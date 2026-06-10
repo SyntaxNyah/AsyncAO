@@ -10,13 +10,13 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 
 | Gate (budget) | Measured | Where |
 |---|---|---|
-| Resolver fast path < 100 ns, ≤ 1 alloc | **67.9 ns/op, 1 alloc (64 B)** | `BenchmarkBuildCandidates_Learned` |
-| Resolver MISS path (unlearned) | **70.0 ns/op, 1 alloc** — generation-cached format lists make the cold path as cheap as the learned one | `BenchmarkBuildCandidates_Miss` |
+| Resolver fast path < 100 ns, ≤ 1 alloc | **76.5 ns/op, 1 alloc (64 B)** | `BenchmarkBuildCandidates_Learned` |
+| Resolver MISS path (unlearned) | **72.5 ns/op, 1 alloc** — generation-cached format lists make the cold path as cheap as the learned one | `BenchmarkBuildCandidates_Miss` |
 | Resolve 200 assets < 1 ms | **14.6 µs** | `BenchmarkResolveAssets` |
-| T1 cache hit, 0 allocs | **40.8 ns/op, 0 allocs** | `BenchmarkCacheHit_T1` |
-| T2 cache hit, 0 allocs | **37.7 ns/op, 0 allocs** | `BenchmarkCacheHit_T2` |
-| WebP 256×192 decode < 3 ms | **0.20 ms/op** | `BenchmarkDecodeWebP_256x192` |
-| Render frame < 16 ms, 0 allocs | **2.44 ms/op (software renderer), 0 allocs** | `BenchmarkRenderFrame` + `TestRenderFrameZeroAllocs` |
+| T1 cache hit, 0 allocs | **41.2 ns/op, 0 allocs** | `BenchmarkCacheHit_T1` |
+| T2 cache hit, 0 allocs | **41.2 ns/op, 0 allocs** | `BenchmarkCacheHit_T2` |
+| WebP 256×192 decode < 3 ms | **0.179 ms/op** | `BenchmarkDecodeWebP_256x192` |
+| Render frame < 16 ms, 0 allocs | **2.34 ms/op (software renderer), 0 allocs** — generation-cached texture pages, zero LRU ops per steady frame | `BenchmarkRenderFrame` + `TestRenderFrameZeroAllocs` |
 | Cold probes ≤ 1/asset, ≤ 450 total | **285 probes / 285 assets** (200-char session) | `TestProbeBudget200CharServer` |
 | Paired cold ≈ single (±20%) | **parallel: 0.17 s with 150 ms/request latency** (serial would be ≥ 0.30 s) | `TestPairedPrefetchResolvesConcurrently` |
 | Steady-state probes (learned warm start) | **N probes for N assets, all first-try** | `TestManagerLearnedWarmStart` |
@@ -35,9 +35,7 @@ Notes:
   says we don't need.
 - The viewport's steady-state texture lookups are generation-cached
   (`animState.resolve`): zero LRU operations per frame until an upload,
-  eviction, or purge bumps `TextureStore.Generation`. Re-measure
-  `BenchmarkRenderFrame` after toolchain restore — the gate remains 0
-  allocs/op.
+  eviction, or purge bumps `TextureStore.Generation` (re-measured above).
 - GIF/APNG composition canvases and DisposalPrevious snapshots come from the
   pixel pool: animated decodes now allocate only their output frames.
 - Keep this file current: update measurements when touching any gated path.
