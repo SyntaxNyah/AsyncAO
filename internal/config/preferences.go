@@ -76,6 +76,8 @@ type AssetPreferences struct {
 	PairOffsetY            int                       `json:"pairOffsetY"`
 	PairFlip               bool                      `json:"pairFlip"`
 	Showname               string                    `json:"showname"`
+	LocalAssetsEnabled     bool                      `json:"localAssetsEnabled"`
+	LocalAssetsPaths       []string                  `json:"localAssetsPaths"`
 
 	mu        sync.RWMutex
 	path      string
@@ -99,6 +101,8 @@ type prefsJSON struct {
 	PairOffsetY            int                       `json:"pairOffsetY"`
 	PairFlip               bool                      `json:"pairFlip"`
 	Showname               string                    `json:"showname"`
+	LocalAssetsEnabled     bool                      `json:"localAssetsEnabled"`
+	LocalAssetsPaths       []string                  `json:"localAssetsPaths"`
 }
 
 // DefaultPath returns the standard preferences file location:
@@ -169,6 +173,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.PairOffsetY = clampPairOffset(onDisk.PairOffsetY)
 	p.PairFlip = onDisk.PairFlip
 	p.Showname = onDisk.Showname
+	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
+	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	return p, nil
 }
 
@@ -536,6 +542,35 @@ func (p *AssetPreferences) SetPairFlipped(flip bool) {
 		return
 	}
 	p.PairFlip = flip
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Local assets (no-streaming legacy mode) ----------------------------------
+
+// LocalAssets reports the no-streaming mode: read assets from user-chosen
+// local mount folders instead of the server's asset URL (legacy support for
+// servers without an asset server). Mounts are searched in order, first hit
+// wins — mirroring AO2-Client mount paths, so any folder layout works, not
+// just a default /base.
+func (p *AssetPreferences) LocalAssets() (enabled bool, mounts []string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]string, len(p.LocalAssetsPaths))
+	copy(out, p.LocalAssetsPaths)
+	return p.LocalAssetsEnabled, out
+}
+
+// SetLocalAssets toggles no-streaming mode and stores the ordered mount
+// folder list.
+func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) {
+	p.mu.Lock()
+	if p.LocalAssetsEnabled == enabled && slices.Equal(p.LocalAssetsPaths, mounts) {
+		p.mu.Unlock()
+		return
+	}
+	p.LocalAssetsEnabled = enabled
+	p.LocalAssetsPaths = slices.Clone(mounts)
 	p.mu.Unlock()
 	p.markDirty()
 }
