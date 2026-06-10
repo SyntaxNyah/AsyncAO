@@ -402,13 +402,9 @@ func (a *App) pollLobbyFetch() {
 // mergedFavorites merges the phone book into a fresh copy of the master
 // list and sorts for display (favorites pinned top, legacy pinned bottom).
 func (a *App) mergedFavorites() []network.ServerEntry {
-	favs := map[string]string{}
-	for _, f := range a.d.Prefs.FavoriteServers() {
-		favs[f.URL] = f.Name
-	}
 	entries := make([]network.ServerEntry, len(a.masterEntries))
 	copy(entries, a.masterEntries)
-	entries = network.MergeFavorites(entries, favs)
+	entries = network.MergeFavorites(entries, a.d.Prefs.FavoriteServers())
 	network.SortServers(entries)
 	return entries
 }

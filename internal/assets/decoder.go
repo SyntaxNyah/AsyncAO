@@ -270,10 +270,14 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 		Delays:   make([]time.Duration, 0, frameCount),
 	}
 
-	// canvas accumulates composition; backdrop snapshots support
-	// DisposalPrevious.
-	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
+	// canvas accumulates composition; the backdrop snapshot supports
+	// DisposalPrevious. Both come from the pixel pool and go back at the
+	// end — animated decodes allocate only their output frames.
+	canvas, canvasTok := newPooledRGBA(width, height)
+	defer putPixBuf(canvasTok)
 	var prevSnapshot *image.RGBA
+	var snapTok *[]byte
+	defer func() { putPixBuf(snapTok) }()
 
 	for i := 0; i < frameCount; i++ {
 		frame := g.Image[i]
@@ -283,9 +287,10 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 		}
 
 		if disposal == gif.DisposalPrevious {
-			snap := image.NewRGBA(canvas.Rect)
-			copy(snap.Pix, canvas.Pix)
-			prevSnapshot = snap
+			if prevSnapshot == nil {
+				prevSnapshot, snapTok = newPooledRGBA(width, height)
+			}
+			copy(prevSnapshot.Pix, canvas.Pix)
 		}
 
 		draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
@@ -376,8 +381,11 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 		Delays:   make([]time.Duration, 0, frameCount),
 	}
 
-	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
+	canvas, canvasTok := newPooledRGBA(width, height)
+	defer putPixBuf(canvasTok)
 	var prevSnapshot *image.RGBA
+	var snapTok *[]byte
+	defer func() { putPixBuf(snapTok) }()
 
 	for i := 0; i < frameCount; i++ {
 		frame := animFrames[i]
@@ -389,9 +397,10 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 		)
 
 		if frame.DisposeOp == apng.DISPOSE_OP_PREVIOUS {
-			snap := image.NewRGBA(canvas.Rect)
-			copy(snap.Pix, canvas.Pix)
-			prevSnapshot = snap
+			if prevSnapshot == nil {
+				prevSnapshot, snapTok = newPooledRGBA(width, height)
+			}
+			copy(prevSnapshot.Pix, canvas.Pix)
 		}
 
 		op := draw.Over

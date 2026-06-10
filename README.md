@@ -59,6 +59,8 @@ asyncao -debug          # pprof on localhost:6060
 | [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | Tuning, PGO capture, profiling |
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Recorded numbers for every gate |
 | [docs/adr/0001-zero-fallback-by-default.md](docs/adr/0001-zero-fallback-by-default.md) | Why zero fallbacks |
+| [docs/PROTOCOL.md](docs/PROTOCOL.md) | The AO2 wire protocol as implemented |
+| [docs/user/lobby.md](docs/user/lobby.md) | Lobby, phone book, direct connect |
 | [docs/user/asset-preferences.md](docs/user/asset-preferences.md) | Format settings guide |
 | [docs/user/pairing.md](docs/user/pairing.md) | Pairing guide |
 | [docs/user/themes.md](docs/user/themes.md) | Migrating AO2 themes |

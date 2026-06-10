@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
 // DefaultMasterServerURL is the canonical AO master server list endpoint
@@ -73,13 +75,14 @@ type ServerEntry struct {
 }
 
 // DirectEntry synthesizes a list entry for a favorite or direct-connect
-// server that is not on the master list (private servers).
-func DirectEntry(name, wsURL string) (ServerEntry, error) {
+// server that is not on the master list (private servers). The phone-book
+// description rides along so the lobby stays informative offline.
+func DirectEntry(name, wsURL, description string) (ServerEntry, error) {
 	scheme, host, port, err := splitWSURL(wsURL)
 	if err != nil {
 		return ServerEntry{}, err
 	}
-	e := ServerEntry{IP: host, Name: name, Favorite: true}
+	e := ServerEntry{IP: host, Name: name, Description: description, Favorite: true}
 	if scheme == "wss" {
 		e.WSSPort = port
 	} else {
@@ -234,17 +237,22 @@ func SortServers(entries []ServerEntry) {
 	})
 }
 
-// MergeFavorites flags master-list entries whose connection URL is starred
-// and appends synthesized entries for favorites missing from the list
-// (private/direct-connect servers). favs maps URL → display name.
-func MergeFavorites(entries []ServerEntry, favs map[string]string) []ServerEntry {
+// MergeFavorites flags master-list entries whose connection URL is in the
+// phone book and appends synthesized entries for favorites missing from the
+// list (private/direct-connect servers), descriptions included. The master
+// list's live description wins for servers it still carries.
+func MergeFavorites(entries []ServerEntry, favs []config.FavoriteServer) []ServerEntry {
+	byURL := make(map[string]config.FavoriteServer, len(favs))
+	for _, f := range favs {
+		byURL[f.URL] = f
+	}
 	seen := map[string]struct{}{}
 	for i := range entries {
 		url := entries[i].WebSocketURL()
 		if url == "" {
 			continue
 		}
-		if _, ok := favs[url]; ok {
+		if _, ok := byURL[url]; ok {
 			entries[i].Favorite = true
 			seen[url] = struct{}{}
 		}
@@ -252,17 +260,17 @@ func MergeFavorites(entries []ServerEntry, favs map[string]string) []ServerEntry
 		// list now advertises wss too; match the ws form as well.
 		if entries[i].WSPort > 0 {
 			alt := "ws://" + entries[i].IP + ":" + strconv.Itoa(entries[i].WSPort)
-			if _, ok := favs[alt]; ok {
+			if _, ok := byURL[alt]; ok {
 				entries[i].Favorite = true
 				seen[alt] = struct{}{}
 			}
 		}
 	}
-	for url, name := range favs {
+	for url, fav := range byURL {
 		if _, ok := seen[url]; ok {
 			continue
 		}
-		if e, err := DirectEntry(name, url); err == nil {
+		if e, err := DirectEntry(fav.Name, url, fav.Description); err == nil {
 			entries = append(entries, e)
 		}
 	}

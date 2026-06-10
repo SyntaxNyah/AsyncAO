@@ -59,6 +59,16 @@ Prefetch(base, type, prio)
 Full-URL keys make per-server separation structural: two servers (or two
 local mount sets — their origin embeds a mount-list hash) can never collide.
 
+Two generation counters keep hot paths lock-free without staleness:
+
+- `AssetPreferences.FormatGeneration` — bumped by format mutators; the
+  resolver's miss path serves probe lists from an atomic per-generation
+  snapshot (70 ns/op, 1 alloc — identical to the learned path).
+- `TextureStore.Generation` — bumped on upload/eviction/purge; each viewport
+  layer caches its `*TexturePage` against it, so steady-state rendering does
+  zero LRU operations and a cached pointer can never outlive its textures
+  (destroys happen later in the same frame, after the generation check).
+
 ## Resolution engine (§6)
 
 `learnedTable` is an immutable `map[host]*[AssetTypeCount]string` behind an
@@ -101,6 +111,15 @@ SM→RD, DONE`). MS parsing honors `MS_MINIMUM=15`, gates fields ≥ 15 on
 (`id^order`, `x&y` offsets) with AO2-Client's exact z-order semantics
 (`^0` = speaker in front). Outgoing MS reproduces AO2-Client's feature-gating
 ladder and its asymmetry (the server injects partner fields when relaying).
+
+## Lobby data
+
+The master list JSON is parsed in full — `ip`, ports, `players`, `name` and
+`description`. Starring a server persists name + URL + **description** into
+the phone book (`config.FavoriteServer`), and `MergeFavorites` synthesizes
+entries for private servers so the lobby shows their descriptions even with
+the master list unreachable. The live master description wins for servers
+still listed.
 
 ## Pairing fast path (§11)
 

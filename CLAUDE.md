@@ -103,6 +103,9 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
 
 - The AV intercepts TLS (pacman needed `curl -k`) and sometimes blocks
   freshly-built test exes (`fork/exec ... Access is denied`) — just re-run.
+- The AV also throttles PARALLEL loopback httptest servers: running several
+  test packages at once can stall one for minutes. **On this machine always
+  test with `go test -p 1 ./...`** (CI runners don't need it).
 - The AV has also quarantined `C:\msys64\ucrt64\bin\ld.exe` mid-session:
   CGO linking then fails with `collect2: cannot find 'ld'`. Fix:
   `pacman -S mingw-w64-ucrt-x86_64-binutils`. On any sudden CGO link

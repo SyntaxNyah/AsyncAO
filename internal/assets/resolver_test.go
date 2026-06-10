@@ -158,6 +158,55 @@ func TestRecordSuccessCASRace(t *testing.T) {
 	}
 }
 
+// TestFormatListCacheFollowsSettings pins the generation invalidation: the
+// miss-path cache must rebuild the moment any format setting changes.
+func TestFormatListCacheFollowsSettings(t *testing.T) {
+	prefs := newTestPrefs(t)
+	r := NewResolver(prefs)
+	const host = "h.example.com"
+	const base = "http://h.example.com/characters/x/(a)normal"
+
+	c := r.BuildCandidates(base, AssetTypeCharSprite, host)
+	if len(c.URLs) != 1 {
+		t.Fatalf("default candidates = %v", c.URLs)
+	}
+	r.PutCandidates(c)
+
+	prefs.SetGlobalFallbacks(true) // bumps the format generation
+	c = r.BuildCandidates(base, AssetTypeCharSprite, host)
+	if len(c.URLs) != 4 {
+		t.Errorf("cached format list went stale after settings change: %v", c.URLs)
+	}
+	r.PutCandidates(c)
+
+	prefs.SetFormatOrder(AssetTypeCharSprite.Name(), []string{config.ExtGIF})
+	c = r.BuildCandidates(base, AssetTypeCharSprite, host)
+	defer r.PutCandidates(c)
+	if len(c.URLs) == 0 || c.URLs[0] != base+config.ExtGIF {
+		t.Errorf("cached format list missed a format-order change: %v", c.URLs)
+	}
+}
+
+// BenchmarkBuildCandidates_Miss measures the unlearned path (cold icon
+// walls): with the generation cache it is lock-free after the first build.
+func BenchmarkBuildCandidates_Miss(b *testing.B) {
+	prefs, err := config.New(filepath.Join(b.TempDir(), config.PrefsFileName))
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer prefs.Close()
+	r := NewResolver(prefs)
+	const host = "assets.example.com"
+	const base = "http://assets.example.com/characters/char/char_icon"
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		c := r.BuildCandidates(base, AssetTypeCharIcon, host)
+		r.PutCandidates(c)
+	}
+}
+
 // TestBuildCandidatesLearnedAllocGate enforces the ≤1 alloc budget in plain
 // `go test`, not just benchmarks (spec §6).
 func TestBuildCandidatesLearnedAllocGate(t *testing.T) {

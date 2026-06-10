@@ -89,6 +89,11 @@ type AssetPreferences struct {
 	saveDelay time.Duration
 	closeOnce sync.Once
 	onSaveErr atomic.Pointer[func(error)]
+
+	// formatGen increments on every mutation that changes any effective
+	// probe list (format orders, fallback toggles). Consumers cache derived
+	// format tables keyed by this generation — see Resolver's miss path.
+	formatGen atomic.Uint64
 }
 
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
@@ -107,12 +112,15 @@ type prefsJSON struct {
 	Favorites              []FavoriteServer          `json:"favorites"`
 }
 
-// FavoriteServer is a starred or direct-connect server entry. URL is the
-// full ws:// or wss:// connection address, which also works for private
-// servers that never appear on the master list.
+// FavoriteServer is a starred or direct-connect server entry (the server
+// phone book). URL is the full ws:// or wss:// connection address, which
+// also works for private servers that never appear on the master list. The
+// description is kept so starred servers stay informative even when the
+// master list is unreachable.
 type FavoriteServer struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Description string `json:"description,omitempty"`
 }
 
 // DefaultPath returns the standard preferences file location:
@@ -310,6 +318,13 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 
 // --- Format lists -----------------------------------------------------------
 
+// FormatGeneration returns the probe-list generation: it changes whenever
+// any SetFormatOrder/SetTypeFallbacks/SetGlobalFallbacks mutation lands, so
+// derived caches know when to rebuild without holding locks.
+func (p *AssetPreferences) FormatGeneration() uint64 {
+	return p.formatGen.Load()
+}
+
 // FormatList implements spec §4: with fallbacks OFF it returns exactly
 // the configured probe list for the type; with fallbacks ON (globally or for
 // this type) it returns the configured list plus the type's legacy chain,
@@ -372,6 +387,7 @@ func (p *AssetPreferences) SetFormatOrder(typeName string, order []string) {
 	p.AssetTypes[typeName] = tp
 	p.dropLearnedTypeLocked(typeName)
 	p.mu.Unlock()
+	p.formatGen.Add(1)
 	p.markDirty()
 }
 
@@ -408,6 +424,7 @@ func (p *AssetPreferences) SetTypeFallbacks(typeName string, enabled bool) {
 	p.AssetTypes[typeName] = tp
 	p.dropLearnedTypeLocked(typeName)
 	p.mu.Unlock()
+	p.formatGen.Add(1)
 	p.markDirty()
 }
 
@@ -429,6 +446,7 @@ func (p *AssetPreferences) SetGlobalFallbacks(enabled bool) {
 	p.GlobalFallbacksEnabled = enabled
 	p.LearnedFormats = map[string][]string{}
 	p.mu.Unlock()
+	p.formatGen.Add(1)
 	p.markDirty()
 }
 
@@ -597,27 +615,29 @@ func (p *AssetPreferences) FavoriteServers() []FavoriteServer {
 	return out
 }
 
-// AddFavorite stars a server (or renames an existing favorite with the same
+// AddFavorite stars a server (or updates an existing favorite with the same
 // URL). URL must be the full ws://host:port or wss://host:port address, so
-// private servers off the master list work identically.
-func (p *AssetPreferences) AddFavorite(name, url string) {
+// private servers off the master list work identically; the description is
+// retained for the phone book.
+func (p *AssetPreferences) AddFavorite(name, url, description string) {
 	if url == "" {
 		return
 	}
 	p.mu.Lock()
 	for i, f := range p.Favorites {
 		if f.URL == url {
-			if f.Name == name {
+			if f.Name == name && f.Description == description {
 				p.mu.Unlock()
 				return
 			}
 			p.Favorites[i].Name = name
+			p.Favorites[i].Description = description
 			p.mu.Unlock()
 			p.markDirty()
 			return
 		}
 	}
-	p.Favorites = append(p.Favorites, FavoriteServer{Name: name, URL: url})
+	p.Favorites = append(p.Favorites, FavoriteServer{Name: name, URL: url, Description: description})
 	p.mu.Unlock()
 	p.markDirty()
 }

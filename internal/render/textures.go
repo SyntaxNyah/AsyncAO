@@ -5,6 +5,7 @@
 package render
 
 import (
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -56,10 +57,17 @@ func (p *TexturePage) destroy() {
 // TextureStore is T1: a byte-budgeted texture cache keyed by asset BASE
 // (extension-less URL base — unique per asset). Evicted pages drain through
 // a bounded destroy queue on the render thread.
+//
+// generation increments on every mutation (upload, eviction, purge). The
+// viewport caches *TexturePage pointers against it, so steady-state frames
+// reuse pages with zero LRU lookups; any mutation forces a re-lookup before
+// a cached pointer can dangle (destroys only happen later in the same frame,
+// in DrainDestroyQueue, after rendering consulted the generation).
 type TextureStore struct {
-	ren     *sdl.Renderer
-	t1      *cache.ByteBudgetLRU[string, *TexturePage]
-	destroy chan *TexturePage
+	ren        *sdl.Renderer
+	t1         *cache.ByteBudgetLRU[string, *TexturePage]
+	destroy    chan *TexturePage
+	generation atomic.Uint64
 }
 
 // NewTextureStore builds T1 over the given renderer.
@@ -69,6 +77,7 @@ func NewTextureStore(ren *sdl.Renderer) (*TextureStore, error) {
 		destroy: make(chan *TexturePage, destroyQueueCap),
 	}
 	t1, err := cache.NewByteBudgetLRU(t1MaxEntries, int64(T1BudgetBytes), func(_ string, page *TexturePage, _ int64) {
+		s.generation.Add(1) // cached page pointers must re-resolve
 		select {
 		case s.destroy <- page:
 		default:
@@ -126,6 +135,7 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 		page.bytes += int64(len(frame.Pix))
 	}
 	s.t1.Add(base, page, page.bytes)
+	s.generation.Add(1)
 	return nil
 }
 
@@ -142,6 +152,11 @@ func (s *TextureStore) DrainDestroyQueue() {
 	}
 }
 
+// Generation reports the mutation counter backing cached page pointers.
+func (s *TextureStore) Generation() uint64 {
+	return s.generation.Load()
+}
+
 // Stats exposes T1 counters for the HUD.
 func (s *TextureStore) Stats() cache.MemoryStats {
 	return s.t1.Stats()
@@ -149,6 +164,7 @@ func (s *TextureStore) Stats() cache.MemoryStats {
 
 // Purge destroys everything (server switch / shutdown). Render thread only.
 func (s *TextureStore) Purge() {
+	s.generation.Add(1)
 	s.t1.Purge()
 	for {
 		select {

@@ -11,6 +11,7 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 | Gate (budget) | Measured | Where |
 |---|---|---|
 | Resolver fast path < 100 ns, ≤ 1 alloc | **67.9 ns/op, 1 alloc (64 B)** | `BenchmarkBuildCandidates_Learned` |
+| Resolver MISS path (unlearned) | **70.0 ns/op, 1 alloc** — generation-cached format lists make the cold path as cheap as the learned one | `BenchmarkBuildCandidates_Miss` |
 | Resolve 200 assets < 1 ms | **14.6 µs** | `BenchmarkResolveAssets` |
 | T1 cache hit, 0 allocs | **40.8 ns/op, 0 allocs** | `BenchmarkCacheHit_T1` |
 | T2 cache hit, 0 allocs | **37.7 ns/op, 0 allocs** | `BenchmarkCacheHit_T2` |
@@ -32,4 +33,11 @@ Notes:
 - The resolver's single allocation is the joined URL string itself — the
   theoretical floor without `unsafe.String` tricks, which the 68 ns reading
   says we don't need.
+- The viewport's steady-state texture lookups are generation-cached
+  (`animState.resolve`): zero LRU operations per frame until an upload,
+  eviction, or purge bumps `TextureStore.Generation`. Re-measure
+  `BenchmarkRenderFrame` after toolchain restore — the gate remains 0
+  allocs/op.
+- GIF/APNG composition canvases and DisposalPrevious snapshots come from the
+  pixel pool: animated decodes now allocate only their output frames.
 - Keep this file current: update measurements when touching any gated path.

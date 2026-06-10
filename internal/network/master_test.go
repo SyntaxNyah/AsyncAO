@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
 // sampleMasterJSON is a real master-server response shape (trimmed): one
@@ -191,23 +193,26 @@ func TestParseDirectAddress(t *testing.T) {
 }
 
 func TestDirectEntry(t *testing.T) {
-	e, err := DirectEntry("My Private Server", "wss://hidden.example.com:2096")
+	e, err := DirectEntry("My Private Server", "wss://hidden.example.com:2096", "Invite only.")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !e.Favorite || e.Security() != SecurityWSS || e.WebSocketURL() != "wss://hidden.example.com:2096" {
 		t.Errorf("DirectEntry = %+v", e)
 	}
-	if _, err := DirectEntry("bad", "tcp://x:1"); err == nil {
+	if e.Description != "Invite only." {
+		t.Errorf("DirectEntry dropped the description: %+v", e)
+	}
+	if _, err := DirectEntry("bad", "tcp://x:1", ""); err == nil {
 		t.Error("DirectEntry accepted a non-ws URL")
 	}
 }
 
 func TestMergeFavoritesAndSort(t *testing.T) {
 	entries, _ := ParseServerList([]byte(sampleMasterJSON))
-	favs := map[string]string{
-		"ws://135.148.43.158:50000":    "KFO ★",          // on the list
-		"wss://secret.example.com:443": "Secret Hideout", // private server
+	favs := []config.FavoriteServer{
+		{Name: "KFO ★", URL: "ws://135.148.43.158:50000"},
+		{Name: "Secret Hideout", URL: "wss://secret.example.com:443", Description: "Invite only."},
 	}
 	entries = MergeFavorites(entries, favs)
 	SortServers(entries)
@@ -222,6 +227,14 @@ func TestMergeFavoritesAndSort(t *testing.T) {
 	}
 	if !entries[0].Favorite || !entries[1].Favorite {
 		t.Error("top entries not flagged favorite")
+	}
+	for _, e := range entries {
+		if e.Name == "Secret Hideout" && e.Description != "Invite only." {
+			t.Errorf("phone-book description lost in merge: %+v", e)
+		}
+		if e.Name == "Killing Fever Online" && e.Description == "" {
+			t.Error("master-list description lost on a starred server")
+		}
 	}
 	// Legacy still pinned to the bottom, after everything.
 	if entries[len(entries)-1].Joinable() || entries[len(entries)-2].Joinable() {

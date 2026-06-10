@@ -149,7 +149,7 @@ func (a *App) toggleFavorite(e *network.ServerEntry) {
 	if e.Favorite {
 		a.d.Prefs.RemoveFavorite(url)
 	} else {
-		a.d.Prefs.AddFavorite(e.Name, url)
+		a.d.Prefs.AddFavorite(e.Name, url, e.Description)
 	}
 	a.servers = a.mergedFavorites()
 }
@@ -161,7 +161,7 @@ func (a *App) directConnect() {
 		return
 	}
 	if a.directSave {
-		a.d.Prefs.AddFavorite(a.directInput, url)
+		a.d.Prefs.AddFavorite(a.directInput, url, "")
 	}
 	a.Connect(a.directInput, url)
 }

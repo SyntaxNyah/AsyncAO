@@ -31,9 +31,14 @@ const (
 	// keep-alive does the work; HTTP/2 kicks in automatically on https.
 	defaultMaxConnsPerHost     = 16
 	defaultMaxIdleConnsPerHost = 8
+	defaultMaxIdleConnsTotal   = 64
 	defaultIdleConnTimeout     = 90 * time.Second
 	defaultTLSHandshakeTimeout = 2 * time.Second
-	tlsSessionCacheSize        = 64
+	// defaultResponseHeaderTimeout fails a stalled server faster than the
+	// overall request deadline, freeing the connection slot for the next
+	// probe.
+	defaultResponseHeaderTimeout = 3 * time.Second
+	tlsSessionCacheSize          = 64
 
 	// DefaultRequestTimeout caps every asset request end-to-end.
 	DefaultRequestTimeout = 5 * time.Second
@@ -88,9 +93,11 @@ func NewClient() *Client {
 func newClient(timeout, notFoundTTL time.Duration) *Client {
 	dns := newDNSCache()
 	transport := &http.Transport{
-		MaxConnsPerHost:     defaultMaxConnsPerHost,
-		MaxIdleConnsPerHost: defaultMaxIdleConnsPerHost,
-		IdleConnTimeout:     defaultIdleConnTimeout,
+		MaxConnsPerHost:       defaultMaxConnsPerHost,
+		MaxIdleConnsPerHost:   defaultMaxIdleConnsPerHost,
+		MaxIdleConns:          defaultMaxIdleConnsTotal,
+		IdleConnTimeout:       defaultIdleConnTimeout,
+		ResponseHeaderTimeout: defaultResponseHeaderTimeout,
 		// Assets are pre-compressed media; transparent gzip would burn CPU
 		// for nothing.
 		DisableCompression:  true,

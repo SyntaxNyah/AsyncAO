@@ -33,13 +33,23 @@ type learnedTable struct {
 
 var emptyLearnedTable = &learnedTable{hosts: map[string]*[AssetTypeCount]string{}}
 
+// formatListCache is an immutable per-generation snapshot of every type's
+// effective probe list, so the unlearned (miss) path costs one atomic load
+// instead of a preferences RLock + slice rebuild per asset. Cold-loading a
+// 200-character icon wall hits this path 200 times back-to-back.
+type formatListCache struct {
+	gen   uint64
+	lists [AssetTypeCount][]string
+}
+
 // Resolver is the AssetResolutionEngine: it turns (base, type, host) into
 // the list of URLs to probe, learning the first working format per
 // (host, type) so steady-state resolution costs a single candidate.
 type Resolver struct {
-	table atomic.Pointer[learnedTable]
-	prefs *config.AssetPreferences
-	pool  sync.Pool // *Candidates
+	table   atomic.Pointer[learnedTable]
+	formats atomic.Pointer[formatListCache]
+	prefs   *config.AssetPreferences
+	pool    sync.Pool // *Candidates
 
 	learnedHits   atomic.Int64
 	learnedMisses atomic.Int64
@@ -133,10 +143,27 @@ func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candi
 
 	r.learnedMisses.Add(1)
 	c.Learned = false
-	for _, ext := range r.prefs.FormatList(t.Name()) {
+	for _, ext := range r.formatList(t) {
 		c.URLs = append(c.URLs, base+ext)
 	}
 	return c
+}
+
+// formatList returns the cached probe list for t, rebuilding the snapshot
+// only when the preferences' format generation moved. The cached slices are
+// read-only by contract. A racing rebuild publishes an identical snapshot —
+// last write wins harmlessly.
+func (r *Resolver) formatList(t AssetType) []string {
+	gen := r.prefs.FormatGeneration()
+	if cached := r.formats.Load(); cached != nil && cached.gen == gen {
+		return cached.lists[t]
+	}
+	fresh := &formatListCache{gen: gen}
+	for tt := AssetType(0); tt < AssetTypeCount; tt++ {
+		fresh.lists[tt] = r.prefs.FormatList(tt.Name())
+	}
+	r.formats.Store(fresh)
+	return fresh.lists[t]
 }
 
 // PutCandidates returns a Candidates to the pool. The caller must not touch

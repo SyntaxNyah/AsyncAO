@@ -55,11 +55,13 @@ Watch for:
 
 | Path | Technique |
 |---|---|
-| Format resolution | atomic snapshot, pooled candidates, 1 alloc |
+| Format resolution | atomic snapshot, pooled candidates, 1 alloc — and the unlearned path reads a generation-cached format table (no prefs lock, no rebuild) |
 | Cache hits | lock-free-ish LRU (internal lock, no wrapper), atomics for stats |
 | Fetch dedup | singleflight; 404 LRU; per-host backoff off the hot path |
 | Decode | worker pool, size-classed pixel pools, SIMD libwebp via CGO |
 | Texture upload | budgeted per frame; live message bypasses the budget |
 | Typewriter | rasterize once per message; reveal = src-rect width per frame |
 | Animations | precomputed delay tables; frame advance is an index bump |
-| Render | zero allocations steady-state (cgo-escape pitfalls: never take the address of a stack rect for `Renderer.Copy` — use a reused field) |
+| Render | zero allocations steady-state (cgo-escape pitfalls: never take the address of a stack rect for `Renderer.Copy` — use a reused field); texture pages are generation-cached per layer, so steady frames do zero LRU lookups |
+| Animated decode | composition canvas + DisposalPrevious snapshot from the pixel pool — allocations limited to the output frames |
+| HTTP transport | 3 s response-header timeout fails stalled hosts before the 5 s deadline, freeing the per-host connection slot |

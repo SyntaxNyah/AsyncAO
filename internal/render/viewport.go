@@ -14,12 +14,17 @@ const (
 )
 
 // animState tracks playback of one sprite layer without allocations: the
-// loop bumps an index and swaps texture pointers (spec §12).
+// loop bumps an index and swaps texture pointers (spec §12). It also caches
+// the resolved TexturePage against the store generation, so steady-state
+// frames perform zero LRU lookups — pure pointer math.
 type animState struct {
 	base     string
 	frame    int
 	elapsed  time.Duration
 	finished bool
+
+	page    *TexturePage
+	pageGen uint64
 }
 
 // reset rebinds the state to a new asset base.
@@ -28,6 +33,29 @@ func (a *animState) reset(base string) {
 	a.frame = 0
 	a.elapsed = 0
 	a.finished = false
+	a.page = nil
+	a.pageGen = 0
+}
+
+// resolve returns the cached page, re-querying the store only when its
+// generation moved (upload/eviction/purge) or the base changed.
+func (a *animState) resolve(store *TextureStore) (*TexturePage, bool) {
+	if a.base == "" {
+		return nil, false
+	}
+	gen := store.Generation()
+	if a.page != nil && a.pageGen == gen {
+		return a.page, true
+	}
+	page, ok := store.Get(a.base)
+	if !ok {
+		a.page = nil
+		a.pageGen = gen
+		return nil, false
+	}
+	a.page = page
+	a.pageGen = gen
+	return page, true
 }
 
 // advance steps frame timing. One-shot animations stop on the last frame
@@ -98,19 +126,19 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
 
-	if page, ok := v.store.Get(scene.BackgroundBase); ok {
+	if page, ok := v.bgAnim.resolve(v.store); ok {
 		v.bgAnim.advance(page, dt, false)
 	}
-	if page, ok := v.store.Get(scene.DeskBase); ok {
+	if page, ok := v.deskAnim.resolve(v.store); ok {
 		v.deskAnim.advance(page, dt, false)
 	}
 	if scene.ShoutBase != "" {
-		if page, ok := v.store.Get(scene.ShoutBase); ok {
+		if page, ok := v.shoutAnim.resolve(v.store); ok {
 			v.shoutAnim.advance(page, dt, true)
 		}
 	}
 	if scene.Speaker.Visible {
-		if page, ok := v.store.Get(scene.Speaker.Active); ok {
+		if page, ok := v.speakerAnim.resolve(v.store); ok {
 			if v.speakerAnim.advance(page, dt, scene.Speaker.PlayOnce) && scene.Speaker.PlayOnce {
 				if v.OnPreanimDone != nil {
 					v.OnPreanimDone()
@@ -119,7 +147,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 		}
 	}
 	if scene.PairActive {
-		if page, ok := v.store.Get(scene.Pair.Active); ok {
+		if page, ok := v.pairAnim.resolve(v.store); ok {
 			v.pairAnim.advance(page, dt, false)
 		}
 	}
@@ -161,7 +189,7 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 	if base == "" {
 		return
 	}
-	page, ok := v.store.Get(base)
+	page, ok := anim.resolve(v.store)
 	if !ok || len(page.Frames) == 0 {
 		return
 	}
@@ -176,7 +204,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if !layer.Visible || layer.Active == "" {
 		return
 	}
-	page, ok := v.store.Get(layer.Active)
+	page, ok := anim.resolve(v.store)
 	if !ok || len(page.Frames) == 0 {
 		return
 	}
