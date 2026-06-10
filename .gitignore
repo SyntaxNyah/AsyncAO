@@ -1,0 +1,20 @@
+# Build output
+/bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test & profiling artifacts
+*.test
+*.prof
+*.pprof
+coverage.out
+
+# Local CGO dev dependencies (SDL2, libwebp, ...) fetched by scripts/
+/.deps/
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
