@@ -106,14 +106,29 @@ func TestConnCloseEndsIncomingCleanly(t *testing.T) {
 }
 
 func TestConnServerDropReportsError(t *testing.T) {
-	srv := echoAOServer(t)
+	// httptest.CloseClientConnections does NOT close hijacked (WebSocket)
+	// conns, so the server handler drops the socket itself: it abruptly
+	// CloseNows after the first client packet.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		_ = ws.Write(r.Context(), websocket.MessageText, []byte("decryptor#34#%"))
+		_, _, _ = ws.Read(r.Context()) // wait for the client's HI
+		_ = ws.CloseNow()              // yank the socket, no close frame
+	}))
+	t.Cleanup(srv.Close)
+
 	conn, err := Dial(context.Background(), wsURL(srv))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
 	<-conn.Incoming() // greeting
-	srv.CloseClientConnections()
+	if err := conn.Send(context.Background(), NewPacket("HI", "x")); err != nil {
+		t.Fatal(err)
+	}
 
 	deadline := time.After(5 * time.Second)
 	for {

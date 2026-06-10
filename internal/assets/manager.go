@@ -151,6 +151,92 @@ func (m *Manager) Prefetch(base string, t AssetType, prio network.Priority) {
 	})
 }
 
+// PrefetchExact queues a pipeline pass for a COMPLETE URL (extension
+// included) — AO music tracks ship their extension in the track name, and
+// direct http(s) tracks are full URLs already. No candidate probing.
+func (m *Manager) PrefetchExact(url string, t AssetType, prio network.Priority) {
+	if url == "" || !t.Valid() {
+		return
+	}
+	m.pool.Submit(prio, network.Job{
+		ID:    m.pool.NextID(),
+		Epoch: m.pool.Epoch(),
+		Run: func(stale bool) {
+			if stale {
+				return
+			}
+			m.resolveExact(url, t)
+		},
+	})
+}
+
+// resolveExact is the candidate-free pipeline pass behind PrefetchExact.
+func (m *Manager) resolveExact(url string, t AssetType) {
+	if _, loaded := m.inflight.LoadOrStore(url, struct{}{}); loaded {
+		return
+	}
+	defer m.inflight.Delete(url)
+
+	if m.t1Contains != nil && m.t1Contains(url) {
+		m.t1Hits.Add(1)
+		return
+	}
+	if data, ok := m.t2.Get(url); ok {
+		m.t2Hits.Add(1)
+		m.deliver(url, url, t, data)
+		return
+	}
+	if !m.localMode {
+		if data, ok := m.disk.Get(url); ok {
+			m.diskHits.Add(1)
+			m.t2.Add(url, data, int64(len(data)))
+			m.deliver(url, url, t, data)
+			return
+		}
+	}
+	data, err := m.client.Fetch(context.Background(), url)
+	switch {
+	case err == nil:
+		m.netFetches.Add(1)
+		m.t2.Add(url, data, int64(len(data)))
+		if !m.localMode {
+			m.disk.Put(url, data)
+		}
+		m.deliver(url, url, t, data)
+	case errors.Is(err, network.ErrAssetNotFound):
+		m.reportMissing(url, t, nil)
+	default:
+		m.decodedCh <- DecodedAsset{URL: url, Base: url, Type: t, Err: err}
+	}
+}
+
+// FetchRaw synchronously fetches a complete URL through T2 → T3 → source
+// without decoding — for text assets like char.ini. Call it off the render
+// thread (UI screens use a goroutine).
+func (m *Manager) FetchRaw(ctx context.Context, url string) ([]byte, error) {
+	if data, ok := m.t2.Get(url); ok {
+		m.t2Hits.Add(1)
+		return data, nil
+	}
+	if !m.localMode {
+		if data, ok := m.disk.Get(url); ok {
+			m.diskHits.Add(1)
+			m.t2.Add(url, data, int64(len(data)))
+			return data, nil
+		}
+	}
+	data, err := m.client.Fetch(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	m.netFetches.Add(1)
+	m.t2.Add(url, data, int64(len(data)))
+	if !m.localMode {
+		m.disk.Put(url, data)
+	}
+	return data, nil
+}
+
 // PrefetchSticky is Prefetch for assets that survive room changes (UI
 // chrome, theme bits).
 func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority) {
@@ -291,6 +377,11 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte) {
 			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err}
 		},
 	})
+}
+
+// ClearDisk wipes the T3 cache (Settings "Clear Disk Cache" button).
+func (m *Manager) ClearDisk() error {
+	return m.disk.Clear()
 }
 
 // reportMissing surfaces the §4 visible warning; the warning lane may drop

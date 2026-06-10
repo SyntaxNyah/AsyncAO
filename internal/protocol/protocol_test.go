@@ -320,22 +320,38 @@ func baseOutgoing() OutgoingMS {
 	}
 }
 
+// Outgoing MS is ASYMMETRIC to incoming: the client never sends other_name/
+// other_emote/other_offset/other_flip — the server injects the partner's
+// data when relaying (AO2-Client on_chat_return_pressed appends exactly
+// showname, other_charid, offset, immediate for the CCCC block). Outgoing
+// indices therefore differ from the incoming CHAT_MESSAGE enum.
+const (
+	outShowname  = 15
+	outPairID    = 16
+	outOffset    = 17
+	outImmediate = 18
+
+	// Full-feature outgoing length: 15 base + 4 CCCC + 5 looping_sfx
+	// + 1 additive + 1 effects + 2 custom_blips.
+	outFullFeatureLen = 28
+)
+
 func TestOutgoingMSFullFeatures(t *testing.T) {
 	fields := baseOutgoing().Fields(allFeatures())
-	if len(fields) != MSMaximum {
-		t.Fatalf("field count = %d, want %d", len(fields), MSMaximum)
+	if len(fields) != outFullFeatureLen {
+		t.Fatalf("field count = %d, want %d", len(fields), outFullFeatureLen)
 	}
-	if fields[MSOtherCharID] != "4^1" {
-		t.Errorf("pair field = %q, want 4^1", fields[MSOtherCharID])
+	if fields[outPairID] != "4^1" {
+		t.Errorf("pair field = %q, want 4^1", fields[outPairID])
 	}
-	if fields[MSSelfOffset] != "10&-5" {
-		t.Errorf("offset field = %q, want 10&-5 (y_offset server)", fields[MSSelfOffset])
+	if fields[outOffset] != "10&-5" {
+		t.Errorf("offset field = %q, want 10&-5 (y_offset server)", fields[outOffset])
 	}
-	if fields[MSShowname] != "Nick" || fields[MSImmediate] != "1" {
+	if fields[outShowname] != "Nick" || fields[outImmediate] != "1" {
 		t.Error("CCCC fields wrong")
 	}
-	if fields[MSBlipname] != "male" || fields[MSSlide] != "0" {
-		t.Error("custom_blips fields wrong")
+	if fields[len(fields)-2] != "male" || fields[len(fields)-1] != "0" {
+		t.Error("custom_blips tail fields wrong")
 	}
 }
 
@@ -349,14 +365,14 @@ func TestOutgoingMSVanillaServerGetsBareMinimum(t *testing.T) {
 func TestOutgoingMSWithoutEffectsOmitsPairOrder(t *testing.T) {
 	feats := ParseFeatures([]string{FeatureCCCCIC}) // no effects, no y_offset
 	fields := baseOutgoing().Fields(feats)
-	if got := fields[MSOtherCharID]; got != "4" {
+	if got := fields[outPairID]; got != "4" {
 		t.Errorf("pair field = %q, want bare 4 (no effects feature)", got)
 	}
-	if got := fields[MSSelfOffset]; got != "10" {
+	if got := fields[outOffset]; got != "10" {
 		t.Errorf("offset field = %q, want x-only 10 (no y_offset feature)", got)
 	}
-	if len(fields) != MSImmediate+1 {
-		t.Errorf("field count = %d, want %d (through IMMEDIATE)", len(fields), MSImmediate+1)
+	if want := outImmediate + 1; len(fields) != want {
+		t.Errorf("field count = %d, want %d (through immediate)", len(fields), want)
 	}
 }
 
@@ -364,16 +380,19 @@ func TestOutgoingMSUnpaired(t *testing.T) {
 	o := baseOutgoing()
 	o.PairWith = UnpairedCharID
 	fields := o.Fields(allFeatures())
-	if fields[MSOtherCharID] != "-1" {
-		t.Errorf("unpaired field = %q, want -1", fields[MSOtherCharID])
+	if fields[outPairID] != "-1" {
+		t.Errorf("unpaired field = %q, want -1", fields[outPairID])
 	}
 }
 
-func TestOutgoingRoundTripThroughWire(t *testing.T) {
-	feats := allFeatures()
+// TestOutgoingWireEscapingSurvives checks the base-15 portion (which IS
+// symmetric) round-trips through the wire with hostile characters. The
+// extended portion is server-transformed in real AO and not round-trippable.
+func TestOutgoingWireEscapingSurvives(t *testing.T) {
+	noFeatures := ParseFeatures(nil)
 	o := baseOutgoing()
 	o.Message = "Special chars: #%&$ 100%"
-	wire := o.Packet(feats).String()
+	wire := o.Packet(noFeatures).String()
 
 	parsed, err := ParsePacket(wire)
 	if err != nil {
@@ -382,17 +401,14 @@ func TestOutgoingRoundTripThroughWire(t *testing.T) {
 	if parsed.Header != "MS" {
 		t.Fatalf("header = %q", parsed.Header)
 	}
-	msg, err := ParseMS(parsed.Fields, feats, 0)
+	msg, err := ParseMS(parsed.Fields, noFeatures, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if msg.Message != o.Message {
 		t.Errorf("message round trip = %q, want %q", msg.Message, o.Message)
 	}
-	if msg.Pair.CharID != 4 || msg.Pair.SpeakerInFront() {
-		t.Errorf("pair round trip = %+v", msg.Pair)
-	}
-	if msg.SelfOffsetX != 10 || msg.SelfOffsetY != -5 {
-		t.Errorf("offset round trip = %d,%d", msg.SelfOffsetX, msg.SelfOffsetY)
+	if msg.Objection != ShoutHoldIt {
+		t.Errorf("objection round trip = %d", msg.Objection)
 	}
 }
