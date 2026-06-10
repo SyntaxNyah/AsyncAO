@@ -302,6 +302,10 @@ func (a *App) enterCourtroom() {
 		return
 	}
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
+	urls := a.urls
+	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character string) string {
+		return urls.Emote(character, "normal", courtroom.EmoteIdle)
+	})
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})

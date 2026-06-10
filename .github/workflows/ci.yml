@@ -1,0 +1,134 @@
+# AsyncAO CI: lint + race tests + alloc-gated benchmarks, then binary builds
+# for every platform. Pull requests get downloadable binaries as artifacts.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.24"
+
+jobs:
+  test:
+    name: Lint & race tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install SDL2 + libwebp dev packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          version: "latest"
+          install-go: false
+
+      - name: Tests (race detector — §17.8 gate)
+        run: go test -race -timeout 600s -count=1 ./...
+
+      - name: Benchmarks (alloc gates — §15)
+        run: |
+          go test -run=NONE -bench=. -benchmem -benchtime=200ms -count=1 ./... | tee bench.txt
+          # Gate: the learned resolver path must stay ≤ 1 alloc/op and the
+          # cache hits + render frame at 0 allocs/op.
+          ! grep -E "BenchmarkBuildCandidates_Learned.*	 *[2-9] allocs/op" bench.txt
+          ! grep -E "BenchmarkCacheHit_T[12].*	 *[1-9] allocs/op" bench.txt
+          ! grep -E "BenchmarkRenderFrame.*	 *[1-9] allocs/op" bench.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: bench.txt
+
+  build-linux:
+    name: Binary (Linux x86_64)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Install SDL2 + libwebp dev packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev
+      - name: Build
+        run: |
+          go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asyncao-linux-x86_64
+          path: asyncao
+
+  build-windows:
+    name: Binary (Windows x86_64)
+    runs-on: windows-latest
+    needs: test
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-SDL2_ttf
+            mingw-w64-ucrt-x86_64-SDL2_mixer
+            mingw-w64-ucrt-x86_64-libwebp
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Build + bundle DLLs
+        run: |
+          export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
+          export CGO_ENABLED=1
+          go build -pgo=auto -trimpath -ldflags "-s -w" -o dist/asyncao.exe ./cmd/asyncao
+          # Ship the runtime DLLs next to the exe so it runs anywhere.
+          ldd dist/asyncao.exe | grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do
+            cp "$dll" dist/
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asyncao-windows-x86_64
+          path: dist/
+
+  build-macos:
+    name: Binary (macOS arm64)
+    runs-on: macos-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Install SDL2 + libwebp
+        run: brew install sdl2 sdl2_ttf sdl2_mixer webp pkg-config
+      - name: Build
+        run: |
+          export CGO_ENABLED=1
+          go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asyncao-macos-arm64
+          path: asyncao

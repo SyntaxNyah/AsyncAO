@@ -78,8 +78,11 @@ type Viewport struct {
 	// machine.
 	OnPreanimDone func()
 
-	// scratch rects reused every frame (no allocs in the loop).
-	dstRect sdl.Rect
+	// scratch rects reused every frame (no allocs in the loop): taking the
+	// address of a stack value for a cgo call would force a heap escape
+	// per draw, so every Copy destination lives on the Viewport.
+	dstRect  sdl.Rect
+	fillRect sdl.Rect
 }
 
 // NewViewport builds a viewport over the texture store.
@@ -163,7 +166,8 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 		return
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
-	_ = ren.Copy(page.Frames[frame], nil, &vp)
+	v.fillRect = vp
+	_ = ren.Copy(page.Frames[frame], nil, &v.fillRect)
 }
 
 // drawSprite draws a character layer: scaled to viewport height preserving

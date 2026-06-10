@@ -17,6 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/ui"
@@ -55,12 +56,26 @@ func main() {
 		}()
 	}
 
-	if err := run(*flagServer, *flagMaster, *flagVsync); err != nil {
+	if err := run(*flagServer, *flagMaster, *flagVsync, *flagDebug); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func run(serverURL, masterURL string, vsync bool) error {
+// logSamples prints the 1 Hz profiler snapshot in --debug mode.
+func logSamples(p *metrics.Profiler) {
+	ticker := time.NewTicker(metrics.SampleInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		s := p.Latest()
+		if s == nil {
+			continue
+		}
+		log.Printf("heap=%dMiB gcP99=%s hitRate=%.0f%% probes=%d cached404=%d",
+			s.HeapBytes>>20, s.GCPauseP99, s.CacheHitRate*100, s.Probes, s.Cached404s)
+	}
+}
+
+func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// --- engine singletons (SDL-free) ---
 	prefsPath, err := config.DefaultPath()
 	if err != nil {
@@ -155,6 +170,27 @@ func run(serverURL, masterURL string, vsync bool) error {
 	viewport := render.NewViewport(store)
 	audio := render.NewAudio(manager)
 	defer audio.Close()
+
+	// 1 Hz sampler: heap, GC pause p99, cache hit rate, probe counts.
+	profiler := metrics.NewProfiler(metrics.StatsSource{
+		CacheHits: func() (int64, int64) {
+			s := t2.Stats()
+			return s.Hits, s.Misses
+		},
+		NetRequests: func() (int64, int64) {
+			s := client.Stats()
+			return s.Requests, s.Cached404s
+		},
+		LearnedHits: func() (int64, int64) {
+			s := resolver.Stats()
+			return s.LearnedHits, s.LearnedMisses
+		},
+	})
+	profiler.Start()
+	defer profiler.Stop()
+	if debugMode {
+		go logSamples(profiler)
+	}
 
 	uiCtx, err := ui.NewCtx(ren)
 	if err != nil {

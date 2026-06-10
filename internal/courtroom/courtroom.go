@@ -116,6 +116,9 @@ type Courtroom struct {
 	current  *protocol.ChatMessage
 	blipBase string
 
+	// Predictor warms the predicted next speaker's sprite (optional).
+	Predictor *assets.Prefetcher
+
 	// preanimDone is flipped by NotifyPreanimDone (render reports one-shot
 	// animation completion).
 	preanimDone bool
@@ -238,6 +241,11 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		}
 		c.mgr.Prefetch(c.ShoutCharBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
 		c.audio.PlayShout(c.urls.ShoutSFX(speakerName, shout))                             // AssetType: SFX
+	}
+
+	// Predictive prefetch: warm the likely next speaker (§10 step 3).
+	if c.Predictor != nil {
+		c.Predictor.OnMessage(speakerName, msg.Pair.Name)
 	}
 
 	blip := msg.Blipname
