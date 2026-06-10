@@ -30,8 +30,6 @@ const (
 	destroyQueueCap = 256
 	// destroyBudgetPerFrame caps destroys per frame to keep 16 ms.
 	destroyBudgetPerFrame = 16
-
-	bytesPerPixel = 4
 )
 
 // TexturePage is one decoded asset uploaded to the GPU: all frames plus

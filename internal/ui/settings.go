@@ -11,11 +11,10 @@ import (
 
 // settingsState lives on App lazily (kept here for file cohesion).
 type settingsState struct {
-	mountInput   string
-	showname     string
-	loaded       bool
-	statusLine   string
-	confirmClear bool
+	mountInput string
+	showname   string
+	loaded     bool
+	statusLine string
 }
 
 var settings settingsState
