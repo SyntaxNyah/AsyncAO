@@ -6,12 +6,12 @@ import (
 )
 
 const (
-	// DefaultWorkers is the fetch worker count (PROMPT.md §7).
+	// DefaultWorkers is the fetch worker count (spec §7).
 	DefaultWorkers = 8
 	// highLaneCap and lowLaneCap bound the two priority lanes. The low lane
 	// holds speculative prefetches and sheds its OLDEST job when full; the
 	// high lane briefly blocks the producer instead — results are never
-	// dropped or stolen (PROMPT.md §17.7).
+	// dropped or stolen (spec §17.7).
 	highLaneCap = 64
 	lowLaneCap  = 256
 )
@@ -81,7 +81,7 @@ func NewPool(workers int) *Pool {
 }
 
 // NextID returns a unique job ID (atomic counter — collision-free, unlike
-// the random IDs PROMPT.md §7 bans).
+// the random IDs spec §7 bans).
 func (p *Pool) NextID() int64 {
 	return p.nextID.Add(1)
 }

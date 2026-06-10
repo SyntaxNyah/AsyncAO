@@ -35,7 +35,7 @@ func newTestPrefs(t *testing.T) (*AssetPreferences, string) {
 }
 
 // TestSetFormatOrderCompletes is the deadlock regression test demanded by
-// PROMPT.md §5: the drafts held the write lock while calling a Save that took
+// spec §5: the drafts held the write lock while calling a Save that took
 // the read lock — a guaranteed self-deadlock on Go's non-reentrant RWMutex.
 // Mutators must never write disk; this must return almost immediately.
 func TestSetFormatOrderCompletes(t *testing.T) {

@@ -3,7 +3,7 @@ package courtroom
 import "time"
 
 const (
-	// DefaultCharInterval is the base typewriter cadence (PROMPT.md §1).
+	// DefaultCharInterval is the base typewriter cadence (spec §1).
 	DefaultCharInterval = 18 * time.Millisecond
 	// DefaultBlipRate fires one blip per N visible characters (AO2-Client
 	// blip_rate default).
@@ -88,7 +88,7 @@ func (t *Typewriter) SkipToEnd() {
 
 // Update advances the reveal by dt. It returns how many new runes became
 // visible and how many blips to fire this tick. The render thread's frame
-// cost stays O(revealed) — no per-character layout here (PROMPT.md §12).
+// cost stays O(revealed) — no per-character layout here (spec §12).
 func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 	if t.Done() {
 		return 0, 0

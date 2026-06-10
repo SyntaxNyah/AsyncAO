@@ -1,6 +1,6 @@
 // Package render owns every SDL resource: window, renderer, textures, fonts,
 // and the audio device. Everything in this package must run on the render
-// thread (runtime.LockOSThread in main) — PROMPT.md §17.1. It consumes plain
+// thread (runtime.LockOSThread in main) — spec §17.1. It consumes plain
 // data (assets.Decoded, courtroom.Scene) produced by the SDL-free packages.
 package render
 
@@ -15,13 +15,13 @@ import (
 )
 
 const (
-	// T1BudgetBytes bounds decoded texture payload bytes (PROMPT.md §9).
+	// T1BudgetBytes bounds decoded texture payload bytes (spec §9).
 	T1BudgetBytes = cache.DefaultT1BudgetBytes
 	t1MaxEntries  = cache.DefaultMaxEntries
 
 	// Speculative upload budget per frame: live-message assets bypass it,
 	// prefetch-ahead uploads stop after this many textures or bytes
-	// (PROMPT.md §8).
+	// (spec §8).
 	speculativeUploadMaxTextures = 2
 	speculativeUploadMaxBytes    = 4 << 20
 
@@ -130,7 +130,7 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 }
 
 // DrainDestroyQueue destroys up to destroyBudgetPerFrame evicted pages.
-// Render thread only; call once per frame (PROMPT.md §12).
+// Render thread only; call once per frame (spec §12).
 func (s *TextureStore) DrainDestroyQueue() {
 	for i := 0; i < destroyBudgetPerFrame; i++ {
 		select {

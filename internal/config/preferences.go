@@ -1,6 +1,6 @@
 // Package config persists user-tunable asset preferences.
 //
-// Concurrency model (PROMPT.md §5): mutators take the write lock, mutate in
+// Concurrency model (spec §5): mutators take the write lock, mutate in
 // memory, and non-blockingly signal a single saver goroutine — they never
 // touch the disk. The saver debounces (DefaultSaveDebounce after the last
 // signal), marshals under the read lock, writes a temp file, and renames it
@@ -53,7 +53,7 @@ const (
 
 // defaultPreferAnimated is the out-of-the-box value for PreferAnimated.
 // PreferAnimated is a decode/render toggle (play animation frames vs. first
-// frame only) — never an extra network probe (PROMPT.md §4).
+// frame only) — never an extra network probe (spec §4).
 const defaultPreferAnimated = true
 
 // AssetTypePrefs holds the per-asset-type format preferences.
@@ -310,7 +310,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 
 // --- Format lists -----------------------------------------------------------
 
-// FormatList implements PROMPT.md §4: with fallbacks OFF it returns exactly
+// FormatList implements spec §4: with fallbacks OFF it returns exactly
 // the configured probe list for the type; with fallbacks ON (globally or for
 // this type) it returns the configured list plus the type's legacy chain,
 // deduplicated, order preserved. The result is a fresh slice.

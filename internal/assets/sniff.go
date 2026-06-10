@@ -3,7 +3,7 @@ package assets
 import "encoding/binary"
 
 // Format is a payload format detected from magic bytes — never from the file
-// extension (PROMPT.md §8: servers lie, payloads don't).
+// extension (spec §8: servers lie, payloads don't).
 type Format int
 
 const (

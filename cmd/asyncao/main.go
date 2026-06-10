@@ -1,5 +1,5 @@
 // Command asyncao is the AsyncAO client: a maximum-performance, zero-fallback
-// Attorney Online 2 client. See PROMPT.md / docs/ARCHITECTURE.md.
+// Attorney Online 2 client. See docs/ARCHITECTURE.md.
 package main
 
 import (
@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	// memoryBudgetBytes is the soft heap limit (PROMPT.md §1: < 256 MiB on
+	// memoryBudgetBytes is the soft heap limit (spec §1: < 256 MiB on
 	// a 200-character server).
 	memoryBudgetBytes = 256 << 20
 
@@ -36,7 +36,7 @@ const (
 )
 
 func main() {
-	// SDL demands the main OS thread for the whole lifetime (PROMPT.md §12).
+	// SDL demands the main OS thread for the whole lifetime (spec §12).
 	runtime.LockOSThread()
 
 	var (

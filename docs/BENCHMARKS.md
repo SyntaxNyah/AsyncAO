@@ -1,6 +1,6 @@
 # Benchmarks
 
-Recorded gates (PROMPT.md §1/§15). Reference machine: Intel i7-7700K,
+Recorded gates (spec §1/§15). Reference machine: Intel i7-7700K,
 Windows 11, Go 1.24.4, MSYS2 UCRT64 gcc 16.1, libwebp 1.6.0. Re-run with:
 
 ```bash

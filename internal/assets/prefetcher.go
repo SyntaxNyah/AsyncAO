@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	// speakerWindowSize bounds the Markov history (PROMPT.md §10: sliding
+	// speakerWindowSize bounds the Markov history (spec §10: sliding
 	// window of the last 32 messages).
 	speakerWindowSize = 32
 	// pairPartnerPriorWeight doubles the current pair partner's predicted
@@ -20,7 +20,7 @@ const (
 type SpriteBaseFunc func(character string) string
 
 // Prefetcher predicts the next speaker with a first-order Markov chain over
-// recent speakers and warms their idle sprite at LOW priority (PROMPT.md
+// recent speakers and warms their idle sprite at LOW priority (spec
 // §10). All methods are called from the game thread; the lock exists only
 // for the metrics snapshot.
 type Prefetcher struct {

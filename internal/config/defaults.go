@@ -49,7 +49,7 @@ const (
 var OptionalImageFormats = []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG, ExtJPG}
 
 // defaultFormatOrders is the zero-fallback probe list per asset type: with
-// fallbacks disabled this is the *entire* probe list (PROMPT.md §4). Every
+// fallbacks disabled this is the *entire* probe list (spec §4). Every
 // default is a single format, so a cold asset costs exactly one probe.
 //
 // Note there is no ".webp.animated": animation is a property of the .webp
@@ -68,7 +68,7 @@ var defaultFormatOrders = map[string][]string{
 
 // legacyFallbackChains is appended (order preserved, deduplicated) to the
 // configured format order when fallbacks are enabled for a type, globally or
-// per-type (PROMPT.md §4).
+// per-type (spec §4).
 var legacyFallbackChains = map[string][]string{
 	TypeCharIcon:    {ExtWebP},
 	TypeCharSprite:  {ExtAPNG, ExtGIF, ExtPNG},

@@ -8,7 +8,7 @@ import (
 )
 
 // candidatePoolMaxCap caps the slice capacity worth pooling; anything bigger
-// is left to the GC (PROMPT.md §6).
+// is left to the GC (spec §6).
 const candidatePoolMaxCap = 8
 
 // Candidates is a pooled probe list. Acquire via Resolver.BuildCandidates,
@@ -26,7 +26,7 @@ type Candidates struct {
 
 // learnedTable is the immutable snapshot behind the resolver's atomic
 // pointer: host → fixed per-type extension array. Lookups are one atomic
-// load, one map access, one array index — no locks (PROMPT.md §17.5).
+// load, one map access, one array index — no locks (spec §17.5).
 type learnedTable struct {
 	hosts map[string]*[AssetTypeCount]string
 }
@@ -112,7 +112,7 @@ func (r *Resolver) Learned(host string, t AssetType) (string, bool) {
 // BuildCandidates returns the URLs to probe for base (the full URL without
 // extension) of type t served by host. Learned hit → exactly one candidate.
 // Miss → the preference FormatList for the type (zero-fallback defaults are
-// a single format, PROMPT.md §4). Callers must hand the result back via
+// a single format, spec §4). Callers must hand the result back via
 // PutCandidates.
 //
 // Fast path budget: < 100 ns, ≤ 1 alloc (the joined URL string) — gated by
@@ -152,7 +152,7 @@ func (r *Resolver) PutCandidates(c *Candidates) {
 
 // RecordSuccess learns ext as the working format for (host, t). The write is
 // a copy-on-write CompareAndSwap loop — readers never block — and a change
-// marks preferences dirty for lazy persistence (PROMPT.md §6, §17.3).
+// marks preferences dirty for lazy persistence (spec §6, §17.3).
 func (r *Resolver) RecordSuccess(host string, t AssetType, ext string) {
 	if !t.Valid() || host == "" || ext == "" {
 		return

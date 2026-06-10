@@ -159,7 +159,7 @@ func TestRecordSuccessCASRace(t *testing.T) {
 }
 
 // TestBuildCandidatesLearnedAllocGate enforces the ≤1 alloc budget in plain
-// `go test`, not just benchmarks (PROMPT.md §6).
+// `go test`, not just benchmarks (spec §6).
 func TestBuildCandidatesLearnedAllocGate(t *testing.T) {
 	r := NewResolver(newTestPrefs(t))
 	const host = "assets.example.com"
@@ -206,7 +206,7 @@ func BenchmarkBuildCandidates_Learned(b *testing.B) {
 }
 
 // BenchmarkResolveAssets approximates a full char-select resolution pass
-// (200 assets): must stay far under 1 ms (PROMPT.md §15).
+// (200 assets): must stay far under 1 ms (spec §15).
 func BenchmarkResolveAssets(b *testing.B) {
 	prefs, err := config.New(filepath.Join(b.TempDir(), config.PrefsFileName))
 	if err != nil {

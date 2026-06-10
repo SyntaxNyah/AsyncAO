@@ -29,7 +29,7 @@ func TextColor(index int) sdl.Color {
 }
 
 // rasterLine is one wrapped line: a texture plus per-rune prefix advances so
-// the reveal is a pure src-rect width (PROMPT.md §12: no per-character
+// the reveal is a pure src-rect width (spec §12: no per-character
 // layout, no texture churn).
 type rasterLine struct {
 	tex      *sdl.Texture

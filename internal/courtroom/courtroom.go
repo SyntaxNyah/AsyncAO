@@ -19,7 +19,7 @@ const (
 	// DefaultTextStayTime holds a finished message on screen before the
 	// queue advances (AO2-Client text_stay_time flavor).
 	DefaultTextStayTime = 200 * time.Millisecond
-	// messageQueueCap bounds the IC message queue (PROMPT.md §17.4).
+	// messageQueueCap bounds the IC message queue (spec §17.4).
 	messageQueueCap = 64
 	// emptyPreanim values AO uses for "no preanimation".
 	emptyPreanimDash = "-"
@@ -99,7 +99,7 @@ func (NopAudio) PlayMusic(string)              {}
 
 // Courtroom drives the courtroom state machine: it consumes session events,
 // prefetches every asset a message needs, and advances Scene each tick. No
-// SDL calls anywhere in this type (PROMPT.md §17.1).
+// SDL calls anywhere in this type (spec §17.1).
 type Courtroom struct {
 	urls  URLBuilder
 	mgr   *assets.Manager

@@ -22,12 +22,12 @@ const (
 	AssetsSubdir = "assets"
 
 	// shardPrefixLen is how many hex characters of the key name the shard
-	// subdirectory uses (PROMPT.md §9: assets/<xx>/<xxhash64-hex>).
+	// subdirectory uses (spec §9: assets/<xx>/<xxhash64-hex>).
 	shardPrefixLen = 2
 
 	// writeQueueCap bounds the async writer queue. When the queue is full,
 	// new writes are dropped (cache writes are best-effort; hot paths never
-	// block on disk — PROMPT.md §17.2, §17.4).
+	// block on disk — spec §17.2, §17.4).
 	writeQueueCap = 256
 
 	diskDirPerm    = 0o755

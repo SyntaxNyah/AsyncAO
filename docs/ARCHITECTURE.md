@@ -28,7 +28,7 @@ and only on this thread. The decode pool outputs plain `image.RGBA`; texture
 creation, destruction (via the bounded destroy queue) and font rasterization
 all happen here.
 
-## Asset pipeline (PROMPT.md §8)
+## Asset pipeline (spec §8)
 
 ```
 Prefetch(base, type, prio)
@@ -86,7 +86,7 @@ per `<host>|<type>` and survive restarts (warm start = N probes for N assets).
 
 ### Known-length reads (documented deviation)
 
-PROMPT.md §7 suggested pooled read buffers. Payloads are retained indefinitely
+spec §7 suggested pooled read buffers. Payloads are retained indefinitely
 by T2/T3, so a pooled buffer could never return to its pool — pooling would
 add one copy and zero reuse. Known-length responses therefore read with a
 single exact-size allocation + `io.ReadFull` (no growth, no copy); unknown

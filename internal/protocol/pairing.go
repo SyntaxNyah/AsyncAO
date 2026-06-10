@@ -11,7 +11,7 @@ import (
 //	^0 → the SPEAKER renders in front (pair behind) — also the default
 //	^1 → the speaker renders behind (pair in front)
 //
-// (PROMPT.md §11's table had these inverted; AO2-Client wins on protocol
+// (spec §11's table had these inverted; AO2-Client wins on protocol
 // behavior per its own ground rule.)
 const (
 	PairSpeakerInFront = 0

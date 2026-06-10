@@ -1,5 +1,5 @@
 // Package network fetches assets over HTTP with aggressive deduplication and
-// negative caching (PROMPT.md §7), runs the prioritized fetch worker pool,
+// negative caching (spec §7), runs the prioritized fetch worker pool,
 // and talks to the AO master server. Every request must earn its RTT:
 // duplicate in-flight fetches collapse via singleflight, cached 404s never
 // touch the wire inside their TTL, and failing hosts back off exponentially.
@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	// Transport tuning (PROMPT.md §7). Most AO asset hosts speak plain
+	// Transport tuning (spec §7). Most AO asset hosts speak plain
 	// http://, where ForceAttemptHTTP2 is inert and tuned HTTP/1.1
 	// keep-alive does the work; HTTP/2 kicks in automatically on https.
 	defaultMaxConnsPerHost     = 16
@@ -39,7 +39,7 @@ const (
 	DefaultRequestTimeout = 5 * time.Second
 
 	// NotFoundCacheSize / NotFoundCacheTTL bound the negative cache: a 404
-	// is never re-probed inside the TTL (PROMPT.md §17.6).
+	// is never re-probed inside the TTL (spec §17.6).
 	NotFoundCacheSize = 1024
 	NotFoundCacheTTL  = 5 * time.Minute
 
@@ -208,7 +208,7 @@ func (c *Client) fetchOnce(url string) ([]byte, error) {
 // io.ReadFull — no growth, no copies. Unknown lengths accumulate in a pooled
 // scratch buffer and are copied out once.
 //
-// Deliberate deviation from PROMPT.md §7's "pooled []byte" for the known-
+// Deliberate deviation from spec §7's "pooled []byte" for the known-
 // length path: the returned payload is retained indefinitely by the T2/T3
 // caches, so a pooled buffer could never be returned to the pool — pooling
 // would add a copy and zero reuse. See docs/ARCHITECTURE.md.

@@ -23,7 +23,7 @@ const (
 	decodeQueueCap = 64
 
 	// minDecodeWorkers is the floor for the worker count formula
-	// max(2, NumCPU/2) from PROMPT.md §8.
+	// max(2, NumCPU/2) from spec §8.
 	minDecodeWorkers = 2
 
 	// gifDelayUnit is the GIF frame-delay resolution.
@@ -57,13 +57,13 @@ type DecodeRequest struct {
 	// never a network-level one).
 	PlayAnimations bool
 	// OnDone receives the result on a decoder goroutine. It must be cheap
-	// (hand off to a channel) and must not touch SDL (PROMPT.md §17.1).
+	// (hand off to a channel) and must not touch SDL (spec §17.1).
 	OnDone func(url string, d *Decoded, err error)
 }
 
 // DecoderPool decodes image payloads into plain RGBA memory. It performs
 // zero SDL calls: texture upload happens on the render thread, which drains
-// the manager's decoded channel (PROMPT.md §8).
+// the manager's decoded channel (spec §8).
 type DecoderPool struct {
 	jobs      chan DecodeRequest
 	stop      chan struct{}

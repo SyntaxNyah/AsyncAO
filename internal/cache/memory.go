@@ -1,4 +1,4 @@
-// Package cache implements AsyncAO's three storage tiers (PROMPT.md §9):
+// Package cache implements AsyncAO's three storage tiers (spec §9):
 //
 //	T1 — decoded textures, byte-budgeted LRU (64 MiB default)
 //	T2 — raw fetched bytes, byte-budgeted LRU (128 MiB default)
@@ -41,7 +41,7 @@ type EvictFunc[K comparable, V any] func(key K, value V, size int64)
 
 // ByteBudgetLRU wraps hashicorp/golang-lru v2 with byte accounting
 // (evict-until-under-budget). The inner LRU is already thread-safe; per
-// PROMPT.md §9 this wrapper adds no locking of its own — only atomics.
+// spec §9 this wrapper adds no locking of its own — only atomics.
 type ByteBudgetLRU[K comparable, V any] struct {
 	budget    int64
 	bytes     atomic.Int64

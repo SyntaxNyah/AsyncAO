@@ -3,6 +3,10 @@
 Guidance for Claude (and humans) working in this repository. Read this before
 touching anything.
 
+> "The spec" / "spec §N" in code comments refers to the original engineering
+> spec (PROMPT.md), removed from the working tree at project completion.
+> Read it any time with: `git show fab9392:PROMPT.md`
+
 ## What this is
 
 AsyncAO is a **maximum-performance Attorney Online 2 client in Go** (CGO for
@@ -15,7 +19,7 @@ WebSocket-only. **Legacy raw-TCP AO servers are deliberately unsupported** —
 the lobby shows them black, pinned to the bottom, with an upgrade note. Never
 add TCP framing back.
 
-## Hard rules (violations get rejected — PROMPT.md §17, kept in force)
+## Hard rules (violations get rejected — spec §17, kept in force)
 
 1. **No SDL calls off the render thread.** Only `internal/render`, `internal/ui`
    and `cmd/asyncao` may import go-sdl2, and everything there runs on the
@@ -86,7 +90,7 @@ driver headlessly (they skip if SDL is unavailable).
 - `../AO-SDL`, `../ferris-ao-switch` — SDL2 thread-model references.
 
 Protocol gotchas already encoded in code/tests — don't "fix" them:
-- Pair order `^0` = **speaker in front**, `^1` = speaker behind (PROMPT.md's
+- Pair order `^0` = **speaker in front**, `^1` = speaker behind (the spec's
   table was inverted; AO2-Client wins — see `internal/protocol/pairing.go`).
 - Outgoing MS is **asymmetric** to incoming: the client never sends
   other_name/other_emote/other_offset/other_flip (server injects them).

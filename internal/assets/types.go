@@ -13,7 +13,7 @@ import (
 )
 
 // AssetType identifies what kind of asset a path refers to, selecting its
-// format policy (PROMPT.md §4).
+// format policy (spec §4).
 type AssetType int
 
 const (
@@ -58,7 +58,7 @@ func (t AssetType) Name() string {
 }
 
 // IsAudio reports whether the type carries audio payloads, which bypass the
-// image decode pool entirely (PROMPT.md §8: bytes go straight to SDL_mixer).
+// image decode pool entirely (spec §8: bytes go straight to SDL_mixer).
 func (t AssetType) IsAudio() bool {
 	return t == AssetTypeSFX || t == AssetTypeMusic || t == AssetTypeBlip
 }
@@ -133,7 +133,7 @@ type ResolvedAsset struct {
 
 // ErrAllFormatsMissing reports that every candidate format 404'd. The UI
 // surfaces it as a visible warning naming the asset and formats tried
-// (PROMPT.md §4: "enable fallbacks or ask the server to ship .webp").
+// (spec §4: "enable fallbacks or ask the server to ship .webp").
 type ErrAllFormatsMissing struct {
 	Base  string // URL base without extension
 	Type  AssetType

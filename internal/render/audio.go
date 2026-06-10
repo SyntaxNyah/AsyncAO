@@ -45,7 +45,7 @@ type pendingPlay struct {
 }
 
 // Audio implements courtroom.AudioSink over SDL_mixer: raw bytes from the
-// asset pipeline decode in C (PROMPT.md §8 — no Go audio decoding anywhere).
+// asset pipeline decode in C (spec §8 — no Go audio decoding anywhere).
 // All methods run on the render/game thread.
 type Audio struct {
 	mgr *assets.Manager
@@ -157,7 +157,7 @@ func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
 	switch kind {
 	case pendingBlip:
 		// Blips replace each other on the reserved channel — playing one
-		// is a pointer pass (PROMPT.md §8).
+		// is a pointer pass (spec §8).
 		mix.HaltChannel(blipChannel)
 		_, _ = chunk.Play(blipChannel, 0)
 	default:

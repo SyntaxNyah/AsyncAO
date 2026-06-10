@@ -14,7 +14,7 @@ const (
 )
 
 // animState tracks playback of one sprite layer without allocations: the
-// loop bumps an index and swaps texture pointers (PROMPT.md §12).
+// loop bumps an index and swaps texture pointers (spec §12).
 type animState struct {
 	base     string
 	frame    int

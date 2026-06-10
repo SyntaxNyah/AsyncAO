@@ -47,7 +47,7 @@ func TestPairedPrefetchResolvesConcurrently(t *testing.T) {
 	}
 	elapsed := time.Since(start)
 
-	// Parallel budget: single-fetch time + 50% tolerance (PROMPT.md §1
+	// Parallel budget: single-fetch time + 50% tolerance (spec §1
 	// "paired cold ≈ single ±20%", relaxed for CI jitter). Serial would be
 	// ≥ 2× perRequestDelay.
 	budget := perRequestDelay + perRequestDelay/2

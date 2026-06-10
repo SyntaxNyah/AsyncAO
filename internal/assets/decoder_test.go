@@ -174,7 +174,7 @@ func TestDecodeGIFAnimated(t *testing.T) {
 
 func TestDecodeGIFFirstFrameOnly(t *testing.T) {
 	// PlayAnimations=false: decode only the first frame but still report
-	// the payload as animated (decode-level toggle, PROMPT.md §4).
+	// the payload as animated (decode-level toggle, spec §4).
 	d, err := DecodeImage(encodeGIF(t, 3), false)
 	if err != nil {
 		t.Fatal(err)

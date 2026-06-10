@@ -154,6 +154,6 @@ func TestRenderFrameZeroAllocs(t *testing.T) {
 		vp.Render(ren, scene, rect)
 	})
 	if allocs != 0 {
-		t.Errorf("render frame allocates %.1f objects/op, want 0 (PROMPT.md §12)", allocs)
+		t.Errorf("render frame allocates %.1f objects/op, want 0 (spec §12)", allocs)
 	}
 }

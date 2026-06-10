@@ -64,7 +64,7 @@ type Event struct {
 
 // Session is a synchronous reducer over server packets: HandlePacket
 // mutates state, sends protocol replies through send, and returns UI events.
-// It owns no goroutines; the caller's loop feeds it (PROMPT.md §17.4).
+// It owns no goroutines; the caller's loop feeds it (spec §17.4).
 type Session struct {
 	send func(protocol.Packet) error
 

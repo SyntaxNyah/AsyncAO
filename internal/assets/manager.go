@@ -15,7 +15,7 @@ import (
 const (
 	// decodedChanCap bounds the decoded-asset handoff to the render thread.
 	// When full, decoder workers block briefly (the render thread drains
-	// every frame); results are never dropped (PROMPT.md §17.7).
+	// every frame); results are never dropped (spec §17.7).
 	decodedChanCap = 64
 	// audioChanCap bounds the raw-audio handoff to the audio system.
 	audioChanCap = 64
@@ -35,7 +35,7 @@ type DecodedAsset struct {
 }
 
 // AudioAsset is the manager's handoff to the audio system: raw bytes for
-// SDL_mixer (decode happens in C at native speed — PROMPT.md §8).
+// SDL_mixer (decode happens in C at native speed — spec §8).
 type AudioAsset struct {
 	URL  string
 	Base string
@@ -44,7 +44,7 @@ type AudioAsset struct {
 }
 
 // Warning reports an asset that 404'd in every probed format, for the
-// visible in-client warning (PROMPT.md §4).
+// visible in-client warning (spec §4).
 type Warning struct {
 	Base  string
 	Type  AssetType
@@ -57,7 +57,7 @@ type Fetcher interface {
 	Fetch(ctx context.Context, url string) ([]byte, error)
 }
 
-// Manager walks the tiers per PROMPT.md §8: T1 texture hit → done; T2 raw
+// Manager walks the tiers per spec §8: T1 texture hit → done; T2 raw
 // hit → decode; T3 disk hit → promote + decode + learn; else network probe
 // by candidate order, then T2 + async T3 + learn + decode; all-404 → warning.
 type Manager struct {
@@ -285,7 +285,7 @@ func (m *Manager) resolve(base string, t AssetType) {
 			m.deliver(url, base, t, data)
 			return
 		}
-		// T3: disk — promote to T2, learn, decode (PROMPT.md §8). Skipped in
+		// T3: disk — promote to T2, learn, decode (spec §8). Skipped in
 		// local mode: the mounts ARE disk.
 		if !m.localMode {
 			if data, ok := m.disk.Get(url); ok {

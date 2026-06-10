@@ -1,5 +1,5 @@
 // Package metrics implements the cold-load report and the 1 Hz runtime
-// sampler (PROMPT.md §15): cache hit rates, heap size via runtime/metrics,
+// sampler (spec §15): cache hit rates, heap size via runtime/metrics,
 // and GC pause p99 — feeding the debug HUD and --debug logging.
 package metrics
 

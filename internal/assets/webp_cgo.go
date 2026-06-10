@@ -2,7 +2,7 @@
 
 package assets
 
-// Thin CGO binding over libwebp + libwebpdemux (PROMPT.md §2): SIMD decode
+// Thin CGO binding over libwebp + libwebpdemux (spec §2): SIMD decode
 // straight into RGBA, animated and static alike, via the WebPAnimDecoder
 // API. Roughly a hundred lines — no third-party wrapper needed.
 
