@@ -18,3 +18,6 @@ coverage.out
 .vscode/
 .idea/
 *.swp
+
+# Local release packages (CI artifacts are the shipping builds)
+/dist/
