@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -62,6 +64,28 @@ type ServerEntry struct {
 	Players     int    `json:"players"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
+
+	// Favorite pins the entry to the very top of the lobby list. Set by the
+	// lobby when merging the master list with persisted favorites; favorite
+	// entries not present on the master list (private/direct-connect
+	// servers) are synthesized with DirectEntry.
+	Favorite bool `json:"-"`
+}
+
+// DirectEntry synthesizes a list entry for a favorite or direct-connect
+// server that is not on the master list (private servers).
+func DirectEntry(name, wsURL string) (ServerEntry, error) {
+	scheme, host, port, err := splitWSURL(wsURL)
+	if err != nil {
+		return ServerEntry{}, err
+	}
+	e := ServerEntry{IP: host, Name: name, Favorite: true}
+	if scheme == "wss" {
+		e.WSSPort = port
+	} else {
+		e.WSPort = port
+	}
+	return e, nil
 }
 
 // Security classifies the entry per the lobby's green/yellow/black tiers.
@@ -97,6 +121,64 @@ func (e ServerEntry) WebSocketURL() string {
 // UnsupportedReason is the lobby message for black-tier entries.
 const UnsupportedReason = "Legacy TCP servers are not supported. Server owners should upgrade their software to WebSockets if they want people to join."
 
+// ParseDirectAddress normalizes direct-connect input for private servers:
+//
+//	"wss://host:port" → unchanged
+//	"ws://host:port"  → unchanged
+//	"host:port"       → "ws://host:port" (or wss:// when secure is set)
+//
+// The port is required — AO servers have no conventional default.
+func ParseDirectAddress(input string, secure bool) (string, error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", fmt.Errorf("network: empty direct-connect address")
+	}
+	if strings.HasPrefix(input, "ws://") || strings.HasPrefix(input, "wss://") {
+		if _, _, _, err := splitWSURL(input); err != nil {
+			return "", err
+		}
+		return input, nil
+	}
+	if strings.Contains(input, "://") {
+		return "", fmt.Errorf("network: unsupported scheme in %q (use ws:// or wss://)", input)
+	}
+	host, port, err := net.SplitHostPort(input)
+	if err != nil || host == "" {
+		return "", fmt.Errorf("network: direct connect needs ip:port or url:port, got %q", input)
+	}
+	if _, err := strconv.Atoi(port); err != nil {
+		return "", fmt.Errorf("network: invalid port in %q", input)
+	}
+	scheme := "ws"
+	if secure {
+		scheme = "wss"
+	}
+	return scheme + "://" + net.JoinHostPort(host, port), nil
+}
+
+// splitWSURL dissects ws://host:port or wss://host:port.
+func splitWSURL(wsURL string) (scheme, host string, port int, err error) {
+	rest, ok := strings.CutPrefix(wsURL, "ws://")
+	scheme = "ws"
+	if !ok {
+		rest, ok = strings.CutPrefix(wsURL, "wss://")
+		scheme = "wss"
+	}
+	if !ok {
+		return "", "", 0, fmt.Errorf("network: %q is not a ws:// or wss:// URL", wsURL)
+	}
+	rest = strings.TrimSuffix(rest, "/")
+	h, p, err := net.SplitHostPort(rest)
+	if err != nil || h == "" {
+		return "", "", 0, fmt.Errorf("network: %q needs host:port", wsURL)
+	}
+	portNum, err := strconv.Atoi(p)
+	if err != nil || portNum <= 0 || portNum > 65535 {
+		return "", "", 0, fmt.Errorf("network: invalid port in %q", wsURL)
+	}
+	return scheme, h, portNum, nil
+}
+
 // FetchServerList downloads and parses the master server list.
 func FetchServerList(ctx context.Context, listURL string) ([]ServerEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, masterFetchTimeout)
@@ -131,9 +213,9 @@ func ParseServerList(data []byte) ([]ServerEntry, error) {
 	return entries, nil
 }
 
-// SortServers orders entries for the lobby: joinable servers first (green
-// and yellow interleaved by player count, then name), legacy TCP-only
-// entries always pinned to the bottom.
+// SortServers orders entries for the lobby: favorites pinned to the very
+// top, then joinable servers (green and yellow interleaved by player count,
+// then name), legacy TCP-only entries always pinned to the bottom.
 func SortServers(entries []ServerEntry) {
 	sort.SliceStable(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
@@ -142,9 +224,47 @@ func SortServers(entries []ServerEntry) {
 		if aLegacy != bLegacy {
 			return bLegacy // joinable before legacy
 		}
+		if !aLegacy && a.Favorite != b.Favorite {
+			return a.Favorite // stars float joinable favorites to the top
+		}
 		if a.Players != b.Players {
 			return a.Players > b.Players
 		}
 		return a.Name < b.Name
 	})
+}
+
+// MergeFavorites flags master-list entries whose connection URL is starred
+// and appends synthesized entries for favorites missing from the list
+// (private/direct-connect servers). favs maps URL → display name.
+func MergeFavorites(entries []ServerEntry, favs map[string]string) []ServerEntry {
+	seen := map[string]struct{}{}
+	for i := range entries {
+		url := entries[i].WebSocketURL()
+		if url == "" {
+			continue
+		}
+		if _, ok := favs[url]; ok {
+			entries[i].Favorite = true
+			seen[url] = struct{}{}
+		}
+		// A server may be favorited via its plain-ws URL while the master
+		// list now advertises wss too; match the ws form as well.
+		if entries[i].WSPort > 0 {
+			alt := "ws://" + entries[i].IP + ":" + strconv.Itoa(entries[i].WSPort)
+			if _, ok := favs[alt]; ok {
+				entries[i].Favorite = true
+				seen[alt] = struct{}{}
+			}
+		}
+	}
+	for url, name := range favs {
+		if _, ok := seen[url]; ok {
+			continue
+		}
+		if e, err := DirectEntry(name, url); err == nil {
+			entries = append(entries, e)
+		}
+	}
+	return entries
 }

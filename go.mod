@@ -11,3 +11,5 @@ require (
 	golang.org/x/image v0.18.0
 	golang.org/x/sync v0.17.0
 )
+
+require github.com/coder/websocket v1.8.12

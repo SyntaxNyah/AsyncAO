@@ -78,6 +78,7 @@ type AssetPreferences struct {
 	Showname               string                    `json:"showname"`
 	LocalAssetsEnabled     bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths       []string                  `json:"localAssetsPaths"`
+	Favorites              []FavoriteServer          `json:"favorites"`
 
 	mu        sync.RWMutex
 	path      string
@@ -103,6 +104,15 @@ type prefsJSON struct {
 	Showname               string                    `json:"showname"`
 	LocalAssetsEnabled     bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths       []string                  `json:"localAssetsPaths"`
+	Favorites              []FavoriteServer          `json:"favorites"`
+}
+
+// FavoriteServer is a starred or direct-connect server entry. URL is the
+// full ws:// or wss:// connection address, which also works for private
+// servers that never appear on the master list.
+type FavoriteServer struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 // DefaultPath returns the standard preferences file location:
@@ -175,6 +185,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.Showname = onDisk.Showname
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
+	p.Favorites = onDisk.Favorites
 	return p, nil
 }
 
@@ -573,6 +584,73 @@ func (p *AssetPreferences) SetLocalAssets(enabled bool, mounts []string) {
 	p.LocalAssetsPaths = slices.Clone(mounts)
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// --- Favorites -----------------------------------------------------------------
+
+// FavoriteServers returns the starred server list, in pin order.
+func (p *AssetPreferences) FavoriteServers() []FavoriteServer {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]FavoriteServer, len(p.Favorites))
+	copy(out, p.Favorites)
+	return out
+}
+
+// AddFavorite stars a server (or renames an existing favorite with the same
+// URL). URL must be the full ws://host:port or wss://host:port address, so
+// private servers off the master list work identically.
+func (p *AssetPreferences) AddFavorite(name, url string) {
+	if url == "" {
+		return
+	}
+	p.mu.Lock()
+	for i, f := range p.Favorites {
+		if f.URL == url {
+			if f.Name == name {
+				p.mu.Unlock()
+				return
+			}
+			p.Favorites[i].Name = name
+			p.mu.Unlock()
+			p.markDirty()
+			return
+		}
+	}
+	p.Favorites = append(p.Favorites, FavoriteServer{Name: name, URL: url})
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RemoveFavorite unstars the server with the given URL.
+func (p *AssetPreferences) RemoveFavorite(url string) {
+	p.mu.Lock()
+	kept := p.Favorites[:0]
+	removed := false
+	for _, f := range p.Favorites {
+		if f.URL == url {
+			removed = true
+			continue
+		}
+		kept = append(kept, f)
+	}
+	p.Favorites = kept
+	p.mu.Unlock()
+	if removed {
+		p.markDirty()
+	}
+}
+
+// IsFavorite reports whether the URL is starred.
+func (p *AssetPreferences) IsFavorite(url string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, f := range p.Favorites {
+		if f.URL == url {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Showname ----------------------------------------------------------------

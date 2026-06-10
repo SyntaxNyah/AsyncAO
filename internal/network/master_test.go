@@ -161,6 +161,74 @@ func TestUnsupportedReasonMentionsUpgrade(t *testing.T) {
 	}
 }
 
+func TestParseDirectAddress(t *testing.T) {
+	cases := []struct {
+		in     string
+		secure bool
+		want   string
+		ok     bool
+	}{
+		{"ws://10.0.0.5:50001", false, "ws://10.0.0.5:50001", true},
+		{"wss://private.example.com:443", false, "wss://private.example.com:443", true},
+		{"10.0.0.5:50001", false, "ws://10.0.0.5:50001", true},
+		{"private.example.com:2096", true, "wss://private.example.com:2096", true},
+		{"  host.example.org:8080  ", false, "ws://host.example.org:8080", true},
+		{"no-port.example.com", false, "", false},
+		{"http://example.com:80", false, "", false},
+		{"ws://missing-port.example.com", false, "", false},
+		{"", false, "", false},
+		{"host:notaport", false, "", false},
+	}
+	for _, tc := range cases {
+		got, err := ParseDirectAddress(tc.in, tc.secure)
+		if tc.ok && (err != nil || got != tc.want) {
+			t.Errorf("ParseDirectAddress(%q,%v) = %q,%v; want %q", tc.in, tc.secure, got, err, tc.want)
+		}
+		if !tc.ok && err == nil {
+			t.Errorf("ParseDirectAddress(%q,%v) accepted invalid input as %q", tc.in, tc.secure, got)
+		}
+	}
+}
+
+func TestDirectEntry(t *testing.T) {
+	e, err := DirectEntry("My Private Server", "wss://hidden.example.com:2096")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Favorite || e.Security() != SecurityWSS || e.WebSocketURL() != "wss://hidden.example.com:2096" {
+		t.Errorf("DirectEntry = %+v", e)
+	}
+	if _, err := DirectEntry("bad", "tcp://x:1"); err == nil {
+		t.Error("DirectEntry accepted a non-ws URL")
+	}
+}
+
+func TestMergeFavoritesAndSort(t *testing.T) {
+	entries, _ := ParseServerList([]byte(sampleMasterJSON))
+	favs := map[string]string{
+		"ws://135.148.43.158:50000":    "KFO ★",          // on the list
+		"wss://secret.example.com:443": "Secret Hideout", // private server
+	}
+	entries = MergeFavorites(entries, favs)
+	SortServers(entries)
+
+	if len(entries) != 6 {
+		t.Fatalf("entries = %d, want 6 (5 master + 1 direct)", len(entries))
+	}
+	// Favorites pinned to the very top, ahead of higher-player servers.
+	top2 := map[string]bool{entries[0].Name: true, entries[1].Name: true}
+	if !top2["Killing Fever Online"] || !top2["Secret Hideout"] {
+		t.Errorf("top of list = %v, want both favorites first", names(entries)[:3])
+	}
+	if !entries[0].Favorite || !entries[1].Favorite {
+		t.Error("top entries not flagged favorite")
+	}
+	// Legacy still pinned to the bottom, after everything.
+	if entries[len(entries)-1].Joinable() || entries[len(entries)-2].Joinable() {
+		t.Errorf("bottom of list = %v, want the two legacy servers", names(entries))
+	}
+}
+
 func containsFold(haystack, needle string) bool {
 	h, n := []rune(haystack), []rune(needle)
 	for i := 0; i+len(n) <= len(h); i++ {
