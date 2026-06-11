@@ -72,7 +72,7 @@ All credit to the original Attorney Online developers — AsyncAO exists because
 of their work and follows their protocol and conventions:
 
 - **FanatSors** — creator of the original Attorney Online. 
-- **OmniTroid** — creator of the original Attorney Online 2 client. 
+- **OmniTroid** — creator of the Attorney Online 2 client.
 - **The [AttorneyOnline](https://github.com/AttorneyOnline) organization** and
   every **[AO2-Client](https://github.com/AttorneyOnline/AO2-Client)**
   contributor — the canonical client whose protocol semantics AsyncAO mirrors
