@@ -221,22 +221,22 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	last := time.Now()
 	running := true
 	for running {
-		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
-			switch e := ev.(type) {
-			case *sdl.QuitEvent:
-				running = false
-			default:
-				_ = e
-			}
-			uiCtx.HandleEvent(ev)
-		}
-
 		now := time.Now()
 		dt := now.Sub(last)
 		last = now
 
-		w, h := window.GetSize()
+		// Order matters: BeginFrame resets the per-frame input snapshot
+		// that HandleEvent fills, so it must run before the event poll.
+		// (Inverting these erased every click before the UI saw it.)
 		uiCtx.BeginFrame(dt)
+		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
+			if _, ok := ev.(*sdl.QuitEvent); ok {
+				running = false
+			}
+			uiCtx.HandleEvent(ev)
+		}
+
+		w, h := window.GetSize()
 		_ = ren.SetDrawColor(0, 0, 0, 255)
 		_ = ren.Clear()
 		app.Frame(dt, w, h)

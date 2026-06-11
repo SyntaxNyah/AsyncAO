@@ -113,7 +113,10 @@ func loadEmbeddedFont(size int) (*ttf.Font, error) {
 // Font exposes the chrome font (typewriter rasterizer reuse).
 func (c *Ctx) Font() *ttf.Font { return c.font }
 
-// BeginFrame ingests this frame's input events. Pass every SDL event.
+// BeginFrame opens a frame: it clears the input snapshot, so it must run
+// BEFORE this frame's events are fed in via HandleEvent. The GetMouseState
+// seed predates the frame's event pump; mouse events override it as they
+// arrive.
 func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.clicked = false
 	c.rightClicked = false
@@ -135,7 +138,10 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 // HandleEvent feeds one SDL event into the frame's input snapshot.
 func (c *Ctx) HandleEvent(ev sdl.Event) {
 	switch e := ev.(type) {
+	case *sdl.MouseMotionEvent:
+		c.mouseX, c.mouseY = e.X, e.Y
 	case *sdl.MouseButtonEvent:
+		c.mouseX, c.mouseY = e.X, e.Y
 		if e.Type == sdl.MOUSEBUTTONUP {
 			switch e.Button {
 			case sdl.BUTTON_LEFT:
