@@ -33,6 +33,21 @@ const (
 	logLines            = 8
 	logLineMax          = 120
 	icLogCap            = 256
+
+	// charIconWarmup caps the connect-time speculative icon burst. Servers
+	// with 4000+ characters exist; blasting them all floods the low lane
+	// (lowLaneCap 256) and sheds nearly everything for zero benefit. Past
+	// the warmup, the visible-demand path in drawCharCell fetches exactly
+	// what's on screen.
+	charIconWarmup = 128
+	// charIconAskPerFrame bounds demand submissions per frame from the char
+	// grid — the render thread must never flood (or block on) the pool.
+	charIconAskPerFrame = 32
+	// charIconRetryInterval spaces re-asks for a visible icon that hasn't
+	// landed yet. Shed low-lane jobs are never re-run by the pool, so the
+	// grid re-demands on this cadence until the texture arrives (or keeps
+	// hitting the client's 404 cache, which never re-probes inside its TTL).
+	charIconRetryInterval = 2 * time.Second
 )
 
 // Deps wires the app to the engine singletons built in main.
@@ -82,6 +97,11 @@ type App struct {
 	charSearch  string
 	charScroll  int32
 	previewBase string
+	// iconAsk[i] is when char i's icon was last demanded by the visible
+	// grid (bounded by the server's char list length); iconAskBudget is
+	// the per-frame submission allowance, reset in drawCharSelect.
+	iconAsk       []time.Time
+	iconAskBudget int
 
 	// --- courtroom chrome state ---
 	icInput     string
@@ -191,6 +211,7 @@ func (a *App) Disconnect() {
 	a.sess = nil
 	a.room = nil
 	a.emotes = nil
+	a.iconAsk = nil
 	a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
 	a.screen = ScreenLobby
 }
@@ -288,11 +309,17 @@ func (a *App) rebuildAssetOrigin() {
 	}
 }
 
+// prefetchCharIcons warms the first screenfuls of icons speculatively.
+// Deliberately capped: the rest load on demand from drawCharCell, because
+// a 4000-char burst would only shed itself out of the low lane.
 func (a *App) prefetchCharIcons() {
 	if a.sess == nil || a.urls.Origin() == "" {
 		return
 	}
-	for _, c := range a.sess.Chars {
+	for i, c := range a.sess.Chars {
+		if i >= charIconWarmup {
+			break
+		}
 		a.d.Manager.Prefetch(a.urls.CharIcon(c.Name), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
 	}
 }

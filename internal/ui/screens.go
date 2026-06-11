@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -141,6 +142,28 @@ func (a *App) drawServerRow(e *network.ServerEntry, y, w int32) {
 	}
 }
 
+// maybeRequestCharIcon demands a visible icon whose texture isn't resident:
+// at most charIconAskPerFrame submissions per frame, one ask per icon per
+// charIconRetryInterval. Low priority keeps the render thread non-blocking
+// (the high lane can stall producers); the retry cadence self-heals when
+// the low lane sheds a burst, since shed jobs are never re-run by the pool.
+func (a *App) maybeRequestCharIcon(idx int, base string) {
+	if a.iconAskBudget <= 0 || a.sess == nil || idx < 0 || idx >= len(a.sess.Chars) {
+		return
+	}
+	// Char list reloads (SI wipes + SC rebuilds) re-size the stamp table.
+	if len(a.iconAsk) != len(a.sess.Chars) {
+		a.iconAsk = make([]time.Time, len(a.sess.Chars))
+	}
+	now := time.Now()
+	if now.Sub(a.iconAsk[idx]) < charIconRetryInterval {
+		return
+	}
+	a.iconAsk[idx] = now
+	a.iconAskBudget--
+	a.d.Manager.Prefetch(base, assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
+}
+
 func (a *App) toggleFavorite(e *network.ServerEntry) {
 	url := e.WebSocketURL()
 	if url == "" {
@@ -208,6 +231,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 
 	query := strings.ToLower(strings.TrimSpace(a.charSearch))
+	a.iconAskBudget = charIconAskPerFrame
 	col, row := int32(0), int32(0)
 	previewRequested := false
 	for i := range a.sess.Chars {
@@ -250,7 +274,9 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 	} else {
-		// Icon still loading: initials placeholder; texture pops in live.
+		// Not resident: demand it (visible = not speculation) and draw the
+		// initials placeholder; the texture pops in live.
+		a.maybeRequestCharIcon(idx, base)
 		initial := slot.Name
 		if len(initial) > 2 {
 			initial = initial[:2]

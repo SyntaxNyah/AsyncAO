@@ -215,6 +215,55 @@ func TestManagerLearnedWarmStart(t *testing.T) {
 	}
 }
 
+// TestManagerT1ShortCircuitUsesBaseKey pins the tier-1 fast path: probed
+// assets are uploaded under their BASE key (TextureStore.Upload(d.Base, …)),
+// so resolve must consult T1 by base — a resident texture costs zero probes
+// and zero decodes (spec §8: T1 hit → done). This was once checked per
+// candidate URL, extension included, which can never match the store key:
+// every re-Prefetch of a visible asset silently re-decoded and re-uploaded.
+func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
+	icon := encodePNG(t, 4, 4, color.White)
+	cs := newCountingServer(t, map[string][]byte{
+		"/characters/phoenix/char_icon.png": icon,
+	})
+	rig := newRig(t, network.NewClient(), false)
+	base := cs.srv.URL + "/characters/phoenix/char_icon"
+
+	// Simulate the render side: textures land keyed by base. Safe to set
+	// post-construction (same package, before any Prefetch).
+	resident := map[string]bool{}
+	rig.manager.t1Contains = func(key string) bool { return resident[key] }
+
+	rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
+	d := waitDecoded(t, rig.manager)
+	if d.Err != nil {
+		t.Fatalf("decode error: %v", d.Err)
+	}
+	d.Asset.Release()
+	if got := cs.total(); got != 1 {
+		t.Fatalf("probes after first load = %d, want 1", got)
+	}
+
+	resident[base] = true // "uploaded" — keyed by base, like the pump does
+
+	rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
+	deadline := time.Now().Add(managerWait)
+	for rig.manager.Stats().T1Hits == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("T1 short-circuit never hit for a resident base")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := cs.total(); got != 1 {
+		t.Errorf("probes after T1 hit = %d, want still 1 (no re-fetch)", got)
+	}
+	select {
+	case d := <-rig.manager.Decoded():
+		t.Errorf("unexpected re-decode of resident asset: %+v", d)
+	default:
+	}
+}
+
 // TestManagerStaleLearnedFormatRecovers covers the server-repack case: the
 // learned format starts 404ing, the manager invalidates it and re-probes the
 // full list once, landing on the new format.

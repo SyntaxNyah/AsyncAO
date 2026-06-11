@@ -72,8 +72,10 @@ type Manager struct {
 	// localMode skips the T3 disk cache (assets already live on disk).
 	localMode bool
 
-	// t1Contains asks the render side whether a texture for url is already
-	// uploaded; nil means "no T1 yet" (headless tests).
+	// t1Contains asks the render side whether a texture is already uploaded;
+	// nil means "no T1 yet" (headless tests). The TextureStore keys probed
+	// assets by BASE (extension-free) and exact assets by their full URL —
+	// callers must pass whichever key the upload used.
 	t1Contains func(url string) bool
 
 	decodedCh chan DecodedAsset
@@ -263,6 +265,14 @@ func (m *Manager) resolve(base string, t AssetType) {
 	}
 	defer m.inflight.Delete(key)
 
+	// T1: already a texture — nothing to do. Uploads from this path are
+	// keyed by base (TextureStore.Upload(d.Base, …)), so the check must use
+	// base too; checking the extension-included candidate URL can never hit.
+	if m.t1Contains != nil && m.t1Contains(base) {
+		m.t1Hits.Add(1)
+		return
+	}
+
 	host := hostOf(base)
 	cands := m.resolver.BuildCandidates(base, t, host)
 	defer m.resolver.PutCandidates(cands)
@@ -274,11 +284,6 @@ func (m *Manager) resolve(base string, t AssetType) {
 		ext := url[len(base):]
 		tried = append(tried, ext)
 
-		// T1: already a texture — nothing to do.
-		if m.t1Contains != nil && m.t1Contains(url) {
-			m.t1Hits.Add(1)
-			return
-		}
 		// T2: raw bytes in memory — straight to decode.
 		if data, ok := m.t2.Get(url); ok {
 			m.t2Hits.Add(1)
