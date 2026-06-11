@@ -155,3 +155,30 @@ func TestINIToleratesCommentsAndMissingFile(t *testing.T) {
 		t.Errorf("section get = %q ok=%v", v, ok)
 	}
 }
+
+// TestHasFont distinguishes "theme defines this element" from the parser's
+// built-in defaults — appliers keep their own colors otherwise.
+func TestHasFont(t *testing.T) {
+	dir := t.TempDir()
+	themes := filepath.Join(dir, "themes", "x")
+	if err := os.MkdirAll(themes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ini := "message = 16\nshowname_color = 10, 20, 30\n"
+	if err := os.WriteFile(filepath.Join(themes, FontsFileName), []byte(ini), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	th, err := Load("x", []string{dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !th.HasFont("message") || !th.HasFont("showname") {
+		t.Error("defined elements must report HasFont")
+	}
+	if th.HasFont("music_display") {
+		t.Error("undefined element must not report HasFont")
+	}
+	if c := th.Font("showname").Color; c.R != 10 || c.G != 20 || c.B != 30 {
+		t.Errorf("showname color = %+v", c)
+	}
+}

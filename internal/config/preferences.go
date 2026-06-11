@@ -60,6 +60,10 @@ const defaultPreferAnimated = true
 // buttons (characters/<char>/emotions/button<N>) rather than text chips.
 const defaultEmoteButtonImages = true
 
+// defaultSmoothScaling turns on linear texture filtering (SDL render
+// scale quality): sprites stretched to the viewport stop shimmering.
+const defaultSmoothScaling = true
+
 // Layout scale bounds (percent). Defaults preserve the original layout:
 // viewport 66 ≈ the old fixed 2/3 width; the text/height scales at 100.
 const (
@@ -84,6 +88,12 @@ const (
 	ScaleStepPercent = 25
 	// ViewportStepPercent is the viewport −/+ increment.
 	ViewportStepPercent = 5
+
+	// Global UI scale (renderer-level: every element, font, and grid
+	// scales together; the mouse unprojects through the same factor).
+	MinUIScalePercent  = 75
+	MaxUIScalePercent  = 200
+	UIScaleStepPercent = 5
 )
 
 // defaultAudioVolume is full volume (the pre-settings behavior).
@@ -133,6 +143,7 @@ type AssetPreferences struct {
 	GlobalFallbacksEnabled bool                      `json:"globalFallbacksEnabled"`
 	PreferAnimated         bool                      `json:"preferAnimated"`
 	EmoteButtonImages      bool                      `json:"emoteButtonImages"`
+	SmoothScaling          bool                      `json:"smoothScaling"`
 	ThemeName              string                    `json:"themeName"`
 	ThemeDir               string                    `json:"themeDir"`
 	OOCName                string                    `json:"oocName"`
@@ -141,6 +152,7 @@ type AssetPreferences struct {
 	ChatBoxPct             int                       `json:"chatBoxPercent"`
 	LogScalePct            int                       `json:"logScalePercent"`
 	InputHeightPct         int                       `json:"inputHeightPercent"`
+	UIScalePct             int                       `json:"uiScalePercent"`
 	MusicVol               int                       `json:"musicVolume"`
 	SFXVol                 int                       `json:"sfxVolume"`
 	BlipVol                int                       `json:"blipVolume"`
@@ -181,6 +193,7 @@ type prefsJSON struct {
 	GlobalFallbacksEnabled bool   `json:"globalFallbacksEnabled"`
 	PreferAnimated         *bool  `json:"preferAnimated"`
 	EmoteButtonImages      *bool  `json:"emoteButtonImages"`
+	SmoothScaling          *bool  `json:"smoothScaling"`
 	ThemeName              string `json:"themeName"`
 	ThemeDir               string `json:"themeDir"`
 	OOCName                string `json:"oocName"`
@@ -189,6 +202,7 @@ type prefsJSON struct {
 	ChatBoxPct             int    `json:"chatBoxPercent"`
 	LogScalePct            int    `json:"logScalePercent"`
 	InputHeightPct         int    `json:"inputHeightPercent"`
+	UIScalePct             int    `json:"uiScalePercent"`
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
 	MusicVol *int `json:"musicVolume"`
 	SFXVol   *int `json:"sfxVolume"`
@@ -255,11 +269,13 @@ func load(path string) (*AssetPreferences, error) {
 	p := &AssetPreferences{
 		PreferAnimated:    defaultPreferAnimated,
 		EmoteButtonImages: defaultEmoteButtonImages,
+		SmoothScaling:     defaultSmoothScaling,
 		ViewportPct:       DefaultViewportPercent,
 		ChatScalePct:      DefaultScalePercent,
 		ChatBoxPct:        DefaultScalePercent,
 		LogScalePct:       DefaultScalePercent,
 		InputHeightPct:    DefaultScalePercent,
+		UIScalePct:        DefaultScalePercent,
 		MusicVol:          defaultAudioVolume,
 		SFXVol:            defaultAudioVolume,
 		BlipVol:           defaultAudioVolume,
@@ -291,6 +307,9 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.EmoteButtonImages != nil {
 		p.EmoteButtonImages = *onDisk.EmoteButtonImages
 	}
+	if onDisk.SmoothScaling != nil {
+		p.SmoothScaling = *onDisk.SmoothScaling
+	}
 	p.ThemeName = onDisk.ThemeName
 	p.ThemeDir = onDisk.ThemeDir
 	p.OOCName = onDisk.OOCName
@@ -310,6 +329,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.InputHeightPct != 0 {
 		p.InputHeightPct = clampPercent(onDisk.InputHeightPct, MinInputPercent, MaxInputPercent)
+	}
+	if onDisk.UIScalePct != 0 {
+		p.UIScalePct = clampPercent(onDisk.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
 	}
 	if onDisk.MusicVol != nil {
 		p.MusicVol = clampPercent(*onDisk.MusicVol, 0, defaultAudioVolume)
@@ -652,6 +674,29 @@ func (p *AssetPreferences) SetEmoteButtonImages(enabled bool) {
 	p.markDirty()
 }
 
+// --- Smooth scaling -----------------------------------------------------------
+
+// SmoothScalingEnabled reports the linear texture-filtering toggle.
+func (p *AssetPreferences) SmoothScalingEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SmoothScaling
+}
+
+// SetSmoothScaling toggles linear texture filtering. The UI re-streams
+// resident textures so it applies live (the SDL hint only affects
+// textures created after it changes).
+func (p *AssetPreferences) SetSmoothScaling(enabled bool) {
+	p.mu.Lock()
+	if p.SmoothScaling == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.SmoothScaling = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // --- Theme -------------------------------------------------------------------
 
 // Theme reports the selected theme name ("" = default) and the custom theme
@@ -722,6 +767,26 @@ func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText,
 	}
 	p.ViewportPct, p.ChatScalePct, p.ChatBoxPct, p.LogScalePct, p.InputHeightPct =
 		viewport, chatText, chatBox, logText, input
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// UIScale reports the global UI scale percent.
+func (p *AssetPreferences) UIScale() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.UIScalePct
+}
+
+// SetUIScale clamps and persists the global UI scale.
+func (p *AssetPreferences) SetUIScale(pct int) {
+	pct = clampPercent(pct, MinUIScalePercent, MaxUIScalePercent)
+	p.mu.Lock()
+	if p.UIScalePct == pct {
+		p.mu.Unlock()
+		return
+	}
+	p.UIScalePct = pct
 	p.mu.Unlock()
 	p.markDirty()
 }

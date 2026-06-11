@@ -466,9 +466,24 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 		boxH = max
 	}
 	box := sdl.Rect{X: vp.X, Y: vp.Y + vp.H - boxH, W: vp.W, H: boxH}
-	c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
-	c.Border(box, ColAccent)
-	c.Label(box.X+8, box.Y+4, sc.ShownameText, ColAccent)
+	// Theme chatbox skin when the theme ships one; flat translucent
+	// panel otherwise.
+	skinned := false
+	if a.themeChatbox {
+		if page, ok := a.d.Store.Get(themeChatboxBase); ok && len(page.Frames) > 0 {
+			_ = c.Ren.Copy(page.Frames[0], nil, &box)
+			skinned = true
+		}
+	}
+	if !skinned {
+		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+		c.Border(box, ColAccent)
+	}
+	nameCol := ColAccent
+	if a.themeHasName {
+		nameCol = a.themeNameCol
+	}
+	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
 
 	// (Re)rasterize when the message, color, zoom, or wrap width changes
 	// (live viewport resizing moves the wrap width mid-message).
@@ -496,6 +511,23 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 		a.msRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
 		_ = c.Ren.SetClipRect(nil)
 	}
+
+	// Ctrl+wheel over the box zooms the chat text (browser convention).
+	if c.ctrlHeld && c.wheelY != 0 && c.hovering(box) {
+		a.chatPct = clampInt(a.chatPct+int(c.wheelY)*config.ScaleStepPercent,
+			config.MinChatScalePercent, config.MaxChatScalePercent)
+		a.saveLayout()
+	}
+}
+
+func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
 }
 
 func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
@@ -516,6 +548,13 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		a.logTab = logTabOOC
 	}
 	inner := sdl.Rect{X: r.X + 4, Y: r.Y + btnH + 4, W: r.W - 8, H: r.H - btnH - 8}
+	// Ctrl+wheel anywhere on the panel resizes the log/OOC/list text;
+	// plain wheel keeps scrolling the active list.
+	if c.ctrlHeld && c.wheelY != 0 && c.hovering(r) {
+		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
+			config.MinLogScalePercent, config.MaxLogScalePercent)
+		a.saveLayout()
+	}
 	switch a.logTab {
 	case logTabMusic:
 		a.drawMusicList(inner)
@@ -554,7 +593,9 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	lineH := int32(font.Height()) + 2
 	contentH := int32(len(a.oocLog)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-	a.oocScroll -= c.wheelY * scrollStepPx
+	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
+		a.oocScroll -= c.wheelY * scrollStepPx
+	}
 	// Follow the tail unless the user scrolled back (within one line of
 	// the bottom counts as "at the bottom").
 	maxScroll := contentH - list.H
@@ -599,7 +640,9 @@ func (a *App) drawAreaList(r sdl.Rect) {
 		c.Label(r.X+4, r.Y+4, "Server reported no areas.", ColTextDim)
 		return
 	}
-	a.areaScroll -= c.wheelY * scrollStepPx
+	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
+		a.areaScroll -= c.wheelY * scrollStepPx
+	}
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 10
 	contentH := int32(len(a.sess.Areas)) * lineH
@@ -773,7 +816,9 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 
 func (a *App) drawMusicList(r sdl.Rect) {
 	c := a.ctx
-	a.musicScroll -= c.wheelY * scrollStepPx
+	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
+		a.musicScroll -= c.wheelY * scrollStepPx
+	}
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 10
 	contentH := int32(len(a.sess.Music)) * lineH
@@ -903,6 +948,12 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// OOC log line.
 	if len(a.oocLog) > 0 {
 		c.LabelClipped(pad+w/2, oocY+4, w/2-2*pad, a.oocLog[len(a.oocLog)-1], ColTextDim)
+	}
+	// Ctrl+wheel over the OOC row: same log/OOC text-size shortcut.
+	if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: pad, Y: oocY, W: w - 2*pad, H: fH}) {
+		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
+			config.MinLogScalePercent, config.MaxLogScalePercent)
+		a.saveLayout()
 	}
 	// Missing-asset warning (spec §4: visible in-client, names what was
 	// tried so "enable fallbacks" is an informed fix, not a guess).
@@ -1261,6 +1312,12 @@ func (a *App) handleChatCommand(text string) bool {
 
 // renderRaster rasterizes the current message with its AO color.
 func renderRaster(a *App, sc *courtroom.Scene, wrapW int32) (*render.MessageRaster, error) {
-	// The chat zoom font: rebuilt only when the Text knob changes.
-	return render.Rasterize(a.ctx.Ren, a.ctx.ChatFont(a.chatPct), sc.MessageText, wrapW, render.TextColor(sc.TextColor))
+	// The chat zoom font: rebuilt only when the Text knob changes. The
+	// theme's "message" color replaces only AO's DEFAULT color (code 0)
+	// — explicit message colors (green/red/...) always win.
+	col := render.TextColor(sc.TextColor)
+	if sc.TextColor == 0 && a.themeHasMsg {
+		col = a.themeMsgCol
+	}
+	return render.Rasterize(a.ctx.Ren, a.ctx.ChatFont(a.chatPct), sc.MessageText, wrapW, col)
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // Screen identifies the active top-level view.
@@ -168,6 +171,14 @@ type App struct {
 	warnLine string
 	warnAt   time.Time
 
+	// --- applied theme (chatbox skin + font colors) ---
+	themeApplyRes chan themeApply
+	themeChatbox  bool // theme://chatbox resident in T1
+	themeMsgCol   sdl.Color
+	themeHasMsg   bool
+	themeNameCol  sdl.Color
+	themeHasName  bool
+
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar     string   // active override folder ("" = picked character)
 	pendingIni  string   // wear this once PV confirms (char-select joins)
@@ -192,6 +203,7 @@ type App struct {
 
 	// layout scales (percent; mirrors prefs, saved on change)
 	vpPct, chatPct, boxPct, logPct, inputPct int
+	uiScalePct                               int // global renderer scale
 	// chat raster invalidation extras (text/color tracked separately)
 	rasterScale int
 	rasterW     int32
@@ -228,27 +240,49 @@ type charINIFetch struct {
 	err error
 }
 
+// themeApply is one off-thread theme load: the decoded chatbox skin (nil
+// when the theme ships none) and the message/showname font colors.
+type themeApply struct {
+	chatbox *assets.Decoded
+	msgCol  sdl.Color
+	hasMsg  bool
+	nameCol sdl.Color
+	hasName bool
+}
+
+// themeChatboxBase is the T1 key for the theme's chatbox skin — the
+// scheme prefix can never collide with real asset URLs.
+const themeChatboxBase = "theme://chatbox"
+
 // NewApp builds the UI over deps.
 func NewApp(ctx *Ctx, d Deps) *App {
 	a := &App{
-		ctx:         ctx,
-		d:           d,
-		screen:      ScreenLobby,
-		lobbyResult: make(chan lobbyFetch, 1),
-		charINIres:  make(chan charINIFetch, 1),
-		iniRes:      make(chan iniswapFetch, 1),
-		pairWith:    protocol.UnpairedCharID,
-		oocName:     d.Prefs.SavedShowname(),
+		ctx:           ctx,
+		d:             d,
+		screen:        ScreenLobby,
+		lobbyResult:   make(chan lobbyFetch, 1),
+		charINIres:    make(chan charINIFetch, 1),
+		iniRes:        make(chan iniswapFetch, 1),
+		themeApplyRes: make(chan themeApply, 1),
+		pairWith:      protocol.UnpairedCharID,
+		oocName:       d.Prefs.SavedShowname(),
 	}
+	a.applyThemeAsync() // chatbox skin + font colors from the saved theme
 	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
 	a.pairFlip = d.Prefs.PairFlipped()
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales()
+	a.uiScalePct = d.Prefs.UIScale()
+	ctx.SetUIScale(a.uiScalePct)
 	if saved := d.Prefs.SavedOOCName(); saved != "" {
 		a.oocName = saved
 	}
 	a.RefreshServers()
 	return a
 }
+
+// UIScale exposes the global scale percent (main sets the renderer scale
+// from it each frame and sizes the logical canvas accordingly).
+func (a *App) UIScale() int { return a.uiScalePct }
 
 // saveLayout persists the courtroom layout knobs (debounced saver flushes).
 func (a *App) saveLayout() {
@@ -829,6 +863,7 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pumpConnection()
 	a.drainWarnings()
+	a.pollThemeApply()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
 		a.healScenery()
@@ -850,6 +885,68 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.drawSettings(winW, winH)
 	case ScreenAbout:
 		a.drawAbout(winW, winH)
+	}
+}
+
+// applyThemeAsync loads the selected theme's visible pieces off-thread —
+// the chatbox skin (chatbox.webp/png in the theme dir, AO2 convention)
+// and the message/showname font colors — and hands them to the render
+// thread via themeApplyRes. Settings re-triggers it on every theme change.
+func (a *App) applyThemeAsync() {
+	name, dir := a.d.Prefs.Theme()
+	go func() {
+		var res themeApply
+		roots := make([]string, 0, 2)
+		if dir != "" {
+			roots = append(roots, dir)
+		}
+		if exe, err := os.Executable(); err == nil {
+			roots = append(roots, filepath.Dir(exe))
+		}
+		t, err := theme.Load(name, roots)
+		if err == nil {
+			if msg := t.Font("message"); t.HasFont("message") {
+				res.msgCol = sdl.Color{R: msg.Color.R, G: msg.Color.G, B: msg.Color.B, A: 255}
+				res.hasMsg = true
+			}
+			if sn := t.Font("showname"); t.HasFont("showname") {
+				res.nameCol = sdl.Color{R: sn.Color.R, G: sn.Color.G, B: sn.Color.B, A: 255}
+				res.hasName = true
+			}
+			if path, ok := t.FindAsset("chatbox", []string{".webp", ".png"}); ok {
+				if data, rerr := os.ReadFile(path); rerr == nil {
+					if d, derr := assets.DecodeImage(data, false); derr == nil {
+						res.chatbox = d
+					}
+				}
+			}
+		}
+		// Replace any queued (now stale) result, then deliver.
+		select {
+		case <-a.themeApplyRes:
+		default:
+		}
+		a.themeApplyRes <- res
+	}()
+}
+
+// pollThemeApply lands theme pieces on the render thread: upload (or
+// drop) the chatbox skin, adopt the colors, force a chat re-raster.
+func (a *App) pollThemeApply() {
+	select {
+	case res := <-a.themeApplyRes:
+		if res.chatbox != nil {
+			if err := a.d.Store.Upload(themeChatboxBase, res.chatbox); err == nil {
+				a.themeChatbox = true
+			}
+		} else if a.themeChatbox {
+			a.d.Store.Remove(themeChatboxBase)
+			a.themeChatbox = false
+		}
+		a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
+		a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
+		a.rasterText = "" // re-raster the current message with theme colors
+	default:
 	}
 }
 

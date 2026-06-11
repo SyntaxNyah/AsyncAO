@@ -150,6 +150,16 @@ func (t *Theme) Font(name string) FontSpec {
 	return spec
 }
 
+// HasFont reports whether the theme's fonts INI defines the element at
+// all (size or color) — callers keep their own defaults otherwise.
+func (t *Theme) HasFont(name string) bool {
+	if _, ok := t.fonts.Get(name); ok {
+		return true
+	}
+	_, ok := t.fonts.Get(name + "_color")
+	return ok
+}
+
 // SoundName returns the courtroom_sounds.ini entry (e.g. "word_call").
 func (t *Theme) SoundName(key string) (string, bool) {
 	return t.sounds.Get(key)

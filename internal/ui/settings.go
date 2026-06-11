@@ -109,6 +109,30 @@ func (a *App) drawSettings(w, h int32) {
 	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats below)", emoteImgs); next != emoteImgs {
 		a.d.Prefs.SetEmoteButtonImages(next)
 	}
+	y += 26
+	smooth := a.d.Prefs.SmoothScalingEnabled()
+	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
+		a.d.Prefs.SetSmoothScaling(next)
+		hint := "1"
+		if !next {
+			hint = "0"
+		}
+		// The hint applies at texture CREATION; purge so everything
+		// re-streams (demand pipeline + scenery heal repopulate live).
+		sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, hint)
+		a.d.Store.Purge()
+		c.purgeTextCache()
+		a.themeChatbox = false
+		a.applyThemeAsync()
+		settings.statusLine = "Re-streaming textures with new filtering."
+	}
+	y += 26
+	uiPct := a.numberRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent)
+	if uiPct != a.uiScalePct {
+		a.uiScalePct = uiPct
+		a.ctx.SetUIScale(uiPct)
+		a.d.Prefs.SetUIScale(uiPct)
+	}
 	y += 34
 
 	// Theme picker: cycle through scanned themes; the folder field points
@@ -133,6 +157,7 @@ func (a *App) drawSettings(w, h int32) {
 	if c.Button(sdl.Rect{X: pad + 460, Y: y, W: 130, H: btnH}, "Apply & rescan") {
 		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
 		a.scanThemes()
+		a.applyThemeAsync()
 	}
 	if runtime.GOOS == "windows" {
 		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Browse...") {
@@ -340,6 +365,7 @@ func (a *App) cycleTheme(step int) {
 	idx = (idx + step + len(list)) % len(list)
 	settings.themeName = list[idx]
 	a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
+	a.applyThemeAsync() // chatbox skin + colors follow the pick live
 }
 
 // scanThemes lists themes/<name> directories under the custom root and the
@@ -380,6 +406,7 @@ func (a *App) pollThemeScan() {
 		}
 		if res.root != "" || res.pickName != "" {
 			a.d.Prefs.SetTheme(settings.themeName, settings.themeDir)
+			a.applyThemeAsync()
 		}
 	default:
 	}

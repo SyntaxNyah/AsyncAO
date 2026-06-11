@@ -88,8 +88,13 @@ type Ctx struct {
 	logFont  *ttf.Font
 	logPct   int
 
+	// uiPct is the global render scale percent; mouse coordinates
+	// unproject through it so logical hit-tests stay exact.
+	uiPct int32
+
 	mouseX, mouseY int32
 	clicked        bool // left released this frame
+	ctrlHeld       bool // live modifier state (Ctrl+wheel font sizing)
 	rightClicked   bool
 	wheelY         int32
 	typed          string
@@ -195,7 +200,8 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.cutReq = false
 	c.dropped = ""
 	x, y, _ := sdl.GetMouseState()
-	c.mouseX, c.mouseY = x, y
+	c.mouseX, c.mouseY = c.toLogical(x), c.toLogical(y)
+	c.ctrlHeld = sdl.GetModState()&sdl.KMOD_CTRL != 0
 	if !c.mouseDown {
 		c.dragID = "" // drags end with the button release
 	}
@@ -211,9 +217,9 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 func (c *Ctx) HandleEvent(ev sdl.Event) {
 	switch e := ev.(type) {
 	case *sdl.MouseMotionEvent:
-		c.mouseX, c.mouseY = e.X, e.Y
+		c.mouseX, c.mouseY = c.toLogical(e.X), c.toLogical(e.Y)
 	case *sdl.MouseButtonEvent:
-		c.mouseX, c.mouseY = e.X, e.Y
+		c.mouseX, c.mouseY = c.toLogical(e.X), c.toLogical(e.Y)
 		switch e.Type {
 		case sdl.MOUSEBUTTONDOWN:
 			if e.Button == sdl.BUTTON_LEFT {
@@ -275,6 +281,23 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 // flattenClipboard makes pasted text safe for the kit's single-line fields.
 func flattenClipboard(s string) string {
 	return strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ", "\t", " ").Replace(s)
+}
+
+// SetUIScale stores the global render scale percent for mouse
+// unprojection (main sets the matching renderer scale each frame).
+func (c *Ctx) SetUIScale(pct int) {
+	if pct <= 0 {
+		pct = DefaultScalePct
+	}
+	c.uiPct = int32(pct)
+}
+
+// toLogical converts window pixels to logical (pre-scale) coordinates.
+func (c *Ctx) toLogical(v int32) int32 {
+	if c.uiPct == 0 || c.uiPct == DefaultScalePct {
+		return v
+	}
+	return v * DefaultScalePct / c.uiPct
 }
 
 // hovering reports whether the mouse is inside r.

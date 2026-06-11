@@ -151,6 +151,12 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 	return nil
 }
 
+// Remove evicts one page (theme swaps replace skin textures). The LRU's
+// eviction callback routes the page through the destroy queue.
+func (s *TextureStore) Remove(base string) {
+	s.t1.Remove(base)
+}
+
 // DrainDestroyQueue destroys up to destroyBudgetPerFrame evicted pages.
 // Render thread only; call once per frame (spec §12).
 func (s *TextureStore) DrainDestroyQueue() {

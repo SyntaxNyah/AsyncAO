@@ -114,6 +114,17 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	defer decoder.Close()
 
 	// --- SDL (render thread = this thread, forever) ---
+	// Texture scale quality must be hinted before textures exist: "1" =
+	// linear filtering (sprites stretched to the viewport stop
+	// shimmering), "0" = nearest (the SDL default). The Settings toggle
+	// re-hints and re-streams live. Batching cuts draw-call overhead on
+	// label/icon-heavy frames.
+	scaleHint := "1"
+	if !prefs.SmoothScalingEnabled() {
+		scaleHint = "0"
+	}
+	sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, scaleHint)
+	sdl.SetHint(sdl.HINT_RENDER_BATCHING, "1")
 	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO | sdl.INIT_EVENTS); err != nil {
 		return err
 	}
@@ -251,10 +262,17 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			continue
 		}
 
+		// Global UI scale: render at logical size, let the GPU scale the
+		// whole frame; the kit unprojects the mouse through the same
+		// factor, so every widget scales without per-element math.
+		scale := float32(app.UIScale()) / 100
+		_ = ren.SetScale(scale, scale)
 		w, h := window.GetSize()
+		lw := int32(float32(w) / scale)
+		lh := int32(float32(h) / scale)
 		_ = ren.SetDrawColor(0, 0, 0, 255)
 		_ = ren.Clear()
-		app.Frame(dt, w, h)
+		app.Frame(dt, lw, lh)
 		ren.Present()
 
 		if !vsync {
