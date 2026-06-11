@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -41,5 +42,31 @@ func TestInputSnapshotOrder(t *testing.T) {
 	c.BeginFrame(time.Millisecond)
 	if c.clicked || c.wheelY != 0 {
 		t.Fatal("BeginFrame must clear the previous frame's input snapshot")
+	}
+}
+
+// TestParseIniswapList pins the iniswap.txt contract: one folder name per
+// line, CRLF tolerated, blanks skipped, case-insensitive dedupe, bounded
+// by iniswapListCap, sorted case-insensitively for the menu.
+func TestParseIniswapList(t *testing.T) {
+	data := []byte("zeta\r\n\r\n  aigis  \r\namong us_red\nAigis\namong us_red\n\n")
+	got := parseIniswapList(data)
+	want := []string{"aigis", "among us_red", "zeta"}
+	if len(got) != len(want) {
+		t.Fatalf("parsed %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("parsed %v, want %v", got, want)
+		}
+	}
+
+	// Cap holds against a hostile file.
+	var huge []byte
+	for i := 0; i < iniswapListCap+500; i++ {
+		huge = append(huge, []byte(fmt.Sprintf("char%06d\n", i))...)
+	}
+	if got := parseIniswapList(huge); len(got) != iniswapListCap {
+		t.Fatalf("cap = %d entries, want %d", len(got), iniswapListCap)
 	}
 }

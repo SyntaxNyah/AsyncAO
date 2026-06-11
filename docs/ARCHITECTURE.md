@@ -178,6 +178,31 @@ so a release hit-tests where it actually happened.
   char.ini fetches run on goroutines and land via polled channels, like
   the lobby fetch.
 
+## Iniswap (server custom characters)
+
+`<asset origin>/iniswap.txt` — one character folder per line — is the
+server-curated list of streamable characters that occupy **no server
+slot**. The courtroom's Iniswap button opens a modal char-select-grade
+grid over it, and every layer reuses the existing fast path, nothing
+bespoke:
+
+- the txt rides `FetchRaw` (T2 + disk cached, singleflight) on a
+  goroutine; parse is bounded (`iniswapListCap` 4096), case-insensitively
+  deduped + sorted, lowercase names precomputed for the search filter;
+- icons are ordinary `AssetTypeCharIcon` traffic: same paced demand
+  (shared `demandAsset` budget/cadence), same 64 px decode thumbnails,
+  same 404 cache — the **list-character pipeline is untouched**, the menu
+  is just a second consumer of it;
+- hover previews and, once picked, live sprites go through the normal
+  name-chain (`(a)X`/`(b)X` → bare `X`).
+
+Picking an entry only swaps the active folder: outgoing `MS` carries the
+custom name in `char_name` (AO2-Client `set_iniswap` semantics — servers
+relay the folder, receivers stream it like any speaker), and the emote
+list reloads from the custom `char.ini`. Re-picking a list character or
+disconnecting clears the override; an in-flight txt fetch is drained on
+disconnect so a stale list can't land after reconnecting elsewhere.
+
 ## Lobby data
 
 The master list JSON is parsed in full — `ip`, ports, `players`, `name` and

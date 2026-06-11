@@ -5,7 +5,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -145,28 +144,6 @@ func (a *App) drawServerRow(e *network.ServerEntry, y, w int32) {
 			a.Connect(e.Name, e.WebSocketURL())
 		}
 	}
-}
-
-// maybeRequestCharIcon demands a visible icon whose texture isn't resident:
-// at most charIconAskPerFrame submissions per frame, one ask per icon per
-// charIconRetryInterval. Low priority keeps the render thread non-blocking
-// (the high lane can stall producers); the retry cadence self-heals when
-// the low lane sheds a burst, since shed jobs are never re-run by the pool.
-func (a *App) maybeRequestCharIcon(idx int, base string) {
-	if a.iconAskBudget <= 0 || a.sess == nil || idx < 0 || idx >= len(a.sess.Chars) {
-		return
-	}
-	// Char list reloads (SI wipes + SC rebuilds) re-size the stamp table.
-	if len(a.iconAsk) != len(a.sess.Chars) {
-		a.iconAsk = make([]time.Time, len(a.sess.Chars))
-	}
-	now := time.Now()
-	if now.Sub(a.iconAsk[idx]) < charIconRetryInterval {
-		return
-	}
-	a.iconAsk[idx] = now
-	a.iconAskBudget--
-	a.d.Manager.Prefetch(base, assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon
 }
 
 func (a *App) toggleFavorite(e *network.ServerEntry) {
@@ -310,7 +287,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	} else {
 		// Not resident: demand it (visible = not speculation) and draw the
 		// initials placeholder; the texture pops in live.
-		a.maybeRequestCharIcon(idx, base)
+		a.demandAsset(&a.iconAsk, len(a.sess.Chars), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
 		initial := slot.Name
 		if len(initial) > 2 {
 			initial = initial[:2]
@@ -371,6 +348,13 @@ func (a *App) drawCourtroom(w, h int32) {
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
 	a.drawChatOverlay(vp)
+
+	// The iniswap menu is modal: the kit has no z-aware input, so the
+	// controls underneath simply don't draw (and don't see clicks).
+	if a.showIni {
+		a.drawIniswapPanel(w, h)
+		return
+	}
 
 	// Right column: log + music.
 	rx := vp.X + vp.W + pad
@@ -484,6 +468,120 @@ func (a *App) drawAreaList(r sdl.Rect) {
 	}
 }
 
+// drawIniswapPanel is the custom character menu: every name from the
+// server's iniswap.txt as a char-select-grade grid — same demand pipeline
+// (paced asks, 64 px thumbnail icons, 404 cache), same search, same
+// scrollbar, same 3 s hover preview. Picking one iniswaps outgoing
+// messages into that folder; the server slot is untouched.
+func (a *App) drawIniswapPanel(w, h int32) {
+	c := a.ctx
+	a.pollIniswap()
+	panel := sdl.Rect{X: pad * 3, Y: pad * 3, W: w - pad*6, H: h - pad*6}
+	c.Fill(panel, ColPanel)
+	c.Border(panel, ColAccent)
+	c.Heading(panel.X+pad, panel.Y+8, "Iniswap — server custom characters", ColText)
+	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + 8, W: 90, H: btnH}, "Close") {
+		a.showIni = false
+		return
+	}
+
+	y := panel.Y + 44
+	active := "none (using " + a.myCharName() + ")"
+	if a.iniChar != "" {
+		active = a.iniChar
+	}
+	c.LabelClipped(panel.X+pad, y+4, 340, "Active: "+active, ColAccent)
+	if a.iniChar != "" {
+		if c.Button(sdl.Rect{X: panel.X + 360, Y: y, W: 130, H: btnH}, "Clear iniswap") {
+			a.setIniswap("")
+		}
+	}
+	y += 32
+	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 260, H: fieldH}, a.iniSearch, "Search customs...")
+	statusX := panel.X + pad + 270
+	switch {
+	case a.iniBusy:
+		c.Label(statusX, y+4, "Fetching "+iniswapFileName+"...", ColTextDim)
+	case a.iniListErr != "":
+		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, a.iniListErr+" — the server ships no custom list", ColDanger)
+	default:
+		c.Label(statusX, y+4, fmt.Sprintf("%d custom characters", len(a.iniList)), ColTextDim)
+	}
+	y += 36
+
+	// Grid: clone of the char-select layout over the iniswap list.
+	gridTop := y
+	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap
+	cols := gridW / (iconCell + iconGap)
+	if cols < 1 {
+		cols = 1
+	}
+	query := strings.ToLower(strings.TrimSpace(a.iniSearch))
+	matches := int32(0)
+	for i := range a.iniList {
+		if query == "" || strings.Contains(a.iniLower[i], query) {
+			matches++
+		}
+	}
+	cellH := iconCell + iconGap + 14
+	contentH := (matches + cols - 1) / cols * cellH
+	visibleH := panel.Y + panel.H - gridTop - pad
+
+	a.iniScroll -= c.wheelY * scrollStepPx
+	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
+	a.iniScroll = c.VScrollbar("iniscroll", track, a.iniScroll, contentH, visibleH)
+
+	col, row := int32(0), int32(0)
+	for i := range a.iniList {
+		if query != "" && !strings.Contains(a.iniLower[i], query) {
+			continue
+		}
+		x := panel.X + pad + col*(iconCell+iconGap)
+		yy := gridTop + row*cellH - a.iniScroll
+		if yy > gridTop-iconCell && yy < panel.Y+panel.H-14 {
+			a.drawIniswapCell(i, sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell})
+		}
+		col++
+		if col >= cols {
+			col = 0
+			row++
+		}
+	}
+
+	if a.previewBase != "" {
+		a.drawSpritePreview(w, h)
+		if c.clicked {
+			a.previewBase = ""
+		}
+	}
+}
+
+func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
+	c := a.ctx
+	name := a.iniList[idx]
+	c.Fill(cell, ColBackground)
+	base := a.urls.CharIcon(name)
+	if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
+		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
+	} else {
+		a.demandAsset(&a.iniAsk, len(a.iniList), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (iniswap)
+		initial := name
+		if len(initial) > 2 {
+			initial = initial[:2]
+		}
+		c.Label(cell.X+iconCell/2-8, cell.Y+iconCell/2-8, initial, ColTextDim)
+	}
+	c.LabelClipped(cell.X, cell.Y+iconCell+1, iconCell, name, ColTextDim)
+	if c.HoverPreview("iniswap:"+name, cell) {
+		a.previewBase = a.urls.Emote(name, "normal", courtroom.EmoteIdle)
+		a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+	}
+	if c.hovering(cell) && c.clicked {
+		a.setIniswap(name)
+		a.showIni = false
+	}
+}
+
 func (a *App) drawMusicList(r sdl.Rect) {
 	c := a.ctx
 	a.musicScroll -= c.wheelY * scrollStepPx
@@ -539,6 +637,10 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.screen = ScreenCharSelect
 	}
 	x += 106
+	if c.Button(sdl.Rect{X: x, Y: y, W: 90, H: btnH}, "Iniswap") {
+		a.openIniswap()
+	}
+	x += 96
 	if c.Button(sdl.Rect{X: x, Y: y, W: 90, H: btnH}, "Settings") {
 		a.prevScreen = ScreenCourtroom
 		a.screen = ScreenSettings
@@ -598,7 +700,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		return
 	}
 	x, y := r.X, r.Y
-	me := a.myCharName()
+	me := a.activeCharName() // iniswap override drives emotes + buttons
 	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
 	for i := range a.emotes {
 		e := &a.emotes[i]
@@ -657,7 +759,7 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 	base := a.urls.EmoteButton(me, i+1, selected)
 	page, ok := a.d.Store.Get(base)
 	if !ok {
-		a.maybeRequestEmoteButton(i, base)
+		a.demandAsset(&a.emoteAsk, len(a.emotes), i, base, assets.AssetTypeEmoteButton) // AssetType: EmoteButton
 		if selected {
 			page, ok = a.d.Store.Get(a.urls.EmoteButton(me, i+1, false))
 		}
@@ -670,25 +772,6 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 		c.LabelClipped(btn.X+3, btn.Y+btn.H/2-8, btn.W-6, label, ColTextDim)
 	}
 	return c.hovering(btn) && c.clicked
-}
-
-// maybeRequestEmoteButton demands missing button art exactly like
-// maybeRequestCharIcon: shared per-frame budget, one ask per button per
-// charIconRetryInterval, low priority (sheddable; the cadence self-heals).
-func (a *App) maybeRequestEmoteButton(idx int, base string) {
-	if a.iconAskBudget <= 0 || idx < 0 || idx >= len(a.emotes) {
-		return
-	}
-	if len(a.emoteAsk) != len(a.emotes) {
-		a.emoteAsk = make([]time.Time, len(a.emotes))
-	}
-	now := time.Now()
-	if now.Sub(a.emoteAsk[idx]) < charIconRetryInterval {
-		return
-	}
-	a.emoteAsk[idx] = now
-	a.iconAskBudget--
-	a.d.Manager.Prefetch(base, assets.AssetTypeEmoteButton, network.PriorityLow) // AssetType: EmoteButton
 }
 
 func (a *App) drawPairPanel(w, h int32) {
@@ -805,7 +888,7 @@ func (a *App) sendIC(shout int) {
 	out := protocol.OutgoingMS{
 		DeskMod:   deskMod,
 		PreEmote:  emote.Preanim,
-		CharName:  a.myCharName(),
+		CharName:  a.activeCharName(), // iniswap: the wire carries the custom folder
 		Emote:     emote.Anim,
 		Message:   text,
 		Side:      a.mySide(),

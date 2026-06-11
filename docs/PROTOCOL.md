@@ -48,8 +48,15 @@ then percent-decoded *again* per sub-element (AO legacy double decode).
 | `checkconnection` | `CH#<char id>` | keepalive |
 
 Outgoing actions: `CC#<player id>#<char id>#<hdid>` (pick character),
-`MS#…` (chat), `CT#<name>#<text>` (OOC), `MC#<track>#<char id>` (music),
+`MS#…` (chat), `CT#<name>#<text>` (OOC), `MC#<track>#<char id>` (music
+**and** area transfers — an area name in place of a track moves rooms),
 `ZZ[#reason]` (mod call).
+
+Iniswap: the `char_name` field of outgoing `MS` is the folder receivers
+stream sprites from; it need not match the server-slot character (servers
+relay it as-is). AsyncAO populates it from the active iniswap override —
+the slot, `CC`, and `PV` are untouched. The custom list itself comes from
+`<asset origin>/iniswap.txt`, one folder name per line.
 
 ## Features (`FL`), wire names
 

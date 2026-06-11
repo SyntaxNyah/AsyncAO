@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -52,6 +53,16 @@ const (
 	// warnShowDuration keeps a missing-asset warning readable without
 	// turning the HUD into a ticker.
 	warnShowDuration = 12 * time.Second
+
+	// iniswapFileName is the server-curated custom character list at the
+	// asset origin root: one character folder name per line. Characters
+	// here stream like list characters but never occupy a server slot.
+	iniswapFileName = "iniswap.txt"
+	// iniswapListCap bounds the parsed list (rule §17.4: no unbounded
+	// anything — a hostile txt cannot balloon memory or the ask pacer).
+	iniswapListCap = 4096
+	// iniswapFetchTimeout caps the txt download.
+	iniswapFetchTimeout = 15 * time.Second
 )
 
 // Log panel tabs (courtroom right column).
@@ -138,6 +149,18 @@ type App struct {
 	warnLine string
 	warnAt   time.Time
 
+	// --- iniswap (custom characters from <origin>/iniswap.txt) ---
+	iniChar    string // active override folder ("" = picked character)
+	iniList    []string
+	iniLower   []string // lowercased names for the search filter
+	iniListErr string
+	iniBusy    bool
+	iniRes     chan iniswapFetch
+	showIni    bool
+	iniSearch  string
+	iniScroll  int32
+	iniAsk     []time.Time // demand pacing stamps, parallel to iniList
+
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
 	bgAskAt     time.Time
@@ -163,6 +186,11 @@ type lobbyFetch struct {
 	err     error
 }
 
+type iniswapFetch struct {
+	names []string
+	err   error
+}
+
 type charINIFetch struct {
 	ini *courtroom.CharINI
 	err error
@@ -176,6 +204,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		screen:      ScreenLobby,
 		lobbyResult: make(chan lobbyFetch, 1),
 		charINIres:  make(chan charINIFetch, 1),
+		iniRes:      make(chan iniswapFetch, 1),
 		pairWith:    protocol.UnpairedCharID,
 		oocName:     d.Prefs.SavedShowname(),
 	}
@@ -242,6 +271,15 @@ func (a *App) Disconnect() {
 	a.iconAsk = nil
 	a.emoteAsk = nil
 	a.charLower = nil
+	// Iniswap state is per-server: drop the list and drain any in-flight
+	// fetch so a stale result can't land after a reconnect elsewhere.
+	a.iniChar, a.iniList, a.iniLower, a.iniAsk = "", nil, nil, nil
+	a.iniListErr, a.iniSearch = "", ""
+	a.showIni, a.iniBusy, a.iniScroll = false, false, 0
+	select {
+	case <-a.iniRes:
+	default:
+	}
 	a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
 	a.screen = ScreenLobby
 }
@@ -359,6 +397,7 @@ func (a *App) enterCourtroom() {
 	if a.sess == nil {
 		return
 	}
+	a.iniChar = "" // fresh pick = fresh identity; iniswap is per-character
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
 	urls := a.urls
 	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character string) string {
@@ -372,12 +411,119 @@ func (a *App) enterCourtroom() {
 	a.loadCharINI()
 }
 
-// loadCharINI fetches our character's char.ini for the emote list.
-func (a *App) loadCharINI() {
-	if a.sess == nil || a.sess.MyCharID < 0 || a.sess.MyCharID >= len(a.sess.Chars) {
+// activeCharName is the character folder OUTGOING messages use: the
+// iniswap override when set (AO iniswapping — the server slot keeps the
+// list character, the wire carries the custom folder; AO2-Client
+// set_iniswap semantics), else our picked character.
+func (a *App) activeCharName() string {
+	if a.iniChar != "" {
+		return a.iniChar
+	}
+	return a.myCharName()
+}
+
+// setIniswap applies a custom character override ("" reverts to the picked
+// character) and reloads the emote list for the new active folder.
+func (a *App) setIniswap(name string) {
+	a.iniChar = name
+	a.emoteAsk = nil
+	a.loadCharINI()
+}
+
+// openIniswap shows the custom character menu, fetching iniswap.txt on
+// first open (FetchRaw: T2 + disk cached, singleflight — a reopen is a
+// memory hit). Runs on a goroutine; pollIniswap lands the result.
+func (a *App) openIniswap() {
+	a.showIni = true
+	if len(a.iniList) > 0 || a.iniBusy || a.urls.Origin() == "" {
 		return
 	}
-	name := a.sess.Chars[a.sess.MyCharID].Name
+	a.iniBusy = true
+	a.iniListErr = ""
+	url := a.urls.Origin() + iniswapFileName
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+		defer cancel()
+		data, err := a.d.Manager.FetchRaw(ctx, url)
+		if err != nil {
+			a.iniRes <- iniswapFetch{err: err}
+			return
+		}
+		a.iniRes <- iniswapFetch{names: parseIniswapList(data)}
+	}()
+}
+
+func (a *App) pollIniswap() {
+	select {
+	case res := <-a.iniRes:
+		a.iniBusy = false
+		if res.err != nil {
+			a.iniListErr = "iniswap.txt: " + res.err.Error()
+			return
+		}
+		a.iniList = res.names
+		a.iniLower = make([]string, len(res.names))
+		for i, n := range res.names {
+			a.iniLower[i] = strings.ToLower(n)
+		}
+		a.iniAsk = nil
+	default:
+	}
+}
+
+// parseIniswapList parses iniswap.txt: one character folder name per line,
+// blanks skipped, case-insensitive dedupe, capped, sorted for the menu.
+func parseIniswapList(data []byte) []string {
+	lines := strings.Split(string(data), "\n")
+	names := make([]string, 0, len(lines))
+	seen := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		names = append(names, name)
+		if len(names) >= iniswapListCap {
+			break
+		}
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		return strings.ToLower(names[i]) < strings.ToLower(names[j])
+	})
+	return names
+}
+
+// demandAsset paces one visible cell's asset demand: shared per-frame
+// budget, one ask per slot per charIconRetryInterval (self-heals shed
+// low-lane jobs). stamps resizes lazily to n; callers tag the asset type.
+func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets.AssetType) {
+	if a.iconAskBudget <= 0 || idx < 0 || idx >= n {
+		return
+	}
+	if len(*stamps) != n {
+		*stamps = make([]time.Time, n)
+	}
+	now := time.Now()
+	if now.Sub((*stamps)[idx]) < charIconRetryInterval {
+		return
+	}
+	(*stamps)[idx] = now
+	a.iconAskBudget--
+	a.d.Manager.Prefetch(base, t, network.PriorityLow)
+}
+
+// loadCharINI fetches the ACTIVE character's char.ini for the emote list
+// (the iniswap override when set).
+func (a *App) loadCharINI() {
+	name := a.activeCharName()
+	if a.sess == nil || name == "" {
+		return
+	}
 	url := a.urls.Origin() + "characters/" + strings.ToLower(name) + "/char.ini"
 	a.charINIBusy = true
 	go func() {
