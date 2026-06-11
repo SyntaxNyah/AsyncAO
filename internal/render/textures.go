@@ -23,8 +23,13 @@ const (
 
 	// Speculative upload budget per frame: live-message assets bypass it,
 	// prefetch-ahead uploads stop after this many textures or bytes
-	// (spec §8).
-	speculativeUploadMaxTextures = 2
+	// (spec §8). The BYTE cap is what protects 16 ms; the texture count
+	// exists so a burst of tiny uploads stays bounded too. At the old
+	// count of 2, a 600-icon char-select viewport took ~5 s to fill even
+	// with every payload already decoded (icons are ~16 KB thumbnails);
+	// 16 small Updates cost tens of µs while big sprites still gate on
+	// bytes long before the count.
+	speculativeUploadMaxTextures = 16
 	speculativeUploadMaxBytes    = 4 << 20
 
 	// destroyQueueCap bounds the texture destroy queue drained each frame.

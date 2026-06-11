@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kettek/apng"
+	xdraw "golang.org/x/image/draw"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 )
@@ -47,6 +48,58 @@ const (
 	// shorter loop beats a sprite that never shows up.
 	maxDecodedAssetBytes = cache.DefaultT1BudgetBytes / 2
 )
+
+const (
+	// charIconDecodePx / emoteButtonDecodePx are the post-decode thumbnail
+	// edges for the two asset types drawn at fixed small cells (they mirror
+	// ui.iconCell and ui.emoteBtnCell — assets cannot import ui). Packs ship
+	// char icons at arbitrary sizes; a 500×500 icon decoded natively costs
+	// ~1 MB of T1 for a 64 px cell (~60× waste), capping how many icons stay
+	// resident and churning the cache while scrolling. Thumbnailing in the
+	// decode pool makes an icon ~16 KB: a 4000-char roster fits T1 whole.
+	charIconDecodePx    = 64
+	emoteButtonDecodePx = 40
+)
+
+// decodeTargetPx returns the thumbnail edge for fixed-cell asset types;
+// 0 means keep the native size.
+func decodeTargetPx(t AssetType) int {
+	switch t {
+	case AssetTypeCharIcon:
+		return charIconDecodePx
+	case AssetTypeEmoteButton:
+		return emoteButtonDecodePx
+	default:
+		return 0
+	}
+}
+
+// downscaleDecoded rescales every frame to target×target (the same stretch
+// the GPU performed when drawing the native texture into a square cell, so
+// visuals are unchanged) and releases the source buffers. No-op when the
+// canvas already fits.
+func downscaleDecoded(d *Decoded, target int) *Decoded {
+	if d.Width <= target && d.Height <= target {
+		return d
+	}
+	out := &Decoded{
+		Animated: d.Animated,
+		Width:    target,
+		Height:   target,
+		Frames:   make([]*image.RGBA, 0, len(d.Frames)),
+		Delays:   d.Delays,
+	}
+	for _, frame := range d.Frames {
+		small, token := newPooledRGBA(target, target)
+		xdraw.ApproxBiLinear.Scale(small, small.Rect, frame, frame.Rect, xdraw.Src, nil)
+		out.Frames = append(out.Frames, small)
+		if token != nil {
+			out.pooledPix = append(out.pooledPix, token)
+		}
+	}
+	d.Release()
+	return out
+}
 
 // boundedFrameCount truncates an animation to the frames whose decoded
 // bytes fit maxDecodedAssetBytes — never below one frame (a single canvas
@@ -169,6 +222,9 @@ func (p *DecoderPool) worker() {
 			if err != nil {
 				p.failed.Add(1)
 			} else {
+				if target := decodeTargetPx(req.Type); target > 0 {
+					d = downscaleDecoded(d, target)
+				}
 				p.decoded.Add(1)
 			}
 			req.OnDone(req.URL, d, err)

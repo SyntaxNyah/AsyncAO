@@ -31,22 +31,59 @@ all happen here.
 ## Asset pipeline (spec §8)
 
 ```
-Prefetch(base, type, prio)
+Prefetch(base, type, prio)            PrefetchWithFallback(base, altBase, ...)
   └─ fetch pool job (epoch-tagged; room change cancels speculation)
-       inflight dedup (one pass per base)
-       resolver.BuildCandidates(base, type, host)
-         learned hit → exactly 1 URL          ← atomic snapshot, no locks
-         miss        → FormatList(type)       ← zero-fallback default = 1 format
-       per candidate: T1 contains? → done
-                      T2 bytes?    → decode
-                      T3 disk?     → promote to T2 + learn + decode
-                      source fetch → T2 + async T3 + learn + decode
-       every candidate 404 + learned was used → invalidate + one full-list retry
-       still nothing → Warning{base, formats tried} → UI banner
-  decode pool: sniff magic bytes (never extensions) → RGBA frames (pooled px)
-  render pump: live-message uploads immediate; speculative ≤ 2 textures / 4 MiB per frame
+       inflight dedup (one pass per primary base)
+       T1 contains primary base? → done       ← textures key by BASE, so the
+                                                 check is by base, pre-chain
+       per base in {primary, alt}:
+         resolver.BuildCandidates(base, type, host)
+           learned hit → exactly 1 URL        ← atomic snapshot, no locks
+           miss        → FormatList(type)     ← zero-fallback default = 1 format
+         per candidate: T2 bytes?    → decode
+                        T3 disk?     → promote to T2 + learn + decode
+                        source fetch → T2 + async T3 + learn + decode
+         every candidate 404 + learned was used → invalidate + one full-list retry
+       still nothing → Warning{base, formats tried} → UI banner (12 s, courtroom
+                                                      + char select)
+  decode pool: sniff magic bytes (never extensions) → RGBA frames (pooled px),
+               animations truncated to maxDecodedAssetBytes (T1 budget / 2 —
+               a shorter loop beats an invisible sprite and a 250 MB RGBA
+               spike inside the 256 MiB process budget); fixed-cell types
+               (char icons → 64 px, emote buttons → 40 px) thumbnail at
+               decode, so a 500×500 pack icon costs ~16 KB of T1 instead of
+               ~1 MB and a 4000-char roster fits the texture budget whole
+  render pump: live-message uploads immediate; speculative ≤ 16 textures /
+               4 MiB per frame (bytes protect 16 ms; the count just bounds
+               tiny-upload bursts). A page the LRU refuses is destroyed +
+               reported, never leaked.
   audio types skip decode entirely: bytes → SDL_mixer (C decodes opus/ogg/mp3/wav)
 ```
+
+### Sprite name chain (AO2-Client `CharLayer::load_image`)
+
+Packs ship idle/talk sprites as `(a)<emote>`/`(b)<emote>` **or** as bare
+`<emote>` files (`1.webp`, `2.webp`, …). `Courtroom.begin` therefore uses
+`PrefetchWithFallback(prefixed, bare)`: the bare spelling is probed only
+after every format of the prefixed one 404s, the asset keeps the prefixed
+base as its identity (scene layers, T1 key), the 404 cache stops the extra
+probe from repeating inside its TTL, and once resident the T1 short-circuit
+costs zero probes. Extension learning is unaffected — whichever spelling
+hits records the host's format as usual.
+
+### Demand-driven loading (visible = demand, not speculation)
+
+Connect-time bursts are capped (`charIconWarmup` = 128): a 4000-character
+server would only shed itself out of the 256-slot low lane. Instead, the
+char grid and the emote picker demand exactly what is on screen: at most
+`charIconAskPerFrame` (32) submissions per frame from a shared budget, one
+re-ask per asset per `charIconRetryInterval` (2 s) — shed jobs are never
+re-run by the pool, so the cadence self-heals backpressure, and loaded
+textures stop asking via the store lookup that precedes every ask. The
+live scene gets the same treatment at HIGH priority (`healScenery`): an
+evicted background/desk re-demands on the same cadence, and the viewport
+holds the last-resident scenery (`syncAnimSticky`) until the replacement
+texture actually lands — a position flip never blanks the viewport.
 
 ## Cache tiers (§9)
 
@@ -105,12 +142,41 @@ lengths accumulate in a pooled scratch buffer copied out once.
 ## Protocol (§ + AO2-Client 2.11)
 
 WebSocket text frames; `HEADER#field#...#%` with `<num>/<percent>/<dollar>/<and>`
-escaping. Fast-loading handshake only (`decryptor→HI, ID→ID, FL, SI→RC, SC→RM,
-SM→RD, DONE`). MS parsing honors `MS_MINIMUM=15`, gates fields ≥ 15 on
+escaping. Fast-loading handshake only — and loading is **client-initiated**:
+`decryptor→HI, ID→ID, FL, PN→askchaa, SI→RC, SC→RM, SM→RD, DONE` (without
+askchaa every server waits forever; only the askchar2 paging is legacy).
+MS parsing honors `MS_MINIMUM=15`, gates fields ≥ 15 on
 `cccc_ic_support`, normalizes legacy emote mods, and parses pairing
 (`id^order`, `x&y` offsets) with AO2-Client's exact z-order semantics
 (`^0` = speaker in front). Outgoing MS reproduces AO2-Client's feature-gating
 ladder and its asymmetry (the server injects partner fields when relaying).
+
+## UI kit contract (`internal/ui`)
+
+Immediate-mode over one per-frame input snapshot — **order is law**:
+`BeginFrame` (clears the snapshot) → `HandleEvent` per polled SDL event →
+draw pass reads it. Feeding events before `BeginFrame` erases every click
+before any widget sees it (this shipped once; `TestInputSnapshotOrder`
+pins the contract). Mouse coordinates refresh from motion/button events,
+so a release hit-tests where it actually happened.
+
+- Clicks fire on left-button **release** over the widget.
+- Clipboard: Ctrl+V appends (flattened to one line), Ctrl+C copies,
+  Ctrl+X cuts — focused text field only; SDL keeps control chords out of
+  TEXTINPUT so nothing double-inserts.
+- `VScrollbar` is the only drag-aware widget: `Ctx` tracks the held left
+  button plus a drag-owner id, pressing the track centers the thumb there
+  (one click to the bottom of a 4000-char list), and its return value
+  clamps wheel scrolling to content.
+- `HoverPreview` (3 s dwell, right-click instant) pops the full sprite:
+  char select previews idle, the emote picker previews the TALKING (b)
+  sprite — what plays when the message sends.
+- Emote buttons draw `emotions/button<N>_off|_on` art (its own
+  `EmoteButton` asset type, WebP-first, Settings-toggleable) with the
+  `_off` art + accent ring standing in while `_on` streams.
+- Screens never do disk I/O on the render thread: theme-folder scans and
+  char.ini fetches run on goroutines and land via polled channels, like
+  the lobby fetch.
 
 ## Lobby data
 

@@ -383,3 +383,65 @@ func TestDecodeGIFTruncatesOversizedAnimation(t *testing.T) {
 		t.Error("truncated animation must stay flagged Animated")
 	}
 }
+
+// TestDecoderThumbnailsFixedCellTypes pins decode-time thumbnailing: types
+// drawn at fixed small cells (char icons, emote buttons) rescale to their
+// cell size inside the decode pool, so a 500×500 pack icon costs ~16 KB of
+// T1 instead of ~1 MB; every other type keeps its native size.
+func TestDecoderThumbnailsFixedCellTypes(t *testing.T) {
+	pool := NewDecoderPool(1)
+	defer pool.Close()
+
+	decode := func(data []byte, typ AssetType) *Decoded {
+		t.Helper()
+		done := make(chan *Decoded, 1)
+		ok := pool.Submit(DecodeRequest{
+			URL: "x", Data: data, Type: typ, PlayAnimations: true,
+			OnDone: func(_ string, d *Decoded, err error) {
+				if err != nil {
+					t.Errorf("decode failed: %v", err)
+				}
+				done <- d
+			},
+		})
+		if !ok {
+			t.Fatal("submit refused")
+		}
+		select {
+		case d := <-done:
+			return d
+		case <-time.After(managerWait):
+			t.Fatal("decode timed out")
+			return nil
+		}
+	}
+
+	big := encodePNG(t, 256, 256, color.RGBA{R: 9, G: 99, B: 199, A: 255})
+
+	icon := decode(big, AssetTypeCharIcon)
+	if icon.Width != charIconDecodePx || icon.Height != charIconDecodePx {
+		t.Errorf("char icon decoded to %dx%d, want %dx%d thumbnail",
+			icon.Width, icon.Height, charIconDecodePx, charIconDecodePx)
+	}
+	icon.Release()
+
+	button := decode(big, AssetTypeEmoteButton)
+	if button.Width != emoteButtonDecodePx {
+		t.Errorf("emote button decoded to %dx%d, want %d px thumbnail",
+			button.Width, button.Height, emoteButtonDecodePx)
+	}
+	button.Release()
+
+	sprite := decode(big, AssetTypeCharSprite)
+	if sprite.Width != 256 || sprite.Height != 256 {
+		t.Errorf("sprite decoded to %dx%d, want native 256x256", sprite.Width, sprite.Height)
+	}
+	sprite.Release()
+
+	// Native art already at cell size passes through untouched.
+	exact := decode(encodePNG(t, 40, 40, color.White), AssetTypeEmoteButton)
+	if exact.Width != 40 || exact.Height != 40 {
+		t.Errorf("native-size button rescaled to %dx%d", exact.Width, exact.Height)
+	}
+	exact.Release()
+}
