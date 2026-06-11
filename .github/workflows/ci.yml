@@ -99,6 +99,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      # setup-go only edits the *Windows* PATH and no longer exports GOROOT
+      # (that stopped at Go 1.9), while the msys2 shell rebuilds a minimal
+      # PATH of its own — so the toolchain is invisible in the build step.
+      # Publish GOROOT via GITHUB_ENV; non-PATH env vars do cross into MSYS2.
+      - name: Expose GOROOT to the MSYS2 shell
+        shell: pwsh
+        run: |
+          "GOROOT=$(go env GOROOT)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build + bundle DLLs
         run: |
           export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
