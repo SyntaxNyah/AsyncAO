@@ -2,7 +2,7 @@
 
 **A maximum-performance Attorney Online 2 client written in Go.** Zero-fallback
 asset streaming, learned formats, three-tier caching, lock-free hot paths, a
-zero-allocation render loop — and full AO2 ≥ 2.6/2.8 pairing.
+zero-allocation render loop  and full AO2 ≥ 2.6/2.8 pairing.
 
 Made by **SyntaxNyah**, because people shouldn't have to download 20 gigabytes
 of files to play, client lookups shouldn't take ages, and the stock AO2 client
@@ -71,6 +71,7 @@ asyncao -debug          # pprof on localhost:6060
 All credit to the original Attorney Online developers — AsyncAO exists because
 of their work and follows their protocol and conventions:
 
+- **FanatSors** — creator of the original Attorney Online. 
 - **OmniTroid** — creator of the original Attorney Online 2 client. 
 - **The [AttorneyOnline](https://github.com/AttorneyOnline) organization** and
   every **[AO2-Client](https://github.com/AttorneyOnline/AO2-Client)**
@@ -81,7 +82,7 @@ of their work and follows their protocol and conventions:
   model reference
 - The whole AO community at [aceattorneyonline.com](https://aceattorneyonline.com)
 
-Thank you for two decades of courtroom drama.
+Thank you everyone for spending the time to read this.
 
 ## Contributing
 
