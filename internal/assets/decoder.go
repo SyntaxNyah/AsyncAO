@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/kettek/apng"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 )
 
 const (
@@ -32,7 +34,37 @@ const (
 	// defaultZeroFrameDelay replaces zero/negative frame delays, matching
 	// browser & webAO handling of broken assets.
 	defaultZeroFrameDelay = 100 * time.Millisecond
+
+	// rgbaBytesPerPixel is the decoded pixel size (image.RGBA).
+	rgbaBytesPerPixel = 4
+
+	// maxDecodedAssetBytes caps ONE asset's decoded payload (Σ w×h×4 across
+	// frames) at half the T1 texture budget. Pages above the whole budget
+	// can never become resident (ByteBudgetLRU rejects them) and one page
+	// near it would evict everything else — long community animations
+	// (hundreds of full-canvas frames) hit exactly that and rendered as
+	// invisible characters. Decoders truncate to the frames that fit: a
+	// shorter loop beats a sprite that never shows up.
+	maxDecodedAssetBytes = cache.DefaultT1BudgetBytes / 2
 )
+
+// boundedFrameCount truncates an animation to the frames whose decoded
+// bytes fit maxDecodedAssetBytes — never below one frame (a single canvas
+// larger than the budget fails at upload with a clear error instead).
+func boundedFrameCount(width, height, frames int) int {
+	canvasBytes := width * height * rgbaBytesPerPixel
+	if canvasBytes <= 0 {
+		return frames
+	}
+	maxFrames := maxDecodedAssetBytes / canvasBytes
+	if maxFrames < 1 {
+		maxFrames = 1
+	}
+	if frames > maxFrames {
+		return maxFrames
+	}
+	return frames
+}
 
 // DecodeWorkers returns the §8 worker-count formula.
 func DecodeWorkers() int {
@@ -257,7 +289,7 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 	}
 
 	animated := len(g.Image) > 1
-	frameCount := len(g.Image)
+	frameCount := boundedFrameCount(width, height, len(g.Image))
 	if !playAnimations {
 		frameCount = 1
 	}
@@ -368,7 +400,7 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 	}
 
 	animated := len(animFrames) > 1
-	frameCount := len(animFrames)
+	frameCount := boundedFrameCount(width, height, len(animFrames))
 	if !playAnimations {
 		frameCount = 1
 	}

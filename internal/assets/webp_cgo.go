@@ -105,7 +105,7 @@ func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
 		return nil, fmt.Errorf("assets: webp anim reports zero frames")
 	}
 
-	frameCount := frameTotal
+	frameCount := boundedFrameCount(width, height, frameTotal)
 	if !playAnimations {
 		frameCount = 1
 	}

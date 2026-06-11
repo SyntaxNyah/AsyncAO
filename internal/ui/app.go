@@ -48,6 +48,17 @@ const (
 	// grid re-demands on this cadence until the texture arrives (or keeps
 	// hitting the client's 404 cache, which never re-probes inside its TTL).
 	charIconRetryInterval = 2 * time.Second
+
+	// warnShowDuration keeps a missing-asset warning readable without
+	// turning the HUD into a ticker.
+	warnShowDuration = 12 * time.Second
+)
+
+// Log panel tabs (courtroom right column).
+const (
+	logTabLog = iota
+	logTabMusic
+	logTabAreas
 )
 
 // Deps wires the app to the engine singletons built in main.
@@ -114,9 +125,14 @@ type App struct {
 	icLog       []string
 	oocLog      []string
 	musicScroll int32
-	showMusic   bool
+	areaScroll  int32
+	logTab      int
 	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
 	emoteAsk []time.Time
+
+	// last missing-asset warning surfaced to the user (spec §4).
+	warnLine string
+	warnAt   time.Time
 
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
@@ -451,6 +467,7 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 // Frame runs one UI frame: connection pump, screen logic, drawing.
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pumpConnection()
+	a.drainWarnings()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
 		a.healScenery()
@@ -473,6 +490,29 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	case ScreenAbout:
 		a.drawAbout(winW, winH)
 	}
+}
+
+// drainWarnings empties the manager's missing-asset lane (bounded by its
+// channel cap), keeping the newest for the §4 on-screen banner.
+func (a *App) drainWarnings() {
+	for {
+		select {
+		case w := <-a.d.Manager.Warnings():
+			line := "Missing asset: " + w.Base
+			if len(w.Tried) > 0 {
+				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"
+			}
+			a.warnLine = clampLine(line)
+			a.warnAt = time.Now()
+		default:
+			return
+		}
+	}
+}
+
+// warnActive reports whether the warning banner should still draw.
+func (a *App) warnActive() bool {
+	return a.warnLine != "" && time.Since(a.warnAt) < warnShowDuration
 }
 
 // healScenery re-demands the scene's background/desk when T1 lost them

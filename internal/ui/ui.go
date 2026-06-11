@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"strings"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -27,6 +28,12 @@ const (
 
 	scrollStepPx = 32
 	caretBlink   = 500 * time.Millisecond
+
+	// scrollThumbMinPx keeps the scrollbar thumb grabbable on long lists.
+	scrollThumbMinPx = 24
+	// scrollGrabSlopPx widens the scrollbar's hit zone beyond its drawn
+	// width so drags don't drop when the cursor drifts.
+	scrollGrabSlopPx = 6
 )
 
 // Palette: dark chrome, AO-flavored accents, and the lobby tier colors.
@@ -72,6 +79,11 @@ type Ctx struct {
 	backspace      bool
 	enter          bool
 	tabPressed     bool
+	pasted         string // Ctrl+V clipboard text (flattened to one line)
+	copyReq        bool   // Ctrl+C: focused field copies its value
+	cutReq         bool   // Ctrl+X: focused field copies, then clears
+	mouseDown      bool   // left button currently held (event-tracked)
+	dragID         string // widget owning the active drag ("" = none)
 
 	focusID  string
 	caretOn  bool
@@ -125,8 +137,14 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.backspace = false
 	c.enter = false
 	c.tabPressed = false
+	c.pasted = ""
+	c.copyReq = false
+	c.cutReq = false
 	x, y, _ := sdl.GetMouseState()
 	c.mouseX, c.mouseY = x, y
+	if !c.mouseDown {
+		c.dragID = "" // drags end with the button release
+	}
 
 	c.caretAcc += dt
 	if c.caretAcc >= caretBlink {
@@ -142,10 +160,16 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 		c.mouseX, c.mouseY = e.X, e.Y
 	case *sdl.MouseButtonEvent:
 		c.mouseX, c.mouseY = e.X, e.Y
-		if e.Type == sdl.MOUSEBUTTONUP {
+		switch e.Type {
+		case sdl.MOUSEBUTTONDOWN:
+			if e.Button == sdl.BUTTON_LEFT {
+				c.mouseDown = true
+			}
+		case sdl.MOUSEBUTTONUP:
 			switch e.Button {
 			case sdl.BUTTON_LEFT:
 				c.clicked = true
+				c.mouseDown = false
 			case sdl.BUTTON_RIGHT:
 				c.rightClicked = true
 			}
@@ -155,17 +179,39 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 	case *sdl.TextInputEvent:
 		c.typed += e.GetText()
 	case *sdl.KeyboardEvent:
-		if e.Type == sdl.KEYDOWN {
+		if e.Type != sdl.KEYDOWN {
+			return
+		}
+		if e.Keysym.Mod&sdl.KMOD_CTRL != 0 {
+			// Clipboard chords. SDL filters control chords out of
+			// TEXTINPUT, so there is no double insert. GetClipboardText is
+			// an SDL call — legal here, HandleEvent runs render-thread.
 			switch e.Keysym.Sym {
-			case sdl.K_BACKSPACE:
-				c.backspace = true
-			case sdl.K_RETURN, sdl.K_KP_ENTER:
-				c.enter = true
-			case sdl.K_TAB:
-				c.tabPressed = true
+			case sdl.K_v:
+				if text, err := sdl.GetClipboardText(); err == nil && text != "" {
+					c.pasted += flattenClipboard(text)
+				}
+			case sdl.K_c:
+				c.copyReq = true
+			case sdl.K_x:
+				c.cutReq = true
 			}
+			return
+		}
+		switch e.Keysym.Sym {
+		case sdl.K_BACKSPACE:
+			c.backspace = true
+		case sdl.K_RETURN, sdl.K_KP_ENTER:
+			c.enter = true
+		case sdl.K_TAB:
+			c.tabPressed = true
 		}
 	}
+}
+
+// flattenClipboard makes pasted text safe for the kit's single-line fields.
+func flattenClipboard(s string) string {
+	return strings.NewReplacer("\r\n", " ", "\r", " ", "\n", " ", "\t", " ").Replace(s)
 }
 
 // hovering reports whether the mouse is inside r.
@@ -333,6 +379,18 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 		if c.typed != "" {
 			value += c.typed
 		}
+		if c.pasted != "" {
+			value += c.pasted
+		}
+		if c.copyReq && value != "" {
+			_ = sdl.SetClipboardText(value)
+		}
+		if c.cutReq {
+			if value != "" {
+				_ = sdl.SetClipboardText(value)
+			}
+			value = ""
+		}
 		if c.backspace && len(value) > 0 {
 			runes := []rune(value)
 			value = string(runes[:len(runes)-1])
@@ -359,6 +417,58 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 		c.Fill(sdl.Rect{X: caretX, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
 	}
 	return value, enter
+}
+
+// VScrollbar draws a proportional vertical scrollbar and returns the scroll
+// offset, updated by thumb drags: pressing anywhere on the track centers
+// the thumb there, so one click reaches any point — including the very
+// bottom of a 4000-character list. content and visible are pixel heights;
+// the result is clamped to [0, content-visible] (use it to clamp wheel
+// scrolling too). Draws nothing when everything fits.
+func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int32) int32 {
+	maxScroll := content - visible
+	if maxScroll <= 0 {
+		return 0
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+
+	thumbH := track.H * visible / content
+	if thumbH < scrollThumbMinPx {
+		thumbH = scrollThumbMinPx
+	}
+	if thumbH > track.H {
+		thumbH = track.H
+	}
+	span := track.H - thumbH
+
+	grab := sdl.Rect{X: track.X - scrollGrabSlopPx, Y: track.Y, W: track.W + 2*scrollGrabSlopPx, H: track.H}
+	if c.mouseDown && (c.dragID == id || (c.dragID == "" && c.hovering(grab))) {
+		c.dragID = id
+		if span > 0 {
+			pos := c.mouseY - track.Y - thumbH/2
+			if pos < 0 {
+				pos = 0
+			}
+			if pos > span {
+				pos = span
+			}
+			scroll = pos * maxScroll / span
+		}
+	}
+
+	c.Fill(track, ColPanel)
+	thumbY := track.Y + scroll*span/maxScroll
+	col := ColPanelHi
+	if c.dragID == id || c.hovering(grab) {
+		col = ColAccent
+	}
+	c.Fill(sdl.Rect{X: track.X, Y: thumbY, W: track.W, H: thumbH}, col)
+	return scroll
 }
 
 // HoverPreview tracks dwell time on a widget id; returns true when the

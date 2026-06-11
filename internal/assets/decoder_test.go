@@ -320,3 +320,66 @@ func TestPixPoolOversizeUnpooled(t *testing.T) {
 	}
 	putPixBuf(token) // must be a no-op
 }
+
+// TestBoundedFrameCount pins the per-asset decode budget: animations
+// truncate to the frames whose decoded bytes fit maxDecodedAssetBytes
+// (community sprite packs ship hundreds of full-canvas frames; unbounded,
+// one page outgrew the whole T1 budget and the character became invisible
+// when its owner talked). The clamp never drops below one frame.
+func TestBoundedFrameCount(t *testing.T) {
+	const w, h = 1000, 1000 // 4 MB per decoded frame
+	fits := maxDecodedAssetBytes / (w * h * rgbaBytesPerPixel)
+	if fits < 2 {
+		t.Fatalf("test geometry no longer fits the budget (fits=%d)", fits)
+	}
+	cases := []struct {
+		name           string
+		w, h, in, want int
+	}{
+		{"under budget untouched", w, h, fits - 1, fits - 1},
+		{"exactly at budget", w, h, fits, fits},
+		{"over budget truncated", w, h, fits + 50, fits},
+		{"giant canvas clamps to one frame", 8000, 8000, 10, 1},
+		{"degenerate canvas left alone", 0, 0, 7, 7},
+	}
+	for _, tc := range cases {
+		if got := boundedFrameCount(tc.w, tc.h, tc.in); got != tc.want {
+			t.Errorf("%s: boundedFrameCount(%d,%d,%d) = %d, want %d",
+				tc.name, tc.w, tc.h, tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestDecodeGIFTruncatesOversizedAnimation runs a real decode through the
+// budget: a GIF whose frame count exceeds the cap decodes to exactly the
+// bounded frame count, still flagged Animated.
+func TestDecodeGIFTruncatesOversizedAnimation(t *testing.T) {
+	const w, h = 500, 500
+	fits := maxDecodedAssetBytes / (w * h * rgbaBytesPerPixel)
+	frames := fits + 3
+
+	g := &gif.GIF{Config: image.Config{Width: w, Height: h}}
+	pal := color.Palette{color.Black, color.White}
+	for i := 0; i < frames; i++ {
+		img := image.NewPaletted(image.Rect(0, 0, w, h), pal)
+		g.Image = append(g.Image, img)
+		g.Delay = append(g.Delay, 5)
+		g.Disposal = append(g.Disposal, gif.DisposalNone)
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := DecodeImage(buf.Bytes(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Release()
+	if len(d.Frames) != fits {
+		t.Errorf("decoded %d frames, want truncation to %d", len(d.Frames), fits)
+	}
+	if !d.Animated {
+		t.Error("truncated animation must stay flagged Animated")
+	}
+}

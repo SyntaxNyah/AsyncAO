@@ -26,6 +26,9 @@ const (
 	previewMax int32 = 360
 	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
 	emoteBtnCell int32 = 40
+	// scrollBarW/Gap reserve the scrollbar lane beside scrolling lists.
+	scrollBarW   int32 = 12
+	scrollBarGap int32 = 6
 )
 
 func osHostname() (string, error) { return os.Hostname() }
@@ -221,18 +224,42 @@ func (a *App) drawCharSelect(w, h int32) {
 		a.enterCourtroom()
 		return
 	}
+	if a.room != nil {
+		// Re-picking from the courtroom ("Change character"): allow backing
+		// out without dropping the session.
+		if c.Button(sdl.Rect{X: pad + 366, Y: pad + 36, W: 90, H: btnH}, "Back") {
+			a.screen = ScreenCourtroom
+			return
+		}
+	}
+	if a.warnActive() {
+		c.LabelClipped(pad+470, pad+42, w-pad-470-130, a.warnLine, ColDanger)
+	}
 
 	gridTop := pad + 76
-	a.charScroll -= c.wheelY * scrollStepPx
-	if a.charScroll < 0 {
-		a.charScroll = 0
-	}
-	cols := (w - 2*pad) / (iconCell + iconGap)
+	gridW := w - 2*pad - scrollBarW - scrollBarGap
+	cols := gridW / (iconCell + iconGap)
 	if cols < 1 {
 		cols = 1
 	}
 
 	query := strings.ToLower(strings.TrimSpace(a.charSearch))
+	// Pre-count matches so the scrollbar knows the content height; the
+	// draw loop below walks the same list anyway.
+	matches := int32(0)
+	for i := range a.sess.Chars {
+		if query == "" || strings.Contains(strings.ToLower(a.sess.Chars[i].Name), query) {
+			matches++
+		}
+	}
+	cellH := iconCell + iconGap + 14
+	contentH := (matches + cols - 1) / cols * cellH
+	visibleH := h - gridTop - pad
+
+	a.charScroll -= c.wheelY * scrollStepPx
+	track := sdl.Rect{X: w - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
+	a.charScroll = c.VScrollbar("charscroll", track, a.charScroll, contentH, visibleH)
+
 	col, row := int32(0), int32(0)
 	previewRequested := false
 	for i := range a.sess.Chars {
@@ -241,7 +268,7 @@ func (a *App) drawCharSelect(w, h int32) {
 			continue
 		}
 		x := pad + col*(iconCell+iconGap)
-		y := gridTop + row*(iconCell+iconGap+14) - a.charScroll
+		y := gridTop + row*cellH - a.charScroll
 		cell := sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell}
 		if y > -iconCell && y < h {
 			a.drawCharCell(slot, cell, i)
@@ -384,18 +411,23 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
 	c.Border(r, ColPanelHi)
-	tab := r.W / 2
-	icTab := sdl.Rect{X: r.X, Y: r.Y, W: tab, H: btnH}
-	musicTab := sdl.Rect{X: r.X + tab, Y: r.Y, W: r.W - tab, H: btnH}
-	if c.Button(icTab, "Log") {
-		a.showMusic = false
+	tab := r.W / 3
+	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: tab, H: btnH}, "Log") {
+		a.logTab = logTabLog
 	}
-	if c.Button(musicTab, "Music") {
-		a.showMusic = true
+	if c.Button(sdl.Rect{X: r.X + tab, Y: r.Y, W: tab, H: btnH}, "Music") {
+		a.logTab = logTabMusic
+	}
+	if c.Button(sdl.Rect{X: r.X + 2*tab, Y: r.Y, W: r.W - 2*tab, H: btnH}, "Areas") {
+		a.logTab = logTabAreas
 	}
 	inner := sdl.Rect{X: r.X + 4, Y: r.Y + btnH + 4, W: r.W - 8, H: r.H - btnH - 8}
-	if a.showMusic {
+	switch a.logTab {
+	case logTabMusic:
 		a.drawMusicList(inner)
+		return
+	case logTabAreas:
+		a.drawAreaList(inner)
 		return
 	}
 	lineH := int32(a.ctx.font.Height()) + 2
@@ -411,25 +443,60 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	}
 }
 
+// drawAreaList lists the server's areas; clicking one requests the room
+// swap. AO area transfers ride the MC packet with the area name in place
+// of a track (AO2-Client sends areas from the same list — the courtroom's
+// isAreaTransfer filter keeps them out of the audio path client-side).
+func (a *App) drawAreaList(r sdl.Rect) {
+	c := a.ctx
+	if len(a.sess.Areas) == 0 {
+		c.Label(r.X+4, r.Y+4, "Server reported no areas.", ColTextDim)
+		return
+	}
+	a.areaScroll -= c.wheelY * scrollStepPx
+	lineH := rowH
+	contentH := int32(len(a.sess.Areas)) * lineH
+	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
+	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
+	y := r.Y - a.areaScroll
+	for _, area := range a.sess.Areas {
+		if y > r.Y+r.H {
+			break
+		}
+		if y >= r.Y-lineH {
+			row := sdl.Rect{X: r.X, Y: y, W: r.W - scrollBarW - scrollBarGap, H: lineH - 4}
+			hover := c.hovering(row)
+			if hover {
+				c.Fill(row, ColPanelHi)
+			}
+			c.LabelClipped(r.X+4, y+4, row.W-8, area, ColText)
+			if hover && c.clicked {
+				a.sess.RequestMusic(area) // area transfer rides MC
+			}
+		}
+		y += lineH
+	}
+}
+
 func (a *App) drawMusicList(r sdl.Rect) {
 	c := a.ctx
 	a.musicScroll -= c.wheelY * scrollStepPx
-	if a.musicScroll < 0 {
-		a.musicScroll = 0
-	}
-	lineH := int32(rowH)
+	lineH := rowH
+	contentH := int32(len(a.sess.Music)) * lineH
+	bar := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
+	a.musicScroll = c.VScrollbar("musicscroll", bar, a.musicScroll, contentH, r.H)
 	y := r.Y - a.musicScroll
 	for _, track := range a.sess.Music {
 		if y > r.Y+r.H {
 			break
 		}
 		if y >= r.Y-lineH {
-			row := sdl.Rect{X: r.X, Y: y, W: r.W, H: lineH - 4}
+			row := sdl.Rect{X: r.X, Y: y, W: r.W - scrollBarW - scrollBarGap, H: lineH - 4}
 			hover := c.hovering(row)
 			if hover {
 				c.Fill(row, ColPanelHi)
 			}
-			c.LabelClipped(r.X+4, y+4, r.W-8, track, ColText)
+			c.LabelClipped(r.X+4, y+4, row.W-8, track, ColText)
 			if hover && c.clicked {
 				a.sess.RequestMusic(track)
 			}
@@ -460,6 +527,12 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.showPair = !a.showPair
 	}
 	x += 76
+	if c.Button(sdl.Rect{X: x, Y: y, W: 100, H: btnH}, "Character") {
+		// Back to char select; the session stays, the server re-picks via
+		// CC → PV and EventCharPicked rebuilds the courtroom.
+		a.screen = ScreenCharSelect
+	}
+	x += 106
 	if c.Button(sdl.Rect{X: x, Y: y, W: 90, H: btnH}, "Settings") {
 		a.prevScreen = ScreenCourtroom
 		a.screen = ScreenSettings
@@ -500,6 +573,11 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// OOC log line.
 	if len(a.oocLog) > 0 {
 		c.LabelClipped(pad+w/2, oocY+4, w/2-2*pad, a.oocLog[len(a.oocLog)-1], ColTextDim)
+	}
+	// Missing-asset warning (spec §4: visible in-client, names what was
+	// tried so "enable fallbacks" is an informed fix, not a guess).
+	if a.warnActive() {
+		c.LabelClipped(pad, oocY-20, w-2*pad, a.warnLine, ColDanger)
 	}
 
 	if a.showPair {

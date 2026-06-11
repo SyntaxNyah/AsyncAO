@@ -5,6 +5,7 @@
 package render
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -132,7 +133,15 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 		page.Frames = append(page.Frames, tex)
 		page.bytes += int64(len(frame.Pix))
 	}
-	s.t1.Add(base, page, page.bytes)
+	if !s.t1.Add(base, page, page.bytes) {
+		// Bigger than the entire T1 budget: the LRU refuses it, and before
+		// this check the freshly created textures leaked silently — sprites
+		// of that size simply never appeared. The decode-side cap
+		// (assets.maxDecodedAssetBytes) keeps this branch unreachable for
+		// well-formed assets; pathological ones get a loud error instead.
+		page.destroy()
+		return fmt.Errorf("render: %s decoded to %d bytes, above the %d-byte T1 budget", base, page.bytes, int64(T1BudgetBytes))
+	}
 	s.generation.Add(1)
 	return nil
 }
