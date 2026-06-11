@@ -149,6 +149,7 @@ type App struct {
 	sidePref   string    // OUR side (char.ini default, /pos override)
 	lastPing   time.Time // CH keepalive pacing
 	lastICSend time.Time // chat_ratelimit window
+	iniWarmed  string    // last char.ini hover-warmed (dedupe)
 	// pair offset edit buffers (typed text commits on valid parse)
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
@@ -690,6 +691,22 @@ func (a *App) demandAsset(stamps *[]time.Time, n, idx int, base string, t assets
 	a.d.Manager.Prefetch(base, t, network.PriorityLow)
 }
 
+// charINIURL builds a character's char.ini location.
+func (a *App) charINIURL(name string) string {
+	return a.urls.Origin() + "characters/" + strings.ToLower(name) + "/char.ini"
+}
+
+// warmCharINI speculatively fetches a hovered character's char.ini so the
+// eventual pick costs a memory hit instead of an RTT. One submit per
+// hovered name; the manager dedupes and the 404 cache absorbs misses.
+func (a *App) warmCharINI(name string) {
+	if name == "" || name == a.iniWarmed || a.urls.Origin() == "" {
+		return
+	}
+	a.iniWarmed = name
+	a.d.Manager.PrefetchRaw(a.charINIURL(name), network.PriorityLow) // raw text: char.ini
+}
+
 // loadCharINI fetches the ACTIVE character's char.ini for the emote list
 // (the iniswap override when set).
 func (a *App) loadCharINI() {
@@ -697,7 +714,7 @@ func (a *App) loadCharINI() {
 	if a.sess == nil || name == "" {
 		return
 	}
-	url := a.urls.Origin() + "characters/" + strings.ToLower(name) + "/char.ini"
+	url := a.charINIURL(name)
 	a.charINIBusy = true
 	go func() {
 		data, err := a.d.Manager.FetchRaw(context.Background(), url)

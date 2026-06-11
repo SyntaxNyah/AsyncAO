@@ -378,8 +378,11 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		c.Label(cell.X+6, cell.Y+iconCell/2-8, "taken", ColDanger)
 	}
 	c.LabelClipped(cell.X, cell.Y+iconCell+1, iconCell, slot.Name, ColTextDim)
-	if c.hovering(cell) && c.clicked && !slot.Taken {
-		a.sess.PickCharacter(idx)
+	if c.hovering(cell) {
+		a.warmCharINI(slot.Name) // pick = memory hit, not an RTT
+		if c.clicked && !slot.Taken {
+			a.sess.PickCharacter(idx)
+		}
 	}
 }
 
@@ -760,8 +763,11 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		a.previewBase = a.urls.Emote(name, "normal", courtroom.EmoteIdle)
 		a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 	}
-	if c.hovering(cell) && c.clicked {
-		a.wearFromMenu(name) // courtroom: instant swap; char select: claim a slot first
+	if c.hovering(cell) {
+		a.warmCharINI(name) // wearing it = memory hit, not an RTT
+		if c.clicked {
+			a.wearFromMenu(name) // courtroom: instant swap; char select: claim a slot first
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"context"
 	"image/color"
 	"net/http"
 	"net/http/httptest"
@@ -507,5 +508,40 @@ func TestManagerInflightDedup(t *testing.T) {
 	}
 	if got := cs.total(); got != 1 {
 		t.Errorf("upstream probes = %d, want 1 (inflight dedup + singleflight)", got)
+	}
+}
+
+// TestManagerPrefetchRawWarmsTiers pins the decode-free raw lane: one
+// network probe lands the payload in T2 + disk, and a later synchronous
+// FetchRaw is a pure memory hit (hover-warm → instant character pick).
+func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
+	ini := []byte("[Options]\nside = def\n")
+	cs := newCountingServer(t, map[string][]byte{
+		"/characters/tung/char.ini": ini,
+	})
+	rig := newRig(t, network.NewClient(), false)
+	url := cs.srv.URL + "/characters/tung/char.ini"
+
+	rig.manager.PrefetchRaw(url, network.PriorityLow) // raw text: char.ini
+	deadline := time.Now().Add(managerWait)
+	for {
+		if _, ok := rig.t2.Get(url); ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("PrefetchRaw never landed in T2")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := cs.total(); got != 1 {
+		t.Fatalf("probes = %d, want 1", got)
+	}
+
+	data, err := rig.manager.FetchRaw(context.Background(), url)
+	if err != nil || string(data) != string(ini) {
+		t.Fatalf("FetchRaw after warm: %v / %q", err, data)
+	}
+	if got := cs.total(); got != 1 {
+		t.Fatalf("probes after warmed FetchRaw = %d, want still 1 (memory hit)", got)
 	}
 }

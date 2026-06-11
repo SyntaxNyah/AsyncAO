@@ -13,7 +13,7 @@
         │ decode pool    │      │ asset manager    │      │ (same manager)   │
         │ max(2,NumCPU/2)│◄─────┤ tier walk on     │      └──────────────────┘
         │ magic sniffing │ jobs │ fetch pool       │
-        └────────────────┘      │ workers (8, two  │
+        └────────────────┘      │ workers (16, two │
                                 │ lanes, epochs)   │
                                 └───────▲──────────┘
                                         │ singleflight HTTP / local mounts
@@ -85,6 +85,11 @@ evicted background/desk re-demands on the same cadence, and the viewport
 holds the last-resident scenery (`syncAnimSticky`) until the replacement
 texture actually lands — a position flip never blanks the viewport.
 
+Hovering any character cell (either grid, the wardrobe too) warms its
+char.ini through the decode-free raw lane (`Manager.PrefetchRaw`:
+pool-bounded, inflight-deduped, T2 + disk), so the eventual pick loads
+its emote list from memory instead of paying an RTT.
+
 ## Cache tiers (§9)
 
 | Tier | Holds | Budget | Keying | Eviction |
@@ -126,8 +131,11 @@ per `<host>|<type>` and survive restarts (warm start = N probes for N assets).
   HTTP/1.1 keep-alive.
 - DNS pre-resolve at server connect + lazy 5 min refresh inside the dialer.
 - Per-host exponential backoff (500 ms → 30 s) on transport failure.
-- Fetch pool: 8 workers, HIGH lane (live message — blocks producer briefly,
-  never sheds) and LOW lane (speculation — sheds **oldest** job when full).
+- Fetch pool: 16 workers (fetches are RTT-bound; the transport is sized
+  for 16 conns/host and h2 bases multiplex them over one connection —
+  spec §7's original 8 halved cold-viewport fill for nothing), HIGH lane
+  (live message — blocks producer briefly, never sheds) and LOW lane
+  (speculation — sheds **oldest** job when full).
   Epoch counter cancels queued jobs on room/server change; cancelled jobs
   still get `Run(stale=true)` so no waiter hangs.
 

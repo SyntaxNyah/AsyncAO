@@ -225,6 +225,47 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 	}
 }
 
+// PrefetchRaw warms T2/T3 for a COMPLETE URL without decoding — text
+// assets like char.ini. Hover-driven: picking a character then costs a
+// memory hit instead of an RTT. Pool-bounded, inflight-deduped, silent
+// on 404 (the negative cache absorbs retries).
+func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
+	if url == "" {
+		return
+	}
+	m.pool.Submit(prio, network.Job{
+		ID:    m.pool.NextID(),
+		Epoch: m.pool.Epoch(),
+		Run: func(stale bool) {
+			if stale {
+				return
+			}
+			if _, loaded := m.inflight.LoadOrStore(url, struct{}{}); loaded {
+				return
+			}
+			defer m.inflight.Delete(url)
+			if _, ok := m.t2.Get(url); ok {
+				m.t2Hits.Add(1)
+				return
+			}
+			if !m.localMode {
+				if data, ok := m.disk.Get(url); ok {
+					m.diskHits.Add(1)
+					m.t2.Add(url, data, int64(len(data)))
+					return
+				}
+			}
+			if data, err := m.client.Fetch(context.Background(), url); err == nil {
+				m.netFetches.Add(1)
+				m.t2.Add(url, data, int64(len(data)))
+				if !m.localMode {
+					m.disk.Put(url, data)
+				}
+			}
+		},
+	})
+}
+
 // FetchRaw synchronously fetches a complete URL through T2 → T3 → source
 // without decoding — for text assets like char.ini. Call it off the render
 // thread (UI screens use a goroutine).

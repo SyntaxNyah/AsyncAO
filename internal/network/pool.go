@@ -6,8 +6,12 @@ import (
 )
 
 const (
-	// DefaultWorkers is the fetch worker count (spec §7).
-	DefaultWorkers = 8
+	// DefaultWorkers sizes the fetch pool. Spec §7 started this at 8, but
+	// fetches are RTT-bound, not CPU-bound: the transport is already sized
+	// for 16 conns/host, and modern AO bases speak HTTP/2 (16 streams
+	// multiplex over one connection). 16 in-flight fetches roughly halves
+	// cold-viewport fill on 600-cell icon grids.
+	DefaultWorkers = 16
 	// highLaneCap and lowLaneCap bound the two priority lanes. The low lane
 	// holds speculative prefetches and sheds its OLDEST job when full; the
 	// high lane briefly blocks the producer instead — results are never
