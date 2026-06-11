@@ -20,6 +20,10 @@ var textColors = []sdl.Color{
 	{R: 192, G: 192, B: 192, A: 255}, // 8 gray
 }
 
+// TextColorCount is the number of AO chat colors the palette defines —
+// the IC color cycler wraps at this (MS text_color wire values 0..N-1).
+var TextColorCount = len(textColors)
+
 // TextColor maps an AO color index to RGBA (out of range → white).
 func TextColor(index int) sdl.Color {
 	if index < 0 || index >= len(textColors) {

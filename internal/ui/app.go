@@ -144,6 +144,13 @@ type App struct {
 	// without it a 4000-char grid pays two ToLower allocations per char
 	// per frame while a query is active. Invalidated on EventCharsUpdated.
 	charLower []string
+	// Generation-keyed texture page caches (the viewport's animState
+	// trick applied to grids): while the store generation is unchanged a
+	// grid redraw costs ZERO LRU lookups/locks for resident icons.
+	iconPages    []*render.TexturePage
+	iconPagesGen uint64
+	iniPages     []*render.TexturePage
+	iniPagesGen  uint64
 
 	// --- courtroom chrome state ---
 	icInput    string
@@ -153,6 +160,7 @@ type App struct {
 	lastPing   time.Time // CH keepalive pacing
 	lastICSend time.Time // chat_ratelimit window
 	iniWarmed  string    // last char.ini hover-warmed (dedupe)
+	icColor    int       // outgoing MS text_color (swatch cycler)
 	// pair offset edit buffers (typed text commits on valid parse)
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
@@ -704,6 +712,37 @@ func parseIniswapList(data []byte) []string {
 		return strings.ToLower(names[i]) < strings.ToLower(names[j])
 	})
 	return names
+}
+
+// cachedPage resolves a grid cell's texture page through a
+// generation-keyed cache: pointers stay valid exactly while the store
+// generation holds (evictions bump it, and evicted textures only destroy
+// via the queue after the bump — same safety argument as the viewport's
+// animState). Slices clear in place on a generation move (no per-move
+// allocation; reallocate only when the list length changes).
+func (a *App) cachedPage(pages *[]*render.TexturePage, gen *uint64, n, idx int, base string) (*render.TexturePage, bool) {
+	g := a.d.Store.Generation()
+	if len(*pages) != n {
+		*pages = make([]*render.TexturePage, n)
+		*gen = g
+	} else if *gen != g {
+		for i := range *pages {
+			(*pages)[i] = nil
+		}
+		*gen = g
+	}
+	if idx < 0 || idx >= n {
+		return nil, false
+	}
+	if p := (*pages)[idx]; p != nil {
+		return p, true
+	}
+	page, ok := a.d.Store.Get(base)
+	if !ok {
+		return nil, false
+	}
+	(*pages)[idx] = page
+	return page, true
 }
 
 // demandAsset paces one visible cell's asset demand: shared per-frame

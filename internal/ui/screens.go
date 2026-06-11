@@ -361,7 +361,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	c := a.ctx
 	c.Fill(cell, ColPanel)
 	base := a.urls.CharIcon(slot.Name)
-	if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.iconPages, &a.iconPagesGen, len(a.sess.Chars), idx, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 	} else {
 		// Not resident: demand it (visible = not speculation) and draw the
@@ -614,17 +614,16 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 		y += lineH
 	}
 
-	// Identity fields.
+	// Identity fields: full width (side labels squished the boxes in the
+	// narrow right column) — the placeholders carry the labels.
 	fy := r.Y + r.H - fieldsH + 4
-	c.Label(r.X, fy+4, "Showname:", ColTextDim)
 	shown := a.d.Prefs.SavedShowname()
-	if next, _ := c.TextField("icshowname", sdl.Rect{X: r.X + 90, Y: fy, W: r.W - 94, H: fH}, shown, "IC showname (blank = character name)"); next != shown {
+	if next, _ := c.TextField("icshowname", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, shown, "IC showname (blank = character name)"); next != shown {
 		a.d.Prefs.SetShowname(next)
 	}
 	fy += fH + 6
-	c.Label(r.X, fy+4, "OOC name:", ColTextDim)
 	prev := a.oocName
-	a.oocName, _ = c.TextField("oocname2", sdl.Rect{X: r.X + 90, Y: fy, W: r.W - 94, H: fH}, a.oocName, "Permanent OOC name")
+	a.oocName, _ = c.TextField("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "Permanent OOC name")
 	if a.oocName != prev {
 		a.d.Prefs.SetOOCName(a.oocName)
 	}
@@ -772,7 +771,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 	name := a.iniList[idx]
 	c.Fill(cell, ColBackground)
 	base := a.urls.CharIcon(name)
-	if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.iniPages, &a.iniPagesGen, len(a.iniList), idx, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 	} else {
 		a.demandAsset(&a.iniAsk, len(a.iniList), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (wardrobe)
@@ -918,11 +917,23 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		return
 	}
 
-	// IC input row (height follows the Box knob).
+	// IC input row (height follows the Box knob), led by the AO2 text
+	// color cycler: the swatch shows the active wire color (MS text_color
+	// 0–9); left-click next, right-click previous.
 	fH := a.inputFieldH()
 	icY := y2 + btnH + 6
+	swatch := sdl.Rect{X: pad, Y: icY, W: 26, H: fH}
+	c.Fill(swatch, render.TextColor(a.icColor))
+	c.Border(swatch, ColPanelHi)
+	if c.hovering(swatch) {
+		if c.clicked {
+			a.icColor = (a.icColor + 1) % render.TextColorCount
+		} else if c.rightClicked {
+			a.icColor = (a.icColor + render.TextColorCount - 1) % render.TextColorCount
+		}
+	}
 	var send bool
-	a.icInput, send = c.TextField("ic", sdl.Rect{X: pad, Y: icY, W: vp.W - 0, H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y])")
+	a.icInput, send = c.TextField("ic", sdl.Rect{X: pad + 32, Y: icY, W: vp.W - 32, H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
 	}
@@ -931,23 +942,20 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	emoteY := icY + fH + 6
 	a.drawEmoteRow(sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}, vp)
 
-	// OOC row at the very bottom (full history lives in the OOC tab).
+	// OOC row at the very bottom: name + a FULL-width input (the squished
+	// half-width box is gone — history lives in the OOC tab now).
 	oocY := h - fH - 4
-	nameW := int32(140)
+	nameW := int32(120)
 	prevOOC := a.oocName
 	a.oocName, _ = c.TextField("oocname", sdl.Rect{X: pad, Y: oocY, W: nameW, H: fH}, a.oocName, "OOC name")
 	if a.oocName != prevOOC {
 		a.d.Prefs.SetOOCName(a.oocName) // permanent OOC name
 	}
 	var sendOOC bool
-	a.oocInput, sendOOC = c.TextField("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w/2 - nameW - pad - 12, H: fH}, a.oocInput, "OOC chat...")
+	a.oocInput, sendOOC = c.TextField("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w - nameW - 3*pad - 6, H: fH}, a.oocInput, "OOC chat... (full history in the OOC tab)")
 	if sendOOC && strings.TrimSpace(a.oocInput) != "" {
 		a.sess.SendOOC(a.oocName, a.oocInput)
 		a.oocInput = ""
-	}
-	// OOC log line.
-	if len(a.oocLog) > 0 {
-		c.LabelClipped(pad+w/2, oocY+4, w/2-2*pad, a.oocLog[len(a.oocLog)-1], ColTextDim)
 	}
 	// Ctrl+wheel over the OOC row: same log/OOC text-size shortcut.
 	if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: pad, Y: oocY, W: w - 2*pad, H: fH}) {
@@ -1251,6 +1259,7 @@ func (a *App) sendIC(shout int) {
 		EmoteMod:  protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, false, a.sess.Features),
 		CharID:    a.sess.MyCharID,
 		Objection: shout,
+		TextColor: a.icColor, // the swatch cycler (AO2 color dropdown parity)
 		Showname:  a.d.Prefs.SavedShowname(),
 		PairWith:  a.pairWith,
 		PairOrder: a.pairOrder,
