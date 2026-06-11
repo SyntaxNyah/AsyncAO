@@ -112,7 +112,8 @@ type Ctx struct {
 	hoverID    string
 	hoverSince time.Time
 
-	textCache map[textKey]cachedText
+	textCache  map[textKey]cachedText
+	widthCache map[string]int32 // chrome-font TextWidth memo
 }
 
 // NewCtx loads the embedded Go font and prepares the kit.
@@ -126,10 +127,11 @@ func NewCtx(ren *sdl.Renderer) (*Ctx, error) {
 		return nil, err
 	}
 	return &Ctx{
-		Ren:       ren,
-		font:      font,
-		fontBig:   fontBig,
-		textCache: map[textKey]cachedText{},
+		Ren:        ren,
+		font:       font,
+		fontBig:    fontBig,
+		textCache:  map[textKey]cachedText{},
+		widthCache: map[string]int32{},
 	}, nil
 }
 
@@ -371,12 +373,21 @@ func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, co
 	_ = c.Ren.Copy(t.tex, &src, &dst)
 }
 
-// TextWidth measures a label.
+// TextWidth measures a label in the chrome font, memoized — screens call
+// it per frame for fixed labels and each miss is a CGO TTF measure. The
+// memo shares the text cache's lifecycle (purged together, same bound).
 func (c *Ctx) TextWidth(text string) int32 {
+	if w, ok := c.widthCache[text]; ok {
+		return w
+	}
 	w, _, err := c.font.SizeUTF8(text)
 	if err != nil {
 		return 0
 	}
+	if len(c.widthCache) >= textCacheMax {
+		c.widthCache = make(map[string]int32, textCacheMax)
+	}
+	c.widthCache[text] = int32(w)
 	return int32(w)
 }
 

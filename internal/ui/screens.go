@@ -150,6 +150,58 @@ func (a *App) drawServerRow(e *network.ServerEntry, y, w int32) {
 	}
 }
 
+// drawWardrobeGrid is the char-select grid over the wardrobe menu: same
+// cells, same demand pipeline, same search box. Picking claims the first
+// free slot and wears the custom on PV (wearFromMenu).
+func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32, query string) {
+	c := a.ctx
+	if len(a.iniList) == 0 {
+		switch {
+		case a.iniBusy:
+			c.Label(pad, gridTop+8, "Fetching "+iniswapFileName+"...", ColTextDim)
+		case a.iniListErr != "":
+			c.LabelClipped(pad, gridTop+8, w-2*pad, a.iniListErr, ColTextDim)
+		default:
+			c.Label(pad, gridTop+8, "Wardrobe empty — star characters or add folders from the courtroom Wardrobe menu.", ColTextDim)
+		}
+		return
+	}
+
+	matches := int32(0)
+	for i := range a.iniList {
+		if query == "" || strings.Contains(a.iniLower[i], query) {
+			matches++
+		}
+	}
+	contentH := (matches + cols - 1) / cols * cellH
+	a.iniScroll -= c.wheelY * scrollStepPx
+	track := sdl.Rect{X: w - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
+	a.iniScroll = c.VScrollbar("iniscroll", track, a.iniScroll, contentH, visibleH)
+
+	col, row := int32(0), int32(0)
+	for i := range a.iniList {
+		if query != "" && !strings.Contains(a.iniLower[i], query) {
+			continue
+		}
+		x := pad + col*(iconCell+iconGap)
+		y := gridTop + row*cellH - a.iniScroll
+		if y > -iconCell && y < h {
+			a.drawIniswapCell(i, sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell})
+		}
+		col++
+		if col >= cols {
+			col = 0
+			row++
+		}
+	}
+	if a.previewBase != "" {
+		a.drawSpritePreview(w, h)
+		if c.clicked {
+			a.previewBase = ""
+		}
+	}
+}
+
 func (a *App) toggleFavorite(e *network.ServerEntry) {
 	url := e.WebSocketURL()
 	if url == "" {
@@ -199,8 +251,31 @@ func (a *App) drawCharSelect(w, h int32) {
 		return
 	}
 
-	a.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: pad + 36, W: 260, H: fieldH}, a.charSearch, "Search characters...")
-	if c.Button(sdl.Rect{X: pad + 270, Y: pad + 36, W: 90, H: btnH}, "Spectate") {
+	a.charSearch, _ = c.TextField("charsearch", sdl.Rect{X: pad, Y: pad + 36, W: 230, H: fieldH}, a.charSearch, "Search...")
+
+	// Grid tabs right of the search: the same grid swaps between the
+	// server's list and your wardrobe (favourites + server customs), so
+	// joining AS an iniswap is one click from the door.
+	tabX := pad + 240
+	tabs := [...]struct {
+		id    int
+		label string
+	}{{charTabServer, "Characters"}, {charTabWardrobe, "Wardrobe"}}
+	for _, tb := range tabs {
+		bw := c.TextWidth(tb.label) + 20
+		if a.charTab == tb.id {
+			c.Fill(sdl.Rect{X: tabX - 2, Y: pad + 34, W: bw + 4, H: btnH + 4}, ColAccent)
+		}
+		if c.Button(sdl.Rect{X: tabX, Y: pad + 36, W: bw, H: btnH}, tb.label) {
+			a.charTab = tb.id
+			if tb.id == charTabWardrobe {
+				a.ensureIniList()
+			}
+		}
+		tabX += bw + 6
+	}
+	specX := tabX + 8
+	if c.Button(sdl.Rect{X: specX, Y: pad + 36, W: 90, H: btnH}, "Spectate") {
 		a.sess.PickCharacter(protocol.UnpairedCharID)
 		a.enterCourtroom()
 		return
@@ -208,13 +283,13 @@ func (a *App) drawCharSelect(w, h int32) {
 	if a.room != nil {
 		// Re-picking from the courtroom ("Change character"): allow backing
 		// out without dropping the session.
-		if c.Button(sdl.Rect{X: pad + 366, Y: pad + 36, W: 90, H: btnH}, "Back") {
+		if c.Button(sdl.Rect{X: specX + 96, Y: pad + 36, W: 90, H: btnH}, "Back") {
 			a.screen = ScreenCourtroom
 			return
 		}
 	}
 	if a.warnActive() {
-		c.LabelClipped(pad+470, pad+42, w-pad-470-130, a.warnLine, ColDanger)
+		c.LabelClipped(specX+200, pad+42, w-specX-200-pad, a.warnLine, ColDanger)
 	}
 
 	gridTop := pad + 76
@@ -223,8 +298,15 @@ func (a *App) drawCharSelect(w, h int32) {
 	if cols < 1 {
 		cols = 1
 	}
-
+	cellH := iconCell + iconGap + 14
+	visibleH := h - gridTop - pad
 	query := strings.ToLower(strings.TrimSpace(a.charSearch))
+
+	if a.charTab == charTabWardrobe {
+		a.drawWardrobeGrid(w, h, gridTop, cols, cellH, visibleH, query)
+		return
+	}
+
 	a.ensureCharLower()
 	// Pre-count matches so the scrollbar knows the content height; the
 	// draw loop below walks the same list anyway.
@@ -234,9 +316,7 @@ func (a *App) drawCharSelect(w, h int32) {
 			matches++
 		}
 	}
-	cellH := iconCell + iconGap + 14
 	contentH := (matches + cols - 1) / cols * cellH
-	visibleH := h - gridTop - pad
 
 	a.charScroll -= c.wheelY * scrollStepPx
 	track := sdl.Rect{X: w - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
@@ -681,8 +761,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 	}
 	if c.hovering(cell) && c.clicked {
-		a.setIniswap(name)
-		a.showIni = false
+		a.wearFromMenu(name) // courtroom: instant swap; char select: claim a slot first
 	}
 }
 

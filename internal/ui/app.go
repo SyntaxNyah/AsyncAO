@@ -78,6 +78,12 @@ const (
 	logTabOOC
 )
 
+// Char select grid tabs.
+const (
+	charTabServer = iota
+	charTabWardrobe
+)
+
 // Deps wires the app to the engine singletons built in main.
 type Deps struct {
 	Prefs    *config.AssetPreferences
@@ -124,6 +130,7 @@ type App struct {
 	// --- char select state ---
 	charSearch  string
 	charScroll  int32
+	charTab     int // charTabServer | charTabWardrobe (grid contents swap)
 	previewBase string
 	// iconAsk[i] is when char i's icon was last demanded by the visible
 	// grid (bounded by the server's char list length); iconAskBudget is
@@ -162,6 +169,7 @@ type App struct {
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar     string   // active override folder ("" = picked character)
+	pendingIni  string   // wear this once PV confirms (char-select joins)
 	iniServer   []string // the server's iniswap.txt names (may be empty)
 	iniList     []string // merged menu: wardrobe first, then server extras
 	iniWardrobe []bool   // parallel to iniList: wardrobe membership (star)
@@ -339,9 +347,11 @@ func (a *App) Disconnect() {
 	// Server-side iniswap state resets per server (the wardrobe is global
 	// and persists); drain any in-flight fetch so a stale txt can't land
 	// after a reconnect elsewhere.
-	a.iniChar, a.iniServer, a.iniList, a.iniWardrobe, a.iniLower, a.iniAsk = "", nil, nil, nil, nil, nil
+	a.iniChar, a.pendingIni = "", ""
+	a.iniServer, a.iniList, a.iniWardrobe, a.iniLower, a.iniAsk = nil, nil, nil, nil, nil
 	a.iniListErr, a.iniSearch, a.iniAdd = "", "", ""
 	a.showIni, a.iniBusy, a.iniScroll = false, false, 0
+	a.charTab = charTabServer
 	select {
 	case <-a.iniRes:
 	default:
@@ -469,7 +479,10 @@ func (a *App) enterCourtroom() {
 	if a.sess == nil {
 		return
 	}
-	a.iniChar = ""  // fresh pick = fresh identity; iniswap is per-character
+	// A wardrobe pick from char select rides in as pendingIni (the slot
+	// was auto-claimed); a plain pick starts clean.
+	a.iniChar = a.pendingIni
+	a.pendingIni = ""
 	a.sidePref = "" // until the new char.ini reports its side
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
 	urls := a.urls
@@ -516,12 +529,44 @@ func (a *App) setIniswap(name string) {
 	a.loadCharINI()
 }
 
-// openIniswap shows the wardrobe menu. The wardrobe half renders
-// instantly from prefs; the server's iniswap.txt merges in when its
-// fetch lands (FetchRaw: T2 + disk cached, singleflight — a reopen is a
-// memory hit).
+// wearFromMenu handles a wardrobe pick from either screen. In the
+// courtroom it's an instant swap; on char select (fresh join) an iniswap
+// still needs a server SLOT, so claim the first free one and wear the
+// custom when PV confirms (enterCourtroom applies pendingIni).
+func (a *App) wearFromMenu(name string) {
+	a.showIni = false
+	if a.room != nil {
+		a.setIniswap(name)
+		a.screen = ScreenCourtroom
+		return
+	}
+	free := -1
+	for i := range a.sess.Chars {
+		if !a.sess.Chars[i].Taken {
+			free = i
+			break
+		}
+	}
+	if free < 0 {
+		a.warnLine = "No free character slots to host an iniswap — every slot is taken"
+		a.warnAt = time.Now()
+		return
+	}
+	a.pendingIni = name
+	a.sess.PickCharacter(free)
+}
+
+// openIniswap shows the wardrobe menu (courtroom modal).
 func (a *App) openIniswap() {
 	a.showIni = true
+	a.ensureIniList()
+}
+
+// ensureIniList makes the merged wardrobe menu current: the wardrobe half
+// renders instantly from prefs; the server's iniswap.txt merges in when
+// its fetch lands (FetchRaw: T2 + disk cached, singleflight — a reopen
+// is a memory hit).
+func (a *App) ensureIniList() {
 	a.rebuildIniMenu() // wardrobe is local: usable before (or without) the txt
 	if a.iniServer != nil || a.iniBusy || a.urls.Origin() == "" {
 		return
