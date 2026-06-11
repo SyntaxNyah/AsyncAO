@@ -32,7 +32,7 @@ then percent-decoded *again* per sub-element (AO legacy double decode).
 |---|---|---|
 | `decryptor#…` | `HI#<hdid>` | FantaCrypt is dead; HI goes plain |
 | `ID#<player id>#<software>#…` | `ID#AsyncAO#<version>` | |
-| `PN#<cur>#<max>[#desc]` | — | player counts |
+| `PN#<cur>#<max>[#desc]` | `askchaa` | player counts; the reply is what requests SI (webAO handshake.ts; AO2-Client networkmanager.cpp `join_to_server`) |
 | `FL#<feature>…` | — | see Features |
 | `ASS#<url>` | — | asset repo URL, percent-decoded (2.9.2+) |
 | `SI#<chars>#<evidence>#<music>` | `RC` | begin fast loading |

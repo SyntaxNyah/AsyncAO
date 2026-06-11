@@ -10,8 +10,10 @@ import (
 )
 
 // Handshake phases, driving the fast-loading flow AO2-Client 2.11 uses
-// exclusively: decryptor→HI, ID→ID, SI→RC, SC→RM, SM→RD, DONE. (Legacy
-// askchaa paging is dead and not implemented.)
+// exclusively: decryptor→HI, ID→ID, PN→askchaa, SI→RC, SC→RM, SM→RD,
+// DONE. Loading is *client-initiated*: askchaa is what makes the server
+// send SI — without it every server waits forever. (Only the legacy
+// askchar2 paging is dead.)
 type SessionPhase int
 
 const (
@@ -125,6 +127,16 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "FL":
 		s.Features = protocol.ParseFeatures(p.Fields)
+
+	case "PN":
+		// Population marker, the tail of every server family's greeting.
+		// Joining is client-initiated from here: webAO sends askchaa on PN
+		// (handshake.ts applyServerInfo), AO2-Client at join time
+		// (networkmanager.cpp join_to_server); the server answers with SI.
+		// Phase guard: population re-broadcasts must not reload the lists.
+		if s.phase == PhaseGreeting {
+			s.reply(protocol.NewPacket("askchaa"))
+		}
 
 	case "ASS":
 		if decoded, err := url.PathUnescape(p.Field(0)); err == nil && decoded != "" {

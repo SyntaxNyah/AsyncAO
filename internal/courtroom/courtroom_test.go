@@ -152,6 +152,9 @@ func TestSessionHandshakeFlow(t *testing.T) {
 	}
 
 	feed(t, s, "SI#3#0#10#%")
+	// Population re-broadcast mid-load: must not re-send askchaa (the
+	// exact reply-ladder check below would flag a duplicate).
+	feed(t, s, "PN#6#100#%")
 	ev := feed(t, s, "SC#Phoenix&Ace Attorney#Edgeworth#Maya#%")
 	if len(ev) != 1 || ev[0].Kind != EventCharsUpdated {
 		t.Fatalf("SC events = %+v", ev)
@@ -175,8 +178,10 @@ func TestSessionHandshakeFlow(t *testing.T) {
 		t.Fatalf("DONE → %+v phase=%v", ev, s.Phase())
 	}
 
-	// Reply ladder must be exactly the fast-loading sequence.
-	want := []string{"HI", "ID", "RC", "RM", "RD"}
+	// Reply ladder must be exactly the fast-loading sequence. askchaa on
+	// PN is what triggers SI — drop it and every server waits forever
+	// (this shipped once: "handshaking" hung on all servers).
+	want := []string{"HI", "ID", "askchaa", "RC", "RM", "RD"}
 	got := rec.headers()
 	if len(got) != len(want) {
 		t.Fatalf("sent %v, want %v", got, want)
