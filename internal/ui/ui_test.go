@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -104,5 +106,33 @@ func TestMergeWardrobe(t *testing.T) {
 		if names[i] != wantNames[i] || stars[i] != wantStars[i] {
 			t.Fatalf("merged %v/%v, want %v/%v", names, stars, wantNames, wantStars)
 		}
+	}
+}
+
+// TestNormalizeThemeRoot pins the three path shapes users actually paste:
+// the root, the themes folder itself, and a single theme inside it (which
+// also auto-picks that theme).
+func TestNormalizeThemeRoot(t *testing.T) {
+	root := t.TempDir()
+	themes := filepath.Join(root, "themes")
+	one := filepath.Join(themes, "themeexample1")
+	if err := os.MkdirAll(one, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(one, "courtroom_design.ini"), []byte("[a]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, pick := normalizeThemeRoot(root); got != root || pick != "" {
+		t.Errorf("root form → %q/%q", got, pick)
+	}
+	if got, pick := normalizeThemeRoot(themes); got != root || pick != "" {
+		t.Errorf("themes form → %q/%q, want %q", got, pick, root)
+	}
+	if got, pick := normalizeThemeRoot(one); got != root || pick != "themeexample1" {
+		t.Errorf("single-theme form → %q/%q, want %q/themeexample1", got, pick, root)
+	}
+	if names := scanThemeDirs([]string{root}); len(names) != 2 || names[1] != "themeexample1" {
+		t.Errorf("scan = %v, want [default themeexample1]", names)
 	}
 }

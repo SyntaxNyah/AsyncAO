@@ -432,18 +432,31 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	}
 	defer p.Close()
 
-	vp, chat, logT, in := p.LayoutScales()
-	if vp != DefaultViewportPercent || chat != DefaultScalePercent || logT != DefaultScalePercent || in != DefaultScalePercent {
-		t.Fatalf("defaults = %d/%d/%d/%d", vp, chat, logT, in)
+	vp, chat, box, logT, in := p.LayoutScales()
+	if vp != DefaultViewportPercent || chat != DefaultScalePercent || box != DefaultScalePercent ||
+		logT != DefaultScalePercent || in != DefaultScalePercent {
+		t.Fatalf("defaults = %d/%d/%d/%d/%d", vp, chat, box, logT, in)
 	}
 	if m, s, b := p.AudioVolumes(); m != 100 || s != 100 || b != 100 {
 		t.Fatalf("default volumes = %d/%d/%d, want 100s", m, s, b)
 	}
+	if crawl, stay, rate := p.Timing(); crawl != DefaultTextCrawlMs || stay != DefaultTextStayMs || rate != DefaultChatRateLimitMs {
+		t.Fatalf("default timing = %d/%d/%d", crawl, stay, rate)
+	}
 
-	p.SetLayoutScales(10, 999, 10, 999) // wildly out of range → clamped
-	vp, chat, logT, in = p.LayoutScales()
-	if vp != MinViewportPercent || chat != MaxChatScalePercent || logT != MinLogScalePercent || in != MaxInputPercent {
-		t.Fatalf("clamped = %d/%d/%d/%d", vp, chat, logT, in)
+	p.SetLayoutScales(10, 999, 10, 10, 999) // wildly out of range → clamped
+	vp, chat, box, logT, in = p.LayoutScales()
+	if vp != MinViewportPercent || chat != MaxChatScalePercent || box != MinChatBoxPercent ||
+		logT != MinLogScalePercent || in != MaxInputPercent {
+		t.Fatalf("clamped = %d/%d/%d/%d/%d", vp, chat, box, logT, in)
+	}
+	p.SetTiming(1, 99999, 99999) // crawl floors, stay/rate ceil
+	if crawl, stay, rate := p.Timing(); crawl != MinTextCrawlMs || stay != MaxTextStayMs || rate != MaxChatRateLimitMs {
+		t.Fatalf("clamped timing = %d/%d/%d", crawl, stay, rate)
+	}
+	p.SetMasterList("  https://alt.example/servers  ")
+	if got := p.MasterList(); got != "https://alt.example/servers" {
+		t.Fatalf("master list = %q", got)
 	}
 
 	p.SetAudioVolumes(0, 55, 200) // mute is a real value; 200 clamps
@@ -462,7 +475,13 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	if q.SavedOOCName() != "arbok" {
 		t.Fatalf("reloaded OOC name = %q", q.SavedOOCName())
 	}
-	if v, _, _, _ := q.LayoutScales(); v != MinViewportPercent {
+	if v, _, _, _, _ := q.LayoutScales(); v != MinViewportPercent {
 		t.Fatalf("reloaded viewport = %d", v)
+	}
+	if _, stay, _ := q.Timing(); stay != MaxTextStayMs {
+		t.Fatalf("reloaded stay = %d", stay)
+	}
+	if got := q.MasterList(); got != "https://alt.example/servers" {
+		t.Fatalf("reloaded master list = %q", got)
 	}
 }

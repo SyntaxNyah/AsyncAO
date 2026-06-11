@@ -67,11 +67,14 @@ const (
 	MinViewportPercent     = 40
 	MaxViewportPercent     = 85
 
-	// Chat = the IC message box text; Log = log/OOC list text; Input =
-	// the IC/OOC entry field height.
+	// Chat = the IC message TEXT size (independent of its box); ChatBox =
+	// the message box height; Log = log/OOC list text; Input = the IC/OOC
+	// entry field height.
 	DefaultScalePercent = 100
-	MinChatScalePercent = 100
+	MinChatScalePercent = 50
 	MaxChatScalePercent = 250
+	MinChatBoxPercent   = 50
+	MaxChatBoxPercent   = 200
 	MinLogScalePercent  = 75
 	MaxLogScalePercent  = 200
 	MinInputPercent     = 75
@@ -89,6 +92,21 @@ const defaultAudioVolume = 100
 // WardrobeCap bounds the client-side custom character list (the wardrobe
 // persists across sessions AND servers — folder names are server-agnostic).
 const WardrobeCap = 1024
+
+// Message timing knobs (milliseconds), AO2-Client options.ini parity.
+const (
+	// DefaultTextCrawlMs mirrors courtroom.DefaultCharInterval.
+	DefaultTextCrawlMs = 18
+	MinTextCrawlMs     = 5
+	MaxTextCrawlMs     = 100
+	// DefaultTextStayMs mirrors courtroom.DefaultTextStayTime.
+	DefaultTextStayMs = 200
+	MaxTextStayMs     = 3000
+	// Chat rate limit: 0 = off (our historical behavior; AO2-Client
+	// defaults to 300 ms — users opt in).
+	DefaultChatRateLimitMs = 0
+	MaxChatRateLimitMs     = 5000
+)
 
 func clampPercent(v, min, max int) int {
 	if v < min {
@@ -120,11 +138,16 @@ type AssetPreferences struct {
 	OOCName                string                    `json:"oocName"`
 	ViewportPct            int                       `json:"viewportPercent"`
 	ChatScalePct           int                       `json:"chatScalePercent"`
+	ChatBoxPct             int                       `json:"chatBoxPercent"`
 	LogScalePct            int                       `json:"logScalePercent"`
 	InputHeightPct         int                       `json:"inputHeightPercent"`
 	MusicVol               int                       `json:"musicVolume"`
 	SFXVol                 int                       `json:"sfxVolume"`
 	BlipVol                int                       `json:"blipVolume"`
+	TextCrawlMs            int                       `json:"textCrawlMs"`
+	TextStayMs             int                       `json:"textStayMs"`
+	ChatRateLimitMs        int                       `json:"chatRateLimitMs"`
+	MasterListURL          string                    `json:"masterListUrl"`
 	AssetTypes             map[string]AssetTypePrefs `json:"assetTypes"`
 	LearnedFormats         map[string][]string       `json:"learnedFormats"`
 	PairOffsetX            int                       `json:"pairOffsetX"`
@@ -163,12 +186,18 @@ type prefsJSON struct {
 	OOCName                string `json:"oocName"`
 	ViewportPct            int    `json:"viewportPercent"`
 	ChatScalePct           int    `json:"chatScalePercent"`
+	ChatBoxPct             int    `json:"chatBoxPercent"`
 	LogScalePct            int    `json:"logScalePercent"`
 	InputHeightPct         int    `json:"inputHeightPercent"`
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
-	MusicVol           *int                      `json:"musicVolume"`
-	SFXVol             *int                      `json:"sfxVolume"`
-	BlipVol            *int                      `json:"blipVolume"`
+	MusicVol *int `json:"musicVolume"`
+	SFXVol   *int `json:"sfxVolume"`
+	BlipVol  *int `json:"blipVolume"`
+	// Stay/ratelimit use pointers too: 0 means "no linger" / "off".
+	TextCrawlMs        int                       `json:"textCrawlMs"`
+	TextStayMs         *int                      `json:"textStayMs"`
+	ChatRateLimitMs    *int                      `json:"chatRateLimitMs"`
+	MasterListURL      string                    `json:"masterListUrl"`
 	AssetTypes         map[string]AssetTypePrefs `json:"assetTypes"`
 	LearnedFormats     map[string][]string       `json:"learnedFormats"`
 	PairOffsetX        int                       `json:"pairOffsetX"`
@@ -228,11 +257,15 @@ func load(path string) (*AssetPreferences, error) {
 		EmoteButtonImages: defaultEmoteButtonImages,
 		ViewportPct:       DefaultViewportPercent,
 		ChatScalePct:      DefaultScalePercent,
+		ChatBoxPct:        DefaultScalePercent,
 		LogScalePct:       DefaultScalePercent,
 		InputHeightPct:    DefaultScalePercent,
 		MusicVol:          defaultAudioVolume,
 		SFXVol:            defaultAudioVolume,
 		BlipVol:           defaultAudioVolume,
+		TextCrawlMs:       DefaultTextCrawlMs,
+		TextStayMs:        DefaultTextStayMs,
+		ChatRateLimitMs:   DefaultChatRateLimitMs,
 		AssetTypes:        defaultAssetTypes(),
 		LearnedFormats:    map[string][]string{},
 		path:              path,
@@ -269,6 +302,9 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.ChatScalePct != 0 {
 		p.ChatScalePct = clampPercent(onDisk.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
 	}
+	if onDisk.ChatBoxPct != 0 {
+		p.ChatBoxPct = clampPercent(onDisk.ChatBoxPct, MinChatBoxPercent, MaxChatBoxPercent)
+	}
 	if onDisk.LogScalePct != 0 {
 		p.LogScalePct = clampPercent(onDisk.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
 	}
@@ -284,6 +320,16 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.BlipVol != nil {
 		p.BlipVol = clampPercent(*onDisk.BlipVol, 0, defaultAudioVolume)
 	}
+	if onDisk.TextCrawlMs != 0 {
+		p.TextCrawlMs = clampPercent(onDisk.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+	}
+	if onDisk.TextStayMs != nil {
+		p.TextStayMs = clampPercent(*onDisk.TextStayMs, 0, MaxTextStayMs)
+	}
+	if onDisk.ChatRateLimitMs != nil {
+		p.ChatRateLimitMs = clampPercent(*onDisk.ChatRateLimitMs, 0, MaxChatRateLimitMs)
+	}
+	p.MasterListURL = onDisk.MasterListURL
 	for name, tp := range onDisk.AssetTypes {
 		if len(tp.FormatOrder) == 0 {
 			tp.FormatOrder = DefaultFormatOrder(name)
@@ -653,27 +699,29 @@ func (p *AssetPreferences) SetOOCName(name string) {
 // --- Layout scales --------------------------------------------------------------
 
 // LayoutScales reports the courtroom layout knobs: viewport width percent,
-// chat (IC box) text percent, log/OOC list text percent, input field
-// height percent. All clamped at load and set time.
-func (p *AssetPreferences) LayoutScales() (viewport, chat, logText, input int) {
+// chat TEXT percent, chat BOX height percent, log/OOC list text percent,
+// input field height percent. All clamped at load and set time.
+func (p *AssetPreferences) LayoutScales() (viewport, chatText, chatBox, logText, input int) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.ViewportPct, p.ChatScalePct, p.LogScalePct, p.InputHeightPct
+	return p.ViewportPct, p.ChatScalePct, p.ChatBoxPct, p.LogScalePct, p.InputHeightPct
 }
 
 // SetLayoutScales clamps and persists the layout knobs.
-func (p *AssetPreferences) SetLayoutScales(viewport, chat, logText, input int) {
+func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText, input int) {
 	viewport = clampPercent(viewport, MinViewportPercent, MaxViewportPercent)
-	chat = clampPercent(chat, MinChatScalePercent, MaxChatScalePercent)
+	chatText = clampPercent(chatText, MinChatScalePercent, MaxChatScalePercent)
+	chatBox = clampPercent(chatBox, MinChatBoxPercent, MaxChatBoxPercent)
 	logText = clampPercent(logText, MinLogScalePercent, MaxLogScalePercent)
 	input = clampPercent(input, MinInputPercent, MaxInputPercent)
 	p.mu.Lock()
-	if p.ViewportPct == viewport && p.ChatScalePct == chat &&
+	if p.ViewportPct == viewport && p.ChatScalePct == chatText && p.ChatBoxPct == chatBox &&
 		p.LogScalePct == logText && p.InputHeightPct == input {
 		p.mu.Unlock()
 		return
 	}
-	p.ViewportPct, p.ChatScalePct, p.LogScalePct, p.InputHeightPct = viewport, chat, logText, input
+	p.ViewportPct, p.ChatScalePct, p.ChatBoxPct, p.LogScalePct, p.InputHeightPct =
+		viewport, chatText, chatBox, logText, input
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -698,6 +746,52 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 		return
 	}
 	p.MusicVol, p.SFXVol, p.BlipVol = music, sfx, blip
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Message timing & master list ----------------------------------------------
+
+// Timing reports the message timing knobs in milliseconds: typewriter
+// crawl per character, post-message stay, and the minimum gap between
+// outgoing chats (0 = no limit).
+func (p *AssetPreferences) Timing() (crawlMs, stayMs, rateLimitMs int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.TextCrawlMs, p.TextStayMs, p.ChatRateLimitMs
+}
+
+// SetTiming clamps and persists the timing knobs.
+func (p *AssetPreferences) SetTiming(crawlMs, stayMs, rateLimitMs int) {
+	crawlMs = clampPercent(crawlMs, MinTextCrawlMs, MaxTextCrawlMs)
+	stayMs = clampPercent(stayMs, 0, MaxTextStayMs)
+	rateLimitMs = clampPercent(rateLimitMs, 0, MaxChatRateLimitMs)
+	p.mu.Lock()
+	if p.TextCrawlMs == crawlMs && p.TextStayMs == stayMs && p.ChatRateLimitMs == rateLimitMs {
+		p.mu.Unlock()
+		return
+	}
+	p.TextCrawlMs, p.TextStayMs, p.ChatRateLimitMs = crawlMs, stayMs, rateLimitMs
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MasterList reports the user's master-list override ("" = the default).
+func (p *AssetPreferences) MasterList() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MasterListURL
+}
+
+// SetMasterList persists the master-list override.
+func (p *AssetPreferences) SetMasterList(url string) {
+	url = strings.TrimSpace(url)
+	p.mu.Lock()
+	if p.MasterListURL == url {
+		p.mu.Unlock()
+		return
+	}
+	p.MasterListURL = url
 	p.mu.Unlock()
 	p.markDirty()
 }

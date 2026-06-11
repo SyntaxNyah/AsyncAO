@@ -11,6 +11,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -26,7 +27,7 @@ type settingsState struct {
 	themeName string
 	themeDir  string
 	themeList []string
-	themeRes  chan []string
+	themeRes  chan themeScan
 	themeBusy bool
 
 	// folder picking: native dialog output / resolved drag-drops land
@@ -35,8 +36,18 @@ type settingsState struct {
 	browseBusy bool
 }
 
+// themeScan is one scan result: the theme names found, the NORMALIZED
+// root (users paste the themes folder itself, or a single theme inside
+// it — both resolve to the root theme.Load expects), and an optional
+// auto-pick when the pasted path WAS a single theme.
+type themeScan struct {
+	names    []string
+	root     string
+	pickName string
+}
+
 var settings = settingsState{
-	themeRes:  make(chan []string, 1),
+	themeRes:  make(chan themeScan, 1),
 	folderRes: make(chan string, 1),
 }
 
@@ -156,6 +167,27 @@ func (a *App) drawSettings(w, h int32) {
 		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
 		a.d.Audio.SetVolumes(a.d.Prefs.AudioVolumes())
 	}
+
+	// Message timing (AO2-Client options.ini parity); applies live.
+	crawl, stay, rate := a.d.Prefs.Timing()
+	crawl = a.numberRow(y, "Text crawl ms", crawl, 5, config.MinTextCrawlMs, config.MaxTextCrawlMs)
+	y += 26
+	stay = a.numberRow(y, "Text stay ms", stay, 100, 0, config.MaxTextStayMs)
+	y += 26
+	rate = a.numberRow(y, "Chat limit ms", rate, 100, 0, config.MaxChatRateLimitMs)
+	y += 30
+	if c0, s0, r0 := a.d.Prefs.Timing(); c0 != crawl || s0 != stay || r0 != rate {
+		a.d.Prefs.SetTiming(crawl, stay, rate)
+		a.applyTimingToRoom()
+	}
+
+	// Master list override (blank = official). Refresh in the lobby applies.
+	c.Label(pad, y+4, "Master list:", ColText)
+	master := a.d.Prefs.MasterList()
+	if next, _ := c.TextField("masterurl", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, master, network.DefaultMasterServerURL); next != master {
+		a.d.Prefs.SetMasterList(next)
+	}
+	y += 34
 
 	// Audio fallbacks.
 	for _, typeName := range []string{config.TypeSFX, config.TypeMusic, config.TypeBlip} {
@@ -319,24 +351,65 @@ func (a *App) scanThemes() {
 	settings.themeBusy = true
 	customRoot := strings.TrimSpace(settings.themeDir)
 	go func() {
+		root, pick := normalizeThemeRoot(customRoot)
 		roots := make([]string, 0, 2)
-		if customRoot != "" {
-			roots = append(roots, customRoot)
+		if root != "" {
+			roots = append(roots, root)
 		}
 		if exe, err := os.Executable(); err == nil {
 			roots = append(roots, filepath.Dir(exe))
 		}
-		settings.themeRes <- scanThemeDirs(roots)
+		settings.themeRes <- themeScan{names: scanThemeDirs(roots), root: root, pickName: pick}
 	}()
 }
 
 func (a *App) pollThemeScan() {
 	select {
-	case names := <-settings.themeRes:
+	case res := <-settings.themeRes:
 		settings.themeBusy = false
-		settings.themeList = names
+		settings.themeList = res.names
+		// The scanner may have normalized the pasted path (the themes
+		// folder itself, or one theme inside it) into the root
+		// theme.Load expects — reflect and persist it.
+		if res.root != "" && res.root != strings.TrimSpace(settings.themeDir) {
+			settings.themeDir = res.root
+			settings.statusLine = "Theme folder normalized to " + res.root
+		}
+		if res.pickName != "" {
+			settings.themeName = res.pickName
+		}
+		if res.root != "" || res.pickName != "" {
+			a.d.Prefs.SetTheme(settings.themeName, settings.themeDir)
+		}
 	default:
 	}
+}
+
+// themeINIFiles marks a directory as a single theme folder.
+var themeINIFiles = []string{theme.DesignFileName, theme.FontsFileName, theme.SoundsFileName}
+
+// normalizeThemeRoot turns whatever the user pasted or dropped into the
+// root theme.Load expects (the folder CONTAINING themes/). Users paste
+// all three shapes — the root, the themes folder itself, or a single
+// theme inside it (returned as pickName and auto-selected). Runs off the
+// render thread (it stats directories).
+func normalizeThemeRoot(path string) (root, pickName string) {
+	if path == "" {
+		return "", ""
+	}
+	path = filepath.Clean(path)
+	// A single theme folder? Its name is the pick; the root is two up
+	// (…/root/themes/<name> → …/root).
+	for _, ini := range themeINIFiles {
+		if _, err := os.Stat(filepath.Join(path, ini)); err == nil {
+			return filepath.Dir(filepath.Dir(path)), filepath.Base(path)
+		}
+	}
+	// The themes folder itself → its parent is the root.
+	if strings.EqualFold(filepath.Base(path), theme.ThemesDirName) {
+		return filepath.Dir(path), ""
+	}
+	return path, ""
 }
 
 // volumeRow draws one "<name>  − NN% +" control and returns the value.
@@ -350,6 +423,27 @@ func (a *App) volumeRow(y int32, name string, value int) int {
 	c.Label(pad+162, y+4, fmt.Sprintf("%3d%%", value), ColAccent)
 	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 24, H: 24}, "+") && value <= 100-volumeStep {
 		value += volumeStep
+	}
+	return value
+}
+
+// numberRow is volumeRow for arbitrary units/steps/bounds (spinbox-style:
+// −/+ plus mousewheel over the row).
+func (a *App) numberRow(y int32, label string, value, step, min, max int) int {
+	c := a.ctx
+	c.Label(pad, y+4, label+":", ColText)
+	if c.Button(sdl.Rect{X: pad + 130, Y: y, W: 24, H: 24}, "-") && value-step >= min {
+		value -= step
+	}
+	c.Label(pad+162, y+4, fmt.Sprintf("%5d", value), ColAccent)
+	if c.Button(sdl.Rect{X: pad + 224, Y: y, W: 24, H: 24}, "+") && value+step <= max {
+		value += step
+	}
+	if c.hovering(sdl.Rect{X: pad, Y: y, W: 252, H: 26}) && c.wheelY != 0 {
+		next := value + int(c.wheelY)*step
+		if next >= min && next <= max {
+			value = next
+		}
 	}
 	return value
 }

@@ -136,11 +136,12 @@ type App struct {
 	charLower []string
 
 	// --- courtroom chrome state ---
-	icInput  string
-	oocInput string
-	oocName  string
-	sidePref string    // OUR side (char.ini default, /pos override)
-	lastPing time.Time // CH keepalive pacing
+	icInput    string
+	oocInput   string
+	oocName    string
+	sidePref   string    // OUR side (char.ini default, /pos override)
+	lastPing   time.Time // CH keepalive pacing
+	lastICSend time.Time // chat_ratelimit window
 	// pair offset edit buffers (typed text commits on valid parse)
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
@@ -181,7 +182,7 @@ type App struct {
 	deskAskAt   time.Time
 
 	// layout scales (percent; mirrors prefs, saved on change)
-	vpPct, chatPct, logPct, inputPct int
+	vpPct, chatPct, boxPct, logPct, inputPct int
 	// chat raster invalidation extras (text/color tracked separately)
 	rasterScale int
 	rasterW     int32
@@ -232,7 +233,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	}
 	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
 	a.pairFlip = d.Prefs.PairFlipped()
-	a.vpPct, a.chatPct, a.logPct, a.inputPct = d.Prefs.LayoutScales()
+	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales()
 	if saved := d.Prefs.SavedOOCName(); saved != "" {
 		a.oocName = saved
 	}
@@ -242,7 +243,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 
 // saveLayout persists the courtroom layout knobs (debounced saver flushes).
 func (a *App) saveLayout() {
-	a.d.Prefs.SetLayoutScales(a.vpPct, a.chatPct, a.logPct, a.inputPct)
+	a.d.Prefs.SetLayoutScales(a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct)
 }
 
 // inputFieldH is the scaled IC/OOC input height.
@@ -479,8 +480,21 @@ func (a *App) enterCourtroom() {
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
 	}
+	a.applyTimingToRoom()
 	a.screen = ScreenCourtroom
 	a.loadCharINI()
+}
+
+// applyTimingToRoom pushes the persisted crawl/stay knobs into the live
+// courtroom (the crawl applies from the next message — Start precomputes
+// per-rune delays).
+func (a *App) applyTimingToRoom() {
+	if a.room == nil {
+		return
+	}
+	crawlMs, stayMs, _ := a.d.Prefs.Timing()
+	a.room.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
+	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
 }
 
 // activeCharName is the character folder OUTGOING messages use: the
@@ -706,10 +720,16 @@ func (a *App) RefreshServers() {
 	}
 	a.lobbyFetching = true
 	a.lobbyStatus = "Fetching server list..."
+	// The Settings override wins over the built-in default, but an
+	// explicit --master flag (anything non-default in Deps) wins over both.
+	url := a.d.MasterURL
+	if alt := a.d.Prefs.MasterList(); alt != "" && url == network.DefaultMasterServerURL {
+		url = alt
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), lobbyRefreshTimeout)
 		defer cancel()
-		entries, err := network.FetchServerList(ctx, a.d.MasterURL)
+		entries, err := network.FetchServerList(ctx, url)
 		a.lobbyResult <- lobbyFetch{entries: entries, err: err}
 	}()
 }

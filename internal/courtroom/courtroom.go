@@ -108,6 +108,9 @@ type Courtroom struct {
 
 	Scene      Scene
 	Typewriter Typewriter
+	// TextStay holds a finished message before the queue advances
+	// (user-tunable; AO2-Client "text stay time").
+	TextStay time.Duration
 
 	queue []*protocol.ChatMessage
 	phase MessagePhase
@@ -140,6 +143,7 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 		sess:       sess,
 		audio:      audio,
 		Typewriter: NewTypewriter(),
+		TextStay:   DefaultTextStayTime,
 	}
 	c.Scene.SpeakerInFront = true
 	return c
@@ -365,7 +369,7 @@ func (c *Courtroom) enterLinger() {
 	c.Scene.Speaker.Active = c.Scene.Speaker.IdleBase
 	c.Scene.Speaker.PlayOnce = false
 	c.phase = PhaseLinger
-	c.timer = DefaultTextStayTime
+	c.timer = c.TextStay
 }
 
 // NotifyPreanimDone is called by the render side when a one-shot animation

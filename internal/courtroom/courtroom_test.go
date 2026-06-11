@@ -473,3 +473,16 @@ func TestSessionPing(t *testing.T) {
 		t.Errorf("ping sent %s#%s, want CH#7", last.Header, last.Field(0))
 	}
 }
+
+// TestTextStayConfigurable pins the user-tunable linger duration.
+func TestTextStayConfigurable(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	if room.TextStay != DefaultTextStayTime {
+		t.Fatalf("default stay = %v", room.TextStay)
+	}
+	room.TextStay = 123 * time.Millisecond
+	room.enterLinger()
+	if room.timer != 123*time.Millisecond {
+		t.Fatalf("linger timer = %v, want the configured 123ms", room.timer)
+	}
+}

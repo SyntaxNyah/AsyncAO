@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -374,8 +375,10 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	if sc.MessageText == "" && sc.ShownameText == "" {
 		return
 	}
-	// Box height follows the Text knob so zoomed text keeps its room.
-	boxH := vp.H / 4 * int32(a.chatPct) / DefaultScalePct
+	// Box height follows the MsgBox knob ONLY; text size (the Text knob)
+	// lives inside it and clips at the box edge — big text never inflates
+	// the box, small text never shrinks it.
+	boxH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
 	if max := vp.H * 3 / 5; boxH > max {
 		boxH = max
 	}
@@ -405,7 +408,10 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 		}
 	}
 	if a.msRaster != nil {
+		// Clip to the box: oversized Text settings stay INSIDE it.
+		_ = c.Ren.SetClipRect(&box)
 		a.msRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
+		_ = c.Ren.SetClipRect(nil)
 	}
 }
 
@@ -749,8 +755,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	x += 80
 	x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
 	x = a.scaleControl(x, y, "Text", &a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent)
+	x = a.scaleControl(x, y, "MsgBox", &a.boxPct, config.ScaleStepPercent, config.MinChatBoxPercent, config.MaxChatBoxPercent)
 	x = a.scaleControl(x, y, "Log", &a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent)
-	_ = a.scaleControl(x, y, "Box", &a.inputPct, config.ScaleStepPercent, config.MinInputPercent, config.MaxInputPercent)
+	_ = a.scaleControl(x, y, "Input", &a.inputPct, config.ScaleStepPercent, config.MinInputPercent, config.MaxInputPercent)
 
 	// Row 2: utility buttons (their own row so nothing overlaps at any
 	// viewport scale or window width).
@@ -995,13 +1002,20 @@ func (a *App) drawPairPanel(w, h int32) {
 	ry += 34
 	a.pairFlip = c.Checkbox(rx, ry, "Flip my sprite", a.pairFlip)
 	ry += 28
-	front := a.pairOrder == protocol.PairSpeakerInFront
-	front = c.Checkbox(rx, ry, "Render me in front", front)
-	a.pairOrder = protocol.PairSpeakerInFront
-	if !front {
-		a.pairOrder = protocol.PairSpeakerBehind
+	// Explicit two-state order toggle — an unchecked box read as "???";
+	// the button always names the CURRENT state, click to flip.
+	orderLabel := "Order: In front"
+	if a.pairOrder != protocol.PairSpeakerInFront {
+		orderLabel = "Order: Behind"
 	}
-	ry += 32
+	if c.Button(sdl.Rect{X: rx, Y: ry, W: 170, H: btnH}, orderLabel) {
+		if a.pairOrder == protocol.PairSpeakerInFront {
+			a.pairOrder = protocol.PairSpeakerBehind
+		} else {
+			a.pairOrder = protocol.PairSpeakerInFront
+		}
+	}
+	ry += 36
 	c.Label(rx, ry, "Both sides must pair with", ColTextDim)
 	c.Label(rx, ry+18, "each other; applies from", ColTextDim)
 	c.Label(rx, ry+36, "your next message.", ColTextDim)
@@ -1078,6 +1092,11 @@ func (a *App) sendIC(shout int) {
 	if a.sess.MyCharID < 0 {
 		return
 	}
+	// AO2-Client chat_ratelimit parity: drop sends inside the window.
+	if _, _, rateMs := a.d.Prefs.Timing(); rateMs > 0 &&
+		time.Since(a.lastICSend) < time.Duration(rateMs)*time.Millisecond {
+		return
+	}
 	emote := courtroom.Emote{Anim: "normal", Preanim: "-"}
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
 		emote = a.emotes[a.emoteIdx]
@@ -1104,6 +1123,7 @@ func (a *App) sendIC(shout int) {
 		Flip:      a.pairFlip,
 	}
 	a.sess.SendChat(out)
+	a.lastICSend = time.Now()
 	a.icInput = ""
 }
 
