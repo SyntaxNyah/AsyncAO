@@ -94,6 +94,15 @@ func (u URLBuilder) Emote(character, emote string, kind EmoteKind) string {
 	return u.origin + charactersDir + seg(character) + "/" + seg(prefix+emote)
 }
 
+// EmoteBare returns the unprefixed sprite base — the second spelling
+// AO2-Client probes for idle/talk sprites (CharLayer::load_image tries
+// the "(a)"/"(b)" path, then the bare one; many packs ship only bare
+// files like "1.webp"). Pass as the fallback to PrefetchWithFallback.
+// AssetType: CharSprite
+func (u URLBuilder) EmoteBare(character, emote string) string {
+	return u.origin + charactersDir + seg(character) + "/" + seg(emote)
+}
+
 // EmoteButton returns the emote-picker button art base for the 1-based
 // emote number n; on selects the pressed (_on) variant. Convention shared
 // by AO2-Client (emotion_button "emotions/button%1_off") and webAO.

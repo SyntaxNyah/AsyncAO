@@ -138,6 +138,19 @@ func (m *Manager) Warnings() <-chan Warning { return m.warningCh }
 // the given priority, tagged with the pool's current epoch so room changes
 // cancel stale speculation.
 func (m *Manager) Prefetch(base string, t AssetType, prio network.Priority) {
+	m.PrefetchWithFallback(base, "", t, prio)
+}
+
+// PrefetchWithFallback is Prefetch with a second URL base probed only when
+// every format of the first one 404s. AO sprite naming requires it: packs
+// ship "(a)<emote>"/"(b)<emote>" files OR bare "<emote>" files, and
+// AO2-Client probes the prefixed path then the unprefixed one
+// (CharLayer::load_image's pathlist). The asset keeps the PRIMARY base as
+// its identity everywhere (T1 key, scene layers); alt is just a second
+// spelling of the same asset. The client's 404 cache keeps the extra probe
+// from repeating inside its TTL, and once the texture is resident the T1
+// short-circuit costs zero probes.
+func (m *Manager) PrefetchWithFallback(base, alt string, t AssetType, prio network.Priority) {
 	if base == "" || !t.Valid() {
 		return
 	}
@@ -148,7 +161,7 @@ func (m *Manager) Prefetch(base string, t AssetType, prio network.Priority) {
 			if stale {
 				return
 			}
-			m.resolve(base, t)
+			m.resolveChain(base, alt, t)
 		},
 	})
 }
@@ -252,14 +265,16 @@ func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority
 			if stale {
 				return
 			}
-			m.resolve(base, t)
+			m.resolveChain(base, "", t)
 		},
 	})
 }
 
-// resolve runs one pipeline pass on a pool worker goroutine.
-func (m *Manager) resolve(base string, t AssetType) {
-	key := base + config.LearnedKeySeparator + t.Name()
+// resolveChain runs the pipeline for primary, then — only when the primary
+// name is missing in every format — for alt, delivering under primary so
+// the asset's identity never changes.
+func (m *Manager) resolveChain(primary, alt string, t AssetType) {
+	key := primary + config.LearnedKeySeparator + t.Name()
 	if _, loaded := m.inflight.LoadOrStore(key, struct{}{}); loaded {
 		return // an identical pass is already in flight
 	}
@@ -268,27 +283,73 @@ func (m *Manager) resolve(base string, t AssetType) {
 	// T1: already a texture — nothing to do. Uploads from this path are
 	// keyed by base (TextureStore.Upload(d.Base, …)), so the check must use
 	// base too; checking the extension-included candidate URL can never hit.
-	if m.t1Contains != nil && m.t1Contains(base) {
+	if m.t1Contains != nil && m.t1Contains(primary) {
 		m.t1Hits.Add(1)
 		return
 	}
 
-	host := hostOf(base)
+	host := hostOf(primary)
+	done, tried := m.tryBase(primary, primary, t, host)
+	if done {
+		return
+	}
+	if alt != "" && alt != primary {
+		var altTried []string
+		done, altTried = m.tryBase(alt, primary, t, host)
+		if done {
+			return
+		}
+		for _, ext := range altTried {
+			if !containsString(tried, ext) {
+				tried = append(tried, ext)
+			}
+		}
+	}
+	m.reportMissing(primary, t, tried)
+}
+
+// tryBase walks one base's format candidates (learned-first), delivering a
+// hit under deliverBase. done=true ends the whole pass: delivered, or a
+// transport error already reported on the decoded channel (remaining
+// probes on the same ailing host would only stack timeouts). A stale
+// learned format triggers the one-shot full-list re-probe inline (spec §4).
+func (m *Manager) tryBase(base, deliverBase string, t AssetType, host string) (done bool, tried404 []string) {
 	cands := m.resolver.BuildCandidates(base, t, host)
-	defer m.resolver.PutCandidates(cands)
-
-	tried := make([]string, 0, len(cands.URLs))
 	usedLearned := cands.Learned
+	done, tried404 = m.walkCandidates(cands.URLs, base, deliverBase, t, host, make([]string, 0, len(cands.URLs)))
+	m.resolver.PutCandidates(cands)
+	if done || !usedLearned {
+		return done, tried404
+	}
 
+	// Every learned-first candidate 404'd on a learned format: the server
+	// may have repacked. Invalidate and probe the full list once, skipping
+	// extensions already tried.
+	m.resolver.Invalidate(host, t)
+	cands = m.resolver.BuildCandidates(base, t, host)
+	rest := make([]string, 0, len(cands.URLs))
 	for _, url := range cands.URLs {
+		if !containsString(tried404, url[len(base):]) {
+			rest = append(rest, url)
+		}
+	}
+	done, tried404 = m.walkCandidates(rest, base, deliverBase, t, host, tried404)
+	m.resolver.PutCandidates(cands)
+	return done, tried404
+}
+
+// walkCandidates probes urls in order through T2 → T3 → source. done=true
+// ends the pass (delivered under deliverBase, or transport error reported);
+// tried404 accumulates the extensions that 404'd.
+func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t AssetType, host string, tried404 []string) (bool, []string) {
+	for _, url := range urls {
 		ext := url[len(base):]
-		tried = append(tried, ext)
 
 		// T2: raw bytes in memory — straight to decode.
 		if data, ok := m.t2.Get(url); ok {
 			m.t2Hits.Add(1)
-			m.deliver(url, base, t, data)
-			return
+			m.deliver(url, deliverBase, t, data)
+			return true, tried404
 		}
 		// T3: disk — promote to T2, learn, decode (spec §8). Skipped in
 		// local mode: the mounts ARE disk.
@@ -297,8 +358,8 @@ func (m *Manager) resolve(base string, t AssetType) {
 				m.diskHits.Add(1)
 				m.t2.Add(url, data, int64(len(data)))
 				m.resolver.RecordSuccess(host, t, ext)
-				m.deliver(url, base, t, data)
-				return
+				m.deliver(url, deliverBase, t, data)
+				return true, tried404
 			}
 		}
 		// Source: network stream or local mounts.
@@ -311,59 +372,18 @@ func (m *Manager) resolve(base string, t AssetType) {
 				m.disk.Put(url, data)
 			}
 			m.resolver.RecordSuccess(host, t, ext)
-			m.deliver(url, base, t, data)
-			return
+			m.deliver(url, deliverBase, t, data)
+			return true, tried404
 		case errors.Is(err, network.ErrAssetNotFound):
+			tried404 = append(tried404, ext)
 			continue // probe the next candidate
 		default:
-			// Transport trouble: the render side hears the error; remaining
-			// candidates on the same ailing host would only stack timeouts.
-			m.decodedCh <- DecodedAsset{URL: url, Base: base, Type: t, Err: err}
-			return
+			// Transport trouble: the render side hears the error.
+			m.decodedCh <- DecodedAsset{URL: url, Base: deliverBase, Type: t, Err: err}
+			return true, tried404
 		}
 	}
-
-	// Every candidate 404'd. If we trusted a learned format, the server may
-	// have repacked: invalidate and re-probe the full list once.
-	if usedLearned {
-		m.resolver.Invalidate(host, t)
-		m.resolveFullList(base, t, host, tried)
-		return
-	}
-	m.reportMissing(base, t, tried)
-}
-
-// resolveFullList is the one-shot retry after a stale learned format.
-func (m *Manager) resolveFullList(base string, t AssetType, host string, alreadyTried []string) {
-	cands := m.resolver.BuildCandidates(base, t, host)
-	defer m.resolver.PutCandidates(cands)
-
-	tried := alreadyTried
-	for _, url := range cands.URLs {
-		ext := url[len(base):]
-		if containsString(alreadyTried, ext) {
-			continue // the learned ext we just 404'd
-		}
-		tried = append(tried, ext)
-		data, err := m.client.Fetch(context.Background(), url)
-		switch {
-		case err == nil:
-			m.netFetches.Add(1)
-			m.t2.Add(url, data, int64(len(data)))
-			if !m.localMode {
-				m.disk.Put(url, data)
-			}
-			m.resolver.RecordSuccess(host, t, ext)
-			m.deliver(url, base, t, data)
-			return
-		case errors.Is(err, network.ErrAssetNotFound):
-			continue
-		default:
-			m.decodedCh <- DecodedAsset{URL: url, Base: base, Type: t, Err: err}
-			return
-		}
-	}
-	m.reportMissing(base, t, tried)
+	return false, tried404
 }
 
 // deliver routes payload bytes onward: audio types skip the decode pool

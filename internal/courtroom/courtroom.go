@@ -213,10 +213,13 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	speakerName := msg.CharName
 
 	// --- prefetch fan-out (all HIGH, all parallel on the pool) ---
+	// Idle/talk fall back to the bare (unprefixed) file name — packs ship
+	// either spelling (AO2-Client CharLayer::load_image pathlist).
 	idle := c.urls.Emote(speakerName, msg.Emote, EmoteIdle)
 	talk := c.urls.Emote(speakerName, msg.Emote, EmoteTalk)
-	c.mgr.Prefetch(idle, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	c.mgr.Prefetch(talk, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	bare := c.urls.EmoteBare(speakerName, msg.Emote)
+	c.mgr.PrefetchWithFallback(idle, bare, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	c.mgr.PrefetchWithFallback(talk, bare, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
 
 	pre := ""
 	if hasPreanim(msg) {
@@ -227,7 +230,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	pairIdle := ""
 	if msg.Pair.Active() {
 		pairIdle = c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle)
-		c.mgr.Prefetch(pairIdle, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (pair partner)
+		pairBare := c.urls.EmoteBare(msg.Pair.Name, msg.Pair.Emote)
+		c.mgr.PrefetchWithFallback(pairIdle, pairBare, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (pair partner)
 	}
 
 	if msg.IsShout() {

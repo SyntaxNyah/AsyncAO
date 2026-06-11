@@ -264,6 +264,55 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 	}
 }
 
+// TestManagerUnprefixedSpriteFallback pins the AO sprite-name chain: packs
+// ship "(a)<emote>" files OR bare "<emote>" files (AO2-Client probes the
+// prefixed path, then the unprefixed one — CharLayer::load_image). When
+// every format of the prefixed base 404s, the same formats probe under the
+// bare base, and the asset keeps the PRIMARY (prefixed) identity so scene
+// layers and T1 keys never change. Cost: exactly one extra probe, 404-cached.
+func TestManagerUnprefixedSpriteFallback(t *testing.T) {
+	sprite := encodePNG(t, 8, 8, color.RGBA{R: 200, G: 80, A: 255})
+	cs := newCountingServer(t, map[string][]byte{
+		"/characters/tung/1.webp": sprite, // bare spelling only — no (a)/(b)
+	})
+	rig := newRig(t, network.NewClient(), false)
+	primary := cs.srv.URL + "/characters/tung/(a)1"
+	bare := cs.srv.URL + "/characters/tung/1"
+
+	resident := map[string]bool{}
+	rig.manager.t1Contains = func(key string) bool { return resident[key] }
+
+	rig.manager.PrefetchWithFallback(primary, bare, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	d := waitDecoded(t, rig.manager)
+	if d.Err != nil {
+		t.Fatalf("decode error: %v", d.Err)
+	}
+	d.Asset.Release()
+	if d.Base != primary {
+		t.Errorf("delivered base = %q, want the primary identity %q", d.Base, primary)
+	}
+	if got := cs.total(); got != 2 {
+		t.Errorf("probes = %d, want exactly 2 ((a)1.webp 404 + 1.webp hit)", got)
+	}
+	if ext, ok := rig.resolver.Learned(hostOf(primary), AssetTypeCharSprite); !ok || ext != config.ExtWebP {
+		t.Errorf("learned = %q,%v, want .webp recorded from the bare hit", ext, ok)
+	}
+
+	// Resident under the primary key: the next pass is a T1 no-op.
+	resident[primary] = true
+	rig.manager.PrefetchWithFallback(primary, bare, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	deadline := time.Now().Add(managerWait)
+	for rig.manager.Stats().T1Hits == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("T1 short-circuit never hit for the resident primary base")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := cs.total(); got != 2 {
+		t.Errorf("probes after residency = %d, want still 2", got)
+	}
+}
+
 // TestManagerStaleLearnedFormatRecovers covers the server-repack case: the
 // learned format starts 404ing, the manager invalidates it and re-probes the
 // full list once, landing on the new format.

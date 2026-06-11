@@ -274,7 +274,7 @@ func (a *App) drawCharSelect(w, h int32) {
 			a.drawCharCell(slot, cell, i)
 			if c.HoverPreview("char:"+slot.Name, cell) {
 				a.previewBase = a.urls.Emote(slot.Name, "normal", courtroom.EmoteIdle)
-				a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+				a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(slot.Name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 				previewRequested = true
 			}
 		}
@@ -631,7 +631,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		// TALKING sprite — what actually plays when this emote is sent.
 		if c.HoverPreview("emote:"+e.Anim, btn) {
 			a.previewBase = a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
-			a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+			a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(me, e.Anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 		}
 		x += bw + 6
 	}
