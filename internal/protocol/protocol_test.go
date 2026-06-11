@@ -412,3 +412,34 @@ func TestOutgoingWireEscapingSurvives(t *testing.T) {
 		t.Errorf("objection round trip = %d", msg.Objection)
 	}
 }
+
+// TestNormalizeOutgoingEmoteMod pins AO2-Client's on_chat_return_pressed
+// overrides (courtroom.cpp "EMOTE MOD OVERRIDES"): legacy ini values
+// 2/3/4 never reach the wire, and a preanim upgrades idle/zoom. Raw
+// legacy values made schema-strict receivers (LemmyAO) drop our
+// messages entirely.
+func TestNormalizeOutgoingEmoteMod(t *testing.T) {
+	full := ParseFeatures([]string{"prezoom"})
+	none := ParseFeatures(nil)
+	cases := []struct {
+		mod        int
+		hasPreanim bool
+		features   FeatureSet
+		want       int
+	}{
+		{2, false, none, EmoteModPreanim}, // objection-internal → preanim
+		{3, false, none, EmoteModIdle},    // meaningless → idle
+		{4, false, none, EmoteModZoom},    // legacy zoom alias
+		{0, true, none, EmoteModPreanim},  // preanim upgrades idle
+		{5, true, full, EmoteModPreanimZoom},
+		{5, true, none, EmoteModZoom}, // prezoom feature gates the upgrade
+		{0, false, none, EmoteModIdle},
+		{1, false, none, EmoteModPreanim},
+		{6, false, none, EmoteModPreanimZoom},
+	}
+	for _, tc := range cases {
+		if got := NormalizeOutgoingEmoteMod(tc.mod, tc.hasPreanim, false, tc.features); got != tc.want {
+			t.Errorf("NormalizeOutgoingEmoteMod(%d, pre=%v) = %d, want %d", tc.mod, tc.hasPreanim, got, tc.want)
+		}
+	}
+}

@@ -331,6 +331,35 @@ func (o OutgoingMS) Packet(features FeatureSet) Packet {
 	return NewPacket("MS", o.Fields(features)...)
 }
 
+// NormalizeOutgoingEmoteMod applies AO2-Client's on_chat_return_pressed
+// emote-mod overrides (courtroom.cpp "EMOTE MOD OVERRIDES", 2.11): char.ini
+// files ship legacy values that must never reach the wire — 2 is
+// objection-internal, 3 is meaningless, 4 aliases zoom — and an emote with
+// a preanimation upgrades idle→preanim and zoom→preanim-zoom (the latter
+// only when the server advertises prezoom). Strict receivers
+// (LemmyAO schema-validates MS broadcasts) DROP messages whose
+// emote_modifier carries a raw legacy value, so sending ini values
+// verbatim made us invisible to them.
+func NormalizeOutgoingEmoteMod(mod int, hasPreanim, immediate bool, features FeatureSet) int {
+	switch mod {
+	case legacyEmoteModObjection:
+		mod = EmoteModPreanim
+	case 3: // "No clue what emote_mod 3 is even supposed to be." — AO2-Client
+		mod = EmoteModIdle
+	case legacyEmoteModZoomPre:
+		mod = EmoteModZoom
+	}
+	if hasPreanim && !immediate {
+		switch {
+		case mod == EmoteModIdle:
+			mod = EmoteModPreanim
+		case mod == EmoteModZoom && features.Has(FeaturePrezoom):
+			mod = EmoteModPreanimZoom
+		}
+	}
+	return mod
+}
+
 // formatObjection emits "mod" or "mod&custom" (custom objections need the
 // server feature).
 func formatObjection(mod int, custom string, features FeatureSet) string {

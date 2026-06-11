@@ -63,6 +63,11 @@ const (
 	iniswapListCap = 4096
 	// iniswapFetchTimeout caps the txt download.
 	iniswapFetchTimeout = 15 * time.Second
+
+	// keepalivePeriod matches AO2-Client's CH ping timer (courtroom.cpp
+	// keepalive_timer->start(45000)): servers idle-kick silent clients,
+	// which used to hit us whenever the window sat minimized.
+	keepalivePeriod = 45 * time.Second
 )
 
 // Log panel tabs (courtroom right column).
@@ -131,18 +136,22 @@ type App struct {
 	charLower []string
 
 	// --- courtroom chrome state ---
-	icInput     string
-	oocInput    string
-	oocName     string
-	emotes      []courtroom.Emote
-	emoteIdx    int
-	charINIBusy bool
-	charINIres  chan charINIFetch
-	icLog       []string
-	oocLog      []string
-	musicScroll int32
-	areaScroll  int32
-	logTab      int
+	icInput  string
+	oocInput string
+	oocName  string
+	sidePref string    // OUR side (char.ini default, /pos override)
+	lastPing time.Time // CH keepalive pacing
+	// pair offset edit buffers (typed text commits on valid parse)
+	pairOffXText, pairOffYText string
+	emotes                     []courtroom.Emote
+	emoteIdx                   int
+	charINIBusy                bool
+	charINIres                 chan charINIFetch
+	icLog                      []string
+	oocLog                     []string
+	musicScroll                int32
+	areaScroll                 int32
+	logTab                     int
 	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
 	emoteAsk []time.Time
 
@@ -305,6 +314,7 @@ func (a *App) Connect(name, wsURL string) {
 		return
 	}
 	a.conn = conn
+	a.lastPing = time.Now()
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
 		return conn.Send(context.Background(), p)
 	}, hdid())
@@ -352,6 +362,12 @@ func hdid() string {
 func (a *App) pumpConnection() {
 	if a.conn == nil || a.sess == nil {
 		return
+	}
+	// Client-initiated keepalive (AO2-Client parity, 45 s): runs from
+	// Frame AND Background, so minimized sessions stay alive too.
+	if time.Since(a.lastPing) >= keepalivePeriod {
+		a.lastPing = time.Now()
+		a.sess.Ping()
 	}
 	for {
 		select {
@@ -452,7 +468,8 @@ func (a *App) enterCourtroom() {
 	if a.sess == nil {
 		return
 	}
-	a.iniChar = "" // fresh pick = fresh identity; iniswap is per-character
+	a.iniChar = ""  // fresh pick = fresh identity; iniswap is per-character
+	a.sidePref = "" // until the new char.ini reports its side
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
 	urls := a.urls
 	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character string) string {
@@ -653,6 +670,11 @@ func (a *App) pollCharINI() {
 		a.emotes = res.ini.Emotes
 		if len(a.emotes) == 0 {
 			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
+		}
+		// OUR side comes from our char.ini (AO2-Client semantics), never
+		// from whoever spoke last; /pos overrides it.
+		if side := strings.ToLower(strings.TrimSpace(res.ini.Side)); side != "" {
+			a.sidePref = side
 		}
 		a.emoteIdx = 0
 		a.emoteAsk = nil // fresh char: re-demand its button art from scratch

@@ -947,6 +947,9 @@ func (a *App) drawPairPanel(w, h int32) {
 			matches++
 		}
 	}
+	if c.hovering(sdl.Rect{X: panel.X + pad, Y: listTop, W: listW, H: listH}) {
+		a.pairScroll -= c.wheelY * scrollStepPx
+	}
 	track := sdl.Rect{X: panel.X + pad + listW - scrollBarW, Y: listTop, W: scrollBarW, H: listH}
 	a.pairScroll = c.VScrollbar("pairscroll", track, a.pairScroll, matches*lineH, listH)
 	rowY := listTop - a.pairScroll
@@ -976,26 +979,17 @@ func (a *App) drawPairPanel(w, h int32) {
 		rowY += lineH
 	}
 
-	// Right: placement controls.
+	// Right: placement controls (type the number, nudge with −/+, or
+	// mousewheel over the row — all three work).
 	rx := panel.X + panel.W/2 + pad
 	ry := panel.Y + 44
-	c.Label(rx, ry, fmt.Sprintf("Offset X: %d%%", a.pairOffX), ColText)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 70, Y: ry - 4, W: 28, H: 24}, "-") {
-		a.pairOffX = clampOffset(a.pairOffX - offsetStep)
-		a.persistPairPrefs()
-	}
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 38, Y: ry - 4, W: 28, H: 24}, "+") {
-		a.pairOffX = clampOffset(a.pairOffX + offsetStep)
+	if next := a.offsetControl("pairoffx", rx, ry, "Offset X %", a.pairOffX, &a.pairOffXText); next != a.pairOffX {
+		a.pairOffX = next
 		a.persistPairPrefs()
 	}
 	ry += 34
-	c.Label(rx, ry, fmt.Sprintf("Offset Y: %d%%", a.pairOffY), ColText)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 70, Y: ry - 4, W: 28, H: 24}, "-") {
-		a.pairOffY = clampOffset(a.pairOffY - offsetStep)
-		a.persistPairPrefs()
-	}
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 38, Y: ry - 4, W: 28, H: 24}, "+") {
-		a.pairOffY = clampOffset(a.pairOffY + offsetStep)
+	if next := a.offsetControl("pairoffy", rx, ry, "Offset Y %", a.pairOffY, &a.pairOffYText); next != a.pairOffY {
+		a.pairOffY = next
 		a.persistPairPrefs()
 	}
 	ry += 34
@@ -1014,6 +1008,39 @@ func (a *App) drawPairPanel(w, h int32) {
 }
 
 const offsetStep = 5
+
+// offsetControl draws one pair-offset row: a typed field (text buffer
+// commits only on a valid parse, so partial input like "-" survives
+// typing), −/+ nudge buttons, and mousewheel over the row. Returns the
+// possibly-updated value; the caller persists on change.
+func (a *App) offsetControl(id string, x, y int32, label string, val int, buf *string) int {
+	c := a.ctx
+	c.Label(x, y+4, label, ColText)
+	const fieldW = 56
+	fx := x + 86
+	if c.focusID != id {
+		*buf = strconv.Itoa(val) // not editing: mirror the canonical value
+	}
+	next, _ := c.TextField(id, sdl.Rect{X: fx, Y: y, W: fieldW, H: fieldH}, *buf, "0")
+	if next != *buf {
+		*buf = next
+		if n, err := strconv.Atoi(strings.TrimSpace(next)); err == nil {
+			val = clampOffset(n)
+		}
+	}
+	bx := fx + fieldW + 6
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 24, H: 24}, "-") {
+		val = clampOffset(val - offsetStep)
+	}
+	if c.Button(sdl.Rect{X: bx + 28, Y: y, W: 24, H: 24}, "+") {
+		val = clampOffset(val + offsetStep)
+	}
+	row := sdl.Rect{X: x, Y: y, W: bx + 52 - x, H: 26}
+	if c.hovering(row) && c.wheelY != 0 {
+		val = clampOffset(val + int(c.wheelY)*offsetStep)
+	}
+	return val
+}
 
 func clampOffset(v int) int {
 	if v < -100 {
@@ -1055,15 +1082,18 @@ func (a *App) sendIC(shout int) {
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
 		emote = a.emotes[a.emoteIdx]
 	}
+	hasPre := emote.Preanim != "" && emote.Preanim != "-"
 	deskMod := 1
 	out := protocol.OutgoingMS{
-		DeskMod:   deskMod,
-		PreEmote:  emote.Preanim,
-		CharName:  a.activeCharName(), // iniswap: the wire carries the custom folder
-		Emote:     emote.Anim,
-		Message:   text,
-		Side:      a.mySide(),
-		EmoteMod:  emote.Mod,
+		DeskMod:  deskMod,
+		PreEmote: emote.Preanim,
+		CharName: a.activeCharName(), // iniswap: the wire carries the custom folder
+		Emote:    emote.Anim,
+		Message:  text,
+		Side:     a.mySide(),
+		// Never ship raw char.ini emote mods: legacy 2/3/4 values make
+		// schema-strict clients drop the whole message.
+		EmoteMod:  protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, false, a.sess.Features),
 		CharID:    a.sess.MyCharID,
 		Objection: shout,
 		Showname:  a.d.Prefs.SavedShowname(),
@@ -1077,16 +1107,27 @@ func (a *App) sendIC(shout int) {
 	a.icInput = ""
 }
 
+// mySide is OUR position: the char.ini side (or /pos override) — never
+// the last speaker's position. Inheriting Scene.Position teleported us
+// to whoever spoke last AND leaked custom side strings that strict
+// receivers (LemmyAO's MS schema enumerates the eight standard sides)
+// reject wholesale.
 func (a *App) mySide() string {
-	if a.room != nil && a.room.Scene.Position != "" {
-		return a.room.Scene.Position
+	if a.sidePref != "" {
+		return a.sidePref
 	}
-	return "wit"
+	return "wit" // the AO default
 }
 
-// handleChatCommand implements /pair <id>, /unpair, /offset <x> [y].
+// handleChatCommand implements /pair <id>, /unpair, /offset <x> [y],
+// /pos <side>.
 func (a *App) handleChatCommand(text string) bool {
 	switch {
+	case strings.HasPrefix(text, "/pos "):
+		if side := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(text, "/pos "))); side != "" {
+			a.sidePref = side
+		}
+		return true
 	case strings.HasPrefix(text, "/pair "):
 		if id, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(text, "/pair "))); err == nil {
 			a.pairWith = id

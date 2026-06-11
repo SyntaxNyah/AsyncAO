@@ -459,3 +459,17 @@ func TestTypewriterSpacesDontBlipByDefault(t *testing.T) {
 		t.Errorf("blips = %d, want 2 (spaces silent)", blips)
 	}
 }
+
+// TestSessionPing pins the CH keepalive (AO2-Client keepalive_timer,
+// 45 s): servers idle-kick silent clients — minimized sessions died
+// before the app pinged on its own.
+func TestSessionPing(t *testing.T) {
+	rec := &sentRecorder{}
+	s := NewSession(rec.send, "h")
+	feed(t, s, "PV#1#CID#7#%")
+	s.Ping()
+	last := rec.packets[len(rec.packets)-1]
+	if last.Header != "CH" || last.Field(0) != "7" {
+		t.Errorf("ping sent %s#%s, want CH#7", last.Header, last.Field(0))
+	}
+}

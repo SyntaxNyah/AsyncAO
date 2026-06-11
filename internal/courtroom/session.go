@@ -265,6 +265,14 @@ func (s *Session) RequestMusic(track string) {
 	s.reply(protocol.NewPacket("MC", track, strconv.Itoa(s.MyCharID)))
 }
 
+// Ping sends the CH keepalive AO2-Client fires every 45 s
+// (courtroom.cpp keepalive_timer → ping_server). Servers idle-kick
+// silent clients; without this, sitting minimized (no chat traffic)
+// got the connection dropped.
+func (s *Session) Ping() {
+	s.reply(protocol.NewPacket("CH", strconv.Itoa(s.MyCharID)))
+}
+
 // CallMod sends a mod call with an optional reason.
 func (s *Session) CallMod(reason string) {
 	if s.Features.Has(protocol.FeatureModcallReason) {
