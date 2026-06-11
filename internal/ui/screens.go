@@ -24,6 +24,8 @@ const (
 	iconCell   int32 = 64
 	iconGap    int32 = 8
 	previewMax int32 = 360
+	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
+	emoteBtnCell int32 = 40
 )
 
 func osHostname() (string, error) { return os.Hostname() }
@@ -231,7 +233,6 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 
 	query := strings.ToLower(strings.TrimSpace(a.charSearch))
-	a.iconAskBudget = charIconAskPerFrame
 	col, row := int32(0), int32(0)
 	previewRequested := false
 	for i := range a.sess.Chars {
@@ -514,31 +515,44 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	}
 	x, y := r.X, r.Y
 	me := a.myCharName()
+	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
 	for i := range a.emotes {
 		e := &a.emotes[i]
 		label := e.Comment
 		if label == "" {
 			label = e.Anim
 		}
-		bw := c.TextWidth(label) + 18
+		bw, bh := emoteBtnCell, emoteBtnCell
+		if !useImages {
+			bw, bh = c.TextWidth(label)+18, btnH
+		}
 		if x+bw > r.X+r.W {
 			x = r.X
-			y += btnH + 4
-			if y > r.Y+r.H-btnH {
+			y += bh + 4
+			if y > r.Y+r.H-bh {
 				break
 			}
 		}
-		btn := sdl.Rect{X: x, Y: y, W: bw, H: btnH}
+		btn := sdl.Rect{X: x, Y: y, W: bw, H: bh}
 		selected := i == a.emoteIdx
 		if selected {
 			c.Fill(sdl.Rect{X: btn.X - 2, Y: btn.Y - 2, W: btn.W + 4, H: btn.H + 4}, ColAccent)
 		}
-		if c.Button(btn, label) {
-			a.emoteIdx = i
+		var picked bool
+		if useImages {
+			picked = a.drawEmoteImageButton(btn, me, i, selected, label)
+		} else {
+			picked = c.Button(btn, label)
 		}
-		// Full-size emote preview: 3 s hover or right-click.
+		if picked {
+			a.emoteIdx = i
+			// Pressed art for the new selection, before next frame draws it.
+			a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (selected)
+		}
+		// Full-size preview after a 3 s hover (right-click = instant): the
+		// TALKING sprite — what actually plays when this emote is sent.
 		if c.HoverPreview("emote:"+e.Anim, btn) {
-			a.previewBase = a.urls.Emote(me, e.Anim, courtroom.EmoteIdle)
+			a.previewBase = a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
 			a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 		}
 		x += bw + 6
@@ -549,6 +563,48 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 			a.previewBase = ""
 		}
 	}
+}
+
+// drawEmoteImageButton draws one emotions/button<N> cell, preferring the
+// state-correct art and falling back to the _off art (selection ring still
+// reads) and finally a text chip while textures stream in. Reports clicks.
+func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool, label string) bool {
+	c := a.ctx
+	base := a.urls.EmoteButton(me, i+1, selected)
+	page, ok := a.d.Store.Get(base)
+	if !ok {
+		a.maybeRequestEmoteButton(i, base)
+		if selected {
+			page, ok = a.d.Store.Get(a.urls.EmoteButton(me, i+1, false))
+		}
+	}
+	if ok && len(page.Frames) > 0 {
+		_ = c.Ren.Copy(page.Frames[0], nil, &btn)
+	} else {
+		c.Fill(btn, ColPanel)
+		c.Border(btn, ColPanelHi)
+		c.LabelClipped(btn.X+3, btn.Y+btn.H/2-8, btn.W-6, label, ColTextDim)
+	}
+	return c.hovering(btn) && c.clicked
+}
+
+// maybeRequestEmoteButton demands missing button art exactly like
+// maybeRequestCharIcon: shared per-frame budget, one ask per button per
+// charIconRetryInterval, low priority (sheddable; the cadence self-heals).
+func (a *App) maybeRequestEmoteButton(idx int, base string) {
+	if a.iconAskBudget <= 0 || idx < 0 || idx >= len(a.emotes) {
+		return
+	}
+	if len(a.emoteAsk) != len(a.emotes) {
+		a.emoteAsk = make([]time.Time, len(a.emotes))
+	}
+	now := time.Now()
+	if now.Sub(a.emoteAsk[idx]) < charIconRetryInterval {
+		return
+	}
+	a.emoteAsk[idx] = now
+	a.iconAskBudget--
+	a.d.Manager.Prefetch(base, assets.AssetTypeEmoteButton, network.PriorityLow) // AssetType: EmoteButton
 }
 
 func (a *App) drawPairPanel(w, h int32) {

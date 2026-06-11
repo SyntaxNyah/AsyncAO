@@ -120,8 +120,8 @@ func NewViewport(store *TextureStore) *Viewport {
 
 // Update advances animation clocks against the active scene.
 func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
-	v.syncAnim(&v.bgAnim, scene.BackgroundBase)
-	v.syncAnim(&v.deskAnim, scene.DeskBase)
+	v.syncAnimSticky(&v.bgAnim, scene.BackgroundBase)
+	v.syncAnimSticky(&v.deskAnim, scene.DeskBase)
 	v.syncAnim(&v.shoutAnim, scene.ShoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
@@ -155,6 +155,21 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 
 func (v *Viewport) syncAnim(a *animState, base string) {
 	if a.base != base {
+		a.reset(base)
+	}
+}
+
+// syncAnimSticky rebinds scenery layers (background, desk) only once the
+// incoming base is resident: a position flip to a still-loading background
+// must keep the last good scenery on screen instead of blanking the
+// viewport to the clear color. An empty base still clears immediately, and
+// the courtroom's HIGH-priority prefetch makes the swap a frame after the
+// texture lands. Contains is a plain map probe — no I/O, no allocation.
+func (v *Viewport) syncAnimSticky(a *animState, base string) {
+	if a.base == base {
+		return
+	}
+	if base == "" || v.store.Contains(base) {
 		a.reset(base)
 	}
 }

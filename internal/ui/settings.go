@@ -2,11 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // settingsState lives on App lazily (kept here for file cohesion).
@@ -15,9 +18,17 @@ type settingsState struct {
 	showname   string
 	loaded     bool
 	statusLine string
+
+	// theme picker state: list scanning runs on a goroutine (directory
+	// I/O stays off the render thread — §17.2) and lands on themeRes.
+	themeName string
+	themeDir  string
+	themeList []string
+	themeRes  chan []string
+	themeBusy bool
 }
 
-var settings settingsState
+var settings = settingsState{themeRes: make(chan []string, 1)}
 
 // imageTypes get the per-format toggle treatment.
 var imageTypeNames = []string{
@@ -26,6 +37,7 @@ var imageTypeNames = []string{
 	config.TypeBackground,
 	config.TypeDeskOverlay,
 	config.TypeShoutBubble,
+	config.TypeEmoteButton,
 	config.TypeMisc,
 }
 
@@ -35,6 +47,7 @@ func (a *App) drawSettings(w, h int32) {
 	c.Heading(pad, pad, "Settings", ColText)
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
 		a.d.Prefs.SetShowname(settings.showname)
+		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
 		_ = a.d.Prefs.SaveNow() // Settings-Apply synchronous flush
 		a.screen = a.prevScreen
 		return
@@ -42,8 +55,14 @@ func (a *App) drawSettings(w, h int32) {
 
 	if !settings.loaded {
 		settings.showname = a.d.Prefs.SavedShowname()
+		settings.themeName, settings.themeDir = a.d.Prefs.Theme()
+		if settings.themeName == "" {
+			settings.themeName = theme.DefaultThemeName
+		}
 		settings.loaded = true
+		a.scanThemes()
 	}
+	a.pollThemeScan()
 
 	y := pad + 44
 
@@ -64,7 +83,37 @@ func (a *App) drawSettings(w, h int32) {
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
 		a.d.Prefs.SetAnimationsEnabled(next)
 	}
+	y += 26
+	emoteImgs := a.d.Prefs.EmoteButtonImagesEnabled()
+	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats below)", emoteImgs); next != emoteImgs {
+		a.d.Prefs.SetEmoteButtonImages(next)
+	}
 	y += 34
+
+	// Theme picker: cycle through scanned themes; the folder field points
+	// at a custom root containing themes/<name> directories.
+	c.Label(pad, y+4, "Theme:", ColText)
+	if c.Button(sdl.Rect{X: pad + 60, Y: y, W: 26, H: btnH}, "<") {
+		a.cycleTheme(-1)
+	}
+	nameW := c.TextWidth(settings.themeName)
+	c.Label(pad+96, y+6, settings.themeName, ColAccent)
+	if c.Button(sdl.Rect{X: pad + 104 + nameW, Y: y, W: 26, H: btnH}, ">") {
+		a.cycleTheme(1)
+	}
+	if settings.themeBusy {
+		c.Label(pad+140+nameW, y+6, "scanning...", ColTextDim)
+	} else {
+		c.Label(pad+140+nameW, y+6, fmt.Sprintf("(%d found)", len(settings.themeList)), ColTextDim)
+	}
+	y += 32
+	c.Label(pad, y+4, "Theme folder:", ColText)
+	settings.themeDir, _ = c.TextField("themedir", sdl.Rect{X: pad + 110, Y: y, W: 340, H: fieldH}, settings.themeDir, `optional root holding themes\<name>`)
+	if c.Button(sdl.Rect{X: pad + 460, Y: y, W: 130, H: btnH}, "Apply & rescan") {
+		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
+		a.scanThemes()
+	}
+	y += 36
 
 	// Per-type format toggles.
 	c.Label(pad, y, "Image formats probed per asset type (defaults: char_icon=PNG only, everything else=WebP only):", ColTextDim)
@@ -186,4 +235,74 @@ func containsExt(list []string, ext string) bool {
 		}
 	}
 	return false
+}
+
+// --- theme picker -----------------------------------------------------------
+
+// cycleTheme steps through the scanned theme list and persists the pick.
+func (a *App) cycleTheme(step int) {
+	list := settings.themeList
+	if len(list) == 0 {
+		return
+	}
+	idx := 0
+	for i, name := range list {
+		if name == settings.themeName {
+			idx = i
+			break
+		}
+	}
+	idx = (idx + step + len(list)) % len(list)
+	settings.themeName = list[idx]
+	a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
+}
+
+// scanThemes lists themes/<name> directories under the custom root and the
+// executable's directory, off-thread; pollThemeScan picks up the result.
+func (a *App) scanThemes() {
+	if settings.themeBusy {
+		return
+	}
+	settings.themeBusy = true
+	customRoot := strings.TrimSpace(settings.themeDir)
+	go func() {
+		roots := make([]string, 0, 2)
+		if customRoot != "" {
+			roots = append(roots, customRoot)
+		}
+		if exe, err := os.Executable(); err == nil {
+			roots = append(roots, filepath.Dir(exe))
+		}
+		settings.themeRes <- scanThemeDirs(roots)
+	}()
+}
+
+func (a *App) pollThemeScan() {
+	select {
+	case names := <-settings.themeRes:
+		settings.themeBusy = false
+		settings.themeList = names
+	default:
+	}
+}
+
+// scanThemeDirs collects theme names across roots, "default" always first
+// (the built-in fallback theme.Load uses even when no folder exists).
+func scanThemeDirs(roots []string) []string {
+	names := []string{theme.DefaultThemeName}
+	seen := map[string]bool{theme.DefaultThemeName: true}
+	for _, root := range roots {
+		entries, err := os.ReadDir(filepath.Join(root, theme.ThemesDirName))
+		if err != nil {
+			continue // missing themes/ dir is normal
+		}
+		for _, e := range entries {
+			if !e.IsDir() || seen[e.Name()] {
+				continue
+			}
+			seen[e.Name()] = true
+			names = append(names, e.Name())
+		}
+	}
+	return names
 }

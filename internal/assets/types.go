@@ -26,6 +26,7 @@ const (
 	AssetTypeSFX
 	AssetTypeMusic
 	AssetTypeBlip
+	AssetTypeEmoteButton
 	// AssetTypeCount is the sentinel for fixed-size per-type tables.
 	AssetTypeCount
 )
@@ -42,6 +43,7 @@ var typeNames = [AssetTypeCount]string{
 	AssetTypeSFX:         config.TypeSFX,
 	AssetTypeMusic:       config.TypeMusic,
 	AssetTypeBlip:        config.TypeBlip,
+	AssetTypeEmoteButton: config.TypeEmoteButton,
 }
 
 // Valid reports whether t is a concrete asset type (not the sentinel).

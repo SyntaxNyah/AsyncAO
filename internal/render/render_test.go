@@ -157,3 +157,50 @@ func TestRenderFrameZeroAllocs(t *testing.T) {
 		t.Errorf("render frame allocates %.1f objects/op, want 0 (spec §12)", allocs)
 	}
 }
+
+// TestViewportStickyScenery pins the black-background fix: flipping the
+// scene to a not-yet-resident background keeps the previous scenery bound
+// (and drawn) until the new texture lands; an empty base clears at once.
+func TestViewportStickyScenery(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+
+	if err := store.Upload("bg/defenseempty", decodedFixture()); err != nil {
+		t.Fatal(err)
+	}
+
+	vp := NewViewport(store)
+	scene := &courtroom.Scene{BackgroundBase: "bg/defenseempty"}
+	vp.Update(scene, time.Millisecond)
+	if vp.bgAnim.base != "bg/defenseempty" {
+		t.Fatalf("bound %q, want defenseempty", vp.bgAnim.base)
+	}
+
+	// Speaker flips position; the witness background hasn't loaded yet.
+	scene.BackgroundBase = "bg/witnessempty"
+	vp.Update(scene, time.Millisecond)
+	if vp.bgAnim.base != "bg/defenseempty" {
+		t.Fatalf("sticky bind lost: bound %q, want defenseempty until witnessempty is resident", vp.bgAnim.base)
+	}
+
+	// The texture lands; the next Update swaps to it.
+	if err := store.Upload("bg/witnessempty", decodedFixture()); err != nil {
+		t.Fatal(err)
+	}
+	vp.Update(scene, time.Millisecond)
+	if vp.bgAnim.base != "bg/witnessempty" {
+		t.Fatalf("bound %q after upload, want witnessempty", vp.bgAnim.base)
+	}
+
+	// An explicit empty base clears immediately.
+	scene.BackgroundBase = ""
+	vp.Update(scene, time.Millisecond)
+	if vp.bgAnim.base != "" {
+		t.Fatalf("bound %q, want cleared", vp.bgAnim.base)
+	}
+}

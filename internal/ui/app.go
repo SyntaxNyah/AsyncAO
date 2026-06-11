@@ -115,6 +115,14 @@ type App struct {
 	oocLog      []string
 	musicScroll int32
 	showMusic   bool
+	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
+	emoteAsk []time.Time
+
+	// scenery self-heal stamps (healScenery pacing)
+	bgAskBase   string
+	bgAskAt     time.Time
+	deskAskBase string
+	deskAskAt   time.Time
 
 	// pairing panel
 	pairWith   int
@@ -212,6 +220,7 @@ func (a *App) Disconnect() {
 	a.room = nil
 	a.emotes = nil
 	a.iconAsk = nil
+	a.emoteAsk = nil
 	a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
 	a.screen = ScreenLobby
 }
@@ -373,6 +382,7 @@ func (a *App) pollCharINI() {
 			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
 		}
 		a.emoteIdx = 0
+		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
 		// Prefetch the first few emotes speculatively.
 		me := a.myCharName()
 		for i, e := range a.emotes {
@@ -441,7 +451,9 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 // Frame runs one UI frame: connection pump, screen logic, drawing.
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pumpConnection()
+	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
+		a.healScenery()
 		a.room.Update(dt)
 		a.d.Viewport.Update(&a.room.Scene, dt)
 	}
@@ -460,6 +472,28 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.drawSettings(winW, winH)
 	case ScreenAbout:
 		a.drawAbout(winW, winH)
+	}
+}
+
+// healScenery re-demands the scene's background/desk when T1 lost them
+// (LRU eviction, or a prefetch that never landed): without it the viewport
+// can only show black until the next position change. Paced one ask per
+// base per charIconRetryInterval; HIGH because this is the live scene.
+func (a *App) healScenery() {
+	sc := &a.room.Scene
+	now := time.Now()
+	if sc.BackgroundBase != "" && sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval {
+		// recently asked for this exact base; let it land
+	} else if sc.BackgroundBase != "" && !a.d.Store.Contains(sc.BackgroundBase) {
+		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
+		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+	}
+	if sc.DeskBase != "" && sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval {
+		return
+	}
+	if sc.DeskBase != "" && !a.d.Store.Contains(sc.DeskBase) {
+		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
+		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
 }
 

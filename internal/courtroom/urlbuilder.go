@@ -6,6 +6,7 @@ package courtroom
 
 import (
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
@@ -20,6 +21,8 @@ const (
 	soundsBlips     = "sounds/blips/"
 	soundsMusic     = "sounds/music/"
 	miscDefaultDir  = "misc/default/"
+	emotionsDir     = "emotions/"
+	emoteButtonStem = "button"
 	charIconStem    = "char_icon"
 	idlePrefix      = "(a)"
 	talkPrefix      = "(b)"
@@ -89,6 +92,18 @@ func (u URLBuilder) Emote(character, emote string, kind EmoteKind) string {
 		prefix = talkPrefix
 	}
 	return u.origin + charactersDir + seg(character) + "/" + seg(prefix+emote)
+}
+
+// EmoteButton returns the emote-picker button art base for the 1-based
+// emote number n; on selects the pressed (_on) variant. Convention shared
+// by AO2-Client (emotion_button "emotions/button%1_off") and webAO.
+// AssetType: EmoteButton
+func (u URLBuilder) EmoteButton(character string, n int, on bool) string {
+	state := "_off"
+	if on {
+		state = "_on"
+	}
+	return u.origin + charactersDir + seg(character) + "/" + emotionsDir + emoteButtonStem + strconv.Itoa(n) + state
 }
 
 // ShoutBubble returns the per-character shout bubble base ("holdit_bubble",

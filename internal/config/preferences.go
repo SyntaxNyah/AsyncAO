@@ -56,6 +56,10 @@ const (
 // frame only) — never an extra network probe (spec §4).
 const defaultPreferAnimated = true
 
+// defaultEmoteButtonImages ships the courtroom emote picker as image
+// buttons (characters/<char>/emotions/button<N>) rather than text chips.
+const defaultEmoteButtonImages = true
+
 // AssetTypePrefs holds the per-asset-type format preferences.
 type AssetTypePrefs struct {
 	// FormatOrder is the ordered probe list for this type. An empty or
@@ -70,6 +74,9 @@ type AssetTypePrefs struct {
 type AssetPreferences struct {
 	GlobalFallbacksEnabled bool                      `json:"globalFallbacksEnabled"`
 	PreferAnimated         bool                      `json:"preferAnimated"`
+	EmoteButtonImages      bool                      `json:"emoteButtonImages"`
+	ThemeName              string                    `json:"themeName"`
+	ThemeDir               string                    `json:"themeDir"`
 	AssetTypes             map[string]AssetTypePrefs `json:"assetTypes"`
 	LearnedFormats         map[string][]string       `json:"learnedFormats"`
 	PairOffsetX            int                       `json:"pairOffsetX"`
@@ -101,6 +108,9 @@ type AssetPreferences struct {
 type prefsJSON struct {
 	GlobalFallbacksEnabled bool                      `json:"globalFallbacksEnabled"`
 	PreferAnimated         *bool                     `json:"preferAnimated"`
+	EmoteButtonImages      *bool                     `json:"emoteButtonImages"`
+	ThemeName              string                    `json:"themeName"`
+	ThemeDir               string                    `json:"themeDir"`
 	AssetTypes             map[string]AssetTypePrefs `json:"assetTypes"`
 	LearnedFormats         map[string][]string       `json:"learnedFormats"`
 	PairOffsetX            int                       `json:"pairOffsetX"`
@@ -155,10 +165,11 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 // load reads and normalizes the preferences file without starting the saver.
 func load(path string) (*AssetPreferences, error) {
 	p := &AssetPreferences{
-		PreferAnimated: defaultPreferAnimated,
-		AssetTypes:     defaultAssetTypes(),
-		LearnedFormats: map[string][]string{},
-		path:           path,
+		PreferAnimated:    defaultPreferAnimated,
+		EmoteButtonImages: defaultEmoteButtonImages,
+		AssetTypes:        defaultAssetTypes(),
+		LearnedFormats:    map[string][]string{},
+		path:              path,
 	}
 
 	data, err := os.ReadFile(path)
@@ -178,6 +189,11 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.PreferAnimated != nil {
 		p.PreferAnimated = *onDisk.PreferAnimated
 	}
+	if onDisk.EmoteButtonImages != nil {
+		p.EmoteButtonImages = *onDisk.EmoteButtonImages
+	}
+	p.ThemeName = onDisk.ThemeName
+	p.ThemeDir = onDisk.ThemeDir
 	for name, tp := range onDisk.AssetTypes {
 		if len(tp.FormatOrder) == 0 {
 			tp.FormatOrder = DefaultFormatOrder(name)
@@ -469,6 +485,52 @@ func (p *AssetPreferences) SetAnimationsEnabled(enabled bool) {
 		return
 	}
 	p.PreferAnimated = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Emote button images ----------------------------------------------------
+
+// EmoteButtonImagesEnabled reports whether the courtroom emote picker draws
+// the character's emotions/button<N> art (text chips when off).
+func (p *AssetPreferences) EmoteButtonImagesEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.EmoteButtonImages
+}
+
+// SetEmoteButtonImages toggles image emote buttons. Render-level only: the
+// probe list for the EmoteButton type is configured separately.
+func (p *AssetPreferences) SetEmoteButtonImages(enabled bool) {
+	p.mu.Lock()
+	if p.EmoteButtonImages == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.EmoteButtonImages = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Theme -------------------------------------------------------------------
+
+// Theme reports the selected theme name ("" = default) and the custom theme
+// root directory ("" = no custom root configured).
+func (p *AssetPreferences) Theme() (name, dir string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ThemeName, p.ThemeDir
+}
+
+// SetTheme stores the selected theme name and custom theme root.
+func (p *AssetPreferences) SetTheme(name, dir string) {
+	p.mu.Lock()
+	if p.ThemeName == name && p.ThemeDir == dir {
+		p.mu.Unlock()
+		return
+	}
+	p.ThemeName = name
+	p.ThemeDir = dir
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -14,6 +14,9 @@ const (
 	TypeSFX         = "SFX"
 	TypeMusic       = "Music"
 	TypeBlip        = "Blip"
+	// TypeEmoteButton is the courtroom emote-picker art
+	// (characters/<char>/emotions/button<N>_off|_on).
+	TypeEmoteButton = "EmoteButton"
 )
 
 // TypeNames lists every canonical asset-type name, in the same order as the
@@ -28,6 +31,7 @@ var TypeNames = []string{
 	TypeSFX,
 	TypeMusic,
 	TypeBlip,
+	TypeEmoteButton,
 }
 
 // File extensions probed for assets. Extensions always carry the leading dot
@@ -64,6 +68,7 @@ var defaultFormatOrders = map[string][]string{
 	TypeSFX:         {ExtOpus},
 	TypeMusic:       {ExtOpus},
 	TypeBlip:        {ExtOpus},
+	TypeEmoteButton: {ExtWebP},
 }
 
 // legacyFallbackChains is appended (order preserved, deduplicated) to the
@@ -79,6 +84,8 @@ var legacyFallbackChains = map[string][]string{
 	TypeSFX:         {ExtOgg, ExtWAV, ExtMP3},
 	TypeMusic:       {ExtOgg, ExtMP3},
 	TypeBlip:        {ExtOgg, ExtWAV, ExtMP3},
+	// Legacy packs ship PNG buttons; APNG/GIF cover animated button packs.
+	TypeEmoteButton: {ExtAPNG, ExtGIF, ExtPNG},
 }
 
 // DefaultFormatOrder returns a copy of the zero-fallback probe list for the

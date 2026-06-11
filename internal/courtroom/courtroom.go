@@ -265,8 +265,12 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		bgPart, deskPart := PositionScene(msg.Side)
 		c.Scene.BackgroundBase = c.urls.Background(c.sess.Background, bgPart)
 		c.Scene.DeskBase = c.urls.Background(c.sess.Background, deskPart)
-		c.mgr.Prefetch(c.Scene.BackgroundBase, assets.AssetTypeBackground, network.PriorityLow) // AssetType: Background
-		c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityLow)      // AssetType: DeskOverlay
+		// HIGH like every other live-message asset: this scenery is on
+		// screen NOW. At low priority a busy lane shed these, and the
+		// viewport had nothing to draw for the new position (the
+		// "background goes black while talking" bug).
+		c.mgr.Prefetch(c.Scene.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
+		c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh)      // AssetType: DeskOverlay
 	}
 	c.Scene.ShowDesk = deskVisible(msg.DeskMod)
 
