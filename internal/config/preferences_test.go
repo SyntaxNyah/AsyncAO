@@ -420,3 +420,49 @@ func TestDefaultPathShape(t *testing.T) {
 		t.Errorf("DefaultPath dir = %s, want %s", filepath.Base(filepath.Dir(path)), PrefsDirName)
 	}
 }
+
+// TestLayoutAudioAndOOCNamePrefs pins the courtroom knobs: defaults match
+// the original fixed layout, sets clamp, volume zero (mute) round-trips,
+// and everything persists.
+func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prefs.json")
+	p, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	vp, chat, logT, in := p.LayoutScales()
+	if vp != DefaultViewportPercent || chat != DefaultScalePercent || logT != DefaultScalePercent || in != DefaultScalePercent {
+		t.Fatalf("defaults = %d/%d/%d/%d", vp, chat, logT, in)
+	}
+	if m, s, b := p.AudioVolumes(); m != 100 || s != 100 || b != 100 {
+		t.Fatalf("default volumes = %d/%d/%d, want 100s", m, s, b)
+	}
+
+	p.SetLayoutScales(10, 999, 10, 999) // wildly out of range → clamped
+	vp, chat, logT, in = p.LayoutScales()
+	if vp != MinViewportPercent || chat != MaxChatScalePercent || logT != MinLogScalePercent || in != MaxInputPercent {
+		t.Fatalf("clamped = %d/%d/%d/%d", vp, chat, logT, in)
+	}
+
+	p.SetAudioVolumes(0, 55, 200) // mute is a real value; 200 clamps
+	p.SetOOCName("arbok")
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+
+	q, err := load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, s, b := q.AudioVolumes(); m != 0 || s != 55 || b != 100 {
+		t.Fatalf("reloaded volumes = %d/%d/%d, want 0/55/100 (0 must survive)", m, s, b)
+	}
+	if q.SavedOOCName() != "arbok" {
+		t.Fatalf("reloaded OOC name = %q", q.SavedOOCName())
+	}
+	if v, _, _, _ := q.LayoutScales(); v != MinViewportPercent {
+		t.Fatalf("reloaded viewport = %d", v)
+	}
+}

@@ -34,6 +34,9 @@ const (
 	scrollStepPx = 32
 	caretBlink   = 500 * time.Millisecond
 
+	// DefaultScalePct is the 1:1 text/layout scale (percent).
+	DefaultScalePct = 100
+
 	// scrollThumbMinPx keeps the scrollbar thumb grabbable on long lists.
 	scrollThumbMinPx = 24
 	// scrollGrabSlopPx widens the scrollbar's hit zone beyond its drawn
@@ -58,10 +61,12 @@ var (
 	ColStar       = sdl.Color{R: 255, G: 215, B: 0, A: 255}  // favorites
 )
 
+// textKey keys the label cache by font identity (pointer), so scaled
+// fonts coexist with the chrome fonts in one cache.
 type textKey struct {
 	text  string
 	color sdl.Color
-	big   bool
+	font  *ttf.Font
 }
 
 type cachedText struct {
@@ -76,6 +81,13 @@ type Ctx struct {
 	font    *ttf.Font
 	fontBig *ttf.Font
 
+	// User-scaled font slots (chat box, log/OOC lists), rebuilt only when
+	// the percent changes — a settings action, never per frame.
+	chatFont *ttf.Font
+	chatPct  int
+	logFont  *ttf.Font
+	logPct   int
+
 	mouseX, mouseY int32
 	clicked        bool // left released this frame
 	rightClicked   bool
@@ -87,8 +99,10 @@ type Ctx struct {
 	pasted         string // Ctrl+V clipboard text (flattened to one line)
 	copyReq        bool   // Ctrl+C: focused field copies its value
 	cutReq         bool   // Ctrl+X: focused field copies, then clears
+	selectAll      bool   // Ctrl+A armed: next edit replaces the whole value
 	mouseDown      bool   // left button currently held (event-tracked)
 	dragID         string // widget owning the active drag ("" = none)
+	dropped        string // SDL_DROPFILE path this frame ("" = none)
 
 	focusID  string
 	caretOn  bool
@@ -130,6 +144,38 @@ func loadEmbeddedFont(size int) (*ttf.Font, error) {
 // Font exposes the chrome font (typewriter rasterizer reuse).
 func (c *Ctx) Font() *ttf.Font { return c.font }
 
+// ChatFont returns the IC message box font at pct percent of the chrome
+// size, rebuilding only when the percent changes (a Settings action).
+func (c *Ctx) ChatFont(pct int) *ttf.Font {
+	return c.scaledFont(&c.chatFont, &c.chatPct, pct)
+}
+
+// LogFont returns the log/OOC list font at pct percent of the chrome size.
+func (c *Ctx) LogFont(pct int) *ttf.Font {
+	return c.scaledFont(&c.logFont, &c.logPct, pct)
+}
+
+func (c *Ctx) scaledFont(slot **ttf.Font, cached *int, pct int) *ttf.Font {
+	if pct == DefaultScalePct && *slot == nil {
+		return c.font // unscaled: share the chrome font, no extra rasters
+	}
+	if *slot != nil && *cached == pct {
+		return *slot
+	}
+	font, err := loadEmbeddedFont(UIFontSize * pct / DefaultScalePct)
+	if err != nil {
+		return c.font
+	}
+	if *slot != nil {
+		(*slot).Close()
+		// Stale-font cache entries would never be hit again (keys carry the
+		// font pointer); purge wholesale — scale changes are user actions.
+		c.purgeTextCache()
+	}
+	*slot, *cached = font, pct
+	return font
+}
+
 // BeginFrame opens a frame: it clears the input snapshot, so it must run
 // BEFORE this frame's events are fed in via HandleEvent. The GetMouseState
 // seed predates the frame's event pump; mouse events override it as they
@@ -145,6 +191,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.pasted = ""
 	c.copyReq = false
 	c.cutReq = false
+	c.dropped = ""
 	x, y, _ := sdl.GetMouseState()
 	c.mouseX, c.mouseY = x, y
 	if !c.mouseDown {
@@ -200,6 +247,11 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 				c.copyReq = true
 			case sdl.K_x:
 				c.cutReq = true
+			case sdl.K_a:
+				// Arm select-all on the focused field: the next typed or
+				// pasted text replaces the whole value, backspace clears
+				// it, Ctrl+C/X already act on the full value.
+				c.selectAll = true
 			}
 			return
 		}
@@ -210,6 +262,10 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 			c.enter = true
 		case sdl.K_TAB:
 			c.tabPressed = true
+		}
+	case *sdl.DropEvent:
+		if e.Type == sdl.DROPFILE {
+			c.dropped = e.File // consumed by the visible screen this frame
 		}
 	}
 }
@@ -238,18 +294,14 @@ func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 	_ = c.Ren.DrawRect(&r)
 }
 
-// textTexture returns (and caches) a rendered label.
-func (c *Ctx) textTexture(text string, col sdl.Color, big bool) (cachedText, bool) {
-	if text == "" {
+// textTexture returns (and caches) a rendered label for the given font.
+func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedText, bool) {
+	if text == "" || font == nil {
 		return cachedText{}, false
 	}
-	key := textKey{text: text, color: col, big: big}
+	key := textKey{text: text, color: col, font: font}
 	if t, ok := c.textCache[key]; ok {
 		return t, true
-	}
-	font := c.font
-	if big {
-		font = c.fontBig
 	}
 	surf, err := font.RenderUTF8Blended(text, col)
 	if err != nil {
@@ -279,7 +331,7 @@ func (c *Ctx) purgeTextCache() {
 
 // Label draws text at (x, y) and returns its pixel width.
 func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
-	t, ok := c.textTexture(text, col, false)
+	t, ok := c.textTexture(text, col, c.font)
 	if !ok {
 		return 0
 	}
@@ -290,7 +342,7 @@ func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
 
 // Heading draws large text.
 func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
-	t, ok := c.textTexture(text, col, true)
+	t, ok := c.textTexture(text, col, c.fontBig)
 	if !ok {
 		return
 	}
@@ -300,7 +352,13 @@ func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
 
 // LabelClipped draws text clipped to maxW.
 func (c *Ctx) LabelClipped(x, y, maxW int32, text string, col sdl.Color) {
-	t, ok := c.textTexture(text, col, false)
+	c.LabelClippedFont(c.font, x, y, maxW, text, col)
+}
+
+// LabelClippedFont is LabelClipped with an explicit font (scaled log/OOC
+// text). Cached like every label; the cache keys by font identity.
+func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, col sdl.Color) {
+	t, ok := c.textTexture(text, col, font)
 	if !ok {
 		return
 	}
@@ -333,7 +391,7 @@ func (c *Ctx) Button(r sdl.Rect, label string) bool {
 	}
 	c.Fill(r, bg)
 	c.Border(r, ColAccent)
-	t, ok := c.textTexture(label, ColText, false)
+	t, ok := c.textTexture(label, ColText, c.font)
 	if ok {
 		dst := sdl.Rect{X: r.X + (r.W-t.w)/2, Y: r.Y + (r.H-t.h)/2, W: t.w, H: t.h}
 		_ = c.Ren.Copy(t.tex, nil, &dst)
@@ -364,6 +422,7 @@ func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
 	hover := c.hovering(r)
 	if c.clicked {
+		c.selectAll = false // any click drops a pending select-all
 		if hover {
 			c.focusID = id
 		} else if c.focusID == id {
@@ -381,11 +440,12 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 
 	enter := false
 	if focused {
-		if c.typed != "" {
-			value += c.typed
-		}
-		if c.pasted != "" {
-			value += c.pasted
+		if c.typed != "" || c.pasted != "" {
+			if c.selectAll {
+				value = "" // select-all: the edit replaces everything
+				c.selectAll = false
+			}
+			value += c.typed + c.pasted
 		}
 		if c.copyReq && value != "" {
 			_ = sdl.SetClipboardText(value)
@@ -395,10 +455,16 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 				_ = sdl.SetClipboardText(value)
 			}
 			value = ""
+			c.selectAll = false
 		}
 		if c.backspace && len(value) > 0 {
-			runes := []rune(value)
-			value = string(runes[:len(runes)-1])
+			if c.selectAll {
+				value = ""
+				c.selectAll = false
+			} else {
+				runes := []rune(value)
+				value = string(runes[:len(runes)-1])
+			}
 		}
 		if c.enter {
 			enter = true
@@ -413,6 +479,15 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 		col = ColTextDim
 	}
 	textY := r.Y + (r.H-int32(c.font.Height()))/2
+	if focused && c.selectAll && value != "" {
+		// Select-all highlight behind the text.
+		selW := c.TextWidth(value)
+		if selW > r.W-2*padX {
+			selW = r.W - 2*padX
+		}
+		c.Fill(sdl.Rect{X: r.X + padX, Y: r.Y + 3, W: selW, H: r.H - 6},
+			sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
+	}
 	c.LabelClipped(r.X+padX, textY, r.W-2*padX, show, col)
 	if focused && c.caretOn {
 		caretX := r.X + padX + c.TextWidth(value)
@@ -504,5 +579,11 @@ func (c *Ctx) Destroy() {
 	}
 	if c.fontBig != nil {
 		c.fontBig.Close()
+	}
+	if c.chatFont != nil {
+		c.chatFont.Close()
+	}
+	if c.logFont != nil {
+		c.logFont.Close()
 	}
 }

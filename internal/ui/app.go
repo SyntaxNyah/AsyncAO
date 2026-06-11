@@ -70,6 +70,7 @@ const (
 	logTabLog = iota
 	logTabMusic
 	logTabAreas
+	logTabOOC
 )
 
 // Deps wires the app to the engine singletons built in main.
@@ -149,17 +150,20 @@ type App struct {
 	warnLine string
 	warnAt   time.Time
 
-	// --- iniswap (custom characters from <origin>/iniswap.txt) ---
-	iniChar    string // active override folder ("" = picked character)
-	iniList    []string
-	iniLower   []string // lowercased names for the search filter
-	iniListErr string
-	iniBusy    bool
-	iniRes     chan iniswapFetch
-	showIni    bool
-	iniSearch  string
-	iniScroll  int32
-	iniAsk     []time.Time // demand pacing stamps, parallel to iniList
+	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
+	iniChar     string   // active override folder ("" = picked character)
+	iniServer   []string // the server's iniswap.txt names (may be empty)
+	iniList     []string // merged menu: wardrobe first, then server extras
+	iniWardrobe []bool   // parallel to iniList: wardrobe membership (star)
+	iniLower    []string // lowercased names for the search filter
+	iniListErr  string
+	iniBusy     bool
+	iniRes      chan iniswapFetch
+	showIni     bool
+	iniSearch   string
+	iniAdd      string // "add folder to wardrobe" input
+	iniScroll   int32
+	iniAsk      []time.Time // demand pacing stamps, parallel to iniList
 
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
@@ -167,7 +171,16 @@ type App struct {
 	deskAskBase string
 	deskAskAt   time.Time
 
+	// layout scales (percent; mirrors prefs, saved on change)
+	vpPct, chatPct, logPct, inputPct int
+	// chat raster invalidation extras (text/color tracked separately)
+	rasterScale int
+	rasterW     int32
+	oocScroll   int32
+
 	// pairing panel
+	pairSearch string
+	pairScroll int32
 	pairWith   int
 	pairOrder  int
 	pairOffX   int
@@ -210,8 +223,49 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	}
 	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
 	a.pairFlip = d.Prefs.PairFlipped()
+	a.vpPct, a.chatPct, a.logPct, a.inputPct = d.Prefs.LayoutScales()
+	if saved := d.Prefs.SavedOOCName(); saved != "" {
+		a.oocName = saved
+	}
 	a.RefreshServers()
 	return a
+}
+
+// saveLayout persists the courtroom layout knobs (debounced saver flushes).
+func (a *App) saveLayout() {
+	a.d.Prefs.SetLayoutScales(a.vpPct, a.chatPct, a.logPct, a.inputPct)
+}
+
+// inputFieldH is the scaled IC/OOC input height.
+func (a *App) inputFieldH() int32 {
+	return fieldH * int32(a.inputPct) / DefaultScalePct
+}
+
+// ensureCharLower keeps the lowercase name cache in sync with the char
+// list (shared by char select filtering and the pairing search).
+func (a *App) ensureCharLower() {
+	if a.sess == nil || len(a.charLower) == len(a.sess.Chars) {
+		return
+	}
+	a.charLower = make([]string, len(a.sess.Chars))
+	for i := range a.sess.Chars {
+		a.charLower[i] = strings.ToLower(a.sess.Chars[i].Name)
+	}
+}
+
+// Background runs the per-frame engine work without drawing — the main
+// loop calls it instead of Frame while the window is minimized, so the
+// session keeps pumping (keepalives answered, queues drained) at zero
+// render cost.
+func (a *App) Background(dt time.Duration) {
+	a.pumpConnection()
+	a.drainWarnings()
+	if a.room != nil {
+		a.room.Update(dt)
+	}
+	a.d.Audio.Frame()
+	a.d.Pump.Frame()
+	a.d.Store.DrainDestroyQueue()
 }
 
 // SetPump injects the upload pump (built after App for the liveness probe).
@@ -271,10 +325,11 @@ func (a *App) Disconnect() {
 	a.iconAsk = nil
 	a.emoteAsk = nil
 	a.charLower = nil
-	// Iniswap state is per-server: drop the list and drain any in-flight
-	// fetch so a stale result can't land after a reconnect elsewhere.
-	a.iniChar, a.iniList, a.iniLower, a.iniAsk = "", nil, nil, nil
-	a.iniListErr, a.iniSearch = "", ""
+	// Server-side iniswap state resets per server (the wardrobe is global
+	// and persists); drain any in-flight fetch so a stale txt can't land
+	// after a reconnect elsewhere.
+	a.iniChar, a.iniServer, a.iniList, a.iniWardrobe, a.iniLower, a.iniAsk = "", nil, nil, nil, nil, nil
+	a.iniListErr, a.iniSearch, a.iniAdd = "", "", ""
 	a.showIni, a.iniBusy, a.iniScroll = false, false, 0
 	select {
 	case <-a.iniRes:
@@ -430,12 +485,14 @@ func (a *App) setIniswap(name string) {
 	a.loadCharINI()
 }
 
-// openIniswap shows the custom character menu, fetching iniswap.txt on
-// first open (FetchRaw: T2 + disk cached, singleflight — a reopen is a
-// memory hit). Runs on a goroutine; pollIniswap lands the result.
+// openIniswap shows the wardrobe menu. The wardrobe half renders
+// instantly from prefs; the server's iniswap.txt merges in when its
+// fetch lands (FetchRaw: T2 + disk cached, singleflight — a reopen is a
+// memory hit).
 func (a *App) openIniswap() {
 	a.showIni = true
-	if len(a.iniList) > 0 || a.iniBusy || a.urls.Origin() == "" {
+	a.rebuildIniMenu() // wardrobe is local: usable before (or without) the txt
+	if a.iniServer != nil || a.iniBusy || a.urls.Origin() == "" {
 		return
 	}
 	a.iniBusy = true
@@ -458,17 +515,57 @@ func (a *App) pollIniswap() {
 	case res := <-a.iniRes:
 		a.iniBusy = false
 		if res.err != nil {
-			a.iniListErr = "iniswap.txt: " + res.err.Error()
-			return
+			a.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
+			a.iniServer = nil
+		} else {
+			a.iniServer = res.names
 		}
-		a.iniList = res.names
-		a.iniLower = make([]string, len(res.names))
-		for i, n := range res.names {
-			a.iniLower[i] = strings.ToLower(n)
-		}
-		a.iniAsk = nil
+		a.rebuildIniMenu()
 	default:
 	}
+}
+
+// rebuildIniMenu merges the menu: wardrobe first (the user's saved
+// favourites — instant swaps, persisted across sessions and servers),
+// then server-list entries not already in the wardrobe.
+func (a *App) rebuildIniMenu() {
+	names, fromWardrobe := mergeWardrobe(a.d.Prefs.WardrobeList(), a.iniServer)
+	a.iniList = names
+	a.iniWardrobe = fromWardrobe
+	a.iniLower = make([]string, len(names))
+	for i, n := range names {
+		a.iniLower[i] = strings.ToLower(n)
+	}
+	a.iniAsk = nil
+}
+
+// mergeWardrobe builds the wardrobe-first menu list; the bool slice marks
+// wardrobe membership (the star). Server duplicates collapse into their
+// wardrobe entry, case-insensitively.
+func mergeWardrobe(wardrobe, server []string) ([]string, []bool) {
+	names := make([]string, 0, len(wardrobe)+len(server))
+	stars := make([]bool, 0, len(wardrobe)+len(server))
+	seen := make(map[string]struct{}, len(wardrobe))
+	sort.SliceStable(wardrobe, func(i, j int) bool {
+		return strings.ToLower(wardrobe[i]) < strings.ToLower(wardrobe[j])
+	})
+	for _, n := range wardrobe {
+		key := strings.ToLower(n)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		names = append(names, n)
+		stars = append(stars, true)
+	}
+	for _, n := range server {
+		if _, dup := seen[strings.ToLower(n)]; dup {
+			continue
+		}
+		names = append(names, n)
+		stars = append(stars, false)
+	}
+	return names, stars
 }
 
 // parseIniswapList parses iniswap.txt: one character folder name per line,
@@ -542,6 +639,14 @@ func (a *App) pollCharINI() {
 	case res := <-a.charINIres:
 		a.charINIBusy = false
 		if res.err != nil || res.ini == nil {
+			// Surface WHY the emote list is a bare default (better than a
+			// silent single "normal" chip).
+			reason := "empty char.ini"
+			if res.err != nil {
+				reason = res.err.Error()
+			}
+			a.warnLine = clampLine("char.ini for " + a.activeCharName() + ": " + reason + " — using a default emote")
+			a.warnAt = time.Now()
 			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
 			return
 		}

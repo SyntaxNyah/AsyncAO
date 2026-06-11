@@ -9,6 +9,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -16,13 +17,15 @@ import (
 )
 
 const (
-	pad        int32 = 10
-	rowH       int32 = 28
-	fieldH     int32 = 26
-	btnH       int32 = 28
-	iconCell   int32 = 64
-	iconGap    int32 = 8
-	previewMax int32 = 360
+	pad      int32 = 10
+	rowH     int32 = 28
+	fieldH   int32 = 26
+	btnH     int32 = 28
+	iconCell int32 = 64
+	iconGap  int32 = 8
+	// previewMax bounds the hover-preview pop-up edge; small sprites
+	// integer-upscale toward it so pixel art previews stay readable.
+	previewMax int32 = 520
 	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
 	emoteBtnCell int32 = 40
 	// scrollBarW/Gap reserve the scrollbar lane beside scrolling lists.
@@ -221,12 +224,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 
 	query := strings.ToLower(strings.TrimSpace(a.charSearch))
-	if len(a.charLower) != len(a.sess.Chars) {
-		a.charLower = make([]string, len(a.sess.Chars))
-		for i := range a.sess.Chars {
-			a.charLower[i] = strings.ToLower(a.sess.Chars[i].Name)
-		}
-	}
+	a.ensureCharLower()
 	// Pre-count matches so the scrollbar knows the content height; the
 	// draw loop below walks the same list anyway.
 	matches := int32(0)
@@ -319,6 +317,11 @@ func (a *App) drawSpritePreview(w, h int32) {
 		ph /= 2
 		scale *= 2
 	}
+	// Small art doubles up toward the box (integer scale keeps pixels crisp).
+	for pw*2 <= previewMax && ph*2 <= previewMax {
+		pw *= 2
+		ph *= 2
+	}
 	dst := sdl.Rect{X: w - pw - pad*2, Y: h - ph - pad*2, W: pw, H: ph}
 	frame := sdl.Rect{X: dst.X - 4, Y: dst.Y - 4, W: dst.W + 8, H: dst.H + 8}
 	c.Fill(frame, ColPanel)
@@ -337,8 +340,8 @@ func (a *App) drawCourtroom(w, h int32) {
 		return
 	}
 
-	// Viewport: AO 4:3, scaled to fit the left column.
-	vpW := w * 2 / 3
+	// Viewport: AO 4:3 at the user's width percent (View −/+ buttons).
+	vpW := w * int32(a.vpPct) / DefaultScalePct
 	vpH := vpW * 3 / 4
 	if vpH > h-220 {
 		vpH = h - 220
@@ -371,24 +374,33 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	if sc.MessageText == "" && sc.ShownameText == "" {
 		return
 	}
-	boxH := vp.H / 4
+	// Box height follows the Text knob so zoomed text keeps its room.
+	boxH := vp.H / 4 * int32(a.chatPct) / DefaultScalePct
+	if max := vp.H * 3 / 5; boxH > max {
+		boxH = max
+	}
 	box := sdl.Rect{X: vp.X, Y: vp.Y + vp.H - boxH, W: vp.W, H: boxH}
 	c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
 	c.Border(box, ColAccent)
 	c.Label(box.X+8, box.Y+4, sc.ShownameText, ColAccent)
 
-	// (Re)rasterize when the message or color changes.
-	if a.msRaster == nil || a.rasterText != sc.MessageText || a.rasterColor != sc.TextColor {
+	// (Re)rasterize when the message, color, zoom, or wrap width changes
+	// (live viewport resizing moves the wrap width mid-message).
+	wrapW := box.W - 16
+	if a.msRaster == nil || a.rasterText != sc.MessageText || a.rasterColor != sc.TextColor ||
+		a.rasterScale != a.chatPct || a.rasterW != wrapW {
 		if a.msRaster != nil {
 			a.msRaster.Destroy()
 			a.msRaster = nil
 		}
 		if sc.MessageText != "" {
-			raster, err := renderRaster(a, sc, box.W-16)
+			raster, err := renderRaster(a, sc, wrapW)
 			if err == nil {
 				a.msRaster = raster
 				a.rasterText = sc.MessageText
 				a.rasterColor = sc.TextColor
+				a.rasterScale = a.chatPct
+				a.rasterW = wrapW
 			}
 		}
 	}
@@ -401,15 +413,18 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
 	c.Border(r, ColPanelHi)
-	tab := r.W / 3
+	tab := r.W / 4
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: tab, H: btnH}, "Log") {
 		a.logTab = logTabLog
 	}
 	if c.Button(sdl.Rect{X: r.X + tab, Y: r.Y, W: tab, H: btnH}, "Music") {
 		a.logTab = logTabMusic
 	}
-	if c.Button(sdl.Rect{X: r.X + 2*tab, Y: r.Y, W: r.W - 2*tab, H: btnH}, "Areas") {
+	if c.Button(sdl.Rect{X: r.X + 2*tab, Y: r.Y, W: tab, H: btnH}, "Areas") {
 		a.logTab = logTabAreas
+	}
+	if c.Button(sdl.Rect{X: r.X + 3*tab, Y: r.Y, W: r.W - 3*tab, H: btnH}, "OOC") {
+		a.logTab = logTabOOC
 	}
 	inner := sdl.Rect{X: r.X + 4, Y: r.Y + btnH + 4, W: r.W - 8, H: r.H - btnH - 8}
 	switch a.logTab {
@@ -419,8 +434,12 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	case logTabAreas:
 		a.drawAreaList(inner)
 		return
+	case logTabOOC:
+		a.drawOOCPanel(inner)
+		return
 	}
-	lineH := int32(a.ctx.font.Height()) + 2
+	font := c.LogFont(a.logPct)
+	lineH := int32(font.Height()) + 2
 	maxLines := int(inner.H / lineH)
 	start := 0
 	if len(a.icLog) > maxLines {
@@ -428,8 +447,56 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	}
 	y := inner.Y
 	for _, line := range a.icLog[start:] {
-		c.LabelClipped(inner.X, y, inner.W, line, ColText)
+		c.LabelClippedFont(font, inner.X, y, inner.W, line, ColText)
 		y += lineH
+	}
+}
+
+// drawOOCPanel is the actual OOC box: full scrollable history plus the
+// identity fields — IC showname (live; outgoing messages read it per
+// send) and the permanent OOC name. Both persist via the debounced saver.
+func (a *App) drawOOCPanel(r sdl.Rect) {
+	c := a.ctx
+	fH := a.inputFieldH()
+	fieldsH := 2*(fH+6) + 4
+	list := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - fieldsH}
+
+	font := c.LogFont(a.logPct)
+	lineH := int32(font.Height()) + 2
+	contentH := int32(len(a.oocLog)) * lineH
+	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
+	a.oocScroll -= c.wheelY * scrollStepPx
+	// Follow the tail unless the user scrolled back (within one line of
+	// the bottom counts as "at the bottom").
+	maxScroll := contentH - list.H
+	if maxScroll > 0 && a.oocScroll >= maxScroll-lineH {
+		a.oocScroll = maxScroll
+	}
+	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
+	y := list.Y - a.oocScroll
+	for _, line := range a.oocLog {
+		if y > list.Y+list.H-lineH {
+			break
+		}
+		if y >= list.Y-lineH {
+			c.LabelClippedFont(font, list.X, y, list.W-scrollBarW-scrollBarGap, line, ColText)
+		}
+		y += lineH
+	}
+
+	// Identity fields.
+	fy := r.Y + r.H - fieldsH + 4
+	c.Label(r.X, fy+4, "Showname:", ColTextDim)
+	shown := a.d.Prefs.SavedShowname()
+	if next, _ := c.TextField("icshowname", sdl.Rect{X: r.X + 90, Y: fy, W: r.W - 94, H: fH}, shown, "IC showname (blank = character name)"); next != shown {
+		a.d.Prefs.SetShowname(next)
+	}
+	fy += fH + 6
+	c.Label(r.X, fy+4, "OOC name:", ColTextDim)
+	prev := a.oocName
+	a.oocName, _ = c.TextField("oocname2", sdl.Rect{X: r.X + 90, Y: fy, W: r.W - 94, H: fH}, a.oocName, "Permanent OOC name")
+	if a.oocName != prev {
+		a.d.Prefs.SetOOCName(a.oocName)
 	}
 }
 
@@ -444,7 +511,8 @@ func (a *App) drawAreaList(r sdl.Rect) {
 		return
 	}
 	a.areaScroll -= c.wheelY * scrollStepPx
-	lineH := rowH
+	font := c.LogFont(a.logPct)
+	lineH := int32(font.Height()) + 10
 	contentH := int32(len(a.sess.Areas)) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
@@ -459,7 +527,7 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			if hover {
 				c.Fill(row, ColPanelHi)
 			}
-			c.LabelClipped(r.X+4, y+4, row.W-8, area, ColText)
+			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, area, ColText)
 			if hover && c.clicked {
 				a.sess.RequestMusic(area) // area transfer rides MC
 			}
@@ -479,7 +547,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	panel := sdl.Rect{X: pad * 3, Y: pad * 3, W: w - pad*6, H: h - pad*6}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+8, "Iniswap — server custom characters", ColText)
+	c.Heading(panel.X+pad, panel.Y+8, "Wardrobe — your characters, any server", ColText)
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + 8, W: 90, H: btnH}, "Close") {
 		a.showIni = false
 		return
@@ -490,22 +558,33 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	if a.iniChar != "" {
 		active = a.iniChar
 	}
-	c.LabelClipped(panel.X+pad, y+4, 340, "Active: "+active, ColAccent)
+	c.LabelClipped(panel.X+pad, y+4, 340, "Wearing: "+active, ColAccent)
 	if a.iniChar != "" {
-		if c.Button(sdl.Rect{X: panel.X + 360, Y: y, W: 130, H: btnH}, "Clear iniswap") {
+		if c.Button(sdl.Rect{X: panel.X + 360, Y: y, W: 130, H: btnH}, "Take off") {
 			a.setIniswap("")
 		}
 	}
 	y += 32
-	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 260, H: fieldH}, a.iniSearch, "Search customs...")
-	statusX := panel.X + pad + 270
+	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Search...")
+	// Add any folder name on the current asset base to the wardrobe —
+	// no server list required (★ marks saved entries; ★ persists
+	// across sessions and servers).
+	var addNow bool
+	a.iniAdd, addNow = c.TextField("iniswapadd", sdl.Rect{X: panel.X + pad + 240, Y: y, W: 230, H: fieldH}, a.iniAdd, "Add folder to wardrobe...")
+	if c.Button(sdl.Rect{X: panel.X + pad + 476, Y: y, W: 60, H: btnH}, "Add") || addNow {
+		if a.d.Prefs.AddWardrobe(a.iniAdd) {
+			a.iniAdd = ""
+			a.rebuildIniMenu()
+		}
+	}
+	statusX := panel.X + pad + 550
 	switch {
 	case a.iniBusy:
 		c.Label(statusX, y+4, "Fetching "+iniswapFileName+"...", ColTextDim)
 	case a.iniListErr != "":
-		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, a.iniListErr+" — the server ships no custom list", ColDanger)
+		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, a.iniListErr, ColTextDim)
 	default:
-		c.Label(statusX, y+4, fmt.Sprintf("%d custom characters", len(a.iniList)), ColTextDim)
+		c.Label(statusX, y+4, fmt.Sprintf("%d entries", len(a.iniList)), ColTextDim)
 	}
 	y += 36
 
@@ -564,7 +643,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 	if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 	} else {
-		a.demandAsset(&a.iniAsk, len(a.iniList), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (iniswap)
+		a.demandAsset(&a.iniAsk, len(a.iniList), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon (wardrobe)
 		initial := name
 		if len(initial) > 2 {
 			initial = initial[:2]
@@ -572,6 +651,25 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		c.Label(cell.X+iconCell/2-8, cell.Y+iconCell/2-8, initial, ColTextDim)
 	}
 	c.LabelClipped(cell.X, cell.Y+iconCell+1, iconCell, name, ColTextDim)
+
+	// Wardrobe star (top-right of the cell): toggle membership without
+	// wearing — the favourites list itself, exactly like lobby stars.
+	star := sdl.Rect{X: cell.X + cell.W - 18, Y: cell.Y + 1, W: 17, H: 17}
+	starCol := ColTextDim
+	if idx < len(a.iniWardrobe) && a.iniWardrobe[idx] {
+		starCol = ColStar
+	}
+	c.Label(star.X+2, star.Y, "★", starCol)
+	if c.hovering(star) && c.clicked {
+		if a.iniWardrobe[idx] {
+			a.d.Prefs.RemoveWardrobe(name)
+		} else {
+			a.d.Prefs.AddWardrobe(name)
+		}
+		a.rebuildIniMenu()
+		return // membership toggled; don't also wear it
+	}
+
 	if c.HoverPreview("iniswap:"+name, cell) {
 		a.previewBase = a.urls.Emote(name, "normal", courtroom.EmoteIdle)
 		a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
@@ -585,7 +683,8 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 func (a *App) drawMusicList(r sdl.Rect) {
 	c := a.ctx
 	a.musicScroll -= c.wheelY * scrollStepPx
-	lineH := rowH
+	font := c.LogFont(a.logPct)
+	lineH := int32(font.Height()) + 10
 	contentH := int32(len(a.sess.Music)) * lineH
 	bar := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.musicScroll = c.VScrollbar("musicscroll", bar, a.musicScroll, contentH, r.H)
@@ -600,7 +699,7 @@ func (a *App) drawMusicList(r sdl.Rect) {
 			if hover {
 				c.Fill(row, ColPanelHi)
 			}
-			c.LabelClipped(r.X+4, y+4, row.W-8, track, ColText)
+			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, track, ColText)
 			if hover && c.clicked {
 				a.sess.RequestMusic(track)
 			}
@@ -609,11 +708,28 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	}
 }
 
+// scaleControl draws one "Name − +" layout knob; steps mutate *value
+// within [min, max] and persist the layout. Returns the next x.
+func (a *App) scaleControl(x, y int32, name string, value *int, step, min, max int) int32 {
+	c := a.ctx
+	x += c.Label(x, y+6, name, ColTextDim) + 4
+	if c.Button(sdl.Rect{X: x, Y: y, W: 22, H: btnH}, "-") && *value-step >= min {
+		*value -= step
+		a.saveLayout()
+	}
+	x += 24
+	if c.Button(sdl.Rect{X: x, Y: y, W: 22, H: btnH}, "+") && *value+step <= max {
+		*value += step
+		a.saveLayout()
+	}
+	return x + 30
+}
+
 func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	c := a.ctx
 	y := vp.Y + vp.H + pad
 
-	// Shout buttons.
+	// Row 1: shouts, pairing, and the live layout knobs.
 	shoutW := int32(96)
 	shouts := []struct {
 		label string
@@ -630,50 +746,64 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	if c.Button(sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...") {
 		a.showPair = !a.showPair
 	}
-	x += 76
-	if c.Button(sdl.Rect{X: x, Y: y, W: 100, H: btnH}, "Character") {
+	x += 80
+	x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
+	x = a.scaleControl(x, y, "Text", &a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent)
+	x = a.scaleControl(x, y, "Log", &a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent)
+	_ = a.scaleControl(x, y, "Box", &a.inputPct, config.ScaleStepPercent, config.MinInputPercent, config.MaxInputPercent)
+
+	// Row 2: utility buttons (their own row so nothing overlaps at any
+	// viewport scale or window width).
+	y2 := y + btnH + 4
+	x = pad
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character") {
 		// Back to char select; the session stays, the server re-picks via
 		// CC → PV and EventCharPicked rebuilds the courtroom.
 		a.screen = ScreenCharSelect
 	}
 	x += 106
-	if c.Button(sdl.Rect{X: x, Y: y, W: 90, H: btnH}, "Iniswap") {
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Wardrobe") {
 		a.openIniswap()
 	}
 	x += 96
-	if c.Button(sdl.Rect{X: x, Y: y, W: 90, H: btnH}, "Settings") {
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
 		a.prevScreen = ScreenCourtroom
 		a.screen = ScreenSettings
 	}
 	x += 96
-	if c.Button(sdl.Rect{X: x, Y: y, W: 80, H: btnH}, "About") {
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About") {
 		a.prevScreen = ScreenCourtroom
 		a.screen = ScreenAbout
 	}
 	x += 86
-	if c.Button(sdl.Rect{X: x, Y: y, W: 110, H: btnH}, "Disconnect") {
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
 		a.Disconnect()
 		return
 	}
 
-	// IC input row.
-	icY := y + btnH + 6
+	// IC input row (height follows the Box knob).
+	fH := a.inputFieldH()
+	icY := y2 + btnH + 6
 	var send bool
-	a.icInput, send = c.TextField("ic", sdl.Rect{X: pad, Y: icY, W: vp.W - 0, H: fieldH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y])")
+	a.icInput, send = c.TextField("ic", sdl.Rect{X: pad, Y: icY, W: vp.W - 0, H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y])")
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
 	}
 
 	// Emote row.
-	emoteY := icY + fieldH + 6
+	emoteY := icY + fH + 6
 	a.drawEmoteRow(sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}, vp)
 
-	// OOC row at the very bottom.
-	oocY := h - fieldH - 4
+	// OOC row at the very bottom (full history lives in the OOC tab).
+	oocY := h - fH - 4
 	nameW := int32(140)
-	a.oocName, _ = c.TextField("oocname", sdl.Rect{X: pad, Y: oocY, W: nameW, H: fieldH}, a.oocName, "OOC name")
+	prevOOC := a.oocName
+	a.oocName, _ = c.TextField("oocname", sdl.Rect{X: pad, Y: oocY, W: nameW, H: fH}, a.oocName, "OOC name")
+	if a.oocName != prevOOC {
+		a.d.Prefs.SetOOCName(a.oocName) // permanent OOC name
+	}
 	var sendOOC bool
-	a.oocInput, sendOOC = c.TextField("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w/2 - nameW - pad - 12, H: fieldH}, a.oocInput, "OOC chat...")
+	a.oocInput, sendOOC = c.TextField("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w/2 - nameW - pad - 12, H: fH}, a.oocInput, "OOC chat...")
 	if sendOOC && strings.TrimSpace(a.oocInput) != "" {
 		a.sess.SendOOC(a.oocName, a.oocInput)
 		a.oocInput = ""
@@ -774,58 +904,113 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 	return c.hovering(btn) && c.clicked
 }
 
+// drawPairPanel: partner picking is a searchable click-to-pick list (the
+// old one-by-one </> cycle was unusable on 4000-char servers); offsets,
+// flip and z-order live in the right column.
 func (a *App) drawPairPanel(w, h int32) {
 	c := a.ctx
-	panel := sdl.Rect{X: w/2 - 180, Y: h/2 - 140, W: 360, H: 280}
+	ph := h - 120
+	if ph > 540 {
+		ph = 540
+	}
+	if ph < 320 {
+		ph = 320
+	}
+	panel := sdl.Rect{X: w/2 - 290, Y: h/2 - ph/2, W: 580, H: ph}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+8, "Pairing", ColText)
+	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + 8, W: 90, H: btnH}, "Close") {
+		a.showPair = false
+		return
+	}
 
+	// Left: searchable partner list.
+	listW := panel.W/2 - pad*2
 	y := panel.Y + 44
-	c.Label(panel.X+pad, y, fmt.Sprintf("Partner: %s", a.pairLabel()), ColText)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 70, Y: y - 4, W: 28, H: 24}, "<") {
-		a.cyclePair(-1)
+	c.LabelClipped(panel.X+pad, y, listW, "Partner: "+a.pairLabel(), ColAccent)
+	y += 24
+	a.pairSearch, _ = c.TextField("pairsearch", sdl.Rect{X: panel.X + pad, Y: y, W: listW - 80, H: fieldH}, a.pairSearch, "Search...")
+	if c.Button(sdl.Rect{X: panel.X + pad + listW - 74, Y: y, W: 74, H: btnH}, "Unpair") {
+		a.pairWith = protocol.UnpairedCharID
 	}
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 38, Y: y - 4, W: 28, H: 24}, ">") {
-		a.cyclePair(1)
+	y += fieldH + 8
+
+	a.ensureCharLower()
+	query := strings.ToLower(strings.TrimSpace(a.pairSearch))
+	lineH := int32(22)
+	listTop := y
+	listH := panel.Y + panel.H - listTop - pad
+	matches := int32(0)
+	for i := range a.sess.Chars {
+		if i != a.sess.MyCharID && (query == "" || strings.Contains(a.charLower[i], query)) {
+			matches++
+		}
+	}
+	track := sdl.Rect{X: panel.X + pad + listW - scrollBarW, Y: listTop, W: scrollBarW, H: listH}
+	a.pairScroll = c.VScrollbar("pairscroll", track, a.pairScroll, matches*lineH, listH)
+	rowY := listTop - a.pairScroll
+	for i := range a.sess.Chars {
+		if i == a.sess.MyCharID { // can't pair with yourself
+			continue
+		}
+		if query != "" && !strings.Contains(a.charLower[i], query) {
+			continue
+		}
+		if rowY > listTop+listH-lineH {
+			break
+		}
+		if rowY >= listTop-lineH {
+			row := sdl.Rect{X: panel.X + pad, Y: rowY, W: listW - scrollBarW - scrollBarGap, H: lineH - 2}
+			hover := c.hovering(row)
+			if i == a.pairWith {
+				c.Fill(row, ColAccent)
+			} else if hover {
+				c.Fill(row, ColPanelHi)
+			}
+			c.LabelClipped(row.X+4, rowY+3, row.W-8, a.sess.Chars[i].Name, ColText)
+			if hover && c.clicked {
+				a.pairWith = i
+			}
+		}
+		rowY += lineH
 	}
 
-	y += 34
-	c.Label(panel.X+pad, y, fmt.Sprintf("Offset X: %d%%", a.pairOffX), ColText)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 70, Y: y - 4, W: 28, H: 24}, "-") {
+	// Right: placement controls.
+	rx := panel.X + panel.W/2 + pad
+	ry := panel.Y + 44
+	c.Label(rx, ry, fmt.Sprintf("Offset X: %d%%", a.pairOffX), ColText)
+	if c.Button(sdl.Rect{X: panel.X + panel.W - 70, Y: ry - 4, W: 28, H: 24}, "-") {
 		a.pairOffX = clampOffset(a.pairOffX - offsetStep)
 		a.persistPairPrefs()
 	}
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 38, Y: y - 4, W: 28, H: 24}, "+") {
+	if c.Button(sdl.Rect{X: panel.X + panel.W - 38, Y: ry - 4, W: 28, H: 24}, "+") {
 		a.pairOffX = clampOffset(a.pairOffX + offsetStep)
 		a.persistPairPrefs()
 	}
-	y += 34
-	c.Label(panel.X+pad, y, fmt.Sprintf("Offset Y: %d%%", a.pairOffY), ColText)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 70, Y: y - 4, W: 28, H: 24}, "-") {
+	ry += 34
+	c.Label(rx, ry, fmt.Sprintf("Offset Y: %d%%", a.pairOffY), ColText)
+	if c.Button(sdl.Rect{X: panel.X + panel.W - 70, Y: ry - 4, W: 28, H: 24}, "-") {
 		a.pairOffY = clampOffset(a.pairOffY - offsetStep)
 		a.persistPairPrefs()
 	}
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 38, Y: y - 4, W: 28, H: 24}, "+") {
+	if c.Button(sdl.Rect{X: panel.X + panel.W - 38, Y: ry - 4, W: 28, H: 24}, "+") {
 		a.pairOffY = clampOffset(a.pairOffY + offsetStep)
 		a.persistPairPrefs()
 	}
-
-	y += 34
-	a.pairFlip = c.Checkbox(panel.X+pad, y, "Flip my sprite for the pair", a.pairFlip)
-	y += 30
+	ry += 34
+	a.pairFlip = c.Checkbox(rx, ry, "Flip my sprite", a.pairFlip)
+	ry += 28
 	front := a.pairOrder == protocol.PairSpeakerInFront
-	front = c.Checkbox(panel.X+pad, y, "Render me in front", front)
+	front = c.Checkbox(rx, ry, "Render me in front", front)
 	a.pairOrder = protocol.PairSpeakerInFront
 	if !front {
 		a.pairOrder = protocol.PairSpeakerBehind
 	}
-
-	y += 36
-	c.Label(panel.X+pad, y, "Offsets apply from your next message.", ColTextDim)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + panel.H - btnH - pad, W: 90, H: btnH}, "Close") {
-		a.showPair = false
-	}
+	ry += 32
+	c.Label(rx, ry, "Both sides must pair with", ColTextDim)
+	c.Label(rx, ry+18, "each other; applies from", ColTextDim)
+	c.Label(rx, ry+36, "your next message.", ColTextDim)
 }
 
 const offsetStep = 5
@@ -850,20 +1035,6 @@ func (a *App) pairLabel() string {
 		return "(unpaired)"
 	}
 	return fmt.Sprintf("%d — %s", a.pairWith, a.sess.Chars[a.pairWith].Name)
-}
-
-func (a *App) cyclePair(dir int) {
-	if a.sess == nil || len(a.sess.Chars) == 0 {
-		return
-	}
-	next := a.pairWith + dir
-	if next < protocol.UnpairedCharID {
-		next = len(a.sess.Chars) - 1
-	}
-	if next >= len(a.sess.Chars) {
-		next = protocol.UnpairedCharID
-	}
-	a.pairWith = next
 }
 
 // sendIC builds and sends the outgoing MS message (chat commands handled
@@ -944,5 +1115,6 @@ func (a *App) handleChatCommand(text string) bool {
 
 // renderRaster rasterizes the current message with its AO color.
 func renderRaster(a *App, sc *courtroom.Scene, wrapW int32) (*render.MessageRaster, error) {
-	return render.Rasterize(a.ctx.Ren, a.ctx.Font(), sc.MessageText, wrapW, render.TextColor(sc.TextColor))
+	// The chat zoom font: rebuilt only when the Text knob changes.
+	return render.Rasterize(a.ctx.Ren, a.ctx.ChatFont(a.chatPct), sc.MessageText, wrapW, render.TextColor(sc.TextColor))
 }

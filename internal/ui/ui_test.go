@@ -70,3 +70,39 @@ func TestParseIniswapList(t *testing.T) {
 		t.Fatalf("cap = %d entries, want %d", len(got), iniswapListCap)
 	}
 }
+
+// TestSelectAllChordArms pins Ctrl+A semantics: the chord arms a pending
+// select-all that survives BeginFrame until a field consumes it (typing
+// replaces the whole value, backspace clears it — handled in TextField).
+func TestSelectAllChordArms(t *testing.T) {
+	c := &Ctx{}
+	c.BeginFrame(time.Millisecond)
+	c.HandleEvent(&sdl.KeyboardEvent{Type: sdl.KEYDOWN, Keysym: sdl.Keysym{Sym: sdl.K_a, Mod: sdl.KMOD_LCTRL}})
+	if !c.selectAll {
+		t.Fatal("Ctrl+A must arm select-all")
+	}
+	c.BeginFrame(time.Millisecond)
+	if !c.selectAll {
+		t.Fatal("select-all must persist across frames until consumed")
+	}
+}
+
+// TestMergeWardrobe pins the wardrobe-first menu: client favourites sort
+// case-insensitively up front (starred), server iniswap.txt entries follow
+// minus case-insensitive duplicates of wardrobe entries.
+func TestMergeWardrobe(t *testing.T) {
+	names, stars := mergeWardrobe(
+		[]string{"Zeta", "aigis"},
+		[]string{"AIGIS", "bread", "zeta", "shrek"},
+	)
+	wantNames := []string{"aigis", "Zeta", "bread", "shrek"}
+	wantStars := []bool{true, true, false, false}
+	if len(names) != len(wantNames) {
+		t.Fatalf("merged %v, want %v", names, wantNames)
+	}
+	for i := range wantNames {
+		if names[i] != wantNames[i] || stars[i] != wantStars[i] {
+			t.Fatalf("merged %v/%v, want %v/%v", names, stars, wantNames, wantStars)
+		}
+	}
+}

@@ -3,7 +3,9 @@ package ui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -26,9 +28,17 @@ type settingsState struct {
 	themeList []string
 	themeRes  chan []string
 	themeBusy bool
+
+	// folder picking: native dialog output / resolved drag-drops land
+	// here from goroutines (never block or stat on the render thread).
+	folderRes  chan string
+	browseBusy bool
 }
 
-var settings = settingsState{themeRes: make(chan []string, 1)}
+var settings = settingsState{
+	themeRes:  make(chan []string, 1),
+	folderRes: make(chan string, 1),
+}
 
 // imageTypes get the per-format toggle treatment.
 var imageTypeNames = []string{
@@ -108,11 +118,22 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	y += 32
 	c.Label(pad, y+4, "Theme folder:", ColText)
-	settings.themeDir, _ = c.TextField("themedir", sdl.Rect{X: pad + 110, Y: y, W: 340, H: fieldH}, settings.themeDir, `optional root holding themes\<name>`)
+	settings.themeDir, _ = c.TextField("themedir", sdl.Rect{X: pad + 110, Y: y, W: 340, H: fieldH}, settings.themeDir, `optional root holding themes\<name> — or drop a folder anywhere`)
 	if c.Button(sdl.Rect{X: pad + 460, Y: y, W: 130, H: btnH}, "Apply & rescan") {
 		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
 		a.scanThemes()
 	}
+	if runtime.GOOS == "windows" {
+		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Browse...") {
+			browseForFolder()
+		}
+	}
+	// Drag-and-drop: SDL DROPFILE anywhere on this screen points the
+	// theme folder (a dropped file resolves to its directory, off-thread).
+	if c.dropped != "" {
+		resolveDroppedFolder(c.dropped)
+	}
+	a.pollFolderPick()
 	y += 36
 
 	// Per-type format toggles.
@@ -122,6 +143,19 @@ func (a *App) drawSettings(w, h int32) {
 		y = a.drawTypeFormatRow(typeName, y)
 	}
 	y += 8
+
+	// Audio volumes.
+	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	music = a.volumeRow(y, "Music volume", music)
+	y += 26
+	sfx = a.volumeRow(y, "SFX volume", sfx)
+	y += 26
+	blip = a.volumeRow(y, "Blip volume", blip)
+	y += 32
+	if m0, s0, b0 := a.d.Prefs.AudioVolumes(); m0 != music || s0 != sfx || b0 != blip {
+		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
+		a.d.Audio.SetVolumes(a.d.Prefs.AudioVolumes())
+	}
 
 	// Audio fallbacks.
 	for _, typeName := range []string{config.TypeSFX, config.TypeMusic, config.TypeBlip} {
@@ -225,6 +259,25 @@ func (a *App) drawTypeFormatRow(typeName string, y int32) int32 {
 		a.d.Resolver.InvalidateAll()
 		a.d.Resolver.WarmFromPrefs()
 	}
+
+	// Probe-order chips: with 2+ formats ticked, clicking a chip promotes
+	// it one slot toward "probed first" (zero-fallback order is the user's
+	// to arrange — ticking chooses the set, chips choose the order).
+	if len(current) > 1 && !changed {
+		c.Label(x+12, y+2, "order:", ColTextDim)
+		cx := x + 12 + c.TextWidth("order:") + 8
+		for i, ext := range current {
+			bw := c.TextWidth(ext) + 14
+			if c.Button(sdl.Rect{X: cx, Y: y, W: bw, H: 22}, ext) && i > 0 {
+				order := append([]string(nil), current...)
+				order[i-1], order[i] = order[i], order[i-1]
+				a.d.Prefs.SetFormatOrder(typeName, order)
+				a.d.Resolver.InvalidateAll()
+				a.d.Resolver.WarmFromPrefs()
+			}
+			cx += bw + 6
+		}
+	}
 	return y + 26
 }
 
@@ -282,6 +335,74 @@ func (a *App) pollThemeScan() {
 	case names := <-settings.themeRes:
 		settings.themeBusy = false
 		settings.themeList = names
+	default:
+	}
+}
+
+// volumeRow draws one "<name>  − NN% +" control and returns the value.
+func (a *App) volumeRow(y int32, name string, value int) int {
+	c := a.ctx
+	const volumeStep = 10
+	c.Label(pad, y+4, name+":", ColText)
+	if c.Button(sdl.Rect{X: pad + 130, Y: y, W: 24, H: 24}, "-") && value >= volumeStep {
+		value -= volumeStep
+	}
+	c.Label(pad+162, y+4, fmt.Sprintf("%3d%%", value), ColAccent)
+	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 24, H: 24}, "+") && value <= 100-volumeStep {
+		value += volumeStep
+	}
+	return value
+}
+
+// browseForFolder shells the native Windows folder picker on a goroutine;
+// the chosen path lands on folderRes (empty = cancelled, dropped).
+func browseForFolder() {
+	if settings.browseBusy {
+		return
+	}
+	settings.browseBusy = true
+	go func() {
+		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
+			`$d = New-Object System.Windows.Forms.FolderBrowserDialog; ` +
+			`$d.Description = 'Pick the folder that CONTAINS themes\<name>'; ` +
+			`if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`
+		out, err := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog).Output()
+		path := strings.TrimSpace(string(out))
+		if err != nil || path == "" {
+			settings.folderRes <- ""
+			return
+		}
+		settings.folderRes <- path
+	}()
+}
+
+// resolveDroppedFolder turns an SDL drop path into a directory off-thread
+// (a dropped file means "its folder") and feeds the same channel as Browse.
+func resolveDroppedFolder(path string) {
+	go func() {
+		st, err := os.Stat(path)
+		if err != nil {
+			settings.folderRes <- ""
+			return
+		}
+		if !st.IsDir() {
+			path = filepath.Dir(path)
+		}
+		settings.folderRes <- path
+	}()
+}
+
+func (a *App) pollFolderPick() {
+	select {
+	case path := <-settings.folderRes:
+		settings.browseBusy = false
+		if path == "" {
+			return
+		}
+		settings.themeDir = path
+		a.d.Prefs.SetTheme(settings.themeName, path)
+		a.scanThemes()
+		settings.statusLine = "Theme folder set: " + path
 	default:
 	}
 }

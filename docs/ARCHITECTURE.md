@@ -174,17 +174,55 @@ so a release hit-tests where it actually happened.
 - Emote buttons draw `emotions/button<N>_off|_on` art (its own
   `EmoteButton` asset type, WebP-first, Settings-toggleable) with the
   `_off` art + accent ring standing in while `_on` streams.
-- Screens never do disk I/O on the render thread: theme-folder scans and
-  char.ini fetches run on goroutines and land via polled channels, like
-  the lobby fetch.
+- Ctrl+A arms select-all on the focused field: the next typed/pasted
+  text replaces the whole value, backspace clears it, Ctrl+C/X act on
+  everything; a highlight shows while armed.
+- Screens never do disk I/O on the render thread: theme-folder scans,
+  char.ini fetches, the native folder picker (Browse → PowerShell
+  FolderBrowserDialog) and dropped-path resolution (SDL DROPFILE) all
+  run on goroutines and land via polled channels, like the lobby fetch.
 
-## Iniswap (server custom characters)
+## Courtroom knobs (all persisted, all live)
 
-`<asset origin>/iniswap.txt` — one character folder per line — is the
-server-curated list of streamable characters that occupy **no server
-slot**. The courtroom's Iniswap button opens a modal char-select-grade
-grid over it, and every layer reuses the existing fast path, nothing
-bespoke:
+- **View − +** resizes the viewport (40–85 % of the window width;
+  default 66 ≈ the original 2/3) — log column and chat box reflow.
+- **Text − +** zooms the IC message box (100–250 %): a dedicated scaled
+  font slot in `Ctx`, raster invalidates on zoom/width change, box
+  height grows with the zoom.
+- **Log − +** scales log/OOC/music/area list text (75–200 %); the label
+  cache keys by font identity so scaled labels cache like any other.
+- **Box − +** scales the IC/OOC input field height (75–200 %).
+- **OOC tab** (Log | Music | Areas | OOC): full scrollable OOC history
+  plus the IC showname (live — outgoing messages read it per send) and
+  the permanent OOC name, both persisted.
+- **Volumes** (Settings): music/SFX/blip 0–100, applied via SDL_mixer —
+  music globally, chunks per playing channel.
+- **Format order** (Settings): ticking picks the probe set, clicking an
+  order chip promotes that extension one slot toward "probed first".
+- The pairing panel picks partners from a searchable click-to-pick list
+  (the old one-by-one cycle was unusable against 4000-char rosters).
+- While minimized the loop runs `App.Background` (session pump, no
+  drawing) at a 50 ms nap — keepalives keep flowing at ~0 % GPU.
+- The renderer sets `BLENDMODE_BLEND` for draw ops at startup: alpha
+  fills (chat box, taken overlay, selection highlight) actually blend —
+  SDL's default NONE silently rendered them opaque.
+
+## Wardrobe & iniswap (custom characters)
+
+The courtroom's Wardrobe button opens a modal char-select-grade grid
+merging two sources, wardrobe first:
+
+1. **The wardrobe** — the user's own favourites, persisted in prefs
+   (`WardrobeCap` 1024) **across sessions and across servers** (folder
+   names are server-agnostic; assets resolve against the current
+   origin). Stars on each cell toggle membership; an add box accepts any
+   folder name, so no server list is required at all.
+2. **`<asset origin>/iniswap.txt`** — one character folder per line —
+   the server-curated set, merged underneath minus wardrobe duplicates
+   (case-insensitive).
+
+Neither occupies a server slot. Every layer reuses the existing fast
+path, nothing bespoke:
 
 - the txt rides `FetchRaw` (T2 + disk cached, singleflight) on a
   goroutine; parse is bounded (`iniswapListCap` 4096), case-insensitively

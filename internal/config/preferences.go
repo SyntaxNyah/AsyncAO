@@ -60,6 +60,46 @@ const defaultPreferAnimated = true
 // buttons (characters/<char>/emotions/button<N>) rather than text chips.
 const defaultEmoteButtonImages = true
 
+// Layout scale bounds (percent). Defaults preserve the original layout:
+// viewport 66 ≈ the old fixed 2/3 width; the text/height scales at 100.
+const (
+	DefaultViewportPercent = 66
+	MinViewportPercent     = 40
+	MaxViewportPercent     = 85
+
+	// Chat = the IC message box text; Log = log/OOC list text; Input =
+	// the IC/OOC entry field height.
+	DefaultScalePercent = 100
+	MinChatScalePercent = 100
+	MaxChatScalePercent = 250
+	MinLogScalePercent  = 75
+	MaxLogScalePercent  = 200
+	MinInputPercent     = 75
+	MaxInputPercent     = 200
+
+	// ScaleStepPercent is the −/+ button increment shared by the UI.
+	ScaleStepPercent = 25
+	// ViewportStepPercent is the viewport −/+ increment.
+	ViewportStepPercent = 5
+)
+
+// defaultAudioVolume is full volume (the pre-settings behavior).
+const defaultAudioVolume = 100
+
+// WardrobeCap bounds the client-side custom character list (the wardrobe
+// persists across sessions AND servers — folder names are server-agnostic).
+const WardrobeCap = 1024
+
+func clampPercent(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
 // AssetTypePrefs holds the per-asset-type format preferences.
 type AssetTypePrefs struct {
 	// FormatOrder is the ordered probe list for this type. An empty or
@@ -77,6 +117,14 @@ type AssetPreferences struct {
 	EmoteButtonImages      bool                      `json:"emoteButtonImages"`
 	ThemeName              string                    `json:"themeName"`
 	ThemeDir               string                    `json:"themeDir"`
+	OOCName                string                    `json:"oocName"`
+	ViewportPct            int                       `json:"viewportPercent"`
+	ChatScalePct           int                       `json:"chatScalePercent"`
+	LogScalePct            int                       `json:"logScalePercent"`
+	InputHeightPct         int                       `json:"inputHeightPercent"`
+	MusicVol               int                       `json:"musicVolume"`
+	SFXVol                 int                       `json:"sfxVolume"`
+	BlipVol                int                       `json:"blipVolume"`
 	AssetTypes             map[string]AssetTypePrefs `json:"assetTypes"`
 	LearnedFormats         map[string][]string       `json:"learnedFormats"`
 	PairOffsetX            int                       `json:"pairOffsetX"`
@@ -86,6 +134,7 @@ type AssetPreferences struct {
 	LocalAssetsEnabled     bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths       []string                  `json:"localAssetsPaths"`
 	Favorites              []FavoriteServer          `json:"favorites"`
+	Wardrobe               []string                  `json:"wardrobe"`
 
 	mu        sync.RWMutex
 	path      string
@@ -106,20 +155,30 @@ type AssetPreferences struct {
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
 // "absent" from the zero value where the default is not the zero value.
 type prefsJSON struct {
-	GlobalFallbacksEnabled bool                      `json:"globalFallbacksEnabled"`
-	PreferAnimated         *bool                     `json:"preferAnimated"`
-	EmoteButtonImages      *bool                     `json:"emoteButtonImages"`
-	ThemeName              string                    `json:"themeName"`
-	ThemeDir               string                    `json:"themeDir"`
-	AssetTypes             map[string]AssetTypePrefs `json:"assetTypes"`
-	LearnedFormats         map[string][]string       `json:"learnedFormats"`
-	PairOffsetX            int                       `json:"pairOffsetX"`
-	PairOffsetY            int                       `json:"pairOffsetY"`
-	PairFlip               bool                      `json:"pairFlip"`
-	Showname               string                    `json:"showname"`
-	LocalAssetsEnabled     bool                      `json:"localAssetsEnabled"`
-	LocalAssetsPaths       []string                  `json:"localAssetsPaths"`
-	Favorites              []FavoriteServer          `json:"favorites"`
+	GlobalFallbacksEnabled bool   `json:"globalFallbacksEnabled"`
+	PreferAnimated         *bool  `json:"preferAnimated"`
+	EmoteButtonImages      *bool  `json:"emoteButtonImages"`
+	ThemeName              string `json:"themeName"`
+	ThemeDir               string `json:"themeDir"`
+	OOCName                string `json:"oocName"`
+	ViewportPct            int    `json:"viewportPercent"`
+	ChatScalePct           int    `json:"chatScalePercent"`
+	LogScalePct            int    `json:"logScalePercent"`
+	InputHeightPct         int    `json:"inputHeightPercent"`
+	// Volumes use pointers: 0 is a real value (mute), absent means 100.
+	MusicVol           *int                      `json:"musicVolume"`
+	SFXVol             *int                      `json:"sfxVolume"`
+	BlipVol            *int                      `json:"blipVolume"`
+	AssetTypes         map[string]AssetTypePrefs `json:"assetTypes"`
+	LearnedFormats     map[string][]string       `json:"learnedFormats"`
+	PairOffsetX        int                       `json:"pairOffsetX"`
+	PairOffsetY        int                       `json:"pairOffsetY"`
+	PairFlip           bool                      `json:"pairFlip"`
+	Showname           string                    `json:"showname"`
+	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
+	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
+	Favorites          []FavoriteServer          `json:"favorites"`
+	Wardrobe           []string                  `json:"wardrobe"`
 }
 
 // FavoriteServer is a starred or direct-connect server entry (the server
@@ -167,6 +226,13 @@ func load(path string) (*AssetPreferences, error) {
 	p := &AssetPreferences{
 		PreferAnimated:    defaultPreferAnimated,
 		EmoteButtonImages: defaultEmoteButtonImages,
+		ViewportPct:       DefaultViewportPercent,
+		ChatScalePct:      DefaultScalePercent,
+		LogScalePct:       DefaultScalePercent,
+		InputHeightPct:    DefaultScalePercent,
+		MusicVol:          defaultAudioVolume,
+		SFXVol:            defaultAudioVolume,
+		BlipVol:           defaultAudioVolume,
 		AssetTypes:        defaultAssetTypes(),
 		LearnedFormats:    map[string][]string{},
 		path:              path,
@@ -194,6 +260,30 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.ThemeName = onDisk.ThemeName
 	p.ThemeDir = onDisk.ThemeDir
+	p.OOCName = onDisk.OOCName
+	// Zero percents mean "absent" (no scale is validly 0); volumes use
+	// pointers because 0 = mute is real.
+	if onDisk.ViewportPct != 0 {
+		p.ViewportPct = clampPercent(onDisk.ViewportPct, MinViewportPercent, MaxViewportPercent)
+	}
+	if onDisk.ChatScalePct != 0 {
+		p.ChatScalePct = clampPercent(onDisk.ChatScalePct, MinChatScalePercent, MaxChatScalePercent)
+	}
+	if onDisk.LogScalePct != 0 {
+		p.LogScalePct = clampPercent(onDisk.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
+	}
+	if onDisk.InputHeightPct != 0 {
+		p.InputHeightPct = clampPercent(onDisk.InputHeightPct, MinInputPercent, MaxInputPercent)
+	}
+	if onDisk.MusicVol != nil {
+		p.MusicVol = clampPercent(*onDisk.MusicVol, 0, defaultAudioVolume)
+	}
+	if onDisk.SFXVol != nil {
+		p.SFXVol = clampPercent(*onDisk.SFXVol, 0, defaultAudioVolume)
+	}
+	if onDisk.BlipVol != nil {
+		p.BlipVol = clampPercent(*onDisk.BlipVol, 0, defaultAudioVolume)
+	}
 	for name, tp := range onDisk.AssetTypes {
 		if len(tp.FormatOrder) == 0 {
 			tp.FormatOrder = DefaultFormatOrder(name)
@@ -210,6 +300,10 @@ func load(path string) (*AssetPreferences, error) {
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
+	if len(onDisk.Wardrobe) > WardrobeCap {
+		onDisk.Wardrobe = onDisk.Wardrobe[:WardrobeCap]
+	}
+	p.Wardrobe = onDisk.Wardrobe
 	return p, nil
 }
 
@@ -533,6 +627,127 @@ func (p *AssetPreferences) SetTheme(name, dir string) {
 	p.ThemeDir = dir
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// --- OOC name -----------------------------------------------------------------
+
+// SavedOOCName reports the persisted OOC chat name.
+func (p *AssetPreferences) SavedOOCName() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.OOCName
+}
+
+// SetOOCName persists the OOC chat name (debounced saver flushes).
+func (p *AssetPreferences) SetOOCName(name string) {
+	p.mu.Lock()
+	if p.OOCName == name {
+		p.mu.Unlock()
+		return
+	}
+	p.OOCName = name
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Layout scales --------------------------------------------------------------
+
+// LayoutScales reports the courtroom layout knobs: viewport width percent,
+// chat (IC box) text percent, log/OOC list text percent, input field
+// height percent. All clamped at load and set time.
+func (p *AssetPreferences) LayoutScales() (viewport, chat, logText, input int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ViewportPct, p.ChatScalePct, p.LogScalePct, p.InputHeightPct
+}
+
+// SetLayoutScales clamps and persists the layout knobs.
+func (p *AssetPreferences) SetLayoutScales(viewport, chat, logText, input int) {
+	viewport = clampPercent(viewport, MinViewportPercent, MaxViewportPercent)
+	chat = clampPercent(chat, MinChatScalePercent, MaxChatScalePercent)
+	logText = clampPercent(logText, MinLogScalePercent, MaxLogScalePercent)
+	input = clampPercent(input, MinInputPercent, MaxInputPercent)
+	p.mu.Lock()
+	if p.ViewportPct == viewport && p.ChatScalePct == chat &&
+		p.LogScalePct == logText && p.InputHeightPct == input {
+		p.mu.Unlock()
+		return
+	}
+	p.ViewportPct, p.ChatScalePct, p.LogScalePct, p.InputHeightPct = viewport, chat, logText, input
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Audio volumes ----------------------------------------------------------------
+
+// AudioVolumes reports the music/SFX/blip volumes (0–100).
+func (p *AssetPreferences) AudioVolumes() (music, sfx, blip int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MusicVol, p.SFXVol, p.BlipVol
+}
+
+// SetAudioVolumes clamps and persists the mixer volumes.
+func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
+	music = clampPercent(music, 0, defaultAudioVolume)
+	sfx = clampPercent(sfx, 0, defaultAudioVolume)
+	blip = clampPercent(blip, 0, defaultAudioVolume)
+	p.mu.Lock()
+	if p.MusicVol == music && p.SFXVol == sfx && p.BlipVol == blip {
+		p.mu.Unlock()
+		return
+	}
+	p.MusicVol, p.SFXVol, p.BlipVol = music, sfx, blip
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Wardrobe ------------------------------------------------------------------
+
+// WardrobeList returns a copy of the client-side custom character list.
+func (p *AssetPreferences) WardrobeList() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return cloneStrings(p.Wardrobe)
+}
+
+// AddWardrobe stores a character folder in the wardrobe (case-insensitive
+// dedupe, capped at WardrobeCap). Reports whether anything changed.
+func (p *AssetPreferences) AddWardrobe(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	p.mu.Lock()
+	if len(p.Wardrobe) >= WardrobeCap {
+		p.mu.Unlock()
+		return false
+	}
+	for _, have := range p.Wardrobe {
+		if strings.EqualFold(have, name) {
+			p.mu.Unlock()
+			return false
+		}
+	}
+	p.Wardrobe = append(p.Wardrobe, name)
+	p.mu.Unlock()
+	p.markDirty()
+	return true
+}
+
+// RemoveWardrobe drops a character folder from the wardrobe.
+func (p *AssetPreferences) RemoveWardrobe(name string) bool {
+	p.mu.Lock()
+	for i, have := range p.Wardrobe {
+		if strings.EqualFold(have, name) {
+			p.Wardrobe = append(p.Wardrobe[:i], p.Wardrobe[i+1:]...)
+			p.mu.Unlock()
+			p.markDirty()
+			return true
+		}
+	}
+	p.mu.Unlock()
+	return false
 }
 
 // --- Learned formats --------------------------------------------------------

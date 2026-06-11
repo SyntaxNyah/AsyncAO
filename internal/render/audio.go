@@ -58,16 +58,37 @@ type Audio struct {
 	musicRW    *sdl.RWops
 	music      *mix.Music
 
+	// Volumes in percent (0–100), applied as mixer volume at play time
+	// (music globally, chunks per returned channel).
+	musicVol, sfxVol, blipVol int
+
 	enabled bool
+}
+
+// fullVolumePercent maps 100% onto SDL_mixer's MAX_VOLUME.
+const fullVolumePercent = 100
+
+func mixVolume(pct int) int { return pct * mix.MAX_VOLUME / fullVolumePercent }
+
+// SetVolumes applies the user's music/SFX/blip volumes (0–100). Music
+// volume takes effect immediately; chunk volumes apply per play.
+func (a *Audio) SetVolumes(music, sfx, blip int) {
+	a.musicVol, a.sfxVol, a.blipVol = music, sfx, blip
+	if a.enabled {
+		mix.VolumeMusic(mixVolume(music))
+	}
 }
 
 // NewAudio opens the mixer. A failed device (headless CI) degrades to a
 // disabled-but-functional sink.
 func NewAudio(mgr *assets.Manager) *Audio {
 	a := &Audio{
-		mgr:     mgr,
-		chunks:  map[string]*mix.Chunk{},
-		pending: map[string]pendingPlay{},
+		mgr:      mgr,
+		chunks:   map[string]*mix.Chunk{},
+		pending:  map[string]pendingPlay{},
+		musicVol: fullVolumePercent,
+		sfxVol:   fullVolumePercent,
+		blipVol:  fullVolumePercent,
 	}
 	if err := mix.OpenAudio(audioFrequency, mix.DEFAULT_FORMAT, audioChannels, audioChunkSize); err != nil {
 		log.Printf("render: audio disabled: %v", err)
@@ -159,9 +180,13 @@ func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
 		// Blips replace each other on the reserved channel — playing one
 		// is a pointer pass (spec §8).
 		mix.HaltChannel(blipChannel)
-		_, _ = chunk.Play(blipChannel, 0)
+		if _, err := chunk.Play(blipChannel, 0); err == nil {
+			mix.Volume(blipChannel, mixVolume(a.blipVol))
+		}
 	default:
-		_, _ = chunk.Play(-1, 0)
+		if ch, err := chunk.Play(-1, 0); err == nil {
+			mix.Volume(ch, mixVolume(a.sfxVol))
+		}
 	}
 }
 
@@ -230,7 +255,9 @@ func (a *Audio) startMusic(data []byte) {
 	if err := music.Play(loopForever); err != nil {
 		log.Printf("render: music play failed: %v", err)
 		a.stopMusic()
+		return
 	}
+	mix.VolumeMusic(mixVolume(a.musicVol))
 }
 
 func (a *Audio) stopMusic() {

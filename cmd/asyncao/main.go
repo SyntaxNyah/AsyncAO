@@ -33,6 +33,10 @@ const (
 	windowHeight   = 864
 	frameCap       = 16667 * time.Microsecond // ~60 FPS when vsync is off
 	debugPprofAddr = "localhost:6060"
+	// minimizedNap paces the loop while the window is minimized: the
+	// session still pumps (keepalives, queues) but nothing draws — no
+	// point compositing 60 fps to nowhere.
+	minimizedNap = 50 * time.Millisecond
 )
 
 func main() {
@@ -141,6 +145,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		}
 	}
 	defer ren.Destroy()
+	// Draw-op alpha (taken overlays, chat box, selection highlights) needs
+	// the renderer's blend mode set: SDL defaults to NONE and renders
+	// every alpha Fill opaque. Textures set their own mode at upload.
+	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
 	store, err := render.NewTextureStore(ren)
 	if err != nil {
@@ -170,6 +178,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	viewport := render.NewViewport(store)
 	audio := render.NewAudio(manager)
 	defer audio.Close()
+	audio.SetVolumes(prefs.AudioVolumes())
 
 	// 1 Hz sampler: heap, GC pause p99, cache hit rate, probe counts.
 	profiler := metrics.NewProfiler(metrics.StatsSource{
@@ -234,6 +243,12 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				running = false
 			}
 			uiCtx.HandleEvent(ev)
+		}
+
+		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
+			app.Background(dt) // keep the session alive, draw nothing
+			time.Sleep(minimizedNap)
+			continue
 		}
 
 		w, h := window.GetSize()
