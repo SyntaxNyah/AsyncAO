@@ -110,9 +110,13 @@ type App struct {
 	previewBase string
 	// iconAsk[i] is when char i's icon was last demanded by the visible
 	// grid (bounded by the server's char list length); iconAskBudget is
-	// the per-frame submission allowance, reset in drawCharSelect.
+	// the per-frame submission allowance, reset each Frame.
 	iconAsk       []time.Time
 	iconAskBudget int
+	// charLower caches lowercased char names for the search filter —
+	// without it a 4000-char grid pays two ToLower allocations per char
+	// per frame while a query is active. Invalidated on EventCharsUpdated.
+	charLower []string
 
 	// --- courtroom chrome state ---
 	icInput     string
@@ -237,6 +241,7 @@ func (a *App) Disconnect() {
 	a.emotes = nil
 	a.iconAsk = nil
 	a.emoteAsk = nil
+	a.charLower = nil
 	a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
 	a.screen = ScreenLobby
 }
@@ -283,6 +288,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.rebuildAssetOrigin()
 			a.prefetchCharIcons()
 		case courtroom.EventCharsUpdated:
+			a.charLower = nil // names may have changed; rebuild lazily
 			// icons refresh lazily as textures land
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()

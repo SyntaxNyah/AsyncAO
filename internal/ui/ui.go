@@ -19,8 +19,13 @@ const (
 	UIFontSizeBig = 22
 
 	// textCacheMax bounds the rendered-label texture cache; past it the
-	// cache purges wholesale (cheap, rare — screen switches).
-	textCacheMax = 512
+	// cache purges wholesale. Sized ABOVE the worst case visible at once:
+	// a 4K char-select grid draws ~600 cells × (name + initials) ≈ 1200
+	// distinct labels per frame — at the old cap of 512 the cache purged
+	// and re-rasterized every label every frame, a hidden TTF storm. 2048
+	// label textures ≈ 12 MiB worst case, and the purge becomes what it
+	// was meant to be: cheap and rare (screen switches).
+	textCacheMax = 2048
 
 	// HoverPreviewDelay is how long the cursor must rest on an emote or
 	// char icon before the full-size preview pops (right-click = instant).

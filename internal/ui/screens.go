@@ -244,11 +244,17 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 
 	query := strings.ToLower(strings.TrimSpace(a.charSearch))
+	if len(a.charLower) != len(a.sess.Chars) {
+		a.charLower = make([]string, len(a.sess.Chars))
+		for i := range a.sess.Chars {
+			a.charLower[i] = strings.ToLower(a.sess.Chars[i].Name)
+		}
+	}
 	// Pre-count matches so the scrollbar knows the content height; the
 	// draw loop below walks the same list anyway.
 	matches := int32(0)
 	for i := range a.sess.Chars {
-		if query == "" || strings.Contains(strings.ToLower(a.sess.Chars[i].Name), query) {
+		if query == "" || strings.Contains(a.charLower[i], query) {
 			matches++
 		}
 	}
@@ -264,7 +270,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	previewRequested := false
 	for i := range a.sess.Chars {
 		slot := &a.sess.Chars[i]
-		if query != "" && !strings.Contains(strings.ToLower(slot.Name), query) {
+		if query != "" && !strings.Contains(a.charLower[i], query) {
 			continue
 		}
 		x := pad + col*(iconCell+iconGap)

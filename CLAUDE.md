@@ -98,6 +98,12 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
 - Wire escaping: `#%$&` → `<num>/<percent>/<dollar>/<and>`, decode after
   `#`-split; SC entries get an extra decode after `&`-split (AO legacy).
 - `.webp.animated` does not exist. Animation = VP8X ANIM flag at decode time.
+- Loading is **client-initiated**: the server only sends SI in reply to our
+  `askchaa` (sent on PN). Only the askchar2 *paging* is legacy — drop the
+  askchaa reply and every server hangs at "handshaking".
+- Sprites have two spellings: `(a)X`/`(b)X` **or** bare `X` (AO2-Client
+  CharLayer::load_image probes both). `PrefetchWithFallback` owns that
+  chain; the prefixed base stays the asset's identity everywhere.
 
 ## Environment gotchas (this dev machine)
 
