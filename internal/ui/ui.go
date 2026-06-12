@@ -6,6 +6,7 @@ package ui
 import (
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
@@ -71,7 +72,61 @@ type textKey struct {
 
 type cachedText struct {
 	tex  *sdl.Texture
+	src  sdl.Rect // sub-rect inside tex (the atlas page or a dedicated texture)
 	w, h int32
+	// owned marks a dedicated (non-atlas) texture the purge must destroy
+	// individually — labels too big for a shelf.
+	owned bool
+}
+
+// Label atlas (§perf texture atlas): labels pack into shared pages so a
+// text-heavy frame (the 4K char grid draws ~1200 distinct labels) costs a
+// handful of texture binds instead of one per label.
+const (
+	// textAtlasPageEdge / textAtlasMaxPages bound the atlas: four 1024²
+	// ABGR pages ≈ 16 MiB worst case, holding the documented label storm
+	// whole. Beyond that, labels fall back to dedicated textures.
+	textAtlasPageEdge = 1024
+	textAtlasMaxPages = 4
+	// textAtlasPad keeps one transparent pixel between packed labels so
+	// linear filtering never bleeds neighbors.
+	textAtlasPad = 1
+)
+
+// shelfPacker allocates left-to-right shelves top-down inside one square
+// page. Pure math — unit-tested without SDL.
+type shelfPacker struct {
+	edge   int32
+	penX   int32
+	shelfY int32
+	shelfH int32
+}
+
+// take reserves a w×h slot, opening a new shelf when the current row is
+// full. ok=false when the page cannot fit it.
+func (p *shelfPacker) take(w, h int32) (sdl.Rect, bool) {
+	if w > p.edge || h > p.edge {
+		return sdl.Rect{}, false
+	}
+	w += textAtlasPad
+	h += textAtlasPad
+	if p.penX+w > p.edge || h > p.shelfH {
+		// Open the next shelf tall enough for this label.
+		newY := p.shelfY + p.shelfH
+		if newY+h > p.edge {
+			return sdl.Rect{}, false
+		}
+		p.shelfY, p.shelfH, p.penX = newY, h, 0
+	}
+	r := sdl.Rect{X: p.penX, Y: p.shelfY, W: w - textAtlasPad, H: h - textAtlasPad}
+	p.penX += w
+	return r, true
+}
+
+// atlasPage is one shared label texture plus its packer state.
+type atlasPage struct {
+	shelfPacker
+	tex *sdl.Texture
 }
 
 // Ctx is the per-frame UI context: input snapshot, fonts, text cache, focus.
@@ -122,7 +177,13 @@ type Ctx struct {
 	hoverSince time.Time
 
 	textCache  map[textKey]cachedText
+	atlas      []*atlasPage     // shared label pages (≤ textAtlasMaxPages)
 	widthCache map[string]int32 // chrome-font TextWidth memo
+
+	// cgo-call scratch rects (the Viewport trick): taking the address of
+	// a stack rect for Ren.Copy forces a heap escape per draw — at ~1200
+	// labels per grid frame that's real garbage. These live here instead.
+	drawSrc, drawDst sdl.Rect
 }
 
 // NewCtx loads the embedded Go font and prepares the kit.
@@ -340,6 +401,8 @@ func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 }
 
 // textTexture returns (and caches) a rendered label for the given font.
+// Labels pack into shared atlas pages; oversized ones get a dedicated
+// texture (the pre-atlas behavior).
 func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedText, bool) {
 	if text == "" || font == nil {
 		return cachedText{}, false
@@ -353,25 +416,88 @@ func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedTex
 		return cachedText{}, false
 	}
 	defer surf.Free()
+	if len(c.textCache) >= textCacheMax {
+		c.purgeTextCache()
+	}
+
+	if tex, slot, ok := c.atlasPlace(surf); ok {
+		entry := cachedText{tex: tex, src: slot, w: surf.W, h: surf.H}
+		c.textCache[key] = entry
+		return entry, true
+	}
+
+	// Atlas full or label oversized: dedicated texture fallback.
 	tex, err := c.Ren.CreateTextureFromSurface(surf)
 	if err != nil {
 		return cachedText{}, false
 	}
-	if len(c.textCache) >= textCacheMax {
-		c.purgeTextCache()
-	}
-	entry := cachedText{tex: tex, w: surf.W, h: surf.H}
+	entry := cachedText{tex: tex, src: sdl.Rect{W: surf.W, H: surf.H}, w: surf.W, h: surf.H, owned: true}
 	c.textCache[key] = entry
 	return entry, true
 }
 
+// atlasPlace uploads a label surface into a shared page, opening pages up
+// to the cap. ok=false → caller uses a dedicated texture.
+func (c *Ctx) atlasPlace(surf *sdl.Surface) (*sdl.Texture, sdl.Rect, bool) {
+	// Texture.Update needs the page's pixel format; convert once here
+	// (TTF blended output is ARGB8888 on SDL2 — usually a no-op check).
+	up := surf
+	if surf.Format.Format != uint32(sdl.PIXELFORMAT_ARGB8888) {
+		conv, err := surf.ConvertFormat(uint32(sdl.PIXELFORMAT_ARGB8888), 0)
+		if err != nil {
+			return nil, sdl.Rect{}, false
+		}
+		defer conv.Free()
+		up = conv
+	}
+	for {
+		// Try the newest page first (older ones are mostly full).
+		if n := len(c.atlas); n > 0 {
+			page := c.atlas[n-1]
+			if slot, ok := page.take(up.W, up.H); ok {
+				if err := page.tex.Update(&slot, unsafe.Pointer(&up.Pixels()[0]), int(up.Pitch)); err != nil {
+					return nil, sdl.Rect{}, false
+				}
+				return page.tex, slot, true
+			}
+		}
+		if len(c.atlas) >= textAtlasMaxPages {
+			return nil, sdl.Rect{}, false
+		}
+		tex, err := c.Ren.CreateTexture(uint32(sdl.PIXELFORMAT_ARGB8888),
+			sdl.TEXTUREACCESS_STATIC, textAtlasPageEdge, textAtlasPageEdge)
+		if err != nil {
+			return nil, sdl.Rect{}, false
+		}
+		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
+		c.atlas = append(c.atlas, &atlasPage{
+			shelfPacker: shelfPacker{edge: textAtlasPageEdge},
+			tex:         tex,
+		})
+	}
+}
+
 func (c *Ctx) purgeTextCache() {
 	for k, v := range c.textCache {
-		if v.tex != nil {
+		if v.owned && v.tex != nil {
 			_ = v.tex.Destroy()
 		}
 		delete(c.textCache, k)
 	}
+	for _, page := range c.atlas {
+		if page.tex != nil {
+			_ = page.tex.Destroy()
+		}
+	}
+	c.atlas = c.atlas[:0]
+}
+
+// blitLabel copies a cached label (atlas sub-rect aware) through the
+// scratch rects — zero heap escapes on the per-frame draw path.
+func (c *Ctx) blitLabel(t cachedText, x, y, w int32) {
+	c.drawSrc = sdl.Rect{X: t.src.X, Y: t.src.Y, W: w, H: t.h}
+	c.drawDst = sdl.Rect{X: x, Y: y, W: w, H: t.h}
+	_ = c.Ren.Copy(t.tex, &c.drawSrc, &c.drawDst)
 }
 
 // Label draws text at (x, y) and returns its pixel width.
@@ -380,8 +506,7 @@ func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
 	if !ok {
 		return 0
 	}
-	dst := sdl.Rect{X: x, Y: y, W: t.w, H: t.h}
-	_ = c.Ren.Copy(t.tex, nil, &dst)
+	c.blitLabel(t, x, y, t.w)
 	return t.w
 }
 
@@ -391,8 +516,7 @@ func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
 	if !ok {
 		return
 	}
-	dst := sdl.Rect{X: x, Y: y, W: t.w, H: t.h}
-	_ = c.Ren.Copy(t.tex, nil, &dst)
+	c.blitLabel(t, x, y, t.w)
 }
 
 // LabelClipped draws text clipped to maxW.
@@ -401,7 +525,8 @@ func (c *Ctx) LabelClipped(x, y, maxW int32, text string, col sdl.Color) {
 }
 
 // LabelClippedFont is LabelClipped with an explicit font (scaled log/OOC
-// text). Cached like every label; the cache keys by font identity.
+// text). Cached like every label; the cache keys by font identity. The
+// clip composes with the label's atlas sub-rect.
 func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, col sdl.Color) {
 	t, ok := c.textTexture(text, col, font)
 	if !ok {
@@ -411,9 +536,7 @@ func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, co
 	if w > maxW {
 		w = maxW
 	}
-	src := sdl.Rect{X: 0, Y: 0, W: w, H: t.h}
-	dst := sdl.Rect{X: x, Y: y, W: w, H: t.h}
-	_ = c.Ren.Copy(t.tex, &src, &dst)
+	c.blitLabel(t, x, y, w)
 }
 
 // TextWidth measures a label in the chrome font, memoized — screens call
@@ -450,8 +573,7 @@ func (c *Ctx) Button(r sdl.Rect, label string) bool {
 	c.Border(r, ColAccent)
 	t, ok := c.textTexture(label, ColText, c.font)
 	if ok {
-		dst := sdl.Rect{X: r.X + (r.W-t.w)/2, Y: r.Y + (r.H-t.h)/2, W: t.w, H: t.h}
-		_ = c.Ren.Copy(t.tex, nil, &dst)
+		c.blitLabel(t, r.X+(r.W-t.w)/2, r.Y+(r.H-t.h)/2, t.w)
 	}
 	return hover && c.clicked
 }

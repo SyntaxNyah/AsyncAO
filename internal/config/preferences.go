@@ -158,6 +158,7 @@ type AssetPreferences struct {
 	DebugOverlay           bool                      `json:"debugOverlay"`
 	AutoDetectFormats      bool                      `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                      `json:"themeLayout"`
+	DiskZstd               bool                      `json:"diskZstd"`
 	ThemeName              string                    `json:"themeName"`
 	ThemeDir               string                    `json:"themeDir"`
 	OOCName                string                    `json:"oocName"`
@@ -217,6 +218,7 @@ type prefsJSON struct {
 	DebugOverlay           bool   `json:"debugOverlay"`
 	FormatAutoDetect       *bool  `json:"formatAutoDetect"` // absent = default ON
 	ThemeLayout            *bool  `json:"themeLayout"`      // absent = default ON
+	DiskZstd               bool   `json:"diskZstd"`         // default OFF (measured trade)
 	ThemeName              string `json:"themeName"`
 	ThemeDir               string `json:"themeDir"`
 	OOCName                string `json:"oocName"`
@@ -359,6 +361,7 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.ThemeLayout != nil {
 		p.ThemeLayoutOn = *onDisk.ThemeLayout
 	}
+	p.DiskZstd = onDisk.DiskZstd
 	p.ThemeName = onDisk.ThemeName
 	p.ThemeDir = onDisk.ThemeDir
 	p.OOCName = onDisk.OOCName
@@ -1169,6 +1172,26 @@ func (p *AssetPreferences) SetFormatAutoDetect(enabled bool) {
 		return
 	}
 	p.AutoDetectFormats = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DiskZstdEnabled reports whether new T3 blobs compress with zstd
+// (default OFF — the CPU-vs-disk trade is the user's to take).
+func (p *AssetPreferences) DiskZstdEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DiskZstd
+}
+
+// SetDiskZstd toggles T3 compression for new writes.
+func (p *AssetPreferences) SetDiskZstd(enabled bool) {
+	p.mu.Lock()
+	if p.DiskZstd == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.DiskZstd = enabled
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -37,6 +37,10 @@ const (
 	// session still pumps (keepalives, queues) but nothing draws — no
 	// point compositing 60 fps to nowhere.
 	minimizedNap = 50 * time.Millisecond
+	// maxFrameDelta clamps one frame's dt after a stall so time-driven
+	// state (typewriter, blips, effect countdowns) resumes smoothly
+	// instead of bursting the backlog (§perf frame pacing).
+	maxFrameDelta = 100 * time.Millisecond
 )
 
 func main() {
@@ -185,6 +189,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		Decoder:    decoder,
 		T1Contains: store.Contains,
 	})
+	manager.SetDiskCompression(prefs.DiskZstdEnabled())
 
 	viewport := render.NewViewport(store)
 	audio := render.NewAudio(manager)
@@ -245,6 +250,13 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		now := time.Now()
 		dt := now.Sub(last)
 		last = now
+		// Pacing guard: after a stall (window drag, AV freeze, sleep
+		// wake) an unbounded dt would dump the typewriter's whole backlog
+		// and machine-gun its blips in one frame. Clamping keeps the
+		// reveal cadence smooth; animation clocks just resume.
+		if dt > maxFrameDelta {
+			dt = maxFrameDelta
+		}
 
 		// Order matters: BeginFrame resets the per-frame input snapshot
 		// that HandleEvent fills, so it must run before the event poll.

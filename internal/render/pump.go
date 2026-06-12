@@ -50,6 +50,15 @@ func (p *Pump) Frame() {
 			}
 			return
 		}
+		// Progressive ordering guard: the budget carry can reorder a
+		// first-frame partial AFTER its own full set — uploading it then
+		// would regress the resident animation to one frame.
+		if d.Asset.Partial {
+			if page, ok := p.store.Get(d.Base); ok && len(page.Frames) > len(d.Asset.Frames) {
+				d.Asset.Release()
+				return
+			}
+		}
 		bytes := d.Asset.PixelBytes()
 		if err := p.store.Upload(d.Base, d.Asset); err != nil {
 			p.uploadErrs++

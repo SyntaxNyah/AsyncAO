@@ -141,6 +141,38 @@ func TestNormalizeThemeRoot(t *testing.T) {
 	}
 }
 
+// TestShelfPacker pins the label-atlas allocator: rows fill left to
+// right, new shelves open below, padding separates slots, and oversize
+// requests fail cleanly (the dedicated-texture fallback).
+func TestShelfPacker(t *testing.T) {
+	p := shelfPacker{edge: 100}
+
+	a, ok := p.take(40, 10)
+	if !ok || a.X != 0 || a.Y != 0 || a.W != 40 || a.H != 10 {
+		t.Fatalf("first slot = %+v ok=%v", a, ok)
+	}
+	b, ok := p.take(40, 10)
+	if !ok || b.X != 41 || b.Y != 0 {
+		t.Fatalf("second slot = %+v ok=%v (want padded to x=41)", b, ok)
+	}
+	// 40 more won't fit the 100-wide shelf (41+41+41 > 100): new shelf.
+	cSlot, ok := p.take(40, 12)
+	if !ok || cSlot.X != 0 || cSlot.Y != 11 {
+		t.Fatalf("third slot = %+v ok=%v (want new shelf at y=11)", cSlot, ok)
+	}
+	// A label taller than the page can never fit.
+	if _, ok := p.take(10, 200); ok {
+		t.Error("oversize label accepted")
+	}
+	// Fill vertically until the page refuses.
+	for i := 0; i < 32; i++ {
+		if _, ok := p.take(90, 20); !ok {
+			return // refused cleanly once full — expected
+		}
+	}
+	t.Error("packer never refused on a full page")
+}
+
 // TestWrapTextCaps pins the lobby description wrapper: nil for blank
 // input, the line cap holds, and the capped line gains an ellipsis.
 // (Headless: TextWidth returns 0 without a font, so everything fits one

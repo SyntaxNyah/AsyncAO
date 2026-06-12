@@ -12,6 +12,10 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
+// serverHelpOutro closes the catalog: nobody's contribution goes
+// uncredited just because this page was written before it.
+var serverHelpOutro = "Credit lists were taken from each project's git history at the time of writing. If you contributed to any of these projects and your name isn't here — or you contribute later on — all credit to you as well."
+
 // serverHelpIntro is the upgrade guidance shown before the catalog.
 var serverHelpIntro = []string{
 	"Your server is pinned to the bottom of the lobby because it only speaks the legacy raw-TCP protocol. AsyncAO — like webAO and the AO master list's web tier — connects over WebSockets only.",
@@ -183,6 +187,9 @@ func (a *App) drawServerHelp(w, h int32) {
 				y += lineH
 			}
 			y += lineH // entry gap
+		}
+		for _, line := range c.WrapText(serverHelpOutro, wrapW, 6) {
+			put(line, ColTextDim)
 		}
 		return y + a.helpScroll - view.Y // content height
 	}

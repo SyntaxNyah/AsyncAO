@@ -349,6 +349,12 @@ func (a *App) drawSettings(w, h int32) {
 	c.Label(pad, y, fmt.Sprintf("Memory cache (T2): %d entries · %.1f / %.0f MiB · %.0f%% hit rate · %d evictions",
 		t2.Entries, float64(t2.Bytes)/(1<<20), float64(t2.Budget)/(1<<20), hitPct, t2.Evictions), ColTextDim)
 	y += 24
+	zstdOn := a.d.Prefs.DiskZstdEnabled()
+	if next := c.Checkbox(pad, y, "Compress disk cache with zstd (new writes only; smaller T3, tiny CPU on hits — old blobs always read fine)", zstdOn); next != zstdOn {
+		a.d.Prefs.SetDiskZstd(next)
+		a.d.Manager.SetDiskCompression(next)
+	}
+	y += 26
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Measure disk cache") {
 		measureDiskCacheAsync(a.d.Manager.DiskRoot())
 	}

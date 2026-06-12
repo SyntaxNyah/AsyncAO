@@ -458,6 +458,13 @@ func (m *Manager) DiskRoot() string {
 	return m.disk.Root()
 }
 
+// SetDiskCompression toggles zstd for new T3 writes (Settings, live-safe).
+func (m *Manager) SetDiskCompression(on bool) {
+	if m.disk != nil {
+		m.disk.SetCompression(on)
+	}
+}
+
 // T2Stats snapshots the byte-tier counters (Settings cache browser).
 func (m *Manager) T2Stats() cache.MemoryStats {
 	if m.t2 == nil {
