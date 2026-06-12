@@ -716,7 +716,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
 	c.Border(r, ColPanelHi)
-	tab := r.W / 4
+	tab := r.W / 5
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: tab, H: btnH}, "Log") {
 		a.logTab = logTabLog
 	}
@@ -726,8 +726,11 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	if c.Button(sdl.Rect{X: r.X + 2*tab, Y: r.Y, W: tab, H: btnH}, "Areas") {
 		a.logTab = logTabAreas
 	}
-	if c.Button(sdl.Rect{X: r.X + 3*tab, Y: r.Y, W: r.W - 3*tab, H: btnH}, "OOC") {
+	if c.Button(sdl.Rect{X: r.X + 3*tab, Y: r.Y, W: tab, H: btnH}, "OOC") {
 		a.logTab = logTabOOC
+	}
+	if c.Button(sdl.Rect{X: r.X + 4*tab, Y: r.Y, W: r.W - 4*tab, H: btnH}, "Notes") {
+		a.logTab = logTabNotes
 	}
 	inner := sdl.Rect{X: r.X + 4, Y: r.Y + btnH + 4, W: r.W - 8, H: r.H - btnH - 8}
 	// Ctrl+wheel anywhere on the panel resizes the log/OOC/list text;
@@ -748,6 +751,9 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		return
 	case logTabOOC:
 		a.drawOOCPanel(inner)
+		return
+	case logTabNotes:
+		a.drawNotesTab(inner)
 		return
 	}
 	// IC log tab: search box + Copy/TXT/HTML row, then the colored
@@ -807,6 +813,10 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				col = render.TextColor(ecol)
 			}
 			c.LabelClippedFont(c.LogFontFor(a.logPct, row.text), list.X, y, wrapW, row.text, col)
+			// Right-click pins the WHOLE entry into the case notebook.
+			if c.rightClicked && c.hovering(sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}) {
+				a.pinNote(a.icLog[row.entry].text)
+			}
 		}
 		y += lineH
 	}
@@ -1009,7 +1019,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	var addNow bool
 	a.iniAdd, addNow = c.TextField("iniswapadd", sdl.Rect{X: panel.X + pad + 240, Y: y, W: 230, H: fieldH}, a.iniAdd, "Add folder to wardrobe...")
 	if c.Button(sdl.Rect{X: panel.X + pad + 476, Y: y, W: 60, H: btnH}, "Add") || addNow {
-		if a.d.Prefs.AddWardrobe(a.iniAdd) {
+		if a.d.Prefs.AddWardrobe(a.serverKey, a.iniAdd) {
 			a.iniAdd = ""
 			a.rebuildIniMenu()
 		}
@@ -1099,12 +1109,46 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 	c.Label(star.X+2, star.Y, "★", starCol)
 	if c.hovering(star) && c.clicked {
 		if a.iniWardrobe[idx] {
-			a.d.Prefs.RemoveWardrobe(name)
+			a.d.Prefs.RemoveWardrobe(a.serverKey, name)
 		} else {
-			a.d.Prefs.AddWardrobe(name)
+			a.d.Prefs.AddWardrobe(a.serverKey, name)
 		}
 		a.rebuildIniMenu()
 		return // membership toggled; don't also wear it
+	}
+
+	// Key badge (bottom-left): the character's bound key on this server,
+	// or "+key" on hover. Click arms capture (next plain keypress binds);
+	// right-click clears the binding.
+	bound := a.charKeyFor(name)
+	badgeLabel := bound
+	if badgeLabel == "" && c.hovering(cell) {
+		badgeLabel = "+key"
+	}
+	if a.bindingFor == name {
+		badgeLabel = "press..."
+	}
+	if badgeLabel != "" {
+		bw := c.TextWidth(badgeLabel) + 8
+		badge := sdl.Rect{X: cell.X + 1, Y: cell.Y + cell.H - 17, W: bw, H: 16}
+		c.Fill(badge, sdl.Color{R: 0, G: 0, B: 0, A: 190})
+		col := ColAccent
+		if bound == "" {
+			col = ColTextDim
+		}
+		c.Label(badge.X+4, badge.Y+1, badgeLabel, col)
+		if c.hovering(badge) {
+			if c.clicked {
+				a.bindingFor = name
+				c.focusID = "" // capture owns the next keypress outright
+				return         // don't also wear it
+			}
+			if c.rightClicked && bound != "" {
+				a.d.Prefs.SetCharKeyBind(a.serverKey, bound, "")
+				a.refreshCharKeys()
+				return
+			}
+		}
 	}
 
 	if c.HoverPreview("iniswap:"+name, cell) {
@@ -1532,10 +1576,107 @@ func (a *App) drawPairPanel(w, h int32) {
 		}
 	}
 	ry += 36
-	c.Label(rx, ry, "Both sides must pair with", ColTextDim)
-	c.Label(rx, ry+18, "each other; applies from", ColTextDim)
-	c.Label(rx, ry+36, "your next message.", ColTextDim)
+	c.Label(rx, ry, "Both sides must pair with each other;", ColTextDim)
+	c.Label(rx, ry+18, "applies from your next message.", ColTextDim)
+	ry += 42
+
+	// Offset ghost editor: drag your sprite live; partner shows as a
+	// translucent ghost at their last-known placement.
+	pv := sdl.Rect{X: rx, Y: ry, W: panel.W/2 - 2*pad, H: panel.Y + panel.H - pad - ry}
+	if pv.H >= ghostMinHeightPx {
+		a.drawPairGhost(pv)
+	}
 }
+
+// ghostMinHeightPx is the smallest useful ghost stage; below it the panel
+// keeps just the numeric controls.
+const ghostMinHeightPx = 70
+
+// ghostAlpha is the partner ghost's translucency.
+const ghostAlpha = 110
+
+// drawPairGhost renders the live offset editor: a miniature stage, the
+// pair partner translucent at THEIR offsets (from the last paired
+// message), and your idle sprite at YOUR offsets — drag it to set them
+// (the numeric rows above mirror live). Same offset math as the real
+// viewport: percent of stage width/height.
+func (a *App) drawPairGhost(pv sdl.Rect) {
+	c := a.ctx
+	c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
+	c.Border(pv, ColPanelHi)
+
+	// Partner ghost first (behind), then me.
+	if a.pairWith >= 0 && a.pairWith < len(a.sess.Chars) {
+		name := a.sess.Chars[a.pairWith].Name
+		// The scene's pair layer knows their REAL offsets once a paired
+		// message arrived; before that they stand centered.
+		gx, gy := 0, 0
+		if sc := &a.room.Scene; sc.PairActive && strings.EqualFold(sc.Pair.Name, name) {
+			gx, gy = sc.Pair.OffsetX, sc.Pair.OffsetY
+		}
+		a.drawGhostSprite(pv, name, gx, gy, false, ghostAlpha)
+	}
+	if me := a.myCharName(); me != "" {
+		a.drawGhostSprite(pv, me, a.pairOffX, a.pairOffY, a.pairFlip, 255)
+	}
+	c.Label(pv.X+4, pv.Y+2, "drag your sprite to place", ColTextDim)
+
+	// Drag: anywhere in the stage moves YOUR sprite (it is the only
+	// thing being edited here — no hit-testing pixel art).
+	pressed := c.mouseDown && !a.ghostPrev
+	a.ghostPrev = c.mouseDown
+	if pressed && c.hovering(pv) {
+		a.ghostDrag = true
+		a.ghostStart = [2]int32{c.mouseX, c.mouseY}
+		a.ghostBase = [2]int{a.pairOffX, a.pairOffY}
+	}
+	if !c.mouseDown {
+		a.ghostDrag = false
+	}
+	if a.ghostDrag && pv.W > 0 && pv.H > 0 {
+		a.pairOffX = clampOffset(a.ghostBase[0] + int(c.mouseX-a.ghostStart[0])*100/int(pv.W))
+		a.pairOffY = clampOffset(a.ghostBase[1] + int(c.mouseY-a.ghostStart[1])*100/int(pv.H))
+		a.persistPairPrefs()
+	}
+}
+
+// drawGhostSprite draws one character's idle at offset% of the stage,
+// sized like the real viewport sizes sprites (full stage height). The
+// texture's alpha-mod restores immediately — pages are shared with the
+// live viewport.
+func (a *App) drawGhostSprite(pv sdl.Rect, name string, offX, offY int, flip bool, alpha uint8) {
+	c := a.ctx
+	base := a.urls.Emote(name, "normal", courtroom.EmoteIdle)
+	page, ok := a.d.Store.Get(base)
+	if !ok || len(page.Frames) == 0 || page.H == 0 {
+		// Warm it once per (panel, character) — not per frame.
+		if a.ghostWarm[name] != base {
+			if a.ghostWarm == nil {
+				a.ghostWarm = map[string]string{}
+			}
+			if len(a.ghostWarm) < ghostWarmCap {
+				a.ghostWarm[name] = base
+				a.d.Manager.PrefetchWithFallback(base, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (ghost editor)
+			}
+		}
+		c.Label(pv.X+pv.W/2-c.TextWidth(name)/2, pv.Y+pv.H/2, name, ColTextDim)
+		return
+	}
+	dst := sdl.Rect{H: pv.H, W: pv.H * page.W / page.H}
+	dst.X = pv.X + (pv.W-dst.W)/2 + int32(offX)*pv.W/100
+	dst.Y = pv.Y + int32(offY)*pv.H/100
+	tex := page.Frames[pageFrameLoop(page, a.themeElapsed())]
+	_ = tex.SetAlphaMod(alpha)
+	if flip {
+		_ = c.Ren.CopyEx(tex, nil, &dst, 0, nil, sdl.FLIP_HORIZONTAL)
+	} else {
+		_ = c.Ren.Copy(tex, nil, &dst)
+	}
+	_ = tex.SetAlphaMod(255)
+}
+
+// ghostWarmCap bounds the ghost editor's prefetch dedupe table.
+const ghostWarmCap = 16
 
 const offsetStep = 5
 

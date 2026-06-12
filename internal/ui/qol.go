@@ -62,8 +62,62 @@ func (a *App) hotkeyFor(action string) string {
 	return ""
 }
 
-// handleHotkeys consumes this frame's Ctrl chord on the courtroom screen.
+// refreshCharKeys re-reads this server's character keybinds into the
+// per-frame lookup caches (connect + bind edits only — never per frame).
+func (a *App) refreshCharKeys() {
+	a.charKeys = a.d.Prefs.CharKeyBinds(a.serverKey)
+	if len(a.charKeys) == 0 {
+		a.charKeysRev = nil
+		return
+	}
+	a.charKeysRev = make(map[string]string, len(a.charKeys))
+	for k, ch := range a.charKeys {
+		a.charKeysRev[ch] = k
+	}
+}
+
+// charKeyFor reports the key bound to a character on this server ("" =
+// none) — the wardrobe badge lookup.
+func (a *App) charKeyFor(char string) string { return a.charKeysRev[char] }
+
+// pollCharBind completes an armed wardrobe key-capture: the next plain
+// keypress binds key → character on this server; Esc cancels.
+func (a *App) pollCharBind() {
+	if a.bindingFor == "" {
+		return
+	}
+	c := a.ctx
+	if c.escPressed {
+		a.bindingFor = ""
+		return
+	}
+	if c.keyPressed == 0 {
+		return
+	}
+	key := strings.ToLower(sdl.GetKeyName(c.keyPressed))
+	a.d.Prefs.SetCharKeyBind(a.serverKey, key, a.bindingFor)
+	a.pushDebug(fmt.Sprintf("key %q now wears %s (this server only)", key, a.bindingFor))
+	a.bindingFor = ""
+	a.refreshCharKeys()
+}
+
+// handleCharKeys wears a bound character on a bare keypress — only with
+// no text field focused, no capture armed, and no Ctrl chord in flight,
+// so typing can never trigger a swap.
+func (a *App) handleCharKeys() {
+	c := a.ctx
+	if c.keyPressed == 0 || c.focusID != "" || a.bindingFor != "" || c.ctrlHeld {
+		return
+	}
+	if name := a.charKeys[strings.ToLower(sdl.GetKeyName(c.keyPressed))]; name != "" {
+		a.wearFromMenu(name)
+	}
+}
+
+// handleHotkeys consumes this frame's Ctrl chord on the courtroom screen
+// (and dispatches the per-server character keybinds first).
 func (a *App) handleHotkeys() {
+	a.handleCharKeys()
 	key := a.ctx.hotkey
 	if key == 0 || a.sess == nil {
 		return

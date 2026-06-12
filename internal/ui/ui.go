@@ -253,10 +253,11 @@ type Ctx struct {
 	enter          bool
 	tabPressed     bool
 	escPressed     bool
-	pasted         string // Ctrl+V clipboard text (flattened to one line)
-	copyReq        bool   // Ctrl+C: focused field copies its value
-	cutReq         bool   // Ctrl+X: focused field copies, then clears
-	selectAll      bool   // Ctrl+A armed: next edit replaces the whole value
+	keyPressed     sdl.Keycode // plain (non-ctrl) keydown this frame (0 = none)
+	pasted         string      // Ctrl+V clipboard text (flattened to one line)
+	copyReq        bool        // Ctrl+C: focused field copies its value
+	cutReq         bool        // Ctrl+X: focused field copies, then clears
+	selectAll      bool        // Ctrl+A armed: next edit replaces the whole value
 	// wheelTaken marks this frame's wheel as consumed by a hovered widget
 	// (spinbox rows, WheelIn lists) so page-level scrolls don't double-act.
 	wheelTaken bool
@@ -511,6 +512,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.enter = false
 	c.tabPressed = false
 	c.escPressed = false
+	c.keyPressed = 0
 	c.pasted = ""
 	c.copyReq = false
 	c.cutReq = false
@@ -594,6 +596,10 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 			c.tabShift = e.Keysym.Mod&sdl.KMOD_SHIFT != 0
 		case sdl.K_ESCAPE:
 			c.escPressed = true
+		default:
+			// Plain keys feed the character keybinds (and the wardrobe's
+			// bind-capture); consumers check focus before acting.
+			c.keyPressed = e.Keysym.Sym
 		}
 	case *sdl.DropEvent:
 		if e.Type == sdl.DROPFILE {

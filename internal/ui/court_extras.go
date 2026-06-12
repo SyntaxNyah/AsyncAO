@@ -693,6 +693,11 @@ func (a *App) drawEvidencePanel(w, h int32) {
 		a.sess.DeleteEvidence(a.evidIdx)
 		a.evidPresent = false
 	}
+	iy += btnH + 6
+	// Pin to the case notebook: name + description in one quoted line.
+	if c.Button(sdl.Rect{X: ix, Y: iy, W: iw, H: btnH}, "Pin to notebook") {
+		a.pinNote("[evidence] " + sel.Name + ": " + sel.Description)
+	}
 }
 
 // --- modcall dialog ---------------------------------------------------------------

@@ -103,6 +103,7 @@ const (
 	logTabMusic
 	logTabAreas
 	logTabOOC
+	logTabNotes
 )
 
 // Char select grid tabs.
@@ -266,6 +267,27 @@ type App struct {
 
 	// --- font override pipeline (file bytes read off-thread) ---
 	fontRes chan fontLoad
+
+	// --- case notebook (per-server pins; loads off-thread on connect) ---
+	notebook    *config.Notebook
+	notebookRes chan *config.Notebook
+	noteInput   string
+	noteScroll  int32
+
+	// bindingFor is the character a wardrobe key-capture is armed for
+	// ("" = none): the next plain keypress binds key → character on this
+	// server (Esc cancels). charKeys/charKeysRev cache this server's
+	// binds for per-frame lookups (refreshed on connect + edits only).
+	bindingFor  string
+	charKeys    map[string]string // key name → character
+	charKeysRev map[string]string // character → key name (badges)
+
+	// Offset ghost editor (pair panel): drag state + prefetch dedupe.
+	ghostDrag  bool
+	ghostPrev  bool // last frame's mouseDown (edge detect)
+	ghostStart [2]int32
+	ghostBase  [2]int
+	ghostWarm  map[string]string
 
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
@@ -640,6 +662,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		iniRes:      make(chan iniswapFetch, 1),
 		manifestRes: make(chan manifestFetch, 1),
 		fontRes:     make(chan fontLoad, 1),
+		notebookRes: make(chan *config.Notebook, 1),
 		pairWith:    protocol.UnpairedCharID,
 		oocName:     d.Prefs.SavedShowname(),
 		selServer:   -1,
@@ -768,6 +791,20 @@ func (a *App) Connect(name, wsURL string) {
 	a.connErr = ""
 	a.connAt = time.Now()
 	a.curArea = ""
+	// One-time wardrobe migration: the first server joined after the
+	// per-server split inherits the old flat collection.
+	a.d.Prefs.ClaimLegacyWardrobe(wsURL)
+	a.bindingFor = ""
+	a.refreshCharKeys()
+	// Case notebook: per-server pins load off-thread, land via the poll.
+	go func(key string) {
+		if nb, err := config.LoadNotebook(key); err == nil {
+			select {
+			case a.notebookRes <- nb:
+			default:
+			}
+		}
+	}(wsURL)
 	conn, err := protocol.Dial(context.Background(), wsURL)
 	if err != nil {
 		a.connErr = err.Error()
@@ -791,15 +828,26 @@ func (a *App) Disconnect() {
 		a.conn.Close()
 		a.conn = nil
 	}
+	// Notebook: flush pending pins off-thread; a stale in-flight load is
+	// drained so it can't land on the next server's session.
+	if a.notebook != nil {
+		go func(nb *config.Notebook) { _ = nb.Flush() }(a.notebook)
+		a.notebook = nil
+	}
+	select {
+	case <-a.notebookRes:
+	default:
+	}
+	a.noteInput, a.noteScroll = "", 0
 	a.sess = nil
 	a.room = nil
 	a.emotes = nil
 	a.iconAsk = nil
 	a.emoteAsk = nil
 	a.charLower = nil
-	// Server-side iniswap state resets per server (the wardrobe is global
-	// and persists); drain any in-flight fetch so a stale txt can't land
-	// after a reconnect elsewhere.
+	// Server-side iniswap state resets per server (wardrobes persist but
+	// are server-keyed in prefs); drain any in-flight fetch so a stale
+	// txt can't land after a reconnect elsewhere.
 	a.iniChar, a.pendingIni = "", ""
 	a.iniServer, a.iniList, a.iniWardrobe, a.iniLower, a.iniAsk = nil, nil, nil, nil, nil
 	a.spriteOv = map[string][2]int{} // drag overrides are per-server
@@ -1313,7 +1361,7 @@ func (a *App) pollIniswap() {
 // favourites — instant swaps, persisted across sessions and servers),
 // then server-list entries not already in the wardrobe.
 func (a *App) rebuildIniMenu() {
-	names, fromWardrobe := mergeWardrobe(a.d.Prefs.WardrobeList(), a.iniServer)
+	names, fromWardrobe := mergeWardrobe(a.d.Prefs.WardrobeList(a.serverKey), a.iniServer)
 	a.iniList = names
 	a.iniWardrobe = fromWardrobe
 	a.iniLower = make([]string, len(names))
@@ -1578,6 +1626,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollThemeApply()
 	a.pollManifest()
 	a.pollFontChain()
+	a.pollNotebook()
+	a.pollCharBind()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
 		a.healScenery()

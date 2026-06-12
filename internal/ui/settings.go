@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -30,6 +31,9 @@ type settingsState struct {
 	// font override edit buffer (semicolon-separated chain).
 	fontInput  string
 	fontLoaded bool
+
+	// importArmed routes the next dropped .json into ImportSettings.
+	importArmed bool
 
 	// theme picker state: list scanning runs on a goroutine (directory
 	// I/O stays off the render thread — §17.2) and lands on themeRes.
@@ -237,9 +241,15 @@ func (a *App) drawSettings(w, h int32) {
 		}
 	}
 	// Drag-and-drop: SDL DROPFILE anywhere on this screen points the
-	// theme folder (a dropped file resolves to its directory, off-thread).
+	// theme folder (a dropped file resolves to its directory, off-thread)
+	// — unless a settings import is armed, which claims .json drops.
 	if c.dropped != "" {
-		resolveDroppedFolder(c.dropped)
+		if settings.importArmed && strings.EqualFold(filepath.Ext(c.dropped), ".json") {
+			settings.importArmed = false
+			importSettingsAsync(a, c.dropped)
+		} else {
+			resolveDroppedFolder(c.dropped)
+		}
 	}
 	a.pollFolderPick()
 	y += 36
@@ -446,6 +456,23 @@ func (a *App) drawSettings(w, h int32) {
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 150, H: btnH}, "Import learned") {
 		importLearnedAsync(a)
 	}
+	y += 32
+
+	// Whole-settings portability: the new-PC bundle (every knob,
+	// favorites, per-server wardrobes/keybinds, learned formats).
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Export settings") {
+		exportSettingsAsync(a)
+	}
+	importLabel := "Import settings..."
+	if settings.importArmed {
+		importLabel = "Drop the .json here"
+	}
+	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, importLabel) {
+		settings.importArmed = !settings.importArmed
+		if settings.importArmed {
+			settings.statusLine = "Drop an exported asyncao-settings .json anywhere on this window."
+		}
+	}
 	y += 36
 	select {
 	case line := <-settings.ioRes:
@@ -521,6 +548,44 @@ func exportLearnedAsync(a *App) {
 		line := "Learned formats exported to " + path
 		if err != nil {
 			line = "Export failed: " + err.Error()
+		}
+		select {
+		case settings.ioRes <- line:
+		default:
+		}
+	}()
+}
+
+// exportSettingsAsync writes the whole-settings bundle beside the exe
+// (timestamped, so repeated exports never clobber each other).
+func exportSettingsAsync(a *App) {
+	go func() {
+		var path string
+		exe, err := os.Executable()
+		if err == nil {
+			path = filepath.Join(filepath.Dir(exe),
+				"asyncao-settings-"+time.Now().Format("20060102-150405")+".json")
+			err = a.d.Prefs.ExportSettings(path)
+		}
+		line := "Settings exported to " + path + " — copy it to the new PC and Import there."
+		if err != nil {
+			line = "Settings export failed: " + err.Error()
+		}
+		select {
+		case settings.ioRes <- line:
+		default:
+		}
+	}()
+}
+
+// importSettingsAsync replaces the preferences file with a dropped
+// bundle; the import owns the file from then on (saver freezes) and
+// applies on the next start.
+func importSettingsAsync(a *App, path string) {
+	go func() {
+		line := "Settings imported — RESTART AsyncAO to apply (changes made this session won't save)."
+		if err := a.d.Prefs.ImportSettings(path); err != nil {
+			line = "Settings import failed: " + err.Error()
 		}
 		select {
 		case settings.ioRes <- line:

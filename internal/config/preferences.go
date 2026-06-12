@@ -115,8 +115,10 @@ const (
 // defaultAudioVolume is full volume (the pre-settings behavior).
 const defaultAudioVolume = 100
 
-// WardrobeCap bounds the client-side custom character list (the wardrobe
-// persists across sessions AND servers — folder names are server-agnostic).
+// WardrobeCap bounds one SERVER's custom character list. Wardrobes were
+// originally global; they are per-server now (playtest: a wardrobe
+// carrying between unrelated servers was wrong), with a one-time legacy
+// migration on the first post-update connect.
 const WardrobeCap = 1024
 
 // Message timing knobs (milliseconds), AO2-Client options.ini parity.
@@ -210,6 +212,9 @@ type AssetPreferences struct {
 	saveDelay time.Duration
 	closeOnce sync.Once
 	onSaveErr atomic.Pointer[func(error)]
+	// frozen blocks every further write after ImportSettings replaced the
+	// file on disk — the live session's saves would clobber the import.
+	frozen atomic.Bool
 
 	// formatGen increments on every mutation that changes any effective
 	// probe list (format orders, fallback toggles). Consumers cache derived
@@ -290,10 +295,21 @@ func defaultDiscordPrefs() DiscordPrefs {
 
 // ServerWarmInfo remembers what a server looked like last visit, so a
 // reconnect can pre-warm it (last character used, last background seen).
+// It also owns the server-scoped player state: the wardrobe (custom
+// character list — per server since wardrobes carrying between servers
+// was a playtest bug) and the character keybinds.
 type ServerWarmInfo struct {
 	Char       string `json:"char,omitempty"`
 	Background string `json:"background,omitempty"`
+	// Wardrobe is this server's custom character list (≤ WardrobeCap).
+	Wardrobe []string `json:"wardrobe,omitempty"`
+	// CharKeys maps a plain key name ("a", "5", "f3") to a character to
+	// wear when pressed in the courtroom with no text field focused.
+	CharKeys map[string]string `json:"charKeys,omitempty"`
 }
+
+// charKeyCap bounds one server's character keybind table.
+const charKeyCap = 36
 
 // serverWarmCap bounds the per-server warm table (rule §17.4); when full,
 // new servers simply don't record until old entries are cleared.
@@ -537,6 +553,9 @@ func (p *AssetPreferences) saverLoop() {
 // the preferences file (temp file + rename). It is intended for shutdown and
 // Settings-Apply; routine mutations rely on the debounced saver instead.
 func (p *AssetPreferences) SaveNow() error {
+	if p.frozen.Load() {
+		return nil // an import owns the file now; restart applies it
+	}
 	// Clear before marshaling: a concurrent mutation re-marks pending and is
 	// picked up by the next flush even if this marshal misses it.
 	p.pending.Store(false)
@@ -976,12 +995,9 @@ func (p *AssetPreferences) rememberServer(key string, set func(*ServerWarmInfo))
 		p.mu.Unlock()
 		return // table full; never unbounded
 	}
-	before := w
+	// ServerWarmInfo carries slices/maps now, so no cheap == skip: every
+	// remember marks dirty and the debounced saver coalesces the writes.
 	set(&w)
-	if exists && w == before {
-		p.mu.Unlock()
-		return
-	}
 	p.ServerWarm[key] = w
 	p.mu.Unlock()
 	p.markDirty()
@@ -1147,52 +1163,172 @@ func (p *AssetPreferences) SetMasterList(url string) {
 	p.markDirty()
 }
 
-// --- Wardrobe ------------------------------------------------------------------
+// --- Wardrobe (per server) ----------------------------------------------------
 
-// WardrobeList returns a copy of the client-side custom character list.
-func (p *AssetPreferences) WardrobeList() []string {
+// WardrobeList returns a copy of one server's custom character list.
+func (p *AssetPreferences) WardrobeList(serverKey string) []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return cloneStrings(p.Wardrobe)
+	return cloneStrings(p.ServerWarm[serverKey].Wardrobe)
 }
 
-// AddWardrobe stores a character folder in the wardrobe (case-insensitive
-// dedupe, capped at WardrobeCap). Reports whether anything changed.
-func (p *AssetPreferences) AddWardrobe(name string) bool {
+// ClaimLegacyWardrobe performs the one-time migration from the flat
+// pre-per-server wardrobe: the FIRST server connected to after the
+// update inherits the collection (in practice the user's main server),
+// then the legacy list clears and every other server starts clean.
+// Connect calls this; it is a no-op once claimed.
+func (p *AssetPreferences) ClaimLegacyWardrobe(serverKey string) {
+	if serverKey == "" {
+		return
+	}
+	p.mu.RLock()
+	parked := len(p.Wardrobe) > 0
+	p.mu.RUnlock()
+	if !parked {
+		return
+	}
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		if len(w.Wardrobe) == 0 && len(p.Wardrobe) > 0 {
+			w.Wardrobe = p.Wardrobe
+			p.Wardrobe = nil
+		}
+	})
+}
+
+// AddWardrobe stores a character folder in one server's wardrobe
+// (case-insensitive dedupe, capped at WardrobeCap). Reports change.
+func (p *AssetPreferences) AddWardrobe(serverKey, name string) bool {
 	name = strings.TrimSpace(name)
-	if name == "" {
+	if name == "" || serverKey == "" {
 		return false
 	}
-	p.mu.Lock()
-	if len(p.Wardrobe) >= WardrobeCap {
-		p.mu.Unlock()
-		return false
-	}
-	for _, have := range p.Wardrobe {
-		if strings.EqualFold(have, name) {
-			p.mu.Unlock()
-			return false
+	changed := false
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		if len(w.Wardrobe) >= WardrobeCap {
+			return
 		}
-	}
-	p.Wardrobe = append(p.Wardrobe, name)
-	p.mu.Unlock()
-	p.markDirty()
-	return true
+		for _, have := range w.Wardrobe {
+			if strings.EqualFold(have, name) {
+				return
+			}
+		}
+		w.Wardrobe = append(w.Wardrobe, name)
+		changed = true
+	})
+	return changed
 }
 
-// RemoveWardrobe drops a character folder from the wardrobe.
-func (p *AssetPreferences) RemoveWardrobe(name string) bool {
-	p.mu.Lock()
-	for i, have := range p.Wardrobe {
-		if strings.EqualFold(have, name) {
-			p.Wardrobe = append(p.Wardrobe[:i], p.Wardrobe[i+1:]...)
-			p.mu.Unlock()
-			p.markDirty()
-			return true
+// RemoveWardrobe drops a character folder from one server's wardrobe.
+func (p *AssetPreferences) RemoveWardrobe(serverKey, name string) bool {
+	changed := false
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		for i, have := range w.Wardrobe {
+			if strings.EqualFold(have, name) {
+				w.Wardrobe = append(w.Wardrobe[:i], w.Wardrobe[i+1:]...)
+				changed = true
+				return
+			}
 		}
+	})
+	return changed
+}
+
+// --- Character keybinds (per server) -------------------------------------------
+
+// CharKeyBinds returns a copy of one server's key → character map.
+func (p *AssetPreferences) CharKeyBinds(serverKey string) map[string]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	src := p.ServerWarm[serverKey].CharKeys
+	if len(src) == 0 {
+		return nil
 	}
-	p.mu.Unlock()
-	return false
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// SetCharKeyBind binds key (lowercase SDL key name) to a character on one
+// server; an empty char clears the binding. Bounded by charKeyCap.
+func (p *AssetPreferences) SetCharKeyBind(serverKey, key, char string) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if key == "" || serverKey == "" {
+		return
+	}
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		if char == "" {
+			delete(w.CharKeys, key)
+			return
+		}
+		if w.CharKeys == nil {
+			w.CharKeys = map[string]string{}
+		}
+		if _, exists := w.CharKeys[key]; !exists && len(w.CharKeys) >= charKeyCap {
+			return
+		}
+		w.CharKeys[key] = char
+	})
+}
+
+// --- Settings export / import ---------------------------------------------------
+
+// ExportSettings flushes pending mutations and copies the ENTIRE
+// preferences file — every knob, favorites, per-server wardrobes and
+// keybinds, learned formats — to destPath: the move-to-a-new-PC bundle.
+func (p *AssetPreferences) ExportSettings(destPath string) error {
+	if err := p.SaveNow(); err != nil {
+		return fmt.Errorf("config: flushing before export: %w", err)
+	}
+	data, err := os.ReadFile(p.path)
+	if err != nil {
+		return fmt.Errorf("config: reading preferences for export: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destPath), prefsDirPerm); err != nil {
+		return err
+	}
+	return os.WriteFile(destPath, data, prefsFilePerm)
+}
+
+// ImportSettings validates that srcPath parses as a preferences file and
+// atomically replaces the live one. Applied on the NEXT start: the live
+// state has too many mirrors (resolver snapshots, UI caches) to hot-swap
+// safely mid-session.
+func (p *AssetPreferences) ImportSettings(srcPath string) error {
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		return fmt.Errorf("config: reading import: %w", err)
+	}
+	var probe prefsJSON
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return fmt.Errorf("config: not a settings file: %w", err)
+	}
+	dir := filepath.Dir(p.path)
+	if err := os.MkdirAll(dir, prefsDirPerm); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, prefsTmpPattern)
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, p.path); err != nil {
+		return err
+	}
+	// From here the on-disk truth is the import; freeze the saver so the
+	// live session can't write its (pre-import) state back over it.
+	p.frozen.Store(true)
+	return nil
 }
 
 // --- Learned formats --------------------------------------------------------

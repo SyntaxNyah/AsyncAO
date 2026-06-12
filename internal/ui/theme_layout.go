@@ -257,10 +257,18 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if c.Button(tab, "OOC") {
 			a.logTab = logTabOOC
 		}
+		tab.X += 48
+		tab.W = 56
+		if c.Button(tab, "Notes") {
+			a.logTab = logTabNotes
+		}
 		inner := sdl.Rect{X: icRect.X, Y: icRect.Y + 26, W: icRect.W, H: icRect.H - 26}
-		if a.logTab == logTabOOC {
+		switch a.logTab {
+		case logTabOOC:
 			a.drawOOCLogList(inner)
-		} else {
+		case logTabNotes:
+			a.drawNotesTab(inner)
+		default:
 			a.drawICLogList(inner)
 		}
 	} else if okIC && !a.panelHidden(panelLog) {
