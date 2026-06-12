@@ -71,6 +71,11 @@ const (
 	// keepalive_timer->start(45000)): servers idle-kick silent clients,
 	// which used to hit us whenever the window sat minimized.
 	keepalivePeriod = 45 * time.Second
+
+	// maxDescLines caps the expanded lobby description box.
+	maxDescLines = 6
+	// spriteOvCap bounds the client-side sprite override table.
+	spriteOvCap = 128
 )
 
 // Log panel tabs (courtroom right column).
@@ -120,7 +125,10 @@ type App struct {
 	directSecure  bool
 	directSave    bool
 	lobbyScroll   int32
-	selectedDesc  string
+	// click-to-expand selection: first click opens the full description
+	// under the row, a second click on the same row joins.
+	selServer int
+	descLines []string
 
 	// --- connection / session ---
 	conn       *protocol.Conn
@@ -209,6 +217,15 @@ type App struct {
 	deskAskBase string
 	deskAskAt   time.Time
 
+	// client-side sprite position overrides, keyed by lowercased character
+	// folder: the server keeps setting positions per message, the client
+	// wins afterwards (drag in the viewport; right-click a sprite resets).
+	spriteOv  map[string][2]int
+	dragName  string // character being dragged ("" = none)
+	dragStart [2]int32
+	dragBase  [2]int
+	prevDown  bool // mouseDown edge detection for drag begin
+
 	// layout scales (percent; mirrors prefs, saved on change)
 	vpPct, chatPct, boxPct, logPct, inputPct int
 	uiScalePct                               int // global renderer scale
@@ -274,6 +291,8 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		themeApplyRes: make(chan themeApply, 1),
 		pairWith:      protocol.UnpairedCharID,
 		oocName:       d.Prefs.SavedShowname(),
+		selServer:     -1,
+		spriteOv:      map[string][2]int{},
 	}
 	a.applyThemeAsync() // chatbox skin + font colors from the saved theme
 	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
@@ -392,6 +411,9 @@ func (a *App) Disconnect() {
 	// after a reconnect elsewhere.
 	a.iniChar, a.pendingIni = "", ""
 	a.iniServer, a.iniList, a.iniWardrobe, a.iniLower, a.iniAsk = nil, nil, nil, nil, nil
+	a.spriteOv = map[string][2]int{} // drag overrides are per-server
+	a.dragName = ""
+	a.selServer, a.descLines = -1, nil
 	a.iniListErr, a.iniSearch, a.iniAdd = "", "", ""
 	a.showIni, a.iniBusy, a.iniScroll = false, false, 0
 	a.charTab = charTabServer
@@ -873,6 +895,7 @@ func (a *App) pollLobbyFetch() {
 	select {
 	case res := <-a.lobbyResult:
 		a.lobbyFetching = false
+		a.selServer, a.descLines = -1, nil // indices change with the list
 		if res.err != nil {
 			a.lobbyStatus = "Master list error: " + res.err.Error()
 			a.masterEntries = nil
@@ -907,6 +930,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.room != nil {
 		a.healScenery()
 		a.room.Update(dt)
+		a.applySpriteOverrides()
 		a.d.Viewport.Update(&a.room.Scene, dt)
 	}
 	a.d.Audio.Frame()
@@ -1010,6 +1034,24 @@ func (a *App) drainWarnings() {
 // warnActive reports whether the warning banner should still draw.
 func (a *App) warnActive() bool {
 	return a.warnLine != "" && time.Since(a.warnAt) < warnShowDuration
+}
+
+// applySpriteOverrides lets the user's drag positions win over the
+// message's offsets every frame (one map probe per visible layer; free
+// while no overrides exist).
+func (a *App) applySpriteOverrides() {
+	if len(a.spriteOv) == 0 {
+		return
+	}
+	sc := &a.room.Scene
+	for _, layer := range [...]*courtroom.SpriteLayer{&sc.Speaker, &sc.Pair} {
+		if !layer.Visible || layer.Name == "" {
+			continue
+		}
+		if ov, ok := a.spriteOv[strings.ToLower(layer.Name)]; ok {
+			layer.OffsetX, layer.OffsetY = ov[0], ov[1]
+		}
+	}
 }
 
 // healScenery re-demands the scene's background/desk when T1 lost them

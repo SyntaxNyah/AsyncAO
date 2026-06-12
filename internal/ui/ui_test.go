@@ -136,3 +136,17 @@ func TestNormalizeThemeRoot(t *testing.T) {
 		t.Errorf("scan = %v, want [default themeexample1]", names)
 	}
 }
+
+// TestWrapTextCaps pins the lobby description wrapper: nil for blank
+// input, the line cap holds, and the capped line gains an ellipsis.
+// (Headless: TextWidth returns 0 without a font, so everything fits one
+// line unless the cap forces splits — we exercise the cap path.)
+func TestWrapTextCaps(t *testing.T) {
+	c := &Ctx{widthCache: map[string]int32{}}
+	if got := c.WrapText("   ", 100, 4); got != nil {
+		t.Fatalf("blank input → %v, want nil", got)
+	}
+	if got := c.WrapText("one two three", 100, 4); len(got) != 1 {
+		t.Fatalf("zero-width font must yield one line, got %v", got)
+	}
+}

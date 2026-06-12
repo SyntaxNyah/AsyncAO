@@ -72,12 +72,14 @@ func (a *App) drawLobby(w, h int32) {
 		a.directConnect()
 	}
 
-	// Server rows.
+	// Server rows. Click once: expand the full description under the
+	// row; click the selected row again: join (Join button still works).
 	listTop := dcY + 40
 	a.lobbyScroll -= c.wheelY * scrollStepPx
 	if a.lobbyScroll < 0 {
 		a.lobbyScroll = 0
 	}
+	lineH := int32(c.font.Height()) + 3
 	y := listTop - a.lobbyScroll
 	legacyHeaderDrawn := false
 	for i := range a.servers {
@@ -93,25 +95,35 @@ func (a *App) drawLobby(w, h int32) {
 			break
 		}
 		if y > listTop-rowH {
-			a.drawServerRow(e, y, w)
+			a.drawServerRow(e, i, y, w)
 		}
 		y += rowH
-	}
-
-	// Description of hovered/selected server.
-	if a.selectedDesc != "" {
-		c.LabelClipped(pad, h-24, w-2*pad, a.selectedDesc, ColTextDim)
+		if i == a.selServer && len(a.descLines) > 0 {
+			boxH := int32(len(a.descLines))*lineH + 8
+			if y > listTop-boxH && y < h {
+				box := sdl.Rect{X: pad + 16, Y: y, W: w - 2*pad - 16, H: boxH - 4}
+				c.Fill(box, ColPanelHi)
+				c.Border(box, ColAccent)
+				ly := y + 3
+				for _, line := range a.descLines {
+					c.LabelClipped(box.X+6, ly, box.W-12, line, ColText)
+					ly += lineH
+				}
+			}
+			y += boxH
+		}
 	}
 }
 
-func (a *App) drawServerRow(e *network.ServerEntry, y, w int32) {
+func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	c := a.ctx
 	row := sdl.Rect{X: pad, Y: y, W: w - 2*pad, H: rowH - 2}
 	hover := c.hovering(row)
 	bg := ColPanel
-	if hover {
+	if idx == a.selServer {
 		bg = ColPanelHi
-		a.selectedDesc = e.Description
+	} else if hover {
+		bg = ColPanelHi
 	}
 	c.Fill(row, bg)
 
@@ -143,10 +155,29 @@ func (a *App) drawServerRow(e *network.ServerEntry, y, w int32) {
 	tierLabel := e.Security().String()
 	c.Label(row.X+row.W-260, y+5, tierLabel, tierColor(*e))
 
+	joinHover := false
 	if e.Joinable() {
-		if c.Button(sdl.Rect{X: row.X + row.W - 80, Y: y + 1, W: 76, H: rowH - 4}, "Join") {
+		joinBtn := sdl.Rect{X: row.X + row.W - 80, Y: y + 1, W: 76, H: rowH - 4}
+		joinHover = c.hovering(joinBtn)
+		if c.Button(joinBtn, "Join") {
 			a.Connect(e.Name, e.WebSocketURL())
+			return
 		}
+	}
+
+	// Row body click: select-and-expand first, join on the second click.
+	if hover && !joinHover && c.clicked {
+		if idx == a.selServer && e.Joinable() {
+			a.Connect(e.Name, e.WebSocketURL())
+			return
+		}
+		a.selServer = idx
+		desc := e.Description
+		if desc == "" {
+			desc = "(no description)"
+		}
+		// Wrapped ONCE per selection — drawing reuses the cached lines.
+		a.descLines = c.WrapText(desc, w-2*pad-40, maxDescLines)
 	}
 }
 
@@ -213,6 +244,7 @@ func (a *App) toggleFavorite(e *network.ServerEntry) {
 		a.d.Prefs.AddFavorite(e.Name, url, e.Description)
 	}
 	a.servers = a.mergedFavorites()
+	a.selServer, a.descLines = -1, nil // the list just reordered
 }
 
 func (a *App) directConnect() {
@@ -434,6 +466,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	vp := sdl.Rect{X: pad, Y: pad, W: vpW, H: vpH}
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
+	a.handleSpriteDrag(vp)
 	a.drawChatOverlay(vp)
 
 	// The iniswap menu is modal: the kit has no z-aware input, so the
@@ -450,6 +483,82 @@ func (a *App) drawCourtroom(w, h int32) {
 
 	// Bottom: IC input, emotes, controls.
 	a.drawICControls(w, h, vp)
+}
+
+// spriteHitRect mirrors Viewport.drawSprite's placement math so drags
+// hit-test exactly what's drawn. Runs only on press/right-click edges.
+func (a *App) spriteHitRect(vp sdl.Rect, layer *courtroom.SpriteLayer) (sdl.Rect, bool) {
+	if !layer.Visible || layer.Active == "" {
+		return sdl.Rect{}, false
+	}
+	page, ok := a.d.Store.Get(layer.Active)
+	if !ok || page.H == 0 {
+		return sdl.Rect{}, false
+	}
+	scaledW := vp.H * page.W / page.H
+	return sdl.Rect{
+		X: vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/100,
+		Y: vp.Y + vp.H*int32(layer.OffsetY)/100,
+		W: scaledW,
+		H: vp.H,
+	}, true
+}
+
+// handleSpriteDrag implements client-side sprite repositioning: grab any
+// character in the viewport and put them wherever you want — the server
+// keeps setting positions per message, the override (keyed by character)
+// wins afterwards. Right-click a sprite to reset it. All math runs on
+// press/drag edges only; idle frames cost one bool check.
+func (a *App) handleSpriteDrag(vp sdl.Rect) {
+	c := a.ctx
+	sc := &a.room.Scene
+	pressed := c.mouseDown && !a.prevDown
+	a.prevDown = c.mouseDown
+	if !c.mouseDown {
+		a.dragName = "" // release keeps the override, ends the drag
+	}
+
+	// Front-most first, matching render z-order; the chat box area is
+	// the text's, not the sprites'.
+	boxH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
+	inChatBox := c.mouseY >= vp.Y+vp.H-boxH
+	layers := [2]*courtroom.SpriteLayer{&sc.Speaker, &sc.Pair}
+	if sc.PairActive && !sc.SpeakerInFront {
+		layers[0], layers[1] = &sc.Pair, &sc.Speaker
+	}
+
+	if pressed && c.hovering(vp) && !inChatBox && a.dragName == "" {
+		for _, layer := range layers {
+			if r, ok := a.spriteHitRect(vp, layer); ok && c.hovering(r) && layer.Name != "" {
+				if _, have := a.spriteOv[strings.ToLower(layer.Name)]; !have && len(a.spriteOv) >= spriteOvCap {
+					break // table full; never unbounded
+				}
+				a.dragName = strings.ToLower(layer.Name)
+				a.dragStart = [2]int32{c.mouseX, c.mouseY}
+				a.dragBase = [2]int{layer.OffsetX, layer.OffsetY}
+				break
+			}
+		}
+	}
+
+	if a.dragName != "" && c.mouseDown && vp.W > 0 && vp.H > 0 {
+		dx := int(c.mouseX-a.dragStart[0]) * 100 / int(vp.W)
+		dy := int(c.mouseY-a.dragStart[1]) * 100 / int(vp.H)
+		a.spriteOv[a.dragName] = [2]int{
+			clampOffset(a.dragBase[0] + dx),
+			clampOffset(a.dragBase[1] + dy),
+		}
+	}
+
+	// Right-click a sprite: drop its override (back to server placement).
+	if c.rightClicked && len(a.spriteOv) > 0 && c.hovering(vp) && !inChatBox {
+		for _, layer := range layers {
+			if r, ok := a.spriteHitRect(vp, layer); ok && c.hovering(r) {
+				delete(a.spriteOv, strings.ToLower(layer.Name))
+				break
+			}
+		}
+	}
 }
 
 func (a *App) drawChatOverlay(vp sdl.Rect) {

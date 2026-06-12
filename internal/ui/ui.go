@@ -400,6 +400,9 @@ func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, co
 // it per frame for fixed labels and each miss is a CGO TTF measure. The
 // memo shares the text cache's lifecycle (purged together, same bound).
 func (c *Ctx) TextWidth(text string) int32 {
+	if c.font == nil {
+		return 0 // headless tests; real Ctx always has the chrome font
+	}
 	if w, ok := c.widthCache[text]; ok {
 		return w
 	}
@@ -531,6 +534,35 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 		c.Fill(sdl.Rect{X: caretX, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
 	}
 	return value, enter
+}
+
+// WrapText greedily word-wraps s to maxW pixels in the chrome font,
+// capped at maxLines (the last line gains an ellipsis when truncated).
+// Widths ride the TextWidth memo; callers cache the result per string.
+func (c *Ctx) WrapText(s string, maxW int32, maxLines int) []string {
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return nil
+	}
+	lines := make([]string, 0, maxLines)
+	line := ""
+	for _, word := range words {
+		candidate := word
+		if line != "" {
+			candidate = line + " " + word
+		}
+		if c.TextWidth(candidate) <= maxW || line == "" {
+			line = candidate
+			continue
+		}
+		lines = append(lines, line)
+		line = word
+		if len(lines) == maxLines {
+			lines[maxLines-1] += "…"
+			return lines
+		}
+	}
+	return append(lines, line)
 }
 
 // VScrollbar draws a proportional vertical scrollbar and returns the scroll

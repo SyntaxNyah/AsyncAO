@@ -40,6 +40,9 @@ const (
 // SpriteLayer describes one character layer for the renderer: which sprite
 // base to show and how to place it. Bases are extension-less URL bases.
 type SpriteLayer struct {
+	// Name is the character folder this layer shows — the key client-side
+	// position overrides attach to (drag-to-move in the viewport).
+	Name        string
 	IdleBase    string
 	TalkBase    string
 	PreanimBase string
@@ -283,6 +286,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.Scene.ShowDesk = deskVisible(msg.DeskMod)
 
 	c.Scene.Speaker = SpriteLayer{
+		Name:        speakerName,
 		IdleBase:    idle,
 		TalkBase:    talk,
 		PreanimBase: pre,
@@ -297,6 +301,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.Scene.SpeakerInFront = msg.Pair.SpeakerInFront()
 	if c.Scene.PairActive {
 		c.Scene.Pair = SpriteLayer{
+			Name:     msg.Pair.Name,
 			IdleBase: pairIdle,
 			Active:   pairIdle,
 			Flip:     msg.Pair.Flip,
