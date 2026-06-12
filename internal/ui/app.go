@@ -18,6 +18,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -120,6 +121,9 @@ type Deps struct {
 	Viewport *render.Viewport
 	Pump     *render.Pump
 	Audio    *render.Audio
+	// Presence is the OPTIONAL Discord Rich Presence client (nil in
+	// tests; never required to build or run — see internal/presence).
+	Presence *presence.Client
 	// MasterURL is the server-list endpoint.
 	MasterURL string
 }
@@ -157,6 +161,8 @@ type App struct {
 	serverName string
 	serverKey  string // ws URL: keys the per-server warm state in prefs
 	connErr    string
+	connAt     time.Time // session start (Rich Presence elapsed timer)
+	curArea    string    // last area WE clicked (Rich Presence, best-effort)
 
 	// --- char select state ---
 	charSearch  string
@@ -211,10 +217,17 @@ type App struct {
 	icFilter      []int
 	icFilterSeq   uint64
 	icFilterQuery string
-	oocLog        []string
-	musicScroll   int32
-	areaScroll    int32
-	logTab        int
+	// OOC wrapped-lines cache: long entries (MOTDs) wrap instead of
+	// truncating; rebuilt only when the log, width, or font scale moved.
+	oocSeq      uint64
+	oocWrap     []string
+	oocWrapSeq  uint64
+	oocWrapW    int32
+	oocWrapPct  int
+	oocLog      []string
+	musicScroll int32
+	areaScroll  int32
+	logTab      int
 	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
 	emoteAsk []time.Time
 
@@ -630,6 +643,8 @@ func (a *App) Connect(name, wsURL string) {
 	a.serverName = name
 	a.serverKey = wsURL
 	a.connErr = ""
+	a.connAt = time.Now()
+	a.curArea = ""
 	conn, err := protocol.Dial(context.Background(), wsURL)
 	if err != nil {
 		a.connErr = err.Error()
@@ -644,6 +659,7 @@ func (a *App) Connect(name, wsURL string) {
 	a.icLog = a.icLog[:0]
 	a.icLogSeq++ // wipe invalidates the filter cache too
 	a.oocLog = a.oocLog[:0]
+	a.oocSeq++
 }
 
 // Disconnect tears the connection down and returns to the lobby.
@@ -675,7 +691,47 @@ func (a *App) Disconnect() {
 	}
 	a.manifestFor = ""   // next connect re-checks its manifest
 	a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
+	a.curArea = ""
+	a.updatePresence() // sess is nil now → clears the Discord activity
 	a.screen = ScreenLobby
+}
+
+// updatePresence pushes (or clears) the Discord activity from the user's
+// per-field choices. Cheap — a channel swap; the presence worker owns all
+// I/O and silently idles when Discord isn't running.
+func (a *App) updatePresence() {
+	if a.d.Presence == nil {
+		return
+	}
+	dp := a.d.Prefs.Discord()
+	if !dp.Enabled || a.sess == nil {
+		a.d.Presence.Clear()
+		return
+	}
+	act := presence.Activity{Start: a.connAt, Details: "In court"}
+	if dp.ShowServer && a.serverName != "" {
+		act.Details = "On " + a.serverName
+	}
+	var parts []string
+	if dp.ShowName {
+		if n := strings.TrimSpace(a.d.Prefs.SavedShowname()); n != "" {
+			parts = append(parts, n)
+		}
+	}
+	if dp.ShowChar {
+		if ch := a.myCharName(); ch != "" {
+			if len(parts) > 0 {
+				parts = append(parts, "as "+ch)
+			} else {
+				parts = append(parts, ch)
+			}
+		}
+	}
+	if dp.ShowArea && a.curArea != "" {
+		parts = append(parts, "— "+a.curArea)
+	}
+	act.State = strings.Join(parts, " ")
+	a.d.Presence.Set(act)
 }
 
 // hdid derives a stable hardware-ish ID (AO servers key bans on it).
@@ -943,6 +999,7 @@ func (a *App) enterCourtroom() {
 	a.evShowImg = ""
 	a.screen = ScreenCourtroom
 	a.loadCharINI()
+	a.updatePresence() // character (and server) just became known
 }
 
 // applyTimingToRoom pushes the persisted crawl/stay knobs into the live
@@ -1668,8 +1725,17 @@ func (a *App) pushIC(line string, color int) {
 	a.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
 }
 
+// oocLineCap bounds ONE OOC entry (hostile-server guard). MOTDs are long
+// multi-line texts — the old clampLine cut them at 120 chars, which is
+// why MOTDs arrived truncated; they now wrap at draw time instead.
+const oocLineCap = 4096
+
 func (a *App) pushOOC(line string) {
-	a.oocLog = appendCapped(a.oocLog, clampLine(line), icLogCap)
+	if len(line) > oocLineCap {
+		line = line[:oocLineCap] + "…"
+	}
+	a.oocLog = appendCapped(a.oocLog, line, icLogCap)
+	a.oocSeq++ // invalidate the wrapped-lines cache
 }
 
 func appendCapped(list []string, line string, cap int) []string {

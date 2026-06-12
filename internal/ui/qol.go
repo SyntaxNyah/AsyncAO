@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -191,6 +192,103 @@ func (a *App) captureScreenshot() {
 		_ = surf.SaveBMP(path)
 	}()
 	a.pushDebug("screenshot saved: screenshots\\asyncao-" + stamp + ".bmp")
+}
+
+// --- OOC wrapping ----------------------------------------------------------------------
+
+// oocWrapMaxLinesPerEntry bounds one entry's wrapped output (a hostile
+// MOTD cannot balloon the list).
+const oocWrapMaxLinesPerEntry = 24
+
+// oocWrapped returns the OOC log as display lines: long entries (MOTDs)
+// word-wrap to the list width and embedded newlines split, instead of the
+// old 120-char truncation. Cached against (log seq, width, font scale) —
+// rebuilds happen on new messages or resizes, never per frame.
+func (a *App) oocWrapped(width int32) []string {
+	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq &&
+		a.oocWrapW == width && a.oocWrapPct == a.logPct {
+		return a.oocWrap
+	}
+	font := a.ctx.LogFont(a.logPct)
+	out := a.oocWrap[:0]
+	for _, entry := range a.oocLog {
+		for _, para := range strings.Split(entry, "\n") {
+			lines := wrapToWidth(font, strings.TrimRight(para, "\r"), width, oocWrapMaxLinesPerEntry)
+			if len(lines) == 0 {
+				out = append(out, "") // blank MOTD spacer lines survive
+				continue
+			}
+			out = append(out, lines...)
+		}
+	}
+	if out == nil {
+		out = []string{}
+	}
+	a.oocWrap, a.oocWrapSeq, a.oocWrapW, a.oocWrapPct = out, a.oocSeq, width, a.logPct
+	return out
+}
+
+// wrapToWidth greedily word-wraps text for an arbitrary font (the kit's
+// WrapText memo is chrome-font only; this measures with the actual log
+// font, and only runs on cache rebuilds). Words wider than the column
+// hard-split so a long URL can't force a 1-line overflow. A nil font
+// (headless tests) measures at a rough 8 px/char.
+func wrapToWidth(font *ttf.Font, text string, maxW int32, maxLines int) []string {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	var lines []string
+	var line strings.Builder
+	flush := func() {
+		if line.Len() > 0 {
+			lines = append(lines, line.String())
+			line.Reset()
+		}
+	}
+	width := func(s string) int32 {
+		if font == nil {
+			return int32(len(s) * 8)
+		}
+		w, _, err := font.SizeUTF8(s)
+		if err != nil {
+			return int32(len(s) * 8)
+		}
+		return int32(w)
+	}
+	for _, word := range strings.Fields(text) {
+		// Hard-split single words wider than the column.
+		for width(word) > maxW && len(word) > 1 {
+			cut := len(word) / 2
+			for cut > 1 && width(word[:cut]) > maxW {
+				cut /= 2
+			}
+			flush()
+			lines = append(lines, word[:cut])
+			word = word[cut:]
+			if len(lines) >= maxLines {
+				return lines
+			}
+		}
+		candidate := word
+		if line.Len() > 0 {
+			candidate = line.String() + " " + word
+		}
+		if width(candidate) <= maxW {
+			line.Reset()
+			line.WriteString(candidate)
+			continue
+		}
+		flush()
+		if len(lines) >= maxLines {
+			return lines
+		}
+		line.WriteString(word)
+	}
+	flush()
+	if len(lines) > maxLines {
+		lines = lines[:maxLines]
+	}
+	return lines
 }
 
 // --- IC log export --------------------------------------------------------------------

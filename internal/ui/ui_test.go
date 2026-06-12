@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -211,6 +212,43 @@ func TestRectOverlapFrac(t *testing.T) {
 	// Half of the smaller rect inside the bigger one.
 	if f := rectOverlapFrac(a, sdl.Rect{X: 75, Y: 0, W: 50, H: 100}); f != 0.5 {
 		t.Errorf("half overlap → %v, want 0.5", f)
+	}
+}
+
+// TestWrapToWidthMOTD pins the OOC wrapper that replaced the 120-char
+// truncation: words stay whole and in order, nothing exceeds the column,
+// oversized words hard-split, and the per-entry line cap holds. The nil
+// font measures at 8 px/char (deterministic headless metric).
+func TestWrapToWidthMOTD(t *testing.T) {
+	const colW = 80 // 10 chars at the fallback metric
+	// All words fit the column, so join-equality holds (hard-split words
+	// rejoin with an inserted space and are asserted separately below).
+	motd := "welcome to the courtroom enjoy your stay in here"
+	lines := wrapToWidth(nil, motd, colW, 24)
+	if len(lines) < 4 {
+		t.Fatalf("MOTD wrapped to %d lines: %v", len(lines), lines)
+	}
+	if got := strings.Join(lines, " "); got != motd {
+		t.Errorf("wrap lost/reordered text:\n got %q\nwant %q", got, motd)
+	}
+	for i, l := range lines {
+		if len(l)*8 > colW {
+			t.Errorf("line %d (%q) wider than the column", i, l)
+		}
+	}
+	// A 40-char "URL" must hard-split, not overflow.
+	long := strings.Repeat("x", 40)
+	for i, l := range wrapToWidth(nil, long, colW, 24) {
+		if len(l)*8 > colW {
+			t.Errorf("hard-split line %d (%q) wider than the column", i, l)
+		}
+	}
+	// Hostile entry: the per-entry cap holds.
+	if got := wrapToWidth(nil, strings.Repeat("word ", 500), colW, 24); len(got) > 24 {
+		t.Errorf("line cap breached: %d lines", len(got))
+	}
+	if got := wrapToWidth(nil, "   ", colW, 24); got != nil {
+		t.Errorf("blank text → %v, want nil", got)
 	}
 }
 

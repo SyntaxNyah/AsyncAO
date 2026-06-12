@@ -191,6 +191,7 @@ type AssetPreferences struct {
 	ServerWarm             map[string]ServerWarmInfo `json:"serverWarm"`
 	CallWordList           []string                  `json:"callWords"`
 	HotkeyMap              map[string]string         `json:"hotkeys"`
+	DiscordRPC             DiscordPrefs              `json:"discord"`
 
 	mu        sync.RWMutex
 	path      string
@@ -253,6 +254,27 @@ type prefsJSON struct {
 	ServerWarm         map[string]ServerWarmInfo `json:"serverWarm"`
 	CallWords          []string                  `json:"callWords"`
 	Hotkeys            map[string]string         `json:"hotkeys"`
+	Discord            *DiscordPrefs             `json:"discord"`
+}
+
+// DiscordPrefs configures the OPTIONAL Rich Presence integration.
+// Disabled by default; when first enabled, showname + character + server
+// display and the area stays hidden (some players don't want their
+// location broadcast — every field is the user's choice).
+type DiscordPrefs struct {
+	Enabled    bool `json:"enabled"`
+	ShowServer bool `json:"showServer"`
+	ShowChar   bool `json:"showChar"`
+	ShowName   bool `json:"showName"`
+	ShowArea   bool `json:"showArea"`
+	// AppID is the user's Discord application ID (developer portal app
+	// named AsyncAO with the icon uploaded as asset "appicon").
+	AppID string `json:"appId"`
+}
+
+// defaultDiscordPrefs: off, with the tick-on defaults pre-set.
+func defaultDiscordPrefs() DiscordPrefs {
+	return DiscordPrefs{ShowServer: true, ShowChar: true, ShowName: true}
 }
 
 // ServerWarmInfo remembers what a server looked like last visit, so a
@@ -314,6 +336,7 @@ func load(path string) (*AssetPreferences, error) {
 		SmoothScaling:     defaultSmoothScaling,
 		AutoDetectFormats: defaultFormatAutoDetect,
 		ThemeLayoutOn:     defaultThemeLayout,
+		DiscordRPC:        defaultDiscordPrefs(),
 		ViewportPct:       DefaultViewportPercent,
 		ChatScalePct:      DefaultScalePercent,
 		ChatBoxPct:        DefaultScalePercent,
@@ -433,6 +456,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.CallWordList = onDisk.CallWords
 	if onDisk.Hotkeys != nil {
 		p.HotkeyMap = onDisk.Hotkeys
+	}
+	if onDisk.Discord != nil {
+		p.DiscordRPC = *onDisk.Discord
 	}
 	return p, nil
 }
@@ -822,6 +848,27 @@ func (p *AssetPreferences) SetCasing(enabled bool, roles int) {
 	}
 	p.CasingEnabled = enabled
 	p.CasingRoles = roles
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Discord Rich Presence ------------------------------------------------------------
+
+// Discord reports the Rich Presence configuration.
+func (p *AssetPreferences) Discord() DiscordPrefs {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DiscordRPC
+}
+
+// SetDiscord stores the Rich Presence configuration.
+func (p *AssetPreferences) SetDiscord(dp DiscordPrefs) {
+	p.mu.Lock()
+	if p.DiscordRPC == dp {
+		p.mu.Unlock()
+		return
+	}
+	p.DiscordRPC = dp
 	p.mu.Unlock()
 	p.markDirty()
 }

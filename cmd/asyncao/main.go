@@ -19,6 +19,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/ui"
 )
@@ -224,6 +225,12 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	defer uiCtx.Destroy()
 	uiCtx.SetWindow(window) // modcall/case-alert taskbar flashing
 
+	// Discord Rich Presence: stdlib-only local IPC, fully optional at
+	// build (-tags nodiscord) AND runtime — it idles silently when the
+	// Settings toggle is off or Discord isn't running.
+	pres := presence.New(prefs.Discord().AppID)
+	defer pres.Close()
+
 	app := ui.NewApp(uiCtx, ui.Deps{
 		Prefs:     prefs,
 		Resolver:  resolver,
@@ -234,6 +241,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		Viewport:  viewport,
 		Pump:      nil, // set below (needs app for liveness)
 		Audio:     audio,
+		Presence:  pres,
 		MasterURL: masterURL,
 	})
 	pump := render.NewPump(store, manager, app.IsLiveBase)

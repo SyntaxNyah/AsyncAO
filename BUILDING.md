@@ -110,6 +110,27 @@ own. Desktop Windows/Linux/macOS are the supported targets.
 | `go build -pgo=auto -trimpath -ldflags "-s -w" ...` | release (uses `default.pgo`) |
 | `GOAMD64=v3 go build ...` | AVX2-tuned build (2013+ CPUs); ship the default build as baseline fallback |
 | `go build -tags nocgo_webp ...` | pure-Go WebP fallback (static images only; animated WebP errors visibly) |
+| `go build -tags nocgo_avif ...` | no libavif binding (AVIF sniffing stays; decode errors visibly) |
+| `go build -tags nodiscord ...` | Rich Presence compiled out entirely (see below) |
+
+## Discord (never required)
+
+**Building AsyncAO never requires Discord, a Discord SDK, or any
+Discord-related dependency.** The optional Rich Presence integration
+(`internal/presence`) is pure Go standard library: it talks to a locally
+running Discord client over its IPC pipe (`\\.\pipe\discord-ipc-N` on
+Windows, `$XDG_RUNTIME_DIR/discord-ipc-N` elsewhere) — nothing is linked,
+fetched, or vendored.
+
+- **Default build**: the feature exists but is OFF until the user enables
+  it in Settings. Without Discord running it idles silently (one paced
+  reconnect probe per 30 s, only while updates are pending).
+- **`-tags nodiscord`**: even that code compiles out; the package becomes
+  a no-op stub with the same API. Use this if your distro policy wants
+  zero proprietary-service integration in the binary.
+- To get the AsyncAO icon on profiles, create a Discord application named
+  "AsyncAO" in the developer portal, upload the icon under the asset key
+  `appicon`, and paste the application ID into Settings → Discord.
 
 ## Tests & benchmarks
 

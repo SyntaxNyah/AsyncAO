@@ -794,7 +794,9 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	c := a.ctx
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
-	contentH := int32(len(a.oocLog)) * lineH
+	wrapW := list.W - scrollBarW - scrollBarGap
+	lines := a.oocWrapped(wrapW) // MOTDs wrap — never truncate
+	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	if !c.ctrlHeld && c.hovering(list) {
 		a.oocScroll -= c.wheelY * scrollStepPx
@@ -804,12 +806,12 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	}
 	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
 	y := list.Y - a.oocScroll
-	for _, line := range a.oocLog {
+	for _, line := range lines {
 		if y > list.Y+list.H-lineH {
 			break
 		}
 		if y >= list.Y-lineH {
-			c.LabelClippedFont(font, list.X, y, list.W-scrollBarW-scrollBarGap, line, ColText)
+			c.LabelClippedFont(font, list.X, y, wrapW, line, ColText)
 		}
 		y += lineH
 	}
@@ -835,7 +837,9 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
-	contentH := int32(len(a.oocLog)) * lineH
+	wrapW := list.W - scrollBarW - scrollBarGap
+	lines := a.oocWrapped(wrapW) // MOTDs wrap — never truncate
+	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.oocScroll -= c.wheelY * scrollStepPx
@@ -848,12 +852,12 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	}
 	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
 	y := list.Y - a.oocScroll
-	for _, line := range a.oocLog {
+	for _, line := range lines {
 		if y > list.Y+list.H-lineH {
 			break
 		}
 		if y >= list.Y-lineH {
-			c.LabelClippedFont(font, list.X, y, list.W-scrollBarW-scrollBarGap, line, ColText)
+			c.LabelClippedFont(font, list.X, y, wrapW, line, ColText)
 		}
 		y += lineH
 	}
@@ -929,6 +933,8 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, line, col)
 			if hover && c.clicked {
 				a.sess.RequestMusic(area) // area transfer rides MC
+				a.curArea = area          // Rich Presence (best-effort)
+				a.updatePresence()
 			}
 		}
 		y += lineH
