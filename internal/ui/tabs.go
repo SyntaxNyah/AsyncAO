@@ -369,5 +369,8 @@ func (a *App) resetSessionState() {
 		evidIdx:  -1,
 		// Full bars so the first HP packets don't fire penalty sfx.
 		hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
+		// Logs follow the tail until the user scrolls up.
+		icStick:  true,
+		oocStick: true,
 	}
 }

@@ -254,10 +254,21 @@ type App struct {
 	themeHasName bool
 	// Theme courtroom geometry (courtroom_design.ini): design-space rects
 	// + emote grid metrics; themeLay caches the window-scaled rects.
+	// themeRectsOrig keeps the theme's PRISTINE geometry so the layout
+	// editor's right-click/Reset can restore it under the user overrides.
 	themeRects     map[string]theme.Rect
+	themeRectsOrig map[string]theme.Rect
 	themeEmoteCell [2]int
 	themeEmoteGap  [2]int
 	themeLay       themeLayoutCache
+
+	// --- live layout editor (themed courtroom; overrides persist per theme) ---
+	layoutEdit bool
+	editKey    string
+	editDrag   int // 0 none, 1 move, 2 resize
+	editPrev   bool
+	editStart  [2]int32
+	editBase   theme.Rect
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage
@@ -378,6 +389,12 @@ type sessionState struct {
 	musicScroll  int32
 	areaScroll   int32
 	logTab       int
+	// Stick flags: the logs FOLLOW new lines while true; scrolling up
+	// releases, scrolling back to the bottom re-sticks. (The old "within
+	// one line of the bottom" heuristic broke whenever one wrapped
+	// message added several rows at once.)
+	icStick  bool
+	oocStick bool
 	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
 	emoteAsk []time.Time
 
@@ -405,6 +422,15 @@ type sessionState struct {
 	loginUser string
 	loginPass string
 	loginAuto bool
+
+	// --- viewport camera (hyperfocus zoom; 0 or 1 = off) ---
+	vpZoom    float64
+	vpPanX    float64 // pan fractions of the zoom overflow (0..1)
+	vpPanY    float64
+	zoomDrag  bool
+	zoomPrev  bool // last frame's mouseDown (edge detect)
+	zoomStart [2]int32
+	zoomBase  [2]float64
 
 	// --- court extras (HP / WTCE / modcall / evidence) ---
 	wtceName    string    // active splash stem ("" = none)
@@ -1971,8 +1997,14 @@ func (a *App) pollThemeApply() {
 		}
 	}
 	a.themeChatbox = a.themeTex[themeStemChatbox]
-	// Geometry: swap in the design rects and invalidate the scaled cache.
-	a.themeRects = res.layout
+	// Geometry: pristine design rects kept aside, the user's layout-editor
+	// overrides applied on a copy, scaled cache invalidated.
+	a.themeRectsOrig = res.layout
+	rects := make(map[string]theme.Rect, len(res.layout))
+	for k, v := range res.layout {
+		rects[k] = v
+	}
+	a.themeRects = a.applyRectOverrides(rects)
 	a.themeEmoteCell, a.themeEmoteGap = res.emoteCell, res.emoteGap
 	a.themeLay.valid = false
 	a.themeSounds = res.sounds

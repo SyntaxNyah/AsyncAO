@@ -190,6 +190,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   join (like the showname); when blank, commands and macros send as a
   sticky random `AsyncAO<1-200>` minted once per run — OOC commands
   always work even with no name set.
+- **Live layout editor** (UI... → Edit layout, themed courtrooms): drag
+  any widget across the screen, grab its corner grip to shrink/grow,
+  right-click to reset one, Reset all for the theme. Edits persist per
+  theme as design-space overrides (window resizes keep working; the
+  theme's own files are never touched). While editing, the real UI is
+  input-fenced so nothing misfires.
+- **Viewport camera zoom (hyperfocus)**: Ctrl+wheel over the stage zooms
+  toward the cursor (up to 6×) — sprites, preanims, and effects magnify
+  together; Ctrl+drag pans while zoomed; the 1× chip (or zooming out)
+  resets. Sprite dragging pauses while zoomed.
+- **IC/OOC logs auto-scroll**: stuck to the newest line until YOU scroll
+  up (then they hold position); scrolling back to the bottom — or the
+  jump-to-newest hotkey — re-sticks. Replaces the old near-bottom
+  heuristic that broke whenever a wrapped message added several rows.
 - **Multi-server tabs (max 3)**: Join while connected opens a NEW tab —
   the old session parks and keeps running (its packets drain on a
   per-frame budget into its own logs; unread counts and callword

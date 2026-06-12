@@ -158,51 +158,52 @@ type AssetTypePrefs struct {
 // AssetPreferences is the persisted user configuration for asset resolution
 // and pairing. All exported methods are safe for concurrent use.
 type AssetPreferences struct {
-	GlobalFallbacksEnabled bool                      `json:"globalFallbacksEnabled"`
-	PreferAnimated         bool                      `json:"preferAnimated"`
-	EmoteButtonImages      bool                      `json:"emoteButtonImages"`
-	SmoothScaling          bool                      `json:"smoothScaling"`
-	DebugOverlay           bool                      `json:"debugOverlay"`
-	AutoDetectFormats      bool                      `json:"formatAutoDetect"`
-	ThemeLayoutOn          bool                      `json:"themeLayout"`
-	UIScaleAutoOn          bool                      `json:"uiScaleAuto"`
-	FontOverridePaths      string                    `json:"fontPaths"`
-	UserMacros             []MacroSpec               `json:"macros,omitempty"`
-	DiskZstd               bool                      `json:"diskZstd"`
-	StreamerModeOn         bool                      `json:"streamerMode"`
-	ThemeName              string                    `json:"themeName"`
-	ThemeDir               string                    `json:"themeDir"`
-	OOCName                string                    `json:"oocName"`
-	ViewportPct            int                       `json:"viewportPercent"`
-	ChatScalePct           int                       `json:"chatScalePercent"`
-	ChatBoxPct             int                       `json:"chatBoxPercent"`
-	LogScalePct            int                       `json:"logScalePercent"`
-	InputHeightPct         int                       `json:"inputHeightPercent"`
-	UIScalePct             int                       `json:"uiScalePercent"`
-	MusicVol               int                       `json:"musicVolume"`
-	SFXVol                 int                       `json:"sfxVolume"`
-	BlipVol                int                       `json:"blipVolume"`
-	TextCrawlMs            int                       `json:"textCrawlMs"`
-	TextStayMs             int                       `json:"textStayMs"`
-	ChatRateLimitMs        int                       `json:"chatRateLimitMs"`
-	MasterListURL          string                    `json:"masterListUrl"`
-	AssetTypes             map[string]AssetTypePrefs `json:"assetTypes"`
-	LearnedFormats         map[string][]string       `json:"learnedFormats"`
-	PairOffsetX            int                       `json:"pairOffsetX"`
-	PairOffsetY            int                       `json:"pairOffsetY"`
-	PairFlip               bool                      `json:"pairFlip"`
-	Showname               string                    `json:"showname"`
-	LocalAssetsEnabled     bool                      `json:"localAssetsEnabled"`
-	LocalAssetsPaths       []string                  `json:"localAssetsPaths"`
-	Favorites              []FavoriteServer          `json:"favorites"`
-	Wardrobe               []string                  `json:"wardrobe"`
-	CasingEnabled          bool                      `json:"casingEnabled"`
-	CasingRoles            int                       `json:"casingRoles"`
-	HiddenPanelIDs         []string                  `json:"hiddenPanels"`
-	ServerWarm             map[string]ServerWarmInfo `json:"serverWarm"`
-	CallWordList           []string                  `json:"callWords"`
-	HotkeyMap              map[string]string         `json:"hotkeys"`
-	DiscordRPC             DiscordPrefs              `json:"discord"`
+	GlobalFallbacksEnabled bool                         `json:"globalFallbacksEnabled"`
+	PreferAnimated         bool                         `json:"preferAnimated"`
+	EmoteButtonImages      bool                         `json:"emoteButtonImages"`
+	SmoothScaling          bool                         `json:"smoothScaling"`
+	DebugOverlay           bool                         `json:"debugOverlay"`
+	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
+	ThemeLayoutOn          bool                         `json:"themeLayout"`
+	UIScaleAutoOn          bool                         `json:"uiScaleAuto"`
+	FontOverridePaths      string                       `json:"fontPaths"`
+	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
+	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
+	DiskZstd               bool                         `json:"diskZstd"`
+	StreamerModeOn         bool                         `json:"streamerMode"`
+	ThemeName              string                       `json:"themeName"`
+	ThemeDir               string                       `json:"themeDir"`
+	OOCName                string                       `json:"oocName"`
+	ViewportPct            int                          `json:"viewportPercent"`
+	ChatScalePct           int                          `json:"chatScalePercent"`
+	ChatBoxPct             int                          `json:"chatBoxPercent"`
+	LogScalePct            int                          `json:"logScalePercent"`
+	InputHeightPct         int                          `json:"inputHeightPercent"`
+	UIScalePct             int                          `json:"uiScalePercent"`
+	MusicVol               int                          `json:"musicVolume"`
+	SFXVol                 int                          `json:"sfxVolume"`
+	BlipVol                int                          `json:"blipVolume"`
+	TextCrawlMs            int                          `json:"textCrawlMs"`
+	TextStayMs             int                          `json:"textStayMs"`
+	ChatRateLimitMs        int                          `json:"chatRateLimitMs"`
+	MasterListURL          string                       `json:"masterListUrl"`
+	AssetTypes             map[string]AssetTypePrefs    `json:"assetTypes"`
+	LearnedFormats         map[string][]string          `json:"learnedFormats"`
+	PairOffsetX            int                          `json:"pairOffsetX"`
+	PairOffsetY            int                          `json:"pairOffsetY"`
+	PairFlip               bool                         `json:"pairFlip"`
+	Showname               string                       `json:"showname"`
+	LocalAssetsEnabled     bool                         `json:"localAssetsEnabled"`
+	LocalAssetsPaths       []string                     `json:"localAssetsPaths"`
+	Favorites              []FavoriteServer             `json:"favorites"`
+	Wardrobe               []string                     `json:"wardrobe"`
+	CasingEnabled          bool                         `json:"casingEnabled"`
+	CasingRoles            int                          `json:"casingRoles"`
+	HiddenPanelIDs         []string                     `json:"hiddenPanels"`
+	ServerWarm             map[string]ServerWarmInfo    `json:"serverWarm"`
+	CallWordList           []string                     `json:"callWords"`
+	HotkeyMap              map[string]string            `json:"hotkeys"`
+	DiscordRPC             DiscordPrefs                 `json:"discord"`
 
 	mu        sync.RWMutex
 	path      string
@@ -226,27 +227,28 @@ type AssetPreferences struct {
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
 // "absent" from the zero value where the default is not the zero value.
 type prefsJSON struct {
-	GlobalFallbacksEnabled bool        `json:"globalFallbacksEnabled"`
-	PreferAnimated         *bool       `json:"preferAnimated"`
-	EmoteButtonImages      *bool       `json:"emoteButtonImages"`
-	SmoothScaling          *bool       `json:"smoothScaling"`
-	DebugOverlay           bool        `json:"debugOverlay"`
-	FormatAutoDetect       *bool       `json:"formatAutoDetect"` // absent = default ON
-	ThemeLayout            *bool       `json:"themeLayout"`      // absent = default ON
-	UIScaleAuto            *bool       `json:"uiScaleAuto"`      // absent = default ON (HiDPI)
-	FontPaths              string      `json:"fontPaths"`        // ""=embedded font
-	Macros                 []MacroSpec `json:"macros"`
-	DiskZstd               bool        `json:"diskZstd"`     // default OFF (measured trade)
-	StreamerMode           bool        `json:"streamerMode"` // default OFF
-	ThemeName              string      `json:"themeName"`
-	ThemeDir               string      `json:"themeDir"`
-	OOCName                string      `json:"oocName"`
-	ViewportPct            int         `json:"viewportPercent"`
-	ChatScalePct           int         `json:"chatScalePercent"`
-	ChatBoxPct             int         `json:"chatBoxPercent"`
-	LogScalePct            int         `json:"logScalePercent"`
-	InputHeightPct         int         `json:"inputHeightPercent"`
-	UIScalePct             int         `json:"uiScalePercent"`
+	GlobalFallbacksEnabled bool                         `json:"globalFallbacksEnabled"`
+	PreferAnimated         *bool                        `json:"preferAnimated"`
+	EmoteButtonImages      *bool                        `json:"emoteButtonImages"`
+	SmoothScaling          *bool                        `json:"smoothScaling"`
+	DebugOverlay           bool                         `json:"debugOverlay"`
+	FormatAutoDetect       *bool                        `json:"formatAutoDetect"` // absent = default ON
+	ThemeLayout            *bool                        `json:"themeLayout"`      // absent = default ON
+	UIScaleAuto            *bool                        `json:"uiScaleAuto"`      // absent = default ON (HiDPI)
+	FontPaths              string                       `json:"fontPaths"`        // ""=embedded font
+	Macros                 []MacroSpec                  `json:"macros"`
+	ThemeRectOverrides     map[string]map[string][4]int `json:"themeRectOverrides"`
+	DiskZstd               bool                         `json:"diskZstd"`     // default OFF (measured trade)
+	StreamerMode           bool                         `json:"streamerMode"` // default OFF
+	ThemeName              string                       `json:"themeName"`
+	ThemeDir               string                       `json:"themeDir"`
+	OOCName                string                       `json:"oocName"`
+	ViewportPct            int                          `json:"viewportPercent"`
+	ChatScalePct           int                          `json:"chatScalePercent"`
+	ChatBoxPct             int                          `json:"chatBoxPercent"`
+	LogScalePct            int                          `json:"logScalePercent"`
+	InputHeightPct         int                          `json:"inputHeightPercent"`
+	UIScalePct             int                          `json:"uiScalePercent"`
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
 	MusicVol *int `json:"musicVolume"`
 	SFXVol   *int `json:"sfxVolume"`
@@ -487,6 +489,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
+	p.ThemeRectOv = onDisk.ThemeRectOverrides
 	p.DiskZstd = onDisk.DiskZstd
 	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
@@ -1514,6 +1517,76 @@ func (p *AssetPreferences) SetDiskZstd(enabled bool) {
 		return
 	}
 	p.DiskZstd = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Layout-editor bounds (rule §17.4).
+const (
+	// themeOvThemesCap bounds how many themes carry edited layouts.
+	themeOvThemesCap = 32
+	// themeOvRectsCap bounds edited widgets per theme (more than the
+	// layout engine even defines).
+	themeOvRectsCap = 64
+)
+
+// ThemeRectOverrides returns a copy of one theme's user-dragged widget
+// geometry (design-space [x,y,w,h], from the live layout editor).
+func (p *AssetPreferences) ThemeRectOverrides(theme string) map[string][4]int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	src := p.ThemeRectOv[theme]
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string][4]int, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// SetThemeRectOverride stores one widget's edited design rect.
+func (p *AssetPreferences) SetThemeRectOverride(theme, key string, r [4]int) {
+	if theme == "" || key == "" {
+		return
+	}
+	p.mu.Lock()
+	if p.ThemeRectOv == nil {
+		p.ThemeRectOv = map[string]map[string][4]int{}
+	}
+	m, ok := p.ThemeRectOv[theme]
+	if !ok {
+		if len(p.ThemeRectOv) >= themeOvThemesCap {
+			p.mu.Unlock()
+			return
+		}
+		m = map[string][4]int{}
+		p.ThemeRectOv[theme] = m
+	}
+	if _, exists := m[key]; !exists && len(m) >= themeOvRectsCap {
+		p.mu.Unlock()
+		return
+	}
+	m[key] = r
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClearThemeRectOverride drops one widget's edit (key "" = the whole
+// theme's edits).
+func (p *AssetPreferences) ClearThemeRectOverride(theme, key string) {
+	p.mu.Lock()
+	if m, ok := p.ThemeRectOv[theme]; ok {
+		if key == "" {
+			delete(p.ThemeRectOv, theme)
+		} else {
+			delete(m, key)
+			if len(m) == 0 {
+				delete(p.ThemeRectOv, theme)
+			}
+		}
+	}
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -167,8 +167,12 @@ func (a *App) drawTheater(w, h int32) {
 		vpW = vpH * 4 / 3
 	}
 	vp := sdl.Rect{X: (w - vpW) / 2, Y: (h - vpH) / 2, W: vpW, H: vpH}
-	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
-	a.handleSpriteDrag(vp)
+	a.renderViewportZoomed(vp)
+	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
+	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
+	if a.vpZoom <= 1 {
+		a.handleSpriteDrag(vp)
+	}
 	a.handleHotkeys()
 	a.drawChatOverlay(vp)
 	a.drawCourtOverlays(vp, nil) // splashes/HP still play — part of the show
@@ -225,6 +229,7 @@ func (a *App) jumpLogs() {
 	const snapToTail = 1 << 30 // clamped by each scrollbar
 	a.icScroll = snapToTail
 	a.oocScroll = snapToTail
+	a.icStick, a.oocStick = true, true // jumping to newest re-arms follow
 }
 
 // --- callwords ----------------------------------------------------------------------

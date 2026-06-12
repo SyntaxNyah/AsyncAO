@@ -531,6 +531,11 @@ func (a *App) drawCourtroom(w, h int32) {
 		a.drawCourtroomThemed(w, h, lay)
 		return
 	}
+	// The editor only exists over themed geometry; release its fence if
+	// the theme (or the toggle) went away mid-edit.
+	if a.layoutEdit {
+		a.stopLayoutEdit()
+	}
 
 	// Viewport: AO 4:3 at the user's width percent (View −/+ buttons).
 	vpW := w * int32(a.vpPct) / DefaultScalePct
@@ -541,8 +546,14 @@ func (a *App) drawCourtroom(w, h int32) {
 	}
 	vp := sdl.Rect{X: pad, Y: pad, W: vpW, H: vpH}
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
-	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
-	a.handleSpriteDrag(vp)
+	a.renderViewportZoomed(vp)
+	// Camera input first (Ctrl+wheel zoom / Ctrl+drag pan); sprite drag
+	// only at 1× — zoomed hit rects would lie.
+	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
+	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
+	if a.vpZoom <= 1 {
+		a.handleSpriteDrag(vp)
+	}
 	a.handleHotkeys() // Ctrl-chords (shouts, pos, music, screenshot...)
 	if a.rehearsal {
 		c.Label(vp.X+8, vp.Y+8, rehearsalBadge, ColTierYellow)
@@ -834,14 +845,26 @@ func (a *App) drawICLogList(list sdl.Rect) {
 		a.saveLayout()
 		c.wheelTaken = true
 	}
-	if !c.ctrlHeld { // ctrl+wheel resizes text
-		a.icScroll -= c.WheelIn(list) * scrollStepPx
+	maxScroll := contentH - list.H
+	if maxScroll < 0 {
+		maxScroll = 0
 	}
-	// Follow the tail unless the user scrolled back (one line of slack).
-	if maxScroll := contentH - list.H; maxScroll > 0 && a.icScroll >= maxScroll-lineH {
+	if !c.ctrlHeld { // ctrl+wheel resizes text
+		if d := c.WheelIn(list); d != 0 {
+			a.icScroll -= d * scrollStepPx
+			a.icStick = a.icScroll >= maxScroll // bottom re-sticks, up releases
+		}
+	}
+	before := a.icScroll
+	a.icScroll = c.VScrollbar("icscroll", track, a.icScroll, contentH, list.H)
+	if a.icScroll != before {
+		a.icStick = a.icScroll >= maxScroll // bar drag follows the same rule
+	}
+	// AUTO-SCROLL: while stuck, every new line lands in view no matter
+	// how many wrapped rows it added.
+	if a.icStick {
 		a.icScroll = maxScroll
 	}
-	a.icScroll = c.VScrollbar("icscroll", track, a.icScroll, contentH, list.H)
 	y := list.Y - a.icScroll
 	for ri := range rows {
 		if y > list.Y+list.H-lineH {
@@ -881,13 +904,24 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 		a.saveLayout()
 		c.wheelTaken = true
 	}
-	if !c.ctrlHeld {
-		a.oocScroll -= c.WheelIn(list) * scrollStepPx
+	maxScroll := contentH - list.H
+	if maxScroll < 0 {
+		maxScroll = 0
 	}
-	if maxScroll := contentH - list.H; maxScroll > 0 && a.oocScroll >= maxScroll-lineH {
+	if !c.ctrlHeld {
+		if d := c.WheelIn(list); d != 0 {
+			a.oocScroll -= d * scrollStepPx
+			a.oocStick = a.oocScroll >= maxScroll // bottom re-sticks, up releases
+		}
+	}
+	before := a.oocScroll
+	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
+	if a.oocScroll != before {
+		a.oocStick = a.oocScroll >= maxScroll
+	}
+	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
-	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
 	y := list.Y - a.oocScroll
 	for _, line := range lines {
 		if y > list.Y+list.H-lineH {
@@ -926,16 +960,24 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	lines := a.oocWrapped(wrapW) // MOTDs wrap — never truncate
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
-		a.oocScroll -= c.WheelIn(list) * scrollStepPx
-	}
-	// Follow the tail unless the user scrolled back (within one line of
-	// the bottom counts as "at the bottom").
 	maxScroll := contentH - list.H
-	if maxScroll > 0 && a.oocScroll >= maxScroll-lineH {
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
+		if d := c.WheelIn(list); d != 0 {
+			a.oocScroll -= d * scrollStepPx
+			a.oocStick = a.oocScroll >= maxScroll // bottom re-sticks, up releases
+		}
+	}
+	before := a.oocScroll
+	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
+	if a.oocScroll != before {
+		a.oocStick = a.oocScroll >= maxScroll
+	}
+	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
-	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
 	y := list.Y - a.oocScroll
 	for _, line := range lines {
 		if y > list.Y+list.H-lineH {

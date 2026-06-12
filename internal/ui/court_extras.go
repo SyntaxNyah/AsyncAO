@@ -729,7 +729,7 @@ func (a *App) drawModcallDialog(w, h int32) {
 func (a *App) drawUICfgPanel(w, h int32) {
 	c := a.ctx
 	panelH := int32(len(hideablePanels))*26 + 70
-	panel := sdl.Rect{X: w/2 - 220, Y: h/2 - panelH/2, W: 440, H: panelH}
+	panel := sdl.Rect{X: w/2 - 280, Y: h/2 - panelH/2, W: 560, H: panelH}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+pad, "Hide UI pieces", ColText)
@@ -746,6 +746,12 @@ func (a *App) drawUICfgPanel(w, h int32) {
 	if c.Button(sdl.Rect{X: panel.X + pad, Y: panel.Y + panel.H - btnH - 10, W: 210, H: btnH}, "Theater mode (Esc exits)") {
 		a.showUICfg = false
 		a.setTheater(true)
+	}
+	// Live layout editor (themed layouts only — classic uses the knobs).
+	if a.themeLay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+		if c.Button(sdl.Rect{X: panel.X + pad + 220, Y: panel.Y + panel.H - btnH - 10, W: 170, H: btnH}, "Edit layout (drag)") {
+			a.startLayoutEdit()
+		}
 	}
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + panel.H - btnH - 10, W: 90, H: btnH}, "Done") {
 		a.showUICfg = false

@@ -192,6 +192,9 @@ func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 // send/poll helpers, same modals).
 func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	c := a.ctx
+	// Layout edit mode fences every widget below (they draw, but stay
+	// inert); the editor overlay paints and interacts at the very end.
+	a.layoutEditFence()
 
 	// Stage: letterbox fill, then the theme's window art over the design
 	// area (this alone makes the whole screen read as "themed").
@@ -208,8 +211,15 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 
 	vp, _ := lay.rect("viewport")
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
-	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
-	a.handleSpriteDrag(vp)
+	a.renderViewportZoomed(vp)
+	inChat := false
+	if box, ok := lay.rect("ao2_chatbox"); ok {
+		inChat = c.hovering(box)
+	}
+	a.handleViewportZoom(vp, inChat)
+	if a.vpZoom <= 1 {
+		a.handleSpriteDrag(vp)
+	}
 	a.handleHotkeys()
 	if a.rehearsal {
 		c.Label(vp.X+8, vp.Y+8, rehearsalBadge, ColTierYellow)
@@ -456,6 +466,11 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 	if a.showPair {
 		a.drawPairPanel(w, h)
+	}
+
+	// Layout editor overlay: last, above everything it edits.
+	if a.layoutEdit {
+		a.drawLayoutEditor(w, h, lay)
 	}
 }
 
