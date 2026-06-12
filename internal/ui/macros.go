@@ -185,9 +185,13 @@ func (a *App) drawLoginDialog(w, h int32) {
 	// software — the automation explains itself.
 	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.loginFlowPreview(), ColAccent)
 	y += 22
-	a.loginUser, _ = c.TextField("loginuser", sdl.Rect{X: panel.X + pad, Y: y, W: panel.W - 2*pad, H: fieldH}, a.loginUser, "username")
+	userField := c.TextField
+	if a.d.Prefs.StreamerMode() {
+		userField = c.PasswordField // names mask on stream too
+	}
+	a.loginUser, _ = userField("loginuser", sdl.Rect{X: panel.X + pad, Y: y, W: panel.W - 2*pad, H: fieldH}, a.loginUser, "username")
 	y += fieldH + 6
-	a.loginPass, _ = c.TextField("loginpass", sdl.Rect{X: panel.X + pad, Y: y, W: panel.W - 2*pad, H: fieldH}, a.loginPass, "password")
+	a.loginPass, _ = c.PasswordField("loginpass", sdl.Rect{X: panel.X + pad, Y: y, W: panel.W - 2*pad, H: fieldH}, a.loginPass, "password")
 	y += fieldH + 6
 	a.loginAuto = c.Checkbox(panel.X+pad, y, "Auto-login every time I join this server", a.loginAuto)
 	y += 24
@@ -298,9 +302,14 @@ func (a *App) drawLoginSettings(y, w int32) int32 {
 	c.LabelClipped(pad+12, y+4, 200, a.serverName+" — "+a.loginFlowPreview(), ColAccent)
 	y += 24
 	c.Label(pad+12, y+4, "Username:", ColText)
-	a.loginUser, _ = c.TextField("loginuser", sdl.Rect{X: pad + 100, Y: y, W: 180, H: fieldH}, a.loginUser, "username")
+	// Streamer mode treats the username as a name too — masked on stream.
+	userField := c.TextField
+	if a.d.Prefs.StreamerMode() {
+		userField = c.PasswordField
+	}
+	a.loginUser, _ = userField("loginuser", sdl.Rect{X: pad + 100, Y: y, W: 180, H: fieldH}, a.loginUser, "username")
 	c.Label(pad+292, y+4, "Password:", ColText)
-	a.loginPass, _ = c.TextField("loginpass", sdl.Rect{X: pad + 380, Y: y, W: 180, H: fieldH}, a.loginPass, "password")
+	a.loginPass, _ = c.PasswordField("loginpass", sdl.Rect{X: pad + 380, Y: y, W: 180, H: fieldH}, a.loginPass, "password")
 	if c.Button(sdl.Rect{X: pad + 572, Y: y, W: 70, H: btnH}, "Save") {
 		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
 		settings.statusLine = "Login saved for " + a.serverName + " (plain text in the prefs file)."

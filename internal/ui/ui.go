@@ -6,6 +6,7 @@ package ui
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -917,6 +918,17 @@ func cycleField(seq []string, cur string, back bool) string {
 // TextField edits value in place; id keys focus. Returns (newValue,
 // enterPressed).
 func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
+	return c.textField(id, r, value, placeholder, false)
+}
+
+// PasswordField is TextField rendered as asterisks (screenshare-safe).
+// Ctrl+C/X never put the secret on the clipboard either — clipboard
+// viewers are just as visible on a stream; Ctrl+X still clears.
+func (c *Ctx) PasswordField(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
+	return c.textField(id, r, value, placeholder, true)
+}
+
+func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string, mask bool) (string, bool) {
 	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
 	hover := c.hovering(r)
 	if c.clicked {
@@ -945,11 +957,11 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 			}
 			value += c.typed + c.pasted
 		}
-		if c.copyReq && value != "" {
+		if c.copyReq && value != "" && !mask {
 			_ = sdl.SetClipboardText(value)
 		}
 		if c.cutReq {
-			if value != "" {
+			if value != "" && !mask {
 				_ = sdl.SetClipboardText(value)
 			}
 			value = ""
@@ -970,7 +982,13 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 	}
 
 	const padX = 6
-	show := value
+	// display is what actually renders (and what the caret/selection
+	// measure against): the mask substitutes one '*' per rune.
+	display := value
+	if mask && value != "" {
+		display = strings.Repeat("*", utf8.RuneCountInString(value))
+	}
+	show := display
 	col := ColText
 	if show == "" && !focused {
 		show = placeholder
@@ -979,7 +997,7 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 	textY := r.Y + (r.H-int32(c.font.Height()))/2
 	if focused && c.selectAll && value != "" {
 		// Select-all highlight behind the text.
-		selW := c.TextWidth(value)
+		selW := c.TextWidth(display)
 		if selW > r.W-2*padX {
 			selW = r.W - 2*padX
 		}
@@ -988,7 +1006,7 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 	}
 	c.LabelClipped(r.X+padX, textY, r.W-2*padX, show, col)
 	if focused && c.caretOn {
-		caretX := r.X + padX + c.TextWidth(value)
+		caretX := r.X + padX + c.TextWidth(display)
 		if caretX > r.X+r.W-padX {
 			caretX = r.X + r.W - padX
 		}
