@@ -166,7 +166,7 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 	c := a.ctx
 	dst := sdl.Rect{X: 0, Y: 0, W: w, H: h}
 	if page, ok := a.themePage(stem); ok {
-		_ = c.Ren.Copy(page.Frames[0], nil, &dst)
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &dst)
 		return
 	}
 	c.Fill(dst, ColBackground)
@@ -177,7 +177,7 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 	c := a.ctx
 	if page, ok := a.themePage(themeBtnPrefix + key); ok {
-		_ = c.Ren.Copy(page.Frames[0], nil, &r)
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &r)
 		hov := c.hovering(r)
 		if hov {
 			c.Border(r, ColAccent)
@@ -201,7 +201,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		W: w - 2*lay.offX, H: h - 2*lay.offY,
 	}
 	if page, ok := a.themePage("courtroombackground"); ok {
-		_ = c.Ren.Copy(page.Frames[0], nil, &court)
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &court)
 	} else {
 		c.Fill(court, ColPanel)
 	}
@@ -306,19 +306,18 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 
-	// IC input row: color swatch + the message field at its design rect.
+	// IC input row: color swatch + name dropdown + the message field at
+	// its design rect (the dropdown's open list auto-widens past 64px).
 	if in, ok := lay.rect("ao2_ic_chat_message"); ok {
-		swatch := sdl.Rect{X: in.X, Y: in.Y, W: 22, H: in.H}
+		swatch := sdl.Rect{X: in.X, Y: in.Y, W: 12, H: in.H}
 		c.Fill(swatch, render.TextColor(a.icColor))
 		c.Border(swatch, ColPanelHi)
-		if c.hovering(swatch) {
-			if c.clicked {
-				a.icColor = (a.icColor + 1) % render.TextColorCount
-			} else if c.rightClicked {
-				a.icColor = (a.icColor + render.TextColorCount - 1) % render.TextColorCount
-			}
+		const themedColorW = 64
+		if next, changed := c.Dropdown("colordd", sdl.Rect{X: in.X + 14, Y: in.Y, W: themedColorW, H: in.H}, render.TextColorNames(), a.icColor); changed {
+			a.icColor = next
 		}
-		field := sdl.Rect{X: in.X + 26, Y: in.Y, W: in.W - 26, H: in.H}
+		lead := int32(14 + themedColorW + 4)
+		field := sdl.Rect{X: in.X + lead, Y: in.Y, W: in.W - lead, H: in.H}
 		var send bool
 		a.icInput, send = c.TextField("ic", field, a.icInput, "Say something in character...")
 		if send {
@@ -352,7 +351,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 				}
 			}
 		}
-		if a.sess.Features.Has(protocol.FeatureCustomObjections) {
+		if a.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
 			if r, ok := lay.rect("custom_objection"); ok {
 				if a.drawThemeButton("custom_objection", a.customShoutLabel(), r) {
 					a.sendIC(protocol.ShoutCustom)
@@ -396,8 +395,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 
 	// Pos / pair / modcall / evidence at their design homes.
 	if r, ok := lay.rect("pos_dropdown"); ok {
-		if c.Button(r, "Pos: "+a.mySide()) {
-			a.cyclePos()
+		// A real dropdown at the theme's pos_dropdown rect (AO2 parity).
+		choices := a.posChoices()
+		cur := 0
+		for i, p := range choices {
+			if p == a.mySide() {
+				cur = i
+				break
+			}
+		}
+		if next, changed := c.Dropdown("posdd", r, choices, cur); changed {
+			a.sidePref = choices[next]
 		}
 	}
 	if r, ok := lay.rect("pair_button"); ok {
@@ -448,7 +456,7 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	}
 	skinned := false
 	if page, ok := a.themePage(themeStemChatbox); ok {
-		_ = c.Ren.Copy(page.Frames[0], nil, &box)
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &box)
 		skinned = true
 	}
 	if !skinned {
@@ -542,6 +550,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		if picked {
 			a.emoteIdx = i
 			a.speculateEmote(me, e)
+			c.FocusField("ic") // AO2 focus_ic_input: pick emote, keep typing
 		}
 		// Same hover-preview behavior as the classic row: the TALKING
 		// sprite, warmed on demand.
@@ -611,9 +620,7 @@ func (a *App) drawThemedUtilityStrip(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 	if _, ok := lay.rect("pos_dropdown"); !ok {
-		if put("Pos: " + a.mySide()) {
-			a.cyclePos()
-		}
+		x = a.drawPosSelect(x, y, stripH)
 	}
 	if put("UI...") {
 		a.showUICfg = true

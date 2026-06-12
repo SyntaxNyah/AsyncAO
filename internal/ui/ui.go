@@ -11,6 +11,8 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 	"golang.org/x/image/font/gofont/goregular"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 const (
@@ -61,6 +63,67 @@ var (
 	ColTierBlack  = sdl.Color{R: 10, G: 10, B: 10, A: 255}   // legacy: unsupported
 	ColStar       = sdl.Color{R: 255, G: 215, B: 0, A: 255}  // favorites
 )
+
+// defaultKitColors snapshots the stock palette above so a theme switch (or
+// picking "none") restores it exactly — themes override, never mutate-forever.
+var defaultKitColors = [...]sdl.Color{
+	ColBackground, ColPanel, ColPanelHi, ColAccent, ColText, ColTextDim, ColDanger,
+}
+
+// Palette derivation ratios for slots QSS doesn't define directly: the
+// window background sits a step darker than panels and dim text a step
+// darker than text, preserving the kit's depth cues under theme colors.
+const (
+	paletteBackgroundPct = 70  // background = panel × 70%
+	paletteRaisePct      = 130 // derived PanelHi = panel × 130%
+	paletteDimPct        = 64  // dim text = text × 64%
+)
+
+// scaleColor multiplies a color's channels by pct/100, clamped.
+func scaleColor(c sdl.Color, pct int) sdl.Color {
+	mul := func(v uint8) uint8 {
+		n := int(v) * pct / 100
+		if n > 255 {
+			n = 255
+		}
+		return uint8(n)
+	}
+	return sdl.Color{R: mul(c.R), G: mul(c.G), B: mul(c.B), A: c.A}
+}
+
+// applyThemePalette restores the stock kit palette, then lays the theme's
+// courtroom_stylesheets.css colors over it. Slots the stylesheet doesn't
+// define keep stock values or derive from defined ones (background from
+// panel, dim text from text) so partial stylesheets stay coherent.
+func applyThemePalette(p theme.Palette) {
+	ColBackground, ColPanel, ColPanelHi, ColAccent, ColText, ColTextDim, ColDanger =
+		defaultKitColors[0], defaultKitColors[1], defaultKitColors[2],
+		defaultKitColors[3], defaultKitColors[4], defaultKitColors[5],
+		defaultKitColors[6]
+	if p.Empty() {
+		return
+	}
+	if p.Panel != nil {
+		ColPanel = sdl.Color{R: p.Panel.R, G: p.Panel.G, B: p.Panel.B, A: 255}
+		ColBackground = scaleColor(ColPanel, paletteBackgroundPct)
+		// Raised surfaces brighten the panel unless the sheet styles
+		// buttons itself.
+		ColPanelHi = scaleColor(ColPanel, paletteRaisePct)
+	}
+	if p.PanelHi != nil {
+		ColPanelHi = sdl.Color{R: p.PanelHi.R, G: p.PanelHi.G, B: p.PanelHi.B, A: 255}
+	}
+	if p.Text != nil {
+		ColText = sdl.Color{R: p.Text.R, G: p.Text.G, B: p.Text.B, A: 255}
+		ColTextDim = scaleColor(ColText, paletteDimPct)
+	}
+	if p.Accent != nil {
+		ColAccent = sdl.Color{R: p.Accent.R, G: p.Accent.G, B: p.Accent.B, A: 255}
+	}
+	if p.Danger != nil {
+		ColDanger = sdl.Color{R: p.Danger.R, G: p.Danger.G, B: p.Danger.B, A: 255}
+	}
+}
 
 // textKey keys the label cache by font identity (pointer), so scaled
 // fonts coexist with the chrome fonts in one cache.
@@ -172,6 +235,28 @@ type Ctx struct {
 	caretOn  bool
 	caretAcc time.Duration
 
+	// Tab focus cycling (playtest: "focus on ic, press tab, it goes to
+	// ooc"): TextField records draw order here each frame; the next
+	// BeginFrame moves focus along it. Bounded by fields drawn per frame.
+	fieldSeq []string
+	tabShift bool // shift held at the Tab press → cycle backwards
+	// focusNext is a queued FocusField request, applied at the next
+	// BeginFrame so it survives this frame's click-away unfocus no matter
+	// where the requesting widget sits in draw order.
+	focusNext string
+
+	// Dropdown state: one dropdown may be open; while open it owns the
+	// pointer (modal capture) and its list paints in FinishFrame so it
+	// stacks above widgets drawn later. modalOn persists across frames —
+	// widgets drawn BEFORE the dropdown in draw order are fenced too —
+	// and releases at the BeginFrame after the close.
+	ddOpen       string
+	ddScroll     int32
+	modalOn      bool
+	modalRect    sdl.Rect
+	modalRelease bool
+	ddDraws      []ddDraw // deferred overlay draws this frame (0 or 1)
+
 	// hover preview tracking
 	hoverID    string
 	hoverSince time.Time
@@ -264,6 +349,30 @@ func (c *Ctx) scaledFont(slot **ttf.Font, cached *int, pct int) *ttf.Font {
 // seed predates the frame's event pump; mouse events override it as they
 // arrive.
 func (c *Ctx) BeginFrame(dt time.Duration) {
+	// Tab focus cycling runs on the PREVIOUS frame's field order — by now
+	// the draw pass that followed the keypress has recorded every visible
+	// TextField (one frame of latency, imperceptible at frame rate).
+	if c.tabPressed && len(c.fieldSeq) > 0 {
+		c.focusID = cycleField(c.fieldSeq, c.focusID, c.tabShift)
+		c.caretOn = true // land visible: the caret shows where focus went
+		c.caretAcc = 0
+	}
+	c.fieldSeq = c.fieldSeq[:0]
+	if c.focusNext != "" {
+		c.focusID = c.focusNext
+		c.focusNext = ""
+		c.caretOn = true
+		c.caretAcc = 0
+	}
+	// A dropdown closed last frame: the modal fence held through that
+	// whole frame (so the closing click reached nothing underneath) and
+	// lifts now.
+	if c.modalRelease {
+		c.modalOn = false
+		c.modalRelease = false
+	}
+	c.ddDraws = c.ddDraws[:0]
+
 	c.clicked = false
 	c.rightClicked = false
 	c.wheelY = 0
@@ -351,6 +460,7 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 			c.enter = true
 		case sdl.K_TAB:
 			c.tabPressed = true
+			c.tabShift = e.Keysym.Mod&sdl.KMOD_SHIFT != 0
 		}
 	case *sdl.DropEvent:
 		if e.Type == sdl.DROPFILE {
@@ -383,6 +493,12 @@ func (c *Ctx) toLogical(v int32) int32 {
 
 // hovering reports whether the mouse is inside r.
 func (c *Ctx) hovering(r sdl.Rect) bool {
+	// An open dropdown owns the pointer: everything outside its modal
+	// rect reads as not-hovered, so clicks/hovers can't leak underneath.
+	if c.modalOn && !(c.mouseX >= c.modalRect.X && c.mouseX < c.modalRect.X+c.modalRect.W &&
+		c.mouseY >= c.modalRect.Y && c.mouseY < c.modalRect.Y+c.modalRect.H) {
+		return false
+	}
 	return c.mouseX >= r.X && c.mouseX < r.X+r.W && c.mouseY >= r.Y && c.mouseY < r.Y+r.H
 }
 
@@ -602,9 +718,40 @@ func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 	return value
 }
 
+// FocusField queues keyboard focus onto a TextField id (e.g. the IC input
+// after an emote pick — AO2-Client's focus_ic_input parity).
+func (c *Ctx) FocusField(id string) { c.focusNext = id }
+
+// WheelIn returns this frame's wheel ticks when the cursor is inside r,
+// else 0 — scrollables only react under the pointer (playtest: the music
+// list scrolled on wheel from anywhere on screen).
+func (c *Ctx) WheelIn(r sdl.Rect) int32 {
+	if c.wheelY != 0 && c.hovering(r) {
+		return c.wheelY
+	}
+	return 0
+}
+
+// cycleField picks the next focus target for Tab / Shift+Tab: the field
+// after (or before) the current one in draw order, wrapping; when nothing
+// is focused, the first field — standard toolkit behavior.
+func cycleField(seq []string, cur string, back bool) string {
+	for i, id := range seq {
+		if id != cur {
+			continue
+		}
+		if back {
+			return seq[(i+len(seq)-1)%len(seq)]
+		}
+		return seq[(i+1)%len(seq)]
+	}
+	return seq[0]
+}
+
 // TextField edits value in place; id keys focus. Returns (newValue,
 // enterPressed).
 func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
+	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
 	hover := c.hovering(r)
 	if c.clicked {
 		c.selectAll = false // any click drops a pending select-all
@@ -682,6 +829,173 @@ func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string)
 		c.Fill(sdl.Rect{X: caretX, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
 	}
 	return value, enter
+}
+
+// --- dropdown ---------------------------------------------------------------
+
+// ddDraw is one deferred dropdown overlay: geometry and content resolve at
+// Dropdown call time, FinishFrame only paints (so the list stacks above
+// widgets drawn after the dropdown).
+type ddDraw struct {
+	list    sdl.Rect
+	options []string
+	cur     int
+	scroll  int32
+	rowH    int32
+}
+
+// ddMaxVisibleRows caps an open dropdown list's height; longer lists
+// wheel-scroll inside the overlay.
+const ddMaxVisibleRows = 12
+
+// Dropdown is a click-to-open selector (playtest: "PLEASE make the color
+// and pos selection a dropdown"). Closed, it shows options[cur] plus a
+// chevron; open, the option list paints above everything and the pointer
+// is modally captured so widgets underneath stay inert. Returns the
+// (possibly new) index and whether it changed this frame.
+func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, bool) {
+	if len(options) == 0 {
+		return cur, false
+	}
+	if cur < 0 || cur >= len(options) {
+		cur = 0
+	}
+	open := c.ddOpen == id
+
+	// Closed control: button chrome with the pick and a chevron.
+	bg := ColPanel
+	if c.hovering(r) || open {
+		bg = ColPanelHi
+	}
+	c.Fill(r, bg)
+	c.Border(r, ColAccent)
+	if t, ok := c.textTexture(options[cur], ColText, c.font); ok {
+		w := t.w
+		if maxW := r.W - 22; w > maxW && maxW > 0 {
+			w = maxW
+		}
+		c.blitLabel(t, r.X+6, r.Y+(r.H-t.h)/2, w)
+	}
+	c.Label(r.X+r.W-14, r.Y+(r.H-int32(c.font.Height()))/2, "▾", ColTextDim)
+
+	if !open {
+		if c.hovering(r) && c.clicked {
+			c.ddOpen = id
+			c.ddScroll = 0
+		}
+		return cur, false
+	}
+
+	// Open: geometry. The list grows to the widest option (tiny controls
+	// stay usable), drops below the control, flips above at the window's
+	// bottom edge, and shifts left at the right edge.
+	rowH := r.H
+	if rowH < int32(c.font.Height())+6 {
+		rowH = int32(c.font.Height()) + 6
+	}
+	visible := int32(len(options))
+	if visible > ddMaxVisibleRows {
+		visible = ddMaxVisibleRows
+	}
+	listW := r.W
+	for _, o := range options {
+		if w := c.TextWidth(o) + 16; w > listW {
+			listW = w
+		}
+	}
+	list := sdl.Rect{X: r.X, Y: r.Y + r.H, W: listW, H: visible * rowH}
+	if outW, outH, err := c.Ren.GetOutputSize(); err == nil {
+		if limit := c.toLogical(outH); list.Y+list.H > limit && r.Y-list.H >= 0 {
+			list.Y = r.Y - list.H
+		}
+		if limit := c.toLogical(outW); list.X+list.W > limit {
+			list.X = limit - list.W
+		}
+	}
+
+	// Modal capture: the control∪list union owns the pointer until the
+	// close releases (next BeginFrame), fencing widgets in both draw
+	// orders.
+	left, right, top := r.X, r.X+r.W, r.Y
+	if list.X < left {
+		left = list.X
+	}
+	if e := list.X + list.W; e > right {
+		right = e
+	}
+	if list.Y < top {
+		top = list.Y
+	}
+	c.modalOn = true
+	c.modalRect = sdl.Rect{X: left, Y: top, W: right - left, H: r.H + list.H}
+
+	// Wheel scrolls long lists; clamp to content.
+	contentH := int32(len(options)) * rowH
+	c.ddScroll -= c.WheelIn(list) * rowH
+	if max := contentH - list.H; c.ddScroll > max {
+		c.ddScroll = max
+	}
+	if c.ddScroll < 0 {
+		c.ddScroll = 0
+	}
+
+	// Interaction resolves NOW (frame-consistent); painting defers.
+	next, changed := cur, false
+	if c.clicked {
+		switch {
+		case c.hovering(list):
+			idx := int((c.mouseY - list.Y + c.ddScroll) / rowH)
+			if idx >= 0 && idx < len(options) {
+				next, changed = idx, idx != cur
+			}
+			c.ddOpen = ""
+			c.modalRelease = true
+		case c.hovering(r):
+			// Toggling the control shut.
+			c.ddOpen = ""
+			c.modalRelease = true
+		default:
+			// Click-away closes and the fence swallows the click.
+			c.ddOpen = ""
+			c.modalRelease = true
+		}
+	}
+	c.ddDraws = append(c.ddDraws, ddDraw{
+		list: list, options: options, cur: next, scroll: c.ddScroll, rowH: rowH,
+	})
+	return next, changed
+}
+
+// FinishFrame paints deferred overlays (open dropdown lists). Call after
+// every screen draw of the frame.
+func (c *Ctx) FinishFrame() {
+	for i := range c.ddDraws {
+		d := &c.ddDraws[i]
+		c.Fill(d.list, ColPanel)
+		c.Border(d.list, ColAccent)
+		y := d.list.Y - d.scroll
+		for idx, opt := range d.options {
+			row := sdl.Rect{X: d.list.X, Y: y, W: d.list.W, H: d.rowH}
+			y += d.rowH
+			if row.Y+row.H <= d.list.Y || row.Y >= d.list.Y+d.list.H {
+				continue
+			}
+			switch {
+			case idx == d.cur:
+				c.Fill(row, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 110})
+			case c.hovering(row):
+				c.Fill(row, ColPanelHi)
+			}
+			if t, ok := c.textTexture(opt, ColText, c.font); ok {
+				w := t.w
+				if maxW := row.W - 12; w > maxW && maxW > 0 {
+					w = maxW
+				}
+				c.blitLabel(t, row.X+6, row.Y+(d.rowH-t.h)/2, w)
+			}
+		}
+	}
+	c.ddDraws = c.ddDraws[:0]
 }
 
 // WrapText greedily word-wraps s to maxW pixels in the chrome font,

@@ -68,6 +68,22 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   itself, single theme, quoted Copy-as-Path).
 - Theme text colors apply **only over their own skin** — on the flat
   fallback panel the client's readable defaults win (black-on-dark fix).
+- **Ink readability guard**: at load time the theme's message/showname
+  colors are luma-checked against the actual decoded chatbox pixels;
+  ink with no contrast against its own skin (real themes ship dark ink
+  on dark skins) is dropped for the client default, with a debug-log
+  verdict. Choosing White in the IC color dropdown always reads.
+- **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
+  backdrops, HP bars, and the settings preview step their frames on a
+  per-apply animation clock (`pageFrameLoop`) instead of freezing on
+  frame 0 — splashes/badge already animated. The hover sprite preview
+  loops its idle too.
+- **courtroom_stylesheets.css works** ("the css stuff"): a QSS-subset
+  parser extracts the palette (QWidget/QPushButton/QLineEdit/etc colors;
+  `#rgb`/`#rrggbb`/Qt `#aarrggbb`/`rgb()`/named) and recolors the whole
+  client kit — panels, buttons, text, accents — restoring the stock
+  palette exactly on theme switch. List-widget backgrounds are treated
+  as refinements, not the window look.
 - **Qt-geometry sanitizing**: AO2 themes relied on Qt clipping children
   at the fixed window edge. Scaled rects now clamp into the stage
   (shift inward; shrink only when oversized), the 11037 hide convention
@@ -93,7 +109,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 
 - **IC log**: 1024-line color-preserving scrollback with search, Copy to
   clipboard, and TXT/HTML export (`logs/` beside the exe; HTML keeps the
-  AO palette).
+  AO palette). Lines **word-wrap to the list width** (cached against
+  log/width/font-scale — never re-wrapped per frame).
 - **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
   flash + `word_call` sound.
 - **Hotkeys** (Ctrl+key, configurable in Settings): shouts 1..4, pos
@@ -102,5 +119,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Hideable chrome**: shout row, layout knobs, emote grid, right column,
   OOC row, HP bars, clocks, badge, judge row — persisted per user.
 - **Stop music** button on the Music tab.
-- Position cycler, evidence ● armed indicator, modcall dialog, casing
-  role checkboxes — all in the courtroom chrome or Settings.
+- **Real dropdowns** for the IC text color (named colors + live swatch)
+  and the position selector (AO2 ui_pos_dropdown parity, SD list when
+  sent) — open lists draw above everything, auto-widen to their options,
+  flip at window edges, and modally capture the pointer.
+- **Tab / Shift+Tab cycles focus** across visible text inputs in draw
+  order (IC → OOC → search ...), wrapping both ways.
+- Clicking an emote **refocuses the IC input** (AO2 focus_ic_input) —
+  pick and keep typing.
+- The custom shout button appears **only for characters that ship one**
+  (char.ini `custom_name` or `[Shouts]`; a streaming client can't stat
+  `custom.gif` the way AO2-Client does).
+- **Wheel scrolling is hover-gated everywhere** — lists only scroll
+  under the pointer (music list used to scroll from anywhere).
+- The Settings showname field writes through to preferences; it can no
+  longer clobber a name set from the courtroom with a stale copy on
+  Back.
+- Evidence ● armed indicator, modcall dialog, casing role checkboxes —
+  all in the courtroom chrome or Settings.

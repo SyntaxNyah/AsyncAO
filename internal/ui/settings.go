@@ -19,7 +19,6 @@ import (
 // settingsState lives on App lazily (kept here for file cohesion).
 type settingsState struct {
 	mountInput string
-	showname   string
 	loaded     bool
 	statusLine string
 
@@ -77,7 +76,6 @@ func (a *App) drawSettings(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 	c.Heading(pad, pad, "Settings", ColText)
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
-		a.d.Prefs.SetShowname(settings.showname)
 		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
 		_ = a.d.Prefs.SaveNow() // Settings-Apply synchronous flush
 		a.screen = a.prevScreen
@@ -85,7 +83,6 @@ func (a *App) drawSettings(w, h int32) {
 	}
 
 	if !settings.loaded {
-		settings.showname = a.d.Prefs.SavedShowname()
 		settings.themeName, settings.themeDir = a.d.Prefs.Theme()
 		if settings.themeName == "" {
 			settings.themeName = theme.DefaultThemeName
@@ -97,9 +94,14 @@ func (a *App) drawSettings(w, h int32) {
 
 	y := pad + 44
 
-	// Showname.
+	// Showname: write-through to prefs. A stale once-per-session copy
+	// here used to overwrite names typed in the courtroom on Back
+	// (playtest: "open the settings and the showname gets reset").
 	c.Label(pad, y+4, "Showname (saved):", ColText)
-	settings.showname, _ = c.TextField("showname", sdl.Rect{X: pad + 150, Y: y, W: 220, H: fieldH}, settings.showname, "Your showname")
+	shown := a.d.Prefs.SavedShowname()
+	if next, _ := c.TextField("showname", sdl.Rect{X: pad + 150, Y: y, W: 220, H: fieldH}, shown, "Your showname"); next != shown {
+		a.d.Prefs.SetShowname(next)
+	}
 	y += 38
 
 	// Global toggles.
@@ -672,7 +674,7 @@ func (a *App) drawThemePreview(y int32) int32 {
 	prev := sdl.Rect{X: pad, Y: y, W: prevW, H: prevH}
 	skinned := false
 	if page, ok := a.themePage(themeStemChatbox); ok {
-		_ = c.Ren.Copy(page.Frames[0], nil, &prev)
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &prev)
 		skinned = true
 	}
 	if !skinned {

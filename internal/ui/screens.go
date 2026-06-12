@@ -74,8 +74,9 @@ func (a *App) drawLobby(w, h int32) {
 
 	// Server rows. Click once: expand the full description under the
 	// row; click the selected row again: join (Join button still works).
+	// Wheel scrolls only over the list itself (never the connect row).
 	listTop := dcY + 40
-	a.lobbyScroll -= c.wheelY * scrollStepPx
+	a.lobbyScroll -= c.WheelIn(sdl.Rect{X: 0, Y: listTop, W: w, H: h - listTop}) * scrollStepPx
 	if a.lobbyScroll < 0 {
 		a.lobbyScroll = 0
 	}
@@ -226,7 +227,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 		}
 	}
 	contentH := (matches + cols - 1) / cols * cellH
-	a.iniScroll -= c.wheelY * scrollStepPx
+	a.iniScroll -= c.WheelIn(sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH}) * scrollStepPx
 	track := sdl.Rect{X: w - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
 	a.iniScroll = c.VScrollbar("iniscroll", track, a.iniScroll, contentH, visibleH)
 
@@ -371,7 +372,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 	contentH := (matches + cols - 1) / cols * cellH
 
-	a.charScroll -= c.wheelY * scrollStepPx
+	a.charScroll -= c.WheelIn(sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH}) * scrollStepPx
 	track := sdl.Rect{X: w - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
 	a.charScroll = c.VScrollbar("charscroll", track, a.charScroll, contentH, visibleH)
 
@@ -447,6 +448,12 @@ func (a *App) drawSpritePreview(w, h int32) {
 	if !ok || len(page.Frames) == 0 {
 		return
 	}
+	// The preview exists to show the sprite — restart its loop per pick so
+	// animated idles play instead of freezing on frame 0.
+	if a.previewBase != a.previewFor {
+		a.previewFor = a.previewBase
+		a.previewAt = time.Now()
+	}
 	scale := int32(1)
 	pw, ph := page.W, page.H
 	for (pw > previewMax || ph > previewMax) && scale < 8 {
@@ -463,7 +470,7 @@ func (a *App) drawSpritePreview(w, h int32) {
 	frame := sdl.Rect{X: dst.X - 4, Y: dst.Y - 4, W: dst.W + 8, H: dst.H + 8}
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
-	_ = c.Ren.Copy(page.Frames[0], nil, &dst)
+	_ = c.Ren.Copy(page.Frames[pageFrameLoop(page, time.Since(a.previewAt))], nil, &dst)
 }
 
 // --- COURTROOM ----------------------------------------------------------------------
@@ -622,7 +629,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	// panel otherwise (themePage self-heals T1 eviction).
 	skinned := false
 	if page, ok := a.themePage(themeStemChatbox); ok {
-		_ = c.Ren.Copy(page.Frames[0], nil, &box)
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &box)
 		skinned = true
 	}
 	if !skinned {
@@ -753,17 +760,19 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	a.drawICLogList(sdl.Rect{X: inner.X, Y: rowY + 28, W: inner.W, H: inner.H - 28})
 }
 
-// drawICLogList renders the colored IC scrollback (search-filtered) into
-// rect — used by the classic Log tab and the themed ic_chatlog element.
+// drawICLogList renders the colored IC scrollback (search-filtered,
+// word-wrapped to the list width) into rect — used by the classic Log tab
+// and the themed ic_chatlog element.
 func (a *App) drawICLogList(list sdl.Rect) {
 	c := a.ctx
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
-	idx := a.icLogFiltered()
-	contentH := int32(len(idx)) * lineH
+	wrapW := list.W - scrollBarW - scrollBarGap
+	rows := a.icWrapped(wrapW)
+	contentH := int32(len(rows)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-	if !c.ctrlHeld && c.hovering(list) { // ctrl+wheel resizes text
-		a.icScroll -= c.wheelY * scrollStepPx
+	if !c.ctrlHeld { // ctrl+wheel resizes text
+		a.icScroll -= c.WheelIn(list) * scrollStepPx
 	}
 	// Follow the tail unless the user scrolled back (one line of slack).
 	if maxScroll := contentH - list.H; maxScroll > 0 && a.icScroll >= maxScroll-lineH {
@@ -771,17 +780,17 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	}
 	a.icScroll = c.VScrollbar("icscroll", track, a.icScroll, contentH, list.H)
 	y := list.Y - a.icScroll
-	for _, i := range idx {
+	for ri := range rows {
 		if y > list.Y+list.H-lineH {
 			break
 		}
 		if y >= list.Y-lineH {
-			e := &a.icLog[i]
+			row := &rows[ri]
 			col := ColText
-			if e.color > 0 {
-				col = render.TextColor(e.color)
+			if ecol := a.icLog[row.entry].color; ecol > 0 {
+				col = render.TextColor(ecol)
 			}
-			c.LabelClippedFont(font, list.X, y, list.W-scrollBarW-scrollBarGap, e.text, col)
+			c.LabelClippedFont(font, list.X, y, wrapW, row.text, col)
 		}
 		y += lineH
 	}
@@ -842,7 +851,7 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
-		a.oocScroll -= c.wheelY * scrollStepPx
+		a.oocScroll -= c.WheelIn(list) * scrollStepPx
 	}
 	// Follow the tail unless the user scrolled back (within one line of
 	// the bottom counts as "at the bottom").
@@ -888,7 +897,7 @@ func (a *App) drawAreaList(r sdl.Rect) {
 		return
 	}
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
-		a.areaScroll -= c.wheelY * scrollStepPx
+		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 10
@@ -1011,7 +1020,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	contentH := (matches + cols - 1) / cols * cellH
 	visibleH := panel.Y + panel.H - gridTop - pad
 
-	a.iniScroll -= c.wheelY * scrollStepPx
+	a.iniScroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
 	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
 	a.iniScroll = c.VScrollbar("iniscroll", track, a.iniScroll, contentH, visibleH)
 
@@ -1094,8 +1103,9 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	}
 	r.Y += 28
 	r.H -= 28
+	// Hover-gated (playtest: the music list scrolled from anywhere).
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
-		a.musicScroll -= c.wheelY * scrollStepPx
+		a.musicScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 10
@@ -1160,7 +1170,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		}
 		// Custom interjection (2.10): the button fires the active pick;
 		// the ▾ cycler steps base custom → each named [Shouts] entry.
-		if a.sess.Features.Has(protocol.FeatureCustomObjections) {
+		// Only for characters that actually ship one (hasCustomShout).
+		if a.sess.Features.Has(protocol.FeatureCustomObjections) && a.hasCustomShout() {
 			label := a.customShoutLabel()
 			bw := c.TextWidth(label) + 16
 			if c.Button(sdl.Rect{X: x, Y: y, W: bw, H: btnH}, label) {
@@ -1236,7 +1247,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.showUICfg = true
 	}
 	x += 56
-	_ = a.drawPosCycler(x, y2)
+	_ = a.drawPosSelect(x, y2, btnH)
 
 	// Judge strip (JD grant, or the judge stand when pos-dependent).
 	icY := y2 + btnH + 6
@@ -1245,28 +1256,25 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	}
 
 	// IC input row (height follows the Box knob), led by the AO2 text
-	// color cycler: the swatch shows the active wire color (MS text_color
-	// 0–9); left-click next, right-click previous. The showname box
-	// OVERRIDES the Settings showname for the session (blank = saved).
+	// color selector: a swatch previews the active wire color (MS
+	// text_color 0–9), the dropdown names it (AO2's color dropdown). The
+	// showname box OVERRIDES the Settings showname for the session.
 	fH := a.inputFieldH()
 	swatch := sdl.Rect{X: pad, Y: icY, W: 26, H: fH}
 	c.Fill(swatch, render.TextColor(a.icColor))
 	c.Border(swatch, ColPanelHi)
-	if c.hovering(swatch) {
-		if c.clicked {
-			a.icColor = (a.icColor + 1) % render.TextColorCount
-		} else if c.rightClicked {
-			a.icColor = (a.icColor + render.TextColorCount - 1) % render.TextColorCount
-		}
+	if next, changed := c.Dropdown("colordd", sdl.Rect{X: pad + 32, Y: icY, W: colorSelectW, H: fH}, render.TextColorNames(), a.icColor); changed {
+		a.icColor = next
 	}
 	const shownameBoxW = 140
+	nameX := pad + 32 + colorSelectW + 6
 	namePlaceholder := a.d.Prefs.SavedShowname()
 	if namePlaceholder == "" {
 		namePlaceholder = "Showname"
 	}
-	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: pad + 32, Y: icY, W: shownameBoxW, H: fH}, a.shownameOverride, namePlaceholder)
+	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameX, Y: icY, W: shownameBoxW, H: fH}, a.shownameOverride, namePlaceholder)
 	var send bool
-	a.icInput, send = c.TextField("ic", sdl.Rect{X: pad + 32 + shownameBoxW + 6, Y: icY, W: vp.W - 32 - shownameBoxW - 6, H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
+	a.icInput, send = c.TextField("ic", sdl.Rect{X: nameX + shownameBoxW + 6, Y: icY, W: vp.W - (nameX - pad) - shownameBoxW - 6, H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
 	}
@@ -1355,6 +1363,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 			// Typing-driven speculation: the pick is the strongest signal
 			// of what the next outgoing message needs — warm it all now.
 			a.speculateEmote(me, e)
+			c.FocusField("ic") // AO2 focus_ic_input: pick emote, keep typing
 		}
 		// Full-size preview after a 3 s hover (right-click = instant): the
 		// TALKING sprite — what actually plays when this emote is sent.

@@ -32,6 +32,16 @@ func TextColor(index int) sdl.Color {
 	return textColors[index]
 }
 
+// textColorNames parallels textColors: the labels the IC color dropdown
+// shows (AO2-Client's set_text_color_dropdown lists names, not swatches).
+var textColorNames = []string{
+	"White", "Green", "Red", "Orange", "Blue", "Yellow", "Pink", "Cyan", "Gray",
+}
+
+// TextColorNames exposes the dropdown option list. Callers treat it as
+// read-only (shared backing array).
+func TextColorNames() []string { return textColorNames }
+
 // rasterLine is one wrapped line: a texture plus per-rune prefix advances so
 // the reveal is a pure src-rect width (spec §12: no per-character
 // layout, no texture churn).

@@ -260,6 +260,42 @@ func (a *App) oocWrapped(width int32) []string {
 	return out
 }
 
+// icWrapLine is one display row of the wrapped IC log: a text slice plus
+// its source entry (the row inherits that entry's AO color).
+type icWrapLine struct {
+	text  string
+	entry int // index into icLog
+}
+
+// icWrapMaxLinesPerEntry bounds one entry's wrapped rows. IC messages cap
+// at 256 chars on the wire, so 16 rows survives even huge fonts in a
+// narrow column.
+const icWrapMaxLinesPerEntry = 16
+
+// icWrapped returns the filtered IC log as display rows wrapped to the
+// list width (playtest: lines clipped at the right edge). Cached against
+// (log seq, query, width, font scale) — rebuilds on new messages,
+// searches, and resizes, never per frame.
+func (a *App) icWrapped(width int32) []icWrapLine {
+	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapQuery == a.logSearch &&
+		a.icWrapW == width && a.icWrapPct == a.logPct {
+		return a.icWrap
+	}
+	font := a.ctx.LogFont(a.logPct)
+	out := a.icWrap[:0]
+	for _, i := range a.icLogFiltered() {
+		for _, ln := range wrapToWidth(font, a.icLog[i].text, width, icWrapMaxLinesPerEntry) {
+			out = append(out, icWrapLine{text: ln, entry: i})
+		}
+	}
+	if out == nil {
+		out = []icWrapLine{} // non-nil marks the cache as populated
+	}
+	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct =
+		out, a.icLogSeq, a.logSearch, width, a.logPct
+	return out
+}
+
 // wrapToWidth greedily word-wraps text for an arbitrary font (the kit's
 // WrapText memo is chrome-font only; this measures with the actual log
 // font, and only runs on cache rebuilds). Words wider than the column

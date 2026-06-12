@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"image"
 	"log"
 	"os"
 	"path/filepath"
@@ -169,6 +170,8 @@ type App struct {
 	charScroll  int32
 	charTab     int // charTabServer | charTabWardrobe (grid contents swap)
 	previewBase string
+	previewFor  string    // base the preview clock was started for
+	previewAt   time.Time // loop anchor — animated previews play, not freeze
 	// iconAsk[i] is when char i's icon was last demanded by the visible
 	// grid (bounded by the server's char list length); iconAskBudget is
 	// the per-frame submission allowance, reset each Frame.
@@ -221,6 +224,14 @@ type App struct {
 	icFilter      []int
 	icFilterSeq   uint64
 	icFilterQuery string
+	// IC wrapped-rows cache (playtest: "make the log break lines
+	// according to its size"): filtered entries wrap to the list width;
+	// rebuilt only when the log, query, width, or font scale moved.
+	icWrap      []icWrapLine
+	icWrapSeq   uint64
+	icWrapQuery string
+	icWrapW     int32
+	icWrapPct   int
 	// OOC wrapped-lines cache: long entries (MOTDs) wrap instead of
 	// truncating; rebuilt only when the log, width, or font scale moved.
 	oocSeq      uint64
@@ -275,6 +286,9 @@ type App struct {
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage
 	themePagesGen uint64
+	// themeAt anchors the looping animation clock for animated theme art
+	// (chatbox/buttons/backdrops shipped as animated webp/gif/apng).
+	themeAt time.Time
 
 	// --- court extras (HP / WTCE / timers / judge / modcall / evidence) ---
 	wtceName    string    // active splash stem ("" = none)
@@ -396,6 +410,9 @@ type themeApply struct {
 	layout    map[string]theme.Rect
 	emoteCell [2]int // emote_button_size (w, h)
 	emoteGap  [2]int // emote_button_spacing (x, y)
+	// palette is the courtroom_stylesheets.css color scheme (the "css
+	// stuff"): applied over the kit colors, restored on theme switch.
+	palette theme.Palette
 
 	// diagnostics: where the skin came from, how many INI keys loaded,
 	// and the dirs probed (so "nothing found" names the actual paths).
@@ -403,10 +420,70 @@ type themeApply struct {
 	chatboxDir  string
 	iniKeys     int
 	probed      []string
+	inkGuard    string // readability guard verdict ("" = colors kept)
 }
 
 // themeStemChatbox is the chatbox skin's stem in themeTex / T1.
 const themeStemChatbox = "chatbox"
+
+// Readability guard for theme ink (playtest: "displaying black text even
+// when I choose white"). A theme's message/showname colors are designed
+// against its own chatbox art, but real themes ship mismatched pairs —
+// dark ink with a dark skin — that render invisible. At load time we
+// compare the ink's luma against the skin's average luma and drop the
+// theme color when the gap is below the floor (the kit default, white on
+// dark, takes over). AO2 renders the broken pair as-authored; readable
+// text beats parity here.
+const (
+	// lumaSampleStep samples every Nth pixel on both axes — a 512²
+	// chatbox costs ≤ ~4k samples, once per theme apply, off-thread.
+	lumaSampleStep = 8
+	// minInkSkinContrast is the minimum |ink − skin| luma gap (0..255):
+	// below it text is declared unreadable on the skin. 48 ≈ the gap
+	// between mid-gray pairs that already strain at chat font sizes.
+	minInkSkinContrast = 48
+	// transparentSkinLuma stands in for see-through skin pixels: the
+	// chatbox overlays the (dark) viewport / flat panel, so transparent
+	// regions read dark, not black.
+	transparentSkinLuma = 20
+)
+
+// colLuma is Rec. 601 perceptual luma on the 0..255 scale.
+func colLuma(c sdl.Color) int {
+	return (299*int(c.R) + 587*int(c.G) + 114*int(c.B)) / 1000
+}
+
+// avgSkinLuma samples a decoded skin frame's average luma, compositing
+// alpha against the dark backdrop the chatbox actually draws over.
+func avgSkinLuma(img *image.RGBA, step int) int {
+	b := img.Bounds()
+	if b.Empty() {
+		return transparentSkinLuma
+	}
+	sum, n := 0, 0
+	for y := b.Min.Y; y < b.Max.Y; y += step {
+		row := img.PixOffset(b.Min.X, y)
+		for x := b.Min.X; x < b.Max.X; x += step {
+			i := row + (x-b.Min.X)*4
+			pix := (299*int(img.Pix[i]) + 587*int(img.Pix[i+1]) + 114*int(img.Pix[i+2])) / 1000
+			a := int(img.Pix[i+3])
+			sum += (pix*a + transparentSkinLuma*(255-a)) / 255
+			n++
+		}
+	}
+	if n == 0 {
+		return transparentSkinLuma
+	}
+	return sum / n
+}
+
+// absInt is the integer |x| (no float detour on the guard path).
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
 
 // themeImageExts is the per-stem probe order, matching AO2-Client
 // get_image_suffix (webp → apng → gif → png).
@@ -1417,6 +1494,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.d.Prefs.DebugOverlayEnabled() {
 		a.drawDebugOverlay(winW, winH)
 	}
+	// Deferred kit overlays (open dropdown lists) stack above everything.
+	a.ctx.FinishFrame()
 }
 
 // applyThemeAsync loads the selected theme's visible pieces off-thread —
@@ -1486,6 +1565,24 @@ func (a *App) applyThemeAsync() {
 			for key, candidates := range themeButtonStems() {
 				loadStem(themeBtnPrefix+key, candidates, themeButtonExts)
 			}
+			// Readability guard: drop theme ink that has no contrast
+			// against the skin it ships with (see the constants above).
+			if box := res.images[themeStemChatbox]; box != nil && len(box.Frames) > 0 {
+				skin := avgSkinLuma(box.Frames[0], lumaSampleStep)
+				var dropped []string
+				if res.hasMsg && absInt(colLuma(res.msgCol)-skin) < minInkSkinContrast {
+					res.hasMsg = false
+					dropped = append(dropped, "message")
+				}
+				if res.hasName && absInt(colLuma(res.nameCol)-skin) < minInkSkinContrast {
+					res.hasName = false
+					dropped = append(dropped, "showname")
+				}
+				if len(dropped) > 0 {
+					res.inkGuard = fmt.Sprintf("theme %s color unreadable on its chatbox skin (luma %d) — using client default",
+						strings.Join(dropped, "+"), skin)
+				}
+			}
 			// Courtroom geometry (the part that makes a theme LOOK like
 			// itself): rects in design-space pixels, plus the emote grid
 			// cell metrics.
@@ -1497,6 +1594,13 @@ func (a *App) applyThemeAsync() {
 			}
 			res.emoteCell = designPair(t, "emote_button_size", defaultEmoteCellPx, defaultEmoteCellPx)
 			res.emoteGap = designPair(t, "emote_button_spacing", defaultEmoteGapPx, defaultEmoteGapPx)
+			// The QSS palette ("css stuff"): AO2 ≥ 2.10 themes color the
+			// client through courtroom_stylesheets.css.
+			if path, ok := t.FindAsset("courtroom_stylesheets", []string{".css"}); ok {
+				if data, rerr := os.ReadFile(path); rerr == nil {
+					res.palette = theme.ParseStylesheet(data)
+				}
+			}
 		}
 		// Sound names resolve even with no theme on disk: the stock
 		// fallbacks keep WT/CE/verdict/modcall audible on bare installs.
@@ -1564,6 +1668,11 @@ func (a *App) pollThemeApply() {
 	a.themeEmoteCell, a.themeEmoteGap = res.emoteCell, res.emoteGap
 	a.themeLay.valid = false
 	a.themeSounds = res.sounds
+	a.themeAt = time.Now() // restart the theme-art animation clock
+	// Apply (or restore) the stylesheet palette; label textures are
+	// color-keyed, so purge the text cache to re-rasterize in new colors.
+	applyThemePalette(res.palette)
+	a.ctx.purgeTextCache()
 	a.pushRealizationToRoom()
 	a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
 	a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
@@ -1571,6 +1680,9 @@ func (a *App) pollThemeApply() {
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)
 	a.pushDebug(line)
+	if res.inkGuard != "" {
+		a.pushDebug(res.inkGuard)
+	}
 }
 
 // themeApplySummary turns one apply into a human-readable verdict, so
@@ -1615,6 +1727,25 @@ func (a *App) themePage(stem string) (*render.TexturePage, bool) {
 	}
 	a.themePages[stem] = page
 	return page, true
+}
+
+// themeElapsed is the animation clock for looping theme art: time since
+// the theme applied, so every animated stem (chatbox, buttons, backdrops)
+// steps with pageFrameLoop instead of freezing on Frames[0].
+func (a *App) themeElapsed() time.Duration {
+	if a.themeAt.IsZero() {
+		return 0
+	}
+	return time.Since(a.themeAt)
+}
+
+// themeFrame picks the current animation frame for a theme page — static
+// pages cost one len check, animated ones loop on the theme clock.
+func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
+	if len(page.Frames) == 1 {
+		return page.Frames[0]
+	}
+	return page.Frames[pageFrameLoop(page, a.themeElapsed())]
 }
 
 // pushRealizationToRoom hands the courtroom the resolved realization sound

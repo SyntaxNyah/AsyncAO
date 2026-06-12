@@ -343,7 +343,7 @@ func (a *App) hpBarStem(def bool, val int) string {
 func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int) {
 	c := a.ctx
 	if page, ok := a.themePage(a.hpBarStem(def, val)); ok {
-		_ = c.Ren.Copy(page.Frames[0], nil, &bar)
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &bar)
 		return
 	}
 	// Procedural fallback: pip strip, blue defense / red prosecution.
@@ -457,6 +457,17 @@ func (a *App) speculateEmote(me string, e *courtroom.Emote) {
 	}
 }
 
+// hasCustomShout reports whether the current character ships a custom
+// interjection. AO2-Client shows ui_custom_objection only when the char
+// folder holds custom art (courtroom.cpp set_widgets file_exists checks);
+// a streaming client can't stat the folder, so the discoverable evidence
+// is char.ini: a custom_name rename or named [Shouts] entries. Without
+// either, the button hides (playtest: it highlighted on hover for chars
+// with no custom shout at all).
+func (a *App) hasCustomShout() bool {
+	return len(a.customShouts) > 0 || a.customName != ""
+}
+
 // customShoutLabel is the active custom-shout button text: a named
 // [Shouts] pick, the char.ini custom_name rename, or plain "Custom!".
 func (a *App) customShoutLabel() string {
@@ -482,25 +493,31 @@ func (a *App) posChoices() []string {
 	return standardPositions
 }
 
-// drawPosCycler renders the "Pos: x" button; clicking advances through
-// posChoices (the SD list when the server sent one). Returns the next x.
-func (a *App) drawPosCycler(x, y int32) int32 {
+// posSelectW fits the widest standard side ("Pos" label drawn separately).
+const posSelectW = 64
+
+// colorSelectW fits the widest color name ("Orange") in the IC selector.
+const colorSelectW = 86
+
+// drawPosSelect renders the side selector as a real dropdown (AO2's
+// ui_pos_dropdown; playtest asked for dropdowns over cyclers) at the given
+// height. Returns the next x. The Ctrl+P hotkey still cycles (cyclePos).
+func (a *App) drawPosSelect(x, y, h int32) int32 {
 	c := a.ctx
-	label := "Pos: " + a.mySide()
-	w := c.TextWidth(label) + 16
-	if c.Button(sdl.Rect{X: x, Y: y, W: w, H: btnH}, label) {
-		choices := a.posChoices()
-		cur := a.mySide()
-		next := choices[0]
-		for i, p := range choices {
-			if p == cur {
-				next = choices[(i+1)%len(choices)]
-				break
-			}
+	c.Label(x, y+(h-int32(c.font.Height()))/2, "Pos", ColTextDim)
+	x += c.TextWidth("Pos") + 6
+	choices := a.posChoices()
+	cur := 0
+	for i, p := range choices {
+		if p == a.mySide() {
+			cur = i
+			break
 		}
-		a.sidePref = next
 	}
-	return x + w + 6
+	if next, changed := c.Dropdown("posdd", sdl.Rect{X: x, Y: y, W: posSelectW, H: h}, choices, cur); changed {
+		a.sidePref = choices[next]
+	}
+	return x + posSelectW + 6
 }
 
 // --- casing ----------------------------------------------------------------------
