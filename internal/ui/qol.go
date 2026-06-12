@@ -31,6 +31,7 @@ const (
 	hotkeyLogJump    = "log_jump"
 	hotkeyScreenshot = "screenshot"
 	hotkeyTheater    = "theater"
+	hotkeyLogin      = "login"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -47,6 +48,7 @@ var hotkeyDefs = []struct {
 	{hotkeyLogJump, "Jump logs to newest", "l"},
 	{hotkeyScreenshot, "Screenshot", "s"},
 	{hotkeyTheater, "Theater mode", "t"},
+	{hotkeyLogin, "Server login (saved creds)", "g"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -115,9 +117,12 @@ func (a *App) handleCharKeys() {
 }
 
 // handleHotkeys consumes this frame's Ctrl chord on the courtroom screen
-// (and dispatches the per-server character keybinds first).
+// (and dispatches macro keybinds, then character keybinds — macros win
+// a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
-	a.handleCharKeys()
+	if !a.handleMacroKeys() {
+		a.handleCharKeys()
+	}
 	key := a.ctx.hotkey
 	if key == 0 || a.sess == nil {
 		return
@@ -142,6 +147,8 @@ func (a *App) handleHotkeys() {
 		a.captureScreenshot()
 	case a.hotkeyFor(hotkeyTheater):
 		a.setTheater(!a.theaterOn)
+	case a.hotkeyFor(hotkeyLogin):
+		a.loginNow()
 	}
 }
 

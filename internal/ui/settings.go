@@ -35,6 +35,11 @@ type settingsState struct {
 	// importArmed routes the next dropped .json into ImportSettings.
 	importArmed bool
 
+	// macro editor buffers (name, captured key, |-separated lines).
+	macroName  string
+	macroKey   string
+	macroLines string
+
 	// theme picker state: list scanning runs on a goroutine (directory
 	// I/O stays off the render thread — §17.2) and lands on themeRes.
 	themeName string
@@ -115,6 +120,13 @@ func (a *App) drawSettings(w, h int32) {
 	shown := a.d.Prefs.SavedShowname()
 	if next, _ := c.TextField("showname", sdl.Rect{X: pad + 150, Y: y, W: 220, H: fieldH}, shown, "Your showname"); next != shown {
 		a.d.Prefs.SetShowname(next)
+	}
+	// Default OOC name: applied on every join (like the showname); blank
+	// sends as a sticky AsyncAO<n> so commands always work.
+	c.Label(pad+390, y+4, "OOC name:", ColText)
+	if next, _ := c.TextField("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, a.oocName, "blank = AsyncAO<n>"); next != a.oocName {
+		a.oocName = next
+		a.d.Prefs.SetOOCName(next)
 	}
 	y += 38
 
@@ -457,6 +469,14 @@ func (a *App) drawSettings(w, h int32) {
 		importLearnedAsync(a)
 	}
 	y += 32
+
+	// Macros: user-defined OOC command sequences with optional keybinds.
+	y = a.drawMacroSettings(y, w)
+	y += 8
+
+	// Built-in server login (auto on join, or manual via hotkey/button).
+	y = a.drawLoginSettings(y, w)
+	y += 8
 
 	// Whole-settings portability: the new-PC bundle (every knob,
 	// favorites, per-server wardrobes/keybinds, learned formats).

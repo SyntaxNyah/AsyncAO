@@ -167,6 +167,7 @@ type AssetPreferences struct {
 	ThemeLayoutOn          bool                      `json:"themeLayout"`
 	UIScaleAutoOn          bool                      `json:"uiScaleAuto"`
 	FontOverridePaths      string                    `json:"fontPaths"`
+	UserMacros             []MacroSpec               `json:"macros,omitempty"`
 	DiskZstd               bool                      `json:"diskZstd"`
 	StreamerModeOn         bool                      `json:"streamerMode"`
 	ThemeName              string                    `json:"themeName"`
@@ -225,26 +226,27 @@ type AssetPreferences struct {
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
 // "absent" from the zero value where the default is not the zero value.
 type prefsJSON struct {
-	GlobalFallbacksEnabled bool   `json:"globalFallbacksEnabled"`
-	PreferAnimated         *bool  `json:"preferAnimated"`
-	EmoteButtonImages      *bool  `json:"emoteButtonImages"`
-	SmoothScaling          *bool  `json:"smoothScaling"`
-	DebugOverlay           bool   `json:"debugOverlay"`
-	FormatAutoDetect       *bool  `json:"formatAutoDetect"` // absent = default ON
-	ThemeLayout            *bool  `json:"themeLayout"`      // absent = default ON
-	UIScaleAuto            *bool  `json:"uiScaleAuto"`      // absent = default ON (HiDPI)
-	FontPaths              string `json:"fontPaths"`        // ""=embedded font
-	DiskZstd               bool   `json:"diskZstd"`         // default OFF (measured trade)
-	StreamerMode           bool   `json:"streamerMode"`     // default OFF
-	ThemeName              string `json:"themeName"`
-	ThemeDir               string `json:"themeDir"`
-	OOCName                string `json:"oocName"`
-	ViewportPct            int    `json:"viewportPercent"`
-	ChatScalePct           int    `json:"chatScalePercent"`
-	ChatBoxPct             int    `json:"chatBoxPercent"`
-	LogScalePct            int    `json:"logScalePercent"`
-	InputHeightPct         int    `json:"inputHeightPercent"`
-	UIScalePct             int    `json:"uiScalePercent"`
+	GlobalFallbacksEnabled bool        `json:"globalFallbacksEnabled"`
+	PreferAnimated         *bool       `json:"preferAnimated"`
+	EmoteButtonImages      *bool       `json:"emoteButtonImages"`
+	SmoothScaling          *bool       `json:"smoothScaling"`
+	DebugOverlay           bool        `json:"debugOverlay"`
+	FormatAutoDetect       *bool       `json:"formatAutoDetect"` // absent = default ON
+	ThemeLayout            *bool       `json:"themeLayout"`      // absent = default ON
+	UIScaleAuto            *bool       `json:"uiScaleAuto"`      // absent = default ON (HiDPI)
+	FontPaths              string      `json:"fontPaths"`        // ""=embedded font
+	Macros                 []MacroSpec `json:"macros"`
+	DiskZstd               bool        `json:"diskZstd"`     // default OFF (measured trade)
+	StreamerMode           bool        `json:"streamerMode"` // default OFF
+	ThemeName              string      `json:"themeName"`
+	ThemeDir               string      `json:"themeDir"`
+	OOCName                string      `json:"oocName"`
+	ViewportPct            int         `json:"viewportPercent"`
+	ChatScalePct           int         `json:"chatScalePercent"`
+	ChatBoxPct             int         `json:"chatBoxPercent"`
+	LogScalePct            int         `json:"logScalePercent"`
+	InputHeightPct         int         `json:"inputHeightPercent"`
+	UIScalePct             int         `json:"uiScalePercent"`
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
 	MusicVol *int `json:"musicVolume"`
 	SFXVol   *int `json:"sfxVolume"`
@@ -312,10 +314,65 @@ type ServerWarmInfo struct {
 	// Chars is the server's character list from the last visit
 	// (≤ WarmCharsCap) — the rehearsal char select.
 	Chars []string `json:"chars,omitempty"`
+	// Mod login for this server. PLAINTEXT in the prefs file — the same
+	// trust level as a saved browser password without an OS keychain;
+	// the settings UI says so out loud. AutoLogin sends the login flow
+	// on every join.
+	LoginUser string `json:"loginUser,omitempty"`
+	LoginPass string `json:"loginPass,omitempty"`
+	AutoLogin bool   `json:"autoLogin,omitempty"`
 }
 
 // charKeyCap bounds one server's character keybind table.
 const charKeyCap = 36
+
+// MacroSpec is one user macro: a name, an optional plain-key bind, and
+// the OOC lines it sends in order (paced by the UI so prompt-style
+// flows like Akashi's two-step login work).
+type MacroSpec struct {
+	Name  string   `json:"name"`
+	Key   string   `json:"key,omitempty"`
+	Lines []string `json:"lines"`
+}
+
+// Macro bounds (rule §17.4): "as many as you want" within named caps.
+const (
+	MacroCap      = 64  // macros per user
+	MacroLinesCap = 8   // lines per macro
+	MacroLineMax  = 256 // chars per line
+)
+
+// sanitizeMacros enforces the macro caps and drops empty entries.
+func sanitizeMacros(in []MacroSpec) []MacroSpec {
+	if len(in) > MacroCap {
+		in = in[:MacroCap]
+	}
+	out := make([]MacroSpec, 0, len(in))
+	for _, m := range in {
+		m.Name = strings.TrimSpace(m.Name)
+		m.Key = strings.ToLower(strings.TrimSpace(m.Key))
+		if len(m.Lines) > MacroLinesCap {
+			m.Lines = m.Lines[:MacroLinesCap]
+		}
+		lines := make([]string, 0, len(m.Lines))
+		for _, l := range m.Lines {
+			l = strings.TrimSpace(l)
+			if l == "" {
+				continue
+			}
+			if len(l) > MacroLineMax {
+				l = l[:MacroLineMax]
+			}
+			lines = append(lines, l)
+		}
+		m.Lines = lines
+		if m.Name == "" || len(m.Lines) == 0 {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out
+}
 
 // WarmCharsCap bounds one server's remembered character list. 4096 names
 // ≈ 60 KiB of JSON — covers the 4000-char megaservers rehearsal exists
@@ -427,6 +484,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.UIScaleAutoOn = *onDisk.UIScaleAuto
 	}
 	p.FontOverridePaths = onDisk.FontPaths
+	p.UserMacros = sanitizeMacros(onDisk.Macros)
 	p.DiskZstd = onDisk.DiskZstd
 	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
@@ -1001,6 +1059,16 @@ func (p *AssetPreferences) RememberServerOrigin(key, origin string) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Origin = origin })
 }
 
+// SetServerLogin stores a server's mod credentials (plaintext — see
+// ServerWarmInfo) and the auto-login-on-join choice. Empty user+pass
+// clears them.
+func (p *AssetPreferences) SetServerLogin(key, user, pass string, auto bool) {
+	p.rememberServer(key, func(w *ServerWarmInfo) {
+		w.LoginUser, w.LoginPass = user, pass
+		w.AutoLogin = auto && user != ""
+	})
+}
+
 // RememberServerChars records the character list for rehearsal mode
 // (capped at WarmCharsCap).
 func (p *AssetPreferences) RememberServerChars(key string, chars []string) {
@@ -1444,6 +1512,24 @@ func (p *AssetPreferences) SetDiskZstd(enabled bool) {
 		return
 	}
 	p.DiskZstd = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Macros returns a copy of the user macro list.
+func (p *AssetPreferences) Macros() []MacroSpec {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]MacroSpec, len(p.UserMacros))
+	copy(out, p.UserMacros)
+	return out
+}
+
+// SetMacros replaces the macro list (caps enforced).
+func (p *AssetPreferences) SetMacros(in []MacroSpec) {
+	clean := sanitizeMacros(in)
+	p.mu.Lock()
+	p.UserMacros = clean
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -165,6 +165,24 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Offset ghost editor** (pair panel): drag your idle sprite on a
   miniature stage to set self-offsets; the partner shows as a
   translucent ghost at their last-known placement.
+- **Macro system** (Settings → Macros): name + optional plain-key bind +
+  a sequence of OOC lines (separate steps with `|`), sent paced so
+  prompt-style flows work. Keys fire in the courtroom with no text box
+  focused; macro binds win a key conflict over character binds. Caps:
+  64 macros × 8 lines × 256 chars.
+- **Built-in server login**: per-server credentials (saved in PLAIN
+  TEXT — the UI says so), with the wire flow picked from the announced
+  server software: Akashi gets the two-step prompt form (`/login`, then
+  `user pass` — the credential line is not echoed into OOC), Nyathena/
+  KFO/Athena/Whisker and unknown servers get `/login user pass`.
+  **Auto-login is OFF by default** — ticked on, a join logs you in the
+  instant the handshake completes; manual mode fires the same saved
+  flow only when you trigger it (courtroom Login... button or the
+  Ctrl+G hotkey). Settings shows the current server's login state.
+- **OOC identity**: a default OOC name in Settings applies on every
+  join (like the showname); when blank, commands and macros send as a
+  sticky random `AsyncAO<1-200>` minted once per run — OOC commands
+  always work even with no name set.
 - **Multi-server tabs (max 3)**: Join while connected opens a NEW tab —
   the old session parks and keeps running (its packets drain on a
   per-frame budget into its own logs; unread counts and callword

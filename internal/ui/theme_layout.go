@@ -238,6 +238,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	case a.showUICfg:
 		a.drawUICfgPanel(w, h)
 		return
+	case a.showLogin:
+		a.drawLoginDialog(w, h)
+		return
 	}
 
 	// Logs: IC at ic_chatlog; OOC log prefers server_chatlog (AO2's joint
@@ -632,6 +635,9 @@ func (a *App) drawThemedUtilityStrip(w, h int32, lay *themeLayoutCache) {
 	}
 	if _, ok := lay.rect("pos_dropdown"); !ok {
 		x = a.drawPosSelect(x, y, stripH)
+	}
+	if put("Login...") {
+		a.openLoginDialog()
 	}
 	if put("UI...") {
 		a.showUICfg = true

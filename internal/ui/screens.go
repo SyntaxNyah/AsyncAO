@@ -111,7 +111,7 @@ func (a *App) drawLobby(w, h int32) {
 		}
 		y += rowH
 		if i == a.selServer && len(a.descLines) > 0 {
-			boxH := int32(len(a.descLines)+len(a.descLinks))*lineH + 8
+			boxH := int32(len(a.descLines)+len(a.descLinks))*lineH + btnH + 16
 			if y > listTop-boxH && y < h {
 				box := sdl.Rect{X: pad + 16, Y: y, W: w - 2*pad - 16, H: boxH - 4}
 				c.Fill(box, ColPanelHi)
@@ -125,6 +125,20 @@ func (a *App) drawLobby(w, h int32) {
 				for _, link := range a.descLinks {
 					a.linkLabel(box.X+6, ly, box.W-12, link)
 					ly += lineH
+				}
+				// Rehearse, spelled out (the row button alone was missed
+				// in playtests): offline browse of this server's cached
+				// roster, or the one-visit explainer.
+				e := &a.servers[i]
+				if e.Joinable() {
+					if c.Button(sdl.Rect{X: box.X + 6, Y: ly + 4, W: 320, H: btnH}, "Rehearse offline (browse cached characters)") {
+						if info := a.d.Prefs.ServerWarmInfoFor(e.WebSocketURL()); info.Origin != "" && len(info.Chars) > 0 {
+							a.startRehearsal(e.Name, e.WebSocketURL(), info)
+							return
+						}
+						a.connErr = "Rehearsal needs one visit first: join " + e.Name +
+							" once (this build) so its roster gets remembered."
+					}
 				}
 			}
 			y += boxH
@@ -552,6 +566,9 @@ func (a *App) drawCourtroom(w, h int32) {
 	case a.showUICfg:
 		a.drawUICfgPanel(w, h)
 		return
+	case a.showLogin:
+		a.drawLoginDialog(w, h)
+		return
 	}
 
 	// Right column: log + music.
@@ -884,11 +901,13 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 }
 
 // submitOOC sends the OOC input if non-blank (shared classic/themed).
+// The name falls back to the sticky AsyncAO<n> — servers reject empty
+// OOC names, and commands must always be sendable.
 func (a *App) submitOOC() {
 	if strings.TrimSpace(a.oocInput) == "" || a.sess == nil {
 		return
 	}
-	a.sess.SendOOC(a.oocName, a.oocInput)
+	a.sess.SendOOC(a.oocNameOrDefault(), a.oocInput)
 	a.oocInput = ""
 }
 
@@ -1334,6 +1353,10 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.showModcall = true
 	}
 	x += 86
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
+		a.openLoginDialog()
+	}
+	x += 76
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
 		a.showUICfg = true
 	}

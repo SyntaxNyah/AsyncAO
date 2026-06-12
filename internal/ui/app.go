@@ -166,8 +166,13 @@ type App struct {
 	// frameNow is this frame's single clock snapshot: animation clocks
 	// (theme art, previews, splashes) read it instead of hitting the OS
 	// clock per draw site.
-	frameNow    time.Time
-	oocName     string
+	frameNow time.Time
+	oocName  string
+	// defaultOOC is the sticky AsyncAO<n> fallback OOC name, minted once
+	// per run on first use (commands/macros need SOME name to send).
+	defaultOOC string
+	// macroBind ≥ 0 while the settings macro editor captures a key.
+	macroBind   int
 	previewBase string
 	previewFor  string    // base the preview clock was started for
 	previewAt   time.Time // loop anchor — animated previews play, not freeze
@@ -393,6 +398,13 @@ type sessionState struct {
 
 	// ghostWarm dedupes the pair-panel ghost editor's sprite prefetches.
 	ghostWarm map[string]string
+
+	// --- macro engine + login dialog ---
+	macroQueue []macroSend // paced OOC sends (≤ macroQueueCap)
+	showLogin  bool
+	loginUser  string
+	loginPass  string
+	loginAuto  bool
 
 	// --- court extras (HP / WTCE / modcall / evidence) ---
 	wtceName    string    // active splash stem ("" = none)
@@ -727,6 +739,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		oocName:     d.Prefs.SavedShowname(),
 		selServer:   -1,
 		activeTab:   -1,
+		macroBind:   -1,
 		themeTex:    map[string]bool{},
 		themePages:  map[string]*render.TexturePage{},
 		hidden:      map[string]bool{},
@@ -1026,6 +1039,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				names[i] = a.sess.Chars[i].Name
 			}
 			a.d.Prefs.RememberServerChars(a.serverKey, names)
+			a.autoLoginOnReady()
 		case courtroom.EventBackground:
 			// Remember it for next visit's pre-warm; the room still
 			// consumes the event below (no continue).
@@ -1752,6 +1766,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollFontChain()
 	a.pollNotebook()
 	a.pollCharBind()
+	a.pollMacroBind()
+	a.processMacroQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
 		a.healScenery()
