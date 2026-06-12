@@ -1,6 +1,7 @@
 package render
 
 import (
+	"math"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -11,6 +12,12 @@ import (
 const (
 	// offsetPercentDivisor converts AO offsets (percent) into pixels.
 	offsetPercentDivisor = 100
+	// shakeAmplitudeDivisor scales the screenshake wobble to the viewport
+	// (vp.W / divisor at full strength — a few pixels at 4:3 sizes).
+	shakeAmplitudeDivisor = 48
+	// shakePeriod is the wobble oscillation period (fast enough to read as
+	// a shake, slow enough that 60 Hz sampling doesn't alias it away).
+	shakePeriod = 90 * time.Millisecond
 )
 
 // animState tracks playback of one sprite layer without allocations: the
@@ -176,7 +183,19 @@ func (v *Viewport) syncAnimSticky(a *animState, base string) {
 
 // Render draws the scene layers in AO order: background → characters (pair
 // z-order) → desk → shout bubble. Chat box and text render UI-side.
+// Screenshake jitters the whole stage rect; the realization flash paints
+// over everything (do_screenshake / do_flash parity, zero allocations).
 func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
+	if scene.ShakeLeft > 0 {
+		// Decaying sinusoid: amplitude follows the remaining time, so the
+		// shake settles instead of cutting off.
+		strength := float64(scene.ShakeLeft) / float64(courtroom.ScreenshakeDuration)
+		amp := float64(vp.W) / shakeAmplitudeDivisor * strength
+		phase := 2 * math.Pi * float64(scene.ShakeLeft) / float64(shakePeriod)
+		vp.X += int32(amp * math.Sin(phase))
+		vp.Y += int32(amp / 2 * math.Cos(phase*1.3))
+	}
+
 	v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp)
 
 	if scene.PairActive && !scene.SpeakerInFront {
@@ -195,6 +214,17 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	}
 	if scene.ShoutBase != "" {
 		v.drawFill(ren, scene.ShoutBase, &v.shoutAnim, vp)
+	}
+
+	if scene.FlashLeft > 0 {
+		// Realization flash: white overlay fading with the countdown.
+		frac := float64(scene.FlashLeft) / float64(courtroom.RealizationFlashDuration)
+		if frac > 1 {
+			frac = 1
+		}
+		v.fillRect = vp
+		_ = ren.SetDrawColor(255, 255, 255, uint8(255*frac))
+		_ = ren.FillRect(&v.fillRect)
 	}
 }
 

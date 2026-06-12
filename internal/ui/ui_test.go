@@ -132,6 +132,10 @@ func TestNormalizeThemeRoot(t *testing.T) {
 	if got, pick := normalizeThemeRoot(one); got != root || pick != "themeexample1" {
 		t.Errorf("single-theme form → %q/%q, want %q/themeexample1", got, pick, root)
 	}
+	// Explorer "Copy as path" pastes the path quoted — must still resolve.
+	if got, pick := normalizeThemeRoot(`"` + themes + `"`); got != root || pick != "" {
+		t.Errorf("quoted themes form → %q/%q, want %q", got, pick, root)
+	}
 	if names := scanThemeDirs([]string{root}); len(names) != 2 || names[1] != "themeexample1" {
 		t.Errorf("scan = %v, want [default themeexample1]", names)
 	}

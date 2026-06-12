@@ -32,6 +32,9 @@ Write-Host "Built bin\asyncao.exe"
 $dlls = @(
     "SDL2.dll", "SDL2_ttf.dll", "SDL2_mixer.dll",
     "libwebp-7.dll", "libwebpdemux-2.dll", "libsharpyuv-0.dll",
+    # AVIF decode chain (libavif links every codec it was built against).
+    "libavif-16.dll", "libaom.dll", "libdav1d-7.dll", "libyuv.dll",
+    "librav1e.dll", "libSvtAv1Enc-4.dll",
     "libfreetype-6.dll", "libbz2-1.dll", "libbrotlidec.dll", "libbrotlicommon.dll",
     "libpng16-16.dll", "zlib1.dll", "libharfbuzz-0.dll", "libglib-2.0-0.dll",
     "libgraphite2.dll", "libintl-8.dll", "libiconv-2.dll", "libpcre2-8-0.dll",

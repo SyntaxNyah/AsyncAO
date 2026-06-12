@@ -468,18 +468,32 @@ func (a *App) drawCourtroom(w, h int32) {
 	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
 	a.handleSpriteDrag(vp)
 	a.drawChatOverlay(vp)
+	a.drawCourtOverlays(vp) // HP bars, clocks, badges, splashes
 
-	// The iniswap menu is modal: the kit has no z-aware input, so the
-	// controls underneath simply don't draw (and don't see clicks).
-	if a.showIni {
+	// Modal popups: the kit has no z-aware input, so the controls
+	// underneath simply don't draw (and don't see clicks) — same pattern
+	// as the iniswap menu.
+	switch {
+	case a.showIni:
 		a.drawIniswapPanel(w, h)
+		return
+	case a.showEvid:
+		a.drawEvidencePanel(w, h)
+		return
+	case a.showModcall:
+		a.drawModcallDialog(w, h)
+		return
+	case a.showUICfg:
+		a.drawUICfgPanel(w, h)
 		return
 	}
 
 	// Right column: log + music.
 	rx := vp.X + vp.W + pad
 	rw := w - rx - pad
-	a.drawLogPanel(sdl.Rect{X: rx, Y: pad, W: rw, H: vpH}, vp)
+	if !a.panelHidden(panelLog) {
+		a.drawLogPanel(sdl.Rect{X: rx, Y: pad, W: rw, H: vpH}, vp)
+	}
 
 	// Bottom: IC input, emotes, controls.
 	a.drawICControls(w, h, vp)
@@ -576,41 +590,43 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	}
 	box := sdl.Rect{X: vp.X, Y: vp.Y + vp.H - boxH, W: vp.W, H: boxH}
 	// Theme chatbox skin when the theme ships one; flat translucent
-	// panel otherwise.
+	// panel otherwise (themePage self-heals T1 eviction).
 	skinned := false
-	if a.themeChatbox {
-		if page, ok := a.d.Store.Get(themeChatboxBase); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &box)
-			skinned = true
-		}
+	if page, ok := a.themePage(themeStemChatbox); ok {
+		_ = c.Ren.Copy(page.Frames[0], nil, &box)
+		skinned = true
 	}
 	if !skinned {
 		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
 		c.Border(box, ColAccent)
 	}
+	// Theme text colors are designed against the theme's own skin; on the
+	// flat fallback panel they can be unreadable (black-on-dark was a real
+	// report), so they only apply while the skin actually drew.
 	nameCol := ColAccent
-	if a.themeHasName {
+	if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
 	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
 
-	// (Re)rasterize when the message, color, zoom, or wrap width changes
-	// (live viewport resizing moves the wrap width mid-message).
+	// (Re)rasterize when the message, color, zoom, wrap width, or skin
+	// presence changes (the skin gates the theme's message color).
 	wrapW := box.W - 16
 	if a.msRaster == nil || a.rasterText != sc.MessageText || a.rasterColor != sc.TextColor ||
-		a.rasterScale != a.chatPct || a.rasterW != wrapW {
+		a.rasterScale != a.chatPct || a.rasterW != wrapW || a.rasterSkinned != skinned {
 		if a.msRaster != nil {
 			a.msRaster.Destroy()
 			a.msRaster = nil
 		}
 		if sc.MessageText != "" {
-			raster, err := renderRaster(a, sc, wrapW)
+			raster, err := renderRaster(a, sc, wrapW, skinned)
 			if err == nil {
 				a.msRaster = raster
 				a.rasterText = sc.MessageText
 				a.rasterColor = sc.TextColor
 				a.rasterScale = a.chatPct
 				a.rasterW = wrapW
+				a.rasterSkinned = skinned
 			}
 		}
 	}
@@ -757,7 +773,7 @@ func (a *App) drawAreaList(r sdl.Rect) {
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
 	y := r.Y - a.areaScroll
-	for _, area := range a.sess.Areas {
+	for i, area := range a.sess.Areas {
 		if y > r.Y+r.H {
 			break
 		}
@@ -767,7 +783,31 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			if hover {
 				c.Fill(row, ColPanelHi)
 			}
-			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, area, ColText)
+			// ARUP columns: "name [players] (STATUS) [lock] CM: x",
+			// row color keyed by status — the live "which area is
+			// active" signal (courtroom.cpp list_areas).
+			line, col := area, ColText
+			if i < len(a.sess.AreaInfo) {
+				info := &a.sess.AreaInfo[i]
+				if info.Players >= 0 {
+					line += fmt.Sprintf("  [%d]", info.Players)
+				}
+				if info.Status != "" {
+					line += " " + info.Status
+					col = areaStatusColor(info.Status)
+				}
+				switch strings.ToUpper(info.Lock) {
+				case "LOCKED":
+					line += " [locked]"
+					col = ColDanger
+				case "SPECTATABLE":
+					line += " [spec]"
+				}
+				if info.CM != "" && !strings.EqualFold(info.CM, "FREE") {
+					line += " CM: " + info.CM
+				}
+			}
+			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, line, col)
 			if hover && c.clicked {
 				a.sess.RequestMusic(area) // area transfer rides MC
 			}
@@ -973,29 +1013,53 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	c := a.ctx
 	y := vp.Y + vp.H + pad
 
-	// Row 1: shouts, pairing, and the live layout knobs.
-	shoutW := int32(96)
-	shouts := []struct {
-		label string
-		mod   int
-	}{{"Hold It!", protocol.ShoutHoldIt}, {"Objection!", protocol.ShoutObjection}, {"Take That!", protocol.ShoutTakeThat}}
+	// Row 1: shouts, pairing, and the live layout knobs (both hideable).
 	x := pad
 	var pendingShout int
-	for _, s := range shouts {
-		if c.Button(sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, s.label) {
-			pendingShout = s.mod
+	if !a.panelHidden(panelShouts) {
+		shoutW := int32(96)
+		shouts := []struct {
+			label string
+			mod   int
+		}{{"Hold It!", protocol.ShoutHoldIt}, {"Objection!", protocol.ShoutObjection}, {"Take That!", protocol.ShoutTakeThat}}
+		for _, s := range shouts {
+			if c.Button(sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, s.label) {
+				pendingShout = s.mod
+			}
+			x += shoutW + 6
 		}
-		x += shoutW + 6
+		// Custom interjection (2.10): the button fires the active pick;
+		// the ▾ cycler steps base custom → each named [Shouts] entry.
+		if a.sess.Features.Has(protocol.FeatureCustomObjections) {
+			label := a.customShoutLabel()
+			bw := c.TextWidth(label) + 16
+			if c.Button(sdl.Rect{X: x, Y: y, W: bw, H: btnH}, label) {
+				pendingShout = protocol.ShoutCustom
+			}
+			x += bw + 4
+			if len(a.customShouts) > 0 {
+				if c.Button(sdl.Rect{X: x, Y: y, W: 26, H: btnH}, "▾") {
+					// −1 (base) → 0 → … → len−1 → −1
+					a.customIdx++
+					if a.customIdx >= len(a.customShouts) {
+						a.customIdx = -1
+					}
+				}
+				x += 32
+			}
+		}
 	}
 	if c.Button(sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...") {
 		a.showPair = !a.showPair
 	}
 	x += 80
-	x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
-	x = a.scaleControl(x, y, "Text", &a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent)
-	x = a.scaleControl(x, y, "MsgBox", &a.boxPct, config.ScaleStepPercent, config.MinChatBoxPercent, config.MaxChatBoxPercent)
-	x = a.scaleControl(x, y, "Log", &a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent)
-	_ = a.scaleControl(x, y, "Input", &a.inputPct, config.ScaleStepPercent, config.MinInputPercent, config.MaxInputPercent)
+	if !a.panelHidden(panelKnobs) {
+		x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
+		x = a.scaleControl(x, y, "Text", &a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent)
+		x = a.scaleControl(x, y, "MsgBox", &a.boxPct, config.ScaleStepPercent, config.MinChatBoxPercent, config.MaxChatBoxPercent)
+		x = a.scaleControl(x, y, "Log", &a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent)
+		_ = a.scaleControl(x, y, "Input", &a.inputPct, config.ScaleStepPercent, config.MinInputPercent, config.MaxInputPercent)
+	}
 
 	// Row 2: utility buttons (their own row so nothing overlaps at any
 	// viewport scale or window width).
@@ -1025,12 +1089,35 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.Disconnect()
 		return
 	}
+	x += 116
+	evLabel := "Evidence"
+	if a.evidPresent {
+		evLabel = "Evidence ●" // armed: next IC message presents it
+	}
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
+		a.showEvid = true
+	}
+	x += 106
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
+		a.showModcall = true
+	}
+	x += 86
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
+		a.showUICfg = true
+	}
+	x += 56
+	_ = a.drawPosCycler(x, y2)
+
+	// Judge strip (JD grant, or the judge stand when pos-dependent).
+	icY := y2 + btnH + 6
+	if a.judgeVisible() {
+		icY += a.drawJudgeRow(pad, icY)
+	}
 
 	// IC input row (height follows the Box knob), led by the AO2 text
 	// color cycler: the swatch shows the active wire color (MS text_color
 	// 0–9); left-click next, right-click previous.
 	fH := a.inputFieldH()
-	icY := y2 + btnH + 6
 	swatch := sdl.Rect{X: pad, Y: icY, W: 26, H: fH}
 	c.Fill(swatch, render.TextColor(a.icColor))
 	c.Border(swatch, ColPanelHi)
@@ -1049,28 +1136,32 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 
 	// Emote row.
 	emoteY := icY + fH + 6
-	a.drawEmoteRow(sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}, vp)
+	if !a.panelHidden(panelEmotes) {
+		a.drawEmoteRow(sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}, vp)
+	}
 
 	// OOC row at the very bottom: name + a FULL-width input (the squished
 	// half-width box is gone — history lives in the OOC tab now).
 	oocY := h - fH - 4
-	nameW := int32(120)
-	prevOOC := a.oocName
-	a.oocName, _ = c.TextField("oocname", sdl.Rect{X: pad, Y: oocY, W: nameW, H: fH}, a.oocName, "OOC name")
-	if a.oocName != prevOOC {
-		a.d.Prefs.SetOOCName(a.oocName) // permanent OOC name
-	}
-	var sendOOC bool
-	a.oocInput, sendOOC = c.TextField("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w - nameW - 3*pad - 6, H: fH}, a.oocInput, "OOC chat... (full history in the OOC tab)")
-	if sendOOC && strings.TrimSpace(a.oocInput) != "" {
-		a.sess.SendOOC(a.oocName, a.oocInput)
-		a.oocInput = ""
-	}
-	// Ctrl+wheel over the OOC row: same log/OOC text-size shortcut.
-	if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: pad, Y: oocY, W: w - 2*pad, H: fH}) {
-		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
-			config.MinLogScalePercent, config.MaxLogScalePercent)
-		a.saveLayout()
+	if !a.panelHidden(panelOOC) {
+		nameW := int32(120)
+		prevOOC := a.oocName
+		a.oocName, _ = c.TextField("oocname", sdl.Rect{X: pad, Y: oocY, W: nameW, H: fH}, a.oocName, "OOC name")
+		if a.oocName != prevOOC {
+			a.d.Prefs.SetOOCName(a.oocName) // permanent OOC name
+		}
+		var sendOOC bool
+		a.oocInput, sendOOC = c.TextField("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w - nameW - 3*pad - 6, H: fH}, a.oocInput, "OOC chat... (full history in the OOC tab)")
+		if sendOOC && strings.TrimSpace(a.oocInput) != "" {
+			a.sess.SendOOC(a.oocName, a.oocInput)
+			a.oocInput = ""
+		}
+		// Ctrl+wheel over the OOC row: same log/OOC text-size shortcut.
+		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: pad, Y: oocY, W: w - 2*pad, H: fH}) {
+			a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
+				config.MinLogScalePercent, config.MaxLogScalePercent)
+			a.saveLayout()
+		}
 	}
 	// Missing-asset warning (spec §4: visible in-client, names what was
 	// tried so "enable fallbacks" is an informed fix, not a guess).
@@ -1124,6 +1215,9 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 			a.emoteIdx = i
 			// Pressed art for the new selection, before next frame draws it.
 			a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (selected)
+			// Typing-driven speculation: the pick is the strongest signal
+			// of what the next outgoing message needs — warm it all now.
+			a.speculateEmote(me, e)
 		}
 		// Full-size preview after a 3 s hover (right-click = instant): the
 		// TALKING sprite — what actually plays when this emote is sent.
@@ -1356,13 +1450,28 @@ func (a *App) sendIC(shout int) {
 	}
 	hasPre := emote.Preanim != "" && emote.Preanim != "-"
 	deskMod := 1
+	// Per-emote audio from char.ini ([SoundN]/[SoundT]/[SoundL]); "1" is
+	// the AO wire value for silence (get_sfx_name's empty default).
+	sfxName := emote.SFXName
+	if sfxName == "" {
+		sfxName = "1"
+	}
+	// Per-emote blip override (2.9.1 custom_blips), else the character's.
+	blip := emote.Blip
+	if blip == "" {
+		blip = a.charBlips
+	}
 	out := protocol.OutgoingMS{
-		DeskMod:  deskMod,
-		PreEmote: emote.Preanim,
-		CharName: a.activeCharName(), // iniswap: the wire carries the custom folder
-		Emote:    emote.Anim,
-		Message:  text,
-		Side:     a.mySide(),
+		DeskMod:    deskMod,
+		PreEmote:   emote.Preanim,
+		CharName:   a.activeCharName(), // iniswap: the wire carries the custom folder
+		Emote:      emote.Anim,
+		Message:    text,
+		SFXName:    sfxName,
+		SFXDelay:   emote.SFXDelay,
+		LoopingSFX: emote.SFXLoop,
+		Blipname:   blip,
+		Side:       a.mySide(),
 		// Never ship raw char.ini emote mods: legacy 2/3/4 values make
 		// schema-strict clients drop the whole message.
 		EmoteMod:  protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, false, a.sess.Features),
@@ -1376,9 +1485,36 @@ func (a *App) sendIC(shout int) {
 		OffsetY:   a.pairOffY,
 		Flip:      a.pairFlip,
 	}
+	// Named custom interjection (2.10): the wire carries "4&<stem>"
+	// (formatObjection assembles it; courtroom.cpp:2142).
+	if shout == protocol.ShoutCustom && a.customIdx >= 0 && a.customIdx < len(a.customShouts) {
+		out.CustomShout = a.customShouts[a.customIdx].File
+	}
+	// Armed evidence rides this message; the wire shifts ids by 1 because
+	// 0 means "no evidence" (legacy standard, courtroom.cpp:2160).
+	if a.evidPresent && a.evidIdx >= 0 && a.evidIdx < len(a.sess.Evidence) {
+		out.EvidenceID = a.evidIdx + 1
+	}
 	a.sess.SendChat(out)
+	a.evidPresent = false // presenting is one-shot
 	a.lastICSend = time.Now()
 	a.icInput = ""
+}
+
+// areaStatusColor keys the area row color to the tsuserver status set.
+func areaStatusColor(status string) sdl.Color {
+	switch strings.ToUpper(status) {
+	case "LOOKING-FOR-PLAYERS", "LFP":
+		return sdl.Color{R: 110, G: 230, B: 110, A: 255} // recruiting: green
+	case "CASING", "RP", "GAMING":
+		return sdl.Color{R: 250, G: 190, B: 80, A: 255} // busy: amber
+	case "RECESS":
+		return sdl.Color{R: 120, G: 180, B: 255, A: 255} // paused: blue
+	case "IDLE":
+		return ColTextDim
+	default:
+		return ColText
+	}
 }
 
 // mySide is OUR position: the char.ini side (or /pos override) — never
@@ -1429,12 +1565,14 @@ func (a *App) handleChatCommand(text string) bool {
 }
 
 // renderRaster rasterizes the current message with its AO color.
-func renderRaster(a *App, sc *courtroom.Scene, wrapW int32) (*render.MessageRaster, error) {
+func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool) (*render.MessageRaster, error) {
 	// The chat zoom font: rebuilt only when the Text knob changes. The
 	// theme's "message" color replaces only AO's DEFAULT color (code 0)
-	// — explicit message colors (green/red/...) always win.
+	// — explicit message colors (green/red/...) always win — and only
+	// while the theme's own chatbox skin is drawn: theme colors assume
+	// their skin (black text on white paper), not our dark flat panel.
 	col := render.TextColor(sc.TextColor)
-	if sc.TextColor == 0 && a.themeHasMsg {
+	if skinned && sc.TextColor == 0 && a.themeHasMsg {
 		col = a.themeMsgCol
 	}
 	return render.Rasterize(a.ctx.Ren, a.ctx.ChatFont(a.chatPct), sc.MessageText, wrapW, col)

@@ -56,6 +56,12 @@ const (
 // frame only) — never an extra network probe (spec §4).
 const defaultPreferAnimated = true
 
+// defaultFormatAutoDetect ships ON: servers publish their own format mix
+// in extensions.json (webAO convention) and seeding from it beats blind
+// probing; manual per-type tuning still governs everything the manifest
+// doesn't cover.
+const defaultFormatAutoDetect = true
+
 // defaultEmoteButtonImages ships the courtroom emote picker as image
 // buttons (characters/<char>/emotions/button<N>) rather than text chips.
 const defaultEmoteButtonImages = true
@@ -144,6 +150,8 @@ type AssetPreferences struct {
 	PreferAnimated         bool                      `json:"preferAnimated"`
 	EmoteButtonImages      bool                      `json:"emoteButtonImages"`
 	SmoothScaling          bool                      `json:"smoothScaling"`
+	DebugOverlay           bool                      `json:"debugOverlay"`
+	AutoDetectFormats      bool                      `json:"formatAutoDetect"`
 	ThemeName              string                    `json:"themeName"`
 	ThemeDir               string                    `json:"themeDir"`
 	OOCName                string                    `json:"oocName"`
@@ -170,6 +178,10 @@ type AssetPreferences struct {
 	LocalAssetsPaths       []string                  `json:"localAssetsPaths"`
 	Favorites              []FavoriteServer          `json:"favorites"`
 	Wardrobe               []string                  `json:"wardrobe"`
+	CasingEnabled          bool                      `json:"casingEnabled"`
+	CasingRoles            int                       `json:"casingRoles"`
+	HiddenPanelIDs         []string                  `json:"hiddenPanels"`
+	ServerWarm             map[string]ServerWarmInfo `json:"serverWarm"`
 
 	mu        sync.RWMutex
 	path      string
@@ -194,6 +206,8 @@ type prefsJSON struct {
 	PreferAnimated         *bool  `json:"preferAnimated"`
 	EmoteButtonImages      *bool  `json:"emoteButtonImages"`
 	SmoothScaling          *bool  `json:"smoothScaling"`
+	DebugOverlay           bool   `json:"debugOverlay"`
+	FormatAutoDetect       *bool  `json:"formatAutoDetect"` // absent = default ON
 	ThemeName              string `json:"themeName"`
 	ThemeDir               string `json:"themeDir"`
 	OOCName                string `json:"oocName"`
@@ -222,7 +236,22 @@ type prefsJSON struct {
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
+	CasingEnabled      bool                      `json:"casingEnabled"`
+	CasingRoles        int                       `json:"casingRoles"`
+	HiddenPanels       []string                  `json:"hiddenPanels"`
+	ServerWarm         map[string]ServerWarmInfo `json:"serverWarm"`
 }
+
+// ServerWarmInfo remembers what a server looked like last visit, so a
+// reconnect can pre-warm it (last character used, last background seen).
+type ServerWarmInfo struct {
+	Char       string `json:"char,omitempty"`
+	Background string `json:"background,omitempty"`
+}
+
+// serverWarmCap bounds the per-server warm table (rule §17.4); when full,
+// new servers simply don't record until old entries are cleared.
+const serverWarmCap = 64
 
 // FavoriteServer is a starred or direct-connect server entry (the server
 // phone book). URL is the full ws:// or wss:// connection address, which
@@ -270,6 +299,7 @@ func load(path string) (*AssetPreferences, error) {
 		PreferAnimated:    defaultPreferAnimated,
 		EmoteButtonImages: defaultEmoteButtonImages,
 		SmoothScaling:     defaultSmoothScaling,
+		AutoDetectFormats: defaultFormatAutoDetect,
 		ViewportPct:       DefaultViewportPercent,
 		ChatScalePct:      DefaultScalePercent,
 		ChatBoxPct:        DefaultScalePercent,
@@ -309,6 +339,10 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.SmoothScaling != nil {
 		p.SmoothScaling = *onDisk.SmoothScaling
+	}
+	p.DebugOverlay = onDisk.DebugOverlay
+	if onDisk.FormatAutoDetect != nil {
+		p.AutoDetectFormats = *onDisk.FormatAutoDetect
 	}
 	p.ThemeName = onDisk.ThemeName
 	p.ThemeDir = onDisk.ThemeDir
@@ -372,6 +406,12 @@ func load(path string) (*AssetPreferences, error) {
 		onDisk.Wardrobe = onDisk.Wardrobe[:WardrobeCap]
 	}
 	p.Wardrobe = onDisk.Wardrobe
+	p.CasingEnabled = onDisk.CasingEnabled
+	p.CasingRoles = onDisk.CasingRoles
+	p.HiddenPanelIDs = onDisk.HiddenPanels
+	if onDisk.ServerWarm != nil {
+		p.ServerWarm = onDisk.ServerWarm
+	}
 	return p, nil
 }
 
@@ -720,6 +760,112 @@ func (p *AssetPreferences) SetTheme(name, dir string) {
 	p.markDirty()
 }
 
+// --- Debug overlay -------------------------------------------------------------
+
+// DebugOverlayEnabled reports whether the on-screen failure log draws.
+func (p *AssetPreferences) DebugOverlayEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DebugOverlay
+}
+
+// SetDebugOverlay toggles the on-screen failure log.
+func (p *AssetPreferences) SetDebugOverlay(enabled bool) {
+	p.mu.Lock()
+	if p.DebugOverlay == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.DebugOverlay = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Casing alerts ---------------------------------------------------------------
+
+// Casing reports the CASEA subscription: enabled + a CaseRole* bitmask
+// (the bit layout is internal/courtroom's; config just persists it).
+func (p *AssetPreferences) Casing() (enabled bool, roles int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CasingEnabled, p.CasingRoles
+}
+
+// SetCasing stores the CASEA subscription.
+func (p *AssetPreferences) SetCasing(enabled bool, roles int) {
+	p.mu.Lock()
+	if p.CasingEnabled == enabled && p.CasingRoles == roles {
+		p.mu.Unlock()
+		return
+	}
+	p.CasingEnabled = enabled
+	p.CasingRoles = roles
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Per-server warm state -----------------------------------------------------------
+
+// ServerWarmInfoFor reports the remembered state for a server key.
+func (p *AssetPreferences) ServerWarmInfoFor(key string) ServerWarmInfo {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ServerWarm[key]
+}
+
+// RememberServerChar records the character last used on a server.
+func (p *AssetPreferences) RememberServerChar(key, char string) {
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.Char = char })
+}
+
+// RememberServerBackground records the background last seen on a server.
+func (p *AssetPreferences) RememberServerBackground(key, bg string) {
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.Background = bg })
+}
+
+func (p *AssetPreferences) rememberServer(key string, set func(*ServerWarmInfo)) {
+	if key == "" {
+		return
+	}
+	p.mu.Lock()
+	if p.ServerWarm == nil {
+		p.ServerWarm = map[string]ServerWarmInfo{}
+	}
+	w, exists := p.ServerWarm[key]
+	if !exists && len(p.ServerWarm) >= serverWarmCap {
+		p.mu.Unlock()
+		return // table full; never unbounded
+	}
+	before := w
+	set(&w)
+	if exists && w == before {
+		p.mu.Unlock()
+		return
+	}
+	p.ServerWarm[key] = w
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Hidden UI panels ---------------------------------------------------------------
+
+// HiddenPanels reports the courtroom chrome regions the user hid.
+func (p *AssetPreferences) HiddenPanels() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]string, len(p.HiddenPanelIDs))
+	copy(out, p.HiddenPanelIDs)
+	return out
+}
+
+// SetHiddenPanels replaces the hidden-chrome set.
+func (p *AssetPreferences) SetHiddenPanels(ids []string) {
+	p.mu.Lock()
+	p.HiddenPanelIDs = append([]string(nil), ids...)
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // --- OOC name -----------------------------------------------------------------
 
 // SavedOOCName reports the persisted OOC chat name.
@@ -932,6 +1078,58 @@ func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 	p.LearnedFormats[key] = []string{ext}
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// FormatAutoDetect reports whether the client fetches extensions.json on
+// connect to seed that server's formats (default ON).
+func (p *AssetPreferences) FormatAutoDetect() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AutoDetectFormats
+}
+
+// SetFormatAutoDetect toggles manifest-driven format detection.
+func (p *AssetPreferences) SetFormatAutoDetect(enabled bool) {
+	p.mu.Lock()
+	if p.AutoDetectFormats == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.AutoDetectFormats = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ExportLearnedJSON snapshots the learned-format table as indented JSON —
+// one player's warm state can seed another's (Settings → Export).
+func (p *AssetPreferences) ExportLearnedJSON() ([]byte, error) {
+	return json.MarshalIndent(p.LearnedSnapshot(), "", jsonMarshalIndent)
+}
+
+// ImportLearnedJSON merges a learned-format export into this table
+// (imported entries win) and reports how many entries landed.
+func (p *AssetPreferences) ImportLearnedJSON(data []byte) (int, error) {
+	var in map[string][]string
+	if err := json.Unmarshal(data, &in); err != nil {
+		return 0, fmt.Errorf("config: parsing learned-format import: %w", err)
+	}
+	p.mu.Lock()
+	if p.LearnedFormats == nil {
+		p.LearnedFormats = map[string][]string{}
+	}
+	n := 0
+	for k, v := range in {
+		if k == "" || len(v) == 0 {
+			continue
+		}
+		p.LearnedFormats[k] = cloneStrings(v)
+		n++
+	}
+	p.mu.Unlock()
+	if n > 0 {
+		p.markDirty()
+	}
+	return n, nil
 }
 
 // LearnedSnapshot returns a deep copy of the learned-format table, used to

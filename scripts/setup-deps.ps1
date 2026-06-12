@@ -1,5 +1,6 @@
 # AsyncAO Windows dependency bootstrap: installs MSYS2 (if missing) and the
-# UCRT64 packages CGO needs (gcc, SDL2, SDL2_ttf, SDL2_mixer, libwebp).
+# UCRT64 packages CGO needs (gcc, SDL2, SDL2_ttf, SDL2_mixer, libwebp,
+# libavif).
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts\setup-deps.ps1
 $ErrorActionPreference = "Stop"
 
@@ -15,7 +16,8 @@ $packages = @(
     "mingw-w64-ucrt-x86_64-SDL2",
     "mingw-w64-ucrt-x86_64-SDL2_ttf",
     "mingw-w64-ucrt-x86_64-SDL2_mixer",
-    "mingw-w64-ucrt-x86_64-libwebp"
+    "mingw-w64-ucrt-x86_64-libwebp",
+    "mingw-w64-ucrt-x86_64-libavif"
 ) -join " "
 
 & $bash -lc "pacman -Sy --noconfirm --noprogressbar && pacman -S --noconfirm --needed --noprogressbar $packages"

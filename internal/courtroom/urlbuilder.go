@@ -21,6 +21,8 @@ const (
 	soundsBlips     = "sounds/blips/"
 	soundsMusic     = "sounds/music/"
 	miscDefaultDir  = "misc/default/"
+	evidenceDir     = "evidence/"
+	customObjDir    = "custom_objections/"
 	emotionsDir     = "emotions/"
 	emoteButtonStem = "button"
 	charIconStem    = "char_icon"
@@ -56,6 +58,18 @@ func NewURLBuilder(origin string) URLBuilder {
 
 // Origin returns the normalized origin.
 func (u URLBuilder) Origin() string { return u.origin }
+
+// Evidence returns the FULL evidence image URL: LE image names carry their
+// extension ("knife.png" — AO2-Client get_evidence_path serves them
+// verbatim from base/evidence/); bare legacy names default to .png. Use
+// Manager.PrefetchExact: no format probing, exactly one fetch.
+// AssetType: Misc (exact URL)
+func (u URLBuilder) Evidence(image string) string {
+	if !strings.Contains(image, ".") {
+		image += ".png"
+	}
+	return u.origin + evidenceDir + seg(image)
+}
 
 // encodeURIRestores maps Go's percent-escapes back to the literal marks
 // JavaScript's encodeURI leaves untouched — webAO is the URL reference, and
@@ -123,6 +137,18 @@ func (u URLBuilder) ShoutBubble(character, shoutName string, custom bool) string
 		stem = customShoutStem
 	}
 	return u.origin + charactersDir + seg(character) + "/" + seg(stem)
+}
+
+// NamedCustomShout returns a 2.10 named custom interjection base
+// (characters/<char>/custom_objections/<stem>). Wire names from other
+// clients may carry a file extension (their dir scan keeps it) — strip it,
+// the resolver owns format probing.
+// AssetType: ShoutBubble
+func (u URLBuilder) NamedCustomShout(character, name string) string {
+	if dot := strings.LastIndexByte(name, '.'); dot > 0 {
+		name = name[:dot]
+	}
+	return u.origin + charactersDir + seg(character) + "/" + customObjDir + seg(name)
 }
 
 // DefaultShoutBubble returns the misc/default fallback bubble base.

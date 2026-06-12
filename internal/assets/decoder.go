@@ -259,6 +259,8 @@ func DecodeImage(data []byte, playAnimations bool) (*Decoded, error) {
 		return decodeJPEG(data)
 	case FormatWebP, FormatWebPAnim:
 		return decodeWebP(data, playAnimations)
+	case FormatAVIF, FormatAVIFAnim:
+		return decodeAVIF(data, playAnimations)
 	default:
 		return nil, fmt.Errorf("assets: unrecognized image payload (%d bytes, magic %s)", len(data), Sniff(data))
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -34,6 +35,10 @@ type settingsState struct {
 	// here from goroutines (never block or stat on the render thread).
 	folderRes  chan string
 	browseBusy bool
+
+	// ioRes carries one-line results of off-thread file ops (learned
+	// format export/import) back to the status line.
+	ioRes chan string
 }
 
 // themeScan is one scan result: the theme names found, the NORMALIZED
@@ -49,6 +54,7 @@ type themeScan struct {
 var settings = settingsState{
 	themeRes:  make(chan themeScan, 1),
 	folderRes: make(chan string, 1),
+	ioRes:     make(chan string, 1),
 }
 
 // imageTypes get the per-format toggle treatment.
@@ -108,6 +114,11 @@ func (a *App) drawSettings(w, h int32) {
 	emoteImgs := a.d.Prefs.EmoteButtonImagesEnabled()
 	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats below)", emoteImgs); next != emoteImgs {
 		a.d.Prefs.SetEmoteButtonImages(next)
+	}
+	y += 26
+	dbg := a.d.Prefs.DebugOverlayEnabled()
+	if next := c.Checkbox(pad, y, "Debug overlay (live log of failures: missing assets, theme problems, unhandled server packets)", dbg); next != dbg {
+		a.d.Prefs.SetDebugOverlay(next)
 	}
 	y += 26
 	smooth := a.d.Prefs.SmoothScalingEnabled()
@@ -172,6 +183,23 @@ func (a *App) drawSettings(w, h int32) {
 	a.pollFolderPick()
 	y += 36
 
+	// Live preview: the actual applied chatbox skin + theme text colors,
+	// so "did the theme land?" is answerable without joining a server.
+	y = a.drawThemePreview(y)
+
+	// Format detection mode: the server manifest by default, pure manual
+	// probing when switched off (the rows below apply in BOTH modes — in
+	// auto they cover servers without a manifest and miss-path fallbacks).
+	auto := a.d.Prefs.FormatAutoDetect()
+	if next := c.Checkbox(pad, y, "Auto-detect formats from the server's extensions.json on connect (recommended; manual tuning below still applies)", auto); next != auto {
+		a.d.Prefs.SetFormatAutoDetect(next)
+		if next {
+			a.manifestFor = "" // re-check the current server right away
+			a.fetchManifestAsync()
+		}
+	}
+	y += 26
+
 	// Per-type format toggles.
 	c.Label(pad, y, "Image formats probed per asset type (defaults: char_icon=PNG only, everything else=WebP only):", ColTextDim)
 	y += 22
@@ -205,6 +233,9 @@ func (a *App) drawSettings(w, h int32) {
 		a.d.Prefs.SetTiming(crawl, stay, rate)
 		a.applyTimingToRoom()
 	}
+
+	// Case announcements (CASEA, tsuserver-family): subscribe by role.
+	y = a.drawCasingRow(y)
 
 	// Master list override (blank = official). Refresh in the lobby applies.
 	c.Label(pad, y+4, "Master list:", ColText)
@@ -266,10 +297,82 @@ func (a *App) drawSettings(w, h int32) {
 		a.d.Resolver.InvalidateAll()
 		settings.statusLine = "Learned formats cleared."
 	}
+	// Learned-format portability: one player's warm state seeds another's.
+	if c.Button(sdl.Rect{X: pad + 380, Y: y, W: 150, H: btnH}, "Export learned") {
+		exportLearnedAsync(a)
+	}
+	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 150, H: btnH}, "Import learned") {
+		importLearnedAsync(a)
+	}
 	y += 36
+	select {
+	case line := <-settings.ioRes:
+		settings.statusLine = line
+	default:
+	}
 	if settings.statusLine != "" {
 		c.Label(pad, y, settings.statusLine, ColAccent)
 	}
+}
+
+// learnedExportFileName sits next to the executable — easy to hand to a
+// friend, easy to find.
+const learnedExportFileName = "learned-formats.json"
+
+func learnedExportPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(exe), learnedExportFileName), nil
+}
+
+// exportLearnedAsync writes the learned table off-thread (§17.2: no sync
+// disk I/O on the render thread) and reports on the status line.
+func exportLearnedAsync(a *App) {
+	go func() {
+		path, err := learnedExportPath()
+		if err == nil {
+			var data []byte
+			if data, err = a.d.Prefs.ExportLearnedJSON(); err == nil {
+				err = os.WriteFile(path, data, 0o644)
+			}
+		}
+		line := "Learned formats exported to " + path
+		if err != nil {
+			line = "Export failed: " + err.Error()
+		}
+		select {
+		case settings.ioRes <- line:
+		default:
+		}
+	}()
+}
+
+// importLearnedAsync merges a learned-formats export and republishes the
+// resolver snapshot (its table swap is atomic — safe off-thread).
+func importLearnedAsync(a *App) {
+	go func() {
+		var line string
+		path, err := learnedExportPath()
+		if err == nil {
+			var data []byte
+			if data, err = os.ReadFile(path); err == nil {
+				var n int
+				if n, err = a.d.Prefs.ImportLearnedJSON(data); err == nil {
+					a.d.Resolver.WarmFromPrefs()
+					line = fmt.Sprintf("Imported %d learned entries from %s", n, path)
+				}
+			}
+		}
+		if err != nil {
+			line = "Import failed: " + err.Error() + " (expected " + learnedExportFileName + " beside the exe)"
+		}
+		select {
+		case settings.ioRes <- line:
+		default:
+		}
+	}()
 }
 
 // drawTypeFormatRow renders the per-type format checkboxes; ticking builds a
@@ -347,7 +450,84 @@ func containsExt(list []string, ext string) bool {
 	return false
 }
 
+// casingRoles drives the per-role subscription checkboxes (wire order).
+var casingRoles = []struct {
+	bit   int
+	label string
+}{
+	{courtroom.CaseRoleDef, "def"},
+	{courtroom.CaseRolePro, "pro"},
+	{courtroom.CaseRoleJudge, "judge"},
+	{courtroom.CaseRoleJury, "jury"},
+	{courtroom.CaseRoleSteno, "steno"},
+}
+
+// drawCasingRow renders the case-announcement subscription (SETCASE roles);
+// changes re-subscribe live when connected. Returns the next y.
+func (a *App) drawCasingRow(y int32) int32 {
+	c := a.ctx
+	enabled, roles := a.d.Prefs.Casing()
+	changed := false
+	if next := c.Checkbox(pad, y, "Case announcements (get notified when someone needs your role)", enabled); next != enabled {
+		enabled = next
+		changed = true
+	}
+	y += 26
+	if enabled {
+		x := pad + 20
+		for _, r := range casingRoles {
+			on := roles&r.bit != 0
+			if next := c.Checkbox(x, y, r.label, on); next != on {
+				roles ^= r.bit
+				changed = true
+			}
+			x += c.TextWidth(r.label) + 52
+		}
+		y += 26
+	}
+	if changed {
+		a.d.Prefs.SetCasing(enabled, roles)
+		a.sendCasingPrefs() // live re-subscribe (no-op when disconnected)
+	}
+	return y + 8
+}
+
 // --- theme picker -----------------------------------------------------------
+
+// drawThemePreview renders the applied theme's chatbox skin (or the flat
+// fallback panel) with sample text in the theme's colors — instant visual
+// proof of what the current pick actually changes. Returns the next y.
+func (a *App) drawThemePreview(y int32) int32 {
+	c := a.ctx
+	const prevW, prevH = 340, 70
+	prev := sdl.Rect{X: pad, Y: y, W: prevW, H: prevH}
+	skinned := false
+	if page, ok := a.themePage(themeStemChatbox); ok {
+		_ = c.Ren.Copy(page.Frames[0], nil, &prev)
+		skinned = true
+	}
+	if !skinned {
+		c.Fill(prev, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+		c.Border(prev, ColAccent)
+	}
+	// Same skin-gated color rule as the live chatbox (readability).
+	nameCol := ColAccent
+	if skinned && a.themeHasName {
+		nameCol = a.themeNameCol
+	}
+	msgCol := ColText
+	if skinned && a.themeHasMsg {
+		msgCol = a.themeMsgCol
+	}
+	c.Label(prev.X+8, prev.Y+6, "Showname", nameCol)
+	c.Label(prev.X+8, prev.Y+30, "Message text preview.", msgCol)
+	label := "preview: theme chatbox skin"
+	if !skinned {
+		label = "preview: no chatbox skin in this theme (flat panel)"
+	}
+	c.Label(prev.X+prevW+12, prev.Y+6, label, ColTextDim)
+	return y + prevH + 10
+}
 
 // cycleTheme steps through the scanned theme list and persists the pick.
 func (a *App) cycleTheme(step int) {
@@ -421,6 +601,9 @@ var themeINIFiles = []string{theme.DesignFileName, theme.FontsFileName, theme.So
 // theme inside it (returned as pickName and auto-selected). Runs off the
 // render thread (it stats directories).
 func normalizeThemeRoot(path string) (root, pickName string) {
+	// Explorer's "Copy as path" wraps in quotes — strip them or every
+	// stat below misses and the root never normalizes.
+	path = strings.Trim(strings.TrimSpace(path), `"'`)
 	if path == "" {
 		return "", ""
 	}

@@ -77,6 +77,9 @@ type cachedText struct {
 // Ctx is the per-frame UI context: input snapshot, fonts, text cache, focus.
 type Ctx struct {
 	Ren *sdl.Renderer
+	// win backs FlashWindow (taskbar attention on modcalls/case alerts);
+	// nil in headless tests — flashing is best-effort everywhere.
+	win *sdl.Window
 
 	font    *ttf.Font
 	fontBig *ttf.Font
@@ -101,13 +104,14 @@ type Ctx struct {
 	backspace      bool
 	enter          bool
 	tabPressed     bool
-	pasted         string // Ctrl+V clipboard text (flattened to one line)
-	copyReq        bool   // Ctrl+C: focused field copies its value
-	cutReq         bool   // Ctrl+X: focused field copies, then clears
-	selectAll      bool   // Ctrl+A armed: next edit replaces the whole value
-	mouseDown      bool   // left button currently held (event-tracked)
-	dragID         string // widget owning the active drag ("" = none)
-	dropped        string // SDL_DROPFILE path this frame ("" = none)
+	pasted         string      // Ctrl+V clipboard text (flattened to one line)
+	copyReq        bool        // Ctrl+C: focused field copies its value
+	cutReq         bool        // Ctrl+X: focused field copies, then clears
+	selectAll      bool        // Ctrl+A armed: next edit replaces the whole value
+	mouseDown      bool        // left button currently held (event-tracked)
+	dragID         string      // widget owning the active drag ("" = none)
+	dropped        string      // SDL_DROPFILE path this frame ("" = none)
+	hotkey         sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
 
 	focusID  string
 	caretOn  bool
@@ -138,6 +142,17 @@ func NewCtx(ren *sdl.Renderer) (*Ctx, error) {
 		textCache:  map[textKey]cachedText{},
 		widthCache: map[string]int32{},
 	}, nil
+}
+
+// SetWindow attaches the SDL window for attention requests (FlashWindow).
+func (c *Ctx) SetWindow(win *sdl.Window) { c.win = win }
+
+// FlashWindow requests user attention until the window regains focus —
+// AO2-Client's QApplication::alert on modcalls/case announcements.
+func (c *Ctx) FlashWindow() {
+	if c.win != nil {
+		_ = c.win.Flash(sdl.FLASH_UNTIL_FOCUSED)
+	}
 }
 
 func loadEmbeddedFont(size int) (*ttf.Font, error) {
@@ -199,6 +214,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.copyReq = false
 	c.cutReq = false
 	c.dropped = ""
+	c.hotkey = 0
 	x, y, _ := sdl.GetMouseState()
 	c.mouseX, c.mouseY = c.toLogical(x), c.toLogical(y)
 	c.ctrlHeld = sdl.GetModState()&sdl.KMOD_CTRL != 0
@@ -260,6 +276,10 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 				// pasted text replaces the whole value, backspace clears
 				// it, Ctrl+C/X already act on the full value.
 				c.selectAll = true
+			default:
+				// Everything else is the app's: configurable Ctrl-chord
+				// hotkeys (shouts, pos cycle, screenshot, ...).
+				c.hotkey = e.Keysym.Sym
 			}
 			return
 		}

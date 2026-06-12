@@ -151,16 +151,20 @@ func TestPrefetcherPredictsAlternatingSpeakers(t *testing.T) {
 		"/characters/phoenix/(a)normal.webp": sprite,
 	})
 	rig := newRig(t, network.NewClient(), false)
-	pf := NewPrefetcher(rig.manager, func(char string) string {
-		return cs.srv.URL + "/characters/" + char + "/(a)normal"
+	pf := NewPrefetcher(rig.manager, func(char, emote string) string {
+		if emote == "" {
+			emote = "normal"
+		}
+		return cs.srv.URL + "/characters/" + char + "/(a)" + emote
 	})
 
-	// Alternating conversation: phoenix ↔ maya.
+	// Alternating conversation: phoenix ↔ maya (constant emote — the
+	// chain has no transitions, so the default sprite stays predicted).
 	for i := 0; i < 6; i++ {
 		if i%2 == 0 {
-			pf.OnMessage("phoenix", "")
+			pf.OnMessage("phoenix", "", "normal")
 		} else {
-			pf.OnMessage("maya", "")
+			pf.OnMessage("maya", "", "normal")
 		}
 	}
 	// After "phoenix" speaks, "maya" must be predicted (and prefetched).
@@ -179,14 +183,14 @@ func TestPrefetcherPairPartnerFirstGuess(t *testing.T) {
 	rig := newRig(t, network.NewClient(), false)
 	var requested []string
 	var mu sync.Mutex
-	pf := NewPrefetcher(rig.manager, func(char string) string {
+	pf := NewPrefetcher(rig.manager, func(char, emote string) string {
 		mu.Lock()
 		requested = append(requested, char)
 		mu.Unlock()
 		return cs.srv.URL + "/characters/" + char + "/(a)normal"
 	})
 	// No history: the active pair partner is the best guess.
-	pf.OnMessage("phoenix", "edgeworth")
+	pf.OnMessage("phoenix", "edgeworth", "normal")
 	mu.Lock()
 	defer mu.Unlock()
 	if len(requested) != 1 || requested[0] != "edgeworth" {

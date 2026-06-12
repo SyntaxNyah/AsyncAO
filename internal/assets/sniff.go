@@ -14,7 +14,9 @@ const (
 	FormatWebPAnim // webp payload with the VP8X ANIM flag set
 	FormatGIF
 	FormatJPEG
-	FormatOgg // Ogg container: Vorbis or Opus
+	FormatAVIF     // ISOBMFF with an avif brand (still image)
+	FormatAVIFAnim // ISOBMFF with the avis brand (image sequence)
+	FormatOgg      // Ogg container: Vorbis or Opus
 	FormatWAV
 	FormatMP3
 )
@@ -34,6 +36,10 @@ func (f Format) String() string {
 		return "gif"
 	case FormatJPEG:
 		return "jpeg"
+	case FormatAVIF:
+		return "avif"
+	case FormatAVIFAnim:
+		return "avif(animated)"
 	case FormatOgg:
 		return "ogg"
 	case FormatWAV:
@@ -48,7 +54,8 @@ func (f Format) String() string {
 // IsImage reports whether the format goes through the image decode pool.
 func (f Format) IsImage() bool {
 	switch f {
-	case FormatPNG, FormatAPNG, FormatWebP, FormatWebPAnim, FormatGIF, FormatJPEG:
+	case FormatPNG, FormatAPNG, FormatWebP, FormatWebPAnim, FormatGIF, FormatJPEG,
+		FormatAVIF, FormatAVIFAnim:
 		return true
 	default:
 		return false
@@ -100,6 +107,11 @@ func Sniff(data []byte) Format {
 		return FormatGIF
 	case data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF:
 		return FormatJPEG
+	case isAVIF(data):
+		if avifIsSequence(data) {
+			return FormatAVIFAnim
+		}
+		return FormatAVIF
 	case hasPrefix(data, oggSignature):
 		return FormatOgg
 	case hasPrefix(data, id3Signature):
@@ -142,6 +154,52 @@ func pngHasACTL(data []byte) bool {
 			return false
 		}
 		offset = next
+	}
+	return false
+}
+
+// AVIF detection: an ISOBMFF "ftyp" box whose major brand or compatible
+// brands list contains avif/avis. The brands sit right after the box
+// header (size + "ftyp" + major + minor + compat...), so scanning the
+// ftyp box body covers both placements.
+const (
+	avifFtypOffset  = 4  // "ftyp" fourcc position
+	avifBrandOffset = 8  // major brand position
+	avifBrandLen    = 4  // each brand is one fourcc
+	avifScanMax     = 64 // bound the compat-brand scan (hostile sizes)
+)
+
+func isAVIF(data []byte) bool {
+	if len(data) < avifBrandOffset+avifBrandLen || string(data[avifFtypOffset:avifFtypOffset+4]) != "ftyp" {
+		return false
+	}
+	return avifScanBrands(data, "avif") || avifScanBrands(data, "avis")
+}
+
+// avifIsSequence reports the animated variant: the avis brand marks an
+// AV1 image sequence (animation is a brand property at this layer; frame
+// truth still comes from the decoder, like WebP's VP8X flag).
+func avifIsSequence(data []byte) bool {
+	// Major brand wins; avis anywhere in compat brands also counts (some
+	// encoders write major avif + compat avis for compatibility).
+	return avifScanBrands(data, "avis")
+}
+
+// avifScanBrands looks for brand inside the ftyp box body, bounded by the
+// declared box size and avifScanMax.
+func avifScanBrands(data []byte, brand string) bool {
+	boxSize := int(binary.BigEndian.Uint32(data[0:4]))
+	limit := len(data)
+	if boxSize >= avifBrandOffset && boxSize < limit {
+		limit = boxSize
+	}
+	if limit > avifScanMax {
+		limit = avifScanMax
+	}
+	for off := avifBrandOffset; off+avifBrandLen <= limit; off += avifBrandLen {
+		if string(data[off:off+avifBrandLen]) == brand {
+			return true
+		}
 	}
 	return false
 }

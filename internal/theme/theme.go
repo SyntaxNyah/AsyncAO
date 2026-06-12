@@ -20,6 +20,9 @@ const (
 	DefaultThemeName = "default"
 	// ThemesDirName is the folder (under each content root) holding themes.
 	ThemesDirName = "themes"
+	// PenaltyFileName is the HP-bar config (AO2-Client get_penalty_value
+	// reads "penalty/penalty.ini" from the theme).
+	PenaltyFileName = "penalty/penalty.ini"
 
 	rectComponentCount = 4
 	tupleSeparator     = ","
@@ -51,10 +54,11 @@ type Theme struct {
 	Name string
 	// dirs are the candidate theme directories in priority order:
 	// <root>/themes/<name>, then <root>/themes/default for every root.
-	dirs   []string
-	design *INI
-	fonts  *INI
-	sounds *INI
+	dirs    []string
+	design  *INI
+	fonts   *INI
+	sounds  *INI
+	penalty *INI
 }
 
 // Load opens the named theme across the given content roots (e.g. the
@@ -84,6 +88,7 @@ func Load(name string, roots []string) (*Theme, error) {
 	t.design = t.loadFirstINI(DesignFileName)
 	t.fonts = t.loadFirstINI(FontsFileName)
 	t.sounds = t.loadFirstINI(SoundsFileName)
+	t.penalty = t.loadFirstINI(filepath.FromSlash(PenaltyFileName))
 	return t, nil
 }
 
@@ -165,6 +170,12 @@ func (t *Theme) SoundName(key string) (string, bool) {
 	return t.sounds.Get(key)
 }
 
+// PenaltyValue returns a penalty/penalty.ini entry (hp_increased_sfx,
+// hp_decreased_sfx, ... — AO2-Client get_penalty_value).
+func (t *Theme) PenaltyValue(key string) (string, bool) {
+	return t.penalty.Get(key)
+}
+
 // FindAsset locates a theme file by stem, probing the given extensions in
 // order across the theme directories (active theme first). Returns the
 // first existing path.
@@ -185,6 +196,12 @@ func (t *Theme) Dirs() []string {
 	out := make([]string, len(t.dirs))
 	copy(out, t.dirs)
 	return out
+}
+
+// KeyCount totals the keys loaded across the three INIs — 0 means the
+// theme directories contributed nothing (diagnostics).
+func (t *Theme) KeyCount() int {
+	return t.design.Len() + t.fonts.Len() + t.sounds.Len()
 }
 
 func atoiTrim(s string) int {

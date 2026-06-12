@@ -217,6 +217,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer uiCtx.Destroy()
+	uiCtx.SetWindow(window) // modcall/case-alert taskbar flashing
 
 	app := ui.NewApp(uiCtx, ui.Deps{
 		Prefs:     prefs,

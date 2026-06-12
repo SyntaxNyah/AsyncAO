@@ -213,6 +213,242 @@ func TestSessionKeepaliveAndPick(t *testing.T) {
 	}
 }
 
+// TestSessionDebugEvents pins the debug lane: headers the client doesn't
+// implement and malformed MS packets surface as EventDebug (never silently
+// vanish), and known no-event headers stay quiet.
+func TestSessionDebugEvents(t *testing.T) {
+	rec := &sentRecorder{}
+	s := NewSession(rec.send, "h")
+
+	if ev := feed(t, s, "NOSUCHPACKET#1#2#%"); len(ev) != 1 || ev[0].Kind != EventDebug ||
+		!strings.Contains(ev[0].Text, "NOSUCHPACKET") {
+		t.Fatalf("unknown header → %+v, want one EventDebug naming it", ev)
+	}
+	// Malformed MS (too few fields) → dropped with a debug trace.
+	if ev := feed(t, s, "MS#1#-#Phoenix#%"); len(ev) != 1 || ev[0].Kind != EventDebug ||
+		!strings.Contains(ev[0].Text, "MS dropped") {
+		t.Fatalf("malformed MS → %+v, want one EventDebug", ev)
+	}
+	// Handled headers that legitimately return no events must NOT trip the
+	// debug lane (FL is reduced into Features).
+	if ev := feed(t, s, "FL#flipping#%"); len(ev) != 0 {
+		t.Fatalf("FL → %+v, want no events", ev)
+	}
+}
+
+// TestSessionCourtPackets pins the 2.6–2.8 court-state reducers: HP, RT,
+// ZZ, ARUP, TI, JD, AUTH, SD, SP, LE, CASEA — wire shapes and bounds per
+// AO2-Client packet_distribution.cpp.
+func TestSessionCourtPackets(t *testing.T) {
+	rec := &sentRecorder{}
+	s := NewSession(rec.send, "h")
+	feed(t, s, "SM#Area1#Area2#x.opus#%")
+
+	// HP: bar 1 = def, range-guarded like set_hp_bar.
+	if ev := feed(t, s, "HP#1#3#%"); len(ev) != 1 || ev[0].Kind != EventHP || ev[0].Int != 1 || ev[0].Int2 != 3 || s.HPDef != 3 {
+		t.Fatalf("HP → %+v def=%d", ev, s.HPDef)
+	}
+	if ev := feed(t, s, "HP#1#11#%"); ev != nil || s.HPDef != 3 {
+		t.Fatalf("out-of-range HP accepted: %+v def=%d", ev, s.HPDef)
+	}
+
+	// RT: name + variant (judgeruling 1 = guilty).
+	if ev := feed(t, s, "RT#judgeruling#1#%"); len(ev) != 1 || ev[0].Kind != EventWTCE || ev[0].Text != "judgeruling" || ev[0].Int != 1 {
+		t.Fatalf("RT → %+v", ev)
+	}
+
+	// ZZ in: pre-formatted modcall line.
+	if ev := feed(t, s, "ZZ#[101] Maya called a mod#%"); len(ev) != 1 || ev[0].Kind != EventModcall {
+		t.Fatalf("ZZ → %+v", ev)
+	}
+
+	// ARUP: type 0 players, type 3 locks; field n → area n−1; overflow drops.
+	feed(t, s, "ARUP#0#5#2#9#%")
+	feed(t, s, "ARUP#3#FREE#LOCKED#%")
+	if s.AreaInfo[0].Players != 5 || s.AreaInfo[1].Players != 2 || s.AreaInfo[1].Lock != "LOCKED" {
+		t.Fatalf("ARUP state = %+v", s.AreaInfo)
+	}
+
+	// TI: show, run, pause; ids ≥ TimerCount drop.
+	feed(t, s, "TI#0#2#%")
+	feed(t, s, "TI#0#0#60000#%")
+	if !s.Timers[0].Visible || !s.Timers[0].Running || s.Timers[0].Remaining(time.Now()) <= 50*time.Second {
+		t.Fatalf("TI start state = %+v", s.Timers[0])
+	}
+	feed(t, s, "TI#0#1#30000#%")
+	if s.Timers[0].Running || s.Timers[0].Remaining(time.Now()) != 30*time.Second {
+		t.Fatalf("TI pause state = %+v", s.Timers[0])
+	}
+	if ev := feed(t, s, "TI#7#0#1000#%"); ev != nil {
+		t.Fatalf("out-of-range timer id accepted: %+v", ev)
+	}
+
+	// JD: numeric states apply, junk ignored.
+	if ev := feed(t, s, "JD#1#%"); len(ev) != 1 || s.Judge != JudgeShow {
+		t.Fatalf("JD → %+v judge=%d", ev, s.Judge)
+	}
+	if ev := feed(t, s, "JD#nope#%"); ev != nil || s.Judge != JudgeShow {
+		t.Fatalf("malformed JD accepted: %+v", ev)
+	}
+
+	// AUTH: gated on the auth_packet feature.
+	if ev := feed(t, s, "AUTH#1#%"); ev != nil || s.ModGranted {
+		t.Fatalf("AUTH honored without feature: %+v", ev)
+	}
+	feed(t, s, "FL#auth_packet#%")
+	if ev := feed(t, s, "AUTH#1#%"); len(ev) != 1 || ev[0].Kind != EventAuth || !s.ModGranted {
+		t.Fatalf("AUTH → %+v granted=%v", ev, s.ModGranted)
+	}
+
+	// SD splits on '*'; SP forces the side.
+	feed(t, s, "SD#wit*def*pro#%")
+	if len(s.PosList) != 3 || s.PosList[1] != "def" {
+		t.Fatalf("SD → %v", s.PosList)
+	}
+	if ev := feed(t, s, "SP#def#%"); len(ev) != 1 || ev[0].Kind != EventSetPos || ev[0].Text != "def" {
+		t.Fatalf("SP → %+v", ev)
+	}
+
+	// LE: '&'-nested triples. NOTE the parse-time field decode means a
+	// "<and>" arrives here as a literal '&' and splits — the same lossy
+	// legacy double-decode SC has (see CLAUDE.md gotchas); extra parts
+	// past the triple drop.
+	feed(t, s, "LE#Knife&A bloody knife&knife.png#Badge&Shiny badge&badge.png#%")
+	if len(s.Evidence) != 2 || s.Evidence[0].Name != "Knife" || s.Evidence[1].Description != "Shiny badge" {
+		t.Fatalf("LE → %+v", s.Evidence)
+	}
+
+	// CASEA: role bits in wire order (field 3 = judge).
+	if ev := feed(t, s, "CASEA#Need a judge!#0#0#1#0#0#%"); len(ev) != 1 || ev[0].Kind != EventCase || ev[0].Int != CaseRoleJudge {
+		t.Fatalf("CASEA → %+v", ev)
+	}
+}
+
+// TestSessionLegacyModLogin pins the auth emulation for servers without
+// auth_packet: the exact OOC confirmation line grants mod state.
+func TestSessionLegacyModLogin(t *testing.T) {
+	rec := &sentRecorder{}
+	s := NewSession(rec.send, "h")
+	ev := feed(t, s, "CT#server#Logged in as a moderator.#%")
+	if len(ev) != 2 || ev[1].Kind != EventAuth || ev[1].Int != 1 || !s.ModGranted {
+		t.Fatalf("legacy login → %+v granted=%v", ev, s.ModGranted)
+	}
+}
+
+// TestSessionCourtSends pins the outgoing court packets' wire shapes.
+func TestSessionCourtSends(t *testing.T) {
+	rec := &sentRecorder{}
+	s := NewSession(rec.send, "h")
+	feed(t, s, "FL#modcall_reason#%")
+
+	s.SendHP(1, 5)
+	s.SendHP(2, 99) // out of range: dropped
+	s.SendWTCE("testimony1", 0)
+	s.SendWTCE("judgeruling", 1)
+	s.CallMod("spam")
+	s.AddEvidence("Knife", "Bloody", "knife.png")
+	s.DeleteEvidence(2)
+	s.EditEvidence(1, "Knife", "Clean", "knife.png")
+	s.SetCasingPrefs(true, false, true, false, false)
+
+	want := [][]string{
+		{"HP", "1", "5"},
+		{"RT", "testimony1"},
+		{"RT", "judgeruling", "1"},
+		{"ZZ", "spam", "-1"},
+		{"PE", "Knife", "Bloody", "knife.png"},
+		{"DE", "2"},
+		{"EE", "1", "Knife", "Clean", "knife.png"},
+		{"SETCASE", "", "1", "0", "1", "0", "0"},
+	}
+	if len(rec.packets) != len(want) {
+		t.Fatalf("sent %d packets, want %d: %+v", len(rec.packets), len(want), rec.packets)
+	}
+	for i, w := range want {
+		p := rec.packets[i]
+		if p.Header != w[0] {
+			t.Fatalf("packet %d header = %s, want %s", i, p.Header, w[0])
+		}
+		for j, f := range w[1:] {
+			if p.Field(j) != f {
+				t.Fatalf("packet %d (%s) field %d = %q, want %q", i, p.Header, j, p.Field(j), f)
+			}
+		}
+	}
+}
+
+// TestParseCharINIFull pins the full char.ini coverage: per-emote audio
+// sections ([SoundN]/[SoundT]/[SoundL]/[Blips]) and the [Shouts] custom
+// interjection discovery (the streaming-compatible 2.10 source).
+func TestParseCharINIFull(t *testing.T) {
+	ini := []byte(`[Options]
+showname = Nick
+side = def
+blips = male
+
+[Emotions]
+number = 2
+1 = normal#-#normal#0#
+2 = slam#slam_pre#slam#1#
+
+[SoundN]
+2 = sfx-deskslam
+
+[SoundT]
+2 = 4
+
+[SoundL]
+2 = 1
+
+[Blips]
+2 = typewriter
+
+[Shouts]
+custom_name = Eureka
+wiggle_name = WIGGLE
+gotcha_name = Gotcha!
+`)
+	out, err := ParseCharINI(ini)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Emotes) != 2 {
+		t.Fatalf("emotes = %d, want 2", len(out.Emotes))
+	}
+	if e := out.Emotes[0]; e.SFXName != "" || e.SFXLoop || e.Blip != "" {
+		t.Errorf("emote 1 audio should be empty: %+v", e)
+	}
+	if e := out.Emotes[1]; e.SFXName != "sfx-deskslam" || e.SFXDelay != 4 || !e.SFXLoop || e.Blip != "typewriter" {
+		t.Errorf("emote 2 audio = %+v", e)
+	}
+	if out.CustomName != "Eureka" {
+		t.Errorf("custom_name = %q", out.CustomName)
+	}
+	if len(out.CustomShouts) != 2 {
+		t.Fatalf("custom shouts = %+v, want 2", out.CustomShouts)
+	}
+	names := map[string]string{}
+	for _, cs := range out.CustomShouts {
+		names[cs.File] = cs.Name
+	}
+	if names["wiggle"] != "WIGGLE" || names["gotcha"] != "Gotcha!" {
+		t.Errorf("custom shouts = %v", names)
+	}
+}
+
+// TestNamedCustomShoutURL pins the 2.10 custom_objections path + the
+// defensive extension strip (older clients send "name.gif").
+func TestNamedCustomShoutURL(t *testing.T) {
+	u := NewURLBuilder("http://cdn.example.com/base/")
+	want := "http://cdn.example.com/base/characters/maya/custom_objections/wiggle"
+	if got := u.NamedCustomShout("Maya", "wiggle"); got != want {
+		t.Errorf("plain = %q, want %q", got, want)
+	}
+	if got := u.NamedCustomShout("Maya", "wiggle.gif"); got != want {
+		t.Errorf("with ext = %q, want %q", got, want)
+	}
+}
+
 // --- message lifecycle ---------------------------------------------------------------
 
 // pairedMS builds a paired 2.8 message through the real wire shape.

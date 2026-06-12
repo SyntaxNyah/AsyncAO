@@ -1,6 +1,7 @@
 package courtroom
 
 import (
+	"strings"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
@@ -23,6 +24,13 @@ const (
 	messageQueueCap = 64
 	// emptyPreanim values AO uses for "no preanimation".
 	emptyPreanimDash = "-"
+
+	// RealizationFlashDuration approximates AO2-Client's realization flash
+	// (do_flash plays the theme's one-shot flash animation, ~a quarter
+	// second on stock themes).
+	RealizationFlashDuration = 250 * time.Millisecond
+	// ScreenshakeDuration approximates do_screenshake's elastic UI wobble.
+	ScreenshakeDuration = 350 * time.Millisecond
 )
 
 // MessagePhase is the IC message lifecycle: shout → preanim → talking →
@@ -77,6 +85,12 @@ type Scene struct {
 	MessageText  string // full text; VisibleRunes gates the reveal
 	VisibleRunes int
 	TextColor    int
+
+	// Full-viewport effects: Update counts these down, the renderer reads
+	// the remainders (flash alpha, shake amplitude). Plain data — the
+	// effect art pipeline stays render-side.
+	FlashLeft time.Duration
+	ShakeLeft time.Duration
 }
 
 // AudioSink receives playback triggers; the SDL_mixer implementation lives
@@ -133,6 +147,12 @@ type Courtroom struct {
 	// renderer falls back to the default bubble base if not.
 	ShoutCharBase    string
 	ShoutDefaultBase string
+
+	// RealizationSFX is the full URL base of the realization sound (theme
+	// courtroom_sounds.ini "realization", resolved UI-side where the theme
+	// lives; "" = silent). Played when a message carries REALIZATION=1
+	// without a 2.8 Effects override.
+	RealizationSFX string
 }
 
 // NewCourtroom wires the state machine. audio may be nil (NopAudio).
@@ -245,18 +265,26 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		shout := ShoutName(msg.Objection)
 		custom := msg.Objection == protocol.ShoutCustom
 		c.ShoutCharBase = c.urls.ShoutBubble(speakerName, shout, custom)
+		shoutSFX := c.urls.ShoutSFX(speakerName, shout)
+		if custom && msg.CustomShout != "" {
+			// 2.10 named interjection: art and sound live under
+			// custom_objections/<name> (courtroom.cpp objection_custom).
+			c.ShoutCharBase = c.urls.NamedCustomShout(speakerName, msg.CustomShout)
+			shoutSFX = c.ShoutCharBase
+		}
 		c.ShoutDefaultBase = ""
 		if !custom {
 			c.ShoutDefaultBase = c.urls.DefaultShoutBubble(shout)
 			c.mgr.Prefetch(c.ShoutDefaultBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
 		}
 		c.mgr.Prefetch(c.ShoutCharBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
-		c.audio.PlayShout(c.urls.ShoutSFX(speakerName, shout))                             // AssetType: SFX
+		c.audio.PlayShout(shoutSFX)                                                        // AssetType: SFX
 	}
 
-	// Predictive prefetch: warm the likely next speaker (§10 step 3).
+	// Predictive prefetch: warm the likely next speaker — and their likely
+	// next emote (§10 step 3 + per-character emote chains).
 	if c.Predictor != nil {
-		c.Predictor.OnMessage(speakerName, msg.Pair.Name)
+		c.Predictor.OnMessage(speakerName, msg.Pair.Name, msg.Emote)
 	}
 
 	blip := msg.Blipname
@@ -337,6 +365,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutBase = ""
 	msg := c.current
+	c.fireMessageEffects(msg)
 	playPre := hasPreanim(msg) &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom || msg.Immediate)
 	blockOnPre := playPre && !msg.Immediate &&
@@ -352,6 +381,48 @@ func (c *Courtroom) enterAfterShout() {
 		return
 	}
 	c.startTalking()
+}
+
+// fireMessageEffects triggers the message-display effects exactly where
+// AO2-Client's handle_ic_message does (courtroom.cpp:4154): the 2.8
+// Effects field wins ("fx|sound" or "fx|folder|sound"), plain REALIZATION=1
+// is the fallback flash, and SCREENSHAKE=1 shakes for IDLE/ZOOM emote mods.
+// Named theme-overlay effects beyond flash/shake play their sound only —
+// the overlay art needs the theme effects engine (frame-synced FRAME_*
+// triggers live with the char.ini frame sections, not here).
+func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
+	if msg.Effects != "" {
+		fx, sound := parseEffectsField(msg.Effects)
+		switch strings.ToLower(fx) {
+		case "screenshake":
+			c.Scene.ShakeLeft = ScreenshakeDuration
+		case "flash", "realization", "realizationflash":
+			c.Scene.FlashLeft = RealizationFlashDuration
+		}
+		if sound != "" && sound != "-" {
+			c.audio.PlaySFX(c.urls.SFX(sound), 0) // AssetType: SFX (2.8 effect sound)
+		}
+	} else if msg.Realization {
+		c.Scene.FlashLeft = RealizationFlashDuration
+		if c.RealizationSFX != "" {
+			c.audio.PlaySFX(c.RealizationSFX, 0) // AssetType: SFX (realization)
+		}
+	}
+	if msg.Screenshake && (msg.EmoteMod == protocol.EmoteModIdle || msg.EmoteMod == protocol.EmoteModZoom) {
+		c.Scene.ShakeLeft = ScreenshakeDuration
+	}
+}
+
+// parseEffectsField splits the 2.8 EFFECTS field: "fx", "fx|sound", or
+// "fx|folder|sound" (the folder selects custom effect art — sound is
+// always the last element, mirroring courtroom.cpp:4156).
+func parseEffectsField(raw string) (fx, sound string) {
+	parts := strings.Split(raw, "|")
+	fx = parts[0]
+	if len(parts) > 1 {
+		sound = parts[len(parts)-1]
+	}
+	return fx, sound
 }
 
 // startTalking begins the typewriter reveal.
@@ -385,6 +456,19 @@ func (c *Courtroom) NotifyPreanimDone() {
 
 // Update advances the message lifecycle by dt.
 func (c *Courtroom) Update(dt time.Duration) {
+	// Effect countdowns run independent of the phase machine.
+	if c.Scene.FlashLeft > 0 {
+		c.Scene.FlashLeft -= dt
+		if c.Scene.FlashLeft < 0 {
+			c.Scene.FlashLeft = 0
+		}
+	}
+	if c.Scene.ShakeLeft > 0 {
+		c.Scene.ShakeLeft -= dt
+		if c.Scene.ShakeLeft < 0 {
+			c.Scene.ShakeLeft = 0
+		}
+	}
 	switch c.phase {
 	case PhaseShout:
 		c.timer -= dt

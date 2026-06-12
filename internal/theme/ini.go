@@ -67,3 +67,17 @@ func (i *INI) GetSection(section, key string) (string, bool) {
 
 // Len reports how many keys were loaded.
 func (i *INI) Len() int { return len(i.values) }
+
+// SectionKeys returns every key=value under [section] (keys lowercased,
+// section prefix stripped). Iteration order is unspecified — callers that
+// care must sort.
+func (i *INI) SectionKeys(section string) map[string]string {
+	prefix := strings.ToLower(section) + iniSectionSep
+	out := map[string]string{}
+	for k, v := range i.values {
+		if strings.HasPrefix(k, prefix) {
+			out[k[len(prefix):]] = v
+		}
+	}
+	return out
+}

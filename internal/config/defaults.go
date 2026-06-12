@@ -42,6 +42,7 @@ const (
 	ExtAPNG = ".apng"
 	ExtGIF  = ".gif"
 	ExtJPG  = ".jpg"
+	ExtAVIF = ".avif"
 	ExtOpus = ".opus"
 	ExtOgg  = ".ogg"
 	ExtWAV  = ".wav"
@@ -50,7 +51,7 @@ const (
 
 // OptionalImageFormats are the extensions the Settings UI offers as opt-in
 // probe formats (all disabled by default — zero-fallback policy).
-var OptionalImageFormats = []string{ExtWebP, ExtAPNG, ExtGIF, ExtPNG, ExtJPG}
+var OptionalImageFormats = []string{ExtWebP, ExtAVIF, ExtAPNG, ExtGIF, ExtPNG, ExtJPG}
 
 // defaultFormatOrders is the zero-fallback probe list per asset type: with
 // fallbacks disabled this is the *entire* probe list (spec §4). Every

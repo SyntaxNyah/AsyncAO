@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -76,6 +78,16 @@ const (
 	maxDescLines = 6
 	// spriteOvCap bounds the client-side sprite override table.
 	spriteOvCap = 128
+
+	// debugLogCap bounds the in-app failure log (rule §17.4: nothing is
+	// unbounded); the oldest lines fall off.
+	debugLogCap = 120
+	// debugOverlayLines is how many of the newest log lines the overlay
+	// draws (the full ring stays browsable in Settings).
+	debugOverlayLines = 10
+	// themeHealPeriod paces re-loading the theme chatbox after T1 evicted
+	// it (same trick as healScenery: one ask per period, never a flood).
+	themeHealPeriod = 2 * time.Second
 )
 
 // Log panel tabs (courtroom right column).
@@ -136,6 +148,7 @@ type App struct {
 	room       *courtroom.Courtroom
 	urls       courtroom.URLBuilder
 	serverName string
+	serverKey  string // ws URL: keys the per-server warm state in prefs
 	connErr    string
 
 	// --- char select state ---
@@ -173,13 +186,19 @@ type App struct {
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
 	emoteIdx                   int
-	charINIBusy                bool
-	charINIres                 chan charINIFetch
-	icLog                      []string
-	oocLog                     []string
-	musicScroll                int32
-	areaScroll                 int32
-	logTab                     int
+	charBlips                  string // char.ini blips/gender (outgoing default)
+	// 2.10 custom shouts ([Shouts] in char.ini): customIdx −1 = the base
+	// "custom" art, ≥ 0 indexes customShouts.
+	customShouts []courtroom.CustomShout
+	customIdx    int
+	customName   string
+	charINIBusy  bool
+	charINIres   chan charINIFetch
+	icLog        []string
+	oocLog       []string
+	musicScroll  int32
+	areaScroll   int32
+	logTab       int
 	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
 	emoteAsk []time.Time
 
@@ -187,13 +206,53 @@ type App struct {
 	warnLine string
 	warnAt   time.Time
 
-	// --- applied theme (chatbox skin + font colors) ---
-	themeApplyRes chan themeApply
-	themeChatbox  bool // theme://chatbox resident in T1
-	themeMsgCol   sdl.Color
-	themeHasMsg   bool
-	themeNameCol  sdl.Color
-	themeHasName  bool
+	// --- debug overlay (Settings toggle): bounded failure log ---
+	debugLog    []string // ring of stamped failure lines, debugLogCap max
+	debugLast   string   // last raw line, for consecutive-duplicate collapse
+	debugRepeat int      // how many times debugLast repeated
+	lastPktHdr  string   // newest server packet header (health line)
+	lastPktAt   time.Time
+
+	// --- server format manifest (extensions.json autodetect) ---
+	manifestRes chan manifestFetch
+	manifestFor string // origin already fetched this session (dedupe)
+
+	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
+	// themeRes holds the newest off-thread theme load; gen ordering means a
+	// slow stale load can never clobber a fresh one (rapid theme cycling
+	// spawns several loads and completion order is not start order).
+	themeRes     atomic.Pointer[themeApply]
+	themeGen     atomic.Uint64
+	themeHealAt  time.Time       // last eviction heal (themeHealPeriod pacing)
+	themeTex     map[string]bool // theme:// stems resident in T1
+	themeSounds  map[string]string
+	themeChatbox bool // theme://chatbox resident (mirror of themeTex)
+	themeMsgCol  sdl.Color
+	themeHasMsg  bool
+	themeNameCol sdl.Color
+	themeHasName bool
+
+	// --- court extras (HP / WTCE / timers / judge / modcall / evidence) ---
+	wtceName    string    // active splash stem ("" = none)
+	wtceAt      time.Time // splash start (frame stepping + expiry)
+	testimonyOn bool      // persistent "Testimony" recording badge (RT 2.9)
+	hpPrev      [2]int    // last drawn HP per bar — penalty sfx direction
+	showModcall bool      // modcall reason dialog
+	modReason   string
+	showEvid    bool // evidence panel
+	evidIdx     int  // selected evidence (-1 = none)
+	evidPresent bool // armed: next IC message carries the selection
+	evidEditing bool // editor open (add when evidIdx == -1)
+	evidName    string
+	evidDesc    string
+	evidImage   string
+	evidScroll  int32
+	evidAsk     []time.Time // thumbnail demand pacing, parallel to Evidence
+	showUICfg   bool        // hide-chrome popup
+	hidden      map[string]bool
+	// evShow is the incoming presented-evidence pop-up (display_evidence_image).
+	evShowImg string
+	evShowAt  time.Time
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
 	iniChar     string   // active override folder ("" = picked character)
@@ -230,9 +289,10 @@ type App struct {
 	vpPct, chatPct, boxPct, logPct, inputPct int
 	uiScalePct                               int // global renderer scale
 	// chat raster invalidation extras (text/color tracked separately)
-	rasterScale int
-	rasterW     int32
-	oocScroll   int32
+	rasterScale   int
+	rasterW       int32
+	rasterSkinned bool // theme skin gates theme text colors (readability)
+	oocScroll     int32
 
 	// pairing panel
 	pairSearch string
@@ -265,34 +325,110 @@ type charINIFetch struct {
 	err error
 }
 
-// themeApply is one off-thread theme load: the decoded chatbox skin (nil
-// when the theme ships none) and the message/showname font colors.
+// manifestFetch is one extensions.json autodetect result.
+type manifestFetch struct {
+	host   string
+	seeded int
+	err    error
+}
+
+// themeApply is one off-thread theme load: every resident theme texture
+// (chatbox skin, WT/CE/verdict splashes, testimony badge, HP bar states),
+// the courtroom/penalty sound names, the message/showname font colors, and
+// the diagnostics the status line / debug overlay report.
 type themeApply struct {
-	chatbox *assets.Decoded
+	gen     uint64                     // themeGen stamp; older never overwrites newer
+	name    string                     // theme that was loaded
+	images  map[string]*assets.Decoded // stem → decoded (themeImageStems keys)
+	sounds  map[string]string          // sound key → streamed sfx name
 	msgCol  sdl.Color
 	hasMsg  bool
 	nameCol sdl.Color
 	hasName bool
+
+	// diagnostics: where the skin came from, how many INI keys loaded,
+	// and the dirs probed (so "nothing found" names the actual paths).
+	chatboxFile string
+	chatboxDir  string
+	iniKeys     int
+	probed      []string
 }
 
-// themeChatboxBase is the T1 key for the theme's chatbox skin — the
-// scheme prefix can never collide with real asset URLs.
-const themeChatboxBase = "theme://chatbox"
+// themeStemChatbox is the chatbox skin's stem in themeTex / T1.
+const themeStemChatbox = "chatbox"
+
+// themeImageExts is the per-stem probe order, matching AO2-Client
+// get_image_suffix (webp → apng → gif → png).
+var themeImageExts = []string{".webp", ".apng", ".gif", ".png"}
+
+// themeImageStems maps each resident theme texture stem to the candidate
+// file stems probed in order. Chatbox candidates mirror AO2-Client
+// courtroom.cpp:3328 ("chat" falling back to "chatbox"; "chatblank" last
+// for themes that ship only the blank skin); splash stems mirror
+// handle_wtce's filenames with the bare legacy spelling second.
+func themeImageStems() map[string][]string {
+	m := map[string][]string{
+		themeStemChatbox:   {"chat", "chatbox", "chatblank"},
+		"witnesstestimony": {"witnesstestimony_bubble", "witnesstestimony"},
+		"crossexamination": {"crossexamination_bubble", "crossexamination"},
+		"notguilty":        {"notguilty_bubble", "notguilty"},
+		"guilty":           {"guilty_bubble", "guilty"},
+		"testimony":        {"testimony"},
+	}
+	for i := 0; i <= courtroom.HPBarMax; i++ {
+		d := "defensebar" + strconv.Itoa(i)
+		p := "prosecutionbar" + strconv.Itoa(i)
+		m[d], m[p] = []string{d}, []string{p}
+	}
+	return m
+}
+
+// themeTexKey is the T1 key for a theme texture stem; the scheme prefix can
+// never collide with real asset URLs.
+func themeTexKey(stem string) string { return "theme://" + stem }
+
+// themeSoundKeys lists the courtroom_sounds.ini entries the UI plays, with
+// the lookup aliases handle_wtce probes and the stock AO2 default-theme
+// values as fallbacks so themeless installs still sound right.
+var themeSoundKeys = []struct {
+	key      string
+	aliases  []string
+	fallback string
+}{
+	{"witness_testimony", []string{"witness_testimony", "witnesstestimony"}, "sfx-testimony2"},
+	{"cross_examination", []string{"cross_examination", "crossexamination"}, "sfx-testimony"},
+	{"not_guilty", []string{"not_guilty", "notguilty"}, "sfx-notguilty"},
+	{"guilty", []string{"guilty"}, "sfx-guilty"},
+	{"mod_call", []string{"mod_call"}, "sfx-gallery"},
+	{"case_call", []string{"case_call"}, "sfx-evidenceadd"},
+	{"realization", []string{"realization"}, "sfx-realization"},
+}
+
+// themePenaltyKeys are the penalty/penalty.ini sfx entries (no stock
+// fallback: AO2 ships none and silence is the canonical default).
+var themePenaltyKeys = []string{"hp_increased_sfx", "hp_decreased_sfx"}
 
 // NewApp builds the UI over deps.
 func NewApp(ctx *Ctx, d Deps) *App {
 	a := &App{
-		ctx:           ctx,
-		d:             d,
-		screen:        ScreenLobby,
-		lobbyResult:   make(chan lobbyFetch, 1),
-		charINIres:    make(chan charINIFetch, 1),
-		iniRes:        make(chan iniswapFetch, 1),
-		themeApplyRes: make(chan themeApply, 1),
-		pairWith:      protocol.UnpairedCharID,
-		oocName:       d.Prefs.SavedShowname(),
-		selServer:     -1,
-		spriteOv:      map[string][2]int{},
+		ctx:         ctx,
+		d:           d,
+		screen:      ScreenLobby,
+		lobbyResult: make(chan lobbyFetch, 1),
+		charINIres:  make(chan charINIFetch, 1),
+		iniRes:      make(chan iniswapFetch, 1),
+		manifestRes: make(chan manifestFetch, 1),
+		pairWith:    protocol.UnpairedCharID,
+		oocName:     d.Prefs.SavedShowname(),
+		selServer:   -1,
+		spriteOv:    map[string][2]int{},
+		themeTex:    map[string]bool{},
+		hidden:      map[string]bool{},
+		evidIdx:     -1,
+		hpPrev:      [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
+	}
+	for _, id := range d.Prefs.HiddenPanels() {
+		a.hidden[id] = true
 	}
 	a.applyThemeAsync() // chatbox skin + font colors from the saved theme
 	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
@@ -378,6 +514,7 @@ func (a *App) IsLiveBase(base string) bool {
 func (a *App) Connect(name, wsURL string) {
 	a.Disconnect()
 	a.serverName = name
+	a.serverKey = wsURL
 	a.connErr = ""
 	conn, err := protocol.Dial(context.Background(), wsURL)
 	if err != nil {
@@ -421,6 +558,7 @@ func (a *App) Disconnect() {
 	case <-a.iniRes:
 	default:
 	}
+	a.manifestFor = ""   // next connect re-checks its manifest
 	a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
 	a.screen = ScreenLobby
 }
@@ -454,9 +592,11 @@ func (a *App) pumpConnection() {
 					reason = err.Error()
 				}
 				a.connErr = reason
+				a.pushDebug("disconnected: " + reason)
 				a.Disconnect()
 				return
 			}
+			a.lastPktHdr, a.lastPktAt = p.Header, time.Now()
 			a.handleSessionEvents(a.sess.HandlePacket(p))
 		default:
 			return
@@ -472,6 +612,12 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventReady:
 			a.rebuildAssetOrigin()
 			a.prefetchCharIcons()
+			a.sendCasingPrefs()
+			a.prewarmServer()
+		case courtroom.EventBackground:
+			// Remember it for next visit's pre-warm; the room still
+			// consumes the event below (no continue).
+			a.d.Prefs.RememberServerBackground(a.serverKey, ev.Text)
 		case courtroom.EventCharsUpdated:
 			a.charLower = nil // names may have changed; rebuild lazily
 			// icons refresh lazily as textures land
@@ -482,10 +628,61 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventMessage:
 			if ev.Message != nil {
 				a.pushIC(icLogLine(ev.Message))
+				a.noteEvidencePresented(ev.Message)
+			}
+		case courtroom.EventHP:
+			// Direction decides the penalty sfx (set_hp_bar compares the
+			// new state against the previous one).
+			if idx := ev.Int - 1; idx >= 0 && idx < len(a.hpPrev) {
+				if ev.Int2 > a.hpPrev[idx] {
+					a.playThemeSFX("hp_increased_sfx")
+				} else if ev.Int2 < a.hpPrev[idx] {
+					a.playThemeSFX("hp_decreased_sfx")
+				}
+				a.hpPrev[idx] = ev.Int2
+			}
+		case courtroom.EventWTCE:
+			a.handleWTCE(ev.Text, ev.Int)
+		case courtroom.EventModcall:
+			a.pushOOC("[MOD CALL] " + ev.Text)
+			a.playThemeSFX("mod_call")
+			a.ctx.FlashWindow()
+		case courtroom.EventAuth:
+			// AO2 surfaces auth transitions as CLIENT lines in the OOC log
+			// (on_authentication_state_received).
+			switch {
+			case ev.Int >= 1:
+				a.pushOOC("CLIENT: Logged in as a moderator.")
+			case ev.Int == 0:
+				a.pushOOC("CLIENT: Login unsuccessful.")
+			default:
+				a.pushOOC("CLIENT: You were logged out.")
+			}
+		case courtroom.EventSetPos:
+			a.sidePref = ev.Text // SP: the server moved us
+		case courtroom.EventCase:
+			a.pushOOC("[CASE] " + ev.Text)
+			if enabled, roles := a.d.Prefs.Casing(); enabled && ev.Int&roles != 0 {
+				a.playThemeSFX("case_call")
+				a.ctx.FlashWindow()
+			}
+		case courtroom.EventNotice:
+			a.pushOOC("[SERVER] " + ev.Text)
+			a.ctx.FlashWindow()
+		case courtroom.EventEvidence:
+			a.evidAsk = nil // list replaced; thumbnail pacing resets
+			if a.evidIdx >= len(a.sess.Evidence) {
+				a.evidIdx = -1
 			}
 		case courtroom.EventDisconnect:
 			a.connErr = ev.Text
+			a.pushDebug("disconnected: " + ev.Text)
 			a.Disconnect()
+			continue
+		case courtroom.EventDebug:
+			// Protocol-level diagnostics (unhandled headers, dropped MS):
+			// the room has no use for these — debug overlay only.
+			a.pushDebug("server: " + ev.Text)
 			continue
 		}
 		if a.room != nil {
@@ -523,6 +720,61 @@ func (a *App) rebuildAssetOrigin() {
 	if host := hostOfURL(origin); host != "" {
 		a.d.Client.PreResolve(context.Background(), strings.Split(host, ":")[0])
 	}
+	a.fetchManifestAsync()
+}
+
+// fetchManifestAsync grabs <origin>/extensions.json (webAO convention —
+// every server ships its own format mix) and seeds this host's learned
+// formats so the first asset of each class costs exactly one probe even
+// stone cold. Default ON (Settings → auto-detect); switching it off keeps
+// the manual per-type probing in full control, and manual orders still
+// govern servers without a manifest either way.
+func (a *App) fetchManifestAsync() {
+	origin := a.urls.Origin()
+	if !a.d.Prefs.FormatAutoDetect() || a.manifestFor == origin ||
+		!strings.HasPrefix(origin, "http") {
+		return
+	}
+	a.manifestFor = origin
+	host := hostOfURL(origin)
+	url := origin + assets.ManifestFileName
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+		defer cancel()
+		res := manifestFetch{host: host}
+		data, err := a.d.Manager.FetchRaw(ctx, url)
+		switch {
+		case err != nil:
+			res.err = err
+		default:
+			m, perr := assets.ParseManifest(data)
+			if perr != nil {
+				res.err = perr
+			} else {
+				res.seeded = m.SeedLearned(a.d.Prefs, host)
+			}
+		}
+		select {
+		case <-a.manifestRes:
+		default:
+		}
+		a.manifestRes <- res
+	}()
+}
+
+// pollManifest lands autodetect results: republish the resolver snapshot
+// (now containing the seeds) and report on the debug lane.
+func (a *App) pollManifest() {
+	select {
+	case res := <-a.manifestRes:
+		if res.err != nil {
+			a.pushDebug("extensions.json: " + res.err.Error() + " — formats learn per probe instead")
+			return
+		}
+		a.d.Resolver.WarmFromPrefs()
+		a.pushDebug(fmt.Sprintf("extensions.json: seeded %d format classes for %s", res.seeded, res.host))
+	default:
+	}
 }
 
 // prefetchCharIcons warms the first screenfuls of icons speculatively.
@@ -551,14 +803,27 @@ func (a *App) enterCourtroom() {
 	a.sidePref = "" // until the new char.ini reports its side
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
 	urls := a.urls
-	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character string) string {
-		return urls.Emote(character, "normal", courtroom.EmoteIdle)
+	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character, emote string) string {
+		if emote == "" {
+			emote = "normal" // no chain signal yet: the default loop
+		}
+		return urls.Emote(character, emote, courtroom.EmoteIdle)
 	})
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
 	}
 	a.applyTimingToRoom()
+	a.pushRealizationToRoom()
+	a.d.Prefs.RememberServerChar(a.serverKey, a.myCharName())
+	// Court-extras state is per-room: splash/badge clear, penalty-sfx
+	// direction tracking re-arms at the session's current bar values.
+	a.wtceName, a.testimonyOn = "", false
+	a.hpPrev = [2]int{a.sess.HPDef, a.sess.HPPro}
+	a.showModcall, a.modReason = false, ""
+	a.showEvid, a.evidEditing, a.evidPresent, a.evidIdx = false, false, false, -1
+	a.evidAsk = nil
+	a.evShowImg = ""
 	a.screen = ScreenCourtroom
 	a.loadCharINI()
 }
@@ -847,6 +1112,12 @@ func (a *App) pollCharINI() {
 		if side := strings.ToLower(strings.TrimSpace(res.ini.Side)); side != "" {
 			a.sidePref = side
 		}
+		a.charBlips = res.ini.Blips
+		// Custom shout menu: the base "custom" entry (renamed by
+		// custom_name) plus the named 2.10 interjections.
+		a.customShouts = res.ini.CustomShouts
+		a.customIdx = -1 // base custom
+		a.customName = res.ini.CustomName
 		a.emoteIdx = 0
 		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
 		// Prefetch the first few emotes speculatively.
@@ -926,6 +1197,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pumpConnection()
 	a.drainWarnings()
 	a.pollThemeApply()
+	a.pollManifest()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
 		a.healScenery()
@@ -949,25 +1221,44 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	case ScreenAbout:
 		a.drawAbout(winW, winH)
 	}
+	// Debug overlay paints over every screen (allocs are acceptable here:
+	// it's an opt-in diagnostics path, never on by default).
+	if a.d.Prefs.DebugOverlayEnabled() {
+		a.drawDebugOverlay(winW, winH)
+	}
 }
 
 // applyThemeAsync loads the selected theme's visible pieces off-thread —
 // the chatbox skin (chatbox.webp/png in the theme dir, AO2 convention)
-// and the message/showname font colors — and hands them to the render
-// thread via themeApplyRes. Settings re-triggers it on every theme change.
+// and the message/showname font colors — and publishes them to the render
+// thread via themeRes. Settings re-triggers it on every theme change.
 func (a *App) applyThemeAsync() {
 	name, dir := a.d.Prefs.Theme()
+	anims := a.d.Prefs.AnimationsEnabled()
+	gen := a.themeGen.Add(1)
 	go func() {
-		var res themeApply
+		res := themeApply{
+			gen:    gen,
+			name:   name,
+			images: map[string]*assets.Decoded{},
+			sounds: map[string]string{},
+		}
+		// Users persist every shape of path (the root, the themes\ folder
+		// itself, one theme inside it, quoted Copy-as-Path) — normalize
+		// HERE so every apply resolves like the settings scanner does,
+		// not only applies that happened to follow a finished scan.
+		root, _ := normalizeThemeRoot(dir)
 		roots := make([]string, 0, 2)
-		if dir != "" {
-			roots = append(roots, dir)
+		if root != "" {
+			roots = append(roots, root)
 		}
 		if exe, err := os.Executable(); err == nil {
 			roots = append(roots, filepath.Dir(exe))
 		}
 		t, err := theme.Load(name, roots)
 		if err == nil {
+			res.iniKeys = t.KeyCount()
+			res.probed = t.Dirs()
 			if msg := t.Font("message"); t.HasFont("message") {
 				res.msgCol = sdl.Color{R: msg.Color.R, G: msg.Color.G, B: msg.Color.B, A: 255}
 				res.hasMsg = true
@@ -976,40 +1267,165 @@ func (a *App) applyThemeAsync() {
 				res.nameCol = sdl.Color{R: sn.Color.R, G: sn.Color.G, B: sn.Color.B, A: 255}
 				res.hasName = true
 			}
-			if path, ok := t.FindAsset("chatbox", []string{".webp", ".png"}); ok {
-				if data, rerr := os.ReadFile(path); rerr == nil {
-					if d, derr := assets.DecodeImage(data, false); derr == nil {
-						res.chatbox = d
+			for stem, candidates := range themeImageStems() {
+				for _, cand := range candidates {
+					path, ok := t.FindAsset(cand, themeImageExts)
+					if !ok {
+						continue
 					}
+					data, rerr := os.ReadFile(path)
+					if rerr != nil {
+						continue
+					}
+					d, derr := assets.DecodeImage(data, anims)
+					if derr != nil {
+						continue
+					}
+					res.images[stem] = d
+					if stem == themeStemChatbox {
+						res.chatboxFile = filepath.Base(path)
+						res.chatboxDir = filepath.Dir(path)
+					}
+					break
 				}
 			}
 		}
-		// Replace any queued (now stale) result, then deliver.
-		select {
-		case <-a.themeApplyRes:
-		default:
+		// Sound names resolve even with no theme on disk: the stock
+		// fallbacks keep WT/CE/verdict/modcall audible on bare installs.
+		for _, sk := range themeSoundKeys {
+			val := sk.fallback
+			if t != nil {
+				for _, alias := range sk.aliases {
+					if v, ok := t.SoundName(alias); ok && v != "" {
+						val = v
+						break
+					}
+				}
+			}
+			if val != "" {
+				res.sounds[sk.key] = val
+			}
 		}
-		a.themeApplyRes <- res
+		if t != nil {
+			for _, pk := range themePenaltyKeys {
+				if v, ok := t.PenaltyValue(pk); ok && v != "" {
+					res.sounds[pk] = v
+				}
+			}
+		}
+		// Newest-wins publish: never overwrite a higher-gen result (this
+		// load may have been outraced by a later pick).
+		for {
+			old := a.themeRes.Load()
+			if old != nil && old.gen > gen {
+				return
+			}
+			if a.themeRes.CompareAndSwap(old, &res) {
+				return
+			}
+		}
 	}()
 }
 
 // pollThemeApply lands theme pieces on the render thread: upload (or
-// drop) the chatbox skin, adopt the colors, force a chat re-raster.
+// drop) the chatbox skin, adopt the colors, force a chat re-raster, and
+// report what happened (settings status line + debug log).
 func (a *App) pollThemeApply() {
-	select {
-	case res := <-a.themeApplyRes:
-		if res.chatbox != nil {
-			if err := a.d.Store.Upload(themeChatboxBase, res.chatbox); err == nil {
-				a.themeChatbox = true
+	res := a.themeRes.Swap(nil)
+	if res == nil {
+		return
+	}
+	for stem := range themeImageStems() {
+		key := themeTexKey(stem)
+		if d := res.images[stem]; d != nil {
+			if err := a.d.Store.Upload(key, d); err == nil {
+				a.themeTex[stem] = true
 			}
-		} else if a.themeChatbox {
-			a.d.Store.Remove(themeChatboxBase)
-			a.themeChatbox = false
+		} else if a.themeTex[stem] {
+			a.d.Store.Remove(key)
+			delete(a.themeTex, stem)
 		}
-		a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
-		a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
-		a.rasterText = "" // re-raster the current message with theme colors
+	}
+	a.themeChatbox = a.themeTex[themeStemChatbox]
+	a.themeSounds = res.sounds
+	a.pushRealizationToRoom()
+	a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
+	a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
+	a.rasterText = "" // re-raster the current message with theme colors
+	line := themeApplySummary(res)
+	settings.statusLine = clampLine(line)
+	a.pushDebug(line)
+}
+
+// themeApplySummary turns one apply into a human-readable verdict, so
+// "nothing happened" is always distinguishable from "applied fine but this
+// theme only restyles the courtroom".
+func themeApplySummary(res *themeApply) string {
+	switch {
+	case res.chatboxFile != "":
+		return fmt.Sprintf("Theme %q applied: %s + %d theme images + %d INI keys (%s)",
+			res.name, res.chatboxFile, len(res.images)-1, res.iniKeys, res.chatboxDir)
+	case len(res.images) > 0 || res.iniKeys > 0:
+		return fmt.Sprintf("Theme %q applied: %d theme images + %d INI keys, no chatbox skin (flat panel)",
+			res.name, len(res.images), res.iniKeys)
 	default:
+		return fmt.Sprintf("Theme %q: nothing found — probed %s",
+			res.name, strings.Join(res.probed, " ; "))
+	}
+}
+
+// pushRealizationToRoom hands the courtroom the resolved realization sound
+// URL (the state machine plays it at message-display time, where AO2's
+// handle_ic_message does — the theme INI itself lives UI-side).
+func (a *App) pushRealizationToRoom() {
+	if a.room == nil {
+		return
+	}
+	if name := a.themeSounds["realization"]; name != "" {
+		a.room.RealizationSFX = a.urls.SFX(name) // AssetType: SFX (realization)
+	} else {
+		a.room.RealizationSFX = ""
+	}
+}
+
+// healTheme re-runs the theme load when T1 evicted a theme texture the UI
+// still needs — paced to one ask per themeHealPeriod (healScenery pattern).
+func (a *App) healTheme() {
+	if time.Since(a.themeHealAt) > themeHealPeriod {
+		a.themeHealAt = time.Now()
+		a.applyThemeAsync()
+	}
+}
+
+// themePage fetches a resident theme texture page, healing on eviction.
+func (a *App) themePage(stem string) (*render.TexturePage, bool) {
+	if !a.themeTex[stem] {
+		return nil, false
+	}
+	page, ok := a.d.Store.Get(themeTexKey(stem))
+	if !ok || len(page.Frames) == 0 {
+		a.healTheme()
+		return nil, false
+	}
+	return page, true
+}
+
+// pushDebug appends one line to the bounded failure log (debug overlay).
+// Consecutive duplicates collapse into a ×N suffix so a chatty source
+// (an ARUP every few seconds, say) can't flush real failures out of the
+// ring. Render thread only.
+func (a *App) pushDebug(line string) {
+	if line == a.debugLast && len(a.debugLog) > 0 {
+		a.debugRepeat++
+		a.debugLog[len(a.debugLog)-1] = time.Now().Format("15:04:05 ") +
+			line + fmt.Sprintf("  ×%d", a.debugRepeat)
+		return
+	}
+	a.debugLast = line
+	a.debugRepeat = 1
+	a.debugLog = append(a.debugLog, time.Now().Format("15:04:05 ")+line)
+	if len(a.debugLog) > debugLogCap {
+		a.debugLog = a.debugLog[len(a.debugLog)-debugLogCap:]
 	}
 }
 
@@ -1025,6 +1441,7 @@ func (a *App) drainWarnings() {
 			}
 			a.warnLine = clampLine(line)
 			a.warnAt = time.Now()
+			a.pushDebug(line)
 		default:
 			return
 		}

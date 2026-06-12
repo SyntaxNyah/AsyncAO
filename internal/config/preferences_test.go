@@ -200,6 +200,7 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	p.SetPairOffsets(15, -20)
 	p.SetPairFlipped(true)
 	p.SetShowname("Nyah")
+	p.SetDebugOverlay(true)
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -233,6 +234,55 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	}
 	if got := q.SavedShowname(); got != "Nyah" {
 		t.Errorf("Showname = %q, want %q", got, "Nyah")
+	}
+	if !q.DebugOverlayEnabled() {
+		t.Error("DebugOverlay lost")
+	}
+}
+
+// TestLearnedExportImport pins the warm-state portability path: export →
+// clear → import restores the table, and FormatAutoDetect defaults ON
+// with an explicit false surviving the round trip.
+func TestLearnedExportImport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.FormatAutoDetect() {
+		t.Error("FormatAutoDetect should default ON")
+	}
+	p.SetFormatAutoDetect(false)
+	p.RecordLearned("miku.pizza", TypeCharSprite, ExtWebP)
+	p.RecordLearned("other.example", TypeCharIcon, ExtPNG)
+
+	data, err := p.ExportLearnedJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.ClearLearned()
+	if len(p.LearnedSnapshot()) != 0 {
+		t.Fatal("clear did not clear")
+	}
+	n, err := p.ImportLearnedJSON(data)
+	if err != nil || n != 2 {
+		t.Fatalf("import = %d, %v", n, err)
+	}
+	if got := p.LearnedSnapshot()[LearnedKey("miku.pizza", TypeCharSprite)]; len(got) != 1 || got[0] != ExtWebP {
+		t.Errorf("imported entry = %v", got)
+	}
+	if _, err := p.ImportLearnedJSON([]byte("junk")); err == nil {
+		t.Error("junk import accepted")
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.FormatAutoDetect() {
+		t.Error("explicit FormatAutoDetect=false lost on reload")
 	}
 }
 
