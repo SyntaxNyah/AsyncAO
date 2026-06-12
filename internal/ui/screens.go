@@ -484,6 +484,12 @@ func (a *App) drawCourtroom(w, h int32) {
 		return
 	}
 
+	// Theater mode preempts BOTH layouts: stage only, Esc exits.
+	if a.theaterOn {
+		a.drawTheater(w, h)
+		return
+	}
+
 	// Theme-driven geometry: when the theme ships courtroom_design.ini
 	// (and the toggle is on), the courtroom IS the theme's layout.
 	if lay := a.themeLayout(w, h); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
@@ -725,11 +731,13 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	}
 	inner := sdl.Rect{X: r.X + 4, Y: r.Y + btnH + 4, W: r.W - 8, H: r.H - btnH - 8}
 	// Ctrl+wheel anywhere on the panel resizes the log/OOC/list text;
-	// plain wheel keeps scrolling the active list.
+	// plain wheel keeps scrolling the active list. Taking the wheel here
+	// stops the inner lists' own zoom handlers from double-stepping.
 	if c.ctrlHeld && c.wheelY != 0 && c.hovering(r) {
 		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
 			config.MinLogScalePercent, config.MaxLogScalePercent)
 		a.saveLayout()
+		c.wheelTaken = true
 	}
 	switch a.logTab {
 	case logTabMusic:
@@ -771,6 +779,14 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	rows := a.icWrapped(wrapW)
 	contentH := int32(len(rows)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
+	// Ctrl+wheel zooms the log text (themed layouts have no outer panel
+	// handler; wheelTaken stops the classic one from double-stepping).
+	if c.ctrlHeld && !c.wheelTaken && c.wheelY != 0 && c.hovering(list) {
+		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
+			config.MinLogScalePercent, config.MaxLogScalePercent)
+		a.saveLayout()
+		c.wheelTaken = true
+	}
 	if !c.ctrlHeld { // ctrl+wheel resizes text
 		a.icScroll -= c.WheelIn(list) * scrollStepPx
 	}
@@ -790,7 +806,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if ecol := a.icLog[row.entry].color; ecol > 0 {
 				col = render.TextColor(ecol)
 			}
-			c.LabelClippedFont(font, list.X, y, wrapW, row.text, col)
+			c.LabelClippedFont(c.LogFontFor(a.logPct, row.text), list.X, y, wrapW, row.text, col)
 		}
 		y += lineH
 	}
@@ -807,8 +823,15 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	lines := a.oocWrapped(wrapW) // MOTDs wrap — never truncate
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-	if !c.ctrlHeld && c.hovering(list) {
-		a.oocScroll -= c.wheelY * scrollStepPx
+	// Ctrl+wheel zooms the OOC text (playtest ask: "zoom the text out").
+	if c.ctrlHeld && !c.wheelTaken && c.wheelY != 0 && c.hovering(list) {
+		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
+			config.MinLogScalePercent, config.MaxLogScalePercent)
+		a.saveLayout()
+		c.wheelTaken = true
+	}
+	if !c.ctrlHeld {
+		a.oocScroll -= c.WheelIn(list) * scrollStepPx
 	}
 	if maxScroll := contentH - list.H; maxScroll > 0 && a.oocScroll >= maxScroll-lineH {
 		a.oocScroll = maxScroll
@@ -820,7 +843,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			break
 		}
 		if y >= list.Y-lineH {
-			c.LabelClippedFont(font, list.X, y, wrapW, line, ColText)
+			c.LabelClippedFont(c.LogFontFor(a.logPct, line), list.X, y, wrapW, line, ColText)
 		}
 		y += lineH
 	}
@@ -866,7 +889,7 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 			break
 		}
 		if y >= list.Y-lineH {
-			c.LabelClippedFont(font, list.X, y, wrapW, line, ColText)
+			c.LabelClippedFont(c.LogFontFor(a.logPct, line), list.X, y, wrapW, line, ColText)
 		}
 		y += lineH
 	}
@@ -1721,5 +1744,7 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool) (*rend
 	if skinned && sc.TextColor == 0 && a.themeHasMsg {
 		col = a.themeMsgCol
 	}
-	return render.Rasterize(a.ctx.Ren, a.ctx.ChatFont(a.chatPct), sc.MessageText, wrapW, col)
+	// Per-message font pick: the override chain's first covering font
+	// (CJK fallback), the embedded font otherwise.
+	return render.Rasterize(a.ctx.Ren, a.ctx.ChatFontFor(a.chatPct, sc.MessageText), sc.MessageText, wrapW, col)
 }

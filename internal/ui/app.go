@@ -232,6 +232,7 @@ type App struct {
 	icWrapQuery string
 	icWrapW     int32
 	icWrapPct   int
+	icWrapGen   int // font chain generation baked into the wrap
 	// OOC wrapped-lines cache: long entries (MOTDs) wrap instead of
 	// truncating; rebuilt only when the log, width, or font scale moved.
 	oocSeq      uint64
@@ -240,6 +241,7 @@ type App struct {
 	oocWrapW    int32
 	oocWrapPct  int
 	oocWrapMask bool // streamer-mode masking baked into the cache
+	oocWrapGen  int  // font chain generation baked into the wrap
 	oocLog      []string
 	musicScroll int32
 	areaScroll  int32
@@ -261,6 +263,9 @@ type App struct {
 	// --- server format manifest (extensions.json autodetect) ---
 	manifestRes chan manifestFetch
 	manifestFor string // origin already fetched this session (dedupe)
+
+	// --- font override pipeline (file bytes read off-thread) ---
+	fontRes chan fontLoad
 
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
@@ -345,7 +350,15 @@ type App struct {
 
 	// layout scales (percent; mirrors prefs, saved on change)
 	vpPct, chatPct, boxPct, logPct, inputPct int
-	uiScalePct                               int // global renderer scale
+	uiScalePct                               int // global renderer scale (manual)
+	// detectedScalePct is the display-DPI-derived scale (96 dpi = 100%),
+	// snapped to the settings step; UIScale() prefers it while the
+	// auto-HiDPI preference is on. 0 = detection unavailable.
+	detectedScalePct int
+	// theaterOn is the borderless viewport-only mode (Esc exits).
+	// Deliberately session-only: it can never persist someone into a
+	// chrome-less client across runs.
+	theaterOn bool
 	// chat raster invalidation extras (text/color tracked separately)
 	rasterScale   int
 	rasterW       int32
@@ -626,6 +639,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		charINIres:  make(chan charINIFetch, 1),
 		iniRes:      make(chan iniswapFetch, 1),
 		manifestRes: make(chan manifestFetch, 1),
+		fontRes:     make(chan fontLoad, 1),
 		pairWith:    protocol.UnpairedCharID,
 		oocName:     d.Prefs.SavedShowname(),
 		selServer:   -1,
@@ -645,6 +659,9 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales()
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
+	if paths := d.Prefs.FontPaths(); paths != "" {
+		a.loadFontChainAsync(paths) // persisted override: bytes land async
+	}
 	if saved := d.Prefs.SavedOOCName(); saved != "" {
 		a.oocName = saved
 	}
@@ -653,8 +670,32 @@ func NewApp(ctx *Ctx, d Deps) *App {
 }
 
 // UIScale exposes the global scale percent (main sets the renderer scale
-// from it each frame and sizes the logical canvas accordingly).
-func (a *App) UIScale() int { return a.uiScalePct }
+// from it each frame and sizes the logical canvas accordingly): the
+// DPI-detected value under auto-HiDPI, the manual setting otherwise.
+func (a *App) UIScale() int {
+	if a.detectedScalePct > 0 && a.d.Prefs.UIScaleAuto() {
+		return a.detectedScalePct
+	}
+	return a.uiScalePct
+}
+
+// SetDetectedUIScale feeds the display-DPI scale measured by main after
+// SDL init (96 dpi = 100%), snapped to the settings step so auto and
+// manual values share one scale, clamped to the manual bounds.
+func (a *App) SetDetectedUIScale(pct int) {
+	pct = pct / config.UIScaleStepPercent * config.UIScaleStepPercent
+	a.detectedScalePct = clampInt(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
+	a.ctx.SetUIScale(a.UIScale()) // mouse unprojection follows immediately
+}
+
+// setTheater flips the borderless viewport-only mode. The SDL border
+// call is legal here — every caller is on the render thread.
+func (a *App) setTheater(on bool) {
+	a.theaterOn = on
+	if a.ctx.win != nil {
+		a.ctx.win.SetBordered(!on)
+	}
+}
 
 // saveLayout persists the courtroom layout knobs (debounced saver flushes).
 func (a *App) saveLayout() {
@@ -1037,6 +1078,78 @@ func (a *App) pollManifest() {
 		}
 		a.d.Resolver.WarmFromPrefs()
 		a.pushDebug(fmt.Sprintf("extensions.json: seeded %d format classes for %s", res.seeded, res.host))
+	default:
+	}
+}
+
+// fontLoad is one font-override read result: file bytes in chain order
+// plus a one-line verdict for the settings status.
+type fontLoad struct {
+	names []string
+	data  [][]byte
+	note  string
+}
+
+// fontFileMaxBytes bounds one override font file (CJK TTCs run ~20 MiB;
+// past 64 MiB it's not a font, it's a mistake).
+const fontFileMaxBytes = 64 << 20
+
+// loadFontChainAsync reads the override font files off-thread (semicolon-
+// or comma-separated paths, chain order, ≤ fontChainCap) and lands them on
+// fontRes. An empty list clears the override immediately.
+func (a *App) loadFontChainAsync(raw string) {
+	paths := strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == ',' })
+	if len(paths) == 0 {
+		a.ctx.SetFontChain(nil, nil)
+		a.rasterText = "" // re-raster the visible message with the embedded font
+		return
+	}
+	if len(paths) > fontChainCap {
+		paths = paths[:fontChainCap]
+	}
+	go func() {
+		var res fontLoad
+		var failed []string
+		for _, p := range paths {
+			p = strings.TrimSpace(strings.Trim(strings.TrimSpace(p), `"`))
+			if p == "" {
+				continue
+			}
+			data, err := os.ReadFile(p)
+			if err != nil || len(data) == 0 || len(data) > fontFileMaxBytes {
+				failed = append(failed, filepath.Base(p))
+				continue
+			}
+			res.names = append(res.names, filepath.Base(p))
+			res.data = append(res.data, data)
+		}
+		switch {
+		case len(res.data) == 0:
+			res.note = "Font override: no readable font files — keeping the embedded font"
+		case len(failed) > 0:
+			res.note = fmt.Sprintf("Font chain: %s (skipped: %s)",
+				strings.Join(res.names, " → "), strings.Join(failed, ", "))
+		default:
+			res.note = "Font chain: " + strings.Join(res.names, " → ")
+		}
+		select {
+		case a.fontRes <- res:
+		default: // a newer load superseded this one
+		}
+	}()
+}
+
+// pollFontChain lands override font bytes on the render thread: install
+// the chain (fonts build lazily per scale) and force a chat re-raster.
+func (a *App) pollFontChain() {
+	select {
+	case res := <-a.fontRes:
+		if len(res.data) > 0 {
+			a.ctx.SetFontChain(res.names, res.data)
+		}
+		a.rasterText = ""
+		settings.statusLine = clampLine(res.note)
+		a.pushDebug(res.note)
 	default:
 	}
 }
@@ -1464,6 +1577,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drainWarnings()
 	a.pollThemeApply()
 	a.pollManifest()
+	a.pollFontChain()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
 		a.healScenery()

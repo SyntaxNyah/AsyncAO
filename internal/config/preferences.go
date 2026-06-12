@@ -62,6 +62,11 @@ const defaultPreferAnimated = true
 // doesn't cover.
 const defaultFormatAutoDetect = true
 
+// defaultUIScaleAuto ships ON: the UI scale follows the display DPI
+// (HiDPI screens render readable out of the box); unticking it re-arms
+// the manual UI scale row in Settings.
+const defaultUIScaleAuto = true
+
 // defaultThemeLayout ships ON: when the active theme defines the AO2
 // courtroom_design.ini geometry, the courtroom adopts it wholesale —
 // that IS what picking a theme means to AO players.
@@ -158,6 +163,8 @@ type AssetPreferences struct {
 	DebugOverlay           bool                      `json:"debugOverlay"`
 	AutoDetectFormats      bool                      `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                      `json:"themeLayout"`
+	UIScaleAutoOn          bool                      `json:"uiScaleAuto"`
+	FontOverridePaths      string                    `json:"fontPaths"`
 	DiskZstd               bool                      `json:"diskZstd"`
 	StreamerModeOn         bool                      `json:"streamerMode"`
 	ThemeName              string                    `json:"themeName"`
@@ -220,6 +227,8 @@ type prefsJSON struct {
 	DebugOverlay           bool   `json:"debugOverlay"`
 	FormatAutoDetect       *bool  `json:"formatAutoDetect"` // absent = default ON
 	ThemeLayout            *bool  `json:"themeLayout"`      // absent = default ON
+	UIScaleAuto            *bool  `json:"uiScaleAuto"`      // absent = default ON (HiDPI)
+	FontPaths              string `json:"fontPaths"`        // ""=embedded font
 	DiskZstd               bool   `json:"diskZstd"`         // default OFF (measured trade)
 	StreamerMode           bool   `json:"streamerMode"`     // default OFF
 	ThemeName              string `json:"themeName"`
@@ -338,6 +347,7 @@ func load(path string) (*AssetPreferences, error) {
 		SmoothScaling:     defaultSmoothScaling,
 		AutoDetectFormats: defaultFormatAutoDetect,
 		ThemeLayoutOn:     defaultThemeLayout,
+		UIScaleAutoOn:     defaultUIScaleAuto,
 		DiscordRPC:        defaultDiscordPrefs(),
 		ViewportPct:       DefaultViewportPercent,
 		ChatScalePct:      DefaultScalePercent,
@@ -386,6 +396,10 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.ThemeLayout != nil {
 		p.ThemeLayoutOn = *onDisk.ThemeLayout
 	}
+	if onDisk.UIScaleAuto != nil {
+		p.UIScaleAutoOn = *onDisk.UIScaleAuto
+	}
+	p.FontOverridePaths = onDisk.FontPaths
 	p.DiskZstd = onDisk.DiskZstd
 	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
@@ -1262,6 +1276,46 @@ func (p *AssetPreferences) SetDiskZstd(enabled bool) {
 		return
 	}
 	p.DiskZstd = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FontPaths reports the raw IC/OOC font override list (semicolon- or
+// comma-separated TTF/TTC paths, chain order; "" = embedded font).
+func (p *AssetPreferences) FontPaths() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FontOverridePaths
+}
+
+// SetFontPaths persists the font override list.
+func (p *AssetPreferences) SetFontPaths(raw string) {
+	p.mu.Lock()
+	if p.FontOverridePaths == raw {
+		p.mu.Unlock()
+		return
+	}
+	p.FontOverridePaths = raw
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// UIScaleAuto reports whether the UI scale follows the display DPI
+// (default ON); off, the manual UIScale percent governs.
+func (p *AssetPreferences) UIScaleAuto() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.UIScaleAutoOn
+}
+
+// SetUIScaleAuto toggles DPI-driven UI scaling.
+func (p *AssetPreferences) SetUIScaleAuto(enabled bool) {
+	p.mu.Lock()
+	if p.UIScaleAutoOn == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.UIScaleAutoOn = enabled
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // TestCycleField pins Tab/Shift+Tab focus order: draw order forward,
@@ -59,6 +61,42 @@ func TestInkReadabilityGuard(t *testing.T) {
 	clear := image.NewRGBA(image.Rect(0, 0, 8, 8))
 	if got := avgSkinLuma(clear, 1); got != transparentSkinLuma {
 		t.Errorf("transparent skin luma = %d, want %d", got, transparentSkinLuma)
+	}
+}
+
+// TestApplyThemePaletteReadabilityFloor pins the kit-wide ink guard: a
+// stylesheet whose text has no contrast against its own panels (playtest:
+// GrayGarden = black on black settings) gets readable ink re-derived from
+// the panel's lightness; switching back restores the stock palette.
+func TestApplyThemePaletteReadabilityFloor(t *testing.T) {
+	defer applyThemePalette(theme.Palette{}) // restore stock for other tests
+	rgb := func(r, g, b uint8) *theme.RGB { return &theme.RGB{R: r, G: g, B: b} }
+
+	// Black-on-black sheet → light ink wins.
+	applyThemePalette(theme.Palette{Text: rgb(10, 10, 10), Panel: rgb(18, 18, 20)})
+	if absInt(colLuma(ColText)-colLuma(ColPanel)) < minInkSkinContrast {
+		t.Errorf("dark-on-dark sheet kept unreadable ink: text %v panel %v", ColText, ColPanel)
+	}
+
+	// White-on-white sheet → dark ink wins.
+	applyThemePalette(theme.Palette{Text: rgb(245, 245, 245), Panel: rgb(230, 230, 235)})
+	if absInt(colLuma(ColText)-colLuma(ColPanel)) < minInkSkinContrast {
+		t.Errorf("light-on-light sheet kept unreadable ink: text %v panel %v", ColText, ColPanel)
+	}
+	if colLuma(ColText) >= paletteLightPanelLuma {
+		t.Error("light panels must take dark ink, not light")
+	}
+
+	// A readable sheet passes through untouched.
+	applyThemePalette(theme.Palette{Text: rgb(220, 230, 240), Panel: rgb(27, 39, 53)})
+	if (ColText != sdl.Color{R: 220, G: 230, B: 240, A: 255}) {
+		t.Errorf("readable sheet text must apply verbatim, got %v", ColText)
+	}
+
+	// Empty palette restores stock exactly.
+	applyThemePalette(theme.Palette{})
+	if ColText != defaultKitColors[4] || ColPanel != defaultKitColors[1] {
+		t.Error("empty palette must restore the stock kit colors")
 	}
 }
 

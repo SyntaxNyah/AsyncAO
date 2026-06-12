@@ -42,6 +42,9 @@ const (
 	// state (typewriter, blips, effect countdowns) resumes smoothly
 	// instead of bursting the backlog (§perf frame pacing).
 	maxFrameDelta = 100 * time.Millisecond
+	// baselineDPI is the desktop "100%" DPI Windows and SDL report at
+	// standard scaling — the divisor for the HiDPI auto UI scale.
+	baselineDPI = 96.0
 )
 
 func main() {
@@ -246,6 +249,13 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	})
 	pump := render.NewPump(store, manager, app.IsLiveBase)
 	app.SetPump(pump)
+
+	// HiDPI: derive the auto UI scale from the desktop DPI (96 dpi =
+	// 100%); the app snaps it to the settings step and the auto-scale
+	// preference (default ON) decides whether it governs.
+	if ddpi, _, _, err := sdl.GetDisplayDPI(0); err == nil && ddpi > 0 {
+		app.SetDetectedUIScale(int(ddpi/baselineDPI*100 + 0.5))
+	}
 
 	if serverURL != "" {
 		app.Connect(serverURL, serverURL)

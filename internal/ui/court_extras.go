@@ -736,6 +736,12 @@ func (a *App) drawUICfgPanel(w, h int32) {
 		}
 		y += 26
 	}
+	// Theater: the logical extreme of hiding chrome — stage only,
+	// borderless, Esc (or the hotkey) exits.
+	if c.Button(sdl.Rect{X: panel.X + pad, Y: panel.Y + panel.H - btnH - 10, W: 210, H: btnH}, "Theater mode (Esc exits)") {
+		a.showUICfg = false
+		a.setTheater(true)
+	}
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + panel.H - btnH - 10, W: 90, H: btnH}, "Done") {
 		a.showUICfg = false
 	}

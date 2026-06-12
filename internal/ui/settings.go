@@ -21,10 +21,15 @@ type settingsState struct {
 	mountInput string
 	loaded     bool
 	statusLine string
+	scroll     int32 // page scroll (playtest: settings must wheel-scroll)
 
 	// callwords edit buffer (loaded once per settings entry).
 	callInput  string
 	callLoaded bool
+
+	// font override edit buffer (semicolon-separated chain).
+	fontInput  string
+	fontLoaded bool
 
 	// theme picker state: list scanning runs on a goroutine (directory
 	// I/O stays off the render thread — §17.2) and lands on themeRes.
@@ -92,7 +97,12 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	a.pollThemeScan()
 
-	y := pad + 44
+	// The page flows from top minus the scroll offset; the wheel handler
+	// and the bar live at the END of the function, where the content
+	// height is known and every spinbox row has had first claim on the
+	// wheel (wheelTaken).
+	top := pad + 44
+	y := top - settings.scroll
 
 	// Showname: write-through to prefs. A stale once-per-session copy
 	// here used to overwrite names typed in the courtroom on Back
@@ -149,11 +159,51 @@ func (a *App) drawSettings(w, h int32) {
 		settings.statusLine = "Re-streaming textures with new filtering."
 	}
 	y += 26
-	uiPct := a.numberRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent)
-	if uiPct != a.uiScalePct {
-		a.uiScalePct = uiPct
-		a.ctx.SetUIScale(uiPct)
-		a.d.Prefs.SetUIScale(uiPct)
+	// Global scale: DPI-driven by default (HiDPI screens land readable),
+	// with the manual spinbox taking over when auto is unticked.
+	scaleAuto := a.d.Prefs.UIScaleAuto()
+	scaleAutoLabel := "Auto UI scale from display DPI"
+	if a.detectedScalePct > 0 {
+		scaleAutoLabel = fmt.Sprintf("Auto UI scale from display DPI (this display: %d%%)", a.detectedScalePct)
+	}
+	if next := c.Checkbox(pad, y, scaleAutoLabel, scaleAuto); next != scaleAuto {
+		a.d.Prefs.SetUIScaleAuto(next)
+		a.ctx.SetUIScale(a.UIScale())
+	}
+	y += 26
+	if scaleAuto {
+		c.Label(pad, y+4, fmt.Sprintf("UI scale %%:  %d (auto)", a.UIScale()), ColTextDim)
+	} else {
+		uiPct := a.numberRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent)
+		if uiPct != a.uiScalePct {
+			a.uiScalePct = uiPct
+			a.ctx.SetUIScale(uiPct)
+			a.d.Prefs.SetUIScale(uiPct)
+		}
+	}
+	y += 34
+
+	// IC/OOC font override: a chain of TTF/TTC paths, first covering font
+	// per line wins (put a CJK-capable font later in the chain; sizes ride
+	// the existing Text/Log knobs and Ctrl+wheel).
+	c.Label(pad, y+4, "IC/OOC font:", ColText)
+	if !settings.fontLoaded {
+		settings.fontInput = a.d.Prefs.FontPaths()
+		settings.fontLoaded = true
+	}
+	var fontCommit bool
+	settings.fontInput, fontCommit = c.TextField("fontpaths", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH},
+		settings.fontInput, `C:\Windows\Fonts\meiryo.ttc; more fallbacks... (blank = built-in)`)
+	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || fontCommit {
+		raw := strings.TrimSpace(settings.fontInput)
+		a.d.Prefs.SetFontPaths(raw)
+		a.loadFontChainAsync(raw)
+		if raw == "" {
+			settings.statusLine = "Font override cleared — built-in font."
+		}
+	}
+	if names := a.ctx.FontChainNames(); len(names) > 0 {
+		c.LabelClipped(pad+620, y+4, w-pad-620-scrollBarW, "chain: "+strings.Join(names, " → "), ColTextDim)
 	}
 	y += 34
 
@@ -404,7 +454,18 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	if settings.statusLine != "" {
 		c.Label(pad, y, settings.statusLine, ColAccent)
+		y += 24
 	}
+
+	// Page scroll: wheel anywhere a spinbox row didn't already consume
+	// it, plus a draggable bar on the right edge.
+	contentH := (y + settings.scroll) - top + pad
+	visibleH := h - top - pad
+	if !c.ctrlHeld && !c.wheelTaken {
+		settings.scroll -= c.wheelY * scrollStepPx
+	}
+	track := sdl.Rect{X: w - scrollBarW - 2, Y: top, W: scrollBarW, H: visibleH}
+	settings.scroll = c.VScrollbar("settscroll", track, settings.scroll, contentH, visibleH)
 }
 
 // measureDiskCacheAsync walks the T3 directory off-thread and reports the
@@ -821,6 +882,7 @@ func (a *App) numberRow(y int32, label string, value, step, min, max int) int {
 		value += step
 	}
 	if c.hovering(sdl.Rect{X: pad, Y: y, W: 252, H: 26}) && c.wheelY != 0 {
+		c.wheelTaken = true // a hovered spinbox owns the wheel — no page scroll
 		next := value + int(c.wheelY)*step
 		if next >= min && next <= max {
 			value = next

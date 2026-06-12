@@ -91,6 +91,14 @@ func scaleColor(c sdl.Color, pct int) sdl.Color {
 	return sdl.Color{R: mul(c.R), G: mul(c.G), B: mul(c.B), A: c.A}
 }
 
+// paletteDarkText is the dark ink the readability floor falls back to on
+// LIGHT theme panels (light panels with unreadable sheet text).
+var paletteDarkText = sdl.Color{R: 20, G: 20, B: 24, A: 255}
+
+// paletteLightPanelLuma splits "dark panel → light text" from "light
+// panel → dark text" in the readability floor.
+const paletteLightPanelLuma = 128
+
 // applyThemePalette restores the stock kit palette, then lays the theme's
 // courtroom_stylesheets.css colors over it. Slots the stylesheet doesn't
 // define keep stock values or derive from defined ones (background from
@@ -122,6 +130,21 @@ func applyThemePalette(p theme.Palette) {
 	}
 	if p.Danger != nil {
 		ColDanger = sdl.Color{R: p.Danger.R, G: p.Danger.G, B: p.Danger.B, A: 255}
+	}
+	// Readability floor — the chatbox ink guard's rule, applied to the
+	// whole kit (playtest: GrayGarden rendered Settings black-on-black).
+	// Labels draw on panels and raised surfaces, so text must clear the
+	// contrast floor against BOTH; when the sheet's combination fails,
+	// re-derive ink from the panel's lightness instead of trusting it.
+	textL := colLuma(ColText)
+	if absInt(textL-colLuma(ColPanel)) < minInkSkinContrast ||
+		absInt(textL-colLuma(ColPanelHi)) < minInkSkinContrast {
+		if colLuma(ColPanel) < paletteLightPanelLuma {
+			ColText = defaultKitColors[4] // stock light ink on dark panels
+		} else {
+			ColText = paletteDarkText
+		}
+		ColTextDim = scaleColor(ColText, paletteDimPct)
 	}
 }
 
@@ -202,12 +225,19 @@ type Ctx struct {
 	font    *ttf.Font
 	fontBig *ttf.Font
 
-	// User-scaled font slots (chat box, log/OOC lists), rebuilt only when
-	// the percent changes — a settings action, never per frame.
-	chatFont *ttf.Font
-	chatPct  int
-	logFont  *ttf.Font
-	logPct   int
+	// User-scaled font sets (chat box, log/OOC lists): the user's
+	// override chain (CJK fallback) plus the embedded last resort,
+	// rebuilt only when the percent or the chain changes — settings
+	// actions, never per frame.
+	chatSet fontSet
+	logSet  fontSet
+	// fontChain holds the override TTF/TTC bytes in chain order
+	// (≤ fontChainCap). Bytes are read OFF-thread (App pipeline); fonts
+	// build here from memory. The slices must outlive their fonts —
+	// SDL's RWFromMem points straight at them.
+	fontChain    [][]byte
+	fontNames    []string // diagnostics (settings status line)
+	fontChainGen int      // bumped per SetFontChain; sets rebuild lazily
 
 	// uiPct is the global render scale percent; mouse coordinates
 	// unproject through it so logical hit-tests stay exact.
@@ -222,14 +252,18 @@ type Ctx struct {
 	backspace      bool
 	enter          bool
 	tabPressed     bool
-	pasted         string      // Ctrl+V clipboard text (flattened to one line)
-	copyReq        bool        // Ctrl+C: focused field copies its value
-	cutReq         bool        // Ctrl+X: focused field copies, then clears
-	selectAll      bool        // Ctrl+A armed: next edit replaces the whole value
-	mouseDown      bool        // left button currently held (event-tracked)
-	dragID         string      // widget owning the active drag ("" = none)
-	dropped        string      // SDL_DROPFILE path this frame ("" = none)
-	hotkey         sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
+	escPressed     bool
+	pasted         string // Ctrl+V clipboard text (flattened to one line)
+	copyReq        bool   // Ctrl+C: focused field copies its value
+	cutReq         bool   // Ctrl+X: focused field copies, then clears
+	selectAll      bool   // Ctrl+A armed: next edit replaces the whole value
+	// wheelTaken marks this frame's wheel as consumed by a hovered widget
+	// (spinbox rows, WheelIn lists) so page-level scrolls don't double-act.
+	wheelTaken bool
+	mouseDown  bool        // left button currently held (event-tracked)
+	dragID     string      // widget owning the active drag ("" = none)
+	dropped    string      // SDL_DROPFILE path this frame ("" = none)
+	hotkey     sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
 
 	focusID  string
 	caretOn  bool
@@ -312,36 +346,131 @@ func loadEmbeddedFont(size int) (*ttf.Font, error) {
 // Font exposes the chrome font (typewriter rasterizer reuse).
 func (c *Ctx) Font() *ttf.Font { return c.font }
 
-// ChatFont returns the IC message box font at pct percent of the chrome
-// size, rebuilding only when the percent changes (a Settings action).
+// fontSet is one scaled font chain: override fonts in order, the
+// embedded font as the guaranteed last entry.
+type fontSet struct {
+	fonts []*ttf.Font
+	pct   int
+	gen   int
+}
+
+// fontChainCap bounds the override chain (a primary plus a few CJK
+// fallbacks is the realistic maximum).
+const fontChainCap = 4
+
+// ChatFont returns the IC message box PRIMARY font at pct percent of the
+// chrome size (metrics/wrap baseline); ChatFontFor picks per text.
 func (c *Ctx) ChatFont(pct int) *ttf.Font {
-	return c.scaledFont(&c.chatFont, &c.chatPct, pct)
+	return c.fontsFor(&c.chatSet, pct)[0]
 }
 
-// LogFont returns the log/OOC list font at pct percent of the chrome size.
+// ChatFontFor picks the first chain font that covers every rune of text
+// (the CJK fallback rule), the embedded font as last resort.
+func (c *Ctx) ChatFontFor(pct int, text string) *ttf.Font {
+	return pickFont(c.fontsFor(&c.chatSet, pct), text)
+}
+
+// LogFont returns the log/OOC list PRIMARY font at pct percent.
 func (c *Ctx) LogFont(pct int) *ttf.Font {
-	return c.scaledFont(&c.logFont, &c.logPct, pct)
+	return c.fontsFor(&c.logSet, pct)[0]
 }
 
-func (c *Ctx) scaledFont(slot **ttf.Font, cached *int, pct int) *ttf.Font {
-	if pct == DefaultScalePct && *slot == nil {
-		return c.font // unscaled: share the chrome font, no extra rasters
+// LogFontFor picks the covering chain font for one log line.
+func (c *Ctx) LogFontFor(pct int, text string) *ttf.Font {
+	return pickFont(c.fontsFor(&c.logSet, pct), text)
+}
+
+// SetFontChain installs the override font bytes (chain order; nil
+// clears). Render thread; the byte slices were read off-thread and must
+// stay referenced for the fonts' lifetime (RWFromMem aliases them).
+func (c *Ctx) SetFontChain(names []string, data [][]byte) {
+	if len(data) > fontChainCap {
+		names, data = names[:fontChainCap], data[:fontChainCap]
 	}
-	if *slot != nil && *cached == pct {
-		return *slot
+	c.fontNames, c.fontChain = names, data
+	c.fontChainGen++
+}
+
+// FontChainNames reports the loaded override names (settings status).
+func (c *Ctx) FontChainNames() []string { return c.fontNames }
+
+// fontsFor returns the set's fonts, rebuilding when the scale or the
+// chain moved (settings actions — never per frame).
+func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
+	if len(s.fonts) > 0 && s.pct == pct && s.gen == c.fontChainGen {
+		return s.fonts
 	}
-	font, err := loadEmbeddedFont(UIFontSize * pct / DefaultScalePct)
+	for _, f := range s.fonts {
+		if f != c.font {
+			f.Close()
+		}
+	}
+	// Stale-font cache entries would never be hit again (keys carry the
+	// font pointer); purge wholesale — rebuilds are user actions.
+	c.purgeTextCache()
+	s.fonts = s.fonts[:0]
+	s.pct, s.gen = pct, c.fontChainGen
+	size := UIFontSize * pct / DefaultScalePct
+	if size < 1 {
+		size = 1
+	}
+	for _, data := range c.fontChain {
+		if f, err := memFont(data, size); err == nil {
+			s.fonts = append(s.fonts, f)
+		}
+	}
+	// Embedded last resort; share the chrome font at 1:1 (no duplicate
+	// rasters for the common case).
+	if pct == DefaultScalePct || c.font == nil {
+		s.fonts = append(s.fonts, c.font)
+	} else if f, err := loadEmbeddedFont(size); err == nil {
+		s.fonts = append(s.fonts, f)
+	} else {
+		s.fonts = append(s.fonts, c.font)
+	}
+	return s.fonts
+}
+
+// memFont opens a TTF/TTC from bytes the caller keeps alive.
+func memFont(data []byte, size int) (*ttf.Font, error) {
+	rw, err := sdl.RWFromMem(data)
 	if err != nil {
-		return c.font
+		return nil, err
 	}
-	if *slot != nil {
-		(*slot).Close()
-		// Stale-font cache entries would never be hit again (keys carry the
-		// font pointer); purge wholesale — scale changes are user actions.
-		c.purgeTextCache()
+	return ttf.OpenFontRW(rw, 1, size)
+}
+
+// pickFont returns the first font covering every rune of text — mixed
+// Latin+CJK lines resolve to the first CJK-capable entry (CJK fonts
+// cover Latin). The last entry is the unconditional fallback.
+func pickFont(fonts []*ttf.Font, text string) *ttf.Font {
+	if len(fonts) == 1 {
+		return fonts[0]
 	}
-	*slot, *cached = font, pct
-	return font
+	for _, f := range fonts[:len(fonts)-1] {
+		if fontCovers(f, text) {
+			return f
+		}
+	}
+	return fonts[len(fonts)-1]
+}
+
+// fontCovers reports whether f provides a glyph for every rune.
+// GlyphMetrics errors exactly on missing glyphs; SDL_ttf's metrics are
+// BMP-only, so supplementary-plane runes count as uncovered.
+func fontCovers(f *ttf.Font, text string) bool {
+	if f == nil {
+		return false
+	}
+	for _, r := range text {
+		if r > 0xFFFF {
+			return false
+		}
+		if _, err := f.GlyphMetrics(r); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // BeginFrame opens a frame: it clears the input snapshot, so it must run
@@ -376,10 +505,12 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.clicked = false
 	c.rightClicked = false
 	c.wheelY = 0
+	c.wheelTaken = false
 	c.typed = ""
 	c.backspace = false
 	c.enter = false
 	c.tabPressed = false
+	c.escPressed = false
 	c.pasted = ""
 	c.copyReq = false
 	c.cutReq = false
@@ -461,6 +592,8 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 		case sdl.K_TAB:
 			c.tabPressed = true
 			c.tabShift = e.Keysym.Mod&sdl.KMOD_SHIFT != 0
+		case sdl.K_ESCAPE:
+			c.escPressed = true
 		}
 	case *sdl.DropEvent:
 		if e.Type == sdl.DROPFILE {
@@ -724,9 +857,11 @@ func (c *Ctx) FocusField(id string) { c.focusNext = id }
 
 // WheelIn returns this frame's wheel ticks when the cursor is inside r,
 // else 0 — scrollables only react under the pointer (playtest: the music
-// list scrolled on wheel from anywhere on screen).
+// list scrolled on wheel from anywhere on screen). A hit marks the wheel
+// taken, fencing page-level scroll handlers.
 func (c *Ctx) WheelIn(r sdl.Rect) int32 {
 	if c.wheelY != 0 && c.hovering(r) {
+		c.wheelTaken = true
 		return c.wheelY
 	}
 	return 0
@@ -1102,16 +1237,18 @@ func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
 // Destroy frees cached textures and fonts.
 func (c *Ctx) Destroy() {
 	c.purgeTextCache()
+	for _, s := range []*fontSet{&c.chatSet, &c.logSet} {
+		for _, f := range s.fonts {
+			if f != c.font && f != nil {
+				f.Close()
+			}
+		}
+		s.fonts = nil
+	}
 	if c.font != nil {
 		c.font.Close()
 	}
 	if c.fontBig != nil {
 		c.fontBig.Close()
-	}
-	if c.chatFont != nil {
-		c.chatFont.Close()
-	}
-	if c.logFont != nil {
-		c.logFont.Close()
 	}
 }

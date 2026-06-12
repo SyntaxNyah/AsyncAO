@@ -30,6 +30,7 @@ const (
 	hotkeyMusicStop  = "music_stop"
 	hotkeyLogJump    = "log_jump"
 	hotkeyScreenshot = "screenshot"
+	hotkeyTheater    = "theater"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -45,6 +46,7 @@ var hotkeyDefs = []struct {
 	{hotkeyMusicStop, "Stop music", "m"},
 	{hotkeyLogJump, "Jump logs to newest", "l"},
 	{hotkeyScreenshot, "Screenshot", "s"},
+	{hotkeyTheater, "Theater mode", "t"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -84,6 +86,34 @@ func (a *App) handleHotkeys() {
 		a.jumpLogs()
 	case a.hotkeyFor(hotkeyScreenshot):
 		a.captureScreenshot()
+	case a.hotkeyFor(hotkeyTheater):
+		a.setTheater(!a.theaterOn)
+	}
+}
+
+// theaterHint is the only chrome theater mode draws.
+const theaterHint = "Esc exits theater"
+
+// drawTheater is the borderless viewport-only courtroom: the stage
+// letterboxed to AO's 4:3 in a black surround, the chat overlay (it IS
+// the show), hotkeys, and nothing else. Esc or the theater hotkey exits.
+func (a *App) drawTheater(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{A: 255})
+	vpW, vpH := w, w*3/4
+	if vpH > h {
+		vpH = h
+		vpW = vpH * 4 / 3
+	}
+	vp := sdl.Rect{X: (w - vpW) / 2, Y: (h - vpH) / 2, W: vpW, H: vpH}
+	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
+	a.handleSpriteDrag(vp)
+	a.handleHotkeys()
+	a.drawChatOverlay(vp)
+	a.drawCourtOverlays(vp, nil) // splashes/HP still play — part of the show
+	c.Label(w-c.TextWidth(theaterHint)-8, 6, theaterHint, ColTextDim)
+	if c.escPressed {
+		a.setTheater(false)
 	}
 }
 
@@ -234,17 +264,19 @@ const oocWrapMaxLinesPerEntry = 24
 // rebuilds happen on new messages or resizes, never per frame.
 func (a *App) oocWrapped(width int32) []string {
 	streamer := a.d.Prefs.StreamerMode()
-	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq &&
+	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq && a.oocWrapGen == a.ctx.fontChainGen &&
 		a.oocWrapW == width && a.oocWrapPct == a.logPct && a.oocWrapMask == streamer {
 		return a.oocWrap
 	}
-	font := a.ctx.LogFont(a.logPct)
 	out := a.oocWrap[:0]
 	for _, entry := range a.oocLog {
 		if streamer {
 			entry = streamerMaskLine(entry)
 		}
 		for _, para := range strings.Split(entry, "\n") {
+			// Per-paragraph font pick: wraps measure with the font that
+			// will draw the line (the CJK chain rule).
+			font := a.ctx.LogFontFor(a.logPct, para)
 			lines := wrapToWidth(font, strings.TrimRight(para, "\r"), width, oocWrapMaxLinesPerEntry)
 			if len(lines) == 0 {
 				out = append(out, "") // blank MOTD spacer lines survive
@@ -257,6 +289,7 @@ func (a *App) oocWrapped(width int32) []string {
 		out = []string{}
 	}
 	a.oocWrap, a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = out, a.oocSeq, width, a.logPct, streamer
+	a.oocWrapGen = a.ctx.fontChainGen
 	return out
 }
 
@@ -278,12 +311,13 @@ const icWrapMaxLinesPerEntry = 16
 // searches, and resizes, never per frame.
 func (a *App) icWrapped(width int32) []icWrapLine {
 	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapQuery == a.logSearch &&
-		a.icWrapW == width && a.icWrapPct == a.logPct {
+		a.icWrapW == width && a.icWrapPct == a.logPct && a.icWrapGen == a.ctx.fontChainGen {
 		return a.icWrap
 	}
-	font := a.ctx.LogFont(a.logPct)
 	out := a.icWrap[:0]
 	for _, i := range a.icLogFiltered() {
+		// Wrap with the font that will draw the entry (CJK chain rule).
+		font := a.ctx.LogFontFor(a.logPct, a.icLog[i].text)
 		for _, ln := range wrapToWidth(font, a.icLog[i].text, width, icWrapMaxLinesPerEntry) {
 			out = append(out, icWrapLine{text: ln, entry: i})
 		}
@@ -291,8 +325,8 @@ func (a *App) icWrapped(width int32) []icWrapLine {
 	if out == nil {
 		out = []icWrapLine{} // non-nil marks the cache as populated
 	}
-	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct =
-		out, a.icLogSeq, a.logSearch, width, a.logPct
+	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen =
+		out, a.icLogSeq, a.logSearch, width, a.logPct, a.ctx.fontChainGen
 	return out
 }
 
