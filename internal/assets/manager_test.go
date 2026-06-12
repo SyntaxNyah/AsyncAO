@@ -247,13 +247,19 @@ func TestManagerT1ShortCircuitUsesBaseKey(t *testing.T) {
 
 	resident[base] = true // "uploaded" — keyed by base, like the pump does
 
-	rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
+	// Re-ask while waiting: a Prefetch submitted during the FIRST pass's
+	// tiny deliver→deferred-inflight-Delete window dedupes away WITHOUT
+	// consulting T1 (correct — an identical pass is mid-flight). Slow CI
+	// runners hit that window (the Linux 2-core runner did); retrying
+	// keeps the test deterministic while the probe/decode assertions
+	// below still pin the actual contract.
 	deadline := time.Now().Add(managerWait)
 	for rig.manager.Stats().T1Hits == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("T1 short-circuit never hit for a resident base")
 		}
-		time.Sleep(time.Millisecond)
+		rig.manager.Prefetch(base, AssetTypeCharIcon, network.PriorityHigh) // AssetType: CharIcon
+		time.Sleep(5 * time.Millisecond)
 	}
 	if got := cs.total(); got != 1 {
 		t.Errorf("probes after T1 hit = %d, want still 1 (no re-fetch)", got)

@@ -190,6 +190,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   join (like the showname); when blank, commands and macros send as a
   sticky random `AsyncAO<1-200>` minted once per run — OOC commands
   always work even with no name set.
+- **Perf HUD (F3, any screen)**: live frame-time graph (last 120 frames;
+  green under 16.7 ms, amber to 33 ms, red past it, with the 60 fps line
+  drawn in), average/worst frame + fps, heap vs the 256 MiB GOMEMLIMIT
+  budget (amber at 75%, red over), GC pause p99, cache hit rate, network
+  probes, and cached 404s — rendered from the 1 Hz sampler that already
+  powered `--debug` logging. F3 again hides it.
+- **Blankposting**: Enter on an empty IC input sends the AO single-space
+  message — your sprite plays with no text (truly empty messages get
+  server-rejected; the space is the cross-server convention).
+- **Per-server theme bindings** (Settings → "Bind theme to server"):
+  pick any known server and bind the selected theme to it — joining
+  that server always applies it (tabs and rehearsal included), leaving
+  restores the global theme. Unbind any time; the row shows the current
+  binding.
 - **Live layout editor** (UI... → Edit layout, themed courtrooms): drag
   any widget across the screen, grab its corner grip to shrink/grow,
   right-click to reset one, Reset all for the theme. Edits persist per

@@ -18,6 +18,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -126,6 +127,8 @@ type Deps struct {
 	// Presence is the OPTIONAL Discord Rich Presence client (nil in
 	// tests; never required to build or run — see internal/presence).
 	Presence *presence.Client
+	// Profiler is the 1 Hz sampler the F3 perf HUD reads (nil in tests).
+	Profiler *metrics.Profiler
 	// MasterURL is the server-list endpoint.
 	MasterURL string
 }
@@ -172,7 +175,11 @@ type App struct {
 	// per run on first use (commands/macros need SOME name to send).
 	defaultOOC string
 	// macroBind ≥ 0 while the settings macro editor captures a key.
-	macroBind   int
+	macroBind int
+	// F3 perf HUD: toggle + the frame-time ring it graphs.
+	perfHUD     bool
+	frameDts    [perfHUDFrames]float32 // milliseconds
+	frameDtIdx  int
 	previewBase string
 	previewFor  string    // base the preview clock was started for
 	previewAt   time.Time // loop anchor — animated previews play, not freeze
@@ -276,6 +283,10 @@ type App struct {
 	// themeAt anchors the looping animation clock for animated theme art
 	// (chatbox/buttons/backdrops shipped as animated webp/gif/apng).
 	themeAt time.Time
+	// themeAppliedName is the last theme that actually landed —
+	// ensureThemeForSession compares against it so per-server bindings
+	// only trigger loads when something really changes.
+	themeAppliedName string
 
 	showUICfg bool // hide-chrome popup
 	hidden    map[string]bool
@@ -322,6 +333,10 @@ type sessionState struct {
 	lastPing    time.Time // CH keepalive pacing (active + background)
 	lastICSend  time.Time // chat_ratelimit window
 	manifestFor string    // origin already fetched this session (dedupe)
+	// themeBound is this server's bound theme ("" = the global pick);
+	// loaded from ServerWarmInfo.Theme on connect, wins in
+	// applyThemeAsync while the session lives.
+	themeBound string
 	// rehearsal marks the offline cached-asset browser (no connection;
 	// the manager's network gate is closed while set). Rehearsal never
 	// parks — backgrounding it would hold the global gate closed.
@@ -900,6 +915,9 @@ func (a *App) Connect(name, wsURL string) {
 	a.d.Prefs.ClaimLegacyWardrobe(wsURL)
 	a.refreshCharKeys()
 	a.syncLoginBuffers() // settings/dialog boxes show this server's creds
+	// Per-server theme binding: this server always uses that theme.
+	a.themeBound = a.d.Prefs.ServerWarmInfoFor(wsURL).Theme
+	a.ensureThemeForSession()
 	// Case notebook: per-server pins load off-thread, land via the poll
 	// (the payload carries the key so it routes even after a tab switch).
 	go func(key string) {
@@ -958,6 +976,8 @@ func (a *App) Disconnect() {
 		a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
 	}
 	a.updatePresence() // sess is nil now → clears the Discord activity
+	// A bound theme leaves with its server; the global pick returns.
+	a.ensureThemeForSession()
 	a.screen = ScreenLobby
 }
 
@@ -1202,6 +1222,8 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 	a.sess = courtroom.NewRehearsalSession(info.Origin, info.Chars)
 	a.rebuildAssetOrigin()
 	a.refreshCharKeys()
+	a.themeBound = info.Theme // rehearsal wears the server's bound theme too
+	a.ensureThemeForSession()
 	a.screen = ScreenCharSelect
 	go func(k string) {
 		if nb, err := config.LoadNotebook(k); err == nil {
@@ -1784,6 +1806,13 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 // Frame runs one UI frame: connection pump, screen logic, drawing.
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.frameNow = time.Now()
+	a.recordFrameDt(float32(dt.Seconds() * 1000))
+	// F3 toggles the perf HUD on any screen; consumed so plain-key
+	// macro/character binds named "f3" can't double-fire.
+	if a.ctx.keyPressed == sdl.K_F3 {
+		a.perfHUD = !a.perfHUD
+		a.ctx.keyPressed = 0
+	}
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.handleTabBar(winW) // chip clicks resolve BEFORE screens see them
@@ -1823,8 +1852,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// The tab strip floats over every screen (input was consumed at the
 	// top of the frame; this is just paint).
 	a.drawTabBar(winW)
-	// Debug overlay paints over every screen (allocs are acceptable here:
-	// it's an opt-in diagnostics path, never on by default).
+	// Perf HUD (F3) and the debug overlay paint over every screen
+	// (allocs acceptable: opt-in diagnostics paths, never on by default).
+	if a.perfHUD {
+		a.drawPerfHUD(winW, winH)
+	}
 	if a.d.Prefs.DebugOverlayEnabled() {
 		a.drawDebugOverlay(winW, winH)
 	}
@@ -1838,6 +1870,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 // thread via themeRes. Settings re-triggers it on every theme change.
 func (a *App) applyThemeAsync() {
 	name, dir := a.d.Prefs.Theme()
+	// Per-server theme binding: while this session declares one, it wins
+	// over the global pick (set on connect from ServerWarmInfo.Theme;
+	// Disconnect/resetSessionState clears it and re-applies the global).
+	if a.themeBound != "" {
+		name = a.themeBound
+	}
 	anims := a.d.Prefs.AnimationsEnabled()
 	gen := a.themeGen.Add(1)
 	go func() {
@@ -2017,11 +2055,26 @@ func (a *App) pollThemeApply() {
 	a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
 	a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
 	a.rasterText = "" // re-raster the current message with theme colors
+	a.themeAppliedName = res.name
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)
 	a.pushDebug(line)
 	if res.inkGuard != "" {
 		a.pushDebug(res.inkGuard)
+	}
+}
+
+// ensureThemeForSession re-applies the theme whenever the session's
+// binding (or its absence) disagrees with what is on screen — connect,
+// tab switches, and disconnect funnel through here. No-op when the
+// right theme is already applied (loads are async but not free).
+func (a *App) ensureThemeForSession() {
+	want := a.themeBound
+	if want == "" {
+		want, _ = a.d.Prefs.Theme()
+	}
+	if want != "" && want != a.themeAppliedName {
+		a.applyThemeAsync()
 	}
 }
 

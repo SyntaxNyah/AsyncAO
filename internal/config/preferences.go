@@ -325,6 +325,9 @@ type ServerWarmInfo struct {
 	LoginUser string `json:"loginUser,omitempty"`
 	LoginPass string `json:"loginPass,omitempty"`
 	AutoLogin bool   `json:"autoLogin,omitempty"`
+	// Theme binds a theme to this server ("" = the global pick): joining
+	// applies it, disconnecting restores the global theme.
+	Theme string `json:"theme,omitempty"`
 }
 
 // charKeyCap bounds one server's character keybind table.
@@ -1072,6 +1075,12 @@ func (p *AssetPreferences) SetServerLogin(key, user, pass string, auto bool) {
 		w.LoginUser, w.LoginPass = user, pass
 		w.AutoLogin = auto && user != ""
 	})
+}
+
+// SetServerTheme binds a theme to one server ("" unbinds): joining the
+// server applies it, disconnecting restores the global pick.
+func (p *AssetPreferences) SetServerTheme(key, themeName string) {
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.Theme = themeName })
 }
 
 // RememberServerChars records the character list for rehearsal mode

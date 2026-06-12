@@ -143,6 +143,7 @@ func (a *App) activateTab(i int) {
 	} else {
 		a.screen = ScreenCharSelect
 	}
+	a.ensureThemeForSession() // the tab's theme binding follows it in
 	a.updatePresence()
 }
 
@@ -313,6 +314,7 @@ func (a *App) handleTabBar(w int32) {
 			// Clicking the active chip parks it and shows the lobby —
 			// the "browse while connected" affordance.
 			a.parkActive()
+			a.ensureThemeForSession() // lobby shows the global theme
 			a.screen = ScreenLobby
 			a.updatePresence()
 		} else {

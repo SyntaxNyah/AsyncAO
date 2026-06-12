@@ -235,6 +235,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	defer pres.Close()
 
 	app := ui.NewApp(uiCtx, ui.Deps{
+		Profiler:  profiler,
 		Prefs:     prefs,
 		Resolver:  resolver,
 		Manager:   manager,

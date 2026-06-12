@@ -1839,8 +1839,11 @@ func (a *App) sendIC(shout int) {
 		a.icInput = ""
 		return
 	}
+	// Blankpost: Enter on an empty input sends the AO single-space
+	// message — your sprite plays with no text (the RP "just show my
+	// character" convention; truly empty messages get server-rejected).
 	if text == "" && shout == 0 {
-		return
+		text = " "
 	}
 	if a.sess.MyCharID < 0 {
 		return

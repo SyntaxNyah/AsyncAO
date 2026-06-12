@@ -40,6 +40,9 @@ type settingsState struct {
 	macroKey   string
 	macroLines string
 
+	// theme-binding picker (shares the login section's server list cache).
+	themeBindKey string
+
 	// login section: the picked server + its credential edit buffers
 	// (configurable for ANY known server, connected or not).
 	loginKey      string
@@ -288,6 +291,9 @@ func (a *App) drawSettings(w, h int32) {
 	// Live preview: the actual applied chatbox skin + theme text colors,
 	// so "did the theme land?" is answerable without joining a server.
 	y = a.drawThemePreview(y)
+
+	// Per-server theme binding: "this server always uses that theme".
+	y = a.drawThemeBindRow(y, w)
 
 	// Format detection mode: the server manifest by default, manual
 	// per-type probing when switched off. While auto is ON the manual
@@ -857,6 +863,55 @@ func (a *App) drawThemePreview(y int32) int32 {
 	}
 	c.Label(prev.X+prevW+12, prev.Y+6, label, ColTextDim)
 	return y + prevH + 10
+}
+
+// drawThemeBindRow binds the PICKED theme to a chosen server: joining
+// that server applies the bound theme, leaving restores the global one.
+// Works for any known server (same picker as the login section).
+func (a *App) drawThemeBindRow(y, w int32) int32 {
+	c := a.ctx
+	names, keys := a.loginTargets()
+	if len(names) == 0 {
+		return y
+	}
+	cur := 0
+	if settings.themeBindKey == "" && a.serverKey != "" {
+		settings.themeBindKey = a.serverKey
+	}
+	for i, k := range keys {
+		if k == settings.themeBindKey {
+			cur = i
+			break
+		}
+	}
+	settings.themeBindKey = keys[cur]
+	c.Label(pad, y+4, "Bind theme to server:", ColText)
+	if next, changed := c.Dropdown("themebindsrv", sdl.Rect{X: pad + 170, Y: y, W: 260, H: btnH}, names, cur); changed {
+		settings.themeBindKey = keys[next]
+	}
+	bound := a.d.Prefs.ServerWarmInfoFor(settings.themeBindKey).Theme
+	if c.Button(sdl.Rect{X: pad + 440, Y: y, W: 150, H: btnH}, "Bind "+clampLine(settings.themeName)) {
+		a.d.Prefs.SetServerTheme(settings.themeBindKey, settings.themeName)
+		if settings.themeBindKey == a.serverKey && a.sess != nil {
+			a.themeBound = settings.themeName
+			a.ensureThemeForSession()
+		}
+		settings.statusLine = "Theme " + settings.themeName + " bound — that server always uses it now."
+	}
+	if bound != "" {
+		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Unbind") {
+			a.d.Prefs.SetServerTheme(settings.themeBindKey, "")
+			if settings.themeBindKey == a.serverKey && a.sess != nil {
+				a.themeBound = ""
+				a.ensureThemeForSession()
+			}
+			settings.statusLine = "Theme binding removed."
+		}
+		c.LabelClipped(pad+700, y+4, w-pad-700-scrollBarW, "bound: "+bound, ColAccent)
+	} else {
+		c.Label(pad+600, y+4, "no binding (uses the global theme)", ColTextDim)
+	}
+	return y + 32
 }
 
 // cycleTheme steps through the scanned theme list and persists the pick.
