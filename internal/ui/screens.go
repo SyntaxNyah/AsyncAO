@@ -491,7 +491,7 @@ func (a *App) drawSpritePreview(w, h int32) {
 	frame := sdl.Rect{X: dst.X - 4, Y: dst.Y - 4, W: dst.W + 8, H: dst.H + 8}
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
-	_ = c.Ren.Copy(page.Frames[pageFrameLoop(page, time.Since(a.previewAt))], nil, &dst)
+	_ = c.Ren.Copy(page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))], nil, &dst)
 }
 
 // --- COURTROOM ----------------------------------------------------------------------
@@ -1475,14 +1475,21 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 // drawEmoteImageButton draws one emotions/button<N> cell, preferring the
 // state-correct art and falling back to the _off art (selection ring still
 // reads) and finally a text chip while textures stream in. Reports clicks.
+// Pages resolve through the generation-keyed caches — a full emote grid
+// redraw costs zero store locks while nothing was uploaded/evicted (the
+// same trick as the char grid; this was the last per-frame LRU storm).
 func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool, label string) bool {
 	c := a.ctx
 	base := a.urls.EmoteButton(me, i+1, selected)
-	page, ok := a.d.Store.Get(base)
+	cache, gen := &a.emoteBtnOff, &a.emoteBtnOffGen
+	if selected {
+		cache, gen = &a.emoteBtnOn, &a.emoteBtnOnGen
+	}
+	page, ok := a.cachedPage(cache, gen, len(a.emotes), i, base)
 	if !ok {
 		a.demandAsset(&a.emoteAsk, len(a.emotes), i, base, assets.AssetTypeEmoteButton) // AssetType: EmoteButton
 		if selected {
-			page, ok = a.d.Store.Get(a.urls.EmoteButton(me, i+1, false))
+			page, ok = a.cachedPage(&a.emoteBtnOff, &a.emoteBtnOffGen, len(a.emotes), i, a.urls.EmoteButton(me, i+1, false))
 		}
 	}
 	if ok && len(page.Frames) > 0 {

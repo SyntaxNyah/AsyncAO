@@ -29,9 +29,14 @@ const (
 	// Transport tuning (spec §7). Most AO asset hosts speak plain
 	// http://, where ForceAttemptHTTP2 is inert and tuned HTTP/1.1
 	// keep-alive does the work; HTTP/2 kicks in automatically on https.
+	// Idle-per-host matches the worker pool: at 8 every 16-wide fetch
+	// burst closed half its connections and the NEXT burst re-dialed
+	// (plus TLS handshake on https) — cold-load bursts are back-to-back,
+	// so all lanes stay warm now. The total covers maxTabs concurrent
+	// servers' asset hosts at full width plus master-list/manifest slack.
 	defaultMaxConnsPerHost     = 16
-	defaultMaxIdleConnsPerHost = 8
-	defaultMaxIdleConnsTotal   = 64
+	defaultMaxIdleConnsPerHost = 16
+	defaultMaxIdleConnsTotal   = 96
 	defaultIdleConnTimeout     = 90 * time.Second
 	defaultTLSHandshakeTimeout = 2 * time.Second
 	// defaultResponseHeaderTimeout fails a stalled server faster than the

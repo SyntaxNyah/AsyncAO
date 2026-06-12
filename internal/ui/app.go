@@ -163,10 +163,14 @@ type App struct {
 
 	// --- global per-frame budgets / transient UI not tied to a server ---
 	iconAskBudget int // per-frame icon demand allowance, reset each Frame
-	oocName       string
-	previewBase   string
-	previewFor    string    // base the preview clock was started for
-	previewAt     time.Time // loop anchor — animated previews play, not freeze
+	// frameNow is this frame's single clock snapshot: animation clocks
+	// (theme art, previews, splashes) read it instead of hitting the OS
+	// clock per draw site.
+	frameNow    time.Time
+	oocName     string
+	previewBase string
+	previewFor  string    // base the preview clock was started for
+	previewAt   time.Time // loop anchor — animated previews play, not freeze
 
 	// --- async result channels (App-global plumbing; payloads carry the
 	// serverKey they were fetched for, and polls drop mismatches so a tab
@@ -330,6 +334,12 @@ type sessionState struct {
 	iconPagesGen uint64
 	iniPages     []*render.TexturePage
 	iniPagesGen  uint64
+	// Emote button art (off/on variants) rides the same gen-keyed trick:
+	// the grid was the last draw path paying an LRU lock per cell/frame.
+	emoteBtnOff    []*render.TexturePage
+	emoteBtnOffGen uint64
+	emoteBtnOn     []*render.TexturePage
+	emoteBtnOnGen  uint64
 
 	// --- courtroom chrome ---
 	icInput  string
@@ -1624,6 +1634,10 @@ func (a *App) pollCharINI() {
 			return // landed after a tab switch: another server's char.ini
 		}
 		a.charINIBusy = false
+		// New emote list = new button art; the gen-keyed page caches key
+		// by INDEX, so a same-length iniswap would show the old char's
+		// buttons without this.
+		a.emoteBtnOff, a.emoteBtnOn = nil, nil
 		if res.err != nil || res.ini == nil {
 			// Surface WHY the emote list is a bare default (better than a
 			// silent single "normal" chip).
@@ -1728,6 +1742,7 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 
 // Frame runs one UI frame: connection pump, screen logic, drawing.
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
+	a.frameNow = time.Now()
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.handleTabBar(winW) // chip clicks resolve BEFORE screens see them
@@ -2005,14 +2020,24 @@ func (a *App) themePage(stem string) (*render.TexturePage, bool) {
 	return page, true
 }
 
+// now is the frame's clock snapshot (real time for callers outside a
+// frame, e.g. headless tests).
+func (a *App) now() time.Time {
+	if a.frameNow.IsZero() {
+		return time.Now()
+	}
+	return a.frameNow
+}
+
 // themeElapsed is the animation clock for looping theme art: time since
 // the theme applied, so every animated stem (chatbox, buttons, backdrops)
-// steps with pageFrameLoop instead of freezing on Frames[0].
+// steps with pageFrameLoop instead of freezing on Frames[0]. Reads the
+// frame snapshot — themed frames step this at ~10 draw sites.
 func (a *App) themeElapsed() time.Duration {
 	if a.themeAt.IsZero() {
 		return 0
 	}
-	return time.Since(a.themeAt)
+	return a.now().Sub(a.themeAt)
 }
 
 // themeFrame picks the current animation frame for a theme page — static
