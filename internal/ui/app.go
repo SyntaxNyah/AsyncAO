@@ -399,12 +399,12 @@ type sessionState struct {
 	// ghostWarm dedupes the pair-panel ghost editor's sprite prefetches.
 	ghostWarm map[string]string
 
-	// --- macro engine + login dialog ---
-	macroQueue []macroSend // paced OOC sends (≤ macroQueueCap)
-	showLogin  bool
-	loginUser  string
-	loginPass  string
-	loginAuto  bool
+	// --- OOC automation (login flows + macros share the send pipeline) ---
+	oocQueue  []oocSend // paced OOC sends (≤ macroQueueCap)
+	showLogin bool
+	loginUser string
+	loginPass string
+	loginAuto bool
 
 	// --- court extras (HP / WTCE / modcall / evidence) ---
 	wtceName    string    // active splash stem ("" = none)
@@ -873,6 +873,7 @@ func (a *App) Connect(name, wsURL string) {
 	// per-server split inherits the old flat collection.
 	a.d.Prefs.ClaimLegacyWardrobe(wsURL)
 	a.refreshCharKeys()
+	a.syncLoginBuffers() // settings/dialog boxes show this server's creds
 	// Case notebook: per-server pins load off-thread, land via the poll
 	// (the payload carries the key so it routes even after a tab switch).
 	go func(key string) {
@@ -1767,7 +1768,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollNotebook()
 	a.pollCharBind()
 	a.pollMacroBind()
-	a.processMacroQueue()
+	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
 		a.healScenery()

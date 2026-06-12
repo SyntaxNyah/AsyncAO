@@ -470,12 +470,13 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	y += 32
 
-	// Macros: user-defined OOC command sequences with optional keybinds.
-	y = a.drawMacroSettings(y, w)
+	// Auto-login: ITS OWN automation, not a macro — per-server creds,
+	// software-detected wire flow, fires on join (or via hotkey/button).
+	y = a.drawLoginSettings(y, w)
 	y += 8
 
-	// Built-in server login (auto on join, or manual via hotkey/button).
-	y = a.drawLoginSettings(y, w)
+	// Macros: user-defined OOC command sequences with optional keybinds.
+	y = a.drawMacroSettings(y, w)
 	y += 8
 
 	// Whole-settings portability: the new-PC bundle (every knob,

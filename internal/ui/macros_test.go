@@ -18,23 +18,23 @@ func TestMacroQueuePacing(t *testing.T) {
 	t0 := time.Now()
 	a.frameNow = t0
 
-	a.queueMacroLines([]string{"/login", "user pass", "/tsundere 1"})
-	if len(a.macroQueue) != 3 {
-		t.Fatalf("queued %d lines, want 3", len(a.macroQueue))
+	a.queueOOCLines([]string{"/login", "user pass", "/tsundere 1"})
+	if len(a.oocQueue) != 3 {
+		t.Fatalf("queued %d lines, want 3", len(a.oocQueue))
 	}
 
-	a.processMacroQueue() // t0: only the first line is due
-	if len(a.macroQueue) != 2 {
-		t.Fatalf("at t0 exactly one line must send, %d left", len(a.macroQueue))
+	a.processOOCQueue() // t0: only the first line is due
+	if len(a.oocQueue) != 2 {
+		t.Fatalf("at t0 exactly one line must send, %d left", len(a.oocQueue))
 	}
 	a.frameNow = t0.Add(macroLineDelay)
-	a.processMacroQueue()
-	if len(a.macroQueue) != 1 {
-		t.Fatalf("at t0+delay the second line must send, %d left", len(a.macroQueue))
+	a.processOOCQueue()
+	if len(a.oocQueue) != 1 {
+		t.Fatalf("at t0+delay the second line must send, %d left", len(a.oocQueue))
 	}
 	a.frameNow = t0.Add(10 * macroLineDelay)
-	a.processMacroQueue()
-	if len(a.macroQueue) != 0 {
+	a.processOOCQueue()
+	if len(a.oocQueue) != 0 {
 		t.Fatal("late frames must drain everything due")
 	}
 
@@ -43,9 +43,9 @@ func TestMacroQueuePacing(t *testing.T) {
 	for i := 0; i < macroQueueCap+10; i++ {
 		many = append(many, "/spam")
 	}
-	a.queueMacroLines(many)
-	if len(a.macroQueue) > macroQueueCap {
-		t.Fatalf("queue exceeded cap: %d > %d", len(a.macroQueue), macroQueueCap)
+	a.queueOOCLines(many)
+	if len(a.oocQueue) > macroQueueCap {
+		t.Fatalf("queue exceeded cap: %d > %d", len(a.oocQueue), macroQueueCap)
 	}
 }
 

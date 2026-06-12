@@ -39,8 +39,10 @@ const (
 	defaultOOCNameRange = 200
 )
 
-// macroSend is one queued OOC line.
-type macroSend struct {
+// oocSend is one queued automated OOC line (login flows and macros share
+// the pipeline; the login itself is NOT a macro — it has its own
+// per-server credential store, dialog, and auto-on-join trigger).
+type oocSend struct {
 	line string
 	due  time.Time
 }
@@ -58,33 +60,34 @@ func (a *App) oocNameOrDefault() string {
 	return a.defaultOOC
 }
 
-// queueMacroLines schedules lines for paced OOC sending.
-func (a *App) queueMacroLines(lines []string) {
+// queueOOCLines schedules lines for paced automated OOC sending (the
+// shared pipeline under the login automation and user macros).
+func (a *App) queueOOCLines(lines []string) {
 	if a.sess == nil {
 		return
 	}
 	now := a.now()
 	for i, line := range lines {
-		if len(a.macroQueue) >= macroQueueCap {
-			a.pushDebug("macro queue full — dropping the rest")
+		if len(a.oocQueue) >= macroQueueCap {
+			a.pushDebug("automation queue full — dropping the rest")
 			return
 		}
-		a.macroQueue = append(a.macroQueue, macroSend{
+		a.oocQueue = append(a.oocQueue, oocSend{
 			line: line,
 			due:  now.Add(time.Duration(i) * macroLineDelay),
 		})
 	}
 }
 
-// processMacroQueue sends due lines (called once per frame; the queue
+// processOOCQueue sends due lines (called once per frame; the queue
 // belongs to the active session and pauses while its tab is parked).
-func (a *App) processMacroQueue() {
-	if len(a.macroQueue) == 0 || a.sess == nil {
+func (a *App) processOOCQueue() {
+	if len(a.oocQueue) == 0 || a.sess == nil {
 		return
 	}
 	now := a.now()
 	sent := 0
-	for _, m := range a.macroQueue {
+	for _, m := range a.oocQueue {
 		if m.due.After(now) {
 			break
 		}
@@ -92,14 +95,14 @@ func (a *App) processMacroQueue() {
 		sent++
 	}
 	if sent > 0 {
-		a.macroQueue = a.macroQueue[:copy(a.macroQueue, a.macroQueue[sent:])]
+		a.oocQueue = a.oocQueue[:copy(a.oocQueue, a.oocQueue[sent:])]
 	}
 }
 
 // runMacro queues one macro and reports it on the debug lane (lines may
 // hold credentials — never echo their content).
 func (a *App) runMacro(m config.MacroSpec) {
-	a.queueMacroLines(m.Lines)
+	a.queueOOCLines(m.Lines)
 	a.pushDebug(fmt.Sprintf("macro %q: %d line(s) queued", m.Name, len(m.Lines)))
 }
 
@@ -145,8 +148,21 @@ func (a *App) loginNow() {
 		a.pushDebug("login: no saved credentials for this server (Login... dialog)")
 		return
 	}
-	a.queueMacroLines(a.loginLines(info.LoginUser, info.LoginPass))
+	a.queueOOCLines(a.loginLines(info.LoginUser, info.LoginPass))
 	a.pushDebug("login: flow queued as " + a.oocNameOrDefault())
+}
+
+// loginFlowPreview names the exact wire flow the dialog will use, so the
+// automation explains itself before you trust it with credentials.
+func (a *App) loginFlowPreview() string {
+	soft := "unknown software"
+	if a.sess != nil && a.sess.Software != "" {
+		soft = a.sess.Software
+	}
+	if a.sess != nil && strings.Contains(strings.ToLower(a.sess.Software), "akashi") {
+		return soft + `: sends "/login" ⏎ … then "username password" ⏎ (the prompt answer is not echoed)`
+	}
+	return soft + `: sends "/login username password" ⏎`
 }
 
 // autoLoginOnReady fires the saved flow once per join when enabled.
@@ -160,11 +176,15 @@ func (a *App) autoLoginOnReady() {
 // the dialog says so) and fires the flow.
 func (a *App) drawLoginDialog(w, h int32) {
 	c := a.ctx
-	panel := sdl.Rect{X: w/2 - 230, Y: h/2 - 110, W: 460, H: 220}
+	panel := sdl.Rect{X: w/2 - 230, Y: h/2 - 122, W: 460, H: 244}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+10, "Server login — "+a.serverName, ColText)
-	y := panel.Y + 44
+	c.Heading(panel.X+pad, panel.Y+10, "Auto-login — "+a.serverName, ColText)
+	y := panel.Y + 40
+	// The dialog names the exact flow it will run for THIS server's
+	// software — the automation explains itself.
+	c.LabelClipped(panel.X+pad, y, panel.W-2*pad, a.loginFlowPreview(), ColAccent)
+	y += 22
 	a.loginUser, _ = c.TextField("loginuser", sdl.Rect{X: panel.X + pad, Y: y, W: panel.W - 2*pad, H: fieldH}, a.loginUser, "username")
 	y += fieldH + 6
 	a.loginPass, _ = c.TextField("loginpass", sdl.Rect{X: panel.X + pad, Y: y, W: panel.W - 2*pad, H: fieldH}, a.loginPass, "password")
@@ -204,7 +224,7 @@ const macroLineSeparator = "|"
 func (a *App) drawMacroSettings(y int32, w int32) int32 {
 	c := a.ctx
 	macros := a.d.Prefs.Macros()
-	c.Label(pad, y+4, fmt.Sprintf("Macros (%d/%d) — OOC lines, optional key, fired in the courtroom:", len(macros), config.MacroCap), ColText)
+	c.Label(pad, y+4, fmt.Sprintf("Macros (%d/%d) — chain OOC commands with %q and fire the whole chain from one key:", len(macros), config.MacroCap, macroLineSeparator), ColText)
 	y += 26
 
 	removeIdx := -1
@@ -239,7 +259,7 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 		a.ctx.focusID = ""
 	}
 	settings.macroLines, _ = c.TextField("macrolines", sdl.Rect{X: pad + 228, Y: y, W: w - pad*2 - 228 - 130 - scrollBarW, H: fieldH},
-		settings.macroLines, `/login user pass   (multi-step: /login `+macroLineSeparator+` user pass)`)
+		settings.macroLines, `/cm `+macroLineSeparator+` /area 2 `+macroLineSeparator+` /tsundere 1   (each `+macroLineSeparator+` step sends as its own ENTER)`)
 	if c.Button(sdl.Rect{X: w - pad - scrollBarW - 124, Y: y, W: 118, H: btnH}, "Add macro") {
 		name := strings.TrimSpace(settings.macroName)
 		var lines []string
@@ -265,31 +285,44 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 // Returns the next y.
 func (a *App) drawLoginSettings(y, w int32) int32 {
 	c := a.ctx
-	c.Label(pad, y+4, "Server login (saved per server; flow auto-detected: Akashi = 2-step prompt, others = /login user pass):", ColText)
-	y += 24
+	c.Label(pad, y+4, "Auto-login — dedicated automation (not a macro). Credentials per server; the wire flow picks itself:", ColText)
+	y += 20
+	c.Label(pad+12, y, "KFO/Athena/Nyathena/Whisker: /login username password   ·   Akashi: /login ⏎ then username password ⏎", ColTextDim)
+	y += 22
 	if a.sess == nil || a.serverKey == "" {
 		c.Label(pad+12, y, "Connect to a server to set its login — each server keeps its own credentials.", ColTextDim)
 		return y + 26
 	}
+	// Dedicated credential boxes, inline (the courtroom Login... dialog
+	// edits the same per-server slots).
+	c.LabelClipped(pad+12, y+4, 200, a.serverName+" — "+a.loginFlowPreview(), ColAccent)
+	y += 24
+	c.Label(pad+12, y+4, "Username:", ColText)
+	a.loginUser, _ = c.TextField("loginuser", sdl.Rect{X: pad + 100, Y: y, W: 180, H: fieldH}, a.loginUser, "username")
+	c.Label(pad+292, y+4, "Password:", ColText)
+	a.loginPass, _ = c.TextField("loginpass", sdl.Rect{X: pad + 380, Y: y, W: 180, H: fieldH}, a.loginPass, "password")
+	if c.Button(sdl.Rect{X: pad + 572, Y: y, W: 70, H: btnH}, "Save") {
+		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
+		settings.statusLine = "Login saved for " + a.serverName + " (plain text in the prefs file)."
+	}
+	if c.Button(sdl.Rect{X: pad + 648, Y: y, W: 100, H: btnH}, "Login now") {
+		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
+		a.loginNow()
+	}
+	y += fieldH + 6
+	next := c.Checkbox(pad+12, y, "Auto-login on join: OFF = log in only when YOU trigger it (Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyLogin))+" or the courtroom Login... button); ON = instantly on every join", a.loginAuto)
+	if next != a.loginAuto {
+		a.loginAuto = next
+		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
+	}
+	return y + 28
+}
+
+// syncLoginBuffers loads this server's saved credentials into the edit
+// buffers (connect time, so the settings boxes show the truth).
+func (a *App) syncLoginBuffers() {
 	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
-	state := "no credentials saved"
-	if info.LoginUser != "" {
-		state = "credentials saved for " + info.LoginUser
-		if info.AutoLogin {
-			state += " — AUTO-LOGIN ON (logs in instantly on every join)"
-		} else {
-			state += " — manual (Login... button or Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyLogin)) + ")"
-		}
-	}
-	c.LabelClipped(pad+12, y, w-2*pad-140, a.serverName+": "+state, ColTextDim)
-	if c.Button(sdl.Rect{X: w - pad - scrollBarW - 120, Y: y - 4, W: 114, H: btnH}, "Edit login...") {
-		a.openLoginDialog()
-	}
-	y += 26
-	c.Label(pad+12, y, "Auto-login fires the flow by itself the moment a join finishes (off by default).", ColTextDim)
-	y += 18
-	c.Label(pad+12, y, "Manual = same saved flow, but only when YOU trigger it — hotkey or the courtroom Login... button.", ColTextDim)
-	return y + 26
+	a.loginUser, a.loginPass, a.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
 }
 
 // pollMacroBind completes an armed macro key capture.
