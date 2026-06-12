@@ -62,6 +62,11 @@ const defaultPreferAnimated = true
 // doesn't cover.
 const defaultFormatAutoDetect = true
 
+// defaultThemeLayout ships ON: when the active theme defines the AO2
+// courtroom_design.ini geometry, the courtroom adopts it wholesale —
+// that IS what picking a theme means to AO players.
+const defaultThemeLayout = true
+
 // defaultEmoteButtonImages ships the courtroom emote picker as image
 // buttons (characters/<char>/emotions/button<N>) rather than text chips.
 const defaultEmoteButtonImages = true
@@ -152,6 +157,7 @@ type AssetPreferences struct {
 	SmoothScaling          bool                      `json:"smoothScaling"`
 	DebugOverlay           bool                      `json:"debugOverlay"`
 	AutoDetectFormats      bool                      `json:"formatAutoDetect"`
+	ThemeLayoutOn          bool                      `json:"themeLayout"`
 	ThemeName              string                    `json:"themeName"`
 	ThemeDir               string                    `json:"themeDir"`
 	OOCName                string                    `json:"oocName"`
@@ -210,6 +216,7 @@ type prefsJSON struct {
 	SmoothScaling          *bool  `json:"smoothScaling"`
 	DebugOverlay           bool   `json:"debugOverlay"`
 	FormatAutoDetect       *bool  `json:"formatAutoDetect"` // absent = default ON
+	ThemeLayout            *bool  `json:"themeLayout"`      // absent = default ON
 	ThemeName              string `json:"themeName"`
 	ThemeDir               string `json:"themeDir"`
 	OOCName                string `json:"oocName"`
@@ -304,6 +311,7 @@ func load(path string) (*AssetPreferences, error) {
 		EmoteButtonImages: defaultEmoteButtonImages,
 		SmoothScaling:     defaultSmoothScaling,
 		AutoDetectFormats: defaultFormatAutoDetect,
+		ThemeLayoutOn:     defaultThemeLayout,
 		ViewportPct:       DefaultViewportPercent,
 		ChatScalePct:      DefaultScalePercent,
 		ChatBoxPct:        DefaultScalePercent,
@@ -347,6 +355,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.DebugOverlay = onDisk.DebugOverlay
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
+	}
+	if onDisk.ThemeLayout != nil {
+		p.ThemeLayoutOn = *onDisk.ThemeLayout
 	}
 	p.ThemeName = onDisk.ThemeName
 	p.ThemeDir = onDisk.ThemeDir
@@ -1158,6 +1169,26 @@ func (p *AssetPreferences) SetFormatAutoDetect(enabled bool) {
 		return
 	}
 	p.AutoDetectFormats = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ThemeLayoutEnabled reports whether the courtroom adopts the theme's
+// courtroom_design.ini geometry (default ON).
+func (p *AssetPreferences) ThemeLayoutEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ThemeLayoutOn
+}
+
+// SetThemeLayout toggles theme-driven courtroom geometry.
+func (p *AssetPreferences) SetThemeLayout(enabled bool) {
+	p.mu.Lock()
+	if p.ThemeLayoutOn == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.ThemeLayoutOn = enabled
 	p.mu.Unlock()
 	p.markDirty()
 }

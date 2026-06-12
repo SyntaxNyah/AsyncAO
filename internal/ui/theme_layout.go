@@ -1,0 +1,525 @@
+package ui
+
+// Theme layout engine: when the active theme ships AO2's
+// courtroom_design.ini geometry ("courtroom" + "viewport" rects at
+// minimum), the courtroom adopts it wholesale — every widget the theme
+// positions draws at its design rect (scaled to the window, letterboxed),
+// with the theme's own button art. Elements the theme doesn't define fall
+// back per-widget; themes without the geometry keep the classic layout
+// entirely. That is what "applying a theme" means to an AO player.
+
+import (
+	"math"
+
+	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
+)
+
+// themeHiddenXConvention: AO2 themes "hide" elements by flinging them off
+// the design space (x = 11037 by convention); anything starting past the
+// design width is treated as absent.
+const themeHiddenXConvention = true
+
+// themeLayoutCache holds the window-scaled design rects; recomputed only
+// when the window size or the theme changes (render loop reads are plain
+// map probes on pre-scaled rects).
+type themeLayoutCache struct {
+	valid      bool
+	winW, winH int32
+	designW    int32
+	scale      float64
+	offX, offY int32
+	r          map[string]sdl.Rect // scaled; absolute except showname/message (chatbox-relative)
+}
+
+// themeLayout returns the cache for the current window, rebuilding on
+// window resize or theme swap (pollThemeApply invalidates).
+func (a *App) themeLayout(w, h int32) *themeLayoutCache {
+	lay := &a.themeLay
+	if lay.valid && lay.winW == w && lay.winH == h {
+		return lay
+	}
+	*lay = themeLayoutCache{winW: w, winH: h}
+	court, okCourt := a.themeRects["courtroom"]
+	_, okVP := a.themeRects["viewport"]
+	if !okCourt || !okVP || court.W <= 0 || court.H <= 0 {
+		return lay
+	}
+	lay.designW = int32(court.W)
+	lay.scale = math.Min(float64(w)/float64(court.W), float64(h)/float64(court.H))
+	lay.offX = (w - int32(float64(court.W)*lay.scale)) / 2
+	lay.offY = (h - int32(float64(court.H)*lay.scale)) / 2
+	lay.r = make(map[string]sdl.Rect, len(a.themeRects))
+	for key, r := range a.themeRects {
+		if themeHiddenXConvention && r.X > court.W {
+			continue // off-design = hidden (the 11037 convention)
+		}
+		sr := sdl.Rect{
+			X: int32(float64(r.X) * lay.scale),
+			Y: int32(float64(r.Y) * lay.scale),
+			W: int32(float64(r.W) * lay.scale),
+			H: int32(float64(r.H) * lay.scale),
+		}
+		// showname/message are children of the chatbox in AO2 — keep them
+		// chatbox-relative; everything else becomes window-absolute.
+		if key != "showname" && key != "message" {
+			sr.X += lay.offX
+			sr.Y += lay.offY
+		}
+		lay.r[key] = sr
+	}
+	lay.valid = true
+	return lay
+}
+
+// rect fetches a usable scaled rect ("" when the theme hides or omits it).
+func (l *themeLayoutCache) rect(key string) (sdl.Rect, bool) {
+	r, ok := l.r[key]
+	if !ok || r.W <= 0 || r.H <= 0 {
+		return sdl.Rect{}, false
+	}
+	return r, true
+}
+
+// drawScreenBackdrop paints a theme screen background (lobbybackground /
+// charselect_background) stretched to the window, or the flat client
+// color when the theme ships none.
+func (a *App) drawScreenBackdrop(w, h int32, stem string) {
+	c := a.ctx
+	dst := sdl.Rect{X: 0, Y: 0, W: w, H: h}
+	if page, ok := a.themePage(stem); ok {
+		_ = c.Ren.Copy(page.Frames[0], nil, &dst)
+		return
+	}
+	c.Fill(dst, ColBackground)
+}
+
+// drawThemeButton draws one themed widget: the theme's art when resident
+// (hover = accent border), the kit's chip button otherwise. Reports clicks.
+func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
+	c := a.ctx
+	if page, ok := a.themePage(themeBtnPrefix + key); ok {
+		_ = c.Ren.Copy(page.Frames[0], nil, &r)
+		hov := c.hovering(r)
+		if hov {
+			c.Border(r, ColAccent)
+		}
+		return hov && c.clicked
+	}
+	return c.Button(r, label)
+}
+
+// drawCourtroomThemed is the design-driven courtroom. Geometry comes from
+// the theme; behavior is shared with the classic path (same state, same
+// send/poll helpers, same modals).
+func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
+	c := a.ctx
+
+	// Stage: letterbox fill, then the theme's window art over the design
+	// area (this alone makes the whole screen read as "themed").
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
+	court := sdl.Rect{
+		X: lay.offX, Y: lay.offY,
+		W: w - 2*lay.offX, H: h - 2*lay.offY,
+	}
+	if page, ok := a.themePage("courtroombackground"); ok {
+		_ = c.Ren.Copy(page.Frames[0], nil, &court)
+	} else {
+		c.Fill(court, ColPanel)
+	}
+
+	vp, _ := lay.rect("viewport")
+	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
+	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
+	a.handleSpriteDrag(vp)
+	a.handleHotkeys()
+
+	// Chatbox at its design rect; classic overlay when the theme has none.
+	if box, ok := lay.rect("ao2_chatbox"); ok {
+		a.drawThemedChatBox(box, lay)
+	} else {
+		a.drawChatOverlay(vp)
+	}
+	a.drawCourtOverlays(vp, lay)
+
+	// Modal popups behave exactly like the classic path: nothing below
+	// them draws (the kit has no z-aware input).
+	switch {
+	case a.showIni:
+		a.drawIniswapPanel(w, h)
+		return
+	case a.showEvid:
+		a.drawEvidencePanel(w, h)
+		return
+	case a.showModcall:
+		a.drawModcallDialog(w, h)
+		return
+	case a.showUICfg:
+		a.drawUICfgPanel(w, h)
+		return
+	}
+
+	// Logs: IC at ic_chatlog; OOC log prefers server_chatlog (AO2's joint
+	// log) and falls back to ms_chatlog.
+	if r, ok := lay.rect("ic_chatlog"); ok && !a.panelHidden(panelLog) {
+		a.drawICLogList(r)
+	}
+	oocRect, okOOC := lay.rect("server_chatlog")
+	if !okOOC {
+		oocRect, okOOC = lay.rect("ms_chatlog")
+	}
+	if okOOC && !a.panelHidden(panelOOC) {
+		a.drawOOCLogList(oocRect)
+		if in, ok := lay.rect("ooc_chat_message"); ok {
+			var send bool
+			a.oocInput, send = c.TextField("ooc", in, a.oocInput, "OOC chat...")
+			if send {
+				a.submitOOC()
+			}
+		}
+		if nameR, ok := lay.rect("ooc_chat_name"); ok {
+			prev := a.oocName
+			a.oocName, _ = c.TextField("oocname", nameR, a.oocName, "OOC name")
+			if a.oocName != prev {
+				a.d.Prefs.SetOOCName(a.oocName)
+			}
+		}
+	}
+
+	// Music / Areas share the music_list rect (AO2 toggles them; we chip).
+	if r, ok := lay.rect("music_list"); ok && !a.panelHidden(panelLog) {
+		toggle := sdl.Rect{X: r.X, Y: r.Y, W: 60, H: 22}
+		if c.Button(toggle, "Music") {
+			a.logTab = logTabMusic
+		}
+		toggle.X += 64
+		if c.Button(toggle, "Areas") {
+			a.logTab = logTabAreas
+		}
+		inner := sdl.Rect{X: r.X, Y: r.Y + 26, W: r.W, H: r.H - 26}
+		if a.logTab == logTabAreas {
+			a.drawAreaList(inner)
+		} else {
+			a.drawMusicList(inner)
+		}
+	}
+
+	// IC input row: color swatch + the message field at its design rect.
+	if in, ok := lay.rect("ao2_ic_chat_message"); ok {
+		swatch := sdl.Rect{X: in.X, Y: in.Y, W: 22, H: in.H}
+		c.Fill(swatch, render.TextColor(a.icColor))
+		c.Border(swatch, ColPanelHi)
+		if c.hovering(swatch) {
+			if c.clicked {
+				a.icColor = (a.icColor + 1) % render.TextColorCount
+			} else if c.rightClicked {
+				a.icColor = (a.icColor + render.TextColorCount - 1) % render.TextColorCount
+			}
+		}
+		field := sdl.Rect{X: in.X + 26, Y: in.Y, W: in.W - 26, H: in.H}
+		var send bool
+		a.icInput, send = c.TextField("ic", field, a.icInput, "Say something in character...")
+		if send {
+			a.sendIC(0)
+		}
+	}
+	if nameR, ok := lay.rect("ao2_ic_chat_name"); ok {
+		shown := a.d.Prefs.SavedShowname()
+		if next, _ := c.TextField("icshowname", nameR, shown, "Showname"); next != shown {
+			a.d.Prefs.SetShowname(next)
+		}
+	}
+
+	// Shouts at their design rects, themed art when shipped.
+	if !a.panelHidden(panelShouts) {
+		shouts := []struct {
+			key, label string
+			mod        int
+		}{
+			{"hold_it", "Hold It!", protocol.ShoutHoldIt},
+			{"objection", "Objection!", protocol.ShoutObjection},
+			{"take_that", "Take That!", protocol.ShoutTakeThat},
+		}
+		for _, s := range shouts {
+			if r, ok := lay.rect(s.key); ok {
+				if a.drawThemeButton(s.key, s.label, r) {
+					a.sendIC(s.mod)
+				}
+			}
+		}
+		if a.sess.Features.Has(protocol.FeatureCustomObjections) {
+			if r, ok := lay.rect("custom_objection"); ok {
+				if a.drawThemeButton("custom_objection", a.customShoutLabel(), r) {
+					a.sendIC(protocol.ShoutCustom)
+				}
+				if len(a.customShouts) > 0 {
+					cyc := sdl.Rect{X: r.X + r.W + 2, Y: r.Y, W: 18, H: r.H}
+					if c.Button(cyc, "▾") {
+						a.customIdx++
+						if a.customIdx >= len(a.customShouts) {
+							a.customIdx = -1
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Judge strip (grant- or pos-gated exactly like classic).
+	if a.judgeVisible() {
+		judge := []struct {
+			key, label string
+			run        func()
+		}{
+			{"witness_testimony", "WT", func() { a.sess.SendWTCE("testimony1", 0) }},
+			{"cross_examination", "CE", func() { a.sess.SendWTCE("testimony2", 0) }},
+			{"not_guilty", "NG", func() { a.sess.SendWTCE("judgeruling", 0) }},
+			{"guilty", "G", func() { a.sess.SendWTCE("judgeruling", 1) }},
+			{"defense_minus", "D-", func() { a.sess.SendHP(1, a.sess.HPDef-1) }},
+			{"defense_plus", "D+", func() { a.sess.SendHP(1, a.sess.HPDef+1) }},
+			{"prosecution_minus", "P-", func() { a.sess.SendHP(2, a.sess.HPPro-1) }},
+			{"prosecution_plus", "P+", func() { a.sess.SendHP(2, a.sess.HPPro+1) }},
+		}
+		for _, j := range judge {
+			if r, ok := lay.rect(j.key); ok {
+				if a.drawThemeButton(j.key, j.label, r) {
+					j.run()
+				}
+			}
+		}
+	}
+
+	// Pos / pair / modcall / evidence at their design homes.
+	if r, ok := lay.rect("pos_dropdown"); ok {
+		if c.Button(r, "Pos: "+a.mySide()) {
+			a.cyclePos()
+		}
+	}
+	if r, ok := lay.rect("pair_button"); ok {
+		if a.drawThemeButton("pair_button", "Pair", r) {
+			a.showPair = !a.showPair
+		}
+	}
+	if r, ok := lay.rect("call_mod"); ok {
+		if a.drawThemeButton("call_mod", "Call Mod", r) {
+			a.showModcall = true
+		}
+	}
+	evLabel := "Evidence"
+	if a.evidPresent {
+		evLabel = "Evidence ●"
+	}
+	if r, ok := lay.rect("evidence_button"); ok {
+		if a.drawThemeButton("evidence_button", evLabel, r) {
+			a.showEvid = true
+		}
+	}
+
+	// Emote grid at the theme's metrics, with page arrows.
+	if r, ok := lay.rect("emotes"); ok && !a.panelHidden(panelEmotes) {
+		a.drawEmoteGridThemed(r, lay, vp)
+	}
+
+	// Utility strip: everything AO2 keeps in OS menus lives on a slim
+	// translucent row pinned to the window's bottom-left.
+	a.drawThemedUtilityStrip(w, h, lay)
+
+	if a.warnActive() {
+		c.LabelClipped(pad, h-44, w-2*pad, a.warnLine, ColDanger)
+	}
+	if a.showPair {
+		a.drawPairPanel(w, h)
+	}
+}
+
+// drawThemedChatBox is the design-rect chatbox: the skin stretches to the
+// ao2_chatbox rect, showname/message sit at their chatbox-relative design
+// rects (AO2 child-widget semantics).
+func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
+	c := a.ctx
+	sc := &a.room.Scene
+	if sc.MessageText == "" && sc.ShownameText == "" {
+		return
+	}
+	skinned := false
+	if page, ok := a.themePage(themeStemChatbox); ok {
+		_ = c.Ren.Copy(page.Frames[0], nil, &box)
+		skinned = true
+	}
+	if !skinned {
+		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+		c.Border(box, ColAccent)
+	}
+
+	nameX, nameY := box.X+8, box.Y+4
+	if r, ok := lay.rect("showname"); ok {
+		nameX, nameY = box.X+r.X, box.Y+r.Y
+	}
+	msgX, msgY := box.X+8, box.Y+26
+	wrapW := box.W - 16
+	if r, ok := lay.rect("message"); ok {
+		msgX, msgY = box.X+r.X, box.Y+r.Y
+		wrapW = r.W
+	}
+
+	nameCol := ColAccent
+	if skinned && a.themeHasName {
+		nameCol = a.themeNameCol
+	}
+	c.Label(nameX, nameY, sc.ShownameText, nameCol)
+
+	a.ensureChatRaster(wrapW, skinned)
+	if a.msRaster != nil {
+		_ = c.Ren.SetClipRect(&box)
+		a.msRaster.Draw(c.Ren, sc.VisibleRunes, msgX, msgY)
+		_ = c.Ren.SetClipRect(nil)
+	}
+	a.chatZoomWheel(box)
+}
+
+// drawEmoteGridThemed lays the emote buttons out on the theme's grid
+// (emote_button_size/spacing scaled), paging with emote_left/right.
+func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect) {
+	c := a.ctx
+	if a.charINIBusy {
+		c.Label(r.X, r.Y, "Loading emotes...", ColTextDim)
+		return
+	}
+	cellW := int32(float64(a.themeEmoteCell[0]) * lay.scale)
+	cellH := int32(float64(a.themeEmoteCell[1]) * lay.scale)
+	gapX := int32(float64(a.themeEmoteGap[0]) * lay.scale)
+	gapY := int32(float64(a.themeEmoteGap[1]) * lay.scale)
+	if cellW < 8 || cellH < 8 {
+		cellW, cellH = 40, 40 // degenerate metrics: AO2 stock size
+	}
+	cols := (r.W + gapX) / (cellW + gapX)
+	rows := (r.H + gapY) / (cellH + gapY)
+	if cols < 1 {
+		cols = 1
+	}
+	if rows < 1 {
+		rows = 1
+	}
+	perPage := int(cols * rows)
+	pages := (len(a.emotes) + perPage - 1) / perPage
+	if a.emotePage >= pages {
+		a.emotePage = 0
+	}
+	start := a.emotePage * perPage
+
+	me := a.activeCharName()
+	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
+	for i := start; i < len(a.emotes) && i < start+perPage; i++ {
+		e := &a.emotes[i]
+		n := int32(i - start)
+		btn := sdl.Rect{
+			X: r.X + (n%cols)*(cellW+gapX),
+			Y: r.Y + (n/cols)*(cellH+gapY),
+			W: cellW, H: cellH,
+		}
+		selected := i == a.emoteIdx
+		if selected {
+			c.Fill(sdl.Rect{X: btn.X - 2, Y: btn.Y - 2, W: btn.W + 4, H: btn.H + 4}, ColAccent)
+		}
+		label := e.Comment
+		if label == "" {
+			label = e.Anim
+		}
+		var picked bool
+		if useImages {
+			picked = a.drawEmoteImageButton(btn, me, i, selected, label)
+		} else {
+			picked = c.Button(btn, label)
+		}
+		if picked {
+			a.emoteIdx = i
+			a.speculateEmote(me, e)
+		}
+		// Same hover-preview behavior as the classic row: the TALKING
+		// sprite, warmed on demand.
+		if c.HoverPreview("emote:"+e.Anim, btn) {
+			a.previewBase = a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
+			a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(me, e.Anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+		}
+	}
+
+	if pages > 1 {
+		if lr, ok := lay.rect("emote_left"); ok {
+			if a.drawThemeButton("emote_left", "<", lr) && a.emotePage > 0 {
+				a.emotePage--
+			}
+		}
+		if rr, ok := lay.rect("emote_right"); ok {
+			if a.drawThemeButton("emote_right", ">", rr) && a.emotePage < pages-1 {
+				a.emotePage++
+			}
+		}
+	}
+	if a.previewBase != "" {
+		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H)
+		if c.clicked {
+			a.previewBase = ""
+		}
+	}
+}
+
+// drawThemedUtilityStrip hosts the client-chrome actions AO2 puts in OS
+// menus: slim, translucent, bottom-left, never fighting the theme.
+func (a *App) drawThemedUtilityStrip(w, h int32, lay *themeLayoutCache) {
+	c := a.ctx
+	const stripH = 24
+	y := h - stripH - 2
+	x := int32(4)
+	put := func(label string) bool {
+		bw := c.TextWidth(label) + 12
+		r := sdl.Rect{X: x, Y: y, W: bw, H: stripH}
+		hit := c.Button(r, label)
+		x += bw + 4
+		return hit
+	}
+	if put("Character") {
+		a.screen = ScreenCharSelect
+	}
+	if put("Wardrobe") {
+		a.openIniswap()
+	}
+	if _, ok := lay.rect("evidence_button"); !ok {
+		evLabel := "Evidence"
+		if a.evidPresent {
+			evLabel = "Evidence ●"
+		}
+		if put(evLabel) {
+			a.showEvid = true
+		}
+	}
+	if _, ok := lay.rect("call_mod"); !ok {
+		if put("Mods...") {
+			a.showModcall = true
+		}
+	}
+	if _, ok := lay.rect("pair_button"); !ok {
+		if put("Pair...") {
+			a.showPair = !a.showPair
+		}
+	}
+	if _, ok := lay.rect("pos_dropdown"); !ok {
+		if put("Pos: " + a.mySide()) {
+			a.cyclePos()
+		}
+	}
+	if put("UI...") {
+		a.showUICfg = true
+	}
+	if put("Settings") {
+		a.prevScreen = ScreenCourtroom
+		a.screen = ScreenSettings
+	}
+	if put("Disconnect") {
+		a.Disconnect()
+	}
+}

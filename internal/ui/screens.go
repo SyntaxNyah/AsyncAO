@@ -41,7 +41,7 @@ func osHostname() (string, error) { return os.Hostname() }
 func (a *App) drawLobby(w, h int32) {
 	a.pollLobbyFetch()
 	c := a.ctx
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
+	a.drawScreenBackdrop(w, h, "lobbybackground")
 	c.Heading(pad, pad, "AsyncAO — Server Phone Book & Lobby", ColText)
 	c.Label(pad, pad+30, a.lobbyStatus, ColTextDim)
 	if a.connErr != "" {
@@ -263,7 +263,7 @@ func (a *App) directConnect() {
 
 func (a *App) drawCharSelect(w, h int32) {
 	c := a.ctx
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
+	a.drawScreenBackdrop(w, h, "charselect_bg")
 	title := "Choose a character"
 	if a.serverName != "" {
 		title += " — " + a.serverName
@@ -456,6 +456,13 @@ func (a *App) drawCourtroom(w, h int32) {
 		return
 	}
 
+	// Theme-driven geometry: when the theme ships courtroom_design.ini
+	// (and the toggle is on), the courtroom IS the theme's layout.
+	if lay := a.themeLayout(w, h); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+		a.drawCourtroomThemed(w, h, lay)
+		return
+	}
+
 	// Viewport: AO 4:3 at the user's width percent (View −/+ buttons).
 	vpW := w * int32(a.vpPct) / DefaultScalePct
 	vpH := vpW * 3 / 4
@@ -469,7 +476,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	a.handleSpriteDrag(vp)
 	a.handleHotkeys() // Ctrl-chords (shouts, pos, music, screenshot...)
 	a.drawChatOverlay(vp)
-	a.drawCourtOverlays(vp) // HP bars, clocks, badges, splashes
+	a.drawCourtOverlays(vp, nil) // HP bars, clocks, badges, splashes
 
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
@@ -610,27 +617,8 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	}
 	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
 
-	// (Re)rasterize when the message, color, zoom, wrap width, or skin
-	// presence changes (the skin gates the theme's message color).
 	wrapW := box.W - 16
-	if a.msRaster == nil || a.rasterText != sc.MessageText || a.rasterColor != sc.TextColor ||
-		a.rasterScale != a.chatPct || a.rasterW != wrapW || a.rasterSkinned != skinned {
-		if a.msRaster != nil {
-			a.msRaster.Destroy()
-			a.msRaster = nil
-		}
-		if sc.MessageText != "" {
-			raster, err := renderRaster(a, sc, wrapW, skinned)
-			if err == nil {
-				a.msRaster = raster
-				a.rasterText = sc.MessageText
-				a.rasterColor = sc.TextColor
-				a.rasterScale = a.chatPct
-				a.rasterW = wrapW
-				a.rasterSkinned = skinned
-			}
-		}
-	}
+	a.ensureChatRaster(wrapW, skinned)
 	if a.msRaster != nil {
 		// Clip to the box: oversized Text settings stay INSIDE it.
 		_ = c.Ren.SetClipRect(&box)
@@ -638,7 +626,41 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 		_ = c.Ren.SetClipRect(nil)
 	}
 
-	// Ctrl+wheel over the box zooms the chat text (browser convention).
+	a.chatZoomWheel(box)
+}
+
+// ensureChatRaster (re)rasterizes the current message when the text,
+// color, zoom, wrap width, or skin presence changed — shared by the
+// classic overlay and the themed chatbox.
+func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
+	sc := &a.room.Scene
+	if a.msRaster != nil && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
+		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned {
+		return
+	}
+	if a.msRaster != nil {
+		a.msRaster.Destroy()
+		a.msRaster = nil
+	}
+	if sc.MessageText == "" {
+		return
+	}
+	raster, err := renderRaster(a, sc, wrapW, skinned)
+	if err != nil {
+		return
+	}
+	a.msRaster = raster
+	a.rasterText = sc.MessageText
+	a.rasterColor = sc.TextColor
+	a.rasterScale = a.chatPct
+	a.rasterW = wrapW
+	a.rasterSkinned = skinned
+}
+
+// chatZoomWheel: Ctrl+wheel over the chatbox zooms the chat text
+// (browser convention) — shared by both chatbox flavors.
+func (a *App) chatZoomWheel(box sdl.Rect) {
+	c := a.ctx
 	if c.ctrlHeld && c.wheelY != 0 && c.hovering(box) {
 		a.chatPct = clampInt(a.chatPct+int(c.wheelY)*config.ScaleStepPercent,
 			config.MinChatScalePercent, config.MaxChatScalePercent)
@@ -707,8 +729,13 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	if c.Button(sdl.Rect{X: bx + 104, Y: rowY, W: 50, H: 24}, "HTML") {
 		a.exportICLog(true)
 	}
-	list := sdl.Rect{X: inner.X, Y: rowY + 28, W: inner.W, H: inner.H - 28}
+	a.drawICLogList(sdl.Rect{X: inner.X, Y: rowY + 28, W: inner.W, H: inner.H - 28})
+}
 
+// drawICLogList renders the colored IC scrollback (search-filtered) into
+// rect — used by the classic Log tab and the themed ic_chatlog element.
+func (a *App) drawICLogList(list sdl.Rect) {
+	c := a.ctx
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	idx := a.icLogFiltered()
@@ -737,6 +764,43 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		}
 		y += lineH
 	}
+}
+
+// drawOOCLogList renders the OOC scrollback into rect (themed
+// server_chatlog element; the classic OOC tab keeps its own copy with the
+// identity fields).
+func (a *App) drawOOCLogList(list sdl.Rect) {
+	c := a.ctx
+	font := c.LogFont(a.logPct)
+	lineH := int32(font.Height()) + 2
+	contentH := int32(len(a.oocLog)) * lineH
+	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
+	if !c.ctrlHeld && c.hovering(list) {
+		a.oocScroll -= c.wheelY * scrollStepPx
+	}
+	if maxScroll := contentH - list.H; maxScroll > 0 && a.oocScroll >= maxScroll-lineH {
+		a.oocScroll = maxScroll
+	}
+	a.oocScroll = c.VScrollbar("oocscroll", track, a.oocScroll, contentH, list.H)
+	y := list.Y - a.oocScroll
+	for _, line := range a.oocLog {
+		if y > list.Y+list.H-lineH {
+			break
+		}
+		if y >= list.Y-lineH {
+			c.LabelClippedFont(font, list.X, y, list.W-scrollBarW-scrollBarGap, line, ColText)
+		}
+		y += lineH
+	}
+}
+
+// submitOOC sends the OOC input if non-blank (shared classic/themed).
+func (a *App) submitOOC() {
+	if strings.TrimSpace(a.oocInput) == "" || a.sess == nil {
+		return
+	}
+	a.sess.SendOOC(a.oocName, a.oocInput)
+	a.oocInput = ""
 }
 
 // drawOOCPanel is the actual OOC box: full scrollable history plus the

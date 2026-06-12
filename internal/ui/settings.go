@@ -187,6 +187,13 @@ func (a *App) drawSettings(w, h int32) {
 	a.pollFolderPick()
 	y += 36
 
+	// Theme-driven courtroom geometry (courtroom_design.ini).
+	tlay := a.d.Prefs.ThemeLayoutEnabled()
+	if next := c.Checkbox(pad, y, "Use the theme's courtroom layout (courtroom_design.ini positions every widget; off = classic layout)", tlay); next != tlay {
+		a.d.Prefs.SetThemeLayout(next)
+	}
+	y += 28
+
 	// Live preview: the actual applied chatbox skin + theme text colors,
 	// so "did the theme land?" is answerable without joining a server.
 	y = a.drawThemePreview(y)

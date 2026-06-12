@@ -203,16 +203,28 @@ func pageFrameLoop(page *render.TexturePage, elapsed time.Duration) int {
 
 // drawCourtOverlays paints the live court state over the viewport: penalty
 // bars, server clocks, the testimony badge, the presented-evidence popup,
-// and the WT/CE/verdict splash (top-most).
-func (a *App) drawCourtOverlays(vp sdl.Rect) {
+// and the WT/CE/verdict splash (top-most). lay positions the bars at their
+// design rects when the theme defines them (nil = classic corners).
+func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 	c := a.ctx
 	now := time.Now()
 
 	barH := int32(0)
 	if !a.panelHidden(panelHP) {
-		barH = a.drawHPBar(vp, true, a.sess.HPDef)
-		h2 := a.drawHPBar(vp, false, a.sess.HPPro)
-		if h2 > barH {
+		defR, okDef := sdl.Rect{}, false
+		proR, okPro := sdl.Rect{}, false
+		if lay != nil {
+			defR, okDef = lay.rect("defense_bar")
+			proR, okPro = lay.rect("prosecution_bar")
+		}
+		if okDef {
+			a.drawHPBarRect(defR, true, a.sess.HPDef)
+		} else {
+			barH = a.drawHPBar(vp, true, a.sess.HPDef)
+		}
+		if okPro {
+			a.drawHPBarRect(proR, false, a.sess.HPPro)
+		} else if h2 := a.drawHPBar(vp, false, a.sess.HPPro); h2 > barH {
 			barH = h2
 		}
 	}
@@ -302,41 +314,50 @@ func (a *App) drawCourtOverlays(vp sdl.Rect) {
 	}
 }
 
-// drawHPBar draws one penalty bar from theme art (defensebar<N> /
-// prosecutionbar<N>, exactly the images set_hp_bar swaps) or a procedural
-// pip strip when the theme ships none. Returns the drawn height.
+// drawHPBar draws one penalty bar at the classic corner placement and
+// returns the drawn height (the themed path positions via design rects).
 func (a *App) drawHPBar(vp sdl.Rect, def bool, val int) int32 {
-	c := a.ctx
-	stem := "prosecutionbar"
-	if def {
-		stem = "defensebar"
-	}
 	w := vp.W * hpBarWidthPct / 100
 	x := vp.X + vp.W - w - 6 // prosecution right
 	if def {
 		x = vp.X + 6 // defense left
 	}
-	if page, ok := a.themePage(stem + strconv.Itoa(val)); ok {
-		h := w * page.H / page.W
-		dst := sdl.Rect{X: x, Y: vp.Y + 6, W: w, H: h}
-		_ = c.Ren.Copy(page.Frames[0], nil, &dst)
-		return h
+	h := int32(12)
+	if page, ok := a.themePage(a.hpBarStem(def, val)); ok {
+		h = w * page.H / page.W
+	}
+	a.drawHPBarRect(sdl.Rect{X: x, Y: vp.Y + 6, W: w, H: h}, def, val)
+	return h
+}
+
+func (a *App) hpBarStem(def bool, val int) string {
+	if def {
+		return "defensebar" + strconv.Itoa(val)
+	}
+	return "prosecutionbar" + strconv.Itoa(val)
+}
+
+// drawHPBarRect draws one penalty bar into an exact rect: theme art
+// (defensebar<N>/prosecutionbar<N>, the images set_hp_bar swaps) stretched
+// like AO2 stretches them, or a procedural pip strip.
+func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int) {
+	c := a.ctx
+	if page, ok := a.themePage(a.hpBarStem(def, val)); ok {
+		_ = c.Ren.Copy(page.Frames[0], nil, &bar)
+		return
 	}
 	// Procedural fallback: pip strip, blue defense / red prosecution.
-	const h = 12
-	bar := sdl.Rect{X: x, Y: vp.Y + 6, W: w, H: h}
 	c.Fill(bar, sdl.Color{R: 0, G: 0, B: 0, A: 185})
 	fill := sdl.Color{R: 200, G: 40, B: 40, A: 235}
 	if def {
 		fill = sdl.Color{R: 50, G: 110, B: 230, A: 235}
 	}
-	segW := (w - 2) / hpBarSegments
+	segW := (bar.W - 2) / hpBarSegments
 	for i := 0; i < val && i < hpBarSegments; i++ {
-		seg := sdl.Rect{X: bar.X + 1 + int32(i)*segW, Y: bar.Y + 1, W: segW - 1, H: h - 2}
+		seg := sdl.Rect{X: bar.X + 1 + int32(i)*segW, Y: bar.Y + 1, W: segW - 1, H: bar.H - 2}
 		c.Fill(seg, fill)
 	}
 	c.Border(bar, ColPanelHi)
-	return h
 }
 
 // --- judge controls -------------------------------------------------------------

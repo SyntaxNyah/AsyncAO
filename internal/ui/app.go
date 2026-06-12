@@ -188,6 +188,7 @@ type App struct {
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
 	emoteIdx                   int
+	emotePage                  int    // themed emote grid paging (emote_left/right)
 	charBlips                  string // char.ini blips/gender (outgoing default)
 	// 2.10 custom shouts ([Shouts] in char.ini): customIdx −1 = the base
 	// "custom" art, ≥ 0 indexes customShouts.
@@ -235,6 +236,12 @@ type App struct {
 	themeHasMsg  bool
 	themeNameCol sdl.Color
 	themeHasName bool
+	// Theme courtroom geometry (courtroom_design.ini): design-space rects
+	// + emote grid metrics; themeLay caches the window-scaled rects.
+	themeRects     map[string]theme.Rect
+	themeEmoteCell [2]int
+	themeEmoteGap  [2]int
+	themeLay       themeLayoutCache
 
 	// --- court extras (HP / WTCE / timers / judge / modcall / evidence) ---
 	wtceName    string    // active splash stem ("" = none)
@@ -350,6 +357,13 @@ type themeApply struct {
 	nameCol sdl.Color
 	hasName bool
 
+	// layout is the courtroom_design.ini geometry (themeLayoutKeys that
+	// the theme defines, design-space pixels; showname/message stay
+	// chatbox-relative exactly as AO2 positions those child widgets).
+	layout    map[string]theme.Rect
+	emoteCell [2]int // emote_button_size (w, h)
+	emoteGap  [2]int // emote_button_spacing (x, y)
+
 	// diagnostics: where the skin came from, how many INI keys loaded,
 	// and the dirs probed (so "nothing found" names the actual paths).
 	chatboxFile string
@@ -378,6 +392,10 @@ func themeImageStems() map[string][]string {
 		"notguilty":        {"notguilty_bubble", "notguilty"},
 		"guilty":           {"guilty_bubble", "guilty"},
 		"testimony":        {"testimony"},
+		// Screen backdrops: the single biggest "the theme applied" signal.
+		"courtroombackground": {"courtroombackground"},
+		"lobbybackground":     {"lobbybackground", "loadingbackground"},
+		"charselect_bg":       {"charselect_background"},
 	}
 	for i := 0; i <= courtroom.HPBarMax; i++ {
 		d := "defensebar" + strconv.Itoa(i)
@@ -387,9 +405,84 @@ func themeImageStems() map[string][]string {
 	return m
 }
 
+// themeBtnPrefix namespaces themed widget art ("theme://btn/<design key>").
+const themeBtnPrefix = "btn/"
+
+// themeButtonStems maps courtroom_design.ini element keys to their AOButton
+// art file stems (courtroom.cpp set_widgets setImage calls). Loaded with a
+// PNG-FIRST ext order: the bare splash names ("crossexamination.gif") and
+// these button files ("crossexamination.png") collide by stem, and on
+// every real theme the button is the png.
+func themeButtonStems() map[string][]string {
+	return map[string][]string{
+		"hold_it":           {"holdit"},
+		"objection":         {"objection"},
+		"take_that":         {"takethat"},
+		"custom_objection":  {"custom"},
+		"witness_testimony": {"witnesstestimony"},
+		"cross_examination": {"crossexamination"},
+		"not_guilty":        {"notguilty"},
+		"guilty":            {"guilty"},
+		"call_mod":          {"call_mod", "callmod"},
+		"evidence_button":   {"evidencebutton", "addevidence"},
+		"emote_left":        {"arrow_left"},
+		"emote_right":       {"arrow_right"},
+	}
+}
+
+// themeButtonExts: png first — see themeButtonStems.
+var themeButtonExts = []string{".png", ".webp", ".apng", ".gif"}
+
+// themeLayoutKeys are the courtroom_design.ini rects the themed courtroom
+// consumes (names exactly as AO2-Client set_size_and_pos reads them).
+// "courtroom" + "viewport" are mandatory for the layout to activate;
+// everything else falls back per element.
+var themeLayoutKeys = []string{
+	"courtroom", "viewport", "ao2_chatbox", "showname", "message",
+	"ic_chatlog", "server_chatlog", "ms_chatlog",
+	"music_list", "music_search",
+	"ooc_chat_message", "ooc_chat_name",
+	"ao2_ic_chat_message", "ao2_ic_chat_name",
+	"pos_dropdown", "pair_button",
+	"hold_it", "objection", "take_that", "custom_objection",
+	"witness_testimony", "cross_examination", "not_guilty", "guilty",
+	"defense_plus", "defense_minus", "prosecution_plus", "prosecution_minus",
+	"defense_bar", "prosecution_bar",
+	"call_mod", "evidence_button",
+	"emotes", "emote_left", "emote_right",
+}
+
 // themeTexKey is the T1 key for a theme texture stem; the scheme prefix can
 // never collide with real asset URLs.
 func themeTexKey(stem string) string { return "theme://" + stem }
+
+const (
+	// defaultEmoteCellPx / defaultEmoteGapPx are AO2's stock emote-grid
+	// metrics, used when the design INI omits the tuples.
+	defaultEmoteCellPx = 40
+	defaultEmoteGapPx  = 1
+)
+
+// designPair parses a "x, y" design tuple (emote_button_size and friends).
+func designPair(t *theme.Theme, key string, defX, defY int) [2]int {
+	raw, ok := t.DesignValue(key)
+	if !ok {
+		return [2]int{defX, defY}
+	}
+	parts := strings.Split(raw, ",")
+	if len(parts) < 2 {
+		return [2]int{defX, defY}
+	}
+	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
+	y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if errX != nil || x <= 0 {
+		x = defX
+	}
+	if errY != nil || y <= 0 {
+		y = defY
+	}
+	return [2]int{x, y}
+}
 
 // themeSoundKeys lists the courtroom_sounds.ini entries the UI plays, with
 // the lookup aliases handle_wtce probes and the stock AO2 default-theme
@@ -1126,6 +1219,7 @@ func (a *App) pollCharINI() {
 		a.customIdx = -1 // base custom
 		a.customName = res.ini.CustomName
 		a.emoteIdx = 0
+		a.emotePage = 0
 		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
 		// Prefetch the first few emotes speculatively.
 		me := a.myCharName()
@@ -1274,9 +1368,9 @@ func (a *App) applyThemeAsync() {
 				res.nameCol = sdl.Color{R: sn.Color.R, G: sn.Color.G, B: sn.Color.B, A: 255}
 				res.hasName = true
 			}
-			for stem, candidates := range themeImageStems() {
+			loadStem := func(stem string, candidates []string, exts []string) {
 				for _, cand := range candidates {
-					path, ok := t.FindAsset(cand, themeImageExts)
+					path, ok := t.FindAsset(cand, exts)
 					if !ok {
 						continue
 					}
@@ -1293,9 +1387,26 @@ func (a *App) applyThemeAsync() {
 						res.chatboxFile = filepath.Base(path)
 						res.chatboxDir = filepath.Dir(path)
 					}
-					break
+					return
 				}
 			}
+			for stem, candidates := range themeImageStems() {
+				loadStem(stem, candidates, themeImageExts)
+			}
+			for key, candidates := range themeButtonStems() {
+				loadStem(themeBtnPrefix+key, candidates, themeButtonExts)
+			}
+			// Courtroom geometry (the part that makes a theme LOOK like
+			// itself): rects in design-space pixels, plus the emote grid
+			// cell metrics.
+			res.layout = map[string]theme.Rect{}
+			for _, key := range themeLayoutKeys {
+				if r, ok := t.ElementRect(key); ok {
+					res.layout[key] = r
+				}
+			}
+			res.emoteCell = designPair(t, "emote_button_size", defaultEmoteCellPx, defaultEmoteCellPx)
+			res.emoteGap = designPair(t, "emote_button_spacing", defaultEmoteGapPx, defaultEmoteGapPx)
 		}
 		// Sound names resolve even with no theme on disk: the stock
 		// fallbacks keep WT/CE/verdict/modcall audible on bare installs.
@@ -1342,18 +1453,24 @@ func (a *App) pollThemeApply() {
 	if res == nil {
 		return
 	}
-	for stem := range themeImageStems() {
-		key := themeTexKey(stem)
-		if d := res.images[stem]; d != nil {
-			if err := a.d.Store.Upload(key, d); err == nil {
-				a.themeTex[stem] = true
-			}
-		} else if a.themeTex[stem] {
-			a.d.Store.Remove(key)
+	// Upload every loaded stem; drop residents the new theme doesn't ship
+	// (covers both the plain stems and the btn/ widget art).
+	for stem, d := range res.images {
+		if err := a.d.Store.Upload(themeTexKey(stem), d); err == nil {
+			a.themeTex[stem] = true
+		}
+	}
+	for stem := range a.themeTex {
+		if res.images[stem] == nil {
+			a.d.Store.Remove(themeTexKey(stem))
 			delete(a.themeTex, stem)
 		}
 	}
 	a.themeChatbox = a.themeTex[themeStemChatbox]
+	// Geometry: swap in the design rects and invalidate the scaled cache.
+	a.themeRects = res.layout
+	a.themeEmoteCell, a.themeEmoteGap = res.emoteCell, res.emoteGap
+	a.themeLay.valid = false
 	a.themeSounds = res.sounds
 	a.pushRealizationToRoom()
 	a.themeMsgCol, a.themeHasMsg = res.msgCol, res.hasMsg
