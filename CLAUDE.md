@@ -148,6 +148,9 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
   (→ mojibake arrows/dashes). It happened once; the fix was a cp1252
   reverse round-trip via [IO.File]. Use the Edit tooling or `-Encoding`
   with [IO.File] reads/writes.
+- In PowerShell 5.1, **quote Go flags containing `=.`** (e.g.
+  `go test "-bench=." ...`): unquoted, the parser splits it into a bare
+  `.` package argument and the run fails with "no Go files in <root>".
 - CGO deps now include `mingw-w64-ucrt-x86_64-libavif` (AVIF decode);
   build.ps1 stages libavif-16/aom/dav1d/yuv/rav1e/SvtAv1Enc DLLs.
 
