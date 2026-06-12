@@ -86,7 +86,18 @@ func (a *App) drawLobby(w, h int32) {
 		e := &a.servers[i]
 		if !e.Joinable() && !legacyHeaderDrawn {
 			if y > listTop-rowH && y < h {
-				c.Label(pad, y+4, "— NOT SUPPORTED: "+network.UnsupportedReason, ColDanger)
+				msg := "— NOT SUPPORTED: " + network.UnsupportedReason
+				c.Label(pad, y+4, msg, ColDanger)
+				// Server owner looking at their own black row: the
+				// upgrade guide lives one click away.
+				bx := pad + c.TextWidth(msg) + 12
+				const helpBtnW = 180
+				if bx+helpBtnW > w-pad {
+					bx = w - pad - helpBtnW
+				}
+				if c.Button(sdl.Rect{X: bx, Y: y, W: helpBtnW, H: 24}, "For server owners…") {
+					a.screen = ScreenServerHelp
+				}
 			}
 			y += rowH
 			legacyHeaderDrawn = true
@@ -99,7 +110,7 @@ func (a *App) drawLobby(w, h int32) {
 		}
 		y += rowH
 		if i == a.selServer && len(a.descLines) > 0 {
-			boxH := int32(len(a.descLines))*lineH + 8
+			boxH := int32(len(a.descLines)+len(a.descLinks))*lineH + 8
 			if y > listTop-boxH && y < h {
 				box := sdl.Rect{X: pad + 16, Y: y, W: w - 2*pad - 16, H: boxH - 4}
 				c.Fill(box, ColPanelHi)
@@ -107,6 +118,11 @@ func (a *App) drawLobby(w, h int32) {
 				ly := y + 3
 				for _, line := range a.descLines {
 					c.LabelClipped(box.X+6, ly, box.W-12, line, ColText)
+					ly += lineH
+				}
+				// URLs from the description: clickable, opens the browser.
+				for _, link := range a.descLinks {
+					a.linkLabel(box.X+6, ly, box.W-12, link)
 					ly += lineH
 				}
 			}
@@ -176,10 +192,15 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 		if desc == "" {
 			desc = "(no description)"
 		}
-		// Wrapped ONCE per selection — drawing reuses the cached lines.
+		// Wrapped ONCE per selection — drawing reuses the cached lines;
+		// any links in the description become clickable rows below it.
 		a.descLines = c.WrapText(desc, w-2*pad-40, maxDescLines)
+		a.descLinks = extractURLs(desc, maxDescLinks)
 	}
 }
+
+// maxDescLinks bounds the clickable-link rows under a description.
+const maxDescLinks = 4
 
 // drawWardrobeGrid is the char-select grid over the wardrobe menu: same
 // cells, same demand pipeline, same search box. Picking claims the first

@@ -32,6 +32,9 @@ const (
 	ScreenCourtroom
 	ScreenSettings
 	ScreenAbout
+	// ScreenServerHelp is the legacy-server-owner upgrade guide (reached
+	// from the lobby's NOT SUPPORTED notice).
+	ScreenServerHelp
 )
 
 const (
@@ -141,8 +144,10 @@ type App struct {
 	lobbyScroll   int32
 	// click-to-expand selection: first click opens the full description
 	// under the row, a second click on the same row joins.
-	selServer int
-	descLines []string
+	selServer  int
+	descLines  []string
+	descLinks  []string // clickable URLs found in the description
+	helpScroll int32    // ScreenServerHelp scroll position
 
 	// --- connection / session ---
 	conn       *protocol.Conn
@@ -1321,6 +1326,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.drawSettings(winW, winH)
 	case ScreenAbout:
 		a.drawAbout(winW, winH)
+	case ScreenServerHelp:
+		a.drawServerHelp(winW, winH)
 	}
 	// Debug overlay paints over every screen (allocs are acceptable here:
 	// it's an opt-in diagnostics path, never on by default).
