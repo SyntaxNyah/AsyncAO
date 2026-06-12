@@ -44,6 +44,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   lists cost a 304 and zero payload bytes.
 - **HTTP/2**: on for https hosts (ForceAttemptHTTP2 + TLS session cache);
   the manifest fetch doubles as the per-host connection pre-dial.
+- **Progressive animated decode**: frame 0 of an animated WebP/AVIF/APNG/
+  GIF shows after one frame-decode; the full set replaces it when ready.
+- **Adaptive per-host deadlines**: a host's TTFB EWMA caps its request
+  deadlines (8×, clamped) so a dying mirror can't pin the fetch lane.
+- **Zstd disk cache** (Settings, default off): self-describing zstd
+  blobs, kept only when smaller — sprites stay raw, INIs shrink 2–4×.
+- **Label texture atlas**: UI labels pack into ≤4 shared pages — the 4K
+  char grid's ~1200 labels cost a handful of binds instead of 1200.
+- **Frame pacing**: dt clamp after stalls + a 144 Hz zero-missed-reveal
+  typewriter gate in CI.
+- See docs/PERFORMANCE-ROADMAP.md for designs and measurements.
 
 ## Themes
 

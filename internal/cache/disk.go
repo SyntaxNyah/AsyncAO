@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
@@ -72,8 +73,38 @@ type DiskCache struct {
 	writeErrors atomic.Int64
 	dropped     atomic.Int64
 
+	// compress turns on zstd for NEW blobs (Settings toggle, default off).
+	// Reads always sniff the zstd magic, so mixed caches — and toggling
+	// at any time — work forever without migration.
+	compress atomic.Bool
+
 	onError atomic.Pointer[func(error)]
 }
+
+// zstd compression for the T3 tier: level-1 ("fastest") in the single
+// writer goroutine, and a compressed blob is kept only when it actually
+// shrank — WebP/AVIF sprites are pre-compressed and would only pay the
+// decompress cost on every hit for nothing. INI/JSON/PNG payloads shrink
+// 2–4×. Encoder/decoder with nil writers are documented safe for
+// concurrent EncodeAll/DecodeAll use.
+var (
+	zstdEnc, _ = zstd.NewWriter(nil,
+		zstd.WithEncoderLevel(zstd.SpeedFastest), zstd.WithEncoderConcurrency(1))
+	zstdDec, _ = zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+)
+
+// zstdMagic is the standard zstd frame header (little-endian 0xFD2FB528);
+// sniffing it makes the on-disk format self-describing.
+var zstdMagic = [4]byte{0x28, 0xB5, 0x2F, 0xFD}
+
+func isZstdBlob(data []byte) bool {
+	return len(data) > len(zstdMagic) &&
+		data[0] == zstdMagic[0] && data[1] == zstdMagic[1] &&
+		data[2] == zstdMagic[2] && data[3] == zstdMagic[3]
+}
+
+// SetCompression toggles zstd for new writes (live-safe: reads sniff).
+func (d *DiskCache) SetCompression(on bool) { d.compress.Store(on) }
 
 // DefaultDiskRoot returns <os.UserCacheDir>/AsyncAO/assets.
 func DefaultDiskRoot() (string, error) {
@@ -126,7 +157,8 @@ func (d *DiskCache) pathFor(url string) string {
 }
 
 // Get reads the cached blob for url. A zero-length blob is treated as a miss
-// and deleted (defensive: a torn write that survived a crash).
+// and deleted (defensive: a torn write that survived a crash). Compressed
+// blobs self-identify by the zstd magic and decompress transparently.
 func (d *DiskCache) Get(url string) ([]byte, bool) {
 	data, err := os.ReadFile(d.pathFor(url))
 	if err != nil || len(data) == 0 {
@@ -135,6 +167,17 @@ func (d *DiskCache) Get(url string) ([]byte, bool) {
 		}
 		d.misses.Add(1)
 		return nil, false
+	}
+	if isZstdBlob(data) {
+		raw, derr := zstdDec.DecodeAll(data, nil)
+		if derr != nil {
+			// Corrupt frame: treat as a miss so the pipeline refetches a
+			// clean copy over this path.
+			_ = os.Remove(d.pathFor(url))
+			d.misses.Add(1)
+			return nil, false
+		}
+		data = raw
 	}
 	d.hits.Add(1)
 	return data, true
@@ -214,6 +257,13 @@ func (d *DiskCache) writerLoop() {
 // write lands one blob via temp file + rename so readers never observe a
 // partial blob under the final name.
 func (d *DiskCache) write(w diskWrite) {
+	if d.compress.Load() {
+		// Compress on the writer goroutine (never the caller's); keep the
+		// zstd frame only when it actually shrank the blob.
+		if cz := zstdEnc.EncodeAll(w.data, nil); len(cz) < len(w.data) {
+			w.data = cz
+		}
+	}
 	dir := filepath.Dir(w.path)
 	if err := os.MkdirAll(dir, diskDirPerm); err != nil {
 		d.reportError(fmt.Errorf("cache: creating shard dir %s: %w", dir, err))

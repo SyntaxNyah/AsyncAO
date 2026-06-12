@@ -89,6 +89,10 @@ type Decoded struct {
 	// flag, APNG acTL, multi-frame GIF) — independent of whether all frames
 	// were decoded (PreferAnimated=false decodes only the first).
 	Animated bool
+	// Partial marks a progressive first-frame delivery: the full frame set
+	// for the same URL follows from the same decode job and replaces this
+	// page on upload (§perf: giant preanims start in one frame-decode).
+	Partial bool
 	// Width and Height are the canvas dimensions in pixels.
 	Width, Height int
 

@@ -52,6 +52,19 @@ const (
 	backoffBase = 500 * time.Millisecond
 	backoffMax  = 30 * time.Second
 
+	// Adaptive deadlines (the bounded "self-tuning within the cap" the
+	// perf roadmap calls for): each host's observed time-to-first-byte
+	// EWMA sets that host's request deadline at adaptiveLatencyMultiple ×
+	// EWMA, clamped to [adaptiveTimeoutFloor, the client timeout]. A
+	// degrading mirror stops pinning fetch workers for the full global
+	// timeout — the lane keeps flowing for healthy hosts — while fast
+	// hosts never notice (the floor dwarfs their real responses).
+	adaptiveLatencyMultiple = 8
+	adaptiveTimeoutFloor    = 2 * time.Second
+	// EWMA weight 1/4: new samples track congestion without letting one
+	// blip swing the average.
+	ewmaWeightDen = 4
+
 	// unknownLengthPrealloc seeds the scratch buffer for responses without
 	// a Content-Length header.
 	unknownLengthPrealloc = 64 << 10
@@ -73,6 +86,7 @@ type Client struct {
 	notFound   *expirable.LRU[string, struct{}]
 	dns        *dnsCache
 	backoff    sync.Map // host string → *hostBackoff
+	hostLat    sync.Map // host string → *hostLatency (TTFB EWMA)
 	timeout    time.Duration
 	bufPool    sync.Pool // *bytes.Buffer for unknown-length reads
 
@@ -160,12 +174,56 @@ func (c *Client) Fetch(ctx context.Context, url string) ([]byte, error) {
 	}
 }
 
+// hostLatency is one host's TTFB EWMA in nanoseconds. Plain atomic
+// load/store: a lost concurrent update only delays the average by one
+// sample — fine for statistics, free of CAS loops on the fetch path.
+type hostLatency struct{ ewmaNs atomic.Int64 }
+
+// observeLatency folds one time-to-first-byte sample into host's EWMA.
+func (c *Client) observeLatency(host string, sample time.Duration) {
+	if host == "" || sample <= 0 {
+		return
+	}
+	v, _ := c.hostLat.LoadOrStore(host, &hostLatency{})
+	lat := v.(*hostLatency)
+	old := lat.ewmaNs.Load()
+	if old == 0 {
+		lat.ewmaNs.Store(int64(sample))
+		return
+	}
+	lat.ewmaNs.Store(old + (int64(sample)-old)/ewmaWeightDen)
+}
+
+// adaptiveTimeout returns the per-request deadline for host: the global
+// timeout until samples exist, then multiple×EWMA clamped to
+// [adaptiveTimeoutFloor, global timeout].
+func (c *Client) adaptiveTimeout(host string) time.Duration {
+	v, ok := c.hostLat.Load(host)
+	if !ok {
+		return c.timeout
+	}
+	ewma := time.Duration(v.(*hostLatency).ewmaNs.Load())
+	if ewma <= 0 {
+		return c.timeout
+	}
+	d := ewma * adaptiveLatencyMultiple
+	if d < adaptiveTimeoutFloor {
+		return adaptiveTimeoutFloor
+	}
+	if d > c.timeout {
+		return c.timeout
+	}
+	return d
+}
+
 // fetchOnce performs the single upstream request behind singleflight. It
-// runs detached from any one caller's context, bounded by the client
-// timeout, so one impatient caller cannot kill the fetch for everyone.
+// runs detached from any one caller's context, bounded by the host's
+// adaptive deadline, so one impatient caller cannot kill the fetch for
+// everyone and one slow host cannot pin workers for the global timeout.
 func (c *Client) fetchOnce(url string) ([]byte, error) {
 	c.requests.Add(1)
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	host := hostOf(url)
+	ctx, cancel := context.WithTimeout(context.Background(), c.adaptiveTimeout(host))
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -173,19 +231,21 @@ func (c *Client) fetchOnce(url string) ([]byte, error) {
 		return nil, fmt.Errorf("network: building request for %s: %w", url, err)
 	}
 
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		c.recordFailure(hostOf(url))
+		c.recordFailure(host)
 		c.failures.Add(1)
 		return nil, fmt.Errorf("network: fetching %s: %w", url, err)
 	}
+	// Do returns once headers arrive: this IS the time-to-first-byte.
+	c.observeLatency(host, time.Since(start))
 	defer func() {
 		// Drain so the keep-alive connection is reusable.
 		_, _ = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
-	host := hostOf(url)
 	switch {
 	case resp.StatusCode == http.StatusOK:
 		data, err := c.readBody(resp)

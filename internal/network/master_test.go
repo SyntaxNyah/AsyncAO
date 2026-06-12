@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
@@ -185,6 +186,36 @@ func TestFetchServerListETagRevalidation(t *testing.T) {
 	}
 	if len(second) != len(first) {
 		t.Errorf("304 path returned %d entries, want %d", len(second), len(first))
+	}
+}
+
+// TestAdaptiveTimeout pins the per-host deadline math: global timeout
+// until samples exist, multiple×EWMA after, clamped both ways.
+func TestAdaptiveTimeout(t *testing.T) {
+	c := newClient(5*time.Second, time.Minute)
+	const host = "cdn.example.com"
+
+	if got := c.adaptiveTimeout(host); got != 5*time.Second {
+		t.Errorf("no samples → %v, want the global timeout", got)
+	}
+	// Fast host: 30ms EWMA × 8 = 240ms → floor-clamped to 2s.
+	c.observeLatency(host, 30*time.Millisecond)
+	if got := c.adaptiveTimeout(host); got != adaptiveTimeoutFloor {
+		t.Errorf("fast host → %v, want the %v floor", got, adaptiveTimeoutFloor)
+	}
+	// Degrading host: EWMA folds new samples at weight 1/4 and the
+	// deadline tracks it, never above the global timeout.
+	for i := 0; i < 40; i++ {
+		c.observeLatency(host, 3*time.Second)
+	}
+	if got := c.adaptiveTimeout(host); got != 5*time.Second {
+		t.Errorf("slow host → %v, want the 5s ceiling", got)
+	}
+	// Mid-range host: 350ms EWMA × 8 = 2.8s, inside both clamps.
+	c2 := newClient(5*time.Second, time.Minute)
+	c2.observeLatency(host, 350*time.Millisecond)
+	if got := c2.adaptiveTimeout(host); got != 2800*time.Millisecond {
+		t.Errorf("mid host → %v, want 2.8s", got)
 	}
 }
 

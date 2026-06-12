@@ -79,6 +79,56 @@ func TestDecodeWebPAnimatedFirstFrameOnly(t *testing.T) {
 	}
 }
 
+// TestProgressiveAnimatedDecode pins the two-phase delivery: an animated
+// payload with PlayAnimations on yields a Partial single-frame result
+// first, then the full set; statics deliver exactly once.
+func TestProgressiveAnimatedDecode(t *testing.T) {
+	pool := NewDecoderPool(1)
+	defer pool.Close()
+
+	type result struct {
+		frames  int
+		partial bool
+	}
+	deliver := func(data []byte) []result {
+		out := make(chan result, 4)
+		done := make(chan struct{})
+		pool.Submit(DecodeRequest{
+			URL: "x", Data: data, Type: AssetTypeCharSprite, PlayAnimations: true,
+			OnDone: func(_ string, d *Decoded, err error) {
+				if err != nil {
+					t.Errorf("decode: %v", err)
+					close(done)
+					return
+				}
+				out <- result{frames: len(d.Frames), partial: d.Partial}
+				if !d.Partial {
+					close(done) // the full set is always the last delivery
+				}
+				d.Release()
+			},
+		})
+		<-done
+		close(out)
+		var rs []result
+		for r := range out {
+			rs = append(rs, r)
+		}
+		return rs
+	}
+
+	anim := deliver(fixture(t, "sprite_anim_256x192.webp"))
+	if len(anim) != 2 || !anim[0].partial || anim[0].frames != 1 ||
+		anim[1].partial || anim[1].frames != 3 {
+		t.Errorf("animated deliveries = %+v, want partial[1] then full[3]", anim)
+	}
+
+	static := deliver(fixture(t, "sprite_256x192.webp"))
+	if len(static) != 1 || static[0].partial {
+		t.Errorf("static deliveries = %+v, want one non-partial", static)
+	}
+}
+
 // BenchmarkDecodeWebP_256x192 is the §15 gate: < 3 ms per static decode.
 func BenchmarkDecodeWebP_256x192(b *testing.B) {
 	data := fixture(b, "sprite_256x192.webp")

@@ -449,6 +449,48 @@ func TestNamedCustomShoutURL(t *testing.T) {
 	}
 }
 
+// TestTypewriter144HzZeroMiss is the frame-pacing gate: at a simulated
+// 144 Hz cadence every rune must reveal within ONE frame of its schedule
+// (the accumulator carries remainders perfectly — no drift, no drops),
+// and the whole message lands inside one frame of its ideal duration.
+func TestTypewriter144HzZeroMiss(t *testing.T) {
+	const framePeriod = time.Second / 144
+	tw := NewTypewriter()
+	msg := strings.Repeat("The court finds the defendant... ", 8) // ~264 runes
+	tw.Start(msg)
+
+	// Ideal reveal times: rune i completes at Σ intervals[0..i].
+	deadlines := make([]time.Duration, len(tw.runes))
+	var acc time.Duration
+	for i, iv := range tw.intervals {
+		acc += iv
+		deadlines[i] = acc
+	}
+
+	elapsed := time.Duration(0)
+	revealedAt := make([]time.Duration, 0, len(tw.runes))
+	for !tw.Done() {
+		elapsed += framePeriod
+		n, _ := tw.Update(framePeriod)
+		for i := 0; i < n; i++ {
+			revealedAt = append(revealedAt, elapsed)
+		}
+		if elapsed > 30*time.Second {
+			t.Fatal("typewriter never finished")
+		}
+	}
+
+	for i, at := range revealedAt {
+		if late := at - deadlines[i]; late > framePeriod {
+			t.Fatalf("rune %d revealed %v late (deadline %v, at %v)", i, late, deadlines[i], at)
+		}
+	}
+	ideal := deadlines[len(deadlines)-1]
+	if drift := elapsed - ideal; drift > framePeriod {
+		t.Errorf("total duration drifted %v past the ideal %v", drift, ideal)
+	}
+}
+
 // --- message lifecycle ---------------------------------------------------------------
 
 // pairedMS builds a paired 2.8 message through the real wire shape.

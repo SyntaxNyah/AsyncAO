@@ -218,19 +218,57 @@ func (p *DecoderPool) worker() {
 	for {
 		select {
 		case req := <-p.jobs:
-			d, err := DecodeImage(req.Data, req.PlayAnimations)
-			if err != nil {
-				p.failed.Add(1)
-			} else {
-				if target := decodeTargetPx(req.Type); target > 0 {
-					d = downscaleDecoded(d, target)
-				}
-				p.decoded.Add(1)
-			}
-			req.OnDone(req.URL, d, err)
+			p.runJob(req)
 		case <-p.stop:
 			return
 		}
+	}
+}
+
+// runJob decodes one payload. Animated payloads with full playback
+// requested deliver progressively: frame 0 first (the cheap first-frame
+// path — one frame decoded instead of N), then the full set replaces it
+// at upload. A 5 MB preanim starts on screen after one frame-decode
+// instead of after the whole sequence.
+func (p *DecoderPool) runJob(req DecodeRequest) {
+	if req.PlayAnimations && sniffMaybeAnimated(req.Data) {
+		if first, err := DecodeImage(req.Data, false); err == nil {
+			// GIF/APNG can sniff "maybe" but decode static — only a real
+			// animation benefits from the early frame (statics would just
+			// upload the same texture twice).
+			if first.Animated && len(first.Frames) > 0 {
+				if target := decodeTargetPx(req.Type); target > 0 {
+					first = downscaleDecoded(first, target)
+				}
+				first.Partial = true
+				req.OnDone(req.URL, first, nil)
+			} else {
+				first.Release()
+			}
+		}
+	}
+
+	d, err := DecodeImage(req.Data, req.PlayAnimations)
+	if err != nil {
+		p.failed.Add(1)
+	} else {
+		if target := decodeTargetPx(req.Type); target > 0 {
+			d = downscaleDecoded(d, target)
+		}
+		p.decoded.Add(1)
+	}
+	req.OnDone(req.URL, d, err)
+}
+
+// sniffMaybeAnimated reports payloads worth a progressive first frame:
+// definitely-animated containers plus GIF/APNG (frame count unknowable
+// without decoding; the cheap first-frame decode settles it).
+func sniffMaybeAnimated(data []byte) bool {
+	switch Sniff(data) {
+	case FormatWebPAnim, FormatAVIFAnim, FormatAPNG, FormatGIF:
+		return true
+	default:
+		return false
 	}
 }
 
