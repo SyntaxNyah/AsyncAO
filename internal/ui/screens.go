@@ -180,18 +180,23 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 			a.Connect(e.Name, e.WebSocketURL())
 			return
 		}
-		// Rehearse (selected row only): offline browse of the server's
-		// cached assets — shown once a past visit remembered its chars.
+		// Rehearse (selected row): offline browse of the server's cached
+		// assets. Always visible so the feature is discoverable — without
+		// a remembered roster (recorded on each join) it explains itself
+		// instead of silently not existing.
 		if idx == a.selServer {
-			if info := a.d.Prefs.ServerWarmInfoFor(e.WebSocketURL()); info.Origin != "" && len(info.Chars) > 0 {
-				rehBtn := sdl.Rect{X: joinBtn.X - 92, Y: y + 1, W: 86, H: rowH - 4}
-				if c.hovering(rehBtn) {
-					joinHover = true // suppress the row's click-to-join
-				}
-				if c.Button(rehBtn, "Rehearse") {
+			info := a.d.Prefs.ServerWarmInfoFor(e.WebSocketURL())
+			rehBtn := sdl.Rect{X: joinBtn.X - 92, Y: y + 1, W: 86, H: rowH - 4}
+			if c.hovering(rehBtn) {
+				joinHover = true // suppress the row's click-to-join
+			}
+			if c.Button(rehBtn, "Rehearse") {
+				if info.Origin != "" && len(info.Chars) > 0 {
 					a.startRehearsal(e.Name, e.WebSocketURL(), info)
 					return
 				}
+				a.connErr = "Rehearsal needs one visit first: join " + e.Name +
+					" once (this build) so its roster gets remembered, then Rehearse works offline."
 			}
 		}
 	}
