@@ -21,11 +21,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install SDL2 + libwebp dev packages
+      - name: Install SDL2 + libwebp + libavif dev packages
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev
 
       - name: go vet
         run: go vet ./...
@@ -63,11 +63,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Install SDL2 + libwebp dev packages
+      - name: Install SDL2 + libwebp + libavif dev packages
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev
       - name: Build
         run: |
           go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
@@ -96,6 +96,7 @@ jobs:
             mingw-w64-ucrt-x86_64-SDL2_ttf
             mingw-w64-ucrt-x86_64-SDL2_mixer
             mingw-w64-ucrt-x86_64-libwebp
+            mingw-w64-ucrt-x86_64-libavif
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -130,8 +131,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Install SDL2 + libwebp
-        run: brew install sdl2 sdl2_ttf sdl2_mixer webp pkg-config
+      - name: Install SDL2 + libwebp + libavif
+        run: brew install sdl2 sdl2_ttf sdl2_mixer webp libavif pkg-config
       - name: Build
         run: |
           export CGO_ENABLED=1
