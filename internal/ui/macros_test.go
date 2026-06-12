@@ -82,7 +82,14 @@ func TestLoginLines(t *testing.T) {
 		t.Fatalf("akashi flow = %v", got)
 	}
 
-	for _, soft := range []string{"Nyathena", "KFO-Server", "Athena", "Whisker", ""} {
+	// KFO has no usernames: password only.
+	a.sess.Software = "KFO-Server"
+	got = a.loginLines("admin", "hunter2")
+	if len(got) != 1 || got[0] != "/login hunter2" {
+		t.Fatalf("kfo flow = %v, want password-only", got)
+	}
+
+	for _, soft := range []string{"Nyathena", "Athena", "Whisker", ""} {
 		a.sess.Software = soft
 		got = a.loginLines("admin", "hunter2")
 		if len(got) != 1 || got[0] != "/login admin hunter2" {

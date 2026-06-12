@@ -40,6 +40,18 @@ type settingsState struct {
 	macroKey   string
 	macroLines string
 
+	// login section: the picked server + its credential edit buffers
+	// (configurable for ANY known server, connected or not).
+	loginKey      string
+	loginUser     string
+	loginPass     string
+	loginAuto     bool
+	loginLoaded   bool
+	loginNames    []string // picker cache (WebSocketURL allocates)
+	loginKeys     []string
+	loginSrvCount int
+	loginSrvFor   string
+
 	// theme picker state: list scanning runs on a goroutine (directory
 	// I/O stays off the render thread — §17.2) and lands on themeRes.
 	themeName string

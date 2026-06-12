@@ -170,15 +170,22 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   prompt-style flows work. Keys fire in the courtroom with no text box
   focused; macro binds win a key conflict over character binds. Caps:
   64 macros × 8 lines × 256 chars.
-- **Built-in server login**: per-server credentials (saved in PLAIN
-  TEXT — the UI says so), with the wire flow picked from the announced
-  server software: Akashi gets the two-step prompt form (`/login`, then
-  `user pass` — the credential line is not echoed into OOC), Nyathena/
-  KFO/Athena/Whisker and unknown servers get `/login user pass`.
-  **Auto-login is OFF by default** — ticked on, a join logs you in the
-  instant the handshake completes; manual mode fires the same saved
-  flow only when you trigger it (courtroom Login... button or the
-  Ctrl+G hotkey). Settings shows the current server's login state.
+- **Built-in account login** — for ANY server with a `/login` account
+  system (member perks, donator ranks, mod powers — not just staff):
+  credentials are keyed by the server's connection URL/IP (saved in
+  PLAIN TEXT — the UI says so; password boxes render as asterisks for
+  screenshare safety, and streamer mode masks the username too). The
+  wire flow picks itself from the announced server software:
+  Akashi = `/login` then `user pass` answering its prompt (not echoed
+  into OOC); KFO = `/login pass` (no usernames); Athena/Nyathena/
+  Whisker/unknown = `/login user pass`. **Auto-login is OFF by
+  default** — ticked on, a join logs you in the instant the handshake
+  completes; manual mode fires the same saved flow only when you
+  trigger it (courtroom Login... button or the Ctrl+G hotkey).
+  Settings → Auto-login configures ANY known server ahead of time via
+  a server picker (lobby + phone-book entries, the connected server
+  first) — no connection needed; the flow preview names exactly what
+  will be sent.
 - **OOC identity**: a default OOC name in Settings applies on every
   join (like the showname); when blank, commands and macros send as a
   sticky random `AsyncAO<1-200>` minted once per run — OOC commands

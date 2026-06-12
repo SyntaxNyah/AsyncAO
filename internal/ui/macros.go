@@ -1,6 +1,8 @@
 package ui
 
-// Macro engine + built-in server login.
+// Macro engine + built-in server account login. The login is for ANY
+// /login account system — member perks, donator ranks, mod powers alike
+// — not just staff auth.
 //
 // A macro is a sequence of OOC lines sent in order with a fixed pace
 // (macroLineDelay) — enough for prompt-style flows like Akashi's
@@ -127,16 +129,23 @@ func (a *App) handleMacroKeys() bool {
 
 // --- built-in login ----------------------------------------------------------
 
-// loginLines builds the wire flow for this server's software.
+// loginLines builds the wire flow for this server's software. Three
+// shapes exist in the wild:
+//   - Akashi: "/login" then "<user> <pass>" answering its prompt
+//   - KFO-Server: "/login <pass>" — password only, no username
+//   - Athena/Nyathena/Whisker/unknown: "/login <user> <pass>"
 func (a *App) loginLines(user, pass string) []string {
 	soft := ""
 	if a.sess != nil {
 		soft = strings.ToLower(a.sess.Software)
 	}
-	if strings.Contains(soft, "akashi") {
+	switch {
+	case strings.Contains(soft, "akashi"):
 		// Two-step: the bare command, then the credential line answering
 		// Akashi's prompt (which the server does not echo into OOC).
 		return []string{"/login", user + " " + pass}
+	case strings.Contains(soft, "kfo"):
+		return []string{"/login " + pass}
 	}
 	return []string{"/login " + user + " " + pass}
 }
@@ -159,8 +168,15 @@ func (a *App) loginFlowPreview() string {
 	if a.sess != nil && a.sess.Software != "" {
 		soft = a.sess.Software
 	}
-	if a.sess != nil && strings.Contains(strings.ToLower(a.sess.Software), "akashi") {
+	lower := ""
+	if a.sess != nil {
+		lower = strings.ToLower(a.sess.Software)
+	}
+	switch {
+	case strings.Contains(lower, "akashi"):
 		return soft + `: sends "/login" ⏎ … then "username password" ⏎ (the prompt answer is not echoed)`
+	case strings.Contains(lower, "kfo"):
+		return soft + `: sends "/login password" ⏎ (KFO has no usernames — the box is ignored)`
 	}
 	return soft + `: sends "/login username password" ⏎`
 }
@@ -285,46 +301,116 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 }
 
 // drawLoginSettings is the Settings section for the built-in login:
-// per-server credentials with the auto/manual difference spelled out.
-// Returns the next y.
+// pick ANY known server (connected or not) and configure its account
+// ahead of time — the credentials wait in its per-server slot and fire
+// (auto or manual) the next time you join. Returns the next y.
 func (a *App) drawLoginSettings(y, w int32) int32 {
 	c := a.ctx
-	c.Label(pad, y+4, "Auto-login — dedicated automation (not a macro). Credentials per server; the wire flow picks itself:", ColText)
+	c.Label(pad, y+4, "Auto-login — for ANY server account (member perks, donator ranks, mod powers). Credentials per server; the wire flow picks itself:", ColText)
 	y += 20
-	c.Label(pad+12, y, "KFO/Athena/Nyathena/Whisker: /login username password   ·   Akashi: /login ⏎ then username password ⏎", ColTextDim)
+	c.Label(pad+12, y, "Athena/Nyathena/Whisker: /login username password   ·   KFO: /login password   ·   Akashi: /login ⏎ then username password ⏎", ColTextDim)
 	y += 22
-	if a.sess == nil || a.serverKey == "" {
-		c.Label(pad+12, y, "Connect to a server to set its login — each server keeps its own credentials.", ColTextDim)
+
+	// Server picker: defaults to the connected server, works without one.
+	names, keys := a.loginTargets()
+	if len(names) == 0 {
+		c.Label(pad+12, y, "No servers known yet — Refresh the lobby once, then set up logins here ahead of time.", ColTextDim)
 		return y + 26
 	}
-	// Dedicated credential boxes, inline (the courtroom Login... dialog
-	// edits the same per-server slots).
-	c.LabelClipped(pad+12, y+4, 200, a.serverName+" — "+a.loginFlowPreview(), ColAccent)
-	y += 24
+	cur := 0
+	if settings.loginKey == "" && a.serverKey != "" {
+		settings.loginKey = a.serverKey
+	}
+	for i, k := range keys {
+		if k == settings.loginKey {
+			cur = i
+			break
+		}
+	}
+	if settings.loginKey != keys[cur] {
+		settings.loginKey, settings.loginLoaded = keys[cur], false // stale pick: normalize
+	}
+	c.Label(pad+12, y+4, "Server:", ColText)
+	if next, changed := c.Dropdown("loginsrv", sdl.Rect{X: pad + 80, Y: y, W: 280, H: btnH}, names, cur); changed {
+		settings.loginKey, settings.loginLoaded = keys[next], false
+	}
+	if settings.loginKey == a.serverKey && a.sess != nil {
+		c.LabelClipped(pad+372, y+4, w-pad-372-scrollBarW, a.loginFlowPreview(), ColAccent)
+	} else {
+		c.LabelClipped(pad+372, y+4, w-pad-372-scrollBarW, "flow auto-detects from the server software when you join", ColTextDim)
+	}
+	y += btnH + 8
+
+	// Load the picked server's saved slots once per pick.
+	if !settings.loginLoaded {
+		info := a.d.Prefs.ServerWarmInfoFor(settings.loginKey)
+		settings.loginUser, settings.loginPass, settings.loginAuto = info.LoginUser, info.LoginPass, info.AutoLogin
+		settings.loginLoaded = true
+	}
+
+	saveTarget := func() {
+		a.d.Prefs.SetServerLogin(settings.loginKey, strings.TrimSpace(settings.loginUser), settings.loginPass, settings.loginAuto)
+		if settings.loginKey == a.serverKey {
+			a.syncLoginBuffers() // the courtroom Login... dialog shows the same
+		}
+	}
+
 	c.Label(pad+12, y+4, "Username:", ColText)
 	// Streamer mode treats the username as a name too — masked on stream.
 	userField := c.TextField
 	if a.d.Prefs.StreamerMode() {
 		userField = c.PasswordField
 	}
-	a.loginUser, _ = userField("loginuser", sdl.Rect{X: pad + 100, Y: y, W: 180, H: fieldH}, a.loginUser, "username")
+	settings.loginUser, _ = userField("loginuser", sdl.Rect{X: pad + 100, Y: y, W: 180, H: fieldH}, settings.loginUser, "username")
 	c.Label(pad+292, y+4, "Password:", ColText)
-	a.loginPass, _ = c.PasswordField("loginpass", sdl.Rect{X: pad + 380, Y: y, W: 180, H: fieldH}, a.loginPass, "password")
+	settings.loginPass, _ = c.PasswordField("loginpass", sdl.Rect{X: pad + 380, Y: y, W: 180, H: fieldH}, settings.loginPass, "password")
 	if c.Button(sdl.Rect{X: pad + 572, Y: y, W: 70, H: btnH}, "Save") {
-		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
-		settings.statusLine = "Login saved for " + a.serverName + " (plain text in the prefs file)."
+		saveTarget()
+		settings.statusLine = "Login saved (plain text in the prefs file) — it fires on your next join."
 	}
-	if c.Button(sdl.Rect{X: pad + 648, Y: y, W: 100, H: btnH}, "Login now") {
-		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
-		a.loginNow()
+	// Login now only makes sense against the live session.
+	if settings.loginKey == a.serverKey && a.sess != nil {
+		if c.Button(sdl.Rect{X: pad + 648, Y: y, W: 100, H: btnH}, "Login now") {
+			saveTarget()
+			a.loginNow()
+		}
 	}
 	y += fieldH + 6
-	next := c.Checkbox(pad+12, y, "Auto-login on join: OFF = log in only when YOU trigger it (Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyLogin))+" or the courtroom Login... button); ON = instantly on every join", a.loginAuto)
-	if next != a.loginAuto {
-		a.loginAuto = next
-		a.d.Prefs.SetServerLogin(a.serverKey, strings.TrimSpace(a.loginUser), a.loginPass, a.loginAuto)
+	next := c.Checkbox(pad+12, y, "Auto-login on join: OFF = log in only when YOU trigger it (Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyLogin))+" or the courtroom Login... button); ON = instantly on every join", settings.loginAuto)
+	if next != settings.loginAuto {
+		settings.loginAuto = next
+		saveTarget()
 	}
 	return y + 28
+}
+
+// loginTargets lists the login picker's servers: the connected one
+// first, then every joinable lobby/favorite entry. Cached against the
+// (server count, active key) pair — WebSocketURL allocates per entry.
+func (a *App) loginTargets() ([]string, []string) {
+	if settings.loginSrvCount == len(a.servers) && settings.loginSrvFor == a.serverKey && settings.loginNames != nil {
+		return settings.loginNames, settings.loginKeys
+	}
+	var names, keys []string
+	if a.sess != nil && a.serverKey != "" {
+		names = append(names, a.serverName+" (connected)")
+		keys = append(keys, a.serverKey)
+	}
+	for i := range a.servers {
+		e := &a.servers[i]
+		if !e.Joinable() {
+			continue
+		}
+		url := e.WebSocketURL()
+		if url == a.serverKey {
+			continue
+		}
+		names = append(names, e.Name)
+		keys = append(keys, url)
+	}
+	settings.loginNames, settings.loginKeys = names, keys
+	settings.loginSrvCount, settings.loginSrvFor = len(a.servers), a.serverKey
+	return names, keys
 }
 
 // syncLoginBuffers loads this server's saved credentials into the edit

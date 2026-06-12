@@ -314,10 +314,12 @@ type ServerWarmInfo struct {
 	// Chars is the server's character list from the last visit
 	// (≤ WarmCharsCap) — the rehearsal char select.
 	Chars []string `json:"chars,omitempty"`
-	// Mod login for this server. PLAINTEXT in the prefs file — the same
-	// trust level as a saved browser password without an OS keychain;
-	// the settings UI says so out loud. AutoLogin sends the login flow
-	// on every join.
+	// Account login for this server — NOT mod-only: servers with user
+	// account systems (Akashi and tsuserver-family forks) hang member
+	// perks off /login too, and the same flow signs either in. PLAINTEXT
+	// in the prefs file — the same trust level as a saved browser
+	// password without an OS keychain; the settings UI says so out loud.
+	// AutoLogin sends the flow on every join.
 	LoginUser string `json:"loginUser,omitempty"`
 	LoginPass string `json:"loginPass,omitempty"`
 	AutoLogin bool   `json:"autoLogin,omitempty"`
