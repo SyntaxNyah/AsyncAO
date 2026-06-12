@@ -42,7 +42,12 @@ func (a *App) drawNotesTab(r sdl.Rect) {
 
 	const inputH = 26
 	list := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - inputH - 6}
-	lines := a.notebook.Lines()
+	// Snapshot cache: Lines() copies, so take it only when the notebook
+	// actually changed (rev) — never per frame.
+	if rev := a.notebook.Rev(); a.noteCache == nil || rev != a.noteCacheRev {
+		a.noteCache, a.noteCacheRev = a.notebook.Lines(), rev
+	}
+	lines := a.noteCache
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 4
 	wrapW := list.W - scrollBarW - scrollBarGap - 18 // room for the ✕ hit zone

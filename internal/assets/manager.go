@@ -84,11 +84,30 @@ type Manager struct {
 
 	inflight sync.Map // base|type → struct{}: one pipeline pass per asset
 
+	// offline gates every network egress (rehearsal mode: a server's
+	// already-cached assets browse, nothing probes). Cache-tier reads
+	// keep working; misses report as not-found without touching the
+	// client, so no 404s get learned from being offline.
+	offline atomic.Bool
+
 	t1Hits     atomic.Int64
 	t2Hits     atomic.Int64
 	diskHits   atomic.Int64
 	netFetches atomic.Int64
 	missing    atomic.Int64
+}
+
+// SetOffline flips rehearsal mode's network gate.
+func (m *Manager) SetOffline(on bool) { m.offline.Store(on) }
+
+// netFetch is the manager's ONLY network egress: the offline gate lives
+// here so every pipeline path (probe chains, raw text, sync fetch)
+// respects rehearsal mode structurally.
+func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
+	if m.offline.Load() {
+		return nil, network.ErrAssetNotFound
+	}
+	return m.client.Fetch(ctx, url)
 }
 
 // ManagerDeps wires a Manager; every field is required except T1Contains.
@@ -209,7 +228,7 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 			return
 		}
 	}
-	data, err := m.client.Fetch(context.Background(), url)
+	data, err := m.netFetch(context.Background(), url)
 	switch {
 	case err == nil:
 		m.netFetches.Add(1)
@@ -255,7 +274,7 @@ func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
 					return
 				}
 			}
-			if data, err := m.client.Fetch(context.Background(), url); err == nil {
+			if data, err := m.netFetch(context.Background(), url); err == nil {
 				m.netFetches.Add(1)
 				m.t2.Add(url, data, int64(len(data)))
 				if !m.localMode {
@@ -281,7 +300,7 @@ func (m *Manager) FetchRaw(ctx context.Context, url string) ([]byte, error) {
 			return data, nil
 		}
 	}
-	data, err := m.client.Fetch(ctx, url)
+	data, err := m.netFetch(ctx, url)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +423,7 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 			}
 		}
 		// Source: network stream or local mounts.
-		data, err := m.client.Fetch(context.Background(), url)
+		data, err := m.netFetch(context.Background(), url)
 		switch {
 		case err == nil:
 			m.netFetches.Add(1)

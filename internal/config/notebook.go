@@ -41,6 +41,16 @@ type Notebook struct {
 	path  string
 	lines []string
 	timer *time.Timer
+	// rev bumps on every mutation so the UI can cache its Lines()
+	// snapshot instead of copying per frame.
+	rev int64
+}
+
+// Rev reports the mutation revision (UI snapshot-cache key).
+func (n *Notebook) Rev() int64 {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.rev
 }
 
 // notebookJSON is the on-disk shape.
@@ -114,6 +124,7 @@ func (n *Notebook) Add(line string) {
 	if len(n.lines) > notebookLineCap {
 		n.lines = n.lines[len(n.lines)-notebookLineCap:]
 	}
+	n.rev++
 	n.flushSoonLocked()
 	n.mu.Unlock()
 }
@@ -123,6 +134,7 @@ func (n *Notebook) Remove(i int) {
 	n.mu.Lock()
 	if i >= 0 && i < len(n.lines) {
 		n.lines = append(n.lines[:i], n.lines[i+1:]...)
+		n.rev++
 		n.flushSoonLocked()
 	}
 	n.mu.Unlock()

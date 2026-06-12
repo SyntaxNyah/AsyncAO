@@ -306,10 +306,21 @@ type ServerWarmInfo struct {
 	// CharKeys maps a plain key name ("a", "5", "f3") to a character to
 	// wear when pressed in the courtroom with no text field focused.
 	CharKeys map[string]string `json:"charKeys,omitempty"`
+	// Origin is the server's asset URL from the last visit — rehearsal
+	// mode rebuilds asset paths from it without connecting.
+	Origin string `json:"origin,omitempty"`
+	// Chars is the server's character list from the last visit
+	// (≤ WarmCharsCap) — the rehearsal char select.
+	Chars []string `json:"chars,omitempty"`
 }
 
 // charKeyCap bounds one server's character keybind table.
 const charKeyCap = 36
+
+// WarmCharsCap bounds one server's remembered character list. 4096 names
+// ≈ 60 KiB of JSON — covers the 4000-char megaservers rehearsal exists
+// for, while the serverWarmCap (64) keeps the whole table bounded.
+const WarmCharsCap = 4096
 
 // serverWarmCap bounds the per-server warm table (rule §17.4); when full,
 // new servers simply don't record until old entries are cleared.
@@ -980,6 +991,27 @@ func (p *AssetPreferences) RememberServerChar(key, char string) {
 // RememberServerBackground records the background last seen on a server.
 func (p *AssetPreferences) RememberServerBackground(key, bg string) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Background = bg })
+}
+
+// RememberServerOrigin records the asset origin for rehearsal mode.
+func (p *AssetPreferences) RememberServerOrigin(key, origin string) {
+	if origin == "" {
+		return
+	}
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.Origin = origin })
+}
+
+// RememberServerChars records the character list for rehearsal mode
+// (capped at WarmCharsCap).
+func (p *AssetPreferences) RememberServerChars(key string, chars []string) {
+	if len(chars) == 0 {
+		return
+	}
+	if len(chars) > WarmCharsCap {
+		chars = chars[:WarmCharsCap]
+	}
+	copied := cloneStrings(chars)
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.Chars = copied })
 }
 
 func (p *AssetPreferences) rememberServer(key string, set func(*ServerWarmInfo)) {

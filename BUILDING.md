@@ -112,6 +112,7 @@ own. Desktop Windows/Linux/macOS are the supported targets.
 | `go build -tags nocgo_webp ...` | pure-Go WebP fallback (static images only; animated WebP errors visibly) |
 | `go build -tags nocgo_avif ...` | no libavif binding (AVIF sniffing stays; decode errors visibly) |
 | `go build -tags nodiscord ...` | Rich Presence compiled out entirely (see below) |
+| `CGO_ENABLED=0 go build ./cmd/asyncao-cache` | cache companion CLI (stats/inspect/prune/warm T3) — pure Go, no SDL/CGO, builds anywhere |
 
 ## Discord (never required)
 

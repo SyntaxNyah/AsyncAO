@@ -180,6 +180,20 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 			a.Connect(e.Name, e.WebSocketURL())
 			return
 		}
+		// Rehearse (selected row only): offline browse of the server's
+		// cached assets — shown once a past visit remembered its chars.
+		if idx == a.selServer {
+			if info := a.d.Prefs.ServerWarmInfoFor(e.WebSocketURL()); info.Origin != "" && len(info.Chars) > 0 {
+				rehBtn := sdl.Rect{X: joinBtn.X - 92, Y: y + 1, W: 86, H: rowH - 4}
+				if c.hovering(rehBtn) {
+					joinHover = true // suppress the row's click-to-join
+				}
+				if c.Button(rehBtn, "Rehearse") {
+					a.startRehearsal(e.Name, e.WebSocketURL(), info)
+					return
+				}
+			}
+		}
 	}
 
 	// Row body click: select-and-expand first, join on the second click.
@@ -330,7 +344,9 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 	specX := tabX + 8
 	if c.Button(sdl.Rect{X: specX, Y: pad + 36, W: 90, H: btnH}, "Spectate") {
-		a.sess.PickCharacter(protocol.UnpairedCharID)
+		if !a.sess.Rehearsal {
+			a.sess.PickCharacter(protocol.UnpairedCharID)
+		}
 		a.enterCourtroom()
 		return
 	}
@@ -435,7 +451,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	if c.hovering(cell) {
 		a.warmCharINI(slot.Name) // pick = memory hit, not an RTT
 		if c.clicked && !slot.Taken {
-			a.sess.PickCharacter(idx)
+			a.pickCharacter(idx) // rehearsal resolves locally
 		}
 	}
 }
@@ -509,6 +525,9 @@ func (a *App) drawCourtroom(w, h int32) {
 	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
 	a.handleSpriteDrag(vp)
 	a.handleHotkeys() // Ctrl-chords (shouts, pos, music, screenshot...)
+	if a.rehearsal {
+		c.Label(vp.X+8, vp.Y+8, rehearsalBadge, ColTierYellow)
+	}
 	a.drawChatOverlay(vp)
 	a.drawCourtOverlays(vp, nil) // HP bars, clocks, badges, splashes
 

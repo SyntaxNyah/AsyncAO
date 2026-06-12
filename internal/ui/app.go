@@ -269,10 +269,12 @@ type App struct {
 	fontRes chan fontLoad
 
 	// --- case notebook (per-server pins; loads off-thread on connect) ---
-	notebook    *config.Notebook
-	notebookRes chan *config.Notebook
-	noteInput   string
-	noteScroll  int32
+	notebook     *config.Notebook
+	notebookRes  chan *config.Notebook
+	noteInput    string
+	noteScroll   int32
+	noteCache    []string // rev-keyed Lines() snapshot (no per-frame copies)
+	noteCacheRev int64
 
 	// bindingFor is the character a wardrobe key-capture is armed for
 	// ("" = none): the next plain keypress binds key → character on this
@@ -288,6 +290,10 @@ type App struct {
 	ghostStart [2]int32
 	ghostBase  [2]int
 	ghostWarm  map[string]string
+
+	// rehearsal marks the offline cached-asset browser (no connection;
+	// the manager's network gate is closed while set).
+	rehearsal bool
 
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
@@ -828,6 +834,11 @@ func (a *App) Disconnect() {
 		a.conn.Close()
 		a.conn = nil
 	}
+	// Rehearsal mode ends with the session: reopen the network gate.
+	if a.rehearsal {
+		a.rehearsal = false
+		a.d.Manager.SetOffline(false)
+	}
 	// Notebook: flush pending pins off-thread; a stale in-flight load is
 	// drained so it can't land on the next server's session.
 	if a.notebook != nil {
@@ -965,6 +976,13 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.prefetchCharIcons()
 			a.sendCasingPrefs()
 			a.prewarmServer()
+			// Remember enough to rehearse this server offline later.
+			a.d.Prefs.RememberServerOrigin(a.serverKey, a.sess.AssetURL)
+			names := make([]string, len(a.sess.Chars))
+			for i := range a.sess.Chars {
+				names[i] = a.sess.Chars[i].Name
+			}
+			a.d.Prefs.RememberServerChars(a.serverKey, names)
 		case courtroom.EventBackground:
 			// Remember it for next visit's pre-warm; the room still
 			// consumes the event below (no continue).
@@ -1070,10 +1088,56 @@ func (a *App) rebuildAssetOrigin() {
 		return
 	}
 	a.urls = courtroom.NewURLBuilder(origin)
+	if a.rehearsal {
+		return // offline: no DNS warm, no manifest fetch
+	}
 	if host := hostOfURL(origin); host != "" {
 		a.d.Client.PreResolve(context.Background(), strings.Split(host, ":")[0])
 	}
 	a.fetchManifestAsync()
+}
+
+// rehearsalBadge labels the offline mode in the courtroom viewport.
+const rehearsalBadge = "REHEARSAL — offline, nothing sends"
+
+// startRehearsal enters the offline cached-asset browser for a server
+// visited before: the remembered character list + asset origin, with the
+// manager's network gate closed — emotes and sprites play from T2/T3,
+// misses just say so. Disconnect (or any connect) exits the mode.
+func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
+	a.Disconnect()
+	a.serverName = name + " (rehearsal)"
+	a.serverKey = key
+	a.connErr = ""
+	a.connAt = time.Now()
+	a.curArea = ""
+	a.rehearsal = true
+	a.d.Manager.SetOffline(true)
+	a.sess = courtroom.NewRehearsalSession(info.Origin, info.Chars)
+	a.rebuildAssetOrigin()
+	a.refreshCharKeys()
+	a.screen = ScreenCharSelect
+	go func(k string) {
+		if nb, err := config.LoadNotebook(k); err == nil {
+			select {
+			case a.notebookRes <- nb:
+			default:
+			}
+		}
+	}(key)
+	a.pushDebug("rehearsal: offline browse of " + name + " (cached assets only)")
+}
+
+// pickCharacter routes a char-select pick: live sessions ask the server
+// (CC → PV → EventCharPicked); rehearsal resolves locally — no PV will
+// ever arrive offline.
+func (a *App) pickCharacter(idx int) {
+	if a.sess.Rehearsal {
+		a.sess.MyCharID = idx
+		a.enterCourtroom()
+		return
+	}
+	a.sess.PickCharacter(idx)
 }
 
 // fetchManifestAsync grabs <origin>/extensions.json (webAO convention —
@@ -1309,7 +1373,7 @@ func (a *App) wearFromMenu(name string) {
 		return
 	}
 	a.pendingIni = name
-	a.sess.PickCharacter(free)
+	a.pickCharacter(free) // rehearsal resolves locally
 }
 
 // openIniswap shows the wardrobe menu (courtroom modal).

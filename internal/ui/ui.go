@@ -238,6 +238,10 @@ type Ctx struct {
 	fontChain    [][]byte
 	fontNames    []string // diagnostics (settings status line)
 	fontChainGen int      // bumped per SetFontChain; sets rebuild lazily
+	// pickMemo caches per-line font picks (log rows re-pick every frame;
+	// GlyphMetrics per rune per row would be a hidden TTF storm whenever
+	// an override chain is installed). Cleared on any font rebuild.
+	pickMemo map[string]*ttf.Font
 
 	// uiPct is the global render scale percent; mouse coordinates
 	// unproject through it so logical hit-tests stay exact.
@@ -368,7 +372,7 @@ func (c *Ctx) ChatFont(pct int) *ttf.Font {
 // ChatFontFor picks the first chain font that covers every rune of text
 // (the CJK fallback rule), the embedded font as last resort.
 func (c *Ctx) ChatFontFor(pct int, text string) *ttf.Font {
-	return pickFont(c.fontsFor(&c.chatSet, pct), text)
+	return c.pickCached(c.fontsFor(&c.chatSet, pct), text)
 }
 
 // LogFont returns the log/OOC list PRIMARY font at pct percent.
@@ -378,7 +382,26 @@ func (c *Ctx) LogFont(pct int) *ttf.Font {
 
 // LogFontFor picks the covering chain font for one log line.
 func (c *Ctx) LogFontFor(pct int, text string) *ttf.Font {
-	return pickFont(c.fontsFor(&c.logSet, pct), text)
+	return c.pickCached(c.fontsFor(&c.logSet, pct), text)
+}
+
+// pickCached memoizes pickFont per line: repeat draws cost one map probe.
+// The no-override case (single-font set) costs nothing at all.
+func (c *Ctx) pickCached(fonts []*ttf.Font, text string) *ttf.Font {
+	if len(fonts) == 1 {
+		return fonts[0]
+	}
+	if f, ok := c.pickMemo[text]; ok {
+		return f
+	}
+	f := pickFont(fonts, text)
+	if c.pickMemo == nil {
+		c.pickMemo = make(map[string]*ttf.Font, 256)
+	} else if len(c.pickMemo) >= textCacheMax {
+		clear(c.pickMemo) // bounded: wholesale reset, repopulates hot lines
+	}
+	c.pickMemo[text] = f
+	return f
 }
 
 // SetFontChain installs the override font bytes (chain order; nil
@@ -407,8 +430,10 @@ func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
 		}
 	}
 	// Stale-font cache entries would never be hit again (keys carry the
-	// font pointer); purge wholesale — rebuilds are user actions.
+	// font pointer); purge wholesale — rebuilds are user actions. The
+	// pick memo holds those same dead pointers, so it resets too.
 	c.purgeTextCache()
+	c.pickMemo = nil
 	s.fonts = s.fonts[:0]
 	s.pct, s.gen = pct, c.fontChainGen
 	size := UIFontSize * pct / DefaultScalePct

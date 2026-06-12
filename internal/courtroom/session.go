@@ -222,6 +222,10 @@ type Session struct {
 	// confirmation line on servers without auth_packet).
 	ModGranted bool
 
+	// Rehearsal marks an offline session (NewRehearsalSession): picks
+	// resolve locally, sends are swallowed, nothing network exists.
+	Rehearsal bool
+
 	phase   SessionPhase
 	sendErr error
 }
@@ -242,6 +246,23 @@ func NewSession(send func(protocol.Packet) error, hdid string) *Session {
 		// (Courtroom::judge_state = POS_DEPENDENT initial).
 		Judge: JudgePosDependent,
 	}
+}
+
+// NewRehearsalSession builds an OFFLINE session over a server's
+// remembered state: the character list browses, emotes play from cache,
+// and every outgoing packet is swallowed — rehearse a character without
+// connecting (or even a network). The UI resolves picks locally (no PV
+// will ever arrive) and labels itself from the Rehearsal flag.
+func NewRehearsalSession(origin string, chars []string) *Session {
+	s := NewSession(func(protocol.Packet) error { return nil }, "")
+	s.Rehearsal = true
+	s.phase = PhaseReady
+	s.AssetURL = origin
+	s.Chars = make([]CharacterSlot, len(chars))
+	for i, name := range chars {
+		s.Chars[i] = CharacterSlot{Name: name}
+	}
+	return s
 }
 
 // Phase reports the handshake phase.

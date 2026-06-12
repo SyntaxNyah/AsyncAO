@@ -211,6 +211,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
 	a.handleSpriteDrag(vp)
 	a.handleHotkeys()
+	if a.rehearsal {
+		c.Label(vp.X+8, vp.Y+8, rehearsalBadge, ColTierYellow)
+	}
 
 	// Chatbox at its design rect; classic overlay when the theme has none.
 	if box, ok := lay.rect("ao2_chatbox"); ok {

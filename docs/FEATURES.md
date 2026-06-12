@@ -137,3 +137,41 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Back.
 - Evidence ● armed indicator, modcall dialog, casing role checkboxes —
   all in the courtroom chrome or Settings.
+- **Settings page wheel-scrolls** with a right-edge bar; spinbox rows
+  keep first claim on the wheel (hover-tune never page-scrolls).
+- **HiDPI auto-scale** (default ON): the UI scale follows the display
+  DPI (96 = 100%, snapped to the settings step); untick for the manual
+  spinbox. **Theater mode** (Ctrl+T, the UI... panel, Esc exits): the
+  borderless stage alone — viewport, chat overlay, splashes — session-
+  only by design.
+- **Font override with CJK fallback chain** (Settings → IC/OOC font):
+  semicolon-separated TTF/TTC paths; every message and log line picks
+  the first chain font covering all its runes (CJK fonts cover Latin, so
+  mixed text lands right), embedded font as last resort. Files read
+  off-thread; picks memoized per line (no per-frame glyph probing).
+- **Case notebook** (Notes tab, per server): right-click an IC log line
+  or hit "Pin to notebook" on evidence; free-form notes + copy-all; one
+  JSON per server, async writes, capped.
+- **Per-server wardrobe**: custom character lists no longer carry
+  between servers; the pre-split collection migrates once to the first
+  server joined after updating.
+- **Per-server character keybinds**: a key badge on each wardrobe cell
+  binds a plain key (press A → wear that character instantly); fires
+  only with no text field focused. Right-click the badge to clear.
+- **Settings export/import**: Export writes the complete preferences
+  file (knobs, favorites, wardrobes, keybinds, learned formats) beside
+  the exe; Import = arm the button and drop the .json — applied on
+  restart, with the saver frozen so the import can't be clobbered.
+- **Offset ghost editor** (pair panel): drag your idle sprite on a
+  miniature stage to set self-offsets; the partner shows as a
+  translucent ghost at their last-known placement.
+- **Rehearsal mode** (lobby → select a visited server → Rehearse):
+  browse its character roster and play emotes entirely offline from the
+  cache — the manager's network gate closes structurally, nothing
+  probes, nothing sends. The viewport carries a REHEARSAL badge.
+- **`asyncao-cache` companion CLI** (pure Go, `CGO_ENABLED=0`): stats /
+  inspect / prune (-older, -max-bytes, -all) / warm a URL list or char
+  icons via a server's `extensions.json` into T3 — pre-seed a fresh
+  install before ever connecting.
+- **Discord Rich Presence**: optional, per-field privacy checkboxes,
+  zero build/run dependency — full guide in [DISCORD.md](DISCORD.md).
