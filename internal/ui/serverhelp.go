@@ -118,7 +118,7 @@ var serverProjects = []serverProject{
 			"It comes from the same from-base-principles effort as the AO-SDL client, with correctness and performance as the explicit design goals.",
 			"Speaks WS and WSS.",
 		},
-		credits: "scatterflower, Salanto, stonedDiscord, in1tiate, SyntaxNyah",
+		credits: "scatterflower, Salanto, stonedDiscord, in1tiate",
 		links: []string{
 			"https://github.com/AttorneyOnline/AO-SDL",
 			"https://github.com/AttorneyOnline/AO-SDL/pkgs/container/kagami",
