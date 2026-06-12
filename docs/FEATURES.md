@@ -68,6 +68,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   itself, single theme, quoted Copy-as-Path).
 - Theme text colors apply **only over their own skin** — on the flat
   fallback panel the client's readable defaults win (black-on-dark fix).
+- **Qt-geometry sanitizing**: AO2 themes relied on Qt clipping children
+  at the fixed window edge. Scaled rects now clamp into the stage
+  (shift inward; shrink only when oversized), the 11037 hide convention
+  applies to both axes, degenerate sub-6px rects are rejected, shownames
+  clip inside the chatbox, button labels clip inside their rects, and
+  themes that stack the IC/OOC logs on one rect (AO2's ooc_toggle
+  pattern) render as tabs instead of drawing on top of each other —
+  nothing flies off screen, whatever the theme author did.
 - Settings shows a live chatbox preview with the applied colors.
 
 ## Diagnostics

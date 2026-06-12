@@ -173,6 +173,71 @@ func TestShelfPacker(t *testing.T) {
 	t.Error("packer never refused on a full page")
 }
 
+// TestClampRectInto pins the Qt-edge emulation: overhanging widgets shift
+// inside the stage, oversized ones shrink, and fully-off ones are hidden.
+func TestClampRectInto(t *testing.T) {
+	bounds := sdl.Rect{X: 10, Y: 10, W: 100, H: 100}
+
+	// Hanging off the right edge: shifted left, size preserved.
+	r, ok := clampRectInto(sdl.Rect{X: 90, Y: 20, W: 40, H: 20}, bounds)
+	if !ok || r.X != 70 || r.Y != 20 || r.W != 40 {
+		t.Errorf("right overhang → %+v ok=%v", r, ok)
+	}
+	// Bigger than the stage: shrunk to fit.
+	r, ok = clampRectInto(sdl.Rect{X: 0, Y: 0, W: 300, H: 50}, bounds)
+	if !ok || r.W != 100 || r.X != 10 {
+		t.Errorf("oversized → %+v ok=%v", r, ok)
+	}
+	// Fully outside: hidden.
+	if _, ok = clampRectInto(sdl.Rect{X: 500, Y: 500, W: 40, H: 20}, bounds); ok {
+		t.Error("fully-off rect not hidden")
+	}
+	// Fully inside: untouched.
+	in := sdl.Rect{X: 20, Y: 20, W: 30, H: 30}
+	if r, ok = clampRectInto(in, bounds); !ok || r != in {
+		t.Errorf("inside rect changed: %+v", r)
+	}
+}
+
+// TestRectOverlapFrac pins the log-merge detector.
+func TestRectOverlapFrac(t *testing.T) {
+	a := sdl.Rect{X: 0, Y: 0, W: 100, H: 100}
+	if f := rectOverlapFrac(a, a); f != 1 {
+		t.Errorf("identical rects → %v, want 1", f)
+	}
+	if f := rectOverlapFrac(a, sdl.Rect{X: 200, Y: 0, W: 50, H: 50}); f != 0 {
+		t.Errorf("disjoint rects → %v, want 0", f)
+	}
+	// Half of the smaller rect inside the bigger one.
+	if f := rectOverlapFrac(a, sdl.Rect{X: 75, Y: 0, W: 50, H: 100}); f != 0.5 {
+		t.Errorf("half overlap → %v, want 0.5", f)
+	}
+}
+
+// TestICLogFilterCache pins the per-frame filter cache: stable while
+// nothing changed, invalidated by pushes and query edits.
+func TestICLogFilterCache(t *testing.T) {
+	a := &App{}
+	a.pushIC("Phoenix: hello court", 0)
+	a.pushIC("Edgeworth: OBJECTION", 2)
+
+	first := a.icLogFiltered()
+	if len(first) != 2 {
+		t.Fatalf("filtered = %d, want 2", len(first))
+	}
+	if again := a.icLogFiltered(); &again[0] != &first[0] {
+		t.Error("cache not reused on unchanged input")
+	}
+	a.logSearch = "objection"
+	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
+		t.Errorf("query filter = %v, want [1]", got)
+	}
+	a.pushIC("Maya: objection noted", 0)
+	if got := a.icLogFiltered(); len(got) != 2 {
+		t.Errorf("post-push filter = %v, want 2 matches", got)
+	}
+}
+
 // TestWrapTextCaps pins the lobby description wrapper: nil for blank
 // input, the line cap holds, and the capped line gains an ellipsis.
 // (Headless: TextWidth returns 0 without a font, so everything fits one

@@ -56,6 +56,15 @@ gates it at a simulated 144 Hz: every rune must reveal within one frame
 of its schedule and the whole message within one frame of its ideal
 duration.
 
+### Steady-state lookup caches — `ui`
+Two per-frame costs removed after the layout engine landed: theme
+overlay textures now resolve through a store-generation-keyed page cache
+(one map probe per draw, zero LRU locks/recency churn until an upload or
+eviction bumps the generation — the same trick the char-grid uses), and
+the IC log's search filter caches its index slice against a (mutation
+seq, query) key instead of scanning 1024 lines and allocating per frame.
+Pinned by `TestICLogFilterCache`.
+
 ## Deferred
 
 ### HTTP/3

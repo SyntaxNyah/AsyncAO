@@ -203,12 +203,18 @@ type App struct {
 	charINIBusy  bool
 	charINIres   chan charINIFetch
 	icLog        []icEntry
+	icLogSeq     uint64 // bumps per mutation: keys the filter cache
 	icScroll     int32
 	logSearch    string
-	oocLog       []string
-	musicScroll  int32
-	areaScroll   int32
-	logTab       int
+	// icLogFiltered cache: rebuilt only when the log or the query moved
+	// (a 1024-line scan + slice alloc per frame otherwise).
+	icFilter      []int
+	icFilterSeq   uint64
+	icFilterQuery string
+	oocLog        []string
+	musicScroll   int32
+	areaScroll    int32
+	logTab        int
 	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
 	emoteAsk []time.Time
 
@@ -247,6 +253,10 @@ type App struct {
 	themeEmoteCell [2]int
 	themeEmoteGap  [2]int
 	themeLay       themeLayoutCache
+	// themePages is the generation-keyed page cache for theme:// textures
+	// (zero store locks while the generation is unchanged).
+	themePages    map[string]*render.TexturePage
+	themePagesGen uint64
 
 	// --- court extras (HP / WTCE / timers / judge / modcall / evidence) ---
 	wtceName    string    // active splash stem ("" = none)
@@ -526,6 +536,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		selServer:   -1,
 		spriteOv:    map[string][2]int{},
 		themeTex:    map[string]bool{},
+		themePages:  map[string]*render.TexturePage{},
 		hidden:      map[string]bool{},
 		evidIdx:     -1,
 		hpPrev:      [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
@@ -631,6 +642,7 @@ func (a *App) Connect(name, wsURL string) {
 	}, hdid())
 	a.screen = ScreenCharSelect
 	a.icLog = a.icLog[:0]
+	a.icLogSeq++ // wipe invalidates the filter cache too
 	a.oocLog = a.oocLog[:0]
 }
 
@@ -1505,6 +1517,33 @@ func themeApplySummary(res *themeApply) string {
 	}
 }
 
+// themePage fetches a resident theme texture page through a generation-
+// keyed cache (the grid trick): while the store generation is unchanged,
+// repeat lookups cost one plain map probe — no LRU lock, no recency churn
+// from overlay draws that run every frame. Misses heal (paced) and cache
+// negatively until the next upload/eviction bumps the generation.
+func (a *App) themePage(stem string) (*render.TexturePage, bool) {
+	if !a.themeTex[stem] {
+		return nil, false
+	}
+	gen := a.d.Store.Generation()
+	if gen != a.themePagesGen {
+		clear(a.themePages)
+		a.themePagesGen = gen
+	}
+	if page, cached := a.themePages[stem]; cached {
+		return page, page != nil
+	}
+	page, ok := a.d.Store.Get(themeTexKey(stem))
+	if !ok || len(page.Frames) == 0 {
+		a.themePages[stem] = nil
+		a.healTheme()
+		return nil, false
+	}
+	a.themePages[stem] = page
+	return page, true
+}
+
 // pushRealizationToRoom hands the courtroom the resolved realization sound
 // URL (the state machine plays it at message-display time, where AO2's
 // handle_ic_message does — the theme INI itself lives UI-side).
@@ -1526,19 +1565,6 @@ func (a *App) healTheme() {
 		a.themeHealAt = time.Now()
 		a.applyThemeAsync()
 	}
-}
-
-// themePage fetches a resident theme texture page, healing on eviction.
-func (a *App) themePage(stem string) (*render.TexturePage, bool) {
-	if !a.themeTex[stem] {
-		return nil, false
-	}
-	page, ok := a.d.Store.Get(themeTexKey(stem))
-	if !ok || len(page.Frames) == 0 {
-		a.healTheme()
-		return nil, false
-	}
-	return page, true
 }
 
 // pushDebug appends one line to the bounded failure log (debug overlay).
@@ -1637,6 +1663,7 @@ func (a *App) pushIC(line string, color int) {
 		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
 		a.icLog = a.icLog[:icLogCap]
 	}
+	a.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
 }
 
 func (a *App) pushOOC(line string) {

@@ -573,7 +573,13 @@ func (c *Ctx) Button(r sdl.Rect, label string) bool {
 	c.Border(r, ColAccent)
 	t, ok := c.textTexture(label, ColText, c.font)
 	if ok {
-		c.blitLabel(t, r.X+(r.W-t.w)/2, r.Y+(r.H-t.h)/2, t.w)
+		// Clip to the button: tiny themed rects must never leak their
+		// label over the neighbors (Qt elided these).
+		w, x := t.w, r.X+(r.W-t.w)/2
+		if maxW := r.W - 8; w > maxW && maxW > 0 {
+			w, x = maxW, r.X+4
+		}
+		c.blitLabel(t, x, r.Y+(r.H-t.h)/2, w)
 	}
 	return hover && c.clicked
 }

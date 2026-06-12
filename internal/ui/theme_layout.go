@@ -20,10 +20,68 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
-// themeHiddenXConvention: AO2 themes "hide" elements by flinging them off
-// the design space (x = 11037 by convention); anything starting past the
-// design width is treated as absent.
-const themeHiddenXConvention = true
+// AO2 themes "hide" elements by flinging them off the design space
+// (11037 by convention, on either axis); anything starting past the
+// design bounds is treated as absent. Qt also CLIPPED overhanging
+// children at the fixed window edge — themes rely on that, so scaled
+// rects clamp into the courtroom area instead of drawing into the void.
+const (
+	// minThemedElementPx rejects degenerate post-scale rects (a 3 px
+	// "button" is sloppy theme data, not a widget).
+	minThemedElementPx = 6
+	// logMergeOverlapFrac: when the IC and OOC log rects overlap this
+	// much, the theme meant them as one toggled widget (AO2's ooc_toggle)
+	// — we draw them tabbed in the shared rect.
+	logMergeOverlapFrac = 0.6
+)
+
+// clampRectInto shifts r inside bounds, shrinking only when r is larger
+// than bounds on an axis. Qt amputated these at the window edge; shifting
+// keeps the whole widget visible and usable. ok=false when r never
+// intersected bounds at all (treated as hidden).
+func clampRectInto(r, bounds sdl.Rect) (sdl.Rect, bool) {
+	if _, hits := r.Intersect(&bounds); !hits {
+		return sdl.Rect{}, false
+	}
+	if r.W > bounds.W {
+		r.W = bounds.W
+	}
+	if r.H > bounds.H {
+		r.H = bounds.H
+	}
+	if r.X < bounds.X {
+		r.X = bounds.X
+	}
+	if r.Y < bounds.Y {
+		r.Y = bounds.Y
+	}
+	if r.X+r.W > bounds.X+bounds.W {
+		r.X = bounds.X + bounds.W - r.W
+	}
+	if r.Y+r.H > bounds.Y+bounds.H {
+		r.Y = bounds.Y + bounds.H - r.H
+	}
+	return r, true
+}
+
+// rectOverlapFrac reports how much of the smaller rect lies inside the
+// other (0..1).
+func rectOverlapFrac(a, b sdl.Rect) float64 {
+	sect, hits := a.Intersect(&b)
+	if !hits {
+		return 0
+	}
+	areaA := int64(a.W) * int64(a.H)
+	areaB := int64(b.W) * int64(b.H)
+	small := areaA
+	if areaB < small {
+		small = areaB
+	}
+	if small <= 0 {
+		return 0
+	}
+	return float64(int64(sect.W)*int64(sect.H)) / float64(small)
+}
 
 // themeLayoutCache holds the window-scaled design rects; recomputed only
 // when the window size or the theme changes (render loop reads are plain
@@ -54,10 +112,15 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 	lay.scale = math.Min(float64(w)/float64(court.W), float64(h)/float64(court.H))
 	lay.offX = (w - int32(float64(court.W)*lay.scale)) / 2
 	lay.offY = (h - int32(float64(court.H)*lay.scale)) / 2
+	courtArea := sdl.Rect{
+		X: lay.offX, Y: lay.offY,
+		W: int32(float64(court.W) * lay.scale),
+		H: int32(float64(court.H) * lay.scale),
+	}
 	lay.r = make(map[string]sdl.Rect, len(a.themeRects))
 	for key, r := range a.themeRects {
-		if themeHiddenXConvention && r.X > court.W {
-			continue // off-design = hidden (the 11037 convention)
+		if r.X > court.W || r.Y > court.H {
+			continue // off-design = hidden (the 11037 convention, both axes)
 		}
 		sr := sdl.Rect{
 			X: int32(float64(r.X) * lay.scale),
@@ -66,10 +129,19 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 			H: int32(float64(r.H) * lay.scale),
 		}
 		// showname/message are children of the chatbox in AO2 — keep them
-		// chatbox-relative; everything else becomes window-absolute.
+		// chatbox-relative; everything else becomes window-absolute and
+		// clamps into the stage like Qt's window edge clipped it.
 		if key != "showname" && key != "message" {
 			sr.X += lay.offX
 			sr.Y += lay.offY
+			clamped, ok := clampRectInto(sr, courtArea)
+			if !ok {
+				continue // never touched the stage: hidden
+			}
+			sr = clamped
+			if sr.W < minThemedElementPx || sr.H < minThemedElementPx {
+				continue // sloppy theme data, not a usable widget
+			}
 		}
 		lay.r[key] = sr
 	}
@@ -77,7 +149,8 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 	return lay
 }
 
-// rect fetches a usable scaled rect ("" when the theme hides or omits it).
+// rect fetches a usable scaled rect (absent when the theme hides or omits
+// it — hidden/overhang filtering happened at build time).
 func (l *themeLayoutCache) rect(key string) (sdl.Rect, bool) {
 	r, ok := l.r[key]
 	if !ok || r.W <= 0 || r.H <= 0 {
@@ -165,16 +238,40 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Logs: IC at ic_chatlog; OOC log prefers server_chatlog (AO2's joint
-	// log) and falls back to ms_chatlog.
-	if r, ok := lay.rect("ic_chatlog"); ok && !a.panelHidden(panelLog) {
-		a.drawICLogList(r)
-	}
+	// log) and falls back to ms_chatlog. Themes that stack the two on the
+	// same rect meant them as one toggled widget (AO2's ooc_toggle) —
+	// detect the overlap and draw them tabbed instead of on top of each
+	// other.
+	icRect, okIC := lay.rect("ic_chatlog")
 	oocRect, okOOC := lay.rect("server_chatlog")
 	if !okOOC {
 		oocRect, okOOC = lay.rect("ms_chatlog")
 	}
-	if okOOC && !a.panelHidden(panelOOC) {
+	merged := okIC && okOOC && rectOverlapFrac(icRect, oocRect) >= logMergeOverlapFrac
+	if merged && !a.panelHidden(panelLog) {
+		tab := sdl.Rect{X: icRect.X, Y: icRect.Y, W: 44, H: 22}
+		if c.Button(tab, "IC") {
+			a.logTab = logTabLog
+		}
+		tab.X += 48
+		if c.Button(tab, "OOC") {
+			a.logTab = logTabOOC
+		}
+		inner := sdl.Rect{X: icRect.X, Y: icRect.Y + 26, W: icRect.W, H: icRect.H - 26}
+		if a.logTab == logTabOOC {
+			a.drawOOCLogList(inner)
+		} else {
+			a.drawICLogList(inner)
+		}
+	} else if okIC && !a.panelHidden(panelLog) {
+		a.drawICLogList(icRect)
+	}
+	if okOOC && !merged && !a.panelHidden(panelOOC) {
 		a.drawOOCLogList(oocRect)
+	}
+	// OOC inputs draw wherever the theme put them — independent of how
+	// the log rects resolved (merged tabs still need a send box).
+	if !a.panelHidden(panelOOC) {
 		if in, ok := lay.rect("ooc_chat_message"); ok {
 			var send bool
 			a.oocInput, send = c.TextField("ooc", in, a.oocInput, "OOC chat...")
@@ -357,8 +454,10 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	}
 
 	nameX, nameY := box.X+8, box.Y+4
+	nameW := box.W - 16
 	if r, ok := lay.rect("showname"); ok {
 		nameX, nameY = box.X+r.X, box.Y+r.Y
+		nameW = r.W
 	}
 	msgX, msgY := box.X+8, box.Y+26
 	wrapW := box.W - 16
@@ -371,7 +470,8 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
-	c.Label(nameX, nameY, sc.ShownameText, nameCol)
+	// Clipped: a long showname must never spill past the theme's box.
+	c.LabelClipped(nameX, nameY, nameW, sc.ShownameText, nameCol)
 
 	a.ensureChatRaster(wrapW, skinned)
 	if a.msRaster != nil {

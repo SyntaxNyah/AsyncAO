@@ -196,15 +196,24 @@ func (a *App) captureScreenshot() {
 // --- IC log export --------------------------------------------------------------------
 
 // icLogFiltered returns the indices of log entries matching the search
-// box ("" = all). Called per frame only while the Log tab is visible.
+// box ("" = all), cached against (log seq, query): while the log tab is
+// visible the per-frame cost is two comparisons instead of a 1024-line
+// scan plus a slice allocation.
 func (a *App) icLogFiltered() []int {
-	out := make([]int, 0, len(a.icLog))
+	if a.icFilter != nil && a.icFilterSeq == a.icLogSeq && a.icFilterQuery == a.logSearch {
+		return a.icFilter
+	}
+	out := a.icFilter[:0]
 	q := strings.ToLower(strings.TrimSpace(a.logSearch))
 	for i := range a.icLog {
 		if q == "" || strings.Contains(strings.ToLower(a.icLog[i].text), q) {
 			out = append(out, i)
 		}
 	}
+	if out == nil {
+		out = []int{} // non-nil marks the cache as populated
+	}
+	a.icFilter, a.icFilterSeq, a.icFilterQuery = out, a.icLogSeq, a.logSearch
 	return out
 }
 
