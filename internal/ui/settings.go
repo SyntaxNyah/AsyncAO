@@ -198,11 +198,12 @@ func (a *App) drawSettings(w, h int32) {
 	// so "did the theme land?" is answerable without joining a server.
 	y = a.drawThemePreview(y)
 
-	// Format detection mode: the server manifest by default, pure manual
-	// probing when switched off (the rows below apply in BOTH modes — in
-	// auto they cover servers without a manifest and miss-path fallbacks).
+	// Format detection mode: the server manifest by default, manual
+	// per-type probing when switched off. While auto is ON the manual
+	// rows are read-only — the server's extensions.json owns the formats.
 	auto := a.d.Prefs.FormatAutoDetect()
-	if next := c.Checkbox(pad, y, "Auto-detect formats from the server's extensions.json on connect (recommended; manual tuning below still applies)", auto); next != auto {
+	if next := c.Checkbox(pad, y, "Auto-detect formats from the server's extensions.json on connect (recommended)", auto); next != auto {
+		auto = next
 		a.d.Prefs.SetFormatAutoDetect(next)
 		if next {
 			a.manifestFor = "" // re-check the current server right away
@@ -211,11 +212,21 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	y += 26
 
-	// Per-type format toggles.
-	c.Label(pad, y, "Image formats probed per asset type (defaults: char_icon=PNG only, everything else=WebP only):", ColTextDim)
-	y += 22
-	for _, typeName := range imageTypeNames {
-		y = a.drawTypeFormatRow(typeName, y)
+	// Per-type format toggles (interactive only in manual mode).
+	if auto {
+		c.Label(pad, y, "Manual tuning disabled — formats come from each server's extensions.json (untick above to tune by hand):", ColTextDim)
+		y += 22
+		for _, typeName := range imageTypeNames {
+			c.Label(pad, y+2, typeName+":", ColTextDim)
+			c.Label(pad+110, y+2, strings.Join(a.d.Prefs.FormatOrder(typeName), "  "), ColTextDim)
+			y += 26
+		}
+	} else {
+		c.Label(pad, y, "Image formats probed per asset type (defaults: char_icon=PNG only, everything else=WebP only):", ColTextDim)
+		y += 22
+		for _, typeName := range imageTypeNames {
+			y = a.drawTypeFormatRow(typeName, y)
+		}
 	}
 	y += 8
 
