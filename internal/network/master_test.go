@@ -154,6 +154,40 @@ func TestFetchServerList(t *testing.T) {
 	}
 }
 
+// TestFetchServerListETagRevalidation pins the conditional refresh: the
+// second fetch sends If-None-Match and a 304 serves the cached payload.
+func TestFetchServerListETagRevalidation(t *testing.T) {
+	const etag = `"v1"`
+	var hits, conditional int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if r.Header.Get("If-None-Match") == etag {
+			conditional++
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(sampleMasterJSON))
+	}))
+	defer srv.Close()
+
+	first, err := FetchServerList(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("first fetch: %v", err)
+	}
+	second, err := FetchServerList(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("revalidated fetch: %v", err)
+	}
+	if conditional != 1 || hits != 2 {
+		t.Errorf("hits=%d conditional=%d, want 2/1", hits, conditional)
+	}
+	if len(second) != len(first) {
+		t.Errorf("304 path returned %d entries, want %d", len(second), len(first))
+	}
+}
+
 func TestUnsupportedReasonMentionsUpgrade(t *testing.T) {
 	// The lobby copy must tell legacy server owners what to do.
 	for _, needle := range []string{"not supported", "upgrade", "WebSockets"} {

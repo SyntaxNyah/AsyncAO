@@ -104,6 +104,27 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
 - Sprites have two spellings: `(a)X`/`(b)X` **or** bare `X` (AO2-Client
   CharLayer::load_image probes both). `PrefetchWithFallback` owns that
   chain; the prefixed base stays the asset's identity everywhere.
+- MS evidence ids are shifted by 1 on the wire (0 = none, legacy); LE
+  shares SC's lossy double-decode — a literal `&` in evidence text cannot
+  round-trip, don't "fix" the parse order.
+- CASEA/SETCASE were removed upstream ("No longer used", serverdata.h) but
+  tsuserver-family servers still send them — we implement the legacy 2.6–2.9
+  wire deliberately.
+- 2.10 custom shouts: AO2-Client *scans the local* `custom_objections/`
+  dir; a streaming client can't, so the char.ini `[Shouts]` `<stem>_name`
+  keys are the discovery source. Receive strips a trailing extension from
+  `4&<name>` (other clients send their dir-scan filename).
+- Evidence images are EXACT URLs (`evidence/<file.ext>` — the extension
+  ships in the LE name): `PrefetchExact`, never the format-probing path.
+- Theme chatbox skin candidates are `chat` → `chatbox` → `chatblank`
+  (courtroom.cpp:3328) — the stock default theme has NO chatbox.png.
+  Theme text colors apply only while the theme's own skin drew: they're
+  designed for that skin (black-on-paper), not our flat dark panel.
+- `extensions.json` at the asset origin (webAO convention) is the format
+  manifest; autodetect (default ON) seeds per-host learned formats from
+  it. `.webp.static`/`.webp.animated` pseudo-suffixes normalize to .webp.
+- Theme textures live in T1 under `theme://<stem>` keys; the scheme prefix
+  can't collide with asset URLs. They heal on eviction via themePage.
 
 ## Environment gotchas (this dev machine)
 
@@ -120,8 +141,15 @@ Protocol gotchas already encoded in code/tests — don't "fix" them:
   `go get` bump x/sync** to a version requiring Go 1.25.
 - devkitPro's MSYS2 at `C:\devkitPro\msys2` belongs to other projects — never
   touch it; AsyncAO uses `C:\msys64`.
-- WebP test fixtures were generated with msys2's `cwebp`/`img2webp`
-  (see test/fixtures/).
+- WebP test fixtures were generated with msys2's `cwebp`/`img2webp`,
+  AVIF fixtures with `avifenc` (see test/fixtures/).
+- **Never round-trip Go sources through Windows PowerShell 5.1 pipes**
+  (`Get-Content | Set-Content`): the default codepage mangles UTF-8
+  (→ mojibake arrows/dashes). It happened once; the fix was a cp1252
+  reverse round-trip via [IO.File]. Use the Edit tooling or `-Encoding`
+  with [IO.File] reads/writes.
+- CGO deps now include `mingw-w64-ucrt-x86_64-libavif` (AVIF decode);
+  build.ps1 stages libavif-16/aom/dav1d/yuv/rav1e/SvtAv1Enc DLLs.
 
 ## Conventions
 

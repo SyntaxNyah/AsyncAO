@@ -467,6 +467,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
 	a.handleSpriteDrag(vp)
+	a.handleHotkeys() // Ctrl-chords (shouts, pos, music, screenshot...)
 	a.drawChatOverlay(vp)
 	a.drawCourtOverlays(vp) // HP bars, clocks, badges, splashes
 
@@ -691,16 +692,49 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		a.drawOOCPanel(inner)
 		return
 	}
+	// IC log tab: search box + Copy/TXT/HTML row, then the colored
+	// scrollback (AO text colors preserved per entry).
+	rowY := inner.Y
+	searchW := inner.W - 3*52 - 12
+	a.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: inner.X, Y: rowY, W: searchW, H: 24}, a.logSearch, "Search log...")
+	bx := inner.X + searchW + 4
+	if c.Button(sdl.Rect{X: bx, Y: rowY, W: 50, H: 24}, "Copy") {
+		a.copyICLog()
+	}
+	if c.Button(sdl.Rect{X: bx + 52, Y: rowY, W: 50, H: 24}, "TXT") {
+		a.exportICLog(false)
+	}
+	if c.Button(sdl.Rect{X: bx + 104, Y: rowY, W: 50, H: 24}, "HTML") {
+		a.exportICLog(true)
+	}
+	list := sdl.Rect{X: inner.X, Y: rowY + 28, W: inner.W, H: inner.H - 28}
+
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
-	maxLines := int(inner.H / lineH)
-	start := 0
-	if len(a.icLog) > maxLines {
-		start = len(a.icLog) - maxLines
+	idx := a.icLogFiltered()
+	contentH := int32(len(idx)) * lineH
+	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
+	if !c.ctrlHeld && c.hovering(list) { // ctrl+wheel resizes text
+		a.icScroll -= c.wheelY * scrollStepPx
 	}
-	y := inner.Y
-	for _, line := range a.icLog[start:] {
-		c.LabelClippedFont(font, inner.X, y, inner.W, line, ColText)
+	// Follow the tail unless the user scrolled back (one line of slack).
+	if maxScroll := contentH - list.H; maxScroll > 0 && a.icScroll >= maxScroll-lineH {
+		a.icScroll = maxScroll
+	}
+	a.icScroll = c.VScrollbar("icscroll", track, a.icScroll, contentH, list.H)
+	y := list.Y - a.icScroll
+	for _, i := range idx {
+		if y > list.Y+list.H-lineH {
+			break
+		}
+		if y >= list.Y-lineH {
+			e := &a.icLog[i]
+			col := ColText
+			if e.color > 0 {
+				col = render.TextColor(e.color)
+			}
+			c.LabelClippedFont(font, list.X, y, list.W-scrollBarW-scrollBarGap, e.text, col)
+		}
 		y += lineH
 	}
 }
@@ -964,6 +998,11 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 
 func (a *App) drawMusicList(r sdl.Rect) {
 	c := a.ctx
+	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: 90, H: 24}, "Stop music") {
+		a.stopMusic()
+	}
+	r.Y += 28
+	r.H -= 28
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.musicScroll -= c.wheelY * scrollStepPx
 	}

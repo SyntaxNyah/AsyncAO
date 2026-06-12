@@ -115,6 +115,10 @@ func (d *DiskCache) reportError(err error) {
 	log.Printf("cache: async disk write failed: %v", err)
 }
 
+// Root exposes the cache directory (Settings: open-in-file-manager and
+// size measurement — read-only use).
+func (d *DiskCache) Root() string { return d.root }
+
 // pathFor maps a URL to its blob path: <root>/<xx>/<xxhash64-hex>.
 func (d *DiskCache) pathFor(url string) string {
 	key := Key(url)

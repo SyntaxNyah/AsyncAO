@@ -278,3 +278,4 @@ a solo sprite.
 | `kettek/apng` | APNG decode (the draft's pick was a diff library!) |
 | `golang.org/x/image` | pure-Go WebP fallback + embedded Go font |
 | `coder/websocket` | **addition:** AO2 ≥ 2.11 is WebSocket-only; stdlib has no WS client. Zero-dependency, maintained, context-aware. |
+| MSYS2 `libavif` (CGO, no Go module) | **addition (user request):** `.avif` as a probe format — native dav1d/aom decode for stills *and* AV1 image sequences, bound exactly like the libwebp CGO shim (~100 lines). The pure-Go alternatives embed a WASM runtime (gen2brain/avif → wazero), the opposite of this project's soul. CGO-less builds degrade to a descriptive decode error; sniffing (`ftyp` + `avif`/`avis` brands) stays pure Go. |

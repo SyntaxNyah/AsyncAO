@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -183,6 +184,21 @@ func splitWSURL(wsURL string) (scheme, host string, port int, err error) {
 }
 
 // FetchServerList downloads and parses the master server list.
+// Master-list ETag revalidation: the lobby Refresh button re-fetches the
+// full list every press; with the validator a no-change refresh costs a
+// 304 and zero payload bytes. One URL in practice — a tiny capped table.
+type cachedMasterList struct {
+	etag string
+	body []byte
+}
+
+const masterETagCacheCap = 4
+
+var (
+	masterETagMu    sync.Mutex
+	masterETagCache = map[string]cachedMasterList{} // listURL → last validated payload
+)
+
 func FetchServerList(ctx context.Context, listURL string) ([]ServerEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, masterFetchTimeout)
 	defer cancel()
@@ -191,11 +207,20 @@ func FetchServerList(ctx context.Context, listURL string) ([]ServerEntry, error)
 	if err != nil {
 		return nil, fmt.Errorf("network: building master request: %w", err)
 	}
+	masterETagMu.Lock()
+	prev, hasPrev := masterETagCache[listURL]
+	masterETagMu.Unlock()
+	if hasPrev && prev.etag != "" {
+		req.Header.Set("If-None-Match", prev.etag)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("network: fetching server list: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotModified && hasPrev {
+		return ParseServerList(prev.body)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("network: master server returned %s", resp.Status)
 	}
@@ -203,6 +228,15 @@ func FetchServerList(ctx context.Context, listURL string) ([]ServerEntry, error)
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMasterResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("network: reading server list: %w", err)
+	}
+	if etag := resp.Header.Get("ETag"); etag != "" {
+		masterETagMu.Lock()
+		if len(masterETagCache) >= masterETagCacheCap {
+			// Tiny table; wholesale reset beats eviction bookkeeping.
+			masterETagCache = map[string]cachedMasterList{}
+		}
+		masterETagCache[listURL] = cachedMasterList{etag: etag, body: data}
+		masterETagMu.Unlock()
 	}
 	return ParseServerList(data)
 }

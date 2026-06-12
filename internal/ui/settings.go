@@ -23,6 +23,10 @@ type settingsState struct {
 	loaded     bool
 	statusLine string
 
+	// callwords edit buffer (loaded once per settings entry).
+	callInput  string
+	callLoaded bool
+
 	// theme picker state: list scanning runs on a goroutine (directory
 	// I/O stays off the render thread — §17.2) and lands on themeRes.
 	themeName string
@@ -237,6 +241,40 @@ func (a *App) drawSettings(w, h int32) {
 	// Case announcements (CASEA, tsuserver-family): subscribe by role.
 	y = a.drawCasingRow(y)
 
+	// Callwords: comma-separated highlight words (flash + sound on match).
+	c.Label(pad, y+4, "Callwords:", ColText)
+	if !settings.callLoaded {
+		settings.callInput = strings.Join(a.d.Prefs.CallWords(), ", ")
+		settings.callLoaded = true
+	}
+	var callCommit bool
+	settings.callInput, callCommit = c.TextField("callwords", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.callInput, "your name, nickname, ... (flash + sound when seen in IC/OOC)")
+	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || callCommit {
+		a.d.Prefs.SetCallWords(strings.Split(settings.callInput, ","))
+		settings.statusLine = "Callwords saved."
+	}
+	y += 34
+
+	// Hotkeys: Ctrl+<key> per action (blank = the default shown).
+	c.Label(pad, y, "Hotkeys (Ctrl + key — single letters/digits; blank uses the default):", ColTextDim)
+	y += 22
+	hx := pad
+	for _, def := range hotkeyDefs {
+		c.Label(hx, y+4, def.label+":", ColText)
+		cur := a.d.Prefs.Hotkey(def.id)
+		placeholder := def.def
+		next, _ := c.TextField("hk_"+def.id, sdl.Rect{X: hx + 150, Y: y, W: 44, H: fieldH}, cur, placeholder)
+		if next != cur {
+			a.d.Prefs.SetHotkey(def.id, strings.ToLower(strings.TrimSpace(next)))
+		}
+		hx += 210
+		if hx > 700 {
+			hx = pad
+			y += 30
+		}
+	}
+	y += 36
+
 	// Master list override (blank = official). Refresh in the lobby applies.
 	c.Label(pad, y+4, "Master list:", ColText)
 	master := a.d.Prefs.MasterList()
@@ -284,6 +322,26 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	y += 10
 
+	// Cache browser: live tier stats, T3 size on demand, open-in-Explorer.
+	t2 := a.d.Manager.T2Stats()
+	hitPct := 0.0
+	if total := t2.Hits + t2.Misses; total > 0 {
+		hitPct = float64(t2.Hits) / float64(total) * 100
+	}
+	c.Label(pad, y, fmt.Sprintf("Memory cache (T2): %d entries · %.1f / %.0f MiB · %.0f%% hit rate · %d evictions",
+		t2.Entries, float64(t2.Bytes)/(1<<20), float64(t2.Budget)/(1<<20), hitPct, t2.Evictions), ColTextDim)
+	y += 24
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Measure disk cache") {
+		measureDiskCacheAsync(a.d.Manager.DiskRoot())
+	}
+	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 170, H: btnH}, "Open cache folder") {
+		if root := a.d.Manager.DiskRoot(); root != "" {
+			// Fire-and-forget Explorer launch; never blocks the frame.
+			_ = exec.Command("explorer.exe", root).Start()
+		}
+	}
+	y += 32
+
 	// Cache actions.
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Clear disk cache") {
 		if err := a.d.Manager.ClearDisk(); err != nil {
@@ -313,6 +371,33 @@ func (a *App) drawSettings(w, h int32) {
 	if settings.statusLine != "" {
 		c.Label(pad, y, settings.statusLine, ColAccent)
 	}
+}
+
+// measureDiskCacheAsync walks the T3 directory off-thread and reports the
+// blob count + total size on the status line.
+func measureDiskCacheAsync(root string) {
+	if root == "" {
+		return
+	}
+	go func() {
+		var files int
+		var bytes int64
+		_ = filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil //nolint:nilerr // best-effort measurement
+			}
+			if info, ierr := d.Info(); ierr == nil {
+				files++
+				bytes += info.Size()
+			}
+			return nil
+		})
+		line := fmt.Sprintf("Disk cache (T3): %d blobs · %.1f MiB at %s", files, float64(bytes)/(1<<20), root)
+		select {
+		case settings.ioRes <- line:
+		default:
+		}
+	}()
 }
 
 // learnedExportFileName sits next to the executable — easy to hand to a

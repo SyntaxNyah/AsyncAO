@@ -38,7 +38,9 @@ const (
 	lobbyRefreshTimeout = 15 * time.Second
 	logLines            = 8
 	logLineMax          = 120
-	icLogCap            = 256
+	// icLogCap sizes the IC scrollback (a casing session's worth; ~100 KiB
+	// worst case — the log is now scrollable/searchable/exportable).
+	icLogCap = 1024
 
 	// charIconWarmup caps the connect-time speculative icon burst. Servers
 	// with 4000+ characters exist; blasting them all floods the low lane
@@ -194,7 +196,9 @@ type App struct {
 	customName   string
 	charINIBusy  bool
 	charINIres   chan charINIFetch
-	icLog        []string
+	icLog        []icEntry
+	icScroll     int32
+	logSearch    string
 	oocLog       []string
 	musicScroll  int32
 	areaScroll   int32
@@ -402,6 +406,7 @@ var themeSoundKeys = []struct {
 	{"mod_call", []string{"mod_call"}, "sfx-gallery"},
 	{"case_call", []string{"case_call"}, "sfx-evidenceadd"},
 	{"realization", []string{"realization"}, "sfx-realization"},
+	{"word_call", []string{"word_call"}, "call"},
 }
 
 // themePenaltyKeys are the penalty/penalty.ini sfx entries (no stock
@@ -625,10 +630,12 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.enterCourtroom()
 		case courtroom.EventOOC:
 			a.pushOOC(ev.Name + ": " + ev.Text)
+			a.checkCallwords(ev.Text)
 		case courtroom.EventMessage:
 			if ev.Message != nil {
-				a.pushIC(icLogLine(ev.Message))
+				a.pushIC(icLogLine(ev.Message), ev.Message.TextColor)
 				a.noteEvidencePresented(ev.Message)
+				a.checkCallwords(ev.Message.Message)
 			}
 		case courtroom.EventHP:
 			// Direction decides the penalty sfx (set_hp_bar compares the
@@ -1493,8 +1500,19 @@ func (a *App) healScenery() {
 	}
 }
 
-func (a *App) pushIC(line string) {
-	a.icLog = appendCapped(a.icLog, clampLine(line), icLogCap)
+// icEntry is one IC log line with its AO text color preserved (rich
+// scrollback: render, search, and export keep the color).
+type icEntry struct {
+	text  string
+	color int
+}
+
+func (a *App) pushIC(line string, color int) {
+	a.icLog = append(a.icLog, icEntry{text: clampLine(line), color: color})
+	if len(a.icLog) > icLogCap {
+		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
+		a.icLog = a.icLog[:icLogCap]
+	}
 }
 
 func (a *App) pushOOC(line string) {

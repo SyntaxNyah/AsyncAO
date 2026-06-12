@@ -182,6 +182,8 @@ type AssetPreferences struct {
 	CasingRoles            int                       `json:"casingRoles"`
 	HiddenPanelIDs         []string                  `json:"hiddenPanels"`
 	ServerWarm             map[string]ServerWarmInfo `json:"serverWarm"`
+	CallWordList           []string                  `json:"callWords"`
+	HotkeyMap              map[string]string         `json:"hotkeys"`
 
 	mu        sync.RWMutex
 	path      string
@@ -240,6 +242,8 @@ type prefsJSON struct {
 	CasingRoles        int                       `json:"casingRoles"`
 	HiddenPanels       []string                  `json:"hiddenPanels"`
 	ServerWarm         map[string]ServerWarmInfo `json:"serverWarm"`
+	CallWords          []string                  `json:"callWords"`
+	Hotkeys            map[string]string         `json:"hotkeys"`
 }
 
 // ServerWarmInfo remembers what a server looked like last visit, so a
@@ -411,6 +415,10 @@ func load(path string) (*AssetPreferences, error) {
 	p.HiddenPanelIDs = onDisk.HiddenPanels
 	if onDisk.ServerWarm != nil {
 		p.ServerWarm = onDisk.ServerWarm
+	}
+	p.CallWordList = onDisk.CallWords
+	if onDisk.Hotkeys != nil {
+		p.HotkeyMap = onDisk.Hotkeys
 	}
 	return p, nil
 }
@@ -800,6 +808,60 @@ func (p *AssetPreferences) SetCasing(enabled bool, roles int) {
 	}
 	p.CasingEnabled = enabled
 	p.CasingRoles = roles
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Callwords + hotkeys -------------------------------------------------------------
+
+// callWordCap bounds the highlight list (rule §17.4).
+const callWordCap = 32
+
+// CallWords reports the highlight words (lowercased on save).
+func (p *AssetPreferences) CallWords() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return cloneStrings(p.CallWordList)
+}
+
+// SetCallWords replaces the highlight list (entries lowercased, capped).
+func (p *AssetPreferences) SetCallWords(words []string) {
+	clean := make([]string, 0, len(words))
+	for _, w := range words {
+		w = strings.ToLower(strings.TrimSpace(w))
+		if w == "" {
+			continue
+		}
+		clean = append(clean, w)
+		if len(clean) >= callWordCap {
+			break
+		}
+	}
+	p.mu.Lock()
+	p.CallWordList = clean
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Hotkey reports the configured key name for an action ("" = unset; the
+// UI layer owns defaults — config just persists overrides).
+func (p *AssetPreferences) Hotkey(action string) string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.HotkeyMap[action]
+}
+
+// SetHotkey stores one action's key name.
+func (p *AssetPreferences) SetHotkey(action, key string) {
+	p.mu.Lock()
+	if p.HotkeyMap == nil {
+		p.HotkeyMap = map[string]string{}
+	}
+	if p.HotkeyMap[action] == key {
+		p.mu.Unlock()
+		return
+	}
+	p.HotkeyMap[action] = key
 	p.mu.Unlock()
 	p.markDirty()
 }

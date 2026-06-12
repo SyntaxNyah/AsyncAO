@@ -450,6 +450,22 @@ func (m *Manager) ClearDisk() error {
 	return m.disk.Clear()
 }
 
+// DiskRoot exposes the T3 directory (Settings cache browser).
+func (m *Manager) DiskRoot() string {
+	if m.disk == nil {
+		return ""
+	}
+	return m.disk.Root()
+}
+
+// T2Stats snapshots the byte-tier counters (Settings cache browser).
+func (m *Manager) T2Stats() cache.MemoryStats {
+	if m.t2 == nil {
+		return cache.MemoryStats{}
+	}
+	return m.t2.Stats()
+}
+
 // reportMissing surfaces the §4 visible warning; the warning lane may drop
 // under flood (advisory, not a result).
 func (m *Manager) reportMissing(base string, t AssetType, tried []string) {
