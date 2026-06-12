@@ -220,7 +220,6 @@ func (a *App) drawCourtOverlays(vp sdl.Rect) {
 	// Server clocks: centered chips along the viewport top (between the
 	// bars), drawn only while the server marked them visible.
 	if !a.panelHidden(panelTimers) {
-		type chip struct{ label string }
 		var chips []string
 		for id := 0; id < courtroom.TimerCount; id++ {
 			t := &a.sess.Timers[id]
