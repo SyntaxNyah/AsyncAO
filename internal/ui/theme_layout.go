@@ -326,10 +326,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 	if nameR, ok := lay.rect("ao2_ic_chat_name"); ok {
-		shown := a.d.Prefs.SavedShowname()
-		if next, _ := c.TextField("icshowname", nameR, shown, "Showname"); next != shown {
-			a.d.Prefs.SetShowname(next)
+		// Session override box (matches the classic layout): blank falls
+		// back to — and shows — the persisted Settings showname.
+		namePlaceholder := a.d.Prefs.SavedShowname()
+		if namePlaceholder == "" {
+			namePlaceholder = "Showname"
 		}
+		a.shownameOverride, _ = c.TextField("icshownameov", nameR, a.shownameOverride, namePlaceholder)
 	}
 
 	// Shouts at their design rects, themed art when shipped.

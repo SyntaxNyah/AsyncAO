@@ -1246,7 +1246,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 
 	// IC input row (height follows the Box knob), led by the AO2 text
 	// color cycler: the swatch shows the active wire color (MS text_color
-	// 0–9); left-click next, right-click previous.
+	// 0–9); left-click next, right-click previous. The showname box
+	// OVERRIDES the Settings showname for the session (blank = saved).
 	fH := a.inputFieldH()
 	swatch := sdl.Rect{X: pad, Y: icY, W: 26, H: fH}
 	c.Fill(swatch, render.TextColor(a.icColor))
@@ -1258,8 +1259,14 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			a.icColor = (a.icColor + render.TextColorCount - 1) % render.TextColorCount
 		}
 	}
+	const shownameBoxW = 140
+	namePlaceholder := a.d.Prefs.SavedShowname()
+	if namePlaceholder == "" {
+		namePlaceholder = "Showname"
+	}
+	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: pad + 32, Y: icY, W: shownameBoxW, H: fH}, a.shownameOverride, namePlaceholder)
 	var send bool
-	a.icInput, send = c.TextField("ic", sdl.Rect{X: pad + 32, Y: icY, W: vp.W - 32, H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
+	a.icInput, send = c.TextField("ic", sdl.Rect{X: pad + 32 + shownameBoxW + 6, Y: icY, W: vp.W - 32 - shownameBoxW - 6, H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
 	}
@@ -1608,7 +1615,7 @@ func (a *App) sendIC(shout int) {
 		CharID:    a.sess.MyCharID,
 		Objection: shout,
 		TextColor: a.icColor, // the swatch cycler (AO2 color dropdown parity)
-		Showname:  a.d.Prefs.SavedShowname(),
+		Showname:  a.effectiveShowname(),
 		PairWith:  a.pairWith,
 		PairOrder: a.pairOrder,
 		OffsetX:   a.pairOffX,

@@ -125,6 +125,11 @@ func (a *App) drawSettings(w, h int32) {
 		a.d.Prefs.SetDebugOverlay(next)
 	}
 	y += 26
+	streamer := a.d.Prefs.StreamerMode()
+	if next := c.Checkbox(pad, y, "Streamer mode (masks OOC names + IPs in the log display, silences callword pings)", streamer); next != streamer {
+		a.d.Prefs.SetStreamerMode(next)
+	}
+	y += 26
 	smooth := a.d.Prefs.SmoothScalingEnabled()
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
 		a.d.Prefs.SetSmoothScaling(next)

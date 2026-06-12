@@ -159,6 +159,7 @@ type AssetPreferences struct {
 	AutoDetectFormats      bool                      `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                      `json:"themeLayout"`
 	DiskZstd               bool                      `json:"diskZstd"`
+	StreamerModeOn         bool                      `json:"streamerMode"`
 	ThemeName              string                    `json:"themeName"`
 	ThemeDir               string                    `json:"themeDir"`
 	OOCName                string                    `json:"oocName"`
@@ -220,6 +221,7 @@ type prefsJSON struct {
 	FormatAutoDetect       *bool  `json:"formatAutoDetect"` // absent = default ON
 	ThemeLayout            *bool  `json:"themeLayout"`      // absent = default ON
 	DiskZstd               bool   `json:"diskZstd"`         // default OFF (measured trade)
+	StreamerMode           bool   `json:"streamerMode"`     // default OFF
 	ThemeName              string `json:"themeName"`
 	ThemeDir               string `json:"themeDir"`
 	OOCName                string `json:"oocName"`
@@ -385,6 +387,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.ThemeLayoutOn = *onDisk.ThemeLayout
 	}
 	p.DiskZstd = onDisk.DiskZstd
+	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
 	p.ThemeDir = onDisk.ThemeDir
 	p.OOCName = onDisk.OOCName
@@ -1219,6 +1222,26 @@ func (p *AssetPreferences) SetFormatAutoDetect(enabled bool) {
 		return
 	}
 	p.AutoDetectFormats = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// StreamerMode reports the on-stream privacy toggle: OOC sender names
+// and IP-like tokens mask in the display, callwords stay silent.
+func (p *AssetPreferences) StreamerMode() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.StreamerModeOn
+}
+
+// SetStreamerMode toggles the on-stream privacy mode.
+func (p *AssetPreferences) SetStreamerMode(enabled bool) {
+	p.mu.Lock()
+	if p.StreamerModeOn == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.StreamerModeOn = enabled
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -139,7 +140,12 @@ func (a *App) jumpLogs() {
 
 // checkCallwords flashes + pings when a configured highlight word appears
 // in IC/OOC traffic (AO2-Client callwords: get_court_sfx("word_call")).
+// Streamer mode suppresses both — an on-stream name ping is exactly the
+// leak the toggle exists to prevent.
 func (a *App) checkCallwords(text string) {
+	if a.d.Prefs.StreamerMode() {
+		return
+	}
 	words := a.d.Prefs.CallWords()
 	if len(words) == 0 || text == "" {
 		return
@@ -194,6 +200,27 @@ func (a *App) captureScreenshot() {
 	a.pushDebug("screenshot saved: screenshots\\asyncao-" + stamp + ".bmp")
 }
 
+// --- streamer mode ----------------------------------------------------------------------
+
+// streamerIPRe matches IPv4-looking tokens (modcall broadcasts on some
+// servers embed caller IPs).
+var streamerIPRe = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}\b`)
+
+// streamerMaskLine redacts one OOC display line: the sender prefix
+// becomes ???, IP-like tokens block out. Display-time only — the raw log
+// is untouched, so switching the mode off restores everything.
+func streamerMaskLine(line string) string {
+	if name, rest, found := strings.Cut(line, ": "); found && len(name) <= streamerNameMax {
+		line = "???: " + rest
+		_ = name
+	}
+	return streamerIPRe.ReplaceAllString(line, "█.█.█.█")
+}
+
+// streamerNameMax bounds what counts as a "name:" prefix — a colon deep
+// inside a sentence is message text, not a sender.
+const streamerNameMax = 32
+
 // --- OOC wrapping ----------------------------------------------------------------------
 
 // oocWrapMaxLinesPerEntry bounds one entry's wrapped output (a hostile
@@ -202,16 +229,21 @@ const oocWrapMaxLinesPerEntry = 24
 
 // oocWrapped returns the OOC log as display lines: long entries (MOTDs)
 // word-wrap to the list width and embedded newlines split, instead of the
-// old 120-char truncation. Cached against (log seq, width, font scale) —
+// old 120-char truncation. Streamer mode masks sender names and IPs here
+// (display only). Cached against (log seq, width, font scale, mask) —
 // rebuilds happen on new messages or resizes, never per frame.
 func (a *App) oocWrapped(width int32) []string {
+	streamer := a.d.Prefs.StreamerMode()
 	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq &&
-		a.oocWrapW == width && a.oocWrapPct == a.logPct {
+		a.oocWrapW == width && a.oocWrapPct == a.logPct && a.oocWrapMask == streamer {
 		return a.oocWrap
 	}
 	font := a.ctx.LogFont(a.logPct)
 	out := a.oocWrap[:0]
 	for _, entry := range a.oocLog {
+		if streamer {
+			entry = streamerMaskLine(entry)
+		}
 		for _, para := range strings.Split(entry, "\n") {
 			lines := wrapToWidth(font, strings.TrimRight(para, "\r"), width, oocWrapMaxLinesPerEntry)
 			if len(lines) == 0 {
@@ -224,7 +256,7 @@ func (a *App) oocWrapped(width int32) []string {
 	if out == nil {
 		out = []string{}
 	}
-	a.oocWrap, a.oocWrapSeq, a.oocWrapW, a.oocWrapPct = out, a.oocSeq, width, a.logPct
+	a.oocWrap, a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = out, a.oocSeq, width, a.logPct, streamer
 	return out
 }
 

@@ -187,14 +187,18 @@ type App struct {
 	iniPagesGen  uint64
 
 	// --- courtroom chrome state ---
-	icInput    string
-	oocInput   string
-	oocName    string
-	sidePref   string    // OUR side (char.ini default, /pos override)
-	lastPing   time.Time // CH keepalive pacing
-	lastICSend time.Time // chat_ratelimit window
-	iniWarmed  string    // last char.ini hover-warmed (dedupe)
-	icColor    int       // outgoing MS text_color (swatch cycler)
+	icInput  string
+	oocInput string
+	oocName  string
+	// shownameOverride is the in-courtroom showname box: when non-blank
+	// it wins over the persisted Settings showname for outgoing messages
+	// (session-scoped — it never overwrites the saved one).
+	shownameOverride string
+	sidePref         string    // OUR side (char.ini default, /pos override)
+	lastPing         time.Time // CH keepalive pacing
+	lastICSend       time.Time // chat_ratelimit window
+	iniWarmed        string    // last char.ini hover-warmed (dedupe)
+	icColor          int       // outgoing MS text_color (swatch cycler)
 	// pair offset edit buffers (typed text commits on valid parse)
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
@@ -224,6 +228,7 @@ type App struct {
 	oocWrapSeq  uint64
 	oocWrapW    int32
 	oocWrapPct  int
+	oocWrapMask bool // streamer-mode masking baked into the cache
 	oocLog      []string
 	musicScroll int32
 	areaScroll  int32
@@ -696,6 +701,15 @@ func (a *App) Disconnect() {
 	a.screen = ScreenLobby
 }
 
+// effectiveShowname is the name outgoing messages carry: the courtroom
+// override box when filled, the persisted Settings showname otherwise.
+func (a *App) effectiveShowname() string {
+	if s := strings.TrimSpace(a.shownameOverride); s != "" {
+		return s
+	}
+	return a.d.Prefs.SavedShowname()
+}
+
 // updatePresence pushes (or clears) the Discord activity from the user's
 // per-field choices. Cheap — a channel swap; the presence worker owns all
 // I/O and silently idles when Discord isn't running.
@@ -714,7 +728,7 @@ func (a *App) updatePresence() {
 	}
 	var parts []string
 	if dp.ShowName {
-		if n := strings.TrimSpace(a.d.Prefs.SavedShowname()); n != "" {
+		if n := strings.TrimSpace(a.effectiveShowname()); n != "" {
 			parts = append(parts, n)
 		}
 	}

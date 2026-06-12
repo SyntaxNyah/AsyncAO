@@ -215,6 +215,24 @@ func TestRectOverlapFrac(t *testing.T) {
 	}
 }
 
+// TestStreamerMaskLine pins the on-stream redaction: sender prefixes and
+// IPv4 tokens mask, in-sentence colons survive, message text is kept.
+func TestStreamerMaskLine(t *testing.T) {
+	// Every OOC entry is "name: text" by construction (pushOOC); lines
+	// without the separator are system notices.
+	cases := map[string]string{
+		"Nyah: hello there":              "???: hello there",
+		"[MOD CALL] 203.0.113.7 called":  "[MOD CALL] █.█.█.█ called",
+		"server: join 198.51.100.23 now": "???: join █.█.█.█ now",
+		"no colon line":                  "no colon line",
+	}
+	for in, want := range cases {
+		if got := streamerMaskLine(in); got != want {
+			t.Errorf("mask(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestWrapToWidthMOTD pins the OOC wrapper that replaced the 120-char
 // truncation: words stay whole and in order, nothing exceeds the column,
 // oversized words hard-split, and the per-entry line cap holds. The nil
