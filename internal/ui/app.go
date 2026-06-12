@@ -1472,10 +1472,12 @@ func (a *App) pollThemeApply() {
 	if res == nil {
 		return
 	}
-	// Upload every loaded stem; drop residents the new theme doesn't ship
-	// (covers both the plain stems and the btn/ widget art).
+	// Upload every loaded stem into the PINNED tier — theme chrome must
+	// never lose an eviction fight against streaming sprites (the cause
+	// of the black-flashing backdrop / glitching buttons) — and drop
+	// residents the new theme doesn't ship (plain stems and btn/ art).
 	for stem, d := range res.images {
-		if err := a.d.Store.Upload(themeTexKey(stem), d); err == nil {
+		if err := a.d.Store.UploadPinned(themeTexKey(stem), d); err == nil {
 			a.themeTex[stem] = true
 		}
 	}

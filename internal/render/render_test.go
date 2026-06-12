@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"image"
 	"os"
 	"testing"
@@ -52,6 +53,50 @@ func decodedFixture() *assets.Decoded {
 		d.Delays = append(d.Delays, 50*time.Millisecond)
 	}
 	return d
+}
+
+// TestPinnedPagesSurviveEvictionPressure pins the theme-chrome tier: a
+// pinned page must outlive any amount of LRU churn (the black-flashing
+// backdrop bug), replace in place, and leave on Remove.
+func TestPinnedPagesSurviveEvictionPressure(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+
+	if err := store.UploadPinned("theme://courtroombackground", decodedFixture()); err != nil {
+		t.Fatalf("pinned upload: %v", err)
+	}
+	// Churn the LRU well past any plausible recency window.
+	for i := 0; i < 200; i++ {
+		if err := store.Upload(fmt.Sprintf("base/churn-%d", i), decodedFixture()); err != nil {
+			t.Fatalf("churn upload %d: %v", i, err)
+		}
+		store.DrainDestroyQueue()
+	}
+	if _, ok := store.Get("theme://courtroombackground"); !ok {
+		t.Fatal("pinned page evicted under LRU churn")
+	}
+
+	// Replacement keeps exactly one resident page and bumps the generation.
+	genBefore := store.Generation()
+	if err := store.UploadPinned("theme://courtroombackground", decodedFixture()); err != nil {
+		t.Fatalf("pinned replace: %v", err)
+	}
+	if store.Generation() == genBefore {
+		t.Error("pinned replace did not bump the generation")
+	}
+	if page, ok := store.Get("theme://courtroombackground"); !ok || len(page.Frames) != 2 {
+		t.Error("pinned page broken after replace")
+	}
+
+	store.Remove("theme://courtroombackground")
+	if _, ok := store.Get("theme://courtroombackground"); ok {
+		t.Error("pinned page survived Remove")
+	}
 }
 
 func TestTextureStoreUploadAndEvict(t *testing.T) {

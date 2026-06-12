@@ -68,16 +68,26 @@ func (p *TexturePage) destroy() {
 // a cached pointer can dangle (destroys only happen later in the same frame,
 // in DrainDestroyQueue, after rendering consulted the generation).
 type TextureStore struct {
-	ren        *sdl.Renderer
-	t1         *cache.ByteBudgetLRU[string, *TexturePage]
-	destroy    chan *TexturePage
-	generation atomic.Uint64
+	ren *sdl.Renderer
+	t1  *cache.ByteBudgetLRU[string, *TexturePage]
+	// pinned holds pages exempt from LRU eviction: the active theme's
+	// chrome (skin, splashes, bars, buttons, full-screen backdrops).
+	// Bounded by the theme stem tables (≈40 pages), render-thread only.
+	// Without pinning, themed backdrops churned against streaming
+	// sprites in the LRU and the stage flashed black every time an
+	// eviction caught them (the gen-keyed UI cache stopped refreshing
+	// their recency, making it constant).
+	pinned      map[string]*TexturePage
+	pinnedBytes int64
+	destroy     chan *TexturePage
+	generation  atomic.Uint64
 }
 
 // NewTextureStore builds T1 over the given renderer.
 func NewTextureStore(ren *sdl.Renderer) (*TextureStore, error) {
 	s := &TextureStore{
 		ren:     ren,
+		pinned:  map[string]*TexturePage{},
 		destroy: make(chan *TexturePage, destroyQueueCap),
 	}
 	t1, err := cache.NewByteBudgetLRU(t1MaxEntries, int64(T1BudgetBytes), func(_ string, page *TexturePage, _ int64) {
@@ -104,15 +114,18 @@ func (s *TextureStore) Contains(base string) bool {
 	return s.t1.Contains(base)
 }
 
-// Get returns the page for base, bumping recency.
+// Get returns the page for base (pinned pages first), bumping recency for
+// LRU-resident ones. Render thread only.
 func (s *TextureStore) Get(base string) (*TexturePage, bool) {
+	if page, ok := s.pinned[base]; ok {
+		return page, true
+	}
 	return s.t1.Get(base)
 }
 
-// Upload turns a decoded asset into textures under the asset's base key.
-// Render thread only. The Decoded is released here.
-func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
-	defer d.Release()
+// buildPage turns a decoded asset into a texture page (shared by the LRU
+// and pinned upload paths). The Decoded is NOT released here.
+func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 	page := &TexturePage{
 		Delays:   append([]time.Duration(nil), d.Delays...),
 		Animated: d.Animated,
@@ -127,16 +140,27 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 		)
 		if err != nil {
 			page.destroy()
-			return err
+			return nil, err
 		}
 		if err := tex.Update(nil, unsafe.Pointer(&frame.Pix[0]), frame.Stride); err != nil {
 			_ = tex.Destroy()
 			page.destroy()
-			return err
+			return nil, err
 		}
 		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 		page.Frames = append(page.Frames, tex)
 		page.bytes += int64(len(frame.Pix))
+	}
+	return page, nil
+}
+
+// Upload turns a decoded asset into textures under the asset's base key.
+// Render thread only. The Decoded is released here.
+func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
+	defer d.Release()
+	page, err := s.buildPage(d)
+	if err != nil {
+		return err
 	}
 	if !s.t1.Add(base, page, page.bytes) {
 		// Bigger than the entire T1 budget: the LRU refuses it, and before
@@ -151,10 +175,47 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 	return nil
 }
 
-// Remove evicts one page (theme swaps replace skin textures). The LRU's
-// eviction callback routes the page through the destroy queue.
+// UploadPinned is Upload into the eviction-exempt tier (theme chrome:
+// losing the courtroom backdrop to LRU pressure flashed the stage black).
+// Replacing an existing pinned page routes the old one through the
+// destroy queue. Render thread only.
+func (s *TextureStore) UploadPinned(base string, d *assets.Decoded) error {
+	defer d.Release()
+	page, err := s.buildPage(d)
+	if err != nil {
+		return err
+	}
+	if old, ok := s.pinned[base]; ok {
+		s.pinnedBytes -= old.bytes
+		s.queueDestroy(old)
+	}
+	s.pinned[base] = page
+	s.pinnedBytes += page.bytes
+	s.generation.Add(1)
+	return nil
+}
+
+// Remove evicts one page from whichever tier holds it (theme swaps
+// replace skin textures). Render thread only.
 func (s *TextureStore) Remove(base string) {
+	if page, ok := s.pinned[base]; ok {
+		delete(s.pinned, base)
+		s.pinnedBytes -= page.bytes
+		s.queueDestroy(page)
+		s.generation.Add(1)
+		return
+	}
 	s.t1.Remove(base)
+}
+
+// queueDestroy hands a page to the bounded destroy queue (inline when
+// full — render thread, legal and bounded).
+func (s *TextureStore) queueDestroy(page *TexturePage) {
+	select {
+	case s.destroy <- page:
+	default:
+		page.destroy()
+	}
 }
 
 // DrainDestroyQueue destroys up to destroyBudgetPerFrame evicted pages.
@@ -180,9 +241,16 @@ func (s *TextureStore) Stats() cache.MemoryStats {
 	return s.t1.Stats()
 }
 
-// Purge destroys everything (server switch / shutdown). Render thread only.
+// Purge destroys everything — pinned pages included (server switch /
+// shutdown / filtering swap; the theme re-applies after). Render thread
+// only.
 func (s *TextureStore) Purge() {
 	s.generation.Add(1)
+	for base, page := range s.pinned {
+		page.destroy()
+		delete(s.pinned, base)
+	}
+	s.pinnedBytes = 0
 	s.t1.Purge()
 	for {
 		select {
