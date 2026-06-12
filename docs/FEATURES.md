@@ -165,6 +165,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Offset ghost editor** (pair panel): drag your idle sprite on a
   miniature stage to set self-offsets; the partner shows as a
   translucent ghost at their last-known placement.
+- **Multi-server tabs (max 3)**: Join while connected opens a NEW tab —
+  the old session parks and keeps running (its packets drain on a
+  per-frame budget into its own logs; unread counts and callword
+  flashes still fire). A floating chip strip (top-center, every screen)
+  switches tabs, shows unread, closes background tabs (✕), and clicking
+  the active chip drops you to the lobby with the session still live.
+  Rooms exist only for the active tab (nothing animates off-screen);
+  activation rebuilds the courtroom from the session state. Caches need
+  nothing: asset keys are full URLs, per-server separation is
+  structural. Rehearsal never backgrounds (it owns the offline gate).
 - **Rehearsal mode** (lobby → select a visited server → Rehearse):
   browse its character roster and play emotes entirely offline from the
   cache — the manager's network gate closes structurally, nothing

@@ -375,7 +375,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 	cellH := iconCell + iconGap + 14
 	visibleH := h - gridTop - pad
-	query := strings.ToLower(strings.TrimSpace(a.charSearch))
+	query := a.charQ.get(a.charSearch)
 
 	if a.charTab == charTabWardrobe {
 		a.drawWardrobeGrid(w, h, gridTop, cols, cellH, visibleH, query)
@@ -1066,7 +1066,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	if cols < 1 {
 		cols = 1
 	}
-	query := strings.ToLower(strings.TrimSpace(a.iniSearch))
+	query := a.iniQ.get(a.iniSearch)
 	matches := int32(0)
 	for i := range a.iniList {
 		if query == "" || strings.Contains(a.iniLower[i], query) {
@@ -1528,7 +1528,7 @@ func (a *App) drawPairPanel(w, h int32) {
 	y += fieldH + 8
 
 	a.ensureCharLower()
-	query := strings.ToLower(strings.TrimSpace(a.pairSearch))
+	query := a.pairQ.get(a.pairSearch)
 	lineH := int32(22)
 	listTop := y
 	listH := panel.Y + panel.H - listTop - pad

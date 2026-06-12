@@ -22,11 +22,23 @@ func (a *App) pinNote(line string) {
 	a.pushDebug("notebook: pinned " + clampLine(line))
 }
 
-// pollNotebook lands the per-server notebook loaded on connect.
+// pollNotebook lands a per-server notebook load: on the active session
+// when the key matches, else on the parked tab it belongs to (a tab
+// switch between request and landing must not cross notebooks).
 func (a *App) pollNotebook() {
 	select {
-	case nb := <-a.notebookRes:
-		a.notebook = nb
+	case res := <-a.notebookRes:
+		if res.key == a.serverKey {
+			a.notebook = res.nb
+			return
+		}
+		for i, t := range a.tabs {
+			if i != a.activeTab && t.state.serverKey == res.key {
+				t.state.notebook = res.nb
+				return
+			}
+		}
+		// No owner anymore (tab closed): drop.
 	default:
 	}
 }

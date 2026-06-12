@@ -155,71 +155,23 @@ type App struct {
 	descLinks  []string // clickable URLs found in the description
 	helpScroll int32    // ScreenServerHelp scroll position
 
-	// --- connection / session ---
-	conn       *protocol.Conn
-	sess       *courtroom.Session
-	room       *courtroom.Courtroom
-	urls       courtroom.URLBuilder
-	serverName string
-	serverKey  string // ws URL: keys the per-server warm state in prefs
-	connErr    string
-	connAt     time.Time // session start (Rich Presence elapsed timer)
-	curArea    string    // last area WE clicked (Rich Presence, best-effort)
+	// --- the active server session (every per-server field) ---
+	// sessionState is EMBEDDED so the whole session parks/restores as one
+	// struct move when tabs switch — see tabs.go. Field names stay
+	// promoted, so call sites read exactly as before tabs existed.
+	sessionState
 
-	// --- char select state ---
-	charSearch  string
-	charScroll  int32
-	charTab     int // charTabServer | charTabWardrobe (grid contents swap)
-	previewBase string
-	previewFor  string    // base the preview clock was started for
-	previewAt   time.Time // loop anchor — animated previews play, not freeze
-	// iconAsk[i] is when char i's icon was last demanded by the visible
-	// grid (bounded by the server's char list length); iconAskBudget is
-	// the per-frame submission allowance, reset each Frame.
-	iconAsk       []time.Time
-	iconAskBudget int
-	// charLower caches lowercased char names for the search filter —
-	// without it a 4000-char grid pays two ToLower allocations per char
-	// per frame while a query is active. Invalidated on EventCharsUpdated.
-	charLower []string
-	// Generation-keyed texture page caches (the viewport's animState
-	// trick applied to grids): while the store generation is unchanged a
-	// grid redraw costs ZERO LRU lookups/locks for resident icons.
-	iconPages    []*render.TexturePage
-	iconPagesGen uint64
-	iniPages     []*render.TexturePage
-	iniPagesGen  uint64
+	// --- global per-frame budgets / transient UI not tied to a server ---
+	iconAskBudget int // per-frame icon demand allowance, reset each Frame
+	oocName       string
+	previewBase   string
+	previewFor    string    // base the preview clock was started for
+	previewAt     time.Time // loop anchor — animated previews play, not freeze
 
-	// --- courtroom chrome state ---
-	icInput  string
-	oocInput string
-	oocName  string
-	// shownameOverride is the in-courtroom showname box: when non-blank
-	// it wins over the persisted Settings showname for outgoing messages
-	// (session-scoped — it never overwrites the saved one).
-	shownameOverride string
-	sidePref         string    // OUR side (char.ini default, /pos override)
-	lastPing         time.Time // CH keepalive pacing
-	lastICSend       time.Time // chat_ratelimit window
-	iniWarmed        string    // last char.ini hover-warmed (dedupe)
-	icColor          int       // outgoing MS text_color (swatch cycler)
-	// pair offset edit buffers (typed text commits on valid parse)
-	pairOffXText, pairOffYText string
-	emotes                     []courtroom.Emote
-	emoteIdx                   int
-	emotePage                  int    // themed emote grid paging (emote_left/right)
-	charBlips                  string // char.ini blips/gender (outgoing default)
-	// 2.10 custom shouts ([Shouts] in char.ini): customIdx −1 = the base
-	// "custom" art, ≥ 0 indexes customShouts.
-	customShouts []courtroom.CustomShout
-	customIdx    int
-	customName   string
-	charINIBusy  bool
-	charINIres   chan charINIFetch
-	icLog        []icEntry
-	icLogSeq     uint64 // bumps per mutation: keys the filter cache
-	icScroll     int32
-	logSearch    string
+	// --- async result channels (App-global plumbing; payloads carry the
+	// serverKey they were fetched for, and polls drop mismatches so a tab
+	// switch can never land another server's data) ---
+	charINIres chan charINIFetch
 	// icLogFiltered cache: rebuilt only when the log or the query moved
 	// (a 1024-line scan + slice alloc per frame otherwise).
 	icFilter      []int
@@ -236,19 +188,14 @@ type App struct {
 	icWrapGen   int // font chain generation baked into the wrap
 	// OOC wrapped-lines cache: long entries (MOTDs) wrap instead of
 	// truncating; rebuilt only when the log, width, or font scale moved.
-	oocSeq      uint64
+	// (Like the IC caches above, these stay App-global: their keys carry
+	// the per-tab seq, so a tab switch is just a cache miss.)
 	oocWrap     []string
 	oocWrapSeq  uint64
 	oocWrapW    int32
 	oocWrapPct  int
 	oocWrapMask bool // streamer-mode masking baked into the cache
 	oocWrapGen  int  // font chain generation baked into the wrap
-	oocLog      []string
-	musicScroll int32
-	areaScroll  int32
-	logTab      int
-	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
-	emoteAsk []time.Time
 
 	// last missing-asset warning surfaced to the user (spec §4).
 	warnLine string
@@ -263,37 +210,24 @@ type App struct {
 
 	// --- server format manifest (extensions.json autodetect) ---
 	manifestRes chan manifestFetch
-	manifestFor string // origin already fetched this session (dedupe)
 
 	// --- font override pipeline (file bytes read off-thread) ---
 	fontRes chan fontLoad
 
-	// --- case notebook (per-server pins; loads off-thread on connect) ---
-	notebook     *config.Notebook
-	notebookRes  chan *config.Notebook
-	noteInput    string
-	noteScroll   int32
-	noteCache    []string // rev-keyed Lines() snapshot (no per-frame copies)
-	noteCacheRev int64
+	// --- case notebook loads (per-server; payload routes by key) ---
+	notebookRes chan notebookLoad
 
-	// bindingFor is the character a wardrobe key-capture is armed for
-	// ("" = none): the next plain keypress binds key → character on this
-	// server (Esc cancels). charKeys/charKeysRev cache this server's
-	// binds for per-frame lookups (refreshed on connect + edits only).
-	bindingFor  string
-	charKeys    map[string]string // key name → character
-	charKeysRev map[string]string // character → key name (badges)
-
-	// Offset ghost editor (pair panel): drag state + prefetch dedupe.
+	// Offset ghost editor (pair panel): transient drag state.
 	ghostDrag  bool
 	ghostPrev  bool // last frame's mouseDown (edge detect)
 	ghostStart [2]int32
 	ghostBase  [2]int
-	ghostWarm  map[string]string
 
-	// rehearsal marks the offline cached-asset browser (no connection;
-	// the manager's network gate is closed while set).
-	rehearsal bool
+	// --- multi-server tabs (bounded maxTabs; see tabs.go) ---
+	// tabs hold PARKED sessions; the active one lives in sessionState
+	// above. activeTab indexes tabs, −1 = no active session (lobby).
+	tabs      []*courtTab
+	activeTab int
 
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
@@ -323,7 +257,134 @@ type App struct {
 	// (chatbox/buttons/backdrops shipped as animated webp/gif/apng).
 	themeAt time.Time
 
-	// --- court extras (HP / WTCE / timers / judge / modcall / evidence) ---
+	showUICfg bool // hide-chrome popup
+	hidden    map[string]bool
+
+	iniRes chan iniswapFetch
+
+	// layout scales (percent; mirrors prefs, saved on change)
+	vpPct, chatPct, boxPct, logPct, inputPct int
+	uiScalePct                               int // global renderer scale (manual)
+	// detectedScalePct is the display-DPI-derived scale (96 dpi = 100%),
+	// snapped to the settings step; UIScale() prefers it while the
+	// auto-HiDPI preference is on. 0 = detection unavailable.
+	detectedScalePct int
+	// theaterOn is the borderless viewport-only mode (Esc exits).
+	// Deliberately session-only: it can never persist someone into a
+	// chrome-less client across runs.
+	theaterOn bool
+
+	// pair placement mirrors prefs (persisted globally — your preferred
+	// offsets follow you across servers like AO2's sliders).
+	pairOffX int
+	pairOffY int
+	pairFlip bool
+}
+
+// sessionState is EVERYTHING scoped to one server session. The active
+// session's state lives embedded in App (field names promoted — call
+// sites read `a.icInput` exactly as before tabs existed); switching tabs
+// parks it into a courtTab and restores another with two struct moves
+// (slice headers and pointers — no deep copies). The room (scene,
+// typewriter, message raster) is deliberately NOT parked: background
+// tabs don't animate, and activation rebuilds it via enterCourtroom.
+type sessionState struct {
+	// --- connection / session ---
+	conn        *protocol.Conn
+	sess        *courtroom.Session
+	room        *courtroom.Courtroom
+	urls        courtroom.URLBuilder
+	serverName  string
+	serverKey   string // ws URL: keys the per-server warm state in prefs
+	connErr     string
+	connAt      time.Time // session start (Rich Presence elapsed timer)
+	curArea     string    // last area WE clicked (Rich Presence, best-effort)
+	lastPing    time.Time // CH keepalive pacing (active + background)
+	lastICSend  time.Time // chat_ratelimit window
+	manifestFor string    // origin already fetched this session (dedupe)
+	// rehearsal marks the offline cached-asset browser (no connection;
+	// the manager's network gate is closed while set). Rehearsal never
+	// parks — backgrounding it would hold the global gate closed.
+	rehearsal bool
+
+	// --- char select ---
+	charSearch string
+	charScroll int32
+	charTab    int // charTabServer | charTabWardrobe (grid contents swap)
+	// lowered-query memos: search filters run per frame; re-lowering the
+	// query allocated on every one of them.
+	charQ loweredCache
+	pairQ loweredCache
+	iniQ  loweredCache
+	// iconAsk[i] is when char i's icon was last demanded by the visible
+	// grid (bounded by the server's char list length).
+	iconAsk []time.Time
+	// charLower caches lowercased char names for the search filter —
+	// without it a 4000-char grid pays two ToLower allocations per char
+	// per frame while a query is active. Invalidated on EventCharsUpdated.
+	charLower []string
+	// Generation-keyed texture page caches (the viewport's animState
+	// trick applied to grids): while the store generation is unchanged a
+	// grid redraw costs ZERO LRU lookups/locks for resident icons.
+	iconPages    []*render.TexturePage
+	iconPagesGen uint64
+	iniPages     []*render.TexturePage
+	iniPagesGen  uint64
+
+	// --- courtroom chrome ---
+	icInput  string
+	oocInput string
+	// shownameOverride is the in-courtroom showname box: when non-blank
+	// it wins over the persisted Settings showname for outgoing messages
+	// (session-scoped — it never overwrites the saved one).
+	shownameOverride string
+	sidePref         string // OUR side (char.ini default, /pos override)
+	iniWarmed        string // last char.ini hover-warmed (dedupe)
+	icColor          int    // outgoing MS text_color (dropdown)
+	// pair offset edit buffers (typed text commits on valid parse)
+	pairOffXText, pairOffYText string
+	emotes                     []courtroom.Emote
+	emoteIdx                   int
+	emotePage                  int    // themed emote grid paging
+	charBlips                  string // char.ini blips/gender (outgoing default)
+	// 2.10 custom shouts ([Shouts] in char.ini): customIdx −1 = the base
+	// "custom" art, ≥ 0 indexes customShouts.
+	customShouts []courtroom.CustomShout
+	customIdx    int
+	customName   string
+	charINIBusy  bool
+	icLog        []icEntry
+	icLogSeq     uint64 // bumps per mutation: keys the filter cache
+	icScroll     int32
+	logSearch    string
+	oocSeq       uint64
+	oocLog       []string
+	oocScroll    int32
+	musicScroll  int32
+	areaScroll   int32
+	logTab       int
+	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
+	emoteAsk []time.Time
+
+	// --- case notebook (per-server pins) ---
+	notebook     *config.Notebook
+	noteInput    string
+	noteScroll   int32
+	noteCache    []string // rev-keyed Lines() snapshot
+	noteCacheRev int64
+
+	// --- character keybinds (per server) ---
+	// bindingFor is the character a wardrobe key-capture is armed for
+	// ("" = none); charKeys/charKeysRev cache this server's binds for
+	// per-frame lookups (refreshed on connect + edits only).
+	bindingFor  string
+	charKeys    map[string]string // key name → character
+	charKeysRev map[string]string // character → key name (badges)
+
+	// ghostWarm dedupes the pair-panel ghost editor's sprite prefetches.
+	ghostWarm map[string]string
+
+	// --- court extras (HP / WTCE / modcall / evidence) ---
 	wtceName    string    // active splash stem ("" = none)
 	wtceAt      time.Time // splash start (frame stepping + expiry)
 	testimonyOn bool      // persistent "Testimony" recording badge (RT 2.9)
@@ -339,9 +400,7 @@ type App struct {
 	evidImage   string
 	evidScroll  int32
 	evidAsk     []time.Time // thumbnail demand pacing, parallel to Evidence
-	showUICfg   bool        // hide-chrome popup
-	hidden      map[string]bool
-	// evShow is the incoming presented-evidence pop-up (display_evidence_image).
+	// evShow is the incoming presented-evidence pop-up.
 	evShowImg string
 	evShowAt  time.Time
 
@@ -354,7 +413,6 @@ type App struct {
 	iniLower    []string // lowercased names for the search filter
 	iniListErr  string
 	iniBusy     bool
-	iniRes      chan iniswapFetch
 	showIni     bool
 	iniSearch   string
 	iniAdd      string // "add folder to wardrobe" input
@@ -376,31 +434,16 @@ type App struct {
 	dragBase  [2]int
 	prevDown  bool // mouseDown edge detection for drag begin
 
-	// layout scales (percent; mirrors prefs, saved on change)
-	vpPct, chatPct, boxPct, logPct, inputPct int
-	uiScalePct                               int // global renderer scale (manual)
-	// detectedScalePct is the display-DPI-derived scale (96 dpi = 100%),
-	// snapped to the settings step; UIScale() prefers it while the
-	// auto-HiDPI preference is on. 0 = detection unavailable.
-	detectedScalePct int
-	// theaterOn is the borderless viewport-only mode (Esc exits).
-	// Deliberately session-only: it can never persist someone into a
-	// chrome-less client across runs.
-	theaterOn bool
 	// chat raster invalidation extras (text/color tracked separately)
 	rasterScale   int
 	rasterW       int32
 	rasterSkinned bool // theme skin gates theme text colors (readability)
-	oocScroll     int32
 
 	// pairing panel
 	pairSearch string
 	pairScroll int32
 	pairWith   int
 	pairOrder  int
-	pairOffX   int
-	pairOffY   int
-	pairFlip   bool
 	showPair   bool
 	msRaster   *render.MessageRaster
 	rasterText string
@@ -415,11 +458,13 @@ type lobbyFetch struct {
 }
 
 type iniswapFetch struct {
+	key   string // serverKey the fetch was made for (tab-switch guard)
 	names []string
 	err   error
 }
 
 type charINIFetch struct {
+	key string // serverKey the fetch was made for (tab-switch guard)
 	ini *courtroom.CharINI
 	err error
 }
@@ -668,17 +713,15 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		iniRes:      make(chan iniswapFetch, 1),
 		manifestRes: make(chan manifestFetch, 1),
 		fontRes:     make(chan fontLoad, 1),
-		notebookRes: make(chan *config.Notebook, 1),
-		pairWith:    protocol.UnpairedCharID,
+		notebookRes: make(chan notebookLoad, 1),
 		oocName:     d.Prefs.SavedShowname(),
 		selServer:   -1,
-		spriteOv:    map[string][2]int{},
+		activeTab:   -1,
 		themeTex:    map[string]bool{},
 		themePages:  map[string]*render.TexturePage{},
 		hidden:      map[string]bool{},
-		evidIdx:     -1,
-		hpPrev:      [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
 	}
+	a.resetSessionState()
 	for _, id := range d.Prefs.HiddenPanels() {
 		a.hidden[id] = true
 	}
@@ -754,6 +797,7 @@ func (a *App) ensureCharLower() {
 // render cost.
 func (a *App) Background(dt time.Duration) {
 	a.pumpConnection()
+	a.pumpBackgroundTabs()
 	a.drainWarnings()
 	if a.room != nil {
 		a.room.Update(dt)
@@ -789,24 +833,29 @@ func (a *App) IsLiveBase(base string) bool {
 
 // --- connection lifecycle -------------------------------------------------------
 
-// Connect dials a server and resets session state.
+// Connect dials a server in a NEW tab. Whatever was active parks and
+// keeps running in the background (rehearsal disconnects instead — it
+// can't background). At the tab cap the connect refuses with a visible
+// reason and the current session stays untouched.
 func (a *App) Connect(name, wsURL string) {
-	a.Disconnect()
+	a.parkActive()
+	if !a.allocateTab() {
+		return // connErr set; lobby shows it
+	}
+	a.resetSessionState()
 	a.serverName = name
 	a.serverKey = wsURL
-	a.connErr = ""
 	a.connAt = time.Now()
-	a.curArea = ""
 	// One-time wardrobe migration: the first server joined after the
 	// per-server split inherits the old flat collection.
 	a.d.Prefs.ClaimLegacyWardrobe(wsURL)
-	a.bindingFor = ""
 	a.refreshCharKeys()
-	// Case notebook: per-server pins load off-thread, land via the poll.
+	// Case notebook: per-server pins load off-thread, land via the poll
+	// (the payload carries the key so it routes even after a tab switch).
 	go func(key string) {
 		if nb, err := config.LoadNotebook(key); err == nil {
 			select {
-			case a.notebookRes <- nb:
+			case a.notebookRes <- notebookLoad{key: key, nb: nb}:
 			default:
 			}
 		}
@@ -814,6 +863,8 @@ func (a *App) Connect(name, wsURL string) {
 	conn, err := protocol.Dial(context.Background(), wsURL)
 	if err != nil {
 		a.connErr = err.Error()
+		a.closeActiveTab()
+		a.screen = ScreenLobby
 		return
 	}
 	a.conn = conn
@@ -822,58 +873,40 @@ func (a *App) Connect(name, wsURL string) {
 		return conn.Send(context.Background(), p)
 	}, hdid())
 	a.screen = ScreenCharSelect
-	a.icLog = a.icLog[:0]
-	a.icLogSeq++ // wipe invalidates the filter cache too
-	a.oocLog = a.oocLog[:0]
-	a.oocSeq++
 }
 
-// Disconnect tears the connection down and returns to the lobby.
+// Disconnect tears the ACTIVE session down (its tab closes; other tabs
+// keep running) and returns to the lobby.
 func (a *App) Disconnect() {
 	if a.conn != nil {
 		a.conn.Close()
-		a.conn = nil
 	}
 	// Rehearsal mode ends with the session: reopen the network gate.
 	if a.rehearsal {
-		a.rehearsal = false
 		a.d.Manager.SetOffline(false)
 	}
-	// Notebook: flush pending pins off-thread; a stale in-flight load is
-	// drained so it can't land on the next server's session.
+	// Notebook: flush pending pins off-thread.
 	if a.notebook != nil {
 		go func(nb *config.Notebook) { _ = nb.Flush() }(a.notebook)
-		a.notebook = nil
 	}
-	select {
-	case <-a.notebookRes:
-	default:
+	if a.msRaster != nil {
+		a.msRaster.Destroy()
 	}
-	a.noteInput, a.noteScroll = "", 0
-	a.sess = nil
-	a.room = nil
-	a.emotes = nil
-	a.iconAsk = nil
-	a.emoteAsk = nil
-	a.charLower = nil
-	// Server-side iniswap state resets per server (wardrobes persist but
-	// are server-keyed in prefs); drain any in-flight fetch so a stale
-	// txt can't land after a reconnect elsewhere.
-	a.iniChar, a.pendingIni = "", ""
-	a.iniServer, a.iniList, a.iniWardrobe, a.iniLower, a.iniAsk = nil, nil, nil, nil, nil
-	a.spriteOv = map[string][2]int{} // drag overrides are per-server
-	a.dragName = ""
+	if a.d.Viewport != nil {
+		a.d.Viewport.OnPreanimDone = nil
+	}
+	a.closeActiveTab()
+	a.resetSessionState()
 	a.selServer, a.descLines = -1, nil
-	a.iniListErr, a.iniSearch, a.iniAdd = "", "", ""
-	a.showIni, a.iniBusy, a.iniScroll = false, false, 0
-	a.charTab = charTabServer
+	// Drain in-flight fetches so stale payloads can't land later (polls
+	// also key-guard, this just frees the slots).
 	select {
 	case <-a.iniRes:
 	default:
 	}
-	a.manifestFor = ""   // next connect re-checks its manifest
-	a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
-	a.curArea = ""
+	if a.d.Pool != nil { // nil in headless tests
+		a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
+	}
 	a.updatePresence() // sess is nil now → clears the Discord activity
 	a.screen = ScreenLobby
 }
@@ -1105,12 +1138,14 @@ const rehearsalBadge = "REHEARSAL — offline, nothing sends"
 // manager's network gate closed — emotes and sprites play from T2/T3,
 // misses just say so. Disconnect (or any connect) exits the mode.
 func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
-	a.Disconnect()
+	a.parkActive()
+	if !a.allocateTab() {
+		return
+	}
+	a.resetSessionState()
 	a.serverName = name + " (rehearsal)"
 	a.serverKey = key
-	a.connErr = ""
 	a.connAt = time.Now()
-	a.curArea = ""
 	a.rehearsal = true
 	a.d.Manager.SetOffline(true)
 	a.sess = courtroom.NewRehearsalSession(info.Origin, info.Chars)
@@ -1120,7 +1155,7 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 	go func(k string) {
 		if nb, err := config.LoadNotebook(k); err == nil {
 			select {
-			case a.notebookRes <- nb:
+			case a.notebookRes <- notebookLoad{key: k, nb: nb}:
 			default:
 			}
 		}
@@ -1394,21 +1429,25 @@ func (a *App) ensureIniList() {
 	a.iniBusy = true
 	a.iniListErr = ""
 	url := a.urls.Origin() + iniswapFileName
+	key := a.serverKey
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
 		data, err := a.d.Manager.FetchRaw(ctx, url)
 		if err != nil {
-			a.iniRes <- iniswapFetch{err: err}
+			a.iniRes <- iniswapFetch{key: key, err: err}
 			return
 		}
-		a.iniRes <- iniswapFetch{names: parseIniswapList(data)}
+		a.iniRes <- iniswapFetch{key: key, names: parseIniswapList(data)}
 	}()
 }
 
 func (a *App) pollIniswap() {
 	select {
 	case res := <-a.iniRes:
+		if res.key != a.serverKey {
+			return // landed after a tab switch: not this server's list
+		}
 		a.iniBusy = false
 		if res.err != nil {
 			a.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
@@ -1566,20 +1605,24 @@ func (a *App) loadCharINI() {
 	}
 	url := a.charINIURL(name)
 	a.charINIBusy = true
+	key := a.serverKey
 	go func() {
 		data, err := a.d.Manager.FetchRaw(context.Background(), url)
 		if err != nil {
-			a.charINIres <- charINIFetch{err: err}
+			a.charINIres <- charINIFetch{key: key, err: err}
 			return
 		}
 		ini, err := courtroom.ParseCharINI(data)
-		a.charINIres <- charINIFetch{ini: ini, err: err}
+		a.charINIres <- charINIFetch{key: key, ini: ini, err: err}
 	}()
 }
 
 func (a *App) pollCharINI() {
 	select {
 	case res := <-a.charINIres:
+		if res.key != a.serverKey {
+			return // landed after a tab switch: another server's char.ini
+		}
 		a.charINIBusy = false
 		if res.err != nil || res.ini == nil {
 			// Surface WHY the emote list is a bare default (better than a
@@ -1686,6 +1729,8 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 // Frame runs one UI frame: connection pump, screen logic, drawing.
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pumpConnection()
+	a.pumpBackgroundTabs()
+	a.handleTabBar(winW) // chip clicks resolve BEFORE screens see them
 	a.drainWarnings()
 	a.pollThemeApply()
 	a.pollManifest()
@@ -1717,6 +1762,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	case ScreenServerHelp:
 		a.drawServerHelp(winW, winH)
 	}
+	// The tab strip floats over every screen (input was consumed at the
+	// top of the frame; this is just paint).
+	a.drawTabBar(winW)
 	// Debug overlay paints over every screen (allocs are acceptable here:
 	// it's an opt-in diagnostics path, never on by default).
 	if a.d.Prefs.DebugOverlayEnabled() {
