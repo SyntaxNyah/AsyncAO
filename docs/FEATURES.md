@@ -73,10 +73,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   ink with no contrast against its own skin (real themes ship dark ink
   on dark skins) is dropped for the client default, with a debug-log
   verdict. Choosing White in the IC color dropdown always reads.
-- **Inline text colors** (type them in your message): `\c1`…`\c8` switch the
-  text color mid-sentence (1 green, 2 red, 3 orange, 4 blue, 5 yellow, 6 pink,
-  7 cyan, 8 gray), and **`\cr` is rainbow** (each letter a different color,
-  flowing across the line). Write `\\` for a literal backslash; any other `\x`
+- **Inline text colors + bold/italic** (type them in your message): `\c1`…`\c8`
+  switch the text color mid-sentence (1 green, 2 red, 3 orange, 4 blue, 5 yellow,
+  6 pink, 7 cyan, 8 gray), **`\cr` is rainbow** (each letter a different color,
+  flowing across the line), and **`\b` / `\i` toggle bold / italic** (they nest
+  and combine with colors). Write `\\` for a literal backslash; any other `\x`
   is left as-is, so ordinary text and file paths aren't eaten. The colored
   message types out normally — each color is its own span, revealed letter by
   letter with the usual zero-cost reveal. This is **AsyncAO-native and

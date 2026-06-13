@@ -2700,18 +2700,18 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool) (*rend
 	font := a.ctx.ChatFontFor(a.chatPct, sc.MessageText)
 	// Inline \cN colors → the multi-color span raster; plain messages keep the
 	// untouched single-color path (col is their whole-message color).
-	if sceneHasInlineColor(sc.MessageStyles) {
+	if sceneNeedsStyled(sc.MessageStyles) {
 		return render.RasterizeStyled(a.ctx.Ren, font, sc.MessageText, buildColorSpans(sc.MessageStyles, col), wrapW)
 	}
 	return render.Rasterize(a.ctx.Ren, font, sc.MessageText, wrapW, col)
 }
 
-// sceneHasInlineColor reports whether any style run sets a non-default color
-// (so the message needs the multi-color raster). A plain message has a single
-// ColorDefault run (or none).
-func sceneHasInlineColor(styles []courtroom.StyleRun) bool {
+// sceneNeedsStyled reports whether any style run has a non-default color or
+// bold/italic (so the message needs the multi-span raster). A plain message has
+// a single default, non-bold, non-italic run (or none).
+func sceneNeedsStyled(styles []courtroom.StyleRun) bool {
 	for _, s := range styles {
-		if s.Color != courtroom.ColorDefault {
+		if s.Color != courtroom.ColorDefault || s.Bold || s.Italic {
 			return true
 		}
 	}
@@ -2738,13 +2738,13 @@ func buildColorSpans(styles []courtroom.StyleRun, def sdl.Color) []render.ColorS
 		switch {
 		case s.Color == courtroom.ColorRainbow:
 			for k := 0; k < s.Len; k++ {
-				out = append(out, render.ColorSpan{Len: 1, Color: chatRainbow[rb%len(chatRainbow)]})
+				out = append(out, render.ColorSpan{Len: 1, Color: chatRainbow[rb%len(chatRainbow)], Bold: s.Bold, Italic: s.Italic})
 				rb++
 			}
 		case s.Color == courtroom.ColorDefault:
-			out = append(out, render.ColorSpan{Len: s.Len, Color: def})
+			out = append(out, render.ColorSpan{Len: s.Len, Color: def, Bold: s.Bold, Italic: s.Italic})
 		default:
-			out = append(out, render.ColorSpan{Len: s.Len, Color: render.TextColor(s.Color)})
+			out = append(out, render.ColorSpan{Len: s.Len, Color: render.TextColor(s.Color), Bold: s.Bold, Italic: s.Italic})
 		}
 	}
 	return out

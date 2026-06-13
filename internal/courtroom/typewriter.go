@@ -31,16 +31,19 @@ const (
 	ColorRainbow = -2
 )
 
-// StyleRun colors a contiguous span of the CLEAN (markup-stripped) rune
+// StyleRun styles a contiguous span of the CLEAN (markup-stripped) rune
 // sequence. Runs are produced in order and partition the whole message, so
 // they index into the typewriter's runes by simple accumulation — the reveal
-// and the colors can never drift (one parse, one rune sequence). Inline markup
+// and the styling can never drift (one parse, one rune sequence). Inline markup
 // is AsyncAO-native and render-only: `\cN` (N = 0..8) starts a palette color,
-// `\cr` rainbow, `\\` is a literal backslash. Incoming AO messages (which don't
-// use these) are unaffected; markup you send won't render on stock AO clients.
+// `\cr` rainbow, `\b` toggles bold, `\i` toggles italic, `\\` is a literal
+// backslash. Incoming AO messages (which don't use these) are unaffected;
+// markup you send won't render on stock AO clients.
 type StyleRun struct {
-	Len   int // clean runes covered
-	Color int // palette index, or ColorDefault / ColorRainbow
+	Len    int  // clean runes covered
+	Color  int  // palette index, or ColorDefault / ColorRainbow
+	Bold   bool // \b
+	Italic bool // \i
 }
 
 // Typewriter reveals message text at AO cadence and schedules blips. Pure
@@ -83,21 +86,20 @@ func (t *Typewriter) Start(message string) {
 
 	speed := speedStepDefault
 	color := ColorDefault
+	bold, italic := false, false
 	runLen := 0
 	emit := func(r rune) {
 		t.runes = append(t.runes, r)
 		t.intervals = append(t.intervals, time.Duration(float64(t.Interval)*speedMultipliers[speed]))
 		runLen++
 	}
-	setColor := func(cn int) {
-		if cn == color {
-			return
-		}
+	// flush closes the current run; a style change opens a new one, so each run
+	// carries one (color, bold, italic) over the runes it covers.
+	flush := func() {
 		if runLen > 0 {
-			t.styles = append(t.styles, StyleRun{Len: runLen, Color: color})
+			t.styles = append(t.styles, StyleRun{Len: runLen, Color: color, Bold: bold, Italic: italic})
 			runLen = 0
 		}
-		color = cn
 	}
 
 	rs := []rune(message)
@@ -122,27 +124,41 @@ func (t *Typewriter) Start(message string) {
 				i++
 				continue
 			case n == 'c' && i+2 < len(rs) && rs[i+2] >= '0' && rs[i+2] <= '8':
-				setColor(int(rs[i+2] - '0'))
+				if c := int(rs[i+2] - '0'); c != color {
+					flush()
+					color = c
+				}
 				i += 2
 				continue
 			case n == 'c' && i+2 < len(rs) && rs[i+2] == 'r':
-				setColor(ColorRainbow)
+				if color != ColorRainbow {
+					flush()
+					color = ColorRainbow
+				}
 				i += 2
+				continue
+			case n == 'b': // toggle bold
+				flush()
+				bold = !bold
+				i++
+				continue
+			case n == 'i': // toggle italic
+				flush()
+				italic = !italic
+				i++
 				continue
 			}
 			// any other `\X`: fall through and emit the backslash literally
 		}
 		emit(r)
 	}
-	if runLen > 0 {
-		t.styles = append(t.styles, StyleRun{Len: runLen, Color: color})
-	}
+	flush()
 }
 
 // StripChatMarkup returns the plain display text for a message — the same
-// markup the typewriter removes (speed `{ }`, color `\cN`/`\cr`, and the `\\`
-// escape), so the IC log shows exactly what the chatbox renders. Kept in lock-
-// step with Start by TestStripMatchesTypewriter.
+// markup the typewriter removes (speed `{ }`, color `\cN`/`\cr`, bold/italic
+// `\b`/`\i`, and the `\\` escape), so the IC log shows exactly what the chatbox
+// renders. Kept in lock-step with Start by TestStripMatchesTypewriter.
 func StripChatMarkup(message string) string {
 	rs := []rune(message)
 	out := make([]rune, 0, len(rs))
@@ -159,6 +175,9 @@ func StripChatMarkup(message string) string {
 				continue
 			case n == 'c' && i+2 < len(rs) && ((rs[i+2] >= '0' && rs[i+2] <= '8') || rs[i+2] == 'r'):
 				i += 2
+				continue
+			case n == 'b' || n == 'i': // bold / italic toggles
+				i++
 				continue
 			}
 		}

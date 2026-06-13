@@ -800,6 +800,26 @@ func TestTypewriterInlineColors(t *testing.T) {
 		t.Fatalf("rainbow styles = %v, want one rainbow run of 3", got)
 	}
 
+	// Bold/italic toggles split runs and tag them; the markup strips out.
+	tw.Start("a\\bbold\\b\\ix\\i")
+	if got := tw.Text(); got != "aboldx" {
+		t.Fatalf("bold/italic Text = %q, want \"aboldx\"", got)
+	}
+	bi := []StyleRun{
+		{Len: 1, Color: ColorDefault},
+		{Len: 4, Color: ColorDefault, Bold: true},
+		{Len: 1, Color: ColorDefault, Italic: true},
+	}
+	if got := tw.Styles(); len(got) != len(bi) {
+		t.Fatalf("bold/italic styles = %v, want %v", got, bi)
+	} else {
+		for i, r := range got {
+			if r != bi[i] {
+				t.Errorf("bi style[%d] = %v, want %v", i, r, bi[i])
+			}
+		}
+	}
+
 	// Escaped backslash collapses to one literal '\'; a lone/unknown escape is kept.
 	tw.Start("a\\\\b")
 	if got := tw.Text(); got != "a\\b" {
@@ -823,6 +843,8 @@ func TestStripMatchesTypewriter(t *testing.T) {
 		"a\\\\b literal slash",
 		"a\\zb unknown escape",
 		"mix {x}\\c4blue\\\\done",
+		"\\bbold\\b and \\iitalic\\i text",
+		"\\b\\c2 bold red \\inested\\i\\b plain",
 		"",
 	}
 	for _, m := range cases {

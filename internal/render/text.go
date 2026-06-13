@@ -122,13 +122,23 @@ func rasterizeLine(ren *sdl.Renderer, font *ttf.Font, line string, color sdl.Col
 	return rl, nil
 }
 
-// ColorSpan colors Len consecutive runes of a message. The UI builds these
+// ColorSpan styles Len consecutive runes of a message. The UI builds these
 // from the courtroom style runs — palette index / default already resolved to
 // a concrete color, and rainbow pre-expanded into per-rune spans — so render
 // needs no palette knowledge. Spans partition the message text in order.
 type ColorSpan struct {
-	Len   int
-	Color sdl.Color
+	Len    int
+	Color  sdl.Color
+	Bold   bool
+	Italic bool
+}
+
+// spanStyle is the resolved per-rune style the raster groups consecutive runes
+// by (a new texture each time it changes). Comparable, so grouping is `==`.
+type spanStyle struct {
+	color  sdl.Color
+	bold   bool
+	italic bool
 }
 
 // RasterizeStyled renders a multi-color message: each wrapped line is split
@@ -141,9 +151,9 @@ func RasterizeStyled(ren *sdl.Renderer, font *ttf.Font, text string, spans []Col
 	if len(runes) == 0 {
 		return m, nil
 	}
-	colors := perRuneColors(runes, spans)
+	styles := perRuneStyles(runes, spans)
 	for _, lr := range wrapStyled(font, runes, wrapW) {
-		line, err := rasterizeStyledLine(ren, font, runes[lr.start:lr.end], colors[lr.start:lr.end])
+		line, err := rasterizeStyledLine(ren, font, runes[lr.start:lr.end], styles[lr.start:lr.end])
 		if err != nil {
 			m.Destroy()
 			return nil, err
@@ -153,26 +163,27 @@ func RasterizeStyled(ren *sdl.Renderer, font *ttf.Font, text string, spans []Col
 	return m, nil
 }
 
-// perRuneColors flattens the span partition into one color per rune (guarding a
-// short partition by repeating the last color).
-func perRuneColors(runes []rune, spans []ColorSpan) []sdl.Color {
-	colors := make([]sdl.Color, len(runes))
+// perRuneStyles flattens the span partition into one style per rune (guarding a
+// short partition by repeating the last span's style).
+func perRuneStyles(runes []rune, spans []ColorSpan) []spanStyle {
+	out := make([]spanStyle, len(runes))
 	i := 0
 	for _, sp := range spans {
+		st := spanStyle{color: sp.Color, bold: sp.Bold, italic: sp.Italic}
 		for k := 0; k < sp.Len && i < len(runes); k++ {
-			colors[i] = sp.Color
+			out[i] = st
 			i++
 		}
 	}
-	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
-	for ; i < len(runes); i++ {
-		if len(spans) > 0 {
-			colors[i] = spans[len(spans)-1].Color
-		} else {
-			colors[i] = white
-		}
+	tail := spanStyle{color: sdl.Color{R: 255, G: 255, B: 255, A: 255}}
+	if len(spans) > 0 {
+		s := spans[len(spans)-1]
+		tail = spanStyle{color: s.Color, bold: s.Bold, italic: s.Italic}
 	}
-	return colors
+	for ; i < len(runes); i++ {
+		out[i] = tail
+	}
+	return out
 }
 
 type lineRange struct{ start, end int }
@@ -216,17 +227,17 @@ func wrapStyled(font *ttf.Font, runes []rune, maxW int32) []lineRange {
 	return out
 }
 
-// rasterizeStyledLine builds one wrapped line's colored spans — a new span each
-// time the color changes, each with its own texture and prefix advances.
-func rasterizeStyledLine(ren *sdl.Renderer, font *ttf.Font, runes []rune, colors []sdl.Color) ([]rasterSpan, error) {
+// rasterizeStyledLine builds one wrapped line's spans — a new span each time
+// the style changes, each with its own texture and prefix advances.
+func rasterizeStyledLine(ren *sdl.Renderer, font *ttf.Font, runes []rune, styles []spanStyle) ([]rasterSpan, error) {
 	var spans []rasterSpan
 	var x int32
 	for i := 0; i < len(runes); {
 		j := i + 1
-		for j < len(runes) && colors[j] == colors[i] {
+		for j < len(runes) && styles[j] == styles[i] {
 			j++
 		}
-		sp, err := buildSpan(ren, font, runes[i:j], colors[i], x)
+		sp, err := buildSpan(ren, font, runes[i:j], styles[i], x)
 		if err != nil {
 			for k := range spans {
 				if spans[k].tex != nil {
@@ -242,8 +253,21 @@ func rasterizeStyledLine(ren *sdl.Renderer, font *ttf.Font, runes []rune, colors
 	return spans, nil
 }
 
-// buildSpan rasterizes one same-color run at xOffset with prefix advances.
-func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, color sdl.Color, xOffset int32) (rasterSpan, error) {
+// buildSpan rasterizes one same-style run at xOffset with prefix advances.
+// Bold/italic ride synthetic SDL_ttf font styles, restored on return (defer) so
+// the shared cached font never leaks a style into other (plain) text.
+func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xOffset int32) (rasterSpan, error) {
+	style := ttf.STYLE_NORMAL
+	if st.bold {
+		style |= ttf.STYLE_BOLD
+	}
+	if st.italic {
+		style |= ttf.STYLE_ITALIC
+	}
+	if style != ttf.STYLE_NORMAL {
+		font.SetStyle(style)
+		defer font.SetStyle(ttf.STYLE_NORMAL) // always reset, even on error/panic
+	}
 	sp := rasterSpan{runes: len(runes), xOffset: xOffset, advances: make([]int32, len(runes)+1)}
 	for i := 1; i <= len(runes); i++ {
 		w, _, err := font.SizeUTF8(string(runes[:i]))
@@ -252,7 +276,7 @@ func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, color sdl.Color,
 		}
 		sp.advances[i] = int32(w)
 	}
-	surf, err := font.RenderUTF8Blended(string(runes), color)
+	surf, err := font.RenderUTF8Blended(string(runes), st.color)
 	if err != nil {
 		return sp, err
 	}

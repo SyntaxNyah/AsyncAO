@@ -46,18 +46,25 @@ func TestBuildColorSpans(t *testing.T) {
 	}
 }
 
-// TestSceneHasInlineColor: only non-default runs route to the styled raster.
-func TestSceneHasInlineColor(t *testing.T) {
-	if sceneHasInlineColor([]courtroom.StyleRun{{Len: 5, Color: courtroom.ColorDefault}}) {
+// TestSceneNeedsStyled: only non-default color OR bold/italic routes to the
+// styled raster; a plain run keeps the cheap single-color path.
+func TestSceneNeedsStyled(t *testing.T) {
+	if sceneNeedsStyled([]courtroom.StyleRun{{Len: 5, Color: courtroom.ColorDefault}}) {
 		t.Error("a single default run must use the plain raster")
 	}
-	if sceneHasInlineColor(nil) {
+	if sceneNeedsStyled(nil) {
 		t.Error("no styles must use the plain raster")
 	}
-	if !sceneHasInlineColor([]courtroom.StyleRun{{Len: 2, Color: courtroom.ColorDefault}, {Len: 2, Color: 4}}) {
+	if !sceneNeedsStyled([]courtroom.StyleRun{{Len: 2, Color: courtroom.ColorDefault}, {Len: 2, Color: 4}}) {
 		t.Error("a palette run must route to the styled raster")
 	}
-	if !sceneHasInlineColor([]courtroom.StyleRun{{Len: 2, Color: courtroom.ColorRainbow}}) {
+	if !sceneNeedsStyled([]courtroom.StyleRun{{Len: 2, Color: courtroom.ColorRainbow}}) {
 		t.Error("a rainbow run must route to the styled raster")
+	}
+	if !sceneNeedsStyled([]courtroom.StyleRun{{Len: 2, Color: courtroom.ColorDefault, Bold: true}}) {
+		t.Error("a bold run (default color) must route to the styled raster")
+	}
+	if !sceneNeedsStyled([]courtroom.StyleRun{{Len: 2, Color: courtroom.ColorDefault, Italic: true}}) {
+		t.Error("an italic run (default color) must route to the styled raster")
 	}
 }
