@@ -313,6 +313,11 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool) {
 	}
 	c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColTextDim)
 
+	// While this background is the active download, mark the cell.
+	if a.dl.active && a.dl.target == name {
+		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
+		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
+	}
 	// Download badge (only when the opt-in downloader is on): grabs this
 	// background's whole folder for offline use.
 	if downloaderOn && a.drawDownloadBadge(cell, "Press this to download this background") {

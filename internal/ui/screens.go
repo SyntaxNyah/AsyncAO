@@ -473,6 +473,11 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		c.Label(cell.X+6, cell.Y+iconCell/2-8, "taken", ColDanger)
 	}
 	c.LabelClipped(cell.X, cell.Y+iconCell+1, iconCell, slot.Name, ColTextDim)
+	// While this character is the active download, mark the cell.
+	if a.dl.active && a.dl.target == slot.Name {
+		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
+		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
+	}
 	// Download badge (only with the opt-in downloader on): grabs this
 	// character's folder + the sfx/blips its char.ini names, for offline use.
 	// Works on taken slots too.

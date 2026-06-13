@@ -268,9 +268,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (Background menu) cell; it walks that folder's autoindex and saves the
   files under `downloads/` — and a downloaded character also pulls the
   `sounds/general` sfx and `sounds/blips` its `char.ini` names (those live
-  outside the folder, so a plain grab would be silent). Bounded (file /
-  byte / depth caps), off-thread, cancelable, and path-traversal-guarded.
-  Point "Read assets from local folders" at the downloads folder to use
-  the grabs offline / in rehearsal.
+  outside the folder, so a plain grab would be silent — the `char.ini` is
+  re-read from the server so this never depends on the just-walked copy).
+  A floating progress chip ("Downloading … — N files, X MiB") shows from any
+  screen while a grab runs, and the cell is marked. Bounded (file / byte /
+  depth caps), off-thread, cancelable, and path-traversal-guarded. Point
+  "Read assets from local folders" at the downloads folder to use the grabs
+  offline / in rehearsal.
 - **Discord Rich Presence**: optional, per-field privacy checkboxes,
   zero build/run dependency — full guide in [DISCORD.md](DISCORD.md).

@@ -41,14 +41,20 @@ const (
 	// downloadGlyph is the grid-cell download badge icon (↓ — same Arrows
 	// block as the font-chain "→" the kit already renders).
 	downloadGlyph = "↓"
+	// charINIFileName is the per-character config the downloader re-reads to
+	// resolve a character's sfx/blip dependencies.
+	charINIFileName = "char.ini"
 )
 
 // downloader is the opt-in downloader's runtime state. One job at a time;
 // progress lands on a latest-wins channel drained each frame by pollDownload.
 type downloader struct {
 	active   bool
-	label    string
+	label    string // "character X" / "background Y" — shown on the indicator
+	target   string // the raw asset name (slot.Name / bg) for per-cell marking
 	status   string
+	files    int // latest progress (drives the floating indicator)
+	bytes    int64
 	cancel   context.CancelFunc
 	progress chan dlProgress
 }
@@ -90,6 +96,7 @@ func (a *App) pollDownload() {
 	}
 	select {
 	case p := <-a.dl.progress:
+		a.dl.files, a.dl.bytes = p.files, p.bytes
 		if p.done {
 			a.dl.active = false
 			a.dl.cancel = nil
@@ -130,24 +137,47 @@ func (a *App) drawDownloadBadge(cell sdl.Rect, tip string) bool {
 	return c.hovering(b) && c.clicked
 }
 
+// drawDownloadIndicator floats a live progress chip (top-center, just under
+// the tab strip) while a download runs, so a grab is visible from any screen.
+// Progress-only — Cancel lives in Settings (a button in this post-screen
+// overlay would race clicks with the widgets drawn underneath it).
+func (a *App) drawDownloadIndicator(w int32) {
+	if !a.dl.active {
+		return
+	}
+	c := a.ctx
+	label := fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB",
+		downloadGlyph, a.dl.label, a.dl.files, float64(a.dl.bytes)/(1<<20))
+	bw := c.TextWidth(label) + 20
+	x := (w - bw) / 2
+	if x < 0 {
+		x = 0
+	}
+	chip := sdl.Rect{X: x, Y: tabBarH + 4, W: bw, H: btnH}
+	c.Fill(chip, sdl.Color{R: ColPanel.R, G: ColPanel.G, B: ColPanel.B, A: 240})
+	c.Border(chip, ColAccent)
+	c.Label(chip.X+10, chip.Y+5, label, ColAccent)
+}
+
 // startCharDownload grabs one character's folder plus the sfx/blips its
 // char.ini references — those live in sounds/general and sounds/blips,
 // OUTSIDE the character folder, so a plain folder grab leaves it silent.
 func (a *App) startCharDownload(char string) {
 	dest := filepath.Join(downloadsRoot(), "characters", strings.ToLower(char))
-	a.startDownload("character "+char, a.urls.CharFolder(char), dest, char)
+	a.startDownload("character "+char, a.urls.CharFolder(char), dest, char, char)
 }
 
 // startBgDownload grabs one background's folder (no external sound deps).
 func (a *App) startBgDownload(bg string) {
 	dest := filepath.Join(downloadsRoot(), "background", strings.ToLower(bg))
-	a.startDownload("background "+bg, a.urls.BackgroundFolder(bg), dest, "")
+	a.startDownload("background "+bg, a.urls.BackgroundFolder(bg), dest, "", bg)
 }
 
 // startDownload launches one recursive folder download off-thread (rule
 // §17.2 — disk writes are fine OFF the render thread). soundChar non-empty
-// means "after the folder, resolve the char.ini sound dependencies".
-func (a *App) startDownload(label, rootURL, destBase, soundChar string) {
+// means "after the folder, resolve the char.ini sound dependencies"; target
+// is the raw asset name the grid marks as downloading.
+func (a *App) startDownload(label, rootURL, destBase, soundChar, target string) {
 	if !a.d.Prefs.CharDownloaderEnabled() {
 		return
 	}
@@ -165,6 +195,8 @@ func (a *App) startDownload(label, rootURL, destBase, soundChar string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.dl.active = true
 	a.dl.label = label
+	a.dl.target = target
+	a.dl.files, a.dl.bytes = 0, 0
 	a.dl.cancel = cancel
 	a.dl.status = "Starting " + label + "..."
 
@@ -232,9 +264,15 @@ func (j *dlJob) walk(ctx context.Context, client *network.Client, dirURL, destDi
 // sounds/general sfx and sounds/blips blips it names (the ones that live
 // outside the character folder).
 func (j *dlJob) resolveCharSounds(ctx context.Context, client *network.Client, urls courtroom.URLBuilder, char string, exts []string) {
-	data, err := os.ReadFile(filepath.Join(j.base, "characters", strings.ToLower(char), "char.ini"))
+	// Read char.ini fresh from the server so sound resolution never depends on
+	// the folder walk's on-disk copy (path/case/partial-write quirks); the
+	// just-walked disk copy is the fallback if the network read fails.
+	data, err := client.Fetch(ctx, urls.CharFolder(char)+charINIFileName)
 	if err != nil {
-		return // no char.ini downloaded → nothing to resolve
+		data, err = os.ReadFile(filepath.Join(j.base, "characters", strings.ToLower(char), charINIFileName))
+		if err != nil {
+			return // no char.ini anywhere → nothing to resolve
+		}
 	}
 	ini, err := courtroom.ParseCharINI(data)
 	if err != nil {

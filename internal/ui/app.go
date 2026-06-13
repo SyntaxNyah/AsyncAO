@@ -1865,6 +1865,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// The tab strip floats over every screen (input was consumed at the
 	// top of the frame; this is just paint).
 	a.drawTabBar(winW)
+	// Download progress chip floats under the strip while a grab runs.
+	a.drawDownloadIndicator(winW)
 	// Perf HUD (F3) and the debug overlay paint over every screen
 	// (allocs acceptable: opt-in diagnostics paths, never on by default).
 	if a.perfHUD {
