@@ -73,6 +73,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   ink with no contrast against its own skin (real themes ship dark ink
   on dark skins) is dropped for the client default, with a debug-log
   verdict. Choosing White in the IC color dropdown always reads.
+- **Inline text colors** (type them in your message): `\c1`…`\c8` switch the
+  text color mid-sentence (1 green, 2 red, 3 orange, 4 blue, 5 yellow, 6 pink,
+  7 cyan, 8 gray), and **`\cr` is rainbow** (each letter a different color,
+  flowing across the line). Write `\\` for a literal backslash; any other `\x`
+  is left as-is, so ordinary text and file paths aren't eaten. The colored
+  message types out normally — each color is its own span, revealed letter by
+  letter with the usual zero-cost reveal. This is **AsyncAO-native and
+  render-only**: incoming messages from other clients are unaffected, and the
+  markup you send won't color on stock AO clients (they'd see the `\c2`).
+  (For now the IC *log* shows the raw codes; the live chatbox is colored.)
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

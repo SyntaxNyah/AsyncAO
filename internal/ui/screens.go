@@ -798,7 +798,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 // classic overlay and the themed chatbox.
 func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	sc := &a.room.Scene
-	if a.msRaster != nil && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
+	if a.msRaster != nil && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
 		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned {
 		return
 	}
@@ -815,6 +815,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	}
 	a.msRaster = raster
 	a.rasterText = sc.MessageText
+	a.rasterRaw = sc.MessageRaw
 	a.rasterColor = sc.TextColor
 	a.rasterScale = a.chatPct
 	a.rasterW = wrapW
@@ -2668,5 +2669,55 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool) (*rend
 	}
 	// Per-message font pick: the override chain's first covering font
 	// (CJK fallback), the embedded font otherwise.
-	return render.Rasterize(a.ctx.Ren, a.ctx.ChatFontFor(a.chatPct, sc.MessageText), sc.MessageText, wrapW, col)
+	font := a.ctx.ChatFontFor(a.chatPct, sc.MessageText)
+	// Inline \cN colors → the multi-color span raster; plain messages keep the
+	// untouched single-color path (col is their whole-message color).
+	if sceneHasInlineColor(sc.MessageStyles) {
+		return render.RasterizeStyled(a.ctx.Ren, font, sc.MessageText, buildColorSpans(sc.MessageStyles, col), wrapW)
+	}
+	return render.Rasterize(a.ctx.Ren, font, sc.MessageText, wrapW, col)
+}
+
+// sceneHasInlineColor reports whether any style run sets a non-default color
+// (so the message needs the multi-color raster). A plain message has a single
+// ColorDefault run (or none).
+func sceneHasInlineColor(styles []courtroom.StyleRun) bool {
+	for _, s := range styles {
+		if s.Color != courtroom.ColorDefault {
+			return true
+		}
+	}
+	return false
+}
+
+// chatRainbow is the palette inline rainbow (\cr) cycles through, per rune.
+var chatRainbow = []sdl.Color{
+	{R: 255, G: 80, B: 80, A: 255},   // red
+	{R: 255, G: 165, B: 0, A: 255},   // orange
+	{R: 250, G: 235, B: 60, A: 255},  // yellow
+	{R: 90, G: 220, B: 90, A: 255},   // green
+	{R: 80, G: 200, B: 255, A: 255},  // blue
+	{R: 185, G: 120, B: 255, A: 255}, // violet
+}
+
+// buildColorSpans resolves the courtroom style runs into render color spans:
+// ColorDefault → the message color, a palette index → that color, and rainbow
+// expands into per-rune spans that flow continuously across the message.
+func buildColorSpans(styles []courtroom.StyleRun, def sdl.Color) []render.ColorSpan {
+	out := make([]render.ColorSpan, 0, len(styles))
+	rb := 0
+	for _, s := range styles {
+		switch {
+		case s.Color == courtroom.ColorRainbow:
+			for k := 0; k < s.Len; k++ {
+				out = append(out, render.ColorSpan{Len: 1, Color: chatRainbow[rb%len(chatRainbow)]})
+				rb++
+			}
+		case s.Color == courtroom.ColorDefault:
+			out = append(out, render.ColorSpan{Len: s.Len, Color: def})
+		default:
+			out = append(out, render.ColorSpan{Len: s.Len, Color: render.TextColor(s.Color)})
+		}
+	}
+	return out
 }

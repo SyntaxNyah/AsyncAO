@@ -177,6 +177,29 @@ func BenchmarkRenderFrame(b *testing.B) {
 }
 
 // TestRenderFrameZeroAllocs enforces the alloc gate in plain go test.
+// TestPerRuneColors pins the span→per-rune-color flattening the styled raster
+// builds on (pure; no SDL). A short partition repeats its last color.
+func TestPerRuneColors(t *testing.T) {
+	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
+	red := sdl.Color{R: 200, G: 0, B: 0, A: 255}
+	runes := []rune("abcdef")
+	got := perRuneColors(runes, []ColorSpan{{Len: 2, Color: white}, {Len: 4, Color: red}})
+	for i, c := range got {
+		want := white
+		if i >= 2 {
+			want = red
+		}
+		if c != want {
+			t.Errorf("rune %d color = %v, want %v", i, c, want)
+		}
+	}
+	// Partition shorter than the text: the tail repeats the last span's color.
+	short := perRuneColors(runes, []ColorSpan{{Len: 2, Color: white}})
+	if short[5] != white {
+		t.Errorf("tail color = %v, want last span %v", short[5], white)
+	}
+}
+
 func TestRenderFrameZeroAllocs(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()

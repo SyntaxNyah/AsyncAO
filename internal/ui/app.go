@@ -572,6 +572,10 @@ type sessionState struct {
 	showPair   bool
 	msRaster   *render.MessageRaster
 	rasterText string
+	// rasterRaw is the pre-strip message the cached raster was built from — the
+	// cache key, since two differently-colored messages can share the same
+	// stripped MessageText (the cachedPage index-key class of bug).
+	rasterRaw string
 
 	// last-applied scene text color (raster invalidation)
 	rasterColor int

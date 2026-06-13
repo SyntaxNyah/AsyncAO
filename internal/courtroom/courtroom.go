@@ -93,9 +93,14 @@ type Scene struct {
 
 	// Chat box state.
 	ShownameText string
-	MessageText  string // full text; VisibleRunes gates the reveal
+	MessageText  string // full text (markup stripped); VisibleRunes gates the reveal
 	VisibleRunes int
 	TextColor    int
+	// MessageStyles colors runs of MessageText (inline \cN markup). MessageRaw
+	// is the pre-strip message — the raster cache keys on it, since two
+	// differently-colored messages can share the same stripped MessageText.
+	MessageStyles []StyleRun
+	MessageRaw    string
 
 	// Full-viewport effects: Update counts these down, the renderer reads
 	// the remainders (flash alpha, shake amplitude). Plain data — the
@@ -380,6 +385,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.Scene.ShownameText = displayName(msg)
 	c.Scene.TextColor = msg.TextColor
 	c.Scene.MessageText = ""
+	c.Scene.MessageRaw = ""
+	c.Scene.MessageStyles = c.Scene.MessageStyles[:0]
 	c.Scene.VisibleRunes = 0
 	c.preanimDone = false
 
@@ -408,6 +415,8 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Typewriter.Start(msg.Message)
 	c.Typewriter.SkipToEnd()
 	c.Scene.MessageText = c.Typewriter.Text()
+	c.Scene.MessageRaw = msg.Message
+	c.Scene.MessageStyles = append(c.Scene.MessageStyles[:0], c.Typewriter.Styles()...)
 	c.Scene.VisibleRunes = c.Typewriter.Visible()
 	c.preanimDone = false
 	c.phase = PhaseLinger
@@ -491,6 +500,8 @@ func (c *Courtroom) startTalking() {
 	msg := c.current
 	c.Typewriter.Start(msg.Message)
 	c.Scene.MessageText = c.Typewriter.Text()
+	c.Scene.MessageRaw = msg.Message
+	c.Scene.MessageStyles = append(c.Scene.MessageStyles[:0], c.Typewriter.Styles()...) // copy: Start reuses its slice
 	c.Scene.VisibleRunes = 0
 	if !c.Scene.Speaker.PlayOnce {
 		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
