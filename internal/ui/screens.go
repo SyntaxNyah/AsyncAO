@@ -865,6 +865,9 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	if a.icStick {
 		a.icScroll = maxScroll
 	}
+	// Scissor the scrollback to the list rect so the partially scrolled
+	// top/bottom row can't draw past it onto the tab strip above.
+	unclip := c.clipScope(list)
 	y := list.Y - a.icScroll
 	for ri := range rows {
 		if y > list.Y+list.H-lineH {
@@ -884,6 +887,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 		}
 		y += lineH
 	}
+	unclip()
 }
 
 // drawOOCLogList renders the OOC scrollback into rect (themed
@@ -922,6 +926,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
+	unclip := c.clipScope(list) // top/bottom row clipped to the rect, not the tabs
 	y := list.Y - a.oocScroll
 	for _, line := range lines {
 		if y > list.Y+list.H-lineH {
@@ -932,6 +937,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 		}
 		y += lineH
 	}
+	unclip()
 }
 
 // submitOOC sends the OOC input if non-blank (shared classic/themed).
@@ -978,6 +984,7 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
+	unclip := c.clipScope(list) // scrollback only; restored before the fields below
 	y := list.Y - a.oocScroll
 	for _, line := range lines {
 		if y > list.Y+list.H-lineH {
@@ -988,6 +995,7 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 		}
 		y += lineH
 	}
+	unclip()
 
 	// Identity fields: full width (side labels squished the boxes in the
 	// narrow right column) — the placeholders carry the labels.
@@ -1022,6 +1030,8 @@ func (a *App) drawAreaList(r sdl.Rect) {
 	contentH := int32(len(a.sess.Areas)) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
+	unclip := c.clipScope(r) // partial top/bottom row stays inside the panel
+	defer unclip()
 	y := r.Y - a.areaScroll
 	for i, area := range a.sess.Areas {
 		if y > r.Y+r.H {
@@ -1264,6 +1274,8 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	contentH := int32(len(a.sess.Music)) * lineH
 	bar := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.musicScroll = c.VScrollbar("musicscroll", bar, a.musicScroll, contentH, r.H)
+	unclip := c.clipScope(r) // partial top/bottom row stays inside the panel
+	defer unclip()
 	y := r.Y - a.musicScroll
 	for _, track := range a.sess.Music {
 		if y > r.Y+r.H {

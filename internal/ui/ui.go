@@ -681,6 +681,26 @@ func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 	_ = c.Ren.DrawRect(&r)
 }
 
+// clipScope scissors rendering to r and returns a restore func that puts
+// the clip back to whatever was active before (the themed log lists draw
+// inside element rects, so a blind SetClipRect(nil) reset could clobber an
+// outer clip). Scrollable lists wrap their line loop in it so a partially
+// scrolled top/bottom row is cut at the rect edge instead of spilling over
+// neighbouring widgets — that overspill is what struck the tab strip
+// through the first OOC line.
+func (c *Ctx) clipScope(r sdl.Rect) func() {
+	hadClip := c.Ren.IsClipEnabled()
+	prev := c.Ren.GetClipRect()
+	_ = c.Ren.SetClipRect(&r)
+	return func() {
+		if hadClip {
+			_ = c.Ren.SetClipRect(&prev)
+		} else {
+			_ = c.Ren.SetClipRect(nil)
+		}
+	}
+}
+
 // textTexture returns (and caches) a rendered label for the given font.
 // Labels pack into shared atlas pages; oversized ones get a dedicated
 // texture (the pre-atlas behavior).
