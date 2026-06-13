@@ -319,7 +319,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   any widget across the screen, grab its corner grip to shrink/grow,
   right-click to reset one, Reset all for the theme. A **Snap** toggle
   (on by default) rounds moves and resizes to a tidy grid so widgets line
-  up; flip it off for free-hand placement. Edits persist per theme as
+  up; flip it off for free-hand placement. **Ctrl+Z / Ctrl+Y undo & redo**
+  any move, resize, or reset (each restores and re-persists the rects).
+  Edits persist per theme as
   design-space overrides (window resizes keep working; the theme's own
   files are never touched). While editing, the real UI is input-fenced so
   nothing misfires.

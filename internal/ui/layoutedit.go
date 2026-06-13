@@ -39,6 +39,46 @@ func snapDesign(v int) int {
 	return (v + layoutGridDesign/2) / layoutGridDesign * layoutGridDesign
 }
 
+// layoutUndoCap bounds the editor's undo/redo stacks (rule §17.4).
+const layoutUndoCap = 64
+
+func cloneRects(m map[string]theme.Rect) map[string]theme.Rect {
+	cp := make(map[string]theme.Rect, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
+}
+
+// pushLayoutUndo snapshots the current rects BEFORE an edit and forks history
+// (a fresh edit drops the redo stack).
+func (a *App) pushLayoutUndo() {
+	a.editUndo = append(a.editUndo, cloneRects(a.themeRects))
+	if len(a.editUndo) > layoutUndoCap {
+		a.editUndo = a.editUndo[1:]
+	}
+	a.editRedo = a.editRedo[:0]
+}
+
+// restoreLayout applies a snapshot to the live rects AND re-syncs the persisted
+// overrides, so undo survives a theme reload (a key back at its original rect
+// clears its override; otherwise it's re-written).
+func (a *App) restoreLayout(themeName string, snap map[string]theme.Rect) {
+	for k := range a.themeRects {
+		r, ok := snap[k]
+		if !ok {
+			continue
+		}
+		a.themeRects[k] = r
+		if r == a.themeRectsOrig[k] {
+			a.d.Prefs.ClearThemeRectOverride(themeName, k)
+		} else {
+			a.d.Prefs.SetThemeRectOverride(themeName, k, [4]int{r.X, r.Y, r.W, r.H})
+		}
+	}
+	a.themeLay.valid = false
+}
+
 // layoutEditSkip are rects the editor never touches: the stage frame
 // itself and the chatbox-relative children (they ride the chatbox).
 var layoutEditSkip = map[string]bool{
@@ -58,6 +98,7 @@ func (a *App) startLayoutEdit() {
 	a.editKey = ""
 	a.editDrag = 0
 	a.layoutSnap = true // tidy placement by default; toggle off in the editor
+	a.editUndo, a.editRedo = nil, nil
 }
 
 // stopLayoutEdit disarms and releases the input fence.
@@ -93,7 +134,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Banner + chrome (raw-hit buttons — the fence blocks kit ones).
-	banner := "LAYOUT EDIT — drag moves, corner grip resizes, right-click resets a widget, Esc exits"
+	banner := "LAYOUT EDIT — drag moves, corner grip resizes, right-click resets one, Ctrl+Z/Y undo/redo, Esc exits"
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: 26}, sdl.Color{R: 0, G: 0, B: 0, A: 210})
 	c.Label(pad, 5, banner, ColTierYellow)
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
@@ -110,11 +151,27 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	pressed := c.mouseDown && !a.editPrev
 	a.editPrev = c.mouseDown
 
+	// Undo / redo (Ctrl+Z / Ctrl+Y): swap the whole rect map with a snapshot.
+	if c.ctrlHeld && c.keyPressed == sdl.K_z && len(a.editUndo) > 0 {
+		a.editRedo = append(a.editRedo, cloneRects(a.themeRects))
+		snap := a.editUndo[len(a.editUndo)-1]
+		a.editUndo = a.editUndo[:len(a.editUndo)-1]
+		a.restoreLayout(themeName, snap)
+		c.keyPressed = 0
+	} else if c.ctrlHeld && c.keyPressed == sdl.K_y && len(a.editRedo) > 0 {
+		a.editUndo = append(a.editUndo, cloneRects(a.themeRects))
+		snap := a.editRedo[len(a.editRedo)-1]
+		a.editRedo = a.editRedo[:len(a.editRedo)-1]
+		a.restoreLayout(themeName, snap)
+		c.keyPressed = 0
+	}
+
 	if c.escPressed || (c.clicked && pointIn(c.mouseX, c.mouseY, doneBtn)) {
 		a.stopLayoutEdit()
 		return
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, resetBtn) {
+		a.pushLayoutUndo()
 		a.d.Prefs.ClearThemeRectOverride(themeName, "")
 		for k, r := range a.themeRectsOrig {
 			a.themeRects[k] = r
@@ -160,10 +217,12 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		}
 		a.editStart = [2]int32{c.mouseX, c.mouseY}
 		a.editBase = a.themeRects[hoverKey]
+		a.pushLayoutUndo() // snapshot before the move/resize (popped at release if it was a no-op)
 	}
 	// Right-click resets the hovered widget to the theme's own rect.
 	if c.rightClicked && hoverKey != "" {
 		if orig, ok := a.themeRectsOrig[hoverKey]; ok {
+			a.pushLayoutUndo()
 			a.themeRects[hoverKey] = orig
 			a.d.Prefs.ClearThemeRectOverride(themeName, hoverKey)
 			a.themeLay.valid = false
@@ -227,7 +286,13 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	if a.editDrag != 0 && !c.mouseDown {
 		if a.editKey != "" {
 			r := a.themeRects[a.editKey]
-			a.d.Prefs.SetThemeRectOverride(themeName, a.editKey, [4]int{r.X, r.Y, r.W, r.H})
+			if r == a.editBase { // a click with no move: discard the begin snapshot
+				if n := len(a.editUndo); n > 0 {
+					a.editUndo = a.editUndo[:n-1]
+				}
+			} else {
+				a.d.Prefs.SetThemeRectOverride(themeName, a.editKey, [4]int{r.X, r.Y, r.W, r.H})
+			}
 		}
 		a.editDrag = 0
 	}

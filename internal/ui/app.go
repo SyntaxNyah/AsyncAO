@@ -288,6 +288,10 @@ type App struct {
 	editStart  [2]int32
 	editBase   theme.Rect
 	layoutSnap bool // snap edits to a design-space grid (toggle in the editor)
+	// Layout-editor undo/redo: each edit snapshots the whole rect map (≈40
+	// entries) before changing it; Ctrl+Z restores, Ctrl+Y redoes. Bounded.
+	editUndo []map[string]theme.Rect
+	editRedo []map[string]theme.Rect
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage
