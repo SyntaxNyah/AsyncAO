@@ -35,6 +35,10 @@ const (
 
 	dlDirPerm  = 0o755
 	dlFilePerm = 0o644
+
+	// downloadGlyph is the grid-cell download badge icon (↓ — same Arrows
+	// block as the font-chain "→" the kit already renders).
+	downloadGlyph = "↓"
 )
 
 // downloader is the opt-in downloader's runtime state. One job at a time;

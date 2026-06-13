@@ -256,7 +256,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Built-in single-asset downloader** (Settings, **OFF by default**): for
   hosts that serve a directory listing, grab one character or background
   straight off the server instead of a multi-GB pack. Turn it on and a
-  **Get** badge appears on each character (char-select) and background
+  download (↓) badge appears on each character (char-select) and background
   (Background menu) cell; it walks that folder's autoindex and saves the
   files under `downloads/` — and a downloaded character also pulls the
   `sounds/general` sfx and `sounds/blips` its `char.ini` names (those live

@@ -477,9 +477,10 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	// character's folder + the sfx/blips its char.ini names, for offline use.
 	// Works on taken slots too, and claims its own click so it never picks.
 	if downloaderOn {
-		get := sdl.Rect{X: cell.X + cell.W - 38, Y: cell.Y + cell.H - 20, W: 36, H: 18}
+		get := sdl.Rect{X: cell.X + cell.W - 22, Y: cell.Y + cell.H - 20, W: 20, H: 18}
 		c.Fill(get, sdl.Color{R: 0, G: 0, B: 0, A: 200})
-		c.Label(get.X+4, get.Y+1, "Get", ColAccent)
+		c.Border(get, ColPanelHi)
+		c.Label(get.X+6, get.Y+1, downloadGlyph, ColAccent)
 		if c.hovering(get) && c.clicked {
 			a.startCharDownload(slot.Name)
 			return
