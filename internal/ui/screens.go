@@ -1140,16 +1140,109 @@ func (a *App) wardrobeFolders() []string {
 	return out
 }
 
+// folderMenuOpt is one row of the right-click "move to folder" menu.
+type folderMenuOpt struct{ label, folder string }
+
+const iniFolderMenuW = 190
+
+// iniFolderMenuOpts builds the move-to-folder rows: unfile, each existing
+// folder, then a "+ new: X" row when the new-folder field has text.
+func (a *App) iniFolderMenuOpts() []folderMenuOpt {
+	opts := []folderMenuOpt{{"(unsorted)", ""}}
+	for _, f := range a.wardrobeFolders() {
+		opts = append(opts, folderMenuOpt{f, f})
+	}
+	if nf := strings.TrimSpace(a.iniNewFold); nf != "" {
+		opts = append(opts, folderMenuOpt{"+ new: " + nf, nf})
+	}
+	return opts
+}
+
+// iniFolderMenuRect positions the menu at the cursor, clamped on-screen.
+func iniFolderMenuRect(at [2]int32, nOpts int, w, h int32) sdl.Rect {
+	r := sdl.Rect{X: at[0], Y: at[1], W: iniFolderMenuW, H: int32(nOpts)*iniMenuRowH + 4}
+	if r.X+r.W > w {
+		r.X = w - r.W
+	}
+	if r.Y+r.H > h {
+		r.Y = h - r.H
+	}
+	if r.X < 0 {
+		r.X = 0
+	}
+	if r.Y < 0 {
+		r.Y = 0
+	}
+	return r
+}
+
+const iniMenuRowH = 22
+
+// handleIniFolderMenu resolves a click on the open move-to-folder menu BEFORE
+// the grid draws (so the click never leaks through to a cell). A click on a
+// row files the character; a click anywhere else closes it; Esc closes it.
+// Either way the click is consumed.
+func (a *App) handleIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
+	c := a.ctx
+	if c.escPressed {
+		a.iniMenuChar = ""
+		return
+	}
+	if !c.clicked {
+		return
+	}
+	for i, opt := range opts {
+		row := sdl.Rect{X: rect.X, Y: rect.Y + 2 + int32(i)*iniMenuRowH, W: rect.W, H: iniMenuRowH}
+		if c.hovering(row) {
+			a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniMenuChar, opt.folder)
+			a.rebuildIniMenu()
+			a.iniMenuChar = ""
+			c.clicked = false
+			return
+		}
+	}
+	a.iniMenuChar = "" // clicked outside → close
+	c.clicked = false
+}
+
+// drawIniFolderMenu paints the move-to-folder menu on top, highlighting the
+// character's current folder.
+func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
+	c := a.ctx
+	c.Fill(rect, sdl.Color{R: 18, G: 18, B: 26, A: 245})
+	c.Border(rect, ColAccent)
+	cur := a.d.Prefs.WardrobeFolderMap(a.serverKey)[strings.ToLower(a.iniMenuChar)]
+	for i, opt := range opts {
+		row := sdl.Rect{X: rect.X, Y: rect.Y + 2 + int32(i)*iniMenuRowH, W: rect.W, H: iniMenuRowH}
+		if c.hovering(row) {
+			c.Fill(row, ColPanelHi)
+		}
+		col := ColText
+		if opt.folder == cur {
+			col = ColAccent // the character's current folder
+		}
+		c.LabelClipped(row.X+8, row.Y+4, row.W-12, opt.label, col)
+	}
+}
+
 func (a *App) drawIniswapPanel(w, h int32) {
 	c := a.ctx
 	a.pollIniswap()
+	a.iniHoverChar = "" // recomputed by the cells this frame (quick-file target)
 	panel := sdl.Rect{X: pad * 3, Y: pad * 3, W: w - pad*6, H: h - pad*6}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+8, "Wardrobe — your characters, any server", ColText)
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + 8, W: 90, H: btnH}, "Close") {
 		a.showIni = false
+		a.iniMenuChar = ""
 		return
+	}
+	// Move-to-folder menu: handle its clicks FIRST so they can't leak to the
+	// chips/grid underneath (it's painted last, on top).
+	if a.iniMenuChar != "" {
+		opts := a.iniFolderMenuOpts()
+		a.handleIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
 	}
 
 	y := panel.Y + 44
@@ -1225,8 +1318,12 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	}
 	folderChip("All", "")
 	folderChip("Unsorted", iniUnsortedFolder)
-	for _, f := range a.wardrobeFolders() {
-		folderChip(f, f)
+	for i, f := range a.wardrobeFolders() {
+		label := f
+		if i < 9 { // 1-9 are the quick-file keys
+			label = fmt.Sprintf("%d %s", i+1, f)
+		}
+		folderChip(label, f)
 	}
 	var newFoldCommit bool
 	a.iniNewFold, newFoldCommit = c.TextField("ininewfold", sdl.Rect{X: panel.X + panel.W - pad - 240, Y: y, W: 240, H: fieldH}, a.iniNewFold, "New folder (Enter), then right-click chars")
@@ -1234,7 +1331,9 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		a.iniFolder = strings.TrimSpace(a.iniNewFold)
 		a.iniNewFold = ""
 	}
-	y += btnH + 8
+	y += btnH + 6
+	c.Label(panel.X+pad, y, "Right-click a character to move it to a folder · keys 1-9 file the hovered one into folder N (0 = unsorted)", ColTextDim)
+	y += 20
 
 	// Grid: clone of the char-select layout over the iniswap list.
 	gridTop := y
@@ -1278,11 +1377,32 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		}
 	}
 
+	// Number-key quick-file: hover a character (no field focused, no menu open)
+	// and press a digit to file it — 1-9 = that-numbered folder, 0 = unsorted.
+	if a.iniHoverChar != "" && c.focusID == "" && a.iniMenuChar == "" {
+		switch {
+		case c.keyPressed == sdl.K_0:
+			a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniHoverChar, "")
+			a.rebuildIniMenu()
+		case c.keyPressed >= sdl.K_1 && c.keyPressed <= sdl.K_9:
+			if folders := a.wardrobeFolders(); int(c.keyPressed-sdl.K_1) < len(folders) {
+				a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniHoverChar, folders[c.keyPressed-sdl.K_1])
+				a.rebuildIniMenu()
+			}
+		}
+	}
+
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h)
 		if c.clicked {
 			a.previewBase = ""
 		}
+	}
+
+	// Move-to-folder menu paints last (above the grid + preview).
+	if a.iniMenuChar != "" {
+		opts := a.iniFolderMenuOpts()
+		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
 	}
 }
 
@@ -1368,15 +1488,11 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		}
 	}
 
-	// Right-click the cell body files this character into the active folder
-	// (All / Unsorted clears it). The key badge's own right-click ran first.
+	// Right-click the cell opens a "move to folder" menu (pick any destination,
+	// including a brand-new one). The key badge's own right-click ran first.
 	if c.rightClicked && c.hovering(cell) {
-		folder := a.iniFolder
-		if folder == iniUnsortedFolder {
-			folder = ""
-		}
-		a.d.Prefs.SetWardrobeFolder(a.serverKey, name, folder)
-		a.rebuildIniMenu()
+		a.iniMenuChar = name
+		a.iniMenuAt = [2]int32{c.mouseX, c.mouseY}
 		return
 	}
 
@@ -1385,7 +1501,8 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 	}
 	if c.hovering(cell) {
-		a.warmCharINI(name) // wearing it = memory hit, not an RTT
+		a.iniHoverChar = name // number keys 0-9 quick-file the hovered character
+		a.warmCharINI(name)   // wearing it = memory hit, not an RTT
 		if c.clicked {
 			a.wearFromMenu(name) // courtroom: instant swap; char select: claim a slot first
 		}

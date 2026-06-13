@@ -469,22 +469,25 @@ type sessionState struct {
 	evShowAt  time.Time
 
 	// --- wardrobe / iniswap (client favourites + server iniswap.txt) ---
-	iniChar     string   // active override folder ("" = picked character)
-	pendingIni  string   // wear this once PV confirms (char-select joins)
-	iniServer   []string // the server's iniswap.txt names (may be empty)
-	iniList     []string // merged menu: wardrobe first, then server extras
-	iniWardrobe []bool   // parallel to iniList: wardrobe membership (star)
-	iniLower    []string // lowercased names for the search filter
-	iniFolders  []string // parallel to iniList: each entry's folder ("" = unsorted)
-	iniListErr  string
-	iniBusy     bool
-	showIni     bool
-	iniSearch   string
-	iniAdd      string // "add folder to wardrobe" input
-	iniFolder   string // active folder filter ("" = All; iniUnsortedFolder = unsorted)
-	iniNewFold  string // "new folder" text input
-	iniScroll   int32
-	iniAsk      []time.Time // demand pacing stamps, parallel to iniList
+	iniChar      string   // active override folder ("" = picked character)
+	pendingIni   string   // wear this once PV confirms (char-select joins)
+	iniServer    []string // the server's iniswap.txt names (may be empty)
+	iniList      []string // merged menu: wardrobe first, then server extras
+	iniWardrobe  []bool   // parallel to iniList: wardrobe membership (star)
+	iniLower     []string // lowercased names for the search filter
+	iniFolders   []string // parallel to iniList: each entry's folder ("" = unsorted)
+	iniListErr   string
+	iniBusy      bool
+	showIni      bool
+	iniSearch    string
+	iniAdd       string   // "add folder to wardrobe" input
+	iniFolder    string   // active folder filter ("" = All; iniUnsortedFolder = unsorted)
+	iniNewFold   string   // "new folder" text input
+	iniMenuChar  string   // wardrobe char with an open "move to folder" menu ("" = none)
+	iniMenuAt    [2]int32 // that menu's top-left (cursor at right-click)
+	iniHoverChar string   // wardrobe char under the cursor this frame (number-key quick-file)
+	iniScroll    int32
+	iniAsk       []time.Time // demand pacing stamps, parallel to iniList
 
 	// bgPick is the "change background" modal (background/ autoindex grid).
 	bgPick bgPicker
