@@ -53,7 +53,8 @@ type downloader struct {
 	label    string // "character X" / "background Y" — shown on the indicator
 	target   string // the raw asset name (slot.Name / bg) for per-cell marking
 	status   string
-	files    int // latest progress (drives the floating indicator)
+	chip     string // cached indicator text (rebuilt only when progress changes)
+	files    int    // latest progress (drives the floating indicator)
 	bytes    int64
 	cancel   context.CancelFunc
 	progress chan dlProgress
@@ -104,6 +105,10 @@ func (a *App) pollDownload() {
 				p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs))
 		} else {
 			a.dl.status = fmt.Sprintf("Downloading %s... %d files, %.1f MiB", p.label, p.files, float64(p.bytes)/(1<<20))
+			// Build the compact chip string here (only when progress changes),
+			// so the per-frame indicator draw stays allocation-free.
+			a.dl.chip = fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB",
+				downloadGlyph, p.label, p.files, float64(p.bytes)/(1<<20))
 		}
 	default:
 	}
@@ -146,9 +151,7 @@ func (a *App) drawDownloadIndicator(w int32) {
 		return
 	}
 	c := a.ctx
-	label := fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB",
-		downloadGlyph, a.dl.label, a.dl.files, float64(a.dl.bytes)/(1<<20))
-	bw := c.TextWidth(label) + 20
+	bw := c.TextWidth(a.dl.chip) + 20
 	x := (w - bw) / 2
 	if x < 0 {
 		x = 0
@@ -156,7 +159,7 @@ func (a *App) drawDownloadIndicator(w int32) {
 	chip := sdl.Rect{X: x, Y: tabBarH + 4, W: bw, H: btnH}
 	c.Fill(chip, sdl.Color{R: ColPanel.R, G: ColPanel.G, B: ColPanel.B, A: 240})
 	c.Border(chip, ColAccent)
-	c.Label(chip.X+10, chip.Y+5, label, ColAccent)
+	c.Label(chip.X+10, chip.Y+5, a.dl.chip, ColAccent)
 }
 
 // startCharDownload grabs one character's folder plus the sfx/blips its
@@ -199,6 +202,7 @@ func (a *App) startDownload(label, rootURL, destBase, soundChar, target string) 
 	a.dl.files, a.dl.bytes = 0, 0
 	a.dl.cancel = cancel
 	a.dl.status = "Starting " + label + "..."
+	a.dl.chip = downloadGlyph + " Starting " + label + "..." // seeded; progress refreshes it
 
 	// Snapshot everything the goroutine touches; it must not read App fields.
 	job := &dlJob{label: label, base: downloadsRoot(), progress: a.dl.progress}
