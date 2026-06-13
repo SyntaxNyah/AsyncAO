@@ -182,6 +182,7 @@ type AssetPreferences struct {
 	UIScaleAutoOn          bool                         `json:"uiScaleAuto"`
 	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
+	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
@@ -256,6 +257,7 @@ type prefsJSON struct {
 	UIScaleAuto            *bool `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
 	CatchUpWhenBehind      *bool `json:"catchUpWhenBehind"` // absent = default ON
 	CatchUpThreshold       *int  `json:"catchUpThreshold"`  // absent = default
+	ReduceMotion           bool  `json:"reduceMotion"`      // default OFF (zero value)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -522,6 +524,7 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.CatchUpThreshold != nil {
 		p.CatchUpThreshold = clampPercent(*onDisk.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
 	}
+	p.ReduceMotionOn = onDisk.ReduceMotion
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
 	p.ThemeRectOv = onDisk.ThemeRectOverrides
@@ -1327,6 +1330,27 @@ func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
 		return
 	}
 	p.CatchUpOn, p.CatchUpThreshold = on, threshold
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ReduceMotion reports the reduce-motion accessibility toggle: when on, the
+// jarring courtroom effects (screen shake, realization flash, and the M2 text
+// effects) are suppressed.
+func (p *AssetPreferences) ReduceMotion() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ReduceMotionOn
+}
+
+// SetReduceMotion toggles reduce-motion.
+func (p *AssetPreferences) SetReduceMotion(on bool) {
+	p.mu.Lock()
+	if p.ReduceMotionOn == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ReduceMotionOn = on
 	p.mu.Unlock()
 	p.markDirty()
 }

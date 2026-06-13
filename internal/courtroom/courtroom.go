@@ -147,6 +147,11 @@ type Courtroom struct {
 	CatchUp          bool
 	CatchUpThreshold int
 
+	// ReduceMotion suppresses the jarring visual effects (screen shake,
+	// realization flash) — accessibility. Effect SOUNDS still play; only the
+	// motion is skipped. Set by the App from prefs (default off).
+	ReduceMotion bool
+
 	queue []*protocol.ChatMessage
 	phase MessagePhase
 	timer time.Duration
@@ -440,24 +445,30 @@ func (c *Courtroom) enterAfterShout() {
 // the overlay art needs the theme effects engine (frame-synced FRAME_*
 // triggers live with the char.ini frame sections, not here).
 func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
+	// Reduce-motion gates the VISUAL effects only — the feedback sounds still
+	// play (accessibility: kill the shake/flash, keep the audio cue).
 	if msg.Effects != "" {
 		fx, sound := parseEffectsField(msg.Effects)
-		switch strings.ToLower(fx) {
-		case "screenshake":
-			c.Scene.ShakeLeft = ScreenshakeDuration
-		case "flash", "realization", "realizationflash":
-			c.Scene.FlashLeft = RealizationFlashDuration
+		if !c.ReduceMotion {
+			switch strings.ToLower(fx) {
+			case "screenshake":
+				c.Scene.ShakeLeft = ScreenshakeDuration
+			case "flash", "realization", "realizationflash":
+				c.Scene.FlashLeft = RealizationFlashDuration
+			}
 		}
 		if sound != "" && sound != "-" {
 			c.audio.PlaySFX(c.urls.SFX(sound), 0) // AssetType: SFX (2.8 effect sound)
 		}
 	} else if msg.Realization {
-		c.Scene.FlashLeft = RealizationFlashDuration
+		if !c.ReduceMotion {
+			c.Scene.FlashLeft = RealizationFlashDuration
+		}
 		if c.RealizationSFX != "" {
 			c.audio.PlaySFX(c.RealizationSFX, 0) // AssetType: SFX (realization)
 		}
 	}
-	if msg.Screenshake && (msg.EmoteMod == protocol.EmoteModIdle || msg.EmoteMod == protocol.EmoteModZoom) {
+	if !c.ReduceMotion && msg.Screenshake && (msg.EmoteMod == protocol.EmoteModIdle || msg.EmoteMod == protocol.EmoteModZoom) {
 		c.Scene.ShakeLeft = ScreenshakeDuration
 	}
 }

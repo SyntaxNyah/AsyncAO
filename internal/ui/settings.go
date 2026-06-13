@@ -24,6 +24,7 @@ type settingsState struct {
 	statusLine string
 	tab        int                    // active settings tab (index into settingsTabNames)
 	tabScroll  [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
+	search     string                 // settings search query (jumps to the matching tab)
 
 	// callwords edit buffer (loaded once per settings entry).
 	callInput  string
@@ -109,6 +110,39 @@ const (
 	tabHotkeys
 )
 
+// settingsSearchKeywords maps each tab to terms the search box matches, so
+// "blip" jumps to Audio & Chat, "password" to Account, and so on.
+var settingsSearchKeywords = [numSettingsTabs][]string{
+	tabGeneral:   {"showname", "ooc name", "animation", "reduce motion", "emote button", "debug", "streamer", "smooth", "scaling", "ui scale", "dpi", "font", "cjk"},
+	tabTheme:     {"theme", "chatbox", "skin", "layout", "courtroom design", "bind", "preview"},
+	tabAssets:    {"fallback", "format", "webp", "png", "avif", "extensions", "audio format", "local", "mount", "download", "cache", "disk", "zstd", "learned"},
+	tabAudioChat: {"music", "sfx", "sound", "blip", "volume", "text crawl", "text stay", "text speed", "chat limit", "catch up", "callword", "casing", "case"},
+	tabAccount:   {"login", "password", "credential", "master list", "discord", "presence"},
+	tabHotkeys:   {"hotkey", "keybind", "macro", "shortcut", "export", "import", "backup"},
+}
+
+// settingsSearchMatch returns the first tab whose name or keywords contain the
+// (lowercased, trimmed) query, or -1 for none/empty.
+func settingsSearchMatch(query string) int {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return -1
+	}
+	for i, name := range settingsTabNames {
+		if strings.Contains(strings.ToLower(name), q) {
+			return i
+		}
+	}
+	for i, kws := range settingsSearchKeywords {
+		for _, kw := range kws {
+			if strings.Contains(kw, q) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
 // imageTypes get the per-format toggle treatment.
 var imageTypeNames = []string{
 	config.TypeCharIcon,
@@ -124,6 +158,16 @@ func (a *App) drawSettings(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 	c.Heading(pad, pad, "Settings", ColText)
+	// Search: type a term, press Enter to jump to the tab that has it.
+	q, committed := c.TextField("settsearch", sdl.Rect{X: pad + 110, Y: pad, W: 230, H: fieldH}, settings.search, "Search settings...")
+	settings.search = q
+	if mt := settingsSearchMatch(q); mt >= 0 {
+		c.LabelClipped(pad+350, pad+4, w-pad-350-110, "→ "+settingsTabNames[mt]+"  (Enter)", ColAccent)
+		if committed {
+			settings.tab = mt
+			settings.search = ""
+		}
+	}
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
 		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
 		_ = a.d.Prefs.SaveNow() // Settings-Apply synchronous flush
@@ -241,6 +285,12 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	anims := a.d.Prefs.AnimationsEnabled()
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
 		a.d.Prefs.SetAnimationsEnabled(next)
+	}
+	y += 26
+	reduce := a.d.Prefs.ReduceMotion()
+	if next := c.Checkbox(pad, y, "Reduce motion (accessibility): stop the screen shake / realization flash (effect sounds still play)", reduce); next != reduce {
+		a.d.Prefs.SetReduceMotion(next)
+		a.applyTimingToRoom() // push the flag to the live room
 	}
 	y += 26
 	emoteImgs := a.d.Prefs.EmoteButtonImagesEnabled()
@@ -514,7 +564,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	y += 32
 	if m0, s0, b0 := a.d.Prefs.AudioVolumes(); m0 != music || s0 != sfx || b0 != blip {
 		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
-		a.d.Audio.SetVolumes(a.d.Prefs.AudioVolumes())
+		a.applyAudioVolumes() // honors the session SFX mute
 	}
 
 	// Message timing (AO2-Client options.ini parity); applies live. Plain

@@ -488,6 +488,11 @@ type sessionState struct {
 	// dl is the opt-in single-asset downloader (off by default).
 	dl downloader
 
+	// sfxMuted is a session-only SFX mute (Mute SFX hotkey); showHotkeys
+	// toggles the F1 hotkey cheat-sheet overlay.
+	sfxMuted    bool
+	showHotkeys bool
+
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
 	bgAskAt     time.Time
@@ -1449,6 +1454,7 @@ func (a *App) applyTimingToRoom() {
 	a.room.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
+	a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
 }
 
 // activeCharName is the character folder OUTGOING messages use: the
@@ -1826,6 +1832,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.perfHUD = !a.perfHUD
 		a.ctx.keyPressed = 0
 	}
+	// F1 toggles the hotkey cheat-sheet on any screen (consumed so a plain-key
+	// macro/char bind named "f1" can't double-fire).
+	if a.ctx.keyPressed == sdl.K_F1 {
+		a.showHotkeys = !a.showHotkeys
+		a.ctx.keyPressed = 0
+	}
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.handleTabBar(winW) // chip clicks resolve BEFORE screens see them
@@ -1875,6 +1887,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	if a.d.Prefs.DebugOverlayEnabled() {
 		a.drawDebugOverlay(winW, winH)
+	}
+	if a.showHotkeys {
+		a.drawHotkeyCheatSheet(winW, winH)
 	}
 	// Deferred kit overlays (open dropdown lists) stack above everything.
 	a.ctx.FinishFrame()

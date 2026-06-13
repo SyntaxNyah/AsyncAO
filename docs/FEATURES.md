@@ -238,7 +238,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
   one long scroll — click a tab, scroll within it, each tab remembers its
   own scroll position. Async work (theme scans, folder picks, dropped
-  files, import/export status) runs regardless of the active tab.
+  files, import/export status) runs regardless of the active tab. A
+  **search box** (settings header) jumps to the tab that has a term —
+  type "blip", "password", "catch up"… and press Enter.
+- **Hotkey cheat-sheet** (press **F1** on any screen): a translucent panel
+  listing every Ctrl-chord binding (resolved to your keys) plus the fixed
+  function keys; F1 again closes it. Off by default, zero cost when closed.
+- **Mute SFX hotkey** (Ctrl+K by default, rebindable): a session-only
+  "shush" that silences sound effects without touching your saved volumes
+  or the music/blip channels.
+- **Reduce motion** (Settings → General, accessibility): suppresses the
+  screen shake and realization flash (the effect *sounds* still play);
+  also governs the text effects added later.
 - **Viewport camera zoom (hyperfocus)**: Ctrl+wheel over the stage zooms
   toward the cursor (up to 6×) — sprites, preanims, and effects magnify
   together; Ctrl+drag pans while zoomed; the 1× chip (or zooming out)

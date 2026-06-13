@@ -32,6 +32,7 @@ const (
 	hotkeyScreenshot = "screenshot"
 	hotkeyTheater    = "theater"
 	hotkeyLogin      = "login"
+	hotkeyMuteSFX    = "mute_sfx"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -49,6 +50,7 @@ var hotkeyDefs = []struct {
 	{hotkeyScreenshot, "Screenshot", "s"},
 	{hotkeyTheater, "Theater mode", "t"},
 	{hotkeyLogin, "Server login (saved creds)", "g"},
+	{hotkeyMuteSFX, "Mute sound effects", "k"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -149,6 +151,65 @@ func (a *App) handleHotkeys() {
 		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):
 		a.loginNow()
+	case a.hotkeyFor(hotkeyMuteSFX):
+		a.toggleSFXMute()
+	}
+}
+
+// toggleSFXMute flips a session-only SFX mute and re-applies volumes. The
+// music/blip channels are untouched; the saved SFX volume is preserved (mute
+// is not persisted — it's a quick "shush" for one session).
+func (a *App) toggleSFXMute() {
+	a.sfxMuted = !a.sfxMuted
+	a.applyAudioVolumes()
+	a.warnLine = "SFX unmuted"
+	if a.sfxMuted {
+		a.warnLine = "SFX muted (press the Mute SFX hotkey again to restore)"
+	}
+	a.warnAt = time.Now()
+}
+
+// applyAudioVolumes pushes the saved volumes to the audio system, forcing the
+// SFX channel to 0 while the session SFX mute is on. Call it wherever volumes
+// change so the mute is always honored.
+func (a *App) applyAudioVolumes() {
+	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	if a.sfxMuted {
+		sfx = 0
+	}
+	a.d.Audio.SetVolumes(music, sfx, blip)
+}
+
+// drawHotkeyCheatSheet overlays the current bindings (F1 toggles it on any
+// screen). It lists the configurable Ctrl-chord actions (resolved to the
+// user's keys) plus the fixed function keys. Only drawn while open, so it
+// costs nothing closed — allocations here are fine (opt-in overlay, like the
+// perf HUD).
+func (a *App) drawHotkeyCheatSheet(w, h int32) {
+	c := a.ctx
+	const rowH = 22
+	rows := int32(len(hotkeyDefs) + 4)
+	pw, ph := int32(460), rows*rowH+44
+	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
+	c.Fill(panel, sdl.Color{R: 12, G: 12, B: 18, A: 242})
+	c.Border(panel, ColAccent)
+	c.Heading(panel.X+pad, panel.Y+6, "Hotkeys", ColText)
+	c.Label(panel.X+pw-120, panel.Y+10, "F1 to close", ColTextDim)
+	y := panel.Y + 36
+	for _, def := range hotkeyDefs {
+		c.Label(panel.X+pad, y, "Ctrl+"+strings.ToUpper(a.hotkeyFor(def.id)), ColAccent)
+		c.Label(panel.X+pad+96, y, def.label, ColText)
+		y += rowH
+	}
+	for _, fx := range [...]struct{ key, label string }{
+		{"F1", "show this hotkey list"},
+		{"F3", "performance HUD"},
+		{"Esc", "close menus / exit theater"},
+		{"Ctrl+wheel", "resize text · zoom the stage"},
+	} {
+		c.Label(panel.X+pad, y, fx.key, ColAccent)
+		c.Label(panel.X+pad+96, y, fx.label, ColText)
+		y += rowH
 	}
 }
 
