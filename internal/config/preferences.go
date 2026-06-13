@@ -91,6 +91,15 @@ const (
 	catchUpThresholdMax     = 50
 )
 
+// Multi-server tab cap: how many servers you can keep open at once. Default 3
+// (each tab costs a websocket + reducer + two bounded logs); raise it to lurk
+// more. Still bounded (rule §17.4) — capped at maxMultiTabCap.
+const (
+	DefaultMultiTabCap = 3
+	minMultiTabCap     = 1
+	maxMultiTabCap     = 6
+)
+
 // defaultEmoteButtonImages ships the courtroom emote picker as image
 // buttons (characters/<char>/emotions/button<N>) rather than text chips.
 const defaultEmoteButtonImages = true
@@ -192,6 +201,7 @@ type AssetPreferences struct {
 	UIScaleAutoOn          bool                         `json:"uiScaleAuto"`
 	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
+	MultiTabCap            int                          `json:"multiTabCap"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	MusicDuckingOn         bool                         `json:"musicDucking"`
 	FontOverridePaths      string                       `json:"fontPaths"`
@@ -268,6 +278,7 @@ type prefsJSON struct {
 	UIScaleAuto            *bool `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
 	CatchUpWhenBehind      *bool `json:"catchUpWhenBehind"` // absent = default ON
 	CatchUpThreshold       *int  `json:"catchUpThreshold"`  // absent = default
+	MultiTabCap            *int  `json:"multiTabCap"`       // absent = default
 	ReduceMotion           bool  `json:"reduceMotion"`      // default OFF (zero value)
 	MusicDucking           bool  `json:"musicDucking"`      // default OFF (zero value)
 
@@ -489,6 +500,7 @@ func load(path string) (*AssetPreferences, error) {
 		UIScaleAutoOn:     defaultUIScaleAuto,
 		CatchUpOn:         defaultCatchUpWhenBehind,
 		CatchUpThreshold:  DefaultCatchUpThreshold,
+		MultiTabCap:       DefaultMultiTabCap,
 		DiscordRPC:        defaultDiscordPrefs(),
 		ViewportPct:       DefaultViewportPercent,
 		ChatScalePct:      DefaultScalePercent,
@@ -546,6 +558,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.CatchUpThreshold != nil {
 		p.CatchUpThreshold = clampPercent(*onDisk.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
+	}
+	if onDisk.MultiTabCap != nil {
+		p.MultiTabCap = clampPercent(*onDisk.MultiTabCap, minMultiTabCap, maxMultiTabCap)
 	}
 	p.ReduceMotionOn = onDisk.ReduceMotion
 	p.MusicDuckingOn = onDisk.MusicDucking
@@ -1354,6 +1369,31 @@ func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
 		return
 	}
 	p.CatchUpOn, p.CatchUpThreshold = on, threshold
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// TabCap is how many concurrent server tabs are allowed (clamped to
+// [minMultiTabCap, maxMultiTabCap]; an unset/zero value falls back to the
+// default, so older prefs files and tests behave as before).
+func (p *AssetPreferences) TabCap() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.MultiTabCap <= 0 {
+		return DefaultMultiTabCap
+	}
+	return clampPercent(p.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+}
+
+// SetTabCap clamps and persists the multi-server tab cap.
+func (p *AssetPreferences) SetTabCap(n int) {
+	n = clampPercent(n, minMultiTabCap, maxMultiTabCap)
+	p.mu.Lock()
+	if p.MultiTabCap == n {
+		p.mu.Unlock()
+		return
+	}
+	p.MultiTabCap = n
 	p.mu.Unlock()
 	p.markDirty()
 }

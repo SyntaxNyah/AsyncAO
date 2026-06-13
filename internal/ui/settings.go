@@ -113,7 +113,7 @@ const (
 // settingsSearchKeywords maps each tab to terms the search box matches, so
 // "blip" jumps to Audio & Chat, "password" to Account, and so on.
 var settingsSearchKeywords = [numSettingsTabs][]string{
-	tabGeneral:   {"showname", "ooc name", "animation", "reduce motion", "emote button", "debug", "streamer", "smooth", "scaling", "ui scale", "dpi", "font", "cjk"},
+	tabGeneral:   {"showname", "ooc name", "animation", "reduce motion", "emote button", "debug", "streamer", "smooth", "scaling", "ui scale", "dpi", "font", "cjk", "tabs", "server tabs", "max tabs"},
 	tabTheme:     {"theme", "chatbox", "skin", "layout", "courtroom design", "bind", "preview"},
 	tabAssets:    {"fallback", "format", "webp", "png", "avif", "extensions", "audio format", "local", "mount", "download", "cache", "disk", "zstd", "learned"},
 	tabAudioChat: {"music", "sfx", "sound", "blip", "volume", "text crawl", "text stay", "text speed", "chat limit", "catch up", "callword", "casing", "case"},
@@ -308,6 +308,12 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetStreamerMode(next)
 	}
 	y += 26
+	tabCap := a.d.Prefs.TabCap()
+	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 6); next != tabCap {
+		a.d.Prefs.SetTabCap(next)
+	}
+	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection", ColTextDim)
+	y += 30
 	smooth := a.d.Prefs.SmoothScalingEnabled()
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
 		a.d.Prefs.SetSmoothScaling(next)

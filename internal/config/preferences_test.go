@@ -486,6 +486,26 @@ func TestDeleteFavBackgroundFolder(t *testing.T) {
 	}
 }
 
+// TestMultiTabCap pins the configurable tab cap: default, set, and clamp.
+func TestMultiTabCap(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.TabCap() != DefaultMultiTabCap {
+		t.Fatalf("default tab cap = %d, want %d", p.TabCap(), DefaultMultiTabCap)
+	}
+	p.SetTabCap(5)
+	if p.TabCap() != 5 {
+		t.Errorf("after SetTabCap(5), TabCap = %d", p.TabCap())
+	}
+	p.SetTabCap(99) // above the hard max
+	if p.TabCap() != maxMultiTabCap {
+		t.Errorf("SetTabCap(99) = %d, want clamp to %d", p.TabCap(), maxMultiTabCap)
+	}
+	p.SetTabCap(0) // below the min
+	if p.TabCap() != minMultiTabCap {
+		t.Errorf("SetTabCap(0) = %d, want clamp to %d", p.TabCap(), minMultiTabCap)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	p, err := load(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil {

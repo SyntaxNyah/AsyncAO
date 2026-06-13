@@ -31,9 +31,10 @@ import (
 )
 
 const (
-	// maxTabs bounds concurrent server sessions (rule §17.4). Three is
-	// enough to host on one server and lurk two others; each costs a
-	// websocket, a session reducer, and two bounded logs.
+	// maxTabs is the DEFAULT concurrent-session cap (rule §17.4); the live cap
+	// is configurable via prefs (config.TabCap, clamped to config.maxMultiTabCap).
+	// Three hosts one server and lurks two others; each costs a websocket, a
+	// session reducer, and two bounded logs.
 	maxTabs = 3
 	// tabPumpBudget bounds packets drained per BACKGROUND tab per frame —
 	// a busy room can't starve the active tab's frame time.
@@ -84,8 +85,8 @@ func (a *App) allocateTab() bool {
 			i--
 		}
 	}
-	if len(a.tabs) >= maxTabs {
-		a.connErr = fmt.Sprintf("%d tabs max — close one first (click its ✕)", maxTabs)
+	if lim := a.d.Prefs.TabCap(); len(a.tabs) >= lim {
+		a.connErr = fmt.Sprintf("%d tabs max — close one first (click its ✕)", lim)
 		return false
 	}
 	a.tabs = append(a.tabs, &courtTab{})
@@ -269,7 +270,7 @@ func (a *App) tabBarRects(w int32) (rects []sdl.Rect, add sdl.Rect) {
 		rects[i].W = c.TextWidth(a.tabChipLabel(i)) + 28 // label + ✕ pad
 		total += rects[i].W + 4
 	}
-	showAdd := len(a.tabs) < maxTabs // no "+" once every slot is full
+	showAdd := len(a.tabs) < a.d.Prefs.TabCap() // no "+" once every slot is full
 	if showAdd {
 		total += addTabChipW + 4
 	}
