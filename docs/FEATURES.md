@@ -82,7 +82,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   letter with the usual zero-cost reveal. This is **AsyncAO-native and
   render-only**: incoming messages from other clients are unaffected, and the
   markup you send won't color on stock AO clients (they'd see the `\c2`).
-  (For now the IC *log* shows the raw codes; the live chatbox is colored.)
+  The IC *log* shows the clean text (codes stripped, same as the chatbox);
+  coloring the log itself is a later step.
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

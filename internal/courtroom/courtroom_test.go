@@ -811,6 +811,28 @@ func TestTypewriterInlineColors(t *testing.T) {
 	}
 }
 
+// TestStripMatchesTypewriter pins StripChatMarkup to produce exactly the clean
+// text the typewriter reveals, so the IC log and the chatbox can never drift.
+func TestStripMatchesTypewriter(t *testing.T) {
+	tw := NewTypewriter()
+	cases := []string{
+		"plain message",
+		"hi \\c2red\\c0 white",
+		"{slow} and }fast{ codes",
+		"\\crrainbow tail",
+		"a\\\\b literal slash",
+		"a\\zb unknown escape",
+		"mix {x}\\c4blue\\\\done",
+		"",
+	}
+	for _, m := range cases {
+		tw.Start(m)
+		if got, want := StripChatMarkup(m), tw.Text(); got != want {
+			t.Errorf("StripChatMarkup(%q) = %q, typewriter = %q", m, got, want)
+		}
+	}
+}
+
 func TestTypewriterSkipToEnd(t *testing.T) {
 	tw := NewTypewriter()
 	tw.Start("a long message that should skip")

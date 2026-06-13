@@ -139,6 +139,34 @@ func (t *Typewriter) Start(message string) {
 	}
 }
 
+// StripChatMarkup returns the plain display text for a message — the same
+// markup the typewriter removes (speed `{ }`, color `\cN`/`\cr`, and the `\\`
+// escape), so the IC log shows exactly what the chatbox renders. Kept in lock-
+// step with Start by TestStripMatchesTypewriter.
+func StripChatMarkup(message string) string {
+	rs := []rune(message)
+	out := make([]rune, 0, len(rs))
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
+		if r == '{' || r == '}' {
+			continue
+		}
+		if r == '\\' && i+1 < len(rs) {
+			switch n := rs[i+1]; {
+			case n == '\\':
+				out = append(out, '\\')
+				i++
+				continue
+			case n == 'c' && i+2 < len(rs) && ((rs[i+2] >= '0' && rs[i+2] <= '8') || rs[i+2] == 'r'):
+				i += 2
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return string(out)
+}
+
 // Text returns the full display text (markup stripped).
 func (t *Typewriter) Text() string { return string(t.runes) }
 

@@ -1253,7 +1253,8 @@ func icLogLine(m *protocol.ChatMessage) string {
 	if name == "" {
 		name = m.CharName
 	}
-	return name + ": " + m.Message
+	// Strip inline markup so the log reads like the chatbox (no raw \cN / { }).
+	return name + ": " + courtroom.StripChatMarkup(m.Message)
 }
 
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's
