@@ -1182,20 +1182,23 @@ func (a *App) wardrobeFolders() []string {
 	return out
 }
 
-// folderMenuOpt is one row of the right-click "move to folder" menu.
-type folderMenuOpt struct{ label, folder string }
+// folderMenuOpt is one row of the right-click character menu.
+type folderMenuOpt struct {
+	label, folder string
+	remove        bool // remove-from-wardrobe action (not a folder move)
+}
 
-const iniFolderMenuW = 190
+const iniFolderMenuW = 200
 
-// iniFolderMenuOpts builds the move-to-folder rows: unfile, each existing
-// folder, then a "+ new: X" row when the new-folder field has text.
+// iniFolderMenuOpts builds the character menu rows: remove from wardrobe, unfile,
+// each existing folder, then a "+ new: X" row when the new-folder field has text.
 func (a *App) iniFolderMenuOpts() []folderMenuOpt {
-	opts := []folderMenuOpt{{"(unsorted)", ""}}
+	opts := []folderMenuOpt{{label: "× Remove from wardrobe", remove: true}, {label: "(unsorted)"}}
 	for _, f := range a.wardrobeFolders() {
-		opts = append(opts, folderMenuOpt{f, f})
+		opts = append(opts, folderMenuOpt{label: f, folder: f})
 	}
 	if nf := strings.TrimSpace(a.iniNewFold); nf != "" {
-		opts = append(opts, folderMenuOpt{"+ new: " + nf, nf})
+		opts = append(opts, folderMenuOpt{label: "+ new: " + nf, folder: nf})
 	}
 	return opts
 }
@@ -1240,7 +1243,11 @@ func (a *App) handleIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	for i, opt := range opts {
 		row := sdl.Rect{X: rect.X, Y: rect.Y + 2 + int32(i)*iniMenuRowH, W: rect.W, H: iniMenuRowH}
 		if c.hovering(row) {
-			a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniMenuChar, opt.folder)
+			if opt.remove {
+				a.d.Prefs.RemoveWardrobe(a.serverKey, a.iniMenuChar) // unfavourite (also drops its folder)
+			} else {
+				a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniMenuChar, opt.folder)
+			}
 			a.rebuildIniMenu()
 			a.iniMenuChar = ""
 			c.clicked = false
@@ -1264,7 +1271,9 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 			c.Fill(row, ColPanelHi)
 		}
 		col := ColText
-		if opt.folder == cur {
+		if opt.remove {
+			col = ColDanger // remove-from-wardrobe
+		} else if opt.folder == cur {
 			col = ColAccent // the character's current folder
 		}
 		c.LabelClipped(row.X+8, row.Y+4, row.W-12, opt.label, col)
@@ -1293,6 +1302,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + 8, W: 90, H: btnH}, "Close") {
 		a.showIni = false
 		a.iniMenuChar = ""
+		a.wardDelFolder = ""
 		a.iniPrevDown = c.mouseDown
 		return
 	}
@@ -1312,8 +1322,9 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		c.Label(r.X+12, r.Y+5, t.label, ColText)
 		if c.hovering(r) && c.clicked && a.wardSection != t.id {
 			a.wardSection = t.id
-			a.previewBase = "" // each section owns its own preview
-			a.iniMenuChar = "" // close any open character move-to-folder menu
+			a.previewBase = ""   // each section owns its own preview
+			a.iniMenuChar = ""   // close any open character move-to-folder menu
+			a.wardDelFolder = "" // close any open folder-delete confirmation
 			if t.id == wardSectionBackgrounds {
 				a.rebuildBgFav()
 			}
@@ -1439,33 +1450,49 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		return n
 	}
 
-	switch {
-	case searching:
-		c.Label(panel.X+pad, y+4, "Search spans every folder — clear it to browse folders", ColTextDim)
-	case a.iniFolder == "":
-		a.iniNewFold, _ = c.TextField("ininewfold", sdl.Rect{X: panel.X + pad, Y: y, W: 240, H: fieldH}, a.iniNewFold, "New folder name, then drag chars onto it")
-		c.LabelClipped(panel.X+pad+250, y+4, panel.X+panel.W-(panel.X+pad+250)-pad, "Drag a character onto a folder to file it · open a folder to see inside", ColTextDim)
-	default:
-		back := sdl.Rect{X: panel.X + pad, Y: y, W: 150, H: btnH}
-		c.Fill(back, ColPanel)
-		if a.iniDragging && c.hovering(back) {
-			c.Border(back, ColAccent) // drop here to take the character out of the folder
-		} else {
-			c.Border(back, ColPanelHi)
-		}
-		c.Label(back.X+8, back.Y+5, "‹ All folders", ColText)
-		c.Tooltip(back, "Back to all folders — or drop a character here to take it out of this folder")
-		if c.hovering(back) && c.clicked {
-			if a.iniDragging && a.iniDragChar != "" {
-				a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniDragChar, "")
-				a.rebuildIniMenu()
-				c.clicked = false // consume the drop
-			} else {
+	if a.wardDelFolder != "" {
+		// A folder delete awaits confirmation: the bar replaces the nav row.
+		choice := a.drawFolderDeleteConfirm(panel.X+pad, y, panel.W-2*pad, countInFolder(a.wardDelFolder), "characters")
+		if choice == folderDeleteWithItems || choice == folderDeleteKeepItems {
+			a.d.Prefs.DeleteWardrobeFolder(a.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
+			if strings.EqualFold(a.iniFolder, a.wardDelFolder) { // we were inside the deleted folder
 				a.iniFolder = ""
 				a.iniScroll = 0
 			}
+			a.wardDelFolder = ""
+			a.rebuildIniMenu()
+		} else if choice == folderDeleteCancel {
+			a.wardDelFolder = ""
 		}
-		c.LabelClipped(back.X+back.W+12, y+5, panel.X+panel.W-(back.X+back.W+12)-pad, fmt.Sprintf("%s — %d character(s) · right-click a character to move it", a.iniFolder, countInFolder(a.iniFolder)), ColAccent)
+	} else {
+		switch {
+		case searching:
+			c.Label(panel.X+pad, y+4, "Search spans every folder — clear it to browse folders", ColTextDim)
+		case a.iniFolder == "":
+			a.iniNewFold, _ = c.TextField("ininewfold", sdl.Rect{X: panel.X + pad, Y: y, W: 240, H: fieldH}, a.iniNewFold, "New folder name, then drag chars onto it")
+			c.LabelClipped(panel.X+pad+250, y+4, panel.X+panel.W-(panel.X+pad+250)-pad, "Drag a character onto a folder to file it · open a folder to see inside · × on a folder deletes it", ColTextDim)
+		default:
+			back := sdl.Rect{X: panel.X + pad, Y: y, W: 150, H: btnH}
+			c.Fill(back, ColPanel)
+			if a.iniDragging && c.hovering(back) {
+				c.Border(back, ColAccent) // drop here to take the character out of the folder
+			} else {
+				c.Border(back, ColPanelHi)
+			}
+			c.Label(back.X+8, back.Y+5, "‹ All folders", ColText)
+			c.Tooltip(back, "Back to all folders — or drop a character here to take it out of this folder")
+			if c.hovering(back) && c.clicked {
+				if a.iniDragging && a.iniDragChar != "" {
+					a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniDragChar, "")
+					a.rebuildIniMenu()
+					c.clicked = false // consume the drop
+				} else {
+					a.iniFolder = ""
+					a.iniScroll = 0
+				}
+			}
+			c.LabelClipped(back.X+back.W+12, y+5, panel.X+panel.W-(back.X+back.W+12)-pad, fmt.Sprintf("%s — %d character(s) · right-click a character to move it", a.iniFolder, countInFolder(a.iniFolder)), ColAccent)
+		}
 	}
 	y += btnH + 8
 
@@ -1580,12 +1607,68 @@ func (a *App) drawFolderShape(cell sdl.Rect, count int, name string, hover, drop
 	c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColText)
 }
 
+// folderDeleteHit draws the folder's delete (×) button when the icon is hovered
+// (and no drag is in flight — during a drag the folder is a drop target) and
+// reports a click on it. Shared by both wardrobe sections; the caller opens the
+// delete confirmation. The × claims its own click so the folder doesn't open.
+func (a *App) folderDeleteHit(cell sdl.Rect, hover bool) bool {
+	if !hover || a.iniDragging {
+		return false
+	}
+	c := a.ctx
+	x := sdl.Rect{X: cell.X + cell.W - 18, Y: cell.Y + 2, W: 16, H: 16}
+	c.Fill(x, sdl.Color{R: 0, G: 0, B: 0, A: 205})
+	c.Label(x.X+4, x.Y+1, "×", ColDanger)
+	c.Tooltip(x, "Delete this folder")
+	return c.hovering(x) && c.clicked
+}
+
+// folderDeleteChoice is the outcome of the delete-folder confirmation bar.
+type folderDeleteChoice int
+
+const (
+	folderDeleteNone folderDeleteChoice = iota
+	folderDeleteWithItems
+	folderDeleteKeepItems
+	folderDeleteCancel
+)
+
+// drawFolderDeleteConfirm draws the "delete folder?" bar (replacing the nav row
+// while a.wardDelFolder is set) and returns the user's choice this frame. noun
+// is "characters"/"backgrounds" for the copy. Esc cancels.
+func (a *App) drawFolderDeleteConfirm(x, y, maxW int32, count int, noun string) folderDeleteChoice {
+	c := a.ctx
+	if c.escPressed {
+		return folderDeleteCancel
+	}
+	label := fmt.Sprintf("Delete folder \"%s\" (%d %s)?", a.wardDelFolder, count, noun)
+	c.LabelClipped(x, y+5, 320, label, ColDanger)
+	bx := x + 332
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 150, H: btnH}, fmt.Sprintf("Delete + %d items", count)) {
+		return folderDeleteWithItems
+	}
+	bx += 156
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 130, H: btnH}, "Keep items") {
+		return folderDeleteKeepItems
+	}
+	bx += 136
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 80, H: btnH}, "Cancel") {
+		return folderDeleteCancel
+	}
+	return folderDeleteNone
+}
+
 // drawIniFolderCell draws one Characters-section folder. Clicking opens it (the
-// grid then shows only its characters); dropping a dragged character files it.
+// grid then shows only its characters); dropping a dragged character files it;
+// the hover × deletes it.
 func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	c := a.ctx
 	hover := c.hovering(cell)
 	a.drawFolderShape(cell, count, name, hover, a.iniDragging && hover)
+	if a.folderDeleteHit(cell, hover) {
+		a.wardDelFolder = name
+		return // the × claimed the click; don't open the folder
+	}
 	c.Tooltip(cell, "Open the "+name+" folder — or drop a character here to file it")
 	if hover && c.clicked {
 		if a.iniDragging && a.iniDragChar != "" {
@@ -1662,6 +1745,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		starCol = ColStar
 	}
 	c.Label(star.X+2, star.Y, "★", starCol)
+	c.Tooltip(star, "★ add to / remove from your wardrobe (right-click the cell for more)")
 	if c.hovering(star) && c.clicked && !a.iniDragging {
 		if a.iniWardrobe[idx] {
 			a.d.Prefs.RemoveWardrobe(a.serverKey, name)

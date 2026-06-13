@@ -205,10 +205,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (the folder becomes permanent once it has a member). A plain click still
   wears the character; a small drag threshold tells a click from a drag. Other
   ways to file: **right-click → "move to folder"** (the only cross-folder move
-  once you're inside one), **number keys 1-9** (file the hovered character into
-  that-numbered folder, 0 = take out), or add with `folder/char`. **Search
-  spans every folder.** Folders are per server and exist exactly while they
-  hold a character — emptying one removes it, so there's nothing to clean up.
+  once you're inside one; this menu also has **× Remove from wardrobe**),
+  **number keys 1-9** (file the hovered character into that-numbered folder,
+  0 = take out), or add with `folder/char`. **Search spans every folder.**
+  Folders are per server.
+- **Removing things**: the **★** on a cell removes that character from the
+  wardrobe (or unstars a background); right-click a character → **× Remove from
+  wardrobe**. **Delete a whole folder** with the **×** that appears on a folder
+  icon when you hover it — a confirmation then offers **"Delete + N items"**
+  (removes the folder's characters/backgrounds from your favorites) or **"Keep
+  items"** (just dissolves the folder, leaving everything unfiled). A folder
+  also disappears on its own once nothing is filed under it.
 - **Two wardrobe sections — Characters and Backgrounds**: tabs at the top of
   the Wardrobe switch between your characters and your **favorite backgrounds**.
   The Backgrounds section uses the *same* navigable folders: drag a background
@@ -317,7 +324,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the old session parks and keeps running (its packets drain on a
   per-frame budget into its own logs; unread counts and callword
   flashes still fire). A floating chip strip (top-center, every screen)
-  switches tabs, shows unread, closes background tabs (✕), and clicking
+  switches tabs, shows unread, closes background tabs (×), and clicking
   the active chip drops you to the lobby with the session still live. A
   **"+" chip** at the end of the strip (accent-bordered, with a hover hint)
   is the discoverable way to open another server — it parks the current

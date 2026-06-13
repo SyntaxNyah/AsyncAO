@@ -430,6 +430,62 @@ func TestFavBackgroundFolders(t *testing.T) {
 	}
 }
 
+// TestDeleteWardrobeFolder pins whole-folder deletion: keepMembers ungroups
+// (tags cleared, characters stay), !keepMembers removes the members entirely.
+func TestDeleteWardrobeFolder(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	const key = "wss://s:1/"
+	p.AddWardrobe(key, "Maya")
+	p.AddWardrobe(key, "Phoenix")
+	p.AddWardrobe(key, "Edgeworth")
+	p.SetWardrobeFolder(key, "Maya", "AA")
+	p.SetWardrobeFolder(key, "Phoenix", "AA")
+
+	p.DeleteWardrobeFolder(key, "AA", true) // ungroup
+	if m := p.WardrobeFolderMap(key); len(m) != 0 {
+		t.Fatalf("keepMembers must clear the folder tags, got %v", m)
+	}
+	if got := p.WardrobeList(key); len(got) != 3 {
+		t.Fatalf("keepMembers must keep the characters, got %v", got)
+	}
+
+	p.SetWardrobeFolder(key, "Maya", "AA")
+	p.SetWardrobeFolder(key, "Phoenix", "AA")
+	p.DeleteWardrobeFolder(key, "aa", false) // delete + items, case-insensitive folder match
+	if got := p.WardrobeList(key); len(got) != 1 || got[0] != "Edgeworth" {
+		t.Fatalf("delete+items must remove the folder's members, got %v", got)
+	}
+	if len(p.WardrobeFolderMap(key)) != 0 {
+		t.Error("delete must drop the folder tags too")
+	}
+}
+
+// TestDeleteFavBackgroundFolder mirrors TestDeleteWardrobeFolder for backgrounds.
+func TestDeleteFavBackgroundFolder(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	const key = "wss://s:1/"
+	p.AddFavBackground(key, "court")
+	p.AddFavBackground(key, "lobby")
+	p.AddFavBackground(key, "gaming")
+	p.SetFavBackgroundFolder(key, "court", "Trials")
+	p.SetFavBackgroundFolder(key, "lobby", "Trials")
+
+	p.DeleteFavBackgroundFolder(key, "Trials", true) // ungroup
+	if len(p.FavBackgroundFolderMap(key)) != 0 {
+		t.Fatal("keepMembers must clear the folder tags")
+	}
+	if len(p.FavBackgroundList(key)) != 3 {
+		t.Fatal("keepMembers must keep the favourites")
+	}
+
+	p.SetFavBackgroundFolder(key, "court", "Trials")
+	p.SetFavBackgroundFolder(key, "lobby", "Trials")
+	p.DeleteFavBackgroundFolder(key, "trials", false) // delete + items, case-insensitive
+	if got := p.FavBackgroundList(key); len(got) != 1 || got[0] != "gaming" {
+		t.Fatalf("delete+items must unstar the folder's members, got %v", got)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	p, err := load(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil {

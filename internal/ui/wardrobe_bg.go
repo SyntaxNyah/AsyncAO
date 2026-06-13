@@ -102,33 +102,49 @@ func (a *App) drawWardrobeBgsBody(panel sdl.Rect, w, h int32) {
 		return n
 	}
 
-	switch {
-	case searching:
-		c.Label(panel.X+pad, y+4, "Search spans every folder — clear it to browse folders", ColTextDim)
-	case a.bgFavFolder == "":
-		a.bgFavNewFold, _ = c.TextField("bgfavnewfold", sdl.Rect{X: panel.X + pad, Y: y, W: 240, H: fieldH}, a.bgFavNewFold, "New folder name, then drag backgrounds onto it")
-		c.LabelClipped(panel.X+pad+250, y+4, panel.X+panel.W-(panel.X+pad+250)-pad, "Drag a background onto a folder to file it · open a folder to see inside", ColTextDim)
-	default:
-		back := sdl.Rect{X: panel.X + pad, Y: y, W: 150, H: btnH}
-		c.Fill(back, ColPanel)
-		if a.iniDragging && c.hovering(back) {
-			c.Border(back, ColAccent) // drop here to take the background out of the folder
-		} else {
-			c.Border(back, ColPanelHi)
-		}
-		c.Label(back.X+8, back.Y+5, "‹ All folders", ColText)
-		c.Tooltip(back, "Back to all folders — or drop a background here to take it out of this folder")
-		if c.hovering(back) && c.clicked {
-			if a.iniDragging && a.iniDragChar != "" {
-				a.d.Prefs.SetFavBackgroundFolder(a.serverKey, a.iniDragChar, "")
-				a.rebuildBgFav()
-				c.clicked = false // consume the drop
-			} else {
+	if a.wardDelFolder != "" {
+		// A folder delete awaits confirmation: the bar replaces the nav row.
+		choice := a.drawFolderDeleteConfirm(panel.X+pad, y, panel.W-2*pad, countIn(a.wardDelFolder), "backgrounds")
+		if choice == folderDeleteWithItems || choice == folderDeleteKeepItems {
+			a.d.Prefs.DeleteFavBackgroundFolder(a.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
+			if strings.EqualFold(a.bgFavFolder, a.wardDelFolder) { // we were inside the deleted folder
 				a.bgFavFolder = ""
 				a.bgFavScroll = 0
 			}
+			a.wardDelFolder = ""
+			a.rebuildBgFav()
+		} else if choice == folderDeleteCancel {
+			a.wardDelFolder = ""
 		}
-		c.LabelClipped(back.X+back.W+12, y+5, panel.X+panel.W-(back.X+back.W+12)-pad, fmt.Sprintf("%s — %d background(s)", a.bgFavFolder, countIn(a.bgFavFolder)), ColAccent)
+	} else {
+		switch {
+		case searching:
+			c.Label(panel.X+pad, y+4, "Search spans every folder — clear it to browse folders", ColTextDim)
+		case a.bgFavFolder == "":
+			a.bgFavNewFold, _ = c.TextField("bgfavnewfold", sdl.Rect{X: panel.X + pad, Y: y, W: 240, H: fieldH}, a.bgFavNewFold, "New folder name, then drag backgrounds onto it")
+			c.LabelClipped(panel.X+pad+250, y+4, panel.X+panel.W-(panel.X+pad+250)-pad, "Drag a background onto a folder to file it · open a folder to see inside · × on a folder deletes it", ColTextDim)
+		default:
+			back := sdl.Rect{X: panel.X + pad, Y: y, W: 150, H: btnH}
+			c.Fill(back, ColPanel)
+			if a.iniDragging && c.hovering(back) {
+				c.Border(back, ColAccent) // drop here to take the background out of the folder
+			} else {
+				c.Border(back, ColPanelHi)
+			}
+			c.Label(back.X+8, back.Y+5, "‹ All folders", ColText)
+			c.Tooltip(back, "Back to all folders — or drop a background here to take it out of this folder")
+			if c.hovering(back) && c.clicked {
+				if a.iniDragging && a.iniDragChar != "" {
+					a.d.Prefs.SetFavBackgroundFolder(a.serverKey, a.iniDragChar, "")
+					a.rebuildBgFav()
+					c.clicked = false // consume the drop
+				} else {
+					a.bgFavFolder = ""
+					a.bgFavScroll = 0
+				}
+			}
+			c.LabelClipped(back.X+back.W+12, y+5, panel.X+panel.W-(back.X+back.W+12)-pad, fmt.Sprintf("%s — %d background(s)", a.bgFavFolder, countIn(a.bgFavFolder)), ColAccent)
+		}
 	}
 	y += btnH + 8
 
@@ -198,6 +214,10 @@ func (a *App) drawBgFavFolderCell(name string, count int, cell sdl.Rect) {
 	c := a.ctx
 	hover := c.hovering(cell)
 	a.drawFolderShape(cell, count, name, hover, a.iniDragging && hover)
+	if a.folderDeleteHit(cell, hover) {
+		a.wardDelFolder = name
+		return // the × claimed the click; don't open the folder
+	}
 	c.Tooltip(cell, "Open the "+name+" folder — or drop a background here to file it")
 	if hover && c.clicked {
 		if a.iniDragging && a.iniDragChar != "" {

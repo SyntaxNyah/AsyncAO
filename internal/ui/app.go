@@ -511,6 +511,9 @@ type sessionState struct {
 	// wardSectionBackgrounds). The Backgrounds section organizes favourite
 	// backgrounds into the same navigable folders as characters.
 	wardSection int
+	// wardDelFolder is the folder a delete confirmation is open for ("" = none);
+	// the active section decides whether it deletes characters or backgrounds.
+	wardDelFolder string
 	// Backgrounds-section state. bgFavList is the favourites in ONE stable
 	// order (FavBackgroundList); navigation filters via a predicate, never by
 	// rebuilding the list, so the index-keyed bgFavPages cache stays valid

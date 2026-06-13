@@ -1529,6 +1529,35 @@ func (p *AssetPreferences) SetWardrobeFolder(serverKey, char, folder string) {
 	})
 }
 
+// DeleteWardrobeFolder removes a whole wardrobe folder on one server in a single
+// op. keepMembers true just ungroups (clears the folder tag, the characters
+// stay in the wardrobe, unfiled); false removes those characters from the
+// wardrobe entirely. Either way the folder — being membership-derived — ceases
+// to exist once nothing is filed under it.
+func (p *AssetPreferences) DeleteWardrobeFolder(serverKey, folder string, keepMembers bool) {
+	folder = strings.TrimSpace(folder)
+	if folder == "" || serverKey == "" {
+		return
+	}
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		for lc, f := range w.WardrobeFolder {
+			if !strings.EqualFold(f, folder) {
+				continue
+			}
+			delete(w.WardrobeFolder, lc)
+			if keepMembers {
+				continue
+			}
+			for i, have := range w.Wardrobe { // also drop the character from the wardrobe
+				if strings.ToLower(have) == lc {
+					w.Wardrobe = append(w.Wardrobe[:i], w.Wardrobe[i+1:]...)
+					break
+				}
+			}
+		}
+	})
+}
+
 // --- Favorite backgrounds (per server) ----------------------------------------
 
 // FavBackgroundList returns a copy of one server's starred-background list.
@@ -1615,6 +1644,33 @@ func (p *AssetPreferences) SetFavBackgroundFolder(serverKey, bg, folder string) 
 			return
 		}
 		w.FavBackgroundFolder[bg] = folder
+	})
+}
+
+// DeleteFavBackgroundFolder removes a whole background folder on one server.
+// keepMembers true ungroups (the backgrounds stay favourited, unfiled); false
+// unstars those backgrounds entirely. Mirrors DeleteWardrobeFolder.
+func (p *AssetPreferences) DeleteFavBackgroundFolder(serverKey, folder string, keepMembers bool) {
+	folder = strings.TrimSpace(folder)
+	if folder == "" || serverKey == "" {
+		return
+	}
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		for lc, f := range w.FavBackgroundFolder {
+			if !strings.EqualFold(f, folder) {
+				continue
+			}
+			delete(w.FavBackgroundFolder, lc)
+			if keepMembers {
+				continue
+			}
+			for i, have := range w.FavBackgrounds {
+				if strings.ToLower(have) == lc {
+					w.FavBackgrounds = append(w.FavBackgrounds[:i], w.FavBackgrounds[i+1:]...)
+					break
+				}
+			}
+		}
 	})
 }
 
