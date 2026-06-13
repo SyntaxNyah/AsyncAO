@@ -17,13 +17,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
-// managerWait is the ceiling for an async fetch→decode round-trip to land on
-// the manager's channel. It's a safety net, not a perf gate: these flows
-// finish in well under a second locally. CI runs every package in parallel
-// under -race (no -p 1), and that contention pushed the PNG-fallback
-// integration test past a tight 5s once — so the ceiling is generous (a real
-// hang still trips the 600s binary -timeout).
-const managerWait = 30 * time.Second
+const managerWait = 5 * time.Second
 
 // testRig wires a full pipeline against an httptest server.
 type testRig struct {
@@ -113,6 +107,32 @@ func waitDecoded(t *testing.T, m *Manager) DecodedAsset {
 	}
 }
 
+// retryDecoded re-issues prefetch on a ticker until a decoded asset lands.
+// A single immediate re-prefetch after a failure can race the prior pass's
+// per-asset inflight-key release (the missing-asset warning is delivered just
+// before resolveChain returns and frees the key) and get collapsed by the
+// singleflight dedup (§17.6) — then dropped. Production never single-shots
+// like that: the demand pipeline retries on its interval and self-heals. This
+// mirrors that, so the test pins "eventually delivers", not a one-shot race.
+func retryDecoded(t *testing.T, m *Manager, prefetch func()) DecodedAsset {
+	t.Helper()
+	deadline := time.After(managerWait)
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	prefetch()
+	for {
+		select {
+		case d := <-m.Decoded():
+			return d
+		case <-tick.C:
+			prefetch() // deduped while a pass is in flight; lands once it clears
+		case <-deadline:
+			t.Fatal("no decoded asset delivered after retries")
+			return DecodedAsset{}
+		}
+	}
+}
+
 func waitWarning(t *testing.T, m *Manager) Warning {
 	t.Helper()
 	select {
@@ -179,10 +199,14 @@ func TestManagerPNGOnlyServerWarnsThenFallbacksRecover(t *testing.T) {
 	}
 
 	// User flips the global fallback toggle; the .png candidate was never
-	// 404-cached, so the retry succeeds immediately.
+	// 404-cached, so a re-probe loads it. The first (fallbacks-off) pass may
+	// still hold the per-asset inflight key when its warning lands, so a lone
+	// immediate re-prefetch can be collapsed by the singleflight dedup and
+	// dropped — re-issue (as the demand pipeline does) until the .png lands.
 	rig.prefs.SetGlobalFallbacks(true)
-	rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	d := waitDecoded(t, rig.manager)
+	d := retryDecoded(t, rig.manager, func() {
+		rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	})
 	if d.Err != nil {
 		t.Fatalf("post-fallback decode error: %v", d.Err)
 	}
