@@ -7,6 +7,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -20,6 +21,9 @@ func (a *App) pinNote(line string) {
 	}
 	a.notebook.Add(line)
 	a.pushDebug("notebook: pinned " + clampLine(line))
+	// Visible confirmation (the pin was otherwise silent — easy to miss).
+	a.warnLine = "Pinned to notebook (Notes tab)"
+	a.warnAt = time.Now()
 }
 
 // pollNotebook lands a per-server notebook load: on the active session
