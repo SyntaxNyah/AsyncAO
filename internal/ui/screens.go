@@ -287,7 +287,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 		}
 	}
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h)
+		a.drawSpritePreview(w, h, false)
 		if c.clicked {
 			a.previewBase = ""
 		}
@@ -446,7 +446,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		// keep showing while hovered; HoverPreview clears hoverID on exit
 	}
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h)
+		a.drawSpritePreview(w, h, false)
 		if c.clicked || (a.ctx.hoverID == "" && !previewRequested) {
 			a.previewBase = ""
 		}
@@ -494,37 +494,88 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	}
 }
 
-// drawSpritePreview shows the full-size idle sprite for the hovered or
-// right-clicked icon/emote (the "show the entire thing" pop-up).
-func (a *App) drawSpritePreview(w, h int32) {
+// drawSpritePreview shows the previewed sprite in a bottom-right box (the
+// "show the entire thing" pop-up for a hovered/right-clicked icon or emote).
+// With cycle set (the wardrobe's try-before-wear), it also draws the ‹ › emote
+// navigator and keeps the box alive while the next emote streams in, so the
+// controls don't blink. Off the hot path — only drawn when a preview is up.
+func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 	c := a.ctx
 	page, ok := a.d.Store.Get(a.previewBase)
-	if !ok || len(page.Frames) == 0 {
-		return
+	ready := ok && len(page.Frames) > 0
+	cycling := cycle && len(a.previewAnims) > 1
+	if !ready && !cycling {
+		return // nothing to show and no navigator to keep on screen
 	}
-	// The preview exists to show the sprite — restart its loop per pick so
-	// animated idles play instead of freezing on frame 0.
-	if a.previewBase != a.previewFor {
-		a.previewFor = a.previewBase
-		a.previewAt = time.Now()
-	}
-	scale := int32(1)
-	pw, ph := page.W, page.H
-	for (pw > previewMax || ph > previewMax) && scale < 8 {
-		pw /= 2
-		ph /= 2
-		scale *= 2
-	}
-	// Small art doubles up toward the box (integer scale keeps pixels crisp).
-	for pw*2 <= previewMax && ph*2 <= previewMax {
-		pw *= 2
-		ph *= 2
+	// Size to the art when we have it; otherwise a default box so the box and
+	// its ‹ › controls hold their place while the next emote sprite loads.
+	pw, ph := previewMax/2, previewMax/2
+	if ready {
+		// The preview exists to show the sprite — restart its loop per pick so
+		// animated idles play instead of freezing on frame 0.
+		if a.previewBase != a.previewFor {
+			a.previewFor = a.previewBase
+			a.previewAt = time.Now()
+		}
+		pw, ph = page.W, page.H
+		scale := int32(1)
+		for (pw > previewMax || ph > previewMax) && scale < 8 {
+			pw /= 2
+			ph /= 2
+			scale *= 2
+		}
+		// Small art doubles up toward the box (integer scale keeps pixels crisp).
+		for pw*2 <= previewMax && ph*2 <= previewMax {
+			pw *= 2
+			ph *= 2
+		}
 	}
 	dst := sdl.Rect{X: w - pw - pad*2, Y: h - ph - pad*2, W: pw, H: ph}
 	frame := sdl.Rect{X: dst.X - 4, Y: dst.Y - 4, W: dst.W + 8, H: dst.H + 8}
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
-	_ = c.Ren.Copy(page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))], nil, &dst)
+	if ready {
+		_ = c.Ren.Copy(page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))], nil, &dst)
+	} else {
+		c.LabelClipped(dst.X+4, dst.Y+dst.H/2-8, dst.W-8, "loading…", ColTextDim)
+	}
+	if cycling {
+		a.drawPreviewEmoteNav(frame)
+	}
+}
+
+// drawPreviewEmoteNav draws the try-before-wear control bar above the preview
+// box — [<] caption [>] — and handles its clicks plus Left/Right keys (only
+// when no text field owns the keyboard). Clicks on the arrows are consumed so
+// the caller's "click dismisses the preview" check doesn't also fire.
+func (a *App) drawPreviewEmoteNav(frame sdl.Rect) {
+	c := a.ctx
+	const barH = 22
+	const navW = 22
+	bar := sdl.Rect{X: frame.X, Y: frame.Y - barH - 2, W: frame.W, H: barH}
+	c.Fill(bar, sdl.Color{R: 0, G: 0, B: 0, A: 210})
+	caption := ""
+	if a.previewEmoteIdx < len(a.previewLabels) {
+		caption = a.previewLabels[a.previewEmoteIdx]
+	}
+	caption = fmt.Sprintf("%s (%d/%d)", caption, a.previewEmoteIdx+1, len(a.previewAnims))
+	c.LabelClipped(bar.X+navW+4, bar.Y+3, bar.W-2*navW-8, caption, ColAccent)
+	if c.Button(sdl.Rect{X: bar.X, Y: bar.Y, W: navW, H: barH}, "<") {
+		a.cyclePreviewEmote(-1)
+		c.clicked = false
+	}
+	if c.Button(sdl.Rect{X: bar.X + bar.W - navW, Y: bar.Y, W: navW, H: barH}, ">") {
+		a.cyclePreviewEmote(1)
+		c.clicked = false
+	}
+	if c.focusID == "" { // arrow keys cycle too, unless the search field has focus
+		switch c.keyPressed {
+		case sdl.K_LEFT:
+			a.cyclePreviewEmote(-1)
+		case sdl.K_RIGHT:
+			a.cyclePreviewEmote(1)
+		}
+	}
 }
 
 // --- COURTROOM ----------------------------------------------------------------------
@@ -1232,6 +1283,7 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 func (a *App) drawIniswapPanel(w, h int32) {
 	c := a.ctx
 	a.pollIniswap()
+	a.pollPreviewEmotes()                        // try-before-wear: drain a previewed char's emote list
 	a.iniHoverChar = ""                          // recomputed by the cells this frame (quick-file target)
 	a.iniPressed = c.mouseDown && !a.iniPrevDown // mouse went down this frame (drag arm)
 	panel := sdl.Rect{X: pad * 3, Y: pad * 3, W: w - pad*6, H: h - pad*6}
@@ -1414,7 +1466,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	}
 
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h)
+		a.drawSpritePreview(w, h, true) // wardrobe: try-before-wear emote cycle
 		if c.clicked {
 			a.previewBase = ""
 		}
@@ -1561,6 +1613,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 	if c.HoverPreview("iniswap:"+name, cell) {
 		a.previewBase = a.urls.Emote(name, "normal", courtroom.EmoteIdle)
 		a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+		a.ensurePreviewEmotes(name)                                                                                                         // try-before-wear: load this character's emotes to cycle
 	}
 	if c.hovering(cell) {
 		a.iniHoverChar = name // number keys 0-9 quick-file the hovered character
@@ -1900,7 +1953,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	}
 
 	if a.previewBase != "" {
-		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H)
+		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H, false)
 		if c.clicked {
 			a.previewBase = ""
 		}

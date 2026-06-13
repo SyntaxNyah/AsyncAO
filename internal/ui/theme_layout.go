@@ -602,7 +602,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		}
 	}
 	if a.previewBase != "" {
-		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H)
+		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H, false)
 		if c.clicked {
 			a.previewBase = ""
 		}

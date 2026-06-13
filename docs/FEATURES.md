@@ -209,6 +209,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   whatever you're wearing now, so the cycle stays predictable even after a
   manual pick. The key is rebindable in Settings → Hotkeys (and listed in the
   F1 cheat sheet); an empty wardrobe just shows a hint.
+- **Try-before-wear preview**: hovering a wardrobe character pops the usual
+  sprite preview, but now you can **flip through that character's emotes**
+  right in the preview box — the `<` `>` buttons or the Left/Right arrow keys
+  cycle them, with a caption naming each one. It reads the character's emote
+  list from the char.ini that was already warmed on hover (no extra download),
+  so you can see a character's range *before* committing to wear them. Nothing
+  is sent — wearing in the courtroom only affects your own next line anyway.
 - **Settings export/import**: Export writes the complete preferences
   file (knobs, favorites, wardrobes, keybinds, learned formats) beside
   the exe; Import = arm the button and drop the .json — applied on

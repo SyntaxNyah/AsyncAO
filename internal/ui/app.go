@@ -183,11 +183,21 @@ type App struct {
 	previewBase string
 	previewFor  string    // base the preview clock was started for
 	previewAt   time.Time // loop anchor — animated previews play, not freeze
+	// Try-before-wear: cycle a previewed (non-worn) wardrobe character's
+	// emotes in the preview box. previewChar guards a one-shot char.ini parse;
+	// the capped anim/label slices drive the ‹ › buttons and arrow keys.
+	previewChar     string
+	previewAnims    []string
+	previewLabels   []string
+	previewEmoteIdx int
 
 	// --- async result channels (App-global plumbing; payloads carry the
 	// serverKey they were fetched for, and polls drop mismatches so a tab
 	// switch can never land another server's data) ---
 	charINIres chan charINIFetch
+	// previewEmoteRes carries a previewed character's parsed emote list for
+	// the try-before-wear cycle (parsed off-thread, key+char guarded).
+	previewEmoteRes chan previewEmoteFetch
 	// icLogFiltered cache: rebuilt only when the log or the query moved
 	// (a 1024-line scan + slice alloc per frame otherwise).
 	icFilter      []int
@@ -560,6 +570,15 @@ type charINIFetch struct {
 	err error
 }
 
+// previewEmoteFetch is one previewed character's emote list for the
+// try-before-wear cycle. char guards against a newer hover landing first.
+type previewEmoteFetch struct {
+	key    string
+	char   string
+	anims  []string // per-emote animation name (sprite stem)
+	labels []string // per-emote display comment (caption)
+}
+
 // manifestFetch is one extensions.json autodetect result.
 type manifestFetch struct {
 	host   string
@@ -796,22 +815,23 @@ var themePenaltyKeys = []string{"hp_increased_sfx", "hp_decreased_sfx"}
 // NewApp builds the UI over deps.
 func NewApp(ctx *Ctx, d Deps) *App {
 	a := &App{
-		ctx:         ctx,
-		d:           d,
-		screen:      ScreenLobby,
-		lobbyResult: make(chan lobbyFetch, 1),
-		charINIres:  make(chan charINIFetch, 1),
-		iniRes:      make(chan iniswapFetch, 1),
-		manifestRes: make(chan manifestFetch, 1),
-		fontRes:     make(chan fontLoad, 1),
-		notebookRes: make(chan notebookLoad, 1),
-		oocName:     d.Prefs.SavedShowname(),
-		selServer:   -1,
-		activeTab:   -1,
-		macroBind:   -1,
-		themeTex:    map[string]bool{},
-		themePages:  map[string]*render.TexturePage{},
-		hidden:      map[string]bool{},
+		ctx:             ctx,
+		d:               d,
+		screen:          ScreenLobby,
+		lobbyResult:     make(chan lobbyFetch, 1),
+		charINIres:      make(chan charINIFetch, 1),
+		previewEmoteRes: make(chan previewEmoteFetch, 1),
+		iniRes:          make(chan iniswapFetch, 1),
+		manifestRes:     make(chan manifestFetch, 1),
+		fontRes:         make(chan fontLoad, 1),
+		notebookRes:     make(chan notebookLoad, 1),
+		oocName:         d.Prefs.SavedShowname(),
+		selServer:       -1,
+		activeTab:       -1,
+		macroBind:       -1,
+		themeTex:        map[string]bool{},
+		themePages:      map[string]*render.TexturePage{},
+		hidden:          map[string]bool{},
 	}
 	a.resetSessionState()
 	for _, id := range d.Prefs.HiddenPanels() {
@@ -1713,6 +1733,84 @@ func (a *App) warmCharINI(name string) {
 	a.iniWarmed = name
 	a.d.Manager.PrefetchRaw(a.charINIURL(name), network.PriorityLow) // raw text: char.ini
 }
+
+// previewEmoteCap bounds one previewed character's try-before-wear emote cycle
+// (rule §17.4) — a pathological char.ini can't grow the slice unbounded.
+const previewEmoteCap = 256
+
+// ensurePreviewEmotes loads a previewed (non-worn) wardrobe character's emote
+// list ONCE so the preview box can cycle it (try-before-wear). The char.ini was
+// just warmed on hover (warmCharINI → PrefetchRaw), so the fetch rides the
+// cache; the parse runs off-thread and lands in previewEmoteRes. previewChar
+// guards it to one parse per character.
+func (a *App) ensurePreviewEmotes(name string) {
+	if name == "" || name == a.previewChar || a.urls.Origin() == "" {
+		return
+	}
+	a.previewChar = name
+	a.previewAnims = nil
+	a.previewLabels = nil
+	a.previewEmoteIdx = 0
+	url := a.charINIURL(name)
+	key := a.serverKey
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+		defer cancel()
+		data, err := a.d.Manager.FetchRaw(ctx, url)
+		if err != nil {
+			return
+		}
+		ini, err := courtroom.ParseCharINI(data)
+		if err != nil || ini == nil {
+			return
+		}
+		anims := make([]string, 0, len(ini.Emotes))
+		labels := make([]string, 0, len(ini.Emotes))
+		for i, e := range ini.Emotes {
+			if i >= previewEmoteCap {
+				break
+			}
+			anims = append(anims, e.Anim)
+			labels = append(labels, e.Comment)
+		}
+		a.previewEmoteRes <- previewEmoteFetch{key: key, char: name, anims: anims, labels: labels}
+	}()
+}
+
+// pollPreviewEmotes drains a finished preview-emote parse (dropped on a tab
+// switch or a newer hover). If the idle is still on screen for this character,
+// it advances to emote 0 so the ‹ › index always matches what's displayed.
+func (a *App) pollPreviewEmotes() {
+	select {
+	case res := <-a.previewEmoteRes:
+		if res.key != a.serverKey || res.char != a.previewChar {
+			return
+		}
+		a.previewAnims = res.anims
+		a.previewLabels = res.labels
+		a.previewEmoteIdx = 0
+		if len(res.anims) > 0 && a.previewBase == a.urls.Emote(res.char, "normal", courtroom.EmoteIdle) {
+			a.setPreviewEmote(0)
+		}
+	default:
+	}
+}
+
+// setPreviewEmote points the preview box at emote i (wrapping) of the previewed
+// character — the talk (b) pose, like the courtroom emote strip's hover.
+func (a *App) setPreviewEmote(i int) {
+	n := len(a.previewAnims)
+	if n == 0 || a.previewChar == "" {
+		return
+	}
+	a.previewEmoteIdx = ((i % n) + n) % n
+	anim := a.previewAnims[a.previewEmoteIdx]
+	a.previewBase = a.urls.Emote(a.previewChar, anim, courtroom.EmoteTalk)
+	a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(a.previewChar, anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview cycle)
+}
+
+// cyclePreviewEmote steps the try-before-wear preview by delta (wrapping).
+func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.previewEmoteIdx + delta) }
 
 // loadCharINI fetches the ACTIVE character's char.ini for the emote list
 // (the iniswap override when set).

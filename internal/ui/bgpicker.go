@@ -310,7 +310,7 @@ func (a *App) drawBgPanel(w, h int32) {
 	c.popClip(clipPrev, clipHad)
 
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h)
+		a.drawSpritePreview(w, h, false)
 		if c.clicked {
 			a.previewBase = ""
 		}
