@@ -29,6 +29,11 @@ const (
 	previewMax int32 = 520
 	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
 	emoteBtnCell int32 = 40
+	// emoteTextCellW is the fixed cell width for text-mode emote chips, so
+	// they page in the same uniform grid as image chips (labels clip).
+	emoteTextCellW int32 = 104
+	// emoteGridGap spaces the classic emote grid (both axes).
+	emoteGridGap int32 = 6
 	// scrollBarW/Gap reserve the scrollbar lane beside scrolling lists.
 	scrollBarW   int32 = 12
 	scrollBarGap int32 = 6
@@ -1493,27 +1498,51 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		c.Label(r.X, r.Y, "Loading emotes...", ColTextDim)
 		return
 	}
-	x, y := r.X, r.Y
 	me := a.activeCharName() // iniswap override drives emotes + buttons
 	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
-	for i := range a.emotes {
+
+	// Uniform grid so hundreds of emotes page cleanly. The old layout
+	// wrapped and `break`ed on overflow, silently dropping every emote past
+	// the visible rows (playtest: many-emote characters were unusable). The
+	// themed layout already paged (theme_layout.go); this brings the classic
+	// row to parity.
+	cellW, cellH := emoteBtnCell, emoteBtnCell
+	if !useImages {
+		cellW, cellH = emoteTextCellW, btnH
+	}
+	cols := (r.W + emoteGridGap) / (cellW + emoteGridGap)
+	if cols < 1 {
+		cols = 1
+	}
+	// Reserve the arrow row ONLY when paging is needed, so normal characters
+	// keep the full height. Two-pass and oscillation-free: reserving height
+	// only shrinks a page, so a list that needed paging still does.
+	gridH := r.H
+	if len(a.emotes) > int(cols*gridRows(gridH, cellH)) {
+		gridH = r.H - (btnH + 4)
+	}
+	perPage := int(cols * gridRows(gridH, cellH))
+	if perPage < 1 {
+		perPage = 1
+	}
+	pages := (len(a.emotes) + perPage - 1) / perPage
+	if a.emotePage >= pages {
+		a.emotePage = 0
+	}
+	start := a.emotePage * perPage
+
+	for i := start; i < len(a.emotes) && i < start+perPage; i++ {
 		e := &a.emotes[i]
 		label := e.Comment
 		if label == "" {
 			label = e.Anim
 		}
-		bw, bh := emoteBtnCell, emoteBtnCell
-		if !useImages {
-			bw, bh = c.TextWidth(label)+18, btnH
+		n := int32(i - start)
+		btn := sdl.Rect{
+			X: r.X + (n%cols)*(cellW+emoteGridGap),
+			Y: r.Y + (n/cols)*(cellH+emoteGridGap),
+			W: cellW, H: cellH,
 		}
-		if x+bw > r.X+r.W {
-			x = r.X
-			y += bh + 4
-			if y > r.Y+r.H-bh {
-				break
-			}
-		}
-		btn := sdl.Rect{X: x, Y: y, W: bw, H: bh}
 		selected := i == a.emoteIdx
 		if selected {
 			c.Fill(sdl.Rect{X: btn.X - 2, Y: btn.Y - 2, W: btn.W + 4, H: btn.H + 4}, ColAccent)
@@ -1539,14 +1568,35 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 			a.previewBase = a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
 			a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(me, e.Anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 		}
-		x += bw + 6
 	}
+
+	// Page arrows + counter (only when more than one page exists). "<"/">"
+	// match the Settings theme-cycle buttons.
+	if pages > 1 {
+		cy := r.Y + r.H - btnH
+		if c.Button(sdl.Rect{X: r.X, Y: cy, W: 30, H: btnH}, "<") && a.emotePage > 0 {
+			a.emotePage--
+		}
+		if c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") && a.emotePage < pages-1 {
+			a.emotePage++
+		}
+		c.Label(r.X+72, cy+6, fmt.Sprintf("page %d/%d · %d emotes", a.emotePage+1, pages, len(a.emotes)), ColTextDim)
+	}
+
 	if a.previewBase != "" {
 		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H)
 		if c.clicked {
 			a.previewBase = ""
 		}
 	}
+}
+
+// gridRows is how many cellH-tall rows (plus emoteGridGap) fit in h, ≥ 1.
+func gridRows(h, cellH int32) int32 {
+	if rows := (h + emoteGridGap) / (cellH + emoteGridGap); rows > 1 {
+		return rows
+	}
+	return 1
 }
 
 // drawEmoteImageButton draws one emotions/button<N> cell, preferring the

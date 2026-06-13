@@ -127,6 +127,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   order (IC → OOC → search ...), wrapping both ways.
 - Clicking an emote **refocuses the IC input** (AO2 focus_ic_input) —
   pick and keep typing.
+- **Emote grid pages** (`<` / `>` + a `page x/y · N emotes` counter) when
+  a character ships more emotes than fit — both the classic and themed
+  layouts. The arrow row only appears when paging is needed; loading a
+  character resets to page 1.
 - The custom shout button appears **only for characters that ship one**
   (char.ini `custom_name` or `[Shouts]`; a streaming client can't stat
   `custom.gif` the way AO2-Client does).
