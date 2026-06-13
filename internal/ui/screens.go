@@ -1266,23 +1266,84 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	}
 }
 
+// Wardrobe sections: the modal holds two — your characters and your favourite
+// backgrounds — each with the same navigable folders.
+const (
+	wardSectionCharacters = iota
+	wardSectionBackgrounds
+)
+
+// drawIniswapPanel is the wardrobe modal shell. It owns the state SHARED by
+// both sections — the drag press-edge and the end-of-frame drag cleanup, which
+// must run exactly once per frame so a drag can't arm twice or fail to clear —
+// and the section tabs, then dispatches to the active section's body for the
+// grid region. A tab is a mouseup, so a section never switches mid-drag.
 func (a *App) drawIniswapPanel(w, h int32) {
 	c := a.ctx
-	a.pollIniswap()
-	a.pollPreviewEmotes()                        // try-before-wear: drain a previewed char's emote list
-	a.iniHoverChar = ""                          // recomputed by the cells this frame (quick-file target)
-	a.iniPressed = c.mouseDown && !a.iniPrevDown // mouse went down this frame (drag arm)
+	a.iniPressed = c.mouseDown && !a.iniPrevDown // mouse went down this frame (drag arm; shared)
 	panel := sdl.Rect{X: pad * 3, Y: pad * 3, W: w - pad*6, H: h - pad*6}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+8, "Wardrobe — your characters, any server", ColText)
+	c.Heading(panel.X+pad, panel.Y+8, "Wardrobe", ColText)
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + 8, W: 90, H: btnH}, "Close") {
 		a.showIni = false
 		a.iniMenuChar = ""
+		a.iniPrevDown = c.mouseDown
 		return
 	}
+	// Section tabs on the header row.
+	tabX := panel.X + 110
+	for _, t := range [...]struct {
+		id    int
+		label string
+	}{{wardSectionCharacters, "Characters"}, {wardSectionBackgrounds, "Backgrounds"}} {
+		r := sdl.Rect{X: tabX, Y: panel.Y + 8, W: 120, H: btnH}
+		bg := ColPanel
+		if a.wardSection == t.id {
+			bg = ColPanelHi
+		}
+		c.Fill(r, bg)
+		c.Border(r, ColAccent)
+		c.Label(r.X+12, r.Y+5, t.label, ColText)
+		if c.hovering(r) && c.clicked && a.wardSection != t.id {
+			a.wardSection = t.id
+			a.previewBase = "" // each section owns its own preview
+			a.iniMenuChar = "" // close any open character move-to-folder menu
+			if t.id == wardSectionBackgrounds {
+				a.rebuildBgFav()
+			}
+		}
+		tabX += 126
+	}
+	if a.wardSection == wardSectionBackgrounds {
+		a.drawWardrobeBgsBody(panel, w, h)
+	} else {
+		a.drawWardrobeCharsBody(panel, w, h)
+	}
+	// Shared drag ghost: a label trailing the cursor shows what's being dragged
+	// (a character or a background — whichever section armed the drag).
+	if a.iniDragging && a.iniDragChar != "" {
+		g := sdl.Rect{X: c.mouseX + 12, Y: c.mouseY + 8, W: c.TextWidth(a.iniDragChar) + 16, H: 22}
+		c.Fill(g, sdl.Color{R: 0, G: 0, B: 0, A: 225})
+		c.Border(g, ColAccent)
+		c.Label(g.X+6, g.Y+3, a.iniDragChar, ColAccent)
+	}
+	// Shared end-of-frame drag bookkeeping (once per frame, both sections).
+	if !c.mouseDown {
+		a.iniDragChar = ""
+		a.iniDragging = false
+	}
+	a.iniPrevDown = c.mouseDown
+}
+
+// drawWardrobeCharsBody is the Characters section: the navigable wardrobe grid.
+func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
+	c := a.ctx
+	a.pollIniswap()
+	a.pollPreviewEmotes() // try-before-wear: drain a previewed char's emote list
+	a.iniHoverChar = ""   // recomputed by the cells this frame (quick-file target)
 	// Move-to-folder menu: handle its clicks FIRST so they can't leak to the
-	// chips/grid underneath (it's painted last, on top).
+	// folder icons/grid underneath (it's painted last, on top).
 	if a.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
 		a.handleIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
@@ -1478,37 +1539,23 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		}
 	}
 
-	// Drag ghost: a label trailing the cursor shows what's being dragged.
-	if a.iniDragging && a.iniDragChar != "" {
-		g := sdl.Rect{X: c.mouseX + 12, Y: c.mouseY + 8, W: c.TextWidth(a.iniDragChar) + 16, H: 22}
-		c.Fill(g, sdl.Color{R: 0, G: 0, B: 0, A: 225})
-		c.Border(g, ColAccent)
-		c.Label(g.X+6, g.Y+3, a.iniDragChar, ColAccent)
-	}
-
-	// Move-to-folder menu paints last (above the grid + preview).
+	// Move-to-folder menu paints last (above the grid + preview). The shared
+	// drag ghost and end-of-frame drag cleanup live in the drawIniswapPanel
+	// wrapper — one place for both sections.
 	if a.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
 		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
 	}
-
-	// End-of-frame drag bookkeeping: release ends the drag; track the held
-	// state for next frame's press detection.
-	if !c.mouseDown {
-		a.iniDragChar = ""
-		a.iniDragging = false
-	}
-	a.iniPrevDown = c.mouseDown
 }
 
-// drawIniFolderCell draws one wardrobe folder as a folder-shaped icon (a tab
-// over a body) labelled with its member count, with the folder name beneath.
-// Clicking opens it (the grid then shows only its characters); dropping a
-// dragged character files it here. Pure graphics — no cachedPage — so it is
-// safe to draw at any grid slot (unlike the index-keyed character cells).
-func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
+// drawFolderShape paints a folder icon — a tab over a body, the member count
+// centered, the name beneath — sized to the given cell. The shared VISUAL for
+// both wardrobe sections; interaction (open/drop) is the caller's, since
+// characters and backgrounds file into different prefs. Pure graphics — no
+// cachedPage — so a folder cell is safe to draw at any grid slot (unlike the
+// index-keyed character/background cells).
+func (a *App) drawFolderShape(cell sdl.Rect, count int, name string, hover, dropTarget bool) {
 	c := a.ctx
-	hover := c.hovering(cell)
 	tab := sdl.Rect{X: cell.X + 4, Y: cell.Y + 5, W: (cell.W - 8) / 2, H: 9}
 	body := sdl.Rect{X: cell.X + 2, Y: cell.Y + 12, W: cell.W - 4, H: cell.H - 14}
 	col := ColFolder
@@ -1517,7 +1564,7 @@ func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	}
 	c.Fill(tab, col)
 	c.Fill(body, col)
-	if a.iniDragging && hover { // drop-target highlight while a character is being dragged
+	if dropTarget { // a drag is hovering this folder
 		c.Border(tab, ColAccent)
 		c.Border(body, ColAccent)
 	} else {
@@ -1525,7 +1572,15 @@ func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	}
 	cnt := fmt.Sprintf("%d", count)
 	c.Label(body.X+body.W/2-c.TextWidth(cnt)/2, body.Y+body.H/2-8, cnt, ColText)
-	c.LabelClipped(cell.X, cell.Y+iconCell+1, cell.W, name, ColText)
+	c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColText)
+}
+
+// drawIniFolderCell draws one Characters-section folder. Clicking opens it (the
+// grid then shows only its characters); dropping a dragged character files it.
+func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
+	c := a.ctx
+	hover := c.hovering(cell)
+	a.drawFolderShape(cell, count, name, hover, a.iniDragging && hover)
 	c.Tooltip(cell, "Open the "+name+" folder — or drop a character here to file it")
 	if hover && c.clicked {
 		if a.iniDragging && a.iniDragChar != "" {

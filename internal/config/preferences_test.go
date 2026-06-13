@@ -408,6 +408,28 @@ func TestFavBackgrounds(t *testing.T) {
 	}
 }
 
+// TestFavBackgroundFolders pins the per-server background→folder map: file with
+// a case-insensitive key, clear, and that unstarring drops the folder entry.
+func TestFavBackgroundFolders(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	const key = "wss://s:1/"
+	p.AddFavBackground(key, "courtroom")
+	p.AddFavBackground(key, "lobby")
+	p.SetFavBackgroundFolder(key, "Courtroom", "Trials") // case-insensitive key
+	p.SetFavBackgroundFolder(key, "lobby", "Trials")
+	if m := p.FavBackgroundFolderMap(key); m["courtroom"] != "Trials" || m["lobby"] != "Trials" {
+		t.Fatalf("folders = %v, want both filed under Trials", m)
+	}
+	p.SetFavBackgroundFolder(key, "courtroom", "") // clear
+	if p.FavBackgroundFolderMap(key)["courtroom"] != "" {
+		t.Error("empty folder must clear the entry")
+	}
+	p.RemoveFavBackground(key, "Lobby") // unstarring drops the folder
+	if p.FavBackgroundFolderMap(key)["lobby"] != "" {
+		t.Error("removing a favourite background must drop its folder")
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	p, err := load(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil {

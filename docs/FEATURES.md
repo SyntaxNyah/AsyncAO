@@ -158,7 +158,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   you use, exactly like the wardrobe star. Favorites are **saved per server**,
   float to the top of the list, and a **"Favorites only"** checkbox filters the
   grid to just them — so your go-to scenes are one click away even on a host
-  with no directory listing. Click the star again to unpin.
+  with no directory listing. Click the star again to unpin. Your favorites also
+  show up in the **Wardrobe's Backgrounds section** (below), where you can sort
+  them into folders and change the room to one with a click.
 - The custom shout button appears **only for characters that ship one**
   (char.ini `custom_name` or `[Shouts]`; a streaming client can't stat
   `custom.gif` the way AO2-Client does).
@@ -203,6 +205,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   that-numbered folder, 0 = take out), or add with `folder/char`. **Search
   spans every folder.** Folders are per server and exist exactly while they
   hold a character — emptying one removes it, so there's nothing to clean up.
+- **Two wardrobe sections — Characters and Backgrounds**: tabs at the top of
+  the Wardrobe switch between your characters and your **favorite backgrounds**.
+  The Backgrounds section uses the *same* navigable folders: drag a background
+  onto a folder icon to file it, open a folder to see inside, and click a
+  background to change the room to it (`/bg`). Its ★ removes a background from
+  favorites. Favorites are added by starring in the Background picker; the
+  section shows a hint pointing there when it's empty. Background folders are
+  saved per server, just like character folders.
 - **Per-server character keybinds**: a key badge on each wardrobe cell
   binds a plain key (press A → wear that character instantly); fires
   only with no text field focused. Right-click the badge to clear.

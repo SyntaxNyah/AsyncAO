@@ -343,6 +343,10 @@ type ServerWarmInfo struct {
 	// — pinned in the background picker so they float to the top and can be
 	// filtered to on their own, even on hosts with no directory listing.
 	FavBackgrounds []string `json:"favBackgrounds,omitempty"`
+	// FavBackgroundFolder maps a lowercased favourite background to its folder
+	// (category) for the wardrobe's Backgrounds section; absent = unfiled.
+	// Mirrors WardrobeFolder for characters.
+	FavBackgroundFolder map[string]string `json:"favBackgroundFolder,omitempty"`
 	// CharKeys maps a plain key name ("a", "5", "f3") to a character to
 	// wear when pressed in the courtroom with no text field focused.
 	CharKeys map[string]string `json:"charKeys,omitempty"`
@@ -1552,19 +1556,61 @@ func (p *AssetPreferences) AddFavBackground(serverKey, name string) bool {
 	return changed
 }
 
-// RemoveFavBackground unstars a background on one server. Reports change.
+// RemoveFavBackground unstars a background on one server (and drops its folder
+// entry, like RemoveWardrobe). Reports change.
 func (p *AssetPreferences) RemoveFavBackground(serverKey, name string) bool {
 	changed := false
 	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
 		for i, have := range w.FavBackgrounds {
 			if strings.EqualFold(have, name) {
 				w.FavBackgrounds = append(w.FavBackgrounds[:i], w.FavBackgrounds[i+1:]...)
+				delete(w.FavBackgroundFolder, strings.ToLower(name)) // leaving favourites drops the folder too
 				changed = true
 				return
 			}
 		}
 	})
 	return changed
+}
+
+// FavBackgroundFolderMap returns a copy of one server's lowercased background →
+// folder map (Backgrounds-section organization). nil when nothing is filed.
+func (p *AssetPreferences) FavBackgroundFolderMap(serverKey string) map[string]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	src := p.ServerWarm[serverKey].FavBackgroundFolder
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// SetFavBackgroundFolder files a favourite background under a folder on one
+// server; an empty folder clears it. Bounded by FavBackgroundCap. Mirrors
+// SetWardrobeFolder.
+func (p *AssetPreferences) SetFavBackgroundFolder(serverKey, bg, folder string) {
+	bg = strings.ToLower(strings.TrimSpace(bg))
+	folder = strings.TrimSpace(folder)
+	if bg == "" || serverKey == "" {
+		return
+	}
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		if folder == "" {
+			delete(w.FavBackgroundFolder, bg)
+			return
+		}
+		if w.FavBackgroundFolder == nil {
+			w.FavBackgroundFolder = map[string]string{}
+		}
+		if _, exists := w.FavBackgroundFolder[bg]; !exists && len(w.FavBackgroundFolder) >= FavBackgroundCap {
+			return
+		}
+		w.FavBackgroundFolder[bg] = folder
+	})
 }
 
 // --- Character keybinds (per server) -------------------------------------------
