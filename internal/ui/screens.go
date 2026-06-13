@@ -403,12 +403,17 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 
 	a.ensureCharLower()
-	// Pre-count matches so the scrollbar knows the content height; the
-	// draw loop below walks the same list anyway.
-	matches := int32(0)
-	for i := range a.sess.Chars {
-		if query == "" || strings.Contains(a.charLower[i], query) {
-			matches++
+	// Pre-count matches so the scrollbar knows the content height. With no
+	// search every slot matches, so skip the scan (it's a per-frame O(n) walk
+	// that bites on servers with thousands of characters); the draw loop below
+	// still culls to the visible rows either way. Mirrors the bg picker.
+	matches := int32(len(a.sess.Chars))
+	if query != "" {
+		matches = 0
+		for i := range a.sess.Chars {
+			if strings.Contains(a.charLower[i], query) {
+				matches++
+			}
 		}
 	}
 	contentH := (matches + cols - 1) / cols * cellH
