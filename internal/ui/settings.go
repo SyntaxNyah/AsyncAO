@@ -309,10 +309,10 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	}
 	y += 26
 	tabCap := a.d.Prefs.TabCap()
-	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 6); next != tabCap {
+	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 99); next != tabCap {
 		a.d.Prefs.SetTabCap(next)
 	}
-	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection", ColTextDim)
+	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection (default 6)", ColTextDim)
 	y += 30
 	smooth := a.d.Prefs.SmoothScalingEnabled()
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {

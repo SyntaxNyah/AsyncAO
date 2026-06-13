@@ -341,7 +341,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   While you're scrolled up reading backlog, a **"↓ N new" pill** appears at
   the bottom of the IC log showing how many messages arrived since you caught
   up; click it to jump back to the live bottom.
-- **Multi-server tabs** (default 3, **configurable 1–6** in Settings →
+- **Multi-server tabs** (default 6, **configurable up to 99** in Settings →
   General → "Max server tabs"): Join while connected opens a NEW tab —
   the old session parks and keeps running (its packets drain on a
   per-frame budget into its own logs; unread counts and callword

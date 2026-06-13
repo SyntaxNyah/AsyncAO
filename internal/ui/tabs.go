@@ -31,11 +31,11 @@ import (
 )
 
 const (
-	// maxTabs is the DEFAULT concurrent-session cap (rule §17.4); the live cap
-	// is configurable via prefs (config.TabCap, clamped to config.maxMultiTabCap).
-	// Three hosts one server and lurks two others; each costs a websocket, a
-	// session reducer, and two bounded logs.
-	maxTabs = 3
+	// maxTabs is the DEFAULT concurrent-session cap; the live cap is
+	// configurable via prefs (config.TabCap, up to config.maxMultiTabCap). Kept
+	// in sync with the config default so it can't drift. Each tab costs a
+	// websocket, a session reducer, and two bounded logs (rule §17.4).
+	maxTabs = config.DefaultMultiTabCap
 	// tabPumpBudget bounds packets drained per BACKGROUND tab per frame —
 	// a busy room can't starve the active tab's frame time.
 	tabPumpBudget = 64

@@ -91,13 +91,15 @@ const (
 	catchUpThresholdMax     = 50
 )
 
-// Multi-server tab cap: how many servers you can keep open at once. Default 3
-// (each tab costs a websocket + reducer + two bounded logs); raise it to lurk
-// more. Still bounded (rule §17.4) — capped at maxMultiTabCap.
+// Multi-server tab cap: how many servers you can keep open at once. Default 6;
+// raise it to lurk as many as you like. Each tab costs a websocket + reducer +
+// two bounded logs, so it stays bounded (rule §17.4) — the ceiling is a high,
+// effectively-unlimited 99 rather than truly unbounded (hundreds of live
+// connections would exhaust the budget; nobody runs that many AO tabs anyway).
 const (
-	DefaultMultiTabCap = 3
+	DefaultMultiTabCap = 6
 	minMultiTabCap     = 1
-	maxMultiTabCap     = 6
+	maxMultiTabCap     = 99
 )
 
 // defaultEmoteButtonImages ships the courtroom emote picker as image
