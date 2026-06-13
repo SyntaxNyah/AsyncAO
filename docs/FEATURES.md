@@ -317,10 +317,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   binding.
 - **Live layout editor** (UI... → Edit layout, themed courtrooms): drag
   any widget across the screen, grab its corner grip to shrink/grow,
-  right-click to reset one, Reset all for the theme. Edits persist per
-  theme as design-space overrides (window resizes keep working; the
-  theme's own files are never touched). While editing, the real UI is
-  input-fenced so nothing misfires.
+  right-click to reset one, Reset all for the theme. A **Snap** toggle
+  (on by default) rounds moves and resizes to a tidy grid so widgets line
+  up; flip it off for free-hand placement. Edits persist per theme as
+  design-space overrides (window resizes keep working; the theme's own
+  files are never touched). While editing, the real UI is input-fenced so
+  nothing misfires.
 - **Tabbed settings**: the settings screen is split into category tabs
   (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
   one long scroll — click a tab, scroll within it, each tab remembers its

@@ -26,7 +26,18 @@ const (
 	// layoutMinDesignPx floors edited widgets in design space (matches
 	// the layout engine's own degenerate-rect rejection with margin).
 	layoutMinDesignPx = 16
+	// layoutGridDesign is the snap grid in design px — edits round to it when
+	// snap is on, so widgets line up cleanly.
+	layoutGridDesign = 8
 )
+
+// snapDesign rounds a design-space coordinate to the nearest grid line.
+func snapDesign(v int) int {
+	if v < 0 {
+		return 0
+	}
+	return (v + layoutGridDesign/2) / layoutGridDesign * layoutGridDesign
+}
 
 // layoutEditSkip are rects the editor never touches: the stage frame
 // itself and the chatbox-relative children (they ride the chatbox).
@@ -46,6 +57,7 @@ func (a *App) startLayoutEdit() {
 	a.bgPick.show = false
 	a.editKey = ""
 	a.editDrag = 0
+	a.layoutSnap = true // tidy placement by default; toggle off in the editor
 }
 
 // stopLayoutEdit disarms and releases the input fence.
@@ -86,8 +98,14 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	c.Label(pad, 5, banner, ColTierYellow)
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
 	resetBtn := sdl.Rect{X: doneBtn.X - 96, Y: 2, W: 90, H: 22}
+	snapBtn := sdl.Rect{X: resetBtn.X - 106, Y: 2, W: 100, H: 22}
+	snapLabel := "Snap: off"
+	if a.layoutSnap {
+		snapLabel = "Snap: on"
+	}
 	a.rawChip(doneBtn, "Done")
 	a.rawChip(resetBtn, "Reset all")
+	a.rawChip(snapBtn, snapLabel)
 
 	pressed := c.mouseDown && !a.editPrev
 	a.editPrev = c.mouseDown
@@ -104,6 +122,10 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		a.themeLay.valid = false
 		a.pushDebug("layout edit: all overrides reset for " + themeName)
 		return
+	}
+
+	if c.clicked && pointIn(c.mouseX, c.mouseY, snapBtn) {
+		a.layoutSnap = !a.layoutSnap
 	}
 
 	// Hover pick: the SMALLEST rect under the cursor wins (stable order
@@ -165,6 +187,21 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			}
 			if r.H < layoutMinDesignPx {
 				r.H = layoutMinDesignPx
+			}
+		}
+		if a.layoutSnap { // round to the grid so widgets line up cleanly
+			if a.editDrag == 1 {
+				r.X = snapDesign(r.X)
+				r.Y = snapDesign(r.Y)
+			} else {
+				r.W = snapDesign(r.W)
+				r.H = snapDesign(r.H)
+				if r.W < layoutMinDesignPx {
+					r.W = layoutMinDesignPx
+				}
+				if r.H < layoutMinDesignPx {
+					r.H = layoutMinDesignPx
+				}
 			}
 		}
 		// Keep it on the stage (the engine's clamp would rescue it, but

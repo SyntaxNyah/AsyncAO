@@ -287,6 +287,7 @@ type App struct {
 	editPrev   bool
 	editStart  [2]int32
 	editBase   theme.Rect
+	layoutSnap bool // snap edits to a design-space grid (toggle in the editor)
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage
