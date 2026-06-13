@@ -1875,6 +1875,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// Deferred kit overlays (open dropdown lists) stack above everything.
 	a.ctx.FinishFrame()
+	// Hover hints paint last so they sit above every cell/overlay.
+	a.ctx.drawTooltip(winW, winH)
 }
 
 // applyThemeAsync loads the selected theme's visible pieces off-thread —

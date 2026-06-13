@@ -481,6 +481,7 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		c.Fill(get, sdl.Color{R: 0, G: 0, B: 0, A: 200})
 		c.Border(get, ColPanelHi)
 		c.Label(get.X+6, get.Y+1, downloadGlyph, ColAccent)
+		c.Tooltip(get, "Press the green down arrow to download this character")
 		if c.hovering(get) && c.clicked {
 			a.startCharDownload(slot.Name)
 			return

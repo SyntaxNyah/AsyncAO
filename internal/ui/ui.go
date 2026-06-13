@@ -270,6 +270,7 @@ type Ctx struct {
 	dragID     string      // widget owning the active drag ("" = none)
 	dropped    string      // SDL_DROPFILE path this frame ("" = none)
 	hotkey     sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
+	tipText    string      // hover hint to paint at end-of-frame ("" = none)
 
 	focusID  string
 	caretOn  bool
@@ -544,6 +545,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.cutReq = false
 	c.dropped = ""
 	c.hotkey = 0
+	c.tipText = ""
 	x, y, _ := sdl.GetMouseState()
 	c.mouseX, c.mouseY = c.toLogical(x), c.toLogical(y)
 	c.ctrlHeld = sdl.GetModState()&sdl.KMOD_CTRL != 0
@@ -1177,6 +1179,36 @@ func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, b
 
 // FinishFrame paints deferred overlays (open dropdown lists). Call after
 // every screen draw of the frame.
+// Tooltip arms a one-line hover hint for rect r; drawTooltip paints it near
+// the cursor at end-of-frame so it sits above the grid cells it describes.
+// Skipped while a dropdown owns the pointer (modal fence).
+func (c *Ctx) Tooltip(r sdl.Rect, text string) {
+	if text != "" && !c.modalOn && c.hovering(r) {
+		c.tipText = text
+	}
+}
+
+// drawTooltip paints the armed hover hint near the cursor, flipped at the
+// window edges so it never spills off-screen. Called last in the frame.
+func (c *Ctx) drawTooltip(w, h int32) {
+	if c.tipText == "" {
+		return
+	}
+	box := sdl.Rect{X: c.mouseX + 16, Y: c.mouseY + 18, W: c.TextWidth(c.tipText) + 12, H: 22}
+	if box.X+box.W > w {
+		box.X = c.mouseX - box.W - 8 // flip left of the pointer
+	}
+	if box.X < 0 {
+		box.X = 0
+	}
+	if box.Y+box.H > h {
+		box.Y = c.mouseY - box.H - 6 // flip above the pointer
+	}
+	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 235})
+	c.Border(box, ColAccent)
+	c.Label(box.X+6, box.Y+3, c.tipText, ColText)
+}
+
 func (c *Ctx) FinishFrame() {
 	for i := range c.ddDraws {
 		d := &c.ddDraws[i]

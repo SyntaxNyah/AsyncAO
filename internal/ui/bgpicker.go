@@ -321,6 +321,7 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool) {
 		c.Fill(get, sdl.Color{R: 0, G: 0, B: 0, A: 200})
 		c.Border(get, ColPanelHi)
 		c.Label(get.X+7, get.Y+2, downloadGlyph, ColAccent)
+		c.Tooltip(get, "Press this to download this background")
 		if c.hovering(get) && c.clicked {
 			a.startBgDownload(name)
 			return
