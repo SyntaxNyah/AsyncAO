@@ -309,7 +309,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   powered `--debug` logging. F3 again hides it.
 - **Blankposting**: Enter on an empty IC input sends the AO single-space
   message — your sprite plays with no text (truly empty messages get
-  server-rejected; the space is the cross-server convention).
+  server-rejected; the space is the cross-server convention). When a
+  blankpost is on stage the whole chatbox — frame, name and text — is
+  hidden, so only the sprite shows (great for silent animated posts). The
+  box stays hidden through the preanim too: it never flashes empty. Any
+  whitespace-only or markup-only message counts as a blankpost.
 - **Per-server theme bindings** (Settings → "Bind theme to server"):
   pick any known server and bind the selected theme to it — joining
   that server always applies it (tabs and rehearsal included), leaving

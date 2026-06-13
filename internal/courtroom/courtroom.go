@@ -101,6 +101,12 @@ type Scene struct {
 	// differently-colored messages can share the same stripped MessageText.
 	MessageStyles []StyleRun
 	MessageRaw    string
+	// IsBlankPost is set when the message's text is empty or whitespace-only
+	// (an AO "blankpost": animate the sprite, say nothing). The UI hides the
+	// whole chatbox — frame, showname and text — so only the sprite shows.
+	// Decided in begin() from the raw message, so an animated blankpost never
+	// flashes an empty box during its preanim.
+	IsBlankPost bool
 
 	// Full-viewport effects: Update counts these down, the renderer reads
 	// the remainders (flash alpha, shake amplitude). Plain data — the
@@ -388,6 +394,11 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.Scene.MessageRaw = ""
 	c.Scene.MessageStyles = c.Scene.MessageStyles[:0]
 	c.Scene.VisibleRunes = 0
+	// Blankpost decided up front from the raw text (StripChatMarkup is pinned
+	// to the typewriter by TestStripMatchesTypewriter, so this matches what
+	// would type out) — known from frame 1 so the box never flashes during an
+	// animated blankpost's preanim.
+	c.Scene.IsBlankPost = strings.TrimSpace(StripChatMarkup(msg.Message)) == ""
 	c.preanimDone = false
 
 	// --- phase entry ---
@@ -418,6 +429,8 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.MessageRaw = msg.Message
 	c.Scene.MessageStyles = append(c.Scene.MessageStyles[:0], c.Typewriter.Styles()...)
 	c.Scene.VisibleRunes = c.Typewriter.Visible()
+	// Same blankpost rule as begin(); this path doesn't route through it.
+	c.Scene.IsBlankPost = strings.TrimSpace(c.Scene.MessageText) == ""
 	c.preanimDone = false
 	c.phase = PhaseLinger
 	c.timer = catchUpLinger

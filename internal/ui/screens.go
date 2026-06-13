@@ -806,7 +806,9 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 func (a *App) drawChatOverlay(vp sdl.Rect) {
 	c := a.ctx
 	sc := &a.room.Scene
-	if sc.MessageText == "" && sc.ShownameText == "" {
+	// Blankpost hides the whole chatbox (frame + showname + text) so only the
+	// sprite shows; the second clause is the unchanged idle/no-message case.
+	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
 		return
 	}
 	// Box height follows the MsgBox knob ONLY; text size (the Text knob)

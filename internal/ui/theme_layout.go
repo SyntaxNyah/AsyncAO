@@ -477,7 +477,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	c := a.ctx
 	sc := &a.room.Scene
-	if sc.MessageText == "" && sc.ShownameText == "" {
+	// Blankpost hides the whole chatbox (frame + showname + text) so only the
+	// sprite shows; the second clause is the unchanged idle/no-message case.
+	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
 		return
 	}
 	skinned := false

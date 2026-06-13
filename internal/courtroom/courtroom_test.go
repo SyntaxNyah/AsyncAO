@@ -553,6 +553,34 @@ func TestPairedMessageSceneState(t *testing.T) {
 	}
 }
 
+// TestBlankPostDetection pins Scene.IsBlankPost: a whitespace-only or
+// markup-only message is a blankpost (the UI hides the whole chatbox so only
+// the sprite shows), real text is not. Decided in begin() before the phase
+// switch — known from frame 1 so an animated blankpost never flashes an empty
+// box during its preanim. A fresh rig per case keeps each at queue depth 1.
+func TestBlankPostDetection(t *testing.T) {
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{"", true},       // truly empty
+		{" ", true},      // AO single-space blankpost (one space rune)
+		{"   ", true},    // any whitespace run
+		{`\c1`, true},    // inline markup with no visible glyphs
+		{"Hello", false}, // real text
+		{`\c1Hi`, false}, // colored real text
+	}
+	for _, tc := range cases {
+		room, sess, _, _ := newCourtroomRig(t)
+		setupReadySession(t, sess)
+		msg := pairedMS(t, sess, tc.text)
+		room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+		if got := room.Scene.IsBlankPost; got != tc.want {
+			t.Errorf("text %q: IsBlankPost = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
 func TestMessageLifecyclePhases(t *testing.T) {
 	room, sess, _, audio := newCourtroomRig(t)
 	setupReadySession(t, sess)
