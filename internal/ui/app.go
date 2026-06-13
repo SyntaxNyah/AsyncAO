@@ -491,7 +491,7 @@ type sessionState struct {
 	showIni      bool
 	iniSearch    string
 	iniAdd       string   // "add folder to wardrobe" input
-	iniFolder    string   // active folder filter ("" = All; iniUnsortedFolder = unsorted)
+	iniFolder    string   // open wardrobe folder ("" = top level/root, else folder name)
 	iniNewFold   string   // "new folder" text input
 	iniMenuChar  string   // wardrobe char with an open "move to folder" menu ("" = none)
 	iniMenuAt    [2]int32 // that menu's top-left (cursor at right-click)

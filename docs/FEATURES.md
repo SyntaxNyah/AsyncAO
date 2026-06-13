@@ -189,17 +189,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Per-server wardrobe**: custom character lists no longer carry
   between servers; the pre-split collection migrates once to the first
   server joined after updating.
-- **Wardrobe folders**: organize the wardrobe into categories (e.g. a
-  "Danganronpa" folder), app-drawer style. Filter chips ([All] · [Unsorted] ·
-  each folder, numbered) switch the grid. File a character four ways:
-  **drag-and-drop** — press a character cell and drag it onto a folder chip to
-  drop it in (drop on [All]/[Unsorted] to unfile); **right-click →
-  "move to folder"** menu (pick any destination, including a brand-new one);
-  **number keys 1-9** file the hovered character into that-numbered folder
-  (0 = unsorted); or add with `folder/char`. A plain click still wears, a
-  small drag threshold tells the two apart. The cell shows its folder tag.
-  Folders persist per server and drop automatically when a character leaves
-  the wardrobe.
+- **Wardrobe folders** (app-drawer style): folders are real objects you open,
+  not just filters. At the top level the grid leads with a **folder icon** per
+  category; **click one to open it** (the grid then shows only that folder's
+  characters) and a **‹ All folders** button takes you back. **Drag a character
+  cell onto a folder icon to file it**; drag it onto the back button to take it
+  out again. To make a new folder, type its name in the **New folder** box — a
+  folder icon appears immediately so you can drop the first character onto it
+  (the folder becomes permanent once it has a member). A plain click still
+  wears the character; a small drag threshold tells a click from a drag. Other
+  ways to file: **right-click → "move to folder"** (the only cross-folder move
+  once you're inside one), **number keys 1-9** (file the hovered character into
+  that-numbered folder, 0 = take out), or add with `folder/char`. **Search
+  spans every folder.** Folders are per server and exist exactly while they
+  hold a character — emptying one removes it, so there's nothing to clean up.
 - **Per-server character keybinds**: a key badge on each wardrobe cell
   binds a plain key (press A → wear that character instantly); fires
   only with no text field focused. Right-click the badge to clear.

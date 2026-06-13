@@ -1156,25 +1156,11 @@ func (a *App) drawAreaList(r sdl.Rect) {
 // (paced asks, 64 px thumbnail icons, 404 cache), same search, same
 // scrollbar, same 3 s hover preview. Picking one iniswaps outgoing
 // messages into that folder; the server slot is untouched.
-// iniUnsortedFolder is the wardrobe folder-filter sentinel for "no folder"
-// (a control char no real folder name can be).
-const iniUnsortedFolder = "\x00unsorted"
-
-// iniFolderMatch reports whether a character's folder passes the active
-// wardrobe filter ("" = All, iniUnsortedFolder = only unfiled, else exact).
-func iniFolderMatch(charFolder, active string) bool {
-	switch active {
-	case "":
-		return true
-	case iniUnsortedFolder:
-		return charFolder == ""
-	default:
-		return charFolder == active
-	}
-}
-
 // wardrobeFolders lists the distinct folder names in the current menu, in
-// first-seen order (stable, no per-frame sort) — the filter chips.
+// first-seen order (stable, no per-frame sort) — the folder icons at the
+// wardrobe's top level. Membership-derived: a folder exists exactly while a
+// character is filed in it (filing the first creates it, emptying it removes
+// it), so there's no separate folder table to keep in sync.
 func (a *App) wardrobeFolders() []string {
 	var out []string
 	seen := map[string]struct{}{}
@@ -1321,13 +1307,10 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	var addNow bool
 	a.iniAdd, addNow = c.TextField("iniswapadd", sdl.Rect{X: panel.X + pad + 240, Y: y, W: 230, H: fieldH}, a.iniAdd, "Add char (or folder/char) to wardrobe...")
 	if c.Button(sdl.Rect{X: panel.X + pad + 476, Y: y, W: 60, H: btnH}, "Add") || addNow {
-		// "folder/char" files it explicitly; otherwise it joins the active
-		// folder filter (a real folder; All/Unsorted = unfiled).
+		// "folder/char" files it explicitly; otherwise it joins the folder
+		// you're currently viewing ("" at the top level = unfiled).
 		raw := strings.TrimSpace(a.iniAdd)
 		folder, char := a.iniFolder, raw
-		if folder == iniUnsortedFolder {
-			folder = ""
-		}
 		if i := strings.IndexByte(raw, '/'); i >= 0 {
 			folder, char = strings.TrimSpace(raw[:i]), strings.TrimSpace(raw[i+1:])
 		}
@@ -1350,105 +1333,128 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	}
 	y += 36
 
-	// Folder row: [All] [Unsorted] + a chip per folder filter the grid; a
-	// "new folder" field names a category, then right-click characters to
-	// file them in (drawIniswapCell). Folders persist per server.
-	fx := panel.X + pad
-	chipLimit := panel.X + panel.W - pad - 250 // leave room for the new-folder field
-	folderChip := func(label, val string) {
-		if fx > chipLimit {
-			return
+	// --- Folder navigation -----------------------------------------------------
+	// Folders are real objects you open. At the top level the grid leads with a
+	// folder icon per category; click one to open it (the grid then shows just
+	// that folder's characters) and drag a character onto one to file it. Inside
+	// a folder, a back button returns to the top (and is itself a drop target
+	// that removes a character from the folder). Folders are membership-derived;
+	// typing a name below makes a transient folder cell so the FIRST character
+	// has something to drop onto. A search spans every folder.
+	query := a.iniQ.get(a.iniSearch)
+	searching := query != ""
+
+	folderCells := a.wardrobeFolders()
+	if nf := strings.TrimSpace(a.iniNewFold); nf != "" { // a just-typed folder is a drop target before it has members
+		seen := false
+		for _, f := range folderCells {
+			if strings.EqualFold(f, nf) {
+				seen = true
+				break
+			}
 		}
-		bw := c.TextWidth(label) + 16
-		fr := sdl.Rect{X: fx, Y: y, W: bw, H: btnH}
-		bg := ColPanel
-		if a.iniFolder == val {
-			bg = ColPanelHi
+		if !seen {
+			folderCells = append(folderCells, nf)
 		}
-		c.Fill(fr, bg)
-		// A drag hovering the chip highlights it as a drop target.
-		if a.iniDragging && c.hovering(fr) {
-			c.Border(fr, ColAccent)
+	}
+	charVisible := func(i int) bool {
+		if searching { // search ignores the folder you're in — find anyone
+			return strings.Contains(a.iniLower[i], query)
+		}
+		return strings.EqualFold(a.iniFolders[i], a.iniFolder) // "" = top level = unfiled
+	}
+	countInFolder := func(name string) int {
+		n := 0
+		for _, f := range a.iniFolders {
+			if strings.EqualFold(f, name) {
+				n++
+			}
+		}
+		return n
+	}
+
+	switch {
+	case searching:
+		c.Label(panel.X+pad, y+4, "Search spans every folder — clear it to browse folders", ColTextDim)
+	case a.iniFolder == "":
+		a.iniNewFold, _ = c.TextField("ininewfold", sdl.Rect{X: panel.X + pad, Y: y, W: 240, H: fieldH}, a.iniNewFold, "New folder name, then drag chars onto it")
+		c.LabelClipped(panel.X+pad+250, y+4, panel.X+panel.W-(panel.X+pad+250)-pad, "Drag a character onto a folder to file it · open a folder to see inside", ColTextDim)
+	default:
+		back := sdl.Rect{X: panel.X + pad, Y: y, W: 150, H: btnH}
+		c.Fill(back, ColPanel)
+		if a.iniDragging && c.hovering(back) {
+			c.Border(back, ColAccent) // drop here to take the character out of the folder
 		} else {
-			c.Border(fr, ColPanelHi)
+			c.Border(back, ColPanelHi)
 		}
-		c.Label(fr.X+8, fr.Y+5, label, ColText)
-		if c.hovering(fr) && c.clicked {
+		c.Label(back.X+8, back.Y+5, "‹ All folders", ColText)
+		c.Tooltip(back, "Back to all folders — or drop a character here to take it out of this folder")
+		if c.hovering(back) && c.clicked {
 			if a.iniDragging && a.iniDragChar != "" {
-				// Drop: file the dragged character here (All/Unsorted unfile).
-				dest := val
-				if dest == iniUnsortedFolder {
-					dest = ""
-				}
-				a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniDragChar, dest)
+				a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniDragChar, "")
 				a.rebuildIniMenu()
 				c.clicked = false // consume the drop
 			} else {
-				a.iniFolder = val
+				a.iniFolder = ""
+				a.iniScroll = 0
 			}
 		}
-		fx += bw + 4
+		c.LabelClipped(back.X+back.W+12, y+5, panel.X+panel.W-(back.X+back.W+12)-pad, fmt.Sprintf("%s — %d character(s) · right-click a character to move it", a.iniFolder, countInFolder(a.iniFolder)), ColAccent)
 	}
-	folderChip("All", "")
-	folderChip("Unsorted", iniUnsortedFolder)
-	for i, f := range a.wardrobeFolders() {
-		label := f
-		if i < 9 { // 1-9 are the quick-file keys
-			label = fmt.Sprintf("%d %s", i+1, f)
-		}
-		folderChip(label, f)
-	}
-	var newFoldCommit bool
-	a.iniNewFold, newFoldCommit = c.TextField("ininewfold", sdl.Rect{X: panel.X + panel.W - pad - 240, Y: y, W: 240, H: fieldH}, a.iniNewFold, "New folder (Enter), then right-click chars")
-	if newFoldCommit && strings.TrimSpace(a.iniNewFold) != "" {
-		a.iniFolder = strings.TrimSpace(a.iniNewFold)
-		a.iniNewFold = ""
-	}
-	y += btnH + 6
-	c.Label(panel.X+pad, y, "Right-click a character to move it to a folder · keys 1-9 file the hovered one into folder N (0 = unsorted)", ColTextDim)
-	y += 20
+	y += btnH + 8
 
-	// Grid: clone of the char-select layout over the iniswap list.
+	// Grid: folder icons (top level only) then character cells. The grid slot
+	// drives layout ONLY — character cells always pass their iniList index to
+	// drawIniswapCell so the index-keyed cachedPage stays correct (see the
+	// cachedPage reorder invariant).
 	gridTop := y
 	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap
 	cols := gridW / (iconCell + iconGap)
 	if cols < 1 {
 		cols = 1
 	}
-	query := a.iniQ.get(a.iniSearch)
-	matches := int32(0)
+	showFolders := !searching && a.iniFolder == ""
+	slots := int32(0)
+	if showFolders {
+		slots += int32(len(folderCells))
+	}
 	for i := range a.iniList {
-		if (query == "" || strings.Contains(a.iniLower[i], query)) && iniFolderMatch(a.iniFolders[i], a.iniFolder) {
-			matches++
+		if charVisible(i) {
+			slots++
 		}
 	}
 	cellH := iconCell + iconGap + 14
-	contentH := (matches + cols - 1) / cols * cellH
+	contentH := (slots + cols - 1) / cols * cellH
 	visibleH := panel.Y + panel.H - gridTop - pad
 
 	a.iniScroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
 	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
 	a.iniScroll = c.VScrollbar("iniscroll", track, a.iniScroll, contentH, visibleH)
 
-	col, row := int32(0), int32(0)
-	for i := range a.iniList {
-		if query != "" && !strings.Contains(a.iniLower[i], query) {
-			continue
-		}
-		if !iniFolderMatch(a.iniFolders[i], a.iniFolder) {
-			continue
-		}
-		x := panel.X + pad + col*(iconCell+iconGap)
-		yy := gridTop + row*cellH - a.iniScroll
-		if yy > gridTop-iconCell && yy < panel.Y+panel.H-14 {
-			a.drawIniswapCell(i, sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell})
-		}
-		col++
-		if col >= cols {
-			col = 0
-			row++
+	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
+	slot := int32(0)
+	place := func() (sdl.Rect, bool) {
+		x := panel.X + pad + (slot%cols)*(iconCell+iconGap)
+		yy := gridTop + (slot/cols)*cellH - a.iniScroll
+		slot++
+		return sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell}, yy > gridTop-iconCell && yy < panel.Y+panel.H-14
+	}
+	if showFolders {
+		for _, f := range folderCells {
+			if cell, vis := place(); vis {
+				a.drawIniFolderCell(f, countInFolder(f), cell)
+			}
 		}
 	}
+	for i := range a.iniList {
+		if !charVisible(i) {
+			continue
+		}
+		if cell, vis := place(); vis {
+			a.drawIniswapCell(i, cell)
+		}
+	}
+	c.popClip(clipPrev, clipHad)
 
 	// Number-key quick-file: hover a character (no field focused, no menu open)
 	// and press a digit to file it — 1-9 = that-numbered folder, 0 = unsorted.
@@ -1493,6 +1499,44 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		a.iniDragging = false
 	}
 	a.iniPrevDown = c.mouseDown
+}
+
+// drawIniFolderCell draws one wardrobe folder as a folder-shaped icon (a tab
+// over a body) labelled with its member count, with the folder name beneath.
+// Clicking opens it (the grid then shows only its characters); dropping a
+// dragged character files it here. Pure graphics — no cachedPage — so it is
+// safe to draw at any grid slot (unlike the index-keyed character cells).
+func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
+	c := a.ctx
+	hover := c.hovering(cell)
+	tab := sdl.Rect{X: cell.X + 4, Y: cell.Y + 5, W: (cell.W - 8) / 2, H: 9}
+	body := sdl.Rect{X: cell.X + 2, Y: cell.Y + 12, W: cell.W - 4, H: cell.H - 14}
+	col := ColFolder
+	if hover {
+		col = ColFolderHi
+	}
+	c.Fill(tab, col)
+	c.Fill(body, col)
+	if a.iniDragging && hover { // drop-target highlight while a character is being dragged
+		c.Border(tab, ColAccent)
+		c.Border(body, ColAccent)
+	} else {
+		c.Border(body, ColPanelHi)
+	}
+	cnt := fmt.Sprintf("%d", count)
+	c.Label(body.X+body.W/2-c.TextWidth(cnt)/2, body.Y+body.H/2-8, cnt, ColText)
+	c.LabelClipped(cell.X, cell.Y+iconCell+1, cell.W, name, ColText)
+	c.Tooltip(cell, "Open the "+name+" folder — or drop a character here to file it")
+	if hover && c.clicked {
+		if a.iniDragging && a.iniDragChar != "" {
+			a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniDragChar, name)
+			a.rebuildIniMenu()
+			c.clicked = false // consume the drop
+		} else {
+			a.iniFolder = name
+			a.iniScroll = 0
+		}
+	}
 }
 
 func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
