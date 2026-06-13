@@ -77,11 +77,16 @@ const defaultThemeLayout = true
 // Catch-up fast-forwards the backlog; the IC log still keeps every message.
 const defaultCatchUpWhenBehind = true
 
-// Catch-up queue-depth threshold: engage once more than this many messages are
-// waiting. DefaultCatchUpThreshold is exported so the UI can show it; the value
-// is clamped to [catchUpThresholdMin, catchUpThresholdMax].
+// Catch-up queue-depth threshold: engage once MORE than this many messages are
+// waiting behind the one starting. The default is the floor (1) so the IC stage
+// stays real-time — in a busy room the newest message types out in full (with
+// its sprite, name and effects) while any backlog behind it flashes past, so
+// the textbox always tracks the latest line instead of crawling seconds behind.
+// Normal back-and-forth (≤1 waiting) still plays every message in full. Raise it
+// to watch more of a backlog animate. DefaultCatchUpThreshold is exported so the
+// UI can show it; the value is clamped to [catchUpThresholdMin, catchUpThresholdMax].
 const (
-	DefaultCatchUpThreshold = 5
+	DefaultCatchUpThreshold = 1
 	catchUpThresholdMin     = 1
 	catchUpThresholdMax     = 50
 )

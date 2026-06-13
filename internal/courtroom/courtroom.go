@@ -26,9 +26,10 @@ const (
 	emptyPreanimDash = "-"
 
 	// catchUpDefaultThreshold is the queue depth past which packed-room
-	// catch-up fast-forwards backlog messages. The App overrides it from
-	// prefs; direct NewCourtroom callers (tests/embedders) get catch-up OFF.
-	catchUpDefaultThreshold = 5
+	// catch-up fast-forwards backlog messages — the floor (1) so the stage
+	// stays on the newest message. The App overrides it from prefs; direct
+	// NewCourtroom callers (tests/embedders) get catch-up OFF regardless.
+	catchUpDefaultThreshold = 1
 	// catchUpLinger holds a fast-forwarded backlog message on screen before
 	// the next dequeues — zero so a deep backlog drains one message per frame
 	// (the IC log keeps every message regardless; only the on-stage ceremony

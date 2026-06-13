@@ -131,13 +131,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   music while a message is on stage (shout/preanim/talking) and restores it
   at idle, so dialogue stays clear. Transition-driven — the mixer volume is
   touched only when the duck state flips, never per frame.
-- **Packed-room catch-up** (Settings → Audio & Chat, ON by default): when
-  more than N messages are queued, the IC stage fast-forwards the backlog
-  (skips its preanims/shouts/typewriter) so chat tracks real-time instead of
-  falling minutes behind in a 20-person room. The newest messages still play
-  in full, and the IC log keeps every line regardless. Perf-positive (fewer
-  frames spent). The threshold is configurable; alongside the plain-English
-  Text crawl / stay / chat-limit knobs.
+- **Packed-room catch-up** (Settings → Audio & Chat, ON by default): keeps the
+  IC stage real-time. **By default (threshold 1)** the newest message always
+  types out **in full — sprite, name, typewriter and effects** — while any
+  backlog stacked behind it flashes past, so when someone fires off several
+  lines a second the textbox jumps straight to the latest one instead of
+  crawling seconds behind. Normal back-and-forth (nothing waiting behind the
+  current line) plays every message in full, so you lose no animation in a
+  calm scene. The IC log keeps every line regardless (it stays the complete
+  record). Perf-positive (fewer frames spent on backlog). Raise the threshold
+  in Settings to watch more of a backlog animate; it sits alongside the
+  plain-English Text crawl / stay / chat-limit knobs.
 - **Emote grid pages** (`<` / `>` + a `page x/y · N emotes` counter) when
   a character ships more emotes than fit — both the classic and themed
   layouts. The arrow row only appears when paging is needed; loading a
