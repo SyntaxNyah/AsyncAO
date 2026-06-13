@@ -22,7 +22,8 @@ type settingsState struct {
 	mountInput string
 	loaded     bool
 	statusLine string
-	scroll     int32 // page scroll (playtest: settings must wheel-scroll)
+	tab        int                    // active settings tab (index into settingsTabNames)
+	tabScroll  [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
 
 	// callwords edit buffer (loaded once per settings entry).
 	callInput  string
@@ -89,6 +90,25 @@ var settings = settingsState{
 	ioRes:     make(chan string, 1),
 }
 
+// Settings tabs: the screen is split into these categories so it's
+// navigable instead of one long scroll. numSettingsTabs sizes the per-tab
+// scroll array (keep it == len(settingsTabNames)).
+const numSettingsTabs = 6
+
+var settingsTabNames = [numSettingsTabs]string{
+	"General", "Theme", "Assets", "Audio & Chat", "Account", "Hotkeys",
+}
+
+// Tab indices (order matches settingsTabNames).
+const (
+	tabGeneral = iota
+	tabTheme
+	tabAssets
+	tabAudioChat
+	tabAccount
+	tabHotkeys
+)
+
 // imageTypes get the per-format toggle treatment.
 var imageTypeNames = []string{
 	config.TypeCharIcon,
@@ -119,25 +139,93 @@ func (a *App) drawSettings(w, h int32) {
 		settings.loaded = true
 		a.scanThemes()
 	}
+
+	// These run regardless of the active tab, so async results land and
+	// dropped files are honored from any tab (theme scan, folder pick,
+	// drag-drop, and the off-thread IO status line).
 	a.pollThemeScan()
+	a.pollFolderPick()
+	if c.dropped != "" {
+		// Drag-and-drop anywhere on this screen: a .json points an armed
+		// settings import; anything else points the theme folder.
+		if settings.importArmed && strings.EqualFold(filepath.Ext(c.dropped), ".json") {
+			settings.importArmed = false
+			importSettingsAsync(a, c.dropped)
+		} else {
+			resolveDroppedFolder(c.dropped)
+		}
+	}
+	select {
+	case line := <-settings.ioRes:
+		settings.statusLine = line
+	default:
+	}
 
-	// The page flows from top minus the scroll offset; the wheel handler
-	// and the bar live at the END of the function, where the content
-	// height is known and every spinbox row has had first claim on the
-	// wheel (wheelTaken).
-	top := pad + 44
-	y := top - settings.scroll
+	// Tab strip: one row of category chips, the active one highlighted.
+	tabY := pad + 38
+	tabW := (w - 2*pad) / int32(len(settingsTabNames))
+	for i, name := range settingsTabNames {
+		r := sdl.Rect{X: pad + int32(i)*tabW, Y: tabY, W: tabW, H: btnH}
+		bg := ColPanel
+		if i == settings.tab {
+			bg = ColPanelHi
+		}
+		c.Fill(r, bg)
+		c.Border(r, ColPanelHi)
+		col := ColTextDim
+		if i == settings.tab {
+			col = ColText
+		}
+		c.LabelClipped(r.X+8, r.Y+5, r.W-12, name, col)
+		if c.hovering(r) && c.clicked {
+			settings.tab = i
+		}
+	}
 
-	// Showname: write-through to prefs. A stale once-per-session copy
-	// here used to overwrite names typed in the courtroom on Back
-	// (playtest: "open the settings and the showname gets reset").
+	// Content scrolls per-tab (each tab remembers its position). The wheel
+	// handler + bar live at the end, where the content height is known.
+	top := tabY + btnH + 10
+	scroll := &settings.tabScroll[settings.tab]
+	y := top - *scroll
+	switch settings.tab {
+	case tabGeneral:
+		y = a.drawSettingsGeneral(y, w)
+	case tabTheme:
+		y = a.drawSettingsTheme(y, w)
+	case tabAssets:
+		y = a.drawSettingsAssets(y, w)
+	case tabAudioChat:
+		y = a.drawSettingsAudioChat(y, w)
+	case tabAccount:
+		y = a.drawSettingsAccount(y, w)
+	case tabHotkeys:
+		y = a.drawSettingsHotkeys(y, w)
+	}
+	if settings.statusLine != "" {
+		c.Label(pad, y, settings.statusLine, ColAccent)
+		y += 24
+	}
+
+	contentH := (y + *scroll) - top + pad
+	visibleH := h - top - pad
+	if !c.ctrlHeld && !c.wheelTaken {
+		*scroll -= c.wheelY * scrollStepPx
+	}
+	track := sdl.Rect{X: w - scrollBarW - 2, Y: top, W: scrollBarW, H: visibleH}
+	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, visibleH)
+}
+
+// drawSettingsGeneral: identity + display toggles + UI scale + font chain.
+func (a *App) drawSettingsGeneral(y, w int32) int32 {
+	c := a.ctx
+	// Showname: write-through to prefs. A stale once-per-session copy here
+	// used to overwrite names typed in the courtroom on Back.
 	c.Label(pad, y+4, "Showname (saved):", ColText)
 	shown := a.d.Prefs.SavedShowname()
 	if next, _ := c.TextField("showname", sdl.Rect{X: pad + 150, Y: y, W: 220, H: fieldH}, shown, "Your showname"); next != shown {
 		a.d.Prefs.SetShowname(next)
 	}
-	// Default OOC name: applied on every join (like the showname); blank
-	// sends as a sticky AsyncAO<n> so commands always work.
+	// Default OOC name: applied on every join; blank sends a sticky AsyncAO<n>.
 	c.Label(pad+390, y+4, "OOC name:", ColText)
 	if next, _ := c.TextField("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, a.oocName, "blank = AsyncAO<n>"); next != a.oocName {
 		a.oocName = next
@@ -145,21 +233,13 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	y += 38
 
-	// Global toggles.
-	global := a.d.Prefs.GlobalFallbacks()
-	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {
-		a.d.Prefs.SetGlobalFallbacks(next)
-		a.d.Resolver.InvalidateAll()
-		a.d.Resolver.WarmFromPrefs()
-	}
-	y += 26
 	anims := a.d.Prefs.AnimationsEnabled()
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
 		a.d.Prefs.SetAnimationsEnabled(next)
 	}
 	y += 26
 	emoteImgs := a.d.Prefs.EmoteButtonImagesEnabled()
-	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats below)", emoteImgs); next != emoteImgs {
+	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats in Assets)", emoteImgs); next != emoteImgs {
 		a.d.Prefs.SetEmoteButtonImages(next)
 	}
 	y += 26
@@ -190,8 +270,7 @@ func (a *App) drawSettings(w, h int32) {
 		settings.statusLine = "Re-streaming textures with new filtering."
 	}
 	y += 26
-	// Global scale: DPI-driven by default (HiDPI screens land readable),
-	// with the manual spinbox taking over when auto is unticked.
+	// Global scale: DPI-driven by default, manual spinbox when auto is off.
 	scaleAuto := a.d.Prefs.UIScaleAuto()
 	scaleAutoLabel := "Auto UI scale from display DPI"
 	if a.detectedScalePct > 0 {
@@ -215,8 +294,7 @@ func (a *App) drawSettings(w, h int32) {
 	y += 34
 
 	// IC/OOC font override: a chain of TTF/TTC paths, first covering font
-	// per line wins (put a CJK-capable font later in the chain; sizes ride
-	// the existing Text/Log knobs and Ctrl+wheel).
+	// per line wins (put a CJK-capable font later in the chain).
 	c.Label(pad, y+4, "IC/OOC font:", ColText)
 	if !settings.fontLoaded {
 		settings.fontInput = a.d.Prefs.FontPaths()
@@ -237,9 +315,12 @@ func (a *App) drawSettings(w, h int32) {
 		c.LabelClipped(pad+620, y+4, w-pad-620-scrollBarW, "chain: "+strings.Join(names, " → "), ColTextDim)
 	}
 	y += 34
+	return y
+}
 
-	// Theme picker: cycle through scanned themes; the folder field points
-	// at a custom root containing themes/<name> directories.
+// drawSettingsTheme: theme picker/folder, layout toggle, live preview, bind.
+func (a *App) drawSettingsTheme(y, w int32) int32 {
+	c := a.ctx
 	c.Label(pad, y+4, "Theme:", ColText)
 	if c.Button(sdl.Rect{X: pad + 60, Y: y, W: 26, H: btnH}, "<") {
 		a.cycleTheme(-1)
@@ -267,18 +348,6 @@ func (a *App) drawSettings(w, h int32) {
 			browseForFolder()
 		}
 	}
-	// Drag-and-drop: SDL DROPFILE anywhere on this screen points the
-	// theme folder (a dropped file resolves to its directory, off-thread)
-	// — unless a settings import is armed, which claims .json drops.
-	if c.dropped != "" {
-		if settings.importArmed && strings.EqualFold(filepath.Ext(c.dropped), ".json") {
-			settings.importArmed = false
-			importSettingsAsync(a, c.dropped)
-		} else {
-			resolveDroppedFolder(c.dropped)
-		}
-	}
-	a.pollFolderPick()
 	y += 36
 
 	// Theme-driven courtroom geometry (courtroom_design.ini).
@@ -288,16 +357,27 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	y += 28
 
-	// Live preview: the actual applied chatbox skin + theme text colors,
-	// so "did the theme land?" is answerable without joining a server.
+	// Live preview of the applied chatbox skin + theme text colors.
 	y = a.drawThemePreview(y)
-
 	// Per-server theme binding: "this server always uses that theme".
 	y = a.drawThemeBindRow(y, w)
+	return y
+}
 
-	// Format detection mode: the server manifest by default, manual
-	// per-type probing when switched off. While auto is ON the manual
-	// rows are read-only — the server's extensions.json owns the formats.
+// drawSettingsAssets: format probing, audio fallbacks, local mounts, the
+// opt-in downloader, and the cache browser/actions.
+func (a *App) drawSettingsAssets(y, w int32) int32 {
+	c := a.ctx
+	global := a.d.Prefs.GlobalFallbacks()
+	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {
+		a.d.Prefs.SetGlobalFallbacks(next)
+		a.d.Resolver.InvalidateAll()
+		a.d.Resolver.WarmFromPrefs()
+	}
+	y += 26
+
+	// Format detection mode: the server manifest by default, manual per-type
+	// probing when off. While auto is ON the manual rows are read-only.
 	auto := a.d.Prefs.FormatAutoDetect()
 	if next := c.Checkbox(pad, y, "Auto-detect formats from the server's extensions.json on connect (recommended)", auto); next != auto {
 		auto = next
@@ -308,8 +388,6 @@ func (a *App) drawSettings(w, h int32) {
 		}
 	}
 	y += 26
-
-	// Per-type format toggles (interactive only in manual mode).
 	if auto {
 		c.Label(pad, y, "Manual tuning disabled — formats come from each server's extensions.json (untick above to tune by hand):", ColTextDim)
 		y += 22
@@ -326,80 +404,6 @@ func (a *App) drawSettings(w, h int32) {
 		}
 	}
 	y += 8
-
-	// Audio volumes.
-	music, sfx, blip := a.d.Prefs.AudioVolumes()
-	music = a.volumeRow(y, "Music volume", music)
-	y += 26
-	sfx = a.volumeRow(y, "SFX volume", sfx)
-	y += 26
-	blip = a.volumeRow(y, "Blip volume", blip)
-	y += 32
-	if m0, s0, b0 := a.d.Prefs.AudioVolumes(); m0 != music || s0 != sfx || b0 != blip {
-		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
-		a.d.Audio.SetVolumes(a.d.Prefs.AudioVolumes())
-	}
-
-	// Message timing (AO2-Client options.ini parity); applies live.
-	crawl, stay, rate := a.d.Prefs.Timing()
-	crawl = a.numberRow(y, "Text crawl ms", crawl, 5, config.MinTextCrawlMs, config.MaxTextCrawlMs)
-	y += 26
-	stay = a.numberRow(y, "Text stay ms", stay, 100, 0, config.MaxTextStayMs)
-	y += 26
-	rate = a.numberRow(y, "Chat limit ms", rate, 100, 0, config.MaxChatRateLimitMs)
-	y += 30
-	if c0, s0, r0 := a.d.Prefs.Timing(); c0 != crawl || s0 != stay || r0 != rate {
-		a.d.Prefs.SetTiming(crawl, stay, rate)
-		a.applyTimingToRoom()
-	}
-
-	// Case announcements (CASEA, tsuserver-family): subscribe by role.
-	y = a.drawCasingRow(y)
-
-	// Discord Rich Presence (optional — never required to build or run).
-	y = a.drawDiscordRow(y, w)
-
-	// Callwords: comma-separated highlight words (flash + sound on match).
-	c.Label(pad, y+4, "Callwords:", ColText)
-	if !settings.callLoaded {
-		settings.callInput = strings.Join(a.d.Prefs.CallWords(), ", ")
-		settings.callLoaded = true
-	}
-	var callCommit bool
-	settings.callInput, callCommit = c.TextField("callwords", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.callInput, "your name, nickname, ... (flash + sound when seen in IC/OOC)")
-	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || callCommit {
-		a.d.Prefs.SetCallWords(strings.Split(settings.callInput, ","))
-		settings.statusLine = "Callwords saved."
-	}
-	y += 34
-
-	// Hotkeys: Ctrl+<key> per action (blank = the default shown).
-	c.Label(pad, y, "Hotkeys (Ctrl + key — single letters/digits; blank uses the default):", ColTextDim)
-	y += 22
-	hx := pad
-	for _, def := range hotkeyDefs {
-		c.Label(hx, y+4, def.label+":", ColText)
-		cur := a.d.Prefs.Hotkey(def.id)
-		placeholder := def.def
-		next, _ := c.TextField("hk_"+def.id, sdl.Rect{X: hx + 150, Y: y, W: 44, H: fieldH}, cur, placeholder)
-		if next != cur {
-			a.d.Prefs.SetHotkey(def.id, strings.ToLower(strings.TrimSpace(next)))
-		}
-		hx += 210
-		if hx > 700 {
-			hx = pad
-			y += 30
-		}
-	}
-	y += 36
-
-	// Master list override (blank = official). Refresh in the lobby applies.
-	c.Label(pad, y+4, "Master list:", ColText)
-	master := a.d.Prefs.MasterList()
-	if next, _ := c.TextField("masterurl", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, master, network.DefaultMasterServerURL); next != master {
-		a.d.Prefs.SetMasterList(next)
-	}
-	y += 34
 
 	// Audio fallbacks.
 	for _, typeName := range []string{config.TypeSFX, config.TypeMusic, config.TypeBlip} {
@@ -440,8 +444,7 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	y += 10
 
-	// Built-in single-asset downloader (opt-in; becomes its own tab when the
-	// settings screen is tabbed).
+	// Built-in single-asset downloader (opt-in).
 	y = a.drawDownloaderSettings(y, w)
 
 	// Cache browser: live tier stats, T3 size on demand, open-in-Explorer.
@@ -491,18 +494,105 @@ func (a *App) drawSettings(w, h int32) {
 		importLearnedAsync(a)
 	}
 	y += 32
+	return y
+}
 
+// drawSettingsAudioChat: volumes, message timing, casing alerts, callwords.
+func (a *App) drawSettingsAudioChat(y, w int32) int32 {
+	c := a.ctx
+	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	music = a.volumeRow(y, "Music volume", music)
+	y += 26
+	sfx = a.volumeRow(y, "SFX volume", sfx)
+	y += 26
+	blip = a.volumeRow(y, "Blip volume", blip)
+	y += 32
+	if m0, s0, b0 := a.d.Prefs.AudioVolumes(); m0 != music || s0 != sfx || b0 != blip {
+		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
+		a.d.Audio.SetVolumes(a.d.Prefs.AudioVolumes())
+	}
+
+	// Message timing (AO2-Client options.ini parity); applies live.
+	crawl, stay, rate := a.d.Prefs.Timing()
+	crawl = a.numberRow(y, "Text crawl ms", crawl, 5, config.MinTextCrawlMs, config.MaxTextCrawlMs)
+	y += 26
+	stay = a.numberRow(y, "Text stay ms", stay, 100, 0, config.MaxTextStayMs)
+	y += 26
+	rate = a.numberRow(y, "Chat limit ms", rate, 100, 0, config.MaxChatRateLimitMs)
+	y += 30
+	if c0, s0, r0 := a.d.Prefs.Timing(); c0 != crawl || s0 != stay || r0 != rate {
+		a.d.Prefs.SetTiming(crawl, stay, rate)
+		a.applyTimingToRoom()
+	}
+
+	// Case announcements (CASEA, tsuserver-family): subscribe by role.
+	y = a.drawCasingRow(y)
+
+	// Callwords: comma-separated highlight words (flash + sound on match).
+	c.Label(pad, y+4, "Callwords:", ColText)
+	if !settings.callLoaded {
+		settings.callInput = strings.Join(a.d.Prefs.CallWords(), ", ")
+		settings.callLoaded = true
+	}
+	var callCommit bool
+	settings.callInput, callCommit = c.TextField("callwords", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.callInput, "your name, nickname, ... (flash + sound when seen in IC/OOC)")
+	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || callCommit {
+		a.d.Prefs.SetCallWords(strings.Split(settings.callInput, ","))
+		settings.statusLine = "Callwords saved."
+	}
+	y += 34
+	return y
+}
+
+// drawSettingsAccount: per-server login, the master-list override, Discord.
+func (a *App) drawSettingsAccount(y, w int32) int32 {
+	c := a.ctx
 	// Auto-login: ITS OWN automation, not a macro — per-server creds,
 	// software-detected wire flow, fires on join (or via hotkey/button).
 	y = a.drawLoginSettings(y, w)
 	y += 8
 
+	// Master list override (blank = official). Refresh in the lobby applies.
+	c.Label(pad, y+4, "Master list:", ColText)
+	master := a.d.Prefs.MasterList()
+	if next, _ := c.TextField("masterurl", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, master, network.DefaultMasterServerURL); next != master {
+		a.d.Prefs.SetMasterList(next)
+	}
+	y += 34
+
+	// Discord Rich Presence (optional — never required to build or run).
+	y = a.drawDiscordRow(y, w)
+	return y
+}
+
+// drawSettingsHotkeys: hotkey rebinds, macros, and the whole-settings bundle.
+func (a *App) drawSettingsHotkeys(y, w int32) int32 {
+	c := a.ctx
+	c.Label(pad, y, "Hotkeys (Ctrl + key — single letters/digits; blank uses the default):", ColTextDim)
+	y += 22
+	hx := pad
+	for _, def := range hotkeyDefs {
+		c.Label(hx, y+4, def.label+":", ColText)
+		cur := a.d.Prefs.Hotkey(def.id)
+		placeholder := def.def
+		next, _ := c.TextField("hk_"+def.id, sdl.Rect{X: hx + 150, Y: y, W: 44, H: fieldH}, cur, placeholder)
+		if next != cur {
+			a.d.Prefs.SetHotkey(def.id, strings.ToLower(strings.TrimSpace(next)))
+		}
+		hx += 210
+		if hx > 700 {
+			hx = pad
+			y += 30
+		}
+	}
+	y += 36
+
 	// Macros: user-defined OOC command sequences with optional keybinds.
 	y = a.drawMacroSettings(y, w)
 	y += 8
 
-	// Whole-settings portability: the new-PC bundle (every knob,
-	// favorites, per-server wardrobes/keybinds, learned formats).
+	// Whole-settings portability: the new-PC bundle (every knob, favorites,
+	// per-server wardrobes/keybinds, learned formats — minus passwords).
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Export settings") {
 		exportSettingsAsync(a)
 	}
@@ -517,25 +607,7 @@ func (a *App) drawSettings(w, h int32) {
 		}
 	}
 	y += 36
-	select {
-	case line := <-settings.ioRes:
-		settings.statusLine = line
-	default:
-	}
-	if settings.statusLine != "" {
-		c.Label(pad, y, settings.statusLine, ColAccent)
-		y += 24
-	}
-
-	// Page scroll: wheel anywhere a spinbox row didn't already consume
-	// it, plus a draggable bar on the right edge.
-	contentH := (y + settings.scroll) - top + pad
-	visibleH := h - top - pad
-	if !c.ctrlHeld && !c.wheelTaken {
-		settings.scroll -= c.wheelY * scrollStepPx
-	}
-	track := sdl.Rect{X: w - scrollBarW - 2, Y: top, W: scrollBarW, H: visibleH}
-	settings.scroll = c.VScrollbar("settscroll", track, settings.scroll, contentH, visibleH)
+	return y
 }
 
 // measureDiskCacheAsync walks the T3 directory off-thread and reports the

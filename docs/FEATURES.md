@@ -227,6 +227,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   theme as design-space overrides (window resizes keep working; the
   theme's own files are never touched). While editing, the real UI is
   input-fenced so nothing misfires.
+- **Tabbed settings**: the settings screen is split into category tabs
+  (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
+  one long scroll — click a tab, scroll within it, each tab remembers its
+  own scroll position. Async work (theme scans, folder picks, dropped
+  files, import/export status) runs regardless of the active tab.
 - **Viewport camera zoom (hyperfocus)**: Ctrl+wheel over the stage zooms
   toward the cursor (up to 6×) — sprites, preanims, and effects magnify
   together; Ctrl+drag pans while zoomed; the 1× chip (or zooming out)
