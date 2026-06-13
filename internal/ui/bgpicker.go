@@ -55,8 +55,10 @@ type bgFetch struct {
 // (mirrors settingsState): the App embeds one as a.bgPick.
 type bgPicker struct {
 	show     bool
-	list     []string // current + remembered, then the autoindex names
+	list     []string // current + remembered + favorites, then the autoindex names
 	lower    []string // lowercased, parallel — search filter
+	fav      []bool   // parallel to list — starred (favorite) on this server
+	favOnly  bool     // grid filter: show only starred backgrounds
 	server   []string // names parsed from the host's background/ autoindex
 	sel      string   // the selected background (the /bg target + preview)
 	listErr  string
@@ -136,12 +138,18 @@ func (a *App) pollBgList() {
 }
 
 // rebuildBgList merges the menu: the current background first, then the last
-// remembered one, then every name from the autoindex (de-duplicated,
-// case-insensitively). Seeds float to the top so "what I'm looking at" is
-// always reachable even on a host with no listing.
+// remembered one, then this server's starred favorites, then every name from
+// the autoindex (de-duplicated, case-insensitively). Seeds float to the top so
+// "what I'm looking at" and "my favorites" are always reachable even on a host
+// with no listing. fav is built parallel to the list for the per-cell star.
 func (a *App) rebuildBgList() {
-	seen := make(map[string]struct{}, len(a.bgPick.server)+2)
-	names := make([]string, 0, len(a.bgPick.server)+2)
+	favList := a.d.Prefs.FavBackgroundList(a.serverKey)
+	favSet := make(map[string]struct{}, len(favList))
+	for _, n := range favList {
+		favSet[strings.ToLower(strings.TrimSpace(n))] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(a.bgPick.server)+len(favList)+2)
+	names := make([]string, 0, len(a.bgPick.server)+len(favList)+2)
 	add := func(n string) {
 		n = strings.TrimSpace(n)
 		if n == "" {
@@ -156,15 +164,25 @@ func (a *App) rebuildBgList() {
 	}
 	add(a.sess.Background)
 	add(a.d.Prefs.ServerWarmInfoFor(a.serverKey).Background)
+	for _, n := range favList {
+		add(n)
+	}
 	for _, n := range a.bgPick.server {
 		add(n)
 	}
 	a.bgPick.list = names
 	a.bgPick.lower = make([]string, len(names))
+	a.bgPick.fav = make([]bool, len(names))
 	for i, n := range names {
 		a.bgPick.lower[i] = strings.ToLower(n)
+		_, a.bgPick.fav[i] = favSet[a.bgPick.lower[i]]
 	}
 	a.bgPick.ask = nil
+	// Starring reorders the list at the SAME length (favorites float up), and
+	// cachedPage keys its thumbnail slice by index without re-checking the URL —
+	// so the idx→page cache must drop here or a reorder would show the previous
+	// name's thumbnail. Pages re-resolve from T1 next frame (a map hit, no flash).
+	a.bgPick.pages = nil
 }
 
 // requestBackground applies a pick: a live session asks the server via /bg
@@ -219,7 +237,10 @@ func (a *App) drawBgPanel(w, h int32) {
 	y += 32
 
 	a.bgPick.search, _ = c.TextField("bgsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.bgPick.search, "Search...")
-	statusX := panel.X + pad + 250
+	// Favorites-only filter: stars are per server (persisted), so this narrows
+	// the grid to the user's pinned backgrounds even on a host with no listing.
+	a.bgPick.favOnly = c.Checkbox(panel.X+pad+244, y+(fieldH-16)/2, "Favorites only", a.bgPick.favOnly)
+	statusX := panel.X + pad + 380
 	switch {
 	case a.bgPick.busy:
 		c.Label(statusX, y+4, "Fetching background list...", ColTextDim)
@@ -240,14 +261,19 @@ func (a *App) drawBgPanel(w, h int32) {
 		cols = 1
 	}
 	query := a.bgPick.q.get(a.bgPick.search)
-	// No search → every entry matches; skip the per-frame full-list scan.
+	// No search and no favorites filter → every entry matches; skip the
+	// per-frame full-list scan.
 	matches := int32(len(a.bgPick.list))
-	if query != "" {
+	if query != "" || a.bgPick.favOnly {
 		matches = 0
 		for i := range a.bgPick.list {
-			if strings.Contains(a.bgPick.lower[i], query) {
-				matches++
+			if query != "" && !strings.Contains(a.bgPick.lower[i], query) {
+				continue
 			}
+			if a.bgPick.favOnly && !a.bgPick.fav[i] {
+				continue
+			}
+			matches++
 		}
 	}
 	cellStride := bgCellH + bgCellGap + bgCellLabelH
@@ -265,6 +291,9 @@ func (a *App) drawBgPanel(w, h int32) {
 	col, row := int32(0), int32(0)
 	for i := range a.bgPick.list {
 		if query != "" && !strings.Contains(a.bgPick.lower[i], query) {
+			continue
+		}
+		if a.bgPick.favOnly && !a.bgPick.fav[i] {
 			continue
 		}
 		x := panel.X + pad + col*(bgCellW+bgCellGap)
@@ -312,6 +341,28 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool) {
 		c.Label(tag.X+4, tag.Y+1, "current", ColAccent)
 	}
 	c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColTextDim)
+
+	// Favorite star (top-right): pin this background on this server. Per-server
+	// and persisted; starred backgrounds float to the top of the list and the
+	// "Favorites only" toggle filters to them. Mirrors the wardrobe star.
+	starred := idx < len(a.bgPick.fav) && a.bgPick.fav[idx]
+	star := sdl.Rect{X: cell.X + cell.W - 22, Y: cell.Y + 2, W: 20, H: 18}
+	c.Fill(star, sdl.Color{R: 0, G: 0, B: 0, A: 150}) // backing: the star must read over busy thumbnails
+	starCol := ColTextDim
+	if starred {
+		starCol = ColStar
+	}
+	c.Label(star.X+4, star.Y+1, "★", starCol)
+	c.Tooltip(star, "Favorite this background (saved per server)")
+	if c.hovering(star) && c.clicked {
+		if starred {
+			a.d.Prefs.RemoveFavBackground(a.serverKey, name)
+		} else {
+			a.d.Prefs.AddFavBackground(a.serverKey, name)
+		}
+		a.rebuildBgList()
+		return // the star claimed the click; don't also select this background
+	}
 
 	// While this background is the active download, mark the cell.
 	if a.dl.active && a.dl.target == name {

@@ -135,6 +135,11 @@ const defaultAudioVolume = 100
 // migration on the first post-update connect.
 const WardrobeCap = 1024
 
+// FavBackgroundCap bounds one SERVER's starred-background list (rule §17.4).
+// Favorites are a curated subset the user pins in the background picker; a
+// few hundred is already generous, so this is well under WardrobeCap.
+const FavBackgroundCap = 512
+
 // Message timing knobs (milliseconds), AO2-Client options.ini parity.
 const (
 	// DefaultTextCrawlMs mirrors courtroom.DefaultCharInterval.
@@ -334,6 +339,10 @@ type ServerWarmInfo struct {
 	Background string `json:"background,omitempty"`
 	// Wardrobe is this server's custom character list (≤ WardrobeCap).
 	Wardrobe []string `json:"wardrobe,omitempty"`
+	// FavBackgrounds are this server's starred backgrounds (≤ FavBackgroundCap)
+	// — pinned in the background picker so they float to the top and can be
+	// filtered to on their own, even on hosts with no directory listing.
+	FavBackgrounds []string `json:"favBackgrounds,omitempty"`
 	// CharKeys maps a plain key name ("a", "5", "f3") to a character to
 	// wear when pressed in the courtroom with no text field focused.
 	CharKeys map[string]string `json:"charKeys,omitempty"`
@@ -1509,6 +1518,53 @@ func (p *AssetPreferences) SetWardrobeFolder(serverKey, char, folder string) {
 		}
 		w.WardrobeFolder[char] = folder
 	})
+}
+
+// --- Favorite backgrounds (per server) ----------------------------------------
+
+// FavBackgroundList returns a copy of one server's starred-background list.
+func (p *AssetPreferences) FavBackgroundList(serverKey string) []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return cloneStrings(p.ServerWarm[serverKey].FavBackgrounds)
+}
+
+// AddFavBackground stars a background on one server (case-insensitive dedupe,
+// capped at FavBackgroundCap). Reports whether it changed.
+func (p *AssetPreferences) AddFavBackground(serverKey, name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" || serverKey == "" {
+		return false
+	}
+	changed := false
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		if len(w.FavBackgrounds) >= FavBackgroundCap {
+			return
+		}
+		for _, have := range w.FavBackgrounds {
+			if strings.EqualFold(have, name) {
+				return
+			}
+		}
+		w.FavBackgrounds = append(w.FavBackgrounds, name)
+		changed = true
+	})
+	return changed
+}
+
+// RemoveFavBackground unstars a background on one server. Reports change.
+func (p *AssetPreferences) RemoveFavBackground(serverKey, name string) bool {
+	changed := false
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		for i, have := range w.FavBackgrounds {
+			if strings.EqualFold(have, name) {
+				w.FavBackgrounds = append(w.FavBackgrounds[:i], w.FavBackgrounds[i+1:]...)
+				changed = true
+				return
+			}
+		}
+	})
+	return changed
 }
 
 // --- Character keybinds (per server) -------------------------------------------

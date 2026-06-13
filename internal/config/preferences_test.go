@@ -378,6 +378,36 @@ func TestWardrobeFolders(t *testing.T) {
 	}
 }
 
+// TestFavBackgrounds pins the per-server starred-background list: add with
+// case-insensitive dedupe, isolation between servers, and remove.
+func TestFavBackgrounds(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	const a, b = "wss://a.example:1/", "wss://b.example:1/"
+	if !p.AddFavBackground(a, "courtroom") {
+		t.Fatal("first AddFavBackground must report a change")
+	}
+	if p.AddFavBackground(a, "Courtroom") { // case-insensitive dedupe
+		t.Error("a case-insensitive duplicate must not report a change")
+	}
+	p.AddFavBackground(a, "lobby")
+	p.AddFavBackground(b, "gaming") // a different server keeps its own list
+	if got := p.FavBackgroundList(a); len(got) != 2 || got[0] != "courtroom" || got[1] != "lobby" {
+		t.Fatalf("server a favorites = %v, want [courtroom lobby]", got)
+	}
+	if got := p.FavBackgroundList(b); len(got) != 1 || got[0] != "gaming" {
+		t.Fatalf("server b favorites = %v, want [gaming] (per-server isolation)", got)
+	}
+	if !p.RemoveFavBackground(a, "COURTROOM") { // remove is case-insensitive
+		t.Error("RemoveFavBackground must report a change")
+	}
+	if got := p.FavBackgroundList(a); len(got) != 1 || got[0] != "lobby" {
+		t.Fatalf("after remove, server a = %v, want [lobby]", got)
+	}
+	if p.RemoveFavBackground(a, "not-there") {
+		t.Error("removing an absent favorite must report no change")
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	p, err := load(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil {

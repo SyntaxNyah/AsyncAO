@@ -1585,6 +1585,11 @@ func (a *App) rebuildIniMenu() {
 		a.iniFolders[i] = folders[lower] // "" when unsorted / not filed
 	}
 	a.iniAsk = nil
+	// Toggling a star reorders the list at the SAME length (wardrobe entries
+	// float up), and cachedPage keys its icon slice by index without re-checking
+	// the URL — so drop the idx→page cache here or a reorder would paint the
+	// previous name's icon. Icons re-resolve from T1 next frame (a map hit).
+	a.iniPages = nil
 }
 
 // mergeWardrobe builds the wardrobe-first menu list; the bool slice marks

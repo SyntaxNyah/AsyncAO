@@ -154,6 +154,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   large; a `/bg <name>` button asks the server to change it for the area
   (rehearsal applies the pick locally). Hosts with directory listing off
   just show a clean "no listing" note and the seeds.
+- **Favorite backgrounds** (the ★ on each picker cell): pin the backgrounds
+  you use, exactly like the wardrobe star. Favorites are **saved per server**,
+  float to the top of the list, and a **"Favorites only"** checkbox filters the
+  grid to just them — so your go-to scenes are one click away even on a host
+  with no directory listing. Click the star again to unpin.
 - The custom shout button appears **only for characters that ship one**
   (char.ini `custom_name` or `[Shouts]`; a streaming client can't stat
   `custom.gif` the way AO2-Client does).
