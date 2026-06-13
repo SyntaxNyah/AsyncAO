@@ -118,12 +118,29 @@ func (a *App) handleCharKeys() {
 	}
 }
 
+// handleEmoteKeys picks the emote in number-key position N on the CURRENT
+// page (keys 1-9), but only with no text field focused (so typing a number
+// never switches emotes), no Ctrl chord in flight, and only when the digit
+// isn't a deliberate character keybind — the same fence as handleCharKeys.
+// Picking focuses the IC input, matching a click.
+func (a *App) handleEmoteKeys() {
+	c := a.ctx
+	if c.keyPressed < sdl.K_1 || c.keyPressed > sdl.K_9 || c.focusID != "" || c.ctrlHeld || a.emotePerPage <= 0 {
+		return
+	}
+	if a.charKeys[strings.ToLower(sdl.GetKeyName(c.keyPressed))] != "" {
+		return // a character keybind owns this digit
+	}
+	a.selectEmote(a.emotePage*a.emotePerPage + int(c.keyPressed-sdl.K_1))
+}
+
 // handleHotkeys consumes this frame's Ctrl chord on the courtroom screen
 // (and dispatches macro keybinds, then character keybinds — macros win
 // a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
 	if !a.handleMacroKeys() {
 		a.handleCharKeys()
+		a.handleEmoteKeys()
 	}
 	key := a.ctx.hotkey
 	if key == 0 || a.sess == nil {

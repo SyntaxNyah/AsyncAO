@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"strconv"
 	"strings"
@@ -1545,6 +1546,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	if perPage < 1 {
 		perPage = 1
 	}
+	a.emotePerPage = perPage // number-key emote select reads this
 	pages := (len(a.emotes) + perPage - 1) / perPage
 	if a.emotePage >= pages {
 		a.emotePage = 0
@@ -1574,13 +1576,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 			picked = c.Button(btn, label)
 		}
 		if picked {
-			a.emoteIdx = i
-			// Pressed art for the new selection, before next frame draws it.
-			a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (selected)
-			// Typing-driven speculation: the pick is the strongest signal
-			// of what the next outgoing message needs — warm it all now.
-			a.speculateEmote(me, e)
-			c.FocusField("ic") // AO2 focus_ic_input: pick emote, keep typing
+			a.selectEmote(i)
 		}
 		// Full-size preview after a 3 s hover (right-click = instant): the
 		// TALKING sprite — what actually plays when this emote is sent.
@@ -1603,11 +1599,48 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		c.Label(r.X+72, cy+6, fmt.Sprintf("page %d/%d · %d emotes", a.emotePage+1, pages, len(a.emotes)), ColTextDim)
 	}
 
+	// Random emote: quick variety / novelty — picks any emote and jumps to its
+	// page. Bottom-right so it never collides with the page arrows on the left.
+	if len(a.emotes) > 1 {
+		rb := sdl.Rect{X: r.X + r.W - 84, Y: r.Y + r.H - btnH, W: 84, H: btnH}
+		if c.Button(rb, "Random") {
+			a.pickRandomEmote()
+		}
+	}
+
 	if a.previewBase != "" {
 		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H)
 		if c.clicked {
 			a.previewBase = ""
 		}
+	}
+}
+
+// selectEmote picks emote i (shared by click, the Random button, and the
+// number-key shortcut): warms its pressed button art + the sprites the next
+// message will need, and refocuses the IC input (AO2 focus_ic_input).
+// Out-of-range indices are ignored.
+func (a *App) selectEmote(i int) {
+	if i < 0 || i >= len(a.emotes) {
+		return
+	}
+	a.emoteIdx = i
+	me := a.activeCharName()
+	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (selected)
+	a.speculateEmote(me, &a.emotes[i])
+	a.ctx.FocusField("ic")
+}
+
+// pickRandomEmote selects a random emote and scrolls its page into view.
+func (a *App) pickRandomEmote() {
+	n := len(a.emotes)
+	if n == 0 {
+		return
+	}
+	i := rand.IntN(n)
+	a.selectEmote(i)
+	if a.emotePerPage > 0 {
+		a.emotePage = i / a.emotePerPage
 	}
 }
 
@@ -1797,7 +1830,7 @@ func (a *App) drawPairGhost(pv sdl.Rect) {
 	if me := a.myCharName(); me != "" {
 		a.drawGhostSprite(pv, me, a.pairOffX, a.pairOffY, a.pairFlip, 255)
 	}
-	c.Label(pv.X+4, pv.Y+2, "drag your sprite to place", ColTextDim)
+	c.Label(pv.X+4, pv.Y+2, "drag your sprite to place — arrow keys nudge 1%", ColTextDim)
 
 	// Drag: anywhere in the stage moves YOUR sprite (it is the only
 	// thing being edited here — no hit-testing pixel art).
@@ -1815,6 +1848,27 @@ func (a *App) drawPairGhost(pv sdl.Rect) {
 		a.pairOffX = clampOffset(a.ghostBase[0] + int(c.mouseX-a.ghostStart[0])*100/int(pv.W))
 		a.pairOffY = clampOffset(a.ghostBase[1] + int(c.mouseY-a.ghostStart[1])*100/int(pv.H))
 		a.persistPairPrefs()
+	}
+	// Arrow keys nudge your offset 1% for fine placement — only with no text
+	// field focused (otherwise arrows move the text caret). Up = toward the
+	// top of the stage (lower Y), matching the drag.
+	if c.focusID == "" {
+		nudged := true
+		switch c.keyPressed {
+		case sdl.K_LEFT:
+			a.pairOffX = clampOffset(a.pairOffX - 1)
+		case sdl.K_RIGHT:
+			a.pairOffX = clampOffset(a.pairOffX + 1)
+		case sdl.K_UP:
+			a.pairOffY = clampOffset(a.pairOffY - 1)
+		case sdl.K_DOWN:
+			a.pairOffY = clampOffset(a.pairOffY + 1)
+		default:
+			nudged = false
+		}
+		if nudged {
+			a.persistPairPrefs()
+		}
 	}
 }
 

@@ -386,7 +386,8 @@ type sessionState struct {
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
 	emoteIdx                   int
-	emotePage                  int    // themed emote grid paging
+	emotePage                  int    // emote grid paging (classic + themed)
+	emotePerPage               int    // emotes per page last frame (number-key select)
 	charBlips                  string // char.ini blips/gender (outgoing default)
 	// 2.10 custom shouts ([Shouts] in char.ini): customIdx −1 = the base
 	// "custom" art, ≥ 0 indexes customShouts.

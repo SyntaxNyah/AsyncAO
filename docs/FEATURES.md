@@ -137,7 +137,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Emote grid pages** (`<` / `>` + a `page x/y · N emotes` counter) when
   a character ships more emotes than fit — both the classic and themed
   layouts. The arrow row only appears when paging is needed; loading a
-  character resets to page 1.
+  character resets to page 1. A **Random** button picks any emote (and jumps
+  to its page), and **number keys 1–9** pick the emote in that grid position
+  on the current page when the chat box isn't focused (picking focuses IC).
 - **Background picker** (courtroom Background button): a thumbnail grid of
   every background, modeled on the wardrobe menu. AO has no "list
   backgrounds" packet, so the set is discovered by fetching the asset
@@ -188,7 +190,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   ride along, so you re-type just the password on the new PC.
 - **Offset ghost editor** (pair panel): drag your idle sprite on a
   miniature stage to set self-offsets; the partner shows as a
-  translucent ghost at their last-known placement.
+  translucent ghost at their last-known placement. **Arrow keys nudge** your
+  offset 1% at a time (when no text field is focused) for fine placement.
 - **Macro system** (Settings → Macros): name + optional plain-key bind +
   a sequence of OOC lines (separate steps with `|`), sent paced so
   prompt-style flows work. Keys fire in the courtroom with no text box
