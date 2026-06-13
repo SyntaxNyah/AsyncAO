@@ -187,6 +187,10 @@ func (a *App) drawSettings(w, h int32) {
 	top := tabY + btnH + 10
 	scroll := &settings.tabScroll[settings.tab]
 	y := top - *scroll
+	// Clip the scrolled content to below the tab strip: a scrolled-up row
+	// would otherwise draw over the tab chips (the strip is full-width, so
+	// it's glaring — same overspill class as the log-list fix).
+	clipPrev, clipHad := c.pushClip(sdl.Rect{X: 0, Y: top, W: w, H: h - top})
 	switch settings.tab {
 	case tabGeneral:
 		y = a.drawSettingsGeneral(y, w)
@@ -205,6 +209,7 @@ func (a *App) drawSettings(w, h int32) {
 		c.Label(pad, y, settings.statusLine, ColAccent)
 		y += 24
 	}
+	c.popClip(clipPrev, clipHad)
 
 	contentH := (y + *scroll) - top + pad
 	visibleH := h - top - pad
