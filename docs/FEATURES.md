@@ -148,6 +148,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   character resets to page 1. A **Random** button picks any emote (and jumps
   to its page), and **number keys 1–9** pick the emote in that grid position
   on the current page when the chat box isn't focused (picking focuses IC).
+  **Hovering an emote previews it** large (3 s, or instantly on right-click):
+  if the emote has a **pre-animation** that flourish plays (looped) so you can
+  watch it before sending; otherwise its talking sprite. Both layouts.
 - **Background picker** (courtroom Background button): a thumbnail grid of
   every background, modeled on the wardrobe menu. AO has no "list
   backgrounds" packet, so the set is discovered by fetching the asset

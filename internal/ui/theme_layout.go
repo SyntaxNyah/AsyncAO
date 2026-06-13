@@ -13,9 +13,6 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/assets"
-	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -581,11 +578,10 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 			a.speculateEmote(me, e)
 			c.FocusField("ic") // AO2 focus_ic_input: pick emote, keep typing
 		}
-		// Same hover-preview behavior as the classic row: the TALKING
-		// sprite, warmed on demand.
+		// Same hover-preview behavior as the classic row: the preanim (scrubbed)
+		// when the emote has one, else the talking sprite — warmed on demand.
 		if c.HoverPreview("emote:"+e.Anim, btn) {
-			a.previewBase = a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
-			a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(me, e.Anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+			a.previewEmote(me, e)
 		}
 	}
 

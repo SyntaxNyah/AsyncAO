@@ -2045,6 +2045,19 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	}
 }
 
+// previewEmote points the hover preview at an emote: its pre-animation when it
+// has one (looped in the preview box — scrub the flourish before sending), else
+// the talking sprite (what actually plays). Shared by both emote rows.
+func (a *App) previewEmote(char string, e *courtroom.Emote) {
+	if e.Preanim != "" && e.Preanim != "-" { // "-" / "" = no preanim (AO convention)
+		a.previewBase = a.urls.Emote(char, e.Preanim, courtroom.EmotePreanim)
+		a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preanim preview)
+		return
+	}
+	a.previewBase = a.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
+	a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(char, e.Anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+}
+
 func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
 	if a.charINIBusy {
@@ -2110,11 +2123,12 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		if picked {
 			a.selectEmote(i)
 		}
-		// Full-size preview after a 3 s hover (right-click = instant): the
-		// TALKING sprite — what actually plays when this emote is sent.
+		// Full-size preview after a 3 s hover (right-click = instant). If the
+		// emote has a pre-animation, scrub THAT (it loops in the preview box) so
+		// you can watch the flourish before sending; otherwise the TALKING
+		// sprite — what actually plays when this emote is sent.
 		if c.HoverPreview("emote:"+e.Anim, btn) {
-			a.previewBase = a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
-			a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(me, e.Anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+			a.previewEmote(me, e)
 		}
 	}
 
