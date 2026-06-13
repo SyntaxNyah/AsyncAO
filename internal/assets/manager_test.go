@@ -17,7 +17,13 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
-const managerWait = 5 * time.Second
+// managerWait is the ceiling for an async fetch→decode round-trip to land on
+// the manager's channel. It's a safety net, not a perf gate: these flows
+// finish in well under a second locally. CI runs every package in parallel
+// under -race (no -p 1), and that contention pushed the PNG-fallback
+// integration test past a tight 5s once — so the ceiling is generous (a real
+// hang still trips the 600s binary -timeout).
+const managerWait = 30 * time.Second
 
 // testRig wires a full pipeline against an httptest server.
 type testRig struct {
