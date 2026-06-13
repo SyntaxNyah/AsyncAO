@@ -204,6 +204,9 @@ type AssetPreferences struct {
 	CallWordList           []string                     `json:"callWords"`
 	HotkeyMap              map[string]string            `json:"hotkeys"`
 	DiscordRPC             DiscordPrefs                 `json:"discord"`
+	// CharDownloaderOn enables the opt-in single-character/background
+	// downloader (off by default — it writes files to disk on demand).
+	CharDownloaderOn bool `json:"charDownloader"`
 
 	mu        sync.RWMutex
 	path      string
@@ -275,6 +278,7 @@ type prefsJSON struct {
 	CallWords          []string                  `json:"callWords"`
 	Hotkeys            map[string]string         `json:"hotkeys"`
 	Discord            *DiscordPrefs             `json:"discord"`
+	CharDownloader     bool                      `json:"charDownloader"`
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -481,6 +485,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.SmoothScaling = *onDisk.SmoothScaling
 	}
 	p.DebugOverlay = onDisk.DebugOverlay
+	p.CharDownloaderOn = onDisk.CharDownloader
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
 	}
@@ -938,6 +943,26 @@ func (p *AssetPreferences) SetDebugOverlay(enabled bool) {
 		return
 	}
 	p.DebugOverlay = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// CharDownloaderEnabled reports whether the opt-in single-asset downloader
+// is on (off by default — it writes files to disk).
+func (p *AssetPreferences) CharDownloaderEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CharDownloaderOn
+}
+
+// SetCharDownloader toggles the opt-in single-asset downloader.
+func (p *AssetPreferences) SetCharDownloader(enabled bool) {
+	p.mu.Lock()
+	if p.CharDownloaderOn == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.CharDownloaderOn = enabled
 	p.mu.Unlock()
 	p.markDirty()
 }

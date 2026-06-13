@@ -440,6 +440,10 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	y += 10
 
+	// Built-in single-asset downloader (opt-in; becomes its own tab when the
+	// settings screen is tabbed).
+	y = a.drawDownloaderSettings(y, w)
+
 	// Cache browser: live tier stats, T3 size on demand, open-in-Explorer.
 	t2 := a.d.Manager.T2Stats()
 	hitPct := 0.0
@@ -784,6 +788,54 @@ func (a *App) drawDiscordRow(y, w int32) int32 {
 		a.updatePresence()
 	}
 	return y + 4
+}
+
+// drawDownloaderSettings renders the opt-in single-asset downloader section:
+// the master toggle (OFF by default), the benefit explainer, the downloads
+// folder with open / add-to-mounts actions, and the live job status + Cancel.
+// Returns the next y. (Folds into its own tab when the settings screen is
+// tabbed.)
+func (a *App) drawDownloaderSettings(y, w int32) int32 {
+	c := a.ctx
+	on := a.d.Prefs.CharDownloaderEnabled()
+	if next := c.Checkbox(pad, y, "Built-in downloader (OFF by default) — grab one character or background straight from the server", on); next != on {
+		a.d.Prefs.SetCharDownloader(next)
+	}
+	y += 24
+	c.Label(pad+20, y, "Tired of a multi-GB pack download for one file? Turn this on and a Download button appears on each", ColTextDim)
+	y += 18
+	c.Label(pad+20, y, "character (char-select) and background (Background menu) cell. Characters also pull the sfx/blips their", ColTextDim)
+	y += 18
+	c.Label(pad+20, y, "char.ini references (those live outside the folder). Files save below — point \"Read assets from local", ColTextDim)
+	y += 18
+	c.Label(pad+20, y, "folders\" (above) at this folder to use them offline / in rehearsal.", ColTextDim)
+	y += 24
+
+	if on {
+		root := downloadsRoot()
+		c.LabelClipped(pad+20, y+4, w-pad-360-scrollBarW, "Folder: "+root, ColText)
+		if c.Button(sdl.Rect{X: w - pad - 340 - scrollBarW, Y: y, W: 150, H: btnH}, "Open folder") {
+			_ = exec.Command("explorer.exe", root).Start()
+		}
+		if c.Button(sdl.Rect{X: w - pad - 180 - scrollBarW, Y: y, W: 180, H: btnH}, "Add to local mounts") {
+			enabled, mounts := a.d.Prefs.LocalAssets()
+			a.d.Prefs.SetLocalAssets(enabled, append(mounts, root))
+			a.rebuildAssetOrigin()
+			settings.statusLine = "Added the downloads folder to local mounts."
+		}
+		y += 30
+		if a.dl.active {
+			c.LabelClipped(pad+20, y+4, w-pad-150-scrollBarW, a.dl.status, ColAccent)
+			if c.Button(sdl.Rect{X: w - pad - 110 - scrollBarW, Y: y, W: 110, H: btnH}, "Cancel") {
+				a.cancelDownload()
+			}
+			y += 30
+		} else if a.dl.status != "" {
+			c.LabelClipped(pad+20, y+4, w-pad-40-scrollBarW, a.dl.status, ColTextDim)
+			y += 26
+		}
+	}
+	return y + 8
 }
 
 // casingRoles drives the per-role subscription checkboxes (wire order).

@@ -256,7 +256,8 @@ func (a *App) drawBgPanel(w, h int32) {
 
 	// Clip the grid so a partially scrolled top/bottom row stays inside the
 	// panel (same overspill guard as the log lists).
-	unclip := c.clipScope(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
+	dlOn := a.d.Prefs.CharDownloaderEnabled() // read once per frame, not per cell
+	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
 	col, row := int32(0), int32(0)
 	for i := range a.bgPick.list {
 		if query != "" && !strings.Contains(a.bgPick.lower[i], query) {
@@ -265,7 +266,7 @@ func (a *App) drawBgPanel(w, h int32) {
 		x := panel.X + pad + col*(bgCellW+bgCellGap)
 		yy := gridTop + row*cellStride - a.bgPick.scroll
 		if yy > gridTop-bgCellH && yy < panel.Y+panel.H {
-			a.drawBgCell(i, sdl.Rect{X: x, Y: yy, W: bgCellW, H: bgCellH})
+			a.drawBgCell(i, sdl.Rect{X: x, Y: yy, W: bgCellW, H: bgCellH}, dlOn)
 		}
 		col++
 		if col >= cols {
@@ -273,7 +274,7 @@ func (a *App) drawBgPanel(w, h int32) {
 			row++
 		}
 	}
-	unclip()
+	c.popClip(clipPrev, clipHad)
 
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h)
@@ -283,7 +284,7 @@ func (a *App) drawBgPanel(w, h int32) {
 	}
 }
 
-func (a *App) drawBgCell(idx int, cell sdl.Rect) {
+func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool) {
 	c := a.ctx
 	name := a.bgPick.list[idx]
 	c.Fill(cell, ColBackground)
@@ -308,6 +309,19 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect) {
 	}
 	c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColTextDim)
 
+	// Download badge (only when the opt-in downloader is on): grabs this
+	// background's whole folder for offline use. Claims its own click so it
+	// never doubles as a select.
+	if downloaderOn {
+		get := sdl.Rect{X: cell.X + cell.W - 38, Y: cell.Y + cell.H - 20, W: 36, H: 18}
+		c.Fill(get, sdl.Color{R: 0, G: 0, B: 0, A: 200})
+		c.Label(get.X+4, get.Y+1, "Get", ColAccent)
+		if c.hovering(get) && c.clicked {
+			a.startBgDownload(name)
+			return
+		}
+	}
+
 	// Hover → large preview (the actual defenseempty image, high priority);
 	// click → select it as the /bg target (and keep the preview up).
 	if c.HoverPreview("bg:"+name, cell) {
@@ -322,41 +336,78 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect) {
 	}
 }
 
-// autoindexHref captures directory links from an HTML autoindex. nginx,
-// Apache and Caddy all emit <a href="name/">; the trailing slash marks a
-// folder, and [^"?#] skips Apache's ?C=N;O=A column-sort links and fragments.
-var autoindexHref = regexp.MustCompile(`(?i)href="([^"?#]+/)"`)
+// autoindexEntry is one parsed directory-listing link.
+type autoindexEntry struct {
+	href string // raw URL segment from the listing (already escaped; dirs keep the trailing /)
+	name string // decoded display / filesystem name
+	dir  bool   // trailing slash in the listing
+}
 
-// parseAutoindexDirs extracts the one-level-deep folder names from a
-// directory autoindex page: trailing-slash hrefs, minus parent/self/absolute/
-// external links, percent-decoded, de-duplicated case-insensitively, capped
-// and sorted. On a non-autoindex response (custom 403/404 HTML) it simply
-// finds no qualifying links and returns nothing — never garbage names.
-func parseAutoindexDirs(data []byte) []string {
-	matches := autoindexHref.FindAllSubmatch(data, -1)
-	names := make([]string, 0, len(matches))
-	seen := make(map[string]struct{}, len(matches))
-	for _, m := range matches {
-		raw := string(m[1])
-		if raw == "../" || raw == "./" || strings.HasPrefix(raw, "/") || strings.Contains(raw, "://") {
+// autoindexHref captures href targets from an HTML directory listing. nginx,
+// Apache and Caddy all emit <a href="...">; [^"?#] drops Apache's
+// ?C=N;O=A column-sort links and fragment targets.
+var autoindexHref = regexp.MustCompile(`(?i)href="([^"?#]+)"`)
+
+// cleanAutoindexEntry normalizes one raw href into an entry and reports
+// whether it's a usable, one-level-deep, non-escaping link. Pure (unit
+// tested) — it is the SECURITY boundary for the downloader: parent (../),
+// self (./), absolute (/x), external (x://), nested (a/b) and any ".."
+// (raw OR percent-encoded like %2e%2e) are rejected so a hostile listing
+// can never write outside the destination folder.
+func cleanAutoindexEntry(raw string) (autoindexEntry, bool) {
+	if raw == "" || strings.HasPrefix(raw, "/") || strings.Contains(raw, "://") {
+		return autoindexEntry{}, false
+	}
+	dir := strings.HasSuffix(raw, "/")
+	name := strings.TrimSuffix(raw, "/")
+	if dec, err := url.PathUnescape(name); err == nil {
+		name = dec
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || name == "." || name == ".." || strings.Contains(name, "..") {
+		return autoindexEntry{}, false
+	}
+	if strings.ContainsAny(name, `/\`) { // one level deep only
+		return autoindexEntry{}, false
+	}
+	return autoindexEntry{href: raw, name: name, dir: dir}, true
+}
+
+// parseAutoindexEntries returns up to limit unique files+dirs from a listing
+// page. On a non-autoindex response (custom 403/404 HTML) it finds no
+// qualifying links and returns nothing — never garbage names.
+func parseAutoindexEntries(data []byte, limit int) []autoindexEntry {
+	out := make([]autoindexEntry, 0)
+	seen := make(map[string]struct{})
+	for _, m := range autoindexHref.FindAllSubmatch(data, -1) {
+		e, ok := cleanAutoindexEntry(string(m[1]))
+		if !ok {
 			continue
 		}
-		name := strings.TrimSuffix(raw, "/")
-		if dec, err := url.PathUnescape(name); err == nil {
-			name = dec
+		key := strings.ToLower(e.name)
+		if e.dir {
+			key += "/"
 		}
-		name = strings.TrimSpace(name)
-		if name == "" || strings.ContainsAny(name, "/\\") { // one level deep only
-			continue
-		}
-		key := strings.ToLower(name)
 		if _, dup := seen[key]; dup {
 			continue
 		}
 		seen[key] = struct{}{}
-		names = append(names, name)
-		if len(names) >= bgListCap {
+		out = append(out, e)
+		if len(out) >= limit {
 			break
+		}
+	}
+	return out
+}
+
+// parseAutoindexDirs is the background picker's discovery list: the sorted,
+// de-duplicated folder names from a directory listing.
+func parseAutoindexDirs(data []byte) []string {
+	entries := parseAutoindexEntries(data, bgListCap)
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.dir {
+			names = append(names, e.name)
 		}
 	}
 	sort.SliceStable(names, func(i, j int) bool {

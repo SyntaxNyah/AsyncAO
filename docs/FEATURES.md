@@ -253,5 +253,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   inspect / prune (-older, -max-bytes, -all) / warm a URL list or char
   icons via a server's `extensions.json` into T3 — pre-seed a fresh
   install before ever connecting.
+- **Built-in single-asset downloader** (Settings, **OFF by default**): for
+  hosts that serve a directory listing, grab one character or background
+  straight off the server instead of a multi-GB pack. Turn it on and a
+  **Get** badge appears on each character (char-select) and background
+  (Background menu) cell; it walks that folder's autoindex and saves the
+  files under `downloads/` — and a downloaded character also pulls the
+  `sounds/general` sfx and `sounds/blips` its `char.ini` names (those live
+  outside the folder, so a plain grab would be silent). Bounded (file /
+  byte / depth caps), off-thread, cancelable, and path-traversal-guarded.
+  Point "Read assets from local folders" at the downloads folder to use
+  the grabs offline / in rehearsal.
 - **Discord Rich Presence**: optional, per-field privacy checkboxes,
   zero build/run dependency — full guide in [DISCORD.md](DISCORD.md).

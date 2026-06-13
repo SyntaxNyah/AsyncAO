@@ -681,23 +681,28 @@ func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 	_ = c.Ren.DrawRect(&r)
 }
 
-// clipScope scissors rendering to r and returns a restore func that puts
-// the clip back to whatever was active before (the themed log lists draw
-// inside element rects, so a blind SetClipRect(nil) reset could clobber an
-// outer clip). Scrollable lists wrap their line loop in it so a partially
-// scrolled top/bottom row is cut at the rect edge instead of spilling over
-// neighbouring widgets — that overspill is what struck the tab strip
-// through the first OOC line.
-func (c *Ctx) clipScope(r sdl.Rect) func() {
-	hadClip := c.Ren.IsClipEnabled()
-	prev := c.Ren.GetClipRect()
+// pushClip scissors rendering to r and returns the clip state to restore
+// with popClip (the themed log lists draw inside element rects, so a blind
+// SetClipRect(nil) reset could clobber an outer clip). Scrollable lists wrap
+// their line loop in push/pop so a partially scrolled top/bottom row is cut
+// at the rect edge instead of spilling over neighbouring widgets — that
+// overspill is what struck the tab strip through the first OOC line.
+//
+// Returns by value (no closure) so the per-frame log/list draws stay
+// allocation-free — the render loop must not heap-allocate.
+func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
+	had = c.Ren.IsClipEnabled()
+	prev = c.Ren.GetClipRect()
 	_ = c.Ren.SetClipRect(&r)
-	return func() {
-		if hadClip {
-			_ = c.Ren.SetClipRect(&prev)
-		} else {
-			_ = c.Ren.SetClipRect(nil)
-		}
+	return prev, had
+}
+
+// popClip restores the clip captured by pushClip.
+func (c *Ctx) popClip(prev sdl.Rect, had bool) {
+	if had {
+		_ = c.Ren.SetClipRect(&prev)
+	} else {
+		_ = c.Ren.SetClipRect(nil)
 	}
 }
 

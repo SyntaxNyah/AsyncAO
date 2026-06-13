@@ -77,7 +77,7 @@ func (a *App) drawNotesTab(r sdl.Rect) {
 		c.Label(list.X+4, list.Y+4, "No pins yet — right-click an IC log line,", ColTextDim)
 		c.Label(list.X+4, list.Y+4+lineH, "Pin evidence, or type a note below.", ColTextDim)
 	}
-	unclip := c.clipScope(list) // scrollback only; restored before the input row
+	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the input row
 	y := list.Y - a.noteScroll
 	removeIdx := -1
 	for i, line := range lines {
@@ -99,7 +99,7 @@ func (a *App) drawNotesTab(r sdl.Rect) {
 		}
 		y += lineH
 	}
-	unclip()
+	c.popClip(clipPrev, clipHad)
 	if removeIdx >= 0 {
 		a.notebook.Remove(removeIdx)
 	}

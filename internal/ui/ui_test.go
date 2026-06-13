@@ -119,6 +119,36 @@ func TestParseAutoindexDirs(t *testing.T) {
 	}
 }
 
+// TestCleanAutoindexEntry pins the downloader's security boundary: parent,
+// self, absolute, external, nested and ".." links (raw OR percent-encoded)
+// are all rejected, so a hostile listing can never write outside the dest.
+func TestCleanAutoindexEntry(t *testing.T) {
+	reject := []string{
+		"../", "./", "..", "%2e%2e/", "%2e%2e%2f", "a/..%2f", // traversal
+		"/abs/", "/etc/passwd", // absolute
+		"https://evil.example/x/", "http://x/y", // external
+		"a/b", "a/b/", `a\b`, // nested / separators
+		"", "%2e%2e", // empty / bare encoded ..
+	}
+	for _, raw := range reject {
+		if e, ok := cleanAutoindexEntry(raw); ok {
+			t.Errorf("cleanAutoindexEntry(%q) accepted as %+v, want rejected", raw, e)
+		}
+	}
+
+	accept := map[string]autoindexEntry{
+		"maya/":         {href: "maya/", name: "maya", dir: true},
+		"char_icon.png": {href: "char_icon.png", name: "char_icon.png", dir: false},
+		"my%20court/":   {href: "my%20court/", name: "my court", dir: true},
+	}
+	for raw, want := range accept {
+		got, ok := cleanAutoindexEntry(raw)
+		if !ok || got != want {
+			t.Errorf("cleanAutoindexEntry(%q) = %+v, %v; want %+v, true", raw, got, ok, want)
+		}
+	}
+}
+
 // TestSelectAllChordArms pins Ctrl+A semantics: the chord arms a pending
 // select-all that survives BeginFrame until a field consumes it (typing
 // replaces the whole value, backspace clears it — handled in TextField).

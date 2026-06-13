@@ -416,6 +416,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	track := sdl.Rect{X: w - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
 	a.charScroll = c.VScrollbar("charscroll", track, a.charScroll, contentH, visibleH)
 
+	dlOn := a.d.Prefs.CharDownloaderEnabled() // read once per frame, not per cell
 	col, row := int32(0), int32(0)
 	previewRequested := false
 	for i := range a.sess.Chars {
@@ -427,7 +428,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		y := gridTop + row*cellH - a.charScroll
 		cell := sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell}
 		if y > -iconCell && y < h {
-			a.drawCharCell(slot, cell, i)
+			a.drawCharCell(slot, cell, i, dlOn)
 			if c.HoverPreview("char:"+slot.Name, cell) {
 				a.previewBase = a.urls.Emote(slot.Name, "normal", courtroom.EmoteIdle)
 				a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(slot.Name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
@@ -451,7 +452,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 }
 
-func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int) {
+func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int, downloaderOn bool) {
 	c := a.ctx
 	c.Fill(cell, ColPanel)
 	base := a.urls.CharIcon(slot.Name)
@@ -472,6 +473,18 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 		c.Label(cell.X+6, cell.Y+iconCell/2-8, "taken", ColDanger)
 	}
 	c.LabelClipped(cell.X, cell.Y+iconCell+1, iconCell, slot.Name, ColTextDim)
+	// Download badge (only with the opt-in downloader on): grabs this
+	// character's folder + the sfx/blips its char.ini names, for offline use.
+	// Works on taken slots too, and claims its own click so it never picks.
+	if downloaderOn {
+		get := sdl.Rect{X: cell.X + cell.W - 38, Y: cell.Y + cell.H - 20, W: 36, H: 18}
+		c.Fill(get, sdl.Color{R: 0, G: 0, B: 0, A: 200})
+		c.Label(get.X+4, get.Y+1, "Get", ColAccent)
+		if c.hovering(get) && c.clicked {
+			a.startCharDownload(slot.Name)
+			return
+		}
+	}
 	if c.hovering(cell) {
 		a.warmCharINI(slot.Name) // pick = memory hit, not an RTT
 		if c.clicked && !slot.Taken {
@@ -875,7 +888,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	}
 	// Scissor the scrollback to the list rect so the partially scrolled
 	// top/bottom row can't draw past it onto the tab strip above.
-	unclip := c.clipScope(list)
+	clipPrev, clipHad := c.pushClip(list)
 	y := list.Y - a.icScroll
 	for ri := range rows {
 		if y > list.Y+list.H-lineH {
@@ -895,7 +908,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 		}
 		y += lineH
 	}
-	unclip()
+	c.popClip(clipPrev, clipHad)
 }
 
 // drawOOCLogList renders the OOC scrollback into rect (themed
@@ -934,7 +947,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
-	unclip := c.clipScope(list) // top/bottom row clipped to the rect, not the tabs
+	clipPrev, clipHad := c.pushClip(list) // top/bottom row clipped to the rect, not the tabs
 	y := list.Y - a.oocScroll
 	for _, line := range lines {
 		if y > list.Y+list.H-lineH {
@@ -945,7 +958,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 		}
 		y += lineH
 	}
-	unclip()
+	c.popClip(clipPrev, clipHad)
 }
 
 // submitOOC sends the OOC input if non-blank (shared classic/themed).
@@ -992,7 +1005,7 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
-	unclip := c.clipScope(list) // scrollback only; restored before the fields below
+	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the fields below
 	y := list.Y - a.oocScroll
 	for _, line := range lines {
 		if y > list.Y+list.H-lineH {
@@ -1003,7 +1016,7 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 		}
 		y += lineH
 	}
-	unclip()
+	c.popClip(clipPrev, clipHad)
 
 	// Identity fields: full width (side labels squished the boxes in the
 	// narrow right column) — the placeholders carry the labels.
@@ -1038,8 +1051,8 @@ func (a *App) drawAreaList(r sdl.Rect) {
 	contentH := int32(len(a.sess.Areas)) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
-	unclip := c.clipScope(r) // partial top/bottom row stays inside the panel
-	defer unclip()
+	clipPrev, clipHad := c.pushClip(r) // partial top/bottom row stays inside the panel
+	defer c.popClip(clipPrev, clipHad)
 	y := r.Y - a.areaScroll
 	for i, area := range a.sess.Areas {
 		if y > r.Y+r.H {
@@ -1282,8 +1295,8 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	contentH := int32(len(a.sess.Music)) * lineH
 	bar := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.musicScroll = c.VScrollbar("musicscroll", bar, a.musicScroll, contentH, r.H)
-	unclip := c.clipScope(r) // partial top/bottom row stays inside the panel
-	defer unclip()
+	clipPrev, clipHad := c.pushClip(r) // partial top/bottom row stays inside the panel
+	defer c.popClip(clipPrev, clipHad)
 	y := r.Y - a.musicScroll
 	for _, track := range a.sess.Music {
 		if y > r.Y+r.H {

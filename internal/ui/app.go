@@ -485,6 +485,9 @@ type sessionState struct {
 	// bgPick is the "change background" modal (background/ autoindex grid).
 	bgPick bgPicker
 
+	// dl is the opt-in single-asset downloader (off by default).
+	dl downloader
+
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
 	bgAskAt     time.Time
@@ -980,6 +983,7 @@ func (a *App) Disconnect() {
 	case <-a.bgPick.res:
 	default:
 	}
+	a.cancelDownload()   // a download targets this server's assets; stop it
 	if a.d.Pool != nil { // nil in headless tests
 		a.d.Pool.BumpEpoch() // cancel queued speculation for the old server
 	}
@@ -1831,6 +1835,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollNotebook()
 	a.pollCharBind()
 	a.pollMacroBind()
+	a.pollDownload()
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {

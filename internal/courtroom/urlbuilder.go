@@ -176,6 +176,17 @@ func (u URLBuilder) BackgroundsRoot() string {
 	return u.origin + backgroundDir
 }
 
+// CharFolder returns one character's folder URL (with trailing slash) — the
+// recursive-download root and (on an autoindex host) its file listing.
+func (u URLBuilder) CharFolder(character string) string {
+	return u.origin + charactersDir + seg(character) + "/"
+}
+
+// BackgroundFolder returns one background's folder URL (with trailing slash).
+func (u URLBuilder) BackgroundFolder(bg string) string {
+	return u.origin + backgroundDir + seg(bg) + "/"
+}
+
 // SFX returns a general sound base. // AssetType: SFX
 func (u URLBuilder) SFX(name string) string {
 	return u.origin + soundsGeneral + seg(name)
