@@ -761,6 +761,56 @@ func TestTypewriterSpeedCodes(t *testing.T) {
 	}
 }
 
+func TestTypewriterInlineColors(t *testing.T) {
+	tw := NewTypewriter()
+
+	// No markup → one default run covering the whole message.
+	tw.Start("hello world")
+	if got := tw.Text(); got != "hello world" {
+		t.Fatalf("plain Text = %q", got)
+	}
+	if s := tw.Styles(); len(s) != 1 || s[0] != (StyleRun{Len: 11, Color: ColorDefault}) {
+		t.Fatalf("plain styles = %v, want one default run of 11", s)
+	}
+
+	// Palette runs partition the clean text; markup is stripped.
+	tw.Start("hi \\c2red\\c0 white")
+	if got := tw.Text(); got != "hi red white" {
+		t.Fatalf("colored Text = %q (markup must strip)", got)
+	}
+	want := []StyleRun{{Len: 3, Color: ColorDefault}, {Len: 3, Color: 2}, {Len: 6, Color: 0}}
+	if got := tw.Styles(); len(got) != len(want) {
+		t.Fatalf("colored styles = %v, want %v", got, want)
+	} else {
+		total := 0
+		for i, r := range got {
+			if r != want[i] {
+				t.Errorf("style[%d] = %v, want %v", i, r, want[i])
+			}
+			total += r.Len
+		}
+		if total != len([]rune(tw.Text())) {
+			t.Errorf("style lengths sum to %d, want %d (must cover every rune)", total, len([]rune(tw.Text())))
+		}
+	}
+
+	// Rainbow tag, no spurious empty default run when color is set before any text.
+	tw.Start("\\crwow")
+	if got := tw.Styles(); len(got) != 1 || got[0] != (StyleRun{Len: 3, Color: ColorRainbow}) {
+		t.Fatalf("rainbow styles = %v, want one rainbow run of 3", got)
+	}
+
+	// Escaped backslash collapses to one literal '\'; a lone/unknown escape is kept.
+	tw.Start("a\\\\b")
+	if got := tw.Text(); got != "a\\b" {
+		t.Errorf(`escaped backslash Text = %q, want "a\b"`, got)
+	}
+	tw.Start("a\\zb")
+	if got := tw.Text(); got != "a\\zb" {
+		t.Errorf(`unknown escape Text = %q, want "a\zb" (backslash kept)`, got)
+	}
+}
+
 func TestTypewriterSkipToEnd(t *testing.T) {
 	tw := NewTypewriter()
 	tw.Start("a long message that should skip")
