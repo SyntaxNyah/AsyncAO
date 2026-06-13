@@ -621,6 +621,47 @@ func TestShoutNukesQueueAndPlaysFirst(t *testing.T) {
 	}
 }
 
+// TestCatchUpDrainsBacklog pins packed-room catch-up: with it on, a deep IC
+// backlog fast-forwards to <= threshold within a handful of frames; with it
+// off (the courtroom default) the same flood still crawls through each
+// message's typewriter + stay, so the queue stays deep. Only the on-stage
+// ceremony is skipped — the IC log records every message regardless.
+func TestCatchUpDrainsBacklog(t *testing.T) {
+	flood := func(room *Courtroom, sess *Session) {
+		// The first message plays normally (queue empty at its begin); the
+		// rest pile up behind it.
+		room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "first")})
+		for i := 0; i < 12; i++ {
+			room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "x")})
+		}
+	}
+	const frames = 60
+
+	// Catch-up ON: the backlog drains to <= threshold well within the budget.
+	on, sess1, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess1)
+	on.CatchUp, on.CatchUpThreshold = true, 2
+	flood(on, sess1)
+	for i := 0; i < frames; i++ {
+		on.Update(DefaultCharInterval)
+	}
+	if on.QueueLen() > on.CatchUpThreshold {
+		t.Errorf("catch-up ON: queue = %d after %d frames, want <= %d", on.QueueLen(), frames, on.CatchUpThreshold)
+	}
+
+	// Catch-up OFF (courtroom default): each message plays its full typewriter
+	// + stay, so the same flood is far from drained in the same budget.
+	off, sess2, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess2)
+	flood(off, sess2)
+	for i := 0; i < frames; i++ {
+		off.Update(DefaultCharInterval)
+	}
+	if off.QueueLen() <= on.CatchUpThreshold {
+		t.Errorf("catch-up OFF: queue = %d after %d frames, expected the backlog still deep", off.QueueLen(), frames)
+	}
+}
+
 func TestPreanimBlocksUntilDone(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)

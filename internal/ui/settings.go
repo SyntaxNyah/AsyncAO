@@ -517,17 +517,42 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Audio.SetVolumes(a.d.Prefs.AudioVolumes())
 	}
 
-	// Message timing (AO2-Client options.ini parity); applies live.
+	// Message timing (AO2-Client options.ini parity); applies live. Plain
+	// descriptions beside each knob so they're self-explanatory.
+	c.Label(pad, y, "Text speed — how the IC chatbox plays messages:", ColTextDim)
+	y += 20
 	crawl, stay, rate := a.d.Prefs.Timing()
 	crawl = a.numberRow(y, "Text crawl ms", crawl, 5, config.MinTextCrawlMs, config.MaxTextCrawlMs)
+	c.Label(pad+270, y+4, "delay between letters (higher = slower, easier to read)", ColTextDim)
 	y += 26
 	stay = a.numberRow(y, "Text stay ms", stay, 100, 0, config.MaxTextStayMs)
+	c.Label(pad+270, y+4, "pause after a message finishes before the next plays", ColTextDim)
 	y += 26
 	rate = a.numberRow(y, "Chat limit ms", rate, 100, 0, config.MaxChatRateLimitMs)
+	c.Label(pad+270, y+4, "smallest gap between YOUR sent messages (anti-spam)", ColTextDim)
 	y += 30
 	if c0, s0, r0 := a.d.Prefs.Timing(); c0 != crawl || s0 != stay || r0 != rate {
 		a.d.Prefs.SetTiming(crawl, stay, rate)
 		a.applyTimingToRoom()
+	}
+
+	// Packed-room catch-up: when 20 people talk at once the stage falls
+	// minutes behind playing every preanim. This skips the backlog's
+	// animations so chat tracks real-time; the log keeps every line either way.
+	cuOn, cuThresh := a.d.Prefs.CatchUp()
+	if next := c.Checkbox(pad, y, "Catch up when behind (packed rooms): skip queued messages' animations so chat stays current", cuOn); next != cuOn {
+		a.d.Prefs.SetCatchUp(next, cuThresh)
+		a.applyTimingToRoom()
+	}
+	y += 26
+	if cuOn {
+		nt := a.numberRow(y, "Catch up after N queued", cuThresh, 1, 1, 50)
+		c.Label(pad+270, y+4, "fast-forward once more than this many messages are waiting", ColTextDim)
+		if nt != cuThresh {
+			a.d.Prefs.SetCatchUp(cuOn, nt)
+			a.applyTimingToRoom()
+		}
+		y += 30
 	}
 
 	// Case announcements (CASEA, tsuserver-family): subscribe by role.

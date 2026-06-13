@@ -25,6 +25,16 @@ const (
 	// emptyPreanim values AO uses for "no preanimation".
 	emptyPreanimDash = "-"
 
+	// catchUpDefaultThreshold is the queue depth past which packed-room
+	// catch-up fast-forwards backlog messages. The App overrides it from
+	// prefs; direct NewCourtroom callers (tests/embedders) get catch-up OFF.
+	catchUpDefaultThreshold = 5
+	// catchUpLinger holds a fast-forwarded backlog message on screen before
+	// the next dequeues — zero so a deep backlog drains one message per frame
+	// (the IC log keeps every message regardless; only the on-stage ceremony
+	// is skipped, mirroring AO2-Client's "catch up when behind").
+	catchUpLinger = 0 * time.Millisecond
+
 	// RealizationFlashDuration approximates AO2-Client's realization flash
 	// (do_flash plays the theme's one-shot flash animation, ~a quarter
 	// second on stock themes).
@@ -129,6 +139,14 @@ type Courtroom struct {
 	// (user-tunable; AO2-Client "text stay time").
 	TextStay time.Duration
 
+	// CatchUp fast-forwards the on-stage ceremony (shout/preanim/typewriter/
+	// stay) of backlog messages once the queue is deeper than CatchUpThreshold,
+	// so a packed room tracks near real-time instead of crawling through every
+	// preanim. The IC log still records every message. Off by default here; the
+	// App turns it on from prefs.
+	CatchUp          bool
+	CatchUpThreshold int
+
 	queue []*protocol.ChatMessage
 	phase MessagePhase
 	timer time.Duration
@@ -167,6 +185,9 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 		audio:      audio,
 		Typewriter: NewTypewriter(),
 		TextStay:   DefaultTextStayTime,
+		// Catch-up defaults OFF so direct callers (tests/embedders) keep the
+		// full lifecycle; the App enables it from prefs (default ON there).
+		CatchUpThreshold: catchUpDefaultThreshold,
 	}
 	c.Scene.SpeakerInFront = true
 	return c
@@ -237,6 +258,15 @@ func (c *Courtroom) setBackground(bg string) {
 // enter the first phase.
 func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.current = msg
+	// Packed-room catch-up: a deep backlog behind this message means the
+	// stage is behind real-time. Fast-forward this one (no shout/preanim/
+	// typewriter/effects/sfx/prefetch) and linger briefly so the queue drains;
+	// the newest messages (queue depth <= threshold) still play in full. The
+	// IC log already holds every message's full text.
+	if c.CatchUp && len(c.queue) > c.CatchUpThreshold {
+		c.beginCaughtUp(msg)
+		return
+	}
 	speakerName := msg.CharName
 
 	// --- prefetch fan-out (all HIGH, all parallel on the pool) ---
@@ -357,6 +387,25 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	default:
 		c.enterAfterShout()
 	}
+}
+
+// beginCaughtUp shows a backlog message's text for ~one frame with no
+// shout/preanim/typewriter/effects/sfx/prefetch, then lingers briefly so the
+// next dequeues. It drains a deep queue toward real-time; the newest message
+// (played in full by begin) sets the real scene, and the IC log already has
+// every message's text. Speaker sprite is intentionally left as-is — a
+// one-frame backlog flash is never seen.
+func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
+	c.Scene.ShoutBase = ""
+	c.Scene.ShownameText = displayName(msg)
+	c.Scene.TextColor = msg.TextColor
+	c.Typewriter.Start(msg.Message)
+	c.Typewriter.SkipToEnd()
+	c.Scene.MessageText = c.Typewriter.Text()
+	c.Scene.VisibleRunes = c.Typewriter.Visible()
+	c.preanimDone = false
+	c.phase = PhaseLinger
+	c.timer = catchUpLinger
 }
 
 // enterAfterShout picks preanim vs talking, mirroring handle_emote_mod:

@@ -127,6 +127,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   order (IC → OOC → search ...), wrapping both ways.
 - Clicking an emote **refocuses the IC input** (AO2 focus_ic_input) —
   pick and keep typing.
+- **Packed-room catch-up** (Settings → Audio & Chat, ON by default): when
+  more than N messages are queued, the IC stage fast-forwards the backlog
+  (skips its preanims/shouts/typewriter) so chat tracks real-time instead of
+  falling minutes behind in a 20-person room. The newest messages still play
+  in full, and the IC log keeps every line regardless. Perf-positive (fewer
+  frames spent). The threshold is configurable; alongside the plain-English
+  Text crawl / stay / chat-limit knobs.
 - **Emote grid pages** (`<` / `>` + a `page x/y · N emotes` counter) when
   a character ships more emotes than fit — both the classic and themed
   layouts. The arrow row only appears when paging is needed; loading a

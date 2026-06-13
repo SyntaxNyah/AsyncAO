@@ -1448,6 +1448,7 @@ func (a *App) applyTimingToRoom() {
 	crawlMs, stayMs, _ := a.d.Prefs.Timing()
 	a.room.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
+	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
 }
 
 // activeCharName is the character folder OUTGOING messages use: the

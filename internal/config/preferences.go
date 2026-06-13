@@ -72,6 +72,20 @@ const defaultUIScaleAuto = true
 // that IS what picking a theme means to AO players.
 const defaultThemeLayout = true
 
+// defaultCatchUpWhenBehind ships ON: in a packed room the IC stage otherwise
+// crawls through every queued preanim/shout, falling minutes behind real-time.
+// Catch-up fast-forwards the backlog; the IC log still keeps every message.
+const defaultCatchUpWhenBehind = true
+
+// Catch-up queue-depth threshold: engage once more than this many messages are
+// waiting. DefaultCatchUpThreshold is exported so the UI can show it; the value
+// is clamped to [catchUpThresholdMin, catchUpThresholdMax].
+const (
+	DefaultCatchUpThreshold = 5
+	catchUpThresholdMin     = 1
+	catchUpThresholdMax     = 50
+)
+
 // defaultEmoteButtonImages ships the courtroom emote picker as image
 // buttons (characters/<char>/emotions/button<N>) rather than text chips.
 const defaultEmoteButtonImages = true
@@ -166,6 +180,8 @@ type AssetPreferences struct {
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
 	UIScaleAutoOn          bool                         `json:"uiScaleAuto"`
+	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
+	CatchUpThreshold       int                          `json:"catchUpThreshold"`
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
@@ -230,28 +246,31 @@ type AssetPreferences struct {
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
 // "absent" from the zero value where the default is not the zero value.
 type prefsJSON struct {
-	GlobalFallbacksEnabled bool                         `json:"globalFallbacksEnabled"`
-	PreferAnimated         *bool                        `json:"preferAnimated"`
-	EmoteButtonImages      *bool                        `json:"emoteButtonImages"`
-	SmoothScaling          *bool                        `json:"smoothScaling"`
-	DebugOverlay           bool                         `json:"debugOverlay"`
-	FormatAutoDetect       *bool                        `json:"formatAutoDetect"` // absent = default ON
-	ThemeLayout            *bool                        `json:"themeLayout"`      // absent = default ON
-	UIScaleAuto            *bool                        `json:"uiScaleAuto"`      // absent = default ON (HiDPI)
-	FontPaths              string                       `json:"fontPaths"`        // ""=embedded font
-	Macros                 []MacroSpec                  `json:"macros"`
-	ThemeRectOverrides     map[string]map[string][4]int `json:"themeRectOverrides"`
-	DiskZstd               bool                         `json:"diskZstd"`     // default OFF (measured trade)
-	StreamerMode           bool                         `json:"streamerMode"` // default OFF
-	ThemeName              string                       `json:"themeName"`
-	ThemeDir               string                       `json:"themeDir"`
-	OOCName                string                       `json:"oocName"`
-	ViewportPct            int                          `json:"viewportPercent"`
-	ChatScalePct           int                          `json:"chatScalePercent"`
-	ChatBoxPct             int                          `json:"chatBoxPercent"`
-	LogScalePct            int                          `json:"logScalePercent"`
-	InputHeightPct         int                          `json:"inputHeightPercent"`
-	UIScalePct             int                          `json:"uiScalePercent"`
+	GlobalFallbacksEnabled bool  `json:"globalFallbacksEnabled"`
+	PreferAnimated         *bool `json:"preferAnimated"`
+	EmoteButtonImages      *bool `json:"emoteButtonImages"`
+	SmoothScaling          *bool `json:"smoothScaling"`
+	DebugOverlay           bool  `json:"debugOverlay"`
+	FormatAutoDetect       *bool `json:"formatAutoDetect"`  // absent = default ON
+	ThemeLayout            *bool `json:"themeLayout"`       // absent = default ON
+	UIScaleAuto            *bool `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
+	CatchUpWhenBehind      *bool `json:"catchUpWhenBehind"` // absent = default ON
+	CatchUpThreshold       *int  `json:"catchUpThreshold"`  // absent = default
+
+	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
+	Macros             []MacroSpec                  `json:"macros"`
+	ThemeRectOverrides map[string]map[string][4]int `json:"themeRectOverrides"`
+	DiskZstd           bool                         `json:"diskZstd"`     // default OFF (measured trade)
+	StreamerMode       bool                         `json:"streamerMode"` // default OFF
+	ThemeName          string                       `json:"themeName"`
+	ThemeDir           string                       `json:"themeDir"`
+	OOCName            string                       `json:"oocName"`
+	ViewportPct        int                          `json:"viewportPercent"`
+	ChatScalePct       int                          `json:"chatScalePercent"`
+	ChatBoxPct         int                          `json:"chatBoxPercent"`
+	LogScalePct        int                          `json:"logScalePercent"`
+	InputHeightPct     int                          `json:"inputHeightPercent"`
+	UIScalePct         int                          `json:"uiScalePercent"`
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
 	MusicVol *int `json:"musicVolume"`
 	SFXVol   *int `json:"sfxVolume"`
@@ -443,6 +462,8 @@ func load(path string) (*AssetPreferences, error) {
 		AutoDetectFormats: defaultFormatAutoDetect,
 		ThemeLayoutOn:     defaultThemeLayout,
 		UIScaleAutoOn:     defaultUIScaleAuto,
+		CatchUpOn:         defaultCatchUpWhenBehind,
+		CatchUpThreshold:  DefaultCatchUpThreshold,
 		DiscordRPC:        defaultDiscordPrefs(),
 		ViewportPct:       DefaultViewportPercent,
 		ChatScalePct:      DefaultScalePercent,
@@ -494,6 +515,12 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.UIScaleAuto != nil {
 		p.UIScaleAutoOn = *onDisk.UIScaleAuto
+	}
+	if onDisk.CatchUpWhenBehind != nil {
+		p.CatchUpOn = *onDisk.CatchUpWhenBehind
+	}
+	if onDisk.CatchUpThreshold != nil {
+		p.CatchUpThreshold = clampPercent(*onDisk.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
 	}
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
@@ -1278,6 +1305,28 @@ func (p *AssetPreferences) SetTiming(crawlMs, stayMs, rateLimitMs int) {
 		return
 	}
 	p.TextCrawlMs, p.TextStayMs, p.ChatRateLimitMs = crawlMs, stayMs, rateLimitMs
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// CatchUp reports the packed-room catch-up toggle and its queue-depth
+// threshold (fast-forward the IC stage once more than threshold messages are
+// queued).
+func (p *AssetPreferences) CatchUp() (on bool, threshold int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CatchUpOn, p.CatchUpThreshold
+}
+
+// SetCatchUp clamps and persists the catch-up toggle + threshold.
+func (p *AssetPreferences) SetCatchUp(on bool, threshold int) {
+	threshold = clampPercent(threshold, catchUpThresholdMin, catchUpThresholdMax)
+	p.mu.Lock()
+	if p.CatchUpOn == on && p.CatchUpThreshold == threshold {
+		p.mu.Unlock()
+		return
+	}
+	p.CatchUpOn, p.CatchUpThreshold = on, threshold
 	p.mu.Unlock()
 	p.markDirty()
 }
