@@ -183,6 +183,7 @@ type App struct {
 	previewBase string
 	previewFor  string    // base the preview clock was started for
 	previewAt   time.Time // loop anchor — animated previews play, not freeze
+	previewZoom int       // magnifier factor (1 = fit; >1 shows a cursor-panned window)
 	// Try-before-wear: cycle a previewed (non-worn) wardrobe character's
 	// emotes in the preview box. previewChar guards a one-shot char.ini parse;
 	// the capped anim/label slices drive the ‹ › buttons and arrow keys.

@@ -163,6 +163,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Hovering an emote previews it** large (3 s, or instantly on right-click):
   if the emote has a **pre-animation** that flourish plays (looped) so you can
   watch it before sending; otherwise its talking sprite. Both layouts.
+- **Sprite preview magnifier**: every sprite preview pop-up (character select,
+  wardrobe, emote hover, background picker) has **− / + zoom controls** along
+  its bottom; past 1× the preview becomes a **magnifying glass** — move the
+  mouse over it to pan around the magnified sprite and inspect pixel detail.
+  (The courtroom **stage** has its own zoom: **Ctrl+wheel** zooms toward the
+  cursor, Ctrl+drag pans — the "hyperfocus" camera.)
 - **Background picker** (courtroom Background button): a thumbnail grid of
   every background, modeled on the wardrobe menu. AO has no "list
   backgrounds" packet, so the set is discovered by fetching the asset

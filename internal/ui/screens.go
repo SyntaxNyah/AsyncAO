@@ -28,6 +28,8 @@ const (
 	// previewMax bounds the hover-preview pop-up edge; small sprites
 	// integer-upscale toward it so pixel art previews stay readable.
 	previewMax int32 = 520
+	// previewZoomMax caps the preview magnifier (× the fit scale).
+	previewZoomMax = 8
 	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
 	emoteBtnCell int32 = 40
 	// emoteTextCellW is the fixed cell width for text-mode emote chips, so
@@ -521,6 +523,7 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		if a.previewBase != a.previewFor {
 			a.previewFor = a.previewBase
 			a.previewAt = time.Now()
+			a.previewZoom = 1 // a new sprite starts unzoomed
 		}
 		pw, ph = page.W, page.H
 		scale := int32(1)
@@ -540,12 +543,65 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
 	if ready {
-		_ = c.Ren.Copy(page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))], nil, &dst)
+		tex := page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))]
+		if a.previewZoom > 1 {
+			// Magnifier: blit a window of the sprite centered on where the
+			// cursor sits over the box — move the mouse to pan around it.
+			zw, zh := page.W/int32(a.previewZoom), page.H/int32(a.previewZoom)
+			if zw < 1 {
+				zw = 1
+			}
+			if zh < 1 {
+				zh = 1
+			}
+			relX := float64(c.mouseX-dst.X) / float64(dst.W)
+			relY := float64(c.mouseY-dst.Y) / float64(dst.H)
+			relX = clampF64(relX, 0, 1)
+			relY = clampF64(relY, 0, 1)
+			src := sdl.Rect{X: clampI32(int32(relX*float64(page.W))-zw/2, 0, page.W-zw), Y: clampI32(int32(relY*float64(page.H))-zh/2, 0, page.H-zh), W: zw, H: zh}
+			_ = c.Ren.Copy(tex, &src, &dst)
+		} else {
+			_ = c.Ren.Copy(tex, nil, &dst)
+		}
+		a.drawPreviewZoom(frame)
 	} else {
 		c.LabelClipped(dst.X+4, dst.Y+dst.H/2-8, dst.W-8, "loading…", ColTextDim)
 	}
 	if cycling {
 		a.drawPreviewEmoteNav(frame)
+	}
+}
+
+// drawPreviewZoom draws the magnifier controls (− / level / +) along the bottom
+// of the preview box and handles their clicks (consumed, so the caller's
+// click-to-dismiss doesn't fire). At >1× the cursor pans the magnified view.
+func (a *App) drawPreviewZoom(frame sdl.Rect) {
+	c := a.ctx
+	const bh, bw int32 = 18, 22
+	y := frame.Y + frame.H - bh
+	minus := sdl.Rect{X: frame.X + 2, Y: y, W: bw, H: bh}
+	plus := sdl.Rect{X: frame.X + frame.W - bw - 2, Y: y, W: bw, H: bh}
+	lvl := sdl.Rect{X: frame.X + frame.W/2 - 16, Y: y, W: 32, H: bh}
+	for _, b := range []struct {
+		r     sdl.Rect
+		label string
+	}{{minus, "-"}, {lvl, fmt.Sprintf("%dx", a.previewZoom)}, {plus, "+"}} {
+		c.Fill(b.r, sdl.Color{R: 0, G: 0, B: 0, A: 205})
+		c.LabelClipped(b.r.X+6, b.r.Y+1, b.r.W-8, b.label, ColAccent)
+	}
+	c.Tooltip(minus, "Zoom the preview out")
+	c.Tooltip(plus, "Zoom in — then move the mouse over the box to pan around the sprite")
+	if c.hovering(minus) && c.clicked {
+		if a.previewZoom > 1 {
+			a.previewZoom--
+		}
+		c.clicked = false
+	}
+	if c.hovering(plus) && c.clicked {
+		if a.previewZoom < previewZoomMax {
+			a.previewZoom++
+		}
+		c.clicked = false
 	}
 }
 
@@ -834,6 +890,26 @@ func (a *App) chatZoomWheel(box sdl.Rect) {
 }
 
 func clampInt(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+func clampI32(v, min, max int32) int32 {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+func clampF64(v, min, max float64) float64 {
 	if v < min {
 		return min
 	}
