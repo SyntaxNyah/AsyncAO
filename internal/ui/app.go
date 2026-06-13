@@ -421,6 +421,9 @@ type sessionState struct {
 	// message added several rows at once.)
 	icStick  bool
 	oocStick bool
+	// icReadMark is the IC entry count when last caught up to the bottom; while
+	// scrolled up, len(icLog)-icReadMark is the unread count the "N new" pill shows.
+	icReadMark int
 	// emoteAsk[i] paces demand for emote i's button art (drawEmoteRow).
 	emoteAsk []time.Time
 

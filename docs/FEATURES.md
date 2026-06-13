@@ -338,6 +338,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   up (then they hold position); scrolling back to the bottom — or the
   jump-to-newest hotkey — re-sticks. Replaces the old near-bottom
   heuristic that broke whenever a wrapped message added several rows.
+  While you're scrolled up reading backlog, a **"↓ N new" pill** appears at
+  the bottom of the IC log showing how many messages arrived since you caught
+  up; click it to jump back to the live bottom.
 - **Multi-server tabs (max 3)**: Join while connected opens a NEW tab —
   the old session parks and keeps running (its packets drain on a
   per-frame budget into its own logs; unread counts and callword

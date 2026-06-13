@@ -943,6 +943,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	// how many wrapped rows it added.
 	if a.icStick {
 		a.icScroll = maxScroll
+		a.icReadMark = len(a.icLog) // caught up to the bottom: everything is read
 	}
 	// Scissor the scrollback to the list rect so the partially scrolled
 	// top/bottom row can't draw past it onto the tab strip above.
@@ -977,6 +978,21 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			}
 		}
 		y += lineH
+	}
+	// "N new" pill: while scrolled up, show how many messages have arrived
+	// since you last caught up; clicking it jumps back to the live bottom.
+	if a.icReadMark > len(a.icLog) {
+		a.icReadMark = len(a.icLog) // log was capped/cleared
+	}
+	if unread := len(a.icLog) - a.icReadMark; unread > 0 && !a.icStick {
+		label := fmt.Sprintf("↓ %d new", unread)
+		bw := c.TextWidth(label) + 20
+		pill := sdl.Rect{X: list.X + (list.W-bw)/2, Y: list.Y + list.H - 26, W: bw, H: 22}
+		c.Fill(pill, ColAccent)
+		c.Label(pill.X+10, pill.Y+4, label, ColBackground)
+		if c.hovering(pill) && c.clicked {
+			a.icStick = true // catch up to live
+		}
 	}
 	c.popClip(clipPrev, clipHad)
 }
