@@ -486,6 +486,14 @@ type sessionState struct {
 	iniMenuChar  string   // wardrobe char with an open "move to folder" menu ("" = none)
 	iniMenuAt    [2]int32 // that menu's top-left (cursor at right-click)
 	iniHoverChar string   // wardrobe char under the cursor this frame (number-key quick-file)
+	// Drag-to-file (app-drawer style): drag a character cell onto a folder
+	// chip to file it. iniDragChar is armed on press; iniDragging flips once
+	// the move passes iniDragThreshold (and then suppresses the wear-click).
+	iniDragChar  string
+	iniDragStart [2]int32
+	iniDragging  bool
+	iniPrevDown  bool // mouse-held tracker for press detection in the modal
+	iniPressed   bool // mouse went down this frame (computed per frame)
 	iniScroll    int32
 	iniAsk       []time.Time // demand pacing stamps, parallel to iniList
 

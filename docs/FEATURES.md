@@ -185,11 +185,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   between servers; the pre-split collection migrates once to the first
   server joined after updating.
 - **Wardrobe folders**: organize the wardrobe into categories (e.g. a
-  "Danganronpa" folder). Filter chips ([All] · [Unsorted] · each folder,
-  numbered) switch the grid. File a character three ways: **right-click →
+  "Danganronpa" folder), app-drawer style. Filter chips ([All] · [Unsorted] ·
+  each folder, numbered) switch the grid. File a character four ways:
+  **drag-and-drop** — press a character cell and drag it onto a folder chip to
+  drop it in (drop on [All]/[Unsorted] to unfile); **right-click →
   "move to folder"** menu (pick any destination, including a brand-new one);
   **number keys 1-9** file the hovered character into that-numbered folder
-  (0 = unsorted); or add with `folder/char`. The cell shows its folder tag.
+  (0 = unsorted); or add with `folder/char`. A plain click still wears, a
+  small drag threshold tells the two apart. The cell shows its folder tag.
   Folders persist per server and drop automatically when a character leaves
   the wardrobe.
 - **Per-server character keybinds**: a key badge on each wardrobe cell

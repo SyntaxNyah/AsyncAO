@@ -1178,6 +1178,10 @@ func iniFolderMenuRect(at [2]int32, nOpts int, w, h int32) sdl.Rect {
 
 const iniMenuRowH = 22
 
+// iniDragThreshold is the cursor travel (logical px) past which a press on a
+// wardrobe cell becomes a drag-to-file instead of a wear-click.
+const iniDragThreshold = 6
+
 // handleIniFolderMenu resolves a click on the open move-to-folder menu BEFORE
 // the grid draws (so the click never leaks through to a cell). A click on a
 // row files the character; a click anywhere else closes it; Esc closes it.
@@ -1228,7 +1232,8 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 func (a *App) drawIniswapPanel(w, h int32) {
 	c := a.ctx
 	a.pollIniswap()
-	a.iniHoverChar = "" // recomputed by the cells this frame (quick-file target)
+	a.iniHoverChar = ""                          // recomputed by the cells this frame (quick-file target)
+	a.iniPressed = c.mouseDown && !a.iniPrevDown // mouse went down this frame (drag arm)
 	panel := sdl.Rect{X: pad * 3, Y: pad * 3, W: w - pad*6, H: h - pad*6}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -1309,10 +1314,26 @@ func (a *App) drawIniswapPanel(w, h int32) {
 			bg = ColPanelHi
 		}
 		c.Fill(fr, bg)
-		c.Border(fr, ColPanelHi)
+		// A drag hovering the chip highlights it as a drop target.
+		if a.iniDragging && c.hovering(fr) {
+			c.Border(fr, ColAccent)
+		} else {
+			c.Border(fr, ColPanelHi)
+		}
 		c.Label(fr.X+8, fr.Y+5, label, ColText)
 		if c.hovering(fr) && c.clicked {
-			a.iniFolder = val
+			if a.iniDragging && a.iniDragChar != "" {
+				// Drop: file the dragged character here (All/Unsorted unfile).
+				dest := val
+				if dest == iniUnsortedFolder {
+					dest = ""
+				}
+				a.d.Prefs.SetWardrobeFolder(a.serverKey, a.iniDragChar, dest)
+				a.rebuildIniMenu()
+				c.clicked = false // consume the drop
+			} else {
+				a.iniFolder = val
+			}
 		}
 		fx += bw + 4
 	}
@@ -1399,16 +1420,57 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		}
 	}
 
+	// Drag ghost: a label trailing the cursor shows what's being dragged.
+	if a.iniDragging && a.iniDragChar != "" {
+		g := sdl.Rect{X: c.mouseX + 12, Y: c.mouseY + 8, W: c.TextWidth(a.iniDragChar) + 16, H: 22}
+		c.Fill(g, sdl.Color{R: 0, G: 0, B: 0, A: 225})
+		c.Border(g, ColAccent)
+		c.Label(g.X+6, g.Y+3, a.iniDragChar, ColAccent)
+	}
+
 	// Move-to-folder menu paints last (above the grid + preview).
 	if a.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
 		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
 	}
+
+	// End-of-frame drag bookkeeping: release ends the drag; track the held
+	// state for next frame's press detection.
+	if !c.mouseDown {
+		a.iniDragChar = ""
+		a.iniDragging = false
+	}
+	a.iniPrevDown = c.mouseDown
 }
 
 func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 	c := a.ctx
 	name := a.iniList[idx]
+
+	// App-drawer drag: a press on the cell arms this character as the drag
+	// candidate; once the cursor travels past iniDragThreshold it becomes a
+	// floating ghost that drops onto a folder chip to file it (the chip drop
+	// handler and ghost live in drawIniswapPanel). A press that never moves is
+	// just a click and still wears/toggles below — the click actions are gated
+	// on !a.iniDragging so a drag never also fires them.
+	if a.iniPressed && a.iniMenuChar == "" && c.hovering(cell) {
+		a.iniDragChar = name
+		a.iniDragStart = [2]int32{c.mouseX, c.mouseY}
+		a.iniDragging = false
+	}
+	if a.iniDragChar == name && c.mouseDown {
+		dx, dy := c.mouseX-a.iniDragStart[0], c.mouseY-a.iniDragStart[1]
+		if dx < 0 {
+			dx = -dx
+		}
+		if dy < 0 {
+			dy = -dy
+		}
+		if dx+dy > iniDragThreshold {
+			a.iniDragging = true
+		}
+	}
+
 	c.Fill(cell, ColBackground)
 	base := a.urls.CharIcon(name)
 	if page, ok := a.cachedPage(&a.iniPages, &a.iniPagesGen, len(a.iniList), idx, base); ok && len(page.Frames) > 0 {
@@ -1444,7 +1506,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		starCol = ColStar
 	}
 	c.Label(star.X+2, star.Y, "★", starCol)
-	if c.hovering(star) && c.clicked {
+	if c.hovering(star) && c.clicked && !a.iniDragging {
 		if a.iniWardrobe[idx] {
 			a.d.Prefs.RemoveWardrobe(a.serverKey, name)
 		} else {
@@ -1475,7 +1537,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		}
 		c.Label(badge.X+4, badge.Y+1, badgeLabel, col)
 		if c.hovering(badge) {
-			if c.clicked {
+			if c.clicked && !a.iniDragging {
 				a.bindingFor = name
 				c.focusID = "" // capture owns the next keypress outright
 				return         // don't also wear it
@@ -1503,7 +1565,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 	if c.hovering(cell) {
 		a.iniHoverChar = name // number keys 0-9 quick-file the hovered character
 		a.warmCharINI(name)   // wearing it = memory hit, not an RTT
-		if c.clicked {
+		if c.clicked && !a.iniDragging {
 			a.wearFromMenu(name) // courtroom: instant swap; char select: claim a slot first
 		}
 	}
