@@ -107,6 +107,9 @@ func (a *App) drawWardrobeBgsBody(panel sdl.Rect, w, h int32) {
 		choice := a.drawFolderDeleteConfirm(panel.X+pad, y, panel.W-2*pad, countIn(a.wardDelFolder), "backgrounds")
 		if choice == folderDeleteWithItems || choice == folderDeleteKeepItems {
 			a.d.Prefs.DeleteFavBackgroundFolder(a.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
+			if strings.EqualFold(a.bgFavNewFold, a.wardDelFolder) {
+				a.bgFavNewFold = "" // also drop the transient "new folder" chip if it named this one
+			}
 			if strings.EqualFold(a.bgFavFolder, a.wardDelFolder) { // we were inside the deleted folder
 				a.bgFavFolder = ""
 				a.bgFavScroll = 0

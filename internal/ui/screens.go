@@ -1560,6 +1560,9 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		choice := a.drawFolderDeleteConfirm(panel.X+pad, y, panel.W-2*pad, countInFolder(a.wardDelFolder), "characters")
 		if choice == folderDeleteWithItems || choice == folderDeleteKeepItems {
 			a.d.Prefs.DeleteWardrobeFolder(a.serverKey, a.wardDelFolder, choice == folderDeleteKeepItems)
+			if strings.EqualFold(a.iniNewFold, a.wardDelFolder) {
+				a.iniNewFold = "" // also drop the transient "new folder" chip if it named this one
+			}
 			if strings.EqualFold(a.iniFolder, a.wardDelFolder) { // we were inside the deleted folder
 				a.iniFolder = ""
 				a.iniScroll = 0
