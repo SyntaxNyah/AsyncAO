@@ -168,6 +168,14 @@ func (u URLBuilder) Background(bg, part string) string {
 	return u.origin + backgroundDir + seg(bg) + "/" + seg(part)
 }
 
+// BackgroundsRoot returns the background/ directory URL (with trailing
+// slash). On hosts that serve an autoindex it lists every background folder
+// — the discovery source for the background picker, mirroring how iniswap.txt
+// seeds the wardrobe. Not an asset: fetch its bytes, don't format-probe it.
+func (u URLBuilder) BackgroundsRoot() string {
+	return u.origin + backgroundDir
+}
+
 // SFX returns a general sound base. // AssetType: SFX
 func (u URLBuilder) SFX(name string) string {
 	return u.origin + soundsGeneral + seg(name)

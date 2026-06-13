@@ -131,6 +131,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   a character ships more emotes than fit — both the classic and themed
   layouts. The arrow row only appears when paging is needed; loading a
   character resets to page 1.
+- **Background picker** (courtroom Background button): a thumbnail grid of
+  every background, modeled on the wardrobe menu. AO has no "list
+  backgrounds" packet, so the set is discovered by fetching the asset
+  host's `background/` directory and parsing its autoindex
+  (nginx/apache/caddy) — same idea as iniswap.txt seeding the wardrobe;
+  the current + last-seen backgrounds always seed it so it's never empty.
+  Each cell shows a `defenseempty` thumbnail; hover or click previews it
+  large; a `/bg <name>` button asks the server to change it for the area
+  (rehearsal applies the pick locally). Hosts with directory listing off
+  just show a clean "no listing" note and the seeds.
 - The custom shout button appears **only for characters that ship one**
   (char.ini `custom_name` or `[Shouts]`; a streaming client can't stat
   `custom.gif` the way AO2-Client does).

@@ -43,6 +43,7 @@ func (a *App) startLayoutEdit() {
 	a.layoutEdit = true
 	a.showUICfg = false
 	a.showIni, a.showEvid, a.showModcall, a.showLogin, a.showPair = false, false, false, false, false
+	a.bgPick.show = false
 	a.editKey = ""
 	a.editDrag = 0
 }

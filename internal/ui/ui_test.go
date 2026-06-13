@@ -74,6 +74,51 @@ func TestParseIniswapList(t *testing.T) {
 	}
 }
 
+// TestParseAutoindexDirs pins the background-listing parser: trailing-slash
+// hrefs only (folders), parent/self/absolute/external/sort links skipped,
+// files skipped, percent-decoded, case-insensitively de-duplicated, sorted.
+func TestParseAutoindexDirs(t *testing.T) {
+	// nginx autoindex (the shape miku.pizza actually serves) plus a few
+	// Apache/Caddy quirks mixed in.
+	page := []byte(`<html><head><title>Index of /base/background/</title></head><body>
+<h1>Index of /base/background/</h1><hr><pre><a href="../">../</a>
+<a href="09-houses/">09-houses/</a>                 05-Apr-2026 12:59    -
+<a href="999apartment/">999apartment/</a>           10-Mar-2026 09:38    -
+<a href="my%20court/">my court/</a>                  10-Mar-2026 09:38    -
+<a href="readme.txt">readme.txt</a>                  10-Mar-2026 09:38  194
+<a href="999apartment/">999apartment/</a>
+<a href="?C=N;O=D">Name</a>
+<a href="/base/">absolute</a>
+<a href="https://evil.example/x/">external</a>
+<a href="nested/sub/">nested</a>
+</pre><hr></body></html>`)
+	got := parseAutoindexDirs(page)
+	want := []string{"09-houses", "999apartment", "my court"}
+	if len(got) != len(want) {
+		t.Fatalf("parsed %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("parsed %v, want %v", got, want)
+		}
+	}
+
+	// A non-autoindex response (custom error page) yields no names, never
+	// garbage.
+	if got := parseAutoindexDirs([]byte(`<html><body><h1>403 Forbidden</h1></body></html>`)); len(got) != 0 {
+		t.Fatalf("non-listing parsed to %v, want empty", got)
+	}
+
+	// Cap holds against a hostile listing.
+	var huge []byte
+	for i := 0; i < bgListCap+500; i++ {
+		huge = append(huge, []byte(fmt.Sprintf(`<a href="bg%06d/">x</a>`+"\n", i))...)
+	}
+	if got := parseAutoindexDirs(huge); len(got) != bgListCap {
+		t.Fatalf("cap = %d entries, want %d", len(got), bgListCap)
+	}
+}
+
 // TestSelectAllChordArms pins Ctrl+A semantics: the chord arms a pending
 // select-all that survives BeginFrame until a field consumes it (typing
 // replaces the whole value, backspace clears it — handled in TextField).

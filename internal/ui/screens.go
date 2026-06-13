@@ -573,6 +573,9 @@ func (a *App) drawCourtroom(w, h int32) {
 	case a.showIni:
 		a.drawIniswapPanel(w, h)
 		return
+	case a.bgPick.show:
+		a.drawBgPanel(w, h)
+		return
 	case a.showEvid:
 		a.drawEvidencePanel(w, h)
 		return
@@ -1385,6 +1388,10 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.openIniswap()
 	}
 	x += 96
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
+		a.openBgPicker()
+	}
+	x += 106
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
 		a.prevScreen = ScreenCourtroom
 		a.screen = ScreenSettings

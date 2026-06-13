@@ -482,6 +482,9 @@ type sessionState struct {
 	iniScroll   int32
 	iniAsk      []time.Time // demand pacing stamps, parallel to iniList
 
+	// bgPick is the "change background" modal (background/ autoindex grid).
+	bgPick bgPicker
+
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
 	bgAskAt     time.Time
@@ -970,6 +973,11 @@ func (a *App) Disconnect() {
 	// also key-guard, this just frees the slots).
 	select {
 	case <-a.iniRes:
+	default:
+	}
+	a.bgPick.show = false
+	select {
+	case <-a.bgPick.res:
 	default:
 	}
 	if a.d.Pool != nil { // nil in headless tests

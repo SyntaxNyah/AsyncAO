@@ -629,6 +629,9 @@ func (a *App) drawThemedUtilityStrip(w, h int32, lay *themeLayoutCache) {
 	if put("Wardrobe") {
 		a.openIniswap()
 	}
+	if put("Background") {
+		a.openBgPicker()
+	}
 	if _, ok := lay.rect("evidence_button"); !ok {
 		evLabel := "Evidence"
 		if a.evidPresent {
