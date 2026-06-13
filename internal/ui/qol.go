@@ -33,6 +33,7 @@ const (
 	hotkeyTheater    = "theater"
 	hotkeyLogin      = "login"
 	hotkeyMuteSFX    = "mute_sfx"
+	hotkeyQuickSwap  = "quick_swap"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -51,6 +52,7 @@ var hotkeyDefs = []struct {
 	{hotkeyTheater, "Theater mode", "t"},
 	{hotkeyLogin, "Server login (saved creds)", "g"},
 	{hotkeyMuteSFX, "Mute sound effects", "k"},
+	{hotkeyQuickSwap, "Quick-swap character (cycle wardrobe)", "j"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -170,7 +172,33 @@ func (a *App) handleHotkeys() {
 		a.loginNow()
 	case a.hotkeyFor(hotkeyMuteSFX):
 		a.toggleSFXMute()
+	case a.hotkeyFor(hotkeyQuickSwap):
+		a.quickSwapNext()
 	}
+}
+
+// quickSwapNext wears the next character in this server's wardrobe ring (the
+// starred set, in the same alphabetical order the wardrobe menu shows). It
+// advances from whatever's worn now — so the cycle stays intuitive even after
+// a manual pick — and wraps. Empty wardrobe = a hint, no swap. The wardrobe is
+// per server, so the ring is too.
+func (a *App) quickSwapNext() {
+	ring, _ := mergeWardrobe(a.d.Prefs.WardrobeList(a.serverKey), nil)
+	if len(ring) == 0 {
+		a.warnLine = "Quick-swap: no wardrobe characters yet — star some with ★ in the Wardrobe"
+		a.warnAt = time.Now()
+		return
+	}
+	next := 0 // current char not in the ring (or nothing worn) → start at the first
+	for i, n := range ring {
+		if strings.EqualFold(n, a.iniChar) {
+			next = (i + 1) % len(ring)
+			break
+		}
+	}
+	a.wearFromMenu(ring[next])
+	a.warnLine = fmt.Sprintf("Quick-swap: %s (%d/%d)", ring[next], next+1, len(ring))
+	a.warnAt = time.Now()
 }
 
 // toggleSFXMute flips a session-only SFX mute and re-applies volumes. The

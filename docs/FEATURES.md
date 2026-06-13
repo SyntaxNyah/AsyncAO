@@ -203,6 +203,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Per-server character keybinds**: a key badge on each wardrobe cell
   binds a plain key (press A → wear that character instantly); fires
   only with no text field focused. Right-click the badge to clear.
+- **Quick-swap (Ctrl+J by default)**: cycles through this server's wardrobe
+  characters and wears the next one, wrapping around — a fast way to flip
+  between your starred cast without opening the menu. It advances from
+  whatever you're wearing now, so the cycle stays predictable even after a
+  manual pick. The key is rebindable in Settings → Hotkeys (and listed in the
+  F1 cheat sheet); an empty wardrobe just shows a hint.
 - **Settings export/import**: Export writes the complete preferences
   file (knobs, favorites, wardrobes, keybinds, learned formats) beside
   the exe; Import = arm the button and drop the .json — applied on
