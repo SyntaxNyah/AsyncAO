@@ -348,6 +348,36 @@ func TestExportSettingsRedactsPassword(t *testing.T) {
 	}
 }
 
+// TestWardrobeFolders pins wardrobe organization: folders are keyed by
+// lowercased character, clear on empty, and a character leaving the wardrobe
+// drops its folder too.
+func TestWardrobeFolders(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const key = "wss://s:1/"
+	p.AddWardrobe(key, "Maya")
+	p.AddWardrobe(key, "Phoenix")
+	p.SetWardrobeFolder(key, "Maya", "Ace Attorney")
+	p.SetWardrobeFolder(key, "phoenix", "Ace Attorney") // case-insensitive key
+	if m := p.WardrobeFolderMap(key); m["maya"] != "Ace Attorney" || m["phoenix"] != "Ace Attorney" {
+		t.Fatalf("folders = %v, want both filed under Ace Attorney", m)
+	}
+	p.SetWardrobeFolder(key, "Maya", "") // clear
+	if p.WardrobeFolderMap(key)["maya"] != "" {
+		t.Error("empty folder must clear the entry")
+	}
+	p.RemoveWardrobe(key, "Phoenix") // leaving the wardrobe drops the folder
+	if p.WardrobeFolderMap(key)["phoenix"] != "" {
+		t.Error("removing a wardrobe character must drop its folder")
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	p, err := load(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil {

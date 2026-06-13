@@ -1105,6 +1105,41 @@ func (a *App) drawAreaList(r sdl.Rect) {
 // (paced asks, 64 px thumbnail icons, 404 cache), same search, same
 // scrollbar, same 3 s hover preview. Picking one iniswaps outgoing
 // messages into that folder; the server slot is untouched.
+// iniUnsortedFolder is the wardrobe folder-filter sentinel for "no folder"
+// (a control char no real folder name can be).
+const iniUnsortedFolder = "\x00unsorted"
+
+// iniFolderMatch reports whether a character's folder passes the active
+// wardrobe filter ("" = All, iniUnsortedFolder = only unfiled, else exact).
+func iniFolderMatch(charFolder, active string) bool {
+	switch active {
+	case "":
+		return true
+	case iniUnsortedFolder:
+		return charFolder == ""
+	default:
+		return charFolder == active
+	}
+}
+
+// wardrobeFolders lists the distinct folder names in the current menu, in
+// first-seen order (stable, no per-frame sort) — the filter chips.
+func (a *App) wardrobeFolders() []string {
+	var out []string
+	seen := map[string]struct{}{}
+	for _, f := range a.iniFolders {
+		if f == "" {
+			continue
+		}
+		if _, dup := seen[f]; dup {
+			continue
+		}
+		seen[f] = struct{}{}
+		out = append(out, f)
+	}
+	return out
+}
+
 func (a *App) drawIniswapPanel(w, h int32) {
 	c := a.ctx
 	a.pollIniswap()
@@ -1134,9 +1169,22 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	// no server list required (★ marks saved entries; ★ persists
 	// across sessions and servers).
 	var addNow bool
-	a.iniAdd, addNow = c.TextField("iniswapadd", sdl.Rect{X: panel.X + pad + 240, Y: y, W: 230, H: fieldH}, a.iniAdd, "Add folder to wardrobe...")
+	a.iniAdd, addNow = c.TextField("iniswapadd", sdl.Rect{X: panel.X + pad + 240, Y: y, W: 230, H: fieldH}, a.iniAdd, "Add char (or folder/char) to wardrobe...")
 	if c.Button(sdl.Rect{X: panel.X + pad + 476, Y: y, W: 60, H: btnH}, "Add") || addNow {
-		if a.d.Prefs.AddWardrobe(a.serverKey, a.iniAdd) {
+		// "folder/char" files it explicitly; otherwise it joins the active
+		// folder filter (a real folder; All/Unsorted = unfiled).
+		raw := strings.TrimSpace(a.iniAdd)
+		folder, char := a.iniFolder, raw
+		if folder == iniUnsortedFolder {
+			folder = ""
+		}
+		if i := strings.IndexByte(raw, '/'); i >= 0 {
+			folder, char = strings.TrimSpace(raw[:i]), strings.TrimSpace(raw[i+1:])
+		}
+		if a.d.Prefs.AddWardrobe(a.serverKey, char) {
+			if folder != "" {
+				a.d.Prefs.SetWardrobeFolder(a.serverKey, char, folder)
+			}
 			a.iniAdd = ""
 			a.rebuildIniMenu()
 		}
@@ -1152,6 +1200,42 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	}
 	y += 36
 
+	// Folder row: [All] [Unsorted] + a chip per folder filter the grid; a
+	// "new folder" field names a category, then right-click characters to
+	// file them in (drawIniswapCell). Folders persist per server.
+	fx := panel.X + pad
+	chipLimit := panel.X + panel.W - pad - 250 // leave room for the new-folder field
+	folderChip := func(label, val string) {
+		if fx > chipLimit {
+			return
+		}
+		bw := c.TextWidth(label) + 16
+		fr := sdl.Rect{X: fx, Y: y, W: bw, H: btnH}
+		bg := ColPanel
+		if a.iniFolder == val {
+			bg = ColPanelHi
+		}
+		c.Fill(fr, bg)
+		c.Border(fr, ColPanelHi)
+		c.Label(fr.X+8, fr.Y+5, label, ColText)
+		if c.hovering(fr) && c.clicked {
+			a.iniFolder = val
+		}
+		fx += bw + 4
+	}
+	folderChip("All", "")
+	folderChip("Unsorted", iniUnsortedFolder)
+	for _, f := range a.wardrobeFolders() {
+		folderChip(f, f)
+	}
+	var newFoldCommit bool
+	a.iniNewFold, newFoldCommit = c.TextField("ininewfold", sdl.Rect{X: panel.X + panel.W - pad - 240, Y: y, W: 240, H: fieldH}, a.iniNewFold, "New folder (Enter), then right-click chars")
+	if newFoldCommit && strings.TrimSpace(a.iniNewFold) != "" {
+		a.iniFolder = strings.TrimSpace(a.iniNewFold)
+		a.iniNewFold = ""
+	}
+	y += btnH + 8
+
 	// Grid: clone of the char-select layout over the iniswap list.
 	gridTop := y
 	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap
@@ -1162,7 +1246,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	query := a.iniQ.get(a.iniSearch)
 	matches := int32(0)
 	for i := range a.iniList {
-		if query == "" || strings.Contains(a.iniLower[i], query) {
+		if (query == "" || strings.Contains(a.iniLower[i], query)) && iniFolderMatch(a.iniFolders[i], a.iniFolder) {
 			matches++
 		}
 	}
@@ -1177,6 +1261,9 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	col, row := int32(0), int32(0)
 	for i := range a.iniList {
 		if query != "" && !strings.Contains(a.iniLower[i], query) {
+			continue
+		}
+		if !iniFolderMatch(a.iniFolders[i], a.iniFolder) {
 			continue
 		}
 		x := panel.X + pad + col*(iconCell+iconGap)
@@ -1215,6 +1302,19 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		c.Label(cell.X+iconCell/2-8, cell.Y+iconCell/2-8, initial, ColTextDim)
 	}
 	c.LabelClipped(cell.X, cell.Y+iconCell+1, iconCell, name, ColTextDim)
+
+	// Folder tag (top-left): the category this character is filed under
+	// (right-click the cell to file it into the active folder).
+	if idx < len(a.iniFolders) && a.iniFolders[idx] != "" {
+		ft := a.iniFolders[idx]
+		tw := c.TextWidth(ft) + 6
+		if maxW := cell.W - 22; tw > maxW { // leave the top-right for the star
+			tw = maxW
+		}
+		tag := sdl.Rect{X: cell.X + 1, Y: cell.Y + 1, W: tw, H: 15}
+		c.Fill(tag, sdl.Color{R: 0, G: 0, B: 0, A: 185})
+		c.LabelClipped(tag.X+3, tag.Y+1, tag.W-5, ft, ColAccent)
+	}
 
 	// Wardrobe star (top-right of the cell): toggle membership without
 	// wearing — the favourites list itself, exactly like lobby stars.
@@ -1266,6 +1366,18 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 				return
 			}
 		}
+	}
+
+	// Right-click the cell body files this character into the active folder
+	// (All / Unsorted clears it). The key badge's own right-click ran first.
+	if c.rightClicked && c.hovering(cell) {
+		folder := a.iniFolder
+		if folder == iniUnsortedFolder {
+			folder = ""
+		}
+		a.d.Prefs.SetWardrobeFolder(a.serverKey, name, folder)
+		a.rebuildIniMenu()
+		return
 	}
 
 	if c.HoverPreview("iniswap:"+name, cell) {

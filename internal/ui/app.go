@@ -475,11 +475,14 @@ type sessionState struct {
 	iniList     []string // merged menu: wardrobe first, then server extras
 	iniWardrobe []bool   // parallel to iniList: wardrobe membership (star)
 	iniLower    []string // lowercased names for the search filter
+	iniFolders  []string // parallel to iniList: each entry's folder ("" = unsorted)
 	iniListErr  string
 	iniBusy     bool
 	showIni     bool
 	iniSearch   string
 	iniAdd      string // "add folder to wardrobe" input
+	iniFolder   string // active folder filter ("" = All; iniUnsortedFolder = unsorted)
+	iniNewFold  string // "new folder" text input
 	iniScroll   int32
 	iniAsk      []time.Time // demand pacing stamps, parallel to iniList
 
@@ -1563,8 +1566,12 @@ func (a *App) rebuildIniMenu() {
 	a.iniList = names
 	a.iniWardrobe = fromWardrobe
 	a.iniLower = make([]string, len(names))
+	folders := a.d.Prefs.WardrobeFolderMap(a.serverKey)
+	a.iniFolders = make([]string, len(names))
 	for i, n := range names {
-		a.iniLower[i] = strings.ToLower(n)
+		lower := strings.ToLower(n)
+		a.iniLower[i] = lower
+		a.iniFolders[i] = folders[lower] // "" when unsorted / not filed
 	}
 	a.iniAsk = nil
 }

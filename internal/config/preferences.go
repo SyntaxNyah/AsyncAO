@@ -337,6 +337,9 @@ type ServerWarmInfo struct {
 	// CharKeys maps a plain key name ("a", "5", "f3") to a character to
 	// wear when pressed in the courtroom with no text field focused.
 	CharKeys map[string]string `json:"charKeys,omitempty"`
+	// WardrobeFolder maps a lowercased wardrobe character to its folder
+	// (category) for organizing the wardrobe; absent = unsorted.
+	WardrobeFolder map[string]string `json:"wardrobeFolder,omitempty"`
 	// Origin is the server's asset URL from the last visit — rehearsal
 	// mode rebuilds asset paths from it without connecting.
 	Origin string `json:"origin,omitempty"`
@@ -1460,12 +1463,52 @@ func (p *AssetPreferences) RemoveWardrobe(serverKey, name string) bool {
 		for i, have := range w.Wardrobe {
 			if strings.EqualFold(have, name) {
 				w.Wardrobe = append(w.Wardrobe[:i], w.Wardrobe[i+1:]...)
+				delete(w.WardrobeFolder, strings.ToLower(name)) // drop its folder too
 				changed = true
 				return
 			}
 		}
 	})
 	return changed
+}
+
+// WardrobeFolderMap returns a copy of one server's lowercased char → folder
+// map (wardrobe organization). nil when nothing is filed.
+func (p *AssetPreferences) WardrobeFolderMap(serverKey string) map[string]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	src := p.ServerWarm[serverKey].WardrobeFolder
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// SetWardrobeFolder files a wardrobe character under a folder (category) on one
+// server; an empty folder clears it. Bounded by WardrobeCap.
+func (p *AssetPreferences) SetWardrobeFolder(serverKey, char, folder string) {
+	char = strings.ToLower(strings.TrimSpace(char))
+	folder = strings.TrimSpace(folder)
+	if char == "" || serverKey == "" {
+		return
+	}
+	p.rememberServer(serverKey, func(w *ServerWarmInfo) {
+		if folder == "" {
+			delete(w.WardrobeFolder, char)
+			return
+		}
+		if w.WardrobeFolder == nil {
+			w.WardrobeFolder = map[string]string{}
+		}
+		if _, exists := w.WardrobeFolder[char]; !exists && len(w.WardrobeFolder) >= WardrobeCap {
+			return
+		}
+		w.WardrobeFolder[char] = folder
+	})
 }
 
 // --- Character keybinds (per server) -------------------------------------------

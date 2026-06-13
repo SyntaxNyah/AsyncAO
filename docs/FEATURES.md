@@ -184,6 +184,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Per-server wardrobe**: custom character lists no longer carry
   between servers; the pre-split collection migrates once to the first
   server joined after updating.
+- **Wardrobe folders**: organize the wardrobe into categories (e.g. a
+  "Danganronpa" folder). Filter chips ([All] · [Unsorted] · each folder)
+  switch the grid; a "new folder" field names a category and then
+  **right-clicking** a character files it there (the cell shows its folder
+  tag). Add with `folder/char` to file in one step. Folders persist per
+  server and drop automatically when a character leaves the wardrobe.
 - **Per-server character keybinds**: a key badge on each wardrobe cell
   binds a plain key (press A → wear that character instantly); fires
   only with no text field focused. Right-click the badge to clear.
