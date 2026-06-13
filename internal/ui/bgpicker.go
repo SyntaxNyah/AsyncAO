@@ -240,10 +240,14 @@ func (a *App) drawBgPanel(w, h int32) {
 		cols = 1
 	}
 	query := a.bgPick.q.get(a.bgPick.search)
-	matches := int32(0)
-	for i := range a.bgPick.list {
-		if query == "" || strings.Contains(a.bgPick.lower[i], query) {
-			matches++
+	// No search → every entry matches; skip the per-frame full-list scan.
+	matches := int32(len(a.bgPick.list))
+	if query != "" {
+		matches = 0
+		for i := range a.bgPick.list {
+			if strings.Contains(a.bgPick.lower[i], query) {
+				matches++
+			}
 		}
 	}
 	cellStride := bgCellH + bgCellGap + bgCellLabelH
