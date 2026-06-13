@@ -2461,10 +2461,15 @@ func (a *App) healScenery() {
 type icEntry struct {
 	text  string
 	color int
+	url   string // first http(s) link in the line ("" = none); makes the line clickable
 }
 
 func (a *App) pushIC(line string, color int) {
-	a.icLog = append(a.icLog, icEntry{text: clampLine(line), color: color})
+	url := ""
+	if urls := extractURLs(line, 1); len(urls) > 0 {
+		url = urls[0]
+	}
+	a.icLog = append(a.icLog, icEntry{text: clampLine(line), color: color, url: url})
 	if len(a.icLog) > icLogCap {
 		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
 		a.icLog = a.icLog[:icLogCap]

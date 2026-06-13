@@ -206,6 +206,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Case notebook** (Notes tab, per server): right-click an IC log line
   or hit "Pin to notebook" on evidence; free-form notes + copy-all; one
   JSON per server, async writes, capped.
+- **Clickable links in the IC log**: when a message contains an `http(s)://`
+  link, hovering its line in the log highlights it (and shows the URL); a
+  **left-click opens it in your browser**. The whole message line is the hit
+  target. Right-click still pins the line to the notebook.
 - **Per-server wardrobe**: custom character lists no longer carry
   between servers; the pre-split collection migrates once to the first
   server joined after updating.

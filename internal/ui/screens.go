@@ -958,7 +958,19 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if ecol := a.icLog[row.entry].color; ecol > 0 {
 				col = render.TextColor(ecol)
 			}
+			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
+			// A line carrying a link reads as a link on hover (accent) and
+			// opens it on click — the whole message line is the hit target.
+			if a.icLog[row.entry].url != "" && c.hovering(rowRect) {
+				col = ColAccent
+			}
 			c.LabelClippedFont(c.LogFontFor(a.logPct, row.text), list.X, y, wrapW, row.text, col)
+			if u := a.icLog[row.entry].url; u != "" && c.hovering(rowRect) {
+				c.Tooltip(rowRect, "Open "+u)
+				if c.clicked {
+					openBrowser(u)
+				}
+			}
 			// Right-click pins the WHOLE entry into the case notebook.
 			if c.rightClicked && c.hovering(sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}) {
 				a.pinNote(a.icLog[row.entry].text)
