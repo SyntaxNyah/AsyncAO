@@ -162,6 +162,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   file (knobs, favorites, wardrobes, keybinds, learned formats) beside
   the exe; Import = arm the button and drop the .json — applied on
   restart, with the saver frozen so the import can't be clobbered.
+  **Saved passwords are stripped from the export** (the bundle is built
+  to travel to another machine) — the username and the auto-login choice
+  ride along, so you re-type just the password on the new PC.
 - **Offset ghost editor** (pair panel): drag your idle sprite on a
   miniature stage to set self-offsets; the partner shows as a
   translucent ghost at their last-known placement.

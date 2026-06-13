@@ -286,6 +286,68 @@ func TestLearnedExportImport(t *testing.T) {
 	}
 }
 
+// TestExportSettingsRedactsPassword pins the security rule: the new-PC
+// bundle carries everything EXCEPT saved passwords — the username and the
+// auto-login choice survive (one retype restores the flow), the password
+// never leaves the machine, and the redacted bundle still imports cleanly.
+func TestExportSettingsRedactsPassword(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const (
+		key  = "wss://miku.pizza:2095"
+		user = "nyah"
+		pass = "hunter2-secret"
+	)
+	p.SetServerLogin(key, user, pass, true)
+
+	dest := filepath.Join(dir, "bundle.json")
+	if err := p.ExportSettings(dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), pass) {
+		t.Fatal("exported bundle still contains the plaintext password")
+	}
+	var snap AssetPreferences
+	if err := json.Unmarshal(raw, &snap); err != nil {
+		t.Fatal(err)
+	}
+	w := snap.ServerWarm[key]
+	if w.LoginPass != "" {
+		t.Errorf("exported LoginPass = %q, want empty", w.LoginPass)
+	}
+	if w.LoginUser != user {
+		t.Errorf("exported LoginUser = %q, want preserved %q", w.LoginUser, user)
+	}
+	if !w.AutoLogin {
+		t.Error("AutoLogin choice should survive export (only the password is stripped)")
+	}
+
+	// The redacted bundle is still a loadable preferences file.
+	path2 := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path2, testDebounce)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.ImportSettings(dest); err != nil {
+		t.Fatalf("re-import of redacted bundle failed: %v", err)
+	}
+	if err := q.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	p, err := load(filepath.Join(t.TempDir(), "absent.json"))
 	if err != nil {

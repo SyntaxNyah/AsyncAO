@@ -606,7 +606,7 @@ func exportSettingsAsync(a *App) {
 				"asyncao-settings-"+time.Now().Format("20060102-150405")+".json")
 			err = a.d.Prefs.ExportSettings(path)
 		}
-		line := "Settings exported to " + path + " — copy it to the new PC and Import there."
+		line := "Settings exported to " + path + " — copy it to the new PC and Import there. (Saved passwords are NOT exported; re-enter them there.)"
 		if err != nil {
 			line = "Settings export failed: " + err.Error()
 		}

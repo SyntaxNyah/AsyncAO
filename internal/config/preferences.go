@@ -1388,9 +1388,10 @@ func (p *AssetPreferences) SetCharKeyBind(serverKey, key, char string) {
 
 // --- Settings export / import ---------------------------------------------------
 
-// ExportSettings flushes pending mutations and copies the ENTIRE
-// preferences file — every knob, favorites, per-server wardrobes and
-// keybinds, learned formats — to destPath: the move-to-a-new-PC bundle.
+// ExportSettings flushes pending mutations and copies the preferences file
+// — every knob, favorites, per-server wardrobes and keybinds, learned
+// formats — to destPath: the move-to-a-new-PC bundle. Saved passwords are
+// the ONE thing stripped on the way out (see stripExportPasswords).
 func (p *AssetPreferences) ExportSettings(destPath string) error {
 	if err := p.SaveNow(); err != nil {
 		return fmt.Errorf("config: flushing before export: %w", err)
@@ -1399,10 +1400,39 @@ func (p *AssetPreferences) ExportSettings(destPath string) error {
 	if err != nil {
 		return fmt.Errorf("config: reading preferences for export: %w", err)
 	}
+	if data, err = stripExportPasswords(data); err != nil {
+		return fmt.Errorf("config: redacting export passwords: %w", err)
+	}
 	if err := os.MkdirAll(filepath.Dir(destPath), prefsDirPerm); err != nil {
 		return err
 	}
 	return os.WriteFile(destPath, data, prefsFilePerm)
+}
+
+// stripExportPasswords blanks every serverWarm[].loginPass in a marshaled
+// preferences blob. The bundle is meant to travel to another machine, and
+// plaintext credentials shouldn't ride along — the user re-enters the
+// password there (the username and the auto-login choice survive, so a
+// single retype restores the saved flow). loginPass is omitempty, so a
+// blanked value drops out of the JSON entirely. Everything else round-trips
+// through the same struct shape the saver marshals, so the export stays a
+// faithful, fully-indented, loadable preferences file.
+func stripExportPasswords(data []byte) ([]byte, error) {
+	var snap AssetPreferences
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return nil, err
+	}
+	if len(snap.ServerWarm) == 0 {
+		return data, nil // nothing saved to redact
+	}
+	for key, warm := range snap.ServerWarm {
+		if warm.LoginPass == "" {
+			continue
+		}
+		warm.LoginPass = ""
+		snap.ServerWarm[key] = warm
+	}
+	return json.MarshalIndent(&snap, jsonMarshalPrefix, jsonMarshalIndent)
 }
 
 // ImportSettings validates that srcPath parses as a preferences file and
