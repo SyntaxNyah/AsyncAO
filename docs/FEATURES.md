@@ -127,6 +127,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   order (IC → OOC → search ...), wrapping both ways.
 - Clicking an emote **refocuses the IC input** (AO2 focus_ic_input) —
   pick and keep typing.
+- **Music ducking** (Settings → Audio & Chat, off by default): dips the
+  music while a message is on stage (shout/preanim/talking) and restores it
+  at idle, so dialogue stays clear. Transition-driven — the mixer volume is
+  touched only when the duck state flips, never per frame.
 - **Packed-room catch-up** (Settings → Audio & Chat, ON by default): when
   more than N messages are queued, the IC stage fast-forwards the backlog
   (skips its preanims/shouts/typewriter) so chat tracks real-time instead of
@@ -171,7 +175,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   semicolon-separated TTF/TTC paths; every message and log line picks
   the first chain font covering all its runes (CJK fonts cover Latin, so
   mixed text lands right), embedded font as last resort. Files read
-  off-thread; picks memoized per line (no per-frame glyph probing).
+  off-thread; picks memoized per line (no per-frame glyph probing). A
+  **Dyslexia-friendly** button one-clicks a high-readability chain
+  (OpenDyslexic if installed, else Verdana).
 - **Case notebook** (Notes tab, per server): right-click an IC log line
   or hit "Pin to notebook" on evidence; free-form notes + copy-all; one
   JSON per server, async writes, capped.

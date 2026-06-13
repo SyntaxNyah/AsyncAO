@@ -490,9 +490,11 @@ type sessionState struct {
 	dl downloader
 
 	// sfxMuted is a session-only SFX mute (Mute SFX hotkey); showHotkeys
-	// toggles the F1 hotkey cheat-sheet overlay.
+	// toggles the F1 hotkey cheat-sheet overlay; musicDucked tracks whether
+	// music is currently ducked under a playing message (transition-driven).
 	sfxMuted    bool
 	showHotkeys bool
+	musicDucked bool
 
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
@@ -1857,6 +1859,16 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.room.Update(dt)
 		a.applySpriteOverrides()
 		a.d.Viewport.Update(&a.room.Scene, dt)
+		// Music ducking: dip music while a message is on stage (shout/preanim/
+		// talking), restore at idle/linger. Transition-driven — SetVolumes is
+		// touched only when the duck state flips, and the prefs read is
+		// short-circuited so it costs nothing between messages.
+		p := a.room.Phase()
+		wantDuck := p != courtroom.PhaseIdle && p != courtroom.PhaseLinger && a.d.Prefs.MusicDucking()
+		if wantDuck != a.musicDucked {
+			a.musicDucked = wantDuck
+			a.applyAudioVolumes()
+		}
 	}
 	a.d.Audio.Frame()
 	a.d.Pump.Frame()

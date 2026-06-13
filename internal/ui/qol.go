@@ -186,13 +186,20 @@ func (a *App) toggleSFXMute() {
 	a.warnAt = time.Now()
 }
 
-// applyAudioVolumes pushes the saved volumes to the audio system, forcing the
-// SFX channel to 0 while the session SFX mute is on. Call it wherever volumes
-// change so the mute is always honored.
+// duckMusicPercent is how loud music plays (as a % of its set volume) while a
+// message is on stage, when music ducking is on.
+const duckMusicPercent = 35
+
+// applyAudioVolumes pushes the saved volumes to the audio system, applying the
+// session SFX mute (SFX → 0) and music ducking (music → duckMusicPercent)
+// when active. Call it wherever those states change so they're always honored.
 func (a *App) applyAudioVolumes() {
 	music, sfx, blip := a.d.Prefs.AudioVolumes()
 	if a.sfxMuted {
 		sfx = 0
+	}
+	if a.musicDucked {
+		music = music * duckMusicPercent / 100
 	}
 	a.d.Audio.SetVolumes(music, sfx, blip)
 }

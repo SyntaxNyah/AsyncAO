@@ -369,9 +369,26 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	if names := a.ctx.FontChainNames(); len(names) > 0 {
 		c.LabelClipped(pad+620, y+4, w-pad-620-scrollBarW, "chain: "+strings.Join(names, " → "), ColTextDim)
 	}
+	y += 30
+	// Dyslexia-friendly preset: one click fills + applies a high-readability
+	// font chain (OpenDyslexic if installed, else Verdana). Edit the field to
+	// point at any TTF you prefer.
+	if c.Button(sdl.Rect{X: pad + 110, Y: y, W: 180, H: btnH}, "Dyslexia-friendly font") {
+		settings.fontInput = dyslexiaFontPreset
+		a.d.Prefs.SetFontPaths(dyslexiaFontPreset)
+		a.loadFontChainAsync(dyslexiaFontPreset)
+		settings.statusLine = "Applied a high-readability font (edit the path above for OpenDyslexic)."
+	}
+	c.LabelClipped(pad+300, y+4, w-pad-300-scrollBarW, "high-readability preset; edit the path to use OpenDyslexic", ColTextDim)
 	y += 34
 	return y
 }
+
+// dyslexiaFontPreset is the one-click readability chain: OpenDyslexic if the
+// user installed it, else Verdana (present on every Windows install) — both
+// far more legible for dyslexic readers than the default. First covering font
+// per line wins, so the missing entries are simply skipped.
+const dyslexiaFontPreset = `C:\Windows\Fonts\OpenDyslexic-Regular.ttf; C:\Windows\Fonts\verdana.ttf`
 
 // drawSettingsTheme: theme picker/folder, layout toggle, live preview, bind.
 func (a *App) drawSettingsTheme(y, w int32) int32 {
@@ -566,6 +583,12 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
 		a.applyAudioVolumes() // honors the session SFX mute
 	}
+	// Music ducking (off by default): dip the music while a message plays.
+	duck := a.d.Prefs.MusicDucking()
+	if next := c.Checkbox(pad, y, "Duck music while someone talks (lower music during a message so dialogue stays clear)", duck); next != duck {
+		a.d.Prefs.SetMusicDucking(next)
+	}
+	y += 28
 
 	// Message timing (AO2-Client options.ini parity); applies live. Plain
 	// descriptions beside each knob so they're self-explanatory.

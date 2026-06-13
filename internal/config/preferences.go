@@ -183,6 +183,7 @@ type AssetPreferences struct {
 	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
+	MusicDuckingOn         bool                         `json:"musicDucking"`
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
@@ -258,6 +259,7 @@ type prefsJSON struct {
 	CatchUpWhenBehind      *bool `json:"catchUpWhenBehind"` // absent = default ON
 	CatchUpThreshold       *int  `json:"catchUpThreshold"`  // absent = default
 	ReduceMotion           bool  `json:"reduceMotion"`      // default OFF (zero value)
+	MusicDucking           bool  `json:"musicDucking"`      // default OFF (zero value)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -525,6 +527,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.CatchUpThreshold = clampPercent(*onDisk.CatchUpThreshold, catchUpThresholdMin, catchUpThresholdMax)
 	}
 	p.ReduceMotionOn = onDisk.ReduceMotion
+	p.MusicDuckingOn = onDisk.MusicDucking
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
 	p.ThemeRectOv = onDisk.ThemeRectOverrides
@@ -1351,6 +1354,26 @@ func (p *AssetPreferences) SetReduceMotion(on bool) {
 		return
 	}
 	p.ReduceMotionOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MusicDucking reports the music-ducking toggle: lower the music while a
+// message is on stage so dialogue isn't drowned out.
+func (p *AssetPreferences) MusicDucking() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MusicDuckingOn
+}
+
+// SetMusicDucking toggles music ducking.
+func (p *AssetPreferences) SetMusicDucking(on bool) {
+	p.mu.Lock()
+	if p.MusicDuckingOn == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MusicDuckingOn = on
 	p.mu.Unlock()
 	p.markDirty()
 }
