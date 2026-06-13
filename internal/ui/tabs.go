@@ -42,6 +42,10 @@ const (
 	tabChipMaxName = 14
 	// tabBarH is the floating tab strip's height.
 	tabBarH = 22
+	// addTabChipW is the "+" new-session chip at the end of the strip — the
+	// discoverable way to open another server (the active-chip-park gesture
+	// wasn't obvious to new players).
+	addTabChipW = 26
 )
 
 // courtTab is one parked server session. While a tab is ACTIVE its state
@@ -251,18 +255,23 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 
 // --- tab bar (floating strip, drawn over every screen) ----------------------
 
-// tabBarRects computes the chip rects for the current frame; the strip
-// floats top-center so no screen layout has to move.
-func (a *App) tabBarRects(w int32) []sdl.Rect {
+// tabBarRects computes the chip rects for the current frame plus the "+"
+// new-session chip (add.W == 0 when at the tab cap); the strip floats
+// top-center so no screen layout has to move.
+func (a *App) tabBarRects(w int32) (rects []sdl.Rect, add sdl.Rect) {
 	if len(a.tabs) == 0 {
-		return nil
+		return nil, sdl.Rect{}
 	}
 	c := a.ctx
-	rects := make([]sdl.Rect, len(a.tabs))
+	rects = make([]sdl.Rect, len(a.tabs))
 	total := int32(0)
 	for i := range a.tabs {
 		rects[i].W = c.TextWidth(a.tabChipLabel(i)) + 28 // label + ✕ pad
 		total += rects[i].W + 4
+	}
+	showAdd := len(a.tabs) < maxTabs // no "+" once every slot is full
+	if showAdd {
+		total += addTabChipW + 4
 	}
 	x := (w - total) / 2
 	if x < 0 {
@@ -272,7 +281,10 @@ func (a *App) tabBarRects(w int32) []sdl.Rect {
 		rects[i].X, rects[i].Y, rects[i].H = x, 0, tabBarH
 		x += rects[i].W + 4
 	}
-	return rects
+	if showAdd {
+		add = sdl.Rect{X: x, Y: 0, W: addTabChipW, H: tabBarH}
+	}
+	return rects, add
 }
 
 // tabChipLabel is "name (unread)" with the name clipped.
@@ -299,8 +311,20 @@ func (a *App) tabChipLabel(i int) string {
 // chips can never double-act with widgets underneath; drawTabBar paints
 // the same rects after the screens (so chips stack on top visually).
 func (a *App) handleTabBar(w int32) {
-	rects := a.tabBarRects(w)
+	rects, add := a.tabBarRects(w)
 	if rects == nil || !a.ctx.clicked {
+		return
+	}
+	if add.W > 0 && a.ctx.hovering(add) {
+		// "+" — open another server: park the active session (it keeps
+		// running in the background) and show the lobby, where connecting
+		// opens the new tab. The explicit, discoverable form of the
+		// active-chip-park gesture.
+		a.parkActive()
+		a.ensureThemeForSession()
+		a.screen = ScreenLobby
+		a.updatePresence()
+		a.ctx.clicked = false
 		return
 	}
 	for i, r := range rects {
@@ -327,7 +351,7 @@ func (a *App) handleTabBar(w int32) {
 
 // drawTabBar paints the strip (after the screens, before overlays).
 func (a *App) drawTabBar(w int32) {
-	rects := a.tabBarRects(w)
+	rects, add := a.tabBarRects(w)
 	c := a.ctx
 	for i, r := range rects {
 		bg := ColPanel
@@ -346,6 +370,14 @@ func (a *App) drawTabBar(w int32) {
 		if i != a.activeTab {
 			c.Label(r.X+r.W-14, r.Y+3, "✕", ColTextDim)
 		}
+	}
+	// "+" new-session chip: accent-bordered so it reads as an action, with a
+	// hint spelling out what it does (multi-server wasn't discoverable).
+	if add.W > 0 {
+		c.Fill(add, sdl.Color{R: ColPanel.R, G: ColPanel.G, B: ColPanel.B, A: 235})
+		c.Border(add, ColAccent)
+		c.Label(add.X+9, add.Y+3, "+", ColAccent)
+		c.Tooltip(add, "Open another server in a new tab")
 	}
 }
 

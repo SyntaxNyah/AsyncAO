@@ -245,7 +245,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   per-frame budget into its own logs; unread counts and callword
   flashes still fire). A floating chip strip (top-center, every screen)
   switches tabs, shows unread, closes background tabs (✕), and clicking
-  the active chip drops you to the lobby with the session still live.
+  the active chip drops you to the lobby with the session still live. A
+  **"+" chip** at the end of the strip (accent-bordered, with a hover hint)
+  is the discoverable way to open another server — it parks the current
+  session and opens the lobby to connect a new tab; it hides at the cap.
   Rooms exist only for the active tab (nothing animates off-screen);
   activation rebuilds the courtroom from the session state. Caches need
   nothing: asset keys are full URLs, per-server separation is
