@@ -314,18 +314,10 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool) {
 	c.LabelClipped(cell.X, cell.Y+cell.H+1, cell.W, name, ColTextDim)
 
 	// Download badge (only when the opt-in downloader is on): grabs this
-	// background's whole folder for offline use. Claims its own click so it
-	// never doubles as a select.
-	if downloaderOn {
-		get := sdl.Rect{X: cell.X + cell.W - 24, Y: cell.Y + cell.H - 22, W: 22, H: 20}
-		c.Fill(get, sdl.Color{R: 0, G: 0, B: 0, A: 200})
-		c.Border(get, ColPanelHi)
-		c.Label(get.X+7, get.Y+2, downloadGlyph, ColAccent)
-		c.Tooltip(get, "Press this to download this background")
-		if c.hovering(get) && c.clicked {
-			a.startBgDownload(name)
-			return
-		}
+	// background's whole folder for offline use.
+	if downloaderOn && a.drawDownloadBadge(cell, "Press this to download this background") {
+		a.startBgDownload(name)
+		return
 	}
 
 	// Hover → large preview (the actual defenseempty image, high priority);

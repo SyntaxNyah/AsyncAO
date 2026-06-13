@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/veandco/go-sdl2/sdl"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -112,6 +114,20 @@ func (a *App) cancelDownload() {
 	if a.dl.cancel != nil {
 		a.dl.cancel()
 	}
+}
+
+// drawDownloadBadge paints the ↓ download badge in a grid cell's bottom-right
+// corner (with a hover hint) and reports a click. Shared by the char-select
+// and background-picker grids when the opt-in downloader is on; it claims its
+// own click so the cell's primary action (pick / select) never co-fires.
+func (a *App) drawDownloadBadge(cell sdl.Rect, tip string) bool {
+	c := a.ctx
+	b := sdl.Rect{X: cell.X + cell.W - 22, Y: cell.Y + cell.H - 20, W: 20, H: 18}
+	c.Fill(b, sdl.Color{R: 0, G: 0, B: 0, A: 200})
+	c.Border(b, ColPanelHi)
+	c.Label(b.X+6, b.Y+1, downloadGlyph, ColAccent)
+	c.Tooltip(b, tip)
+	return c.hovering(b) && c.clicked
 }
 
 // startCharDownload grabs one character's folder plus the sfx/blips its

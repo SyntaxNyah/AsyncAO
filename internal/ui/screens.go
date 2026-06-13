@@ -475,17 +475,10 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	c.LabelClipped(cell.X, cell.Y+iconCell+1, iconCell, slot.Name, ColTextDim)
 	// Download badge (only with the opt-in downloader on): grabs this
 	// character's folder + the sfx/blips its char.ini names, for offline use.
-	// Works on taken slots too, and claims its own click so it never picks.
-	if downloaderOn {
-		get := sdl.Rect{X: cell.X + cell.W - 22, Y: cell.Y + cell.H - 20, W: 20, H: 18}
-		c.Fill(get, sdl.Color{R: 0, G: 0, B: 0, A: 200})
-		c.Border(get, ColPanelHi)
-		c.Label(get.X+6, get.Y+1, downloadGlyph, ColAccent)
-		c.Tooltip(get, "Press the green down arrow to download this character")
-		if c.hovering(get) && c.clicked {
-			a.startCharDownload(slot.Name)
-			return
-		}
+	// Works on taken slots too.
+	if downloaderOn && a.drawDownloadBadge(cell, "Press the green down arrow to download this character") {
+		a.startCharDownload(slot.Name)
+		return
 	}
 	if c.hovering(cell) {
 		a.warmCharINI(slot.Name) // pick = memory hit, not an RTT
