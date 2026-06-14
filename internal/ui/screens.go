@@ -983,6 +983,10 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	a.drawICLogList(sdl.Rect{X: inner.X, Y: rowY + 28, W: inner.W, H: inner.H - 28})
 }
 
+// unreadDividerH is the thickness of the accent line drawn at the first
+// unread IC line (the "last read" boundary the N-new pill jumps to).
+const unreadDividerH = 2
+
 // drawICLogList renders the colored IC scrollback (search-filtered,
 // word-wrapped to the list width) into rect — used by the classic Log tab
 // and the themed ic_chatlog element.
@@ -1023,6 +1027,22 @@ func (a *App) drawICLogList(list sdl.Rect) {
 		a.icScroll = maxScroll
 		a.icReadMark = len(a.icLog) // caught up to the bottom: everything is read
 	}
+	if a.icReadMark > len(a.icLog) {
+		a.icReadMark = len(a.icLog) // log was capped/cleared
+	}
+	// First wrapped row of the first unread entry — the "jump to last read"
+	// target and where the unread divider draws. Scanned only while scrolled
+	// up with unread; caught-up frames (icReadMark == len) skip it entirely, so
+	// the hot render path pays nothing.
+	firstUnreadRow := -1
+	if a.icReadMark < len(a.icLog) {
+		for ri := range rows {
+			if rows[ri].entry >= a.icReadMark {
+				firstUnreadRow = ri
+				break
+			}
+		}
+	}
 	// Scissor the scrollback to the list rect so the partially scrolled
 	// top/bottom row can't draw past it onto the tab strip above.
 	clipPrev, clipHad := c.pushClip(list)
@@ -1038,6 +1058,11 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				col = render.TextColor(ecol)
 			}
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
+			// Unread divider: a thin accent rule at the top of the first unread
+			// line, so "jump to last read" lands on an obvious boundary.
+			if ri == firstUnreadRow {
+				c.Fill(sdl.Rect{X: list.X, Y: y, W: wrapW, H: unreadDividerH}, ColAccent)
+			}
 			// A line carrying a link reads as a link on hover (accent) and
 			// opens it on click — the whole message line is the hit target.
 			if a.icLog[row.entry].url != "" && c.hovering(rowRect) {
@@ -1057,19 +1082,25 @@ func (a *App) drawICLogList(list sdl.Rect) {
 		}
 		y += lineH
 	}
-	// "N new" pill: while scrolled up, show how many messages have arrived
-	// since you last caught up; clicking it jumps back to the live bottom.
-	if a.icReadMark > len(a.icLog) {
-		a.icReadMark = len(a.icLog) // log was capped/cleared
-	}
+	// "N new" pill: while scrolled up, show how many messages arrived since you
+	// last caught up. Clicking it jumps to the FIRST unread line (read forward
+	// from where you left off); the Jump-logs hotkey still snaps to newest.
 	if unread := len(a.icLog) - a.icReadMark; unread > 0 && !a.icStick {
 		label := fmt.Sprintf("↓ %d new", unread)
 		bw := c.TextWidth(label) + 20
 		pill := sdl.Rect{X: list.X + (list.W-bw)/2, Y: list.Y + list.H - 26, W: bw, H: 22}
 		c.Fill(pill, ColAccent)
 		c.Label(pill.X+10, pill.Y+4, label, ColBackground)
-		if c.hovering(pill) && c.clicked {
-			a.icStick = true // catch up to live
+		if c.hovering(pill) {
+			c.Tooltip(pill, "Jump to first unread - Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyLogJump))+" for newest")
+			if c.clicked {
+				if firstUnreadRow >= 0 {
+					a.icScroll = clampI32(int32(firstUnreadRow)*lineH, 0, maxScroll)
+					a.icStick = a.icScroll >= maxScroll
+				} else {
+					a.icStick = true // unread rows scrolled off the cap: just go live
+				}
+			}
 		}
 	}
 	c.popClip(clipPrev, clipHad)
