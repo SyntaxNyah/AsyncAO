@@ -230,6 +230,7 @@ type AssetPreferences struct {
 	ForceCharNames         bool                         `json:"forceCharNames"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
 	FriendNotify           bool                         `json:"friendNotify"`
+	FriendOSToast          bool                         `json:"friendOSToast"`
 	FriendSound            bool                         `json:"friendSound"`
 	FriendSoundFile        string                       `json:"friendSoundFile"`
 	CallwordSoundFile      string                       `json:"callwordSoundFile"`
@@ -318,6 +319,7 @@ type prefsJSON struct {
 	ForceCharNames         bool   `json:"forceCharNames"`  // default OFF
 	FriendHighlight        bool   `json:"friendHighlight"` // default OFF
 	FriendNotify           bool   `json:"friendNotify"`    // default OFF
+	FriendOSToast          bool   `json:"friendOSToast"`   // default OFF
 	FriendSound            bool   `json:"friendSound"`     // default OFF
 	FriendSoundFile        string `json:"friendSoundFile"`
 	CallwordSoundFile      string `json:"callwordSoundFile"`
@@ -624,6 +626,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ForceCharNames = onDisk.ForceCharNames
 	p.FriendHighlight = onDisk.FriendHighlight
 	p.FriendNotify = onDisk.FriendNotify
+	p.FriendOSToast = onDisk.FriendOSToast
 	p.FriendSound = onDisk.FriendSound
 	p.FriendSoundFile = onDisk.FriendSoundFile
 	p.CallwordSoundFile = onDisk.CallwordSoundFile
@@ -1226,6 +1229,25 @@ func (p *AssetPreferences) SetFriendNotify(on bool) {
 	p.mu.Lock()
 	if p.FriendNotify != on {
 		p.FriendNotify = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+// FriendOSToastOn / SetFriendOSToast: pop a DESKTOP (OS) notification when a
+// friend speaks (OFF by default; Windows only, rate-limited by the UI).
+func (p *AssetPreferences) FriendOSToastOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FriendOSToast
+}
+
+func (p *AssetPreferences) SetFriendOSToast(on bool) {
+	p.mu.Lock()
+	if p.FriendOSToast != on {
+		p.FriendOSToast = on
 		p.mu.Unlock()
 		p.markDirty()
 		return

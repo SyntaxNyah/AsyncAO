@@ -304,6 +304,9 @@ type App struct {
 	colorWheel *sdl.Texture
 	colorHex   string
 
+	// lastOSToast rate-limits friend desktop toasts (osToastMinInterval).
+	lastOSToast time.Time
+
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
 	// rotation background URL ("" = not overriding). The viewport renders a
@@ -2573,7 +2576,7 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) bool {
 	}
 	// Cheap gate: if NO friend signal (glow / notify / sound) is enabled, skip
 	// entirely — the default, so it costs nothing.
-	if !a.d.Prefs.FriendHighlightOn() && !a.d.Prefs.FriendNotifyOn() && !a.d.Prefs.FriendSoundOn() {
+	if !a.d.Prefs.FriendHighlightOn() && !a.d.Prefs.FriendNotifyOn() && !a.d.Prefs.FriendSoundOn() && !a.d.Prefs.FriendOSToastOn() {
 		return false
 	}
 	name := strings.TrimSpace(m.Showname)
@@ -2615,6 +2618,19 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 		} else {
 			a.playThemeSFX("word_call")
 		}
+	}
+	// Desktop (OS) toast — rate-limited so a chatty friend can't storm it.
+	if a.d.Prefs.FriendOSToastOn() && time.Since(a.lastOSToast) >= osToastMinInterval {
+		a.lastOSToast = time.Now()
+		name := strings.TrimSpace(m.Showname)
+		if name == "" {
+			name = strings.TrimSpace(m.CharName)
+		}
+		body := name + " just spoke"
+		if serverName != "" {
+			body += " on " + serverName
+		}
+		showOSToast("AsyncAO — friend online", body)
 	}
 }
 

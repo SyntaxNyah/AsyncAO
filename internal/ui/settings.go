@@ -710,6 +710,11 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Prefs.SetFriendNotify(next)
 	}
 	y += 26
+	fot := a.d.Prefs.FriendOSToastOn()
+	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification — a real Windows toast (rate-limited so it can't storm)", fot); next != fot {
+		a.d.Prefs.SetFriendOSToast(next)
+	}
+	y += 26
 	fsnd := a.d.Prefs.FriendSoundOn()
 	if next := c.Checkbox(pad+16, y, "Play a sound when a friend speaks", fsnd); next != fsnd {
 		a.d.Prefs.SetFriendSound(next)

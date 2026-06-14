@@ -136,9 +136,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Optional signals** (each its own toggle, all OFF): a **notification** (an
   in-app toast "*X just spoke on \<server\>*" + taskbar flash) that fires **even
   from a backgrounded server tab** — so you see a friend pop up on another
-  server — and a **sound** (the default ping, or a **custom file** you choose).
-  Streamer mode suppresses both. *(Still planned: a desktop OS toast, per-friend
-  colours, glow animation, and a toggle keybind.)*
+  server — and a **sound** (the default ping, or a **custom file** you choose),
+  and a real **desktop OS notification** (a Windows toast, rate-limited so a
+  chatty friend can't storm it). Streamer mode suppresses them all.
+  *(Still planned: per-friend colours, glow animation, and a toggle keybind.)*
 - **Hotkeys** (Ctrl+key, configurable in Settings): shouts 1..4, pos
   cycle, music stop (`~stop.mp3` fake-track request, courtroom.cpp
   music_stop), log jump, screenshot (`screenshots/` beside the exe).
