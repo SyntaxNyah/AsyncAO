@@ -478,14 +478,23 @@ func (j *dlJob) saveURL(ctx context.Context, client *network.Client, url, destPa
 	return true
 }
 
-// publish sends a progress snapshot (latest-wins; dropped if the consumer
-// hasn't drained the previous one — pollDownload reads the freshest each frame).
+// publish sends a progress snapshot. Intermediate snapshots are latest-wins
+// (dropped if the consumer hasn't drained the previous one — pollDownload reads
+// the freshest each frame). The TERMINAL snapshot (done) MUST land, or the
+// on-screen indicator never clears: it blocks until pollDownload makes room
+// (a cap-1 buffer the render thread drains every frame, so it lands within a
+// frame or two — the job is finished, so the brief block is harmless).
 func (j *dlJob) publish(done bool) {
 	if j.progress == nil {
 		return
 	}
+	snap := dlProgress{label: j.label, files: j.files, bytes: j.bytes, errs: j.errs, done: done}
+	if done {
+		j.progress <- snap // guaranteed delivery (flips a.dl.active off, hides the chip)
+		return
+	}
 	select {
-	case j.progress <- dlProgress{label: j.label, files: j.files, bytes: j.bytes, errs: j.errs, done: done}:
-	default:
+	case j.progress <- snap:
+	default: // intermediate: a fresher snapshot will follow
 	}
 }
