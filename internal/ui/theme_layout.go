@@ -338,7 +338,20 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			a.icColor = next
 		}
 		lead := int32(14 + themedColorW + 4)
-		field := sdl.Rect{X: in.X + lead, Y: in.Y, W: in.W - lead, H: in.H}
+		fieldX, fieldW := in.X+lead, in.W-lead
+		// Immediate toggle (parity with the classic IC row), but only when the
+		// theme's message rect is wide enough to keep a usable field after it.
+		const (
+			themedImmedW    = 64  // space reserved for the "Immed" checkbox
+			themedImmedKeep = 120 // min field width to still host the checkbox
+		)
+		if fieldW > themedImmedW+themedImmedKeep {
+			a.icImmediate = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Immed", a.icImmediate)
+			c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedImmedW, H: in.H}, "Immediate: the preanim plays without holding back the text")
+			fieldX += themedImmedW
+			fieldW -= themedImmedW
+		}
+		field := sdl.Rect{X: fieldX, Y: in.Y, W: fieldW, H: in.H}
 		var send bool
 		a.icInput, send = c.TextField("ic", field, a.icInput, "Say something in character...")
 		if send {
