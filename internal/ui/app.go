@@ -414,6 +414,24 @@ type App struct {
 	pairOffY int
 	pairFlip bool
 
+	// --- jukebox (global DJ /play music-link library) ---
+	// App-global like dlPaused and OUTSIDE sessionState: the library is shared
+	// across every server and must survive disconnects and tab switches.
+	juke            *config.Jukebox      // global store, loaded off-thread
+	jukeRes         chan *config.Jukebox // off-thread load landing
+	jukeCache       []config.Playlist    // rev-keyed Playlists() snapshot for drawing
+	jukeCacheRev    int64
+	jukeOpen        int    // -1 = playlist list; else the open playlist index
+	jukeSearch      string // filters playlists (top) or songs (inside one)
+	jukeScroll      int32
+	jukeNewName     string // "new playlist" input
+	jukeAddURL      string // "add song" URL input
+	jukeAddTitle    string // "add song" optional title input
+	jukeDelPlaylist int    // playlist index awaiting delete confirmation (-1 = none)
+	jukeBindFor     string // key-capture target: "" / "p:<i>" / "e:<pl>:<i>"
+	jukeFiltered    []int  // memoized matching entry indices in the open playlist
+	jukeFilteredKey jukeFilterKey
+
 	// dlPaused is the download worker's pause flag — App-global (one worker at
 	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic
 	// can't be copied). The Pause button flips it; the worker polls it. It is
@@ -983,6 +1001,9 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		manifestRes:     make(chan manifestFetch, 1),
 		fontRes:         make(chan fontLoad, 1),
 		notebookRes:     make(chan notebookLoad, 1),
+		jukeRes:         make(chan *config.Jukebox, 1),
+		jukeOpen:        -1,
+		jukeDelPlaylist: -1,
 		oocName:         d.Prefs.SavedShowname(),
 		selServer:       -1,
 		activeTab:       -1,
@@ -996,6 +1017,13 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	for _, id := range d.Prefs.HiddenPanels() {
 		a.hidden[id] = true
 	}
+	// Global jukebox library loads off-thread (it can be large); it lands via
+	// pollJukebox so the keybinds and wardrobe tab have it ready.
+	go func() {
+		if j, err := config.LoadJukebox(); err == nil {
+			a.jukeRes <- j
+		}
+	}()
 	a.applyThemeAsync() // chatbox skin + font colors from the saved theme
 	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
 	a.pairFlip = d.Prefs.PairFlipped()
@@ -2247,6 +2275,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollManifest()
 	a.pollFontChain()
 	a.pollNotebook()
+	a.pollJukebox()
 	a.pollCharBind()
 	a.pollMacroBind()
 	a.pollDownload()

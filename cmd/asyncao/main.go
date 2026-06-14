@@ -316,6 +316,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 
 	app.RememberOpenTabs() // restore-on-launch: snapshot tabs before the final flush (no-op when off)
 	app.CloseTranscript()  // flush + close the detailed-log file (no-op when off/unopened)
+	app.CloseJukebox()     // flush the global music library (no-op until loaded)
 	_ = prefs.SaveNow()
 	return nil
 }

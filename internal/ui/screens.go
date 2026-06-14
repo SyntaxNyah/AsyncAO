@@ -1596,6 +1596,7 @@ const (
 	wardSectionCharacters = iota
 	wardSectionBackgrounds
 	wardSectionIniswaps
+	wardSectionJukebox
 )
 
 // drawIniswapPanel is the wardrobe modal shell. It owns the state SHARED by
@@ -1622,7 +1623,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	for _, t := range [...]struct {
 		id    int
 		label string
-	}{{wardSectionCharacters, "Characters"}, {wardSectionBackgrounds, "Backgrounds"}, {wardSectionIniswaps, "Iniswaps"}} {
+	}{{wardSectionCharacters, "Characters"}, {wardSectionBackgrounds, "Backgrounds"}, {wardSectionIniswaps, "Iniswaps"}, {wardSectionJukebox, "Jukebox"}} {
 		r := sdl.Rect{X: tabX, Y: panel.Y + 8, W: 120, H: btnH}
 		bg := ColPanel
 		if a.wardSection == t.id {
@@ -1647,6 +1648,8 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		a.drawWardrobeBgsBody(panel, w, h)
 	case wardSectionIniswaps:
 		a.drawWardrobeIniswapsBody(panel, w, h)
+	case wardSectionJukebox:
+		a.drawWardrobeJukeboxBody(panel, w, h)
 	default:
 		a.drawWardrobeCharsBody(panel, w, h)
 	}
