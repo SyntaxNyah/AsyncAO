@@ -349,6 +349,9 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	// Log-selection highlight colour: a hue/saturation wheel + brightness
 	// slider + hex field (drag-select in IC/OOC shows it).
 	y = a.drawHighlightPicker(y, w)
+	// Per-speaker name colours: tint each speaker's name by a stable hash, with
+	// saturation/brightness sliders + a live preview. OFF by default.
+	y = a.drawNameColorPicker(y, w)
 	slideOn := a.d.Prefs.BgSlideshowEnabled()
 	if next := c.Checkbox(pad, y, "Background slideshow (OFF by default): when the courtroom is idle, cycle the stage through this server's backgrounds as ambiance", slideOn); next != slideOn {
 		a.d.Prefs.SetBgSlideshow(next)

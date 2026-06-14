@@ -872,6 +872,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
+	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	}
 	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
 
 	wrapW := box.W - 16

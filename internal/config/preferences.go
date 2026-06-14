@@ -123,6 +123,15 @@ const defaultUpdateCheck = true
 // until the user customizes it in Settings.
 const defaultHighlightColor = 0x78AAFF
 
+// Per-speaker name colours (OFF by default): each speaker's name is tinted by a
+// stable hash of the name. Saturation/value are user-tunable; value has a floor
+// so a name can't go unreadable-dark on the chat panel.
+const (
+	defaultNameColorSat = 60
+	defaultNameColorVal = 90
+	minNameColorVal     = 50
+)
+
 // Background slideshow (M5, OFF by default): while the courtroom is idle (no
 // message on stage), cycle through the server's backgrounds every N seconds as
 // ambiance. Bounded so the timer can't be set pathologically fast or slow.
@@ -227,6 +236,9 @@ type AssetPreferences struct {
 	SmoothScaling          bool                         `json:"smoothScaling"`
 	UpdateCheck            bool                         `json:"updateCheck"`
 	HighlightColor         int                          `json:"highlightColor"`
+	NameColors             bool                         `json:"nameColors"`
+	NameSat                int                          `json:"nameColorSat"`
+	NameVal                int                          `json:"nameColorVal"`
 	BgSlideshow            bool                         `json:"bgSlideshow"`
 	BgSlideshowSecs        int                          `json:"bgSlideshowSecs"`
 	DownloadKBps           int                          `json:"downloadKBps"`
@@ -341,6 +353,9 @@ type prefsJSON struct {
 	CatchUpWhenBehind      *bool     `json:"catchUpWhenBehind"` // absent = default ON
 	CatchUpThreshold       *int      `json:"catchUpThreshold"`  // absent = default
 	MultiTabCap            *int      `json:"multiTabCap"`       // absent = default
+	NameColors             bool      `json:"nameColors"`        // default OFF (zero value)
+	NameColorSat           *int      `json:"nameColorSat"`      // absent = default
+	NameColorVal           *int      `json:"nameColorVal"`      // absent = default
 	RestoreTabs            bool      `json:"restoreTabs"`       // default OFF (zero value)
 	OpenTabs               []OpenTab `json:"openTabs"`          // remembered tabs for restore-on-launch
 	ReduceMotion           bool      `json:"reduceMotion"`      // default OFF (zero value)
@@ -588,6 +603,8 @@ func defaultPrefs(path string) *AssetPreferences {
 		SmoothScaling:     defaultSmoothScaling,
 		UpdateCheck:       defaultUpdateCheck,
 		HighlightColor:    defaultHighlightColor,
+		NameSat:           defaultNameColorSat,
+		NameVal:           defaultNameColorVal,
 		BgSlideshowSecs:   defaultBgSlideshowSecs,
 		AutoDetectFormats: defaultFormatAutoDetect,
 		ThemeLayoutOn:     defaultThemeLayout,
@@ -680,6 +697,13 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.MultiTabCap != nil {
 		p.MultiTabCap = clampPercent(*onDisk.MultiTabCap, minMultiTabCap, maxMultiTabCap)
+	}
+	p.NameColors = onDisk.NameColors
+	if onDisk.NameColorSat != nil {
+		p.NameSat = clampPercent(*onDisk.NameColorSat, 0, 100)
+	}
+	if onDisk.NameColorVal != nil {
+		p.NameVal = clampPercent(*onDisk.NameColorVal, minNameColorVal, 100)
 	}
 	p.RestoreTabs = onDisk.RestoreTabs
 	p.OpenTabs = onDisk.OpenTabs
@@ -1191,6 +1215,53 @@ func (p *AssetPreferences) SetHighlightColor(rgb int) {
 		return
 	}
 	p.HighlightColor = rgb
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// NameColorsOn reports the per-speaker name-colour toggle (OFF by default).
+func (p *AssetPreferences) NameColorsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.NameColors
+}
+
+// SetNameColors toggles per-speaker name colours.
+func (p *AssetPreferences) SetNameColors(on bool) {
+	p.mu.Lock()
+	if p.NameColors == on {
+		p.mu.Unlock()
+		return
+	}
+	p.NameColors = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// NameColorSat / NameColorVal report the name-colour saturation and brightness
+// (0..100; value floored at minNameColorVal so names stay readable).
+func (p *AssetPreferences) NameColorSat() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.NameSat
+}
+
+func (p *AssetPreferences) NameColorVal() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.NameVal
+}
+
+// SetNameColorSatVal clamps and stores the saturation + brightness together.
+func (p *AssetPreferences) SetNameColorSatVal(sat, val int) {
+	sat = clampPercent(sat, 0, 100)
+	val = clampPercent(val, minNameColorVal, 100)
+	p.mu.Lock()
+	if p.NameSat == sat && p.NameVal == val {
+		p.mu.Unlock()
+		return
+	}
+	p.NameSat, p.NameVal = sat, val
 	p.mu.Unlock()
 	p.markDirty()
 }

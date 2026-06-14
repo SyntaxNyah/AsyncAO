@@ -19,6 +19,57 @@ import (
 // colorWheelDiam is the picker disc diameter (a "giant" wheel per the request).
 const colorWheelDiam = 150
 
+// nameColor maps a speaker name to a stable, smooth colour: an FNV-1a hash of
+// the name picks the hue, the caller's saturation/value (0..1) fill it out.
+// Deterministic (same name → same colour every launch, unlike a map-seeded
+// hash) and allocation-free, so it's cheap to call inline per visible name —
+// no cache to go stale when the sliders move.
+func nameColor(name string, sat, val float64) sdl.Color {
+	var h uint32 = 2166136261 // FNV-1a offset basis
+	for i := 0; i < len(name); i++ {
+		h ^= uint32(name[i])
+		h *= 16777619 // FNV-1a prime
+	}
+	r, g, b := hsvToRGB(float64(h%360)/360, sat, val)
+	return sdl.Color{R: r, G: g, B: b, A: 255}
+}
+
+// drawNameColorPicker draws the per-speaker name-colour controls — a toggle,
+// saturation + brightness rows (brightness floored so names stay readable), and
+// a live preview of sample names in their computed colours. OFF by default;
+// returns the y below the section. Settings-only, not a hot path.
+func (a *App) drawNameColorPicker(y, w int32) int32 {
+	c := a.ctx
+	on := a.d.Prefs.NameColorsOn()
+	if next := c.Checkbox(pad, y, "Colour each speaker's name (OFF by default): every name gets its own stable colour from its text", on); next != on {
+		a.d.Prefs.SetNameColors(next)
+	}
+	y += 26
+	if !on {
+		return y
+	}
+	sat, val := a.d.Prefs.NameColorSat(), a.d.Prefs.NameColorVal()
+	ns := a.numberRow(y, "Name saturation", sat, 5, 0, 100)
+	c.Label(pad+270, y+4, "0 = grey · 100 = vivid", ColTextDim)
+	y += 30
+	nv := a.numberRow(y, "Name brightness", val, 5, 50, 100)
+	c.Label(pad+270, y+4, "kept ≥ 50 so names stay readable on the dark panel", ColTextDim)
+	y += 30
+	if ns != sat || nv != val {
+		a.d.Prefs.SetNameColorSatVal(ns, nv)
+	}
+	// Live preview — sample names in their hash colours at the current sliders.
+	fs, fv := float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100
+	c.Label(pad, y+4, "Preview:", ColTextDim)
+	px := pad + 70
+	for _, nm := range []string{"Phoenix", "Edgeworth", "Maya", "Franziska", "Klavier", "Apollo"} {
+		c.Label(px, y+4, nm, nameColor(nm, fs, fv))
+		px += c.TextWidth(nm) + 16
+	}
+	y += 28
+	return y
+}
+
 // hsvToRGB converts h,s,v in [0,1] to 8-bit RGB.
 func hsvToRGB(h, s, v float64) (uint8, uint8, uint8) {
 	if s <= 0 {

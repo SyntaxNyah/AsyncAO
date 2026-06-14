@@ -509,6 +509,9 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	if skinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
+	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	}
 	// Clipped: a long showname must never spill past the theme's box.
 	c.LabelClipped(nameX, nameY, nameW, sc.ShownameText, nameCol)
 

@@ -165,6 +165,21 @@ func TestSelectAllChordArms(t *testing.T) {
 	}
 }
 
+// TestNameColorStable pins per-speaker name colours: deterministic per name
+// (same name → same colour every call/launch — it's a fixed hash, not a seeded
+// one), distinct for distinct names here, and always full-alpha.
+func TestNameColorStable(t *testing.T) {
+	if nameColor("Phoenix", 0.6, 0.9) != nameColor("Phoenix", 0.6, 0.9) {
+		t.Error("nameColor must be stable for the same name")
+	}
+	if nameColor("Phoenix", 0.6, 0.9) == nameColor("Edgeworth", 0.6, 0.9) {
+		t.Error("distinct names should get distinct colours")
+	}
+	if c := nameColor("Maya", 0.6, 0.9); c.A != 255 {
+		t.Errorf("alpha = %d, want 255", c.A)
+	}
+}
+
 // TestMergeWardrobe pins the wardrobe-first menu: client favourites sort
 // case-insensitively up front (starred), server iniswap.txt entries follow
 // minus case-insensitive duplicates of wardrobe entries. inServer marks which

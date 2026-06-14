@@ -149,6 +149,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   single background goroutine fed by a bounded queue, so the message path never
   blocks (and a flood sheds rather than stalls); the file flushes when caught up
   and closes on exit. OFF ⇒ nothing is opened or written.
+- **Per-speaker name colours** (Settings → General, **OFF by default**): each
+  speaker's name gets its own **stable** colour, derived from a hash of the name
+  (same name → same colour every session — no random reshuffles). Two sliders —
+  **saturation** (grey ↔ vivid) and **brightness** (floored so a name can't go
+  unreadable-dark on the panel) — tune the palette, with a live preview of
+  sample names. Currently colours the chatbox showname (the big name above each
+  message); the IC-log line names are a follow-up. Computed inline (a few-byte
+  hash + HSV, no allocation, no cache to stale), so it's free per frame and the
+  default OFF path is byte-identical.
 - **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
   flash + a sound (the theme's `word_call`, or a **custom sound file** you
   point at in Settings — `.wav`/`.ogg`/`.mp3`).

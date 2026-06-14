@@ -757,6 +757,23 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	}
 }
 
+// TestNameColorClamp pins the name-colour slider bounds: saturation clamps to
+// 0..100 and brightness is floored at minNameColorVal so a name can't go dark.
+func TestNameColorClamp(t *testing.T) {
+	p, err := New(filepath.Join(t.TempDir(), "prefs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	p.SetNameColorSatVal(200, 0) // saturation over the top, brightness under the floor
+	if got := p.NameColorSat(); got != 100 {
+		t.Errorf("saturation = %d, want 100 (clamped)", got)
+	}
+	if got := p.NameColorVal(); got != minNameColorVal {
+		t.Errorf("brightness = %d, want %d (floor)", got, minNameColorVal)
+	}
+}
+
 // TestResetSettings pins the settings-only reset: tunables revert to defaults
 // while user content (callwords, favourites) is preserved.
 func TestResetSettings(t *testing.T) {
