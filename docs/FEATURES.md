@@ -222,6 +222,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   link, hovering its line in the log highlights it (and shows the URL); a
   **left-click opens it in your browser**. The whole message line is the hit
   target. Right-click still pins the line to the notebook.
+- **Links in the OOC log too**: hovering an OOC line with an `http(s)://` link
+  highlights it; **left-click opens it**, **right-click copies the URL** to the
+  clipboard (the IC log pins on right-click, so OOC takes copy). The URL is
+  detected only on the hovered line, so it costs nothing per frame.
 - **Per-server wardrobe**: custom character lists no longer carry
   between servers; the pre-split collection migrates once to the first
   server joined after updating.

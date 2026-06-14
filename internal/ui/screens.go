@@ -1149,7 +1149,25 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			break
 		}
 		if y >= list.Y-lineH {
-			c.LabelClippedFont(c.LogFontFor(a.logPct, line), list.X, y, wrapW, line, ColText)
+			col := ColText
+			// Links in OOC are openable (click) and copyable (right-click) —
+			// matching the IC log. The URL scan runs ONLY on the hovered line,
+			// so it costs one extract per frame, never per visible line.
+			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
+			if c.hovering(rowRect) {
+				if urls := extractURLs(line, 1); len(urls) > 0 {
+					col = ColAccent
+					c.Tooltip(rowRect, "Click to open / right-click to copy: "+urls[0])
+					if c.clicked {
+						openBrowser(urls[0])
+					} else if c.rightClicked {
+						_ = sdl.SetClipboardText(urls[0])
+						a.warnLine = "Link copied to clipboard"
+						a.warnAt = time.Now()
+					}
+				}
+			}
+			c.LabelClippedFont(c.LogFontFor(a.logPct, line), list.X, y, wrapW, line, col)
 		}
 		y += lineH
 	}
