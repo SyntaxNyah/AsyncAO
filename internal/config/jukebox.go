@@ -85,8 +85,12 @@ func LoadJukebox() (*Jukebox, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loadJukeboxFile(path), nil
+	return OpenJukebox(path), nil
 }
+
+// OpenJukebox loads (or initializes) a jukebox library at an explicit path;
+// LoadJukebox is this at the default location. Disk I/O — off the render thread.
+func OpenJukebox(path string) *Jukebox { return loadJukeboxFile(path) }
 
 // loadJukeboxFile reads one jukebox file; absent/corrupt = fresh.
 func loadJukeboxFile(path string) *Jukebox {
