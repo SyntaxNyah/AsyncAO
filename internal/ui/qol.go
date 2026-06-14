@@ -36,6 +36,7 @@ const (
 	hotkeyQuickSwap  = "quick_swap"
 	hotkeyEmoteCycle = "emote_cycle"
 	hotkeyPinNote    = "pin_note"
+	hotkeyFriendHi   = "friend_toggle"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -57,6 +58,7 @@ var hotkeyDefs = []struct {
 	{hotkeyQuickSwap, "Quick-swap character (cycle wardrobe)", "j"},
 	{hotkeyEmoteCycle, "Cycle emote (next)", "e"},
 	{hotkeyPinNote, "Pin hovered log line to notes", "n"},
+	{hotkeyFriendHi, "Toggle friend highlights", "u"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -180,6 +182,14 @@ func (a *App) handleHotkeys() {
 		a.quickSwapNext()
 	case a.hotkeyFor(hotkeyEmoteCycle):
 		a.cycleEmote(1)
+	case a.hotkeyFor(hotkeyFriendHi):
+		on := !a.d.Prefs.FriendHighlightOn()
+		a.d.Prefs.SetFriendHighlight(on)
+		a.warnLine = "Friend highlights off"
+		if on {
+			a.warnLine = "Friend highlights on"
+		}
+		a.warnAt = time.Now()
 	}
 }
 
