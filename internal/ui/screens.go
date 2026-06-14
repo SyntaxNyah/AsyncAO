@@ -2099,9 +2099,13 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.screen = ScreenCharSelect
 	}
 	x += 106
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Wardrobe") {
+	// Wardrobe (iniswap): accent + tooltip so it's easy to spot.
+	wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+	if c.Button(wr, "Wardrobe") {
 		a.openIniswap()
 	}
+	c.Border(wr, ColAccent)
+	c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
 	x += 96
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
 		a.openBgPicker()

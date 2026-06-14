@@ -624,8 +624,19 @@ func (a *App) drawThemedUtilityStrip(w, h int32, lay *themeLayoutCache) {
 	if put("Character") {
 		a.screen = ScreenCharSelect
 	}
-	if put("Wardrobe") {
-		a.openIniswap()
+	// Wardrobe (iniswap) is accented + tooltipped so it stands out in the slim
+	// chrome strip — playtest: it was there but easy to miss.
+	{
+		label := "Wardrobe"
+		bw := c.TextWidth(label) + 12
+		r := sdl.Rect{X: x, Y: y, W: bw, H: stripH}
+		hit := c.Button(r, label)
+		c.Border(r, ColAccent)
+		c.Tooltip(r, "Wardrobe / iniswap — swap your character's sprites & emotes")
+		x += bw + 4
+		if hit {
+			a.openIniswap()
+		}
 	}
 	if put("Background") {
 		a.openBgPicker()
