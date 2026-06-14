@@ -25,10 +25,11 @@ const (
 	// emptyPreanim values AO uses for "no preanimation".
 	emptyPreanimDash = "-"
 
-	// catchUpDefaultThreshold is the queue depth past which packed-room
-	// catch-up fast-forwards backlog messages — the floor (1) so the stage
-	// stays on the newest message. The App overrides it from prefs; direct
-	// NewCourtroom callers (tests/embedders) get catch-up OFF regardless.
+	// catchUpDefaultThreshold is the queue depth at which packed-room catch-up
+	// fast-forwards backlog messages — the floor (1) so the stage stays on the
+	// newest message (a message catches up the moment one or more wait behind
+	// it). The App overrides it from prefs; direct NewCourtroom callers
+	// (tests/embedders) get catch-up OFF regardless.
 	catchUpDefaultThreshold = 1
 	// catchUpLinger holds a fast-forwarded backlog message on screen before
 	// the next dequeues — zero so a deep backlog drains one message per frame
@@ -280,12 +281,14 @@ func (c *Courtroom) setBackground(bg string) {
 // enter the first phase.
 func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.current = msg
-	// Packed-room catch-up: a deep backlog behind this message means the
-	// stage is behind real-time. Fast-forward this one (no shout/preanim/
-	// typewriter/effects/sfx/prefetch) and linger briefly so the queue drains;
-	// the newest messages (queue depth <= threshold) still play in full. The
-	// IC log already holds every message's full text.
-	if c.CatchUp && len(c.queue) > c.CatchUpThreshold {
+	// Packed-room catch-up: a backlog behind this message means the stage is
+	// behind real-time. Fast-forward this one (no shout/preanim/typewriter/
+	// effects/sfx/prefetch) and linger briefly so the queue drains. The trigger
+	// is "threshold or more waiting behind it" — at the default of 1, a message
+	// plays in full only when nothing is queued behind it (so calm back-and-forth
+	// still plays every line; only a genuine pile-up flashes past). The IC log
+	// already holds every message's full text.
+	if c.CatchUp && len(c.queue) >= c.CatchUpThreshold {
 		c.beginCaughtUp(msg)
 		return
 	}

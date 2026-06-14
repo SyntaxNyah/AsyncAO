@@ -690,6 +690,35 @@ func TestCatchUpDrainsBacklog(t *testing.T) {
 	}
 }
 
+// TestCatchUpDefaultEngagesAtOneBehind pins the default catch-up trigger
+// (threshold 1, the floor): a message catches up the moment ONE message waits
+// behind it, so only the newest line (nothing behind it) ever plays in full.
+// This is the boundary the >= comparison sets — under the old > it engaged only
+// at two-behind, leaving the textbox a message behind real-time.
+func TestCatchUpDefaultEngagesAtOneBehind(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+	room.CatchUp, room.CatchUpThreshold = true, 1
+
+	// "a" plays at idle (nothing behind). While it's on stage "b" and "c" pile
+	// up, so when "b" is dequeued one message ("c") still waits behind it — that
+	// one-behind case must catch up.
+	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "a")})
+	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "b")})
+	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "c")})
+
+	bPhase := MessagePhase(-1) // capture "b"'s phase the first frame it's on stage
+	for i := 0; i < 300 && bPhase < 0; i++ {
+		room.Update(DefaultCharInterval)
+		if room.Scene.MessageRaw == "b" {
+			bPhase = room.Phase()
+		}
+	}
+	if bPhase != PhaseLinger {
+		t.Fatalf("one-behind message must catch up (PhaseLinger, typewriter skipped), got phase %v", bPhase)
+	}
+}
+
 func TestPreanimBlocksUntilDone(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)
