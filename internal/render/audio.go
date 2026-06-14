@@ -190,6 +190,36 @@ func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
 	}
 }
 
+// PlayFile plays a sound from a local file PATH (an opt-in user alert sound:
+// callword / friend), loaded + cached by path — OFF the courtroom asset
+// pipeline. A missing/bad path just no-ops. Render thread only; the file loads
+// once (first play), then it's a cached pointer pass like any other chunk.
+func (a *Audio) PlayFile(path string) {
+	if path == "" || !a.enabled {
+		return
+	}
+	chunk, ok := a.chunks[path]
+	if !ok {
+		c, err := mix.LoadWAV(path)
+		if err != nil {
+			log.Printf("render: alert sound %s failed: %v", path, err)
+			return
+		}
+		if len(a.chunkOrder) >= chunkCacheMax {
+			oldest := a.chunkOrder[0]
+			a.chunkOrder = a.chunkOrder[1:]
+			if old, ok := a.chunks[oldest]; ok {
+				old.Free()
+				delete(a.chunks, oldest)
+			}
+		}
+		a.chunks[path] = c
+		a.chunkOrder = append(a.chunkOrder, path)
+		chunk = c
+	}
+	a.playChunk(chunk, pendingSFX)
+}
+
 // request plays the chunk for base now if cached, else marks it pending
 // (the courtroom already prefetched it at HIGH priority).
 func (a *Audio) request(base string, kind pendingKind) {

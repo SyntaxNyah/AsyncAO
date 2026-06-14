@@ -263,13 +263,17 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 	switch ev.Kind {
 	case courtroom.EventMessage:
 		if ev.Message != nil {
-			s.icLog = append(s.icLog, icEntry{text: clampLine(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn())), color: ev.Message.TextColor, friend: a.friendMessage(s.serverKey, ev.Message)})
+			fr := a.friendMessage(s.serverKey, ev.Message)
+			s.icLog = append(s.icLog, icEntry{text: clampLine(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn())), color: ev.Message.TextColor, friend: fr})
 			if len(s.icLog) > icLogCap {
 				copy(s.icLog, s.icLog[len(s.icLog)-icLogCap:])
 				s.icLog = s.icLog[:icLogCap]
 			}
 			s.icLogSeq++
 			t.unread++
+			if fr {
+				a.signalFriend(s.serverName, ev.Message) // alert even from a backgrounded server
+			}
 			a.checkCallwords(ev.Message.Message)
 		}
 	case courtroom.EventOOC:

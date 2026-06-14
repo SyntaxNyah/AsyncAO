@@ -1263,7 +1263,11 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.checkCallwords(ev.Text)
 		case courtroom.EventMessage:
 			if ev.Message != nil {
-				a.pushIC(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn()), ev.Message.TextColor, a.friendMessage(a.serverKey, ev.Message))
+				fr := a.friendMessage(a.serverKey, ev.Message)
+				a.pushIC(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn()), ev.Message.TextColor, fr)
+				if fr {
+					a.signalFriend(a.serverName, ev.Message)
+				}
 				a.noteEvidencePresented(ev.Message)
 				a.checkCallwords(ev.Message.Message)
 			}
@@ -2564,7 +2568,12 @@ type icEntry struct {
 // no-op when the feature is off (the default) — and the membership scan
 // allocates nothing, so it's safe per message even in a catch-up burst.
 func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) bool {
-	if m == nil || serverKey == "" || !a.d.Prefs.FriendHighlightOn() {
+	if m == nil || serverKey == "" {
+		return false
+	}
+	// Cheap gate: if NO friend signal (glow / notify / sound) is enabled, skip
+	// entirely — the default, so it costs nothing.
+	if !a.d.Prefs.FriendHighlightOn() && !a.d.Prefs.FriendNotifyOn() && !a.d.Prefs.FriendSoundOn() {
 		return false
 	}
 	name := strings.TrimSpace(m.Showname)
@@ -2575,6 +2584,38 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) bool {
 		return false
 	}
 	return a.d.Prefs.IsServerFriend(serverKey, name)
+}
+
+// signalFriend fires the opt-in alert signals when a friend speaks: an in-app
+// toast + window flash (FriendNotify) and a sound (FriendSound — a custom file,
+// else the theme word_call). Streamer mode suppresses them (same as callwords).
+// Called at the message seam when friendMessage is true (active OR background
+// tab, so you're alerted even while looking at another server). The glow is
+// drawn separately in the log.
+func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
+	if a.d.Prefs.StreamerMode() {
+		return
+	}
+	if a.d.Prefs.FriendNotifyOn() {
+		name := strings.TrimSpace(m.Showname)
+		if name == "" {
+			name = strings.TrimSpace(m.CharName)
+		}
+		line := name + " just spoke"
+		if serverName != "" {
+			line += " on " + serverName
+		}
+		a.warnLine = line
+		a.warnAt = time.Now()
+		a.ctx.FlashWindow()
+	}
+	if a.d.Prefs.FriendSoundOn() {
+		if f := a.d.Prefs.FriendSoundPath(); f != "" {
+			a.d.Audio.PlayFile(f)
+		} else {
+			a.playThemeSFX("word_call")
+		}
+	}
 }
 
 func (a *App) pushIC(line string, color int, friend bool) {

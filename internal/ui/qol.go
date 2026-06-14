@@ -368,7 +368,11 @@ func (a *App) checkCallwords(text string) {
 	lower := strings.ToLower(text)
 	for _, w := range words {
 		if strings.Contains(lower, w) {
-			a.playThemeSFX("word_call")
+			if f := a.d.Prefs.CallwordSoundPath(); f != "" {
+				a.d.Audio.PlayFile(f) // custom callword sound
+			} else {
+				a.playThemeSFX("word_call")
+			}
 			a.ctx.FlashWindow()
 			return
 		}

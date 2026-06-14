@@ -124,7 +124,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   AO palette). Lines **word-wrap to the list width** (cached against
   log/width/font-scale — never re-wrapped per frame).
 - **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
-  flash + `word_call` sound.
+  flash + a sound (the theme's `word_call`, or a **custom sound file** you
+  point at in Settings — `.wav`/`.ogg`/`.mp3`).
 - **Highlighted friends** (Settings, **OFF by default**): a **per-server** list
   of shownames whose IC messages **glow** (a warm tint behind the line) so you
   can spot your friends in a busy log — saved per server (cached like the char
@@ -132,7 +133,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (custom showname, falling back to the character), so — like any showname — it
   can be spoofed; that's noted in Settings. Gated entirely on the toggle, so a
   no-friend log draws byte-identical and the detection costs nothing when off.
-  *(Sound/popup signals + a toggle keybind are planned follow-ups.)*
+  **Optional signals** (each its own toggle, all OFF): a **notification** (an
+  in-app toast "*X just spoke on \<server\>*" + taskbar flash) that fires **even
+  from a backgrounded server tab** — so you see a friend pop up on another
+  server — and a **sound** (the default ping, or a **custom file** you choose).
+  Streamer mode suppresses both. *(Still planned: a desktop OS toast, per-friend
+  colours, glow animation, and a toggle keybind.)*
 - **Hotkeys** (Ctrl+key, configurable in Settings): shouts 1..4, pos
   cycle, music stop (`~stop.mp3` fake-track request, courtroom.cpp
   music_stop), log jump, screenshot (`screenshots/` beside the exe).

@@ -229,6 +229,10 @@ type AssetPreferences struct {
 	DownloadKBps           int                          `json:"downloadKBps"`
 	ForceCharNames         bool                         `json:"forceCharNames"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
+	FriendNotify           bool                         `json:"friendNotify"`
+	FriendSound            bool                         `json:"friendSound"`
+	FriendSoundFile        string                       `json:"friendSoundFile"`
+	CallwordSoundFile      string                       `json:"callwordSoundFile"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
@@ -302,26 +306,30 @@ type AssetPreferences struct {
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
 // "absent" from the zero value where the default is not the zero value.
 type prefsJSON struct {
-	GlobalFallbacksEnabled bool  `json:"globalFallbacksEnabled"`
-	PreferAnimated         *bool `json:"preferAnimated"`
-	EmoteButtonImages      *bool `json:"emoteButtonImages"`
-	SmoothScaling          *bool `json:"smoothScaling"`
-	UpdateCheck            *bool `json:"updateCheck"`    // absent = default ON
-	HighlightColor         *int  `json:"highlightColor"` // absent = default accent
-	BgSlideshow            bool  `json:"bgSlideshow"`    // default OFF (zero value)
-	BgSlideshowSecs        int   `json:"bgSlideshowSecs"`
-	DownloadKBps           int   `json:"downloadKBps"`    // 0 = unlimited (default)
-	ForceCharNames         bool  `json:"forceCharNames"`  // default OFF
-	FriendHighlight        bool  `json:"friendHighlight"` // default OFF
-	DebugOverlay           bool  `json:"debugOverlay"`
-	FormatAutoDetect       *bool `json:"formatAutoDetect"`  // absent = default ON
-	ThemeLayout            *bool `json:"themeLayout"`       // absent = default ON
-	UIScaleAuto            *bool `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
-	CatchUpWhenBehind      *bool `json:"catchUpWhenBehind"` // absent = default ON
-	CatchUpThreshold       *int  `json:"catchUpThreshold"`  // absent = default
-	MultiTabCap            *int  `json:"multiTabCap"`       // absent = default
-	ReduceMotion           bool  `json:"reduceMotion"`      // default OFF (zero value)
-	MusicDucking           bool  `json:"musicDucking"`      // default OFF (zero value)
+	GlobalFallbacksEnabled bool   `json:"globalFallbacksEnabled"`
+	PreferAnimated         *bool  `json:"preferAnimated"`
+	EmoteButtonImages      *bool  `json:"emoteButtonImages"`
+	SmoothScaling          *bool  `json:"smoothScaling"`
+	UpdateCheck            *bool  `json:"updateCheck"`    // absent = default ON
+	HighlightColor         *int   `json:"highlightColor"` // absent = default accent
+	BgSlideshow            bool   `json:"bgSlideshow"`    // default OFF (zero value)
+	BgSlideshowSecs        int    `json:"bgSlideshowSecs"`
+	DownloadKBps           int    `json:"downloadKBps"`    // 0 = unlimited (default)
+	ForceCharNames         bool   `json:"forceCharNames"`  // default OFF
+	FriendHighlight        bool   `json:"friendHighlight"` // default OFF
+	FriendNotify           bool   `json:"friendNotify"`    // default OFF
+	FriendSound            bool   `json:"friendSound"`     // default OFF
+	FriendSoundFile        string `json:"friendSoundFile"`
+	CallwordSoundFile      string `json:"callwordSoundFile"`
+	DebugOverlay           bool   `json:"debugOverlay"`
+	FormatAutoDetect       *bool  `json:"formatAutoDetect"`  // absent = default ON
+	ThemeLayout            *bool  `json:"themeLayout"`       // absent = default ON
+	UIScaleAuto            *bool  `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
+	CatchUpWhenBehind      *bool  `json:"catchUpWhenBehind"` // absent = default ON
+	CatchUpThreshold       *int   `json:"catchUpThreshold"`  // absent = default
+	MultiTabCap            *int   `json:"multiTabCap"`       // absent = default
+	ReduceMotion           bool   `json:"reduceMotion"`      // default OFF (zero value)
+	MusicDucking           bool   `json:"musicDucking"`      // default OFF (zero value)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -615,6 +623,10 @@ func load(path string) (*AssetPreferences, error) {
 	p.DownloadKBps = onDisk.DownloadKBps // 0 = unlimited
 	p.ForceCharNames = onDisk.ForceCharNames
 	p.FriendHighlight = onDisk.FriendHighlight
+	p.FriendNotify = onDisk.FriendNotify
+	p.FriendSound = onDisk.FriendSound
+	p.FriendSoundFile = onDisk.FriendSoundFile
+	p.CallwordSoundFile = onDisk.CallwordSoundFile
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
 	if onDisk.FormatAutoDetect != nil {
@@ -1198,6 +1210,74 @@ func (p *AssetPreferences) SetFriendHighlight(on bool) {
 		return
 	}
 	p.FriendHighlight = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FriendNotifyOn / SetFriendNotify: pop an in-app toast + flash the window when
+// a friend speaks (OFF by default).
+func (p *AssetPreferences) FriendNotifyOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FriendNotify
+}
+
+func (p *AssetPreferences) SetFriendNotify(on bool) {
+	p.mu.Lock()
+	if p.FriendNotify != on {
+		p.FriendNotify = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+// FriendSoundOn / SetFriendSound: play a sound when a friend speaks (OFF by
+// default). FriendSoundPath is the custom file ("" = the theme's word_call).
+func (p *AssetPreferences) FriendSoundOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FriendSound
+}
+
+func (p *AssetPreferences) SetFriendSound(on bool) {
+	p.mu.Lock()
+	if p.FriendSound != on {
+		p.FriendSound = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+// FriendSoundPath / CallwordSoundPath are the custom alert sound files
+// ("" = fall back to the theme's word_call). Setters store the trimmed path.
+func (p *AssetPreferences) FriendSoundPath() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FriendSoundFile
+}
+
+func (p *AssetPreferences) SetFriendSoundPath(path string) {
+	path = strings.TrimSpace(path)
+	p.mu.Lock()
+	p.FriendSoundFile = path
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+func (p *AssetPreferences) CallwordSoundPath() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CallwordSoundFile
+}
+
+func (p *AssetPreferences) SetCallwordSoundPath(path string) {
+	path = strings.TrimSpace(path)
+	p.mu.Lock()
+	p.CallwordSoundFile = path
 	p.mu.Unlock()
 	p.markDirty()
 }

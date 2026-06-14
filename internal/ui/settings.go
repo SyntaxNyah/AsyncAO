@@ -692,6 +692,11 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Prefs.SetCallWords(strings.Split(settings.callInput, ","))
 		settings.statusLine = "Callwords saved."
 	}
+	y += 30
+	c.Label(pad, y+4, "Callword sound:", ColTextDim)
+	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 120, Y: y, W: 490, H: fieldH}, a.d.Prefs.CallwordSoundPath(), "custom .wav/.ogg/.mp3 path (blank = default word-call ping)"); next != a.d.Prefs.CallwordSoundPath() {
+		a.d.Prefs.SetCallwordSoundPath(next)
+	}
 	y += 34
 
 	// Highlighted friends (per server): shownames whose IC messages glow.
@@ -700,6 +705,21 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Prefs.SetFriendHighlight(next)
 	}
 	y += 26
+	fn := a.d.Prefs.FriendNotifyOn()
+	if next := c.Checkbox(pad+16, y, "Notify + flash the taskbar when a friend speaks (fires even from a backgrounded server tab)", fn); next != fn {
+		a.d.Prefs.SetFriendNotify(next)
+	}
+	y += 26
+	fsnd := a.d.Prefs.FriendSoundOn()
+	if next := c.Checkbox(pad+16, y, "Play a sound when a friend speaks", fsnd); next != fsnd {
+		a.d.Prefs.SetFriendSound(next)
+	}
+	y += 26
+	c.Label(pad+16, y+4, "Friend sound:", ColTextDim)
+	if next, _ := c.TextField("friendsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.FriendSoundPath(), "custom .wav/.ogg/.mp3 path (blank = default word-call ping)"); next != a.d.Prefs.FriendSoundPath() {
+		a.d.Prefs.SetFriendSoundPath(next)
+	}
+	y += 32
 	if a.serverKey == "" {
 		c.Label(pad, y+4, "Friends: connect to a server to set its highlighted shownames.", ColTextDim)
 		y += 30
