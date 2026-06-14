@@ -330,11 +330,34 @@ func (a *App) drawHPBar(vp sdl.Rect, def bool, val int) int32 {
 	return h
 }
 
-func (a *App) hpBarStem(def bool, val int) string {
-	if def {
-		return "defensebar" + strconv.Itoa(val)
+// hpBarStems holds the precomputed theme-art key for every penalty value
+// ([0] = defense, [1] = prosecution), so the per-frame HP draw looks a key up
+// instead of allocating one by string concatenation. val is 0..HPBarMax (the
+// session clamps it there). Built once at init; the always-on courtroom draw
+// calls hpBarStem up to 4×/frame, so this keeps that path off the heap.
+var hpBarStems = func() [2][hpBarSegments + 1]string {
+	var t [2][hpBarSegments + 1]string
+	for v := 0; v <= hpBarSegments; v++ {
+		t[0][v] = "defensebar" + strconv.Itoa(v)
+		t[1][v] = "prosecutionbar" + strconv.Itoa(v)
 	}
-	return "prosecutionbar" + strconv.Itoa(val)
+	return t
+}()
+
+func (a *App) hpBarStem(def bool, val int) string {
+	// Out of the precomputed range (a server sent an odd value): fall back to
+	// the concat — rare/never given the session clamp, and it keeps the table
+	// bounded.
+	if val < 0 || val > hpBarSegments {
+		if def {
+			return "defensebar" + strconv.Itoa(val)
+		}
+		return "prosecutionbar" + strconv.Itoa(val)
+	}
+	if def {
+		return hpBarStems[0][val]
+	}
+	return hpBarStems[1][val]
 }
 
 // drawHPBarRect draws one penalty bar into an exact rect: theme art

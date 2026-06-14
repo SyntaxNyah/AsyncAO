@@ -17,6 +17,8 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 | T2 cache hit, 0 allocs | **41.2 ns/op, 0 allocs** | `BenchmarkCacheHit_T2` |
 | WebP 256×192 decode < 3 ms | **0.179 ms/op** | `BenchmarkDecodeWebP_256x192` |
 | Render frame < 16 ms, 0 allocs | **2.34 ms/op (software renderer), 0 allocs** — generation-cached texture pages, zero LRU ops per steady frame | `BenchmarkRenderFrame` + `TestRenderFrameZeroAllocs` |
+| UI emote-grid counter, 0 allocs | **0 allocs/op steady state** — the "page x/y · N emotes" label is memoized; the `fmt.Sprintf` runs only when page/total change | `TestEmotePageCounterMemoized` |
+| UI HP-bar key, 0 allocs | **0 allocs/op** — `defensebar<N>`/`prosecutionbar<N>` keys are a precomputed table, not a per-frame string concat (ran ≤ 4×/frame) | `TestHPBarStemNoAlloc` |
 | Cold probes ≤ 1/asset, ≤ 450 total | **285 probes / 285 assets** (200-char session) | `TestProbeBudget200CharServer` |
 | Paired cold ≈ single (±20%) | **parallel: 0.17 s with 150 ms/request latency** (serial would be ≥ 0.30 s) | `TestPairedPrefetchResolvesConcurrently` |
 | Steady-state probes (learned warm start) | **N probes for N assets, all first-try** | `TestManagerLearnedWarmStart` |

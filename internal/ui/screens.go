@@ -2379,7 +2379,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		if c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") && a.emotePage < pages-1 {
 			a.emotePage++
 		}
-		c.Label(r.X+72, cy+6, fmt.Sprintf("page %d/%d · %d emotes", a.emotePage+1, pages, len(a.emotes)), ColTextDim)
+		c.Label(r.X+72, cy+6, a.emotePageCounter(a.emotePage+1, pages, len(a.emotes)), ColTextDim)
 	}
 
 	// Random emote: quick variety / novelty — picks any emote and jumps to its
@@ -2412,6 +2412,18 @@ func (a *App) selectEmote(i int) {
 	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (selected)
 	a.speculateEmote(me, &a.emotes[i])
 	a.ctx.FocusField("ic")
+}
+
+// emotePageCounter returns the "page x/y · N emotes" label, memoized so the
+// per-frame emote-grid draw allocates nothing while paging is stable — the
+// fmt.Sprintf runs only when the page, page count, or emote total changes (the
+// same memoize-on-change idiom as the generation-cached texture pages).
+func (a *App) emotePageCounter(page, pages, n int) string {
+	if key := [3]int{page, pages, n}; a.emotePageLabel == "" || key != a.emotePageLabelKey {
+		a.emotePageLabel = fmt.Sprintf("page %d/%d · %d emotes", page, pages, n)
+		a.emotePageLabelKey = key
+	}
+	return a.emotePageLabel
 }
 
 // pickRandomEmote selects a random emote and scrolls its page into view.

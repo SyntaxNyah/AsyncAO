@@ -7,6 +7,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -163,6 +164,51 @@ func TestNextRandomEmote(t *testing.T) {
 	for trial := 0; trial < 200; trial++ {
 		if got := nextRandomEmote(n, -1); got < 0 || got >= n {
 			t.Fatalf("nextRandomEmote(%d, -1) = %d, out of range", n, got)
+		}
+	}
+}
+
+// TestEmotePageCounterMemoized pins the per-frame emote-grid counter: correct
+// text, ZERO allocations while the page is stable (the gate), and a rebuild the
+// moment any input changes (the invalidation correctness check).
+func TestEmotePageCounterMemoized(t *testing.T) {
+	a := &App{}
+	got := a.emotePageCounter(1, 3, 24)
+	if got != "page 1/3 · 24 emotes" {
+		t.Fatalf("label = %q, want %q", got, "page 1/3 · 24 emotes")
+	}
+	// The always-on draw path re-asks with the same inputs every frame: no alloc.
+	if n := testing.AllocsPerRun(100, func() { a.emotePageCounter(1, 3, 24) }); n != 0 {
+		t.Errorf("steady-state allocs = %v, want 0", n)
+	}
+	// Paging changes an input → the label must rebuild (else we'd show a stale
+	// counter).
+	if g := a.emotePageCounter(2, 3, 24); g != "page 2/3 · 24 emotes" {
+		t.Errorf("changed page label = %q, want rebuilt", g)
+	}
+	if g := a.emotePageCounter(2, 3, 25); g != "page 2/3 · 25 emotes" {
+		t.Errorf("changed total label = %q, want rebuilt", g)
+	}
+}
+
+// TestHPBarStemNoAlloc pins the per-frame HP-bar key lookup: correct stems and
+// ZERO allocations (the precomputed table replaced a string concat that ran up
+// to 4×/frame in the default courtroom view).
+func TestHPBarStemNoAlloc(t *testing.T) {
+	a := &App{}
+	if s := a.hpBarStem(true, 5); s != "defensebar5" {
+		t.Fatalf("defense stem = %q, want defensebar5", s)
+	}
+	if s := a.hpBarStem(false, 0); s != "prosecutionbar0" {
+		t.Fatalf("prosecution stem = %q, want prosecutionbar0", s)
+	}
+	if s := a.hpBarStem(true, courtroom.HPBarMax); s != "defensebar10" {
+		t.Fatalf("max stem = %q, want defensebar10", s)
+	}
+	for _, def := range []bool{true, false} {
+		d := def
+		if n := testing.AllocsPerRun(100, func() { _ = a.hpBarStem(d, 7) }); n != 0 {
+			t.Errorf("hpBarStem(def=%v) allocs = %v, want 0", d, n)
 		}
 	}
 }
