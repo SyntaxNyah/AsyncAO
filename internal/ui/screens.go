@@ -1637,6 +1637,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 			a.previewBase = ""   // each section owns its own preview
 			a.iniMenuChar = ""   // close any open character move-to-folder menu
 			a.wardDelFolder = "" // close any open folder-delete confirmation
+			a.jukeBindFor = ""   // cancel any armed jukebox key-capture
 			if t.id == wardSectionBackgrounds {
 				a.rebuildBgFav()
 			}

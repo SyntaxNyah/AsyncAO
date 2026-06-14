@@ -9,6 +9,7 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -195,6 +196,8 @@ func (a *App) drawJukePlaylistRow(pl config.Playlist, idx int, r sdl.Rect) {
 	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 70, H: r.H}, "Open") {
 		a.openJukePlaylist(idx)
 	}
+	bx -= 50
+	a.drawJukeKeyBadge(sdl.Rect{X: bx, Y: r.Y, W: 46, H: r.H}, pl.Key, fmt.Sprintf("p:%d", idx))
 	// Name + count fill the left; clicking the name area also opens it.
 	nameHit := sdl.Rect{X: r.X, Y: r.Y, W: bx - r.X - 6, H: r.H}
 	c.LabelClipped(r.X+8, r.Y+6, nameHit.W-12, fmt.Sprintf("%s  (%d)", pl.Name, len(pl.Entries)), ColText)
@@ -318,10 +321,12 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 66, H: r.H}, "Share") {
 		a.jukeShare(e.URL)
 	}
-	bx -= 70
-	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 66, H: r.H}, "Open ↗") {
+	bx -= 64
+	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 60, H: r.H}, "Open ↗") {
 		openBrowser(e.URL)
 	}
+	bx -= 50
+	a.drawJukeKeyBadge(sdl.Rect{X: bx, Y: r.Y, W: 46, H: r.H}, e.Key, fmt.Sprintf("e:%d:%d", a.jukeOpen, idx))
 	bx -= 34
 	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 30, H: r.H}, "▶") {
 		a.jukePlay(e.URL)
@@ -355,6 +360,86 @@ func (a *App) refreshJukeFilter(pl int, entries []config.JukeboxEntry, query str
 	for i, e := range entries {
 		if strings.Contains(strings.ToLower(e.Title), query) || strings.Contains(strings.ToLower(e.URL), query) {
 			a.jukeFiltered = append(a.jukeFiltered, i)
+		}
+	}
+}
+
+// handleJukeboxKeys fires a bare-key jukebox bind from the courtroom: an entry
+// key /plays that song, a playlist key /plays a random song from it. Slotted
+// between macros and char/emote keys (so it shadows char binds and the emote
+// 1-9 digits — a deliberate trade for a DJ). Returns true if it fired.
+func (a *App) handleJukeboxKeys() bool {
+	c := a.ctx
+	if a.juke == nil || c.keyPressed == 0 || c.focusID != "" || a.bindingFor != "" || a.jukeBindFor != "" || a.macroBind >= 0 || c.ctrlHeld {
+		return false
+	}
+	if url, ok := a.juke.ResolveKey(strings.ToLower(sdl.GetKeyName(c.keyPressed))); ok {
+		a.jukePlay(url)
+		return true
+	}
+	return false
+}
+
+// pollJukeBind completes an armed jukebox key-capture (badge click): the next
+// plain keypress binds it; Esc cancels. Runs in the frame polls BEFORE
+// handleHotkeys and CONSUMES the key, so binding a song never also plays it the
+// same frame.
+func (a *App) pollJukeBind() {
+	if a.jukeBindFor == "" || a.juke == nil {
+		return
+	}
+	c := a.ctx
+	if c.escPressed {
+		a.jukeBindFor = ""
+		return
+	}
+	if c.keyPressed == 0 {
+		return
+	}
+	a.applyJukeKey(a.jukeBindFor, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
+	a.jukeBindFor = ""
+	c.keyPressed = 0 // consume: don't let the just-bound key also fire this frame
+}
+
+// applyJukeKey sets (or clears, with "") the bind named by target: "p:<i>" is a
+// playlist shuffle key, "e:<pl>:<i>" is a song key.
+func (a *App) applyJukeKey(target, key string) {
+	parts := strings.Split(target, ":")
+	switch {
+	case len(parts) == 2 && parts[0] == "p":
+		if i, err := strconv.Atoi(parts[1]); err == nil {
+			a.juke.SetPlaylistKey(i, key)
+		}
+	case len(parts) == 3 && parts[0] == "e":
+		pl, e1 := strconv.Atoi(parts[1])
+		e, e2 := strconv.Atoi(parts[2])
+		if e1 == nil && e2 == nil {
+			a.juke.SetEntryKey(pl, e, key)
+		}
+	}
+}
+
+// drawJukeKeyBadge draws a bare-key bind chip: shows the bound key, click to
+// arm a capture, right-click to clear.
+func (a *App) drawJukeKeyBadge(r sdl.Rect, bound, target string) {
+	c := a.ctx
+	label, col := bound, ColAccent
+	switch {
+	case a.jukeBindFor == target:
+		label = "press…"
+	case bound == "":
+		label, col = "key", ColTextDim
+	}
+	c.Fill(r, ColPanelHi)
+	c.LabelClipped(r.X+4, r.Y+(r.H-14)/2, r.W-6, label, col)
+	c.Tooltip(r, "Bind a key (click, then press a key; right-click clears)")
+	if c.hovering(r) {
+		if c.clicked {
+			a.bindingFor = "" // don't also arm a character keybind
+			a.jukeBindFor = target
+			c.focusID = "" // the capture owns the next keypress
+		} else if c.rightClicked && bound != "" {
+			a.applyJukeKey(target, "")
 		}
 	}
 }

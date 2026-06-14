@@ -2277,6 +2277,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollCharBind()
+	a.pollJukeBind()
 	a.pollMacroBind()
 	a.pollDownload()
 	a.pollBgList() // drain bg discovery even when the picker is closed (slideshow)

@@ -689,6 +689,9 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 		a.d.Prefs.ResetAll()
 		_ = a.d.Manager.ClearDisk()
 		a.d.Resolver.InvalidateAll()
+		if a.juke != nil {
+			a.juke.Clear() // the jukebox library lives in its own file — wipe it too
+		}
 		a.warnLine = "Everything wiped — fresh-install state."
 	} else {
 		a.d.Prefs.ResetSettings()

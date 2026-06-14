@@ -146,7 +146,7 @@ func (a *App) handleEmoteKeys() {
 // (and dispatches macro keybinds, then character keybinds — macros win
 // a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
-	if !a.handleMacroKeys() {
+	if !a.handleMacroKeys() && !a.handleJukeboxKeys() {
 		a.handleCharKeys()
 		a.handleEmoteKeys()
 	}
