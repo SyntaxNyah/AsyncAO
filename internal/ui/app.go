@@ -24,6 +24,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
+	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
 
 // Screen identifies the active top-level view.
@@ -264,6 +265,18 @@ type App struct {
 	tabDragStart [2]int32
 	tabDragging  bool
 	tabPrevDown  bool
+
+	// --- M13 self-update (one-shot launch check; see internal/update) ---
+	// updateRes carries a newer release found by the off-thread probe; the
+	// drain stores it in updateRel and auto-opens the What's New modal once.
+	// updateChecked fires the probe EXACTLY ONCE on the first frame (after the
+	// window is up) so the check never touches the boot critical path.
+	updateRes       chan *update.Release
+	updateChecked   bool
+	updateRel       *update.Release
+	updateShow      bool
+	updateScroll    int32
+	updateChipLabel string
 
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
@@ -867,6 +880,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		lobbyResult:     make(chan lobbyFetch, 1),
 		charINIres:      make(chan charINIFetch, 1),
 		previewEmoteRes: make(chan previewEmoteFetch, 1),
+		updateRes:       make(chan *update.Release, 1),
 		iniRes:          make(chan iniswapFetch, 1),
 		manifestRes:     make(chan manifestFetch, 1),
 		fontRes:         make(chan fontLoad, 1),
@@ -2013,6 +2027,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.showHotkeys = !a.showHotkeys
 		a.ctx.keyPressed = 0
 	}
+	a.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
+	a.pollUpdate()                  // drain a found release
+	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.handleTabBar(winW) // chip clicks resolve BEFORE screens see them
@@ -2076,6 +2093,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.showHotkeys {
 		a.drawHotkeyCheatSheet(winW, winH)
 	}
+	// M13: a found update shows a persistent chip (reopen) and, the first time,
+	// the What's New patch-notes modal. Both no-op when no update was found.
+	a.drawUpdateAvailable(winW, winH)
 	// Deferred kit overlays (open dropdown lists) stack above everything.
 	a.ctx.FinishFrame()
 	// Hover hints paint last so they sit above every cell/overlay.

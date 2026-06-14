@@ -110,6 +110,11 @@ const defaultEmoteButtonImages = true
 // scale quality): sprites stretched to the viewport stop shimmering.
 const defaultSmoothScaling = true
 
+// defaultUpdateCheck enables the one-shot GitHub-Releases update check at
+// launch (M13). On by default per the user's intent; the check is a single
+// async probe fired off the boot path, and a dev build never hits the network.
+const defaultUpdateCheck = true
+
 // Layout scale bounds (percent). Defaults preserve the original layout:
 // viewport 66 ≈ the old fixed 2/3 width; the text/height scales at 100.
 const (
@@ -197,6 +202,7 @@ type AssetPreferences struct {
 	PreferAnimated         bool                         `json:"preferAnimated"`
 	EmoteButtonImages      bool                         `json:"emoteButtonImages"`
 	SmoothScaling          bool                         `json:"smoothScaling"`
+	UpdateCheck            bool                         `json:"updateCheck"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
@@ -274,6 +280,7 @@ type prefsJSON struct {
 	PreferAnimated         *bool `json:"preferAnimated"`
 	EmoteButtonImages      *bool `json:"emoteButtonImages"`
 	SmoothScaling          *bool `json:"smoothScaling"`
+	UpdateCheck            *bool `json:"updateCheck"` // absent = default ON
 	DebugOverlay           bool  `json:"debugOverlay"`
 	FormatAutoDetect       *bool `json:"formatAutoDetect"`  // absent = default ON
 	ThemeLayout            *bool `json:"themeLayout"`       // absent = default ON
@@ -497,6 +504,7 @@ func load(path string) (*AssetPreferences, error) {
 		PreferAnimated:    defaultPreferAnimated,
 		EmoteButtonImages: defaultEmoteButtonImages,
 		SmoothScaling:     defaultSmoothScaling,
+		UpdateCheck:       defaultUpdateCheck,
 		AutoDetectFormats: defaultFormatAutoDetect,
 		ThemeLayoutOn:     defaultThemeLayout,
 		UIScaleAutoOn:     defaultUIScaleAuto,
@@ -543,6 +551,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.SmoothScaling != nil {
 		p.SmoothScaling = *onDisk.SmoothScaling
+	}
+	if onDisk.UpdateCheck != nil {
+		p.UpdateCheck = *onDisk.UpdateCheck
 	}
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
@@ -970,6 +981,28 @@ func (p *AssetPreferences) SetSmoothScaling(enabled bool) {
 		return
 	}
 	p.SmoothScaling = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Update check ------------------------------------------------------------
+
+// UpdateCheckEnabled reports whether the one-shot launch update check (M13)
+// runs. On by default; disabling it stops the outbound GitHub Releases call.
+func (p *AssetPreferences) UpdateCheckEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.UpdateCheck
+}
+
+// SetUpdateCheck toggles the launch update check.
+func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
+	p.mu.Lock()
+	if p.UpdateCheck == enabled {
+		p.mu.Unlock()
+		return
+	}
+	p.UpdateCheck = enabled
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -20,7 +20,16 @@ $env:PKG_CONFIG_PATH = "$msys\lib\pkgconfig"
 
 $flags = @()
 if ($Release) {
-    $flags = @("-pgo=auto", "-trimpath", "-ldflags", "-s -w")
+    # Stamp the build version for the self-update check (M13) from the git tag,
+    # e.g. v1.2.3 or v1.2.3-5-gabc1234-dirty. No tag -> stays "dev" (a dev build
+    # never self-updates). Dev (non -Release) builds are intentionally unstamped.
+    $ldflags = "-s -w"
+    $ver = (git describe --tags --dirty 2>$null)
+    if ($LASTEXITCODE -eq 0 -and $ver) {
+        $ldflags = "$ldflags -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=$ver"
+        Write-Host "Stamping version $ver"
+    }
+    $flags = @("-pgo=auto", "-trimpath", "-ldflags", $ldflags)
 }
 
 New-Item -ItemType Directory -Force bin | Out-Null

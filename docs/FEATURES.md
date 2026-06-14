@@ -404,3 +404,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   offline / in rehearsal.
 - **Discord Rich Presence**: optional, per-field privacy checkboxes,
   zero build/run dependency — full guide in [DISCORD.md](DISCORD.md).
+- **Update check + "What's New"** (Settings → on by default): one async check
+  of the GitHub Releases API at launch — fired once, after the window is up,
+  **never on the boot path** (zero startup cost), and a dev build skips it
+  entirely. When a newer version is published, a top-right **"Update N
+  available"** chip appears and a **What's New** panel shows that release's
+  **patch notes** (scrollable). Turn the setting off for no outbound call.
+  *(Downloading and applying the update in-app is the next step; for now "Get
+  the update" opens the release page.)*

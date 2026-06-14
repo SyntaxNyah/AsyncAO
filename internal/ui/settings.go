@@ -308,6 +308,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetStreamerMode(next)
 	}
 	y += 26
+	upd := a.d.Prefs.UpdateCheckEnabled()
+	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
+		a.d.Prefs.SetUpdateCheck(next)
+	}
+	y += 26
 	tabCap := a.d.Prefs.TabCap()
 	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 99); next != tabCap {
 		a.d.Prefs.SetTabCap(next)
