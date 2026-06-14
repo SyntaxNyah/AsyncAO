@@ -299,6 +299,10 @@ type App struct {
 	logSelPressed  bool
 	logSelPrevDown bool
 	logSelFill     sdl.Color // configured highlight colour, cached per frame
+	// Highlight-colour picker (Settings): the hue/sat wheel texture (built once)
+	// and the in-progress hex field text.
+	colorWheel *sdl.Texture
+	colorHex   string
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current

@@ -245,7 +245,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   characters across lines, **Ctrl+C** copies it. The selection is anchored to
   content (not screen rows), so scrolling or new lines never corrupt it, and
   the hit-test binary-searches glyph widths only on the line under the cursor
-  (no per-frame cost). The **highlight colour is configurable** in Settings.
+  (no per-frame cost). The **highlight colour is configurable** in Settings via
+  an **HSV colour wheel** (drag hue/saturation), a **brightness slider**, and a
+  **hex code** field.
   A drag never also opens a link or pins a line; a plain click clears.
 - **Force character names** (Settings, off by default): show every speaker's
   **character** name instead of their custom showname, in both the chatbox and
