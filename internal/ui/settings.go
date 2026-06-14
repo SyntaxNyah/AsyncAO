@@ -1486,18 +1486,15 @@ func normalizeThemeRoot(path string) (root, pickName string) {
 	return path, ""
 }
 
-// volumeRow draws one "<name>  − NN% +" control and returns the value.
+// volumeRow draws one "<name>  [====slider====] NN%" control and returns the
+// value. A draggable slider (click/drag anywhere on the track) instead of
+// +/- buttons — far nicer to set than stepping a button. Continuous 0–100.
 func (a *App) volumeRow(y int32, name string, value int) int {
 	c := a.ctx
-	const volumeStep = 10
 	c.Label(pad, y+4, name+":", ColText)
-	if c.Button(sdl.Rect{X: pad + 130, Y: y, W: 24, H: 24}, "-") && value >= volumeStep {
-		value -= volumeStep
-	}
-	c.Label(pad+162, y+4, fmt.Sprintf("%3d%%", value), ColAccent)
-	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 24, H: 24}, "+") && value <= 100-volumeStep {
-		value += volumeStep
-	}
+	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}
+	value = int(c.Slider(name, track, int32(value), 100))
+	c.Label(track.X+track.W+12, y+4, fmt.Sprintf("%3d%%", value), ColAccent)
 	return value
 }
 

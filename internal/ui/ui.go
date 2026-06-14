@@ -1330,6 +1330,56 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 	return scroll
 }
 
+// Slider draws a horizontal value slider over [0, maxVal] and returns the
+// (possibly updated) value. It mirrors VScrollbar's drag model: drag-captured
+// by id, hover-gated, and mouse-down anywhere on the track jumps the thumb —
+// so it's grabbable rather than a fiddly +/- button press. Continuous (any
+// int in range).
+func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
+	if maxVal <= 0 {
+		return 0
+	}
+	if value < 0 {
+		value = 0
+	}
+	if value > maxVal {
+		value = maxVal
+	}
+	const sliderThumbW = 10
+	span := track.W - sliderThumbW
+	if span < 0 {
+		span = 0
+	}
+	grab := sdl.Rect{X: track.X - scrollGrabSlopPx, Y: track.Y - scrollGrabSlopPx, W: track.W + 2*scrollGrabSlopPx, H: track.H + 2*scrollGrabSlopPx}
+	if c.mouseDown && (c.dragID == id || (c.dragID == "" && c.hovering(grab))) {
+		c.dragID = id
+		if span > 0 {
+			pos := c.mouseX - track.X - sliderThumbW/2
+			if pos < 0 {
+				pos = 0
+			}
+			if pos > span {
+				pos = span
+			}
+			value = pos * maxVal / span
+		}
+	}
+	c.Fill(track, ColPanel)
+	thumbX := track.X
+	if span > 0 {
+		thumbX = track.X + value*span/maxVal
+	}
+	if thumbX > track.X { // filled portion left of the thumb reads as "level"
+		c.Fill(sdl.Rect{X: track.X, Y: track.Y, W: thumbX - track.X, H: track.H}, ColPanelHi)
+	}
+	col := ColPanelHi
+	if c.dragID == id || c.hovering(grab) {
+		col = ColAccent
+	}
+	c.Fill(sdl.Rect{X: thumbX, Y: track.Y, W: sliderThumbW, H: track.H}, col)
+	return value
+}
+
 // HoverPreview tracks dwell time on a widget id; returns true when the
 // full-size preview should show: 3 s hover, or right-click toggles instantly.
 func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
