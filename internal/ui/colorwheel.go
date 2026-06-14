@@ -49,10 +49,10 @@ func (a *App) drawNameColorPicker(y, w int32) int32 {
 		return y
 	}
 	sat, val := a.d.Prefs.NameColorSat(), a.d.Prefs.NameColorVal()
-	ns := a.numberRow(y, "Name saturation", sat, 5, 0, 100)
+	ns := a.sliderRow(y, "Name saturation", sat, 5, 0, 100)
 	c.Label(pad+270, y+4, "0 = grey · 100 = vivid", ColTextDim)
 	y += 30
-	nv := a.numberRow(y, "Name brightness", val, 5, 50, 100)
+	nv := a.sliderRow(y, "Name brightness", val, 5, 50, 100)
 	c.Label(pad+270, y+4, "kept ≥ 50 so names stay readable on the dark panel", ColTextDim)
 	y += 30
 	if ns != sat || nv != val {

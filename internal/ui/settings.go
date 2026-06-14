@@ -753,13 +753,13 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	c.Label(pad, y, "Text speed — how the IC chatbox plays messages:", ColTextDim)
 	y += 20
 	crawl, stay, rate := a.d.Prefs.Timing()
-	crawl = a.numberRow(y, "Text crawl ms", crawl, 5, config.MinTextCrawlMs, config.MaxTextCrawlMs)
+	crawl = a.sliderRow(y, "Text crawl ms", crawl, 5, config.MinTextCrawlMs, config.MaxTextCrawlMs)
 	c.Label(pad+270, y+4, "delay between letters (higher = slower, easier to read)", ColTextDim)
 	y += 26
-	stay = a.numberRow(y, "Text stay ms", stay, 100, 0, config.MaxTextStayMs)
+	stay = a.sliderRow(y, "Text stay ms", stay, 100, 0, config.MaxTextStayMs)
 	c.Label(pad+270, y+4, "pause after a message finishes before the next plays", ColTextDim)
 	y += 26
-	rate = a.numberRow(y, "Chat limit ms", rate, 100, 0, config.MaxChatRateLimitMs)
+	rate = a.sliderRow(y, "Chat limit ms", rate, 100, 0, config.MaxChatRateLimitMs)
 	c.Label(pad+270, y+4, "smallest gap between YOUR sent messages (anti-spam)", ColTextDim)
 	y += 30
 	if c0, s0, r0 := a.d.Prefs.Timing(); c0 != crawl || s0 != stay || r0 != rate {
@@ -1517,6 +1517,38 @@ func (a *App) numberRow(y int32, label string, value, step, min, max int) int {
 			value = next
 		}
 	}
+	return value
+}
+
+// sliderRow is numberRow drawn as a draggable slider (same signature, so it's
+// a drop-in): label, a slider track, then the live value — all left of the
+// pad+270 help text the settings rows use. Drag for coarse; mousewheel over
+// the row still fine-tunes by ±step (numberRow parity). The result snaps to
+// the step grid and clamps to [min, max].
+func (a *App) sliderRow(y int32, label string, value, step, min, max int) int {
+	c := a.ctx
+	c.Label(pad, y+4, label+":", ColText)
+	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 90, H: 16}
+	if span := max - min; span > 0 {
+		value = min + int(c.Slider(label, track, int32(value-min), int32(span)))
+	}
+	if c.hovering(sdl.Rect{X: pad, Y: y, W: 252, H: 26}) && c.wheelY != 0 {
+		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
+		value += int(c.wheelY) * step
+	}
+	if value < min {
+		value = min
+	}
+	if value > max {
+		value = max
+	}
+	if step > 1 { // snap to the step grid for clean values, then re-clamp
+		value = ((value-min+step/2)/step)*step + min
+		if value > max {
+			value = max
+		}
+	}
+	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%d", value), ColAccent)
 	return value
 }
 
