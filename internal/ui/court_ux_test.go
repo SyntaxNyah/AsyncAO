@@ -4,6 +4,7 @@ import (
 	"image"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -243,5 +244,29 @@ func TestTabChipLabelMemoized(t *testing.T) {
 	a.tabs[1].unread = 4
 	if got := a.tabChipLabel(1); got != "Other (4)" {
 		t.Errorf("rebuilt label = %q, want Other (4)", got)
+	}
+}
+
+// TestTimerChipLabelsMemoized pins the server-clock overlay: correct "Tn mm:ss"
+// labels and ZERO allocations for a stable (paused) clock — the always-on draw
+// asks every frame, so only a ticking second should rebuild.
+func TestTimerChipLabelsMemoized(t *testing.T) {
+	a := &App{sessionState: sessionState{sess: &courtroom.Session{}}}
+	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second} // paused 01:30
+	a.sess.Timers[2] = courtroom.TimerState{Visible: true, Left: 5 * time.Second}  // paused 00:05
+
+	now := time.Now()
+	chips := a.timerChipLabels(now)
+	if len(chips) != 2 || chips[0] != "T1 01:30" || chips[1] != "T3 00:05" {
+		t.Fatalf("labels = %v, want [T1 01:30 T3 00:05]", chips)
+	}
+	// Paused clocks are stable → the per-frame ask allocates nothing.
+	if n := testing.AllocsPerRun(100, func() { _ = a.timerChipLabels(now) }); n != 0 {
+		t.Errorf("steady-state allocs = %v, want 0", n)
+	}
+	// A changed second rebuilds that timer's label.
+	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 91 * time.Second}
+	if got := a.timerChipLabels(now); got[0] != "T1 01:31" {
+		t.Errorf("rebuilt label = %q, want T1 01:31", got[0])
 	}
 }

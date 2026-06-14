@@ -477,7 +477,13 @@ type sessionState struct {
 	// {page, pages, total} change (same idiom as the generation-cached pages).
 	emotePageLabel    string
 	emotePageLabelKey [3]int
-	charBlips         string // char.ini blips/gender (outgoing default)
+	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their
+	// displayed second changes, into a reused scratch slice — so a visible (esp.
+	// paused) clock costs nothing on the always-on courtroom draw.
+	timerChips     []string
+	timerLabels    [courtroom.TimerCount]string
+	timerLabelSecs [courtroom.TimerCount]int
+	charBlips      string // char.ini blips/gender (outgoing default)
 	// 2.10 custom shouts ([Shouts] in char.ini): customIdx −1 = the base
 	// "custom" art, ≥ 0 indexes customShouts.
 	customShouts []courtroom.CustomShout

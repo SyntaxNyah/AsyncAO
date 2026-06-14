@@ -201,6 +201,32 @@ func pageFrameLoop(page *render.TexturePage, elapsed time.Duration) int {
 
 // --- viewport overlays ---------------------------------------------------------
 
+// timerChipLabels returns the visible server clocks' "Tn mm:ss" labels for the
+// overlay, into a REUSED backing slice and memoized per displayed second — so a
+// stable (e.g. paused) clock allocates nothing on the always-on courtroom draw,
+// and a running one rebuilds at most once per second instead of every frame.
+func (a *App) timerChipLabels(now time.Time) []string {
+	chips := a.timerChips[:0]
+	for id := 0; id < courtroom.TimerCount; id++ {
+		t := &a.sess.Timers[id]
+		if !t.Visible {
+			continue
+		}
+		secs := int(t.Remaining(now).Seconds())
+		if secs < 0 {
+			secs = 0
+		}
+		// A built label is never "" → that doubles as the "not yet built" check.
+		if a.timerLabels[id] == "" || a.timerLabelSecs[id] != secs {
+			a.timerLabels[id] = fmt.Sprintf("T%d %02d:%02d", id+1, secs/60, secs%60)
+			a.timerLabelSecs[id] = secs
+		}
+		chips = append(chips, a.timerLabels[id])
+	}
+	a.timerChips = chips // keep the grown backing for next frame's reuse
+	return chips
+}
+
 // drawCourtOverlays paints the live court state over the viewport: penalty
 // bars, server clocks, the testimony badge, the presented-evidence popup,
 // and the WT/CE/verdict splash (top-most). lay positions the bars at their
@@ -232,16 +258,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 	// Server clocks: centered chips along the viewport top (between the
 	// bars), drawn only while the server marked them visible.
 	if !a.panelHidden(panelTimers) {
-		var chips []string
-		for id := 0; id < courtroom.TimerCount; id++ {
-			t := &a.sess.Timers[id]
-			if !t.Visible {
-				continue
-			}
-			rem := t.Remaining(now)
-			chips = append(chips, fmt.Sprintf("T%d %02d:%02d", id+1,
-				int(rem.Minutes()), int(rem.Seconds())%60))
-		}
+		chips := a.timerChipLabels(now)
 		var totalW int32
 		for _, label := range chips {
 			totalW += c.TextWidth(label) + 12 + 6
