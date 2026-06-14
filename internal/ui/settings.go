@@ -319,6 +319,24 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	}
 	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection (default 6)", ColTextDim)
 	y += 30
+	// Log-selection highlight colour (drag-select in IC/OOC): a live swatch
+	// plus R/G/B spinners. Stored packed; the highlight draws it translucent.
+	hl := a.d.Prefs.HighlightColorRGB()
+	hr, hg, hb := hl>>16&0xFF, hl>>8&0xFF, hl&0xFF
+	c.Label(pad, y+4, "Highlight colour (IC/OOC text selection):", ColText)
+	sw := sdl.Rect{X: pad + 330, Y: y, W: 48, H: 22}
+	c.Fill(sw, sdl.Color{R: uint8(hr), G: uint8(hg), B: uint8(hb), A: 255})
+	c.Border(sw, ColPanelHi)
+	y += 28
+	nr := a.numberRow(y, "  Red", hr, 15, 0, 255)
+	y += 26
+	ng := a.numberRow(y, "  Green", hg, 15, 0, 255)
+	y += 26
+	nb := a.numberRow(y, "  Blue", hb, 15, 0, 255)
+	y += 26
+	if nr != hr || ng != hg || nb != hb {
+		a.d.Prefs.SetHighlightColor(nr<<16 | ng<<8 | nb)
+	}
 	smooth := a.d.Prefs.SmoothScalingEnabled()
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
 		a.d.Prefs.SetSmoothScaling(next)

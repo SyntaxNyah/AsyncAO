@@ -298,6 +298,7 @@ type App struct {
 	logSelHead     selPoint
 	logSelPressed  bool
 	logSelPrevDown bool
+	logSelFill     sdl.Color // configured highlight colour, cached per frame
 
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a

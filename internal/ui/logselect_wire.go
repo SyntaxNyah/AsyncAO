@@ -19,9 +19,17 @@ const (
 	logSelOOC
 )
 
-// logSelColor is the highlight fill — translucent so the text reads through.
-// (A configurable colour is the next slice.)
-var logSelColor = sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90}
+// logSelAlpha keeps the highlight translucent so the text reads through it,
+// whatever RGB the user picks in Settings.
+const logSelAlpha = 96
+
+// highlightFill is the configured selection colour (Settings → packed RGB) at
+// the fixed translucent alpha. Read once per frame into a.logSelFill while a
+// selection is active, so the per-line draw never locks prefs.
+func (a *App) highlightFill() sdl.Color {
+	rgb := a.d.Prefs.HighlightColorRGB()
+	return sdl.Color{R: uint8(rgb >> 16), G: uint8(rgb >> 8), B: uint8(rgb), A: logSelAlpha}
+}
 
 // logLineCount / logLineText give the shared selection code random access to a
 // log's CURRENT wrapped display lines. Selection only needs the displayed text
@@ -93,6 +101,9 @@ func (a *App) logPointAt(which int, listX, listY, scroll, lineH, mx, my int32) s
 func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int32) {
 	c := a.ctx
 	n := a.logLineCount(which)
+	if a.logSelActive {
+		a.logSelFill = a.highlightFill() // cache once/frame; the per-line draw won't lock
+	}
 	inText := c.mouseX >= list.X && c.mouseX <= list.X+wrapW // exclude the scrollbar
 	if a.logSelPressed && n > 0 && c.hovering(list) && inText {
 		p := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
@@ -146,6 +157,6 @@ func (a *App) drawLogSelHighlight(which, li int, listX, y, wrapW, lineH int32, t
 		x1 = listX + logPrefixWidth(font, runes, hi.off)
 	}
 	if x1 > x0 {
-		a.ctx.Fill(sdl.Rect{X: x0, Y: y, W: x1 - x0, H: lineH}, logSelColor)
+		a.ctx.Fill(sdl.Rect{X: x0, Y: y, W: x1 - x0, H: lineH}, a.logSelFill)
 	}
 }

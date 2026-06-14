@@ -115,6 +115,11 @@ const defaultSmoothScaling = true
 // async probe fired off the boot path, and a dev build never hits the network.
 const defaultUpdateCheck = true
 
+// defaultHighlightColor is the IC/OOC log text-selection highlight, packed
+// 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
+// until the user customizes it in Settings.
+const defaultHighlightColor = 0x78AAFF
+
 // Layout scale bounds (percent). Defaults preserve the original layout:
 // viewport 66 ≈ the old fixed 2/3 width; the text/height scales at 100.
 const (
@@ -203,6 +208,7 @@ type AssetPreferences struct {
 	EmoteButtonImages      bool                         `json:"emoteButtonImages"`
 	SmoothScaling          bool                         `json:"smoothScaling"`
 	UpdateCheck            bool                         `json:"updateCheck"`
+	HighlightColor         int                          `json:"highlightColor"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
@@ -280,7 +286,8 @@ type prefsJSON struct {
 	PreferAnimated         *bool `json:"preferAnimated"`
 	EmoteButtonImages      *bool `json:"emoteButtonImages"`
 	SmoothScaling          *bool `json:"smoothScaling"`
-	UpdateCheck            *bool `json:"updateCheck"` // absent = default ON
+	UpdateCheck            *bool `json:"updateCheck"`    // absent = default ON
+	HighlightColor         *int  `json:"highlightColor"` // absent = default accent
 	DebugOverlay           bool  `json:"debugOverlay"`
 	FormatAutoDetect       *bool `json:"formatAutoDetect"`  // absent = default ON
 	ThemeLayout            *bool `json:"themeLayout"`       // absent = default ON
@@ -505,6 +512,7 @@ func load(path string) (*AssetPreferences, error) {
 		EmoteButtonImages: defaultEmoteButtonImages,
 		SmoothScaling:     defaultSmoothScaling,
 		UpdateCheck:       defaultUpdateCheck,
+		HighlightColor:    defaultHighlightColor,
 		AutoDetectFormats: defaultFormatAutoDetect,
 		ThemeLayoutOn:     defaultThemeLayout,
 		UIScaleAutoOn:     defaultUIScaleAuto,
@@ -554,6 +562,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.UpdateCheck != nil {
 		p.UpdateCheck = *onDisk.UpdateCheck
+	}
+	if onDisk.HighlightColor != nil {
+		p.HighlightColor = *onDisk.HighlightColor & 0xFFFFFF
 	}
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
@@ -1003,6 +1014,26 @@ func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
 		return
 	}
 	p.UpdateCheck = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// HighlightColorRGB returns the packed 0xRRGGBB log-selection highlight colour.
+func (p *AssetPreferences) HighlightColorRGB() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.HighlightColor & 0xFFFFFF
+}
+
+// SetHighlightColor stores a packed 0xRRGGBB log-selection highlight colour.
+func (p *AssetPreferences) SetHighlightColor(rgb int) {
+	rgb &= 0xFFFFFF
+	p.mu.Lock()
+	if p.HighlightColor == rgb {
+		p.mu.Unlock()
+		return
+	}
+	p.HighlightColor = rgb
 	p.mu.Unlock()
 	p.markDirty()
 }
