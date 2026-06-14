@@ -120,6 +120,15 @@ const defaultUpdateCheck = true
 // until the user customizes it in Settings.
 const defaultHighlightColor = 0x78AAFF
 
+// Background slideshow (M5, OFF by default): while the courtroom is idle (no
+// message on stage), cycle through the server's backgrounds every N seconds as
+// ambiance. Bounded so the timer can't be set pathologically fast or slow.
+const (
+	defaultBgSlideshowSecs = 15
+	minBgSlideshowSecs     = 3
+	maxBgSlideshowSecs     = 600
+)
+
 // Layout scale bounds (percent). Defaults preserve the original layout:
 // viewport 66 ≈ the old fixed 2/3 width; the text/height scales at 100.
 const (
@@ -209,6 +218,8 @@ type AssetPreferences struct {
 	SmoothScaling          bool                         `json:"smoothScaling"`
 	UpdateCheck            bool                         `json:"updateCheck"`
 	HighlightColor         int                          `json:"highlightColor"`
+	BgSlideshow            bool                         `json:"bgSlideshow"`
+	BgSlideshowSecs        int                          `json:"bgSlideshowSecs"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
@@ -288,6 +299,8 @@ type prefsJSON struct {
 	SmoothScaling          *bool `json:"smoothScaling"`
 	UpdateCheck            *bool `json:"updateCheck"`    // absent = default ON
 	HighlightColor         *int  `json:"highlightColor"` // absent = default accent
+	BgSlideshow            bool  `json:"bgSlideshow"`    // default OFF (zero value)
+	BgSlideshowSecs        int   `json:"bgSlideshowSecs"`
 	DebugOverlay           bool  `json:"debugOverlay"`
 	FormatAutoDetect       *bool `json:"formatAutoDetect"`  // absent = default ON
 	ThemeLayout            *bool `json:"themeLayout"`       // absent = default ON
@@ -513,6 +526,7 @@ func load(path string) (*AssetPreferences, error) {
 		SmoothScaling:     defaultSmoothScaling,
 		UpdateCheck:       defaultUpdateCheck,
 		HighlightColor:    defaultHighlightColor,
+		BgSlideshowSecs:   defaultBgSlideshowSecs,
 		AutoDetectFormats: defaultFormatAutoDetect,
 		ThemeLayoutOn:     defaultThemeLayout,
 		UIScaleAutoOn:     defaultUIScaleAuto,
@@ -565,6 +579,10 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.HighlightColor != nil {
 		p.HighlightColor = *onDisk.HighlightColor & 0xFFFFFF
+	}
+	p.BgSlideshow = onDisk.BgSlideshow
+	if onDisk.BgSlideshowSecs > 0 { // 0 (absent) keeps the New() default
+		p.BgSlideshowSecs = onDisk.BgSlideshowSecs
 	}
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
@@ -1034,6 +1052,49 @@ func (p *AssetPreferences) SetHighlightColor(rgb int) {
 		return
 	}
 	p.HighlightColor = rgb
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// BgSlideshowEnabled reports the idle background-slideshow toggle (OFF default).
+func (p *AssetPreferences) BgSlideshowEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.BgSlideshow
+}
+
+// SetBgSlideshow toggles the idle background slideshow.
+func (p *AssetPreferences) SetBgSlideshow(on bool) {
+	p.mu.Lock()
+	if p.BgSlideshow == on {
+		p.mu.Unlock()
+		return
+	}
+	p.BgSlideshow = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// BgSlideshowSeconds is the per-background dwell time, clamped to its bounds
+// (an unset/zero value falls back to the default).
+func (p *AssetPreferences) BgSlideshowSeconds() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.BgSlideshowSecs <= 0 {
+		return defaultBgSlideshowSecs
+	}
+	return clampPercent(p.BgSlideshowSecs, minBgSlideshowSecs, maxBgSlideshowSecs)
+}
+
+// SetBgSlideshowSeconds clamps and persists the slideshow dwell time.
+func (p *AssetPreferences) SetBgSlideshowSeconds(n int) {
+	n = clampPercent(n, minBgSlideshowSecs, maxBgSlideshowSecs)
+	p.mu.Lock()
+	if p.BgSlideshowSecs == n {
+		p.mu.Unlock()
+		return
+	}
+	p.BgSlideshowSecs = n
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -40,12 +40,13 @@ func (a *App) zoomDst(vp sdl.Rect) sdl.Rect {
 // only while zoomed) and the 1× reset chip.
 func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	c := a.ctx
+	sc := a.renderScene() // real scene, or the slideshow's background override
 	if a.vpZoom <= 1 {
-		a.d.Viewport.Render(c.Ren, &a.room.Scene, vp)
+		a.d.Viewport.Render(c.Ren, sc, vp)
 		return
 	}
 	_ = c.Ren.SetClipRect(&vp)
-	a.d.Viewport.Render(c.Ren, &a.room.Scene, a.zoomDst(vp))
+	a.d.Viewport.Render(c.Ren, sc, a.zoomDst(vp))
 	_ = c.Ren.SetClipRect(nil)
 	// Reset chip, top-right of the stage.
 	chip := sdl.Rect{X: vp.X + vp.W - 40, Y: vp.Y + 4, W: 36, H: 20}

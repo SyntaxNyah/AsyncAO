@@ -337,6 +337,20 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	if nr != hr || ng != hg || nb != hb {
 		a.d.Prefs.SetHighlightColor(nr<<16 | ng<<8 | nb)
 	}
+	slideOn := a.d.Prefs.BgSlideshowEnabled()
+	if next := c.Checkbox(pad, y, "Background slideshow (OFF by default): when the courtroom is idle, cycle the stage through this server's backgrounds as ambiance", slideOn); next != slideOn {
+		a.d.Prefs.SetBgSlideshow(next)
+	}
+	y += 26
+	if slideOn {
+		secs := a.d.Prefs.BgSlideshowSeconds()
+		// Bounds match the config clamp (3..600s); SetBgSlideshowSeconds is authoritative.
+		if next := a.numberRow(y, "  Seconds per background", secs, 1, 3, 600); next != secs {
+			a.d.Prefs.SetBgSlideshowSeconds(next)
+		}
+		c.Label(pad+270, y+4, "only while idle — a message instantly shows the real area background again", ColTextDim)
+		y += 30
+	}
 	smooth := a.d.Prefs.SmoothScalingEnabled()
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
 		a.d.Prefs.SetSmoothScaling(next)

@@ -300,6 +300,16 @@ type App struct {
 	logSelPrevDown bool
 	logSelFill     sdl.Color // configured highlight colour, cached per frame
 
+	// --- M5 background slideshow (idle ambiance, off by default) ---
+	// While enabled AND the courtroom is idle, slideBG holds the current
+	// rotation background URL ("" = not overriding). The viewport renders a
+	// shallow Scene copy (slideScene) carrying that background, so the real
+	// scene is never mutated and a live message reverts instantly.
+	slideIdx   int
+	slideAt    time.Time
+	slideBG    string
+	slideScene courtroom.Scene
+
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
 	// slow stale load can never clobber a fresh one (rapid theme cycling
@@ -2068,6 +2078,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollCharBind()
 	a.pollMacroBind()
 	a.pollDownload()
+	a.pollBgList() // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	if a.room != nil {
@@ -2085,6 +2096,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.musicDucked = wantDuck
 			a.applyAudioVolumes()
 		}
+		a.updateSlideshow(p)
 	}
 	a.d.Audio.Frame()
 	a.d.Pump.Frame()

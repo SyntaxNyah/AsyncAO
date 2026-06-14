@@ -196,6 +196,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   with no directory listing. Click the star again to unpin. Your favorites also
   show up in the **Wardrobe's Backgrounds section** (below), where you can sort
   them into folders and change the room to one with a click.
+- **Background slideshow** (Settings → **OFF by default**): when the courtroom
+  is **idle** (no message on stage), the stage cycles through the server's
+  backgrounds every few seconds (configurable, 3–600 s) as ambiance. It's a
+  pure render-time overlay — it never changes the area for anyone and never
+  touches a live scene, so **the instant a message arrives the real background
+  is back**. The desk is hidden while it cycles so the scenery reads clean.
+  Backgrounds are discovered the same way the picker finds them.
 - The custom shout button appears **only for characters that ship one**
   (char.ini `custom_name` or `[Shouts]`; a streaming client can't stat
   `custom.gif` the way AO2-Client does).
