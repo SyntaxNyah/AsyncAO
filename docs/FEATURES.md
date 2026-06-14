@@ -122,9 +122,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Reset to defaults** (Settings, with a confirmation pop-up): two scopes —
   **Reset settings** reverts the whole settings page (scales, volumes, theme,
   hotkeys, colours, toggles) to defaults but KEEPS your favourites, wardrobes,
-  servers & logins, callwords, learned formats and disk cache; **Wipe
-  everything** is a fresh-install factory reset that also erases those, the
-  logins/passwords, and the disk cache. Robust by construction — the reset
+  servers & logins, callwords, learned formats, the jukebox library and disk
+  cache; **Wipe everything** is a fresh-install factory reset that also erases
+  those (the jukebox library included), the logins/passwords, and the disk
+  cache. Robust by construction — the reset
   copies a fresh-defaults struct over every setting via reflection, so a
   newly-added option resets automatically (a guard test pins the preserved-data
   field names). Applies live (no restart) and re-pulls the derived UI state.
@@ -190,6 +191,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Hideable chrome**: shout row, layout knobs, emote grid, right column,
   OOC row, HP bars, clocks, badge, judge row — persisted per user.
 - **Stop music** button on the Music tab.
+- **Jukebox playlist** (Wardrobe → **Jukebox** tab): a library of the music
+  links DJs/CMs `/play` in OOC (YouTube/Discord/etc.), organized into named
+  playlists (folders) so you click instead of paste. Per song: **▶ Play**
+  (sends `/play <url>` in OOC), **Open ↗** (browser), **Share** (drops the raw
+  link in your OOC box to post for others), and remove. **Shuffle** one
+  playlist or everything (random `/play`). **Bare-key binds**: assign a key to
+  a song (plays it) or to a playlist (shuffles it) and fire it from the
+  courtroom with no text field focused — these take priority over character
+  keybinds and the emote 1–9 digits (a deliberate DJ trade). Memoized search.
+  The library is **global** — shared across every server (the links are) — and
+  lives in its own async-written `jukebox.json` (capped: 200 playlists / 50000
+  links / one debounced writer), so a huge collection never bloats or
+  re-serializes the prefs file. Play/Share need a live connection (and DJ/CM
+  rights, which the server enforces). Kept by **Reset settings**, erased by
+  **Wipe everything**.
 - **Real dropdowns** for the IC text color (named colors + live swatch)
   and the position selector (AO2 ui_pos_dropdown parity, SD list when
   sent) — open lists draw above everything, auto-widen to their options,
