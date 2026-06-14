@@ -12,6 +12,7 @@ package ui
 
 import (
 	"context"
+	"os"
 	"runtime"
 	"strings"
 
@@ -44,6 +45,14 @@ func (a *App) maybeKickUpdateCheck() {
 		return
 	}
 	a.updateChecked = true
+	// Clear a leftover .old backup from a previous self-update — off the render
+	// thread (disk I/O) and off the boot path (frame 1), regardless of the
+	// check pref (you want the stale binary gone even with checks disabled).
+	go func() {
+		if exe, err := os.Executable(); err == nil {
+			update.CleanupOldVersion(exe)
+		}
+	}()
 	if !a.d.Prefs.UpdateCheckEnabled() {
 		return
 	}
