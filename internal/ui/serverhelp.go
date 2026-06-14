@@ -108,6 +108,7 @@ var serverProjects = []serverProject{
 			"Extending it means writing .NET plugins rather than patching the core.",
 			"WSS support landed very recently, alongside plain WS.",
 		},
+		warn:    "No modern 2.11 player-list support.",
 		credits: "Enovale",
 		links:   []string{"https://github.com/Enovale/Alibi"},
 	},
