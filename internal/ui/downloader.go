@@ -34,6 +34,7 @@ const (
 	dlMaxDepth = 8       // folder recursion depth
 	dlDirCap   = 8192    // entries parsed per directory listing
 	dlSoundCap = 4096    // distinct char.ini sounds resolved per job
+	dlQueueCap = 128     // grabs queued behind the active one (rule §17.4)
 
 	dlDirPerm  = 0o755
 	dlFilePerm = 0o644
@@ -46,8 +47,9 @@ const (
 	charINIFileName = "char.ini"
 )
 
-// downloader is the opt-in downloader's runtime state. One job at a time;
-// progress lands on a latest-wins channel drained each frame by pollDownload.
+// downloader is the opt-in downloader's runtime state. One job runs at a time;
+// further grabs wait in queue (v2). Progress lands on a latest-wins channel
+// drained each frame by pollDownload, which also starts the next queued job.
 type downloader struct {
 	active   bool
 	label    string // "character X" / "background Y" — shown on the indicator
@@ -58,6 +60,13 @@ type downloader struct {
 	bytes    int64
 	cancel   context.CancelFunc
 	progress chan dlProgress
+	queue    []dlReq // grabs waiting behind the active one (render-thread only)
+}
+
+// dlReq is one queued grab — the args launchDownload needs. The queue is
+// render-thread-only App state; the worker goroutine never touches it.
+type dlReq struct {
+	label, rootURL, destBase, soundChar, target string
 }
 
 // dlProgress is one progress snapshot from the worker goroutine.
@@ -101,14 +110,23 @@ func (a *App) pollDownload() {
 		if p.done {
 			a.dl.active = false
 			a.dl.cancel = nil
-			a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (Add the downloads folder to local mounts to use offline.)",
-				p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs))
+			if len(a.dl.queue) > 0 {
+				// Pop the next grab and start it (in place — bounded backing).
+				next := a.dl.queue[0]
+				a.dl.queue = append(a.dl.queue[:0], a.dl.queue[1:]...)
+				a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. Starting next (%d queued)...",
+					p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs), len(a.dl.queue))
+				a.launchDownload(next)
+			} else {
+				a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (Add the downloads folder to local mounts to use offline.)",
+					p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs))
+			}
 		} else {
 			a.dl.status = fmt.Sprintf("Downloading %s... %d files, %.1f MiB", p.label, p.files, float64(p.bytes)/(1<<20))
 			// Build the compact chip string here (only when progress changes),
 			// so the per-frame indicator draw stays allocation-free.
-			a.dl.chip = fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB",
-				downloadGlyph, p.label, p.files, float64(p.bytes)/(1<<20))
+			a.dl.chip = fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB%s",
+				downloadGlyph, p.label, p.files, float64(p.bytes)/(1<<20), dlQueued(len(a.dl.queue)))
 		}
 	default:
 	}
@@ -121,11 +139,34 @@ func dlErrSuffix(n int) string {
 	return fmt.Sprintf(" (%d skipped)", n)
 }
 
-// cancelDownload stops an in-flight job (Cancel button, disconnect, quit).
+// dlQueued is the " (+N queued)" suffix on the live indicator chip.
+func dlQueued(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (+%d queued)", n)
+}
+
+// cancelDownload stops everything: the in-flight job AND the pending queue
+// (Cancel button, disconnect, quit). Clearing the queue first means the done
+// snapshot won't auto-start the next one.
 func (a *App) cancelDownload() {
+	a.dl.queue = a.dl.queue[:0]
 	if a.dl.cancel != nil {
 		a.dl.cancel()
 	}
+}
+
+// dlQueuedTarget reports whether an asset is waiting in the download queue (for
+// the per-cell "queued" marker). Linear over the bounded queue (dlQueueCap),
+// only for visible cells — cheap.
+func (a *App) dlQueuedTarget(target string) bool {
+	for _, q := range a.dl.queue {
+		if q.target == target {
+			return true
+		}
+	}
+	return false
 }
 
 // drawDownloadBadge paints the ↓ download badge in a grid cell's bottom-right
@@ -167,48 +208,72 @@ func (a *App) drawDownloadIndicator(w int32) {
 // OUTSIDE the character folder, so a plain folder grab leaves it silent.
 func (a *App) startCharDownload(char string) {
 	dest := filepath.Join(downloadsRoot(), "characters", strings.ToLower(char))
-	a.startDownload("character "+char, a.urls.CharFolder(char), dest, char, char)
+	a.enqueueDownload(dlReq{label: "character " + char, rootURL: a.urls.CharFolder(char), destBase: dest, soundChar: char, target: char})
 }
 
 // startBgDownload grabs one background's folder (no external sound deps).
 func (a *App) startBgDownload(bg string) {
 	dest := filepath.Join(downloadsRoot(), "background", strings.ToLower(bg))
-	a.startDownload("background "+bg, a.urls.BackgroundFolder(bg), dest, "", bg)
+	a.enqueueDownload(dlReq{label: "background " + bg, rootURL: a.urls.BackgroundFolder(bg), destBase: dest, target: bg})
 }
 
-// startDownload launches one recursive folder download off-thread (rule
-// §17.2 — disk writes are fine OFF the render thread). soundChar non-empty
-// means "after the folder, resolve the char.ini sound dependencies"; target
-// is the raw asset name the grid marks as downloading.
-func (a *App) startDownload(label, rootURL, destBase, soundChar, target string) {
+// enqueueDownload starts a grab immediately when idle, else queues it behind
+// the active one (v2). It refuses politely when the downloader is off, the
+// server has no asset URL, the same target is already active/queued, or the
+// queue is full — all render-thread state, no goroutine touches the queue.
+func (a *App) enqueueDownload(req dlReq) {
 	if !a.d.Prefs.CharDownloaderEnabled() {
-		return
-	}
-	if a.dl.active {
-		a.dl.status = "Already downloading " + a.dl.label + " — wait for it to finish."
 		return
 	}
 	if a.d.Client == nil || a.urls.Origin() == "" {
 		a.dl.status = "Downloader needs a connected server with an asset URL."
 		return
 	}
+	if !a.dl.active {
+		a.launchDownload(req)
+		return
+	}
+	if a.dl.target == req.target {
+		a.dl.status = req.label + " is already downloading."
+		return
+	}
+	for _, q := range a.dl.queue {
+		if q.target == req.target {
+			a.dl.status = req.label + " is already queued."
+			return
+		}
+	}
+	if len(a.dl.queue) >= dlQueueCap {
+		a.dl.status = "Download queue is full — let some finish first."
+		return
+	}
+	a.dl.queue = append(a.dl.queue, req)
+	a.dl.status = fmt.Sprintf("Queued %s (%d waiting).", req.label, len(a.dl.queue))
+}
+
+// launchDownload runs one recursive folder download off-thread (rule §17.2 —
+// disk writes are fine OFF the render thread). Caller ensured the downloader is
+// on, a server is connected, and nothing is active. soundChar non-empty means
+// "after the folder, resolve the char.ini sound dependencies".
+func (a *App) launchDownload(req dlReq) {
 	if a.dl.progress == nil {
 		a.dl.progress = make(chan dlProgress, 1)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	a.dl.active = true
-	a.dl.label = label
-	a.dl.target = target
+	a.dl.label = req.label
+	a.dl.target = req.target
 	a.dl.files, a.dl.bytes = 0, 0
 	a.dl.cancel = cancel
-	a.dl.status = "Starting " + label + "..."
-	a.dl.chip = downloadGlyph + " Starting " + label + "..." // seeded; progress refreshes it
+	a.dl.status = "Starting " + req.label + "..."
+	a.dl.chip = downloadGlyph + " Starting " + req.label + "..." // seeded; progress refreshes it
 
 	// Snapshot everything the goroutine touches; it must not read App fields.
-	job := &dlJob{label: label, base: downloadsRoot(), progress: a.dl.progress}
+	job := &dlJob{label: req.label, base: downloadsRoot(), progress: a.dl.progress}
 	client := a.d.Client
 	urls := a.urls
 	exts := audioProbeExts()
+	soundChar, rootURL, destBase := req.soundChar, req.rootURL, req.destBase
 	go func() {
 		defer cancel()
 		job.walk(ctx, client, rootURL, destBase, 0)

@@ -394,14 +394,21 @@ func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int6
 		return // the star claimed the click; don't also select this background
 	}
 
-	// While this background is the active download, mark the cell.
+	// Mark the cell while this background is downloading or queued (v2).
 	if a.dl.active && a.dl.target == name {
 		c.Fill(cell, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 70})
 		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"…", ColText)
+	} else if downloaderOn && a.dlQueuedTarget(name) {
+		c.Label(cell.X+4, cell.Y+4, downloadGlyph+"·", ColTextDim) // waiting in queue
 	}
 	// Download badge (only when the opt-in downloader is on): grabs this
-	// background's whole folder for offline use.
-	if downloaderOn && a.drawDownloadBadge(cell, "Press this to download this background") {
+	// background's whole folder for offline use. Right-clicking the cell does
+	// the same — a quick grab without aiming at the badge (v2).
+	if downloaderOn && a.drawDownloadBadge(cell, "Download / queue this background (or right-click the cell)") {
+		a.startBgDownload(name)
+		return
+	}
+	if downloaderOn && c.rightClicked && c.hovering(cell) {
 		a.startBgDownload(name)
 		return
 	}
