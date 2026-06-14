@@ -380,6 +380,13 @@ type App struct {
 	pairOffX int
 	pairOffY int
 	pairFlip bool
+
+	// dlPaused is the download worker's pause flag — App-global (one worker at
+	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic
+	// can't be copied). The Pause button flips it; the worker polls it. It is
+	// the ONLY state shared with the worker goroutine; everything else the
+	// worker touches is snapshotted at launch, so the two never race.
+	dlPaused atomic.Bool
 }
 
 // sessionState is EVERYTHING scoped to one server session. The active
@@ -597,7 +604,10 @@ type sessionState struct {
 	// bgPick is the "change background" modal (background/ autoindex grid).
 	bgPick bgPicker
 
-	// dl is the opt-in single-asset downloader (off by default).
+	// dl is the opt-in single-asset downloader (off by default). The pause flag
+	// shared with the worker lives in App proper (a.dlPaused), NOT here — this
+	// struct is copied by value on tab park/activate, which can't copy an
+	// atomic, and the worker needs one stable global flag anyway.
 	dl downloader
 
 	// sfxMuted is a session-only SFX mute (Mute SFX hotkey); showHotkeys

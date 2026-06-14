@@ -1042,8 +1042,17 @@ func (a *App) drawDownloaderSettings(y, w int32) int32 {
 			settings.statusLine = "Added the downloads folder to local mounts."
 		}
 		y += 30
-		if a.dl.active {
-			c.LabelClipped(pad+20, y+4, w-pad-150-scrollBarW, a.dl.status, ColAccent)
+		if a.dl.active || len(a.dl.queue) > 0 {
+			status := a.dl.status
+			pauseLabel := "Pause"
+			if a.dlPaused.Load() {
+				pauseLabel = "Resume"
+				status = "Paused — " + status
+			}
+			c.LabelClipped(pad+20, y+4, w-pad-240-scrollBarW, status, ColAccent)
+			if c.Button(sdl.Rect{X: w - pad - 218 - scrollBarW, Y: y, W: 100, H: btnH}, pauseLabel) {
+				a.dlPaused.Store(!a.dlPaused.Load())
+			}
 			if c.Button(sdl.Rect{X: w - pad - 110 - scrollBarW, Y: y, W: 110, H: btnH}, "Cancel") {
 				a.cancelDownload()
 			}

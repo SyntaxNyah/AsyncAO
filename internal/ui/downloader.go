@@ -18,6 +18,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -35,6 +37,10 @@ const (
 	dlDirCap   = 8192    // entries parsed per directory listing
 	dlSoundCap = 4096    // distinct char.ini sounds resolved per job
 	dlQueueCap = 128     // grabs queued behind the active one (rule §17.4)
+
+	// dlPausePoll is how often a paused worker re-checks the pause flag (and
+	// cancellation) — short enough to feel instant on resume, idle otherwise.
+	dlPausePoll = 150 * time.Millisecond
 
 	dlDirPerm  = 0o755
 	dlFilePerm = 0o644
@@ -97,38 +103,42 @@ func downloadsRoot() string {
 	return downloadsRootMemo
 }
 
-// pollDownload drains the latest progress snapshot into the status line and
-// flips active off when the job finishes. Runs every frame (Frame) so the
-// status is current and "active" can't wedge after a job ends off-screen.
+// pollDownload drains the latest progress snapshot into the status line, flips
+// active off when a job finishes, and starts the next queued grab when idle and
+// not paused. Runs every frame (Frame). The single per-frame queue check covers
+// done-advance AND resume, and a paused downloader simply doesn't advance it —
+// one rule, no special resume path (advisor #2).
 func (a *App) pollDownload() {
-	if a.dl.progress == nil {
-		return
-	}
-	select {
-	case p := <-a.dl.progress:
-		a.dl.files, a.dl.bytes = p.files, p.bytes
-		if p.done {
-			a.dl.active = false
-			a.dl.cancel = nil
-			if len(a.dl.queue) > 0 {
-				// Pop the next grab and start it (in place — bounded backing).
-				next := a.dl.queue[0]
-				a.dl.queue = append(a.dl.queue[:0], a.dl.queue[1:]...)
-				a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. Starting next (%d queued)...",
-					p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs), len(a.dl.queue))
-				a.launchDownload(next)
+	if a.dl.progress != nil {
+		select {
+		case p := <-a.dl.progress:
+			a.dl.files, a.dl.bytes = p.files, p.bytes
+			if p.done {
+				a.dl.active = false
+				a.dl.cancel = nil
+				if len(a.dl.queue) > 0 {
+					a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (%d queued)",
+						p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs), len(a.dl.queue))
+				} else {
+					a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (Add the downloads folder to local mounts to use offline.)",
+						p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs))
+				}
 			} else {
-				a.dl.status = fmt.Sprintf("Downloaded %s — %d files, %.1f MiB%s. (Add the downloads folder to local mounts to use offline.)",
-					p.label, p.files, float64(p.bytes)/(1<<20), dlErrSuffix(p.errs))
+				a.dl.status = fmt.Sprintf("Downloading %s... %d files, %.1f MiB", p.label, p.files, float64(p.bytes)/(1<<20))
+				// Build the compact chip string here (only when progress changes),
+				// so the per-frame indicator draw stays allocation-free.
+				a.dl.chip = fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB%s",
+					downloadGlyph, p.label, p.files, float64(p.bytes)/(1<<20), dlQueued(len(a.dl.queue)))
 			}
-		} else {
-			a.dl.status = fmt.Sprintf("Downloading %s... %d files, %.1f MiB", p.label, p.files, float64(p.bytes)/(1<<20))
-			// Build the compact chip string here (only when progress changes),
-			// so the per-frame indicator draw stays allocation-free.
-			a.dl.chip = fmt.Sprintf("%s Downloading %s — %d files, %.1f MiB%s",
-				downloadGlyph, p.label, p.files, float64(p.bytes)/(1<<20), dlQueued(len(a.dl.queue)))
+		default:
 		}
-	default:
+	}
+	// Advance the queue when idle and not paused (covers done-advance and
+	// resume; pause stops it here).
+	if !a.dl.active && !a.dlPaused.Load() && len(a.dl.queue) > 0 {
+		next := a.dl.queue[0]
+		a.dl.queue = append(a.dl.queue[:0], a.dl.queue[1:]...)
+		a.launchDownload(next)
 	}
 }
 
@@ -152,6 +162,7 @@ func dlQueued(n int) string {
 // snapshot won't auto-start the next one.
 func (a *App) cancelDownload() {
 	a.dl.queue = a.dl.queue[:0]
+	a.dlPaused.Store(false) // a paused worker wakes on ctx.Done(); clear so the next grab isn't silently paused
 	if a.dl.cancel != nil {
 		a.dl.cancel()
 	}
@@ -199,8 +210,12 @@ func (a *App) drawDownloadIndicator(w int32) {
 	}
 	chip := sdl.Rect{X: x, Y: tabBarH + 4, W: bw, H: btnH}
 	c.Fill(chip, sdl.Color{R: ColPanel.R, G: ColPanel.G, B: ColPanel.B, A: 240})
-	c.Border(chip, ColAccent)
-	c.Label(chip.X+10, chip.Y+5, a.dl.chip, ColAccent)
+	col := ColAccent
+	if a.dlPaused.Load() {
+		col = ColTextDim // dimmed while paused (progress isn't advancing)
+	}
+	c.Border(chip, col)
+	c.Label(chip.X+10, chip.Y+5, a.dl.chip, col)
 }
 
 // startCharDownload grabs one character's folder plus the sfx/blips its
@@ -269,7 +284,8 @@ func (a *App) launchDownload(req dlReq) {
 	a.dl.chip = downloadGlyph + " Starting " + req.label + "..." // seeded; progress refreshes it
 
 	// Snapshot everything the goroutine touches; it must not read App fields.
-	job := &dlJob{label: req.label, base: downloadsRoot(), progress: a.dl.progress}
+	// dlPaused is the one exception — an atomic, safe to share (advisor #3).
+	job := &dlJob{label: req.label, base: downloadsRoot(), progress: a.dl.progress, paused: &a.dlPaused}
 	client := a.d.Client
 	urls := a.urls
 	exts := audioProbeExts()
@@ -301,9 +317,23 @@ type dlJob struct {
 	bytes    int64
 	errs     int
 	progress chan dlProgress
+	paused   *atomic.Bool // shared with the render thread (Pause button)
 }
 
 func (j *dlJob) overBudget() bool { return j.files >= dlMaxFiles || j.bytes >= dlMaxBytes }
+
+// waitWhilePaused blocks the worker while the user has it paused, waking on
+// resume OR on cancellation (so Cancel / disconnect / quit never wedge a paused
+// job). Called at the same per-file checkpoints as the cancel/budget tests.
+func (j *dlJob) waitWhilePaused(ctx context.Context) {
+	for j.paused != nil && j.paused.Load() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(dlPausePoll):
+		}
+	}
+}
 
 // walk recursively downloads a directory listing into destDir.
 func (j *dlJob) walk(ctx context.Context, client *network.Client, dirURL, destDir string, depth int) {
@@ -316,6 +346,7 @@ func (j *dlJob) walk(ctx context.Context, client *network.Client, dirURL, destDi
 		return
 	}
 	for _, e := range parseAutoindexEntries(data, dlDirCap) {
+		j.waitWhilePaused(ctx)
 		if ctx.Err() != nil || j.overBudget() {
 			return
 		}
@@ -363,6 +394,7 @@ func (j *dlJob) resolveCharSounds(ctx context.Context, client *network.Client, u
 	}
 	n := 0
 	for name := range sfx {
+		j.waitWhilePaused(ctx)
 		if ctx.Err() != nil || j.overBudget() || n >= dlSoundCap {
 			return
 		}
@@ -371,6 +403,7 @@ func (j *dlJob) resolveCharSounds(ctx context.Context, client *network.Client, u
 		j.publish(false)
 	}
 	for name := range blips {
+		j.waitWhilePaused(ctx)
 		if ctx.Err() != nil || j.overBudget() || n >= dlSoundCap {
 			return
 		}
