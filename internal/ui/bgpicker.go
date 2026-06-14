@@ -41,6 +41,18 @@ const (
 	bgCellH      int32 = 120
 	bgCellGap    int32 = 10
 	bgCellLabelH int32 = 14
+	// bgThumbBudgetBytes caps the bg-picker's resident thumbnail textures.
+	// Thumbnails are FULL-RESOLUTION backgrounds (≈3.5 MiB each at 1280x720),
+	// so a screenful of HD backgrounds would blow the 64 MiB T1 and the LRU
+	// would thrash -- cells flickering black ("disco"). Capping demand to ~52
+	// MiB keeps the resident set inside T1 (leaving room for the hover preview
+	// and UI text); overflow cells show the name until scrolled. The cap is
+	// BYTE-based off the observed thumbnail size, so small-background servers
+	// (where everything fits) still show every thumbnail -- no regression.
+	// (Proper fix: decode/render downscaled thumbnails -- a focused render pass.)
+	bgThumbBudgetBytes int64 = 52 << 20
+	// bgThumbEstBytes seeds the per-thumb estimate before any has resolved.
+	bgThumbEstBytes int64 = 4 << 20
 )
 
 // bgFetch is one background-directory-listing result, tagged with the server
@@ -69,6 +81,7 @@ type bgPicker struct {
 	ask      []time.Time // demand pacing, parallel to list
 	pages    []*render.TexturePage
 	pagesGen uint64
+	thumbMax int64 // largest observed thumbnail footprint (bytes), for the demand budget
 	q        loweredCache
 	res      chan bgFetch
 	forKey   string // serverKey the current list belongs to
@@ -287,6 +300,10 @@ func (a *App) drawBgPanel(w, h int32) {
 	// Clip the grid so a partially scrolled top/bottom row stays inside the
 	// panel (same overspill guard as the log lists).
 	dlOn := a.d.Prefs.CharDownloaderEnabled() // read once per frame, not per cell
+	// Texture budget for THIS frame's visible thumbnails (drawn top-to-bottom);
+	// once spent, further cells show their name instead of demanding a texture,
+	// so the resident set can't overflow T1 and thrash. See bgThumbBudgetBytes.
+	thumbBudget := bgThumbBudgetBytes
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
 	col, row := int32(0), int32(0)
 	for i := range a.bgPick.list {
@@ -299,7 +316,7 @@ func (a *App) drawBgPanel(w, h int32) {
 		x := panel.X + pad + col*(bgCellW+bgCellGap)
 		yy := gridTop + row*cellStride - a.bgPick.scroll
 		if yy > gridTop-bgCellH && yy < panel.Y+panel.H {
-			a.drawBgCell(i, sdl.Rect{X: x, Y: yy, W: bgCellW, H: bgCellH}, dlOn)
+			a.drawBgCell(i, sdl.Rect{X: x, Y: yy, W: bgCellW, H: bgCellH}, dlOn, &thumbBudget)
 		}
 		col++
 		if col >= cols {
@@ -317,15 +334,28 @@ func (a *App) drawBgPanel(w, h int32) {
 	}
 }
 
-func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool) {
+func (a *App) drawBgCell(idx int, cell sdl.Rect, downloaderOn bool, budget *int64) {
 	c := a.ctx
 	name := a.bgPick.list[idx]
 	c.Fill(cell, ColBackground)
 	base := a.urls.Background(name, bgThumbPart)
 	if page, ok := a.cachedPage(&a.bgPick.pages, &a.bgPick.pagesGen, len(a.bgPick.list), idx, base); ok && len(page.Frames) > 0 {
+		// Resident: always draw it (it's already in T1) and bill its footprint.
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
-	} else {
+		b := int64(page.W) * int64(page.H) * 4
+		*budget -= b
+		if b > a.bgPick.thumbMax {
+			a.bgPick.thumbMax = b // learn the real per-thumb size for the estimate
+		}
+	} else if est := max(a.bgPick.thumbMax, bgThumbEstBytes); *budget >= est {
+		// Not resident, and the budget still allows another full-res thumbnail:
+		// demand it. Bill the estimate so we don't over-commit before it lands.
+		*budget -= est
 		a.demandAsset(&a.bgPick.ask, len(a.bgPick.list), idx, base, assets.AssetTypeBackground) // AssetType: Background (picker thumb)
+		c.LabelClipped(cell.X+4, cell.Y+cell.H/2-8, cell.W-8, name, ColTextDim)
+	} else {
+		// Budget spent: show the name (scroll brings it into the budget). No
+		// demand here, so the LRU isn't asked to hold more than fits.
 		c.LabelClipped(cell.X+4, cell.Y+cell.H/2-8, cell.W-8, name, ColTextDim)
 	}
 	c.Border(cell, ColPanelHi)

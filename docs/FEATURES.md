@@ -183,7 +183,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Each cell shows a `defenseempty` thumbnail; hover or click previews it
   large; a `/bg <name>` button asks the server to change it for the area
   (rehearsal applies the pick locally). Hosts with directory listing off
-  just show a clean "no listing" note and the seeds.
+  just show a clean "no listing" note and the seeds. Thumbnails are
+  full-resolution backgrounds, so to stay inside the 64 MiB texture budget
+  the picker only loads as many as fit (byte-budgeted off the observed size);
+  on HD-background servers the cells past the budget show their name until you
+  scroll, instead of thrashing the cache and flickering. (Small-background
+  servers fit everything and show every thumbnail.)
 - **Favorite backgrounds** (the ★ on each picker cell): pin the backgrounds
   you use, exactly like the wardrobe star. Favorites are **saved per server**,
   float to the top of the list, and a **"Favorites only"** checkbox filters the
