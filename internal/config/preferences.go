@@ -245,6 +245,8 @@ type AssetPreferences struct {
 	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
 	MultiTabCap            int                          `json:"multiTabCap"`
+	RestoreTabs            bool                         `json:"restoreTabs"`
+	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	MusicDuckingOn         bool                         `json:"musicDucking"`
 	FontOverridePaths      string                       `json:"fontPaths"`
@@ -311,33 +313,35 @@ type AssetPreferences struct {
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
 // "absent" from the zero value where the default is not the zero value.
 type prefsJSON struct {
-	GlobalFallbacksEnabled bool   `json:"globalFallbacksEnabled"`
-	PreferAnimated         *bool  `json:"preferAnimated"`
-	EmoteButtonImages      *bool  `json:"emoteButtonImages"`
-	SmoothScaling          *bool  `json:"smoothScaling"`
-	UpdateCheck            *bool  `json:"updateCheck"`    // absent = default ON
-	HighlightColor         *int   `json:"highlightColor"` // absent = default accent
-	BgSlideshow            bool   `json:"bgSlideshow"`    // default OFF (zero value)
-	BgSlideshowSecs        int    `json:"bgSlideshowSecs"`
-	DownloadKBps           int    `json:"downloadKBps"`    // 0 = unlimited (default)
-	ForceCharNames         bool   `json:"forceCharNames"`  // default OFF
-	RandomEmote            bool   `json:"randomEmote"`     // default OFF
-	FriendHighlight        bool   `json:"friendHighlight"` // default OFF
-	FriendNotify           bool   `json:"friendNotify"`    // default OFF
-	FriendOSToast          bool   `json:"friendOSToast"`   // default OFF
-	FriendGlowPulse        bool   `json:"friendGlowPulse"` // default OFF
-	FriendSound            bool   `json:"friendSound"`     // default OFF
-	FriendSoundFile        string `json:"friendSoundFile"`
-	CallwordSoundFile      string `json:"callwordSoundFile"`
-	DebugOverlay           bool   `json:"debugOverlay"`
-	FormatAutoDetect       *bool  `json:"formatAutoDetect"`  // absent = default ON
-	ThemeLayout            *bool  `json:"themeLayout"`       // absent = default ON
-	UIScaleAuto            *bool  `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
-	CatchUpWhenBehind      *bool  `json:"catchUpWhenBehind"` // absent = default ON
-	CatchUpThreshold       *int   `json:"catchUpThreshold"`  // absent = default
-	MultiTabCap            *int   `json:"multiTabCap"`       // absent = default
-	ReduceMotion           bool   `json:"reduceMotion"`      // default OFF (zero value)
-	MusicDucking           bool   `json:"musicDucking"`      // default OFF (zero value)
+	GlobalFallbacksEnabled bool      `json:"globalFallbacksEnabled"`
+	PreferAnimated         *bool     `json:"preferAnimated"`
+	EmoteButtonImages      *bool     `json:"emoteButtonImages"`
+	SmoothScaling          *bool     `json:"smoothScaling"`
+	UpdateCheck            *bool     `json:"updateCheck"`    // absent = default ON
+	HighlightColor         *int      `json:"highlightColor"` // absent = default accent
+	BgSlideshow            bool      `json:"bgSlideshow"`    // default OFF (zero value)
+	BgSlideshowSecs        int       `json:"bgSlideshowSecs"`
+	DownloadKBps           int       `json:"downloadKBps"`    // 0 = unlimited (default)
+	ForceCharNames         bool      `json:"forceCharNames"`  // default OFF
+	RandomEmote            bool      `json:"randomEmote"`     // default OFF
+	FriendHighlight        bool      `json:"friendHighlight"` // default OFF
+	FriendNotify           bool      `json:"friendNotify"`    // default OFF
+	FriendOSToast          bool      `json:"friendOSToast"`   // default OFF
+	FriendGlowPulse        bool      `json:"friendGlowPulse"` // default OFF
+	FriendSound            bool      `json:"friendSound"`     // default OFF
+	FriendSoundFile        string    `json:"friendSoundFile"`
+	CallwordSoundFile      string    `json:"callwordSoundFile"`
+	DebugOverlay           bool      `json:"debugOverlay"`
+	FormatAutoDetect       *bool     `json:"formatAutoDetect"`  // absent = default ON
+	ThemeLayout            *bool     `json:"themeLayout"`       // absent = default ON
+	UIScaleAuto            *bool     `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
+	CatchUpWhenBehind      *bool     `json:"catchUpWhenBehind"` // absent = default ON
+	CatchUpThreshold       *int      `json:"catchUpThreshold"`  // absent = default
+	MultiTabCap            *int      `json:"multiTabCap"`       // absent = default
+	RestoreTabs            bool      `json:"restoreTabs"`       // default OFF (zero value)
+	OpenTabs               []OpenTab `json:"openTabs"`          // remembered tabs for restore-on-launch
+	ReduceMotion           bool      `json:"reduceMotion"`      // default OFF (zero value)
+	MusicDucking           bool      `json:"musicDucking"`      // default OFF (zero value)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -533,6 +537,13 @@ type FavoriteServer struct {
 	Description string `json:"description,omitempty"`
 }
 
+// OpenTab is one remembered server tab for restore-on-launch (M7): the display
+// name and ws URL, enough to reconnect via App.Connect.
+type OpenTab struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 // DefaultPath returns the standard preferences file location:
 // <os.UserConfigDir>/AsyncAO/asset_preferences.json.
 func DefaultPath() (string, error) {
@@ -658,6 +669,8 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.MultiTabCap != nil {
 		p.MultiTabCap = clampPercent(*onDisk.MultiTabCap, minMultiTabCap, maxMultiTabCap)
 	}
+	p.RestoreTabs = onDisk.RestoreTabs
+	p.OpenTabs = onDisk.OpenTabs
 	p.ReduceMotionOn = onDisk.ReduceMotion
 	p.MusicDuckingOn = onDisk.MusicDucking
 	p.FontOverridePaths = onDisk.FontPaths
@@ -1854,6 +1867,52 @@ func (p *AssetPreferences) SetTabCap(n int) {
 		return
 	}
 	p.MultiTabCap = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RestoreTabsOn reports the "reopen my server tabs on launch" toggle (OFF by
+// default). When on, the open tabs are saved on exit and reconnected next time.
+func (p *AssetPreferences) RestoreTabsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RestoreTabs
+}
+
+// SetRestoreTabs toggles restore-on-launch.
+func (p *AssetPreferences) SetRestoreTabs(on bool) {
+	p.mu.Lock()
+	if p.RestoreTabs == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RestoreTabs = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// OpenTabList returns a copy of the remembered open tabs (restore-on-launch).
+func (p *AssetPreferences) OpenTabList() []OpenTab {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.OpenTabs) == 0 {
+		return nil
+	}
+	out := make([]OpenTab, len(p.OpenTabs))
+	copy(out, p.OpenTabs)
+	return out
+}
+
+// SetOpenTabs replaces the remembered open tabs (copied, capped at
+// maxMultiTabCap), persisted for the next launch's restore.
+func (p *AssetPreferences) SetOpenTabs(tabs []OpenTab) {
+	if len(tabs) > maxMultiTabCap {
+		tabs = tabs[:maxMultiTabCap]
+	}
+	cp := make([]OpenTab, len(tabs))
+	copy(cp, tabs)
+	p.mu.Lock()
+	p.OpenTabs = cp
 	p.mu.Unlock()
 	p.markDirty()
 }

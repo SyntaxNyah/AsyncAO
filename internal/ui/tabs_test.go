@@ -124,6 +124,36 @@ func TestTabBackgroundRouting(t *testing.T) {
 	}
 }
 
+// TestCollectOpenTabs pins the restore-on-launch snapshot (M7): the live active
+// tab comes from the session fields, parked tabs from their stored state, in
+// order, and dead / rehearsal / blank-URL / duplicate-URL slots are skipped.
+func TestCollectOpenTabs(t *testing.T) {
+	a := &App{activeTab: 1}
+	a.serverName = "Active"
+	a.serverKey = "wss://active:2096"
+	a.tabs = []*courtTab{
+		{state: sessionState{serverName: "Parked", serverKey: "wss://parked:2096"}},
+		{}, // index 1 = the active tab (its session lives in a.sessionState)
+		{state: sessionState{serverName: "Dead", serverKey: "wss://dead:2096"}, dead: true},
+		{state: sessionState{serverName: "Reh", serverKey: "wss://reh:2096", rehearsal: true}},
+		{state: sessionState{serverName: "NoURL"}},                               // blank URL → skipped
+		{state: sessionState{serverName: "Dup", serverKey: "wss://active:2096"}}, // dup of active
+	}
+	got := a.collectOpenTabs()
+	want := []config.OpenTab{
+		{Name: "Parked", URL: "wss://parked:2096"},
+		{Name: "Active", URL: "wss://active:2096"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("collected %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("tab %d = %v, want %v", i, got[i], want[i])
+		}
+	}
+}
+
 // TestLoweredCacheMemo pins the per-frame query memo.
 func TestLoweredCacheMemo(t *testing.T) {
 	var l loweredCache

@@ -337,6 +337,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	}
 	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection (default 6)", ColTextDim)
 	y += 30
+	restoreTabs := a.d.Prefs.RestoreTabsOn()
+	if next := c.Checkbox(pad, y, "Reopen my server tabs on launch (OFF by default): remembers open servers on exit and reconnects them next time", restoreTabs); next != restoreTabs {
+		a.d.Prefs.SetRestoreTabs(next)
+	}
+	y += 30
 	// Log-selection highlight colour: a hue/saturation wheel + brightness
 	// slider + hex field (drag-select in IC/OOC shows it).
 	y = a.drawHighlightPicker(y, w)

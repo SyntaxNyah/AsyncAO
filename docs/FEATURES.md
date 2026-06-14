@@ -437,6 +437,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   them; the active tab keeps its place in the lineup. A small drag is told
   from a click by a 6px threshold, so a plain click still switches/closes
   and a drag never does both. (The right × hot-zone still only closes.)
+  **Reopen tabs on launch** (Settings → General, **OFF by default**): when on,
+  the open servers are remembered on exit and reconnected next launch — the app
+  reopens each one (one reconnect per frame, so the dials never pile into a
+  single freeze, and each on a short timeout so a since-dead server can't hang
+  startup). Off by default and zero boot cost when off: nothing is read or
+  reconnected, and nothing is persisted, so the default launch is byte-identical.
+  A dead remembered server just shows its error and is skipped.
 - **Rehearsal mode** (lobby → select a visited server → Rehearse):
   browse its character roster and play emotes entirely offline from the
   cache — the manager's network gate closes structurally, nothing

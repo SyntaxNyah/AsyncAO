@@ -314,6 +314,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		}
 	}
 
+	app.RememberOpenTabs() // restore-on-launch: snapshot tabs before the final flush (no-op when off)
 	_ = prefs.SaveNow()
 	return nil
 }

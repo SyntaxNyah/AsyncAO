@@ -83,6 +83,10 @@ const (
 	// which used to hit us whenever the window sat minimized.
 	keepalivePeriod = 45 * time.Second
 
+	// restoreDialTimeout bounds each restore-on-launch reconnect so a dead
+	// remembered server can't freeze boot (manual Join keeps Dial's full 10s).
+	restoreDialTimeout = 4 * time.Second
+
 	// maxDescLines caps the expanded lobby description box.
 	maxDescLines = 6
 	// spriteOvCap bounds the client-side sprite override table.
@@ -265,6 +269,10 @@ type App struct {
 	tabDragStart [2]int32
 	tabDragging  bool
 	tabPrevDown  bool
+	// restoreQueue holds the tabs to reopen on launch (M7, opt-in): populated
+	// once in NewApp when RestoreTabs is on, drained one reconnect per frame by
+	// pumpTabRestore so the blocking dials never pile into a single boot freeze.
+	restoreQueue []config.OpenTab
 
 	// --- M13 self-update (one-shot launch check; see internal/update) ---
 	// updateRes carries a newer release found by the off-thread probe; the
@@ -972,6 +980,17 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		a.oocName = saved
 	}
 	a.RefreshServers()
+	// Restore-on-launch (opt-in, OFF by default): queue the remembered tabs;
+	// Frame reconnects them one per frame. Capped to the live tab cap so we
+	// never queue a connect that allocateTab would reject. Off ⇒ nil queue ⇒
+	// pumpTabRestore is a single length check, so boot is byte-identical.
+	if d.Prefs.RestoreTabsOn() {
+		q := d.Prefs.OpenTabList()
+		if cap := d.Prefs.TabCap(); len(q) > cap {
+			q = q[:cap]
+		}
+		a.restoreQueue = q
+	}
 	return a
 }
 
@@ -1072,6 +1091,13 @@ func (a *App) IsLiveBase(base string) bool {
 // can't background). At the tab cap the connect refuses with a visible
 // reason and the current session stays untouched.
 func (a *App) Connect(name, wsURL string) {
+	a.connectWith(name, wsURL, context.Background())
+}
+
+// connectWith is Connect with a caller-chosen dial context. Manual joins pass
+// context.Background() (Dial's full 10s budget); restore-on-launch passes a
+// short timeout so a dead remembered server can't freeze boot for long.
+func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.parkActive()
 	if !a.allocateTab() {
 		return // connErr set; lobby shows it
@@ -1098,7 +1124,7 @@ func (a *App) Connect(name, wsURL string) {
 			}
 		}
 	}(wsURL)
-	conn, err := protocol.Dial(context.Background(), wsURL)
+	conn, err := protocol.Dial(dialCtx, wsURL)
 	if err != nil {
 		a.connErr = err.Error()
 		a.closeActiveTab()
@@ -1111,6 +1137,59 @@ func (a *App) Connect(name, wsURL string) {
 		return conn.Send(context.Background(), p)
 	}, hdid())
 	a.screen = ScreenCharSelect
+}
+
+// pumpTabRestore reconnects one remembered tab per frame (restore-on-launch),
+// spreading the blocking dials so they never pile into one boot freeze, each on
+// a short dial budget. A no-op (single length check) once the queue is empty,
+// so it costs nothing after startup and nothing at all when the feature is off.
+func (a *App) pumpTabRestore() {
+	if len(a.restoreQueue) == 0 {
+		return
+	}
+	tab := a.restoreQueue[0]
+	a.restoreQueue = a.restoreQueue[1:]
+	ctx, cancel := context.WithTimeout(context.Background(), restoreDialTimeout)
+	defer cancel()
+	a.connectWith(tab.Name, tab.URL, ctx)
+}
+
+// collectOpenTabs snapshots the currently open server tabs (name + ws URL) for
+// restore-on-launch: the live active tab from the session fields, parked tabs
+// from their stored state. Skips rehearsal/dead/blank-URL slots and dedups by
+// URL. Pure over App state (no prefs/IO) so it unit-tests directly. activeTab
+// == -1 (sitting on the lobby) simply contributes no "active" entry.
+func (a *App) collectOpenTabs() []config.OpenTab {
+	out := make([]config.OpenTab, 0, len(a.tabs))
+	seen := make(map[string]struct{}, len(a.tabs))
+	add := func(name, url string, dead, rehearse bool) {
+		if dead || rehearse || url == "" {
+			return
+		}
+		if _, dup := seen[url]; dup {
+			return
+		}
+		seen[url] = struct{}{}
+		out = append(out, config.OpenTab{Name: name, URL: url})
+	}
+	for i, t := range a.tabs {
+		if i == a.activeTab {
+			add(a.serverName, a.serverKey, false, a.rehearsal)
+		} else {
+			add(t.state.serverName, t.state.serverKey, t.dead, t.state.rehearsal)
+		}
+	}
+	return out
+}
+
+// RememberOpenTabs persists the open tabs for next launch's restore — called
+// once at shutdown (before the final SaveNow). No-op unless restore-on-launch
+// is enabled, so the feature is truly zero-cost when off.
+func (a *App) RememberOpenTabs() {
+	if !a.d.Prefs.RestoreTabsOn() {
+		return
+	}
+	a.d.Prefs.SetOpenTabs(a.collectOpenTabs())
 }
 
 // Disconnect tears the ACTIVE session down (its tab closes; other tabs
@@ -2097,6 +2176,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// on screen) read the same value — whichever draws first can't steal it.
 	a.logSelPressed = a.ctx.mouseDown && !a.logSelPrevDown
 	a.logSelPrevDown = a.ctx.mouseDown
+	a.pumpTabRestore()              // restore-on-launch: one reconnect/frame, then idle
 	a.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
 	a.pollUpdate()                  // drain a found release
 	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens

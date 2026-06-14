@@ -755,3 +755,42 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 		t.Fatalf("reloaded master list = %q", got)
 	}
 }
+
+// TestRestoreTabsRoundTrip pins the restore-on-launch prefs (M7): OFF + empty by
+// default, and the toggle + remembered-tab list survive a save/reload.
+func TestRestoreTabsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prefs.json")
+	p, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	if p.RestoreTabsOn() {
+		t.Error("RestoreTabs must default OFF")
+	}
+	if len(p.OpenTabList()) != 0 {
+		t.Error("OpenTabs must default empty")
+	}
+
+	p.SetRestoreTabs(true)
+	p.SetOpenTabs([]OpenTab{
+		{Name: "Alpha", URL: "wss://a.example:2096"},
+		{Name: "Beta", URL: "wss://b.example:2096"},
+	})
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+
+	q, err := load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !q.RestoreTabsOn() {
+		t.Error("reloaded RestoreTabs must be ON")
+	}
+	got := q.OpenTabList()
+	if len(got) != 2 || got[0].Name != "Alpha" || got[0].URL != "wss://a.example:2096" || got[1].URL != "wss://b.example:2096" {
+		t.Fatalf("reloaded OpenTabs = %v", got)
+	}
+}
