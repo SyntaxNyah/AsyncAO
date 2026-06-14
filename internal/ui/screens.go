@@ -1089,6 +1089,14 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	// one key/frame); handleHotkeys leaves an unrecognized chord in c.hotkey.
 	pinChord := c.hotkey != 0 && strings.EqualFold(sdl.GetKeyName(c.hotkey), a.hotkeyFor(hotkeyPinNote))
 	friendsOn := a.d.Prefs.FriendHighlightOn() // gates the per-line friend glow (read once)
+	// Per-speaker name colours (read once): tint each entry's name prefix on its
+	// first wrapped row. Short-circuit so the default OFF path adds nothing.
+	nameColorsOn := a.d.Prefs.NameColorsOn()
+	var nameSat, nameVal float64
+	if nameColorsOn {
+		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
+		nameVal = float64(a.d.Prefs.NameColorVal()) / 100
+	}
 	// Glow alpha, computed once per frame: static by default, or a slow breathe
 	// when FriendGlowPulse is on (suppressed by reduce-motion). Short-circuit
 	// keeps the no-friend default path to a single pref read — no trig, no extra
@@ -1153,7 +1161,24 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if a.icLog[row.entry].url != "" && c.hovering(rowRect) {
 				col = ColAccent
 			}
-			c.LabelClippedFont(font, list.X, y, wrapW, row.text, col)
+			// Per-speaker name colour: on an entry's FIRST wrapped row, draw the
+			// name prefix in its hash colour and the rest in the line colour. Falls
+			// back to a plain draw for system/evidence lines (no speaker) or when
+			// a long name wrapped off this row.
+			drewName := false
+			if nameColorsOn {
+				if sp := a.icLog[row.entry].speaker; sp != "" &&
+					(ri == 0 || rows[ri-1].entry != row.entry) && strings.HasPrefix(row.text, sp) {
+					if nw, _, err := font.SizeUTF8(sp); err == nil {
+						c.LabelClippedFont(font, list.X, y, wrapW, sp, nameColor(sp, nameSat, nameVal))
+						c.LabelClippedFont(font, list.X+int32(nw), y, wrapW-int32(nw), row.text[len(sp):], col)
+						drewName = true
+					}
+				}
+			}
+			if !drewName {
+				c.LabelClippedFont(font, list.X, y, wrapW, row.text, col)
+			}
 			if u := a.icLog[row.entry].url; u != "" && c.hovering(rowRect) {
 				c.Tooltip(rowRect, "Open "+u)
 				if c.clicked {

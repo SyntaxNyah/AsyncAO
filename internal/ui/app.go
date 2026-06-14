@@ -1384,7 +1384,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventMessage:
 			if ev.Message != nil {
 				fr, fc := a.friendMessage(a.serverKey, ev.Message)
-				a.pushIC(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn()), ev.Message.TextColor, fr, fc)
+				force := a.d.Prefs.ForceCharNamesOn()
+				a.pushIC(icLogLine(ev.Message, force), ev.Message.TextColor, fr, fc, icSpeakerName(ev.Message, force))
 				if fr {
 					a.signalFriend(a.serverName, ev.Message)
 				}
@@ -1454,12 +1455,19 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 }
 
 func icLogLine(m *protocol.ChatMessage, forceChar bool) string {
+	// Strip inline markup so the log reads like the chatbox (no raw \cN / { }).
+	return icSpeakerName(m, forceChar) + ": " + courtroom.StripChatMarkup(m.Message)
+}
+
+// icSpeakerName is the displayed name an IC log line is prefixed with — the
+// showname, or the character (force-char-names / no showname). Stored on the
+// entry so per-speaker name colours tint exactly that prefix.
+func icSpeakerName(m *protocol.ChatMessage, forceChar bool) string {
 	name := m.Showname
 	if forceChar || name == "" {
 		name = m.CharName // force-char-names mirrors the chatbox (anti-impersonation)
 	}
-	// Strip inline markup so the log reads like the chatbox (no raw \cN / { }).
-	return name + ": " + courtroom.StripChatMarkup(m.Message)
+	return name
 }
 
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's
@@ -2702,6 +2710,7 @@ type icEntry struct {
 	url         string // first http(s) link in the line ("" = none); makes the line clickable
 	friend      bool   // sender is a highlighted friend (showname match) — glows in the log
 	friendColor int32  // per-friend glow RGB (0xRRGGBB) from a `name=hex` entry; -1 = default friend tint
+	speaker     string // displayed name prefix (for per-speaker name colours); "" = system/evidence line
 }
 
 // friendMessage reports whether a message is from a highlighted friend on the
@@ -2833,12 +2842,12 @@ func (a *App) logDetailed(server, area string, m *protocol.ChatMessage) {
 // CloseTranscript flushes and closes the detailed-log writer at shutdown.
 func (a *App) CloseTranscript() { a.translog.close() }
 
-func (a *App) pushIC(line string, color int, friend bool, friendColor int32) {
+func (a *App) pushIC(line string, color int, friend bool, friendColor int32, speaker string) {
 	url := ""
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: clampLine(line), color: color, url: url, friend: friend, friendColor: friendColor})
+	a.icLog = append(a.icLog, icEntry{text: clampLine(line), color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker})
 	if len(a.icLog) > icLogCap {
 		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
 		a.icLog = a.icLog[:icLogCap]
