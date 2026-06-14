@@ -921,12 +921,8 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 // chatZoomWheel: Ctrl+wheel over the chatbox zooms the chat text
 // (browser convention) — shared by both chatbox flavors.
 func (a *App) chatZoomWheel(box sdl.Rect) {
-	c := a.ctx
-	if c.ctrlHeld && c.wheelY != 0 && c.hovering(box) {
-		a.chatPct = clampInt(a.chatPct+int(c.wheelY)*config.ScaleStepPercent,
-			config.MinChatScalePercent, config.MaxChatScalePercent)
-		a.saveLayout()
-	}
+	// Ctrl+wheel (fine) or wheel-button-held (fast) resizes the chatbox text.
+	a.zoomWheel(box, &a.chatPct, config.MinChatScalePercent, config.MaxChatScalePercent)
 }
 
 func clampInt(v, min, max int) int {
@@ -980,15 +976,10 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		a.logTab = logTabNotes
 	}
 	inner := sdl.Rect{X: r.X + 4, Y: r.Y + btnH + 4, W: r.W - 8, H: r.H - btnH - 8}
-	// Ctrl+wheel anywhere on the panel resizes the log/OOC/list text;
-	// plain wheel keeps scrolling the active list. Taking the wheel here
-	// stops the inner lists' own zoom handlers from double-stepping.
-	if c.ctrlHeld && c.wheelY != 0 && c.hovering(r) {
-		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
-			config.MinLogScalePercent, config.MaxLogScalePercent)
-		a.saveLayout()
-		c.wheelTaken = true
-	}
+	// Ctrl+wheel (fine) or wheel-button-held (fast) anywhere on the panel
+	// resizes the log/OOC/list text; plain wheel keeps scrolling the active
+	// list. Taking the wheel here stops the inner lists' zoom from double-stepping.
+	a.zoomWheel(r, &a.logPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	switch a.logTab {
 	case logTabMusic:
 		a.drawMusicList(inner)
@@ -1043,20 +1034,21 @@ const (
 // is held — "hold the wheel and scroll to zoom the log fast".
 const logFastZoomMultiple = 5
 
-// logZoomWheel zooms the log text when the wheel turns over `list` with Ctrl
-// (fine, one step) OR the middle button held (fast, logFastZoomMultiple steps).
-// Returns true if it consumed the wheel, so the caller skips scrolling. Shared
-// by the IC/OOC log surfaces.
-func (a *App) logZoomWheel(list sdl.Rect) bool {
+// zoomWheel resizes a text scale (*pct, clamped to [min,max]) when the wheel
+// turns over rect with Ctrl (fine, one step) OR the middle button held (fast,
+// logFastZoomMultiple steps). Returns true if it consumed the wheel, so the
+// caller skips scrolling. Shared by every text-zoom surface (IC/OOC log, the
+// right-column panel, the chatbox) so the gesture is identical everywhere.
+func (a *App) zoomWheel(rect sdl.Rect, pct *int, min, max int) bool {
 	c := a.ctx
-	if c.wheelTaken || c.wheelY == 0 || !c.hovering(list) || (!c.ctrlHeld && !c.middleHeld) {
+	if c.wheelTaken || c.wheelY == 0 || !c.hovering(rect) || (!c.ctrlHeld && !c.middleHeld) {
 		return false
 	}
 	step := config.ScaleStepPercent
 	if c.middleHeld {
 		step *= logFastZoomMultiple
 	}
-	a.logPct = clampInt(a.logPct+int(c.wheelY)*step, config.MinLogScalePercent, config.MaxLogScalePercent)
+	*pct = clampInt(*pct+int(c.wheelY)*step, min, max)
 	a.saveLayout()
 	c.wheelTaken = true
 	return true
@@ -1074,7 +1066,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	contentH := int32(len(rows)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the log text.
-	zoomed := a.logZoomWheel(list)
+	zoomed := a.zoomWheel(list, &a.logPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	maxScroll := contentH - list.H
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -1244,7 +1236,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the OOC text.
-	zoomed := a.logZoomWheel(list)
+	zoomed := a.zoomWheel(list, &a.logPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	maxScroll := contentH - list.H
 	if maxScroll < 0 {
 		maxScroll = 0

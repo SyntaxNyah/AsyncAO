@@ -467,10 +467,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   to the FIRST unread line** (read forward from where you left off — the
   Jump-logs hotkey also goes to newest), and a thin accent **divider** marks the
   read/unread boundary.
-- **Log text zoom**: **Ctrl+wheel** over the IC/OOC log resizes its text one
-  step at a time; **hold the middle (wheel) button and scroll** to zoom **fast**
-  (5× the step) — a quick way to size the log up or down. The zoom consumes the
-  wheel, so it never also scrolls.
+- **Text zoom (log + chatbox)**: **Ctrl+wheel** resizes the text one step at a
+  time; **hold the middle (wheel) button and scroll** to zoom **fast** (5× the
+  step) — a quick way to size text up or down. One shared handler drives the IC
+  log, the OOC log, the whole right-column panel, and the chatbox message text,
+  so the gesture is identical everywhere; the zoom consumes the wheel, so it
+  never also scrolls.
 - **Multi-server tabs** (default 6, **configurable up to 99** in Settings →
   General → "Max server tabs"): Join while connected opens a NEW tab —
   the old session parks and keeps running (its packets drain on a
