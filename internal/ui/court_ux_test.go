@@ -212,3 +212,36 @@ func TestHPBarStemNoAlloc(t *testing.T) {
 		}
 	}
 }
+
+// TestTabChipLabelMemoized pins the always-on tab-strip label: correct text per
+// state, ZERO allocations while a tab is stable (the strip asks ~3×/tab/frame),
+// and a rebuild when unread changes.
+func TestTabChipLabelMemoized(t *testing.T) {
+	a := &App{
+		sessionState: sessionState{serverName: "ActiveServer"},
+		activeTab:    0,
+		tabs: []*courtTab{
+			{}, // 0: active
+			{state: sessionState{serverName: "Other"}, unread: 3}, // 1: backgrounded, unread
+			{state: sessionState{serverName: "Gone"}, dead: true}, // 2: backgrounded, dead
+		},
+	}
+	if got := a.tabChipLabel(0); got != "ActiveServer" {
+		t.Fatalf("active label = %q, want ActiveServer", got)
+	}
+	if got := a.tabChipLabel(1); got != "Other (3)" {
+		t.Fatalf("unread label = %q, want Other (3)", got)
+	}
+	if got := a.tabChipLabel(2); got != "Gone ✕" {
+		t.Fatalf("dead label = %q, want Gone ✕", got)
+	}
+	// The per-frame asks (sizing + draw) must allocate nothing once stable.
+	if n := testing.AllocsPerRun(100, func() { _ = a.tabChipLabel(1) }); n != 0 {
+		t.Errorf("steady-state allocs = %v, want 0", n)
+	}
+	// A new background message bumps unread → the label must rebuild.
+	a.tabs[1].unread = 4
+	if got := a.tabChipLabel(1); got != "Other (4)" {
+		t.Errorf("rebuilt label = %q, want Other (4)", got)
+	}
+}

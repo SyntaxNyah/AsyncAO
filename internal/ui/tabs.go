@@ -60,6 +60,20 @@ type courtTab struct {
 	unread  int  // IC+OOC lines landed while backgrounded
 	dead    bool // connection ended while backgrounded
 	inCourt bool // a room existed when parked (activation re-enters it)
+	// chipLabel memoizes the tab-strip label so the always-on tab bar (which
+	// asks for it ~3×/tab/frame) allocates nothing while the tab's
+	// name/state/unread are stable; rebuilt only when chipKey changes.
+	chipLabel string
+	chipKey   tabChipKey
+}
+
+// tabChipKey is everything a chip's text depends on — the memo key for
+// tabChipLabel. Comparable (all value fields) so a changed field invalidates.
+type tabChipKey struct {
+	name   string
+	active bool
+	dead   bool
+	unread int
 }
 
 // notebookLoad routes an off-thread notebook read to the right tab.
@@ -328,24 +342,39 @@ func (a *App) tabBarRects(w int32) (rects []sdl.Rect, add sdl.Rect) {
 	return rects, add
 }
 
-// tabChipLabel is "name (unread)" with the name clipped.
-func (a *App) tabChipLabel(i int) string {
-	name := a.tabName(i)
+// buildTabChipLabel formats a chip's text from its key: the (clipped) name,
+// with " ✕" when dead or " (N)" when a backgrounded tab has unread. Pure — the
+// memoized tabChipLabel calls it only when the key changes.
+func buildTabChipLabel(key tabChipKey) string {
+	name := key.name
 	if name == "" {
 		name = "tab"
 	}
 	if len(name) > tabChipMaxName {
 		name = name[:tabChipMaxName] + "…"
 	}
-	if i != a.activeTab {
-		if a.tabs[i].dead {
+	if !key.active {
+		if key.dead {
 			return name + " ✕"
 		}
-		if n := a.tabs[i].unread; n > 0 {
-			return fmt.Sprintf("%s (%d)", name, n)
+		if key.unread > 0 {
+			return fmt.Sprintf("%s (%d)", name, key.unread)
 		}
 	}
 	return name
+}
+
+// tabChipLabel is "name (unread)" with the name clipped — memoized, because the
+// always-on tab strip asks for every chip several times per frame (sizing in
+// tabBarRects from both handleTabBar and drawTabBar, plus the draw itself).
+func (a *App) tabChipLabel(i int) string {
+	t := a.tabs[i]
+	key := tabChipKey{name: a.tabName(i), active: i == a.activeTab, dead: t.dead, unread: t.unread}
+	if t.chipLabel == "" || t.chipKey != key {
+		t.chipLabel = buildTabChipLabel(key)
+		t.chipKey = key
+	}
+	return t.chipLabel
 }
 
 // handleTabBar consumes clicks on the strip BEFORE the screens draw, so
