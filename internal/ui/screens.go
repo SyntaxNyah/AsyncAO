@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"strconv"
@@ -989,7 +990,17 @@ const unreadDividerH = 2
 
 // friendTintColor is the warm "glow" behind a highlighted friend's IC line
 // (translucent so the text reads through; distinct from the blue selection).
+// A `name=RRGGBB` friends entry overrides the R/G/B per friend; the alpha is
+// the glow strength (and the pulse ceiling).
 var friendTintColor = sdl.Color{R: 255, G: 210, B: 90, A: 64}
+
+const (
+	// friendGlowMinAlpha is the dim floor the pulsing glow breathes down to
+	// (up to friendTintColor.A and back) — only when FriendGlowPulse is on.
+	friendGlowMinAlpha = 20
+	// friendGlowPulsePeriod is one full breathe cycle of the friend glow.
+	friendGlowPulsePeriod = 1600 * time.Millisecond
+)
 
 // drawICLogList renders the colored IC scrollback (search-filtered,
 // word-wrapped to the list width) into rect — used by the classic Log tab
@@ -1041,6 +1052,17 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	// one key/frame); handleHotkeys leaves an unrecognized chord in c.hotkey.
 	pinChord := c.hotkey != 0 && strings.EqualFold(sdl.GetKeyName(c.hotkey), a.hotkeyFor(hotkeyPinNote))
 	friendsOn := a.d.Prefs.FriendHighlightOn() // gates the per-line friend glow (read once)
+	// Glow alpha, computed once per frame: static by default, or a slow breathe
+	// when FriendGlowPulse is on (suppressed by reduce-motion). Short-circuit
+	// keeps the no-friend default path to a single pref read — no trig, no extra
+	// locks. Modulo-into-period keeps the sine argument small for precision.
+	friendAlpha := friendTintColor.A
+	if friendsOn && a.d.Prefs.FriendGlowPulseOn() && !a.d.Prefs.ReduceMotion() {
+		period := int64(friendGlowPulsePeriod)
+		phase := math.Sin(float64(a.now().UnixNano()%period) / float64(period) * 2 * math.Pi)
+		lo, hi := float64(friendGlowMinAlpha), float64(friendTintColor.A)
+		friendAlpha = uint8(lo + (hi-lo)*(phase*0.5+0.5)) // [-1,1] -> [floor, full]
+	}
 	// First wrapped row of the first unread entry — the "jump to last read"
 	// target and where the unread divider draws. Scanned only while scrolled
 	// up with unread; caught-up frames (icReadMark == len) skip it entirely, so
@@ -1072,9 +1094,15 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			font := c.LogFontFor(a.logPct, row.text)
 			// A highlighted friend's line glows (warm tint behind it), gated on
 			// the master toggle + the entry flag — a no-friend log is byte-
-			// identical to before.
+			// identical to before. A `name=hex` entry recolors the glow per
+			// friend; the alpha carries the (optional) pulse.
 			if friendsOn && a.icLog[row.entry].friend {
-				c.Fill(rowRect, friendTintColor)
+				tint := friendTintColor
+				if fc := a.icLog[row.entry].friendColor; fc >= 0 {
+					tint.R, tint.G, tint.B = uint8(fc>>16), uint8(fc>>8), uint8(fc)
+				}
+				tint.A = friendAlpha
+				c.Fill(rowRect, tint)
 			}
 			// Selection highlight sits under the text (and the divider).
 			a.drawLogSelHighlight(logSelIC, ri, list.X, y, wrapW, lineH, row.text, font)

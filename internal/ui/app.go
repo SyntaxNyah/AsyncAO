@@ -1266,8 +1266,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.checkCallwords(ev.Text)
 		case courtroom.EventMessage:
 			if ev.Message != nil {
-				fr := a.friendMessage(a.serverKey, ev.Message)
-				a.pushIC(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn()), ev.Message.TextColor, fr)
+				fr, fc := a.friendMessage(a.serverKey, ev.Message)
+				a.pushIC(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn()), ev.Message.TextColor, fr, fc)
 				if fr {
 					a.signalFriend(a.serverName, ev.Message)
 				}
@@ -2559,34 +2559,37 @@ func (a *App) healScenery() {
 // icEntry is one IC log line with its AO text color preserved (rich
 // scrollback: render, search, and export keep the color).
 type icEntry struct {
-	text   string
-	color  int
-	url    string // first http(s) link in the line ("" = none); makes the line clickable
-	friend bool   // sender is a highlighted friend (showname match) — glows in the log
+	text        string
+	color       int
+	url         string // first http(s) link in the line ("" = none); makes the line clickable
+	friend      bool   // sender is a highlighted friend (showname match) — glows in the log
+	friendColor int32  // per-friend glow RGB (0xRRGGBB) from a `name=hex` entry; -1 = default friend tint
 }
 
 // friendMessage reports whether a message is from a highlighted friend on the
 // given server — its showname, falling back to CharName (the displayName rule),
-// matched case-insensitively. Gated on the master toggle FIRST, so it's a cheap
+// matched case-insensitively — and the friend's per-entry glow colour (0xRRGGBB,
+// or -1 for the default tint). Gated on the master toggle FIRST, so it's a cheap
 // no-op when the feature is off (the default) — and the membership scan
 // allocates nothing, so it's safe per message even in a catch-up burst.
-func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) bool {
+func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, int32) {
 	if m == nil || serverKey == "" {
-		return false
+		return false, -1
 	}
 	// Cheap gate: if NO friend signal (glow / notify / sound) is enabled, skip
 	// entirely — the default, so it costs nothing.
 	if !a.d.Prefs.FriendHighlightOn() && !a.d.Prefs.FriendNotifyOn() && !a.d.Prefs.FriendSoundOn() && !a.d.Prefs.FriendOSToastOn() {
-		return false
+		return false, -1
 	}
 	name := strings.TrimSpace(m.Showname)
 	if name == "" {
 		name = strings.TrimSpace(m.CharName)
 	}
 	if name == "" {
-		return false
+		return false, -1
 	}
-	return a.d.Prefs.IsServerFriend(serverKey, name)
+	friend, color := a.d.Prefs.ServerFriendMatch(serverKey, name)
+	return friend, int32(color)
 }
 
 // signalFriend fires the opt-in alert signals when a friend speaks: an in-app
@@ -2634,12 +2637,12 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 	}
 }
 
-func (a *App) pushIC(line string, color int, friend bool) {
+func (a *App) pushIC(line string, color int, friend bool, friendColor int32) {
 	url := ""
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: clampLine(line), color: color, url: url, friend: friend})
+	a.icLog = append(a.icLog, icEntry{text: clampLine(line), color: color, url: url, friend: friend, friendColor: friendColor})
 	if len(a.icLog) > icLogCap {
 		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
 		a.icLog = a.icLog[:icLogCap]

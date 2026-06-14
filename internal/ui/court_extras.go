@@ -556,7 +556,8 @@ func (a *App) noteEvidencePresented(msg *protocol.ChatMessage) {
 	if name == "" {
 		name = msg.CharName
 	}
-	a.pushIC(name+" presented evidence: "+item.Name, 0, a.friendMessage(a.serverKey, msg))
+	fr, fc := a.friendMessage(a.serverKey, msg)
+	a.pushIC(name+" presented evidence: "+item.Name, 0, fr, fc)
 	a.evShowImg = item.Image
 	a.evShowAt = time.Now()
 	a.d.Manager.PrefetchExact(a.urls.Evidence(item.Image), assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (evidence image, exact URL)

@@ -349,8 +349,8 @@ func TestWrapToWidthMOTD(t *testing.T) {
 // nothing changed, invalidated by pushes and query edits.
 func TestICLogFilterCache(t *testing.T) {
 	a := &App{}
-	a.pushIC("Phoenix: hello court", 0, false)
-	a.pushIC("Edgeworth: OBJECTION", 2, false)
+	a.pushIC("Phoenix: hello court", 0, false, -1)
+	a.pushIC("Edgeworth: OBJECTION", 2, false, -1)
 
 	first := a.icLogFiltered()
 	if len(first) != 2 {
@@ -363,7 +363,7 @@ func TestICLogFilterCache(t *testing.T) {
 	if got := a.icLogFiltered(); len(got) != 1 || got[0] != 1 {
 		t.Errorf("query filter = %v, want [1]", got)
 	}
-	a.pushIC("Maya: objection noted", 0, false)
+	a.pushIC("Maya: objection noted", 0, false, -1)
 	if got := a.icLogFiltered(); len(got) != 2 {
 		t.Errorf("post-push filter = %v, want 2 matches", got)
 	}

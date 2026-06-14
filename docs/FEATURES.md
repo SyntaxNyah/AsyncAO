@@ -139,7 +139,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   server — and a **sound** (the default ping, or a **custom file** you choose),
   and a real **desktop OS notification** (a Windows toast, rate-limited so a
   chatty friend can't storm it). Streamer mode suppresses them all.
-  *(Still planned: per-friend colours, glow animation, and a toggle keybind.)*
+  **Per-friend glow colour**: append `=RRGGBB` to a name in the list (e.g.
+  `blank=ff4488`) to give that friend's glow a custom colour; names without one
+  use the default warm tint. **Pulse the glow** is its own toggle — a gentle
+  breathing animation on the glow (obeys reduce-motion, so it holds steady when
+  that's on). A configurable **toggle keybind** (default **Ctrl+U**, rebindable
+  in Settings → Hotkeys) flips the highlight on/off mid-session.
 - **Hotkeys** (Ctrl+key, configurable in Settings): shouts 1..4, pos
   cycle, music stop (`~stop.mp3` fake-track request, courtroom.cpp
   music_stop), log jump, screenshot (`screenshots/` beside the exe).

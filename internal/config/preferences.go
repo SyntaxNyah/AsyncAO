@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -231,6 +232,7 @@ type AssetPreferences struct {
 	FriendHighlight        bool                         `json:"friendHighlight"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
+	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
 	FriendSound            bool                         `json:"friendSound"`
 	FriendSoundFile        string                       `json:"friendSoundFile"`
 	CallwordSoundFile      string                       `json:"callwordSoundFile"`
@@ -320,6 +322,7 @@ type prefsJSON struct {
 	FriendHighlight        bool   `json:"friendHighlight"` // default OFF
 	FriendNotify           bool   `json:"friendNotify"`    // default OFF
 	FriendOSToast          bool   `json:"friendOSToast"`   // default OFF
+	FriendGlowPulse        bool   `json:"friendGlowPulse"` // default OFF
 	FriendSound            bool   `json:"friendSound"`     // default OFF
 	FriendSoundFile        string `json:"friendSoundFile"`
 	CallwordSoundFile      string `json:"callwordSoundFile"`
@@ -627,6 +630,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.FriendHighlight = onDisk.FriendHighlight
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
+	p.FriendGlowPulse = onDisk.FriendGlowPulse
 	p.FriendSound = onDisk.FriendSound
 	p.FriendSoundFile = onDisk.FriendSoundFile
 	p.CallwordSoundFile = onDisk.CallwordSoundFile
@@ -1255,6 +1259,25 @@ func (p *AssetPreferences) SetFriendOSToast(on bool) {
 	p.mu.Unlock()
 }
 
+// FriendGlowPulseOn / SetFriendGlowPulse: gently pulse the friend glow instead
+// of a static tint (OFF by default).
+func (p *AssetPreferences) FriendGlowPulseOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FriendGlowPulse
+}
+
+func (p *AssetPreferences) SetFriendGlowPulse(on bool) {
+	p.mu.Lock()
+	if p.FriendGlowPulse != on {
+		p.FriendGlowPulse = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
 // FriendSoundOn / SetFriendSound: play a sound when a friend speaks (OFF by
 // default). FriendSoundPath is the custom file ("" = the theme's word_call).
 func (p *AssetPreferences) FriendSoundOn() bool {
@@ -1488,22 +1511,40 @@ func (p *AssetPreferences) ServerFriends(key string) []string {
 	return cloneStrings(p.ServerWarm[key].Friends)
 }
 
-// IsServerFriend reports whether name (case-insensitive) is a highlighted
-// friend on the server. Scans under the lock with NO allocation — safe to call
-// per incoming message (even in a catch-up burst).
-func (p *AssetPreferences) IsServerFriend(key, name string) bool {
+// friendNameHex splits a friend entry "name" or "name=RRGGBB" into its
+// trimmed name and the (raw) hex part ("" if none).
+func friendNameHex(entry string) (name, hex string) {
+	if i := strings.IndexByte(entry, '='); i >= 0 {
+		return strings.TrimSpace(entry[:i]), strings.TrimSpace(entry[i+1:])
+	}
+	return strings.TrimSpace(entry), ""
+}
+
+// ServerFriendMatch reports whether name (case-insensitive) is a highlighted
+// friend on the server, and that friend's custom glow colour (packed 0xRRGGBB)
+// from a "name=RRGGBB" entry, or -1 for the default tint. Scans under the lock
+// with NO allocation — safe per incoming message (even in a catch-up burst).
+func (p *AssetPreferences) ServerFriendMatch(key, name string) (friend bool, color int) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, f := range p.ServerWarm[key].Friends {
-		if strings.EqualFold(strings.TrimSpace(f), name) {
-			return true
+		fname, hex := friendNameHex(f)
+		if !strings.EqualFold(fname, name) {
+			continue
 		}
+		if hex != "" {
+			if v, err := strconv.ParseInt(strings.TrimPrefix(hex, "#"), 16, 32); err == nil {
+				return true, int(v) & 0xFFFFFF
+			}
+		}
+		return true, -1 // friend, no/invalid custom colour → default tint
 	}
-	return false
+	return false, -1
 }
 
-// SetServerFriends replaces a server's highlighted-showname list — trimmed,
-// blanks dropped, deduped case-insensitively, capped at WarmFriendsCap.
+// SetServerFriends replaces a server's highlighted-showname list — entries are
+// "name" or "name=RRGGBB" (per-friend glow colour); trimmed, blanks dropped,
+// deduped by NAME (case-insensitive), capped at WarmFriendsCap.
 func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 	seen := make(map[string]struct{}, len(names))
 	clean := make([]string, 0, len(names))
@@ -1512,7 +1553,11 @@ func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 		if n == "" {
 			continue
 		}
-		k := strings.ToLower(n)
+		nm, _ := friendNameHex(n)
+		if nm == "" {
+			continue
+		}
+		k := strings.ToLower(nm)
 		if _, dup := seen[k]; dup {
 			continue
 		}

@@ -705,6 +705,11 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Prefs.SetFriendHighlight(next)
 	}
 	y += 26
+	fgp := a.d.Prefs.FriendGlowPulseOn()
+	if next := c.Checkbox(pad+16, y, "Pulse the friend glow (gentle breathing animation; obeys reduce-motion)", fgp); next != fgp {
+		a.d.Prefs.SetFriendGlowPulse(next)
+	}
+	y += 26
 	fn := a.d.Prefs.FriendNotifyOn()
 	if next := c.Checkbox(pad+16, y, "Notify + flash the taskbar when a friend speaks (fires even from a backgrounded server tab)", fn); next != fn {
 		a.d.Prefs.SetFriendNotify(next)
@@ -735,12 +740,14 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 			settings.friendKey = a.serverKey
 		}
 		var friendCommit bool
-		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.friendInput, "showname1, showname2, ... (saved per server; their lines glow)")
+		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.friendInput, "showname1, showname2=ffcc00, ... (saved per server)")
 		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || friendCommit {
 			a.d.Prefs.SetServerFriends(a.serverKey, strings.Split(settings.friendInput, ","))
 			settings.statusLine = "Friends saved for this server."
 		}
-		y += 34
+		y += 28
+		c.Label(pad+110, y, "Append =RRGGBB to a name to give that friend a custom glow colour (e.g. blank=ff4488).", ColTextDim)
+		y += 24
 	}
 	return y
 }
