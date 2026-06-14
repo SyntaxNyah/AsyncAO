@@ -123,6 +123,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   clipboard, and TXT/HTML export (`logs/` beside the exe; HTML keeps the
   AO palette). Lines **word-wrap to the list width** (cached against
   log/width/font-scale — never re-wrapped per frame).
+- **Per-area scrollback** (Settings → Audio & Chat, **OFF by default**): when
+  on, each area keeps its own IC log — clicking an area in the Areas list saves
+  the current log and swaps in that area's history (empty on first visit, your
+  earlier lines on return), so a busy lobby's chat doesn't bleed into a quiet
+  courtroom. Best-effort: AO only signals the area on an explicit click, so a
+  mod-initiated move keeps the current log (the default continuous behavior).
+  Bounded to the last 64 visited areas; OFF ⇒ one continuous log as before.
+- **Detailed logging** (Settings → Audio & Chat, **OFF by default**): appends
+  every IC line to `logs/transcript.log` beside the exe — `timestamp | server |
+  area | CharName (Showname) | message` — a full casing record across all
+  connected servers (each line names its server). All disk writes run on a
+  single background goroutine fed by a bounded queue, so the message path never
+  blocks (and a flood sheds rather than stalls); the file flushes when caught up
+  and closes on exit. OFF ⇒ nothing is opened or written.
 - **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
   flash + a sound (the theme's `word_call`, or a **custom sound file** you
   point at in Settings — `.wav`/`.ogg`/`.mp3`).

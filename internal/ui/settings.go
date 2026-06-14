@@ -679,13 +679,26 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	y += 26
 	if cuOn {
 		nt := a.numberRow(y, "Catch up after N queued", cuThresh, 1, 1, 50)
-		c.Label(pad+270, y+4, "fast-forward once more than this many messages are waiting", ColTextDim)
+		c.Label(pad+270, y+4, "fast-forward once at least this many messages are waiting (1 = stay on the newest)", ColTextDim)
 		if nt != cuThresh {
 			a.d.Prefs.SetCatchUp(cuOn, nt)
 			a.applyTimingToRoom()
 		}
 		y += 30
 	}
+
+	// Per-area IC scrollback (opt-in): each visited area keeps its own log.
+	areaScroll := a.d.Prefs.PerAreaScrollbackOn()
+	if next := c.Checkbox(pad, y, "Per-area chat scrollback (OFF by default): each area keeps its own IC log; switches when you click an area in the Areas list", areaScroll); next != areaScroll {
+		a.d.Prefs.SetPerAreaScrollback(next)
+	}
+	y += 26
+	// Detailed transcript logging (opt-in): full IC record to a file.
+	detLog := a.d.Prefs.DetailedLogOn()
+	if next := c.Checkbox(pad, y, "Detailed logging (OFF by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
+		a.d.Prefs.SetDetailedLog(next)
+	}
+	y += 26
 
 	// Case announcements (CASEA, tsuserver-family): subscribe by role.
 	y = a.drawCasingRow(y)

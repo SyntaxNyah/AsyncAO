@@ -1377,8 +1377,9 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			}
 			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, line, col)
 			if hover && c.clicked {
-				a.sess.RequestMusic(area) // area transfer rides MC
-				a.curArea = area          // Rich Presence (best-effort)
+				a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves
+				a.sess.RequestMusic(area)    // area transfer rides MC
+				a.curArea = area             // Rich Presence (best-effort)
 				a.updatePresence()
 			}
 		}

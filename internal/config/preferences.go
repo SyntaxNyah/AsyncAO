@@ -249,6 +249,8 @@ type AssetPreferences struct {
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	MusicDuckingOn         bool                         `json:"musicDucking"`
+	PerAreaScroll          bool                         `json:"perAreaScrollback"`
+	DetailedLog            bool                         `json:"detailedLog"`
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
@@ -342,6 +344,8 @@ type prefsJSON struct {
 	OpenTabs               []OpenTab `json:"openTabs"`          // remembered tabs for restore-on-launch
 	ReduceMotion           bool      `json:"reduceMotion"`      // default OFF (zero value)
 	MusicDucking           bool      `json:"musicDucking"`      // default OFF (zero value)
+	PerAreaScrollback      bool      `json:"perAreaScrollback"` // default OFF (zero value)
+	DetailedLog            bool      `json:"detailedLog"`       // default OFF (zero value)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -673,6 +677,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.OpenTabs = onDisk.OpenTabs
 	p.ReduceMotionOn = onDisk.ReduceMotion
 	p.MusicDuckingOn = onDisk.MusicDucking
+	p.PerAreaScroll = onDisk.PerAreaScrollback
+	p.DetailedLog = onDisk.DetailedLog
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
 	p.ThemeRectOv = onDisk.ThemeRectOverrides
@@ -1954,6 +1960,48 @@ func (p *AssetPreferences) SetMusicDucking(on bool) {
 		return
 	}
 	p.MusicDuckingOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// PerAreaScrollbackOn reports the per-area IC scrollback toggle (OFF by
+// default): when on, switching areas swaps the IC log to that area's own
+// history instead of one continuous log.
+func (p *AssetPreferences) PerAreaScrollbackOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PerAreaScroll
+}
+
+// SetPerAreaScrollback toggles per-area IC scrollback.
+func (p *AssetPreferences) SetPerAreaScrollback(on bool) {
+	p.mu.Lock()
+	if p.PerAreaScroll == on {
+		p.mu.Unlock()
+		return
+	}
+	p.PerAreaScroll = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DetailedLogOn reports the detailed-logging toggle (OFF by default): when on,
+// IC/OOC messages are appended to a per-server transcript file with timestamps,
+// area, character name and showname.
+func (p *AssetPreferences) DetailedLogOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DetailedLog
+}
+
+// SetDetailedLog toggles detailed transcript logging.
+func (p *AssetPreferences) SetDetailedLog(on bool) {
+	p.mu.Lock()
+	if p.DetailedLog == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DetailedLog = on
 	p.mu.Unlock()
 	p.markDirty()
 }

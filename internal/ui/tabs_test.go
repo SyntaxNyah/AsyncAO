@@ -154,6 +154,47 @@ func TestCollectOpenTabs(t *testing.T) {
 	}
 }
 
+// TestPerAreaScrollback pins the opt-in per-area IC log swap: leaving an area
+// saves its log, entering a fresh one starts empty, and returning restores it.
+// With the toggle OFF (default) switching areas never touches the log.
+func TestPerAreaScrollback(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetPerAreaScrollback(true)
+	a.icLog = []icEntry{{text: "lobby line"}} // default area (curArea "")
+
+	a.switchAreaScrollback("C1")
+	if len(a.icLog) != 0 {
+		t.Fatalf("entering a fresh area must start empty, got %d", len(a.icLog))
+	}
+	a.curArea = "C1"
+	a.icLog = append(a.icLog, icEntry{text: "c1 line"})
+
+	a.switchAreaScrollback("C2")
+	if len(a.icLog) != 0 {
+		t.Fatalf("second fresh area must start empty, got %d", len(a.icLog))
+	}
+	a.curArea = "C2"
+
+	a.switchAreaScrollback("C1") // back to C1 → its line returns
+	if len(a.icLog) != 1 || a.icLog[0].text != "c1 line" {
+		t.Fatalf("returning to an area must restore its log, got %v", a.icLog)
+	}
+	a.curArea = "C1"
+
+	a.switchAreaScrollback("") // back to the default area
+	if len(a.icLog) != 1 || a.icLog[0].text != "lobby line" {
+		t.Fatalf("default area log lost: %v", a.icLog)
+	}
+
+	// OFF (default): switching areas must not touch the log.
+	b := testTabApp(t)
+	b.icLog = []icEntry{{text: "x"}}
+	b.switchAreaScrollback("Other")
+	if len(b.icLog) != 1 {
+		t.Error("with per-area scrollback off, switching areas must leave the log alone")
+	}
+}
+
 // TestLoweredCacheMemo pins the per-frame query memo.
 func TestLoweredCacheMemo(t *testing.T) {
 	var l loweredCache

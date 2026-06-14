@@ -49,6 +49,10 @@ const (
 	// worst case — the log is now scrollable/searchable/exportable).
 	icLogCap = 1024
 
+	// areaLogCacheMax bounds how many visited areas keep their own IC scrollback
+	// (per-area scrollback, opt-in) — oldest evicted FIFO (rule §17.4).
+	areaLogCacheMax = 64
+
 	// charIconWarmup caps the connect-time speculative icon burst. Servers
 	// with 4000+ characters exist; blasting them all floods the low lane
 	// (lowLaneCap 256) and sheds nearly everything for zero benefit. Past
@@ -273,6 +277,10 @@ type App struct {
 	// once in NewApp when RestoreTabs is on, drained one reconnect per frame by
 	// pumpTabRestore so the blocking dials never pile into a single boot freeze.
 	restoreQueue []config.OpenTab
+	// translog is the detailed-transcript writer (opt-in): one file for all
+	// servers (each line names the server), opened lazily on the first logged
+	// message, closed at shutdown. nil = off / not yet opened.
+	translog *transcriptWriter
 
 	// --- M13 self-update (one-shot launch check; see internal/update) ---
 	// updateRes carries a newer release found by the off-thread probe; the
@@ -413,18 +421,23 @@ type App struct {
 // tabs don't animate, and activation rebuilds it via enterCourtroom.
 type sessionState struct {
 	// --- connection / session ---
-	conn        *protocol.Conn
-	sess        *courtroom.Session
-	room        *courtroom.Courtroom
-	urls        courtroom.URLBuilder
-	serverName  string
-	serverKey   string // ws URL: keys the per-server warm state in prefs
-	connErr     string
-	connAt      time.Time // session start (Rich Presence elapsed timer)
-	curArea     string    // last area WE clicked (Rich Presence, best-effort)
-	lastPing    time.Time // CH keepalive pacing (active + background)
-	lastICSend  time.Time // chat_ratelimit window
-	manifestFor string    // origin already fetched this session (dedupe)
+	conn       *protocol.Conn
+	sess       *courtroom.Session
+	room       *courtroom.Courtroom
+	urls       courtroom.URLBuilder
+	serverName string
+	serverKey  string // ws URL: keys the per-server warm state in prefs
+	connErr    string
+	connAt     time.Time // session start (Rich Presence elapsed timer)
+	curArea    string    // last area WE clicked (Rich Presence, best-effort)
+	// Per-area IC scrollback (opt-in): areaLogs holds each visited area's saved
+	// icLog, areaLogOrder is the visit order for bounded FIFO eviction
+	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
+	areaLogs     map[string][]icEntry
+	areaLogOrder []string
+	lastPing     time.Time // CH keepalive pacing (active + background)
+	lastICSend   time.Time // chat_ratelimit window
+	manifestFor  string    // origin already fetched this session (dedupe)
 	// themeBound is this server's bound theme ("" = the global pick);
 	// loaded from ServerWarmInfo.Theme on connect, wins in
 	// applyThemeAsync while the session lives.
@@ -1361,6 +1374,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				if fr {
 					a.signalFriend(a.serverName, ev.Message)
 				}
+				a.logDetailed(a.serverName, a.curArea, ev.Message) // detailed transcript (opt-in)
 				a.noteEvidencePresented(ev.Message)
 				a.checkCallwords(ev.Message.Message)
 			}
@@ -2727,6 +2741,64 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 		showOSToast("AsyncAO — friend online", body)
 	}
 }
+
+// switchAreaScrollback swaps the IC log to toArea's own history when per-area
+// scrollback is on (opt-in). Best-effort: AO only tells us the area on an
+// explicit area click (curArea), so server-initiated moves keep the current log
+// — same as the default continuous behavior. Runs only on an area click, never
+// per frame, and no-ops entirely when off, so it costs the default path nothing.
+// Bounded FIFO over visited areas (rule §17.4). Both maps park per tab.
+func (a *App) switchAreaScrollback(toArea string) {
+	if !a.d.Prefs.PerAreaScrollbackOn() || toArea == a.curArea {
+		return
+	}
+	if a.areaLogs == nil {
+		a.areaLogs = map[string][]icEntry{}
+	}
+	// Save the area we're leaving (curArea); track its key order for eviction.
+	if _, seen := a.areaLogs[a.curArea]; !seen {
+		a.areaLogOrder = append(a.areaLogOrder, a.curArea)
+	}
+	a.areaLogs[a.curArea] = a.icLog
+	for len(a.areaLogOrder) > areaLogCacheMax {
+		oldest := a.areaLogOrder[0]
+		a.areaLogOrder = a.areaLogOrder[1:]
+		if oldest != toArea { // never evict the log we're about to load
+			delete(a.areaLogs, oldest)
+		}
+	}
+	// Load the target area's saved log (nil = unvisited = a fresh empty log).
+	a.icLog = a.areaLogs[toArea]
+	a.icLogSeq++ // invalidate the wrap + filter caches
+	a.icScroll, a.icStick = 0, true
+	a.icReadMark = len(a.icLog)
+}
+
+// logDetailed appends an IC message to the transcript when detailed logging is
+// on (opt-in). The writer is opened lazily and does the disk write on its own
+// goroutine, so the message seam never blocks. A no-op (one pref read) when off,
+// so the default path is unaffected. Called at both message seams (active +
+// background tab), so the transcript captures every server you're connected to.
+func (a *App) logDetailed(server, area string, m *protocol.ChatMessage) {
+	if m == nil || !a.d.Prefs.DetailedLogOn() {
+		return
+	}
+	if a.translog == nil {
+		path, err := transcriptPath()
+		if err != nil {
+			return
+		}
+		w, err := newTranscriptWriter(path)
+		if err != nil {
+			return
+		}
+		a.translog = w
+	}
+	a.translog.write(detailedLogLine(time.Now(), server, area, m))
+}
+
+// CloseTranscript flushes and closes the detailed-log writer at shutdown.
+func (a *App) CloseTranscript() { a.translog.close() }
 
 func (a *App) pushIC(line string, color int, friend bool, friendColor int32) {
 	url := ""
