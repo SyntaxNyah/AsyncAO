@@ -182,7 +182,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   on the current page when the chat box isn't focused (picking focuses IC).
   **Ctrl+E** (rebindable) **cycles to the next emote**, wrapping at the end and
   auto-paging into view — keyboard-only emote stepping that walks the list in
-  order (vs. Random's jump). A **missing-frame warning** appears the moment you
+  order (vs. Random's jump). **Auto-random emote** (Settings, **OFF by
+  default**): when on, every IC message you send rolls a *different* emote from
+  the current character's set (and scrolls the grid to it) — for people who'd
+  rather not click the grid, and to surface sprites they'd never pick. It only
+  runs on an accepted send, so it costs nothing while idle and never fires on a
+  rate-limited or command line. A **missing-frame warning** appears the moment you
   select or send an emote whose sprite is absent (the streaming layer probes on
   selection and the banner names what 404'd — see also Settings → formats).
   **Hovering an emote previews it** large (3 s, or instantly on right-click):

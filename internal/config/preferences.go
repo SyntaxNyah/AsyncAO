@@ -229,6 +229,7 @@ type AssetPreferences struct {
 	BgSlideshowSecs        int                          `json:"bgSlideshowSecs"`
 	DownloadKBps           int                          `json:"downloadKBps"`
 	ForceCharNames         bool                         `json:"forceCharNames"`
+	RandomEmote            bool                         `json:"randomEmote"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
@@ -319,6 +320,7 @@ type prefsJSON struct {
 	BgSlideshowSecs        int    `json:"bgSlideshowSecs"`
 	DownloadKBps           int    `json:"downloadKBps"`    // 0 = unlimited (default)
 	ForceCharNames         bool   `json:"forceCharNames"`  // default OFF
+	RandomEmote            bool   `json:"randomEmote"`     // default OFF
 	FriendHighlight        bool   `json:"friendHighlight"` // default OFF
 	FriendNotify           bool   `json:"friendNotify"`    // default OFF
 	FriendOSToast          bool   `json:"friendOSToast"`   // default OFF
@@ -627,6 +629,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.DownloadKBps = onDisk.DownloadKBps // 0 = unlimited
 	p.ForceCharNames = onDisk.ForceCharNames
+	p.RandomEmote = onDisk.RandomEmote
 	p.FriendHighlight = onDisk.FriendHighlight
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
@@ -1197,6 +1200,27 @@ func (p *AssetPreferences) SetForceCharNames(on bool) {
 		return
 	}
 	p.ForceCharNames = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RandomEmote reports the "auto-random emote" toggle (OFF by default): when on,
+// every IC send rolls a fresh emote from the current character's set so the
+// sprite changes each message without manual clicking.
+func (p *AssetPreferences) RandomEmoteOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RandomEmote
+}
+
+// SetRandomEmote toggles auto-random emote selection on send.
+func (p *AssetPreferences) SetRandomEmote(on bool) {
+	p.mu.Lock()
+	if p.RandomEmote == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RandomEmote = on
 	p.mu.Unlock()
 	p.markDirty()
 }

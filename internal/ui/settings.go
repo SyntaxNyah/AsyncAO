@@ -321,6 +321,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		}
 	}
 	y += 26
+	re := a.d.Prefs.RandomEmoteOn()
+	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {
+		a.d.Prefs.SetRandomEmote(next)
+	}
+	y += 26
 	upd := a.d.Prefs.UpdateCheckEnabled()
 	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
 		a.d.Prefs.SetUpdateCheck(next)

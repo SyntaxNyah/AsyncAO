@@ -2427,6 +2427,39 @@ func (a *App) pickRandomEmote() {
 	}
 }
 
+// nextRandomEmote picks a random emote index for auto-random mode. With more
+// than one emote it returns a DIFFERENT index than cur (uniform over the rest,
+// via an unbiased skip-current), so every send visibly changes the sprite;
+// with 0 or 1 it can't vary and returns cur (the caller no-ops). Pure for tests.
+func nextRandomEmote(n, cur int) int {
+	if n <= 1 {
+		return cur
+	}
+	if cur < 0 || cur >= n { // nothing valid selected: any emote will do
+		return rand.IntN(n)
+	}
+	i := rand.IntN(n - 1)
+	if i >= cur {
+		i++ // skip the current index — guarantees a different emote, no bias
+	}
+	return i
+}
+
+// randomEmoteForSend rolls a fresh emote on send for auto-random mode, reusing
+// selectEmote so the button art + sprites warm exactly as a manual pick would,
+// and scrolls the grid to it. No-op when the char has 0 or 1 emote.
+func (a *App) randomEmoteForSend() {
+	n := len(a.emotes)
+	i := nextRandomEmote(n, a.emoteIdx)
+	if n <= 1 || i == a.emoteIdx {
+		return
+	}
+	a.selectEmote(i)
+	if a.emotePerPage > 0 {
+		a.emotePage = i / a.emotePerPage
+	}
+}
+
 // cycleEmote steps the selection by delta with wrap and scrolls its page into
 // view — keyboard-only emote stepping during RP (the Ctrl+emote-cycle hotkey).
 // Unlike Random (which jumps anywhere), this walks the list in order. No-op
@@ -2787,6 +2820,14 @@ func (a *App) sendIC(shout int) {
 	if _, _, rateMs := a.d.Prefs.Timing(); rateMs > 0 &&
 		time.Since(a.lastICSend) < time.Duration(rateMs)*time.Millisecond {
 		return
+	}
+	// Auto-random emote (OFF by default): roll a fresh sprite from this char's
+	// set on every accepted send — for people who'd rather not click the grid,
+	// and to surface emotes they'd never pick. Behaviorally identical to picking
+	// that emote by hand (same Anim/Preanim/SFX/Mod ride along below). Placed
+	// after the command/blankpost/rate-limit guards so a dropped send won't roll.
+	if a.d.Prefs.RandomEmoteOn() {
+		a.randomEmoteForSend()
 	}
 	emote := courtroom.Emote{Anim: "normal", Preanim: "-"}
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {

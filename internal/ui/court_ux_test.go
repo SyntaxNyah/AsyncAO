@@ -134,3 +134,35 @@ func TestICWrapped(t *testing.T) {
 		t.Error("narrower width must produce more wrapped rows")
 	}
 }
+
+// TestNextRandomEmote pins auto-random emote selection: with >1 emote it always
+// returns a DIFFERENT, in-range index than the current one (so the sprite
+// visibly changes every send); with 0 or 1 it can't vary and returns cur.
+func TestNextRandomEmote(t *testing.T) {
+	// Degenerate counts can't vary — return cur, never panic.
+	for _, n := range []int{0, 1} {
+		if got := nextRandomEmote(n, 0); got != 0 {
+			t.Errorf("nextRandomEmote(%d, 0) = %d, want 0 (no variation possible)", n, got)
+		}
+	}
+	// With many emotes, every roll differs from cur and stays in [0, n).
+	const n = 10
+	for cur := 0; cur < n; cur++ {
+		for trial := 0; trial < 200; trial++ {
+			got := nextRandomEmote(n, cur)
+			if got == cur {
+				t.Fatalf("nextRandomEmote(%d, %d) returned the same index", n, cur)
+			}
+			if got < 0 || got >= n {
+				t.Fatalf("nextRandomEmote(%d, %d) = %d, out of range", n, cur, got)
+			}
+		}
+	}
+	// An out-of-range current selection (-1 = nothing picked) still yields a
+	// valid index without panicking.
+	for trial := 0; trial < 200; trial++ {
+		if got := nextRandomEmote(n, -1); got < 0 || got >= n {
+			t.Fatalf("nextRandomEmote(%d, -1) = %d, out of range", n, got)
+		}
+	}
+}
