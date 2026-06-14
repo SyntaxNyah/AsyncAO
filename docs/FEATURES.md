@@ -319,11 +319,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   top of the Wardrobe switch between them. **Characters** is *your* curated set
   only — the iniswaps you've starred or filed into folders — so it stays clean
   instead of listing the whole server. **Iniswaps** is a flat browse of the
-  server's full iniswap list: search it, hover to preview, click to try one on,
-  and hit **★** to add it to your Characters wardrobe (where you can then file
-  it into folders). Both grids render from the same backing list with the same
-  indices, so switching tabs never repaints the wrong thumbnail (the index-keyed
-  icon cache stays valid).
+  server's `iniswap.txt` **only** — favourites that aren't on the server's list
+  don't show here, they stay on Characters: search it, hover to preview, click
+  to try one on, and hit **★** to add it to your Characters wardrobe (where you
+  can then file it into folders). A server that publishes no `iniswap.txt` just
+  shows a note and an empty list (nothing to fetch). Both grids render from the
+  same backing list with the same indices, so switching tabs never repaints the
+  wrong thumbnail (the index-keyed icon cache stays valid).
   The Backgrounds section uses the *same* navigable folders: drag a background
   onto a folder icon to file it, open a folder to see inside, and click a
   background to change the room to it (`/bg`). Its ★ removes a background from

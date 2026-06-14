@@ -593,6 +593,7 @@ type sessionState struct {
 	iniServer    []string // the server's iniswap.txt names (may be empty)
 	iniList      []string // merged menu: wardrobe first, then server extras
 	iniWardrobe  []bool   // parallel to iniList: wardrobe membership (star)
+	iniServerMem []bool   // parallel to iniList: is in the server's iniswap.txt (Iniswaps tab filter)
 	iniLower     []string // lowercased names for the search filter
 	iniFolders   []string // parallel to iniList: each entry's folder ("" = unsorted)
 	iniListErr   string
@@ -1818,9 +1819,10 @@ func (a *App) pollIniswap() {
 // favourites — instant swaps, persisted across sessions and servers),
 // then server-list entries not already in the wardrobe.
 func (a *App) rebuildIniMenu() {
-	names, fromWardrobe := mergeWardrobe(a.d.Prefs.WardrobeList(a.serverKey), a.iniServer)
+	names, fromWardrobe, inServer := mergeWardrobe(a.d.Prefs.WardrobeList(a.serverKey), a.iniServer)
 	a.iniList = names
 	a.iniWardrobe = fromWardrobe
+	a.iniServerMem = inServer
 	a.iniLower = make([]string, len(names))
 	folders := a.d.Prefs.WardrobeFolderMap(a.serverKey)
 	a.iniFolders = make([]string, len(names))
@@ -1837,12 +1839,19 @@ func (a *App) rebuildIniMenu() {
 	a.iniPages = nil
 }
 
-// mergeWardrobe builds the wardrobe-first menu list; the bool slice marks
-// wardrobe membership (the star). Server duplicates collapse into their
-// wardrobe entry, case-insensitively.
-func mergeWardrobe(wardrobe, server []string) ([]string, []bool) {
-	names := make([]string, 0, len(wardrobe)+len(server))
-	stars := make([]bool, 0, len(wardrobe)+len(server))
+// mergeWardrobe builds the wardrobe-first menu list. stars marks wardrobe
+// membership (the favourite); inServer marks entries that are in the server's
+// iniswap.txt (the Iniswaps tab shows only those — a favourite that ISN'T a
+// server iniswap stays out of it, and a server with no list shows nothing).
+// Server duplicates collapse into their wardrobe entry, case-insensitively.
+func mergeWardrobe(wardrobe, server []string) (names []string, stars, inServer []bool) {
+	names = make([]string, 0, len(wardrobe)+len(server))
+	stars = make([]bool, 0, len(wardrobe)+len(server))
+	inServer = make([]bool, 0, len(wardrobe)+len(server))
+	serverSet := make(map[string]struct{}, len(server))
+	for _, n := range server {
+		serverSet[strings.ToLower(n)] = struct{}{}
+	}
 	seen := make(map[string]struct{}, len(wardrobe))
 	sort.SliceStable(wardrobe, func(i, j int) bool {
 		return strings.ToLower(wardrobe[i]) < strings.ToLower(wardrobe[j])
@@ -1855,6 +1864,8 @@ func mergeWardrobe(wardrobe, server []string) ([]string, []bool) {
 		seen[key] = struct{}{}
 		names = append(names, n)
 		stars = append(stars, true)
+		_, srv := serverSet[key]
+		inServer = append(inServer, srv) // a favourite that's also a server iniswap
 	}
 	for _, n := range server {
 		if _, dup := seen[strings.ToLower(n)]; dup {
@@ -1862,8 +1873,9 @@ func mergeWardrobe(wardrobe, server []string) ([]string, []bool) {
 		}
 		names = append(names, n)
 		stars = append(stars, false)
+		inServer = append(inServer, true)
 	}
-	return names, stars
+	return names, stars, inServer
 }
 
 // parseIniswapList parses iniswap.txt: one character folder name per line,

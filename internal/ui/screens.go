@@ -1842,15 +1842,24 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	switch {
 	case a.iniBusy:
 		c.Label(statusX, y+4, "Fetching "+iniswapFileName+"...", ColTextDim)
-	case a.iniListErr != "":
-		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, a.iniListErr, ColTextDim)
+	case len(a.iniServer) == 0:
+		// No iniswap.txt on this server (404 or none published): show nothing,
+		// calmly — the favourites live on the Characters tab, untouched.
+		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, "This server doesn't publish an "+iniswapFileName+" list.", ColTextDim)
 	default:
-		c.Label(statusX, y+4, fmt.Sprintf("%d known · ★ adds one to your Characters wardrobe", len(a.iniList)), ColTextDim)
+		c.Label(statusX, y+4, fmt.Sprintf("%d on this server · ★ adds one to your Characters wardrobe", len(a.iniServer)), ColTextDim)
 	}
 	y += 36
 
 	query := a.iniQ.get(a.iniSearch)
-	visible := func(i int) bool { return query == "" || strings.Contains(a.iniLower[i], query) }
+	// The Iniswaps tab is the server's iniswap.txt ONLY — a favourite that isn't
+	// a server iniswap (or any favourite on a server with no list) stays out.
+	visible := func(i int) bool {
+		if i >= len(a.iniServerMem) || !a.iniServerMem[i] {
+			return false
+		}
+		return query == "" || strings.Contains(a.iniLower[i], query)
+	}
 
 	gridTop := y
 	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap

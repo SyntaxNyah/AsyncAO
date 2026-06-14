@@ -199,7 +199,7 @@ func (a *App) handleHotkeys() {
 // a manual pick — and wraps. Empty wardrobe = a hint, no swap. The wardrobe is
 // per server, so the ring is too.
 func (a *App) quickSwapNext() {
-	ring, _ := mergeWardrobe(a.d.Prefs.WardrobeList(a.serverKey), nil)
+	ring, _, _ := mergeWardrobe(a.d.Prefs.WardrobeList(a.serverKey), nil)
 	if len(ring) == 0 {
 		a.warnLine = "Quick-swap: no wardrobe characters yet — star some with ★ in the Wardrobe"
 		a.warnAt = time.Now()

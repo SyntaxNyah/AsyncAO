@@ -167,20 +167,24 @@ func TestSelectAllChordArms(t *testing.T) {
 
 // TestMergeWardrobe pins the wardrobe-first menu: client favourites sort
 // case-insensitively up front (starred), server iniswap.txt entries follow
-// minus case-insensitive duplicates of wardrobe entries.
+// minus case-insensitive duplicates of wardrobe entries. inServer marks which
+// entries are in the server list — a favourite that ISN'T a server iniswap
+// ("quagmire" here) is false, so the Iniswaps tab won't show it.
 func TestMergeWardrobe(t *testing.T) {
-	names, stars := mergeWardrobe(
-		[]string{"Zeta", "aigis"},
+	names, stars, inServer := mergeWardrobe(
+		[]string{"Zeta", "aigis", "quagmire"},
 		[]string{"AIGIS", "bread", "zeta", "shrek"},
 	)
-	wantNames := []string{"aigis", "Zeta", "bread", "shrek"}
-	wantStars := []bool{true, true, false, false}
+	wantNames := []string{"aigis", "quagmire", "Zeta", "bread", "shrek"}
+	wantStars := []bool{true, true, true, false, false}
+	wantServer := []bool{true, false, true, true, true} // quagmire favourited but not on the server
 	if len(names) != len(wantNames) {
 		t.Fatalf("merged %v, want %v", names, wantNames)
 	}
 	for i := range wantNames {
-		if names[i] != wantNames[i] || stars[i] != wantStars[i] {
-			t.Fatalf("merged %v/%v, want %v/%v", names, stars, wantNames, wantStars)
+		if names[i] != wantNames[i] || stars[i] != wantStars[i] || inServer[i] != wantServer[i] {
+			t.Fatalf("entry %d = %q star=%v server=%v, want %q/%v/%v",
+				i, names[i], stars[i], inServer[i], wantNames[i], wantStars[i], wantServer[i])
 		}
 	}
 }
