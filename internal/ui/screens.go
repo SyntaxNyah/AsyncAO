@@ -1228,14 +1228,34 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
+	// Drag-select / Ctrl+C + links — same as the themed OOC log (this is the
+	// classic OOC tab's own scrollback; it must behave identically).
+	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
 	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the fields below
 	y := list.Y - a.oocScroll
-	for _, line := range lines {
+	for li, line := range lines {
 		if y > list.Y+list.H-lineH {
 			break
 		}
 		if y >= list.Y-lineH {
-			c.LabelClippedFont(c.LogFontFor(a.logPct, line), list.X, y, wrapW, line, ColText)
+			col := ColText
+			font := c.LogFontFor(a.logPct, line)
+			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
+			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
+			if c.hovering(rowRect) {
+				if urls := extractURLs(line, 1); len(urls) > 0 {
+					col = ColAccent
+					c.Tooltip(rowRect, "Click to open / right-click to copy: "+urls[0])
+					if c.clicked {
+						openBrowser(urls[0])
+					} else if c.rightClicked {
+						_ = sdl.SetClipboardText(urls[0])
+						a.warnLine = "Link copied to clipboard"
+						a.warnAt = time.Now()
+					}
+				}
+			}
+			c.LabelClippedFont(font, list.X, y, wrapW, line, col)
 		}
 		y += lineH
 	}
