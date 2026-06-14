@@ -34,6 +34,7 @@ const (
 	hotkeyLogin      = "login"
 	hotkeyMuteSFX    = "mute_sfx"
 	hotkeyQuickSwap  = "quick_swap"
+	hotkeyEmoteCycle = "emote_cycle"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -53,6 +54,7 @@ var hotkeyDefs = []struct {
 	{hotkeyLogin, "Server login (saved creds)", "g"},
 	{hotkeyMuteSFX, "Mute sound effects", "k"},
 	{hotkeyQuickSwap, "Quick-swap character (cycle wardrobe)", "j"},
+	{hotkeyEmoteCycle, "Cycle emote (next)", "e"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -174,6 +176,8 @@ func (a *App) handleHotkeys() {
 		a.toggleSFXMute()
 	case a.hotkeyFor(hotkeyQuickSwap):
 		a.quickSwapNext()
+	case a.hotkeyFor(hotkeyEmoteCycle):
+		a.cycleEmote(1)
 	}
 }
 

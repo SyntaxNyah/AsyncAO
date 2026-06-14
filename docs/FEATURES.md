@@ -160,6 +160,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   character resets to page 1. A **Random** button picks any emote (and jumps
   to its page), and **number keys 1–9** pick the emote in that grid position
   on the current page when the chat box isn't focused (picking focuses IC).
+  **Ctrl+E** (rebindable) **cycles to the next emote**, wrapping at the end and
+  auto-paging into view — keyboard-only emote stepping that walks the list in
+  order (vs. Random's jump). A **missing-frame warning** appears the moment you
+  select or send an emote whose sprite is absent (the streaming layer probes on
+  selection and the banner names what 404'd — see also Settings → formats).
   **Hovering an emote previews it** large (3 s, or instantly on right-click):
   if the emote has a **pre-animation** that flourish plays (looped) so you can
   watch it before sending; otherwise its talking sprite. Both layouts.

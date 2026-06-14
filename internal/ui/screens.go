@@ -2300,6 +2300,22 @@ func (a *App) pickRandomEmote() {
 	}
 }
 
+// cycleEmote steps the selection by delta with wrap and scrolls its page into
+// view — keyboard-only emote stepping during RP (the Ctrl+emote-cycle hotkey).
+// Unlike Random (which jumps anywhere), this walks the list in order. No-op
+// with no emotes; selectEmote clamps the index and refocuses the IC input.
+func (a *App) cycleEmote(delta int) {
+	n := len(a.emotes)
+	if n == 0 {
+		return
+	}
+	i := ((a.emoteIdx+delta)%n + n) % n // wrap, tolerating a -1 "nothing selected"
+	a.selectEmote(i)
+	if a.emotePerPage > 0 {
+		a.emotePage = i / a.emotePerPage
+	}
+}
+
 // gridRows is how many cellH-tall rows (plus emoteGridGap) fit in h, ≥ 1.
 func gridRows(h, cellH int32) int32 {
 	if rows := (h + emoteGridGap) / (cellH + emoteGridGap); rows > 1 {
