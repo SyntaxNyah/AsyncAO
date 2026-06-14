@@ -375,6 +375,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   activation rebuilds the courtroom from the session state. Caches need
   nothing: asset keys are full URLs, per-server separation is
   structural. Rehearsal never backgrounds (it owns the offline gate).
+  **Drag-reorder**: grab a chip and drag it along the strip to reorder —
+  it lifts (accent border) and the other chips slide live as you cross
+  them; the active tab keeps its place in the lineup. A small drag is told
+  from a click by a 6px threshold, so a plain click still switches/closes
+  and a drag never does both. (The right × hot-zone still only closes.)
 - **Rehearsal mode** (lobby → select a visited server → Rehearse):
   browse its character roster and play emotes entirely offline from the
   cache — the manager's network gate closes structurally, nothing

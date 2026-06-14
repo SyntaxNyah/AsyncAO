@@ -139,3 +139,41 @@ func TestLoweredCacheMemo(t *testing.T) {
 		t.Fatalf("changed src must re-lower, got %q", got)
 	}
 }
+
+// TestMoveTab pins the drag-reorder slice math: tabs land in the right order
+// and activeTab keeps pointing at whatever session was active across the move
+// (the two-step remove-then-insert index shift). Slots are identified by
+// pointer, mirroring how the live strip carries each parked session.
+func TestMoveTab(t *testing.T) {
+	cases := []struct {
+		name             string
+		from, to, active int
+		wantOrder        []int // positions expressed as original indices
+		wantActive       int
+	}{
+		{"forward, active follows", 0, 2, 2, []int{1, 2, 0, 3}, 1},
+		{"forward, moved is active", 0, 2, 0, []int{1, 2, 0, 3}, 2},
+		{"forward, active past range", 1, 2, 3, []int{0, 2, 1, 3}, 3},
+		{"backward to front", 3, 0, 1, []int{3, 0, 1, 2}, 2},
+		{"no-op", 2, 2, 1, []int{0, 1, 2, 3}, 1},
+		{"to end, lobby (no active)", 0, 3, -1, []int{1, 2, 3, 0}, -1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			orig := []*courtTab{{}, {}, {}, {}}
+			a := &App{tabs: append([]*courtTab(nil), orig...), activeTab: tc.active}
+			a.moveTab(tc.from, tc.to)
+			if a.activeTab != tc.wantActive {
+				t.Errorf("activeTab = %d, want %d", a.activeTab, tc.wantActive)
+			}
+			if len(a.tabs) != len(orig) {
+				t.Fatalf("len = %d, want %d", len(a.tabs), len(orig))
+			}
+			for pos, want := range tc.wantOrder {
+				if a.tabs[pos] != orig[want] {
+					t.Errorf("position %d holds the wrong tab (want original index %d)", pos, want)
+				}
+			}
+		})
+	}
+}

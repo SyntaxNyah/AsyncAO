@@ -47,6 +47,10 @@ const (
 	// discoverable way to open another server (the active-chip-park gesture
 	// wasn't obvious to new players).
 	addTabChipW = 26
+	// tabDragThreshold is the cursor travel (logical px) past which a press on
+	// a chip becomes a reorder drag instead of a switch/close click — mirrors
+	// the wardrobe's iniDragThreshold.
+	tabDragThreshold = 6
 )
 
 // courtTab is one parked server session. While a tab is ACTIVE its state
@@ -150,6 +154,38 @@ func (a *App) activateTab(i int) {
 	}
 	a.ensureThemeForSession() // the tab's theme binding follows it in
 	a.updatePresence()
+}
+
+// moveTab reorders the strip, moving the tab at `from` to index `to` and
+// keeping activeTab pointing at whatever session was active across the move
+// (remove-then-insert, so the index shifts in two steps). Slot identity is by
+// pointer, so a parked session's state rides along untouched. Drag-gesture
+// frequency, not per frame — the small reslice alloc is fine.
+func (a *App) moveTab(from, to int) {
+	n := len(a.tabs)
+	if from == to || from < 0 || to < 0 || from >= n || to >= n {
+		return
+	}
+	t := a.tabs[from]
+	a.tabs = append(a.tabs[:from], a.tabs[from+1:]...) // remove
+	a.tabs = append(a.tabs, nil)                       // grow by one
+	copy(a.tabs[to+1:], a.tabs[to:])                   // open a gap at `to`
+	a.tabs[to] = t                                     // drop it in
+	// Track the active slot through the same remove (indices past `from` shift
+	// down) then insert (indices at/after `to` shift up).
+	act := a.activeTab
+	switch {
+	case act == from:
+		act = to
+	default:
+		if act > from {
+			act--
+		}
+		if act >= to {
+			act++
+		}
+	}
+	a.activeTab = act
 }
 
 // closeActiveTab disconnects the live session and removes its slot.
@@ -312,11 +348,21 @@ func (a *App) tabChipLabel(i int) string {
 // chips can never double-act with widgets underneath; drawTabBar paints
 // the same rects after the screens (so chips stack on top visually).
 func (a *App) handleTabBar(w int32) {
+	c := a.ctx
 	rects, add := a.tabBarRects(w)
-	if rects == nil || !a.ctx.clicked {
+	pressed := c.mouseDown && !a.tabPrevDown
+	a.tabPrevDown = c.mouseDown
+	if rects == nil {
+		a.tabDragFrom, a.tabDragging = -1, false
 		return
 	}
-	if add.W > 0 && a.ctx.hovering(add) {
+	if a.handleTabDrag(rects, pressed) {
+		return // a reorder drag consumed this gesture; don't switch/close
+	}
+	if !c.clicked {
+		return
+	}
+	if add.W > 0 && c.hovering(add) {
 		// "+" — open another server: park the active session (it keeps
 		// running in the background) and show the lobby, where connecting
 		// opens the new tab. The explicit, discoverable form of the
@@ -325,15 +371,15 @@ func (a *App) handleTabBar(w int32) {
 		a.ensureThemeForSession()
 		a.screen = ScreenLobby
 		a.updatePresence()
-		a.ctx.clicked = false
+		c.clicked = false
 		return
 	}
 	for i, r := range rects {
-		if !a.ctx.hovering(r) {
+		if !c.hovering(r) {
 			continue
 		}
 		// Right third of a chip = close; rest = switch.
-		if a.ctx.mouseX > r.X+r.W-16 && i != a.activeTab {
+		if c.mouseX > r.X+r.W-16 && i != a.activeTab {
 			a.closeParkedTab(i)
 		} else if i == a.activeTab {
 			// Clicking the active chip parks it and shows the lobby —
@@ -345,9 +391,66 @@ func (a *App) handleTabBar(w int32) {
 		} else {
 			a.activateTab(i)
 		}
-		a.ctx.clicked = false // swallowed: nothing underneath reacts
+		c.clicked = false // swallowed: nothing underneath reacts
 		return
 	}
+}
+
+// handleTabDrag arms a reorder on press over a chip body, promotes it to a
+// drag once the cursor passes tabDragThreshold, and reorders the strip live as
+// the cursor crosses chips. Returns true when a release ended a drag, so the
+// caller swallows the click (a reorder must not also switch/close the tab).
+// Pressing the right ✕ third never arms — that stays a close-click target.
+func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
+	c := a.ctx
+	if pressed && a.tabDragFrom < 0 {
+		for i, r := range rects {
+			if c.hovering(r) && c.mouseX <= r.X+r.W-16 { // chip body, not the ✕
+				a.tabDragFrom = i
+				a.tabDragStart = [2]int32{c.mouseX, c.mouseY}
+				a.tabDragging = false
+				break
+			}
+		}
+	}
+	if a.tabDragFrom >= 0 && c.mouseDown {
+		if !a.tabDragging {
+			dx, dy := c.mouseX-a.tabDragStart[0], c.mouseY-a.tabDragStart[1]
+			if dx*dx+dy*dy > tabDragThreshold*tabDragThreshold {
+				a.tabDragging = true
+			}
+		}
+		if a.tabDragging {
+			target := a.tabDragFrom
+			last := rects[len(rects)-1]
+			switch {
+			case c.mouseX < rects[0].X:
+				target = 0
+			case c.mouseX >= last.X+last.W:
+				target = len(rects) - 1
+			default:
+				for i, r := range rects {
+					if c.mouseX >= r.X && c.mouseX < r.X+r.W {
+						target = i
+						break
+					}
+				}
+			}
+			if target != a.tabDragFrom {
+				a.moveTab(a.tabDragFrom, target)
+				a.tabDragFrom = target // follow the slot to its new index
+			}
+		}
+	}
+	if !c.mouseDown {
+		wasDragging := a.tabDragging
+		a.tabDragFrom, a.tabDragging = -1, false
+		if wasDragging {
+			c.clicked = false
+			return true
+		}
+	}
+	return false
 }
 
 // drawTabBar paints the strip (after the screens, before overlays).
@@ -366,7 +469,11 @@ func (a *App) drawTabBar(w int32) {
 			col = ColAccent
 		}
 		c.Fill(r, sdl.Color{R: bg.R, G: bg.G, B: bg.B, A: 235})
-		c.Border(r, ColPanelHi)
+		border := ColPanelHi
+		if a.tabDragging && i == a.tabDragFrom {
+			border = ColAccent // lifted: this chip is mid-reorder
+		}
+		c.Border(r, border)
 		c.LabelClipped(r.X+6, r.Y+3, r.W-24, a.tabChipLabel(i), col)
 		if i != a.activeTab {
 			c.Label(r.X+r.W-14, r.Y+3, "✕", ColTextDim)

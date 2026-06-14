@@ -255,6 +255,15 @@ type App struct {
 	// above. activeTab indexes tabs, −1 = no active session (lobby).
 	tabs      []*courtTab
 	activeTab int
+	// Tab drag-reorder: tabDragFrom is the chip armed on press (−1 = none),
+	// tabDragging flips once the cursor passes tabDragThreshold (then a release
+	// reorders instead of switching). tabPrevDown is this strip's own
+	// mouse-held tracker (separate from the wardrobe's, since the strip draws
+	// over every screen).
+	tabDragFrom  int
+	tabDragStart [2]int32
+	tabDragging  bool
+	tabPrevDown  bool
 
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
@@ -865,6 +874,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		oocName:         d.Prefs.SavedShowname(),
 		selServer:       -1,
 		activeTab:       -1,
+		tabDragFrom:     -1,
 		macroBind:       -1,
 		themeTex:        map[string]bool{},
 		themePages:      map[string]*render.TexturePage{},
