@@ -2405,8 +2405,16 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		namePlaceholder = "Showname"
 	}
 	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameX, Y: icY, W: shownameBoxW, H: fH}, a.shownameOverride, namePlaceholder)
+	// Immediate (AO non-interrupting preanim): the preanim plays without
+	// holding back the text. Session toggle; rides the next message via
+	// OutgoingMS.Immediate. Vertically centered against the fH-tall inputs.
+	const immedW = 70
+	immedX := nameX + shownameBoxW + 6
+	a.icImmediate = c.Checkbox(immedX, icY+(fH-16)/2, "Immed", a.icImmediate)
+	c.Tooltip(sdl.Rect{X: immedX, Y: icY, W: immedW, H: fH}, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	var send bool
-	a.icInput, send = c.TextField("ic", sdl.Rect{X: nameX + shownameBoxW + 6, Y: icY, W: vp.W - (nameX - pad) - shownameBoxW - 6, H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
+	icX := immedX + immedW + 6
+	a.icInput, send = c.TextField("ic", sdl.Rect{X: icX, Y: icY, W: vp.W - (icX - pad), H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
 	}
@@ -2578,7 +2586,13 @@ func (a *App) selectEmote(i int) {
 	}
 	a.emoteIdx = i
 	me := a.activeCharName()
-	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (selected)
+	// Warm BOTH button states at HIGH: the _on (pressed) art the selected
+	// cell wants, AND the _off art it falls back to while _on streams in —
+	// so a freshly-pressed cell shows its sprite immediately instead of
+	// blanking to the text-clipped fallback (the "button didn't load on
+	// press" report).
+	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, true), assets.AssetTypeEmoteButton, network.PriorityHigh)  // AssetType: EmoteButton (on)
+	a.d.Manager.Prefetch(a.urls.EmoteButton(me, i+1, false), assets.AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (off fallback)
 	a.speculateEmote(me, &a.emotes[i])
 	a.ctx.FocusField("ic")
 }
@@ -3050,6 +3064,7 @@ func (a *App) sendIC(shout int) {
 		OffsetX:   a.pairOffX,
 		OffsetY:   a.pairOffY,
 		Flip:      a.pairFlip,
+		Immediate: a.icImmediate, // non-interrupting preanim (IC-row toggle)
 	}
 	// Named custom interjection (2.10): the wire carries "4&<stem>"
 	// (formatObjection assembles it; courtroom.cpp:2142).

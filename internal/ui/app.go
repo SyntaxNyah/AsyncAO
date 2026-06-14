@@ -497,6 +497,7 @@ type sessionState struct {
 	sidePref         string // OUR side (char.ini default, /pos override)
 	iniWarmed        string // last char.ini hover-warmed (dedupe)
 	icColor          int    // outgoing MS text_color (dropdown)
+	icImmediate      bool   // MS Immediate: preanim plays without holding the text (session toggle)
 	// pair offset edit buffers (typed text commits on valid parse)
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
@@ -2510,6 +2511,14 @@ func (a *App) pollThemeApply() {
 	if res.inkGuard != "" {
 		a.pushDebug(res.inkGuard)
 	}
+	// Theme chrome uploads PINNED (above), so applying a theme can evict
+	// emote-button art from T1. The gen-keyed page cache re-Gets on the
+	// bumped generation, but evicted slots then sit in the text fallback
+	// until demandAsset's per-slot retry window elapses. Force a fresh
+	// re-demand so the emote grid heals immediately after a theme switch
+	// (the same invariant pollCharINI applies on a character change).
+	a.emoteBtnOff, a.emoteBtnOn = nil, nil
+	a.emoteAsk = nil
 }
 
 // ensureThemeForSession re-applies the theme whenever the session's
