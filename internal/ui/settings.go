@@ -30,6 +30,11 @@ type settingsState struct {
 	callInput  string
 	callLoaded bool
 
+	// friends edit buffer — reloaded when the server (friendKey) changes,
+	// since the friend list is per server.
+	friendInput string
+	friendKey   string
+
 	// font override edit buffer (semicolon-separated chain).
 	fontInput  string
 	fontLoaded bool
@@ -688,6 +693,30 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		settings.statusLine = "Callwords saved."
 	}
 	y += 34
+
+	// Highlighted friends (per server): shownames whose IC messages glow.
+	fh := a.d.Prefs.FriendHighlightOn()
+	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {
+		a.d.Prefs.SetFriendHighlight(next)
+	}
+	y += 26
+	if a.serverKey == "" {
+		c.Label(pad, y+4, "Friends: connect to a server to set its highlighted shownames.", ColTextDim)
+		y += 30
+	} else {
+		c.Label(pad, y+4, "Friends:", ColText)
+		if settings.friendKey != a.serverKey { // reload buffer per server
+			settings.friendInput = strings.Join(a.d.Prefs.ServerFriends(a.serverKey), ", ")
+			settings.friendKey = a.serverKey
+		}
+		var friendCommit bool
+		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.friendInput, "showname1, showname2, ... (saved per server; their lines glow)")
+		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || friendCommit {
+			a.d.Prefs.SetServerFriends(a.serverKey, strings.Split(settings.friendInput, ","))
+			settings.statusLine = "Friends saved for this server."
+		}
+		y += 34
+	}
 	return y
 }
 

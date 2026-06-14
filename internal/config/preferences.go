@@ -228,6 +228,7 @@ type AssetPreferences struct {
 	BgSlideshowSecs        int                          `json:"bgSlideshowSecs"`
 	DownloadKBps           int                          `json:"downloadKBps"`
 	ForceCharNames         bool                         `json:"forceCharNames"`
+	FriendHighlight        bool                         `json:"friendHighlight"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
@@ -309,8 +310,9 @@ type prefsJSON struct {
 	HighlightColor         *int  `json:"highlightColor"` // absent = default accent
 	BgSlideshow            bool  `json:"bgSlideshow"`    // default OFF (zero value)
 	BgSlideshowSecs        int   `json:"bgSlideshowSecs"`
-	DownloadKBps           int   `json:"downloadKBps"`   // 0 = unlimited (default)
-	ForceCharNames         bool  `json:"forceCharNames"` // default OFF
+	DownloadKBps           int   `json:"downloadKBps"`    // 0 = unlimited (default)
+	ForceCharNames         bool  `json:"forceCharNames"`  // default OFF
+	FriendHighlight        bool  `json:"friendHighlight"` // default OFF
 	DebugOverlay           bool  `json:"debugOverlay"`
 	FormatAutoDetect       *bool `json:"formatAutoDetect"`  // absent = default ON
 	ThemeLayout            *bool `json:"themeLayout"`       // absent = default ON
@@ -419,6 +421,10 @@ type ServerWarmInfo struct {
 	// connect (like the cached char list), then a fresh autoindex fetch
 	// refreshes it in the background.
 	Backgrounds []string `json:"backgrounds,omitempty"`
+	// Friends are this server's highlighted shownames (≤ WarmFriendsCap):
+	// their IC messages glow, and (later slices) can ping/notify. Per server,
+	// so your friend list on one server doesn't bleed into another.
+	Friends []string `json:"friends,omitempty"`
 	// Account login for this server — NOT mod-only: servers with user
 	// account systems (Akashi and tsuserver-family forks) hang member
 	// perks off /login too, and the same flow signs either in. PLAINTEXT
@@ -492,6 +498,9 @@ const WarmCharsCap = 4096
 // WarmBgsCap bounds one server's remembered background list (same budget as
 // the char list — the megaservers have comparable background counts).
 const WarmBgsCap = 4096
+
+// WarmFriendsCap bounds one server's highlighted-showname (friend) list.
+const WarmFriendsCap = 256
 
 // serverWarmCap bounds the per-server warm table (rule §17.4); when full,
 // new servers simply don't record until old entries are cleared.
@@ -605,6 +614,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.DownloadKBps = onDisk.DownloadKBps // 0 = unlimited
 	p.ForceCharNames = onDisk.ForceCharNames
+	p.FriendHighlight = onDisk.FriendHighlight
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
 	if onDisk.FormatAutoDetect != nil {
@@ -1172,6 +1182,26 @@ func (p *AssetPreferences) SetForceCharNames(on bool) {
 	p.markDirty()
 }
 
+// FriendHighlightOn reports the master toggle for friend (highlighted-showname)
+// IC-log highlighting (OFF by default).
+func (p *AssetPreferences) FriendHighlightOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FriendHighlight
+}
+
+// SetFriendHighlight toggles friend IC-log highlighting.
+func (p *AssetPreferences) SetFriendHighlight(on bool) {
+	p.mu.Lock()
+	if p.FriendHighlight == on {
+		p.mu.Unlock()
+		return
+	}
+	p.FriendHighlight = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // --- Theme -------------------------------------------------------------------
 
 // Theme reports the selected theme name ("" = default) and the custom theme
@@ -1346,6 +1376,51 @@ func (p *AssetPreferences) ServerWarmInfoFor(key string) ServerWarmInfo {
 // RememberServerChar records the character last used on a server.
 func (p *AssetPreferences) RememberServerChar(key, char string) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Char = char })
+}
+
+// ServerFriends returns a server's highlighted shownames (a clone — the
+// settings editor mutates it; callers must not alias the stored slice).
+func (p *AssetPreferences) ServerFriends(key string) []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return cloneStrings(p.ServerWarm[key].Friends)
+}
+
+// IsServerFriend reports whether name (case-insensitive) is a highlighted
+// friend on the server. Scans under the lock with NO allocation — safe to call
+// per incoming message (even in a catch-up burst).
+func (p *AssetPreferences) IsServerFriend(key, name string) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, f := range p.ServerWarm[key].Friends {
+		if strings.EqualFold(strings.TrimSpace(f), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetServerFriends replaces a server's highlighted-showname list — trimmed,
+// blanks dropped, deduped case-insensitively, capped at WarmFriendsCap.
+func (p *AssetPreferences) SetServerFriends(key string, names []string) {
+	seen := make(map[string]struct{}, len(names))
+	clean := make([]string, 0, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		k := strings.ToLower(n)
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
+		clean = append(clean, n)
+		if len(clean) >= WarmFriendsCap {
+			break
+		}
+	}
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.Friends = clean })
 }
 
 // RememberServerBackground records the background last seen on a server.

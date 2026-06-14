@@ -125,6 +125,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   log/width/font-scale — never re-wrapped per frame).
 - **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
   flash + `word_call` sound.
+- **Highlighted friends** (Settings, **OFF by default**): a **per-server** list
+  of shownames whose IC messages **glow** (a warm tint behind the line) so you
+  can spot your friends in a busy log — saved per server (cached like the char
+  list), and it works for backgrounded tabs too. Matches the **displayed** name
+  (custom showname, falling back to the character), so — like any showname — it
+  can be spoofed; that's noted in Settings. Gated entirely on the toggle, so a
+  no-friend log draws byte-identical and the detection costs nothing when off.
+  *(Sound/popup signals + a toggle keybind are planned follow-ups.)*
 - **Hotkeys** (Ctrl+key, configurable in Settings): shouts 1..4, pos
   cycle, music stop (`~stop.mp3` fake-track request, courtroom.cpp
   music_stop), log jump, screenshot (`screenshots/` beside the exe).

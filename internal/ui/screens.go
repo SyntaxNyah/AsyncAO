@@ -987,6 +987,10 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 // unread IC line (the "last read" boundary the N-new pill jumps to).
 const unreadDividerH = 2
 
+// friendTintColor is the warm "glow" behind a highlighted friend's IC line
+// (translucent so the text reads through; distinct from the blue selection).
+var friendTintColor = sdl.Color{R: 255, G: 210, B: 90, A: 64}
+
 // drawICLogList renders the colored IC scrollback (search-filtered,
 // word-wrapped to the list width) into rect — used by the classic Log tab
 // and the themed ic_chatlog element.
@@ -1036,6 +1040,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	// it pins the HOVERED line, like right-click. Resolved once (the chord is
 	// one key/frame); handleHotkeys leaves an unrecognized chord in c.hotkey.
 	pinChord := c.hotkey != 0 && strings.EqualFold(sdl.GetKeyName(c.hotkey), a.hotkeyFor(hotkeyPinNote))
+	friendsOn := a.d.Prefs.FriendHighlightOn() // gates the per-line friend glow (read once)
 	// First wrapped row of the first unread entry — the "jump to last read"
 	// target and where the unread divider draws. Scanned only while scrolled
 	// up with unread; caught-up frames (icReadMark == len) skip it entirely, so
@@ -1065,6 +1070,12 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			}
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			font := c.LogFontFor(a.logPct, row.text)
+			// A highlighted friend's line glows (warm tint behind it), gated on
+			// the master toggle + the entry flag — a no-friend log is byte-
+			// identical to before.
+			if friendsOn && a.icLog[row.entry].friend {
+				c.Fill(rowRect, friendTintColor)
+			}
 			// Selection highlight sits under the text (and the divider).
 			a.drawLogSelHighlight(logSelIC, ri, list.X, y, wrapW, lineH, row.text, font)
 			// Unread divider: a thin accent rule at the top of the first unread

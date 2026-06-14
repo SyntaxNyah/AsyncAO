@@ -263,7 +263,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 	switch ev.Kind {
 	case courtroom.EventMessage:
 		if ev.Message != nil {
-			s.icLog = append(s.icLog, icEntry{text: clampLine(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn())), color: ev.Message.TextColor})
+			s.icLog = append(s.icLog, icEntry{text: clampLine(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn())), color: ev.Message.TextColor, friend: a.friendMessage(s.serverKey, ev.Message)})
 			if len(s.icLog) > icLogCap {
 				copy(s.icLog, s.icLog[len(s.icLog)-icLogCap:])
 				s.icLog = s.icLog[:icLogCap]
