@@ -169,8 +169,10 @@ func TestSelectAllChordArms(t *testing.T) {
 // (same name → same colour every call/launch — it's a fixed hash, not a seeded
 // one), distinct for distinct names here, and always full-alpha.
 func TestNameColorStable(t *testing.T) {
-	if nameColor("Phoenix", 0.6, 0.9) != nameColor("Phoenix", 0.6, 0.9) {
-		t.Error("nameColor must be stable for the same name")
+	// Two calls with the same name must agree (the hash is fixed, not seeded).
+	first := nameColor("Phoenix", 0.6, 0.9)
+	if again := nameColor("Phoenix", 0.6, 0.9); again != first {
+		t.Errorf("nameColor not stable: %v vs %v", first, again)
 	}
 	if nameColor("Phoenix", 0.6, 0.9) == nameColor("Edgeworth", 0.6, 0.9) {
 		t.Error("distinct names should get distinct colours")
