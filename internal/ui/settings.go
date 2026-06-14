@@ -1030,6 +1030,13 @@ func (a *App) drawDownloaderSettings(y, w int32) int32 {
 	y += 24
 
 	if on {
+		// Bandwidth cap (KiB/s; 0 = unlimited — the default, so grabs run full
+		// speed unless you throttle them). Average-rate, applied per grab.
+		capKBps := a.d.Prefs.DownloadCapKBps()
+		if next := a.numberRow(y, "Bandwidth cap (KiB/s, 0 = unlimited)", capKBps, 256, 0, 1<<20); next != capKBps {
+			a.d.Prefs.SetDownloadCapKBps(next)
+		}
+		y += 30
 		root := downloadsRoot()
 		c.LabelClipped(pad+20, y+4, w-pad-360-scrollBarW, "Folder: "+root, ColText)
 		if c.Button(sdl.Rect{X: w - pad - 340 - scrollBarW, Y: y, W: 150, H: btnH}, "Open folder") {

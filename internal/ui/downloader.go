@@ -285,7 +285,12 @@ func (a *App) launchDownload(req dlReq) {
 
 	// Snapshot everything the goroutine touches; it must not read App fields.
 	// dlPaused is the one exception — an atomic, safe to share (advisor #3).
-	job := &dlJob{label: req.label, base: downloadsRoot(), progress: a.dl.progress, paused: &a.dlPaused}
+	// The bandwidth cap is snapshot here (applies per job; a slider change hits
+	// the next grab, which with a queue is soon enough).
+	job := &dlJob{
+		label: req.label, base: downloadsRoot(), progress: a.dl.progress,
+		paused: &a.dlPaused, capBPS: int64(a.d.Prefs.DownloadCapKBps()) * 1024, start: time.Now(),
+	}
 	client := a.d.Client
 	urls := a.urls
 	exts := audioProbeExts()
@@ -318,6 +323,26 @@ type dlJob struct {
 	errs     int
 	progress chan dlProgress
 	paused   *atomic.Bool // shared with the render thread (Pause button)
+	capBPS   int64        // bandwidth cap in bytes/sec (0 = unlimited), snapshot at launch
+	start    time.Time    // job start, for the cumulative average-rate throttle
+}
+
+// throttle holds the job to its average-rate bandwidth cap. client.Fetch
+// returns whole files, so this paces BETWEEN files (a single big file fetches
+// at full speed, then we sleep) — an average-rate limiter, not an instantaneous
+// one. Cumulative form self-corrects; the wait selects on ctx.Done() so cancel
+// never wedges it. No-op when uncapped (the default).
+func (j *dlJob) throttle(ctx context.Context) {
+	if j.capBPS <= 0 {
+		return
+	}
+	expected := time.Duration(float64(j.bytes) / float64(j.capBPS) * float64(time.Second))
+	if d := expected - time.Since(j.start); d > 0 {
+		select {
+		case <-ctx.Done():
+		case <-time.After(d):
+		}
+	}
 }
 
 func (j *dlJob) overBudget() bool { return j.files >= dlMaxFiles || j.bytes >= dlMaxBytes }
@@ -449,6 +474,7 @@ func (j *dlJob) saveURL(ctx context.Context, client *network.Client, url, destPa
 	}
 	j.files++
 	j.bytes += int64(len(data))
+	j.throttle(ctx) // hold to the bandwidth cap (no-op when uncapped)
 	return true
 }
 

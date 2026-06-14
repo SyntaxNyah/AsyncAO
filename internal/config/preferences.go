@@ -129,6 +129,12 @@ const (
 	maxBgSlideshowSecs     = 600
 )
 
+// maxDownloadKBps bounds the optional downloader bandwidth cap (KiB/s). 0 =
+// unlimited (the DEFAULT — a throttle on by default would slow grabs out of the
+// box, a perf regression). The 1 GiB/s ceiling is effectively unlimited but
+// keeps the value finite (rule §17.4).
+const maxDownloadKBps = 1 << 20
+
 // Layout scale bounds (percent). Defaults preserve the original layout:
 // viewport 66 ≈ the old fixed 2/3 width; the text/height scales at 100.
 const (
@@ -220,6 +226,7 @@ type AssetPreferences struct {
 	HighlightColor         int                          `json:"highlightColor"`
 	BgSlideshow            bool                         `json:"bgSlideshow"`
 	BgSlideshowSecs        int                          `json:"bgSlideshowSecs"`
+	DownloadKBps           int                          `json:"downloadKBps"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
@@ -301,6 +308,7 @@ type prefsJSON struct {
 	HighlightColor         *int  `json:"highlightColor"` // absent = default accent
 	BgSlideshow            bool  `json:"bgSlideshow"`    // default OFF (zero value)
 	BgSlideshowSecs        int   `json:"bgSlideshowSecs"`
+	DownloadKBps           int   `json:"downloadKBps"` // 0 = unlimited (default)
 	DebugOverlay           bool  `json:"debugOverlay"`
 	FormatAutoDetect       *bool `json:"formatAutoDetect"`  // absent = default ON
 	ThemeLayout            *bool `json:"themeLayout"`       // absent = default ON
@@ -593,6 +601,7 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.BgSlideshowSecs > 0 { // 0 (absent) keeps the New() default
 		p.BgSlideshowSecs = onDisk.BgSlideshowSecs
 	}
+	p.DownloadKBps = onDisk.DownloadKBps // 0 = unlimited
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
 	if onDisk.FormatAutoDetect != nil {
@@ -1104,6 +1113,37 @@ func (p *AssetPreferences) SetBgSlideshowSeconds(n int) {
 		return
 	}
 	p.BgSlideshowSecs = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DownloadCapKBps reports the downloader bandwidth cap in KiB/s (0 = unlimited).
+func (p *AssetPreferences) DownloadCapKBps() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.DownloadKBps < 0 {
+		return 0
+	}
+	if p.DownloadKBps > maxDownloadKBps {
+		return maxDownloadKBps
+	}
+	return p.DownloadKBps
+}
+
+// SetDownloadCapKBps clamps and persists the bandwidth cap (0 = unlimited).
+func (p *AssetPreferences) SetDownloadCapKBps(n int) {
+	if n < 0 {
+		n = 0
+	}
+	if n > maxDownloadKBps {
+		n = maxDownloadKBps
+	}
+	p.mu.Lock()
+	if p.DownloadKBps == n {
+		p.mu.Unlock()
+		return
+	}
+	p.DownloadKBps = n
 	p.mu.Unlock()
 	p.markDirty()
 }
