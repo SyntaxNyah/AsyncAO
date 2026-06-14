@@ -1032,6 +1032,10 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	}
 	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
 	a.handleLogSelect(logSelIC, list, a.icScroll, lineH, wrapW)
+	// Pin-to-notes can also fire on a configurable Ctrl-chord (default Ctrl+N):
+	// it pins the HOVERED line, like right-click. Resolved once (the chord is
+	// one key/frame); handleHotkeys leaves an unrecognized chord in c.hotkey.
+	pinChord := c.hotkey != 0 && strings.EqualFold(sdl.GetKeyName(c.hotkey), a.hotkeyFor(hotkeyPinNote))
 	// First wrapped row of the first unread entry — the "jump to last read"
 	// target and where the unread divider draws. Scanned only while scrolled
 	// up with unread; caught-up frames (icReadMark == len) skip it entirely, so
@@ -1080,8 +1084,9 @@ func (a *App) drawICLogList(list sdl.Rect) {
 					openBrowser(u)
 				}
 			}
-			// Right-click pins the WHOLE entry into the case notebook.
-			if c.rightClicked && c.hovering(sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}) {
+			// Right-click — or the configurable pin-note chord — pins the
+			// WHOLE entry into the case notebook.
+			if (c.rightClicked || pinChord) && c.hovering(sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}) {
 				a.pinNote(a.icLog[row.entry].text)
 			}
 		}

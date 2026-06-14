@@ -35,6 +35,7 @@ const (
 	hotkeyMuteSFX    = "mute_sfx"
 	hotkeyQuickSwap  = "quick_swap"
 	hotkeyEmoteCycle = "emote_cycle"
+	hotkeyPinNote    = "pin_note"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -55,6 +56,7 @@ var hotkeyDefs = []struct {
 	{hotkeyMuteSFX, "Mute sound effects", "k"},
 	{hotkeyQuickSwap, "Quick-swap character (cycle wardrobe)", "j"},
 	{hotkeyEmoteCycle, "Cycle emote (next)", "e"},
+	{hotkeyPinNote, "Pin hovered log line to notes", "n"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
