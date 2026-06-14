@@ -236,6 +236,7 @@ type App struct {
 	// (Like the IC caches above, these stay App-global: their keys carry
 	// the per-tab seq, so a tab switch is just a cache miss.)
 	oocWrap     []string
+	oocWrapName []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
 	oocWrapSeq  uint64
 	oocWrapW    int32
 	oocWrapPct  int
@@ -526,6 +527,7 @@ type sessionState struct {
 	logSearch    string
 	oocSeq       uint64
 	oocLog       []string
+	oocSpeakers  []string // parallel to oocLog: speaker per line ("" = system line); for name colours
 	oocScroll    int32
 	musicScroll  int32
 	areaScroll   int32
@@ -1379,7 +1381,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()
 		case courtroom.EventOOC:
-			a.pushOOC(ev.Name + ": " + ev.Text)
+			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
 			a.checkCallwords(ev.Text)
 		case courtroom.EventMessage:
 			if ev.Message != nil {
@@ -1407,7 +1409,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventWTCE:
 			a.handleWTCE(ev.Text, ev.Int)
 		case courtroom.EventModcall:
-			a.pushOOC("[MOD CALL] " + ev.Text)
+			a.pushOOC("[MOD CALL] "+ev.Text, "")
 			a.playThemeSFX("mod_call")
 			a.ctx.FlashWindow()
 			a.signalModcall(a.serverName, ev.Text) // desktop toast (opt-in)
@@ -1416,22 +1418,22 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// (on_authentication_state_received).
 			switch {
 			case ev.Int >= 1:
-				a.pushOOC("CLIENT: Logged in as a moderator.")
+				a.pushOOC("CLIENT: Logged in as a moderator.", "")
 			case ev.Int == 0:
-				a.pushOOC("CLIENT: Login unsuccessful.")
+				a.pushOOC("CLIENT: Login unsuccessful.", "")
 			default:
-				a.pushOOC("CLIENT: You were logged out.")
+				a.pushOOC("CLIENT: You were logged out.", "")
 			}
 		case courtroom.EventSetPos:
 			a.sidePref = ev.Text // SP: the server moved us
 		case courtroom.EventCase:
-			a.pushOOC("[CASE] " + ev.Text)
+			a.pushOOC("[CASE] "+ev.Text, "")
 			if enabled, roles := a.d.Prefs.Casing(); enabled && ev.Int&roles != 0 {
 				a.playThemeSFX("case_call")
 				a.ctx.FlashWindow()
 			}
 		case courtroom.EventNotice:
-			a.pushOOC("[SERVER] " + ev.Text)
+			a.pushOOC("[SERVER] "+ev.Text, "")
 			a.ctx.FlashWindow()
 		case courtroom.EventEvidence:
 			a.evidAsk = nil // list replaced; thumbnail pacing resets
@@ -2881,11 +2883,16 @@ func (a *App) pushIC(line string, color int, friend bool, friendColor int32, spe
 // why MOTDs arrived truncated; they now wrap at draw time instead.
 const oocLineCap = 4096
 
-func (a *App) pushOOC(line string) {
+// pushOOC appends an OOC log line. speaker is the sender's name for a real OOC
+// message (used by name colours), "" for system/[MOD CALL]/CLIENT lines. The
+// two slices stay parallel (same cap), so display can look the speaker up by
+// entry index without re-parsing the ": " (which would mis-tint system lines).
+func (a *App) pushOOC(line, speaker string) {
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
 	}
 	a.oocLog = appendCapped(a.oocLog, line, icLogCap)
+	a.oocSpeakers = appendCapped(a.oocSpeakers, speaker, icLogCap)
 	a.oocSeq++ // invalidate the wrapped-lines cache
 }
 

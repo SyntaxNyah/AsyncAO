@@ -7,11 +7,29 @@ package ui
 // byte-identical to before.
 
 import (
+	"strings"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 )
+
+// drawLogLineNamed draws one wrapped log line, tinting the speaker's name prefix
+// in its per-speaker colour when name colours are on and speaker != "" (the
+// caller passes "" for non-first rows and system lines, so no draw-time
+// re-parsing of ": "). The rest of the line draws in col. Falls back to a plain
+// draw otherwise. Shared by the IC and OOC log render paths.
+func (a *App) drawLogLineNamed(font *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64) {
+	c := a.ctx
+	if nameOn && speaker != "" && strings.HasPrefix(line, speaker) {
+		if nw, _, err := font.SizeUTF8(speaker); err == nil {
+			c.LabelClippedFont(font, x, y, wrapW, speaker, nameColor(speaker, sat, val))
+			c.LabelClippedFont(font, x+int32(nw), y, wrapW-int32(nw), line[len(speaker):], col)
+			return
+		}
+	}
+	c.LabelClippedFont(font, x, y, wrapW, line, col)
+}
 
 const (
 	logSelNone = iota

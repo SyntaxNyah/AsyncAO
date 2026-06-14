@@ -468,10 +468,16 @@ func (a *App) oocWrapped(width int32) []string {
 		return a.oocWrap
 	}
 	out := a.oocWrap[:0]
-	for _, entry := range a.oocLog {
+	name := a.oocWrapName[:0] // parallel to out: speaker on each entry's first display line
+	for i, entry := range a.oocLog {
+		sp := ""
+		if i < len(a.oocSpeakers) {
+			sp = a.oocSpeakers[i]
+		}
 		if streamer {
 			entry = streamerMaskLine(entry)
 		}
+		entryFirst := true // the speaker tints only the entry's FIRST display line
 		for _, para := range strings.Split(entry, "\n") {
 			// Per-paragraph font pick: wraps measure with the font that
 			// will draw the line (the CJK chain rule).
@@ -479,15 +485,25 @@ func (a *App) oocWrapped(width int32) []string {
 			lines := wrapToWidth(font, strings.TrimRight(para, "\r"), width, oocWrapMaxLinesPerEntry)
 			if len(lines) == 0 {
 				out = append(out, "") // blank MOTD spacer lines survive
+				name = append(name, "")
 				continue
 			}
-			out = append(out, lines...)
+			for _, ln := range lines {
+				out = append(out, ln)
+				if entryFirst {
+					name = append(name, sp)
+					entryFirst = false
+				} else {
+					name = append(name, "")
+				}
+			}
 		}
 	}
 	if out == nil {
 		out = []string{}
 	}
-	a.oocWrap, a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = out, a.oocSeq, width, a.logPct, streamer
+	a.oocWrap, a.oocWrapName = out, name
+	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.logPct, streamer
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out
 }

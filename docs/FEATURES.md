@@ -154,12 +154,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (same name → same colour every session — no random reshuffles). Two sliders —
   **saturation** (grey ↔ vivid) and **brightness** (floored so a name can't go
   unreadable-dark on the panel) — tune the palette, with a live preview of
-  sample names. Colours **both** the chatbox showname (the big name above each
-  message) **and** each speaker's name in the IC log (the name prefix on each
-  entry's first line; system/evidence lines and partially-wrapped long names
-  fall back cleanly). Computed inline (a few-byte hash + HSV, no allocation, no
-  cache to stale), so it's free per frame and the default OFF path is
-  byte-identical (RenderFrame stays 0 allocs/op).
+  sample names. Colours the chatbox showname (the big name above each message)
+  **and** each speaker's name in **both** the IC and OOC logs (the name prefix
+  on each entry's first line; system lines — `[MOD CALL]`, `CLIENT:`, `SERVER:`,
+  evidence — and partially-wrapped long names fall back cleanly, because the
+  speaker is stored at append time, never re-parsed from the `": "`). Computed
+  inline (a few-byte hash + HSV, no allocation, no cache to stale), so it's free
+  per frame and the default OFF path is byte-identical (RenderFrame stays 0
+  allocs/op).
 - **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
   flash + a sound (the theme's `word_call`, or a **custom sound file** you
   point at in Settings — `.wav`/`.ogg`/`.mp3`).

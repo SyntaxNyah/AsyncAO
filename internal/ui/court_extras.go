@@ -755,7 +755,7 @@ func (a *App) drawModcallDialog(w, h int32) {
 	by := panel.Y + panel.H - btnH - 12
 	if c.Button(sdl.Rect{X: panel.X + pad, Y: by, W: 110, H: btnH}, "Call mod") {
 		a.sess.CallMod(strings.TrimSpace(a.modReason))
-		a.pushOOC("CLIENT: Moderator called.")
+		a.pushOOC("CLIENT: Moderator called.", "")
 		a.showModcall, a.modReason = false, ""
 	}
 	if c.Button(sdl.Rect{X: panel.X + pad + 120, Y: by, W: 90, H: btnH}, "Cancel") {

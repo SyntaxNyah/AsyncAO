@@ -298,6 +298,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			line = line[:oocLineCap] + "…"
 		}
 		s.oocLog = appendCapped(s.oocLog, line, icLogCap)
+		s.oocSpeakers = appendCapped(s.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
 		s.oocSeq++
 		t.unread++
 		a.checkCallwords(ev.Text)
@@ -305,6 +306,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		// A modcall on a backgrounded server still alerts the mod (toast +
 		// the tab's OOC log + unread), like the friend signal.
 		s.oocLog = appendCapped(s.oocLog, "[MOD CALL] "+ev.Text, icLogCap)
+		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line — no name tint
 		s.oocSeq++
 		t.unread++
 		a.signalModcall(s.serverName, ev.Text)
@@ -313,6 +315,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 	case courtroom.EventDisconnect:
 		t.dead = true
 		s.oocLog = appendCapped(s.oocLog, "SERVER: disconnected: "+ev.Text, icLogCap)
+		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line
 		s.oocSeq++
 	}
 }

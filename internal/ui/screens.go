@@ -1161,24 +1161,14 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if a.icLog[row.entry].url != "" && c.hovering(rowRect) {
 				col = ColAccent
 			}
-			// Per-speaker name colour: on an entry's FIRST wrapped row, draw the
-			// name prefix in its hash colour and the rest in the line colour. Falls
-			// back to a plain draw for system/evidence lines (no speaker) or when
-			// a long name wrapped off this row.
-			drewName := false
-			if nameColorsOn {
-				if sp := a.icLog[row.entry].speaker; sp != "" &&
-					(ri == 0 || rows[ri-1].entry != row.entry) && strings.HasPrefix(row.text, sp) {
-					if nw, _, err := font.SizeUTF8(sp); err == nil {
-						c.LabelClippedFont(font, list.X, y, wrapW, sp, nameColor(sp, nameSat, nameVal))
-						c.LabelClippedFont(font, list.X+int32(nw), y, wrapW-int32(nw), row.text[len(sp):], col)
-						drewName = true
-					}
-				}
+			// Per-speaker name colour: tint the name prefix on an entry's FIRST
+			// wrapped row (the shared helper falls back to a plain draw for
+			// system/evidence lines or when a long name wrapped off this row).
+			lineSpeaker := ""
+			if nameColorsOn && (ri == 0 || rows[ri-1].entry != row.entry) {
+				lineSpeaker = a.icLog[row.entry].speaker
 			}
-			if !drewName {
-				c.LabelClippedFont(font, list.X, y, wrapW, row.text, col)
-			}
+			a.drawLogLineNamed(font, list.X, y, wrapW, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal)
 			if u := a.icLog[row.entry].url; u != "" && c.hovering(rowRect) {
 				c.Tooltip(rowRect, "Open "+u)
 				if c.clicked {
@@ -1225,7 +1215,13 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	lines := a.oocWrapped(wrapW) // MOTDs wrap — never truncate
+	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
+	nameColorsOn := a.d.Prefs.NameColorsOn() // per-speaker OOC name colours (read once)
+	var nameSat, nameVal float64
+	if nameColorsOn {
+		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
+		nameVal = float64(a.d.Prefs.NameColorVal()) / 100
+	}
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	// Ctrl+wheel zooms the OOC text (playtest ask: "zoom the text out").
@@ -1283,7 +1279,11 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 					}
 				}
 			}
-			c.LabelClippedFont(font, list.X, y, wrapW, line, col)
+			sp := ""
+			if li < len(a.oocWrapName) {
+				sp = a.oocWrapName[li]
+			}
+			a.drawLogLineNamed(font, list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
 		}
 		y += lineH
 	}
@@ -1313,7 +1313,13 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	lines := a.oocWrapped(wrapW) // MOTDs wrap — never truncate
+	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
+	nameColorsOn := a.d.Prefs.NameColorsOn() // per-speaker OOC name colours (read once)
+	var nameSat, nameVal float64
+	if nameColorsOn {
+		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
+		nameVal = float64(a.d.Prefs.NameColorVal()) / 100
+	}
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	maxScroll := contentH - list.H
@@ -1361,7 +1367,11 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 					}
 				}
 			}
-			c.LabelClippedFont(font, list.X, y, wrapW, line, col)
+			sp := ""
+			if li < len(a.oocWrapName) {
+				sp = a.oocWrapName[li]
+			}
+			a.drawLogLineNamed(font, list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
 		}
 		y += lineH
 	}
