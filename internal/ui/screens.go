@@ -1511,11 +1511,13 @@ func (a *App) drawIniFolderMenu(rect sdl.Rect, opts []folderMenuOpt) {
 	}
 }
 
-// Wardrobe sections: the modal holds two — your characters and your favourite
-// backgrounds — each with the same navigable folders.
+// Wardrobe sections: your curated characters (folders), your favourite
+// backgrounds, and a flat browse of the server's full iniswap list (★ to add
+// one to your characters).
 const (
 	wardSectionCharacters = iota
 	wardSectionBackgrounds
+	wardSectionIniswaps
 )
 
 // drawIniswapPanel is the wardrobe modal shell. It owns the state SHARED by
@@ -1542,7 +1544,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	for _, t := range [...]struct {
 		id    int
 		label string
-	}{{wardSectionCharacters, "Characters"}, {wardSectionBackgrounds, "Backgrounds"}} {
+	}{{wardSectionCharacters, "Characters"}, {wardSectionBackgrounds, "Backgrounds"}, {wardSectionIniswaps, "Iniswaps"}} {
 		r := sdl.Rect{X: tabX, Y: panel.Y + 8, W: 120, H: btnH}
 		bg := ColPanel
 		if a.wardSection == t.id {
@@ -1562,9 +1564,12 @@ func (a *App) drawIniswapPanel(w, h int32) {
 		}
 		tabX += 126
 	}
-	if a.wardSection == wardSectionBackgrounds {
+	switch a.wardSection {
+	case wardSectionBackgrounds:
 		a.drawWardrobeBgsBody(panel, w, h)
-	} else {
+	case wardSectionIniswaps:
+		a.drawWardrobeIniswapsBody(panel, w, h)
+	default:
 		a.drawWardrobeCharsBody(panel, w, h)
 	}
 	// Shared drag ghost: a label trailing the cursor shows what's being dragged
@@ -1666,6 +1671,11 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		}
 	}
 	charVisible := func(i int) bool {
+		// Characters is YOUR wardrobe only — starred or filed into a folder. The
+		// full server list lives on the Iniswaps tab (★ there adds it here).
+		if !a.iniWardrobe[i] && a.iniFolders[i] == "" {
+			return false
+		}
 		if searching { // search ignores the folder you're in — find anyone
 			return strings.Contains(a.iniLower[i], query)
 		}
@@ -1811,6 +1821,77 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	if a.iniMenuChar != "" {
 		opts := a.iniFolderMenuOpts()
 		a.drawIniFolderMenu(iniFolderMenuRect(a.iniMenuAt, len(opts), w, h), opts)
+	}
+}
+
+// drawWardrobeIniswapsBody is the Iniswaps section: a flat browse of the
+// server's full iniswap list. ★ on a cell adds it to your wardrobe (it then
+// appears under Characters); clicking the cell wears it to try it on. No folders
+// — organizing lives in Characters. Renders from the SAME a.iniList with the
+// SAME indices as the Characters grid, so the index-keyed thumbnail cache
+// (a.iniPages) stays valid across a tab switch (the cachedPage reorder
+// invariant — a different list under the same index keys would paint wrong art).
+func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
+	c := a.ctx
+	a.pollIniswap()     // drain the server list (fetched on open)
+	a.iniHoverChar = "" // recomputed by the cells (quick-file target; unused here)
+
+	y := panel.Y + 44
+	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Search the server's iniswaps...")
+	statusX := panel.X + pad + 250
+	switch {
+	case a.iniBusy:
+		c.Label(statusX, y+4, "Fetching "+iniswapFileName+"...", ColTextDim)
+	case a.iniListErr != "":
+		c.LabelClipped(statusX, y+4, panel.X+panel.W-statusX-pad, a.iniListErr, ColTextDim)
+	default:
+		c.Label(statusX, y+4, fmt.Sprintf("%d known · ★ adds one to your Characters wardrobe", len(a.iniList)), ColTextDim)
+	}
+	y += 36
+
+	query := a.iniQ.get(a.iniSearch)
+	visible := func(i int) bool { return query == "" || strings.Contains(a.iniLower[i], query) }
+
+	gridTop := y
+	gridW := panel.W - 2*pad - scrollBarW - scrollBarGap
+	cols := gridW / (iconCell + iconGap)
+	if cols < 1 {
+		cols = 1
+	}
+	slots := int32(0)
+	for i := range a.iniList {
+		if visible(i) {
+			slots++
+		}
+	}
+	cellH := iconCell + iconGap + 14
+	contentH := (slots + cols - 1) / cols * cellH
+	visibleH := panel.Y + panel.H - gridTop - pad
+
+	a.iniBrowseScroll -= c.WheelIn(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH}) * scrollStepPx
+	track := sdl.Rect{X: panel.X + panel.W - pad - scrollBarW, Y: gridTop, W: scrollBarW, H: visibleH}
+	a.iniBrowseScroll = c.VScrollbar("inibrowsescroll", track, a.iniBrowseScroll, contentH, visibleH)
+
+	clipPrev, clipHad := c.pushClip(sdl.Rect{X: panel.X, Y: gridTop, W: panel.W, H: visibleH})
+	slot := int32(0)
+	for i := range a.iniList {
+		if !visible(i) {
+			continue
+		}
+		x := panel.X + pad + (slot%cols)*(iconCell+iconGap)
+		yy := gridTop + (slot/cols)*cellH - a.iniBrowseScroll
+		slot++
+		if yy > gridTop-iconCell && yy < panel.Y+panel.H-14 {
+			a.drawIniswapCell(i, sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell})
+		}
+	}
+	c.popClip(clipPrev, clipHad)
+
+	if a.previewBase != "" {
+		a.drawSpritePreview(w, h, true) // try-before-wear preview, same as Characters
+		if c.clicked {
+			a.previewBase = ""
+		}
 	}
 }
 
