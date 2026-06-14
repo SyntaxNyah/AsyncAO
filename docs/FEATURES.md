@@ -241,6 +241,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   highlights it; **left-click opens it**, **right-click copies the URL** to the
   clipboard (the IC log pins on right-click, so OOC takes copy). The URL is
   detected only on the hovered line, so it costs nothing per frame.
+- **Select & copy log text** (IC and OOC): **drag to highlight** any span of
+  characters across lines, **Ctrl+C** copies it. The selection is anchored to
+  content (not screen rows), so scrolling or new lines never corrupt it, and
+  the hit-test binary-searches glyph widths only on the line under the cursor
+  (no per-frame cost). The **highlight colour is configurable** in Settings.
+  A drag never also opens a link or pins a line; a plain click clears.
+- **Force character names** (Settings, off by default): show every speaker's
+  **character** name instead of their custom showname, in both the chatbox and
+  the IC log — true-roleplay immersion and anti-impersonation for casing.
 - **Per-server wardrobe**: custom character lists no longer carry
   between servers; the pre-split collection migrates once to the first
   server joined after updating.
@@ -379,7 +388,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   heuristic that broke whenever a wrapped message added several rows.
   While you're scrolled up reading backlog, a **"↓ N new" pill** appears at
   the bottom of the IC log showing how many messages arrived since you caught
-  up; click it to jump back to the live bottom.
+  up; **clicking it jumps to the FIRST unread line** (read forward from where
+  you left off — the Jump-logs hotkey still goes to newest), and a thin accent
+  **divider** marks that read/unread boundary.
 - **Multi-server tabs** (default 6, **configurable up to 99** in Settings →
   General → "Max server tabs"): Join while connected opens a NEW tab —
   the old session parks and keeps running (its packets drain on a
@@ -421,6 +432,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   depth caps), off-thread, cancelable, and path-traversal-guarded. Point
   "Read assets from local folders" at the downloads folder to use the grabs
   offline / in rehearsal.
+  **v2:** grabs **queue** instead of refusing while one runs (the chip shows
+  "+N queued"); **right-click** a background cell to queue it; **Pause / Resume**
+  the active grab and the whole queue (Settings); and an optional **bandwidth
+  cap** (KiB/s, 0 = unlimited) paces downloads so a big grab doesn't hog your
+  connection.
 - **Discord Rich Presence**: optional, per-field privacy checkboxes,
   zero build/run dependency — full guide in [DISCORD.md](DISCORD.md).
 - **Update check + "What's New"** (Settings → on by default): one async check
