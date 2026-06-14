@@ -1030,6 +1030,8 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	if a.icReadMark > len(a.icLog) {
 		a.icReadMark = len(a.icLog) // log was capped/cleared
 	}
+	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
+	a.handleLogSelect(logSelIC, list, a.icScroll, lineH, wrapW)
 	// First wrapped row of the first unread entry — the "jump to last read"
 	// target and where the unread divider draws. Scanned only while scrolled
 	// up with unread; caught-up frames (icReadMark == len) skip it entirely, so
@@ -1058,6 +1060,9 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				col = render.TextColor(ecol)
 			}
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
+			font := c.LogFontFor(a.logPct, row.text)
+			// Selection highlight sits under the text (and the divider).
+			a.drawLogSelHighlight(logSelIC, ri, list.X, y, wrapW, lineH, row.text, font)
 			// Unread divider: a thin accent rule at the top of the first unread
 			// line, so "jump to last read" lands on an obvious boundary.
 			if ri == firstUnreadRow {
@@ -1068,7 +1073,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if a.icLog[row.entry].url != "" && c.hovering(rowRect) {
 				col = ColAccent
 			}
-			c.LabelClippedFont(c.LogFontFor(a.logPct, row.text), list.X, y, wrapW, row.text, col)
+			c.LabelClippedFont(font, list.X, y, wrapW, row.text, col)
 			if u := a.icLog[row.entry].url; u != "" && c.hovering(rowRect) {
 				c.Tooltip(rowRect, "Open "+u)
 				if c.clicked {
@@ -1142,14 +1147,19 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	if a.oocStick {
 		a.oocScroll = maxScroll
 	}
+	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
+	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
 	clipPrev, clipHad := c.pushClip(list) // top/bottom row clipped to the rect, not the tabs
 	y := list.Y - a.oocScroll
-	for _, line := range lines {
+	for li, line := range lines {
 		if y > list.Y+list.H-lineH {
 			break
 		}
 		if y >= list.Y-lineH {
 			col := ColText
+			font := c.LogFontFor(a.logPct, line)
+			// Selection highlight sits under the text.
+			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
 			// Links in OOC are openable (click) and copyable (right-click) —
 			// matching the IC log. The URL scan runs ONLY on the hovered line,
 			// so it costs one extract per frame, never per visible line.
@@ -1167,7 +1177,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 					}
 				}
 			}
-			c.LabelClippedFont(c.LogFontFor(a.logPct, line), list.X, y, wrapW, line, col)
+			c.LabelClippedFont(font, list.X, y, wrapW, line, col)
 		}
 		y += lineH
 	}

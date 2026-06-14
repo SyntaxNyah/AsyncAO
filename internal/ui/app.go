@@ -286,6 +286,19 @@ type App struct {
 	updateStaged   bool
 	updateErr      string
 
+	// --- IC/OOC log text selection (drag to highlight, Ctrl+C to copy) ---
+	// Anchored to (wrapped-line index, rune offset in that line); see
+	// logselect.go. logSelWhich names the owning log so only it highlights/
+	// copies; logSelPressed is the once-per-frame press edge (both logs read
+	// the same value, so whichever draws first can't steal the arm).
+	logSelWhich    int
+	logSelActive   bool
+	logSelDragging bool
+	logSelAnchor   selPoint
+	logSelHead     selPoint
+	logSelPressed  bool
+	logSelPrevDown bool
+
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
 	// slow stale load can never clobber a fresh one (rapid theme cycling
@@ -2036,6 +2049,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.showHotkeys = !a.showHotkeys
 		a.ctx.keyPressed = 0
 	}
+	// Log-selection press edge, computed once so both logs (which may both be
+	// on screen) read the same value — whichever draws first can't steal it.
+	a.logSelPressed = a.ctx.mouseDown && !a.logSelPrevDown
+	a.logSelPrevDown = a.ctx.mouseDown
 	a.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
 	a.pollUpdate()                  // drain a found release
 	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
