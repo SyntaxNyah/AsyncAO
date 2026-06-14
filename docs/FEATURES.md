@@ -410,5 +410,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   entirely. When a newer version is published, a top-right **"Update N
   available"** chip appears and a **What's New** panel shows that release's
   **patch notes** (scrollable). Turn the setting off for no outbound call.
-  *(Downloading and applying the update in-app is the next step; for now "Get
-  the update" opens the release page.)*
+  **"Get the update"** then downloads the new build next to the running exe,
+  verifies it, and **stages an atomic self-replace** (rename the old aside →
+  move the new in, **rolling back** if anything fails — so an AV lock mid-swap
+  can't break the install); restart to finish, and the old binary is cleaned
+  up on the next launch. A read-only install (Program Files) or a release with
+  no matching asset degrades to opening the release page. Verification is
+  **integrity** (size / SHA-256), not yet authenticity — release signing can
+  slot in later.

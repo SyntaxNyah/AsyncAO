@@ -277,6 +277,14 @@ type App struct {
 	updateShow      bool
 	updateScroll    int32
 	updateChipLabel string
+	// Self-update apply flow (the "Get the update" button → async download,
+	// verify, staged swap): updateBusy while it runs, updateStaged once the new
+	// binary is in place (restart pending), updateErr on failure. The goroutine
+	// reports on updateApplyRes. Inert unless a stamped build found a release.
+	updateApplyRes chan error
+	updateBusy     bool
+	updateStaged   bool
+	updateErr      string
 
 	// --- applied theme (chatbox skin, splashes, bars, colors, sounds) ---
 	// themeRes holds the newest off-thread theme load; gen ordering means a
@@ -881,6 +889,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		charINIres:      make(chan charINIFetch, 1),
 		previewEmoteRes: make(chan previewEmoteFetch, 1),
 		updateRes:       make(chan *update.Release, 1),
+		updateApplyRes:  make(chan error, 1),
 		iniRes:          make(chan iniswapFetch, 1),
 		manifestRes:     make(chan manifestFetch, 1),
 		fontRes:         make(chan fontLoad, 1),

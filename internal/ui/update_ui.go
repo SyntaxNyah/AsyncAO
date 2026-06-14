@@ -83,6 +83,61 @@ func (a *App) pollUpdate() {
 		a.updateShow = true
 	default:
 	}
+	select {
+	case err := <-a.updateApplyRes:
+		a.updateBusy = false
+		if err != nil {
+			a.updateErr = "Update failed: " + err.Error()
+		} else {
+			a.updateStaged = true // new binary in place; restart to apply
+		}
+	default:
+	}
+}
+
+// startSelfUpdate downloads the release asset next to the running exe, verifies
+// it, and stages the swap — all off-thread, reporting on updateApplyRes. It
+// degrades to the release page when there's no downloadable asset or the
+// install dir is read-only (Program Files without elevation). No-op while a
+// previous run is in flight or already staged.
+func (a *App) startSelfUpdate() {
+	if a.updateBusy || a.updateStaged || a.updateRel == nil {
+		return
+	}
+	if a.updateRel.AssetURL == "" {
+		if a.updateRel.PageURL != "" {
+			openBrowser(a.updateRel.PageURL)
+		}
+		a.updateErr = "This release has no downloadable build for your platform — opened the release page."
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil || !update.TargetWritable(exe) {
+		if a.updateRel.PageURL != "" {
+			openBrowser(a.updateRel.PageURL)
+		}
+		a.updateErr = "Can't self-update here (read-only install) — opened the release page."
+		return
+	}
+	a.updateBusy = true
+	a.updateErr = ""
+	url := a.updateRel.AssetURL
+	res := a.updateApplyRes
+	go func() {
+		staged := update.StagedPath(exe)
+		if _, err := update.Download(context.Background(), url, staged); err != nil {
+			res <- err
+			return
+		}
+		// Integrity check is plumbed (update.VerifyChecksum); no published
+		// checksum source yet, so it's skipped until releases ship one.
+		if err := update.StageReplace(staged, exe, update.BackupPath(exe)); err != nil {
+			_ = os.Remove(staged)
+			res <- err
+			return
+		}
+		res <- nil
+	}()
 }
 
 // updateChipRect is the persistent reopen chip, top-right and clear of the
@@ -134,8 +189,8 @@ func (a *App) handleUpdateInput(w, h int32) {
 	}
 	switch {
 	case c.hovering(getBtn):
-		if a.updateRel.PageURL != "" {
-			openBrowser(a.updateRel.PageURL)
+		if !a.updateBusy && !a.updateStaged {
+			a.startSelfUpdate() // download → verify → staged swap (or degrade)
 		}
 	case c.hovering(laterBtn):
 		a.updateShow = false
@@ -190,11 +245,25 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	}
 	c.popClip(clipPrev, clipHad)
 
-	a.drawUpdateButton(getBtn, "Get the update")
-	a.drawUpdateButton(laterBtn, "Later")
-	if maxScroll > 0 {
-		c.Label(panel.X+pad, getBtn.Y+4, "(scroll for more)", ColTextDim)
+	// Status line above the buttons reflects the apply flow.
+	statusY := getBtn.Y - 20
+	switch {
+	case a.updateErr != "":
+		c.LabelClipped(panel.X+pad, statusY, panel.W-2*pad, a.updateErr, ColDanger)
+	case a.updateStaged:
+		c.LabelClipped(panel.X+pad, statusY, panel.W-2*pad, "Installed - restart AsyncAO to finish updating.", ColAccent)
+	case a.updateBusy:
+		c.Label(panel.X+pad, statusY, "Downloading and installing...", ColTextDim)
 	}
+	getLabel := "Get the update"
+	switch {
+	case a.updateBusy:
+		getLabel = "Downloading..."
+	case a.updateStaged:
+		getLabel = "Restart to apply"
+	}
+	a.drawUpdateButton(getBtn, getLabel)
+	a.drawUpdateButton(laterBtn, "Close")
 }
 
 // updateNotesLines wraps the release body for the modal, preserving its line
