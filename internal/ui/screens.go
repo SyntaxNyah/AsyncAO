@@ -1039,6 +1039,29 @@ const (
 	friendGlowPulsePeriod = 1600 * time.Millisecond
 )
 
+// logFastZoomMultiple scales the text-zoom step when the middle (wheel) button
+// is held — "hold the wheel and scroll to zoom the log fast".
+const logFastZoomMultiple = 5
+
+// logZoomWheel zooms the log text when the wheel turns over `list` with Ctrl
+// (fine, one step) OR the middle button held (fast, logFastZoomMultiple steps).
+// Returns true if it consumed the wheel, so the caller skips scrolling. Shared
+// by the IC/OOC log surfaces.
+func (a *App) logZoomWheel(list sdl.Rect) bool {
+	c := a.ctx
+	if c.wheelTaken || c.wheelY == 0 || !c.hovering(list) || (!c.ctrlHeld && !c.middleHeld) {
+		return false
+	}
+	step := config.ScaleStepPercent
+	if c.middleHeld {
+		step *= logFastZoomMultiple
+	}
+	a.logPct = clampInt(a.logPct+int(c.wheelY)*step, config.MinLogScalePercent, config.MaxLogScalePercent)
+	a.saveLayout()
+	c.wheelTaken = true
+	return true
+}
+
 // drawICLogList renders the colored IC scrollback (search-filtered,
 // word-wrapped to the list width) into rect — used by the classic Log tab
 // and the themed ic_chatlog element.
@@ -1050,19 +1073,13 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	rows := a.icWrapped(wrapW)
 	contentH := int32(len(rows)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-	// Ctrl+wheel zooms the log text (themed layouts have no outer panel
-	// handler; wheelTaken stops the classic one from double-stepping).
-	if c.ctrlHeld && !c.wheelTaken && c.wheelY != 0 && c.hovering(list) {
-		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
-			config.MinLogScalePercent, config.MaxLogScalePercent)
-		a.saveLayout()
-		c.wheelTaken = true
-	}
+	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the log text.
+	zoomed := a.logZoomWheel(list)
 	maxScroll := contentH - list.H
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if !c.ctrlHeld { // ctrl+wheel resizes text
+	if !zoomed { // a zoom consumed the wheel — don't also scroll
 		if d := c.WheelIn(list); d != 0 {
 			a.icScroll -= d * scrollStepPx
 			a.icStick = a.icScroll >= maxScroll // bottom re-sticks, up releases
@@ -1193,8 +1210,10 @@ func (a *App) drawICLogList(list sdl.Rect) {
 		c.Fill(pill, ColAccent)
 		c.Label(pill.X+10, pill.Y+4, label, ColBackground)
 		if c.hovering(pill) {
-			c.Tooltip(pill, "Jump to first unread - Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyLogJump))+" for newest")
-			if c.clicked {
+			c.Tooltip(pill, "Left-click: jump to the newest message · right-click: first unread")
+			if c.clicked { // left-click → snap straight to the latest message
+				a.icScroll, a.icStick = maxScroll, true
+			} else if c.rightClicked { // right-click → read forward from the first unread
 				if firstUnreadRow >= 0 {
 					a.icScroll = clampI32(int32(firstUnreadRow)*lineH, 0, maxScroll)
 					a.icStick = a.icScroll >= maxScroll
@@ -1224,18 +1243,13 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	}
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-	// Ctrl+wheel zooms the OOC text (playtest ask: "zoom the text out").
-	if c.ctrlHeld && !c.wheelTaken && c.wheelY != 0 && c.hovering(list) {
-		a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
-			config.MinLogScalePercent, config.MaxLogScalePercent)
-		a.saveLayout()
-		c.wheelTaken = true
-	}
+	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the OOC text.
+	zoomed := a.logZoomWheel(list)
 	maxScroll := contentH - list.H
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if !c.ctrlHeld {
+	if !zoomed {
 		if d := c.WheelIn(list); d != 0 {
 			a.oocScroll -= d * scrollStepPx
 			a.oocStick = a.oocScroll >= maxScroll // bottom re-sticks, up releases

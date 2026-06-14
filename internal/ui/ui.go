@@ -271,6 +271,7 @@ type Ctx struct {
 	// (spinbox rows, WheelIn lists) so page-level scrolls don't double-act.
 	wheelTaken bool
 	mouseDown  bool        // left button currently held (event-tracked)
+	middleHeld bool        // middle (wheel) button held — fast log zoom modifier (event-tracked)
 	dragID     string      // widget owning the active drag ("" = none)
 	dropped    string      // SDL_DROPFILE path this frame ("" = none)
 	hotkey     sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
@@ -573,8 +574,11 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 		c.mouseX, c.mouseY = c.toLogical(e.X), c.toLogical(e.Y)
 		switch e.Type {
 		case sdl.MOUSEBUTTONDOWN:
-			if e.Button == sdl.BUTTON_LEFT {
+			switch e.Button {
+			case sdl.BUTTON_LEFT:
 				c.mouseDown = true
+			case sdl.BUTTON_MIDDLE:
+				c.middleHeld = true // held = fast log-zoom modifier
 			}
 		case sdl.MOUSEBUTTONUP:
 			switch e.Button {
@@ -583,6 +587,8 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 				c.mouseDown = false
 			case sdl.BUTTON_RIGHT:
 				c.rightClicked = true
+			case sdl.BUTTON_MIDDLE:
+				c.middleHeld = false
 			}
 		}
 	case *sdl.MouseWheelEvent:
