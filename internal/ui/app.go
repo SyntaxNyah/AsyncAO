@@ -1410,6 +1410,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.pushOOC("[MOD CALL] " + ev.Text)
 			a.playThemeSFX("mod_call")
 			a.ctx.FlashWindow()
+			a.signalModcall(a.serverName, ev.Text) // desktop toast (opt-in)
 		case courtroom.EventAuth:
 			// AO2 surfaces auth transitions as CLIENT lines in the OOC log
 			// (on_authentication_state_received).
@@ -2782,6 +2783,26 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 		}
 		showOSToast("AsyncAO — friend online", body)
 	}
+}
+
+// signalModcall pops a desktop toast when a modcall arrives, if the option is on
+// (OFF by default) — a "you're being called" ping for mods who alt-tabbed away.
+// Streamer mode suppresses it (modcall lines can carry IPs) and it shares the
+// friend toast's rate limit so a modcall storm can't flood the desktop. Called
+// at both seams (active + background tab).
+func (a *App) signalModcall(serverName, notice string) {
+	if !a.d.Prefs.ModcallToastOn() || a.d.Prefs.StreamerMode() {
+		return
+	}
+	if time.Since(a.lastOSToast) < osToastMinInterval {
+		return
+	}
+	a.lastOSToast = time.Now()
+	body := strings.TrimSpace(notice)
+	if serverName != "" {
+		body = serverName + ": " + body
+	}
+	showOSToast("AsyncAO — mod call", body)
 }
 
 // switchAreaScrollback swaps the IC log to toArea's own history when per-area

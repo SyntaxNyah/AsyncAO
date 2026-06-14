@@ -871,6 +871,14 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		c.Label(pad+110, y, "Append =RRGGBB to a name to give that friend a custom glow colour (e.g. blank=ff4488).", ColTextDim)
 		y += 24
 	}
+	// Mod-call desktop toast (for moderators): not friend-related, so it sits at
+	// the section's top level.
+	y += 6
+	mct := a.d.Prefs.ModcallToastOn()
+	if next := c.Checkbox(pad, y, "Desktop notification on mod-call (OFF by default): pop a Windows toast when a modcall comes in — for mods who alt-tabbed away", mct); next != mct {
+		a.d.Prefs.SetModcallToast(next)
+	}
+	y += 28
 	return y
 }
 

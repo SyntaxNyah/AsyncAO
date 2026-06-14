@@ -250,6 +250,7 @@ type AssetPreferences struct {
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
 	FriendSound            bool                         `json:"friendSound"`
 	FriendSoundFile        string                       `json:"friendSoundFile"`
+	ModcallToast           bool                         `json:"modcallToast"`
 	CallwordSoundFile      string                       `json:"callwordSoundFile"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
@@ -345,6 +346,7 @@ type prefsJSON struct {
 	FriendGlowPulse        bool      `json:"friendGlowPulse"` // default OFF
 	FriendSound            bool      `json:"friendSound"`     // default OFF
 	FriendSoundFile        string    `json:"friendSoundFile"`
+	ModcallToast           bool      `json:"modcallToast"` // default OFF
 	CallwordSoundFile      string    `json:"callwordSoundFile"`
 	DebugOverlay           bool      `json:"debugOverlay"`
 	FormatAutoDetect       *bool     `json:"formatAutoDetect"`  // absent = default ON
@@ -677,6 +679,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
 	p.FriendSound = onDisk.FriendSound
 	p.FriendSoundFile = onDisk.FriendSoundFile
+	p.ModcallToast = onDisk.ModcallToast
 	p.CallwordSoundFile = onDisk.CallwordSoundFile
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
@@ -1433,6 +1436,25 @@ func (p *AssetPreferences) SetFriendOSToast(on bool) {
 	p.mu.Lock()
 	if p.FriendOSToast != on {
 		p.FriendOSToast = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+// ModcallToastOn / SetModcallToast: pop a desktop notification when a modcall
+// arrives (for mods who alt-tabbed away). OFF by default; Windows only.
+func (p *AssetPreferences) ModcallToastOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ModcallToast
+}
+
+func (p *AssetPreferences) SetModcallToast(on bool) {
+	p.mu.Lock()
+	if p.ModcallToast != on {
+		p.ModcallToast = on
 		p.mu.Unlock()
 		p.markDirty()
 		return

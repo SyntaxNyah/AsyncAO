@@ -301,6 +301,13 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		s.oocSeq++
 		t.unread++
 		a.checkCallwords(ev.Text)
+	case courtroom.EventModcall:
+		// A modcall on a backgrounded server still alerts the mod (toast +
+		// the tab's OOC log + unread), like the friend signal.
+		s.oocLog = appendCapped(s.oocLog, "[MOD CALL] "+ev.Text, icLogCap)
+		s.oocSeq++
+		t.unread++
+		a.signalModcall(s.serverName, ev.Text)
 	case courtroom.EventBackground:
 		a.d.Prefs.RememberServerBackground(s.serverKey, ev.Text)
 	case courtroom.EventDisconnect:
