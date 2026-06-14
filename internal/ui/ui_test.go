@@ -182,6 +182,20 @@ func TestNameColorStable(t *testing.T) {
 	}
 }
 
+// TestNameColorNoAlloc pins the per-speaker name colour as allocation-free. It
+// runs INLINE per visible name in the IC/OOC log whenever name colours are on
+// (there's deliberately no cache), so a stray alloc here would land straight on
+// the always-on draw path. Guards the inline FNV-1a + hsvToRGB math against a
+// future regression (e.g. a []byte(name) conversion or an fmt call sneaking in).
+func TestNameColorNoAlloc(t *testing.T) {
+	for _, nm := range []string{"Phoenix", "Edgeworth"} {
+		name := nm
+		if n := testing.AllocsPerRun(100, func() { _ = nameColor(name, 0.6, 0.9) }); n != 0 {
+			t.Errorf("nameColor(%q) allocs = %v, want 0", name, n)
+		}
+	}
+}
+
 // TestMergeWardrobe pins the wardrobe-first menu: client favourites sort
 // case-insensitively up front (starred), server iniswap.txt entries follow
 // minus case-insensitive duplicates of wardrobe entries. inServer marks which
