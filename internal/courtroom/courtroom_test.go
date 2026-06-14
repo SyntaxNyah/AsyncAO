@@ -2,6 +2,7 @@ package courtroom
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -168,9 +169,18 @@ func TestSessionHandshakeFlow(t *testing.T) {
 		t.Error("taken flags wrong")
 	}
 
-	feed(t, s, "SM#Basement#Courtroom 1#Objection.opus#Trial.mp3#%")
-	if len(s.Areas) != 2 || len(s.Music) != 2 {
+	// fix_last_area: real AO music lists wrap songs in a category header, and
+	// the header sits between the areas and the first song. It must land in
+	// music, not leak into the Areas tab (and AreaInfo stays parallel).
+	feed(t, s, "SM#Basement#Courtroom 1#==Cave Story OST==#Objection.opus#Trial.mp3#%")
+	if len(s.Areas) != 2 || len(s.Music) != 3 {
 		t.Errorf("areas=%v music=%v", s.Areas, s.Music)
+	}
+	if len(s.AreaInfo) != len(s.Areas) {
+		t.Errorf("AreaInfo (%d) must stay parallel to Areas (%d)", len(s.AreaInfo), len(s.Areas))
+	}
+	if s.Music[0] != "==Cave Story OST==" {
+		t.Errorf("category header must be the first music entry, got music=%v", s.Music)
 	}
 
 	ev = feed(t, s, "DONE#%")
@@ -194,6 +204,53 @@ func TestSessionHandshakeFlow(t *testing.T) {
 
 	if !s.Features.Has(protocol.FeatureCCCCIC) || !s.Features.Has(protocol.FeatureYOffset) {
 		t.Error("features lost")
+	}
+}
+
+// TestSplitAreasAndMusic pins the fix_last_area boundary (AO2-Client
+// packet_distribution.cpp SM handler + courtroom.cpp:613): the category
+// header preceding the first song belongs to music, never the Areas tab.
+func TestSplitAreasAndMusic(t *testing.T) {
+	cases := []struct {
+		name              string
+		fields            []string
+		wantAreas, wantMx []string
+	}{
+		{
+			"category header before songs moves to music",
+			[]string{"Basement", "Courtroom 1", "==Cave Story OST==", "a.opus", "b.mp3"},
+			[]string{"Basement", "Courtroom 1"},
+			[]string{"==Cave Story OST==", "a.opus", "b.mp3"},
+		},
+		{
+			"all areas, no songs: nothing moves",
+			[]string{"Area 1", "Area 2", "Area 3"},
+			[]string{"Area 1", "Area 2", "Area 3"},
+			nil,
+		},
+		{
+			"song first: no areas, no header to move",
+			[]string{"theme.mp3", "battle.ogg"},
+			nil,
+			[]string{"theme.mp3", "battle.ogg"},
+		},
+		{
+			"only the last pre-song entry moves (extra header stays an area)",
+			[]string{"Area", "==A==", "==B==", "song.wav"},
+			[]string{"Area", "==A=="},
+			[]string{"==B==", "song.wav"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			areas, music := splitAreasAndMusic(tc.fields)
+			if !slices.Equal(areas, tc.wantAreas) {
+				t.Errorf("areas = %v, want %v", areas, tc.wantAreas)
+			}
+			if !slices.Equal(music, tc.wantMx) {
+				t.Errorf("music = %v, want %v", music, tc.wantMx)
+			}
+		})
 	}
 }
 
@@ -242,7 +299,7 @@ func TestSessionDebugEvents(t *testing.T) {
 func TestSessionCourtPackets(t *testing.T) {
 	rec := &sentRecorder{}
 	s := NewSession(rec.send, "h")
-	feed(t, s, "SM#Area1#Area2#x.opus#%")
+	feed(t, s, "SM#Area1#Area2#==Music==#x.opus#%") // header before songs (fix_last_area)
 
 	// HP: bar 1 = def, range-guarded like set_hp_bar.
 	if ev := feed(t, s, "HP#1#3#%"); len(ev) != 1 || ev[0].Kind != EventHP || ev[0].Int != 1 || ev[0].Int2 != 3 || s.HPDef != 3 {

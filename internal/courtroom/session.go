@@ -600,8 +600,15 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	return nil
 }
 
-// splitAreasAndMusic mirrors AO2-Client's SM scan: entries before the first
-// audio-extension entry are areas, the rest (inclusive) are music.
+// splitAreasAndMusic mirrors AO2-Client's SM scan (packet_distribution.cpp
+// "SM" handler): entries before the first audio-extension entry are areas,
+// the rest (inclusive) are music. The one subtlety is fix_last_area
+// (courtroom.cpp:613): the entry immediately preceding the first song is a
+// music *category header* (e.g. "==Cave Story OST=="), NOT an area — AO music
+// lists always wrap their songs in a category, so that last "area" is
+// malplaced and gets moved to the front of the music list. Without this a
+// category header leaks into the Areas tab (and leaves a trailing area row
+// with no ARUP column).
 func splitAreasAndMusic(fields []string) (areas, music []string) {
 	musicStart := len(fields)
 	for i, f := range fields {
@@ -609,6 +616,12 @@ func splitAreasAndMusic(fields []string) (areas, music []string) {
 			musicStart = i
 			break
 		}
+	}
+	// fix_last_area: when at least one song exists and an entry precedes it,
+	// that preceding entry is the music category header — shift the boundary
+	// back one so it lands in music instead of areas.
+	if musicStart > 0 && musicStart < len(fields) {
+		musicStart--
 	}
 	areas = append(areas, fields[:musicStart]...)
 	music = append(music, fields[musicStart:]...)
