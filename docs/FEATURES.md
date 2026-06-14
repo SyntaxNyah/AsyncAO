@@ -180,6 +180,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   host's `background/` directory and parsing its autoindex
   (nginx/apache/caddy) — same idea as iniswap.txt seeding the wardrobe;
   the current + last-seen backgrounds always seed it so it's never empty.
+  The discovered list is **cached per server** (like the char list), so the
+  next session's picker and slideshow show it **instantly** while a fresh
+  listing refreshes in the background.
   Each cell shows a `defenseempty` thumbnail; hover or click previews it
   large; a `/bg <name>` button asks the server to change it for the area
   (rehearsal applies the pick locally). Hosts with directory listing off

@@ -404,6 +404,11 @@ type ServerWarmInfo struct {
 	// Chars is the server's character list from the last visit
 	// (≤ WarmCharsCap) — the rehearsal char select.
 	Chars []string `json:"chars,omitempty"`
+	// Backgrounds is the server's discovered background list from the last
+	// visit (≤ WarmBgsCap) — seeds the picker/slideshow INSTANTLY on the next
+	// connect (like the cached char list), then a fresh autoindex fetch
+	// refreshes it in the background.
+	Backgrounds []string `json:"backgrounds,omitempty"`
 	// Account login for this server — NOT mod-only: servers with user
 	// account systems (Akashi and tsuserver-family forks) hang member
 	// perks off /login too, and the same flow signs either in. PLAINTEXT
@@ -473,6 +478,10 @@ func sanitizeMacros(in []MacroSpec) []MacroSpec {
 // ≈ 60 KiB of JSON — covers the 4000-char megaservers rehearsal exists
 // for, while the serverWarmCap (64) keeps the whole table bounded.
 const WarmCharsCap = 4096
+
+// WarmBgsCap bounds one server's remembered background list (same budget as
+// the char list — the megaservers have comparable background counts).
+const WarmBgsCap = 4096
 
 // serverWarmCap bounds the per-server warm table (rule §17.4); when full,
 // new servers simply don't record until old entries are cleared.
@@ -1315,6 +1324,19 @@ func (p *AssetPreferences) RememberServerChars(key string, chars []string) {
 	}
 	copied := cloneStrings(chars)
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Chars = copied })
+}
+
+// RememberServerBackgrounds caches a server's discovered background list so the
+// next session's picker/slideshow seed instantly (capped at WarmBgsCap).
+func (p *AssetPreferences) RememberServerBackgrounds(key string, bgs []string) {
+	if len(bgs) == 0 {
+		return
+	}
+	if len(bgs) > WarmBgsCap {
+		bgs = bgs[:WarmBgsCap]
+	}
+	copied := cloneStrings(bgs)
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.Backgrounds = copied })
 }
 
 func (p *AssetPreferences) rememberServer(key string, set func(*ServerWarmInfo)) {

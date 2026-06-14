@@ -76,6 +76,7 @@ type bgPicker struct {
 	listErr  string
 	status   string
 	busy     bool
+	fetched  bool // a fresh autoindex landed this session (gates the one-shot fetch)
 	search   string
 	scroll   int32
 	ask      []time.Time // demand pacing, parallel to list
@@ -102,8 +103,11 @@ func (a *App) openBgPicker() {
 // is a memory hit — same path as the iniswap.txt fetch.
 func (a *App) ensureBgList() {
 	if a.bgPick.forKey != a.serverKey {
-		// New server since the last open: drop the stale list/caches.
-		a.bgPick.server = nil
+		// New server: seed the list INSTANTLY from last session's cached
+		// discovery (snappy, like the char list), then refresh below. Cloned so
+		// the picker can't mutate the prefs' backing slice.
+		a.bgPick.server = append([]string(nil), a.d.Prefs.ServerWarmInfoFor(a.serverKey).Backgrounds...)
+		a.bgPick.fetched = false
 		a.bgPick.listErr = ""
 		a.bgPick.forKey = a.serverKey
 	}
@@ -111,7 +115,9 @@ func (a *App) ensureBgList() {
 	if a.bgPick.res == nil {
 		a.bgPick.res = make(chan bgFetch, 1)
 	}
-	if a.bgPick.server != nil || a.bgPick.busy || a.urls.Origin() == "" {
+	// Fetch once per server per session (gated on fetched, NOT on the seeded
+	// list — the cache shows immediately while the fresh listing loads).
+	if a.bgPick.fetched || a.bgPick.busy || a.urls.Origin() == "" {
 		return
 	}
 	a.bgPick.busy = true
@@ -139,11 +145,16 @@ func (a *App) pollBgList() {
 			return // landed after a tab switch: not this server's list
 		}
 		a.bgPick.busy = false
+		a.bgPick.fetched = true // one fetch per server per session
 		if res.err != nil {
-			a.bgPick.listErr = "no directory listing (" + res.err.Error() + ") — type/preview a known name or use the current one"
-			a.bgPick.server = nil
+			// Keep any cached seed (better than empty); only flag an error when
+			// we have nothing to show.
+			if len(a.bgPick.server) == 0 {
+				a.bgPick.listErr = "no directory listing (" + res.err.Error() + ") — type/preview a known name or use the current one"
+			}
 		} else {
 			a.bgPick.server = res.names
+			a.d.Prefs.RememberServerBackgrounds(a.serverKey, res.names) // cache for next session
 		}
 		a.rebuildBgList()
 	default:
