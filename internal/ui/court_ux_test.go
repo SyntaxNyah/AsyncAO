@@ -247,6 +247,26 @@ func TestTabChipLabelMemoized(t *testing.T) {
 	}
 }
 
+// TestDebugDiagLine pins the debug overlay's diagnostics readout: it reports the
+// live structural counts (tabs, area, queue, log sizes, goroutines) so a leak or
+// stuck queue is visible at a glance.
+func TestDebugDiagLine(t *testing.T) {
+	a := &App{}
+	a.tabs = []*courtTab{{}, {}}
+	a.icLog = make([]icEntry, 3)
+	a.oocLog = make([]string, 1)
+	got := a.debugDiagLine()
+	for _, want := range []string{"tabs 2", "area —", "queue 0", "ic 3", "ooc 1", "goroutines "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("diag line %q missing %q", got, want)
+		}
+	}
+	a.curArea = "Courtroom 1"
+	if got := a.debugDiagLine(); !strings.Contains(got, "area Courtroom 1") {
+		t.Errorf("area not shown in %q", got)
+	}
+}
+
 // TestTimerChipLabelsMemoized pins the server-clock overlay: correct "Tn mm:ss"
 // labels and ZERO allocations for a stable (paused) clock — the always-on draw
 // asks every frame, so only a ticking second should rebuild.

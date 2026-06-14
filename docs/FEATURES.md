@@ -113,7 +113,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   reasons, `extensions.json` results, **unhandled/malformed packets**
   (EventDebug from the session reducer) — plus a health line: handshake
   phase · server software · last packet age. A hung server reads as a
-  stuck phase with a climbing age.
+  stuck phase with a climbing age. A second **diagnostics line** reports live
+  structural counts — open tabs · current area · IC play-queue depth · IC/OOC
+  scrollback sizes · **goroutine count** — so a leak (goroutines climbing) or a
+  stuck queue is obvious at a glance. Computed only while the overlay is open.
 - Settings cache browser: live T2 stats (entries/bytes/budget/hit rate),
   on-demand T3 size measurement, open-in-Explorer, clear buttons.
 
