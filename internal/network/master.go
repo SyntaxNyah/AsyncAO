@@ -250,6 +250,36 @@ func ParseServerList(data []byte) ([]ServerEntry, error) {
 	return entries, nil
 }
 
+// ProbeLatency measures the TCP connect round-trip to addr ("host:port") — a
+// rough relative-latency probe for the lobby's "connect time" sort. It is NOT
+// an ICMP ping and undercounts wss:// (no TLS handshake); the first dial to a
+// host also folds in DNS. Honors ctx (the caller bounds it with a timeout).
+func ProbeLatency(ctx context.Context, addr string) (time.Duration, error) {
+	var d net.Dialer
+	start := time.Now()
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	rtt := time.Since(start)
+	if conn != nil {
+		_ = conn.Close()
+	}
+	if err != nil {
+		return 0, err
+	}
+	return rtt, nil
+}
+
+// DialTarget is the host:port the lobby would connect to (wss preferred), for
+// ProbeLatency. Empty for legacy/unjoinable entries.
+func (e ServerEntry) DialTarget() string {
+	switch e.Security() {
+	case SecurityWSS:
+		return net.JoinHostPort(e.IP, strconv.Itoa(e.WSSPort))
+	case SecurityWS:
+		return net.JoinHostPort(e.IP, strconv.Itoa(e.WSPort))
+	}
+	return ""
+}
+
 // SortServers orders entries for the lobby: favorites pinned to the very
 // top, then joinable servers (green and yellow interleaved by player count,
 // then name), legacy TCP-only entries always pinned to the bottom.

@@ -49,6 +49,7 @@ func osHostname() (string, error) { return os.Hostname() }
 
 func (a *App) drawLobby(w, h int32) {
 	a.pollLobbyFetch()
+	a.pollPing() // drain connect-time probes (no-op unless a sweep is running)
 	c := a.ctx
 	a.drawScreenBackdrop(w, h, "lobbybackground")
 	c.Heading(pad, pad, "AsyncAO — Server Phone Book & Lobby", ColText)
@@ -69,6 +70,24 @@ func (a *App) drawLobby(w, h int32) {
 		a.prevScreen = ScreenLobby
 		a.screen = ScreenAbout
 	}
+	// Connect-time ("ping") sort: probe joinable servers and sort by RTT. A
+	// second press goes back to the player-count sort. Off until pressed.
+	pingBtn := sdl.Rect{X: w - 470 - pad, Y: pad, W: 110, H: btnH}
+	pingLabel := "Ping"
+	if a.pinging {
+		pingLabel = "Pinging…"
+	} else if a.pingMode {
+		pingLabel = "Ping ✓"
+	}
+	if c.Button(pingBtn, pingLabel) {
+		if a.pingMode {
+			a.pingMode = false
+			a.applyServerSort() // back to player-count order
+		} else {
+			a.startPinging()
+		}
+	}
+	c.Tooltip(pingBtn, "Sort by connect time (rough TCP latency, not ICMP ping) — press again for player-count order")
 
 	// Direct connect row.
 	dcY := pad + 56
@@ -194,6 +213,20 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 
 	tierLabel := e.Security().String()
 	c.Label(row.X+row.W-260, y+5, tierLabel, tierColor(*e))
+
+	// Connect-time readout (ping sort only): "NNms", "…" while probing, "✕"
+	// unreachable. Sits between the tier and the Join button.
+	if a.pingMode && e.Joinable() {
+		label, col := "…", ColTextDim
+		if d, ok := a.pings[e.WebSocketURL()]; ok {
+			if d < 0 {
+				label, col = "✕", ColDanger
+			} else {
+				label, col = fmt.Sprintf("%dms", int(d/time.Millisecond)), ColText
+			}
+		}
+		c.Label(row.X+row.W-150, y+5, label, col)
+	}
 
 	joinHover := false
 	if e.Joinable() {

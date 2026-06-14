@@ -273,6 +273,20 @@ func TestDirectEntry(t *testing.T) {
 	}
 }
 
+// TestDialTarget pins the host:port ProbeLatency dials: wss preferred, then ws,
+// empty for a legacy/unjoinable entry.
+func TestDialTarget(t *testing.T) {
+	if got := (ServerEntry{IP: "h", WSSPort: 2096, WSPort: 2095}).DialTarget(); got != "h:2096" {
+		t.Errorf("wss DialTarget = %q, want h:2096", got)
+	}
+	if got := (ServerEntry{IP: "h", WSPort: 2095}).DialTarget(); got != "h:2095" {
+		t.Errorf("ws DialTarget = %q, want h:2095", got)
+	}
+	if got := (ServerEntry{IP: "h", Port: 50001}).DialTarget(); got != "" {
+		t.Errorf("legacy DialTarget = %q, want empty", got)
+	}
+}
+
 func TestMergeFavoritesAndSort(t *testing.T) {
 	entries, _ := ParseServerList([]byte(sampleMasterJSON))
 	favs := []config.FavoriteServer{

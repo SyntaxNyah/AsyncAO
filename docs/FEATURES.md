@@ -470,6 +470,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   startup). Off by default and zero boot cost when off: nothing is read or
   reconnected, and nothing is persisted, so the default launch is byte-identical.
   A dead remembered server just shows its error and is skipped.
+- **Connect-time ("Ping") sort** (lobby **Ping** button, opt-in): probes every
+  joinable server's TCP-connect RTT on a bounded worker pool (8 at a time, 2 s
+  cap each) and re-sorts the list by it — favorites still pinned, then fastest
+  first, unprobed/unreachable last. Each row shows `NNms` (`…` while probing,
+  `✕` unreachable); press again for the player-count order. It's a *connect*
+  time (rough relative latency, not ICMP, and undercounts the TLS leg) — the
+  button tooltip says so. Nothing probes until you press it (default lobby is
+  byte-identical), and the cache clears on Refresh.
 - **Rehearsal mode** (lobby → select a visited server → Rehearse):
   browse its character roster and play emotes entirely offline from the
   cache — the manager's network gate closes structurally, nothing

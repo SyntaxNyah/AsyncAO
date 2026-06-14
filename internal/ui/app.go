@@ -166,6 +166,15 @@ type App struct {
 	descLines  []string
 	descLinks  []string // clickable URLs found in the description
 	helpScroll int32    // ScreenServerHelp scroll position
+	// Ping-sort (M7, opt-in via the lobby "Ping" button): pings holds each
+	// joinable server's TCP-connect RTT by URL (0 = unprobed, <0 = unreachable);
+	// pingMode sorts the lobby by it; pinging gates a re-probe; pingGen drops
+	// stale results after a re-probe. A bounded worker pool feeds pingResult.
+	pings    map[string]time.Duration
+	pingRes  chan pingResult
+	pingMode bool
+	pinging  bool
+	pingGen  int
 
 	// --- the active server session (every per-server field) ---
 	// sessionState is EMBEDDED so the whole session parks/restores as one
@@ -961,6 +970,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		d:               d,
 		screen:          ScreenLobby,
 		lobbyResult:     make(chan lobbyFetch, 1),
+		pingRes:         make(chan pingResult, pingResBuf),
 		charINIres:      make(chan charINIFetch, 1),
 		previewEmoteRes: make(chan previewEmoteFetch, 1),
 		updateRes:       make(chan *update.Release, 1),
@@ -1113,6 +1123,7 @@ func (a *App) Connect(name, wsURL string) {
 // context.Background() (Dial's full 10s budget); restore-on-launch passes a
 // short timeout so a dead remembered server can't freeze boot for long.
 func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
+	a.pinging = false // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
 	a.parkActive()
 	if !a.allocateTab() {
 		return // connErr set; lobby shows it
@@ -2139,6 +2150,10 @@ func (a *App) RefreshServers() {
 	}
 	a.lobbyFetching = true
 	a.lobbyStatus = "Fetching server list..."
+	// Fresh list = stale connect-times: back to player sort, drop the cache
+	// (keeps a.pings bounded, rule §17.4), and abandon any in-flight sweep.
+	a.pings, a.pingMode, a.pinging = nil, false, false
+	a.pingGen++
 	// The Settings override wins over the built-in default, but an
 	// explicit --master flag (anything non-default in Deps) wins over both.
 	url := a.d.MasterURL
@@ -2177,7 +2192,11 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 	entries := make([]network.ServerEntry, len(a.masterEntries))
 	copy(entries, a.masterEntries)
 	entries = network.MergeFavorites(entries, a.d.Prefs.FavoriteServers())
-	network.SortServers(entries)
+	if a.pingMode {
+		sortByPing(entries, a.pings) // lobby "Ping" sort: connect-time ascending
+	} else {
+		network.SortServers(entries)
+	}
 	return entries
 }
 
