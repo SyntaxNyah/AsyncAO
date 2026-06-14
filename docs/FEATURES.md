@@ -119,6 +119,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   stuck queue is obvious at a glance. Computed only while the overlay is open.
 - Settings cache browser: live T2 stats (entries/bytes/budget/hit rate),
   on-demand T3 size measurement, open-in-Explorer, clear buttons.
+- **Reset to defaults** (Settings, with a confirmation pop-up): two scopes —
+  **Reset settings** reverts the whole settings page (scales, volumes, theme,
+  hotkeys, colours, toggles) to defaults but KEEPS your favourites, wardrobes,
+  servers & logins, callwords, learned formats and disk cache; **Wipe
+  everything** is a fresh-install factory reset that also erases those, the
+  logins/passwords, and the disk cache. Robust by construction — the reset
+  copies a fresh-defaults struct over every setting via reflection, so a
+  newly-added option resets automatically (a guard test pins the preserved-data
+  field names). Applies live (no restart) and re-pulls the derived UI state.
 
 ## Quality of life
 

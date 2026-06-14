@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -753,6 +754,76 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	}
 	if got := q.MasterList(); got != "https://alt.example/servers" {
 		t.Fatalf("reloaded master list = %q", got)
+	}
+}
+
+// TestResetSettings pins the settings-only reset: tunables revert to defaults
+// while user content (callwords, favourites) is preserved.
+func TestResetSettings(t *testing.T) {
+	p, err := New(filepath.Join(t.TempDir(), "prefs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	p.SetAudioVolumes(0, 10, 20)
+	p.SetForceCharNames(true)
+	p.SetTabCap(20)
+	p.SetCallWords([]string{"myname"})
+	p.AddFavorite("Home", "wss://home:2096", "")
+
+	p.ResetSettings()
+
+	if m, s, b := p.AudioVolumes(); m != 100 || s != 100 || b != 100 {
+		t.Errorf("volumes not reset: %d/%d/%d", m, s, b)
+	}
+	if p.ForceCharNamesOn() {
+		t.Error("ForceCharNames not reset")
+	}
+	if p.TabCap() != DefaultMultiTabCap {
+		t.Errorf("TabCap = %d, want %d", p.TabCap(), DefaultMultiTabCap)
+	}
+	if got := p.CallWords(); len(got) != 1 || got[0] != "myname" {
+		t.Errorf("callwords (content) must be preserved, got %v", got)
+	}
+	if len(p.FavoriteServers()) != 1 {
+		t.Error("favourites (content) must be preserved")
+	}
+}
+
+// TestResetAll pins the full wipe: tunables AND content both revert.
+func TestResetAll(t *testing.T) {
+	p, err := New(filepath.Join(t.TempDir(), "prefs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	p.SetForceCharNames(true)
+	p.SetCallWords([]string{"myname"})
+	p.AddFavorite("Home", "wss://home:2096", "")
+
+	p.ResetAll()
+
+	if p.ForceCharNamesOn() {
+		t.Error("ForceCharNames not reset")
+	}
+	if got := p.CallWords(); len(got) != 0 {
+		t.Errorf("callwords must be wiped, got %v", got)
+	}
+	if got := p.FavoriteServers(); len(got) != 0 {
+		t.Errorf("favourites must be wiped, got %d", len(got))
+	}
+}
+
+// TestResetContentFieldsExist guards resetContentFields against a struct rename:
+// every preserved name must be a real exported field of AssetPreferences.
+func TestResetContentFieldsExist(t *testing.T) {
+	tp := reflect.TypeOf(AssetPreferences{})
+	for name := range resetContentFields {
+		if f, ok := tp.FieldByName(name); !ok || f.PkgPath != "" {
+			t.Errorf("resetContentFields[%q] is not an exported field of AssetPreferences", name)
+		}
 	}
 }
 

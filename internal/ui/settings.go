@@ -161,6 +161,10 @@ var imageTypeNames = []string{
 
 func (a *App) drawSettings(w, h int32) {
 	c := a.ctx
+	if a.showReset { // factory-reset pop-up owns the screen + input this frame
+		a.drawResetConfirm(w, h)
+		return
+	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 	c.Heading(pad, pad, "Settings", ColText)
 	// Search: type a term, press Enter to jump to the tab that has it.
@@ -624,8 +628,100 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	c.Label(pad, y, "or your cache — can keep serving the OLD file, so you'd see the wrong (outdated) version. Worth keeping", ColTextDim)
 	y += 18
 	c.Label(pad, y, "in mind if a character or background looks stale right after a server update.", ColTextDim)
-	y += 26
+	y += 30
+
+	// Factory reset: opens a pop-up offering settings-only or a full wipe.
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 220, H: btnH}, "Reset to defaults…") {
+		a.showReset = true
+	}
+	c.Label(pad+232, y+5, "Reset the settings page, or wipe everything (favourites, logins, data, cache).", ColTextDim)
+	y += 30
 	return y
+}
+
+// drawResetConfirm is the factory-reset pop-up: settings-only (keeps your data,
+// logins and cache) or a full wipe (erases everything, fresh-install state). It
+// owns the screen + input while open, so its buttons can't double-fire with the
+// settings widgets underneath.
+func (a *App) drawResetConfirm(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 235})
+	pw, ph := int32(620), int32(300)
+	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
+	c.Fill(panel, ColPanel)
+	c.Border(panel, ColAccent)
+	x, y := panel.X+24, panel.Y+18
+	c.Heading(x, y, "Reset AsyncAO", ColText)
+	y += 40
+
+	c.LabelClipped(x, y, pw-48, "Reset settings — restores the settings page to defaults (scales, volumes,", ColText)
+	y += 18
+	c.LabelClipped(x, y, pw-48, "theme, hotkeys, colours, toggles). KEEPS favourites, wardrobes, servers &", ColTextDim)
+	y += 18
+	c.LabelClipped(x, y, pw-48, "logins, callwords, learned formats, and your disk cache.", ColTextDim)
+	y += 26
+	if c.Button(sdl.Rect{X: x, Y: y, W: pw - 48, H: btnH}, "Reset settings (keep my data, logins & cache)") {
+		a.applyFactoryReset(false)
+	}
+	y += 42
+
+	c.LabelClipped(x, y, pw-48, "Wipe everything — a brand-new install: ALSO erases favourites, wardrobes,", ColDanger)
+	y += 18
+	c.LabelClipped(x, y, pw-48, "servers, logins/passwords, callwords, and the disk cache. Cannot be undone.", ColDanger)
+	y += 26
+	if c.Button(sdl.Rect{X: x, Y: y, W: pw - 48, H: btnH}, "WIPE EVERYTHING — logins, data, cache (no undo)") {
+		a.applyFactoryReset(true)
+	}
+	y += 42
+	if c.Button(sdl.Rect{X: x, Y: y, W: 120, H: btnH}, "Cancel") {
+		a.showReset = false
+	}
+}
+
+// applyFactoryReset resets preferences (settings-only or full wipe), clears the
+// disk cache on a full wipe, then re-applies the derived UI state and refreshes
+// the lobby so the change is visible immediately.
+func (a *App) applyFactoryReset(wipeAll bool) {
+	if wipeAll {
+		a.d.Prefs.ResetAll()
+		_ = a.d.Manager.ClearDisk()
+		a.d.Resolver.InvalidateAll()
+		a.warnLine = "Everything wiped — fresh-install state."
+	} else {
+		a.d.Prefs.ResetSettings()
+		a.warnLine = "Settings reset to defaults."
+	}
+	a.applyPrefsToState()
+	a.RefreshServers() // favourites/master re-merge (also clears ping state)
+	a.showReset = false
+	a.warnAt = time.Now()
+}
+
+// applyPrefsToState re-pulls the App-cached values derived from preferences —
+// the subset NewApp seeds — so a reset (or import) takes effect without a
+// restart. Not a hot path.
+func (a *App) applyPrefsToState() {
+	a.hidden = map[string]bool{}
+	for _, id := range a.d.Prefs.HiddenPanels() {
+		a.hidden[id] = true
+	}
+	a.pairOffX, a.pairOffY = a.d.Prefs.PairOffsets()
+	a.pairFlip = a.d.Prefs.PairFlipped()
+	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
+	a.uiScalePct = a.d.Prefs.UIScale()
+	a.ctx.SetUIScale(a.UIScale())
+	a.oocName = a.d.Prefs.SavedShowname()
+	if s := a.d.Prefs.SavedOOCName(); s != "" {
+		a.oocName = s
+	}
+	a.refreshCharKeys()
+	a.applyThemeAsync()
+	a.applyAudioVolumes()
+	if a.room != nil {
+		a.applyTimingToRoom()
+		a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+		a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
+	}
 }
 
 // drawSettingsAudioChat: volumes, message timing, casing alerts, callwords.

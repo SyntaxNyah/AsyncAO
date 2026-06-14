@@ -608,6 +608,7 @@ type sessionState struct {
 	iniListErr   string
 	iniBusy      bool
 	showIni      bool
+	showReset    bool // factory-reset confirmation pop-up (Settings)
 	iniSearch    string
 	iniAdd       string   // "add folder to wardrobe" input
 	iniFolder    string   // open wardrobe folder ("" = top level/root, else folder name)

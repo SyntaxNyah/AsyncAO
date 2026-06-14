@@ -16,6 +16,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -577,9 +578,11 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 	return p, err
 }
 
-// load reads and normalizes the preferences file without starting the saver.
-func load(path string) (*AssetPreferences, error) {
-	p := &AssetPreferences{
+// defaultPrefs builds a fresh, all-defaults AssetPreferences (no disk read, no
+// saver goroutine). Both load() (before overlaying the file) and the reset
+// methods use it, so the default state lives in exactly one place.
+func defaultPrefs(path string) *AssetPreferences {
+	return &AssetPreferences{
 		PreferAnimated:    defaultPreferAnimated,
 		EmoteButtonImages: defaultEmoteButtonImages,
 		SmoothScaling:     defaultSmoothScaling,
@@ -609,6 +612,11 @@ func load(path string) (*AssetPreferences, error) {
 		LearnedFormats:    map[string][]string{},
 		path:              path,
 	}
+}
+
+// load reads and normalizes the preferences file without starting the saver.
+func load(path string) (*AssetPreferences, error) {
+	p := defaultPrefs(path)
 
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -813,6 +821,64 @@ func (p *AssetPreferences) saverLoop() {
 			}
 		}
 	}
+}
+
+// resetContentFields names the user-CONTENT fields ResetSettings PRESERVES
+// (everything else — the tunable settings — reverts to default). ResetAll
+// preserves nothing. Keyed by Go field name (checked against the struct by
+// TestResetFieldNames so a rename can't silently break it).
+var resetContentFields = map[string]bool{
+	"Favorites":          true, // saved servers (phone book)
+	"Wardrobe":           true, // legacy flat wardrobe
+	"ServerWarm":         true, // per-server: char/bg/wardrobe/folders/LOGINS/friends
+	"UserMacros":         true,
+	"CallWordList":       true,
+	"LearnedFormats":     true, // learned per-host formats (cache-adjacent)
+	"ThemeRectOv":        true, // layout-editor overrides
+	"OpenTabs":           true,
+	"LocalAssetsPaths":   true, // local mount config
+	"LocalAssetsEnabled": true,
+	"Showname":           true, // your identity
+	"OOCName":            true,
+}
+
+// resetLocked overwrites every exported field with a fresh-defaults value,
+// skipping unexported machinery (mu/saver/path — PkgPath != "") and any name in
+// keep. Caller holds the write lock. Reflection (a rare, cold user action) keeps
+// this robust: a newly-added setting resets automatically, no enumeration to
+// forget.
+func (p *AssetPreferences) resetLocked(keep map[string]bool) {
+	fresh := defaultPrefs(p.path)
+	pv, fv := reflect.ValueOf(p).Elem(), reflect.ValueOf(fresh).Elem()
+	t := pv.Type()
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" || keep[f.Name] { // unexported machinery / preserved content
+			continue
+		}
+		pv.Field(i).Set(fv.Field(i))
+	}
+	p.formatGen.Add(1) // format/fallback prefs may have changed; invalidate resolver caches
+}
+
+// ResetSettings reverts the tunable settings to defaults but KEEPS your content
+// (favourites, wardrobes, servers & logins, macros, callwords, learned formats,
+// layout overrides, local mounts, names) and the disk cache. Persisted now.
+func (p *AssetPreferences) ResetSettings() {
+	p.mu.Lock()
+	p.resetLocked(resetContentFields)
+	p.mu.Unlock()
+	_ = p.SaveNow()
+}
+
+// ResetAll wipes EVERYTHING to a fresh-install state — settings AND content
+// (favourites, wardrobes, servers, logins/passwords, macros, callwords, learned
+// formats, ...). The disk cache is the caller's to clear. Persisted now.
+func (p *AssetPreferences) ResetAll() {
+	p.mu.Lock()
+	p.resetLocked(nil)
+	p.mu.Unlock()
+	_ = p.SaveNow()
 }
 
 // SaveNow synchronously marshals current preferences and atomically replaces
