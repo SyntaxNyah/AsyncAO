@@ -164,6 +164,11 @@ type Courtroom struct {
 	// motion is skipped. Set by the App from prefs (default off).
 	ReduceMotion bool
 
+	// ForceCharNames shows every speaker's CHARACTER name instead of their
+	// custom showname (true-roleplay / anti-impersonation for casing). Set by
+	// the App from prefs (default off); the IC log mirrors it App-side.
+	ForceCharNames bool
+
 	queue []*protocol.ChatMessage
 	phase MessagePhase
 	timer time.Duration
@@ -388,7 +393,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.Scene.Pair = SpriteLayer{}
 	}
 
-	c.Scene.ShownameText = displayName(msg)
+	c.Scene.ShownameText = c.displayName(msg)
 	c.Scene.TextColor = msg.TextColor
 	c.Scene.MessageText = ""
 	c.Scene.MessageRaw = ""
@@ -421,7 +426,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 // one-frame backlog flash is never seen.
 func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.ShoutBase = ""
-	c.Scene.ShownameText = displayName(msg)
+	c.Scene.ShownameText = c.displayName(msg)
 	c.Scene.TextColor = msg.TextColor
 	c.Typewriter.Start(msg.Message)
 	c.Typewriter.SkipToEnd()
@@ -614,8 +619,11 @@ func deskVisible(deskMod int) bool {
 }
 
 // displayName picks the chat box name: showname overrides the folder name.
-func displayName(msg *protocol.ChatMessage) string {
-	if msg.Showname != "" {
+// displayName is the chatbox/log name for a message: the custom showname,
+// falling back to the character name — UNLESS ForceCharNames is on, which
+// always shows the character (ignoring custom shownames).
+func (c *Courtroom) displayName(msg *protocol.ChatMessage) string {
+	if !c.ForceCharNames && msg.Showname != "" {
 		return msg.Showname
 	}
 	return msg.CharName

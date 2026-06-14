@@ -308,6 +308,14 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetStreamerMode(next)
 	}
 	y += 26
+	fcn := a.d.Prefs.ForceCharNamesOn()
+	if next := c.Checkbox(pad, y, "Force character names (OFF by default): show everyone's CHARACTER name, not custom shownames — true-roleplay / anti-impersonation (casing)", fcn); next != fcn {
+		a.d.Prefs.SetForceCharNames(next)
+		if a.room != nil {
+			a.room.ForceCharNames = next // apply to the running session immediately
+		}
+	}
+	y += 26
 	upd := a.d.Prefs.UpdateCheckEnabled()
 	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
 		a.d.Prefs.SetUpdateCheck(next)
@@ -608,7 +616,15 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 150, H: btnH}, "Import learned") {
 		importLearnedAsync(a)
 	}
-	y += 32
+	y += 30
+	c.Label(pad, y, "\"Clear disk cache\" wipes the on-disk asset cache (T3); assets re-download fresh on next use.", ColTextDim)
+	y += 18
+	c.Label(pad, y, "Recommended after a server that's behind Cloudflare / a CDN updates its assets: otherwise the CDN —", ColTextDim)
+	y += 18
+	c.Label(pad, y, "or your cache — can keep serving the OLD file, so you'd see the wrong (outdated) version. Worth keeping", ColTextDim)
+	y += 18
+	c.Label(pad, y, "in mind if a character or background looks stale right after a server update.", ColTextDim)
+	y += 26
 	return y
 }
 

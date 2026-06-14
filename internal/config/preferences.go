@@ -227,6 +227,7 @@ type AssetPreferences struct {
 	BgSlideshow            bool                         `json:"bgSlideshow"`
 	BgSlideshowSecs        int                          `json:"bgSlideshowSecs"`
 	DownloadKBps           int                          `json:"downloadKBps"`
+	ForceCharNames         bool                         `json:"forceCharNames"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
@@ -308,7 +309,8 @@ type prefsJSON struct {
 	HighlightColor         *int  `json:"highlightColor"` // absent = default accent
 	BgSlideshow            bool  `json:"bgSlideshow"`    // default OFF (zero value)
 	BgSlideshowSecs        int   `json:"bgSlideshowSecs"`
-	DownloadKBps           int   `json:"downloadKBps"` // 0 = unlimited (default)
+	DownloadKBps           int   `json:"downloadKBps"`   // 0 = unlimited (default)
+	ForceCharNames         bool  `json:"forceCharNames"` // default OFF
 	DebugOverlay           bool  `json:"debugOverlay"`
 	FormatAutoDetect       *bool `json:"formatAutoDetect"`  // absent = default ON
 	ThemeLayout            *bool `json:"themeLayout"`       // absent = default ON
@@ -602,6 +604,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.BgSlideshowSecs = onDisk.BgSlideshowSecs
 	}
 	p.DownloadKBps = onDisk.DownloadKBps // 0 = unlimited
+	p.ForceCharNames = onDisk.ForceCharNames
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
 	if onDisk.FormatAutoDetect != nil {
@@ -1144,6 +1147,27 @@ func (p *AssetPreferences) SetDownloadCapKBps(n int) {
 		return
 	}
 	p.DownloadKBps = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ForceCharNames reports the "show character names, not custom shownames"
+// toggle (OFF by default) — applies to everyone's messages, in the chatbox and
+// the IC log, for true-roleplay immersion / anti-impersonation in casing.
+func (p *AssetPreferences) ForceCharNamesOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ForceCharNames
+}
+
+// SetForceCharNames toggles forcing character names over custom shownames.
+func (p *AssetPreferences) SetForceCharNames(on bool) {
+	p.mu.Lock()
+	if p.ForceCharNames == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ForceCharNames = on
 	p.mu.Unlock()
 	p.markDirty()
 }

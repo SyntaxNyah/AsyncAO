@@ -1259,7 +1259,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.checkCallwords(ev.Text)
 		case courtroom.EventMessage:
 			if ev.Message != nil {
-				a.pushIC(icLogLine(ev.Message), ev.Message.TextColor)
+				a.pushIC(icLogLine(ev.Message, a.d.Prefs.ForceCharNamesOn()), ev.Message.TextColor)
 				a.noteEvidencePresented(ev.Message)
 				a.checkCallwords(ev.Message.Message)
 			}
@@ -1324,10 +1324,10 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 	}
 }
 
-func icLogLine(m *protocol.ChatMessage) string {
+func icLogLine(m *protocol.ChatMessage, forceChar bool) string {
 	name := m.Showname
-	if name == "" {
-		name = m.CharName
+	if forceChar || name == "" {
+		name = m.CharName // force-char-names mirrors the chatbox (anti-impersonation)
 	}
 	// Strip inline markup so the log reads like the chatbox (no raw \cN / { }).
 	return name + ": " + courtroom.StripChatMarkup(m.Message)
@@ -1597,6 +1597,7 @@ func (a *App) applyTimingToRoom() {
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
 	a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
+	a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 }
 
 // activeCharName is the character folder OUTGOING messages use: the
