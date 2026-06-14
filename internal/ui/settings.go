@@ -774,7 +774,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 26
 	if cuOn {
-		nt := a.numberRow(y, "Catch up after N queued", cuThresh, 1, 1, 50)
+		nt := a.numberRow(y, "Catch up after", cuThresh, 1, 1, 50)
 		c.Label(pad+270, y+4, "fast-forward once at least this many messages are waiting (1 = stay on the newest)", ColTextDim)
 		if nt != cuThresh {
 			a.d.Prefs.SetCatchUp(cuOn, nt)
@@ -1214,9 +1214,10 @@ func (a *App) drawDownloaderSettings(y, w int32) int32 {
 		// Bandwidth cap (KiB/s; 0 = unlimited — the default, so grabs run full
 		// speed unless you throttle them). Average-rate, applied per grab.
 		capKBps := a.d.Prefs.DownloadCapKBps()
-		if next := a.numberRow(y, "Bandwidth cap (KiB/s, 0 = unlimited)", capKBps, 256, 0, 1<<20); next != capKBps {
+		if next := a.numberRow(y, "Bandwidth cap", capKBps, 256, 0, 1<<20); next != capKBps {
 			a.d.Prefs.SetDownloadCapKBps(next)
 		}
+		c.Label(pad+270, y+4, "KiB/s — 0 = unlimited (full speed)", ColTextDim)
 		y += 30
 		root := downloadsRoot()
 		c.LabelClipped(pad+20, y+4, w-pad-360-scrollBarW, "Folder: "+root, ColText)

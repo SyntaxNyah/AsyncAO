@@ -211,21 +211,22 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	}
 	c.LabelClipped(row.X+52, y+5, row.W-260, name, textCol)
 
-	tierLabel := e.Security().String()
-	c.Label(row.X+row.W-260, y+5, tierLabel, tierColor(*e))
-
-	// Connect-time readout (ping sort only): "NNms", "…" while probing, "✕"
-	// unreachable. Sits between the tier and the Join button.
+	// Right-side label: normally the security tier; in ping mode the connect
+	// time takes this slot instead (the verbose tier text would run under the
+	// number — the tier COLOUR still reads off the left swatch). "…" probing,
+	// "unreachable" on a failed dial.
 	if a.pingMode && e.Joinable() {
 		label, col := "…", ColTextDim
 		if d, ok := a.pings[e.WebSocketURL()]; ok {
 			if d < 0 {
-				label, col = "✕", ColDanger
+				label, col = "unreachable", ColDanger
 			} else {
-				label, col = fmt.Sprintf("%dms", int(d/time.Millisecond)), ColText
+				label, col = fmt.Sprintf("%d ms", int(d/time.Millisecond)), ColText
 			}
 		}
-		c.Label(row.X+row.W-150, y+5, label, col)
+		c.Label(row.X+row.W-260, y+5, label, col)
+	} else {
+		c.Label(row.X+row.W-260, y+5, e.Security().String(), tierColor(*e))
 	}
 
 	joinHover := false
