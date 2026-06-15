@@ -23,6 +23,16 @@ const (
 	// blipChannel is reserved so a new blip replaces the previous one
 	// (AO blips never stack).
 	blipChannel = 0
+	// alertChannel is reserved for callword/friend pings. A callword fires on
+	// message ARRIVAL, when the blip channel is momentarily free — so Play(-1)
+	// used to land the ping on channel 0, and the typewriter's very first blip
+	// then HaltChannel(0)'d it, cutting the ping the instant blips started
+	// ("can't hear the callword when blips are on"). A dedicated reserved
+	// channel keeps blips and a burst of emote SFX from ever stealing it.
+	alertChannel = 1
+	// reservedChannels holds channels [0,N) (blip + alert) back from the
+	// Play(-1) SFX pool so only their explicit owners use them.
+	reservedChannels = 2
 
 	// chunkCacheMax bounds decoded SFX/blip chunks held in memory.
 	chunkCacheMax = 64
@@ -45,6 +55,7 @@ const (
 	pendingSFX
 	pendingBlip
 	pendingMusic
+	pendingAlert // callword/friend ping — its own reserved channel
 )
 
 type pendingPlay struct {
@@ -117,6 +128,7 @@ func NewAudio(mgr *assets.Manager) *Audio {
 		return a
 	}
 	mix.AllocateChannels(mixChannelCount)
+	mix.ReserveChannels(reservedChannels) // keep blips + alerts off the Play(-1) SFX pool
 	a.enabled = true
 	a.loadAlert()
 	return a
@@ -139,35 +151,44 @@ func (a *Audio) loadAlert() {
 	a.alert = chunk
 }
 
-// builtinAlertWAV synthesizes a short two-tone "ping" as an in-memory WAV
-// (16-bit mono PCM). It is the always-available fallback so a configured
-// callword (or friend ping) is never silent on a theme without a word_call
-// sound — see App.checkCallwords / signalFriend.
+// builtinAlertWAV synthesizes the callword/friend "ping" as an in-memory WAV
+// (16-bit mono PCM): a ~1.5 s trill of three short two-tone dings, long enough
+// to clearly notice (a single 160 ms ping "played too short"). Each ding resets
+// phase and decays to zero, so the dings and the gaps between them are
+// click-free. The reliable default when no custom sound is set — see
+// App.checkCallwords / signalFriend.
 func builtinAlertWAV() []byte {
 	const (
 		alertSampleRate = 44100
-		alertDurMs      = 160
+		alertTotalMs    = 1500   // total length — the user asked for ~1.5 s
+		alertDingMs     = 300    // one ding within the trill
+		alertGapMs      = 200    // silence between dings (1500 = 3 × (300+200))
 		alertFreqLo     = 880.0  // first tone (A5)
-		alertFreqHi     = 1320.0 // lift on the second half — the "ping" feel
+		alertFreqHi     = 1320.0 // lift on the ding's second half — the "ping" feel
 		alertAmp        = 0.33   // headroom so it isn't jarring
-		alertAttack     = 0.05   // fraction of the clip spent ramping in (anti-click)
+		alertAttack     = 0.05   // fraction of a ding spent ramping in (anti-click)
 	)
-	n := alertSampleRate * alertDurMs / 1000
-	pcm := make([]byte, 0, n*2)
-	for i := 0; i < n; i++ {
-		t := float64(i) / float64(alertSampleRate)
-		prog := float64(i) / float64(n) // 0..1 through the clip
-		freq := alertFreqLo
-		if prog >= 0.5 {
-			freq = alertFreqHi
+	dingN := alertSampleRate * alertDingMs / 1000
+	unitN := alertSampleRate * (alertDingMs + alertGapMs) / 1000
+	totalN := alertSampleRate * alertTotalMs / 1000
+	pcm := make([]byte, 0, totalN*2)
+	for i := 0; i < totalN; i++ {
+		var v int16
+		if pos := i % unitN; pos < dingN { // inside a ding (else the silent gap)
+			t := float64(pos) / float64(alertSampleRate) // phase per ding
+			prog := float64(pos) / float64(dingN)        // 0..1 through the ding
+			freq := alertFreqLo
+			if prog >= 0.5 {
+				freq = alertFreqHi
+			}
+			env := 1.0 // attack ramp, then linear decay to 0 (no click)
+			if prog < alertAttack {
+				env = prog / alertAttack
+			} else {
+				env = 1 - (prog-alertAttack)/(1-alertAttack)
+			}
+			v = int16(math.Sin(2*math.Pi*freq*t) * alertAmp * env * math.MaxInt16)
 		}
-		env := 1.0 // attack ramp, then linear decay to 0 (no end click)
-		if prog < alertAttack {
-			env = prog / alertAttack
-		} else {
-			env = 1 - (prog-alertAttack)/(1-alertAttack)
-		}
-		v := int16(math.Sin(2*math.Pi*freq*t) * alertAmp * env * math.MaxInt16)
 		pcm = append(pcm, byte(v), byte(v>>8)) // little-endian
 	}
 	return wavMono16(pcm, alertSampleRate)
@@ -210,7 +231,7 @@ func (a *Audio) PlayAlert() {
 	if !a.enabled || a.alert == nil {
 		return
 	}
-	a.playChunk(a.alert, pendingSFX)
+	a.playChunk(a.alert, pendingAlert)
 }
 
 // Close stops playback and shuts the device.
@@ -302,6 +323,14 @@ func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
 		if _, err := chunk.Play(blipChannel, 0); err == nil {
 			mix.Volume(blipChannel, mixVolume(a.blipVol))
 		}
+	case pendingAlert:
+		// Callword/friend ping on its own reserved channel: a new alert replaces
+		// the old (no stacking), and neither blips nor a burst of emote SFX can
+		// steal or halt it. SFX volume so the mute toggle still covers it.
+		mix.HaltChannel(alertChannel)
+		if _, err := chunk.Play(alertChannel, 0); err == nil {
+			mix.Volume(alertChannel, mixVolume(a.sfxVol))
+		}
 	default:
 		if ch, err := chunk.Play(-1, 0); err == nil {
 			mix.Volume(ch, mixVolume(a.sfxVol))
@@ -336,7 +365,7 @@ func (a *Audio) PlayFile(path string) {
 		a.chunkOrder = append(a.chunkOrder, path)
 		chunk = c
 	}
-	a.playChunk(chunk, pendingSFX)
+	a.playChunk(chunk, pendingAlert) // alert channel: a custom callword/friend sound is never cut by blips
 }
 
 // request plays the chunk for base now if cached, else marks it pending
