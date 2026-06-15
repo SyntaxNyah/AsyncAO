@@ -163,15 +163,23 @@ func (a *App) drawPairPopup(w, h int32) {
 		return
 	}
 	y += fieldH + 10
-	if c.Button(sdl.Rect{X: x, Y: y, W: 160, H: btnH}, "Refresh (/getarea)") {
-		a.pairAreaReset = true
-		a.queueOOCLines([]string{"/getarea"})
-		a.warnLine = clampLine("Asked the server for /getarea — pick a player below.")
-		a.warnAt = a.now()
+	// Fetch the area roster. Servers differ on the command — some only have the
+	// /ga alias, not /getarea — so offer all three; whichever your server answers
+	// fills the list (the reply is parsed no matter how you ask).
+	c.Label(x, y+5, "Fetch list:", ColTextDim)
+	bx := x + 78
+	for _, cmd := range []string{"/ga", "/gas", "/getarea"} {
+		bw := c.TextWidth(cmd) + 16
+		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, cmd) {
+			a.pairAreaReset = true
+			a.queueOOCLines([]string{cmd})
+			a.warnLine = clampLine("Sent " + cmd + " — the roster fills from the reply.")
+			a.warnAt = a.now()
+		}
+		bx += bw + 6
 	}
-	c.LabelClipped(x+168, y+5, pw-168-36, "then click a player to grab their UID", ColTextDim)
 	y += btnH + 10
-	c.Label(x, y, "Players here (/getarea):", ColTextDim)
+	c.Label(x, y, "Players parsed from the area list: "+strconv.Itoa(len(a.areaPlayers)), ColTextDim)
 	y += 20
 	a.drawPairPlayerList(sdl.Rect{X: x, Y: y, W: pw - 36, H: panel.Y + ph - y - 14})
 }
@@ -182,7 +190,7 @@ func (a *App) drawPairPopup(w, h int32) {
 func (a *App) drawPairPlayerList(r sdl.Rect) {
 	c := a.ctx
 	if len(a.areaPlayers) == 0 {
-		c.LabelClipped(r.X+2, r.Y+4, r.W-4, "No /getarea data yet — hit Refresh, or type the UID above.", ColTextDim)
+		c.LabelClipped(r.X+2, r.Y+4, r.W-4, "No area data yet — run /ga, /gas, or hit Refresh; or type the UID above.", ColTextDim)
 		return
 	}
 	const lineH = int32(24)

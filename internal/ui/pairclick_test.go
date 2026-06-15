@@ -66,28 +66,49 @@ func TestParseAreaShowname(t *testing.T) {
 // and a unicode showname. (The "speaker:" prefix is stripped upstream in pushOOC.)
 func TestParseAreaRealFormat(t *testing.T) {
 	a := &App{}
-	block := "[23] kayoko onikata (ba)\n" +
-		"Showname: Beta\n" +
-		"IPID: SAUPFiHDo04mLehRUj5ifQ\n" +
+	// A verbatim slice of the user's live /ga output: header lines, "[Title]" tags
+	// before the UID, "(pos)" suffixes, per-player "Showname:"/"OOC:" lines, and a
+	// unicode showname.
+	block := "Players\n" +
+		"----------\n" +
+		"Lobby:\n" +
+		"21 players online.\n" +
+		"[0] mikako kurokawa_hd\n" +
+		"Showname: mikako kurokawa_hd\n" +
+		"[2] m16a1 (gfl)\n" +
+		"Showname: fünfzehn\n" +
+		"[3] klavier (aj)\n" +
+		"[Sparkle] [5] oneshot niko\n" +
+		"Showname: The Pilot (the 2nd server cat)\n" +
+		"[11] ciel-sensei (tsukihime)\n" +
+		"Showname: Häschen\n" +
+		"[Nakama] [12] hina sorasaki (ba)\n" +
+		"Showname: Peen (🍅)\n" +
+		"OOC: Peen\n" +
 		"[Mario Kart Queen] [24] tlaloc (fgo)\n" +
-		"Showname: [Poki]\n" +
-		"IPID: XRPtULDZd8HiIIqL/kzg/g\n" +
-		"[25] rabu_fvba\n" +
-		"Showname: fünfzehn\n"
+		"Showname: [Poki]\n"
 	a.parseAreaBlock(block)
-	if got := a.areaUIDs["beta"]; got != "23" {
-		t.Errorf("showname Beta -> %q, want 23", got)
+
+	for k, want := range map[string]string{
+		"häschen":      "11", // showname → the player you'd double-click
+		"ciel-sensei":  "11", // char name (pos suffix stripped)
+		"tlaloc":       "24", // "[Mario Kart Queen] [24] tlaloc" — past the title tag
+		"[poki]":       "24", // bracketed showname
+		"oneshot niko": "5",  // "[Sparkle] [5] oneshot niko"
+		"m16a1":        "2",
+		"fünfzehn":     "2", // unicode showname
+	} {
+		if got := a.areaUIDs[k]; got != want {
+			t.Errorf("areaUIDs[%q] = %q, want %q", k, got, want)
+		}
 	}
-	if got := a.areaUIDs["tlaloc"]; got != "24" { // "[Mario Kart Queen] [24] tlaloc"
-		t.Errorf("title-prefixed [24] tlaloc -> %q, want 24", got)
+	// Header / OOC lines must NOT pollute the map.
+	for _, junk := range []string{"players", "lobby:", "21 players online.", "peen"} {
+		if _, ok := a.areaUIDs[junk]; ok {
+			t.Errorf("header/OOC junk %q leaked into the UID map", junk)
+		}
 	}
-	if got := a.areaUIDs["[poki]"]; got != "24" {
-		t.Errorf("showname [Poki] -> %q, want 24", got)
-	}
-	if got := a.areaUIDs["fünfzehn"]; got != "25" {
-		t.Errorf("unicode showname -> %q, want 25", got)
-	}
-	if len(a.areaPlayers) != 3 {
-		t.Errorf("roster = %d, want 3 (the [uid] rows; shownames are aliases)", len(a.areaPlayers))
+	if got := len(a.areaPlayers); got != 7 { // [0] [2] [3] [5] [11] [12] [24]
+		t.Errorf("roster rows = %d, want 7 (shownames are aliases, not rows)", got)
 	}
 }
