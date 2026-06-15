@@ -888,6 +888,8 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawUICfgPanel(w, h)
 	case a.showLogin:
 		a.drawLoginDialog(w, h)
+	case a.pairPopupOpen:
+		a.drawPairPopup(w, h)
 	default:
 		return false
 	}
@@ -1319,10 +1321,18 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				lineSpeaker = a.icLog[row.entry].speaker
 			}
 			a.drawLogLineNamed(font, list.X, y, wrapW, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal)
-			if u := a.icLog[row.entry].url; u != "" && c.hovering(rowRect) {
-				c.Tooltip(rowRect, "Open "+u)
-				if c.clicked {
-					openBrowser(u)
+			if u := a.icLog[row.entry].url; u != "" {
+				if c.hovering(rowRect) {
+					c.Tooltip(rowRect, "Open "+u)
+					if c.clicked {
+						openBrowser(u)
+					}
+				}
+			} else if spk := a.icLog[row.entry].speaker; spk != "" && c.hovering(rowRect) {
+				// Double-click a speaker's line → click-to-pair (grab their UID).
+				// Single click stays free (selection/read); double is deliberate.
+				if c.dblClick {
+					a.openPairPopup(spk)
 				}
 			}
 			// Right-click — or the configurable pin-note chord — pins the

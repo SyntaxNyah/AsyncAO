@@ -33,6 +33,10 @@ const (
 
 	scrollStepPx = 32
 	caretBlink   = 500 * time.Millisecond
+	// doubleClickWindow/Slop define a double-click: a second left release within
+	// the window AND within a few logical px of the first.
+	doubleClickWindow = 400 * time.Millisecond
+	doubleClickSlop   = 6
 
 	// DefaultScalePct is the 1:1 text/layout scale (percent).
 	DefaultScalePct = 100
@@ -249,7 +253,11 @@ type Ctx struct {
 	uiPct int32
 
 	mouseX, mouseY int32
-	clicked        bool // left released this frame
+	clicked        bool      // left released this frame
+	dblClick       bool      // a double-click landed this frame (doubleClickWindow)
+	lastClickAt    time.Time // double-click detection state (persists across frames)
+	lastClickX     int32
+	lastClickY     int32
 	ctrlHeld       bool // live modifier state (Ctrl+wheel font sizing)
 	rightClicked   bool
 	wheelY         int32
@@ -542,6 +550,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.ddDraws = c.ddDraws[:0]
 
 	c.clicked = false
+	c.dblClick = false
 	c.rightClicked = false
 	c.wheelY = 0
 	c.wheelTaken = false
@@ -591,6 +600,18 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 			case sdl.BUTTON_LEFT:
 				c.clicked = true
 				c.mouseDown = false
+				now := time.Now()
+				dx, dy := c.mouseX-c.lastClickX, c.mouseY-c.lastClickY
+				if dx < 0 {
+					dx = -dx
+				}
+				if dy < 0 {
+					dy = -dy
+				}
+				if now.Sub(c.lastClickAt) < doubleClickWindow && dx < doubleClickSlop && dy < doubleClickSlop {
+					c.dblClick = true
+				}
+				c.lastClickAt, c.lastClickX, c.lastClickY = now, c.mouseX, c.mouseY
 			case sdl.BUTTON_RIGHT:
 				c.rightClicked = true
 			case sdl.BUTTON_MIDDLE:

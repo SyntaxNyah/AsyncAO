@@ -736,6 +736,17 @@ type sessionState struct {
 	pairAskBase string // pair sprite heal pacing
 	pairAskAt   time.Time
 
+	// Click-to-pair (/pair <uid> for servers that sync pairs via the OOC command).
+	// areaUIDs/areaPlayers are parsed from /getarea in pushOOC; the popup pre-fills
+	// the UID when it can confidently match the clicked char, else manual entry.
+	pairPopupOpen  bool
+	pairPopupChar  string
+	pairPopupUID   string
+	areaUIDs       map[string]string
+	areaPlayers    []areaPlayer
+	pairAreaReset  bool
+	pairListScroll int32
+
 	// client-side sprite position overrides, keyed by lowercased character
 	// folder: the server keeps setting positions per message, the client
 	// wins afterwards (drag in the viewport; right-click a sprite resets).
@@ -3064,6 +3075,7 @@ const oocLineCap = 4096
 // two slices stay parallel (same cap), so display can look the speaker up by
 // entry index without re-parsing the ": " (which would mis-tint system lines).
 func (a *App) pushOOC(line, speaker string) {
+	a.parseAreaBlock(line) // harvest /getarea "[uid] name" rows for click-to-pair (full line, pre-truncation)
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
 	}
