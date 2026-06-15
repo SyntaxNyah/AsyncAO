@@ -1153,9 +1153,32 @@ func (a *App) Background(dt time.Duration) {
 	if a.room != nil {
 		a.room.Update(dt)
 	}
+	a.keepActiveAssetsWarm() // bump recency BEFORE the pump's uploads can evict
 	a.d.Audio.Frame()
 	a.d.Pump.Frame()
 	a.d.Store.DrainDestroyQueue()
+}
+
+// keepActiveAssetsWarm re-touches the user's persistently-shown assets — the
+// SELECTED emote's "on" button image and the char icon — so T1's LRU never
+// evicts them while the window is minimized. Background draws nothing, so those
+// assets aren't touched by a render; an incoming message streaming in then
+// uploads over them and the selected emote button blanks for a moment on
+// restore (it heals, but shouldn't drop at all). Only called from Background:
+// the URL building allocates, so it must stay off the 0-alloc render path (in a
+// drawn frame the emote row already touches these when visible).
+func (a *App) keepActiveAssetsWarm() {
+	if a.room == nil || a.sess == nil {
+		return
+	}
+	me := a.activeCharName()
+	if me == "" {
+		return
+	}
+	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
+		a.d.Store.Get(a.urls.EmoteButton(me, a.emoteIdx+1, true)) // selected emote "on" image
+	}
+	a.d.Store.Get(a.urls.CharIcon(me))
 }
 
 // SetPump injects the upload pump (built after App for the liveness probe).
