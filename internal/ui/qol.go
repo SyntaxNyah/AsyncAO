@@ -38,6 +38,18 @@ const (
 	hotkeyPinNote    = "pin_note"
 	hotkeyFriendHi   = "friend_toggle"
 	hotkeyExtras     = "extras"
+	// Per-menu shortcuts: jump straight to an Extras menu (a legacy AO2 theme has
+	// no button for these), skipping the Extras box if you know the key.
+	hotkeyCharMenu   = "char_menu"
+	hotkeyWardrobe   = "wardrobe"
+	hotkeyJukebox    = "jukebox"
+	hotkeyBackground = "background"
+	hotkeyEvidence   = "evidence"
+	hotkeyPairMenu   = "pair_menu"
+	hotkeyModcall    = "modcall"
+	hotkeyUIChrome   = "ui_chrome"
+	hotkeySettings   = "settings_menu"
+	hotkeyRandomChar = "random_char"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -61,6 +73,17 @@ var hotkeyDefs = []struct {
 	{hotkeyPinNote, "Pin hovered log line to notes", "n"},
 	{hotkeyFriendHi, "Toggle friend highlights", "u"},
 	{hotkeyExtras, "Open the Extras menu (AsyncAO features box)", "x"},
+	// Direct menu shortcuts (skip the Extras box). Common menus on Ctrl+5..0.
+	{hotkeyCharMenu, "Menu: Characters", "5"},
+	{hotkeyWardrobe, "Menu: Wardrobe", "6"},
+	{hotkeyJukebox, "Menu: Jukebox", "7"},
+	{hotkeyBackground, "Menu: Background", "8"},
+	{hotkeyEvidence, "Menu: Evidence", "9"},
+	{hotkeyPairMenu, "Menu: Pairing", "0"},
+	{hotkeyModcall, "Menu: Call mod", "o"},
+	{hotkeyUIChrome, "Menu: UI chrome", "f"},
+	{hotkeySettings, "Menu: Settings", "z"},
+	{hotkeyRandomChar, "Random character", "r"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -194,6 +217,28 @@ func (a *App) handleHotkeys() {
 		a.warnAt = time.Now()
 	case a.hotkeyFor(hotkeyExtras):
 		a.showWidgets = !a.showWidgets
+	case a.hotkeyFor(hotkeyCharMenu):
+		a.screen = ScreenCharSelect
+	case a.hotkeyFor(hotkeyWardrobe):
+		a.openIniswap()
+	case a.hotkeyFor(hotkeyJukebox):
+		a.openIniswap()
+		a.wardSection = wardSectionJukebox
+	case a.hotkeyFor(hotkeyBackground):
+		a.openBgPicker()
+	case a.hotkeyFor(hotkeyEvidence):
+		a.showEvid = true
+	case a.hotkeyFor(hotkeyPairMenu):
+		a.showPair = true
+	case a.hotkeyFor(hotkeyModcall):
+		a.showModcall = true
+	case a.hotkeyFor(hotkeyUIChrome):
+		a.showUICfg = true
+	case a.hotkeyFor(hotkeySettings):
+		a.prevScreen = ScreenCourtroom
+		a.screen = ScreenSettings
+	case a.hotkeyFor(hotkeyRandomChar):
+		a.randomChar()
 	}
 }
 

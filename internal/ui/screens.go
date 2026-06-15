@@ -561,6 +561,34 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	}
 }
 
+// randomChar swaps to a random AVAILABLE character (webAO's /randomchar): a
+// uniformly-random untaken slot other than the current one, chosen by reservoir
+// sampling so it never allocates. No-op with no free slot. Render thread only.
+func (a *App) randomChar() {
+	if a.sess == nil || len(a.sess.Chars) == 0 {
+		return
+	}
+	cur := a.sess.MyCharID
+	chosen, seen := -1, 0
+	for i := range a.sess.Chars {
+		if i == cur || a.sess.Chars[i].Taken {
+			continue
+		}
+		seen++
+		if rand.IntN(seen) == 0 { // reservoir: keep the i-th candidate w.p. 1/seen
+			chosen = i
+		}
+	}
+	if chosen < 0 {
+		a.warnLine = clampLine("No free character to switch to.")
+		a.warnAt = time.Now()
+		return
+	}
+	a.pickCharacter(chosen)
+	a.warnLine = clampLine("Random character: " + a.sess.Chars[chosen].Name)
+	a.warnAt = time.Now()
+}
+
 // drawSpritePreview shows the previewed sprite in a bottom-right box (the
 // "show the entire thing" pop-up for a hovered/right-clicked icon or emote).
 // With cycle set (the wardrobe's try-before-wear), it also draws the ‹ › emote

@@ -302,6 +302,11 @@ type Ctx struct {
 	// hover preview tracking
 	hoverID    string
 	hoverSince time.Time
+	// Delayed-tooltip dwell (TooltipAfter): the pointer must rest on a target
+	// for tooltipDwell before its hint shows. Separate from hoverID so the
+	// sprite-preview dwell and tooltip dwell never clobber each other.
+	tipHoverID    string
+	tipHoverSince time.Time
 	// hover-preview config, stamped once per frame from prefs (App.Frame →
 	// SetHoverPreview): whether previews are enabled, and the dwell before one
 	// shows. Keeping them on Ctx keeps HoverPreview a pure read on the hot path.
@@ -1195,6 +1200,30 @@ func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, b
 // Skipped while a dropdown owns the pointer (modal fence).
 func (c *Ctx) Tooltip(r sdl.Rect, text string) {
 	if text != "" && !c.modalOn && c.hovering(r) {
+		c.tipText = text
+	}
+}
+
+// tooltipDwell is how long the pointer must rest on a TooltipAfter target
+// before its hint shows — long enough to stay unobtrusive (the Extras buttons).
+const tooltipDwell = 2 * time.Second
+
+// TooltipAfter is Tooltip with a dwell: r's hint shows only after the pointer
+// has rested on it (keyed by id) for tooltipDwell. id distinguishes adjacent
+// targets so moving between them restarts the timer.
+func (c *Ctx) TooltipAfter(id string, r sdl.Rect, text string) {
+	if text == "" || c.modalOn || !c.hovering(r) {
+		if c.tipHoverID == id {
+			c.tipHoverID = ""
+		}
+		return
+	}
+	if c.tipHoverID != id {
+		c.tipHoverID = id
+		c.tipHoverSince = time.Now()
+		return
+	}
+	if time.Since(c.tipHoverSince) >= tooltipDwell {
 		c.tipText = text
 	}
 }

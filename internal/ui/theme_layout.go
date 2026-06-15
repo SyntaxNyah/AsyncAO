@@ -10,6 +10,7 @@ package ui
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -688,7 +689,7 @@ func (a *App) drawThemedExtrasButton(w, h int32) {
 func (a *App) drawWidgetsPanel(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 215})
-	pw, ph := int32(560), int32(372)
+	pw, ph := int32(560), int32(420) // 5 rows of the 3-wide grid
 	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -700,21 +701,22 @@ func (a *App) drawWidgetsPanel(w, h int32) {
 	}
 
 	widgets := []struct {
-		label string
-		run   func()
+		label, desc, key string // key = hotkey id ("" = no shortcut), surfaced in the tooltip
+		run              func()
 	}{
-		{"Character", func() { a.screen = ScreenCharSelect }},
-		{"Wardrobe", func() { a.openIniswap() }},
-		{"Jukebox", func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
-		{"Background", func() { a.openBgPicker() }},
-		{"Evidence", func() { a.showEvid = true }},
-		{"Call Mod", func() { a.showModcall = true }},
-		{"Pair", func() { a.showPair = true }},
-		{"Login", func() { a.openLoginDialog() }},
-		{"Hide chrome", func() { a.showUICfg = true }},
-		{"Theater", func() { a.setTheater(!a.theaterOn) }},
-		{"Settings", func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
-		{"Disconnect", func() { a.Disconnect() }},
+		{"Character", "Open character select", hotkeyCharMenu, func() { a.screen = ScreenCharSelect }},
+		{"Random char", "Swap to a random free character", hotkeyRandomChar, func() { a.randomChar() }},
+		{"Wardrobe", "Iniswap — borrow another character's look", hotkeyWardrobe, func() { a.openIniswap() }},
+		{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
+		{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
+		{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.showEvid = true }},
+		{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
+		{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.showPair = true }},
+		{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
+		{"Hide chrome", "Hide/show AsyncAO's on-screen widgets", hotkeyUIChrome, func() { a.showUICfg = true }},
+		{"Theater", "Theater mode — stage only, Esc exits", hotkeyTheater, func() { a.setTheater(!a.theaterOn) }},
+		{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
+		{"Disconnect", "Leave this server", "", func() { a.Disconnect() }},
 	}
 	const cols int32 = 3
 	const cellW, cellH, gap int32 = 168, 54, 10
@@ -727,5 +729,11 @@ func (a *App) drawWidgetsPanel(w, h int32) {
 			wd.run()
 			return
 		}
+		// Brief description on ~2s dwell; surface the menu's keybind for discovery.
+		tip := wd.desc
+		if wd.key != "" {
+			tip += "  ·  Ctrl+" + strings.ToUpper(a.hotkeyFor(wd.key))
+		}
+		c.TooltipAfter("extra:"+wd.label, r, tip)
 	}
 }
