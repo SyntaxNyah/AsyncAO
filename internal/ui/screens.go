@@ -2443,6 +2443,14 @@ func (a *App) refreshMusicFilter(query string) {
 
 func (a *App) drawMusicList(r sdl.Rect) {
 	c := a.ctx
+	if a.musicPct < config.MinLogScalePercent { // uninit / stale → match the log
+		a.musicPct = a.logPct
+	}
+	// Ctrl+wheel (or wheel-button) resizes the track text (musicPct). Lives HERE
+	// — not just the classic log panel — so it also works on the THEMED courtroom
+	// (which draws drawMusicList directly). In classic the panel already took the
+	// wheel (wheelTaken), so this no-ops there; no double-step.
+	a.zoomWheel(r, &a.musicPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: 90, H: 24}, "Stop music") {
 		a.stopMusic()
 	}
@@ -2502,6 +2510,9 @@ func (a *App) drawMusicList(r sdl.Rect) {
 				c.Fill(row, ColPanelHi)
 			}
 			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, track, ColText)
+			if hover {
+				c.Tooltip(row, track) // full track name on hover (long titles get clipped)
+			}
 			if hover && c.clicked {
 				a.sess.RequestMusic(track)
 			}
