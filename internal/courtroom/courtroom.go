@@ -89,8 +89,12 @@ type Scene struct {
 	PairActive     bool
 	SpeakerInFront bool
 
-	ShoutBase   string // active shout bubble base ("" = none)
-	ShoutCustom bool
+	ShoutBase string // active shout bubble base ("" = none)
+	// ShoutFallbackBase is the default (misc/default) bubble the render draws
+	// when the character ships no custom interjection art (most don't) —
+	// AO2-Client falls back the same way. Prefetched alongside ShoutBase.
+	ShoutFallbackBase string
+	ShoutCustom       bool
 
 	// MusicTrack is the currently-playing track (raw MC text; "" = nothing,
 	// stopped, or an area transfer) — the courtroom Now-Playing display reads it.
@@ -438,6 +442,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	switch {
 	case msg.IsShout():
 		c.Scene.ShoutBase = c.ShoutCharBase
+		c.Scene.ShoutFallbackBase = c.ShoutDefaultBase // misc/default when the char has none
 		c.Scene.ShoutCustom = msg.Objection == protocol.ShoutCustom
 		c.phase = PhaseShout
 		c.timer = DefaultShoutDuration
@@ -454,6 +459,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 // one-frame backlog flash is never seen.
 func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.ShoutBase = ""
+	c.Scene.ShoutFallbackBase = ""
 	c.Scene.ShownameText = c.displayName(msg)
 	c.Scene.TextColor = msg.TextColor
 	c.Typewriter.Start(msg.Message)
@@ -474,6 +480,7 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 // alongside the text.
 func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutBase = ""
+	c.Scene.ShoutFallbackBase = ""
 	msg := c.current
 	c.fireMessageEffects(msg)
 	playPre := hasPreanim(msg) &&

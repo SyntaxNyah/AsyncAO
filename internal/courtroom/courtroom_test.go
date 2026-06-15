@@ -746,6 +746,12 @@ func TestShoutNukesQueueAndPlaysFirst(t *testing.T) {
 	if room.Scene.ShoutBase == "" {
 		t.Error("shout bubble base missing")
 	}
+	// The default (misc/default) bubble must be set as the fallback so a
+	// character without its own interjection art (most) still shows a bubble —
+	// the render uses it when the char-specific base isn't resident.
+	if !strings.HasSuffix(room.Scene.ShoutFallbackBase, "misc/default/objection_bubble") {
+		t.Errorf("shout fallback base = %q, want .../misc/default/objection_bubble", room.Scene.ShoutFallbackBase)
+	}
 	if len(audio.shouts) != 1 || !strings.HasSuffix(audio.shouts[0], "characters/phoenix/objection") {
 		t.Errorf("shout sfx = %v", audio.shouts)
 	}

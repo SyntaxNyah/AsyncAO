@@ -127,9 +127,10 @@ func NewViewport(store *TextureStore) *Viewport {
 
 // Update advances animation clocks against the active scene.
 func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
+	shoutBase := effectiveShoutBase(scene, v.store)
 	v.syncAnimSticky(&v.bgAnim, scene.BackgroundBase)
 	v.syncAnimSticky(&v.deskAnim, scene.DeskBase)
-	v.syncAnim(&v.shoutAnim, scene.ShoutBase)
+	v.syncAnim(&v.shoutAnim, shoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
 
@@ -139,7 +140,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	if page, ok := v.deskAnim.resolve(v.store); ok {
 		v.deskAnim.advance(page, dt, false)
 	}
-	if scene.ShoutBase != "" {
+	if shoutBase != "" {
 		if page, ok := v.shoutAnim.resolve(v.store); ok {
 			v.shoutAnim.advance(page, dt, true)
 		}
@@ -212,8 +213,8 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if scene.ShowDesk {
 		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp)
 	}
-	if scene.ShoutBase != "" {
-		v.drawFill(ren, scene.ShoutBase, &v.shoutAnim, vp)
+	if shoutBase := effectiveShoutBase(scene, v.store); shoutBase != "" {
+		v.drawFill(ren, shoutBase, &v.shoutAnim, vp)
 	}
 
 	if scene.FlashLeft > 0 {
@@ -226,6 +227,22 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		_ = ren.SetDrawColor(255, 255, 255, uint8(255*frac))
 		_ = ren.FillRect(&v.fillRect)
 	}
+}
+
+// effectiveShoutBase picks which shout bubble to draw: the character's own
+// bubble when it's resident, else the default (misc/default) bubble — mirroring
+// AO2-Client, since most characters ship NO custom interjection art, so the
+// char-specific base 404s and only the default ever loads. Both are prefetched
+// in Courtroom.begin. The Contains probe only runs during a shout (ShoutBase
+// set), so it costs nothing the rest of the time.
+func effectiveShoutBase(scene *courtroom.Scene, store *TextureStore) string {
+	if scene.ShoutBase == "" {
+		return ""
+	}
+	if scene.ShoutFallbackBase != "" && !store.Contains(scene.ShoutBase) {
+		return scene.ShoutFallbackBase
+	}
+	return scene.ShoutBase
 }
 
 // drawFill stretches an asset across the whole viewport (backgrounds, desks,
