@@ -479,6 +479,13 @@ type sessionState struct {
 	charSearch string
 	charScroll int32
 	charTab    int // charTabServer | charTabWardrobe (grid contents swap)
+	// wardrobeMembers is the lowercased wardrobe set for the current server,
+	// powering the ★ star state in the Characters grid. Rebuilt only when the
+	// server or the wardrobe generation changes (ensureWardrobeMembers), so the
+	// per-cell star lookup stays a lock-free, alloc-free map read.
+	wardrobeMembers    map[string]bool
+	wardrobeMembersFor string // serverKey the set was built for
+	wardrobeMembersGen uint64 // config.WardrobeGeneration() it was built at
 	// lowered-query memos: search filters run per frame; re-lowering the
 	// query allocated on every one of them.
 	charQ loweredCache
@@ -1896,6 +1903,27 @@ func (a *App) rebuildIniMenu() {
 // iniswap.txt (the Iniswaps tab shows only those — a favourite that ISN'T a
 // server iniswap stays out of it, and a server with no list shows nothing).
 // Server duplicates collapse into their wardrobe entry, case-insensitively.
+// ensureWardrobeMembers rebuilds the current server's lowercased wardrobe set
+// when the server changed or the wardrobe was edited (generation bump). It
+// reuses the map (clear-in-place) so the steady state allocates nothing; the
+// per-cell star lookup in drawCharCell then reads it lock-free.
+func (a *App) ensureWardrobeMembers() {
+	gen := a.d.Prefs.WardrobeGeneration()
+	if a.wardrobeMembers != nil && a.wardrobeMembersFor == a.serverKey && a.wardrobeMembersGen == gen {
+		return
+	}
+	if a.wardrobeMembers == nil {
+		a.wardrobeMembers = make(map[string]bool)
+	} else {
+		clear(a.wardrobeMembers)
+	}
+	for _, name := range a.d.Prefs.WardrobeList(a.serverKey) {
+		a.wardrobeMembers[strings.ToLower(name)] = true
+	}
+	a.wardrobeMembersFor = a.serverKey
+	a.wardrobeMembersGen = gen
+}
+
 func mergeWardrobe(wardrobe, server []string) (names []string, stars, inServer []bool) {
 	names = make([]string, 0, len(wardrobe)+len(server))
 	stars = make([]bool, 0, len(wardrobe)+len(server))
@@ -2247,6 +2275,9 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.frameNow = time.Now()
 	a.recordFrameDt(float32(dt.Seconds() * 1000))
+	// Stamp the sprite-preview config onto the context once per frame so every
+	// HoverPreview call this frame reads a consistent, lock-free value.
+	a.ctx.SetHoverPreview(a.d.Prefs.SpritePreviewsOn(), a.d.Prefs.PreviewHoverDelay())
 	// F3 toggles the perf HUD on any screen; consumed so plain-key
 	// macro/character binds named "f3" can't double-fire.
 	if a.ctx.keyPressed == sdl.K_F3 {
@@ -2683,6 +2714,11 @@ func (a *App) pushDebug(line string) {
 // drainWarnings empties the manager's missing-asset lane (bounded by its
 // channel cap), keeping the newest for the §4 on-screen banner.
 func (a *App) drainWarnings() {
+	// The red banner is opt-in (default OFF — players found it noisy on
+	// sparse-pack servers); read the toggle once per drain. We still drain
+	// the channel (it's bounded) and log every failure to the debug overlay
+	// regardless, so nothing is lost — only the on-screen banner is gated.
+	show := a.d.Prefs.AssetWarningsOn()
 	for {
 		select {
 		case w := <-a.d.Manager.Warnings():
@@ -2690,9 +2726,11 @@ func (a *App) drainWarnings() {
 			if len(w.Tried) > 0 {
 				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"
 			}
-			a.warnLine = clampLine(line)
-			a.warnAt = time.Now()
 			a.pushDebug(line)
+			if show {
+				a.warnLine = clampLine(line)
+				a.warnAt = time.Now()
+			}
 		default:
 			return
 		}

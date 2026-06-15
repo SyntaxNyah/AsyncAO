@@ -31,10 +31,6 @@ const (
 	// was meant to be: cheap and rare (screen switches).
 	textCacheMax = 2048
 
-	// HoverPreviewDelay is how long the cursor must rest on an emote or
-	// char icon before the full-size preview pops (right-click = instant).
-	HoverPreviewDelay = 3 * time.Second
-
 	scrollStepPx = 32
 	caretBlink   = 500 * time.Millisecond
 
@@ -306,6 +302,11 @@ type Ctx struct {
 	// hover preview tracking
 	hoverID    string
 	hoverSince time.Time
+	// hover-preview config, stamped once per frame from prefs (App.Frame →
+	// SetHoverPreview): whether previews are enabled, and the dwell before one
+	// shows. Keeping them on Ctx keeps HoverPreview a pure read on the hot path.
+	hoverPreviewOn    bool
+	hoverPreviewDelay time.Duration
 
 	textCache  map[textKey]cachedText
 	atlas      []*atlasPage     // shared label pages (≤ textAtlasMaxPages)
@@ -1381,9 +1382,11 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 }
 
 // HoverPreview tracks dwell time on a widget id; returns true when the
-// full-size preview should show: 3 s hover, or right-click toggles instantly.
+// full-size preview should show: the configured hover dwell, or right-click
+// toggles instantly. Returns false outright when previews are disabled
+// (Settings → General), so callers light up nothing.
 func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
-	if !c.hovering(r) {
+	if !c.hoverPreviewOn || !c.hovering(r) {
 		if c.hoverID == id {
 			c.hoverID = ""
 		}
@@ -1397,7 +1400,14 @@ func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
 		c.hoverSince = time.Now()
 		return false
 	}
-	return time.Since(c.hoverSince) >= HoverPreviewDelay
+	return time.Since(c.hoverSince) >= c.hoverPreviewDelay
+}
+
+// SetHoverPreview stamps the per-frame sprite-preview config (enabled + dwell)
+// onto the context; App.Frame calls it once before any screen draws.
+func (c *Ctx) SetHoverPreview(on bool, delay time.Duration) {
+	c.hoverPreviewOn = on
+	c.hoverPreviewDelay = delay
 }
 
 // Destroy frees cached textures and fonts.

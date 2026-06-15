@@ -181,11 +181,28 @@ func (a *App) loginFlowPreview() string {
 	return soft + `: sends "/login username password" ⏎`
 }
 
-// autoLoginOnReady fires the saved flow once per join when enabled.
+// autoLoginOnReady fires the saved flow once per join when enabled, and pops a
+// one-shot toast so you KNOW the auto-login went out (players kept asking "am I
+// logged in rn?"). The login lines themselves send paced — one at a time — via
+// queueOOCLines, so a two-step flow (Akashi) still answers its prompt in order.
 func (a *App) autoLoginOnReady() {
-	if info := a.d.Prefs.ServerWarmInfoFor(a.serverKey); info.AutoLogin && info.LoginUser != "" {
-		a.loginNow()
+	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
+	if !info.AutoLogin || info.LoginUser == "" {
+		return
 	}
+	a.loginNow()
+	// One toast per join (autoLoginOnReady is called once at PhaseReady). The
+	// username confirms WHO you signed in as ("am I logged in?"), but streamer
+	// mode masks it like every other name.
+	line := "Auto-logging in"
+	if !a.d.Prefs.StreamerMode() {
+		line += " as " + info.LoginUser
+	}
+	if a.serverName != "" {
+		line += " on " + a.serverName
+	}
+	a.warnLine = clampLine(line)
+	a.warnAt = time.Now()
 }
 
 // drawLoginDialog edits this server's credentials (plaintext storage —

@@ -330,6 +330,37 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetRandomEmote(next)
 	}
 	y += 26
+	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
+	// full-size preview. ON by default; the dwell before it shows is tunable.
+	prev := a.d.Prefs.SpritePreviewsOn()
+	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite", prev); next != prev {
+		a.d.Prefs.SetSpritePreviews(next)
+	}
+	y += 26
+	if prev {
+		ms := a.d.Prefs.PreviewHoverMillis()
+		if next := a.previewDelayRow(y, ms); next != ms {
+			a.d.Prefs.SetPreviewHoverMs(next)
+		}
+		c.Label(pad+340, y+4, "how long to hover before the preview pops (default 5 s)", ColTextDim)
+		y += 30
+	}
+	// Sprite repositioning: drag a character in the viewport to move them (the
+	// override sticks per character until reset). OFF by default so a stray click
+	// can't nudge a sprite; right-clicking a sprite resets just that one.
+	move := a.d.Prefs.SpriteMoveEnabled()
+	if next := c.Checkbox(pad, y, "Let me drag character sprites to reposition them (OFF by default; right-click a sprite to reset it)", move); next != move {
+		a.d.Prefs.SetSpriteMove(next)
+	}
+	y += 26
+	if move {
+		if c.Button(sdl.Rect{X: pad + 20, Y: y, W: 200, H: btnH}, "Reset all moved sprites") {
+			clear(a.spriteOv)
+			settings.statusLine = "Cleared every sprite reposition."
+		}
+		c.Label(pad+232, y+5, "drop every drag override back to the server's placement", ColTextDim)
+		y += 32
+	}
 	upd := a.d.Prefs.UpdateCheckEnabled()
 	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
 		a.d.Prefs.SetUpdateCheck(next)
@@ -534,6 +565,30 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 		}
 	}
 	y += 8
+
+	// Desk format policy: desks default to WebP and stay WebP even when a
+	// server's extensions.json declares another format for backgrounds (which
+	// desks share) — unless the player opts in here. Reachable in either mode.
+	deskWebP := !a.d.Prefs.DeskFollowsManifest()
+	if next := c.Checkbox(pad, y, "Always use WebP for desks, ignoring the server's extensions.json (recommended)", deskWebP); next != deskWebP {
+		a.d.Prefs.SetDeskFollowManifest(!next)
+		a.d.Prefs.ClearLearnedType(config.TypeDeskOverlay) // re-derive on next probe
+		a.d.Resolver.InvalidateAll()
+		a.d.Resolver.WarmFromPrefs()
+		if !next { // now following the manifest: re-seed from the current server
+			a.manifestFor = ""
+			a.fetchManifestAsync()
+		}
+	}
+	y += 28
+
+	// Missing-asset banner: opt-in (default OFF). The failures always reach the
+	// debug overlay; this only governs the red on-screen banner.
+	showWarn := a.d.Prefs.AssetWarningsOn()
+	if next := c.Checkbox(pad, y, "Show missing-asset warnings (red banner naming assets that failed to load — off by default)", showWarn); next != showWarn {
+		a.d.Prefs.SetAssetWarnings(next)
+	}
+	y += 28
 
 	// Audio fallbacks.
 	for _, typeName := range []string{config.TypeSFX, config.TypeMusic, config.TypeBlip} {
@@ -1553,6 +1608,40 @@ func (a *App) sliderRow(y int32, label string, value, step, min, max int) int {
 	}
 	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%d", value), ColAccent)
 	return value
+}
+
+// previewDelayRow draws the sprite-preview hover dwell as a draggable slider
+// with a seconds readout (the value is stored in milliseconds; a raw "5000"
+// would be opaque). Bounds mirror the config clamp — SetPreviewHoverMs is
+// authoritative — and the result snaps to the half-second grid.
+func (a *App) previewDelayRow(y int32, ms int) int {
+	c := a.ctx
+	const (
+		minMs  = 500   // == config.minPreviewHoverMs (setter is authoritative)
+		maxMs  = 15000 // == config.maxPreviewHoverMs
+		stepMs = 500   // half-second grid
+	)
+	c.Label(pad, y+4, "Preview after hovering:", ColText)
+	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
+	if span := maxMs - minMs; span > 0 {
+		ms = minMs + int(c.Slider("previewdelay", track, int32(ms-minMs), int32(span)))
+	}
+	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
+		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
+		ms += int(c.wheelY) * stepMs
+	}
+	if ms < minMs {
+		ms = minMs
+	}
+	if ms > maxMs {
+		ms = maxMs
+	}
+	ms = ((ms-minMs+stepMs/2)/stepMs)*stepMs + minMs // snap to the grid
+	if ms > maxMs {
+		ms = maxMs
+	}
+	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%.1f s", float64(ms)/1000), ColAccent)
+	return ms
 }
 
 // browseForFolder shells the native Windows folder picker on a goroutine;

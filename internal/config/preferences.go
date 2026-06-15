@@ -118,6 +118,36 @@ const defaultSmoothScaling = true
 // async probe fired off the boot path, and a dev build never hits the network.
 const defaultUpdateCheck = true
 
+// defaultShowAssetWarnings ships OFF: the red "Missing asset" banner naming
+// every 404 was a constant annoyance on servers with sparse packs. The
+// failures still reach the debug overlay (the dedicated failure log); this
+// flag only governs the on-screen banner. Settings → Assets turns it back on.
+const defaultShowAssetWarnings = false
+
+// defaultSpriteMove ships OFF: click-drag sprite repositioning is a power
+// feature that surprised players who grabbed a sprite by accident. Settings
+// re-enables it (and offers a one-click reset of every moved sprite).
+const defaultSpriteMove = false
+
+// defaultDeskFollowManifest ships OFF: desks default to WebP and STAY WebP
+// even when a server's extensions.json declares another format for its
+// background class (which desk overlays share). ON lets desks follow the
+// manifest like backgrounds do.
+const defaultDeskFollowManifest = false
+
+// defaultSpritePreview ships ON: hovering a character/emote button pops a
+// full-size sprite preview. OFF disables the pop-up entirely.
+const defaultSpritePreview = true
+
+// Sprite-preview hover dwell: how long the cursor must rest on a button before
+// the preview shows. Default 5 s (the user's pick); bounded so it can't be set
+// to fire instantly-on-graze or effectively never.
+const (
+	DefaultPreviewHoverMs = 5000
+	minPreviewHoverMs     = 500
+	maxPreviewHoverMs     = 15000
+)
+
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
 // 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
@@ -307,6 +337,19 @@ type AssetPreferences struct {
 	// downloader (off by default — it writes files to disk on demand).
 	CharDownloaderOn bool `json:"charDownloader"`
 
+	// ShowAssetWarnings governs the red on-screen "Missing asset" banner
+	// (OFF by default — the failures still reach the debug overlay).
+	ShowAssetWarnings bool `json:"showAssetWarnings"`
+	// SpriteMoveOn enables click-drag sprite repositioning (OFF by default).
+	SpriteMoveOn bool `json:"spriteMove"`
+	// DeskFollowManifest lets desks adopt the server extensions.json format;
+	// OFF by default keeps desks on WebP regardless of the manifest.
+	DeskFollowManifest bool `json:"deskFollowManifest"`
+	// SpritePreviewOn shows the hover-preview pop-up (ON by default).
+	SpritePreviewOn bool `json:"spritePreview"`
+	// PreviewHoverMs is the hover dwell before the preview shows (ms).
+	PreviewHoverMs int `json:"previewHoverMs"`
+
 	mu        sync.RWMutex
 	path      string
 	dirty     chan struct{} // buffered 1: wake-up signal for the saver
@@ -324,6 +367,11 @@ type AssetPreferences struct {
 	// probe list (format orders, fallback toggles). Consumers cache derived
 	// format tables keyed by this generation — see Resolver's miss path.
 	formatGen atomic.Uint64
+
+	// wardrobeGen increments on every change to any server's wardrobe
+	// membership. The char-select star grid caches a lowercased membership
+	// set keyed by this generation, so the per-cell lookup stays lock-free.
+	wardrobeGen atomic.Uint64
 }
 
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
@@ -406,6 +454,12 @@ type prefsJSON struct {
 	Hotkeys            map[string]string         `json:"hotkeys"`
 	Discord            *DiscordPrefs             `json:"discord"`
 	CharDownloader     bool                      `json:"charDownloader"`
+
+	ShowAssetWarnings  bool  `json:"showAssetWarnings"`  // default OFF (zero value)
+	SpriteMove         bool  `json:"spriteMove"`         // default OFF (zero value)
+	DeskFollowManifest bool  `json:"deskFollowManifest"` // default OFF (zero value)
+	SpritePreview      *bool `json:"spritePreview"`      // absent = default ON
+	PreviewHoverMs     *int  `json:"previewHoverMs"`     // absent = default 5 s
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -600,36 +654,41 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 // methods use it, so the default state lives in exactly one place.
 func defaultPrefs(path string) *AssetPreferences {
 	return &AssetPreferences{
-		PreferAnimated:    defaultPreferAnimated,
-		EmoteButtonImages: defaultEmoteButtonImages,
-		SmoothScaling:     defaultSmoothScaling,
-		UpdateCheck:       defaultUpdateCheck,
-		HighlightColor:    defaultHighlightColor,
-		NameSat:           defaultNameColorSat,
-		NameVal:           defaultNameColorVal,
-		BgSlideshowSecs:   defaultBgSlideshowSecs,
-		AutoDetectFormats: defaultFormatAutoDetect,
-		ThemeLayoutOn:     defaultThemeLayout,
-		UIScaleAutoOn:     defaultUIScaleAuto,
-		CatchUpOn:         defaultCatchUpWhenBehind,
-		CatchUpThreshold:  DefaultCatchUpThreshold,
-		MultiTabCap:       DefaultMultiTabCap,
-		DiscordRPC:        defaultDiscordPrefs(),
-		ViewportPct:       DefaultViewportPercent,
-		ChatScalePct:      DefaultScalePercent,
-		ChatBoxPct:        DefaultScalePercent,
-		LogScalePct:       DefaultScalePercent,
-		InputHeightPct:    DefaultScalePercent,
-		UIScalePct:        DefaultScalePercent,
-		MusicVol:          defaultAudioVolume,
-		SFXVol:            defaultAudioVolume,
-		BlipVol:           defaultAudioVolume,
-		TextCrawlMs:       DefaultTextCrawlMs,
-		TextStayMs:        DefaultTextStayMs,
-		ChatRateLimitMs:   DefaultChatRateLimitMs,
-		AssetTypes:        defaultAssetTypes(),
-		LearnedFormats:    map[string][]string{},
-		path:              path,
+		PreferAnimated:     defaultPreferAnimated,
+		EmoteButtonImages:  defaultEmoteButtonImages,
+		SmoothScaling:      defaultSmoothScaling,
+		UpdateCheck:        defaultUpdateCheck,
+		ShowAssetWarnings:  defaultShowAssetWarnings,
+		SpriteMoveOn:       defaultSpriteMove,
+		DeskFollowManifest: defaultDeskFollowManifest,
+		SpritePreviewOn:    defaultSpritePreview,
+		PreviewHoverMs:     DefaultPreviewHoverMs,
+		HighlightColor:     defaultHighlightColor,
+		NameSat:            defaultNameColorSat,
+		NameVal:            defaultNameColorVal,
+		BgSlideshowSecs:    defaultBgSlideshowSecs,
+		AutoDetectFormats:  defaultFormatAutoDetect,
+		ThemeLayoutOn:      defaultThemeLayout,
+		UIScaleAutoOn:      defaultUIScaleAuto,
+		CatchUpOn:          defaultCatchUpWhenBehind,
+		CatchUpThreshold:   DefaultCatchUpThreshold,
+		MultiTabCap:        DefaultMultiTabCap,
+		DiscordRPC:         defaultDiscordPrefs(),
+		ViewportPct:        DefaultViewportPercent,
+		ChatScalePct:       DefaultScalePercent,
+		ChatBoxPct:         DefaultScalePercent,
+		LogScalePct:        DefaultScalePercent,
+		InputHeightPct:     DefaultScalePercent,
+		UIScalePct:         DefaultScalePercent,
+		MusicVol:           defaultAudioVolume,
+		SFXVol:             defaultAudioVolume,
+		BlipVol:            defaultAudioVolume,
+		TextCrawlMs:        DefaultTextCrawlMs,
+		TextStayMs:         DefaultTextStayMs,
+		ChatRateLimitMs:    DefaultChatRateLimitMs,
+		AssetTypes:         defaultAssetTypes(),
+		LearnedFormats:     map[string][]string{},
+		path:               path,
 	}
 }
 
@@ -683,6 +742,15 @@ func load(path string) (*AssetPreferences, error) {
 	p.CallwordSoundFile = onDisk.CallwordSoundFile
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
+	p.ShowAssetWarnings = onDisk.ShowAssetWarnings
+	p.SpriteMoveOn = onDisk.SpriteMove
+	p.DeskFollowManifest = onDisk.DeskFollowManifest
+	if onDisk.SpritePreview != nil {
+		p.SpritePreviewOn = *onDisk.SpritePreview
+	}
+	if onDisk.PreviewHoverMs != nil {
+		p.PreviewHoverMs = clampPercent(*onDisk.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	}
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
 	}
@@ -885,7 +953,8 @@ func (p *AssetPreferences) resetLocked(keep map[string]bool) {
 		}
 		pv.Field(i).Set(fv.Field(i))
 	}
-	p.formatGen.Add(1) // format/fallback prefs may have changed; invalidate resolver caches
+	p.formatGen.Add(1)   // format/fallback prefs may have changed; invalidate resolver caches
+	p.wardrobeGen.Add(1) // a reset can wipe ServerWarm (and its wardrobes)
 }
 
 // ResetSettings reverts the tunable settings to defaults but KEEPS your content
@@ -1199,6 +1268,132 @@ func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
 	}
 	p.UpdateCheck = enabled
 	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Missing-asset warning banner -------------------------------------------
+
+// AssetWarningsOn reports whether the red on-screen "Missing asset" banner
+// shows (OFF by default — the failures still go to the debug overlay).
+func (p *AssetPreferences) AssetWarningsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ShowAssetWarnings
+}
+
+// SetAssetWarnings toggles the missing-asset banner.
+func (p *AssetPreferences) SetAssetWarnings(on bool) {
+	p.mu.Lock()
+	if p.ShowAssetWarnings == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ShowAssetWarnings = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Sprite repositioning ---------------------------------------------------
+
+// SpriteMoveEnabled reports the click-drag sprite repositioning toggle
+// (OFF by default).
+func (p *AssetPreferences) SpriteMoveEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteMoveOn
+}
+
+// SetSpriteMove toggles click-drag sprite repositioning.
+func (p *AssetPreferences) SetSpriteMove(on bool) {
+	p.mu.Lock()
+	if p.SpriteMoveOn == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteMoveOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Desk format policy -----------------------------------------------------
+
+// DeskFollowsManifest reports whether desks adopt the server extensions.json
+// format (OFF by default — desks stay WebP regardless of the manifest).
+func (p *AssetPreferences) DeskFollowsManifest() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DeskFollowManifest
+}
+
+// SetDeskFollowManifest toggles whether desks follow the server manifest.
+func (p *AssetPreferences) SetDeskFollowManifest(on bool) {
+	p.mu.Lock()
+	if p.DeskFollowManifest == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DeskFollowManifest = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// --- Sprite hover preview ---------------------------------------------------
+
+// SpritePreviewsOn reports the hover-preview toggle (ON by default).
+func (p *AssetPreferences) SpritePreviewsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpritePreviewOn
+}
+
+// SetSpritePreviews toggles the hover-preview pop-up.
+func (p *AssetPreferences) SetSpritePreviews(on bool) {
+	p.mu.Lock()
+	if p.SpritePreviewOn == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SpritePreviewOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// PreviewHoverMillis returns the configured hover dwell in milliseconds
+// (clamped), for the Settings readout.
+func (p *AssetPreferences) PreviewHoverMillis() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.PreviewHoverMs <= 0 {
+		return DefaultPreviewHoverMs
+	}
+	return clampPercent(p.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+}
+
+// PreviewHoverDelay returns the hover dwell as a duration for the UI.
+func (p *AssetPreferences) PreviewHoverDelay() time.Duration {
+	return time.Duration(p.PreviewHoverMillis()) * time.Millisecond
+}
+
+// SetPreviewHoverMs clamps and persists the hover dwell (milliseconds).
+func (p *AssetPreferences) SetPreviewHoverMs(n int) {
+	n = clampPercent(n, minPreviewHoverMs, maxPreviewHoverMs)
+	p.mu.Lock()
+	if p.PreviewHoverMs == n {
+		p.mu.Unlock()
+		return
+	}
+	p.PreviewHoverMs = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClearLearnedType drops every host's learned format for one asset type (e.g.
+// after changing the desk-format policy) so the next probe re-derives it.
+func (p *AssetPreferences) ClearLearnedType(typeName string) {
+	p.mu.Lock()
+	p.dropLearnedTypeLocked(typeName)
+	p.mu.Unlock()
+	p.formatGen.Add(1)
 	p.markDirty()
 }
 
@@ -2215,6 +2410,7 @@ func (p *AssetPreferences) ClaimLegacyWardrobe(serverKey string) {
 			p.Wardrobe = nil
 		}
 	})
+	p.wardrobeGen.Add(1) // the claiming server's wardrobe just gained the legacy list
 }
 
 // AddWardrobe stores a character folder in one server's wardrobe
@@ -2237,6 +2433,9 @@ func (p *AssetPreferences) AddWardrobe(serverKey, name string) bool {
 		w.Wardrobe = append(w.Wardrobe, name)
 		changed = true
 	})
+	if changed {
+		p.wardrobeGen.Add(1)
+	}
 	return changed
 }
 
@@ -2253,7 +2452,17 @@ func (p *AssetPreferences) RemoveWardrobe(serverKey, name string) bool {
 			}
 		}
 	})
+	if changed {
+		p.wardrobeGen.Add(1)
+	}
 	return changed
+}
+
+// WardrobeGeneration returns a counter that bumps whenever any server's
+// wardrobe membership changes; the char-select star grid caches its
+// membership set keyed by it (mirrors FormatGeneration).
+func (p *AssetPreferences) WardrobeGeneration() uint64 {
+	return p.wardrobeGen.Load()
 }
 
 // WardrobeFolderMap returns a copy of one server's lowercased char → folder

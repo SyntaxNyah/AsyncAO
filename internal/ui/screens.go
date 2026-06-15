@@ -291,7 +291,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 		case a.iniListErr != "":
 			c.LabelClipped(pad, gridTop+8, w-2*pad, a.iniListErr, ColTextDim)
 		default:
-			c.Label(pad, gridTop+8, "Wardrobe empty — star characters or add folders from the courtroom Wardrobe menu.", ColTextDim)
+			c.Label(pad, gridTop+8, "Wardrobe empty — tap the ★ on any character in the Characters tab to save it here (it stays per server).", ColTextDim)
 		}
 		return
 	}
@@ -440,6 +440,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 
 	a.ensureCharLower()
+	a.ensureWardrobeMembers() // star state for the grid; rebuilt only on change
 	// Pre-count matches so the scrollbar knows the content height. With no
 	// search every slot matches, so skip the scan (it's a per-frame O(n) walk
 	// that bites on servers with thousands of characters); the draw loop below
@@ -527,6 +528,30 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	if downloaderOn && a.drawDownloadBadge(cell, "Press the green down arrow to download this character") {
 		a.startCharDownload(slot.Name)
 		return
+	}
+	// ★ Wardrobe star (top-right): one click favourites this character into your
+	// Wardrobe (LemmyAO-style), so it appears in the Wardrobe tab on every
+	// connect. The click is consumed so it can't also pick the character; works
+	// on taken slots too. Membership is the lock-free cached set.
+	starred := idx >= 0 && idx < len(a.charLower) && a.wardrobeMembers[a.charLower[idx]]
+	starR := sdl.Rect{X: cell.X + cell.W - 20, Y: cell.Y + 2, W: 18, H: 18}
+	c.Fill(starR, sdl.Color{R: 0, G: 0, B: 0, A: 130})
+	starCol := ColTextDim
+	if starred {
+		starCol = ColStar
+	}
+	c.Label(starR.X+3, starR.Y+1, "★", starCol)
+	if c.hovering(starR) {
+		c.Tooltip(starR, "Star → save to your Wardrobe (favourites)")
+		if c.clicked {
+			if starred {
+				a.d.Prefs.RemoveWardrobe(a.serverKey, slot.Name)
+			} else {
+				a.d.Prefs.AddWardrobe(a.serverKey, slot.Name)
+			}
+			c.clicked = false // consumed: don't also pick the character
+			return
+		}
 	}
 	if c.hovering(cell) {
 		a.warmCharINI(slot.Name) // pick = memory hit, not an RTT
@@ -787,6 +812,9 @@ func (a *App) spriteHitRect(vp sdl.Rect, layer *courtroom.SpriteLayer) (sdl.Rect
 // wins afterwards. Right-click a sprite to reset it. All math runs on
 // press/drag edges only; idle frames cost one bool check.
 func (a *App) handleSpriteDrag(vp sdl.Rect) {
+	if !a.d.Prefs.SpriteMoveEnabled() {
+		return // opt-in (Settings → General); off by default so stray clicks can't nudge sprites
+	}
 	c := a.ctx
 	sc := &a.room.Scene
 	pressed := c.mouseDown && !a.prevDown
@@ -1726,7 +1754,12 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	default:
 		c.Label(statusX, y+4, fmt.Sprintf("%d entries", len(a.iniList)), ColTextDim)
 	}
-	y += 36
+	y += 30
+	// One-line orientation — the Wardrobe confused some newcomers. Names the two
+	// ways in (★ in Character Select, or the Add box) and the folder/wear flow.
+	c.LabelClipped(panel.X+pad, y, panel.W-2*pad,
+		"Your saved characters, kept per server. ★ a character in Character Select (or use Add above) to save it; drag a card onto a folder to organise; click a card to wear it.", ColTextDim)
+	y += 22
 
 	// --- Folder navigation -----------------------------------------------------
 	// Folders are real objects you open. At the top level the grid leads with a

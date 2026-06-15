@@ -107,12 +107,20 @@ func (m *Manifest) SeedLearned(prefs *config.AssetPreferences, host string) int 
 	if prefs == nil || host == "" {
 		return 0
 	}
+	// Desks default to WebP and ignore the manifest unless the player opts in:
+	// a server declaring e.g. PNG backgrounds (which desks share a class with)
+	// shouldn't silently drag desks off WebP. See defaultDeskFollowManifest /
+	// Settings → Assets → "Always use WebP for desks".
+	deskFollows := prefs.DeskFollowsManifest()
 	seeded := 0
 	for _, target := range m.manifestSeedTargets() {
 		if len(target.exts) == 0 {
 			continue
 		}
 		for _, t := range target.types {
+			if t == AssetTypeDeskOverlay && !deskFollows {
+				continue
+			}
 			prefs.RecordLearned(host, t.Name(), target.exts[0])
 			seeded++
 		}
