@@ -399,6 +399,12 @@ func (a *App) checkCallwords(text string) {
 			} else {
 				a.d.Audio.PlayAlert()
 			}
+			// Optional in-app toast naming the word (like the modcall/friend
+			// toasts) so you can see WHY it pinged, not just hear it.
+			if a.d.Prefs.CallwordToastOn() {
+				a.warnLine = clampLine("Heard your callword: " + w)
+				a.warnAt = time.Now()
+			}
 			a.ctx.FlashWindow()
 			return
 		}

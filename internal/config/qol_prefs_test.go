@@ -28,6 +28,9 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.AutoLoginToastOn() {
 		t.Error("AutoLoginToastOn default must be true")
 	}
+	if !p.CallwordToastOn() {
+		t.Error("CallwordToastOn default must be true")
+	}
 }
 
 // TestPreviewHoverClamp pins the dwell bounds (the setter is authoritative).
@@ -58,6 +61,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetSpriteMove(true)
 	p.SetDeskFollowManifest(true)
 	p.SetAutoLoginToast(false) // explicit false must survive the absent-default-ON pointer
+	p.SetCallwordToast(false)  // same absent-default-ON pointer
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -83,6 +87,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.AutoLoginToastOn() {
 		t.Error("AutoLoginToast=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if q.CallwordToastOn() {
+		t.Error("CallwordToast=false lost (absent-default ON must not clobber explicit false)")
 	}
 }
 

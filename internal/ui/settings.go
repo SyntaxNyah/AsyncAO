@@ -1016,6 +1016,11 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	c.Label(pad+260, y+6, "play the alert sound now to check it works", ColTextDim)
 	y += 34
+	ct := a.d.Prefs.CallwordToastOn()
+	if next := c.Checkbox(pad, y, "Toast when a callword is heard (ON by default): a popup names the word, like the modcall/friend toasts.", ct); next != ct {
+		a.d.Prefs.SetCallwordToast(next)
+	}
+	y += 30
 
 	// Highlighted friends (per server): shownames whose IC messages glow.
 	fh := a.d.Prefs.FriendHighlightOn()

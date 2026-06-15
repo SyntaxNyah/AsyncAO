@@ -182,6 +182,11 @@ const (
 // knows their session is authenticated. Toggleable off in Settings.
 const defaultAutoLoginToast = true
 
+// defaultCallwordToast ships ON: when a callword is heard, an in-app toast
+// names it (alongside the flash + ping), like the modcall/friend toasts.
+// Toggleable off in Settings (streamer mode suppresses it regardless).
+const defaultCallwordToast = true
+
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
 // 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
@@ -391,6 +396,9 @@ type AssetPreferences struct {
 	// AutoLoginToast notifies (in-app toast + desktop notification) when a
 	// saved auto-login fires on join (ON by default).
 	AutoLoginToast bool `json:"autoLoginToast"`
+	// CallwordToast shows an in-app toast when a callword is heard (ON by
+	// default), alongside the existing flash + ping.
+	CallwordToast bool `json:"callwordToast"`
 
 	mu        sync.RWMutex
 	path      string
@@ -508,6 +516,7 @@ type prefsJSON struct {
 	SpritePreview      *bool `json:"spritePreview"`      // absent = default ON
 	PreviewHoverMs     *int  `json:"previewHoverMs"`     // absent = default 5 s
 	AutoLoginToast     *bool `json:"autoLoginToast"`     // absent = default ON
+	CallwordToast      *bool `json:"callwordToast"`      // absent = default ON
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -712,6 +721,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		SpritePreviewOn:    defaultSpritePreview,
 		PreviewHoverMs:     DefaultPreviewHoverMs,
 		AutoLoginToast:     defaultAutoLoginToast,
+		CallwordToast:      defaultCallwordToast,
 		HighlightColor:     defaultHighlightColor,
 		NameSat:            defaultNameColorSat,
 		NameVal:            defaultNameColorVal,
@@ -805,6 +815,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.AutoLoginToast != nil {
 		p.AutoLoginToast = *onDisk.AutoLoginToast
+	}
+	if onDisk.CallwordToast != nil {
+		p.CallwordToast = *onDisk.CallwordToast
 	}
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
@@ -1467,6 +1480,26 @@ func (p *AssetPreferences) SetAutoLoginToast(on bool) {
 		return
 	}
 	p.AutoLoginToast = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// CallwordToastOn reports the callword-toast toggle (ON by default): an in-app
+// toast naming the heard callword, alongside the flash + ping.
+func (p *AssetPreferences) CallwordToastOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CallwordToast
+}
+
+// SetCallwordToast toggles the callword toast.
+func (p *AssetPreferences) SetCallwordToast(on bool) {
+	p.mu.Lock()
+	if p.CallwordToast == on {
+		p.mu.Unlock()
+		return
+	}
+	p.CallwordToast = on
 	p.mu.Unlock()
 	p.markDirty()
 }
