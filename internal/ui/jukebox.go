@@ -67,17 +67,16 @@ func (a *App) jukePlay(url string) {
 	a.jukeWarn("▶ /play " + url)
 }
 
-// jukeShare fills the OOC input with the raw link (and focuses it) so you can
-// post it for others to grab — a deliberate send, not an automatic one.
+// jukeShare posts the raw link straight to OOC so others can grab it — a
+// one-press send (not just dropping it in the box), through the same paced OOC
+// pipeline as jukePlay, minus the /play prefix so it's a plain shareable line.
 func (a *App) jukeShare(url string) {
 	if a.sess == nil {
 		a.jukeWarn("Connect to a server first.")
 		return
 	}
-	a.oocInput = url
-	a.ctx.FocusField("ooc")
-	a.showIni = false // close the wardrobe so the OOC box is in reach
-	a.jukeWarn("Link dropped in your OOC box — press Enter to post it.")
+	a.queueOOCLines([]string{url})
+	a.jukeWarn("Shared in OOC: " + url)
 }
 
 func (a *App) jukeWarn(msg string) {

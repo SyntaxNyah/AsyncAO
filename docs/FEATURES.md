@@ -210,8 +210,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Jukebox playlist** (Wardrobe → **Jukebox** tab): a library of the music
   links DJs/CMs `/play` in OOC (YouTube/Discord/etc.), organized into named
   playlists (folders) so you click instead of paste. Per song: **▶ Play**
-  (sends `/play <url>` in OOC), **Open ↗** (browser), **Share** (drops the raw
-  link in your OOC box to post for others), and remove. **Shuffle** one
+  (sends `/play <url>` in OOC), **Open ↗** (browser), **Share** (posts the raw
+  link to OOC in one press, for others to grab), and remove. **Shuffle** one
   playlist or everything (random `/play`). **Bare-key binds**: assign a key to
   a song (plays it) or to a playlist (shuffles it) and fire it from the
   courtroom with no text field focused — these take priority over character
