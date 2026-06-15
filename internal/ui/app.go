@@ -392,7 +392,12 @@ type App struct {
 	themeAppliedName string
 
 	showUICfg bool // hide-chrome popup
-	hidden    map[string]bool
+	// showWidgets opens the themed-mode "Extras" box: every AsyncAO feature an
+	// AO2 theme has no button for. themedHintShown gates the one-time hint that
+	// points players at it (legacy themes carry no AsyncAO element keys).
+	showWidgets     bool
+	themedHintShown bool
+	hidden          map[string]bool
 
 	iniRes chan iniswapFetch
 

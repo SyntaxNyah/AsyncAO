@@ -10,6 +10,7 @@ package ui
 
 import (
 	"math"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -192,6 +193,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// Layout edit mode fences every widget below (they draw, but stay
 	// inert); the editor overlay paints and interacts at the very end.
 	a.layoutEditFence()
+	a.themedExtrasHint() // one-time-per-session: point players at the Extras box
 
 	// Stage: letterbox fill, then the theme's window art over the design
 	// area (this alone makes the whole screen read as "themed").
@@ -233,6 +235,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// Modal popups behave exactly like the classic path: nothing below
 	// them draws (the kit has no z-aware input).
 	switch {
+	case a.showWidgets:
+		a.drawWidgetsPanel(w, h)
+		return
 	case a.showIni:
 		a.drawIniswapPanel(w, h)
 		return
@@ -467,9 +472,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.drawEmoteGridThemed(r, lay, vp)
 	}
 
-	// Utility strip: everything AO2 keeps in OS menus lives on a slim
-	// translucent row pinned to the window's bottom-left.
-	a.drawThemedUtilityStrip(w, h, lay)
+	// Extras: ONE compact button (bottom-left) opening the box of every AsyncAO
+	// feature this AO2 theme has no slot for. Hideable; the hotkey opens it too.
+	a.drawThemedExtrasButton(w, h)
 
 	if a.warnActive() {
 		c.LabelClipped(pad, h-44, w-2*pad, a.warnLine, ColDanger)
@@ -623,73 +628,90 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	}
 }
 
-// drawThemedUtilityStrip hosts the client-chrome actions AO2 puts in OS
-// menus: slim, translucent, bottom-left, never fighting the theme.
-func (a *App) drawThemedUtilityStrip(w, h int32, lay *themeLayoutCache) {
+// themedExtrasHint fires a one-time-per-session toast when a themed (AO2) layout
+// is in use, pointing players at the Extras button/hotkey — legacy AO2 themes
+// carry no element keys for AsyncAO's own features, so they'd otherwise be lost.
+func (a *App) themedExtrasHint() {
+	if a.themedHintShown {
+		return
+	}
+	a.themedHintShown = true
+	hint := "AO2 theme — Wardrobe, Jukebox & all AsyncAO extras are in the ★ Extras button (bottom-left)"
+	if a.panelHidden(panelExtras) {
+		hint = "AO2 theme — press [" + a.hotkeyFor(hotkeyExtras) + "] for AsyncAO extras (Wardrobe, Jukebox…)"
+	}
+	a.warnLine = clampLine(hint)
+	a.warnAt = time.Now()
+}
+
+// drawThemedExtrasButton places the single "Extras" button — the one entry
+// point to every AsyncAO feature an AO2 theme has no slot for (the box of
+// widgets). One compact button pinned bottom-left so it barely touches the
+// theme art; hideable via panelExtras (the Extras hotkey still opens the box).
+// The classic (non-themed) layout exposes all of this as real buttons already,
+// so this exists for themed mode only.
+func (a *App) drawThemedExtrasButton(w, h int32) {
 	c := a.ctx
-	const stripH = 24
-	y := h - stripH - 2
-	x := int32(4)
-	put := func(label string) bool {
-		bw := c.TextWidth(label) + 12
-		r := sdl.Rect{X: x, Y: y, W: bw, H: stripH}
-		hit := c.Button(r, label)
-		x += bw + 4
-		return hit
+	if a.panelHidden(panelExtras) {
+		return // hidden — the Extras hotkey still opens the box
 	}
-	if put("Character") {
-		a.screen = ScreenCharSelect
+	const bh int32 = 24
+	label := "★ Extras"
+	bw := c.TextWidth(label) + 14
+	r := sdl.Rect{X: 4, Y: h - bh - 2, W: bw, H: bh}
+	if c.Button(r, label) {
+		a.showWidgets = true
 	}
-	// Wardrobe (iniswap) is accented + tooltipped so it stands out in the slim
-	// chrome strip — playtest: it was there but easy to miss.
-	{
-		label := "Wardrobe"
-		bw := c.TextWidth(label) + 12
-		r := sdl.Rect{X: x, Y: y, W: bw, H: stripH}
-		hit := c.Button(r, label)
-		c.Border(r, ColAccent)
-		c.Tooltip(r, "Wardrobe / iniswap — swap your character's sprites & emotes")
-		x += bw + 4
-		if hit {
-			a.openIniswap()
+	c.Border(r, ColAccent)
+	c.Tooltip(r, "AsyncAO extras (Wardrobe, Jukebox, Background, Settings…) — hotkey: "+a.hotkeyFor(hotkeyExtras))
+}
+
+// drawWidgetsPanel is the "box of widgets": every AsyncAO feature an AO2 theme
+// has no button for, in one grid. Opened by the Extras button or the hotkey. A
+// modal — like the other courtroom popups, nothing under it draws or takes
+// input (the kit has no z-aware input). Picking one closes the box and runs the
+// action (which usually opens its own panel).
+func (a *App) drawWidgetsPanel(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 215})
+	pw, ph := int32(560), int32(372)
+	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
+	c.Fill(panel, ColPanel)
+	c.Border(panel, ColAccent)
+	c.Heading(panel.X+20, panel.Y+14, "AsyncAO extras", ColText)
+	c.LabelClipped(panel.X+20, panel.Y+46, pw-40,
+		"Features an AO2 theme has no button for. Hotkey ["+a.hotkeyFor(hotkeyExtras)+"] toggles this box; hide the button in UI… → chrome.", ColTextDim)
+	if c.Button(sdl.Rect{X: panel.X + pw - 90, Y: panel.Y + 12, W: 78, H: btnH}, "Close") {
+		a.showWidgets = false
+	}
+
+	widgets := []struct {
+		label string
+		run   func()
+	}{
+		{"Character", func() { a.screen = ScreenCharSelect }},
+		{"Wardrobe", func() { a.openIniswap() }},
+		{"Jukebox", func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
+		{"Background", func() { a.openBgPicker() }},
+		{"Evidence", func() { a.showEvid = true }},
+		{"Call Mod", func() { a.showModcall = true }},
+		{"Pair", func() { a.showPair = true }},
+		{"Login", func() { a.openLoginDialog() }},
+		{"Hide chrome", func() { a.showUICfg = true }},
+		{"Theater", func() { a.setTheater(!a.theaterOn) }},
+		{"Settings", func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
+		{"Disconnect", func() { a.Disconnect() }},
+	}
+	const cols int32 = 3
+	const cellW, cellH, gap int32 = 168, 54, 10
+	gx, gy := panel.X+20, panel.Y+84
+	for i, wd := range widgets {
+		col, row := int32(i)%cols, int32(i)/cols
+		r := sdl.Rect{X: gx + col*(cellW+gap), Y: gy + row*(cellH+gap), W: cellW, H: cellH}
+		if c.Button(r, wd.label) {
+			a.showWidgets = false
+			wd.run()
+			return
 		}
-	}
-	if put("Background") {
-		a.openBgPicker()
-	}
-	if _, ok := lay.rect("evidence_button"); !ok {
-		evLabel := "Evidence"
-		if a.evidPresent {
-			evLabel = "Evidence ●"
-		}
-		if put(evLabel) {
-			a.showEvid = true
-		}
-	}
-	if _, ok := lay.rect("call_mod"); !ok {
-		if put("Mods...") {
-			a.showModcall = true
-		}
-	}
-	if _, ok := lay.rect("pair_button"); !ok {
-		if put("Pair...") {
-			a.showPair = !a.showPair
-		}
-	}
-	if _, ok := lay.rect("pos_dropdown"); !ok {
-		x = a.drawPosSelect(x, y, stripH)
-	}
-	if put("Login...") {
-		a.openLoginDialog()
-	}
-	if put("UI...") {
-		a.showUICfg = true
-	}
-	if put("Settings") {
-		a.prevScreen = ScreenCourtroom
-		a.screen = ScreenSettings
-	}
-	if put("Disconnect") {
-		a.Disconnect()
 	}
 }

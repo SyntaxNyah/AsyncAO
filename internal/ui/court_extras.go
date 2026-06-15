@@ -55,6 +55,7 @@ const (
 	panelTimers    = "timers"
 	panelTestimony = "testimony"
 	panelJudge     = "judge"
+	panelExtras    = "extras"
 )
 
 // hideablePanels drives the UI popup: id + human label, draw order.
@@ -68,6 +69,7 @@ var hideablePanels = []struct{ id, label string }{
 	{panelTimers, "Server timers"},
 	{panelTestimony, "Testimony recording badge"},
 	{panelJudge, "Judge controls (even when granted)"},
+	{panelExtras, "Extras button (AsyncAO features menu — themed mode; the 'x' hotkey still opens it)"},
 }
 
 // panelHidden reports whether the user hid a chrome region.

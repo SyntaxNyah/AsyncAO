@@ -124,6 +124,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   pattern) render as tabs instead of drawing on top of each other —
   nothing flies off screen, whatever the theme author did.
 - Settings shows a live chatbox preview with the applied colors.
+- **AsyncAO extras on AO2 themes** (the "★ Extras" button): a legacy AO2
+  `courtroom_design.ini` has no element keys for AsyncAO's own features
+  (Wardrobe, Jukebox, Background, Theater, Pair, Evidence, Login, Settings, …),
+  so when a theme drives the courtroom layout they'd be unreachable. One compact
+  **★ Extras** button, pinned bottom-left so it barely touches the theme art,
+  opens a **box of widgets** with all of them. The box also opens with a hotkey
+  (default `x`), and the button itself is **hideable** via **UI… → chrome** for a
+  pure-theme look (the hotkey still works). A one-time hint on the first themed
+  draw points players at it.
 
 ## Diagnostics
 

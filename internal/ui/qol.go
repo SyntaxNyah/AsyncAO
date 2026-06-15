@@ -37,6 +37,7 @@ const (
 	hotkeyEmoteCycle = "emote_cycle"
 	hotkeyPinNote    = "pin_note"
 	hotkeyFriendHi   = "friend_toggle"
+	hotkeyExtras     = "extras"
 )
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
@@ -59,6 +60,7 @@ var hotkeyDefs = []struct {
 	{hotkeyEmoteCycle, "Cycle emote (next)", "e"},
 	{hotkeyPinNote, "Pin hovered log line to notes", "n"},
 	{hotkeyFriendHi, "Toggle friend highlights", "u"},
+	{hotkeyExtras, "Open the Extras menu (AsyncAO features box)", "x"},
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -190,6 +192,8 @@ func (a *App) handleHotkeys() {
 			a.warnLine = "Friend highlights on"
 		}
 		a.warnAt = time.Now()
+	case a.hotkeyFor(hotkeyExtras):
+		a.showWidgets = !a.showWidgets
 	}
 }
 
