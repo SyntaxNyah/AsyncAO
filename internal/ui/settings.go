@@ -520,8 +520,43 @@ func (a *App) drawSettingsTheme(y, w int32) int32 {
 	tlay := a.d.Prefs.ThemeLayoutEnabled()
 	if next := c.Checkbox(pad, y, "Use the theme's courtroom layout (courtroom_design.ini positions every widget; off = classic layout)", tlay); next != tlay {
 		a.d.Prefs.SetThemeLayout(next)
+		a.themeLay.valid = false
 	}
 	y += 28
+
+	// Theme fit: how the theme's FIXED design size fills your (differently
+	// shaped) window — the cause of those borders.
+	c.Label(pad, y+4, "Theme fit:", ColText)
+	fitOpts := []string{"Stretch — fill, no bars", "Letterbox — keep shape (bars)", "Crop — fill, trim edges", "Custom — zoom + pan"}
+	fit := a.d.Prefs.ThemeFitMode()
+	if next, changed := c.Dropdown("themefit", sdl.Rect{X: pad + 90, Y: y, W: 230, H: fieldH}, fitOpts, fit); changed {
+		a.d.Prefs.SetThemeFit(next)
+		a.themeLay.valid = false // rebuild the layout cache with the new fit
+		fit = next
+	}
+	c.LabelClipped(pad+330, y+4, w-pad-330-scrollBarW, "applies under a theme that drives the courtroom layout (above)", ColTextDim)
+	y += 30
+	if fit == config.ThemeFitCustom {
+		zoom := a.d.Prefs.ThemeZoom()
+		if next := a.sliderRow(y, "  Zoom %", zoom, 5, config.MinThemeZoom, config.MaxThemeZoom); next != zoom {
+			a.d.Prefs.SetThemeFitZoom(next)
+			a.themeLay.valid = false
+		}
+		y += 28
+		px, py := a.d.Prefs.ThemePan()
+		if next := a.sliderRow(y, "  Pan X %", px, 1, -config.MaxThemePan, config.MaxThemePan); next != px {
+			a.d.Prefs.SetThemeFitPan(next, py)
+			a.themeLay.valid = false
+		}
+		y += 28
+		if next := a.sliderRow(y, "  Pan Y %", py, 1, -config.MaxThemePan, config.MaxThemePan); next != py {
+			a.d.Prefs.SetThemeFitPan(px, next)
+			a.themeLay.valid = false
+		}
+		y += 28
+		c.LabelClipped(pad, y, w-2*pad-scrollBarW, "Open a server to preview live — the courtroom re-fits as you drag (zoom to crop, pan to position).", ColTextDim)
+		y += 22
+	}
 
 	// Live preview of the applied chatbox skin + theme text colors.
 	y = a.drawThemePreview(y)

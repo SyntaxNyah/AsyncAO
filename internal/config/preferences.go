@@ -74,6 +74,29 @@ const defaultUIScaleAuto = true
 // that IS what picking a theme means to AO players.
 const defaultThemeLayout = true
 
+// Theme-fit modes: how an AO2 theme's FIXED design size fills a differently
+// shaped window. Stretch (default — webAO-style) fills edge-to-edge with a
+// slight aspect distortion; Letterbox keeps the exact proportions with bars;
+// Crop scales up to fill and lets the overflow run off-screen. Stretch is 0 so
+// the zero value (and every pre-existing prefs file) lands on the new default.
+const (
+	ThemeFitStretch   = 0
+	ThemeFitLetterbox = 1
+	ThemeFitCrop      = 2
+	ThemeFitCustom    = 3 // manual zoom + pan (crop to taste)
+	defaultThemeFit   = ThemeFitStretch
+)
+
+// Custom theme-fit knobs: a manual zoom (percent of the letterbox-fit scale,
+// so 100 = exactly fits) and a pan (percent of the window, ±), for cropping a
+// theme to taste. Bounded so it can't be scaled or panned into nothing.
+const (
+	DefaultThemeZoom = 100
+	MinThemeZoom     = 50
+	MaxThemeZoom     = 300
+	MaxThemePan      = 50
+)
+
 // defaultCatchUpWhenBehind ships ON: in a packed room the IC stage otherwise
 // crawls through every queued preanim/shout, falling minutes behind real-time.
 // Catch-up fast-forwards the backlog; the IC log still keeps every message.
@@ -290,6 +313,10 @@ type AssetPreferences struct {
 	DebugOverlay           bool                         `json:"debugOverlay"`
 	AutoDetectFormats      bool                         `json:"formatAutoDetect"`
 	ThemeLayoutOn          bool                         `json:"themeLayout"`
+	ThemeFit               int                          `json:"themeFit"`
+	ThemeFitZoom           int                          `json:"themeFitZoom"`
+	ThemeFitPanX           int                          `json:"themeFitPanX"`
+	ThemeFitPanY           int                          `json:"themeFitPanY"`
 	UIScaleAutoOn          bool                         `json:"uiScaleAuto"`
 	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
@@ -405,8 +432,12 @@ type prefsJSON struct {
 	ModcallToast           bool      `json:"modcallToast"` // default OFF
 	CallwordSoundFile      string    `json:"callwordSoundFile"`
 	DebugOverlay           bool      `json:"debugOverlay"`
-	FormatAutoDetect       *bool     `json:"formatAutoDetect"`  // absent = default ON
-	ThemeLayout            *bool     `json:"themeLayout"`       // absent = default ON
+	FormatAutoDetect       *bool     `json:"formatAutoDetect"` // absent = default ON
+	ThemeLayout            *bool     `json:"themeLayout"`      // absent = default ON
+	ThemeFit               int       `json:"themeFit"`         // 0 = Stretch (default)
+	ThemeFitZoom           int       `json:"themeFitZoom"`     // 0 (absent) = default 100
+	ThemeFitPanX           int       `json:"themeFitPanX"`
+	ThemeFitPanY           int       `json:"themeFitPanY"`
 	UIScaleAuto            *bool     `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
 	CatchUpWhenBehind      *bool     `json:"catchUpWhenBehind"` // absent = default ON
 	CatchUpThreshold       *int      `json:"catchUpThreshold"`  // absent = default
@@ -679,6 +710,8 @@ func defaultPrefs(path string) *AssetPreferences {
 		BgSlideshowSecs:    defaultBgSlideshowSecs,
 		AutoDetectFormats:  defaultFormatAutoDetect,
 		ThemeLayoutOn:      defaultThemeLayout,
+		ThemeFit:           defaultThemeFit,
+		ThemeFitZoom:       DefaultThemeZoom,
 		UIScaleAutoOn:      defaultUIScaleAuto,
 		CatchUpOn:          defaultCatchUpWhenBehind,
 		CatchUpThreshold:   DefaultCatchUpThreshold,
@@ -770,6 +803,12 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.ThemeLayout != nil {
 		p.ThemeLayoutOn = *onDisk.ThemeLayout
 	}
+	p.ThemeFit = clampPercent(onDisk.ThemeFit, ThemeFitStretch, ThemeFitCustom)
+	if onDisk.ThemeFitZoom != 0 { // 0 (absent) keeps the default
+		p.ThemeFitZoom = clampPercent(onDisk.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+	}
+	p.ThemeFitPanX = clampPercent(onDisk.ThemeFitPanX, -MaxThemePan, MaxThemePan)
+	p.ThemeFitPanY = clampPercent(onDisk.ThemeFitPanY, -MaxThemePan, MaxThemePan)
 	if onDisk.UIScaleAuto != nil {
 		p.UIScaleAutoOn = *onDisk.UIScaleAuto
 	}
@@ -3039,6 +3078,72 @@ func (p *AssetPreferences) SetThemeLayout(enabled bool) {
 		return
 	}
 	p.ThemeLayoutOn = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ThemeFitMode reports how an AO2 theme fills the window: ThemeFitStretch
+// (default), ThemeFitLetterbox, or ThemeFitCrop.
+func (p *AssetPreferences) ThemeFitMode() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ThemeFit
+}
+
+// SetThemeFit sets the theme-fit mode (clamped to a valid mode).
+func (p *AssetPreferences) SetThemeFit(mode int) {
+	mode = clampPercent(mode, ThemeFitStretch, ThemeFitCustom)
+	p.mu.Lock()
+	if p.ThemeFit == mode {
+		p.mu.Unlock()
+		return
+	}
+	p.ThemeFit = mode
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ThemeZoom reports the Custom-mode zoom (percent of the letterbox-fit scale;
+// 100 = exactly fits), clamped.
+func (p *AssetPreferences) ThemeZoom() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.ThemeFitZoom <= 0 {
+		return DefaultThemeZoom
+	}
+	return clampPercent(p.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
+}
+
+// ThemePan reports the Custom-mode pan (percent of the window, ±).
+func (p *AssetPreferences) ThemePan() (x, y int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ThemeFitPanX, p.ThemeFitPanY
+}
+
+// SetThemeFitZoom clamps and stores the Custom-mode zoom.
+func (p *AssetPreferences) SetThemeFitZoom(z int) {
+	z = clampPercent(z, MinThemeZoom, MaxThemeZoom)
+	p.mu.Lock()
+	if p.ThemeFitZoom == z {
+		p.mu.Unlock()
+		return
+	}
+	p.ThemeFitZoom = z
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SetThemeFitPan clamps and stores the Custom-mode pan.
+func (p *AssetPreferences) SetThemeFitPan(x, y int) {
+	x = clampPercent(x, -MaxThemePan, MaxThemePan)
+	y = clampPercent(y, -MaxThemePan, MaxThemePan)
+	p.mu.Lock()
+	if p.ThemeFitPanX == x && p.ThemeFitPanY == y {
+		p.mu.Unlock()
+		return
+	}
+	p.ThemeFitPanX, p.ThemeFitPanY = x, y
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -85,35 +86,58 @@ func rectOverlapFrac(a, b sdl.Rect) float64 {
 // when the window size or the theme changes (render loop reads are plain
 // map probes on pre-scaled rects).
 type themeLayoutCache struct {
-	valid      bool
-	winW, winH int32
-	designW    int32
-	scale      float64
-	offX, offY int32
-	r          map[string]sdl.Rect // scaled; absolute except showname/message (chatbox-relative)
+	valid          bool
+	winW, winH     int32
+	designW        int32
+	scaleX, scaleY float64 // per-axis: equal for Letterbox/Crop, independent for Stretch
+	offX, offY     int32
+	fit            int                 // ThemeFit mode it was built for (rebuild on change)
+	r              map[string]sdl.Rect // scaled; absolute except showname/message (chatbox-relative)
 }
 
 // themeLayout returns the cache for the current window, rebuilding on
 // window resize or theme swap (pollThemeApply invalidates).
 func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 	lay := &a.themeLay
-	if lay.valid && lay.winW == w && lay.winH == h {
+	fit := a.d.Prefs.ThemeFitMode()
+	if lay.valid && lay.winW == w && lay.winH == h && lay.fit == fit {
 		return lay
 	}
-	*lay = themeLayoutCache{winW: w, winH: h}
+	*lay = themeLayoutCache{winW: w, winH: h, fit: fit}
 	court, okCourt := a.themeRects["courtroom"]
 	_, okVP := a.themeRects["viewport"]
 	if !okCourt || !okVP || court.W <= 0 || court.H <= 0 {
 		return lay
 	}
 	lay.designW = int32(court.W)
-	lay.scale = math.Min(float64(w)/float64(court.W), float64(h)/float64(court.H))
-	lay.offX = (w - int32(float64(court.W)*lay.scale)) / 2
-	lay.offY = (h - int32(float64(court.H)*lay.scale)) / 2
+	// Per-axis scale by fit mode: Stretch fills both axes independently (no
+	// bars, slight distortion); Crop scales UP uniformly and lets the overflow
+	// run off-screen; Letterbox scales DOWN uniformly with centered bars.
+	sx, sy := float64(w)/float64(court.W), float64(h)/float64(court.H)
+	switch fit {
+	case config.ThemeFitStretch:
+		lay.scaleX, lay.scaleY = sx, sy
+	case config.ThemeFitCrop:
+		s := math.Max(sx, sy)
+		lay.scaleX, lay.scaleY = s, s
+	case config.ThemeFitCustom:
+		s := math.Min(sx, sy) * float64(a.d.Prefs.ThemeZoom()) / 100 // manual zoom over the fit
+		lay.scaleX, lay.scaleY = s, s
+	default: // ThemeFitLetterbox
+		s := math.Min(sx, sy)
+		lay.scaleX, lay.scaleY = s, s
+	}
+	lay.offX = (w - int32(float64(court.W)*lay.scaleX)) / 2
+	lay.offY = (h - int32(float64(court.H)*lay.scaleY)) / 2
+	if fit == config.ThemeFitCustom { // pan to crop where you like
+		px, py := a.d.Prefs.ThemePan()
+		lay.offX += int32(px) * w / 100
+		lay.offY += int32(py) * h / 100
+	}
 	courtArea := sdl.Rect{
 		X: lay.offX, Y: lay.offY,
-		W: int32(float64(court.W) * lay.scale),
-		H: int32(float64(court.H) * lay.scale),
+		W: int32(float64(court.W) * lay.scaleX),
+		H: int32(float64(court.H) * lay.scaleY),
 	}
 	lay.r = make(map[string]sdl.Rect, len(a.themeRects))
 	for key, r := range a.themeRects {
@@ -121,10 +145,10 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 			continue // off-design = hidden (the 11037 convention, both axes)
 		}
 		sr := sdl.Rect{
-			X: int32(float64(r.X) * lay.scale),
-			Y: int32(float64(r.Y) * lay.scale),
-			W: int32(float64(r.W) * lay.scale),
-			H: int32(float64(r.H) * lay.scale),
+			X: int32(float64(r.X) * lay.scaleX),
+			Y: int32(float64(r.Y) * lay.scaleY),
+			W: int32(float64(r.W) * lay.scaleX),
+			H: int32(float64(r.H) * lay.scaleY),
 		}
 		// showname/message are children of the chatbox in AO2 — keep them
 		// chatbox-relative; everything else becomes window-absolute and
@@ -550,10 +574,10 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		c.Label(r.X, r.Y, "Loading emotes...", ColTextDim)
 		return
 	}
-	cellW := int32(float64(a.themeEmoteCell[0]) * lay.scale)
-	cellH := int32(float64(a.themeEmoteCell[1]) * lay.scale)
-	gapX := int32(float64(a.themeEmoteGap[0]) * lay.scale)
-	gapY := int32(float64(a.themeEmoteGap[1]) * lay.scale)
+	cellW := int32(float64(a.themeEmoteCell[0]) * lay.scaleX)
+	cellH := int32(float64(a.themeEmoteCell[1]) * lay.scaleY)
+	gapX := int32(float64(a.themeEmoteGap[0]) * lay.scaleX)
+	gapY := int32(float64(a.themeEmoteGap[1]) * lay.scaleY)
 	if cellW < 8 || cellH < 8 {
 		cellW, cellH = 40, 40 // degenerate metrics: AO2 stock size
 	}

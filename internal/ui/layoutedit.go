@@ -128,7 +128,7 @@ func pointIn(x, y int32, r sdl.Rect) bool {
 func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	c := a.ctx
 	themeName, _ := a.d.Prefs.Theme()
-	if themeName == "" || lay.scale <= 0 {
+	if themeName == "" || lay.scaleX <= 0 || lay.scaleY <= 0 {
 		a.stopLayoutEdit()
 		return
 	}
@@ -232,8 +232,8 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// Live drag: screen deltas map back to design space through the
 	// layout scale; the cache invalidates per move (a ~40-rect rebuild).
 	if a.editDrag != 0 && c.mouseDown && a.editKey != "" {
-		dx := int(float64(c.mouseX-a.editStart[0]) / lay.scale)
-		dy := int(float64(c.mouseY-a.editStart[1]) / lay.scale)
+		dx := int(float64(c.mouseX-a.editStart[0]) / lay.scaleX)
+		dy := int(float64(c.mouseY-a.editStart[1]) / lay.scaleY)
 		r := a.editBase
 		if a.editDrag == 1 {
 			r.X += dx

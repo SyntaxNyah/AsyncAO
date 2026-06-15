@@ -126,3 +126,27 @@ func TestClearLearnedType(t *testing.T) {
 		t.Error("ClearLearnedType(DeskOverlay) must NOT drop other types")
 	}
 }
+
+// TestThemeFitDefaultsAndClamp pins the theme-fit prefs: Stretch is the default
+// (zero value), and the mode/zoom/pan all clamp to their bounds.
+func TestThemeFitDefaultsAndClamp(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.ThemeFitMode() != ThemeFitStretch {
+		t.Errorf("ThemeFitMode default = %d, want Stretch(%d)", p.ThemeFitMode(), ThemeFitStretch)
+	}
+	if p.ThemeZoom() != DefaultThemeZoom {
+		t.Errorf("ThemeZoom default = %d, want %d", p.ThemeZoom(), DefaultThemeZoom)
+	}
+	p.SetThemeFit(99) // out of range → clamps to the last mode (Custom)
+	if p.ThemeFitMode() != ThemeFitCustom {
+		t.Errorf("SetThemeFit clamp = %d, want Custom(%d)", p.ThemeFitMode(), ThemeFitCustom)
+	}
+	p.SetThemeFitZoom(1 << 20)
+	if p.ThemeZoom() != MaxThemeZoom {
+		t.Errorf("zoom clamp = %d, want %d", p.ThemeZoom(), MaxThemeZoom)
+	}
+	p.SetThemeFitPan(999, -999)
+	if x, y := p.ThemePan(); x != MaxThemePan || y != -MaxThemePan {
+		t.Errorf("pan clamp = (%d,%d), want (%d,%d)", x, y, MaxThemePan, -MaxThemePan)
+	}
+}

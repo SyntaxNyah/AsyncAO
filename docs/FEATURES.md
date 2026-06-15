@@ -123,6 +123,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   themes that stack the IC/OOC logs on one rect (AO2's ooc_toggle
   pattern) render as tabs instead of drawing on top of each other —
   nothing flies off screen, whatever the theme author did.
+- **Theme fit modes** (Settings → Theme): an AO2 theme has a FIXED design size,
+  so scaling it to a differently-shaped window leaves bars. Pick how it fills:
+  **Stretch** (default — edge-to-edge, slight distortion, the webAO behaviour),
+  **Letterbox** (keep exact proportions, theme-coloured bars), **Crop** (scale up
+  to fill, overflow runs off-screen), or **Custom** (a manual **zoom + pan** to
+  crop the theme to taste). The courtroom re-fits live as you drag the sliders.
+  Per-axis scaling is folded into the geometry cache, so it stays a resize-only
+  rebuild — zero per-frame cost.
 - Settings shows a live chatbox preview with the applied colors.
 - **AsyncAO extras on AO2 themes** (the "★ Extras" button): a legacy AO2
   `courtroom_design.ini` has no element keys for AsyncAO's own features
