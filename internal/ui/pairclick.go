@@ -150,6 +150,28 @@ func isAreaHeader(t string) bool {
 	return strings.Contains(low, "players online") || strings.Contains(low, "player online")
 }
 
+// looksLikeAreaList reports whether an OOC payload is a /getarea (/ga, /gas)
+// reply rather than chat — so running it never fires YOUR OWN callword (your name
+// is right there in the roster). Matches the header or any verbose roster line.
+func looksLikeAreaList(text string) bool {
+	t := strings.ToLower(strings.TrimSpace(text))
+	if strings.Contains(t, "players online") ||
+		strings.HasPrefix(t, "showname:") || strings.HasPrefix(t, "ooc:") || strings.HasPrefix(t, "ipid:") {
+		return true
+	}
+	for i := 0; i < len(text); i++ { // a "[<digits>] name" roster line (past any "[Title]")
+		if text[i] != '[' {
+			continue
+		}
+		if j := strings.IndexByte(text[i+1:], ']'); j >= 1 {
+			if _, err := strconv.Atoi(strings.TrimSpace(text[i+1 : i+1+j])); err == nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // openPairPopup opens the click-to-pair popup targeting char, pre-filling the
 // UID only when /getarea gave a confident name match (else blank — never a guess).
 func (a *App) openPairPopup(char string) {

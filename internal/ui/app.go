@@ -1515,7 +1515,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.enterCourtroom()
 		case courtroom.EventOOC:
 			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
-			a.checkCallwords(ev.Text)
+			if !looksLikeAreaList(ev.Text) { // your own /ga roster lists your name — don't self-ping
+				a.checkCallwords(ev.Text)
+			}
 		case courtroom.EventMessage:
 			if ev.Message != nil {
 				fr, fc := a.friendMessage(a.serverKey, ev.Message)

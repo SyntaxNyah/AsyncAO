@@ -152,3 +152,31 @@ func TestParseAreaRosterIdentity(t *testing.T) {
 		t.Errorf("after re-fetch roster = %d, want 2 (replaced, not accumulated)", got)
 	}
 }
+
+// TestLooksLikeAreaList pins that /getarea output reads as non-chat (so running
+// /ga never self-pings your callword), while ordinary OOC — even mentioning your
+// name — still does.
+func TestLooksLikeAreaList(t *testing.T) {
+	for _, s := range []string{
+		"21 players online.",
+		"Showname: Häschen",
+		"OOC: Peen",
+		"IPID: ABC123",
+		"[11] ciel-sensei (tsukihime)",
+		"[Mario Kart Queen] [24] tlaloc (fgo)",
+	} {
+		if !looksLikeAreaList(s) {
+			t.Errorf("looksLikeAreaList(%q) = false, want true (/ga output)", s)
+		}
+	}
+	for _, s := range []string{
+		"hey Häschen how are you",
+		"lol nice one",
+		"check out [this] cool link",
+		"",
+	} {
+		if looksLikeAreaList(s) {
+			t.Errorf("looksLikeAreaList(%q) = true, want false (real chat)", s)
+		}
+	}
+}

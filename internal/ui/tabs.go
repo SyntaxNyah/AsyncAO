@@ -301,7 +301,9 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		s.oocSpeakers = appendCapped(s.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
 		s.oocSeq++
 		t.unread++
-		a.checkCallwords(ev.Text)
+		if !looksLikeAreaList(ev.Text) { // /ga roster output isn't chat — never self-ping
+			a.checkCallwords(ev.Text)
+		}
 	case courtroom.EventModcall:
 		// A modcall on a backgrounded server still alerts the mod (toast +
 		// the tab's OOC log + unread), like the friend signal.
