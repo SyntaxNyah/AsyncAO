@@ -41,7 +41,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		c.LabelClipped(r.X, r.Y+4, r.W, "Run /ga (or /gas, /getarea) to list who's in this area.", ColTextDim)
 		return
 	}
-	const lineH = int32(30)
+	const lineH = int32(40) // two text rows: IC identity + OOC
 	if !c.ctrlHeld {
 		a.playerScroll -= c.WheelIn(r) * scrollStepPx
 	}
@@ -77,44 +77,49 @@ func (a *App) drawPlayerRow(p *areaPlayer, row sdl.Rect) {
 	if p.showname != "" {
 		display = p.showname
 	}
+	// IPID is mod-only data: show it ONLY while logged in as a mod (non-mods never
+	// get it from /getarea anyway; this also hides it the moment a mod logs out).
+	isMod := a.sess != nil && a.sess.ModGranted
+	btnY := row.Y + (row.H-22)/2
 	bx := row.X + row.W - 52
-	if c.Button(sdl.Rect{X: bx, Y: row.Y + 2, W: 48, H: row.H - 4}, "Pair") {
+	if c.Button(sdl.Rect{X: bx, Y: btnY, W: 48, H: 22}, "Pair") {
 		a.queueOOCLines([]string{"/pair " + p.uid}) // we have the UID — no popup needed
 		a.warnLine = clampLine("Sent /pair " + p.uid + " — " + display)
 		a.warnAt = a.now()
 	}
 	bx -= 84
-	if c.Button(sdl.Rect{X: bx, Y: row.Y + 2, W: 80, H: row.H - 4}, "Copy UID") {
+	if c.Button(sdl.Rect{X: bx, Y: btnY, W: 80, H: 22}, "Copy UID") {
 		_ = sdl.SetClipboardText(p.uid)
 		a.warnLine = clampLine("Copied UID " + p.uid)
 		a.warnAt = a.now()
 	}
-	if p.ipid != "" {
+	if p.ipid != "" && isMod {
 		bx -= 88
-		if c.Button(sdl.Rect{X: bx, Y: row.Y + 2, W: 84, H: row.H - 4}, "Copy IPID") {
+		if c.Button(sdl.Rect{X: bx, Y: btnY, W: 84, H: 22}, "Copy IPID") {
 			_ = sdl.SetClipboardText(p.ipid)
 			a.warnLine = clampLine("Copied IPID for " + display)
 			a.warnAt = a.now()
 		}
 	}
-	label := "[" + p.uid + "]  " + p.name
+	textW := bx - row.X - 12
+	// Line 1 — IC identity: [uid] showname · character.
+	ic := "[" + p.uid + "]  " + p.name
 	if p.showname != "" && !strings.EqualFold(p.showname, p.name) {
-		label = "[" + p.uid + "]  " + p.showname + "  ·  " + p.name
+		ic = "[" + p.uid + "]  " + p.showname + "  ·  " + p.name
 	}
-	c.LabelClipped(row.X+8, row.Y+(row.H-14)/2, bx-row.X-12, label, ColText)
-	if hover {
-		tip := ""
-		if p.ooc != "" {
-			tip = "OOC: " + p.ooc
+	c.LabelClipped(row.X+8, row.Y+4, textW, ic, ColText)
+	// Line 2 — OOC name (+ IPID for mods), dimmer.
+	sub := ""
+	if p.ooc != "" {
+		sub = "OOC: " + p.ooc
+	}
+	if p.ipid != "" && isMod {
+		if sub != "" {
+			sub += "   ·   "
 		}
-		if p.ipid != "" {
-			if tip != "" {
-				tip += "   ·   "
-			}
-			tip += "IPID: " + p.ipid
-		}
-		if tip != "" {
-			c.Tooltip(row, tip)
-		}
+		sub += "IPID: " + p.ipid
+	}
+	if sub != "" {
+		c.LabelClipped(row.X+8, row.Y+row.H-16, textW, sub, ColTextDim)
 	}
 }
