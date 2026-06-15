@@ -1038,22 +1038,35 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		col = ColTextDim
 	}
 	textY := r.Y + (r.H-int32(c.font.Height()))/2
+	avail := r.W - 2*padX
+	// Horizontal scroll: once a FOCUSED field's text outgrows the box, slide it
+	// left so the caret end stays visible — otherwise you type blind past the
+	// right edge (the IC bar "cut off the text" report). Unfocused fields stay
+	// head-aligned (conventional), and a field that fits keeps the cheap path.
+	textW := c.TextWidth(display)
+	scroll := int32(0)
+	if focused && textW > avail {
+		scroll = textW - avail
+	}
 	if focused && c.selectAll && value != "" {
-		// Select-all highlight behind the text.
-		selW := c.TextWidth(display)
-		if selW > r.W-2*padX {
-			selW = r.W - 2*padX
+		// Select-all highlight behind the visible text.
+		selW := textW - scroll
+		if selW > avail {
+			selW = avail
 		}
 		c.Fill(sdl.Rect{X: r.X + padX, Y: r.Y + 3, W: selW, H: r.H - 6},
 			sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
 	}
-	c.LabelClipped(r.X+padX, textY, r.W-2*padX, show, col)
+	if scroll > 0 {
+		// Clip to the field interior so the scrolled-off head doesn't spill left.
+		cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
+		c.Label(r.X+padX-scroll, textY, show, col)
+		c.popClip(cp, ch)
+	} else {
+		c.LabelClipped(r.X+padX, textY, avail, show, col)
+	}
 	if focused && c.caretOn {
-		caretX := r.X + padX + c.TextWidth(display)
-		if caretX > r.X+r.W-padX {
-			caretX = r.X + r.W - padX
-		}
-		c.Fill(sdl.Rect{X: caretX, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
+		c.Fill(sdl.Rect{X: r.X + padX + textW - scroll, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
 	}
 	return value, enter
 }
