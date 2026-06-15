@@ -407,6 +407,14 @@ type App struct {
 	// AsyncAO element keys).
 	showWidgets     bool
 	themedHintShown bool
+	// Floating Extras box (floatbox.go): movable geometry. extrasPlaced=false
+	// means "centered default until first dragged"; the rest tracks a title-bar
+	// drag. (Position persistence lands in a later slice.)
+	extrasBoxX, extrasBoxY     int32
+	extrasPlaced               bool
+	extrasDragging             bool
+	extrasGrabDX, extrasGrabDY int32
+	extrasPrevDown             bool
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32

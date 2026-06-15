@@ -37,20 +37,44 @@ func (a *App) extrasBoxVisible() bool {
 	return a.showWidgets && a.room != nil && a.sess != nil && !a.courtModalOpen()
 }
 
-// extrasBoxRect is the box's screen rect (slice 0: centered near the top,
-// clamped to the window).
+// extrasBoxRect is the box's screen rect: the dragged position once placed, else
+// a centered-near-the-top default. Always clamped fully on-screen so a resize or
+// a moved-then-shrunk window can't strand it off-edge.
 func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
-	x := (w - extrasBoxW) / 2
-	if x < 8 {
-		x = 8
+	x, y := a.extrasBoxX, a.extrasBoxY
+	if !a.extrasPlaced {
+		x, y = (w-extrasBoxW)/2, 76
 	}
-	y := int32(76)
-	if y+extrasBoxH > h-8 {
-		if y = h - 8 - extrasBoxH; y < 8 {
-			y = 8
-		}
+	maxX, maxY := w-extrasBoxW-8, h-extrasBoxH-8
+	if maxX < 8 {
+		maxX = 8
 	}
-	return sdl.Rect{X: x, Y: y, W: extrasBoxW, H: extrasBoxH}
+	if maxY < 8 {
+		maxY = 8
+	}
+	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: extrasBoxW, H: extrasBoxH}
+}
+
+// handleExtrasDrag moves the box by its title bar. The grab offset is captured
+// on press so the box tracks the cursor without jumping. Runs in the box's own
+// pass (real pointer), after the courtroom fence was restored.
+func (a *App) handleExtrasDrag(handle sdl.Rect, w, h int32) {
+	c := a.ctx
+	pressed := c.mouseDown && !a.extrasPrevDown
+	a.extrasPrevDown = c.mouseDown
+	if pressed && c.mouseX >= handle.X && c.mouseX < handle.X+handle.W &&
+		c.mouseY >= handle.Y && c.mouseY < handle.Y+handle.H {
+		r := a.extrasBoxRect(w, h)
+		a.extrasDragging = true
+		a.extrasGrabDX, a.extrasGrabDY = c.mouseX-r.X, c.mouseY-r.Y
+	}
+	if !c.mouseDown {
+		a.extrasDragging = false
+	}
+	if a.extrasDragging {
+		a.extrasBoxX, a.extrasBoxY = c.mouseX-a.extrasGrabDX, c.mouseY-a.extrasGrabDY
+		a.extrasPlaced = true
+	}
 }
 
 // boxFencesPointer reports whether the courtroom pass should run pointer-blind
@@ -84,6 +108,8 @@ func (a *App) drawFloatingExtras(w, h int32) {
 		a.showWidgets = false
 		return
 	}
+	// Drag-to-move by the title bar (excluding the close button on the right).
+	a.handleExtrasDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 30, H: extrasTitleH}, w, h)
 
 	widgets := []struct {
 		label, desc, key string // key = hotkey id ("" = none), surfaced in the tooltip
@@ -120,5 +146,5 @@ func (a *App) drawFloatingExtras(w, h int32) {
 		}
 		c.TooltipAfter("fextra:"+wd.label, br, tip)
 	}
-	c.LabelClipped(r.X+10, r.Y+r.H-18, r.W-20, "Stays open while you play · × or the Extras key closes it", ColTextDim)
+	c.LabelClipped(r.X+10, r.Y+r.H-18, r.W-20, "Drag the title to move · stays open while you play · × closes", ColTextDim)
 }

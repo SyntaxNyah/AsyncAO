@@ -3,6 +3,8 @@ package ui
 import (
 	"testing"
 
+	"github.com/veandco/go-sdl2/sdl"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
@@ -51,6 +53,42 @@ func TestBoxFencesPointer(t *testing.T) {
 	a.ctx.mouseX, a.ctx.mouseY = r.X+5, r.Y+5
 	if a.boxFencesPointer(w, h) {
 		t.Error("a closed box must never fence")
+	}
+}
+
+// TestExtrasDrag pins title-bar move: a press on the handle starts a drag, the
+// box then tracks the cursor by the captured grab offset and is marked placed,
+// and release ends the drag.
+func TestExtrasDrag(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.showWidgets = true
+	const w, h = int32(1280), int32(720)
+	r0 := a.extrasBoxRect(w, h)
+	handle := sdl.Rect{X: r0.X, Y: r0.Y, W: r0.W - 30, H: extrasTitleH}
+
+	a.ctx.mouseDown = true
+	a.ctx.mouseX, a.ctx.mouseY = handle.X+20, handle.Y+10
+	a.handleExtrasDrag(handle, w, h) // press → start drag (grab offset 20,10)
+	if !a.extrasDragging {
+		t.Fatal("a press on the title bar must start a drag")
+	}
+
+	a.ctx.mouseX, a.ctx.mouseY = handle.X+120, handle.Y+60 // move +100,+50
+	a.handleExtrasDrag(handle, w, h)                        // continue (no new press)
+	if moved := a.extrasBoxRect(w, h); moved.X != r0.X+100 || moved.Y != r0.Y+50 {
+		t.Errorf("box at (%d,%d), want (%d,%d) — must track the cursor by the grab offset",
+			moved.X, moved.Y, r0.X+100, r0.Y+50)
+	}
+	if !a.extrasPlaced {
+		t.Error("a drag must mark the box placed")
+	}
+
+	a.ctx.mouseDown = false
+	a.handleExtrasDrag(handle, w, h)
+	if a.extrasDragging {
+		t.Error("release must end the drag")
 	}
 }
 
