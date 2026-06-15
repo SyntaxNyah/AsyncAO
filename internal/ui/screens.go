@@ -1114,22 +1114,22 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
 	c.Border(r, ColPanelHi)
-	tab := r.W / 5
-	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: tab, H: btnH}, "Log") {
-		a.logTab = logTabLog
+	tab := r.W / 6
+	tabBtn := func(i int32, id int, label string) {
+		bw := tab
+		if i == 5 {
+			bw = r.W - 5*tab // last tab takes the remainder
+		}
+		if c.Button(sdl.Rect{X: r.X + i*tab, Y: r.Y, W: bw, H: btnH}, label) {
+			a.logTab = id
+		}
 	}
-	if c.Button(sdl.Rect{X: r.X + tab, Y: r.Y, W: tab, H: btnH}, "Music") {
-		a.logTab = logTabMusic
-	}
-	if c.Button(sdl.Rect{X: r.X + 2*tab, Y: r.Y, W: tab, H: btnH}, "Areas") {
-		a.logTab = logTabAreas
-	}
-	if c.Button(sdl.Rect{X: r.X + 3*tab, Y: r.Y, W: tab, H: btnH}, "OOC") {
-		a.logTab = logTabOOC
-	}
-	if c.Button(sdl.Rect{X: r.X + 4*tab, Y: r.Y, W: r.W - 4*tab, H: btnH}, "Notes") {
-		a.logTab = logTabNotes
-	}
+	tabBtn(0, logTabLog, "Log")
+	tabBtn(1, logTabMusic, "Music")
+	tabBtn(2, logTabAreas, "Areas")
+	tabBtn(3, logTabPlayers, "Players")
+	tabBtn(4, logTabOOC, "OOC")
+	tabBtn(5, logTabNotes, "Notes")
 	inner := sdl.Rect{X: r.X + 4, Y: r.Y + btnH + 4, W: r.W - 8, H: r.H - btnH - 8}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) anywhere on the panel
 	// resizes the log/OOC/list text; plain wheel keeps scrolling the active
@@ -1147,6 +1147,9 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		return
 	case logTabAreas:
 		a.drawAreaList(inner)
+		return
+	case logTabPlayers:
+		a.drawPlayerList(inner)
 		return
 	case logTabOOC:
 		a.drawOOCPanel(inner)

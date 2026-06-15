@@ -14,9 +14,10 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-// areaPlayer is one parsed /getarea player: client UID, character name, and the
-// showname (the name their IC lines display) when /getarea lists one.
-type areaPlayer struct{ uid, name, showname string }
+// areaPlayer is one parsed /getarea player. One row per UID (never deduped by
+// name — two "Spectator" rows are two different people). ipid is mod-only data
+// from /getarea: shown in-session, never persisted or logged.
+type areaPlayer struct{ uid, name, showname, ooc, ipid string }
 
 // areaPlayersCap bounds the parsed /getarea picker (a busy area's roster).
 const areaPlayersCap = 200
@@ -53,74 +54,100 @@ func (a *App) parseAreaLine(line string) {
 	}
 }
 
-// addAreaPlayer records a parsed /getarea player (UID + display name) into the
-// match map AND the clickable roster (one row per player, dedup by name).
+// addAreaPlayer records a parsed /getarea player: one roster row PER UID (so
+// same-named players don't collapse), plus a lossy name→uid entry for the
+// double-click auto-fill (last writer wins — that path always has a manual box).
 func (a *App) addAreaPlayer(name, uid string) {
-	if i := strings.LastIndexByte(name, '('); i > 0 { // drop a trailing "(showname)"
+	if i := strings.LastIndexByte(name, '('); i > 0 { // drop a trailing "(pos)" / "(showname)"
 		name = strings.TrimSpace(name[:i])
 	}
 	if name == "" {
 		return
 	}
-	if a.pairAreaReset { // a fresh /getarea (after Refresh): start the roster over
+	if a.pairAreaReset { // a fresh /getarea: start the roster over (replace, never accumulate)
 		a.areaUIDs = nil
 		a.areaPlayers = a.areaPlayers[:0]
 		a.pairAreaReset = false
+		a.areaListAt = a.now()
 	}
 	if a.areaUIDs == nil {
 		a.areaUIDs = map[string]string{}
 	}
-	key := strings.ToLower(name)
-	if _, seen := a.areaUIDs[key]; !seen && len(a.areaPlayers) < areaPlayersCap {
+	a.areaUIDs[strings.ToLower(name)] = uid
+	if len(a.areaPlayers) < areaPlayersCap {
 		a.areaPlayers = append(a.areaPlayers, areaPlayer{uid: uid, name: name})
 	}
-	a.areaUIDs[key] = uid
 }
 
-// aliasAreaName maps an EXTRA name (a "Showname:" line) to a UID for matching —
-// no roster row, since it's the same player as its "[uid] char" line. This is
-// what lets a double-clicked IC line (which shows the SHOWNAME) auto-fill the UID.
-func (a *App) aliasAreaName(name, uid string) {
-	name = strings.TrimSpace(name)
-	if name == "" || uid == "" || a.areaUIDs == nil {
+// setAreaField attaches a Showname/OOC/IPID value to the most recent player row
+// (the one whose "[uid]" line preceded it).
+func (a *App) setAreaField(field, val string) {
+	val = strings.TrimSpace(val)
+	n := len(a.areaPlayers)
+	if val == "" || n == 0 || a.areaPlayers[n-1].uid != a.areaLastUID {
 		return
 	}
-	a.areaUIDs[strings.ToLower(name)] = uid
-	// Record the showname on its roster row (the most recent player) so the
-	// picker can show it next to the character — that's the name you recognise.
-	if n := len(a.areaPlayers); n > 0 && a.areaPlayers[n-1].uid == uid && a.areaPlayers[n-1].showname == "" {
-		a.areaPlayers[n-1].showname = name
+	switch field {
+	case "showname":
+		a.areaPlayers[n-1].showname = val
+		a.areaUIDs[strings.ToLower(val)] = a.areaLastUID // the IC name → UID, for auto-fill
+	case "ooc":
+		a.areaPlayers[n-1].ooc = val
+	case "ipid":
+		a.areaPlayers[n-1].ipid = val
 	}
 }
 
-// parseAreaBlock feeds each newline-separated row of an OOC payload to the parser
-// (/getarea usually arrives as one multi-line CT). Tracks the verbose format too:
-// a "Showname:" line (inline "Showname: X" or the name on the next line) aliases
-// to the last "[uid]" seen. Fast-rejects ordinary chat so it costs nothing.
+// parseAreaBlock parses a /getarea payload line by line. A HEADER line ("----…"
+// or "N players online") resets the roster, so any fetch — the popup buttons OR a
+// hand-typed /ga — REPLACES the snapshot instead of accumulating stale rows (and
+// servers recycle UIDs, so accumulating would mispair). Showname/OOC/IPID lines
+// attach to the preceding "[uid]" player. Fast-rejects ordinary chat.
 func (a *App) parseAreaBlock(text string) {
-	if !strings.ContainsRune(text, '[') && !strings.Contains(strings.ToLower(text), "showname") {
+	low := strings.ToLower(text)
+	if !strings.ContainsRune(text, '[') && !strings.Contains(low, "showname") && !strings.Contains(low, "players online") {
 		return
 	}
 	wantShowname := false
 	for _, line := range strings.Split(text, "\n") {
 		t := strings.TrimSpace(line)
+		if isAreaHeader(t) {
+			a.pairAreaReset = true // the next "[uid]" starts a clean roster + stamps the time
+			wantShowname = false
+			continue
+		}
 		if wantShowname { // the line right after a bare "Showname:" is the name
 			wantShowname = false
-			if t != "" && a.areaLastUID != "" {
-				a.aliasAreaName(t, a.areaLastUID)
+			if t != "" {
+				a.setAreaField("showname", t)
 				continue
 			}
 		}
-		if strings.HasPrefix(strings.ToLower(t), "showname:") {
+		switch lt := strings.ToLower(t); {
+		case strings.HasPrefix(lt, "showname:"):
 			if name := strings.TrimSpace(t[len("showname:"):]); name != "" {
-				a.aliasAreaName(name, a.areaLastUID) // inline "Showname: X"
+				a.setAreaField("showname", name) // inline "Showname: X"
 			} else {
 				wantShowname = true // bare "Showname:" → the next line
 			}
-			continue
+		case strings.HasPrefix(lt, "ooc:"):
+			a.setAreaField("ooc", t[len("ooc:"):])
+		case strings.HasPrefix(lt, "ipid:"):
+			a.setAreaField("ipid", t[len("ipid:"):])
+		default:
+			a.parseAreaLine(line) // "[uid] name" sets areaLastUID + adds the roster row
 		}
-		a.parseAreaLine(line) // "[uid] name" sets areaLastUID + adds the roster row
 	}
+}
+
+// isAreaHeader spots a /getarea opener (a divider rule or the "N players online"
+// line) — the trigger to REPLACE the roster snapshot rather than append to it.
+func isAreaHeader(t string) bool {
+	if strings.HasPrefix(t, "----") {
+		return true
+	}
+	low := strings.ToLower(t)
+	return strings.Contains(low, "players online") || strings.Contains(low, "player online")
 }
 
 // openPairPopup opens the click-to-pair popup targeting char, pre-filling the

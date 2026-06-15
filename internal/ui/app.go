@@ -112,6 +112,7 @@ const (
 	logTabLog = iota
 	logTabMusic
 	logTabAreas
+	logTabPlayers
 	logTabOOC
 	logTabNotes
 )
@@ -749,9 +750,11 @@ type sessionState struct {
 	pairPopupUID   string
 	areaUIDs       map[string]string
 	areaPlayers    []areaPlayer
-	areaLastUID    string // last "[uid]" parsed, so a following "Showname:" line aliases to it
+	areaLastUID    string    // last "[uid]" parsed, so a following Showname/OOC/IPID line attaches to it
+	areaListAt     time.Time // when the current roster snapshot was parsed ("as of HH:MM")
 	pairAreaReset  bool
 	pairListScroll int32
+	playerScroll   int32 // Players-tab roster scroll
 
 	// client-side sprite position overrides, keyed by lowercased character
 	// folder: the server keeps setting positions per message, the client

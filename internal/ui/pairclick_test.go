@@ -122,3 +122,33 @@ func TestParseAreaRealFormat(t *testing.T) {
 		t.Errorf("roster uid 11 = {name:%q showname:%q}, want {ciel-sensei, Häschen}", ciel.name, ciel.showname)
 	}
 }
+
+// TestParseAreaRosterIdentity pins the player-list identity model: one row PER
+// UID (same-named players don't collapse), a header REPLACES the snapshot (no
+// stale/recycled-UID accumulation), and OOC/IPID attach to their player.
+func TestParseAreaRosterIdentity(t *testing.T) {
+	a := &App{}
+	a.parseAreaBlock("----------\n" +
+		"3 players online.\n" +
+		"[10] Spectator\n" +
+		"[12] hina sorasaki (ba)\n" +
+		"Showname: Peen\n" +
+		"OOC: PeenOOC\n" +
+		"IPID: ABC123\n" +
+		"[17] Spectator\n")
+	if got := len(a.areaPlayers); got != 3 {
+		t.Fatalf("roster = %d, want 3 (the two Spectators must NOT collapse)", got)
+	}
+	if a.areaPlayers[0].uid != "10" || a.areaPlayers[2].uid != "17" {
+		t.Errorf("spectator rows = %q,%q, want 10,17 (distinct)", a.areaPlayers[0].uid, a.areaPlayers[2].uid)
+	}
+	if h := a.areaPlayers[1]; h.showname != "Peen" || h.ooc != "PeenOOC" || h.ipid != "ABC123" {
+		t.Errorf("hina = {showname:%q ooc:%q ipid:%q}, want {Peen, PeenOOC, ABC123}", h.showname, h.ooc, h.ipid)
+	}
+
+	// A header REPLACES (recycled UIDs must not ghost): re-fetch with new people.
+	a.parseAreaBlock("----------\n2 players online.\n[0] phoenix\n[1] edgeworth\n")
+	if got := len(a.areaPlayers); got != 2 {
+		t.Errorf("after re-fetch roster = %d, want 2 (replaced, not accumulated)", got)
+	}
+}

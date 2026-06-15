@@ -329,7 +329,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 
-	// Music / Areas share the music_list rect (AO2 toggles them; we chip).
+	// Music / Areas / Players share the music_list rect (AO2 toggles them; we chip).
 	if r, ok := lay.rect("music_list"); ok && !a.panelHidden(panelLog) {
 		toggle := sdl.Rect{X: r.X, Y: r.Y, W: 60, H: 22}
 		if c.Button(toggle, "Music") {
@@ -339,10 +339,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if c.Button(toggle, "Areas") {
 			a.logTab = logTabAreas
 		}
+		toggle.X += 64
+		if c.Button(toggle, "Players") {
+			a.logTab = logTabPlayers
+		}
 		inner := sdl.Rect{X: r.X, Y: r.Y + 26, W: r.W, H: r.H - 26}
-		if a.logTab == logTabAreas {
+		switch a.logTab {
+		case logTabAreas:
 			a.drawAreaList(inner)
-		} else {
+		case logTabPlayers:
+			a.drawPlayerList(inner)
+		default:
 			a.drawMusicList(inner)
 		}
 	}
