@@ -366,7 +366,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   mixed text lands right), embedded font as last resort. Files read
   off-thread; picks memoized per line (no per-frame glyph probing). A
   **Dyslexia-friendly** button one-clicks a high-readability chain
-  (OpenDyslexic if installed, else Verdana).
+  (OpenDyslexic if installed, else Verdana). *Known limitation:* **colour emoji
+  and other supplementary-plane characters (U+1F300+, e.g. 💔🥀) render as
+  boxes** — the bundled SDL_ttf (2.0.18) has 16-bit glyph metrics and no colour
+  glyphs, so a fallback font can't help; needs an SDL_ttf 2.20+ upgrade. See
+  [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
 - **Case notebook** (Notes tab, per server): right-click an IC log line
   or hit "Pin to notebook" on evidence; free-form notes + copy-all; one
   JSON per server, async writes, capped.
