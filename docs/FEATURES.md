@@ -512,6 +512,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   miniature stage to set self-offsets; the partner shows as a
   translucent ghost at their last-known placement. **Arrow keys nudge** your
   offset 1% at a time (when no text field is focused) for fine placement.
+- **Click-to-pair** (`/pair <UID>` shortcut for servers that sync pairs via the
+  OOC command): **double-click a speaker's IC line** to open a pair popup.
+  AO's IC packets carry only the character, not the player UID, so the UID is
+  harvested from **`/getarea`** (parsed passively) — the popup pre-fills it on a
+  confident match, **else you type it** (always-available fallback), and a
+  **Refresh** button runs `/getarea` to fill a **clickable roster** where each
+  row carries the real UID (no name-matching needed). Single-click stays free
+  for read/select; links keep their single-click.
 - **Macro system** (Settings → Macros): name + optional plain-key bind +
   a sequence of OOC lines (separate steps with `|`), sent paced so
   prompt-style flows work. Keys fire in the courtroom with no text box
@@ -635,6 +643,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   time (rough relative latency, not ICMP, and undercounts the TLS leg) — the
   button tooltip says so. Nothing probes until you press it (default lobby is
   byte-identical), and the cache clears on Refresh.
+- **AsyncAO Server Phone Book** (lobby **★ Phone Book** toggle): a dedicated page
+  showing **only your saved servers** (the list filters to favorites), with an
+  **Add server** form (name + `host:port` / `ws://` / `wss://`). Saved servers
+  live in Favorites — which **survives "Reset settings"** and is cleared only by
+  **"Wipe everything"** — so they stay forever. Click a row to connect; the ★
+  removes it. **Copy/Paste export-import** shares the whole book via the
+  clipboard (additive, dedup by URL) — render-thread-safe, no file needed.
 - **Rehearsal mode** (lobby → select a visited server → Rehearse):
   browse its character roster and play emotes entirely offline from the
   cache — the manager's network gate closes structurally, nothing
