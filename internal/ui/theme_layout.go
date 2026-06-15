@@ -10,7 +10,6 @@ package ui
 
 import (
 	"math"
-	"strings"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -688,59 +687,4 @@ func (a *App) drawThemedExtrasButton(w, h int32) {
 	c.Tooltip(r, "AsyncAO extras (Wardrobe, Jukebox, Background, Settings…) — hotkey: "+a.hotkeyFor(hotkeyExtras))
 }
 
-// drawWidgetsPanel is the "box of widgets": every AsyncAO feature an AO2 theme
-// has no button for, in one grid. Opened by the Extras button or the hotkey. A
-// modal — like the other courtroom popups, nothing under it draws or takes
-// input (the kit has no z-aware input). Picking one closes the box and runs the
-// action (which usually opens its own panel).
-func (a *App) drawWidgetsPanel(w, h int32) {
-	c := a.ctx
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 215})
-	pw, ph := int32(560), int32(420) // 5 rows of the 3-wide grid
-	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
-	c.Fill(panel, ColPanel)
-	c.Border(panel, ColAccent)
-	c.Heading(panel.X+20, panel.Y+14, "AsyncAO extras", ColText)
-	c.LabelClipped(panel.X+20, panel.Y+46, pw-40,
-		"Features an AO2 theme has no button for. Hotkey ["+a.hotkeyFor(hotkeyExtras)+"] toggles this box; hide the button in UI… → chrome.", ColTextDim)
-	if c.Button(sdl.Rect{X: panel.X + pw - 90, Y: panel.Y + 12, W: 78, H: btnH}, "Close") {
-		a.showWidgets = false
-	}
-
-	widgets := []struct {
-		label, desc, key string // key = hotkey id ("" = no shortcut), surfaced in the tooltip
-		run              func()
-	}{
-		{"Character", "Open character select", hotkeyCharMenu, func() { a.screen = ScreenCharSelect }},
-		{"Random char", "Swap to a random free character", hotkeyRandomChar, func() { a.randomChar() }},
-		{"Wardrobe", "Iniswap — borrow another character's look", hotkeyWardrobe, func() { a.openIniswap() }},
-		{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
-		{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
-		{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.showEvid = true }},
-		{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
-		{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.showPair = true }},
-		{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
-		{"Hide chrome", "Hide/show AsyncAO's on-screen widgets", hotkeyUIChrome, func() { a.showUICfg = true }},
-		{"Theater", "Theater mode — stage only, Esc exits", hotkeyTheater, func() { a.setTheater(!a.theaterOn) }},
-		{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
-		{"Disconnect", "Leave this server", "", func() { a.Disconnect() }},
-	}
-	const cols int32 = 3
-	const cellW, cellH, gap int32 = 168, 54, 10
-	gx, gy := panel.X+20, panel.Y+84
-	for i, wd := range widgets {
-		col, row := int32(i)%cols, int32(i)/cols
-		r := sdl.Rect{X: gx + col*(cellW+gap), Y: gy + row*(cellH+gap), W: cellW, H: cellH}
-		if c.Button(r, wd.label) {
-			a.showWidgets = false
-			wd.run()
-			return
-		}
-		// Brief description on ~2s dwell; surface the menu's keybind for discovery.
-		tip := wd.desc
-		if wd.key != "" {
-			tip += "  ·  Ctrl+" + strings.ToUpper(a.hotkeyFor(wd.key))
-		}
-		c.TooltipAfter("extra:"+wd.label, r, tip)
-	}
-}
+// drawWidgetsPanel moved to floatbox.go as the non-blocking drawFloatingExtras.

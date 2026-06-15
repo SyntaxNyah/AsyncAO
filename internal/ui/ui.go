@@ -307,6 +307,14 @@ type Ctx struct {
 	modalRelease bool
 	ddDraws      []ddDraw // deferred overlay draws this frame (0 or 1)
 
+	// Pointer fence (fencePointer/unfencePointer): the non-blocking floating
+	// panel runs the courtroom pass pointer-blind while the cursor sits over it,
+	// then restores the stashed state for its own pass.
+	ptrFenced               bool
+	fMouseX, fMouseY        int32
+	fClicked, fRight, fDown bool
+	fWheel                  int32
+
 	// hover preview tracking
 	hoverID    string
 	hoverSince time.Time
@@ -704,6 +712,35 @@ func (c *Ctx) hovering(r sdl.Rect) bool {
 		return false
 	}
 	return c.mouseX >= r.X && c.mouseX < r.X+r.W && c.mouseY >= r.Y && c.mouseY < r.Y+r.H
+}
+
+// fencePointer blanks the live pointer state (cursor off-screen, no click / drag
+// / wheel) after stashing it, so an immediate-mode pass draws as if the mouse
+// were absent. unfencePointer restores it. The kit has no z-aware input, so a
+// non-blocking floating panel hides the pointer from the courtroom pass while it
+// sits underneath, then unfences for its own pass. Keyboard is untouched (you
+// keep typing in chat with the panel up). Idempotent; restore is a direct method
+// (no closure) so the deferred unfence on the courtroom path stays alloc-free.
+func (c *Ctx) fencePointer() {
+	if c.ptrFenced {
+		return
+	}
+	c.ptrFenced = true
+	c.fMouseX, c.fMouseY = c.mouseX, c.mouseY
+	c.fClicked, c.fRight, c.fDown, c.fWheel = c.clicked, c.rightClicked, c.mouseDown, c.wheelY
+	c.mouseX, c.mouseY = -1, -1
+	c.clicked, c.rightClicked, c.mouseDown, c.wheelY = false, false, false, 0
+}
+
+// unfencePointer restores the pointer state stashed by fencePointer. No-op when
+// not fenced, so it's safe to defer unconditionally.
+func (c *Ctx) unfencePointer() {
+	if !c.ptrFenced {
+		return
+	}
+	c.ptrFenced = false
+	c.mouseX, c.mouseY = c.fMouseX, c.fMouseY
+	c.clicked, c.rightClicked, c.mouseDown, c.wheelY = c.fClicked, c.fRight, c.fDown, c.fWheel
 }
 
 // --- draw primitives -----------------------------------------------------------

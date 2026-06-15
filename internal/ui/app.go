@@ -2462,6 +2462,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.drawCharSelect(winW, winH)
 	case ScreenCourtroom:
 		a.drawCourtroom(winW, winH)
+		a.drawFloatingExtras(winW, winH) // non-blocking, on top of the live courtroom (input already restored)
 	case ScreenSettings:
 		a.drawSettings(winW, winH)
 	case ScreenAbout:

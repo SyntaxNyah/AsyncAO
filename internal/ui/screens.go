@@ -815,6 +815,14 @@ func (a *App) drawPreviewEmoteNav(frame sdl.Rect) {
 
 func (a *App) drawCourtroom(w, h int32) {
 	c := a.ctx
+	// Fence the courtroom under the non-blocking Extras box: while the pointer is
+	// over the box, this whole pass runs pointer-blind so a click in the box can't
+	// also land on the scene/log. The deferred unfence is a direct method (no
+	// closure) and a no-op when the box is closed, so the common frame is alloc-free.
+	if a.boxFencesPointer(w, h) {
+		c.fencePointer()
+	}
+	defer c.unfencePointer()
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 	a.pollCharINI()
 	if a.room == nil || a.sess == nil {
@@ -892,8 +900,6 @@ func (a *App) drawCourtroom(w, h int32) {
 // overlay drawn on top in both paths.)
 func (a *App) drawCourtroomModals(w, h int32) bool {
 	switch {
-	case a.showWidgets: // "Extras" box — themed Extras button, or the Extras hotkey in either mode
-		a.drawWidgetsPanel(w, h)
 	case a.showIni:
 		a.drawIniswapPanel(w, h)
 	case a.bgPick.show:
