@@ -114,6 +114,41 @@ func TestURLBuilderConventions(t *testing.T) {
 	}
 }
 
+// TestPlayMusicURLWithQueryString pins the DJ /play fix: an MC carrying a full
+// http(s):// URL whose audio extension sits before a query string (Discord CDN
+// links end in a signed ?ex=&is=&hm=& suffix) must reach PlayMusic, not be
+// swallowed as an area transfer — while real area names still are.
+func TestPlayMusicURLWithQueryString(t *testing.T) {
+	room, _, _, audio := newCourtroomRig(t)
+	const url = "https://cdn.discordapp.com/attachments/1/2/Song.click.opus?ex=6a307a65&is=6a2f28e5&hm=deadbeef&"
+	room.HandleEvent(Event{Kind: EventMusic, Text: url})
+	if len(audio.music) != 1 || audio.music[0] != url {
+		t.Fatalf("PlayMusic(URL) = %v, want [%q]", audio.music, url)
+	}
+	room.HandleEvent(Event{Kind: EventMusic, Text: "Basement"}) // area name, no audio ext
+	if len(audio.music) != 1 {
+		t.Errorf("area transfer wrongly played as music: %v", audio.music)
+	}
+}
+
+func TestIsAreaTransfer(t *testing.T) {
+	cases := []struct {
+		track string
+		area  bool
+	}{
+		{"Objection.opus", false}, // server track
+		{"Basement", true},        // area name
+		{"https://cdn.discordapp.com/a/b/x.click.opus?ex=1&is=2&hm=3&", false}, // signed CDN link
+		{"https://radio.example.com/stream", false},                            // extensionless stream URL
+		{"HTTP://X/Y.MP3", false},                                              // case-insensitive scheme
+	}
+	for _, c := range cases {
+		if got := isAreaTransfer(c.track); got != c.area {
+			t.Errorf("isAreaTransfer(%q) = %v, want %v", c.track, got, c.area)
+		}
+	}
+}
+
 func TestPositionSceneTable(t *testing.T) {
 	cases := map[string][2]string{
 		"def":    {"defenseempty", "defensedesk"},

@@ -236,8 +236,18 @@ func (c *Courtroom) HandleEvent(ev Event) {
 	}
 }
 
-// isAreaTransfer filters MC packets that carry area names (no audio ext).
-func isAreaTransfer(track string) bool { return !hasAudioExt(track) }
+// isAreaTransfer filters MC packets that carry area names (server-relative, no
+// audio ext) from real music. A full http(s):// URL is ALWAYS music: its audio
+// extension can sit before a query string (a Discord CDN /play link ends in a
+// signed ?ex=&is=&hm=& suffix), so the trailing-extension check alone would
+// misread it as an area name and silently swallow the /play. Area names are
+// never URLs, so the URL test is exact.
+func isAreaTransfer(track string) bool {
+	if isMusicURL(track) {
+		return false
+	}
+	return !hasAudioExt(track)
+}
 
 // enqueue mirrors AO2-Client chatmessage_enqueue: shouts nuke the queue and
 // play immediately; otherwise messages process in order.

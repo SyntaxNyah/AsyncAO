@@ -202,11 +202,19 @@ func (u URLBuilder) Blip(name string) string {
 // (AO2-Client get_music_path). Use Manager.PrefetchExact with this.
 // AssetType: Music
 func (u URLBuilder) MusicURL(track string) string {
-	lower := strings.ToLower(track)
-	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+	if isMusicURL(track) {
 		return track
 	}
-	return u.origin + soundsMusic + escapePreservingSlashes(lower)
+	return u.origin + soundsMusic + escapePreservingSlashes(strings.ToLower(track))
+}
+
+// isMusicURL reports whether a track is a direct http(s):// music URL (a DJ
+// /play link) rather than a server-relative track name. Such a URL is ALWAYS
+// real music — never an area transfer — even though its audio extension may sit
+// before a query string (Discord CDN links carry a signed ?ex=&is=&hm= suffix).
+func isMusicURL(track string) bool {
+	lower := strings.ToLower(track)
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
 }
 
 // escapePreservingSlashes escapes each path segment of a track that may
