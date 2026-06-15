@@ -404,7 +404,17 @@ type App struct {
 	themeFitDrag      bool
 	themeFitDragStart [2]int32
 	themeFitDragBase  [2]int
-	hidden            map[string]bool
+	// Sprite-preview box: wheel zoom + left-drag to reposition. Handled centrally
+	// (handlePreviewInput) before screens draw so it claims the wheel/press ahead
+	// of the grid scroll and icon clicks underneath. previewFrameRect caches last
+	// frame's box for that hit-test; the offset shifts it from the default corner.
+	previewOffX, previewOffY int32
+	previewDrag              bool
+	previewDragMoved         bool
+	previewDragStart         [2]int32
+	previewDragBase          [2]int32
+	previewFrameRect         sdl.Rect
+	hidden                   map[string]bool
 
 	iniRes chan iniswapFetch
 
@@ -2359,6 +2369,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.d.Audio.Frame()
 	a.d.Pump.Frame()
 	a.d.Store.DrainDestroyQueue()
+
+	// Sprite-preview wheel zoom + drag, claimed before any screen draws so it
+	// wins the wheel/press over the grid scroll and icon clicks under the box.
+	a.handlePreviewInput()
 
 	switch a.screen {
 	case ScreenLobby:

@@ -572,7 +572,8 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 	ready := ok && len(page.Frames) > 0
 	cycling := cycle && len(a.previewAnims) > 1
 	if !ready && !cycling {
-		return // nothing to show and no navigator to keep on screen
+		a.previewFrameRect = sdl.Rect{} // no box this frame — no phantom wheel/drag target
+		return
 	}
 	// Size to the art when we have it; otherwise a default box so the box and
 	// its ‹ › controls hold their place while the next emote sprite loads.
@@ -598,8 +599,18 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 			ph *= 2
 		}
 	}
-	dst := sdl.Rect{X: w - pw - pad*2, Y: h - ph - pad*2, W: pw, H: ph}
+	// Default bottom-right, shifted by the user's drag and clamped on-screen.
+	baseX, baseY := w-pw-pad*2, h-ph-pad*2
+	hiX, hiY := w-pw-pad, h-ph-pad
+	if hiX < pad {
+		hiX = pad
+	}
+	if hiY < pad {
+		hiY = pad
+	}
+	dst := sdl.Rect{X: clampI32(baseX+a.previewOffX, pad, hiX), Y: clampI32(baseY+a.previewOffY, pad, hiY), W: pw, H: ph}
 	frame := sdl.Rect{X: dst.X - 4, Y: dst.Y - 4, W: dst.W + 8, H: dst.H + 8}
+	a.previewFrameRect = frame // cached for handlePreviewInput (wheel zoom + drag)
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
 	if ready {
@@ -632,6 +643,61 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 	}
 }
 
+// previewDragBottomReserve keeps the bottom strip of the preview box (the − / +
+// zoom buttons) out of the drag-start region, so pressing a button doesn't also
+// grab-drag the box.
+const previewDragBottomReserve = 22
+
+// handlePreviewInput drives the sprite-preview box's mouse-wheel zoom and
+// left-drag reposition. It runs in App.Frame BEFORE any screen draws, against
+// last frame's cached box rect, so it claims the wheel and the mouse press ahead
+// of the grid/list scroll and the icon clicks UNDER the box (it overlaps them).
+// Off the hot path — a no-op whenever no preview is up.
+func (a *App) handlePreviewInput() {
+	c := a.ctx
+	if a.previewBase == "" {
+		a.previewDrag = false
+		return
+	}
+	box := a.previewFrameRect
+	if box.W == 0 { // no preview drawn yet
+		return
+	}
+	// Wheel zoom in/out over the box; claim the wheel so the list/grid under it
+	// doesn't also scroll (same range as the − / + buttons).
+	if c.wheelY != 0 && c.hovering(box) {
+		a.previewZoom = int(clampI32(int32(a.previewZoom)+c.wheelY, 1, previewZoomMax))
+		c.wheelY = 0
+		c.wheelTaken = true
+	}
+	// Left-drag to reposition. Start only on the body (not the bottom zoom-button
+	// strip). Claiming the press here keeps a drag from selecting whatever icon is
+	// underneath, and a real move swallows the release so click-to-dismiss/select
+	// doesn't fire.
+	body := sdl.Rect{X: box.X, Y: box.Y, W: box.W, H: box.H - previewDragBottomReserve}
+	if c.mouseDown && !a.previewDrag && c.hovering(body) {
+		a.previewDrag = true
+		a.previewDragMoved = false
+		a.previewDragStart = [2]int32{c.mouseX, c.mouseY}
+		a.previewDragBase = [2]int32{a.previewOffX, a.previewOffY}
+	}
+	if a.previewDrag {
+		if c.mouseDown {
+			dx, dy := c.mouseX-a.previewDragStart[0], c.mouseY-a.previewDragStart[1]
+			if dx != 0 || dy != 0 {
+				a.previewDragMoved = true
+			}
+			a.previewOffX = a.previewDragBase[0] + dx
+			a.previewOffY = a.previewDragBase[1] + dy
+		} else {
+			if a.previewDragMoved {
+				c.clicked = false // a completed drag isn't a dismiss/selection
+			}
+			a.previewDrag = false
+		}
+	}
+}
+
 // drawPreviewZoom draws the magnifier controls (− / level / +) along the bottom
 // of the preview box and handles their clicks (consumed, so the caller's
 // click-to-dismiss doesn't fire). At >1× the cursor pans the magnified view.
@@ -649,8 +715,8 @@ func (a *App) drawPreviewZoom(frame sdl.Rect) {
 		c.Fill(b.r, sdl.Color{R: 0, G: 0, B: 0, A: 205})
 		c.LabelClipped(b.r.X+6, b.r.Y+1, b.r.W-8, b.label, ColAccent)
 	}
-	c.Tooltip(minus, "Zoom the preview out")
-	c.Tooltip(plus, "Zoom in — then move the mouse over the box to pan around the sprite")
+	c.Tooltip(minus, "Zoom out (or scroll the wheel over the box)")
+	c.Tooltip(plus, "Zoom in (or scroll the wheel) — at >1× move the mouse to pan. Drag the box to move it.")
 	if c.hovering(minus) && c.clicked {
 		if a.previewZoom > 1 {
 			a.previewZoom--
