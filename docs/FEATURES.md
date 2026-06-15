@@ -43,6 +43,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   red on-screen warning naming an asset that failed every format is off by
   default (it was noisy on sparse-pack servers); the failures still stream to
   the **debug overlay** (the dedicated failure log) regardless.
+- **Decode-failure backoff**: a payload that downloads but won't *decode*
+  (a corrupt/truncated file — e.g. an AV mangling the TLS stream — distinct
+  from a 404, which the network tier already caches) goes into a short-lived
+  negative cache, so one bad asset isn't re-fetched + re-decoded every retry
+  interval (it can't render regardless). The failure logs **once** per window
+  instead of flooding, and a transient failure still recovers after it.
 - **Learned-format export/import**: `learned-formats.json` beside the exe;
   one player's warm state seeds another's.
 - **AVIF**: `.avif` probe format; `ftyp avif/avis` sniffing, libavif CGO

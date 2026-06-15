@@ -192,6 +192,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		Pool:       pool,
 		Decoder:    decoder,
 		T1Contains: store.Contains,
+		T1Failed:   store.FailedRecently,
 	})
 	manager.SetDiskCompression(prefs.DiskZstdEnabled())
 

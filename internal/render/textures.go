@@ -6,6 +6,7 @@ package render
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
@@ -36,6 +37,16 @@ const (
 	destroyQueueCap = 256
 	// destroyBudgetPerFrame caps destroys per frame to keep 16 ms.
 	destroyBudgetPerFrame = 16
+
+	// decodeFailTTL backs off a base whose bytes downloaded but failed to
+	// DECODE (a corrupt/truncated payload — distinct from a 404, which the
+	// network tier already caches). Without it a single bad asset is re-fetched
+	// + re-decoded every retry interval, storming the log and the network; the
+	// asset can't render regardless, so a long backoff costs nothing and a
+	// transient failure still recovers after the window.
+	decodeFailTTL = 30 * time.Second
+	// decodeFailCap bounds the negative cache (rule §17.4); pruned on insert.
+	decodeFailCap = 2048
 )
 
 // TexturePage is one decoded asset uploaded to the GPU: all frames plus
@@ -81,6 +92,59 @@ type TextureStore struct {
 	pinnedBytes int64
 	destroy     chan *TexturePage
 	generation  atomic.Uint64
+
+	// failed is the decode-failure negative cache: base → last failure time.
+	// Written on the render thread (the upload pump) but read off-thread by the
+	// manager's prefetch gate, so it carries its own lock.
+	failedMu sync.Mutex
+	failed   map[string]time.Time
+}
+
+// MarkFailed records that base failed to DECODE and reports whether this is a
+// NEW failure (so the caller logs once per decodeFailTTL, not on every retry).
+func (s *TextureStore) MarkFailed(base string) bool {
+	now := time.Now()
+	s.failedMu.Lock()
+	defer s.failedMu.Unlock()
+	if s.failed == nil {
+		s.failed = make(map[string]time.Time)
+	}
+	prev, ok := s.failed[base]
+	fresh := !ok || now.Sub(prev) >= decodeFailTTL
+	if len(s.failed) >= decodeFailCap {
+		for k, t := range s.failed { // prune expired first
+			if now.Sub(t) >= decodeFailTTL {
+				delete(s.failed, k)
+			}
+		}
+		if len(s.failed) >= decodeFailCap {
+			clear(s.failed) // pathological flood of distinct bad assets
+		}
+	}
+	s.failed[base] = now
+	return fresh
+}
+
+// FailedRecently reports whether base failed to decode within decodeFailTTL —
+// the manager's prefetch gate skips re-fetching it. Safe from any goroutine.
+func (s *TextureStore) FailedRecently(base string) bool {
+	if base == "" {
+		return false
+	}
+	s.failedMu.Lock()
+	defer s.failedMu.Unlock()
+	t, ok := s.failed[base]
+	return ok && time.Since(t) < decodeFailTTL
+}
+
+// clearFailed drops base from the negative cache (it just uploaded fine, so a
+// transient failure recovered).
+func (s *TextureStore) clearFailed(base string) {
+	s.failedMu.Lock()
+	if s.failed != nil {
+		delete(s.failed, base)
+	}
+	s.failedMu.Unlock()
 }
 
 // NewTextureStore builds T1 over the given renderer.
@@ -172,6 +236,7 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 		return fmt.Errorf("render: %s decoded to %d bytes, above the %d-byte T1 budget", base, page.bytes, int64(T1BudgetBytes))
 	}
 	s.generation.Add(1)
+	s.clearFailed(base) // it decoded fine — drop any stale negative-cache entry
 	return nil
 }
 

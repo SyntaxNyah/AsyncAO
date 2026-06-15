@@ -77,6 +77,10 @@ type Manager struct {
 	// assets by BASE (extension-free) and exact assets by their full URL —
 	// callers must pass whichever key the upload used.
 	t1Contains func(url string) bool
+	// t1Failed asks the render side whether base recently failed to DECODE (a
+	// corrupt/truncated payload); the prefetch gate backs off so one bad asset
+	// can't storm the network + log every retry. nil in headless tests.
+	t1Failed func(base string) bool
 
 	decodedCh chan DecodedAsset
 	audioCh   chan AudioAsset
@@ -124,6 +128,7 @@ type ManagerDeps struct {
 	Pool       *network.Pool
 	Decoder    *DecoderPool
 	T1Contains func(url string) bool
+	T1Failed   func(base string) bool
 }
 
 // NewManager builds the pipeline orchestrator.
@@ -138,6 +143,7 @@ func NewManager(deps ManagerDeps) *Manager {
 		pool:       deps.Pool,
 		decoder:    deps.Decoder,
 		t1Contains: deps.T1Contains,
+		t1Failed:   deps.T1Failed,
 		decodedCh:  make(chan DecodedAsset, decodedChanCap),
 		audioCh:    make(chan AudioAsset, audioChanCap),
 		warningCh:  make(chan Warning, warningChanCap),
@@ -173,6 +179,9 @@ func (m *Manager) PrefetchWithFallback(base, alt string, t AssetType, prio netwo
 	if base == "" || !t.Valid() {
 		return
 	}
+	if m.t1Failed != nil && m.t1Failed(base) {
+		return // recently failed to decode — back off (the negative cache absorbs retries)
+	}
 	m.pool.Submit(prio, network.Job{
 		ID:    m.pool.NextID(),
 		Epoch: m.pool.Epoch(),
@@ -191,6 +200,9 @@ func (m *Manager) PrefetchWithFallback(base, alt string, t AssetType, prio netwo
 func (m *Manager) PrefetchExact(url string, t AssetType, prio network.Priority) {
 	if url == "" || !t.Valid() {
 		return
+	}
+	if m.t1Failed != nil && m.t1Failed(url) {
+		return // recently failed to decode — back off
 	}
 	m.pool.Submit(prio, network.Job{
 		ID:    m.pool.NextID(),

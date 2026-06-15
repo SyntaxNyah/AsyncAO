@@ -45,7 +45,10 @@ func (p *Pump) Frame() {
 	}
 	upload := func(d assets.DecodedAsset) {
 		if d.Err != nil || d.Asset == nil {
-			if d.Err != nil {
+			// A DECODE failure (corrupt/truncated bytes) records to the negative
+			// cache so the manager's prefetch gate backs off — and we log it only
+			// once per decodeFailTTL, not on every retry, killing the flood.
+			if d.Err != nil && p.store.MarkFailed(d.Base) {
 				log.Printf("render: asset %s failed: %v", d.Base, d.Err)
 			}
 			return
