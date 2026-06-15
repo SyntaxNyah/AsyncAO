@@ -246,7 +246,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   music_stop), log jump, screenshot (`screenshots/` beside the exe).
   **Per-menu shortcuts** jump straight to a menu without opening the Extras box:
   Characters / Wardrobe / Jukebox / Background / Evidence / Pairing on
-  **Ctrl+5..0**, Call-mod / UI-chrome / Settings on Ctrl+O / F / Z. **Random
+  **Ctrl+5..0**, Call-mod / UI-chrome / Settings on Ctrl+O / F / **,** (comma —
+  Ctrl+Z stays free for the layout editor's undo). **Random
   character** (webAO `/randomchar` — swap to a uniformly-random FREE character)
   on **Ctrl+R**, also a "Random char" button in the Extras box. All rebindable
   and listed as defaults in Settings → Hotkeys.

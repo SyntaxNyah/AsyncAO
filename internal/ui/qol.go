@@ -82,7 +82,7 @@ var hotkeyDefs = []struct {
 	{hotkeyPairMenu, "Menu: Pairing", "0"},
 	{hotkeyModcall, "Menu: Call mod", "o"},
 	{hotkeyUIChrome, "Menu: UI chrome", "f"},
-	{hotkeySettings, "Menu: Settings", "z"},
+	{hotkeySettings, "Menu: Settings", ","}, // Ctrl+, (prefs convention); NOT z — that's the layout-editor undo
 	{hotkeyRandomChar, "Random character", "r"},
 }
 
