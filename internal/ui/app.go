@@ -749,6 +749,7 @@ type sessionState struct {
 	pairPopupUID   string
 	areaUIDs       map[string]string
 	areaPlayers    []areaPlayer
+	areaLastUID    string // last "[uid]" parsed, so a following "Showname:" line aliases to it
 	pairAreaReset  bool
 	pairListScroll int32
 

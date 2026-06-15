@@ -41,6 +41,13 @@ func (a *App) parseAreaLine(line string) {
 	if name == "" {
 		return
 	}
+	a.areaLastUID = uid // a following "Showname:" line aliases to this player
+	a.addAreaPlayer(name, uid)
+}
+
+// addAreaPlayer records a parsed /getarea player (UID + display name) into the
+// match map AND the clickable roster (one row per player, dedup by name).
+func (a *App) addAreaPlayer(name, uid string) {
 	if i := strings.LastIndexByte(name, '('); i > 0 { // drop a trailing "(showname)"
 		name = strings.TrimSpace(name[:i])
 	}
@@ -62,15 +69,44 @@ func (a *App) parseAreaLine(line string) {
 	a.areaUIDs[key] = uid
 }
 
-// parseAreaBlock feeds each newline-separated row of an OOC payload to
-// parseAreaLine (/getarea usually arrives as one multi-line CT). Fast-rejects
-// ordinary chat (no '[') so it costs nothing off a /getarea.
-func (a *App) parseAreaBlock(text string) {
-	if !strings.ContainsRune(text, '[') {
+// aliasAreaName maps an EXTRA name (a "Showname:" line) to a UID for matching —
+// no roster row, since it's the same player as its "[uid] char" line. This is
+// what lets a double-clicked IC line (which shows the SHOWNAME) auto-fill the UID.
+func (a *App) aliasAreaName(name, uid string) {
+	name = strings.TrimSpace(name)
+	if name == "" || uid == "" || a.areaUIDs == nil {
 		return
 	}
+	a.areaUIDs[strings.ToLower(name)] = uid
+}
+
+// parseAreaBlock feeds each newline-separated row of an OOC payload to the parser
+// (/getarea usually arrives as one multi-line CT). Tracks the verbose format too:
+// a "Showname:" line (inline "Showname: X" or the name on the next line) aliases
+// to the last "[uid]" seen. Fast-rejects ordinary chat so it costs nothing.
+func (a *App) parseAreaBlock(text string) {
+	if !strings.ContainsRune(text, '[') && !strings.Contains(strings.ToLower(text), "showname") {
+		return
+	}
+	wantShowname := false
 	for _, line := range strings.Split(text, "\n") {
-		a.parseAreaLine(line)
+		t := strings.TrimSpace(line)
+		if wantShowname { // the line right after a bare "Showname:" is the name
+			wantShowname = false
+			if t != "" && a.areaLastUID != "" {
+				a.aliasAreaName(t, a.areaLastUID)
+				continue
+			}
+		}
+		if strings.HasPrefix(strings.ToLower(t), "showname:") {
+			if name := strings.TrimSpace(t[len("showname:"):]); name != "" {
+				a.aliasAreaName(name, a.areaLastUID) // inline "Showname: X"
+			} else {
+				wantShowname = true // bare "Showname:" → the next line
+			}
+			continue
+		}
+		a.parseAreaLine(line) // "[uid] name" sets areaLastUID + adds the roster row
 	}
 }
 
