@@ -128,9 +128,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Stretch** (default — edge-to-edge, slight distortion, the webAO behaviour),
   **Letterbox** (keep exact proportions, theme-coloured bars), **Crop** (scale up
   to fill, overflow runs off-screen), or **Custom** (a manual **zoom + pan** to
-  crop the theme to taste). The courtroom re-fits live as you drag the sliders.
+  crop the theme to taste). **Custom** opens a **big interactive preview** shaped
+  to your window — **drag to pan, scroll to zoom** (or use the sliders) — so the
+  crop you see is the crop you get; the live courtroom re-fits as you go.
   Per-axis scaling is folded into the geometry cache, so it stays a resize-only
   rebuild — zero per-frame cost.
+- **Plain lobby** (Settings → Theme, **ON by default**): the lobby/server list
+  keeps AsyncAO's readable backdrop instead of the theme's `lobbybackground` —
+  an AO2 lobby image (built for AO2's own list) often renders our server list
+  unreadable. Untick it to use the theme's lobby; the **courtroom still uses the
+  theme** either way, so you keep the rest of the theme for free.
 - Settings shows a live chatbox preview with the applied colors.
 - **AsyncAO extras on AO2 themes** (the "★ Extras" button): a legacy AO2
   `courtroom_design.ini` has no element keys for AsyncAO's own features

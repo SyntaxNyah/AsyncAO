@@ -248,7 +248,7 @@ func (a *App) drawSettings(w, h int32) {
 	case tabGeneral:
 		y = a.drawSettingsGeneral(y, w)
 	case tabTheme:
-		y = a.drawSettingsTheme(y, w)
+		y = a.drawSettingsTheme(y, w, h)
 	case tabAssets:
 		y = a.drawSettingsAssets(y, w)
 	case tabAudioChat:
@@ -485,7 +485,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 const dyslexiaFontPreset = `C:\Windows\Fonts\OpenDyslexic-Regular.ttf; C:\Windows\Fonts\verdana.ttf`
 
 // drawSettingsTheme: theme picker/folder, layout toggle, live preview, bind.
-func (a *App) drawSettingsTheme(y, w int32) int32 {
+func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	c := a.ctx
 	c.Label(pad, y+4, "Theme:", ColText)
 	if c.Button(sdl.Rect{X: pad + 60, Y: y, W: 26, H: btnH}, "<") {
@@ -537,6 +537,20 @@ func (a *App) drawSettingsTheme(y, w int32) int32 {
 	c.LabelClipped(pad+330, y+4, w-pad-330-scrollBarW, "applies under a theme that drives the courtroom layout (above)", ColTextDim)
 	y += 30
 	if fit == config.ThemeFitCustom {
+		// Big interactive preview (window-shaped): drag to pan, scroll to zoom.
+		boxW := int32(560)
+		if avail := w - 2*pad - scrollBarW; boxW > avail {
+			boxW = avail
+		}
+		boxH := boxW * h / w // match the real window aspect so the crop is true
+		if boxH > 340 {
+			boxH, boxW = 340, 340*w/h
+		}
+		if boxH < 160 {
+			boxH = 160
+		}
+		a.drawThemeFitPreview(sdl.Rect{X: pad, Y: y, W: boxW, H: boxH})
+		y += boxH + 10
 		zoom := a.d.Prefs.ThemeZoom()
 		if next := a.sliderRow(y, "  Zoom %", zoom, 5, config.MinThemeZoom, config.MaxThemeZoom); next != zoom {
 			a.d.Prefs.SetThemeFitZoom(next)
@@ -553,16 +567,85 @@ func (a *App) drawSettingsTheme(y, w int32) int32 {
 			a.d.Prefs.SetThemeFitPan(px, next)
 			a.themeLay.valid = false
 		}
-		y += 28
-		c.LabelClipped(pad, y, w-2*pad-scrollBarW, "Open a server to preview live — the courtroom re-fits as you drag (zoom to crop, pan to position).", ColTextDim)
-		y += 22
+		y += 30
 	}
+
+	// Plain lobby: the server list keeps the readable client backdrop instead of
+	// the theme's lobbybackground (which is built for AO2's own list and often
+	// makes ours unreadable). The courtroom still uses the theme either way.
+	plain := a.d.Prefs.PlainLobbyOn()
+	if next := c.Checkbox(pad, y, "Plain lobby — keep my readable server-list backdrop, ignore the theme's lobby image (ON by default; the courtroom still uses the theme)", plain); next != plain {
+		a.d.Prefs.SetPlainLobby(next)
+	}
+	y += 28
 
 	// Live preview of the applied chatbox skin + theme text colors.
 	y = a.drawThemePreview(y)
 	// Per-server theme binding: "this server always uses that theme".
 	y = a.drawThemeBindRow(y, w)
 	return y
+}
+
+// drawThemeFitPreview draws a big interactive preview of the Custom theme fit:
+// the theme's courtroom background scaled + panned exactly as the live courtroom
+// would (the box carries the window aspect, so the crop you see is the crop you
+// get). Drag to pan, scroll to zoom — both write the prefs and re-fit live.
+// Settings-screen only; never the courtroom hot path.
+func (a *App) drawThemeFitPreview(box sdl.Rect) {
+	c := a.ctx
+	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 255})
+	court, ok := a.themeRects["courtroom"]
+	if ok && court.W > 0 && court.H > 0 {
+		base := float64(box.W) / float64(court.W) // min-fit within the box
+		if by := float64(box.H) / float64(court.H); by < base {
+			base = by
+		}
+		s := base * float64(a.d.Prefs.ThemeZoom()) / 100
+		artW, artH := int32(float64(court.W)*s), int32(float64(court.H)*s)
+		px, py := a.d.Prefs.ThemePan()
+		art := sdl.Rect{
+			X: box.X + (box.W-artW)/2 + int32(px)*box.W/100,
+			Y: box.Y + (box.H-artH)/2 + int32(py)*box.H/100,
+			W: artW, H: artH,
+		}
+		clipPrev, clipHad := c.pushClip(box)
+		if page, pok := a.themePage("courtroombackground"); pok {
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &art)
+		} else {
+			c.Fill(art, ColPanel)
+			c.Border(art, ColAccent)
+			c.LabelClipped(art.X+6, art.Y+6, art.W-12, "(theme ships no courtroombackground — this outline is its design area)", ColTextDim)
+		}
+		c.popClip(clipPrev, clipHad)
+	} else {
+		c.LabelClipped(box.X+8, box.Y+8, box.W-16, "This theme has no courtroom_design.ini — the fit modes don't apply to it.", ColTextDim)
+	}
+	c.Border(box, ColAccent)
+	c.Label(box.X+6, box.Y+4, "Drag to pan · scroll to zoom", ColTextDim)
+
+	// Interaction: wheel zooms, drag pans; both clamp via the setters and re-fit
+	// the live courtroom by invalidating the geometry cache.
+	if c.hovering(box) && c.wheelY != 0 {
+		c.wheelTaken = true
+		a.d.Prefs.SetThemeFitZoom(a.d.Prefs.ThemeZoom() + int(c.wheelY)*5)
+		a.themeLay.valid = false
+	}
+	if c.hovering(box) && c.mouseDown && !a.themeFitDrag {
+		a.themeFitDrag = true
+		a.themeFitDragStart = [2]int32{c.mouseX, c.mouseY}
+		px, py := a.d.Prefs.ThemePan()
+		a.themeFitDragBase = [2]int{px, py}
+	}
+	if a.themeFitDrag {
+		if !c.mouseDown {
+			a.themeFitDrag = false
+		} else if box.W > 0 && box.H > 0 {
+			dx := int(c.mouseX-a.themeFitDragStart[0]) * 100 / int(box.W)
+			dy := int(c.mouseY-a.themeFitDragStart[1]) * 100 / int(box.H)
+			a.d.Prefs.SetThemeFitPan(a.themeFitDragBase[0]+dx, a.themeFitDragBase[1]+dy)
+			a.themeLay.valid = false
+		}
+	}
 }
 
 // drawSettingsAssets: format probing, audio fallbacks, local mounts, the

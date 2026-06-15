@@ -397,7 +397,11 @@ type App struct {
 	// points players at it (legacy themes carry no AsyncAO element keys).
 	showWidgets     bool
 	themedHintShown bool
-	hidden          map[string]bool
+	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
+	themeFitDrag      bool
+	themeFitDragStart [2]int32
+	themeFitDragBase  [2]int
+	hidden            map[string]bool
 
 	iniRes chan iniswapFetch
 

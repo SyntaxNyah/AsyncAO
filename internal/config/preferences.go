@@ -97,6 +97,12 @@ const (
 	MaxThemePan      = 50
 )
 
+// defaultPlainLobby ships ON: the lobby/server list uses the plain client
+// backdrop, not the theme's lobbybackground — a busy AO2 lobby image (made for
+// AO2's own list) often renders our server list unreadable. Untick it to get
+// the theme's lobby; the courtroom always uses the theme regardless.
+const defaultPlainLobby = true
+
 // defaultCatchUpWhenBehind ships ON: in a packed room the IC stage otherwise
 // crawls through every queued preanim/shout, falling minutes behind real-time.
 // Catch-up fast-forwards the backlog; the IC log still keeps every message.
@@ -317,6 +323,7 @@ type AssetPreferences struct {
 	ThemeFitZoom           int                          `json:"themeFitZoom"`
 	ThemeFitPanX           int                          `json:"themeFitPanX"`
 	ThemeFitPanY           int                          `json:"themeFitPanY"`
+	PlainLobby             bool                         `json:"plainLobby"`
 	UIScaleAutoOn          bool                         `json:"uiScaleAuto"`
 	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
@@ -438,6 +445,7 @@ type prefsJSON struct {
 	ThemeFitZoom           int       `json:"themeFitZoom"`     // 0 (absent) = default 100
 	ThemeFitPanX           int       `json:"themeFitPanX"`
 	ThemeFitPanY           int       `json:"themeFitPanY"`
+	PlainLobby             *bool     `json:"plainLobby"`        // absent = default ON
 	UIScaleAuto            *bool     `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
 	CatchUpWhenBehind      *bool     `json:"catchUpWhenBehind"` // absent = default ON
 	CatchUpThreshold       *int      `json:"catchUpThreshold"`  // absent = default
@@ -712,6 +720,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		ThemeLayoutOn:      defaultThemeLayout,
 		ThemeFit:           defaultThemeFit,
 		ThemeFitZoom:       DefaultThemeZoom,
+		PlainLobby:         defaultPlainLobby,
 		UIScaleAutoOn:      defaultUIScaleAuto,
 		CatchUpOn:          defaultCatchUpWhenBehind,
 		CatchUpThreshold:   DefaultCatchUpThreshold,
@@ -809,6 +818,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.ThemeFitPanX = clampPercent(onDisk.ThemeFitPanX, -MaxThemePan, MaxThemePan)
 	p.ThemeFitPanY = clampPercent(onDisk.ThemeFitPanY, -MaxThemePan, MaxThemePan)
+	if onDisk.PlainLobby != nil {
+		p.PlainLobby = *onDisk.PlainLobby
+	}
 	if onDisk.UIScaleAuto != nil {
 		p.UIScaleAutoOn = *onDisk.UIScaleAuto
 	}
@@ -3144,6 +3156,26 @@ func (p *AssetPreferences) SetThemeFitPan(x, y int) {
 		return
 	}
 	p.ThemeFitPanX, p.ThemeFitPanY = x, y
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// PlainLobbyOn reports whether the lobby/server list uses the plain client
+// backdrop instead of the theme's lobbybackground (ON by default).
+func (p *AssetPreferences) PlainLobbyOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PlainLobby
+}
+
+// SetPlainLobby toggles the plain lobby backdrop.
+func (p *AssetPreferences) SetPlainLobby(on bool) {
+	p.mu.Lock()
+	if p.PlainLobby == on {
+		p.mu.Unlock()
+		return
+	}
+	p.PlainLobby = on
 	p.mu.Unlock()
 	p.markDirty()
 }

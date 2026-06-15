@@ -137,6 +137,9 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	if p.ThemeZoom() != DefaultThemeZoom {
 		t.Errorf("ThemeZoom default = %d, want %d", p.ThemeZoom(), DefaultThemeZoom)
 	}
+	if !p.PlainLobbyOn() {
+		t.Error("PlainLobbyOn default must be true (readable server list)")
+	}
 	p.SetThemeFit(99) // out of range → clamps to the last mode (Custom)
 	if p.ThemeFitMode() != ThemeFitCustom {
 		t.Errorf("SetThemeFit clamp = %d, want Custom(%d)", p.ThemeFitMode(), ThemeFitCustom)

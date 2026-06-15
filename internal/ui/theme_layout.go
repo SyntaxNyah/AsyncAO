@@ -187,6 +187,13 @@ func (l *themeLayoutCache) rect(key string) (sdl.Rect, bool) {
 func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 	c := a.ctx
 	dst := sdl.Rect{X: 0, Y: 0, W: w, H: h}
+	// The lobby/server list defaults to the plain client backdrop: a busy AO2
+	// lobbybackground (built for AO2's own list) often renders our server list
+	// unreadable. Untick "plain lobby" in Settings → Theme to use the theme's.
+	if stem == "lobbybackground" && a.d.Prefs.PlainLobbyOn() {
+		c.Fill(dst, ColBackground)
+		return
+	}
 	if page, ok := a.themePage(stem); ok {
 		_ = c.Ren.Copy(a.themeFrame(page), nil, &dst)
 		return
