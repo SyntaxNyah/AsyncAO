@@ -369,6 +369,22 @@ func (a *Audio) PlayMusic(url string) {
 	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
 }
 
+// StopMusic halts music playback immediately AND cancels any track still being
+// fetched. AO has no stop packet, so the "Stop music" button can't rely on the
+// server recognizing a fake stop track — this lets a listener silence music in
+// their own client right away, regardless of DJ rights. Render thread only.
+func (a *Audio) StopMusic() {
+	if !a.enabled {
+		return
+	}
+	a.stopMusic()
+	for url, p := range a.pending { // a pending fetch would otherwise start on arrival
+		if p.kind == pendingMusic {
+			delete(a.pending, url)
+		}
+	}
+}
+
 func (a *Audio) startMusic(data []byte) {
 	a.stopMusic()
 	rw, err := sdl.RWFromMem(data)

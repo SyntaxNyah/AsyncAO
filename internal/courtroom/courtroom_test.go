@@ -149,6 +149,24 @@ func TestIsAreaTransfer(t *testing.T) {
 	}
 }
 
+// TestNowPlayingTrack pins Scene.MusicTrack: a real track sets it, an area
+// transfer leaves it, a ~stop sentinel clears it.
+func TestNowPlayingTrack(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.HandleEvent(Event{Kind: EventMusic, Text: "Objection.opus"})
+	if room.Scene.MusicTrack != "Objection.opus" {
+		t.Errorf("MusicTrack = %q, want Objection.opus", room.Scene.MusicTrack)
+	}
+	room.HandleEvent(Event{Kind: EventMusic, Text: "Basement"}) // area name, no audio ext
+	if room.Scene.MusicTrack != "Objection.opus" {
+		t.Errorf("area transfer must not change the track, got %q", room.Scene.MusicTrack)
+	}
+	room.HandleEvent(Event{Kind: EventMusic, Text: "~stop.mp3"}) // stop sentinel
+	if room.Scene.MusicTrack != "" {
+		t.Errorf("stop must clear the track, got %q", room.Scene.MusicTrack)
+	}
+}
+
 func TestPositionSceneTable(t *testing.T) {
 	cases := map[string][2]string{
 		"def":    {"defenseempty", "defensedesk"},

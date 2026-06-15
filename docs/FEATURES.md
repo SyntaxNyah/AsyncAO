@@ -213,7 +213,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   music_stop), log jump, screenshot (`screenshots/` beside the exe).
 - **Hideable chrome**: shout row, layout knobs, emote grid, right column,
   OOC row, HP bars, clocks, badge, judge row — persisted per user.
-- **Stop music** button on the Music tab.
+- **Now-Playing + reliable Stop** on the Music tab: a "Now playing: <track>"
+  line shows the current song (a streaming link shows its filename), and **Stop
+  music** now **halts your own playback immediately** (and cancels a track still
+  fetching) instead of only asking the server to stop a fake `~stop` track —
+  which often failed, so the music kept going. It still sends the server-side
+  stop too, so a DJ stops it for the room.
 - **Jukebox playlist** (Wardrobe → **Jukebox** tab): a library of the music
   links DJs/CMs `/play` in OOC (YouTube/Discord/etc.), organized into named
   playlists (folders) so you click instead of paste. Per song: a labelled

@@ -2273,6 +2273,17 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: 90, H: 24}, "Stop music") {
 		a.stopMusic()
 	}
+	// Now-Playing indicator: the current track from the server's MC (cleared on
+	// stop / area transfer), so you can see and silence what's playing.
+	now := ""
+	if a.room != nil {
+		now = a.room.Scene.MusicTrack
+	}
+	if now != "" {
+		c.LabelClipped(r.X+98, r.Y+6, r.W-98, "Now playing: "+musicDisplayName(now), ColAccent)
+	} else {
+		c.Label(r.X+98, r.Y+6, "Nothing playing", ColTextDim)
+	}
 	r.Y += 28
 	r.H -= 28
 	// Hover-gated (playtest: the music list scrolled from anywhere).
@@ -2304,6 +2315,23 @@ func (a *App) drawMusicList(r sdl.Rect) {
 		}
 		y += lineH
 	}
+}
+
+// musicDisplayName shortens a track for the Now-Playing line: a streaming URL
+// shows its filename (query string stripped), a server track shows as-is.
+func musicDisplayName(track string) string {
+	if strings.HasPrefix(strings.ToLower(track), "http") {
+		if i := strings.IndexByte(track, '?'); i >= 0 {
+			track = track[:i]
+		}
+		if i := strings.LastIndexByte(track, '/'); i >= 0 && i+1 < len(track) {
+			track = track[i+1:]
+		}
+		if track == "" {
+			return "streaming link"
+		}
+	}
+	return track
 }
 
 // scaleControl draws one "Name − +" layout knob; steps mutate *value

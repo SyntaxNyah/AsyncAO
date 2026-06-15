@@ -92,6 +92,10 @@ type Scene struct {
 	ShoutBase   string // active shout bubble base ("" = none)
 	ShoutCustom bool
 
+	// MusicTrack is the currently-playing track (raw MC text; "" = nothing,
+	// stopped, or an area transfer) — the courtroom Now-Playing display reads it.
+	MusicTrack string
+
 	// Chat box state.
 	ShownameText string
 	MessageText  string // full text (markup stripped); VisibleRunes gates the reveal
@@ -232,8 +236,19 @@ func (c *Courtroom) HandleEvent(ev Event) {
 	case EventMusic:
 		if ev.Text != "" && !isAreaTransfer(ev.Text) {
 			c.audio.PlayMusic(c.urls.MusicURL(ev.Text)) // AssetType: Music
+			if isMusicStop(ev.Text) {
+				c.Scene.MusicTrack = "" // a "stop music" request, not a song
+			} else {
+				c.Scene.MusicTrack = ev.Text
+			}
 		}
 	}
+}
+
+// isMusicStop reports whether a track is an AO "stop music" sentinel (the fake
+// ~stop track AO2-Client sends) rather than a real song — Now-Playing clears.
+func isMusicStop(track string) bool {
+	return strings.HasPrefix(strings.ToLower(track), "~stop")
 }
 
 // isAreaTransfer filters MC packets that carry area names (server-relative, no

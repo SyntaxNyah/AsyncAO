@@ -325,11 +325,18 @@ func (a *App) cyclePos() {
 	a.sidePref = next
 }
 
-// stopMusic asks the server to stop the area music — AO has no stop
-// packet, so AO2-Client requests a fake track: "~stop.mp3", or the first
-// extension-less list entry (a category header the server recognizes) on
-// servers without it (courtroom.cpp music_stop).
+// stopMusic stops the music. It HALTS OUR playback immediately, then also asks
+// the server to stop the area music (AO has no stop packet, so AO2-Client
+// requests a fake track: "~stop.mp3", or the first extension-less list entry a
+// server recognizes — courtroom.cpp music_stop). The local halt is what makes
+// the button reliable: the server-side request often fails (the server may not
+// have the fake track), and a listener should be able to silence music in their
+// own client regardless of DJ rights.
 func (a *App) stopMusic() {
+	a.d.Audio.StopMusic()
+	if a.room != nil {
+		a.room.Scene.MusicTrack = "" // clear the Now-Playing display
+	}
 	if a.sess == nil {
 		return
 	}
