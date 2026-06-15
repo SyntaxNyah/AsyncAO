@@ -158,6 +158,7 @@ func (a *App) loginNow() {
 		return
 	}
 	a.queueOOCLines(a.loginLines(info.LoginUser, info.LoginPass))
+	a.loginAt = a.now() // open the callword grace: login replies routinely echo your handle/name
 	a.pushDebug("login: flow queued as " + a.oocNameOrDefault())
 }
 

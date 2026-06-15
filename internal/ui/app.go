@@ -252,6 +252,7 @@ type App struct {
 	// last missing-asset warning surfaced to the user (spec §4).
 	warnLine string
 	warnAt   time.Time
+	loginAt  time.Time // when a login flow last fired; a brief callword grace so the server's login replies don't self-ping
 
 	// --- debug overlay (Settings toggle): bounded failure log ---
 	debugLog    []string // ring of stamped failure lines, debugLogCap max

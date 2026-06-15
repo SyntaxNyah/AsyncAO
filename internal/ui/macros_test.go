@@ -70,6 +70,27 @@ func TestOOCNameFallback(t *testing.T) {
 	}
 }
 
+// TestInLoginGrace pins the post-login callword grace: off before any login,
+// on inside the window (so the server's name-echoing login replies don't
+// self-ping), and off again once it expires.
+func TestInLoginGrace(t *testing.T) {
+	a := &App{}
+	base := time.Now()
+	a.frameNow = base
+	if a.inLoginGrace() {
+		t.Error("no login yet (zero loginAt) must not be in grace")
+	}
+	a.loginAt = base
+	a.frameNow = base.Add(2 * time.Second)
+	if !a.inLoginGrace() {
+		t.Error("2s after login must be within the grace window")
+	}
+	a.frameNow = base.Add(loginCallwordGrace + time.Second)
+	if a.inLoginGrace() {
+		t.Error("past the window must not be in grace")
+	}
+}
+
 // TestLoginLines pins the two wire shapes: Akashi's two-step prompt flow
 // vs the one-line form everyone else (and unknown servers) uses.
 func TestLoginLines(t *testing.T) {

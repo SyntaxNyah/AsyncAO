@@ -419,12 +419,29 @@ func (a *App) jumpLogs() {
 
 // --- callwords ----------------------------------------------------------------------
 
+// loginCallwordGrace is how long after a login flow we suppress callword alerts,
+// covering the paced login lines plus the server's (name-echoing) confirmation.
+// Short on purpose: a genuine callword a few seconds after join still pings.
+const loginCallwordGrace = 5 * time.Second
+
+// inLoginGrace reports whether we're inside the post-login callword grace window.
+func (a *App) inLoginGrace() bool {
+	return !a.loginAt.IsZero() && a.now().Sub(a.loginAt) < loginCallwordGrace
+}
+
 // checkCallwords flashes + pings when a configured highlight word appears
 // in IC/OOC traffic (AO2-Client callwords: get_court_sfx("word_call")).
 // Streamer mode suppresses both — an on-stream name ping is exactly the
 // leak the toggle exists to prevent.
 func (a *App) checkCallwords(text string) {
 	if a.d.Prefs.StreamerMode() {
+		return
+	}
+	// Brief grace after a login flow: the server's login replies (and the Akashi
+	// prompt) routinely echo your handle/name, which would self-ping your callword
+	// the instant you join. The window is short so a real callword seconds later
+	// still alerts.
+	if a.inLoginGrace() {
 		return
 	}
 	words := a.d.Prefs.CallWords()
