@@ -191,9 +191,12 @@ func (a *App) autoLoginOnReady() {
 		return
 	}
 	a.loginNow()
-	// One toast per join (autoLoginOnReady is called once at PhaseReady). The
-	// username confirms WHO you signed in as ("am I logged in?"), but streamer
-	// mode masks it like every other name.
+	if !a.d.Prefs.AutoLoginToastOn() {
+		return // the mod opted out of the notification (Settings → General)
+	}
+	// One notification per join (autoLoginOnReady fires once at PhaseReady). The
+	// username confirms WHO you signed in as ("am I logged in rn?"), but
+	// streamer mode masks it like every other name.
 	line := "Auto-logging in"
 	if !a.d.Prefs.StreamerMode() {
 		line += " as " + info.LoginUser
@@ -203,6 +206,8 @@ func (a *App) autoLoginOnReady() {
 	}
 	a.warnLine = clampLine(line)
 	a.warnAt = time.Now()
+	// A desktop notification too, so a minimized mod still sees it.
+	showOSToast("AsyncAO — auto-login", line)
 }
 
 // drawLoginDialog edits this server's credentials (plaintext storage —

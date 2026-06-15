@@ -281,10 +281,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   icon adds it straight to your **per-server Wardrobe** (LemmyAO-style), so it
   rides along on every connect. One click on, one click off; the Wardrobe tab
   and courtroom Wardrobe menu show the same stars.
-- **Auto-login toast**: when a saved auto-login fires on join, a one-shot
-  notification names who/where you signed in as (masked in streamer mode), so
-  "am I logged in?" answers itself. The login lines still send paced, one at a
-  time (so a two-step Akashi prompt is answered in order).
+- **Auto-login toast** (Settings → General, **ON by default**): when a saved
+  auto-login fires on join, a one-shot in-app toast **and a desktop
+  notification** name who/where you signed in as (masked in streamer mode), so
+  a mod knows "am I logged in?" without checking. Toggle it off if you don't
+  want the popup. The login lines still send paced, one at a time (so a
+  two-step Akashi prompt is answered in order).
 - **Background picker** (courtroom Background button): a thumbnail grid of
   every background, modeled on the wardrobe menu. AO has no "list
   backgrounds" packet, so the set is discovered by fetching the asset

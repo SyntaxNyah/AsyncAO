@@ -366,6 +366,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetUpdateCheck(next)
 	}
 	y += 26
+	alt := a.d.Prefs.AutoLoginToastOn()
+	if next := c.Checkbox(pad, y, "Notify me when auto-login signs me in (toast + desktop notification — ON by default, so a mod knows they're logged in)", alt); next != alt {
+		a.d.Prefs.SetAutoLoginToast(next)
+	}
+	y += 26
 	tabCap := a.d.Prefs.TabCap()
 	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 99); next != tabCap {
 		a.d.Prefs.SetTabCap(next)

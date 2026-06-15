@@ -148,6 +148,11 @@ const (
 	maxPreviewHoverMs     = 15000
 )
 
+// defaultAutoLoginToast ships ON: when a saved auto-login fires on join, a
+// toast + desktop notification confirms it ("am I logged in rn?") so a mod
+// knows their session is authenticated. Toggleable off in Settings.
+const defaultAutoLoginToast = true
+
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
 // 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
@@ -349,6 +354,9 @@ type AssetPreferences struct {
 	SpritePreviewOn bool `json:"spritePreview"`
 	// PreviewHoverMs is the hover dwell before the preview shows (ms).
 	PreviewHoverMs int `json:"previewHoverMs"`
+	// AutoLoginToast notifies (in-app toast + desktop notification) when a
+	// saved auto-login fires on join (ON by default).
+	AutoLoginToast bool `json:"autoLoginToast"`
 
 	mu        sync.RWMutex
 	path      string
@@ -460,6 +468,7 @@ type prefsJSON struct {
 	DeskFollowManifest bool  `json:"deskFollowManifest"` // default OFF (zero value)
 	SpritePreview      *bool `json:"spritePreview"`      // absent = default ON
 	PreviewHoverMs     *int  `json:"previewHoverMs"`     // absent = default 5 s
+	AutoLoginToast     *bool `json:"autoLoginToast"`     // absent = default ON
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -663,6 +672,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		DeskFollowManifest: defaultDeskFollowManifest,
 		SpritePreviewOn:    defaultSpritePreview,
 		PreviewHoverMs:     DefaultPreviewHoverMs,
+		AutoLoginToast:     defaultAutoLoginToast,
 		HighlightColor:     defaultHighlightColor,
 		NameSat:            defaultNameColorSat,
 		NameVal:            defaultNameColorVal,
@@ -750,6 +760,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.PreviewHoverMs != nil {
 		p.PreviewHoverMs = clampPercent(*onDisk.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	}
+	if onDisk.AutoLoginToast != nil {
+		p.AutoLoginToast = *onDisk.AutoLoginToast
 	}
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
@@ -1383,6 +1396,26 @@ func (p *AssetPreferences) SetPreviewHoverMs(n int) {
 		return
 	}
 	p.PreviewHoverMs = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AutoLoginToastOn reports the auto-login notification toggle (ON by default):
+// a toast + desktop notification when a saved auto-login fires on join.
+func (p *AssetPreferences) AutoLoginToastOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AutoLoginToast
+}
+
+// SetAutoLoginToast toggles the auto-login notification.
+func (p *AssetPreferences) SetAutoLoginToast(on bool) {
+	p.mu.Lock()
+	if p.AutoLoginToast == on {
+		p.mu.Unlock()
+		return
+	}
+	p.AutoLoginToast = on
 	p.mu.Unlock()
 	p.markDirty()
 }
