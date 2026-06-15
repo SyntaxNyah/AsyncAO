@@ -88,16 +88,31 @@ func (a *App) drawLobby(w, h int32) {
 		}
 	}
 	c.Tooltip(pingBtn, "Sort by connect time (rough TCP latency, not ICMP ping) — press again for player-count order")
+	// Phone Book page toggle: a dedicated view of just YOUR saved servers.
+	pbBtn := sdl.Rect{X: w - 590 - pad, Y: pad, W: 110, H: btnH}
+	pbLabel := "★ Phone Book"
+	if a.phoneBookPage {
+		pbLabel = "← All servers"
+	}
+	if c.Button(pbBtn, pbLabel) {
+		a.phoneBookPage = !a.phoneBookPage
+		a.selServer, a.descLines, a.lobbyScroll = -1, nil, 0
+	}
+	c.Tooltip(pbBtn, "Your manually-added servers — kept forever (until Wipe everything), exportable")
 
-	// Direct connect row.
 	dcY := pad + 56
-	c.Label(pad, dcY+4, "Direct connect (ip:port, url:port, ws:// or wss://):", ColText)
-	fieldX := pad + c.TextWidth("Direct connect (ip:port, url:port, ws:// or wss://):") + 12
-	a.directInput, _ = c.TextField("direct", sdl.Rect{X: fieldX, Y: dcY, W: 280, H: fieldH}, a.directInput, "127.0.0.1:50001")
-	a.directSecure = c.Checkbox(fieldX+290, dcY+4, "TLS (wss)", a.directSecure)
-	a.directSave = c.Checkbox(fieldX+390, dcY+4, "Save to phone book", a.directSave)
-	if c.Button(sdl.Rect{X: fieldX + 560, Y: dcY, W: 100, H: btnH}, "Connect") {
-		a.directConnect()
+	if a.phoneBookPage {
+		a.drawPhoneBookBar(w, dcY)
+	} else {
+		// Direct connect row.
+		c.Label(pad, dcY+4, "Direct connect (ip:port, url:port, ws:// or wss://):", ColText)
+		fieldX := pad + c.TextWidth("Direct connect (ip:port, url:port, ws:// or wss://):") + 12
+		a.directInput, _ = c.TextField("direct", sdl.Rect{X: fieldX, Y: dcY, W: 280, H: fieldH}, a.directInput, "127.0.0.1:50001")
+		a.directSecure = c.Checkbox(fieldX+290, dcY+4, "TLS (wss)", a.directSecure)
+		a.directSave = c.Checkbox(fieldX+390, dcY+4, "Save to phone book", a.directSave)
+		if c.Button(sdl.Rect{X: fieldX + 560, Y: dcY, W: 100, H: btnH}, "Connect") {
+			a.directConnect()
+		}
 	}
 
 	// Server rows. Click once: expand the full description under the
@@ -113,6 +128,9 @@ func (a *App) drawLobby(w, h int32) {
 	legacyHeaderDrawn := false
 	for i := range a.servers {
 		e := &a.servers[i]
+		if a.phoneBookPage && !e.Favorite {
+			continue // Phone Book shows only your saved servers
+		}
 		if !e.Joinable() && !legacyHeaderDrawn {
 			if y > listTop-rowH && y < h {
 				msg := "— NOT SUPPORTED: " + network.UnsupportedReason

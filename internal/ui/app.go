@@ -160,6 +160,11 @@ type App struct {
 	directSecure  bool
 	directSave    bool
 	lobbyScroll   int32
+	// AsyncAO Server Phone Book: a dedicated lobby page over the user's saved
+	// (favorite) servers — manual add + connect, persisted in Favorites (survives
+	// Reset, cleared by Wipe), with its own export/import.
+	phoneBookPage bool
+	pbName, pbURL string // phone-book "add server" form
 	// click-to-expand selection: first click opens the full description
 	// under the row, a second click on the same row joins.
 	selServer  int

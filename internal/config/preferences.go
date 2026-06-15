@@ -3408,6 +3408,29 @@ func (p *AssetPreferences) RemoveFavorite(url string) {
 	}
 }
 
+// ExportFavoritesJSON marshals the phone book (favorites) as shareable JSON.
+func (p *AssetPreferences) ExportFavoritesJSON() ([]byte, error) {
+	return json.MarshalIndent(p.FavoriteServers(), jsonMarshalPrefix, jsonMarshalIndent)
+}
+
+// MergeFavoritesJSON merges a shared phone book in (additive, dedup by URL) and
+// returns the count of NEW servers added. Entries with no URL are skipped.
+func (p *AssetPreferences) MergeFavoritesJSON(data []byte) (int, error) {
+	var in []FavoriteServer
+	if err := json.Unmarshal(data, &in); err != nil {
+		return 0, err
+	}
+	added := 0
+	for _, f := range in {
+		if strings.TrimSpace(f.URL) == "" || p.IsFavorite(f.URL) {
+			continue
+		}
+		p.AddFavorite(f.Name, f.URL, f.Description)
+		added++
+	}
+	return added, nil
+}
+
 // IsFavorite reports whether the URL is starred.
 func (p *AssetPreferences) IsFavorite(url string) bool {
 	p.mu.RLock()
