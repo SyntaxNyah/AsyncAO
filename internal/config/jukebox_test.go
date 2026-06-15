@@ -191,3 +191,26 @@ func TestJukeboxMergeJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestJukeboxQuickAdd(t *testing.T) {
+	j := newTestJukebox(t)
+	if !j.QuickAdd("Saved from chat", "Cool Song", "https://x/a.opus") {
+		t.Fatal("first QuickAdd should store a new link")
+	}
+	if j.QuickAdd("Saved from chat", "", "https://X/A.opus") { // dup URL (case-insensitive)
+		t.Error("duplicate URL must not be added again")
+	}
+	if !j.QuickAdd("saved from chat", "", "https://x/b.opus") { // same playlist (case-insensitive), new link
+		t.Error("a new link in the same playlist should be added")
+	}
+	pls := j.Playlists()
+	if len(pls) != 1 {
+		t.Fatalf("playlists = %d, want 1 (find-or-create reused it)", len(pls))
+	}
+	if len(pls[0].Entries) != 2 {
+		t.Errorf("entries = %d, want 2 (A, B; dup A skipped)", len(pls[0].Entries))
+	}
+	if j.QuickAdd("P", "", "   ") {
+		t.Error("empty URL must be rejected")
+	}
+}

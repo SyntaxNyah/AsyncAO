@@ -374,6 +374,45 @@ func (j *Jukebox) MergeJSON(data []byte) (int, error) {
 	return added, nil
 }
 
+// QuickAdd files a link under a named playlist (created if absent), skipping a
+// duplicate URL — the one-click "save this shared link" path (e.g. capturing a
+// song a DJ just /played in OOC). Returns true only when a NEW link was stored.
+func (j *Jukebox) QuickAdd(playlist, title, url string) bool {
+	url = clampStr(strings.TrimSpace(url), jukeboxMaxURLLen)
+	playlist = clampStr(strings.TrimSpace(playlist), jukeboxMaxNameLen)
+	if url == "" || playlist == "" {
+		return false
+	}
+	title = clampStr(strings.TrimSpace(title), jukeboxMaxTitleLen)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	idx := -1
+	for i, pl := range j.playlists {
+		if strings.EqualFold(pl.Name, playlist) {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		if len(j.playlists) >= jukeboxMaxPlaylists {
+			return false
+		}
+		j.playlists = append(j.playlists, Playlist{Name: playlist})
+		idx = len(j.playlists) - 1
+	}
+	for _, e := range j.playlists[idx].Entries {
+		if strings.EqualFold(e.URL, url) {
+			return false // already saved
+		}
+	}
+	if j.totalLocked() >= jukeboxMaxEntries {
+		return false
+	}
+	j.playlists[idx].Entries = append(j.playlists[idx].Entries, JukeboxEntry{Title: title, URL: url})
+	j.touchLocked()
+	return true
+}
+
 // mergePlaylists folds add into *dst (see MergeJSON) and returns links added.
 // Bounded by jukeboxMaxPlaylists / jukeboxMaxEntries; dedups links by URL within
 // a playlist; drops an imported bind that collides with one already in *dst.

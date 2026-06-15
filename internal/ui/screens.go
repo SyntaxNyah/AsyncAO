@@ -1303,14 +1303,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			if c.hovering(rowRect) {
 				if urls := extractURLs(line, 1); len(urls) > 0 {
 					col = ColAccent
-					c.Tooltip(rowRect, "Click to open / right-click to copy: "+urls[0])
-					if c.clicked {
-						openBrowser(urls[0])
-					} else if c.rightClicked {
-						_ = sdl.SetClipboardText(urls[0])
-						a.warnLine = "Link copied to clipboard"
-						a.warnAt = time.Now()
-					}
+					a.oocLinkActions(rowRect, urls[0])
 				}
 			}
 			sp := ""
@@ -1322,6 +1315,37 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 		y += lineH
 	}
 	c.popClip(clipPrev, clipHad)
+}
+
+// oocLinkActions handles the hover interactions for an OOC log line that holds
+// a link: a one-click "+ Jukebox" save button at the row's right edge, else
+// click-to-open / right-click-to-copy. Shared by the courtroom OOC log and the
+// OOC tab. Only ever called for the single hovered line (one extract/frame).
+func (a *App) oocLinkActions(rowRect sdl.Rect, url string) {
+	c := a.ctx
+	if a.juke != nil {
+		saveBtn := sdl.Rect{X: rowRect.X + rowRect.W - 96, Y: rowRect.Y + 1, W: 94, H: rowRect.H - 2}
+		if c.Button(saveBtn, "+ Jukebox") {
+			if a.juke.QuickAdd(jukeboxOOCPlaylist, "", url) {
+				a.warnLine = "Saved to Jukebox → " + jukeboxOOCPlaylist
+			} else {
+				a.warnLine = "Already in your Jukebox (or it's full)"
+			}
+			a.warnAt = time.Now()
+			return
+		}
+		if c.hovering(saveBtn) {
+			return // hovering the button — don't also open/copy the line
+		}
+	}
+	c.Tooltip(rowRect, "Click to open · right-click to copy · or + Jukebox to save: "+url)
+	if c.clicked {
+		openBrowser(url)
+	} else if c.rightClicked {
+		_ = sdl.SetClipboardText(url)
+		a.warnLine = "Link copied to clipboard"
+		a.warnAt = time.Now()
+	}
 }
 
 // submitOOC sends the OOC input if non-blank (shared classic/themed).
@@ -1391,14 +1415,7 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 			if c.hovering(rowRect) {
 				if urls := extractURLs(line, 1); len(urls) > 0 {
 					col = ColAccent
-					c.Tooltip(rowRect, "Click to open / right-click to copy: "+urls[0])
-					if c.clicked {
-						openBrowser(urls[0])
-					} else if c.rightClicked {
-						_ = sdl.SetClipboardText(urls[0])
-						a.warnLine = "Link copied to clipboard"
-						a.warnAt = time.Now()
-					}
+					a.oocLinkActions(rowRect, urls[0])
 				}
 			}
 			sp := ""

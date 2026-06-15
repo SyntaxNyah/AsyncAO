@@ -19,6 +19,10 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
+// jukeboxOOCPlaylist is the playlist the one-click "save this shared link"
+// action (on an OOC log line) files into — created on first use.
+const jukeboxOOCPlaylist = "Saved from chat"
+
 // jukeFilterKey memoizes the song search so a playlist of thousands isn't
 // re-filtered every frame (keyed by query + library revision + playlist).
 type jukeFilterKey struct {
@@ -165,6 +169,26 @@ func (a *App) jukeWarn(msg string) {
 	a.warnAt = time.Now()
 }
 
+// jukePasteMerge merges a jukebox export pasted on the clipboard — an
+// alternative to the file Import. MergeJSON is in-memory (the flush is async),
+// so this is safe on the render thread.
+func (a *App) jukePasteMerge() {
+	if a.juke == nil {
+		return
+	}
+	txt, err := sdl.GetClipboardText()
+	if err != nil || strings.TrimSpace(txt) == "" {
+		a.jukeWarn("Clipboard is empty — copy a jukebox export (JSON) first.")
+		return
+	}
+	n, err := a.juke.MergeJSON([]byte(txt))
+	if err != nil {
+		a.jukeWarn("Clipboard isn't a valid jukebox export.")
+		return
+	}
+	a.jukeWarn(fmt.Sprintf("Merged %d new link(s) from the clipboard.", n))
+}
+
 // drawWardrobeJukeboxBody is the Jukebox section: playlists (folders) of music
 // links, then a song list inside the opened one.
 func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
@@ -215,11 +239,14 @@ func (a *App) drawJukeboxPlaylists(x, y, wide, bottom int32) {
 	// a JSON beside the exe (Export writes it; Import merges one in — additive).
 	a.jukeSearch, _ = c.TextField("jukesearch", sdl.Rect{X: x, Y: y, W: 240, H: fieldH}, a.jukeSearch, "Search playlists…")
 	c.Label(x+250, y+5, fmt.Sprintf("%d playlists · %d links total", len(a.jukeCache), a.juke.TotalEntries()), ColTextDim)
-	if c.Button(sdl.Rect{X: x + wide - 230, Y: y, W: 110, H: btnH}, "Export…") {
+	if c.Button(sdl.Rect{X: x + wide - 350, Y: y, W: 104, H: btnH}, "Export…") {
 		a.exportJukeboxAsync()
 	}
-	if c.Button(sdl.Rect{X: x + wide - 114, Y: y, W: 114, H: btnH}, "Import / merge") {
+	if c.Button(sdl.Rect{X: x + wide - 240, Y: y, W: 110, H: btnH}, "Import file") {
 		a.importJukeboxAsync()
+	}
+	if c.Button(sdl.Rect{X: x + wide - 124, Y: y, W: 124, H: btnH}, "Paste & merge") {
+		a.jukePasteMerge()
 	}
 	y += fieldH + 8
 

@@ -217,13 +217,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   a song (plays it) or to a playlist (shuffles it) and fire it from the
   courtroom with no text field focused — these take priority over character
   keybinds and the emote 1–9 digits (a deliberate DJ trade). Memoized search.
+  **Save shared links**: hover any **OOC log line** that carries a link and a
+  **+ Jukebox** button files it into a "Saved from chat" playlist (dedup by
+  URL) — one click to keep a song someone just `/play`ed.
   **Share a whole config**: **Export…** writes the library to
   `jukebox-playlists.json` beside the exe; a friend drops that file beside
-  their exe and clicks **Import / merge** to fold it into theirs — additive
+  their exe and clicks **Import file** to fold it into theirs — additive
   (same-named playlists gain links they don't have, dedup by URL, unknown
   playlists added whole, all within the caps), and an imported key bind is
   kept only where it doesn't collide with one of yours (yours win, so a shared
-  config can't hijack a courtroom key).
+  config can't hijack a courtroom key). **Paste & merge** does the same from a
+  JSON copied to the clipboard, no file needed.
   The library is **global** — shared across every server (the links are) — and
   lives in its own async-written `jukebox.json` (capped: 200 playlists / 50000
   links / one debounced writer), so a huge collection never bloats or
