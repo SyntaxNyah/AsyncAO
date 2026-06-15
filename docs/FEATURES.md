@@ -209,13 +209,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Stop music** button on the Music tab.
 - **Jukebox playlist** (Wardrobe → **Jukebox** tab): a library of the music
   links DJs/CMs `/play` in OOC (YouTube/Discord/etc.), organized into named
-  playlists (folders) so you click instead of paste. Per song: **▶ Play**
-  (sends `/play <url>` in OOC), **Open ↗** (browser), **Share** (posts the raw
+  playlists (folders) so you click instead of paste. Per song: a labelled
+  **Play** button (clicking the song title plays it too — both send `/play
+  <url>` in OOC and autoplay), **Open** (browser), **Share** (posts the raw
   link to OOC in one press, for others to grab), and remove. **Shuffle** one
   playlist or everything (random `/play`). **Bare-key binds**: assign a key to
   a song (plays it) or to a playlist (shuffles it) and fire it from the
   courtroom with no text field focused — these take priority over character
   keybinds and the emote 1–9 digits (a deliberate DJ trade). Memoized search.
+  **Share a whole config**: **Export…** writes the library to
+  `jukebox-playlists.json` beside the exe; a friend drops that file beside
+  their exe and clicks **Import / merge** to fold it into theirs — additive
+  (same-named playlists gain links they don't have, dedup by URL, unknown
+  playlists added whole, all within the caps), and an imported key bind is
+  kept only where it doesn't collide with one of yours (yours win, so a shared
+  config can't hijack a courtroom key).
   The library is **global** — shared across every server (the links are) — and
   lives in its own async-written `jukebox.json` (capped: 200 playlists / 50000
   links / one debounced writer), so a huge collection never bloats or

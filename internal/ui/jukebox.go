@@ -9,6 +9,8 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -25,16 +27,95 @@ type jukeFilterKey struct {
 	pl  int
 }
 
-// pollJukebox lands the off-thread library load exactly once.
+// pollJukebox lands the off-thread library load exactly once, then drains any
+// export/import results onto the in-app toast (both on the render thread).
 func (a *App) pollJukebox() {
-	if a.juke != nil {
+	if a.juke == nil {
+		select {
+		case j := <-a.jukeRes:
+			a.juke = j
+		default:
+		}
+	}
+	for {
+		select {
+		case line := <-a.jukeIORes:
+			a.jukeWarn(line)
+		default:
+			return
+		}
+	}
+}
+
+// jukeboxExportFileName sits beside the executable — easy to find and hand to a
+// friend, who drops it beside their exe and clicks Import to merge.
+const jukeboxExportFileName = "jukebox-playlists.json"
+
+func jukeboxExportPath() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(exe), jukeboxExportFileName), nil
+}
+
+// exportJukeboxAsync writes the whole playlist library beside the exe off-thread
+// (§17.2: no sync disk I/O on the render thread); the result lands on the
+// jukebox toast via jukeIORes. The Jukebox is concurrency-safe, so the goroutine
+// can read it directly.
+func (a *App) exportJukeboxAsync() {
+	juke, res := a.juke, a.jukeIORes
+	if juke == nil {
 		return
 	}
-	select {
-	case j := <-a.jukeRes:
-		a.juke = j
-	default:
+	go func() {
+		var line string
+		path, err := jukeboxExportPath()
+		if err == nil {
+			var data []byte
+			if data, err = juke.ExportJSON(); err == nil {
+				err = os.WriteFile(path, data, 0o644)
+			}
+		}
+		line = "Playlists exported to " + path + " — share that file; others Import it to merge."
+		if err != nil {
+			line = "Jukebox export failed: " + err.Error()
+		}
+		select {
+		case res <- line:
+		default:
+		}
+	}()
+}
+
+// importJukeboxAsync merges a shared jukebox-playlists.json (placed beside the
+// exe) into the library: additive, dedup by URL, your key binds win. Off-thread;
+// result via jukeIORes.
+func (a *App) importJukeboxAsync() {
+	juke, res := a.juke, a.jukeIORes
+	if juke == nil {
+		return
 	}
+	go func() {
+		var line string
+		path, err := jukeboxExportPath()
+		if err == nil {
+			var data []byte
+			if data, err = os.ReadFile(path); err == nil {
+				var n int
+				if n, err = juke.MergeJSON(data); err == nil {
+					line = fmt.Sprintf("Merged %d new link(s) from %s", n, path)
+				}
+			}
+		}
+		if err != nil {
+			line = "Jukebox import failed (put " + jukeboxExportFileName + " beside the exe): " + err.Error()
+		}
+		select {
+		case res <- line:
+		default:
+		}
+	}()
 }
 
 // CloseJukebox stops the debounce timer and writes any pending change. Called
@@ -64,7 +145,7 @@ func (a *App) jukePlay(url string) {
 		return
 	}
 	a.queueOOCLines([]string{"/play " + url})
-	a.jukeWarn("▶ /play " + url)
+	a.jukeWarn("Playing — /play " + url)
 }
 
 // jukeShare posts the raw link straight to OOC so others can grab it — a
@@ -121,7 +202,7 @@ func (a *App) drawJukeboxPlaylists(x, y, wide, bottom int32) {
 			a.jukeWarn("Name it first (or you're at the playlist cap).")
 		}
 	}
-	if c.Button(sdl.Rect{X: x + wide - 130, Y: y, W: 130, H: btnH}, "▶ Shuffle all") {
+	if c.Button(sdl.Rect{X: x + wide - 110, Y: y, W: 110, H: btnH}, "Shuffle all") {
 		if url, ok := a.juke.ShuffleAll(); ok {
 			a.jukePlay(url)
 		} else {
@@ -130,9 +211,16 @@ func (a *App) drawJukeboxPlaylists(x, y, wide, bottom int32) {
 	}
 	y += fieldH + 8
 
-	// Search (filters playlists by name here).
+	// Search (filters playlists by name here) + share/merge the whole library as
+	// a JSON beside the exe (Export writes it; Import merges one in — additive).
 	a.jukeSearch, _ = c.TextField("jukesearch", sdl.Rect{X: x, Y: y, W: 240, H: fieldH}, a.jukeSearch, "Search playlists…")
 	c.Label(x+250, y+5, fmt.Sprintf("%d playlists · %d links total", len(a.jukeCache), a.juke.TotalEntries()), ColTextDim)
+	if c.Button(sdl.Rect{X: x + wide - 230, Y: y, W: 110, H: btnH}, "Export…") {
+		a.exportJukeboxAsync()
+	}
+	if c.Button(sdl.Rect{X: x + wide - 114, Y: y, W: 114, H: btnH}, "Import / merge") {
+		a.importJukeboxAsync()
+	}
 	y += fieldH + 8
 
 	query := strings.ToLower(strings.TrimSpace(a.jukeSearch))
@@ -321,16 +409,18 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 		a.jukeShare(e.URL)
 	}
 	bx -= 64
-	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 60, H: r.H}, "Open ↗") {
+	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 60, H: r.H}, "Open") {
 		openBrowser(e.URL)
 	}
 	bx -= 50
 	a.drawJukeKeyBadge(sdl.Rect{X: bx, Y: r.Y, W: 46, H: r.H}, e.Key, fmt.Sprintf("e:%d:%d", a.jukeOpen, idx))
-	bx -= 34
-	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 30, H: r.H}, "▶") {
+	// A labelled "Play" button (not a ▶ glyph — that tofus on fonts without
+	// Geometric Shapes) so it's obvious the song /plays on click.
+	bx -= 60
+	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 56, H: r.H}, "Play") {
 		a.jukePlay(e.URL)
 	}
-	// Title (or URL) fills the left; clicking it also plays.
+	// Title (or URL) fills the left; clicking it also /plays the song.
 	label := e.Title
 	if label == "" {
 		label = e.URL
@@ -338,6 +428,7 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 	titleHit := sdl.Rect{X: r.X, Y: r.Y, W: bx - r.X - 6, H: r.H}
 	if c.hovering(titleHit) {
 		c.Border(titleHit, ColPanelHi)
+		c.Tooltip(titleHit, "Click to /play this song (autoplays for everyone)")
 	}
 	c.LabelClipped(r.X+8, r.Y+5, titleHit.W-12, label, ColText)
 	if c.hovering(titleHit) && c.clicked {

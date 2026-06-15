@@ -142,3 +142,52 @@ func TestJukeboxClear(t *testing.T) {
 		t.Errorf("Clear left data: %d playlists, %d entries", j.PlaylistCount(), j.TotalEntries())
 	}
 }
+
+func TestJukeboxMergeJSON(t *testing.T) {
+	j := newTestJukebox(t)
+	j.AddPlaylist("Anime")
+	j.AddEntry(0, "Song A", "https://x/a.opus")
+	j.SetEntryKey(0, 0, "f1") // an existing bind — must survive untouched
+
+	// Import a shared config: the same playlist "anime" (case-insensitive) with a
+	// dup link, a new link carrying a COLLIDING key (f1), and a new link with a
+	// FREE key (f2); plus a brand-new playlist.
+	imp := []byte(`{"playlists":[
+		{"name":"anime","entries":[
+			{"title":"Song A","url":"https://x/a.opus"},
+			{"title":"Song B","url":"https://x/b.opus","key":"f1"},
+			{"title":"Song C","url":"https://x/c.opus","key":"f2"}
+		]},
+		{"name":"Vocaloid","entries":[{"url":"https://x/d.opus"}]}
+	]}`)
+	added, err := j.MergeJSON(imp)
+	if err != nil {
+		t.Fatalf("MergeJSON: %v", err)
+	}
+	if added != 3 { // B + C into Anime, D as a new playlist (A is a dup → skipped)
+		t.Fatalf("added = %d, want 3", added)
+	}
+	pls := j.Playlists()
+	if len(pls) != 2 {
+		t.Fatalf("playlists = %d, want 2 (Anime + Vocaloid)", len(pls))
+	}
+	if len(pls[0].Entries) != 3 {
+		t.Errorf("Anime entries = %d, want 3 (A,B,C — A not duplicated)", len(pls[0].Entries))
+	}
+	for _, e := range pls[0].Entries {
+		switch e.URL {
+		case "https://x/a.opus":
+			if e.Key != "f1" {
+				t.Errorf("existing bind f1 lost on Song A: %q", e.Key)
+			}
+		case "https://x/b.opus":
+			if e.Key != "" {
+				t.Errorf("colliding key f1 must NOT transfer to Song B, got %q", e.Key)
+			}
+		case "https://x/c.opus":
+			if e.Key != "f2" {
+				t.Errorf("free key f2 should carry onto Song C, got %q", e.Key)
+			}
+		}
+	}
+}

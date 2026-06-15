@@ -344,13 +344,112 @@ func (j *Jukebox) Clear() {
 	j.mu.Unlock()
 }
 
-func (j *Jukebox) totalLocked() int {
+// ExportJSON returns the whole library as pretty JSON (the on-disk shape) so a
+// playlist config can be shared with others — save it, send it, paste it.
+func (j *Jukebox) ExportJSON() ([]byte, error) {
+	j.mu.Lock()
+	snapshot := jukeboxJSON{Playlists: clonePlaylists(j.playlists)}
+	j.mu.Unlock()
+	return json.MarshalIndent(snapshot, jsonMarshalPrefix, jsonMarshalIndent)
+}
+
+// MergeJSON folds a shared jukebox export into this library: a playlist whose
+// name matches (case-insensitively) gains the imported links it doesn't already
+// have (dedup by URL); unknown playlists are added whole — all within the
+// playlist/entry caps. Imported key binds are kept only where they don't
+// collide with a bind you already have (yours win), so a shared config can't
+// silently hijack a courtroom key. Returns the number of links added.
+func (j *Jukebox) MergeJSON(data []byte) (int, error) {
+	var incoming jukeboxJSON
+	if err := json.Unmarshal(data, &incoming); err != nil {
+		return 0, err
+	}
+	add := sanitizePlaylists(incoming.Playlists)
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	added := mergePlaylists(&j.playlists, add)
+	if added > 0 {
+		j.touchLocked()
+	}
+	return added, nil
+}
+
+// mergePlaylists folds add into *dst (see MergeJSON) and returns links added.
+// Bounded by jukeboxMaxPlaylists / jukeboxMaxEntries; dedups links by URL within
+// a playlist; drops an imported bind that collides with one already in *dst.
+func mergePlaylists(dst *[]Playlist, add []Playlist) int {
+	used := map[string]bool{}            // every key already bound (yours win)
+	index := map[string]int{}            // lower(name) -> playlist index in *dst
+	have := map[string]map[string]bool{} // lower(name) -> set of lower(URL)
+	for i, pl := range *dst {
+		nameKey := strings.ToLower(pl.Name)
+		index[nameKey] = i
+		set := make(map[string]bool, len(pl.Entries))
+		for _, e := range pl.Entries {
+			set[strings.ToLower(e.URL)] = true
+			if e.Key != "" {
+				used[e.Key] = true
+			}
+		}
+		have[nameKey] = set
+		if pl.Key != "" {
+			used[pl.Key] = true
+		}
+	}
+	total := totalEntries(*dst)
+	added := 0
+	for _, pl := range add {
+		nameKey := strings.ToLower(pl.Name)
+		idx, exists := index[nameKey]
+		if !exists {
+			if len(*dst) >= jukeboxMaxPlaylists {
+				continue // playlist cap reached
+			}
+			*dst = append(*dst, Playlist{Name: pl.Name, Key: freshKey(pl.Key, used)})
+			idx = len(*dst) - 1
+			index[nameKey] = idx
+			have[nameKey] = map[string]bool{}
+		}
+		set := have[nameKey]
+		for _, e := range pl.Entries {
+			if total >= jukeboxMaxEntries {
+				break // total-entry cap reached
+			}
+			urlKey := strings.ToLower(e.URL)
+			if set[urlKey] {
+				continue // already in this playlist
+			}
+			(*dst)[idx].Entries = append((*dst)[idx].Entries, JukeboxEntry{
+				Title: e.Title, URL: e.URL, Key: freshKey(e.Key, used),
+			})
+			set[urlKey] = true
+			total++
+			added++
+		}
+	}
+	return added
+}
+
+// freshKey returns key if set and not already used (recording it), else "" — so
+// an import can't take over a bind you already rely on.
+func freshKey(key string, used map[string]bool) string {
+	if key == "" || used[key] {
+		return ""
+	}
+	used[key] = true
+	return key
+}
+
+// totalEntries counts links across playlists.
+func totalEntries(pls []Playlist) int {
 	n := 0
-	for _, pl := range j.playlists {
+	for _, pl := range pls {
 		n += len(pl.Entries)
 	}
 	return n
 }
+
+func (j *Jukebox) totalLocked() int { return totalEntries(j.playlists) }
 
 // touchLocked bumps the revision and (re)arms the debounced flush. The timer
 // goroutine is the single disk writer. Caller holds j.mu.

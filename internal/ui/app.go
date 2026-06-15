@@ -419,6 +419,7 @@ type App struct {
 	// across every server and must survive disconnects and tab switches.
 	juke            *config.Jukebox      // global store, loaded off-thread
 	jukeRes         chan *config.Jukebox // off-thread load landing
+	jukeIORes       chan string          // off-thread export/import result → in-app toast
 	jukeCache       []config.Playlist    // rev-keyed Playlists() snapshot for drawing
 	jukeCacheRev    int64
 	jukeOpen        int    // -1 = playlist list; else the open playlist index
@@ -1013,6 +1014,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		fontRes:         make(chan fontLoad, 1),
 		notebookRes:     make(chan notebookLoad, 1),
 		jukeRes:         make(chan *config.Jukebox, 1),
+		jukeIORes:       make(chan string, 4),
 		jukeOpen:        -1,
 		jukeDelPlaylist: -1,
 		oocName:         d.Prefs.SavedShowname(),
