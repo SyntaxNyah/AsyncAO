@@ -215,8 +215,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   nothing and silence the alert — the "callwords don't work" report). A **Test
   sound** button next to the field plays exactly what an alert fires, so you can
   confirm it's audible. The same custom-file → built-in-ping rule covers the
-  friend-speaks sound. (Opus support needs the codec DLLs loaded at startup —
-  see the audio note below.)
+  friend-speaks sound. The built-in ping is a **~1.5 s trill** (the old 160 ms
+  ping "played too short"), and both ping and custom sound play on a **dedicated
+  reserved audio channel** so a chat blip can never cut them off (it used to: the
+  alert landed on the free blip channel at message arrival and the first blip
+  halted it). An **optional toast** (Settings → **ON by default**) names the
+  heard word, like the modcall/friend toasts. (Opus support needs the codec DLLs
+  loaded at startup — see the audio note below.)
 - **Highlighted friends** (Settings, **OFF by default**): a **per-server** list
   of shownames whose IC messages **glow** (a warm tint behind the line) so you
   can spot your friends in a busy log — saved per server (cached like the char
@@ -239,6 +244,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Hotkeys** (Ctrl+key, configurable in Settings): shouts 1..4, pos
   cycle, music stop (`~stop.mp3` fake-track request, courtroom.cpp
   music_stop), log jump, screenshot (`screenshots/` beside the exe).
+  **Per-menu shortcuts** jump straight to a menu without opening the Extras box:
+  Characters / Wardrobe / Jukebox / Background / Evidence / Pairing on
+  **Ctrl+5..0**, Call-mod / UI-chrome / Settings on Ctrl+O / F / Z. **Random
+  character** (webAO `/randomchar` — swap to a uniformly-random FREE character)
+  on **Ctrl+R**, also a "Random char" button in the Extras box. All rebindable
+  and listed as defaults in Settings → Hotkeys.
 - **Hideable chrome**: shout row, layout knobs, emote grid, right column,
   OOC row, HP bars, clocks, badge, judge row — persisted per user.
 - **Now-Playing + reliable Stop** on the Music tab: a "Now playing: <track>"
@@ -246,7 +257,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   music** now **halts your own playback immediately** (and cancels a track still
   fetching) instead of only asking the server to stop a fake `~stop` track —
   which often failed, so the music kept going. It still sends the server-side
-  stop too, so a DJ stops it for the room.
+  stop too, so a DJ stops it for the room. A **search box** filters the server's
+  track list (AO2/webAO parity), memoized so a list of thousands isn't re-scanned
+  per frame; an "N / M" count shows how many match.
 - **Jukebox playlist** (Wardrobe → **Jukebox** tab): a library of the music
   links DJs/CMs `/play` in OOC (YouTube/Discord/etc.), organized into named
   playlists (folders) so you click instead of paste. Per song: a labelled
@@ -325,8 +338,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   watch it before sending; otherwise its talking sprite. Both layouts.
 - **Sprite preview magnifier**: every sprite preview pop-up (character select,
   wardrobe, emote hover, background picker) has **− / + zoom controls** along
-  its bottom; past 1× the preview becomes a **magnifying glass** — move the
-  mouse over it to pan around the magnified sprite and inspect pixel detail.
+  its bottom OR the **mouse wheel** (in and out) over the box; past 1× the
+  preview becomes a **magnifying glass** — move the mouse over it to pan around
+  the magnified sprite and inspect pixel detail. **Left-drag the box** to move
+  it anywhere on screen (it stays put across previews) if it covers something.
   (The courtroom **stage** has its own zoom: **Ctrl+wheel** zooms toward the
   cursor, Ctrl+drag pans — the "hyperfocus" camera.)
 - **Sprite hover-previews are configurable** (Settings → General): the preview
