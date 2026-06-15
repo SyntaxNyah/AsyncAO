@@ -206,8 +206,13 @@ func (a *App) autoLoginOnReady() {
 	}
 	a.warnLine = clampLine(line)
 	a.warnAt = time.Now()
-	// A desktop notification too, so a minimized mod still sees it.
-	showOSToast("AsyncAO — auto-login", line)
+	// A desktop notification too, so a minimized mod still sees it — rate-limited
+	// (shares the friend-toast throttle) so a multi-tab restore-on-launch can't
+	// burst the notification centre with one popup per reconnecting server.
+	if time.Since(a.lastOSToast) >= osToastMinInterval {
+		a.lastOSToast = time.Now()
+		showOSToast("AsyncAO — auto-login", line)
+	}
 }
 
 // drawLoginDialog edits this server's credentials (plaintext storage —

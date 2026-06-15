@@ -1902,11 +1902,6 @@ func (a *App) rebuildIniMenu() {
 	a.iniPages = nil
 }
 
-// mergeWardrobe builds the wardrobe-first menu list. stars marks wardrobe
-// membership (the favourite); inServer marks entries that are in the server's
-// iniswap.txt (the Iniswaps tab shows only those — a favourite that ISN'T a
-// server iniswap stays out of it, and a server with no list shows nothing).
-// Server duplicates collapse into their wardrobe entry, case-insensitively.
 // ensureWardrobeMembers rebuilds the current server's lowercased wardrobe set
 // when the server changed or the wardrobe was edited (generation bump). It
 // reuses the map (clear-in-place) so the steady state allocates nothing; the
@@ -1928,6 +1923,12 @@ func (a *App) ensureWardrobeMembers() {
 	a.wardrobeMembersGen = gen
 }
 
+// mergeWardrobe combines your wardrobe favourites with the server's iniswap
+// list for the wardrobe grid: favourites come first (starred), then the server
+// entries the favourites didn't already cover. The Iniswaps tab shows only the
+// server list — a favourite that ISN'T a server iniswap stays out of it, and a
+// server with no list shows nothing. Server duplicates collapse into their
+// wardrobe entry, case-insensitively.
 func mergeWardrobe(wardrobe, server []string) (names []string, stars, inServer []bool) {
 	names = make([]string, 0, len(wardrobe)+len(server))
 	stars = make([]bool, 0, len(wardrobe)+len(server))
