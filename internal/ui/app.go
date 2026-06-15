@@ -569,8 +569,14 @@ type sessionState struct {
 	oocSpeakers  []string // parallel to oocLog: speaker per line ("" = system line); for name colours
 	oocScroll    int32
 	musicScroll  int32
-	areaScroll   int32
-	logTab       int
+	// Music-list search (AO2/webAO parity): the query plus a memoized filter so
+	// a list of thousands isn't re-scanned (and re-lowercased — that allocates)
+	// every frame. musicFiltered holds matching indices into a.sess.Music.
+	musicSearch     string
+	musicFiltered   []int
+	musicFilterMemo musicFilterKey
+	areaScroll      int32
+	logTab          int
 	// Stick flags: the logs FOLLOW new lines while true; scrolling up
 	// releases, scrolling back to the bottom re-sticks. (The old "within
 	// one line of the bottom" heuristic broke whenever one wrapped

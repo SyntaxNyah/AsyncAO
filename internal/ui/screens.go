@@ -2281,6 +2281,38 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 	}
 }
 
+// musicFilterKey memoizes the server-music-list filter so a list of thousands
+// isn't re-scanned (and re-lowercased — that allocates) every frame. Keyed by
+// the query plus a cheap identity of the list (len + first/last track), which
+// changes whenever the server resends SM.
+type musicFilterKey struct {
+	q           string
+	n           int
+	first, last string
+}
+
+// refreshMusicFilter recomputes the matching track indices for a non-empty
+// query, memoized against the query + the list identity. Only this O(N) scan
+// (and its ToLower allocs) is gated here; the per-frame call is an O(1) key
+// compare and early-return when neither the query nor the list changed.
+func (a *App) refreshMusicFilter(query string) {
+	n := len(a.sess.Music)
+	key := musicFilterKey{q: query, n: n}
+	if n > 0 {
+		key.first, key.last = a.sess.Music[0], a.sess.Music[n-1]
+	}
+	if key == a.musicFilterMemo {
+		return
+	}
+	a.musicFilterMemo = key
+	a.musicFiltered = a.musicFiltered[:0]
+	for i, track := range a.sess.Music {
+		if strings.Contains(strings.ToLower(track), query) {
+			a.musicFiltered = append(a.musicFiltered, i)
+		}
+	}
+}
+
 func (a *App) drawMusicList(r sdl.Rect) {
 	c := a.ctx
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: 90, H: 24}, "Stop music") {
@@ -2299,23 +2331,43 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	}
 	r.Y += 28
 	r.H -= 28
+
+	// Search filter (AO2/webAO parity): type to narrow the server's track list.
+	// Memoized so the O(N) scan runs only when the query or the list changes.
+	a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: r.X, Y: r.Y, W: r.W - 150, H: fieldH}, a.musicSearch, "Search music…")
+	query := strings.ToLower(strings.TrimSpace(a.musicSearch))
+	total := len(a.sess.Music)
+	shown := total
+	if query != "" {
+		a.refreshMusicFilter(query)
+		shown = len(a.musicFiltered)
+	}
+	c.Label(r.X+r.W-142, r.Y+5, fmt.Sprintf("%d / %d", shown, total), ColTextDim)
+	r.Y += fieldH + 6
+	r.H -= fieldH + 6
+
 	// Hover-gated (playtest: the music list scrolled from anywhere).
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.musicScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 10
-	contentH := int32(len(a.sess.Music)) * lineH
+	contentH := int32(shown) * lineH
 	bar := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.musicScroll = c.VScrollbar("musicscroll", bar, a.musicScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r) // partial top/bottom row stays inside the panel
 	defer c.popClip(clipPrev, clipHad)
 	y := r.Y - a.musicScroll
-	for _, track := range a.sess.Music {
+	for vi := 0; vi < shown; vi++ {
+		ti := vi
+		if query != "" {
+			ti = a.musicFiltered[vi]
+		}
 		if y > r.Y+r.H {
 			break
 		}
-		if y >= r.Y-lineH {
+		if y >= r.Y-lineH && ti >= 0 && ti < len(a.sess.Music) {
+			track := a.sess.Music[ti]
 			row := sdl.Rect{X: r.X, Y: y, W: r.W - scrollBarW - scrollBarGap, H: lineH - 4}
 			hover := c.hovering(row)
 			if hover {
@@ -2327,6 +2379,13 @@ func (a *App) drawMusicList(r sdl.Rect) {
 			}
 		}
 		y += lineH
+	}
+	if shown == 0 {
+		hint := "Server sent no music list."
+		if query != "" {
+			hint = "No tracks match your search."
+		}
+		c.Label(r.X+4, r.Y+6, hint, ColTextDim)
 	}
 }
 
