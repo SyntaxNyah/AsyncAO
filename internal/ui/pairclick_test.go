@@ -60,3 +60,34 @@ func TestParseAreaShowname(t *testing.T) {
 		t.Errorf("roster = %d, want 2 (shownames are aliases, not rows)", len(a.areaPlayers))
 	}
 }
+
+// TestParseAreaRealFormat pins a real mod /getarea block: a "[Title]" tag BEFORE
+// the UID bracket, a "(pos)" tag after the char name, a Showname line per player,
+// and a unicode showname. (The "speaker:" prefix is stripped upstream in pushOOC.)
+func TestParseAreaRealFormat(t *testing.T) {
+	a := &App{}
+	block := "[23] kayoko onikata (ba)\n" +
+		"Showname: Beta\n" +
+		"IPID: SAUPFiHDo04mLehRUj5ifQ\n" +
+		"[Mario Kart Queen] [24] tlaloc (fgo)\n" +
+		"Showname: [Poki]\n" +
+		"IPID: XRPtULDZd8HiIIqL/kzg/g\n" +
+		"[25] rabu_fvba\n" +
+		"Showname: fünfzehn\n"
+	a.parseAreaBlock(block)
+	if got := a.areaUIDs["beta"]; got != "23" {
+		t.Errorf("showname Beta -> %q, want 23", got)
+	}
+	if got := a.areaUIDs["tlaloc"]; got != "24" { // "[Mario Kart Queen] [24] tlaloc"
+		t.Errorf("title-prefixed [24] tlaloc -> %q, want 24", got)
+	}
+	if got := a.areaUIDs["[poki]"]; got != "24" {
+		t.Errorf("showname [Poki] -> %q, want 24", got)
+	}
+	if got := a.areaUIDs["fünfzehn"]; got != "25" {
+		t.Errorf("unicode showname -> %q, want 25", got)
+	}
+	if len(a.areaPlayers) != 3 {
+		t.Errorf("roster = %d, want 3 (the [uid] rows; shownames are aliases)", len(a.areaPlayers))
+	}
+}

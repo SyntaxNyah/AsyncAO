@@ -3099,7 +3099,14 @@ const oocLineCap = 4096
 // two slices stay parallel (same cap), so display can look the speaker up by
 // entry index without re-parsing the ": " (which would mis-tint system lines).
 func (a *App) pushOOC(line, speaker string) {
-	a.parseAreaBlock(line) // harvest /getarea "[uid] name" rows for click-to-pair (full line, pre-truncation)
+	// Harvest /getarea "[uid] name" rows for click-to-pair, from the RAW text:
+	// strip the "speaker: " prefix first, else when a server sends /getarea line
+	// by line every "[uid]" row hides behind "ServerName: " and parses as nothing.
+	text := line
+	if speaker != "" && strings.HasPrefix(line, speaker+": ") {
+		text = line[len(speaker)+2:]
+	}
+	a.parseAreaBlock(text)
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
 	}

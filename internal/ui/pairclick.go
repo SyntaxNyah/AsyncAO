@@ -26,23 +26,30 @@ const areaPlayersCap = 200
 // Called per incoming OOC line; allocation-light (no regexp).
 func (a *App) parseAreaLine(line string) {
 	s := strings.TrimSpace(line)
-	if len(s) < 3 || s[0] != '[' {
+	// Find the first "[<digits>]". A server may prefix a "[Title]" tag before the
+	// UID bracket (e.g. "[Mario Kart Queen] [24] tlaloc"), so scan PAST any
+	// non-numeric brackets rather than only checking the first one.
+	for i := 0; i < len(s); i++ {
+		if s[i] != '[' {
+			continue
+		}
+		rel := strings.IndexByte(s[i+1:], ']')
+		if rel < 1 {
+			continue
+		}
+		end := i + 1 + rel
+		uid := s[i+1 : end]
+		if _, err := strconv.Atoi(uid); err != nil {
+			continue // "[Title]" etc. — keep looking for "[<digits>]"
+		}
+		name := strings.TrimSpace(s[end+1:])
+		if name == "" {
+			return
+		}
+		a.areaLastUID = uid // a following "Showname:" line aliases to this player
+		a.addAreaPlayer(name, uid)
 		return
 	}
-	end := strings.IndexByte(s, ']')
-	if end < 2 {
-		return
-	}
-	uid := s[1:end]
-	if _, err := strconv.Atoi(uid); err != nil {
-		return // not "[<digits>]"
-	}
-	name := strings.TrimSpace(s[end+1:])
-	if name == "" {
-		return
-	}
-	a.areaLastUID = uid // a following "Showname:" line aliases to this player
-	a.addAreaPlayer(name, uid)
 }
 
 // addAreaPlayer records a parsed /getarea player (UID + display name) into the
