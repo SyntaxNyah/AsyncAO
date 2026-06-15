@@ -1172,20 +1172,22 @@ func (a *App) Background(dt time.Duration) {
 	if a.room != nil {
 		a.room.Update(dt)
 	}
-	a.keepActiveAssetsWarm() // bump recency BEFORE the pump's uploads can evict
 	a.d.Audio.Frame()
 	a.d.Pump.Frame()
+	// AFTER the upload pump, so the touch wins recency over THIS tick's upload
+	// burst — exactly what a drawn frame does (the emote row touches these after
+	// Pump.Frame too). Touching before the pump let the burst supersede it.
+	a.keepActiveAssetsWarm()
 	a.d.Store.DrainDestroyQueue()
 }
 
-// keepActiveAssetsWarm re-touches the user's persistently-shown assets — the
-// SELECTED emote's "on" button image and the char icon — so T1's LRU never
-// evicts them while the window is minimized. Background draws nothing, so those
-// assets aren't touched by a render; an incoming message streaming in then
-// uploads over them and the selected emote button blanks for a moment on
-// restore (it heals, but shouldn't drop at all). Only called from Background:
-// the URL building allocates, so it must stay off the 0-alloc render path (in a
-// drawn frame the emote row already touches these when visible).
+// keepActiveAssetsWarm keeps the user's persistently-shown assets resident while
+// the window is minimized — the SELECTED emote's "on" + "off" button images and
+// the char icon — so T1's LRU never drops them mid-tab-out (Background draws
+// nothing, so a render never touches them; an incoming message then uploads over
+// the selected button and it blanks for a moment on restore). Background-only:
+// the URL build + map ops here would break the 0-alloc render path (a drawn
+// frame's emote row already touches these).
 func (a *App) keepActiveAssetsWarm() {
 	if a.room == nil || a.sess == nil {
 		return
@@ -1195,9 +1197,25 @@ func (a *App) keepActiveAssetsWarm() {
 		return
 	}
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
-		a.d.Store.Get(a.urls.EmoteButton(me, a.emoteIdx+1, true)) // selected emote "on" image
+		a.warmBase(a.urls.EmoteButton(me, a.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
+		a.warmBase(a.urls.EmoteButton(me, a.emoteIdx+1, false), assets.AssetTypeEmoteButton) // "off" fallback
 	}
-	a.d.Store.Get(a.urls.CharIcon(me))
+	a.warmBase(a.urls.CharIcon(me), assets.AssetTypeCharIcon)
+}
+
+// warmBase keeps base resident across a minimized upload burst: touch it (→
+// most-recent, the LAST to evict) if it's in T1, else re-demand it — once it has
+// evicted, a Get alone can't bring it back, so the asset would stay gone until
+// the post-restore render heals it.
+func (a *App) warmBase(base string, t assets.AssetType) {
+	if base == "" {
+		return
+	}
+	if a.d.Store.Contains(base) {
+		a.d.Store.Get(base)
+		return
+	}
+	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 }
 
 // SetPump injects the upload pump (built after App for the liveness probe).
