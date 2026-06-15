@@ -141,10 +141,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Reset to defaults** (Settings, with a confirmation pop-up): two scopes —
   **Reset settings** reverts the whole settings page (scales, volumes, theme,
   hotkeys, colours, toggles) to defaults but KEEPS your favourites, wardrobes,
-  servers & logins, callwords, learned formats, the jukebox library and disk
-  cache; **Wipe everything** is a fresh-install factory reset that also erases
-  those (the jukebox library included), the logins/passwords, and the disk
-  cache. Robust by construction — the reset
+  servers & logins, callwords, learned formats, the jukebox library, your case
+  notebooks and the disk cache; **Wipe everything** is a fresh-install factory
+  reset that also erases all of those — the jukebox library AND the per-server
+  notebooks (each lives in its own file, so the wipe clears them explicitly) —
+  plus the logins/passwords and the disk cache. Robust by construction — the reset
   copies a fresh-defaults struct over every setting via reflection, so a
   newly-added option resets automatically (a guard test pins the preserved-data
   field names). Applies live (no restart) and re-pulls the derived UI state.

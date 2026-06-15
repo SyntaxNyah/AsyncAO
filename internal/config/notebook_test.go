@@ -42,6 +42,17 @@ func TestNotebookCap(t *testing.T) {
 	}
 }
 
+// TestNotebookClear pins the Wipe-everything path: Clear empties the notebook.
+func TestNotebookClear(t *testing.T) {
+	nb := &Notebook{path: filepath.Join(t.TempDir(), "nb.json")}
+	nb.Add("a pin")
+	nb.Add("another")
+	nb.Clear()
+	if nb.Len() != 0 {
+		t.Errorf("Clear left %d lines", nb.Len())
+	}
+}
+
 // TestWardrobePerServer pins the per-server split: lists never leak
 // between servers, and the legacy flat list migrates exactly once to the
 // first server that claims it.

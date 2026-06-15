@@ -730,7 +730,7 @@ func (a *App) drawResetConfirm(w, h int32) {
 
 	c.LabelClipped(x, y, pw-48, "Wipe everything — a brand-new install: ALSO erases favourites, wardrobes,", ColDanger)
 	y += 18
-	c.LabelClipped(x, y, pw-48, "servers, logins/passwords, callwords, and the disk cache. Cannot be undone.", ColDanger)
+	c.LabelClipped(x, y, pw-48, "servers, logins, callwords, jukebox, notes, and the disk cache. No undo.", ColDanger)
 	y += 26
 	if c.Button(sdl.Rect{X: x, Y: y, W: pw - 48, H: btnH}, "WIPE EVERYTHING — logins, data, cache (no undo)") {
 		a.applyFactoryReset(true)
@@ -752,6 +752,10 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 		if a.juke != nil {
 			a.juke.Clear() // the jukebox library lives in its own file — wipe it too
 		}
+		if a.notebook != nil {
+			a.notebook.Clear() // empty + stop its flush before deleting the files
+		}
+		_ = config.WipeNotebooks() // per-server case notes live in their own dir
 		a.warnLine = "Everything wiped — fresh-install state."
 	} else {
 		a.d.Prefs.ResetSettings()

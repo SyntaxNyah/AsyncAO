@@ -53,6 +53,21 @@ func (n *Notebook) Rev() int64 {
 	return n.rev
 }
 
+// Clear empties the notebook in memory and STOPS its pending flush — the
+// Wipe-everything reset deletes the files (WipeNotebooks), so there's nothing
+// to write back (a live flush would recreate the file). Reset settings leaves
+// notebooks alone.
+func (n *Notebook) Clear() {
+	n.mu.Lock()
+	n.lines = nil
+	if n.timer != nil {
+		n.timer.Stop()
+		n.timer = nil
+	}
+	n.rev++
+	n.mu.Unlock()
+}
+
 // notebookJSON is the on-disk shape.
 type notebookJSON struct {
 	Lines []string `json:"lines"`
@@ -80,6 +95,26 @@ func NotebookPath(serverKey string) (string, error) {
 	_, _ = h.Write([]byte(serverKey))
 	name := fmt.Sprintf("%s-%08x.json", clean, h.Sum32())
 	return filepath.Join(filepath.Dir(base), NotebookDirName, name), nil
+}
+
+// NotebookDir returns the directory holding every per-server notebook file.
+func NotebookDir() (string, error) {
+	base, err := DefaultPath()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(base), NotebookDirName), nil
+}
+
+// WipeNotebooks deletes EVERY server's notebook (the Wipe-everything factory
+// reset — a fresh install has no notes; Reset settings leaves them). A
+// deliberate user action, not a hot path.
+func WipeNotebooks() error {
+	dir, err := NotebookDir()
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(dir)
 }
 
 // LoadNotebook reads (or initializes) a server's notebook. Does disk I/O
