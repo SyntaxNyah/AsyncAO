@@ -17,7 +17,7 @@ import (
 // areaPlayer is one parsed /getarea player. One row per UID (never deduped by
 // name — two "Spectator" rows are two different people). ipid is mod-only data
 // from /getarea: shown in-session, never persisted or logged.
-type areaPlayer struct{ uid, name, showname, ooc, ipid, area string }
+type areaPlayer struct{ uid, name, showname, ooc, ipid string }
 
 // areaPlayersCap bounds the parsed /getarea picker (a busy area's roster).
 const areaPlayersCap = 200
