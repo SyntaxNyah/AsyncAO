@@ -209,10 +209,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   allocs/op).
 - **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
   flash + a sound — a **custom sound file** you point at in Settings
-  (`.wav`/`.ogg`/`.mp3`), else the theme's `word_call`, else a **built-in
-  ping**, so a configured callword is never silent (the stock theme ships no
-  `word_call`). The same custom → theme → built-in chain covers the
-  friend-speaks sound.
+  (`.wav`/`.ogg`/`.mp3`/**`.opus`**), else a **built-in ping**. The ping is the
+  reliable default: we deliberately do **not** route through the theme's
+  `word_call` (a theme that *names* it but ships no loadable file would play
+  nothing and silence the alert — the "callwords don't work" report). A **Test
+  sound** button next to the field plays exactly what an alert fires, so you can
+  confirm it's audible. The same custom-file → built-in-ping rule covers the
+  friend-speaks sound. (Opus support needs the codec DLLs loaded at startup —
+  see the audio note below.)
 - **Highlighted friends** (Settings, **OFF by default**): a **per-server** list
   of shownames whose IC messages **glow** (a warm tint behind the line) so you
   can spot your friends in a busy log — saved per server (cached like the char
@@ -270,6 +274,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   re-serializes the prefs file. Play/Share need a live connection (and DJ/CM
   rights, which the server enforces). Kept by **Reset settings**, erased by
   **Wipe everything**.
+- **Audio codecs** (the "audio note"): only WAV is built into SDL_mixer; the
+  **Opus / Ogg-Vorbis / MP3** decoders ship as separate DLLs and are loaded at
+  startup via `Mix_Init` (best-effort — a missing codec just loses that one
+  format, the rest still play). This is what lets **`.opus`** work everywhere it
+  matters: Discord `/play` CDN links (which are `.opus`) **and** a custom
+  `.opus` callword/friend alert sound. Decoding always runs in C off the Go
+  side (spec §8).
 - **Real dropdowns** for the IC text color (named colors + live swatch)
   and the position selector (AO2 ui_pos_dropdown parity, SD list when
   sent) — open lists draw above everything, auto-widen to their options,

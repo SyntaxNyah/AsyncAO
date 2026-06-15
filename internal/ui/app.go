@@ -2869,7 +2869,7 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, in
 
 // signalFriend fires the opt-in alert signals when a friend speaks: an in-app
 // toast + window flash (FriendNotify) and a sound (FriendSound — a custom file,
-// else the theme word_call). Streamer mode suppresses them (same as callwords).
+// else the built-in ping). Streamer mode suppresses them (same as callwords).
 // Called at the message seam when friendMessage is true (active OR background
 // tab, so you're alerted even while looking at another server). The glow is
 // drawn separately in the log.
@@ -2891,11 +2891,12 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 		a.ctx.FlashWindow()
 	}
 	if a.d.Prefs.FriendSoundOn() {
-		// Custom sound → theme word_call → built-in ping, so a friend alert is
-		// never silent on a theme without word_call (same fix as callwords).
+		// Custom sound if set, else the built-in ping — always audible. Same fix
+		// as callwords: routing through the theme's word_call silenced the alert
+		// on themes that name it but ship no loadable file.
 		if f := a.d.Prefs.FriendSoundPath(); f != "" {
 			a.d.Audio.PlayFile(f)
-		} else if !a.playThemeSFX("word_call") {
+		} else {
 			a.d.Audio.PlayAlert()
 		}
 	}

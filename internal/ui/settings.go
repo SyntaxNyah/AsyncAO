@@ -1001,9 +1001,20 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 30
 	c.Label(pad, y+4, "Callword sound:", ColTextDim)
-	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 120, Y: y, W: 490, H: fieldH}, a.d.Prefs.CallwordSoundPath(), "custom .wav/.ogg/.mp3 path (blank = default word-call ping)"); next != a.d.Prefs.CallwordSoundPath() {
+	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 120, Y: y, W: 490, H: fieldH}, a.d.Prefs.CallwordSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.CallwordSoundPath() {
 		a.d.Prefs.SetCallwordSoundPath(next)
 	}
+	y += 32
+	if c.Button(sdl.Rect{X: pad + 120, Y: y, W: 130, H: btnH}, "Test sound") {
+		// Play exactly what a callword/friend alert fires: the custom file if set,
+		// else the built-in ping — so people can confirm it's actually audible.
+		if f := a.d.Prefs.CallwordSoundPath(); f != "" {
+			a.d.Audio.PlayFile(f)
+		} else {
+			a.d.Audio.PlayAlert()
+		}
+	}
+	c.Label(pad+260, y+6, "play the alert sound now to check it works", ColTextDim)
 	y += 34
 
 	// Highlighted friends (per server): shownames whose IC messages glow.
@@ -1033,7 +1044,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 26
 	c.Label(pad+16, y+4, "Friend sound:", ColTextDim)
-	if next, _ := c.TextField("friendsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.FriendSoundPath(), "custom .wav/.ogg/.mp3 path (blank = default word-call ping)"); next != a.d.Prefs.FriendSoundPath() {
+	if next, _ := c.TextField("friendsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.FriendSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.FriendSoundPath() {
 		a.d.Prefs.SetFriendSoundPath(next)
 	}
 	y += 32

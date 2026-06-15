@@ -94,18 +94,16 @@ func (a *App) setPanelHidden(id string, hide bool) {
 
 // playThemeSFX streams the theme-configured sound for key (picked up at
 // theme apply from courtroom_sounds.ini / penalty.ini, with stock AO2
-// fallbacks). Reports whether the theme actually named a sound for key:
-// missing keys stay silent (AO2 with a sparse INI does too) and return false,
-// so alert callers (callword/friend) can fall back to the built-in ping.
-func (a *App) playThemeSFX(key string) bool {
+// fallbacks). Missing keys stay silent (AO2 with a sparse INI does too).
+// Callword/friend alerts deliberately don't go through here — they use the
+// built-in ping so a sparse theme can never silence them.
+func (a *App) playThemeSFX(key string) {
 	if a.room == nil {
-		return false
+		return
 	}
 	if name := a.themeSounds[key]; name != "" {
 		a.d.Audio.PlaySFX(a.urls.SFX(name), 0) // AssetType: SFX (court sound)
-		return true
 	}
-	return false
 }
 
 // --- WTCE splashes + testimony badge -----------------------------------------

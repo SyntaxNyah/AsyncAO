@@ -29,6 +29,13 @@ const (
 
 	// pendingPlayTTL drops play requests whose asset never arrived.
 	pendingPlayTTL = 10 * time.Second
+
+	// mixInitOpus is MIX_INIT_OPUS (0x40). go-sdl2 v0.4.40's mix package
+	// predates the Opus flag and doesn't export it, but the SDL2_mixer.dll we
+	// ship supports Opus — so we pass the raw value to Mix_Init. Without this,
+	// the on-demand opus DLLs (libopusfile/libopus) never load and .opus
+	// content (Discord /play links, .opus alert sounds) won't decode.
+	mixInitOpus = 0x40
 )
 
 type pendingKind int
@@ -55,10 +62,10 @@ type Audio struct {
 	chunkOrder []string              // FIFO eviction order
 	pending    map[string]pendingPlay
 
-	// alert is the built-in notification ping — the guaranteed-audible
-	// fallback for callword/friend alerts when the user set no custom sound
-	// AND the theme defines no word_call (the stock theme doesn't). Synthesized
-	// once at open, freed at close; never enters the asset chunk cache.
+	// alert is the built-in notification ping — the guaranteed-audible default
+	// for callword/friend alerts whenever the user set no custom sound file.
+	// Synthesized once at open, freed at close; never enters the asset chunk
+	// cache.
 	alert *mix.Chunk
 
 	musicBytes []byte // keeps streamed music memory alive while playing
@@ -97,8 +104,16 @@ func NewAudio(mgr *assets.Manager) *Audio {
 		sfxVol:   fullVolumePercent,
 		blipVol:  fullVolumePercent,
 	}
+	// Load the dynamic decoder libraries we ship: opus/ogg/mp3 are pulled in on
+	// demand (only WAV is built into SDL_mixer), so without this they never
+	// decode. Best-effort — Init reports an error if any one codec's DLL is
+	// missing, but the codecs that DID load stay usable, so we log and continue.
+	if err := mix.Init(mix.INIT_OGG | mix.INIT_MP3 | mixInitOpus); err != nil {
+		log.Printf("render: some audio codecs unavailable (opus/ogg/mp3): %v", err)
+	}
 	if err := mix.OpenAudio(audioFrequency, mix.DEFAULT_FORMAT, audioChannels, audioChunkSize); err != nil {
 		log.Printf("render: audio disabled: %v", err)
+		mix.Quit() // pair the Init above even though the device failed
 		return a
 	}
 	mix.AllocateChannels(mixChannelCount)
@@ -213,6 +228,7 @@ func (a *Audio) Close() {
 		a.alert = nil
 	}
 	mix.CloseAudio()
+	mix.Quit() // unload the codec libs loaded in NewAudio
 	a.enabled = false
 }
 
