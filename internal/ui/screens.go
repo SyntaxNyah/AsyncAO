@@ -1114,7 +1114,13 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// Ctrl+wheel (fine) or wheel-button-held (fast) anywhere on the panel
 	// resizes the log/OOC/list text; plain wheel keeps scrolling the active
 	// list. Taking the wheel here stops the inner lists' zoom from double-stepping.
-	a.zoomWheel(r, &a.logPct, config.MinLogScalePercent, config.MaxLogScalePercent)
+	// The Music tab tunes its OWN scale (musicPct) so you can shrink long track
+	// titles without shrinking the IC log.
+	scale := &a.logPct
+	if a.logTab == logTabMusic {
+		scale = &a.musicPct
+	}
+	a.zoomWheel(r, scale, config.MinLogScalePercent, config.MaxLogScalePercent)
 	switch a.logTab {
 	case logTabMusic:
 		a.drawMusicList(inner)
@@ -2428,7 +2434,7 @@ func (a *App) drawMusicList(r sdl.Rect) {
 
 	// Search filter (AO2/webAO parity): type to narrow the server's track list.
 	// Memoized so the O(N) scan runs only when the query or the list changes.
-	a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: r.X, Y: r.Y, W: r.W - 150, H: fieldH}, a.musicSearch, "Search music…")
+	a.musicSearch, _ = c.TextField("musicsearch", sdl.Rect{X: r.X, Y: r.Y, W: r.W - 150, H: fieldH}, a.musicSearch, "Search music…  (Ctrl+wheel resizes)")
 	query := strings.ToLower(strings.TrimSpace(a.musicSearch))
 	total := len(a.sess.Music)
 	shown := total
@@ -2441,10 +2447,10 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	r.H -= fieldH + 6
 
 	// Hover-gated (playtest: the music list scrolled from anywhere).
-	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
+	if !c.ctrlHeld { // ctrl+wheel resizes text (musicPct), never scrolls
 		a.musicScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	font := c.LogFont(a.logPct)
+	font := c.LogFont(a.musicPct) // independent of the IC log scale
 	lineH := int32(font.Height()) + 10
 	contentH := int32(shown) * lineH
 	bar := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}

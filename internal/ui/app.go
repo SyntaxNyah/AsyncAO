@@ -420,6 +420,7 @@ type App struct {
 
 	// layout scales (percent; mirrors prefs, saved on change)
 	vpPct, chatPct, boxPct, logPct, inputPct int
+	musicPct                                 int // music-list font scale, independent of the log so long titles can shrink without shrinking IC
 	uiScalePct                               int // global renderer scale (manual)
 	// detectedScalePct is the display-DPI-derived scale (96 dpi = 100%),
 	// snapped to the settings step; UIScale() prefers it while the
@@ -1069,6 +1070,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
 	a.pairFlip = d.Prefs.PairFlipped()
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales()
+	a.musicPct = a.logPct // starts matching the log; ctrl+wheel over the Music tab tunes it apart
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
 	if paths := d.Prefs.FontPaths(); paths != "" {
