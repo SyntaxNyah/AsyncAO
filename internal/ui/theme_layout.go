@@ -263,26 +263,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 	a.drawCourtOverlays(vp, lay)
 
-	// Modal popups behave exactly like the classic path: nothing below
-	// them draws (the kit has no z-aware input).
-	switch {
-	case a.showWidgets:
-		a.drawWidgetsPanel(w, h)
-		return
-	case a.showIni:
-		a.drawIniswapPanel(w, h)
-		return
-	case a.showEvid:
-		a.drawEvidencePanel(w, h)
-		return
-	case a.showModcall:
-		a.drawModcallDialog(w, h)
-		return
-	case a.showUICfg:
-		a.drawUICfgPanel(w, h)
-		return
-	case a.showLogin:
-		a.drawLoginDialog(w, h)
+	// Modal popups: same shared list as the classic path, so the two can't
+	// drift (the bg picker once drew in classic but was missing here).
+	if a.drawCourtroomModals(w, h) {
 		return
 	}
 

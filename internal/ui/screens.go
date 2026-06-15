@@ -754,25 +754,8 @@ func (a *App) drawCourtroom(w, h int32) {
 
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
-	// as the iniswap menu.
-	switch {
-	case a.showIni:
-		a.drawIniswapPanel(w, h)
-		return
-	case a.bgPick.show:
-		a.drawBgPanel(w, h)
-		return
-	case a.showEvid:
-		a.drawEvidencePanel(w, h)
-		return
-	case a.showModcall:
-		a.drawModcallDialog(w, h)
-		return
-	case a.showUICfg:
-		a.drawUICfgPanel(w, h)
-		return
-	case a.showLogin:
-		a.drawLoginDialog(w, h)
+	// as the iniswap menu. Shared with the themed path (drawCourtroomModals).
+	if a.drawCourtroomModals(w, h) {
 		return
 	}
 
@@ -785,6 +768,36 @@ func (a *App) drawCourtroom(w, h int32) {
 
 	// Bottom: IC input, emotes, controls.
 	a.drawICControls(w, h, vp)
+}
+
+// drawCourtroomModals draws whichever return-to-top courtroom popup is open and
+// reports whether one took the screen — the caller then returns, because the
+// kit has no z-aware input so nothing underneath should draw or take clicks.
+// SHARED by the classic and themed courtroom so the two lists can't drift: the
+// background picker once drew in the classic path but was missing from the
+// themed switch, so on a custom theme the Extras → Background button opened a
+// picker that never rendered. (showPair is NOT here — it's a non-returning
+// overlay drawn on top in both paths.)
+func (a *App) drawCourtroomModals(w, h int32) bool {
+	switch {
+	case a.showWidgets: // "Extras" box — themed Extras button, or the Extras hotkey in either mode
+		a.drawWidgetsPanel(w, h)
+	case a.showIni:
+		a.drawIniswapPanel(w, h)
+	case a.bgPick.show:
+		a.drawBgPanel(w, h)
+	case a.showEvid:
+		a.drawEvidencePanel(w, h)
+	case a.showModcall:
+		a.drawModcallDialog(w, h)
+	case a.showUICfg:
+		a.drawUICfgPanel(w, h)
+	case a.showLogin:
+		a.drawLoginDialog(w, h)
+	default:
+		return false
+	}
+	return true
 }
 
 // spriteHitRect mirrors Viewport.drawSprite's placement math so drags

@@ -392,9 +392,12 @@ type App struct {
 	themeAppliedName string
 
 	showUICfg bool // hide-chrome popup
-	// showWidgets opens the themed-mode "Extras" box: every AsyncAO feature an
-	// AO2 theme has no button for. themedHintShown gates the one-time hint that
-	// points players at it (legacy themes carry no AsyncAO element keys).
+	// showWidgets opens the "Extras" box: every AsyncAO feature an AO2 theme has
+	// no button for. The themed Extras button opens it; so does the Extras
+	// hotkey, which works in EITHER mode (in the classic path it's just a quick
+	// launcher, since those features already have buttons). themedHintShown
+	// gates the one-time hint that points players at it (legacy themes carry no
+	// AsyncAO element keys).
 	showWidgets     bool
 	themedHintShown bool
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
