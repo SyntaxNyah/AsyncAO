@@ -14,8 +14,9 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-// areaPlayer is one parsed /getarea row: the client UID and the name shown.
-type areaPlayer struct{ uid, name string }
+// areaPlayer is one parsed /getarea player: client UID, character name, and the
+// showname (the name their IC lines display) when /getarea lists one.
+type areaPlayer struct{ uid, name, showname string }
 
 // areaPlayersCap bounds the parsed /getarea picker (a busy area's roster).
 const areaPlayersCap = 200
@@ -85,6 +86,11 @@ func (a *App) aliasAreaName(name, uid string) {
 		return
 	}
 	a.areaUIDs[strings.ToLower(name)] = uid
+	// Record the showname on its roster row (the most recent player) so the
+	// picker can show it next to the character — that's the name you recognise.
+	if n := len(a.areaPlayers); n > 0 && a.areaPlayers[n-1].uid == uid && a.areaPlayers[n-1].showname == "" {
+		a.areaPlayers[n-1].showname = name
+	}
 }
 
 // parseAreaBlock feeds each newline-separated row of an OOC payload to the parser
@@ -213,9 +219,16 @@ func (a *App) drawPairPlayerList(r sdl.Rect) {
 				if c.clicked {
 					a.pairPopupUID = p.uid
 					a.pairPopupChar = p.name
+					if p.showname != "" {
+						a.pairPopupChar = p.showname // recognise them by the IC name
+					}
 				}
 			}
-			c.LabelClipped(row.X+6, row.Y+4, row.W-12, "["+p.uid+"]  "+p.name, ColText)
+			label := "[" + p.uid + "]  " + p.name
+			if p.showname != "" && !strings.EqualFold(p.showname, p.name) {
+				label = "[" + p.uid + "]  " + p.showname + "  ·  " + p.name // showname first (the IC name)
+			}
+			c.LabelClipped(row.X+6, row.Y+4, row.W-12, label, ColText)
 		}
 		rowY += lineH
 	}

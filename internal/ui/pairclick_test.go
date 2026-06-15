@@ -111,4 +111,14 @@ func TestParseAreaRealFormat(t *testing.T) {
 	if got := len(a.areaPlayers); got != 7 { // [0] [2] [3] [5] [11] [12] [24]
 		t.Errorf("roster rows = %d, want 7 (shownames are aliases, not rows)", got)
 	}
+	// The roster carries the showname so the picker shows the recognisable name.
+	var ciel areaPlayer
+	for _, p := range a.areaPlayers {
+		if p.uid == "11" {
+			ciel = p
+		}
+	}
+	if ciel.name != "ciel-sensei" || ciel.showname != "Häschen" {
+		t.Errorf("roster uid 11 = {name:%q showname:%q}, want {ciel-sensei, Häschen}", ciel.name, ciel.showname)
+	}
 }
