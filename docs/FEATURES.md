@@ -30,6 +30,19 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Manual per-type probing in Settings stays authoritative when autodetect
   is off and covers manifest-less servers. `.webp.static`-style pseudo
   suffixes are normalized away (animation is a payload property here).
+- **Desks default to WebP** (Settings → Assets): desk overlays stay on `.webp`
+  even when a server's `extensions.json` declares another format for its
+  background class (which desks share) — so a PNG-background server can't
+  silently drag desks off WebP. Untick "Always use WebP for desks" to let them
+  follow the manifest; the per-type format picker covers every format either way.
+- **Live-scene self-heal**: if the background, desk, **or a character sprite**
+  is evicted from the texture cache mid-message (memory pressure in a packed
+  room, or a hover-preview fetch), it is re-demanded at high priority within a
+  paced window instead of vanishing to black.
+- **Missing-asset banner is opt-in** (Settings → Assets, **default OFF**): the
+  red on-screen warning naming an asset that failed every format is off by
+  default (it was noisy on sparse-pack servers); the failures still stream to
+  the **debug overlay** (the dedicated failure log) regardless.
 - **Learned-format export/import**: `learned-formats.json` beside the exe;
   one player's warm state seeds another's.
 - **AVIF**: `.avif` probe format; `ftyp avif/avis` sniffing, libavif CGO
@@ -164,8 +177,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   per frame and the default OFF path is byte-identical (RenderFrame stays 0
   allocs/op).
 - **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
-  flash + a sound (the theme's `word_call`, or a **custom sound file** you
-  point at in Settings — `.wav`/`.ogg`/`.mp3`).
+  flash + a sound — a **custom sound file** you point at in Settings
+  (`.wav`/`.ogg`/`.mp3`), else the theme's `word_call`, else a **built-in
+  ping**, so a configured callword is never silent (the stock theme ships no
+  `word_call`). The same custom → theme → built-in chain covers the
+  friend-speaks sound.
 - **Highlighted friends** (Settings, **OFF by default**): a **per-server** list
   of shownames whose IC messages **glow** (a warm tint behind the line) so you
   can spot your friends in a busy log — saved per server (cached like the char
@@ -254,6 +270,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   mouse over it to pan around the magnified sprite and inspect pixel detail.
   (The courtroom **stage** has its own zoom: **Ctrl+wheel** zooms toward the
   cursor, Ctrl+drag pans — the "hyperfocus" camera.)
+- **Sprite hover-previews are configurable** (Settings → General): the preview
+  pop-up is **ON by default** with a **5 s hover dwell** you tune with a slider
+  (0.5–15 s), or switch off entirely.
+- **Reposition sprites by dragging** (Settings → General, **default OFF**): when
+  enabled, drag any character in the viewport to move them (the override sticks
+  per character; right-click a sprite to reset it, or "Reset all moved sprites"
+  in Settings). Off by default so a stray click can't nudge a sprite.
+- **★ favourite a character from Character Select**: a star on each character
+  icon adds it straight to your **per-server Wardrobe** (LemmyAO-style), so it
+  rides along on every connect. One click on, one click off; the Wardrobe tab
+  and courtroom Wardrobe menu show the same stars.
+- **Auto-login toast**: when a saved auto-login fires on join, a one-shot
+  notification names who/where you signed in as (masked in streamer mode), so
+  "am I logged in?" answers itself. The login lines still send paced, one at a
+  time (so a two-step Akashi prompt is answered in order).
 - **Background picker** (courtroom Background button): a thumbnail grid of
   every background, modeled on the wardrobe menu. AO has no "list
   backgrounds" packet, so the set is discovered by fetching the asset
