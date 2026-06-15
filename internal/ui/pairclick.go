@@ -17,7 +17,7 @@ import (
 // areaPlayer is one parsed /getarea player. One row per UID (never deduped by
 // name — two "Spectator" rows are two different people). ipid is mod-only data
 // from /getarea: shown in-session, never persisted or logged.
-type areaPlayer struct{ uid, name, showname, ooc, ipid string }
+type areaPlayer struct{ uid, name, showname, ooc, ipid, area string }
 
 // areaPlayersCap bounds the parsed /getarea picker (a busy area's roster).
 const areaPlayersCap = 200
@@ -67,6 +67,8 @@ func (a *App) addAreaPlayer(name, uid string) {
 	if a.pairAreaReset { // a fresh /getarea: start the roster over (replace, never accumulate)
 		a.areaUIDs = nil
 		a.areaPlayers = a.areaPlayers[:0]
+		a.playerIconPages = nil // re-resolve icons: a same-length new roster reuses indices (cachedPage reorder invariant)
+		a.playerIconAsk = nil   // and re-arm the demand timers so the new faces fetch immediately
 		a.pairAreaReset = false
 		a.areaListAt = a.now()
 	}

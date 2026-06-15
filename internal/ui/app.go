@@ -755,6 +755,21 @@ type sessionState struct {
 	pairAreaReset  bool
 	pairListScroll int32
 	playerScroll   int32 // Players-tab roster scroll
+	playerSort     int   // roster sort: 0=UID, 1=name, 2=speakers-first
+	// playerOrder is the memoized display order (indices into areaPlayers); it
+	// recomputes only when the roster, sort mode, or current speaker change, so
+	// the Players tab never sorts per-frame.
+	playerOrder     []int
+	playerOrderSort int
+	playerOrderLen  int
+	playerOrderSpk  string
+	playerOrderAt   time.Time
+	// player-row char icons: same demand/cache pipeline as the char grid, but
+	// keyed by the areaPlayers index (sort-stable). NULLED on every /ga replace
+	// so a same-length new roster re-resolves (cachedPage reorder invariant).
+	playerIconPages    []*render.TexturePage
+	playerIconPagesGen uint64
+	playerIconAsk      []time.Time
 
 	// client-side sprite position overrides, keyed by lowercased character
 	// folder: the server keeps setting positions per message, the client
