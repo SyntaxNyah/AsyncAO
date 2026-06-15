@@ -701,6 +701,10 @@ type sessionState struct {
 	bgAskAt     time.Time
 	deskAskBase string
 	deskAskAt   time.Time
+	spkAskBase  string // speaker sprite heal pacing
+	spkAskAt    time.Time
+	pairAskBase string // pair sprite heal pacing
+	pairAskAt   time.Time
 
 	// client-side sprite position overrides, keyed by lowercased character
 	// folder: the server keeps setting positions per message, the client
@@ -2760,26 +2764,58 @@ func (a *App) applySpriteOverrides() {
 	}
 }
 
-// healScenery re-demands the scene's background/desk when T1 lost them
-// (LRU eviction, or a prefetch that never landed): without it the viewport
-// can only show black until the next position change. Paced one ask per
+// healScenery re-demands a live scene asset when T1 lost it (LRU eviction, or
+// a prefetch that never landed): without it the viewport can only show black
+// until the next position change. Covers the background, the desk, AND the
+// speaker/pair sprites — the same eviction that blanks the background can drop
+// a character sprite (a hover-preview HIGH fetch, or churn in a busy room), and
+// nothing else re-demands it, so it vanishes mid-message. Paced one ask per
 // base per charIconRetryInterval; HIGH because this is the live scene.
 func (a *App) healScenery() {
 	sc := &a.room.Scene
 	now := time.Now()
-	if sc.BackgroundBase != "" && sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval {
-		// recently asked for this exact base; let it land
-	} else if sc.BackgroundBase != "" && !a.d.Store.Contains(sc.BackgroundBase) {
+	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) {
 		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
 		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	}
-	if sc.DeskBase != "" && sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval {
-		return
-	}
-	if sc.DeskBase != "" && !a.d.Store.Contains(sc.DeskBase) {
+	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) {
 		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
 		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
+	a.healSpriteLayer(&sc.Speaker, &a.spkAskBase, &a.spkAskAt, now)
+	a.healSpriteLayer(&sc.Pair, &a.pairAskBase, &a.pairAskAt, now)
+}
+
+// healSpriteLayer re-demands one visible character sprite layer if its active
+// base was evicted from T1. Uses the prefix→bare fallback the lifecycle uses
+// (bareSpriteBase reconstructs the unprefixed spelling), paced per layer like
+// the scenery above. No-op while the sprite is resident or recently asked.
+func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, askAt *time.Time, now time.Time) {
+	if !layer.Visible || layer.Active == "" {
+		return
+	}
+	if *askBase == layer.Active && now.Sub(*askAt) < charIconRetryInterval {
+		return // recently asked for this exact base; let it land
+	}
+	if a.d.Store.Contains(layer.Active) {
+		return // resident — nothing to heal
+	}
+	*askBase, *askAt = layer.Active, now
+	a.d.Manager.PrefetchWithFallback(layer.Active, bareSpriteBase(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite)
+}
+
+// bareSpriteBase reconstructs the unprefixed sprite spelling from an active
+// base: it strips a leading "(a)"/"(b)" from the final path segment, turning
+// URLBuilder.Emote's output back into EmoteBare's. Preanim/already-bare bases
+// (no prefix) pass through unchanged, so PrefetchWithFallback just retries the
+// same URL.
+func bareSpriteBase(active string) string {
+	i := strings.LastIndexByte(active, '/')
+	seg := active[i+1:]
+	if strings.HasPrefix(seg, "(a)") || strings.HasPrefix(seg, "(b)") {
+		return active[:i+1] + seg[len("(a)"):]
+	}
+	return active
 }
 
 // icEntry is one IC log line with its AO text color preserved (rich
