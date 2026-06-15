@@ -378,10 +378,13 @@ func (a *App) checkCallwords(text string) {
 	lower := strings.ToLower(text)
 	for _, w := range words {
 		if strings.Contains(lower, w) {
+			// Custom sound wins; else the theme's word_call; else the built-in
+			// ping — so a configured callword is NEVER silent (the stock theme
+			// ships no word_call, which is why this went quiet for people).
 			if f := a.d.Prefs.CallwordSoundPath(); f != "" {
-				a.d.Audio.PlayFile(f) // custom callword sound
-			} else {
-				a.playThemeSFX("word_call")
+				a.d.Audio.PlayFile(f)
+			} else if !a.playThemeSFX("word_call") {
+				a.d.Audio.PlayAlert()
 			}
 			a.ctx.FlashWindow()
 			return

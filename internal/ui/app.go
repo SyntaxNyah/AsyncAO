@@ -2843,10 +2843,12 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 		a.ctx.FlashWindow()
 	}
 	if a.d.Prefs.FriendSoundOn() {
+		// Custom sound → theme word_call → built-in ping, so a friend alert is
+		// never silent on a theme without word_call (same fix as callwords).
 		if f := a.d.Prefs.FriendSoundPath(); f != "" {
 			a.d.Audio.PlayFile(f)
-		} else {
-			a.playThemeSFX("word_call")
+		} else if !a.playThemeSFX("word_call") {
+			a.d.Audio.PlayAlert()
 		}
 	}
 	// Desktop (OS) toast — rate-limited so a chatty friend can't storm it.

@@ -2,6 +2,7 @@ package render
 
 import (
 	"log"
+	"math"
 	"time"
 
 	"github.com/veandco/go-sdl2/mix"
@@ -54,6 +55,12 @@ type Audio struct {
 	chunkOrder []string              // FIFO eviction order
 	pending    map[string]pendingPlay
 
+	// alert is the built-in notification ping — the guaranteed-audible
+	// fallback for callword/friend alerts when the user set no custom sound
+	// AND the theme defines no word_call (the stock theme doesn't). Synthesized
+	// once at open, freed at close; never enters the asset chunk cache.
+	alert *mix.Chunk
+
 	musicBytes []byte // keeps streamed music memory alive while playing
 	musicRW    *sdl.RWops
 	music      *mix.Music
@@ -96,7 +103,99 @@ func NewAudio(mgr *assets.Manager) *Audio {
 	}
 	mix.AllocateChannels(mixChannelCount)
 	a.enabled = true
+	a.loadAlert()
 	return a
+}
+
+// loadAlert synthesizes the built-in notification ping and loads it as a
+// mixer chunk (same in-memory path as loadChunk). Best-effort: a failure
+// leaves a.alert nil and PlayAlert simply no-ops.
+func (a *Audio) loadAlert() {
+	wav := builtinAlertWAV()
+	rw, err := sdl.RWFromMem(wav)
+	if err != nil {
+		return
+	}
+	chunk, err := mix.LoadWAVRW(rw, true) // mixer frees the RW
+	if err != nil {
+		log.Printf("render: built-in alert sound failed: %v", err)
+		return
+	}
+	a.alert = chunk
+}
+
+// builtinAlertWAV synthesizes a short two-tone "ping" as an in-memory WAV
+// (16-bit mono PCM). It is the always-available fallback so a configured
+// callword (or friend ping) is never silent on a theme without a word_call
+// sound — see App.checkCallwords / signalFriend.
+func builtinAlertWAV() []byte {
+	const (
+		alertSampleRate = 44100
+		alertDurMs      = 160
+		alertFreqLo     = 880.0  // first tone (A5)
+		alertFreqHi     = 1320.0 // lift on the second half — the "ping" feel
+		alertAmp        = 0.33   // headroom so it isn't jarring
+		alertAttack     = 0.05   // fraction of the clip spent ramping in (anti-click)
+	)
+	n := alertSampleRate * alertDurMs / 1000
+	pcm := make([]byte, 0, n*2)
+	for i := 0; i < n; i++ {
+		t := float64(i) / float64(alertSampleRate)
+		prog := float64(i) / float64(n) // 0..1 through the clip
+		freq := alertFreqLo
+		if prog >= 0.5 {
+			freq = alertFreqHi
+		}
+		env := 1.0 // attack ramp, then linear decay to 0 (no end click)
+		if prog < alertAttack {
+			env = prog / alertAttack
+		} else {
+			env = 1 - (prog-alertAttack)/(1-alertAttack)
+		}
+		v := int16(math.Sin(2*math.Pi*freq*t) * alertAmp * env * math.MaxInt16)
+		pcm = append(pcm, byte(v), byte(v>>8)) // little-endian
+	}
+	return wavMono16(pcm, alertSampleRate)
+}
+
+// wavMono16 wraps 16-bit mono PCM samples in a minimal RIFF/WAVE container.
+func wavMono16(pcm []byte, sampleRate int) []byte {
+	const (
+		channels   = 1
+		bits       = 16
+		pcmFormat  = 1 // WAVE_FORMAT_PCM
+		fmtChunk   = 16
+		headerSize = 44
+	)
+	byteRate := sampleRate * channels * bits / 8
+	blockAlign := channels * bits / 8
+	buf := make([]byte, 0, headerSize+len(pcm))
+	put4 := func(s string) { buf = append(buf, s...) }
+	put32 := func(v int) { buf = append(buf, byte(v), byte(v>>8), byte(v>>16), byte(v>>24)) }
+	put16 := func(v int) { buf = append(buf, byte(v), byte(v>>8)) }
+	put4("RIFF")
+	put32(36 + len(pcm)) // RIFF chunk size = 4 ("WAVE") + (8+fmt) + (8+data)
+	put4("WAVE")
+	put4("fmt ")
+	put32(fmtChunk)
+	put16(pcmFormat)
+	put16(channels)
+	put32(sampleRate)
+	put32(byteRate)
+	put16(blockAlign)
+	put16(bits)
+	put4("data")
+	put32(len(pcm))
+	return append(buf, pcm...)
+}
+
+// PlayAlert plays the built-in notification ping (callword/friend fallback).
+// No-op when the device is disabled or the ping failed to synthesize.
+func (a *Audio) PlayAlert() {
+	if !a.enabled || a.alert == nil {
+		return
+	}
+	a.playChunk(a.alert, pendingSFX)
 }
 
 // Close stops playback and shuts the device.
@@ -109,6 +208,10 @@ func (a *Audio) Close() {
 		c.Free()
 	}
 	a.chunks = map[string]*mix.Chunk{}
+	if a.alert != nil {
+		a.alert.Free()
+		a.alert = nil
+	}
 	mix.CloseAudio()
 	a.enabled = false
 }
