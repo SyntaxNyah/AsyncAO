@@ -402,27 +402,34 @@ type AssetPreferences struct {
 	HoldClearOn            bool                         `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
 	HoldClearKey           string                       `json:"holdClearKey"` // which key (default "Backspace"), rebindable
 	HoldClearMs            int                          `json:"holdClearMs"`  // hold duration to clear (default 1500)
-	TextCrawlMs            int                          `json:"textCrawlMs"`
-	TextStayMs             int                          `json:"textStayMs"`
-	ChatRateLimitMs        int                          `json:"chatRateLimitMs"`
-	MasterListURL          string                       `json:"masterListUrl"`
-	AssetTypes             map[string]AssetTypePrefs    `json:"assetTypes"`
-	LearnedFormats         map[string][]string          `json:"learnedFormats"`
-	PairOffsetX            int                          `json:"pairOffsetX"`
-	PairOffsetY            int                          `json:"pairOffsetY"`
-	PairFlip               bool                         `json:"pairFlip"`
-	Showname               string                       `json:"showname"`
-	LocalAssetsEnabled     bool                         `json:"localAssetsEnabled"`
-	LocalAssetsPaths       []string                     `json:"localAssetsPaths"`
-	Favorites              []FavoriteServer             `json:"favorites"`
-	Wardrobe               []string                     `json:"wardrobe"`
-	CasingEnabled          bool                         `json:"casingEnabled"`
-	CasingRoles            int                          `json:"casingRoles"`
-	HiddenPanelIDs         []string                     `json:"hiddenPanels"`
-	ServerWarm             map[string]ServerWarmInfo    `json:"serverWarm"`
-	CallWordList           []string                     `json:"callWords"`
-	HotkeyMap              map[string]string            `json:"hotkeys"`
-	DiscordRPC             DiscordPrefs                 `json:"discord"`
+	// Extras-box theming (all hex like "78aaff"; "" = the stock kit colour).
+	ExtrasBg           string                    `json:"extrasBg"`
+	ExtrasBg2          string                    `json:"extrasBg2"` // gradient bottom colour
+	ExtrasBorder       string                    `json:"extrasBorder"`
+	ExtrasTitle        string                    `json:"extrasTitle"`
+	ExtrasText         string                    `json:"extrasText"`
+	ExtrasGradient     bool                      `json:"extrasGradient"`
+	TextCrawlMs        int                       `json:"textCrawlMs"`
+	TextStayMs         int                       `json:"textStayMs"`
+	ChatRateLimitMs    int                       `json:"chatRateLimitMs"`
+	MasterListURL      string                    `json:"masterListUrl"`
+	AssetTypes         map[string]AssetTypePrefs `json:"assetTypes"`
+	LearnedFormats     map[string][]string       `json:"learnedFormats"`
+	PairOffsetX        int                       `json:"pairOffsetX"`
+	PairOffsetY        int                       `json:"pairOffsetY"`
+	PairFlip           bool                      `json:"pairFlip"`
+	Showname           string                    `json:"showname"`
+	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
+	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
+	Favorites          []FavoriteServer          `json:"favorites"`
+	Wardrobe           []string                  `json:"wardrobe"`
+	CasingEnabled      bool                      `json:"casingEnabled"`
+	CasingRoles        int                       `json:"casingRoles"`
+	HiddenPanelIDs     []string                  `json:"hiddenPanels"`
+	ServerWarm         map[string]ServerWarmInfo `json:"serverWarm"`
+	CallWordList       []string                  `json:"callWords"`
+	HotkeyMap          map[string]string         `json:"hotkeys"`
+	DiscordRPC         DiscordPrefs              `json:"discord"`
 	// CharDownloaderOn enables the opt-in single-character/background
 	// downloader (off by default — it writes files to disk on demand).
 	CharDownloaderOn bool `json:"charDownloader"`
@@ -539,6 +546,13 @@ type prefsJSON struct {
 	HoldClearOn  *bool  `json:"holdClearOn"` // absent = default ON
 	HoldClearKey string `json:"holdClearKey"`
 	HoldClearMs  int    `json:"holdClearMs"`
+	// Extras-box theming (hex; "" = stock colour). Gradient: absent = default OFF.
+	ExtrasBg       string `json:"extrasBg"`
+	ExtrasBg2      string `json:"extrasBg2"`
+	ExtrasBorder   string `json:"extrasBorder"`
+	ExtrasTitle    string `json:"extrasTitle"`
+	ExtrasText     string `json:"extrasText"`
+	ExtrasGradient *bool  `json:"extrasGradient"`
 	// Stay/ratelimit use pointers too: 0 means "no linger" / "off".
 	TextCrawlMs        int                       `json:"textCrawlMs"`
 	TextStayMs         *int                      `json:"textStayMs"`
@@ -973,6 +987,11 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.HoldClearMs != 0 {
 		p.HoldClearMs = clampPercent(onDisk.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
+	}
+	p.ExtrasBg, p.ExtrasBg2 = onDisk.ExtrasBg, onDisk.ExtrasBg2
+	p.ExtrasBorder, p.ExtrasTitle, p.ExtrasText = onDisk.ExtrasBorder, onDisk.ExtrasTitle, onDisk.ExtrasText
+	if onDisk.ExtrasGradient != nil {
+		p.ExtrasGradient = *onDisk.ExtrasGradient
 	}
 	if onDisk.TextCrawlMs != 0 {
 		p.TextCrawlMs = clampPercent(onDisk.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
@@ -2464,6 +2483,24 @@ func (p *AssetPreferences) SetHoldClearMs(ms int) {
 		return
 	}
 	p.HoldClearMs = ms
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ExtrasBoxStyle reports the Extras-box theme: background / gradient-bottom /
+// border / title / text colours (hex, "" = stock) and whether the background is
+// a gradient.
+func (p *AssetPreferences) ExtrasBoxStyle() (bg, bg2, border, title, text string, gradient bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ExtrasBg, p.ExtrasBg2, p.ExtrasBorder, p.ExtrasTitle, p.ExtrasText, p.ExtrasGradient
+}
+
+// SetExtrasBoxStyle persists the Extras-box theme.
+func (p *AssetPreferences) SetExtrasBoxStyle(bg, bg2, border, title, text string, gradient bool) {
+	p.mu.Lock()
+	p.ExtrasBg, p.ExtrasBg2, p.ExtrasBorder, p.ExtrasTitle, p.ExtrasText, p.ExtrasGradient =
+		bg, bg2, border, title, text, gradient
 	p.mu.Unlock()
 	p.markDirty()
 }

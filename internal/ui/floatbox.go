@@ -77,6 +77,68 @@ func (a *App) extrasWidgets() []extrasWidget {
 	return a.extrasWidgetCache
 }
 
+// extrasPalette is the resolved Extras-box theme for a frame. Empty prefs leave
+// every field at the stock kit colour, so the default look (and cost) is unchanged.
+type extrasPalette struct {
+	bg, bg2, border, title, text sdl.Color
+	gradient                     bool
+}
+
+// extrasPalette resolves the user's Extras-box colours (hex prefs) over the stock
+// kit palette. Blank/invalid entries keep the stock colour — so an untouched box
+// is byte-identical to before.
+func (a *App) extrasPalette() extrasPalette {
+	bgH, bg2H, brH, tiH, txH, grad := a.d.Prefs.ExtrasBoxStyle()
+	p := extrasPalette{bg: ColPanel, bg2: ColPanel, border: ColAccent, title: ColPanelHi, text: ColText, gradient: grad}
+	if col, ok := parseHexColor(bgH); ok {
+		p.bg, p.bg2 = col, col // gradient bottom defaults to the top until set
+	}
+	if col, ok := parseHexColor(bg2H); ok {
+		p.bg2 = col
+	}
+	if col, ok := parseHexColor(brH); ok {
+		p.border = col
+	}
+	if col, ok := parseHexColor(tiH); ok {
+		p.title = col
+	}
+	if col, ok := parseHexColor(txH); ok {
+		p.text = col
+	}
+	return p
+}
+
+// parseHexColor parses "rrggbb" (optionally "#rrggbb") into an opaque colour.
+// ok=false on empty/invalid input — no allocation, so it's cheap per frame.
+func parseHexColor(s string) (sdl.Color, bool) {
+	s = strings.TrimPrefix(strings.TrimSpace(s), "#")
+	if len(s) != 6 {
+		return sdl.Color{}, false
+	}
+	var rgb [3]uint8
+	for i := 0; i < 3; i++ {
+		hi, ok1 := hexNibble(s[i*2])
+		lo, ok2 := hexNibble(s[i*2+1])
+		if !ok1 || !ok2 {
+			return sdl.Color{}, false
+		}
+		rgb[i] = hi<<4 | lo
+	}
+	return sdl.Color{R: rgb[0], G: rgb[1], B: rgb[2], A: 255}, true
+}
+
+func hexNibble(b byte) (uint8, bool) {
+	switch {
+	case b >= '0' && b <= '9':
+		return b - '0', true
+	case b >= 'a' && b <= 'f':
+		return b - 'a' + 10, true
+	case b >= 'A' && b <= 'F':
+		return b - 'A' + 10, true
+	}
+	return 0, false
+}
+
 // courtModalOpen reports whether a blocking courtroom popup is up. The box (and
 // its torn-off widgets) yields to those and reappears when they close.
 func (a *App) courtModalOpen() bool {
@@ -312,11 +374,16 @@ func (a *App) drawFloatingExtras(w, h int32) {
 func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	c := a.ctx
 	r := a.extrasBoxRect(w, h)
-	c.Fill(r, ColPanel)
-	c.Border(r, ColAccent)
+	pal := a.extrasPalette() // stock colours unless the user themed the box
+	if pal.gradient {
+		c.FillGradient(r, pal.bg, pal.bg2)
+	} else {
+		c.Fill(r, pal.bg)
+	}
+	c.Border(r, pal.border)
 	// Title bar / drag handle.
-	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, ColPanelHi)
-	c.Label(r.X+10, r.Y+6, "AsyncAO Extras", ColText)
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, pal.title)
+	c.Label(r.X+10, r.Y+6, "AsyncAO Extras", pal.text)
 	if c.Button(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 4, W: 20, H: extrasTitleH - 8}, "x") {
 		a.showWidgets = false
 		if !a.extrasCloseHintShown { // tell them how to get it back — once per session
@@ -342,7 +409,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	music, sfx, blip := a.d.Prefs.AudioVolumes()
 	volY := r.Y + extrasTitleH + 4
 	drawVol := func(id, label string, val int) int {
-		c.Label(r.X+10, volY+2, label, ColText)
+		c.Label(r.X+10, volY+2, label, pal.text)
 		track := sdl.Rect{X: r.X + 62, Y: volY + 4, W: r.W - 62 - 48, H: 12}
 		nv := int(c.Slider("exvol:"+id, track, int32(val), 100))
 		c.Label(r.X+r.W-42, volY+2, strconv.Itoa(nv)+"%", ColTextDim)
@@ -395,7 +462,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		c.TooltipAfter("fextra:"+wd.label, br, tip)
 	}
 	c.LabelClipped(r.X+10, r.Y+r.H-18, r.W-20-extrasGripSz,
-		"Drag a widget out to pop it loose · drag the title to move · × closes", ColTextDim)
+		"Drag a widget out to pop it loose · drag the title to move · × closes", pal.text)
 }
 
 // handleExtrasResize resizes the main box from its bottom-right grip, pinning the
@@ -474,6 +541,7 @@ func (a *App) handleDetachedResize(i int, grip, r sdl.Rect, pressed *bool) {
 func (a *App) drawExtrasDetached(w, h int32, pressed *bool) {
 	c := a.ctx
 	widgets := a.extrasWidgets()
+	pal := a.extrasPalette() // torn-off boxes share the main box's theme
 	for i := 0; i < len(a.extrasDetached); i++ {
 		id := a.extrasDetached[i].id
 		if id < 0 || id >= len(widgets) {
@@ -481,10 +549,14 @@ func (a *App) drawExtrasDetached(w, h int32, pressed *bool) {
 		}
 		wd := widgets[id]
 		r := a.detachedBoxRect(i, w, h)
-		c.Fill(r, ColPanel)
-		c.Border(r, ColAccent)
+		if pal.gradient {
+			c.FillGradient(r, pal.bg, pal.bg2)
+		} else {
+			c.Fill(r, pal.bg)
+		}
+		c.Border(r, pal.border)
 		// Title strip = drag handle + close. Identity lives on the body button.
-		c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, ColPanelHi)
+		c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, pal.title)
 		if c.Button(sdl.Rect{X: r.X + r.W - 24, Y: r.Y + 4, W: 18, H: extrasTitleH - 8}, "x") {
 			a.reattachWidget(i)
 			return // slice mutated — stop drawing this frame

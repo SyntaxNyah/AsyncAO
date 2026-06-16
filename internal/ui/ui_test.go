@@ -564,6 +564,36 @@ func TestICLogStoresLongLine(t *testing.T) {
 	}
 }
 
+// TestParseHexColor pins the Extras-box colour parser: "rrggbb" (optionally with
+// "#" / surrounding space) → opaque colour; empty/short/long/non-hex → not ok
+// (so a blank pref keeps the stock colour).
+func TestParseHexColor(t *testing.T) {
+	cases := []struct {
+		in      string
+		r, g, b uint8
+		ok      bool
+	}{
+		{"78aaff", 0x78, 0xaa, 0xff, true},
+		{"#FF0000", 0xff, 0, 0, true},
+		{"000000", 0, 0, 0, true},
+		{"  abcdef ", 0xab, 0xcd, 0xef, true},
+		{"", 0, 0, 0, false},
+		{"12345", 0, 0, 0, false},
+		{"1234567", 0, 0, 0, false},
+		{"gggggg", 0, 0, 0, false},
+	}
+	for _, tc := range cases {
+		col, ok := parseHexColor(tc.in)
+		if ok != tc.ok {
+			t.Errorf("parseHexColor(%q) ok=%v, want %v", tc.in, ok, tc.ok)
+			continue
+		}
+		if ok && (col.R != tc.r || col.G != tc.g || col.B != tc.b || col.A != 255) {
+			t.Errorf("parseHexColor(%q) = %+v, want %d,%d,%d,255", tc.in, col, tc.r, tc.g, tc.b)
+		}
+	}
+}
+
 // TestICLogFilterCache pins the per-frame filter cache: stable while
 // nothing changed, invalidated by pushes and query edits.
 func TestICLogFilterCache(t *testing.T) {

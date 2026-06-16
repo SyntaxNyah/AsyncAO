@@ -833,6 +833,32 @@ func (c *Ctx) Fill(r sdl.Rect, col sdl.Color) {
 	_ = c.Ren.FillRect(&r)
 }
 
+// gradientSteps bounds the horizontal strips a vertical gradient draws — smooth
+// enough at any panel height, cheap enough off the render hot path (gradients
+// are opt-in and only paint on an open panel).
+const gradientSteps = int32(48)
+
+// FillGradient paints r as a top→bottom vertical gradient from top to bottom.
+func (c *Ctx) FillGradient(r sdl.Rect, top, bottom sdl.Color) {
+	if r.W <= 0 || r.H <= 0 {
+		return
+	}
+	n := gradientSteps
+	if r.H < n {
+		n = r.H // never more strips than pixels
+	}
+	lerp := func(a, b uint8, t int32) uint8 { return uint8(int32(a) + (int32(b)-int32(a))*t/(n-1)) }
+	if n == 1 {
+		c.Fill(r, top)
+		return
+	}
+	for i := int32(0); i < n; i++ {
+		y0, y1 := r.Y+i*r.H/n, r.Y+(i+1)*r.H/n
+		c.Fill(sdl.Rect{X: r.X, Y: y0, W: r.W, H: y1 - y0},
+			sdl.Color{R: lerp(top.R, bottom.R, i), G: lerp(top.G, bottom.G, i), B: lerp(top.B, bottom.B, i), A: 255})
+	}
+}
+
 // Border outlines a rect.
 func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 	_ = c.Ren.SetDrawColor(col.R, col.G, col.B, col.A)

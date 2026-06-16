@@ -181,6 +181,20 @@ func TestHoldClearDefaults(t *testing.T) {
 	}
 }
 
+// TestExtrasBoxStyle pins the Extras-box theme prefs: blank/false by default
+// (stock look), and a full round-trip of the five colours + gradient flag.
+func TestExtrasBoxStyle(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if bg, _, _, _, _, grad := p.ExtrasBoxStyle(); bg != "" || grad {
+		t.Errorf("default ExtrasBoxStyle = bg %q grad %v, want blank/false", bg, grad)
+	}
+	p.SetExtrasBoxStyle("101018", "000000", "78aaff", "202030", "ffffff", true)
+	bg, bg2, border, title, text, grad := p.ExtrasBoxStyle()
+	if bg != "101018" || bg2 != "000000" || border != "78aaff" || title != "202030" || text != "ffffff" || !grad {
+		t.Errorf("round-trip = %q %q %q %q %q %v", bg, bg2, border, title, text, grad)
+	}
+}
+
 // TestThemeFitDefaultsAndClamp pins the theme-fit prefs: Stretch is the default
 // (zero value), and the mode/zoom/pan all clamp to their bounds.
 func TestThemeFitDefaultsAndClamp(t *testing.T) {

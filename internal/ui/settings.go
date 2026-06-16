@@ -509,6 +509,36 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		y += btnH + 10
 	}
 
+	// Extras box appearance: a hex colour per element (blank = the stock colour),
+	// a live swatch, and a Background → Gradient↓ fade. Applies to the floating
+	// Extras box and its torn-off boxes; default (all blank) is byte-identical.
+	c.Label(pad, y+4, "Extras box colours:", ColText)
+	c.LabelClipped(pad+150, y+4, w-pad-150-scrollBarW, "hex like 78aaff — blank = default · live on the open box", ColTextDim)
+	y += 24
+	exBg, exBg2, exBorder, exTitle, exText, exGrad := a.d.Prefs.ExtrasBoxStyle()
+	cur := [5]string{exBg, exBg2, exBorder, exTitle, exText}
+	next := cur
+	for i, label := range [5]string{"Background", "Gradient ↓", "Border", "Title bar", "Text"} {
+		c.Label(pad+16, y+4, label, ColTextDim)
+		swatch := ColPanel
+		if col, ok := parseHexColor(next[i]); ok {
+			swatch = col
+		}
+		swR := sdl.Rect{X: pad + 120, Y: y + 1, W: 18, H: 18}
+		c.Fill(swR, swatch)
+		c.Border(swR, ColTextDim)
+		next[i], _ = c.TextField("excol"+strconv.Itoa(i), sdl.Rect{X: pad + 146, Y: y, W: 110, H: fieldH}, next[i], "rrggbb")
+		y += 26
+	}
+	nextGrad := exGrad
+	if v := c.Checkbox(pad+16, y, "Background gradient (Background → Gradient ↓)", exGrad); v != exGrad {
+		nextGrad = v
+	}
+	y += 30
+	if next != cur || nextGrad != exGrad {
+		a.d.Prefs.SetExtrasBoxStyle(next[0], next[1], next[2], next[3], next[4], nextGrad)
+	}
+
 	// IC/OOC font override: a chain of TTF/TTC paths, first covering font
 	// per line wins (put a CJK-capable font later in the chain).
 	c.Label(pad, y+4, "IC/OOC font:", ColText)
