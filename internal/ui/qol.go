@@ -564,20 +564,23 @@ func (a *App) oocWrapped(width int32) []string {
 		if i < len(a.oocSpeakers) {
 			sp = a.oocSpeakers[i]
 		}
-		// Pull the link from the WHOLE (unmasked) entry once, like pushIC does —
-		// a long URL the wrap hard-splits below would otherwise be captured as a
-		// truncated fragment (Discord CDN links die at the first '&').
-		entryURL := ""
-		if u := extractURLs(entry, 1); len(u) > 0 {
-			entryURL = u[0]
-		}
-		if streamer {
-			entry = streamerMaskLine(entry)
-		}
 		entryFirst := true // the speaker tints only the entry's FIRST display line
-		for _, para := range strings.Split(entry, "\n") {
-			// Per-paragraph font pick: wraps measure with the font that
-			// will draw the line (the CJK chain rule).
+		for _, rawPara := range strings.Split(entry, "\n") {
+			// Link PER PARAGRAPH, from the UNMASKED line: a multi-line entry with a
+			// URL on each line (a server's fork/upstream description) makes each line
+			// open its OWN link, not the entry's first one. A long URL the wrap
+			// hard-splits below is still captured whole here — extractURLs runs on the
+			// full paragraph, never a wrapped fragment.
+			paraURL := ""
+			if u := extractURLs(rawPara, 1); len(u) > 0 {
+				paraURL = u[0]
+			}
+			para := rawPara
+			if streamer {
+				para = streamerMaskLine(para)
+			}
+			// Per-paragraph font pick: wraps measure with the font that will draw
+			// the line (the CJK chain rule).
 			font := a.ctx.LogFontFor(a.logPct, para)
 			lines := wrapToWidth(font, strings.TrimRight(para, "\r"), width, oocWrapMaxLinesPerEntry)
 			if len(lines) == 0 {
@@ -588,7 +591,7 @@ func (a *App) oocWrapped(width int32) []string {
 			}
 			for _, ln := range lines {
 				out = append(out, ln)
-				urls = append(urls, entryURL) // every wrapped row of the entry opens the whole link
+				urls = append(urls, paraURL) // every wrapped row of THIS line opens its link
 				if entryFirst {
 					name = append(name, sp)
 					entryFirst = false

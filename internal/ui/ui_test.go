@@ -500,6 +500,40 @@ func TestOOCWrapURLFullLink(t *testing.T) {
 	}
 }
 
+// TestOOCWrapURLPerParagraph pins that a multi-line OOC entry with a URL on each
+// line (a server's fork/upstream description) makes each line open its OWN link
+// — not the entry's first one for every line (the "hovering only one of two
+// links" bug).
+func TestOOCWrapURLPerParagraph(t *testing.T) {
+	a := testTabApp(t)
+	const u1 = "https://github.com/SyntaxNyah/Nyathena"
+	const u2 = "https://github.com/MangosArentLiterature/Athena"
+	a.pushOOC("Server: Fork:\n"+u1+"\nUpstream:\n"+u2, "Server")
+
+	lines := a.oocWrapped(800) // wide enough that each URL fits one row
+	if len(a.oocWrapURL) != len(lines) {
+		t.Fatalf("oocWrapURL (%d) not parallel to lines (%d)", len(a.oocWrapURL), len(lines))
+	}
+	var sawU1, sawU2 bool
+	for li, ln := range lines {
+		if ln == u1 {
+			sawU1 = true
+			if a.oocWrapURL[li] != u1 {
+				t.Errorf("u1 line carries %q, want u1", a.oocWrapURL[li])
+			}
+		}
+		if ln == u2 {
+			sawU2 = true
+			if a.oocWrapURL[li] != u2 { // the bug: this was u1 (the entry's first link)
+				t.Errorf("u2 line carries %q, want u2 (its OWN link, not the first)", a.oocWrapURL[li])
+			}
+		}
+	}
+	if !sawU1 || !sawU2 {
+		t.Fatalf("both URL lines must be present (u1=%v u2=%v)", sawU1, sawU2)
+	}
+}
+
 // TestCapLogLine pins the IC-entry guard that replaced the 120-char truncation
 // ("text cuts off if it's too long"): a real max-length IC message (256 on the
 // wire) survives whole to be word-wrapped at draw time, and only a hostile huge
