@@ -384,7 +384,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	// Title bar / drag handle.
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, pal.title)
 	c.Label(r.X+10, r.Y+6, "AsyncAO Extras", pal.text)
-	if c.Button(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 4, W: 20, H: extrasTitleH - 8}, "x") {
+	if c.ButtonCol(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 4, W: 20, H: extrasTitleH - 8}, "x", pal.bg, pal.title, pal.border, pal.text) {
 		a.showWidgets = false
 		if !a.extrasCloseHintShown { // tell them how to get it back — once per session
 			a.extrasCloseHintShown = true
@@ -451,7 +451,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		if a.extrasTearDetect(id, br, pressed) {
 			return // grid changed — stop drawing stale cells this frame
 		}
-		if c.Button(br, wd.label) {
+		if c.ButtonCol(br, wd.label, pal.bg, pal.title, pal.border, pal.text) {
 			wd.run()
 			return // an action can open a sub-panel / switch screen — stop here
 		}
@@ -557,7 +557,7 @@ func (a *App) drawExtrasDetached(w, h int32, pressed *bool) {
 		c.Border(r, pal.border)
 		// Title strip = drag handle + close. Identity lives on the body button.
 		c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, pal.title)
-		if c.Button(sdl.Rect{X: r.X + r.W - 24, Y: r.Y + 4, W: 18, H: extrasTitleH - 8}, "x") {
+		if c.ButtonCol(sdl.Rect{X: r.X + r.W - 24, Y: r.Y + 4, W: 18, H: extrasTitleH - 8}, "x", pal.bg, pal.title, pal.border, pal.text) {
 			a.reattachWidget(i)
 			return // slice mutated — stop drawing this frame
 		}
@@ -567,7 +567,7 @@ func (a *App) drawExtrasDetached(w, h int32, pressed *bool) {
 		grip := sdl.Rect{X: r.X + r.W - detachedGripSz, Y: r.Y + r.H - detachedGripSz, W: detachedGripSz, H: detachedGripSz}
 		a.handleDetachedResize(i, grip, r, pressed)
 		body := sdl.Rect{X: r.X + 8, Y: r.Y + extrasTitleH + 6, W: r.W - 16, H: r.H - extrasTitleH - 12}
-		if c.Button(body, wd.label) {
+		if c.ButtonCol(body, wd.label, pal.bg, pal.title, pal.border, pal.text) {
 			wd.run()
 			return
 		}

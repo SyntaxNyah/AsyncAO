@@ -1054,15 +1054,21 @@ func (c *Ctx) TextWidth(text string) int32 {
 
 // Button draws a clickable button; returns true on click.
 func (c *Ctx) Button(r sdl.Rect, label string) bool {
+	return c.ButtonCol(r, label, ColPanel, ColPanelHi, ColAccent, ColText)
+}
+
+// ButtonCol is Button in explicit colours (bg, hover bg, border, label) — so a
+// themed panel can colour its own buttons. Same look, click semantics and cost
+// as Button; Button is just ButtonCol in the stock palette.
+func (c *Ctx) ButtonCol(r sdl.Rect, label string, bg, hoverBg, border, text sdl.Color) bool {
 	hover := c.hovering(r)
-	bg := ColPanel
+	col := bg
 	if hover {
-		bg = ColPanelHi
+		col = hoverBg
 	}
-	c.Fill(r, bg)
-	c.Border(r, ColAccent)
-	t, ok := c.textTexture(label, ColText, c.font)
-	if ok {
+	c.Fill(r, col)
+	c.Border(r, border)
+	if t, ok := c.textTexture(label, text, c.font); ok {
 		// Clip to the button: tiny themed rects must never leak their
 		// label over the neighbors (Qt elided these).
 		w, x := t.w, r.X+(r.W-t.w)/2
