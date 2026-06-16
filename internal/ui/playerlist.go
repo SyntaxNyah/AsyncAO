@@ -111,6 +111,20 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		a.playerSort = (a.playerSort + 1) % playerSortModes
 	}
 	status := strconv.Itoa(len(a.rosterView())) + " here · live"
+	if !a.rosterLegacy { // show whether the /getarea UID/IPID enrich has landed yet
+		enriched := false
+		for i := range a.liveRoster {
+			if a.liveRoster[i].uid != "" {
+				enriched = true
+				break
+			}
+		}
+		if enriched {
+			status += " · UIDs ready"
+		} else {
+			status += " · fetching details…"
+		}
+	}
 	if a.rosterLegacy {
 		status = strconv.Itoa(len(a.rosterView())) + " players"
 		if !a.areaListAt.IsZero() {
