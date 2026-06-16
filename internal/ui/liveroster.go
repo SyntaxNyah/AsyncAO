@@ -42,9 +42,15 @@ func buildLiveRoster(chars []courtroom.CharacterSlot, headCount int, haveCount b
 			continue
 		}
 		if byChar == nil {
-			byChar = make(map[string]areaPlayer, len(snapshot))
+			byChar = make(map[string]areaPlayer, len(snapshot)*2)
 		}
+		// Index by BOTH the name and the showname: servers disagree on which the
+		// /getarea row leads with (Akashi "char (showname)", tsuserver/Athena/
+		// Nyathena "showname (char)"), so either one lands a match.
 		byChar[strings.ToLower(snapshot[i].name)] = snapshot[i]
+		if sn := snapshot[i].showname; sn != "" {
+			byChar[strings.ToLower(sn)] = snapshot[i]
+		}
 	}
 
 	out := make([]areaPlayer, 0, len(chars)+4)
@@ -57,7 +63,11 @@ func buildLiveRoster(chars []courtroom.CharacterSlot, headCount int, haveCount b
 			showname: shownameFor[strings.ToLower(chars[i].Name)],
 			area:     area,
 		}
-		if snap, ok := byChar[strings.ToLower(chars[i].Name)]; ok {
+		snap, ok := byChar[strings.ToLower(chars[i].Name)]
+		if !ok && row.showname != "" {
+			snap, ok = byChar[strings.ToLower(row.showname)] // match by the cached IC name
+		}
+		if ok {
 			row.uid, row.ooc, row.ipid = snap.uid, snap.ooc, snap.ipid
 			if row.showname == "" {
 				row.showname = snap.showname
