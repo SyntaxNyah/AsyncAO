@@ -185,14 +185,19 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   clipboard, and TXT/HTML export (`logs/` beside the exe; HTML keeps the
   AO palette). Lines **word-wrap to the list width** (cached against
   log/width/font-scale — never re-wrapped per frame).
-- **Player list** (the Players tab): a roster built from `/getarea`, with a char
-  icon per row, role highlights (you · the current speaker · friends), Spectator
-  and CM chips, a sort toggle (UID · name · speakers-first), and — before any
-  fetch — the live ARUP head-count for the area you're in. A **`/gas` groups by
-  area**: each non-empty area gets a header (name + count) you **click to jump
-  there** (an area transfer by name through the music list). The displayed name
-  falls back showname → OOC name → character. IPIDs are mod-only, shown
-  in-session, never persisted.
+- **Live player list** (the Players tab): **updates as people join and leave** —
+  driven, like webAO, by the server-pushed CharsCheck (taken characters) + the
+  ARUP head-count, with **no `/getarea` polling** (zero extra traffic, no
+  floodguard, zero per-frame cost). Spectators have no character, but
+  `spectators = head-count − taken chars`, so anonymous **Spectator rows come and
+  go** too. Each row has a char icon, role highlights (you · the current speaker ·
+  friends), Spectator/CM chips, and a sort toggle (UID · name · speakers-first).
+  A **"Legacy snapshot" tick box (off by default)** swaps in the classic
+  `/getarea` roster with UIDs, IPIDs and Pair/Copy actions on demand; a **`/gas`
+  then groups by area** with a header (name + count) you **click to jump there**
+  (an area transfer by name through the music list). The displayed name falls
+  back showname → OOC name → character. IPIDs are mod-only, shown in-session,
+  never persisted.
 - **Music changes in the IC log** (webAO/AO2 parity): when someone plays a song
   the log shows "*&lt;name&gt; has played a song: &lt;song&gt;*" (and "*has
   stopped the music*" on stop), named by the MC showname or the character. The
@@ -346,10 +351,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   record). Perf-positive (fewer frames spent on backlog). Raise the threshold
   in Settings to watch more of a backlog animate; it sits alongside the
   plain-English Text crawl / stay / chat-limit knobs.
+- **IC character counter** (ON by default, Settings → Audio & Chat): a live count
+  to the right of the IC box that turns red past ~256 chars, where many servers
+  truncate. The count string is cached, so the courtroom frame stays 0-alloc.
 - **Emote grid pages** (`<` / `>` + a `page x/y · N emotes` counter) when
   a character ships more emotes than fit — both the classic and themed
   layouts. The arrow row only appears when paging is needed; loading a
-  character resets to page 1. A **Random** button picks any emote (and jumps
+  character resets to page 1. The **mouse-wheel over the grid pages too** (scroll
+  up = previous, down = next). A **Random** button picks any emote (and jumps
   to its page), and **number keys 1–9** pick the emote in that grid position
   on the current page when the chat box isn't focused (picking focuses IC).
   **Ctrl+E** (rebindable) **cycles to the next emote**, wrapping at the end and
