@@ -2978,6 +2978,15 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	if a.emotePage >= pages {
 		a.emotePage = 0
 	}
+	// Mouse-wheel over the grid pages through emotes (scroll up = previous page,
+	// down = next). WheelIn fences the page-level scroll so nothing else moves.
+	if pages > 1 {
+		if d := c.WheelIn(r); d > 0 && a.emotePage > 0 {
+			a.emotePage--
+		} else if d < 0 && a.emotePage < pages-1 {
+			a.emotePage++
+		}
+	}
 	start := a.emotePage * perPage
 
 	for i := start; i < len(a.emotes) && i < start+perPage; i++ {

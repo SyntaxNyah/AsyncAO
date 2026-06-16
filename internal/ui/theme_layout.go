@@ -591,6 +591,13 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	if a.emotePage >= pages {
 		a.emotePage = 0
 	}
+	if pages > 1 { // mouse-wheel pages emotes (parity with the classic row)
+		if d := c.WheelIn(r); d > 0 && a.emotePage > 0 {
+			a.emotePage--
+		} else if d < 0 && a.emotePage < pages-1 {
+			a.emotePage++
+		}
+	}
 	start := a.emotePage * perPage
 
 	me := a.activeCharName()
