@@ -44,7 +44,11 @@ const (
 const (
 	lobbyRefreshTimeout = 15 * time.Second
 	logLines            = 8
-	logLineMax          = 120
+	logLineMax          = 120 // single-line UI (toasts/warnings) — NOT the IC log
+	// icLineCap bounds ONE stored IC entry (hostile-server guard). Long lines
+	// word-WRAP at draw time (icWrapped, up to 16 rows) instead of the old
+	// 120-char "…" truncation — real IC messages (≤256 on the wire) never cut.
+	icLineCap = 1024
 	// icLogCap sizes the IC scrollback (a casing session's worth; ~100 KiB
 	// worst case — the log is now scrollable/searchable/exportable).
 	icLogCap = 1024
@@ -3226,7 +3230,7 @@ func (a *App) pushIC(line string, color int, friend bool, friendColor int32, spe
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: clampLine(line), color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker})
+	a.icLog = append(a.icLog, icEntry{text: capLogLine(line), color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker})
 	if len(a.icLog) > icLogCap {
 		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
 		a.icLog = a.icLog[:icLogCap]
@@ -3267,6 +3271,20 @@ func appendCapped(list []string, line string, cap int) []string {
 		list = list[:cap]
 	}
 	return list
+}
+
+// capLogLine bounds one stored IC entry (hostile-server guard) WITHOUT the
+// old 120-char "…" truncation — the IC log word-wraps long lines at draw time
+// (icWrapped). Real IC messages (≤256 on the wire) are never cut. Byte-length
+// fast path; the rune conversion only runs on a genuinely huge line.
+func capLogLine(s string) string {
+	if len(s) <= icLineCap {
+		return s
+	}
+	if r := []rune(s); len(r) > icLineCap {
+		return string(r[:icLineCap]) + "…"
+	}
+	return s
 }
 
 func clampLine(s string) string {

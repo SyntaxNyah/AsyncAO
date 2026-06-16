@@ -279,7 +279,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		if ev.Message != nil {
 			fr, fc := a.friendMessage(s.serverKey, ev.Message)
 			force := a.d.Prefs.ForceCharNamesOn()
-			s.icLog = append(s.icLog, icEntry{text: clampLine(icLogLine(ev.Message, force)), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: icSpeakerName(ev.Message, force)})
+			s.icLog = append(s.icLog, icEntry{text: capLogLine(icLogLine(ev.Message, force)), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: icSpeakerName(ev.Message, force)})
 			if len(s.icLog) > icLogCap {
 				copy(s.icLog, s.icLog[len(s.icLog)-icLogCap:])
 				s.icLog = s.icLog[:icLogCap]

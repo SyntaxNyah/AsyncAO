@@ -436,6 +436,36 @@ func TestOOCWrapURLFullLink(t *testing.T) {
 	}
 }
 
+// TestCapLogLine pins the IC-entry guard that replaced the 120-char truncation
+// ("text cuts off if it's too long"): a real max-length IC message (256 on the
+// wire) survives whole to be word-wrapped at draw time, and only a hostile huge
+// line is bounded (with an ellipsis).
+func TestCapLogLine(t *testing.T) {
+	if s := "Phoenix: Objection!"; capLogLine(s) != s {
+		t.Error("a short line must pass through unchanged")
+	}
+	long := "Phoenix: " + strings.Repeat("a", 256) // the old clampLine cut these at 120
+	if got := capLogLine(long); got != long {
+		t.Errorf("a 256-char IC message must survive whole, got %d runes", len([]rune(got)))
+	}
+	huge := strings.Repeat("x", icLineCap+50)
+	if r := []rune(capLogLine(huge)); len(r) != icLineCap+1 || r[len(r)-1] != '…' {
+		t.Errorf("a hostile huge line must cap at %d runes + …, got %d", icLineCap, len(r))
+	}
+}
+
+// TestICLogStoresLongLine pins that pushIC keeps a long message intact (it now
+// wraps at draw time) instead of truncating at 120 chars.
+func TestICLogStoresLongLine(t *testing.T) {
+	a := &App{}
+	msg := "Phoenix: " + strings.Repeat("b", 200) // 209 chars, over the old cap
+	a.pushIC(msg, 0, false, -1, "Phoenix")
+	if a.icLog[0].text != msg {
+		t.Errorf("IC log cut a %d-rune line to %d (must wrap, not truncate)",
+			len([]rune(msg)), len([]rune(a.icLog[0].text)))
+	}
+}
+
 // TestICLogFilterCache pins the per-frame filter cache: stable while
 // nothing changed, invalidated by pushes and query edits.
 func TestICLogFilterCache(t *testing.T) {
