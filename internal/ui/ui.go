@@ -288,12 +288,12 @@ type Ctx struct {
 	caretField string // which field c.caret belongs to ("" = none); focus change resets it
 	caretAcc   time.Duration
 	// Hold-to-clear: holding holdKey (stamped per frame from prefs) for
-	// holdThreshold wipes the focused field. holdMs accumulates while it's
+	// holdThreshold wipes the focused field. holdAcc accumulates while it's
 	// physically held (SDL live state, so a missed KEYUP can't strand it).
 	holdOn        bool
 	holdKey       sdl.Keycode
 	holdThreshold time.Duration
-	holdMs        time.Duration
+	holdAcc       time.Duration
 	holdFired     bool
 
 	// Tab focus cycling (playtest: "focus on ic, press tab, it goes to
@@ -654,9 +654,9 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	// reset (and re-arm) the moment it's released. holdKey/holdOn were stamped
 	// last frame by App.Frame — one frame stale is fine.
 	if c.holdOn && c.keyHeld(c.holdKey) {
-		c.holdMs += dt
+		c.holdAcc += dt
 	} else {
-		c.holdMs = 0
+		c.holdAcc = 0
 		c.holdFired = false
 	}
 }
@@ -1245,7 +1245,7 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 			_ = sdl.SetClipboardText(value)
 		}
 		switch {
-		case c.holdOn && c.holdMs >= c.holdThreshold && !c.holdFired && value != "":
+		case c.holdOn && c.holdAcc >= c.holdThreshold && !c.holdFired && value != "":
 			// Hold-to-clear: the bound key (default Backspace) held past the
 			// threshold wipes the whole field at once — no slow char-by-char.
 			c.holdFired = true
