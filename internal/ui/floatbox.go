@@ -14,6 +14,7 @@ package ui
 // edge so exactly one of them grabs a given press.
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -21,9 +22,10 @@ import (
 
 const (
 	extrasBoxW   = int32(380) // main box default width
-	extrasBoxH   = int32(360) // main box default height
+	extrasBoxH   = int32(392) // main box default height
 	extrasMinW   = int32(300) // resize floor: 2 columns stay readable
-	extrasMinH   = int32(340) // resize floor: all 13 widgets' rows + hint still fit
+	extrasMinH   = int32(372) // resize floor: volume row + all 13 widgets' rows + hint still fit
+	extrasVolH   = int32(28)  // master-volume row above the widget grid
 	extrasTitleH = int32(26)  // title bar / drag handle height (main + torn boxes)
 	extrasGripSz = int32(16)  // bottom-right resize grip
 
@@ -333,11 +335,23 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	a.handleExtrasResize(grip, r, pressed)
 	a.drawResizeGrip(grip)
 
+	// Master volume — an easy, theme-free way to turn it down (players' top ask:
+	// "the volume is in a bad place"). Scales music/SFX/blip together.
+	volY := r.Y + extrasTitleH + 6
+	c.Label(r.X+10, volY+2, "Volume", ColText)
+	master := a.d.Prefs.MasterVolume()
+	volTrack := sdl.Rect{X: r.X + 70, Y: volY + 3, W: r.W - 70 - 56, H: 14}
+	if v := int(c.Slider("extrasmaster", volTrack, int32(master), 100)); v != master {
+		a.d.Prefs.SetMasterVolume(v)
+		a.applyAudioVolumes()
+	}
+	c.Label(r.X+r.W-46, volY+2, strconv.Itoa(master)+"%", ColTextDim)
+
 	widgets := a.extrasWidgets()
 	const cols = int32(2)
 	const cellH, gap = int32(34), int32(8)
 	cellW := (r.W - 20 - gap) / cols
-	gx, gy := r.X+10, r.Y+extrasTitleH+8
+	gx, gy := r.X+10, r.Y+extrasTitleH+8+extrasVolH
 	slot := int32(0) // visible cells compact past torn-off widgets
 	for id, wd := range widgets {
 		if a.widgetDetached(id) {

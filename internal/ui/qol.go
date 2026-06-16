@@ -294,6 +294,11 @@ func (a *App) applyAudioVolumes() {
 	if a.musicDucked {
 		music = music * duckMusicPercent / 100
 	}
+	// Master multiplier scales everything (composes over mute/duck) — the one
+	// "too loud / too quiet" knob.
+	if m := a.d.Prefs.MasterVolume(); m != 100 {
+		music, sfx, blip = music*m/100, sfx*m/100, blip*m/100
+	}
 	a.d.Audio.SetVolumes(music, sfx, blip)
 }
 

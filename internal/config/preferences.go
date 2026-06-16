@@ -388,6 +388,7 @@ type AssetPreferences struct {
 	MusicVol               int                          `json:"musicVolume"`
 	SFXVol                 int                          `json:"sfxVolume"`
 	BlipVol                int                          `json:"blipVolume"`
+	MasterVol              int                          `json:"masterVolume"` // scales all three (default 100)
 	TextCrawlMs            int                          `json:"textCrawlMs"`
 	TextStayMs             int                          `json:"textStayMs"`
 	ChatRateLimitMs        int                          `json:"chatRateLimitMs"`
@@ -518,9 +519,10 @@ type prefsJSON struct {
 	WindowH            int                          `json:"windowHeight"`
 	WindowFull         *bool                        `json:"windowFullscreen"` // absent = default OFF
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
-	MusicVol *int `json:"musicVolume"`
-	SFXVol   *int `json:"sfxVolume"`
-	BlipVol  *int `json:"blipVolume"`
+	MusicVol  *int `json:"musicVolume"`
+	SFXVol    *int `json:"sfxVolume"`
+	BlipVol   *int `json:"blipVolume"`
+	MasterVol *int `json:"masterVolume"`
 	// Stay/ratelimit use pointers too: 0 means "no linger" / "off".
 	TextCrawlMs        int                       `json:"textCrawlMs"`
 	TextStayMs         *int                      `json:"textStayMs"`
@@ -780,6 +782,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		MusicVol:           defaultAudioVolume,
 		SFXVol:             defaultAudioVolume,
 		BlipVol:            defaultAudioVolume,
+		MasterVol:          defaultAudioVolume,
 		TextCrawlMs:        DefaultTextCrawlMs,
 		TextStayMs:         DefaultTextStayMs,
 		ChatRateLimitMs:    DefaultChatRateLimitMs,
@@ -939,6 +942,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.BlipVol != nil {
 		p.BlipVol = clampPercent(*onDisk.BlipVol, 0, defaultAudioVolume)
+	}
+	if onDisk.MasterVol != nil {
+		p.MasterVol = clampPercent(*onDisk.MasterVol, 0, defaultAudioVolume)
 	}
 	if onDisk.TextCrawlMs != 0 {
 		p.TextCrawlMs = clampPercent(onDisk.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
@@ -2361,6 +2367,27 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 		return
 	}
 	p.MusicVol, p.SFXVol, p.BlipVol = music, sfx, blip
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MasterVolume reports the master multiplier (0–100) that scales music/SFX/blip
+// together — the single "make everything quieter/louder" control.
+func (p *AssetPreferences) MasterVolume() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MasterVol
+}
+
+// SetMasterVolume clamps and persists the master volume multiplier.
+func (p *AssetPreferences) SetMasterVolume(v int) {
+	v = clampPercent(v, 0, defaultAudioVolume)
+	p.mu.Lock()
+	if p.MasterVol == v {
+		p.mu.Unlock()
+		return
+	}
+	p.MasterVol = v
 	p.mu.Unlock()
 	p.markDirty()
 }

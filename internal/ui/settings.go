@@ -982,6 +982,12 @@ func (a *App) applyPrefsToState() {
 // drawSettingsAudioChat: volumes, message timing, casing alerts, callwords.
 func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	c := a.ctx
+	// Master volume — scales everything; also on the Extras box for quick access.
+	if mv := a.volumeRow(y, "Master volume", a.d.Prefs.MasterVolume()); mv != a.d.Prefs.MasterVolume() {
+		a.d.Prefs.SetMasterVolume(mv)
+		a.applyAudioVolumes()
+	}
+	y += 30
 	music, sfx, blip := a.d.Prefs.AudioVolumes()
 	music = a.volumeRow(y, "Music volume", music)
 	y += 26
