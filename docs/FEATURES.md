@@ -139,15 +139,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   unreadable. Untick it to use the theme's lobby; the **courtroom still uses the
   theme** either way, so you keep the rest of the theme for free.
 - Settings shows a live chatbox preview with the applied colors.
-- **AsyncAO extras on AO2 themes** (the "★ Extras" button): a legacy AO2
+- **Floating Extras box** (the "★ Extras" button / **Ctrl+X**): a legacy AO2
   `courtroom_design.ini` has no element keys for AsyncAO's own features
   (Wardrobe, Jukebox, Background, Theater, Pair, Evidence, Login, Settings, …),
-  so when a theme drives the courtroom layout they'd be unreachable. One compact
-  **★ Extras** button, pinned bottom-left so it barely touches the theme art,
-  opens a **box of widgets** with all of them. The box also opens with a hotkey
-  (default `x`), and the button itself is **hideable** via **UI… → chrome** for a
-  pure-theme look (the hotkey still works). A one-time hint on the first themed
-  draw points players at it.
+  so when a theme drives the courtroom layout they'd be unreachable. Pressing
+  **★ Extras** (pinned bottom-left) — or **Ctrl+X** — opens a **non-blocking
+  floating box** of all of them: the courtroom, chat and logs stay live
+  underneath (a per-frame pointer fence, not a modal). **Drag the title bar** to
+  move it, **drag the bottom-right corner** to resize it, and **drag any widget
+  out** of the grid to pop it into its own little movable, resizable box that
+  persists even when the main box is closed (close one to send its widget back to
+  the grid). Closing the box drops a one-shot hint naming the reopen key. The
+  button is **hideable** via **UI… → chrome** for a pure-theme look (Ctrl+X still
+  reopens it). All of this stays on the zero-allocation render path — the
+  box-closed courtroom frame is byte-identical.
 
 ## Diagnostics
 
@@ -180,6 +185,29 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   clipboard, and TXT/HTML export (`logs/` beside the exe; HTML keeps the
   AO palette). Lines **word-wrap to the list width** (cached against
   log/width/font-scale — never re-wrapped per frame).
+- **Player list** (the Players tab): a roster built from `/getarea`, with a char
+  icon per row, role highlights (you · the current speaker · friends), Spectator
+  and CM chips, a sort toggle (UID · name · speakers-first), and — before any
+  fetch — the live ARUP head-count for the area you're in. A **`/gas` groups by
+  area**: each non-empty area gets a header (name + count) you **click to jump
+  there** (an area transfer by name through the music list). The displayed name
+  falls back showname → OOC name → character. IPIDs are mod-only, shown
+  in-session, never persisted.
+- **Music changes in the IC log** (webAO/AO2 parity): when someone plays a song
+  the log shows "*&lt;name&gt; has played a song: &lt;song&gt;*" (and "*has
+  stopped the music*" on stop), named by the MC showname or the character. The
+  **`~stop` sentinel halts playback immediately** instead of fetching a track
+  that 404s, and **disconnecting from a server stops the music** too.
+- **OOC links survive word-wrap**: a long shared link (e.g. a Discord CDN URL
+  with a `&`-laden query string) that wraps across rows still opens / copies /
+  saves whole — resolved from the source entry, not the visible fragment.
+- **Custom window size + fullscreen** (Settings → Window): pick a size from
+  presets, **Fit to screen**, or a custom W×H — or go **borderless fullscreen**
+  (**F11** toggles it from any screen). Every applied size is clamped to the
+  display and recentered, so a window bigger than the monitor can't be stranded
+  off-screen; the choice persists across launches.
+- **Double-click any text field** to select all its text — a quick replace or
+  clear without holding backspace.
 - **Per-area scrollback** (Settings → Audio & Chat, **OFF by default**): when
   on, each area keeps its own IC log — clicking an area in the Areas list saves
   the current log and swaps in that area's history (empty on first visit, your

@@ -38,6 +38,14 @@ everything in memory and on disk, and renders without allocating.
 - **Niceties** — hover an emote or character icon for 3 seconds (or
   right-click) to preview the full sprite; saved shownames; live-loading
   character grid with search; per-type format toggles.
+- **Quality-of-life suite** — a non-blocking **floating Extras box** (drag any
+  widget out into its own movable, resizable box; the courtroom stays live
+  underneath); a **player list** that groups a `/gas` by area and jumps you
+  there on a click; a cross-server **jukebox** for the `/play` links DJs share;
+  **custom window size + borderless fullscreen** (F11, with a "Fit to screen"
+  rescue); per-speaker name colours; callword alerts; highlighted friends; and
+  music changes logged right in the IC log. See
+  [docs/FEATURES.md](docs/FEATURES.md) for the full inventory.
 
 ## Quick start
 
@@ -81,6 +89,16 @@ of their work and follows their protocol and conventions:
 - **[AO-SDL](https://github.com/AttorneyOnline/AO-SDL)** — the SDL2 rendering
   model reference
 - The whole AO community at [aceattorneyonline.com](https://aceattorneyonline.com)
+
+### Beta testers
+
+Thank you to everyone who tested AsyncAO while it was closed source — finding
+bugs, requesting features, and giving the feedback that shaped it:
+**Cocoa Bean, Lala, Peen, Emerald, Extra7, Poki, Xocfti, Dag**.
+
+A special thank-you to **Northgate** — who backed the project, including
+financially, and gave the inspiration to keep going. Without that support
+AsyncAO wouldn't have come this far this fast.
 
 Thank you everyone for spending the time to read this.
 
