@@ -56,42 +56,62 @@ func playerSortLabel(mode int) string {
 // per-row icon + highlights + Pair / Copy actions.
 func (a *App) drawPlayerList(r sdl.Rect) {
 	c := a.ctx
-	// Row 1: fetch buttons. A hand fetch REPLACES the snapshot (same as the pair
-	// popup) so a header-less /ga still starts a clean roster.
-	c.Label(r.X, r.Y+5, "Fetch:", ColTextDim)
-	bx := r.X + 48
-	for _, cmd := range []string{"/ga", "/gas", "/getarea"} {
-		bw := c.TextWidth(cmd) + 14
-		if c.Button(sdl.Rect{X: bx, Y: r.Y, W: bw, H: 22}, cmd) {
-			a.pairAreaReset = true
-			a.queueOOCLines([]string{cmd})
-			a.warnLine = clampLine("Sent " + cmd + " — the list fills from the reply.")
-			a.warnAt = a.now()
+	// Row 1: live indicator (default) OR the legacy fetch buttons, plus the
+	// "Legacy snapshot" tick box that switches the two. Live = no traffic; legacy
+	// = a /getarea snapshot whose hand fetch REPLACES the roster (clean restart).
+	if a.rosterLegacy {
+		c.Label(r.X, r.Y+5, "Fetch:", ColTextDim)
+		bx := r.X + 48
+		for _, cmd := range []string{"/ga", "/gas", "/getarea"} {
+			bw := c.TextWidth(cmd) + 14
+			if c.Button(sdl.Rect{X: bx, Y: r.Y, W: bw, H: 22}, cmd) {
+				a.pairAreaReset = true
+				a.queueOOCLines([]string{cmd})
+				a.warnLine = clampLine("Sent " + cmd + " — the list fills from the reply.")
+				a.warnAt = a.now()
+			}
+			bx += bw + 5
 		}
-		bx += bw + 5
+	} else {
+		c.Label(r.X, r.Y+5, "● LIVE — updates as people join & leave", ColTierGreen)
 	}
+	const legLabel = "Legacy snapshot"
+	legW := int32(22) + c.TextWidth(legLabel)
+	legX := r.X + r.W - legW - 4
+	if next := c.Checkbox(legX, r.Y+3, legLabel, a.rosterLegacy); next != a.rosterLegacy {
+		a.setRosterLegacy(next)
+	}
+	c.Tooltip(sdl.Rect{X: legX, Y: r.Y + 3, W: legW, H: 16},
+		"Off (default): live roster from the server's join/leave signals — no commands sent, spectators come & go by head-count. On: the classic /getarea snapshot with names, UIDs & IPIDs (Pair/Copy), fetched on demand.")
 	r.Y += 26
 	r.H -= 26
-	// Row 2: sort toggle + snapshot status.
+	// Row 2: sort toggle + status (live head-count vs. legacy snapshot time).
 	sortBtn := "Sort: " + playerSortLabel(a.playerSort)
 	sw := c.TextWidth(sortBtn) + 16
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: sw, H: 22}, sortBtn) {
 		a.playerSort = (a.playerSort + 1) % playerSortModes
 	}
-	status := strconv.Itoa(len(a.areaPlayers)) + " players"
-	if !a.areaListAt.IsZero() {
-		status += "  ·  as of " + a.areaListAt.Format("15:04") // a snapshot, not live
+	status := strconv.Itoa(len(a.rosterView())) + " here · live"
+	if a.rosterLegacy {
+		status = strconv.Itoa(len(a.rosterView())) + " players"
+		if !a.areaListAt.IsZero() {
+			status += "  ·  as of " + a.areaListAt.Format("15:04") // a snapshot, not live
+		}
 	}
 	c.LabelClipped(r.X+sw+10, r.Y+5, r.X+r.W-(r.X+sw+10)-4, status, ColTextDim)
 	r.Y += 28
 	r.H -= 28
 
-	if len(a.areaPlayers) == 0 {
-		// No roster yet: still show the live ARUP head-count for the area you're in
-		// (the names need a /ga, but the count is free).
+	if len(a.rosterView()) == 0 {
 		hint := "Run /ga (or /gas, /getarea) to list who's in this area."
+		if !a.rosterLegacy {
+			hint = "Nobody with a character here yet — the list fills live as people join."
+		}
 		if n, ok := a.curAreaPlayers(); ok {
-			hint = "This area has " + strconv.Itoa(n) + " player(s) right now — run /ga for names."
+			hint = "This area has " + strconv.Itoa(n) + " player(s) right now."
+			if a.rosterLegacy {
+				hint += " Run /ga for names."
+			}
 		}
 		c.LabelClipped(r.X, r.Y+4, r.W, hint, ColTextDim)
 		return
@@ -148,7 +168,7 @@ func rowHeight(row rosterRow) int32 {
 // into areaPlayers (sort-stable) — the key for the icon cache.
 func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet map[string]bool) {
 	c := a.ctx
-	p := &a.areaPlayers[idx]
+	p := &a.rosterView()[idx]
 	isMod := a.sess != nil && a.sess.ModGranted
 	isSpec := strings.EqualFold(p.name, "Spectator")
 	isMe := myUID != "" && p.uid == myUID
@@ -188,19 +208,23 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	// Right cluster: Pair + compact Copy buttons (mod also gets Copy-IPID).
 	btnY := row.Y + (row.H-22)/2
 	bx := row.X + row.W - 4
-	pw := c.TextWidth("Pair") + 14
-	bx -= pw
-	if c.Button(sdl.Rect{X: bx, Y: btnY, W: pw, H: 22}, "Pair") {
-		a.queueOOCLines([]string{"/pair " + p.uid}) // we have the UID — no popup needed
-		a.warnLine = clampLine("Sent /pair " + p.uid + " — " + display)
-		a.warnAt = a.now()
-	}
-	uw := c.TextWidth("UID") + 12
-	bx -= uw + 4
-	if c.Button(sdl.Rect{X: bx, Y: btnY, W: uw, H: 22}, "UID") {
-		_ = sdl.SetClipboardText(p.uid)
-		a.warnLine = clampLine("Copied UID " + p.uid)
-		a.warnAt = a.now()
+	// Pair / Copy-UID need a UID, which only the /getarea snapshot carries — live
+	// rows (CharsCheck) have none, so these appear only in legacy mode.
+	if p.uid != "" {
+		pw := c.TextWidth("Pair") + 14
+		bx -= pw
+		if c.Button(sdl.Rect{X: bx, Y: btnY, W: pw, H: 22}, "Pair") {
+			a.queueOOCLines([]string{"/pair " + p.uid}) // we have the UID — no popup needed
+			a.warnLine = clampLine("Sent /pair " + p.uid + " — " + display)
+			a.warnAt = a.now()
+		}
+		uw := c.TextWidth("UID") + 12
+		bx -= uw + 4
+		if c.Button(sdl.Rect{X: bx, Y: btnY, W: uw, H: 22}, "UID") {
+			_ = sdl.SetClipboardText(p.uid)
+			a.warnLine = clampLine("Copied UID " + p.uid)
+			a.warnAt = a.now()
+		}
 	}
 	if p.ipid != "" && isMod {
 		iw := c.TextWidth("IPID") + 12
@@ -258,11 +282,11 @@ func (a *App) drawPlayerIcon(p *areaPlayer, idx int, cell sdl.Rect, isSpec bool)
 		return
 	}
 	base := a.urls.CharIcon(p.name)
-	if page, ok := a.cachedPage(&a.playerIconPages, &a.playerIconPagesGen, len(a.areaPlayers), idx, base); ok && len(page.Frames) > 0 {
+	if page, ok := a.cachedPage(&a.playerIconPages, &a.playerIconPagesGen, len(a.rosterView()), idx, base); ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
 		return
 	}
-	a.demandAsset(&a.playerIconAsk, len(a.areaPlayers), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
+	a.demandAsset(&a.playerIconAsk, len(a.rosterView()), idx, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
 	initial := p.name
 	if len(initial) > 2 {
 		initial = initial[:2]
@@ -368,24 +392,24 @@ func (a *App) playerRosterOrder(speaker string) []int {
 	if a.playerSort == playerSortSpeaking {
 		spk = speaker // only this mode depends on who's talking
 	}
-	if a.playerOrder != nil && a.playerOrderLen == len(a.areaPlayers) &&
+	if a.playerOrder != nil && a.playerOrderLen == len(a.rosterView()) &&
 		a.playerOrderSort == a.playerSort && a.playerOrderSpk == spk &&
-		a.playerOrderAt.Equal(a.areaListAt) {
+		a.playerOrderAt.Equal(a.rosterStamp()) {
 		return a.playerOrder
 	}
 	ord := a.playerOrder[:0]
-	if cap(ord) < len(a.areaPlayers) {
-		ord = make([]int, 0, len(a.areaPlayers))
+	if cap(ord) < len(a.rosterView()) {
+		ord = make([]int, 0, len(a.rosterView()))
 	}
-	for i := range a.areaPlayers {
+	for i := range a.rosterView() {
 		ord = append(ord, i)
 	}
 	a.sortRosterIdxs(ord, spk)
 	a.playerOrder = ord
-	a.playerOrderLen = len(a.areaPlayers)
+	a.playerOrderLen = len(a.rosterView())
 	a.playerOrderSort = a.playerSort
 	a.playerOrderSpk = spk
-	a.playerOrderAt = a.areaListAt
+	a.playerOrderAt = a.rosterStamp()
 	return ord
 }
 
@@ -395,16 +419,16 @@ func (a *App) sortRosterIdxs(ord []int, spk string) {
 	switch a.playerSort {
 	case playerSortName:
 		sort.SliceStable(ord, func(i, j int) bool {
-			return strings.ToLower(rosterName(&a.areaPlayers[ord[i]])) <
-				strings.ToLower(rosterName(&a.areaPlayers[ord[j]]))
+			return strings.ToLower(rosterName(&a.rosterView()[ord[i]])) <
+				strings.ToLower(rosterName(&a.rosterView()[ord[j]]))
 		})
 	case playerSortSpeaking:
 		sort.SliceStable(ord, func(i, j int) bool { // speakers first; stable keeps parse order otherwise
-			return rosterIsSpeaker(&a.areaPlayers[ord[i]], spk) && !rosterIsSpeaker(&a.areaPlayers[ord[j]], spk)
+			return rosterIsSpeaker(&a.rosterView()[ord[i]], spk) && !rosterIsSpeaker(&a.rosterView()[ord[j]], spk)
 		})
 	default: // playerSortUID
 		sort.SliceStable(ord, func(i, j int) bool {
-			return uidLess(a.areaPlayers[ord[i]].uid, a.areaPlayers[ord[j]].uid)
+			return uidLess(a.rosterView()[ord[i]].uid, a.rosterView()[ord[j]].uid)
 		})
 	}
 }
@@ -422,8 +446,8 @@ type rosterRow struct {
 // /gas), so the list groups by area instead of showing one flat run (a /ga).
 func (a *App) rosterMultiArea() bool {
 	first, seen := "", false
-	for i := range a.areaPlayers {
-		ar := a.areaPlayers[i].area
+	for i := range a.rosterView() {
+		ar := a.rosterView()[i].area
 		if ar == "" {
 			continue
 		}
@@ -445,9 +469,9 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 	if a.playerSort == playerSortSpeaking {
 		spk = speaker
 	}
-	if a.playerRows != nil && a.playerRowsLen == len(a.areaPlayers) &&
+	if a.playerRows != nil && a.playerRowsLen == len(a.rosterView()) &&
 		a.playerRowsSort == a.playerSort && a.playerRowsSpk == spk &&
-		a.playerRowsAt.Equal(a.areaListAt) {
+		a.playerRowsAt.Equal(a.rosterStamp()) {
 		return a.playerRows
 	}
 	rows := a.playerRows[:0]
@@ -458,8 +482,8 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 	} else {
 		order := make([]string, 0, 8) // areas in first-seen (parse) order
 		groups := map[string][]int{}
-		for i := range a.areaPlayers {
-			ar := a.areaPlayers[i].area
+		for i := range a.rosterView() {
+			ar := a.rosterView()[i].area
 			if _, ok := groups[ar]; !ok {
 				order = append(order, ar)
 			}
@@ -476,7 +500,7 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 	}
 	a.playerRows = rows
 	a.playerRowsLen, a.playerRowsSort, a.playerRowsSpk, a.playerRowsAt =
-		len(a.areaPlayers), a.playerSort, spk, a.areaListAt
+		len(a.rosterView()), a.playerSort, spk, a.rosterStamp()
 	return rows
 }
 

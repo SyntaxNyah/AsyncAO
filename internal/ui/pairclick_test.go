@@ -206,6 +206,7 @@ func TestParseAreaGasGroups(t *testing.T) {
 			t.Errorf("uid 14 ooc = %q, want web999", p.ooc)
 		}
 	}
+	a.rosterLegacy = true // rosterMultiArea reads the active roster — the snapshot here
 	if !a.rosterMultiArea() {
 		t.Error("a /gas spanning 3 areas must read as multi-area")
 	}

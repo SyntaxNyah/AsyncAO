@@ -25,6 +25,7 @@ func TestUIDLess(t *testing.T) {
 // (case-insensitive IC name), and Speaking (the current speaker floats up).
 func TestPlayerRosterOrder(t *testing.T) {
 	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	a.areaPlayers = []areaPlayer{
 		{uid: "10", name: "zeta", showname: "Zed"},
 		{uid: "2", name: "alpha"},
@@ -58,6 +59,7 @@ func TestPlayerRosterOrder(t *testing.T) {
 // the player rows still index into areaPlayers (the icon-cache key).
 func TestPlayerRosterRowsGrouped(t *testing.T) {
 	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	a.areaPlayers = []areaPlayer{
 		{uid: "0", name: "phoenix", area: "Lobby"},
 		{uid: "5", name: "maya", area: "Lobby"},
@@ -88,6 +90,7 @@ func TestPlayerRosterRowsGrouped(t *testing.T) {
 // headers — just the flat sorted player rows.
 func TestPlayerRosterRowsFlat(t *testing.T) {
 	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
 	a.areaPlayers = []areaPlayer{
 		{uid: "5", name: "maya", area: "Lobby"},
 		{uid: "0", name: "phoenix", area: "Lobby"},

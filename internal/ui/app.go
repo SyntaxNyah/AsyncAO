@@ -780,15 +780,23 @@ type sessionState struct {
 	// Click-to-pair (/pair <uid> for servers that sync pairs via the OOC command).
 	// areaUIDs/areaPlayers are parsed from /getarea in pushOOC; the popup pre-fills
 	// the UID when it can confidently match the clicked char, else manual entry.
-	pairPopupOpen  bool
-	pairPopupChar  string
-	pairPopupUID   string
-	areaUIDs       map[string]string
-	areaPlayers    []areaPlayer
-	areaLastUID    string    // last "[uid]" parsed, so a following Showname/OOC/IPID line attaches to it
-	areaCurName    string    // area currently being parsed in a /gas block (tags each player's .area)
-	areaListAt     time.Time // when the current roster snapshot was parsed ("as of HH:MM")
-	pairAreaReset  bool
+	pairPopupOpen bool
+	pairPopupChar string
+	pairPopupUID  string
+	areaUIDs      map[string]string
+	areaPlayers   []areaPlayer
+	areaLastUID   string    // last "[uid]" parsed, so a following Showname/OOC/IPID line attaches to it
+	areaCurName   string    // area currently being parsed in a /gas block (tags each player's .area)
+	areaListAt    time.Time // when the current roster snapshot was parsed ("as of HH:MM")
+	pairAreaReset bool
+	// Live player list (M1): rosterLegacy off (default) = the CharsCheck/ARUP
+	// roster that updates as people join/leave with no extra traffic; on = the
+	// rich /getarea snapshot. shownameFor caches char→showname from incoming IC
+	// so a live row shows the showname, not the bare character folder.
+	rosterLegacy   bool
+	liveRoster     []areaPlayer // M1 live roster (CharsCheck taken chars + ARUP spectators)
+	liveRosterAt   time.Time    // live roster's last change — the rows/order memo key
+	shownameFor    map[string]string
 	pairListScroll int32
 	playerScroll   int32 // Players-tab roster scroll
 	playerSort     int   // roster sort: 0=UID, 1=name, 2=speakers-first
@@ -1621,8 +1629,11 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// AO2-Client (handle_song). The room still plays the track below.
 			a.logMusicChange(ev)
 		case courtroom.EventCharsUpdated:
-			a.charLower = nil // names may have changed; rebuild lazily
+			a.charLower = nil     // names may have changed; rebuild lazily
+			a.rebuildLiveRoster() // a character was taken/freed → live roster moves
 			// icons refresh lazily as textures land
+		case courtroom.EventAreasUpdated:
+			a.rebuildLiveRoster() // ARUP head-count moved (covers spectator join/leave)
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()
 		case courtroom.EventOOC:
@@ -1635,6 +1646,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				fr, fc := a.friendMessage(a.serverKey, ev.Message)
 				force := a.d.Prefs.ForceCharNamesOn()
 				a.pushIC(icLogLine(ev.Message, force), ev.Message.TextColor, fr, fc, icSpeakerName(ev.Message, force))
+				a.noteShowname(ev.Message.CharName, ev.Message.Showname) // live-roster name cache
 				if fr {
 					a.signalFriend(a.serverName, ev.Message)
 				}
@@ -2000,7 +2012,8 @@ func (a *App) enterCourtroom() {
 	a.evShowImg = ""
 	a.screen = ScreenCourtroom
 	a.loadCharINI()
-	a.updatePresence() // character (and server) just became known
+	a.updatePresence()    // character (and server) just became known
+	a.rebuildLiveRoster() // seed the live player list from the handshake's CharsCheck
 }
 
 // applyTimingToRoom pushes the persisted crawl/stay knobs into the live
