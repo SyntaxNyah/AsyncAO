@@ -134,6 +134,27 @@ func TestClearLearnedType(t *testing.T) {
 	}
 }
 
+// TestClampWindowSize pins the shared window-size clamp (the stuck-too-big fix):
+// an oversize request on a smaller display fits to the usable bounds, a tiny
+// request floors at the minimum, and an unknown display (0) skips the ceiling.
+func TestClampWindowSize(t *testing.T) {
+	cases := []struct {
+		reqW, reqH, uW, uH, wantW, wantH int
+	}{
+		{4000, 3000, 1920, 1080, 1920, 1080},           // oversize → fit the screen
+		{1280, 720, 1920, 1080, 1280, 720},             // fits → unchanged
+		{200, 100, 1920, 1080, MinWindowW, MinWindowH}, // tiny → floor
+		{4000, 3000, 0, 0, 4000, 3000},                 // unknown display → no ceiling
+		{1280, 720, 1024, 768, 1024, 720},              // width over, height fits
+	}
+	for _, c := range cases {
+		if w, h := ClampWindowSize(c.reqW, c.reqH, c.uW, c.uH); w != c.wantW || h != c.wantH {
+			t.Errorf("ClampWindowSize(%d,%d,%d,%d) = %d,%d, want %d,%d",
+				c.reqW, c.reqH, c.uW, c.uH, w, h, c.wantW, c.wantH)
+		}
+	}
+}
+
 // TestThemeFitDefaultsAndClamp pins the theme-fit prefs: Stretch is the default
 // (zero value), and the mode/zoom/pan all clamp to their bounds.
 func TestThemeFitDefaultsAndClamp(t *testing.T) {

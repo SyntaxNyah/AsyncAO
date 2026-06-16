@@ -142,13 +142,31 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	}
 	defer ttf.Quit()
 
+	// Start at the saved windowed size if any, else the default.
+	winW, winH := int32(windowWidth), int32(windowHeight)
+	if sw, sh := prefs.WindowSize(); sw > 0 && sh > 0 {
+		winW, winH = int32(sw), int32(sh)
+	}
 	window, err := sdl.CreateWindow(windowTitle,
 		sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED,
-		windowWidth, windowHeight, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE)
+		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE)
 	if err != nil {
 		return err
 	}
 	defer window.Destroy()
+	// Clamp the (possibly stale/oversize) saved size to the display we landed on
+	// and recenter — the startup half of the "too big to drag smaller" fix.
+	if di, err := window.GetDisplayIndex(); err == nil {
+		if ub, err := sdl.GetDisplayUsableBounds(di); err == nil {
+			if cw, ch := config.ClampWindowSize(int(winW), int(winH), int(ub.W), int(ub.H)); int32(cw) != winW || int32(ch) != winH {
+				window.SetSize(int32(cw), int32(ch))
+				window.SetPosition(sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED)
+			}
+		}
+	}
+	if prefs.WindowFullscreen() {
+		_ = window.SetFullscreen(sdl.WINDOW_FULLSCREEN_DESKTOP)
+	}
 
 	renFlags := uint32(sdl.RENDERER_ACCELERATED)
 	if vsync {

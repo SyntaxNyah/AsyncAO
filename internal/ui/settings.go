@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,11 @@ type settingsState struct {
 	// font override edit buffer (semicolon-separated chain).
 	fontInput  string
 	fontLoaded bool
+
+	// custom window-size edit buffers (W, H), seeded from the live size and
+	// re-seeded after a preset/fit so they track the window.
+	winWInput, winHInput string
+	winLoaded            bool
 
 	// importArmed routes the next dropped .json into ImportSettings.
 	importArmed bool
@@ -441,6 +447,67 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		}
 	}
 	y += 34
+
+	// --- Window size / fullscreen: pick your own client dimensions (a window
+	// bigger than the monitor can't be dragged smaller; F11 + Fit to screen are
+	// the escapes). All window ops run here on the render thread.
+	c.Label(pad, y+4, "Window:", ColText)
+	full := a.d.Prefs.WindowFullscreen()
+	if next := c.Checkbox(pad+86, y, "Fullscreen (borderless) · F11 toggles", full); next != full {
+		a.applyFullscreen(next)
+	}
+	y += 28
+	if a.d.Prefs.WindowFullscreen() {
+		c.LabelClipped(pad, y+4, w-2*pad-scrollBarW, "Press F11 or untick Fullscreen to return to a window.", ColTextDim)
+		y += 28
+	} else {
+		cw, ch := a.ctx.WindowSize()
+		c.Label(pad, y+4, fmt.Sprintf("Current: %d×%d", cw, ch), ColTextDim)
+		bx := pad + 150
+		for _, p := range []struct {
+			label string
+			w, h  int
+		}{
+			{"1280×720", 1280, 720},
+			{"1600×900", 1600, 900},
+			{"1920×1080", 1920, 1080},
+			{"Default", config.DefaultWindowW, config.DefaultWindowH},
+		} {
+			bw := c.TextWidth(p.label) + 14
+			if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, p.label) {
+				a.applyWindowSize(p.w, p.h)
+				settings.winLoaded = false
+			}
+			bx += bw + 6
+		}
+		y += btnH + 8
+		if c.Button(sdl.Rect{X: pad, Y: y, W: 110, H: btnH}, "Fit to screen") {
+			a.fitWindowToScreen()
+			settings.winLoaded = false
+		}
+		if !settings.winLoaded { // seed/refresh the custom fields from the live size
+			sw, sh := a.ctx.WindowSize()
+			if sw <= 0 {
+				sw, sh = config.DefaultWindowW, config.DefaultWindowH
+			}
+			settings.winWInput, settings.winHInput = strconv.Itoa(sw), strconv.Itoa(sh)
+			settings.winLoaded = true
+		}
+		c.Label(pad+126, y+4, "Custom:", ColTextDim)
+		var wCommit, hCommit bool
+		settings.winWInput, wCommit = c.TextField("winw", sdl.Rect{X: pad + 190, Y: y, W: 66, H: fieldH}, settings.winWInput, "W")
+		c.Label(pad+262, y+4, "×", ColTextDim)
+		settings.winHInput, hCommit = c.TextField("winh", sdl.Rect{X: pad + 276, Y: y, W: 66, H: fieldH}, settings.winHInput, "H")
+		if c.Button(sdl.Rect{X: pad + 350, Y: y, W: 70, H: btnH}, "Apply") || wCommit || hCommit {
+			if iw, ew := strconv.Atoi(strings.TrimSpace(settings.winWInput)); ew == nil {
+				if ih, eh := strconv.Atoi(strings.TrimSpace(settings.winHInput)); eh == nil && iw > 0 && ih > 0 {
+					a.applyWindowSize(iw, ih)
+					settings.winLoaded = false
+				}
+			}
+		}
+		y += btnH + 10
+	}
 
 	// IC/OOC font override: a chain of TTF/TTC paths, first covering font
 	// per line wins (put a CJK-capable font later in the chain).

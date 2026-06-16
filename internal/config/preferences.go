@@ -246,7 +246,36 @@ const (
 	MinUIScalePercent  = 75
 	MaxUIScalePercent  = 200
 	UIScaleStepPercent = 5
+
+	// Window sizing (Settings → Window): the default windowed size, and the
+	// floor a request can't go below. A saved size of 0 means "use the default".
+	DefaultWindowW = 1152
+	DefaultWindowH = 864
+	MinWindowW     = 640
+	MinWindowH     = 480
 )
+
+// ClampWindowSize fits a requested window size into [min, display-usable].
+// usableW/H ≤ 0 means the display size is unknown (skip the ceiling). Pure, so
+// the live SDL resize AND the startup clamp share it (a saved oversize on a
+// smaller monitor can't re-strand the window off-screen) — and it's testable
+// without SDL.
+func ClampWindowSize(reqW, reqH, usableW, usableH int) (int, int) {
+	w, h := reqW, reqH
+	if w < MinWindowW {
+		w = MinWindowW
+	}
+	if h < MinWindowH {
+		h = MinWindowH
+	}
+	if usableW > 0 && w > usableW {
+		w = usableW
+	}
+	if usableH > 0 && h > usableH {
+		h = usableH
+	}
+	return w, h
+}
 
 // defaultAudioVolume is full volume (the pre-settings behavior).
 const defaultAudioVolume = 100
@@ -353,6 +382,9 @@ type AssetPreferences struct {
 	LogScalePct            int                          `json:"logScalePercent"`
 	InputHeightPct         int                          `json:"inputHeightPercent"`
 	UIScalePct             int                          `json:"uiScalePercent"`
+	WindowW                int                          `json:"windowWidth"`  // 0 = default
+	WindowH                int                          `json:"windowHeight"` // 0 = default
+	WindowFull             bool                         `json:"windowFullscreen"`
 	MusicVol               int                          `json:"musicVolume"`
 	SFXVol                 int                          `json:"sfxVolume"`
 	BlipVol                int                          `json:"blipVolume"`
@@ -482,6 +514,9 @@ type prefsJSON struct {
 	LogScalePct        int                          `json:"logScalePercent"`
 	InputHeightPct     int                          `json:"inputHeightPercent"`
 	UIScalePct         int                          `json:"uiScalePercent"`
+	WindowW            int                          `json:"windowWidth"`
+	WindowH            int                          `json:"windowHeight"`
+	WindowFull         *bool                        `json:"windowFullscreen"` // absent = default OFF
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
 	MusicVol *int `json:"musicVolume"`
 	SFXVol   *int `json:"sfxVolume"`
@@ -886,6 +921,15 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.UIScalePct != 0 {
 		p.UIScalePct = clampPercent(onDisk.UIScalePct, MinUIScalePercent, MaxUIScalePercent)
+	}
+	if onDisk.WindowW > 0 {
+		p.WindowW = onDisk.WindowW
+	}
+	if onDisk.WindowH > 0 {
+		p.WindowH = onDisk.WindowH
+	}
+	if onDisk.WindowFull != nil {
+		p.WindowFull = *onDisk.WindowFull
 	}
 	if onDisk.MusicVol != nil {
 		p.MusicVol = clampPercent(*onDisk.MusicVol, 0, defaultAudioVolume)
@@ -2247,6 +2291,52 @@ func (p *AssetPreferences) SetUIScale(pct int) {
 		return
 	}
 	p.UIScalePct = pct
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// WindowSize reports the saved windowed size (0,0 = use the default). Clamp to
+// the display at apply (ClampWindowSize) — a raw saved value may be stale.
+func (p *AssetPreferences) WindowSize() (int, int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.WindowW, p.WindowH
+}
+
+// SetWindowSize persists the windowed size (floored at the minimum; the display
+// ceiling is applied where the size is used, since prefs are SDL-free).
+func (p *AssetPreferences) SetWindowSize(w, h int) {
+	if w < MinWindowW {
+		w = MinWindowW
+	}
+	if h < MinWindowH {
+		h = MinWindowH
+	}
+	p.mu.Lock()
+	if p.WindowW == w && p.WindowH == h {
+		p.mu.Unlock()
+		return
+	}
+	p.WindowW, p.WindowH = w, h
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// WindowFullscreen reports whether the client launches in borderless fullscreen.
+func (p *AssetPreferences) WindowFullscreen() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.WindowFull
+}
+
+// SetWindowFullscreen persists the fullscreen choice.
+func (p *AssetPreferences) SetWindowFullscreen(on bool) {
+	p.mu.Lock()
+	if p.WindowFull == on {
+		p.mu.Unlock()
+		return
+	}
+	p.WindowFull = on
 	p.mu.Unlock()
 	p.markDirty()
 }

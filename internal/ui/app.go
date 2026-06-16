@@ -1452,6 +1452,51 @@ func (a *App) Disconnect() {
 	a.screen = ScreenLobby
 }
 
+// applyWindowSize resizes the window to a clamped, recentered size and persists
+// it, so a too-big or off-screen window snaps back into view. Leaves fullscreen
+// first (a windowed resize is meaningless while fullscreen).
+func (a *App) applyWindowSize(w, h int) {
+	if a.d.Prefs.WindowFullscreen() {
+		a.ctx.SetWindowFullscreen(false)
+		a.d.Prefs.SetWindowFullscreen(false)
+	}
+	uw, uh := a.ctx.WindowDisplayUsable()
+	w, h = config.ClampWindowSize(w, h, uw, uh)
+	a.ctx.ResizeWindow(w, h)
+	a.d.Prefs.SetWindowSize(w, h)
+}
+
+// fitWindowToScreen sizes the window to (most of) the display's usable area and
+// recenters — the one-click rescue for a window bigger than the monitor.
+func (a *App) fitWindowToScreen() {
+	uw, uh := a.ctx.WindowDisplayUsable()
+	if uw <= 0 || uh <= 0 {
+		a.applyWindowSize(config.DefaultWindowW, config.DefaultWindowH)
+		return
+	}
+	a.applyWindowSize(uw, uh) // ClampWindowSize keeps it within the usable bounds
+}
+
+// applyFullscreen toggles borderless fullscreen and persists it. Leaving
+// fullscreen snaps back to a clamped windowed size so a stranded one can't return.
+func (a *App) applyFullscreen(on bool) {
+	a.ctx.SetWindowFullscreen(on)
+	a.d.Prefs.SetWindowFullscreen(on)
+	if !on {
+		w, h := a.d.Prefs.WindowSize()
+		if w <= 0 || h <= 0 {
+			w, h = config.DefaultWindowW, config.DefaultWindowH
+		}
+		uw, uh := a.ctx.WindowDisplayUsable()
+		w, h = config.ClampWindowSize(w, h, uw, uh)
+		a.ctx.ResizeWindow(w, h)
+	}
+}
+
+// toggleFullscreen flips fullscreen — shared by the F11 escape and the Settings
+// checkbox.
+func (a *App) toggleFullscreen() { a.applyFullscreen(!a.d.Prefs.WindowFullscreen()) }
+
 // effectiveShowname is the name outgoing messages carry: the courtroom
 // override box when filled, the persisted Settings showname otherwise.
 func (a *App) effectiveShowname() string {
@@ -2478,6 +2523,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.ctx.keyPressed == sdl.K_F1 {
 		a.showHotkeys = !a.showHotkeys
 		a.ctx.keyPressed = 0
+	}
+	// F11 toggles fullscreen on any screen — the keyboard escape when a too-big
+	// window has dragged the Settings controls off the edge of the monitor.
+	if a.ctx.fullscreenReq {
+		a.toggleFullscreen()
 	}
 	// Log-selection press edge, computed once so both logs (which may both be
 	// on screen) read the same value — whichever draws first can't steal it.

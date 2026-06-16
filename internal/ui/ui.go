@@ -266,6 +266,7 @@ type Ctx struct {
 	enter          bool
 	tabPressed     bool
 	escPressed     bool
+	fullscreenReq  bool        // F11: toggle fullscreen this frame (consumed in app.Frame)
 	keyPressed     sdl.Keycode // plain (non-ctrl) keydown this frame (0 = none)
 	pasted         string      // Ctrl+V clipboard text (flattened to one line)
 	copyReq        bool        // Ctrl+C: focused field copies its value
@@ -367,6 +368,58 @@ func (c *Ctx) FlashWindow() {
 	if c.win != nil {
 		_ = c.win.Flash(sdl.FLASH_UNTIL_FOCUSED)
 	}
+}
+
+// WindowDisplayUsable returns the usable size (work area, minus the taskbar) of
+// the display the window currently sits on; (0,0) if unknown (headless). The
+// caller clamps a requested size into this (config.ClampWindowSize). Render
+// thread only.
+func (c *Ctx) WindowDisplayUsable() (int, int) {
+	if c.win == nil {
+		return 0, 0
+	}
+	di, err := c.win.GetDisplayIndex()
+	if err != nil {
+		di = 0
+	}
+	r, err := sdl.GetDisplayUsableBounds(di)
+	if err != nil {
+		return 0, 0
+	}
+	return int(r.W), int(r.H)
+}
+
+// WindowSize reports the current window size (0,0 headless). Render thread only.
+func (c *Ctx) WindowSize() (int, int) {
+	if c.win == nil {
+		return 0, 0
+	}
+	w, h := c.win.GetSize()
+	return int(w), int(h)
+}
+
+// ResizeWindow sets the windowed size and recenters it on its display, so a
+// too-big or off-screen window snaps back into view. No-op headless; the caller
+// clamps the size first. Render thread only.
+func (c *Ctx) ResizeWindow(w, h int) {
+	if c.win == nil {
+		return
+	}
+	c.win.SetSize(int32(w), int32(h))
+	c.win.SetPosition(sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED)
+}
+
+// SetWindowFullscreen toggles borderless desktop fullscreen (no display-mode
+// change — safe on every monitor). Render thread only.
+func (c *Ctx) SetWindowFullscreen(on bool) {
+	if c.win == nil {
+		return
+	}
+	var flags uint32
+	if on {
+		flags = sdl.WINDOW_FULLSCREEN_DESKTOP
+	}
+	_ = c.win.SetFullscreen(flags)
 }
 
 func loadEmbeddedFont(size int) (*ttf.Font, error) {
@@ -567,6 +620,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.enter = false
 	c.tabPressed = false
 	c.escPressed = false
+	c.fullscreenReq = false
 	c.keyPressed = 0
 	c.pasted = ""
 	c.copyReq = false
@@ -676,6 +730,8 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 			c.tabShift = e.Keysym.Mod&sdl.KMOD_SHIFT != 0
 		case sdl.K_ESCAPE:
 			c.escPressed = true
+		case sdl.K_F11:
+			c.fullscreenReq = true // toggle fullscreen — the keyboard escape from a too-big window
 		default:
 			// Plain keys feed the character keybinds (and the wardrobe's
 			// bind-capture); consumers check focus before acting.
