@@ -795,17 +795,18 @@ type sessionState struct {
 	// roster that updates as people join/leave with no extra traffic; on = the
 	// rich /getarea snapshot. shownameFor caches char→showname from incoming IC
 	// so a live row shows the showname, not the bare character folder.
-	rosterLegacy   bool
-	liveRoster     []areaPlayer // M1 live roster (CharsCheck taken chars + ARUP spectators)
-	liveRosterAt   time.Time    // live roster's last change — the rows/order memo key
-	shownameFor    map[string]string
-	icCountN       int    // M5 IC char counter: cached count + its string, reformatted
-	icCountStr     string // only when the length changes so the frame stays 0-alloc
-	pairListScroll int32
-	playerScroll   int32  // Players-tab roster scroll
-	playerSort     int    // roster sort: 0=UID, 1=name, 2=speakers-first
-	playerPct      int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
-	shownameAdd    string // M6: Settings "save a showname preset" input
+	rosterLegacy     bool
+	liveRoster       []areaPlayer // M1 live roster (CharsCheck taken chars + ARUP spectators)
+	liveRosterAt     time.Time    // live roster's last change — the rows/order memo key
+	liveDetailsAsked bool         // one /getarea auto-sent to enrich the live roster (per session)
+	shownameFor      map[string]string
+	icCountN         int    // M5 IC char counter: cached count + its string, reformatted
+	icCountStr       string // only when the length changes so the frame stays 0-alloc
+	pairListScroll   int32
+	playerScroll     int32  // Players-tab roster scroll
+	playerSort       int    // roster sort: 0=UID, 1=name, 2=speakers-first
+	playerPct        int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
+	shownameAdd      string // M6: Settings "save a showname preset" input
 	// playerOrder is the memoized display order (indices into areaPlayers); it
 	// recomputes only when the roster, sort mode, or current speaker change, so
 	// the Players tab never sorts per-frame.
@@ -2020,8 +2021,9 @@ func (a *App) enterCourtroom() {
 	a.evShowImg = ""
 	a.screen = ScreenCourtroom
 	a.loadCharINI()
-	a.updatePresence()    // character (and server) just became known
-	a.rebuildLiveRoster() // seed the live player list from the handshake's CharsCheck
+	a.updatePresence()         // character (and server) just became known
+	a.liveDetailsAsked = false // re-pull the rich roster once when the Players tab opens
+	a.rebuildLiveRoster()      // seed the live player list from the handshake's CharsCheck
 }
 
 // applyTimingToRoom pushes the persisted crawl/stay knobs into the live

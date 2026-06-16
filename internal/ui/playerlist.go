@@ -60,6 +60,13 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	if a.playerPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.playerPct = a.logPct
 	}
+	// First time the live tab opens this session, pull UIDs/IPIDs/OOC once so the
+	// rows get Pair/Copy without a manual Refresh (one /getarea — not per event).
+	if !a.rosterLegacy && !a.liveDetailsAsked && a.sess != nil {
+		a.liveDetailsAsked = true
+		a.pairAreaReset = true
+		a.queueOOCLines([]string{"/getarea"})
+	}
 	// Row 1: live indicator (default) OR the legacy fetch buttons, plus the
 	// "Legacy snapshot" tick box that switches the two. Live = no traffic; legacy
 	// = a /getarea snapshot whose hand fetch REPLACES the roster (clean restart).
@@ -160,7 +167,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			if rows[i].header {
 				a.drawAreaHeaderRow(rows[i], sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 2})
 			} else {
-				a.drawPlayerRow(rows[i].idx, sdl.Rect{X: r.X, Y: y, W: rowW, H: playerRowH - 4}, myUID, speaker, cmSet)
+				a.drawPlayerRow(rows[i].idx, sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 4}, myUID, speaker, cmSet)
 			}
 		}
 		y += rh
@@ -215,8 +222,9 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		c.Border(row, ColPanelHi)
 	}
 
-	// Char icon (left). Spectators have no character art, so don't demand it.
-	iconR := sdl.Rect{X: row.X + 6, Y: row.Y + (row.H-playerIconSz)/2, W: playerIconSz, H: playerIconSz}
+	// Char icon (left), scaled with the zoom so it never overflows a short row.
+	iconSz := playerIconSz * int32(a.playerPct) / 100
+	iconR := sdl.Rect{X: row.X + 6, Y: row.Y + (row.H-iconSz)/2, W: iconSz, H: iconSz}
 	a.drawPlayerIcon(p, idx, iconR, isSpec)
 
 	// Right cluster: Pair + compact Copy buttons (mod also gets Copy-IPID).
@@ -251,7 +259,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	}
 
 	// Text column between the icon and the button cluster.
-	textX := row.X + 6 + playerIconSz + 8
+	textX := row.X + 6 + iconSz + 8
 	textW := bx - textX - 8
 	if textW < 40 {
 		textW = 40
