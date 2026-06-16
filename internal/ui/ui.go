@@ -1096,12 +1096,16 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
 	hover := c.hovering(r)
 	if c.clicked {
-		c.selectAll = false // any click drops a pending select-all
+		c.selectAll = false // any single click drops a pending select-all
 		if hover {
 			c.focusID = id
 		} else if c.focusID == id {
 			c.focusID = ""
 		}
+	}
+	if c.dblClick && hover { // double-click selects all the text (quick replace/clear)
+		c.focusID = id
+		c.selectAll = true
 	}
 	focused := c.focusID == id
 
