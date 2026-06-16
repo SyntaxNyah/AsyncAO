@@ -41,18 +41,19 @@ const (
 	hotkeyExtras     = "extras"
 	// Per-menu shortcuts: jump straight to an Extras menu (a legacy AO2 theme has
 	// no button for these), skipping the Extras box if you know the key.
-	hotkeyCharMenu   = "char_menu"
-	hotkeyWardrobe   = "wardrobe"
-	hotkeyJukebox    = "jukebox"
-	hotkeyBackground = "background"
-	hotkeyEvidence   = "evidence"
-	hotkeyPairMenu   = "pair_menu"
-	hotkeyModcall    = "modcall"
-	hotkeyUIChrome   = "ui_chrome"
-	hotkeySettings   = "settings_menu"
-	hotkeyRandomChar = "random_char"
-	hotkeyVolDown    = "vol_down" // master volume −/+ a step (quick volume from the keyboard)
-	hotkeyVolUp      = "vol_up"
+	hotkeyCharMenu     = "char_menu"
+	hotkeyWardrobe     = "wardrobe"
+	hotkeyJukebox      = "jukebox"
+	hotkeyBackground   = "background"
+	hotkeyEvidence     = "evidence"
+	hotkeyPairMenu     = "pair_menu"
+	hotkeyModcall      = "modcall"
+	hotkeyUIChrome     = "ui_chrome"
+	hotkeySettings     = "settings_menu"
+	hotkeyRandomChar   = "random_char"
+	hotkeyVolDown      = "vol_down" // master volume −/+ a step (quick volume from the keyboard)
+	hotkeyVolUp        = "vol_up"
+	hotkeyShownameRand = "showname_rand" // swap to a random saved showname preset (M6)
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -90,8 +91,9 @@ var hotkeyDefs = []struct {
 	{hotkeyUIChrome, "Menu: UI chrome", "f"},
 	{hotkeySettings, "Menu: Settings", ","}, // Ctrl+, (prefs convention); NOT z — that's the layout-editor undo
 	{hotkeyRandomChar, "Random character", "r"},
-	{hotkeyVolDown, "Master volume down", "-"}, // Ctrl+-  (quieter)
-	{hotkeyVolUp, "Master volume up", "="},     // Ctrl+=  (louder)
+	{hotkeyVolDown, "Master volume down", "-"},          // Ctrl+-  (quieter)
+	{hotkeyVolUp, "Master volume up", "="},              // Ctrl+=  (louder)
+	{hotkeyShownameRand, "Random showname preset", "h"}, // Ctrl+H (rebindable)
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -251,6 +253,8 @@ func (a *App) handleHotkeys() {
 		a.screen = ScreenSettings
 	case a.hotkeyFor(hotkeyRandomChar):
 		a.randomChar()
+	case a.hotkeyFor(hotkeyShownameRand):
+		a.randomShowname()
 	}
 }
 

@@ -3177,6 +3177,21 @@ func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 	c.Label(input.X+input.W+6, input.Y+(input.H-14)/2, a.icCountStr, col)
 }
 
+// randomShowname swaps the active showname to a random saved preset (M6, the
+// Ctrl+H hotkey). It sets the in-courtroom override, which effectiveShowname
+// reads, so the next message carries it.
+func (a *App) randomShowname() {
+	presets := a.d.Prefs.ShownameList()
+	if len(presets) == 0 {
+		a.warnLine = "No showname presets saved — add some in Settings → General"
+		a.warnAt = a.now()
+		return
+	}
+	a.shownameOverride = presets[rand.IntN(len(presets))]
+	a.warnLine = clampLine("Showname → " + a.shownameOverride)
+	a.warnAt = a.now()
+}
+
 func (a *App) cycleEmote(delta int) {
 	n := len(a.emotes)
 	if n == 0 {
