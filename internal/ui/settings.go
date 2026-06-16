@@ -1086,15 +1086,25 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.applyTimingToRoom()
 	}
 
-	// Packed-room catch-up: when 20 people talk at once the stage falls
-	// minutes behind playing every preanim. This skips the backlog's
-	// animations so chat tracks real-time; the log keeps every line either way.
+	// Packed-room catch-up vs. the OG-client queue. ON (default) = webAO pacing:
+	// when 20 people talk at once, backlog messages skip their animations so the
+	// stage tracks real-time. OFF = the original AO2 client's queue — every line
+	// plays in full and in order, nothing cut off, but a room full of webAO users
+	// (who skip the queue) can leave you behind. The log keeps every line either
+	// way. (This is the "message queue" toggle — it was a setting, not removed.)
 	cuOn, cuThresh := a.d.Prefs.CatchUp()
-	if next := c.Checkbox(pad, y, "Catch up when behind (packed rooms): skip queued messages' animations so chat stays current", cuOn); next != cuOn {
+	const cuLabel = "Catch up in packed rooms — uncheck for the OG-client queue (every line plays in full, nothing cut off)"
+	if next := c.Checkbox(pad, y, cuLabel, cuOn); next != cuOn {
 		a.d.Prefs.SetCatchUp(next, cuThresh)
 		a.applyTimingToRoom()
 	}
+	c.Tooltip(sdl.Rect{X: pad, Y: y, W: 22 + c.TextWidth(cuLabel), H: 16},
+		"On (default): in a packed room, queued messages skip their animations so chat stays at real-time — like webAO. Off: the original AO2 client's queue — every IC message plays in full and in order (nothing cut off), but a roomful of webAO users can leave you minutes behind. The IC log keeps every line either way.")
 	y += 26
+	c.Label(pad+22, y, "Checked (default): webAO pacing — in a busy room, backlog messages skip their animation to keep chat current (they can flash past).", ColTextDim)
+	y += 18
+	c.Label(pad+22, y, "Unchecked: the original AO2 client's queue — every message plays out in full and in order, nothing skipped (busy webAO rooms may lag you).", ColTextDim)
+	y += 22
 	if cuOn {
 		nt := a.numberRow(y, "Catch up after", cuThresh, 1, 1, 50)
 		c.Label(pad+270, y+4, "fast-forward once at least this many messages are waiting (1 = stay on the newest)", ColTextDim)
