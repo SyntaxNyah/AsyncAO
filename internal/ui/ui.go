@@ -282,9 +282,11 @@ type Ctx struct {
 	hotkey     sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
 	tipText    string      // hover hint to paint at end-of-frame ("" = none)
 
-	focusID  string
-	caretOn  bool
-	caretAcc time.Duration
+	focusID    string
+	caretOn    bool
+	caret      int    // caret position (RUNE index) in the focused field's value
+	caretField string // which field c.caret belongs to ("" = none); focus change resets it
+	caretAcc   time.Duration
 
 	// Tab focus cycling (playtest: "focus on ic, press tab, it goes to
 	// ooc"): TextField records draw order here each frame; the next
@@ -1092,6 +1094,76 @@ func (c *Ctx) PasswordField(id string, r sdl.Rect, value string, placeholder str
 	return c.textField(id, r, value, placeholder, true)
 }
 
+// editOp is a caret movement / forward-delete a text field applies this frame.
+type editOp int
+
+const (
+	editNone editOp = iota
+	editLeft
+	editRight
+	editHome
+	editEnd
+	editDelete
+)
+
+// editInput is one frame of edits to a focused text field.
+type editInput struct {
+	typed  string // inserted text (typed + pasted)
+	back   bool   // backspace (delete the rune before the caret)
+	op     editOp // caret move or forward delete
+	selAll bool   // a pending select-all: an insert/delete replaces the whole value
+}
+
+// editStep applies one frame of edits to value at caret (a RUNE index), returning
+// the new value and caret. Pure and rune-aware (multibyte shownames — Häschen,
+// fünfzehn, 🍅 — so the caret is by rune, never by byte), so it carries all the
+// edit logic that the draw path (which needs a renderer) can't unit-test.
+func editStep(value string, caret int, in editInput) (string, int) {
+	runes := []rune(value)
+	if caret < 0 {
+		caret = 0
+	}
+	if caret > len(runes) {
+		caret = len(runes)
+	}
+	// A pending select-all: the next insert/delete replaces everything.
+	if in.selAll && (in.typed != "" || in.back || in.op == editDelete) {
+		if in.typed != "" {
+			t := []rune(in.typed)
+			return string(t), len(t)
+		}
+		return "", 0
+	}
+	switch {
+	case in.typed != "":
+		t := []rune(in.typed)
+		out := make([]rune, 0, len(runes)+len(t))
+		out = append(out, runes[:caret]...)
+		out = append(out, t...)
+		out = append(out, runes[caret:]...)
+		return string(out), caret + len(t)
+	case in.back && caret > 0:
+		out := make([]rune, 0, len(runes)-1)
+		out = append(out, runes[:caret-1]...)
+		out = append(out, runes[caret:]...)
+		return string(out), caret - 1
+	case in.op == editDelete && caret < len(runes):
+		out := make([]rune, 0, len(runes)-1)
+		out = append(out, runes[:caret]...)
+		out = append(out, runes[caret+1:]...)
+		return string(out), caret
+	case in.op == editLeft && caret > 0:
+		caret--
+	case in.op == editRight && caret < len(runes):
+		caret++
+	case in.op == editHome:
+		caret = 0
+	case in.op == editEnd:
+		caret = len(runes)
+	}
+	return value, caret
+}
+
 func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string, mask bool) (string, bool) {
 	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
 	hover := c.hovering(r)
@@ -1116,14 +1188,41 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	}
 	c.Border(r, border)
 
+	const padX = 6
+	avail := r.W - 2*padX
+	// maskOf maps a value to what's drawn (one '*' per rune when masked). The
+	// caret math measures the DISPLAY, so a password field never leaks its value.
+	maskOf := func(v string) string {
+		if mask && v != "" {
+			return strings.Repeat("*", utf8.RuneCountInString(v))
+		}
+		return v
+	}
+	if !focused && c.caretField == id {
+		c.caretField = "" // dropped focus → a future re-focus resets the caret to the end
+	}
+
 	enter := false
 	if focused {
-		if c.typed != "" || c.pasted != "" {
-			if c.selectAll {
-				value = "" // select-all: the edit replaces everything
-				c.selectAll = false
-			}
-			value += c.typed + c.pasted
+		// The caret is the focused field's. Default to the end on a focus change,
+		// and CLAMP every frame — value can shrink underneath us (click-to-pair,
+		// macros set a.icInput while it's focused), so a stale caret must never
+		// index past the end (the live-crash the advisor flagged).
+		rc := utf8.RuneCountInString(value)
+		if c.caretField != id {
+			c.caret = rc
+			c.caretField = id
+		}
+		if c.caret > rc {
+			c.caret = rc
+		}
+		if c.caret < 0 {
+			c.caret = 0
+		}
+		// A click positions the caret (measured on the display, so masked maps 1:1).
+		if c.clicked && hover {
+			pre := maskOf(value)
+			c.caret = c.caretIndexAtX(pre, c.mouseX-(r.X+padX)+c.fieldScroll(pre, c.caret, avail))
 		}
 		if c.copyReq && value != "" && !mask {
 			_ = sdl.SetClipboardText(value)
@@ -1132,16 +1231,29 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 			if value != "" && !mask {
 				_ = sdl.SetClipboardText(value)
 			}
-			value = ""
+			value, c.caret = "", 0
 			c.selectAll = false
-		}
-		if c.backspace && len(value) > 0 {
-			if c.selectAll {
-				value = ""
-				c.selectAll = false
-			} else {
-				runes := []rune(value)
-				value = string(runes[:len(runes)-1])
+		} else {
+			in := editInput{typed: c.typed + c.pasted, back: c.backspace, selAll: c.selectAll}
+			switch c.keyPressed {
+			case sdl.K_LEFT:
+				in.op = editLeft
+			case sdl.K_RIGHT:
+				in.op = editRight
+			case sdl.K_HOME:
+				in.op = editHome
+			case sdl.K_END:
+				in.op = editEnd
+			case sdl.K_DELETE:
+				in.op = editDelete
+			}
+			if in.typed != "" || in.back || in.op != editNone {
+				value, c.caret = editStep(value, c.caret, in)
+				c.selectAll = false   // any edit/nav drops the pending select-all
+				switch c.keyPressed { // consume nav keys so char keybinds don't also fire
+				case sdl.K_LEFT, sdl.K_RIGHT, sdl.K_HOME, sdl.K_END, sdl.K_DELETE:
+					c.keyPressed = 0
+				}
 			}
 		}
 		if c.enter {
@@ -1149,13 +1261,7 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		}
 	}
 
-	const padX = 6
-	// display is what actually renders (and what the caret/selection
-	// measure against): the mask substitutes one '*' per rune.
-	display := value
-	if mask && value != "" {
-		display = strings.Repeat("*", utf8.RuneCountInString(value))
-	}
+	display := maskOf(value)
 	show := display
 	col := ColText
 	if show == "" && !focused {
@@ -1163,24 +1269,32 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		col = ColTextDim
 	}
 	textY := r.Y + (r.H-int32(c.font.Height()))/2
-	avail := r.W - 2*padX
-	// Horizontal scroll: once a FOCUSED field's text outgrows the box, slide it
-	// left so the caret end stays visible — otherwise you type blind past the
-	// right edge (the IC bar "cut off the text" report). Unfocused fields stay
-	// head-aligned (conventional), and a field that fits keeps the cheap path.
-	textW := c.TextWidth(display)
-	scroll := int32(0)
-	if focused && textW > avail {
-		scroll = textW - avail
+	// Horizontal scroll keeps the CARET visible (roughly centered) once the text
+	// overflows the box — type or arrow anywhere and you can see it, instead of
+	// typing blind past the right edge. Unfocused/fitting fields stay head-aligned.
+	fullW := c.TextWidth(display)
+	scroll, caretX := int32(0), int32(0)
+	if focused {
+		caretX = c.caretPixelX(display, c.caret)
+		if fullW > avail && avail > 0 {
+			scroll = caretX - avail/2
+			if scroll < 0 {
+				scroll = 0
+			}
+			if m := fullW - avail; scroll > m {
+				scroll = m
+			}
+		}
 	}
 	if focused && c.selectAll && value != "" {
-		// Select-all highlight behind the visible text.
-		selW := textW - scroll
+		selW := fullW - scroll // select-all highlight behind the visible text
 		if selW > avail {
 			selW = avail
 		}
-		c.Fill(sdl.Rect{X: r.X + padX, Y: r.Y + 3, W: selW, H: r.H - 6},
-			sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
+		if selW > 0 {
+			c.Fill(sdl.Rect{X: r.X + padX, Y: r.Y + 3, W: selW, H: r.H - 6},
+				sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
+		}
 	}
 	if scroll > 0 {
 		// Clip to the field interior so the scrolled-off head doesn't spill left.
@@ -1191,9 +1305,58 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		c.LabelClipped(r.X+padX, textY, avail, show, col)
 	}
 	if focused && c.caretOn {
-		c.Fill(sdl.Rect{X: r.X + padX + textW - scroll, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
+		c.Fill(sdl.Rect{X: r.X + padX + caretX - scroll, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
 	}
 	return value, enter
+}
+
+// caretPixelX is the x-pixel offset of the caret (a rune index) within display.
+func (c *Ctx) caretPixelX(display string, caret int) int32 {
+	if caret <= 0 || display == "" {
+		return 0
+	}
+	runes := []rune(display)
+	if caret > len(runes) {
+		caret = len(runes)
+	}
+	return c.TextWidth(string(runes[:caret]))
+}
+
+// caretIndexAtX returns the rune index nearest pixel relX (a click position
+// relative to the text's left edge), measured on the display string — so a
+// click lands the caret between the characters under the cursor.
+func (c *Ctx) caretIndexAtX(display string, relX int32) int {
+	if relX <= 0 || display == "" {
+		return 0
+	}
+	runes := []rune(display)
+	prevW := int32(0)
+	for i := 1; i <= len(runes); i++ {
+		w := c.TextWidth(string(runes[:i]))
+		if relX < (prevW+w)/2 {
+			return i - 1
+		}
+		prevW = w
+	}
+	return len(runes)
+}
+
+// fieldScroll is the horizontal pixel scroll that keeps the caret visible in a
+// field of interior width avail — caret roughly centered once the text overflows.
+// Stateless (deterministic per caret), so it never jitters frame to frame.
+func (c *Ctx) fieldScroll(display string, caret int, avail int32) int32 {
+	full := c.TextWidth(display)
+	if full <= avail || avail <= 0 {
+		return 0
+	}
+	scroll := c.caretPixelX(display, caret) - avail/2
+	if scroll < 0 {
+		scroll = 0
+	}
+	if m := full - avail; scroll > m {
+		scroll = m
+	}
+	return scroll
 }
 
 // --- dropdown ---------------------------------------------------------------

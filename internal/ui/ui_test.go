@@ -165,6 +165,70 @@ func TestSelectAllChordArms(t *testing.T) {
 	}
 }
 
+// TestEditStep exhaustively pins the pure text-edit logic the draw path can't
+// unit-test: insert/backspace/forward-delete/caret-move at start/mid/end,
+// select-all replace, caret clamping, and — the classic bug — MULTIBYTE runes
+// (caret by rune, not byte) on the server's real shownames.
+func TestEditStep(t *testing.T) {
+	chk := func(name, gotV string, gotC int, wantV string, wantC int) {
+		if gotV != wantV || gotC != wantC {
+			t.Errorf("%s = %q,%d want %q,%d", name, gotV, gotC, wantV, wantC)
+		}
+	}
+	v, c := editStep("ac", 1, editInput{typed: "b"})
+	chk("insert mid", v, c, "abc", 2)
+	v, c = editStep("ab", 2, editInput{typed: "c"})
+	chk("insert end", v, c, "abc", 3)
+	v, c = editStep("bc", 0, editInput{typed: "a"})
+	chk("insert start", v, c, "abc", 1)
+	v, c = editStep("abc", 2, editInput{back: true})
+	chk("backspace", v, c, "ac", 1)
+	v, c = editStep("abc", 0, editInput{back: true})
+	chk("backspace at start (no-op)", v, c, "abc", 0)
+	v, c = editStep("abc", 1, editInput{op: editDelete})
+	chk("forward delete", v, c, "ac", 1)
+	v, c = editStep("abc", 3, editInput{op: editDelete})
+	chk("delete at end (no-op)", v, c, "abc", 3)
+	_, c = editStep("abc", 1, editInput{op: editLeft})
+	if c != 0 {
+		t.Errorf("left = %d want 0", c)
+	}
+	_, c = editStep("abc", 0, editInput{op: editLeft})
+	if c != 0 {
+		t.Errorf("left at start = %d want 0 (clamped)", c)
+	}
+	_, c = editStep("abc", 3, editInput{op: editRight})
+	if c != 3 {
+		t.Errorf("right at end = %d want 3 (clamped)", c)
+	}
+	_, c = editStep("abc", 1, editInput{op: editHome})
+	if c != 0 {
+		t.Errorf("home = %d want 0", c)
+	}
+	_, c = editStep("abc", 1, editInput{op: editEnd})
+	if c != 3 {
+		t.Errorf("end = %d want 3", c)
+	}
+	v, c = editStep("hello", 5, editInput{typed: "x", selAll: true})
+	chk("select-all + type replaces", v, c, "x", 1)
+	v, c = editStep("hello", 5, editInput{back: true, selAll: true})
+	chk("select-all + backspace clears", v, c, "", 0)
+	// Multibyte: "Häschen" = H ä s c h e n (7 runes). Insert at rune 2, backspace
+	// at rune 2, and an emoji forward-delete — all by RUNE, never by byte.
+	v, c = editStep("Häschen", 2, editInput{typed: "!"})
+	chk("multibyte insert", v, c, "Hä!schen", 3)
+	v, c = editStep("Häschen", 2, editInput{back: true})
+	chk("multibyte backspace (deletes ä)", v, c, "Hschen", 1)
+	v, c = editStep("a🍅b", 1, editInput{op: editDelete})
+	chk("emoji forward-delete", v, c, "ab", 1)
+	v, c = editStep("ab", 99, editInput{typed: "c"})
+	chk("caret past end clamps", v, c, "abc", 3)
+	v, c = editStep("", 0, editInput{typed: "x"})
+	chk("empty insert", v, c, "x", 1)
+	v, c = editStep("", 0, editInput{back: true})
+	chk("empty backspace", v, c, "", 0)
+}
+
 // TestCtrlXFallsThroughToHotkey pins the Extras-keybind fix: Ctrl+X is clipboard
 // cut only with a field focused; with nothing focused it falls through to the
 // configurable hotkeys — otherwise the Extras toggle bound to "x" was dead (the
