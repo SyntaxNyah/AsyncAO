@@ -287,6 +287,14 @@ type Ctx struct {
 	caret      int    // caret position (RUNE index) in the focused field's value
 	caretField string // which field c.caret belongs to ("" = none); focus change resets it
 	caretAcc   time.Duration
+	// Hold-to-clear: holding holdKey (stamped per frame from prefs) for
+	// holdThreshold wipes the focused field. holdMs accumulates while it's
+	// physically held (SDL live state, so a missed KEYUP can't strand it).
+	holdOn        bool
+	holdKey       sdl.Keycode
+	holdThreshold time.Duration
+	holdMs        time.Duration
+	holdFired     bool
 
 	// Tab focus cycling (playtest: "focus on ic, press tab, it goes to
 	// ooc"): TextField records draw order here each frame; the next
@@ -641,6 +649,15 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	if c.caretAcc >= caretBlink {
 		c.caretAcc = 0
 		c.caretOn = !c.caretOn
+	}
+	// Hold-to-clear timer: accumulate while the bound key is physically held,
+	// reset (and re-arm) the moment it's released. holdKey/holdOn were stamped
+	// last frame by App.Frame — one frame stale is fine.
+	if c.holdOn && c.keyHeld(c.holdKey) {
+		c.holdMs += dt
+	} else {
+		c.holdMs = 0
+		c.holdFired = false
 	}
 }
 
@@ -1227,13 +1244,19 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		if c.copyReq && value != "" && !mask {
 			_ = sdl.SetClipboardText(value)
 		}
-		if c.cutReq {
+		switch {
+		case c.holdOn && c.holdMs >= c.holdThreshold && !c.holdFired && value != "":
+			// Hold-to-clear: the bound key (default Backspace) held past the
+			// threshold wipes the whole field at once — no slow char-by-char.
+			c.holdFired = true
+			value, c.caret = "", 0
+		case c.cutReq:
 			if value != "" && !mask {
 				_ = sdl.SetClipboardText(value)
 			}
 			value, c.caret = "", 0
 			c.selectAll = false
-		} else {
+		default:
 			in := editInput{typed: c.typed + c.pasted, back: c.backspace, selAll: c.selectAll}
 			switch c.keyPressed {
 			case sdl.K_LEFT:
@@ -1357,6 +1380,23 @@ func (c *Ctx) fieldScroll(display string, caret int, avail int32) int32 {
 		scroll = m
 	}
 	return scroll
+}
+
+// SetHoldClear stamps the hold-to-clear config for the frame (App resolves it
+// from prefs). The accumulation runs in BeginFrame; the focused field clears.
+func (c *Ctx) SetHoldClear(on bool, key sdl.Keycode, threshold time.Duration) {
+	c.holdOn, c.holdKey, c.holdThreshold = on, key, threshold
+}
+
+// keyHeld reports whether key is physically down right now, via SDL's live
+// keyboard state — correct even if a KEYUP was missed (window focus loss).
+func (c *Ctx) keyHeld(key sdl.Keycode) bool {
+	if key == sdl.K_UNKNOWN {
+		return false
+	}
+	sc := sdl.GetScancodeFromKey(key)
+	state := sdl.GetKeyboardState()
+	return int(sc) < len(state) && state[sc] != 0
 }
 
 // --- dropdown ---------------------------------------------------------------

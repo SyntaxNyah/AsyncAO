@@ -1006,6 +1006,37 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 28
 
+	// Hold-to-clear: hold a key (default Backspace, rebindable) to wipe a text
+	// box at once instead of deleting char-by-char.
+	hcOn, hcKey, hcMs := a.d.Prefs.HoldClear()
+	if next := c.Checkbox(pad, y, "Hold a key to clear a text box (a fast wipe — no holding backspace char-by-char)", hcOn); next != hcOn {
+		a.d.Prefs.SetHoldClearOn(next)
+	}
+	y += 28
+	if hcOn {
+		c.Label(pad+16, y+4, "Clear key:", ColTextDim)
+		keyLabel := hcKey
+		if a.holdKeyArmed {
+			keyLabel = "press a key…  (Esc cancels)"
+		}
+		if c.Button(sdl.Rect{X: pad + 96, Y: y, W: 200, H: btnH}, keyLabel) {
+			a.holdKeyArmed = !a.holdKeyArmed
+		}
+		if a.holdKeyArmed && c.keyPressed != 0 {
+			if c.keyPressed != sdl.K_ESCAPE {
+				a.d.Prefs.SetHoldClearKey(sdl.GetKeyName(c.keyPressed))
+			}
+			a.holdKeyArmed = false
+			c.keyPressed = 0 // consume — don't let the captured key act elsewhere
+		}
+		y += btnH + 6
+		if next := a.sliderRow(y, "  Hold time (ms)", hcMs, 100, config.MinHoldClearMs, config.MaxHoldClearMs); next != hcMs {
+			a.d.Prefs.SetHoldClearMs(next)
+		}
+		c.Label(pad+270, y+4, "how long to hold before it clears (default 1.5 s)", ColTextDim)
+		y += 30
+	}
+
 	// Message timing (AO2-Client options.ini parity); applies live. Plain
 	// descriptions beside each knob so they're self-explanatory.
 	c.Label(pad, y, "Text speed — how the IC chatbox plays messages:", ColTextDim)

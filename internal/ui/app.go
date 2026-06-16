@@ -204,6 +204,8 @@ type App struct {
 	defaultOOC string
 	// macroBind ≥ 0 while the settings macro editor captures a key.
 	macroBind int
+	// holdKeyArmed: the Settings hold-to-clear rebind is capturing the next key.
+	holdKeyArmed bool
 	// F3 perf HUD: toggle + the frame-time ring it graphs.
 	perfHUD     bool
 	frameDts    [perfHUDFrames]float32 // milliseconds
@@ -2516,6 +2518,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// Stamp the sprite-preview config onto the context once per frame so every
 	// HoverPreview call this frame reads a consistent, lock-free value.
 	a.ctx.SetHoverPreview(a.d.Prefs.SpritePreviewsOn(), a.d.Prefs.PreviewHoverDelay())
+	// Hold-to-clear: stamp the bound key + threshold so the kit's text fields can
+	// wipe on a long hold (the timer runs in BeginFrame).
+	if on, keyName, ms := a.d.Prefs.HoldClear(); on {
+		a.ctx.SetHoldClear(true, sdl.GetKeyFromName(keyName), time.Duration(ms)*time.Millisecond)
+	} else {
+		a.ctx.SetHoldClear(false, sdl.K_UNKNOWN, 0)
+	}
 	// F3 toggles the perf HUD on any screen; consumed so plain-key
 	// macro/character binds named "f3" can't double-fire.
 	if a.ctx.keyPressed == sdl.K_F3 {

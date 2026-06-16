@@ -280,6 +280,16 @@ func ClampWindowSize(reqW, reqH, usableW, usableH int) (int, int) {
 // defaultAudioVolume is full volume (the pre-settings behavior).
 const defaultAudioVolume = 100
 
+// Hold-to-clear: hold a key (default Backspace, rebindable) this long to wipe a
+// focused text field at once, instead of deleting char-by-char.
+const (
+	defaultHoldClearOn  = true
+	defaultHoldClearKey = "Backspace"
+	DefaultHoldClearMs  = 1500
+	MinHoldClearMs      = 300
+	MaxHoldClearMs      = 5000
+)
+
 // WardrobeCap bounds one SERVER's custom character list. Wardrobes were
 // originally global; they are per-server now (playtest: a wardrobe
 // carrying between unrelated servers was wrong), with a one-time legacy
@@ -389,6 +399,9 @@ type AssetPreferences struct {
 	SFXVol                 int                          `json:"sfxVolume"`
 	BlipVol                int                          `json:"blipVolume"`
 	MasterVol              int                          `json:"masterVolume"` // scales all three (default 100)
+	HoldClearOn            bool                         `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
+	HoldClearKey           string                       `json:"holdClearKey"` // which key (default "Backspace"), rebindable
+	HoldClearMs            int                          `json:"holdClearMs"`  // hold duration to clear (default 1500)
 	TextCrawlMs            int                          `json:"textCrawlMs"`
 	TextStayMs             int                          `json:"textStayMs"`
 	ChatRateLimitMs        int                          `json:"chatRateLimitMs"`
@@ -519,10 +532,13 @@ type prefsJSON struct {
 	WindowH            int                          `json:"windowHeight"`
 	WindowFull         *bool                        `json:"windowFullscreen"` // absent = default OFF
 	// Volumes use pointers: 0 is a real value (mute), absent means 100.
-	MusicVol  *int `json:"musicVolume"`
-	SFXVol    *int `json:"sfxVolume"`
-	BlipVol   *int `json:"blipVolume"`
-	MasterVol *int `json:"masterVolume"`
+	MusicVol     *int   `json:"musicVolume"`
+	SFXVol       *int   `json:"sfxVolume"`
+	BlipVol      *int   `json:"blipVolume"`
+	MasterVol    *int   `json:"masterVolume"`
+	HoldClearOn  *bool  `json:"holdClearOn"` // absent = default ON
+	HoldClearKey string `json:"holdClearKey"`
+	HoldClearMs  int    `json:"holdClearMs"`
 	// Stay/ratelimit use pointers too: 0 means "no linger" / "off".
 	TextCrawlMs        int                       `json:"textCrawlMs"`
 	TextStayMs         *int                      `json:"textStayMs"`
@@ -783,6 +799,9 @@ func defaultPrefs(path string) *AssetPreferences {
 		SFXVol:             defaultAudioVolume,
 		BlipVol:            defaultAudioVolume,
 		MasterVol:          defaultAudioVolume,
+		HoldClearOn:        defaultHoldClearOn,
+		HoldClearKey:       defaultHoldClearKey,
+		HoldClearMs:        DefaultHoldClearMs,
 		TextCrawlMs:        DefaultTextCrawlMs,
 		TextStayMs:         DefaultTextStayMs,
 		ChatRateLimitMs:    DefaultChatRateLimitMs,
@@ -945,6 +964,15 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.MasterVol != nil {
 		p.MasterVol = clampPercent(*onDisk.MasterVol, 0, defaultAudioVolume)
+	}
+	if onDisk.HoldClearOn != nil {
+		p.HoldClearOn = *onDisk.HoldClearOn
+	}
+	if onDisk.HoldClearKey != "" {
+		p.HoldClearKey = onDisk.HoldClearKey
+	}
+	if onDisk.HoldClearMs != 0 {
+		p.HoldClearMs = clampPercent(onDisk.HoldClearMs, MinHoldClearMs, MaxHoldClearMs)
 	}
 	if onDisk.TextCrawlMs != 0 {
 		p.TextCrawlMs = clampPercent(onDisk.TextCrawlMs, MinTextCrawlMs, MaxTextCrawlMs)
@@ -2388,6 +2416,54 @@ func (p *AssetPreferences) SetMasterVolume(v int) {
 		return
 	}
 	p.MasterVol = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// HoldClear reports the hold-to-clear settings: whether it's on, the key name
+// (SDL key name, e.g. "Backspace"), and the hold duration in ms.
+func (p *AssetPreferences) HoldClear() (on bool, key string, ms int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.HoldClearOn, p.HoldClearKey, p.HoldClearMs
+}
+
+// SetHoldClearOn toggles hold-to-clear.
+func (p *AssetPreferences) SetHoldClearOn(on bool) {
+	p.mu.Lock()
+	if p.HoldClearOn == on {
+		p.mu.Unlock()
+		return
+	}
+	p.HoldClearOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SetHoldClearKey rebinds the hold-to-clear key (an SDL key name; "" ignored).
+func (p *AssetPreferences) SetHoldClearKey(key string) {
+	if key == "" {
+		return
+	}
+	p.mu.Lock()
+	if p.HoldClearKey == key {
+		p.mu.Unlock()
+		return
+	}
+	p.HoldClearKey = key
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SetHoldClearMs clamps and persists the hold-to-clear duration.
+func (p *AssetPreferences) SetHoldClearMs(ms int) {
+	ms = clampPercent(ms, MinHoldClearMs, MaxHoldClearMs)
+	p.mu.Lock()
+	if p.HoldClearMs == ms {
+		p.mu.Unlock()
+		return
+	}
+	p.HoldClearMs = ms
 	p.mu.Unlock()
 	p.markDirty()
 }

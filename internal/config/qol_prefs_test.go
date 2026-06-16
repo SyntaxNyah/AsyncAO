@@ -155,6 +155,32 @@ func TestClampWindowSize(t *testing.T) {
 	}
 }
 
+// TestHoldClearDefaults pins the hold-to-clear prefs: ON by default, the
+// Backspace key, a 1.5s threshold, and that all three round-trip (the threshold
+// clamping included).
+func TestHoldClearDefaults(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	on, key, ms := p.HoldClear()
+	if !on {
+		t.Error("hold-to-clear must default ON")
+	}
+	if key != "Backspace" {
+		t.Errorf("default key = %q, want Backspace", key)
+	}
+	if ms != DefaultHoldClearMs {
+		t.Errorf("default ms = %d, want %d", ms, DefaultHoldClearMs)
+	}
+	p.SetHoldClearMs(1 << 20) // over-large clamps to max
+	if _, _, got := p.HoldClear(); got != MaxHoldClearMs {
+		t.Errorf("ms clamp = %d, want %d", got, MaxHoldClearMs)
+	}
+	p.SetHoldClearOn(false)
+	p.SetHoldClearKey("Delete")
+	if gotOn, gotKey, _ := p.HoldClear(); gotOn || gotKey != "Delete" {
+		t.Errorf("after edits: on=%v key=%q, want false, Delete", gotOn, gotKey)
+	}
+}
+
 // TestThemeFitDefaultsAndClamp pins the theme-fit prefs: Stretch is the default
 // (zero value), and the mode/zoom/pan all clamp to their bounds.
 func TestThemeFitDefaultsAndClamp(t *testing.T) {
