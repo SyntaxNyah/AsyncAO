@@ -61,9 +61,27 @@ func (a *App) parseAreaLine(line string) {
 // same-named players don't collapse), plus a lossy name→uid entry for the
 // double-click auto-fill (last writer wins — that path always has a manual box).
 func (a *App) addAreaPlayer(name, uid string) {
-	if i := strings.LastIndexByte(name, '('); i > 0 { // drop a trailing "(pos)" / "(showname)"
-		name = strings.TrimSpace(name[:i])
+	// Akashi's mod /getarea packs everything onto one line:
+	//   "<char> (<showname>) (<ipid>): <ooc name>"   (showname/ipid/ooc optional).
+	// Peel the trailing ": ooc" and "(ipid)", then a leading "(showname)/(pos)",
+	// leaving the BARE character — so it matches the CharsCheck name (the live-
+	// roster merge key) AND the IPID/OOC buttons get their values. tsuserver's
+	// separate Showname:/OOC:/IPID: lines still fill in via setAreaField (they
+	// leave these empty here).
+	var showname, ipid, ooc string
+	if i := strings.LastIndex(name, "): "); i >= 0 { // "(ipid): ooc" tail (mod view)
+		ooc = strings.TrimSpace(name[i+3:])
+		name = name[:i+1] // keep through the ")" of "(ipid)"
+		if j := strings.LastIndexByte(name, '('); j >= 0 {
+			ipid = strings.TrimSpace(strings.TrimRight(name[j+1:], ")"))
+			name = name[:j]
+		}
 	}
+	if i := strings.LastIndexByte(name, '('); i > 0 { // a remaining "(showname)" / "(pos)"
+		showname = strings.TrimSpace(strings.Trim(name[i:], "()"))
+		name = name[:i]
+	}
+	name = strings.TrimSpace(name)
 	if name == "" {
 		return
 	}
@@ -79,8 +97,11 @@ func (a *App) addAreaPlayer(name, uid string) {
 		a.areaUIDs = map[string]string{}
 	}
 	a.areaUIDs[strings.ToLower(name)] = uid
+	if showname != "" {
+		a.areaUIDs[strings.ToLower(showname)] = uid // IC name → UID for the pair auto-fill
+	}
 	if len(a.areaPlayers) < areaPlayersCap {
-		a.areaPlayers = append(a.areaPlayers, areaPlayer{uid: uid, name: name, area: a.areaCurName})
+		a.areaPlayers = append(a.areaPlayers, areaPlayer{uid: uid, name: name, showname: showname, ooc: ooc, ipid: ipid, area: a.areaCurName})
 	}
 }
 
