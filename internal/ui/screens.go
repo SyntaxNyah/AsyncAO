@@ -2537,6 +2537,41 @@ func (a *App) refreshMusicFilter(query string) {
 	}
 }
 
+// drawMusicVolume is the Music tab's pure volume menu (toggled in place of the
+// track list) — Master + the three channels, full sliders + readouts. Reachable
+// on a legacy AO2 theme too, since the theme draws drawMusicList directly.
+func (a *App) drawMusicVolume(r sdl.Rect) {
+	c := a.ctx
+	c.LabelClipped(r.X, r.Y, r.W, "Volume — the IC box stays live below, so adjust and keep chatting.", ColTextDim)
+	y := r.Y + 30
+	master := a.d.Prefs.MasterVolume()
+	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	row := func(id, label string, val int) int {
+		c.Label(r.X, y+6, label, ColText)
+		track := sdl.Rect{X: r.X + 80, Y: y + 7, W: r.W - 80 - 56, H: 16}
+		nv := int(c.Slider("musicvol:"+id, track, int32(val), 100))
+		c.Label(r.X+r.W-48, y+6, strconv.Itoa(nv)+"%", ColTextDim)
+		y += 40
+		return nv
+	}
+	if nv := row("master", "Master", master); nv != master {
+		a.d.Prefs.SetMasterVolume(nv)
+		a.applyAudioVolumes()
+	}
+	if nv := row("music", "Music", music); nv != music {
+		a.d.Prefs.SetAudioVolumes(nv, sfx, blip)
+		a.applyAudioVolumes()
+	}
+	if nv := row("sfx", "SFX", sfx); nv != sfx {
+		a.d.Prefs.SetAudioVolumes(music, nv, blip)
+		a.applyAudioVolumes()
+	}
+	if nv := row("blip", "Blip", blip); nv != blip {
+		a.d.Prefs.SetAudioVolumes(music, sfx, nv)
+		a.applyAudioVolumes()
+	}
+}
+
 func (a *App) drawMusicList(r sdl.Rect) {
 	c := a.ctx
 	if a.musicPct < config.MinLogScalePercent { // uninit / stale → match the log
@@ -2550,6 +2585,16 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: 90, H: 24}, "Stop music") {
 		a.stopMusic()
 	}
+	// Toggle this panel between the track list and a pure volume-sliders menu.
+	// It lives in drawMusicList, which the THEMED courtroom draws directly too, so
+	// volume is reachable on a legacy AO2 theme as well (no Extras box needed).
+	volLabel := "Volume"
+	if a.musicVolMode {
+		volLabel = "Track list"
+	}
+	if c.Button(sdl.Rect{X: r.X + r.W - 96, Y: r.Y, W: 96, H: 24}, volLabel) {
+		a.musicVolMode = !a.musicVolMode
+	}
 	// Now-Playing indicator: the current track from the server's MC (cleared on
 	// stop / area transfer), so you can see and silence what's playing.
 	now := ""
@@ -2557,12 +2602,16 @@ func (a *App) drawMusicList(r sdl.Rect) {
 		now = a.room.Scene.MusicTrack
 	}
 	if now != "" {
-		c.LabelClipped(r.X+98, r.Y+6, r.W-98, "Now playing: "+musicDisplayName(now), ColAccent)
+		c.LabelClipped(r.X+98, r.Y+6, r.W-98-104, "Now playing: "+musicDisplayName(now), ColAccent)
 	} else {
 		c.Label(r.X+98, r.Y+6, "Nothing playing", ColTextDim)
 	}
 	r.Y += 28
 	r.H -= 28
+	if a.musicVolMode { // pure volume menu in place of the track list
+		a.drawMusicVolume(r)
+		return
+	}
 
 	// Search filter (AO2/webAO parity): type to narrow the server's track list.
 	// Memoized so the O(N) scan runs only when the query or the list changes.

@@ -627,6 +627,7 @@ type sessionState struct {
 	areaScroll      int32
 	logTab          int
 	volStripOn      bool // the log panel's toggleable on-screen volume strip
+	musicVolMode    bool // Music tab shows the volume sliders instead of the track list
 	// Stick flags: the logs FOLLOW new lines while true; scrolling up
 	// releases, scrolling back to the bottom re-sticks. (The old "within
 	// one line of the bottom" heuristic broke whenever one wrapped
