@@ -135,6 +135,8 @@ type AudioSink interface {
 	PlayBlip(base string)
 	// PlayMusic streams a track from a full URL.
 	PlayMusic(url string)
+	// StopMusic halts playback now (the ~stop sentinel; also on disconnect).
+	StopMusic()
 }
 
 // NopAudio discards all triggers (headless tests, muted client).
@@ -144,6 +146,7 @@ func (NopAudio) PlayShout(string)              {}
 func (NopAudio) PlaySFX(string, time.Duration) {}
 func (NopAudio) PlayBlip(string)               {}
 func (NopAudio) PlayMusic(string)              {}
+func (NopAudio) StopMusic()                    {}
 
 // Courtroom drives the courtroom state machine: it consumes session events,
 // prefetches every asset a message needs, and advances Scene each tick. No
@@ -238,13 +241,17 @@ func (c *Courtroom) HandleEvent(ev Event) {
 	case EventBackground:
 		c.setBackground(ev.Text)
 	case EventMusic:
-		if ev.Text != "" && !isAreaTransfer(ev.Text) {
+		switch {
+		case ev.Text == "" || isAreaTransfer(ev.Text):
+			// empty, or an area-name transfer (unified music/area list) — not a song
+		case isMusicStop(ev.Text):
+			// The ~stop sentinel isn't a real track: halt now instead of trying to
+			// fetch+play it (PlayMusic is async, so a 404 would leave music running).
+			c.audio.StopMusic()
+			c.Scene.MusicTrack = "" // clear Now-Playing
+		default:
 			c.audio.PlayMusic(c.urls.MusicURL(ev.Text)) // AssetType: Music
-			if isMusicStop(ev.Text) {
-				c.Scene.MusicTrack = "" // a "stop music" request, not a song
-			} else {
-				c.Scene.MusicTrack = ev.Text
-			}
+			c.Scene.MusicTrack = ev.Text
 		}
 	}
 }

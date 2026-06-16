@@ -35,12 +35,14 @@ func (r *sentRecorder) headers() []string {
 
 type audioRecorder struct {
 	shouts, sfx, blips, music []string
+	stops                     int
 }
 
 func (a *audioRecorder) PlayShout(base string)             { a.shouts = append(a.shouts, base) }
 func (a *audioRecorder) PlaySFX(b string, _ time.Duration) { a.sfx = append(a.sfx, b) }
 func (a *audioRecorder) PlayBlip(base string)              { a.blips = append(a.blips, base) }
 func (a *audioRecorder) PlayMusic(url string)              { a.music = append(a.music, url) }
+func (a *audioRecorder) StopMusic()                        { a.stops++ }
 
 // newCourtroomRig builds a courtroom over a no-network manager (local mounts
 // pointing at an empty dir — prefetches resolve to warnings, which the
@@ -164,6 +166,27 @@ func TestNowPlayingTrack(t *testing.T) {
 	room.HandleEvent(Event{Kind: EventMusic, Text: "~stop.mp3"}) // stop sentinel
 	if room.Scene.MusicTrack != "" {
 		t.Errorf("stop must clear the track, got %q", room.Scene.MusicTrack)
+	}
+}
+
+// TestStopMusicHalts pins that the ~stop sentinel HALTS playback (StopMusic)
+// rather than trying to fetch+play "~stop.mp3" as a track — PlayMusic is async,
+// so a 404 on the sentinel would otherwise leave the current song running.
+func TestStopMusicHalts(t *testing.T) {
+	room, _, _, audio := newCourtroomRig(t)
+	room.HandleEvent(Event{Kind: EventMusic, Text: "Objection.opus"})
+	if audio.stops != 0 || len(audio.music) != 1 {
+		t.Fatalf("a real song must play, not stop (stops=%d music=%v)", audio.stops, audio.music)
+	}
+	room.HandleEvent(Event{Kind: EventMusic, Text: "~stop.mp3"})
+	if audio.stops != 1 {
+		t.Errorf("~stop must halt playback once, stops=%d", audio.stops)
+	}
+	if len(audio.music) != 1 {
+		t.Errorf("~stop must NOT enqueue a fetch for the sentinel, music=%v", audio.music)
+	}
+	if room.Scene.MusicTrack != "" {
+		t.Errorf("~stop must clear Now-Playing, got %q", room.Scene.MusicTrack)
 	}
 }
 
