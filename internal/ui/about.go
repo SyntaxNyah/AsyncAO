@@ -42,6 +42,14 @@ var aboutLines = []string{
 	"Thank you for two decades of courtroom drama. None of this would exist",
 	"without the things you built and the inspiration they provided.",
 	"",
+	"Closed-source beta testers — thank you for the bug reports, feature",
+	"requests and feedback that shaped AsyncAO during development:",
+	"  Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag",
+	"",
+	"A special thank-you to Northgate — who backed this project, including",
+	"financially, and gave me the inspiration to keep going. Without that",
+	"support AsyncAO wouldn't have come this far this fast. Thank you.",
+	"",
 	"Pull requests, bug fixes and feature requests are welcome!",
 }
 
@@ -71,7 +79,8 @@ func (a *App) drawAbout(w, h int32) {
 	y := pad + 48*1
 	for _, line := range aboutLines {
 		col := ColText
-		if line == "Pull requests, bug fixes and feature requests are welcome!" {
+		if line == "Pull requests, bug fixes and feature requests are welcome!" ||
+			line == "  Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag" {
 			col = ColAccent
 		}
 		c.Label(pad, y, line, col)
