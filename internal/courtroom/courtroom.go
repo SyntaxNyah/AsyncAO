@@ -255,6 +255,40 @@ func isMusicStop(track string) bool {
 	return strings.HasPrefix(strings.ToLower(track), "~stop")
 }
 
+// MusicAction classifies an MC track for the IC "has played a song" log line,
+// mirroring AO2-Client handle_song: a real song → ("has played a song",
+// <clean name>, true); the ~stop sentinel → ("has stopped the music", "", true);
+// an area-name transfer → ("", "", false), i.e. not a song, don't log.
+func MusicAction(track string) (action, song string, ok bool) {
+	if track == "" {
+		return "", "", false
+	}
+	if isMusicStop(track) {
+		return "has stopped the music", "", true
+	}
+	if isAreaTransfer(track) {
+		return "", "", false
+	}
+	return "has played a song", cleanSongName(track), true
+}
+
+// cleanSongName is the song's display name — AO2's QUrl(f_song).fileName() minus
+// the extension: drop any URL query/fragment, the directory, then the extension.
+func cleanSongName(track string) string {
+	s := track
+	if i := strings.IndexAny(s, "?#"); i >= 0 { // a Discord CDN /play link's signed query
+		s = s[:i]
+	}
+	s = strings.TrimRight(s, "/")
+	if i := strings.LastIndexAny(s, `/\`); i >= 0 { // basename
+		s = s[i+1:]
+	}
+	if i := strings.LastIndexByte(s, '.'); i > 0 { // strip the extension
+		s = s[:i]
+	}
+	return s
+}
+
 // isAreaTransfer filters MC packets that carry area names (server-relative, no
 // audio ext) from real music. A full http(s):// URL is ALWAYS music: its audio
 // extension can sit before a query string (a Discord CDN /play link ends in a

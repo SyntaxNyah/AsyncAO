@@ -137,7 +137,9 @@ const (
 	EventMessage
 	// EventBackground carries a background change (BN).
 	EventBackground
-	// EventMusic carries a music change (MC): Text=track, Int=charID.
+	// EventMusic carries a music change (MC): Text=track, Int=charID,
+	// Name=showname (field 2, may be ""). charID/showname name who played it
+	// for the IC "has played a song" log line (AO2 handle_song).
 	EventMusic
 	// EventOOC carries server/OOC chat: Name + Text.
 	EventOOC
@@ -366,7 +368,9 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		return []Event{{Kind: EventMessage, Message: msg}}
 
 	case "MC":
-		return []Event{{Kind: EventMusic, Text: p.Field(0), Int: atoiOr(p.Field(1), protocol.UnpairedCharID)}}
+		// Field 2 (showname) and field 1 (charID) name who played it for the IC
+		// log line; both are optional on the wire (short legacy MC packets).
+		return []Event{{Kind: EventMusic, Text: p.Field(0), Int: atoiOr(p.Field(1), protocol.UnpairedCharID), Name: p.Field(2)}}
 
 	case "BN":
 		s.Background = p.Field(0)

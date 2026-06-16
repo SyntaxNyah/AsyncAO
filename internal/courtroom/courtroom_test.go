@@ -167,6 +167,49 @@ func TestNowPlayingTrack(t *testing.T) {
 	}
 }
 
+// TestMusicAction pins the IC "has played a song" classifier (AO2 handle_song):
+// a real song → the action + a clean name (dir/query/ext stripped), the ~stop
+// sentinel → "has stopped the music", an area-name transfer → not a song.
+func TestMusicAction(t *testing.T) {
+	cases := []struct {
+		track, wantAction, wantSong string
+		wantOK                      bool
+	}{
+		{"Cross_Examination.opus", "has played a song", "Cross_Examination", true},
+		{"songs/intro.mp3", "has played a song", "intro", true}, // subdir stripped
+		{"https://miku.pizza/base/sounds/music/Trial.opus?ex=1&is=2&hm=3&", "has played a song", "Trial", true},
+		{"~stop.mp3", "has stopped the music", "", true},
+		{"Pizza Room 3", "", "", false}, // an area name (no audio ext) — not a song
+		{"", "", "", false},
+	}
+	for _, c := range cases {
+		action, song, ok := MusicAction(c.track)
+		if ok != c.wantOK || action != c.wantAction || song != c.wantSong {
+			t.Errorf("MusicAction(%q) = (%q,%q,%v), want (%q,%q,%v)",
+				c.track, action, song, ok, c.wantAction, c.wantSong, c.wantOK)
+		}
+	}
+}
+
+// TestMCEventCarriesPlayer pins that the MC parse keeps the charID (field 1) and
+// showname (field 2) that name who played the song, tolerating a short legacy
+// MC with neither.
+func TestMCEventCarriesPlayer(t *testing.T) {
+	s := NewSession(func(protocol.Packet) error { return nil }, "h")
+	ev := feed(t, s, "MC#Cross_Examination.opus#2#Cocoa Bean#%")
+	if len(ev) != 1 || ev[0].Kind != EventMusic {
+		t.Fatalf("MC events = %+v, want one EventMusic", ev)
+	}
+	if ev[0].Text != "Cross_Examination.opus" || ev[0].Int != 2 || ev[0].Name != "Cocoa Bean" {
+		t.Errorf("EventMusic = {Text:%q Int:%d Name:%q}, want {Cross_Examination.opus 2 Cocoa Bean}",
+			ev[0].Text, ev[0].Int, ev[0].Name)
+	}
+	ev = feed(t, s, "MC#Trial.opus#5#%") // short MC: no showname
+	if ev[0].Int != 5 || ev[0].Name != "" {
+		t.Errorf("short MC = {Int:%d Name:%q}, want {5 \"\"}", ev[0].Int, ev[0].Name)
+	}
+}
+
 func TestPositionSceneTable(t *testing.T) {
 	cases := map[string][2]string{
 		"def":    {"defenseempty", "defensedesk"},

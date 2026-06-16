@@ -1556,6 +1556,10 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// Remember it for next visit's pre-warm; the room still
 			// consumes the event below (no continue).
 			a.d.Prefs.RememberServerBackground(a.serverKey, ev.Text)
+		case courtroom.EventMusic:
+			// Log "<name> has played a song: <song>" in the IC log like webAO and
+			// AO2-Client (handle_song). The room still plays the track below.
+			a.logMusicChange(ev)
 		case courtroom.EventCharsUpdated:
 			a.charLower = nil // names may have changed; rebuild lazily
 			// icons refresh lazily as textures land
@@ -1638,6 +1642,37 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.room.HandleEvent(ev)
 		}
 	}
+}
+
+// musicLogColor is the IC colour of the "has played a song" line — AO default
+// white (0), matching AO2-Client handle_song's p_color.
+const musicLogColor = 0
+
+// logMusicChange adds AO2/webAO's "<name> has played a song: <song>" (or "has
+// stopped the music") line to the IC log when a real player changed the music.
+// System/area music (no valid charID) and area-name transfers don't log. The
+// room still plays the track — this only mirrors the on-screen notice.
+func (a *App) logMusicChange(ev courtroom.Event) {
+	cid := ev.Int
+	if a.sess == nil || cid < 0 || cid >= len(a.sess.Chars) {
+		return // no player to attribute it to (system/area change or bad id)
+	}
+	action, song, ok := courtroom.MusicAction(ev.Text)
+	if !ok {
+		return // an area-name transfer, not a song
+	}
+	name := ev.Name // the MC packet's showname (field 2)
+	if name == "" {
+		name = a.sess.Chars[cid].Name // fall back to the character name
+	}
+	if name == "" {
+		name = "Someone"
+	}
+	line := name + " " + action
+	if song != "" {
+		line += ": " + song
+	}
+	a.pushIC(line, musicLogColor, false, -1, "") // system line: no friend tint, no name-tint/pair
 }
 
 func icLogLine(m *protocol.ChatMessage, forceChar bool) string {
