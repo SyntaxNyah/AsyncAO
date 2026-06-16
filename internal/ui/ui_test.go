@@ -165,6 +165,29 @@ func TestSelectAllChordArms(t *testing.T) {
 	}
 }
 
+// TestCtrlXFallsThroughToHotkey pins the Extras-keybind fix: Ctrl+X is clipboard
+// cut only with a field focused; with nothing focused it falls through to the
+// configurable hotkeys — otherwise the Extras toggle bound to "x" was dead (the
+// cut handler swallowed the chord before dispatch).
+func TestCtrlXFallsThroughToHotkey(t *testing.T) {
+	// A focused field → cut, never a hotkey.
+	c := &Ctx{}
+	c.BeginFrame(time.Millisecond)
+	c.focusID = "ic"
+	c.HandleEvent(&sdl.KeyboardEvent{Type: sdl.KEYDOWN, Keysym: sdl.Keysym{Sym: sdl.K_x, Mod: sdl.KMOD_LCTRL}})
+	if !c.cutReq || c.hotkey != 0 {
+		t.Errorf("Ctrl+X with a focused field must cut (cutReq=%v hotkey=%d)", c.cutReq, c.hotkey)
+	}
+	// Nothing focused → a hotkey, not a (no-op) cut.
+	c = &Ctx{}
+	c.BeginFrame(time.Millisecond)
+	c.HandleEvent(&sdl.KeyboardEvent{Type: sdl.KEYDOWN, Keysym: sdl.Keysym{Sym: sdl.K_x, Mod: sdl.KMOD_LCTRL}})
+	if c.cutReq || c.hotkey != sdl.K_x {
+		t.Errorf("Ctrl+X with nothing focused must dispatch as a hotkey (cutReq=%v hotkey=%d, want %d)",
+			c.cutReq, c.hotkey, sdl.K_x)
+	}
+}
+
 // TestNameColorStable pins per-speaker name colours: deterministic per name
 // (same name → same colour every call/launch — it's a fixed hash, not a seeded
 // one), distinct for distinct names here, and always full-alpha.

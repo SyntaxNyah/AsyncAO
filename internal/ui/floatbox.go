@@ -296,6 +296,11 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	c.Label(r.X+10, r.Y+6, "AsyncAO Extras", ColText)
 	if c.Button(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 4, W: 20, H: extrasTitleH - 8}, "x") {
 		a.showWidgets = false
+		if !a.extrasCloseHintShown { // tell them how to get it back — once per session
+			a.extrasCloseHintShown = true
+			a.warnLine = clampLine("Extras hidden — press Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyExtras)) + " or the ★ Extras button to reopen")
+			a.warnAt = a.now()
+		}
 		return
 	}
 	a.handleExtrasDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 30, H: extrasTitleH}, w, h, pressed)

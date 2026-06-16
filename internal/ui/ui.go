@@ -646,7 +646,14 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 			case sdl.K_c:
 				c.copyReq = true
 			case sdl.K_x:
-				c.cutReq = true
+				// Cut only makes sense in a focused field; with nothing focused
+				// let Ctrl+X fall through to the configurable hotkeys (else the
+				// Extras toggle bound to "x" is dead — clipboard ate it).
+				if c.focusID != "" {
+					c.cutReq = true
+				} else {
+					c.hotkey = e.Keysym.Sym
+				}
 			case sdl.K_a:
 				// Arm select-all on the focused field: the next typed or
 				// pasted text replaces the whole value, backspace clears

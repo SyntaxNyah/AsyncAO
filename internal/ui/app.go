@@ -429,6 +429,7 @@ type App struct {
 	extrasUserW          int32 // user-resized main box size (0 = default extrasBoxW/H)
 	extrasUserH          int32
 	extrasResizing       bool           // the bottom-right resize grip is being dragged
+	extrasCloseHintShown bool           // one-shot "how to reopen" toast on first × close
 	extrasWidgetCache    []extrasWidget // canonical widget table, built once
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
