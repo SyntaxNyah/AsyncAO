@@ -3192,6 +3192,28 @@ func (a *App) randomShowname() {
 	a.warnAt = a.now()
 }
 
+// cycleShowname swaps the active showname to the NEXT saved preset (Ctrl+B),
+// wrapping around — a quick in-courtroom flip through your shownames.
+func (a *App) cycleShowname() {
+	presets := a.d.Prefs.ShownameList()
+	if len(presets) == 0 {
+		a.warnLine = "No showname presets saved — add some in Settings → General"
+		a.warnAt = a.now()
+		return
+	}
+	cur := a.effectiveShowname()
+	next := 0
+	for i, p := range presets {
+		if strings.EqualFold(p, cur) {
+			next = (i + 1) % len(presets)
+			break
+		}
+	}
+	a.shownameOverride = presets[next]
+	a.warnLine = clampLine("Showname → " + a.shownameOverride)
+	a.warnAt = a.now()
+}
+
 func (a *App) cycleEmote(delta int) {
 	n := len(a.emotes)
 	if n == 0 {
