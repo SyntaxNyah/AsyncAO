@@ -62,8 +62,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	}
 	// First time the live tab opens this session, pull UIDs/IPIDs/OOC once so the
 	// rows get Pair/Copy without a manual Refresh (one /getarea — not per event).
-	if !a.rosterLegacy && !a.liveDetailsAsked && a.sess != nil {
-		a.liveDetailsAsked = true
+	if !a.rosterLegacy && a.sess != nil && a.liveDetailsArea != a.curArea {
+		a.liveDetailsArea = a.curArea // re-pull UIDs/IPIDs on first open + each area change
 		a.pairAreaReset = true
 		a.queueOOCLines([]string{"/getarea"})
 	}
