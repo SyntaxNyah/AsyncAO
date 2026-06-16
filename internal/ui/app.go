@@ -707,6 +707,7 @@ type sessionState struct {
 	showReset    bool // factory-reset confirmation pop-up (Settings)
 	iniSearch    string
 	iniAdd       string   // "add folder to wardrobe" input
+	iniWear      string   // legacy iniswap: type any folder name → wear it instantly
 	iniFolder    string   // open wardrobe folder ("" = top level/root, else folder name)
 	iniNewFold   string   // "new folder" text input
 	iniMenuChar  string   // wardrobe char with an open "move to folder" menu ("" = none)

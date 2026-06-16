@@ -21,13 +21,13 @@ import (
 )
 
 const (
-	extrasBoxW   = int32(380) // main box default width
-	extrasBoxH   = int32(392) // main box default height
-	extrasMinW   = int32(300) // resize floor: 2 columns stay readable
-	extrasMinH   = int32(372) // resize floor: volume row + all 13 widgets' rows + hint still fit
-	extrasVolH   = int32(28)  // master-volume row above the widget grid
-	extrasTitleH = int32(26)  // title bar / drag handle height (main + torn boxes)
-	extrasGripSz = int32(16)  // bottom-right resize grip
+	extrasBoxW    = int32(380) // main box default width
+	extrasBoxH    = int32(452) // main box default height
+	extrasMinW    = int32(300) // resize floor: 2 columns stay readable
+	extrasMinH    = int32(430) // resize floor: 4 volume sliders + all 13 widgets' rows + hint still fit
+	extrasVolRowH = int32(21)  // one volume-slider row at the top of the box
+	extrasTitleH  = int32(26)  // title bar / drag handle height (main + torn boxes)
+	extrasGripSz  = int32(16)  // bottom-right resize grip
 
 	detachedBoxW   = int32(176) // a torn-off widget's own little box (default)
 	detachedBoxH   = int32(66)
@@ -335,24 +335,43 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	a.handleExtrasResize(grip, r, pressed)
 	a.drawResizeGrip(grip)
 
-	// Master volume — an easy, theme-free way to turn it down (players' top ask:
-	// "the volume is in a bad place"). Scales music/SFX/blip together.
-	volY := r.Y + extrasTitleH + 6
-	c.Label(r.X+10, volY+2, "Volume", ColText)
+	// Sound sliders at the top — Master + the three channels (players' top ask:
+	// "the volume is in a bad place", and they liked this design). Master scales
+	// the others; each channel is independent.
 	master := a.d.Prefs.MasterVolume()
-	volTrack := sdl.Rect{X: r.X + 70, Y: volY + 3, W: r.W - 70 - 56, H: 14}
-	if v := int(c.Slider("extrasmaster", volTrack, int32(master), 100)); v != master {
-		a.d.Prefs.SetMasterVolume(v)
+	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	volY := r.Y + extrasTitleH + 4
+	drawVol := func(id, label string, val int) int {
+		c.Label(r.X+10, volY+2, label, ColText)
+		track := sdl.Rect{X: r.X + 62, Y: volY + 4, W: r.W - 62 - 48, H: 12}
+		nv := int(c.Slider("exvol:"+id, track, int32(val), 100))
+		c.Label(r.X+r.W-42, volY+2, strconv.Itoa(nv)+"%", ColTextDim)
+		volY += extrasVolRowH
+		return nv
+	}
+	if nv := drawVol("master", "Master", master); nv != master {
+		a.d.Prefs.SetMasterVolume(nv)
 		a.applyAudioVolumes()
 	}
-	c.Label(r.X+r.W-46, volY+2, strconv.Itoa(master)+"%", ColTextDim)
+	if nv := drawVol("music", "Music", music); nv != music {
+		a.d.Prefs.SetAudioVolumes(nv, sfx, blip)
+		a.applyAudioVolumes()
+	}
+	if nv := drawVol("sfx", "SFX", sfx); nv != sfx {
+		a.d.Prefs.SetAudioVolumes(music, nv, blip)
+		a.applyAudioVolumes()
+	}
+	if nv := drawVol("blip", "Blip", blip); nv != blip {
+		a.d.Prefs.SetAudioVolumes(music, sfx, nv)
+		a.applyAudioVolumes()
+	}
 
 	widgets := a.extrasWidgets()
 	const cols = int32(2)
 	const cellH, gap = int32(34), int32(8)
 	cellW := (r.W - 20 - gap) / cols
-	gx, gy := r.X+10, r.Y+extrasTitleH+8+extrasVolH
-	slot := int32(0) // visible cells compact past torn-off widgets
+	gx, gy := r.X+10, volY+6 // grid starts below the volume sliders
+	slot := int32(0)         // visible cells compact past torn-off widgets
 	for id, wd := range widgets {
 		if a.widgetDetached(id) {
 			continue

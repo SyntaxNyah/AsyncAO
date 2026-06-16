@@ -1886,6 +1886,19 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		}
 	}
 	y += 32
+	// Legacy iniswap (fallback): type ANY character folder on the asset base and
+	// wear it instantly — no need to add it to the wardrobe first. e.g. type
+	// "tung tung sahur" and you swap straight to characters/tung tung sahur/.
+	c.Label(panel.X+pad, y+4, "Wear by name:", ColTextDim)
+	var wearNow bool
+	a.iniWear, wearNow = c.TextField("iniswapwear", sdl.Rect{X: panel.X + pad + 110, Y: y, W: 300, H: fieldH}, a.iniWear, "type any character folder on the base…")
+	if c.Button(sdl.Rect{X: panel.X + pad + 418, Y: y, W: 70, H: btnH}, "Wear") || wearNow {
+		if name := strings.TrimSpace(a.iniWear); name != "" {
+			a.iniWear = ""
+			a.wearFromMenu(name) // instant swap in the courtroom; claims a slot on char-select
+		}
+	}
+	y += 32
 	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Search...")
 	// Add any folder name on the current asset base to the wardrobe —
 	// no server list required (★ marks saved entries; ★ persists
