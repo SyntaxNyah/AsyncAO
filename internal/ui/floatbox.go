@@ -27,9 +27,12 @@ const (
 	extrasTitleH = int32(26)  // title bar / drag handle height (main + torn boxes)
 	extrasGripSz = int32(16)  // bottom-right resize grip
 
-	detachedBoxW = int32(176) // a torn-off widget's own little box
-	detachedBoxH = int32(66)
-	extrasTearPx = int32(8) // drag a grid cell this far to tear it loose
+	detachedBoxW   = int32(176) // a torn-off widget's own little box (default)
+	detachedBoxH   = int32(66)
+	detachedMinW   = int32(120) // resize floor: the label + close still fit
+	detachedMinH   = int32(54)
+	detachedGripSz = int32(12) // smaller resize grip for the little torn-off boxes
+	extrasTearPx   = int32(8)  // drag a grid cell this far to tear it loose
 )
 
 // extrasWidget is one entry in the Extras box: a labelled action you click to
@@ -39,11 +42,13 @@ type extrasWidget struct {
 	run              func()
 }
 
-// detachedWidget is a widget torn out into its own box at (x,y). id indexes the
-// canonical extrasWidgets table; (x,y) is the raw (pre-clamp) top-left.
+// detachedWidget is a widget torn out into its own box at (x,y), sized w×h. id
+// indexes the canonical extrasWidgets table; (x,y) is the raw (pre-clamp)
+// top-left; w/h are 0 until the box is resized (then its user size).
 type detachedWidget struct {
 	id   int
 	x, y int32
+	w, h int32
 }
 
 // extrasWidgets returns the canonical widget table, built once and cached. The
@@ -125,17 +130,33 @@ func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
 	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}
 }
 
-// detachedBoxRect is the i-th torn-off widget's screen rect, clamped on-screen.
+// detachedBoxRect is the i-th torn-off widget's screen rect: its (possibly
+// resized) size clamped to [min, window], placed at its clamped-on-screen top-left.
 func (a *App) detachedBoxRect(i int, w, h int32) sdl.Rect {
 	d := a.extrasDetached[i]
-	maxX, maxY := w-detachedBoxW-4, h-detachedBoxH-4
+	bw, bh := detachedBoxW, detachedBoxH
+	if d.w > 0 {
+		bw = d.w
+	}
+	if d.h > 0 {
+		bh = d.h
+	}
+	hiW, hiH := w-8, h-8
+	if hiW < detachedMinW {
+		hiW = detachedMinW
+	}
+	if hiH < detachedMinH {
+		hiH = detachedMinH
+	}
+	bw, bh = clampI32(bw, detachedMinW, hiW), clampI32(bh, detachedMinH, hiH)
+	maxX, maxY := w-bw-4, h-bh-4
 	if maxX < 4 {
 		maxX = 4
 	}
 	if maxY < 4 {
 		maxY = 4
 	}
-	return sdl.Rect{X: clampI32(d.x, 4, maxX), Y: clampI32(d.y, 4, maxY), W: detachedBoxW, H: detachedBoxH}
+	return sdl.Rect{X: clampI32(d.x, 4, maxX), Y: clampI32(d.y, 4, maxY), W: bw, H: bh}
 }
 
 // widgetDetached reports whether widget id is currently torn out (so the grid
@@ -158,7 +179,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if !a.extrasSurfaceLive() {
 		return false
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing {
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
@@ -272,7 +293,7 @@ func (a *App) drawFloatingExtras(w, h int32) {
 	a.extrasPrevDown = c.mouseDown
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
-		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing {
+		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
@@ -310,8 +331,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	// drawing it here doesn't overlap any cell.
 	grip := sdl.Rect{X: r.X + r.W - extrasGripSz, Y: r.Y + r.H - extrasGripSz, W: extrasGripSz, H: extrasGripSz}
 	a.handleExtrasResize(grip, r, pressed)
-	c.Fill(grip, ColPanelHi)
-	c.Border(grip, ColAccent)
+	a.drawResizeGrip(grip)
 
 	widgets := a.extrasWidgets()
 	const cols = int32(2)
@@ -375,6 +395,46 @@ func (a *App) handleExtrasResize(grip, r sdl.Rect, pressed *bool) {
 	}
 }
 
+// drawResizeGrip paints a bottom-right resize handle — a small plate with accent
+// nicks stepping up the diagonal — so it reads as draggable rather than blending
+// into the box edge. Shared by the main box and every torn-off box.
+func (a *App) drawResizeGrip(grip sdl.Rect) {
+	c := a.ctx
+	c.Fill(grip, ColPanelHi)
+	for i := int32(0); i < 3; i++ { // dots along the bottom-right diagonal
+		d := 3 + i*4
+		c.Fill(sdl.Rect{X: grip.X + grip.W - d - 2, Y: grip.Y + grip.H - d - 2, W: 2, H: 2}, ColAccent)
+	}
+}
+
+// handleDetachedResize resizes the i-th torn-off box from its bottom-right grip,
+// pinning the top-left. Shares the per-frame press edge and the (one-at-a-time)
+// grab offset; detachedBoxRect clamps the result to [min, window].
+func (a *App) handleDetachedResize(i int, grip, r sdl.Rect, pressed *bool) {
+	c := a.ctx
+	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {
+		*pressed = false
+		a.extrasDetachResizing = true
+		a.extrasDetachIdx = i
+		a.extrasDetached[i].x, a.extrasDetached[i].y = r.X, r.Y // pin the corner
+		a.extrasGrabDX, a.extrasGrabDY = (r.X+r.W)-c.mouseX, (r.Y+r.H)-c.mouseY
+	}
+	if a.extrasDetachResizing && a.extrasDetachIdx == i {
+		if !c.mouseDown {
+			a.extrasDetachResizing = false
+		} else {
+			nw, nh := (c.mouseX+a.extrasGrabDX)-r.X, (c.mouseY+a.extrasGrabDY)-r.Y
+			if nw < detachedMinW {
+				nw = detachedMinW
+			}
+			if nh < detachedMinH {
+				nh = detachedMinH
+			}
+			a.extrasDetached[i].w, a.extrasDetached[i].h = nw, nh
+		}
+	}
+}
+
 // drawExtrasDetached paints every torn-off widget as its own small floating box:
 // a title strip that drags + closes (closing returns the widget to the grid),
 // and a body button that runs the widget.
@@ -397,11 +457,16 @@ func (a *App) drawExtrasDetached(w, h int32, pressed *bool) {
 			return // slice mutated — stop drawing this frame
 		}
 		a.handleDetachedDrag(i, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 28, H: extrasTitleH}, pressed)
+		// Bottom-right resize grip — handled before the body button so a corner
+		// press resizes the box instead of running the widget.
+		grip := sdl.Rect{X: r.X + r.W - detachedGripSz, Y: r.Y + r.H - detachedGripSz, W: detachedGripSz, H: detachedGripSz}
+		a.handleDetachedResize(i, grip, r, pressed)
 		body := sdl.Rect{X: r.X + 8, Y: r.Y + extrasTitleH + 6, W: r.W - 16, H: r.H - extrasTitleH - 12}
 		if c.Button(body, wd.label) {
 			wd.run()
 			return
 		}
+		a.drawResizeGrip(grip) // over the body's corner, so it's always visible
 		c.TooltipAfter("fdetach:"+wd.label, body, wd.desc)
 	}
 }

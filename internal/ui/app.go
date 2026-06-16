@@ -421,7 +421,8 @@ type App struct {
 	// Flags use bool+index so the &App{} zero value is "idle" (no ctor needed).
 	extrasDetached       []detachedWidget // bounded: one box per widget at most
 	extrasDetachDragging bool             // a detached box is being moved
-	extrasDetachIdx      int              // which extrasDetached index, while dragging
+	extrasDetachResizing bool             // a detached box is being resized
+	extrasDetachIdx      int              // which extrasDetached index, while dragging/resizing
 	extrasPressing       bool             // a grid cell is held (pending click-or-tear)
 	extrasPressID        int              // that cell's widget id
 	extrasPressX         int32            // press origin, for the tear threshold

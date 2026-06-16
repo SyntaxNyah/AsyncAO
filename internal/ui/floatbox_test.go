@@ -262,6 +262,47 @@ func TestExtrasResize(t *testing.T) {
 	}
 }
 
+// TestDetachedResize pins corner-resize on a torn-off box: a grip press starts a
+// resize that grows the box with the drag, a far-inward drag clamps at the
+// minimum, and release ends it.
+func TestDetachedResize(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	const w, h = int32(1280), int32(720)
+	a.extrasDetached = []detachedWidget{{id: 1, x: 500, y: 300}}
+	r := a.detachedBoxRect(0, w, h)
+	grip := sdl.Rect{X: r.X + r.W - detachedGripSz, Y: r.Y + r.H - detachedGripSz, W: detachedGripSz, H: detachedGripSz}
+
+	a.ctx.mouseDown = true
+	a.ctx.mouseX, a.ctx.mouseY = grip.X+3, grip.Y+3
+	pressed := true
+	a.handleDetachedResize(0, grip, r, &pressed)
+	if !a.extrasDetachResizing || pressed {
+		t.Fatal("a press on the grip must start a resize and consume the edge")
+	}
+
+	a.ctx.mouseX += 60 // drag the corner out by +60,+40
+	a.ctx.mouseY += 40
+	pressed = false
+	a.handleDetachedResize(0, grip, r, &pressed)
+	if got := a.detachedBoxRect(0, w, h); got.W != r.W+60 || got.H != r.H+40 {
+		t.Errorf("resized to %dx%d, want %dx%d", got.W, got.H, r.W+60, r.H+40)
+	}
+
+	a.ctx.mouseX, a.ctx.mouseY = r.X-500, r.Y-500 // far inward → floor
+	a.handleDetachedResize(0, grip, r, &pressed)
+	if got := a.detachedBoxRect(0, w, h); got.W != detachedMinW || got.H != detachedMinH {
+		t.Errorf("over-shrunk to %dx%d, want the floor %dx%d", got.W, got.H, detachedMinW, detachedMinH)
+	}
+
+	a.ctx.mouseDown = false
+	a.handleDetachedResize(0, grip, r, &pressed)
+	if a.extrasDetachResizing {
+		t.Error("release must end the resize")
+	}
+}
+
 // TestPointerFence pins the fence round-trip: it blanks the live pointer, is
 // idempotent (a second fence must NOT save the blanked state), and restores the
 // original on unfence — the heart of the non-blocking box's input isolation.
