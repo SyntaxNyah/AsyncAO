@@ -511,15 +511,17 @@ type App struct {
 // tabs don't animate, and activation rebuilds it via enterCourtroom.
 type sessionState struct {
 	// --- connection / session ---
-	conn       *protocol.Conn
-	sess       *courtroom.Session
-	room       *courtroom.Courtroom
-	urls       courtroom.URLBuilder
-	serverName string
-	serverKey  string // ws URL: keys the per-server warm state in prefs
-	connErr    string
-	connAt     time.Time // session start (Rich Presence elapsed timer)
-	curArea    string    // last area WE clicked (Rich Presence, best-effort)
+	conn         *protocol.Conn
+	sess         *courtroom.Session
+	room         *courtroom.Courtroom
+	urls         courtroom.URLBuilder
+	serverName   string
+	serverKey    string // ws URL: keys the per-server warm state in prefs
+	connErr      string
+	lastConnName string    // M2: the server we were dropped from, for one-click Reconnect
+	lastConnURL  string    // its ws URL (serverKey), captured before Disconnect clears it
+	connAt       time.Time // session start (Rich Presence elapsed timer)
+	curArea      string    // last area WE clicked (Rich Presence, best-effort)
 	// Per-area IC scrollback (opt-in): areaLogs holds each visited area's saved
 	// icLog, areaLogOrder is the visit order for bounded FIFO eviction
 	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
@@ -1327,7 +1329,8 @@ func (a *App) Connect(name, wsURL string) {
 // context.Background() (Dial's full 10s budget); restore-on-launch passes a
 // short timeout so a dead remembered server can't freeze boot for long.
 func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
-	a.pinging = false // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
+	a.lastConnName, a.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
+	a.pinging = false                           // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
 	a.parkActive()
 	if !a.allocateTab() {
 		return // connErr set; lobby shows it

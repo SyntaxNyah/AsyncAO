@@ -57,6 +57,14 @@ func (a *App) drawLobby(w, h int32) {
 	c.Label(pad, pad+30, a.lobbyStatus, ColTextDim)
 	if a.connErr != "" {
 		c.Label(pad+220, pad+30, a.connErr, ColDanger)
+		if a.lastConnURL != "" { // one-click Reconnect to the server we dropped from
+			label := "Reconnect to " + a.lastConnName
+			bw := c.TextWidth(label) + 20
+			if c.Button(sdl.Rect{X: pad + 220, Y: pad + 50, W: bw, H: btnH}, label) {
+				a.connErr = ""
+				a.Connect(a.lastConnName, a.lastConnURL)
+			}
+		}
 	}
 
 	// Top bar buttons.
