@@ -310,17 +310,25 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	if c.Button(sdl.Rect{X: pad + 444, Y: y, W: 110, H: btnH}, "Save current") {
 		a.d.Prefs.AddShownamePreset(a.effectiveShowname())
 	}
-	c.Label(pad+564, y+4, "saved globally; cleared only by a factory reset", ColTextDim)
+	c.Label(pad+564, y+4, "global · Ctrl+H = random · cleared only by a factory reset", ColTextDim)
 	y += 32
 	if presets := a.d.Prefs.ShownameList(); len(presets) == 0 {
 		c.Label(pad+12, y+2, "(none yet — Save a name above; bind keys to swap them)", ColTextDim)
 		y += 24
 	} else {
+		active := a.effectiveShowname()
 		for _, name := range presets {
 			if c.Button(sdl.Rect{X: pad + 12, Y: y, W: 20, H: 18}, "×") {
 				a.d.Prefs.RemoveShownamePreset(name)
 			}
-			c.LabelClipped(pad+40, y+1, 320, name, ColText)
+			if c.Button(sdl.Rect{X: pad + 38, Y: y, W: 46, H: 18}, "Use") {
+				a.shownameOverride = name // apply now (the in-courtroom override)
+			}
+			lbl, col := name, ColText
+			if strings.EqualFold(active, name) {
+				lbl, col = name+"   ← active", ColTierGreen
+			}
+			c.LabelClipped(pad+92, y+1, 300, lbl, col)
 			y += 24
 		}
 	}
