@@ -797,6 +797,8 @@ type sessionState struct {
 	liveRoster     []areaPlayer // M1 live roster (CharsCheck taken chars + ARUP spectators)
 	liveRosterAt   time.Time    // live roster's last change — the rows/order memo key
 	shownameFor    map[string]string
+	icCountN       int    // M5 IC char counter: cached count + its string, reformatted
+	icCountStr     string // only when the length changes so the frame stays 0-alloc
 	pairListScroll int32
 	playerScroll   int32 // Players-tab roster scroll
 	playerSort     int   // roster sort: 0=UID, 1=name, 2=speakers-first

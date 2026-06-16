@@ -187,6 +187,10 @@ const defaultAutoLoginToast = true
 // Toggleable off in Settings (streamer mode suppresses it regardless).
 const defaultCallwordToast = true
 
+// defaultMessageCounter ships ON: a live IC character count so you can see how
+// long a message is getting (servers truncate very long lines).
+const defaultMessageCounter = true
+
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
 // 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
@@ -452,6 +456,8 @@ type AssetPreferences struct {
 	// CallwordToast shows an in-app toast when a callword is heard (ON by
 	// default), alongside the existing flash + ping.
 	CallwordToast bool `json:"callwordToast"`
+	// MessageCounter shows a live character count by the IC input (ON by default).
+	MessageCounter bool `json:"messageCounter"`
 
 	mu        sync.RWMutex
 	path      string
@@ -584,6 +590,7 @@ type prefsJSON struct {
 	PreviewHoverMs     *int  `json:"previewHoverMs"`     // absent = default 5 s
 	AutoLoginToast     *bool `json:"autoLoginToast"`     // absent = default ON
 	CallwordToast      *bool `json:"callwordToast"`      // absent = default ON
+	MessageCounter     *bool `json:"messageCounter"`     // absent = default ON
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -789,6 +796,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		PreviewHoverMs:     DefaultPreviewHoverMs,
 		AutoLoginToast:     defaultAutoLoginToast,
 		CallwordToast:      defaultCallwordToast,
+		MessageCounter:     defaultMessageCounter,
 		HighlightColor:     defaultHighlightColor,
 		NameSat:            defaultNameColorSat,
 		NameVal:            defaultNameColorVal,
@@ -889,6 +897,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.CallwordToast != nil {
 		p.CallwordToast = *onDisk.CallwordToast
+	}
+	if onDisk.MessageCounter != nil {
+		p.MessageCounter = *onDisk.MessageCounter
 	}
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
@@ -1597,6 +1608,25 @@ func (p *AssetPreferences) SetCallwordToast(on bool) {
 		return
 	}
 	p.CallwordToast = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MessageCounterOn reports the IC character-counter toggle (ON by default).
+func (p *AssetPreferences) MessageCounterOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MessageCounter
+}
+
+// SetMessageCounter toggles the IC character counter.
+func (p *AssetPreferences) SetMessageCounter(on bool) {
+	p.mu.Lock()
+	if p.MessageCounter == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MessageCounter = on
 	p.mu.Unlock()
 	p.markDirty()
 }

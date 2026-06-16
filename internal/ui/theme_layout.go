@@ -379,7 +379,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		}
 		field := sdl.Rect{X: fieldX, Y: in.Y, W: fieldW, H: in.H}
 		var send bool
+		icCounterOn := a.d.Prefs.MessageCounterOn()
+		if icCounterOn {
+			field.W -= msgCounterReserve
+		}
 		a.icInput, send = c.TextField("ic", field, a.icInput, "Say something in character...")
+		a.drawMsgCounter(field, icCounterOn)
 		if send {
 			a.sendIC(0)
 		}

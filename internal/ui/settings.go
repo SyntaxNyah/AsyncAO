@@ -1166,6 +1166,12 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 30
 
+	mc := a.d.Prefs.MessageCounterOn()
+	if next := c.Checkbox(pad, y, "Show a character count by the IC box (ON by default): turns red past ~256 chars, where many servers truncate.", mc); next != mc {
+		a.d.Prefs.SetMessageCounter(next)
+	}
+	y += 30
+
 	// Highlighted friends (per server): shownames whose IC messages glow.
 	fh := a.d.Prefs.FriendHighlightOn()
 	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {

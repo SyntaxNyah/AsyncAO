@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -2882,7 +2883,14 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	c.Tooltip(sdl.Rect{X: immedX, Y: icY, W: immedW, H: fH}, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	var send bool
 	icX := immedX + immedW + 6
-	a.icInput, send = c.TextField("ic", sdl.Rect{X: icX, Y: icY, W: vp.W - (icX - pad), H: fH}, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
+	icCounterOn := a.d.Prefs.MessageCounterOn()
+	icW := vp.W - (icX - pad)
+	if icCounterOn {
+		icW -= msgCounterReserve
+	}
+	icBox := sdl.Rect{X: icX, Y: icY, W: icW, H: fH}
+	a.icInput, send = c.TextField("ic", icBox, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
+	a.drawMsgCounter(icBox, icCounterOn)
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
 	}
@@ -3136,6 +3144,31 @@ func (a *App) randomEmoteForSend() {
 // view — keyboard-only emote stepping during RP (the Ctrl+emote-cycle hotkey).
 // Unlike Random (which jumps anywhere), this walks the list in order. No-op
 // with no emotes; selectEmote clamps the index and refocuses the IC input.
+const (
+	msgCounterReserve = int32(48) // px reserved right of the IC box for the counter
+	msgCounterCap     = 256       // typical AO server IC cap — past it, warn in red
+)
+
+// drawMsgCounter draws the live IC character count in the gap reserved to the
+// right of the input (M5; ON by default, Settings-toggleable). The count string
+// is cached and reformatted only when the length changes, so the courtroom frame
+// stays 0-alloc; past the typical server cap it turns red (the line may truncate).
+func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
+	if !on {
+		return
+	}
+	c := a.ctx
+	n := utf8.RuneCountInString(a.icInput)
+	if n != a.icCountN {
+		a.icCountN, a.icCountStr = n, strconv.Itoa(n)
+	}
+	col := ColTextDim
+	if n > msgCounterCap {
+		col = ColDanger
+	}
+	c.Label(input.X+input.W+6, input.Y+(input.H-14)/2, a.icCountStr, col)
+}
+
 func (a *App) cycleEmote(delta int) {
 	n := len(a.emotes)
 	if n == 0 {
