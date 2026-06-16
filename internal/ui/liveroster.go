@@ -114,8 +114,8 @@ func rosterEqual(a, b []areaPlayer) bool {
 // reorder invariant — a same-length new roster reuses indices) and restamps the
 // memo time so the grouped-rows cache rebuilds once.
 func (a *App) rebuildLiveRoster() {
-	if a.rosterLegacy || a.sess == nil {
-		return
+	if a.rosterLegacy || a.sess == nil || len(a.areaPlayers) > 0 {
+		return // snapshot is showing; the CharsCheck-names fallback isn't displayed
 	}
 	n, ok := a.curAreaPlayers()
 	next := buildLiveRoster(a.sess.Chars, n, ok, a.curArea, a.shownameFor, a.areaPlayers)
@@ -127,12 +127,44 @@ func (a *App) rebuildLiveRoster() {
 	a.liveRosterAt = a.now()
 }
 
+// rosterRefetchDebounce bounds how often a join/leave re-pulls the rich /getarea
+// snapshot in live mode — fresh enough, but never a command per packet.
+const rosterRefetchDebounce = 3 * time.Second
+
+// fetchRoster pulls the /getarea snapshot (the UID/IPID/Pair data the live list
+// shows) and stamps the debounce. Shared by the on-open/area-change fetch and the
+// join/leave refresh.
+func (a *App) fetchRoster() {
+	a.lastRosterFetch = a.now()
+	a.suppressAreaEcho = true // its reply is parsed but kept out of the OOC log
+	a.pairAreaReset = true
+	a.queueOOCLines([]string{"/getarea"})
+}
+
+// maybeRefetchRoster re-pulls the snapshot after a join/leave (CharsCheck/ARUP),
+// debounced, so the live list's rich data stays current without a command per
+// packet. Live mode only.
+func (a *App) maybeRefetchRoster() {
+	if a.rosterLegacy || a.sess == nil {
+		return
+	}
+	if a.now().Sub(a.lastRosterFetch) < rosterRefetchDebounce {
+		return
+	}
+	a.fetchRoster()
+}
+
 // rosterView is the player list's active data: the live (CharsCheck/ARUP) roster
 // by default, or the /getarea snapshot in legacy mode. The pair popup always uses
 // the snapshot (areaPlayers) directly — it needs the UIDs only /getarea carries,
 // so the live roster lives in its own slice rather than swapping areaPlayers out.
 func (a *App) rosterView() []areaPlayer {
-	if a.rosterLegacy {
+	// Both modes show the /getarea snapshot once it has landed — it is the only
+	// source of UIDs/IPIDs/OOC and the Pair/Copy buttons, and matching it back onto
+	// CharsCheck rows by name was too fragile. Live mode auto-fetches and refreshes
+	// it; before the first reply we fall back to the CharsCheck names so the list
+	// isn't blank. (The pair popup uses areaPlayers directly too.)
+	if a.rosterLegacy || len(a.areaPlayers) > 0 {
 		return a.areaPlayers
 	}
 	return a.liveRoster
@@ -141,7 +173,7 @@ func (a *App) rosterView() []areaPlayer {
 // rosterStamp is the active roster's last-change time — the memo-invalidation
 // key for the grouped rows and sort order.
 func (a *App) rosterStamp() time.Time {
-	if a.rosterLegacy {
+	if a.rosterLegacy || len(a.areaPlayers) > 0 {
 		return a.areaListAt
 	}
 	return a.liveRosterAt

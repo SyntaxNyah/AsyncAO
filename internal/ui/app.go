@@ -795,18 +795,20 @@ type sessionState struct {
 	// roster that updates as people join/leave with no extra traffic; on = the
 	// rich /getarea snapshot. shownameFor caches char→showname from incoming IC
 	// so a live row shows the showname, not the bare character folder.
-	rosterLegacy    bool
-	liveRoster      []areaPlayer // M1 live roster (CharsCheck taken chars + ARUP spectators)
-	liveRosterAt    time.Time    // live roster's last change — the rows/order memo key
-	liveDetailsArea string       // area of the last auto /getarea enrich; re-pull on area change
-	shownameFor     map[string]string
-	icCountN        int    // M5 IC char counter: cached count + its string, reformatted
-	icCountStr      string // only when the length changes so the frame stays 0-alloc
-	pairListScroll  int32
-	playerScroll    int32  // Players-tab roster scroll
-	playerSort      int    // roster sort: 0=UID, 1=name, 2=speakers-first
-	playerPct       int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
-	shownameAdd     string // M6: Settings "save a showname preset" input
+	rosterLegacy     bool
+	liveRoster       []areaPlayer // M1 live roster (CharsCheck taken chars + ARUP spectators)
+	liveRosterAt     time.Time    // live roster's last change — the rows/order memo key
+	liveDetailsArea  string       // area of the last auto /getarea pull; re-pull on area change
+	lastRosterFetch  time.Time    // debounce for the join/leave re-pull (rosterRefetchDebounce)
+	suppressAreaEcho bool         // keep the NEXT auto /getarea reply out of the OOC log
+	shownameFor      map[string]string
+	icCountN         int    // M5 IC char counter: cached count + its string, reformatted
+	icCountStr       string // only when the length changes so the frame stays 0-alloc
+	pairListScroll   int32
+	playerScroll     int32  // Players-tab roster scroll
+	playerSort       int    // roster sort: 0=UID, 1=name, 2=speakers-first
+	playerPct        int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
+	shownameAdd      string // M6: Settings "save a showname preset" input
 	// playerOrder is the memoized display order (indices into areaPlayers); it
 	// recomputes only when the roster, sort mode, or current speaker change, so
 	// the Players tab never sorts per-frame.
@@ -1638,11 +1640,12 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// AO2-Client (handle_song). The room still plays the track below.
 			a.logMusicChange(ev)
 		case courtroom.EventCharsUpdated:
-			a.charLower = nil     // names may have changed; rebuild lazily
-			a.rebuildLiveRoster() // a character was taken/freed → live roster moves
-			// icons refresh lazily as textures land
+			a.charLower = nil      // names may have changed; rebuild lazily
+			a.rebuildLiveRoster()  // pre-snapshot fallback only
+			a.maybeRefetchRoster() // someone joined/left → re-pull the rich /getarea snapshot (debounced)
 		case courtroom.EventAreasUpdated:
-			a.rebuildLiveRoster() // ARUP head-count moved (covers spectator join/leave)
+			a.rebuildLiveRoster()
+			a.maybeRefetchRoster() // ARUP head-count moved (covers spectator join/leave)
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()
 		case courtroom.EventOOC:
@@ -3353,7 +3356,13 @@ func (a *App) pushOOC(line, speaker string) {
 		text = line[len(speaker)+2:]
 	}
 	a.parseAreaBlock(text)
-	a.rebuildLiveRoster() // a /getarea reply enriches the live roster (UIDs/IPIDs/OOC)
+	// An AUTO /getarea (the live list's silent fetch) is parsed for its data but
+	// kept OUT of the OOC log so the refresh never spams the channel; a MANUAL
+	// /getarea (the fetch buttons) doesn't set the flag, so it still shows.
+	if a.suppressAreaEcho && looksLikeAreaList(text) {
+		a.suppressAreaEcho = false
+		return
+	}
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
 	}

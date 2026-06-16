@@ -60,12 +60,11 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	if a.playerPct < config.MinLogScalePercent { // uninit / stale → match the log
 		a.playerPct = a.logPct
 	}
-	// First time the live tab opens this session, pull UIDs/IPIDs/OOC once so the
-	// rows get Pair/Copy without a manual Refresh (one /getarea — not per event).
+	// Pull the rich /getarea snapshot (UIDs/IPIDs/Pair) when the live tab first
+	// opens and on each area change; join/leave refreshes it via maybeRefetchRoster.
 	if !a.rosterLegacy && a.sess != nil && a.liveDetailsArea != a.curArea {
-		a.liveDetailsArea = a.curArea // re-pull UIDs/IPIDs on first open + each area change
-		a.pairAreaReset = true
-		a.queueOOCLines([]string{"/getarea"})
+		a.liveDetailsArea = a.curArea
+		a.fetchRoster()
 	}
 	// Row 1: live indicator (default) OR the legacy fetch buttons, plus the
 	// "Legacy snapshot" tick box that switches the two. Live = no traffic; legacy
@@ -111,19 +110,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		a.playerSort = (a.playerSort + 1) % playerSortModes
 	}
 	status := strconv.Itoa(len(a.rosterView())) + " here · live"
-	if !a.rosterLegacy { // show whether the /getarea UID/IPID enrich has landed yet
-		enriched := false
-		for i := range a.liveRoster {
-			if a.liveRoster[i].uid != "" {
-				enriched = true
-				break
-			}
-		}
-		if enriched {
-			status += " · UIDs ready"
-		} else {
-			status += " · fetching details…"
-		}
+	if !a.rosterLegacy && len(a.areaPlayers) == 0 {
+		status += " · fetching details…" // the rich /getarea snapshot hasn't landed yet
 	}
 	if a.rosterLegacy {
 		status = strconv.Itoa(len(a.rosterView())) + " players"
