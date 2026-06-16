@@ -192,12 +192,25 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   `spectators = head-count − taken chars`, so anonymous **Spectator rows come and
   go** too. Each row has a char icon, role highlights (you · the current speaker ·
   friends), Spectator/CM chips, and a sort toggle (UID · name · speakers-first).
-  A **"Legacy snapshot" tick box (off by default)** swaps in the classic
-  `/getarea` roster with UIDs, IPIDs and Pair/Copy actions on demand; a **`/gas`
-  then groups by area** with a header (name + count) you **click to jump there**
-  (an area transfer by name through the music list). The displayed name falls
-  back showname → OOC name → character. IPIDs are mod-only, shown in-session,
-  never persisted.
+  **UID / IPID / Pair:** those exist only in `/getarea`, so one fetches once when
+  the tab first opens (a **"Refresh details"** button pulls it again for new
+  joiners), and the result is **merged onto the live rows** — Copy-UID, Copy-IPID
+  (mod) and a `/pair <uid>` button appear next to every player. The merge matches
+  by name **or** showname, so it works whether the server leads its `/getarea` row
+  with the character (Akashi: `char (showname)`) or the showname (tsuserver /
+  Athena / Nyathena: `showname (char)`), including Akashi's one-line mod form
+  `char (showname) (ipid): ooc`. A **"Legacy snapshot" tick box (off by default)**
+  shows the raw `/getarea` roster instead; a **`/gas`** then groups by area with a
+  header (name + count) you **click to jump there**. **Ctrl+wheel zooms** the list
+  text (rows + icon scale with it); the click-to-pair popup zooms the same way.
+  The displayed name falls back showname → OOC name → character. IPIDs are
+  mod-only, shown in-session, never persisted.
+- **One-click reconnect**: when a connection drops or a join fails, the lobby
+  shows a **"Reconnect to &lt;server&gt;"** button that re-dials the last server
+  you tried (the name + ws URL are remembered on every connect attempt).
+- **Showname presets**: a global, persisted list of shownames managed in
+  **Settings → General** (add, *Save current*, remove with ×; cleared only by a
+  factory reset). **Ctrl+H** (rebindable) swaps to a random saved preset.
 - **Music changes in the IC log** (webAO/AO2 parity): when someone plays a song
   the log shows "*&lt;name&gt; has played a song: &lt;song&gt;*" (and "*has
   stopped the music*" on stop), named by the MC showname or the character. The
