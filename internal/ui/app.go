@@ -243,6 +243,7 @@ type App struct {
 	// the per-tab seq, so a tab switch is just a cache miss.)
 	oocWrap     []string
 	oocWrapName []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
+	oocWrapURL  []string // parallel to oocWrap: the entry's first link on each of its display lines ("" = none) — so a URL the wrap hard-split still opens whole (mirrors icEntry.url)
 	oocWrapSeq  uint64
 	oocWrapW    int32
 	oocWrapPct  int

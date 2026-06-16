@@ -553,10 +553,18 @@ func (a *App) oocWrapped(width int32) []string {
 	}
 	out := a.oocWrap[:0]
 	name := a.oocWrapName[:0] // parallel to out: speaker on each entry's first display line
+	urls := a.oocWrapURL[:0]  // parallel to out: the entry's link on each of its display lines
 	for i, entry := range a.oocLog {
 		sp := ""
 		if i < len(a.oocSpeakers) {
 			sp = a.oocSpeakers[i]
+		}
+		// Pull the link from the WHOLE (unmasked) entry once, like pushIC does —
+		// a long URL the wrap hard-splits below would otherwise be captured as a
+		// truncated fragment (Discord CDN links die at the first '&').
+		entryURL := ""
+		if u := extractURLs(entry, 1); len(u) > 0 {
+			entryURL = u[0]
 		}
 		if streamer {
 			entry = streamerMaskLine(entry)
@@ -570,10 +578,12 @@ func (a *App) oocWrapped(width int32) []string {
 			if len(lines) == 0 {
 				out = append(out, "") // blank MOTD spacer lines survive
 				name = append(name, "")
+				urls = append(urls, "")
 				continue
 			}
 			for _, ln := range lines {
 				out = append(out, ln)
+				urls = append(urls, entryURL) // every wrapped row of the entry opens the whole link
 				if entryFirst {
 					name = append(name, sp)
 					entryFirst = false
@@ -586,7 +596,7 @@ func (a *App) oocWrapped(width int32) []string {
 	if out == nil {
 		out = []string{}
 	}
-	a.oocWrap, a.oocWrapName = out, name
+	a.oocWrap, a.oocWrapName, a.oocWrapURL = out, name, urls
 	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.logPct, streamer
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out

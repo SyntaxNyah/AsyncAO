@@ -1447,14 +1447,12 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			// Selection highlight sits under the text.
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
 			// Links in OOC are openable (click) and copyable (right-click) —
-			// matching the IC log. The URL scan runs ONLY on the hovered line,
-			// so it costs one extract per frame, never per visible line.
+			// matching the IC log. The link is the entry's, resolved at wrap
+			// time (oocWrapURL), so a URL the wrap hard-split still opens whole.
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
-			if c.hovering(rowRect) {
-				if urls := extractURLs(line, 1); len(urls) > 0 {
-					col = ColAccent
-					a.oocLinkActions(rowRect, urls[0])
-				}
+			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
+				col = ColAccent
+				a.oocLinkActions(rowRect, a.oocWrapURL[li])
 			}
 			sp := ""
 			if li < len(a.oocWrapName) {
@@ -1562,11 +1560,9 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 			font := c.LogFontFor(a.logPct, line)
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
-			if c.hovering(rowRect) {
-				if urls := extractURLs(line, 1); len(urls) > 0 {
-					col = ColAccent
-					a.oocLinkActions(rowRect, urls[0])
-				}
+			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
+				col = ColAccent
+				a.oocLinkActions(rowRect, a.oocWrapURL[li])
 			}
 			sp := ""
 			if li < len(a.oocWrapName) {

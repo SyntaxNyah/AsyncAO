@@ -380,6 +380,39 @@ func TestWrapToWidthMOTD(t *testing.T) {
 	}
 }
 
+// TestOOCWrapURLFullLink pins the fix for links the OOC wrapper hard-splits:
+// a long Discord CDN URL (a '&'-laden query string) is captured WHOLE from the
+// source entry, so every wrapped row of it opens the full link — not the
+// truncated fragment a per-display-line scan used to grab at the first '&'.
+func TestOOCWrapURLFullLink(t *testing.T) {
+	a := testTabApp(t)
+	const url = "https://cdn.discordapp.com/attachments/151/151/asyncao-windows-x86_64.zip?ex=6a31e0a4&is=6a308f24&hm=335a54ec&"
+	a.pushOOC("Nyah: "+url, "Nyah")
+
+	// A narrow column (15 chars at the 8 px/char headless metric) forces the
+	// URL to hard-split across several display rows.
+	lines := a.oocWrapped(120)
+	if len(a.oocWrapURL) != len(lines) {
+		t.Fatalf("oocWrapURL (%d) not parallel to wrapped lines (%d)", len(a.oocWrapURL), len(lines))
+	}
+	if len(lines) < 2 {
+		t.Fatalf("expected the URL to wrap across rows, got %d line(s): %v", len(lines), lines)
+	}
+	// Setup guard: no single display row holds the whole URL, so a per-row
+	// scan really would truncate — that's the bug this fix removes.
+	for _, ln := range lines {
+		if strings.Contains(ln, url) {
+			t.Fatal("URL did not hard-split; the test no longer exercises the bug")
+		}
+	}
+	// Every wrapped row of the entry must resolve to the FULL link.
+	for li, ln := range lines {
+		if a.oocWrapURL[li] != url {
+			t.Errorf("row %d (%q): oocWrapURL = %q, want full %q", li, ln, a.oocWrapURL[li], url)
+		}
+	}
+}
+
 // TestICLogFilterCache pins the per-frame filter cache: stable while
 // nothing changed, invalidated by pushes and query edits.
 func TestICLogFilterCache(t *testing.T) {
