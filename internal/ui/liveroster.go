@@ -26,27 +26,55 @@ import (
 const specName = "Spectator"
 
 // buildLiveRoster assembles the in-area roster from the real-time signals: one
-// row per taken character (showname pulled from the IC-harvested cache), then
-// anonymous Spectator rows for the head-count beyond those characters. Pure so
-// the reconciliation is table-tested; the draw path can't be.
-func buildLiveRoster(chars []courtroom.CharacterSlot, headCount int, haveCount bool, area string, shownameFor map[string]string) []areaPlayer {
+// row per taken character, then Spectator rows for the head-count beyond them.
+// The `snapshot` (the last /getarea — i.e. areaPlayers) enriches each row with
+// the data CharsCheck can't carry — UID, IPID, OOC name (matched by character;
+// spectators handed out in snapshot order) — so a live row offers the same
+// Pair/Copy actions as the legacy snapshot. Pure + table-tested.
+func buildLiveRoster(chars []courtroom.CharacterSlot, headCount int, haveCount bool, area string, shownameFor map[string]string, snapshot []areaPlayer) []areaPlayer {
+	// Split the snapshot: characters key by name; spectators are anonymous to
+	// CharsCheck, so queue them in order to hand out up to the live head-count.
+	var byChar map[string]areaPlayer
+	var snapSpecs []areaPlayer
+	for i := range snapshot {
+		if snapshot[i].name == specName {
+			snapSpecs = append(snapSpecs, snapshot[i])
+			continue
+		}
+		if byChar == nil {
+			byChar = make(map[string]areaPlayer, len(snapshot))
+		}
+		byChar[strings.ToLower(snapshot[i].name)] = snapshot[i]
+	}
+
 	out := make([]areaPlayer, 0, len(chars)+4)
 	for i := range chars {
 		if !chars[i].Taken {
 			continue
 		}
-		out = append(out, areaPlayer{
+		row := areaPlayer{
 			name:     chars[i].Name,
 			showname: shownameFor[strings.ToLower(chars[i].Name)],
 			area:     area,
-		})
+		}
+		if snap, ok := byChar[strings.ToLower(chars[i].Name)]; ok {
+			row.uid, row.ooc, row.ipid = snap.uid, snap.ooc, snap.ipid
+			if row.showname == "" {
+				row.showname = snap.showname
+			}
+		}
+		out = append(out, row)
 	}
-	// Spectators = players the ARUP head-count knows about beyond the taken
-	// characters. No names (they're invisible to CharsCheck), but the COUNT moves
-	// live, so they still come and go.
+	// Spectators: the ARUP head-count beyond the characters. Prefer the named
+	// snapshot rows (UID/OOC) in order; anonymous rows fill any remainder the
+	// count knows about. Either way the COUNT moves live, so they come and go.
 	if haveCount {
-		for spec := headCount - len(out); spec > 0; spec-- {
-			out = append(out, areaPlayer{name: specName, area: area})
+		for s, want := 0, headCount-len(out); s < want; s++ {
+			if s < len(snapSpecs) {
+				out = append(out, snapSpecs[s])
+			} else {
+				out = append(out, areaPlayer{name: specName, area: area})
+			}
 		}
 	}
 	return out
@@ -61,8 +89,9 @@ func rosterEqual(a, b []areaPlayer) bool {
 		return false
 	}
 	for i := range a {
-		if a[i].name != b[i].name || a[i].showname != b[i].showname {
-			return false
+		if a[i].name != b[i].name || a[i].showname != b[i].showname ||
+			a[i].uid != b[i].uid || a[i].ooc != b[i].ooc || a[i].ipid != b[i].ipid {
+			return false // rich fields included so a /getarea enrich triggers a rebuild
 		}
 	}
 	return true
@@ -79,7 +108,7 @@ func (a *App) rebuildLiveRoster() {
 		return
 	}
 	n, ok := a.curAreaPlayers()
-	next := buildLiveRoster(a.sess.Chars, n, ok, a.curArea, a.shownameFor)
+	next := buildLiveRoster(a.sess.Chars, n, ok, a.curArea, a.shownameFor, a.areaPlayers)
 	if rosterEqual(a.liveRoster, next) {
 		return
 	}

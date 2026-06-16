@@ -3348,6 +3348,7 @@ func (a *App) pushOOC(line, speaker string) {
 		text = line[len(speaker)+2:]
 	}
 	a.parseAreaBlock(text)
+	a.rebuildLiveRoster() // a /getarea reply enriches the live roster (UIDs/IPIDs/OOC)
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
 	}

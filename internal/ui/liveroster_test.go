@@ -17,30 +17,40 @@ func TestBuildLiveRoster(t *testing.T) {
 		{Name: "Franziska", Taken: true},
 	}
 	show := map[string]string{"phoenix": "Nick"}
+	// A prior /getarea snapshot enriches matching characters by name; its
+	// Spectator rows fill the live spectator slots in order.
+	snap := []areaPlayer{
+		{uid: "3", name: "Phoenix", showname: "Wright", ooc: "nick_ooc", ipid: "AB12"},
+		{uid: "5", name: "Franziska"},
+		{uid: "9", name: specName, ooc: "lurker"},
+	}
 
 	// Head-count 5: 2 taken characters + 3 spectators.
-	got := buildLiveRoster(chars, 5, true, "Courtroom 1", show)
+	got := buildLiveRoster(chars, 5, true, "Courtroom 1", show, snap)
 	if len(got) != 5 {
 		t.Fatalf("roster len = %d, want 5 (2 chars + 3 spectators)", len(got))
 	}
-	if got[0].name != "Phoenix" || got[0].showname != "Nick" || got[0].area != "Courtroom 1" {
-		t.Errorf("row0 = %+v, want Phoenix/Nick/Courtroom 1", got[0])
+	// Phoenix inherits UID/IPID/OOC from the snapshot; the cached showname wins.
+	if got[0].name != "Phoenix" || got[0].uid != "3" || got[0].ipid != "AB12" || got[0].ooc != "nick_ooc" || got[0].showname != "Nick" {
+		t.Errorf("row0 = %+v, want Phoenix enriched (uid 3, ipid AB12), cached showname Nick", got[0])
 	}
-	if got[1].name != "Franziska" || got[1].showname != "" {
-		t.Errorf("row1 = %+v, want Franziska with no cached showname", got[1])
+	if got[1].name != "Franziska" || got[1].uid != "5" || got[1].showname != "" {
+		t.Errorf("row1 = %+v, want Franziska uid 5, no showname", got[1])
 	}
-	for i := 2; i < 5; i++ {
-		if got[i].name != specName {
-			t.Errorf("row%d name = %q, want %q", i, got[i].name, specName)
-		}
+	// First spectator slot uses the named snapshot row; the rest are anonymous.
+	if got[2].name != specName || got[2].uid != "9" || got[2].ooc != "lurker" {
+		t.Errorf("row2 = %+v, want the named snapshot spectator (uid 9)", got[2])
+	}
+	if got[3].name != specName || got[3].uid != "" || got[4].name != specName {
+		t.Errorf("rows 3-4 = %+v %+v, want anonymous spectators", got[3], got[4])
 	}
 
 	// No ARUP count yet → characters only, no spectator rows.
-	if n := len(buildLiveRoster(chars, 0, false, "", show)); n != 2 {
+	if n := len(buildLiveRoster(chars, 0, false, "", show, snap)); n != 2 {
 		t.Errorf("no-count roster len = %d, want 2 (chars only)", n)
 	}
 	// Head-count below the character count (stale ARUP) → never negative rows.
-	if n := len(buildLiveRoster(chars, 1, true, "", show)); n != 2 {
+	if n := len(buildLiveRoster(chars, 1, true, "", show, nil)); n != 2 {
 		t.Errorf("stale-count roster len = %d, want 2 (no negative spectators)", n)
 	}
 }

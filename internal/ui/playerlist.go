@@ -73,7 +73,15 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			bx += bw + 5
 		}
 	} else {
-		c.Label(r.X, r.Y+5, "● LIVE — updates as people join & leave", ColTierGreen)
+		c.Label(r.X, r.Y+5, "● LIVE", ColTierGreen)
+		rb := sdl.Rect{X: r.X + 52, Y: r.Y, W: 116, H: 22}
+		if c.Button(rb, "Refresh details") {
+			a.pairAreaReset = true
+			a.queueOOCLines([]string{"/getarea"})
+			a.warnLine = clampLine("Fetching UIDs / IPIDs for this area…")
+			a.warnAt = a.now()
+		}
+		c.Tooltip(rb, "Pull UIDs, IPIDs, OOC names + Pair/Copy onto the live rows (one /getarea). The list stays live — refresh again to fill in new joiners.")
 	}
 	const legLabel = "Legacy snapshot"
 	legW := int32(22) + c.TextWidth(legLabel)
