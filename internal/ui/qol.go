@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,7 +51,12 @@ const (
 	hotkeyUIChrome   = "ui_chrome"
 	hotkeySettings   = "settings_menu"
 	hotkeyRandomChar = "random_char"
+	hotkeyVolDown    = "vol_down" // master volume −/+ a step (quick volume from the keyboard)
+	hotkeyVolUp      = "vol_up"
 )
+
+// volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
+const volumeKeyStep = 5
 
 // hotkeyDefs drives both dispatch and the Settings rows: id, label, and
 // the default key (per the original request: shouts on Ctrl+1..4).
@@ -84,6 +90,8 @@ var hotkeyDefs = []struct {
 	{hotkeyUIChrome, "Menu: UI chrome", "f"},
 	{hotkeySettings, "Menu: Settings", ","}, // Ctrl+, (prefs convention); NOT z — that's the layout-editor undo
 	{hotkeyRandomChar, "Random character", "r"},
+	{hotkeyVolDown, "Master volume down", "-"}, // Ctrl+-  (quieter)
+	{hotkeyVolUp, "Master volume up", "="},     // Ctrl+=  (louder)
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -193,6 +201,10 @@ func (a *App) handleHotkeys() {
 		a.cyclePos()
 	case a.hotkeyFor(hotkeyMusicStop):
 		a.stopMusic()
+	case a.hotkeyFor(hotkeyVolDown):
+		a.nudgeMasterVolume(-volumeKeyStep)
+	case a.hotkeyFor(hotkeyVolUp):
+		a.nudgeMasterVolume(volumeKeyStep)
 	case a.hotkeyFor(hotkeyLogJump):
 		a.jumpLogs()
 	case a.hotkeyFor(hotkeyScreenshot):
@@ -300,6 +312,17 @@ func (a *App) applyAudioVolumes() {
 		music, sfx, blip = music*m/100, sfx*m/100, blip*m/100
 	}
 	a.d.Audio.SetVolumes(music, sfx, blip)
+}
+
+// nudgeMasterVolume steps the master volume from the keyboard (Ctrl+-/Ctrl+=),
+// clamps it, applies it, and toasts the new level. Master scales every channel,
+// so this is the quick "turn it down/up" without reaching for a slider.
+func (a *App) nudgeMasterVolume(delta int) {
+	v := clampInt(a.d.Prefs.MasterVolume()+delta, 0, 100)
+	a.d.Prefs.SetMasterVolume(v)
+	a.applyAudioVolumes()
+	a.warnLine = "Master volume: " + strconv.Itoa(v) + "%"
+	a.warnAt = a.now()
 }
 
 // drawHotkeyCheatSheet overlays the current bindings (F1 toggles it on any
