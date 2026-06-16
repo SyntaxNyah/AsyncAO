@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -56,6 +57,9 @@ func playerSortLabel(mode int) string {
 // per-row icon + highlights + Pair / Copy actions.
 func (a *App) drawPlayerList(r sdl.Rect) {
 	c := a.ctx
+	if a.playerPct < config.MinLogScalePercent { // uninit / stale → match the log
+		a.playerPct = a.logPct
+	}
 	// Row 1: live indicator (default) OR the legacy fetch buttons, plus the
 	// "Legacy snapshot" tick box that switches the two. Live = no traffic; legacy
 	// = a /getarea snapshot whose hand fetch REPLACES the roster (clean restart).
@@ -133,12 +137,13 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	cmSet := a.cmNameSet()
 	rows := a.playerRosterRows(speaker) // flat for a /ga, area-grouped for a /gas
 
+	a.zoomWheel(r, &a.playerPct, config.MinLogScalePercent, config.MaxLogScalePercent) // Ctrl+wheel zooms text
 	if !c.ctrlHeld {
 		a.playerScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	contentH := int32(0)
 	for i := range rows {
-		contentH += rowHeight(rows[i])
+		contentH += a.rowHeight(rows[i])
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.playerScroll = c.VScrollbar("playerlist", track, a.playerScroll, contentH, r.H)
@@ -147,7 +152,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	rowW := r.W - scrollBarW - 6
 	y := r.Y - a.playerScroll
 	for i := range rows {
-		rh := rowHeight(rows[i])
+		rh := a.rowHeight(rows[i])
 		if y > r.Y+r.H {
 			break
 		}
@@ -162,12 +167,13 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	}
 }
 
-// rowHeight is the display height of one roster row (area headers are shorter).
-func rowHeight(row rosterRow) int32 {
+// rowHeight is the display height of one roster row (area headers are shorter);
+// player rows scale with the Players-tab text zoom (Ctrl+wheel).
+func (a *App) rowHeight(row rosterRow) int32 {
 	if row.header {
 		return playerHeaderH
 	}
-	return playerRowH
+	return playerRowH * int32(a.playerPct) / 100
 }
 
 // drawPlayerRow is one player: char icon + "[uid] showname · character" with the
@@ -262,7 +268,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if !strings.EqualFold(display, p.name) {
 		ic = "[" + p.uid + "]  " + display + "  ·  " + p.name
 	}
-	c.LabelClipped(cx, row.Y+5, textW-(cx-textX), ic, ColText)
+	c.LabelClippedFont(c.LogFontFor(a.playerPct, ic), cx, row.Y+5, textW-(cx-textX), ic, ColText)
 	// Line 2 — OOC name (+ IPID for mods), dimmer. Skip OOC when it's already the
 	// display name above (no showname → OOC was promoted to the identity line).
 	sub := ""
@@ -276,7 +282,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		sub += "IPID: " + p.ipid
 	}
 	if sub != "" {
-		c.LabelClipped(textX, row.Y+row.H-16, textW, sub, ColTextDim)
+		c.LabelClippedFont(c.LogFontFor(a.playerPct, sub), textX, row.Y+row.H-int32(16*a.playerPct/100), textW, sub, ColTextDim)
 	}
 }
 

@@ -804,6 +804,7 @@ type sessionState struct {
 	pairListScroll int32
 	playerScroll   int32 // Players-tab roster scroll
 	playerSort     int   // roster sort: 0=UID, 1=name, 2=speakers-first
+	playerPct      int   // Players-tab text zoom (Ctrl+wheel); starts at the log scale
 	// playerOrder is the memoized display order (indices into areaPlayers); it
 	// recomputes only when the roster, sort mode, or current speaker change, so
 	// the Players tab never sorts per-frame.
@@ -1160,7 +1161,8 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
 	a.pairFlip = d.Prefs.PairFlipped()
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales()
-	a.musicPct = a.logPct // starts matching the log; ctrl+wheel over the Music tab tunes it apart
+	a.musicPct = a.logPct  // starts matching the log; ctrl+wheel over the Music tab tunes it apart
+	a.playerPct = a.logPct // same for the Players tab + pair popup
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
 	if paths := d.Prefs.FontPaths(); paths != "" {

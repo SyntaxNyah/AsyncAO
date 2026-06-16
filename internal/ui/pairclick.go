@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -279,8 +280,14 @@ func (a *App) drawPairPlayerList(r sdl.Rect) {
 		c.LabelClipped(r.X+2, r.Y+4, r.W-4, "No area data yet — run /ga, /gas, or hit Refresh; or type the UID above.", ColTextDim)
 		return
 	}
-	const lineH = int32(24)
-	a.pairListScroll -= c.WheelIn(r) * scrollStepPx
+	if a.playerPct < config.MinLogScalePercent { // uninit / stale → match the log
+		a.playerPct = a.logPct
+	}
+	lineH := int32(24) * int32(a.playerPct) / 100
+	a.zoomWheel(r, &a.playerPct, config.MinLogScalePercent, config.MaxLogScalePercent) // Ctrl+wheel zooms text
+	if !c.ctrlHeld {
+		a.pairListScroll -= c.WheelIn(r) * scrollStepPx
+	}
 	contentH := int32(len(a.areaPlayers)) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.pairListScroll = c.VScrollbar("pairlist", track, a.pairListScroll, contentH, r.H)
@@ -308,7 +315,7 @@ func (a *App) drawPairPlayerList(r sdl.Rect) {
 			if p.showname != "" && !strings.EqualFold(p.showname, p.name) {
 				label = "[" + p.uid + "]  " + p.showname + "  ·  " + p.name // showname first (the IC name)
 			}
-			c.LabelClipped(row.X+6, row.Y+4, row.W-12, label, ColText)
+			c.LabelClippedFont(c.LogFontFor(a.playerPct, label), row.X+6, row.Y+4, row.W-12, label, ColText)
 		}
 		rowY += lineH
 	}
