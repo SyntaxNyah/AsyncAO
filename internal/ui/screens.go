@@ -1116,15 +1116,50 @@ func clampF64(v, min, max float64) float64 {
 	return v
 }
 
+// drawVolumeStrip draws the toggleable on-screen volume row (Master + the three
+// channels) at the top of the log panel — quick volume without leaving the chat.
+func (a *App) drawVolumeStrip(r sdl.Rect) {
+	c := a.ctx
+	master := a.d.Prefs.MasterVolume()
+	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	colW := r.W / 4
+	cell := func(i int32, id, label string, val int) int {
+		x := r.X + i*colW
+		c.Label(x, r.Y+4, label, ColTextDim)
+		track := sdl.Rect{X: x + 34, Y: r.Y + 6, W: colW - 42, H: 12}
+		return int(c.Slider("volstrip:"+id, track, int32(val), 100))
+	}
+	if nv := cell(0, "master", "Mas", master); nv != master {
+		a.d.Prefs.SetMasterVolume(nv)
+		a.applyAudioVolumes()
+	}
+	if nv := cell(1, "music", "Mus", music); nv != music {
+		a.d.Prefs.SetAudioVolumes(nv, sfx, blip)
+		a.applyAudioVolumes()
+	}
+	if nv := cell(2, "sfx", "SFX", sfx); nv != sfx {
+		a.d.Prefs.SetAudioVolumes(music, nv, blip)
+		a.applyAudioVolumes()
+	}
+	if nv := cell(3, "blip", "Blp", blip); nv != blip {
+		a.d.Prefs.SetAudioVolumes(music, sfx, nv)
+		a.applyAudioVolumes()
+	}
+}
+
 func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
 	c.Border(r, ColPanelHi)
-	tab := r.W / 6
+	// A "🔊" toggle at the right end drops a compact volume strip above the panel
+	// content — adjust volume while the log stays on screen and you keep chatting
+	// (the IC box below is untouched). The tabs share the rest of the row.
+	const volBtnW = int32(36)
+	tab := (r.W - volBtnW) / 6
 	tabBtn := func(i int32, id int, label string) {
 		bw := tab
 		if i == 5 {
-			bw = r.W - 5*tab // last tab takes the remainder
+			bw = (r.W - volBtnW) - 5*tab // last tab takes the remainder before the Vol toggle
 		}
 		if c.Button(sdl.Rect{X: r.X + i*tab, Y: r.Y, W: bw, H: btnH}, label) {
 			a.logTab = id
@@ -1136,7 +1171,21 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	tabBtn(3, logTabPlayers, "Players")
 	tabBtn(4, logTabOOC, "OOC")
 	tabBtn(5, logTabNotes, "Notes")
-	inner := sdl.Rect{X: r.X + 4, Y: r.Y + btnH + 4, W: r.W - 8, H: r.H - btnH - 8}
+	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}
+	if c.Button(volBtn, "Vol") {
+		a.volStripOn = !a.volStripOn
+	}
+	if a.volStripOn {
+		c.Border(volBtn, ColAccent) // active cue
+	}
+	c.Tooltip(volBtn, "Show/hide volume sliders on screen (chat stays usable)")
+	innerY := r.Y + btnH + 4
+	if a.volStripOn {
+		const stripH = int32(28)
+		a.drawVolumeStrip(sdl.Rect{X: r.X + 4, Y: innerY, W: r.W - 8, H: stripH})
+		innerY += stripH + 4
+	}
+	inner := sdl.Rect{X: r.X + 4, Y: innerY, W: r.W - 8, H: r.Y + r.H - innerY - 4}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) anywhere on the panel
 	// resizes the log/OOC/list text; plain wheel keeps scrolling the active
 	// list. Taking the wheel here stops the inner lists' zoom from double-stepping.
@@ -2141,6 +2190,35 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 		c.Label(statusX, y+4, fmt.Sprintf("%d on this server · ★ adds one to your Characters wardrobe", len(a.iniServer)), ColTextDim)
 	}
 	y += 36
+
+	// No server list yet → a mini guide for owners (where to put iniswap.txt) and
+	// players (they can still wear any folder by name).
+	if !a.iniBusy && len(a.iniServer) == 0 {
+		base := a.urls.Origin()
+		if base == "" {
+			base = "https://your-server.com/base/"
+		}
+		gx, gy := panel.X+pad, y+4
+		for _, line := range []string{
+			"No iniswap list for this server yet.",
+			"",
+			"Server owners: drop an " + iniswapFileName + " at your asset base and it'll",
+			"be fetched here automatically — one character folder name per line:",
+			"",
+			base + iniswapFileName,
+			"",
+			"Players: you can still add any folder by name (the box above), or wear one",
+			"instantly from the Characters tab's \"Wear by name\" field.",
+		} {
+			col := ColTextDim
+			if strings.Contains(line, "://") {
+				col = ColAccent // the example URL
+			}
+			c.LabelClipped(gx, gy, panel.W-2*pad, line, col)
+			gy += 20
+		}
+		return
+	}
 
 	query := a.iniQ.get(a.iniSearch)
 	// The Iniswaps tab is the server's iniswap.txt ONLY — a favourite that isn't

@@ -626,6 +626,7 @@ type sessionState struct {
 	musicFilterMemo musicFilterKey
 	areaScroll      int32
 	logTab          int
+	volStripOn      bool // the log panel's toggleable on-screen volume strip
 	// Stick flags: the logs FOLLOW new lines while true; scrolling up
 	// releases, scrolling back to the bottom re-sticks. (The old "within
 	// one line of the bottom" heuristic broke whenever one wrapped
