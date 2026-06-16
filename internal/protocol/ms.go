@@ -369,13 +369,24 @@ func formatObjection(mod int, custom string, features FeatureSet) string {
 	return strconv.Itoa(mod)
 }
 
-// formatPairID emits "-1", "<id>", or "<id>^<order>" — pair reordering only
-// on servers with the effects feature (AO2-Client gates it the same way).
+// formatPairID emits the charid_pair field: "-1" unpaired, else the partner's
+// id, with the 2.8 "^<order>" reorder suffix appended only on effects servers
+// AND only for a NON-default order (speaker behind).
+//
+// "<id>" and "<id>^0" render identically on AO2-Client/webAO — display_pair_
+// character splits on "^" and a missing suffix defaults to speaker-in-front
+// (order 0). But the bare integer is the only form strict parsers accept:
+// LemmyAO (a webAO fork that schema-validates broadcasts) parses charid_pair
+// with Number("5^0") → NaN and DROPS the whole MS, so a paired AsyncAO client
+// was invisible to LemmyAO users. Emitting the suffix only when it actually
+// changes the z-order keeps pair reordering working on capable clients while
+// staying compatible with strict ones for the common (front) pairing — and the
+// non-default "behind" order, which genuinely needs the suffix, still sends it.
 func formatPairID(pairWith, order int, features FeatureSet) string {
 	if pairWith <= UnpairedCharID {
 		return strconv.Itoa(UnpairedCharID)
 	}
-	if features.Has(FeatureEffects) {
+	if features.Has(FeatureEffects) && order != PairSpeakerInFront {
 		return strconv.Itoa(pairWith) + "^" + strconv.Itoa(order)
 	}
 	return strconv.Itoa(pairWith)

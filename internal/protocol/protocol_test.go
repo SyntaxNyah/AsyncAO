@@ -376,6 +376,24 @@ func TestOutgoingMSWithoutEffectsOmitsPairOrder(t *testing.T) {
 	}
 }
 
+// TestOutgoingMSDefaultPairOrderStaysBare pins the LemmyAO-compat fix: a paired
+// message with the DEFAULT order (speaker in front) emits a BARE id even on a
+// full-feature/effects server — "4", not "4^0" — while the non-default "behind"
+// order still carries the "^1" reorder suffix. "4" and "4^0" render identically
+// on AO2-Client/webAO (missing "^" = front), but strict parsers accept only the
+// bare integer (LemmyAO does Number("4^0") → NaN and drops the whole message).
+func TestOutgoingMSDefaultPairOrderStaysBare(t *testing.T) {
+	out := baseOutgoing()
+	out.PairOrder = PairSpeakerInFront // the common/default pairing
+	if got := out.Fields(allFeatures())[outPairID]; got != "4" {
+		t.Errorf("front-order pair field = %q, want bare 4 (a ^0 suffix makes LemmyAO drop the message)", got)
+	}
+	out.PairOrder = PairSpeakerBehind // a real reorder still needs the suffix
+	if got := out.Fields(allFeatures())[outPairID]; got != "4^1" {
+		t.Errorf("behind-order pair field = %q, want 4^1 (reorder must survive)", got)
+	}
+}
+
 func TestOutgoingMSUnpaired(t *testing.T) {
 	o := baseOutgoing()
 	o.PairWith = UnpairedCharID
