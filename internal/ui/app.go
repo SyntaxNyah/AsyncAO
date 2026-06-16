@@ -426,6 +426,9 @@ type App struct {
 	extrasPressID        int              // that cell's widget id
 	extrasPressX         int32            // press origin, for the tear threshold
 	extrasPressY         int32
+	extrasUserW          int32 // user-resized main box size (0 = default extrasBoxW/H)
+	extrasUserH          int32
+	extrasResizing       bool           // the bottom-right resize grip is being dragged
 	extrasWidgetCache    []extrasWidget // canonical widget table, built once
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool

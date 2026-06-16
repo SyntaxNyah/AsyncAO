@@ -193,6 +193,75 @@ func TestBoxFencesPointerDetached(t *testing.T) {
 	}
 }
 
+// TestExtrasDetachedPersistsClosed pins that closing the main box does NOT drop
+// the widgets you tore out: with showWidgets=false but a torn-off box present on
+// a live surface, that box still fences the courtroom (clicks can't leak), while
+// the closed main box does not.
+func TestExtrasDetachedPersistsClosed(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	const w, h = int32(1280), int32(720)
+	a.extrasDetached = []detachedWidget{{id: 1, x: 900, y: 600}}
+	a.showWidgets = false // main box CLOSED
+	dr := a.detachedBoxRect(0, w, h)
+
+	a.ctx.mouseX, a.ctx.mouseY = dr.X+5, dr.Y+5
+	if !a.boxFencesPointer(w, h) {
+		t.Error("a torn-off box must keep fencing when the main box is closed")
+	}
+	// Where the (closed) main box would sit must NOT fence.
+	mainR := a.extrasBoxRect(w, h)
+	a.ctx.mouseX, a.ctx.mouseY = mainR.X+5, mainR.Y+5
+	if pointIn(a.ctx.mouseX, a.ctx.mouseY, dr) {
+		t.Skip("main box overlaps the torn-off box in this layout")
+	}
+	if a.boxFencesPointer(w, h) {
+		t.Error("a closed main box must not fence")
+	}
+}
+
+// TestExtrasResize pins corner-resize: a press on the bottom-right grip starts a
+// resize that grows W/H with the drag, a far-inward drag clamps at the minimum,
+// and a release ends it.
+func TestExtrasResize(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.showWidgets = true
+	const w, h = int32(1280), int32(720)
+	r := a.extrasBoxRect(w, h)
+	grip := sdl.Rect{X: r.X + r.W - extrasGripSz, Y: r.Y + r.H - extrasGripSz, W: extrasGripSz, H: extrasGripSz}
+
+	a.ctx.mouseDown = true
+	a.ctx.mouseX, a.ctx.mouseY = grip.X+4, grip.Y+4
+	pressed := true
+	a.handleExtrasResize(grip, r, &pressed)
+	if !a.extrasResizing || pressed {
+		t.Fatal("a press on the grip must start a resize and consume the edge")
+	}
+
+	a.ctx.mouseX += 120 // drag the corner out by +120,+90
+	a.ctx.mouseY += 90
+	pressed = false
+	a.handleExtrasResize(grip, r, &pressed)
+	if got := a.extrasBoxRect(w, h); got.W != r.W+120 || got.H != r.H+90 {
+		t.Errorf("resized to %dx%d, want %dx%d", got.W, got.H, r.W+120, r.H+90)
+	}
+
+	a.ctx.mouseX, a.ctx.mouseY = r.X-500, r.Y-500 // far inward → floor
+	a.handleExtrasResize(grip, r, &pressed)
+	if min := a.extrasBoxRect(w, h); min.W != extrasMinW || min.H != extrasMinH {
+		t.Errorf("over-shrunk to %dx%d, want the floor %dx%d", min.W, min.H, extrasMinW, extrasMinH)
+	}
+
+	a.ctx.mouseDown = false
+	a.handleExtrasResize(grip, r, &pressed)
+	if a.extrasResizing {
+		t.Error("release must end the resize")
+	}
+}
+
 // TestPointerFence pins the fence round-trip: it blanks the live pointer, is
 // idempotent (a second fence must NOT save the blanked state), and restores the
 // original on unfence — the heart of the non-blocking box's input isolation.

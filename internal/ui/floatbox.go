@@ -20,9 +20,12 @@ import (
 )
 
 const (
-	extrasBoxW   = int32(380) // main box width
-	extrasBoxH   = int32(360) // main box height
+	extrasBoxW   = int32(380) // main box default width
+	extrasBoxH   = int32(360) // main box default height
+	extrasMinW   = int32(300) // resize floor: 2 columns stay readable
+	extrasMinH   = int32(340) // resize floor: all 13 widgets' rows + hint still fit
 	extrasTitleH = int32(26)  // title bar / drag handle height (main + torn boxes)
+	extrasGripSz = int32(16)  // bottom-right resize grip
 
 	detachedBoxW = int32(176) // a torn-off widget's own little box
 	detachedBoxH = int32(66)
@@ -74,28 +77,52 @@ func (a *App) courtModalOpen() bool {
 		a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair
 }
 
-// extrasBoxVisible reports whether the floating Extras surface should draw:
-// opened, in a live courtroom, and not shadowed by a blocking popup.
-func (a *App) extrasBoxVisible() bool {
-	return a.showWidgets && a.room != nil && a.sess != nil && !a.courtModalOpen()
+// extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any
+// torn-off boxes) may show at all: a live courtroom with no blocking popup over
+// it. Torn-off boxes ride on this alone, so they persist when the main box is
+// closed — closing the main box must not yank the widgets you dragged out.
+func (a *App) extrasSurfaceLive() bool {
+	return a.room != nil && a.sess != nil && !a.courtModalOpen()
 }
 
-// extrasBoxRect is the main box's screen rect: the dragged position once placed,
-// else a centered-near-the-top default. Always clamped fully on-screen so a
-// resize or a moved-then-shrunk window can't strand it off-edge.
+// extrasBoxVisible reports whether the MAIN box should draw: opened (showWidgets)
+// on a live surface. (Torn-off boxes are gated only by extrasSurfaceLive.)
+func (a *App) extrasBoxVisible() bool {
+	return a.showWidgets && a.extrasSurfaceLive()
+}
+
+// extrasBoxRect is the main box's screen rect: the (possibly user-resized) size
+// at the dragged position once placed, else a centered-near-the-top default.
+// Size clamps to [min, window] and the position clamps fully on-screen, so a
+// resize or a moved-then-shrunk window can't strand it off-edge or oversize it.
 func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
+	bw, bh := extrasBoxW, extrasBoxH
+	if a.extrasUserW > 0 {
+		bw = a.extrasUserW
+	}
+	if a.extrasUserH > 0 {
+		bh = a.extrasUserH
+	}
+	hiW, hiH := w-16, h-16 // never wider/taller than the window
+	if hiW < extrasMinW {
+		hiW = extrasMinW
+	}
+	if hiH < extrasMinH {
+		hiH = extrasMinH
+	}
+	bw, bh = clampI32(bw, extrasMinW, hiW), clampI32(bh, extrasMinH, hiH)
 	x, y := a.extrasBoxX, a.extrasBoxY
 	if !a.extrasPlaced {
-		x, y = (w-extrasBoxW)/2, 76
+		x, y = (w-bw)/2, 76
 	}
-	maxX, maxY := w-extrasBoxW-8, h-extrasBoxH-8
+	maxX, maxY := w-bw-8, h-bh-8
 	if maxX < 8 {
 		maxX = 8
 	}
 	if maxY < 8 {
 		maxY = 8
 	}
-	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: extrasBoxW, H: extrasBoxH}
+	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}
 }
 
 // detachedBoxRect is the i-th torn-off widget's screen rect, clamped on-screen.
@@ -123,17 +150,19 @@ func (a *App) widgetDetached(id int) bool {
 }
 
 // boxFencesPointer reports whether the courtroom pass should run pointer-blind
-// this frame: any Extras box is up under the cursor, or a box drag is in flight
-// (so a fast drag can't leak a click to the scene between frames).
+// this frame: any Extras box is up under the cursor, or a box drag/resize is in
+// flight (so a fast drag can't leak a click to the scene between frames). Gated
+// on extrasSurfaceLive — NOT extrasBoxVisible — so torn-off boxes still fence
+// the scene when the main box is closed (else clicks would leak through them).
 func (a *App) boxFencesPointer(w, h int32) bool {
-	if !a.extrasBoxVisible() {
+	if !a.extrasSurfaceLive() {
 		return false
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing {
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
-	if pointIn(mx, my, a.extrasBoxRect(w, h)) {
+	if a.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
 		return true
 	}
 	for i := range a.extrasDetached {
@@ -230,8 +259,11 @@ func (a *App) extrasTearDetect(id int, cell sdl.Rect, pressed *bool) bool {
 // box open (non-invasive); a widget that opens its own blocking panel hides the
 // surface until that panel closes, then it returns.
 func (a *App) drawFloatingExtras(w, h int32) {
-	if !a.extrasBoxVisible() {
+	if !a.extrasSurfaceLive() {
 		return
+	}
+	if !a.showWidgets && len(a.extrasDetached) == 0 {
+		return // main box closed and nothing torn off — nothing to draw
 	}
 	c := a.ctx
 	// One mouse-press edge per frame, shared by every box so exactly one grabs
@@ -240,15 +272,15 @@ func (a *App) drawFloatingExtras(w, h int32) {
 	a.extrasPrevDown = c.mouseDown
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
-		if a.extrasDragging || a.extrasDetachDragging {
-			c.clicked = false // a finished drag isn't a click on whatever's now underneath
+		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing {
+			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
 
-	a.drawExtrasMainBox(w, h, &pressed)
-	if !a.showWidgets {
-		return // a widget's × closed the surface this frame
+	if a.showWidgets {
+		a.drawExtrasMainBox(w, h, &pressed)
 	}
+	// Torn-off widgets persist even with the main box closed.
 	a.drawExtrasDetached(w, h, &pressed)
 }
 
@@ -267,6 +299,14 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		return
 	}
 	a.handleExtrasDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 30, H: extrasTitleH}, w, h, pressed)
+
+	// Bottom-right resize grip. Handled before the grid so a corner press resizes
+	// rather than arming a tear on the cell beneath; it sits below the grid, so
+	// drawing it here doesn't overlap any cell.
+	grip := sdl.Rect{X: r.X + r.W - extrasGripSz, Y: r.Y + r.H - extrasGripSz, W: extrasGripSz, H: extrasGripSz}
+	a.handleExtrasResize(grip, r, pressed)
+	c.Fill(grip, ColPanelHi)
+	c.Border(grip, ColAccent)
 
 	widgets := a.extrasWidgets()
 	const cols = int32(2)
@@ -296,8 +336,38 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		}
 		c.TooltipAfter("fextra:"+wd.label, br, tip)
 	}
-	c.LabelClipped(r.X+10, r.Y+r.H-18, r.W-20,
+	c.LabelClipped(r.X+10, r.Y+r.H-18, r.W-20-extrasGripSz,
 		"Drag a widget out to pop it loose · drag the title to move · × closes", ColTextDim)
+}
+
+// handleExtrasResize resizes the main box from its bottom-right grip, pinning the
+// top-left so only width/height grow. Shares the per-frame press edge and the
+// (one-at-a-time) grab offset; extrasBoxRect clamps the result to [min, window].
+func (a *App) handleExtrasResize(grip, r sdl.Rect, pressed *bool) {
+	c := a.ctx
+	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {
+		*pressed = false
+		a.extrasResizing = true
+		a.extrasBoxX, a.extrasBoxY = r.X, r.Y // pin the corner so resizing doesn't re-center
+		a.extrasPlaced = true
+		a.extrasGrabDX, a.extrasGrabDY = (r.X+r.W)-c.mouseX, (r.Y+r.H)-c.mouseY
+	}
+	if !c.mouseDown {
+		a.extrasResizing = false
+	}
+	if a.extrasResizing {
+		// Floor at the minimum here (so a far-inward drag can't drive the size
+		// to ≤0, which extrasBoxRect would misread as "unset → default"); the
+		// window ceiling is clamped there.
+		nw, nh := (c.mouseX+a.extrasGrabDX)-r.X, (c.mouseY+a.extrasGrabDY)-r.Y
+		if nw < extrasMinW {
+			nw = extrasMinW
+		}
+		if nh < extrasMinH {
+			nh = extrasMinH
+		}
+		a.extrasUserW, a.extrasUserH = nw, nh
+	}
 }
 
 // drawExtrasDetached paints every torn-off widget as its own small floating box:
