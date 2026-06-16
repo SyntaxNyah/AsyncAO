@@ -1408,6 +1408,11 @@ func (a *App) Disconnect() {
 	if a.conn != nil {
 		a.conn.Close()
 	}
+	// The server's area music shouldn't outlive the connection (manual
+	// disconnect, kick, or a dropped socket all land here).
+	if a.d.Audio != nil {
+		a.d.Audio.StopMusic()
+	}
 	// Rehearsal mode ends with the session: reopen the network gate.
 	if a.rehearsal {
 		a.d.Manager.SetOffline(false)
