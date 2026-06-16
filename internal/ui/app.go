@@ -709,7 +709,7 @@ type sessionState struct {
 	showReset    bool // factory-reset confirmation pop-up (Settings)
 	iniSearch    string
 	iniAdd       string   // "add folder to wardrobe" input
-	iniWear      string   // legacy iniswap: type any folder name → wear it instantly
+	iniSwapMode  bool     // Characters tab: click iniswaps instead of switching char (off=switch; per session)
 	iniFolder    string   // open wardrobe folder ("" = top level/root, else folder name)
 	iniNewFold   string   // "new folder" text input
 	iniMenuChar  string   // wardrobe char with an open "move to folder" menu ("" = none)
@@ -2035,6 +2035,68 @@ func (a *App) setIniswap(name string) {
 	a.iniChar = name
 	a.emoteAsk = nil
 	a.loadCharINI()
+}
+
+// wardrobeAct is the resolved action for clicking a Characters-tab favourite.
+// Pure + table-tested (TestWardrobeAction) because this is the bit users are
+// touchy about — a favourite must never silently iniswap when it could switch.
+type wardrobeAct int
+
+const (
+	actSwitch  wardrobeAct = iota // take the character's slot (a real char change)
+	actIniswap                    // wear its look without taking a slot
+)
+
+// wardrobeAction decides what a Characters-tab click does. Switching to the
+// character is the default; we fall back to an iniswap only when the user ticked
+// iniswap mode, when the name isn't one of this server's characters (slot < 0),
+// or when that character's slot is already taken (can't claim an occupied one).
+func wardrobeAction(iniswapMode bool, slot int, taken bool) wardrobeAct {
+	if iniswapMode || slot < 0 || taken {
+		return actIniswap
+	}
+	return actSwitch
+}
+
+// charSlotByName finds the server character slot whose folder name matches
+// (case-insensitive), or -1. Linear, but only runs on an actual wardrobe click.
+func (a *App) charSlotByName(name string) int {
+	want := strings.ToLower(strings.TrimSpace(name))
+	for i := range a.sess.Chars {
+		if strings.ToLower(a.sess.Chars[i].Name) == want {
+			return i
+		}
+	}
+	return -1
+}
+
+// wardrobeClick handles a click on a Characters-tab favourite: switch to that
+// character (claim its slot — the same CC → PV → enterCourtroom flow as the
+// "Character" button) by default, or iniswap it when iniswap mode is ticked. A
+// switch we can't perform (taken slot, or a name that isn't a server character)
+// falls back to an iniswap — with a toast, so a favourite never silently swaps.
+func (a *App) wardrobeClick(name string) {
+	a.showIni = false
+	if a.room == nil { // pre-join (not normally reachable here) → claim a slot + wear
+		a.wearFromMenu(name)
+		return
+	}
+	slot := a.charSlotByName(name)
+	taken := slot >= 0 && a.sess.Chars[slot].Taken
+	if wardrobeAction(a.iniSwapMode, slot, taken) == actSwitch {
+		a.pickCharacter(slot) // CC → PV → EventCharPicked → enterCourtroom (iniswap clears)
+		return
+	}
+	if !a.iniSwapMode { // a switch was wanted but impossible — say why, don't swap silently
+		switch {
+		case slot < 0:
+			a.warnLine = name + " isn't a character on this server — worn as an iniswap"
+		default:
+			a.warnLine = name + " is taken — worn as an iniswap"
+		}
+		a.warnAt = time.Now()
+	}
+	a.wearFromMenu(name)
 }
 
 // wearFromMenu handles a wardrobe pick from either screen. In the

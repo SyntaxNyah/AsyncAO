@@ -333,7 +333,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 		x := pad + col*(iconCell+iconGap)
 		y := gridTop + row*cellH - a.iniScroll
 		if y > -iconCell && y < h {
-			a.drawIniswapCell(i, sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell})
+			a.drawIniswapCell(i, sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell}, cellClickIniswap)
 		}
 		col++
 		if col >= cols {
@@ -1935,18 +1935,14 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		}
 	}
 	y += 32
-	// Legacy iniswap (fallback): type ANY character folder on the asset base and
-	// wear it instantly — no need to add it to the wardrobe first. e.g. type
-	// "tung tung sahur" and you swap straight to characters/tung tung sahur/.
-	c.Label(panel.X+pad, y+4, "Wear by name:", ColTextDim)
-	var wearNow bool
-	a.iniWear, wearNow = c.TextField("iniswapwear", sdl.Rect{X: panel.X + pad + 110, Y: y, W: 300, H: fieldH}, a.iniWear, "type any character folder on the base…")
-	if c.Button(sdl.Rect{X: panel.X + pad + 418, Y: y, W: 70, H: btnH}, "Wear") || wearNow {
-		if name := strings.TrimSpace(a.iniWear); name != "" {
-			a.iniWear = ""
-			a.wearFromMenu(name) // instant swap in the courtroom; claims a slot on char-select
-		}
-	}
+	// Default: clicking a favourite SWITCHES you to that character (claims its
+	// slot — the CC → PV flow). Tick this to iniswap it instead: wear the look,
+	// keep your slot. Per session (resets on restart). Iniswap-by-name now lives
+	// on the Iniswaps tab's search box.
+	const swapLabel = "Iniswap instead of switching character"
+	a.iniSwapMode = c.Checkbox(panel.X+pad, y, swapLabel, a.iniSwapMode)
+	c.Tooltip(sdl.Rect{X: panel.X + pad, Y: y, W: 22 + c.TextWidth(swapLabel), H: 16},
+		"Off (default): clicking a character switches you to them (takes a slot). On: wears them as an iniswap — no slot taken.")
 	y += 32
 	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Search...")
 	// Add any folder name on the current asset base to the wardrobe —
@@ -2128,7 +2124,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 			continue
 		}
 		if cell, vis := place(); vis {
-			a.drawIniswapCell(i, cell)
+			a.drawIniswapCell(i, cell, cellClickChar)
 		}
 	}
 	c.popClip(clipPrev, clipHad)
@@ -2177,7 +2173,16 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	a.iniHoverChar = "" // recomputed by the cells (quick-file target; unused here)
 
 	y := panel.Y + 44
-	a.iniSearch, _ = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Search the server's iniswaps...")
+	var iniswapNow bool
+	a.iniSearch, iniswapNow = c.TextField("iniswapsearch", sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH}, a.iniSearch, "Iniswap a folder by name, or search the list…")
+	c.Tooltip(sdl.Rect{X: panel.X + pad, Y: y, W: 230, H: fieldH},
+		"Type any character folder on the base and press Enter to iniswap into it — or just type to filter the list below.")
+	if iniswapNow { // Enter → legacy iniswap into the typed folder (whether or not it's in the list)
+		if name := strings.TrimSpace(a.iniSearch); name != "" {
+			a.iniSearch = ""
+			a.wearFromMenu(name)
+		}
+	}
 	statusX := panel.X + pad + 250
 	switch {
 	case a.iniBusy:
@@ -2207,8 +2212,8 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 			"",
 			base + iniswapFileName,
 			"",
-			"Players: you can still add any folder by name (the box above), or wear one",
-			"instantly from the Characters tab's \"Wear by name\" field.",
+			"Players: type any folder name in the search box above and press Enter to",
+			"iniswap into it instantly — no published list required.",
 		} {
 			col := ColTextDim
 			if strings.Contains(line, "://") {
@@ -2260,7 +2265,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 		yy := gridTop + (slot/cols)*cellH - a.iniBrowseScroll
 		slot++
 		if yy > gridTop-iconCell && yy < panel.Y+panel.H-14 {
-			a.drawIniswapCell(i, sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell})
+			a.drawIniswapCell(i, sdl.Rect{X: x, Y: yy, W: iconCell, H: iconCell}, cellClickIniswap)
 		}
 	}
 	c.popClip(clipPrev, clipHad)
@@ -2375,9 +2380,28 @@ func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	}
 }
 
-func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
+// cellClick is what clicking a wardrobe cell does: always iniswap (the
+// char-select drawer and the Iniswaps tab), or run the Characters-tab logic
+// (switch to the character, or iniswap when the box is ticked).
+type cellClick int
+
+const (
+	cellClickIniswap cellClick = iota
+	cellClickChar
+)
+
+func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick) {
 	c := a.ctx
 	name := a.iniList[idx]
+
+	// Hover hint for what a click does here. Registered before the star/key-badge
+	// tooltips below, which override it on their own sub-rects (Tooltip = last
+	// write wins, and the cursor sits on those rects when it's over them).
+	if click == cellClickChar {
+		c.Tooltip(cell, "Click to switch to this character (take its slot). Tick \"Iniswap instead\" above to wear it without a slot.")
+	} else {
+		c.Tooltip(cell, "Click to iniswap into this folder — wear its look, no slot taken.")
+	}
 
 	// App-drawer drag: a press on the cell arms this character as the drag
 	// candidate; once the cursor travels past iniDragThreshold it becomes a
@@ -2500,7 +2524,11 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect) {
 		a.iniHoverChar = name // number keys 0-9 quick-file the hovered character
 		a.warmCharINI(name)   // wearing it = memory hit, not an RTT
 		if c.clicked && !a.iniDragging {
-			a.wearFromMenu(name) // courtroom: instant swap; char select: claim a slot first
+			if click == cellClickChar {
+				a.wardrobeClick(name) // Characters tab: switch to the char (or iniswap if ticked)
+			} else {
+				a.wearFromMenu(name) // Iniswaps tab / char-select drawer: iniswap
+			}
 		}
 	}
 }
@@ -2592,9 +2620,11 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	if a.musicVolMode {
 		volLabel = "Track list"
 	}
-	if c.Button(sdl.Rect{X: r.X + r.W - 96, Y: r.Y, W: 96, H: 24}, volLabel) {
+	volRect := sdl.Rect{X: r.X + r.W - 96, Y: r.Y, W: 96, H: 24}
+	if c.Button(volRect, volLabel) {
 		a.musicVolMode = !a.musicVolMode
 	}
+	c.Tooltip(volRect, "Swap the track list for volume sliders (Master/Music/SFX/Blip) and back — chat stays live.")
 	// Now-Playing indicator: the current track from the server's MC (cleared on
 	// stop / area transfer), so you can see and silence what's playing.
 	now := ""

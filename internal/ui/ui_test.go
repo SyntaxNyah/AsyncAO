@@ -165,6 +165,32 @@ func TestSelectAllChordArms(t *testing.T) {
 	}
 }
 
+// TestWardrobeAction pins the switch-vs-iniswap decision for a Characters-tab
+// click: switch to a free server character by default, but fall back to an
+// iniswap when iniswap mode is ticked, when the slot is taken, or when the name
+// isn't a character on this server.
+func TestWardrobeAction(t *testing.T) {
+	cases := []struct {
+		name        string
+		iniswapMode bool
+		slot        int
+		taken       bool
+		want        wardrobeAct
+	}{
+		{"free server char switches", false, 3, false, actSwitch},
+		{"iniswap mode overrides switch", true, 3, false, actIniswap},
+		{"taken slot falls back to iniswap", false, 3, true, actIniswap},
+		{"unknown name falls back to iniswap", false, -1, false, actIniswap},
+		{"iniswap mode + unknown name", true, -1, false, actIniswap},
+	}
+	for _, tc := range cases {
+		if got := wardrobeAction(tc.iniswapMode, tc.slot, tc.taken); got != tc.want {
+			t.Errorf("%s: wardrobeAction(%v,%d,%v) = %v, want %v",
+				tc.name, tc.iniswapMode, tc.slot, tc.taken, got, tc.want)
+		}
+	}
+}
+
 // TestEditStep exhaustively pins the pure text-edit logic the draw path can't
 // unit-test: insert/backspace/forward-delete/caret-move at start/mid/end,
 // select-all replace, caret clamping, and — the classic bug — MULTIBYTE runes
