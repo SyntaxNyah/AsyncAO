@@ -21,8 +21,9 @@ import (
 )
 
 const (
-	playerRowH   = int32(44) // a char icon flanked by two text rows (IC identity, OOC)
-	playerIconSz = int32(38)
+	playerRowH    = int32(44) // a char icon flanked by two text rows (IC identity, OOC)
+	playerIconSz  = int32(38)
+	playerHeaderH = int32(26) // a /gas area-group header row (name + count, click to jump)
 )
 
 // Roster sort modes, cycled by the Sort button.
@@ -102,27 +103,43 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		myUID = strconv.Itoa(a.sess.PlayerID)
 	}
 	cmSet := a.cmNameSet()
-	order := a.playerRosterOrder(speaker)
+	rows := a.playerRosterRows(speaker) // flat for a /ga, area-grouped for a /gas
 
 	if !c.ctrlHeld {
 		a.playerScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	contentH := int32(len(order)) * playerRowH
+	contentH := int32(0)
+	for i := range rows {
+		contentH += rowHeight(rows[i])
+	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.playerScroll = c.VScrollbar("playerlist", track, a.playerScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := r.W - scrollBarW - 6
 	y := r.Y - a.playerScroll
-	for _, idx := range order {
+	for i := range rows {
+		rh := rowHeight(rows[i])
 		if y > r.Y+r.H {
 			break
 		}
-		if y >= r.Y-playerRowH {
-			a.drawPlayerRow(idx, sdl.Rect{X: r.X, Y: y, W: rowW, H: playerRowH - 4}, myUID, speaker, cmSet)
+		if y >= r.Y-rh {
+			if rows[i].header {
+				a.drawAreaHeaderRow(rows[i], sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 2})
+			} else {
+				a.drawPlayerRow(rows[i].idx, sdl.Rect{X: r.X, Y: y, W: rowW, H: playerRowH - 4}, myUID, speaker, cmSet)
+			}
 		}
-		y += playerRowH
+		y += rh
 	}
+}
+
+// rowHeight is the display height of one roster row (area headers are shorter).
+func rowHeight(row rosterRow) int32 {
+	if row.header {
+		return playerHeaderH
+	}
+	return playerRowH
 }
 
 // drawPlayerRow is one player: char icon + "[uid] showname · character" with the
@@ -145,10 +162,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		}
 		friend, _ = a.d.Prefs.ServerFriendMatch(a.serverKey, nm)
 	}
-	display := p.name
-	if p.showname != "" {
-		display = p.showname
-	}
+	display := rosterName(p) // showname → OOC → character
 
 	// Background + role tint (you > speaking > friend) + a left accent bar.
 	c.Fill(row, ColPanel)
@@ -213,13 +227,14 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		cx += a.drawRosterChip(cx, row.Y+4, "SPEC", chipSpecColor, ColText) + 5
 	}
 	ic := "[" + p.uid + "]  " + p.name
-	if p.showname != "" && !strings.EqualFold(p.showname, p.name) {
-		ic = "[" + p.uid + "]  " + p.showname + "  ·  " + p.name
+	if !strings.EqualFold(display, p.name) {
+		ic = "[" + p.uid + "]  " + display + "  ·  " + p.name
 	}
 	c.LabelClipped(cx, row.Y+5, textW-(cx-textX), ic, ColText)
-	// Line 2 — OOC name (+ IPID for mods), dimmer.
+	// Line 2 — OOC name (+ IPID for mods), dimmer. Skip OOC when it's already the
+	// display name above (no showname → OOC was promoted to the identity line).
 	sub := ""
-	if p.ooc != "" {
+	if p.ooc != "" && p.showname != "" {
 		sub = "OOC: " + p.ooc
 	}
 	if p.ipid != "" && isMod {
@@ -365,6 +380,18 @@ func (a *App) playerRosterOrder(speaker string) []int {
 	for i := range a.areaPlayers {
 		ord = append(ord, i)
 	}
+	a.sortRosterIdxs(ord, spk)
+	a.playerOrder = ord
+	a.playerOrderLen = len(a.areaPlayers)
+	a.playerOrderSort = a.playerSort
+	a.playerOrderSpk = spk
+	a.playerOrderAt = a.areaListAt
+	return ord
+}
+
+// sortRosterIdxs orders indices into areaPlayers in place by the current sort
+// mode (shared by the flat list and each /gas area group).
+func (a *App) sortRosterIdxs(ord []int, spk string) {
 	switch a.playerSort {
 	case playerSortName:
 		sort.SliceStable(ord, func(i, j int) bool {
@@ -380,18 +407,121 @@ func (a *App) playerRosterOrder(speaker string) []int {
 			return uidLess(a.areaPlayers[ord[i]].uid, a.areaPlayers[ord[j]].uid)
 		})
 	}
-	a.playerOrder = ord
-	a.playerOrderLen = len(a.areaPlayers)
-	a.playerOrderSort = a.playerSort
-	a.playerOrderSpk = spk
-	a.playerOrderAt = a.areaListAt
-	return ord
 }
 
-// rosterName is the IC display name (showname, else character).
+// rosterRow is one display row of the player list: a /gas area-group header
+// (name + count, click to jump) or a player (index into areaPlayers).
+type rosterRow struct {
+	header bool
+	area   string // header: the area name
+	count  int    // header: players in the group
+	idx    int    // player: index into areaPlayers
+}
+
+// rosterMultiArea reports whether the roster spans ≥2 distinct named areas (a
+// /gas), so the list groups by area instead of showing one flat run (a /ga).
+func (a *App) rosterMultiArea() bool {
+	first, seen := "", false
+	for i := range a.areaPlayers {
+		ar := a.areaPlayers[i].area
+		if ar == "" {
+			continue
+		}
+		if !seen {
+			first, seen = ar, true
+		} else if ar != first {
+			return true
+		}
+	}
+	return false
+}
+
+// playerRosterRows is the memoized GROUPED display. A single-area roster (/ga) is
+// the flat sorted list (no headers); a /gas spanning areas emits an area header
+// before each group, players sorted within. Same invalidation keys as
+// playerRosterOrder, so it rebuilds only on roster/sort/speaker change.
+func (a *App) playerRosterRows(speaker string) []rosterRow {
+	spk := ""
+	if a.playerSort == playerSortSpeaking {
+		spk = speaker
+	}
+	if a.playerRows != nil && a.playerRowsLen == len(a.areaPlayers) &&
+		a.playerRowsSort == a.playerSort && a.playerRowsSpk == spk &&
+		a.playerRowsAt.Equal(a.areaListAt) {
+		return a.playerRows
+	}
+	rows := a.playerRows[:0]
+	if !a.rosterMultiArea() {
+		for _, idx := range a.playerRosterOrder(speaker) {
+			rows = append(rows, rosterRow{idx: idx})
+		}
+	} else {
+		order := make([]string, 0, 8) // areas in first-seen (parse) order
+		groups := map[string][]int{}
+		for i := range a.areaPlayers {
+			ar := a.areaPlayers[i].area
+			if _, ok := groups[ar]; !ok {
+				order = append(order, ar)
+			}
+			groups[ar] = append(groups[ar], i)
+		}
+		for _, ar := range order {
+			idxs := groups[ar]
+			a.sortRosterIdxs(idxs, spk)
+			rows = append(rows, rosterRow{header: true, area: ar, count: len(idxs)})
+			for _, idx := range idxs {
+				rows = append(rows, rosterRow{idx: idx})
+			}
+		}
+	}
+	a.playerRows = rows
+	a.playerRowsLen, a.playerRowsSort, a.playerRowsSpk, a.playerRowsAt =
+		len(a.areaPlayers), a.playerSort, spk, a.areaListAt
+	return rows
+}
+
+// drawAreaHeaderRow draws a /gas area-group header: the area name + headcount,
+// the whole row clickable to jump there (an area transfer by name via the music
+// list). Inert when there's no live session.
+func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
+	c := a.ctx
+	c.Fill(r, ColPanelHi)
+	name := hr.area
+	if name == "" {
+		name = "(unnamed area)"
+	}
+	if a.sess != nil && hr.area != "" {
+		if c.hovering(r) {
+			c.Border(r, ColAccent)
+			if c.clicked {
+				a.jumpToArea(hr.area)
+			}
+		}
+		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "click to jump →", ColTextDim)
+	}
+	c.LabelClipped(r.X+8, r.Y+6, r.W-132, name+"  ·  "+strconv.Itoa(hr.count)+" player(s)", ColText)
+}
+
+// jumpToArea transfers us to area by name (AO switches areas through the music
+// list: MC#<area name>#<char id>). The name comes from the same server, so it
+// matches the area list.
+func (a *App) jumpToArea(area string) {
+	if a.sess == nil || area == "" {
+		return
+	}
+	a.sess.RequestMusic(area)
+	a.warnLine = clampLine("Jumping to " + area + "…")
+	a.warnAt = a.now()
+}
+
+// rosterName is the recognisable display name: showname, else the OOC name (an
+// iniswapper with no showname is known by their OOC handle), else the character.
 func rosterName(p *areaPlayer) string {
 	if p.showname != "" {
 		return p.showname
+	}
+	if p.ooc != "" {
+		return p.ooc
 	}
 	return p.name
 }

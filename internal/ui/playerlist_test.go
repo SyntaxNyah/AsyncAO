@@ -53,6 +53,79 @@ func TestPlayerRosterOrder(t *testing.T) {
 	}
 }
 
+// TestPlayerRosterRowsGrouped pins the /gas grouped display: a header per area
+// in parse order, that area's players under it (sorted by the active mode), and
+// the player rows still index into areaPlayers (the icon-cache key).
+func TestPlayerRosterRowsGrouped(t *testing.T) {
+	a := &App{}
+	a.areaPlayers = []areaPlayer{
+		{uid: "0", name: "phoenix", area: "Lobby"},
+		{uid: "5", name: "maya", area: "Lobby"},
+		{uid: "3", name: "kanade", area: "Pizza Room 3"},
+	}
+	a.areaListAt = time.Now()
+	a.playerSort = playerSortUID
+
+	rows := a.playerRosterRows("") // [hdr Lobby(2)] [0] [5] [hdr Pizza(1)] [3]
+	if len(rows) != 5 {
+		t.Fatalf("rows = %d, want 5 (2 headers + 3 players)", len(rows))
+	}
+	if !rows[0].header || rows[0].area != "Lobby" || rows[0].count != 2 {
+		t.Errorf("row0 = %+v, want Lobby header count 2", rows[0])
+	}
+	if rows[1].header || a.areaPlayers[rows[1].idx].uid != "0" {
+		t.Errorf("row1 = %+v, want player uid 0", rows[1])
+	}
+	if !rows[3].header || rows[3].area != "Pizza Room 3" || rows[3].count != 1 {
+		t.Errorf("row3 = %+v, want Pizza Room 3 header count 1", rows[3])
+	}
+	if rows[4].header || a.areaPlayers[rows[4].idx].uid != "3" {
+		t.Errorf("row4 = %+v, want player uid 3", rows[4])
+	}
+}
+
+// TestPlayerRosterRowsFlat pins that a single-area roster (/ga) yields no
+// headers — just the flat sorted player rows.
+func TestPlayerRosterRowsFlat(t *testing.T) {
+	a := &App{}
+	a.areaPlayers = []areaPlayer{
+		{uid: "5", name: "maya", area: "Lobby"},
+		{uid: "0", name: "phoenix", area: "Lobby"},
+	}
+	a.areaListAt = time.Now()
+	a.playerSort = playerSortUID
+	rows := a.playerRosterRows("")
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2 (no headers for one area)", len(rows))
+	}
+	for _, rw := range rows {
+		if rw.header {
+			t.Fatal("a single-area roster must have no group headers")
+		}
+	}
+	if a.areaPlayers[rows[0].idx].uid != "0" { // UID sort
+		t.Errorf("first row uid = %q, want 0", a.areaPlayers[rows[0].idx].uid)
+	}
+}
+
+// TestRosterNameOOCFallback pins the display-name chain: showname, else the OOC
+// name (an iniswapper with no showname), else the character.
+func TestRosterNameOOCFallback(t *testing.T) {
+	cases := []struct {
+		p    areaPlayer
+		want string
+	}{
+		{areaPlayer{name: "phoenix", showname: "Nick", ooc: "wright"}, "Nick"},
+		{areaPlayer{name: "phoenix", ooc: "wright"}, "wright"}, // no showname → OOC
+		{areaPlayer{name: "phoenix"}, "phoenix"},               // neither → character
+	}
+	for _, tc := range cases {
+		if got := rosterName(&tc.p); got != tc.want {
+			t.Errorf("rosterName(%+v) = %q, want %q", tc.p, got, tc.want)
+		}
+	}
+}
+
 // TestCMNameSet pins that the CM marker source excludes ""/FREE and splits a
 // multi-CM list into individual names.
 func TestCMNameSet(t *testing.T) {

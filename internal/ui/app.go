@@ -775,6 +775,7 @@ type sessionState struct {
 	areaUIDs       map[string]string
 	areaPlayers    []areaPlayer
 	areaLastUID    string    // last "[uid]" parsed, so a following Showname/OOC/IPID line attaches to it
+	areaCurName    string    // area currently being parsed in a /gas block (tags each player's .area)
 	areaListAt     time.Time // when the current roster snapshot was parsed ("as of HH:MM")
 	pairAreaReset  bool
 	pairListScroll int32
@@ -788,6 +789,13 @@ type sessionState struct {
 	playerOrderLen  int
 	playerOrderSpk  string
 	playerOrderAt   time.Time
+	// playerRows is the memoized GROUPED display (area headers + players) used
+	// when a /gas spans areas; same invalidation keys as playerOrder.
+	playerRows     []rosterRow
+	playerRowsSort int
+	playerRowsLen  int
+	playerRowsSpk  string
+	playerRowsAt   time.Time
 	// player-row char icons: same demand/cache pipeline as the char grid, but
 	// keyed by the areaPlayers index (sort-stable). NULLED on every /ga replace
 	// so a same-length new roster re-resolves (cachedPage reorder invariant).

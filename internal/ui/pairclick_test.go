@@ -153,6 +153,80 @@ func TestParseAreaRosterIdentity(t *testing.T) {
 	}
 }
 
+// TestParseAreaGasGroups pins /gas multi-area parsing (a verbatim slice of the
+// user's Skrapegropen /gas): the FIRST "----" block replaces the roster, each
+// LATER block accumulates as its own area, players carry their area name, and
+// the "N players online." counts + trailing "N empty area(s) hidden." footer add
+// nobody.
+func TestParseAreaGasGroups(t *testing.T) {
+	a := &App{}
+	a.areaPlayers = []areaPlayer{{uid: "99", name: "stale ghost"}} // a prior snapshot the /gas must replace
+	a.pairAreaReset = true
+	block := "Players\n" +
+		"----------\n" +
+		"Lobby:\n" +
+		"3 players online.\n" +
+		"[0] 2 anonymous\n" +
+		"[Coffee Brewer] [2] sinclair lc\n" +
+		"Showname: Cocoa Bean\n" +
+		"[19] meursault lc\n" +
+		"Showname: Si Yang\n" +
+		"----------\n" +
+		"Pizza Room 3:\n" +
+		"2 players online.\n" +
+		"[16] kanade_hd\n" +
+		"[28] diana venicia_eg\n" +
+		"----------\n" +
+		"Teto Cafe:\n" +
+		"2 players online.\n" +
+		"[14] mahiru_drs\n" +
+		"OOC: web999\n" +
+		"[15] seiko kimura_hd\n" +
+		"OOC: tbh\n" +
+		"----------\n" +
+		"17 empty area(s) hidden.\n"
+	a.parseAreaBlock(block)
+
+	if got := len(a.areaPlayers); got != 7 { // 3 Lobby + 2 Pizza + 2 Teto; footer adds nobody
+		t.Fatalf("roster = %d, want 7 (stale replaced, footer ignored)", got)
+	}
+	if a.areaPlayers[0].uid != "0" {
+		t.Errorf("first row uid = %q, want 0 (the prior snapshot must be replaced)", a.areaPlayers[0].uid)
+	}
+	wantArea := map[string]string{
+		"0": "Lobby", "2": "Lobby", "19": "Lobby",
+		"16": "Pizza Room 3", "28": "Pizza Room 3",
+		"14": "Teto Cafe", "15": "Teto Cafe",
+	}
+	for _, p := range a.areaPlayers {
+		if want := wantArea[p.uid]; p.area != want {
+			t.Errorf("uid %s area = %q, want %q", p.uid, p.area, want)
+		}
+		if p.uid == "14" && p.ooc != "web999" { // OOC attaches across the area boundary correctly
+			t.Errorf("uid 14 ooc = %q, want web999", p.ooc)
+		}
+	}
+	if !a.rosterMultiArea() {
+		t.Error("a /gas spanning 3 areas must read as multi-area")
+	}
+}
+
+// TestParseAreaGaSingle pins that a single-area /ga (one "----" block) is NOT
+// multi-area, so the player list stays flat (no group headers).
+func TestParseAreaGaSingle(t *testing.T) {
+	a := &App{}
+	a.parseAreaBlock("Players\n----------\nLobby:\n2 players online.\n[0] phoenix\n[1] edgeworth\n")
+	if len(a.areaPlayers) != 2 {
+		t.Fatalf("roster = %d, want 2", len(a.areaPlayers))
+	}
+	if a.areaPlayers[0].area != "Lobby" {
+		t.Errorf("area = %q, want Lobby", a.areaPlayers[0].area)
+	}
+	if a.rosterMultiArea() {
+		t.Error("a single-area /ga must NOT read as multi-area")
+	}
+}
+
 // TestLooksLikeAreaList pins that /getarea output reads as non-chat (so running
 // /ga never self-pings your callword), while ordinary OOC — even mentioning your
 // name — still does.

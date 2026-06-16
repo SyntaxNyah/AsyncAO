@@ -16,8 +16,10 @@ import (
 
 // areaPlayer is one parsed /getarea player. One row per UID (never deduped by
 // name — two "Spectator" rows are two different people). ipid is mod-only data
-// from /getarea: shown in-session, never persisted or logged.
-type areaPlayer struct{ uid, name, showname, ooc, ipid string }
+// from /getarea: shown in-session, never persisted or logged. area is the area
+// the player is in (from a /gas multi-area block; "" for a header-less /ga) —
+// it groups the player list and drives click-an-area-to-jump.
+type areaPlayer struct{ uid, name, showname, ooc, ipid, area string }
 
 // areaPlayersCap bounds the parsed /getarea picker (a busy area's roster).
 const areaPlayersCap = 200
@@ -77,7 +79,7 @@ func (a *App) addAreaPlayer(name, uid string) {
 	}
 	a.areaUIDs[strings.ToLower(name)] = uid
 	if len(a.areaPlayers) < areaPlayersCap {
-		a.areaPlayers = append(a.areaPlayers, areaPlayer{uid: uid, name: name})
+		a.areaPlayers = append(a.areaPlayers, areaPlayer{uid: uid, name: name, area: a.areaCurName})
 	}
 }
 
@@ -100,22 +102,42 @@ func (a *App) setAreaField(field, val string) {
 	}
 }
 
-// parseAreaBlock parses a /getarea payload line by line. A HEADER line ("----…"
-// or "N players online") resets the roster, so any fetch — the popup buttons OR a
-// hand-typed /ga — REPLACES the snapshot instead of accumulating stale rows (and
-// servers recycle UIDs, so accumulating would mispair). Showname/OOC/IPID lines
-// attach to the preceding "[uid]" player. Fast-rejects ordinary chat.
+// parseAreaBlock parses a /getarea payload line by line. A "----" divider opens
+// an area block; the FIRST one in a payload REPLACES the roster (any fetch — the
+// buttons OR a hand-typed /ga — starts clean, and servers recycle UIDs so
+// accumulating would mispair), while LATER dividers in the same payload are a
+// /gas's extra areas and ACCUMULATE as new groups. The line after a divider is
+// the area name ("Lobby:"), then "N players online." (skipped), then "[uid]"
+// rows whose Showname/OOC/IPID lines attach to them. Fast-rejects ordinary chat.
 func (a *App) parseAreaBlock(text string) {
 	low := strings.ToLower(text)
 	if !strings.ContainsRune(text, '[') && !strings.Contains(low, "showname") && !strings.Contains(low, "players online") {
 		return
 	}
 	wantShowname := false
+	firstArea := true       // first block REPLACES; a /gas's later blocks accumulate
+	expectAreaName := false // the line right after a divider names the area
 	for _, line := range strings.Split(text, "\n") {
 		t := strings.TrimSpace(line)
-		if isAreaHeader(t) {
-			a.pairAreaReset = true // the next "[uid]" starts a clean roster + stamps the time
+		if strings.HasPrefix(t, "----") { // area divider (/ga: one; /gas: one per non-empty area)
+			if firstArea {
+				a.pairAreaReset = true // the next "[uid]" starts a clean roster + stamps the time
+				firstArea = false
+			}
+			a.areaCurName = "" // the name line below sets it ("" = a nameless block)
+			expectAreaName = true
 			wantShowname = false
+			continue
+		}
+		if expectAreaName {
+			expectAreaName = false
+			if isAreaNameLine(t) { // "Lobby:" / "Pizza Room 3:" — tags the players that follow
+				a.areaCurName = strings.TrimSpace(strings.TrimSuffix(t, ":"))
+				continue
+			}
+			// else fall through: a nameless block, or the "N empty area(s) hidden." footer
+		}
+		if isPlayerCountLine(t) { // "13 players online." — informational, not a player
 			continue
 		}
 		if wantShowname { // the line right after a bare "Showname:" is the name
@@ -142,12 +164,19 @@ func (a *App) parseAreaBlock(text string) {
 	}
 }
 
-// isAreaHeader spots a /getarea opener (a divider rule or the "N players online"
-// line) — the trigger to REPLACE the roster snapshot rather than append to it.
-func isAreaHeader(t string) bool {
-	if strings.HasPrefix(t, "----") {
-		return true
+// isAreaNameLine spots a /gas area-name line ("Lobby:", "Pizza Room 3:") — a line
+// ending in ":" that isn't one of the per-player field labels.
+func isAreaNameLine(t string) bool {
+	if t == "" || !strings.HasSuffix(t, ":") {
+		return false
 	}
+	low := strings.ToLower(t)
+	return !strings.HasPrefix(low, "showname:") && !strings.HasPrefix(low, "ooc:") && !strings.HasPrefix(low, "ipid:")
+}
+
+// isPlayerCountLine spots the "N players online." line under each area name —
+// informational, so it neither resets the roster nor adds a player.
+func isPlayerCountLine(t string) bool {
 	low := strings.ToLower(t)
 	return strings.Contains(low, "players online") || strings.Contains(low, "player online")
 }
