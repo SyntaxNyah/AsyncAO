@@ -297,6 +297,35 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	}
 	y += 38
 
+	// Showname presets (M6): a saved, global list — quick-swap them in-game with
+	// keybinds (random or a specific one). Cleared only by a factory reset.
+	c.Label(pad, y+4, "Showname presets:", ColText)
+	var addNow bool
+	a.shownameAdd, addNow = c.TextField("shownameadd", sdl.Rect{X: pad + 150, Y: y, W: 220, H: fieldH}, a.shownameAdd, "type a name to save…")
+	if c.Button(sdl.Rect{X: pad + 378, Y: y, W: 60, H: btnH}, "Save") || addNow {
+		if a.d.Prefs.AddShownamePreset(a.shownameAdd) {
+			a.shownameAdd = ""
+		}
+	}
+	if c.Button(sdl.Rect{X: pad + 444, Y: y, W: 110, H: btnH}, "Save current") {
+		a.d.Prefs.AddShownamePreset(a.effectiveShowname())
+	}
+	c.Label(pad+564, y+4, "saved globally; cleared only by a factory reset", ColTextDim)
+	y += 32
+	if presets := a.d.Prefs.ShownameList(); len(presets) == 0 {
+		c.Label(pad+12, y+2, "(none yet — Save a name above; bind keys to swap them)", ColTextDim)
+		y += 24
+	} else {
+		for _, name := range presets {
+			if c.Button(sdl.Rect{X: pad + 12, Y: y, W: 20, H: 18}, "×") {
+				a.d.Prefs.RemoveShownamePreset(name)
+			}
+			c.LabelClipped(pad+40, y+1, 320, name, ColText)
+			y += 24
+		}
+	}
+	y += 8
+
 	anims := a.d.Prefs.AnimationsEnabled()
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
 		a.d.Prefs.SetAnimationsEnabled(next)

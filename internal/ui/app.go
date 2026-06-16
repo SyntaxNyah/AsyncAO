@@ -802,9 +802,10 @@ type sessionState struct {
 	icCountN       int    // M5 IC char counter: cached count + its string, reformatted
 	icCountStr     string // only when the length changes so the frame stays 0-alloc
 	pairListScroll int32
-	playerScroll   int32 // Players-tab roster scroll
-	playerSort     int   // roster sort: 0=UID, 1=name, 2=speakers-first
-	playerPct      int   // Players-tab text zoom (Ctrl+wheel); starts at the log scale
+	playerScroll   int32  // Players-tab roster scroll
+	playerSort     int    // roster sort: 0=UID, 1=name, 2=speakers-first
+	playerPct      int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
+	shownameAdd    string // M6: Settings "save a showname preset" input
 	// playerOrder is the memoized display order (indices into areaPlayers); it
 	// recomputes only when the roster, sort mode, or current speaker change, so
 	// the Players tab never sorts per-frame.

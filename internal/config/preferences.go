@@ -423,6 +423,7 @@ type AssetPreferences struct {
 	PairOffsetY        int                       `json:"pairOffsetY"`
 	PairFlip           bool                      `json:"pairFlip"`
 	Showname           string                    `json:"showname"`
+	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -570,6 +571,7 @@ type prefsJSON struct {
 	PairOffsetY        int                       `json:"pairOffsetY"`
 	PairFlip           bool                      `json:"pairFlip"`
 	Showname           string                    `json:"showname"`
+	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1027,6 +1029,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.PairOffsetY = clampPairOffset(onDisk.PairOffsetY)
 	p.PairFlip = onDisk.PairFlip
 	p.Showname = onDisk.Showname
+	p.ShownamePresets = onDisk.ShownamePresets
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
@@ -3723,6 +3726,61 @@ func (p *AssetPreferences) SetShowname(name string) {
 	p.Showname = name
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// ShownameCap bounds the saved showname presets (M6).
+const ShownameCap = 64
+
+// ShownameList returns a copy of the saved showname presets (global, persisted —
+// cleared only by a full factory reset).
+func (p *AssetPreferences) ShownameList() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.ShownamePresets) == 0 {
+		return nil
+	}
+	out := make([]string, len(p.ShownamePresets))
+	copy(out, p.ShownamePresets)
+	return out
+}
+
+// AddShownamePreset appends a showname to the saved presets (trimmed, deduped
+// case-insensitively, bounded). Reports whether it changed.
+func (p *AssetPreferences) AddShownamePreset(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	p.mu.Lock()
+	if len(p.ShownamePresets) >= ShownameCap {
+		p.mu.Unlock()
+		return false
+	}
+	for _, have := range p.ShownamePresets {
+		if strings.EqualFold(have, name) {
+			p.mu.Unlock()
+			return false
+		}
+	}
+	p.ShownamePresets = append(p.ShownamePresets, name)
+	p.mu.Unlock()
+	p.markDirty()
+	return true
+}
+
+// RemoveShownamePreset drops a saved showname. Reports whether it changed.
+func (p *AssetPreferences) RemoveShownamePreset(name string) bool {
+	p.mu.Lock()
+	for i, have := range p.ShownamePresets {
+		if strings.EqualFold(have, name) {
+			p.ShownamePresets = append(p.ShownamePresets[:i], p.ShownamePresets[i+1:]...)
+			p.mu.Unlock()
+			p.markDirty()
+			return true
+		}
+	}
+	p.mu.Unlock()
+	return false
 }
 
 func clampPairOffset(v int) int {

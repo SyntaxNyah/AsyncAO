@@ -202,6 +202,38 @@ func TestExtrasBoxStyle(t *testing.T) {
 	}
 }
 
+// TestShownamePresets pins the global showname-preset list (M6): add (deduped
+// case-insensitively), remove, and that it round-trips through save/load.
+func TestShownamePresets(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if !p.AddShownamePreset("Phoenix") || !p.AddShownamePreset("Edgeworth") {
+		t.Fatal("AddShownamePreset should report a change")
+	}
+	if p.AddShownamePreset("phoenix") { // case-insensitive duplicate
+		t.Error("duplicate AddShownamePreset must not change")
+	}
+	if got := p.ShownameList(); len(got) != 2 {
+		t.Fatalf("ShownameList = %v, want 2", got)
+	}
+	if !p.RemoveShownamePreset("Phoenix") {
+		t.Error("RemoveShownamePreset should report a change")
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := q.ShownameList(); len(got) != 1 || got[0] != "Edgeworth" {
+		t.Errorf("after reload: ShownameList = %v, want [Edgeworth]", got)
+	}
+}
+
 // TestThemeFitDefaultsAndClamp pins the theme-fit prefs: Stretch is the default
 // (zero value), and the mode/zoom/pan all clamp to their bounds.
 func TestThemeFitDefaultsAndClamp(t *testing.T) {
