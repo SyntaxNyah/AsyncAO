@@ -416,6 +416,17 @@ type App struct {
 	extrasDragging             bool
 	extrasGrabDX, extrasGrabDY int32
 	extrasPrevDown             bool
+	// Torn-off widgets: each lives in its own small floating box you drag out
+	// of the main grid, move freely, and close (which returns it to the grid).
+	// Flags use bool+index so the &App{} zero value is "idle" (no ctor needed).
+	extrasDetached       []detachedWidget // bounded: one box per widget at most
+	extrasDetachDragging bool             // a detached box is being moved
+	extrasDetachIdx      int              // which extrasDetached index, while dragging
+	extrasPressing       bool             // a grid cell is held (pending click-or-tear)
+	extrasPressID        int              // that cell's widget id
+	extrasPressX         int32            // press origin, for the tear threshold
+	extrasPressY         int32
+	extrasWidgetCache    []extrasWidget // canonical widget table, built once
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32

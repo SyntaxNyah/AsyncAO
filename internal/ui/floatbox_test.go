@@ -70,13 +70,18 @@ func TestExtrasDrag(t *testing.T) {
 
 	a.ctx.mouseDown = true
 	a.ctx.mouseX, a.ctx.mouseY = handle.X+20, handle.Y+10
-	a.handleExtrasDrag(handle, w, h) // press → start drag (grab offset 20,10)
+	pressed := true
+	a.handleExtrasDrag(handle, w, h, &pressed) // press → start drag (grab offset 20,10)
 	if !a.extrasDragging {
 		t.Fatal("a press on the title bar must start a drag")
 	}
+	if pressed {
+		t.Error("grabbing the title must consume the frame's press edge")
+	}
 
 	a.ctx.mouseX, a.ctx.mouseY = handle.X+120, handle.Y+60 // move +100,+50
-	a.handleExtrasDrag(handle, w, h)                        // continue (no new press)
+	pressed = false
+	a.handleExtrasDrag(handle, w, h, &pressed) // continue (no new press)
 	if moved := a.extrasBoxRect(w, h); moved.X != r0.X+100 || moved.Y != r0.Y+50 {
 		t.Errorf("box at (%d,%d), want (%d,%d) — must track the cursor by the grab offset",
 			moved.X, moved.Y, r0.X+100, r0.Y+50)
@@ -86,9 +91,105 @@ func TestExtrasDrag(t *testing.T) {
 	}
 
 	a.ctx.mouseDown = false
-	a.handleExtrasDrag(handle, w, h)
+	a.handleExtrasDrag(handle, w, h, &pressed)
 	if a.extrasDragging {
 		t.Error("release must end the drag")
+	}
+}
+
+// TestExtrasWidgetTearOff pins the tear-off: a press arms tracking, a drag past
+// the threshold pops the widget into its own box (removed from the grid, set as
+// the active drag), and that box then tracks the cursor by its grab offset.
+func TestExtrasWidgetTearOff(t *testing.T) {
+	a := testTabApp(t)
+	const w, h = int32(1280), int32(720)
+	cell := sdl.Rect{X: 200, Y: 200, W: 160, H: 34}
+	const id = 3
+
+	a.ctx.mouseDown = true
+	a.ctx.mouseX, a.ctx.mouseY = cell.X+20, cell.Y+15
+	pressed := true
+	if a.extrasTearDetect(id, cell, &pressed) {
+		t.Fatal("a press without movement must not tear yet")
+	}
+	if !a.extrasPressing || pressed {
+		t.Fatal("the press must arm tear tracking and consume the edge")
+	}
+
+	a.ctx.mouseX += extrasTearPx + 4 // drag past the threshold
+	pressed = false
+	if !a.extrasTearDetect(id, cell, &pressed) {
+		t.Fatal("dragging past the threshold must tear the widget out")
+	}
+	if len(a.extrasDetached) != 1 || a.extrasDetached[0].id != id {
+		t.Fatalf("torn-off set = %v, want one box for id %d", a.extrasDetached, id)
+	}
+	if !a.widgetDetached(id) {
+		t.Error("the torn widget must be filtered out of the grid")
+	}
+	if !a.extrasDetachDragging || a.extrasDetachIdx != 0 {
+		t.Error("the new box must become the active drag target")
+	}
+
+	// The new box tracks the cursor by the grab offset captured at tear time.
+	a.ctx.mouseX, a.ctx.mouseY = 500, 400
+	a.handleDetachedDrag(0, sdl.Rect{}, &pressed) // continue-drag path (not on the handle)
+	r := a.detachedBoxRect(0, w, h)
+	if wantX, wantY := int32(500)-detachedBoxW/2, int32(400)-extrasTitleH/2; r.X != wantX || r.Y != wantY {
+		t.Errorf("torn box at (%d,%d), want (%d,%d)", r.X, r.Y, wantX, wantY)
+	}
+
+	a.ctx.mouseDown = false
+	a.handleDetachedDrag(0, sdl.Rect{}, &pressed)
+	if a.extrasDetachDragging {
+		t.Error("release must end the detached drag")
+	}
+}
+
+// TestExtrasReattach pins closing a torn-off box: it's removed, its widget
+// returns to the grid, and no drag is left dangling.
+func TestExtrasReattach(t *testing.T) {
+	a := testTabApp(t)
+	a.extrasDetached = []detachedWidget{{id: 5, x: 100, y: 100}, {id: 2, x: 200, y: 200}}
+	a.extrasDetachDragging = true
+	a.reattachWidget(0)
+	if len(a.extrasDetached) != 1 || a.extrasDetached[0].id != 2 {
+		t.Fatalf("after closing box 0, detached = %v, want one box for id 2", a.extrasDetached)
+	}
+	if a.widgetDetached(5) {
+		t.Error("id 5 must return to the grid")
+	}
+	if a.extrasDetachDragging {
+		t.Error("closing a box must not leave a drag active")
+	}
+}
+
+// TestBoxFencesPointerDetached pins the fence over torn-off boxes: the cursor
+// over a detached box fences even off the main box, an in-flight drag fences
+// regardless of position, and the cursor clear of every box does not.
+func TestBoxFencesPointerDetached(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.showWidgets = true
+	const w, h = int32(1280), int32(720)
+	a.extrasDetached = []detachedWidget{{id: 1, x: 900, y: 600}}
+	dr := a.detachedBoxRect(0, w, h)
+	if pointIn(dr.X+5, dr.Y+5, a.extrasBoxRect(w, h)) {
+		t.Skip("detached box overlaps the main box in this layout")
+	}
+
+	a.ctx.mouseX, a.ctx.mouseY = dr.X+5, dr.Y+5
+	if !a.boxFencesPointer(w, h) {
+		t.Error("cursor over a torn-off box must fence the courtroom")
+	}
+	a.ctx.mouseX, a.ctx.mouseY = 5, 5
+	if a.boxFencesPointer(w, h) {
+		t.Error("cursor clear of every box must not fence")
+	}
+	a.extrasDetachDragging = true // a fast drag must hold the fence between frames
+	if !a.boxFencesPointer(w, h) {
+		t.Error("an active drag must hold the fence regardless of cursor position")
 	}
 }
 
