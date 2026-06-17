@@ -3,6 +3,7 @@ package courtroom
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -179,6 +180,9 @@ const (
 	EventEvidence
 	// EventTimer signals TI clock Int changed (read Timers).
 	EventTimer
+	// EventPlayersUpdated signals the live player list changed (PR/PU from the
+	// server's PlayerStateObserver); the UI re-reads Players().
+	EventPlayersUpdated
 )
 
 // Event is one session occurrence. Fields are populated per Kind.
@@ -190,6 +194,73 @@ type Event struct {
 	Int     int
 	// Int2 is the second integer payload (EventHP's bar value).
 	Int2 int
+}
+
+// LivePlayer is one entry of the server-pushed live player list. Akashi and
+// Nyathena run a PlayerStateObserver that streams PR (join/leave) and PU (field
+// update) packets to every client from connect — no /getarea, no opt-in — so the
+// roster is live and carries the server UID (the id pairing and /getarea target).
+// Char is "" for a spectator / a player still at character select. AreaID indexes
+// Areas. (../akashi/src/playerstateobserver.cpp.)
+type LivePlayer struct {
+	ID       int
+	OOCName  string
+	Char     string
+	Showname string
+	AreaID   int
+}
+
+// livePlayerCap bounds the live roster map (hard rule #4: no unbounded caches).
+// Far above any real area population; a reconnect re-dumps the full roster, so a
+// hit here self-heals rather than corrupting state.
+const livePlayerCap = 1024
+
+// PR roster-change types — PR#<id>#<type>#% (akashi PacketPR::UPDATE_TYPE).
+const (
+	prJoin  = 0 // ADD
+	prLeave = 1 // REMOVE
+)
+
+// PU field types — PU#<id>#<type>#<data>#% (akashi PacketPU::DATA_TYPE).
+const (
+	puOOCName  = 0
+	puChar     = 1
+	puShowname = 2
+	puAreaID   = 3
+)
+
+// Players returns the live roster (PR/PU) as a slice sorted by UID for a stable
+// display order. Empty when the server doesn't push the player-list packets (an
+// older tsuserver) — the UI then falls back to its CharsCheck-derived roster.
+// Allocates a fresh slice; call it on EventPlayersUpdated, not per frame.
+func (s *Session) Players() []LivePlayer {
+	if len(s.players) == 0 {
+		return nil
+	}
+	out := make([]LivePlayer, 0, len(s.players))
+	for _, p := range s.players {
+		out = append(out, *p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// touchPlayer returns player id's live entry, creating it (bounded by
+// livePlayerCap) when absent. Returns nil only at the cap. A PR join and a
+// field-first PU both route through here, so the roster survives either order.
+func (s *Session) touchPlayer(id int) *LivePlayer {
+	if pl := s.players[id]; pl != nil {
+		return pl
+	}
+	if s.players == nil {
+		s.players = make(map[int]*LivePlayer, 16)
+	}
+	if len(s.players) >= livePlayerCap {
+		return nil
+	}
+	pl := &LivePlayer{ID: id}
+	s.players[id] = pl
+	return pl
 }
 
 // Session is a synchronous reducer over server packets: HandlePacket
@@ -215,6 +286,7 @@ type Session struct {
 	HPDef    int                    // defense penalty bar, 0..10
 	HPPro    int                    // prosecution penalty bar, 0..10
 	AreaInfo []AreaInfo             // ARUP columns, parallel to Areas
+	players  map[int]*LivePlayer    // live roster (PR/PU), keyed by server UID; ≤ livePlayerCap
 	Evidence []EvidenceItem         // LE list (≤ evidenceCap)
 	Timers   [TimerCount]TimerState // TI server clocks
 	PosList  []string               // SD dropdown entries (≤ posListCap)
@@ -342,6 +414,47 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			s.Chars[i].Taken = p.Fields[i] == "-1"
 		}
 		return []Event{{Kind: EventCharsUpdated}}
+
+	case "PR":
+		// Player roster change (PR#<id>#<type>#%): the Akashi/Nyathena
+		// PlayerStateObserver streams these to every client from connect — no
+		// /getarea, no opt-in — so the live list reacts to joins/leaves and learns
+		// each player's server UID. (../akashi/src/playerstateobserver.cpp.)
+		id := atoiOr(p.Field(0), -1)
+		if id < 0 {
+			return nil
+		}
+		if atoiOr(p.Field(1), prJoin) == prLeave {
+			delete(s.players, id)
+		} else {
+			s.touchPlayer(id) // join (or a benign re-add); fields follow via PU
+		}
+		return []Event{{Kind: EventPlayersUpdated}}
+
+	case "PU":
+		// Player field update (PU#<id>#<type>#<data>#%): type 0 OOC name, 1
+		// character folder, 2 showname, 3 area id (an index into Areas). Servers
+		// send PR before PU, but touchPlayer keeps it order-robust. Name/showname
+		// ship wire-escaped like every other text field — decode them.
+		id := atoiOr(p.Field(0), -1)
+		if id < 0 {
+			return nil
+		}
+		pl := s.touchPlayer(id)
+		if pl == nil {
+			return nil // at the cap; reconnect re-dumps the roster
+		}
+		switch atoiOr(p.Field(1), -1) {
+		case puOOCName:
+			pl.OOCName = protocol.DecodeField(p.Field(2))
+		case puChar:
+			pl.Char = protocol.DecodeField(p.Field(2))
+		case puShowname:
+			pl.Showname = protocol.DecodeField(p.Field(2))
+		case puAreaID:
+			pl.AreaID = atoiOr(p.Field(2), 0)
+		}
+		return []Event{{Kind: EventPlayersUpdated}}
 
 	case "SM":
 		s.Areas, s.Music = splitAreasAndMusic(p.Fields)
