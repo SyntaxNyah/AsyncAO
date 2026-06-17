@@ -302,6 +302,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Settings → Audio & Chat**, with the muted list (× to unmute) below it. Global
   and persisted; matching SFX are skipped at the courtroom's play site, so muting
   costs nothing while a sound isn't playing.
+- **Per-character blip volume** (M11): quiet a character whose typing **blips**
+  are too loud without touching the global blip slider. The **last speaker** gets
+  a quick **0–100% slider** in **Settings → Audio & Chat**; everyone you've
+  adjusted is listed below with their own slider and a **×** that resets to 100%
+  (= unchanged). Global and persisted, keyed by character folder name. The scale
+  is read **once per message** in the courtroom and multiplied into the blip
+  channel's volume **at play time** — the render loop and per-frame hot paths are
+  untouched, so an unadjusted roster costs nothing. The map only stores genuine
+  adjustments (resetting to 100% drops the entry) and is bounded.
 - **Highlighted friends** (Settings, **OFF by default**): a **per-server** list
   of shownames whose IC messages **glow** (a warm tint behind the line) so you
   can spot your friends in a busy log — saved per server (cached like the char

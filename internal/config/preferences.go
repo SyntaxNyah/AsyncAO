@@ -435,6 +435,7 @@ type AssetPreferences struct {
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
+	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -589,6 +590,7 @@ type prefsJSON struct {
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
+	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1059,6 +1061,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ShownamePresets = onDisk.ShownamePresets
 	p.ShownameKeys = onDisk.ShownameKeys
 	p.MutedSFX = onDisk.MutedSFX
+	p.BlipVols = onDisk.BlipVols
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
@@ -3971,6 +3974,84 @@ func (p *AssetPreferences) UnmuteSFX(name string) bool {
 	}
 	p.mu.Unlock()
 	return false
+}
+
+// blipVolsCap bounds the per-character blip-volume map (hard rule #4: no
+// unbounded maps). Only characters adjusted away from the default occupy a
+// slot, so this is a safety ceiling, not an expected size.
+const blipVolsCap = 256
+
+// blipVolumeDefault is the per-character blip scale when none is stored: full
+// (100%), i.e. no extra attenuation beyond the global blip volume (M11).
+const blipVolumeDefault = 100
+
+// BlipVolumeFor returns a character's stored per-character blip scale (0–100,
+// 100 = no attenuation; M11). Called from the courtroom once per message (not
+// per frame). Unknown characters get the full default.
+func (p *AssetPreferences) BlipVolumeFor(char string) int {
+	char = strings.ToLower(strings.TrimSpace(char))
+	if char == "" {
+		return blipVolumeDefault
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if v, ok := p.BlipVols[char]; ok {
+		return v
+	}
+	return blipVolumeDefault
+}
+
+// BlipVolumes returns a copy of the per-character blip-volume overrides
+// (lowercased char → scale), for the settings UI. Nil when none are set.
+func (p *AssetPreferences) BlipVolumes() map[string]int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.BlipVols) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(p.BlipVols))
+	for k, v := range p.BlipVols {
+		out[k] = v
+	}
+	return out
+}
+
+// SetBlipVolume stores a character's per-character blip scale (clamped 0–100).
+// Setting the default (100) clears the override so the map only holds genuine
+// adjustments (and stays well under blipVolsCap). Reports whether it changed.
+func (p *AssetPreferences) SetBlipVolume(char string, pct int) bool {
+	char = strings.ToLower(strings.TrimSpace(char))
+	if char == "" {
+		return false
+	}
+	pct = clampPercent(pct, 0, blipVolumeDefault)
+	p.mu.Lock()
+	cur, had := p.BlipVols[char]
+	if pct == blipVolumeDefault {
+		if !had {
+			p.mu.Unlock()
+			return false // already default
+		}
+		delete(p.BlipVols, char)
+		p.mu.Unlock()
+		p.markDirty()
+		return true
+	}
+	if had && cur == pct {
+		p.mu.Unlock()
+		return false // unchanged
+	}
+	if !had && len(p.BlipVols) >= blipVolsCap {
+		p.mu.Unlock()
+		return false // bounded
+	}
+	if p.BlipVols == nil {
+		p.BlipVols = make(map[string]int)
+	}
+	p.BlipVols[char] = pct
+	p.mu.Unlock()
+	p.markDirty()
+	return true
 }
 
 func clampPairOffset(v int) int {

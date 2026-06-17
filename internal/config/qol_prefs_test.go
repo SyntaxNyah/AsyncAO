@@ -199,6 +199,63 @@ func TestMutedSFXRoundTrip(t *testing.T) {
 	}
 }
 
+// TestBlipVolume pins the M11 per-character blip scale: default 100, clamp,
+// case-insensitive key, no-op detection, and that resetting to 100 clears the
+// entry (so the map only holds real adjustments).
+func TestBlipVolume(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if v := p.BlipVolumeFor("phoenix"); v != 100 {
+		t.Errorf("unset char = %d, want default 100", v)
+	}
+	if !p.SetBlipVolume("Phoenix", 40) { // stored lowercase
+		t.Error("SetBlipVolume should report a change")
+	}
+	if v := p.BlipVolumeFor("phoenix"); v != 40 {
+		t.Errorf("after set = %d, want 40", v)
+	}
+	if p.SetBlipVolume("phoenix", 40) {
+		t.Error("re-setting the same value must be a no-op")
+	}
+	if !p.SetBlipVolume("phoenix", 999) { // clamps to 100 → also resets the entry
+		t.Error("clamped change should report a change")
+	}
+	if v := p.BlipVolumeFor("phoenix"); v != 100 {
+		t.Errorf("clamped-high = %d, want 100", v)
+	}
+	if vols := p.BlipVolumes(); len(vols) != 0 {
+		t.Errorf("resetting to 100 should clear the entry, got %v", vols)
+	}
+	if !p.SetBlipVolume("edgeworth", -5) { // clamps to 0
+		t.Error("clamp-low should report a change")
+	}
+	if v := p.BlipVolumeFor("edgeworth"); v != 0 {
+		t.Errorf("clamped-low = %d, want 0", v)
+	}
+	if p.SetBlipVolume("", 50) {
+		t.Error("empty char name must be rejected")
+	}
+}
+
+// TestBlipVolumeRoundTrip pins that per-character blip scales survive save→load.
+func TestBlipVolumeRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	p.SetBlipVolume("phoenix", 25)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if v := q.BlipVolumeFor("phoenix"); v != 25 {
+		t.Errorf("per-char blip scale lost across save/load: %d", v)
+	}
+}
+
 // TestWardrobeGenerationBumps pins the counter the char-select star grid caches
 // against: it moves on a real membership change and stays put on a no-op.
 func TestWardrobeGenerationBumps(t *testing.T) {

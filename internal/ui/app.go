@@ -828,6 +828,7 @@ type sessionState struct {
 	areaHistory    []string
 	shownameFor    map[string]string
 	lastSFXName    string // M11: most-recent emote SFX name, for one-click "Mute last SFX"
+	lastBlipChar   string // M11: most-recent speaker char, for one-click per-character blip volume
 	icCountN       int    // M5 IC char counter: cached count + its string, reformatted
 	icCountStr     string // only when the length changes so the frame stays 0-alloc
 	pairListScroll int32
@@ -1696,6 +1697,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				if sn := ev.Message.SFXName; sn != "" && sn != "0" && sn != "1" {
 					a.lastSFXName = sn // M11: remember the most-recent SFX for one-click "Mute last SFX"
 				}
+				if cn := ev.Message.CharName; cn != "" {
+					a.lastBlipChar = cn // M11: remember the most-recent speaker for one-click per-char blip volume
+				}
 				if fr {
 					a.signalFriend(a.serverName, ev.Message)
 				}
@@ -2045,7 +2049,8 @@ func (a *App) enterCourtroom() {
 	a.pendingIni = ""
 	a.sidePref = "" // until the new char.ini reports its side
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
-	a.room.SFXMuted = func(name string) bool { return a.d.Prefs.IsSFXMuted(name) } // M11 per-SFX mute (reads live prefs)
+	a.room.SFXMuted = func(name string) bool { return a.d.Prefs.IsSFXMuted(name) }        // M11 per-SFX mute (reads live prefs)
+	a.room.BlipVolumeFor = func(char string) int { return a.d.Prefs.BlipVolumeFor(char) } // M11 per-character blip volume (reads live prefs)
 	urls := a.urls
 	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character, emote string) string {
 		if emote == "" {

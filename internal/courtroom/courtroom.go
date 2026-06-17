@@ -22,6 +22,9 @@ const (
 	DefaultTextStayTime = 200 * time.Millisecond
 	// messageQueueCap bounds the IC message queue (spec §17.4).
 	messageQueueCap = 64
+	// blipVolumeFull is the unattenuated per-character blip scale (M11): 100%,
+	// used when no BlipVolumeFor callback is wired (tests/embedders).
+	blipVolumeFull = 100
 	// emptyPreanim values AO uses for "no preanimation".
 	emptyPreanimDash = "-"
 
@@ -133,6 +136,9 @@ type AudioSink interface {
 	PlaySFX(base string, delay time.Duration)
 	// PlayBlip fires one chat blip.
 	PlayBlip(base string)
+	// SetBlipScale sets the current speaker's per-character blip attenuation
+	// (0–100, 100 = none; M11), applied to subsequent blips.
+	SetBlipScale(pct int)
 	// PlayMusic streams a track from a full URL.
 	PlayMusic(url string)
 	// StopMusic halts playback now (the ~stop sentinel; also on disconnect).
@@ -145,6 +151,7 @@ type NopAudio struct{}
 func (NopAudio) PlayShout(string)              {}
 func (NopAudio) PlaySFX(string, time.Duration) {}
 func (NopAudio) PlayBlip(string)               {}
+func (NopAudio) SetBlipScale(int)              {}
 func (NopAudio) PlayMusic(string)              {}
 func (NopAudio) StopMusic()                    {}
 
@@ -184,6 +191,11 @@ type Courtroom struct {
 	// SFXMuted, when set, reports whether an emote SFX name should be silenced
 	// (M11 per-SFX mute). Set by the App to read live prefs; nil = play everything.
 	SFXMuted func(name string) bool
+
+	// BlipVolumeFor, when set, returns the per-character blip attenuation
+	// (0–100, 100 = no attenuation; M11 per-character blip volume) for a
+	// character folder name. Set by the App to read live prefs; nil = full.
+	BlipVolumeFor func(char string) int
 
 	queue []*protocol.ChatMessage
 	phase MessagePhase
@@ -422,6 +434,14 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	}
 	c.blipBase = c.urls.Blip(blip)
 	c.mgr.Prefetch(c.blipBase, assets.AssetTypeBlip, network.PriorityHigh) // AssetType: Blip
+
+	// M11 per-character blip volume: attenuate this speaker's blips by their
+	// stored scale. One int-set per message — the render loop is untouched.
+	blipScale := blipVolumeFull
+	if c.BlipVolumeFor != nil {
+		blipScale = c.BlipVolumeFor(speakerName)
+	}
+	c.audio.SetBlipScale(blipScale)
 
 	if msg.SFXName != "" && msg.SFXName != "0" && msg.SFXName != "1" &&
 		(c.SFXMuted == nil || !c.SFXMuted(msg.SFXName)) { // M11: per-SFX mute

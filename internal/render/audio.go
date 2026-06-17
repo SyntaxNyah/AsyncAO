@@ -86,6 +86,10 @@ type Audio struct {
 	// Volumes in percent (0–100), applied as mixer volume at play time
 	// (music globally, chunks per returned channel).
 	musicVol, sfxVol, blipVol int
+	// blipScale is the current speaker's per-character blip attenuation (0–100,
+	// 100 = none; M11), set per message via SetBlipScale and multiplied into
+	// blipVol when a blip plays.
+	blipScale int
 
 	enabled bool
 }
@@ -104,16 +108,30 @@ func (a *Audio) SetVolumes(music, sfx, blip int) {
 	}
 }
 
+// SetBlipScale sets the current speaker's per-character blip attenuation (0–100;
+// 100 = full blip volume, M11). Multiplied into the blip channel volume at the
+// next blip play; set once per message by the courtroom from per-char prefs.
+func (a *Audio) SetBlipScale(pct int) {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > fullVolumePercent {
+		pct = fullVolumePercent
+	}
+	a.blipScale = pct
+}
+
 // NewAudio opens the mixer. A failed device (headless CI) degrades to a
 // disabled-but-functional sink.
 func NewAudio(mgr *assets.Manager) *Audio {
 	a := &Audio{
-		mgr:      mgr,
-		chunks:   map[string]*mix.Chunk{},
-		pending:  map[string]pendingPlay{},
-		musicVol: fullVolumePercent,
-		sfxVol:   fullVolumePercent,
-		blipVol:  fullVolumePercent,
+		mgr:       mgr,
+		chunks:    map[string]*mix.Chunk{},
+		pending:   map[string]pendingPlay{},
+		musicVol:  fullVolumePercent,
+		sfxVol:    fullVolumePercent,
+		blipVol:   fullVolumePercent,
+		blipScale: fullVolumePercent,
 	}
 	// Load the dynamic decoder libraries we ship: opus/ogg/mp3 are pulled in on
 	// demand (only WAV is built into SDL_mixer), so without this they never
@@ -321,7 +339,7 @@ func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
 		// is a pointer pass (spec §8).
 		mix.HaltChannel(blipChannel)
 		if _, err := chunk.Play(blipChannel, 0); err == nil {
-			mix.Volume(blipChannel, mixVolume(a.blipVol))
+			mix.Volume(blipChannel, mixVolume(a.blipVol*a.blipScale/fullVolumePercent)) // M11 per-char blip scale
 		}
 	case pendingAlert:
 		// Callword/friend ping on its own reserved channel: a new alert replaces

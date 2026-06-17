@@ -36,11 +36,13 @@ func (r *sentRecorder) headers() []string {
 type audioRecorder struct {
 	shouts, sfx, blips, music []string
 	stops                     int
+	blipScale                 int
 }
 
 func (a *audioRecorder) PlayShout(base string)             { a.shouts = append(a.shouts, base) }
 func (a *audioRecorder) PlaySFX(b string, _ time.Duration) { a.sfx = append(a.sfx, b) }
 func (a *audioRecorder) PlayBlip(base string)              { a.blips = append(a.blips, base) }
+func (a *audioRecorder) SetBlipScale(pct int)              { a.blipScale = pct }
 func (a *audioRecorder) PlayMusic(url string)              { a.music = append(a.music, url) }
 func (a *audioRecorder) StopMusic()                        { a.stops++ }
 
@@ -816,6 +818,38 @@ func TestMessageLifecyclePhases(t *testing.T) {
 	}
 	if room.Scene.Speaker.Active != room.Scene.Speaker.IdleBase {
 		t.Error("speaker must end on the idle loop")
+	}
+}
+
+// TestBlipVolumeScalesSpeaker pins M11 per-character blip volume: begin()
+// consults BlipVolumeFor with the speaker's char name and pushes that scale to
+// the audio once per message. With no callback wired it defaults to full.
+func TestBlipVolumeScalesSpeaker(t *testing.T) {
+	room, sess, _, audio := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	var gotChar string
+	room.BlipVolumeFor = func(char string) int {
+		gotChar = char
+		return 30
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "Quiet")})
+	if gotChar != "Phoenix" {
+		t.Errorf("BlipVolumeFor got char %q, want the speaker %q", gotChar, "Phoenix")
+	}
+	if audio.blipScale != 30 {
+		t.Errorf("blip scale = %d, want the callback's 30", audio.blipScale)
+	}
+}
+
+// TestBlipVolumeDefaultsFull pins that with no callback the speaker plays at the
+// full (unattenuated) blip scale.
+func TestBlipVolumeDefaultsFull(t *testing.T) {
+	room, sess, _, audio := newCourtroomRig(t)
+	setupReadySession(t, sess)
+	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "Hi")})
+	if audio.blipScale != blipVolumeFull {
+		t.Errorf("default blip scale = %d, want %d", audio.blipScale, blipVolumeFull)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1271,6 +1272,43 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 				a.d.Prefs.UnmuteSFX(name)
 			}
 			c.LabelClipped(pad+40, y+1, 360, name, ColText)
+			y += 24
+		}
+		y += 6
+	}
+
+	// M11 per-character blip volume: quiet a character whose typing blips are
+	// too loud (their scale multiplies the global blip volume; 100% = no
+	// change). The last speaker gets a quick slider; everyone you've adjusted
+	// is listed below with their own slider and a × that resets to 100%.
+	c.Label(pad, y+2, "Per-character blip volume (typing-sound loudness, 100% = unchanged):", ColTextDim)
+	y += 22
+	if a.lastBlipChar != "" {
+		cur := a.d.Prefs.BlipVolumeFor(a.lastBlipChar)
+		if nv := a.volumeRow(y, "Last speaker — "+a.lastBlipChar, cur); nv != cur {
+			a.d.Prefs.SetBlipVolume(a.lastBlipChar, nv)
+		}
+		y += 28
+	} else {
+		c.Label(pad+12, y+1, "The last character to speak gets a quick slider here.", ColTextDim)
+		y += 24
+	}
+	if vols := a.d.Prefs.BlipVolumes(); len(vols) > 0 {
+		names := make([]string, 0, len(vols))
+		for name := range vols {
+			names = append(names, name)
+		}
+		sort.Strings(names) // stable row order (map iteration is random)
+		for _, name := range names {
+			if c.Button(sdl.Rect{X: pad + 12, Y: y, W: 20, H: 18}, "×") {
+				a.d.Prefs.SetBlipVolume(name, 100) // reset to default (100% = unchanged)
+			}
+			c.LabelClipped(pad+40, y+1, 124, name, ColText)
+			track := sdl.Rect{X: pad + 170, Y: y + 1, W: 110, H: 16}
+			if nv := int(c.Slider("blipvol:"+name, track, int32(vols[name]), 100)); nv != vols[name] {
+				a.d.Prefs.SetBlipVolume(name, nv)
+			}
+			c.Label(track.X+track.W+8, y+1, fmt.Sprintf("%3d%%", vols[name]), ColAccent)
 			y += 24
 		}
 		y += 6
