@@ -297,6 +297,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   halted it). An **optional toast** (Settings → **ON by default**) names the
   heard word, like the modcall/friend toasts. (Opus support needs the codec DLLs
   loaded at startup — see the audio note below.)
+- **Per-SFX mute** (M11): silence an emote sound effect that's grating — the
+  **last SFX you hear** gets a one-click **"Mute last SFX: &lt;name&gt;"** toggle in
+  **Settings → Audio & Chat**, with the muted list (× to unmute) below it. Global
+  and persisted; matching SFX are skipped at the courtroom's play site, so muting
+  costs nothing while a sound isn't playing.
 - **Highlighted friends** (Settings, **OFF by default**): a **per-server** list
   of shownames whose IC messages **glow** (a warm tint behind the line) so you
   can spot your friends in a busy log — saved per server (cached like the char
