@@ -66,6 +66,15 @@ func (a *App) drawLobby(w, h int32) {
 			}
 		}
 	}
+	// M2 auto-reconnect status (when a retry is pending): the cached message
+	// (rebuilt per attempt, not per frame) + a Stop button to bail out.
+	if !a.autoReconnectAt.IsZero() {
+		c.Label(pad+220, pad+78, a.autoReconnectMsg, ColAccent)
+		sx := pad + 220 + c.TextWidth(a.autoReconnectMsg) + 12
+		if c.Button(sdl.Rect{X: sx, Y: pad + 74, W: c.TextWidth("Stop") + 20, H: btnH}, "Stop") {
+			a.cancelAutoReconnect()
+		}
+	}
 
 	// Top bar buttons.
 	if c.Button(sdl.Rect{X: w - 110 - pad, Y: pad, W: 110, H: btnH}, "Refresh") {

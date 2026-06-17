@@ -195,6 +195,11 @@ const defaultMessageCounter = true
 // it arrived, so you can see when people spoke. Toggleable off in Settings.
 const defaultICTimestamps = true
 
+// defaultAutoReconnect ships ON: after an unexpected drop, AsyncAO auto-retries
+// the last server with backoff (the manual Reconnect button still works, and a
+// deliberate Disconnect never auto-retries).
+const defaultAutoReconnect = true
+
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
 // 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
@@ -466,6 +471,8 @@ type AssetPreferences struct {
 	MessageCounter bool `json:"messageCounter"`
 	// ICTimestamps prefixes each IC log line with its local arrival time (ON by default).
 	ICTimestamps bool `json:"icTimestamps"`
+	// AutoReconnect auto-retries the last server after an unexpected drop (ON by default).
+	AutoReconnect bool `json:"autoReconnect"`
 
 	mu        sync.RWMutex
 	path      string
@@ -602,6 +609,7 @@ type prefsJSON struct {
 	CallwordToast      *bool `json:"callwordToast"`      // absent = default ON
 	MessageCounter     *bool `json:"messageCounter"`     // absent = default ON
 	ICTimestamps       *bool `json:"icTimestamps"`       // absent = default ON
+	AutoReconnect      *bool `json:"autoReconnect"`      // absent = default ON
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -809,6 +817,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		CallwordToast:      defaultCallwordToast,
 		MessageCounter:     defaultMessageCounter,
 		ICTimestamps:       defaultICTimestamps,
+		AutoReconnect:      defaultAutoReconnect,
 		HighlightColor:     defaultHighlightColor,
 		NameSat:            defaultNameColorSat,
 		NameVal:            defaultNameColorVal,
@@ -915,6 +924,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.ICTimestamps != nil {
 		p.ICTimestamps = *onDisk.ICTimestamps
+	}
+	if onDisk.AutoReconnect != nil {
+		p.AutoReconnect = *onDisk.AutoReconnect
 	}
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
@@ -1663,6 +1675,26 @@ func (p *AssetPreferences) SetICTimestamps(on bool) {
 		return
 	}
 	p.ICTimestamps = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AutoReconnectOn reports the auto-reconnect toggle (ON by default): retry the
+// last server with backoff after an unexpected drop.
+func (p *AssetPreferences) AutoReconnectOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AutoReconnect
+}
+
+// SetAutoReconnect toggles auto-reconnect on a dropped connection.
+func (p *AssetPreferences) SetAutoReconnect(on bool) {
+	p.mu.Lock()
+	if p.AutoReconnect == on {
+		p.mu.Unlock()
+		return
+	}
+	p.AutoReconnect = on
 	p.mu.Unlock()
 	p.markDirty()
 }

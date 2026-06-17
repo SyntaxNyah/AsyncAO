@@ -1235,6 +1235,12 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	if next := c.Checkbox(pad, y, "Show local timestamps in the IC log (ON by default): each line is prefixed with the time it arrived, so you can see when people spoke.", ts); next != ts {
 		a.d.Prefs.SetICTimestamps(next)
 	}
+	y += 26
+
+	ar := a.d.Prefs.AutoReconnectOn()
+	if next := c.Checkbox(pad, y, "Auto-reconnect after a dropped connection (ON by default): retries the last server with backoff. A deliberate Disconnect never reconnects; the manual Reconnect button always works.", ar); next != ar {
+		a.d.Prefs.SetAutoReconnect(next)
+	}
 	y += 30
 
 	// Highlighted friends (per server): shownames whose IC messages glow.

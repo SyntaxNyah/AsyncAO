@@ -519,10 +519,17 @@ type sessionState struct {
 	serverName   string
 	serverKey    string // ws URL: keys the per-server warm state in prefs
 	connErr      string
-	lastConnName string    // M2: the server we were dropped from, for one-click Reconnect
-	lastConnURL  string    // its ws URL (serverKey), captured before Disconnect clears it
-	connAt       time.Time // session start (Rich Presence elapsed timer)
-	curArea      string    // last area WE clicked (Rich Presence, best-effort)
+	lastConnName string // M2: the server we were dropped from, for one-click Reconnect
+	lastConnURL  string // its ws URL (serverKey), captured before Disconnect clears it
+	// M2 auto-reconnect: after an unexpected drop, retry lastConnURL with backoff.
+	// autoReconnectAt is the next attempt (zero = not retrying); pollAutoReconnect
+	// fires it from the frame loop (a single time compare when idle — 0 per-frame
+	// cost). autoReconnectMsg is the cached lobby status (rebuilt per attempt only).
+	autoReconnectAt    time.Time
+	autoReconnectTries int
+	autoReconnectMsg   string
+	connAt             time.Time // session start (Rich Presence elapsed timer)
+	curArea            string    // last area WE clicked (Rich Presence, best-effort)
 	// Per-area IC scrollback (opt-in): areaLogs holds each visited area's saved
 	// icLog, areaLogOrder is the visit order for bounded FIFO eviction
 	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
@@ -1346,6 +1353,7 @@ func (a *App) IsLiveBase(base string) bool {
 // can't background). At the tab cap the connect refuses with a visible
 // reason and the current session stays untouched.
 func (a *App) Connect(name, wsURL string) {
+	a.cancelAutoReconnect() // a deliberate Join/Reconnect takes over from any pending auto-retry
 	a.connectWith(name, wsURL, context.Background())
 }
 
@@ -1453,6 +1461,7 @@ func (a *App) RememberOpenTabs() {
 // Disconnect tears the ACTIVE session down (its tab closes; other tabs
 // keep running) and returns to the lobby.
 func (a *App) Disconnect() {
+	a.cancelAutoReconnect() // teardown cancels any pending retry; the EventDisconnect path re-arms after
 	if a.conn != nil {
 		a.conn.Close()
 	}
@@ -1745,6 +1754,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.connErr = ev.Text
 			a.pushDebug("disconnected: " + ev.Text)
 			a.Disconnect()
+			a.scheduleAutoReconnect() // M2: unexpected drop → auto-retry this server (Disconnect just cancelled it)
 			continue
 		case courtroom.EventDebug:
 			// Protocol-level diagnostics (unhandled headers, dropped MS):
@@ -2685,6 +2695,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollJukeBind()
 	a.pollMacroBind()
 	a.pollShownameBind()
+	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollDownload()
 	a.pollBgList() // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
