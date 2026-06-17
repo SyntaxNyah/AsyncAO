@@ -164,10 +164,10 @@ var aboutServers = []aboutServer{
 		name: "Whisker", lang: "C3 · base", ws: true, wss: true, plist: false,
 		url: "https://github.com/SyntaxNyah/Whisker",
 		desc: []string{
-			"A clean, minimal Attorney Online 2 server written in C3, built for speed with configurable",
-			"rate limits and DDoS resilience. Its philosophy is readability — no magic numbers, no",
-			"unnecessary abstractions — with an optional plugin system for extensions. It serves",
-			"WebSocket clients with native WSS; a lean, modern, no-frills option for hosting.",
+			"A super-lightweight Attorney Online 2 server written in C3 — a leaner alternative to Akashi",
+			"with far less bloat, benchmarked using even less memory than it. Its headline feature is a",
+			"plugin system: the base itself stays tiny and you bolt features on as plugins rather than",
+			"carrying them all by default. It serves WebSocket clients with native WSS.",
 		},
 	},
 }
