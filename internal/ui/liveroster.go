@@ -195,16 +195,18 @@ func (a *App) rebuildLiveRoster() {
 // snapshot in live mode — fresh enough, but never a command per packet.
 const rosterRefetchDebounce = 3 * time.Second
 
-// fetchRoster pulls /getareas (the all-areas UID/showname/IPID detail the live
-// list merges over the PR/PU rows) and stamps the debounce. /getareas, NOT
-// /getarea: the live list spans every area, so the IPID source must too — and on
-// Nyathena only /getareas carries the per-player IPID lines. Shared by the
-// on-open fetch, the mod IPID refresh, and the on-auth pull.
+// fetchRoster pulls /gas (the all-areas UID/showname/IPID detail the live list
+// merges over the PR/PU rows) and stamps the debounce. /gas, NOT /getareas: the
+// live list spans every area (so the IPID source must too), and /gas is the alias
+// EVERY server family registers — Athena/Nyathena only have the short ga/gas
+// form, while Akashi/tsuserver/KFO accept it too (the long /getareas isn't on
+// Athena/Nyathena). Shared by the on-open fetch, the mod IPID refresh, and the
+// on-auth pull.
 func (a *App) fetchRoster() {
 	a.lastRosterFetch = a.now()
 	a.suppressAreaEcho = true // its reply is parsed but kept out of the OOC log
 	a.pairAreaReset = true
-	a.queueOOCLines([]string{"/getareas"})
+	a.queueOOCLines([]string{"/gas"})
 }
 
 // maybeRefetchRoster re-pulls /getareas, debounced. On the PR/PU path the ONLY
