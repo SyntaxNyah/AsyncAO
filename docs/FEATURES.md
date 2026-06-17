@@ -199,8 +199,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   vanish live. Rows **group by area** (a header you **click to jump there**). Each
   row has a char icon, role highlights (you · the current speaker · friends),
   Spectator/CM chips, a sort toggle (UID · name · speakers-first), a **`/pair
-  <uid>` button** and **Copy-UID** — straight from the live UID, no `/getarea`
-  needed. **IPID** is the only field the stream omits: a mod's **"Refresh
+  <uid>` button**, **Copy-UID**, and a **Follow** button (M3) — straight from the
+  live UID, no `/getarea` needed. **Follow** trails a player across areas: while
+  you're following, AsyncAO **auto-jumps you to their area whenever they move**
+  (debounced; the row reads *Following*, click again to stop) — a mod tailing a
+  suspect or catching up to a friend, riding the same live PR/PU area data.
+  **IPID** is the only field the stream omits: a mod's **"Refresh
   details"** (and an auto-pull on mod-login + as joiners arrive) runs **`/gas`** —
   the all-areas roster, since the live list spans every area — and merges the IPID
   back **by UID** (exact, not name-matched), shown whenever present (in-session,
