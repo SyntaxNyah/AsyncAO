@@ -3368,10 +3368,18 @@ func (a *App) pushOOC(line, speaker string) {
 		text = line[len(speaker)+2:]
 	}
 	a.parseAreaBlock(text)
+	isAreaList := looksLikeAreaList(text)
+	if isAreaList {
+		// A /getarea snapshot just landed: re-merge its IPIDs (the one field PR/PU
+		// lacks) into the live roster NOW, so a mod's Refresh shows them at once
+		// instead of lagging until the next PR/PU packet. No-op off the PR/PU path
+		// (rosterEqual gates it), so an ordinary chat line never pays for this.
+		a.rebuildLiveRoster()
+	}
 	// An AUTO /getarea (the live list's silent fetch) is parsed for its data but
 	// kept OUT of the OOC log so the refresh never spams the channel; a MANUAL
 	// /getarea (the fetch buttons) doesn't set the flag, so it still shows.
-	if a.suppressAreaEcho && looksLikeAreaList(text) {
+	if a.suppressAreaEcho && isAreaList {
 		a.suppressAreaEcho = false
 		return
 	}
