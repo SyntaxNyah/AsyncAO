@@ -1186,7 +1186,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	tabBtn(0, logTabLog, "Log")
 	tabBtn(1, logTabMusic, "Music")
 	tabBtn(2, logTabAreas, "Areas")
-	tabBtn(3, logTabPlayers, "Players")
+	tabBtn(3, logTabPlayers, "Player List")
 	tabBtn(4, logTabOOC, "OOC")
 	tabBtn(5, logTabNotes, "Notes")
 	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}

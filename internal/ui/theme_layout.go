@@ -339,7 +339,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			a.logTab = logTabAreas
 		}
 		toggle.X += 64
-		if c.Button(toggle, "Players") {
+		if c.Button(sdl.Rect{X: toggle.X, Y: toggle.Y, W: 96, H: toggle.H}, "Player List") {
 			a.logTab = logTabPlayers
 		}
 		inner := sdl.Rect{X: r.X, Y: r.Y + 26, W: r.W, H: r.H - 26}
