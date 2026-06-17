@@ -64,15 +64,16 @@ var aboutOutroLines = []string{
 // desc is pre-wrapped (no per-frame word-wrap on the scroll path). url=="" draws
 // no link button.
 type aboutServer struct {
-	name  string
-	lang  string
-	ws    bool // WebSocket (every server here has it — AsyncAO is WS-only)
-	wss   bool // NATIVE secure WebSocket (server terminates TLS itself)
-	plist bool // live player list (PR/PU player-state packets)
-	fork  bool
-	warn  bool
-	url   string
-	desc  []string
+	name        string
+	lang        string
+	ws          bool // WebSocket (every server here has it — AsyncAO is WS-only)
+	wss         bool // NATIVE secure WebSocket (server terminates TLS itself)
+	plist       bool // live player list (PR/PU) in the BASE server
+	plistPlugin bool // live player list available only via a plugin (not in base)
+	fork        bool
+	warn        bool
+	url         string
+	desc        []string
 }
 
 // aboutServers is grouped base → forks. Capabilities are verified from the
@@ -161,13 +162,13 @@ var aboutServers = []aboutServer{
 		},
 	},
 	{
-		name: "Whisker", lang: "C3 · base", ws: true, wss: true, plist: false,
+		name: "Whisker", lang: "C3 · base", ws: true, wss: true, plist: false, plistPlugin: true,
 		url: "https://github.com/SyntaxNyah/Whisker",
 		desc: []string{
 			"A super-lightweight Attorney Online 2 server written in C3 — a leaner alternative to Akashi",
 			"with far less bloat, benchmarked using even less memory than it. Its headline feature is a",
-			"plugin system: the base stays tiny and you bolt features on as plugins (over 4 ready to use)",
-			"rather than carrying them all by default. It serves WebSocket clients with native WSS.",
+			"plugin system: the base stays tiny and you bolt features on as plugins (over 4 ready to use).",
+			"The base has no live player list, but a player-list plugin on the repo adds it; WS + native WSS.",
 		},
 	},
 	{
@@ -231,7 +232,7 @@ func (a *App) drawAbout(w, h int32) {
 
 	c.Label(pad, y, "Server software AsyncAO speaks to (WS-only — legacy TCP servers aren't supported):", ColAccent)
 	y += lineH
-	c.Label(pad, y, "WS = WebSocket · WSS = native secure WebSocket (✕ = via a reverse proxy) · Players = live player list", ColTextDim)
+	c.Label(pad, y, "WS = WebSocket · WSS = native secure WebSocket (✕ = via a reverse proxy) · Players = live player list (yellow ✓ = via a plugin)", ColTextDim)
 	y += lineH + 4
 	for i := range aboutServers {
 		y = a.drawAboutServer(&aboutServers[i], pad, y, lineH)
@@ -299,7 +300,18 @@ func (a *App) drawAboutServer(sv *aboutServer, x, y, lineH int32) int32 {
 	cx := capX
 	cx = drawTick(cx, "WS", sv.ws, ColTierYellow)
 	cx = drawTick(cx, "WSS", sv.wss, ColTierGreen)
-	drawTick(cx, "Players", sv.plist, ColTierGreen)
+	// Players: green ✓ native, yellow ✓ via a plugin (not in the base), red ✕ none.
+	c.Label(cx, y, "Players", ColTextDim)
+	pgx := cx + c.TextWidth("Players") + 4
+	switch {
+	case sv.plist:
+		c.Label(pgx, y, "✓", ColTierGreen)
+	case sv.plistPlugin:
+		c.Label(pgx, y, "✓", ColTierYellow)
+		c.Label(pgx+c.TextWidth("✓")+4, y, "(plugin)", ColTierYellow)
+	default:
+		c.Label(pgx, y, "✕", ColDanger)
+	}
 	y += lineH
 
 	for _, line := range sv.desc {
