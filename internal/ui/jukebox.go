@@ -201,15 +201,36 @@ func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
 	left := panel.X + pad
 	top := panel.Y + 44
 	bottom := panel.Y + panel.H - pad
+	wide := panel.W - pad*2
 	c.Label(left, top, "Your music library — shared across every server. Play sends /play in OOC (DJ/CM only).", ColTextDim)
+
+	atTop := a.jukeOpen < 0 || a.jukeOpen >= len(a.jukeCache)
+	if atTop && !a.jukeShowRecent {
+		// Toggle into the session "recently played" view (hidden inside a playlist
+		// and inside the recent view itself, which has its own back button). The
+		// label is cached (rebuilt only when the ring changes) so this draws 0-alloc.
+		togLbl := a.jukeRecentLbl
+		if togLbl == "" {
+			togLbl = "Recently played (0)" // before the first song
+		}
+		tw := c.TextWidth(togLbl) + 24
+		if c.Button(sdl.Rect{X: left + wide - tw, Y: top - 4, W: tw, H: btnH}, togLbl) {
+			a.jukeShowRecent = true
+			a.jukeHistScroll = 0
+		}
+	}
 	top += 22
 
-	if a.jukeOpen < 0 || a.jukeOpen >= len(a.jukeCache) {
+	if atTop {
 		a.jukeOpen = -1
-		a.drawJukeboxPlaylists(left, top, panel.W-pad*2, bottom)
+		if a.jukeShowRecent {
+			a.drawJukeHistory(left, top, wide, bottom)
+		} else {
+			a.drawJukeboxPlaylists(left, top, wide, bottom)
+		}
 		return
 	}
-	a.drawJukeboxEntries(left, top, panel.W-pad*2, bottom)
+	a.drawJukeboxEntries(left, top, wide, bottom)
 }
 
 // drawJukeboxPlaylists is the top level: create playlists, shuffle all, and a

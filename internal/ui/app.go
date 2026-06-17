@@ -494,6 +494,10 @@ type App struct {
 	jukeBindFor     string // key-capture target: "" / "p:<i>" / "e:<pl>:<i>"
 	jukeFiltered    []int  // memoized matching entry indices in the open playlist
 	jukeFilteredKey jukeFilterKey
+	musicHist       []musicHistEntry // session-only "recently played" ring (MRU, capped)
+	jukeShowRecent  bool             // top-level jukebox view: recently-played vs playlists
+	jukeHistScroll  int32
+	jukeRecentLbl   string // cached "Recently played (N)" toggle label (rebuilt only on change, so the per-frame draw never Sprintfs)
 
 	// dlPaused is the download worker's pause flag — App-global (one worker at
 	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic
@@ -1669,6 +1673,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// Log "<name> has played a song: <song>" in the IC log like webAO and
 			// AO2-Client (handle_song). The room still plays the track below.
 			a.logMusicChange(ev)
+			a.noteMusicHistory(ev) // M12 slice: session "recently played" history
 		case courtroom.EventCharsUpdated:
 			a.charLower = nil      // names may have changed; rebuild lazily
 			a.rebuildLiveRoster()  // pre-snapshot fallback only
