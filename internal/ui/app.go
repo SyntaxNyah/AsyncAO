@@ -846,6 +846,7 @@ type sessionState struct {
 	icCountStr     string // only when the length changes so the frame stays 0-alloc
 	pairListScroll int32
 	playerScroll   int32  // Players-tab roster scroll
+	aboutScroll    int32  // About screen scroll offset
 	playerSort     int    // roster sort: 0=UID, 1=name, 2=speakers-first
 	playerPct      int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
 	shownameAdd    string // M6: Settings "save a showname preset" input
