@@ -139,6 +139,7 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 				a.logSelActive = false // a plain click clears the selection
 			} else {
 				c.clicked = false // a real drag must not also open a link / pin
+				c.focusID = ""    // ...and it unfocuses the IC/OOC input, so Ctrl+C copies the SELECTION, not the (still-focused) field
 			}
 		}
 	}
