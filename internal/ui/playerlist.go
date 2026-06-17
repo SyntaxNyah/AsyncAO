@@ -123,6 +123,24 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	r.Y += 28
 	r.H -= 28
 
+	if !a.rosterLegacy { // TEMP diagnostic for the IPID merge pipeline — remove once confirmed
+		snapIPID := 0
+		for i := range a.areaPlayers {
+			if a.areaPlayers[i].ipid != "" {
+				snapIPID++
+			}
+		}
+		mod := "N"
+		if a.sess != nil && a.sess.ModGranted {
+			mod = "Y"
+		}
+		c.LabelClipped(r.X, r.Y+2, r.W-4, "dbg· snap="+strconv.Itoa(len(a.areaPlayers))+
+			" snapIPID="+strconv.Itoa(snapIPID)+" mergeMap="+strconv.Itoa(len(a.ipidByUID()))+
+			" live="+strconv.Itoa(len(a.liveRoster))+" mod="+mod, ColDanger)
+		r.Y += 20
+		r.H -= 20
+	}
+
 	if len(a.rosterView()) == 0 {
 		hint := "Run /ga (or /gas, /getarea) to list who's in this area."
 		if !a.rosterLegacy {
@@ -192,7 +210,6 @@ func (a *App) rowHeight(row rosterRow) int32 {
 func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet map[string]bool) {
 	c := a.ctx
 	p := &a.rosterView()[idx]
-	isMod := a.sess != nil && a.sess.ModGranted
 	isSpec := strings.EqualFold(p.name, "Spectator")
 	isMe := myUID != "" && p.uid == myUID
 	isSpeaker := speaker != "" && (strings.EqualFold(p.showname, speaker) || strings.EqualFold(p.name, speaker))
@@ -251,7 +268,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 			a.warnAt = a.now()
 		}
 	}
-	if p.ipid != "" && isMod {
+	if p.ipid != "" { // IPID is mod-only server data — its presence IS the authorization (don't gate on local mod-detection)
 		iw := c.TextWidth("IPID") + 12
 		bx -= iw + 4
 		if c.Button(sdl.Rect{X: bx, Y: btnY, W: iw, H: 22}, "IPID") {
@@ -286,7 +303,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if p.ooc != "" && p.showname != "" {
 		sub = "OOC: " + p.ooc
 	}
-	if p.ipid != "" && isMod {
+	if p.ipid != "" { // mod-only server data; show it whenever we actually have it
 		if sub != "" {
 			sub += "   ·   "
 		}
