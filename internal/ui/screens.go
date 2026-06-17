@@ -1657,6 +1657,24 @@ func (a *App) drawAreaList(r sdl.Rect) {
 		c.Label(r.X+4, r.Y+4, "Server reported no areas.", ColTextDim)
 		return
 	}
+	// Recent areas (M3): one-click jump-back chips for the areas you've passed
+	// through (newest first; index 0 is the current area, so skip it). One row.
+	if len(a.areaHistory) > 1 {
+		c.Label(r.X+2, r.Y+5, "Recent:", ColTextDim)
+		cx := r.X + 2 + c.TextWidth("Recent:") + 8
+		for _, name := range a.areaHistory[1:] {
+			w := c.TextWidth(name) + 16
+			if cx+w > r.X+r.W-scrollBarW {
+				break // keep it to a single row inside the panel
+			}
+			if c.Button(sdl.Rect{X: cx, Y: r.Y, W: w, H: 22}, name) {
+				a.jumpToArea(name)
+			}
+			cx += w + 4
+		}
+		r.Y += 28
+		r.H -= 28
+	}
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}

@@ -815,6 +815,10 @@ type sessionState struct {
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
 	lastFollowJump time.Time
+	// areaHistory is the most-recently-visited areas (MRU, index 0 = current),
+	// driven by our own PR/PU area; the Areas tab shows the rest as jump-back
+	// chips (M3). Bounded by areaHistoryCap.
+	areaHistory    []string
 	shownameFor    map[string]string
 	icCountN       int    // M5 IC char counter: cached count + its string, reformatted
 	icCountStr     string // only when the length changes so the frame stays 0-alloc
@@ -1665,6 +1669,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.rebuildLiveRoster()  // server-pushed PR/PU: the live roster's primary source
 			a.maybeRefetchRoster() // a mod still missing IPIDs re-pulls /getareas (self-gated, debounced)
 			a.maybeFollowJump()    // follow-a-player (M3): trail the followed UID across areas
+			a.recordAreaHistory()  // area history (M3): note our own area into the MRU list
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()
 		case courtroom.EventOOC:
