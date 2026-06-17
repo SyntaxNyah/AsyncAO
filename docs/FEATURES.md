@@ -224,7 +224,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Settings → General** (add, *Save current*, **Use** to apply one — the active
   preset is marked — remove with ×; cleared only by a factory reset). **Ctrl+H**
   swaps to a random saved preset and **Ctrl+B** cycles to the next (both
-  rebindable).
+  rebindable). Each preset also takes a **per-preset keybind** — click *Bind key*,
+  press a key, and that key swaps your showname to that preset in the courtroom
+  (right-click the button to clear). The bind survives all but a factory wipe and
+  drops automatically if you remove its preset.
 - **Music changes in the IC log** (webAO/AO2 parity): when someone plays a song
   the log shows "*&lt;name&gt; has played a song: &lt;song&gt;*" (and "*has
   stopped the music*" on stop), named by the MC showname or the character. The
