@@ -796,7 +796,8 @@ type sessionState struct {
 	// rich /getarea snapshot. shownameFor caches char→showname from incoming IC
 	// so a live row shows the showname, not the bare character folder.
 	rosterLegacy     bool
-	liveRoster       []areaPlayer // M1 live roster (CharsCheck taken chars + ARUP spectators)
+	livePlayersOn    bool         // PR/PU server roster is the live source (else the CharsCheck fallback)
+	liveRoster       []areaPlayer // M1 live roster (PR/PU players, or CharsCheck taken chars + ARUP spectators)
 	liveRosterAt     time.Time    // live roster's last change — the rows/order memo key
 	liveDetailsArea  string       // area of the last auto /getarea pull; re-pull on area change
 	lastRosterFetch  time.Time    // debounce for the join/leave re-pull (rosterRefetchDebounce)
@@ -1646,6 +1647,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventAreasUpdated:
 			a.rebuildLiveRoster()
 			a.maybeRefetchRoster() // ARUP head-count moved (covers spectator join/leave)
+		case courtroom.EventPlayersUpdated:
+			a.rebuildLiveRoster() // server-pushed PR/PU: the live roster's primary source
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()
 		case courtroom.EventOOC:

@@ -110,8 +110,8 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		a.playerSort = (a.playerSort + 1) % playerSortModes
 	}
 	status := strconv.Itoa(len(a.rosterView())) + " here · live"
-	if !a.rosterLegacy && len(a.areaPlayers) == 0 {
-		status += " · fetching details…" // the rich /getarea snapshot hasn't landed yet
+	if !a.rosterLegacy && !a.livePlayersOn && len(a.areaPlayers) == 0 {
+		status += " · fetching details…" // CharsCheck fallback; the rich /getarea snapshot hasn't landed
 	}
 	if a.rosterLegacy {
 		status = strconv.Itoa(len(a.rosterView())) + " players"

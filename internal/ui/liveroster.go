@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,6 +91,55 @@ func buildLiveRoster(chars []courtroom.CharacterSlot, headCount int, haveCount b
 	return out
 }
 
+// buildLivePlayers converts the server-pushed live roster (PR/PU, the Akashi/
+// Nyathena PlayerStateObserver) into display rows. Every player is a row keyed by
+// its server UID — the live source of UID/showname/OOC/area the /getarea snapshot
+// used to stand in for — tagged with its area name (areas[AreaID]) so the
+// existing per-area grouping works across the whole server. A player with no
+// character is a Spectator, so spectators appear and vanish live. IPID is the one
+// field PU never carries; ipidByUID merges it from a /getarea snapshot (when a mod
+// pulled one) on an exact UID key. Pure + table-tested.
+func buildLivePlayers(players []courtroom.LivePlayer, areas []string, ipidByUID map[string]string) []areaPlayer {
+	out := make([]areaPlayer, 0, len(players))
+	for i := range players {
+		p := players[i]
+		name := p.Char
+		if name == "" {
+			name = specName // no character = spectator / still at char select
+		}
+		area := ""
+		if p.AreaID >= 0 && p.AreaID < len(areas) {
+			area = areas[p.AreaID]
+		}
+		uid := strconv.Itoa(p.ID)
+		out = append(out, areaPlayer{
+			uid:      uid,
+			name:     name,
+			showname: p.Showname,
+			ooc:      p.OOCName,
+			ipid:     ipidByUID[uid], // "" when no snapshot (nil map read is safe)
+			area:     area,
+		})
+	}
+	return out
+}
+
+// ipidByUID maps UID→IPID from the last /getarea snapshot (areaPlayers) so the
+// PR/PU live roster can show IPIDs, which PU never carries. Keyed by UID, so the
+// merge is exact (unlike the old by-name match). Nil when no snapshot has IPIDs.
+func (a *App) ipidByUID() map[string]string {
+	var m map[string]string
+	for i := range a.areaPlayers {
+		if p := &a.areaPlayers[i]; p.uid != "" && p.ipid != "" {
+			if m == nil {
+				m = make(map[string]string, len(a.areaPlayers))
+			}
+			m[p.uid] = p.ipid
+		}
+	}
+	return m
+}
+
 // rosterEqual reports whether two rosters are identical for display purposes —
 // same length, same per-row identity (name + showname). Used to skip a rebuild
 // (and the icon-cache invalidation it forces) when a CharsCheck/ARUP packet
@@ -114,11 +164,25 @@ func rosterEqual(a, b []areaPlayer) bool {
 // reorder invariant — a same-length new roster reuses indices) and restamps the
 // memo time so the grouped-rows cache rebuilds once.
 func (a *App) rebuildLiveRoster() {
-	if a.rosterLegacy || a.sess == nil || len(a.areaPlayers) > 0 {
-		return // snapshot is showing; the CharsCheck-names fallback isn't displayed
+	if a.rosterLegacy || a.sess == nil {
+		return
 	}
-	n, ok := a.curAreaPlayers()
-	next := buildLiveRoster(a.sess.Chars, n, ok, a.curArea, a.shownameFor, a.areaPlayers)
+	var next []areaPlayer
+	if live := a.sess.Players(); len(live) > 0 {
+		// Primary: the server-pushed PR/PU roster — live UIDs, shownames, OOC
+		// names and areas, plus spectators, with no /getarea polling. IPID is
+		// enriched by UID from the last snapshot (mod-only) when present.
+		a.livePlayersOn = true
+		next = buildLivePlayers(live, a.sess.Areas, a.ipidByUID())
+	} else {
+		a.livePlayersOn = false
+		if len(a.areaPlayers) > 0 {
+			return // no PR/PU on this server; the /getarea snapshot is the roster
+		}
+		// Pre-PR/PU fallback: name-only rows from CharsCheck so the list isn't blank.
+		n, ok := a.curAreaPlayers()
+		next = buildLiveRoster(a.sess.Chars, n, ok, a.curArea, a.shownameFor, a.areaPlayers)
+	}
 	if rosterEqual(a.liveRoster, next) {
 		return
 	}
@@ -159,12 +223,16 @@ func (a *App) maybeRefetchRoster() {
 // the snapshot (areaPlayers) directly — it needs the UIDs only /getarea carries,
 // so the live roster lives in its own slice rather than swapping areaPlayers out.
 func (a *App) rosterView() []areaPlayer {
-	// Both modes show the /getarea snapshot once it has landed — it is the only
-	// source of UIDs/IPIDs/OOC and the Pair/Copy buttons, and matching it back onto
-	// CharsCheck rows by name was too fragile. Live mode auto-fetches and refreshes
-	// it; before the first reply we fall back to the CharsCheck names so the list
-	// isn't blank. (The pair popup uses areaPlayers directly too.)
-	if a.rosterLegacy || len(a.areaPlayers) > 0 {
+	if a.rosterLegacy {
+		return a.areaPlayers // explicit legacy /getarea snapshot
+	}
+	if a.livePlayersOn {
+		return a.liveRoster // server-pushed PR/PU roster (UIDs/shownames live)
+	}
+	// No PR/PU on this server: show the /getarea snapshot once it has landed,
+	// else the CharsCheck name-only roster so the list isn't blank. (The pair
+	// popup uses areaPlayers directly too.)
+	if len(a.areaPlayers) > 0 {
 		return a.areaPlayers
 	}
 	return a.liveRoster
@@ -173,6 +241,9 @@ func (a *App) rosterView() []areaPlayer {
 // rosterStamp is the active roster's last-change time — the memo-invalidation
 // key for the grouped rows and sort order.
 func (a *App) rosterStamp() time.Time {
+	if !a.rosterLegacy && a.livePlayersOn {
+		return a.liveRosterAt
+	}
 	if a.rosterLegacy || len(a.areaPlayers) > 0 {
 		return a.areaListAt
 	}
