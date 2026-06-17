@@ -166,8 +166,18 @@ var aboutServers = []aboutServer{
 		desc: []string{
 			"A super-lightweight Attorney Online 2 server written in C3 — a leaner alternative to Akashi",
 			"with far less bloat, benchmarked using even less memory than it. Its headline feature is a",
-			"plugin system: the base itself stays tiny and you bolt features on as plugins rather than",
-			"carrying them all by default. It serves WebSocket clients with native WSS.",
+			"plugin system: the base stays tiny and you bolt features on as plugins (over 4 ready to use)",
+			"rather than carrying them all by default. It serves WebSocket clients with native WSS.",
+		},
+	},
+	{
+		name: "Alibi", lang: "C# .NET · base", ws: true, wss: true, plist: false,
+		url: "https://github.com/Enovale/Alibi",
+		desc: []string{
+			"A from-scratch Attorney Online 2 server written in C# on .NET Core, born out of frustration",
+			"with maintaining existing servers. It's cross-platform, supports plugin development alongside",
+			"case alerts, commands and logging, and serves WebSocket clients including native WSS. Live",
+			"PR/PU player-state packets are still on its to-do list, so a roster there is /getarea-driven.",
 		},
 	},
 }
