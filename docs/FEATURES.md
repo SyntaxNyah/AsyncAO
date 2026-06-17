@@ -378,17 +378,23 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   rights, which the server enforces). Kept by **Reset settings**, erased by
   **Wipe everything**.
 - **Recently played** (M12; Jukebox tab → **Recently played** toggle, **ON by
-  default**): a session list of the songs that played **in the room** — captured
-  from the same music-change event the IC "*has played a song*" line uses, so it
-  catches what **everyone** (DJs/CMs) plays, not just you. Each row shows the
-  cleaned song name + who played it; a real `/play` **link** gets **Save** (files
-  it into its own dedicated **"Music history"** playlist, dedup by URL), **Play**,
-  and **Share**, while a bare server-music-list name can only be re-**Play**ed.
-  It's the "*what was that song?*" grab-it scratchpad — **in-memory for the
-  session** (the persisted half is the playlists), newest-first, deduped (a replay
-  moves to the top), and **bounded** (30). A **Settings → Audio & Chat** tick box
-  turns the whole thing off (it then records nothing and hides the toggle). Costs
-  nothing on the hot path: the capture is event-driven (once per song, never per
+  default**): a session list of the songs that played **in the room**, captured
+  from the same music-change event the IC "*has played a song*" line uses — but
+  **only for an allowlisted set of "unique" host domains** (the kind people host
+  their own songs on). The default allowlist is **catbox.moe, file.garden,
+  youtube.com, youtu.be, discordapp.com, cdn.discordapp.com**, editable in
+  **Settings → Audio & Chat** (add/remove domains; paste a full URL and it's
+  normalized to the bare host). The server's own music (bare names, the server
+  host) **still plays — it just isn't recorded** (you already have it on the
+  server; this feature is for grabbing songs from elsewhere). **Discord records
+  audio files only** (`.mp3`/`.opus`/…), since most Discord CDN links are images.
+  Each row shows the cleaned song name + who played it, with **Save** (files it
+  into its own dedicated **"Music history"** playlist, dedup by URL), **Play**,
+  and **Share**. It's the "*what was that song?*" grab-it scratchpad — **in-memory
+  for the session** (the persisted half is the playlists), newest-first, deduped
+  (a replay moves to the top), and **bounded** (30). A tick box turns the whole
+  thing off (records nothing, hides the toggle). Costs nothing on the hot path:
+  the allowlist check + capture are event-driven (once per song, never per
   frame), the row labels are precomputed at capture, and the toggle's count label
   is cached — the render loop stays **0 allocs/op**.
 - **Audio codecs** (the "audio note"): only WAV is built into SDL_mixer; the

@@ -1321,6 +1321,31 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 30
 
+	// Domain allowlist for the history: only songs from these "unique" user-hosted
+	// domains are recorded (the server's own music still plays, it's just not
+	// saved). Discord records audio files only. Add/remove like the muted-SFX list.
+	if mh {
+		c.Label(pad+16, y, "Only record songs from these domains — others still play, they're just not saved (Discord: audio files only):", ColTextDim)
+		y += 22
+		a.musicHostInput, _ = c.TextField("musichost", sdl.Rect{X: pad + 16, Y: y, W: 240, H: fieldH}, a.musicHostInput, "Add a domain (e.g. catbox.moe)…")
+		if c.Button(sdl.Rect{X: pad + 262, Y: y, W: 80, H: btnH}, "+ Add") {
+			if a.d.Prefs.AddMusicHost(a.musicHostInput) {
+				a.musicHostInput = ""
+			} else {
+				a.jukeWarn("Enter a domain (or it's already listed / at the cap).")
+			}
+		}
+		y += fieldH + 6
+		for _, h := range a.d.Prefs.MusicHostList() {
+			if c.Button(sdl.Rect{X: pad + 28, Y: y, W: 20, H: 18}, "×") {
+				a.d.Prefs.RemoveMusicHost(h)
+			}
+			c.LabelClipped(pad+56, y+1, 320, h, ColText)
+			y += 24
+		}
+		y += 6
+	}
+
 	// Highlighted friends (per server): shownames whose IC messages glow.
 	fh := a.d.Prefs.FriendHighlightOn()
 	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {

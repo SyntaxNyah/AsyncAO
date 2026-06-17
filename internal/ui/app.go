@@ -498,6 +498,7 @@ type App struct {
 	jukeShowRecent  bool             // top-level jukebox view: recently-played vs playlists
 	jukeHistScroll  int32
 	jukeRecentLbl   string // cached "Recently played (N)" toggle label (rebuilt only on change, so the per-frame draw never Sprintfs)
+	musicHostInput  string // Settings: "add a domain" field for the music-history allowlist
 
 	// dlPaused is the download worker's pause flag — App-global (one worker at
 	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic

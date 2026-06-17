@@ -482,6 +482,11 @@ type AssetPreferences struct {
 	AutoReconnect bool `json:"autoReconnect"`
 	// MusicHistory keeps the session "recently played" jukebox list (ON by default).
 	MusicHistory bool `json:"musicHistory"`
+	// MusicHosts allowlists the domains whose /play links the music history
+	// records — for "unique" user-hosted song domains (catbox/file.garden/etc.).
+	// Server-hosted music (bare names, the server's own host) still plays but is
+	// never recorded. Editable in Settings; seeded with a sensible default.
+	MusicHosts []string `json:"musicHosts,omitempty"`
 
 	mu        sync.RWMutex
 	path      string
@@ -611,17 +616,18 @@ type prefsJSON struct {
 	Discord            *DiscordPrefs             `json:"discord"`
 	CharDownloader     bool                      `json:"charDownloader"`
 
-	ShowAssetWarnings  bool  `json:"showAssetWarnings"`  // default OFF (zero value)
-	SpriteMove         bool  `json:"spriteMove"`         // default OFF (zero value)
-	DeskFollowManifest bool  `json:"deskFollowManifest"` // default OFF (zero value)
-	SpritePreview      *bool `json:"spritePreview"`      // absent = default ON
-	PreviewHoverMs     *int  `json:"previewHoverMs"`     // absent = default 5 s
-	AutoLoginToast     *bool `json:"autoLoginToast"`     // absent = default ON
-	CallwordToast      *bool `json:"callwordToast"`      // absent = default ON
-	MessageCounter     *bool `json:"messageCounter"`     // absent = default ON
-	ICTimestamps       *bool `json:"icTimestamps"`       // absent = default ON
-	AutoReconnect      *bool `json:"autoReconnect"`      // absent = default ON
-	MusicHistory       *bool `json:"musicHistory"`       // absent = default ON
+	ShowAssetWarnings  bool     `json:"showAssetWarnings"`    // default OFF (zero value)
+	SpriteMove         bool     `json:"spriteMove"`           // default OFF (zero value)
+	DeskFollowManifest bool     `json:"deskFollowManifest"`   // default OFF (zero value)
+	SpritePreview      *bool    `json:"spritePreview"`        // absent = default ON
+	PreviewHoverMs     *int     `json:"previewHoverMs"`       // absent = default 5 s
+	AutoLoginToast     *bool    `json:"autoLoginToast"`       // absent = default ON
+	CallwordToast      *bool    `json:"callwordToast"`        // absent = default ON
+	MessageCounter     *bool    `json:"messageCounter"`       // absent = default ON
+	ICTimestamps       *bool    `json:"icTimestamps"`         // absent = default ON
+	AutoReconnect      *bool    `json:"autoReconnect"`        // absent = default ON
+	MusicHistory       *bool    `json:"musicHistory"`         // absent = default ON
+	MusicHosts         []string `json:"musicHosts,omitempty"` // absent = default list
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -831,6 +837,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		ICTimestamps:       defaultICTimestamps,
 		AutoReconnect:      defaultAutoReconnect,
 		MusicHistory:       defaultMusicHistory,
+		MusicHosts:         defaultMusicHostList(),
 		HighlightColor:     defaultHighlightColor,
 		NameSat:            defaultNameColorSat,
 		NameVal:            defaultNameColorVal,
@@ -943,6 +950,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.MusicHistory != nil {
 		p.MusicHistory = *onDisk.MusicHistory
+	}
+	if onDisk.MusicHosts != nil {
+		p.MusicHosts = sanitizeMusicHosts(onDisk.MusicHosts)
 	}
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
