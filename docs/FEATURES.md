@@ -404,6 +404,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the allowlist check + capture are event-driven (once per song, never per
   frame), the row labels are precomputed at capture, and the toggle's count label
   is cached — the render loop stays **0 allocs/op**.
+- **Favorites ★** (M12; Jukebox): click a song's **★** to star it; a top-level
+  **"★ Favorites (N)"** toggle (beside *Recently played*) collects your starred
+  songs from **every playlist** in one place — Play / Share / Open / un-★ — with
+  each song's home playlist shown. The star persists with the library (in
+  `jukebox.json`), and the favorites list is **memoized against the library
+  revision** (rebuilt only when something changes, the same self-invalidating
+  snapshot the search and domain-grouping use), so the per-frame draw just walks a
+  cached slice — **allocation-free**. Stars survive Export/Import; a merged-in
+  shared config arrives un-starred (it can't restar your library).
 - **Audio codecs** (the "audio note"): only WAV is built into SDL_mixer; the
   **Opus / Ogg-Vorbis / MP3** decoders ship as separate DLLs and are loaded at
   startup via `Mix_Init` (best-effort — a missing codec just loses that one

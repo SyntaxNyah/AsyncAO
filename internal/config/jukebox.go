@@ -42,6 +42,7 @@ type JukeboxEntry struct {
 	Title string `json:"title,omitempty"`
 	URL   string `json:"url"`
 	Key   string `json:"key,omitempty"`
+	Fav   bool   `json:"fav,omitempty"` // starred for the Favorites view (M12)
 }
 
 // Playlist is a named folder of links. Key, when set, is a bare-key bind that
@@ -131,6 +132,7 @@ func sanitizePlaylists(in []Playlist) []Playlist {
 				Title: clampStr(strings.TrimSpace(e.Title), jukeboxMaxTitleLen),
 				URL:   url,
 				Key:   normalizeJukeKey(e.Key),
+				Fav:   e.Fav, // preserve the star across save→load
 			})
 			total++
 		}
@@ -277,6 +279,20 @@ func (j *Jukebox) SetEntryKey(pl, e int, key string) {
 		es := j.playlists[pl].Entries
 		if e >= 0 && e < len(es) {
 			es[e].Key = key
+			j.touchLocked()
+		}
+	}
+}
+
+// SetEntryFav stars (or unstars) entry e in playlist pl for the Favorites view
+// (M12). No-op out of range.
+func (j *Jukebox) SetEntryFav(pl, e int, fav bool) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if pl >= 0 && pl < len(j.playlists) {
+		es := j.playlists[pl].Entries
+		if e >= 0 && e < len(es) {
+			es[e].Fav = fav
 			j.touchLocked()
 		}
 	}

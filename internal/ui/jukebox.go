@@ -198,6 +198,7 @@ func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
 		return
 	}
 	a.refreshJukeCache()
+	a.refreshJukeFavs() // keep the ★ Favorites count label + list current (memoized, 0-alloc when unchanged)
 	left := panel.X + pad
 	top := panel.Y + 44
 	bottom := panel.Y + panel.H - pad
@@ -209,27 +210,47 @@ func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
 	if !histOn {
 		a.jukeShowRecent = false // feature disabled in Settings: never show the recent view
 	}
-	if atTop && !a.jukeShowRecent && histOn {
-		// Toggle into the session "recently played" view (hidden inside a playlist
-		// and inside the recent view itself, which has its own back button). The
-		// label is cached (rebuilt only when the ring changes) so this draws 0-alloc.
-		togLbl := a.jukeRecentLbl
-		if togLbl == "" {
-			togLbl = "Recently played (0)" // before the first song
+	// Top-level view toggles (right-aligned): ★ Favorites, and — when history is
+	// on — Recently played. Hidden inside a playlist and inside either sub-view
+	// (each has its own back button). Labels are cached so this draws 0-alloc.
+	if atTop && !a.jukeShowRecent && !a.jukeShowFav {
+		bx := left + wide
+		if histOn {
+			togLbl := a.jukeRecentLbl
+			if togLbl == "" {
+				togLbl = "Recently played (0)" // before the first song
+			}
+			tw := c.TextWidth(togLbl) + 24
+			bx -= tw
+			if c.Button(sdl.Rect{X: bx, Y: top - 4, W: tw, H: btnH}, togLbl) {
+				a.jukeShowRecent = true
+				a.jukeShowFav = false
+				a.jukeHistScroll = 0
+			}
+			bx -= 8
 		}
-		tw := c.TextWidth(togLbl) + 24
-		if c.Button(sdl.Rect{X: left + wide - tw, Y: top - 4, W: tw, H: btnH}, togLbl) {
-			a.jukeShowRecent = true
-			a.jukeHistScroll = 0
+		favLbl := a.jukeFavLbl
+		if favLbl == "" {
+			favLbl = "★ Favorites (0)"
+		}
+		fw := c.TextWidth(favLbl) + 24
+		bx -= fw
+		if c.Button(sdl.Rect{X: bx, Y: top - 4, W: fw, H: btnH}, favLbl) {
+			a.jukeShowFav = true
+			a.jukeShowRecent = false
+			a.jukeFavScroll = 0
 		}
 	}
 	top += 22
 
 	if atTop {
 		a.jukeOpen = -1
-		if a.jukeShowRecent {
+		switch {
+		case a.jukeShowRecent:
 			a.drawJukeHistory(left, top, wide, bottom)
-		} else {
+		case a.jukeShowFav:
+			a.drawJukeFavorites(left, top, wide, bottom)
+		default:
 			a.drawJukeboxPlaylists(left, top, wide, bottom)
 		}
 		return
@@ -492,6 +513,19 @@ func (a *App) drawJukeEntryRow(e config.JukeboxEntry, idx int, r sdl.Rect) {
 	bx -= 60
 	if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 56, H: r.H}, "Play") {
 		a.jukePlay(e.URL)
+	}
+	// ★ favorite toggle (M12): star a song to collect it in the Favorites view.
+	bx -= 28
+	sr := sdl.Rect{X: bx, Y: r.Y, W: 26, H: r.H}
+	starCol := ColTextDim
+	if e.Fav {
+		starCol = ColStar
+	}
+	c.Fill(sr, ColPanelHi)
+	c.Label(sr.X+5, r.Y+5, "★", starCol)
+	c.Tooltip(sr, "Favorite this song (★) — find it fast in the Favorites view")
+	if c.hovering(sr) && c.clicked {
+		a.juke.SetEntryFav(a.jukeOpen, idx, !e.Fav)
 	}
 	// Title (or URL) fills the left; clicking it also /plays the song.
 	label := e.Title

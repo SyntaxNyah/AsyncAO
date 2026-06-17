@@ -40,6 +40,38 @@ func TestJukeboxRoundTrip(t *testing.T) {
 	}
 }
 
+// TestJukeboxFavRoundTrip pins the M12 star: SetEntryFav survives save→load.
+// (sanitizePlaylists on the load path must carry Fav through, else stars vanish
+// on restart.)
+func TestJukeboxFavRoundTrip(t *testing.T) {
+	j := newTestJukebox(t)
+	j.AddPlaylist("P")
+	j.AddEntry(0, "Starred", "https://youtu.be/a")
+	j.AddEntry(0, "Plain", "https://youtu.be/b")
+	j.SetEntryFav(0, 0, true)
+	if err := j.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	got := loadJukeboxFile(j.path).Playlists()
+	if len(got) != 1 || len(got[0].Entries) != 2 {
+		t.Fatalf("reloaded = %+v", got)
+	}
+	if !got[0].Entries[0].Fav {
+		t.Error("starred entry lost its Fav across save/load")
+	}
+	if got[0].Entries[1].Fav {
+		t.Error("unstarred entry should not be Fav")
+	}
+	// Unstarring persists too.
+	j.SetEntryFav(0, 0, false)
+	if err := j.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	if loadJukeboxFile(j.path).Playlists()[0].Entries[0].Fav {
+		t.Error("unstar should persist")
+	}
+}
+
 func TestJukeboxRejectsEmptyURL(t *testing.T) {
 	j := newTestJukebox(t)
 	j.AddPlaylist("P")

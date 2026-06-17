@@ -501,6 +501,11 @@ type App struct {
 	musicHostInput  string            // Settings: "add a domain" field for the music-history allowlist
 	jukeGroupRows   []jukeGroupRow    // memoized domain-grouped row layout for the "Music history" playlist
 	jukeGroupKey    jukeGroupCacheKey // (playlist, revision) the grouped layout was built for
+	jukeShowFav     bool              // top-level jukebox view: ★ favorites vs playlists/recent
+	jukeFavScroll   int32
+	jukeFavs        []favRef // memoized list of starred songs across all playlists
+	jukeFavRev      int64    // library revision the favorites list was built for
+	jukeFavLbl      string   // cached "★ Favorites (N)" toggle label (rebuilt only on change)
 
 	// dlPaused is the download worker's pause flag — App-global (one worker at
 	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic
