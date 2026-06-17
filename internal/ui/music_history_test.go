@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
@@ -86,5 +87,45 @@ func TestNoteMusicHistoryNoSession(t *testing.T) {
 	a.noteMusicHistory(courtroom.Event{Kind: courtroom.EventMusic, Text: "https://files.catbox.moe/solo.mp3", Int: 5})
 	if len(a.musicHist) != 1 || a.musicHist[0].display != "solo" {
 		t.Fatalf("entry = %+v, want a single entry with display 'solo'", a.musicHist)
+	}
+}
+
+// TestRefreshJukeGroups pins the M12 domain grouping for the Music-history
+// playlist: a header per domain (sorted), each domain's songs under it in
+// original order, subdomains collapsed onto the listed domain.
+func TestRefreshJukeGroups(t *testing.T) {
+	a := testTabApp(t)
+	entries := []config.JukeboxEntry{
+		{Title: "a", URL: "https://files.catbox.moe/a.mp3"}, // catbox.moe (subdomain)
+		{Title: "y", URL: "https://youtu.be/y"},             // youtu.be
+		{Title: "b", URL: "https://catbox.moe/b.mp3"},       // catbox.moe
+	}
+	a.jukeCacheRev = 1
+	a.refreshJukeGroups(0, entries)
+	want := []jukeGroupRow{
+		{domain: "catbox.moe"},
+		{entry: 0},
+		{entry: 2},
+		{domain: "youtu.be"},
+		{entry: 1},
+	}
+	if len(a.jukeGroupRows) != len(want) {
+		t.Fatalf("rows = %+v, want %+v", a.jukeGroupRows, want)
+	}
+	for i, w := range want {
+		if a.jukeGroupRows[i] != w {
+			t.Errorf("row %d = %+v, want %+v", i, a.jukeGroupRows[i], w)
+		}
+	}
+
+	// Memoized: same (playlist, rev) doesn't rebuild; a rev bump does.
+	a.refreshJukeGroups(0, entries[:1])
+	if len(a.jukeGroupRows) != len(want) {
+		t.Errorf("unchanged key must not rebuild (got %d rows)", len(a.jukeGroupRows))
+	}
+	a.jukeCacheRev = 2
+	a.refreshJukeGroups(0, entries[:1])
+	if len(a.jukeGroupRows) != 2 { // header + one entry
+		t.Errorf("rev bump should rebuild, got %+v", a.jukeGroupRows)
 	}
 }

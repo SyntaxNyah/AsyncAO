@@ -410,9 +410,20 @@ func (a *App) drawJukeboxEntries(x, y, wide, bottom int32) {
 	if query != "" {
 		a.refreshJukeFilter(a.jukeOpen, pl.Entries, query)
 	}
-	rows := len(pl.Entries)
-	if query != "" {
+	// The "Music history" playlist groups its songs under domain headers when not
+	// searching (M12 option A); other playlists, or an active search, stay flat.
+	grouped := query == "" && pl.Name == jukeboxHistoryPlaylist && len(pl.Entries) > 0
+	if grouped {
+		a.refreshJukeGroups(a.jukeOpen, pl.Entries)
+	}
+	var rows int
+	switch {
+	case grouped:
+		rows = len(a.jukeGroupRows)
+	case query != "":
 		rows = len(a.jukeFiltered)
+	default:
+		rows = len(pl.Entries)
 	}
 
 	lineH := int32(28)
@@ -426,15 +437,25 @@ func (a *App) drawJukeboxEntries(x, y, wide, bottom int32) {
 	rowY := listTop - a.jukeScroll
 	rowW := wide - scrollBarW - 6
 	for i := 0; i < rows; i++ {
-		ri := i
-		if query != "" {
-			ri = a.jukeFiltered[i]
-		}
 		if rowY > listTop+listH-lineH {
 			break
 		}
-		if rowY >= listTop-lineH && ri >= 0 && ri < len(pl.Entries) {
-			a.drawJukeEntryRow(pl.Entries[ri], ri, sdl.Rect{X: x, Y: rowY, W: rowW, H: lineH - 3})
+		if rowY >= listTop-lineH {
+			r := sdl.Rect{X: x, Y: rowY, W: rowW, H: lineH - 3}
+			switch {
+			case grouped:
+				if gr := a.jukeGroupRows[i]; gr.domain != "" {
+					a.drawJukeGroupHeader(gr.domain, r)
+				} else if gr.entry >= 0 && gr.entry < len(pl.Entries) {
+					a.drawJukeEntryRow(pl.Entries[gr.entry], gr.entry, r)
+				}
+			case query != "":
+				if ri := a.jukeFiltered[i]; ri >= 0 && ri < len(pl.Entries) {
+					a.drawJukeEntryRow(pl.Entries[ri], ri, r)
+				}
+			default:
+				a.drawJukeEntryRow(pl.Entries[i], i, r)
+			}
 		}
 		rowY += lineH
 	}

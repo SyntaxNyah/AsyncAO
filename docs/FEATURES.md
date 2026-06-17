@@ -390,7 +390,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   audio files only** (`.mp3`/`.opus`/…), since most Discord CDN links are images.
   Each row shows the cleaned song name + who played it, with **Save** (files it
   into its own dedicated **"Music history"** playlist, dedup by URL), **Play**,
-  and **Share**. It's the "*what was that song?*" grab-it scratchpad — **in-memory
+  and **Share**. Open that **Music history** playlist and its songs are **grouped
+  under domain-name headers** (catbox.moe, youtube.com, …) so you can see at a
+  glance who hosts what — the grouping is memoized against the library revision,
+  so scrolling it stays allocation-free. It's the "*what was that song?*" grab-it
+  scratchpad — **in-memory
   for the session** (the persisted half is the playlists), newest-first, deduped
   (a replay moves to the top), and **bounded** (30). A tick box turns the whole
   thing off (records nothing, hides the toggle). Costs nothing on the hot path:

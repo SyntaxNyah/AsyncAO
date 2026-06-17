@@ -10,8 +10,10 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -155,4 +157,66 @@ func (a *App) drawJukeHistRow(e musicHistEntry, r sdl.Rect) {
 		}
 	}
 	c.LabelClipped(r.X+8, r.Y+5, bx-r.X-12, e.display, ColText)
+}
+
+// jukeGroupRow is one row of the domain-grouped "Music history" view: a domain
+// header (domain != "") or an entry (index into the playlist's Entries).
+type jukeGroupRow struct {
+	domain string
+	entry  int
+}
+
+// jukeGroupCacheKey memoizes the grouped layout so it's rebuilt only when the
+// open playlist or the library revision changes — never per frame.
+type jukeGroupCacheKey struct {
+	pl  int
+	rev int64
+}
+
+// jukeHistoryDomainOther labels entries with no recognizable host (e.g. a
+// manually added bare name) in the grouped view.
+const jukeHistoryDomainOther = "other"
+
+// refreshJukeGroups (re)builds the domain-grouped row layout for the "Music
+// history" playlist: entries bucketed under a header per domain, domains sorted.
+// Memoized against (playlist, revision); the per-frame draw just walks the
+// cached slice, so the grouping costs nothing on the render loop.
+func (a *App) refreshJukeGroups(pl int, entries []config.JukeboxEntry) {
+	key := jukeGroupCacheKey{pl: pl, rev: a.jukeCacheRev}
+	if key == a.jukeGroupKey && a.jukeGroupRows != nil {
+		return
+	}
+	a.jukeGroupKey = key
+	a.jukeGroupRows = a.jukeGroupRows[:0]
+
+	type de struct {
+		domain string
+		idx    int
+	}
+	pairs := make([]de, len(entries))
+	for i, e := range entries {
+		d := a.d.Prefs.MusicURLDomain(e.URL)
+		if d == "" {
+			d = jukeHistoryDomainOther
+		}
+		pairs[i] = de{domain: d, idx: i}
+	}
+	// Stable sort keeps each domain's songs in their original (recency) order.
+	sort.SliceStable(pairs, func(i, j int) bool { return pairs[i].domain < pairs[j].domain })
+
+	cur := ""
+	for i, p := range pairs {
+		if i == 0 || p.domain != cur {
+			cur = p.domain
+			a.jukeGroupRows = append(a.jukeGroupRows, jukeGroupRow{domain: cur})
+		}
+		a.jukeGroupRows = append(a.jukeGroupRows, jukeGroupRow{entry: p.idx})
+	}
+}
+
+// drawJukeGroupHeader draws a domain section header in the grouped history view.
+func (a *App) drawJukeGroupHeader(domain string, r sdl.Rect) {
+	c := a.ctx
+	c.Fill(r, ColPanelHi)
+	c.LabelClipped(r.X+6, r.Y+5, r.W-12, domain, ColAccent)
 }

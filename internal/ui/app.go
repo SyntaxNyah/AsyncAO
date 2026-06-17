@@ -497,8 +497,10 @@ type App struct {
 	musicHist       []musicHistEntry // session-only "recently played" ring (MRU, capped)
 	jukeShowRecent  bool             // top-level jukebox view: recently-played vs playlists
 	jukeHistScroll  int32
-	jukeRecentLbl   string // cached "Recently played (N)" toggle label (rebuilt only on change, so the per-frame draw never Sprintfs)
-	musicHostInput  string // Settings: "add a domain" field for the music-history allowlist
+	jukeRecentLbl   string            // cached "Recently played (N)" toggle label (rebuilt only on change, so the per-frame draw never Sprintfs)
+	musicHostInput  string            // Settings: "add a domain" field for the music-history allowlist
+	jukeGroupRows   []jukeGroupRow    // memoized domain-grouped row layout for the "Music history" playlist
+	jukeGroupKey    jukeGroupCacheKey // (playlist, revision) the grouped layout was built for
 
 	// dlPaused is the download worker's pause flag — App-global (one worker at
 	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic
