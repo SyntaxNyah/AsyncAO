@@ -1207,6 +1207,12 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	if next := c.Checkbox(pad, y, "Show a character count by the IC box (ON by default): turns red past ~256 chars, where many servers truncate.", mc); next != mc {
 		a.d.Prefs.SetMessageCounter(next)
 	}
+	y += 26
+
+	ts := a.d.Prefs.ICTimestampsOn()
+	if next := c.Checkbox(pad, y, "Show local timestamps in the IC log (ON by default): each line is prefixed with the time it arrived, so you can see when people spoke.", ts); next != ts {
+		a.d.Prefs.SetICTimestamps(next)
+	}
 	y += 30
 
 	// Highlighted friends (per server): shownames whose IC messages glow.

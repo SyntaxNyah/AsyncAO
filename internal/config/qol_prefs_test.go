@@ -34,6 +34,9 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.MessageCounterOn() {
 		t.Error("MessageCounterOn default must be true")
 	}
+	if !p.ICTimestampsOn() {
+		t.Error("ICTimestampsOn default must be true")
+	}
 }
 
 // TestPreviewHoverClamp pins the dwell bounds (the setter is authoritative).
@@ -66,6 +69,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetAutoLoginToast(false) // explicit false must survive the absent-default-ON pointer
 	p.SetCallwordToast(false)  // same absent-default-ON pointer
 	p.SetMessageCounter(false) // same absent-default-ON pointer
+	p.SetICTimestamps(false)   // same absent-default-ON pointer
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}

@@ -1290,7 +1290,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	rows := a.icWrapped(wrapW)
+	rows := a.icWrapped(wrapW, a.d.Prefs.ICTimestampsOn()) // per-frame pref read, like the IC counter
 	contentH := int32(len(rows)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the log text.

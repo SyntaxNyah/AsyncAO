@@ -657,24 +657,32 @@ const icWrapMaxLinesPerEntry = 16
 // list width (playtest: lines clipped at the right edge). Cached against
 // (log seq, query, width, font scale) — rebuilds on new messages,
 // searches, and resizes, never per frame.
-func (a *App) icWrapped(width int32) []icWrapLine {
+func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapQuery == a.logSearch &&
-		a.icWrapW == width && a.icWrapPct == a.logPct && a.icWrapGen == a.ctx.fontChainGen {
+		a.icWrapW == width && a.icWrapPct == a.logPct && a.icWrapGen == a.ctx.fontChainGen &&
+		a.icWrapStamp == showStamps {
 		return a.icWrap
 	}
 	out := a.icWrap[:0]
 	for _, i := range a.icLogFiltered() {
+		// Prefix the local arrival time when enabled. The stamp was formatted once
+		// on append; the only cost here is one concat per entry, and only on a wrap
+		// REBUILD (new message / search / resize / toggle), never per frame.
+		text := a.icLog[i].text
+		if showStamps && a.icLog[i].stamp != "" {
+			text = a.icLog[i].stamp + "  " + text
+		}
 		// Wrap with the font that will draw the entry (CJK chain rule).
-		font := a.ctx.LogFontFor(a.logPct, a.icLog[i].text)
-		for _, ln := range wrapToWidth(font, a.icLog[i].text, width, icWrapMaxLinesPerEntry) {
+		font := a.ctx.LogFontFor(a.logPct, text)
+		for _, ln := range wrapToWidth(font, text, width, icWrapMaxLinesPerEntry) {
 			out = append(out, icWrapLine{text: ln, entry: i})
 		}
 	}
 	if out == nil {
 		out = []icWrapLine{} // non-nil marks the cache as populated
 	}
-	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen =
-		out, a.icLogSeq, a.logSearch, width, a.logPct, a.ctx.fontChainGen
+	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen, a.icWrapStamp =
+		out, a.icLogSeq, a.logSearch, width, a.logPct, a.ctx.fontChainGen, showStamps
 	return out
 }
 

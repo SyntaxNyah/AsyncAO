@@ -191,6 +191,10 @@ const defaultCallwordToast = true
 // long a message is getting (servers truncate very long lines).
 const defaultMessageCounter = true
 
+// defaultICTimestamps ships ON: each IC log line is prefixed with the local time
+// it arrived, so you can see when people spoke. Toggleable off in Settings.
+const defaultICTimestamps = true
+
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
 // 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
@@ -459,6 +463,8 @@ type AssetPreferences struct {
 	CallwordToast bool `json:"callwordToast"`
 	// MessageCounter shows a live character count by the IC input (ON by default).
 	MessageCounter bool `json:"messageCounter"`
+	// ICTimestamps prefixes each IC log line with its local arrival time (ON by default).
+	ICTimestamps bool `json:"icTimestamps"`
 
 	mu        sync.RWMutex
 	path      string
@@ -593,6 +599,7 @@ type prefsJSON struct {
 	AutoLoginToast     *bool `json:"autoLoginToast"`     // absent = default ON
 	CallwordToast      *bool `json:"callwordToast"`      // absent = default ON
 	MessageCounter     *bool `json:"messageCounter"`     // absent = default ON
+	ICTimestamps       *bool `json:"icTimestamps"`       // absent = default ON
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -799,6 +806,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		AutoLoginToast:     defaultAutoLoginToast,
 		CallwordToast:      defaultCallwordToast,
 		MessageCounter:     defaultMessageCounter,
+		ICTimestamps:       defaultICTimestamps,
 		HighlightColor:     defaultHighlightColor,
 		NameSat:            defaultNameColorSat,
 		NameVal:            defaultNameColorVal,
@@ -902,6 +910,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.MessageCounter != nil {
 		p.MessageCounter = *onDisk.MessageCounter
+	}
+	if onDisk.ICTimestamps != nil {
+		p.ICTimestamps = *onDisk.ICTimestamps
 	}
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
@@ -1630,6 +1641,25 @@ func (p *AssetPreferences) SetMessageCounter(on bool) {
 		return
 	}
 	p.MessageCounter = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ICTimestampsOn reports the IC-log local-time prefix toggle (ON by default).
+func (p *AssetPreferences) ICTimestampsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ICTimestamps
+}
+
+// SetICTimestamps toggles the IC-log local-time prefix.
+func (p *AssetPreferences) SetICTimestamps(on bool) {
+	p.mu.Lock()
+	if p.ICTimestamps == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ICTimestamps = on
 	p.mu.Unlock()
 	p.markDirty()
 }

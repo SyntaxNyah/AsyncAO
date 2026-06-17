@@ -242,7 +242,8 @@ type App struct {
 	icWrapQuery string
 	icWrapW     int32
 	icWrapPct   int
-	icWrapGen   int // font chain generation baked into the wrap
+	icWrapGen   int  // font chain generation baked into the wrap
+	icWrapStamp bool // ICTimestamps state baked into the wrap (toggling rewraps)
 	// OOC wrapped-lines cache: long entries (MOTDs) wrap instead of
 	// truncating; rebuilt only when the log, width, or font scale moved.
 	// (Like the IC caches above, these stay App-global: their keys carry
@@ -3174,7 +3175,15 @@ type icEntry struct {
 	friend      bool   // sender is a highlighted friend (showname match) — glows in the log
 	friendColor int32  // per-friend glow RGB (0xRRGGBB) from a `name=hex` entry; -1 = default friend tint
 	speaker     string // displayed name prefix (for per-speaker name colours); "" = system/evidence line
+	stamp       string // local arrival time ("15:04"), formatted once on append; prefixed in the log when ICTimestamps is on
 }
+
+// icStampLayout formats the IC log's per-line local time (24-hour HH:MM).
+const icStampLayout = "15:04"
+
+// icStamp is the local arrival time for a new IC log line, formatted ONCE here on
+// append — never in the draw loop — so the timestamp prefix costs nothing per frame.
+func (a *App) icStamp() string { return a.now().Format(icStampLayout) }
 
 // friendMessage reports whether a message is from a highlighted friend on the
 // given server — its showname, falling back to CharName (the displayName rule),
@@ -3333,7 +3342,7 @@ func (a *App) pushIC(line string, color int, friend bool, friendColor int32, spe
 	if urls := extractURLs(line, 1); len(urls) > 0 {
 		url = urls[0]
 	}
-	a.icLog = append(a.icLog, icEntry{text: capLogLine(line), color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker})
+	a.icLog = append(a.icLog, icEntry{text: capLogLine(line), color: color, url: url, friend: friend, friendColor: friendColor, speaker: speaker, stamp: a.icStamp()})
 	if len(a.icLog) > icLogCap {
 		copy(a.icLog, a.icLog[len(a.icLog)-icLogCap:])
 		a.icLog = a.icLog[:icLogCap]

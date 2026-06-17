@@ -114,7 +114,7 @@ func TestICWrapped(t *testing.T) {
 	}
 	a.icLogSeq = 1
 
-	rows := a.icWrapped(160) // 20 chars per row at the 8 px fallback
+	rows := a.icWrapped(160, false) // 20 chars per row at the 8 px fallback
 	if len(rows) < 3 {
 		t.Fatalf("long entry must wrap to multiple rows, got %d", len(rows))
 	}
@@ -128,12 +128,31 @@ func TestICWrapped(t *testing.T) {
 		}
 	}
 
-	again := a.icWrapped(160)
+	again := a.icWrapped(160, false)
 	if &again[0] != &rows[0] || len(again) != len(rows) {
 		t.Error("unchanged log/width/query must hit the cache (same backing)")
 	}
-	if narrower := a.icWrapped(80); len(narrower) <= len(rows) {
+	if narrower := a.icWrapped(80, false); len(narrower) <= len(rows) {
 		t.Error("narrower width must produce more wrapped rows")
+	}
+}
+
+// TestICWrappedTimestamps pins the local-time prefix: with showStamps on, the
+// first wrapped row of an entry carries its stamp; toggling rewraps (the stamp
+// is part of the memo key). The stamp is formatted once on append, never here.
+func TestICWrappedTimestamps(t *testing.T) {
+	a := &App{ctx: &Ctx{}}
+	a.logPct = DefaultScalePct
+	a.icLog = []icEntry{{text: "Phoenix: hold it", color: 2, stamp: "14:32"}}
+	a.icLogSeq = 1
+
+	off := a.icWrapped(800, false)
+	if len(off) != 1 || off[0].text != "Phoenix: hold it" {
+		t.Fatalf("stamps off: want the bare line, got %+v", off)
+	}
+	on := a.icWrapped(800, true)
+	if len(on) != 1 || !strings.HasPrefix(on[0].text, "14:32") {
+		t.Fatalf("stamps on: first row must start with the time, got %+v", on)
 	}
 }
 
