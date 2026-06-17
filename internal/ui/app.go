@@ -1649,12 +1649,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.rebuildLiveRoster()
 			a.maybeRefetchRoster() // ARUP head-count moved (covers spectator join/leave)
 		case courtroom.EventPlayersUpdated:
-			a.rebuildLiveRoster() // server-pushed PR/PU: the live roster's primary source
-			if a.sess != nil && a.sess.ModGranted {
-				// Mods only (IPID is mod-only data): keep IPIDs current as people
-				// join/leave by re-pulling /getarea, debounced. Non-mods never poll.
-				a.maybeRefetchRoster()
-			}
+			a.rebuildLiveRoster()  // server-pushed PR/PU: the live roster's primary source
+			a.maybeRefetchRoster() // a mod still missing IPIDs re-pulls /getareas (self-gated, debounced)
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()
 		case courtroom.EventOOC:

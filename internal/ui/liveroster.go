@@ -195,27 +195,48 @@ func (a *App) rebuildLiveRoster() {
 // snapshot in live mode — fresh enough, but never a command per packet.
 const rosterRefetchDebounce = 3 * time.Second
 
-// fetchRoster pulls the /getarea snapshot (the UID/IPID/Pair data the live list
-// shows) and stamps the debounce. Shared by the on-open/area-change fetch and the
-// join/leave refresh.
+// fetchRoster pulls /getareas (the all-areas UID/showname/IPID detail the live
+// list merges over the PR/PU rows) and stamps the debounce. /getareas, NOT
+// /getarea: the live list spans every area, so the IPID source must too — and on
+// Nyathena only /getareas carries the per-player IPID lines. Shared by the
+// on-open fetch, the mod IPID refresh, and the on-auth pull.
 func (a *App) fetchRoster() {
 	a.lastRosterFetch = a.now()
 	a.suppressAreaEcho = true // its reply is parsed but kept out of the OOC log
 	a.pairAreaReset = true
-	a.queueOOCLines([]string{"/getarea"})
+	a.queueOOCLines([]string{"/getareas"})
 }
 
-// maybeRefetchRoster re-pulls the snapshot after a join/leave (CharsCheck/ARUP),
-// debounced, so the live list's rich data stays current without a command per
-// packet. Live mode only.
+// maybeRefetchRoster re-pulls /getareas, debounced. On the PR/PU path the ONLY
+// thing /getareas adds over the live roster is mod-only IPID, so it polls only
+// while a mod still has rows without one — once they land (or for a non-mod, who
+// can't see IPIDs at all) the list stays event-driven and quiet. The pre-PR/PU
+// fallback keeps the old always-refresh behaviour (it needs /getareas for UIDs).
 func (a *App) maybeRefetchRoster() {
 	if a.rosterLegacy || a.sess == nil {
+		return
+	}
+	if a.livePlayersOn && (!a.sess.ModGranted || !a.liveRosterMissingIPID()) {
 		return
 	}
 	if a.now().Sub(a.lastRosterFetch) < rosterRefetchDebounce {
 		return
 	}
 	a.fetchRoster()
+}
+
+// liveRosterMissingIPID reports whether any live row with a CHARACTER still has a
+// UID but no IPID — the signal a mod needs a /getareas pull to fill them in.
+// Spectators are excluded: a server may omit them from /getareas, and counting
+// them would poll forever.
+func (a *App) liveRosterMissingIPID() bool {
+	for i := range a.liveRoster {
+		r := &a.liveRoster[i]
+		if r.uid != "" && r.ipid == "" && r.name != specName {
+			return true
+		}
+	}
+	return false
 }
 
 // rosterView is the player list's active data: the live (CharsCheck/ARUP) roster
