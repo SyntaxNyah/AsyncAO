@@ -40,6 +40,8 @@ then percent-decoded *again* per sub-element (AO legacy double decode).
 | `SM#<areas…><music…>` | `RD` | split at the first audio-extension entry |
 | `DONE` | — | joined; char select usable |
 | `CharsCheck#…` | — | taken flags (`-1` = taken) |
+| `PR#<id>#<type>` | — | live player roster change: type `0` join, `1` leave (PlayerStateObserver; streamed from connect, no opt-in) |
+| `PU#<id>#<type>#<data>` | — | live player field: type `0` OOC name, `1` char folder, `2` showname, `3` area id; UID-keyed, carries no IPID |
 | `PV#<id>#CID#<char id>` | — | our character confirmed |
 | `BN#<background>[#pos]` | — | background change |
 | `MC#<track>#<char id>#…` | — | music / area transfer |

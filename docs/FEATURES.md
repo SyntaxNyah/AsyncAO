@@ -184,33 +184,44 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **IC log**: 1024-line color-preserving scrollback with search, Copy to
   clipboard, and TXT/HTML export (`logs/` beside the exe; HTML keeps the
   AO palette). Lines **word-wrap to the list width** (cached against
-  log/width/font-scale — never re-wrapped per frame).
-- **Live player list** (the Players tab): **updates as people join and leave** —
-  driven, like webAO, by the server-pushed CharsCheck (taken characters) + the
-  ARUP head-count, with **no `/getarea` polling** (zero extra traffic, no
-  floodguard, zero per-frame cost). Spectators have no character, but
-  `spectators = head-count − taken chars`, so anonymous **Spectator rows come and
-  go** too. Each row has a char icon, role highlights (you · the current speaker ·
-  friends), Spectator/CM chips, and a sort toggle (UID · name · speakers-first).
-  **UID / IPID / Pair:** those exist only in `/getarea`, so one fetches once when
-  the tab first opens (a **"Refresh details"** button pulls it again for new
-  joiners), and the result is **merged onto the live rows** — Copy-UID, Copy-IPID
-  (mod) and a `/pair <uid>` button appear next to every player. The merge matches
-  by name **or** showname, so it works whether the server leads its `/getarea` row
-  with the character (Akashi: `char (showname)`) or the showname (tsuserver /
-  Athena / Nyathena: `showname (char)`), including Akashi's one-line mod form
-  `char (showname) (ipid): ooc`. A **"Legacy snapshot" tick box (off by default)**
-  shows the raw `/getarea` roster instead; a **`/gas`** then groups by area with a
-  header (name + count) you **click to jump there**. **Ctrl+wheel zooms** the list
-  text (rows + icon scale with it); the click-to-pair popup zooms the same way.
-  The displayed name falls back showname → OOC name → character. IPIDs are
-  mod-only, shown in-session, never persisted.
+  log/width/font-scale — never re-wrapped per frame). **Local timestamps**
+  prefix each line (`14:32  Phoenix: …`) so you can see when people spoke —
+  **ON by default**, toggle in **Settings → Audio & Chat**. The time is stamped
+  once when the line arrives, never formatted per frame (the toggle state is part
+  of the wrap-cache key, so flipping it re-wraps exactly once).
+- **Live player list** (the Players tab): a **truly live roster** built from the
+  server's **`PR`/`PU` player-state stream** (the Akashi/Nyathena
+  `PlayerStateObserver`), pushed to every client from connect with **no `/getarea`
+  polling and no opt-in** — zero floodguard, event-driven, zero per-frame cost.
+  Every player is a row keyed by their **server UID**, carrying showname, OOC name
+  and area, updated as people **join, leave, switch character, or change area**; a
+  player with no character shows as a **Spectator**, so spectators appear and
+  vanish live. Rows **group by area** (a header you **click to jump there**). Each
+  row has a char icon, role highlights (you · the current speaker · friends),
+  Spectator/CM chips, a sort toggle (UID · name · speakers-first), a **`/pair
+  <uid>` button** and **Copy-UID** — straight from the live UID, no `/getarea`
+  needed. **IPID** is the only field the stream omits: a mod's **"Refresh
+  details"** pulls one `/getarea` and the IPID is merged back **by UID** (exact,
+  not name-matched) and shown at once — mod-only, in-session, never persisted. A
+  **"Legacy snapshot" tick box (off by default)** shows the raw `/getarea` roster
+  instead. **Ctrl+wheel zooms** the list text (rows + icon scale with it); the
+  click-to-pair popup zooms the same way. The displayed name falls back showname →
+  OOC name → character.
+  - **Fallback** (servers without a PlayerStateObserver, e.g. older tsuserver):
+    the list reverts to the webAO-style **CharsCheck + ARUP head-count** roster —
+    one row per taken character plus anonymous **Spectator rows** from
+    `head-count − taken chars`, enriched by a `/getarea` snapshot (matched by name
+    **or** showname to cover Akashi `char (showname)` vs Athena/Nyathena
+    `showname (char)`, including Akashi's one-line mod form
+    `char (showname) (ipid): ooc`).
 - **One-click reconnect**: when a connection drops or a join fails, the lobby
   shows a **"Reconnect to &lt;server&gt;"** button that re-dials the last server
   you tried (the name + ws URL are remembered on every connect attempt).
 - **Showname presets**: a global, persisted list of shownames managed in
-  **Settings → General** (add, *Save current*, remove with ×; cleared only by a
-  factory reset). **Ctrl+H** (rebindable) swaps to a random saved preset.
+  **Settings → General** (add, *Save current*, **Use** to apply one — the active
+  preset is marked — remove with ×; cleared only by a factory reset). **Ctrl+H**
+  swaps to a random saved preset and **Ctrl+B** cycles to the next (both
+  rebindable).
 - **Music changes in the IC log** (webAO/AO2 parity): when someone plays a song
   the log shows "*&lt;name&gt; has played a song: &lt;song&gt;*" (and "*has
   stopped the music*" on stop), named by the MC showname or the character. The
