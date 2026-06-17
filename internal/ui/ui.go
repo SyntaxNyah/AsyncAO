@@ -253,6 +253,7 @@ type Ctx struct {
 	uiPct int32
 
 	mouseX, mouseY int32
+	downX, downY   int32     // left-press origin (logical px); ClickedIn gates on it
 	clicked        bool      // left released this frame
 	dblClick       bool      // a double-click landed this frame (doubleClickWindow)
 	lastClickAt    time.Time // double-click detection state (persists across frames)
@@ -673,6 +674,7 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 			switch e.Button {
 			case sdl.BUTTON_LEFT:
 				c.mouseDown = true
+				c.downX, c.downY = c.mouseX, c.mouseY // press origin (set above) for ClickedIn gating
 			case sdl.BUTTON_MIDDLE:
 				c.middleHeld = true // held = fast log-zoom modifier
 			}
@@ -794,6 +796,19 @@ func (c *Ctx) hovering(r sdl.Rect) bool {
 		return false
 	}
 	return c.mouseX >= r.X && c.mouseX < r.X+r.W && c.mouseY >= r.Y && c.mouseY < r.Y+r.H
+}
+
+// ClickedIn reports a committed left-click on r: the button was both pressed AND
+// released inside r. Plain `c.clicked && hovering(r)` fires on the RELEASE alone,
+// so a gesture that began elsewhere — a scrollbar grab or panel move whose cursor
+// drifts onto a row before the button comes up — triggers whatever it's released
+// over. For navigational rows (area list / area-jump header / music track) that
+// stray release sends an area transfer: "I only hovered and ended up in another
+// area." Gating on the press origin (downX/downY) requires the click to start on
+// the row, which a drag-in never does.
+func (c *Ctx) ClickedIn(r sdl.Rect) bool {
+	return c.clicked && c.hovering(r) &&
+		c.downX >= r.X && c.downX < r.X+r.W && c.downY >= r.Y && c.downY < r.Y+r.H
 }
 
 // fencePointer blanks the live pointer state (cursor off-screen, no click / drag

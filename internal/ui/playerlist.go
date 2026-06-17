@@ -541,9 +541,9 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 	if a.sess != nil && hr.area != "" {
 		if c.hovering(r) {
 			c.Border(r, ColAccent)
-			if c.clicked {
-				a.jumpToArea(hr.area)
-			}
+		}
+		if c.ClickedIn(r) { // press+release in-row, so a drag-in release can't jump areas
+			a.jumpToArea(hr.area)
 		}
 		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "click to jump →", ColTextDim)
 	}

@@ -1703,7 +1703,7 @@ func (a *App) drawAreaList(r sdl.Rect) {
 				}
 			}
 			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, line, col)
-			if hover && c.clicked {
+			if c.ClickedIn(row) { // press+release in-row: a drag-in release must not transfer areas
 				a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves
 				a.sess.RequestMusic(area)    // area transfer rides MC
 				a.curArea = area             // Rich Presence (best-effort)
@@ -2697,7 +2697,7 @@ func (a *App) drawMusicList(r sdl.Rect) {
 			if hover {
 				c.Tooltip(row, track) // full track name on hover (long titles get clipped)
 			}
-			if hover && c.clicked {
+			if c.ClickedIn(row) { // press+release in-row: a scrollbar-drag release must not play a track
 				a.sess.RequestMusic(track)
 			}
 		}
