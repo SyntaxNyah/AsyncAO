@@ -1650,6 +1650,11 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.maybeRefetchRoster() // ARUP head-count moved (covers spectator join/leave)
 		case courtroom.EventPlayersUpdated:
 			a.rebuildLiveRoster() // server-pushed PR/PU: the live roster's primary source
+			if a.sess != nil && a.sess.ModGranted {
+				// Mods only (IPID is mod-only data): keep IPIDs current as people
+				// join/leave by re-pulling /getarea, debounced. Non-mods never poll.
+				a.maybeRefetchRoster()
+			}
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()
 		case courtroom.EventOOC:
@@ -1694,6 +1699,12 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			switch {
 			case ev.Int >= 1:
 				a.pushOOC("CLIENT: Logged in as a moderator.", "")
+				// Mod now: re-pull /getarea so IPIDs (mod-only, absent from PR/PU)
+				// grab onto the roster. The first auto-pull on tab-open can fire
+				// BEFORE this auto-login lands, so its reply carried no IPIDs.
+				if a.sess != nil {
+					a.fetchRoster()
+				}
 			case ev.Int == 0:
 				a.pushOOC("CLIENT: Login unsuccessful.", "")
 			default:
