@@ -223,9 +223,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
     **or** showname to cover Akashi `char (showname)` vs Athena/Nyathena
     `showname (char)`, including Akashi's one-line mod form
     `char (showname) (ipid): ooc`).
-- **One-click reconnect**: when a connection drops or a join fails, the lobby
-  shows a **"Reconnect to &lt;server&gt;"** button that re-dials the last server
-  you tried (the name + ws URL are remembered on every connect attempt).
+- **Reconnect, manual + automatic** (M2): when a connection drops or a join fails,
+  the lobby shows a **"Reconnect to &lt;server&gt;"** button that re-dials the last
+  server you tried (the name + ws URL are remembered on every connect attempt). On
+  an **unexpected drop**, AsyncAO also **auto-reconnects** with exponential backoff
+  (≈2 s → 30 s, capped, several tries) until the server returns — the lobby shows
+  the retry status and a **Stop** button. A **deliberate Disconnect never
+  reconnects**, and a manual Reconnect / fresh Join takes over. Toggle in
+  **Settings → Audio & Chat** ("Auto-reconnect after a dropped connection", ON by
+  default). Idle it costs one time-compare per frame.
 - **Showname presets**: a global, persisted list of shownames managed in
   **Settings → General** (add, *Save current*, **Use** to apply one — the active
   preset is marked — remove with ×; cleared only by a factory reset). **Ctrl+H**
