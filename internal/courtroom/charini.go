@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -99,9 +100,14 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 			Preanim: parts[1],
 			Anim:    parts[2],
 			Mod:     atoiOr(parts[3], 0),
+			// AO2 shows the desk when the emote omits its optional 5th (desk_mod)
+			// field (get_desk_mod → -1, a non-hide value); only an explicit 0/3/5
+			// hides it. Defaulting to 0 here would wrongly hide the desk for the
+			// majority of emotes, which have no desk_mod field.
+			DeskMod: protocol.DeskShow,
 		}
 		if len(parts) > emoteFieldCount {
-			e.DeskMod = atoiOr(parts[4], 0)
+			e.DeskMod = atoiOr(parts[4], protocol.DeskShow)
 		}
 		// Per-emote audio rides sections keyed by the same number
 		// (get_sfx_name / get_sfx_delay / get_sfx_looping / get_blipname).

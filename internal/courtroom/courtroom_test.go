@@ -553,6 +553,36 @@ func TestSessionCourtSends(t *testing.T) {
 	}
 }
 
+// TestParseCharINIDeskMod pins the desk_mod default: an emote that OMITS the
+// optional 5th field shows the desk (AO2 default — get_desk_mod returns -1, a
+// non-hide value), an explicit 0 hides it, and an explicit 1 shows it. Regression
+// guard for the bug where the OUTGOING desk_mod was hardcoded to 1, so a no-desk
+// emote (char.ini desk_mod 0) never hid the desk for the room.
+func TestParseCharINIDeskMod(t *testing.T) {
+	ini := []byte(`[Emotions]
+number = 3
+1 = plain#-#plain#1
+2 = nodesk#-#nodesk#1#0
+3 = hasdesk#-#hasdesk#1#1
+`)
+	out, err := ParseCharINI(ini)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Emotes) != 3 {
+		t.Fatalf("emotes = %d, want 3", len(out.Emotes))
+	}
+	if got := out.Emotes[0].DeskMod; got != protocol.DeskShow {
+		t.Errorf("emote 1 (no desk_mod field) DeskMod = %d, want %d (show, default)", got, protocol.DeskShow)
+	}
+	if got := out.Emotes[1].DeskMod; got != protocol.DeskHide {
+		t.Errorf("emote 2 (explicit 0) DeskMod = %d, want %d (hide)", got, protocol.DeskHide)
+	}
+	if got := out.Emotes[2].DeskMod; got != protocol.DeskShow {
+		t.Errorf("emote 3 (explicit 1) DeskMod = %d, want %d (show)", got, protocol.DeskShow)
+	}
+}
+
 // TestParseCharINIFull pins the full char.ini coverage: per-emote audio
 // sections ([SoundN]/[SoundT]/[SoundL]/[Blips]) and the [Shouts] custom
 // interjection discovery (the streaming-compatible 2.10 source).

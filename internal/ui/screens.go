@@ -3579,12 +3579,11 @@ func (a *App) sendIC(shout int) {
 	if a.d.Prefs.RandomEmoteOn() {
 		a.randomEmoteForSend()
 	}
-	emote := courtroom.Emote{Anim: "normal", Preanim: "-"}
+	emote := courtroom.Emote{Anim: "normal", Preanim: "-", DeskMod: protocol.DeskShow}
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
 		emote = a.emotes[a.emoteIdx]
 	}
 	hasPre := emote.Preanim != "" && emote.Preanim != "-"
-	deskMod := 1
 	// Per-emote audio from char.ini ([SoundN]/[SoundT]/[SoundL]); "1" is
 	// the AO wire value for silence (get_sfx_name's empty default).
 	sfxName := emote.SFXName
@@ -3597,7 +3596,7 @@ func (a *App) sendIC(shout int) {
 		blip = a.charBlips
 	}
 	out := protocol.OutgoingMS{
-		DeskMod:    deskMod,
+		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
 		PreEmote:   emote.Preanim,
 		CharName:   a.activeCharName(), // iniswap: the wire carries the custom folder
 		Emote:      emote.Anim,
