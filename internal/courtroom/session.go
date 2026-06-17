@@ -245,6 +245,15 @@ func (s *Session) Players() []LivePlayer {
 	return out
 }
 
+// PlayerArea returns the live (PR/PU) area id of player id and whether that
+// player is currently known — the basis for follow-a-player (M3). O(1).
+func (s *Session) PlayerArea(id int) (int, bool) {
+	if pl := s.players[id]; pl != nil {
+		return pl.AreaID, true
+	}
+	return 0, false
+}
+
 // touchPlayer returns player id's live entry, creating it (bounded by
 // livePlayerCap) when absent. Returns nil only at the cap. A PR join and a
 // field-first PU both route through here, so the roster survives either order.

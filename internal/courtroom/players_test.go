@@ -50,4 +50,12 @@ func TestLivePlayersPRPU(t *testing.T) {
 	if got = s.Players(); len(got) != 1 || got[0].AreaID != 5 {
 		t.Fatalf("want area 5 after move, got %+v", got)
 	}
+
+	// PlayerArea (follow-a-player, M3) reads the same live area; unknown ids !ok.
+	if area, ok := s.PlayerArea(9); !ok || area != 5 {
+		t.Fatalf("PlayerArea(9) = %d,%v want 5,true", area, ok)
+	}
+	if _, ok := s.PlayerArea(999); ok {
+		t.Error("PlayerArea(unknown) should report !ok")
+	}
 }

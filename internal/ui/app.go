@@ -811,14 +811,18 @@ type sessionState struct {
 	liveDetailsArea  string       // area of the last auto /getarea pull; re-pull on area change
 	lastRosterFetch  time.Time    // debounce for the join/leave re-pull (rosterRefetchDebounce)
 	suppressAreaEcho bool         // keep the NEXT auto /getarea reply out of the OOC log
-	shownameFor      map[string]string
-	icCountN         int    // M5 IC char counter: cached count + its string, reformatted
-	icCountStr       string // only when the length changes so the frame stays 0-alloc
-	pairListScroll   int32
-	playerScroll     int32  // Players-tab roster scroll
-	playerSort       int    // roster sort: 0=UID, 1=name, 2=speakers-first
-	playerPct        int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
-	shownameAdd      string // M6: Settings "save a showname preset" input
+	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
+	// off); we auto-jump to their area on each PR/PU update, debounced.
+	followUID      string
+	lastFollowJump time.Time
+	shownameFor    map[string]string
+	icCountN       int    // M5 IC char counter: cached count + its string, reformatted
+	icCountStr     string // only when the length changes so the frame stays 0-alloc
+	pairListScroll int32
+	playerScroll   int32  // Players-tab roster scroll
+	playerSort     int    // roster sort: 0=UID, 1=name, 2=speakers-first
+	playerPct      int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
+	shownameAdd    string // M6: Settings "save a showname preset" input
 	// playerOrder is the memoized display order (indices into areaPlayers); it
 	// recomputes only when the roster, sort mode, or current speaker change, so
 	// the Players tab never sorts per-frame.
@@ -1660,6 +1664,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventPlayersUpdated:
 			a.rebuildLiveRoster()  // server-pushed PR/PU: the live roster's primary source
 			a.maybeRefetchRoster() // a mod still missing IPIDs re-pulls /getareas (self-gated, debounced)
+			a.maybeFollowJump()    // follow-a-player (M3): trail the followed UID across areas
 		case courtroom.EventCharPicked:
 			a.enterCourtroom()
 		case courtroom.EventOOC:

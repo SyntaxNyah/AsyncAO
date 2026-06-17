@@ -249,6 +249,18 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 			a.warnLine = clampLine("Copied UID " + p.uid)
 			a.warnAt = a.now()
 		}
+		// Follow (M3): trail this player across areas — auto-jump when they move.
+		fl := "Follow"
+		if a.followUID == p.uid {
+			fl = "Following"
+		}
+		fw := c.TextWidth(fl) + 14
+		bx -= fw + 4
+		fr := sdl.Rect{X: bx, Y: btnY, W: fw, H: 22}
+		if c.Button(fr, fl) {
+			a.toggleFollow(p.uid)
+		}
+		c.Tooltip(fr, "Follow this player: auto-jump to their area whenever they move. Click again to stop.")
 	}
 	if p.ipid != "" { // IPID is mod-only server data — its presence IS the authorization (don't gate on local mod-detection)
 		iw := c.TextWidth("IPID") + 12
