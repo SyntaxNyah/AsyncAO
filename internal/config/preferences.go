@@ -428,6 +428,7 @@ type AssetPreferences struct {
 	PairFlip           bool                      `json:"pairFlip"`
 	Showname           string                    `json:"showname"`
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
+	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -578,6 +579,7 @@ type prefsJSON struct {
 	PairFlip           bool                      `json:"pairFlip"`
 	Showname           string                    `json:"showname"`
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
+	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1041,6 +1043,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.PairFlip = onDisk.PairFlip
 	p.Showname = onDisk.Showname
 	p.ShownamePresets = onDisk.ShownamePresets
+	p.ShownameKeys = onDisk.ShownameKeys
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
@@ -3804,6 +3807,11 @@ func (p *AssetPreferences) RemoveShownamePreset(name string) bool {
 	for i, have := range p.ShownamePresets {
 		if strings.EqualFold(have, name) {
 			p.ShownamePresets = append(p.ShownamePresets[:i], p.ShownamePresets[i+1:]...)
+			for k, v := range p.ShownameKeys { // drop any key bound to the removed preset
+				if strings.EqualFold(v, name) {
+					delete(p.ShownameKeys, k)
+				}
+			}
 			p.mu.Unlock()
 			p.markDirty()
 			return true
@@ -3811,6 +3819,51 @@ func (p *AssetPreferences) RemoveShownamePreset(name string) bool {
 	}
 	p.mu.Unlock()
 	return false
+}
+
+// shownameKeyCap bounds the global per-key showname binds (hard rule #4: no
+// unbounded maps).
+const shownameKeyCap = 64
+
+// ShownameKeyBinds returns a copy of the global key → showname bind map (M6:
+// press a bound key in the courtroom to swap to that showname). Nil = none.
+func (p *AssetPreferences) ShownameKeyBinds() map[string]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.ShownameKeys) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(p.ShownameKeys))
+	for k, v := range p.ShownameKeys {
+		out[k] = v
+	}
+	return out
+}
+
+// SetShownameKeyBind binds key (lowercase SDL key name) to a showname; an empty
+// showname clears the binding. Global + persisted; bounded by shownameKeyCap.
+func (p *AssetPreferences) SetShownameKeyBind(key, showname string) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if key == "" {
+		return
+	}
+	p.mu.Lock()
+	if showname == "" {
+		delete(p.ShownameKeys, key)
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	if p.ShownameKeys == nil {
+		p.ShownameKeys = map[string]string{}
+	}
+	if _, exists := p.ShownameKeys[key]; !exists && len(p.ShownameKeys) >= shownameKeyCap {
+		p.mu.Unlock()
+		return
+	}
+	p.ShownameKeys[key] = showname
+	p.mu.Unlock()
+	p.markDirty()
 }
 
 func clampPairOffset(v int) int {

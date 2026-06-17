@@ -310,7 +310,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	if c.Button(sdl.Rect{X: pad + 444, Y: y, W: 110, H: btnH}, "Save current") {
 		a.d.Prefs.AddShownamePreset(a.effectiveShowname())
 	}
-	c.Label(pad+564, y+4, "global · Ctrl+H = random · cleared only by a factory reset", ColTextDim)
+	c.Label(pad+564, y+4, "global · Ctrl+H random · Ctrl+B cycle · bind a key per preset · resets on a factory wipe", ColTextDim)
 	y += 32
 	if presets := a.d.Prefs.ShownameList(); len(presets) == 0 {
 		c.Label(pad+12, y+2, "(none yet — Save a name above; bind keys to swap them)", ColTextDim)
@@ -320,15 +320,37 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		for _, name := range presets {
 			if c.Button(sdl.Rect{X: pad + 12, Y: y, W: 20, H: 18}, "×") {
 				a.d.Prefs.RemoveShownamePreset(name)
+				a.refreshShownameKeys() // its keybind (if any) was cleared too
 			}
 			if c.Button(sdl.Rect{X: pad + 38, Y: y, W: 46, H: 18}, "Use") {
 				a.shownameOverride = name // apply now (the in-courtroom override)
 			}
+			// Per-preset keybind: arm a capture (pollShownameBind binds the next
+			// key to this showname); right-click the button clears the bind.
+			bound := a.shownameKeyFor(name)
+			keyLbl := "Bind key"
+			switch {
+			case a.shownameBindFor == name:
+				keyLbl = "press a key…"
+			case bound != "":
+				keyLbl = "Key: " + bound
+			}
+			kr := sdl.Rect{X: pad + 90, Y: y, W: 96, H: 18}
+			if c.Button(kr, keyLbl) {
+				a.bindingFor = "" // don't also arm a character keybind
+				a.shownameBindFor = name
+				c.focusID = "" // the capture owns the next keypress
+			}
+			if bound != "" && c.rightClicked && c.hovering(kr) {
+				a.d.Prefs.SetShownameKeyBind(bound, "")
+				a.refreshShownameKeys()
+			}
+			c.Tooltip(kr, "Bind a key to this showname — press it in the courtroom to swap. Right-click to clear.")
 			lbl, col := name, ColText
 			if strings.EqualFold(active, name) {
 				lbl, col = name+"   ← active", ColTierGreen
 			}
-			c.LabelClipped(pad+92, y+1, 300, lbl, col)
+			c.LabelClipped(pad+194, y+1, 280, lbl, col)
 			y += 24
 		}
 	}

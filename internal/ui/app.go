@@ -658,6 +658,14 @@ type sessionState struct {
 	charKeys    map[string]string // key name → character
 	charKeysRev map[string]string // character → key name (badges)
 
+	// --- showname keybinds (M6, global) ---
+	// shownameBindFor is the showname a Settings key-capture is armed for
+	// ("" = none); shownameKeys/Rev cache the global binds for per-frame
+	// lookups (refreshed on connect + edits only, like charKeys).
+	shownameBindFor string
+	shownameKeys    map[string]string // key name → showname
+	shownameKeysRev map[string]string // showname → key name (badges)
+
 	// ghostWarm dedupes the pair-panel ghost editor's sprite prefetches.
 	ghostWarm map[string]string
 
@@ -1351,6 +1359,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	// per-server split inherits the old flat collection.
 	a.d.Prefs.ClaimLegacyWardrobe(wsURL)
 	a.refreshCharKeys()
+	a.refreshShownameKeys()
 	a.syncLoginBuffers() // settings/dialog boxes show this server's creds
 	// Per-server theme binding: this server always uses that theme.
 	a.themeBound = a.d.Prefs.ServerWarmInfoFor(wsURL).Theme
@@ -1834,6 +1843,7 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 	a.sess = courtroom.NewRehearsalSession(info.Origin, info.Chars)
 	a.rebuildAssetOrigin()
 	a.refreshCharKeys()
+	a.refreshShownameKeys()
 	a.themeBound = info.Theme // rehearsal wears the server's bound theme too
 	a.ensureThemeForSession()
 	a.screen = ScreenCharSelect
@@ -2664,6 +2674,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollCharBind()
 	a.pollJukeBind()
 	a.pollMacroBind()
+	a.pollShownameBind()
 	a.pollDownload()
 	a.pollBgList() // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()

@@ -104,6 +104,50 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 }
 
+// TestShownameKeyBinds pins the M6 per-preset showname keybinds: keys store
+// case-insensitively, an empty showname clears, and removing a preset drops its
+// bind (no orphans).
+func TestShownameKeyBinds(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	p.AddShownamePreset("Nick")
+	p.AddShownamePreset("Edgey")
+	p.SetShownameKeyBind("F1", "Nick") // key lowercased on store
+	p.SetShownameKeyBind("f2", "Edgey")
+
+	if b := p.ShownameKeyBinds(); b["f1"] != "Nick" || b["f2"] != "Edgey" {
+		t.Fatalf("binds = %v, want f1->Nick f2->Edgey", b)
+	}
+	p.SetShownameKeyBind("f1", "") // empty showname clears the bind
+	if p.ShownameKeyBinds()["f1"] != "" {
+		t.Error("f1 bind should be cleared")
+	}
+	p.RemoveShownamePreset("Edgey") // removing a preset drops its bind
+	if p.ShownameKeyBinds()["f2"] != "" {
+		t.Error("removing Edgey must drop its f2 keybind")
+	}
+}
+
+// TestShownameKeyBindRoundTrip pins that a keybind survives save → load.
+func TestShownameKeyBindRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	p.AddShownamePreset("Nick")
+	p.SetShownameKeyBind("F1", "Nick")
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := q.ShownameKeyBinds()["f1"]; got != "Nick" {
+		t.Errorf("keybind lost across save/load: f1 = %q, want Nick", got)
+	}
+}
+
 // TestWardrobeGenerationBumps pins the counter the char-select star grid caches
 // against: it moves on a real membership change and stays put on a no-op.
 func TestWardrobeGenerationBumps(t *testing.T) {
