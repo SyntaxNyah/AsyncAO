@@ -155,7 +155,8 @@ var serverProjects = []serverProject{
 			"Being Python and tsuserver-based, it is familiar, hackable territory for anyone who has run the classic server before.",
 			"Pick it if you specifically want the Case Café flavor of the long-running tsuserver lineage.",
 		},
-		credits: "The tsuserverCC / Case Café contributors",
+		credits: "RealKaiser, argoneuscze, oldmud0, OmniTroid, Poyoanon, Lewdton, in1tiate, collinxchu, Pyraqq, shogunator1337, likeawindrammer, Cerapter, yuvi18, mposs00, cents02, Crystalwarrior, Enovale, HolyMan-17, Fronku, Parazoid, perplexedMurfy, the-moonwitch",
+		links:   []string{"https://github.com/RealKaiser/tsuserverCC"},
 	},
 	{
 		name: "Ferris-AO", lang: "Rust", wss: true, plist: true,
