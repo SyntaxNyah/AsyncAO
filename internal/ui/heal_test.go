@@ -10,7 +10,7 @@ func TestBareSpriteBase(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"https://h/base/characters/phoenix/(a)normal", "https://h/base/characters/phoenix/normal"},
 		{"https://h/base/characters/phoenix/(b)happy", "https://h/base/characters/phoenix/happy"},
-		{"https://h/base/characters/phoenix/normal", "https://h/base/characters/phoenix/normal"}, // already bare
+		{"https://h/base/characters/phoenix/normal", "https://h/base/characters/phoenix/normal"},               // already bare
 		{"https://h/base/characters/phoenix/cross_preanim", "https://h/base/characters/phoenix/cross_preanim"}, // preanim, no prefix
 		{"(a)foo", "foo"}, // no slash at all
 	}
