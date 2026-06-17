@@ -181,6 +181,10 @@ type Courtroom struct {
 	// the App from prefs (default off); the IC log mirrors it App-side.
 	ForceCharNames bool
 
+	// SFXMuted, when set, reports whether an emote SFX name should be silenced
+	// (M11 per-SFX mute). Set by the App to read live prefs; nil = play everything.
+	SFXMuted func(name string) bool
+
 	queue []*protocol.ChatMessage
 	phase MessagePhase
 	timer time.Duration
@@ -419,7 +423,8 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.blipBase = c.urls.Blip(blip)
 	c.mgr.Prefetch(c.blipBase, assets.AssetTypeBlip, network.PriorityHigh) // AssetType: Blip
 
-	if msg.SFXName != "" && msg.SFXName != "0" && msg.SFXName != "1" {
+	if msg.SFXName != "" && msg.SFXName != "0" && msg.SFXName != "1" &&
+		(c.SFXMuted == nil || !c.SFXMuted(msg.SFXName)) { // M11: per-SFX mute
 		c.audio.PlaySFX(c.urls.SFX(msg.SFXName), time.Duration(msg.SFXDelay)*time.Millisecond) // AssetType: SFX
 	}
 

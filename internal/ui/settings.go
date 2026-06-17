@@ -1243,6 +1243,39 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 30
 
+	// M11 per-SFX mute: silence an annoying emote sound effect by name. The
+	// last one you heard gets a one-click toggle; the muted list is below.
+	if a.lastSFXName != "" {
+		on := a.d.Prefs.IsSFXMuted(a.lastSFXName)
+		lbl := "Mute last SFX: " + a.lastSFXName
+		if on {
+			lbl = "Unmute last SFX: " + a.lastSFXName
+		}
+		if c.Button(sdl.Rect{X: pad, Y: y, W: c.TextWidth(lbl) + 20, H: btnH}, lbl) {
+			if on {
+				a.d.Prefs.UnmuteSFX(a.lastSFXName)
+			} else {
+				a.d.Prefs.MuteSFX(a.lastSFXName)
+			}
+		}
+		y += 30
+	} else {
+		c.Label(pad, y+2, "Per-SFX mute: the last emote sound effect you hear gets a one-click Mute button here.", ColTextDim)
+		y += 26
+	}
+	if list := a.d.Prefs.MutedSFXList(); len(list) > 0 {
+		c.Label(pad, y+2, "Muted sound effects (× to unmute):", ColTextDim)
+		y += 22
+		for _, name := range list {
+			if c.Button(sdl.Rect{X: pad + 12, Y: y, W: 20, H: 18}, "×") {
+				a.d.Prefs.UnmuteSFX(name)
+			}
+			c.LabelClipped(pad+40, y+1, 360, name, ColText)
+			y += 24
+		}
+		y += 6
+	}
+
 	// Highlighted friends (per server): shownames whose IC messages glow.
 	fh := a.d.Prefs.FriendHighlightOn()
 	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {

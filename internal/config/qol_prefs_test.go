@@ -155,6 +155,50 @@ func TestShownameKeyBindRoundTrip(t *testing.T) {
 	}
 }
 
+// TestMutedSFX pins the M11 per-SFX mute list: case-insensitive store/match,
+// dedup, unmute, and survival across save → load.
+func TestMutedSFX(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.IsSFXMuted("sfx-stab") {
+		t.Error("nothing should be muted initially")
+	}
+	if !p.MuteSFX("SFX-Stab") { // stored lowercase
+		t.Error("MuteSFX should report a change")
+	}
+	if !p.IsSFXMuted("sfx-stab") || !p.IsSFXMuted("SFX-STAB") {
+		t.Error("a muted SFX should match case-insensitively")
+	}
+	if p.MuteSFX("sfx-stab") {
+		t.Error("re-muting the same SFX must be a no-op")
+	}
+	if l := p.MutedSFXList(); len(l) != 1 || l[0] != "sfx-stab" {
+		t.Fatalf("list = %v, want [sfx-stab]", l)
+	}
+	if !p.UnmuteSFX("sfx-stab") || p.IsSFXMuted("sfx-stab") {
+		t.Error("UnmuteSFX should clear it")
+	}
+}
+
+// TestMutedSFXRoundTrip pins that the mute list survives save → load.
+func TestMutedSFXRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	p.MuteSFX("sfx-stab")
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !q.IsSFXMuted("sfx-stab") {
+		t.Error("muted SFX lost across save/load")
+	}
+}
+
 // TestWardrobeGenerationBumps pins the counter the char-select star grid caches
 // against: it moves on a real membership change and stays put on a no-op.
 func TestWardrobeGenerationBumps(t *testing.T) {

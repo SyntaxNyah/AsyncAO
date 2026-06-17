@@ -434,6 +434,7 @@ type AssetPreferences struct {
 	Showname           string                    `json:"showname"`
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
+	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -587,6 +588,7 @@ type prefsJSON struct {
 	Showname           string                    `json:"showname"`
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
+	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1056,6 +1058,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.Showname = onDisk.Showname
 	p.ShownamePresets = onDisk.ShownamePresets
 	p.ShownameKeys = onDisk.ShownameKeys
+	p.MutedSFX = onDisk.MutedSFX
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
@@ -3896,6 +3899,78 @@ func (p *AssetPreferences) SetShownameKeyBind(key, showname string) {
 	p.ShownameKeys[key] = showname
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// mutedSFXCap bounds the per-SFX mute list (hard rule #4: no unbounded slices).
+const mutedSFXCap = 128
+
+// IsSFXMuted reports whether an emote SFX name is muted (M11, case-insensitive).
+// Called from the courtroom audio path once per played SFX (not per frame).
+func (p *AssetPreferences) IsSFXMuted(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, m := range p.MutedSFX {
+		if m == name {
+			return true
+		}
+	}
+	return false
+}
+
+// MutedSFXList returns a copy of the muted SFX names (global, persisted).
+func (p *AssetPreferences) MutedSFXList() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.MutedSFX) == 0 {
+		return nil
+	}
+	out := make([]string, len(p.MutedSFX))
+	copy(out, p.MutedSFX)
+	return out
+}
+
+// MuteSFX adds an SFX name to the mute list (lowercased, deduped, bounded).
+// Reports whether it changed.
+func (p *AssetPreferences) MuteSFX(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	p.mu.Lock()
+	if len(p.MutedSFX) >= mutedSFXCap {
+		p.mu.Unlock()
+		return false
+	}
+	for _, m := range p.MutedSFX {
+		if m == name {
+			p.mu.Unlock()
+			return false
+		}
+	}
+	p.MutedSFX = append(p.MutedSFX, name)
+	p.mu.Unlock()
+	p.markDirty()
+	return true
+}
+
+// UnmuteSFX removes an SFX name from the mute list. Reports whether it changed.
+func (p *AssetPreferences) UnmuteSFX(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	p.mu.Lock()
+	for i, m := range p.MutedSFX {
+		if m == name {
+			p.MutedSFX = append(p.MutedSFX[:i], p.MutedSFX[i+1:]...)
+			p.mu.Unlock()
+			p.markDirty()
+			return true
+		}
+	}
+	p.mu.Unlock()
+	return false
 }
 
 func clampPairOffset(v int) int {
