@@ -203,7 +203,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   live UID, no `/getarea` needed. **Follow** trails a player across areas: while
   you're following, AsyncAO **auto-jumps you to their area whenever they move**
   (debounced; the row reads *Following*, click again to stop) — a mod tailing a
-  suspect or catching up to a friend, riding the same live PR/PU area data.
+  suspect or catching up to a friend, riding the same live PR/PU area data. The
+  **Areas tab** also keeps a **Recent:** strip — one-click chips to jump straight
+  back to areas you've just passed through (newest first, current area excluded).
   **IPID** is the only field the stream omits: a mod's **"Refresh
   details"** (and an auto-pull on mod-login + as joiners arrive) runs **`/gas`** —
   the all-areas roster, since the live list spans every area — and merges the IPID
