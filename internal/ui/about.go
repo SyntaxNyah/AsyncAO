@@ -44,7 +44,7 @@ var aboutLines = []string{
 	"",
 	"Closed-source beta testers — thank you for the bug reports, feature",
 	"requests and feedback that shaped AsyncAO during development:",
-	"  Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag",
+	"  Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag · CherriPop",
 	"",
 	"A special thank-you to Northgate — who backed this project, including",
 	"financially, and gave me the inspiration to keep going. Without that",
