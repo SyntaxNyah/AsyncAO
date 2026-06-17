@@ -232,8 +232,9 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	// Right cluster: Pair + compact Copy buttons (mod also gets Copy-IPID).
 	btnY := row.Y + (row.H-22)/2
 	bx := row.X + row.W - 4
-	// Pair / Copy-UID need a UID, which only the /getarea snapshot carries — live
-	// rows (CharsCheck) have none, so these appear only in legacy mode.
+	// Pair / Copy-UID need a UID. The PR/PU live roster now carries it, so these
+	// show on live rows too; the CharsCheck-only fallback has none (hence the gate).
+	// Pair sends the server's "/pair <uid>" command — no popup, no char-slot guess.
 	if p.uid != "" {
 		pw := c.TextWidth("Pair") + 14
 		bx -= pw
