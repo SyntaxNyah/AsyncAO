@@ -123,24 +123,6 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	r.Y += 28
 	r.H -= 28
 
-	if !a.rosterLegacy { // TEMP diagnostic for the IPID merge pipeline — remove once confirmed
-		snapIPID := 0
-		for i := range a.areaPlayers {
-			if a.areaPlayers[i].ipid != "" {
-				snapIPID++
-			}
-		}
-		mod := "N"
-		if a.sess != nil && a.sess.ModGranted {
-			mod = "Y"
-		}
-		c.LabelClipped(r.X, r.Y+2, r.W-4, "dbg· snap="+strconv.Itoa(len(a.areaPlayers))+
-			" snapIPID="+strconv.Itoa(snapIPID)+" mergeMap="+strconv.Itoa(len(a.ipidByUID()))+
-			" live="+strconv.Itoa(len(a.liveRoster))+" mod="+mod, ColDanger)
-		r.Y += 20
-		r.H -= 20
-	}
-
 	if len(a.rosterView()) == 0 {
 		hint := "Run /ga (or /gas, /getarea) to list who's in this area."
 		if !a.rosterLegacy {
