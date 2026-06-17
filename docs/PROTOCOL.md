@@ -60,6 +60,12 @@ relay it as-is). AsyncAO populates it from the active iniswap override —
 the slot, `CC`, and `PV` are untouched. The custom list itself comes from
 `<asset origin>/iniswap.txt`, one folder name per line.
 
+Desk visibility: the outgoing `MS` `desk_mod` (field 0) is the SELECTED emote's
+char.ini `desk_mod` (the optional 5th `[Emotions]` field), defaulting to **show**
+(`1`) when the emote omits it — AO2 `get_desk_mod` parity (an absent field reads
+as a non-hide value). Only an explicit `0`/`3`/`5` hides the desk. A hardcoded
+`1` previously meant a no-desk emote never hid the desk for the room (fixed).
+
 ## Features (`FL`), wire names
 
 `yellowtext flipping customobjections fastloading noencryption deskmod

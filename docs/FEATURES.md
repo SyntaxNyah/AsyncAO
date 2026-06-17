@@ -201,8 +201,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Spectator/CM chips, a sort toggle (UID · name · speakers-first), a **`/pair
   <uid>` button** and **Copy-UID** — straight from the live UID, no `/getarea`
   needed. **IPID** is the only field the stream omits: a mod's **"Refresh
-  details"** pulls one `/getarea` and the IPID is merged back **by UID** (exact,
-  not name-matched) and shown at once — mod-only, in-session, never persisted. A
+  details"** (and an auto-pull on mod-login + as joiners arrive) runs **`/gas`** —
+  the all-areas roster, since the live list spans every area — and merges the IPID
+  back **by UID** (exact, not name-matched), shown whenever present (in-session,
+  never persisted). `/gas`, **not** `/getareas`: Athena/Nyathena register only the
+  short `ga`/`gas` alias, which Akashi/tsuserver accept too. A
   **"Legacy snapshot" tick box (off by default)** shows the raw `/getarea` roster
   instead. **Ctrl+wheel zooms** the list text (rows + icon scale with it); the
   click-to-pair popup zooms the same way. The displayed name falls back showname →
