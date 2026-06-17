@@ -25,99 +25,147 @@ var serverHelpIntro = []string{
 	"Then advertise the ws:// (and wss://) ports on the master server, and web + desktop clients can finally reach you.",
 }
 
+// serverHelpLegend explains the per-server capability ticks below.
+var serverHelpLegend = "Each server is tagged:  WS (yellow ✓ — every server here speaks it)  ·  WSS (green ✓ = native secure WebSocket, red ✕ = needs a reverse proxy)  ·  Players (green ✓ = modern live player list, yellow ✓ = via a plugin, red ✕ = none)."
+
 // serverProject is one catalog entry.
 type serverProject struct {
-	name    string
-	lang    string
-	wss     bool     // WSS ⇒ WS too; false = plain WS only
-	desc    []string // three sentences
-	warn    string   // "" = none
-	credits string   // every author from the project's git history
-	links   []string // first = main repo
+	name        string
+	lang        string
+	wss         bool     // WSS ⇒ WS too; false = plain WS only
+	plist       bool     // modern 2.11 live player list in the BASE server
+	plistPlugin bool     // player list available only via a plugin (not in base)
+	desc        []string // three sentences
+	warn        string   // "" = none (extra note beyond the WS/WSS/Players ticks)
+	credits     string   // every author from the project's git history
+	links       []string // first = main repo
 }
 
 // serverProjects: descriptions per the project owners' own positioning;
 // support notes current as of 2026-06.
 var serverProjects = []serverProject{
 	{
-		name: "Akashi", lang: "C++", wss: true,
+		name: "Akashi", lang: "C++", wss: true, plist: true,
 		desc: []string{
-			"The main server software for modern-day Attorney Online, maintained under the AttorneyOnline organization.",
-			"Written in C++, it tracks the current protocol closely and is the de-facto reference for new server features.",
-			"Speaks WS and WSS out of the box, including the modern 2.11 player list.",
+			"The main, officially-maintained server software for modern-day Attorney Online, developed under the AttorneyOnline organization.",
+			"It is written in C++ on the Qt framework, which makes it fast and gives it a mature, well-structured codebase.",
+			"Of all the servers it tracks the current protocol most closely, and it is the de-facto reference that new features are designed against.",
+			"It terminates TLS itself, so it serves both plain WS and encrypted WSS out of the box without strictly needing a reverse proxy.",
+			"It implements the modern 2.11 live player list, which is what powers AsyncAO's real-time roster, shownames, spectator counts and pairing data.",
+			"Feature-wise it is the most complete option: areas, evidence, casing, moderation and music are all first-class, and its documentation and support are the best of any AO server.",
+			"If you are starting a new server today and want the safest, best-supported, most future-proof choice, this is the one to pick.",
 		},
 		credits: "Salanto, scatterflower, in1tiate, MangosArentLiterature, Rosemary Witchaven, stonedDiscord, Cerapter, Marisa P, AwesomeAim, Denton Poss, Leifa, Wiso, likeawindrammer, Rebecca, Doz1l, Pyraqq, cow-face, Adam Swanson, HolyMan, Jun-pei, Scott Brenner, SyntaxNyah, cancer, oldmud0, t-h-i-s-u-s-e-r-n-a-m-e-i-s-c-a-n-c-e-r",
 		links:   []string{"https://github.com/AttorneyOnline/akashi"},
 	},
 	{
-		name: "Athena", lang: "Go", wss: false,
+		name: "witches-akashi-party", lang: "C++", wss: true, plist: true,
 		desc: []string{
-			"A server written in Go by MangosArentLiterature, focused on clean concurrency and carrying less bloat than the bigger forks.",
-			"The codebase is small and readable, which makes it a pleasant base to study or build on.",
-			"It speaks plain WS only.",
+			"A feature-rich community fork of Akashi, with its active development living on the 'tea' branch rather than master.",
+			"It is maintained by Ganty1999, Elchi, IDk-2023 and SyntaxNyah, and builds directly on top of Akashi's modern C++/Qt base.",
+			"Everything Akashi does, it does too — native WSS and the full modern 2.11 live player list are both included.",
+			"On top of that it adds a VIP system, a /radio command, /getmusic, and a dedicated /play DJ role for managing music in a room.",
+			"Moderation gains ID-based /kick and /ban, finer-grained mute controls, and OOC text effects (disemvowel / shake / gimp) that also apply to PMs and global chat.",
+			"It reworks pairing to sync by client id instead of character id, and it marks webAO users in the area player list so you can tell who's on the web client.",
+			"Pick it when you want Akashi's reliability plus a big pile of quality-of-life and roleplay extras for a busy, active community.",
 		},
-		warn:    "No WSS and no modern 2.11 player-list support.",
+		credits: "Ganty1999, ElChi, IDk-2023, SyntaxNyah, and the upstream Akashi authors",
+		links:   []string{"https://github.com/Elchi-2023/witches-akashi-party/tree/tea"},
+	},
+	{
+		name: "Athena", lang: "Go", wss: false, plist: false,
+		desc: []string{
+			"A server written in Go by MangosArentLiterature, focused on clean concurrency and carrying far less bloat than the bigger forks.",
+			"The codebase is deliberately small and readable, which makes it a genuinely pleasant base to study or build on top of.",
+			"It implements the core AO2 experience — areas, IC and OOC chat, music, evidence and moderation — without piling on kitchen-sink extras.",
+			"It speaks plain WS only, so to offer an encrypted WSS port you will need to terminate TLS with a reverse proxy such as Caddy or nginx.",
+			"The stock build does not implement the modern 2.11 player list, so AsyncAO falls back to /getarea snapshots for its roster.",
+			"Its real strength is being a lean, well-structured foundation rather than a batteries-included server.",
+			"If you want a minimal Go base to extend yourself it is an excellent starting point — and see Nyathena just below for a much fuller fork.",
+		},
 		credits: "MangosArentLiterature, lambdcalculus, Miles Nottingham",
 		links:   []string{"https://github.com/MangosArentLiterature/Athena"},
 	},
 	{
-		name: "Nyathena", lang: "Go", wss: true,
+		name: "Nyathena", lang: "Go", wss: true, plist: true,
 		desc: []string{
-			"SyntaxNyah's Go fork of Mangos' Athena work, grown into a much larger feature set.",
-			"It adds WSS and DOES support the modern player list, on top of a pile of chaotic extra features that not every AO server will need.",
-			"Pick it when you want Athena's bones with full modern protocol coverage and don't mind the size.",
+			"SyntaxNyah's Go fork of Mangos' Athena, grown into a much larger and more complete feature set.",
+			"It adds native WSS support, so you can point it straight at a TLS certificate and serve the secure port without a proxy.",
+			"It also implements the modern 2.11 player list, so AsyncAO's real-time roster, spectator counts and pairing data all work against it.",
+			"On top of Athena's clean bones it layers a large pile of extra commands and features, some of them deliberately chaotic, that not every server will need.",
+			"Despite the bigger feature set it keeps Go's lightweight runtime footprint.",
+			"It is the server that AsyncAO itself is most actively developed and tested against day to day.",
+			"Pick it when you want Athena's structure with every modern feature switched on and you don't mind the larger surface area.",
 		},
 		credits: "SyntaxNyah, Claude, MangosArentLiterature, David Skoland, lambdcalculus, Miles Nottingham",
 		links:   []string{"https://github.com/SyntaxNyah/Nyathena"},
 	},
 	{
-		name: "Whisker", lang: "C3", wss: true,
+		name: "Whisker", lang: "C3", wss: true, plistPlugin: true,
 		desc: []string{
-			"Written in C3 and built to be the lightest possible core: every command — even the CM casing commands — is a plugin on top of its own documented API.",
-			"The build system is deliberately minimal (no CMake), keeping the server as slim as possible to build and deploy.",
-			"It ships premade plugins you can drop straight in, and speaks WS and WSS.",
+			"A super-lightweight server written in C3, built from the ground up to be the smallest possible core.",
+			"Its entire philosophy is the plugin system: even core features like the CM casing commands are plugins layered on top of a documented API.",
+			"The base itself stays tiny — it has been benchmarked using even less memory than Akashi — and you add only the features you actually want.",
+			"The build system is deliberately minimal, with no CMake, so the server is quick to compile and to deploy.",
+			"It ships with over four premade plugins you can drop straight in, including a live player-list plugin (the base has no player list of its own).",
+			"It speaks both plain WS and native WSS.",
+			"Choose it when you want maximum control over your server's footprint and features and you are comfortable composing it from plugins.",
 		},
 		credits: "SyntaxNyah, ElChi",
 		links:   []string{"https://github.com/SyntaxNyah/Whisker"},
 	},
 	{
-		name: "KFO-Server", lang: "Python", wss: true,
+		name: "KFO-Server", lang: "Python", wss: true, plist: false,
 		desc: []string{
-			"CrystalWarrior's Python server, forked from the official — now dead — tsuserver3, the original AO Python server.",
-			"It carries a huge focus on roleplaying commands and extra features for RP-heavy communities.",
-			"Speaks WS and WSS.",
+			"CrystalWarrior's Python server, forked from the official — now discontinued — tsuserver3, the original AO Python server.",
+			"It carries a huge focus on roleplaying commands and extra features tailored to RP-heavy communities.",
+			"As a long-lived community project it has one of the largest command sets of any AO server.",
+			"Being Python and battle-tested, it is approachable to read and modify and is widely deployed across the casing scene.",
+			"It speaks both plain WS and WSS.",
+			"It does not implement the modern 2.11 player-list tab, so AsyncAO uses /getarea snapshots for the roster there.",
+			"Pick it if your community lives on its rich roleplay command set and you don't need the modern live player list.",
 		},
-		warn:    "No modern 2.11 player-list tab support.",
 		credits: "Alex Noir, Crystalwarrior, argoneus, oldmud0, stonedDiscord, sD, OmniTroid, David Skoland, ghostfeesh, Dev, Lewdton, Jumbowl, BazettFraga, UnDeviato, Pyraq, Parazoid, SymphonyVR, cents02, in1tiate, mastyra, Cerapter, EstatoDeviato, Satoru;1816, windrammer, Mariomagistr, Trey, Denton, Elijah Bansley, Somebody Somebodious, SyntaxNyah, likeawindrammer, scatterflower, AwesomeAim, Chrezm, ElijahZAwesome, Jumblr, Paradox, Rosemary Witchaven, Salanto, deadlestrade, perplexedMurfy, shogun, slavfox, yemt",
 		links:   []string{"https://github.com/Crystalwarrior/KFO-Server"},
 	},
 	{
-		name: "Ferris-AO", lang: "Rust", wss: true,
+		name: "Ferris-AO", lang: "Rust", wss: true, plist: true,
 		desc: []string{
-			"A privacy-focused server written in Rust as an alternative to the Python and C++ servers, with privacy as the entire design philosophy.",
-			"Raw IPs are hashed immediately on receipt and discarded (never logged or stored), hardware IDs get a permanent keyed hash so bans survive reconnects without keeping the original identifier, sensitive database records are encrypted at rest with AES-256-GCM, and passwords are hashed with Argon2id.",
-			"Speaks WS and WSS.",
+			"A privacy-first server written in Rust as an alternative to the Python and C++ servers, with privacy as its entire design philosophy.",
+			"Raw IP addresses are hashed immediately on receipt and then discarded — never logged or stored anywhere.",
+			"Hardware IDs are given a permanent keyed hash, so bans survive reconnects without the server ever keeping the original identifier.",
+			"Sensitive database records are encrypted at rest with AES-256-GCM, and account passwords are hashed with Argon2id.",
+			"It is built async-first on Tokio and implements the AO2 protocol over both WebSocket (including native WSS) and legacy TCP.",
+			"It also streams the modern live player list, so AsyncAO's real-time roster works against it.",
+			"Choose it when player privacy and data protection are non-negotiable requirements for your community.",
 		},
 		credits: "SyntaxNyah, Claude",
 		links:   []string{"https://github.com/SyntaxNyah/Ferris-AO"},
 	},
 	{
-		name: "Alibi", lang: "C#", wss: true,
+		name: "Alibi", lang: "C#", wss: true, plist: false,
 		desc: []string{
-			"A C# server written with a plugin system in mind from the start.",
-			"Extending it means writing .NET plugins rather than patching the core.",
-			"WSS support landed very recently, alongside plain WS.",
+			"A C# server on .NET Core, written with a plugin system in mind from the very start.",
+			"Extending it means writing .NET plugins rather than patching the core, which keeps your customizations clean and upgrade-safe.",
+			"It is cross-platform, running anywhere .NET does, including Windows and Linux.",
+			"It was created out of frustration with maintaining existing servers, aiming for a more pleasant day-to-day operator experience.",
+			"It includes case alerts, commands and logging, and its WebSocket transport was recently overhauled to behave properly.",
+			"Both plain WS and native WSS are supported, with the WSS support having landed fairly recently.",
+			"The modern 2.11 live player list is still on its to-do list, so AsyncAO uses /getarea snapshots for the roster for now.",
 		},
-		warn:    "No modern 2.11 player-list support.",
 		credits: "Enovale",
 		links:   []string{"https://github.com/Enovale/Alibi"},
 	},
 	{
-		name: "Kagami", lang: "C++", wss: true,
+		name: "Kagami", lang: "C++", wss: true, plist: false,
 		desc: []string{
-			"Scatterflower's server, developed in the AttorneyOnline/AO-SDL repository and shipped as the kagami container image.",
-			"It comes from the same from-base-principles effort as the AO-SDL client, with correctness and performance as the explicit design goals.",
-			"Speaks WS and WSS.",
+			"Scatterflower's server, developed inside the AttorneyOnline/AO-SDL repository and shipped as the 'kagami' container image.",
+			"It comes from the same from-first-principles effort as the AO-SDL client, with correctness and performance as explicit design goals.",
+			"Written in C++, it aims to be a clean, modern implementation rather than an accretion of legacy code.",
+			"Being built right alongside a client gives it an unusually precise read on exactly what the protocol expects.",
+			"It is distributed primarily as a container image, which makes deployment straightforward and reproducible.",
+			"It speaks both plain WS and native WSS.",
+			"It is a newer, smaller project than Akashi, so double-check its current feature coverage (including the live player list) against your needs before committing.",
 		},
 		credits: "scatterflower, Salanto, stonedDiscord, in1tiate",
 		links: []string{
@@ -160,14 +208,18 @@ func (a *App) drawServerHelp(w, h int32) {
 				put(line, ColText)
 			}
 		}
+		y += lineH / 2
+		for _, line := range c.WrapText(serverHelpLegend, wrapW, 8) {
+			put(line, ColTextDim)
+		}
 		y += lineH
 		for i := range serverProjects {
 			p := &serverProjects[i]
-			tier := "WS only"
-			if p.wss {
-				tier = "WS + WSS"
+			put(p.name+"  ·  "+p.lang, ColAccent)
+			if !measure && y > view.Y-20 && y < view.Y+view.H {
+				a.drawServerCaps(pad, y, p)
 			}
-			put(p.name+"  ·  "+p.lang+"  ·  "+tier, ColAccent)
+			y += lineH + 4
 			for _, sentence := range p.desc {
 				for _, line := range c.WrapText(sentence, wrapW, 6) {
 					put(line, ColText)
@@ -202,6 +254,40 @@ func (a *App) drawServerHelp(w, h int32) {
 	track := sdl.Rect{X: w - scrollBarW - 4, Y: view.Y, W: scrollBarW, H: view.H}
 	a.helpScroll = c.VScrollbar("helpscroll", track, a.helpScroll, contentH, view.H)
 	draw(false)
+}
+
+// serverCapBox is the slightly-brighter cell behind each WS/WSS/Players tick, so
+// the indicators stand out against the dark catalog backdrop (drawn straight on
+// the background they were too dim to read).
+var serverCapBox = sdl.Color{R: 78, G: 82, B: 96, A: 255}
+
+// drawServerCaps draws the WS / WSS / Players capability chips for one project:
+// WS is always a yellow ✓ (every catalog server speaks WS); WSS is a green ✓
+// (native) or red ✕; Players is a green ✓ (native live list), a yellow ✓ marked
+// "plugin", or a red ✕.
+func (a *App) drawServerCaps(x, y int32, p *serverProject) {
+	c := a.ctx
+	cell := func(bx int32, label, glyph string, glyphCol sdl.Color) int32 {
+		w := c.TextWidth(label+" "+glyph) + 16
+		c.Fill(sdl.Rect{X: bx, Y: y, W: w, H: 20}, serverCapBox)
+		c.Label(bx+8, y+2, label+" ", ColText)
+		c.Label(bx+8+c.TextWidth(label+" "), y+2, glyph, glyphCol)
+		return bx + w + 8
+	}
+	bx := cell(x, "WS", "✓", ColTierYellow)
+	if p.wss {
+		bx = cell(bx, "WSS", "✓", ColTierGreen)
+	} else {
+		bx = cell(bx, "WSS", "✕", ColDanger)
+	}
+	switch {
+	case p.plist:
+		cell(bx, "Players", "✓", ColTierGreen)
+	case p.plistPlugin:
+		cell(bx, "Players", "✓ plugin", ColTierYellow)
+	default:
+		cell(bx, "Players", "✕", ColDanger)
+	}
 }
 
 // linkLabel draws one clickable URL: accent text, hover underline, click
