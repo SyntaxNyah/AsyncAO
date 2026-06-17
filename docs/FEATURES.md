@@ -138,6 +138,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   an AO2 lobby image (built for AO2's own list) often renders our server list
   unreadable. Untick it to use the theme's lobby; the **courtroom still uses the
   theme** either way, so you keep the rest of the theme for free.
+- **"For server owners" help screen** (the button beside the legacy-servers
+  notice in the lobby): explains how to get a raw-TCP-era server speaking
+  WebSockets (and WSS for the green lobby tier), then a **scrollable catalog of
+  every modern AO2 server software**. Each entry shows **WS / WSS / Players** as
+  colour-coded chips — **WS** a yellow ✓ (all of them), **WSS** a green ✓ when
+  the server terminates TLS itself or a red ✕ when it needs a reverse proxy, and
+  **Players** a green ✓ (native live player list), a yellow ✓ "plugin" (added by a
+  plugin, e.g. Whisker), or a red ✕ — with a legend. Servers are grouped **base →
+  fork**: each fork (witches-akashi-party → Akashi, Nyathena → Athena, KFO-Server
+  & tsuserverCC → tsuserver3) is indented under its upstream with a drawn
+  connector line and a "fork of X" tag. Every project gets a **~7-sentence
+  description** so an owner knows what they're getting, a full **contributor
+  credit list** pulled from its git history, and clickable repo links. Covers
+  Akashi, witches-akashi-party, Athena, Nyathena, Whisker, tsuserver3 (flagged
+  deprecated), KFO-Server, tsuserverCC, Ferris-AO, Alibi and Kagami.
 - Settings shows a live chatbox preview with the applied colors.
 - **Floating Extras box** (the "★ Extras" button / **Ctrl+X**): a legacy AO2
   `courtroom_design.ini` has no element keys for AsyncAO's own features
