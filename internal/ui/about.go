@@ -150,6 +150,26 @@ var aboutServers = []aboutServer{
 			"actively tested against.",
 		},
 	},
+	{
+		name: "Ferris-AO", lang: "Rust · base", ws: true, wss: true, plist: true,
+		url: "https://github.com/SyntaxNyah/Ferris-AO",
+		desc: []string{
+			"A privacy-first Attorney Online 2 server written in Rust, built async-first on Tokio. It",
+			"implements the full AO2 protocol over both WebSocket (with native WSS) and legacy TCP. Its",
+			"headline is privacy: raw IP addresses and hardware IDs are never stored. It also streams",
+			"the live PR/PU player list, so AsyncAO's real-time roster works against it.",
+		},
+	},
+	{
+		name: "Whisker", lang: "C3 · base", ws: true, wss: true, plist: false,
+		url: "https://github.com/SyntaxNyah/Whisker",
+		desc: []string{
+			"A clean, minimal Attorney Online 2 server written in C3, built for speed with configurable",
+			"rate limits and DDoS resilience. Its philosophy is readability — no magic numbers, no",
+			"unnecessary abstractions — with an optional plugin system for extensions. It serves",
+			"WebSocket clients with native WSS; a lean, modern, no-frills option for hosting.",
+		},
+	},
 }
 
 type aboutLink struct {
