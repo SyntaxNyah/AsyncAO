@@ -32,6 +32,7 @@ var serverHelpLegend = "Each server is tagged:  WS (yellow ✓ — every server 
 type serverProject struct {
 	name        string
 	lang        string
+	parent      string   // "" = base; else the upstream it's a fork of (indented under it)
 	wss         bool     // WSS ⇒ WS too; false = plain WS only
 	plist       bool     // modern 2.11 live player list in the BASE server
 	plistPlugin bool     // player list available only via a plugin (not in base)
@@ -59,7 +60,7 @@ var serverProjects = []serverProject{
 		links:   []string{"https://github.com/AttorneyOnline/akashi"},
 	},
 	{
-		name: "witches-akashi-party", lang: "C++", wss: true, plist: true,
+		name: "witches-akashi-party", lang: "C++", parent: "Akashi", wss: true, plist: true,
 		desc: []string{
 			"A feature-rich community fork of Akashi, with its active development living on the 'tea' branch rather than master.",
 			"It is maintained by Ganty1999, Elchi, IDk-2023 and SyntaxNyah, and builds directly on top of Akashi's modern C++/Qt base.",
@@ -69,7 +70,7 @@ var serverProjects = []serverProject{
 			"It reworks pairing to sync by client id instead of character id, and it marks webAO users in the area player list so you can tell who's on the web client.",
 			"Pick it when you want Akashi's reliability plus a big pile of quality-of-life and roleplay extras for a busy, active community.",
 		},
-		credits: "Ganty1999, ElChi, IDk-2023, SyntaxNyah, and the upstream Akashi authors",
+		credits: "Ganty1999, IDk-2023, SyntaxNyah, ElChi, Claude, plus the full upstream Akashi author list",
 		links:   []string{"https://github.com/Elchi-2023/witches-akashi-party/tree/tea"},
 	},
 	{
@@ -87,7 +88,7 @@ var serverProjects = []serverProject{
 		links:   []string{"https://github.com/MangosArentLiterature/Athena"},
 	},
 	{
-		name: "Nyathena", lang: "Go", wss: true, plist: true,
+		name: "Nyathena", lang: "Go", parent: "Athena", wss: true, plist: true,
 		desc: []string{
 			"SyntaxNyah's Go fork of Mangos' Athena, grown into a much larger and more complete feature set.",
 			"It adds native WSS support, so you can point it straight at a TLS certificate and serve the secure port without a proxy.",
@@ -97,7 +98,7 @@ var serverProjects = []serverProject{
 			"It is the server that AsyncAO itself is most actively developed and tested against day to day.",
 			"Pick it when you want Athena's structure with every modern feature switched on and you don't mind the larger surface area.",
 		},
-		credits: "SyntaxNyah, Claude, MangosArentLiterature, David Skoland, lambdcalculus, Miles Nottingham",
+		credits: "SyntaxNyah, Claude, MangosArentLiterature, OmniTroid, lambdcalculus, Miles Nottingham, David Skoland",
 		links:   []string{"https://github.com/SyntaxNyah/Nyathena"},
 	},
 	{
@@ -115,7 +116,22 @@ var serverProjects = []serverProject{
 		links:   []string{"https://github.com/SyntaxNyah/Whisker"},
 	},
 	{
-		name: "KFO-Server", lang: "Python", wss: true, plist: false,
+		name: "tsuserver3", lang: "Python", wss: false, plist: false,
+		warn: "Deprecated — no longer maintained by the official developers; for a new server, use Akashi instead.",
+		desc: []string{
+			"The original Python server for Attorney Online 2, and the common ancestor of the entire classic Python server lineage.",
+			"For years it was effectively THE AO server, and most long-running communities ran on it at some point.",
+			"Modern builds gained WebSocket support, which is what allows browser and streaming clients to reach its descendants at all.",
+			"It speaks plain WS only, so any secure WSS port has to be provided by a reverse proxy sitting in front of it.",
+			"It has no modern 2.11 player list, so a roster on it is entirely /getarea-driven.",
+			"Most importantly it is no longer maintained by the official developers, so although it still runs you should not start a new server on it today.",
+			"Its actively-maintained forks below are the living continuation of this lineage; for a fresh modern server, use Akashi.",
+		},
+		credits: "argoneuscze, oldmud0, OmniTroid, stonedDiscord, Poyoanon, Crystalwarrior, Lewdton, in1tiate, caleb-mabry, collinxchu, Pyraqq, likeawindrammer, cents02, Cerapter, Lernos, shogunator1337, mposs00, Enovale, Fronku, Parazoid",
+		links:   []string{"https://github.com/AttorneyOnline/tsuserver3"},
+	},
+	{
+		name: "KFO-Server", lang: "Python", parent: "tsuserver3", wss: true, plist: false,
 		desc: []string{
 			"CrystalWarrior's Python server, forked from the official — now discontinued — tsuserver3, the original AO Python server.",
 			"It carries a huge focus on roleplaying commands and extra features tailored to RP-heavy communities.",
@@ -127,6 +143,19 @@ var serverProjects = []serverProject{
 		},
 		credits: "Alex Noir, Crystalwarrior, argoneus, oldmud0, stonedDiscord, sD, OmniTroid, David Skoland, ghostfeesh, Dev, Lewdton, Jumbowl, BazettFraga, UnDeviato, Pyraq, Parazoid, SymphonyVR, cents02, in1tiate, mastyra, Cerapter, EstatoDeviato, Satoru;1816, windrammer, Mariomagistr, Trey, Denton, Elijah Bansley, Somebody Somebodious, SyntaxNyah, likeawindrammer, scatterflower, AwesomeAim, Chrezm, ElijahZAwesome, Jumblr, Paradox, Rosemary Witchaven, Salanto, deadlestrade, perplexedMurfy, shogun, slavfox, yemt",
 		links:   []string{"https://github.com/Crystalwarrior/KFO-Server"},
+	},
+	{
+		name: "tsuserverCC", lang: "Python", parent: "tsuserver3", wss: false, plist: false,
+		desc: []string{
+			"A fork of tsuserver3 originally built for the Case Café community, which is where the \"CC\" in the name comes from.",
+			"It keeps the classic tsuserver protocol and command style, with its own additions and tweaks layered on top.",
+			"Like the rest of the tsuserver family it is WebSocket-capable but serves plain WS only, so a WSS port needs a reverse proxy.",
+			"It does not implement the modern 2.11 player list, so AsyncAO uses /getarea snapshots for the roster against it.",
+			"It leans toward casing and roleplay tooling for the communities it grew up serving.",
+			"Being Python and tsuserver-based, it is familiar, hackable territory for anyone who has run the classic server before.",
+			"Pick it if you specifically want the Case Café flavor of the long-running tsuserver lineage.",
+		},
+		credits: "The tsuserverCC / Case Café contributors",
 	},
 	{
 		name: "Ferris-AO", lang: "Rust", wss: true, plist: true,
@@ -215,9 +244,21 @@ func (a *App) drawServerHelp(w, h int32) {
 		y += lineH
 		for i := range serverProjects {
 			p := &serverProjects[i]
-			put(p.name+"  ·  "+p.lang, ColAccent)
+			nameX := pad
+			header := p.name + "  ·  " + p.lang
+			if p.parent != "" { // a fork: indent under its upstream + a connector line
+				nameX = pad + 22
+				header = p.name + "  ·  " + p.lang + "  ·  fork of " + p.parent
+			}
+			if !measure && y > view.Y-lineH && y < view.Y+view.H {
+				if p.parent != "" {
+					a.drawForkConnector(y, lineH)
+				}
+				c.LabelClipped(nameX, y, wrapW-(nameX-pad), header, ColAccent)
+			}
+			y += lineH
 			if !measure && y > view.Y-20 && y < view.Y+view.H {
-				a.drawServerCaps(pad, y, p)
+				a.drawServerCaps(nameX, y, p)
 			}
 			y += lineH + 4
 			for _, sentence := range p.desc {
@@ -254,6 +295,18 @@ func (a *App) drawServerHelp(w, h int32) {
 	track := sdl.Rect{X: w - scrollBarW - 4, Y: view.Y, W: scrollBarW, H: view.H}
 	a.helpScroll = c.VScrollbar("helpscroll", track, a.helpScroll, contentH, view.H)
 	draw(false)
+}
+
+// drawForkConnector draws a small line linking a fork to the upstream listed
+// above it: a short vertical drop in the indent gutter plus a horizontal stub
+// into the indented name. Drawn as lines, not glyphs, so it never depends on a
+// font having box-drawing characters.
+func (a *App) drawForkConnector(y, lineH int32) {
+	c := a.ctx
+	railX := int32(pad + 7)
+	mid := y + lineH/2
+	c.Fill(sdl.Rect{X: railX, Y: y - lineH/2, W: 2, H: lineH}, ColAccent) // vertical drop from above
+	c.Fill(sdl.Rect{X: railX, Y: mid, W: 13, H: 2}, ColAccent)            // horizontal into the name
 }
 
 // serverCapBox is the slightly-brighter cell behind each WS/WSS/Players tick, so
