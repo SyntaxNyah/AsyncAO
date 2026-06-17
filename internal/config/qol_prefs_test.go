@@ -45,6 +45,31 @@ func TestQoLPrefDefaults(t *testing.T) {
 	}
 }
 
+// TestFollowEnabledPref pins the opt-in player-follow toggle: OFF by default,
+// and an explicit ON survives save→load.
+func TestFollowEnabledPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.FollowEnabledOn() {
+		t.Error("FollowEnabled must default OFF (opt-in)")
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetFollowEnabled(true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.FollowEnabledOn() {
+		t.Error("FollowEnabled=true lost across save/load")
+	}
+}
+
 // TestPreviewHoverClamp pins the dwell bounds (the setter is authoritative).
 func TestPreviewHoverClamp(t *testing.T) {
 	p, _ := newTestPrefs(t)

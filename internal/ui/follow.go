@@ -49,6 +49,10 @@ func (a *App) maybeFollowJump() {
 	if a.followUID == "" || a.sess == nil {
 		return
 	}
+	if !a.d.Prefs.FollowEnabledOn() {
+		a.followUID = "" // feature is off (opt-in): stop trailing
+		return
+	}
 	uid, err := strconv.Atoi(a.followUID)
 	if err != nil {
 		a.followUID = "" // malformed; stop trailing a ghost

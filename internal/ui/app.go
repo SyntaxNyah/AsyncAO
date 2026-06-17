@@ -829,6 +829,7 @@ type sessionState struct {
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
 	lastFollowJump time.Time
+	followShow     bool // FollowEnabled pref, read once per player-list frame (no per-row lock)
 	// areaHistory is the most-recently-visited areas (MRU, index 0 = current),
 	// driven by our own PR/PU area; the Areas tab shows the rest as jump-back
 	// chips (M3). Bounded by areaHistoryCap.

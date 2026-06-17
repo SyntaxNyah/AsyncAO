@@ -371,6 +371,7 @@ type AssetPreferences struct {
 	ForceCharNames         bool                         `json:"forceCharNames"`
 	RandomEmote            bool                         `json:"randomEmote"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
+	FollowEnabled          bool                         `json:"followEnabled"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
@@ -527,6 +528,7 @@ type prefsJSON struct {
 	ForceCharNames         bool      `json:"forceCharNames"`  // default OFF
 	RandomEmote            bool      `json:"randomEmote"`     // default OFF
 	FriendHighlight        bool      `json:"friendHighlight"` // default OFF
+	FollowEnabled          bool      `json:"followEnabled"`   // default OFF (opt-in)
 	FriendNotify           bool      `json:"friendNotify"`    // default OFF
 	FriendOSToast          bool      `json:"friendOSToast"`   // default OFF
 	FriendGlowPulse        bool      `json:"friendGlowPulse"` // default OFF
@@ -915,6 +917,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ForceCharNames = onDisk.ForceCharNames
 	p.RandomEmote = onDisk.RandomEmote
 	p.FriendHighlight = onDisk.FriendHighlight
+	p.FollowEnabled = onDisk.FollowEnabled
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
@@ -1956,6 +1959,26 @@ func (p *AssetPreferences) SetFriendHighlight(on bool) {
 		return
 	}
 	p.FriendHighlight = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FollowEnabledOn reports the opt-in player-follow toggle (OFF by default): when
+// on, each player-list row shows a Follow button that trails them across areas.
+func (p *AssetPreferences) FollowEnabledOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FollowEnabled
+}
+
+// SetFollowEnabled toggles the opt-in player-follow feature.
+func (p *AssetPreferences) SetFollowEnabled(on bool) {
+	p.mu.Lock()
+	if p.FollowEnabled == on {
+		p.mu.Unlock()
+		return
+	}
+	p.FollowEnabled = on
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -109,6 +109,22 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: sw, H: 22}, sortBtn) {
 		a.playerSort = (a.playerSort + 1) % playerSortModes
 	}
+	// Follow toggle (M3, opt-in / OFF by default): when on, every row gets a
+	// Follow button that auto-jumps you to that player's area as they move.
+	const followLabel = "Follow"
+	follW := int32(22) + c.TextWidth(followLabel)
+	follX := r.X + r.W - follW - 4
+	followOn := a.d.Prefs.FollowEnabledOn()
+	a.followShow = followOn // cache for the per-row Follow buttons (one read per frame, no per-row lock)
+	if next := c.Checkbox(follX, r.Y+3, followLabel, followOn); next != followOn {
+		a.d.Prefs.SetFollowEnabled(next)
+		a.followShow = next
+		if !next {
+			a.followUID = "" // turning it off stops any active trailing
+		}
+	}
+	c.Tooltip(sdl.Rect{X: follX, Y: r.Y + 3, W: follW, H: 16},
+		"Off (default): no follow. On: each row gets a Follow button that auto-jumps you to that player's area whenever they move.")
 	status := strconv.Itoa(len(a.rosterView())) + " here · live"
 	if !a.rosterLegacy && !a.livePlayersOn && len(a.areaPlayers) == 0 {
 		status += " · fetching details…" // CharsCheck fallback; the rich /getarea snapshot hasn't landed
@@ -119,7 +135,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			status += "  ·  as of " + a.areaListAt.Format("15:04") // a snapshot, not live
 		}
 	}
-	c.LabelClipped(r.X+sw+10, r.Y+5, r.X+r.W-(r.X+sw+10)-4, status, ColTextDim)
+	c.LabelClipped(r.X+sw+10, r.Y+5, follX-(r.X+sw+10)-8, status, ColTextDim)
 	r.Y += 28
 	r.H -= 28
 
@@ -249,18 +265,22 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 			a.warnLine = clampLine("Copied UID " + p.uid)
 			a.warnAt = a.now()
 		}
-		// Follow (M3): trail this player across areas — auto-jump when they move.
-		fl := "Follow"
-		if a.followUID == p.uid {
-			fl = "Following"
+		// Follow (M3, opt-in): trail this player across areas — auto-jump when they
+		// move. Only shown when the player-list "Follow" toggle is on (OFF default);
+		// a.followShow is read once per frame in drawPlayerList (no per-row lock).
+		if a.followShow {
+			fl := "Follow"
+			if a.followUID == p.uid {
+				fl = "Following"
+			}
+			fw := c.TextWidth(fl) + 14
+			bx -= fw + 4
+			fr := sdl.Rect{X: bx, Y: btnY, W: fw, H: 22}
+			if c.Button(fr, fl) {
+				a.toggleFollow(p.uid)
+			}
+			c.Tooltip(fr, "Follow this player: auto-jump to their area whenever they move. Click again to stop.")
 		}
-		fw := c.TextWidth(fl) + 14
-		bx -= fw + 4
-		fr := sdl.Rect{X: bx, Y: btnY, W: fw, H: 22}
-		if c.Button(fr, fl) {
-			a.toggleFollow(p.uid)
-		}
-		c.Tooltip(fr, "Follow this player: auto-jump to their area whenever they move. Click again to stop.")
 	}
 	if p.ipid != "" { // IPID is mod-only server data — its presence IS the authorization (don't gate on local mod-detection)
 		iw := c.TextWidth("IPID") + 12
