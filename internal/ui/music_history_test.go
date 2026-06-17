@@ -63,6 +63,18 @@ func TestNoteMusicHistoryCap(t *testing.T) {
 	}
 }
 
+// TestNoteMusicHistoryDisabled pins the Settings toggle: with the history pref
+// off, nothing is captured (the default is ON, so it normally records).
+func TestNoteMusicHistoryDisabled(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.d.Prefs.SetMusicHistory(false)
+	a.noteMusicHistory(courtroom.Event{Kind: courtroom.EventMusic, Text: "Trial.opus", Int: 0})
+	if len(a.musicHist) != 0 {
+		t.Errorf("history disabled but captured %d entries", len(a.musicHist))
+	}
+}
+
 // TestNoteMusicHistoryNoSession pins crash-safety: no session + an out-of-range
 // charID must not panic, and "by" is simply left blank.
 func TestNoteMusicHistoryNoSession(t *testing.T) {

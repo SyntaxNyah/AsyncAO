@@ -200,6 +200,11 @@ const defaultICTimestamps = true
 // deliberate Disconnect never auto-retries).
 const defaultAutoReconnect = true
 
+// defaultMusicHistory ships ON: AsyncAO keeps a session list of the songs played
+// in the room (the Jukebox "Recently played" view) so you can grab a link
+// someone /played. Toggleable off in Settings.
+const defaultMusicHistory = true
+
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
 // 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
@@ -475,6 +480,8 @@ type AssetPreferences struct {
 	ICTimestamps bool `json:"icTimestamps"`
 	// AutoReconnect auto-retries the last server after an unexpected drop (ON by default).
 	AutoReconnect bool `json:"autoReconnect"`
+	// MusicHistory keeps the session "recently played" jukebox list (ON by default).
+	MusicHistory bool `json:"musicHistory"`
 
 	mu        sync.RWMutex
 	path      string
@@ -614,6 +621,7 @@ type prefsJSON struct {
 	MessageCounter     *bool `json:"messageCounter"`     // absent = default ON
 	ICTimestamps       *bool `json:"icTimestamps"`       // absent = default ON
 	AutoReconnect      *bool `json:"autoReconnect"`      // absent = default ON
+	MusicHistory       *bool `json:"musicHistory"`       // absent = default ON
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -822,6 +830,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		MessageCounter:     defaultMessageCounter,
 		ICTimestamps:       defaultICTimestamps,
 		AutoReconnect:      defaultAutoReconnect,
+		MusicHistory:       defaultMusicHistory,
 		HighlightColor:     defaultHighlightColor,
 		NameSat:            defaultNameColorSat,
 		NameVal:            defaultNameColorVal,
@@ -931,6 +940,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.AutoReconnect != nil {
 		p.AutoReconnect = *onDisk.AutoReconnect
+	}
+	if onDisk.MusicHistory != nil {
+		p.MusicHistory = *onDisk.MusicHistory
 	}
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
@@ -1701,6 +1713,26 @@ func (p *AssetPreferences) SetAutoReconnect(on bool) {
 		return
 	}
 	p.AutoReconnect = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MusicHistoryOn reports the jukebox "recently played" history toggle (ON by
+// default): capture the songs played in the room into the session list.
+func (p *AssetPreferences) MusicHistoryOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MusicHistory
+}
+
+// SetMusicHistory toggles the jukebox "recently played" session history.
+func (p *AssetPreferences) SetMusicHistory(on bool) {
+	p.mu.Lock()
+	if p.MusicHistory == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MusicHistory = on
 	p.mu.Unlock()
 	p.markDirty()
 }

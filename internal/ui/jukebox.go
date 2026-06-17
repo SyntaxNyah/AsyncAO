@@ -205,7 +205,11 @@ func (a *App) drawWardrobeJukeboxBody(panel sdl.Rect, w, h int32) {
 	c.Label(left, top, "Your music library — shared across every server. Play sends /play in OOC (DJ/CM only).", ColTextDim)
 
 	atTop := a.jukeOpen < 0 || a.jukeOpen >= len(a.jukeCache)
-	if atTop && !a.jukeShowRecent {
+	histOn := a.d.Prefs.MusicHistoryOn()
+	if !histOn {
+		a.jukeShowRecent = false // feature disabled in Settings: never show the recent view
+	}
+	if atTop && !a.jukeShowRecent && histOn {
 		// Toggle into the session "recently played" view (hidden inside a playlist
 		// and inside the recent view itself, which has its own back button). The
 		// label is cached (rebuilt only when the ring changes) so this draws 0-alloc.

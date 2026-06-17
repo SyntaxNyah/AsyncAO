@@ -20,6 +20,11 @@ import (
 // slices). Newest first; a replay moves its entry to the front.
 const musicHistoryCap = 30
 
+// jukeboxHistoryPlaylist is the dedicated playlist the "recently played" Save
+// button files into — kept separate from the OOC-log "Saved from chat" list so
+// songs you grab from the room collect in their own folder.
+const jukeboxHistoryPlaylist = "Music history"
+
 // musicHistEntry is one played song. track is the raw MC text (a full /play URL
 // or a server music-list name); the rest are precomputed for the draw.
 type musicHistEntry struct {
@@ -35,6 +40,9 @@ type musicHistEntry struct {
 // unlike the IC log line — it keeps system/area-played songs too (attribution
 // is best-effort), and it never indexes Chars out of range.
 func (a *App) noteMusicHistory(ev courtroom.Event) {
+	if !a.d.Prefs.MusicHistoryOn() {
+		return // history disabled in Settings (default ON)
+	}
 	_, song, ok := courtroom.MusicAction(ev.Text)
 	if !ok || song == "" {
 		return // a ~stop sentinel or an area-name transfer — not a song
@@ -136,8 +144,8 @@ func (a *App) drawJukeHistRow(e musicHistEntry, r sdl.Rect) {
 		}
 		bx -= 58
 		if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 54, H: r.H}, "Save") {
-			if a.juke != nil && a.juke.QuickAdd(jukeboxOOCPlaylist, e.name, e.track) {
-				a.jukeWarn(fmt.Sprintf("Saved to %q: %s", jukeboxOOCPlaylist, e.name))
+			if a.juke != nil && a.juke.QuickAdd(jukeboxHistoryPlaylist, e.name, e.track) {
+				a.jukeWarn(fmt.Sprintf("Saved to %q: %s", jukeboxHistoryPlaylist, e.name))
 			} else {
 				a.jukeWarn("Already saved (or at the link cap).")
 			}

@@ -377,18 +377,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   re-serializes the prefs file. Play/Share need a live connection (and DJ/CM
   rights, which the server enforces). Kept by **Reset settings**, erased by
   **Wipe everything**.
-- **Recently played** (M12; Jukebox tab → **Recently played** toggle): a
-  session list of the songs that played **in the room** — captured from the same
-  music-change event the IC "*has played a song*" line uses, so it catches what
-  **everyone** (DJs/CMs) plays, not just you. Each row shows the cleaned song
-  name + who played it; a real `/play` **link** gets **Save** (files it into the
-  "Saved from chat" playlist, dedup by URL), **Play**, and **Share**, while a
-  bare server-music-list name can only be re-**Play**ed. It's the "*what was that
-  song?*" grab-it scratchpad — **in-memory for the session** (the persisted half
-  is the playlists), newest-first, deduped (a replay moves to the top), and
-  **bounded** (30). Costs nothing on the hot path: the capture is event-driven
-  (once per song, never per frame), the row labels are precomputed at capture,
-  and the toggle's count label is cached — the render loop stays **0 allocs/op**.
+- **Recently played** (M12; Jukebox tab → **Recently played** toggle, **ON by
+  default**): a session list of the songs that played **in the room** — captured
+  from the same music-change event the IC "*has played a song*" line uses, so it
+  catches what **everyone** (DJs/CMs) plays, not just you. Each row shows the
+  cleaned song name + who played it; a real `/play` **link** gets **Save** (files
+  it into its own dedicated **"Music history"** playlist, dedup by URL), **Play**,
+  and **Share**, while a bare server-music-list name can only be re-**Play**ed.
+  It's the "*what was that song?*" grab-it scratchpad — **in-memory for the
+  session** (the persisted half is the playlists), newest-first, deduped (a replay
+  moves to the top), and **bounded** (30). A **Settings → Audio & Chat** tick box
+  turns the whole thing off (it then records nothing and hides the toggle). Costs
+  nothing on the hot path: the capture is event-driven (once per song, never per
+  frame), the row labels are precomputed at capture, and the toggle's count label
+  is cached — the render loop stays **0 allocs/op**.
 - **Audio codecs** (the "audio note"): only WAV is built into SDL_mixer; the
   **Opus / Ogg-Vorbis / MP3** decoders ship as separate DLLs and are loaded at
   startup via `Mix_Init` (best-effort — a missing codec just loses that one

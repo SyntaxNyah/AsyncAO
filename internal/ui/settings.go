@@ -1314,6 +1314,13 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		y += 6
 	}
 
+	// M12: keep a session "recently played" jukebox history (ON by default).
+	mh := a.d.Prefs.MusicHistoryOn()
+	if next := c.Checkbox(pad, y, "Keep a \"recently played\" music history (ON by default): the Jukebox tab lists songs played in the room so you can Save a link (into the \"Music history\" playlist), Play, or Share. Off = don't record.", mh); next != mh {
+		a.d.Prefs.SetMusicHistory(next)
+	}
+	y += 30
+
 	// Highlighted friends (per server): shownames whose IC messages glow.
 	fh := a.d.Prefs.FriendHighlightOn()
 	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {
