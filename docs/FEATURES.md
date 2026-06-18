@@ -554,18 +554,26 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   all in the courtroom chrome or Settings.
 - **Settings page wheel-scrolls** with a right-edge bar; spinbox rows
   keep first claim on the wheel (hover-tune never page-scrolls).
-- **HiDPI auto-scale** (default ON): the UI scale follows the display
-  DPI (96 = 100%, snapped to the settings step); untick for the manual
-  spinbox. **Theater mode** (Ctrl+T, the UI... panel, Esc exits): the
+- **HiDPI auto-scale** (default ON): the global UI scale follows the display
+  DPI (96 = 100%, snapped to the settings step); untick for a manual **UI scale
+  slider** (75–200%, drag or wheel). The scale is a true whole-frame zoom — text
+  *and* sprites grow together. Below it sit two independent **text-size sliders**
+  — **Chat log text** and **Chatbox text** — that resize just the IC/OOC log +
+  message text *without* zooming the courtroom art (the same persisted scales the
+  in-courtroom Ctrl+wheel zoom tunes, so a change here shows at once and survives
+  restart). **Theater mode** (Ctrl+T, the UI... panel, Esc exits): the
   borderless stage alone — viewport, chat overlay, splashes — session-
   only by design.
 - **Font override with CJK fallback chain** (Settings → IC/OOC font):
   semicolon-separated TTF/TTC paths; every message and log line picks
   the first chain font covering all its runes (CJK fonts cover Latin, so
   mixed text lands right), embedded font as last resort. Files read
-  off-thread; picks memoized per line (no per-frame glyph probing). A
-  **Dyslexia-friendly** button one-clicks a high-readability chain
-  (OpenDyslexic if installed, else Verdana). *Known limitation:* **colour emoji
+  off-thread; picks memoized per line (no per-frame glyph probing). A persisted
+  **Dyslexia-friendly font** toggle (OFF by default) drives the chat + log text
+  with the **bundled OpenDyslexic** (SIL OFL 1.1, embedded in the binary — no
+  install needed) and takes precedence over the manual override; both resolve
+  through a single launch/live path, so the toggle survives a restart. *Known
+  limitation:* **colour emoji
   and other supplementary-plane characters (U+1F300+, e.g. 💔🥀) render as
   boxes** — the bundled SDL_ttf (2.0.18) has 16-bit glyph metrics and no colour
   glyphs, so a fallback font can't help; needs an SDL_ttf 2.20+ upgrade. See

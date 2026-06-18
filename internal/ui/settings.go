@@ -499,12 +499,27 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	if scaleAuto {
 		c.Label(pad, y+4, fmt.Sprintf("UI scale %%:  %d (auto)", a.UIScale()), ColTextDim)
 	} else {
-		uiPct := a.numberRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent)
+		uiPct := a.sliderRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent)
 		if uiPct != a.uiScalePct {
 			a.uiScalePct = uiPct
 			a.ctx.SetUIScale(uiPct)
 			a.d.Prefs.SetUIScale(uiPct)
 		}
+	}
+	y += 34
+
+	// Independent text size: scale the IC/OOC log + chatbox message text WITHOUT
+	// zooming the courtroom art (that's the UI scale above — it's a whole-frame
+	// zoom). These map to the same persisted layout scales the in-courtroom
+	// Ctrl+wheel zoom tunes, so a change here shows at once and survives restart.
+	if v := a.sliderRow(y, "Chat log text size %", a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent); v != a.logPct {
+		a.logPct = v
+		a.saveLayout()
+	}
+	y += 30
+	if v := a.sliderRow(y, "Chatbox text size %", a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent); v != a.chatPct {
+		a.chatPct = v
+		a.saveLayout()
 	}
 	y += 34
 
@@ -599,8 +614,25 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetExtrasBoxStyle(next[0], next[1], next[2], next[3], next[4], nextGrad)
 	}
 
-	// IC/OOC font override: a chain of TTF/TTC paths, first covering font
-	// per line wins (put a CJK-capable font later in the chain).
+	// Dyslexia-friendly font: a persisted one-click toggle backed by the bundled
+	// OpenDyslexic (no install needed). Drives the IC/OOC chat + log text and
+	// takes precedence over the manual override below.
+	dys := a.d.Prefs.DyslexiaFontOn()
+	if next := c.Checkbox(pad, y, "Dyslexia-friendly font (bundled OpenDyslexic) — applies to the chat & log text", dys); next != dys {
+		a.d.Prefs.SetDyslexiaFont(next)
+		a.applyFontConfig()
+		if next {
+			settings.statusLine = "Dyslexia-friendly font on (OpenDyslexic)."
+		} else {
+			settings.statusLine = "Dyslexia-friendly font off."
+		}
+		dys = next
+	}
+	y += 28
+
+	// IC/OOC font override: a chain of TTF/TTC paths, first covering font per
+	// line wins (put a CJK-capable font later in the chain). Saved even while the
+	// dyslexia font is on (which overrides it), so it returns when you switch back.
 	c.Label(pad, y+4, "IC/OOC font:", ColText)
 	if !settings.fontLoaded {
 		settings.fontInput = a.d.Prefs.FontPaths()
@@ -612,34 +644,22 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || fontCommit {
 		raw := strings.TrimSpace(settings.fontInput)
 		a.d.Prefs.SetFontPaths(raw)
-		a.loadFontChainAsync(raw)
-		if raw == "" {
+		a.applyFontConfig()
+		switch {
+		case dys:
+			settings.statusLine = "Saved — turn off the dyslexia font to use this custom font."
+		case raw == "":
 			settings.statusLine = "Font override cleared — built-in font."
 		}
 	}
-	if names := a.ctx.FontChainNames(); len(names) > 0 {
+	if dys {
+		c.LabelClipped(pad+620, y+4, w-pad-620-scrollBarW, "(dyslexia font active — overrides this)", ColTextDim)
+	} else if names := a.ctx.FontChainNames(); len(names) > 0 {
 		c.LabelClipped(pad+620, y+4, w-pad-620-scrollBarW, "chain: "+strings.Join(names, " → "), ColTextDim)
 	}
-	y += 30
-	// Dyslexia-friendly preset: one click fills + applies a high-readability
-	// font chain (OpenDyslexic if installed, else Verdana). Edit the field to
-	// point at any TTF you prefer.
-	if c.Button(sdl.Rect{X: pad + 110, Y: y, W: 180, H: btnH}, "Dyslexia-friendly font") {
-		settings.fontInput = dyslexiaFontPreset
-		a.d.Prefs.SetFontPaths(dyslexiaFontPreset)
-		a.loadFontChainAsync(dyslexiaFontPreset)
-		settings.statusLine = "Applied a high-readability font (edit the path above for OpenDyslexic)."
-	}
-	c.LabelClipped(pad+300, y+4, w-pad-300-scrollBarW, "high-readability preset; edit the path to use OpenDyslexic", ColTextDim)
 	y += 34
 	return y
 }
-
-// dyslexiaFontPreset is the one-click readability chain: OpenDyslexic if the
-// user installed it, else Verdana (present on every Windows install) — both
-// far more legible for dyslexic readers than the default. First covering font
-// per line wins, so the missing entries are simply skipped.
-const dyslexiaFontPreset = `C:\Windows\Fonts\OpenDyslexic-Regular.ttf; C:\Windows\Fonts\verdana.ttf`
 
 // drawSettingsTheme: theme picker/folder, layout toggle, live preview, bind.
 func (a *App) drawSettingsTheme(y, w, h int32) int32 {

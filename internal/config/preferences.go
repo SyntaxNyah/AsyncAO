@@ -372,6 +372,7 @@ type AssetPreferences struct {
 	RandomEmote            bool                         `json:"randomEmote"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
 	FollowEnabled          bool                         `json:"followEnabled"`
+	DyslexiaFont           bool                         `json:"dyslexiaFont"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
@@ -529,6 +530,7 @@ type prefsJSON struct {
 	RandomEmote            bool      `json:"randomEmote"`     // default OFF
 	FriendHighlight        bool      `json:"friendHighlight"` // default OFF
 	FollowEnabled          bool      `json:"followEnabled"`   // default OFF (opt-in)
+	DyslexiaFont           bool      `json:"dyslexiaFont"`    // default OFF
 	FriendNotify           bool      `json:"friendNotify"`    // default OFF
 	FriendOSToast          bool      `json:"friendOSToast"`   // default OFF
 	FriendGlowPulse        bool      `json:"friendGlowPulse"` // default OFF
@@ -918,6 +920,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.RandomEmote = onDisk.RandomEmote
 	p.FriendHighlight = onDisk.FriendHighlight
 	p.FollowEnabled = onDisk.FollowEnabled
+	p.DyslexiaFont = onDisk.DyslexiaFont
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
@@ -1959,6 +1962,27 @@ func (p *AssetPreferences) SetFriendHighlight(on bool) {
 		return
 	}
 	p.FriendHighlight = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DyslexiaFontOn reports the dyslexia-friendly font toggle (OFF by default):
+// when on, the bundled OpenDyslexic font drives the IC/OOC chat + log text and
+// takes precedence over any manual font-path override.
+func (p *AssetPreferences) DyslexiaFontOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DyslexiaFont
+}
+
+// SetDyslexiaFont toggles the embedded dyslexia-friendly font.
+func (p *AssetPreferences) SetDyslexiaFont(on bool) {
+	p.mu.Lock()
+	if p.DyslexiaFont == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DyslexiaFont = on
 	p.mu.Unlock()
 	p.markDirty()
 }

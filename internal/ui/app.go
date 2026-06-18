@@ -1209,9 +1209,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.playerPct = a.logPct // same for the Players tab + pair popup
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
-	if paths := d.Prefs.FontPaths(); paths != "" {
-		a.loadFontChainAsync(paths) // persisted override: bytes land async
-	}
+	a.applyFontConfig() // dyslexia toggle or manual font path, resolved once
 	if saved := d.Prefs.SavedOOCName(); saved != "" {
 		a.oocName = saved
 	}
@@ -1978,6 +1976,21 @@ type fontLoad struct {
 // past 64 MiB it's not a font, it's a mistake).
 const fontFileMaxBytes = 64 << 20
 
+// applyFontConfig installs the IC/OOC override font chain from prefs through one
+// resolver, so the launch path and the live Settings toggles can never disagree:
+// the dyslexia toggle wins (embedded OpenDyslexic, set synchronously — no disk),
+// else the manual font-path chain (read off-thread), else the built-in font.
+// Called at launch and on every change to either source.
+func (a *App) applyFontConfig() {
+	switch fontChainSource(a.d.Prefs.DyslexiaFontOn(), a.d.Prefs.FontPaths()) {
+	case fontSourceDyslexia:
+		a.ctx.SetFontChain([]string{dyslexiaFontName}, [][]byte{openDyslexicOTF})
+		a.rasterText = "" // re-raster the visible message in the new font
+	default: // manual path or built-in — loadFontChainAsync clears on empty
+		a.loadFontChainAsync(a.d.Prefs.FontPaths())
+	}
+}
+
 // loadFontChainAsync reads the override font files off-thread (semicolon-
 // or comma-separated paths, chain order, ≤ fontChainCap) and lands them on
 // fontRes. An empty list clears the override immediately.
@@ -2028,7 +2041,10 @@ func (a *App) loadFontChainAsync(raw string) {
 func (a *App) pollFontChain() {
 	select {
 	case res := <-a.fontRes:
-		if len(res.data) > 0 {
+		// Precedence guard: if the dyslexia toggle flipped on while this manual
+		// chain was loading off-thread, the embedded font already won — don't
+		// let the stale result clobber it.
+		if len(res.data) > 0 && !a.d.Prefs.DyslexiaFontOn() {
 			a.ctx.SetFontChain(res.names, res.data)
 		}
 		a.rasterText = ""
