@@ -113,6 +113,26 @@ func (a *App) hotkeyFor(action string) string {
 	return ""
 }
 
+// hotkeyConflictKeys returns the set of keys bound to more than one action. The
+// dispatch switch in handleHotkeys matches the first case for a key, so a clash
+// silently dead-ends the later action(s) — the Controls tab flags these keys so
+// a rebind collision is visible, not a mystery.
+func (a *App) hotkeyConflictKeys() map[string]bool {
+	count := make(map[string]int, len(hotkeyDefs))
+	for _, def := range hotkeyDefs {
+		if k := a.hotkeyFor(def.id); k != "" {
+			count[k]++
+		}
+	}
+	out := map[string]bool{}
+	for k, n := range count {
+		if n > 1 {
+			out[k] = true
+		}
+	}
+	return out
+}
+
 // refreshCharKeys re-reads this server's character keybinds into the
 // per-frame lookup caches (connect + bind edits only — never per frame).
 func (a *App) refreshCharKeys() {

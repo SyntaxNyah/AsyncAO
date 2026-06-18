@@ -372,6 +372,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   character** (webAO `/randomchar` — swap to a uniformly-random FREE character)
   on **Ctrl+R**, also a "Random char" button in the Extras box. All rebindable
   and listed as defaults in Settings → Hotkeys.
+- **Keybind remap screen** (M7; Settings → Hotkeys): every action is a
+  **click-to-capture** binding — click it, press a key, done (no typing key
+  names). **Right-click resets** that one to its default; **"Reset all to
+  defaults"** clears every override at once. **Conflict detection** outlines any
+  key bound to more than one action in red (the dispatch fires only the first, so
+  a clash would otherwise silently dead-end the later action), with a tooltip
+  naming it. Esc cancels a capture.
 - **Hideable chrome**: shout row, layout knobs, emote grid, right column,
   OOC row, HP bars, clocks, badge, judge row — persisted per user.
 - **Now-Playing + reliable Stop** on the Music tab: a "Now playing: <track>"

@@ -680,6 +680,7 @@ type sessionState struct {
 	// ("" = none); charKeys/charKeysRev cache this server's binds for
 	// per-frame lookups (refreshed on connect + edits only).
 	bindingFor  string
+	hkCapture   string            // settings Controls tab: hotkey id a key-capture is armed for ("" = none)
 	charKeys    map[string]string // key name → character
 	charKeysRev map[string]string // character → key name (badges)
 

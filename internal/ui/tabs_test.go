@@ -39,6 +39,22 @@ func TestDoNotDisturbSilencesCallword(t *testing.T) {
 	}
 }
 
+// TestHotkeyConflictKeys pins the M7 conflict detector: distinct defaults never
+// clash, but rebinding two actions onto the same key flags that key (the
+// dispatch switch would otherwise silently drop the later action).
+func TestHotkeyConflictKeys(t *testing.T) {
+	a := testTabApp(t)
+	if got := a.hotkeyConflictKeys(); len(got) != 0 {
+		t.Fatalf("default hotkeys must not conflict, got %v", got)
+	}
+	a.d.Prefs.SetHotkey(hotkeyPosCycle, "z")
+	a.d.Prefs.SetHotkey(hotkeyMusicStop, "z") // two actions, one key
+	got := a.hotkeyConflictKeys()
+	if !got["z"] || len(got) != 1 {
+		t.Errorf("only 'z' should conflict after the double-bind, got %v", got)
+	}
+}
+
 // TestTabParkActivateRoundTrip pins the core invariant: parking moves the
 // WHOLE session out (live state pristine afterwards), activating moves it
 // back bit-for-bit (logs, seqs, identity).

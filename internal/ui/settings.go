@@ -1552,22 +1552,62 @@ func (a *App) drawSettingsAccount(y, w int32) int32 {
 func (a *App) drawSettingsHotkeys(y, w int32) int32 {
 	c := a.ctx
 	y = a.settingsSection(y, w, "Hotkeys")
-	c.Label(pad, y, "Ctrl + key — single letters/digits; blank uses the default.", ColTextDim)
-	y += 22
+	c.Label(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
+	y += 24
+	// Conflict scan: two actions resolving to the same key clash — only the first
+	// in the dispatch switch fires — so flag both rather than fail silently.
+	hkConflicts := a.hotkeyConflictKeys()
 	hx := pad
 	for _, def := range hotkeyDefs {
-		c.Label(hx, y+4, def.label+":", ColText)
-		cur := a.d.Prefs.Hotkey(def.id)
-		placeholder := def.def
-		next, _ := c.TextField("hk_"+def.id, sdl.Rect{X: hx + 150, Y: y, W: 44, H: fieldH}, cur, placeholder)
-		if next != cur {
-			a.d.Prefs.SetHotkey(def.id, strings.ToLower(strings.TrimSpace(next)))
+		c.LabelClipped(hx, y+4, 190, def.label, ColText)
+		key := a.hotkeyFor(def.id)
+		lbl := "Ctrl+" + strings.ToUpper(key)
+		switch {
+		case a.hkCapture == def.id:
+			lbl = "press a key…"
+		case key == "":
+			lbl = "(unset)"
 		}
-		hx += 210
-		if hx > 700 {
+		br := sdl.Rect{X: hx + 198, Y: y, W: 110, H: btnH}
+		if c.Button(br, lbl) {
+			a.hkCapture = def.id // arm capture for this action
+			a.bindingFor = ""    // don't also arm a character keybind
+			c.focusID = ""       // the capture owns the next keypress
+		}
+		if c.rightClicked && c.hovering(br) {
+			a.d.Prefs.SetHotkey(def.id, "") // reset to the built-in default
+			if a.hkCapture == def.id {
+				a.hkCapture = ""
+			}
+		}
+		if a.hkCapture != def.id && hkConflicts[key] {
+			c.Border(br, ColDanger) // clash: another action shares this key
+			c.Tooltip(br, "Ctrl+"+strings.ToUpper(key)+" is bound to more than one action — only the first fires. Rebind one.")
+		}
+		hx += 340
+		if hx > 560 {
 			hx = pad
 			y += 30
 		}
+	}
+	if hx != pad {
+		y += 30 // finish a partial row
+	}
+	// Capture: the next keypress binds to the armed action; Esc cancels. Consume
+	// the key so it can't also act elsewhere (mirrors the hold-to-clear capture).
+	if a.hkCapture != "" && c.keyPressed != 0 {
+		if c.keyPressed != sdl.K_ESCAPE {
+			a.d.Prefs.SetHotkey(a.hkCapture, strings.ToLower(sdl.GetKeyName(c.keyPressed)))
+		}
+		a.hkCapture = ""
+		c.keyPressed = 0
+	}
+	y += 8
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Reset all to defaults") {
+		for _, def := range hotkeyDefs {
+			a.d.Prefs.SetHotkey(def.id, "")
+		}
+		settings.statusLine = "All hotkeys reset to their defaults."
 	}
 	y += 36
 
