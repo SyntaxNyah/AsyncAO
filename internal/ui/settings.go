@@ -234,9 +234,12 @@ func (a *App) drawSettings(w, h int32) {
 		c.Border(r, ColPanelHi)
 		col := ColTextDim
 		if i == settings.tab {
-			col = ColText
+			col = ColAccent
 		}
 		c.LabelClipped(r.X+8, r.Y+5, r.W-12, name, col)
+		if i == settings.tab { // active-tab accent underline (modern selected state)
+			c.Fill(sdl.Rect{X: r.X, Y: r.Y + r.H - 2, W: r.W, H: 2}, ColAccent)
+		}
 		if c.hovering(r) && c.clicked {
 			settings.tab = i
 		}
@@ -306,6 +309,7 @@ func (a *App) settingsSection(y, w int32, title string) int32 {
 // drawSettingsGeneral: identity + display toggles + UI scale + font chain.
 func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	c := a.ctx
+	y = a.settingsSection(y, w, "Identity")
 	// Showname: write-through to prefs. A stale once-per-session copy here
 	// used to overwrite names typed in the courtroom on Back.
 	c.Label(pad, y+4, "Showname (saved):", ColText)
@@ -380,6 +384,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	}
 	y += 8
 
+	y = a.settingsSection(y, w, "Display & behaviour")
 	anims := a.d.Prefs.AnimationsEnabled()
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
 		a.d.Prefs.SetAnimationsEnabled(next)
@@ -450,6 +455,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		c.Label(pad+232, y+5, "drop every drag override back to the server's placement", ColTextDim)
 		y += 32
 	}
+	y = a.settingsSection(y, w, "Application")
 	upd := a.d.Prefs.UpdateCheckEnabled()
 	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {
 		a.d.Prefs.SetUpdateCheck(next)
@@ -471,12 +477,14 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetRestoreTabs(next)
 	}
 	y += 30
+	y = a.settingsSection(y, w, "Log colours")
 	// Log-selection highlight colour: a hue/saturation wheel + brightness
 	// slider + hex field (drag-select in IC/OOC shows it).
 	y = a.drawHighlightPicker(y, w)
 	// Per-speaker name colours: tint each speaker's name by a stable hash, with
 	// saturation/brightness sliders + a live preview. OFF by default.
 	y = a.drawNameColorPicker(y, w)
+	y = a.settingsSection(y, w, "Stage")
 	slideOn := a.d.Prefs.BgSlideshowEnabled()
 	if next := c.Checkbox(pad, y, "Background slideshow (OFF by default): when the courtroom is idle, cycle the stage through this server's backgrounds as ambiance", slideOn); next != slideOn {
 		a.d.Prefs.SetBgSlideshow(next)
@@ -508,6 +516,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		settings.statusLine = "Re-streaming textures with new filtering."
 	}
 	y += 26
+	y = a.settingsSection(y, w, "Scale & text size")
 	// Global scale: DPI-driven by default, manual spinbox when auto is off.
 	scaleAuto := a.d.Prefs.UIScaleAuto()
 	scaleAutoLabel := "Auto UI scale from display DPI"
@@ -546,12 +555,12 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	}
 	y += 34
 
-	// --- Window size / fullscreen: pick your own client dimensions (a window
-	// bigger than the monitor can't be dragged smaller; F11 + Fit to screen are
-	// the escapes). All window ops run here on the render thread.
-	c.Label(pad, y+4, "Window:", ColText)
+	y = a.settingsSection(y, w, "Window")
+	// Window size / fullscreen: pick your own client dimensions (a window bigger
+	// than the monitor can't be dragged smaller; F11 + Fit to screen are the
+	// escapes). All window ops run here on the render thread.
 	full := a.d.Prefs.WindowFullscreen()
-	if next := c.Checkbox(pad+86, y, "Fullscreen (borderless) · F11 toggles", full); next != full {
+	if next := c.Checkbox(pad, y, "Fullscreen (borderless) · F11 toggles", full); next != full {
 		a.applyFullscreen(next)
 	}
 	y += 28
@@ -607,10 +616,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		y += btnH + 10
 	}
 
+	y = a.settingsSection(y, w, "Extras box")
 	// Extras box appearance: a hex colour per element (blank = the stock colour),
 	// a live swatch, and a Background → Gradient↓ fade. Applies to the floating
 	// Extras box and its torn-off boxes; default (all blank) is byte-identical.
-	c.Label(pad, y+4, "Extras box colours:", ColText)
+	c.Label(pad, y+4, "Colours:", ColTextDim)
 	c.LabelClipped(pad+150, y+4, w-pad-150-scrollBarW, "hex like 78aaff — blank = default · live on the open box", ColTextDim)
 	y += 24
 	exBg, exBg2, exBorder, exTitle, exText, exGrad := a.d.Prefs.ExtrasBoxStyle()
@@ -637,6 +647,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetExtrasBoxStyle(next[0], next[1], next[2], next[3], next[4], nextGrad)
 	}
 
+	y = a.settingsSection(y, w, "Fonts")
 	// Dyslexia-friendly font: a persisted one-click toggle backed by the bundled
 	// OpenDyslexic (no install needed). Drives the IC/OOC chat + log text and
 	// takes precedence over the manual override below.
@@ -687,6 +698,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 // drawSettingsTheme: theme picker/folder, layout toggle, live preview, bind.
 func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	c := a.ctx
+	y = a.settingsSection(y, w, "Theme")
 	c.Label(pad, y+4, "Theme:", ColText)
 	if c.Button(sdl.Rect{X: pad + 60, Y: y, W: 26, H: btnH}, "<") {
 		a.cycleTheme(-1)
@@ -716,6 +728,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	}
 	y += 36
 
+	y = a.settingsSection(y, w, "Layout & fit")
 	// Theme-driven courtroom geometry (courtroom_design.ini).
 	tlay := a.d.Prefs.ThemeLayoutEnabled()
 	if next := c.Checkbox(pad, y, "Use the theme's courtroom layout (courtroom_design.ini positions every widget; off = classic layout)", tlay); next != tlay {
@@ -770,6 +783,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		y += 30
 	}
 
+	y = a.settingsSection(y, w, "Lobby")
 	// Plain lobby: the server list keeps the readable client backdrop instead of
 	// the theme's lobbybackground (which is built for AO2's own list and often
 	// makes ours unreadable). The courtroom still uses the theme either way.
@@ -779,6 +793,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	}
 	y += 28
 
+	y = a.settingsSection(y, w, "Preview & binding")
 	// Live preview of the applied chatbox skin + theme text colors.
 	y = a.drawThemePreview(y)
 	// Per-server theme binding: "this server always uses that theme".
@@ -852,6 +867,7 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 // opt-in downloader, and the cache browser/actions.
 func (a *App) drawSettingsAssets(y, w int32) int32 {
 	c := a.ctx
+	y = a.settingsSection(y, w, "Image formats")
 	global := a.d.Prefs.GlobalFallbacks()
 	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {
 		a.d.Prefs.SetGlobalFallbacks(next)
@@ -913,6 +929,7 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	}
 	y += 28
 
+	y = a.settingsSection(y, w, "Audio formats")
 	// Audio fallbacks.
 	for _, typeName := range []string{config.TypeSFX, config.TypeMusic, config.TypeBlip} {
 		enabled := a.d.Prefs.TypeFallbacksEnabled(typeName)
@@ -925,6 +942,7 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	}
 	y += 10
 
+	y = a.settingsSection(y, w, "Local assets")
 	// Local assets (no-streaming legacy mode).
 	enabled, mounts := a.d.Prefs.LocalAssets()
 	if next := c.Checkbox(pad, y, "Read assets from local folders instead of streaming (legacy servers without an asset URL)", enabled); next != enabled {
@@ -952,9 +970,11 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	}
 	y += 10
 
+	y = a.settingsSection(y, w, "Downloader")
 	// Built-in single-asset downloader (opt-in).
 	y = a.drawDownloaderSettings(y, w)
 
+	y = a.settingsSection(y, w, "Cache")
 	// Cache browser: live tier stats, T3 size on demand, open-in-Explorer.
 	t2 := a.d.Manager.T2Stats()
 	hitPct := 0.0
@@ -1507,19 +1527,22 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 // drawSettingsAccount: per-server login, the master-list override, Discord.
 func (a *App) drawSettingsAccount(y, w int32) int32 {
 	c := a.ctx
+	y = a.settingsSection(y, w, "Login")
 	// Auto-login: ITS OWN automation, not a macro — per-server creds,
 	// software-detected wire flow, fires on join (or via hotkey/button).
 	y = a.drawLoginSettings(y, w)
 	y += 8
 
+	y = a.settingsSection(y, w, "Master list")
 	// Master list override (blank = official). Refresh in the lobby applies.
-	c.Label(pad, y+4, "Master list:", ColText)
+	c.Label(pad, y+4, "URL:", ColTextDim)
 	master := a.d.Prefs.MasterList()
 	if next, _ := c.TextField("masterurl", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, master, network.DefaultMasterServerURL); next != master {
 		a.d.Prefs.SetMasterList(next)
 	}
 	y += 34
 
+	y = a.settingsSection(y, w, "Discord")
 	// Discord Rich Presence (optional — never required to build or run).
 	y = a.drawDiscordRow(y, w)
 	return y
@@ -1528,7 +1551,8 @@ func (a *App) drawSettingsAccount(y, w int32) int32 {
 // drawSettingsHotkeys: hotkey rebinds, macros, and the whole-settings bundle.
 func (a *App) drawSettingsHotkeys(y, w int32) int32 {
 	c := a.ctx
-	c.Label(pad, y, "Hotkeys (Ctrl + key — single letters/digits; blank uses the default):", ColTextDim)
+	y = a.settingsSection(y, w, "Hotkeys")
+	c.Label(pad, y, "Ctrl + key — single letters/digits; blank uses the default.", ColTextDim)
 	y += 22
 	hx := pad
 	for _, def := range hotkeyDefs {
@@ -1547,6 +1571,7 @@ func (a *App) drawSettingsHotkeys(y, w int32) int32 {
 	}
 	y += 36
 
+	y = a.settingsSection(y, w, "Macros")
 	// Macros: user-defined OOC command sequences with optional keybinds.
 	y = a.drawMacroSettings(y, w)
 	y += 8
