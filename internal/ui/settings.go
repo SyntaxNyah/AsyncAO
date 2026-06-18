@@ -280,6 +280,29 @@ func (a *App) drawSettings(w, h int32) {
 	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, visibleH)
 }
 
+// --- modernized settings layout (flat headers + airy spacing) ----------------
+
+const (
+	settSectionTop = 18 // airy gap above each section header
+	settSectionMid = 22 // header baseline → divider
+	settSectionBot = 12 // divider → the section's first row
+)
+
+// settingsSection draws a flat section header — an uppercase title in the accent
+// colour with a hairline divider beneath — and returns the y of the section's
+// first row. It's the unit of the modernized settings look: clear grouping with
+// room to breathe, instead of one dense undifferentiated scroll. Pure draw (no
+// widget ids), so it never disturbs hit-testing, per-tab scroll, or search.
+func (a *App) settingsSection(y, w int32, title string) int32 {
+	c := a.ctx
+	y += settSectionTop
+	c.Label(pad, y, strings.ToUpper(title), ColAccent)
+	y += settSectionMid
+	c.Fill(sdl.Rect{X: pad, Y: y, W: w - 2*pad - scrollBarW, H: 1}, ColPanelHi)
+	y += settSectionBot
+	return y
+}
+
 // drawSettingsGeneral: identity + display toggles + UI scale + font chain.
 func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	c := a.ctx
@@ -1092,6 +1115,7 @@ func (a *App) applyPrefsToState() {
 // drawSettingsAudioChat: volumes, message timing, casing alerts, callwords.
 func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	c := a.ctx
+	y = a.settingsSection(y, w, "Volume")
 	// Master volume — scales everything; also on the Extras box for quick access.
 	if mv := a.volumeRow(y, "Master volume", a.d.Prefs.MasterVolume()); mv != a.d.Prefs.MasterVolume() {
 		a.d.Prefs.SetMasterVolume(mv)
@@ -1116,6 +1140,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 28
 
+	y = a.settingsSection(y, w, "Text & typing")
 	// Hold-to-clear: hold a key (default Backspace, rebindable) to wipe a text
 	// box at once instead of deleting char-by-char.
 	hcOn, hcKey, hcMs := a.d.Prefs.HoldClear()
@@ -1195,6 +1220,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		y += 30
 	}
 
+	y = a.settingsSection(y, w, "Chat log")
 	// Per-area IC scrollback (opt-in): each visited area keeps its own log.
 	areaScroll := a.d.Prefs.PerAreaScrollbackOn()
 	if next := c.Checkbox(pad, y, "Per-area chat scrollback (OFF by default): each area keeps its own IC log; switches when you click an area in the Areas list", areaScroll); next != areaScroll {
@@ -1208,12 +1234,14 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 26
 
+	y = a.settingsSection(y, w, "Case alerts")
 	// Case announcements (CASEA, tsuserver-family): subscribe by role.
 	y = a.drawCasingRow(y)
 
+	y = a.settingsSection(y, w, "Callwords")
 	// Callwords manager: type a word (or paste "a, b, c") + Add, and each shows
 	// below with a × to remove. Flash + sound + toast fire on an IC/OOC match.
-	c.Label(pad, y+4, "Callwords:", ColText)
+	c.Label(pad, y+4, "Add word(s):", ColTextDim)
 	var callCommit bool
 	settings.callAddInput, callCommit = c.TextField("callwordadd", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.callAddInput, "your name, nickname… (comma-separates; flash + sound when seen in IC/OOC)")
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "+ Add") || callCommit {
@@ -1259,6 +1287,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Prefs.SetCallwordToast(next)
 	}
 	y += 30
+	y = a.settingsSection(y, w, "Do Not Disturb")
 	// Do Not Disturb: session-only by default (clears every launch so it can't
 	// silently kill your callwords days later) — mutes the personal pings only.
 	// The keybind (default Ctrl+D, rebindable on the Controls tab) toggles it too.
@@ -1285,6 +1314,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 30
 
+	y = a.settingsSection(y, w, "Messages & connection")
 	mc := a.d.Prefs.MessageCounterOn()
 	if next := c.Checkbox(pad, y, "Show a character count by the IC box (ON by default): turns red past ~256 chars, where many servers truncate.", mc); next != mc {
 		a.d.Prefs.SetMessageCounter(next)
@@ -1303,6 +1333,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 30
 
+	y = a.settingsSection(y, w, "Sound effects")
 	// M11 per-SFX mute: silence an annoying emote sound effect by name. The
 	// last one you heard gets a one-click toggle; the muted list is below.
 	if a.lastSFXName != "" {
@@ -1373,6 +1404,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		y += 6
 	}
 
+	y = a.settingsSection(y, w, "Music history")
 	// M12: keep a session "recently played" jukebox history (ON by default).
 	mh := a.d.Prefs.MusicHistoryOn()
 	if next := c.Checkbox(pad, y, "Keep a \"recently played\" music history (ON by default): the Jukebox tab lists songs played in the room so you can Save a link (into the \"Music history\" playlist), Play, or Share. Off = don't record.", mh); next != mh {
@@ -1411,6 +1443,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		y += 6
 	}
 
+	y = a.settingsSection(y, w, "Friends")
 	// Highlighted friends (per server): shownames whose IC messages glow.
 	fh := a.d.Prefs.FriendHighlightOn()
 	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {
@@ -1461,9 +1494,8 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		c.Label(pad+110, y, "Append =RRGGBB to a name to give that friend a custom glow colour (e.g. blank=ff4488).", ColTextDim)
 		y += 24
 	}
-	// Mod-call desktop toast (for moderators): not friend-related, so it sits at
-	// the section's top level.
-	y += 6
+	y = a.settingsSection(y, w, "Mod tools")
+	// Mod-call desktop toast (for moderators).
 	mct := a.d.Prefs.ModcallToastOn()
 	if next := c.Checkbox(pad, y, "Desktop notification on mod-call (OFF by default): pop a Windows toast when a modcall comes in — for mods who alt-tabbed away", mct); next != mct {
 		a.d.Prefs.SetModcallToast(next)
