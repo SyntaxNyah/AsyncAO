@@ -337,6 +337,7 @@ const duckMusicPercent = 35
 // when active. Call it wherever those states change so they're always honored.
 func (a *App) applyAudioVolumes() {
 	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	alert := a.d.Prefs.AlertVolume() // callword/friend ping — independent of SFX
 	if a.sfxMuted {
 		sfx = 0
 	}
@@ -347,8 +348,10 @@ func (a *App) applyAudioVolumes() {
 	// "too loud / too quiet" knob.
 	if m := a.d.Prefs.MasterVolume(); m != 100 {
 		music, sfx, blip = music*m/100, sfx*m/100, blip*m/100
+		alert = alert * m / 100
 	}
 	a.d.Audio.SetVolumes(music, sfx, blip)
+	a.d.Audio.SetAlertVolume(alert)
 }
 
 // nudgeMasterVolume steps the master volume from the keyboard (Ctrl+-/Ctrl+=),

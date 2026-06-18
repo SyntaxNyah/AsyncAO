@@ -86,6 +86,9 @@ type Audio struct {
 	// Volumes in percent (0–100), applied as mixer volume at play time
 	// (music globally, chunks per returned channel).
 	musicVol, sfxVol, blipVol int
+	// alertVol is the callword/friend ping volume — independent of SFX so a quiet
+	// SFX mix (or the SFX mute) can't silence your name-pings.
+	alertVol int
 	// blipScale is the current speaker's per-character blip attenuation (0–100,
 	// 100 = none; M11), set per message via SetBlipScale and multiplied into
 	// blipVol when a blip plays.
@@ -107,6 +110,10 @@ func (a *Audio) SetVolumes(music, sfx, blip int) {
 		mix.VolumeMusic(mixVolume(music))
 	}
 }
+
+// SetAlertVolume sets the callword/friend ping volume (0–100), independent of
+// SFX. Applied to the reserved alert channel at the next ping.
+func (a *Audio) SetAlertVolume(pct int) { a.alertVol = pct }
 
 // SetBlipScale sets the current speaker's per-character blip attenuation (0–100;
 // 100 = full blip volume, M11). Multiplied into the blip channel volume at the
@@ -131,6 +138,7 @@ func NewAudio(mgr *assets.Manager) *Audio {
 		musicVol:  fullVolumePercent,
 		sfxVol:    fullVolumePercent,
 		blipVol:   fullVolumePercent,
+		alertVol:  fullVolumePercent,
 		blipScale: fullVolumePercent,
 	}
 	// Load the dynamic decoder libraries we ship: opus/ogg/mp3 are pulled in on
@@ -344,10 +352,10 @@ func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
 	case pendingAlert:
 		// Callword/friend ping on its own reserved channel: a new alert replaces
 		// the old (no stacking), and neither blips nor a burst of emote SFX can
-		// steal or halt it. SFX volume so the mute toggle still covers it.
+		// steal or halt it. Its OWN volume (alertVol), independent of SFX.
 		mix.HaltChannel(alertChannel)
 		if _, err := chunk.Play(alertChannel, 0); err == nil {
-			mix.Volume(alertChannel, mixVolume(a.sfxVol))
+			mix.Volume(alertChannel, mixVolume(a.alertVol))
 		}
 	default:
 		if ch, err := chunk.Play(-1, 0); err == nil {

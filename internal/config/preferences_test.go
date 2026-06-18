@@ -861,6 +861,34 @@ func TestDNDPersistRoundTrip(t *testing.T) {
 	}
 }
 
+// TestAlertVolumeRoundTrip pins the callword/alert volume (separate from SFX):
+// it defaults to full, clamps to 0–100, and survives save→load.
+func TestAlertVolumeRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if p.AlertVolume() != defaultAudioVolume {
+		t.Fatalf("AlertVolume default = %d, want %d", p.AlertVolume(), defaultAudioVolume)
+	}
+	p.SetAlertVolume(150) // over-max clamps to 100
+	if p.AlertVolume() != 100 {
+		t.Errorf("AlertVolume(150) = %d, want clamp to 100", p.AlertVolume())
+	}
+	p.SetAlertVolume(40)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if q.AlertVolume() != 40 {
+		t.Errorf("AlertVolume lost across reload: got %d, want 40", q.AlertVolume())
+	}
+}
+
 // TestResetAll pins the full wipe: tunables AND content both revert.
 func TestResetAll(t *testing.T) {
 	p, err := New(filepath.Join(t.TempDir(), "prefs.json"))

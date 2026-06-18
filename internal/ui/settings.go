@@ -1148,6 +1148,13 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	sfx = a.volumeRow(y, "SFX volume", sfx)
 	y += 26
 	blip = a.volumeRow(y, "Blip volume", blip)
+	y += 26
+	// Callword/friend ping volume — its OWN control, independent of SFX (so a
+	// quiet SFX mix or the SFX mute never silences your name-pings).
+	if av := a.volumeRow(y, "Callword/alert volume", a.d.Prefs.AlertVolume()); av != a.d.Prefs.AlertVolume() {
+		a.d.Prefs.SetAlertVolume(av)
+		a.applyAudioVolumes()
+	}
 	y += 32
 	if m0, s0, b0 := a.d.Prefs.AudioVolumes(); m0 != music || s0 != sfx || b0 != blip {
 		a.d.Prefs.SetAudioVolumes(music, sfx, blip)

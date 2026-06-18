@@ -315,7 +315,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   ping "played too short"), and both ping and custom sound play on a **dedicated
   reserved audio channel** so a chat blip can never cut them off (it used to: the
   alert landed on the free blip channel at message arrival and the first blip
-  halted it). An **optional toast** (Settings → **ON by default**) names the
+  halted it). The alert has its **own volume** (Settings → Audio · "Callword/alert
+  volume"), **independent of SFX** — quietening or muting SFX never silences your
+  name-pings. An **optional toast** (Settings → **ON by default**) names the
   heard word, like the modcall/friend toasts. (Opus support needs the codec DLLs
   loaded at startup — see the audio note below.)
 - **Do Not Disturb** (M15; **Ctrl+D**, or Settings → Audio & Chat): a one-click

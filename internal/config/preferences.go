@@ -420,6 +420,7 @@ type AssetPreferences struct {
 	MusicVol               int                          `json:"musicVolume"`
 	SFXVol                 int                          `json:"sfxVolume"`
 	BlipVol                int                          `json:"blipVolume"`
+	AlertVol               int                          `json:"alertVolume"`
 	MasterVol              int                          `json:"masterVolume"` // scales all three (default 100)
 	HoldClearOn            bool                         `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
 	HoldClearKey           string                       `json:"holdClearKey"` // which key (default "Backspace"), rebindable
@@ -585,6 +586,7 @@ type prefsJSON struct {
 	MusicVol     *int   `json:"musicVolume"`
 	SFXVol       *int   `json:"sfxVolume"`
 	BlipVol      *int   `json:"blipVolume"`
+	AlertVol     *int   `json:"alertVolume"`
 	MasterVol    *int   `json:"masterVolume"`
 	HoldClearOn  *bool  `json:"holdClearOn"` // absent = default ON
 	HoldClearKey string `json:"holdClearKey"`
@@ -869,6 +871,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		MusicVol:           defaultAudioVolume,
 		SFXVol:             defaultAudioVolume,
 		BlipVol:            defaultAudioVolume,
+		AlertVol:           defaultAudioVolume,
 		MasterVol:          defaultAudioVolume,
 		HoldClearOn:        defaultHoldClearOn,
 		HoldClearKey:       defaultHoldClearKey,
@@ -1051,6 +1054,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.BlipVol != nil {
 		p.BlipVol = clampPercent(*onDisk.BlipVol, 0, defaultAudioVolume)
+	}
+	if onDisk.AlertVol != nil {
+		p.AlertVol = clampPercent(*onDisk.AlertVol, 0, defaultAudioVolume)
 	}
 	if onDisk.MasterVol != nil {
 		p.MasterVol = clampPercent(*onDisk.MasterVol, 0, defaultAudioVolume)
@@ -2705,6 +2711,27 @@ func (p *AssetPreferences) SetAudioVolumes(music, sfx, blip int) {
 		return
 	}
 	p.MusicVol, p.SFXVol, p.BlipVol = music, sfx, blip
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AlertVolume reports the callword/friend ping volume (0–100), independent of
+// SFX so quietening or muting SFX never silences your name-pings.
+func (p *AssetPreferences) AlertVolume() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AlertVol
+}
+
+// SetAlertVolume clamps and persists the alert (callword/friend) volume.
+func (p *AssetPreferences) SetAlertVolume(v int) {
+	v = clampPercent(v, 0, defaultAudioVolume)
+	p.mu.Lock()
+	if p.AlertVol == v {
+		p.mu.Unlock()
+		return
+	}
+	p.AlertVol = v
 	p.mu.Unlock()
 	p.markDirty()
 }
