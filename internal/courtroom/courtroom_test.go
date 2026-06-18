@@ -92,6 +92,50 @@ func feed(t *testing.T, s *Session, raw string) []Event {
 	return s.HandlePacket(p)
 }
 
+// TestReduceMotionGatesEffects pins the M14 accessibility gate: ReduceMotion
+// suppresses the screen shake + realization flash but KEEPS the feedback sound;
+// with it off, the visuals fire. Covers all three trigger paths (the 2.8 Effects
+// field, plain Realization, and the emote-mod screenshake).
+func TestReduceMotionGatesEffects(t *testing.T) {
+	room, _, _, audio := newCourtroomRig(t)
+
+	// Reduce-motion ON: visuals gated, the audio cue still plays.
+	room.ReduceMotion = true
+	room.Scene.ShakeLeft, room.Scene.FlashLeft = 0, 0
+	room.fireMessageEffects(&protocol.ChatMessage{Effects: "screenshake|boom"})
+	if room.Scene.ShakeLeft != 0 {
+		t.Errorf("reduce-motion must suppress the Effects screenshake, ShakeLeft=%v", room.Scene.ShakeLeft)
+	}
+	if len(audio.sfx) == 0 {
+		t.Error("reduce-motion must KEEP the effect sound — only the visual is gated")
+	}
+	room.fireMessageEffects(&protocol.ChatMessage{Realization: true})
+	if room.Scene.FlashLeft != 0 {
+		t.Errorf("reduce-motion must suppress the realization flash, FlashLeft=%v", room.Scene.FlashLeft)
+	}
+	room.fireMessageEffects(&protocol.ChatMessage{Screenshake: true, EmoteMod: protocol.EmoteModIdle})
+	if room.Scene.ShakeLeft != 0 {
+		t.Errorf("reduce-motion must suppress the emote-mod screenshake, ShakeLeft=%v", room.Scene.ShakeLeft)
+	}
+
+	// Reduce-motion OFF: the effects fire.
+	room.ReduceMotion = false
+	room.Scene.ShakeLeft, room.Scene.FlashLeft = 0, 0
+	room.fireMessageEffects(&protocol.ChatMessage{Effects: "screenshake"})
+	if room.Scene.ShakeLeft != ScreenshakeDuration {
+		t.Errorf("screenshake must fire without reduce-motion, ShakeLeft=%v", room.Scene.ShakeLeft)
+	}
+	room.fireMessageEffects(&protocol.ChatMessage{Realization: true})
+	if room.Scene.FlashLeft != RealizationFlashDuration {
+		t.Errorf("flash must fire without reduce-motion, FlashLeft=%v", room.Scene.FlashLeft)
+	}
+	room.Scene.ShakeLeft = 0
+	room.fireMessageEffects(&protocol.ChatMessage{Screenshake: true, EmoteMod: protocol.EmoteModZoom})
+	if room.Scene.ShakeLeft != ScreenshakeDuration {
+		t.Errorf("emote-mod screenshake must fire without reduce-motion, ShakeLeft=%v", room.Scene.ShakeLeft)
+	}
+}
+
 // --- URL builder ----------------------------------------------------------------
 
 func TestURLBuilderConventions(t *testing.T) {
