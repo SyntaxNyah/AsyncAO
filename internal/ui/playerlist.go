@@ -291,6 +291,27 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 			a.warnAt = a.now()
 		}
 	}
+	// Add/remove friend (matches by showname, else character — the IC-log
+	// highlight key, no UID needed). Shown for any named player; ServerFriendMatch
+	// allocates nothing, so the per-row check is fine for this panel.
+	fk := p.showname
+	if fk == "" {
+		fk = p.name
+	}
+	if fk != "" && a.serverKey != "" {
+		isFriend, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, fk)
+		fl := "+ Friend"
+		if isFriend {
+			fl = "★ Friend"
+		}
+		fw := c.TextWidth(fl) + 12
+		bx -= fw + 4
+		fr := sdl.Rect{X: bx, Y: btnY, W: fw, H: 22}
+		if c.Button(fr, fl) {
+			a.toggleServerFriend(fk)
+		}
+		c.Tooltip(fr, "Add this player to your friends — highlights their messages in the IC log. Click again to remove. Matches their showname, so it can be spoofed.")
+	}
 
 	// Text column between the icon and the button cluster.
 	textX := row.X + 6 + iconSz + 8
@@ -591,6 +612,40 @@ func (a *App) jumpToArea(area string) {
 	}
 	a.sess.RequestMusic(area)
 	a.warnLine = clampLine("Jumping to " + area + "…")
+	a.warnAt = a.now()
+}
+
+// toggleServerFriend adds or removes a name from this server's friend list (the
+// player-list "+ Friend" button). Friending matches by showname (else the
+// character), the same key the IC-log highlight uses. Reuses the cloned list +
+// SetServerFriends (which dedups, caps, and persists).
+func (a *App) toggleServerFriend(name string) {
+	if a.serverKey == "" || strings.TrimSpace(name) == "" {
+		return
+	}
+	friends := a.d.Prefs.ServerFriends(a.serverKey)
+	out := friends[:0]
+	removed := false
+	for _, f := range friends {
+		fn := f
+		if i := strings.IndexByte(f, '='); i >= 0 {
+			fn = f[:i] // strip any "=RRGGBB" glow colour before matching
+		}
+		if strings.EqualFold(strings.TrimSpace(fn), name) {
+			removed = true
+			continue
+		}
+		out = append(out, f)
+	}
+	if !removed {
+		out = append(out, name) // add as a plain entry (default glow)
+	}
+	a.d.Prefs.SetServerFriends(a.serverKey, out)
+	if removed {
+		a.warnLine = clampLine("Removed " + name + " from friends")
+	} else {
+		a.warnLine = clampLine("Added " + name + " to friends")
+	}
 	a.warnAt = a.now()
 }
 

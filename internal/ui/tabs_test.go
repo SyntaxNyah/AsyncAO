@@ -55,6 +55,22 @@ func TestHotkeyConflictKeys(t *testing.T) {
 	}
 }
 
+// TestToggleServerFriend pins the player-list "+ Friend" toggle: the first call
+// adds the name to this server's friend list, the second removes it (matched by
+// name, case-insensitive, ignoring any =colour suffix).
+func TestToggleServerFriend(t *testing.T) {
+	a := testTabApp(t)
+	a.serverKey = "wss://srv:2096"
+	a.toggleServerFriend("Alice")
+	if ok, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, "alice"); !ok {
+		t.Fatal("first toggle should add Alice as a friend")
+	}
+	a.toggleServerFriend("ALICE") // case-insensitive remove
+	if ok, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, "Alice"); ok {
+		t.Error("second toggle should remove Alice")
+	}
+}
+
 // TestTabParkActivateRoundTrip pins the core invariant: parking moves the
 // WHOLE session out (live state pristine afterwards), activating moves it
 // back bit-for-bit (logs, seqs, identity).

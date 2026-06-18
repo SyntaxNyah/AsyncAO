@@ -348,7 +348,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Highlighted friends** (Settings, **OFF by default**): a **per-server** list
   of shownames whose IC messages **glow** (a warm tint behind the line) so you
   can spot your friends in a busy log — saved per server (cached like the char
-  list), and it works for backgrounded tabs too. Matches the **displayed** name
+  list), and it works for backgrounded tabs too. **Add or remove a friend right
+  from the player list** — each row carries a **+ Friend** / **★** toggle (matches
+  by showname, no UID needed), not just the Settings text field. Matches the **displayed** name
   (custom showname, falling back to the character), so — like any showname — it
   can be spoofed; that's noted in Settings. Gated entirely on the toggle, so a
   no-friend log draws byte-identical and the detection costs nothing when off.
