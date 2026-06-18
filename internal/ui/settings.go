@@ -312,9 +312,9 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	y = a.settingsSection(y, w, "Identity")
 	// Showname: write-through to prefs. A stale once-per-session copy here
 	// used to overwrite names typed in the courtroom on Back.
-	c.Label(pad, y+4, "Showname (saved):", ColText)
+	c.Label(pad, y+4, "Showname:", ColText)
 	shown := a.d.Prefs.SavedShowname()
-	if next, _ := c.TextField("showname", sdl.Rect{X: pad + 150, Y: y, W: 220, H: fieldH}, shown, "Your showname"); next != shown {
+	if next, _ := c.TextField("showname", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, shown, "your saved showname"); next != shown {
 		a.d.Prefs.SetShowname(next)
 	}
 	// Default OOC name: applied on every join; blank sends a sticky AsyncAO<n>.
@@ -327,9 +327,9 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 
 	// Showname presets (M6): a saved, global list — quick-swap them in-game with
 	// keybinds (random or a specific one). Cleared only by a factory reset.
-	c.Label(pad, y+4, "Showname presets:", ColText)
+	c.Label(pad, y+4, "Presets:", ColText)
 	var addNow bool
-	a.shownameAdd, addNow = c.TextField("shownameadd", sdl.Rect{X: pad + 150, Y: y, W: 220, H: fieldH}, a.shownameAdd, "type a name to save…")
+	a.shownameAdd, addNow = c.TextField("shownameadd", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, a.shownameAdd, "type a name to save…")
 	if c.Button(sdl.Rect{X: pad + 378, Y: y, W: 60, H: btnH}, "Save") || addNow {
 		if a.d.Prefs.AddShownamePreset(a.shownameAdd) {
 			a.shownameAdd = ""
