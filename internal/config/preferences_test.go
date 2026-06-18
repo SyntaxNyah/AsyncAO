@@ -835,6 +835,32 @@ func TestCallWordAddRemove(t *testing.T) {
 	}
 }
 
+// TestDNDPersistRoundTrip pins the OPTIONAL Do Not Disturb persistence: both
+// flags default OFF (DND is session-only, clears each launch), and when the user
+// opts in the saved state survives save→load.
+func TestDNDPersistRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if p.DNDPersistOn() || p.DNDSavedOn() {
+		t.Fatal("DND persistence + state must default OFF (session-only)")
+	}
+	p.SetDNDPersist(true)
+	p.SetDNDSaved(true)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !q.DNDPersistOn() || !q.DNDSavedOn() {
+		t.Errorf("DND persist/state lost across reload: persist=%v saved=%v", q.DNDPersistOn(), q.DNDSavedOn())
+	}
+}
+
 // TestResetAll pins the full wipe: tunables AND content both revert.
 func TestResetAll(t *testing.T) {
 	p, err := New(filepath.Join(t.TempDir(), "prefs.json"))

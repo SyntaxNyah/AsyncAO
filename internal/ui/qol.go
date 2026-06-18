@@ -262,7 +262,7 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyShownameCycle):
 		a.cycleShowname()
 	case a.hotkeyFor(hotkeyDND):
-		a.dndOn = !a.dndOn
+		a.setDND(!a.dndOn)
 		a.warnLine = "Do Not Disturb off"
 		if a.dndOn {
 			a.warnLine = "Do Not Disturb ON — callword + friend pings muted"

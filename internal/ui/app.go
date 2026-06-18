@@ -1215,7 +1215,8 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.playerPct = a.logPct // same for the Players tab + pair popup
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
-	a.applyFontConfig() // dyslexia toggle or manual font path, resolved once
+	a.applyFontConfig()                                      // dyslexia toggle or manual font path, resolved once
+	a.dndOn = d.Prefs.DNDPersistOn() && d.Prefs.DNDSavedOn() // else session-only: clears each launch
 	if saved := d.Prefs.SavedOOCName(); saved != "" {
 		a.oocName = saved
 	}
@@ -1259,6 +1260,17 @@ func (a *App) setTheater(on bool) {
 	a.theaterOn = on
 	if a.ctx.win != nil {
 		a.ctx.win.SetBordered(!on)
+	}
+}
+
+// setDND flips Do Not Disturb (mutes callword + friend pings this session) and,
+// when the user opted into persistence, saves the state so it survives a restart
+// — the default is session-only (clears every launch). The single chokepoint for
+// the Settings toggle, the Ctrl+D hotkey, and the badge's click-to-undo.
+func (a *App) setDND(on bool) {
+	a.dndOn = on
+	if a.d.Prefs.DNDPersistOn() {
+		a.d.Prefs.SetDNDSaved(on)
 	}
 }
 

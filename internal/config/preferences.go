@@ -373,6 +373,8 @@ type AssetPreferences struct {
 	FriendHighlight        bool                         `json:"friendHighlight"`
 	FollowEnabled          bool                         `json:"followEnabled"`
 	DyslexiaFont           bool                         `json:"dyslexiaFont"`
+	DNDPersist             bool                         `json:"dndPersist"`
+	DNDSaved               bool                         `json:"dndSaved"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
@@ -531,6 +533,8 @@ type prefsJSON struct {
 	FriendHighlight        bool      `json:"friendHighlight"` // default OFF
 	FollowEnabled          bool      `json:"followEnabled"`   // default OFF (opt-in)
 	DyslexiaFont           bool      `json:"dyslexiaFont"`    // default OFF
+	DNDPersist             bool      `json:"dndPersist"`      // default OFF (DND clears each launch)
+	DNDSaved               bool      `json:"dndSaved"`        // persisted DND state (restored only when DNDPersist)
 	FriendNotify           bool      `json:"friendNotify"`    // default OFF
 	FriendOSToast          bool      `json:"friendOSToast"`   // default OFF
 	FriendGlowPulse        bool      `json:"friendGlowPulse"` // default OFF
@@ -921,6 +925,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.FriendHighlight = onDisk.FriendHighlight
 	p.FollowEnabled = onDisk.FollowEnabled
 	p.DyslexiaFont = onDisk.DyslexiaFont
+	p.DNDPersist = onDisk.DNDPersist
+	p.DNDSaved = onDisk.DNDSaved
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
@@ -1983,6 +1989,48 @@ func (p *AssetPreferences) SetDyslexiaFont(on bool) {
 		return
 	}
 	p.DyslexiaFont = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DNDPersistOn reports the "remember Do Not Disturb across restarts" option (OFF
+// by default — DND normally clears every launch so it can't silently mute you
+// forever; the on-screen badge + opt-in are the guard when it's on).
+func (p *AssetPreferences) DNDPersistOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DNDPersist
+}
+
+// SetDNDPersist toggles whether the DND state survives a restart.
+func (p *AssetPreferences) SetDNDPersist(on bool) {
+	p.mu.Lock()
+	if p.DNDPersist == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DNDPersist = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DNDSavedOn reports the persisted Do Not Disturb state, restored at launch only
+// when DNDPersistOn.
+func (p *AssetPreferences) DNDSavedOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DNDSaved
+}
+
+// SetDNDSaved records the current DND state for next launch (called only while
+// persistence is on).
+func (p *AssetPreferences) SetDNDSaved(on bool) {
+	p.mu.Lock()
+	if p.DNDSaved == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DNDSaved = on
 	p.mu.Unlock()
 	p.markDirty()
 }

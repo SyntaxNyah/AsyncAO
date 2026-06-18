@@ -1259,16 +1259,28 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Prefs.SetCallwordToast(next)
 	}
 	y += 30
-	// Do Not Disturb: session-only (resets on restart by design, so it can't
+	// Do Not Disturb: session-only by default (clears every launch so it can't
 	// silently kill your callwords days later) — mutes the personal pings only.
 	// The keybind (default Ctrl+D, rebindable on the Controls tab) toggles it too.
-	dndLabel := "Do Not Disturb (Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyDND)) + ") — mute callword + friend pings (sound/toast/window flash). Modcalls + case alerts still come through. Resets on restart."
+	dndPersist := a.d.Prefs.DNDPersistOn()
+	dndTail := "Clears on restart."
+	if dndPersist {
+		dndTail = "Remembered across restarts (option below)."
+	}
+	dndLabel := "Do Not Disturb (Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyDND)) + ") — mute callword + friend pings (sound/toast/window flash). Modcalls + case alerts still come through. " + dndTail
 	if next := c.Checkbox(pad, y, dndLabel, a.dndOn); next != a.dndOn {
-		a.dndOn = next
+		a.setDND(next)
 		if next {
-			settings.statusLine = "Do Not Disturb ON — callword + friend pings muted this session."
+			settings.statusLine = "Do Not Disturb ON — callword + friend pings muted."
 		} else {
 			settings.statusLine = "Do Not Disturb off."
+		}
+	}
+	y += 26
+	if next := c.Checkbox(pad+16, y, "Remember Do Not Disturb across restarts (default off — DND normally clears every launch)", dndPersist); next != dndPersist {
+		a.d.Prefs.SetDNDPersist(next)
+		if next {
+			a.d.Prefs.SetDNDSaved(a.dndOn) // snapshot the current state so it restores correctly
 		}
 	}
 	y += 30

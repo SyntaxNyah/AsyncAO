@@ -2961,19 +2961,32 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	}
 	// Missing-asset warning (spec §4: visible in-client, names what was
 	// tried so "enable fallbacks" is an informed fix, not a guess).
-	if a.warnActive() {
-		c.LabelClipped(pad, oocY-20, w-2*pad, a.warnLine, ColDanger)
-	}
-	// Do Not Disturb: a persistent badge while alerts are muted, so a silenced
-	// callword never reads as "callwords broken". Right-aligned so it clears the
-	// left-aligned toast above; click it to turn DND off without opening Settings.
+	// Missing-asset warning + the DND badge share this row. When DND is on, clip
+	// the (left-aligned) toast so it can't run under the right-aligned badge —
+	// both stay readable. DND off (the default) draws byte-identical to before.
+	toastW := w - 2*pad
+	dndMsg := ""
+	var dndW int32
 	if a.dndOn {
-		const dndMsg = "● Do Not Disturb — alerts muted (click to undo)"
-		tw := c.TextWidth(dndMsg)
-		bx := w - pad - tw
+		dndMsg = "● Do Not Disturb — alerts muted (click to undo)"
+		dndW = c.TextWidth(dndMsg)
+		if gap := dndW + 16; gap < toastW {
+			toastW -= gap
+		} else {
+			toastW = 0
+		}
+	}
+	if a.warnActive() {
+		c.LabelClipped(pad, oocY-20, toastW, a.warnLine, ColDanger)
+	}
+	// Do Not Disturb badge: a persistent reminder while alerts are muted, so a
+	// silenced callword never reads as "callwords broken". Click it to turn DND
+	// off without opening Settings.
+	if a.dndOn {
+		bx := w - pad - dndW
 		c.Label(bx, oocY-20, dndMsg, ColTierYellow)
-		if c.clicked && c.hovering(sdl.Rect{X: bx, Y: oocY - 22, W: tw, H: 18}) {
-			a.dndOn = false
+		if c.clicked && c.hovering(sdl.Rect{X: bx, Y: oocY - 22, W: dndW, H: 18}) {
+			a.setDND(false)
 			a.warnLine = "Do Not Disturb off."
 			a.warnAt = time.Now()
 		}

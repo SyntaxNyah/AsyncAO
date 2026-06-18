@@ -322,11 +322,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   mode that **mutes the personal pings** — callword *and* friend alerts (their
   sound, toast, and window flash) — while **duty signals still come through**
   (modcalls, case alerts, server notices). The **Ctrl+D** keybind is rebindable
-  (Settings → Controls, like every other shortcut). It's **session-only by design**
-  (resets on restart) so it can never silently kill your callwords days later; a
-  persistent **"● Do Not Disturb — alerts muted"** badge sits above the OOC box
-  while it's on (**click it to turn DND off**). The friend *glow* in the log is
-  passive, so it stays on.
+  (Settings → Controls, like every other shortcut). By default it's
+  **session-only** (clears every launch) so it can never silently kill your
+  callwords days later — but an opt-in **"Remember Do Not Disturb across restarts"**
+  setting makes it persist if you want. Either way a persistent
+  **"● Do Not Disturb — alerts muted"** badge sits above the OOC box while it's on
+  (**click it to turn DND off**), and the toast beside it is clipped so the two
+  never overlap. The friend *glow* in the log is passive, so it stays on.
 - **Per-SFX mute** (M11): silence an emote sound effect that's grating — the
   **last SFX you hear** gets a one-click **"Mute last SFX: &lt;name&gt;"** toggle in
   **Settings → Audio & Chat**, with the muted list (× to unmute) below it. Global
