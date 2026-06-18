@@ -837,6 +837,7 @@ type sessionState struct {
 	liveDetailsArea       string       // area of the last auto /getarea pull; re-pull on area change
 	lastRosterFetch       time.Time    // debounce for the join/leave re-pull (rosterRefetchDebounce)
 	suppressAreaEchoUntil time.Time    // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
+	rosterCmdUnsupported  bool         // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
 	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
@@ -3495,6 +3496,13 @@ func (a *App) pushOOC(line, speaker string) {
 	// /getarea (the fetch buttons) doesn't set the flag, so it still shows.
 	if isAreaList && a.now().Before(a.suppressAreaEchoUntil) {
 		return // the entire /gas reply burst stays out of OOC, not just its first line
+	}
+	// /gas isn't supported on this server: the reply is a command error, not an
+	// area list. Swallow it AND learn — so fetchRoster stops sending /gas (no
+	// repeat "unknown command" spam); the live PR/PU roster works without it.
+	if a.now().Before(a.suppressAreaEchoUntil) && looksLikeCommandError(text) {
+		a.rosterCmdUnsupported = true
+		return
 	}
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"

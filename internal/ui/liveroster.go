@@ -209,10 +209,24 @@ const rosterRefetchDebounce = 3 * time.Second
 const areaEchoSuppressWindow = 3 * time.Second
 
 func (a *App) fetchRoster() {
+	if a.rosterCmdUnsupported {
+		return // this server rejected /gas earlier — don't re-spam it
+	}
 	a.lastRosterFetch = a.now()
 	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow) // its whole reply burst is parsed but kept out of OOC
 	a.pairAreaReset = true
 	a.queueOOCLines([]string{"/gas"})
+}
+
+// looksLikeCommandError reports whether an OOC line is a server "command not
+// recognised" reply (the response to a /gas the server doesn't support). Only
+// consulted inside the post-fetch window, so a real chat line can't trip it.
+func looksLikeCommandError(text string) bool {
+	t := strings.ToLower(text)
+	return strings.Contains(t, "unknown command") ||
+		strings.Contains(t, "invalid command") ||
+		strings.Contains(t, "not a command") ||
+		strings.Contains(t, "command not found")
 }
 
 // maybeRefetchRoster re-pulls /getareas, debounced. On the PR/PU path the ONLY

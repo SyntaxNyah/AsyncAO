@@ -255,3 +255,19 @@ func TestLooksLikeAreaList(t *testing.T) {
 		}
 	}
 }
+
+// TestLooksLikeCommandError pins the /gas "unsupported command" detector (#59):
+// server command-error replies match, ordinary chat that merely mentions
+// "command" does not.
+func TestLooksLikeCommandError(t *testing.T) {
+	for _, s := range []string{"Unknown command.", "Invalid command", "that is not a command", "command not found"} {
+		if !looksLikeCommandError(s) {
+			t.Errorf("looksLikeCommandError(%q) = false, want true", s)
+		}
+	}
+	for _, s := range []string{"hey what's up", "the command center is cool", "/gas", ""} {
+		if looksLikeCommandError(s) {
+			t.Errorf("looksLikeCommandError(%q) = true, want false (not an error)", s)
+		}
+	}
+}
