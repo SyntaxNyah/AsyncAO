@@ -202,9 +202,15 @@ const rosterRefetchDebounce = 3 * time.Second
 // form, while Akashi/tsuserver/KFO accept it too (the long /getareas isn't on
 // Athena/Nyathena). Shared by the on-open fetch, the mod IPID refresh, and the
 // on-auth pull.
+// areaEchoSuppressWindow is how long after a /gas we keep incoming area-list
+// messages out of OOC — a multi-area /gas (Athena/Nyathena) replies as SEVERAL
+// messages, and the old single-shot suppression let every line after the first
+// leak into the chat log.
+const areaEchoSuppressWindow = 3 * time.Second
+
 func (a *App) fetchRoster() {
 	a.lastRosterFetch = a.now()
-	a.suppressAreaEcho = true // its reply is parsed but kept out of the OOC log
+	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow) // its whole reply burst is parsed but kept out of OOC
 	a.pairAreaReset = true
 	a.queueOOCLines([]string{"/gas"})
 }

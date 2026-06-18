@@ -830,13 +830,13 @@ type sessionState struct {
 	// roster that updates as people join/leave with no extra traffic; on = the
 	// rich /getarea snapshot. shownameFor caches char→showname from incoming IC
 	// so a live row shows the showname, not the bare character folder.
-	rosterLegacy     bool
-	livePlayersOn    bool         // PR/PU server roster is the live source (else the CharsCheck fallback)
-	liveRoster       []areaPlayer // M1 live roster (PR/PU players, or CharsCheck taken chars + ARUP spectators)
-	liveRosterAt     time.Time    // live roster's last change — the rows/order memo key
-	liveDetailsArea  string       // area of the last auto /getarea pull; re-pull on area change
-	lastRosterFetch  time.Time    // debounce for the join/leave re-pull (rosterRefetchDebounce)
-	suppressAreaEcho bool         // keep the NEXT auto /getarea reply out of the OOC log
+	rosterLegacy          bool
+	livePlayersOn         bool         // PR/PU server roster is the live source (else the CharsCheck fallback)
+	liveRoster            []areaPlayer // M1 live roster (PR/PU players, or CharsCheck taken chars + ARUP spectators)
+	liveRosterAt          time.Time    // live roster's last change — the rows/order memo key
+	liveDetailsArea       string       // area of the last auto /getarea pull; re-pull on area change
+	lastRosterFetch       time.Time    // debounce for the join/leave re-pull (rosterRefetchDebounce)
+	suppressAreaEchoUntil time.Time    // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
 	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
@@ -3493,9 +3493,8 @@ func (a *App) pushOOC(line, speaker string) {
 	// An AUTO /getarea (the live list's silent fetch) is parsed for its data but
 	// kept OUT of the OOC log so the refresh never spams the channel; a MANUAL
 	// /getarea (the fetch buttons) doesn't set the flag, so it still shows.
-	if a.suppressAreaEcho && isAreaList {
-		a.suppressAreaEcho = false
-		return
+	if isAreaList && a.now().Before(a.suppressAreaEchoUntil) {
+		return // the entire /gas reply burst stays out of OOC, not just its first line
 	}
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
