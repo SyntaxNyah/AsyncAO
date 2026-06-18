@@ -1343,6 +1343,12 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 			c.LabelClipped(pad+56, y+1, 320, h, ColText)
 			y += 24
 		}
+		// Always-on curated path rules (not removable): e.g. miku.pizza/base/youtube
+		// records only the song files under that folder, never the rest of the host.
+		for _, b := range config.BuiltinMusicHostLabels() {
+			c.LabelClipped(pad+56, y+1, 360, b+"  (built-in · songs only)", ColTextDim)
+			y += 24
+		}
 		y += 6
 	}
 

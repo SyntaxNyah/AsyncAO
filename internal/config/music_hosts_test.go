@@ -59,6 +59,37 @@ func TestMusicURLAllowed(t *testing.T) {
 	}
 }
 
+// TestMusicURLAllowedBuiltinPath pins the always-on curated rule
+// miku.pizza/base/youtube/: only actual song files under that exact path record
+// (the rest of miku.pizza — including its own music folder — still never saves),
+// subdomains count, and the grouping label is the folder, not the bare host.
+func TestMusicURLAllowedBuiltinPath(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	cases := []struct {
+		url  string
+		want bool
+	}{
+		{"https://miku.pizza/base/youtube/Song.opus", true},
+		{"https://miku.pizza/base/youtube/Some%20Cover.mp3", true}, // escaped space in path
+		{"https://cdn.miku.pizza/base/youtube/x.opus", true},       // subdomain match
+		{"https://miku.pizza/base/youtube/", false},                // the folder, not a file
+		{"https://miku.pizza/base/youtube/art.png", false},         // under the path but not audio
+		{"https://miku.pizza/base/sounds/music/Trial.opus", false}, // server library, wrong path
+		{"https://miku.pizza/Song.opus", false},                    // host root, not under the path
+	}
+	for _, c := range cases {
+		if got := p.MusicURLAllowed(c.url); got != c.want {
+			t.Errorf("MusicURLAllowed(%q) = %v, want %v", c.url, got, c.want)
+		}
+	}
+	if got := p.MusicURLDomain("https://miku.pizza/base/youtube/Song.opus"); got != "miku.pizza/base/youtube" {
+		t.Errorf("MusicURLDomain youtube-rip = %q, want miku.pizza/base/youtube", got)
+	}
+	if labels := BuiltinMusicHostLabels(); len(labels) != 1 || labels[0] != "miku.pizza/base/youtube" {
+		t.Errorf("BuiltinMusicHostLabels = %v, want [miku.pizza/base/youtube]", labels)
+	}
+}
+
 // TestMusicHostAddRemove pins normalization (paste a full URL → bare host, www
 // stripped), dedup, and removal.
 func TestMusicHostAddRemove(t *testing.T) {

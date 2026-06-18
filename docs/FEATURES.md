@@ -406,6 +406,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   host) **still plays — it just isn't recorded** (you already have it on the
   server; this feature is for grabbing songs from elsewhere). **Discord records
   audio files only** (`.mp3`/`.opus`/…), since most Discord CDN links are images.
+  One **built-in path rule** ships always-on (shown read-only under the list):
+  **`miku.pizza/base/youtube/`** — Skrapegropen's folder of user-hosted YouTube
+  rips — records **only the audio files under that one path** (`…/youtube/Song.opus`),
+  while the rest of `miku.pizza` (the server's own library) stays unsaved as above.
   Each row shows the cleaned song name + who played it, with **Save** (files it
   into its own dedicated **"Music history"** playlist, dedup by URL), **Play**,
   and **Share**. Open that **Music history** playlist and its songs are **grouped
