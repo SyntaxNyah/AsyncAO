@@ -375,6 +375,8 @@ type AssetPreferences struct {
 	DyslexiaFont           bool                         `json:"dyslexiaFont"`
 	DNDPersist             bool                         `json:"dndPersist"`
 	DNDSaved               bool                         `json:"dndSaved"`
+	RainbowMessages        bool                         `json:"rainbowMessages"`
+	RandomMessageColor     bool                         `json:"randomMessageColor"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
@@ -528,18 +530,20 @@ type prefsJSON struct {
 	HighlightColor         *int      `json:"highlightColor"` // absent = default accent
 	BgSlideshow            bool      `json:"bgSlideshow"`    // default OFF (zero value)
 	BgSlideshowSecs        int       `json:"bgSlideshowSecs"`
-	DownloadKBps           int       `json:"downloadKBps"`    // 0 = unlimited (default)
-	ForceCharNames         bool      `json:"forceCharNames"`  // default OFF
-	RandomEmote            bool      `json:"randomEmote"`     // default OFF
-	FriendHighlight        bool      `json:"friendHighlight"` // default OFF
-	FollowEnabled          bool      `json:"followEnabled"`   // default OFF (opt-in)
-	DyslexiaFont           bool      `json:"dyslexiaFont"`    // default OFF
-	DNDPersist             bool      `json:"dndPersist"`      // default OFF (DND clears each launch)
-	DNDSaved               bool      `json:"dndSaved"`        // persisted DND state (restored only when DNDPersist)
-	FriendNotify           bool      `json:"friendNotify"`    // default OFF
-	FriendOSToast          bool      `json:"friendOSToast"`   // default OFF
-	FriendGlowPulse        bool      `json:"friendGlowPulse"` // default OFF
-	FriendSound            bool      `json:"friendSound"`     // default OFF
+	DownloadKBps           int       `json:"downloadKBps"`       // 0 = unlimited (default)
+	ForceCharNames         bool      `json:"forceCharNames"`     // default OFF
+	RandomEmote            bool      `json:"randomEmote"`        // default OFF
+	FriendHighlight        bool      `json:"friendHighlight"`    // default OFF
+	FollowEnabled          bool      `json:"followEnabled"`      // default OFF (opt-in)
+	DyslexiaFont           bool      `json:"dyslexiaFont"`       // default OFF
+	DNDPersist             bool      `json:"dndPersist"`         // default OFF (DND clears each launch)
+	DNDSaved               bool      `json:"dndSaved"`           // persisted DND state (restored only when DNDPersist)
+	RainbowMessages        bool      `json:"rainbowMessages"`    // default OFF
+	RandomMessageColor     bool      `json:"randomMessageColor"` // default OFF
+	FriendNotify           bool      `json:"friendNotify"`       // default OFF
+	FriendOSToast          bool      `json:"friendOSToast"`      // default OFF
+	FriendGlowPulse        bool      `json:"friendGlowPulse"`    // default OFF
+	FriendSound            bool      `json:"friendSound"`        // default OFF
 	FriendSoundFile        string    `json:"friendSoundFile"`
 	ModcallToast           bool      `json:"modcallToast"` // default OFF
 	CallwordSoundFile      string    `json:"callwordSoundFile"`
@@ -930,6 +934,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.DyslexiaFont = onDisk.DyslexiaFont
 	p.DNDPersist = onDisk.DNDPersist
 	p.DNDSaved = onDisk.DNDSaved
+	p.RainbowMessages = onDisk.RainbowMessages
+	p.RandomMessageColor = onDisk.RandomMessageColor
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
@@ -2037,6 +2043,48 @@ func (p *AssetPreferences) SetDNDSaved(on bool) {
 		return
 	}
 	p.DNDSaved = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RainbowMessagesOn reports the "rainbow my IC messages" toggle (OFF by default):
+// when on, sendIC prefixes \cr so the message renders as a per-rune colour cycle
+// (on clients that parse the inline-colour markup).
+func (p *AssetPreferences) RainbowMessagesOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RainbowMessages
+}
+
+// SetRainbowMessages toggles rainbow IC messages.
+func (p *AssetPreferences) SetRainbowMessages(on bool) {
+	p.mu.Lock()
+	if p.RainbowMessages == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RainbowMessages = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RandomMessageColorOn reports the "random colour per IC message" toggle (OFF by
+// default): each message picks a random palette colour (the standard TextColor
+// field, so every client shows it).
+func (p *AssetPreferences) RandomMessageColorOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RandomMessageColor
+}
+
+// SetRandomMessageColor toggles random per-message colour.
+func (p *AssetPreferences) SetRandomMessageColor(on bool) {
+	p.mu.Lock()
+	if p.RandomMessageColor == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RandomMessageColor = on
 	p.mu.Unlock()
 	p.markDirty()
 }

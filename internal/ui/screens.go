@@ -3609,6 +3609,24 @@ func (a *App) pairLabel() string {
 
 // sendIC builds and sends the outgoing MS message (chat commands handled
 // first: /pair, /unpair, /offset — AO2-Client parity).
+// funColor applies the optional outgoing message-colour modes (M61, both off by
+// default): rainbow wraps the text in the \cr inline-colour markup (per-rune
+// palette cycle), else random swaps the message's palette colour. Pure (the
+// random index is supplied) so the rule is testable; blank/space sends are left
+// alone, and rainbow wins if both are set.
+func funColor(text string, color int, rainbow, random bool, randIdx int) (string, int) {
+	if text == "" || text == " " {
+		return text, color
+	}
+	switch {
+	case rainbow:
+		return "\\cr" + text, color
+	case random:
+		return text, randIdx
+	}
+	return text, color
+}
+
 func (a *App) sendIC(shout int) {
 	text := strings.TrimSpace(a.icInput)
 	if cmdHandled := a.handleChatCommand(text); cmdHandled {
@@ -3653,6 +3671,8 @@ func (a *App) sendIC(shout int) {
 	if blip == "" {
 		blip = a.charBlips
 	}
+	// M61 fun colour: rainbow (\cr prefix) or a random palette colour per message.
+	text, msgColor := funColor(text, a.icColor, a.d.Prefs.RainbowMessagesOn(), a.d.Prefs.RandomMessageColorOn(), rand.IntN(render.TextColorCount))
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
 		PreEmote:   emote.Preanim,
@@ -3669,7 +3689,7 @@ func (a *App) sendIC(shout int) {
 		EmoteMod:  protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, false, a.sess.Features),
 		CharID:    a.sess.MyCharID,
 		Objection: shout,
-		TextColor: a.icColor, // the swatch cycler (AO2 color dropdown parity)
+		TextColor: msgColor, // swatch cycler, or M61 random-per-message colour
 		Showname:  a.effectiveShowname(),
 		PairWith:  a.pairWith,
 		PairOrder: a.pairOrder,

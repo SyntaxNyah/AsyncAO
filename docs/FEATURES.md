@@ -104,6 +104,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   markup you send won't color on stock AO clients (they'd see the `\c2`).
   The IC *log* shows the clean text (codes stripped, same as the chatbox);
   coloring the log itself is a later step.
+- **Random / rainbow message colour** (M61, Settings → General, both OFF):
+  **Random colour** picks a fresh palette colour for each IC message you send
+  (the standard TextColor field — every client sees it); **Rainbow** prefixes
+  `\cr` so your text cycles the palette per letter (renders on clients that read
+  inline colour; rainbow wins if both are on). Applied at send (`funColor`), so
+  zero render cost.
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

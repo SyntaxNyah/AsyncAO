@@ -71,6 +71,24 @@ func TestToggleServerFriend(t *testing.T) {
 	}
 }
 
+// TestFunColor pins the M61 message-colour modes: neither leaves text+colour
+// alone, random swaps the colour, rainbow prefixes \cr and wins over random, and
+// a blank/space send is never decorated.
+func TestFunColor(t *testing.T) {
+	if txt, col := funColor("hi", 4, false, false, 7); txt != "hi" || col != 4 {
+		t.Errorf("neither: got (%q,%d), want (hi,4)", txt, col)
+	}
+	if txt, col := funColor("hi", 4, false, true, 7); txt != "hi" || col != 7 {
+		t.Errorf("random: got (%q,%d), want (hi,7)", txt, col)
+	}
+	if txt, col := funColor("hi", 4, true, true, 7); txt != "\\crhi" || col != 4 {
+		t.Errorf("rainbow wins: got (%q,%d), want (\\crhi,4)", txt, col)
+	}
+	if txt, _ := funColor(" ", 4, true, true, 7); txt != " " {
+		t.Error("a blank/space send must be left undecorated")
+	}
+}
+
 // TestTabParkActivateRoundTrip pins the core invariant: parking moves the
 // WHOLE session out (live state pristine afterwards), activating moves it
 // back bit-for-bit (logs, seqs, identity).

@@ -424,6 +424,16 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetRandomEmote(next)
 	}
 	y += 26
+	rmc := a.d.Prefs.RandomMessageColorOn()
+	if next := c.Checkbox(pad, y, "Random colour for each IC message (OFF by default): every message you send picks a random text colour — everyone sees it (standard colour field)", rmc); next != rmc {
+		a.d.Prefs.SetRandomMessageColor(next)
+	}
+	y += 26
+	rbw := a.d.Prefs.RainbowMessagesOn()
+	if next := c.Checkbox(pad, y, "Rainbow IC messages (OFF by default): your text cycles the palette per letter (takes priority over random; renders on clients that read inline \\cr colour)", rbw); next != rbw {
+		a.d.Prefs.SetRainbowMessages(next)
+	}
+	y += 26
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()
