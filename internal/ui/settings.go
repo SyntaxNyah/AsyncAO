@@ -673,7 +673,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		settings.fontLoaded = true
 	}
 	var fontCommit bool
-	settings.fontInput, fontCommit = c.TextField("fontpaths", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH},
+	settings.fontInput, fontCommit = c.TextField("fontpaths", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH},
 		settings.fontInput, `C:\Windows\Fonts\meiryo.ttc; more fallbacks... (blank = built-in)`)
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || fontCommit {
 		raw := strings.TrimSpace(settings.fontInput)
@@ -715,7 +715,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	}
 	y += 32
 	c.Label(pad, y+4, "Theme folder:", ColText)
-	settings.themeDir, _ = c.TextField("themedir", sdl.Rect{X: pad + 110, Y: y, W: 340, H: fieldH}, settings.themeDir, `optional root holding themes\<name> — or drop a folder anywhere`)
+	settings.themeDir, _ = c.TextField("themedir", sdl.Rect{X: pad + 130, Y: y, W: 320, H: fieldH}, settings.themeDir, `optional root holding themes\<name> — or drop a folder anywhere`)
 	if c.Button(sdl.Rect{X: pad + 460, Y: y, W: 130, H: btnH}, "Apply & rescan") {
 		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
 		a.scanThemes()
@@ -951,7 +951,7 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	}
 	y += 28
 	c.Label(pad, y+4, "Mount folder:", ColText)
-	settings.mountInput, _ = c.TextField("mount", sdl.Rect{X: pad + 110, Y: y, W: 340, H: fieldH}, settings.mountInput, `C:\AO2\base or /home/you/ao2/base`)
+	settings.mountInput, _ = c.TextField("mount", sdl.Rect{X: pad + 130, Y: y, W: 320, H: fieldH}, settings.mountInput, `C:\AO2\base or /home/you/ao2/base`)
 	if c.Button(sdl.Rect{X: pad + 460, Y: y, W: 80, H: btnH}, "Add") && strings.TrimSpace(settings.mountInput) != "" {
 		a.d.Prefs.SetLocalAssets(enabled, append(mounts, strings.TrimSpace(settings.mountInput)))
 		settings.mountInput = ""
@@ -1270,7 +1270,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	// below with a × to remove. Flash + sound + toast fire on an IC/OOC match.
 	c.Label(pad, y+4, "Add word(s):", ColTextDim)
 	var callCommit bool
-	settings.callAddInput, callCommit = c.TextField("callwordadd", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.callAddInput, "your name, nickname… (comma-separates; flash + sound when seen in IC/OOC)")
+	settings.callAddInput, callCommit = c.TextField("callwordadd", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.callAddInput, "your name, nickname… (comma-separates; flash + sound when seen in IC/OOC)")
 	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "+ Add") || callCommit {
 		if n := a.d.Prefs.AddCallWord(settings.callAddInput); n > 0 {
 			settings.callAddInput = ""
@@ -1294,7 +1294,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 	y += 6
 	c.Label(pad, y+4, "Callword sound:", ColTextDim)
-	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 120, Y: y, W: 490, H: fieldH}, a.d.Prefs.CallwordSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.CallwordSoundPath() {
+	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 130, Y: y, W: 480, H: fieldH}, a.d.Prefs.CallwordSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.CallwordSoundPath() {
 		a.d.Prefs.SetCallwordSoundPath(next)
 	}
 	y += 32
@@ -1512,7 +1512,7 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 			settings.friendKey = a.serverKey
 		}
 		var friendCommit bool
-		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.friendInput, "showname1, showname2=ffcc00, ... (saved per server)")
+		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.friendInput, "showname1, showname2=ffcc00, ... (saved per server)")
 		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || friendCommit {
 			a.d.Prefs.SetServerFriends(a.serverKey, strings.Split(settings.friendInput, ","))
 			settings.statusLine = "Friends saved for this server."
@@ -1544,7 +1544,7 @@ func (a *App) drawSettingsAccount(y, w int32) int32 {
 	// Master list override (blank = official). Refresh in the lobby applies.
 	c.Label(pad, y+4, "URL:", ColTextDim)
 	master := a.d.Prefs.MasterList()
-	if next, _ := c.TextField("masterurl", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, master, network.DefaultMasterServerURL); next != master {
+	if next, _ := c.TextField("masterurl", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, master, network.DefaultMasterServerURL); next != master {
 		a.d.Prefs.SetMasterList(next)
 	}
 	y += 34
