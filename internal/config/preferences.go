@@ -2271,6 +2271,56 @@ func (p *AssetPreferences) SetCallWords(words []string) {
 	p.markDirty()
 }
 
+// AddCallWord adds one or more highlight words from a single input, split on
+// commas so a pasted "a, b, c" adds them all at once. Each is lowercased +
+// trimmed; blanks and case-insensitive duplicates are skipped, up to
+// callWordCap. Returns how many were newly added (0 = nothing new / at the cap),
+// mirroring AddMusicHost for the Settings list manager.
+func (p *AssetPreferences) AddCallWord(input string) int {
+	p.mu.Lock()
+	have := make(map[string]bool, len(p.CallWordList))
+	for _, w := range p.CallWordList {
+		have[w] = true
+	}
+	added := 0
+	for _, raw := range strings.Split(input, ",") {
+		w := strings.ToLower(strings.TrimSpace(raw))
+		if w == "" || have[w] {
+			continue
+		}
+		if len(p.CallWordList) >= callWordCap {
+			break
+		}
+		p.CallWordList = append(p.CallWordList, w)
+		have[w] = true
+		added++
+	}
+	p.mu.Unlock()
+	if added > 0 {
+		p.markDirty()
+	}
+	return added
+}
+
+// RemoveCallWord drops a highlight word (case-insensitive). Reports a change.
+func (p *AssetPreferences) RemoveCallWord(word string) bool {
+	word = strings.ToLower(strings.TrimSpace(word))
+	p.mu.Lock()
+	changed := false
+	for i, w := range p.CallWordList {
+		if w == word {
+			p.CallWordList = append(p.CallWordList[:i], p.CallWordList[i+1:]...)
+			changed = true
+			break
+		}
+	}
+	p.mu.Unlock()
+	if changed {
+		p.markDirty()
+	}
+	return changed
+}
+
 // Hotkey reports the configured key name for an action ("" = unset; the
 // UI layer owns defaults — config just persists overrides).
 func (p *AssetPreferences) Hotkey(action string) string {

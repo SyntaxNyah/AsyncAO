@@ -260,7 +260,13 @@ type App struct {
 	// last missing-asset warning surfaced to the user (spec §4).
 	warnLine string
 	warnAt   time.Time
-	loginAt  time.Time // when a login flow last fired; a brief callword grace so the server's login replies don't self-ping
+
+	// dndOn is Do Not Disturb: session-only (resets on launch by design, so it
+	// can't silently kill callwords days later) — silences the personal-ping
+	// alerts (callword + friend) while leaving duty signals (modcalls, case
+	// alerts, server notices) through. Gated in checkCallwords + signalFriend.
+	dndOn   bool
+	loginAt time.Time // when a login flow last fired; a brief callword grace so the server's login replies don't self-ping
 
 	// --- debug overlay (Settings toggle): bounded failure log ---
 	debugLog    []string // ring of stamped failure lines, debugLogCap max
@@ -3297,7 +3303,7 @@ func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, in
 // tab, so you're alerted even while looking at another server). The glow is
 // drawn separately in the log.
 func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
-	if a.d.Prefs.StreamerMode() {
+	if a.d.Prefs.StreamerMode() || a.dndOn {
 		return
 	}
 	if a.d.Prefs.FriendNotifyOn() {

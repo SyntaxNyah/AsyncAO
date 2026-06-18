@@ -808,6 +808,33 @@ func TestResetSettings(t *testing.T) {
 	}
 }
 
+// TestCallWordAddRemove pins the callword manager helpers: Add splits a pasted
+// "a, b, c" into separate words, lowercases + dedups (case-insensitive), reports
+// the count actually added, and Remove drops one regardless of case.
+func TestCallWordAddRemove(t *testing.T) {
+	p, err := New(filepath.Join(t.TempDir(), "prefs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	if n := p.AddCallWord("Alice, bob , ALICE,  "); n != 2 {
+		t.Fatalf("AddCallWord bulk = %d, want 2 (alice, bob; dup + blanks skipped)", n)
+	}
+	if got := p.CallWords(); len(got) != 2 || got[0] != "alice" || got[1] != "bob" {
+		t.Fatalf("CallWords = %v, want [alice bob]", got)
+	}
+	if n := p.AddCallWord("bob"); n != 0 {
+		t.Errorf("re-adding an existing word = %d, want 0", n)
+	}
+	if !p.RemoveCallWord("ALICE") { // case-insensitive remove
+		t.Error("RemoveCallWord(ALICE) should drop the lowercased entry")
+	}
+	if got := p.CallWords(); len(got) != 1 || got[0] != "bob" {
+		t.Errorf("after remove, CallWords = %v, want [bob]", got)
+	}
+}
+
 // TestResetAll pins the full wipe: tunables AND content both revert.
 func TestResetAll(t *testing.T) {
 	p, err := New(filepath.Join(t.TempDir(), "prefs.json"))

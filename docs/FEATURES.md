@@ -300,7 +300,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   inline (a few-byte hash + HSV, no allocation, no cache to stale), so it's free
   per frame and the default OFF path is byte-identical (RenderFrame stays 0
   allocs/op).
-- **Callwords**: comma-separated highlight words; IC/OOC match = taskbar
+- **Callwords** (M15 **manager**): a managed highlight-word list — type a word
+  (or paste `a, b, c` to add several at once) + **Add**, and each shows below
+  with a **×** to remove (replaces the old single comma field; lowercased,
+  deduped, capped at 32). An IC/OOC match = taskbar
   flash + a sound — a **custom sound file** you point at in Settings
   (`.wav`/`.ogg`/`.mp3`/**`.opus`**), else a **built-in ping**. The ping is the
   reliable default: we deliberately do **not** route through the theme's
@@ -315,6 +318,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   halted it). An **optional toast** (Settings → **ON by default**) names the
   heard word, like the modcall/friend toasts. (Opus support needs the codec DLLs
   loaded at startup — see the audio note below.)
+- **Do Not Disturb** (M15; Settings → Audio & Chat): a one-click mode that
+  **mutes the personal pings** — callword *and* friend alerts (their sound, toast,
+  and window flash) — while **duty signals still come through** (modcalls, case
+  alerts, server notices). It's **session-only by design** (resets on restart) so
+  it can never silently kill your callwords days later; a persistent
+  **"● Do Not Disturb — alerts muted"** badge sits above the OOC box while it's on
+  (**click it to turn DND off**). The friend *glow* in the log is passive, so it
+  stays on.
 - **Per-SFX mute** (M11): silence an emote sound effect that's grating — the
   **last SFX you hear** gets a one-click **"Mute last SFX: &lt;name&gt;"** toggle in
   **Settings → Audio & Chat**, with the muted list (× to unmute) below it. Global

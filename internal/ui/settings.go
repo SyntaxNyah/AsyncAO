@@ -28,9 +28,9 @@ type settingsState struct {
 	tabScroll  [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
 	search     string                 // settings search query (jumps to the matching tab)
 
-	// callwords edit buffer (loaded once per settings entry).
-	callInput  string
-	callLoaded bool
+	// callword manager add-field buffer: a fresh empty field (NOT preloaded with
+	// the word list — the words render as ×-removable rows below it).
+	callAddInput string
 
 	// friends edit buffer — reloaded when the server (friendKey) changes,
 	// since the friend list is per server.
@@ -1211,19 +1211,33 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	// Case announcements (CASEA, tsuserver-family): subscribe by role.
 	y = a.drawCasingRow(y)
 
-	// Callwords: comma-separated highlight words (flash + sound on match).
+	// Callwords manager: type a word (or paste "a, b, c") + Add, and each shows
+	// below with a × to remove. Flash + sound + toast fire on an IC/OOC match.
 	c.Label(pad, y+4, "Callwords:", ColText)
-	if !settings.callLoaded {
-		settings.callInput = strings.Join(a.d.Prefs.CallWords(), ", ")
-		settings.callLoaded = true
-	}
 	var callCommit bool
-	settings.callInput, callCommit = c.TextField("callwords", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.callInput, "your name, nickname, ... (flash + sound when seen in IC/OOC)")
-	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || callCommit {
-		a.d.Prefs.SetCallWords(strings.Split(settings.callInput, ","))
-		settings.statusLine = "Callwords saved."
+	settings.callAddInput, callCommit = c.TextField("callwordadd", sdl.Rect{X: pad + 110, Y: y, W: 420, H: fieldH}, settings.callAddInput, "your name, nickname… (comma-separates; flash + sound when seen in IC/OOC)")
+	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "+ Add") || callCommit {
+		if n := a.d.Prefs.AddCallWord(settings.callAddInput); n > 0 {
+			settings.callAddInput = ""
+			settings.statusLine = fmt.Sprintf("Added %d callword(s).", n)
+		} else {
+			settings.statusLine = "Nothing added (blank, already listed, or at the 32-word cap)."
+		}
 	}
 	y += 30
+	if words := a.d.Prefs.CallWords(); len(words) > 0 {
+		for _, w := range words {
+			if c.Button(sdl.Rect{X: pad + 28, Y: y, W: 20, H: 18}, "×") {
+				a.d.Prefs.RemoveCallWord(w)
+			}
+			c.LabelClipped(pad+56, y+1, 320, w, ColText)
+			y += 24
+		}
+	} else {
+		c.Label(pad+28, y+1, "No callwords yet — add your name to get pinged when it's said.", ColTextDim)
+		y += 24
+	}
+	y += 6
 	c.Label(pad, y+4, "Callword sound:", ColTextDim)
 	if next, _ := c.TextField("cwsound", sdl.Rect{X: pad + 120, Y: y, W: 490, H: fieldH}, a.d.Prefs.CallwordSoundPath(), "custom .wav/.ogg/.mp3/.opus path (blank = built-in ping)"); next != a.d.Prefs.CallwordSoundPath() {
 		a.d.Prefs.SetCallwordSoundPath(next)
@@ -1243,6 +1257,17 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	ct := a.d.Prefs.CallwordToastOn()
 	if next := c.Checkbox(pad, y, "Toast when a callword is heard (ON by default): a popup names the word, like the modcall/friend toasts.", ct); next != ct {
 		a.d.Prefs.SetCallwordToast(next)
+	}
+	y += 30
+	// Do Not Disturb: session-only (resets on restart by design, so it can't
+	// silently kill your callwords days later) — mutes the personal pings only.
+	if next := c.Checkbox(pad, y, "Do Not Disturb — mute callword + friend pings (sound/toast/window flash). Modcalls + case alerts still come through. Resets on restart.", a.dndOn); next != a.dndOn {
+		a.dndOn = next
+		if next {
+			settings.statusLine = "Do Not Disturb ON — callword + friend pings muted this session."
+		} else {
+			settings.statusLine = "Do Not Disturb off."
+		}
 	}
 	y += 30
 

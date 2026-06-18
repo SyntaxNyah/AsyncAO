@@ -24,6 +24,21 @@ func testTabApp(t *testing.T) *App {
 	return a
 }
 
+// TestDoNotDisturbSilencesCallword pins that DND short-circuits checkCallwords
+// before any side effect: with DND on, a matching callword sets no toast and
+// never reaches the (nil-in-test) Audio — so the gate must stay above the alert
+// calls (a nil-Audio panic here would catch it being moved below them). The
+// DND-off path fires real SDL audio, so it's covered by inspection, not here.
+func TestDoNotDisturbSilencesCallword(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetCallWords([]string{"phoenix"})
+	a.dndOn = true
+	a.checkCallwords("objection, phoenix!") // must early-return, not touch Audio
+	if a.warnLine != "" {
+		t.Errorf("DND must suppress the callword toast, got warnLine=%q", a.warnLine)
+	}
+}
+
 // TestTabParkActivateRoundTrip pins the core invariant: parking moves the
 // WHOLE session out (live state pristine afterwards), activating moves it
 // back bit-for-bit (logs, seqs, identity).

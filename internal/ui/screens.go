@@ -2964,6 +2964,20 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	if a.warnActive() {
 		c.LabelClipped(pad, oocY-20, w-2*pad, a.warnLine, ColDanger)
 	}
+	// Do Not Disturb: a persistent badge while alerts are muted, so a silenced
+	// callword never reads as "callwords broken". Right-aligned so it clears the
+	// left-aligned toast above; click it to turn DND off without opening Settings.
+	if a.dndOn {
+		const dndMsg = "● Do Not Disturb — alerts muted (click to undo)"
+		tw := c.TextWidth(dndMsg)
+		bx := w - pad - tw
+		c.Label(bx, oocY-20, dndMsg, ColTierYellow)
+		if c.clicked && c.hovering(sdl.Rect{X: bx, Y: oocY - 22, W: tw, H: 18}) {
+			a.dndOn = false
+			a.warnLine = "Do Not Disturb off."
+			a.warnAt = time.Now()
+		}
+	}
 
 	if a.showPair {
 		a.drawPairPanel(w, h)

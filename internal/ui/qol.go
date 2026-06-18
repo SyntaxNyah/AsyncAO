@@ -470,7 +470,7 @@ func (a *App) inLoginGrace() bool {
 // Streamer mode suppresses both — an on-stream name ping is exactly the
 // leak the toggle exists to prevent.
 func (a *App) checkCallwords(text string) {
-	if a.d.Prefs.StreamerMode() {
+	if a.d.Prefs.StreamerMode() || a.dndOn {
 		return
 	}
 	// Brief grace after a login flow: the server's login replies (and the Akashi
