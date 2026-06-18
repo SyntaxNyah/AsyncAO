@@ -55,6 +55,7 @@ const (
 	hotkeyVolUp         = "vol_up"
 	hotkeyShownameRand  = "showname_rand"  // swap to a random saved showname preset (M6)
 	hotkeyShownameCycle = "showname_cycle" // cycle to the next saved showname preset
+	hotkeyDND           = "dnd"            // toggle Do Not Disturb (mute callword + friend pings) (M15)
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -96,6 +97,7 @@ var hotkeyDefs = []struct {
 	{hotkeyVolUp, "Master volume up", "="},              // Ctrl+=  (louder)
 	{hotkeyShownameRand, "Random showname preset", "h"}, // Ctrl+H (rebindable)
 	{hotkeyShownameCycle, "Cycle showname preset", "b"}, // Ctrl+B (rebindable)
+	{hotkeyDND, "Do Not Disturb (mute pings)", "d"},     // Ctrl+D — session-only, rebindable
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -259,6 +261,13 @@ func (a *App) handleHotkeys() {
 		a.randomShowname()
 	case a.hotkeyFor(hotkeyShownameCycle):
 		a.cycleShowname()
+	case a.hotkeyFor(hotkeyDND):
+		a.dndOn = !a.dndOn
+		a.warnLine = "Do Not Disturb off"
+		if a.dndOn {
+			a.warnLine = "Do Not Disturb ON — callword + friend pings muted"
+		}
+		a.warnAt = time.Now()
 	}
 }
 

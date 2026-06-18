@@ -318,14 +318,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   halted it). An **optional toast** (Settings → **ON by default**) names the
   heard word, like the modcall/friend toasts. (Opus support needs the codec DLLs
   loaded at startup — see the audio note below.)
-- **Do Not Disturb** (M15; Settings → Audio & Chat): a one-click mode that
-  **mutes the personal pings** — callword *and* friend alerts (their sound, toast,
-  and window flash) — while **duty signals still come through** (modcalls, case
-  alerts, server notices). It's **session-only by design** (resets on restart) so
-  it can never silently kill your callwords days later; a persistent
-  **"● Do Not Disturb — alerts muted"** badge sits above the OOC box while it's on
-  (**click it to turn DND off**). The friend *glow* in the log is passive, so it
-  stays on.
+- **Do Not Disturb** (M15; **Ctrl+D**, or Settings → Audio & Chat): a one-click
+  mode that **mutes the personal pings** — callword *and* friend alerts (their
+  sound, toast, and window flash) — while **duty signals still come through**
+  (modcalls, case alerts, server notices). The **Ctrl+D** keybind is rebindable
+  (Settings → Controls, like every other shortcut). It's **session-only by design**
+  (resets on restart) so it can never silently kill your callwords days later; a
+  persistent **"● Do Not Disturb — alerts muted"** badge sits above the OOC box
+  while it's on (**click it to turn DND off**). The friend *glow* in the log is
+  passive, so it stays on.
 - **Per-SFX mute** (M11): silence an emote sound effect that's grating — the
   **last SFX you hear** gets a one-click **"Mute last SFX: &lt;name&gt;"** toggle in
   **Settings → Audio & Chat**, with the muted list (× to unmute) below it. Global

@@ -1261,7 +1261,9 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	y += 30
 	// Do Not Disturb: session-only (resets on restart by design, so it can't
 	// silently kill your callwords days later) — mutes the personal pings only.
-	if next := c.Checkbox(pad, y, "Do Not Disturb — mute callword + friend pings (sound/toast/window flash). Modcalls + case alerts still come through. Resets on restart.", a.dndOn); next != a.dndOn {
+	// The keybind (default Ctrl+D, rebindable on the Controls tab) toggles it too.
+	dndLabel := "Do Not Disturb (Ctrl+" + strings.ToUpper(a.hotkeyFor(hotkeyDND)) + ") — mute callword + friend pings (sound/toast/window flash). Modcalls + case alerts still come through. Resets on restart."
+	if next := c.Checkbox(pad, y, dndLabel, a.dndOn); next != a.dndOn {
 		a.dndOn = next
 		if next {
 			settings.statusLine = "Do Not Disturb ON — callword + friend pings muted this session."
