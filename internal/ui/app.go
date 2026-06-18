@@ -2203,7 +2203,23 @@ func (a *App) charSlotByName(name string) int {
 // falls back to an iniswap — with a toast, so a favourite never silently swaps.
 func (a *App) wardrobeClick(name string) {
 	a.showIni = false
-	if a.room == nil { // pre-join (not normally reachable here) → claim a slot + wear
+	if a.room == nil {
+		// Char-select Wardrobe tab: pick the REAL free character (the switch a
+		// favourite is expected to do) when it's a claimable server slot; only
+		// fall back to an iniswap (free slot + its look) when it's taken or not a
+		// server character. Same decision as the courtroom path below, via
+		// wardrobeAction — this is the half the original fix missed, so picking a
+		// favourite on reconnect iniswapped instead of switching.
+		slot := -1
+		taken := false
+		if a.sess != nil {
+			slot = a.charSlotByName(name)
+			taken = slot >= 0 && a.sess.Chars[slot].Taken
+		}
+		if wardrobeAction(a.iniSwapMode, slot, taken) == actSwitch {
+			a.pickCharacter(slot)
+			return
+		}
 		a.wearFromMenu(name)
 		return
 	}

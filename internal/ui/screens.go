@@ -351,7 +351,9 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 		x := pad + col*(iconCell+iconGap)
 		y := gridTop + row*cellH - a.iniScroll
 		if y > -iconCell && y < h {
-			a.drawIniswapCell(i, sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell}, cellClickIniswap)
+			// Char-select Wardrobe tab: a favourite SWITCHES to the real character
+			// (wardrobeClick picks its free slot), not a blind iniswap.
+			a.drawIniswapCell(i, sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell}, cellClickChar)
 		}
 		col++
 		if col >= cols {
@@ -2416,9 +2418,11 @@ func (a *App) drawIniFolderCell(name string, count int, cell sdl.Rect) {
 	}
 }
 
-// cellClick is what clicking a wardrobe cell does: always iniswap (the
-// char-select drawer and the Iniswaps tab), or run the Characters-tab logic
-// (switch to the character, or iniswap when the box is ticked).
+// cellClick is what clicking a wardrobe cell does: always iniswap (the Iniswaps
+// tab), or run the Characters-tab logic — switch to the character (claim its
+// slot), falling back to iniswap when it's taken / not a server char / the box
+// is ticked. cellClickChar drives the courtroom Characters tab AND the
+// char-select Wardrobe tab, so a favourite switches in both.
 type cellClick int
 
 const (
