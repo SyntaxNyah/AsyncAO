@@ -61,6 +61,54 @@ func newRig(t *testing.T, source Fetcher, localMode bool) *testRig {
 	return &testRig{prefs: prefs, resolver: resolver, manager: m, pool: pool, decoder: decoder, disk: disk, t2: t2}
 }
 
+// TestResolveRawFromLocalArchive is the load-bearing round-trip proof for the
+// self-contained scene archive: an asset written into a local folder at the
+// webAO relative path is resolved back by the SAME candidate chain replay uses,
+// and the resolved URL minus the origin is exactly that relative path. If this
+// holds, export (write at relpath) and replay (resolve to relpath) are
+// symmetric — a bundled .aorec replays with the CDN gone.
+func TestResolveRawFromLocalArchive(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel string, data []byte) {
+		full := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	local := NewLocalFetcher([]string{dir})
+	rig := newRig(t, local, true)
+
+	// Common case: assets bundled as .webp (what a webp-first server serves) —
+	// the default probe list IS webp, so it resolves with NO seeding, and the
+	// resolved URL minus the origin is exactly the relative path it was written
+	// to (export/replay symmetry).
+	write("characters/Phoenix/(a)normal.webp", []byte("WEBP"))
+	base := local.BaseURL() + "characters/Phoenix/(a)normal"
+	url, data, ok := rig.manager.ResolveRaw(base, AssetTypeCharSprite)
+	if !ok || url != base+config.ExtWebP || string(data) != "WEBP" {
+		t.Fatalf("webp archive asset not resolved: ok=%v url=%q", ok, url)
+	}
+	if rel, _ := strings.CutPrefix(url, local.BaseURL()); rel != "characters/Phoenix/(a)normal.webp" {
+		t.Errorf("relpath = %q, want characters/Phoenix/(a)normal.webp", rel)
+	}
+
+	// Robustness: a NON-default format (.png, e.g. an older server) MISSES until
+	// the archive's recorded format is seeded for the archive host — which is
+	// exactly what replaying a bundled archive does from its format manifest.
+	write("characters/Edgeworth/(a)normal.png", []byte("PNG"))
+	pbase := local.BaseURL() + "characters/Edgeworth/(a)normal"
+	if _, _, ok := rig.manager.ResolveRaw(pbase, AssetTypeCharSprite); ok {
+		t.Fatal("expected .png to MISS before seeding (default probe list is webp-only)")
+	}
+	rig.resolver.RecordSuccess(hostOf(pbase), AssetTypeCharSprite, config.ExtPNG)
+	if url, data, ok := rig.manager.ResolveRaw(pbase, AssetTypeCharSprite); !ok || string(data) != "PNG" {
+		t.Fatalf("seeded .png archive asset not resolved: ok=%v url=%q", ok, url)
+	}
+}
+
 // countingServer serves payloads by exact path and counts every request.
 type countingServer struct {
 	mu       sync.Mutex

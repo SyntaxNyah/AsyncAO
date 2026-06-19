@@ -324,6 +324,34 @@ func (m *Manager) FetchRaw(ctx context.Context, url string) ([]byte, error) {
 	return data, nil
 }
 
+// ResolveRaw resolves an extensionless base to the first candidate URL whose
+// bytes fetch — learned-first, the SAME candidate order the render path probes
+// (BuildCandidates) — returning that complete URL and its bytes. Synchronous,
+// for tooling (the scene-archive exporter) that needs the resolved file itself,
+// not a decoded texture. It learns the winning format so a repeat call is a
+// single-probe hit. ok=false when every candidate is missing.
+//
+// Because export and replay both resolve through this same candidate logic, the
+// relative path an asset is written to (resolvedURL minus origin) is exactly the
+// path replay will later request — symmetry by construction (no hand-built
+// paths, no pre-seeded format table needed).
+func (m *Manager) ResolveRaw(base string, t AssetType) (string, []byte, bool) {
+	if base == "" || !t.Valid() {
+		return "", nil, false
+	}
+	host := hostOf(base)
+	cands := m.resolver.BuildCandidates(base, t, host)
+	defer m.resolver.PutCandidates(cands)
+	for _, url := range cands.URLs {
+		data, err := m.FetchRaw(context.Background(), url)
+		if err == nil && len(data) > 0 {
+			m.resolver.RecordSuccess(host, t, url[len(base):]) // learn the winning ext
+			return url, data, true
+		}
+	}
+	return "", nil, false
+}
+
 // PrefetchSticky is Prefetch for assets that survive room changes (UI
 // chrome, theme bits).
 func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority) {
