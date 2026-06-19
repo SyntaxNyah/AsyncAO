@@ -1,0 +1,508 @@
+package ui
+
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
+)
+
+// Scene maker (M16 [3/3]): an in-app editor over the SAME .aorec model the
+// recorder/replayer use. Build a scene from scratch or load a recording, edit
+// the ordered event stream (who speaks, emote, text, background, music), Preview
+// it through the existing replay engine, and Save a fresh .aorec. It reuses the
+// recording model + the replay renderer, so there is no second renderer and no
+// new asset path — and because it's a full-window overlay drawn only while
+// makerOpen, it costs nothing on the live render hot path.
+//
+// A scene is just a list of recEvents, and .aorec is pretty-printed JSON, so a
+// scene built here is hand-editable in any text editor too (and vice-versa).
+
+const (
+	// defaultMakerEmote is the starter sprite stem for a new line — the bare
+	// form, which the prefetch fallback chain probes as both "(a)normal" and
+	// "normal" (CLAUDE.md: AO2-Client CharLayer::load_image tries both).
+	defaultMakerEmote = "normal"
+	// defaultMakerSide centres a new speaker on the witness stand, where a
+	// talking character is visible without needing a specific background slot.
+	defaultMakerSide = "wit"
+
+	makerListW int32 = 300 // left event-list column width
+	makerRowH  int32 = 24  // event-list row height
+)
+
+// makerSideLabels / makerSideValues map friendly position names to the AO side
+// codes the URL builder understands (urlbuilder.go positionFolder).
+var (
+	makerSideLabels = []string{"Defense", "Prosecution", "Witness", "Judge", "Defense (hold)", "Prosecution (hold)", "Jury", "Seance"}
+	makerSideValues = []string{"def", "pro", "wit", "jud", "hld", "hlp", "jur", "sea"}
+)
+
+func makerSideIndex(side string) int {
+	for i, v := range makerSideValues {
+		if v == side {
+			return i
+		}
+	}
+	return 2 // default: witness
+}
+
+// newMessageEvent builds a synthetic IC line. EmoteMod defaults to idle (NOT
+// preanim): a from-scratch line must not wait on a preanim asset that may not
+// exist at the origin, which would stall the preview (advisor note on the
+// replay-delay thread). The user opts into a preanim explicitly.
+func newMessageEvent(char, emote, text string) recEvent {
+	if strings.TrimSpace(emote) == "" {
+		emote = defaultMakerEmote
+	}
+	return recEvent{
+		Kind: int(courtroom.EventMessage),
+		Message: &protocol.ChatMessage{
+			CharName: char,
+			Emote:    emote,
+			Message:  text,
+			Side:     defaultMakerSide,
+			EmoteMod: protocol.EmoteModIdle,
+		},
+	}
+}
+
+func newBackgroundEvent(name string) recEvent {
+	return recEvent{Kind: int(courtroom.EventBackground), Text: name}
+}
+
+func newMusicEvent(track string) recEvent {
+	return recEvent{Kind: int(courtroom.EventMusic), Text: track}
+}
+
+// sanitizeStem turns a user-typed scene name into a safe filename stem (no path
+// separators or odd characters), so Save can never escape recordings\.
+func sanitizeStem(s string) string {
+	s = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(s), recordingExt))
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == ' ':
+			b.WriteRune(r)
+		default:
+			b.WriteRune('-')
+		}
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" {
+		out = "scene"
+	}
+	return out
+}
+
+// cloneScene copies a scene so the maker edits its own buffer: the Events slice
+// and each Message pointer are duplicated, so editing a field never reaches back
+// into a live recording or a previously loaded file (and a Preview can't mutate
+// the edit buffer).
+func cloneScene(rec *sceneRecording) *sceneRecording {
+	if rec == nil {
+		return &sceneRecording{Version: recordingVersion}
+	}
+	out := *rec
+	out.Events = make([]recEvent, len(rec.Events))
+	for i, e := range rec.Events {
+		out.Events[i] = e
+		if e.Message != nil {
+			m := *e.Message
+			out.Events[i].Message = &m
+		}
+	}
+	if out.Version == 0 {
+		out.Version = recordingVersion
+	}
+	return &out
+}
+
+// openSceneMaker shows the maker editing a CLONE of rec (so the source is never
+// mutated in place). Recording and replay are mutually exclusive with it.
+func (a *App) openSceneMaker(rec *sceneRecording, name string) {
+	if a.recActive {
+		a.warnLine = "Stop recording first, then open the Scene Maker."
+		a.warnAt = time.Now()
+		return
+	}
+	if a.replaying {
+		a.stopReplay()
+	}
+	a.makerScene = cloneScene(rec)
+	a.makerName = sanitizeStem(name)
+	a.makerSel = 0
+	a.makerScroll = 0
+	a.makerOpen = true
+}
+
+// newScene opens the maker on a fresh one-line scene, seeded with the asset
+// origin of the connected server (if any) and the player's current character —
+// so "New scene → Preview" shows a real sprite out of the box where possible.
+func (a *App) newScene() {
+	origin := a.urls.Origin() // the connected server's asset base, "" when offline
+	rec := &sceneRecording{
+		Version: recordingVersion,
+		Origin:  origin,
+		Events:  []recEvent{newMessageEvent(a.activeCharName(), defaultMakerEmote, "Hello!")},
+	}
+	a.openSceneMaker(rec, "untitled")
+}
+
+// editRecordingInMaker loads a saved .aorec into the maker for editing (the
+// Studio "Edit" entry point).
+func (a *App) editRecordingInMaker(path string) {
+	rec, err := loadRecording(path)
+	if err != nil {
+		a.warnLine = "Couldn't open recording: " + err.Error()
+		a.warnAt = time.Now()
+		return
+	}
+	a.openSceneMaker(rec, strings.TrimSuffix(filepath.Base(path), recordingExt))
+}
+
+// closeSceneMaker hides the maker and frees its buffer. The dispatch then falls
+// back to whatever screen was underneath (the maker never changed a.screen).
+func (a *App) closeSceneMaker() {
+	a.makerOpen = false
+	a.makerScene = nil
+	a.makerSel = 0
+	a.makerScroll = 0
+}
+
+// makerInsert adds an event just after the selection (bounded by the recording
+// cap) and selects it.
+func (a *App) makerInsert(ev recEvent) {
+	if a.makerScene == nil {
+		return
+	}
+	if len(a.makerScene.Events) >= maxRecordedEvents {
+		a.warnLine = "Scene is at the event cap (" + fmt.Sprint(maxRecordedEvents) + ")."
+		a.warnAt = time.Now()
+		return
+	}
+	at := a.makerSel + 1
+	if at < 0 || at > len(a.makerScene.Events) {
+		at = len(a.makerScene.Events)
+	}
+	evs := append(a.makerScene.Events, recEvent{})
+	copy(evs[at+1:], evs[at:])
+	evs[at] = ev
+	a.makerScene.Events = evs
+	a.makerSel = at
+}
+
+// makerDeleteSel removes the selected event.
+func (a *App) makerDeleteSel() {
+	if a.makerScene == nil {
+		return
+	}
+	i := a.makerSel
+	if i < 0 || i >= len(a.makerScene.Events) {
+		return
+	}
+	a.makerScene.Events = append(a.makerScene.Events[:i], a.makerScene.Events[i+1:]...)
+	if a.makerSel >= len(a.makerScene.Events) {
+		a.makerSel = len(a.makerScene.Events) - 1
+	}
+	if a.makerSel < 0 {
+		a.makerSel = 0
+	}
+}
+
+// makerMoveSel swaps the selection with its neighbour (reorder).
+func (a *App) makerMoveSel(dir int) {
+	if a.makerScene == nil {
+		return
+	}
+	evs := a.makerScene.Events
+	i := a.makerSel
+	j := i + dir
+	if i < 0 || i >= len(evs) || j < 0 || j >= len(evs) {
+		return
+	}
+	evs[i], evs[j] = evs[j], evs[i]
+	a.makerSel = j
+}
+
+// makerPreview plays the scene through the replay engine on a copy, so playback
+// can't mutate the edit buffer; on ■ Stop the maker (still makerOpen) reappears
+// with the edit intact.
+func (a *App) makerPreview() {
+	if a.makerScene == nil || len(a.makerScene.Events) == 0 {
+		a.warnLine = "Nothing to preview yet — add a line first."
+		a.warnAt = time.Now()
+		return
+	}
+	a.startReplay(cloneScene(a.makerScene), a.makerName+" (preview)")
+}
+
+// makerSave writes the scene as a NEW timestamped .aorec — never overwriting the
+// file you loaded (the user's recordings aren't ours to clobber). The write is
+// off the render thread (saveSceneRecording, §17.2).
+func (a *App) makerSave() {
+	if a.makerScene == nil || len(a.makerScene.Events) == 0 {
+		a.warnLine = "Nothing to save yet — add a line first."
+		a.warnAt = time.Now()
+		return
+	}
+	a.makerScene.Version = recordingVersion
+	if a.makerScene.RecordedAt == "" {
+		a.makerScene.RecordedAt = time.Now().Format(time.RFC3339)
+	}
+	stem := sanitizeStem(a.makerName) + "-" + time.Now().Format("20060102-150405")
+	name, err := saveSceneRecording(a.makerScene, stem)
+	if err != nil {
+		a.warnLine = "Save failed: " + err.Error()
+		a.warnAt = time.Now()
+		return
+	}
+	a.warnLine = "Scene saved: recordings\\" + name
+	a.warnAt = time.Now()
+}
+
+// eventSummary returns a short tag + one-line description for the event list.
+func eventSummary(e recEvent) (tag, text string) {
+	switch courtroom.EventKind(e.Kind) {
+	case courtroom.EventMessage:
+		tag = "MSG"
+		if e.Message != nil {
+			name := e.Message.CharName
+			if e.Message.Showname != "" {
+				name = e.Message.Showname
+			}
+			text = strings.TrimSpace(name + ": " + e.Message.Message)
+		}
+	case courtroom.EventBackground:
+		tag, text = "BG", e.Text
+	case courtroom.EventMusic:
+		tag, text = "MUS", e.Text
+	default:
+		tag = "?"
+	}
+	return tag, text
+}
+
+// drawSceneMaker paints the full-window editor overlay (dispatched instead of a
+// screen while makerOpen, so it owns input). Left: the event list + add/reorder/
+// delete. Right: the per-event editor. Top: name, origin, Preview / Save / New.
+func (a *App) drawSceneMaker(winW, winH int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: winW, H: winH}, ColBackground)
+	if a.makerScene == nil { // defensive: never draw an open maker with no scene
+		a.newScene()
+	}
+
+	y := tabBarH + int32(8)
+	c.Label(pad, y, "🎬 Scene Maker — build or edit a scene, then Preview / Save", ColText)
+	if c.Button(sdl.Rect{X: winW - pad - 92, Y: y - 4, W: 92, H: btnH}, "✖ Close") {
+		a.closeSceneMaker()
+		return
+	}
+	y += 28
+
+	// Name + Origin/CDN.
+	c.Label(pad, y+5, "Name:", ColText)
+	a.makerName, _ = c.TextField("mk_name", sdl.Rect{X: pad + 52, Y: y, W: 200, H: fieldH}, a.makerName, "scene name")
+	c.Label(pad+266, y+5, "Origin/CDN:", ColText)
+	originX := pad + 352
+	originW := winW - originX - pad
+	if originW < 160 {
+		originW = 160
+	}
+	a.makerScene.Origin, _ = c.TextField("mk_origin", sdl.Rect{X: originX, Y: y, W: originW, H: fieldH}, a.makerScene.Origin, "https://your-cdn/base  — where characters/ and background/ live")
+	y += 34
+
+	// Actions.
+	bx := pad
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "▶ Preview") {
+		a.makerPreview()
+		return // a Preview takes over the window this frame
+	}
+	bx += 112
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "💾 Save .aorec") {
+		a.makerSave()
+	}
+	bx += 128
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 108, H: btnH}, "🆕 New scene") {
+		a.newScene()
+	}
+	bx += 116
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 96, H: btnH}, "📁 Folder") {
+		a.openRecordingsFolder()
+	}
+	y += btnH + 8
+	c.Fill(sdl.Rect{X: pad, Y: y, W: winW - 2*pad, H: 1}, ColPanelHi)
+	y += 8
+
+	bodyY := y
+	a.drawMakerList(pad, bodyY, makerListW, winH-bodyY-pad)
+	edX := pad + makerListW + 16
+	a.drawMakerEditor(edX, bodyY, winW-edX-pad)
+}
+
+// drawMakerList renders the scrollable event list and its add/reorder/delete
+// toolbar.
+func (a *App) drawMakerList(x, y, w, h int32) {
+	c := a.ctx
+	evs := a.makerScene.Events
+	c.Label(x, y, fmt.Sprintf("Events (%d) — click to edit:", len(evs)), ColText)
+	y += 24
+
+	const toolH = 72 // reserved for the two toolbar rows below the list
+	listH := h - toolH
+	if listH < makerRowH*3 {
+		listH = makerRowH * 3
+	}
+	listRect := sdl.Rect{X: x, Y: y, W: w, H: listH}
+	c.Fill(listRect, ColPanel)
+
+	contentH := int32(len(evs)) * makerRowH
+	maxScroll := contentH - listH
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if c.hovering(listRect) && c.wheelY != 0 {
+		c.wheelTaken = true
+		a.makerScroll -= int32(c.wheelY) * makerRowH
+	}
+	if a.makerScroll > maxScroll {
+		a.makerScroll = maxScroll
+	}
+	if a.makerScroll < 0 {
+		a.makerScroll = 0
+	}
+
+	for i := range evs {
+		ry := y + int32(i)*makerRowH - a.makerScroll
+		if ry+makerRowH < y || ry > y+listH { // cull rows outside the list window
+			continue
+		}
+		rowRect := sdl.Rect{X: x, Y: ry, W: w, H: makerRowH - 2}
+		if i == a.makerSel {
+			c.Fill(rowRect, ColPanelHi)
+		}
+		if c.hovering(rowRect) && c.clicked {
+			a.makerSel = i
+		}
+		tag, text := eventSummary(evs[i])
+		c.Label(x+6, ry+4, fmt.Sprintf("%d", i+1), ColTextDim)
+		c.Label(x+32, ry+4, tag, ColAccent)
+		c.LabelClipped(x+74, ry+4, w-80, text, ColText)
+	}
+
+	ty := y + listH + 8
+	if c.Button(sdl.Rect{X: x, Y: ty, W: 62, H: btnH}, "+ Line") {
+		a.makerInsert(newMessageEvent(a.activeCharName(), defaultMakerEmote, ""))
+	}
+	if c.Button(sdl.Rect{X: x + 68, Y: ty, W: 56, H: btnH}, "+ BG") {
+		a.makerInsert(newBackgroundEvent(""))
+	}
+	if c.Button(sdl.Rect{X: x + 130, Y: ty, W: 72, H: btnH}, "+ Music") {
+		a.makerInsert(newMusicEvent(""))
+	}
+	ty += btnH + 6
+	if c.Button(sdl.Rect{X: x, Y: ty, W: 44, H: btnH}, "▲ Up") {
+		a.makerMoveSel(-1)
+	}
+	if c.Button(sdl.Rect{X: x + 50, Y: ty, W: 56, H: btnH}, "▼ Down") {
+		a.makerMoveSel(1)
+	}
+	if c.Button(sdl.Rect{X: x + 112, Y: ty, W: 84, H: btnH}, "✖ Delete") {
+		a.makerDeleteSel()
+	}
+}
+
+// drawMakerEditor renders the fields for the selected event (message / bg /
+// music). Edits write straight back into the cloned scene buffer.
+func (a *App) drawMakerEditor(x, y, w int32) {
+	c := a.ctx
+	if a.makerScene == nil || a.makerSel < 0 || a.makerSel >= len(a.makerScene.Events) {
+		c.Label(x, y, "No line selected — use + Line / + BG / + Music to add one.", ColTextDim)
+		return
+	}
+	if w < 200 {
+		w = 200
+	}
+	e := &a.makerScene.Events[a.makerSel]
+	const labelW = 96
+	fx := x + labelW
+	fw := w - labelW
+
+	switch courtroom.EventKind(e.Kind) {
+	case courtroom.EventMessage:
+		if e.Message == nil {
+			e.Message = &protocol.ChatMessage{Side: defaultMakerSide, Emote: defaultMakerEmote}
+		}
+		m := e.Message
+		c.Label(x, y, "Message line", ColAccent)
+		y += 28
+		c.Label(x, y+5, "Character:", ColText)
+		m.CharName, _ = c.TextField("mk_char", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.CharName, "character folder, e.g. Phoenix")
+		y += 32
+		c.Label(x, y+5, "Emote:", ColText)
+		m.Emote, _ = c.TextField("mk_emote", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.Emote, "sprite stem, e.g. normal or (a)normal")
+		y += 32
+		c.Label(x, y+5, "Showname:", ColText)
+		m.Showname, _ = c.TextField("mk_show", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.Showname, "optional display name (blank = character name)")
+		y += 32
+		c.Label(x, y+5, "Text:", ColText)
+		m.Message, _ = c.TextField("mk_text", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.Message, "what the character says")
+		y += 36
+		c.Label(x, y+5, "Position:", ColText)
+		if next, changed := c.Dropdown("mk_side", sdl.Rect{X: fx, Y: y, W: 150, H: fieldH}, makerSideLabels, makerSideIndex(m.Side)); changed {
+			m.Side = makerSideValues[next]
+		}
+		c.Label(fx+162, y+5, "Colour:", ColText)
+		col := m.TextColor
+		if col < 0 || col >= render.TextColorCount {
+			col = 0
+		}
+		if next, changed := c.Dropdown("mk_color", sdl.Rect{X: fx + 220, Y: y, W: 130, H: fieldH}, render.TextColorNames(), col); changed {
+			m.TextColor = next
+		}
+		y += 36
+		if next := c.Checkbox(x, y, "Flip the sprite horizontally", m.Flip); next != m.Flip {
+			m.Flip = next
+		}
+		y += 26
+		pre := m.EmoteMod == protocol.EmoteModPreanim || m.EmoteMod == protocol.EmoteModPreanimZoom
+		if next := c.Checkbox(x, y, "Play a pre-animation before the line", pre); next != pre {
+			if next {
+				m.EmoteMod = protocol.EmoteModPreanim
+			} else {
+				m.EmoteMod = protocol.EmoteModIdle
+			}
+			pre = next
+		}
+		y += 26
+		if pre {
+			c.Label(x, y+5, "Pre-anim:", ColText)
+			m.PreEmote, _ = c.TextField("mk_pre", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.PreEmote, "pre-animation stem, e.g. (a)point")
+			y += 32
+		}
+		c.Label(x, y, "The character + emote must exist at the Origin/CDN above for the sprite to load.", ColTextDim)
+
+	case courtroom.EventBackground:
+		c.Label(x, y, "Background change", ColAccent)
+		y += 28
+		c.Label(x, y+5, "Background:", ColText)
+		e.Text, _ = c.TextField("mk_bg", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, e.Text, "background folder, e.g. courtroom or gs4")
+		y += 36
+		c.Label(x, y, "Sets the scene from this point on (shown under every line that follows).", ColTextDim)
+
+	case courtroom.EventMusic:
+		c.Label(x, y, "Music change", ColAccent)
+		y += 28
+		c.Label(x, y+5, "Track:", ColText)
+		e.Text, _ = c.TextField("mk_mus", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, e.Text, "music filename or full URL, e.g. trial.opus")
+		y += 36
+		c.Label(x, y, "Plays from this point on. Use a full URL for a CDN-hosted track.", ColTextDim)
+	}
+}

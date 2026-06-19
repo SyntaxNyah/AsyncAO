@@ -265,9 +265,22 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   paces the replay: it's deliberately **slower than live chat** so the whole
   message types out and lingers long enough to read, and the slider adjusts it
   **live** — drag it mid-replay and the next line picks up the new speed.
-  *(Roadmap: a from-lobby replay screen, an event-timeline editor to
-  retime/trim, and an opt-in GIF/video export — all cheap because they edit
-  events, not pixels.)*
+- **Scene maker** (M16, the same **Studio** tab): a full **in-app scene editor**
+  over the very same `.aorec` model — **build a scene from scratch or edit a
+  recording**. **🎬 New scene** (works **offline**, no server needed) or **✎ Edit**
+  any saved recording opens a full-window editor: a left **event list** you can
+  **add / reorder (▲▼) / delete** lines on, and a right panel to set each line's
+  **character, emote, showname, text, position, colour, flip** and an optional
+  **pre-animation** — plus **background** and **music** events. Set the
+  **Origin/CDN** the assets load from (your own host, or a server's base), then
+  **▶ Preview** it (played through the replay engine) and **💾 Save** a fresh
+  timestamped `.aorec` (Save never overwrites the file you opened). Because a
+  scene is just a list of events and `.aorec` is **pretty-printed JSON**, you can
+  also open one in **any text editor** and tweak it by hand. The editor is a
+  drawn-only-while-open overlay, so it costs **nothing** on the live render path.
+  *(Roadmap: a character/background picker pulled from the server or a CDN
+  manifest, and an opt-in GIF / animated-WebP export — all cheap because they
+  edit events, not pixels.)*
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.

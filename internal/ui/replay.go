@@ -132,26 +132,39 @@ func (a *App) stopRecording() {
 		a.warnAt = time.Now()
 		return
 	}
-	data, err := json.MarshalIndent(rec, "", "  ")
+	stamp := time.Now().Format("20060102-150405")
+	name, err := saveSceneRecording(rec, "asyncao-"+stamp)
 	if err != nil {
 		a.pushDebug("recording: " + err.Error())
 		return
 	}
-	stamp := time.Now().Format("20060102-150405")
-	name := "asyncao-" + stamp + recordingExt
+	a.warnLine = "Recording saved (" + strconv.Itoa(len(rec.Events)) + " events): recordings\\" + name
+	a.warnAt = time.Now()
+}
+
+// saveSceneRecording marshals a scene to pretty-printed (hand-editable) JSON and
+// writes it under recordings\ as <stem>.aorec OFF the render thread (§17.2: no
+// synchronous disk I/O on the render path). The marshal is cheap and done on the
+// caller; only the WriteFile is deferred. Returns the filename it will land as.
+// Shared by recording (stopRecording) and the scene maker's Save so both produce
+// identical, reopenable .aorec files.
+func saveSceneRecording(rec *sceneRecording, stem string) (string, error) {
+	data, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	name := stem + recordingExt
 	go func() {
-		exe, err := os.Executable()
-		if err != nil {
+		dir := recordingsDir()
+		if dir == "" {
 			return
 		}
-		dir := filepath.Join(filepath.Dir(exe), "recordings")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return
 		}
 		_ = os.WriteFile(filepath.Join(dir, name), data, 0o644)
 	}()
-	a.warnLine = "Recording saved (" + strconv.Itoa(len(rec.Events)) + " events): recordings\\" + name
-	a.warnAt = time.Now()
+	return name, nil
 }
 
 // --- M16 [2/2]: replay player ---

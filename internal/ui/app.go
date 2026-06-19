@@ -379,6 +379,17 @@ type App struct {
 	replayIdx    int
 	replayName   string
 
+	// Scene maker (M16 [3/3], see scenemaker.go): an in-app editor over the SAME
+	// .aorec model — build a scene from scratch or edit a recording, preview it
+	// through the replay engine, and Save a new .aorec. All state lives here and
+	// is allocated only while makerOpen, so the maker costs nothing on the live
+	// render path (it's drawn as a full-window overlay, like a replay).
+	makerOpen   bool
+	makerScene  *sceneRecording
+	makerSel    int    // selected event index
+	makerName   string // working filename stem (sanitized on Save)
+	makerScroll int32  // event-list scroll offset (px)
+
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
 	// rotation background URL ("" = not overriding). The viewport renders a
@@ -2857,8 +2868,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// M16: a replay takes over the whole window via the guarded overlay,
 		// drawn INSTEAD of any screen — so its controls own the input AND every
 		// replay render path is the recover-wrapped one (a themed courtroom or a
-		// missing theme can't crash a replay this way).
+		// missing theme can't crash a replay this way). Precedence is
+		// replaying > makerOpen > screen: a Preview launched from the maker shows
+		// the replay; on ■ Stop the maker (still makerOpen) reappears intact.
 		a.drawReplayOverlay(winW, winH)
+	} else if a.makerOpen {
+		// M16 scene maker: a full-window editor overlay (scenemaker.go), drawn
+		// instead of any screen so it owns input.
+		a.drawSceneMaker(winW, winH)
 	} else {
 		switch a.screen {
 		case ScreenLobby:

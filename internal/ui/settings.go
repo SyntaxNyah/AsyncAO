@@ -808,6 +808,19 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 	}
 	y += 32
 
+	y = a.settingsSection(y, w, "Scene maker")
+	c.Label(pad, y, "Build a scene from scratch — or edit a recording — line by line: pick the character, emote, text,", ColTextDim)
+	y += 18
+	c.Label(pad, y, "background and music, set the Origin/CDN the assets load from, then Preview and Save a .aorec.", ColTextDim)
+	y += 18
+	c.Label(pad, y, ".aorec files are plain text (JSON) — you can also open one in any text editor to tweak it by hand.", ColTextDim)
+	y += 26
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "🎬 New scene") {
+		a.newScene()
+	}
+	c.Label(pad+162, y+5, "opens the in-app Scene Maker (works offline — no server needed)", ColTextDim)
+	y += 36
+
 	y = a.settingsSection(y, w, "Recordings")
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "📁 Open folder") {
 		a.openRecordingsFolder()
@@ -833,7 +846,10 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 			if c.Button(sdl.Rect{X: pad + 16, Y: y, W: 70, H: btnH}, "▶ Play") {
 				a.replayFromPath(r.path)
 			}
-			c.LabelClipped(pad+96, y+4, w-pad-96-scrollBarW, r.name, ColText)
+			if c.Button(sdl.Rect{X: pad + 90, Y: y, W: 64, H: btnH}, "✎ Edit") {
+				a.editRecordingInMaker(r.path)
+			}
+			c.LabelClipped(pad+162, y+4, w-pad-162-scrollBarW, r.name, ColText)
 			y += 28
 		}
 	}
