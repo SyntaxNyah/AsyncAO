@@ -404,6 +404,12 @@ type App struct {
 	replayBundled  bool
 	makerExporting bool
 	makerExportCh  chan string // archive-export goroutine → UI (result line)
+	// Scene GIF export (gifexport.go): renders a scene offscreen into paletted
+	// frames across several frame-loop ticks, then encodes off-thread. Allocated
+	// only while exporting; zero cost on the live path otherwise.
+	gifExporting bool
+	gif          *gifExportJob
+	gifResultCh  chan string // off-thread encode → UI (result line)
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
@@ -2844,10 +2850,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollDownload()
 	a.pollMakerExport() // M16: deliver the self-contained archive export result
+	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
 	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
+	case a.gifExporting:
+		// M16 GIF export drives the viewport itself in the draw-phase tick — skip
+		// the normal scene driving so they don't fight over the shared viewport.
 	case a.replaying && a.replayRoom != nil:
 		// M16 replay: drive the recorded scene instead of the live one (feed the
 		// next event when the room goes idle so the courtroom's own pacing times
@@ -2885,7 +2895,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// wins the wheel/press over the grid scroll and icon clicks under the box.
 	a.handlePreviewInput()
 
-	if a.replaying && a.replayRoom != nil {
+	if a.gifExporting {
+		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a
+		// batch of frames on the render thread, behind a progress overlay, instead
+		// of any screen. Highest precedence: gif > replay > maker > screen.
+		a.tickGifExport()
+		a.drawGifProgress(winW, winH)
+	} else if a.replaying && a.replayRoom != nil {
 		// M16: a replay takes over the whole window via the guarded overlay,
 		// drawn INSTEAD of any screen — so its controls own the input AND every
 		// replay render path is the recover-wrapped one (a themed courtroom or a

@@ -642,6 +642,10 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 		a.exportSceneArchive(a.makerScene, a.makerName) // CDN-proof: bundles the assets
 	}
 	bx += 144
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "🎞 Export GIF") {
+		a.startGifExport(a.makerScene, a.makerName)
+	}
+	bx += 128
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 108, H: btnH}, "🆕 New scene") {
 		a.newScene()
 	}
