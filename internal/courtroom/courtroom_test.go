@@ -125,6 +125,24 @@ func TestSyntheticMessageRendersSpeaker(t *testing.T) {
 	}
 }
 
+// TestSkipToIdle pins the replay player's "next message" fast-forward: a message
+// mid-play is driven straight to idle (so the next event can be fed).
+func TestSkipToIdle(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.HandleEvent(Event{Kind: EventMessage, Message: &protocol.ChatMessage{
+		CharName: "Phoenix", Emote: "normal", Side: "wit",
+		Message: "A fairly long line that would take a while to type out at normal speed.",
+	}})
+	room.Update(10 * time.Millisecond) // a beat in — still typing
+	if room.Phase() == PhaseIdle {
+		t.Fatal("message should be on stage right after it begins, not idle")
+	}
+	room.SkipToIdle()
+	if room.Phase() != PhaseIdle {
+		t.Fatalf("SkipToIdle did not reach idle, phase = %v", room.Phase())
+	}
+}
+
 // TestReduceMotionGatesEffects pins the M14 accessibility gate: ReduceMotion
 // suppresses the screen shake + realization flash but KEEPS the feedback sound;
 // with it off, the visuals fire. Covers all three trigger paths (the 2.8 Effects

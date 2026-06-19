@@ -378,6 +378,8 @@ type App struct {
 	replayEvents []recEvent
 	replayIdx    int
 	replayName   string
+	replayPaused bool            // player ⏸ — freeze the scene (Next/Restart still work)
+	replayRec    *sceneRecording // the source, kept so ⏮ Restart can rebuild from the top
 
 	// Scene maker (M16 [3/3], see scenemaker.go): an in-app editor over the SAME
 	// .aorec model — build a scene from scratch or edit a recording, preview it

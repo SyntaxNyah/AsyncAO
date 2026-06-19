@@ -391,9 +391,49 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	a.replayEvents = rec.Events
 	a.replayIdx = 0
 	a.replayName = name
+	a.replayRec = rec      // kept so ⏮ Restart can rebuild from the top
+	a.replayPaused = false // a fresh replay starts playing
 	a.replaying = true
 	a.warnLine = "▶ Replaying " + name + " — press the Replay key to stop"
 	a.warnAt = time.Now()
+}
+
+// --- replay player controls (drawReplayOverlay) ---
+
+// replayNext skips the current message straight to idle and feeds the following
+// event — the "fast-forward to the next line" button. Works while paused.
+func (a *App) replayNext() {
+	if a.replayRoom == nil {
+		return
+	}
+	a.replayRoom.SkipToIdle()
+	a.advanceReplay(0) // now idle → feed the next event immediately (or end if exhausted)
+}
+
+// replayTogglePause freezes / resumes playback (Next + Restart still work while
+// paused).
+func (a *App) replayTogglePause() { a.replayPaused = !a.replayPaused }
+
+// replayRestart rebuilds the replay from the first event.
+func (a *App) replayRestart() {
+	if a.replayRec != nil {
+		a.startReplay(a.replayRec, a.replayName)
+	}
+}
+
+// replayMessagePos reports the current / total MESSAGE count (ignoring bg/music
+// events) for the player's position readout.
+func (a *App) replayMessagePos() (cur, total int) {
+	for i, e := range a.replayEvents {
+		if courtroom.EventKind(e.Kind) != courtroom.EventMessage {
+			continue
+		}
+		total++
+		if i < a.replayIdx {
+			cur++
+		}
+	}
+	return cur, total
 }
 
 // advanceReplay feeds the next recorded event whenever the replay room returns
@@ -426,6 +466,8 @@ func (a *App) stopReplay() {
 	a.replayEvents = nil
 	a.replayIdx = 0
 	a.replayName = ""
+	a.replayPaused = false
+	a.replayRec = nil
 	if a.d.Viewport != nil { // rebind preanim completion to the live room (or clear it)
 		if a.room != nil {
 			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
@@ -453,6 +495,8 @@ func (a *App) recoverReplay(where string) {
 	a.replayEvents = nil
 	a.replayIdx = 0
 	a.replayName = ""
+	a.replayPaused = false
+	a.replayRec = nil
 	if a.d.Viewport != nil {
 		if a.room != nil {
 			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
@@ -469,6 +513,9 @@ func (a *App) recoverReplay(where string) {
 func (a *App) driveReplay(dt time.Duration) {
 	defer a.recoverReplay("update")
 	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // live Playback-speed slider
+	if a.replayPaused {
+		return // ⏸ frozen — the overlay keeps drawing the last frame; Next/Restart still act
+	}
 	a.advanceReplay(dt)
 	a.replayRoom.Update(dt)
 	a.d.Viewport.SetSpriteFX(a.spriteFX())
@@ -511,8 +558,9 @@ func (a *App) drawReplayOverlay(w, h int32) {
 	defer a.recoverReplay("render")
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 10, G: 10, B: 14, A: 255})
-	// A 4:3 stage, centred, leaving a top strip for the title + Stop button.
-	stageH := h - 80
+	// A 4:3 stage, centred, leaving a top strip for the title + Stop and a bottom
+	// strip for the player transport controls.
+	stageH := h - 120
 	stageW := stageH * 4 / 3
 	if stageW > w-40 {
 		stageW = w - 40
@@ -526,4 +574,32 @@ func (a *App) drawReplayOverlay(w, h int32) {
 	if c.Button(sdl.Rect{X: w - 136, Y: 12, W: 120, H: 26}, "■ Stop replay") {
 		a.stopReplay()
 	}
+	a.drawReplayControls(stage, w)
+}
+
+// drawReplayControls draws the player transport strip below the stage: Restart,
+// Pause/Play, Next message (fast-forward), and a message position readout.
+func (a *App) drawReplayControls(stage sdl.Rect, w int32) {
+	c := a.ctx
+	y := stage.Y + stage.H + 14
+	bx := stage.X
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 92, H: 28}, "⏮ Restart") {
+		a.replayRestart()
+		return // the room was rebuilt; don't touch it again this frame
+	}
+	bx += 100
+	pp := "⏸ Pause"
+	if a.replayPaused {
+		pp = "▶ Play"
+	}
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 86, H: 28}, pp) {
+		a.replayTogglePause()
+	}
+	bx += 94
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 150, H: 28}, "⏭ Next message") {
+		a.replayNext()
+	}
+	bx += 160
+	cur, total := a.replayMessagePos()
+	c.Label(bx, y+6, fmt.Sprintf("message %d / %d", cur, total), ColTextDim)
 }

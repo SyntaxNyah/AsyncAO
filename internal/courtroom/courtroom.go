@@ -645,6 +645,22 @@ func (c *Courtroom) NotifyPreanimDone() {
 	c.preanimDone = true
 }
 
+// SkipToIdle fast-forwards the CURRENT message straight to idle: reveal the rest
+// of the text, release a preanim that's waiting on the viewport callback, and
+// collapse every timed phase (shout / preanim / linger) with a huge step. A
+// replay/player "next" uses it so the following event can be fed immediately.
+// The loop is bounded — shout→preanim→talking→linger→idle is ≤4 hops — and a
+// queued message would begin via dequeue (replay feeds one at a time, so the
+// queue is empty here).
+func (c *Courtroom) SkipToIdle() {
+	const bigStep = time.Hour // collapse any phase timer in a single Update
+	for i := 0; i < 8 && c.phase != PhaseIdle; i++ {
+		c.Typewriter.SkipToEnd()
+		c.preanimDone = true
+		c.Update(bigStep)
+	}
+}
+
 // Update advances the message lifecycle by dt.
 func (c *Courtroom) Update(dt time.Duration) {
 	// Effect countdowns run independent of the phase machine.
