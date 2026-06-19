@@ -168,15 +168,29 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		_ = window.SetFullscreen(sdl.WINDOW_FULLSCREEN_DESKTOP)
 	}
 
-	// Cap full-size textures (sprites/backgrounds) at the display HEIGHT: high-
-	// res art (e.g. 2000px sprites) is high-quality downscaled at decode so the
-	// GPU never single-pass-shrinks a giant source into the viewport every
-	// frame — sharper (closer to a browser's mipmapped downsample) AND cheaper
-	// to draw + less VRAM. Full display bounds, since fullscreen-desktop renders
-	// at that height; downscale-only, so it's a no-op for already-small art.
+	// Cap full-size textures (sprites/backgrounds) at the courtroom STAGE
+	// height — the display height minus the chatbox/UI strip the layout always
+	// reserves below the stage (screens.go: vpH = h-220). The stage never fills
+	// the whole display, so capping to the real stage height makes the final
+	// per-frame GPU scale gentler in EVERY window size (sharper, esp. windowed)
+	// AND cheaper than the full display height. Strictly 0 per-frame cost: the
+	// cached texture is smaller, and the single decode-time downscale is
+	// unchanged. High-res art (e.g. 2000px sprites) is high-quality downscaled
+	// once at decode; downscale-only, so a no-op for already-small art. Safe at
+	// the common UI scale >= 1 (the real reserve only grows with scale); a tall-
+	// stage theme at fullscreen costs at most a mild ~1.1:1 upscale, far below
+	// the gap this fixes. The floor avoids over-shrinking on a tiny display.
+	const (
+		stageBottomReservePx = 220 // mirrors screens.go default-courtroom chatbox reserve
+		minSpriteCapPx       = 480
+	)
 	if di, err := window.GetDisplayIndex(); err == nil {
 		if db, err := sdl.GetDisplayBounds(di); err == nil && db.H > 0 {
-			decoder.SetSpriteCap(int(db.H))
+			spriteCap := int(db.H) - stageBottomReservePx
+			if spriteCap < minSpriteCapPx {
+				spriteCap = int(db.H) // tiny display: keep full height, don't over-shrink
+			}
+			decoder.SetSpriteCap(spriteCap)
 		}
 	}
 
