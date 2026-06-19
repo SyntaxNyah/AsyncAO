@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -136,5 +137,151 @@ func (a *App) stopRecording() {
 		_ = os.WriteFile(filepath.Join(dir, name), data, 0o644)
 	}()
 	a.warnLine = "Recording saved (" + strconv.Itoa(len(rec.Events)) + " events): recordings\\" + name
+	a.warnAt = time.Now()
+}
+
+// --- M16 [2/2]: replay player ---
+
+// eventFromRec reconstructs the courtroom event a recorded entry stands for.
+func eventFromRec(e recEvent) courtroom.Event {
+	return courtroom.Event{
+		Kind:    courtroom.EventKind(e.Kind),
+		Message: e.Message,
+		Name:    e.Name,
+		Text:    e.Text,
+		Int:     e.Int,
+	}
+}
+
+// loadRecording reads and parses a .aorec file.
+func loadRecording(path string) (*sceneRecording, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var rec sceneRecording
+	if err := json.Unmarshal(data, &rec); err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+// latestRecordingPath returns the newest .aorec under recordings\ ("" = none).
+func latestRecordingPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	entries, err := os.ReadDir(filepath.Join(filepath.Dir(exe), "recordings"))
+	if err != nil {
+		return ""
+	}
+	best, bestMod := "", time.Time{}
+	for _, en := range entries {
+		if en.IsDir() || !strings.HasSuffix(en.Name(), recordingExt) {
+			continue
+		}
+		info, err := en.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(bestMod) {
+			best, bestMod = filepath.Join(filepath.Dir(exe), "recordings", en.Name()), info.ModTime()
+		}
+	}
+	return best
+}
+
+// toggleReplay starts replaying the most recent recording, or stops the current
+// replay (the Ctrl+I hotkey). Recording and replay are mutually exclusive.
+func (a *App) toggleReplay() {
+	if a.replaying {
+		a.stopReplay()
+		return
+	}
+	if a.recActive {
+		a.warnLine = "Stop recording first, then replay."
+		a.warnAt = time.Now()
+		return
+	}
+	path := latestRecordingPath()
+	if path == "" {
+		a.warnLine = "No recordings yet — press the Record key to capture a scene first."
+		a.warnAt = time.Now()
+		return
+	}
+	rec, err := loadRecording(path)
+	if err != nil {
+		a.warnLine = "Couldn't load recording: " + err.Error()
+		a.warnAt = time.Now()
+		return
+	}
+	a.startReplay(rec, filepath.Base(path))
+}
+
+// startReplay spins up a throwaway courtroom pointed at the recorded asset
+// origin (asset HTTP fetch is independent of the game WS), seeds the starting
+// background so the first frames aren't blank, and begins feeding events. Paced
+// to the user's live timing settings.
+func (a *App) startReplay(rec *sceneRecording, name string) {
+	if rec == nil || len(rec.Events) == 0 {
+		return
+	}
+	a.replayRoom = courtroom.NewCourtroom(courtroom.NewURLBuilder(rec.Origin), a.d.Manager, nil, a.d.Audio)
+	crawlMs, stayMs, _ := a.d.Prefs.Timing()
+	a.replayRoom.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
+	a.replayRoom.TextStay = time.Duration(stayMs) * time.Millisecond
+	a.replayRoom.CatchUp = false // play every recorded line in full; the driver feeds one at a time
+	a.replayRoom.ReduceMotion = a.d.Prefs.ReduceMotion()
+	a.replayRoom.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+	if a.d.Viewport != nil { // one-shot preanim completion must notify the REPLAY room now
+		a.d.Viewport.OnPreanimDone = a.replayRoom.NotifyPreanimDone
+	}
+	if rec.StartBg != "" {
+		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: rec.StartBg})
+	}
+	a.replayEvents = rec.Events
+	a.replayIdx = 0
+	a.replaying = true
+	a.warnLine = "▶ Replaying " + name + " — press the Replay key to stop"
+	a.warnAt = time.Now()
+}
+
+// advanceReplay feeds the next recorded event whenever the replay room returns
+// to idle, so the courtroom's own pacing (typewriter / preanim / linger) times
+// the playback — NOT the recorded wall-clock deltas, which would double-drag.
+// When the stream is exhausted and the room settles, the replay ends.
+func (a *App) advanceReplay(dt time.Duration) {
+	if !a.replaying || a.replayRoom == nil {
+		return
+	}
+	if a.replayRoom.Phase() != courtroom.PhaseIdle || a.replayRoom.QueueLen() != 0 {
+		return // a message is still on stage — let it finish
+	}
+	if a.replayIdx >= len(a.replayEvents) {
+		a.stopReplay() // exhausted and idle: done
+		return
+	}
+	a.replayRoom.HandleEvent(eventFromRec(a.replayEvents[a.replayIdx]))
+	a.replayIdx++
+}
+
+// stopReplay tears down the replay and returns the stage to the live room.
+func (a *App) stopReplay() {
+	if !a.replaying {
+		return
+	}
+	a.replaying = false
+	a.replayRoom = nil
+	a.replayEvents = nil
+	a.replayIdx = 0
+	if a.d.Viewport != nil { // rebind preanim completion to the live room (or clear it)
+		if a.room != nil {
+			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+		} else {
+			a.d.Viewport.OnPreanimDone = nil
+		}
+	}
+	a.warnLine = "Replay ended."
 	a.warnAt = time.Now()
 }

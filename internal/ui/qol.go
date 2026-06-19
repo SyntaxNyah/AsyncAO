@@ -34,6 +34,7 @@ const (
 	hotkeyLogJump     = "log_jump"
 	hotkeyScreenshot  = "screenshot"
 	hotkeyRecordScene = "record_scene"
+	hotkeyReplayLast  = "replay_last"
 	hotkeyTheater     = "theater"
 	hotkeyLogin       = "login"
 	hotkeyMuteSFX     = "mute_sfx"
@@ -78,6 +79,7 @@ var hotkeyDefs = []struct {
 	{hotkeyLogJump, "Jump logs to newest", "l"},
 	{hotkeyScreenshot, "Screenshot", "s"},
 	{hotkeyRecordScene, "Record scene to a replay file (start/stop)", "w"},
+	{hotkeyReplayLast, "Replay the last recording (start/stop)", "i"},
 	{hotkeyTheater, "Theater mode", "t"},
 	{hotkeyLogin, "Server login (saved creds)", "g"},
 	{hotkeyMuteSFX, "Mute sound effects", "k"},
@@ -241,6 +243,8 @@ func (a *App) handleHotkeys() {
 		a.captureScreenshot()
 	case a.hotkeyFor(hotkeyRecordScene):
 		a.toggleRecording()
+	case a.hotkeyFor(hotkeyReplayLast):
+		a.toggleReplay()
 	case a.hotkeyFor(hotkeyTheater):
 		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):

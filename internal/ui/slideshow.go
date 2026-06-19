@@ -48,6 +48,9 @@ func (a *App) updateSlideshow(phase courtroom.MessagePhase) {
 // The real scene is never mutated; the copy is stored in slideScene so taking
 // its address adds no per-frame allocation.
 func (a *App) renderScene() *courtroom.Scene {
+	if a.replaying && a.replayRoom != nil { // M16: the stage shows the replay, not the live room
+		return &a.replayRoom.Scene
+	}
 	if a.slideBG == "" {
 		return &a.room.Scene
 	}

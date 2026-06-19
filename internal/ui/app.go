@@ -369,6 +369,15 @@ type App struct {
 	rec       *sceneRecording
 	recStart  time.Time
 
+	// Scene replay (M16 [2/2], see replay.go): while replaying, a throwaway
+	// replayRoom (pointed at the recorded asset origin) is driven instead of the
+	// live room and the viewport/renderScene read its scene. The driver feeds
+	// replayEvents[replayIdx] into it whenever it returns to idle.
+	replaying    bool
+	replayRoom   *courtroom.Courtroom
+	replayEvents []recEvent
+	replayIdx    int
+
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
 	// rotation background URL ("" = not overriding). The viewport renders a
@@ -2805,32 +2814,21 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollBgList() // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
-	if a.room != nil {
+	switch {
+	case a.replaying && a.replayRoom != nil:
+		// M16 replay: drive the recorded scene instead of the live one. The
+		// driver feeds the next event when the replay room goes idle (so the
+		// courtroom's own pacing — not recorded wall-clock — times it), and the
+		// viewport reads the replay scene (via renderScene too).
+		a.advanceReplay(dt)
+		a.replayRoom.Update(dt)
+		a.d.Viewport.SetSpriteFX(a.spriteFX())
+		a.d.Viewport.Update(&a.replayRoom.Scene, dt)
+	case a.room != nil:
 		a.healScenery()
 		a.room.Update(dt)
 		a.applySpriteOverrides()
-		// Optional sprite colour FX (all off by default): mirror the prefs onto
-		// the viewport once per frame. A handful of uncontended RLocks — far
-		// cheaper than any snapshot/cache layer, and the render path stays
-		// 0-alloc regardless (pinned by TestRenderFrameRainbowZeroAllocs).
-		fx := render.SpriteFX{
-			Rainbow:    a.d.Prefs.RainbowSpritesOn(),
-			Solid:      a.d.Prefs.SpriteSolidTintOn(),
-			Glow:       a.d.Prefs.RainbowSpriteGlowOn(),
-			PairDesync: a.d.Prefs.RainbowPairDesyncOn(),
-			PerCharHue: a.d.Prefs.RainbowPerCharOn(),
-			Wobble:     a.d.Prefs.SpriteWobbleOn(),
-			Spin:       a.d.Prefs.SpriteSpinOn(),
-			Speed:      a.d.Prefs.RainbowSpeed(),
-			Vividness:  a.d.Prefs.RainbowVividness(),
-		}
-		if fx.Solid && !fx.Rainbow { // colour only matters for the solid wash, and rainbow wins
-			rgb := a.d.Prefs.SpriteTintColorRGB()
-			fx.SolidR = uint8(rgb >> 16 & 0xFF)
-			fx.SolidG = uint8(rgb >> 8 & 0xFF)
-			fx.SolidB = uint8(rgb & 0xFF)
-		}
-		a.d.Viewport.SetSpriteFX(fx)
+		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		// Music ducking: dip music while a message is on stage (shout/preanim/
 		// talking), restore at idle/linger. Transition-driven — SetVolumes is
@@ -3258,6 +3256,33 @@ func (a *App) drainWarnings() {
 // warnActive reports whether the warning banner should still draw.
 func (a *App) warnActive() bool {
 	return a.warnLine != "" && time.Since(a.warnAt) < warnShowDuration
+}
+
+// spriteFX builds the optional sprite colour-FX struct from the user prefs
+// (all off by default). A handful of uncontended RLocks once per frame — far
+// cheaper than any snapshot/cache layer, and the render path stays 0-alloc
+// regardless (pinned by TestRenderFrameRainbowZeroAllocs). The colour is only
+// fetched when the solid wash is actually active. Shared by the live + replay
+// render paths.
+func (a *App) spriteFX() render.SpriteFX {
+	fx := render.SpriteFX{
+		Rainbow:    a.d.Prefs.RainbowSpritesOn(),
+		Solid:      a.d.Prefs.SpriteSolidTintOn(),
+		Glow:       a.d.Prefs.RainbowSpriteGlowOn(),
+		PairDesync: a.d.Prefs.RainbowPairDesyncOn(),
+		PerCharHue: a.d.Prefs.RainbowPerCharOn(),
+		Wobble:     a.d.Prefs.SpriteWobbleOn(),
+		Spin:       a.d.Prefs.SpriteSpinOn(),
+		Speed:      a.d.Prefs.RainbowSpeed(),
+		Vividness:  a.d.Prefs.RainbowVividness(),
+	}
+	if fx.Solid && !fx.Rainbow { // colour only matters for the solid wash, and rainbow wins
+		rgb := a.d.Prefs.SpriteTintColorRGB()
+		fx.SolidR = uint8(rgb >> 16 & 0xFF)
+		fx.SolidG = uint8(rgb >> 8 & 0xFF)
+		fx.SolidB = uint8(rgb & 0xFF)
+	}
+	return fx
 }
 
 // applySpriteOverrides lets the user's drag positions win over the

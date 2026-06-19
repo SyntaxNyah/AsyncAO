@@ -2,6 +2,8 @@ package ui
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -47,5 +49,47 @@ func TestSceneRecordingRoundTrip(t *testing.T) {
 	m := got.Events[2].Message
 	if m == nil || m.CharName != "Phoenix" || m.Emote != "pointing" || m.Message != "Objection!" {
 		t.Errorf("message event lost: %+v", got.Events[2])
+	}
+}
+
+// TestEventFromRec pins that a recorded entry reconstructs the courtroom event
+// the replay player feeds back into HandleEvent.
+func TestEventFromRec(t *testing.T) {
+	ev := eventFromRec(recEvent{
+		Kind: int(courtroom.EventMusic), Text: "Song.opus", Name: "Phoenix", Int: 7,
+		Message: &protocol.ChatMessage{CharName: "Phoenix"},
+	})
+	if ev.Kind != courtroom.EventMusic || ev.Text != "Song.opus" || ev.Name != "Phoenix" || ev.Int != 7 {
+		t.Errorf("eventFromRec lost data: %+v", ev)
+	}
+	if ev.Message == nil || ev.Message.CharName != "Phoenix" {
+		t.Errorf("eventFromRec lost the message: %+v", ev.Message)
+	}
+}
+
+// TestLoadRecording pins the .aorec read path: a written file round-trips, and
+// a missing file errors instead of panicking.
+func TestLoadRecording(t *testing.T) {
+	rec := &sceneRecording{
+		Version: recordingVersion, Origin: "https://x/", StartBg: "court",
+		Events: []recEvent{{Kind: int(courtroom.EventBackground), Text: "gallery"}},
+	}
+	data, err := json.Marshal(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "r"+recordingExt)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := loadRecording(path)
+	if err != nil {
+		t.Fatalf("loadRecording: %v", err)
+	}
+	if got.Origin != "https://x/" || got.StartBg != "court" || len(got.Events) != 1 || got.Events[0].Text != "gallery" {
+		t.Errorf("loaded = %+v", got)
+	}
+	if _, err := loadRecording(filepath.Join(t.TempDir(), "nope"+recordingExt)); err == nil {
+		t.Error("loadRecording(missing) should error, not panic")
 	}
 }
