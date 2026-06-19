@@ -108,6 +108,42 @@ func TestMakerInsertDeleteMove(t *testing.T) {
 	}
 }
 
+func TestMakerDuplicateSel(t *testing.T) {
+	a := &App{}
+	a.makerScene = &sceneRecording{Events: []recEvent{newMessageEvent("A", "n", "orig")}}
+	a.makerSel = 0
+	a.makerDuplicateSel()
+	if len(a.makerScene.Events) != 2 || a.makerSel != 1 {
+		t.Fatalf("dup: len=%d sel=%d", len(a.makerScene.Events), a.makerSel)
+	}
+	a.makerScene.Events[1].Message.Message = "changed" // editing the dup must not touch the original
+	if a.makerScene.Events[0].Message.Message != "orig" {
+		t.Error("duplicate shares the Message pointer with the original")
+	}
+}
+
+func TestMakerNewLineSeedInherits(t *testing.T) {
+	a := &App{}
+	a.makerScene = &sceneRecording{Events: []recEvent{{
+		Kind:    int(courtroom.EventMessage),
+		Message: &protocol.ChatMessage{CharName: "Edgeworth", Emote: "deskslam", Side: "pro", TextColor: 3, Flip: true, DeskMod: protocol.DeskShow},
+	}}}
+	a.makerSel = 0
+	m := a.makerNewLineSeed().Message
+	if m == nil {
+		t.Fatal("nil seed message")
+	}
+	if m.CharName != "Edgeworth" || m.Emote != "deskslam" || m.Side != "pro" || m.TextColor != 3 || !m.Flip || m.DeskMod != protocol.DeskShow {
+		t.Errorf("new line did not inherit the previous speaker: %+v", m)
+	}
+	if m.Message != "" {
+		t.Errorf("inherited line should start with empty text, got %q", m.Message)
+	}
+	if m.EmoteMod != protocol.EmoteModIdle {
+		t.Errorf("inherited line should be idle, got %d", m.EmoteMod)
+	}
+}
+
 func TestSanitizeStem(t *testing.T) {
 	cases := map[string]string{
 		"  my scene  ":     "my scene",

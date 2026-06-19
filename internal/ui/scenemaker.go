@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,16 +114,22 @@ func cloneScene(rec *sceneRecording) *sceneRecording {
 	out := *rec
 	out.Events = make([]recEvent, len(rec.Events))
 	for i, e := range rec.Events {
-		out.Events[i] = e
-		if e.Message != nil {
-			m := *e.Message
-			out.Events[i].Message = &m
-		}
+		out.Events[i] = cloneEvent(e)
 	}
 	if out.Version == 0 {
 		out.Version = recordingVersion
 	}
 	return &out
+}
+
+// cloneEvent deep-copies one event (duplicating the Message pointer so an edit
+// to the copy never touches the original).
+func cloneEvent(e recEvent) recEvent {
+	if e.Message != nil {
+		m := *e.Message
+		e.Message = &m
+	}
+	return e
 }
 
 // openSceneMaker shows the maker editing a CLONE of rec (so the source is never
@@ -202,6 +209,62 @@ func (a *App) makerInsert(ev recEvent) {
 	evs[at] = ev
 	a.makerScene.Events = evs
 	a.makerSel = at
+}
+
+// makerDuplicateSel clones the selected event right after it (the fastest way to
+// build a back-and-forth: dup, then tweak the copy).
+func (a *App) makerDuplicateSel() {
+	if a.makerScene == nil {
+		return
+	}
+	i := a.makerSel
+	if i < 0 || i >= len(a.makerScene.Events) {
+		return
+	}
+	a.makerInsert(cloneEvent(a.makerScene.Events[i]))
+}
+
+// makerNewLineSeed builds the event a fresh "+ Line" inserts. It INHERITS the
+// speaker of the line you're inserting after — char/emote/position/colour/flip/
+// desk — so a conversation doesn't make you retype the character every line; you
+// just edit the text (and swap the character when the speaker changes). Falls
+// back to your current character for the very first line.
+func (a *App) makerNewLineSeed() recEvent {
+	if a.makerScene != nil {
+		i := a.makerSel
+		if i >= 0 && i < len(a.makerScene.Events) {
+			if m := a.makerScene.Events[i].Message; m != nil {
+				return recEvent{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{
+					CharName:  m.CharName,
+					Emote:     m.Emote,
+					Side:      m.Side,
+					TextColor: m.TextColor,
+					Flip:      m.Flip,
+					DeskMod:   m.DeskMod,
+					EmoteMod:  protocol.EmoteModIdle, // a fresh line, not a preanim
+				}}
+			}
+		}
+	}
+	return newMessageEvent(a.activeCharName(), defaultMakerEmote, "")
+}
+
+// makerPreviewFrom previews the scene starting at idx — so you can iterate on a
+// late line without watching the whole thing. It carries the most recent
+// background before idx so the partial replay isn't blank.
+func (a *App) makerPreviewFrom(idx int) {
+	if a.makerScene == nil || idx < 0 || idx >= len(a.makerScene.Events) {
+		return
+	}
+	sub := cloneScene(a.makerScene)
+	for j := idx - 1; j >= 0; j-- { // last background change before idx becomes the start scene
+		if courtroom.EventKind(sub.Events[j].Kind) == courtroom.EventBackground {
+			sub.StartBg = sub.Events[j].Text
+			break
+		}
+	}
+	sub.Events = sub.Events[idx:]
+	a.startReplay(sub, a.makerName+" (from line "+strconv.Itoa(idx+1)+")")
 }
 
 // makerDeleteSel removes the selected event.
@@ -361,7 +424,7 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 	c.Label(x, y, fmt.Sprintf("Events (%d) — click to edit:", len(evs)), ColText)
 	y += 24
 
-	const toolH = 72 // reserved for the two toolbar rows below the list
+	const toolH = 108 // reserved for the three toolbar rows below the list
 	listH := h - toolH
 	if listH < makerRowH*3 {
 		listH = makerRowH * 3
@@ -405,7 +468,7 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 
 	ty := y + listH + 8
 	if c.Button(sdl.Rect{X: x, Y: ty, W: 62, H: btnH}, "+ Line") {
-		a.makerInsert(newMessageEvent(a.activeCharName(), defaultMakerEmote, ""))
+		a.makerInsert(a.makerNewLineSeed()) // inherits the previous speaker
 	}
 	if c.Button(sdl.Rect{X: x + 68, Y: ty, W: 56, H: btnH}, "+ BG") {
 		a.makerInsert(newBackgroundEvent(""))
@@ -414,14 +477,21 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 		a.makerInsert(newMusicEvent(""))
 	}
 	ty += btnH + 6
-	if c.Button(sdl.Rect{X: x, Y: ty, W: 44, H: btnH}, "▲ Up") {
+	if c.Button(sdl.Rect{X: x, Y: ty, W: 40, H: btnH}, "▲") {
 		a.makerMoveSel(-1)
 	}
-	if c.Button(sdl.Rect{X: x + 50, Y: ty, W: 56, H: btnH}, "▼ Down") {
+	if c.Button(sdl.Rect{X: x + 46, Y: ty, W: 40, H: btnH}, "▼") {
 		a.makerMoveSel(1)
 	}
-	if c.Button(sdl.Rect{X: x + 112, Y: ty, W: 84, H: btnH}, "✖ Delete") {
+	if c.Button(sdl.Rect{X: x + 92, Y: ty, W: 56, H: btnH}, "⎘ Dup") {
+		a.makerDuplicateSel()
+	}
+	if c.Button(sdl.Rect{X: x + 154, Y: ty, W: 56, H: btnH}, "✖ Del") {
 		a.makerDeleteSel()
+	}
+	ty += btnH + 6
+	if c.Button(sdl.Rect{X: x, Y: ty, W: 184, H: btnH}, "▶ Preview from this line") {
+		a.makerPreviewFrom(a.makerSel)
 	}
 }
 
