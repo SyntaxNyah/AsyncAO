@@ -275,10 +275,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   events. **Quality-of-life:** **+ Line inherits the previous speaker** (so a
   back-and-forth doesn't make you retype the character every line — you just edit
   the text), **⎘ Dup** clones a line, **▶ Preview from this line** iterates a late
-  line without replaying the whole scene, and a **character autocomplete** under
-  the Character field suggests matching folders from the connected server's
-  roster (a real searchable picker — it stays cheap even on a 4000-character
-  server, where a flat dropdown would be useless). A **📂 Open** button loads any
+  line without replaying the whole scene, and **character + background
+  autocompletes** suggest matching folders from the connected server's roster /
+  discovered background list as you type (real searchable pickers — they stay
+  cheap even on a 4000-character server, where a flat dropdown would be useless).
+  A **📂 Open** button loads any
   saved recording straight into the editor (no trip out to Settings), and a
   **live WYSIWYG preview pane** on the right renders the **selected line**
   — character, emote, pose, background, desk — so you build the scene *visually*
@@ -307,7 +308,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   temporarily pointed at the archive (an atomic source override), so textures
   still upload through the normal pipeline. *(Tip: export while connected to the
   origin so the assets are reachable to download.)*
-  *(Roadmap: a background picker, and an opt-in GIF / animated-WebP export.)*
+  *(Roadmap: an opt-in GIF / animated-WebP export.)*
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.

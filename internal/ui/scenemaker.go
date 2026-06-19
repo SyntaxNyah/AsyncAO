@@ -160,6 +160,7 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 	a.makerPickerOpen = false
 	a.makerPreviewIdx = -1 // force the preview pane to rebuild for the new scene
 	a.makerOpen = true
+	a.ensureBgList() // warm the background list once so the BG picker has suggestions
 }
 
 // newScene opens the maker on a fresh one-line scene, seeded with the asset
@@ -792,7 +793,6 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 // The scan stops after makerCharSuggest hits and uses an alloc-free fold match,
 // so it costs almost nothing even with the field open on a huge roster.
 func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMessage) int32 {
-	c := a.ctx
 	typed := strings.TrimSpace(m.CharName)
 	if a.sess == nil || typed == "" {
 		return y
@@ -809,13 +809,45 @@ func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMes
 			n++
 		}
 	}
-	if n == 0 {
+	return a.drawSuggestionChips(x, y, leftX, availW, buf[:n], &m.CharName)
+}
+
+// drawBgSuggestions is drawCharSuggestions for backgrounds: click-to-fill chips
+// from the server's discovered background list (a.bgPick.server, the same names
+// the background picker shows), so a BG line isn't a guess. Free-text stays for
+// names a host's autoindex doesn't list.
+func (a *App) drawBgSuggestions(x, y, leftX, availW int32, target *string) int32 {
+	typed := strings.TrimSpace(*target)
+	if typed == "" || len(a.bgPick.server) == 0 {
 		return y
 	}
+	var buf [makerCharSuggest]string
+	n := 0
+	for i := 0; i < len(a.bgPick.server) && n < makerCharSuggest; i++ {
+		name := a.bgPick.server[i]
+		if strings.EqualFold(name, typed) {
+			continue
+		}
+		if containsFold(name, typed) {
+			buf[n] = name
+			n++
+		}
+	}
+	return a.drawSuggestionChips(x, y, leftX, availW, buf[:n], target)
+}
+
+// drawSuggestionChips renders up to makerCharSuggest click-to-fill chips (wrapped
+// rows), writing the clicked name into *target. Shared by the character +
+// background autocompletes. Returns the y below the chips (== y when none).
+func (a *App) drawSuggestionChips(x, y, leftX, availW int32, names []string, target *string) int32 {
+	if len(names) == 0 {
+		return y
+	}
+	c := a.ctx
 	c.Label(x, y+5, "Matches:", ColTextDim)
 	cx, cy := leftX, y
-	for i := 0; i < n; i++ {
-		bw := c.TextWidth(buf[i]) + 16
+	for _, name := range names {
+		bw := c.TextWidth(name) + 16
 		if bw > 170 {
 			bw = 170
 		}
@@ -823,8 +855,8 @@ func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMes
 			cx = leftX
 			cy += btnH + 4
 		}
-		if c.Button(sdl.Rect{X: cx, Y: cy, W: bw, H: btnH}, buf[i]) {
-			m.CharName = buf[i]
+		if c.Button(sdl.Rect{X: cx, Y: cy, W: bw, H: btnH}, name) {
+			*target = name
 		}
 		cx += bw + 6
 	}
@@ -948,7 +980,8 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 		y += 28
 		c.Label(x, y+5, "Background:", ColText)
 		e.Text, _ = c.TextField("mk_bg", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, e.Text, "background folder, e.g. courtroom or gs4")
-		y += 36
+		y += 32
+		y = a.drawBgSuggestions(x, y, fx, fw, &e.Text) // searchable picker from the server's background list
 		c.Label(x, y, "Sets the scene from this point on (shown under every line that follows).", ColTextDim)
 
 	case courtroom.EventMusic:
