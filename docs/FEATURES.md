@@ -269,18 +269,26 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   over the very same `.aorec` model — **build a scene from scratch or edit a
   recording**. **🎬 New scene** (works **offline**, no server needed) or **✎ Edit**
   any saved recording opens a full-window editor: a left **event list** you can
-  **add / reorder (▲▼) / delete** lines on, and a right panel to set each line's
-  **character, emote, showname, text, position, colour, flip** and an optional
-  **pre-animation** — plus **background** and **music** events. Set the
-  **Origin/CDN** the assets load from (your own host, or a server's base), then
-  **▶ Preview** it (played through the replay engine) and **💾 Save** a fresh
-  timestamped `.aorec` (Save never overwrites the file you opened). Because a
-  scene is just a list of events and `.aorec` is **pretty-printed JSON**, you can
-  also open one in **any text editor** and tweak it by hand. The editor is a
-  drawn-only-while-open overlay, so it costs **nothing** on the live render path.
-  *(Roadmap: a character/background picker pulled from the server or a CDN
-  manifest, and an opt-in GIF / animated-WebP export — all cheap because they
-  edit events, not pixels.)*
+  **add / reorder (▲▼) / duplicate (⎘) / delete** lines on, and a right panel to
+  set each line's **character, emote, showname, text, position, colour, flip,
+  desk** and an optional **pre-animation** — plus **background** and **music**
+  events. **Quality-of-life:** **+ Line inherits the previous speaker** (so a
+  back-and-forth doesn't make you retype the character every line — you just edit
+  the text), **⎘ Dup** clones a line, **▶ Preview from this line** iterates a late
+  line without replaying the whole scene, and a **character autocomplete** under
+  the Character field suggests matching folders from the connected server's
+  roster (a real searchable picker — it stays cheap even on a 4000-character
+  server, where a flat dropdown would be useless). A new scene seeds the **live
+  background and a visible desk** so Preview lands on a real, grounded scene
+  instead of a character floating on black. Set the **Origin/CDN** the assets
+  load from (your own host, or a server's base), then **▶ Preview** it (played
+  through the replay engine) and **💾 Save** a fresh timestamped `.aorec` (Save
+  never overwrites the file you opened). Because a scene is just a list of events
+  and `.aorec` is **pretty-printed JSON**, you can also open one in **any text
+  editor** and tweak it by hand. The editor is a drawn-only-while-open overlay,
+  so it costs **nothing** on the live render path.
+  *(Roadmap: a background picker, and an opt-in GIF / animated-WebP export —
+  all cheap because they edit events, not pixels.)*
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.
