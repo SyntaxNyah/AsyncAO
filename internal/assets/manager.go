@@ -553,6 +553,10 @@ func containsString(list []string, s string) bool {
 }
 
 // hostOf extracts host:port from an absolute URL base (scheme://host/...).
+// HostOf returns the host component of an asset URL/origin (the key the learned
+// format table uses), exported for the archive exporter's replay seeding.
+func HostOf(url string) string { return hostOf(url) }
+
 func hostOf(base string) string {
 	const sep = "://"
 	i := strings.Index(base, sep)
