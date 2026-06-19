@@ -36,6 +36,11 @@ const (
 
 	makerListW int32 = 300 // left event-list column width
 	makerRowH  int32 = 24  // event-list row height
+
+	// makerCharSuggest caps the character-autocomplete chips. The scan stops
+	// once this many matches are found, so it stays cheap even on a 4000-char
+	// server (you never list all of them — a dropdown would be unusable there).
+	makerCharSuggest = 6
 )
 
 // makerSideLabels / makerSideValues map friendly position names to the AO side
@@ -495,6 +500,81 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 	}
 }
 
+// drawCharSuggestions shows up to makerCharSuggest server characters whose name
+// contains the typed text, as click-to-fill chips under the Character field —
+// the searchable picker (a flat dropdown can't list a 4000-char server). Hidden
+// when offline or when the field is empty. Returns the new y (== y when hidden).
+// The scan stops after makerCharSuggest hits and uses an alloc-free fold match,
+// so it costs almost nothing even with the field open on a huge roster.
+func (a *App) drawCharSuggestions(x, y, leftX, availW int32, m *protocol.ChatMessage) int32 {
+	c := a.ctx
+	typed := strings.TrimSpace(m.CharName)
+	if a.sess == nil || typed == "" {
+		return y
+	}
+	var buf [makerCharSuggest]string
+	n := 0
+	for i := 0; i < len(a.sess.Chars) && n < makerCharSuggest; i++ {
+		name := a.sess.Chars[i].Name
+		if strings.EqualFold(name, typed) {
+			continue // don't suggest the exact thing already typed
+		}
+		if containsFold(name, typed) {
+			buf[n] = name
+			n++
+		}
+	}
+	if n == 0 {
+		return y
+	}
+	c.Label(x, y+5, "Matches:", ColTextDim)
+	cx, cy := leftX, y
+	for i := 0; i < n; i++ {
+		bw := c.TextWidth(buf[i]) + 16
+		if bw > 170 {
+			bw = 170
+		}
+		if cx+bw > leftX+availW && cx > leftX { // wrap to the next row
+			cx = leftX
+			cy += btnH + 4
+		}
+		if c.Button(sdl.Rect{X: cx, Y: cy, W: bw, H: btnH}, buf[i]) {
+			m.CharName = buf[i]
+		}
+		cx += bw + 6
+	}
+	return cy + btnH + 6
+}
+
+// containsFold reports whether s contains sub, ASCII-case-insensitively, WITHOUT
+// allocating (strings.ToLower would alloc per name — this runs over the whole
+// server char list while the autocomplete is open).
+func containsFold(s, sub string) bool {
+	if sub == "" {
+		return true
+	}
+	for i := 0; i+len(sub) <= len(s); i++ {
+		match := true
+		for j := 0; j < len(sub); j++ {
+			if lowerASCII(s[i+j]) != lowerASCII(sub[j]) {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+func lowerASCII(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
+}
+
 // drawMakerEditor renders the fields for the selected event (message / bg /
 // music). Edits write straight back into the cloned scene buffer.
 func (a *App) drawMakerEditor(x, y, w int32) {
@@ -522,6 +602,7 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 		c.Label(x, y+5, "Character:", ColText)
 		m.CharName, _ = c.TextField("mk_char", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.CharName, "character folder, e.g. Phoenix")
 		y += 32
+		y = a.drawCharSuggestions(x, y, fx, fw, m) // searchable picker from the server roster
 		c.Label(x, y+5, "Emote:", ColText)
 		m.Emote, _ = c.TextField("mk_emote", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.Emote, "sprite stem, e.g. normal or (a)normal")
 		y += 32

@@ -159,6 +159,21 @@ func TestSanitizeStem(t *testing.T) {
 	}
 }
 
+func TestContainsFold(t *testing.T) {
+	yes := [][2]string{{"Phoenix", "pho"}, {"Phoenix", "NIX"}, {"Miles Edgeworth", "edge"}, {"abc", ""}, {"abc", "abc"}}
+	for _, c := range yes {
+		if !containsFold(c[0], c[1]) {
+			t.Errorf("containsFold(%q,%q) = false, want true", c[0], c[1])
+		}
+	}
+	no := [][2]string{{"Phoenix", "xyz"}, {"abc", "abcd"}, {"Phoenix", "phx"}}
+	for _, c := range no {
+		if containsFold(c[0], c[1]) {
+			t.Errorf("containsFold(%q,%q) = true, want false", c[0], c[1])
+		}
+	}
+}
+
 func TestMakerSideIndexRoundTrip(t *testing.T) {
 	for i, code := range makerSideValues {
 		if got := makerSideIndex(code); got != i {
