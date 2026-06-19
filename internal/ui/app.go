@@ -377,6 +377,7 @@ type App struct {
 	replayRoom   *courtroom.Courtroom
 	replayEvents []recEvent
 	replayIdx    int
+	replayName   string
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
@@ -2850,20 +2851,27 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// wins the wheel/press over the grid scroll and icon clicks under the box.
 	a.handlePreviewInput()
 
-	switch a.screen {
-	case ScreenLobby:
-		a.drawLobby(winW, winH)
-	case ScreenCharSelect:
-		a.drawCharSelect(winW, winH)
-	case ScreenCourtroom:
-		a.drawCourtroom(winW, winH)
-		a.drawFloatingExtras(winW, winH) // non-blocking, on top of the live courtroom (input already restored)
-	case ScreenSettings:
-		a.drawSettings(winW, winH)
-	case ScreenAbout:
-		a.drawAbout(winW, winH)
-	case ScreenServerHelp:
-		a.drawServerHelp(winW, winH)
+	if a.replaying && a.replayRoom != nil && a.screen != ScreenCourtroom {
+		// M16: a replay launched from the lobby/Settings takes over the whole
+		// window (drawn INSTEAD of the screen, so its controls own the input);
+		// on the courtroom screen the stage shows it in place instead.
+		a.drawReplayOverlay(winW, winH)
+	} else {
+		switch a.screen {
+		case ScreenLobby:
+			a.drawLobby(winW, winH)
+		case ScreenCharSelect:
+			a.drawCharSelect(winW, winH)
+		case ScreenCourtroom:
+			a.drawCourtroom(winW, winH)
+			a.drawFloatingExtras(winW, winH) // non-blocking, on top of the live courtroom (input already restored)
+		case ScreenSettings:
+			a.drawSettings(winW, winH)
+		case ScreenAbout:
+			a.drawAbout(winW, winH)
+		case ScreenServerHelp:
+			a.drawServerHelp(winW, winH)
+		}
 	}
 	// The tab strip floats over every screen (input was consumed at the
 	// top of the frame; this is just paint).

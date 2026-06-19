@@ -226,8 +226,8 @@ func latestRecordingPath() string {
 }
 
 // replayFromPath loads a specific .aorec and starts replaying it (the picker
-// entry point). v1 renders the replay on the courtroom stage, so it asks the
-// user to connect first if they're in the lobby.
+// entry point). The replay plays in an overlay over whatever screen you're on
+// (drawReplayOverlay), so it works connected or from the lobby.
 func (a *App) replayFromPath(path string) {
 	if a.recActive {
 		a.warnLine = "Stop recording first, then replay."
@@ -240,12 +240,6 @@ func (a *App) replayFromPath(path string) {
 		a.warnAt = time.Now()
 		return
 	}
-	if a.room == nil {
-		a.warnLine = "Connect to a server to watch a replay — it plays on the courtroom stage."
-		a.warnAt = time.Now()
-		return
-	}
-	a.screen = ScreenCourtroom
 	a.startReplay(rec, filepath.Base(path))
 }
 
@@ -299,6 +293,7 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	}
 	a.replayEvents = rec.Events
 	a.replayIdx = 0
+	a.replayName = name
 	a.replaying = true
 	a.warnLine = "▶ Replaying " + name + " — press the Replay key to stop"
 	a.warnAt = time.Now()
@@ -332,6 +327,7 @@ func (a *App) stopReplay() {
 	a.replayRoom = nil
 	a.replayEvents = nil
 	a.replayIdx = 0
+	a.replayName = ""
 	if a.d.Viewport != nil { // rebind preanim completion to the live room (or clear it)
 		if a.room != nil {
 			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
@@ -364,5 +360,32 @@ func (a *App) drawStageRecordButton(vp sdl.Rect) {
 	}
 	if c.Button(sdl.Rect{X: vp.X + 6, Y: vp.Y + 6, W: 92, H: 22}, label) {
 		a.toggleRecording()
+	}
+}
+
+// drawReplayOverlay renders an in-progress replay as a full-window viewer — used
+// when it was launched off the courtroom screen (lobby / Settings), so it can be
+// watched in place. The caller draws it INSTEAD of the underlying screen, so the
+// Stop button owns the input. The courtroom screen renders the replay in its own
+// stage instead, so this isn't used there.
+func (a *App) drawReplayOverlay(w, h int32) {
+	if a.replayRoom == nil {
+		return
+	}
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 10, G: 10, B: 14, A: 255})
+	// A 4:3 stage, centred, leaving a top strip for the title + Stop button.
+	stageH := h - 80
+	stageW := stageH * 4 / 3
+	if stageW > w-40 {
+		stageW = w - 40
+		stageH = stageW * 3 / 4
+	}
+	stage := sdl.Rect{X: (w - stageW) / 2, Y: 46, W: stageW, H: stageH}
+	c.Fill(stage, sdl.Color{R: 0, G: 0, B: 0, A: 255})
+	a.d.Viewport.Render(c.Ren, &a.replayRoom.Scene, stage)
+	c.Label(20, 16, "▶ Replaying — "+a.replayName, ColText)
+	if c.Button(sdl.Rect{X: w - 136, Y: 12, W: 120, H: 26}, "■ Stop replay") {
+		a.stopReplay()
 	}
 }
