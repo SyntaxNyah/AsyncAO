@@ -144,6 +144,11 @@ const defaultEmoteButtonImages = true
 // the panel.
 const defaultShowFriendButton = true
 
+// defaultDragLayout makes the courtroom resize by dragging panel edges (the
+// viewport↔log divider) the default; unchecking it brings back the +/− knob
+// buttons. Default-ON per the request ("mouse is draggable by default").
+const defaultDragLayout = true
+
 // defaultSmoothScaling turns on linear texture filtering (SDL render
 // scale quality): sprites stretched to the viewport stop shimmering.
 const defaultSmoothScaling = true
@@ -392,6 +397,7 @@ type AssetPreferences struct {
 	RandomEmote            bool                         `json:"randomEmote"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
 	ShowFriendButton       bool                         `json:"showFriendButton"`
+	DragLayout             bool                         `json:"dragLayout"`
 	FollowEnabled          bool                         `json:"followEnabled"`
 	DyslexiaFont           bool                         `json:"dyslexiaFont"`
 	DNDPersist             bool                         `json:"dndPersist"`
@@ -573,6 +579,7 @@ type prefsJSON struct {
 	RandomEmote            bool      `json:"randomEmote"`            // default OFF
 	FriendHighlight        bool      `json:"friendHighlight"`        // default OFF
 	ShowFriendButton       *bool     `json:"showFriendButton"`       // default ON (pointer: absent != off)
+	DragLayout             *bool     `json:"dragLayout"`             // default ON (pointer: absent != off)
 	FollowEnabled          bool      `json:"followEnabled"`          // default OFF (opt-in)
 	DyslexiaFont           bool      `json:"dyslexiaFont"`           // default OFF
 	DNDPersist             bool      `json:"dndPersist"`             // default OFF (DND clears each launch)
@@ -895,6 +902,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		PreferAnimated:    defaultPreferAnimated,
 		EmoteButtonImages: defaultEmoteButtonImages,
 		ShowFriendButton:  defaultShowFriendButton,
+		DragLayout:        defaultDragLayout,
 
 		RainbowSpriteSpeed:     defaultRainbowSpeed,
 		RainbowSpriteVividness: defaultRainbowVivid,
@@ -993,6 +1001,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.FriendHighlight = onDisk.FriendHighlight
 	if onDisk.ShowFriendButton != nil { // pointer: absent keeps the default-ON
 		p.ShowFriendButton = *onDisk.ShowFriendButton
+	}
+	if onDisk.DragLayout != nil { // pointer: absent keeps the default-ON
+		p.DragLayout = *onDisk.DragLayout
 	}
 	p.FollowEnabled = onDisk.FollowEnabled
 	p.DyslexiaFont = onDisk.DyslexiaFont
@@ -2077,6 +2088,27 @@ func (p *AssetPreferences) FriendButtonShown() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.ShowFriendButton
+}
+
+// DragLayoutOn reports whether the courtroom resizes by dragging panel edges
+// (ON by default) — when on, the viewport↔log divider is draggable and the +/−
+// layout-knob panel is hidden; off brings the knobs back.
+func (p *AssetPreferences) DragLayoutOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DragLayout
+}
+
+// SetDragLayout toggles drag-to-resize layout mode.
+func (p *AssetPreferences) SetDragLayout(on bool) {
+	p.mu.Lock()
+	if p.DragLayout == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DragLayout = on
+	p.mu.Unlock()
+	p.markDirty()
 }
 
 // SetShowFriendButton toggles the player-list friend button.

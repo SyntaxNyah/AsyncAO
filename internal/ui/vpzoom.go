@@ -60,7 +60,7 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 // cursor sits in the chat box band (that area's Ctrl+wheel resizes text).
 func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 	c := a.ctx
-	if vp.W <= 0 || vp.H <= 0 {
+	if vp.W <= 0 || vp.H <= 0 || a.dragVpDivider {
 		return
 	}
 

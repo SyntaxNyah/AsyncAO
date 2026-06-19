@@ -590,6 +590,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		c.Label(pad+270, y+4, "only while idle — a message instantly shows the real area background again", ColTextDim)
 		y += 30
 	}
+	dragLay := a.d.Prefs.DragLayoutOn()
+	if next := c.Checkbox(pad, y, "Drag panel edges to resize the courtroom (ON by default): grab the viewport's right edge to make it bigger / the log smaller — uncheck for the +/− View/Text/MsgBox/Log/Input knob buttons instead", dragLay); next != dragLay {
+		a.d.Prefs.SetDragLayout(next)
+	}
+	y += 26
 	smooth := a.d.Prefs.SmoothScalingEnabled()
 	if next := c.Checkbox(pad, y, "Smooth texture scaling (linear filtering; re-streams loaded images when toggled)", smooth); next != smooth {
 		a.d.Prefs.SetSmoothScaling(next)

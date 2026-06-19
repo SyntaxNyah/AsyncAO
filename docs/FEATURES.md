@@ -469,6 +469,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   key bound to more than one action in red (the dispatch fires only the first, so
   a clash would otherwise silently dead-end the later action), with a tooltip
   naming it. Esc cancels a capture.
+- **Drag-resize the layout** (Settings → General → Stage, **ON by default**):
+  grab the **viewport's right edge** and drag to make the stage bigger / the log
+  smaller (it scales the whole 4:3 viewport, reusing the View knob's own clamp +
+  persistence). The grab is claimed *before* the zoom/sprite-drag handlers so it
+  never fights them, and it's only active in drag mode. Uncheck it to bring back
+  the classic **+/− View/Text/MsgBox/Log/Input knob buttons** instead (the text
+  scales are also always Ctrl+wheel over each region). *(Themed layouts have a
+  separate full drag-to-move/resize editor.)*
 - **Hideable chrome**: shout row, layout knobs, emote grid, right column,
   OOC row, HP bars, clocks, badge, judge row — persisted per user.
 - **Now-Playing + reliable Stop** on the Music tab: a "Now playing: <track>"

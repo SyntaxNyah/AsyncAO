@@ -879,6 +879,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.renderViewportZoomed(vp)
 	a.drawStageRecordButton(vp)
+	a.handleVpDivider(vp, w) // drag the right edge to resize (claims the press BEFORE zoom/sprite-drag)
 	// Camera input first (Ctrl+wheel zoom / Ctrl+drag pan); sprite drag
 	// only at 1× — zoomed hit rects would lie.
 	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
@@ -941,6 +942,51 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 	return true
 }
 
+// handleVpDivider lets the user drag the viewport's right edge to resize the
+// viewport↔log split (vpPct) — the mouse alternative to the View knob. Called
+// BEFORE the zoom/sprite-drag handlers so a grab on the edge wins, and only in
+// drag-resize mode (the default; the knob panel covers it when off). It scales
+// the whole 4:3 viewport, so past the height clamp the edge stops tracking the
+// mouse (the grip then sits "stuck" at the limit — expected, not a bug). Reuses
+// the View knob's own clamp so the two never disagree.
+func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
+	c := a.ctx
+	if !a.d.Prefs.DragLayoutOn() || a.vpZoom > 1 { // off, or zoomed (hit rects shift)
+		a.dragVpDivider = false
+		a.dividerPrevDwn = c.mouseDown
+		return
+	}
+	handle := sdl.Rect{X: vp.X + vp.W - 4, Y: vp.Y, W: 12, H: vp.H}
+	hot := c.hovering(handle)
+	grip := ColPanelHi
+	if hot || a.dragVpDivider {
+		grip = ColAccent
+	}
+	c.Fill(sdl.Rect{X: vp.X + vp.W - 1, Y: vp.Y + vp.H/2 - 24, W: 3, H: 48}, grip) // a subtle edge grip
+	pressed := c.mouseDown && !a.dividerPrevDwn
+	a.dividerPrevDwn = c.mouseDown
+	if pressed && hot {
+		a.dragVpDivider = true
+	}
+	if !c.mouseDown {
+		if a.dragVpDivider {
+			a.saveLayout() // persist the new width on release
+		}
+		a.dragVpDivider = false
+		return
+	}
+	if a.dragVpDivider && w > 0 {
+		pct := int(int64(c.mouseX-vp.X) * int64(DefaultScalePct) / int64(w))
+		if pct < config.MinViewportPercent {
+			pct = config.MinViewportPercent
+		}
+		if pct > config.MaxViewportPercent {
+			pct = config.MaxViewportPercent
+		}
+		a.vpPct = pct
+	}
+}
+
 // spriteHitRect mirrors Viewport.drawSprite's placement math so drags
 // hit-test exactly what's drawn. Runs only on press/right-click edges.
 func (a *App) spriteHitRect(vp sdl.Rect, layer *courtroom.SpriteLayer) (sdl.Rect, bool) {
@@ -966,6 +1012,9 @@ func (a *App) spriteHitRect(vp sdl.Rect, layer *courtroom.SpriteLayer) (sdl.Rect
 // wins afterwards. Right-click a sprite to reset it. All math runs on
 // press/drag edges only; idle frames cost one bool check.
 func (a *App) handleSpriteDrag(vp sdl.Rect) {
+	if a.dragVpDivider {
+		return // the viewport-resize divider owns this press
+	}
 	if !a.d.Prefs.SpriteMoveEnabled() {
 		return // opt-in (Settings → General); off by default so stray clicks can't nudge sprites
 	}
@@ -2823,7 +2872,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.showPair = !a.showPair
 	}
 	x += 80
-	if !a.panelHidden(panelKnobs) {
+	if !a.panelHidden(panelKnobs) && !a.d.Prefs.DragLayoutOn() { // drag-resize mode hides the +/− knobs
 		x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
 		x = a.scaleControl(x, y, "Text", &a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent)
 		x = a.scaleControl(x, y, "MsgBox", &a.boxPct, config.ScaleStepPercent, config.MinChatBoxPercent, config.MaxChatBoxPercent)
