@@ -396,7 +396,8 @@ type App struct {
 	// selection/scene changes. Driven by driveMakerPreview while makerOpen.
 	makerPreviewRoom *courtroom.Courtroom
 	makerPreviewIdx  int
-	makerPreviewOrig string // origin the preview room was built for (rebuild on change)
+	makerPreviewOrig string          // origin the preview room was built for (rebuild on change)
+	makerPreviewKey  makerPreviewKey // visual identity of the previewed line (rebuild on change)
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
@@ -2846,6 +2847,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// it; the viewport reads the replay scene via renderScene too). Wrapped
 		// so a panic in a bad/edge recording stops the replay, not the app.
 		a.driveReplay(dt)
+	case a.makerOpen:
+		// M16 scene maker: drive the preview-pane room (NOT the live room) so the
+		// shared viewport's anim state tracks the previewed line, not whatever the
+		// live courtroom is doing behind the overlay.
+		a.driveMakerPreview(dt)
 	case a.room != nil:
 		a.healScenery()
 		a.room.Update(dt)

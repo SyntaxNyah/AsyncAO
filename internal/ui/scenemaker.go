@@ -199,6 +199,137 @@ func (a *App) closeSceneMaker() {
 	a.teardownMakerPreview()
 }
 
+// makerPreviewKey is the VISUAL identity of the previewed line — everything that
+// changes what the pane should draw EXCEPT the message text (so typing doesn't
+// re-trigger a rebuild on every keystroke). Compared field-by-field each frame,
+// alloc-free.
+type makerPreviewKey struct {
+	bg, char, emote, side, pre string
+	emoteMod, deskMod, kind    int
+	flip                       bool
+}
+
+// makerPreviewKeyFor computes the preview key for the selected event: the
+// effective background (the selected BG itself, else the most recent BG before
+// it, else StartBg) plus the message's visual fields.
+func (a *App) makerPreviewKeyFor(sel int) makerPreviewKey {
+	rec := a.makerScene
+	e := rec.Events[sel]
+	k := makerPreviewKey{kind: e.Kind}
+	if courtroom.EventKind(e.Kind) == courtroom.EventBackground {
+		k.bg = e.Text
+	} else {
+		k.bg = rec.StartBg
+		for j := sel - 1; j >= 0; j-- {
+			if courtroom.EventKind(rec.Events[j].Kind) == courtroom.EventBackground {
+				k.bg = rec.Events[j].Text
+				break
+			}
+		}
+	}
+	if m := e.Message; m != nil {
+		k.char, k.emote, k.side, k.pre = m.CharName, m.Emote, m.Side, m.PreEmote
+		k.emoteMod, k.deskMod, k.flip = m.EmoteMod, m.DeskMod, m.Flip
+	}
+	return k
+}
+
+// ensureMakerPreview (re)builds the preview-pane room so it reflects the selected
+// line — only when the origin, selection, or the line's visual identity changed
+// (so it's idle most frames). Feeds the background context then the selected
+// message, so the pane shows that line type out and settle, like the real stage.
+func (a *App) ensureMakerPreview() {
+	if a.makerScene == nil || a.d.Manager == nil {
+		return
+	}
+	sel := a.makerSel
+	if sel < 0 || sel >= len(a.makerScene.Events) {
+		return
+	}
+	key := a.makerPreviewKeyFor(sel)
+	if a.makerPreviewRoom != nil && a.makerPreviewOrig == a.makerScene.Origin &&
+		a.makerPreviewIdx == sel && a.makerPreviewKey == key {
+		return // unchanged — keep playing the current preview
+	}
+	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(a.makerScene.Origin), a.d.Manager, nil, a.d.Audio)
+	room.Typewriter.Interval, room.TextStay = a.replayTiming()
+	room.CatchUp = false
+	room.ReduceMotion = a.d.Prefs.ReduceMotion()
+	room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+	if a.d.Viewport != nil {
+		a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
+	}
+	if key.bg != "" {
+		room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: key.bg})
+	}
+	if e := a.makerScene.Events[sel]; courtroom.EventKind(e.Kind) == courtroom.EventMessage && e.Message != nil {
+		room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: cloneEvent(e).Message}) // copy: the room must not alias the edit buffer
+	}
+	a.makerPreviewRoom = room
+	a.makerPreviewOrig = a.makerScene.Origin
+	a.makerPreviewIdx = sel
+	a.makerPreviewKey = key
+}
+
+// driveMakerPreview advances the preview-pane room each frame (build-on-change +
+// Update + viewport sync), wrapped so a bad scene/asset can't crash the maker.
+func (a *App) driveMakerPreview(dt time.Duration) {
+	defer a.recoverMakerPreview()
+	if a.makerPickerOpen { // the picker covers the body — no pane to drive
+		return
+	}
+	a.ensureMakerPreview()
+	if a.makerPreviewRoom == nil {
+		return
+	}
+	if a.d.Viewport != nil {
+		// Re-assert each frame: a full ▶ Preview (replay) rebinds this to the
+		// replay room and stopReplay points it at the live room — neither is right
+		// once we're back in the pane.
+		a.d.Viewport.OnPreanimDone = a.makerPreviewRoom.NotifyPreanimDone
+		a.d.Viewport.SetSpriteFX(a.spriteFX())
+	}
+	a.makerPreviewRoom.Update(dt)
+	if a.d.Viewport != nil {
+		a.d.Viewport.Update(&a.makerPreviewRoom.Scene, dt)
+	}
+}
+
+// recoverMakerPreview turns a panic in the preview drive/render into a clean
+// teardown + debug line, never an app crash (the pane is optional).
+func (a *App) recoverMakerPreview() {
+	if r := recover(); r != nil {
+		a.pushDebug("maker preview panic: " + fmt.Sprint(r))
+		a.teardownMakerPreview()
+	}
+}
+
+// drawMakerPreviewPane renders the selected line into a 4:3 stage — the WYSIWYG
+// "studio" view, so you see your scene as you build it.
+func (a *App) drawMakerPreviewPane(x, y, w, h int32) {
+	defer a.recoverMakerPreview()
+	c := a.ctx
+	c.Label(x, y, "Live preview — selected line:", ColTextDim)
+	y += 22
+	stageW := w
+	stageH := stageW * 3 / 4
+	if stageH > h-44 {
+		stageH = h - 44
+		stageW = stageH * 4 / 3
+	}
+	stage := sdl.Rect{X: x + (w-stageW)/2, Y: y, W: stageW, H: stageH}
+	c.Fill(stage, sdl.Color{R: 0, G: 0, B: 0, A: 255})
+	if a.makerPreviewRoom == nil || a.d.Viewport == nil {
+		c.Label(stage.X+10, stage.Y+10, "Set an Origin/CDN above to preview.", ColTextDim)
+		return
+	}
+	a.d.Viewport.Render(c.Ren, &a.makerPreviewRoom.Scene, stage)
+	sc := &a.makerPreviewRoom.Scene
+	if sc.ShownameText != "" || sc.MessageText != "" {
+		c.LabelClipped(stage.X, stage.Y+stage.H+4, stage.W, strings.TrimSpace(sc.ShownameText+": "+sc.MessageText), ColText)
+	}
+}
+
 // teardownMakerPreview disposes the preview-pane room and restores the
 // viewport's one-shot preanim callback to the live room (or clears it).
 func (a *App) teardownMakerPreview() {
@@ -446,7 +577,16 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	}
 	a.drawMakerList(pad, bodyY, makerListW, winH-bodyY-pad)
 	edX := pad + makerListW + 16
-	a.drawMakerEditor(edX, bodyY, winW-edX-pad)
+	edRight := winW - pad
+	// Far-right live preview pane, when the window is wide enough to show it
+	// without crushing the editor (keep >= makerEditorMinW for the fields).
+	const makerPaneW, makerEditorMinW = 380, 320
+	if winW-edX-16-makerPaneW >= makerEditorMinW {
+		paneX := winW - pad - makerPaneW
+		a.drawMakerPreviewPane(paneX, bodyY, makerPaneW, winH-bodyY-pad)
+		edRight = paneX - 16
+	}
+	a.drawMakerEditor(edX, bodyY, edRight-edX)
 }
 
 // drawMakerOpenPicker lists saved recordings to load straight into the maker

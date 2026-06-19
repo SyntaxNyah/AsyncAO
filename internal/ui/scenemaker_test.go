@@ -159,6 +159,36 @@ func TestSanitizeStem(t *testing.T) {
 	}
 }
 
+func TestMakerPreviewKeyForBackgroundContext(t *testing.T) {
+	a := &App{}
+	a.makerScene = &sceneRecording{
+		StartBg: "courtroom",
+		Events: []recEvent{
+			newMessageEvent("A", "n", "1"),     // 0: bg = StartBg (courtroom)
+			newBackgroundEvent("gs4"),          // 1: bg = gs4 (itself)
+			newMessageEvent("B", "point", "2"), // 2: bg = gs4 (most recent before it)
+		},
+	}
+	if k := a.makerPreviewKeyFor(0); k.bg != "courtroom" {
+		t.Errorf("line 0 bg = %q, want courtroom (StartBg)", k.bg)
+	}
+	if k := a.makerPreviewKeyFor(1); k.bg != "gs4" {
+		t.Errorf("selected BG line bg = %q, want gs4 (itself)", k.bg)
+	}
+	k := a.makerPreviewKeyFor(2)
+	if k.bg != "gs4" {
+		t.Errorf("line 2 bg = %q, want gs4 (most recent before it)", k.bg)
+	}
+	if k.char != "B" || k.emote != "point" {
+		t.Errorf("line 2 key missing visual fields: %+v", k)
+	}
+	// text is NOT part of the key (so typing doesn't rebuild the preview)
+	a.makerScene.Events[2].Message.Message = "edited"
+	if a.makerPreviewKeyFor(2) != k {
+		t.Error("editing message text must not change the preview key")
+	}
+}
+
 func TestContainsFold(t *testing.T) {
 	yes := [][2]string{{"Phoenix", "pho"}, {"Phoenix", "NIX"}, {"Miles Edgeworth", "edge"}, {"abc", ""}, {"abc", "abc"}}
 	for _, c := range yes {
