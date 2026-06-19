@@ -229,6 +229,62 @@ func TestRenderFrameZeroAllocs(t *testing.T) {
 	}
 }
 
+// TestRenderFrameRainbowZeroAllocs enforces the alloc gate on the rainbow-
+// sprites ON path: the default frame test runs with the wash OFF, so it can't
+// catch a regression in the SetColorMod/hue code. With the flag set, the
+// per-frame hue mod + restore must still allocate nothing (spec §12).
+func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	for _, base := range []string{"bg", "desk", "spk", "pair"} {
+		if err := store.Upload(base, decodedFixture()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vp := NewViewport(store)
+	vp.SetRainbowSprites(true)
+	scene := benchScene(store)
+	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
+
+	allocs := testing.AllocsPerRun(200, func() {
+		vp.Update(scene, 16*time.Millisecond)
+		vp.Render(ren, scene, rect)
+	})
+	if allocs != 0 {
+		t.Errorf("rainbow render frame allocates %.1f objects/op, want 0 (spec §12)", allocs)
+	}
+}
+
+// TestRainbowMod pins the hue colour-mod invariants: every channel stays in
+// [rainbowSpriteFloor,255] across a full cycle (so the wash tints rather than
+// silhouettes and never wraps a uint8), and the hue actually moves (the floor
+// is below 255 and the start/quarter hues differ).
+func TestRainbowMod(t *testing.T) {
+	const steps = 600
+	moved := false
+	r0, g0, b0 := rainbowMod(0)
+	for i := 0; i <= steps; i++ {
+		phase := time.Duration(int64(rainbowSpriteCycle) * int64(i) / int64(steps))
+		r, g, b := rainbowMod(phase)
+		for _, c := range []uint8{r, g, b} {
+			if c < rainbowSpriteFloor {
+				t.Fatalf("phase %v channel %d below floor %d", phase, c, rainbowSpriteFloor)
+			}
+		}
+		if r != r0 || g != g0 || b != b0 {
+			moved = true
+		}
+	}
+	if !moved {
+		t.Fatal("rainbowMod never varied across a full cycle")
+	}
+}
+
 // TestViewportStickyScenery pins the black-background fix: flipping the
 // scene to a not-yet-resident background keeps the previous scenery bound
 // (and drawn) until the new texture lands; an empty base clears at once.

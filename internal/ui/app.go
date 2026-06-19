@@ -2780,6 +2780,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.healScenery()
 		a.room.Update(dt)
 		a.applySpriteOverrides()
+		a.d.Viewport.SetRainbowSprites(a.d.Prefs.RainbowSpritesOn()) // optional sprite wash (one RLock/frame)
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		// Music ducking: dip music while a message is on stage (shout/preanim/
 		// talking), restore at idle/linger. Transition-driven — SetVolumes is

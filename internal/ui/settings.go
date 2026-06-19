@@ -434,6 +434,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetRainbowMessages(next)
 	}
 	y += 26
+	rbs := a.d.Prefs.RainbowSpritesOn()
+	if next := c.Checkbox(pad, y, "Rainbow character sprites (OFF by default): washes every on-stage sprite through a slow hue cycle — local eye-candy only, nobody else sees it, zero render cost when off", rbs); next != rbs {
+		a.d.Prefs.SetRainbowSprites(next)
+	}
+	y += 26
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()

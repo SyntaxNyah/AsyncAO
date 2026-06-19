@@ -110,6 +110,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   `\cr` so your text cycles the palette per letter (renders on clients that read
   inline colour; rainbow wins if both are on). Applied at send (`funColor`), so
   zero render cost.
+- **Rainbow character sprites** (Settings → General, OFF by default): washes
+  every on-stage character layer (speaker **and** pair) through a slow ~2.5 s
+  hue cycle — pure **local eye-candy**, nobody else sees it. It's a render-side
+  `SetColorMod` bracketed around the existing sprite blit (alpha untouched, so
+  the transparent cutout stays transparent and the art stays readable under the
+  tint — a 64/255 channel floor keeps it from crushing to a flat silhouette).
+  The hue clock lives on the viewport and advances with pure integer math, so
+  the frame **still allocates zero** with the wash on (pinned by
+  `TestRenderFrameRainbowZeroAllocs`); with it off there is **no cost at all**
+  (not even the colour-mod calls).
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

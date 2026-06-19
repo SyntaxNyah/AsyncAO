@@ -97,12 +97,14 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetAssetWarnings(true)
 	p.SetSpriteMove(true)
 	p.SetDeskFollowManifest(true)
-	p.SetAutoLoginToast(false) // explicit false must survive the absent-default-ON pointer
-	p.SetCallwordToast(false)  // same absent-default-ON pointer
-	p.SetMessageCounter(false) // same absent-default-ON pointer
-	p.SetICTimestamps(false)   // same absent-default-ON pointer
-	p.SetAutoReconnect(false)  // same absent-default-ON pointer
-	p.SetMusicHistory(false)   // same absent-default-ON pointer
+	p.SetAutoLoginToast(false)   // explicit false must survive the absent-default-ON pointer
+	p.SetCallwordToast(false)    // same absent-default-ON pointer
+	p.SetMessageCounter(false)   // same absent-default-ON pointer
+	p.SetICTimestamps(false)     // same absent-default-ON pointer
+	p.SetAutoReconnect(false)    // same absent-default-ON pointer
+	p.SetMusicHistory(false)     // same absent-default-ON pointer
+	p.SetRainbowSprites(true)    // default-OFF plain bool — must survive as true
+	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -140,6 +142,12 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.MusicHistoryOn() {
 		t.Error("MusicHistory=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if !q.RainbowSpritesOn() {
+		t.Error("RainbowSprites=true lost across reload")
+	}
+	if q.FriendButtonShown() {
+		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
 	}
 }
 

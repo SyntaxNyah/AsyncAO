@@ -384,6 +384,7 @@ type AssetPreferences struct {
 	DNDSaved               bool                         `json:"dndSaved"`
 	RainbowMessages        bool                         `json:"rainbowMessages"`
 	RandomMessageColor     bool                         `json:"randomMessageColor"`
+	RainbowSprites         bool                         `json:"rainbowSprites"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
@@ -548,6 +549,7 @@ type prefsJSON struct {
 	DNDSaved               bool      `json:"dndSaved"`           // persisted DND state (restored only when DNDPersist)
 	RainbowMessages        bool      `json:"rainbowMessages"`    // default OFF
 	RandomMessageColor     bool      `json:"randomMessageColor"` // default OFF
+	RainbowSprites         bool      `json:"rainbowSprites"`     // default OFF
 	FriendNotify           bool      `json:"friendNotify"`       // default OFF
 	FriendOSToast          bool      `json:"friendOSToast"`      // default OFF
 	FriendGlowPulse        bool      `json:"friendGlowPulse"`    // default OFF
@@ -948,6 +950,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.DNDSaved = onDisk.DNDSaved
 	p.RainbowMessages = onDisk.RainbowMessages
 	p.RandomMessageColor = onDisk.RandomMessageColor
+	p.RainbowSprites = onDisk.RainbowSprites
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
@@ -2117,6 +2120,28 @@ func (p *AssetPreferences) SetRandomMessageColor(on bool) {
 		return
 	}
 	p.RandomMessageColor = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RainbowSpritesOn reports the "rainbow character sprites" toggle (OFF by
+// default): when on, the viewport washes every character layer through a
+// slow hue cycle (local-only eye-candy — purely a render-side colour mod, it
+// changes nothing on the wire and never touches other clients).
+func (p *AssetPreferences) RainbowSpritesOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RainbowSprites
+}
+
+// SetRainbowSprites toggles the rainbow character-sprite wash.
+func (p *AssetPreferences) SetRainbowSprites(on bool) {
+	p.mu.Lock()
+	if p.RainbowSprites == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RainbowSprites = on
 	p.mu.Unlock()
 	p.markDirty()
 }
