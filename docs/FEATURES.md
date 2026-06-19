@@ -308,7 +308,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   temporarily pointed at the archive (an atomic source override), so textures
   still upload through the normal pipeline. *(Tip: export while connected to the
   origin so the assets are reachable to download.)*
-  *(Roadmap: an opt-in GIF / animated-WebP export.)*
+- **Scene → GIF export** (M16, **🎞 Export GIF** in the maker): render a scene to
+  a **shareable animated GIF** — "an animation of people talking." It renders the
+  scene through a throwaway replay room into a **fixed off-screen target** (a
+  capped 480×360, so it's small + memory-bounded), quantizes each frame and drops
+  the source at once (only 1-byte/px paletted frames are kept, hard-capped at
+  ~33 s), and encodes off-thread to `recordings\<name>.gif`. It runs
+  **incrementally behind a progress bar** (with **■ Stop & save**) so the window
+  never freezes, and it's **off by default** — zero cost on the live render path
+  (the render loop stays at 0 allocs/op). *(v1 captures the viewport — sprites,
+  poses, background animating; the chatbox-text overlay and a higher-quality
+  animated-WebP export are the follow-ups.)*
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.
