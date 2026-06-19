@@ -363,6 +363,12 @@ type App struct {
 	// broadcast burst into a single play. See modsfx.go.
 	lastModSFX [3]time.Time
 
+	// Scene recording (M16, see replay.go): when recActive, the event loop taps
+	// the scene-mutating events into rec; recStart anchors the relative offsets.
+	recActive bool
+	rec       *sceneRecording
+	recStart  time.Time
+
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
 	// rotation background URL ("" = not overriding). The viewport renders a
@@ -1821,6 +1827,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// the room has no use for these — debug overlay only.
 			a.pushDebug("server: " + ev.Text)
 			continue
+		}
+		if a.recActive { // M16: tap the scene event stream for a replay recording
+			a.recordEvent(ev)
 		}
 		if a.room != nil {
 			a.room.HandleEvent(ev)

@@ -25,22 +25,23 @@ import (
 // Hotkey actions (persisted overrides in Prefs.Hotkeys; all fire on
 // Ctrl+<key>).
 const (
-	hotkeyHoldIt     = "holdit"
-	hotkeyObjection  = "objection"
-	hotkeyTakeThat   = "takethat"
-	hotkeyCustom     = "custom"
-	hotkeyPosCycle   = "pos_cycle"
-	hotkeyMusicStop  = "music_stop"
-	hotkeyLogJump    = "log_jump"
-	hotkeyScreenshot = "screenshot"
-	hotkeyTheater    = "theater"
-	hotkeyLogin      = "login"
-	hotkeyMuteSFX    = "mute_sfx"
-	hotkeyQuickSwap  = "quick_swap"
-	hotkeyEmoteCycle = "emote_cycle"
-	hotkeyPinNote    = "pin_note"
-	hotkeyFriendHi   = "friend_toggle"
-	hotkeyExtras     = "extras"
+	hotkeyHoldIt      = "holdit"
+	hotkeyObjection   = "objection"
+	hotkeyTakeThat    = "takethat"
+	hotkeyCustom      = "custom"
+	hotkeyPosCycle    = "pos_cycle"
+	hotkeyMusicStop   = "music_stop"
+	hotkeyLogJump     = "log_jump"
+	hotkeyScreenshot  = "screenshot"
+	hotkeyRecordScene = "record_scene"
+	hotkeyTheater     = "theater"
+	hotkeyLogin       = "login"
+	hotkeyMuteSFX     = "mute_sfx"
+	hotkeyQuickSwap   = "quick_swap"
+	hotkeyEmoteCycle  = "emote_cycle"
+	hotkeyPinNote     = "pin_note"
+	hotkeyFriendHi    = "friend_toggle"
+	hotkeyExtras      = "extras"
 	// Per-menu shortcuts: jump straight to an Extras menu (a legacy AO2 theme has
 	// no button for these), skipping the Extras box if you know the key.
 	hotkeyCharMenu      = "char_menu"
@@ -76,6 +77,7 @@ var hotkeyDefs = []struct {
 	{hotkeyMusicStop, "Stop music", "m"},
 	{hotkeyLogJump, "Jump logs to newest", "l"},
 	{hotkeyScreenshot, "Screenshot", "s"},
+	{hotkeyRecordScene, "Record scene to a replay file (start/stop)", "w"},
 	{hotkeyTheater, "Theater mode", "t"},
 	{hotkeyLogin, "Server login (saved creds)", "g"},
 	{hotkeyMuteSFX, "Mute sound effects", "k"},
@@ -237,6 +239,8 @@ func (a *App) handleHotkeys() {
 		a.jumpLogs()
 	case a.hotkeyFor(hotkeyScreenshot):
 		a.captureScreenshot()
+	case a.hotkeyFor(hotkeyRecordScene):
+		a.toggleRecording()
 	case a.hotkeyFor(hotkeyTheater):
 		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):
