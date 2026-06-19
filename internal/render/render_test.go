@@ -299,7 +299,13 @@ func TestRainbowMod(t *testing.T) {
 			t.Fatalf("cycleForSpeed(%d) = %v, want > 0", s, cycleForSpeed(s))
 		}
 	}
-	rainbowMod(123, 0, 0) // defensive: a zero cycle must not panic either
+	// Defensive: a zero/negative cycle must not panic — it's clamped to
+	// minRainbowCycle, so the result is identical to passing that period.
+	gr, gg, gb := rainbowMod(123, 0, 0)
+	er, eg, eb := rainbowMod(123, minRainbowCycle, 0)
+	if gr != er || gg != eg || gb != eb {
+		t.Fatalf("rainbowMod(zero cycle) = %d,%d,%d, want clamp to minRainbowCycle %d,%d,%d", gr, gg, gb, er, eg, eb)
+	}
 }
 
 // TestViewportStickyScenery pins the black-background fix: flipping the
