@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
@@ -59,17 +60,25 @@ func writeFixture(t *testing.T, dir, rel string, data []byte) {
 // source gone. If the bytes round-trip, a bundled .aorec keeps its visuals when
 // the CDN dies.
 func TestExportReplayRoundTrip(t *testing.T) {
-	// SOURCE: a local "server" holding assets at the webAO paths.
+	// SOURCE: a local "server" holding assets. Derive every fixture path FROM the
+	// URL builder (don't hand-construct) — seg() lowercases + percent-encodes, so
+	// hand-built paths only match on a case-insensitive filesystem. This is the
+	// same export/replay symmetry the feature relies on.
 	srcDir := t.TempDir()
+	srcLocal := assets.NewLocalFetcher([]string{srcDir})
+	origin := srcLocal.BaseURL()
+	urls := courtroom.NewURLBuilder(origin)
+	rel := func(base string) string {
+		r, _ := strings.CutPrefix(base, origin)
+		return r + config.ExtWebP
+	}
 	bgPart, deskPart := courtroom.PositionScene("wit")
 	idleBytes := []byte("PHOENIX-IDLE")
-	writeFixture(t, srcDir, "characters/Phoenix/(a)normal"+config.ExtWebP, idleBytes)
-	writeFixture(t, srcDir, "characters/Phoenix/(b)normal"+config.ExtWebP, []byte("PHOENIX-TALK"))
-	writeFixture(t, srcDir, "background/gs4/"+bgPart+config.ExtWebP, []byte("BG"))
-	writeFixture(t, srcDir, "background/gs4/"+deskPart+config.ExtWebP, []byte("DESK"))
-	srcLocal := assets.NewLocalFetcher([]string{srcDir})
+	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteIdle)), idleBytes)
+	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteTalk)), []byte("PHOENIX-TALK"))
+	writeFixture(t, srcDir, rel(urls.Background("gs4", bgPart)), []byte("BG"))
+	writeFixture(t, srcDir, rel(urls.Background("gs4", deskPart)), []byte("DESK"))
 	srcMgr, _ := buildManager(t, srcLocal, true)
-	origin := srcLocal.BaseURL()
 
 	events := []courtroom.Event{
 		{Kind: courtroom.EventBackground, Text: "gs4"},
@@ -85,7 +94,7 @@ func TestExportReplayRoundTrip(t *testing.T) {
 	if res.Files < 4 {
 		t.Fatalf("expected >=4 bundled assets (idle/talk/bg/desk), got %d", res.Files)
 	}
-	if _, err := os.Stat(filepath.Join(archDir, "characters", "Phoenix", "(a)normal"+config.ExtWebP)); err != nil {
+	if _, err := os.Stat(filepath.Join(archDir, filepath.FromSlash(rel(urls.Emote("Phoenix", "normal", courtroom.EmoteIdle))))); err != nil {
 		t.Fatalf("idle sprite not written into the archive: %v", err)
 	}
 
