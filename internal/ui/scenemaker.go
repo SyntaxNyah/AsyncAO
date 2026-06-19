@@ -152,6 +152,8 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 	a.makerName = sanitizeStem(name)
 	a.makerSel = 0
 	a.makerScroll = 0
+	a.makerPickerOpen = false
+	a.makerPreviewIdx = -1 // force the preview pane to rebuild for the new scene
 	a.makerOpen = true
 }
 
@@ -185,13 +187,31 @@ func (a *App) editRecordingInMaker(path string) {
 	a.openSceneMaker(rec, strings.TrimSuffix(filepath.Base(path), recordingExt))
 }
 
-// closeSceneMaker hides the maker and frees its buffer. The dispatch then falls
-// back to whatever screen was underneath (the maker never changed a.screen).
+// closeSceneMaker hides the maker, frees its buffer, and tears down the preview
+// room (restoring the viewport's preanim callback to the live room). The
+// dispatch then falls back to whatever screen was underneath.
 func (a *App) closeSceneMaker() {
 	a.makerOpen = false
 	a.makerScene = nil
 	a.makerSel = 0
 	a.makerScroll = 0
+	a.makerPickerOpen = false
+	a.teardownMakerPreview()
+}
+
+// teardownMakerPreview disposes the preview-pane room and restores the
+// viewport's one-shot preanim callback to the live room (or clears it).
+func (a *App) teardownMakerPreview() {
+	a.makerPreviewRoom = nil
+	a.makerPreviewOrig = ""
+	a.makerPreviewIdx = -1
+	if a.d.Viewport != nil {
+		if a.room != nil {
+			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+		} else {
+			a.d.Viewport.OnPreanimDone = nil
+		}
+	}
 }
 
 // makerInsert adds an event just after the selection (bounded by the recording
@@ -400,6 +420,10 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 		return // a Preview takes over the window this frame
 	}
 	bx += 112
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 88, H: btnH}, "📂 Open") {
+		a.makerPickerOpen = !a.makerPickerOpen
+	}
+	bx += 96
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "💾 Save .aorec") {
 		a.makerSave()
 	}
@@ -416,9 +440,48 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	y += 8
 
 	bodyY := y
+	if a.makerPickerOpen { // the in-maker "Open a recording" list replaces the body
+		a.drawMakerOpenPicker(pad, bodyY, winW-2*pad, winH-bodyY-pad)
+		return
+	}
 	a.drawMakerList(pad, bodyY, makerListW, winH-bodyY-pad)
 	edX := pad + makerListW + 16
 	a.drawMakerEditor(edX, bodyY, winW-edX-pad)
+}
+
+// drawMakerOpenPicker lists saved recordings to load straight into the maker
+// (the "import existing recordings to edit" ask) — no trip out to Settings.
+func (a *App) drawMakerOpenPicker(x, y, w, h int32) {
+	c := a.ctx
+	recs := listRecordings()
+	c.Label(x, y, fmt.Sprintf("Open a recording to edit (%d found) — click one, or Cancel:", len(recs)), ColText)
+	if c.Button(sdl.Rect{X: x + w - 90, Y: y - 4, W: 90, H: btnH}, "Cancel") {
+		a.makerPickerOpen = false
+		return
+	}
+	y += 28
+	if len(recs) == 0 {
+		c.Label(x, y, "No recordings yet — record a scene (Ctrl+W) or build one with 🆕 New scene.", ColTextDim)
+		return
+	}
+	panel := sdl.Rect{X: x, Y: y, W: w, H: h - 28}
+	c.Fill(panel, ColPanel)
+	rowH := int32(26)
+	maxRows := (panel.H - 8) / rowH
+	for i := range recs {
+		if int32(i) >= maxRows {
+			c.Label(x+8, y+int32(maxRows)*rowH+2, fmt.Sprintf("… and %d more (use the 📁 Folder button).", len(recs)-int(maxRows)), ColTextDim)
+			break
+		}
+		row := sdl.Rect{X: x + 4, Y: y + 4 + int32(i)*rowH, W: w - 8, H: rowH - 2}
+		if c.hovering(row) && c.clicked {
+			a.editRecordingInMaker(recs[i].path) // loads + closes the picker (openSceneMaker)
+		}
+		if c.hovering(row) {
+			c.Fill(row, ColPanelHi)
+		}
+		c.LabelClipped(row.X+8, row.Y+4, row.W-16, recs[i].name, ColText)
+	}
 }
 
 // drawMakerList renders the scrollable event list and its add/reorder/delete

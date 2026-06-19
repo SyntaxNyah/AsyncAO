@@ -384,11 +384,19 @@ type App struct {
 	// through the replay engine, and Save a new .aorec. All state lives here and
 	// is allocated only while makerOpen, so the maker costs nothing on the live
 	// render path (it's drawn as a full-window overlay, like a replay).
-	makerOpen   bool
-	makerScene  *sceneRecording
-	makerSel    int    // selected event index
-	makerName   string // working filename stem (sanitized on Save)
-	makerScroll int32  // event-list scroll offset (px)
+	makerOpen       bool
+	makerScene      *sceneRecording
+	makerSel        int    // selected event index
+	makerName       string // working filename stem (sanitized on Save)
+	makerScroll     int32  // event-list scroll offset (px)
+	makerPickerOpen bool   // the in-maker "Open a recording" list is showing
+	// makerPreviewRoom is a throwaway courtroom that renders the selected line
+	// into the maker's live preview pane (the "studio" WYSIWYG). makerPreviewIdx
+	// is the line it currently reflects, so the pane is rebuilt only when the
+	// selection/scene changes. Driven by driveMakerPreview while makerOpen.
+	makerPreviewRoom *courtroom.Courtroom
+	makerPreviewIdx  int
+	makerPreviewOrig string // origin the preview room was built for (rebuild on change)
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
