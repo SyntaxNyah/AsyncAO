@@ -39,6 +39,19 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   is evicted from the texture cache mid-message (memory pressure in a packed
   room, or a hover-preview fetch), it is re-demanded at high priority within a
   paced window instead of vanishing to black.
+- **High-res art is downscaled at decode, in high quality** (automatic, no
+  setting): packs increasingly ship **huge** sprites (Skrapegropen's are
+  ~2000×2000 px), and shrinking a 2000 px source into a ~700 px viewport with
+  the GPU's single-pass bilinear *undersamples* it — visibly **less smooth** than
+  a browser's mipmapped downsample (the exact gap players spotted vs webAO). So
+  any sprite/background taller than the **display height** is **CatmullRom**
+  -downscaled **once, in the decode pool** (off the render thread) to a near-
+  display-size texture; the per-frame `CopyEx` then works at a gentle ratio and
+  looks sharper. It's a **net speedup**: a smaller cached texture samples faster
+  and uses far less VRAM (a 2000² RGBA frame is ~16 MB → ~4 MB at 1080p), easing
+  the 256 MiB budget. Downscale-only, so already-small art is untouched — and the
+  WebP/AVIF *decode* stays exact; this is purely the resample that used to fall
+  to the GPU every frame.
 - **Missing-asset banner is opt-in** (Settings → Assets, **default OFF**): the
   red on-screen warning naming an asset that failed every format is off by
   default (it was noisy on sparse-pack servers); the failures still stream to

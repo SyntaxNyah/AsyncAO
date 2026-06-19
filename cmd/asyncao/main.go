@@ -168,6 +168,18 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		_ = window.SetFullscreen(sdl.WINDOW_FULLSCREEN_DESKTOP)
 	}
 
+	// Cap full-size textures (sprites/backgrounds) at the display HEIGHT: high-
+	// res art (e.g. 2000px sprites) is high-quality downscaled at decode so the
+	// GPU never single-pass-shrinks a giant source into the viewport every
+	// frame — sharper (closer to a browser's mipmapped downsample) AND cheaper
+	// to draw + less VRAM. Full display bounds, since fullscreen-desktop renders
+	// at that height; downscale-only, so it's a no-op for already-small art.
+	if di, err := window.GetDisplayIndex(); err == nil {
+		if db, err := sdl.GetDisplayBounds(di); err == nil && db.H > 0 {
+			decoder.SetSpriteCap(int(db.H))
+		}
+	}
+
 	renFlags := uint32(sdl.RENDERER_ACCELERATED)
 	if vsync {
 		renFlags |= sdl.RENDERER_PRESENTVSYNC

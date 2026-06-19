@@ -101,6 +101,42 @@ func downscaleDecoded(d *Decoded, target int) *Decoded {
 	return out
 }
 
+// downscaleDecodedAspect shrinks every frame so its HEIGHT fits within maxH,
+// preserving aspect. Sprites/backgrounds are drawn scaled to the viewport
+// height, so a texture taller than the display can never show more detail — it
+// only costs memory and forces SDL to single-pass-shrink the full ~2000px
+// source every frame (the visible quality loss vs a browser's mipmapped
+// downsample). Doing one HIGH-QUALITY CatmullRom downscale here — once, off the
+// render thread — lands a near-display-size texture, so the per-frame CopyEx
+// then has a far gentler ratio and the result is sharper AND cheaper to draw.
+// Downscale-only: a no-op when the asset already fits.
+func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
+	if maxH <= 0 || d.Height <= maxH {
+		return d
+	}
+	newW := d.Width * maxH / d.Height
+	if newW < 1 {
+		newW = 1
+	}
+	out := &Decoded{
+		Animated: d.Animated,
+		Width:    newW,
+		Height:   maxH,
+		Frames:   make([]*image.RGBA, 0, len(d.Frames)),
+		Delays:   d.Delays,
+	}
+	for _, frame := range d.Frames {
+		small, token := newPooledRGBA(newW, maxH)
+		xdraw.CatmullRom.Scale(small, small.Rect, frame, frame.Rect, xdraw.Src, nil)
+		out.Frames = append(out.Frames, small)
+		if token != nil {
+			out.pooledPix = append(out.pooledPix, token)
+		}
+	}
+	d.Release()
+	return out
+}
+
 // boundedFrameCount truncates an animation to the frames whose decoded
 // bytes fit maxDecodedAssetBytes — never below one frame (a single canvas
 // larger than the budget fails at upload with a clear error instead).
@@ -157,6 +193,14 @@ type DecoderPool struct {
 
 	decoded atomic.Int64
 	failed  atomic.Int64
+
+	// spriteCap is the max HEIGHT in px for full-size assets (character
+	// sprites, backgrounds, …); 0 = no cap. Set once at startup from the
+	// display height: a texture taller than the screen can never show more
+	// detail, only cost memory and force the GPU to single-pass-shrink a huge
+	// source every frame. atomic because workers read it while the SDL thread
+	// stores it at startup.
+	spriteCap atomic.Int64
 }
 
 // NewDecoderPool starts workers decode goroutines (DecodeWorkers() when
@@ -174,6 +218,33 @@ func NewDecoderPool(workers int) *DecoderPool {
 		go p.worker()
 	}
 	return p
+}
+
+// SetSpriteCap sets the display-height ceiling (px) for full-size assets; 0
+// disables it. Call once at startup (from the SDL display height) before
+// decodes begin. Safe to call concurrently with workers (atomic store).
+func (p *DecoderPool) SetSpriteCap(px int) {
+	if px < 0 {
+		px = 0
+	}
+	p.spriteCap.Store(int64(px))
+}
+
+// fit shrinks a freshly decoded asset to its on-screen ceiling: fixed-cell
+// types (char icons / emote buttons) to a small square thumbnail, every other
+// (full-size) type to the display-height sprite cap. Both are downscale-only,
+// so already-small assets pass through untouched.
+func (p *DecoderPool) fit(t AssetType, d *Decoded) *Decoded {
+	if d == nil {
+		return d
+	}
+	if target := decodeTargetPx(t); target > 0 {
+		return downscaleDecoded(d, target) // square thumbnail (fixed cells)
+	}
+	if cap := int(p.spriteCap.Load()); cap > 0 {
+		return downscaleDecodedAspect(d, cap) // aspect-preserving, height-bound
+	}
+	return d
 }
 
 // Submit queues a decode. Returns false when the pool is closed (OnDone is
@@ -237,9 +308,7 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 			// animation benefits from the early frame (statics would just
 			// upload the same texture twice).
 			if first.Animated && len(first.Frames) > 0 {
-				if target := decodeTargetPx(req.Type); target > 0 {
-					first = downscaleDecoded(first, target)
-				}
+				first = p.fit(req.Type, first)
 				first.Partial = true
 				req.OnDone(req.URL, first, nil)
 			} else {
@@ -252,9 +321,7 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 	if err != nil {
 		p.failed.Add(1)
 	} else {
-		if target := decodeTargetPx(req.Type); target > 0 {
-			d = downscaleDecoded(d, target)
-		}
+		d = p.fit(req.Type, d)
 		p.decoded.Add(1)
 	}
 	req.OnDone(req.URL, d, err)
