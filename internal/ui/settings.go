@@ -16,6 +16,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -1605,6 +1606,38 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		a.d.Prefs.SetModcallToast(next)
 	}
 	y += 28
+
+	// Mod-command feedback sounds (#60): a distinct sound on ban/kick/mute —
+	// fires when your own /ban /kick /mute lands in OOC, on mod actions you can
+	// see, and when you personally get kicked/banned. Each action has its own
+	// toggle + optional custom file (blank = the built-in default). A duty
+	// signal, so it plays through Do Not Disturb. Test plays it right now.
+	c.Label(pad, y, "Mod-command SFX — play a sound when a ban / kick / mute happens (blank file = built-in default):", ColTextDim)
+	y += 24
+	type modSFXRow struct {
+		label  string
+		on     bool
+		path   string
+		action render.ModAction
+		setOn  func(bool)
+		setPth func(string)
+	}
+	for _, r := range []modSFXRow{
+		{"Ban", a.d.Prefs.ModBanSFXOn(), a.d.Prefs.ModBanSoundPath(), render.ModBan, a.d.Prefs.SetModBanSFX, a.d.Prefs.SetModBanSoundPath},
+		{"Kick", a.d.Prefs.ModKickSFXOn(), a.d.Prefs.ModKickSoundPath(), render.ModKick, a.d.Prefs.SetModKickSFX, a.d.Prefs.SetModKickSoundPath},
+		{"Mute", a.d.Prefs.ModMuteSFXOn(), a.d.Prefs.ModMuteSoundPath(), render.ModMute, a.d.Prefs.SetModMuteSFX, a.d.Prefs.SetModMuteSoundPath},
+	} {
+		if next := c.Checkbox(pad+16, y, r.label, r.on); next != r.on {
+			r.setOn(next)
+		}
+		if next, _ := c.TextField("modsfx:"+r.label, sdl.Rect{X: pad + 130, Y: y, W: 380, H: fieldH}, r.path, "custom .wav/.ogg/.mp3/.opus (blank = built-in)"); next != r.path {
+			r.setPth(next)
+		}
+		if c.Button(sdl.Rect{X: pad + 520, Y: y, W: 60, H: btnH}, "Test") {
+			a.d.Audio.PlayModAction(r.action, r.path)
+		}
+		y += 28
+	}
 	return y
 }
 

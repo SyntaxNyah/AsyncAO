@@ -55,6 +55,42 @@ func TestQoLPrefDefaults(t *testing.T) {
 	}
 }
 
+// TestModSFXPrefs pins the #60 mod-command sounds: every action defaults OFF
+// with no custom file, and toggles + paths survive save→load.
+func TestModSFXPrefs(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.ModBanSFXOn() || p.ModKickSFXOn() || p.ModMuteSFXOn() {
+		t.Error("mod-SFX toggles must default OFF")
+	}
+	if p.ModBanSoundPath() != "" || p.ModKickSoundPath() != "" || p.ModMuteSoundPath() != "" {
+		t.Error("mod-SFX sound paths must default empty")
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetModBanSFX(true)
+	q.SetModKickSFX(true)
+	q.SetModMuteSFX(true)
+	q.SetModBanSoundPath("ban.opus")
+	q.SetModKickSoundPath("kick.wav")
+	q.SetModMuteSoundPath("mute.ogg")
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.ModBanSFXOn() || !r.ModKickSFXOn() || !r.ModMuteSFXOn() {
+		t.Error("mod-SFX toggles lost across reload")
+	}
+	if r.ModBanSoundPath() != "ban.opus" || r.ModKickSoundPath() != "kick.wav" || r.ModMuteSoundPath() != "mute.ogg" {
+		t.Errorf("mod-SFX paths lost: %q %q %q", r.ModBanSoundPath(), r.ModKickSoundPath(), r.ModMuteSoundPath())
+	}
+}
+
 // TestFollowEnabledPref pins the opt-in player-follow toggle: OFF by default,
 // and an explicit ON survives save→load.
 func TestFollowEnabledPref(t *testing.T) {

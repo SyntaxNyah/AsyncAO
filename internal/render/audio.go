@@ -79,6 +79,12 @@ type Audio struct {
 	// cache.
 	alert *mix.Chunk
 
+	// modBan/modKick/modMute are the built-in defaults for the optional
+	// mod-command feedback sounds (#60) — distinct synthesized tones, the
+	// fallback when the user sets no custom file for an action. Same lifecycle
+	// as alert (synth once, freed at close).
+	modBan, modKick, modMute *mix.Chunk
+
 	musicBytes []byte // keeps streamed music memory alive while playing
 	musicRW    *sdl.RWops
 	music      *mix.Music
@@ -157,7 +163,66 @@ func NewAudio(mgr *assets.Manager) *Audio {
 	mix.ReserveChannels(reservedChannels) // keep blips + alerts off the Play(-1) SFX pool
 	a.enabled = true
 	a.loadAlert()
+	a.loadModSounds()
 	return a
+}
+
+// ModAction identifies which mod-command feedback sound to play (#60).
+type ModAction int
+
+const (
+	ModBan ModAction = iota
+	ModKick
+	ModMute
+)
+
+// loadModSounds synthesizes the three built-in mod-action defaults. Best-effort
+// (same as loadAlert): a failure leaves the chunk nil and PlayModAction no-ops
+// for that action.
+func (a *Audio) loadModSounds() {
+	a.modBan = loadSynth(builtinModWAV(ModBan))
+	a.modKick = loadSynth(builtinModWAV(ModKick))
+	a.modMute = loadSynth(builtinModWAV(ModMute))
+}
+
+// loadSynth turns an in-memory WAV into a mixer chunk (nil on failure).
+func loadSynth(wav []byte) *mix.Chunk {
+	rw, err := sdl.RWFromMem(wav)
+	if err != nil {
+		return nil
+	}
+	chunk, err := mix.LoadWAVRW(rw, true) // mixer frees the RW
+	if err != nil {
+		log.Printf("render: built-in mod sound failed: %v", err)
+		return nil
+	}
+	return chunk
+}
+
+// PlayModAction plays the feedback sound for a mod action (#60): the user's
+// custom file if set, else the synthesized built-in default. Routed on the
+// reserved alert channel (its own volume, never cut by blips/SFX), same as the
+// callword/friend ping. No-op when the device is disabled.
+func (a *Audio) PlayModAction(action ModAction, customPath string) {
+	if !a.enabled {
+		return
+	}
+	if customPath != "" {
+		a.PlayFile(customPath)
+		return
+	}
+	var ch *mix.Chunk
+	switch action {
+	case ModBan:
+		ch = a.modBan
+	case ModKick:
+		ch = a.modKick
+	case ModMute:
+		ch = a.modMute
+	}
+	if ch != nil {
+		a.playChunk(ch, pendingAlert)
+	}
 }
 
 // loadAlert synthesizes the built-in notification ping and loads it as a
@@ -220,6 +285,67 @@ func builtinAlertWAV() []byte {
 	return wavMono16(pcm, alertSampleRate)
 }
 
+// modSegment is one tone in a synthesized mod-action sound: a sine that glides
+// from freqStart to freqEnd over ms (equal = steady), then gapMs of silence.
+type modSegment struct {
+	freqStart, freqEnd float64
+	ms, gapMs          int
+	amp                float64
+}
+
+// synthSegments renders a sequence of modSegments to an in-memory mono WAV. Pure
+// generation, run once at open (no hot path). Phase is accumulated across the
+// glide so a frequency sweep stays continuous, and each segment's envelope
+// decays to zero at its end so the segment seams never click.
+func synthSegments(segs []modSegment) []byte {
+	const sr = 44100
+	const attack = 0.06 // fraction of a segment spent ramping in (anti-click)
+	pcm := make([]byte, 0, 4096)
+	phase := 0.0
+	for _, s := range segs {
+		n := sr * s.ms / 1000
+		for i := 0; i < n; i++ {
+			prog := float64(i) / float64(n) // 0..1 through the segment
+			freq := s.freqStart + (s.freqEnd-s.freqStart)*prog
+			env := 1.0
+			if prog < attack {
+				env = prog / attack
+			} else {
+				env = 1 - (prog-attack)/(1-attack)
+			}
+			v := int16(math.Sin(phase) * s.amp * env * math.MaxInt16)
+			pcm = append(pcm, byte(v), byte(v>>8))
+			phase += 2 * math.Pi * freq / sr
+		}
+		for i := 0; i < sr*s.gapMs/1000; i++ {
+			pcm = append(pcm, 0, 0)
+		}
+	}
+	return wavMono16(pcm, sr)
+}
+
+// builtinModWAV synthesizes the default sound for a mod action — each distinct
+// so they're tell-apart by ear: ban = a low, heavy two-tone "thud"; kick = two
+// quick punchy blips; mute = a muffled downward sweep ("shush").
+func builtinModWAV(action ModAction) []byte {
+	switch action {
+	case ModKick:
+		return synthSegments([]modSegment{
+			{freqStart: 620, freqEnd: 620, ms: 80, gapMs: 55, amp: 0.38},
+			{freqStart: 820, freqEnd: 820, ms: 95, gapMs: 0, amp: 0.38},
+		})
+	case ModMute:
+		return synthSegments([]modSegment{
+			{freqStart: 640, freqEnd: 200, ms: 420, gapMs: 0, amp: 0.34},
+		})
+	default: // ModBan
+		return synthSegments([]modSegment{
+			{freqStart: 220, freqEnd: 220, ms: 180, gapMs: 60, amp: 0.42},
+			{freqStart: 160, freqEnd: 160, ms: 360, gapMs: 0, amp: 0.42},
+		})
+	}
+}
+
 // wavMono16 wraps 16-bit mono PCM samples in a minimal RIFF/WAVE container.
 func wavMono16(pcm []byte, sampleRate int) []byte {
 	const (
@@ -274,6 +400,12 @@ func (a *Audio) Close() {
 		a.alert.Free()
 		a.alert = nil
 	}
+	for _, c := range []*mix.Chunk{a.modBan, a.modKick, a.modMute} {
+		if c != nil {
+			c.Free()
+		}
+	}
+	a.modBan, a.modKick, a.modMute = nil, nil, nil
 	mix.CloseAudio()
 	mix.Quit() // unload the codec libs loaded in NewAudio
 	a.enabled = false

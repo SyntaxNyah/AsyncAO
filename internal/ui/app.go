@@ -358,6 +358,11 @@ type App struct {
 	// lastOSToast rate-limits friend desktop toasts (osToastMinInterval).
 	lastOSToast time.Time
 
+	// lastModSFX debounces the mod-command feedback sounds per action (#60),
+	// indexed by render.ModAction — collapses the OOC actor-confirm + area
+	// broadcast burst into a single play. See modsfx.go.
+	lastModSFX [3]time.Time
+
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
 	// rotation background URL ("" = not overriding). The viewport renders a
@@ -1724,6 +1729,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			if !looksLikeAreaList(ev.Text) { // your own /ga roster lists your name — don't self-ping
 				a.checkCallwords(ev.Text)
 			}
+			a.scanModActionOOC(ev.Name, ev.Text) // #60: optional ban/kick/mute feedback sound
 		case courtroom.EventMessage:
 			if ev.Message != nil {
 				fr, fc := a.friendMessage(a.serverKey, ev.Message)
@@ -1797,6 +1803,16 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventDisconnect:
 			a.connErr = ev.Text
 			a.pushDebug("disconnected: " + ev.Text)
+			// #60: KK/KB/BD surface here as "Kicked: …" / "Banned: …" — play the
+			// matching feedback sound (cooldown-gated, so an auto-reconnect retry
+			// loop can't machine-gun it) before the session tears down. The audio
+			// device is app-level, so it keeps playing across the disconnect.
+			switch {
+			case strings.HasPrefix(ev.Text, "Kicked"):
+				a.playModActionSFX(render.ModKick)
+			case strings.HasPrefix(ev.Text, "Banned"):
+				a.playModActionSFX(render.ModBan)
+			}
 			a.Disconnect()
 			a.scheduleAutoReconnect() // M2: unexpected drop → auto-retry this server (Disconnect just cancelled it)
 			continue

@@ -410,6 +410,12 @@ type AssetPreferences struct {
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
 	FriendSound            bool                         `json:"friendSound"`
 	FriendSoundFile        string                       `json:"friendSoundFile"`
+	ModBanSFX              bool                         `json:"modBanSFX"`
+	ModKickSFX             bool                         `json:"modKickSFX"`
+	ModMuteSFX             bool                         `json:"modMuteSFX"`
+	ModBanSoundFile        string                       `json:"modBanSoundFile"`
+	ModKickSoundFile       string                       `json:"modKickSoundFile"`
+	ModMuteSoundFile       string                       `json:"modMuteSoundFile"`
 	ModcallToast           bool                         `json:"modcallToast"`
 	CallwordSoundFile      string                       `json:"callwordSoundFile"`
 	DebugOverlay           bool                         `json:"debugOverlay"`
@@ -581,7 +587,13 @@ type prefsJSON struct {
 	FriendGlowPulse        bool      `json:"friendGlowPulse"`        // default OFF
 	FriendSound            bool      `json:"friendSound"`            // default OFF
 	FriendSoundFile        string    `json:"friendSoundFile"`
-	ModcallToast           bool      `json:"modcallToast"` // default OFF
+	ModBanSFX              bool      `json:"modBanSFX"`        // default OFF
+	ModKickSFX             bool      `json:"modKickSFX"`       // default OFF
+	ModMuteSFX             bool      `json:"modMuteSFX"`       // default OFF
+	ModBanSoundFile        string    `json:"modBanSoundFile"`  // "" = built-in default
+	ModKickSoundFile       string    `json:"modKickSoundFile"` // "" = built-in default
+	ModMuteSoundFile       string    `json:"modMuteSoundFile"` // "" = built-in default
+	ModcallToast           bool      `json:"modcallToast"`     // default OFF
 	CallwordSoundFile      string    `json:"callwordSoundFile"`
 	DebugOverlay           bool      `json:"debugOverlay"`
 	FormatAutoDetect       *bool     `json:"formatAutoDetect"` // absent = default ON
@@ -998,6 +1010,12 @@ func load(path string) (*AssetPreferences, error) {
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
 	p.FriendSound = onDisk.FriendSound
 	p.FriendSoundFile = onDisk.FriendSoundFile
+	p.ModBanSFX = onDisk.ModBanSFX
+	p.ModKickSFX = onDisk.ModKickSFX
+	p.ModMuteSFX = onDisk.ModMuteSFX
+	p.ModBanSoundFile = onDisk.ModBanSoundFile
+	p.ModKickSoundFile = onDisk.ModKickSoundFile
+	p.ModMuteSoundFile = onDisk.ModMuteSoundFile
 	p.ModcallToast = onDisk.ModcallToast
 	p.CallwordSoundFile = onDisk.CallwordSoundFile
 	p.DebugOverlay = onDisk.DebugOverlay
@@ -2438,6 +2456,104 @@ func (p *AssetPreferences) SetFriendSoundPath(path string) {
 	path = strings.TrimSpace(path)
 	p.mu.Lock()
 	p.FriendSoundFile = path
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Mod-command feedback sounds (#60, each OFF by default): play a distinct sound
+// when a ban / kick / mute happens. Fired by the OOC mod-action scan and the
+// kick/ban disconnect; each action has its own toggle and an optional custom
+// file ("" = the built-in synthesized default). A duty signal — deliberately
+// NOT silenced by DND / streamer mode (consistent with modcalls).
+func (p *AssetPreferences) ModBanSFXOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ModBanSFX
+}
+
+func (p *AssetPreferences) SetModBanSFX(on bool) {
+	p.mu.Lock()
+	if p.ModBanSFX != on {
+		p.ModBanSFX = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+func (p *AssetPreferences) ModKickSFXOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ModKickSFX
+}
+
+func (p *AssetPreferences) SetModKickSFX(on bool) {
+	p.mu.Lock()
+	if p.ModKickSFX != on {
+		p.ModKickSFX = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+func (p *AssetPreferences) ModMuteSFXOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ModMuteSFX
+}
+
+func (p *AssetPreferences) SetModMuteSFX(on bool) {
+	p.mu.Lock()
+	if p.ModMuteSFX != on {
+		p.ModMuteSFX = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+func (p *AssetPreferences) ModBanSoundPath() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ModBanSoundFile
+}
+
+func (p *AssetPreferences) SetModBanSoundPath(path string) {
+	path = strings.TrimSpace(path)
+	p.mu.Lock()
+	p.ModBanSoundFile = path
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+func (p *AssetPreferences) ModKickSoundPath() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ModKickSoundFile
+}
+
+func (p *AssetPreferences) SetModKickSoundPath(path string) {
+	path = strings.TrimSpace(path)
+	p.mu.Lock()
+	p.ModKickSoundFile = path
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+func (p *AssetPreferences) ModMuteSoundPath() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ModMuteSoundFile
+}
+
+func (p *AssetPreferences) SetModMuteSoundPath(path string) {
+	path = strings.TrimSpace(path)
+	p.mu.Lock()
+	p.ModMuteSoundFile = path
 	p.mu.Unlock()
 	p.markDirty()
 }

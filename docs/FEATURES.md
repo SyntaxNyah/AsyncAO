@@ -361,6 +361,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **"● Do Not Disturb — alerts muted"** badge sits above the OOC box while it's on
   (**click it to turn DND off**), and the toast beside it is clipped so the two
   never overlap. The friend *glow* in the log is passive, so it stays on.
+- **Mod-command feedback sounds** (Settings → Mod tools, each **OFF by
+  default**): a distinct sound when a **ban / kick / mute** happens — handy for a
+  moderator. Each of the three actions has **its own toggle and an optional
+  custom file** (`.wav/.ogg/.mp3/.opus`; blank = a built-in synthesized default,
+  and a **Test** button auditions it). It fires on **both** signals: the exact
+  `KK`/`KB` disconnect packets (when *you* get kicked/banned) **and** a scan of
+  **server** OOC lines for the action (so your own `/ban`·`/kick`·`/mute`
+  landing — and visible mod actions — sound too). The classifier is server-origin
+  gated (a player typing "ban" can't trip it), excludes `un-`/negated forms
+  (`unbanned`, "not muted"), picks **one** sound per line (fixed precedence), and
+  a short **per-action cooldown** collapses the usual confirmation+broadcast
+  double-line into a single play. As a **duty** signal it deliberately plays
+  **through Do Not Disturb**. *(The OOC keywords are hardcoded constants tuned to
+  tsuserver-family wording — a one-line edit per server, not a config knob.)*
 - **Per-SFX mute** (M11): silence an emote sound effect that's grating — the
   **last SFX you hear** gets a one-click **"Mute last SFX: &lt;name&gt;"** toggle in
   **Settings → Audio & Chat**, with the muted list (× to unmute) below it. Global
