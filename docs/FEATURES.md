@@ -291,15 +291,23 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   never overwrites the file you opened). Because a scene is just a list of events
   and `.aorec` is **pretty-printed JSON**, you can also open one in **any text
   editor** and tweak it by hand. The editor is a drawn-only-while-open overlay,
-  so it costs **nothing** on the live render path. **Archival note:** the
-  `.aorec` *script* is tiny and lasts forever, but its **visuals** are streamed
-  from the recorded **Origin** at replay time — so a scene built against a CDN
-  needs that CDN to stay up to render. The script never expires; for a permanent
-  *visual* archive, keep a copy of the asset base (a true bake-the-assets-in
-  export is on the roadmap).
-  *(Roadmap: a background picker, an opt-in GIF / animated-WebP export, and a
-  self-contained "bake assets in" archive export for permanent visual
-  archives.)*
+  so it costs **nothing** on the live render path.
+- **Self-contained archive** (CDN-proof, M16): a plain `.aorec` is a tiny script
+  whose **visuals stream from the recorded Origin**, so a scene built against a
+  CDN goes blank if that CDN dies. **📦 Export archive** (in the maker) fixes
+  that: it downloads **every asset the scene needs** — character sprites,
+  backgrounds, desks, music — into `recordings\<name>-archive\` (webAO layout)
+  and writes a **bundled `.aorec`** beside them, so the scene **replays with the
+  CDN gone, forever**. It's **de-duplicated** (a 100-line, 3-character scene
+  bundles three characters' art, not a hundred copies) to stay as small as
+  possible, and resolves each asset through the **same candidate logic** the
+  renderer uses, so export and replay are symmetric by construction (proven by
+  an export→replay round-trip test). Opening a bundled archive (picker or
+  **Ctrl+I**) plays it straight from its folder — the shared asset manager is
+  temporarily pointed at the archive (an atomic source override), so textures
+  still upload through the normal pipeline. *(Tip: export while connected to the
+  origin so the assets are reachable to download.)*
+  *(Roadmap: a background picker, and an opt-in GIF / animated-WebP export.)*
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.
