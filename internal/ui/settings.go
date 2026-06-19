@@ -839,6 +839,23 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 	}
 	y += 10
 
+	y = a.settingsSection(y, w, "Replay playback")
+	c.Label(pad, y, "How fast a replay plays. Lower = slower, so the whole message types out and lingers long enough", ColTextDim)
+	y += 18
+	c.Label(pad, y, "to read; higher = a quick recap. 100% is the readable default — adjusts live while a replay runs.", ColTextDim)
+	y += 26
+	// Bounds mirror the config clamp; SetReplaySpeed is authoritative.
+	const (
+		minReplayPct  = 25
+		maxReplayPct  = 200
+		replayPctStep = 5
+	)
+	rspd := a.d.Prefs.ReplaySpeed()
+	if next := a.sliderRow(y, "  Playback speed %", rspd, replayPctStep, minReplayPct, maxReplayPct); next != rspd {
+		a.d.Prefs.SetReplaySpeed(next)
+	}
+	y += 32
+
 	y = a.settingsSection(y, w, "Export to GIF / video (coming soon)")
 	c.Label(pad, y, "Turn a recording into a shareable GIF/video — with adjustable playback speed and trimmed", ColTextDim)
 	y += 18

@@ -31,6 +31,15 @@ const (
 	// buffers): a runaway session can't balloon memory. ~5000 IC messages is
 	// hours of play; recording stops accepting events past the cap.
 	maxRecordedEvents = 5000
+
+	// Replay pacing base (at 100% playback speed). A replay is meant to be
+	// WATCHED, not skimmed, so it's deliberately slower than live chat: the
+	// crawl is a relaxed reading cadence and the linger gives time to read the
+	// whole finished line before the next event is fed. The ReplaySpeed pref
+	// scales both — lower percent = slower (longer crawl + linger), higher =
+	// faster — so the user can dial it from a slow cinematic to a quick recap.
+	replayBaseCrawlMs = 55   // ms per character typed at 100%
+	replayBaseStayMs  = 3200 // ms the finished line lingers at 100%
 )
 
 // recEvent is one recorded scene-mutating event. Only the three events that
@@ -289,20 +298,35 @@ func (a *App) toggleReplay() {
 	a.startReplay(rec, filepath.Base(path))
 }
 
+// replayTiming maps the ReplaySpeed pref (percent, 100 = base) to the replay
+// typewriter crawl + linger. 100% is the readable base; lower percent slows
+// both (so the whole message plays out and can be read), higher speeds it up.
+// Re-applied every frame in driveReplay so the Studio "Playback speed" slider
+// is live — the new crawl takes the NEXT typed message, the new linger the next
+// settle (Typewriter precomputes per-rune delays at Start; TextStay is read at
+// linger), which is exactly when a mid-replay speed change should bite.
+func (a *App) replayTiming() (crawl, stay time.Duration) {
+	spd := a.d.Prefs.ReplaySpeed()
+	if spd < 1 {
+		spd = 1 // defensive: the pref is clamped to ≥25, but never divide by zero
+	}
+	crawl = time.Duration(replayBaseCrawlMs*100/spd) * time.Millisecond
+	stay = time.Duration(replayBaseStayMs*100/spd) * time.Millisecond
+	return crawl, stay
+}
+
 // startReplay spins up a throwaway courtroom pointed at the recorded asset
 // origin (asset HTTP fetch is independent of the game WS), seeds the starting
 // background so the first frames aren't blank, and begins feeding events. Paced
-// to the user's live timing settings.
+// by replayTiming (slower than live, scaled by the Playback-speed slider).
 func (a *App) startReplay(rec *sceneRecording, name string) {
 	if rec == nil || len(rec.Events) == 0 {
 		return
 	}
 	defer a.recoverReplay("start") // building the room / seeding must never crash the app
 	a.replayRoom = courtroom.NewCourtroom(courtroom.NewURLBuilder(rec.Origin), a.d.Manager, nil, a.d.Audio)
-	crawlMs, stayMs, _ := a.d.Prefs.Timing()
-	a.replayRoom.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
-	a.replayRoom.TextStay = time.Duration(stayMs) * time.Millisecond
-	a.replayRoom.CatchUp = false // play every recorded line in full; the driver feeds one at a time
+	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // slower than live + slider-driven
+	a.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
 	a.replayRoom.ReduceMotion = a.d.Prefs.ReduceMotion()
 	a.replayRoom.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	if a.d.Viewport != nil { // one-shot preanim completion must notify the REPLAY room now
@@ -389,6 +413,7 @@ func (a *App) recoverReplay(where string) {
 // viewport sync), wrapped so a panic stops the replay instead of crashing.
 func (a *App) driveReplay(dt time.Duration) {
 	defer a.recoverReplay("update")
+	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // live Playback-speed slider
 	a.advanceReplay(dt)
 	a.replayRoom.Update(dt)
 	a.d.Viewport.SetSpriteFX(a.spriteFX())

@@ -259,9 +259,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   pointed at the recorded asset origin (sprites/bg stream over HTTP, no live
   server needed), seeds the starting background, and feeds each line **when the
   stage goes idle** so the courtroom's own pacing — not raw timestamps — times
-  it. An **■ Stop replay** button shows on the stage while one plays. *(Roadmap:
-  a from-lobby replay screen, an event-timeline editor to retime/trim, and an
-  opt-in GIF/video export — all cheap because they edit events, not pixels.)*
+  it (recorded wall-clock gaps between lines are discarded, so a replay never
+  inherits dead air). An **■ Stop replay** button shows on the stage while one
+  plays. A **Playback speed** slider (Studio tab, 25–200 %, **100 % default**)
+  paces the replay: it's deliberately **slower than live chat** so the whole
+  message types out and lingers long enough to read, and the slider adjusts it
+  **live** — drag it mid-replay and the next line picks up the new speed.
+  *(Roadmap: a from-lobby replay screen, an event-timeline editor to
+  retime/trim, and an opt-in GIF/video export — all cheap because they edit
+  events, not pixels.)*
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.

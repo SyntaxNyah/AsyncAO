@@ -235,6 +235,16 @@ const (
 	defaultSpriteTintColor = 0xFF44CC // hot pink — only used once Solid tint is enabled
 )
 
+// Scene-replay playback speed (M16): a percent where 100 = the comfortable
+// readable base, lower = slower (longer typing + linger so the whole line can
+// be read), higher = faster. Default-ON to a slower-than-live pace because the
+// live chat crawl is tuned for typing, not watching back.
+const (
+	minReplaySpeed     = 25
+	maxReplaySpeed     = 200
+	defaultReplaySpeed = 100
+)
+
 // Per-speaker name colours (OFF by default): each speaker's name is tinted by a
 // stable hash of the name. Saturation/value are user-tunable; value has a floor
 // so a name can't go unreadable-dark on the chat panel.
@@ -407,6 +417,7 @@ type AssetPreferences struct {
 	RainbowSprites         bool                         `json:"rainbowSprites"`
 	ShowRecordButton       bool                         `json:"showRecordButton"`
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
+	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
 	RainbowPairDesync      bool                         `json:"rainbowPairDesync"`
@@ -589,6 +600,7 @@ type prefsJSON struct {
 	RainbowSprites         bool      `json:"rainbowSprites"`         // default OFF
 	ShowRecordButton       bool      `json:"showRecordButton"`       // default OFF
 	RainbowSpriteSpeed     *int      `json:"rainbowSpriteSpeed"`     // absent = default
+	ReplayPlaybackSpeed    *int      `json:"replaySpeed"`            // absent = default
 	RainbowSpriteVividness *int      `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
 	RainbowSpriteGlow      bool      `json:"rainbowSpriteGlow"`      // default OFF
 	RainbowPairDesync      bool      `json:"rainbowPairDesync"`      // default OFF
@@ -905,6 +917,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		DragLayout:        defaultDragLayout,
 
 		RainbowSpriteSpeed:     defaultRainbowSpeed,
+		ReplayPlaybackSpeed:    defaultReplaySpeed,
 		RainbowSpriteVividness: defaultRainbowVivid,
 		SpriteTintColor:        defaultSpriteTintColor,
 		SmoothScaling:          defaultSmoothScaling,
@@ -1015,6 +1028,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.ShowRecordButton = onDisk.ShowRecordButton
 	if onDisk.RainbowSpriteSpeed != nil {
 		p.RainbowSpriteSpeed = clampPercent(*onDisk.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
+	}
+	if onDisk.ReplayPlaybackSpeed != nil {
+		p.ReplayPlaybackSpeed = clampPercent(*onDisk.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
 	}
 	if onDisk.RainbowSpriteVividness != nil {
 		p.RainbowSpriteVividness = clampPercent(*onDisk.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
@@ -2276,6 +2292,28 @@ func (p *AssetPreferences) RainbowSpeed() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.RainbowSpriteSpeed
+}
+
+// ReplaySpeed reports the scene-replay playback speed percent [25,200] (100 =
+// the readable base, lower = slower). The UI maps it to the typewriter crawl +
+// linger when driving a replay.
+func (p *AssetPreferences) ReplaySpeed() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ReplayPlaybackSpeed
+}
+
+// SetReplaySpeed stores the replay playback speed (clamped to [25,200]).
+func (p *AssetPreferences) SetReplaySpeed(v int) {
+	v = clampPercent(v, minReplaySpeed, maxReplaySpeed)
+	p.mu.Lock()
+	if p.ReplayPlaybackSpeed == v {
+		p.mu.Unlock()
+		return
+	}
+	p.ReplayPlaybackSpeed = v
+	p.mu.Unlock()
+	p.markDirty()
 }
 
 // SetRainbowSpriteSpeed stores the hue speed (clamped to [1,100]).
