@@ -123,6 +123,9 @@ type SpriteFX struct {
 	Solid      bool // fixed-colour wash (used only when !Rainbow)
 	Glow       bool // additive blend (neon) instead of multiplying tint
 	PairDesync bool // offset the pair layer's hue half a period
+	PerCharHue bool // rainbow: offset each character's hue by a hash of its name
+	Wobble     bool // gentle continuous position sway
+	Spin       bool // slow continuous rotation
 
 	Speed     int // rainbow hue speed slider [1,100] (higher = faster)
 	Vividness int // rainbow saturation slider [0,100] (higher = more neon)
@@ -157,6 +160,10 @@ type Viewport struct {
 	fx           SpriteFX
 	rainbowPhase time.Duration
 	curCycle     time.Duration
+	// fxClock free-runs (accumulates dt; int64 ns won't overflow in any
+	// session), so the motion effects (wobble, spin) each take it modulo their
+	// own period and stay continuous without a shared wrap glitch.
+	fxClock time.Duration
 
 	// scratch rects reused every frame (no allocs in the loop): taking the
 	// address of a stack value for a cgo call would force a heap escape
@@ -185,6 +192,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	// only *read* when a wash is enabled.
 	v.curCycle = cycleForSpeed(v.fx.Speed)
 	v.rainbowPhase = (v.rainbowPhase + dt) % v.curCycle
+	v.fxClock += dt // free-running clock for the motion effects (wobble/spin)
 
 	shoutBase := effectiveShoutBase(scene, v.store)
 	v.syncAnimSticky(&v.bgAnim, scene.BackgroundBase)
@@ -362,6 +370,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		var r, g, b uint8
 		if fx.Rainbow {
 			phase := v.rainbowPhase + hueShift
+			if fx.PerCharHue { // each character a different hue at once
+				phase += charHueOffset(layer.Active, v.curCycle)
+			}
 			if v.curCycle > 0 { // defensive: curCycle is floored > 0 in Update
 				phase %= v.curCycle
 			}
@@ -377,7 +388,20 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			_ = tex.SetBlendMode(sdl.BLENDMODE_ADD)
 		}
 	}
-	_ = ren.CopyEx(tex, nil, &v.dstRect, 0, nil, flip)
+	// Optional motion FX (independent of the colour wash): a gentle position
+	// sway and/or a slow spin. Both are pure math off the free-running fxClock,
+	// so they add no allocation — and when off, the offset is 0 and the angle is
+	// 0, leaving the blit byte-identical to before.
+	if fx.Wobble {
+		dx, dy := wobbleOffset(v.fxClock, vp)
+		v.dstRect.X += dx
+		v.dstRect.Y += dy
+	}
+	angle := 0.0
+	if fx.Spin {
+		angle = spinDegrees(v.fxClock)
+	}
+	_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
 	if tinted {
 		// Restore the neutral mod/blend on this SHARED T1 page: leaving either
 		// set would bleed onto every later user of the same texture (the next
@@ -435,6 +459,55 @@ func floorForVividness(v int) int {
 		v = 100
 	}
 	return spriteFloorMax * (100 - v) / 100
+}
+
+// Motion-FX tuning (Wobble / Spin). Slow + small so they read as playful, not
+// nauseating.
+const (
+	wobblePeriod     = 1700 * time.Millisecond // one full sway cycle
+	wobbleAmpDivisor = 40                      // sway amplitude = vp.W / divisor
+	spinPeriod       = 4 * time.Second         // one full rotation
+)
+
+// oscFrac returns clock's phase within period as a fraction in [0,1).
+func oscFrac(clock, period time.Duration) float64 {
+	if period <= 0 {
+		return 0
+	}
+	return float64(clock%period) / float64(period)
+}
+
+// wobbleOffset is a gentle Lissajous sway (x and y on different periods) scaled
+// to the viewport, for the Wobble effect. Pure math — no allocation.
+func wobbleOffset(clock time.Duration, vp sdl.Rect) (dx, dy int32) {
+	amp := float64(vp.W) / wobbleAmpDivisor
+	dx = int32(amp * math.Sin(2*math.Pi*oscFrac(clock, wobblePeriod)))
+	dy = int32(amp * 0.6 * math.Sin(2*math.Pi*oscFrac(clock, wobblePeriod*3/2)))
+	return dx, dy
+}
+
+// spinDegrees is the continuous rotation angle (0..360) for the Spin effect.
+func spinDegrees(clock time.Duration) float64 {
+	return oscFrac(clock, spinPeriod) * 360
+}
+
+// charHueOffset hashes a sprite's base name to a stable hue offset in [0,cycle)
+// so PerCharHue gives each character a different rainbow colour at once. Inline
+// FNV-1a — no allocation, safe on the render path.
+func charHueOffset(base string, cycle time.Duration) time.Duration {
+	if cycle <= 0 {
+		return 0
+	}
+	const (
+		fnvOffset = 2166136261
+		fnvPrime  = 16777619
+	)
+	h := uint32(fnvOffset)
+	for i := 0; i < len(base); i++ {
+		h ^= uint32(base[i])
+		h *= fnvPrime
+	}
+	return time.Duration(uint64(h) % uint64(cycle))
 }
 
 // rainbowMod maps the hue clock to an SDL colour-mod (r,g,b) for the rainbow

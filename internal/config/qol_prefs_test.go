@@ -155,6 +155,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
 	p.SetRainbowPairDesync(true)
+	p.SetRainbowPerChar(true)
+	p.SetSpriteWobble(true)
+	p.SetSpriteSpin(true)
 	p.SetSpriteSolidTint(true)
 	p.SetSpriteTintColor(0x112233)
 	if err := p.Close(); err != nil {
@@ -206,6 +209,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if !q.RainbowSpriteGlowOn() || !q.RainbowPairDesyncOn() || !q.SpriteSolidTintOn() {
 		t.Error("a sprite-FX toggle (glow/desync/solid) lost across reload")
+	}
+	if !q.RainbowPerCharOn() || !q.SpriteWobbleOn() || !q.SpriteSpinOn() {
+		t.Error("a wacky-FX toggle (per-char/wobble/spin) lost across reload")
 	}
 	if q.SpriteTintColorRGB() != 0x112233 {
 		t.Errorf("SpriteTintColor lost: %06x, want 112233", q.SpriteTintColorRGB())

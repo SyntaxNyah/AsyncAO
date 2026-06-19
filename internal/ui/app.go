@@ -2809,6 +2809,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			Solid:      a.d.Prefs.SpriteSolidTintOn(),
 			Glow:       a.d.Prefs.RainbowSpriteGlowOn(),
 			PairDesync: a.d.Prefs.RainbowPairDesyncOn(),
+			PerCharHue: a.d.Prefs.RainbowPerCharOn(),
+			Wobble:     a.d.Prefs.SpriteWobbleOn(),
+			Spin:       a.d.Prefs.SpriteSpinOn(),
 			Speed:      a.d.Prefs.RainbowSpeed(),
 			Vividness:  a.d.Prefs.RainbowVividness(),
 		}

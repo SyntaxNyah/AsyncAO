@@ -139,13 +139,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   - **Neon glow** switches the blend to additive (`BLENDMODE_ADD`) so the tint
     **adds light** and the character glows — it becomes a translucent neon ghost
     (the room shows through, by design).
+  - **Different hue per character** offsets each character's hue by a hash of its
+    name, so several characters on stage cycle to **different colours at once** —
+    a packed room turns into a riot.
+  - **Wobble** sways the sprites gently and continuously, and **Spin** rotates
+    them slowly — pure-math motion off a free-running clock, independent of the
+    colour wash (each takes the clock modulo its own period, so no wrap glitch).
 
-  The hue clock lives on the viewport and everything is pure integer math (the
-  period is hard-floored above zero so the per-frame modulo/divide can never
-  panic). The frame **still allocates zero** with every wash on — rainbow +
-  glow + desync, and solid + glow, are both pinned by
-  `TestRenderFrameRainbowZeroAllocs` — and with it all off there is **no cost at
-  all** (not even the colour-mod calls). The App mirrors the prefs onto the
+  The hue clock lives on the viewport and everything is pure integer/float math
+  (the rainbow period is hard-floored above zero so the per-frame modulo/divide
+  can never panic). The frame **still allocates zero with every effect on at
+  once** — rainbow + glow + desync + per-char hue + wobble + spin, and the solid
+  wash + glow + motion, are both pinned by `TestRenderFrameRainbowZeroAllocs` —
+  and with it all off there is **no cost at all** (the blit is byte-identical:
+  no colour-mod, zero offset, zero angle). The App mirrors the prefs onto the
   viewport once per frame (a few uncontended RLocks, no caching layer).
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a

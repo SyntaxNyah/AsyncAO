@@ -252,8 +252,10 @@ func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 
 	for _, fx := range []SpriteFX{
-		{Rainbow: true, Glow: true, PairDesync: true, Speed: 80, Vividness: 90},
-		{Solid: true, Glow: true, SolidR: 255, SolidG: 64, SolidB: 200},
+		// Everything on at once: rainbow + glow + desync + per-char hue + the
+		// motion effects (wobble + spin) — the worst case for the hot path.
+		{Rainbow: true, Glow: true, PairDesync: true, PerCharHue: true, Wobble: true, Spin: true, Speed: 80, Vividness: 90},
+		{Solid: true, Glow: true, Wobble: true, Spin: true, SolidR: 255, SolidG: 64, SolidB: 200},
 	} {
 		vp.SetSpriteFX(fx)
 		allocs := testing.AllocsPerRun(200, func() {
@@ -262,6 +264,42 @@ func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
 		})
 		if allocs != 0 {
 			t.Errorf("sprite-FX %+v render frame allocates %.1f objects/op, want 0 (spec §12)", fx, allocs)
+		}
+	}
+}
+
+// TestSpriteFXHelpers pins the motion / per-character FX helpers: bounded,
+// deterministic, allocation-free pure math.
+func TestSpriteFXHelpers(t *testing.T) {
+	cycle := cycleForSpeed(50)
+	// charHueOffset: deterministic and bounded to [0,cycle); distinct names
+	// land on distinct offsets (so per-character actually differs).
+	off := charHueOffset("phoenix", cycle)
+	if off < 0 || off >= cycle {
+		t.Errorf("charHueOffset = %v, want [0,%v)", off, cycle)
+	}
+	if charHueOffset("phoenix", cycle) != off {
+		t.Error("charHueOffset must be deterministic for the same name")
+	}
+	if charHueOffset("miles", cycle) == off {
+		t.Error("distinct names should land on distinct hues")
+	}
+	if charHueOffset("x", 0) != 0 {
+		t.Error("charHueOffset with cycle 0 must be 0 (guard)")
+	}
+	// spinDegrees stays within [0,360) across and beyond one period.
+	for _, d := range []time.Duration{0, spinPeriod / 4, spinPeriod - 1, 5 * spinPeriod} {
+		if deg := spinDegrees(d); deg < 0 || deg >= 360 {
+			t.Errorf("spinDegrees(%v) = %v, want [0,360)", d, deg)
+		}
+	}
+	// wobbleOffset never exceeds the amplitude band (vp.W / divisor).
+	vp := sdl.Rect{W: 800, H: 600}
+	maxAmp := int32(800/wobbleAmpDivisor) + 1
+	for _, d := range []time.Duration{0, wobblePeriod / 3, wobblePeriod, 7 * wobblePeriod / 2} {
+		dx, dy := wobbleOffset(d, vp)
+		if dx < -maxAmp || dx > maxAmp || dy < -maxAmp || dy > maxAmp {
+			t.Errorf("wobbleOffset(%v) = %d,%d exceeds amplitude %d", d, dx, dy, maxAmp)
 		}
 	}
 }

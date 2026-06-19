@@ -465,6 +465,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 			a.d.Prefs.SetRainbowPairDesync(next)
 		}
 		y += 26
+		pch := a.d.Prefs.RainbowPerCharOn()
+		if next := c.Checkbox(pad+16, y, "Different hue per character (each on-stage character cycles to its own colour)", pch); next != pch {
+			a.d.Prefs.SetRainbowPerChar(next)
+		}
+		y += 26
 	}
 	sst := a.d.Prefs.SpriteSolidTintOn()
 	if next := c.Checkbox(pad, y, "Solid colour sprite tint (OFF by default): wash sprites in one fixed colour instead of a cycle (rainbow takes priority if both are on)", sst); next != sst {
@@ -495,6 +500,17 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		}
 		y += 26
 	}
+	// Motion FX (independent of the colour wash, OFF by default).
+	wob := a.d.Prefs.SpriteWobbleOn()
+	if next := c.Checkbox(pad, y, "Wobble sprites (OFF by default): a gentle, continuous sway", wob); next != wob {
+		a.d.Prefs.SetSpriteWobble(next)
+	}
+	y += 26
+	spn := a.d.Prefs.SpriteSpinOn()
+	if next := c.Checkbox(pad, y, "Spin sprites (OFF by default): the on-stage characters rotate slowly — maximum chaos", spn); next != spn {
+		a.d.Prefs.SetSpriteSpin(next)
+	}
+	y += 26
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()

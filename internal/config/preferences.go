@@ -403,6 +403,9 @@ type AssetPreferences struct {
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
 	RainbowPairDesync      bool                         `json:"rainbowPairDesync"`
+	RainbowPerChar         bool                         `json:"rainbowPerChar"`
+	SpriteWobble           bool                         `json:"spriteWobble"`
+	SpriteSpin             bool                         `json:"spriteSpin"`
 	SpriteSolidTint        bool                         `json:"spriteSolidTint"`
 	SpriteTintColor        int                          `json:"spriteTintColor"`
 	FriendNotify           bool                         `json:"friendNotify"`
@@ -580,6 +583,9 @@ type prefsJSON struct {
 	RainbowSpriteVividness *int      `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
 	RainbowSpriteGlow      bool      `json:"rainbowSpriteGlow"`      // default OFF
 	RainbowPairDesync      bool      `json:"rainbowPairDesync"`      // default OFF
+	RainbowPerChar         bool      `json:"rainbowPerChar"`         // default OFF
+	SpriteWobble           bool      `json:"spriteWobble"`           // default OFF
+	SpriteSpin             bool      `json:"spriteSpin"`             // default OFF
 	SpriteSolidTint        bool      `json:"spriteSolidTint"`        // default OFF
 	SpriteTintColor        *int      `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool      `json:"friendNotify"`           // default OFF
@@ -1001,6 +1007,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.RainbowSpriteGlow = onDisk.RainbowSpriteGlow
 	p.RainbowPairDesync = onDisk.RainbowPairDesync
+	p.RainbowPerChar = onDisk.RainbowPerChar
+	p.SpriteWobble = onDisk.SpriteWobble
+	p.SpriteSpin = onDisk.SpriteSpin
 	p.SpriteSolidTint = onDisk.SpriteSolidTint
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
@@ -2285,6 +2294,67 @@ func (p *AssetPreferences) SetRainbowPairDesync(on bool) {
 		return
 	}
 	p.RainbowPairDesync = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RainbowPerCharOn reports the "different hue per character" toggle (OFF by
+// default): with rainbow on, each character's hue is offset by a hash of its
+// name, so several on-stage characters show different colours at once.
+func (p *AssetPreferences) RainbowPerCharOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RainbowPerChar
+}
+
+// SetRainbowPerChar toggles the per-character hue offset.
+func (p *AssetPreferences) SetRainbowPerChar(on bool) {
+	p.mu.Lock()
+	if p.RainbowPerChar == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RainbowPerChar = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SpriteWobbleOn reports the "wobble" toggle (OFF by default): a gentle
+// continuous position sway over the on-stage sprites.
+func (p *AssetPreferences) SpriteWobbleOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteWobble
+}
+
+// SetSpriteWobble toggles the sprite wobble.
+func (p *AssetPreferences) SetSpriteWobble(on bool) {
+	p.mu.Lock()
+	if p.SpriteWobble == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteWobble = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SpriteSpinOn reports the "spin" toggle (OFF by default): the on-stage sprites
+// rotate slowly and continuously.
+func (p *AssetPreferences) SpriteSpinOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteSpin
+}
+
+// SetSpriteSpin toggles the sprite spin.
+func (p *AssetPreferences) SetSpriteSpin(on bool) {
+	p.mu.Lock()
+	if p.SpriteSpin == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteSpin = on
 	p.mu.Unlock()
 	p.markDirty()
 }
