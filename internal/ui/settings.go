@@ -779,6 +779,44 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		c.LabelClipped(pad+620, y+4, w-pad-620-scrollBarW, "chain: "+strings.Join(names, " → "), ColTextDim)
 	}
 	y += 34
+
+	// --- Scene recording & replay (M16) ---
+	y = a.settingsSection(y, w, "Scene recording & replay")
+	c.Label(pad, y, "Record the courtroom to a tiny .aorec replay file — it stores the scene EVENTS (who spoke,", ColTextDim)
+	y += 18
+	c.Label(pad, y, "emote, text, timing), not video, so it's near-free and replays at perfect quality. Off by default.", ColTextDim)
+	y += 18
+	c.Label(pad, y, "Record: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyRecordScene))+"   ·   Replay last: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyReplayLast))+"   (rebind in Controls). Saved under recordings\\.", ColTextDim)
+	y += 26
+	srb := a.d.Prefs.ShowRecordButtonOn()
+	if next := c.Checkbox(pad, y, "Show a small ● Record button on the courtroom stage (OFF by default)", srb); next != srb {
+		a.d.Prefs.SetShowRecordButton(next)
+	}
+	y += 28
+	// Recordings picker. listRecordings does a dir read, but this is the Settings
+	// menu (never the courtroom render path), so it stays fresh with no caching.
+	recs := listRecordings()
+	if len(recs) == 0 {
+		c.Label(pad, y+4, "No recordings yet — press the Record key during a scene to make one.", ColTextDim)
+		y += 26
+	} else {
+		c.Label(pad, y+4, "Your recordings (newest first) — Play replays one on the courtroom stage:", ColText)
+		y += 26
+		const maxShow = 8
+		for i, r := range recs {
+			if i >= maxShow {
+				c.Label(pad+16, y+4, "… and "+strconv.Itoa(len(recs)-maxShow)+" more in the recordings\\ folder.", ColTextDim)
+				y += 24
+				break
+			}
+			if c.Button(sdl.Rect{X: pad + 16, Y: y, W: 70, H: btnH}, "▶ Play") {
+				a.replayFromPath(r.path)
+			}
+			c.LabelClipped(pad+96, y+4, w-pad-96-scrollBarW, r.name, ColText)
+			y += 28
+		}
+	}
+	y += 6
 	return y
 }
 

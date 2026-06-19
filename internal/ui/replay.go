@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -166,17 +169,36 @@ func loadRecording(path string) (*sceneRecording, error) {
 	return &rec, nil
 }
 
-// latestRecordingPath returns the newest .aorec under recordings\ ("" = none).
-func latestRecordingPath() string {
+// recordingsDir is recordings\ next to the exe (created on demand).
+func recordingsDir() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
-	entries, err := os.ReadDir(filepath.Join(filepath.Dir(exe), "recordings"))
-	if err != nil {
-		return ""
+	return filepath.Join(filepath.Dir(exe), "recordings")
+}
+
+// recordingFile is one saved replay in the picker.
+type recordingFile struct {
+	name string
+	path string
+}
+
+// listRecordings returns the .aorec files under recordings\, newest first.
+func listRecordings() []recordingFile {
+	dir := recordingsDir()
+	if dir == "" {
+		return nil
 	}
-	best, bestMod := "", time.Time{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	type withMod struct {
+		recordingFile
+		mod time.Time
+	}
+	var all []withMod
 	for _, en := range entries {
 		if en.IsDir() || !strings.HasSuffix(en.Name(), recordingExt) {
 			continue
@@ -185,11 +207,46 @@ func latestRecordingPath() string {
 		if err != nil {
 			continue
 		}
-		if info.ModTime().After(bestMod) {
-			best, bestMod = filepath.Join(filepath.Dir(exe), "recordings", en.Name()), info.ModTime()
-		}
+		all = append(all, withMod{recordingFile{en.Name(), filepath.Join(dir, en.Name())}, info.ModTime()})
 	}
-	return best
+	sort.Slice(all, func(i, j int) bool { return all[i].mod.After(all[j].mod) })
+	out := make([]recordingFile, len(all))
+	for i, w := range all {
+		out[i] = w.recordingFile
+	}
+	return out
+}
+
+// latestRecordingPath returns the newest .aorec under recordings\ ("" = none).
+func latestRecordingPath() string {
+	if rs := listRecordings(); len(rs) > 0 {
+		return rs[0].path
+	}
+	return ""
+}
+
+// replayFromPath loads a specific .aorec and starts replaying it (the picker
+// entry point). v1 renders the replay on the courtroom stage, so it asks the
+// user to connect first if they're in the lobby.
+func (a *App) replayFromPath(path string) {
+	if a.recActive {
+		a.warnLine = "Stop recording first, then replay."
+		a.warnAt = time.Now()
+		return
+	}
+	rec, err := loadRecording(path)
+	if err != nil {
+		a.warnLine = "Couldn't load recording: " + err.Error()
+		a.warnAt = time.Now()
+		return
+	}
+	if a.room == nil {
+		a.warnLine = "Connect to a server to watch a replay — it plays on the courtroom stage."
+		a.warnAt = time.Now()
+		return
+	}
+	a.screen = ScreenCourtroom
+	a.startReplay(rec, filepath.Base(path))
 }
 
 // toggleReplay starts replaying the most recent recording, or stops the current
@@ -284,4 +341,28 @@ func (a *App) stopReplay() {
 	}
 	a.warnLine = "Replay ended."
 	a.warnAt = time.Now()
+}
+
+// drawStageRecordButton draws the optional on-stage control at the top-left of
+// the viewport. While replaying it's a Stop-replay button (so a replay is always
+// easy to end on screen); otherwise it's the opt-in ● Record toggle, shown only
+// when the "Show a Record button" setting is on.
+func (a *App) drawStageRecordButton(vp sdl.Rect) {
+	c := a.ctx
+	if a.replaying {
+		if c.Button(sdl.Rect{X: vp.X + 6, Y: vp.Y + 6, W: 104, H: 22}, "■ Stop replay") {
+			a.stopReplay()
+		}
+		return
+	}
+	if !a.d.Prefs.ShowRecordButtonOn() {
+		return
+	}
+	label := "● Record"
+	if a.recActive {
+		label = "■ Stop rec"
+	}
+	if c.Button(sdl.Rect{X: vp.X + 6, Y: vp.Y + 6, W: 92, H: 22}, label) {
+		a.toggleRecording()
+	}
 }

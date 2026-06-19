@@ -150,6 +150,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetAutoReconnect(false)    // same absent-default-ON pointer
 	p.SetMusicHistory(false)     // same absent-default-ON pointer
 	p.SetRainbowSprites(true)    // default-OFF plain bool — must survive as true
+	p.SetShowRecordButton(true)  // default-OFF plain bool
 	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
@@ -200,6 +201,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if !q.RainbowSpritesOn() {
 		t.Error("RainbowSprites=true lost across reload")
+	}
+	if !q.ShowRecordButtonOn() {
+		t.Error("ShowRecordButton=true lost across reload")
 	}
 	if q.FriendButtonShown() {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")

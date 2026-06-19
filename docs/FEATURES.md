@@ -246,6 +246,24 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 
 ## Quality of life
 
+- **Scene recording & replay** (M16, Settings → General, **off by default**):
+  record a courtroom scene to a tiny **`.aorec`** replay file and play it back
+  **natively at perfect quality**. The trick: it records the **event stream**
+  (who spoke, emote, text, bg/music, timing) — **not pixels** — so recording is
+  near-free and the file is tiny + shareable to anyone else on AsyncAO with the
+  same asset base. **Record** with **Ctrl+W** (or an optional small on-stage
+  **● Record** button, toggled on in Settings); files save under `recordings/`
+  beside the exe. **Replay** the latest with **Ctrl+I**, or pick any saved file
+  from the **Settings list** (▶ Play); the stage spins up a throwaway courtroom
+  pointed at the recorded asset origin (sprites/bg stream over HTTP, no live
+  server needed), seeds the starting background, and feeds each line **when the
+  stage goes idle** so the courtroom's own pacing — not raw timestamps — times
+  it. An **■ Stop replay** button shows on the stage while one plays. *(Roadmap:
+  a from-lobby replay screen, an event-timeline editor to retime/trim, and an
+  opt-in GIF/video export — all cheap because they edit events, not pixels.)*
+- **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
+  written off the render thread; ~10× smaller than the old BMP and it previews
+  inline in Discord etc.
 - **IC log**: 1024-line color-preserving scrollback with search, Copy to
   clipboard, and TXT/HTML export (`logs/` beside the exe; HTML keeps the
   AO palette). Lines **word-wrap to the list width** (cached against

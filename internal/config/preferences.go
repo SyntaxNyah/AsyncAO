@@ -399,6 +399,7 @@ type AssetPreferences struct {
 	RainbowMessages        bool                         `json:"rainbowMessages"`
 	RandomMessageColor     bool                         `json:"randomMessageColor"`
 	RainbowSprites         bool                         `json:"rainbowSprites"`
+	ShowRecordButton       bool                         `json:"showRecordButton"`
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
@@ -579,6 +580,7 @@ type prefsJSON struct {
 	RainbowMessages        bool      `json:"rainbowMessages"`        // default OFF
 	RandomMessageColor     bool      `json:"randomMessageColor"`     // default OFF
 	RainbowSprites         bool      `json:"rainbowSprites"`         // default OFF
+	ShowRecordButton       bool      `json:"showRecordButton"`       // default OFF
 	RainbowSpriteSpeed     *int      `json:"rainbowSpriteSpeed"`     // absent = default
 	RainbowSpriteVividness *int      `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
 	RainbowSpriteGlow      bool      `json:"rainbowSpriteGlow"`      // default OFF
@@ -999,6 +1001,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.RainbowMessages = onDisk.RainbowMessages
 	p.RandomMessageColor = onDisk.RandomMessageColor
 	p.RainbowSprites = onDisk.RainbowSprites
+	p.ShowRecordButton = onDisk.ShowRecordButton
 	if onDisk.RainbowSpriteSpeed != nil {
 		p.RainbowSpriteSpeed = clampPercent(*onDisk.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
 	}
@@ -2211,6 +2214,26 @@ func (p *AssetPreferences) SetRainbowSprites(on bool) {
 		return
 	}
 	p.RainbowSprites = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ShowRecordButtonOn reports the "show a small Record button on the courtroom"
+// toggle (OFF by default — the feature is otherwise keyboard-only, Ctrl+W).
+func (p *AssetPreferences) ShowRecordButtonOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ShowRecordButton
+}
+
+// SetShowRecordButton toggles the on-courtroom Record button.
+func (p *AssetPreferences) SetShowRecordButton(on bool) {
+	p.mu.Lock()
+	if p.ShowRecordButton == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ShowRecordButton = on
 	p.mu.Unlock()
 	p.markDirty()
 }

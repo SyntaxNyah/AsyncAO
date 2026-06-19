@@ -878,6 +878,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	vp := sdl.Rect{X: pad, Y: pad, W: vpW, H: vpH}
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.renderViewportZoomed(vp)
+	a.drawStageRecordButton(vp)
 	// Camera input first (Ctrl+wheel zoom / Ctrl+drag pan); sprite drag
 	// only at 1× — zoomed hit rects would lie.
 	chatBandH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
