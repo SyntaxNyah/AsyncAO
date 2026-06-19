@@ -2853,10 +2853,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// wins the wheel/press over the grid scroll and icon clicks under the box.
 	a.handlePreviewInput()
 
-	if a.replaying && a.replayRoom != nil && a.screen != ScreenCourtroom {
-		// M16: a replay launched from the lobby/Settings takes over the whole
-		// window (drawn INSTEAD of the screen, so its controls own the input);
-		// on the courtroom screen the stage shows it in place instead.
+	if a.replaying && a.replayRoom != nil {
+		// M16: a replay takes over the whole window via the guarded overlay,
+		// drawn INSTEAD of any screen — so its controls own the input AND every
+		// replay render path is the recover-wrapped one (a themed courtroom or a
+		// missing theme can't crash a replay this way).
 		a.drawReplayOverlay(winW, winH)
 	} else {
 		switch a.screen {

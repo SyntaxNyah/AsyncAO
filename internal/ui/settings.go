@@ -809,6 +809,11 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 	y += 32
 
 	y = a.settingsSection(y, w, "Recordings")
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "📁 Open folder") {
+		a.openRecordingsFolder()
+	}
+	c.Label(pad+162, y+5, "the default recordings\\ folder (next to AsyncAO) where .aorec files are saved", ColTextDim)
+	y += 32
 	// listRecordings does a dir read, but this is the Settings menu (never the
 	// courtroom render path), so it stays fresh with no caching.
 	recs := listRecordings()

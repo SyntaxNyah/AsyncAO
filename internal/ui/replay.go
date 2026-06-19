@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -226,6 +227,23 @@ func latestRecordingPath() string {
 	return ""
 }
 
+// openRecordingsFolder makes sure the recordings\ folder exists (the default
+// place .aorec files live) and opens it in the OS file manager, so saved
+// recordings are easy to find and share.
+func (a *App) openRecordingsFolder() {
+	dir := recordingsDir()
+	if dir == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		a.pushDebug("recordings folder: " + err.Error())
+		return
+	}
+	_ = exec.Command("explorer.exe", dir).Start()
+	a.warnLine = "Opened recordings folder: " + dir
+	a.warnAt = time.Now()
+}
+
 // replayFromPath loads a specific .aorec and starts replaying it (the picker
 // entry point). The replay plays in an overlay over whatever screen you're on
 // (drawReplayOverlay), so it works connected or from the lobby.
@@ -279,6 +297,7 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	if rec == nil || len(rec.Events) == 0 {
 		return
 	}
+	defer a.recoverReplay("start") // building the room / seeding must never crash the app
 	a.replayRoom = courtroom.NewCourtroom(courtroom.NewURLBuilder(rec.Origin), a.d.Manager, nil, a.d.Audio)
 	crawlMs, stayMs, _ := a.d.Prefs.Timing()
 	a.replayRoom.Typewriter.Interval = time.Duration(crawlMs) * time.Millisecond
