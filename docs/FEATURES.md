@@ -278,7 +278,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   line without replaying the whole scene, and a **character autocomplete** under
   the Character field suggests matching folders from the connected server's
   roster (a real searchable picker — it stays cheap even on a 4000-character
-  server, where a flat dropdown would be useless). A new scene seeds the **live
+  server, where a flat dropdown would be useless). A **📂 Open** button loads any
+  saved recording straight into the editor (no trip out to Settings), and a
+  **live WYSIWYG preview pane** on the right renders the **selected line**
+  — character, emote, pose, background, desk — so you build the scene *visually*
+  instead of guessing from text fields (it rebuilds only when the line's look
+  changes, so typing never re-triggers it). A new scene seeds the **live
   background and a visible desk** so Preview lands on a real, grounded scene
   instead of a character floating on black. Set the **Origin/CDN** the assets
   load from (your own host, or a server's base), then **▶ Preview** it (played
@@ -286,9 +291,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   never overwrites the file you opened). Because a scene is just a list of events
   and `.aorec` is **pretty-printed JSON**, you can also open one in **any text
   editor** and tweak it by hand. The editor is a drawn-only-while-open overlay,
-  so it costs **nothing** on the live render path.
-  *(Roadmap: a background picker, and an opt-in GIF / animated-WebP export —
-  all cheap because they edit events, not pixels.)*
+  so it costs **nothing** on the live render path. **Archival note:** the
+  `.aorec` *script* is tiny and lasts forever, but its **visuals** are streamed
+  from the recorded **Origin** at replay time — so a scene built against a CDN
+  needs that CDN to stay up to render. The script never expires; for a permanent
+  *visual* archive, keep a copy of the asset base (a true bake-the-assets-in
+  export is on the roadmap).
+  *(Roadmap: a background picker, an opt-in GIF / animated-WebP export, and a
+  self-contained "bake assets in" archive export for permanent visual
+  archives.)*
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.
