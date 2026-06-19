@@ -246,7 +246,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 
 ## Quality of life
 
-- **Scene recording & replay** (M16, Settings → General, **off by default**):
+- **Scene recording & replay** (M16, its own **Settings → Studio** tab, **off by
+  default**):
   record a courtroom scene to a tiny **`.aorec`** replay file and play it back
   **natively at perfect quality**. The trick: it records the **event stream**
   (who spoke, emote, text, bg/music, timing) — **not pixels** — so recording is

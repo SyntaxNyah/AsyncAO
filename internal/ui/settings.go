@@ -107,10 +107,10 @@ var settings = settingsState{
 // Settings tabs: the screen is split into these categories so it's
 // navigable instead of one long scroll. numSettingsTabs sizes the per-tab
 // scroll array (keep it == len(settingsTabNames)).
-const numSettingsTabs = 6
+const numSettingsTabs = 7
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Assets", "Audio & Chat", "Account", "Hotkeys",
+	"General", "Theme", "Assets", "Audio & Chat", "Account", "Hotkeys", "Studio",
 }
 
 // Tab indices (order matches settingsTabNames).
@@ -121,6 +121,7 @@ const (
 	tabAudioChat
 	tabAccount
 	tabHotkeys
+	tabStudio
 )
 
 // settingsSearchKeywords maps each tab to terms the search box matches, so
@@ -132,6 +133,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 	tabAudioChat: {"music", "sfx", "sound", "blip", "volume", "text crawl", "text stay", "text speed", "chat limit", "catch up", "callword", "casing", "case"},
 	tabAccount:   {"login", "password", "credential", "master list", "discord", "presence"},
 	tabHotkeys:   {"hotkey", "keybind", "macro", "shortcut", "export", "import", "backup"},
+	tabStudio:    {"studio", "record", "recording", "replay", "aorec", "scene", "capture", "gif", "video", "export", "movie"},
 }
 
 // settingsSearchMatch returns the first tab whose name or keywords contain the
@@ -268,6 +270,8 @@ func (a *App) drawSettings(w, h int32) {
 		y = a.drawSettingsAccount(y, w)
 	case tabHotkeys:
 		y = a.drawSettingsHotkeys(y, w)
+	case tabStudio:
+		y = a.drawSettingsStudio(y, w)
 	}
 	if settings.statusLine != "" {
 		c.Label(pad, y, settings.statusLine, ColAccent)
@@ -779,30 +783,37 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		c.LabelClipped(pad+620, y+4, w-pad-620-scrollBarW, "chain: "+strings.Join(names, " → "), ColTextDim)
 	}
 	y += 34
+	return y
+}
 
-	// --- Scene recording & replay (M16) ---
-	y = a.settingsSection(y, w, "Scene recording & replay")
+// drawSettingsStudio: the "Studio" tab — scene recording, the recordings
+// library/replay picker, and (soon) GIF/video export. See replay.go.
+func (a *App) drawSettingsStudio(y, w int32) int32 {
+	c := a.ctx
+	y = a.settingsSection(y, w, "Scene recording")
 	c.Label(pad, y, "Record the courtroom to a tiny .aorec replay file — it stores the scene EVENTS (who spoke,", ColTextDim)
 	y += 18
-	c.Label(pad, y, "emote, text, timing), not video, so it's near-free and replays at perfect quality. Off by default.", ColTextDim)
+	c.Label(pad, y, "emote, text, timing), not video — so it's near-free and replays at perfect quality. All off by default.", ColTextDim)
 	y += 18
-	c.Label(pad, y, "Record: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyRecordScene))+"   ·   Replay last: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyReplayLast))+"   (rebind in Controls). Saved under recordings\\.", ColTextDim)
+	c.Label(pad, y, "Record: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyRecordScene))+"   ·   Replay last: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyReplayLast))+"   (rebind in Controls). Files save under recordings\\.", ColTextDim)
 	y += 26
 	srb := a.d.Prefs.ShowRecordButtonOn()
 	if next := c.Checkbox(pad, y, "Show a small ● Record button on the courtroom stage (OFF by default)", srb); next != srb {
 		a.d.Prefs.SetShowRecordButton(next)
 	}
-	y += 28
-	// Recordings picker. listRecordings does a dir read, but this is the Settings
-	// menu (never the courtroom render path), so it stays fresh with no caching.
+	y += 32
+
+	y = a.settingsSection(y, w, "Recordings")
+	// listRecordings does a dir read, but this is the Settings menu (never the
+	// courtroom render path), so it stays fresh with no caching.
 	recs := listRecordings()
 	if len(recs) == 0 {
-		c.Label(pad, y+4, "No recordings yet — press the Record key during a scene to make one.", ColTextDim)
+		c.Label(pad, y+4, "No recordings yet — press the Record key (or the on-stage button) during a scene.", ColTextDim)
 		y += 26
 	} else {
-		c.Label(pad, y+4, "Your recordings (newest first) — Play replays one on the courtroom stage:", ColText)
+		c.Label(pad, y+4, "Newest first — Play watches it back (it plays over the screen; ■ Stop to end):", ColText)
 		y += 26
-		const maxShow = 8
+		const maxShow = 12
 		for i, r := range recs {
 			if i >= maxShow {
 				c.Label(pad+16, y+4, "… and "+strconv.Itoa(len(recs)-maxShow)+" more in the recordings\\ folder.", ColTextDim)
@@ -816,7 +827,13 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 			y += 28
 		}
 	}
-	y += 6
+	y += 10
+
+	y = a.settingsSection(y, w, "Export to GIF / video (coming soon)")
+	c.Label(pad, y, "Turn a recording into a shareable GIF/video — with adjustable playback speed and trimmed", ColTextDim)
+	y += 18
+	c.Label(pad, y, "transitions before you export. It's the only part that renders pixels, so it stays opt-in.", ColTextDim)
+	y += 26
 	return y
 }
 
