@@ -69,6 +69,7 @@ func newMessageEvent(char, emote, text string) recEvent {
 			Message:  text,
 			Side:     defaultMakerSide,
 			EmoteMod: protocol.EmoteModIdle,
+			DeskMod:  protocol.DeskShow, // stand behind the desk = grounded, natural AO framing (off = full-body character floating on the bg)
 		},
 	}
 }
@@ -147,9 +148,14 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 // so "New scene → Preview" shows a real sprite out of the box where possible.
 func (a *App) newScene() {
 	origin := a.urls.Origin() // the connected server's asset base, "" when offline
+	bg := ""
+	if a.sess != nil {
+		bg = a.sess.Background // seed the live background so Preview lands on a real scene (with a desk), not a character floating on black
+	}
 	rec := &sceneRecording{
 		Version: recordingVersion,
 		Origin:  origin,
+		StartBg: bg,
 		Events:  []recEvent{newMessageEvent(a.activeCharName(), defaultMakerEmote, "Hello!")},
 	}
 	a.openSceneMaker(rec, "untitled")
@@ -470,6 +476,18 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 		y += 36
 		if next := c.Checkbox(x, y, "Flip the sprite horizontally", m.Flip); next != m.Flip {
 			m.Flip = next
+		}
+		y += 26
+		// Desk: with it on, the character stands behind the desk (grounded, the
+		// normal AO look). Off shows the whole body floating on the background —
+		// which reads as "zoomed in / clipping" with no desk to anchor the feet.
+		showDesk := m.DeskMod != protocol.DeskHide
+		if next := c.Checkbox(x, y, "Show the desk (character stands behind it — off = full body on the background)", showDesk); next != showDesk {
+			if next {
+				m.DeskMod = protocol.DeskShow
+			} else {
+				m.DeskMod = protocol.DeskHide
+			}
 		}
 		y += 26
 		pre := m.EmoteMod == protocol.EmoteModPreanim || m.EmoteMod == protocol.EmoteModPreanimZoom

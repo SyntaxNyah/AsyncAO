@@ -25,6 +25,9 @@ func TestNewMessageEventDefaults(t *testing.T) {
 	if e.Message.EmoteMod != protocol.EmoteModIdle {
 		t.Errorf("new line must be idle (no preanim stall), got emotemod %d", e.Message.EmoteMod)
 	}
+	if e.Message.DeskMod != protocol.DeskShow {
+		t.Errorf("new line must default to desk-shown (grounded framing), got deskmod %d", e.Message.DeskMod)
+	}
 	if e.Message.CharName != "Phoenix" || e.Message.Message != "Objection!" {
 		t.Errorf("fields not set: %+v", e.Message)
 	}
