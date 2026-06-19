@@ -108,6 +108,27 @@ func TestMakerInsertDeleteMove(t *testing.T) {
 	}
 }
 
+func TestBundledSceneRoundTrip(t *testing.T) {
+	scene := &sceneRecording{
+		Version: recordingVersion,
+		Origin:  "https://cdn/base",
+		Bundled: true,
+		Formats: map[string]string{"CharSprite": ".webp", "Background": ".png"},
+		Events:  []recEvent{newMessageEvent("A", "n", "hi")},
+	}
+	data, err := json.MarshalIndent(scene, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back sceneRecording
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !back.Bundled || back.Formats["CharSprite"] != ".webp" || back.Formats["Background"] != ".png" {
+		t.Errorf("bundled archive fields lost in round-trip: %+v", back)
+	}
+}
+
 func TestMakerDuplicateSel(t *testing.T) {
 	a := &App{}
 	a.makerScene = &sceneRecording{Events: []recEvent{newMessageEvent("A", "n", "orig")}}

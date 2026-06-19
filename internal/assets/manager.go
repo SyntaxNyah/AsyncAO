@@ -94,6 +94,14 @@ type Manager struct {
 	// client, so no 404s get learned from being offline.
 	offline atomic.Bool
 
+	// archiveSrc, when set, is consulted BEFORE the normal client in netFetch —
+	// a bundled-scene replay points it at the archive folder so the same shared
+	// Manager (whose Decoded channel the render Pump drains) serves the archive's
+	// local:// URLs. A miss falls through to the normal source, so non-archive
+	// fetches (theme/UI chrome) during a replay are unaffected. atomic: the UI
+	// thread sets/clears it while pool workers read it.
+	archiveSrc atomic.Pointer[Fetcher]
+
 	t1Hits     atomic.Int64
 	t2Hits     atomic.Int64
 	diskHits   atomic.Int64
@@ -111,8 +119,23 @@ func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
 	if m.offline.Load() {
 		return nil, network.ErrAssetNotFound
 	}
+	// Bundled-archive replay: serve the archive folder first; a miss falls
+	// through so concurrent non-archive fetches (theme/UI) still hit the network.
+	if ov := m.archiveSrc.Load(); ov != nil {
+		if data, err := (*ov).Fetch(ctx, url); err == nil && len(data) > 0 {
+			return data, nil
+		}
+	}
 	return m.client.Fetch(ctx, url)
 }
+
+// SetArchiveSource routes fetches through f (an archive folder's LocalFetcher)
+// before the normal source, for the duration of a bundled-scene replay.
+// ClearArchiveSource restores normal fetching.
+func (m *Manager) SetArchiveSource(f Fetcher) { m.archiveSrc.Store(&f) }
+
+// ClearArchiveSource removes the bundled-archive source override.
+func (m *Manager) ClearArchiveSource() { m.archiveSrc.Store(nil) }
 
 // ManagerDeps wires a Manager; every field is required except T1Contains.
 type ManagerDeps struct {

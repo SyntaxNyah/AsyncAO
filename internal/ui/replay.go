@@ -13,6 +13,8 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/archive"
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -63,6 +65,12 @@ type sceneRecording struct {
 	StartBg    string     `json:"startBackground"`
 	RecordedAt string     `json:"recordedAt"`
 	Events     []recEvent `json:"events"`
+	// Bundled marks a self-contained archive: the assets live in THIS file's
+	// folder (webAO layout) and Formats maps AssetType.Name()→ext so replay can
+	// seed the resolver. Set only by the archive exporter; replay reads them to
+	// play from the folder instead of the (possibly dead) Origin CDN.
+	Bundled bool              `json:"bundled,omitempty"`
+	Formats map[string]string `json:"formats,omitempty"`
 }
 
 // recordable reports whether an event mutates the scene (so it belongs in a
@@ -281,7 +289,39 @@ func (a *App) replayFromPath(path string) {
 		a.warnAt = time.Now()
 		return
 	}
+	a.playRecording(rec, path)
+}
+
+// playRecording starts replaying a loaded recording. A self-contained archive
+// (Bundled) plays its assets from the .aorec's own folder, CDN-free; a normal
+// recording streams from its Origin.
+func (a *App) playRecording(rec *sceneRecording, path string) {
+	if rec.Bundled {
+		a.beginBundledReplay(rec, filepath.Dir(path))
+	}
 	a.startReplay(rec, filepath.Base(path))
+}
+
+// beginBundledReplay points the shared Manager at the archive folder (so the
+// archive's local:// asset URLs resolve from disk, with the CDN gone) and seeds
+// the resolver with the archive's bundled formats. rec.Origin is rewritten to
+// the archive's local base so the courtroom builds matching URLs. The shared
+// Manager is used deliberately — its Decoded channel is the one the render Pump
+// drains, so textures actually upload. Undone by endBundledReplay.
+func (a *App) beginBundledReplay(rec *sceneRecording, dir string) {
+	local := assets.NewLocalFetcher([]string{dir})
+	rec.Origin = local.BaseURL()
+	a.d.Manager.SetArchiveSource(local)
+	archive.SeedFormats(a.d.Resolver, rec.Origin, rec.Formats)
+	a.replayBundled = true
+}
+
+// endBundledReplay removes the archive source override (replay teardown).
+func (a *App) endBundledReplay() {
+	if a.replayBundled {
+		a.d.Manager.ClearArchiveSource()
+		a.replayBundled = false
+	}
 }
 
 // toggleReplay starts replaying the most recent recording, or stops the current
@@ -308,7 +348,7 @@ func (a *App) toggleReplay() {
 		a.warnAt = time.Now()
 		return
 	}
-	a.startReplay(rec, filepath.Base(path))
+	a.playRecording(rec, path)
 }
 
 // replayTiming maps the ReplaySpeed pref (percent, 100 = base) to the replay
@@ -380,6 +420,7 @@ func (a *App) stopReplay() {
 	if !a.replaying {
 		return
 	}
+	a.endBundledReplay() // drop the archive source override if this was a bundled replay
 	a.replaying = false
 	a.replayRoom = nil
 	a.replayEvents = nil
@@ -406,6 +447,7 @@ func (a *App) recoverReplay(where string) {
 		return
 	}
 	a.pushDebug("replay " + where + " panic: " + fmt.Sprint(r))
+	a.endBundledReplay()
 	a.replaying = false
 	a.replayRoom = nil
 	a.replayEvents = nil

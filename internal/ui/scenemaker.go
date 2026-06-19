@@ -1,7 +1,10 @@
 package ui
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -9,6 +12,8 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/archive"
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -492,6 +497,77 @@ func (a *App) makerSave() {
 	a.warnAt = time.Now()
 }
 
+// exportSceneArchive bundles the scene's assets into a self-contained folder so
+// the .aorec keeps its visuals when the origin CDN dies. It downloads through the
+// live Manager (the same one streaming the session), so it must run connected to
+// the origin — off the UI thread, since it fetches many assets.
+func (a *App) exportSceneArchive(scene *sceneRecording, name string) {
+	if a.makerExporting {
+		return
+	}
+	if scene == nil || len(scene.Events) == 0 || strings.TrimSpace(scene.Origin) == "" {
+		a.warnLine = "Set the Origin/CDN and add at least one line before exporting an archive."
+		a.warnAt = time.Now()
+		return
+	}
+	snap := cloneScene(scene) // the goroutine must not race the edit buffer
+	stem := sanitizeStem(name) + "-archive-" + time.Now().Format("20060102-150405")
+	if a.makerExportCh == nil {
+		a.makerExportCh = make(chan string, 1)
+	}
+	a.makerExporting = true
+	a.warnLine = "Exporting self-contained archive… downloading assets (this can take a moment)."
+	a.warnAt = time.Now()
+	mgr := a.d.Manager
+	go func() { a.makerExportCh <- runArchiveExport(mgr, snap, stem) }()
+}
+
+// runArchiveExport (off-thread) resolves+writes every asset the scene needs into
+// recordings\<stem>\ and drops a bundled .aorec beside them. Returns a status
+// line for the UI.
+func runArchiveExport(mgr *assets.Manager, scene *sceneRecording, stem string) string {
+	dir := recordingsDir()
+	if dir == "" {
+		return "Export failed: no recordings folder."
+	}
+	destDir := filepath.Join(dir, stem)
+	events := make([]courtroom.Event, len(scene.Events))
+	for i, e := range scene.Events {
+		events[i] = eventFromRec(e)
+	}
+	res, err := archive.ExportAssets(context.Background(), mgr, scene.Origin, scene.StartBg, events, destDir)
+	if err != nil {
+		return "Export failed: " + err.Error()
+	}
+	out := cloneScene(scene)
+	out.Bundled = true
+	out.Formats = res.Formats
+	data, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return "Export failed: " + err.Error()
+	}
+	if err := os.WriteFile(filepath.Join(destDir, stem+recordingExt), data, 0o644); err != nil {
+		return "Export failed: " + err.Error()
+	}
+	return fmt.Sprintf("Archive exported (plays without the CDN): recordings\\%s — %d files, %.1f MB.",
+		stem, res.Files, float64(res.Bytes)/(1024*1024))
+}
+
+// pollMakerExport delivers the archive-export result back to the UI (called each
+// frame from Update).
+func (a *App) pollMakerExport() {
+	if !a.makerExporting || a.makerExportCh == nil {
+		return
+	}
+	select {
+	case msg := <-a.makerExportCh:
+		a.makerExporting = false
+		a.warnLine = msg
+		a.warnAt = time.Now()
+	default:
+	}
+}
+
 // eventSummary returns a short tag + one-line description for the event list.
 func eventSummary(e recEvent) (tag, text string) {
 	switch courtroom.EventKind(e.Kind) {
@@ -559,6 +635,12 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 		a.makerSave()
 	}
 	bx += 128
+	if a.makerExporting {
+		c.Label(bx, y+6, "📦 exporting…", ColAccent)
+	} else if c.Button(sdl.Rect{X: bx, Y: y, W: 136, H: btnH}, "📦 Export archive") {
+		a.exportSceneArchive(a.makerScene, a.makerName) // CDN-proof: bundles the assets
+	}
+	bx += 144
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 108, H: btnH}, "🆕 New scene") {
 		a.newScene()
 	}

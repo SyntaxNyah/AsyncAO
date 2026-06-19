@@ -398,6 +398,12 @@ type App struct {
 	makerPreviewIdx  int
 	makerPreviewOrig string          // origin the preview room was built for (rebuild on change)
 	makerPreviewKey  makerPreviewKey // visual identity of the previewed line (rebuild on change)
+	// Self-contained archive (CDN-proof): export bundles a scene's assets into a
+	// folder; replayBundled marks a replay whose assets stream from that folder
+	// (Manager archive-source override) instead of the origin.
+	replayBundled  bool
+	makerExporting bool
+	makerExportCh  chan string // archive-export goroutine → UI (result line)
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
@@ -2837,7 +2843,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollShownameBind()
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollDownload()
-	a.pollBgList() // drain bg discovery even when the picker is closed (slideshow)
+	a.pollMakerExport() // M16: deliver the self-contained archive export result
+	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
