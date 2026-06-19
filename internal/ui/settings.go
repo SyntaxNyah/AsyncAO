@@ -434,11 +434,66 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetRainbowMessages(next)
 	}
 	y += 26
+	// Sprite colour FX (all OFF by default): a render-side wash over the
+	// on-stage characters. Local eye-candy only — nothing on the wire, nobody
+	// else sees it, and zero render cost when everything's off.
 	rbs := a.d.Prefs.RainbowSpritesOn()
-	if next := c.Checkbox(pad, y, "Rainbow character sprites (OFF by default): washes every on-stage sprite through a slow hue cycle — local eye-candy only, nobody else sees it, zero render cost when off", rbs); next != rbs {
+	if next := c.Checkbox(pad, y, "Rainbow character sprites (OFF by default): washes every on-stage sprite through a hue cycle — local eye-candy only, nobody else sees it, zero render cost when off", rbs); next != rbs {
 		a.d.Prefs.SetRainbowSprites(next)
 	}
 	y += 26
+	if rbs {
+		sp := a.d.Prefs.RainbowSpeed()
+		c.Label(pad+16, y+4, "Speed:", ColTextDim)
+		if next := int(c.Slider("rbspeed", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(sp), 100)); next != sp {
+			a.d.Prefs.SetRainbowSpriteSpeed(next)
+			sp = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", sp), ColAccent)
+		y += 26
+		vv := a.d.Prefs.RainbowVividness()
+		c.Label(pad+16, y+4, "Vividness:", ColTextDim)
+		if next := int(c.Slider("rbvivid", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(vv), 100)); next != vv {
+			a.d.Prefs.SetRainbowSpriteVividness(next)
+			vv = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", vv), ColAccent)
+		y += 26
+		dsy := a.d.Prefs.RainbowPairDesyncOn()
+		if next := c.Checkbox(pad+16, y, "Desync the pair's colour (the two characters show different hues at once)", dsy); next != dsy {
+			a.d.Prefs.SetRainbowPairDesync(next)
+		}
+		y += 26
+	}
+	sst := a.d.Prefs.SpriteSolidTintOn()
+	if next := c.Checkbox(pad, y, "Solid colour sprite tint (OFF by default): wash sprites in one fixed colour instead of a cycle (rainbow takes priority if both are on)", sst); next != sst {
+		a.d.Prefs.SetSpriteSolidTint(next)
+	}
+	y += 26
+	if sst {
+		c.Label(pad+16, y+4, "Tint colour:", ColTextDim)
+		cur := a.d.Prefs.SpriteTintColorRGB()
+		sw := sdl.Rect{X: pad + 130, Y: y, W: 28, H: fieldH}
+		c.Fill(sw, sdl.Color{R: uint8(cur >> 16 & 0xFF), G: uint8(cur >> 8 & 0xFF), B: uint8(cur & 0xFF), A: 255})
+		c.Border(sw, ColPanelHi)
+		if c.focusID != "spritetinthex" {
+			a.spriteTintHex = fmt.Sprintf("%06x", cur) // reflect the pref when not typing
+		}
+		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.spriteTintHex, "RRGGBB"); next != a.spriteTintHex {
+			a.spriteTintHex = next
+			if rgb, ok := parseHex6(next); ok {
+				a.d.Prefs.SetSpriteTintColor(rgb)
+			}
+		}
+		y += 28
+	}
+	if rbs || sst { // glow applies to whichever wash is on
+		glw := a.d.Prefs.RainbowSpriteGlowOn()
+		if next := c.Checkbox(pad+16, y, "Neon glow (additive): the tint adds light so sprites glow — they become translucent neon ghosts (you can see the room through them)", glw); next != glw {
+			a.d.Prefs.SetRainbowSpriteGlow(next)
+		}
+		y += 26
+	}
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()

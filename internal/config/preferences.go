@@ -216,6 +216,20 @@ const defaultMusicHistory = true
 // until the user customizes it in Settings.
 const defaultHighlightColor = 0x78AAFF
 
+// Sprite colour-FX knobs (all optional, all OFF/neutral by default). The
+// rainbow Speed maps to the hue-rotation period and Vividness to the colour-mod
+// channel floor (render side); both are plain 0..100 sliders. The solid tint is
+// a packed 0xRRGGBB wash. Ranges are clamped on load and by the setters.
+const (
+	minRainbowSpeed        = 1   // slowest hue rotation
+	maxRainbowSpeed        = 100 // fastest
+	defaultRainbowSpeed    = 70  // ~2.6 s per cycle (close to the original fixed look)
+	minRainbowVivid        = 0   // subtlest tint
+	maxRainbowVivid        = 100 // most saturated / neon
+	defaultRainbowVivid    = 65
+	defaultSpriteTintColor = 0xFF44CC // hot pink — only used once Solid tint is enabled
+)
+
 // Per-speaker name colours (OFF by default): each speaker's name is tinted by a
 // stable hash of the name. Saturation/value are user-tunable; value has a floor
 // so a name can't go unreadable-dark on the chat panel.
@@ -385,6 +399,12 @@ type AssetPreferences struct {
 	RainbowMessages        bool                         `json:"rainbowMessages"`
 	RandomMessageColor     bool                         `json:"randomMessageColor"`
 	RainbowSprites         bool                         `json:"rainbowSprites"`
+	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
+	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
+	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
+	RainbowPairDesync      bool                         `json:"rainbowPairDesync"`
+	SpriteSolidTint        bool                         `json:"spriteSolidTint"`
+	SpriteTintColor        int                          `json:"spriteTintColor"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
@@ -538,22 +558,28 @@ type prefsJSON struct {
 	HighlightColor         *int      `json:"highlightColor"` // absent = default accent
 	BgSlideshow            bool      `json:"bgSlideshow"`    // default OFF (zero value)
 	BgSlideshowSecs        int       `json:"bgSlideshowSecs"`
-	DownloadKBps           int       `json:"downloadKBps"`       // 0 = unlimited (default)
-	ForceCharNames         bool      `json:"forceCharNames"`     // default OFF
-	RandomEmote            bool      `json:"randomEmote"`        // default OFF
-	FriendHighlight        bool      `json:"friendHighlight"`    // default OFF
-	ShowFriendButton       *bool     `json:"showFriendButton"`   // default ON (pointer: absent != off)
-	FollowEnabled          bool      `json:"followEnabled"`      // default OFF (opt-in)
-	DyslexiaFont           bool      `json:"dyslexiaFont"`       // default OFF
-	DNDPersist             bool      `json:"dndPersist"`         // default OFF (DND clears each launch)
-	DNDSaved               bool      `json:"dndSaved"`           // persisted DND state (restored only when DNDPersist)
-	RainbowMessages        bool      `json:"rainbowMessages"`    // default OFF
-	RandomMessageColor     bool      `json:"randomMessageColor"` // default OFF
-	RainbowSprites         bool      `json:"rainbowSprites"`     // default OFF
-	FriendNotify           bool      `json:"friendNotify"`       // default OFF
-	FriendOSToast          bool      `json:"friendOSToast"`      // default OFF
-	FriendGlowPulse        bool      `json:"friendGlowPulse"`    // default OFF
-	FriendSound            bool      `json:"friendSound"`        // default OFF
+	DownloadKBps           int       `json:"downloadKBps"`           // 0 = unlimited (default)
+	ForceCharNames         bool      `json:"forceCharNames"`         // default OFF
+	RandomEmote            bool      `json:"randomEmote"`            // default OFF
+	FriendHighlight        bool      `json:"friendHighlight"`        // default OFF
+	ShowFriendButton       *bool     `json:"showFriendButton"`       // default ON (pointer: absent != off)
+	FollowEnabled          bool      `json:"followEnabled"`          // default OFF (opt-in)
+	DyslexiaFont           bool      `json:"dyslexiaFont"`           // default OFF
+	DNDPersist             bool      `json:"dndPersist"`             // default OFF (DND clears each launch)
+	DNDSaved               bool      `json:"dndSaved"`               // persisted DND state (restored only when DNDPersist)
+	RainbowMessages        bool      `json:"rainbowMessages"`        // default OFF
+	RandomMessageColor     bool      `json:"randomMessageColor"`     // default OFF
+	RainbowSprites         bool      `json:"rainbowSprites"`         // default OFF
+	RainbowSpriteSpeed     *int      `json:"rainbowSpriteSpeed"`     // absent = default
+	RainbowSpriteVividness *int      `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
+	RainbowSpriteGlow      bool      `json:"rainbowSpriteGlow"`      // default OFF
+	RainbowPairDesync      bool      `json:"rainbowPairDesync"`      // default OFF
+	SpriteSolidTint        bool      `json:"spriteSolidTint"`        // default OFF
+	SpriteTintColor        *int      `json:"spriteTintColor"`        // absent = default
+	FriendNotify           bool      `json:"friendNotify"`           // default OFF
+	FriendOSToast          bool      `json:"friendOSToast"`          // default OFF
+	FriendGlowPulse        bool      `json:"friendGlowPulse"`        // default OFF
+	FriendSound            bool      `json:"friendSound"`            // default OFF
 	FriendSoundFile        string    `json:"friendSoundFile"`
 	ModcallToast           bool      `json:"modcallToast"` // default OFF
 	CallwordSoundFile      string    `json:"callwordSoundFile"`
@@ -846,57 +872,61 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 // methods use it, so the default state lives in exactly one place.
 func defaultPrefs(path string) *AssetPreferences {
 	return &AssetPreferences{
-		PreferAnimated:     defaultPreferAnimated,
-		EmoteButtonImages:  defaultEmoteButtonImages,
-		ShowFriendButton:   defaultShowFriendButton,
-		SmoothScaling:      defaultSmoothScaling,
-		UpdateCheck:        defaultUpdateCheck,
-		ShowAssetWarnings:  defaultShowAssetWarnings,
-		SpriteMoveOn:       defaultSpriteMove,
-		DeskFollowManifest: defaultDeskFollowManifest,
-		SpritePreviewOn:    defaultSpritePreview,
-		PreviewHoverMs:     DefaultPreviewHoverMs,
-		AutoLoginToast:     defaultAutoLoginToast,
-		CallwordToast:      defaultCallwordToast,
-		MessageCounter:     defaultMessageCounter,
-		ICTimestamps:       defaultICTimestamps,
-		AutoReconnect:      defaultAutoReconnect,
-		MusicHistory:       defaultMusicHistory,
-		MusicHosts:         defaultMusicHostList(),
-		HighlightColor:     defaultHighlightColor,
-		NameSat:            defaultNameColorSat,
-		NameVal:            defaultNameColorVal,
-		BgSlideshowSecs:    defaultBgSlideshowSecs,
-		AutoDetectFormats:  defaultFormatAutoDetect,
-		ThemeLayoutOn:      defaultThemeLayout,
-		ThemeFit:           defaultThemeFit,
-		ThemeFitZoom:       DefaultThemeZoom,
-		PlainLobby:         defaultPlainLobby,
-		UIScaleAutoOn:      defaultUIScaleAuto,
-		CatchUpOn:          defaultCatchUpWhenBehind,
-		CatchUpThreshold:   DefaultCatchUpThreshold,
-		MultiTabCap:        DefaultMultiTabCap,
-		DiscordRPC:         defaultDiscordPrefs(),
-		ViewportPct:        DefaultViewportPercent,
-		ChatScalePct:       DefaultScalePercent,
-		ChatBoxPct:         DefaultScalePercent,
-		LogScalePct:        DefaultScalePercent,
-		InputHeightPct:     DefaultScalePercent,
-		UIScalePct:         DefaultScalePercent,
-		MusicVol:           defaultAudioVolume,
-		SFXVol:             defaultAudioVolume,
-		BlipVol:            defaultAudioVolume,
-		AlertVol:           defaultAudioVolume,
-		MasterVol:          defaultAudioVolume,
-		HoldClearOn:        defaultHoldClearOn,
-		HoldClearKey:       defaultHoldClearKey,
-		HoldClearMs:        DefaultHoldClearMs,
-		TextCrawlMs:        DefaultTextCrawlMs,
-		TextStayMs:         DefaultTextStayMs,
-		ChatRateLimitMs:    DefaultChatRateLimitMs,
-		AssetTypes:         defaultAssetTypes(),
-		LearnedFormats:     map[string][]string{},
-		path:               path,
+		PreferAnimated:    defaultPreferAnimated,
+		EmoteButtonImages: defaultEmoteButtonImages,
+		ShowFriendButton:  defaultShowFriendButton,
+
+		RainbowSpriteSpeed:     defaultRainbowSpeed,
+		RainbowSpriteVividness: defaultRainbowVivid,
+		SpriteTintColor:        defaultSpriteTintColor,
+		SmoothScaling:          defaultSmoothScaling,
+		UpdateCheck:            defaultUpdateCheck,
+		ShowAssetWarnings:      defaultShowAssetWarnings,
+		SpriteMoveOn:           defaultSpriteMove,
+		DeskFollowManifest:     defaultDeskFollowManifest,
+		SpritePreviewOn:        defaultSpritePreview,
+		PreviewHoverMs:         DefaultPreviewHoverMs,
+		AutoLoginToast:         defaultAutoLoginToast,
+		CallwordToast:          defaultCallwordToast,
+		MessageCounter:         defaultMessageCounter,
+		ICTimestamps:           defaultICTimestamps,
+		AutoReconnect:          defaultAutoReconnect,
+		MusicHistory:           defaultMusicHistory,
+		MusicHosts:             defaultMusicHostList(),
+		HighlightColor:         defaultHighlightColor,
+		NameSat:                defaultNameColorSat,
+		NameVal:                defaultNameColorVal,
+		BgSlideshowSecs:        defaultBgSlideshowSecs,
+		AutoDetectFormats:      defaultFormatAutoDetect,
+		ThemeLayoutOn:          defaultThemeLayout,
+		ThemeFit:               defaultThemeFit,
+		ThemeFitZoom:           DefaultThemeZoom,
+		PlainLobby:             defaultPlainLobby,
+		UIScaleAutoOn:          defaultUIScaleAuto,
+		CatchUpOn:              defaultCatchUpWhenBehind,
+		CatchUpThreshold:       DefaultCatchUpThreshold,
+		MultiTabCap:            DefaultMultiTabCap,
+		DiscordRPC:             defaultDiscordPrefs(),
+		ViewportPct:            DefaultViewportPercent,
+		ChatScalePct:           DefaultScalePercent,
+		ChatBoxPct:             DefaultScalePercent,
+		LogScalePct:            DefaultScalePercent,
+		InputHeightPct:         DefaultScalePercent,
+		UIScalePct:             DefaultScalePercent,
+		MusicVol:               defaultAudioVolume,
+		SFXVol:                 defaultAudioVolume,
+		BlipVol:                defaultAudioVolume,
+		AlertVol:               defaultAudioVolume,
+		MasterVol:              defaultAudioVolume,
+		HoldClearOn:            defaultHoldClearOn,
+		HoldClearKey:           defaultHoldClearKey,
+		HoldClearMs:            DefaultHoldClearMs,
+		TextCrawlMs:            DefaultTextCrawlMs,
+		TextStayMs:             DefaultTextStayMs,
+		ChatRateLimitMs:        DefaultChatRateLimitMs,
+		AssetTypes:             defaultAssetTypes(),
+		LearnedFormats:         map[string][]string{},
+		path:                   path,
 	}
 }
 
@@ -951,6 +981,18 @@ func load(path string) (*AssetPreferences, error) {
 	p.RainbowMessages = onDisk.RainbowMessages
 	p.RandomMessageColor = onDisk.RandomMessageColor
 	p.RainbowSprites = onDisk.RainbowSprites
+	if onDisk.RainbowSpriteSpeed != nil {
+		p.RainbowSpriteSpeed = clampPercent(*onDisk.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
+	}
+	if onDisk.RainbowSpriteVividness != nil {
+		p.RainbowSpriteVividness = clampPercent(*onDisk.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
+	}
+	p.RainbowSpriteGlow = onDisk.RainbowSpriteGlow
+	p.RainbowPairDesync = onDisk.RainbowPairDesync
+	p.SpriteSolidTint = onDisk.SpriteSolidTint
+	if onDisk.SpriteTintColor != nil {
+		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
+	}
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
@@ -2142,6 +2184,129 @@ func (p *AssetPreferences) SetRainbowSprites(on bool) {
 		return
 	}
 	p.RainbowSprites = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RainbowSpeed reports the rainbow hue-rotation speed slider [1,100]
+// (higher = faster); render maps it to the cycle period.
+func (p *AssetPreferences) RainbowSpeed() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RainbowSpriteSpeed
+}
+
+// SetRainbowSpriteSpeed stores the hue speed (clamped to [1,100]).
+func (p *AssetPreferences) SetRainbowSpriteSpeed(v int) {
+	v = clampPercent(v, minRainbowSpeed, maxRainbowSpeed)
+	p.mu.Lock()
+	if p.RainbowSpriteSpeed == v {
+		p.mu.Unlock()
+		return
+	}
+	p.RainbowSpriteSpeed = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RainbowVividness reports the rainbow saturation slider [0,100] (higher =
+// more vivid/neon); render maps it to the colour-mod channel floor.
+func (p *AssetPreferences) RainbowVividness() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RainbowSpriteVividness
+}
+
+// SetRainbowSpriteVividness stores the saturation (clamped to [0,100]).
+func (p *AssetPreferences) SetRainbowSpriteVividness(v int) {
+	v = clampPercent(v, minRainbowVivid, maxRainbowVivid)
+	p.mu.Lock()
+	if p.RainbowSpriteVividness == v {
+		p.mu.Unlock()
+		return
+	}
+	p.RainbowSpriteVividness = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RainbowSpriteGlowOn reports the additive-blend "neon glow" toggle (OFF by
+// default): the tint adds light instead of multiplying, so sprites glow.
+func (p *AssetPreferences) RainbowSpriteGlowOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RainbowSpriteGlow
+}
+
+// SetRainbowSpriteGlow toggles the additive neon-glow blend.
+func (p *AssetPreferences) SetRainbowSpriteGlow(on bool) {
+	p.mu.Lock()
+	if p.RainbowSpriteGlow == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RainbowSpriteGlow = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RainbowPairDesyncOn reports the "desync pair colour" toggle (OFF by default):
+// the speaker and pair sprites cycle half a period apart, so they show
+// different hues at once.
+func (p *AssetPreferences) RainbowPairDesyncOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RainbowPairDesync
+}
+
+// SetRainbowPairDesync toggles the pair hue offset.
+func (p *AssetPreferences) SetRainbowPairDesync(on bool) {
+	p.mu.Lock()
+	if p.RainbowPairDesync == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RainbowPairDesync = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SpriteSolidTintOn reports the "solid colour tint" toggle (OFF by default): a
+// single fixed-colour wash over sprites (rainbow takes priority if both are on).
+func (p *AssetPreferences) SpriteSolidTintOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteSolidTint
+}
+
+// SetSpriteSolidTint toggles the fixed-colour sprite wash.
+func (p *AssetPreferences) SetSpriteSolidTint(on bool) {
+	p.mu.Lock()
+	if p.SpriteSolidTint == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteSolidTint = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SpriteTintColorRGB returns the packed 0xRRGGBB solid-tint colour.
+func (p *AssetPreferences) SpriteTintColorRGB() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteTintColor & 0xFFFFFF
+}
+
+// SetSpriteTintColor stores a packed 0xRRGGBB solid-tint colour.
+func (p *AssetPreferences) SetSpriteTintColor(rgb int) {
+	rgb &= 0xFFFFFF
+	p.mu.Lock()
+	if p.SpriteTintColor == rgb {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteTintColor = rgb
 	p.mu.Unlock()
 	p.markDirty()
 }

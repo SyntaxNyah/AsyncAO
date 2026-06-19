@@ -110,16 +110,30 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   `\cr` so your text cycles the palette per letter (renders on clients that read
   inline colour; rainbow wins if both are on). Applied at send (`funColor`), so
   zero render cost.
-- **Rainbow character sprites** (Settings → General, OFF by default): washes
-  every on-stage character layer (speaker **and** pair) through a slow ~2.5 s
-  hue cycle — pure **local eye-candy**, nobody else sees it. It's a render-side
-  `SetColorMod` bracketed around the existing sprite blit (alpha untouched, so
-  the transparent cutout stays transparent and the art stays readable under the
-  tint — a 64/255 channel floor keeps it from crushing to a flat silhouette).
-  The hue clock lives on the viewport and advances with pure integer math, so
-  the frame **still allocates zero** with the wash on (pinned by
-  `TestRenderFrameRainbowZeroAllocs`); with it off there is **no cost at all**
-  (not even the colour-mod calls).
+- **Sprite colour FX** (Settings → General, all OFF by default): a render-side
+  colour wash over the on-stage characters (speaker **and** pair) — pure **local
+  eye-candy**, nothing on the wire, nobody else sees it. A `SetColorMod`
+  bracketed around the existing sprite blit (alpha untouched, so the transparent
+  cutout stays transparent), with a clutch of knobs:
+  - **Rainbow** cycles the hue, with a **Speed** slider (the rotation period)
+    and a **Vividness** slider (the channel floor — subtle tint ↔ vivid neon;
+    `SetColorMod` multiplies, so a higher floor keeps more of the art's own
+    brightness instead of crushing it to a silhouette).
+  - **Desync pair** offsets the two characters half a cycle apart, so they show
+    different hues at once.
+  - **Solid colour tint** washes sprites in one fixed `RRGGBB` colour instead of
+    a cycle (rainbow wins if both are on).
+  - **Neon glow** switches the blend to additive (`BLENDMODE_ADD`) so the tint
+    **adds light** and the character glows — it becomes a translucent neon ghost
+    (the room shows through, by design).
+
+  The hue clock lives on the viewport and everything is pure integer math (the
+  period is hard-floored above zero so the per-frame modulo/divide can never
+  panic). The frame **still allocates zero** with every wash on — rainbow +
+  glow + desync, and solid + glow, are both pinned by
+  `TestRenderFrameRainbowZeroAllocs` — and with it all off there is **no cost at
+  all** (not even the colour-mod calls). The App mirrors the prefs onto the
+  viewport once per frame (a few uncontended RLocks, no caching layer).
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

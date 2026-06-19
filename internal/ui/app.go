@@ -351,6 +351,10 @@ type App struct {
 	colorWheel *sdl.Texture
 	colorHex   string
 
+	// spriteTintHex is the in-progress hex text for the solid sprite-tint field
+	// (Settings); reflected from the pref when the field isn't focused.
+	spriteTintHex string
+
 	// lastOSToast rate-limits friend desktop toasts (osToastMinInterval).
 	lastOSToast time.Time
 
@@ -2780,7 +2784,25 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.healScenery()
 		a.room.Update(dt)
 		a.applySpriteOverrides()
-		a.d.Viewport.SetRainbowSprites(a.d.Prefs.RainbowSpritesOn()) // optional sprite wash (one RLock/frame)
+		// Optional sprite colour FX (all off by default): mirror the prefs onto
+		// the viewport once per frame. A handful of uncontended RLocks — far
+		// cheaper than any snapshot/cache layer, and the render path stays
+		// 0-alloc regardless (pinned by TestRenderFrameRainbowZeroAllocs).
+		fx := render.SpriteFX{
+			Rainbow:    a.d.Prefs.RainbowSpritesOn(),
+			Solid:      a.d.Prefs.SpriteSolidTintOn(),
+			Glow:       a.d.Prefs.RainbowSpriteGlowOn(),
+			PairDesync: a.d.Prefs.RainbowPairDesyncOn(),
+			Speed:      a.d.Prefs.RainbowSpeed(),
+			Vividness:  a.d.Prefs.RainbowVividness(),
+		}
+		if fx.Solid && !fx.Rainbow { // colour only matters for the solid wash, and rainbow wins
+			rgb := a.d.Prefs.SpriteTintColorRGB()
+			fx.SolidR = uint8(rgb >> 16 & 0xFF)
+			fx.SolidG = uint8(rgb >> 8 & 0xFF)
+			fx.SolidB = uint8(rgb & 0xFF)
+		}
+		a.d.Viewport.SetSpriteFX(fx)
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		// Music ducking: dip music while a message is on stage (shout/preanim/
 		// talking), restore at idle/linger. Transition-driven — SetVolumes is

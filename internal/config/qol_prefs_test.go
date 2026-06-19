@@ -43,6 +43,16 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.MusicHistoryOn() {
 		t.Error("MusicHistoryOn default must be true")
 	}
+	if p.RainbowSpeed() != defaultRainbowSpeed || p.RainbowVividness() != defaultRainbowVivid {
+		t.Errorf("rainbow speed/vividness defaults = %d/%d, want %d/%d",
+			p.RainbowSpeed(), p.RainbowVividness(), defaultRainbowSpeed, defaultRainbowVivid)
+	}
+	if p.SpriteTintColorRGB() != defaultSpriteTintColor {
+		t.Errorf("SpriteTintColor default = %06x, want %06x", p.SpriteTintColorRGB(), defaultSpriteTintColor)
+	}
+	if p.RainbowSpriteGlowOn() || p.RainbowPairDesyncOn() || p.SpriteSolidTintOn() {
+		t.Error("sprite-FX glow/desync/solid must default OFF")
+	}
 }
 
 // TestFollowEnabledPref pins the opt-in player-follow toggle: OFF by default,
@@ -105,6 +115,12 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetMusicHistory(false)     // same absent-default-ON pointer
 	p.SetRainbowSprites(true)    // default-OFF plain bool — must survive as true
 	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
+	p.SetRainbowSpriteSpeed(30)
+	p.SetRainbowSpriteVividness(95)
+	p.SetRainbowSpriteGlow(true)
+	p.SetRainbowPairDesync(true)
+	p.SetSpriteSolidTint(true)
+	p.SetSpriteTintColor(0x112233)
 	if err := p.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -148,6 +164,15 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.FriendButtonShown() {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if q.RainbowSpeed() != 30 || q.RainbowVividness() != 95 {
+		t.Errorf("rainbow speed/vividness lost: %d/%d, want 30/95", q.RainbowSpeed(), q.RainbowVividness())
+	}
+	if !q.RainbowSpriteGlowOn() || !q.RainbowPairDesyncOn() || !q.SpriteSolidTintOn() {
+		t.Error("a sprite-FX toggle (glow/desync/solid) lost across reload")
+	}
+	if q.SpriteTintColorRGB() != 0x112233 {
+		t.Errorf("SpriteTintColor lost: %06x, want 112233", q.SpriteTintColorRGB())
 	}
 }
 

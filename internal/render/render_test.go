@@ -229,10 +229,11 @@ func TestRenderFrameZeroAllocs(t *testing.T) {
 	}
 }
 
-// TestRenderFrameRainbowZeroAllocs enforces the alloc gate on the rainbow-
-// sprites ON path: the default frame test runs with the wash OFF, so it can't
-// catch a regression in the SetColorMod/hue code. With the flag set, the
-// per-frame hue mod + restore must still allocate nothing (spec §12).
+// TestRenderFrameRainbowZeroAllocs enforces the alloc gate on the sprite-FX ON
+// path: the default frame test runs with every wash OFF, so it can't catch a
+// regression in the SetColorMod / SetBlendMode / hue code. It drives the most
+// expensive combinations — rainbow + additive glow + pair desync, and the solid
+// wash + glow — and every one must still allocate nothing (spec §12).
 func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
@@ -247,33 +248,41 @@ func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
 		}
 	}
 	vp := NewViewport(store)
-	vp.SetRainbowSprites(true)
 	scene := benchScene(store)
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 
-	allocs := testing.AllocsPerRun(200, func() {
-		vp.Update(scene, 16*time.Millisecond)
-		vp.Render(ren, scene, rect)
-	})
-	if allocs != 0 {
-		t.Errorf("rainbow render frame allocates %.1f objects/op, want 0 (spec §12)", allocs)
+	for _, fx := range []SpriteFX{
+		{Rainbow: true, Glow: true, PairDesync: true, Speed: 80, Vividness: 90},
+		{Solid: true, Glow: true, SolidR: 255, SolidG: 64, SolidB: 200},
+	} {
+		vp.SetSpriteFX(fx)
+		allocs := testing.AllocsPerRun(200, func() {
+			vp.Update(scene, 16*time.Millisecond)
+			vp.Render(ren, scene, rect)
+		})
+		if allocs != 0 {
+			t.Errorf("sprite-FX %+v render frame allocates %.1f objects/op, want 0 (spec §12)", fx, allocs)
+		}
 	}
 }
 
 // TestRainbowMod pins the hue colour-mod invariants: every channel stays in
-// [rainbowSpriteFloor,255] across a full cycle (so the wash tints rather than
-// silhouettes and never wraps a uint8), and the hue actually moves (the floor
-// is below 255 and the start/quarter hues differ).
+// [floor,255] across a full cycle (so the wash tints rather than silhouettes
+// and never wraps a uint8), the hue actually moves, and — critically — the
+// cycle period is always > 0 so the frame loop's phase%cycle / divide can never
+// panic, whatever the speed slider says.
 func TestRainbowMod(t *testing.T) {
 	const steps = 600
+	cycle := cycleForSpeed(50)
+	floor := floorForVividness(60)
 	moved := false
-	r0, g0, b0 := rainbowMod(0)
+	r0, g0, b0 := rainbowMod(0, cycle, floor)
 	for i := 0; i <= steps; i++ {
-		phase := time.Duration(int64(rainbowSpriteCycle) * int64(i) / int64(steps))
-		r, g, b := rainbowMod(phase)
+		phase := time.Duration(int64(cycle) * int64(i) / int64(steps))
+		r, g, b := rainbowMod(phase, cycle, floor)
 		for _, c := range []uint8{r, g, b} {
-			if c < rainbowSpriteFloor {
-				t.Fatalf("phase %v channel %d below floor %d", phase, c, rainbowSpriteFloor)
+			if int(c) < floor {
+				t.Fatalf("phase %v channel %d below floor %d", phase, c, floor)
 			}
 		}
 		if r != r0 || g != g0 || b != b0 {
@@ -283,6 +292,14 @@ func TestRainbowMod(t *testing.T) {
 	if !moved {
 		t.Fatal("rainbowMod never varied across a full cycle")
 	}
+	// cycleForSpeed must stay strictly positive for every in-range and
+	// out-of-range slider value — a zero period would panic the render loop.
+	for _, s := range []int{-99, 0, 1, 50, 100, 9999} {
+		if cycleForSpeed(s) <= 0 {
+			t.Fatalf("cycleForSpeed(%d) = %v, want > 0", s, cycleForSpeed(s))
+		}
+	}
+	rainbowMod(123, 0, 0) // defensive: a zero cycle must not panic either
 }
 
 // TestViewportStickyScenery pins the black-background fix: flipping the
