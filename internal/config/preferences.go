@@ -138,6 +138,12 @@ const (
 // buttons (characters/<char>/emotions/button<N>) rather than text chips.
 const defaultEmoteButtonImages = true
 
+// defaultShowFriendButton shows the per-row "+ Friend" button in the player
+// list out of the box (it can be hidden in Settings). Default-ON so the
+// feature is discoverable; the toggle is for people who find it clutters
+// the panel.
+const defaultShowFriendButton = true
+
 // defaultSmoothScaling turns on linear texture filtering (SDL render
 // scale quality): sprites stretched to the viewport stop shimmering.
 const defaultSmoothScaling = true
@@ -371,6 +377,7 @@ type AssetPreferences struct {
 	ForceCharNames         bool                         `json:"forceCharNames"`
 	RandomEmote            bool                         `json:"randomEmote"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
+	ShowFriendButton       bool                         `json:"showFriendButton"`
 	FollowEnabled          bool                         `json:"followEnabled"`
 	DyslexiaFont           bool                         `json:"dyslexiaFont"`
 	DNDPersist             bool                         `json:"dndPersist"`
@@ -534,6 +541,7 @@ type prefsJSON struct {
 	ForceCharNames         bool      `json:"forceCharNames"`     // default OFF
 	RandomEmote            bool      `json:"randomEmote"`        // default OFF
 	FriendHighlight        bool      `json:"friendHighlight"`    // default OFF
+	ShowFriendButton       *bool     `json:"showFriendButton"`   // default ON (pointer: absent != off)
 	FollowEnabled          bool      `json:"followEnabled"`      // default OFF (opt-in)
 	DyslexiaFont           bool      `json:"dyslexiaFont"`       // default OFF
 	DNDPersist             bool      `json:"dndPersist"`         // default OFF (DND clears each launch)
@@ -838,6 +846,7 @@ func defaultPrefs(path string) *AssetPreferences {
 	return &AssetPreferences{
 		PreferAnimated:     defaultPreferAnimated,
 		EmoteButtonImages:  defaultEmoteButtonImages,
+		ShowFriendButton:   defaultShowFriendButton,
 		SmoothScaling:      defaultSmoothScaling,
 		UpdateCheck:        defaultUpdateCheck,
 		ShowAssetWarnings:  defaultShowAssetWarnings,
@@ -930,6 +939,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.ForceCharNames = onDisk.ForceCharNames
 	p.RandomEmote = onDisk.RandomEmote
 	p.FriendHighlight = onDisk.FriendHighlight
+	if onDisk.ShowFriendButton != nil { // pointer: absent keeps the default-ON
+		p.ShowFriendButton = *onDisk.ShowFriendButton
+	}
 	p.FollowEnabled = onDisk.FollowEnabled
 	p.DyslexiaFont = onDisk.DyslexiaFont
 	p.DNDPersist = onDisk.DNDPersist
@@ -1980,6 +1992,26 @@ func (p *AssetPreferences) SetFriendHighlight(on bool) {
 		return
 	}
 	p.FriendHighlight = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FriendButtonShown reports whether the player-list rows draw the per-row
+// "+ Friend" / "Unfriend" button (ON by default; Settings can hide it).
+func (p *AssetPreferences) FriendButtonShown() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ShowFriendButton
+}
+
+// SetShowFriendButton toggles the player-list friend button.
+func (p *AssetPreferences) SetShowFriendButton(on bool) {
+	p.mu.Lock()
+	if p.ShowFriendButton == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ShowFriendButton = on
 	p.mu.Unlock()
 	p.markDirty()
 }

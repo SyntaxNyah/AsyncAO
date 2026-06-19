@@ -298,11 +298,11 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if fk == "" {
 		fk = p.name
 	}
-	if fk != "" && a.serverKey != "" {
+	if fk != "" && a.serverKey != "" && a.d.Prefs.FriendButtonShown() {
 		isFriend, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, fk)
 		fl := "+ Friend"
 		if isFriend {
-			fl = "★ Friend"
+			fl = "Unfriend" // friended state reads as the un-action (one click removes)
 		}
 		fw := c.TextWidth(fl) + 12
 		bx -= fw + 4

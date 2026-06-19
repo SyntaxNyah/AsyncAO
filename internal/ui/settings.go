@@ -1481,6 +1481,13 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Friends")
+	// Player-list friend button (ON by default): the per-row "+ Friend" /
+	// "Unfriend" button. Hide it if it clutters the panel.
+	sfb := a.d.Prefs.FriendButtonShown()
+	if next := c.Checkbox(pad, y, "Show the \"+ Friend\" / \"Unfriend\" button on player-list rows (ON by default): one click adds or removes a friend.", sfb); next != sfb {
+		a.d.Prefs.SetShowFriendButton(next)
+	}
+	y += 26
 	// Highlighted friends (per server): shownames whose IC messages glow.
 	fh := a.d.Prefs.FriendHighlightOn()
 	if next := c.Checkbox(pad, y, "Highlight friends in the IC log (OFF by default): their messages glow. Matches the DISPLAYED name, so it can be spoofed.", fh); next != fh {
