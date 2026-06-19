@@ -260,8 +260,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   server needed), seeds the starting background, and feeds each line **when the
   stage goes idle** so the courtroom's own pacing — not raw timestamps — times
   it (recorded wall-clock gaps between lines are discarded, so a replay never
-  inherits dead air). An **■ Stop replay** button shows on the stage while one
-  plays. A **Playback speed** slider (Studio tab, 25–200 %, **100 % default**)
+  inherits dead air). A **player transport** sits under the stage — **⏭ Next
+  message** (fast-forward the current line straight to the next), **⏸ Pause /
+  ▶ Play**, **⏮ Restart**, and a **message X / Y** readout — plus an **■ Stop
+  replay** button. A **Playback speed** slider (Studio tab, 25–200 %, **100 %
+  default**)
   paces the replay: it's deliberately **slower than live chat** so the whole
   message types out and lingers long enough to read, and the slider adjusts it
   **live** — drag it mid-replay and the next line picks up the new speed.
