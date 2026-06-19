@@ -849,7 +849,10 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 			if c.Button(sdl.Rect{X: pad + 90, Y: y, W: 64, H: btnH}, "✎ Edit") {
 				a.editRecordingInMaker(r.path)
 			}
-			c.LabelClipped(pad+162, y+4, w-pad-162-scrollBarW, r.name, ColText)
+			if c.Button(sdl.Rect{X: pad + 158, Y: y, W: 60, H: btnH}, "🎞 GIF") {
+				a.gifFromPath(r.path)
+			}
+			c.LabelClipped(pad+226, y+4, w-pad-226-scrollBarW, r.name, ColText)
 			y += 28
 		}
 	}
@@ -872,10 +875,14 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 	}
 	y += 32
 
-	y = a.settingsSection(y, w, "Export to GIF / video (coming soon)")
-	c.Label(pad, y, "Turn a recording into a shareable GIF/video — with adjustable playback speed and trimmed", ColTextDim)
+	y = a.settingsSection(y, w, "Export to GIF")
+	c.Label(pad, y, "Turn a scene into a shareable animated GIF. Click 🎞 GIF on a recording above, OR open a scene in the", ColTextDim)
 	y += 18
-	c.Label(pad, y, "transitions before you export. It's the only part that renders pixels, so it stays opt-in.", ColTextDim)
+	c.Label(pad, y, "Scene Maker (🎬 New scene / ✎ Edit) and click 🎞 Export GIF. It renders behind a progress bar and saves", ColTextDim)
+	y += 18
+	c.Label(pad, y, "to recordings\\. Best while connected so the assets can load. Off by default — opt-in, no live cost.", ColTextDim)
+	y += 18
+	c.Label(pad, y, "(Playback speed above controls the GIF's pacing too; a higher-quality animated-WebP export is coming.)", ColTextDim)
 	y += 26
 	return y
 }

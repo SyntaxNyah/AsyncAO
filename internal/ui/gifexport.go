@@ -5,6 +5,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -13,6 +14,27 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
+
+// gifFromPath loads a recording and exports it straight to a GIF (the Studio
+// "🎞 GIF" button) — no trip through the maker. A bundled archive renders from
+// its own folder (the archive source is dropped when the export finishes).
+func (a *App) gifFromPath(path string) {
+	if a.gifExporting || a.replaying || a.recActive {
+		a.warnLine = "Finish the current replay / recording first."
+		a.warnAt = time.Now()
+		return
+	}
+	rec, err := loadRecording(path)
+	if err != nil {
+		a.warnLine = "Couldn't load recording: " + err.Error()
+		a.warnAt = time.Now()
+		return
+	}
+	if rec.Bundled {
+		a.beginBundledReplay(rec, filepath.Dir(path)) // archive source + repoint Origin
+	}
+	a.startGifExport(rec, strings.TrimSuffix(filepath.Base(path), recordingExt))
+}
 
 // Scene GIF export (M16): render a scene through a throwaway replay room into a
 // fixed offscreen target (render.CaptureTarget), quantize each frame to a
@@ -133,6 +155,7 @@ func (a *App) finishGifExport() {
 	if j.ct != nil {
 		j.ct.Close()
 	}
+	a.endBundledReplay() // drop the archive source if this GIF was from a bundled archive
 	a.restoreViewportPreanim()
 	a.makerPreviewIdx = -1 // the export drove the shared viewport — force the preview pane to rebuild
 	if len(j.frames) == 0 {
