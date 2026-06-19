@@ -6,6 +6,8 @@ package ui
 
 import (
 	"fmt"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -544,8 +546,9 @@ func (a *App) checkCallwords(text string) {
 // --- screenshots ----------------------------------------------------------------------
 
 // captureScreenshot reads the back buffer (render thread — required for
-// ReadPixels) and writes the BMP off-thread next to the exe under
-// screenshots\ (§17.2: file I/O never blocks the render thread).
+// ReadPixels) and writes a PNG off-thread next to the exe under screenshots\
+// (§17.2: file I/O never blocks the render thread). PNG over BMP: ~10× smaller
+// and it previews inline everywhere (Discord, etc.) — the point is to share it.
 func (a *App) captureScreenshot() {
 	w, h, err := a.ctx.Ren.GetOutputSize()
 	if err != nil {
@@ -563,8 +566,14 @@ func (a *App) captureScreenshot() {
 		return
 	}
 	stamp := time.Now().Format("20060102-150405")
+	rel := "screenshots\\asyncao-" + stamp + ".png"
+	pitch := int(surf.Pitch)
 	go func() {
 		defer surf.Free()
+		// Copy the surface bytes into Go memory so the encode is decoupled from
+		// the SDL surface's lifetime (ABGR8888 == image.RGBA byte order).
+		pix := make([]byte, len(surf.Pixels()))
+		copy(pix, surf.Pixels())
 		exe, err := os.Executable()
 		if err != nil {
 			return
@@ -573,12 +582,27 @@ func (a *App) captureScreenshot() {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return
 		}
-		path := filepath.Join(dir, "asyncao-"+stamp+".bmp")
-		// SaveBMP touches only this surface — no renderer state, safe
-		// off the render thread.
-		_ = surf.SaveBMP(path)
+		_ = writeScreenshotPNG(filepath.Join(dir, "asyncao-"+stamp+".png"), pix, int(w), int(h), pitch)
 	}()
-	a.pushDebug("screenshot saved: screenshots\\asyncao-" + stamp + ".bmp")
+	a.warnLine = "Screenshot saved: " + rel
+	a.warnAt = time.Now()
+	a.pushDebug("screenshot saved: " + rel)
+}
+
+// writeScreenshotPNG encodes ABGR8888 back-buffer bytes (already in image.RGBA
+// byte order) as a PNG at path. Pure + off the render thread; pitch is the row
+// stride (≥ w*4, may carry alignment padding).
+func writeScreenshotPNG(path string, pix []byte, w, h, pitch int) error {
+	img := &image.RGBA{Pix: pix, Stride: pitch, Rect: image.Rect(0, 0, w, h)}
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	if err := png.Encode(f, img); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // --- streamer mode ----------------------------------------------------------------------
