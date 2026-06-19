@@ -92,6 +92,39 @@ func feed(t *testing.T, s *Session, raw string) []Event {
 	return s.HandlePacket(p)
 }
 
+// TestSyntheticMessageRendersSpeaker pins the load-bearing assumption behind the
+// Scene Maker and replay: a HAND-BUILT message — CharName + Emote only, with no
+// CharID and no populated char list — drives a renderable speaker. The courtroom
+// builds the sprite URL straight from CharName/Emote (speakerName := msg.CharName
+// → urls.Emote), so it does NOT need a CharID→char-list lookup. That's why a
+// "build a scene from scratch" line, and a nil-session replay, both render. If
+// this ever regresses to a char-list lookup, from-scratch scenes go blank.
+func TestSyntheticMessageRendersSpeaker(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	msg := &protocol.ChatMessage{
+		CharName: "Phoenix",
+		Emote:    "normal",
+		Message:  "Objection!",
+		Side:     "wit",
+		EmoteMod: protocol.EmoteModIdle, // the Scene Maker's default — no preanim stall
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+
+	if !room.Scene.Speaker.Visible {
+		t.Fatal("synthetic message produced no visible speaker")
+	}
+	if room.Scene.Speaker.Name != "Phoenix" {
+		t.Errorf("speaker name = %q, want Phoenix (msg.CharName)", room.Scene.Speaker.Name)
+	}
+	if room.Scene.Speaker.IdleBase == "" {
+		t.Fatal("speaker has no idle sprite URL — a from-scratch line would render blank")
+	}
+	low := strings.ToLower(room.Scene.Speaker.IdleBase)
+	if !strings.Contains(low, "phoenix") || !strings.Contains(low, "normal") {
+		t.Errorf("sprite URL %q not built from CharName/Emote — render must not depend on a char list", room.Scene.Speaker.IdleBase)
+	}
+}
+
 // TestReduceMotionGatesEffects pins the M14 accessibility gate: ReduceMotion
 // suppresses the screen shake + realization flash but KEEPS the feedback sound;
 // with it off, the visuals fire. Covers all three trigger paths (the 2.8 Effects
