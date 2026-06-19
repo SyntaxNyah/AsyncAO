@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -339,6 +340,42 @@ func (a *App) stopReplay() {
 	a.warnAt = time.Now()
 }
 
+// recoverReplay turns a panic anywhere in the replay drive/render into a clean
+// stop + a debug line, instead of crashing the app — a replay is optional and a
+// bad/edge recording must never take the client down. The recovered value names
+// the cause (visible in the debug overlay) so the root bug can be pinned.
+func (a *App) recoverReplay(where string) {
+	r := recover()
+	if r == nil {
+		return
+	}
+	a.pushDebug("replay " + where + " panic: " + fmt.Sprint(r))
+	a.replaying = false
+	a.replayRoom = nil
+	a.replayEvents = nil
+	a.replayIdx = 0
+	a.replayName = ""
+	if a.d.Viewport != nil {
+		if a.room != nil {
+			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+		} else {
+			a.d.Viewport.OnPreanimDone = nil
+		}
+	}
+	a.warnLine = "Replay stopped (error) — open the debug overlay for details."
+	a.warnAt = time.Now()
+}
+
+// driveReplay advances the replay one frame (feed-on-idle, courtroom Update,
+// viewport sync), wrapped so a panic stops the replay instead of crashing.
+func (a *App) driveReplay(dt time.Duration) {
+	defer a.recoverReplay("update")
+	a.advanceReplay(dt)
+	a.replayRoom.Update(dt)
+	a.d.Viewport.SetSpriteFX(a.spriteFX())
+	a.d.Viewport.Update(&a.replayRoom.Scene, dt)
+}
+
 // drawStageRecordButton draws the optional on-stage control at the top-left of
 // the viewport. While replaying it's a Stop-replay button (so a replay is always
 // easy to end on screen); otherwise it's the opt-in ● Record toggle, shown only
@@ -372,6 +409,7 @@ func (a *App) drawReplayOverlay(w, h int32) {
 	if a.replayRoom == nil {
 		return
 	}
+	defer a.recoverReplay("render")
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 10, G: 10, B: 14, A: 255})
 	// A 4:3 stage, centred, leaving a top strip for the title + Stop button.

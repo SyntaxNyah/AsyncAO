@@ -2822,14 +2822,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)
 	switch {
 	case a.replaying && a.replayRoom != nil:
-		// M16 replay: drive the recorded scene instead of the live one. The
-		// driver feeds the next event when the replay room goes idle (so the
-		// courtroom's own pacing — not recorded wall-clock — times it), and the
-		// viewport reads the replay scene (via renderScene too).
-		a.advanceReplay(dt)
-		a.replayRoom.Update(dt)
-		a.d.Viewport.SetSpriteFX(a.spriteFX())
-		a.d.Viewport.Update(&a.replayRoom.Scene, dt)
+		// M16 replay: drive the recorded scene instead of the live one (feed the
+		// next event when the room goes idle so the courtroom's own pacing times
+		// it; the viewport reads the replay scene via renderScene too). Wrapped
+		// so a panic in a bad/edge recording stops the replay, not the app.
+		a.driveReplay(dt)
 	case a.room != nil:
 		a.healScenery()
 		a.room.Update(dt)
