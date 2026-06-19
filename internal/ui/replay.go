@@ -441,6 +441,7 @@ func (a *App) drawReplayOverlay(w, h int32) {
 	stage := sdl.Rect{X: (w - stageW) / 2, Y: 46, W: stageW, H: stageH}
 	c.Fill(stage, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.d.Viewport.Render(c.Ren, &a.replayRoom.Scene, stage)
+	a.drawChatOverlay(stage) // M16: the spoken text (reads the replay scene via renderScene)
 	c.Label(20, 16, "▶ Replaying — "+a.replayName, ColText)
 	if c.Button(sdl.Rect{X: w - 136, Y: 12, W: 120, H: 26}, "■ Stop replay") {
 		a.stopReplay()

@@ -1071,7 +1071,7 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 
 func (a *App) drawChatOverlay(vp sdl.Rect) {
 	c := a.ctx
-	sc := &a.room.Scene
+	sc := a.renderScene() // live room, slideshow override, OR the replay scene (M16)
 	// Blankpost hides the whole chatbox (frame + showname + text) so only the
 	// sprite shows; the second clause is the unchanged idle/no-message case.
 	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
@@ -1124,7 +1124,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 // color, zoom, wrap width, or skin presence changed — shared by the
 // classic overlay and the themed chatbox.
 func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
-	sc := &a.room.Scene
+	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
 	if a.msRaster != nil && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
 		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned {
 		return
