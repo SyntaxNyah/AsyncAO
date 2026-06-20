@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -325,8 +326,20 @@ func (a *App) recoverMakerPreview() {
 // the debug overlay so a hard-to-reproduce edit crash names itself.
 func (a *App) recoverMaker() {
 	if r := recover(); r != nil {
-		a.pushDebug("scene maker panic: " + fmt.Sprint(r))
-		a.warnLine = "Scene Maker hit an error (see the debug overlay) — closed it to keep the app running."
+		msg := fmt.Sprint(r)
+		a.pushDebug("scene maker panic: " + msg)
+		// Write a shareable crash log with the panic + full stack so the exact
+		// site is pinpointed (a hard-to-reproduce edit crash names itself). This
+		// is the exceptional recover path, not the steady render path, so the
+		// one-shot synchronous write is fine.
+		logPath := "recordings\\scene-maker-crash.log"
+		if dir := recordingsDir(); dir != "" {
+			if err := os.MkdirAll(dir, 0o755); err == nil {
+				_ = os.WriteFile(filepath.Join(dir, "scene-maker-crash.log"),
+					[]byte("scene maker panic: "+msg+"\n\n"+string(debug.Stack())), 0o644)
+			}
+		}
+		a.warnLine = "Scene Maker error: " + msg + " — details saved to " + logPath
 		a.warnAt = time.Now()
 		a.closeSceneMaker()
 	}

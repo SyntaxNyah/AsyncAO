@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -29,6 +30,10 @@ func TestMakerDrawNoPanic(t *testing.T) {
 	t.Cleanup(func() { _ = prefs.Close() })
 
 	a := &App{ctx: ctx, d: Deps{Prefs: prefs}, makerName: "test", makerTrimStart: -1, makerTrimEnd: -1}
+	// A real session + bg list enables the char/background autocompletes — the
+	// draw paths a nil-session test would skip.
+	a.sess = &courtroom.Session{Chars: []courtroom.CharacterSlot{{Name: "Sekai"}, {Name: "Phoenix"}, {Name: "Häschen"}}}
+	a.bgPick.server = []string{"court", "gs4", "lobby"}
 	a.makerScene = &sceneRecording{
 		Version: recordingVersion,
 		Origin:  "https://example.test/base/",
@@ -42,6 +47,14 @@ func TestMakerDrawNoPanic(t *testing.T) {
 			{Kind: int(courtroom.EventMusic), Text: "trial.opus"},
 			{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{Side: "def", Realization: true}}, // empty CharName
 			{Kind: int(courtroom.EventMessage), Message: nil},                                                   // defensive: nil message
+			{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{ // a full 256-char IC line
+				CharName: "Sekai", Emote: "normal", Side: "wit",
+				Message: strings.Repeat("A very long sentence. ", 16)[:256],
+			}},
+			{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{ // unicode / emoji + long
+				CharName: "Häschen", Emote: "normal", Side: "wit", Showname: "🍅 fünfzehn",
+				Message: strings.Repeat("🍅 Häschen fünfzehn — ", 14),
+			}},
 		},
 	}
 
