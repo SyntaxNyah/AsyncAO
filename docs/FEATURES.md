@@ -331,8 +331,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   kept, hard-capped at ~33 s), and it encodes off-thread to `recordings\<name>.gif`.
   It runs **incrementally behind a progress bar** (with **■ Stop & save**) so the
   window never freezes, and it's **off by default** — zero cost on the live render
-  path (the render loop stays at 0 allocs/op). *(GIF is 256-colour; a
-  higher-quality **animated-WebP** export is the follow-up.)*
+  path (the render loop stays at 0 allocs/op).
+- **Scene → animated WebP** (**🎬 WebP**, beside every 🎞 GIF button — Settings →
+  Studio per recording, and in the maker): the **higher-quality** export. Same
+  capture pipeline (chatbox composited, sprites pre-warmed), but each frame
+  **streams into a libwebp `WebPAnimEncoder`** (`internal/webpenc`, a thin CGO
+  binding over libwebpmux) and is compressed **as it's captured** — so it's
+  **true-colour** (no GIF 256-colour banding), typically **smaller**, and its
+  memory stays flat no matter how long the scene (unlike GIF, which must hold
+  every frame for the final encode). Saved to `recordings\<name>.webp`. Falls back
+  to a clear message if a build was made without the encoder; the GIF path always
+  works.
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.

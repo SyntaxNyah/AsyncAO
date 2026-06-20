@@ -843,16 +843,19 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 				y += 24
 				break
 			}
-			if c.Button(sdl.Rect{X: pad + 16, Y: y, W: 70, H: btnH}, "▶ Play") {
+			if c.Button(sdl.Rect{X: pad + 16, Y: y, W: 64, H: btnH}, "▶ Play") {
 				a.replayFromPath(r.path)
 			}
-			if c.Button(sdl.Rect{X: pad + 90, Y: y, W: 64, H: btnH}, "✎ Edit") {
+			if c.Button(sdl.Rect{X: pad + 84, Y: y, W: 58, H: btnH}, "✎ Edit") {
 				a.editRecordingInMaker(r.path)
 			}
-			if c.Button(sdl.Rect{X: pad + 158, Y: y, W: 60, H: btnH}, "🎞 GIF") {
-				a.gifFromPath(r.path)
+			if c.Button(sdl.Rect{X: pad + 146, Y: y, W: 54, H: btnH}, "🎞 GIF") {
+				a.sceneExportFromPath(r.path, false)
 			}
-			c.LabelClipped(pad+226, y+4, w-pad-226-scrollBarW, r.name, ColText)
+			if c.Button(sdl.Rect{X: pad + 204, Y: y, W: 74, H: btnH}, "🎬 WebP") {
+				a.sceneExportFromPath(r.path, true) // higher-quality animated WebP
+			}
+			c.LabelClipped(pad+286, y+4, w-pad-286-scrollBarW, r.name, ColText)
 			y += 28
 		}
 	}
@@ -875,14 +878,14 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 	}
 	y += 32
 
-	y = a.settingsSection(y, w, "Export to GIF")
-	c.Label(pad, y, "Turn a scene into a shareable animated GIF. Click 🎞 GIF on a recording above, OR open a scene in the", ColTextDim)
+	y = a.settingsSection(y, w, "Export to GIF / WebP")
+	c.Label(pad, y, "Turn a recording into a shareable animation of people talking. On a recording above, click 🎞 GIF (works", ColTextDim)
 	y += 18
-	c.Label(pad, y, "Scene Maker (🎬 New scene / ✎ Edit) and click 🎞 Export GIF. It renders behind a progress bar and saves", ColTextDim)
+	c.Label(pad, y, "everywhere) or 🎬 WebP (true-colour + smaller, no 256-colour banding) — or build one in the Scene Maker", ColTextDim)
 	y += 18
-	c.Label(pad, y, "to recordings\\. Best while connected so the assets can load. Off by default — opt-in, no live cost.", ColTextDim)
+	c.Label(pad, y, "(🎬 New scene / ✎ Edit) and use its 🎞 / 🎬 buttons. It pre-loads the sprites, then renders behind a", ColTextDim)
 	y += 18
-	c.Label(pad, y, "(Playback speed above controls the GIF's pacing too; a higher-quality animated-WebP export is coming.)", ColTextDim)
+	c.Label(pad, y, "progress bar to recordings\\. Best while connected so assets can load. Off by default — opt-in, no live cost.", ColTextDim)
 	y += 26
 	return y
 }

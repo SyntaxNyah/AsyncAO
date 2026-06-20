@@ -643,9 +643,13 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	}
 	bx += 144
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "🎞 Export GIF") {
-		a.startGifExport(a.makerScene, a.makerName)
+		a.startSceneExport(a.makerScene, a.makerName, false)
 	}
 	bx += 128
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "🎬 WebP") {
+		a.startSceneExport(a.makerScene, a.makerName, true) // higher-quality animated WebP
+	}
+	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 108, H: btnH}, "🆕 New scene") {
 		a.newScene()
 	}

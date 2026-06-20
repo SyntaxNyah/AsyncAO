@@ -14,12 +14,14 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/webpenc"
 )
 
-// gifFromPath loads a recording and exports it straight to a GIF (the Studio
-// "🎞 GIF" button) — no trip through the maker. A bundled archive renders from
-// its own folder (the archive source is dropped when the export finishes).
-func (a *App) gifFromPath(path string) {
+// sceneExportFromPath loads a recording and exports it straight to a GIF (the
+// Studio "🎞 GIF" button) or an animated WebP ("🎬 WebP") — no trip through the
+// maker. A bundled archive renders from its own folder (the archive source is
+// dropped when the export finishes).
+func (a *App) sceneExportFromPath(path string, asWebP bool) {
 	if a.gifExporting || a.replaying || a.recActive {
 		a.warnLine = "Finish the current replay / recording first."
 		a.warnAt = time.Now()
@@ -34,7 +36,7 @@ func (a *App) gifFromPath(path string) {
 	if rec.Bundled {
 		a.beginBundledReplay(rec, filepath.Dir(path)) // archive source + repoint Origin
 	}
-	a.startGifExport(rec, strings.TrimSuffix(filepath.Base(path), recordingExt))
+	a.startSceneExport(rec, strings.TrimSuffix(filepath.Base(path), recordingExt), asWebP)
 }
 
 // Scene GIF export (M16): render a scene through a throwaway replay room into a
@@ -49,9 +51,11 @@ const (
 	gifExportW       = gifExportH * 4 / 3 // 480
 	gifExportFPS     = 12                 // capture cadence
 	gifFrameDt       = time.Second / gifExportFPS
-	gifDelayCs       = 100 / gifExportFPS // per-frame GIF delay, centiseconds (≈8)
-	maxGifFrames     = 400                // ~33 s cap (§17.4): ~69 MB of paletted frames, sane GIF
-	gifFramesPerTick = 4                  // frames captured per real frame (responsive + progress)
+	gifDelayCs       = 100 / gifExportFPS  // per-frame GIF delay, centiseconds (≈8)
+	webpFrameMs      = 1000 / gifExportFPS // per-frame WebP duration, ms (≈83)
+	webpQuality      = 80                  // lossy WebP quality (0..100): small but clean
+	maxGifFrames     = 400                 // ~33 s cap (§17.4): ~69 MB of paletted frames, sane GIF
+	gifFramesPerTick = 4                   // frames captured per real frame (responsive + progress)
 
 	// Asset pre-warm (so the GIF shows the characters, not an empty stage): the
 	// export advances ~4× faster than a replay and outruns async sprite fetches,
@@ -64,13 +68,19 @@ const (
 )
 
 // gifExportJob is the in-flight render state (allocated only while exporting).
+// One job drives either format: GIF accumulates paletted frames for gifenc;
+// WebP streams each RGBA frame into the libwebp encoder (so it never holds them).
 type gifExportJob struct {
-	room   *courtroom.Courtroom
-	ct     *render.CaptureTarget
-	frames []*image.Paletted
-	events []recEvent
-	idx    int
-	name   string
+	room     *courtroom.Courtroom
+	ct       *render.CaptureTarget
+	frames   []*image.Paletted // GIF only — every frame, for gifenc.EncodeGIF
+	events   []recEvent
+	idx      int
+	name     string
+	captured int // frames captured (both formats) — drives the cap + progress
+
+	asWebP bool             // export an animated WebP instead of a GIF
+	webp   *webpenc.Encoder // WebP only — streams + compresses frames as they arrive
 
 	// Conversation chatbox raster, rebuilt per message and revealed rune-by-rune
 	// (so the GIF shows people talking). Self-cached here, never the live a.msRaster.
@@ -87,22 +97,37 @@ type gifExportJob struct {
 	warmResident int // resident count from the last warm tick (for the overlay)
 }
 
-// startGifExport spins up the offscreen render of scene into an animated GIF.
-// Must be called on the render thread (it creates the capture target).
-func (a *App) startGifExport(scene *sceneRecording, name string) {
+// startSceneExport spins up the offscreen render of scene into an animated GIF
+// (asWebP false) or an animated WebP (asWebP true). Must be called on the render
+// thread (it creates the capture target).
+func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) {
 	if a.gifExporting {
 		return
 	}
 	if scene == nil || len(scene.Events) == 0 {
-		a.warnLine = "Add at least one line before exporting a GIF."
+		a.warnLine = "Add at least one line before exporting."
+		a.warnAt = time.Now()
+		return
+	}
+	if asWebP && !webpenc.Available() {
+		a.warnLine = "Animated WebP isn't available in this build — use 🎞 GIF."
 		a.warnAt = time.Now()
 		return
 	}
 	ct, err := render.NewCaptureTarget(a.ctx.Ren, gifExportW, gifExportH)
 	if err != nil {
-		a.warnLine = "GIF export unavailable: " + err.Error()
+		a.warnLine = "Export unavailable: " + err.Error()
 		a.warnAt = time.Now()
 		return
+	}
+	var enc *webpenc.Encoder
+	if asWebP {
+		if enc, err = webpenc.New(gifExportW, gifExportH, webpQuality, webpFrameMs); err != nil {
+			ct.Close()
+			a.warnLine = "WebP export unavailable: " + err.Error()
+			a.warnAt = time.Now()
+			return
+		}
 	}
 	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(scene.Origin), a.d.Manager, nil, a.d.Audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
@@ -147,6 +172,8 @@ func (a *App) startGifExport(scene *sceneRecording, name string) {
 		ct:           ct,
 		events:       append([]recEvent(nil), scene.Events...),
 		name:         sanitizeStem(name),
+		asWebP:       asWebP,
+		webp:         enc,
 		warming:      true,
 		warmRefs:     warmRefs,
 		warmStarted:  now,
@@ -172,7 +199,7 @@ func (a *App) tickGifExport() {
 		return
 	}
 	for n := 0; n < gifFramesPerTick; n++ {
-		if len(j.frames) >= maxGifFrames {
+		if j.captured >= maxGifFrames {
 			a.finishGifExport()
 			return
 		}
@@ -192,11 +219,22 @@ func (a *App) tickGifExport() {
 			a.drawGifChatbox(j, &j.room.Scene, dst) // composite the conversation over the scene
 		})
 		if err != nil {
-			a.pushDebug("gif capture: " + err.Error())
+			a.pushDebug("scene export capture: " + err.Error())
 			a.finishGifExport()
 			return
 		}
-		j.frames = append(j.frames, gifenc.Quantize(img))
+		if j.asWebP {
+			// Stream into the WebP encoder (it compresses + drops the RGBA now, so
+			// memory stays flat); GIF keeps the quantized frame for the final encode.
+			if err := j.webp.AddFrame(img); err != nil {
+				a.pushDebug("webp add: " + err.Error())
+				a.finishGifExport()
+				return
+			}
+		} else {
+			j.frames = append(j.frames, gifenc.Quantize(img))
+		}
+		j.captured++
 	}
 }
 
@@ -288,19 +326,52 @@ func (a *App) finishGifExport() {
 		j.chatRaster.Destroy()
 		j.chatRaster = nil
 	}
-	a.endBundledReplay() // drop the archive source if this GIF was from a bundled archive
+	a.endBundledReplay() // drop the archive source if the export was from a bundled archive
 	a.restoreViewportPreanim()
 	a.makerPreviewIdx = -1 // the export drove the shared viewport — force the preview pane to rebuild
+
+	stem := j.name + "-" + time.Now().Format("20060102-150405")
+	if j.asWebP {
+		a.finishWebpExport(j, stem)
+		return
+	}
 	if len(j.frames) == 0 {
 		a.warnLine = "GIF export: nothing rendered (set an Origin/CDN and add a line)."
 		a.warnAt = time.Now()
 		return
 	}
 	frames := j.frames
-	stem := j.name + "-" + time.Now().Format("20060102-150405")
 	a.warnLine = fmt.Sprintf("Encoding GIF (%d frames)…", len(frames))
 	a.warnAt = time.Now()
 	go func() { a.gifResultCh <- encodeAndWriteGIF(frames, stem) }()
+}
+
+// finishWebpExport assembles the streamed WebP frames and writes the file. The
+// per-frame compression already happened during capture, so assembling + writing
+// runs off-thread (the encoder is owned solely by this goroutine now — a.gif is
+// already nil — so the cross-goroutine handoff is safe).
+func (a *App) finishWebpExport(j *gifExportJob, stem string) {
+	if j.webp == nil {
+		return
+	}
+	if j.captured == 0 {
+		j.webp.Close()
+		a.warnLine = "WebP export: nothing rendered (set an Origin/CDN and add a line)."
+		a.warnAt = time.Now()
+		return
+	}
+	enc := j.webp
+	a.warnLine = fmt.Sprintf("Encoding WebP (%d frames)…", j.captured)
+	a.warnAt = time.Now()
+	go func() {
+		data, err := enc.Assemble()
+		enc.Close()
+		if err != nil {
+			a.gifResultCh <- "WebP export failed: " + err.Error()
+			return
+		}
+		a.gifResultCh <- writeWebp(data, stem)
+	}()
 }
 
 // restoreViewportPreanim rebinds the viewport's one-shot preanim callback to
@@ -337,6 +408,22 @@ func encodeAndWriteGIF(frames []*image.Paletted, stem string) string {
 		return "GIF export failed: " + err.Error()
 	}
 	return fmt.Sprintf("GIF saved: recordings\\%s (%.1f MB).", name, float64(len(data))/(1024*1024))
+}
+
+// writeWebp (off-thread) writes the assembled animated WebP to recordings\<stem>.webp.
+func writeWebp(data []byte, stem string) string {
+	dir := recordingsDir()
+	if dir == "" {
+		return "WebP export failed: no recordings folder."
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "WebP export failed: " + err.Error()
+	}
+	name := stem + ".webp"
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+		return "WebP export failed: " + err.Error()
+	}
+	return fmt.Sprintf("WebP saved: recordings\\%s (%.2f MB).", name, float64(len(data))/(1024*1024))
 }
 
 // pollGifExport delivers the off-thread encode result to the UI.
@@ -379,11 +466,15 @@ func (a *App) drawGifProgress(winW, winH int32) {
 	}
 
 	done := 0
+	label := "🎞  Rendering GIF…"
 	if j != nil {
-		done = len(j.frames)
+		done = j.captured
+		if j.asWebP {
+			label = "🎬  Rendering WebP…"
+		}
 	}
 	pct := done * 100 / maxGifFrames
-	c.Label(cx-120, cy-30, "🎞  Rendering GIF…", ColText)
+	c.Label(cx-120, cy-30, label, ColText)
 	c.Label(cx-120, cy, fmt.Sprintf("%d frames captured (%d%% of the cap)", done, pct), ColTextDim)
 	// progress bar
 	bar := sdl.Rect{X: cx - 160, Y: cy + 26, W: 320, H: 14}

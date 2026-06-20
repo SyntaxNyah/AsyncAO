@@ -40,7 +40,7 @@ Write-Host "Built bin\asyncao.exe"
 # Copy runtime DLLs next to the exe so it runs without MSYS2 on PATH.
 $dlls = @(
     "SDL2.dll", "SDL2_ttf.dll", "SDL2_mixer.dll",
-    "libwebp-7.dll", "libwebpdemux-2.dll", "libsharpyuv-0.dll",
+    "libwebp-7.dll", "libwebpdemux-2.dll", "libwebpmux-3.dll", "libsharpyuv-0.dll",
     # AVIF decode chain (libavif links every codec it was built against).
     "libavif-16.dll", "libaom.dll", "libdav1d-7.dll", "libyuv.dll",
     "librav1e.dll", "libSvtAv1Enc-4.dll",
