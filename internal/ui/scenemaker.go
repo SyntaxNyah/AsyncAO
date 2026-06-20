@@ -146,6 +146,19 @@ func cloneEvent(e recEvent) recEvent {
 // openSceneMaker shows the maker editing a CLONE of rec (so the source is never
 // mutated in place). Recording and replay are mutually exclusive with it.
 func (a *App) openSceneMaker(rec *sceneRecording, name string) {
+	// This runs in a Settings/picker CLICK handler (drawSettings), which is NOT
+	// recover-wrapped — so a panic here (cloneScene / ensureBgList / …) would
+	// hard-crash the app with no log, which is the reported "Edit crashes, no
+	// crash log" symptom (recoverMaker only guards the maker's own draw). Catch +
+	// log it here so the cause finally names itself and the app survives.
+	defer func() {
+		if r := recover(); r != nil {
+			a.warnLine = a.logMakerCrash(r)
+			a.warnAt = time.Now()
+			a.makerOpen = false
+			a.makerScene = nil
+		}
+	}()
 	if a.recActive {
 		a.warnLine = "Stop recording first, then open the Scene Maker."
 		a.warnAt = time.Now()
@@ -326,23 +339,40 @@ func (a *App) recoverMakerPreview() {
 // the debug overlay so a hard-to-reproduce edit crash names itself.
 func (a *App) recoverMaker() {
 	if r := recover(); r != nil {
-		msg := fmt.Sprint(r)
-		a.pushDebug("scene maker panic: " + msg)
-		// Write a shareable crash log with the panic + full stack so the exact
-		// site is pinpointed (a hard-to-reproduce edit crash names itself). This
-		// is the exceptional recover path, not the steady render path, so the
-		// one-shot synchronous write is fine.
-		logPath := "recordings\\scene-maker-crash.log"
-		if dir := recordingsDir(); dir != "" {
-			if err := os.MkdirAll(dir, 0o755); err == nil {
-				_ = os.WriteFile(filepath.Join(dir, "scene-maker-crash.log"),
-					[]byte("scene maker panic: "+msg+"\n\n"+string(debug.Stack())), 0o644)
-			}
-		}
-		a.warnLine = "Scene Maker error: " + msg + " — details saved to " + logPath
+		a.warnLine = a.logMakerCrash(r)
 		a.warnAt = time.Now()
 		a.closeSceneMaker()
 	}
+}
+
+// logMakerCrash records a recovered maker panic: it pushes a debug line and
+// writes the panic + full stack to recordings\scene-maker-crash.log so the exact
+// site is pinpointed (a hard-to-reproduce crash names itself). One-shot synchronous
+// write on the exceptional recover path (not the steady render path). Returns the
+// toast string the caller should show. Shared by the draw recover AND the
+// open-from-Settings recover (the crash that produced no log was in the latter,
+// unrecovered, path).
+func (a *App) logMakerCrash(r any) string {
+	msg := fmt.Sprint(r)
+	a.pushDebug("scene maker panic: " + msg)
+	writeCrashLog("scene maker panic: ", r)
+	return "Scene Maker error: " + msg + " — details saved to recordings\\scene-maker-crash.log"
+}
+
+// writeCrashLog best-effort writes a panic + full stack to
+// recordings\scene-maker-crash.log. It touches only os/debug, so it's safe to
+// call from ANY goroutine (the background bg-list fetch can't recover up the main
+// stack, so it logs here directly).
+func writeCrashLog(header string, r any) {
+	dir := recordingsDir()
+	if dir == "" {
+		return
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dir, "scene-maker-crash.log"),
+		[]byte(header+fmt.Sprint(r)+"\n\n"+string(debug.Stack())), 0o644)
 }
 
 // drawMakerPreviewPane renders the selected line into a 4:3 stage — the WYSIWYG

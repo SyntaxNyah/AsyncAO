@@ -1422,6 +1422,19 @@ func (a *App) warmBase(base string, t assets.AssetType) {
 	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 }
 
+// frameCrashLog is the last-resort diagnostic: a panic that escaped every
+// per-feature recover (replay/preview/maker) would otherwise hard-crash the app
+// with no trace — the exact "it crashes, no crash log" report. This writes the
+// panic + full stack to recordings\scene-maker-crash.log, then RE-PANICS so the
+// behaviour is unchanged (it does NOT mask the bug or leave SDL in a half-bound
+// state — it just makes the next crash diagnosable).
+func (a *App) frameCrashLog() {
+	if r := recover(); r != nil {
+		writeCrashLog("UNRECOVERED frame panic: ", r)
+		panic(r)
+	}
+}
+
 // SetPump injects the upload pump (built after App for the liveness probe).
 func (a *App) SetPump(p *render.Pump) { a.d.Pump = p }
 
@@ -2802,6 +2815,7 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 
 // Frame runs one UI frame: connection pump, screen logic, drawing.
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
+	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
 	a.recordFrameDt(float32(dt.Seconds() * 1000))
 	// Stamp the sprite-preview config onto the context once per frame so every

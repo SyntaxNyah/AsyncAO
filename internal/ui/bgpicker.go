@@ -125,6 +125,16 @@ func (a *App) ensureBgList() {
 	listURL := a.urls.BackgroundsRoot()
 	key := a.serverKey
 	go func() {
+		// A background list fetch/parse must NEVER crash the app: this is off the
+		// main thread, so no recover up the stack catches a panic here (e.g. a
+		// malformed autoindex tripping parseAutoindexDirs). Catch it, log the stack,
+		// and degrade to "no listing" instead of a logless hard-crash.
+		defer func() {
+			if r := recover(); r != nil {
+				writeCrashLog("background list goroutine panic: ", r)
+				a.bgPick.res <- bgFetch{key: key, err: fmt.Errorf("background list failed: %v", r)}
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), bgFetchTimeout)
 		defer cancel()
 		data, err := a.d.Manager.FetchRaw(ctx, listURL)
