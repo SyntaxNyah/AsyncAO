@@ -282,7 +282,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   autocompletes** suggest matching folders from the connected server's roster /
   discovered background list as you type (real searchable pickers — they stay
   cheap even on a 4000-character server, where a flat dropdown would be useless).
-  A **📂 Open** button loads any
+  **⏮ Set In / ⏭ Set Out** mark a **crop range** so **Preview** and **Export**
+  (GIF/WebP) cover only that slice — grab a funny moment or cut the bloat (the
+  excluded lines **dim** in the list; an inverted range safely falls back to the
+  whole scene, and a mid-scene crop carries the right background so it isn't
+  blank). A **📂 Open** button loads any
   saved recording straight into the editor (no trip out to Settings), and a
   **live WYSIWYG preview pane** on the right renders the **selected line**
   — character, emote, pose, background, desk — so you build the scene *visually*

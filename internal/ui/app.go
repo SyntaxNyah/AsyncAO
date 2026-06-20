@@ -393,6 +393,8 @@ type App struct {
 	makerScroll     int32  // event-list scroll offset (px)
 	makerPickerOpen bool   // the in-maker "Open a recording" list is showing
 	makerExportOpen bool   // the in-maker "⚙ Export options" panel is showing
+	makerTrimStart  int    // crop In point (event index), -1 = scene start
+	makerTrimEnd    int    // crop Out point (event index), -1 = scene end
 	// makerPreviewRoom is a throwaway courtroom that renders the selected line
 	// into the maker's live preview pane (the "studio" WYSIWYG). makerPreviewIdx
 	// is the line it currently reflects, so the pane is rebuilt only when the

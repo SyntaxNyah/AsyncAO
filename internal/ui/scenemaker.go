@@ -158,6 +158,8 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 	a.makerSel = 0
 	a.makerScroll = 0
 	a.makerPickerOpen = false
+	a.makerTrimStart = -1 // no crop until the user sets In/Out
+	a.makerTrimEnd = -1
 	a.makerPreviewIdx = -1 // force the preview pane to rebuild for the new scene
 	a.makerOpen = true
 	a.ensureBgList() // warm the background list once so the BG picker has suggestions
@@ -203,6 +205,8 @@ func (a *App) closeSceneMaker() {
 	a.makerScroll = 0
 	a.makerPickerOpen = false
 	a.makerExportOpen = false
+	a.makerTrimStart = -1
+	a.makerTrimEnd = -1
 	a.teardownMakerPreview()
 }
 
@@ -430,6 +434,68 @@ func (a *App) makerPreviewFrom(idx int) {
 	a.startReplay(sub, a.makerName+" (from line "+strconv.Itoa(idx+1)+")")
 }
 
+// trimActive reports whether a crop In or Out point is set (so the export /
+// preview should use a sub-range, not the whole scene).
+func (a *App) trimActive() bool {
+	return a.makerTrimStart >= 0 || a.makerTrimEnd >= 0
+}
+
+// trimRange resolves the In/Out points to a concrete, in-bounds [start, end]
+// (inclusive) over the current events: an unset/out-of-range end means "to the
+// end", and an inverted range (after deletes/reorders) degrades to the whole
+// scene rather than producing an empty export.
+func (a *App) trimRange() (int, int) {
+	n := 0
+	if a.makerScene != nil {
+		n = len(a.makerScene.Events)
+	}
+	if n == 0 {
+		return 0, -1
+	}
+	s, e := a.makerTrimStart, a.makerTrimEnd
+	if s < 0 || s >= n {
+		s = 0
+	}
+	if e < 0 || e >= n {
+		e = n - 1
+	}
+	if s > e {
+		s, e = 0, n-1
+	}
+	return s, e
+}
+
+// inTrim reports whether event i is inside the crop range (always true when no
+// crop is set) — used to dim the excluded rows in the list.
+func (a *App) inTrim(i int) bool {
+	if !a.trimActive() {
+		return true
+	}
+	s, e := a.trimRange()
+	return i >= s && i <= e
+}
+
+// trimmedScene returns a clone of the maker scene clipped to the crop range (or
+// the whole scene when no crop is set). The clone is always fresh so a Preview /
+// export can't mutate the edit buffer; StartBg is carried forward to the
+// background in effect at the crop start so a mid-scene crop isn't blank (same as
+// "Preview from this line"). Music before the crop is not carried (visual crop).
+func (a *App) trimmedScene() *sceneRecording {
+	sub := cloneScene(a.makerScene)
+	if !a.trimActive() || len(sub.Events) == 0 {
+		return sub
+	}
+	s, e := a.trimRange()
+	for j := s - 1; j >= 0; j-- { // last background change before the crop becomes the start scene
+		if courtroom.EventKind(sub.Events[j].Kind) == courtroom.EventBackground {
+			sub.StartBg = sub.Events[j].Text
+			break
+		}
+	}
+	sub.Events = sub.Events[s : e+1]
+	return sub
+}
+
 // makerDeleteSel removes the selected event.
 func (a *App) makerDeleteSel() {
 	if a.makerScene == nil {
@@ -472,7 +538,12 @@ func (a *App) makerPreview() {
 		a.warnAt = time.Now()
 		return
 	}
-	a.startReplay(cloneScene(a.makerScene), a.makerName+" (preview)")
+	name := a.makerName + " (preview)"
+	if a.trimActive() {
+		s, e := a.trimRange()
+		name = fmt.Sprintf("%s (crop %d–%d)", a.makerName, s+1, e+1)
+	}
+	a.startReplay(a.trimmedScene(), name) // honours the crop range
 }
 
 // makerSave writes the scene as a NEW timestamped .aorec — never overwriting the
@@ -645,11 +716,11 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	}
 	bx += 144
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "🎞 Export GIF") {
-		a.startSceneExport(a.makerScene, a.makerName, false)
+		a.startSceneExport(a.trimmedScene(), a.makerName, false) // honours the crop range
 	}
 	bx += 128
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "🎬 WebP") {
-		a.startSceneExport(a.makerScene, a.makerName, true) // higher-quality animated WebP
+		a.startSceneExport(a.trimmedScene(), a.makerName, true) // higher-quality animated WebP, cropped
 	}
 	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "⚙ Export") {
@@ -747,7 +818,7 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 	c.Label(x, y, fmt.Sprintf("Events (%d) — click to edit:", len(evs)), ColText)
 	y += 24
 
-	const toolH = 108 // reserved for the three toolbar rows below the list
+	const toolH = 170 // reserved for the toolbar rows (add / reorder / preview / crop) below the list
 	listH := h - toolH
 	if listH < makerRowH*3 {
 		listH = makerRowH * 3
@@ -783,10 +854,20 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 		if c.hovering(rowRect) && c.clicked {
 			a.makerSel = i
 		}
+		// Crop visuals: in-range rows get an accent stripe; excluded rows dim.
 		tag, text := eventSummary(evs[i])
-		c.Label(x+6, ry+4, fmt.Sprintf("%d", i+1), ColTextDim)
-		c.Label(x+32, ry+4, tag, ColAccent)
-		c.LabelClipped(x+74, ry+4, w-80, text, ColText)
+		tagCol, textCol := ColAccent, ColText
+		if a.trimActive() {
+			if a.inTrim(i) {
+				c.Fill(sdl.Rect{X: x, Y: ry, W: 3, H: makerRowH - 2}, ColAccent)
+			} else {
+				c.Fill(rowRect, sdl.Color{R: 0, G: 0, B: 0, A: 110})
+				tagCol, textCol = ColTextDim, ColTextDim
+			}
+		}
+		c.Label(x+8, ry+4, fmt.Sprintf("%d", i+1), ColTextDim)
+		c.Label(x+34, ry+4, tag, tagCol)
+		c.LabelClipped(x+76, ry+4, w-82, text, textCol)
 	}
 
 	ty := y + listH + 8
@@ -815,6 +896,33 @@ func (a *App) drawMakerList(x, y, w, h int32) {
 	ty += btnH + 6
 	if c.Button(sdl.Rect{X: x, Y: ty, W: 184, H: btnH}, "▶ Preview from this line") {
 		a.makerPreviewFrom(a.makerSel)
+	}
+	// Crop / trim: set In/Out around the funny moment; Preview + Export use the
+	// range, and the excluded lines dim above (delete with ✖ Del to cut for good).
+	ty += btnH + 6
+	if c.Button(sdl.Rect{X: x, Y: ty, W: 76, H: btnH}, "⏮ Set In") {
+		a.makerTrimStart = a.makerSel
+		if a.makerTrimEnd >= 0 && a.makerTrimEnd < a.makerTrimStart {
+			a.makerTrimEnd = -1 // Out before In is meaningless — clear it
+		}
+	}
+	if c.Button(sdl.Rect{X: x + 82, Y: ty, W: 84, H: btnH}, "⏭ Set Out") {
+		a.makerTrimEnd = a.makerSel
+		if a.makerTrimStart > a.makerTrimEnd {
+			a.makerTrimStart = -1
+		}
+	}
+	if a.trimActive() {
+		if c.Button(sdl.Rect{X: x + 172, Y: ty, W: 64, H: btnH}, "✕ Crop") {
+			a.makerTrimStart, a.makerTrimEnd = -1, -1
+		}
+	}
+	ty += btnH + 4
+	if a.trimActive() {
+		s, e := a.trimRange()
+		c.Label(x, ty, fmt.Sprintf("Crop: lines %d–%d of %d — Preview / Export use this range", s+1, e+1, len(evs)), ColAccent)
+	} else {
+		c.Label(x, ty, "Crop: full scene — pick a line, then ⏮ Set In / ⏭ Set Out", ColTextDim)
 	}
 }
 

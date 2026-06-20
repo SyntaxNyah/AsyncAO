@@ -143,6 +143,75 @@ func TestMakerDuplicateSel(t *testing.T) {
 	}
 }
 
+// TestMakerCropRange pins the crop/trim logic: In/Out resolve to an in-bounds
+// inclusive range, the trimmed scene carries the background in effect at the crop
+// start (so a mid-scene crop isn't blank), the clone never mutates the edit
+// buffer, and an inverted/out-of-range range degrades to the whole scene rather
+// than producing an empty export.
+func TestMakerCropRange(t *testing.T) {
+	bg := func(name string) recEvent { return recEvent{Kind: int(courtroom.EventBackground), Text: name} }
+	msg := func(text string) recEvent {
+		return recEvent{Kind: int(courtroom.EventMessage), Message: &protocol.ChatMessage{Message: text}}
+	}
+	newApp := func() *App {
+		return &App{
+			makerScene:     &sceneRecording{StartBg: "lobby", Events: []recEvent{bg("court"), msg("a"), msg("b"), msg("c"), msg("d")}},
+			makerTrimStart: -1,
+			makerTrimEnd:   -1,
+		}
+	}
+
+	// No crop: whole scene, a fresh clone.
+	a := newApp()
+	if a.trimActive() {
+		t.Fatal("trimActive must be false with no In/Out set")
+	}
+	if sub := a.trimmedScene(); len(sub.Events) != 5 || sub.StartBg != "lobby" {
+		t.Fatalf("no-crop scene = %d events bg=%q, want 5 / lobby", len(sub.Events), sub.StartBg)
+	}
+
+	// In at index 2 (msg "b"): range [2,4], StartBg carried from the bg before it.
+	a = newApp()
+	a.makerTrimStart = 2
+	if s, e := a.trimRange(); s != 2 || e != 4 {
+		t.Fatalf("In-only range = %d..%d, want 2..4", s, e)
+	}
+	sub := a.trimmedScene()
+	if len(sub.Events) != 3 || sub.StartBg != "court" {
+		t.Fatalf("In-only crop = %d events bg=%q, want 3 / court", len(sub.Events), sub.StartBg)
+	}
+	if sub.Events[0].Message == nil || sub.Events[0].Message.Message != "b" {
+		t.Fatalf("crop should start at msg b, got %+v", sub.Events[0])
+	}
+	if len(a.makerScene.Events) != 5 || a.makerScene.StartBg != "lobby" {
+		t.Error("trimmedScene mutated the edit buffer (must clone)")
+	}
+
+	// Out at index 2: range [0,2].
+	a = newApp()
+	a.makerTrimEnd = 2
+	if s, e := a.trimRange(); s != 0 || e != 2 {
+		t.Fatalf("Out-only range = %d..%d, want 0..2", s, e)
+	}
+
+	// Inverted (In after Out) degrades to the whole scene, never empty.
+	a = newApp()
+	a.makerTrimStart, a.makerTrimEnd = 4, 1
+	if s, e := a.trimRange(); s != 0 || e != 4 {
+		t.Fatalf("inverted range = %d..%d, want full 0..4", s, e)
+	}
+	if sub := a.trimmedScene(); len(sub.Events) != 5 {
+		t.Fatalf("inverted crop = %d events, want full 5", len(sub.Events))
+	}
+
+	// Out-of-range Out (e.g. after deletes) clamps to the last event.
+	a = newApp()
+	a.makerTrimStart, a.makerTrimEnd = 2, 99
+	if s, e := a.trimRange(); s != 2 || e != 4 {
+		t.Fatalf("clamped range = %d..%d, want 2..4", s, e)
+	}
+}
+
 func TestMakerNewLineSeedInherits(t *testing.T) {
 	a := &App{}
 	a.makerScene = &sceneRecording{Events: []recEvent{{
