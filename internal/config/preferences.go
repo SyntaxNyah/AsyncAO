@@ -245,6 +245,34 @@ const (
 	defaultReplaySpeed = 100
 )
 
+// Scene GIF/WebP export options (the studio) — sticky so a chosen look persists.
+const (
+	minExportHeight      = 240
+	maxExportHeight      = 720
+	defaultExportHeight  = 360
+	minExportFPS         = 6
+	maxExportFPS         = 30
+	defaultExportFPS     = 12
+	minExportQuality     = 20
+	maxExportQuality     = 100
+	defaultExportQuality = 80
+)
+
+// ExportOptions is the persisted scene-export configuration (GIF + animated
+// WebP). Output is 4:3 at HeightPx; FPS is the capture/playback cadence; Quality
+// is the lossy WebP quality (GIF is always 256-colour); Loop loops the animation.
+type ExportOptions struct {
+	HeightPx int  `json:"heightPx"`
+	FPS      int  `json:"fps"`
+	Quality  int  `json:"quality"`
+	Loop     bool `json:"loop"`
+}
+
+// defaultExportOptions is the out-of-box export look.
+func defaultExportOptions() ExportOptions {
+	return ExportOptions{HeightPx: defaultExportHeight, FPS: defaultExportFPS, Quality: defaultExportQuality, Loop: true}
+}
+
 // Per-speaker name colours (OFF by default): each speaker's name is tinted by a
 // stable hash of the name. Saturation/value are user-tunable; value has a floor
 // so a name can't go unreadable-dark on the chat panel.
@@ -418,6 +446,7 @@ type AssetPreferences struct {
 	ShowRecordButton       bool                         `json:"showRecordButton"`
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
 	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
+	Export                 ExportOptions                `json:"export"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
 	RainbowPairDesync      bool                         `json:"rainbowPairDesync"`
@@ -577,72 +606,73 @@ type AssetPreferences struct {
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
 // "absent" from the zero value where the default is not the zero value.
 type prefsJSON struct {
-	GlobalFallbacksEnabled bool      `json:"globalFallbacksEnabled"`
-	PreferAnimated         *bool     `json:"preferAnimated"`
-	EmoteButtonImages      *bool     `json:"emoteButtonImages"`
-	SmoothScaling          *bool     `json:"smoothScaling"`
-	UpdateCheck            *bool     `json:"updateCheck"`    // absent = default ON
-	HighlightColor         *int      `json:"highlightColor"` // absent = default accent
-	BgSlideshow            bool      `json:"bgSlideshow"`    // default OFF (zero value)
-	BgSlideshowSecs        int       `json:"bgSlideshowSecs"`
-	DownloadKBps           int       `json:"downloadKBps"`           // 0 = unlimited (default)
-	ForceCharNames         bool      `json:"forceCharNames"`         // default OFF
-	RandomEmote            bool      `json:"randomEmote"`            // default OFF
-	FriendHighlight        bool      `json:"friendHighlight"`        // default OFF
-	ShowFriendButton       *bool     `json:"showFriendButton"`       // default ON (pointer: absent != off)
-	DragLayout             *bool     `json:"dragLayout"`             // default ON (pointer: absent != off)
-	FollowEnabled          bool      `json:"followEnabled"`          // default OFF (opt-in)
-	DyslexiaFont           bool      `json:"dyslexiaFont"`           // default OFF
-	DNDPersist             bool      `json:"dndPersist"`             // default OFF (DND clears each launch)
-	DNDSaved               bool      `json:"dndSaved"`               // persisted DND state (restored only when DNDPersist)
-	RainbowMessages        bool      `json:"rainbowMessages"`        // default OFF
-	RandomMessageColor     bool      `json:"randomMessageColor"`     // default OFF
-	RainbowSprites         bool      `json:"rainbowSprites"`         // default OFF
-	ShowRecordButton       bool      `json:"showRecordButton"`       // default OFF
-	RainbowSpriteSpeed     *int      `json:"rainbowSpriteSpeed"`     // absent = default
-	ReplayPlaybackSpeed    *int      `json:"replaySpeed"`            // absent = default
-	RainbowSpriteVividness *int      `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
-	RainbowSpriteGlow      bool      `json:"rainbowSpriteGlow"`      // default OFF
-	RainbowPairDesync      bool      `json:"rainbowPairDesync"`      // default OFF
-	RainbowPerChar         bool      `json:"rainbowPerChar"`         // default OFF
-	SpriteWobble           bool      `json:"spriteWobble"`           // default OFF
-	SpriteSpin             bool      `json:"spriteSpin"`             // default OFF
-	SpriteSolidTint        bool      `json:"spriteSolidTint"`        // default OFF
-	SpriteTintColor        *int      `json:"spriteTintColor"`        // absent = default
-	FriendNotify           bool      `json:"friendNotify"`           // default OFF
-	FriendOSToast          bool      `json:"friendOSToast"`          // default OFF
-	FriendGlowPulse        bool      `json:"friendGlowPulse"`        // default OFF
-	FriendSound            bool      `json:"friendSound"`            // default OFF
-	FriendSoundFile        string    `json:"friendSoundFile"`
-	ModBanSFX              bool      `json:"modBanSFX"`        // default OFF
-	ModKickSFX             bool      `json:"modKickSFX"`       // default OFF
-	ModMuteSFX             bool      `json:"modMuteSFX"`       // default OFF
-	ModBanSoundFile        string    `json:"modBanSoundFile"`  // "" = built-in default
-	ModKickSoundFile       string    `json:"modKickSoundFile"` // "" = built-in default
-	ModMuteSoundFile       string    `json:"modMuteSoundFile"` // "" = built-in default
-	ModcallToast           bool      `json:"modcallToast"`     // default OFF
-	CallwordSoundFile      string    `json:"callwordSoundFile"`
-	DebugOverlay           bool      `json:"debugOverlay"`
-	FormatAutoDetect       *bool     `json:"formatAutoDetect"` // absent = default ON
-	ThemeLayout            *bool     `json:"themeLayout"`      // absent = default ON
-	ThemeFit               int       `json:"themeFit"`         // 0 = Stretch (default)
-	ThemeFitZoom           int       `json:"themeFitZoom"`     // 0 (absent) = default 100
-	ThemeFitPanX           int       `json:"themeFitPanX"`
-	ThemeFitPanY           int       `json:"themeFitPanY"`
-	PlainLobby             *bool     `json:"plainLobby"`        // absent = default ON
-	UIScaleAuto            *bool     `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
-	CatchUpWhenBehind      *bool     `json:"catchUpWhenBehind"` // absent = default ON
-	CatchUpThreshold       *int      `json:"catchUpThreshold"`  // absent = default
-	MultiTabCap            *int      `json:"multiTabCap"`       // absent = default
-	NameColors             bool      `json:"nameColors"`        // default OFF (zero value)
-	NameColorSat           *int      `json:"nameColorSat"`      // absent = default
-	NameColorVal           *int      `json:"nameColorVal"`      // absent = default
-	RestoreTabs            bool      `json:"restoreTabs"`       // default OFF (zero value)
-	OpenTabs               []OpenTab `json:"openTabs"`          // remembered tabs for restore-on-launch
-	ReduceMotion           bool      `json:"reduceMotion"`      // default OFF (zero value)
-	MusicDucking           bool      `json:"musicDucking"`      // default OFF (zero value)
-	PerAreaScrollback      bool      `json:"perAreaScrollback"` // default OFF (zero value)
-	DetailedLog            bool      `json:"detailedLog"`       // default OFF (zero value)
+	GlobalFallbacksEnabled bool           `json:"globalFallbacksEnabled"`
+	PreferAnimated         *bool          `json:"preferAnimated"`
+	EmoteButtonImages      *bool          `json:"emoteButtonImages"`
+	SmoothScaling          *bool          `json:"smoothScaling"`
+	UpdateCheck            *bool          `json:"updateCheck"`    // absent = default ON
+	HighlightColor         *int           `json:"highlightColor"` // absent = default accent
+	BgSlideshow            bool           `json:"bgSlideshow"`    // default OFF (zero value)
+	BgSlideshowSecs        int            `json:"bgSlideshowSecs"`
+	DownloadKBps           int            `json:"downloadKBps"`           // 0 = unlimited (default)
+	ForceCharNames         bool           `json:"forceCharNames"`         // default OFF
+	RandomEmote            bool           `json:"randomEmote"`            // default OFF
+	FriendHighlight        bool           `json:"friendHighlight"`        // default OFF
+	ShowFriendButton       *bool          `json:"showFriendButton"`       // default ON (pointer: absent != off)
+	DragLayout             *bool          `json:"dragLayout"`             // default ON (pointer: absent != off)
+	FollowEnabled          bool           `json:"followEnabled"`          // default OFF (opt-in)
+	DyslexiaFont           bool           `json:"dyslexiaFont"`           // default OFF
+	DNDPersist             bool           `json:"dndPersist"`             // default OFF (DND clears each launch)
+	DNDSaved               bool           `json:"dndSaved"`               // persisted DND state (restored only when DNDPersist)
+	RainbowMessages        bool           `json:"rainbowMessages"`        // default OFF
+	RandomMessageColor     bool           `json:"randomMessageColor"`     // default OFF
+	RainbowSprites         bool           `json:"rainbowSprites"`         // default OFF
+	ShowRecordButton       bool           `json:"showRecordButton"`       // default OFF
+	RainbowSpriteSpeed     *int           `json:"rainbowSpriteSpeed"`     // absent = default
+	ReplayPlaybackSpeed    *int           `json:"replaySpeed"`            // absent = default
+	Export                 *ExportOptions `json:"export"`                 // absent = default
+	RainbowSpriteVividness *int           `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
+	RainbowSpriteGlow      bool           `json:"rainbowSpriteGlow"`      // default OFF
+	RainbowPairDesync      bool           `json:"rainbowPairDesync"`      // default OFF
+	RainbowPerChar         bool           `json:"rainbowPerChar"`         // default OFF
+	SpriteWobble           bool           `json:"spriteWobble"`           // default OFF
+	SpriteSpin             bool           `json:"spriteSpin"`             // default OFF
+	SpriteSolidTint        bool           `json:"spriteSolidTint"`        // default OFF
+	SpriteTintColor        *int           `json:"spriteTintColor"`        // absent = default
+	FriendNotify           bool           `json:"friendNotify"`           // default OFF
+	FriendOSToast          bool           `json:"friendOSToast"`          // default OFF
+	FriendGlowPulse        bool           `json:"friendGlowPulse"`        // default OFF
+	FriendSound            bool           `json:"friendSound"`            // default OFF
+	FriendSoundFile        string         `json:"friendSoundFile"`
+	ModBanSFX              bool           `json:"modBanSFX"`        // default OFF
+	ModKickSFX             bool           `json:"modKickSFX"`       // default OFF
+	ModMuteSFX             bool           `json:"modMuteSFX"`       // default OFF
+	ModBanSoundFile        string         `json:"modBanSoundFile"`  // "" = built-in default
+	ModKickSoundFile       string         `json:"modKickSoundFile"` // "" = built-in default
+	ModMuteSoundFile       string         `json:"modMuteSoundFile"` // "" = built-in default
+	ModcallToast           bool           `json:"modcallToast"`     // default OFF
+	CallwordSoundFile      string         `json:"callwordSoundFile"`
+	DebugOverlay           bool           `json:"debugOverlay"`
+	FormatAutoDetect       *bool          `json:"formatAutoDetect"` // absent = default ON
+	ThemeLayout            *bool          `json:"themeLayout"`      // absent = default ON
+	ThemeFit               int            `json:"themeFit"`         // 0 = Stretch (default)
+	ThemeFitZoom           int            `json:"themeFitZoom"`     // 0 (absent) = default 100
+	ThemeFitPanX           int            `json:"themeFitPanX"`
+	ThemeFitPanY           int            `json:"themeFitPanY"`
+	PlainLobby             *bool          `json:"plainLobby"`        // absent = default ON
+	UIScaleAuto            *bool          `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
+	CatchUpWhenBehind      *bool          `json:"catchUpWhenBehind"` // absent = default ON
+	CatchUpThreshold       *int           `json:"catchUpThreshold"`  // absent = default
+	MultiTabCap            *int           `json:"multiTabCap"`       // absent = default
+	NameColors             bool           `json:"nameColors"`        // default OFF (zero value)
+	NameColorSat           *int           `json:"nameColorSat"`      // absent = default
+	NameColorVal           *int           `json:"nameColorVal"`      // absent = default
+	RestoreTabs            bool           `json:"restoreTabs"`       // default OFF (zero value)
+	OpenTabs               []OpenTab      `json:"openTabs"`          // remembered tabs for restore-on-launch
+	ReduceMotion           bool           `json:"reduceMotion"`      // default OFF (zero value)
+	MusicDucking           bool           `json:"musicDucking"`      // default OFF (zero value)
+	PerAreaScrollback      bool           `json:"perAreaScrollback"` // default OFF (zero value)
+	DetailedLog            bool           `json:"detailedLog"`       // default OFF (zero value)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -918,6 +948,7 @@ func defaultPrefs(path string) *AssetPreferences {
 
 		RainbowSpriteSpeed:     defaultRainbowSpeed,
 		ReplayPlaybackSpeed:    defaultReplaySpeed,
+		Export:                 defaultExportOptions(),
 		RainbowSpriteVividness: defaultRainbowVivid,
 		SpriteTintColor:        defaultSpriteTintColor,
 		SmoothScaling:          defaultSmoothScaling,
@@ -1031,6 +1062,22 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.ReplayPlaybackSpeed != nil {
 		p.ReplayPlaybackSpeed = clampPercent(*onDisk.ReplayPlaybackSpeed, minReplaySpeed, maxReplaySpeed)
+	}
+	if onDisk.Export != nil {
+		// Start from defaults and overlay valid on-disk fields, so a partial
+		// hand-edited export object can't zero-out the unspecified knobs.
+		e := defaultExportOptions()
+		if onDisk.Export.HeightPx > 0 {
+			e.HeightPx = clampPercent(onDisk.Export.HeightPx, minExportHeight, maxExportHeight)
+		}
+		if onDisk.Export.FPS > 0 {
+			e.FPS = clampPercent(onDisk.Export.FPS, minExportFPS, maxExportFPS)
+		}
+		if onDisk.Export.Quality > 0 {
+			e.Quality = clampPercent(onDisk.Export.Quality, minExportQuality, maxExportQuality)
+		}
+		e.Loop = onDisk.Export.Loop
+		p.Export = e
 	}
 	if onDisk.RainbowSpriteVividness != nil {
 		p.RainbowSpriteVividness = clampPercent(*onDisk.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
@@ -2312,6 +2359,28 @@ func (p *AssetPreferences) SetReplaySpeed(v int) {
 		return
 	}
 	p.ReplayPlaybackSpeed = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ExportOpts reports the sticky scene-export options (GIF/WebP size/fps/quality/loop).
+func (p *AssetPreferences) ExportOpts() ExportOptions {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.Export
+}
+
+// SetExportOpts stores the export options (each field clamped to its range).
+func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
+	o.HeightPx = clampPercent(o.HeightPx, minExportHeight, maxExportHeight)
+	o.FPS = clampPercent(o.FPS, minExportFPS, maxExportFPS)
+	o.Quality = clampPercent(o.Quality, minExportQuality, maxExportQuality)
+	p.mu.Lock()
+	if p.Export == o {
+		p.mu.Unlock()
+		return
+	}
+	p.Export = o
 	p.mu.Unlock()
 	p.markDirty()
 }

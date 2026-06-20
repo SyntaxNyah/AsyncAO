@@ -23,7 +23,7 @@ func solidRGBA(w, h int, c color.RGBA) *image.RGBA {
 // to feed frames.
 func TestEncodeAnimatedWebP(t *testing.T) {
 	const w, h = 24, 18
-	enc, err := New(w, h, 75, 80)
+	enc, err := New(w, h, 75, 80, true)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestEncodeAnimatedWebP(t *testing.T) {
 // TestSizeMismatchRejected guards the capture contract: a frame whose dimensions
 // don't match the encoder must be rejected, not silently corrupt the stream.
 func TestSizeMismatchRejected(t *testing.T) {
-	enc, err := New(16, 16, 75, 80)
+	enc, err := New(16, 16, 75, 80, true)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

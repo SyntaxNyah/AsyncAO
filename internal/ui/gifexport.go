@@ -47,15 +47,17 @@ func (a *App) sceneExportFromPath(path string, asWebP bool) {
 // — so the window stays responsive and nothing blocks. Off by default; zero cost
 // on the live render path when not exporting.
 const (
-	gifExportH       = 360                // capped output height (4:3) — bounds memory + GIF size
-	gifExportW       = gifExportH * 4 / 3 // 480
-	gifExportFPS     = 12                 // capture cadence
-	gifFrameDt       = time.Second / gifExportFPS
-	gifDelayCs       = 100 / gifExportFPS  // per-frame GIF delay, centiseconds (≈8)
-	webpFrameMs      = 1000 / gifExportFPS // per-frame WebP duration, ms (≈83)
-	webpQuality      = 80                  // lossy WebP quality (0..100): small but clean
-	maxGifFrames     = 400                 // ~33 s cap (§17.4): ~69 MB of paletted frames, sane GIF
-	gifFramesPerTick = 4                   // frames captured per real frame (responsive + progress)
+	gifExportH       = 360 // default output height (4:3); config ExportOptions overrides
+	gifExportW       = gifExportH * 4 / 3
+	maxGifFrames     = 400 // absolute frame cap (§17.4) + the memory-budget basis
+	minExportFrames  = 60  // floor so even the largest size still gets a few seconds
+	gifFramesPerTick = 4   // frames captured per real frame (responsive + progress)
+
+	// gifFrameBudgetBytes bounds GIF memory: every paletted frame is 1 byte/px and
+	// all are held for the final encode, so 480×360×400 ≈ 69 MB is the budget. A
+	// bigger output keeps that budget by capping at proportionally fewer frames
+	// (exportMaxFrames), so resolution can't blow the 256 MiB envelope.
+	gifFrameBudgetBytes = gifExportW * gifExportH * maxGifFrames
 
 	// Asset pre-warm (so the GIF shows the characters, not an empty stage): the
 	// export advances ~4× faster than a replay and outruns async sprite fetches,
@@ -66,6 +68,101 @@ const (
 	gifWarmQuiet = 600 * time.Millisecond
 	gifWarmMax   = 6 * time.Second
 )
+
+// Export size / frame-rate dropdown presets (4:3). Bounds mirror the config
+// clamp — SetExportOpts is authoritative — so a pick is always in range.
+var (
+	exportHeightPresets = []int{288, 360, 480, 540}
+	exportHeightLabels  = []string{"Small · 384×288", "Medium · 480×360", "Large · 640×480", "XL · 720×540"}
+	exportFPSPresets    = []int{8, 12, 15, 24}
+	exportFPSLabels     = []string{"8 fps · smallest", "12 fps", "15 fps", "24 fps · smoothest"}
+)
+
+// nearestPresetIdx returns the index of the preset value closest to v (so a
+// hand-edited or legacy pref lands on a sensible dropdown row).
+func nearestPresetIdx(presets []int, v int) int {
+	best, bestD := 0, 1<<30
+	for i, p := range presets {
+		d := p - v
+		if d < 0 {
+			d = -d
+		}
+		if d < bestD {
+			bestD, best = d, i
+		}
+	}
+	return best
+}
+
+// drawExportOptions draws the shared GIF/WebP export controls — size, frame rate,
+// WebP quality, loop, and (when withSpeed) playback speed — at the pad column,
+// persisting each change immediately. Returns the y below the panel. Shared by
+// Settings → Studio and the in-maker "⚙ Export options" panel so they can't
+// drift. withSpeed is off in Settings (its Replay-playback section owns the
+// slider) and on in the maker (so the speed is editable while building).
+func (a *App) drawExportOptions(y int32, withSpeed bool) int32 {
+	c := a.ctx
+	opts := a.d.Prefs.ExportOpts()
+	fx := int32(pad + 130)
+
+	c.Label(pad, y+5, "Size:", ColText)
+	if next, changed := c.Dropdown("exp_size", sdl.Rect{X: fx, Y: y, W: 180, H: fieldH}, exportHeightLabels, nearestPresetIdx(exportHeightPresets, opts.HeightPx)); changed {
+		opts.HeightPx = exportHeightPresets[next]
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	hh := int32(opts.HeightPx)
+	maxSecs := exportMaxFrames(hh*4/3, hh) / max(1, opts.FPS)
+	c.Label(fx+190, y+5, fmt.Sprintf("GIF up to ~%ds (bigger = shorter); WebP runs longer", maxSecs), ColTextDim)
+	y += 32
+
+	c.Label(pad, y+5, "Frame rate:", ColText)
+	if next, changed := c.Dropdown("exp_fps", sdl.Rect{X: fx, Y: y, W: 180, H: fieldH}, exportFPSLabels, nearestPresetIdx(exportFPSPresets, opts.FPS)); changed {
+		opts.FPS = exportFPSPresets[next]
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	c.Label(fx+190, y+5, "higher = smoother but bigger", ColTextDim)
+	y += 32
+
+	if next := a.sliderRow(y, "  WebP quality %", opts.Quality, 5, 20, 100); next != opts.Quality {
+		opts.Quality = next
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	y += 30
+
+	if next := c.Checkbox(pad, y, "Loop the animation forever (off = play once)", opts.Loop); next != opts.Loop {
+		opts.Loop = next
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	y += 28
+
+	// Playback speed is shared with the replay player (it drives the export's
+	// pacing too) — surfaced here so the whole "look" is set in one place.
+	if withSpeed {
+		spd := a.d.Prefs.ReplaySpeed()
+		if next := a.sliderRow(y, "  Playback speed %", spd, 5, 25, 200); next != spd {
+			a.d.Prefs.SetReplaySpeed(next)
+		}
+		y += 30
+	}
+	return y
+}
+
+// exportMaxFrames is the frame cap for a w×h export: bounded by the paletted-frame
+// memory budget (so a large GIF can't blow the budget), floored so even the
+// largest size still gets a few seconds, and never above the absolute cap.
+func exportMaxFrames(w, h int32) int {
+	if w <= 0 || h <= 0 {
+		return maxGifFrames
+	}
+	n := gifFrameBudgetBytes / (int(w) * int(h))
+	if n < minExportFrames {
+		n = minExportFrames
+	}
+	if n > maxGifFrames {
+		n = maxGifFrames
+	}
+	return n
+}
 
 // gifExportJob is the in-flight render state (allocated only while exporting).
 // One job drives either format: GIF accumulates paletted frames for gifenc;
@@ -81,6 +178,13 @@ type gifExportJob struct {
 
 	asWebP bool             // export an animated WebP instead of a GIF
 	webp   *webpenc.Encoder // WebP only — streams + compresses frames as they arrive
+
+	// Per-export output settings (from config ExportOptions, resolved once).
+	w, h      int32         // capture/output size (4:3)
+	frameDt   time.Duration // room Update step per captured frame (= 1/fps)
+	delayCs   int           // GIF per-frame delay, centiseconds
+	loop      bool          // loop the animation forever vs play once
+	maxFrames int           // frame cap for this size (memory-budgeted)
 
 	// Conversation chatbox raster, rebuilt per message and revealed rune-by-rune
 	// (so the GIF shows people talking). Self-cached here, never the live a.msRaster.
@@ -114,7 +218,26 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 		a.warnAt = time.Now()
 		return
 	}
-	ct, err := render.NewCaptureTarget(a.ctx.Ren, gifExportW, gifExportH)
+	// Resolve the sticky export options into this job's size/cadence.
+	opts := a.d.Prefs.ExportOpts()
+	h := int32(opts.HeightPx)
+	w := h * 4 / 3
+	fps := opts.FPS
+	if fps < 1 {
+		fps = 1
+	}
+	frameDt := time.Second / time.Duration(fps)
+	delayCs := 100 / fps
+	if delayCs < 1 {
+		delayCs = 1
+	}
+	frameMs := 1000 / fps
+	if frameMs < 1 {
+		frameMs = 1
+	}
+	maxFrames := exportMaxFrames(w, h)
+
+	ct, err := render.NewCaptureTarget(a.ctx.Ren, w, h)
 	if err != nil {
 		a.warnLine = "Export unavailable: " + err.Error()
 		a.warnAt = time.Now()
@@ -122,7 +245,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 	}
 	var enc *webpenc.Encoder
 	if asWebP {
-		if enc, err = webpenc.New(gifExportW, gifExportH, webpQuality, webpFrameMs); err != nil {
+		if enc, err = webpenc.New(int(w), int(h), opts.Quality, frameMs, opts.Loop); err != nil {
 			ct.Close()
 			a.warnLine = "WebP export unavailable: " + err.Error()
 			a.warnAt = time.Now()
@@ -174,6 +297,12 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 		name:         sanitizeStem(name),
 		asWebP:       asWebP,
 		webp:         enc,
+		w:            w,
+		h:            h,
+		frameDt:      frameDt,
+		delayCs:      delayCs,
+		loop:         opts.Loop,
+		maxFrames:    maxFrames,
 		warming:      true,
 		warmRefs:     warmRefs,
 		warmStarted:  now,
@@ -199,7 +328,7 @@ func (a *App) tickGifExport() {
 		return
 	}
 	for n := 0; n < gifFramesPerTick; n++ {
-		if j.captured >= maxGifFrames {
+		if j.captured >= j.maxFrames {
 			a.finishGifExport()
 			return
 		}
@@ -211,9 +340,9 @@ func (a *App) tickGifExport() {
 			j.room.HandleEvent(eventFromRec(j.events[j.idx]))
 			j.idx++
 		}
-		j.room.Update(gifFrameDt)
+		j.room.Update(j.frameDt)
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
-		a.d.Viewport.Update(&j.room.Scene, gifFrameDt)
+		a.d.Viewport.Update(&j.room.Scene, j.frameDt)
 		img, err := j.ct.Capture(a.ctx.Ren, func(dst sdl.Rect) {
 			a.d.Viewport.Render(a.ctx.Ren, &j.room.Scene, dst)
 			a.drawGifChatbox(j, &j.room.Scene, dst) // composite the conversation over the scene
@@ -368,9 +497,10 @@ func (a *App) finishGifExport() {
 		return
 	}
 	frames := j.frames
+	delayCs, loop := j.delayCs, j.loop
 	a.warnLine = fmt.Sprintf("Encoding GIF (%d frames)…", len(frames))
 	a.warnAt = time.Now()
-	go func() { a.gifResultCh <- encodeAndWriteGIF(frames, stem) }()
+	go func() { a.gifResultCh <- encodeAndWriteGIF(frames, stem, delayCs, loop) }()
 }
 
 // finishWebpExport assembles the streamed WebP frames and writes the file. The
@@ -418,8 +548,8 @@ func (a *App) restoreViewportPreanim() {
 }
 
 // encodeAndWriteGIF (off-thread) encodes the frames and writes recordings\<stem>.gif.
-func encodeAndWriteGIF(frames []*image.Paletted, stem string) string {
-	data, err := gifenc.EncodeGIF(frames, gifDelayCs)
+func encodeAndWriteGIF(frames []*image.Paletted, stem string, delayCs int, loop bool) string {
+	data, err := gifenc.EncodeGIF(frames, delayCs, loop)
 	if err != nil {
 		return "GIF export failed: " + err.Error()
 	}
@@ -493,20 +623,24 @@ func (a *App) drawGifProgress(winW, winH int32) {
 	}
 
 	done := 0
+	capFrames := maxGifFrames
 	label := "🎞  Rendering GIF…"
 	if j != nil {
 		done = j.captured
+		if j.maxFrames > 0 {
+			capFrames = j.maxFrames
+		}
 		if j.asWebP {
 			label = "🎬  Rendering WebP…"
 		}
 	}
-	pct := done * 100 / maxGifFrames
+	pct := done * 100 / capFrames
 	c.Label(cx-120, cy-30, label, ColText)
 	c.Label(cx-120, cy, fmt.Sprintf("%d frames captured (%d%% of the cap)", done, pct), ColTextDim)
 	// progress bar
 	bar := sdl.Rect{X: cx - 160, Y: cy + 26, W: 320, H: 14}
 	c.Fill(bar, ColPanel)
-	fillW := int32(done) * bar.W / int32(maxGifFrames)
+	fillW := int32(done) * bar.W / int32(capFrames)
 	if fillW > bar.W {
 		fillW = bar.W
 	}

@@ -60,11 +60,12 @@ func Quantize(src *image.RGBA) *image.Paletted {
 // predecessor emits nothing — its delay folds into the previously emitted frame,
 // preserving total duration with fewer frames. delayCs is the per-emitted-frame
 // delay in centiseconds (derive it from the capture cadence — 12 fps → 8 cs).
+// loop forever when loop is true, else play the animation once.
 //
 // Diffing only runs when the frames' palette reserves a transparent slot (an
 // alpha-0 entry, as Quantize's does). A palette without one falls back to whole
 // frames, so EncodeGIF stays correct for any caller.
-func EncodeGIF(frames []*image.Paletted, delayCs int) ([]byte, error) {
+func EncodeGIF(frames []*image.Paletted, delayCs int, loop bool) ([]byte, error) {
 	if len(frames) == 0 {
 		return nil, errors.New("gifenc: no frames to encode")
 	}
@@ -73,7 +74,11 @@ func EncodeGIF(frames []*image.Paletted, delayCs int) ([]byte, error) {
 	}
 	ti, canDiff := transparentIdx(frames[0].Palette)
 
-	g := &gif.GIF{LoopCount: 0} // 0 = loop forever
+	loopCount := 0 // 0 = loop forever
+	if !loop {
+		loopCount = -1 // -1 = play once, no loop
+	}
+	g := &gif.GIF{LoopCount: loopCount}
 	// The first frame is whole — the keyframe every later frame diffs against.
 	g.Image = append(g.Image, frames[0])
 	g.Delay = append(g.Delay, delayCs)

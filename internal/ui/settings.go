@@ -879,14 +879,11 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 	y += 32
 
 	y = a.settingsSection(y, w, "Export to GIF / WebP")
-	c.Label(pad, y, "Turn a recording into a shareable animation of people talking. On a recording above, click 🎞 GIF (works", ColTextDim)
+	c.Label(pad, y, "Turn a recording into a shareable animation. Use 🎞 GIF (works everywhere) or 🎬 WebP (true-colour, smaller)", ColTextDim)
 	y += 18
-	c.Label(pad, y, "everywhere) or 🎬 WebP (true-colour + smaller, no 256-colour banding) — or build one in the Scene Maker", ColTextDim)
-	y += 18
-	c.Label(pad, y, "(🎬 New scene / ✎ Edit) and use its 🎞 / 🎬 buttons. It pre-loads the sprites, then renders behind a", ColTextDim)
-	y += 18
-	c.Label(pad, y, "progress bar to recordings\\. Best while connected so assets can load. Off by default — opt-in, no live cost.", ColTextDim)
+	c.Label(pad, y, "on a recording above, or build one in the Scene Maker. These settings apply to every export:", ColTextDim)
 	y += 26
+	y = a.drawExportOptions(y, false) // speed lives in the Replay-playback section above
 	return y
 }
 

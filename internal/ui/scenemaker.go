@@ -202,6 +202,7 @@ func (a *App) closeSceneMaker() {
 	a.makerSel = 0
 	a.makerScroll = 0
 	a.makerPickerOpen = false
+	a.makerExportOpen = false
 	a.teardownMakerPreview()
 }
 
@@ -630,6 +631,7 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 88, H: btnH}, "📂 Open") {
 		a.makerPickerOpen = !a.makerPickerOpen
+		a.makerExportOpen = false
 	}
 	bx += 96
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "💾 Save .aorec") {
@@ -650,6 +652,10 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 		a.startSceneExport(a.makerScene, a.makerName, true) // higher-quality animated WebP
 	}
 	bx += 112
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "⚙ Export") {
+		a.makerExportOpen = !a.makerExportOpen // size / fps / quality / loop / speed
+	}
+	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 108, H: btnH}, "🆕 New scene") {
 		a.newScene()
 	}
@@ -664,6 +670,10 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	bodyY := y
 	if a.makerPickerOpen { // the in-maker "Open a recording" list replaces the body
 		a.drawMakerOpenPicker(pad, bodyY, winW-2*pad, winH-bodyY-pad)
+		return
+	}
+	if a.makerExportOpen { // the in-maker export-options panel replaces the body
+		a.drawMakerExportPanel(pad, bodyY)
 		return
 	}
 	a.drawMakerList(pad, bodyY, makerListW, winH-bodyY-pad)
@@ -682,6 +692,20 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 
 // drawMakerOpenPicker lists saved recordings to load straight into the maker
 // (the "import existing recordings to edit" ask) — no trip out to Settings.
+// drawMakerExportPanel is the in-maker "⚙ Export options" body: the shared export
+// controls (size / fps / quality / loop / speed) plus guidance. The 🎞 GIF / 🎬
+// WebP buttons in the actions row run the export with these settings.
+func (a *App) drawMakerExportPanel(x, y int32) {
+	c := a.ctx
+	c.Label(x, y, "⚙ Export options — apply to 🎞 GIF / 🎬 WebP (buttons above)", ColAccent)
+	y += 30
+	y = a.drawExportOptions(y, true)
+	y += 10
+	c.Label(x, y, "Bigger size / higher frame-rate = a larger file and a shorter GIF (WebP can run longer).", ColTextDim)
+	y += 20
+	c.Label(x, y, "Tip: screenshake and busy animated backgrounds bloat a GIF — every pixel changes each frame, so it can't compress.", ColTextDim)
+}
+
 func (a *App) drawMakerOpenPicker(x, y, w, h int32) {
 	c := a.ctx
 	recs := listRecordings()

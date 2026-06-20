@@ -16,7 +16,7 @@ func Available() bool { return false }
 type Encoder struct{}
 
 // New always fails in the fallback build.
-func New(w, h, quality, frameMs int) (*Encoder, error) {
+func New(w, h, quality, frameMs int, loop bool) (*Encoder, error) {
 	return nil, fmt.Errorf("webpenc: built without the libwebp encoder (CGO disabled)")
 }
 

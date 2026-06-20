@@ -43,8 +43,8 @@ type Encoder struct {
 }
 
 // New creates an encoder for w×h frames at the given lossy quality (0..100) and a
-// fixed per-frame duration frameMs. The animation loops forever.
-func New(w, h, quality, frameMs int) (*Encoder, error) {
+// fixed per-frame duration frameMs. loop forever when loop is true, else play once.
+func New(w, h, quality, frameMs int, loop bool) (*Encoder, error) {
 	if w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("webpenc: bad size %dx%d", w, h)
 	}
@@ -55,7 +55,11 @@ func New(w, h, quality, frameMs int) (*Encoder, error) {
 	if C.WebPAnimEncoderOptionsInit(&opts) == 0 {
 		return nil, fmt.Errorf("webpenc: anim options init failed (libwebpmux ABI mismatch)")
 	}
-	opts.anim_params.loop_count = 0 // 0 = loop forever
+	loopCount := C.int(0) // 0 = loop forever
+	if !loop {
+		loopCount = 1 // play once
+	}
+	opts.anim_params.loop_count = loopCount
 
 	enc := C.WebPAnimEncoderNew(C.int(w), C.int(h), &opts)
 	if enc == nil {

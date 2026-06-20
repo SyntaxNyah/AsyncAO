@@ -314,8 +314,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Scene → GIF export** (M16, **🎞 Export GIF** in the maker, **🎞 GIF** per
   recording in **Settings → Studio**): render a recorded courtroom — *people
   talking* — to a **shareable animated GIF**. It renders the scene through a
-  throwaway replay room into a **fixed off-screen target** (a capped 480×360, so
-  it's small + memory-bounded) and **composites the conversation chatbox** over
+  throwaway replay room into a **fixed off-screen target** (a capped, configurable
+  size — default 480×360 — so it's small + memory-bounded) and **composites the
+  conversation chatbox** over
   each frame — the speaker's name and their line **typing out rune-by-rune**, the
   same content the live/replay chatbox draws (so the GIF actually animates, it
   isn't a silent stage). Before the first frame it **pre-warms the scene's
@@ -342,6 +343,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   every frame for the final encode). Saved to `recordings\<name>.webp`. Falls back
   to a clear message if a build was made without the encoder; the GIF path always
   works.
+- **Export options** (**⚙ Export** in the maker, and **Settings → Studio**): set
+  the **size** (Small 384×288 → XL 720×540), **frame rate** (8–24 fps), **WebP
+  quality**, **loop on/off**, and **playback speed** — all **sticky** (persisted in
+  prefs) and applied to every GIF/WebP. The frame cap is **memory-budgeted**: a
+  bigger size keeps the ~69 MB paletted-frame budget by allowing proportionally
+  fewer frames (the GIF gets shorter, never over-budget; WebP streams compressed so
+  it can run longer). The panel shows the resulting max length and notes that
+  screenshake / busy backgrounds bloat a GIF (every pixel changes each frame).
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.

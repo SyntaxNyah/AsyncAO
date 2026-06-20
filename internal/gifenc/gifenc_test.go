@@ -26,7 +26,7 @@ func TestEncodeGIFRoundTrip(t *testing.T) {
 		solidPaletted(color.RGBA{G: 255, A: 255}, 6, 4),
 		solidPaletted(color.RGBA{B: 255, A: 255}, 6, 4),
 	}
-	data, err := EncodeGIF(frames, 8)
+	data, err := EncodeGIF(frames, 8, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,6 +40,14 @@ func TestEncodeGIFRoundTrip(t *testing.T) {
 	if g.LoopCount != 0 {
 		t.Errorf("loop count = %d, want 0 (forever)", g.LoopCount)
 	}
+	// loop=false must encode "play once" (LoopCount -1), not forever.
+	once, err := EncodeGIF(frames, 8, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g2, err := gif.DecodeAll(bytes.NewReader(once)); err != nil || g2.LoopCount != -1 {
+		t.Errorf("loop=false: LoopCount=%d err=%v, want -1 (play once)", g2.LoopCount, err)
+	}
 	for i, d := range g.Delay {
 		if d != 8 {
 			t.Errorf("frame %d delay = %d cs, want 8", i, d)
@@ -51,7 +59,7 @@ func TestEncodeGIFRoundTrip(t *testing.T) {
 }
 
 func TestEncodeGIFEmpty(t *testing.T) {
-	if _, err := EncodeGIF(nil, 8); err == nil {
+	if _, err := EncodeGIF(nil, 8, true); err == nil {
 		t.Error("encoding zero frames should error, not produce an empty GIF")
 	}
 }
@@ -107,7 +115,7 @@ func TestEncodeGIFDiffCompositesAndShrinks(t *testing.T) {
 		originals[i] = quantBlock(w, h, 4+i*4) // block slides right: every frame differs
 	}
 
-	data, err := EncodeGIF(originals, 8)
+	data, err := EncodeGIF(originals, 8, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +154,7 @@ func TestEncodeGIFFoldsIdenticalFrames(t *testing.T) {
 	aCopy := quantBlock(32, 24, 4) // byte-identical to a
 	b := quantBlock(32, 24, 12)
 
-	data, err := EncodeGIF([]*image.Paletted{a, aCopy, b}, 8)
+	data, err := EncodeGIF([]*image.Paletted{a, aCopy, b}, 8, true)
 	if err != nil {
 		t.Fatal(err)
 	}

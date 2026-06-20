@@ -145,3 +145,30 @@ func TestGifChatboxHeightFitsMessage(t *testing.T) {
 		t.Errorf("huge-message box = %d, want the %d cap", h, vpH*3/5)
 	}
 }
+
+// TestExportMaxFramesBoundsMemory pins the size feature's memory guard: a bigger
+// export must keep the GIF paletted-frame budget by capping at proportionally
+// fewer frames, never exceed the absolute cap, never drop below the floor, and
+// never divide by zero on a degenerate size.
+func TestExportMaxFramesBoundsMemory(t *testing.T) {
+	if n := exportMaxFrames(gifExportW, gifExportH); n != maxGifFrames {
+		t.Errorf("default size frames = %d, want the cap %d", n, maxGifFrames)
+	}
+	for _, h := range []int32{288, 360, 480, 540, 600, 720} {
+		w := h * 4 / 3
+		n := exportMaxFrames(w, h)
+		if n < minExportFrames {
+			t.Errorf("%dx%d frames = %d, below floor %d", w, h, n, minExportFrames)
+		}
+		if n > maxGifFrames {
+			t.Errorf("%dx%d frames = %d, above cap %d", w, h, n, maxGifFrames)
+		}
+		// Budget respected whenever the floor didn't kick in.
+		if n > minExportFrames && n*int(w)*int(h) > gifFrameBudgetBytes {
+			t.Errorf("%dx%d: %d frames × %d px exceeds budget %d", w, h, n, int(w)*int(h), gifFrameBudgetBytes)
+		}
+	}
+	if n := exportMaxFrames(0, 0); n != maxGifFrames {
+		t.Errorf("zero size = %d, want the guard %d", n, maxGifFrames)
+	}
+}
