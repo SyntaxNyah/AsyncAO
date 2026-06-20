@@ -1787,13 +1787,13 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 			settings.friendKey = a.serverKey
 		}
 		var friendCommit bool
-		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.friendInput, "showname1, showname2=ffcc00, ... (saved per server)")
+		settings.friendInput, friendCommit = c.TextField("friends", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.friendInput, "showname, showname=ffcc00, showname=ffcc00=Nickname, ... (per server)")
 		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || friendCommit {
 			a.d.Prefs.SetServerFriends(a.serverKey, strings.Split(settings.friendInput, ","))
 			settings.statusLine = "Friends saved for this server."
 		}
 		y += 28
-		c.Label(pad+110, y, "Append =RRGGBB to a name to give that friend a custom glow colour (e.g. blank=ff4488).", ColTextDim)
+		c.Label(pad+110, y, "name=RRGGBB sets a custom glow + name colour; name=RRGGBB=Nick adds a personal nickname (shown in the player list). Use name==Nick for a nickname with no colour. No commas in nicknames.", ColTextDim)
 		y += 24
 	}
 

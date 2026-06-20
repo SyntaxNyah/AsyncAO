@@ -3247,8 +3247,10 @@ func (p *AssetPreferences) ServerFriends(key string) []string {
 	return cloneStrings(p.ServerWarm[key].Friends)
 }
 
-// friendNameHex splits a friend entry "name" or "name=RRGGBB" into its
-// trimmed name and the (raw) hex part ("" if none).
+// friendNameHex splits a friend entry "name" or "name=RRGGBB[=nick]" into its
+// trimmed name and the (raw) hex part ("" if none). The nickname (a third "="
+// field) is not returned here — name-only callers split on the FIRST "=", which
+// is still correct for the name.
 func friendNameHex(entry string) (name, hex string) {
 	if i := strings.IndexByte(entry, '='); i >= 0 {
 		return strings.TrimSpace(entry[:i]), strings.TrimSpace(entry[i+1:])
@@ -3256,40 +3258,67 @@ func friendNameHex(entry string) (name, hex string) {
 	return strings.TrimSpace(entry), ""
 }
 
-// ServerFriendMatch reports whether name (case-insensitive) is a highlighted
-// friend on the server, and that friend's custom glow colour (packed 0xRRGGBB)
-// from a "name=RRGGBB" entry, or -1 for the default tint. Scans under the lock
-// with NO allocation — safe per incoming message (even in a catch-up burst).
-func (p *AssetPreferences) ServerFriendMatch(key, name string) (friend bool, color int) {
+// friendParts splits a friend entry "name[=RRGGBB[=nick]]" into its three fields
+// (#82). SplitN with 3 keeps the colour parse robust even if the nickname
+// itself contains an "=". Trimmed; missing fields come back "".
+func friendParts(entry string) (name, hex, nick string) {
+	parts := strings.SplitN(entry, "=", 3)
+	name = strings.TrimSpace(parts[0])
+	if len(parts) > 1 {
+		hex = strings.TrimSpace(parts[1])
+	}
+	if len(parts) > 2 {
+		nick = strings.TrimSpace(parts[2])
+	}
+	return
+}
+
+// ServerFriendInfo reports whether name (case-insensitive) is a highlighted
+// friend on the server, plus that friend's custom glow colour (packed 0xRRGGBB,
+// or -1 for the default tint) and personal nickname ("" if none) — #82. ONE scan
+// under the lock with no allocation, so the player list (per row) and friend
+// matching (per message) read all three from a single call.
+func (p *AssetPreferences) ServerFriendInfo(key, name string) (friend bool, color int, nick string) {
+	if name == "" {
+		return false, -1, ""
+	}
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, f := range p.ServerWarm[key].Friends {
-		fname, hex := friendNameHex(f)
+		fname, hex, nk := friendParts(f)
 		if !strings.EqualFold(fname, name) {
 			continue
 		}
+		color = -1
 		if hex != "" {
 			if v, err := strconv.ParseInt(strings.TrimPrefix(hex, "#"), 16, 32); err == nil {
-				return true, int(v) & 0xFFFFFF
+				color = int(v) & 0xFFFFFF
 			}
 		}
-		return true, -1 // friend, no/invalid custom colour → default tint
+		return true, color, nk
 	}
-	return false, -1
+	return false, -1, ""
+}
+
+// ServerFriendMatch reports whether name is a highlighted friend and its custom
+// glow colour — a thin wrapper over ServerFriendInfo (one scan, no nested lock)
+// kept for the per-message/glow callers that don't need the nickname.
+func (p *AssetPreferences) ServerFriendMatch(key, name string) (friend bool, color int) {
+	f, c, _ := p.ServerFriendInfo(key, name)
+	return f, c
 }
 
 // SetServerFriends replaces a server's highlighted-showname list — entries are
-// "name" or "name=RRGGBB" (per-friend glow colour); trimmed, blanks dropped,
-// deduped by NAME (case-insensitive), capped at WarmFriendsCap.
+// "name", "name=RRGGBB" (per-friend glow colour), or "name=RRGGBB=nick" (#82, a
+// personal nickname). Each is re-canonicalised: trimmed, blanks dropped, deduped
+// by NAME (case-insensitive), capped at WarmFriendsCap. Commas are STRIPPED from
+// the nickname — the editor stores the list comma-separated, so a comma in a
+// nick would split into two broken entries on the next round-trip.
 func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 	seen := make(map[string]struct{}, len(names))
 	clean := make([]string, 0, len(names))
 	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" {
-			continue
-		}
-		nm, _ := friendNameHex(n)
+		nm, hex, nick := friendParts(n)
 		if nm == "" {
 			continue
 		}
@@ -3298,7 +3327,15 @@ func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 			continue
 		}
 		seen[k] = struct{}{}
-		clean = append(clean, n)
+		nick = strings.ReplaceAll(nick, ",", "") // can't survive the comma-separated store
+		entry := nm
+		if hex != "" || nick != "" {
+			entry += "=" + hex
+		}
+		if nick != "" {
+			entry += "=" + nick
+		}
+		clean = append(clean, entry)
 		if len(clean) >= WarmFriendsCap {
 			break
 		}

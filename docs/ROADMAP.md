@@ -26,9 +26,11 @@ items move to `docs/FEATURES.md` as they ship.
   repro, or which screen the pick came from (main grid / Wardrobe tab / switch).**
 
 ### Player list / social
-- **Friend nicknames** *(#82)* — set a personal nickname for a friend, shown in
-  the player list / IC.
-- **Custom friend colours** *(#82)* — per-friend colour in the list / IC.
+- **Friend nickname in the IC log** *(#82 follow-up)* — the nickname + custom
+  colour now show on the **player-list row**; rendering the nickname in the IC
+  log too (as `nick (showname)`) was deliberately deferred — it crosses the
+  anti-impersonation force-char path, so it's a separate, careful change. The
+  per-friend glow **colour** already applies in the IC log.
 
 ---
 

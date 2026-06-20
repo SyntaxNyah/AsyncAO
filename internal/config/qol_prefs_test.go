@@ -267,6 +267,50 @@ func TestServerIgnorePref(t *testing.T) {
 	}
 }
 
+// TestServerFriendNickColor pins #82: a friend entry parses into name + custom
+// glow colour + personal nickname, the colour stays parseable when a nickname is
+// present, commas are stripped from nicknames (they'd corrupt the comma-separated
+// store), and it all survives a save→reload.
+func TestServerFriendNickColor(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	const key = "wss://example.test/ws"
+	// name=RRGGBB=nick (with a comma in the nick, which must be stripped) + a
+	// nick-only entry (name==nick, default colour) + a plain colour entry.
+	p.SetServerFriends(key, []string{"Phoenix=ff4488=Wright, buddy", "Alice==Allie", "Bob=00ff00"})
+
+	friend, color, nick := p.ServerFriendInfo(key, "phoenix") // case-insensitive
+	if !friend || color != 0xff4488 || nick != "Wright buddy" {
+		t.Fatalf("Phoenix info = %v/%06x/%q, want true/ff4488/\"Wright buddy\" (comma stripped)", friend, color, nick)
+	}
+	if _, c, nk := p.ServerFriendInfo(key, "Alice"); c != -1 || nk != "Allie" {
+		t.Fatalf("Alice info color/nick = %d/%q, want -1/\"Allie\"", c, nk)
+	}
+	if _, c, nk := p.ServerFriendInfo(key, "Bob"); c != 0x00ff00 || nk != "" {
+		t.Fatalf("Bob info color/nick = %06x/%q, want 00ff00/\"\"", c, nk)
+	}
+	// ServerFriendMatch (the 2-return wrapper) still works for colour-only callers.
+	if f, c := p.ServerFriendMatch(key, "Phoenix"); !f || c != 0xff4488 {
+		t.Fatalf("ServerFriendMatch = %v/%06x, want true/ff4488", f, c)
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetServerFriends(key, []string{"Mallory=123456=Mal"})
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if f, c, nk := r.ServerFriendInfo(key, "Mallory"); !f || c != 0x123456 || nk != "Mal" {
+		t.Errorf("reloaded = %v/%06x/%q, want true/123456/\"Mal\"", f, c, nk)
+	}
+}
+
 // TestChatboxOpacityPref pins the see-through chatbox setting: default 84,
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {

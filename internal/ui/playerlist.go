@@ -212,15 +212,27 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	isMe := myUID != "" && p.uid == myUID
 	isSpeaker := speaker != "" && (strings.EqualFold(p.showname, speaker) || strings.EqualFold(p.name, speaker))
 	isCM := cmSet != nil && (cmSet[strings.ToLower(p.showname)] || cmSet[strings.ToLower(p.name)])
-	friend := false
-	if a.d.Prefs.FriendHighlightOn() {
-		nm := p.showname
-		if nm == "" {
-			nm = p.name
-		}
-		friend, _ = a.d.Prefs.ServerFriendMatch(a.serverKey, nm)
+	// Friend lookup, ONCE: drives the row tint (only when highlights are on) plus
+	// the per-friend nickname + name colour (#82, shown regardless of the toggle —
+	// they're labels, not the glow). isFriend is reused by the Ignore/Friend
+	// buttons below so the list isn't scanned twice per row.
+	fk := p.showname
+	if fk == "" {
+		fk = p.name
 	}
-	display := rosterName(p) // showname → OOC → character
+	isFriend, fColor, fNick := false, -1, ""
+	if a.serverKey != "" && fk != "" {
+		isFriend, fColor, fNick = a.d.Prefs.ServerFriendInfo(a.serverKey, fk)
+	}
+	friend := isFriend && a.d.Prefs.FriendHighlightOn() // row tint gate (unchanged)
+	display := rosterName(p)                            // showname → OOC → character
+	if isFriend && fNick != "" {
+		display = fNick // your personal label for them (the character still shows after "·")
+	}
+	nameCol := ColText
+	if isFriend && fColor >= 0 {
+		nameCol = readableOnPanel(fColor) // custom colour, lifted so it stays legible on the dark panel
+	}
 
 	// Background + role tint (you > speaking > friend) + a left accent bar.
 	c.Fill(row, ColPanel)
@@ -292,14 +304,9 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		}
 	}
 	// Add/remove friend (matches by showname, else character — the IC-log
-	// highlight key, no UID needed). Shown for any named player; ServerFriendMatch
-	// allocates nothing, so the per-row check is fine for this panel.
-	fk := p.showname
-	if fk == "" {
-		fk = p.name
-	}
+	// highlight key, no UID needed). Shown for any named player; reuses isFriend
+	// from the single lookup above, so the row isn't scanned twice.
 	if fk != "" && a.serverKey != "" && a.d.Prefs.FriendButtonShown() {
-		isFriend, _ := a.d.Prefs.ServerFriendMatch(a.serverKey, fk)
 		fl := "+ Friend"
 		if isFriend {
 			fl = "Unfriend" // friended state reads as the un-action (one click removes)
@@ -348,7 +355,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if !strings.EqualFold(display, p.name) {
 		ic = "[" + p.uid + "]  " + display + "  ·  " + p.name
 	}
-	c.LabelClippedFont(c.LogFontFor(a.playerPct, ic), cx, row.Y+5, textW-(cx-textX), ic, ColText)
+	c.LabelClippedFont(c.LogFontFor(a.playerPct, ic), cx, row.Y+5, textW-(cx-textX), ic, nameCol)
 	// Line 2 — OOC name (+ IPID for mods), dimmer. Skip OOC when it's already the
 	// display name above (no showname → OOC was promoted to the identity line).
 	sub := ""
@@ -695,6 +702,30 @@ func (a *App) toggleServerIgnore(name string) {
 		a.warnLine = clampLine("Ignoring " + name + " — hiding their IC + OOC")
 	}
 	a.warnAt = a.now()
+}
+
+// readableOnPanel returns a packed 0xRRGGBB colour as an sdl.Color guaranteed
+// legible on the dark player panel (#82): a too-dark colour is lifted toward a
+// minimum brightness with its hue preserved, so a custom friend colour can tint
+// the name without it sinking into the background — the same readability concern
+// the theme ink guard handles. rgb must be >= 0.
+func readableOnPanel(rgb int) sdl.Color {
+	const minLuma = 120
+	r, g, b := int(uint8(rgb>>16)), int(uint8(rgb>>8)), int(uint8(rgb))
+	luma := (299*r + 587*g + 114*b) / 1000 // Rec.601
+	if luma < minLuma {
+		if luma < 1 {
+			return sdl.Color{R: minLuma, G: minLuma, B: minLuma, A: 255} // pure black → neutral grey
+		}
+		clamp := func(v int) uint8 {
+			if v > 255 {
+				return 255
+			}
+			return uint8(v)
+		}
+		r, g, b = int(clamp(r*minLuma/luma)), int(clamp(g*minLuma/luma)), int(clamp(b*minLuma/luma))
+	}
+	return sdl.Color{R: uint8(r), G: uint8(g), B: uint8(b), A: 255}
 }
 
 // rosterName is the recognisable display name: showname, else the OOC name (an

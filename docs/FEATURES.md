@@ -596,9 +596,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   server — and a **sound** (the default ping, or a **custom file** you choose),
   and a real **desktop OS notification** (a Windows toast, rate-limited so a
   chatty friend can't storm it). Streamer mode suppresses them all.
-  **Per-friend glow colour**: append `=RRGGBB` to a name in the list (e.g.
-  `blank=ff4488`) to give that friend's glow a custom colour; names without one
-  use the default warm tint. **Pulse the glow** is its own toggle — a gentle
+  **Per-friend colour + nickname** (#82): append `=RRGGBB` to a name in the list
+  (e.g. `blank=ff4488`) to give that friend a custom colour — it tints both their
+  IC-log **glow** and their **name in the player list** (lifted toward a readable
+  brightness so a dark colour can't vanish on the dark panel); names without one
+  use the default warm tint. Append a third field — `name=RRGGBB=Nickname` (or
+  `name==Nickname` for a nickname with no colour) — to set a **personal nickname**
+  shown in their **player-list row** (in place of their showname, with their
+  character still shown after the `·`), so you recognise a friend even when they
+  iniswap or change showname. Per server, like the rest of the list; nicknames
+  can't contain commas (the list is comma-separated). **Pulse the glow** is its own toggle — a gentle
   breathing animation on the glow (obeys reduce-motion, so it holds steady when
   that's on). A configurable **toggle keybind** (default **Ctrl+U**, rebindable
   in Settings → Hotkeys) flips the highlight on/off mid-session.
