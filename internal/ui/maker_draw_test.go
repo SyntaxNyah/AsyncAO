@@ -33,14 +33,34 @@ func TestRebuildBgListOffline(t *testing.T) {
 // session hidden-set is dropped (Visible=false) by applySpriteOverrides, a
 // non-hidden one is untouched, the empty-set case is a no-op, and reshow un-hides.
 func TestHideSpriteSuppression(t *testing.T) {
+	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = prefs.Close() })
 	a := &App{} // field assignment, not a keyed literal (known phantom "unknown field" glitch)
+	a.d.Prefs = prefs
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.Speaker = courtroom.SpriteLayer{Name: "Booba", Visible: true}
 	a.room.Scene.Pair = courtroom.SpriteLayer{Name: "Phoenix", Visible: true}
+	a.room.Scene.ShowDesk = true
 
-	a.applySpriteOverrides() // empty hidden-set + no overrides: a no-op
-	if !a.room.Scene.Speaker.Visible || !a.room.Scene.Pair.Visible {
-		t.Fatal("empty hidden-set must not change visibility")
+	a.applySpriteOverrides() // empty hidden-set + no overrides + desk shown: a no-op
+	if !a.room.Scene.Speaker.Visible || !a.room.Scene.Pair.Visible || !a.room.Scene.ShowDesk {
+		t.Fatal("empty hidden-set / hide-desk-off must not change anything")
+	}
+
+	// Hide-desk option suppresses ShowDesk; turning it off restores it.
+	prefs.SetHideDesk(true)
+	a.applySpriteOverrides()
+	if a.room.Scene.ShowDesk {
+		t.Error("hide-desk did not suppress ShowDesk")
+	}
+	prefs.SetHideDesk(false)
+	a.room.Scene.ShowDesk = true // the courtroom re-sets it each frame
+	a.applySpriteOverrides()
+	if !a.room.Scene.ShowDesk {
+		t.Error("desk should render again when hide-desk is off")
 	}
 
 	a.hiddenSprites = map[string]struct{}{"booba": {}}

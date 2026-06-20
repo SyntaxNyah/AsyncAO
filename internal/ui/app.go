@@ -3393,10 +3393,14 @@ func (a *App) spriteFX() render.SpriteFX {
 // message's offsets every frame (one map probe per visible layer; free
 // while no overrides exist).
 func (a *App) applySpriteOverrides() {
-	if len(a.spriteOv) == 0 && len(a.hiddenSprites) == 0 {
-		return // both empty (the common case): byte-for-byte the old no-op
+	hideDesk := a.d.Prefs.HideDeskOn()
+	if !hideDesk && len(a.spriteOv) == 0 && len(a.hiddenSprites) == 0 {
+		return // nothing hidden/moved (the common case): one pref read, then out
 	}
 	sc := &a.room.Scene
+	if hideDesk {
+		sc.ShowDesk = false // hide-desk option (Settings toggle + keybind)
+	}
 	for _, layer := range [...]*courtroom.SpriteLayer{&sc.Speaker, &sc.Pair} {
 		if layer.Name == "" {
 			continue

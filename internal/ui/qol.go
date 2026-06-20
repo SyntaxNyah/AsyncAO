@@ -61,6 +61,7 @@ const (
 	hotkeyShownameCycle = "showname_cycle" // cycle to the next saved showname preset
 	hotkeyDND           = "dnd"            // toggle Do Not Disturb (mute callword + friend pings) (M15)
 	hotkeyReshowSprites = "reshow_sprites" // un-hide all sprites hidden this session (right-click-to-hide)
+	hotkeyHideDesk      = "hide_desk"      // toggle hiding the courtroom desk
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -106,6 +107,7 @@ var hotkeyDefs = []struct {
 	{hotkeyShownameCycle, "Cycle showname preset", "b"}, // Ctrl+B (rebindable)
 	{hotkeyDND, "Do Not Disturb (mute pings)", "d"},     // Ctrl+D — session-only, rebindable
 	{hotkeyReshowSprites, "Reshow hidden sprites", "y"}, // un-hide all right-click-hidden sprites
+	{hotkeyHideDesk, "Hide / show the desk", "v"},       // toggle desk rendering
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -302,7 +304,21 @@ func (a *App) handleHotkeys() {
 		a.warnAt = time.Now()
 	case a.hotkeyFor(hotkeyReshowSprites):
 		a.reshowSprites()
+	case a.hotkeyFor(hotkeyHideDesk):
+		a.toggleHideDesk()
 	}
+}
+
+// toggleHideDesk flips the hide-desk option (Settings + the Hide/show desk key).
+func (a *App) toggleHideDesk() {
+	on := !a.d.Prefs.HideDeskOn()
+	a.d.Prefs.SetHideDesk(on)
+	if on {
+		a.warnLine = "Desk hidden"
+	} else {
+		a.warnLine = "Desk showing"
+	}
+	a.warnAt = time.Now()
 }
 
 // quickSwapNext wears the next character in this server's wardrobe ring (the

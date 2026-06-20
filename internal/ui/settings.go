@@ -560,6 +560,12 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		c.Label(pad+232, y+5, fmt.Sprintf("%d sprite(s) hidden this session — un-hide them all", len(a.hiddenSprites)), ColTextDim)
 		y += 32
 	}
+	// Hide the desk (the foreground table the character stands behind).
+	hideDesk := a.d.Prefs.HideDeskOn()
+	if next := c.Checkbox(pad, y, "Hide the courtroom desk (OFF by default): suppresses the foreground desk so the full character shows. Toggle live with the Hide/show-desk key (Controls tab).", hideDesk); next != hideDesk {
+		a.d.Prefs.SetHideDesk(next)
+	}
+	y += 30
 	y = a.settingsSection(y, w, "Application")
 	upd := a.d.Prefs.UpdateCheckEnabled()
 	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {

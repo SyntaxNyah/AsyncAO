@@ -744,6 +744,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   session-only (not persisted). Free on the render path: the suppression check
   short-circuits when nothing is hidden (the `RenderFrame` 0-alloc gate is in
   `render.Viewport`, untouched).
+- **Hide the desk** (Settings → General, **default OFF**): suppress the foreground
+  courtroom desk so the **full character** shows (no table in front). Toggle it
+  live with the **"Hide / show the desk"** key (Controls tab, default **Ctrl+V**)
+  or the Settings checkbox. Persisted. Suppressed in the same per-frame
+  sprite-override pass (one pref read, then the existing short-circuit) — the
+  render gate is untouched.
 - **★ favourite a character from Character Select**: a star on each character
   icon adds it straight to your **per-server Wardrobe** (LemmyAO-style), so it
   rides along on every connect. One click on, one click off; the Wardrobe tab
