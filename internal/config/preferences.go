@@ -3247,17 +3247,6 @@ func (p *AssetPreferences) ServerFriends(key string) []string {
 	return cloneStrings(p.ServerWarm[key].Friends)
 }
 
-// friendNameHex splits a friend entry "name" or "name=RRGGBB[=nick]" into its
-// trimmed name and the (raw) hex part ("" if none). The nickname (a third "="
-// field) is not returned here — name-only callers split on the FIRST "=", which
-// is still correct for the name.
-func friendNameHex(entry string) (name, hex string) {
-	if i := strings.IndexByte(entry, '='); i >= 0 {
-		return strings.TrimSpace(entry[:i]), strings.TrimSpace(entry[i+1:])
-	}
-	return strings.TrimSpace(entry), ""
-}
-
 // friendParts splits a friend entry "name[=RRGGBB[=nick]]" into its three fields
 // (#82). SplitN with 3 keeps the colour parse robust even if the nickname
 // itself contains an "=". Trimmed; missing fields come back "".
