@@ -455,6 +455,39 @@ func gifChatboxHeight(textH, vpH int32) int32 {
 	return h
 }
 
+// fitChatRaster rasterizes the message at the export font scale (pct), shrinking
+// the font if the whole message would overflow the tallest the box can be (3/5 of
+// the frame), so a full ~256-char line always fits instead of clipping — "fit it
+// no matter what". Converges fast (fewer wrapped lines as the font drops); bounded
+// iterations, floored at the min chat scale. Render thread only.
+func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int) *render.MessageRaster {
+	maxTextH := vpH*3/5 - gifChatNameRowH - 10
+	if maxTextH < gifChatNameRowH {
+		maxTextH = gifChatNameRowH
+	}
+	for attempt := 0; attempt < 5; attempt++ {
+		r, err := renderRaster(a, sc, wrapW, false, pct)
+		if err != nil {
+			return nil
+		}
+		if h := r.Height(); h <= maxTextH || pct <= config.MinChatScalePercent {
+			return r // fits (or already at the smallest font)
+		} else {
+			next := pct * int(maxTextH) / int(h) // proportional shrink toward fitting
+			if next >= pct {
+				next = pct - 10 // guarantee progress
+			}
+			if next < config.MinChatScalePercent {
+				next = config.MinChatScalePercent
+			}
+			r.Destroy()
+			pct = next
+		}
+	}
+	r, _ := renderRaster(a, sc, wrapW, false, config.MinChatScalePercent) // safety: show text at the floor
+	return r
+}
+
 func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) {
 	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
 		return
@@ -462,18 +495,16 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 	c := a.ctx
 	wrapW := vp.W - 16
 	// Rasterize FIRST, so the box can be sized to FIT the message. The capture is a
-	// small fixed frame (480×360), so a live-proportioned box (¼ of the viewport)
-	// is too short and clips a multi-line message off the bottom EDGE of the frame
-	// — which is exactly the bug. Rebuilt only when the line changes.
+	// small fixed frame, so a live-proportioned box would clip a multi-line message
+	// off the bottom edge. Rebuilt only when the line changes; the font shrinks (if
+	// needed) so even a full ~256-char line fits the box rather than clipping.
 	if j.chatRaster == nil || j.chatText != sc.MessageText {
 		if j.chatRaster != nil {
 			j.chatRaster.Destroy()
 			j.chatRaster = nil
 		}
 		if sc.MessageText != "" {
-			if r, err := renderRaster(a, sc, wrapW, false, j.chatPct); err == nil {
-				j.chatRaster = r
-			}
+			j.chatRaster = a.fitChatRaster(sc, wrapW, vp.H, j.chatPct)
 		}
 		j.chatText = sc.MessageText
 	}
