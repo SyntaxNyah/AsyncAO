@@ -7,6 +7,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -170,5 +171,34 @@ func TestExportMaxFramesBoundsMemory(t *testing.T) {
 	}
 	if n := exportMaxFrames(0, 0); n != maxGifFrames {
 		t.Errorf("zero size = %d, want the guard %d", n, maxGifFrames)
+	}
+}
+
+// TestExportChatPctFitsAndClamps pins the chatbox-font fix: the export text size
+// is derived from the CAPTURE height (not the live chat zoom), scales up with the
+// frame and the user's TextScale, and stays within the chat-scale clamp — so long
+// lines fit the small frame instead of overflowing.
+func TestExportChatPctFitsAndClamps(t *testing.T) {
+	// Bigger frame → bigger font (until the clamp); same chars-per-line.
+	if a, b := exportChatPct(288, 100), exportChatPct(540, 100); a >= b {
+		t.Errorf("font didn't grow with size: 288px=%d, 540px=%d", a, b)
+	}
+	// Higher TextScale → bigger; lower → smaller.
+	if lo, hi := exportChatPct(360, 50), exportChatPct(360, 150); lo >= hi {
+		t.Errorf("TextScale not honoured: 50%%=%d, 150%%=%d", lo, hi)
+	}
+	// Always within the chat-scale clamp, even at extremes.
+	for _, c := range []struct {
+		h  int32
+		ts int
+	}{{240, 50}, {360, 100}, {720, 200}, {360, 0}} {
+		if p := exportChatPct(c.h, c.ts); p < config.MinChatScalePercent || p > config.MaxChatScalePercent {
+			t.Errorf("exportChatPct(%d,%d)=%d out of [%d,%d]", c.h, c.ts, p, config.MinChatScalePercent, config.MaxChatScalePercent)
+		}
+	}
+	// A 360px export at 100% is far smaller than a maxed-out live chat zoom (250%)
+	// — which is the overflow bug it fixes.
+	if exportChatPct(360, 100) >= config.MaxChatScalePercent {
+		t.Errorf("default export text = %d, expected well below the %d live-zoom max", exportChatPct(360, 100), config.MaxChatScalePercent)
 	}
 }

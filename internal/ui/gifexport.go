@@ -10,12 +10,36 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/webpenc"
 )
+
+// exportChatFontDivisor sizes the export chatbox font: at 100% TextScale the font
+// is ≈ vp.H / 18 px (= this divisor / UIFontSize), so text fits ~the same number
+// of characters per line at any export size — and, crucially, the export font is
+// derived from the CAPTURE size, NOT the live chat zoom (a.chatPct), so a user who
+// zoomed their live chat doesn't get giant, clipped text in the small GIF.
+const exportChatFontDivisor = 252 // ≈ 18 text rows × UIFontSize(14)
+
+// exportChatPct maps the capture height + the user's TextScale to a ChatFontFor
+// percent, clamped to the chat-scale range.
+func exportChatPct(vpH int32, textScale int) int {
+	if textScale <= 0 {
+		textScale = 100
+	}
+	pct := int(vpH) * textScale / exportChatFontDivisor
+	if pct < config.MinChatScalePercent {
+		pct = config.MinChatScalePercent
+	}
+	if pct > config.MaxChatScalePercent {
+		pct = config.MaxChatScalePercent
+	}
+	return pct
+}
 
 // sceneExportFromPath loads a recording and exports it straight to a GIF (the
 // Studio "🎞 GIF" button) or an animated WebP ("🎬 WebP") — no trip through the
@@ -129,6 +153,14 @@ func (a *App) drawExportOptions(y int32, withSpeed bool) int32 {
 	}
 	y += 30
 
+	// Chat text size in the export (fitted to the output size at 100%, so long
+	// lines fit; independent of the live chat zoom). Bounds mirror the config clamp.
+	if next := a.sliderRow(y, "  Text size %", opts.TextScale, 10, 50, 200); next != opts.TextScale {
+		opts.TextScale = next
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	y += 30
+
 	if next := c.Checkbox(pad, y, "Loop the animation forever (off = play once)", opts.Loop); next != opts.Loop {
 		opts.Loop = next
 		a.d.Prefs.SetExportOpts(opts)
@@ -190,6 +222,7 @@ type gifExportJob struct {
 	// (so the GIF shows people talking). Self-cached here, never the live a.msRaster.
 	chatRaster *render.MessageRaster
 	chatText   string
+	chatPct    int // export chat-font scale (fitted to the capture size, not live zoom)
 
 	// Asset pre-warm phase: prefetch the scene's sprites/backgrounds and wait for
 	// T1 residency before the first capture, so characters are on stage.
@@ -303,6 +336,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 		delayCs:      delayCs,
 		loop:         opts.Loop,
 		maxFrames:    maxFrames,
+		chatPct:      exportChatPct(h, opts.TextScale), // font fitted to the capture, not the live zoom
 		warming:      true,
 		warmRefs:     warmRefs,
 		warmStarted:  now,
@@ -437,7 +471,7 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 			j.chatRaster = nil
 		}
 		if sc.MessageText != "" {
-			if r, err := renderRaster(a, sc, wrapW, false); err == nil {
+			if r, err := renderRaster(a, sc, wrapW, false, j.chatPct); err == nil {
 				j.chatRaster = r
 			}
 		}

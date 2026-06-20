@@ -1136,7 +1136,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	if sc.MessageText == "" {
 		return
 	}
-	raster, err := renderRaster(a, sc, wrapW, skinned)
+	raster, err := renderRaster(a, sc, wrapW, skinned, a.chatPct)
 	if err != nil {
 		return
 	}
@@ -3828,7 +3828,7 @@ func (a *App) handleChatCommand(text string) bool {
 }
 
 // renderRaster rasterizes the current message with its AO color.
-func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool) (*render.MessageRaster, error) {
+func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int) (*render.MessageRaster, error) {
 	// The chat zoom font: rebuilt only when the Text knob changes. The
 	// theme's "message" color replaces only AO's DEFAULT color (code 0)
 	// — explicit message colors (green/red/...) always win — and only
@@ -3838,9 +3838,10 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool) (*rend
 	if skinned && sc.TextColor == 0 && a.themeHasMsg {
 		col = a.themeMsgCol
 	}
-	// Per-message font pick: the override chain's first covering font
-	// (CJK fallback), the embedded font otherwise.
-	font := a.ctx.ChatFontFor(a.chatPct, sc.MessageText)
+	// Per-message font pick at the given scale (pct): the override chain's first
+	// covering font (CJK fallback), the embedded font otherwise. The live chatbox
+	// passes a.chatPct; the export passes a size fitted to the capture frame.
+	font := a.ctx.ChatFontFor(pct, sc.MessageText)
 	// Inline \cN colors → the multi-color span raster; plain messages keep the
 	// untouched single-color path (col is their whole-message color).
 	if sceneNeedsStyled(sc.MessageStyles) {

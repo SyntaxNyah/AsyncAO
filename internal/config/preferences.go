@@ -256,21 +256,27 @@ const (
 	minExportQuality     = 20
 	maxExportQuality     = 100
 	defaultExportQuality = 80
+	minExportText        = 50 // chat-text size in the export, percent of the fitted base
+	maxExportText        = 200
+	defaultExportText    = 100
 )
 
 // ExportOptions is the persisted scene-export configuration (GIF + animated
 // WebP). Output is 4:3 at HeightPx; FPS is the capture/playback cadence; Quality
-// is the lossy WebP quality (GIF is always 256-colour); Loop loops the animation.
+// is the lossy WebP quality (GIF is always 256-colour); Loop loops the animation;
+// TextScale sizes the chatbox text (percent of a base fitted to the output size,
+// so the live chat zoom doesn't blow the text up in the small capture).
 type ExportOptions struct {
-	HeightPx int  `json:"heightPx"`
-	FPS      int  `json:"fps"`
-	Quality  int  `json:"quality"`
-	Loop     bool `json:"loop"`
+	HeightPx  int  `json:"heightPx"`
+	FPS       int  `json:"fps"`
+	Quality   int  `json:"quality"`
+	Loop      bool `json:"loop"`
+	TextScale int  `json:"textScale"`
 }
 
 // defaultExportOptions is the out-of-box export look.
 func defaultExportOptions() ExportOptions {
-	return ExportOptions{HeightPx: defaultExportHeight, FPS: defaultExportFPS, Quality: defaultExportQuality, Loop: true}
+	return ExportOptions{HeightPx: defaultExportHeight, FPS: defaultExportFPS, Quality: defaultExportQuality, Loop: true, TextScale: defaultExportText}
 }
 
 // Per-speaker name colours (OFF by default): each speaker's name is tinted by a
@@ -1075,6 +1081,9 @@ func load(path string) (*AssetPreferences, error) {
 		}
 		if onDisk.Export.Quality > 0 {
 			e.Quality = clampPercent(onDisk.Export.Quality, minExportQuality, maxExportQuality)
+		}
+		if onDisk.Export.TextScale > 0 {
+			e.TextScale = clampPercent(onDisk.Export.TextScale, minExportText, maxExportText)
 		}
 		e.Loop = onDisk.Export.Loop
 		p.Export = e
@@ -2375,6 +2384,7 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 	o.HeightPx = clampPercent(o.HeightPx, minExportHeight, maxExportHeight)
 	o.FPS = clampPercent(o.FPS, minExportFPS, maxExportFPS)
 	o.Quality = clampPercent(o.Quality, minExportQuality, maxExportQuality)
+	o.TextScale = clampPercent(o.TextScale, minExportText, maxExportText)
 	p.mu.Lock()
 	if p.Export == o {
 		p.mu.Unlock()

@@ -60,13 +60,13 @@ func TestQoLPrefDefaults(t *testing.T) {
 // clause that would silently reset every export to defaults if it were dropped.
 func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if d := p.ExportOpts(); d.HeightPx != defaultExportHeight || d.FPS != defaultExportFPS || d.Quality != defaultExportQuality || !d.Loop {
-		t.Fatalf("default export opts = %+v, want %d/%d/%d + loop", d, defaultExportHeight, defaultExportFPS, defaultExportQuality)
+	if d := p.ExportOpts(); d.HeightPx != defaultExportHeight || d.FPS != defaultExportFPS || d.Quality != defaultExportQuality || !d.Loop || d.TextScale != defaultExportText {
+		t.Fatalf("default export opts = %+v, want %d/%d/%d/%d + loop", d, defaultExportHeight, defaultExportFPS, defaultExportQuality, defaultExportText)
 	}
 	// Out-of-range values clamp to the configured bounds.
-	p.SetExportOpts(ExportOptions{HeightPx: 99999, FPS: 0, Quality: 999, Loop: false})
-	if g := p.ExportOpts(); g.HeightPx != maxExportHeight || g.FPS != minExportFPS || g.Quality != maxExportQuality || g.Loop {
-		t.Fatalf("clamped export opts = %+v, want max/min/max + loop off", g)
+	p.SetExportOpts(ExportOptions{HeightPx: 99999, FPS: 0, Quality: 999, Loop: false, TextScale: 9999})
+	if g := p.ExportOpts(); g.HeightPx != maxExportHeight || g.FPS != minExportFPS || g.Quality != maxExportQuality || g.Loop || g.TextScale != maxExportText {
+		t.Fatalf("clamped export opts = %+v, want max/min/max/maxText + loop off", g)
 	}
 
 	path := filepath.Join(t.TempDir(), PrefsFileName)
@@ -74,7 +74,7 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetExportOpts(ExportOptions{HeightPx: 480, FPS: 24, Quality: 60, Loop: true})
+	q.SetExportOpts(ExportOptions{HeightPx: 480, FPS: 24, Quality: 60, Loop: true, TextScale: 70})
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -82,8 +82,8 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if o := r.ExportOpts(); o.HeightPx != 480 || o.FPS != 24 || o.Quality != 60 || !o.Loop {
-		t.Fatalf("reloaded export opts = %+v, want 480/24/60 + loop (merge clause dropped a field?)", o)
+	if o := r.ExportOpts(); o.HeightPx != 480 || o.FPS != 24 || o.Quality != 60 || !o.Loop || o.TextScale != 70 {
+		t.Fatalf("reloaded export opts = %+v, want 480/24/60/70 + loop (merge clause dropped a field?)", o)
 	}
 }
 

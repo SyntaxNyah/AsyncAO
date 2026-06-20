@@ -354,8 +354,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   works.
 - **Export options** (**⚙ Export** in the maker, and **Settings → Studio**): set
   the **size** (Small 384×288 → XL 720×540), **frame rate** (8–24 fps), **WebP
-  quality**, **loop on/off**, and **playback speed** — all **sticky** (persisted in
-  prefs) and applied to every GIF/WebP. The frame cap is **memory-budgeted**: a
+  quality**, **chat text size**, **loop on/off**, and **playback speed** — all
+  **sticky** (persisted in prefs) and applied to every GIF/WebP. The chatbox text
+  is sized to the **output frame** (not your live chat zoom), so long lines fit the
+  small capture instead of overflowing; the **Text size %** knob nudges it. The frame cap is **memory-budgeted**: a
   bigger size keeps the ~69 MB paletted-frame budget by allowing proportionally
   fewer frames (the GIF gets shorter, never over-budget; WebP streams compressed so
   it can run longer). The panel shows the resulting max length and notes that
