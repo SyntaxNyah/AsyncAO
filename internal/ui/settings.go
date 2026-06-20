@@ -38,6 +38,11 @@ type settingsState struct {
 	friendInput string
 	friendKey   string
 
+	// ignore edit buffer — same per-server reload, so you can un-ignore a
+	// player who's left (the player-row button is gone once they're offline).
+	ignoreInput string
+	ignoreKey   string
+
 	// font override edit buffer (semicolon-separated chain).
 	fontInput  string
 	fontLoaded bool
@@ -1791,6 +1796,28 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 		c.Label(pad+110, y, "Append =RRGGBB to a name to give that friend a custom glow colour (e.g. blank=ff4488).", ColTextDim)
 		y += 24
 	}
+
+	y = a.settingsSection(y, w, "Ignored players")
+	if a.serverKey == "" {
+		c.Label(pad, y+4, "Ignored: connect to a server to manage its ignore list.", ColTextDim)
+		y += 30
+	} else {
+		c.Label(pad, y+4, "Ignored:", ColText)
+		if settings.ignoreKey != a.serverKey { // reload buffer per server
+			settings.ignoreInput = strings.Join(a.d.Prefs.ServerIgnored(a.serverKey), ", ")
+			settings.ignoreKey = a.serverKey
+		}
+		var ignoreCommit bool
+		settings.ignoreInput, ignoreCommit = c.TextField("ignored", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH}, settings.ignoreInput, "showname1, showname2, ... (saved per server)")
+		if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Save") || ignoreCommit {
+			a.d.Prefs.SetServerIgnored(a.serverKey, strings.Split(settings.ignoreInput, ","))
+			settings.statusLine = "Ignore list saved for this server."
+		}
+		y += 28
+		c.Label(pad+110, y, "Ignored players' IC + OOC are hidden entirely (no log, no sprite, no blip). Edit here to un-ignore someone who's left. Use the Ignore button on player rows too.", ColTextDim)
+		y += 24
+	}
+
 	y = a.settingsSection(y, w, "Mod tools")
 	// Mod-call desktop toast (for moderators).
 	mct := a.d.Prefs.ModcallToastOn()

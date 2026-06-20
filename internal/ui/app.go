@@ -1839,6 +1839,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 			a.enterCourtroom()
 		case courtroom.EventOOC:
+			if a.serverKey != "" && a.d.Prefs.ServerIgnoreMatch(a.serverKey, ev.Name) {
+				continue // #81: ignored player's OOC — drop it (room ignores OOC, so this is a clean skip)
+			}
 			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
 			if !looksLikeAreaList(ev.Text) { // your own /ga roster lists your name — don't self-ping
 				a.checkCallwords(ev.Text)
@@ -1846,6 +1849,9 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.scanModActionOOC(ev.Name, ev.Text) // #60: optional ban/kick/mute feedback sound
 		case courtroom.EventMessage:
 			if ev.Message != nil {
+				if a.serverKey != "" && a.ignoreSpeaker(ev.Message) {
+					continue // #81: ignored player — drop IC entirely (no log, no sprite/blip via room, no recording)
+				}
 				fr, fc := a.friendMessage(a.serverKey, ev.Message)
 				force := a.d.Prefs.ForceCharNamesOn()
 				a.pushIC(icLogLine(ev.Message, force), ev.Message.TextColor, fr, fc, icSpeakerName(ev.Message, force))
@@ -3572,6 +3578,21 @@ func (a *App) icStamp() string { return a.now().Format(icStampLayout) }
 // or -1 for the default tint). Gated on the master toggle FIRST, so it's a cheap
 // no-op when the feature is off (the default) — and the membership scan
 // allocates nothing, so it's safe per message even in a catch-up burst.
+// ignoreSpeaker reports whether an IC message is from an ignored player (#81),
+// matched by showname-else-character — the only identity the MS wire carries (no
+// UID). Called once per incoming IC message (not per frame); the empty-list
+// default is one RLock and zero iterations, so an un-used ignore list is free.
+func (a *App) ignoreSpeaker(m *protocol.ChatMessage) bool {
+	if m == nil || a.serverKey == "" {
+		return false
+	}
+	name := strings.TrimSpace(m.Showname)
+	if name == "" {
+		name = strings.TrimSpace(m.CharName)
+	}
+	return a.d.Prefs.ServerIgnoreMatch(a.serverKey, name)
+}
+
 func (a *App) friendMessage(serverKey string, m *protocol.ChatMessage) (bool, int32) {
 	if m == nil || serverKey == "" {
 		return false, -1

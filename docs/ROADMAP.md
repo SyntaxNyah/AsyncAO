@@ -26,8 +26,6 @@ items move to `docs/FEATURES.md` as they ship.
   repro, or which screen the pick came from (main grid / Wardrobe tab / switch).**
 
 ### Player list / social
-- **Ignore / mute a person** *(#81)* — an "Ignore" option in the double-click
-  player popup; hide/mute their IC (and OOC) messages.
 - **Friend nicknames** *(#82)* — set a personal nickname for a friend, shown in
   the player list / IC.
 - **Custom friend colours** *(#82)* — per-friend colour in the list / IC.

@@ -312,6 +312,23 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		}
 		c.Tooltip(fr, "Add this player to your friends — highlights their messages in the IC log. Click again to remove. Matches their showname, so it can be spoofed.")
 	}
+	// Ignore / Unignore (#81): block a player's IC + OOC. Same showname-else-char
+	// key as friends (all the MS wire carries). Always shown for a named player —
+	// it's a moderation-of-your-own-view tool, independent of the friend button.
+	if fk != "" && a.serverKey != "" {
+		ignored := a.d.Prefs.ServerIgnoreMatch(a.serverKey, fk)
+		il := "Ignore"
+		if ignored {
+			il = "Unignore"
+		}
+		iw := c.TextWidth(il) + 12
+		bx -= iw + 4
+		ir := sdl.Rect{X: bx, Y: btnY, W: iw, H: 22}
+		if c.Button(ir, il) {
+			a.toggleServerIgnore(fk)
+		}
+		c.Tooltip(ir, "Ignore this player — drops their IC and OOC messages (no log line, no sprite, no blip). Click again to unignore; you can also manage the list in Settings.")
+	}
 
 	// Text column between the icon and the button cluster.
 	textX := row.X + 6 + iconSz + 8
@@ -645,6 +662,37 @@ func (a *App) toggleServerFriend(name string) {
 		a.warnLine = clampLine("Removed " + name + " from friends")
 	} else {
 		a.warnLine = clampLine("Added " + name + " to friends")
+	}
+	a.warnAt = a.now()
+}
+
+// toggleServerIgnore adds or removes a name from this server's ignore list (the
+// player-list "Ignore" button). Matching mirrors friends (showname else
+// character — the only identity the MS wire carries). Ignored players' IC and
+// OOC messages are dropped at ingest (#81). Reuses the cloned list +
+// SetServerIgnored (dedups, caps, persists).
+func (a *App) toggleServerIgnore(name string) {
+	if a.serverKey == "" || strings.TrimSpace(name) == "" {
+		return
+	}
+	ignored := a.d.Prefs.ServerIgnored(a.serverKey)
+	out := ignored[:0]
+	removed := false
+	for _, n := range ignored {
+		if strings.EqualFold(strings.TrimSpace(n), name) {
+			removed = true
+			continue
+		}
+		out = append(out, n)
+	}
+	if !removed {
+		out = append(out, name)
+	}
+	a.d.Prefs.SetServerIgnored(a.serverKey, out)
+	if removed {
+		a.warnLine = clampLine("Unignored " + name + " — their messages show again")
+	} else {
+		a.warnLine = clampLine("Ignoring " + name + " — hiding their IC + OOC")
 	}
 	a.warnAt = a.now()
 }

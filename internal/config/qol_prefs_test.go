@@ -226,6 +226,47 @@ func TestEmoteFavsPref(t *testing.T) {
 	}
 }
 
+// TestServerIgnorePref pins the per-server ignore list (#81): empty by default,
+// case-insensitive match, trim + dedup on set, per-server isolation, and a
+// save→reload round-trip (so you can un-ignore someone who's left).
+func TestServerIgnorePref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	const key = "wss://example.test/ws"
+	if p.ServerIgnoreMatch(key, "Bob") {
+		t.Error("nothing should be ignored by default")
+	}
+	p.SetServerIgnored(key, []string{"Bob", "  Alice  ", "bob", ""}) // dup (ci) + pad + blank
+	if got := p.ServerIgnored(key); len(got) != 2 {
+		t.Fatalf("ignored = %v, want 2 (Bob, Alice — deduped/trimmed)", got)
+	}
+	if !p.ServerIgnoreMatch(key, "BOB") || !p.ServerIgnoreMatch(key, "alice") {
+		t.Error("match must be case-insensitive")
+	}
+	if p.ServerIgnoreMatch(key, "Carol") {
+		t.Error("Carol isn't ignored")
+	}
+	if p.ServerIgnoreMatch("wss://other/ws", "Bob") {
+		t.Error("ignore list must be per-server")
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetServerIgnored(key, []string{"Mallory"})
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.ServerIgnoreMatch(key, "Mallory") {
+		t.Error("ignore list lost on reload")
+	}
+}
+
 // TestChatboxOpacityPref pins the see-through chatbox setting: default 84,
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {

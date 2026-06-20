@@ -845,6 +845,11 @@ type ServerWarmInfo struct {
 	// their IC messages glow, and (later slices) can ping/notify. Per server,
 	// so your friend list on one server doesn't bleed into another.
 	Friends []string `json:"friends,omitempty"`
+	// Ignored is this server's blocked shownames (≤ WarmIgnoredCap): their IC
+	// AND OOC messages are dropped at ingest — no log line, no sprite, no blip
+	// (#81). Matched by showname-else-character, the only identity the MS wire
+	// carries (UID isn't in the packet). Per server, like Friends.
+	Ignored []string `json:"ignored,omitempty"`
 	// Account login for this server — NOT mod-only: servers with user
 	// account systems (Akashi and tsuserver-family forks) hang member
 	// perks off /login too, and the same flow signs either in. PLAINTEXT
@@ -921,6 +926,9 @@ const WarmBgsCap = 4096
 
 // WarmFriendsCap bounds one server's highlighted-showname (friend) list.
 const WarmFriendsCap = 256
+
+// WarmIgnoredCap bounds one server's ignored-showname (block) list.
+const WarmIgnoredCap = 256
 
 // serverWarmCap bounds the per-server warm table (rule §17.4); when full,
 // new servers simply don't record until old entries are cleared.
@@ -3296,6 +3304,55 @@ func (p *AssetPreferences) SetServerFriends(key string, names []string) {
 		}
 	}
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Friends = clean })
+}
+
+// ServerIgnored returns a server's blocked shownames (a clone — the settings
+// editor mutates it; callers must not alias the stored slice).
+func (p *AssetPreferences) ServerIgnored(key string) []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return cloneStrings(p.ServerWarm[key].Ignored)
+}
+
+// ServerIgnoreMatch reports whether name (case-insensitive) is on the server's
+// ignore list. Scans under the lock with NO allocation — safe to call per
+// incoming IC/OOC message (an empty list, the default, costs one RLock + zero
+// iterations).
+func (p *AssetPreferences) ServerIgnoreMatch(key, name string) bool {
+	if name == "" {
+		return false
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, n := range p.ServerWarm[key].Ignored {
+		if strings.EqualFold(strings.TrimSpace(n), name) {
+			return true
+		}
+	}
+	return false
+}
+
+// SetServerIgnored replaces a server's ignore list — trimmed, blanks dropped,
+// deduped case-insensitively, capped at WarmIgnoredCap.
+func (p *AssetPreferences) SetServerIgnored(key string, names []string) {
+	seen := make(map[string]struct{}, len(names))
+	clean := make([]string, 0, len(names))
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		k := strings.ToLower(n)
+		if _, dup := seen[k]; dup {
+			continue
+		}
+		seen[k] = struct{}{}
+		clean = append(clean, n)
+		if len(clean) >= WarmIgnoredCap {
+			break
+		}
+	}
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.Ignored = clean })
 }
 
 // RememberServerBackground records the background last seen on a server.

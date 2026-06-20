@@ -427,6 +427,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
     **or** showname to cover Akashi `char (showname)` vs Athena/Nyathena
     `showname (char)`, including Akashi's one-line mod form
     `char (showname) (ipid): ooc`).
+- **Ignore / block a player** (#81): an **Ignore** button on every player-list row
+  (and *Unignore* once set) drops that player's messages **entirely** — IC *and*
+  OOC, with **no log line, no sprite, and no blip**: an ignored IC packet is
+  skipped before it reaches the courtroom, so it's as if the server never sent
+  it. Matched by **showname-else-character** (the only identity the MS wire
+  carries — so, like friend highlights, it can be spoofed), stored **per server**.
+  Manage the list (and **un-ignore someone who has left**, when their row is gone)
+  in **Settings → Ignored players**. Free when unused: the match is one lock and
+  zero iterations per message on an empty list, and nothing touches the render
+  loop.
 - **Reconnect, manual + automatic** (M2): when a connection drops or a join fails,
   the lobby shows a **"Reconnect to &lt;server&gt;"** button that re-dials the last
   server you tried (the name + ws URL are remembered on every connect attempt). On
