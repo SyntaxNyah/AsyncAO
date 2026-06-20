@@ -733,6 +733,10 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	if a.makerScene == nil { // defensive: never draw an open maker with no scene
 		a.newScene()
 	}
+	// Mouse-press edge for the timeline crop-handle grab (computed once per frame
+	// so a handle is grabbed on press, not when a drag from elsewhere drifts in).
+	press := c.mouseDown && !a.makerPrevDown
+	a.makerPrevDown = c.mouseDown
 
 	y := tabBarH + int32(8)
 	c.Label(pad, y, "🎬 Scene Maker — build or edit a scene, then Preview / Save", ColText)
@@ -808,7 +812,13 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 		a.drawMakerExportPanel(pad, bodyY)
 		return
 	}
-	a.drawMakerList(pad, bodyY, makerListW, winH-bodyY-pad)
+	// Reserve the bottom strip for the timeline; the columns fill above it.
+	tlY := winH - pad - makerTimelineH
+	bodyH := tlY - bodyY - 10
+	if bodyH < makerRowH*4 { // keep the columns usable on a short window
+		bodyH = makerRowH * 4
+	}
+	a.drawMakerList(pad, bodyY, makerListW, bodyH)
 	edX := pad + makerListW + 16
 	edRight := winW - pad
 	// Far-right live preview pane, when the window is wide enough to show it
@@ -816,10 +826,11 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	const makerPaneW, makerEditorMinW = 380, 320
 	if winW-edX-16-makerPaneW >= makerEditorMinW {
 		paneX := winW - pad - makerPaneW
-		a.drawMakerPreviewPane(paneX, bodyY, makerPaneW, winH-bodyY-pad)
+		a.drawMakerPreviewPane(paneX, bodyY, makerPaneW, bodyH)
 		edRight = paneX - 16
 	}
 	a.drawMakerEditor(edX, bodyY, edRight-edX)
+	a.drawMakerTimeline(pad, tlY, winW-2*pad, press)
 }
 
 // drawMakerOpenPicker lists saved recordings to load straight into the maker

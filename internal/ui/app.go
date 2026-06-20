@@ -395,6 +395,17 @@ type App struct {
 	makerExportOpen bool   // the in-maker "⚙ Export options" panel is showing
 	makerTrimStart  int    // crop In point (event index), -1 = scene start
 	makerTrimEnd    int    // crop Out point (event index), -1 = scene end
+	// Timeline strip (#75): a proportional film-strip of the scene events, widths
+	// from the recorded OffsetMs pacing. Reused per-frame layout buffers (segX/W
+	// in px, dur in ms) so the maker draw stays alloc-free; horizontal scroll;
+	// makerDragHandle is which crop handle is being dragged (0 none, 1 In, 2 Out);
+	// makerPrevDown carries the mouse-press edge for grabbing a handle.
+	makerSegX       []int32
+	makerSegW       []int32
+	makerTLDur      []float64
+	makerTLScroll   int32
+	makerDragHandle int
+	makerPrevDown   bool
 	// makerPreviewRoom is a throwaway courtroom that renders the selected line
 	// into the maker's live preview pane (the "studio" WYSIWYG). makerPreviewIdx
 	// is the line it currently reflects, so the pane is rebuilt only when the

@@ -322,6 +322,19 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   and `.aorec` is **pretty-printed JSON**, you can also open one in **any text
   editor** and tweak it by hand. The editor is a drawn-only-while-open overlay,
   so it costs **nothing** on the live render path.
+- **Timeline strip** (#75): a horizontal **film-strip** of the whole scene along
+  the bottom of the maker — the one view the vertical list can't give. Each
+  block's **width is proportional to how long that event was on screen in the
+  recording** (its `OffsetMs` pacing), so you *see* the rhythm: which line
+  dominates the runtime, where the dead air is — exactly what you need to **find
+  the funny moment or cut the bloat**. Blocks are tinted by kind (dialogue ·
+  scene change · music), the **selected event** is outlined (the playhead), and
+  the excluded part dims under the crop. **Click a block to select it**; **drag
+  the ⟦ ⟧ handles to set In/Out directly** (snapping to event boundaries — no
+  more select-row-then-click-Set-In). Honest axis: an idle AFK gap is **clamped**
+  so it can't swallow the strip, every block keeps a **clickable minimum width**
+  (the strip scrolls when they overflow), and a hand-built scene with no recorded
+  pacing falls back to **even widths**. Drawn only while the maker is open.
 - **Self-contained archive** (CDN-proof, M16): a plain `.aorec` is a tiny script
   whose **visuals stream from the recorded Origin**, so a scene built against a
   CDN goes blank if that CDN dies. **📦 Export archive** (in the maker) fixes

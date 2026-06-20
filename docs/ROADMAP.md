@@ -48,6 +48,7 @@ it's a stale build (`scripts\build.ps1 -Release`).
 
 ## In flight / larger (separate tracks)
 - **M16 Scene studio** — recording, replay player, scene maker, GIF + animated
-  WebP export, crop/trim, per-line effects (shipped); **timeline playhead** is the
-  next optional piece (see `docs/FEATURES.md`).
+  WebP export, crop/trim, per-line effects, **proportional timeline strip with
+  draggable In/Out handles** (#75, shipped) — all in `docs/FEATURES.md`. Possible
+  later tweaks: continuous-playback scrubbing, drag-to-reorder on the strip.
 - **M8 Gamepad support** *(#44)* — the last untouched milestone.
