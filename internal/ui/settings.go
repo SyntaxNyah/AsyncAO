@@ -1583,6 +1583,17 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	if next := c.Checkbox(pad, y, "Instant disconnect (OFF by default): the Disconnect button asks for confirmation first, since it's easy to hit by accident. Turn this on to disconnect immediately with no prompt.", idc); next != idc {
 		a.d.Prefs.SetInstantDisconnect(next)
 	}
+	y += 26
+
+	acl := a.d.Prefs.AutoConnectOnLaunchOn()
+	lastName, lastURL := a.d.Prefs.LastServer()
+	label := "Auto-connect to my last server on launch (OFF by default): opens straight onto the server you last used, even after a disconnect. Also bound to a Connect-to-last-server key (Controls tab)."
+	if lastURL != "" {
+		label = "Auto-connect on launch to \"" + lastName + "\" (OFF by default): your last server. Reconnect there with the Connect-to-last-server key (Controls tab) too."
+	}
+	if next := c.Checkbox(pad, y, label, acl); next != acl {
+		a.d.Prefs.SetAutoConnectOnLaunch(next)
+	}
 	y += 30
 
 	y = a.settingsSection(y, w, "Sound effects")

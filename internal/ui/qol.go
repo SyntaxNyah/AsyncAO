@@ -62,6 +62,7 @@ const (
 	hotkeyDND           = "dnd"            // toggle Do Not Disturb (mute callword + friend pings) (M15)
 	hotkeyReshowSprites = "reshow_sprites" // un-hide all sprites hidden this session (right-click-to-hide)
 	hotkeyHideDesk      = "hide_desk"      // toggle hiding the courtroom desk
+	hotkeyQuickConnect  = "quick_connect"  // dial the saved last server (works offline / in the lobby)
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -108,6 +109,7 @@ var hotkeyDefs = []struct {
 	{hotkeyDND, "Do Not Disturb (mute pings)", "d"},     // Ctrl+D — session-only, rebindable
 	{hotkeyReshowSprites, "Reshow hidden sprites", "y"}, // un-hide all right-click-hidden sprites
 	{hotkeyHideDesk, "Hide / show the desk", "v"},       // toggle desk rendering
+	{hotkeyQuickConnect, "Connect to last server", "q"}, // dial the saved server (lobby)
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).

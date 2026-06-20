@@ -6,6 +6,42 @@ import (
 	"time"
 )
 
+// fireAutoConnect dials the last server once on launch when auto-connect-on-launch
+// is set (one-shot via autoConnectPending, armed in NewApp only when no tab
+// restore is queued). No-op when not pending — a single bool check per frame, so
+// boot stays byte-identical when off.
+func (a *App) fireAutoConnect() {
+	if !a.autoConnectPending {
+		return
+	}
+	a.autoConnectPending = false
+	if a.sess != nil || a.lastConnURL != "" {
+		return // a tab restore (or anything) already started connecting
+	}
+	if name, url := a.d.Prefs.LastServer(); url != "" {
+		a.Connect(name, url)
+	}
+}
+
+// quickConnect dials the saved last server now (the quick-connect keybind) — to
+// hop back on after a disconnect without going through the lobby.
+func (a *App) quickConnect() {
+	if a.sess != nil {
+		a.warnLine = "Already connected — Disconnect first."
+		a.warnAt = time.Now()
+		return
+	}
+	name, url := a.d.Prefs.LastServer()
+	if url == "" {
+		a.warnLine = "No saved server yet — connect to one first."
+		a.warnAt = time.Now()
+		return
+	}
+	a.warnLine = "Connecting to " + name + "…"
+	a.warnAt = time.Now()
+	a.Connect(name, url)
+}
+
 // Auto-reconnect (M2): after an UNEXPECTED drop (EventDisconnect), retry the last
 // server with exponential backoff until it returns, we connect, or we give up. A
 // deliberate Disconnect (the Extras button) never auto-retries, and a manual

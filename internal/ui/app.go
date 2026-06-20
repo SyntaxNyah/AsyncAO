@@ -867,12 +867,13 @@ type sessionState struct {
 	// sfxMuted is a session-only SFX mute (Mute SFX hotkey); showHotkeys
 	// toggles the F1 hotkey cheat-sheet overlay; musicDucked tracks whether
 	// music is currently ducked under a playing message (transition-driven).
-	sfxMuted          bool
-	showHotkeys       bool
-	confirmDisconnect bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
-	hidePrompt        string              // a "hide this sprite?" confirm is open for this char name ("" = none)
-	hiddenSprites     map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
-	musicDucked       bool
+	sfxMuted           bool
+	showHotkeys        bool
+	confirmDisconnect  bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
+	hidePrompt         string              // a "hide this sprite?" confirm is open for this char name ("" = none)
+	hiddenSprites      map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
+	autoConnectPending bool                // fire auto-connect-to-last-server once, on the first frame
+	musicDucked        bool
 
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
@@ -1304,6 +1305,15 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		}
 		a.restoreQueue = q
 	}
+	// Auto-connect-on-launch (opt-in, OFF by default): if tab-restore didn't queue
+	// anything, dial the last server on the first frames so you land straight on
+	// your chosen server — even when no tab was open at shutdown. Tab-restore wins
+	// if both are on (it reopens exactly what you had).
+	if d.Prefs.AutoConnectOnLaunchOn() && len(a.restoreQueue) == 0 {
+		if _, url := d.Prefs.LastServer(); url != "" {
+			a.autoConnectPending = true
+		}
+	}
 	return a
 }
 
@@ -1478,6 +1488,7 @@ func (a *App) Connect(name, wsURL string) {
 // short timeout so a dead remembered server can't freeze boot for long.
 func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.lastConnName, a.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
+	a.d.Prefs.SetLastServer(name, wsURL)        // persist for auto-connect / quick-connect on next launch
 	a.pinging = false                           // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
 	a.parkActive()
 	if !a.allocateTab() {
@@ -2852,7 +2863,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// on screen) read the same value — whichever draws first can't steal it.
 	a.logSelPressed = a.ctx.mouseDown && !a.logSelPrevDown
 	a.logSelPrevDown = a.ctx.mouseDown
-	a.pumpTabRestore()              // restore-on-launch: one reconnect/frame, then idle
+	a.pumpTabRestore()  // restore-on-launch: one reconnect/frame, then idle
+	a.fireAutoConnect() // one-shot: auto-connect to the last server on launch (opt-in)
+	// Quick-connect key: the courtroom hotkey handler is sess-gated and never runs
+	// in the lobby, so dispatch this one here, only while offline.
+	if a.sess == nil && a.ctx.hotkey != 0 && strings.ToLower(sdl.GetKeyName(a.ctx.hotkey)) == a.hotkeyFor(hotkeyQuickConnect) {
+		a.quickConnect()
+	}
 	a.maybeKickUpdateCheck()        // one-shot, off the boot path (fires on frame 1)
 	a.pollUpdate()                  // drain a found release
 	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens

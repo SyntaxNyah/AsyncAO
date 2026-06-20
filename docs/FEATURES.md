@@ -419,6 +419,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   reconnects**, and a manual Reconnect / fresh Join takes over. Toggle in
   **Settings → Audio & Chat** ("Auto-reconnect after a dropped connection", ON by
   default). Idle it costs one time-compare per frame.
+- **Auto-connect on launch** (OFF by default): turn this on in **Settings →
+  Messages & connection** to open straight onto the **server you last used** — no
+  lobby detour — even after you'd disconnected. The checkbox names the remembered
+  server once you've connected to one. Tab-restore (M7) wins if both are on (it
+  reopens exactly what you had). The same saved server is also reachable any time
+  via a **"Connect to last server" keybind** (default **Ctrl+Q**, rebindable in
+  the Controls tab) that works offline in the lobby. Off, it's one bool check on
+  the first frame and nothing after — boot stays byte-identical.
 - **Disconnect confirmation**: the **Disconnect** button is easy to fat-finger, so
   by default it pops a **confirm modal** ("Disconnect from the server? — Yes will
   disconnect you, you'll return to the lobby") with **Yes / Cancel** before it

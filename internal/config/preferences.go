@@ -464,6 +464,9 @@ type AssetPreferences struct {
 	ShowRecordButton       bool                         `json:"showRecordButton"`
 	InstantDisconnect      bool                         `json:"instantDisconnect"`
 	HideDesk               bool                         `json:"hideDesk"`
+	AutoConnectOnLaunch    bool                         `json:"autoConnectOnLaunch"`
+	LastServerName         string                       `json:"lastServerName"`
+	LastServerURL          string                       `json:"lastServerURL"`
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
 	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
 	Export                 ExportOptions                `json:"export"`
@@ -635,23 +638,26 @@ type prefsJSON struct {
 	HighlightColor         *int           `json:"highlightColor"` // absent = default accent
 	BgSlideshow            bool           `json:"bgSlideshow"`    // default OFF (zero value)
 	BgSlideshowSecs        int            `json:"bgSlideshowSecs"`
-	DownloadKBps           int            `json:"downloadKBps"`           // 0 = unlimited (default)
-	ForceCharNames         bool           `json:"forceCharNames"`         // default OFF
-	RandomEmote            bool           `json:"randomEmote"`            // default OFF
-	FriendHighlight        bool           `json:"friendHighlight"`        // default OFF
-	ShowFriendButton       *bool          `json:"showFriendButton"`       // default ON (pointer: absent != off)
-	RightClickHideSprite   *bool          `json:"rightClickHideSprite"`   // default ON (pointer: absent != off)
-	DragLayout             *bool          `json:"dragLayout"`             // default ON (pointer: absent != off)
-	FollowEnabled          bool           `json:"followEnabled"`          // default OFF (opt-in)
-	DyslexiaFont           bool           `json:"dyslexiaFont"`           // default OFF
-	DNDPersist             bool           `json:"dndPersist"`             // default OFF (DND clears each launch)
-	DNDSaved               bool           `json:"dndSaved"`               // persisted DND state (restored only when DNDPersist)
-	RainbowMessages        bool           `json:"rainbowMessages"`        // default OFF
-	RandomMessageColor     bool           `json:"randomMessageColor"`     // default OFF
-	RainbowSprites         bool           `json:"rainbowSprites"`         // default OFF
-	ShowRecordButton       bool           `json:"showRecordButton"`       // default OFF
-	InstantDisconnect      bool           `json:"instantDisconnect"`      // default OFF (confirm first)
-	HideDesk               bool           `json:"hideDesk"`               // default OFF
+	DownloadKBps           int            `json:"downloadKBps"`         // 0 = unlimited (default)
+	ForceCharNames         bool           `json:"forceCharNames"`       // default OFF
+	RandomEmote            bool           `json:"randomEmote"`          // default OFF
+	FriendHighlight        bool           `json:"friendHighlight"`      // default OFF
+	ShowFriendButton       *bool          `json:"showFriendButton"`     // default ON (pointer: absent != off)
+	RightClickHideSprite   *bool          `json:"rightClickHideSprite"` // default ON (pointer: absent != off)
+	DragLayout             *bool          `json:"dragLayout"`           // default ON (pointer: absent != off)
+	FollowEnabled          bool           `json:"followEnabled"`        // default OFF (opt-in)
+	DyslexiaFont           bool           `json:"dyslexiaFont"`         // default OFF
+	DNDPersist             bool           `json:"dndPersist"`           // default OFF (DND clears each launch)
+	DNDSaved               bool           `json:"dndSaved"`             // persisted DND state (restored only when DNDPersist)
+	RainbowMessages        bool           `json:"rainbowMessages"`      // default OFF
+	RandomMessageColor     bool           `json:"randomMessageColor"`   // default OFF
+	RainbowSprites         bool           `json:"rainbowSprites"`       // default OFF
+	ShowRecordButton       bool           `json:"showRecordButton"`     // default OFF
+	InstantDisconnect      bool           `json:"instantDisconnect"`    // default OFF (confirm first)
+	HideDesk               bool           `json:"hideDesk"`             // default OFF
+	AutoConnectOnLaunch    bool           `json:"autoConnectOnLaunch"`  // default OFF
+	LastServerName         string         `json:"lastServerName"`
+	LastServerURL          string         `json:"lastServerURL"`
 	RainbowSpriteSpeed     *int           `json:"rainbowSpriteSpeed"`     // absent = default
 	ReplayPlaybackSpeed    *int           `json:"replaySpeed"`            // absent = default
 	Export                 *ExportOptions `json:"export"`                 // absent = default
@@ -1089,6 +1095,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.ShowRecordButton = onDisk.ShowRecordButton
 	p.InstantDisconnect = onDisk.InstantDisconnect
 	p.HideDesk = onDisk.HideDesk
+	p.AutoConnectOnLaunch = onDisk.AutoConnectOnLaunch
+	p.LastServerName = onDisk.LastServerName
+	p.LastServerURL = onDisk.LastServerURL
 	if onDisk.RainbowSpriteSpeed != nil {
 		p.RainbowSpriteSpeed = clampPercent(*onDisk.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
 	}
@@ -2428,6 +2437,48 @@ func (p *AssetPreferences) SetHideDesk(on bool) {
 		return
 	}
 	p.HideDesk = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AutoConnectOnLaunchOn reports whether the client auto-connects to the last
+// server on launch (default OFF). Distinct from M7 tab-restore: this fires even
+// when no tab was open at shutdown, so it always lands on your chosen server.
+func (p *AssetPreferences) AutoConnectOnLaunchOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AutoConnectOnLaunch
+}
+
+// SetAutoConnectOnLaunch toggles auto-connect-on-launch.
+func (p *AssetPreferences) SetAutoConnectOnLaunch(on bool) {
+	p.mu.Lock()
+	if p.AutoConnectOnLaunch == on {
+		p.mu.Unlock()
+		return
+	}
+	p.AutoConnectOnLaunch = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// LastServer returns the last server connected to (name, ws URL) — the
+// auto-connect / quick-connect target. Empty url means none yet.
+func (p *AssetPreferences) LastServer() (name, url string) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.LastServerName, p.LastServerURL
+}
+
+// SetLastServer records the last server connected to (persisted for auto-connect
+// + quick-connect). Called on every connect.
+func (p *AssetPreferences) SetLastServer(name, url string) {
+	p.mu.Lock()
+	if p.LastServerName == name && p.LastServerURL == url {
+		p.mu.Unlock()
+		return
+	}
+	p.LastServerName, p.LastServerURL = name, url
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -138,6 +138,39 @@ func TestRightClickHideSpritePref(t *testing.T) {
 	}
 }
 
+// TestAutoConnectOnLaunchPref pins the auto-connect-on-launch opt-in: OFF by
+// default, and the toggle plus the saved last server (name + URL) survive a
+// save→reload so the next launch knows where to dial.
+func TestAutoConnectOnLaunchPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.AutoConnectOnLaunchOn() {
+		t.Error("AutoConnectOnLaunch must default OFF (auto-connect is opt-in)")
+	}
+	if name, url := p.LastServer(); name != "" || url != "" {
+		t.Errorf("LastServer default = %q/%q, want empty", name, url)
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetAutoConnectOnLaunch(true)
+	q.SetLastServer("Skrapegropen", "wss://example.test/ws")
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.AutoConnectOnLaunchOn() {
+		t.Error("AutoConnectOnLaunch=true lost on reload")
+	}
+	if name, url := r.LastServer(); name != "Skrapegropen" || url != "wss://example.test/ws" {
+		t.Errorf("reloaded LastServer = %q/%q, want Skrapegropen/wss://example.test/ws", name, url)
+	}
+}
+
 // TestChatboxOpacityPref pins the see-through chatbox setting: default 84,
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {
