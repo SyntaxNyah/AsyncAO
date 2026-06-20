@@ -10,6 +10,25 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
+// TestRebuildBgListOffline pins the edit-maker-offline crash: opening the Scene
+// Maker while disconnected (a.sess == nil) ran rebuildBgList, which dereferenced
+// a.sess.Background. The bg picker is courtroom-only so it never hit this; the
+// maker opens from Settings. Must not panic, and still build a list (server +
+// favorites) when offline.
+func TestRebuildBgListOffline(t *testing.T) {
+	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = prefs.Close() })
+	a := &App{d: Deps{Prefs: prefs}} // a.sess == nil (offline)
+	a.bgPick.server = []string{"court", "gs4", "lobby"}
+	a.rebuildBgList() // would nil-deref a.sess.Background before the guard
+	if len(a.bgPick.list) == 0 {
+		t.Error("offline bg list dropped the server list + favorites")
+	}
+}
+
 // TestMakerDrawNoPanic drives the maker's list + per-event editor over a loaded
 // recording (message / background / music events, an empty-charname line, effects
 // + crop set) the way "✎ Edit" does — directly, NOT through drawSceneMaker, so a

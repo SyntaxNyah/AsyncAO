@@ -196,7 +196,9 @@ func (a *App) rebuildBgList() {
 		seen[k] = struct{}{}
 		names = append(names, n)
 	}
-	add(a.sess.Background)
+	if a.sess != nil { // nil when the Scene Maker is opened offline (Settings → Studio → Edit)
+		add(a.sess.Background)
+	}
 	add(a.d.Prefs.ServerWarmInfoFor(a.serverKey).Background)
 	for _, n := range favList {
 		add(n)
