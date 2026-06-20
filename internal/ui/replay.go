@@ -380,7 +380,9 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	a.replayRoom = courtroom.NewCourtroom(courtroom.NewURLBuilder(rec.Origin), a.d.Manager, nil, a.d.Audio)
 	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // slower than live + slider-driven
 	a.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
-	a.replayRoom.ReduceMotion = a.d.Prefs.ReduceMotion()
+	// A maker Preview is authoring (show the scene's screenshake/flash); a normal
+	// replay honours the viewer's reduce-motion accessibility pref.
+	a.replayRoom.ReduceMotion = a.d.Prefs.ReduceMotion() && !a.makerOpen
 	a.replayRoom.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	if a.d.Viewport != nil { // one-shot preanim completion must notify the REPLAY room now
 		a.d.Viewport.OnPreanimDone = a.replayRoom.NotifyPreanimDone

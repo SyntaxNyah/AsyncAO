@@ -217,7 +217,8 @@ func (a *App) closeSceneMaker() {
 type makerPreviewKey struct {
 	bg, char, emote, side, pre string
 	emoteMod, deskMod, kind    int
-	flip                       bool
+	offX, offY                 int
+	flip, shake, flash         bool
 }
 
 // makerPreviewKeyFor computes the preview key for the selected event: the
@@ -241,6 +242,8 @@ func (a *App) makerPreviewKeyFor(sel int) makerPreviewKey {
 	if m := e.Message; m != nil {
 		k.char, k.emote, k.side, k.pre = m.CharName, m.Emote, m.Side, m.PreEmote
 		k.emoteMod, k.deskMod, k.flip = m.EmoteMod, m.DeskMod, m.Flip
+		k.offX, k.offY = m.SelfOffsetX, m.SelfOffsetY
+		k.shake, k.flash = m.Screenshake, m.Realization // so the pane replays when an effect is toggled
 	}
 	return k
 }
@@ -265,7 +268,7 @@ func (a *App) ensureMakerPreview() {
 	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(a.makerScene.Origin), a.d.Manager, nil, a.d.Audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
-	room.ReduceMotion = a.d.Prefs.ReduceMotion()
+	room.ReduceMotion = false // authored WYSIWYG: show the line's screenshake/flash even if live reduce-motion is on
 	room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
@@ -1034,6 +1037,16 @@ func lowerASCII(b byte) byte {
 
 // drawMakerEditor renders the fields for the selected event (message / bg /
 // music). Edits write straight back into the cloned scene buffer.
+// makerOffsetSlider draws a −100..100 % slider for a sprite offset at column fx,
+// with a numeric readout, returning the new value (drag; 0 = centred). The kit
+// slider is 0..max, so the value is biased by +100 and unbiased on the way out.
+func makerOffsetSlider(c *Ctx, id string, fx, y int32, v int) int {
+	track := sdl.Rect{X: fx, Y: y + 6, W: 150, H: 14}
+	nv := int(c.Slider(id, track, int32(v+100), 200)) - 100
+	c.Label(fx+162, y+5, fmt.Sprintf("%d%%", nv), ColAccent)
+	return nv
+}
+
 func (a *App) drawMakerEditor(x, y, w int32) {
 	c := a.ctx
 	if a.makerScene == nil || a.makerSel < 0 || a.makerSel >= len(a.makerScene.Events) {
@@ -1113,7 +1126,31 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 			m.PreEmote, _ = c.TextField("mk_pre", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.PreEmote, "pre-animation stem, e.g. (a)point")
 			y += 32
 		}
-		c.Label(x, y, "The character + emote must exist at the Origin/CDN above for the sprite to load.", ColTextDim)
+		// Effects — these render in the live preview AND the GIF/WebP export
+		// (the export ignores the live reduce-motion pref so authored shakes show).
+		shakeLabel := "Screenshake"
+		if pre {
+			shakeLabel = "Screenshake (only without a pre-anim)" // AO fires shake on idle/zoom only
+		}
+		if next := c.Checkbox(x, y, shakeLabel, m.Screenshake); next != m.Screenshake {
+			m.Screenshake = next
+		}
+		if next := c.Checkbox(x+190, y, "Realization flash", m.Realization); next != m.Realization {
+			m.Realization = next
+		}
+		y += 28
+		// Move the character (offset as a percent of the viewport; 0 = centred).
+		c.Label(x, y+5, "Move X:", ColText)
+		m.SelfOffsetX = makerOffsetSlider(c, "mk_offx", fx, y, m.SelfOffsetX)
+		y += 28
+		c.Label(x, y+5, "Move Y:", ColText)
+		m.SelfOffsetY = makerOffsetSlider(c, "mk_offy", fx, y, m.SelfOffsetY)
+		y += 30
+		// Sound effect — plays in Preview / a recording, but a GIF/WebP has no audio.
+		c.Label(x, y+5, "Sound FX:", ColText)
+		m.SFXName, _ = c.TextField("mk_sfx", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.SFXName, "sfx name — plays in replay, silent in the GIF")
+		y += 34
+		c.Label(x, y, "Effects + move show in Preview and the export. The character + emote must exist at the Origin/CDN.", ColTextDim)
 
 	case courtroom.EventBackground:
 		c.Label(x, y, "Background change", ColAccent)

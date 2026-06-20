@@ -255,7 +255,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(scene.Origin), a.d.Manager, nil, a.d.Audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
-	room.ReduceMotion = a.d.Prefs.ReduceMotion()
+	room.ReduceMotion = false // export the authored effects (screenshake/flash), not the viewer's accessibility pref
 	room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone

@@ -212,6 +212,30 @@ func TestMakerCropRange(t *testing.T) {
 	}
 }
 
+// TestMakerPreviewKeyReflectsEffects ensures toggling a line's screenshake /
+// realization / sprite-move changes its preview key, so the WYSIWYG pane rebuilds
+// and replays the effect instead of showing a stale frame.
+func TestMakerPreviewKeyReflectsEffects(t *testing.T) {
+	base := &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Side: "wit"}
+	a := &App{makerScene: &sceneRecording{Events: []recEvent{{Kind: int(courtroom.EventMessage), Message: base}}}}
+	k0 := a.makerPreviewKeyFor(0)
+
+	for _, mut := range []func(m *protocol.ChatMessage){
+		func(m *protocol.ChatMessage) { m.Screenshake = true },
+		func(m *protocol.ChatMessage) { m.Realization = true },
+		func(m *protocol.ChatMessage) { m.SelfOffsetX = 30 },
+		func(m *protocol.ChatMessage) { m.SelfOffsetY = -20 },
+	} {
+		msg := *base
+		mut(&msg)
+		a.makerScene.Events[0].Message = &msg
+		if a.makerPreviewKeyFor(0) == k0 {
+			t.Errorf("preview key unchanged after mutating %+v — the pane wouldn't rebuild to show it", msg)
+		}
+		a.makerScene.Events[0].Message = base
+	}
+}
+
 func TestMakerNewLineSeedInherits(t *testing.T) {
 	a := &App{}
 	a.makerScene = &sceneRecording{Events: []recEvent{{

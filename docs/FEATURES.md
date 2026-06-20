@@ -274,8 +274,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   any saved recording opens a full-window editor: a left **event list** you can
   **add / reorder (▲▼) / duplicate (⎘) / delete** lines on, and a right panel to
   set each line's **character, emote, showname, text, position, colour, flip,
-  desk** and an optional **pre-animation** — plus **background** and **music**
-  events. **Quality-of-life:** **+ Line inherits the previous speaker** (so a
+  desk**, an optional **pre-animation**, and per-line **effects** —
+  **screenshake**, **realization flash**, **move the character (X/Y sliders)**, and
+  a **sound effect** — plus **background** and **music** events. The visual effects
+  (shake / flash / move) render in **both the live preview and the GIF/WebP
+  export** (the export ignores the live *reduce-motion* accessibility pref so the
+  scene you authored is what you get); the sound plays in Preview / a recording but
+  a GIF/WebP has no audio. **Quality-of-life:** **+ Line inherits the previous speaker** (so a
   back-and-forth doesn't make you retype the character every line — you just edit
   the text), **⎘ Dup** clones a line, **▶ Preview from this line** iterates a late
   line without replaying the whole scene, and **character + background
