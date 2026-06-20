@@ -158,6 +158,7 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 	a.makerSel = 0
 	a.makerScroll = 0
 	a.makerPickerOpen = false
+	a.makerExportOpen = false
 	a.makerTrimStart = -1 // no crop until the user sets In/Out
 	a.makerTrimEnd = -1
 	a.makerPreviewIdx = -1 // force the preview pane to rebuild for the new scene
@@ -315,6 +316,19 @@ func (a *App) recoverMakerPreview() {
 	if r := recover(); r != nil {
 		a.pushDebug("maker preview panic: " + fmt.Sprint(r))
 		a.teardownMakerPreview()
+	}
+}
+
+// recoverMaker turns a panic anywhere in the maker DRAW (list / editor / actions —
+// the parts the preview's own recover doesn't cover) into a debug line + a clean
+// close, never an app crash. It also SURFACES the cause: the panic value lands in
+// the debug overlay so a hard-to-reproduce edit crash names itself.
+func (a *App) recoverMaker() {
+	if r := recover(); r != nil {
+		a.pushDebug("scene maker panic: " + fmt.Sprint(r))
+		a.warnLine = "Scene Maker hit an error (see the debug overlay) — closed it to keep the app running."
+		a.warnAt = time.Now()
+		a.closeSceneMaker()
 	}
 }
 
@@ -670,6 +684,7 @@ func eventSummary(e recEvent) (tag, text string) {
 // screen while makerOpen, so it owns input). Left: the event list + add/reorder/
 // delete. Right: the per-event editor. Top: name, origin, Preview / Save / New.
 func (a *App) drawSceneMaker(winW, winH int32) {
+	defer a.recoverMaker() // a draw panic closes the maker + names itself, never kills the app
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: winW, H: winH}, ColBackground)
 	if a.makerScene == nil { // defensive: never draw an open maker with no scene
