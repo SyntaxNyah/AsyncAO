@@ -727,6 +727,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Hovering an emote previews it** large (3 s, or instantly on right-click):
   if the emote has a **pre-animation** that flourish plays (looped) so you can
   watch it before sending; otherwise its talking sprite. Both layouts.
+- **Emote favourites + show-favourites-only** (#77): characters ship dozens of
+  emotes but you use a handful — **click the ★** that appears in an emote
+  button's corner (on hover, or always once starred) to **favourite it for that
+  character**. Turn on **"Show favourite emotes only"** (Settings → General, or
+  the **★ Favs** button in the classic grid) and the grid hides everything but
+  your stars; paging, the **Random** button, the **number keys**, and
+  **Ctrl+E cycling** all then operate on just the favourites. Favourites are
+  **per character and persisted** (and kept across a settings reset, like your
+  wardrobe). They're keyed by the emote's position, not its name — emote
+  labels and talking sprites *duplicate* within a character (Apollo has three
+  distinct "normal" emotes that share a sprite), so a name key would merge them
+  into one star. **Zero render cost**: a click rebuilds a small lookup set + the
+  visible-index list once; every steady-state frame is a single guard compare
+  (verified 0 allocs/op), and the always-on render loop is untouched.
 - **Sprite preview magnifier**: every sprite preview pop-up (character select,
   wardrobe, emote hover, background picker) has **− / + zoom controls** along
   its bottom OR the **mouse wheel** (in and out) over the box; past 1× the

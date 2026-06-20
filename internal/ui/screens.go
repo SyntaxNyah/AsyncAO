@@ -3178,6 +3178,8 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	}
 	me := a.activeCharName() // iniswap override drives emotes + buttons
 	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
+	a.refreshEmoteView() // build the favourite set + the visible-index list (#77)
+	vis := a.emoteVisible
 
 	// Uniform grid so hundreds of emotes page cleanly. The old layout
 	// wrapped and `break`ed on overflow, silently dropping every emote past
@@ -3196,7 +3198,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	// keep the full height. Two-pass and oscillation-free: reserving height
 	// only shrinks a page, so a list that needed paging still does.
 	gridH := r.H
-	if len(a.emotes) > int(cols*gridRows(gridH, cellH)) {
+	if len(vis) > int(cols*gridRows(gridH, cellH)) {
 		gridH = r.H - (btnH + 4)
 	}
 	perPage := int(cols * gridRows(gridH, cellH))
@@ -3204,7 +3206,10 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		perPage = 1
 	}
 	a.emotePerPage = perPage // number-key emote select reads this
-	pages := (len(a.emotes) + perPage - 1) / perPage
+	pages := (len(vis) + perPage - 1) / perPage
+	if pages < 1 {
+		pages = 1 // favs-only with no favourites yet: one empty page
+	}
 	if a.emotePage >= pages {
 		a.emotePage = 0
 	}
@@ -3219,13 +3224,14 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	}
 	start := a.emotePage * perPage
 
-	for i := start; i < len(a.emotes) && i < start+perPage; i++ {
+	for slot := start; slot < len(vis) && slot < start+perPage; slot++ {
+		i := vis[slot] // real index into a.emotes (favs-only filters which show)
 		e := &a.emotes[i]
 		label := e.Comment
 		if label == "" {
 			label = e.Anim
 		}
-		n := int32(i - start)
+		n := int32(slot - start)
 		btn := sdl.Rect{
 			X: r.X + (n%cols)*(cellW+emoteGridGap),
 			Y: r.Y + (n/cols)*(cellH+emoteGridGap),
@@ -3241,7 +3247,11 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		} else {
 			picked = c.Button(btn, label)
 		}
-		if picked {
+		// The favourite ★ is drawn on top and wins the click: a press on the
+		// corner star toggles the favourite instead of selecting the emote.
+		if a.drawEmoteFavStar(btn, i) {
+			// star toggled — swallow this cell's select for the frame
+		} else if picked {
 			a.selectEmote(i)
 		}
 		// Full-size preview after a 3 s hover (right-click = instant). If the
@@ -3251,6 +3261,10 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		if c.HoverPreview("emote:"+e.Anim, btn) {
 			a.previewEmote(me, e)
 		}
+	}
+	// Favs-only with nothing starred yet: explain how to get out / add some.
+	if len(vis) == 0 && a.d.Prefs.EmoteFavOnlyOn() {
+		c.Label(r.X, r.Y+4, "No favourite emotes yet — turn off ★ Favs, then click the ★ on an emote.", ColTextDim)
 	}
 
 	// Page arrows + counter (only when more than one page exists). "<"/">"
@@ -3263,11 +3277,14 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		if c.Button(sdl.Rect{X: r.X + 34, Y: cy, W: 30, H: btnH}, ">") && a.emotePage < pages-1 {
 			a.emotePage++
 		}
-		c.Label(r.X+72, cy+6, a.emotePageCounter(a.emotePage+1, pages, len(a.emotes)), ColTextDim)
+		c.Label(r.X+72, cy+6, a.emotePageCounter(a.emotePage+1, pages, len(vis)), ColTextDim)
 	}
 
-	// Random emote: quick variety / novelty — picks any emote and jumps to its
-	// page. Bottom-right so it never collides with the page arrows on the left.
+	// ★ Favs filter toggle (always present, so you can switch it off even with an
+	// empty favs-only grid) + Random. Bottom-right, clear of the page arrows.
+	a.drawEmoteFavToggle(sdl.Rect{X: r.X + r.W - 158, Y: r.Y + r.H - btnH, W: 64, H: btnH})
+	// Random emote: quick variety / novelty — picks any VISIBLE emote (so it
+	// respects the favs-only filter) and jumps to its page.
 	if len(a.emotes) > 1 {
 		rb := sdl.Rect{X: r.X + r.W - 84, Y: r.Y + r.H - btnH, W: 84, H: btnH}
 		if c.Button(rb, "Random") {
@@ -3316,16 +3333,17 @@ func (a *App) emotePageCounter(page, pages, n int) string {
 	return a.emotePageLabel
 }
 
-// pickRandomEmote selects a random emote and scrolls its page into view.
+// pickRandomEmote selects a random VISIBLE emote (so it respects the favs-only
+// filter) and scrolls its page into view.
 func (a *App) pickRandomEmote() {
-	n := len(a.emotes)
-	if n == 0 {
+	a.refreshEmoteView()
+	i := a.randomVisibleEmote()
+	if i < 0 {
 		return
 	}
-	i := rand.IntN(n)
 	a.selectEmote(i)
-	if a.emotePerPage > 0 {
-		a.emotePage = i / a.emotePerPage
+	if p := a.emotePageOf(i); p >= 0 {
+		a.emotePage = p
 	}
 }
 
@@ -3349,16 +3367,31 @@ func nextRandomEmote(n, cur int) int {
 
 // randomEmoteForSend rolls a fresh emote on send for auto-random mode, reusing
 // selectEmote so the button art + sprites warm exactly as a manual pick would,
-// and scrolls the grid to it. No-op when the char has 0 or 1 emote.
+// and scrolls the grid to it. It varies among the VISIBLE emotes, so with the
+// favs-only filter on it rolls within your favourites (and with it off — the
+// default — `vis` is the whole list, so behaviour is unchanged). No-op with 0 or
+// 1 visible emote.
 func (a *App) randomEmoteForSend() {
-	n := len(a.emotes)
-	i := nextRandomEmote(n, a.emoteIdx)
-	if n <= 1 || i == a.emoteIdx {
+	a.refreshEmoteView()
+	vis := a.emoteVisible
+	if len(vis) <= 1 {
+		return
+	}
+	cur := -1 // current selection's slot in the visible list (-1 if not visible)
+	for k, idx := range vis {
+		if idx == a.emoteIdx {
+			cur = k
+			break
+		}
+	}
+	slot := nextRandomEmote(len(vis), cur)
+	i := vis[slot]
+	if i == a.emoteIdx {
 		return
 	}
 	a.selectEmote(i)
 	if a.emotePerPage > 0 {
-		a.emotePage = i / a.emotePerPage
+		a.emotePage = slot / a.emotePerPage
 	}
 }
 
@@ -3429,14 +3462,26 @@ func (a *App) cycleShowname() {
 }
 
 func (a *App) cycleEmote(delta int) {
-	n := len(a.emotes)
+	a.refreshEmoteView()
+	vis := a.emoteVisible
+	n := len(vis)
 	if n == 0 {
 		return
 	}
-	i := ((a.emoteIdx+delta)%n + n) % n // wrap, tolerating a -1 "nothing selected"
-	a.selectEmote(i)
+	// Walk the VISIBLE list in order (so favs-only steps through favourites).
+	// Start from the current selection's slot, or -1 ("nothing selected") which
+	// the wrap tolerates.
+	cur := -1
+	for k, idx := range vis {
+		if idx == a.emoteIdx {
+			cur = k
+			break
+		}
+	}
+	slot := ((cur+delta)%n + n) % n
+	a.selectEmote(vis[slot])
 	if a.emotePerPage > 0 {
-		a.emotePage = i / a.emotePerPage
+		a.emotePage = slot / a.emotePerPage
 	}
 }
 

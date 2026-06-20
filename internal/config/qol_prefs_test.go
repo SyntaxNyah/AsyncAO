@@ -171,6 +171,61 @@ func TestAutoConnectOnLaunchPref(t *testing.T) {
 	}
 }
 
+// TestEmoteFavsPref pins per-character emote favourites: index-keyed (not
+// name-keyed, since emote labels/anims duplicate within a character), toggling
+// is its own inverse, removing the last one drops the entry, and both the
+// favourites and the favs-only display toggle survive a save→reload.
+func TestEmoteFavsPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.EmoteFavOnlyOn() {
+		t.Error("EmoteFavOnly must default OFF")
+	}
+	if got := p.EmoteFavsFor("Apollo"); got != nil {
+		t.Errorf("fresh EmoteFavsFor = %v, want nil", got)
+	}
+	// Toggle two emotes on; toggling one again removes it (its own inverse).
+	if now := p.ToggleEmoteFav("Apollo", 0); !now {
+		t.Error("ToggleEmoteFav(0) should report now-favourited")
+	}
+	p.ToggleEmoteFav("Apollo", 10)
+	if !p.IsEmoteFav("Apollo", 0) || !p.IsEmoteFav("Apollo", 10) {
+		t.Fatal("both 0 and 10 should be favourited")
+	}
+	if now := p.ToggleEmoteFav("apollo", 0); now { // case-insensitive char key
+		t.Error("re-toggling 0 should report now-unfavourited")
+	}
+	if p.IsEmoteFav("Apollo", 0) {
+		t.Error("0 should be removed after the second toggle")
+	}
+	// Removing the last favourite drops the map entry entirely.
+	p.ToggleEmoteFav("Apollo", 10)
+	if got := p.EmoteFavsFor("Apollo"); got != nil {
+		t.Errorf("after clearing, EmoteFavsFor = %v, want nil", got)
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.ToggleEmoteFav("Phoenix", 3)
+	q.ToggleEmoteFav("Phoenix", 7)
+	q.SetEmoteFavOnly(true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.EmoteFavOnlyOn() {
+		t.Error("EmoteFavOnly=true lost on reload")
+	}
+	if !r.IsEmoteFav("Phoenix", 3) || !r.IsEmoteFav("Phoenix", 7) {
+		t.Errorf("reloaded favourites = %v, want [3 7]", r.EmoteFavsFor("Phoenix"))
+	}
+}
+
 // TestChatboxOpacityPref pins the see-through chatbox setting: default 84,
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {

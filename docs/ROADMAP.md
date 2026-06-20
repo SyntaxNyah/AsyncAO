@@ -22,11 +22,6 @@ items move to `docs/FEATURES.md` as they ship.
   the player list / IC.
 - **Custom friend colours** *(#82)* — per-friend colour in the list / IC.
 
-### Emotes
-- **Emote favourites** *(#77)* — star emotes as favourites per character + a
-  **"show favourites only"** toggle in the emote grid (characters can ship dozens
-  of emotes but you use 6–8). Persisted per character.
-
 ### Chatbox / text
 - **Rainbow in the colour selector** *(#79)* — when rainbow IC text is enabled,
   surface a **"Rainbow"** entry in the IC colour selector instead of a separate

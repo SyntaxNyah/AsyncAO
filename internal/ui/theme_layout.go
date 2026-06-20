@@ -577,6 +577,8 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		c.Label(r.X, r.Y, "Loading emotes...", ColTextDim)
 		return
 	}
+	a.refreshEmoteView() // favourite set + visible-index list (#77)
+	vis := a.emoteVisible
 	cellW := int32(float64(a.themeEmoteCell[0]) * lay.scaleX)
 	cellH := int32(float64(a.themeEmoteCell[1]) * lay.scaleY)
 	gapX := int32(float64(a.themeEmoteGap[0]) * lay.scaleX)
@@ -593,7 +595,10 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		rows = 1
 	}
 	perPage := int(cols * rows)
-	pages := (len(a.emotes) + perPage - 1) / perPage
+	pages := (len(vis) + perPage - 1) / perPage
+	if pages < 1 {
+		pages = 1 // favs-only with nothing starred yet: one empty page
+	}
 	if a.emotePage >= pages {
 		a.emotePage = 0
 	}
@@ -608,9 +613,10 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 
 	me := a.activeCharName()
 	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
-	for i := start; i < len(a.emotes) && i < start+perPage; i++ {
+	for slot := start; slot < len(vis) && slot < start+perPage; slot++ {
+		i := vis[slot] // real index into a.emotes (favs-only filters which show)
 		e := &a.emotes[i]
-		n := int32(i - start)
+		n := int32(slot - start)
 		btn := sdl.Rect{
 			X: r.X + (n%cols)*(cellW+gapX),
 			Y: r.Y + (n/cols)*(cellH+gapY),
@@ -630,7 +636,10 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		} else {
 			picked = c.Button(btn, label)
 		}
-		if picked {
+		// The favourite ★ (drawn on top) wins the click over selecting the emote.
+		if a.drawEmoteFavStar(btn, i) {
+			// star toggled — swallow this cell's select for the frame
+		} else if picked {
 			a.emoteIdx = i
 			a.speculateEmote(me, e)
 			c.FocusField("ic") // AO2 focus_ic_input: pick emote, keep typing
@@ -640,6 +649,11 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		if c.HoverPreview("emote:"+e.Anim, btn) {
 			a.previewEmote(me, e)
 		}
+	}
+	// Favs-only with nothing starred yet: tell the user how to recover (the
+	// toggle lives in Settings for themed layouts, which are pixel-precise).
+	if len(vis) == 0 && a.d.Prefs.EmoteFavOnlyOn() {
+		c.Label(r.X, r.Y+4, "No favourite emotes — turn off \"favourites only\" in Settings, then click an emote's ★.", ColTextDim)
 	}
 
 	if pages > 1 {

@@ -127,7 +127,7 @@ const (
 // settingsSearchKeywords maps each tab to terms the search box matches, so
 // "blip" jumps to Audio & Chat, "password" to Account, and so on.
 var settingsSearchKeywords = [numSettingsTabs][]string{
-	tabGeneral:   {"showname", "ooc name", "animation", "reduce motion", "emote button", "debug", "streamer", "smooth", "scaling", "ui scale", "dpi", "font", "cjk", "tabs", "server tabs", "max tabs"},
+	tabGeneral:   {"showname", "ooc name", "animation", "reduce motion", "emote button", "favourite emotes", "favorite emotes", "debug", "streamer", "smooth", "scaling", "ui scale", "dpi", "font", "cjk", "tabs", "server tabs", "max tabs"},
 	tabTheme:     {"theme", "chatbox", "skin", "layout", "courtroom design", "bind", "preview"},
 	tabAssets:    {"fallback", "format", "webp", "png", "avif", "extensions", "audio format", "local", "mount", "download", "cache", "disk", "zstd", "learned"},
 	tabAudioChat: {"music", "sfx", "sound", "blip", "volume", "text crawl", "text stay", "text speed", "chat limit", "catch up", "callword", "casing", "case"},
@@ -406,6 +406,12 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetEmoteButtonImages(next)
 	}
 	y += 26
+	favOnly := a.d.Prefs.EmoteFavOnlyOn()
+	if next := c.Checkbox(pad, y, "Show favourite emotes only (OFF by default): hides everything but the emotes you've starred. Click the ★ on an emote button to favourite it (per character). The classic grid also has a ★ Favs button.", favOnly); next != favOnly {
+		a.d.Prefs.SetEmoteFavOnly(next)
+		a.emoteFavRev++ // rebuild the visible list for the new filter state
+	}
+	y += 30
 	dbg := a.d.Prefs.DebugOverlayEnabled()
 	if next := c.Checkbox(pad, y, "Debug overlay (live log of failures: missing assets, theme problems, unhandled server packets)", dbg); next != dbg {
 		a.d.Prefs.SetDebugOverlay(next)

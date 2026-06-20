@@ -686,6 +686,19 @@ type sessionState struct {
 	// {page, pages, total} change (same idiom as the generation-cached pages).
 	emotePageLabel    string
 	emotePageLabelKey [3]int
+	// Emote favourites view (#77): emoteFavSet holds the active character's
+	// favourited emote indices for lock-free O(1) star lookups, and emoteVisible
+	// is the list of emote indices the grid shows (all, or favs-only) — a reused
+	// buffer. Both are rebuilt by refreshEmoteView ONLY when the guard key
+	// (char/favs-only/emote count/edit-rev) changes, so a steady-state frame does
+	// one cheap compare and nothing else.
+	emoteFavSet      map[int]struct{}
+	emoteVisible     []int
+	emoteFavRev      int    // bumped on every favourite toggle to invalidate the view
+	emoteViewChar    string // guard: character the view was built for
+	emoteViewFavOnly bool   // guard: favs-only state the view was built for
+	emoteViewLen     int    // guard: len(emotes) the view was built for
+	emoteViewRev     int    // guard: emoteFavRev the view was built for
 	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their
 	// displayed second changes, into a reused scratch slice — so a visible (esp.
 	// paused) clock costs nothing on the always-on courtroom draw.

@@ -556,6 +556,8 @@ type AssetPreferences struct {
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
+	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
+	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -753,6 +755,8 @@ type prefsJSON struct {
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
+	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
+	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1316,6 +1320,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.ShownameKeys = onDisk.ShownameKeys
 	p.MutedSFX = onDisk.MutedSFX
 	p.BlipVols = onDisk.BlipVols
+	p.EmoteFavs = onDisk.EmoteFavs
+	p.EmoteFavOnly = onDisk.EmoteFavOnly
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
@@ -1399,6 +1405,7 @@ func (p *AssetPreferences) saverLoop() {
 var resetContentFields = map[string]bool{
 	"Favorites":          true, // saved servers (phone book)
 	"Wardrobe":           true, // legacy flat wardrobe
+	"EmoteFavs":          true, // per-character favourited emotes
 	"ServerWarm":         true, // per-server: char/bg/wardrobe/folders/LOGINS/friends
 	"UserMacros":         true,
 	"CallWordList":       true,
@@ -5056,6 +5063,115 @@ func (p *AssetPreferences) SetBlipVolume(char string, pct int) bool {
 	p.mu.Unlock()
 	p.markDirty()
 	return true
+}
+
+// emoteFavCharsCap / emoteFavPerCharCap bound the per-character emote-favourites
+// map (hard rule #4: no unbounded maps/slices). Only characters with at least
+// one starred emote occupy a slot, and hundreds of favourites on one character
+// is already absurd, so these are safety ceilings, not expected sizes.
+const (
+	emoteFavCharsCap   = 1024
+	emoteFavPerCharCap = 256
+)
+
+// EmoteFavsFor returns a COPY of a character's favourited emote indices — the
+// slice positions in its emote list. Indices are the key (not the emote
+// name/anim) because those DUPLICATE within a character (e.g. Apollo's three
+// "normal" emotes share both label and talking sprite), so a name key would
+// merge distinct emotes into one star. Called from the UI's per-character view
+// rebuild, which runs only on a character/filter change — never per frame. Nil
+// when none are set.
+func (p *AssetPreferences) EmoteFavsFor(char string) []int {
+	char = strings.ToLower(strings.TrimSpace(char))
+	if char == "" {
+		return nil
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	src := p.EmoteFavs[char]
+	if len(src) == 0 {
+		return nil
+	}
+	out := make([]int, len(src))
+	copy(out, src)
+	return out
+}
+
+// IsEmoteFav reports whether emote index idx is favourited for char.
+func (p *AssetPreferences) IsEmoteFav(char string, idx int) bool {
+	char = strings.ToLower(strings.TrimSpace(char))
+	if char == "" || idx < 0 {
+		return false
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, v := range p.EmoteFavs[char] {
+		if v == idx {
+			return true
+		}
+	}
+	return false
+}
+
+// ToggleEmoteFav flips emote index idx's favourite state for char and returns
+// the NEW state (true = now favourited). Bounded by the per-char and char-count
+// caps; marks dirty so the debounced saver persists it. Removing the last
+// favourite drops the character's map entry, so the map only holds genuine
+// favourites.
+func (p *AssetPreferences) ToggleEmoteFav(char string, idx int) bool {
+	char = strings.ToLower(strings.TrimSpace(char))
+	if char == "" || idx < 0 {
+		return false
+	}
+	p.mu.Lock()
+	list := p.EmoteFavs[char]
+	for i, v := range list {
+		if v == idx { // already favourited -> remove it
+			list = append(list[:i], list[i+1:]...)
+			if len(list) == 0 {
+				delete(p.EmoteFavs, char)
+			} else {
+				p.EmoteFavs[char] = list
+			}
+			p.mu.Unlock()
+			p.markDirty()
+			return false
+		}
+	}
+	if len(list) >= emoteFavPerCharCap { // bounded: keep existing favourites
+		p.mu.Unlock()
+		return false
+	}
+	if _, had := p.EmoteFavs[char]; !had && len(p.EmoteFavs) >= emoteFavCharsCap {
+		p.mu.Unlock()
+		return false // bounded: too many characters tracked
+	}
+	if p.EmoteFavs == nil {
+		p.EmoteFavs = make(map[string][]int)
+	}
+	p.EmoteFavs[char] = append(p.EmoteFavs[char], idx)
+	p.mu.Unlock()
+	p.markDirty()
+	return true
+}
+
+// EmoteFavOnlyOn reports whether the emote grid is filtered to favourites only.
+func (p *AssetPreferences) EmoteFavOnlyOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.EmoteFavOnly
+}
+
+// SetEmoteFavOnly toggles the favourites-only emote grid filter.
+func (p *AssetPreferences) SetEmoteFavOnly(on bool) {
+	p.mu.Lock()
+	if p.EmoteFavOnly == on {
+		p.mu.Unlock()
+		return
+	}
+	p.EmoteFavOnly = on
+	p.mu.Unlock()
+	p.markDirty()
 }
 
 func clampPairOffset(v int) int {

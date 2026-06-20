@@ -210,7 +210,13 @@ func (a *App) handleEmoteKeys() {
 	if a.charKeys[strings.ToLower(sdl.GetKeyName(c.keyPressed))] != "" {
 		return // a character keybind owns this digit
 	}
-	a.selectEmote(a.emotePage*a.emotePerPage + int(c.keyPressed-sdl.K_1))
+	// Map the on-screen slot through the visible list (favs-only filters it),
+	// so the number keys pick exactly what that grid cell shows.
+	a.refreshEmoteView()
+	slot := a.emotePage*a.emotePerPage + int(c.keyPressed-sdl.K_1)
+	if slot >= 0 && slot < len(a.emoteVisible) {
+		a.selectEmote(a.emoteVisible[slot])
+	}
 }
 
 // handleHotkeys consumes this frame's Ctrl chord on the courtroom screen
