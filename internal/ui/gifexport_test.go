@@ -113,3 +113,35 @@ func TestGifChatboxCompositesAndReveals(t *testing.T) {
 		t.Errorf("full message has %d text pixels, not more than the 3-rune %d — the GIF wouldn't animate as the line types out", all, few)
 	}
 }
+
+// TestGifChatboxHeightFitsMessage pins the fix for text clipping off the bottom
+// of the WebP/GIF frame: the chatbox must size to FIT the rasterized message,
+// not use a fixed fraction of the small capture frame. A multi-line message must
+// produce a box tall enough to hold name-row + text (so nothing clips off-frame),
+// taller than the old fixed ¼-frame box; a huge message caps at 3/5 of the frame.
+func TestGifChatboxHeightFitsMessage(t *testing.T) {
+	const vpH int32 = gifExportH // 360, the capture frame height
+	const lineH int32 = 22       // a typical chat line height
+
+	// One short line: floored to a consistent panel, still fits the text.
+	if h := gifChatboxHeight(lineH, vpH); h < gifChatNameRowH+lineH || h < vpH/5 {
+		t.Errorf("one-line box = %d, want >= name+text (%d) and >= floor (%d)", h, gifChatNameRowH+lineH, vpH/5)
+	}
+
+	// Four lines: the box must hold name-row + all four lines (no off-frame clip),
+	// and be taller than the old fixed quarter-frame box that caused the bug.
+	four := int32(4 * lineH)
+	h4 := gifChatboxHeight(four, vpH)
+	if h4 < gifChatNameRowH+four {
+		t.Errorf("4-line box = %d, too short for name+text %d — message would clip off the frame", h4, gifChatNameRowH+four)
+	}
+	if oldQuarter := vpH / 4; h4 <= oldQuarter {
+		t.Errorf("4-line box = %d, not taller than the old fixed quarter-frame box %d (the clipping bug)", h4, oldQuarter)
+	}
+
+	// A pathologically long message caps at 3/5 of the frame (then clips inside the
+	// box, never swallowing the whole picture).
+	if h := gifChatboxHeight(int32(40*lineH), vpH); h != vpH*3/5 {
+		t.Errorf("huge-message box = %d, want the %d cap", h, vpH*3/5)
+	}
+}

@@ -369,6 +369,17 @@ func (m *MessageRaster) TotalRunes() int {
 	return total
 }
 
+// Height returns the rasterized message's full pixel height (all wrapped lines
+// stacked at lineH), so a caller can size a box to fit it. Zero for an empty
+// message.
+func (m *MessageRaster) Height() int32 {
+	n := len(m.lines)
+	if m.styled != nil {
+		n = len(m.styled)
+	}
+	return int32(n) * m.lineH
+}
+
 // Text returns the rasterized source text.
 func (m *MessageRaster) Text() string { return m.text }
 

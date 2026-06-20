@@ -272,26 +272,37 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 // INPUT-FREE (no wheel-zoom side effect) and self-caches its raster on the export
 // job, never touching the live a.msRaster or the render hot path. Render thread
 // only (called inside the capture's draw callback).
+// gifChatNameRowH is the speaker-name row above the message text in the export
+// chatbox; the message is drawn this far below the box top.
+const gifChatNameRowH = 24
+
+// gifChatboxHeight sizes the export chatbox to FIT the rasterized message (height
+// textH) within the fixed capture frame (height vpH): name row + text + padding,
+// floored so a one-word line still gets a real panel and capped at 3/5 of the
+// frame so a very long message can't swallow the whole picture (it then clips
+// INSIDE the box, never off the bottom edge of the frame — the reported bug).
+func gifChatboxHeight(textH, vpH int32) int32 {
+	h := gifChatNameRowH + textH + 10
+	if minH := vpH / 5; h < minH {
+		h = minH
+	}
+	if maxH := vpH * 3 / 5; h > maxH {
+		h = maxH
+	}
+	return h
+}
+
 func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) {
 	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
 		return
 	}
 	c := a.ctx
-	boxH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
-	if maxH := vp.H * 3 / 5; boxH > maxH {
-		boxH = maxH
-	}
-	box := sdl.Rect{X: vp.X, Y: vp.Y + vp.H - boxH, W: vp.W, H: boxH}
-	c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
-	c.Border(box, ColAccent)
-	nameCol := ColAccent
-	if a.d.Prefs.NameColorsOn() { // per-speaker name colour, same as the live chatbox
-		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
-	}
-	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
-
-	wrapW := box.W - 16
-	if j.chatRaster == nil || j.chatText != sc.MessageText { // rebuild only when the line changes
+	wrapW := vp.W - 16
+	// Rasterize FIRST, so the box can be sized to FIT the message. The capture is a
+	// small fixed frame (480×360), so a live-proportioned box (¼ of the viewport)
+	// is too short and clips a multi-line message off the bottom EDGE of the frame
+	// — which is exactly the bug. Rebuilt only when the line changes.
+	if j.chatRaster == nil || j.chatText != sc.MessageText {
 		if j.chatRaster != nil {
 			j.chatRaster.Destroy()
 			j.chatRaster = nil
@@ -303,9 +314,25 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 		}
 		j.chatText = sc.MessageText
 	}
+
+	textH := int32(0)
 	if j.chatRaster != nil {
-		_ = c.Ren.SetClipRect(&box) // oversized text stays inside the box
-		j.chatRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
+		textH = j.chatRaster.Height()
+	}
+	boxH := gifChatboxHeight(textH, vp.H)
+	box := sdl.Rect{X: vp.X, Y: vp.Y + vp.H - boxH, W: vp.W, H: boxH}
+	c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+	c.Border(box, ColAccent)
+
+	nameCol := ColAccent
+	if a.d.Prefs.NameColorsOn() { // per-speaker name colour, same as the live chatbox
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	}
+	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
+
+	if j.chatRaster != nil {
+		_ = c.Ren.SetClipRect(&box) // the cap case stays inside the box, never off-frame
+		j.chatRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+gifChatNameRowH)
 		_ = c.Ren.SetClipRect(nil)
 	}
 }
