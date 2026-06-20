@@ -1550,6 +1550,12 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	if next := c.Checkbox(pad, y, "Auto-reconnect after a dropped connection (ON by default): retries the last server with backoff. A deliberate Disconnect never reconnects; the manual Reconnect button always works.", ar); next != ar {
 		a.d.Prefs.SetAutoReconnect(next)
 	}
+	y += 26
+
+	idc := a.d.Prefs.InstantDisconnectOn()
+	if next := c.Checkbox(pad, y, "Instant disconnect (OFF by default): the Disconnect button asks for confirmation first, since it's easy to hit by accident. Turn this on to disconnect immediately with no prompt.", idc); next != idc {
+		a.d.Prefs.SetInstantDisconnect(next)
+	}
 	y += 30
 
 	y = a.settingsSection(y, w, "Sound effects")

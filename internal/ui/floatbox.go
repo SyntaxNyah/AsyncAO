@@ -71,7 +71,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Hide chrome", "Hide/show AsyncAO's on-screen widgets", hotkeyUIChrome, func() { a.showUICfg = true }},
 			{"Theater", "Theater mode — stage only, Esc exits", hotkeyTheater, func() { a.setTheater(!a.theaterOn) }},
 			{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
-			{"Disconnect", "Leave this server", "", func() { a.Disconnect() }},
+			{"Disconnect", "Leave this server", "", func() { a.requestDisconnect() }},
 		}
 	}
 	return a.extrasWidgetCache

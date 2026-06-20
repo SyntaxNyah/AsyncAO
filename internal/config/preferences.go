@@ -450,6 +450,7 @@ type AssetPreferences struct {
 	RandomMessageColor     bool                         `json:"randomMessageColor"`
 	RainbowSprites         bool                         `json:"rainbowSprites"`
 	ShowRecordButton       bool                         `json:"showRecordButton"`
+	InstantDisconnect      bool                         `json:"instantDisconnect"`
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
 	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
 	Export                 ExportOptions                `json:"export"`
@@ -634,6 +635,7 @@ type prefsJSON struct {
 	RandomMessageColor     bool           `json:"randomMessageColor"`     // default OFF
 	RainbowSprites         bool           `json:"rainbowSprites"`         // default OFF
 	ShowRecordButton       bool           `json:"showRecordButton"`       // default OFF
+	InstantDisconnect      bool           `json:"instantDisconnect"`      // default OFF (confirm first)
 	RainbowSpriteSpeed     *int           `json:"rainbowSpriteSpeed"`     // absent = default
 	ReplayPlaybackSpeed    *int           `json:"replaySpeed"`            // absent = default
 	Export                 *ExportOptions `json:"export"`                 // absent = default
@@ -1063,6 +1065,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.RandomMessageColor = onDisk.RandomMessageColor
 	p.RainbowSprites = onDisk.RainbowSprites
 	p.ShowRecordButton = onDisk.ShowRecordButton
+	p.InstantDisconnect = onDisk.InstantDisconnect
 	if onDisk.RainbowSpriteSpeed != nil {
 		p.RainbowSpriteSpeed = clampPercent(*onDisk.RainbowSpriteSpeed, minRainbowSpeed, maxRainbowSpeed)
 	}
@@ -2338,6 +2341,27 @@ func (p *AssetPreferences) SetShowRecordButton(on bool) {
 		return
 	}
 	p.ShowRecordButton = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// InstantDisconnectOn reports whether Disconnect acts immediately (true) or asks
+// for confirmation first (false, the default — the button is easy to hit by
+// accident).
+func (p *AssetPreferences) InstantDisconnectOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.InstantDisconnect
+}
+
+// SetInstantDisconnect toggles skip-the-confirm on the Disconnect button.
+func (p *AssetPreferences) SetInstantDisconnect(on bool) {
+	p.mu.Lock()
+	if p.InstantDisconnect == on {
+		p.mu.Unlock()
+		return
+	}
+	p.InstantDisconnect = on
 	p.mu.Unlock()
 	p.markDirty()
 }

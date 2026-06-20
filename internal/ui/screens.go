@@ -407,7 +407,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	c.Heading(pad, pad, title, ColText)
 
 	if c.Button(sdl.Rect{X: w - 120 - pad, Y: pad, W: 120, H: btnH}, "Disconnect") {
-		a.Disconnect()
+		a.requestDisconnect() // confirm first unless instant-disconnect is set
 		return
 	}
 	if a.sess == nil {
@@ -1066,6 +1066,43 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 				break
 			}
 		}
+	}
+}
+
+// requestDisconnect is what the user-facing Disconnect buttons call: it acts at
+// once when "instant disconnect" is set, otherwise opens a confirm modal (the
+// button is easy to hit by accident). Internal disconnects — a closed tab, a
+// dropped connection, auto-reconnect teardown — keep calling Disconnect() direct.
+func (a *App) requestDisconnect() {
+	if a.d.Prefs.InstantDisconnectOn() {
+		a.Disconnect()
+		return
+	}
+	a.confirmDisconnect = true
+}
+
+// drawDisconnectConfirm paints the "are you sure" overlay: a dimmed screen + a
+// centered modal warning that Yes leaves the server, with Yes / Cancel and a note
+// about the instant-disconnect setting. Drawn top-level (Frame) so it works from
+// any Disconnect button; the pointer is fenced around it so clicks can't reach the
+// screen behind. Off the render hot path (only while open).
+func (a *App) drawDisconnectConfirm(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
+	const mw, mh = 480, 176
+	m := sdl.Rect{X: (w - mw) / 2, Y: (h - mh) / 2, W: mw, H: mh}
+	c.Fill(m, ColPanel)
+	c.Border(m, ColAccent)
+	c.Heading(m.X+pad, m.Y+pad, "Disconnect from the server?", ColText)
+	c.Label(m.X+pad, m.Y+50, "Yes will disconnect you from the server (you'll return to the lobby).", ColText)
+	c.Label(m.X+pad, m.Y+74, "Tip: enable \"Instant disconnect\" in Settings → General to skip this.", ColTextDim)
+	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 170, H: btnH}, "Yes, disconnect") {
+		a.confirmDisconnect = false
+		a.Disconnect()
+		return
+	}
+	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
+		a.confirmDisconnect = false
 	}
 }
 
@@ -2913,7 +2950,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	}
 	x += 86
 	if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
-		a.Disconnect()
+		a.requestDisconnect() // confirm first unless instant-disconnect is set
 		return
 	}
 	x += 116

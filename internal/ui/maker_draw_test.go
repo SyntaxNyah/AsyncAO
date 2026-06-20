@@ -29,6 +29,21 @@ func TestRebuildBgListOffline(t *testing.T) {
 	}
 }
 
+// TestRequestDisconnectConfirms pins the safety gate: with instant-disconnect OFF
+// (the default), the Disconnect button opens the confirm modal instead of acting.
+func TestRequestDisconnectConfirms(t *testing.T) {
+	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = prefs.Close() })
+	a := &App{d: Deps{Prefs: prefs}}
+	a.requestDisconnect()
+	if !a.confirmDisconnect {
+		t.Error("with instant-disconnect off, requestDisconnect must open the confirm modal, not disconnect")
+	}
+}
+
 // TestMakerDrawNoPanic drives the maker's list + per-event editor over a loaded
 // recording (message / background / music events, an empty-charname line, effects
 // + crop set) the way "✎ Edit" does — directly, NOT through drawSceneMaker, so a

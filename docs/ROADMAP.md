@@ -15,12 +15,6 @@ items move to `docs/FEATURES.md` as they ship.
 
 ## Planned
 
-### Connection / safety
-- **Disconnect confirmation** *(#76)* — Disconnect is hit by accident a lot.
-  Default: a confirm popup ("Disconnect from the server? — Yes will disconnect
-  you") before it acts. A **Settings toggle** for **instant disconnect** (skip the
-  popup), and the popup notes that option exists.
-
 ### Player list / social
 - **Ignore / mute a person** *(#81)* — an "Ignore" option in the double-click
   player popup; hide/mute their IC (and OOC) messages.

@@ -87,6 +87,31 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	}
 }
 
+// TestInstantDisconnectPref pins the Disconnect-confirm toggle: OFF by default
+// (confirm first), and the on state survives save→reload.
+func TestInstantDisconnectPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.InstantDisconnectOn() {
+		t.Error("InstantDisconnect must default OFF (Disconnect confirms first)")
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetInstantDisconnect(true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.InstantDisconnectOn() {
+		t.Error("InstantDisconnect=true lost on reload")
+	}
+}
+
 // TestModSFXPrefs pins the #60 mod-command sounds: every action defaults OFF
 // with no custom file, and toggles + paths survive save→load.
 func TestModSFXPrefs(t *testing.T) {
