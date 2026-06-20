@@ -15,22 +15,9 @@ items move to `docs/FEATURES.md` as they ship.
 
 ## Planned
 
-### Bugs
-- **Player list shows the wrong character for AsyncAO users** *(#88, diagnosing)*
-  — picking a char (e.g. #43 Phoenix) shows them as a different char (e.g. #0) in
-  the player list, while their IC sprite is correct. The list shows the server's
-  PU char (folder name), and IC is right because MS carries the name directly —
-  so the server recorded the wrong char_id. Our CC send looks correct in code
-  (absolute SC index), so debug logs were added (CC char_id sent + PV char_id
-  assigned) to pin client-vs-server on the next playtest. **Needs: Debug-overlay
-  repro, or which screen the pick came from (main grid / Wardrobe tab / switch).**
-
-### Player list / social
-- **Friend nickname in the IC log** *(#82 follow-up)* — the nickname + custom
-  colour now show on the **player-list row**; rendering the nickname in the IC
-  log too (as `nick (showname)`) was deliberately deferred — it crosses the
-  anti-impersonation force-char path, so it's a separate, careful change. The
-  per-friend glow **colour** already applies in the IC log.
+_Playtest backlog cleared (2026-06-21) — every Discord/playtest request shipped
+(see `docs/FEATURES.md`). New asks land here. The only milestone left is the
+gamepad track below._
 
 ---
 

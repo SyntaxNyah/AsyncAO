@@ -616,9 +616,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   use the default warm tint. Append a third field — `name=RRGGBB=Nickname` (or
   `name==Nickname` for a nickname with no colour) — to set a **personal nickname**
   shown in their **player-list row** (in place of their showname, with their
-  character still shown after the `·`), so you recognise a friend even when they
-  iniswap or change showname. Per server, like the rest of the list; nicknames
-  can't contain commas (the list is comma-separated). **Pulse the glow** is its own toggle — a gentle
+  character still shown after the `·`) **and in the IC log** as `nick (showname):`,
+  so you recognise a friend even when they iniswap or change showname. In the IC
+  log the **real showname stays in parentheses** and is what double-click-to-pair
+  and the per-speaker colour key off; the nickname is **suppressed in force-char
+  (anti-impersonation) mode**, where the character name is what matters. Per
+  server, like the rest of the list; nicknames can't contain commas (the list is
+  comma-separated). **Pulse the glow** is its own toggle — a gentle
   breathing animation on the glow (obeys reduce-motion, so it holds steady when
   that's on). A configurable **toggle keybind** (default **Ctrl+U**, rebindable
   in Settings → Hotkeys) flips the highlight on/off mid-session.

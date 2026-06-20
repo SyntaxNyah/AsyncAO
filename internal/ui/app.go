@@ -1865,7 +1865,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				}
 				fr, fc := a.friendMessage(a.serverKey, ev.Message)
 				force := a.d.Prefs.ForceCharNamesOn()
-				a.pushIC(icLogLine(ev.Message, force), ev.Message.TextColor, fr, fc, icSpeakerName(ev.Message, force))
+				line, speaker := icLogLineDisplay(ev.Message, force, a.friendNick(ev.Message))
+				a.pushIC(line, ev.Message.TextColor, fr, fc, speaker)
 				a.noteShowname(ev.Message.CharName, ev.Message.Showname) // live-roster name cache
 				if sn := ev.Message.SFXName; sn != "" && sn != "0" && sn != "1" {
 					a.lastSFXName = sn // M11: remember the most-recent SFX for one-click "Mute last SFX"
@@ -2007,6 +2008,35 @@ func icSpeakerName(m *protocol.ChatMessage, forceChar bool) string {
 		name = m.CharName // force-char-names mirrors the chatbox (anti-impersonation)
 	}
 	return name
+}
+
+// friendNick returns the personal nickname set for m's speaker if they're a
+// friend with one (#82 follow-up) — independent of the friend-highlight signals,
+// since a nickname is a label, not an alert. Showname-else-character match, the
+// identity the MS wire carries.
+func (a *App) friendNick(m *protocol.ChatMessage) string {
+	if m == nil || a.serverKey == "" {
+		return ""
+	}
+	name := strings.TrimSpace(m.Showname)
+	if name == "" {
+		name = strings.TrimSpace(m.CharName)
+	}
+	_, _, nick := a.d.Prefs.ServerFriendInfo(a.serverKey, name)
+	return nick
+}
+
+// icLogLineDisplay builds the IC log line text and its speaker field. When a
+// friend has a nickname AND we're not in force-char (anti-impersonation) mode,
+// the line reads "nick (showname): msg" so you see your own label for them — but
+// the SPEAKER field stays the REAL name, so double-click-to-pair (UID lookup) and
+// the per-speaker colour still key off the true identity. Pure, for testing.
+func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string) (line, speaker string) {
+	speaker = icSpeakerName(m, force)
+	if !force && nick != "" {
+		return nick + " (" + speaker + "): " + courtroom.StripChatMarkup(m.Message), speaker
+	}
+	return icLogLine(m, force), speaker
 }
 
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's
