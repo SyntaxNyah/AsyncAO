@@ -930,18 +930,34 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	c := a.ctx
 	y = a.settingsSection(y, w, "Theme")
 	c.Label(pad, y+4, "Theme:", ColText)
-	if c.Button(sdl.Rect{X: pad + 60, Y: y, W: 26, H: btnH}, "<") {
+	// Direct-jump dropdown so a big theme collection is one click + scroll away,
+	// not dozens of < > presses (#86). The < > buttons stay for fine stepping.
+	selIdx := 0
+	for i, n := range settings.themeList {
+		if n == settings.themeName {
+			selIdx = i
+			break
+		}
+	}
+	if len(settings.themeList) > 0 {
+		if next, changed := c.Dropdown("themedd", sdl.Rect{X: pad + 60, Y: y, W: 240, H: btnH}, settings.themeList, selIdx); changed {
+			settings.themeName = settings.themeList[next]
+			a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
+			a.applyThemeAsync()
+		}
+	} else {
+		c.Label(pad+60, y+6, settings.themeName, ColAccent)
+	}
+	if c.Button(sdl.Rect{X: pad + 308, Y: y, W: 26, H: btnH}, "<") {
 		a.cycleTheme(-1)
 	}
-	nameW := c.TextWidth(settings.themeName)
-	c.Label(pad+96, y+6, settings.themeName, ColAccent)
-	if c.Button(sdl.Rect{X: pad + 104 + nameW, Y: y, W: 26, H: btnH}, ">") {
+	if c.Button(sdl.Rect{X: pad + 338, Y: y, W: 26, H: btnH}, ">") {
 		a.cycleTheme(1)
 	}
 	if settings.themeBusy {
-		c.Label(pad+140+nameW, y+6, "scanning...", ColTextDim)
+		c.Label(pad+372, y+6, "scanning...", ColTextDim)
 	} else {
-		c.Label(pad+140+nameW, y+6, fmt.Sprintf("(%d found)", len(settings.themeList)), ColTextDim)
+		c.Label(pad+372, y+6, fmt.Sprintf("(%d found)", len(settings.themeList)), ColTextDim)
 	}
 	y += 32
 	c.Label(pad, y+4, "Theme folder:", ColText)

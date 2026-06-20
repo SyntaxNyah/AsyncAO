@@ -3042,6 +3042,23 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 // the chatbox skin (chatbox.webp/png in the theme dir, AO2 convention)
 // and the message/showname font colors — and publishes them to the render
 // thread via themeRes. Settings re-triggers it on every theme change.
+// themeLoadRoots orders the content roots theme.Load searches for theme `name`.
+// A custom themes folder (customRoot) is searched FIRST for named themes — but is
+// dropped for the stock "default": theme packs ship their own themes/default, and
+// since the custom root wins, that custom default would otherwise SHADOW the
+// built-in one, making the stock default unreachable once you've set a folder
+// (#87). The app directory is always the built-in fallback. Pure, for testing.
+func themeLoadRoots(name, customRoot, exeDir string) []string {
+	roots := make([]string, 0, 2)
+	if customRoot != "" && name != theme.DefaultThemeName {
+		roots = append(roots, customRoot)
+	}
+	if exeDir != "" {
+		roots = append(roots, exeDir)
+	}
+	return roots
+}
+
 func (a *App) applyThemeAsync() {
 	name, dir := a.d.Prefs.Theme()
 	// Per-server theme binding: while this session declares one, it wins
@@ -3064,14 +3081,11 @@ func (a *App) applyThemeAsync() {
 		// HERE so every apply resolves like the settings scanner does,
 		// not only applies that happened to follow a finished scan.
 		root, _ := normalizeThemeRoot(dir)
-		roots := make([]string, 0, 2)
-		if root != "" {
-			roots = append(roots, root)
-		}
+		exeDir := ""
 		if exe, err := os.Executable(); err == nil {
-			roots = append(roots, filepath.Dir(exe))
+			exeDir = filepath.Dir(exe)
 		}
-		t, err := theme.Load(name, roots)
+		t, err := theme.Load(name, themeLoadRoots(name, root, exeDir))
 		if err == nil {
 			res.iniKeys = t.KeyCount()
 			res.probed = t.Dirs()

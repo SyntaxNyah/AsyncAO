@@ -15,14 +15,6 @@ items move to `docs/FEATURES.md` as they ship.
 
 ## Planned
 
-### Themes
-- **Faster theme navigation** *(#86)* — selecting a theme is slow when there are
-  many; add a quick picker (search / scrollable list / preview) instead of
-  cycling one at a time.
-- **BUG: default theme not reselectable** *(#87)* — after pointing the client at
-  a custom-themes folder, the stock/default theme can no longer be chosen — the
-  custom one "overwrites" it. The default must always be selectable.
-
 ### Player list / social
 - **Ignore / mute a person** *(#81)* — an "Ignore" option in the double-click
   player popup; hide/mute their IC (and OOC) messages.

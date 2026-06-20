@@ -98,6 +98,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - Chatbox skin candidates `chat` → `chatbox` → `chatblank`
   (courtroom.cpp:3328); every pasted path shape normalizes (root, themes\
   itself, single theme, quoted Copy-as-Path).
+- **Theme picker** (Settings → Theme): a **searchable-scroll dropdown** jumps
+  straight to any theme in your collection (#86) — no more clicking **`< >`**
+  dozens of times — with the `< >` buttons kept for fine stepping and a live
+  "(N found)" count. The default-jump dropdown scrolls, so a big themes folder
+  is one click away.
+- **Stock "default" is always selectable** (#87): theme packs ship their own
+  `themes/default`, and because a custom themes folder is searched first, that
+  pack's default used to **shadow the built-in** one — so once you set a folder,
+  picking "default" loaded the custom look and the stock default was
+  unreachable. The stock **default** now resolves against the app directory
+  only, so it's always there; custom *named* themes still use your folder (and
+  still fall back to its default for missing keys).
 - Theme text colors apply **only over their own skin** — on the flat
   fallback panel the client's readable defaults win (black-on-dark fix).
 - **Ink readability guard**: at load time the theme's message/showname
