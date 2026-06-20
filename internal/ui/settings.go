@@ -411,6 +411,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetEmoteFavOnly(next)
 		a.emoteFavRev++ // rebuild the visible list for the new filter state
 	}
+	y += 26
+	favBox := a.d.Prefs.FavEmoteBoxOn()
+	if next := c.Checkbox(pad, y, "Favourite-emotes box (OFF by default): a small movable box of just your starred emotes as clickable buttons — press one to use that emote. Also opens with Ctrl+A (rebindable in the Controls tab).", favBox); next != favBox {
+		a.d.Prefs.SetFavEmoteBox(next)
+	}
 	y += 30
 	dbg := a.d.Prefs.DebugOverlayEnabled()
 	if next := c.Checkbox(pad, y, "Debug overlay (live log of failures: missing assets, theme problems, unhandled server packets)", dbg); next != dbg {

@@ -45,14 +45,23 @@ func (a *App) refreshEmoteView() {
 		a.emoteFavSet[idx] = struct{}{}
 	}
 
-	a.emoteVisible = a.emoteVisible[:0]
+	// favBoxList is always the favourites in emote order (the floating box reads
+	// it regardless of the grid filter). Built here so both it and the box stay
+	// allocation-free at steady state — only this rebuild touches them.
+	a.favBoxList = a.favBoxList[:0]
 	for i := range a.emotes {
-		if favOnly {
-			if _, ok := a.emoteFavSet[i]; !ok {
-				continue
-			}
+		if _, ok := a.emoteFavSet[i]; ok {
+			a.favBoxList = append(a.favBoxList, i)
 		}
-		a.emoteVisible = append(a.emoteVisible, i)
+	}
+
+	a.emoteVisible = a.emoteVisible[:0]
+	if favOnly {
+		a.emoteVisible = append(a.emoteVisible, a.favBoxList...) // favs-only == the fav list
+	} else {
+		for i := range a.emotes {
+			a.emoteVisible = append(a.emoteVisible, i)
+		}
 	}
 }
 
@@ -65,23 +74,24 @@ func (a *App) toggleEmoteFav(realIdx int) {
 
 // drawEmoteFavStar draws the favourite badge in an emote cell's top-right corner
 // and reports whether THIS frame's click toggled it (so the caller skips the
-// cell's emote-select). To keep a dense grid clean, the badge shows only when
-// the emote is already favourited (gold, so you can unstar it) or while the cell
-// is hovered (dim, inviting a star). Must be drawn AFTER the cell button (sits
-// on top) and its result must win over the button's pick — see the call sites.
+// cell's emote-select). The ★ is ALWAYS shown — dim grey when not yet a
+// favourite, gold when it is — so favouriting is discoverable (a hover-only star
+// is invisible until you happen to hover; the whole feature then goes unnoticed).
+// A faint backing only appears when it's favourited or the cell is hovered, so an
+// idle grid stays subtle, not noisy. Must be drawn AFTER the cell button (sits on
+// top) and its result must win over the button's pick — see the call sites.
 func (a *App) drawEmoteFavStar(cell sdl.Rect, realIdx int) bool {
 	c := a.ctx
 	_, fav := a.emoteFavSet[realIdx]
-	if !fav && !c.hovering(cell) {
-		return false // clean cell: nothing drawn, nothing to test
-	}
 	sr := sdl.Rect{X: cell.X + cell.W - emoteFavStarPx, Y: cell.Y, W: emoteFavStarPx, H: emoteFavStarPx}
 	col := ColTextDim
 	if fav {
 		col = ColStar
 	}
-	c.Fill(sr, ColPanelHi)
-	c.Label(sr.X+2, sr.Y, "★", col) // "★" (filled) for both states — the dim colour reads as "not yet"
+	if fav || c.hovering(cell) {
+		c.Fill(sr, ColPanelHi) // backing for contrast only when it matters
+	}
+	c.Label(sr.X+2, sr.Y, "★", col)
 	if c.ClickedIn(sr) {
 		a.toggleEmoteFav(realIdx)
 		return true

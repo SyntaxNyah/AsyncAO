@@ -732,20 +732,33 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Hovering an emote previews it** large (3 s, or instantly on right-click):
   if the emote has a **pre-animation** that flourish plays (looped) so you can
   watch it before sending; otherwise its talking sprite. Both layouts.
-- **Emote favourites + show-favourites-only** (#77): characters ship dozens of
-  emotes but you use a handful — **click the ★** that appears in an emote
-  button's corner (on hover, or always once starred) to **favourite it for that
-  character**. Turn on **"Show favourite emotes only"** (Settings → General, or
-  the **★ Favs** button in the classic grid) and the grid hides everything but
-  your stars; paging, the **Random** button, the **number keys**, and
-  **Ctrl+E cycling** all then operate on just the favourites. Favourites are
-  **per character and persisted** (and kept across a settings reset, like your
-  wardrobe). They're keyed by the emote's position, not its name — emote
-  labels and talking sprites *duplicate* within a character (Apollo has three
-  distinct "normal" emotes that share a sprite), so a name key would merge them
-  into one star. **Zero render cost**: a click rebuilds a small lookup set + the
-  visible-index list once; every steady-state frame is a single guard compare
-  (verified 0 allocs/op), and the always-on render loop is untouched.
+- **Emote favourites** (#77/#85): characters ship dozens of emotes but you use a
+  handful. Every emote button carries a **★ in its corner** — **dim grey** when
+  not yet a favourite, **gold** once it is — so favouriting is always one click
+  away (it isn't a hover-only secret), while an idle grid stays subtle. Click the
+  ★ to **favourite that emote for that character**. Three ways to use them:
+  - **★ Favourite-emotes box** (the headline — Settings → General, the Extras
+    menu's **★ Fav Emotes**, or **Ctrl+A**, rebindable; **OFF by default**): a
+    small **movable, closeable floating box** of just that character's starred
+    emotes as clickable sprite buttons — your go-to emotes one click away,
+    no paging. Press one to select it (it sends on your next message), exactly
+    like the grid. Non-blocking (the scene/chat stay live underneath) and it
+    shares the Extras surface's input model, so it can't steal clicks from the
+    scene. The open state persists; its position is per-session.
+  - **Show favourite emotes only** (Settings → General, or the **★ Favs** button
+    in the classic grid): the main grid hides everything but your stars — paging,
+    **Random**, **number keys**, and **Ctrl+E cycling** then all operate on just
+    the favourites.
+  - The ★ itself, to curate from anywhere in the grid.
+
+  Favourites are **per character and persisted** (kept across a settings reset,
+  like your wardrobe). They're keyed by the emote's **position, not its name** —
+  emote labels and talking sprites *duplicate* within a character (Apollo has
+  three distinct "normal" emotes that share a sprite), so a name key would merge
+  them into one star. **Zero render cost**: a star toggle rebuilds a small lookup
+  set + the visible/box index lists once; every steady-state frame is a single
+  guard compare (verified 0 allocs/op), the box draws only while open, and the
+  always-on render loop (`render.Viewport`) is untouched.
 - **Sprite preview magnifier**: every sprite preview pop-up (character select,
   wardrobe, emote hover, background picker) has **− / + zoom controls** along
   its bottom OR the **mouse wheel** (in and out) over the box; past 1× the

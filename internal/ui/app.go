@@ -694,11 +694,19 @@ type sessionState struct {
 	// one cheap compare and nothing else.
 	emoteFavSet      map[int]struct{}
 	emoteVisible     []int
+	favBoxList       []int  // current character's favourite emote indices (always; for the floating box)
 	emoteFavRev      int    // bumped on every favourite toggle to invalidate the view
 	emoteViewChar    string // guard: character the view was built for
 	emoteViewFavOnly bool   // guard: favs-only state the view was built for
 	emoteViewLen     int    // guard: len(emotes) the view was built for
 	emoteViewRev     int    // guard: emoteFavRev the view was built for
+	// Floating favourite-emotes box (#85): movable geometry (session, like the
+	// Extras box) + the drag grab offset. Open state is the FavEmoteBox pref.
+	favBoxX, favBoxY int32
+	favBoxPlaced     bool
+	favBoxDragging   bool
+	favBoxGrabDX     int32
+	favBoxGrabDY     int32
 	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their
 	// displayed second changes, into a reused scratch slice — so a visible (esp.
 	// paused) clock costs nothing on the always-on courtroom draw.

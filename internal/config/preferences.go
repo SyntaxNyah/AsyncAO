@@ -464,6 +464,7 @@ type AssetPreferences struct {
 	ShowRecordButton       bool                         `json:"showRecordButton"`
 	InstantDisconnect      bool                         `json:"instantDisconnect"`
 	HideDesk               bool                         `json:"hideDesk"`
+	FavEmoteBox            bool                         `json:"favEmoteBox"` // floating box of starred emotes (default OFF)
 	AutoConnectOnLaunch    bool                         `json:"autoConnectOnLaunch"`
 	LastServerName         string                       `json:"lastServerName"`
 	LastServerURL          string                       `json:"lastServerURL"`
@@ -657,6 +658,7 @@ type prefsJSON struct {
 	ShowRecordButton       bool           `json:"showRecordButton"`     // default OFF
 	InstantDisconnect      bool           `json:"instantDisconnect"`    // default OFF (confirm first)
 	HideDesk               bool           `json:"hideDesk"`             // default OFF
+	FavEmoteBox            bool           `json:"favEmoteBox"`          // default OFF
 	AutoConnectOnLaunch    bool           `json:"autoConnectOnLaunch"`  // default OFF
 	LastServerName         string         `json:"lastServerName"`
 	LastServerURL          string         `json:"lastServerURL"`
@@ -1099,6 +1101,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ShowRecordButton = onDisk.ShowRecordButton
 	p.InstantDisconnect = onDisk.InstantDisconnect
 	p.HideDesk = onDisk.HideDesk
+	p.FavEmoteBox = onDisk.FavEmoteBox
 	p.AutoConnectOnLaunch = onDisk.AutoConnectOnLaunch
 	p.LastServerName = onDisk.LastServerName
 	p.LastServerURL = onDisk.LastServerURL
@@ -2444,6 +2447,25 @@ func (p *AssetPreferences) SetHideDesk(on bool) {
 		return
 	}
 	p.HideDesk = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FavEmoteBoxOn reports whether the floating favourite-emotes box is shown.
+func (p *AssetPreferences) FavEmoteBoxOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FavEmoteBox
+}
+
+// SetFavEmoteBox toggles the floating favourite-emotes box.
+func (p *AssetPreferences) SetFavEmoteBox(on bool) {
+	p.mu.Lock()
+	if p.FavEmoteBox == on {
+		p.mu.Unlock()
+		return
+	}
+	p.FavEmoteBox = on
 	p.mu.Unlock()
 	p.markDirty()
 }

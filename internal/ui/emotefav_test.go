@@ -43,6 +43,9 @@ func TestRefreshEmoteView(t *testing.T) {
 	if got := a.emoteVisible; len(got) != 2 || got[0] != 1 || got[1] != 3 {
 		t.Fatalf("favs-only visible = %v, want [1 3]", got)
 	}
+	if got := a.favBoxList; len(got) != 2 || got[0] != 1 || got[1] != 3 {
+		t.Fatalf("favBoxList = %v, want [1 3]", got)
+	}
 	if _, ok := a.emoteFavSet[1]; !ok {
 		t.Error("emoteFavSet should contain emote 1")
 	}
@@ -56,12 +59,24 @@ func TestRefreshEmoteView(t *testing.T) {
 	}
 
 	// emotePageOf maps a real index to its page within the visible list (-1 when
-	// the index isn't visible, e.g. a non-favourite while favs-only is on).
+	// the index isn't visible — e.g. a non-favourite while favs-only is on).
 	a.emotePerPage = 10
 	if p := a.emotePageOf(3); p != 0 {
 		t.Errorf("emotePageOf(3) = %d, want 0", p)
 	}
 	if p := a.emotePageOf(0); p != -1 {
 		t.Errorf("emotePageOf(0) = %d, want -1 (emote 0 is filtered out)", p)
+	}
+
+	// favBoxList holds the favourites regardless of the grid filter: with
+	// favs-only OFF the grid shows everything but the box still shows just [1 3].
+	prefs.SetEmoteFavOnly(false)
+	a.emoteFavRev++
+	a.refreshEmoteView()
+	if len(a.emoteVisible) != 5 {
+		t.Fatalf("favs-only off visible = %d, want 5 (all)", len(a.emoteVisible))
+	}
+	if got := a.favBoxList; len(got) != 2 || got[0] != 1 || got[1] != 3 {
+		t.Fatalf("favBoxList with filter off = %v, want [1 3]", got)
 	}
 }

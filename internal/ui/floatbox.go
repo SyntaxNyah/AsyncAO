@@ -68,6 +68,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
 			{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.showPair = true }},
 			{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
+			{"★ Fav Emotes", "Floating box of just your starred emotes (Ctrl+A)", hotkeyFavEmotes, func() { a.d.Prefs.SetFavEmoteBox(true) }},
 			{"Hotkeys", "Show every keyboard shortcut, including your custom ones (F1)", "", func() { a.openHotkeyCheatSheet() }},
 			{"Hide chrome", "Hide/show AsyncAO's on-screen widgets", hotkeyUIChrome, func() { a.showUICfg = true }},
 			{"Theater", "Theater mode — stage only, Esc exits", hotkeyTheater, func() { a.setTheater(!a.theaterOn) }},
@@ -244,7 +245,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if !a.extrasSurfaceLive() {
 		return false
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing {
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
@@ -255,6 +256,9 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		if pointIn(mx, my, a.detachedBoxRect(i, w, h)) {
 			return true
 		}
+	}
+	if a.d.Prefs.FavEmoteBoxOn() && pointIn(mx, my, a.favBoxRect(w, h)) {
+		return true
 	}
 	return false
 }
@@ -348,8 +352,9 @@ func (a *App) drawFloatingExtras(w, h int32) {
 	if !a.extrasSurfaceLive() {
 		return
 	}
-	if !a.showWidgets && len(a.extrasDetached) == 0 {
-		return // main box closed and nothing torn off — nothing to draw
+	favOpen := a.d.Prefs.FavEmoteBoxOn()
+	if !a.showWidgets && len(a.extrasDetached) == 0 && !favOpen {
+		return // every floating box closed — nothing to draw
 	}
 	c := a.ctx
 	// One mouse-press edge per frame, shared by every box so exactly one grabs
@@ -358,7 +363,7 @@ func (a *App) drawFloatingExtras(w, h int32) {
 	a.extrasPrevDown = c.mouseDown
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
-		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing {
+		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
@@ -368,6 +373,10 @@ func (a *App) drawFloatingExtras(w, h int32) {
 	}
 	// Torn-off widgets persist even with the main box closed.
 	a.drawExtrasDetached(w, h, &pressed)
+	// The favourite-emotes box shares the same press edge (drawn last = on top).
+	if favOpen {
+		a.drawFavEmoteBox(w, h, &pressed)
+	}
 }
 
 // drawExtrasMainBox paints the main box and its 2-column grid of (non-detached)

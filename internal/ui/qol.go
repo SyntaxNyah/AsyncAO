@@ -63,6 +63,7 @@ const (
 	hotkeyReshowSprites = "reshow_sprites" // un-hide all sprites hidden this session (right-click-to-hide)
 	hotkeyHideDesk      = "hide_desk"      // toggle hiding the courtroom desk
 	hotkeyQuickConnect  = "quick_connect"  // dial the saved last server (works offline / in the lobby)
+	hotkeyFavEmotes     = "fav_emote_box"  // toggle the floating favourite-emotes box
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -110,6 +111,7 @@ var hotkeyDefs = []struct {
 	{hotkeyReshowSprites, "Reshow hidden sprites", "y"}, // un-hide all right-click-hidden sprites
 	{hotkeyHideDesk, "Hide / show the desk", "v"},       // toggle desk rendering
 	{hotkeyQuickConnect, "Connect to last server", "q"}, // dial the saved server (lobby)
+	{hotkeyFavEmotes, "Favourite-emotes box", "a"},      // toggle the floating box of starred emotes
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -314,7 +316,22 @@ func (a *App) handleHotkeys() {
 		a.reshowSprites()
 	case a.hotkeyFor(hotkeyHideDesk):
 		a.toggleHideDesk()
+	case a.hotkeyFor(hotkeyFavEmotes):
+		a.toggleFavEmoteBox()
 	}
+}
+
+// toggleFavEmoteBox flips the floating favourite-emotes box (its rebindable key
+// + the Settings tick). A short toast confirms, and points at how to fill it.
+func (a *App) toggleFavEmoteBox() {
+	on := !a.d.Prefs.FavEmoteBoxOn()
+	a.d.Prefs.SetFavEmoteBox(on)
+	if on {
+		a.warnLine = "Favourite-emotes box shown — ★ emotes in the grid to fill it"
+	} else {
+		a.warnLine = "Favourite-emotes box hidden"
+	}
+	a.warnAt = time.Now()
 }
 
 // toggleHideDesk flips the hide-desk option (Settings + the Hide/show desk key).
