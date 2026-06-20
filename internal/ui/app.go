@@ -1830,6 +1830,13 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.maybeFollowJump()    // follow-a-player (M3): trail the followed UID across areas
 			a.recordAreaHistory()  // area history (M3): note our own area into the MRU list
 		case courtroom.EventCharPicked:
+			// #88 diagnostic: the server's PV echo — the char_id it actually
+			// assigned us. If this differs from the CC char_id logged on pick, the
+			// desync is on the wire/server; if it matches but the player list still
+			// shows the wrong char, it's in how the roster reports it.
+			if ev.Int >= 0 && ev.Int < len(a.sess.Chars) {
+				a.pushDebug(fmt.Sprintf("server assigned char_id=%d (%s)", ev.Int, a.sess.Chars[ev.Int].Name))
+			}
 			a.enterCourtroom()
 		case courtroom.EventOOC:
 			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
@@ -2052,6 +2059,13 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 // (CC → PV → EventCharPicked); rehearsal resolves locally — no PV will
 // ever arrive offline.
 func (a *App) pickCharacter(idx int) {
+	// Diagnostic for the "player list shows the wrong character" report (#88):
+	// log the exact char_id we put on the wire in CC, named from our own list, so
+	// a playtest with the Debug overlay on shows whether the index we SEND matches
+	// the character picked (vs the server-assigned id logged at EventCharPicked).
+	if idx >= 0 && idx < len(a.sess.Chars) {
+		a.pushDebug(fmt.Sprintf("char pick → CC char_id=%d (%s)", idx, a.sess.Chars[idx].Name))
+	}
 	if a.sess.Rehearsal {
 		a.sess.MyCharID = idx
 		a.enterCourtroom()
