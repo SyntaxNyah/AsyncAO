@@ -112,6 +112,32 @@ func TestInstantDisconnectPref(t *testing.T) {
 	}
 }
 
+// TestRightClickHideSpritePref pins the hide-sprite toggle: ON by default
+// (right-click offers to hide), survives a save→reload OFF (the *bool DTO so an
+// absent field keeps the default-ON, not a silent off).
+func TestRightClickHideSpritePref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if !p.RightClickHideSpriteOn() {
+		t.Error("RightClickHideSprite must default ON")
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetRightClickHideSprite(false)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if r.RightClickHideSpriteOn() {
+		t.Error("RightClickHideSprite=false lost on reload (absent != default-on)")
+	}
+}
+
 // TestChatboxOpacityPref pins the see-through chatbox setting: default 84,
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {

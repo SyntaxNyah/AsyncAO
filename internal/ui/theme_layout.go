@@ -249,6 +249,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	a.handleViewportZoom(vp, inChat)
 	if a.vpZoom <= 1 {
 		a.handleSpriteDrag(vp)
+		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}
 	a.handleHotkeys()
 	if a.rehearsal {

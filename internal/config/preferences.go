@@ -144,6 +144,10 @@ const defaultEmoteButtonImages = true
 // the panel.
 const defaultShowFriendButton = true
 
+// defaultRightClickHideSprite makes right-clicking a character sprite offer to
+// hide it from the viewport (default ON; a Settings toggle disables it).
+const defaultRightClickHideSprite = true
+
 // defaultDragLayout makes the courtroom resize by dragging panel edges (the
 // viewport↔log divider) the default; unchecking it brings back the +/− knob
 // buttons. Default-ON per the request ("mouse is draggable by default").
@@ -448,6 +452,7 @@ type AssetPreferences struct {
 	RandomEmote            bool                         `json:"randomEmote"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
 	ShowFriendButton       bool                         `json:"showFriendButton"`
+	RightClickHideSprite   bool                         `json:"rightClickHideSprite"`
 	DragLayout             bool                         `json:"dragLayout"`
 	FollowEnabled          bool                         `json:"followEnabled"`
 	DyslexiaFont           bool                         `json:"dyslexiaFont"`
@@ -634,6 +639,7 @@ type prefsJSON struct {
 	RandomEmote            bool           `json:"randomEmote"`            // default OFF
 	FriendHighlight        bool           `json:"friendHighlight"`        // default OFF
 	ShowFriendButton       *bool          `json:"showFriendButton"`       // default ON (pointer: absent != off)
+	RightClickHideSprite   *bool          `json:"rightClickHideSprite"`   // default ON (pointer: absent != off)
 	DragLayout             *bool          `json:"dragLayout"`             // default ON (pointer: absent != off)
 	FollowEnabled          bool           `json:"followEnabled"`          // default OFF (opt-in)
 	DyslexiaFont           bool           `json:"dyslexiaFont"`           // default OFF
@@ -958,10 +964,11 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 // methods use it, so the default state lives in exactly one place.
 func defaultPrefs(path string) *AssetPreferences {
 	return &AssetPreferences{
-		PreferAnimated:    defaultPreferAnimated,
-		EmoteButtonImages: defaultEmoteButtonImages,
-		ShowFriendButton:  defaultShowFriendButton,
-		DragLayout:        defaultDragLayout,
+		PreferAnimated:       defaultPreferAnimated,
+		EmoteButtonImages:    defaultEmoteButtonImages,
+		ShowFriendButton:     defaultShowFriendButton,
+		RightClickHideSprite: defaultRightClickHideSprite,
+		DragLayout:           defaultDragLayout,
 
 		RainbowSpriteSpeed:     defaultRainbowSpeed,
 		ReplayPlaybackSpeed:    defaultReplaySpeed,
@@ -1061,6 +1068,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.ForceCharNames = onDisk.ForceCharNames
 	p.RandomEmote = onDisk.RandomEmote
 	p.FriendHighlight = onDisk.FriendHighlight
+	if onDisk.RightClickHideSprite != nil { // pointer: absent keeps the default-ON
+		p.RightClickHideSprite = *onDisk.RightClickHideSprite
+	}
 	if onDisk.ShowFriendButton != nil { // pointer: absent keeps the default-ON
 		p.ShowFriendButton = *onDisk.ShowFriendButton
 	}
@@ -2207,6 +2217,26 @@ func (p *AssetPreferences) SetShowFriendButton(on bool) {
 		return
 	}
 	p.ShowFriendButton = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RightClickHideSpriteOn reports whether right-clicking a sprite offers to hide
+// it from the viewport (ON by default; a Settings toggle disables it).
+func (p *AssetPreferences) RightClickHideSpriteOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RightClickHideSprite
+}
+
+// SetRightClickHideSprite toggles right-click-to-hide-sprite.
+func (p *AssetPreferences) SetRightClickHideSprite(on bool) {
+	p.mu.Lock()
+	if p.RightClickHideSprite == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RightClickHideSprite = on
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -29,6 +29,40 @@ func TestRebuildBgListOffline(t *testing.T) {
 	}
 }
 
+// TestHideSpriteSuppression pins the Missingno render hook: a sprite in the
+// session hidden-set is dropped (Visible=false) by applySpriteOverrides, a
+// non-hidden one is untouched, the empty-set case is a no-op, and reshow un-hides.
+func TestHideSpriteSuppression(t *testing.T) {
+	a := &App{} // field assignment, not a keyed literal (known phantom "unknown field" glitch)
+	a.room = &courtroom.Courtroom{}
+	a.room.Scene.Speaker = courtroom.SpriteLayer{Name: "Booba", Visible: true}
+	a.room.Scene.Pair = courtroom.SpriteLayer{Name: "Phoenix", Visible: true}
+
+	a.applySpriteOverrides() // empty hidden-set + no overrides: a no-op
+	if !a.room.Scene.Speaker.Visible || !a.room.Scene.Pair.Visible {
+		t.Fatal("empty hidden-set must not change visibility")
+	}
+
+	a.hiddenSprites = map[string]struct{}{"booba": {}}
+	a.applySpriteOverrides()
+	if a.room.Scene.Speaker.Visible {
+		t.Error("hidden sprite still visible")
+	}
+	if !a.room.Scene.Pair.Visible {
+		t.Error("non-hidden pair wrongly hidden")
+	}
+
+	a.reshowSprites()
+	if a.hiddenSprites != nil {
+		t.Error("reshow must clear the hidden-set")
+	}
+	a.room.Scene.Speaker.Visible = true // the courtroom re-sets Visible each frame
+	a.applySpriteOverrides()
+	if !a.room.Scene.Speaker.Visible {
+		t.Error("after reshow the sprite must render again")
+	}
+}
+
 // TestRequestDisconnectConfirms pins the safety gate: with instant-disconnect OFF
 // (the default), the Disconnect button opens the confirm modal instead of acting.
 func TestRequestDisconnectConfirms(t *testing.T) {

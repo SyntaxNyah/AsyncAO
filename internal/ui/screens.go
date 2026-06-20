@@ -886,6 +886,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
 	if a.vpZoom <= 1 {
 		a.handleSpriteDrag(vp)
+		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}
 	a.handleHotkeys() // Ctrl-chords (shouts, pos, music, screenshot...)
 	if a.rehearsal {
@@ -1058,8 +1059,9 @@ func (a *App) handleSpriteDrag(vp sdl.Rect) {
 		}
 	}
 
-	// Right-click a sprite: drop its override (back to server placement).
-	if c.rightClicked && len(a.spriteOv) > 0 && c.hovering(vp) && !inChatBox {
+	// Right-click a sprite: drop its move override (back to server placement) —
+	// but only when right-click-to-hide is OFF, so the two don't both fire.
+	if c.rightClicked && !a.d.Prefs.RightClickHideSpriteOn() && len(a.spriteOv) > 0 && c.hovering(vp) && !inChatBox {
 		for _, layer := range layers {
 			if r, ok := a.spriteHitRect(vp, layer); ok && c.hovering(r) {
 				delete(a.spriteOv, strings.ToLower(layer.Name))
@@ -1104,6 +1106,69 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
 		a.confirmDisconnect = false
 	}
+}
+
+// handleSpriteHide opens the "hide this sprite?" confirm when the user right-clicks
+// a character sprite (default ON; Settings can disable). Hidden sprites are dropped
+// from the viewport for the session — for players who'd rather not see certain art.
+// Only at 1× zoom (zoomed hit rects lie) and not over the chatbox area.
+func (a *App) handleSpriteHide(vp sdl.Rect) {
+	c := a.ctx
+	if !c.rightClicked || a.room == nil || !a.d.Prefs.RightClickHideSpriteOn() {
+		return
+	}
+	boxH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
+	if !c.hovering(vp) || c.mouseY >= vp.Y+vp.H-boxH {
+		return
+	}
+	sc := &a.room.Scene
+	layers := [2]*courtroom.SpriteLayer{&sc.Speaker, &sc.Pair}
+	if sc.PairActive && !sc.SpeakerInFront {
+		layers[0], layers[1] = &sc.Pair, &sc.Speaker
+	}
+	for _, layer := range layers {
+		if r, ok := a.spriteHitRect(vp, layer); ok && c.hovering(r) && layer.Name != "" {
+			a.hidePrompt = layer.Name // open the confirm for this sprite
+			break
+		}
+	}
+}
+
+// drawHideSpriteConfirm paints the "hide this sprite?" modal. Yes hides it for the
+// session; the pointer is fenced around it (Frame) so the click can't reach the
+// courtroom behind. Off the render hot path (only while open).
+func (a *App) drawHideSpriteConfirm(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
+	const mw, mh = 520, 184
+	m := sdl.Rect{X: (w - mw) / 2, Y: (h - mh) / 2, W: mw, H: mh}
+	c.Fill(m, ColPanel)
+	c.Border(m, ColAccent)
+	c.Heading(m.X+pad, m.Y+pad, "Hide this sprite?", ColText)
+	c.Label(m.X+pad, m.Y+50, "Hide \""+a.hidePrompt+"\" from the viewport for this session?", ColText)
+	c.Label(m.X+pad, m.Y+74, "Reshow all with the \"Reshow hidden sprites\" key, or turn this off in Settings → General.", ColTextDim)
+	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 150, H: btnH}, "Hide it") {
+		if a.hiddenSprites == nil {
+			a.hiddenSprites = make(map[string]struct{}, 4)
+		}
+		a.hiddenSprites[strings.ToLower(a.hidePrompt)] = struct{}{}
+		a.hidePrompt = ""
+		return
+	}
+	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
+		a.hidePrompt = ""
+	}
+}
+
+// reshowSprites un-hides every sprite hidden this session (the Reshow key + the
+// Settings button).
+func (a *App) reshowSprites() {
+	if len(a.hiddenSprites) == 0 {
+		return
+	}
+	a.hiddenSprites = nil
+	a.warnLine = "Hidden sprites are showing again."
+	a.warnAt = time.Now()
 }
 
 func (a *App) drawChatOverlay(vp sdl.Rect) {

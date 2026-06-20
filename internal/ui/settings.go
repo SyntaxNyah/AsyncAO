@@ -546,6 +546,20 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		c.Label(pad+232, y+5, "drop every drag override back to the server's placement", ColTextDim)
 		y += 32
 	}
+	// Hide-sprite ("Missingno"): right-click a sprite → confirm → hidden for the
+	// session (for players who'd rather not see certain art). ON by default.
+	hideRC := a.d.Prefs.RightClickHideSpriteOn()
+	if next := c.Checkbox(pad, y, "Right-click a sprite to hide it from the viewport (ON by default): confirms, then hides it for the session. Reshow all with the Reshow-hidden-sprites key (Controls tab).", hideRC); next != hideRC {
+		a.d.Prefs.SetRightClickHideSprite(next)
+	}
+	y += 26
+	if len(a.hiddenSprites) > 0 {
+		if c.Button(sdl.Rect{X: pad + 20, Y: y, W: 200, H: btnH}, "Reshow hidden sprites") {
+			a.reshowSprites()
+		}
+		c.Label(pad+232, y+5, fmt.Sprintf("%d sprite(s) hidden this session — un-hide them all", len(a.hiddenSprites)), ColTextDim)
+		y += 32
+	}
 	y = a.settingsSection(y, w, "Application")
 	upd := a.d.Prefs.UpdateCheckEnabled()
 	if next := c.Checkbox(pad, y, "Check for updates on launch (one async check of GitHub Releases; shows the patch notes — off = no outbound call)", upd); next != upd {

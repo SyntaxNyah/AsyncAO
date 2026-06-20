@@ -60,6 +60,7 @@ const (
 	hotkeyShownameRand  = "showname_rand"  // swap to a random saved showname preset (M6)
 	hotkeyShownameCycle = "showname_cycle" // cycle to the next saved showname preset
 	hotkeyDND           = "dnd"            // toggle Do Not Disturb (mute callword + friend pings) (M15)
+	hotkeyReshowSprites = "reshow_sprites" // un-hide all sprites hidden this session (right-click-to-hide)
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -104,6 +105,7 @@ var hotkeyDefs = []struct {
 	{hotkeyShownameRand, "Random showname preset", "h"}, // Ctrl+H (rebindable)
 	{hotkeyShownameCycle, "Cycle showname preset", "b"}, // Ctrl+B (rebindable)
 	{hotkeyDND, "Do Not Disturb (mute pings)", "d"},     // Ctrl+D — session-only, rebindable
+	{hotkeyReshowSprites, "Reshow hidden sprites", "y"}, // un-hide all right-click-hidden sprites
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -298,6 +300,8 @@ func (a *App) handleHotkeys() {
 			a.warnLine = "Do Not Disturb ON — callword + friend pings muted"
 		}
 		a.warnAt = time.Now()
+	case a.hotkeyFor(hotkeyReshowSprites):
+		a.reshowSprites()
 	}
 }
 
@@ -428,6 +432,7 @@ func (a *App) drawTheater(w, h int32) {
 	a.handleViewportZoom(vp, c.mouseY >= vp.Y+vp.H-chatBandH)
 	if a.vpZoom <= 1 {
 		a.handleSpriteDrag(vp)
+		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}
 	a.handleHotkeys()
 	a.drawChatOverlay(vp)

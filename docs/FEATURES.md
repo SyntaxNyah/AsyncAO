@@ -734,6 +734,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   enabled, drag any character in the viewport to move them (the override sticks
   per character; right-click a sprite to reset it, or "Reset all moved sprites"
   in Settings). Off by default so a stray click can't nudge a sprite.
+- **Hide a sprite ("Missingno")** (Settings → General, **default ON**): for
+  players who'd rather not see certain art — **right-click a character sprite** in
+  the viewport, confirm, and it's **hidden from the viewport for the session** (the
+  layer is dropped; the message text still shows). The confirm modal **fences the
+  pointer** so the click can't fall through. **Reshow all** with the
+  *"Reshow hidden sprites"* key (Controls tab, default **Ctrl+Y**) or the Settings
+  button; turn the right-click off entirely in Settings. The hidden set is
+  session-only (not persisted). Free on the render path: the suppression check
+  short-circuits when nothing is hidden (the `RenderFrame` 0-alloc gate is in
+  `render.Viewport`, untouched).
 - **★ favourite a character from Character Select**: a star on each character
   icon adds it straight to your **per-server Wardrobe** (LemmyAO-style), so it
   rides along on every connect. One click on, one click off; the Wardrobe tab

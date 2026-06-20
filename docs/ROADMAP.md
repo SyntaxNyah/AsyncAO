@@ -22,12 +22,6 @@ items move to `docs/FEATURES.md` as they ship.
   the player list / IC.
 - **Custom friend colours** *(#82)* — per-friend colour in the list / IC.
 
-### Sprites / viewport
-- **Hide a sprite ("Missingno")** *(#80)* — right-click a character sprite →
-  "Hide this sprite from the viewport?" → hides it for the **whole session** (for
-  players who'd rather not see certain sprites). A **Settings toggle** to disable
-  the right-click entirely, and a **keybind to re-show** all hidden sprites.
-
 ### Emotes
 - **Emote favourites** *(#77)* — star emotes as favourites per character + a
   **"show favourites only"** toggle in the emote grid (characters can ship dozens

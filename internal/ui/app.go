@@ -869,7 +869,9 @@ type sessionState struct {
 	// music is currently ducked under a playing message (transition-driven).
 	sfxMuted          bool
 	showHotkeys       bool
-	confirmDisconnect bool // a Disconnect confirm popup is open (unless instant-disconnect is set)
+	confirmDisconnect bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
+	hidePrompt        string              // a "hide this sprite?" confirm is open for this char name ("" = none)
+	hiddenSprites     map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
 	musicDucked       bool
 
 	// scenery self-heal stamps (healScenery pacing)
@@ -2915,10 +2917,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// wins the wheel/press over the grid scroll and icon clicks under the box.
 	a.handlePreviewInput()
 
-	// While the Disconnect confirm is up, the modal OWNS the pointer: fence it so
-	// the screen + overlays behind draw click-proof (no fat-finger on a courtroom
-	// button under the modal). Restored just before the modal draws, below.
-	if a.confirmDisconnect {
+	// While a confirm modal (Disconnect / hide-sprite) is up, the modal OWNS the
+	// pointer: fence it so the screen + overlays behind draw click-proof (no
+	// fat-finger underneath). Restored just before the modal draws, below.
+	if a.confirmDisconnect || a.hidePrompt != "" {
 		a.ctx.fencePointer()
 	}
 
@@ -2976,11 +2978,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// M13: a found update shows a persistent chip (reopen) and, the first time,
 	// the What's New patch-notes modal. Both no-op when no update was found.
 	a.drawUpdateAvailable(winW, winH)
-	// Disconnect confirm: restore the pointer (fenced above) for the modal's own
-	// buttons, then paint it over everything.
-	if a.confirmDisconnect {
+	// Confirm modals: restore the pointer (fenced above) for the modal's own
+	// buttons, then paint it over everything. One at a time.
+	if a.confirmDisconnect || a.hidePrompt != "" {
 		a.ctx.unfencePointer()
-		a.drawDisconnectConfirm(winW, winH)
+		if a.confirmDisconnect {
+			a.drawDisconnectConfirm(winW, winH)
+		} else {
+			a.drawHideSpriteConfirm(winW, winH)
+		}
 	}
 	// Deferred kit overlays (open dropdown lists) stack above everything.
 	a.ctx.FinishFrame()
@@ -3387,15 +3393,25 @@ func (a *App) spriteFX() render.SpriteFX {
 // message's offsets every frame (one map probe per visible layer; free
 // while no overrides exist).
 func (a *App) applySpriteOverrides() {
-	if len(a.spriteOv) == 0 {
-		return
+	if len(a.spriteOv) == 0 && len(a.hiddenSprites) == 0 {
+		return // both empty (the common case): byte-for-byte the old no-op
 	}
 	sc := &a.room.Scene
 	for _, layer := range [...]*courtroom.SpriteLayer{&sc.Speaker, &sc.Pair} {
-		if !layer.Visible || layer.Name == "" {
+		if layer.Name == "" {
 			continue
 		}
-		if ov, ok := a.spriteOv[strings.ToLower(layer.Name)]; ok {
+		key := strings.ToLower(layer.Name)
+		// Hidden sprites ("Missingno"): drop the layer entirely this session. The
+		// check is before the !Visible skip — a hidden sprite is otherwise visible.
+		if _, hidden := a.hiddenSprites[key]; hidden {
+			layer.Visible = false
+			continue
+		}
+		if !layer.Visible {
+			continue
+		}
+		if ov, ok := a.spriteOv[key]; ok {
 			layer.OffsetX, layer.OffsetY = ov[0], ov[1]
 		}
 	}
