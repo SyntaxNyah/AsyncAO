@@ -34,8 +34,6 @@ items move to `docs/FEATURES.md` as they ship.
   of emotes but you use 6–8). Persisted per character.
 
 ### Chatbox / text
-- **Chatbox transparency / appearance** *(#78)* — a setting for the IC text box
-  transparency (and related appearance knobs).
 - **Rainbow in the colour selector** *(#79)* — when rainbow IC text is enabled,
   surface a **"Rainbow"** entry in the IC colour selector instead of a separate
   toggle.

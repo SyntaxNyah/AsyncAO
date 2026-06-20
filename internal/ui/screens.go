@@ -1130,7 +1130,11 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 		skinned = true
 	}
 	if !skinned {
-		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+		// Panel opacity is user-tunable (Settings → see-through chatbox); the
+		// border stays solid for legibility. Read once here, off the 0-alloc
+		// render gate (that's render.Viewport; this UI overlay already reads prefs).
+		alpha := uint8(255 * a.d.Prefs.ChatboxOpacityPct() / 100)
+		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: alpha})
 		c.Border(box, ColAccent)
 	}
 	// Theme text colors are designed against the theme's own skin; on the

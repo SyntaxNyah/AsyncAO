@@ -478,6 +478,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   inline (a few-byte hash + HSV, no allocation, no cache to stale), so it's free
   per frame and the default OFF path is byte-identical (RenderFrame stays 0
   allocs/op).
+- **See-through chatbox** (Settings → Theme, **"Chatbox opacity %"**): a slider
+  for the IC chatbox **panel opacity** (0 = fully transparent — text only — through
+  100 = solid; default 84 ≈ the old fixed look) so you can see more of the scene
+  behind it. Only the **flat fallback** panel fades; a theme's own chatbox skin
+  keeps its art, and the border + text stay solid for legibility. The viewport
+  render path is untouched (this is the UI chat overlay), so it's free.
 - **Callwords** (M15 **manager**): a managed highlight-word list — type a word
   (or paste `a, b, c` to add several at once) + **Add**, and each shows below
   with a **×** to remove (replaces the old single comma field; lowercased,

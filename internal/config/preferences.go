@@ -323,6 +323,13 @@ const (
 	MinInputPercent     = 75
 	MaxInputPercent     = 200
 
+	// Chatbox panel opacity (flat fallback skin only): percent, 0 = fully
+	// see-through (text only), 100 = solid. Default ≈ the previous hardcoded
+	// 215/255 panel alpha.
+	MinChatboxOpacity     = 0
+	MaxChatboxOpacity     = 100
+	DefaultChatboxOpacity = 84
+
 	// ScaleStepPercent is the −/+ button increment shared by the UI.
 	ScaleStepPercent = 25
 	// ViewportStepPercent is the viewport −/+ increment.
@@ -454,6 +461,7 @@ type AssetPreferences struct {
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
 	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
 	Export                 ExportOptions                `json:"export"`
+	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
 	RainbowPairDesync      bool                         `json:"rainbowPairDesync"`
@@ -639,6 +647,7 @@ type prefsJSON struct {
 	RainbowSpriteSpeed     *int           `json:"rainbowSpriteSpeed"`     // absent = default
 	ReplayPlaybackSpeed    *int           `json:"replaySpeed"`            // absent = default
 	Export                 *ExportOptions `json:"export"`                 // absent = default
+	ChatboxOpacity         *int           `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int           `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
 	RainbowSpriteGlow      bool           `json:"rainbowSpriteGlow"`      // default OFF
 	RainbowPairDesync      bool           `json:"rainbowPairDesync"`      // default OFF
@@ -957,6 +966,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		RainbowSpriteSpeed:     defaultRainbowSpeed,
 		ReplayPlaybackSpeed:    defaultReplaySpeed,
 		Export:                 defaultExportOptions(),
+		ChatboxOpacity:         DefaultChatboxOpacity,
 		RainbowSpriteVividness: defaultRainbowVivid,
 		SpriteTintColor:        defaultSpriteTintColor,
 		SmoothScaling:          defaultSmoothScaling,
@@ -1090,6 +1100,9 @@ func load(path string) (*AssetPreferences, error) {
 		}
 		e.Loop = onDisk.Export.Loop
 		p.Export = e
+	}
+	if onDisk.ChatboxOpacity != nil {
+		p.ChatboxOpacity = clampPercent(*onDisk.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
 	}
 	if onDisk.RainbowSpriteVividness != nil {
 		p.RainbowSpriteVividness = clampPercent(*onDisk.RainbowSpriteVividness, minRainbowVivid, maxRainbowVivid)
@@ -2415,6 +2428,27 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 		return
 	}
 	p.Export = o
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ChatboxOpacityPct reports the IC chatbox panel opacity (0–100, default 84) for
+// the flat fallback skin (0 = fully see-through, 100 = solid).
+func (p *AssetPreferences) ChatboxOpacityPct() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ChatboxOpacity
+}
+
+// SetChatboxOpacity clamps and persists the chatbox panel opacity percent.
+func (p *AssetPreferences) SetChatboxOpacity(v int) {
+	v = clampPercent(v, MinChatboxOpacity, MaxChatboxOpacity)
+	p.mu.Lock()
+	if p.ChatboxOpacity == v {
+		p.mu.Unlock()
+		return
+	}
+	p.ChatboxOpacity = v
 	p.mu.Unlock()
 	p.markDirty()
 }

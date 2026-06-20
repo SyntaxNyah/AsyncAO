@@ -112,6 +112,35 @@ func TestInstantDisconnectPref(t *testing.T) {
 	}
 }
 
+// TestChatboxOpacityPref pins the see-through chatbox setting: default 84,
+// clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
+func TestChatboxOpacityPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.ChatboxOpacityPct() != DefaultChatboxOpacity {
+		t.Fatalf("ChatboxOpacity default = %d, want %d", p.ChatboxOpacityPct(), DefaultChatboxOpacity)
+	}
+	p.SetChatboxOpacity(999)
+	if p.ChatboxOpacityPct() != MaxChatboxOpacity {
+		t.Errorf("over-max = %d, want %d", p.ChatboxOpacityPct(), MaxChatboxOpacity)
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetChatboxOpacity(30)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if r.ChatboxOpacityPct() != 30 {
+		t.Errorf("reloaded opacity = %d, want 30", r.ChatboxOpacityPct())
+	}
+}
+
 // TestModSFXPrefs pins the #60 mod-command sounds: every action defaults OFF
 // with no custom file, and toggles + paths survive save→load.
 func TestModSFXPrefs(t *testing.T) {

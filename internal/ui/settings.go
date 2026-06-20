@@ -649,6 +649,13 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.chatPct = v
 		a.saveLayout()
 	}
+	y += 30
+	// See-through chatbox: panel opacity (0 = fully transparent, 100 = solid).
+	// Only affects the flat fallback skin; a theme chatbox keeps its own art.
+	op := a.d.Prefs.ChatboxOpacityPct()
+	if v := a.sliderRow(y, "Chatbox opacity %", op, 5, config.MinChatboxOpacity, config.MaxChatboxOpacity); v != op {
+		a.d.Prefs.SetChatboxOpacity(v)
+	}
 	y += 34
 
 	y = a.settingsSection(y, w, "Window")
