@@ -12,6 +12,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
+	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
@@ -51,6 +52,15 @@ const (
 	gifDelayCs       = 100 / gifExportFPS // per-frame GIF delay, centiseconds (≈8)
 	maxGifFrames     = 400                // ~33 s cap (§17.4): ~69 MB of paletted frames, sane GIF
 	gifFramesPerTick = 4                  // frames captured per real frame (responsive + progress)
+
+	// Asset pre-warm (so the GIF shows the characters, not an empty stage): the
+	// export advances ~4× faster than a replay and outruns async sprite fetches,
+	// so we prefetch every scene asset and wait for them to decode before
+	// capturing. gifWarmQuiet ends the wait once no new asset has landed for a
+	// beat (the common, warm-cache case finishes in well under a second);
+	// gifWarmMax is the hard cap so a scene with 404-ing assets still exports.
+	gifWarmQuiet = 600 * time.Millisecond
+	gifWarmMax   = 6 * time.Second
 )
 
 // gifExportJob is the in-flight render state (allocated only while exporting).
@@ -61,6 +71,20 @@ type gifExportJob struct {
 	events []recEvent
 	idx    int
 	name   string
+
+	// Conversation chatbox raster, rebuilt per message and revealed rune-by-rune
+	// (so the GIF shows people talking). Self-cached here, never the live a.msRaster.
+	chatRaster *render.MessageRaster
+	chatText   string
+
+	// Asset pre-warm phase: prefetch the scene's sprites/backgrounds and wait for
+	// T1 residency before the first capture, so characters are on stage.
+	warming      bool
+	warmRefs     []courtroom.AssetRef
+	warmStarted  time.Time
+	warmLastGain time.Time
+	warmBest     int // most assets seen resident so far (quiescence detector)
+	warmResident int // resident count from the last warm tick (for the overlay)
 }
 
 // startGifExport spins up the offscreen render of scene into an animated GIF.
@@ -94,15 +118,43 @@ func (a *App) startGifExport(scene *sceneRecording, name string) {
 	if a.gifResultCh == nil {
 		a.gifResultCh = make(chan string, 1)
 	}
+
+	// Pre-warm: enumerate every sprite / background / desk the scene needs and
+	// prefetch them at high priority, then (in tickGifWarm) wait for them to
+	// decode into T1 before capturing — otherwise the fast export outruns the
+	// async fetch and renders an empty stage. Music refs (Exact) aren't textures.
+	urls := courtroom.NewURLBuilder(scene.Origin)
+	evs := make([]courtroom.Event, 0, len(scene.Events))
+	for _, re := range scene.Events {
+		evs = append(evs, eventFromRec(re))
+	}
+	var warmRefs []courtroom.AssetRef
+	for _, r := range courtroom.SceneAssets(urls, scene.StartBg, evs) {
+		if r.Exact {
+			continue
+		}
+		warmRefs = append(warmRefs, r)
+		if r.Alt != "" {
+			a.d.Manager.PrefetchWithFallback(r.Base, r.Alt, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
+		} else {
+			a.d.Manager.Prefetch(r.Base, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
+		}
+	}
+
+	now := time.Now()
 	a.gif = &gifExportJob{
-		room:   room,
-		ct:     ct,
-		events: append([]recEvent(nil), scene.Events...),
-		name:   sanitizeStem(name),
+		room:         room,
+		ct:           ct,
+		events:       append([]recEvent(nil), scene.Events...),
+		name:         sanitizeStem(name),
+		warming:      true,
+		warmRefs:     warmRefs,
+		warmStarted:  now,
+		warmLastGain: now,
 	}
 	a.gifExporting = true
-	a.warnLine = "Rendering GIF…"
-	a.warnAt = time.Now()
+	a.warnLine = "Loading scene assets…"
+	a.warnAt = now
 }
 
 // tickGifExport captures a bounded batch of frames (render thread). Feeds the
@@ -113,6 +165,10 @@ func (a *App) tickGifExport() {
 	j := a.gif
 	if j == nil || a.d.Viewport == nil {
 		a.gifExporting = false
+		return
+	}
+	if j.warming {
+		a.tickGifWarm(j) // wait for the scene's sprites to decode before capturing
 		return
 	}
 	for n := 0; n < gifFramesPerTick; n++ {
@@ -133,6 +189,7 @@ func (a *App) tickGifExport() {
 		a.d.Viewport.Update(&j.room.Scene, gifFrameDt)
 		img, err := j.ct.Capture(a.ctx.Ren, func(dst sdl.Rect) {
 			a.d.Viewport.Render(a.ctx.Ren, &j.room.Scene, dst)
+			a.drawGifChatbox(j, &j.room.Scene, dst) // composite the conversation over the scene
 		})
 		if err != nil {
 			a.pushDebug("gif capture: " + err.Error())
@@ -140,6 +197,78 @@ func (a *App) tickGifExport() {
 			return
 		}
 		j.frames = append(j.frames, gifenc.Quantize(img))
+	}
+}
+
+// tickGifWarm runs during the pre-warm phase: it counts how many of the scene's
+// assets are resident in T1 (the upload Pump fills it each frame) and ends the
+// wait once they're all ready, OR no new asset has landed for gifWarmQuiet (the
+// rest are 404-ing or evicted), OR gifWarmMax elapses. Then capture begins.
+func (a *App) tickGifWarm(j *gifExportJob) {
+	now := time.Now()
+	resident := 0
+	for _, r := range j.warmRefs {
+		if a.d.Store.Contains(r.Base) {
+			resident++
+		}
+	}
+	j.warmResident = resident
+	if resident > j.warmBest {
+		j.warmBest = resident
+		j.warmLastGain = now
+	}
+	allReady := len(j.warmRefs) > 0 && resident >= len(j.warmRefs)
+	quiesced := resident > 0 && now.Sub(j.warmLastGain) > gifWarmQuiet
+	timedOut := now.Sub(j.warmStarted) > gifWarmMax
+	if allReady || quiesced || timedOut || len(j.warmRefs) == 0 {
+		j.warming = false
+		a.warnLine = "Rendering GIF…"
+		a.warnAt = now
+	}
+}
+
+// drawGifChatbox composites the conversation chatbox — speaker name + the message
+// typed out to the current rune — over the captured scene, so an exported GIF
+// shows people talking rather than a silent stage. It mirrors the live chatbox's
+// flat-panel look and reuses renderRaster (same colours / inline markup), but is
+// INPUT-FREE (no wheel-zoom side effect) and self-caches its raster on the export
+// job, never touching the live a.msRaster or the render hot path. Render thread
+// only (called inside the capture's draw callback).
+func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) {
+	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
+		return
+	}
+	c := a.ctx
+	boxH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
+	if maxH := vp.H * 3 / 5; boxH > maxH {
+		boxH = maxH
+	}
+	box := sdl.Rect{X: vp.X, Y: vp.Y + vp.H - boxH, W: vp.W, H: boxH}
+	c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+	c.Border(box, ColAccent)
+	nameCol := ColAccent
+	if a.d.Prefs.NameColorsOn() { // per-speaker name colour, same as the live chatbox
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	}
+	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
+
+	wrapW := box.W - 16
+	if j.chatRaster == nil || j.chatText != sc.MessageText { // rebuild only when the line changes
+		if j.chatRaster != nil {
+			j.chatRaster.Destroy()
+			j.chatRaster = nil
+		}
+		if sc.MessageText != "" {
+			if r, err := renderRaster(a, sc, wrapW, false); err == nil {
+				j.chatRaster = r
+			}
+		}
+		j.chatText = sc.MessageText
+	}
+	if j.chatRaster != nil {
+		_ = c.Ren.SetClipRect(&box) // oversized text stays inside the box
+		j.chatRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
+		_ = c.Ren.SetClipRect(nil)
 	}
 }
 
@@ -154,6 +283,10 @@ func (a *App) finishGifExport() {
 	}
 	if j.ct != nil {
 		j.ct.Close()
+	}
+	if j.chatRaster != nil {
+		j.chatRaster.Destroy()
+		j.chatRaster = nil
 	}
 	a.endBundledReplay() // drop the archive source if this GIF was from a bundled archive
 	a.restoreViewportPreanim()
@@ -225,13 +358,31 @@ func (a *App) drawGifProgress(winW, winH int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: winW, H: winH}, sdl.Color{R: 10, G: 10, B: 14, A: 255})
 	j := a.gif
+	cx := winW / 2
+	cy := winH / 2
+
+	// Pre-warm phase: loading the scene's sprites before the first capture.
+	if j != nil && j.warming {
+		total := len(j.warmRefs)
+		c.Label(cx-120, cy-30, "🎞  Loading scene assets…", ColText)
+		c.Label(cx-120, cy, fmt.Sprintf("%d / %d ready", j.warmResident, total), ColTextDim)
+		bar := sdl.Rect{X: cx - 160, Y: cy + 26, W: 320, H: 14}
+		c.Fill(bar, ColPanel)
+		if total > 0 {
+			fillW := int32(j.warmResident) * bar.W / int32(total)
+			c.Fill(sdl.Rect{X: bar.X, Y: bar.Y, W: fillW, H: bar.H}, ColAccent)
+		}
+		if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "▶ Start now") {
+			j.warming = false // skip the wait; capture with whatever has loaded
+		}
+		return
+	}
+
 	done := 0
 	if j != nil {
 		done = len(j.frames)
 	}
 	pct := done * 100 / maxGifFrames
-	cx := winW / 2
-	cy := winH / 2
 	c.Label(cx-120, cy-30, "🎞  Rendering GIF…", ColText)
 	c.Label(cx-120, cy, fmt.Sprintf("%d frames captured (%d%% of the cap)", done, pct), ColTextDim)
 	// progress bar

@@ -311,17 +311,28 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   temporarily pointed at the archive (an atomic source override), so textures
   still upload through the normal pipeline. *(Tip: export while connected to the
   origin so the assets are reachable to download.)*
-- **Scene → GIF export** (M16, **🎞 Export GIF** in the maker): render a scene to
-  a **shareable animated GIF** — "an animation of people talking." It renders the
-  scene through a throwaway replay room into a **fixed off-screen target** (a
-  capped 480×360, so it's small + memory-bounded), quantizes each frame and drops
-  the source at once (only 1-byte/px paletted frames are kept, hard-capped at
-  ~33 s), and encodes off-thread to `recordings\<name>.gif`. It runs
-  **incrementally behind a progress bar** (with **■ Stop & save**) so the window
-  never freezes, and it's **off by default** — zero cost on the live render path
-  (the render loop stays at 0 allocs/op). *(v1 captures the viewport — sprites,
-  poses, background animating; the chatbox-text overlay and a higher-quality
-  animated-WebP export are the follow-ups.)*
+- **Scene → GIF export** (M16, **🎞 Export GIF** in the maker, **🎞 GIF** per
+  recording in **Settings → Studio**): render a recorded courtroom — *people
+  talking* — to a **shareable animated GIF**. It renders the scene through a
+  throwaway replay room into a **fixed off-screen target** (a capped 480×360, so
+  it's small + memory-bounded) and **composites the conversation chatbox** over
+  each frame — the speaker's name and their line **typing out rune-by-rune**, the
+  same content the live/replay chatbox draws (so the GIF actually animates, it
+  isn't a silent stage). Before the first frame it **pre-warms the scene's
+  sprites/backgrounds** (prefetch + wait for decode, behind a "Loading scene
+  assets…" bar with **▶ Start now**) because the export advances ~4× faster than a
+  replay and would otherwise outrun the async fetch and capture an empty stage.
+  **File size** is kept down by an **inter-frame diff**: frames are quantized
+  *without* dithering and each frame ships only the **pixels that changed** from
+  the previous one (transparent elsewhere, "do not dispose"), and an unchanged
+  frame folds into the previous one's delay — a mostly-static courtroom compresses
+  to a fraction of the naive size (proven by a composite-back round-trip test).
+  Each frame's source RGBA is dropped at once (only 1-byte/px paletted frames are
+  kept, hard-capped at ~33 s), and it encodes off-thread to `recordings\<name>.gif`.
+  It runs **incrementally behind a progress bar** (with **■ Stop & save**) so the
+  window never freezes, and it's **off by default** — zero cost on the live render
+  path (the render loop stays at 0 allocs/op). *(GIF is 256-colour; a
+  higher-quality **animated-WebP** export is the follow-up.)*
 - **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
   written off the render thread; ~10× smaller than the old BMP and it previews
   inline in Discord etc.
