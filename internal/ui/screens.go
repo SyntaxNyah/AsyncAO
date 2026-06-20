@@ -3057,10 +3057,35 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// showname box OVERRIDES the Settings showname for the session.
 	fH := a.inputFieldH()
 	swatch := sdl.Rect{X: pad, Y: icY, W: 26, H: fH}
-	c.Fill(swatch, render.TextColor(a.icColor))
+	// The selector also offers the two "fun colour" modes (#79): Rainbow and
+	// Random sit at the end of the palette list, so they're picked like any
+	// colour instead of being buried in Settings. The selected row reflects the
+	// active mode; the swatch previews it.
+	icSel := a.icColor
+	switch {
+	case a.d.Prefs.RainbowMessagesOn():
+		icSel = icColorRainbowIdx
+		c.Fill(swatch, chatRainbow[0])
+	case a.d.Prefs.RandomMessageColorOn():
+		icSel = icColorRandomIdx
+		c.Fill(swatch, ColTextDim)
+	default:
+		c.Fill(swatch, render.TextColor(a.icColor))
+	}
 	c.Border(swatch, ColPanelHi)
-	if next, changed := c.Dropdown("colordd", sdl.Rect{X: pad + 32, Y: icY, W: colorSelectW, H: fH}, render.TextColorNames(), a.icColor); changed {
-		a.icColor = next
+	if next, changed := c.Dropdown("colordd", sdl.Rect{X: pad + 32, Y: icY, W: colorSelectW, H: fH}, icColorChoices, icSel); changed {
+		switch next {
+		case icColorRainbowIdx: // Rainbow wins over Random; both off picks a plain colour
+			a.d.Prefs.SetRainbowMessages(true)
+			a.d.Prefs.SetRandomMessageColor(false)
+		case icColorRandomIdx:
+			a.d.Prefs.SetRandomMessageColor(true)
+			a.d.Prefs.SetRainbowMessages(false)
+		default:
+			a.d.Prefs.SetRainbowMessages(false)
+			a.d.Prefs.SetRandomMessageColor(false)
+			a.icColor = next
+		}
 	}
 	const shownameBoxW = 140
 	nameX := pad + 32 + colorSelectW + 6
@@ -4012,6 +4037,17 @@ func sceneNeedsStyled(styles []courtroom.StyleRun) bool {
 	}
 	return false
 }
+
+// icColorChoices is the IC colour dropdown (#79): the wire palette plus the two
+// "fun colour" modes, so Rainbow/Random are picked like any colour rather than
+// hidden in Settings. Built once at package init — the IC input row reads it
+// every frame, so it must not allocate. icColorRainbowIdx / icColorRandomIdx are
+// the appended entries' positions.
+var (
+	icColorRainbowIdx = len(render.TextColorNames())
+	icColorRandomIdx  = icColorRainbowIdx + 1
+	icColorChoices    = append(append([]string{}, render.TextColorNames()...), "Rainbow", "Random")
+)
 
 // chatRainbow is the palette inline rainbow (\cr) cycles through, per rune.
 var chatRainbow = []sdl.Color{

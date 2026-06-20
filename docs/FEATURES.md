@@ -122,7 +122,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (the standard TextColor field — every client sees it); **Rainbow** prefixes
   `\cr` so your text cycles the palette per letter (renders on clients that read
   inline colour; rainbow wins if both are on). Applied at send (`funColor`), so
-  zero render cost.
+  zero render cost. Both are **also pickable right in the IC colour dropdown**
+  (#79): **Rainbow** and **Random** sit at the end of the palette list, so you
+  switch modes the same way you pick a colour — no trip to Settings — and the
+  swatch previews the active mode. The dropdown and the Settings checkboxes are
+  the same setting, so they stay in sync. (The extended list is built once, so
+  the IC input row stays allocation-free.)
 - **Sprite colour FX** (Settings → General, all OFF by default): a render-side
   colour wash over the on-stage characters (speaker **and** pair) — pure **local
   eye-candy**, nothing on the wire, nobody else sees it. A `SetColorMod`
@@ -1008,9 +1013,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   files, import/export status) runs regardless of the active tab. A
   **search box** (settings header) jumps to the tab that has a term —
   type "blip", "password", "catch up"… and press Enter.
-- **Hotkey cheat-sheet** (press **F1** on any screen): a translucent panel
-  listing every Ctrl-chord binding (resolved to your keys) plus the fixed
-  function keys; F1 again closes it. Off by default, zero cost when closed.
+- **Hotkey cheat-sheet** (press **F1** on any screen, or the **Extras → Hotkeys**
+  entry — #79): a translucent two-column panel listing **every** shortcut in one
+  place — the Ctrl-chord actions resolved to your keys, the fixed function keys,
+  **and your own custom bindings**: macros, character keys, and showname keys.
+  Anything *you* remapped or created shows its key in **gold**, so your bindings
+  stand out from the defaults. Section headers group them; an ✕ or F1 closes it.
+  The rows are built once per open (never per frame) and only drawn while open,
+  so it's zero cost closed.
 - **Mute SFX hotkey** (Ctrl+K by default, rebindable): a session-only
   "shush" that silences sound effects without touching your saved volumes
   or the music/blip channels.

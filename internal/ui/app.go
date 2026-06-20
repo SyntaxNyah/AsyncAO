@@ -882,6 +882,7 @@ type sessionState struct {
 	// music is currently ducked under a playing message (transition-driven).
 	sfxMuted           bool
 	showHotkeys        bool
+	hkCache            []hkEntry           // hotkey cheat-sheet rows, rebuilt once per open (not per frame)
 	confirmDisconnect  bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
 	hidePrompt         string              // a "hide this sprite?" confirm is open for this char name ("" = none)
 	hiddenSprites      map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
@@ -2864,7 +2865,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// F1 toggles the hotkey cheat-sheet on any screen (consumed so a plain-key
 	// macro/char bind named "f1" can't double-fire).
 	if a.ctx.keyPressed == sdl.K_F1 {
-		a.showHotkeys = !a.showHotkeys
+		if a.showHotkeys {
+			a.showHotkeys = false
+			a.hkCache = nil
+		} else {
+			a.openHotkeyCheatSheet() // (re)builds the rows so it reflects current bindings
+		}
 		a.ctx.keyPressed = 0
 	}
 	// F11 toggles fullscreen on any screen — the keyboard escape when a too-big

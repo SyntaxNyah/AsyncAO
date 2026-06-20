@@ -403,36 +403,62 @@ func (a *App) nudgeMasterVolume(delta int) {
 	a.warnAt = a.now()
 }
 
-// drawHotkeyCheatSheet overlays the current bindings (F1 toggles it on any
-// screen). It lists the configurable Ctrl-chord actions (resolved to the
-// user's keys) plus the fixed function keys. Only drawn while open, so it
-// costs nothing closed — allocations here are fine (opt-in overlay, like the
-// perf HUD).
+// drawHotkeyCheatSheet overlays every binding (F1 or the Extras "Hotkeys" entry
+// opens it). It lists the configurable Ctrl-chord actions resolved to the user's
+// keys AND their own custom bindings — macros, character keys, showname keys —
+// with section headers, in two columns so a long list fits the window. Your own
+// bindings (a remapped action or anything you created) show their key in gold so
+// they stand out from the defaults. Rows are cached per open (hkCache); drawing
+// only happens while open, so it costs nothing closed.
 func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	c := a.ctx
-	const rowH = 22
-	rows := int32(len(hotkeyDefs) + 4)
-	pw, ph := int32(460), rows*rowH+44
-	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
-	c.Fill(panel, sdl.Color{R: 12, G: 12, B: 18, A: 242})
-	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+6, "Hotkeys", ColText)
-	c.Label(panel.X+pw-120, panel.Y+10, "F1 to close", ColTextDim)
-	y := panel.Y + 36
-	for _, def := range hotkeyDefs {
-		c.Label(panel.X+pad, y, "Ctrl+"+strings.ToUpper(a.hotkeyFor(def.id)), ColAccent)
-		c.Label(panel.X+pad+96, y, def.label, ColText)
-		y += rowH
+	if a.hkCache == nil { // opened without openHotkeyCheatSheet (defensive)
+		a.hkCache = a.hotkeyCheatEntries()
 	}
-	for _, fx := range [...]struct{ key, label string }{
-		{"F1", "show this hotkey list"},
-		{"F3", "performance HUD"},
-		{"Esc", "close menus / exit theater"},
-		{"Ctrl+wheel", "resize text · zoom the stage"},
-	} {
-		c.Label(panel.X+pad, y, fx.key, ColAccent)
-		c.Label(panel.X+pad+96, y, fx.label, ColText)
-		y += rowH
+	entries := a.hkCache
+	const (
+		rowH   = int32(20)
+		colW   = int32(360)
+		keyGap = int32(116) // label x-offset within a column
+	)
+	rowsPerCol := (int32(len(entries)) + 1) / 2
+	if rowsPerCol < 1 {
+		rowsPerCol = 1
+	}
+	pw := colW*2 + pad*3
+	ph := rowsPerCol*rowH + 48
+	if max := h - 20; ph > max { // never taller than the window
+		ph = max
+	}
+	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
+	c.Fill(panel, sdl.Color{R: 12, G: 12, B: 18, A: 245})
+	c.Border(panel, ColAccent)
+	c.Heading(panel.X+pad, panel.Y+6, "Hotkeys — your shortcuts", ColText)
+	if c.Button(sdl.Rect{X: panel.X + pw - 28, Y: panel.Y + 6, W: 20, H: 20}, "x") {
+		a.showHotkeys = false
+		a.hkCache = nil
+	}
+	c.Label(panel.X+pw-150, panel.Y+10, "F1 to close", ColTextDim)
+
+	colTop := panel.Y + 34
+	for i, e := range entries {
+		col := int32(i) / rowsPerCol
+		row := int32(i) % rowsPerCol
+		x := panel.X + pad + col*(colW+pad)
+		y := colTop + row*rowH
+		if y+rowH > panel.Y+panel.H-4 {
+			continue // clip rather than overflow (the height cap keeps this rare)
+		}
+		if e.header {
+			c.Label(x, y, e.label, ColStar)
+			continue
+		}
+		keyCol := ColAccent
+		if e.custom {
+			keyCol = ColStar // a binding you remapped or created
+		}
+		c.Label(x, y, e.key, keyCol)
+		c.LabelClipped(x+keyGap, y, colW-keyGap, e.label, ColText)
 	}
 }
 

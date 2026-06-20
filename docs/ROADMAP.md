@@ -22,15 +22,6 @@ items move to `docs/FEATURES.md` as they ship.
   the player list / IC.
 - **Custom friend colours** *(#82)* — per-friend colour in the list / IC.
 
-### Chatbox / text
-- **Rainbow in the colour selector** *(#79)* — when rainbow IC text is enabled,
-  surface a **"Rainbow"** entry in the IC colour selector instead of a separate
-  toggle.
-
-### Hotkeys
-- **Custom-hotkeys list window** *(#79)* — a window listing all the user's
-  custom-made hotkeys (click to view them all in one place).
-
 ---
 
 ## Already shipped (rebuild to get them)
