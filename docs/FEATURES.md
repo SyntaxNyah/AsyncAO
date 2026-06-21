@@ -290,7 +290,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   recent conversation** and AsyncAO keeps a small **rolling buffer** of the recent
   scene events; press the **clip key (Ctrl+.)** and the **last window** is written
   as a `.aorec` — **with no recording started in advance**. The **capture window
-  is a slider** you set from **10 seconds up to a full hour**. The clip opens on
+  is a slider** you set from **10 seconds up to a full hour**. While it's armed, a
+  small **accent dot in the stage's top-right corner** (dim until you hover, with a
+  tooltip) shows the buffer is live and **clicks to clip** — so the
+  otherwise-invisible feature is discoverable. The clip opens on
   the **right stage and track** (it carries the background and music that were
   playing *before* the window, so it's never blank or silent) and lands in
   `recordings/` ready to **open in the Scene Maker to trim/export**. It's

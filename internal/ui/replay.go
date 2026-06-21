@@ -712,6 +712,7 @@ func (a *App) drawStageRecordButton(vp sdl.Rect) {
 		}
 		return
 	}
+	a.drawInstantReplayDot(vp) // armed-buffer indicator (independent of the Record button)
 	if !a.d.Prefs.ShowRecordButtonOn() {
 		return
 	}
@@ -721,6 +722,41 @@ func (a *App) drawStageRecordButton(vp sdl.Rect) {
 	}
 	if c.Button(sdl.Rect{X: vp.X + 6, Y: vp.Y + 6, W: 92, H: 22}, label) {
 		a.toggleRecording()
+	}
+}
+
+// drawInstantReplayDot marks that the instant-replay rolling buffer is ARMED — a
+// small accent dot in the stage's top-right corner, dim until hovered, so the
+// otherwise-invisible buffer is discoverable. Click it (or press the clip key) to
+// save the last window. Hidden while an explicit recording is running (the Record
+// button/toast already says so) and off entirely unless the opt-in pref is on, so
+// the default client draws nothing here.
+func (a *App) drawInstantReplayDot(vp sdl.Rect) {
+	if a.recActive || !a.d.Prefs.InstantReplayOn() {
+		return
+	}
+	c := a.ctx
+	const sz = 18
+	r := sdl.Rect{X: vp.X + vp.W - 6 - sz, Y: vp.Y + 6, W: sz, H: sz}
+	hot := c.hovering(r)
+	backA := uint8(70)
+	if hot {
+		backA = 150
+	}
+	c.Fill(r, sdl.Color{R: 0, G: 0, B: 0, A: backA}) // subtle backing so the dot reads on any background
+	c.Border(r, ColPanelHi)
+	col := ColAccent
+	if !hot {
+		col.A = 160 // dim until hovered — present but unobtrusive
+	}
+	c.Fill(sdl.Rect{X: r.X + sz/2 - 3, Y: r.Y + sz/2 - 3, W: 6, H: 6}, col)
+	if hot {
+		win := formatReplayWindow(time.Duration(a.d.Prefs.InstantReplaySecondsValue()) * time.Second)
+		c.Tooltip(r, "Instant Replay armed — click or press Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyClipReplay))+" to clip the last "+win)
+		if c.clicked {
+			a.clipInstantReplay()
+			c.clicked = false // consumed: don't let the viewport treat it as a sprite click
+		}
 	}
 }
 
