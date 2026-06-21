@@ -41,5 +41,10 @@ it's a stale build (`scripts\build.ps1 -Release`).
   (10 s … 1 h) of conversation with no recording started in advance (shipped) —
   all in `docs/FEATURES.md`. Possible later tweak: continuous-playback scrubbing
   on the timeline strip.
+- ~~**Shareable scene/server deep-link** *(#52)*~~ — **closed** (2026-06-21, by
+  request): the gif/WebP export half shipped; the deep-link half is covered by
+  the existing **Direct Connect** field (paste a `ws://`/`wss://` URL in the phone
+  book) and the `--server` launch flag, so no bespoke link or `asyncao://` scheme
+  was built.
 - ~~**M8 Gamepad support** *(#44)*~~ — **dropped** (2026-06-21, by request — no
   need for it). The whole milestone backlog is now closed.
