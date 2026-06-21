@@ -701,6 +701,10 @@ type sessionState struct {
 	// --- courtroom chrome ---
 	icInput  string
 	oocInput string
+	// Friends-tab PM composer (#friends): the selected friend + the message being
+	// typed. Sends as "/pm <their uid> <message>" over OOC.
+	pmTarget string
+	pmInput  string
 	// shownameOverride is the in-courtroom showname box: when non-blank
 	// it wins over the persisted Settings showname for outgoing messages
 	// (session-scoped — it never overwrites the saved one).
