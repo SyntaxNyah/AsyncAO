@@ -705,6 +705,12 @@ type sessionState struct {
 	// typed. Sends as "/pm <their uid> <message>" over OOC.
 	pmTarget string
 	pmInput  string
+	// pmThreads is the per-conversation PM history (keyed by the partner's
+	// canonical name via pmThreadKey) the Friends tab shows as a little DM thread.
+	// Outgoing lines append on send; incoming ones are best-effort parsed out of
+	// OOC (detectIncomingPM — server formats vary, a miss just stays in the OOC
+	// log). Session-scoped (PMs are per-server) and bounded.
+	pmThreads map[string][]pmLine
 	// shownameOverride is the in-courtroom showname box: when non-blank
 	// it wins over the persisted Settings showname for outgoing messages
 	// (session-scoped — it never overwrites the saved one).
@@ -3979,6 +3985,10 @@ func (a *App) pushOOC(line, speaker string) {
 		a.rosterCmdUnsupported = true
 		return
 	}
+	// Best-effort: mirror a received PM into the Friends-tab DM thread too (it also
+	// stays in the OOC log). On the real-OOC path only — AFTER the /gas suppression
+	// returns above — so a suppressed area burst can't double-fire it.
+	a.detectIncomingPM(text)
 	if len(line) > oocLineCap {
 		line = line[:oocLineCap] + "…"
 	}

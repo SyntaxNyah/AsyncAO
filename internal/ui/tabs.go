@@ -570,6 +570,7 @@ func (a *App) resetSessionState() {
 		playerSort:     clampMode(a.d.Prefs.PlayerListSortMode(), playerSortModes), // remembered Players-tab sorts
 		playerAreaSort: clampMode(a.d.Prefs.PlayerListAreaSortMode(), areaSortModes),
 		spriteOv:       map[string][2]int{},
+		pmThreads:      map[string][]pmLine{},
 		evidIdx:        -1,
 		// Full bars so the first HP packets don't fire penalty sfx.
 		hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax},

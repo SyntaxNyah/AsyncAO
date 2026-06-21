@@ -21,25 +21,33 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 		return
 	}
 	names := a.d.Prefs.ServerFriends(a.serverKey)
+	c.Label(r.X+4, r.Y+4, fmt.Sprintf("Friends here (%d) — add with \"+ Friend\" on a player:", len(names)), ColTextDim)
 
-	// Reserve a bottom strip for the PM composer once a friend is picked.
-	listH := r.H
-	composerH := int32(0)
-	if a.pmTarget != "" {
-		composerH = fieldH + 22
-		listH = r.H - composerH
+	// No friend picked: the list owns the whole tab.
+	if a.pmTarget == "" {
+		if len(names) == 0 {
+			c.Label(r.X+4, r.Y+30, "No friends yet.", ColTextDim)
+		} else {
+			a.drawFriendRows(r, r.H, names)
+		}
+		return
 	}
 
-	c.Label(r.X+4, r.Y+4, fmt.Sprintf("Friends here (%d) — add with \"+ Friend\" on a player:", len(names)), ColTextDim)
+	// A friend is picked: split into a compact list (to switch between friends), the
+	// PM thread (the DM view), and the composer pinned at the bottom.
+	composerH := fieldH + 22
+	listH := (r.H - composerH) / 3
+	if listH < 64 {
+		listH = 64
+	}
+	threadH := r.H - composerH - listH
 	if len(names) == 0 {
 		c.Label(r.X+4, r.Y+30, "No friends yet.", ColTextDim)
 	} else {
 		a.drawFriendRows(r, listH, names)
 	}
-
-	if a.pmTarget != "" {
-		a.drawPMComposer(sdl.Rect{X: r.X, Y: r.Y + listH, W: r.W, H: composerH})
-	}
+	a.drawPMThread(sdl.Rect{X: r.X, Y: r.Y + listH, W: r.W, H: threadH})
+	a.drawPMComposer(sdl.Rect{X: r.X, Y: r.Y + listH + threadH, W: r.W, H: composerH})
 }
 
 // drawFriendRows lists the friends within the top listH of r.
@@ -130,8 +138,8 @@ func (a *App) sendPM() {
 		target = a.pmTarget // no live id — try the name (some servers accept it)
 	}
 	a.sess.SendOOC(a.oocNameOrDefault(), "/pm "+target+" "+msg)
+	a.pmAppend(a.pmTarget, true, msg) // mirror into the DM thread (it also shows in OOC)
 	a.pmInput = ""
-	a.logTab = logTabOOC // surface the OOC log so the reply is visible
 }
 
 // friendUID looks up a friend's current client UID by matching their saved name
@@ -145,4 +153,139 @@ func (a *App) friendUID(name string) string {
 		}
 	}
 	return ""
+}
+
+// pmLine is one line of a PM conversation: who said it and the text. A tiny
+// convenience mirror of the OOC log, not a store of record.
+type pmLine struct {
+	fromMe bool
+	text   string
+}
+
+const (
+	pmThreadLineCap = 100 // per-conversation history cap
+	pmThreadCap     = 32  // distinct conversations kept (bounds the map)
+)
+
+// pmAppend records one PM line under the partner's canonical thread key, bounded
+// per-thread and in the number of threads.
+func (a *App) pmAppend(partner string, fromMe bool, text string) {
+	text = strings.TrimSpace(text)
+	key := a.pmThreadKey(partner)
+	if key == "" || text == "" {
+		return
+	}
+	if a.pmThreads == nil {
+		a.pmThreads = map[string][]pmLine{}
+	}
+	if _, ok := a.pmThreads[key]; !ok && len(a.pmThreads) >= pmThreadCap {
+		return // already at the conversation cap — drop the new partner, stay bounded
+	}
+	cur := append(a.pmThreads[key], pmLine{fromMe: fromMe, text: text})
+	if len(cur) > pmThreadLineCap { // keep the newest; fresh backing so the old head frees
+		cur = append([]pmLine(nil), cur[len(cur)-pmThreadLineCap:]...)
+	}
+	a.pmThreads[key] = cur
+}
+
+// pmThreadKey canonicalises a PM partner name to a thread key so incoming and
+// outgoing share ONE conversation. Matches a known friend by their stored name,
+// or via the live roster's showname / char / OOC name (a server's "PM from <X>"
+// may use a different identity field than the one we filed the friend under);
+// otherwise the lowercased name itself.
+func (a *App) pmThreadKey(name string) string {
+	want := strings.ToLower(strings.TrimSpace(name))
+	if want == "" {
+		return ""
+	}
+	friends := a.d.Prefs.ServerFriends(a.serverKey)
+	for _, f := range friends {
+		if strings.ToLower(f) == want {
+			return want
+		}
+	}
+	roster := a.rosterView()
+	for i := range roster {
+		p := &roster[i]
+		if strings.ToLower(p.showname) != want && strings.ToLower(p.name) != want && strings.ToLower(p.ooc) != want {
+			continue
+		}
+		for _, f := range friends {
+			if strings.EqualFold(f, p.showname) || strings.EqualFold(f, p.name) {
+				return strings.ToLower(f)
+			}
+		}
+	}
+	return want
+}
+
+// detectIncomingPM best-effort parses a received PM out of an OOC line and mirrors
+// it into the Friends-tab thread (the line ALSO stays in the OOC log, so a miss
+// loses nothing). Matches the common "PM from <sender>: <message>" shape, dropping
+// a trailing "(...)" annotation from the sender. Server formats vary across
+// tsuserver forks, so this is deliberately tolerant + easy to extend once a real
+// line is confirmed. Outgoing PMs are recorded in sendPM, and a server's own
+// "PM sent to ..." echo never matches "PM from", so nothing double-records.
+func (a *App) detectIncomingPM(text string) {
+	if sender, msg, ok := parseIncomingPM(text); ok {
+		a.pmAppend(sender, false, msg)
+	}
+}
+
+// parseIncomingPM extracts (sender, message) from a received-PM OOC line, or
+// ok=false when it isn't the recognised "PM from <sender>: <message>" shape (a
+// trailing "(CID 5)" / "(in Area)" annotation on the sender is dropped). Pure, so
+// the format match is unit-tested — and easy to adjust — without a live App.
+func parseIncomingPM(text string) (sender, msg string, ok bool) {
+	const prefix = "pm from "
+	t := strings.TrimSpace(text)
+	if len(t) < len(prefix) || !strings.EqualFold(t[:len(prefix)], prefix) {
+		return "", "", false
+	}
+	rest := t[len(prefix):]
+	idx := strings.Index(rest, ": ")
+	if idx <= 0 {
+		return "", "", false
+	}
+	sender, msg = rest[:idx], rest[idx+2:]
+	if p := strings.Index(sender, " ("); p > 0 {
+		sender = sender[:p]
+	}
+	sender, msg = strings.TrimSpace(sender), strings.TrimSpace(msg)
+	if sender == "" || msg == "" {
+		return "", "", false
+	}
+	return sender, msg, true
+}
+
+// drawPMThread renders the selected friend's PM history as a little DM view (your
+// lines in accent, theirs plain), newest at the bottom. A convenience mirror of
+// the OOC log; incoming lines are best-effort parsed there.
+func (a *App) drawPMThread(box sdl.Rect) {
+	c := a.ctx
+	c.Fill(box, ColPanel)
+	c.Border(box, ColPanelHi)
+	lines := a.pmThreads[strings.ToLower(strings.TrimSpace(a.pmTarget))]
+	if len(lines) == 0 {
+		c.Label(box.X+6, box.Y+6, "No messages yet — type below to start.", ColTextDim)
+		return
+	}
+	const lh = int32(18)
+	rows := int((box.H - 6) / lh)
+	if rows < 1 {
+		rows = 1
+	}
+	start := 0
+	if len(lines) > rows {
+		start = len(lines) - rows // anchor to the newest, like a chat
+	}
+	y := box.Y + 4
+	for _, ln := range lines[start:] {
+		who, col := a.pmTarget, ColText
+		if ln.fromMe {
+			who, col = "You", ColAccent
+		}
+		c.LabelClipped(box.X+6, y, box.W-12, who+": "+ln.text, col)
+		y += lh
+	}
 }
