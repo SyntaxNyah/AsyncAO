@@ -131,25 +131,80 @@ const (
 	tabStudio
 )
 
-// settingsSearchKeywords maps each tab to terms the search box matches, so
-// "blip" jumps to Audio & Chat, "password" to Account, and so on.
+// settingsSearchKeywords maps each tab to terms the search box matches. It folds
+// in every SECTION TITLE on the tab (so "friends", "cache", "callwords", "window"
+// etc. all resolve) plus the individual setting terms, since the old curated list
+// missed most sections — the "search doesn't work that much" report (#102). Keep
+// terms lowercase; when adding a settings section, add its title here.
 var settingsSearchKeywords = [numSettingsTabs][]string{
-	tabGeneral:   {"showname", "ooc name", "animation", "reduce motion", "sprite style", "recolour", "recolor", "glow", "emote button", "favourite emotes", "favorite emotes", "debug", "streamer", "smooth", "scaling", "ui scale", "dpi", "font", "cjk", "tabs", "server tabs", "max tabs"},
-	tabTheme:     {"theme", "chatbox", "skin", "layout", "courtroom design", "bind", "preview"},
-	tabAssets:    {"fallback", "format", "webp", "png", "avif", "extensions", "audio format", "local", "mount", "download", "cache", "disk", "zstd", "learned"},
-	tabAudioChat: {"music", "sfx", "sound", "blip", "volume", "text crawl", "text stay", "text speed", "chat limit", "catch up", "callword", "casing", "case"},
-	tabAccount:   {"login", "password", "credential", "master list", "discord", "presence"},
-	tabHotkeys:   {"hotkey", "keybind", "macro", "shortcut", "export", "import", "backup"},
-	tabStudio:    {"studio", "record", "recording", "replay", "aorec", "scene", "capture", "gif", "video", "export", "movie"},
+	tabGeneral: {
+		// sections: Identity, Display & behaviour, Application, Log colours, Stage,
+		// Scale & text size, Window, Extras box, Fonts.
+		"identity", "showname", "ooc name", "default showname", "force char names", "anti-impersonation",
+		"display", "behaviour", "behavior", "animation", "reduce motion", "accessibility",
+		"sprite style", "recolour", "recolor", "tint", "glow", "opacity", "hide sprite styles", "hide other",
+		"emote button", "favourite emotes", "favorite emotes", "fav emotes",
+		"application", "streamer mode", "debug", "performance", "perf hud", "fps", "notify ooc", "unread badge",
+		"log colours", "log colors", "selection highlight", "highlight colour", "name colour", "name colours",
+		"stage", "desk", "hide desk", "scale", "text size", "ui scale", "dpi", "zoom",
+		"window", "fullscreen", "window size", "resolution", "extras box", "extras", "tear off",
+		"fonts", "font", "cjk", "dyslexia", "dyslexic", "emoji", "smooth scaling", "tabs", "server tabs", "max tabs",
+	},
+	tabTheme: {
+		// sections: Theme, Layout & fit, Lobby, Preview & binding.
+		"theme", "theme picker", "chatbox", "skin", "default theme",
+		"layout", "fit", "courtroom design", "lobby", "preview", "bind", "binding",
+	},
+	tabAssets: {
+		// sections: Image formats, Audio formats, Local assets, Downloader, Cache.
+		"image format", "format", "fallback", "autodetect", "webp", "png", "apng", "avif", "extensions",
+		"audio format", "opus", "ogg", "mp3",
+		"local assets", "local", "mount", "downloader", "download",
+		"cache", "disk cache", "disk", "zstd", "learned formats", "learned", "clear cache",
+	},
+	tabAudioChat: {
+		// sections: Volume, Text & typing, Chat log, Case alerts, Callwords, Do Not
+		// Disturb, Messages & connection, Sound effects, Music history, Friends,
+		// Ignored players, Mod tools.
+		"volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
+		"text", "typing", "text crawl", "text stay", "text speed", "chat limit", "catch up",
+		"chat log", "ic log", "timestamps", "log",
+		"case alerts", "casing", "case", "callword", "callwords", "ping", "alert",
+		"do not disturb", "dnd", "messages", "connection", "auto reconnect", "reconnect", "disconnect confirm",
+		"sound effects", "sfx", "mute sfx", "music history", "jukebox history",
+		"friends", "friend", "nickname", "friend colour", "ignored players", "ignore", "block",
+		"mod tools", "moderator", "modcall", "ipid",
+	},
+	tabAccount: {
+		// sections: Login, Master list, Discord.
+		"login", "password", "username", "credential", "auto login",
+		"master list", "server list", "discord", "presence", "rich presence",
+	},
+	tabHotkeys: {
+		// sections: Hotkeys, Macros, IC quick-phrases.
+		"hotkey", "hotkeys", "keybind", "keybinding", "shortcut",
+		"macro", "macros", "ic quick", "quick phrase", "phrase", "export hotkeys", "import", "backup",
+	},
+	tabStudio: {
+		// sections: Scene recording, Instant replay, Scene maker, Recordings, Replay
+		// playback, Export to GIF / WebP.
+		"studio", "scene recording", "record", "recording", "instant replay", "clip", "rolling buffer",
+		"scene maker", "maker", "aorec", "recordings", "replay", "replay playback", "playback speed",
+		"export", "gif", "webp", "video", "mp4", "webm", "movie", "frame rate", "quality", "scene", "capture", "archive",
+	},
 }
 
 // settingsSearchMatch returns the first tab whose name or keywords contain the
-// (lowercased, trimmed) query, or -1 for none/empty.
+// (lowercased, trimmed) query, or -1 for none/empty. Matching is forward only
+// (the query is a substring of a setting term) — the comprehensive keyword list
+// above is what makes the search actually find things; a reverse match would let
+// a longer query like "keybind" wrongly hit the short "bind" (Theme preview).
 func settingsSearchMatch(query string) int {
 	q := strings.ToLower(strings.TrimSpace(query))
 	if q == "" {
 		return -1
 	}
+	// A tab-name match wins (you typed the destination directly).
 	for i, name := range settingsTabNames {
 		if strings.Contains(strings.ToLower(name), q) {
 			return i
