@@ -1,0 +1,103 @@
+package ui
+
+// Emoji-aware labels for the IC/OOC log lines and shownames. Those draw through
+// the single-font label path (textTexture / LabelClippedFont), which renders any
+// colour emoji as the chat font's tofu. labelEmoji keeps that exact fast path for
+// plain text — the overwhelming common case — behind one cheap byte scan (no font
+// work, no allocation), and only the rare label that actually contains emoji the
+// chat font can't draw builds a multi-font render.MessageRaster (RasterizeFallback
+// routes each emoji rune to the colour-emoji face). Those rasters are CACHED, so a
+// steady-state frame just blits — the IC/OOC draw stays off the per-frame font
+// path (hard rule §17.1: no synchronous font work on the render hot path).
+
+import (
+	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/ttf"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
+)
+
+const (
+	// emojiRasterMax bounds the emoji-label raster cache. Each entry owns its own
+	// SDL textures (not the shared label atlas), so this is deliberately small —
+	// emoji labels are rare; the cap only guards a pathological churn.
+	emojiRasterMax = 256
+	// emojiNoWrap is the build-time wrap width for a single-line label: a large
+	// finite sentinel so the content NEVER wraps. The cache key carries no width,
+	// so a wrapped raster would desync from the column — the DRAW clips to maxW
+	// instead (a long emoji label is cut on the right, like any clipped label).
+	emojiNoWrap = 1 << 20
+)
+
+// emojiKey keys the raster cache exactly like textKey: the same text, colour and
+// primary-font pointer always produce the same raster. The emoji face is derived
+// from the primary's scale, so it needn't be in the key — an emoji-font swap
+// purges the whole cache (SetEmojiFont), as does a primary-font rebuild
+// (purgeTextCache).
+type emojiKey struct {
+	text  string
+	color sdl.Color
+	font  *ttf.Font
+}
+
+// labelEmoji draws text that may contain colour emoji, clipped to maxW. Plain
+// text takes the byte-identical LabelClippedFont fast path after one scan; an
+// emoji label blits a cached multi-font raster, kicking the one-shot emoji-face
+// load the first time it's needed (a showname/log emoji must trigger the load
+// too, not just a chatbox message). While the face is still loading the label
+// degrades to today's tofu and repaints in colour once it lands.
+func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string, col sdl.Color) {
+	c := a.ctx
+	if primary == nil || !render.NeedsEmojiFallback(text) {
+		c.LabelClippedFont(primary, x, y, maxW, text, col)
+		return
+	}
+	a.ensureEmojiFontLoad() // idempotent; no-op once started / where there's no system face
+	m := c.emojiRaster(text, col, primary, emoji)
+	if m == nil { // face not loaded yet, or build failed → single-font (tofu) path
+		c.LabelClippedFont(primary, x, y, maxW, text, col)
+		return
+	}
+	cp, ch := c.pushClip(sdl.Rect{X: x, Y: y, W: maxW, H: m.Height()})
+	m.Draw(c.Ren, m.TotalRunes(), x, y)
+	c.popClip(cp, ch)
+}
+
+// emojiRaster returns (and caches) the multi-font raster for one emoji label, or
+// nil when there's no emoji face yet / the build failed (the caller then degrades
+// to the single-font path). The colour spans the whole label (one ColorSpan);
+// the slice + the build are paid once per (text, colour, font), never per frame.
+func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) *render.MessageRaster {
+	if emoji == nil || primary == nil {
+		return nil
+	}
+	key := emojiKey{text: text, color: col, font: primary}
+	if m, ok := c.emojiCache[key]; ok {
+		return m
+	}
+	spans := []render.ColorSpan{{Len: len([]rune(text)), Color: col}}
+	m, err := render.RasterizeFallback(c.Ren, primary, emoji, text, spans, emojiNoWrap)
+	if err != nil || m == nil {
+		return nil
+	}
+	if c.emojiCache == nil {
+		c.emojiCache = make(map[emojiKey]*render.MessageRaster, 16)
+	} else if len(c.emojiCache) >= emojiRasterMax {
+		c.purgeEmojiCache() // wholesale reset (like purgeTextCache); hot labels repopulate
+	}
+	c.emojiCache[key] = m
+	return m
+}
+
+// purgeEmojiCache destroys every cached raster's textures and empties the cache.
+// Render thread only (the textures are render-thread-owned). Called from
+// purgeTextCache (a primary-font rebuild leaves the keys' pointers dead) and from
+// SetEmojiFont (an emoji-face swap leaves the cached glyphs stale).
+func (c *Ctx) purgeEmojiCache() {
+	for k, m := range c.emojiCache {
+		if m != nil {
+			m.Destroy()
+		}
+		delete(c.emojiCache, k)
+	}
+}

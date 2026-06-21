@@ -577,8 +577,9 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
 	}
-	// Clipped: a long showname must never spill past the theme's box.
-	c.LabelClipped(nameX, nameY, nameW, sc.ShownameText, nameCol)
+	// Clipped: a long showname must never spill past the theme's box. Emoji-aware
+	// so a showname with colour emoji renders the glyphs, not the chat font's tofu.
+	a.labelEmoji(c.font, c.EmojiFont(DefaultScalePct), nameX, nameY, nameW, sc.ShownameText, nameCol)
 
 	a.ensureChatRaster(wrapW, skinned)
 	if a.msRaster != nil {

@@ -53,3 +53,58 @@ func TestRasterizeFallbackBuildsSpans(t *testing.T) {
 	}
 	r2.Destroy()
 }
+
+// TestEmojiRasterCacheGate pins labelEmoji's routing + cache (the showname / IC-log
+// colour-emoji fix): a plain label never needs the fallback, an emoji label builds
+// a raster and CACHES it (a second call returns the same pointer, not a rebuild), a
+// nil emoji face degrades to nil (the single-font tofu path), and purge frees the
+// textures + empties the map. Uses two embedded-font instances as the two faces.
+func TestEmojiRasterCacheGate(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	textFont, err := loadEmbeddedFont(UIFontSize)
+	if err != nil {
+		t.Skipf("embedded font unavailable: %v", err)
+	}
+	defer textFont.Close()
+	emojiFace, err := loadEmbeddedFont(UIFontSize)
+	if err != nil {
+		t.Skipf("embedded font unavailable: %v", err)
+	}
+	defer emojiFace.Close()
+
+	c := &Ctx{Ren: ren}
+	col := sdl.Color{R: 240, G: 240, B: 240, A: 255}
+
+	// The gate: a plain showname stays on the fast path; one with emoji does not.
+	if render.NeedsEmojiFallback("Phoenix Wright") {
+		t.Fatal("precondition: a plain showname must not need the emoji fallback")
+	}
+	const name = "Phoenix 😀"
+	if !render.NeedsEmojiFallback(name) {
+		t.Fatal("precondition: an emoji showname must need the fallback")
+	}
+
+	// Emoji label builds a raster and caches it (same pointer on the second call).
+	m1 := c.emojiRaster(name, col, textFont, emojiFace)
+	if m1 == nil {
+		t.Fatal("emojiRaster returned nil for emoji text with a face")
+	}
+	if m2 := c.emojiRaster(name, col, textFont, emojiFace); m1 != m2 {
+		t.Error("emojiRaster did not cache: the second call rebuilt the raster")
+	}
+	if n := len(c.emojiCache); n != 1 {
+		t.Errorf("emojiCache size = %d, want 1", n)
+	}
+
+	// No emoji face yet → nil (caller degrades to the single-font tofu), nothing cached.
+	if m := c.emojiRaster(name, col, textFont, nil); m != nil {
+		t.Error("emojiRaster with a nil face must return nil (degrade), not build")
+	}
+
+	// Purge frees the textures and empties the cache.
+	c.purgeEmojiCache()
+	if n := len(c.emojiCache); n != 0 {
+		t.Errorf("after purgeEmojiCache, size = %d, want 0", n)
+	}
+}

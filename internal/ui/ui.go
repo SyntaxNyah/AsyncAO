@@ -13,6 +13,7 @@ import (
 	"github.com/veandco/go-sdl2/ttf"
 	"golang.org/x/image/font/gofont/goregular"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
@@ -350,6 +351,13 @@ type Ctx struct {
 	textCache  map[textKey]cachedText
 	atlas      []*atlasPage     // shared label pages (≤ textAtlasMaxPages)
 	widthCache map[string]int32 // chrome-font TextWidth memo
+	// emojiCache holds multi-font rasters for the rare labels (shownames, IC/OOC
+	// log lines) that mix text with colour emoji the chat font can't draw. Keyed
+	// like textCache (text + colour + primary-font ptr); each entry owns dedicated
+	// textures (not the shared atlas), so it's bounded and Destroy()ed on purge —
+	// wherever the primary fonts are rebuilt (purgeTextCache) and on an emoji-font
+	// swap (SetEmojiFont). Lazily created so test-built Ctx values stay valid.
+	emojiCache map[emojiKey]*render.MessageRaster
 
 	// cgo-call scratch rects (the Viewport trick): taking the address of
 	// a stack rect for Ren.Copy forces a heap escape per draw — at ~1200
@@ -576,6 +584,7 @@ func (c *Ctx) SetEmojiFont(data []byte) {
 	}
 	c.emojiFonts = nil
 	c.emojiData = data
+	c.purgeEmojiCache() // cached rasters used the OLD emoji face — rebuild on next draw
 }
 
 // EmojiFont returns the color-emoji fallback face at pct percent (the chat/log
@@ -1044,6 +1053,7 @@ func (c *Ctx) purgeTextCache() {
 		}
 	}
 	c.atlas = c.atlas[:0]
+	c.purgeEmojiCache() // emoji rasters carry the same now-dead primary-font pointers
 }
 
 // blitLabel copies a cached label (atlas sub-rect aware) through the

@@ -1227,7 +1227,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
 	}
-	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
+	a.labelEmoji(c.font, c.EmojiFont(DefaultScalePct), box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
 
 	wrapW := box.W - 16
 	a.ensureChatRaster(wrapW, skinned)
@@ -1592,7 +1592,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if nameColorsOn && (ri == 0 || rows[ri-1].entry != row.entry) {
 				lineSpeaker = a.icLog[row.entry].speaker
 			}
-			a.drawLogLineNamed(font, list.X, y, wrapW, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal)
+			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X, y, wrapW, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal)
 			if u := a.icLog[row.entry].url; u != "" {
 				if c.hovering(rowRect) {
 					c.Tooltip(rowRect, "Open "+u)
@@ -1699,7 +1699,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
-			a.drawLogLineNamed(font, list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
+			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
 		}
 		y += lineH
 	}
@@ -1809,7 +1809,7 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
-			a.drawLogLineNamed(font, list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
+			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
 		}
 		y += lineH
 	}

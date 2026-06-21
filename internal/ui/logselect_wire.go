@@ -12,6 +12,8 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // drawLogLineNamed draws one wrapped log line, tinting the speaker's name prefix
@@ -19,16 +21,24 @@ import (
 // caller passes "" for non-first rows and system lines, so no draw-time
 // re-parsing of ": "). The rest of the line draws in col. Falls back to a plain
 // draw otherwise. Shared by the IC and OOC log render paths.
-func (a *App) drawLogLineNamed(font *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64) {
+func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64) {
 	c := a.ctx
 	if nameOn && speaker != "" && strings.HasPrefix(line, speaker) {
+		// An emoji line skips the per-speaker name-colour split (rare; also saves
+		// this branch's per-row SizeUTF8 measure) and renders whole via the raster.
+		if emojiFont != nil && render.NeedsEmojiFallback(line) {
+			a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
+			return
+		}
 		if nw, _, err := font.SizeUTF8(speaker); err == nil {
 			c.LabelClippedFont(font, x, y, wrapW, speaker, nameColor(speaker, sat, val))
 			c.LabelClippedFont(font, x+int32(nw), y, wrapW-int32(nw), line[len(speaker):], col)
 			return
 		}
 	}
-	c.LabelClippedFont(font, x, y, wrapW, line, col)
+	// Default path: labelEmoji is the byte-identical LabelClippedFont for plain
+	// text (after one cheap scan), the cached multi-font raster for an emoji line.
+	a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
 }
 
 const (
