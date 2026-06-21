@@ -852,15 +852,25 @@ type sessionState struct {
 	hpPrev      [2]int    // last drawn HP per bar — penalty sfx direction
 	showModcall bool      // modcall reason dialog
 	modReason   string
-	showEvid    bool // evidence panel
-	evidIdx     int  // selected evidence (-1 = none)
-	evidPresent bool // armed: next IC message carries the selection
-	evidEditing bool // editor open (add when evidIdx == -1)
-	evidName    string
-	evidDesc    string
-	evidImage   string
-	evidScroll  int32
-	evidAsk     []time.Time // thumbnail demand pacing, parallel to Evidence
+	// Local alarm/timer (#97, opt-in): a personal countdown distinct from the
+	// server courtroom timers. App-global (one timer across all tabs, like DND).
+	// timerEndAt zero = not counting down; timerPausedLeft > 0 = paused; both at
+	// rest = idle, so pollTimer and the on-stage chip cost nothing when unused.
+	showTimer       bool
+	timerEndAt      time.Time     // when the running countdown fires (zero = not running)
+	timerPausedLeft time.Duration // frozen remainder while paused (0 = not paused)
+	timerSetSec     int           // configured duration, seeded from prefs on first open
+	timerRepeat     bool          // restart from the same duration on fire
+	timerSeeded     bool          // timerSetSec loaded from prefs once
+	showEvid        bool          // evidence panel
+	evidIdx         int           // selected evidence (-1 = none)
+	evidPresent     bool          // armed: next IC message carries the selection
+	evidEditing     bool          // editor open (add when evidIdx == -1)
+	evidName        string
+	evidDesc        string
+	evidImage       string
+	evidScroll      int32
+	evidAsk         []time.Time // thumbnail demand pacing, parallel to Evidence
 	// evShow is the incoming presented-evidence pop-up.
 	evShowImg string
 	evShowAt  time.Time
@@ -3060,6 +3070,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollShownameBind()
 	a.pollICPhraseBind()
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
+	a.pollTimer()         // #97 local alarm: one compare while running, zero cost when idle
 	a.pollDownload()
 	a.pollMakerExport() // M16: deliver the self-contained archive export result
 	a.pollGifExport()   // M16: deliver the off-thread GIF encode result

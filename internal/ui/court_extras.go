@@ -276,6 +276,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			c.Label(r.X+6, r.Y+3, label, ColText)
 			tx += w + 6
 		}
+		a.drawTimerChip(vp) // #97 local alarm countdown — same visibility group as the server clocks
 	}
 
 	// Testimony recording badge under the defense bar (loops while the

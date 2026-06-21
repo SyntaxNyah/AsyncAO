@@ -469,6 +469,8 @@ type AssetPreferences struct {
 	FavEmoteBox            bool                         `json:"favEmoteBox"`          // floating box of starred emotes (default OFF)
 	InstantReplay          bool                         `json:"instantReplay"`        // always-on rolling clip buffer (default OFF)
 	InstantReplaySeconds   int                          `json:"instantReplaySeconds"` // clip capture window; 0 = default
+	TimerSeconds           int                          `json:"timerSeconds"`         // local alarm/timer remembered duration; 0 = default (#97)
+	TimerRepeat            bool                         `json:"timerRepeat"`          // local alarm/timer auto-restart (default OFF) (#97)
 	AutoConnectOnLaunch    bool                         `json:"autoConnectOnLaunch"`
 	LastServerName         string                       `json:"lastServerName"`
 	LastServerURL          string                       `json:"lastServerURL"`
@@ -668,6 +670,8 @@ type prefsJSON struct {
 	FavEmoteBox            bool           `json:"favEmoteBox"`          // default OFF
 	InstantReplay          bool           `json:"instantReplay"`        // default OFF
 	InstantReplaySeconds   int            `json:"instantReplaySeconds"` // 0 = default window
+	TimerSeconds           int            `json:"timerSeconds"`         // 0 = default (#97)
+	TimerRepeat            bool           `json:"timerRepeat"`          // default OFF (#97)
 	AutoConnectOnLaunch    bool           `json:"autoConnectOnLaunch"`  // default OFF
 	LastServerName         string         `json:"lastServerName"`
 	LastServerURL          string         `json:"lastServerURL"`
@@ -1124,6 +1128,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.FavEmoteBox = onDisk.FavEmoteBox
 	p.InstantReplay = onDisk.InstantReplay
 	p.InstantReplaySeconds = onDisk.InstantReplaySeconds
+	p.TimerSeconds = onDisk.TimerSeconds
+	p.TimerRepeat = onDisk.TimerRepeat
 	p.AutoConnectOnLaunch = onDisk.AutoConnectOnLaunch
 	p.LastServerName = onDisk.LastServerName
 	p.LastServerURL = onDisk.LastServerURL
@@ -2481,6 +2487,69 @@ const (
 	InstantReplayMaxSeconds     = 3600
 	InstantReplayDefaultSeconds = 60
 )
+
+// Local alarm/timer (#97) duration bounds: 1 second … 99 minutes, default 5 min.
+// Only the remembered duration persists; running state is session-only.
+const (
+	TimerMinSeconds     = 1
+	TimerMaxSeconds     = 99 * 60
+	TimerDefaultSeconds = 5 * 60
+)
+
+func clampTimerSeconds(s int) int {
+	switch {
+	case s <= 0:
+		return TimerDefaultSeconds
+	case s < TimerMinSeconds:
+		return TimerMinSeconds
+	case s > TimerMaxSeconds:
+		return TimerMaxSeconds
+	default:
+		return s
+	}
+}
+
+// TimerSecondsValue returns the clamped remembered countdown duration (#97); the
+// running state itself lives in the UI (session-only). 0/unset reads as default.
+func (p *AssetPreferences) TimerSecondsValue() int {
+	p.mu.RLock()
+	s := p.TimerSeconds
+	p.mu.RUnlock()
+	return clampTimerSeconds(s)
+}
+
+// SetTimerSeconds stores the countdown duration, clamped to [min,max].
+func (p *AssetPreferences) SetTimerSeconds(s int) {
+	s = clampTimerSeconds(s)
+	p.mu.Lock()
+	if p.TimerSeconds == s {
+		p.mu.Unlock()
+		return
+	}
+	p.TimerSeconds = s
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// TimerRepeatOn reports whether the local timer restarts itself on each fire
+// (#97, default OFF).
+func (p *AssetPreferences) TimerRepeatOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.TimerRepeat
+}
+
+// SetTimerRepeat stores the timer's repeat toggle.
+func (p *AssetPreferences) SetTimerRepeat(on bool) {
+	p.mu.Lock()
+	if p.TimerRepeat == on {
+		p.mu.Unlock()
+		return
+	}
+	p.TimerRepeat = on
+	p.mu.Unlock()
+	p.markDirty()
+}
 
 func clampInstantReplaySeconds(s int) int {
 	switch {

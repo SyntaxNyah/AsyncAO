@@ -70,6 +70,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
 			{"★ Fav Emotes", "Floating box of just your starred emotes (Ctrl+A)", hotkeyFavEmotes, func() { a.d.Prefs.SetFavEmoteBox(true) }},
 			{"Hotkeys", "Show every keyboard shortcut, including your custom ones (F1)", "", func() { a.openHotkeyCheatSheet() }},
+			{"Timer", "A personal countdown timer + alarm (for RP / casing pace)", "", func() { a.openTimer() }},
 			{"Hide chrome", "Hide/show AsyncAO's on-screen widgets", hotkeyUIChrome, func() { a.showUICfg = true }},
 			{"Theater", "Theater mode — stage only, Esc exits", hotkeyTheater, func() { a.setTheater(!a.theaterOn) }},
 			{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
@@ -145,7 +146,7 @@ func hexNibble(b byte) (uint8, bool) {
 // its torn-off widgets) yields to those and reappears when they close.
 func (a *App) courtModalOpen() bool {
 	return a.showIni || a.bgPick.show || a.showEvid || a.showModcall ||
-		a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair
+		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair
 }
 
 // extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any

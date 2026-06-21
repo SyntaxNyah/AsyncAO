@@ -353,6 +353,48 @@ func TestInstantReplayPref(t *testing.T) {
 	}
 }
 
+// TestTimerPref pins the local alarm/timer settings (#97): repeat OFF by default,
+// the remembered duration defaults to 5 min and clamps to [1s, 99 min], and both
+// survive save→reload.
+func TestTimerPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.TimerRepeatOn() {
+		t.Error("TimerRepeat must default OFF")
+	}
+	if got := p.TimerSecondsValue(); got != TimerDefaultSeconds {
+		t.Errorf("unset duration = %d, want default %d", got, TimerDefaultSeconds)
+	}
+	p.SetTimerSeconds(0) // 0/unset → default, not the floor
+	if got := p.TimerSecondsValue(); got != TimerDefaultSeconds {
+		t.Errorf("zero duration = %d, want default %d", got, TimerDefaultSeconds)
+	}
+	p.SetTimerSeconds(1000000) // past the 99-minute ceiling
+	if got := p.TimerSecondsValue(); got != TimerMaxSeconds {
+		t.Errorf("clamped-high duration = %d, want %d", got, TimerMaxSeconds)
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetTimerSeconds(90)
+	q.SetTimerRepeat(true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := r.TimerSecondsValue(); got != 90 {
+		t.Errorf("reloaded duration = %d, want 90", got)
+	}
+	if !r.TimerRepeatOn() {
+		t.Error("TimerRepeat=true lost on reload")
+	}
+}
+
 // TestPlayerListSortPref pins that the Players-tab sort choices (player sort +
 // /gas area-group order) default to 0 and survive save→reload.
 func TestPlayerListSortPref(t *testing.T) {

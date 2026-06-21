@@ -931,6 +931,8 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawEvidencePanel(w, h)
 	case a.showModcall:
 		a.drawModcallDialog(w, h)
+	case a.showTimer:
+		a.drawTimerPanel(w, h)
 	case a.showUICfg:
 		a.drawUICfgPanel(w, h)
 	case a.showLogin:

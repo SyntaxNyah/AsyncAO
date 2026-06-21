@@ -316,6 +316,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   switch** so a clip can never mix two servers' assets. Ignored players are left
   out of the clip (the same drop that hides them live). Off, it's a single
   pointer check per event.
+- **Local timer / alarm** (#97, **Extras → Timer**, **opt-in**): a **personal
+  countdown** for keeping RP and casing moving — set a duration with the
+  **Minutes / Seconds sliders** or a **1m / 3m / 5m / 10m preset**, then
+  **Start / Pause / Reset**, with an optional **Repeat**. When it reaches zero it
+  **pings** (the built-in alert sound), **flashes the window** and shows a
+  **"Timer finished!"** banner. While it runs, a small **"Timer mm:ss" chip** sits
+  over the stage (top-right, **blinking red in the final ten seconds**) so the
+  urgency is always visible — independent of the server's own courtroom clocks,
+  which are untouched. It's entirely **off until you start one**: the per-frame
+  check returns immediately while idle, and the chip only draws while a countdown
+  is live, so it costs nothing when unused. Your last **duration** and the
+  **Repeat** toggle are remembered between sessions; the running state is not.
 - **Scene maker** (M16, the same **Studio** tab): a full **in-app scene editor**
   over the very same `.aorec` model — **build a scene from scratch or edit a
   recording**. **🎬 New scene** (works **offline**, no server needed) or **✎ Edit**
