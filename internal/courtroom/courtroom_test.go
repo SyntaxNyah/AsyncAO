@@ -1269,6 +1269,19 @@ func TestStripMatchesTypewriter(t *testing.T) {
 	}
 }
 
+// TestExtColorCodesStripped directly pins that every extended-colour code (#98)
+// is CONSUMED from the visible text — the literal "\c<letter>" never shows in the
+// chatbox or IC log on a current build. (A playtester seeing a literal "\cg" is
+// on a stale pre-#98 exe, which doesn't know the code and emits it verbatim.)
+func TestExtColorCodesStripped(t *testing.T) {
+	for _, code := range ExtColorCodes {
+		in := "Objection\\c" + string(code) + "!"
+		if got := StripChatMarkup(in); got != "Objection!" {
+			t.Errorf("StripChatMarkup(%q) = %q, want %q — ext code \\c%c not stripped", in, got, "Objection!", code)
+		}
+	}
+}
+
 func TestTypewriterSkipToEnd(t *testing.T) {
 	tw := NewTypewriter()
 	tw.Start("a long message that should skip")

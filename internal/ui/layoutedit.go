@@ -113,8 +113,7 @@ func (a *App) stopLayoutEdit() {
 // widgets draw (they see hovering()==false everywhere and stay inert).
 func (a *App) layoutEditFence() {
 	if a.layoutEdit {
-		a.ctx.modalOn = true
-		a.ctx.modalRect = sdl.Rect{} // empty: nothing hovers
+		a.ctx.modalOn = true // hovering() blanks everywhere; the editor uses raw pointIn
 	}
 }
 

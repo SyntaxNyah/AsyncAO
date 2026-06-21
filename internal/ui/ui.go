@@ -322,7 +322,6 @@ type Ctx struct {
 	ddOpen       string
 	ddScroll     int32
 	modalOn      bool
-	modalRect    sdl.Rect
 	modalRelease bool
 	ddDraws      []ddDraw // deferred overlay draws this frame (0 or 1)
 
@@ -837,10 +836,12 @@ func (c *Ctx) toLogical(v int32) int32 {
 
 // hovering reports whether the mouse is inside r.
 func (c *Ctx) hovering(r sdl.Rect) bool {
-	// An open dropdown owns the pointer: everything outside its modal
-	// rect reads as not-hovered, so clicks/hovers can't leak underneath.
-	if c.modalOn && !(c.mouseX >= c.modalRect.X && c.mouseX < c.modalRect.X+c.modalRect.W &&
-		c.mouseY >= c.modalRect.Y && c.mouseY < c.modalRect.Y+c.modalRect.H) {
+	// An open dropdown (or the layout editor) owns the pointer entirely: while a
+	// modal is up, EVERY other widget reads as not-hovered — including one drawn
+	// directly UNDER the open list — so a click on the list can't also fall
+	// through to it (the "click Random, the Character behind it gets clicked too"
+	// bug). The modal owner uses the raw pointIn() hit test for its own interaction.
+	if c.modalOn {
 		return false
 	}
 	return c.mouseX >= r.X && c.mouseX < r.X+r.W && c.mouseY >= r.Y && c.mouseY < r.Y+r.H
@@ -1576,25 +1577,19 @@ func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, b
 		}
 	}
 
-	// Modal capture: the control∪list union owns the pointer until the
-	// close releases (next BeginFrame), fencing widgets in both draw
-	// orders.
-	left, right, top := r.X, r.X+r.W, r.Y
-	if list.X < left {
-		left = list.X
-	}
-	if e := list.X + list.W; e > right {
-		right = e
-	}
-	if list.Y < top {
-		top = list.Y
-	}
+	// Modal capture: while open, the dropdown owns the pointer until the close
+	// releases it (next BeginFrame). hovering() blanks for EVERY other widget —
+	// even one drawn directly under the list — so a click on a list row can't also
+	// fall through to it. The dropdown uses the raw pointIn() hit test below for
+	// its own interaction (the fence would otherwise blank it too).
 	c.modalOn = true
-	c.modalRect = sdl.Rect{X: left, Y: top, W: right - left, H: r.H + list.H}
 
-	// Wheel scrolls long lists; clamp to content.
+	// Wheel scrolls long lists (raw hit test, since hovering() is fenced while open).
 	contentH := int32(len(options)) * rowH
-	c.ddScroll -= c.WheelIn(list) * rowH
+	if c.wheelY != 0 && pointIn(c.mouseX, c.mouseY, list) {
+		c.wheelTaken = true
+		c.ddScroll -= c.wheelY * rowH
+	}
 	if max := contentH - list.H; c.ddScroll > max {
 		c.ddScroll = max
 	}
@@ -1606,14 +1601,14 @@ func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, b
 	next, changed := cur, false
 	if c.clicked {
 		switch {
-		case c.hovering(list):
+		case pointIn(c.mouseX, c.mouseY, list): // raw: the dropdown owns the pointer, bypass the fence
 			idx := int((c.mouseY - list.Y + c.ddScroll) / rowH)
 			if idx >= 0 && idx < len(options) {
 				next, changed = idx, idx != cur
 			}
 			c.ddOpen = ""
 			c.modalRelease = true
-		case c.hovering(r):
+		case pointIn(c.mouseX, c.mouseY, r):
 			// Toggling the control shut.
 			c.ddOpen = ""
 			c.modalRelease = true
