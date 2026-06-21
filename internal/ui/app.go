@@ -993,6 +993,7 @@ type sessionState struct {
 	playerRowsLen      int
 	playerRowsSpk      string
 	playerRowsAt       time.Time
+	playerRowsAreaAt   time.Time // areaListAt the rows were built at (a /gas reorders the default)
 	// player-row char icons: same demand/cache pipeline as the char grid, but
 	// keyed by the areaPlayers index (sort-stable). NULLED on every /ga replace
 	// so a same-length new roster re-resolves (cachedPage reorder invariant).

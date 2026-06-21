@@ -281,6 +281,19 @@ func (a *App) rosterView() []areaPlayer {
 	return a.liveRoster
 }
 
+// myAreaName is our current area NAME from the PR/PU roster — reliable on spawn
+// AND on every move (unlike curArea, which only tracks areas we CLICK to and is ""
+// on a fresh join). Falls back to curArea for servers that don't report our own
+// area. Used to float our area to the top of the grouped player list.
+func (a *App) myAreaName() string {
+	if a.sess != nil {
+		if id, ok := a.sess.PlayerArea(a.sess.PlayerID); ok && id >= 0 && id < len(a.sess.Areas) {
+			return a.sess.Areas[id]
+		}
+	}
+	return a.curArea
+}
+
 // rosterStamp is the active roster's last-change time — the memo-invalidation
 // key for the grouped rows and sort order.
 func (a *App) rosterStamp() time.Time {

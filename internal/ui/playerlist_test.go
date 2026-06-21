@@ -129,6 +129,42 @@ func TestPlayerRosterRowsAreaSort(t *testing.T) {
 	}
 }
 
+// TestPlayerRosterRowsLiveUsesGasOrder pins the bug fix: on the LIVE (PR/PU)
+// roster — which is UID-ordered — the grouped area headers must NOT follow the
+// lowest-UID player's area. They follow OUR area first, then the server's /gas
+// order (from the areaPlayers snapshot). Reproduces the report: UID 0 (Marty) in
+// "Pizza Room 1" must not sit above the "Lobby" we're standing in.
+func TestPlayerRosterRowsLiveUsesGasOrder(t *testing.T) {
+	a := &App{}
+	a.livePlayersOn = true // rosterView() == liveRoster (UID order)
+	a.liveRoster = []areaPlayer{
+		{uid: "0", name: "marty", area: "Pizza Room 1"}, // lowest UID, different area
+		{uid: "1", name: "miles", area: "Lobby"},
+		{uid: "2", name: "pam", area: "Movie Studio 1"},
+	}
+	a.liveRosterAt = time.Now()
+	// The /gas snapshot (areaPlayers) lists areas in the server's own order.
+	a.areaPlayers = []areaPlayer{
+		{uid: "1", area: "Lobby"},
+		{uid: "2", area: "Movie Studio 1"},
+		{uid: "0", area: "Pizza Room 1"},
+	}
+	a.areaListAt = time.Now()
+	a.curArea = "Lobby" // sess is nil here, so myAreaName falls back to curArea
+	a.playerSort = playerSortUID
+	a.playerAreaSort = areaSortGas
+
+	var headers []string
+	for _, rw := range a.playerRosterRows("") {
+		if rw.header {
+			headers = append(headers, rw.area)
+		}
+	}
+	if !equalStrings(headers, []string{"Lobby", "Movie Studio 1", "Pizza Room 1"}) {
+		t.Errorf("default order = %v, want [Lobby, Movie Studio 1, Pizza Room 1] (our area + /gas order, NOT the UID-first-seen Pizza Room 1)", headers)
+	}
+}
+
 // TestPlayerRosterRowsFlat pins that a single-area roster (/ga) yields no
 // headers — just the flat sorted player rows.
 func TestPlayerRosterRowsFlat(t *testing.T) {

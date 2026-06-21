@@ -40,7 +40,7 @@ const (
 // HEADERS (a second axis from playerSort, which orders players). Default keeps
 // the server's /gas order so room 1 stays on top.
 const (
-	areaSortGas   = iota // the order /gas listed the areas in (first-seen) — default
+	areaSortGas   = iota // our current area first, then the server's /gas order — default
 	areaSortName         // area name, A→Z
 	areaSortPop          // most players first
 	areaSortModes        // count, for the cycle
@@ -57,9 +57,10 @@ func areaSortLabel(mode int) string {
 	}
 }
 
-// sortAreaOrder orders the area-group names in place by mode: /gas (first-seen,
-// left untouched), area name A→Z, or most-populated first. Stable, so a tie keeps
-// the /gas order. Pure (groups supplies each area's size) — tested directly.
+// sortAreaOrder orders the area-group names in place for the A→Z and most-populated
+// modes (the default /gas mode is handled by applyGasAreaOrder, which needs our
+// current area + the snapshot order). Stable, so a tie keeps the incoming order.
+// Pure (groups supplies each area's size) — tested directly.
 func sortAreaOrder(order []string, groups map[string][]int, mode int) {
 	switch mode {
 	case areaSortName:
@@ -71,6 +72,38 @@ func sortAreaOrder(order []string, groups map[string][]int, mode int) {
 			return len(groups[order[i]]) > len(groups[order[j]])
 		})
 	}
+}
+
+// applyGasAreaOrder reorders the area-group headers for the DEFAULT mode: OUR
+// current area first, then the server's /gas order (the order areaPlayers — the
+// /getareas snapshot — listed the areas), then any live-only areas keep their
+// first-seen order. This fixes the live roster grouping by the lowest-UID player's
+// area (UID 0 in "Pizza Room 1" floating above the Lobby you're standing in)
+// instead of the server's order. Stable; reuses the already-built order/groups; one
+// area-count-sized rank map. Runs ONLY on a grouped-rows REBUILD (memoized), so it
+// adds nothing to the per-frame draw.
+func (a *App) applyGasAreaOrder(order []string, groups map[string][]int) {
+	mine := a.myAreaName()
+	gasRank := make(map[string]int, len(order)) // area → its index in the /gas snapshot
+	for i := range a.areaPlayers {
+		ar := a.areaPlayers[i].area
+		if _, ok := gasRank[ar]; !ok {
+			gasRank[ar] = len(gasRank)
+		}
+	}
+	after := len(gasRank) + 1 // live-only areas (no snapshot row) sort after the /gas ones
+	rank := func(ar string) int {
+		switch {
+		case ar != "" && ar == mine:
+			return -1 // our current area floats to the very top
+		default:
+			if r, ok := gasRank[ar]; ok {
+				return r
+			}
+			return after
+		}
+	}
+	sort.SliceStable(order, func(i, j int) bool { return rank(order[i]) < rank(order[j]) })
 }
 
 // Role chip colors (Spectator / case master), drawn as small filled pills.
@@ -624,7 +657,8 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 	}
 	if a.playerRows != nil && a.playerRowsLen == len(a.rosterView()) &&
 		a.playerRowsSort == a.playerSort && a.playerRowsAreaSort == a.playerAreaSort &&
-		a.playerRowsSpk == spk && a.playerRowsAt.Equal(a.rosterStamp()) {
+		a.playerRowsSpk == spk && a.playerRowsAt.Equal(a.rosterStamp()) &&
+		a.playerRowsAreaAt.Equal(a.areaListAt) { // a /gas refresh changes the default area order
 		return a.playerRows
 	}
 	rows := a.playerRows[:0]
@@ -642,7 +676,11 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 			}
 			groups[ar] = append(groups[ar], i)
 		}
-		sortAreaOrder(order, groups, a.playerAreaSort) // /gas (default), A→Z, or most-populated
+		if a.playerAreaSort == areaSortGas {
+			a.applyGasAreaOrder(order, groups) // default: current area first, then the server's /gas order
+		} else {
+			sortAreaOrder(order, groups, a.playerAreaSort) // A→Z or most-populated
+		}
 		for _, ar := range order {
 			idxs := groups[ar]
 			a.sortRosterIdxs(idxs, spk)
@@ -653,8 +691,8 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 		}
 	}
 	a.playerRows = rows
-	a.playerRowsLen, a.playerRowsSort, a.playerRowsAreaSort, a.playerRowsSpk, a.playerRowsAt =
-		len(a.rosterView()), a.playerSort, a.playerAreaSort, spk, a.rosterStamp()
+	a.playerRowsLen, a.playerRowsSort, a.playerRowsAreaSort, a.playerRowsSpk, a.playerRowsAt, a.playerRowsAreaAt =
+		len(a.rosterView()), a.playerSort, a.playerAreaSort, spk, a.rosterStamp(), a.areaListAt
 	return rows
 }
 
