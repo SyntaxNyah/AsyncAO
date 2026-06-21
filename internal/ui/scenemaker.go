@@ -175,6 +175,7 @@ func (a *App) openSceneMaker(rec *sceneRecording, name string) {
 	a.makerExportOpen = false
 	a.makerTrimStart = -1 // no crop until the user sets In/Out
 	a.makerTrimEnd = -1
+	a.makerDragSeg = -1    // no reorder drag in progress
 	a.makerPreviewIdx = -1 // force the preview pane to rebuild for the new scene
 	a.makerOpen = true
 	a.ensureBgList() // warm the background list once so the BG picker has suggestions
@@ -222,6 +223,8 @@ func (a *App) closeSceneMaker() {
 	a.makerExportOpen = false
 	a.makerTrimStart = -1
 	a.makerTrimEnd = -1
+	a.makerDragSeg = -1
+	a.makerDragMoved = false
 	a.teardownMakerPreview()
 }
 
@@ -574,19 +577,60 @@ func (a *App) makerDeleteSel() {
 	}
 }
 
-// makerMoveSel swaps the selection with its neighbour (reorder).
+// makerMoveSel moves the selection one slot in dir (the ▲/▼ buttons), delegating
+// to the shared reorder path so the crop endpoints follow the move too. An
+// out-of-range neighbour is a no-op (makerMoveEvent bounds-checks dst).
 func (a *App) makerMoveSel(dir int) {
 	if a.makerScene == nil {
 		return
 	}
-	evs := a.makerScene.Events
-	i := a.makerSel
-	j := i + dir
-	if i < 0 || i >= len(evs) || j < 0 || j >= len(evs) {
+	a.makerMoveEvent(a.makerSel, a.makerSel+dir)
+}
+
+// reindexAfterMove maps an index p to where it lands after the event at src is
+// moved to dst (every other event keeping its relative order). Pure helper so the
+// reorder can carry the selection AND the crop In/Out with their events, not their
+// old slots. Tested directly.
+func reindexAfterMove(p, src, dst int) int {
+	switch {
+	case p == src:
+		return dst
+	case src < dst && p > src && p <= dst:
+		return p - 1
+	case src > dst && p >= dst && p < src:
+		return p + 1
+	default:
+		return p
+	}
+}
+
+// makerMoveEvent moves the event at src to index dst within the scene, preserving
+// every other event's order, and reindexes the selection + crop In/Out so they
+// keep pointing at the SAME events. The single reorder path: the ▲/▼ buttons and
+// the timeline drag both go through it.
+func (a *App) makerMoveEvent(src, dst int) {
+	if a.makerScene == nil {
 		return
 	}
-	evs[i], evs[j] = evs[j], evs[i]
-	a.makerSel = j
+	evs := a.makerScene.Events
+	n := len(evs)
+	if src < 0 || src >= n || dst < 0 || dst >= n || src == dst {
+		return
+	}
+	ev := evs[src]
+	if src < dst {
+		copy(evs[src:dst], evs[src+1:dst+1]) // shift (src,dst] left one
+	} else {
+		copy(evs[dst+1:src+1], evs[dst:src]) // shift [dst,src) right one
+	}
+	evs[dst] = ev
+	a.makerSel = reindexAfterMove(a.makerSel, src, dst)
+	if a.makerTrimStart >= 0 {
+		a.makerTrimStart = reindexAfterMove(a.makerTrimStart, src, dst)
+	}
+	if a.makerTrimEnd >= 0 {
+		a.makerTrimEnd = reindexAfterMove(a.makerTrimEnd, src, dst)
+	}
 }
 
 // makerPreview plays the scene through the replay engine on a copy, so playback

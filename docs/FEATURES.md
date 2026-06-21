@@ -331,10 +331,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   scene change · music), the **selected event** is outlined (the playhead), and
   the excluded part dims under the crop. **Click a block to select it**; **drag
   the ⟦ ⟧ handles to set In/Out directly** (snapping to event boundaries — no
-  more select-row-then-click-Set-In). Honest axis: an idle AFK gap is **clamped**
-  so it can't swallow the strip, every block keeps a **clickable minimum width**
-  (the strip scrolls when they overflow), and a hand-built scene with no recorded
-  pacing falls back to **even widths**. Drawn only while the maker is open.
+  more select-row-then-click-Set-In). **Drag a block sideways to reorder it** —
+  an insertion caret shows where it'll land, the strip **auto-scrolls** at the
+  edges so you can drop past the visible window, and the **selection and the crop
+  In/Out follow their events** through the move (not their old slots), so a crop
+  set around the funny moment survives a reorder. A small move threshold keeps a
+  plain click a select, not an accidental drag. Honest axis: an idle AFK gap is
+  **clamped** so it can't swallow the strip, every block keeps a **clickable
+  minimum width** (the strip scrolls when they overflow), and a hand-built scene
+  with no recorded pacing falls back to **even widths**. Drawn only while the
+  maker is open.
 - **Self-contained archive** (CDN-proof, M16): a plain `.aorec` is a tiny script
   whose **visuals stream from the recorded Origin**, so a scene built against a
   CDN goes blank if that CDN dies. **📦 Export archive** (in the maker) fixes

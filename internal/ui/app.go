@@ -400,12 +400,18 @@ type App struct {
 	// in px, dur in ms) so the maker draw stays alloc-free; horizontal scroll;
 	// makerDragHandle is which crop handle is being dragged (0 none, 1 In, 2 Out);
 	// makerPrevDown carries the mouse-press edge for grabbing a handle.
+	// makerDragSeg is the segment being drag-reordered (-1 = none; 0 is a valid
+	// index, so it MUST be initialised to -1); makerDragMoved marks the armed press
+	// as a real drag once it crosses the threshold; makerDragX is the press-origin x.
 	makerSegX       []int32
 	makerSegW       []int32
 	makerTLDur      []float64
 	makerTLScroll   int32
 	makerDragHandle int
 	makerPrevDown   bool
+	makerDragSeg    int
+	makerDragMoved  bool
+	makerDragX      int32
 	// makerPreviewRoom is a throwaway courtroom that renders the selected line
 	// into the maker's live preview pane (the "studio" WYSIWYG). makerPreviewIdx
 	// is the line it currently reflects, so the pane is rebuilt only when the

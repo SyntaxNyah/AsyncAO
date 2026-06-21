@@ -28,10 +28,22 @@ const (
 	makerHandleW   = int32(9)  // crop-handle grab width
 	makerTLWheelPx = int32(48) // horizontal scroll per wheel notch
 
+	makerDragThreshPx = int32(6)  // px the press must travel before a click becomes a reorder drag
+	makerTLEdgePx     = int32(28) // a drag within this of a strip edge auto-scrolls toward it
+	makerSegDragID    = "maker_tl_seg"
+
 	makerTLMinMs  = 150.0  // floor so a near-instant bg/music change still shows
 	makerTLMaxMs  = 6000.0 // ceiling so dead air can't dominate the axis
 	makerTLTailMs = 2000.0 // the last event has no successor — assume this on-screen
 )
+
+// abs32 is |v| for the drag-threshold check (no generics dependency / import).
+func abs32(v int32) int32 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
 
 // makerTLDurations fills durs (reused) with each event's display duration in ms:
 // the recorded OffsetMs gap to the next event, clamped [min,max]. When the
@@ -111,12 +123,29 @@ func (a *App) makerTLSegAt(mx, stripX int32) int {
 	return -1
 }
 
+// makerTLGapAt returns the insertion gap (0..n) nearest screen-x mx — the slot a
+// dragged segment would drop into. Gap g means "between segment g-1 and g"; 0 is
+// before the first, n after the last. Segments are laid left→right in order, so
+// the scan can stop at the first midpoint past the cursor.
+func (a *App) makerTLGapAt(mx, stripX int32) int {
+	rel := mx - stripX + a.makerTLScroll
+	g := 0
+	for i := range a.makerSegX {
+		if rel >= a.makerSegX[i]+a.makerSegW[i]/2 {
+			g = i + 1
+		} else {
+			break
+		}
+	}
+	return g
+}
+
 // drawMakerTimeline paints the strip and handles its clicks. press is this
 // frame's mouse-press edge (so a handle is grabbed on press, not on a drag-in).
 func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 	c := a.ctx
 	evs := a.makerScene.Events
-	c.Label(x, y, "Timeline — width ∝ recorded pacing · click a block to select · drag ⟦ ⟧ to crop In/Out", ColTextDim)
+	c.Label(x, y, "Timeline — width ∝ recorded pacing · click a block to select · drag a block to reorder · drag ⟦ ⟧ to crop In/Out", ColTextDim)
 	ty := y + 18
 	track := sdl.Rect{X: x, Y: ty, W: w, H: makerTrackH}
 	c.Fill(track, ColPanel)
@@ -161,7 +190,10 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 		if i == a.makerSel { // playhead = the selected event
 			c.Border(seg, ColText)
 		}
-		if c.hovering(seg) {
+		if a.makerDragMoved && i == a.makerDragSeg { // the block being moved dims in place; the caret shows its target slot
+			c.Fill(seg, sdl.Color{R: 0, G: 0, B: 0, A: 110})
+		}
+		if c.hovering(seg) && !a.makerDragMoved { // suppress tooltips mid-drag
 			tag, text := eventSummary(evs[i])
 			if len(text) > 60 {
 				text = text[:60] + "…"
@@ -178,7 +210,8 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 	c.Fill(inH, ColAccent)
 	c.Fill(outH, ColAccent)
 
-	// Interaction: grab a handle on the press edge, else select the clicked block.
+	// Interaction: grab a crop handle on the press edge, else select the clicked
+	// block AND arm it for a possible reorder drag.
 	if press {
 		switch {
 		case pointIn(c.mouseX, c.mouseY, inH):
@@ -187,7 +220,10 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 			a.makerDragHandle = 2
 		case pointIn(c.mouseX, c.mouseY, track):
 			if seg := a.makerTLSegAt(c.mouseX, x); seg >= 0 {
-				a.makerSel = seg
+				a.makerSel = seg     // select immediately (feedback)
+				a.makerDragSeg = seg // arm a potential reorder drag
+				a.makerDragX = c.mouseX
+				a.makerDragMoved = false
 			}
 		}
 	}
@@ -214,6 +250,62 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 				a.makerTrimStart = -1
 			}
 		}
+	}
+
+	// Reorder drag: once the armed press travels past a small threshold it's a
+	// drag, not a click. A caret marks the drop gap; an edge nudge auto-scrolls so
+	// you can drop past the visible window; release commits the move.
+	if a.makerDragSeg >= 0 && c.mouseDown {
+		if !a.makerDragMoved && abs32(c.mouseX-a.makerDragX) > makerDragThreshPx {
+			a.makerDragMoved = true
+		}
+		if a.makerDragMoved {
+			c.dragID = makerSegDragID // claim the drag so editor sliders/scrollbars can't grab as it drifts up
+			switch {                  // edge auto-scroll
+			case c.mouseX < x+makerTLEdgePx:
+				a.makerTLScroll -= makerTLWheelPx
+			case c.mouseX > x+w-makerTLEdgePx:
+				a.makerTLScroll += makerTLWheelPx
+			}
+			if a.makerTLScroll < 0 {
+				a.makerTLScroll = 0
+			}
+			if a.makerTLScroll > scrollMax {
+				a.makerTLScroll = scrollMax
+			}
+			g := a.makerTLGapAt(c.mouseX, x)
+			var caretRel int32
+			switch {
+			case g <= 0:
+				caretRel = a.makerSegX[0]
+			case g >= len(a.makerSegX):
+				last := len(a.makerSegX) - 1
+				caretRel = a.makerSegX[last] + a.makerSegW[last] - makerSegGap
+			default:
+				caretRel = a.makerSegX[g]
+			}
+			caretX := x + caretRel - a.makerTLScroll
+			c.Fill(sdl.Rect{X: caretX - 1, Y: ty - 3, W: 2, H: makerTrackH + 6}, ColAccent)
+		}
+	}
+	if a.makerDragSeg >= 0 && !c.mouseDown { // release
+		if a.makerDragMoved {
+			g := a.makerTLGapAt(c.mouseX, x)
+			dst := g
+			if dst > a.makerDragSeg { // removing the source shifts a later target left one
+				dst--
+			}
+			if dst < 0 {
+				dst = 0
+			}
+			if dst >= len(evs) {
+				dst = len(evs) - 1
+			}
+			a.makerMoveEvent(a.makerDragSeg, dst)
+			c.clicked = false // a finished drag is not a click (don't leak it underneath)
+		}
+		a.makerDragSeg = -1
+		a.makerDragMoved = false
 	}
 }
 
