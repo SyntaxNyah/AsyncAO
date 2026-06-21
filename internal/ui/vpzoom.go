@@ -60,8 +60,8 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 // cursor sits in the chat box band (that area's Ctrl+wheel resizes text).
 func (a *App) handleViewportZoom(vp sdl.Rect, inChatBox bool) {
 	c := a.ctx
-	if vp.W <= 0 || vp.H <= 0 || a.dragVpDivider {
-		return
+	if vp.W <= 0 || vp.H <= 0 || a.dragVpDivider || a.courtModalOpen() {
+		return // a blocking popup (Pair menu, evidence…) fences the stage
 	}
 
 	// Zoom: Ctrl+wheel over the stage (outside the chat text band).

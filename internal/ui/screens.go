@@ -952,7 +952,7 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 // the View knob's own clamp so the two never disagree.
 func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 	c := a.ctx
-	if !a.d.Prefs.DragLayoutOn() || a.vpZoom > 1 { // off, or zoomed (hit rects shift)
+	if !a.d.Prefs.DragLayoutOn() || a.vpZoom > 1 || a.courtModalOpen() { // off, zoomed, or a blocking popup (Pair menu, evidence…) is up over the edge
 		a.dragVpDivider = false
 		a.dividerPrevDwn = c.mouseDown
 		return
@@ -1013,8 +1013,8 @@ func (a *App) spriteHitRect(vp sdl.Rect, layer *courtroom.SpriteLayer) (sdl.Rect
 // wins afterwards. Right-click a sprite to reset it. All math runs on
 // press/drag edges only; idle frames cost one bool check.
 func (a *App) handleSpriteDrag(vp sdl.Rect) {
-	if a.dragVpDivider {
-		return // the viewport-resize divider owns this press
+	if a.dragVpDivider || a.courtModalOpen() {
+		return // the resize divider owns this press, or a blocking popup fences the stage
 	}
 	if !a.d.Prefs.SpriteMoveEnabled() {
 		return // opt-in (Settings → General); off by default so stray clicks can't nudge sprites
@@ -1114,8 +1114,8 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 // Only at 1× zoom (zoomed hit rects lie) and not over the chatbox area.
 func (a *App) handleSpriteHide(vp sdl.Rect) {
 	c := a.ctx
-	if !c.rightClicked || a.room == nil || !a.d.Prefs.RightClickHideSpriteOn() {
-		return
+	if !c.rightClicked || a.room == nil || !a.d.Prefs.RightClickHideSpriteOn() || a.courtModalOpen() {
+		return // a blocking popup fences the stage
 	}
 	boxH := vp.H / 4 * int32(a.boxPct) / DefaultScalePct
 	if !c.hovering(vp) || c.mouseY >= vp.Y+vp.H-boxH {
