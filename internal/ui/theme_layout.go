@@ -744,6 +744,16 @@ func (a *App) drawThemedExtrasButton(w, h int32) {
 	}
 	c.Border(hk, ColPanelHi)
 	c.Tooltip(hk, "Show all your hotkeys & custom binds (also F1)")
+
+	// Sibling "Restyle" button (#103/#104): one click to the floating Sprite Style
+	// box, so themed users can recolour/glow their character without opening Extras.
+	stLabel := "Restyle"
+	st := sdl.Rect{X: hk.X + hk.W + 4, Y: r.Y, W: c.TextWidth(stLabel) + 14, H: bh}
+	if c.Button(st, stLabel) {
+		a.openSpriteStyle()
+	}
+	c.Border(st, ColAccent)
+	c.Tooltip(st, "Recolour / glow your character on the fly — other AsyncAO players see it")
 }
 
 // drawWidgetsPanel moved to floatbox.go as the non-blocking drawFloatingExtras.

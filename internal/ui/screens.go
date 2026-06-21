@@ -3077,6 +3077,14 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.openHotkeyCheatSheet()
 	}
 	c.Tooltip(keysR, "Show all your hotkeys & custom binds (also F1)")
+	x += 96
+	// "Restyle" opens the floating Sprite Style box (#103/#104) — recolour / glow
+	// your character on the fly; other AsyncAO players see it.
+	styleR := sdl.Rect{X: x, Y: y2, W: 84, H: btnH}
+	if c.Button(styleR, "Restyle") {
+		a.openSpriteStyle()
+	}
+	c.Tooltip(styleR, "Recolour / glow your character on the fly — other AsyncAO players see it")
 
 	// Judge strip (JD grant, or the judge stand when pos-dependent).
 	icY := y2 + btnH + 6
