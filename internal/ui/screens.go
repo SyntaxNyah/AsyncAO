@@ -3347,13 +3347,11 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	// ★ Favs filter toggle (always present, so you can switch it off even with an
 	// empty favs-only grid) + Random. Bottom-right, clear of the page arrows.
 	a.drawEmoteFavToggle(sdl.Rect{X: r.X + r.W - 158, Y: r.Y + r.H - btnH, W: 64, H: btnH})
-	// Random emote: quick variety / novelty — picks any VISIBLE emote (so it
-	// respects the favs-only filter) and jumps to its page.
-	if len(a.emotes) > 1 {
-		rb := sdl.Rect{X: r.X + r.W - 84, Y: r.Y + r.H - btnH, W: 84, H: btnH}
-		if c.Button(rb, "Random") {
-			a.pickRandomEmote()
-		}
+	// Swap to a random available character — replaced the old "Random" emote
+	// button (redundant with per-send auto-random + the wheel cycling emotes).
+	rcb := sdl.Rect{X: r.X + r.W - 92, Y: r.Y + r.H - btnH, W: 92, H: btnH}
+	if c.Button(rcb, "Rand char") {
+		a.randomChar()
 	}
 
 	if a.previewBase != "" {
@@ -3395,20 +3393,6 @@ func (a *App) emotePageCounter(page, pages, n int) string {
 		a.emotePageLabelKey = key
 	}
 	return a.emotePageLabel
-}
-
-// pickRandomEmote selects a random VISIBLE emote (so it respects the favs-only
-// filter) and scrolls its page into view.
-func (a *App) pickRandomEmote() {
-	a.refreshEmoteView()
-	i := a.randomVisibleEmote()
-	if i < 0 {
-		return
-	}
-	a.selectEmote(i)
-	if p := a.emotePageOf(i); p >= 0 {
-		a.emotePage = p
-	}
 }
 
 // nextRandomEmote picks a random emote index for auto-random mode. With more

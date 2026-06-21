@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"math/rand/v2"
-
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -128,13 +126,4 @@ func (a *App) emotePageOf(ri int) int {
 		}
 	}
 	return -1
-}
-
-// randomVisibleEmote returns a random real emote index from the visible list
-// (so the grid's Random button respects the favs-only filter), or -1 if empty.
-func (a *App) randomVisibleEmote() int {
-	if len(a.emoteVisible) == 0 {
-		return -1
-	}
-	return a.emoteVisible[rand.IntN(len(a.emoteVisible))]
 }
