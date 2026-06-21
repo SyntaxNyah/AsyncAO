@@ -41,4 +41,5 @@ it's a stale build (`scripts\build.ps1 -Release`).
   (10 s … 1 h) of conversation with no recording started in advance (shipped) —
   all in `docs/FEATURES.md`. Possible later tweak: continuous-playback scrubbing
   on the timeline strip.
-- **M8 Gamepad support** *(#44)* — the last untouched milestone.
+- ~~**M8 Gamepad support** *(#44)*~~ — **dropped** (2026-06-21, by request — no
+  need for it). The whole milestone backlog is now closed.
