@@ -988,14 +988,18 @@ type sessionState struct {
 	// roster that updates as people join/leave with no extra traffic; on = the
 	// rich /getarea snapshot. shownameFor caches char→showname from incoming IC
 	// so a live row shows the showname, not the bare character folder.
-	rosterLegacy          bool
-	livePlayersOn         bool         // PR/PU server roster is the live source (else the CharsCheck fallback)
-	liveRoster            []areaPlayer // M1 live roster (PR/PU players, or CharsCheck taken chars + ARUP spectators)
-	liveRosterAt          time.Time    // live roster's last change — the rows/order memo key
-	liveDetailsArea       string       // area of the last auto /getarea pull; re-pull on area change
-	lastRosterFetch       time.Time    // debounce for the join/leave re-pull (rosterRefetchDebounce)
-	suppressAreaEchoUntil time.Time    // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
-	rosterCmdUnsupported  bool         // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
+	rosterLegacy  bool
+	livePlayersOn bool         // PR/PU server roster is the live source (else the CharsCheck fallback)
+	liveRoster    []areaPlayer // M1 live roster (PR/PU players, or CharsCheck taken chars + ARUP spectators)
+	liveRosterAt  time.Time    // live roster's last change — the rows/order memo key
+	// Player-list profile card popover (#101): which profile to show + its title.
+	profileCardShow       bool
+	profileCardPr         config.ProfilePref
+	profileCardName       string
+	liveDetailsArea       string    // area of the last auto /getarea pull; re-pull on area change
+	lastRosterFetch       time.Time // debounce for the join/leave re-pull (rosterRefetchDebounce)
+	suppressAreaEchoUntil time.Time // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
+	rosterCmdUnsupported  bool      // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
 	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string

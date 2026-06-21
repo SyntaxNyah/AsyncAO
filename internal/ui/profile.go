@@ -61,6 +61,45 @@ func (a *App) drawProfileSettings(y, w int32) int32 {
 	return a.drawProfileCard(pad, y, pr, a.effectiveShowname())
 }
 
+// profileFor returns the profile to show for a roster row, if any. SLICE 1 only
+// knows the LOCAL user's profile (when Enabled + ShowOnList); slice 2 adds a
+// remote store keyed by UID, populated from the zero-width IC fingerprint.
+func (a *App) profileFor(p *areaPlayer, isMe bool) (config.ProfilePref, bool) {
+	if isMe {
+		if pr := a.d.Prefs.Profile(); pr.Enabled && pr.ShowOnList {
+			return pr, true
+		}
+	}
+	return config.ProfilePref{}, false
+}
+
+// openProfileCard opens the player-list profile popover for pr/name.
+func (a *App) openProfileCard(pr config.ProfilePref, name string) {
+	a.profileCardShow = true
+	a.profileCardPr = pr
+	a.profileCardName = name
+}
+
+// drawProfileCardOverlay paints the profile popover centred in area (the player
+// list), if open. Closed by its X. Called last in drawPlayerList so it sits on top.
+func (a *App) drawProfileCardOverlay(area sdl.Rect) {
+	if !a.profileCardShow {
+		return
+	}
+	c := a.ctx
+	const titleH = int32(30)
+	cw, ch := profileCardW+20, profileCardH+titleH+18
+	panel := sdl.Rect{X: area.X + (area.W-cw)/2, Y: area.Y + (area.H-ch)/2, W: cw, H: ch}
+	c.Fill(panel, ColBackground)
+	c.Border(panel, ColAccent)
+	c.Label(panel.X+10, panel.Y+8, a.profileCardName+" — profile", ColText)
+	if c.Button(sdl.Rect{X: panel.X + panel.W - 26, Y: panel.Y + 5, W: 20, H: 20}, "x") {
+		a.profileCardShow = false
+		return
+	}
+	a.drawProfileCard(panel.X+10, panel.Y+titleH+4, a.profileCardPr, a.profileCardName)
+}
+
 // profileCardW / profileCardH size the profile card; the bio clips inside it.
 const (
 	profileCardW = int32(330)

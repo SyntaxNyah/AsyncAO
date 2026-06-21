@@ -286,6 +286,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		}
 		y += rh
 	}
+	a.drawProfileCardOverlay(r) // #101: the profile popover sits on top of the list
 }
 
 // rowHeight is the display height of one roster row (area headers are shorter);
@@ -431,6 +432,17 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 			a.toggleServerIgnore(fk)
 		}
 		c.Tooltip(ir, "Ignore this player — drops their IC and OOC messages (no log line, no sprite, no blip). Click again to unignore; you can also manage the list in Settings.")
+	}
+	// Profile (#101): a card other AsyncAO players can set. Only rows we HAVE a
+	// profile for show this (slice 1: your own; slice 2 adds remote players).
+	if prof, ok := a.profileFor(p, isMe); ok {
+		pw := c.TextWidth("Profile") + 12
+		bx -= pw + 4
+		pb := sdl.Rect{X: bx, Y: btnY, W: pw, H: 22}
+		if c.Button(pb, "Profile") {
+			a.openProfileCard(prof, display)
+		}
+		c.Tooltip(pb, "View this player's AsyncAO profile card")
 	}
 
 	// Text column between the icon and the button cluster.
