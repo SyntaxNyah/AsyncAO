@@ -2388,6 +2388,11 @@ func (a *App) enterCourtroom() {
 	a.iniChar = a.pendingIni
 	a.pendingIni = ""
 	a.sidePref = ""
+	// FRESH entry / character switch starts at the first emote (page 0). The
+	// reactivation path (activateTab → buildRoom) deliberately skips this so each
+	// tab keeps its own emote selection; pollCharINI then clamps rather than
+	// resets, so the parked index survives the reload.
+	a.emoteIdx, a.emotePage = 0, 0
 	a.buildRoom()
 }
 
@@ -2468,6 +2473,7 @@ func (a *App) activeCharName() string {
 func (a *App) setIniswap(name string) {
 	a.iniChar = name
 	a.emoteAsk = nil
+	a.emoteIdx, a.emotePage = 0, 0 // new active folder = new emote list: start at the first
 	a.loadCharINI()
 }
 
@@ -2884,6 +2890,21 @@ func (a *App) setPreviewEmote(i int) {
 // cyclePreviewEmote steps the try-before-wear preview by delta (wrapping).
 func (a *App) cyclePreviewEmote(delta int) { a.setPreviewEmote(a.previewEmoteIdx + delta) }
 
+// clampEmoteSel returns the emote index/page to use after an emote list of
+// length n is (re)loaded. A still-valid index is PRESERVED — so a tab
+// reactivation (activateTab → buildRoom → loadCharINI lands for the SAME
+// character) keeps the user's selection instead of snapping back to the first
+// emote. An out-of-range index (a shorter list, e.g. an iniswap) resets to the
+// first emote on page 0. Index and page move together so a kept index can't
+// desync from a stale page. Pure so the session-isolation behaviour is pinned
+// by a unit test, not a manual rebuild.
+func clampEmoteSel(idx, page, n int) (int, int) {
+	if idx < 0 || idx >= n {
+		return 0, 0
+	}
+	return idx, page
+}
+
 // loadCharINI fetches the ACTIVE character's char.ini for the emote list
 // (the iniswap override when set).
 func (a *App) loadCharINI() {
@@ -2926,6 +2947,7 @@ func (a *App) pollCharINI() {
 			a.warnLine = clampLine("char.ini for " + a.activeCharName() + ": " + reason + " — using a default emote")
 			a.warnAt = time.Now()
 			a.emotes = []courtroom.Emote{{Comment: "normal", Anim: "normal", Preanim: "-"}}
+			a.emoteIdx, a.emotePage = clampEmoteSel(a.emoteIdx, a.emotePage, len(a.emotes))
 			return
 		}
 		a.emotes = res.ini.Emotes
@@ -2943,8 +2965,12 @@ func (a *App) pollCharINI() {
 		a.customShouts = res.ini.CustomShouts
 		a.customIdx = -1 // base custom
 		a.customName = res.ini.CustomName
-		a.emoteIdx = 0
-		a.emotePage = 0
+		// Preserve the per-tab emote selection across a REACTIVATION reload: snap
+		// to the first emote only when the restored index no longer fits the
+		// freshly loaded list. A real character change (enterCourtroom / setIniswap)
+		// zeroes these synchronously before the fetch, so a fresh pick still starts
+		// at emote 0 — see clampEmoteSel.
+		a.emoteIdx, a.emotePage = clampEmoteSel(a.emoteIdx, a.emotePage, len(a.emotes))
 		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
 		// Prefetch the first few emotes speculatively.
 		me := a.myCharName()

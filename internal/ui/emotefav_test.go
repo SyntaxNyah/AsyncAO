@@ -8,6 +8,29 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
+// TestClampEmoteSel pins the per-tab emote-selection survival (the "emote
+// resets to the first one on tab switch" fix): a still-valid index is preserved
+// across a reactivation reload, while an out-of-range index (a shorter list)
+// snaps back to the first emote on page 0, carrying the page with it.
+func TestClampEmoteSel(t *testing.T) {
+	// Same-length reload: a valid selection is kept (the tab-switch case).
+	if idx, page := clampEmoteSel(5, 2, 6); idx != 5 || page != 2 {
+		t.Errorf("clampEmoteSel(5,2,6) = (%d,%d), want (5,2)", idx, page)
+	}
+	// Shorter list: an out-of-range index resets index AND page together.
+	if idx, page := clampEmoteSel(5, 2, 3); idx != 0 || page != 0 {
+		t.Errorf("clampEmoteSel(5,2,3) = (%d,%d), want (0,0)", idx, page)
+	}
+	// Boundary: index == len is out of range (0-based); a negative index
+	// (defensive) also snaps to the first emote.
+	if idx, _ := clampEmoteSel(3, 0, 3); idx != 0 {
+		t.Errorf("clampEmoteSel(3,0,3) idx = %d, want 0 (len is out of range)", idx)
+	}
+	if idx, _ := clampEmoteSel(-1, 0, 5); idx != 0 {
+		t.Errorf("clampEmoteSel(-1,0,5) idx = %d, want 0", idx)
+	}
+}
+
 // TestRefreshEmoteView pins the favourites view (#77): every emote is visible by
 // default, favs-only filters to the starred subset (in order), the fav set gives
 // O(1) membership, and a steady-state rebuild allocates nothing (the per-frame
