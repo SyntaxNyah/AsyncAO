@@ -247,7 +247,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if !a.extrasSurfaceLive() {
 		return false
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging {
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
@@ -368,7 +368,7 @@ func (a *App) drawFloatingExtras(w, h int32) {
 	a.extrasPrevDown = c.mouseDown
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
-		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging {
+		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}

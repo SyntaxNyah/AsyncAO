@@ -760,6 +760,8 @@ type sessionState struct {
 	styleBoxY        int32
 	styleBoxPlaced   bool
 	styleBoxDragging bool
+	styleBoxResizing bool  // the right-edge width grip is being dragged
+	styleBoxUserW    int32 // user-set width (0 = the default styleBoxW); height stays content-driven
 	styleBoxGrabDX   int32
 	styleBoxGrabDY   int32
 	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their

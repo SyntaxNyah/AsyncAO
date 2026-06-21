@@ -22,6 +22,8 @@ const minVisibleStyleOpacity = 25
 
 const (
 	styleBoxW       = int32(268)
+	styleBoxMinW    = int32(232) // floor for the right-edge width resize (swatches + sliders still fit)
+	styleGripW      = int32(8)   // right-edge resize-grip hit width (clear of every control)
 	styleBoxPad     = int32(10)
 	styleSwatchSz   = int32(26)
 	styleSwatchGap  = int32(6)
@@ -46,6 +48,12 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 30 // clear button
 	bh += styleBoxPad
 	bw := styleBoxW
+	if a.styleBoxUserW > 0 {
+		bw = a.styleBoxUserW // user-dragged width (the sliders / notes follow r.W)
+	}
+	if bw < styleBoxMinW {
+		bw = styleBoxMinW
+	}
 	if bw > w-16 {
 		bw = w - 16
 	}
@@ -240,6 +248,17 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if c.Button(sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}, "Clear style") {
 		a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})
 	}
+
+	// Right-edge width grip: drag to widen the box (the notes / sliders / buttons
+	// all follow r.W). Height stays content-driven. The hit strip sits in the right
+	// margin, clear of every control (they stop at r.W - styleBoxPad). Handled with
+	// the box's shared press edge, like the title-bar drag.
+	grip := sdl.Rect{X: r.X + r.W - styleGripW, Y: r.Y + extrasTitleH, W: styleGripW, H: r.H - extrasTitleH}
+	a.handleStyleResize(grip, r, pressed)
+	for i := int32(0); i < 3; i++ { // three nubs down the right-edge centre so it reads as draggable
+		c.Fill(sdl.Rect{X: r.X + r.W - 4, Y: r.Y + r.H/2 - 8 + i*8, W: 2, H: 3}, ColAccent)
+	}
+	c.Tooltip(grip, "Drag to resize the box width")
 }
 
 // handleStyleBoxDrag moves the box by its title bar, mirroring handleFavBoxDrag.
@@ -257,5 +276,29 @@ func (a *App) handleStyleBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	if a.styleBoxDragging {
 		a.styleBoxX, a.styleBoxY = c.mouseX-a.styleBoxGrabDX, c.mouseY-a.styleBoxGrabDY
 		a.styleBoxPlaced = true
+	}
+}
+
+// handleStyleResize widens the box from its right-edge grip (height stays
+// content-driven). Shares the Extras surface's press edge + the box's grab
+// offset; styleBoxRect clamps the result to [styleBoxMinW, window].
+func (a *App) handleStyleResize(grip, r sdl.Rect, pressed *bool) {
+	c := a.ctx
+	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {
+		*pressed = false
+		a.styleBoxResizing = true
+		a.styleBoxX, a.styleBoxY = r.X, r.Y // pin the corner so the box doesn't re-default
+		a.styleBoxPlaced = true
+		a.styleBoxGrabDX = (r.X + r.W) - c.mouseX
+	}
+	if !c.mouseDown {
+		a.styleBoxResizing = false
+	}
+	if a.styleBoxResizing {
+		nw := (c.mouseX + a.styleBoxGrabDX) - r.X
+		if nw < styleBoxMinW {
+			nw = styleBoxMinW
+		}
+		a.styleBoxUserW = nw // styleBoxRect clamps the window ceiling
 	}
 }
