@@ -263,6 +263,9 @@ const (
 	minExportText        = 50 // chat-text size in the export, percent of the fitted base
 	maxExportText        = 200
 	defaultExportText    = 100
+	// Video export container/codec (the 🎥 Video button). Only "mp4" (H.264) and
+	// "webm" (VP9) are valid; anything else normalizes to the MP4 default.
+	defaultVideoFormat = "mp4"
 )
 
 // ExportOptions is the persisted scene-export configuration (GIF + animated
@@ -276,11 +279,24 @@ type ExportOptions struct {
 	Quality   int  `json:"quality"`
 	Loop      bool `json:"loop"`
 	TextScale int  `json:"textScale"`
+	// VideoFormat picks the 🎥 Video container/codec ("mp4" H.264 or "webm" VP9);
+	// it has no effect on the GIF/WebP buttons. Empty = the MP4 default.
+	VideoFormat string `json:"videoFormat,omitempty"`
 }
 
 // defaultExportOptions is the out-of-box export look.
 func defaultExportOptions() ExportOptions {
-	return ExportOptions{HeightPx: defaultExportHeight, FPS: defaultExportFPS, Quality: defaultExportQuality, Loop: true, TextScale: defaultExportText}
+	return ExportOptions{HeightPx: defaultExportHeight, FPS: defaultExportFPS, Quality: defaultExportQuality, Loop: true, TextScale: defaultExportText, VideoFormat: defaultVideoFormat}
+}
+
+// normalizeVideoFormat maps any stored/edited value to a supported one ("mp4" or
+// "webm"), defaulting to MP4 — kept here (not in videoenc) so config has no UI
+// dependency.
+func normalizeVideoFormat(s string) string {
+	if strings.EqualFold(s, "webm") {
+		return "webm"
+	}
+	return defaultVideoFormat
 }
 
 // Per-speaker name colours (OFF by default): each speaker's name is tinted by a
@@ -1157,6 +1173,9 @@ func load(path string) (*AssetPreferences, error) {
 		}
 		if onDisk.Export.TextScale > 0 {
 			e.TextScale = clampPercent(onDisk.Export.TextScale, minExportText, maxExportText)
+		}
+		if onDisk.Export.VideoFormat != "" {
+			e.VideoFormat = normalizeVideoFormat(onDisk.Export.VideoFormat)
 		}
 		e.Loop = onDisk.Export.Loop
 		p.Export = e
@@ -2736,6 +2755,7 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 	o.FPS = clampPercent(o.FPS, minExportFPS, maxExportFPS)
 	o.Quality = clampPercent(o.Quality, minExportQuality, maxExportQuality)
 	o.TextScale = clampPercent(o.TextScale, minExportText, maxExportText)
+	o.VideoFormat = normalizeVideoFormat(o.VideoFormat)
 	p.mu.Lock()
 	if p.Export == o {
 		p.mu.Unlock()

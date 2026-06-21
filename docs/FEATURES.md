@@ -431,6 +431,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   every frame for the final encode). Saved to `recordings\<name>.webp`. Falls back
   to a clear message if a build was made without the encoder; the GIF path always
   works.
+- **Scene → MP4 / WebM video** (**🎥 Video**, beside every 🎞 GIF / 🎬 WebP
+  button — in the maker and Settings → Studio per recording): a **real video file**
+  for content creation. Same capture pipeline, but each raw frame is **streamed
+  into a system `ffmpeg`** (`internal/videoenc`, pure-Go — it shells out, no CGO)
+  over a stdin pipe: `rawvideo` → **H.264/MP4** (plays everywhere) or **VP9/WebM**
+  (smaller, open). **ffmpeg is runtime-optional** — the app boots and runs fully
+  without it; only the 🎥 Video button disables (with an "install ffmpeg" hint),
+  and GIF/WebP still work. Format is picked in **⚙ Export options**; the **quality
+  %** slider drives the codec CRF and the **size / frame-rate** apply as usual.
+  Like WebP it never holds frames (memory stays flat), so video can run **much
+  longer** than the memory-budgeted GIF. Saved to `recordings\<name>.mp4|webm`.
+  *(Audio bake-in — music + SFX — is a planned follow-up; this pass is silent.)*
 - **Export options** (**⚙ Export** in the maker, and **Settings → Studio**): set
   the **size** (Small 384×288 → XL 720×540), **frame rate** (8–24 fps), **WebP
   quality**, **chat text size**, **loop on/off**, and **playback speed** — all

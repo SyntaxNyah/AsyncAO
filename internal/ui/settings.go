@@ -926,12 +926,15 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 				a.editRecordingInMaker(r.path)
 			}
 			if c.Button(sdl.Rect{X: pad + 146, Y: y, W: 54, H: btnH}, "🎞 GIF") {
-				a.sceneExportFromPath(r.path, false)
+				a.sceneExportFromPath(r.path, exportGIF)
 			}
 			if c.Button(sdl.Rect{X: pad + 204, Y: y, W: 74, H: btnH}, "🎬 WebP") {
-				a.sceneExportFromPath(r.path, true) // higher-quality animated WebP
+				a.sceneExportFromPath(r.path, exportWebP) // higher-quality animated WebP
 			}
-			c.LabelClipped(pad+286, y+4, w-pad-286-scrollBarW, r.name, ColText)
+			if c.Button(sdl.Rect{X: pad + 282, Y: y, W: 78, H: btnH}, "🎥 Video") {
+				a.sceneExportFromPath(r.path, exportVideo) // MP4/WebM via ffmpeg (Export-options format)
+			}
+			c.LabelClipped(pad+368, y+4, w-pad-368-scrollBarW, r.name, ColText)
 			y += 28
 		}
 	}

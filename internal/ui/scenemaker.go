@@ -825,11 +825,15 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 	}
 	bx += 144
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 120, H: btnH}, "🎞 Export GIF") {
-		a.startSceneExport(a.trimmedScene(), a.makerName, false) // honours the crop range
+		a.startSceneExport(a.trimmedScene(), a.makerName, exportGIF) // honours the crop range
 	}
 	bx += 128
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "🎬 WebP") {
-		a.startSceneExport(a.trimmedScene(), a.makerName, true) // higher-quality animated WebP, cropped
+		a.startSceneExport(a.trimmedScene(), a.makerName, exportWebP) // higher-quality animated WebP, cropped
+	}
+	bx += 112
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "🎥 Video") {
+		a.startSceneExport(a.trimmedScene(), a.makerName, exportVideo) // MP4/WebM via ffmpeg (format in ⚙ Export)
 	}
 	bx += 112
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "⚙ Export") {

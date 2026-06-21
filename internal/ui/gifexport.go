@@ -15,6 +15,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/gifenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/webpenc"
 )
 
@@ -42,10 +43,10 @@ func exportChatPct(vpH int32, textScale int) int {
 }
 
 // sceneExportFromPath loads a recording and exports it straight to a GIF (the
-// Studio "🎞 GIF" button) or an animated WebP ("🎬 WebP") — no trip through the
-// maker. A bundled archive renders from its own folder (the archive source is
-// dropped when the export finishes).
-func (a *App) sceneExportFromPath(path string, asWebP bool) {
+// Studio "🎞 GIF" button), an animated WebP ("🎬 WebP"), or an MP4/WebM video
+// ("🎥 Video") — no trip through the maker. A bundled archive renders from its
+// own folder (the archive source is dropped when the export finishes).
+func (a *App) sceneExportFromPath(path string, kind exportKind) {
 	if a.gifExporting || a.replaying || a.recActive {
 		a.warnLine = "Finish the current replay / recording first."
 		a.warnAt = time.Now()
@@ -60,7 +61,7 @@ func (a *App) sceneExportFromPath(path string, asWebP bool) {
 	if rec.Bundled {
 		a.beginBundledReplay(rec, filepath.Dir(path)) // archive source + repoint Origin
 	}
-	a.startSceneExport(rec, strings.TrimSuffix(filepath.Base(path), recordingExt), asWebP)
+	a.startSceneExport(rec, strings.TrimSuffix(filepath.Base(path), recordingExt), kind)
 }
 
 // Scene GIF export (M16): render a scene through a throwaway replay room into a
@@ -93,6 +94,24 @@ const (
 	gifWarmMax   = 6 * time.Second
 )
 
+// exportKind selects the output format one gifExportJob produces. GIF and WebP
+// share the held/streamed encoders already here; Video streams raw frames into a
+// system ffmpeg (internal/videoenc).
+type exportKind int
+
+const (
+	exportGIF   exportKind = iota // animated GIF (paletted, every frame held for gifenc)
+	exportWebP                    // animated WebP (libwebp streams + compresses each frame)
+	exportVideo                   // MP4/WebM via a system ffmpeg (videoenc streams frames)
+)
+
+// maxVideoFrames caps a single video export. Unlike the GIF cap (bounded by the
+// HELD paletted-frame memory budget), video frames are streamed straight to
+// ffmpeg and never retained, so this isn't a memory bound — it's a runaway /
+// file-size guard so a stuck scene can't encode forever. 18000 frames is 15 min
+// at 20 fps (12.5 min at 24 fps) — far longer than anyone exports in one go.
+const maxVideoFrames = 18000
+
 // Export size / frame-rate dropdown presets (4:3). Bounds mirror the config
 // clamp — SetExportOpts is authoritative — so a pick is always in range.
 var (
@@ -100,7 +119,20 @@ var (
 	exportHeightLabels  = []string{"Small · 384×288", "Medium · 480×360", "Large · 640×480", "XL · 720×540"}
 	exportFPSPresets    = []int{8, 12, 15, 24}
 	exportFPSLabels     = []string{"8 fps · smallest", "12 fps", "15 fps", "24 fps · smoothest"}
+
+	// Video container/codec choices for the 🎥 Video button. Index ↔ the persisted
+	// VideoFormat string; MP4/H.264 first (the play-everywhere default).
+	videoFormatValues = []string{"mp4", "webm"}
+	videoFormatLabels = []string{"MP4 · H.264 (plays everywhere)", "WebM · VP9 (smaller, open)"}
 )
+
+// videoFormatIdx maps a persisted VideoFormat to its dropdown row.
+func videoFormatIdx(s string) int {
+	if strings.EqualFold(s, "webm") {
+		return 1
+	}
+	return 0
+}
 
 // nearestPresetIdx returns the index of the preset value closest to v (so a
 // hand-edited or legacy pref lands on a sensible dropdown row).
@@ -147,7 +179,20 @@ func (a *App) drawExportOptions(y int32, withSpeed bool) int32 {
 	c.Label(fx+190, y+5, "higher = smoother but bigger", ColTextDim)
 	y += 32
 
-	if next := a.sliderRow(y, "  WebP quality %", opts.Quality, 5, 20, 100); next != opts.Quality {
+	c.Label(pad, y+5, "Video format:", ColText)
+	if next, changed := c.Dropdown("exp_vfmt", sdl.Rect{X: fx, Y: y, W: 180, H: fieldH}, videoFormatLabels, videoFormatIdx(opts.VideoFormat)); changed {
+		opts.VideoFormat = videoFormatValues[next]
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	if videoenc.Available() {
+		c.Label(fx+190, y+5, "for the 🎥 Video button", ColTextDim)
+	} else {
+		c.Label(fx+190, y+5, "🎥 Video needs ffmpeg on PATH — GIF/WebP work without it", ColDanger)
+	}
+	y += 32
+
+	// Quality drives both the WebP encoder and the video CRF (higher = better/bigger).
+	if next := a.sliderRow(y, "  Quality % (WebP / video)", opts.Quality, 5, 20, 100); next != opts.Quality {
 		opts.Quality = next
 		a.d.Prefs.SetExportOpts(opts)
 	}
@@ -208,8 +253,14 @@ type gifExportJob struct {
 	name     string
 	captured int // frames captured (both formats) — drives the cap + progress
 
-	asWebP bool             // export an animated WebP instead of a GIF
-	webp   *webpenc.Encoder // WebP only — streams + compresses frames as they arrive
+	kind exportKind       // which format this job produces (GIF / WebP / Video)
+	webp *webpenc.Encoder // WebP only — streams + compresses frames as they arrive
+
+	// Video only — a system ffmpeg streams frames to vidPath as they arrive (so,
+	// like WebP, no frames are held). vidPath is resolved up front because ffmpeg
+	// owns the file the whole time it runs.
+	vid     *videoenc.Encoder
+	vidPath string
 
 	// Per-export output settings (from config ExportOptions, resolved once).
 	w, h      int32         // capture/output size (4:3)
@@ -235,9 +286,9 @@ type gifExportJob struct {
 }
 
 // startSceneExport spins up the offscreen render of scene into an animated GIF
-// (asWebP false) or an animated WebP (asWebP true). Must be called on the render
-// thread (it creates the capture target).
-func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) {
+// (exportGIF), an animated WebP (exportWebP), or an MP4/WebM video (exportVideo).
+// Must be called on the render thread (it creates the capture target).
+func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKind) {
 	if a.gifExporting {
 		return
 	}
@@ -246,8 +297,14 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 		a.warnAt = time.Now()
 		return
 	}
-	if asWebP && !webpenc.Available() {
+	if kind == exportWebP && !webpenc.Available() {
 		a.warnLine = "Animated WebP isn't available in this build — use 🎞 GIF."
+		a.warnAt = time.Now()
+		return
+	}
+	if kind == exportVideo && !videoenc.Available() {
+		// Runtime-optional: the app runs fine without ffmpeg; only this action needs it.
+		a.warnLine = "Video export needs ffmpeg — install it and add it to PATH (the app works fine without it; GIF/WebP still export)."
 		a.warnAt = time.Now()
 		return
 	}
@@ -268,7 +325,12 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 	if frameMs < 1 {
 		frameMs = 1
 	}
+	// Video streams to ffmpeg and never holds frames, so it isn't bound by the GIF
+	// paletted-frame budget — let scene length drive it (capped against runaway).
 	maxFrames := exportMaxFrames(w, h)
+	if kind == exportVideo {
+		maxFrames = maxVideoFrames
+	}
 
 	ct, err := render.NewCaptureTarget(a.ctx.Ren, w, h)
 	if err != nil {
@@ -277,10 +339,28 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 		return
 	}
 	var enc *webpenc.Encoder
-	if asWebP {
+	var vid *videoenc.Encoder
+	var vidPath string
+	switch kind {
+	case exportWebP:
 		if enc, err = webpenc.New(int(w), int(h), opts.Quality, frameMs, opts.Loop); err != nil {
 			ct.Close()
 			a.warnLine = "WebP export unavailable: " + err.Error()
+			a.warnAt = time.Now()
+			return
+		}
+	case exportVideo:
+		format := videoenc.FormatFromString(opts.VideoFormat)
+		vidPath, err = videoExportPath(sanitizeStem(name), format)
+		if err != nil {
+			ct.Close()
+			a.warnLine = "Video export unavailable: " + err.Error()
+			a.warnAt = time.Now()
+			return
+		}
+		if vid, err = videoenc.New(vidPath, int(w), int(h), fps, opts.Quality, format); err != nil {
+			ct.Close()
+			a.warnLine = "Video export unavailable: " + err.Error()
 			a.warnAt = time.Now()
 			return
 		}
@@ -328,8 +408,10 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, asWebP bool) 
 		ct:           ct,
 		events:       append([]recEvent(nil), scene.Events...),
 		name:         sanitizeStem(name),
-		asWebP:       asWebP,
+		kind:         kind,
 		webp:         enc,
+		vid:          vid,
+		vidPath:      vidPath,
 		w:            w,
 		h:            h,
 		frameDt:      frameDt,
@@ -386,7 +468,8 @@ func (a *App) tickGifExport() {
 			a.finishGifExport()
 			return
 		}
-		if j.asWebP {
+		switch j.kind {
+		case exportWebP:
 			// Stream into the WebP encoder (it compresses + drops the RGBA now, so
 			// memory stays flat); GIF keeps the quantized frame for the final encode.
 			if err := j.webp.AddFrame(img); err != nil {
@@ -394,7 +477,16 @@ func (a *App) tickGifExport() {
 				a.finishGifExport()
 				return
 			}
-		} else {
+		case exportVideo:
+			// Stream the raw frame into ffmpeg (synchronous; the export owns the
+			// window). A broken pipe means ffmpeg died — stop; finishVideoExport
+			// reaps the process and surfaces the stderr tail as the result.
+			if err := j.vid.AddFrame(img); err != nil {
+				a.pushDebug("video add: " + err.Error())
+				a.finishGifExport()
+				return
+			}
+		default: // exportGIF
 			j.frames = append(j.frames, gifenc.Quantize(img))
 		}
 		j.captured++
@@ -551,8 +643,12 @@ func (a *App) finishGifExport() {
 	a.restoreViewportPreanim()
 	a.makerPreviewIdx = -1 // the export drove the shared viewport — force the preview pane to rebuild
 
+	if j.kind == exportVideo {
+		a.finishVideoExport(j) // ffmpeg has been writing vidPath all along — just flush + wait
+		return
+	}
 	stem := j.name + "-" + time.Now().Format("20060102-150405")
-	if j.asWebP {
+	if j.kind == exportWebP {
 		a.finishWebpExport(j, stem)
 		return
 	}
@@ -594,6 +690,60 @@ func (a *App) finishWebpExport(j *gifExportJob, stem string) {
 		}
 		a.gifResultCh <- writeWebp(data, stem)
 	}()
+}
+
+// finishVideoExport closes ffmpeg's stdin and waits for the encode to finalize
+// off-thread — ffmpeg flushes + writes the moov atom on EOF, which can take a
+// beat (mirrors finishWebpExport's off-thread Assemble). ffmpeg has been writing
+// vidPath the whole capture, so there's nothing to assemble; we just wait and
+// report. The encoder is owned solely by this goroutine now (a.gif is already
+// nil), so the handoff is race-free.
+func (a *App) finishVideoExport(j *gifExportJob) {
+	if j.vid == nil {
+		return
+	}
+	enc, path := j.vid, j.vidPath
+	if j.captured == 0 {
+		enc.Close()
+		_ = os.Remove(path) // drop the empty container ffmpeg may have created
+		a.warnLine = "Video export: nothing rendered (set an Origin/CDN and add a line)."
+		a.warnAt = time.Now()
+		return
+	}
+	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
+	a.warnAt = time.Now()
+	go func() {
+		if err := enc.Finish(); err != nil {
+			_ = os.Remove(path) // a failed encode leaves a corrupt file — don't keep it
+			a.gifResultCh <- "Video export failed: " + err.Error()
+			return
+		}
+		a.gifResultCh <- videoSavedMsg(path)
+	}()
+}
+
+// videoExportPath resolves recordings\<stem>-<timestamp>.<ext> (creating the
+// folder). The path must exist up front because ffmpeg owns the file for the
+// whole encode, unlike GIF/WebP which write only at the end.
+func videoExportPath(stem string, format videoenc.Format) (string, error) {
+	dir := recordingsDir()
+	if dir == "" {
+		return "", fmt.Errorf("no recordings folder")
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	name := stem + "-" + time.Now().Format("20060102-150405") + "." + videoenc.FormatExt(format)
+	return filepath.Join(dir, name), nil
+}
+
+// videoSavedMsg reports a finished video with its on-disk size.
+func videoSavedMsg(path string) string {
+	name := filepath.Base(path)
+	if st, err := os.Stat(path); err == nil {
+		return fmt.Sprintf("Video saved: recordings\\%s (%.2f MB).", name, float64(st.Size())/(1024*1024))
+	}
+	return "Video saved: recordings\\" + name + "."
 }
 
 // restoreViewportPreanim rebinds the viewport's one-shot preanim callback to
@@ -687,27 +837,47 @@ func (a *App) drawGifProgress(winW, winH int32) {
 		return
 	}
 
-	done := 0
-	capFrames := maxGifFrames
-	label := "🎞  Rendering GIF…"
+	done, label := 0, "🎞  Rendering GIF…"
 	if j != nil {
 		done = j.captured
-		if j.maxFrames > 0 {
-			capFrames = j.maxFrames
-		}
-		if j.asWebP {
+		switch j.kind {
+		case exportWebP:
 			label = "🎬  Rendering WebP…"
+		case exportVideo:
+			label = "🎥  Rendering video…"
 		}
 	}
-	pct := done * 100 / capFrames
 	c.Label(cx-120, cy-30, label, ColText)
-	c.Label(cx-120, cy, fmt.Sprintf("%d frames captured (%d%% of the cap)", done, pct), ColTextDim)
-	// progress bar
+
+	// Progress fraction: GIF/WebP are bounded by the (memory-budgeted) frame cap,
+	// so their bar is frames/cap. Video streams and almost always finishes by
+	// exhausting the script long before the runaway cap, so its bar tracks how far
+	// through the events we are — a real 0–100%, not a sliver of the huge cap.
+	var frac float64
+	var sub string
+	if j != nil && j.kind == exportVideo {
+		if n := len(j.events); n > 0 {
+			frac = float64(j.idx) / float64(n)
+		}
+		sub = fmt.Sprintf("%d frames written (%d%% of the script)", done, int(frac*100))
+	} else {
+		capFrames := maxGifFrames
+		if j != nil && j.maxFrames > 0 {
+			capFrames = j.maxFrames
+		}
+		frac = float64(done) / float64(capFrames)
+		sub = fmt.Sprintf("%d frames captured (%d%% of the cap)", done, int(frac*100))
+	}
+	c.Label(cx-120, cy, sub, ColTextDim)
+
 	bar := sdl.Rect{X: cx - 160, Y: cy + 26, W: 320, H: 14}
 	c.Fill(bar, ColPanel)
-	fillW := int32(done) * bar.W / int32(capFrames)
+	fillW := int32(frac * float64(bar.W))
 	if fillW > bar.W {
 		fillW = bar.W
+	}
+	if fillW < 0 {
+		fillW = 0
 	}
 	c.Fill(sdl.Rect{X: bar.X, Y: bar.Y, W: fillW, H: bar.H}, ColAccent)
 	if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "■ Stop & save") {

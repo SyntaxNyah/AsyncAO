@@ -60,8 +60,13 @@ func TestQoLPrefDefaults(t *testing.T) {
 // clause that would silently reset every export to defaults if it were dropped.
 func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if d := p.ExportOpts(); d.HeightPx != defaultExportHeight || d.FPS != defaultExportFPS || d.Quality != defaultExportQuality || !d.Loop || d.TextScale != defaultExportText {
-		t.Fatalf("default export opts = %+v, want %d/%d/%d/%d + loop", d, defaultExportHeight, defaultExportFPS, defaultExportQuality, defaultExportText)
+	if d := p.ExportOpts(); d.HeightPx != defaultExportHeight || d.FPS != defaultExportFPS || d.Quality != defaultExportQuality || !d.Loop || d.TextScale != defaultExportText || d.VideoFormat != defaultVideoFormat {
+		t.Fatalf("default export opts = %+v, want %d/%d/%d/%d/%s + loop", d, defaultExportHeight, defaultExportFPS, defaultExportQuality, defaultExportText, defaultVideoFormat)
+	}
+	// An unknown video format normalizes to the MP4 default (never crashes ffmpeg).
+	p.SetExportOpts(ExportOptions{HeightPx: 360, FPS: 12, Quality: 80, Loop: true, TextScale: 100, VideoFormat: "avi"})
+	if g := p.ExportOpts(); g.VideoFormat != defaultVideoFormat {
+		t.Fatalf("bogus video format = %q, want normalized to %q", g.VideoFormat, defaultVideoFormat)
 	}
 	// Out-of-range values clamp to the configured bounds.
 	p.SetExportOpts(ExportOptions{HeightPx: 99999, FPS: 0, Quality: 999, Loop: false, TextScale: 9999})
@@ -74,7 +79,7 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	q.SetExportOpts(ExportOptions{HeightPx: 480, FPS: 24, Quality: 60, Loop: true, TextScale: 70})
+	q.SetExportOpts(ExportOptions{HeightPx: 480, FPS: 24, Quality: 60, Loop: true, TextScale: 70, VideoFormat: "webm"})
 	if err := q.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -82,8 +87,8 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if o := r.ExportOpts(); o.HeightPx != 480 || o.FPS != 24 || o.Quality != 60 || !o.Loop || o.TextScale != 70 {
-		t.Fatalf("reloaded export opts = %+v, want 480/24/60/70 + loop (merge clause dropped a field?)", o)
+	if o := r.ExportOpts(); o.HeightPx != 480 || o.FPS != 24 || o.Quality != 60 || !o.Loop || o.TextScale != 70 || o.VideoFormat != "webm" {
+		t.Fatalf("reloaded export opts = %+v, want 480/24/60/70/webm + loop (merge clause dropped a field?)", o)
 	}
 }
 
