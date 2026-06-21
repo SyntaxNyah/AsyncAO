@@ -15,9 +15,15 @@ func TestSpriteStyleRoundTrip(t *testing.T) {
 		{Tint: true, R: 255, G: 60, B: 60},              // red Phoenix
 		{Tint: true, R: 80, G: 255, B: 120, Glow: true}, // glowing green
 		{Opacity: 40}, // ghostly
-		{Tint: true, R: 10, G: 20, B: 30, Opacity: 70, Glow: true, Wobble: true, Spin: true}, // the works
+		{Tint: true, R: 10, G: 20, B: 30, Opacity: 70, Glow: true, Wobble: true, Spin: true},
 		{Wobble: true},
 		{Spin: true},
+		{Scale: 130},                      // bigger sprite
+		{Rotation: 64},                    // tilt
+		{FlipH: true},                     // mirror
+		{Brightness: 160, HueCycle: true}, // brighter + rainbow
+		{Tint: true, R: 1, G: 2, B: 3, Opacity: 50, Glow: true, Wobble: true, Spin: true,
+			HueCycle: true, FlipH: true, Brightness: 80, Scale: 120, Rotation: 200}, // the works
 	}
 	for _, want := range cases {
 		marker := want.EncodeMarker()

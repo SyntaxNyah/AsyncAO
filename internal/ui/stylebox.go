@@ -37,9 +37,11 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 26                         // Tint row
 	if a.d.Prefs.SpriteStyle().Tint {
 		rows := int32((len(spriteStylePresets) + styleSwatchCols - 1) / styleSwatchCols)
-		bh += rows*(styleSwatchSz+styleSwatchGap) + 6 // preset swatches
+		bh += rows*(styleSwatchSz+styleSwatchGap) + 4 + 62 // preset swatches + R/G/B sliders
 	}
-	bh += 30 // opacity
+	bh += 30 // opacity (Fade)
+	bh += 26 // Rainbow / Mirror row
+	bh += 66 // Brightness / Size / Tilt sliders
 	bh += 26 // glow / wobble / spin row
 	bh += 30 // clear button
 	bh += styleBoxPad
@@ -136,7 +138,22 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		if col != 0 {
 			y += styleSwatchSz + styleSwatchGap
 		}
-		y += 6
+		y += 4
+		// Fine RGB control.
+		swW := r.W - 24 - styleBoxPad*2
+		nr := c.Slider("styleR", sdl.Rect{X: x + 22, Y: y, W: swW, H: 14}, int32(p.R), 255)
+		c.Label(x, y, "R", ColTextDim)
+		y += 20
+		ng := c.Slider("styleG", sdl.Rect{X: x + 22, Y: y, W: swW, H: 14}, int32(p.G), 255)
+		c.Label(x, y, "G", ColTextDim)
+		y += 20
+		nb := c.Slider("styleB", sdl.Rect{X: x + 22, Y: y, W: swW, H: 14}, int32(p.B), 255)
+		c.Label(x, y, "B", ColTextDim)
+		y += 22
+		if nr != int32(p.R) || ng != int32(p.G) || nb != int32(p.B) {
+			p.R, p.G, p.B = uint8(nr), uint8(ng), uint8(nb)
+			a.d.Prefs.SetSpriteStyle(p)
+		}
 	}
 
 	// Opacity (25..100; below the floor renders at the floor, never invisible).
@@ -157,6 +174,53 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 30
+
+	// Rainbow (transmitted hue cycle) + Mirror.
+	if next := c.Checkbox(x, y, "Rainbow", p.HueCycle); next != p.HueCycle {
+		p.HueCycle = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	if next := c.Checkbox(x+110, y, "Mirror", p.FlipH); next != p.FlipH {
+		p.FlipH = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	y += 26
+
+	// Brightness / Size / Tilt sliders.
+	slX, slW := x+56, r.W-56-styleBoxPad*2
+	br := int32(p.Brightness)
+	if br == 0 {
+		br = 100
+	}
+	c.Label(x, y+1, "Bright", ColTextDim)
+	if n := c.Slider("styleBright", sdl.Rect{X: slX, Y: y, W: slW, H: 14}, br, 200); n != br {
+		if n < 20 {
+			n = 20
+		}
+		p.Brightness = uint8(n)
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	y += 22
+	sc := int32(p.Scale)
+	if sc == 0 {
+		sc = 100
+	}
+	c.Label(x, y+1, "Size", ColTextDim)
+	if n := c.Slider("styleScale", sdl.Rect{X: slX, Y: y, W: slW, H: 14}, sc, 150); n != sc {
+		if n < 50 {
+			n = 50
+		}
+		p.Scale = uint8(n)
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	y += 22
+	tilt := int32(int(p.Rotation) * 360 / 256)
+	c.Label(x, y+1, "Tilt", ColTextDim)
+	if n := c.Slider("styleTilt", sdl.Rect{X: slX, Y: y, W: slW, H: 14}, tilt, 359); n != tilt {
+		p.Rotation = uint8(n * 256 / 360)
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	y += 26
 
 	// Glow / Wobble / Spin.
 	if next := c.Checkbox(x, y, "Glow", p.Glow); next != p.Glow {

@@ -370,13 +370,39 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		modR, modG, modB            uint8 = 255, 255, 255
 		alphaMod                    uint8 = 255
 		doColorMod, glow, wob, spin bool
+		scalePct                    = 100
+		rotDeg                      float64
 	)
 	if st := layer.Style; st.Active() {
-		if st.Tint {
+		// Colour: a transmitted hue-cycle rainbow, else the tint colour, then
+		// optionally dimmed by brightness — all collapse into one ColorMod.
+		if st.HueCycle {
+			phase := v.rainbowPhase + hueShift
+			if v.curCycle > 0 {
+				phase %= v.curCycle
+			}
+			modR, modG, modB = rainbowMod(phase, v.curCycle, floorForVividness(styleHueVividness))
+			doColorMod = true
+		} else if st.Tint {
 			modR, modG, modB, doColorMod = st.R, st.G, st.B, true
+		}
+		if b := st.BrightnessPct(); b != 100 {
+			if !doColorMod {
+				modR, modG, modB, doColorMod = 255, 255, 255, true
+			}
+			modR, modG, modB = scaleChannel(modR, b), scaleChannel(modG, b), scaleChannel(modB, b)
 		}
 		alphaMod = st.AlphaMod() // opacity (floored so a received style can't go invisible)
 		glow, wob, spin = st.Glow, st.Wobble, st.Spin
+		scalePct = st.ScalePct()
+		rotDeg = st.RotationDeg()
+		if st.FlipH { // transmitted mirror toggles the layer's own flip
+			if flip == sdl.FLIP_HORIZONTAL {
+				flip = sdl.FLIP_NONE
+			} else {
+				flip = sdl.FLIP_HORIZONTAL
+			}
+		}
 	} else {
 		fx := v.fx
 		if fx.tinted() {
@@ -416,6 +442,15 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if glow {
 		_ = tex.SetBlendMode(sdl.BLENDMODE_ADD)
 	}
+	// Transmitted scale: resize around the sprite's CENTRE so it grows/shrinks in
+	// place rather than from a corner.
+	if scalePct != 100 {
+		nw := v.dstRect.W * int32(scalePct) / 100
+		nh := v.dstRect.H * int32(scalePct) / 100
+		v.dstRect.X += (v.dstRect.W - nw) / 2
+		v.dstRect.Y += (v.dstRect.H - nh) / 2
+		v.dstRect.W, v.dstRect.H = nw, nh
+	}
 	// Optional motion FX: a gentle sway and/or slow spin, pure math off the
 	// free-running fxClock (no allocation; off = zero offset / zero angle).
 	if wob {
@@ -423,9 +458,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		v.dstRect.X += dx
 		v.dstRect.Y += dy
 	}
-	angle := 0.0
+	angle := rotDeg // transmitted fixed tilt (spin adds to it)
 	if spin {
-		angle = spinDegrees(v.fxClock)
+		angle += spinDegrees(v.fxClock)
 	}
 	_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
 	if doColorMod {
@@ -466,6 +501,21 @@ func cycleForSpeed(speed int) time.Duration {
 		cyc = minRainbowCycle
 	}
 	return cyc
+}
+
+// styleHueVividness is the saturation for a TRANSMITTED hue-cycle rainbow (the
+// wire style carries no vividness field) — vivid but not blinding.
+const styleHueVividness = 70
+
+// scaleChannel multiplies a colour channel by pct/100 (clamped to 255): pct < 100
+// dims the sprite, pct > 100 washes it brighter toward white. Used by the
+// transmitted brightness control.
+func scaleChannel(c uint8, pct int) uint8 {
+	v := int(c) * pct / 100
+	if v > 255 {
+		v = 255
+	}
+	return uint8(v)
 }
 
 // floorForVividness maps the Vividness slider [0,100] to the colour-mod channel

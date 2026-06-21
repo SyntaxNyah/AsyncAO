@@ -16,25 +16,44 @@ import "strings"
 // "free" draw-time effects; per-pixel effects (invert/grayscale) are a planned
 // follow-up that builds cached variant textures.
 type SpriteStyle struct {
-	Tint    bool  // multiply the sprite by (R,G,B) — recolour / brightness
+	Tint    bool  // multiply the sprite by (R,G,B) — recolour
 	R, G, B uint8 // the multiply colour (only meaningful when Tint)
 	// Opacity is a percent 1..100 (0 = unset = fully opaque). Applied via
 	// SetTextureAlphaMod, clamped to a visible floor so a received style can't
 	// make a sprite invisible.
-	Opacity uint8
-	Glow    bool // additive blend (neon glow)
-	Wobble  bool // gentle continuous sway (viewer ReduceMotion can suppress it)
-	Spin    bool // slow continuous rotation (viewer ReduceMotion can suppress it)
+	Opacity  uint8
+	Glow     bool // additive blend (neon glow)
+	Wobble   bool // gentle continuous sway (viewer ReduceMotion can suppress it)
+	Spin     bool // slow continuous rotation (viewer ReduceMotion can suppress it)
+	HueCycle bool // transmitted rainbow: cycle the tint hue over time
+	FlipH    bool // mirror horizontally
+	// Brightness/Scale are percents with 0 = unset (= 100%). Rotation is a fixed
+	// tilt: 0 = none, else degrees via Rotation*360/256 (full circle).
+	Brightness uint8
+	Scale      uint8
+	Rotation   uint8
 }
 
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or
 // near-fully) invisible sprite at others — clamp applied at render time.
 const minVisibleOpacity = 25
 
+// Style field bounds (percent ranges; 0 always means "unset" = neutral).
+const (
+	minStyleBrightness = 20
+	maxStyleBrightness = 200
+	minStyleScale      = 50
+	maxStyleScale      = 150
+)
+
 // Active reports whether the style does anything (so the encoder skips it and the
 // renderer leaves the blit byte-identical when there's nothing to do).
 func (s SpriteStyle) Active() bool {
-	return s.Tint || s.Glow || s.Wobble || s.Spin || (s.Opacity != 0 && s.Opacity != 100)
+	return s.Tint || s.Glow || s.Wobble || s.Spin || s.HueCycle || s.FlipH ||
+		(s.Opacity != 0 && s.Opacity != 100) ||
+		(s.Brightness != 0 && s.Brightness != 100) ||
+		(s.Scale != 0 && s.Scale != 100) ||
+		s.Rotation != 0
 }
 
 // AlphaMod resolves Opacity to an 0..255 SetTextureAlphaMod value, treating 0 as
@@ -48,6 +67,29 @@ func (s SpriteStyle) AlphaMod() uint8 {
 		pct = minVisibleOpacity
 	}
 	return uint8(int(pct) * 255 / 100)
+}
+
+// BrightnessPct / ScalePct resolve their 0-as-unset fields to a usable percent,
+// clamped to their range. RotationDeg maps the tilt byte to degrees.
+func (s SpriteStyle) BrightnessPct() int {
+	return resolvePct(s.Brightness, minStyleBrightness, maxStyleBrightness)
+}
+func (s SpriteStyle) ScalePct() int { return resolvePct(s.Scale, minStyleScale, maxStyleScale) }
+func (s SpriteStyle) RotationDeg() float64 {
+	return float64(int(s.Rotation)) * 360.0 / 256.0
+}
+
+func resolvePct(v uint8, lo, hi int) int {
+	if v == 0 {
+		return 100
+	}
+	if int(v) < lo {
+		return lo
+	}
+	if int(v) > hi {
+		return hi
+	}
+	return int(v)
 }
 
 // --- zero-width wire codec --------------------------------------------------
@@ -68,16 +110,21 @@ const (
 	zwBit1  rune = 0x200C // ZERO WIDTH NON-JOINER → bit 1
 	zwStart rune = 0x2060 // WORD JOINER           → payload sentinel
 
-	styleFlagTint   = 1 << 0
-	styleFlagGlow   = 1 << 1
-	styleFlagWobble = 1 << 2
-	styleFlagSpin   = 1 << 3
+	styleFlagTint     = 1 << 0
+	styleFlagGlow     = 1 << 1
+	styleFlagWobble   = 1 << 2
+	styleFlagSpin     = 1 << 3
+	styleFlagHueCycle = 1 << 4
+	styleFlagFlipH    = 1 << 5
 
-	spriteStyleBytes = 5 // R,G,B,Opacity,Flags
-	spriteStyleBits  = spriteStyleBytes * 8
+	// spriteStyleVersion tags the payload so a later field change is detectable —
+	// a decoder that doesn't recognise the version yields no style (benign).
+	spriteStyleVersion = 1
+	spriteStyleBytes   = 9 // version, flags, R, G, B, opacity, brightness, scale, rotation
+	spriteStyleBits    = spriteStyleBytes * 8
 )
 
-// payloadBytes packs the style into its fixed 5-byte wire form.
+// payloadBytes packs the style into its fixed wire form (version-tagged).
 func (s SpriteStyle) payloadBytes() [spriteStyleBytes]byte {
 	var flags byte
 	if s.Tint {
@@ -92,21 +139,35 @@ func (s SpriteStyle) payloadBytes() [spriteStyleBytes]byte {
 	if s.Spin {
 		flags |= styleFlagSpin
 	}
-	return [spriteStyleBytes]byte{s.R, s.G, s.B, s.Opacity, flags}
+	if s.HueCycle {
+		flags |= styleFlagHueCycle
+	}
+	if s.FlipH {
+		flags |= styleFlagFlipH
+	}
+	return [spriteStyleBytes]byte{spriteStyleVersion, flags, s.R, s.G, s.B, s.Opacity, s.Brightness, s.Scale, s.Rotation}
 }
 
 // styleFromBytes is the inverse of payloadBytes.
 func styleFromBytes(b [spriteStyleBytes]byte) SpriteStyle {
-	flags := b[4]
+	if b[0] != spriteStyleVersion {
+		return SpriteStyle{} // unknown version → no style
+	}
+	flags := b[1]
 	return SpriteStyle{
-		Tint:    flags&styleFlagTint != 0,
-		R:       b[0],
-		G:       b[1],
-		B:       b[2],
-		Opacity: b[3],
-		Glow:    flags&styleFlagGlow != 0,
-		Wobble:  flags&styleFlagWobble != 0,
-		Spin:    flags&styleFlagSpin != 0,
+		Tint:       flags&styleFlagTint != 0,
+		Glow:       flags&styleFlagGlow != 0,
+		Wobble:     flags&styleFlagWobble != 0,
+		Spin:       flags&styleFlagSpin != 0,
+		HueCycle:   flags&styleFlagHueCycle != 0,
+		FlipH:      flags&styleFlagFlipH != 0,
+		R:          b[2],
+		G:          b[3],
+		B:          b[4],
+		Opacity:    b[5],
+		Brightness: b[6],
+		Scale:      b[7],
+		Rotation:   b[8],
 	}
 }
 

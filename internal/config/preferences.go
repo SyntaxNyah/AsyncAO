@@ -313,6 +313,13 @@ type SpriteStylePref struct {
 	Glow    bool  `json:"glow,omitempty"`
 	Wobble  bool  `json:"wobble,omitempty"`
 	Spin    bool  `json:"spin,omitempty"`
+	// Richer effects (#103): hue-cycle rainbow, mirror, and percent
+	// brightness/scale + a tilt (0 = unset/neutral). Clamped at render.
+	HueCycle   bool  `json:"hueCycle,omitempty"`
+	FlipH      bool  `json:"flipH,omitempty"`
+	Brightness uint8 `json:"brightness,omitempty"`
+	Scale      uint8 `json:"scale,omitempty"`
+	Rotation   uint8 `json:"rotation,omitempty"`
 }
 
 // clampOpacity bounds a persisted/edited opacity to [0,100] (0 = unset/opaque).

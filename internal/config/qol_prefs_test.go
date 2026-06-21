@@ -115,7 +115,7 @@ func TestSpriteStylePref(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWithDebounce: %v", err)
 	}
-	want := SpriteStylePref{Tint: true, R: 10, G: 20, B: 30, Opacity: 50, Glow: true, Wobble: true, Spin: true}
+	want := SpriteStylePref{Tint: true, R: 10, G: 20, B: 30, Opacity: 50, Glow: true, Wobble: true, Spin: true, HueCycle: true, FlipH: true, Brightness: 70, Scale: 130, Rotation: 200}
 	q.SetSpriteStyle(want)
 	q.SetHideSpriteStyles(true)
 	if err := q.Close(); err != nil {

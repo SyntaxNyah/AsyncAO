@@ -287,8 +287,8 @@ func TestTransmittedSpriteStyleZeroAlloc(t *testing.T) {
 	}
 	vp := NewViewport(store)
 	scene := benchScene(store)
-	scene.Speaker.Style = courtroom.SpriteStyle{Tint: true, R: 255, G: 60, B: 60, Opacity: 60, Glow: true, Wobble: true, Spin: true}
-	scene.Pair.Style = courtroom.SpriteStyle{Tint: true, R: 40, G: 200, B: 255, Opacity: 80, Glow: true}
+	scene.Speaker.Style = courtroom.SpriteStyle{Tint: true, R: 255, G: 60, B: 60, Opacity: 60, Glow: true, Wobble: true, Spin: true, Brightness: 70, Scale: 130, Rotation: 64, FlipH: true}
+	scene.Pair.Style = courtroom.SpriteStyle{HueCycle: true, Opacity: 80, Glow: true, Scale: 80, Rotation: 200}
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 	allocs := testing.AllocsPerRun(200, func() {
 		vp.Update(scene, 16*time.Millisecond)
