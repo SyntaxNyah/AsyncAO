@@ -33,6 +33,7 @@ const (
 // (else a default tucked under the top-right, clear of the stage centre).
 func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh := extrasTitleH + styleBoxPad // title + top pad
+	bh += 50                         // 3-line "what it does / who sees it" note
 	bh += 26                         // Tint row
 	if a.d.Prefs.SpriteStyle().Tint {
 		rows := int32((len(spriteStylePresets) + styleSwatchCols - 1) / styleSwatchCols)
@@ -92,6 +93,15 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 
 	x := r.X + styleBoxPad
 	y := r.Y + extrasTitleH + 6
+
+	// What it does + how others see it (the user asked for this in the box).
+	noteW := r.W - styleBoxPad*2
+	c.LabelClipped(x, y, noteW, "Restyle YOUR own character live.", ColTextDim)
+	y += 16
+	c.LabelClipped(x, y, noteW, "Other AsyncAO players see your colours;", ColTextDim)
+	y += 15
+	c.LabelClipped(x, y, noteW, "AO2 / webAO see a normal character.", ColTextDim)
+	y += 19
 
 	// Recolour toggle.
 	if next := c.Checkbox(x, y, "Recolour (tint)", p.Tint); next != p.Tint {
