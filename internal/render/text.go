@@ -42,6 +42,48 @@ var textColorNames = []string{
 // read-only (shared backing array).
 func TextColorNames() []string { return textColorNames }
 
+// Extended AsyncAO chat colors (#98). These are NOT wire text_color values —
+// the AO MS text_color field MUST stay 0..8 or strict clients (LemmyAO-style)
+// drop the whole message. They travel ONLY as inline \c<Code> markup, exactly
+// like the \cr rainbow: another AsyncAO client renders Color precisely, while a
+// standard AO2 client drops the unknown escape and falls back to Wire (the
+// nearest standard palette index we ship in the MS text_color field). Codes
+// avoid the reserved markup letters r/b/i and the \c lead-in 'c', plus digits
+// 0..8 — the gate set is mirrored by courtroom.ExtColorCodes (a test pins it).
+type ExtColor struct {
+	Name  string
+	Code  byte      // inline letter: \c<Code>
+	Color sdl.Color // exact render color
+	Wire  int       // nearest standard palette index (0..8) for non-AsyncAO clients
+}
+
+var extColors = []ExtColor{
+	{"Purple", 'p', sdl.Color{R: 150, G: 90, B: 245, A: 255}, 4},
+	{"Magenta", 'm', sdl.Color{R: 255, G: 70, B: 230, A: 255}, 6},
+	{"Teal", 't', sdl.Color{R: 40, G: 200, B: 190, A: 255}, 7},
+	{"Lime", 'l', sdl.Color{R: 170, G: 240, B: 70, A: 255}, 1},
+	{"Gold", 'g', sdl.Color{R: 255, G: 200, B: 40, A: 255}, 5},
+	{"Coral", 'o', sdl.Color{R: 255, G: 120, B: 90, A: 255}, 3},
+	{"Sky", 'k', sdl.Color{R: 110, G: 200, B: 255, A: 255}, 4},
+	{"Lavender", 'v', sdl.Color{R: 205, G: 170, B: 255, A: 255}, 4},
+}
+
+// ExtColorCount / ExtColorAt expose the extended palette (read-only) to the IC
+// colour dropdown and the send path.
+func ExtColorCount() int        { return len(extColors) }
+func ExtColorAt(i int) ExtColor { return extColors[i] }
+
+// ExtColorByCode resolves an inline \c<code> letter to its render color; ok is
+// false for an unknown code, and the caller renders the message default.
+func ExtColorByCode(code byte) (sdl.Color, bool) {
+	for i := range extColors {
+		if extColors[i].Code == code {
+			return extColors[i].Color, true
+		}
+	}
+	return textColors[0], false
+}
+
 // rasterLine is one wrapped line: a texture plus per-rune prefix advances so
 // the reveal is a pure src-rect width (spec §12: no per-character
 // layout, no texture churn).

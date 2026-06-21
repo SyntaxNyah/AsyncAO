@@ -1,6 +1,9 @@
 package courtroom
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	// DefaultCharInterval is the base typewriter cadence (spec §1).
@@ -29,19 +32,40 @@ const (
 	// ColorRainbow cycles the palette per rune (rendered render-side; the
 	// parser just tags the run).
 	ColorRainbow = -2
+	// ColorExtBase tags an extended AsyncAO color (#98): StyleRun.Color is
+	// ColorExtBase + the inline letter code, so the render side resolves it by
+	// letter (render.ExtColorByCode) with no positional coupling. Sits well
+	// above the palette/sentinels so the buildColorSpans switch can branch on
+	// `Color >= ColorExtBase`.
+	ColorExtBase = 0x1000
 )
+
+// ExtColorCodes gates which `\c<letter>` codes the parser consumes as extended
+// colors (render owns the actual RGB by the same letter; a ui test pins the two
+// sets equal). Reserved letters are excluded: 'r' is rainbow, and we keep 'b'/
+// 'i'/'c' clear of the bold/italic/lead-in markup to avoid confusion.
+const ExtColorCodes = "pmtlgokv"
+
+// isExtColorCode reports whether r is a consumed extended-color letter. The
+// ASCII guard keeps a non-ASCII rune whose low byte aliases a code letter from
+// matching. Shared by Start and StripChatMarkup so they can't drift.
+func isExtColorCode(r rune) bool {
+	return r >= 'a' && r <= 'z' && strings.IndexByte(ExtColorCodes, byte(r)) >= 0
+}
 
 // StyleRun styles a contiguous span of the CLEAN (markup-stripped) rune
 // sequence. Runs are produced in order and partition the whole message, so
 // they index into the typewriter's runes by simple accumulation — the reveal
 // and the styling can never drift (one parse, one rune sequence). Inline markup
 // is AsyncAO-native and render-only: `\cN` (N = 0..8) starts a palette color,
-// `\cr` rainbow, `\b` toggles bold, `\i` toggles italic, `\\` is a literal
-// backslash. Incoming AO messages (which don't use these) are unaffected;
-// markup you send won't render on stock AO clients.
+// `\cr` rainbow, `\c<letter>` an extended AsyncAO color (#98), `\b` toggles
+// bold, `\i` toggles italic, `\\` is a literal backslash. Incoming AO messages
+// (which don't use these) are unaffected; markup you send won't render on stock
+// AO clients (they drop the escape — extended colors carry a nearest-standard
+// wire fallback so those clients still see a sensible colour).
 type StyleRun struct {
 	Len    int  // clean runes covered
-	Color  int  // palette index, or ColorDefault / ColorRainbow
+	Color  int  // palette index, ColorDefault / ColorRainbow, or ColorExtBase+code
 	Bold   bool // \b
 	Italic bool // \i
 }
@@ -137,6 +161,13 @@ func (t *Typewriter) Start(message string) {
 				}
 				i += 2
 				continue
+			case n == 'c' && i+2 < len(rs) && isExtColorCode(rs[i+2]):
+				if ec := ColorExtBase + int(rs[i+2]); ec != color {
+					flush()
+					color = ec
+				}
+				i += 2
+				continue
 			case n == 'b': // toggle bold
 				flush()
 				bold = !bold
@@ -173,7 +204,7 @@ func StripChatMarkup(message string) string {
 				out = append(out, '\\')
 				i++
 				continue
-			case n == 'c' && i+2 < len(rs) && ((rs[i+2] >= '0' && rs[i+2] <= '8') || rs[i+2] == 'r'):
+			case n == 'c' && i+2 < len(rs) && ((rs[i+2] >= '0' && rs[i+2] <= '8') || rs[i+2] == 'r' || isExtColorCode(rs[i+2])):
 				i += 2
 				continue
 			case n == 'b' || n == 'i': // bold / italic toggles

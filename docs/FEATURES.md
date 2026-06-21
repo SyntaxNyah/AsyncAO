@@ -140,6 +140,19 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   swatch previews the active mode. The dropdown and the Settings checkboxes are
   the same setting, so they stay in sync. (The extended list is built once, so
   the IC input row stays allocation-free.)
+- **Extended chat colours** (#98): the IC colour dropdown adds **Purple, Magenta,
+  Teal, Lime, Gold, Coral, Sky, Lavender** beyond AO's nine, in **both** the
+  classic and themed input rows. These ride as inline `\c<letter>` markup (the
+  same mechanism as Rainbow's `\cr`), so **another AsyncAO user sees the exact
+  colour**, while the message's wire `text_color` carries the **nearest standard
+  colour** as a fallback — so a stock AO2 client still shows a sensible colour and
+  never breaks. The AO wire `text_color` field itself stays 0–8 (strict clients
+  never receive an out-of-range value). Picked like any colour (mutually exclusive
+  with Rainbow/Random); resolved once at send (`funColor`) and once per message at
+  raster build, so there is **zero per-frame cost** and the render loop stays
+  0-alloc. The parser gate set (`courtroom.ExtColorCodes`) and the render palette
+  are pinned equal by a test, so the two AsyncAO clients can never disagree on
+  letter→colour.
 - **Sprite colour FX** (Settings → General, all OFF by default): a render-side
   colour wash over the on-stage characters (speaker **and** pair) — pure **local
   eye-candy**, nothing on the wire, nobody else sees it. A `SetColorMod`

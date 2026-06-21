@@ -3065,35 +3065,16 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// showname box OVERRIDES the Settings showname for the session.
 	fH := a.inputFieldH()
 	swatch := sdl.Rect{X: pad, Y: icY, W: 26, H: fH}
-	// The selector also offers the two "fun colour" modes (#79): Rainbow and
-	// Random sit at the end of the palette list, so they're picked like any
-	// colour instead of being buried in Settings. The selected row reflects the
-	// active mode; the swatch previews it.
-	icSel := a.icColor
-	switch {
-	case a.d.Prefs.RainbowMessagesOn():
-		icSel = icColorRainbowIdx
-		c.Fill(swatch, chatRainbow[0])
-	case a.d.Prefs.RandomMessageColorOn():
-		icSel = icColorRandomIdx
-		c.Fill(swatch, ColTextDim)
-	default:
-		c.Fill(swatch, render.TextColor(a.icColor))
-	}
+	// The selector also offers the extended AsyncAO colours (#98) and the two
+	// "fun colour" modes (#79): they sit after the palette so they're picked like
+	// any colour instead of being buried in Settings. icColorSelected drives the
+	// active row + swatch; applyICColorChoice routes the pick — both shared with
+	// the themed row so the two layouts can't drift.
+	icSel, sw := a.icColorSelected()
+	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
 	if next, changed := c.Dropdown("colordd", sdl.Rect{X: pad + 32, Y: icY, W: colorSelectW, H: fH}, icColorChoices, icSel); changed {
-		switch next {
-		case icColorRainbowIdx: // Rainbow wins over Random; both off picks a plain colour
-			a.d.Prefs.SetRainbowMessages(true)
-			a.d.Prefs.SetRandomMessageColor(false)
-		case icColorRandomIdx:
-			a.d.Prefs.SetRandomMessageColor(true)
-			a.d.Prefs.SetRainbowMessages(false)
-		default:
-			a.d.Prefs.SetRainbowMessages(false)
-			a.d.Prefs.SetRandomMessageColor(false)
-			a.icColor = next
-		}
+		a.applyICColorChoice(next)
 	}
 	const shownameBoxW = 140
 	nameX := pad + 32 + colorSelectW + 6
@@ -3865,7 +3846,7 @@ func (a *App) pairLabel() string {
 // palette cycle), else random swaps the message's palette colour. Pure (the
 // random index is supplied) so the rule is testable; blank/space sends are left
 // alone, and rainbow wins if both are set.
-func funColor(text string, color int, rainbow, random bool, randIdx int) (string, int) {
+func funColor(text string, color, ext int, rainbow, random bool, randIdx int) (string, int) {
 	if text == "" || text == " " {
 		return text, color
 	}
@@ -3874,6 +3855,12 @@ func funColor(text string, color int, rainbow, random bool, randIdx int) (string
 		return "\\cr" + text, color
 	case random:
 		return text, randIdx
+	case ext >= 0 && ext < render.ExtColorCount():
+		// Extended AsyncAO colour (#98): the exact colour rides as inline markup
+		// (AsyncAO renders it); the wire text_color is the nearest standard index
+		// so stock AO2 clients still see a sensible colour.
+		e := render.ExtColorAt(ext)
+		return "\\c" + string(e.Code) + text, e.Wire
 	}
 	return text, color
 }
@@ -3922,8 +3909,9 @@ func (a *App) sendIC(shout int) {
 	if blip == "" {
 		blip = a.charBlips
 	}
-	// M61 fun colour: rainbow (\cr prefix) or a random palette colour per message.
-	text, msgColor := funColor(text, a.icColor, a.d.Prefs.RainbowMessagesOn(), a.d.Prefs.RandomMessageColorOn(), rand.IntN(render.TextColorCount))
+	// M61 fun colour: rainbow (\cr prefix), an extended AsyncAO colour (\c<letter>
+	// + nearest-standard wire fallback, #98), or a random palette colour per message.
+	text, msgColor := funColor(text, a.icColor, a.icExtColor-1, a.d.Prefs.RainbowMessagesOn(), a.d.Prefs.RandomMessageColorOn(), rand.IntN(render.TextColorCount))
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
 		PreEmote:   emote.Preanim,
@@ -4077,16 +4065,73 @@ func sceneNeedsStyled(styles []courtroom.StyleRun) bool {
 	return false
 }
 
-// icColorChoices is the IC colour dropdown (#79): the wire palette plus the two
-// "fun colour" modes, so Rainbow/Random are picked like any colour rather than
-// hidden in Settings. Built once at package init — the IC input row reads it
-// every frame, so it must not allocate. icColorRainbowIdx / icColorRandomIdx are
-// the appended entries' positions.
+// icColorChoices is the IC colour dropdown (#79/#98): the wire palette, then the
+// extended AsyncAO colours (#98), then the two "fun colour" modes — so every
+// colour is picked from one list rather than hidden in Settings. Built once at
+// package init — the IC input row reads it every frame, so it must not allocate.
+// extColorFirst is where the extended entries start; icColorRainbowIdx /
+// icColorRandomIdx are the trailing fun-mode positions (all len-derived so they
+// shift correctly if the palettes change).
 var (
-	icColorRainbowIdx = len(render.TextColorNames())
+	extColorFirst     = len(render.TextColorNames())
+	icColorRainbowIdx = extColorFirst + render.ExtColorCount()
 	icColorRandomIdx  = icColorRainbowIdx + 1
-	icColorChoices    = append(append([]string{}, render.TextColorNames()...), "Rainbow", "Random")
+	icColorChoices    = buildICColorChoices()
 )
+
+// buildICColorChoices assembles the dropdown label list once at init: standard
+// palette names, extended colour names, then Rainbow/Random.
+func buildICColorChoices() []string {
+	out := append([]string{}, render.TextColorNames()...)
+	for i := 0; i < render.ExtColorCount(); i++ {
+		out = append(out, render.ExtColorAt(i).Name)
+	}
+	return append(out, "Rainbow", "Random")
+}
+
+// applyICColorChoice routes an IC colour-dropdown selection (shared by the
+// classic and themed rows so they can't drift). The four kinds are mutually
+// exclusive — picking one clears the others. Critically, only a standard 0..8
+// pick touches a.icColor (the wire text_color); extended colours live in
+// a.icExtColor and ship as inline markup with a nearest-standard wire fallback,
+// so the wire field never leaves 0..8 (#98).
+func (a *App) applyICColorChoice(next int) {
+	switch {
+	case next == icColorRainbowIdx:
+		a.d.Prefs.SetRainbowMessages(true)
+		a.d.Prefs.SetRandomMessageColor(false)
+		a.icExtColor = 0
+	case next == icColorRandomIdx:
+		a.d.Prefs.SetRandomMessageColor(true)
+		a.d.Prefs.SetRainbowMessages(false)
+		a.icExtColor = 0
+	case next >= extColorFirst && next < extColorFirst+render.ExtColorCount():
+		a.icExtColor = next - extColorFirst + 1 // 1-based; 0 = none
+		a.d.Prefs.SetRainbowMessages(false)
+		a.d.Prefs.SetRandomMessageColor(false)
+	default: // standard palette 0..8
+		a.icColor = next
+		a.icExtColor = 0
+		a.d.Prefs.SetRainbowMessages(false)
+		a.d.Prefs.SetRandomMessageColor(false)
+	}
+}
+
+// icColorSelected returns the active dropdown row and its swatch preview colour
+// for the current IC colour state, so both layouts highlight + preview the same
+// thing. Reads only fields/prefs the IC row already reads each frame (0 alloc).
+func (a *App) icColorSelected() (sel int, swatch sdl.Color) {
+	switch {
+	case a.d.Prefs.RainbowMessagesOn():
+		return icColorRainbowIdx, chatRainbow[0]
+	case a.d.Prefs.RandomMessageColorOn():
+		return icColorRandomIdx, ColTextDim
+	case a.icExtColor > 0 && a.icExtColor <= render.ExtColorCount():
+		return extColorFirst + a.icExtColor - 1, render.ExtColorAt(a.icExtColor - 1).Color
+	default:
+		return a.icColor, render.TextColor(a.icColor)
+	}
+}
 
 // chatRainbow is the palette inline rainbow (\cr) cycles through, per rune.
 var chatRainbow = []sdl.Color{
@@ -4113,6 +4158,12 @@ func buildColorSpans(styles []courtroom.StyleRun, def sdl.Color) []render.ColorS
 			}
 		case s.Color == courtroom.ColorDefault:
 			out = append(out, render.ColorSpan{Len: s.Len, Color: def, Bold: s.Bold, Italic: s.Italic})
+		case s.Color >= courtroom.ColorExtBase: // extended AsyncAO color (#98): resolve by inline letter
+			col, ok := render.ExtColorByCode(byte(s.Color - courtroom.ColorExtBase))
+			if !ok {
+				col = def // unknown code → the message's own colour
+			}
+			out = append(out, render.ColorSpan{Len: s.Len, Color: col, Bold: s.Bold, Italic: s.Italic})
 		default:
 			out = append(out, render.ColorSpan{Len: s.Len, Color: render.TextColor(s.Color), Bold: s.Bold, Italic: s.Italic})
 		}

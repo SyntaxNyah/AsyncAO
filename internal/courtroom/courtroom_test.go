@@ -1218,6 +1218,21 @@ func TestTypewriterInlineColors(t *testing.T) {
 		}
 	}
 
+	// Extended AsyncAO color (#98): \c<letter> tags a run with ColorExtBase+letter
+	// (render resolves the RGB by letter); the markup strips like any other code.
+	tw.Start("\\cphi")
+	if got := tw.Text(); got != "hi" {
+		t.Fatalf("ext-color Text = %q, want \"hi\"", got)
+	}
+	if got := tw.Styles(); len(got) != 1 || got[0] != (StyleRun{Len: 2, Color: ColorExtBase + int('p')}) {
+		t.Fatalf("ext-color styles = %v, want one run of 2 @ ColorExtBase+'p'", got)
+	}
+	// An undefined \c<letter> (in a-z but not a code) is kept literal, not eaten.
+	tw.Start("a\\czb")
+	if got := tw.Text(); got != "a\\czb" {
+		t.Errorf(`undefined ext code Text = %q, want literal "a\czb"`, got)
+	}
+
 	// Escaped backslash collapses to one literal '\'; a lone/unknown escape is kept.
 	tw.Start("a\\\\b")
 	if got := tw.Text(); got != "a\\b" {
@@ -1243,6 +1258,7 @@ func TestStripMatchesTypewriter(t *testing.T) {
 		"mix {x}\\c4blue\\\\done",
 		"\\bbold\\b and \\iitalic\\i text",
 		"\\b\\c2 bold red \\inested\\i\\b plain",
+		"\\cppurple\\c0 then white and \\cz kept",
 		"",
 	}
 	for _, m := range cases {

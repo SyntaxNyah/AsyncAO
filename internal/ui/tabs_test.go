@@ -2,11 +2,13 @@ package ui
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // testTabApp builds a headless App with just enough wiring for the tab
@@ -71,21 +73,57 @@ func TestToggleServerFriend(t *testing.T) {
 	}
 }
 
-// TestFunColor pins the M61 message-colour modes: neither leaves text+colour
-// alone, random swaps the colour, rainbow prefixes \cr and wins over random, and
-// a blank/space send is never decorated.
+// TestFunColor pins the M61 message-colour modes + the extended colours (#98):
+// neither leaves text+colour alone, random swaps the colour, rainbow prefixes
+// \cr and wins over random, an extended colour prepends \c<code> and reports the
+// nearest-standard wire colour, and a blank/space send is never decorated.
 func TestFunColor(t *testing.T) {
-	if txt, col := funColor("hi", 4, false, false, 7); txt != "hi" || col != 4 {
+	if txt, col := funColor("hi", 4, -1, false, false, 7); txt != "hi" || col != 4 {
 		t.Errorf("neither: got (%q,%d), want (hi,4)", txt, col)
 	}
-	if txt, col := funColor("hi", 4, false, true, 7); txt != "hi" || col != 7 {
+	if txt, col := funColor("hi", 4, -1, false, true, 7); txt != "hi" || col != 7 {
 		t.Errorf("random: got (%q,%d), want (hi,7)", txt, col)
 	}
-	if txt, col := funColor("hi", 4, true, true, 7); txt != "\\crhi" || col != 4 {
+	if txt, col := funColor("hi", 4, -1, true, true, 7); txt != "\\crhi" || col != 4 {
 		t.Errorf("rainbow wins: got (%q,%d), want (\\crhi,4)", txt, col)
 	}
-	if txt, _ := funColor(" ", 4, true, true, 7); txt != " " {
+	// Extended colour: exact colour rides as inline \c<code>; wire = nearest standard.
+	e := render.ExtColorAt(0)
+	if txt, col := funColor("hi", 2, 0, false, false, 7); txt != "\\c"+string(e.Code)+"hi" || col != e.Wire {
+		t.Errorf("ext: got (%q,%d), want (\\c%shi,%d)", txt, col, string(e.Code), e.Wire)
+	}
+	// ext = -1 is "none" even with a non-default base colour.
+	if txt, col := funColor("hi", 2, -1, false, false, 7); txt != "hi" || col != 2 {
+		t.Errorf("ext none: got (%q,%d), want (hi,2)", txt, col)
+	}
+	if txt, _ := funColor(" ", 4, -1, true, true, 7); txt != " " {
 		t.Error("a blank/space send must be left undecorated")
+	}
+}
+
+// TestExtColorCodesConsistent pins the parser's gate set (courtroom.ExtColorCodes)
+// to the render palette that owns the RGB (#98): every dropdown colour must be a
+// gated letter the parser will render, and every gated letter must resolve to a
+// colour. The cross-AsyncAO guarantee depends on both clients agreeing letter→
+// colour, and these tables live in different packages, so this can't drift.
+func TestExtColorCodesConsistent(t *testing.T) {
+	if len(courtroom.ExtColorCodes) != render.ExtColorCount() {
+		t.Fatalf("courtroom.ExtColorCodes has %d letters, render has %d ext colours — must match 1:1",
+			len(courtroom.ExtColorCodes), render.ExtColorCount())
+	}
+	for i := 0; i < render.ExtColorCount(); i++ {
+		e := render.ExtColorAt(i)
+		if strings.IndexByte(courtroom.ExtColorCodes, e.Code) < 0 {
+			t.Errorf("render ext colour %q (%c) is not parser-gated — it would never render", e.Name, e.Code)
+		}
+		if e.Wire < 0 || e.Wire >= render.TextColorCount {
+			t.Errorf("ext colour %q wire fallback %d out of standard range 0..%d", e.Name, e.Wire, render.TextColorCount-1)
+		}
+	}
+	for i := 0; i < len(courtroom.ExtColorCodes); i++ {
+		if _, ok := render.ExtColorByCode(courtroom.ExtColorCodes[i]); !ok {
+			t.Errorf("gated code %c has no render colour", courtroom.ExtColorCodes[i])
+		}
 	}
 }
 

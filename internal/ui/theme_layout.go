@@ -16,7 +16,6 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
-	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // AO2 themes "hide" elements by flinging them off the design space
@@ -364,14 +363,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// IC input row: color swatch + name dropdown + the message field at
-	// its design rect (the dropdown's open list auto-widens past 64px).
+	// its design rect (the dropdown's open list auto-widens past 64px). Shares
+	// the classic row's full colour list + helpers (palette, extended #98,
+	// Rainbow/Random) so the two layouts stay in lock-step.
 	if in, ok := lay.rect("ao2_ic_chat_message"); ok {
 		swatch := sdl.Rect{X: in.X, Y: in.Y, W: 12, H: in.H}
-		c.Fill(swatch, render.TextColor(a.icColor))
+		icSel, sw := a.icColorSelected()
+		c.Fill(swatch, sw)
 		c.Border(swatch, ColPanelHi)
 		const themedColorW = 64
-		if next, changed := c.Dropdown("colordd", sdl.Rect{X: in.X + 14, Y: in.Y, W: themedColorW, H: in.H}, render.TextColorNames(), a.icColor); changed {
-			a.icColor = next
+		if next, changed := c.Dropdown("colordd", sdl.Rect{X: in.X + 14, Y: in.Y, W: themedColorW, H: in.H}, icColorChoices, icSel); changed {
+			a.applyICColorChoice(next)
 		}
 		lead := int32(14 + themedColorW + 4)
 		fieldX, fieldW := in.X+lead, in.W-lead
