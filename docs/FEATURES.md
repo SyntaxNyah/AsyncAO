@@ -512,7 +512,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   rebindable). Each preset also takes a **per-preset keybind** — click *Bind key*,
   press a key, and that key swaps your showname to that preset in the courtroom
   (right-click the button to clear). The bind survives all but a factory wipe and
-  drops automatically if you remove its preset.
+  drops automatically if you remove its preset. **On the courtroom screen** a tiny
+  **▾ picker** sits next to the showname box (and the OOC-name box) — click it to
+  pick a saved name with the mouse, no Settings trip or keybind needed (great for
+  RP name-changing). It appears only when you have presets, fits inside the box so
+  nothing shifts, and the option list is cached so the chat row stays alloc-free.
+  Works in the classic and themed chatbox layouts.
 - **Music changes in the IC log** (webAO/AO2 parity): when someone plays a song
   the log shows "*&lt;name&gt; has played a song: &lt;song&gt;*" (and "*has
   stopped the music*" on stop), named by the MC showname or the character. The

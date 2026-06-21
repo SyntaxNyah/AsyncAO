@@ -321,8 +321,17 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			}
 		}
 		if nameR, ok := lay.rect("ooc_chat_name"); ok {
+			a.ensureNameOpts()
+			dd := int32(0)
+			if len(a.nameOpts) > 1 && nameR.W > 60 { // tiny ▾ picker, fitted inside the theme's box
+				dd = 20
+				nameR.W -= dd + 2
+			}
 			prev := a.oocName
 			a.oocName, _ = c.TextField("oocname", nameR, a.oocName, "OOC name")
+			if name := a.pickNameDropdown("oocpick", sdl.Rect{X: nameR.X + nameR.W + 2, Y: nameR.Y, W: dd, H: nameR.H}); name != "" {
+				a.oocName = name
+			}
 			if a.oocName != prev {
 				a.d.Prefs.SetOOCName(a.oocName)
 			}
@@ -397,7 +406,16 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if namePlaceholder == "" {
 			namePlaceholder = "Showname"
 		}
+		a.ensureNameOpts()
+		dd := int32(0)
+		if len(a.nameOpts) > 1 && nameR.W > 60 { // tiny ▾ saved-name picker, fitted inside the theme's box
+			dd = 20
+			nameR.W -= dd + 2
+		}
 		a.shownameOverride, _ = c.TextField("icshownameov", nameR, a.shownameOverride, namePlaceholder)
+		if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameR.X + nameR.W + 2, Y: nameR.Y, W: dd, H: nameR.H}); name != "" {
+			a.shownameOverride = name
+		}
 	}
 
 	// Shouts at their design rects, themed art when shipped.

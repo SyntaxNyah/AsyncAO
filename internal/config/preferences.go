@@ -5047,6 +5047,15 @@ func (p *AssetPreferences) ShownameList() []string {
 	return out
 }
 
+// ShownameCount is the number of saved presets — a cheap, alloc-free length read
+// so the courtroom name picker caches its option list and rebuilds only when the
+// set changes (vs calling ShownameList, which copies, every frame).
+func (p *AssetPreferences) ShownameCount() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return len(p.ShownamePresets)
+}
+
 // AddShownamePreset appends a showname to the saved presets (trimmed, deduped
 // case-insensitively, bounded). Reports whether it changed.
 func (p *AssetPreferences) AddShownamePreset(name string) bool {

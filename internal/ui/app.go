@@ -202,6 +202,11 @@ type App struct {
 	// defaultOOC is the sticky AsyncAO<n> fallback OOC name, minted once
 	// per run on first use (commands/macros need SOME name to send).
 	defaultOOC string
+	// nameOpts caches the courtroom name-picker dropdown options ("▾" then the
+	// saved showname presets); nameOptsLen is the preset count it was built at, so
+	// the per-frame chat row never re-copies the list (ensureNameOpts).
+	nameOpts    []string
+	nameOptsLen int
 	// macroBind ≥ 0 while the settings macro editor captures a key.
 	macroBind int
 	// holdKeyArmed: the Settings hold-to-clear rebind is capturing the next key.
@@ -1743,6 +1748,30 @@ func (a *App) effectiveShowname() string {
 		return s
 	}
 	return a.d.Prefs.SavedShowname()
+}
+
+// ensureNameOpts (re)builds the cached name-picker dropdown options — a leading
+// "▾" (the no-op the closed control shows) then the saved showname presets —
+// rebuilt only when the preset count changes, so the per-frame chat row reads a
+// cached slice instead of copying the preset list every draw.
+func (a *App) ensureNameOpts() {
+	if n := a.d.Prefs.ShownameCount(); a.nameOpts == nil || n != a.nameOptsLen {
+		a.nameOptsLen = n
+		a.nameOpts = append([]string{"▾"}, a.d.Prefs.ShownameList()...)
+	}
+}
+
+// pickNameDropdown draws the tiny ▾ showname picker at r and returns the chosen
+// preset (or "" if nothing was picked). Shown only when presets exist; reused by
+// the IC showname box and the OOC name box.
+func (a *App) pickNameDropdown(id string, r sdl.Rect) string {
+	if len(a.nameOpts) <= 1 {
+		return ""
+	}
+	if next, changed := a.ctx.Dropdown(id, r, a.nameOpts, 0); changed && next > 0 {
+		return a.nameOpts[next]
+	}
+	return ""
 }
 
 // updatePresence pushes (or clears) the Discord activity from the user's

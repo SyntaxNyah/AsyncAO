@@ -3093,7 +3093,16 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	if namePlaceholder == "" {
 		namePlaceholder = "Showname"
 	}
-	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameX, Y: icY, W: shownameBoxW, H: fH}, a.shownameOverride, namePlaceholder)
+	a.ensureNameOpts()
+	snW, snDD := int32(shownameBoxW), int32(0)
+	if len(a.nameOpts) > 1 { // a tiny ▾ saved-name picker, fitted INSIDE the box width so nothing downstream shifts
+		snDD = 22
+		snW -= snDD + 2
+	}
+	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameX, Y: icY, W: snW, H: fH}, a.shownameOverride, namePlaceholder)
+	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameX + snW + 2, Y: icY, W: snDD, H: fH}); name != "" {
+		a.shownameOverride = name
+	}
 	// Immediate (AO non-interrupting preanim): the preanim plays without
 	// holding back the text. Session toggle; rides the next message via
 	// OutgoingMS.Immediate. Vertically centered against the fH-tall inputs.
@@ -3126,8 +3135,16 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	oocY := h - fH - 4
 	if !a.panelHidden(panelOOC) {
 		nameW := int32(120)
+		ocW, ocDD := nameW, int32(0)
+		if len(a.nameOpts) > 1 { // same tiny ▾ saved-name picker, fitted inside the name box
+			ocDD = 22
+			ocW -= ocDD + 2
+		}
 		prevOOC := a.oocName
-		a.oocName, _ = c.TextField("oocname", sdl.Rect{X: pad, Y: oocY, W: nameW, H: fH}, a.oocName, "OOC name")
+		a.oocName, _ = c.TextField("oocname", sdl.Rect{X: pad, Y: oocY, W: ocW, H: fH}, a.oocName, "OOC name")
+		if name := a.pickNameDropdown("oocpick", sdl.Rect{X: pad + ocW + 2, Y: oocY, W: ocDD, H: fH}); name != "" {
+			a.oocName = name
+		}
 		if a.oocName != prevOOC {
 			a.d.Prefs.SetOOCName(a.oocName) // permanent OOC name
 		}
