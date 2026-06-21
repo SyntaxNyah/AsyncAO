@@ -119,6 +119,7 @@ const (
 	logTabPlayers
 	logTabOOC
 	logTabNotes
+	logTabFriends
 )
 
 // Char select grid tabs.

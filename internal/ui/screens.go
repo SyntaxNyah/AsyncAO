@@ -1346,11 +1346,12 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// content — adjust volume while the log stays on screen and you keep chatting
 	// (the IC box below is untouched). The tabs share the rest of the row.
 	const volBtnW = int32(36)
-	tab := (r.W - volBtnW) / 6
+	const numLogTabs = 7
+	tab := (r.W - volBtnW) / numLogTabs
 	tabBtn := func(i int32, id int, label string) {
 		bw := tab
-		if i == 5 {
-			bw = (r.W - volBtnW) - 5*tab // last tab takes the remainder before the Vol toggle
+		if int(i) == numLogTabs-1 {
+			bw = (r.W - volBtnW) - (numLogTabs-1)*tab // last tab takes the remainder before the Vol toggle
 		}
 		if c.Button(sdl.Rect{X: r.X + i*tab, Y: r.Y, W: bw, H: btnH}, label) {
 			a.logTab = id
@@ -1359,9 +1360,10 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	tabBtn(0, logTabLog, "Log")
 	tabBtn(1, logTabMusic, "Music")
 	tabBtn(2, logTabAreas, "Areas")
-	tabBtn(3, logTabPlayers, "Player List")
+	tabBtn(3, logTabPlayers, "Players")
 	tabBtn(4, logTabOOC, "OOC")
 	tabBtn(5, logTabNotes, "Notes")
+	tabBtn(6, logTabFriends, "Friends")
 	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}
 	if c.Button(volBtn, "Vol") {
 		a.volStripOn = !a.volStripOn
@@ -1402,6 +1404,9 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		return
 	case logTabNotes:
 		a.drawNotesTab(inner)
+		return
+	case logTabFriends:
+		a.drawFriendsTab(inner)
 		return
 	}
 	// IC log tab: search box + Copy/TXT/HTML row, then the colored
