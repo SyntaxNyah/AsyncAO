@@ -748,6 +748,15 @@ type sessionState struct {
 	favBoxDragging   bool
 	favBoxGrabDX     int32
 	favBoxGrabDY     int32
+	// Floating Sprite Style box (#104): the non-modal, draggable picker for the
+	// transmitted sprite style — open state + movable geometry are session-only.
+	showStyleBox     bool
+	styleBoxX        int32
+	styleBoxY        int32
+	styleBoxPlaced   bool
+	styleBoxDragging bool
+	styleBoxGrabDX   int32
+	styleBoxGrabDY   int32
 	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their
 	// displayed second changes, into a reused scratch slice — so a visible (esp.
 	// paused) clock costs nothing on the always-on courtroom draw.
@@ -857,7 +866,6 @@ type sessionState struct {
 	// timerEndAt zero = not counting down; timerPausedLeft > 0 = paused; both at
 	// rest = idle, so pollTimer and the on-stage chip cost nothing when unused.
 	showTimer       bool
-	showSpriteStyle bool          // Sprite Style picker modal (#103)
 	timerEndAt      time.Time     // when the running countdown fires (zero = not running)
 	timerPausedLeft time.Duration // frozen remainder while paused (0 = not paused)
 	timerSetSec     int           // configured duration, seeded from prefs on first open

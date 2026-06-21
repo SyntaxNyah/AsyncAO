@@ -202,10 +202,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   per-layer, so a received style is **0-alloc** (pinned by
   `TestTransmittedSpriteStyleZeroAlloc`) and an unstyled sprite is byte-identical.
   Sticky (persisted); shows in replays and the GIF/WebP/video export for free (it
-  rides in the replayed text). **Viewer controls:** Reduce-motion drops a received
-  style's wobble/spin, and **Settings → General / the picker** has a "**Hide other
-  players' sprite styles**" off-switch. *(Per-pixel effects — invert / grayscale —
-  are a planned follow-up that builds cached variant textures.)*
+  rides in the replayed text). The picker is a **floating, draggable, non-blocking
+  panel** (#104, the **Sprite Style box** — Extras → Sprite Style) built on the
+  same surface as the Extras / Favourite-Emotes boxes, so you recolour **on the
+  fly while still chatting** (presets + a live swatch, a Fade/opacity slider, and
+  glow / wobble / spin), not a modal that takes over the screen. **Viewer
+  controls:** Reduce-motion drops a received style's wobble/spin, and **Settings →
+  General** has a "**Hide other players' sprite styles**" off-switch. *(Per-pixel
+  effects — invert / grayscale — are a planned follow-up that builds cached
+  variant textures.)*
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

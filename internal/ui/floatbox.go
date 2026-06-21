@@ -147,7 +147,7 @@ func hexNibble(b byte) (uint8, bool) {
 // its torn-off widgets) yields to those and reappears when they close.
 func (a *App) courtModalOpen() bool {
 	return a.showIni || a.bgPick.show || a.showEvid || a.showModcall ||
-		a.showTimer || a.showSpriteStyle || a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair
+		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair
 }
 
 // extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any
@@ -247,7 +247,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if !a.extrasSurfaceLive() {
 		return false
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging {
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
@@ -260,6 +260,9 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		}
 	}
 	if a.d.Prefs.FavEmoteBoxOn() && pointIn(mx, my, a.favBoxRect(w, h)) {
+		return true
+	}
+	if a.showStyleBox && pointIn(mx, my, a.styleBoxRect(w, h)) {
 		return true
 	}
 	return false
@@ -355,7 +358,7 @@ func (a *App) drawFloatingExtras(w, h int32) {
 		return
 	}
 	favOpen := a.d.Prefs.FavEmoteBoxOn()
-	if !a.showWidgets && len(a.extrasDetached) == 0 && !favOpen {
+	if !a.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.showStyleBox {
 		return // every floating box closed — nothing to draw
 	}
 	c := a.ctx
@@ -365,7 +368,7 @@ func (a *App) drawFloatingExtras(w, h int32) {
 	a.extrasPrevDown = c.mouseDown
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
-		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging {
+		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
@@ -375,9 +378,13 @@ func (a *App) drawFloatingExtras(w, h int32) {
 	}
 	// Torn-off widgets persist even with the main box closed.
 	a.drawExtrasDetached(w, h, &pressed)
-	// The favourite-emotes box shares the same press edge (drawn last = on top).
+	// The favourite-emotes and Sprite Style boxes share the same press edge
+	// (drawn last = on top).
 	if favOpen {
 		a.drawFavEmoteBox(w, h, &pressed)
+	}
+	if a.showStyleBox {
+		a.drawSpriteStyleBox(w, h, &pressed)
 	}
 }
 
