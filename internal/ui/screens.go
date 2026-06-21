@@ -3043,7 +3043,15 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.showUICfg = true
 	}
 	x += 56
-	_ = a.drawPosSelect(x, y2, btnH)
+	x = a.drawPosSelect(x, y2, btnH)
+	// "Hotkeys" opens the cheat sheet of every shortcut + your own custom binds
+	// (#96) — the same window as F1 / Extras → Hotkeys, surfaced on the main bar
+	// for discoverability. Appended after Pos so no existing button shifts.
+	keysR := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+	if c.Button(keysR, "Hotkeys") {
+		a.openHotkeyCheatSheet()
+	}
+	c.Tooltip(keysR, "Show all your hotkeys & custom binds (also F1)")
 
 	// Judge strip (JD grant, or the judge stand when pos-dependent).
 	icY := y2 + btnH + 6

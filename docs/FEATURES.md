@@ -1121,14 +1121,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   files, import/export status) runs regardless of the active tab. A
   **search box** (settings header) jumps to the tab that has a term —
   type "blip", "password", "catch up"… and press Enter.
-- **Hotkey cheat-sheet** (press **F1** on any screen, or the **Extras → Hotkeys**
-  entry — #79): a translucent two-column panel listing **every** shortcut in one
-  place — the Ctrl-chord actions resolved to your keys, the fixed function keys,
-  **and your own custom bindings**: macros, character keys, and showname keys.
-  Anything *you* remapped or created shows its key in **gold**, so your bindings
-  stand out from the defaults. Section headers group them; an ✕ or F1 closes it.
-  The rows are built once per open (never per frame) and only drawn while open,
-  so it's zero cost closed.
+- **Hotkey cheat-sheet** (press **F1** on any screen, the courtroom's **Hotkeys**
+  button, or the **Extras → Hotkeys** entry — #79/#96): a translucent two-column
+  panel listing **every** shortcut in one place — the Ctrl-chord actions resolved
+  to your keys, the fixed function keys, **and your own custom bindings**: macros,
+  character keys, showname keys, and IC quick-phrases. Anything *you* remapped or
+  created shows its key in **gold**, so your bindings stand out from the defaults.
+  Section headers group them; an ✕ or F1 closes it. The rows are built once per
+  open (never per frame) and only drawn while open, so it's zero cost closed.
+  A **Hotkeys** button now sits on the main courtroom screen in both layouts — on
+  the classic utility bar (after the Pos selector) and beside **★ Extras** at the
+  bottom-left in themed mode — so the list is one click away without recalling F1.
 - **Mute SFX hotkey** (Ctrl+K by default, rebindable): a session-only
   "shush" that silences sound effects without touching your saved volumes
   or the music/blip channels.

@@ -710,10 +710,11 @@ func (a *App) themedExtrasHint() {
 	a.warnAt = time.Now()
 }
 
-// drawThemedExtrasButton places the single "Extras" button — the one entry
-// point to every AsyncAO feature an AO2 theme has no slot for (the box of
-// widgets). One compact button pinned bottom-left so it barely touches the
-// theme art; hideable via panelExtras (the Extras hotkey still opens the box).
+// drawThemedExtrasButton places the bottom-left affordances for themed mode:
+// the "Extras" button — the one entry point to every AsyncAO feature an AO2
+// theme has no slot for (the box of widgets) — plus a sibling "Hotkeys" button
+// (#96). Two compact buttons pinned bottom-left so they barely touch the theme
+// art; both hideable via panelExtras (the Extras hotkey still opens the box).
 // The classic (non-themed) layout exposes all of this as real buttons already,
 // so this exists for themed mode only.
 func (a *App) drawThemedExtrasButton(w, h int32) {
@@ -730,6 +731,17 @@ func (a *App) drawThemedExtrasButton(w, h int32) {
 	}
 	c.Border(r, ColAccent)
 	c.Tooltip(r, "AsyncAO extras (Wardrobe, Jukebox, Background, Settings…) — hotkey: "+a.hotkeyFor(hotkeyExtras))
+
+	// Sibling "Hotkeys" button (#96): one click to the cheat sheet of every
+	// shortcut + your custom binds, so themed users needn't open Extras or
+	// recall F1. Constant labels → the two TextWidth probes stay alloc-free.
+	hkLabel := "Hotkeys"
+	hk := sdl.Rect{X: r.X + r.W + 4, Y: r.Y, W: c.TextWidth(hkLabel) + 14, H: bh}
+	if c.Button(hk, hkLabel) {
+		a.openHotkeyCheatSheet()
+	}
+	c.Border(hk, ColPanelHi)
+	c.Tooltip(hk, "Show all your hotkeys & custom binds (also F1)")
 }
 
 // drawWidgetsPanel moved to floatbox.go as the non-blocking drawFloatingExtras.
