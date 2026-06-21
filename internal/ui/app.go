@@ -857,6 +857,7 @@ type sessionState struct {
 	// timerEndAt zero = not counting down; timerPausedLeft > 0 = paused; both at
 	// rest = idle, so pollTimer and the on-stage chip cost nothing when unused.
 	showTimer       bool
+	showSpriteStyle bool          // Sprite Style picker modal (#103)
 	timerEndAt      time.Time     // when the running countdown fires (zero = not running)
 	timerPausedLeft time.Duration // frozen remainder while paused (0 = not paused)
 	timerSetSec     int           // configured duration, seeded from prefs on first open
@@ -2427,6 +2428,7 @@ func (a *App) applyTimingToRoom() {
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
 	a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
 	a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+	a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() // #103: viewer opt-out of others' styles
 }
 
 // activeCharName is the character folder OUTGOING messages use: the

@@ -184,6 +184,28 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   and with it all off there is **no cost at all** (the blit is byte-identical:
   no colour-mod, zero offset, zero angle). The App mirrors the prefs onto the
   viewport once per frame (a few uncontended RLocks, no caching layer).
+- **Sprite Style — transmitted, cross-AsyncAO** (#103, **Extras → Sprite Style**):
+  the **transmitted cousin** of the local wash above. You style **your own**
+  character — **recolour** (tint, fun-colour presets + RGB), **opacity** (a ghost,
+  floored so nobody can post an invisible sprite), **neon glow**, and **wobble /
+  spin** — and **every other AsyncAO player sees it on your sprite**, while
+  **AO2 / webAO see a normal, unstyled character** (and unaffected chat text). The
+  style rides as an **invisible zero-width marker** appended to your message text
+  (`internal/courtroom/spritestyle.go`): the message-text field is the only
+  channel that survives an arbitrary server to other clients (the same reason
+  `\cN` colours ride there), and zero-width keeps standard clients truly
+  unaffected — a 5-byte payload (R,G,B,opacity,flags) with a **benign failure
+  mode** (a server that mangles it just yields no style, never a corrupted
+  message). It's decoded + stripped before the typewriter, blankpost test, IC log,
+  and callword matcher, so the visible text is always clean. The renderer reuses
+  the **exact same** `SetColorMod` / `SetAlphaMod` / `BLENDMODE_ADD` bracket
+  per-layer, so a received style is **0-alloc** (pinned by
+  `TestTransmittedSpriteStyleZeroAlloc`) and an unstyled sprite is byte-identical.
+  Sticky (persisted); shows in replays and the GIF/WebP/video export for free (it
+  rides in the replayed text). **Viewer controls:** Reduce-motion drops a received
+  style's wobble/spin, and **Settings → General / the picker** has a "**Hide other
+  players' sprite styles**" off-switch. *(Per-pixel effects — invert / grayscale —
+  are a planned follow-up that builds cached variant textures.)*
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

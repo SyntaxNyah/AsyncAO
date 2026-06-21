@@ -299,6 +299,30 @@ func normalizeVideoFormat(s string) string {
 	return defaultVideoFormat
 }
 
+// SpriteStylePref persists the user's own transmitted sprite customization (the
+// Sprite Style picker): a recolour, opacity, glow, and gentle motion that rides
+// invisibly in their messages so other AsyncAO clients render it. It mirrors
+// courtroom.SpriteStyle field-for-field (config can't import courtroom); the App
+// converts between them. The all-zero value means "no style".
+type SpriteStylePref struct {
+	Tint    bool  `json:"tint,omitempty"`
+	R       uint8 `json:"r,omitempty"`
+	G       uint8 `json:"g,omitempty"`
+	B       uint8 `json:"b,omitempty"`
+	Opacity uint8 `json:"opacity,omitempty"` // percent 1..100; 0 = unset = opaque
+	Glow    bool  `json:"glow,omitempty"`
+	Wobble  bool  `json:"wobble,omitempty"`
+	Spin    bool  `json:"spin,omitempty"`
+}
+
+// clampOpacity bounds a persisted/edited opacity to [0,100] (0 = unset/opaque).
+func clampOpacity(v uint8) uint8 {
+	if v > 100 {
+		return 100
+	}
+	return v
+}
+
 // Per-speaker name colours (OFF by default): each speaker's name is tinted by a
 // stable hash of the name. Saturation/value are user-tunable; value has a floor
 // so a name can't go unreadable-dark on the chat panel.
@@ -494,6 +518,8 @@ type AssetPreferences struct {
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
 	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
 	Export                 ExportOptions                `json:"export"`
+	MySpriteStyle          SpriteStylePref              `json:"mySpriteStyle"`    // the user's own transmitted sprite style (#103)
+	HideSpriteStyles       bool                         `json:"hideSpriteStyles"` // ignore others' transmitted styles (default OFF = show)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
@@ -657,88 +683,90 @@ type AssetPreferences struct {
 // prefsJSON mirrors the on-disk shape for loading. Pointer fields distinguish
 // "absent" from the zero value where the default is not the zero value.
 type prefsJSON struct {
-	GlobalFallbacksEnabled bool           `json:"globalFallbacksEnabled"`
-	PreferAnimated         *bool          `json:"preferAnimated"`
-	EmoteButtonImages      *bool          `json:"emoteButtonImages"`
-	SmoothScaling          *bool          `json:"smoothScaling"`
-	UpdateCheck            *bool          `json:"updateCheck"`    // absent = default ON
-	HighlightColor         *int           `json:"highlightColor"` // absent = default accent
-	BgSlideshow            bool           `json:"bgSlideshow"`    // default OFF (zero value)
-	BgSlideshowSecs        int            `json:"bgSlideshowSecs"`
-	DownloadKBps           int            `json:"downloadKBps"`         // 0 = unlimited (default)
-	ForceCharNames         bool           `json:"forceCharNames"`       // default OFF
-	RandomEmote            bool           `json:"randomEmote"`          // default OFF
-	FriendHighlight        bool           `json:"friendHighlight"`      // default OFF
-	ShowFriendButton       *bool          `json:"showFriendButton"`     // default ON (pointer: absent != off)
-	RightClickHideSprite   *bool          `json:"rightClickHideSprite"` // default ON (pointer: absent != off)
-	DragLayout             *bool          `json:"dragLayout"`           // default ON (pointer: absent != off)
-	FollowEnabled          bool           `json:"followEnabled"`        // default OFF (opt-in)
-	PlayerListSort         int            `json:"playerListSort"`       // default 0 (UID)
-	PlayerListAreaSort     int            `json:"playerListAreaSort"`   // default 0 (/gas order)
-	DyslexiaFont           bool           `json:"dyslexiaFont"`         // default OFF
-	DNDPersist             bool           `json:"dndPersist"`           // default OFF (DND clears each launch)
-	DNDSaved               bool           `json:"dndSaved"`             // persisted DND state (restored only when DNDPersist)
-	RainbowMessages        bool           `json:"rainbowMessages"`      // default OFF
-	RandomMessageColor     bool           `json:"randomMessageColor"`   // default OFF
-	RainbowSprites         bool           `json:"rainbowSprites"`       // default OFF
-	ShowRecordButton       bool           `json:"showRecordButton"`     // default OFF
-	InstantDisconnect      bool           `json:"instantDisconnect"`    // default OFF (confirm first)
-	HideDesk               bool           `json:"hideDesk"`             // default OFF
-	FavEmoteBox            bool           `json:"favEmoteBox"`          // default OFF
-	InstantReplay          bool           `json:"instantReplay"`        // default OFF
-	InstantReplaySeconds   int            `json:"instantReplaySeconds"` // 0 = default window
-	TimerSeconds           int            `json:"timerSeconds"`         // 0 = default (#97)
-	TimerRepeat            bool           `json:"timerRepeat"`          // default OFF (#97)
-	NotifyOnOOC            bool           `json:"notifyOnOOC"`          // default OFF (IC-only badge)
-	AutoConnectOnLaunch    bool           `json:"autoConnectOnLaunch"`  // default OFF
-	LastServerName         string         `json:"lastServerName"`
-	LastServerURL          string         `json:"lastServerURL"`
-	RainbowSpriteSpeed     *int           `json:"rainbowSpriteSpeed"`     // absent = default
-	ReplayPlaybackSpeed    *int           `json:"replaySpeed"`            // absent = default
-	Export                 *ExportOptions `json:"export"`                 // absent = default
-	ChatboxOpacity         *int           `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
-	RainbowSpriteVividness *int           `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
-	RainbowSpriteGlow      bool           `json:"rainbowSpriteGlow"`      // default OFF
-	RainbowPairDesync      bool           `json:"rainbowPairDesync"`      // default OFF
-	RainbowPerChar         bool           `json:"rainbowPerChar"`         // default OFF
-	SpriteWobble           bool           `json:"spriteWobble"`           // default OFF
-	SpriteSpin             bool           `json:"spriteSpin"`             // default OFF
-	SpriteSolidTint        bool           `json:"spriteSolidTint"`        // default OFF
-	SpriteTintColor        *int           `json:"spriteTintColor"`        // absent = default
-	FriendNotify           bool           `json:"friendNotify"`           // default OFF
-	FriendOSToast          bool           `json:"friendOSToast"`          // default OFF
-	FriendGlowPulse        bool           `json:"friendGlowPulse"`        // default OFF
-	FriendSound            bool           `json:"friendSound"`            // default OFF
-	FriendSoundFile        string         `json:"friendSoundFile"`
-	ModBanSFX              bool           `json:"modBanSFX"`        // default OFF
-	ModKickSFX             bool           `json:"modKickSFX"`       // default OFF
-	ModMuteSFX             bool           `json:"modMuteSFX"`       // default OFF
-	ModBanSoundFile        string         `json:"modBanSoundFile"`  // "" = built-in default
-	ModKickSoundFile       string         `json:"modKickSoundFile"` // "" = built-in default
-	ModMuteSoundFile       string         `json:"modMuteSoundFile"` // "" = built-in default
-	ModcallToast           bool           `json:"modcallToast"`     // default OFF
-	CallwordSoundFile      string         `json:"callwordSoundFile"`
-	DebugOverlay           bool           `json:"debugOverlay"`
-	FormatAutoDetect       *bool          `json:"formatAutoDetect"` // absent = default ON
-	ThemeLayout            *bool          `json:"themeLayout"`      // absent = default ON
-	ThemeFit               int            `json:"themeFit"`         // 0 = Stretch (default)
-	ThemeFitZoom           int            `json:"themeFitZoom"`     // 0 (absent) = default 100
-	ThemeFitPanX           int            `json:"themeFitPanX"`
-	ThemeFitPanY           int            `json:"themeFitPanY"`
-	PlainLobby             *bool          `json:"plainLobby"`        // absent = default ON
-	UIScaleAuto            *bool          `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
-	CatchUpWhenBehind      *bool          `json:"catchUpWhenBehind"` // absent = default ON
-	CatchUpThreshold       *int           `json:"catchUpThreshold"`  // absent = default
-	MultiTabCap            *int           `json:"multiTabCap"`       // absent = default
-	NameColors             bool           `json:"nameColors"`        // default OFF (zero value)
-	NameColorSat           *int           `json:"nameColorSat"`      // absent = default
-	NameColorVal           *int           `json:"nameColorVal"`      // absent = default
-	RestoreTabs            bool           `json:"restoreTabs"`       // default OFF (zero value)
-	OpenTabs               []OpenTab      `json:"openTabs"`          // remembered tabs for restore-on-launch
-	ReduceMotion           bool           `json:"reduceMotion"`      // default OFF (zero value)
-	MusicDucking           bool           `json:"musicDucking"`      // default OFF (zero value)
-	PerAreaScrollback      bool           `json:"perAreaScrollback"` // default OFF (zero value)
-	DetailedLog            bool           `json:"detailedLog"`       // default OFF (zero value)
+	GlobalFallbacksEnabled bool             `json:"globalFallbacksEnabled"`
+	PreferAnimated         *bool            `json:"preferAnimated"`
+	EmoteButtonImages      *bool            `json:"emoteButtonImages"`
+	SmoothScaling          *bool            `json:"smoothScaling"`
+	UpdateCheck            *bool            `json:"updateCheck"`    // absent = default ON
+	HighlightColor         *int             `json:"highlightColor"` // absent = default accent
+	BgSlideshow            bool             `json:"bgSlideshow"`    // default OFF (zero value)
+	BgSlideshowSecs        int              `json:"bgSlideshowSecs"`
+	DownloadKBps           int              `json:"downloadKBps"`         // 0 = unlimited (default)
+	ForceCharNames         bool             `json:"forceCharNames"`       // default OFF
+	RandomEmote            bool             `json:"randomEmote"`          // default OFF
+	FriendHighlight        bool             `json:"friendHighlight"`      // default OFF
+	ShowFriendButton       *bool            `json:"showFriendButton"`     // default ON (pointer: absent != off)
+	RightClickHideSprite   *bool            `json:"rightClickHideSprite"` // default ON (pointer: absent != off)
+	DragLayout             *bool            `json:"dragLayout"`           // default ON (pointer: absent != off)
+	FollowEnabled          bool             `json:"followEnabled"`        // default OFF (opt-in)
+	PlayerListSort         int              `json:"playerListSort"`       // default 0 (UID)
+	PlayerListAreaSort     int              `json:"playerListAreaSort"`   // default 0 (/gas order)
+	DyslexiaFont           bool             `json:"dyslexiaFont"`         // default OFF
+	DNDPersist             bool             `json:"dndPersist"`           // default OFF (DND clears each launch)
+	DNDSaved               bool             `json:"dndSaved"`             // persisted DND state (restored only when DNDPersist)
+	RainbowMessages        bool             `json:"rainbowMessages"`      // default OFF
+	RandomMessageColor     bool             `json:"randomMessageColor"`   // default OFF
+	RainbowSprites         bool             `json:"rainbowSprites"`       // default OFF
+	ShowRecordButton       bool             `json:"showRecordButton"`     // default OFF
+	InstantDisconnect      bool             `json:"instantDisconnect"`    // default OFF (confirm first)
+	HideDesk               bool             `json:"hideDesk"`             // default OFF
+	FavEmoteBox            bool             `json:"favEmoteBox"`          // default OFF
+	InstantReplay          bool             `json:"instantReplay"`        // default OFF
+	InstantReplaySeconds   int              `json:"instantReplaySeconds"` // 0 = default window
+	TimerSeconds           int              `json:"timerSeconds"`         // 0 = default (#97)
+	TimerRepeat            bool             `json:"timerRepeat"`          // default OFF (#97)
+	NotifyOnOOC            bool             `json:"notifyOnOOC"`          // default OFF (IC-only badge)
+	AutoConnectOnLaunch    bool             `json:"autoConnectOnLaunch"`  // default OFF
+	LastServerName         string           `json:"lastServerName"`
+	LastServerURL          string           `json:"lastServerURL"`
+	RainbowSpriteSpeed     *int             `json:"rainbowSpriteSpeed"`     // absent = default
+	ReplayPlaybackSpeed    *int             `json:"replaySpeed"`            // absent = default
+	Export                 *ExportOptions   `json:"export"`                 // absent = default
+	MySpriteStyle          *SpriteStylePref `json:"mySpriteStyle"`          // absent = no style (#103)
+	HideSpriteStyles       bool             `json:"hideSpriteStyles"`       // default OFF (show others' styles)
+	ChatboxOpacity         *int             `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
+	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
+	RainbowSpriteGlow      bool             `json:"rainbowSpriteGlow"`      // default OFF
+	RainbowPairDesync      bool             `json:"rainbowPairDesync"`      // default OFF
+	RainbowPerChar         bool             `json:"rainbowPerChar"`         // default OFF
+	SpriteWobble           bool             `json:"spriteWobble"`           // default OFF
+	SpriteSpin             bool             `json:"spriteSpin"`             // default OFF
+	SpriteSolidTint        bool             `json:"spriteSolidTint"`        // default OFF
+	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
+	FriendNotify           bool             `json:"friendNotify"`           // default OFF
+	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
+	FriendGlowPulse        bool             `json:"friendGlowPulse"`        // default OFF
+	FriendSound            bool             `json:"friendSound"`            // default OFF
+	FriendSoundFile        string           `json:"friendSoundFile"`
+	ModBanSFX              bool             `json:"modBanSFX"`        // default OFF
+	ModKickSFX             bool             `json:"modKickSFX"`       // default OFF
+	ModMuteSFX             bool             `json:"modMuteSFX"`       // default OFF
+	ModBanSoundFile        string           `json:"modBanSoundFile"`  // "" = built-in default
+	ModKickSoundFile       string           `json:"modKickSoundFile"` // "" = built-in default
+	ModMuteSoundFile       string           `json:"modMuteSoundFile"` // "" = built-in default
+	ModcallToast           bool             `json:"modcallToast"`     // default OFF
+	CallwordSoundFile      string           `json:"callwordSoundFile"`
+	DebugOverlay           bool             `json:"debugOverlay"`
+	FormatAutoDetect       *bool            `json:"formatAutoDetect"` // absent = default ON
+	ThemeLayout            *bool            `json:"themeLayout"`      // absent = default ON
+	ThemeFit               int              `json:"themeFit"`         // 0 = Stretch (default)
+	ThemeFitZoom           int              `json:"themeFitZoom"`     // 0 (absent) = default 100
+	ThemeFitPanX           int              `json:"themeFitPanX"`
+	ThemeFitPanY           int              `json:"themeFitPanY"`
+	PlainLobby             *bool            `json:"plainLobby"`        // absent = default ON
+	UIScaleAuto            *bool            `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
+	CatchUpWhenBehind      *bool            `json:"catchUpWhenBehind"` // absent = default ON
+	CatchUpThreshold       *int             `json:"catchUpThreshold"`  // absent = default
+	MultiTabCap            *int             `json:"multiTabCap"`       // absent = default
+	NameColors             bool             `json:"nameColors"`        // default OFF (zero value)
+	NameColorSat           *int             `json:"nameColorSat"`      // absent = default
+	NameColorVal           *int             `json:"nameColorVal"`      // absent = default
+	RestoreTabs            bool             `json:"restoreTabs"`       // default OFF (zero value)
+	OpenTabs               []OpenTab        `json:"openTabs"`          // remembered tabs for restore-on-launch
+	ReduceMotion           bool             `json:"reduceMotion"`      // default OFF (zero value)
+	MusicDucking           bool             `json:"musicDucking"`      // default OFF (zero value)
+	PerAreaScrollback      bool             `json:"perAreaScrollback"` // default OFF (zero value)
+	DetailedLog            bool             `json:"detailedLog"`       // default OFF (zero value)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -1180,6 +1208,12 @@ func load(path string) (*AssetPreferences, error) {
 		e.Loop = onDisk.Export.Loop
 		p.Export = e
 	}
+	if onDisk.MySpriteStyle != nil {
+		s := *onDisk.MySpriteStyle
+		s.Opacity = clampOpacity(s.Opacity)
+		p.MySpriteStyle = s
+	}
+	p.HideSpriteStyles = onDisk.HideSpriteStyles
 	if onDisk.ChatboxOpacity != nil {
 		p.ChatboxOpacity = clampPercent(*onDisk.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
 	}
@@ -2762,6 +2796,46 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 		return
 	}
 	p.Export = o
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SpriteStyle reports the user's own transmitted sprite customization (#103).
+func (p *AssetPreferences) SpriteStyle() SpriteStylePref {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MySpriteStyle
+}
+
+// SetSpriteStyle stores the user's sprite style (opacity clamped to [0,100]).
+func (p *AssetPreferences) SetSpriteStyle(s SpriteStylePref) {
+	s.Opacity = clampOpacity(s.Opacity)
+	p.mu.Lock()
+	if p.MySpriteStyle == s {
+		p.mu.Unlock()
+		return
+	}
+	p.MySpriteStyle = s
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// HideSpriteStylesOn reports whether the viewer ignores others' transmitted
+// sprite styles (default false = show them).
+func (p *AssetPreferences) HideSpriteStylesOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.HideSpriteStyles
+}
+
+// SetHideSpriteStyles toggles ignoring others' transmitted sprite styles.
+func (p *AssetPreferences) SetHideSpriteStyles(b bool) {
+	p.mu.Lock()
+	if p.HideSpriteStyles == b {
+		p.mu.Unlock()
+		return
+	}
+	p.HideSpriteStyles = b
 	p.mu.Unlock()
 	p.markDirty()
 }

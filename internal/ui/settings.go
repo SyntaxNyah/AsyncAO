@@ -134,7 +134,7 @@ const (
 // settingsSearchKeywords maps each tab to terms the search box matches, so
 // "blip" jumps to Audio & Chat, "password" to Account, and so on.
 var settingsSearchKeywords = [numSettingsTabs][]string{
-	tabGeneral:   {"showname", "ooc name", "animation", "reduce motion", "emote button", "favourite emotes", "favorite emotes", "debug", "streamer", "smooth", "scaling", "ui scale", "dpi", "font", "cjk", "tabs", "server tabs", "max tabs"},
+	tabGeneral:   {"showname", "ooc name", "animation", "reduce motion", "sprite style", "recolour", "recolor", "glow", "emote button", "favourite emotes", "favorite emotes", "debug", "streamer", "smooth", "scaling", "ui scale", "dpi", "font", "cjk", "tabs", "server tabs", "max tabs"},
 	tabTheme:     {"theme", "chatbox", "skin", "layout", "courtroom design", "bind", "preview"},
 	tabAssets:    {"fallback", "format", "webp", "png", "avif", "extensions", "audio format", "local", "mount", "download", "cache", "disk", "zstd", "learned"},
 	tabAudioChat: {"music", "sfx", "sound", "blip", "volume", "text crawl", "text stay", "text speed", "chat limit", "catch up", "callword", "casing", "case"},
@@ -406,6 +406,17 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	if next := c.Checkbox(pad, y, "Reduce motion (accessibility): stop the screen shake / realization flash (effect sounds still play)", reduce); next != reduce {
 		a.d.Prefs.SetReduceMotion(next)
 		a.applyTimingToRoom() // push the flag to the live room
+	}
+	y += 26
+	// #103: viewer opt-out of OTHER players' transmitted sprite styles (your own
+	// is set in the Extras → Sprite Style picker). Reduce-motion already drops a
+	// received style's wobble/spin; this hides the whole thing.
+	hideStyles := a.d.Prefs.HideSpriteStylesOn()
+	if next := c.Checkbox(pad, y, "Hide other players' sprite styles: show every character normally (ignore transmitted recolour / glow)", hideStyles); next != hideStyles {
+		a.d.Prefs.SetHideSpriteStyles(next)
+		if a.room != nil {
+			a.room.HideSpriteStyles = next
+		}
 	}
 	y += 26
 	emoteImgs := a.d.Prefs.EmoteButtonImagesEnabled()

@@ -360,63 +360,82 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		flip = sdl.FLIP_HORIZONTAL
 	}
 	tex := page.Frames[frame]
-	fx := v.fx
-	tinted := fx.tinted()
-	if tinted {
-		// Optional eye-candy: modulate the sprite by a colour. Alpha is
-		// untouched, so the transparent cutout stays transparent — it tints the
-		// character, it never fills the frame. Rainbow (a cycling hue) wins over
-		// the fixed Solid colour when both are on.
-		var r, g, b uint8
-		if fx.Rainbow {
-			phase := v.rainbowPhase + hueShift
-			if fx.PerCharHue { // each character a different hue at once
-				phase += charHueOffset(layer.Active, v.curCycle)
-			}
-			if v.curCycle > 0 { // defensive: curCycle is floored > 0 in Update
-				phase %= v.curCycle
-			}
-			r, g, b = rainbowMod(phase, v.curCycle, floorForVividness(fx.Vividness))
-		} else {
-			r, g, b = fx.SolidR, fx.SolidG, fx.SolidB
+
+	// Resolve the effective per-layer effects into plain locals (no allocation; a
+	// no-FX layer leaves them all neutral and the blit byte-identical). A
+	// TRANSMITTED style — the speaker's own choice, decoded from their message —
+	// takes precedence over the viewer's local wash for that layer; otherwise the
+	// local wash (rainbow / solid) applies exactly as before.
+	var (
+		modR, modG, modB            uint8 = 255, 255, 255
+		alphaMod                    uint8 = 255
+		doColorMod, glow, wob, spin bool
+	)
+	if st := layer.Style; st.Active() {
+		if st.Tint {
+			modR, modG, modB, doColorMod = st.R, st.G, st.B, true
 		}
-		_ = tex.SetColorMod(r, g, b)
-		if fx.Glow {
-			// Additive: the tint adds light instead of multiplying, so the
-			// sprite glows like neon (and turns translucent — the background
-			// shows through, by design).
-			_ = tex.SetBlendMode(sdl.BLENDMODE_ADD)
+		alphaMod = st.AlphaMod() // opacity (floored so a received style can't go invisible)
+		glow, wob, spin = st.Glow, st.Wobble, st.Spin
+	} else {
+		fx := v.fx
+		if fx.tinted() {
+			doColorMod = true
+			if fx.Rainbow {
+				phase := v.rainbowPhase + hueShift
+				if fx.PerCharHue { // each character a different hue at once
+					phase += charHueOffset(layer.Active, v.curCycle)
+				}
+				if v.curCycle > 0 { // defensive: curCycle is floored > 0 in Update
+					phase %= v.curCycle
+				}
+				modR, modG, modB = rainbowMod(phase, v.curCycle, floorForVividness(fx.Vividness))
+			} else {
+				modR, modG, modB = fx.SolidR, fx.SolidG, fx.SolidB
+			}
+			glow = fx.Glow // local glow rides the local tint (unchanged)
 		}
+		wob, spin = fx.Wobble, fx.Spin
 	}
-	// Optional motion FX (independent of the colour wash): a gentle position
-	// sway and/or a slow spin. Both are pure math off the free-running fxClock,
-	// so they add no allocation — and when off, the offset is 0 and the angle is
-	// 0, leaving the blit byte-identical to before.
-	if fx.Wobble {
+
+	// Apply each modulation, then restore EACH to neutral after the blit so it
+	// never bleeds onto the next user of this SHARED T1 page (next frame, emote
+	// preview, wardrobe grid). ColorMod leaves alpha alone so the transparent
+	// cutout stays cut out; AlphaMod handles opacity; ADD blend makes a glow.
+	//
+	// INVARIANT: drawSprite is the *only* place the renderer touches SetColorMod /
+	// SetBlendMode / SetAlphaMod (the sole other SetBlendMode is the upload
+	// default, BLENDMODE_BLEND at textures.go). Any future effect that mods a
+	// texture elsewhere MUST restore it too, or art bleeds.
+	if doColorMod {
+		_ = tex.SetColorMod(modR, modG, modB)
+	}
+	if alphaMod != 255 {
+		_ = tex.SetAlphaMod(alphaMod)
+	}
+	if glow {
+		_ = tex.SetBlendMode(sdl.BLENDMODE_ADD)
+	}
+	// Optional motion FX: a gentle sway and/or slow spin, pure math off the
+	// free-running fxClock (no allocation; off = zero offset / zero angle).
+	if wob {
 		dx, dy := wobbleOffset(v.fxClock, vp)
 		v.dstRect.X += dx
 		v.dstRect.Y += dy
 	}
 	angle := 0.0
-	if fx.Spin {
+	if spin {
 		angle = spinDegrees(v.fxClock)
 	}
 	_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
-	if tinted {
-		// Restore the neutral mod/blend on this SHARED T1 page: leaving either
-		// set would bleed onto every later user of the same texture (the next
-		// frame, the emote preview, the wardrobe grid). Cheap and load-bearing.
-		//
-		// INVARIANT: drawSprite is the *only* place the renderer touches
-		// SetColorMod or SetBlendMode (the sole other SetBlendMode is the
-		// upload default, BLENDMODE_BLEND at textures.go) — that's what keeps
-		// scenery/preview/wardrobe untouched, and why restoring to BLEND is
-		// correct. Any future effect that mods a texture elsewhere MUST restore
-		// it too, or art bleeds.
+	if doColorMod {
 		_ = tex.SetColorMod(255, 255, 255)
-		if fx.Glow {
-			_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
-		}
+	}
+	if alphaMod != 255 {
+		_ = tex.SetAlphaMod(255)
+	}
+	if glow {
+		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	}
 }
 

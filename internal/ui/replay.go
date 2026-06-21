@@ -560,6 +560,8 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	// replay honours the viewer's reduce-motion accessibility pref.
 	a.replayRoom.ReduceMotion = a.d.Prefs.ReduceMotion() && !a.makerOpen
 	a.replayRoom.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
+	a.replayRoom.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() && !a.makerOpen // maker preview shows styles; replay honours the viewer
+
 	if a.d.Viewport != nil { // one-shot preanim completion must notify the REPLAY room now
 		a.d.Viewport.OnPreanimDone = a.replayRoom.NotifyPreanimDone
 	}

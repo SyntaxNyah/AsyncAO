@@ -268,6 +268,37 @@ func TestRenderFrameRainbowZeroAllocs(t *testing.T) {
 	}
 }
 
+// TestTransmittedSpriteStyleZeroAlloc pins the #103 hard constraint: a RECEIVED
+// per-layer sprite style — recolour + opacity + glow + motion on BOTH the speaker
+// and the pair, the worst case — renders with zero heap allocations, so a styled
+// speaker can never degrade the render hot path.
+func TestTransmittedSpriteStyleZeroAlloc(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	for _, base := range []string{"bg", "desk", "spk", "pair"} {
+		if err := store.Upload(base, decodedFixture()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vp := NewViewport(store)
+	scene := benchScene(store)
+	scene.Speaker.Style = courtroom.SpriteStyle{Tint: true, R: 255, G: 60, B: 60, Opacity: 60, Glow: true, Wobble: true, Spin: true}
+	scene.Pair.Style = courtroom.SpriteStyle{Tint: true, R: 40, G: 200, B: 255, Opacity: 80, Glow: true}
+	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
+	allocs := testing.AllocsPerRun(200, func() {
+		vp.Update(scene, 16*time.Millisecond)
+		vp.Render(ren, scene, rect)
+	})
+	if allocs != 0 {
+		t.Errorf("transmitted sprite style render allocates %.1f objects/op, want 0 (#103 zero-perf constraint)", allocs)
+	}
+}
+
 // TestSpriteFXHelpers pins the motion / per-character FX helpers: bounded,
 // deterministic, allocation-free pure math.
 func TestSpriteFXHelpers(t *testing.T) {

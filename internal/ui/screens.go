@@ -946,6 +946,8 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawModcallDialog(w, h)
 	case a.showTimer:
 		a.drawTimerPanel(w, h)
+	case a.showSpriteStyle:
+		a.drawSpriteStylePanel(w, h)
 	case a.showUICfg:
 		a.drawUICfgPanel(w, h)
 	case a.showLogin:
@@ -3937,6 +3939,13 @@ func (a *App) sendIC(shout int) {
 	// M61 fun colour: rainbow (\cr prefix), an extended AsyncAO colour (\c<letter>
 	// + nearest-standard wire fallback, #98), or a random palette colour per message.
 	text, msgColor := funColor(text, a.icColor, a.icExtColor-1, a.d.Prefs.RainbowMessagesOn(), a.d.Prefs.RandomMessageColorOn(), rand.IntN(render.TextColorCount))
+	// Transmitted sprite style (#103): append the invisible zero-width marker at
+	// the END of the text — other AsyncAO clients decode + render it on this
+	// character; AO2/webAO see nothing. End placement keeps the visible text intact
+	// if a server length-limits the message (worst case: the style is dropped).
+	if marker := a.mySpriteStyle().EncodeMarker(); marker != "" {
+		text += marker
+	}
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
 		PreEmote:   emote.Preanim,

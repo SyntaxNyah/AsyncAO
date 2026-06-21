@@ -77,6 +77,10 @@ type SpriteLayer struct {
 	// OffsetX/Y are percent of viewport dimensions (−100..100).
 	OffsetX, OffsetY int
 	Visible          bool
+	// Style is the speaker's transmitted sprite customization (recolour / glow /
+	// opacity / motion), decoded from this message's text. Zero value = none; the
+	// renderer leaves the blit byte-identical when it's inactive.
+	Style SpriteStyle
 }
 
 // Scene is the renderer's entire input: plain data, no SDL types, mutated
@@ -180,8 +184,14 @@ type Courtroom struct {
 
 	// ReduceMotion suppresses the jarring visual effects (screen shake,
 	// realization flash) — accessibility. Effect SOUNDS still play; only the
-	// motion is skipped. Set by the App from prefs (default off).
+	// motion is skipped. Set by the App from prefs (default off). It also
+	// suppresses a RECEIVED sprite style's wobble/spin (transmitted motion).
 	ReduceMotion bool
+
+	// HideSpriteStyles ignores other speakers' transmitted SpriteStyle entirely
+	// (every character renders normally) — a viewer off-switch. Set by the App
+	// from prefs; default off (zero value) = show received styles.
+	HideSpriteStyles bool
 
 	// ForceCharNames shows every speaker's CHARACTER name instead of their
 	// custom showname (true-roleplay / anti-impersonation for casing). Set by
@@ -201,8 +211,13 @@ type Courtroom struct {
 	phase MessagePhase
 	timer time.Duration
 
-	current  *protocol.ChatMessage
-	blipBase string
+	current *protocol.ChatMessage
+	// currentText is current.Message with any transmitted SpriteStyle marker
+	// decoded out — the visible-only text the typewriter/blankpost use. The raw
+	// current.Message keeps the marker (recordings share that pointer, so replays
+	// re-decode the style); we never mutate it.
+	currentText string
+	blipBase    string
 
 	// Predictor warms the predicted next speaker's sprite (optional).
 	Predictor *assets.Prefetcher
@@ -378,6 +393,17 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.beginCaughtUp(msg)
 		return
 	}
+	// Decode this speaker's transmitted sprite style out of the text (an invisible
+	// zero-width marker). currentText is the visible-only text the typewriter and
+	// blankpost test use; we never mutate msg.Message (the recording shares that
+	// pointer, so a replay re-decodes the same marker).
+	style, clean := DecodeSpriteStyle(msg.Message)
+	c.currentText = clean
+	if c.HideSpriteStyles {
+		style = SpriteStyle{} // viewer opted out of others' styles
+	} else if c.ReduceMotion {
+		style.Wobble, style.Spin = false, false // accessibility: drop transmitted motion
+	}
 	speakerName := msg.CharName
 
 	// --- prefetch fan-out (all HIGH, all parallel on the pool) ---
@@ -473,6 +499,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		OffsetX:     msg.SelfOffsetX,
 		OffsetY:     msg.SelfOffsetY,
 		Visible:     true,
+		Style:       style, // transmitted recolour / glow / opacity / motion
 	}
 
 	c.Scene.PairActive = msg.Pair.Active()
@@ -501,7 +528,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// to the typewriter by TestStripMatchesTypewriter, so this matches what
 	// would type out) — known from frame 1 so the box never flashes during an
 	// animated blankpost's preanim.
-	c.Scene.IsBlankPost = strings.TrimSpace(StripChatMarkup(msg.Message)) == ""
+	c.Scene.IsBlankPost = strings.TrimSpace(StripChatMarkup(c.currentText)) == ""
 	c.preanimDone = false
 
 	// --- phase entry ---
@@ -528,10 +555,11 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.ShoutFallbackBase = ""
 	c.Scene.ShownameText = c.displayName(msg)
 	c.Scene.TextColor = msg.TextColor
-	c.Typewriter.Start(msg.Message)
+	_, c.currentText = DecodeSpriteStyle(msg.Message) // strip the style marker (catch-up never redraws the sprite)
+	c.Typewriter.Start(c.currentText)
 	c.Typewriter.SkipToEnd()
 	c.Scene.MessageText = c.Typewriter.Text()
-	c.Scene.MessageRaw = msg.Message
+	c.Scene.MessageRaw = c.currentText
 	c.Scene.MessageStyles = append(c.Scene.MessageStyles[:0], c.Typewriter.Styles()...)
 	c.Scene.VisibleRunes = c.Typewriter.Visible()
 	// Same blankpost rule as begin(); this path doesn't route through it.
@@ -616,10 +644,9 @@ func parseEffectsField(raw string) (fx, sound string) {
 
 // startTalking begins the typewriter reveal.
 func (c *Courtroom) startTalking() {
-	msg := c.current
-	c.Typewriter.Start(msg.Message)
+	c.Typewriter.Start(c.currentText) // marker-stripped (sprite style decoded out in begin)
 	c.Scene.MessageText = c.Typewriter.Text()
-	c.Scene.MessageRaw = msg.Message
+	c.Scene.MessageRaw = c.currentText
 	c.Scene.MessageStyles = append(c.Scene.MessageStyles[:0], c.Typewriter.Styles()...) // copy: Start reuses its slice
 	c.Scene.VisibleRunes = 0
 	if !c.Scene.Speaker.PlayOnce {

@@ -92,6 +92,46 @@ func TestExportOptionsDefaultsAndPersist(t *testing.T) {
 	}
 }
 
+// TestSpriteStylePref pins the transmitted sprite-style settings (#103): empty by
+// default, opacity clamped, and a save→reload round-trip (including the hide
+// toggle) — the merge clause that would silently drop the style otherwise.
+func TestSpriteStylePref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if s := p.SpriteStyle(); s.Tint || s.Glow || s.Opacity != 0 || s.Wobble || s.Spin {
+		t.Fatalf("default sprite style not empty: %+v", s)
+	}
+	if p.HideSpriteStylesOn() {
+		t.Fatal("HideSpriteStyles should default OFF (show others' styles)")
+	}
+	// Opacity clamps to [0,100].
+	p.SetSpriteStyle(SpriteStylePref{Tint: true, R: 255, G: 60, B: 60, Opacity: 200})
+	if g := p.SpriteStyle(); g.Opacity != 100 {
+		t.Errorf("opacity 200 clamped to %d, want 100", g.Opacity)
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	want := SpriteStylePref{Tint: true, R: 10, G: 20, B: 30, Opacity: 50, Glow: true, Wobble: true, Spin: true}
+	q.SetSpriteStyle(want)
+	q.SetHideSpriteStyles(true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if g := r.SpriteStyle(); g != want {
+		t.Errorf("reloaded sprite style = %+v, want %+v (merge clause dropped a field?)", g, want)
+	}
+	if !r.HideSpriteStylesOn() {
+		t.Error("HideSpriteStyles didn't persist")
+	}
+}
+
 // TestInstantDisconnectPref pins the Disconnect-confirm toggle: OFF by default
 // (confirm first), and the on state survives save→reload.
 func TestInstantDisconnectPref(t *testing.T) {
