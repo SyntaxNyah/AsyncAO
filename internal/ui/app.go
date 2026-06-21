@@ -973,7 +973,8 @@ type sessionState struct {
 	icCountStr     string // only when the length changes so the frame stays 0-alloc
 	pairListScroll int32
 	playerScroll   int32  // Players-tab roster scroll
-	playerSort     int    // roster sort: 0=UID, 1=name, 2=speakers-first
+	playerSort     int    // roster sort (players): 0=UID, 1=name, 2=speakers-first
+	playerAreaSort int    // /gas area-group order: 0=/gas, 1=A→Z, 2=most-populated
 	playerPct      int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
 	shownameAdd    string // M6: Settings "save a showname preset" input
 	// playerOrder is the memoized display order (indices into areaPlayers); it
@@ -986,11 +987,12 @@ type sessionState struct {
 	playerOrderAt   time.Time
 	// playerRows is the memoized GROUPED display (area headers + players) used
 	// when a /gas spans areas; same invalidation keys as playerOrder.
-	playerRows     []rosterRow
-	playerRowsSort int
-	playerRowsLen  int
-	playerRowsSpk  string
-	playerRowsAt   time.Time
+	playerRows         []rosterRow
+	playerRowsSort     int
+	playerRowsAreaSort int
+	playerRowsLen      int
+	playerRowsSpk      string
+	playerRowsAt       time.Time
 	// player-row char icons: same demand/cache pipeline as the char grid, but
 	// keyed by the areaPlayers index (sort-stable). NULLED on every /ga replace
 	// so a same-length new roster re-resolves (cachedPage reorder invariant).

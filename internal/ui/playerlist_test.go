@@ -86,6 +86,49 @@ func TestPlayerRosterRowsGrouped(t *testing.T) {
 	}
 }
 
+// TestPlayerRosterRowsAreaSort pins the Rooms button: the /gas area GROUPS reorder
+// by mode — default keeps the server's /gas (parse) order, A→Z sorts by name, and
+// "Most" puts the fullest room first. Flipping the mode between calls also proves
+// the grouped-rows memo invalidates on playerAreaSort (else the cached order leaks).
+func TestPlayerRosterRowsAreaSort(t *testing.T) {
+	a := &App{}
+	a.rosterLegacy = true // snapshot path: rosterView() == areaPlayers
+	// /gas parse order: Courtroom 2 (3 players), Basement (1), Courtroom 1 (2).
+	a.areaPlayers = []areaPlayer{
+		{uid: "0", name: "a", area: "Courtroom 2"},
+		{uid: "1", name: "b", area: "Courtroom 2"},
+		{uid: "2", name: "c", area: "Courtroom 2"},
+		{uid: "3", name: "d", area: "Basement"},
+		{uid: "4", name: "e", area: "Courtroom 1"},
+		{uid: "5", name: "f", area: "Courtroom 1"},
+	}
+	a.areaListAt = time.Now()
+	a.playerSort = playerSortUID
+
+	headerAreas := func() []string {
+		var out []string
+		for _, rw := range a.playerRosterRows("") {
+			if rw.header {
+				out = append(out, rw.area)
+			}
+		}
+		return out
+	}
+
+	a.playerAreaSort = areaSortGas
+	if got := headerAreas(); !equalStrings(got, []string{"Courtroom 2", "Basement", "Courtroom 1"}) {
+		t.Errorf("/gas order = %v, want [Courtroom 2 Basement Courtroom 1]", got)
+	}
+	a.playerAreaSort = areaSortName
+	if got := headerAreas(); !equalStrings(got, []string{"Basement", "Courtroom 1", "Courtroom 2"}) {
+		t.Errorf("A→Z order = %v, want [Basement Courtroom 1 Courtroom 2]", got)
+	}
+	a.playerAreaSort = areaSortPop
+	if got := headerAreas(); !equalStrings(got, []string{"Courtroom 2", "Courtroom 1", "Basement"}) {
+		t.Errorf("most-populated = %v, want [Courtroom 2(3) Courtroom 1(2) Basement(1)]", got)
+	}
+}
+
 // TestPlayerRosterRowsFlat pins that a single-area roster (/ga) yields no
 // headers — just the flat sorted player rows.
 func TestPlayerRosterRowsFlat(t *testing.T) {

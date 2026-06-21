@@ -27,13 +27,51 @@ const (
 	playerHeaderH = int32(26) // a /gas area-group header row (name + count, click to jump)
 )
 
-// Roster sort modes, cycled by the Sort button.
+// Roster sort modes, cycled by the Sort button (orders PLAYERS, flat or within
+// each /gas area group).
 const (
 	playerSortUID      = iota // by client UID, numeric
 	playerSortName            // by IC name (showname, else character)
 	playerSortSpeaking        // whoever spoke most recently, first
 	playerSortModes           // count, for the cycle
 )
+
+// Area-group sort modes, cycled by the Rooms button — orders the /gas area
+// HEADERS (a second axis from playerSort, which orders players). Default keeps
+// the server's /gas order so room 1 stays on top.
+const (
+	areaSortGas   = iota // the order /gas listed the areas in (first-seen) — default
+	areaSortName         // area name, A→Z
+	areaSortPop          // most players first
+	areaSortModes        // count, for the cycle
+)
+
+func areaSortLabel(mode int) string {
+	switch mode {
+	case areaSortName:
+		return "A–Z"
+	case areaSortPop:
+		return "Most"
+	default:
+		return "/gas"
+	}
+}
+
+// sortAreaOrder orders the area-group names in place by mode: /gas (first-seen,
+// left untouched), area name A→Z, or most-populated first. Stable, so a tie keeps
+// the /gas order. Pure (groups supplies each area's size) — tested directly.
+func sortAreaOrder(order []string, groups map[string][]int, mode int) {
+	switch mode {
+	case areaSortName:
+		sort.SliceStable(order, func(i, j int) bool {
+			return strings.ToLower(order[i]) < strings.ToLower(order[j])
+		})
+	case areaSortPop:
+		sort.SliceStable(order, func(i, j int) bool {
+			return len(groups[order[i]]) > len(groups[order[j]])
+		})
+	}
+}
 
 // Role chip colors (Spectator / case master), drawn as small filled pills.
 var (
@@ -109,6 +147,20 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: sw, H: 22}, sortBtn) {
 		a.playerSort = (a.playerSort + 1) % playerSortModes
 	}
+	statusX := r.X + sw + 10
+	// Rooms button: orders the /gas AREA GROUPS (a second axis from Sort, which
+	// orders players). Default keeps the server's /gas order; only shown when the
+	// roster spans areas — there's nothing to order in a single-area /ga list.
+	if a.rosterMultiArea() {
+		roomsBtn := "Rooms: " + areaSortLabel(a.playerAreaSort)
+		rw := c.TextWidth(roomsBtn) + 16
+		rb := sdl.Rect{X: statusX, Y: r.Y, W: rw, H: 22}
+		if c.Button(rb, roomsBtn) {
+			a.playerAreaSort = (a.playerAreaSort + 1) % areaSortModes
+		}
+		c.Tooltip(rb, "Order the area groups: /gas (the server's own order), A–Z, or most players first.")
+		statusX += rw + 10
+	}
 	// Follow toggle (M3, opt-in / OFF by default): when on, every row gets a
 	// Follow button that auto-jumps you to that player's area as they move.
 	const followLabel = "Follow"
@@ -135,7 +187,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			status += "  ·  as of " + a.areaListAt.Format("15:04") // a snapshot, not live
 		}
 	}
-	c.LabelClipped(r.X+sw+10, r.Y+5, follX-(r.X+sw+10)-8, status, ColTextDim)
+	c.LabelClipped(statusX, r.Y+5, follX-statusX-8, status, ColTextDim)
 	r.Y += 28
 	r.H -= 28
 
@@ -571,8 +623,8 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 		spk = speaker
 	}
 	if a.playerRows != nil && a.playerRowsLen == len(a.rosterView()) &&
-		a.playerRowsSort == a.playerSort && a.playerRowsSpk == spk &&
-		a.playerRowsAt.Equal(a.rosterStamp()) {
+		a.playerRowsSort == a.playerSort && a.playerRowsAreaSort == a.playerAreaSort &&
+		a.playerRowsSpk == spk && a.playerRowsAt.Equal(a.rosterStamp()) {
 		return a.playerRows
 	}
 	rows := a.playerRows[:0]
@@ -590,6 +642,7 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 			}
 			groups[ar] = append(groups[ar], i)
 		}
+		sortAreaOrder(order, groups, a.playerAreaSort) // /gas (default), A→Z, or most-populated
 		for _, ar := range order {
 			idxs := groups[ar]
 			a.sortRosterIdxs(idxs, spk)
@@ -600,8 +653,8 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 		}
 	}
 	a.playerRows = rows
-	a.playerRowsLen, a.playerRowsSort, a.playerRowsSpk, a.playerRowsAt =
-		len(a.rosterView()), a.playerSort, spk, a.rosterStamp()
+	a.playerRowsLen, a.playerRowsSort, a.playerRowsAreaSort, a.playerRowsSpk, a.playerRowsAt =
+		len(a.rosterView()), a.playerSort, a.playerAreaSort, spk, a.rosterStamp()
 	return rows
 }
 

@@ -431,9 +431,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Every player is a row keyed by their **server UID**, carrying showname, OOC name
   and area, updated as people **join, leave, switch character, or change area**; a
   player with no character shows as a **Spectator**, so spectators appear and
-  vanish live. Rows **group by area** (a header you **click to jump there**). Each
+  vanish live. Rows **group by area** (a header you **click to jump there**); a
+  **Rooms** button orders those area groups — by default the server's **`/gas`
+  order** (so room 1 stays on top), or **A–Z**, or **most players first**. Each
   row has a char icon, role highlights (you · the current speaker · friends),
-  Spectator/CM chips, a sort toggle (UID · name · speakers-first), a **`/pair
+  Spectator/CM chips, a player **sort toggle** (UID · name · speakers-first), a **`/pair
   <uid>` button**, **Copy-UID**, and (opt-in) a **Follow** button (M3) — straight
   from the live UID, no `/getarea` needed. **Follow is OFF by default**: tick the
   **Follow** box in the player-list header to switch the per-row Follow buttons on
