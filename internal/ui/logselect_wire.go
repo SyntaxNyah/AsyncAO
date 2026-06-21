@@ -154,6 +154,53 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 		}
 		c.copyReq = false
 	}
+	// Double-click selects the whole line under the cursor (the standard text
+	// gesture) — highlight start→end so Ctrl+C / right-click copies the full line.
+	// Replaces the old IC double-click-to-pair (pairing now lives on the player
+	// list's Pair button). Event-gated: a normal frame never enters here.
+	if c.dblClick && n > 0 && c.hovering(list) && inText {
+		a.selectLogLine(which, list, scroll, lineH)
+		c.clicked = false  // the line is selected — don't also open a link under it
+		c.focusID = ""     // unfocus so Ctrl+C / right-click copies the selection
+		c.dblClick = false // consume: this double-click was the log's
+	}
+	// Right-click copies. A deliberate SELECTION wins and is consumed (so a link
+	// line's copy-URL and the unread pill don't also fire); otherwise copy the
+	// whole line under the cursor WITHOUT consuming — an OOC link line then still
+	// copies its URL (it runs after; last write wins) and the pill keeps its
+	// gesture. Pin-to-notes moved to its chord (default Ctrl+N).
+	if c.rightClicked && n > 0 && c.hovering(list) && inText {
+		if a.logSelActive && a.logSelWhich == which {
+			lo, hi := orderSel(a.logSelAnchor, a.logSelHead)
+			if !lo.equal(hi) {
+				_ = sdl.SetClipboardText(selectedText(func(i int) string { return a.logLineText(which, i) }, lo, hi))
+				a.warnLine = "Copied selection to clipboard"
+				a.warnAt = time.Now()
+				c.rightClicked = false
+			}
+		}
+		if c.rightClicked { // no selection consumed it: copy the hovered line
+			li := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY).entry
+			if t := a.logLineText(which, li); t != "" {
+				_ = sdl.SetClipboardText(t)
+				a.warnLine = "Copied line to clipboard"
+				a.warnAt = time.Now()
+			}
+		}
+	}
+}
+
+// selectLogLine selects the whole wrapped line under the cursor in log `which`
+// (the double-click gesture). Anchors at the line's start and head at its end so
+// the existing highlight + copy paths treat it like any drag selection.
+func (a *App) selectLogLine(which int, list sdl.Rect, scroll, lineH int32) {
+	c := a.ctx
+	li := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY).entry
+	a.logSelWhich = which
+	a.logSelAnchor = selPoint{entry: li, off: 0}
+	a.logSelHead = selPoint{entry: li, off: len([]rune(a.logLineText(which, li)))}
+	a.logSelActive = true
+	a.logSelDragging = false
 }
 
 // drawLogSelHighlight fills the selection background behind one display line

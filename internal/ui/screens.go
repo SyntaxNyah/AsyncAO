@@ -1600,16 +1600,12 @@ func (a *App) drawICLogList(list sdl.Rect) {
 						openBrowser(u)
 					}
 				}
-			} else if spk := a.icLog[row.entry].speaker; spk != "" && c.hovering(rowRect) {
-				// Double-click a speaker's line → click-to-pair (grab their UID).
-				// Single click stays free (selection/read); double is deliberate.
-				if c.dblClick {
-					a.openPairPopup(spk)
-				}
 			}
-			// Right-click — or the configurable pin-note chord — pins the
-			// WHOLE entry into the case notebook.
-			if (c.rightClicked || pinChord) && c.hovering(sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}) {
+			// The pin-note chord (default Ctrl+N) pins the WHOLE entry into the case
+			// notebook. Right-click now COPIES the log text (see handleLogSelect), so
+			// pinning lives on its chord; double-click selects the line; pairing moved
+			// to the player list's Pair button.
+			if pinChord && c.hovering(sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}) {
 				a.pinNote(a.icLog[row.entry].text)
 			}
 		}
@@ -3074,18 +3070,24 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	}
 	x += 56
 	x = a.drawPosSelect(x, y2, btnH)
-	// "Hotkeys" opens the cheat sheet of every shortcut + your own custom binds
-	// (#96) — the same window as F1 / Extras → Hotkeys, surfaced on the main bar
-	// for discoverability. Appended after Pos so no existing button shifts.
-	keysR := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+	// "Hotkeys" (#96) + "Restyle" (#103/#104) are the trailing convenience buttons,
+	// appended after Pos so no existing button shifts. At a narrow window width the
+	// long Row 2 would push the PAIR off the right edge, so wrap them down to a
+	// fresh row when they wouldn't fit. Everything below keys off y2 (icY = y2 +
+	// btnH + …), so bumping it in place drops the IC area and judge strip with it.
+	// Constant widths keep this alloc-free.
+	const keysW, styleW, btnGap int32 = 90, 84, 6
+	if x+keysW+btnGap+styleW > w-pad {
+		y2 += btnH + 4
+		x = pad
+	}
+	keysR := sdl.Rect{X: x, Y: y2, W: keysW, H: btnH}
 	if c.Button(keysR, "Hotkeys") {
 		a.openHotkeyCheatSheet()
 	}
 	c.Tooltip(keysR, "Show all your hotkeys & custom binds (also F1)")
-	x += 96
-	// "Restyle" opens the floating Sprite Style box (#103/#104) — recolour / glow
-	// your character on the fly; other AsyncAO players see it.
-	styleR := sdl.Rect{X: x, Y: y2, W: 84, H: btnH}
+	x += keysW + btnGap
+	styleR := sdl.Rect{X: x, Y: y2, W: styleW, H: btnH}
 	if c.Button(styleR, "Restyle") {
 		a.openSpriteStyle()
 	}

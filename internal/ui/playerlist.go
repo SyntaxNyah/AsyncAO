@@ -390,6 +390,18 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 			}
 			c.Tooltip(fr, "Follow this player: auto-jump to their area whenever they move. Click again to stop.")
 		}
+	} else if !isSpec && p.name != "" {
+		// No live UID (CharsCheck-only roster, or a server without PR/PU UIDs): can't
+		// direct-/pair, so offer the manual-UID popup instead (pre-filled from
+		// /getarea when it confidently matched the character). Keeps a home for
+		// click-to-pair now that the IC log's double-click selects text.
+		pw := c.TextWidth("Pair…") + 14
+		bx -= pw
+		pr := sdl.Rect{X: bx, Y: btnY, W: pw, H: 22}
+		if c.Button(pr, "Pair…") {
+			a.openPairPopup(p.name)
+		}
+		c.Tooltip(pr, "Pair via the manual /pair UID box — this row has no live UID")
 	}
 	if p.ipid != "" { // IPID is mod-only server data — its presence IS the authorization (don't gate on local mod-detection)
 		iw := c.TextWidth("IPID") + 12
