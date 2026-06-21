@@ -937,12 +937,19 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Dyslexia-friendly font** toggle (OFF by default) drives the chat + log text
   with the **bundled OpenDyslexic** (SIL OFL 1.1, embedded in the binary — no
   install needed) and takes precedence over the manual override; both resolve
-  through a single launch/live path, so the toggle survives a restart. *Known
-  limitation:* **colour emoji
-  and other supplementary-plane characters (U+1F300+, e.g. 💔🥀) render as
-  boxes** — the bundled SDL_ttf (2.0.18) has 16-bit glyph metrics and no colour
-  glyphs, so a fallback font can't help; needs an SDL_ttf 2.20+ upgrade. See
-  [KNOWN-ISSUES.md](KNOWN-ISSUES.md).
+  through a single launch/live path, so the toggle survives a restart.
+- **Colour emoji** (per-glyph font fallback): messages that mix text and emoji
+  (`hi 😀`, `❤️`, ZWJ families like 👨‍👩‍👧, skin tones, flags) render the emoji in
+  **full colour** from the system emoji face (Segoe UI Emoji on Windows) while the
+  text stays on the chat font — split per glyph and baseline-aligned. **Zero cost
+  to plain messages:** a one-message byte scan keeps text-only lines on the
+  untouched single-font fast path; only a message that actually contains emoji
+  takes the fallback build, and the per-frame draw + the render alloc gate are
+  unchanged. The emoji face is read **off-thread on first use** (so a player who
+  never types emoji never pays the ~12 MB read) and pre-warmed at the chat size.
+  Compound sequences (variation selectors, ZWJ, keycaps) are absorbed into one
+  emoji run so they don't fragment. (Where there's no system emoji font, emoji
+  fall back to the chat font as before.)
 - **Case notebook** (Notes tab, per server): right-click an IC log line
   or hit "Pin to notebook" on evidence; free-form notes + copy-all; one
   JSON per server, async writes, capped.

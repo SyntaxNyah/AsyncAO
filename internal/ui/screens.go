@@ -4018,6 +4018,20 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 	// covering font (CJK fallback), the embedded font otherwise. The live chatbox
 	// passes a.chatPct; the export passes a size fitted to the capture frame.
 	font := a.ctx.ChatFontFor(pct, sc.MessageText)
+	// Emoji present → the per-glyph fallback raster: text runes from `font`, emoji
+	// runes from the color emoji face, baseline-aligned. Gated on a cheap byte scan
+	// so PLAIN messages (the overwhelming common case) never reach here and stay on
+	// the untouched fast paths below — zero change for them.
+	if render.NeedsEmojiFallback(sc.MessageText) {
+		a.ensureEmojiFontLoad() // kick off the one off-thread system-emoji read
+		var spans []render.ColorSpan
+		if sceneNeedsStyled(sc.MessageStyles) {
+			spans = buildColorSpans(sc.MessageStyles, col)
+		} else {
+			spans = []render.ColorSpan{{Len: len([]rune(sc.MessageText)), Color: col}}
+		}
+		return render.RasterizeFallback(a.ctx.Ren, font, a.ctx.EmojiFont(pct), sc.MessageText, spans, wrapW)
+	}
 	// Inline \cN colors → the multi-color span raster; plain messages keep the
 	// untouched single-color path (col is their whole-message color).
 	if sceneNeedsStyled(sc.MessageStyles) {

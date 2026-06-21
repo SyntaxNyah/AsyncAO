@@ -60,6 +60,7 @@ type rasterSpan struct {
 	w, h     int32
 	runes    int
 	xOffset  int32
+	yOff     int32 // baseline offset within the line (0 for same-font color spans; >0 aligns a shorter-ascent font in the emoji fallback)
 	advances []int32
 }
 
@@ -237,7 +238,7 @@ func rasterizeStyledLine(ren *sdl.Renderer, font *ttf.Font, runes []rune, styles
 		for j < len(runes) && styles[j] == styles[i] {
 			j++
 		}
-		sp, err := buildSpan(ren, font, runes[i:j], styles[i], x)
+		sp, err := buildSpan(ren, font, runes[i:j], styles[i], x, 0) // same font across the line → no baseline offset
 		if err != nil {
 			for k := range spans {
 				if spans[k].tex != nil {
@@ -256,7 +257,7 @@ func rasterizeStyledLine(ren *sdl.Renderer, font *ttf.Font, runes []rune, styles
 // buildSpan rasterizes one same-style run at xOffset with prefix advances.
 // Bold/italic ride synthetic SDL_ttf font styles, restored on return (defer) so
 // the shared cached font never leaks a style into other (plain) text.
-func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xOffset int32) (rasterSpan, error) {
+func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xOffset, yOff int32) (rasterSpan, error) {
 	style := ttf.STYLE_NORMAL
 	if st.bold {
 		style |= ttf.STYLE_BOLD
@@ -268,7 +269,7 @@ func buildSpan(ren *sdl.Renderer, font *ttf.Font, runes []rune, st spanStyle, xO
 		font.SetStyle(style)
 		defer font.SetStyle(ttf.STYLE_NORMAL) // always reset, even on error/panic
 	}
-	sp := rasterSpan{runes: len(runes), xOffset: xOffset, advances: make([]int32, len(runes)+1)}
+	sp := rasterSpan{runes: len(runes), xOffset: xOffset, yOff: yOff, advances: make([]int32, len(runes)+1)}
 	for i := 1; i <= len(runes); i++ {
 		w, _, err := font.SizeUTF8(string(runes[:i]))
 		if err != nil {
@@ -342,7 +343,7 @@ func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int
 			if sp.tex != nil && show > 0 {
 				width := sp.advances[show]
 				m.srcGet = sdl.Rect{X: 0, Y: 0, W: width, H: sp.h}
-				m.dstGet = sdl.Rect{X: x + sp.xOffset, Y: lineY, W: width, H: sp.h}
+				m.dstGet = sdl.Rect{X: x + sp.xOffset, Y: lineY + sp.yOff, W: width, H: sp.h} // yOff baseline-aligns the emoji fallback (0 for plain color spans)
 				_ = ren.Copy(sp.tex, &m.srcGet, &m.dstGet)
 			}
 			remaining -= sp.runes

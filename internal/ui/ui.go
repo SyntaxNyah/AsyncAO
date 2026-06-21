@@ -247,6 +247,13 @@ type Ctx struct {
 	// GlyphMetrics per rune per row would be a hidden TTF storm whenever
 	// an override chain is installed). Cleared on any font rebuild.
 	pickMemo map[string]*ttf.Font
+	// Color-emoji fallback face (e.g. Segoe UI Emoji), kept SEPARATE from the
+	// chain so the common single-font fast path (pickCached len==1) is unchanged.
+	// emojiData is the font file bytes (read off-thread by the App; nil = none/not
+	// loaded); emojiFonts builds faces per size lazily. RWFromMem aliases the bytes,
+	// so emojiData must outlive the faces.
+	emojiData  []byte
+	emojiFonts map[int]*ttf.Font
 
 	// uiPct is the global render scale percent; mouse coordinates
 	// unproject through it so logical hit-tests stay exact.
@@ -557,6 +564,47 @@ func memFont(data []byte, size int) (*ttf.Font, error) {
 		return nil, err
 	}
 	return ttf.OpenFontRW(rw, 1, size)
+}
+
+// SetEmojiFont installs the color-emoji fallback face bytes (read off-thread by
+// the App; nil clears). The bytes must stay referenced for the faces' lifetime
+// (RWFromMem aliases them). Drops any built faces so they rebuild. Render thread.
+func (c *Ctx) SetEmojiFont(data []byte) {
+	for _, f := range c.emojiFonts {
+		if f != nil {
+			f.Close()
+		}
+	}
+	c.emojiFonts = nil
+	c.emojiData = data
+}
+
+// EmojiFont returns the color-emoji fallback face at pct percent (the chat/log
+// scale), built lazily and cached per size, or nil when no face is loaded (then a
+// mixed message renders emoji as the chat font's tofu — today's behavior). Sized
+// to match the text font so baselines line up after RasterizeFallback's per-run
+// offset. A failed build caches nil so it isn't retried every message.
+func (c *Ctx) EmojiFont(pct int) *ttf.Font {
+	if c.emojiData == nil {
+		return nil
+	}
+	size := UIFontSize * pct / DefaultScalePct
+	if size < 1 {
+		size = 1
+	}
+	if f, ok := c.emojiFonts[size]; ok {
+		return f
+	}
+	if c.emojiFonts == nil {
+		c.emojiFonts = make(map[int]*ttf.Font, 4)
+	}
+	f, err := memFont(c.emojiData, size)
+	if err != nil {
+		c.emojiFonts[size] = nil // remember the failure; don't retry per message
+		return nil
+	}
+	c.emojiFonts[size] = f
+	return f
 }
 
 // pickFont returns the first font covering every rune of text — mixed

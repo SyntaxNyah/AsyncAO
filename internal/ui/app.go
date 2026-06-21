@@ -280,6 +280,12 @@ type App struct {
 
 	// --- font override pipeline (file bytes read off-thread) ---
 	fontRes chan fontLoad
+	// Color-emoji fallback face: the system emoji font (e.g. Segoe UI Emoji) is read
+	// off-thread the FIRST time a message needs it (emojiLoadStarted gates the one
+	// read), landing on emojiFontRes → ctx.SetEmojiFont. Lazy so a user who never
+	// types emoji never pays the 11.9 MB read.
+	emojiFontRes     chan []byte
+	emojiLoadStarted bool
 
 	// --- case notebook loads (per-server; payload routes by key) ---
 	notebookRes chan notebookLoad
@@ -1306,6 +1312,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		iniRes:          make(chan iniswapFetch, 1),
 		manifestRes:     make(chan manifestFetch, 1),
 		fontRes:         make(chan fontLoad, 1),
+		emojiFontRes:    make(chan []byte, 1),
 		notebookRes:     make(chan notebookLoad, 1),
 		jukeRes:         make(chan *config.Jukebox, 1),
 		jukeIORes:       make(chan string, 4),
@@ -3004,6 +3011,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollThemeApply()
 	a.pollManifest()
 	a.pollFontChain()
+	a.pollEmojiFont()
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollCharBind()
