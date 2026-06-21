@@ -168,13 +168,18 @@ func (a *App) refreshCharKeys() {
 func (a *App) charKeyFor(char string) string { return a.charKeysRev[char] }
 
 // pollCharBind completes an armed wardrobe key-capture: the next plain
-// keypress binds key → character on this server; Esc cancels.
+// keypress binds key → character on this server. Esc OR any mouse click cancels
+// it — an accidental arm used to trap you into pressing a key (you only had a
+// tiny per-cell "press..." cue and no obvious way out), so clicking anywhere now
+// dismisses it, the natural "oops, didn't mean to" gesture. The arming click
+// itself can't self-cancel: pollCharBind runs in the update phase BEFORE the
+// wardrobe arms bindingFor in the render phase, and c.clicked is a one-frame edge.
 func (a *App) pollCharBind() {
 	if a.bindingFor == "" {
 		return
 	}
 	c := a.ctx
-	if c.escPressed {
+	if c.escPressed || c.clicked {
 		a.bindingFor = ""
 		return
 	}

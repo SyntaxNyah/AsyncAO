@@ -344,13 +344,18 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 	a.iniScroll = c.VScrollbar("iniscroll", track, a.iniScroll, contentH, visibleH)
 
 	col, row := int32(0), int32(0)
+	// Clip to the grid viewport so scrolled cells slide under the fixed top bar
+	// (search + tabs + buttons) instead of covering it — same fix as the
+	// Characters tab.
+	gridClip := sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH}
+	_ = c.Ren.SetClipRect(&gridClip)
 	for i := range a.iniList {
 		if query != "" && !strings.Contains(a.iniLower[i], query) {
 			continue
 		}
 		x := pad + col*(iconCell+iconGap)
 		y := gridTop + row*cellH - a.iniScroll
-		if y > -iconCell && y < h {
+		if y+iconCell > gridTop && y < gridTop+visibleH {
 			// Char-select Wardrobe tab: a favourite SWITCHES to the real character
 			// (wardrobeClick picks its free slot), not a blind iniswap.
 			a.drawIniswapCell(i, sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell}, cellClickChar)
@@ -361,6 +366,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 			row++
 		}
 	}
+	_ = c.Ren.SetClipRect(nil)
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false)
 		if c.clicked {
@@ -501,6 +507,12 @@ func (a *App) drawCharSelect(w, h int32) {
 	dlOn := a.d.Prefs.CharDownloaderEnabled() // read once per frame, not per cell
 	col, row := int32(0), int32(0)
 	previewRequested := false
+	// Clip the grid to its own viewport (below the top bar) so scrolled cells
+	// slide UNDER the fixed search/tabs/buttons instead of painting over them: the
+	// bar is drawn first, so without this the later cell draws covered it as you
+	// scrolled down, and search became unreachable. Keeps the bar always usable.
+	gridClip := sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH}
+	_ = c.Ren.SetClipRect(&gridClip)
 	for i := range a.sess.Chars {
 		slot := &a.sess.Chars[i]
 		if query != "" && !strings.Contains(a.charLower[i], query) {
@@ -509,7 +521,7 @@ func (a *App) drawCharSelect(w, h int32) {
 		x := pad + col*(iconCell+iconGap)
 		y := gridTop + row*cellH - a.charScroll
 		cell := sdl.Rect{X: x, Y: y, W: iconCell, H: iconCell}
-		if y > -iconCell && y < h {
+		if y+iconCell > gridTop && y < gridTop+visibleH { // only rows touching the viewport (no draw/hover through the bar)
 			a.drawCharCell(slot, cell, i, dlOn)
 			if c.HoverPreview("char:"+slot.Name, cell) {
 				a.previewBase = a.urls.Emote(slot.Name, "normal", courtroom.EmoteIdle)
@@ -523,6 +535,7 @@ func (a *App) drawCharSelect(w, h int32) {
 			row++
 		}
 	}
+	_ = c.Ren.SetClipRect(nil)
 	if !previewRequested && !c.rightClicked {
 		// keep showing while hovered; HoverPreview clears hoverID on exit
 	}
@@ -2079,6 +2092,16 @@ func (a *App) drawIniswapPanel(w, h int32) {
 			}
 		}
 		tabX += 126
+	}
+	// Armed key-capture hint: while a wardrobe bind waits for a key, say so loudly
+	// in the header AND that Esc or a click cancels — the per-cell "press..." badge
+	// alone was too easy to miss after an accidental arm.
+	if a.bindingFor != "" {
+		hintX := tabX + 8
+		hintW := (panel.X + panel.W - 90 - pad) - hintX - 8
+		if hintW > 60 {
+			c.LabelClipped(hintX, panel.Y+13, hintW, "Binding "+a.bindingFor+": press a key — or Esc / click to cancel", ColAccent)
+		}
 	}
 	switch a.wardSection {
 	case wardSectionBackgrounds:
