@@ -136,7 +136,7 @@ func (s SpriteStyle) EncodeMarker() string {
 // hasMarker is a fast guard: the common message has no style, so the strip path
 // must not allocate or scan-rebuild when there's no sentinel present.
 func hasMarker(text string) bool {
-	return strings.IndexRune(text, zwStart) >= 0
+	return strings.ContainsRune(text, zwStart)
 }
 
 // DecodeSpriteStyle pulls the style out of a message's text and returns the style
