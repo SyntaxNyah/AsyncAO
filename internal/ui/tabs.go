@@ -570,4 +570,8 @@ func (a *App) resetSessionState() {
 		icStick:  true,
 		oocStick: true,
 	}
+	// The IC/OOC log text selection lives on App (not sessionState) but is anchored
+	// into the ACTIVE log's wrapped lines — leaving it set across a session change
+	// (park/disconnect/connect) would highlight stale lines in a different tab's log.
+	a.logSelActive, a.logSelDragging = false, false
 }
