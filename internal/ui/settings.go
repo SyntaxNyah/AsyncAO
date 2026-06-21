@@ -141,6 +141,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// sections: Identity, Display & behaviour, Application, Log colours, Stage,
 		// Scale & text size, Window, Extras box, Fonts.
 		"identity", "showname", "ooc name", "default showname", "force char names", "anti-impersonation",
+		"your profile", "profile", "character profile", "pronouns", "bio", "tagline", "theme song", "card",
 		"display", "behaviour", "behavior", "animation", "reduce motion", "accessibility",
 		"sprite style", "recolour", "recolor", "tint", "glow", "opacity", "hide sprite styles", "hide other",
 		"emote button", "favourite emotes", "favorite emotes", "fav emotes",
@@ -449,6 +450,10 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 			y += 24
 		}
 	}
+	y += 8
+
+	y = a.settingsSection(y, w, "Your profile")
+	y = a.drawProfileSettings(y, w)
 	y += 8
 
 	y = a.settingsSection(y, w, "Display & behaviour")

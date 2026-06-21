@@ -323,6 +323,58 @@ func clampOpacity(v uint8) uint8 {
 	return v
 }
 
+// Character profile (#101) field length caps — bounded so the pref file (and, in
+// a later slice, anything transmitted) can't balloon. The wire slice will send a
+// tiny fingerprint, not these bytes, so art/song are URLs, never data.
+const (
+	profileNameMax     = 40
+	profilePronounsMax = 32
+	profileTagMax      = 80
+	profileBioMax      = 400
+	profileURLMax      = 300
+)
+
+// ProfilePref is the user's character profile (#101): a small card — pronouns, a
+// one-line tag, a short bio, and URLs for art / theme-song — shown on the player
+// list to other AsyncAO clients (a later slice transmits it; standard clients are
+// unaffected). Configurable: Enabled is the master switch, ShowOnList controls
+// whether it appears on the list.
+type ProfilePref struct {
+	Enabled    bool   `json:"enabled,omitempty"`
+	ShowOnList bool   `json:"showOnList,omitempty"`
+	Name       string `json:"name,omitempty"` // card title (blank = use showname/character)
+	Pronouns   string `json:"pronouns,omitempty"`
+	Tag        string `json:"tag,omitempty"`       // one-line status / tagline
+	Bio        string `json:"bio,omitempty"`       // short free text
+	ThemeSong  string `json:"themeSong,omitempty"` // URL
+	ArtURL     string `json:"artURL,omitempty"`    // URL to a profile picture
+}
+
+// clampProfile bounds every field length (the setter and the load-merge both run
+// it, so a hand-edited prefs file can't smuggle in an oversized field).
+func clampProfile(p ProfilePref) ProfilePref {
+	p.Name = clampLen(p.Name, profileNameMax)
+	p.Pronouns = clampLen(p.Pronouns, profilePronounsMax)
+	p.Tag = clampLen(p.Tag, profileTagMax)
+	p.Bio = clampLen(p.Bio, profileBioMax)
+	p.ThemeSong = clampLen(p.ThemeSong, profileURLMax)
+	p.ArtURL = clampLen(p.ArtURL, profileURLMax)
+	return p
+}
+
+// clampLen truncates s to at most n runes (rune-safe so a multibyte tail can't be
+// split mid-character).
+func clampLen(s string, n int) string {
+	if len(s) <= n { // fast path: byte length ≤ n ⇒ rune count ≤ n
+		return s
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
+}
+
 // Per-speaker name colours (OFF by default): each speaker's name is tinted by a
 // stable hash of the name. Saturation/value are user-tunable; value has a floor
 // so a name can't go unreadable-dark on the chat panel.
@@ -520,6 +572,7 @@ type AssetPreferences struct {
 	Export                 ExportOptions                `json:"export"`
 	MySpriteStyle          SpriteStylePref              `json:"mySpriteStyle"`    // the user's own transmitted sprite style (#103)
 	HideSpriteStyles       bool                         `json:"hideSpriteStyles"` // ignore others' transmitted styles (default OFF = show)
+	MyProfile              ProfilePref                  `json:"profile"`          // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
@@ -724,6 +777,7 @@ type prefsJSON struct {
 	Export                 *ExportOptions   `json:"export"`                 // absent = default
 	MySpriteStyle          *SpriteStylePref `json:"mySpriteStyle"`          // absent = no style (#103)
 	HideSpriteStyles       bool             `json:"hideSpriteStyles"`       // default OFF (show others' styles)
+	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
 	ChatboxOpacity         *int             `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
 	RainbowSpriteGlow      bool             `json:"rainbowSpriteGlow"`      // default OFF
@@ -1214,6 +1268,9 @@ func load(path string) (*AssetPreferences, error) {
 		p.MySpriteStyle = s
 	}
 	p.HideSpriteStyles = onDisk.HideSpriteStyles
+	if onDisk.Profile != nil {
+		p.MyProfile = clampProfile(*onDisk.Profile)
+	}
 	if onDisk.ChatboxOpacity != nil {
 		p.ChatboxOpacity = clampPercent(*onDisk.ChatboxOpacity, MinChatboxOpacity, MaxChatboxOpacity)
 	}
@@ -2836,6 +2893,26 @@ func (p *AssetPreferences) SetHideSpriteStyles(b bool) {
 		return
 	}
 	p.HideSpriteStyles = b
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Profile reports the user's character profile (#101).
+func (p *AssetPreferences) Profile() ProfilePref {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MyProfile
+}
+
+// SetProfile stores the user's character profile (every field length-clamped).
+func (p *AssetPreferences) SetProfile(pr ProfilePref) {
+	pr = clampProfile(pr)
+	p.mu.Lock()
+	if p.MyProfile == pr {
+		p.mu.Unlock()
+		return
+	}
+	p.MyProfile = pr
 	p.mu.Unlock()
 	p.markDirty()
 }

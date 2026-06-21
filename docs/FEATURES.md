@@ -211,6 +211,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   General** has a "**Hide other players' sprite styles**" off-switch. *(Per-pixel
   effects — invert / grayscale — are a planned follow-up that builds cached
   variant textures.)*
+- **Character profile** (#101, **Settings → General → Your profile**, OFF by
+  default): a small **card** — name, **pronouns**, a one-line **tagline**, a short
+  **bio**, and **URLs** for art / theme-song — that other AsyncAO players will see
+  on the list, while AO2 / webAO are unaffected (they just see the normal list).
+  **Configurable**: an **Enable** master switch and a "**Show my profile on the
+  player list**" toggle. Every field is **length-clamped** (the pref file stays
+  bounded), and the editor shows a **live preview** of the card. *Slice 1 is the
+  local model + editor + card render; the cross-client transmission — a tiny
+  zero-width fingerprint in IC, never the art bytes, so standard clients stay
+  unaffected — is slice 2, gated on confirming the zero-width channel survives the
+  live server.*
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

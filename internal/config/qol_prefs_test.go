@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -129,6 +130,41 @@ func TestSpriteStylePref(t *testing.T) {
 	}
 	if !r.HideSpriteStylesOn() {
 		t.Error("HideSpriteStyles didn't persist")
+	}
+}
+
+// TestProfilePref pins the #101 character profile: empty by default, every field
+// length-clamped, and a save→reload round-trip (the merge clause that would
+// silently drop the profile otherwise).
+func TestProfilePref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if pr := p.Profile(); pr.Enabled || pr.ShowOnList || pr.Name != "" || pr.Bio != "" {
+		t.Fatalf("default profile not empty: %+v", pr)
+	}
+	// Oversized fields clamp to their caps.
+	long := strings.Repeat("x", 1000)
+	p.SetProfile(ProfilePref{Enabled: true, Name: long, Bio: long, ArtURL: long})
+	g := p.Profile()
+	if len([]rune(g.Name)) != profileNameMax || len([]rune(g.Bio)) != profileBioMax || len([]rune(g.ArtURL)) != profileURLMax {
+		t.Errorf("fields not clamped: name=%d bio=%d url=%d", len([]rune(g.Name)), len([]rune(g.Bio)), len([]rune(g.ArtURL)))
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	want := ProfilePref{Enabled: true, ShowOnList: true, Name: "Nick", Pronouns: "they/them", Tag: "ace attorney", Bio: "objection enjoyer", ThemeSong: "https://x/y.opus", ArtURL: "https://x/a.png"}
+	q.SetProfile(want)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if g := r.Profile(); g != want {
+		t.Errorf("reloaded profile = %+v, want %+v (merge clause dropped a field?)", g, want)
 	}
 }
 
