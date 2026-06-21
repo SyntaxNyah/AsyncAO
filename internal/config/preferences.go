@@ -559,6 +559,7 @@ type AssetPreferences struct {
 	Showname           string                    `json:"showname"`
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
+	ICPhraseKeys       map[string]string         `json:"icPhraseKeys,omitempty"` // key name → canned IC line (hotkeyed)
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
@@ -763,6 +764,7 @@ type prefsJSON struct {
 	Showname           string                    `json:"showname"`
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
+	ICPhraseKeys       map[string]string         `json:"icPhraseKeys,omitempty"` // key name → canned IC line (hotkeyed)
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
@@ -1341,6 +1343,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.Showname = onDisk.Showname
 	p.ShownamePresets = onDisk.ShownamePresets
 	p.ShownameKeys = onDisk.ShownameKeys
+	p.ICPhraseKeys = onDisk.ICPhraseKeys
 	p.MutedSFX = onDisk.MutedSFX
 	p.BlipVols = onDisk.BlipVols
 	p.EmoteFavs = onDisk.EmoteFavs
@@ -5141,6 +5144,51 @@ func (p *AssetPreferences) SetShownameKeyBind(key, showname string) {
 		return
 	}
 	p.ShownameKeys[key] = showname
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// icPhraseKeyCap bounds the hotkeyed IC quick-phrases (hard rule #4: no unbounded maps).
+const icPhraseKeyCap = 64
+
+// ICPhraseBinds returns a copy of the key → IC-phrase map: press a bound key in
+// the courtroom to send that line as your character in IC. Nil = none.
+func (p *AssetPreferences) ICPhraseBinds() map[string]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.ICPhraseKeys) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(p.ICPhraseKeys))
+	for k, v := range p.ICPhraseKeys {
+		out[k] = v
+	}
+	return out
+}
+
+// SetICPhraseKey binds key (lowercase SDL key name) to a canned IC line; an empty
+// phrase clears the binding. Global + persisted; bounded by icPhraseKeyCap.
+func (p *AssetPreferences) SetICPhraseKey(key, phrase string) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if key == "" {
+		return
+	}
+	phrase = strings.TrimSpace(phrase)
+	p.mu.Lock()
+	if phrase == "" {
+		delete(p.ICPhraseKeys, key)
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	if p.ICPhraseKeys == nil {
+		p.ICPhraseKeys = map[string]string{}
+	}
+	if _, exists := p.ICPhraseKeys[key]; !exists && len(p.ICPhraseKeys) >= icPhraseKeyCap {
+		p.mu.Unlock()
+		return
+	}
+	p.ICPhraseKeys[key] = phrase
 	p.mu.Unlock()
 	p.markDirty()
 }

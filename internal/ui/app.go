@@ -811,6 +811,11 @@ type sessionState struct {
 	shownameBindFor string
 	shownameKeys    map[string]string // key name → showname
 	shownameKeysRev map[string]string // showname → key name (badges)
+	// IC quick-phrases (ic_phrase.go): a bare key sends a canned IC line.
+	// icPhraseBindFor is the phrase a Settings key-capture is armed for ("" = none);
+	// icPhraseKeys caches the global key→phrase binds for the per-frame dispatch.
+	icPhraseBindFor string
+	icPhraseKeys    map[string]string // key name → IC phrase
 
 	// ghostWarm dedupes the pair-panel ghost editor's sprite prefetches.
 	ghostWarm map[string]string
@@ -1564,6 +1569,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.d.Prefs.ClaimLegacyWardrobe(wsURL)
 	a.refreshCharKeys()
 	a.refreshShownameKeys()
+	a.refreshICPhraseKeys()
 	a.syncLoginBuffers() // settings/dialog boxes show this server's creds
 	// Per-server theme binding: this server always uses that theme.
 	a.themeBound = a.d.Prefs.ServerWarmInfoFor(wsURL).Theme
@@ -2141,6 +2147,7 @@ func (a *App) startRehearsal(name, key string, info config.ServerWarmInfo) {
 	a.rebuildAssetOrigin()
 	a.refreshCharKeys()
 	a.refreshShownameKeys()
+	a.refreshICPhraseKeys()
 	a.themeBound = info.Theme // rehearsal wears the server's bound theme too
 	a.ensureThemeForSession()
 	a.screen = ScreenCharSelect
@@ -3047,6 +3054,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollJukeBind()
 	a.pollMacroBind()
 	a.pollShownameBind()
+	a.pollICPhraseBind()
 	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollDownload()
 	a.pollMakerExport() // M16: deliver the self-contained archive export result

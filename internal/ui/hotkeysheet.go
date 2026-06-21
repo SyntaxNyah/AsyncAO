@@ -58,6 +58,8 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 	out = appendKeyMapSection(out, "Character keys", a.charKeys, "Wear: ")
 	// Showname keybinds (bare/Ctrl per the binder; key → showname).
 	out = appendKeyMapSection(out, "Showname keys", a.shownameKeys, "Showname: ")
+	// IC quick-phrases (bare key sends a canned IC line).
+	out = appendKeyMapSection(out, "IC phrases", a.icPhraseKeys, "IC: ")
 	return out
 }
 

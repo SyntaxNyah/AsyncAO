@@ -1059,6 +1059,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   prompt-style flows work. Keys fire in the courtroom with no text box
   focused; macro binds win a key conflict over character binds. Caps:
   64 macros × 8 lines × 256 chars.
+- **IC quick-phrases** (Settings → Controls): the **IC counterpart to macros** —
+  bind a bare key to a canned line your **character says in IC** (e.g. `E →
+  "Happy Pride Month"`). Pressing it sends the line through the normal IC path
+  (your current emote/colour/character) **without disturbing your draft**; a
+  `/command` phrase runs as the command. Keys fire only with no text box focused,
+  so typing never triggers one, and they show on the F1 cheat sheet. Global +
+  persisted, bounded.
 - **Built-in account login** — for ANY server with a `/login` account
   system (member perks, donator ranks, mod powers — not just staff):
   credentials are keyed by the server's connection URL/IP (saved in

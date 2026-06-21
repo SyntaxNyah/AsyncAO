@@ -623,6 +623,41 @@ func TestShownameKeyBindRoundTrip(t *testing.T) {
 	}
 }
 
+// TestICPhraseKeyBinds pins the hotkeyed IC phrases: keys store lowercased, an
+// empty phrase clears, and a bind survives save→load.
+func TestICPhraseKeyBinds(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.ICPhraseBinds() != nil {
+		t.Error("no IC-phrase binds by default")
+	}
+	p.SetICPhraseKey("E", "Happy Pride Month") // key lowercased on store
+	p.SetICPhraseKey("q", "Objection!")
+	if b := p.ICPhraseBinds(); b["e"] != "Happy Pride Month" || b["q"] != "Objection!" {
+		t.Fatalf("binds = %v, want e->phrase q->Objection!", b)
+	}
+	p.SetICPhraseKey("e", "") // an empty phrase clears the bind
+	if p.ICPhraseBinds()["e"] != "" {
+		t.Error("empty phrase should clear the e bind")
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetICPhraseKey("F1", "Take that!")
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := r.ICPhraseBinds()["f1"]; got != "Take that!" {
+		t.Errorf("IC-phrase bind lost across save/load: f1 = %q, want Take that!", got)
+	}
+}
+
 // TestMutedSFX pins the M11 per-SFX mute list: case-insensitive store/match,
 // dedup, unmute, and survival across save → load.
 func TestMutedSFX(t *testing.T) {

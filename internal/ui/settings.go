@@ -59,6 +59,8 @@ type settingsState struct {
 	macroName  string
 	macroKey   string
 	macroLines string
+	// IC quick-phrase editor buffer (the line to bind a key to).
+	icPhrase string
 
 	// theme-binding picker (shares the login section's server list cache).
 	themeBindKey string
@@ -1972,6 +1974,11 @@ func (a *App) drawSettingsHotkeys(y, w int32) int32 {
 	y = a.settingsSection(y, w, "Macros")
 	// Macros: user-defined OOC command sequences with optional keybinds.
 	y = a.drawMacroSettings(y, w)
+	y += 8
+
+	y = a.settingsSection(y, w, "IC quick-phrases")
+	// Bind a key to a canned IC line your CHARACTER says (the IC counterpart to macros).
+	y = a.drawICPhraseSettings(y, w)
 	y += 8
 
 	// Whole-settings portability: the new-PC bundle (every knob, favorites,
