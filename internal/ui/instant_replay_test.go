@@ -72,3 +72,45 @@ func TestBuildClip(t *testing.T) {
 		}
 	}
 }
+
+// TestLinearizeReplayBuf pins the ring→ordered unwrap (oldest→newest) across the
+// wraparound: partial fill, exactly full, and after wrap (the oldest entries fall
+// off the cap). This is the index math buildClip's test can't reach.
+func TestLinearizeReplayBuf(t *testing.T) {
+	const ringCap = 4
+	a := &App{replayBuf: make([]replayBufEntry, ringCap)}
+	write := func(text string) { // mirrors bufferReplayEvent's ring advance
+		a.replayBuf[a.replayBufW] = replayBufEntry{ev: recEvent{Text: text}}
+		a.replayBufW = (a.replayBufW + 1) % ringCap
+		if a.replayBufN < ringCap {
+			a.replayBufN++
+		}
+	}
+	texts := func() []string {
+		var out []string
+		for _, e := range a.linearizeReplayBuf() {
+			out = append(out, e.ev.Text)
+		}
+		return out
+	}
+
+	if got := a.linearizeReplayBuf(); got != nil {
+		t.Fatalf("empty ring should linearize to nil, got %v", got)
+	}
+	write("a")
+	write("b")
+	write("c")
+	if got := texts(); !equalStrings(got, []string{"a", "b", "c"}) { // partial fill
+		t.Fatalf("partial = %v, want [a b c]", got)
+	}
+	write("d")
+	if got := texts(); !equalStrings(got, []string{"a", "b", "c", "d"}) { // exactly full
+		t.Fatalf("full = %v, want [a b c d]", got)
+	}
+	write("e")
+	write("f")
+	write("g")
+	if got := texts(); !equalStrings(got, []string{"d", "e", "f", "g"}) { // wrapped: oldest 3 fell off
+		t.Fatalf("wrapped = %v, want [d e f g]", got)
+	}
+}
