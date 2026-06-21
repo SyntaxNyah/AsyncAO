@@ -302,7 +302,12 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		s.oocLog = appendCapped(s.oocLog, line, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, ev.Name, icLogCap) // parallel: for name colours
 		s.oocSeq++
-		t.unread++
+		// OOC still LOGS, but by default it doesn't bump the unread badge: servers
+		// post auto-messages in OOC (hourly "hydration" reminders, etc.) and a "(1)"
+		// when nobody chatted is just noise. Opt in to count OOC in Settings.
+		if a.d.Prefs.NotifyOnOOCOn() {
+			t.unread++
+		}
 		if !looksLikeAreaList(ev.Text) { // /ga roster output isn't chat — never self-ping
 			a.checkCallwords(ev.Text)
 		}

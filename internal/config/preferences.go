@@ -471,6 +471,7 @@ type AssetPreferences struct {
 	InstantReplaySeconds   int                          `json:"instantReplaySeconds"` // clip capture window; 0 = default
 	TimerSeconds           int                          `json:"timerSeconds"`         // local alarm/timer remembered duration; 0 = default (#97)
 	TimerRepeat            bool                         `json:"timerRepeat"`          // local alarm/timer auto-restart (default OFF) (#97)
+	NotifyOnOOC            bool                         `json:"notifyOnOOC"`          // OOC bumps the unread tab badge (default OFF = IC only)
 	AutoConnectOnLaunch    bool                         `json:"autoConnectOnLaunch"`
 	LastServerName         string                       `json:"lastServerName"`
 	LastServerURL          string                       `json:"lastServerURL"`
@@ -672,6 +673,7 @@ type prefsJSON struct {
 	InstantReplaySeconds   int            `json:"instantReplaySeconds"` // 0 = default window
 	TimerSeconds           int            `json:"timerSeconds"`         // 0 = default (#97)
 	TimerRepeat            bool           `json:"timerRepeat"`          // default OFF (#97)
+	NotifyOnOOC            bool           `json:"notifyOnOOC"`          // default OFF (IC-only badge)
 	AutoConnectOnLaunch    bool           `json:"autoConnectOnLaunch"`  // default OFF
 	LastServerName         string         `json:"lastServerName"`
 	LastServerURL          string         `json:"lastServerURL"`
@@ -1130,6 +1132,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.InstantReplaySeconds = onDisk.InstantReplaySeconds
 	p.TimerSeconds = onDisk.TimerSeconds
 	p.TimerRepeat = onDisk.TimerRepeat
+	p.NotifyOnOOC = onDisk.NotifyOnOOC
 	p.AutoConnectOnLaunch = onDisk.AutoConnectOnLaunch
 	p.LastServerName = onDisk.LastServerName
 	p.LastServerURL = onDisk.LastServerURL
@@ -2537,6 +2540,28 @@ func (p *AssetPreferences) TimerRepeatOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.TimerRepeat
+}
+
+// NotifyOnOOCOn reports whether OOC messages count toward a background tab's
+// unread badge. Default OFF: server auto-messages (hourly reminders, etc.) live
+// in OOC and shouldn't light up a "(1)" when nobody actually chatted — so only IC
+// counts unless the user opts in.
+func (p *AssetPreferences) NotifyOnOOCOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.NotifyOnOOC
+}
+
+// SetNotifyOnOOC toggles whether OOC bumps the unread tab badge.
+func (p *AssetPreferences) SetNotifyOnOOC(on bool) {
+	p.mu.Lock()
+	if p.NotifyOnOOC == on {
+		p.mu.Unlock()
+		return
+	}
+	p.NotifyOnOOC = on
+	p.mu.Unlock()
+	p.markDirty()
 }
 
 // SetTimerRepeat stores the timer's repeat toggle.

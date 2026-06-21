@@ -434,6 +434,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetStreamerMode(next)
 	}
 	y += 26
+	notifOOC := a.d.Prefs.NotifyOnOOCOn()
+	if next := c.Checkbox(pad, y, "Count OOC in the unread tab badge (OFF by default): otherwise only IC chat lights up a background tab's \"(N)\" — so server auto-messages (hourly reminders, etc.) don't ping you", notifOOC); next != notifOOC {
+		a.d.Prefs.SetNotifyOnOOC(next)
+	}
+	y += 26
 	fcn := a.d.Prefs.ForceCharNamesOn()
 	if next := c.Checkbox(pad, y, "Force character names (OFF by default): show everyone's CHARACTER name, not custom shownames — true-roleplay / anti-impersonation (casing)", fcn); next != fcn {
 		a.d.Prefs.SetForceCharNames(next)

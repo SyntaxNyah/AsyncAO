@@ -255,12 +255,23 @@ func TestTabBackgroundRouting(t *testing.T) {
 	a.parkActive()
 
 	tab := a.tabs[0]
+	// OOC by default LOGS but does NOT bump the unread badge: server auto-messages
+	// (hourly reminders, etc.) shouldn't light up a "(1)" when nobody chatted.
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventOOC, Name: "mod", Text: "hi"})
+	if tab.unread != 0 || len(tab.state.oocLog) != 1 {
+		t.Fatalf("OOC must log but not badge by default: unread=%d ooc=%d", tab.unread, len(tab.state.oocLog))
+	}
+	// IC chat always bumps the badge.
 	msg := &protocol.ChatMessage{Message: "objection!", TextColor: 2}
 	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventMessage, Message: msg})
-	if tab.unread != 2 || len(tab.state.oocLog) != 1 || len(tab.state.icLog) != 1 {
-		t.Fatalf("background chat must land in the tab: unread=%d ooc=%d ic=%d",
-			tab.unread, len(tab.state.oocLog), len(tab.state.icLog))
+	if tab.unread != 1 || len(tab.state.icLog) != 1 {
+		t.Fatalf("IC chat must badge: unread=%d ic=%d", tab.unread, len(tab.state.icLog))
+	}
+	// With the opt-in pref ON, OOC counts toward the badge too.
+	a.d.Prefs.SetNotifyOnOOC(true)
+	a.routeBackgroundEvent(tab, courtroom.Event{Kind: courtroom.EventOOC, Name: "mod", Text: "yo"})
+	if tab.unread != 2 {
+		t.Fatalf("with NotifyOnOOC on, OOC must badge: unread=%d", tab.unread)
 	}
 	if tab.state.icLogSeq == 0 || tab.state.oocSeq == 0 {
 		t.Fatal("background appends must bump the cache-key seqs")

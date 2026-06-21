@@ -395,6 +395,31 @@ func TestTimerPref(t *testing.T) {
 	}
 }
 
+// TestNotifyOnOOCPref pins the unread-badge OOC toggle: OFF by default (IC only),
+// and survives save→reload when enabled.
+func TestNotifyOnOOCPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.NotifyOnOOCOn() {
+		t.Error("NotifyOnOOC must default OFF (IC-only badge)")
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetNotifyOnOOC(true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.NotifyOnOOCOn() {
+		t.Error("NotifyOnOOC=true lost on reload")
+	}
+}
+
 // TestPlayerListSortPref pins that the Players-tab sort choices (player sort +
 // /gas area-group order) default to 0 and survive save→reload.
 func TestPlayerListSortPref(t *testing.T) {
