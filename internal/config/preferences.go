@@ -464,7 +464,9 @@ type AssetPreferences struct {
 	ShowRecordButton       bool                         `json:"showRecordButton"`
 	InstantDisconnect      bool                         `json:"instantDisconnect"`
 	HideDesk               bool                         `json:"hideDesk"`
-	FavEmoteBox            bool                         `json:"favEmoteBox"` // floating box of starred emotes (default OFF)
+	FavEmoteBox            bool                         `json:"favEmoteBox"`          // floating box of starred emotes (default OFF)
+	InstantReplay          bool                         `json:"instantReplay"`        // always-on rolling clip buffer (default OFF)
+	InstantReplaySeconds   int                          `json:"instantReplaySeconds"` // clip capture window; 0 = default
 	AutoConnectOnLaunch    bool                         `json:"autoConnectOnLaunch"`
 	LastServerName         string                       `json:"lastServerName"`
 	LastServerURL          string                       `json:"lastServerURL"`
@@ -659,6 +661,8 @@ type prefsJSON struct {
 	InstantDisconnect      bool           `json:"instantDisconnect"`    // default OFF (confirm first)
 	HideDesk               bool           `json:"hideDesk"`             // default OFF
 	FavEmoteBox            bool           `json:"favEmoteBox"`          // default OFF
+	InstantReplay          bool           `json:"instantReplay"`        // default OFF
+	InstantReplaySeconds   int            `json:"instantReplaySeconds"` // 0 = default window
 	AutoConnectOnLaunch    bool           `json:"autoConnectOnLaunch"`  // default OFF
 	LastServerName         string         `json:"lastServerName"`
 	LastServerURL          string         `json:"lastServerURL"`
@@ -1110,6 +1114,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.InstantDisconnect = onDisk.InstantDisconnect
 	p.HideDesk = onDisk.HideDesk
 	p.FavEmoteBox = onDisk.FavEmoteBox
+	p.InstantReplay = onDisk.InstantReplay
+	p.InstantReplaySeconds = onDisk.InstantReplaySeconds
 	p.AutoConnectOnLaunch = onDisk.AutoConnectOnLaunch
 	p.LastServerName = onDisk.LastServerName
 	p.LastServerURL = onDisk.LastServerURL
@@ -2455,6 +2461,70 @@ func (p *AssetPreferences) SetHideDesk(on bool) {
 		return
 	}
 	p.HideDesk = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Instant-replay capture-window bounds: a sane floor so a clip has context, and
+// a 1-hour ceiling (the requested "up to one hour"). 0/unset reads as default.
+const (
+	InstantReplayMinSeconds     = 10
+	InstantReplayMaxSeconds     = 3600
+	InstantReplayDefaultSeconds = 60
+)
+
+func clampInstantReplaySeconds(s int) int {
+	switch {
+	case s <= 0:
+		return InstantReplayDefaultSeconds
+	case s < InstantReplayMinSeconds:
+		return InstantReplayMinSeconds
+	case s > InstantReplayMaxSeconds:
+		return InstantReplayMaxSeconds
+	default:
+		return s
+	}
+}
+
+// InstantReplayOn reports whether the always-on rolling clip buffer is enabled
+// (default OFF). When on, recent scene events are kept so the clip key can save
+// the last window WITHOUT a recording started in advance.
+func (p *AssetPreferences) InstantReplayOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.InstantReplay
+}
+
+// SetInstantReplay toggles the rolling clip buffer.
+func (p *AssetPreferences) SetInstantReplay(on bool) {
+	p.mu.Lock()
+	if p.InstantReplay == on {
+		p.mu.Unlock()
+		return
+	}
+	p.InstantReplay = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// InstantReplaySecondsValue returns the clamped capture-window length in seconds
+// (the value the slider shows); 0/unset reads as the default.
+func (p *AssetPreferences) InstantReplaySecondsValue() int {
+	p.mu.RLock()
+	s := p.InstantReplaySeconds
+	p.mu.RUnlock()
+	return clampInstantReplaySeconds(s)
+}
+
+// SetInstantReplaySeconds stores the capture window, clamped to [min,max].
+func (p *AssetPreferences) SetInstantReplaySeconds(s int) {
+	s = clampInstantReplaySeconds(s)
+	p.mu.Lock()
+	if p.InstantReplaySeconds == s {
+		p.mu.Unlock()
+		return
+	}
+	p.InstantReplaySeconds = s
 	p.mu.Unlock()
 	p.markDirty()
 }

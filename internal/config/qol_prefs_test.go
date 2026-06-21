@@ -311,6 +311,48 @@ func TestServerFriendNickColor(t *testing.T) {
 	}
 }
 
+// TestInstantReplayPref pins the rolling clip buffer settings: OFF by default,
+// the window defaults to 60s and clamps to [10s, 1 hour], and both survive
+// save→reload.
+func TestInstantReplayPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.InstantReplayOn() {
+		t.Error("InstantReplay must default OFF (opt-in)")
+	}
+	if got := p.InstantReplaySecondsValue(); got != InstantReplayDefaultSeconds {
+		t.Errorf("unset window = %d, want default %d", got, InstantReplayDefaultSeconds)
+	}
+	p.SetInstantReplaySeconds(2) // below the floor
+	if got := p.InstantReplaySecondsValue(); got != InstantReplayMinSeconds {
+		t.Errorf("clamped-low window = %d, want %d", got, InstantReplayMinSeconds)
+	}
+	p.SetInstantReplaySeconds(100000) // past the 1-hour ceiling
+	if got := p.InstantReplaySecondsValue(); got != InstantReplayMaxSeconds {
+		t.Errorf("clamped-high window = %d, want %d", got, InstantReplayMaxSeconds)
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetInstantReplay(true)
+	q.SetInstantReplaySeconds(120)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.InstantReplayOn() {
+		t.Error("InstantReplay=true lost on reload")
+	}
+	if got := r.InstantReplaySecondsValue(); got != 120 {
+		t.Errorf("reloaded window = %d, want 120", got)
+	}
+}
+
 // TestChatboxOpacityPref pins the see-through chatbox setting: default 84,
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {

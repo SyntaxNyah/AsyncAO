@@ -285,6 +285,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   paces the replay: it's deliberately **slower than live chat** so the whole
   message types out and lingers long enough to read, and the slider adjusts it
   **live** — drag it mid-replay and the next line picks up the new speed.
+- **Instant replay** (clip what just happened, **Settings → Studio**, **off by
+  default**): the "I wish I'd been recording that" button. Tick **Pre-record
+  recent conversation** and AsyncAO keeps a small **rolling buffer** of the recent
+  scene events; press the **clip key (Ctrl+.)** and the **last window** is written
+  as a `.aorec` — **with no recording started in advance**. The **capture window
+  is a slider** you set from **10 seconds up to a full hour**. The clip opens on
+  the **right stage and track** (it carries the background and music that were
+  playing *before* the window, so it's never blank or silent) and lands in
+  `recordings/` ready to **open in the Scene Maker to trim/export**. It's
+  **opt-in** and costs nothing until you enable it: the buffer captures on the
+  event stream (a human-paced trickle of messages), **never the render loop**, is
+  a **bounded ring** (a busy hour can't balloon memory), and **resets on a server
+  switch** so a clip can never mix two servers' assets. Ignored players are left
+  out of the clip (the same drop that hides them live). Off, it's a single
+  pointer check per event.
 - **Scene maker** (M16, the same **Studio** tab): a full **in-app scene editor**
   over the very same `.aorec` model — **build a scene from scratch or edit a
   recording**. **🎬 New scene** (works **offline**, no server needed) or **✎ Edit**

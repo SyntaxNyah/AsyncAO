@@ -369,6 +369,17 @@ type App struct {
 	rec       *sceneRecording
 	recStart  time.Time
 
+	// Instant replay (rolling clip buffer, see replay.go): when the opt-in pref is
+	// on, every scene-mutating event is also stamped into replayBuf — a bounded
+	// ring — so the clip key can save the last window WITHOUT a prior recording.
+	// Allocated lazily on first capture, nilled when disabled or the origin changes
+	// (a clip must never mix two servers' assets). replayBufW = next write slot,
+	// replayBufN = entries held (<= cap), replayBufOrigin = the CDN they came from.
+	replayBuf       []replayBufEntry
+	replayBufW      int
+	replayBufN      int
+	replayBufOrigin string
+
 	// Scene replay (M16 [2/2], see replay.go): while replaying, a throwaway
 	// replayRoom (pointed at the recorded asset origin) is driven instead of the
 	// live room and the viewport/renderScene read its scene. The driver feeds
@@ -1963,6 +1974,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		if a.recActive { // M16: tap the scene event stream for a replay recording
 			a.recordEvent(ev)
 		}
+		a.bufferReplayEvent(ev) // instant-replay rolling buffer (no-op unless the opt-in pref is on)
 		if a.room != nil {
 			a.room.HandleEvent(ev)
 		}

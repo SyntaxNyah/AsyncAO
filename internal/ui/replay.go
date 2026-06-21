@@ -34,6 +34,13 @@ const (
 	// hours of play; recording stops accepting events past the cap.
 	maxRecordedEvents = 5000
 
+	// instantReplayMaxEvents bounds the always-on rolling clip buffer (hard rule
+	// §17.4): even a 1-hour window in a frantic room can't balloon memory — past
+	// the cap the oldest captured events fall off the ring. Each entry is a
+	// timestamp + a recEvent (which only holds a pointer to the already-parsed
+	// message), so the whole ring is well under a megabyte.
+	instantReplayMaxEvents = 5000
+
 	// Replay pacing base (at 100% playback speed). A replay is meant to be
 	// WATCHED, not skimmed, so it's deliberately slower than live chat: the
 	// crawl is a relaxed reading cadence and the linger gives time to read the
@@ -110,20 +117,189 @@ func (a *App) startRecording() {
 	a.warnAt = time.Now()
 }
 
+// recEventFrom builds a recEvent from a live courtroom.Event; the caller fills
+// OffsetMs (it owns the time base). Shared by the recorder and the instant-replay
+// buffer so both capture the same fields.
+func recEventFrom(ev courtroom.Event) recEvent {
+	return recEvent{
+		Kind:    int(ev.Kind),
+		Message: ev.Message,
+		Name:    ev.Name,
+		Text:    ev.Text,
+		Int:     ev.Int,
+	}
+}
+
 // recordEvent appends a scene-mutating event to the active recording (bounded).
 // Called from the event loop for every event while recActive.
 func (a *App) recordEvent(ev courtroom.Event) {
 	if a.rec == nil || !recordable(ev.Kind) || len(a.rec.Events) >= maxRecordedEvents {
 		return
 	}
-	a.rec.Events = append(a.rec.Events, recEvent{
-		OffsetMs: int(time.Since(a.recStart).Milliseconds()),
-		Kind:     int(ev.Kind),
-		Message:  ev.Message,
-		Name:     ev.Name,
-		Text:     ev.Text,
-		Int:      ev.Int,
-	})
+	re := recEventFrom(ev)
+	re.OffsetMs = int(time.Since(a.recStart).Milliseconds())
+	a.rec.Events = append(a.rec.Events, re)
+}
+
+// replayBufEntry is one ring slot for the instant-replay buffer: a wall-clock
+// capture time plus the scene event, so a clip can window by real elapsed time.
+type replayBufEntry struct {
+	at time.Time
+	ev recEvent
+}
+
+// bufferReplayEvent stamps a scene-mutating event into the rolling clip buffer
+// when the opt-in pref is on. Called for EVERY game event from the event loop, so
+// it stays O(1) and allocation-free after the one-time ring allocation (it runs
+// per incoming message, never per render frame). The ring is released when the
+// feature is off and reset when the asset origin changes — a clip must never mix
+// two servers' assets (a long window can outlive a server switch).
+func (a *App) bufferReplayEvent(ev courtroom.Event) {
+	if !a.d.Prefs.InstantReplayOn() {
+		if a.replayBuf != nil { // turned off at runtime → free the ring
+			a.replayBuf = nil
+			a.replayBufN, a.replayBufW, a.replayBufOrigin = 0, 0, ""
+		}
+		return
+	}
+	if !recordable(ev.Kind) {
+		return
+	}
+	origin := a.urls.Origin()
+	if a.replayBuf == nil || a.replayBufOrigin != origin {
+		a.replayBuf = make([]replayBufEntry, instantReplayMaxEvents)
+		a.replayBufW, a.replayBufN, a.replayBufOrigin = 0, 0, origin
+	}
+	a.replayBuf[a.replayBufW] = replayBufEntry{at: time.Now(), ev: recEventFrom(ev)}
+	a.replayBufW++
+	if a.replayBufW == len(a.replayBuf) {
+		a.replayBufW = 0
+	}
+	if a.replayBufN < len(a.replayBuf) {
+		a.replayBufN++
+	}
+}
+
+// linearizeReplayBuf copies the ring into a fresh oldest→newest slice. Only the
+// clip key calls it (a rare user action), so the allocation is fine here.
+func (a *App) linearizeReplayBuf() []replayBufEntry {
+	n := a.replayBufN
+	if n == 0 || len(a.replayBuf) == 0 {
+		return nil
+	}
+	out := make([]replayBufEntry, 0, n)
+	start := a.replayBufW - n
+	if start < 0 {
+		start += len(a.replayBuf)
+	}
+	for i := 0; i < n; i++ {
+		out = append(out, a.replayBuf[(start+i)%len(a.replayBuf)])
+	}
+	return out
+}
+
+// buildClip assembles a sceneRecording from the buffered entries whose capture
+// time is within [cutoff, now], recomputing each OffsetMs from the first kept
+// entry and carrying the scene context (the last background — and music — change
+// BEFORE the window) so a mid-conversation clip isn't blank or silent. Pure: no
+// ring, clock, or SDL, so it's tested directly. entries must be oldest-first.
+// Returns nil when nothing falls in the window.
+func buildClip(entries []replayBufEntry, cutoff time.Time, origin, sessBg string) *sceneRecording {
+	start := -1
+	for i := range entries {
+		if !entries[i].at.Before(cutoff) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return nil
+	}
+	// Scene context active at the window start: the most recent background and
+	// music change BEFORE it, so the clip opens on the right stage and track.
+	startBg, startMusic := sessBg, ""
+	foundBg, foundMus := false, false
+	for i := start - 1; i >= 0 && (!foundBg || !foundMus); i-- {
+		switch courtroom.EventKind(entries[i].ev.Kind) {
+		case courtroom.EventBackground:
+			if !foundBg {
+				startBg, foundBg = entries[i].ev.Text, true
+			}
+		case courtroom.EventMusic:
+			if !foundMus {
+				startMusic, foundMus = entries[i].ev.Text, true
+			}
+		}
+	}
+	base := entries[start].at
+	evs := make([]recEvent, 0, len(entries)-start+1)
+	if startMusic != "" { // no StartMusic field on .aorec — seed the playing track as the first event
+		evs = append(evs, recEvent{Kind: int(courtroom.EventMusic), Text: startMusic})
+	}
+	for i := start; i < len(entries); i++ {
+		e := cloneEvent(entries[i].ev) // own the message pointer; the clip outlives the ring slot
+		e.OffsetMs = int(entries[i].at.Sub(base).Milliseconds())
+		evs = append(evs, e)
+	}
+	return &sceneRecording{
+		Version:    recordingVersion,
+		Origin:     origin,
+		StartBg:    startBg,
+		RecordedAt: base.Format(time.RFC3339),
+		Events:     evs,
+	}
+}
+
+// clipInstantReplay saves the last capture-window of conversation as a .aorec —
+// the "save what just happened" key, with no recording started in advance. The
+// write is deferred off the render thread by saveSceneRecording.
+func (a *App) clipInstantReplay() {
+	if !a.d.Prefs.InstantReplayOn() {
+		a.warnLine = "Instant Replay is off — enable “Pre-record recent conversation” in Settings → Studio first."
+		a.warnAt = time.Now()
+		return
+	}
+	if a.replayBufN == 0 {
+		a.warnLine = "Nothing captured yet — Instant Replay needs some conversation to clip."
+		a.warnAt = time.Now()
+		return
+	}
+	window := time.Duration(a.d.Prefs.InstantReplaySecondsValue()) * time.Second
+	bg := ""
+	if a.sess != nil {
+		bg = a.sess.Background
+	}
+	now := time.Now()
+	clip := buildClip(a.linearizeReplayBuf(), now.Add(-window), a.replayBufOrigin, bg)
+	if clip == nil || len(clip.Events) == 0 {
+		a.warnLine = "Nothing in the last " + formatReplayWindow(window) + " to clip."
+		a.warnAt = time.Now()
+		return
+	}
+	stem := "asyncao-clip-" + now.Format("20060102-150405")
+	name, err := saveSceneRecording(clip, stem)
+	if err != nil {
+		a.pushDebug("instant replay: " + err.Error())
+		a.warnLine = "Clip failed: " + err.Error()
+		a.warnAt = time.Now()
+		return
+	}
+	a.warnLine = fmt.Sprintf("📎 Clipped the last %s (%d events): recordings\\%s — open it in the Scene Maker to trim/export.",
+		formatReplayWindow(window), len(clip.Events), name)
+	a.warnAt = time.Now()
+}
+
+// formatReplayWindow renders a capture window for a toast/readout: 45s, 1m, 1m30s.
+func formatReplayWindow(d time.Duration) string {
+	s := int(d.Seconds())
+	switch {
+	case s < 60:
+		return fmt.Sprintf("%ds", s)
+	case s%60 == 0:
+		return fmt.Sprintf("%dm", s/60)
+	default:
+		return fmt.Sprintf("%dm%02ds", s/60, s%60)
+	}
 }
 
 // stopRecording ends capture and writes the .aorec next to the exe under

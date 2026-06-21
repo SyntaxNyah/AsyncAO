@@ -36,6 +36,9 @@ it's a stale build (`scripts\build.ps1 -Release`).
 ## In flight / larger (separate tracks)
 - **M16 Scene studio** — recording, replay player, scene maker, GIF + animated
   WebP export, crop/trim, per-line effects, **proportional timeline strip with
-  draggable In/Out handles** (#75, shipped) — all in `docs/FEATURES.md`. Possible
-  later tweaks: continuous-playback scrubbing, drag-to-reorder on the strip.
+  draggable In/Out handles _and drag-to-reorder_** (#75 + follow-up, shipped),
+  and **Instant Replay** — an opt-in rolling buffer that clips the last window
+  (10 s … 1 h) of conversation with no recording started in advance (shipped) —
+  all in `docs/FEATURES.md`. Possible later tweak: continuous-playback scrubbing
+  on the timeline strip.
 - **M8 Gamepad support** *(#44)* — the last untouched milestone.

@@ -64,6 +64,7 @@ const (
 	hotkeyHideDesk      = "hide_desk"      // toggle hiding the courtroom desk
 	hotkeyQuickConnect  = "quick_connect"  // dial the saved last server (works offline / in the lobby)
 	hotkeyFavEmotes     = "fav_emote_box"  // toggle the floating favourite-emotes box
+	hotkeyClipReplay    = "clip_replay"    // save the last window of conversation (instant replay)
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -103,15 +104,16 @@ var hotkeyDefs = []struct {
 	{hotkeyUIChrome, "Menu: UI chrome", "f"},
 	{hotkeySettings, "Menu: Settings", ","}, // Ctrl+, (prefs convention); NOT z — that's the layout-editor undo
 	{hotkeyRandomChar, "Random character", "r"},
-	{hotkeyVolDown, "Master volume down", "-"},          // Ctrl+-  (quieter)
-	{hotkeyVolUp, "Master volume up", "="},              // Ctrl+=  (louder)
-	{hotkeyShownameRand, "Random showname preset", "h"}, // Ctrl+H (rebindable)
-	{hotkeyShownameCycle, "Cycle showname preset", "b"}, // Ctrl+B (rebindable)
-	{hotkeyDND, "Do Not Disturb (mute pings)", "d"},     // Ctrl+D — session-only, rebindable
-	{hotkeyReshowSprites, "Reshow hidden sprites", "y"}, // un-hide all right-click-hidden sprites
-	{hotkeyHideDesk, "Hide / show the desk", "v"},       // toggle desk rendering
-	{hotkeyQuickConnect, "Connect to last server", "q"}, // dial the saved server (lobby)
-	{hotkeyFavEmotes, "Favourite-emotes box", "a"},      // toggle the floating box of starred emotes
+	{hotkeyVolDown, "Master volume down", "-"},                             // Ctrl+-  (quieter)
+	{hotkeyVolUp, "Master volume up", "="},                                 // Ctrl+=  (louder)
+	{hotkeyShownameRand, "Random showname preset", "h"},                    // Ctrl+H (rebindable)
+	{hotkeyShownameCycle, "Cycle showname preset", "b"},                    // Ctrl+B (rebindable)
+	{hotkeyDND, "Do Not Disturb (mute pings)", "d"},                        // Ctrl+D — session-only, rebindable
+	{hotkeyReshowSprites, "Reshow hidden sprites", "y"},                    // un-hide all right-click-hidden sprites
+	{hotkeyHideDesk, "Hide / show the desk", "v"},                          // toggle desk rendering
+	{hotkeyQuickConnect, "Connect to last server", "q"},                    // dial the saved server (lobby)
+	{hotkeyFavEmotes, "Favourite-emotes box", "a"},                         // toggle the floating box of starred emotes
+	{hotkeyClipReplay, "Clip the last conversation (Instant Replay)", "."}, // Ctrl+. — every letter is taken; pairs with settings (Ctrl+,)
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -259,6 +261,8 @@ func (a *App) handleHotkeys() {
 		a.toggleRecording()
 	case a.hotkeyFor(hotkeyReplayLast):
 		a.toggleReplay()
+	case a.hotkeyFor(hotkeyClipReplay):
+		a.clipInstantReplay()
 	case a.hotkeyFor(hotkeyTheater):
 		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):

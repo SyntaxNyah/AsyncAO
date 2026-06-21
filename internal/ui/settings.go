@@ -851,6 +851,32 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 	}
 	y += 32
 
+	y = a.settingsSection(y, w, "Instant replay (clip what just happened)")
+	c.Label(pad, y, "Optionally keep a rolling buffer of the recent conversation, so the clip key can save the last minute or", ColTextDim)
+	y += 18
+	c.Label(pad, y, "two as a .aorec — WITHOUT starting a recording first. Off by default; nothing is kept until you tick it.", ColTextDim)
+	y += 24
+	ir := a.d.Prefs.InstantReplayOn()
+	if next := c.Checkbox(pad, y, "Pre-record recent conversation (Instant Replay)", ir); next != ir {
+		a.d.Prefs.SetInstantReplay(next)
+	}
+	y += 30
+	if ir {
+		secs := a.d.Prefs.InstantReplaySecondsValue()
+		c.Label(pad+16, y+4, "Capture window:", ColTextDim)
+		track := sdl.Rect{X: pad + 140, Y: y + 5, W: 240, H: 16}
+		lo, hi := config.InstantReplayMinSeconds, config.InstantReplayMaxSeconds
+		if nv := int(c.Slider("ir_window", track, int32(secs-lo), int32(hi-lo))) + lo; nv != secs {
+			a.d.Prefs.SetInstantReplaySeconds(nv)
+			secs = nv
+		}
+		c.Label(track.X+track.W+10, y+4, formatReplayWindow(time.Duration(secs)*time.Second)+"  (10s … 1 hour)", ColAccent)
+		y += 26
+		c.Label(pad+16, y, "Clip the last window: Ctrl+"+strings.ToUpper(a.hotkeyFor(hotkeyClipReplay))+"  (rebind in Controls). Saves to recordings\\ — open it in the Scene Maker to trim/export.", ColTextDim)
+		y += 22
+	}
+	y += 6
+
 	y = a.settingsSection(y, w, "Scene maker")
 	c.Label(pad, y, "Build a scene from scratch — or edit a recording — line by line: pick the character, emote, text,", ColTextDim)
 	y += 18
