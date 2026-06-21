@@ -169,7 +169,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// Ignored players, Mod tools.
 		"volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
 		"text", "typing", "text crawl", "text stay", "text speed", "chat limit", "catch up",
-		"chat log", "ic log", "timestamps", "log",
+		"chat log", "ic log", "timestamps", "log", "song url", "song link", "full link", "music url",
 		"case alerts", "casing", "case", "callword", "callwords", "ping", "alert",
 		"do not disturb", "dnd", "messages", "connection", "auto reconnect", "reconnect", "disconnect confirm",
 		"sound effects", "sfx", "mute sfx", "music history", "jukebox history",
@@ -1616,6 +1616,13 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	detLog := a.d.Prefs.DetailedLogOn()
 	if next := c.Checkbox(pad, y, "Detailed logging (OFF by default): append every IC line to logs/transcript.log with timestamp, server, area, character + showname", detLog); next != detLog {
 		a.d.Prefs.SetDetailedLog(next)
+	}
+	y += 26
+	// Show the full song URL in the "has played a song" log line instead of just
+	// the name (a song's link, on request).
+	songURL := a.d.Prefs.ShowSongURLOn()
+	if next := c.Checkbox(pad, y, "Show the full song URL in the music log line (OFF by default): the whole link instead of just the song name", songURL); next != songURL {
+		a.d.Prefs.SetShowSongURL(next)
 	}
 	y += 26
 

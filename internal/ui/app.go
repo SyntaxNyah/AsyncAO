@@ -2080,7 +2080,11 @@ func (a *App) logMusicChange(ev courtroom.Event) {
 	}
 	line := name + " " + action
 	if song != "" {
-		line += ": " + song
+		disp := song
+		if a.d.Prefs.ShowSongURLOn() && ev.Text != "" {
+			disp = ev.Text // opt-in: the full song URL / raw track instead of the name
+		}
+		line += ": " + disp
 	}
 	a.pushIC(line, musicLogColor, false, -1, "") // system line: no friend tint, no name-tint/pair
 }

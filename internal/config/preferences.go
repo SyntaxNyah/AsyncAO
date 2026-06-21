@@ -571,6 +571,7 @@ type AssetPreferences struct {
 	TimerSeconds           int                          `json:"timerSeconds"`         // local alarm/timer remembered duration; 0 = default (#97)
 	TimerRepeat            bool                         `json:"timerRepeat"`          // local alarm/timer auto-restart (default OFF) (#97)
 	NotifyOnOOC            bool                         `json:"notifyOnOOC"`          // OOC bumps the unread tab badge (default OFF = IC only)
+	ShowSongURL            bool                         `json:"showSongURL"`          // show the full song URL in the music log line (default OFF)
 	AutoConnectOnLaunch    bool                         `json:"autoConnectOnLaunch"`
 	LastServerName         string                       `json:"lastServerName"`
 	LastServerURL          string                       `json:"lastServerURL"`
@@ -776,6 +777,7 @@ type prefsJSON struct {
 	TimerSeconds           int              `json:"timerSeconds"`         // 0 = default (#97)
 	TimerRepeat            bool             `json:"timerRepeat"`          // default OFF (#97)
 	NotifyOnOOC            bool             `json:"notifyOnOOC"`          // default OFF (IC-only badge)
+	ShowSongURL            bool             `json:"showSongURL"`          // default OFF (song name only)
 	AutoConnectOnLaunch    bool             `json:"autoConnectOnLaunch"`  // default OFF
 	LastServerName         string           `json:"lastServerName"`
 	LastServerURL          string           `json:"lastServerURL"`
@@ -1238,6 +1240,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.TimerSeconds = onDisk.TimerSeconds
 	p.TimerRepeat = onDisk.TimerRepeat
 	p.NotifyOnOOC = onDisk.NotifyOnOOC
+	p.ShowSongURL = onDisk.ShowSongURL
 	p.AutoConnectOnLaunch = onDisk.AutoConnectOnLaunch
 	p.LastServerName = onDisk.LastServerName
 	p.LastServerURL = onDisk.LastServerURL
@@ -2677,6 +2680,26 @@ func (p *AssetPreferences) SetNotifyOnOOC(on bool) {
 		return
 	}
 	p.NotifyOnOOC = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ShowSongURLOn reports whether the music log line shows the full song URL
+// instead of just the song name (default OFF).
+func (p *AssetPreferences) ShowSongURLOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ShowSongURL
+}
+
+// SetShowSongURL toggles showing the full song URL in the music log line.
+func (p *AssetPreferences) SetShowSongURL(on bool) {
+	p.mu.Lock()
+	if p.ShowSongURL == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ShowSongURL = on
 	p.mu.Unlock()
 	p.markDirty()
 }
