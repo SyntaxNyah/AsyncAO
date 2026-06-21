@@ -162,7 +162,9 @@ func (a *App) activateTab(i int) {
 		return
 	}
 	if t.inCourt {
-		a.enterCourtroom() // rebuilds room/prefetcher from session state
+		a.buildRoom() // rebuild the room WITHOUT the fresh-entry resets, so the
+		// parked iniswap + /pos override survive the tab switch (enterCourtroom is
+		// for a fresh char-select entry only)
 	} else {
 		a.screen = ScreenCharSelect
 	}
@@ -552,8 +554,14 @@ func (l *loweredCache) get(src string) string {
 // initialized, sentinel ids set) — used by NewApp, Disconnect, and the
 // park path.
 func (a *App) resetSessionState() {
+	// Pair placement is per-session, seeded from the global "last used" pref, so it
+	// can't leak across tabs (it used to live on App proper and be shared).
+	offX, offY := a.d.Prefs.PairOffsets()
 	a.sessionState = sessionState{
 		pairWith: protocol.UnpairedCharID,
+		pairOffX: offX,
+		pairOffY: offY,
+		pairFlip: a.d.Prefs.PairFlipped(),
 		spriteOv: map[string][2]int{},
 		evidIdx:  -1,
 		// Full bars so the first HP packets don't fire penalty sfx.

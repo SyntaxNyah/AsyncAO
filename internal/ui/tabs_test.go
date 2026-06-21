@@ -107,6 +107,11 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	a.icLogSeq = 7
 	a.oocLog = append(a.oocLog, "mod: welcome")
 	a.oocSeq = 3
+	// The three settings that used to LEAK across tabs (playtest reports): the
+	// pair placement (was App-global), the iniswap override, and the /pos side.
+	a.pairOffX, a.pairOffY, a.pairFlip = 30, -20, true
+	a.iniChar = "SwappedChar"
+	a.sidePref = "wit"
 
 	a.parkActive()
 	if a.activeTab != -1 || a.serverName != "" || len(a.icLog) != 0 || a.icInput != "" {
@@ -115,6 +120,13 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 	if a.spriteOv == nil || a.pairWith == 0 {
 		t.Fatal("reset state must re-init maps and sentinels")
+	}
+	// Park must hand the live session a PRISTINE pair/iniswap/pos — not the parked
+	// tab's values (that shared-live-field bleed was the bug). Pair placement reseeds
+	// from prefs (default 0/0/false in this fresh test config).
+	if a.iniChar != "" || a.sidePref != "" || a.pairOffX != 0 || a.pairOffY != 0 || a.pairFlip {
+		t.Fatalf("park must reset per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
+			a.iniChar, a.sidePref, a.pairOffX, a.pairOffY, a.pairFlip)
 	}
 	parked := &a.tabs[0].state
 	if parked.serverName != "Skrapegropen" || parked.icLogSeq != 7 || len(parked.oocLog) != 1 {
@@ -128,8 +140,27 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	if a.icLogSeq != 7 || len(a.icLog) != 1 || a.icLog[0].color != 2 {
 		t.Fatal("activate must restore logs and seqs bit-for-bit")
 	}
+	// The previously-leaking settings come back with THIS tab's session.
+	if a.iniChar != "SwappedChar" || a.sidePref != "wit" || a.pairOffX != 30 || a.pairOffY != -20 || !a.pairFlip {
+		t.Fatalf("activate must restore per-session pair/iniswap/pos: ini=%q side=%q off=%d/%d flip=%v",
+			a.iniChar, a.sidePref, a.pairOffX, a.pairOffY, a.pairFlip)
+	}
 	if a.tabs[0].state.serverName != "" {
 		t.Fatal("the active tab's parked slot must be zeroed")
+	}
+}
+
+// TestResetSessionStateSeedsPairOffsets pins that a fresh/parked session seeds its
+// (now per-tab) pair placement from the global "last used" pref — so a new tab
+// starts from your saved default, never from zero and never from another tab's
+// live value.
+func TestResetSessionStateSeedsPairOffsets(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetPairOffsets(15, 25)
+	a.d.Prefs.SetPairFlipped(true)
+	a.resetSessionState()
+	if a.pairOffX != 15 || a.pairOffY != 25 || !a.pairFlip {
+		t.Errorf("pair seed = %d/%d/%v, want 15/25/true", a.pairOffX, a.pairOffY, a.pairFlip)
 	}
 }
 

@@ -1138,9 +1138,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   is the discoverable way to open another server — it parks the current
   session and opens the lobby to connect a new tab; it hides at the cap.
   Rooms exist only for the active tab (nothing animates off-screen);
-  activation rebuilds the courtroom from the session state. Caches need
-  nothing: asset keys are full URLs, per-server separation is
-  structural. Rehearsal never backgrounds (it owns the offline gate).
+  activation rebuilds the courtroom from the session state. Every
+  per-session setting — your **iniswap, /pos side, and pair placement**
+  included — is parked with its tab, so switching servers never carries one
+  tab's character or pairing into another. Caches need nothing: asset keys
+  are full URLs, per-server separation is structural. Rehearsal never
+  backgrounds (it owns the offline gate).
   **Drag-reorder**: grab a chip and drag it along the strip to reorder —
   it lifts (accent border) and the other chips slide live as you cross
   them; the active tab keeps its place in the lineup. A small drag is told

@@ -566,12 +566,6 @@ type App struct {
 	// chrome-less client across runs.
 	theaterOn bool
 
-	// pair placement mirrors prefs (persisted globally — your preferred
-	// offsets follow you across servers like AO2's sliders).
-	pairOffX int
-	pairOffY int
-	pairFlip bool
-
 	// --- jukebox (global DJ /play music-link library) ---
 	// App-global like dlPaused and OUTSIDE sessionState: the library is shared
 	// across every server and must survive disconnects and tab switches.
@@ -703,7 +697,11 @@ type sessionState struct {
 	iniWarmed        string // last char.ini hover-warmed (dedupe)
 	icColor          int    // outgoing MS text_color (dropdown)
 	icImmediate      bool   // MS Immediate: preanim plays without holding the text (session toggle)
-	// pair offset edit buffers (typed text commits on valid parse)
+	// pair placement (session-scoped: each tab keeps its own, seeded from prefs in
+	// resetSessionState, so it can't leak across tabs like the App-global version
+	// did). pairOffXText/Y are the typed edit buffers (commit on valid parse).
+	pairOffX, pairOffY         int
+	pairFlip                   bool
 	pairOffXText, pairOffYText string
 	emotes                     []courtroom.Emote
 	emoteIdx                   int
@@ -1330,12 +1328,10 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			a.jukeRes <- j
 		}
 	}()
-	a.applyThemeAsync() // chatbox skin + font colors from the saved theme
-	a.pairOffX, a.pairOffY = d.Prefs.PairOffsets()
-	a.pairFlip = d.Prefs.PairFlipped()
-	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales()
-	a.musicPct = a.logPct  // starts matching the log; ctrl+wheel over the Music tab tunes it apart
-	a.playerPct = a.logPct // same for the Players tab + pair popup
+	a.applyThemeAsync()                                                         // chatbox skin + font colors from the saved theme
+	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // pair placement is seeded per-session in resetSessionState (above)
+	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
+	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
 	a.applyFontConfig()                                      // dyslexia toggle or manual font path, resolved once
@@ -2302,11 +2298,30 @@ func (a *App) enterCourtroom() {
 	if a.sess == nil {
 		return
 	}
-	// A wardrobe pick from char select rides in as pendingIni (the slot
-	// was auto-claimed); a plain pick starts clean.
+	// FRESH entry from char select: a wardrobe pick rides in as pendingIni (the
+	// slot was auto-claimed); a plain pick starts clean, and the side waits on the
+	// new char.ini. A tab REACTIVATION must NOT run these — activateTab calls
+	// buildRoom directly so the parked iniswap + /pos override survive (they were
+	// leaking across tabs: re-entering a tab un-iniswapped you and reset your /pos).
 	a.iniChar = a.pendingIni
 	a.pendingIni = ""
-	a.sidePref = "" // until the new char.ini reports its side
+	a.sidePref = ""
+	a.buildRoom()
+}
+
+// buildRoom (re)constructs the render-coupled courtroom from the CURRENT session
+// state WITHOUT touching the per-entry bits (iniChar / sidePref) — so a tab
+// reactivation rebuilds the room while the parked iniswap and /pos ride along
+// (loadCharINI below re-applies the active, possibly iniswapped, character).
+// enterCourtroom layers the fresh-entry resets on top; activateTab calls this
+// directly. The court-extras reset + hpPrev re-arm stay here on PURPOSE: they must
+// run on reactivation too, because background tabs apply HP via HandlePacket but
+// never route it to the penalty-sfx logic, so hpPrev must re-arm at the session's
+// current bars or the next HP packet fires a spurious sound.
+func (a *App) buildRoom() {
+	if a.sess == nil {
+		return
+	}
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
 	a.room.SFXMuted = func(name string) bool { return a.d.Prefs.IsSFXMuted(name) }        // M11 per-SFX mute (reads live prefs)
 	a.room.BlipVolumeFor = func(char string) int { return a.d.Prefs.BlipVolumeFor(char) } // M11 per-character blip volume (reads live prefs)
