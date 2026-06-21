@@ -46,6 +46,15 @@ const (
 	areaSortModes        // count, for the cycle
 )
 
+// clampMode keeps a remembered sort index inside [0, n) — a stale pref or a future
+// change to the mode count can't select an out-of-range sort.
+func clampMode(v, n int) int {
+	if v < 0 || v >= n {
+		return 0
+	}
+	return v
+}
+
 func areaSortLabel(mode int) string {
 	switch mode {
 	case areaSortName:
@@ -179,6 +188,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	sw := c.TextWidth(sortBtn) + 16
 	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: sw, H: 22}, sortBtn) {
 		a.playerSort = (a.playerSort + 1) % playerSortModes
+		a.d.Prefs.SetPlayerListSort(a.playerSort) // remember it across sessions
 	}
 	statusX := r.X + sw + 10
 	// Rooms button: orders the /gas AREA GROUPS (a second axis from Sort, which
@@ -190,6 +200,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		rb := sdl.Rect{X: statusX, Y: r.Y, W: rw, H: 22}
 		if c.Button(rb, roomsBtn) {
 			a.playerAreaSort = (a.playerAreaSort + 1) % areaSortModes
+			a.d.Prefs.SetPlayerListAreaSort(a.playerAreaSort) // remember it across sessions
 		}
 		c.Tooltip(rb, "Order the area groups: /gas (the server's own order), A–Z, or most players first.")
 		statusX += rw + 10

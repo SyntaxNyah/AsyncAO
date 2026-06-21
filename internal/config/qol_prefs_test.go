@@ -353,6 +353,32 @@ func TestInstantReplayPref(t *testing.T) {
 	}
 }
 
+// TestPlayerListSortPref pins that the Players-tab sort choices (player sort +
+// /gas area-group order) default to 0 and survive save→reload.
+func TestPlayerListSortPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.PlayerListSortMode() != 0 || p.PlayerListAreaSortMode() != 0 {
+		t.Fatalf("sort prefs must default to 0, got %d/%d", p.PlayerListSortMode(), p.PlayerListAreaSortMode())
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetPlayerListSort(1)
+	q.SetPlayerListAreaSort(2)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if r.PlayerListSortMode() != 1 || r.PlayerListAreaSortMode() != 2 {
+		t.Errorf("reloaded sorts = %d/%d, want 1/2", r.PlayerListSortMode(), r.PlayerListAreaSortMode())
+	}
+}
+
 // TestChatboxOpacityPref pins the see-through chatbox setting: default 84,
 // clamps, and survives save→reload (the *int DTO so a fresh config isn't 0%).
 func TestChatboxOpacityPref(t *testing.T) {

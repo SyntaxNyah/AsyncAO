@@ -558,12 +558,14 @@ func (a *App) resetSessionState() {
 	// can't leak across tabs (it used to live on App proper and be shared).
 	offX, offY := a.d.Prefs.PairOffsets()
 	a.sessionState = sessionState{
-		pairWith: protocol.UnpairedCharID,
-		pairOffX: offX,
-		pairOffY: offY,
-		pairFlip: a.d.Prefs.PairFlipped(),
-		spriteOv: map[string][2]int{},
-		evidIdx:  -1,
+		pairWith:       protocol.UnpairedCharID,
+		pairOffX:       offX,
+		pairOffY:       offY,
+		pairFlip:       a.d.Prefs.PairFlipped(),
+		playerSort:     clampMode(a.d.Prefs.PlayerListSortMode(), playerSortModes), // remembered Players-tab sorts
+		playerAreaSort: clampMode(a.d.Prefs.PlayerListAreaSortMode(), areaSortModes),
+		spriteOv:       map[string][2]int{},
+		evidIdx:        -1,
 		// Full bars so the first HP packets don't fire penalty sfx.
 		hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
 		// Logs follow the tail until the user scrolls up.

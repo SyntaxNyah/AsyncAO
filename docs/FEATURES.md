@@ -435,7 +435,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **Rooms** button orders those area groups — by default **your current area
   first, then the server's `/gas` order** (so the room you're in is on top, not
   whichever room holds the lowest-UID player), or **A–Z**, or **most players
-  first**. Each
+  first**. Both the **Rooms** and player **Sort** choices are **remembered across
+  sessions**. Each
   row has a char icon, role highlights (you · the current speaker · friends),
   Spectator/CM chips, a player **sort toggle** (UID · name · speakers-first), a **`/pair
   <uid>` button**, **Copy-UID**, and (opt-in) a **Follow** button (M3) — straight

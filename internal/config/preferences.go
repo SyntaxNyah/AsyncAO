@@ -455,6 +455,8 @@ type AssetPreferences struct {
 	RightClickHideSprite   bool                         `json:"rightClickHideSprite"`
 	DragLayout             bool                         `json:"dragLayout"`
 	FollowEnabled          bool                         `json:"followEnabled"`
+	PlayerListSort         int                          `json:"playerListSort"`     // remembered Players-tab player sort
+	PlayerListAreaSort     int                          `json:"playerListAreaSort"` // remembered Players-tab /gas area-group order
 	DyslexiaFont           bool                         `json:"dyslexiaFont"`
 	DNDPersist             bool                         `json:"dndPersist"`
 	DNDSaved               bool                         `json:"dndSaved"`
@@ -651,6 +653,8 @@ type prefsJSON struct {
 	RightClickHideSprite   *bool          `json:"rightClickHideSprite"` // default ON (pointer: absent != off)
 	DragLayout             *bool          `json:"dragLayout"`           // default ON (pointer: absent != off)
 	FollowEnabled          bool           `json:"followEnabled"`        // default OFF (opt-in)
+	PlayerListSort         int            `json:"playerListSort"`       // default 0 (UID)
+	PlayerListAreaSort     int            `json:"playerListAreaSort"`   // default 0 (/gas order)
 	DyslexiaFont           bool           `json:"dyslexiaFont"`         // default OFF
 	DNDPersist             bool           `json:"dndPersist"`           // default OFF (DND clears each launch)
 	DNDSaved               bool           `json:"dndSaved"`             // persisted DND state (restored only when DNDPersist)
@@ -1104,6 +1108,8 @@ func load(path string) (*AssetPreferences, error) {
 		p.DragLayout = *onDisk.DragLayout
 	}
 	p.FollowEnabled = onDisk.FollowEnabled
+	p.PlayerListSort = onDisk.PlayerListSort
+	p.PlayerListAreaSort = onDisk.PlayerListAreaSort
 	p.DyslexiaFont = onDisk.DyslexiaFont
 	p.DNDPersist = onDisk.DNDPersist
 	p.DNDSaved = onDisk.DNDSaved
@@ -2846,6 +2852,46 @@ func (p *AssetPreferences) FollowEnabledOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.FollowEnabled
+}
+
+// PlayerListSortMode / PlayerListAreaSortMode return the remembered Players-tab
+// sort choices (the player sort, and the /gas area-group order). Stored raw; the
+// UI clamps to its current mode count when it seeds a session.
+func (p *AssetPreferences) PlayerListSortMode() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PlayerListSort
+}
+
+// SetPlayerListSort remembers the Players-tab player sort.
+func (p *AssetPreferences) SetPlayerListSort(v int) {
+	p.mu.Lock()
+	if p.PlayerListSort == v {
+		p.mu.Unlock()
+		return
+	}
+	p.PlayerListSort = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// PlayerListAreaSortMode returns the remembered Players-tab area-group order.
+func (p *AssetPreferences) PlayerListAreaSortMode() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PlayerListAreaSort
+}
+
+// SetPlayerListAreaSort remembers the Players-tab area-group order.
+func (p *AssetPreferences) SetPlayerListAreaSort(v int) {
+	p.mu.Lock()
+	if p.PlayerListAreaSort == v {
+		p.mu.Unlock()
+		return
+	}
+	p.PlayerListAreaSort = v
+	p.mu.Unlock()
+	p.markDirty()
 }
 
 // SetFollowEnabled toggles the opt-in player-follow feature.

@@ -168,6 +168,23 @@ func TestResetSessionStateSeedsPairOffsets(t *testing.T) {
 	}
 }
 
+// TestResetSessionStateSeedsPlayerSort pins that a fresh session seeds the
+// Players-tab sorts from prefs, clamped to the valid mode range.
+func TestResetSessionStateSeedsPlayerSort(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetPlayerListSort(playerSortName)
+	a.d.Prefs.SetPlayerListAreaSort(areaSortPop)
+	a.resetSessionState()
+	if a.playerSort != playerSortName || a.playerAreaSort != areaSortPop {
+		t.Errorf("seed = %d/%d, want %d/%d", a.playerSort, a.playerAreaSort, playerSortName, areaSortPop)
+	}
+	a.d.Prefs.SetPlayerListSort(99) // a stale/out-of-range value clamps to 0
+	a.resetSessionState()
+	if a.playerSort != 0 {
+		t.Errorf("out-of-range sort must clamp to 0, got %d", a.playerSort)
+	}
+}
+
 // TestTabCap pins the bound: maxTabs sessions, the next connect refuses
 // with a visible reason and leaves the active session untouched.
 func TestTabCap(t *testing.T) {
