@@ -723,15 +723,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   **only for an allowlisted set of "unique" host domains** (the kind people host
   their own songs on). The default allowlist is **catbox.moe, file.garden,
   youtube.com, youtu.be, discordapp.com, cdn.discordapp.com**, editable in
-  **Settings → Audio & Chat** (add/remove domains; paste a full URL and it's
+  **Settings → Audio & Chat** (add/remove entries; paste a full URL and it's
   normalized to the bare host). The server's own music (bare names, the server
   host) **still plays — it just isn't recorded** (you already have it on the
   server; this feature is for grabbing songs from elsewhere). **Discord records
   audio files only** (`.mp3`/`.opus`/…), since most Discord CDN links are images.
-  One **built-in path rule** ships always-on (shown read-only under the list):
-  **`miku.pizza/base/youtube/`** — Skrapegropen's folder of user-hosted YouTube
-  rips — records **only the audio files under that one path** (`…/youtube/Song.opus`),
-  while the rest of `miku.pizza` (the server's own library) stays unsaved as above.
+  **Nothing is hardcoded to a specific server.** An entry can also be a
+  **host/folder** (`host/path`) to record **only the audio files under that
+  path** — e.g. add `miku.pizza/base/youtube` to save a server's user-rip folder
+  while the rest of that host (its own library) stays unsaved. Folder rules are
+  **opt-in**: you add the one you want.
   Each row shows the cleaned song name + who played it, with **Save** (files it
   into its own dedicated **"Music history"** playlist, dedup by URL), **Play**,
   and **Share**. Open that **Music history** playlist and its songs are **grouped

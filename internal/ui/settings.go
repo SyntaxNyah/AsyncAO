@@ -1737,14 +1737,16 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	// domains are recorded (the server's own music still plays, it's just not
 	// saved). Discord records audio files only. Add/remove like the muted-SFX list.
 	if mh {
-		c.Label(pad+16, y, "Only record songs from these domains — others still play, they're just not saved (Discord: audio files only):", ColTextDim)
+		c.Label(pad+16, y, "Only record songs from these hosts — others still play, just aren't saved. Add a host (catbox.moe), or a host/folder", ColTextDim)
+		y += 18
+		c.Label(pad+16, y, "for a server's user-rip path (e.g. miku.pizza/base/youtube → only songs under it). Discord: audio files only.", ColTextDim)
 		y += 22
-		a.musicHostInput, _ = c.TextField("musichost", sdl.Rect{X: pad + 16, Y: y, W: 240, H: fieldH}, a.musicHostInput, "Add a domain (e.g. catbox.moe)…")
+		a.musicHostInput, _ = c.TextField("musichost", sdl.Rect{X: pad + 16, Y: y, W: 240, H: fieldH}, a.musicHostInput, "Host or host/folder (e.g. catbox.moe)…")
 		if c.Button(sdl.Rect{X: pad + 262, Y: y, W: 80, H: btnH}, "+ Add") {
 			if a.d.Prefs.AddMusicHost(a.musicHostInput) {
 				a.musicHostInput = ""
 			} else {
-				a.jukeWarn("Enter a domain (or it's already listed / at the cap).")
+				a.jukeWarn("Enter a host or host/folder (or it's already listed / at the cap).")
 			}
 		}
 		y += fieldH + 6
@@ -1753,12 +1755,6 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 				a.d.Prefs.RemoveMusicHost(h)
 			}
 			c.LabelClipped(pad+56, y+1, 320, h, ColText)
-			y += 24
-		}
-		// Always-on curated path rules (not removable): e.g. miku.pizza/base/youtube
-		// records only the song files under that folder, never the rest of the host.
-		for _, b := range config.BuiltinMusicHostLabels() {
-			c.LabelClipped(pad+56, y+1, 360, b+"  (built-in · songs only)", ColTextDim)
 			y += 24
 		}
 		y += 6

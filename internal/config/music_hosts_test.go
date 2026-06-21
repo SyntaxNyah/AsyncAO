@@ -59,12 +59,20 @@ func TestMusicURLAllowed(t *testing.T) {
 	}
 }
 
-// TestMusicURLAllowedBuiltinPath pins the always-on curated rule
-// miku.pizza/base/youtube/: only actual song files under that exact path record
-// (the rest of miku.pizza — including its own music folder — still never saves),
-// subdomains count, and the grouping label is the folder, not the bare host.
-func TestMusicURLAllowedBuiltinPath(t *testing.T) {
+// TestMusicURLAllowedPathEntry pins the OPTIONAL path-scoped allowlist entry:
+// nothing server-specific is hardcoded, but a user can ADD "miku.pizza/base/youtube"
+// so only actual song files under that folder record (the rest of the host —
+// including its own music library — still never saves), subdomains count, the
+// grouping label is the folder, and it's removable like any other entry.
+func TestMusicURLAllowedPathEntry(t *testing.T) {
 	p, _ := newTestPrefs(t)
+	// Nothing hardcoded: without the entry, the server path does NOT record.
+	if p.MusicURLAllowed("https://miku.pizza/base/youtube/Song.opus") {
+		t.Fatal("a server path must not record until the user opts in (no hardcoded rule)")
+	}
+	if !p.AddMusicHost("miku.pizza/base/youtube") {
+		t.Fatal("adding a host/folder entry should report a change")
+	}
 	cases := []struct {
 		url  string
 		want bool
@@ -85,8 +93,11 @@ func TestMusicURLAllowedBuiltinPath(t *testing.T) {
 	if got := p.MusicURLDomain("https://miku.pizza/base/youtube/Song.opus"); got != "miku.pizza/base/youtube" {
 		t.Errorf("MusicURLDomain youtube-rip = %q, want miku.pizza/base/youtube", got)
 	}
-	if labels := BuiltinMusicHostLabels(); len(labels) != 1 || labels[0] != "miku.pizza/base/youtube" {
-		t.Errorf("BuiltinMusicHostLabels = %v, want [miku.pizza/base/youtube]", labels)
+	if !p.RemoveMusicHost("miku.pizza/base/youtube") {
+		t.Error("the path entry must be removable (it's a list entry, not hardcoded)")
+	}
+	if p.MusicURLAllowed("https://miku.pizza/base/youtube/Song.opus") {
+		t.Error("after removal the path must stop recording")
 	}
 }
 
