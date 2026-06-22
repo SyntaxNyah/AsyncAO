@@ -2114,6 +2114,7 @@ func (a *App) drawIniswapPanel(w, h int32) {
 	default:
 		a.drawWardrobeCharsBody(panel, w, h)
 	}
+	a.applyPendingFav() // a ★ toggle a cell deferred: rebuild AFTER the grid loop, never during it
 	// Shared drag ghost: a label trailing the cursor shows what's being dragged
 	// (a character or a background — whichever section armed the drag).
 	if a.iniDragging && a.iniDragChar != "" {
@@ -2227,6 +2228,9 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 		}
 	}
 	charVisible := func(i int) bool {
+		if i >= len(a.iniWardrobe) || i >= len(a.iniFolders) || i >= len(a.iniLower) {
+			return false // never index past the parallel slices if they ever shrink mid-frame
+		}
 		// Characters is YOUR wardrobe only — starred or filed into a folder. The
 		// full server list lives on the Iniswaps tab (★ there adds it here).
 		if !a.iniWardrobe[i] && a.iniFolders[i] == "" {
@@ -2686,13 +2690,14 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick) {
 	c.Label(star.X+2, star.Y, "★", starCol)
 	c.Tooltip(star, "★ add to / remove from your wardrobe (right-click the cell for more)")
 	if c.hovering(star) && c.clicked && !a.iniDragging {
-		if a.iniWardrobe[idx] {
-			a.d.Prefs.RemoveWardrobe(a.serverKey, name)
-		} else {
-			a.d.Prefs.AddWardrobe(a.serverKey, name)
-		}
-		a.rebuildIniMenu()
-		return // membership toggled; don't also wear it
+		// DEFER the toggle: rebuilding the wardrobe here shrinks the iniList/
+		// iniWardrobe/iniFolders slices the grid loop is currently ranging, which
+		// panicked on a REMOVE (the reported crash). drawIniswapPanel applies it
+		// after the loop instead.
+		a.iniFavPending = name
+		a.iniFavPendingAdd = idx >= len(a.iniWardrobe) || !a.iniWardrobe[idx]
+		c.clicked = false // consumed; don't also wear it
+		return
 	}
 
 	// Key badge (bottom-left): the character's bound key on this server,

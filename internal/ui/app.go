@@ -906,18 +906,23 @@ type sessionState struct {
 	iniServerMem []bool   // parallel to iniList: is in the server's iniswap.txt (Iniswaps tab filter)
 	iniLower     []string // lowercased names for the search filter
 	iniFolders   []string // parallel to iniList: each entry's folder ("" = unsorted)
-	iniListErr   string
-	iniBusy      bool
-	showIni      bool
-	showReset    bool // factory-reset confirmation pop-up (Settings)
-	iniSearch    string
-	iniAdd       string   // "add folder to wardrobe" input
-	iniSwapMode  bool     // Characters tab: click iniswaps instead of switching char (off=switch; per session)
-	iniFolder    string   // open wardrobe folder ("" = top level/root, else folder name)
-	iniNewFold   string   // "new folder" text input
-	iniMenuChar  string   // wardrobe char with an open "move to folder" menu ("" = none)
-	iniMenuAt    [2]int32 // that menu's top-left (cursor at right-click)
-	iniHoverChar string   // wardrobe char under the cursor this frame (number-key quick-file)
+	// A wardrobe ★ toggle is DEFERRED out of the cell to after the grid loop: it
+	// rebuilds (and shrinks) the iniList/iniWardrobe/iniFolders slices the loop is
+	// ranging, so toggling mid-loop panicked on a remove (the crash report).
+	iniFavPending    string // char to toggle ("" = none)
+	iniFavPendingAdd bool   // true = add to wardrobe, false = remove
+	iniListErr       string
+	iniBusy          bool
+	showIni          bool
+	showReset        bool // factory-reset confirmation pop-up (Settings)
+	iniSearch        string
+	iniAdd           string   // "add folder to wardrobe" input
+	iniSwapMode      bool     // Characters tab: click iniswaps instead of switching char (off=switch; per session)
+	iniFolder        string   // open wardrobe folder ("" = top level/root, else folder name)
+	iniNewFold       string   // "new folder" text input
+	iniMenuChar      string   // wardrobe char with an open "move to folder" menu ("" = none)
+	iniMenuAt        [2]int32 // that menu's top-left (cursor at right-click)
+	iniHoverChar     string   // wardrobe char under the cursor this frame (number-key quick-file)
 	// Drag-to-file (app-drawer style): drag a character cell onto a folder
 	// chip to file it. iniDragChar is armed on press; iniDragging flips once
 	// the move passes iniDragThreshold (and then suppresses the wear-click).
@@ -2664,6 +2669,25 @@ func (a *App) rebuildIniMenu() {
 	// the URL — so drop the idx→page cache here or a reorder would paint the
 	// previous name's icon. Icons re-resolve from T1 next frame (a map hit).
 	a.iniPages = nil
+}
+
+// applyPendingFav applies a wardrobe ★ toggle that a cell DEFERRED this frame. It
+// rebuilds (and shrinks/grows) the iniList/iniWardrobe/iniFolders slices, so it MUST
+// run after the grid loop that ranges them — toggling inside the cell shrank those
+// slices mid-iteration and panicked on a remove (the reported crash). A no-op when
+// nothing was deferred.
+func (a *App) applyPendingFav() {
+	if a.iniFavPending == "" {
+		return
+	}
+	name := a.iniFavPending
+	a.iniFavPending = ""
+	if a.iniFavPendingAdd {
+		a.d.Prefs.AddWardrobe(a.serverKey, name)
+	} else {
+		a.d.Prefs.RemoveWardrobe(a.serverKey, name)
+	}
+	a.rebuildIniMenu()
 }
 
 // ensureWardrobeMembers rebuilds the current server's lowercased wardrobe set
