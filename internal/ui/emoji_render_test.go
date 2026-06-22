@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -33,8 +34,13 @@ func TestRasterizeFallbackBuildsSpans(t *testing.T) {
 	const msg = "hi 😀!" // 5 runes; only 😀 routes to the emoji face → 3 runs
 	want := len([]rune(msg))
 	spans := []render.ColorSpan{{Len: want, Color: sdl.Color{R: 240, G: 240, B: 240, A: 255}}}
+	// Per-rune text faces (all the same here): the emoji mask overrides 😀 onto emojiFace.
+	textFonts := make([]*ttf.Font, want)
+	for i := range textFonts {
+		textFonts[i] = textFont
+	}
 
-	raster, err := render.RasterizeFallback(ren, textFont, emojiFace, msg, spans, 400)
+	raster, err := render.RasterizeFallback(ren, textFonts, emojiFace, msg, spans, 400)
 	if err != nil {
 		t.Fatalf("RasterizeFallback: %v", err)
 	}
@@ -44,7 +50,7 @@ func TestRasterizeFallbackBuildsSpans(t *testing.T) {
 	}
 
 	// A nil emoji face (not yet loaded) must not crash — it degrades to the text font.
-	r2, err := render.RasterizeFallback(ren, textFont, nil, msg, spans, 400)
+	r2, err := render.RasterizeFallback(ren, textFonts, nil, msg, spans, 400)
 	if err != nil {
 		t.Fatalf("RasterizeFallback(nil emoji): %v", err)
 	}
@@ -97,9 +103,12 @@ func TestEmojiRasterCacheGate(t *testing.T) {
 		t.Errorf("emojiCache size = %d, want 1", n)
 	}
 
-	// No emoji face yet → nil (caller degrades to the single-font tofu), nothing cached.
-	if m := c.emojiRaster(name, col, textFont, nil); m != nil {
-		t.Error("emojiRaster with a nil face must return nil (degrade), not build")
+	// First time, no emoji face yet AND no script fallback (empty Ctx → every rune on
+	// the primary): a CACHE-MISS nil-face call degrades to nil (single-font tofu). A
+	// fresh string, since the face isn't in the cache key — a hit would return the
+	// already-built raster, which is fine but not what this asserts.
+	if m := c.emojiRaster("Fresh 😀", col, textFont, nil); m != nil {
+		t.Error("emojiRaster with a nil face (cache miss, no script fallback) must degrade to nil")
 	}
 
 	// Purge frees the textures and empties the cache.

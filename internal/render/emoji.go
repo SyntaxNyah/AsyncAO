@@ -120,31 +120,41 @@ func assignEmoji(runes []rune) []bool {
 // needsEmojiFallback so plain messages never reach here. emoji may be nil (face
 // not loaded / unavailable): every run then uses the primary font, degrading to
 // today's behaviour rather than failing.
-func RasterizeFallback(ren *sdl.Renderer, primary, emoji *ttf.Font, text string, spans []ColorSpan, wrapW int32) (*MessageRaster, error) {
+func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font, text string, spans []ColorSpan, wrapW int32) (*MessageRaster, error) {
 	runes := []rune(text)
-	lineH, ascent := int32(primary.Height()), int32(primary.Ascent())
-	if emoji != nil {
-		if h := int32(emoji.Height()); h > lineH {
-			lineH = h
-		}
-		if a := int32(emoji.Ascent()); a > ascent {
-			ascent = a
-		}
-	}
-	m := &MessageRaster{text: text, lineH: lineH, styled: [][]rasterSpan{}}
+	m := &MessageRaster{text: text, styled: [][]rasterSpan{}}
 	if len(runes) == 0 {
 		return m, nil
 	}
 	mask := assignEmoji(runes)
 	styles := perRuneStyles(runes, spans)
+	// Per rune: the colour-emoji face for emoji runes, else this rune's covering text
+	// face (textFonts is per-rune — the caller routes each glyph to a face that has it,
+	// so a mixed-script run no single face covers still renders). For a pure-emoji or
+	// single-script message textFonts is uniform, reproducing the old behaviour.
 	fonts := make([]*ttf.Font, len(runes))
 	for i := range runes {
 		if mask[i] && emoji != nil {
 			fonts[i] = emoji
 		} else {
-			fonts[i] = primary
+			fonts[i] = textFonts[i]
 		}
 	}
+	// lineH / ascent over the faces ACTUALLY used (a CJK or emoji face is taller than
+	// the embedded one); the per-run baseline-align below handles the differing ascents.
+	var lineH, ascent int32
+	for _, f := range fonts {
+		if f == nil {
+			continue
+		}
+		if h := int32(f.Height()); h > lineH {
+			lineH = h
+		}
+		if a := int32(f.Ascent()); a > ascent {
+			ascent = a
+		}
+	}
+	m.lineH = lineH
 	for _, lr := range wrapMultiFont(fonts, runes, wrapW) {
 		line, err := rasterizeFallbackLine(ren, runes[lr.start:lr.end], fonts[lr.start:lr.end], styles[lr.start:lr.end], ascent)
 		if err != nil {

@@ -48,13 +48,19 @@ type emojiKey struct {
 // degrades to today's tofu and repaints in colour once it lands.
 func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string, col sdl.Color) {
 	c := a.ctx
-	if primary == nil || !render.NeedsEmojiFallback(text) {
+	needEmoji := render.NeedsEmojiFallback(text)
+	// Per-glyph raster only when the label has emoji OR mixes scripts no single face
+	// covers (covers() reads the pick made by the caller's *FontFor, no rescan). Plain
+	// single-script text — the overwhelming common case — stays on the fast path.
+	if primary == nil || (!needEmoji && c.covers(text)) {
 		c.LabelClippedFont(primary, x, y, maxW, text, col)
 		return
 	}
-	a.ensureEmojiFontLoad() // idempotent; no-op once started / where there's no system face
+	if needEmoji {
+		a.ensureEmojiFontLoad() // colour-emoji face; a mixed-script label alone needs none
+	}
 	m := c.emojiRaster(text, col, primary, emoji)
-	if m == nil { // face not loaded yet, or build failed → single-font (tofu) path
+	if m == nil { // build failed → single-font (tofu) path
 		c.LabelClippedFont(primary, x, y, maxW, text, col)
 		return
 	}
@@ -68,15 +74,23 @@ func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string
 // to the single-font path). The colour spans the whole label (one ColorSpan);
 // the slice + the build are paid once per (text, colour, font), never per frame.
 func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) *render.MessageRaster {
-	if emoji == nil || primary == nil {
+	if primary == nil {
 		return nil
 	}
 	key := emojiKey{text: text, color: col, font: primary}
 	if m, ok := c.emojiCache[key]; ok {
 		return m
 	}
-	spans := []render.ColorSpan{{Len: len([]rune(text)), Color: col}}
-	m, err := render.RasterizeFallback(c.Ren, primary, emoji, text, spans, emojiNoWrap)
+	runes := []rune(text)
+	textFonts := c.coverRunes(primary, runes) // per-rune covering face (mixed-script)
+	// No emoji face AND every rune covered by primary → nothing this raster can add;
+	// degrade to the single-font path (the caller tofus the emoji until the face lands),
+	// exactly as before. A mixed-script run (textFonts differ) still builds.
+	if emoji == nil && allSameFont(textFonts, primary) {
+		return nil
+	}
+	spans := []render.ColorSpan{{Len: len(runes), Color: col}}
+	m, err := render.RasterizeFallback(c.Ren, textFonts, emoji, text, spans, emojiNoWrap)
 	if err != nil || m == nil {
 		return nil
 	}

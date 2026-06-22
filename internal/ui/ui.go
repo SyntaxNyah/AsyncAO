@@ -245,10 +245,12 @@ type Ctx struct {
 	fontChain    [][]byte
 	fontNames    []string // diagnostics (settings status line)
 	fontChainGen int      // bumped per SetFontChain; sets rebuild lazily
-	// pickMemo caches per-line font picks (log rows re-pick every frame;
-	// GlyphMetrics per rune per row would be a hidden TTF storm whenever
-	// an override chain is installed). Cleared on any font rebuild.
-	pickMemo map[string]*ttf.Font
+	// pickMemo caches per-line font picks (log rows re-pick every frame; an sfnt
+	// coverage scan per rune per row would be a hidden storm once a fallback is
+	// installed). It also records whether the pick FULLY covers the line, so the
+	// raster gate knows when to take the per-glyph mixed-script path without a second
+	// scan. Cleared on any font rebuild.
+	pickMemo map[string]pickResult
 	// Color-emoji fallback face (e.g. Segoe UI Emoji), kept SEPARATE from the
 	// chain so the common single-font fast path (pickSet len==1) is unchanged.
 	// emojiData is the font file bytes (read off-thread by the App; nil = none/not
@@ -568,6 +570,13 @@ func (c *Ctx) TakeWantsCJK() bool {
 	return false
 }
 
+// pickResult is one cached line pick: the covering face, and whether it covers EVERY
+// rune (false = a mixed-script line the per-glyph raster should handle).
+type pickResult struct {
+	font    *ttf.Font
+	covered bool
+}
+
 // pickSet memoizes the per-line coverage pick: repeat draws cost one map probe, and
 // the no-fallback single-font set costs nothing at all (the len==1 fast path).
 func (c *Ctx) pickSet(s *fontSet, pct int, text string) *ttf.Font {
@@ -575,17 +584,76 @@ func (c *Ctx) pickSet(s *fontSet, pct int, text string) *ttf.Font {
 	if len(fonts) == 1 {
 		return fonts[0]
 	}
-	if f, ok := c.pickMemo[text]; ok {
-		return f
+	if r, ok := c.pickMemo[text]; ok {
+		return r.font
 	}
-	f := pickFont(fonts, s.cover, &c.sfntBuf, text)
+	f, covered := pickFont(fonts, s.cover, &c.sfntBuf, text)
 	if c.pickMemo == nil {
-		c.pickMemo = make(map[string]*ttf.Font, 256)
+		c.pickMemo = make(map[string]pickResult, 256)
 	} else if len(c.pickMemo) >= textCacheMax {
 		clear(c.pickMemo) // bounded: wholesale reset, repopulates hot lines
 	}
-	c.pickMemo[text] = f
+	c.pickMemo[text] = pickResult{font: f, covered: covered}
 	return f
+}
+
+// covers reports whether the whole-message pick for text covered every rune. A line
+// with no memo entry took the single-font fast path (no fallback loaded) and counts as
+// covered — so the raster gate stays cheap for the common case. Read AFTER the matching
+// *FontFor pick (same frame), which populated the entry.
+func (c *Ctx) covers(text string) bool {
+	r, ok := c.pickMemo[text]
+	return !ok || r.covered
+}
+
+// setOf finds the built fontSet a picked face belongs to, by pointer. Font instances
+// are unique per size, so this resolves to the set at the right scale without threading
+// pct anywhere — the face was just returned from that set's fontsFor this frame.
+func (c *Ctx) setOf(primary *ttf.Font) *fontSet {
+	for _, s := range []*fontSet{&c.chatSet, &c.logSet} {
+		for _, f := range s.fonts {
+			if f == primary {
+				return s
+			}
+		}
+	}
+	return nil
+}
+
+// coverRunes returns the per-rune text face for the per-glyph raster: each rune drawn
+// by the first face in primary's set whose cmap has it, falling back to primary for an
+// uncovered rune (or when the set can't be found). A mixed-script run thus resolves
+// glyph by glyph. Paid once per raster BUILD (cache miss), never per frame.
+func (c *Ctx) coverRunes(primary *ttf.Font, runes []rune) []*ttf.Font {
+	out := make([]*ttf.Font, len(runes))
+	s := c.setOf(primary)
+	if s == nil {
+		for i := range out {
+			out[i] = primary
+		}
+		return out
+	}
+	for i, r := range runes {
+		out[i] = primary
+		for j, cov := range s.cover {
+			if coverHasRune(cov, &c.sfntBuf, r) {
+				out[i] = s.fonts[j]
+				break
+			}
+		}
+	}
+	return out
+}
+
+// allSameFont reports whether every entry is f — i.e. the per-rune assignment found no
+// script fallback and the line is single-face after all.
+func allSameFont(fonts []*ttf.Font, f *ttf.Font) bool {
+	for _, x := range fonts {
+		if x != f {
+			return false
+		}
+	}
+	return true
 }
 
 // SetFontChain installs the override font bytes (chain order; nil
@@ -760,27 +828,39 @@ func (c *Ctx) EmojiFont(pct int) *ttf.Font {
 // Tifinagh / Indic line resolves to the covering fallback face. cover is aligned
 // with fonts; the last entry is the unconditional fallback (used when nothing
 // covers, so the result is at worst the same .notdef box as before).
-func pickFont(fonts []*ttf.Font, cover []*sfnt.Font, buf *sfnt.Buffer, text string) *ttf.Font {
+func pickFont(fonts []*ttf.Font, cover []*sfnt.Font, buf *sfnt.Buffer, text string) (*ttf.Font, bool) {
 	if len(fonts) == 1 {
-		return fonts[0]
+		return fonts[0], true
 	}
 	for i, f := range fonts[:len(fonts)-1] {
 		if i < len(cover) && coverHasAll(cover[i], buf, text) {
-			return f
+			return f, true
 		}
 	}
-	return fonts[len(fonts)-1]
+	// Fell through — no single face covers every rune (a mixed-script run). The
+	// last entry renders it (at worst the same .notdef as before); covered=false
+	// tells the raster gate to take the per-glyph path instead.
+	return fonts[len(fonts)-1], false
 }
 
-// coverHasAll reports whether the sfnt face provides a glyph (cmap index != 0,
-// i.e. not .notdef) for every rune of text. A nil face (parse failure) covers
-// nothing. The reused buffer keeps the per-rune lookup allocation-free.
+// coverHasRune reports whether the sfnt face provides a glyph (cmap index != 0)
+// for r. A nil face covers nothing; the reused buffer keeps it allocation-free.
+func coverHasRune(f *sfnt.Font, buf *sfnt.Buffer, r rune) bool {
+	if f == nil {
+		return false
+	}
+	idx, err := f.GlyphIndex(buf, r)
+	return err == nil && idx != 0
+}
+
+// coverHasAll reports whether the face covers EVERY rune of text (the whole-message
+// PICK rule).
 func coverHasAll(f *sfnt.Font, buf *sfnt.Buffer, text string) bool {
 	if f == nil {
 		return false
 	}
 	for _, r := range text {
-		if idx, err := f.GlyphIndex(buf, r); err != nil || idx == 0 {
+		if !coverHasRune(f, buf, r) {
 			return false
 		}
 	}

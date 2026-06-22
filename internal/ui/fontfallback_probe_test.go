@@ -129,9 +129,58 @@ func TestPickFontSelectsCoveringFace(t *testing.T) {
 		{"tifinagh routes to ebrima", "ⵜⵉⴼⴻⵔⴰ", ebrima},
 	}
 	for _, tc := range cases {
-		if got := pickFont(fonts, cover, &buf, tc.text); got != tc.want {
+		if got, _ := pickFont(fonts, cover, &buf, tc.text); got != tc.want {
 			t.Errorf("%s: pickFont picked the wrong face", tc.name)
 		}
+	}
+	// Coverage flag: Latin is fully covered, but a Cyrillic+Tifinagh mix (no single
+	// face here) is NOT — that's the signal the per-glyph raster gate keys on.
+	if _, ok := pickFont(fonts, cover, &buf, "Hello"); !ok {
+		t.Error("covered flag: pure Latin should be fully covered")
+	}
+	if _, ok := pickFont(fonts, cover, &buf, "Аⵜ"); ok { // Cyrillic + Tifinagh: ebrima lacks Cyrillic, embedded lacks Tifinagh
+		t.Error("covered flag: a mixed Cyrillic+Tifinagh run should NOT be fully covered")
+	}
+}
+
+// TestCoverRunesPerGlyph pins the per-glyph assignment behind the mixed-script raster:
+// given a set [embedded, ebrima], a Latin+Tifinagh string routes 'A' to the embedded
+// face and 'ⵜ' to Ebrima — each rune to the first face that covers it. Skips without
+// Ebrima.
+func TestCoverRunesPerGlyph(t *testing.T) {
+	if err := ttf.Init(); err != nil {
+		t.Skipf("ttf init: %v", err)
+	}
+	defer ttf.Quit()
+	ebrimaBytes, err := os.ReadFile(`C:\Windows\Fonts\ebrima.ttf`)
+	if err != nil {
+		t.Skip("Ebrima not installed")
+	}
+	const sz = 18
+	embedded, err := loadEmbeddedFont(sz)
+	if err != nil {
+		t.Fatalf("embedded: %v", err)
+	}
+	defer embedded.Close()
+	ebrima, err := memFont(ebrimaBytes, sz)
+	if err != nil {
+		t.Fatalf("ebrima: %v", err)
+	}
+	defer ebrima.Close()
+
+	c := &Ctx{}
+	c.chatSet.fonts = []*ttf.Font{embedded, ebrima}
+	c.chatSet.cover = []*sfnt.Font{parseCover(goregular.TTF), parseCover(ebrimaBytes)}
+
+	got := c.coverRunes(embedded, []rune("Aⵜ"))
+	if len(got) != 2 {
+		t.Fatalf("coverRunes len = %d, want 2", len(got))
+	}
+	if got[0] != embedded {
+		t.Error("Latin 'A' should route to the embedded face")
+	}
+	if got[1] != ebrima {
+		t.Error("Tifinagh 'ⵜ' should route to Ebrima")
 	}
 }
 

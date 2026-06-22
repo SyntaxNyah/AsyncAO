@@ -24,9 +24,11 @@ import (
 func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64) {
 	c := a.ctx
 	if nameOn && speaker != "" && strings.HasPrefix(line, speaker) {
-		// An emoji line skips the per-speaker name-colour split (rare; also saves
-		// this branch's per-row SizeUTF8 measure) and renders whole via the raster.
-		if emojiFont != nil && render.NeedsEmojiFallback(line) {
+		// An emoji line OR a mixed-script line no single face covers skips the
+		// per-speaker name-colour split (the split draws with one `font`, which can't
+		// do per-glyph faces) and renders whole via the raster — coverage wins over the
+		// name tint for the rare mixed name. Both are rare; plain names take the split.
+		if (emojiFont != nil && render.NeedsEmojiFallback(line)) || !c.covers(line) {
 			a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
 			return
 		}
