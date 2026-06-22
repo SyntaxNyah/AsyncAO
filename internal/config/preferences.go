@@ -315,8 +315,12 @@ type SpriteStylePref struct {
 	Spin    bool  `json:"spin,omitempty"`
 	// Richer effects (#103): hue-cycle rainbow, mirror, and percent
 	// brightness/scale + a tilt (0 = unset/neutral). Clamped at render.
-	HueCycle   bool  `json:"hueCycle,omitempty"`
-	FlipH      bool  `json:"flipH,omitempty"`
+	HueCycle bool `json:"hueCycle,omitempty"`
+	FlipH    bool `json:"flipH,omitempty"`
+	// Per-pixel effects (#103 slice 2): negate / desaturate. The renderer builds a
+	// cached variant texture for these (SetColorMod can't do either).
+	Invert     bool  `json:"invert,omitempty"`
+	Grayscale  bool  `json:"grayscale,omitempty"`
 	Brightness uint8 `json:"brightness,omitempty"`
 	Scale      uint8 `json:"scale,omitempty"`
 	Rotation   uint8 `json:"rotation,omitempty"`

@@ -57,9 +57,15 @@ type TexturePage struct {
 	Animated bool
 	W, H     int32
 	bytes    int64
+	// variants holds lazily-built per-pixel transforms of this page (invert /
+	// grayscale, keyed by the effect's uint8) — a transmitted sprite style needs a
+	// genuinely transformed texture (SetColorMod can't invert/desaturate). They live
+	// HERE so they're destroyed with the base page (eviction frees them too), keeping
+	// the cache from leaking or going stale. Bounded: at most one per VariantEffect.
+	variants map[uint8]*TexturePage
 }
 
-// destroy releases every frame texture. Render thread only.
+// destroy releases every frame texture and any built variants. Render thread only.
 func (p *TexturePage) destroy() {
 	for _, t := range p.Frames {
 		if t != nil {
@@ -67,6 +73,10 @@ func (p *TexturePage) destroy() {
 		}
 	}
 	p.Frames = nil
+	for k, v := range p.variants {
+		v.destroy()
+		delete(p.variants, k)
+	}
 }
 
 // TextureStore is T1: a byte-budgeted texture cache keyed by asset BASE

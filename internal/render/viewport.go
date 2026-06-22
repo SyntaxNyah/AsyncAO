@@ -360,6 +360,16 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		flip = sdl.FLIP_HORIZONTAL
 	}
 	tex := page.Frames[frame]
+	// A transmitted PER-PIXEL effect (invert / grayscale) swaps in a cached variant
+	// texture built from the base's transformed pixels — SetColorMod can't do either.
+	// The colour-mod bracket below still applies ON TOP (so invert + glow composes).
+	// Built once per (base, effect) and cached on the page; this is a 0-alloc map hit
+	// every frame after the first.
+	if eff := layer.Style.Variant(); eff != courtroom.VariantNone {
+		if vpg, ok := v.store.VariantPage(layer.Active, eff); ok && frame < len(vpg.Frames) {
+			tex = vpg.Frames[frame]
+		}
+	}
 
 	// Resolve the effective per-layer effects into plain locals (no allocation; a
 	// no-FX layer leaves them all neutral and the blit byte-identical). A
@@ -429,10 +439,11 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	// preview, wardrobe grid). ColorMod leaves alpha alone so the transparent
 	// cutout stays cut out; AlphaMod handles opacity; ADD blend makes a glow.
 	//
-	// INVARIANT: drawSprite is the *only* place the renderer touches SetColorMod /
-	// SetBlendMode / SetAlphaMod (the sole other SetBlendMode is the upload
-	// default, BLENDMODE_BLEND at textures.go). Any future effect that mods a
-	// texture elsewhere MUST restore it too, or art bleeds.
+	// INVARIANT: drawSprite is the *only* place the renderer MOD-brackets a texture
+	// for drawing — SetColorMod / SetBlendMode / SetAlphaMod (besides the upload
+	// default BLENDMODE_BLEND at textures.go, and the variant readback in variant.go,
+	// which flips a frame to BLENDMODE_NONE for an exact copy and restores BLEND).
+	// Any future effect that mods a texture elsewhere MUST restore it too, or art bleeds.
 	if doColorMod {
 		_ = tex.SetColorMod(modR, modG, modB)
 	}

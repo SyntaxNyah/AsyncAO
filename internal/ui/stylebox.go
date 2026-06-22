@@ -45,6 +45,7 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 26 // Rainbow / Mirror row
 	bh += 66 // Brightness / Size / Tilt sliders
 	bh += 26 // glow / wobble / spin row
+	bh += 26 // invert / grayscale row
 	bh += 30 // clear button
 	bh += styleBoxPad
 	bw := styleBoxW
@@ -241,6 +242,18 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	if next := c.Checkbox(x+176, y, "Spin", p.Spin); next != p.Spin {
 		p.Spin = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	y += 26
+
+	// Invert / Grayscale — per-pixel effects (the renderer builds a cached variant
+	// texture; the recolour/glow above still compose on top).
+	if next := c.Checkbox(x, y, "Invert", p.Invert); next != p.Invert {
+		p.Invert = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	if next := c.Checkbox(x+86, y, "Grayscale", p.Grayscale); next != p.Grayscale {
+		p.Grayscale = next
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26

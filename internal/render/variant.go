@@ -1,0 +1,135 @@
+package render
+
+import (
+	"time"
+	"unsafe"
+
+	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+)
+
+// Per-pixel sprite-style variants (#103): invert and grayscale can't ride the cheap
+// SetColorMod bracket the other transmitted effects use (multiply can't negate or mix
+// channels), so the renderer builds a genuinely TRANSFORMED texture. The decoded RGBA
+// is freed the instant it's uploaded, and sprite textures are STATIC (not readable),
+// so the variant is built on demand from the resident base page: render each frame to
+// an offscreen target with NO blending (an exact 1:1 copy → straight, non-premultiplied
+// pixels), read it back, transform the pixels, and upload a new texture. The result is
+// cached on the base page (TexturePage.variants), so it's a 0-alloc map hit every
+// frame after the first and is destroyed with the base page on eviction. Build cost is
+// one-time per (base, effect); steady-state drawing never re-generates.
+
+// VariantPage returns `base` transformed by `effect`, building + caching it on first
+// use. Render thread only. Returns (page, true), or (nil, false) when the base isn't
+// resident or the build failed — the caller then draws the base unstyled.
+func (s *TextureStore) VariantPage(base string, effect courtroom.VariantEffect) (*TexturePage, bool) {
+	if effect == courtroom.VariantNone {
+		return nil, false
+	}
+	bp, ok := s.Get(base)
+	if !ok || len(bp.Frames) == 0 || bp.W <= 0 || bp.H <= 0 {
+		return nil, false
+	}
+	key := uint8(effect)
+	if v, ok := bp.variants[key]; ok {
+		return v, true
+	}
+	v, err := s.buildVariant(bp, key)
+	if err != nil {
+		return nil, false
+	}
+	if bp.variants == nil {
+		bp.variants = make(map[uint8]*TexturePage, 1)
+	}
+	bp.variants[key] = v
+	return v, true
+}
+
+// buildVariant transforms every frame of base into a new page (render thread).
+func (s *TextureStore) buildVariant(base *TexturePage, effect uint8) (*TexturePage, error) {
+	v := &TexturePage{
+		Animated: base.Animated,
+		W:        base.W,
+		H:        base.H,
+		Delays:   append([]time.Duration(nil), base.Delays...),
+	}
+	for _, frame := range base.Frames {
+		pix, err := s.readbackFrame(frame, base.W, base.H)
+		if err != nil {
+			v.destroy()
+			return nil, err
+		}
+		applyVariant(pix, effect)
+		tex, err := uploadPixels(s.ren, pix, base.W, base.H)
+		if err != nil {
+			v.destroy()
+			return nil, err
+		}
+		v.Frames = append(v.Frames, tex)
+		v.bytes += int64(len(pix))
+	}
+	return v, nil
+}
+
+// readbackFrame reads src's exact pixels (ABGR8888 = image.RGBA byte order) by drawing
+// it 1:1 onto an offscreen target with NO blend (so no premultiply/blend with the
+// target) and reading back. Restores whatever render target was active (the screen, or
+// a capture target during an export) and src's normal blend mode.
+func (s *TextureStore) readbackFrame(src *sdl.Texture, w, h int32) ([]byte, error) {
+	target, err := s.ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_TARGET, w, h)
+	if err != nil {
+		return nil, err
+	}
+	defer target.Destroy()
+	prev := s.ren.GetRenderTarget() // nil = the screen; non-nil during a capture/export
+	if err := s.ren.SetRenderTarget(target); err != nil {
+		return nil, err
+	}
+	defer s.ren.SetRenderTarget(prev)
+
+	_ = s.ren.SetDrawColor(0, 0, 0, 0)
+	_ = s.ren.Clear()
+	_ = src.SetBlendMode(sdl.BLENDMODE_NONE) // exact copy: target pixels = src pixels
+	rect := sdl.Rect{X: 0, Y: 0, W: w, H: h}
+	_ = s.ren.Copy(src, nil, &rect)
+	_ = src.SetBlendMode(sdl.BLENDMODE_BLEND) // restore (the base frame still draws normally)
+
+	pix := make([]byte, int(w)*int(h)*4)
+	if err := s.ren.ReadPixels(&rect, uint32(sdl.PIXELFORMAT_ABGR8888), unsafe.Pointer(&pix[0]), int(w)*4); err != nil {
+		return nil, err
+	}
+	return pix, nil
+}
+
+// uploadPixels turns a transformed RGBA buffer into a STATIC blended texture (mirrors
+// buildPage's per-frame upload).
+func uploadPixels(ren *sdl.Renderer, pix []byte, w, h int32) (*sdl.Texture, error) {
+	tex, err := ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_STATIC, w, h)
+	if err != nil {
+		return nil, err
+	}
+	if err := tex.Update(nil, unsafe.Pointer(&pix[0]), int(w)*4); err != nil {
+		_ = tex.Destroy()
+		return nil, err
+	}
+	_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
+	return tex, nil
+}
+
+// applyVariant transforms an ABGR8888 buffer (R,G,B,A per pixel) IN PLACE, preserving
+// alpha. Pure (no SDL) so the maths is unit-tested. Invert negates RGB; grayscale uses
+// Rec.601 luma (integer, alloc-free).
+func applyVariant(pix []byte, effect uint8) {
+	switch courtroom.VariantEffect(effect) {
+	case courtroom.VariantInvert:
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i], pix[i+1], pix[i+2] = 255-pix[i], 255-pix[i+1], 255-pix[i+2]
+		}
+	case courtroom.VariantGrayscale:
+		for i := 0; i+3 < len(pix); i += 4 {
+			y := byte((299*int(pix[i]) + 587*int(pix[i+1]) + 114*int(pix[i+2])) / 1000)
+			pix[i], pix[i+1], pix[i+2] = y, y, y
+		}
+	}
+}

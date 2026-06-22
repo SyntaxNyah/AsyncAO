@@ -143,6 +143,33 @@ func TestStripsOlderClientMarker(t *testing.T) {
 	}
 }
 
+// TestSpriteStyleVariantFlags pins the per-pixel effect flags (#103 slice 2): they
+// round-trip through the wire, and Variant() reports the transform the renderer needs
+// (invert wins if both are set; none when neither).
+func TestSpriteStyleVariantFlags(t *testing.T) {
+	for _, s := range []SpriteStyle{
+		{Invert: true},
+		{Grayscale: true},
+		{Invert: true, Grayscale: true, Tint: true, R: 9, Glow: true},
+	} {
+		if got, _ := DecodeSpriteStyle("hi" + s.EncodeMarker()); got != s {
+			t.Errorf("round-trip: got %+v, want %+v", got, s)
+		}
+	}
+	if (SpriteStyle{Invert: true}).Variant() != VariantInvert {
+		t.Error("invert → VariantInvert")
+	}
+	if (SpriteStyle{Grayscale: true}).Variant() != VariantGrayscale {
+		t.Error("grayscale → VariantGrayscale")
+	}
+	if (SpriteStyle{Invert: true, Grayscale: true}).Variant() != VariantInvert {
+		t.Error("both set → invert wins")
+	}
+	if (SpriteStyle{Tint: true}).Variant() != VariantNone {
+		t.Error("no per-pixel effect → VariantNone")
+	}
+}
+
 // TestEncodeChangeMarker pins send-on-change: the marker rides only style CHANGES.
 // No change → nothing; a new/changed active style → its marker; turning a style off →
 // a CLEAR marker (decodes to the default, non-active); inactive→inactive → nothing.

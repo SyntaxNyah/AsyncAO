@@ -27,6 +27,10 @@ type SpriteStyle struct {
 	Spin     bool // slow continuous rotation (viewer ReduceMotion can suppress it)
 	HueCycle bool // transmitted rainbow: cycle the tint hue over time
 	FlipH    bool // mirror horizontally
+	// Invert / Grayscale are PER-PIXEL effects (SetColorMod can't do either): the
+	// renderer builds a cached variant texture from the sprite's transformed pixels.
+	Invert    bool // negate RGB (keep alpha)
+	Grayscale bool // luma-weighted desaturate (keep alpha)
 	// Brightness/Scale are percents with 0 = unset (= 100%). Rotation is a fixed
 	// tilt: 0 = none, else degrees via Rotation*360/256 (full circle).
 	Brightness uint8
@@ -50,10 +54,34 @@ const (
 // renderer leaves the blit byte-identical when there's nothing to do).
 func (s SpriteStyle) Active() bool {
 	return s.Tint || s.Glow || s.Wobble || s.Spin || s.HueCycle || s.FlipH ||
+		s.Invert || s.Grayscale ||
 		(s.Opacity != 0 && s.Opacity != 100) ||
 		(s.Brightness != 0 && s.Brightness != 100) ||
 		(s.Scale != 0 && s.Scale != 100) ||
 		s.Rotation != 0
+}
+
+// VariantEffect identifies the per-pixel transform a sprite needs (none / invert /
+// grayscale) so the renderer can key + cache a transformed texture. Invert wins if
+// both are set (one variant per layer).
+type VariantEffect uint8
+
+const (
+	VariantNone VariantEffect = iota
+	VariantInvert
+	VariantGrayscale
+)
+
+// Variant returns the per-pixel variant this style needs (VariantNone when none).
+func (s SpriteStyle) Variant() VariantEffect {
+	switch {
+	case s.Invert:
+		return VariantInvert
+	case s.Grayscale:
+		return VariantGrayscale
+	default:
+		return VariantNone
+	}
 }
 
 // AlphaMod resolves Opacity to an 0..255 SetTextureAlphaMod value, treating 0 as
@@ -110,12 +138,14 @@ func resolvePct(v uint8, lo, hi int) int {
 const (
 	zwStart rune = 0x2060 // WORD JOINER — payload sentinel (proven to pass the wire)
 
-	styleFlagTint     = 1 << 0
-	styleFlagGlow     = 1 << 1
-	styleFlagWobble   = 1 << 2
-	styleFlagSpin     = 1 << 3
-	styleFlagHueCycle = 1 << 4
-	styleFlagFlipH    = 1 << 5
+	styleFlagTint      = 1 << 0
+	styleFlagGlow      = 1 << 1
+	styleFlagWobble    = 1 << 2
+	styleFlagSpin      = 1 << 3
+	styleFlagHueCycle  = 1 << 4
+	styleFlagFlipH     = 1 << 5
+	styleFlagInvert    = 1 << 6
+	styleFlagGrayscale = 1 << 7 // flags is one byte (bits 0-7) — full now; a new effect needs a payload-format bump
 
 	// spriteStyleVersion tags the payload so a later field change is detectable —
 	// a decoder that doesn't recognise the version yields no style (benign).
@@ -173,6 +203,12 @@ func (s SpriteStyle) payloadBytes() [spriteStyleBytes]byte {
 	if s.FlipH {
 		flags |= styleFlagFlipH
 	}
+	if s.Invert {
+		flags |= styleFlagInvert
+	}
+	if s.Grayscale {
+		flags |= styleFlagGrayscale
+	}
 	return [spriteStyleBytes]byte{spriteStyleVersion, flags, s.R, s.G, s.B, s.Opacity, s.Brightness, s.Scale, s.Rotation}
 }
 
@@ -189,6 +225,8 @@ func styleFromBytes(b [spriteStyleBytes]byte) SpriteStyle {
 		Spin:       flags&styleFlagSpin != 0,
 		HueCycle:   flags&styleFlagHueCycle != 0,
 		FlipH:      flags&styleFlagFlipH != 0,
+		Invert:     flags&styleFlagInvert != 0,
+		Grayscale:  flags&styleFlagGrayscale != 0,
 		R:          b[2],
 		G:          b[3],
 		B:          b[4],
