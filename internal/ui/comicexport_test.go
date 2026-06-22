@@ -31,7 +31,7 @@ func TestComposeComicPageLayout(t *testing.T) {
 	for _, c := range want {
 		panels = append(panels, solidPanel(pw, ph, c))
 	}
-	page := composeComicPage(panels, cols, pw, ph, gutter, margin, border)
+	page := composeComicPage(panels, cols, pw, ph, gutter, margin, border, 1)
 	if page == nil {
 		t.Fatal("composeComicPage returned nil for 5 panels")
 	}
@@ -57,7 +57,7 @@ func TestComposeComicPageLayout(t *testing.T) {
 
 // TestComposeComicPageEmpty: no panels → nil (nothing to write).
 func TestComposeComicPageEmpty(t *testing.T) {
-	if composeComicPage(nil, comicCols, comicPanelW, comicPanelH, comicGutter, comicMargin, comicBorder) != nil {
+	if composeComicPage(nil, comicCols, comicPanelW, comicPanelH, comicGutter, comicMargin, comicBorder, 1) != nil {
 		t.Error("composeComicPage(nil) should be nil")
 	}
 }
@@ -69,11 +69,34 @@ func TestComposeComicPageSingleRow(t *testing.T) {
 		solidPanel(6, 6, color.RGBA{A: 255}),
 		solidPanel(6, 6, color.RGBA{A: 255}),
 	}
-	page := composeComicPage(panels, 4, 6, 6, 2, 3, 1) // cols=4 but only 2 panels
-	wantW := 3*2 + 2*6 + (2-1)*2                       // margin*2 + 2 panels + 1 gutter
-	wantH := 3*2 + 1*6                                 // a single row
+	page := composeComicPage(panels, 4, 6, 6, 2, 3, 1, 1) // cols=4 but only 2 panels
+	wantW := 3*2 + 2*6 + (2-1)*2                          // margin*2 + 2 panels + 1 gutter
+	wantH := 3*2 + 1*6                                    // a single row
 	if b := page.Bounds(); b.Dx() != wantW || b.Dy() != wantH {
 		t.Fatalf("single-row page = %dx%d, want %dx%d", b.Dx(), b.Dy(), wantW, wantH)
+	}
+}
+
+// TestComposeComicPageNumbers pins the reading-order badge: a real-sized panel gets a
+// dark number badge in its top-left corner without swallowing the panel body, and a
+// too-small panel skips it (no room).
+func TestComposeComicPageNumbers(t *testing.T) {
+	const pw, ph, margin = 80, 60, 4
+	panels := []*image.RGBA{solidPanel(pw, ph, color.RGBA{R: 200, A: 255})}
+	page := composeComicPage(panels, 1, pw, ph, 8, margin, 2, 7) // startNum 7
+
+	if got := page.RGBAAt(margin+1, margin+1); got != comicBadgeColor {
+		t.Errorf("badge corner = %+v, want badge colour %+v", got, comicBadgeColor)
+	}
+	if got, want := page.RGBAAt(margin+pw/2, margin+ph-4), (color.RGBA{R: 200, A: 255}); got != want {
+		t.Errorf("panel body overwritten by the badge: %+v", got)
+	}
+
+	// A tiny panel has no room — the badge is skipped and its corner stays panel colour.
+	small := []*image.RGBA{solidPanel(10, 8, color.RGBA{G: 200, A: 255})}
+	sp := composeComicPage(small, 1, 10, 8, 2, 3, 1, 1)
+	if got, want := sp.RGBAAt(4, 4), (color.RGBA{G: 200, A: 255}); got != want {
+		t.Errorf("tiny panel got a badge: corner = %+v", got)
 	}
 }
 

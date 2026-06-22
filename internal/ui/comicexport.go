@@ -9,10 +9,14 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 	"unicode/utf8"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
@@ -183,9 +187,10 @@ func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) string
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "Comic export failed: " + err.Error()
 	}
-	var totalBytes int
+	var totalBytes, startNum int = 0, 1
 	for i, pagePanels := range pages {
-		img := composeComicPage(pagePanels, comicCols, comicPanelW, comicPanelH, comicGutter, comicMargin, comicBorder)
+		img := composeComicPage(pagePanels, comicCols, comicPanelW, comicPanelH, comicGutter, comicMargin, comicBorder, startNum)
+		startNum += len(pagePanels) // page 2's panels continue numbering, not restart at 1
 		if img == nil {
 			continue
 		}
@@ -221,7 +226,7 @@ func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) string
 // border frame per panel on a paper-coloured background. Pure (no SDL) so the layout
 // math is unit-tested. Returns nil for no panels. panelW/H are parameters (not the
 // consts) so the test can drive it with tiny synthetic panels.
-func composeComicPage(panels []*image.RGBA, cols, panelW, panelH, gutter, margin, border int) *image.RGBA {
+func composeComicPage(panels []*image.RGBA, cols, panelW, panelH, gutter, margin, border, startNum int) *image.RGBA {
 	n := len(panels)
 	if n == 0 {
 		return nil
@@ -249,6 +254,40 @@ func composeComicPage(panels []*image.RGBA, cols, panelW, panelH, gutter, margin
 			dst := image.Rect(x, y, x+panelW, y+panelH)
 			draw.Draw(page, dst, panel, panel.Bounds().Min, draw.Src)
 		}
+		if panelW >= 28 && panelH >= 24 { // room for the badge without swallowing the panel
+			drawPanelNumber(page, x, y, startNum+i) // storyboard reading order
+		}
 	}
 	return page
+}
+
+// Panel-number badge geometry / colours (a comic reads in sequence).
+const (
+	comicDigitW        = 7  // basicfont.Face7x13 advance width
+	comicBadgeH        = 16 // badge height
+	comicBadgeBaseline = 12 // text baseline within the badge (face ascent ≈ 11)
+)
+
+var (
+	comicBadgeColor     = color.RGBA{R: 28, G: 28, B: 44, A: 255}
+	comicBadgeTextColor = color.RGBA{R: 245, G: 245, B: 250, A: 255}
+)
+
+// drawPanelNumber paints a small reading-order badge in a panel's top-left corner.
+func drawPanelNumber(img *image.RGBA, x, y, n int) {
+	s := strconv.Itoa(n)
+	bw := len(s)*comicDigitW + 6
+	draw.Draw(img, image.Rect(x, y, x+bw, y+comicBadgeH), &image.Uniform{C: comicBadgeColor}, image.Point{}, draw.Src)
+	drawComicText(img, x+3, y+comicBadgeBaseline, s, comicBadgeTextColor)
+}
+
+// drawComicText renders text onto the CPU image with the built-in 7x13 bitmap face
+// (x/image, already a dep) — no SDL on the off-thread compose path. y is the baseline.
+func drawComicText(img *image.RGBA, x, y int, text string, col color.RGBA) {
+	(&font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(col),
+		Face: basicfont.Face7x13,
+		Dot:  fixed.P(x, y),
+	}).DrawString(text)
 }
