@@ -117,10 +117,25 @@ func (a *App) startRecording() {
 	a.warnAt = time.Now()
 }
 
-// recEventFrom builds a recEvent from a live courtroom.Event; the caller fills
-// OffsetMs (it owns the time base). Shared by the recorder and the instant-replay
-// buffer so both capture the same fields.
-func recEventFrom(ev courtroom.Event) recEvent {
+// recEventFrom builds a recEvent from a live courtroom.Event, keeping the recording
+// SELF-CONTAINED for sprite styles. Send-on-change transmits the style marker only on
+// a CHANGE, so a no-marker message inherits the speaker's last style — which a clip
+// that starts mid-stream (instant-replay, a cropped export) would otherwise lose. When
+// the live message omits the marker but the speaker HAS a remembered style, record a
+// COPY of the message with the marker re-injected; the live msg is never mutated (the
+// room processes the original, and the recording shares that pointer for unstyled
+// lines). Called BEFORE room.HandleEvent, so RecalledStyle still reflects this
+// speaker's last style (a no-marker line doesn't change it). The caller fills OffsetMs
+// (it owns the time base). Shared by the recorder and the instant-replay buffer.
+func (a *App) recEventFrom(ev courtroom.Event) recEvent {
+	if ev.Kind == courtroom.EventMessage && ev.Message != nil && a.room != nil &&
+		!courtroom.HasSpriteMarker(ev.Message.Message) {
+		if style := a.room.RecalledStyle(ev.Message.CharID); style.Active() {
+			msgCopy := *ev.Message
+			msgCopy.Message = ev.Message.Message + style.EncodeMarker()
+			ev.Message = &msgCopy // record the self-contained copy, not the bare line
+		}
+	}
 	return recEvent{
 		Kind:    int(ev.Kind),
 		Message: ev.Message,
@@ -136,7 +151,7 @@ func (a *App) recordEvent(ev courtroom.Event) {
 	if a.rec == nil || !recordable(ev.Kind) || len(a.rec.Events) >= maxRecordedEvents {
 		return
 	}
-	re := recEventFrom(ev)
+	re := a.recEventFrom(ev)
 	re.OffsetMs = int(time.Since(a.recStart).Milliseconds())
 	a.rec.Events = append(a.rec.Events, re)
 }
@@ -170,7 +185,7 @@ func (a *App) bufferReplayEvent(ev courtroom.Event) {
 		a.replayBuf = make([]replayBufEntry, instantReplayMaxEvents)
 		a.replayBufW, a.replayBufN, a.replayBufOrigin = 0, 0, origin
 	}
-	a.replayBuf[a.replayBufW] = replayBufEntry{at: time.Now(), ev: recEventFrom(ev)}
+	a.replayBuf[a.replayBufW] = replayBufEntry{at: time.Now(), ev: a.recEventFrom(ev)}
 	a.replayBufW++
 	if a.replayBufW == len(a.replayBuf) {
 		a.replayBufW = 0

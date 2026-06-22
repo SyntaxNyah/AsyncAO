@@ -206,6 +206,13 @@ func (s SpriteStyle) EncodeMarker() string {
 	if !s.Active() {
 		return ""
 	}
+	return s.encodeMarker()
+}
+
+// encodeMarker emits the zero-width run for s REGARDLESS of Active(). The
+// send-on-change path uses it to transmit a CLEAR: an inactive style encodes to the
+// default payload, which tells receivers to stop styling that speaker.
+func (s SpriteStyle) encodeMarker() string {
 	pb := s.payloadBytes()
 	var sb strings.Builder
 	sb.Grow((spriteStyleBytes*8/3 + 2) * 3) // ~24 data runes + sentinel, 3 UTF-8 bytes each
@@ -224,6 +231,32 @@ func (s SpriteStyle) EncodeMarker() string {
 	}
 	return sb.String()
 }
+
+// EncodeChangeMarker returns the wire run to append to an outgoing message given prev
+// (the style this speaker last TRANSMITTED): "" when nothing changed, the new active
+// style's marker when it changed, or a CLEAR marker (decodes to the default → receivers
+// stop styling this speaker) when an active style was turned off. So the invisible
+// marker rides only the style-CHANGE messages, not every line — other clients
+// typewriter the run and blip on each character, so a marker on every line was audible
+// spam. Senders track the last-sent style and pass it here; receivers remember each
+// speaker's last style and reapply it to the messages that carry no marker.
+func (s SpriteStyle) EncodeChangeMarker(prev SpriteStyle) string {
+	if s == prev {
+		return ""
+	}
+	if s.Active() {
+		return s.encodeMarker()
+	}
+	if prev.Active() {
+		return SpriteStyle{}.encodeMarker() // turned a style off → transmit a clear
+	}
+	return "" // one inactive variant to another: no visible change, send nothing
+}
+
+// HasSpriteMarker reports whether text carries a sprite-style marker — used by the
+// recorder to tell a style UPDATE from a no-marker line that inherits the speaker's
+// last style (send-on-change), so it can keep recordings self-contained.
+func HasSpriteMarker(text string) bool { return hasMarker(text) }
 
 // hasMarker is a fast guard: the common message has no style, so the strip path
 // must not allocate or scan-rebuild when there's no sentinel present.
@@ -291,4 +324,41 @@ func stripZeroWidth(text string) string {
 		}
 		return r
 	}, text)
+}
+
+// --- per-speaker style memory (send-on-change) -------------------------------
+
+// maxRememberedStyles bounds the per-speaker style memory (hard rule §17.4): the
+// distinct char-slot count is finite, but cap it so a malformed stream can't grow the
+// map without bound. A clear frees its entry, so it stays near the active-styler count.
+const maxRememberedStyles = 512
+
+// rememberStyle records this speaker's transmitted style from an explicit marker. An
+// INACTIVE style is a clear — it frees the entry. charID < 0 (system / spectator, no
+// stable slot) is not persisted.
+func (c *Courtroom) rememberStyle(charID int, s SpriteStyle) {
+	if charID < 0 {
+		return
+	}
+	if !s.Active() {
+		delete(c.styleByChar, charID)
+		return
+	}
+	if c.styleByChar == nil {
+		c.styleByChar = map[int]SpriteStyle{}
+	}
+	if _, had := c.styleByChar[charID]; !had && len(c.styleByChar) >= maxRememberedStyles {
+		return // at the cap — don't admit a new speaker
+	}
+	c.styleByChar[charID] = s
+}
+
+// RecalledStyle returns a speaker's last transmitted style (zero value = none) — used
+// for a message that carries no marker (send-on-change) and by the App's recorder to
+// keep recordings self-contained.
+func (c *Courtroom) RecalledStyle(charID int) SpriteStyle {
+	if charID < 0 {
+		return SpriteStyle{}
+	}
+	return c.styleByChar[charID]
 }

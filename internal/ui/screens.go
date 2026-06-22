@@ -3945,9 +3945,15 @@ func (a *App) sendIC(shout int) {
 	// the END of the text — other AsyncAO clients decode + render it on this
 	// character; AO2/webAO see nothing. End placement keeps the visible text intact
 	// if a server length-limits the message (worst case: the style is dropped).
-	if marker := a.mySpriteStyle().EncodeMarker(); marker != "" {
+	// Send-on-CHANGE: the marker rides only the messages where YOUR style changed
+	// (and a clear when you turn it off), not every line — other clients typewriter
+	// the invisible run and blip on each character, so a marker on every message was
+	// audible spam. lastSentStyle tracks what we last transmitted this session.
+	curStyle := a.mySpriteStyle()
+	if marker := curStyle.EncodeChangeMarker(a.lastSentStyle); marker != "" {
 		text += marker
 	}
+	a.lastSentStyle = curStyle
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
 		PreEmote:   emote.Preanim,

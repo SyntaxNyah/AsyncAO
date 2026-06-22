@@ -219,6 +219,13 @@ type Courtroom struct {
 	currentText string
 	blipBase    string
 
+	// styleByChar remembers each speaker's last TRANSMITTED sprite style, keyed by
+	// msg.CharID. Senders transmit the marker only when their style CHANGES
+	// (send-on-change keeps the invisible run off most messages — EncodeChangeMarker),
+	// so a message with no marker reuses its speaker's remembered style. A clear (an
+	// inactive style) frees the entry; the map is bounded by maxRememberedStyles.
+	styleByChar map[int]SpriteStyle
+
 	// Predictor warms the predicted next speaker's sprite (optional).
 	Predictor *assets.Prefetcher
 
@@ -399,6 +406,15 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// pointer, so a replay re-decodes the same marker).
 	style, clean := DecodeSpriteStyle(msg.Message)
 	c.currentText = clean
+	// Send-on-change: a message carries the style marker only when this speaker's
+	// style CHANGED. With a marker, remember it (an update — or a clear that frees the
+	// entry); without one, reuse the speaker's last remembered style so a styled
+	// character stays styled across the messages that omit the marker.
+	if hasMarker(msg.Message) {
+		c.rememberStyle(msg.CharID, style)
+	} else {
+		style = c.RecalledStyle(msg.CharID)
+	}
 	if c.HideSpriteStyles {
 		style = SpriteStyle{} // viewer opted out of others' styles
 	} else if c.ReduceMotion {
@@ -555,7 +571,11 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.ShoutFallbackBase = ""
 	c.Scene.ShownameText = c.displayName(msg)
 	c.Scene.TextColor = msg.TextColor
-	_, c.currentText = DecodeSpriteStyle(msg.Message) // strip the style marker (catch-up never redraws the sprite)
+	caStyle, caClean := DecodeSpriteStyle(msg.Message) // strip the style marker (catch-up never redraws the sprite)
+	c.currentText = caClean
+	if hasMarker(msg.Message) {
+		c.rememberStyle(msg.CharID, caStyle) // keep the per-speaker style memory consistent through a catch-up
+	}
 	c.Typewriter.Start(c.currentText)
 	c.Typewriter.SkipToEnd()
 	c.Scene.MessageText = c.Typewriter.Text()

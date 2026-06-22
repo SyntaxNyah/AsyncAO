@@ -143,6 +143,75 @@ func TestStripsOlderClientMarker(t *testing.T) {
 	}
 }
 
+// TestEncodeChangeMarker pins send-on-change: the marker rides only style CHANGES.
+// No change → nothing; a new/changed active style → its marker; turning a style off →
+// a CLEAR marker (decodes to the default, non-active); inactive→inactive → nothing.
+func TestEncodeChangeMarker(t *testing.T) {
+	active := SpriteStyle{Tint: true, R: 9, G: 9, B: 9}
+	active2 := SpriteStyle{Tint: true, R: 200, Glow: true}
+
+	if m := active.EncodeChangeMarker(active); m != "" {
+		t.Errorf("unchanged style emitted a %d-rune marker, want none", len([]rune(m)))
+	}
+	if m := (SpriteStyle{}).EncodeChangeMarker(SpriteStyle{}); m != "" {
+		t.Error("inactive→inactive (never styled) must emit nothing")
+	}
+
+	// First active (from nothing) → a marker that decodes back to it.
+	m := active.EncodeChangeMarker(SpriteStyle{})
+	if got, _ := DecodeSpriteStyle("hi" + m); got != active {
+		t.Errorf("new style marker decoded to %+v, want %+v", got, active)
+	}
+	// Active → a different active → the new style's marker.
+	m = active2.EncodeChangeMarker(active)
+	if got, _ := DecodeSpriteStyle("x" + m); got != active2 {
+		t.Errorf("changed style marker decoded to %+v, want %+v", got, active2)
+	}
+	// Active → inactive → a CLEAR (a present marker that decodes to a non-active style).
+	m = (SpriteStyle{}).EncodeChangeMarker(active)
+	if m == "" {
+		t.Fatal("turning a style off must emit a clear marker")
+	}
+	if got, _ := DecodeSpriteStyle("y" + m); got.Active() {
+		t.Errorf("clear marker decoded to an active style %+v", got)
+	}
+}
+
+// TestSpriteStyleRememberedAcrossMessages pins send-on-change RECEPTION: a styled
+// message sets the speaker's style; a later NO-marker message from the same char keeps
+// it; a clear drops it; and different chars are independent.
+func TestSpriteStyleRememberedAcrossMessages(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	style := SpriteStyle{Tint: true, R: 200, G: 40, B: 40, Glow: true}
+	feed := func(charID int, text string) SpriteStyle {
+		msg := &protocol.ChatMessage{
+			CharID: charID, CharName: "Phoenix", Emote: "normal",
+			Side: "wit", Message: text, EmoteMod: protocol.EmoteModIdle,
+		}
+		room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+		got := room.Scene.Speaker.Style
+		room.SkipToIdle() // drain so the next message begins fresh
+		return got
+	}
+
+	if got := feed(5, "hi"+style.EncodeMarker()); got != style {
+		t.Fatalf("styled message: speaker style = %+v, want %+v", got, style)
+	}
+	if got := feed(5, "still me, no marker"); got != style {
+		t.Errorf("no-marker follow-up from same char: style = %+v, want remembered %+v", got, style)
+	}
+	if got := feed(6, "different speaker"); got.Active() {
+		t.Errorf("a never-styled char inherited a style %+v", got)
+	}
+	// Char 5 turns its style OFF (a clear) → no style now, and it stays off.
+	if got := feed(5, "off"+(SpriteStyle{}).EncodeChangeMarker(style)); got.Active() {
+		t.Errorf("after clear: style = %+v, want none", got)
+	}
+	if got := feed(5, "still cleared, no marker"); got.Active() {
+		t.Errorf("no-marker after clear: style = %+v, want none", got)
+	}
+}
+
 // TestAlphaModFloorAndDefault pins the opacity clamp: 0/100 are opaque, and an
 // explicit low value can't drop below the visible floor (no invisible sprites).
 func TestAlphaModFloorAndDefault(t *testing.T) {
