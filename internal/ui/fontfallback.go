@@ -7,15 +7,49 @@ import (
 	"golang.org/x/image/font/sfnt"
 )
 
-// hasNonASCII reports whether s has any byte ≥ 0x80, i.e. any non-ASCII rune. This is
-// the cheap (no decode, no alloc) LOAD trigger: a pure-ASCII session never trips it, so
-// the broad fallback never loads and the single-font fast path stays untouched. It is
-// deliberately coarse — over-triggering on a covered rune (é, Cyrillic) merely loads
-// the faces once off-thread; the sfnt PICK then still resolves such text to the
-// embedded font, so there's no visual change, only availability.
-func hasNonASCII(s string) bool {
+// scanScriptBytes does ONE byte pass over s: nonASCII is set by any byte ≥ 0x80;
+// cjkMaybe by any byte ≥ 0xE3 (the UTF-8 lead bytes of U+3000+, where CJK lives —
+// Cyrillic/Greek/Arabic/Tifinagh/Indic all have lower leads). No rune decode, no
+// alloc: a pure-ASCII line returns both false, so the broad/CJK loads never trip and
+// the single-font fast path stays untouched (the 0-perf gate). Deliberately coarse —
+// over-triggering merely loads faces once off-thread; the sfnt PICK still resolves the
+// text to the right face, so there's no visual change, only availability.
+func scanScriptBytes(s string) (nonASCII, cjkMaybe bool) {
 	for i := 0; i < len(s); i++ {
-		if s[i] >= 0x80 {
+		if b := s[i]; b >= 0x80 {
+			nonASCII = true
+			if b >= 0xE3 {
+				return true, true
+			}
+		}
+	}
+	return nonASCII, false
+}
+
+// isCJKLetter reports a Han / Kana / Hangul letter (NOT CJK punctuation, which the
+// embedded font may already cover) — the runes that need the big CJK faces.
+func isCJKLetter(r rune) bool {
+	switch {
+	case r >= 0x3040 && r <= 0x30FF: // Hiragana + Katakana
+		return true
+	case r >= 0x3400 && r <= 0x9FFF: // CJK Ext-A + Unified Ideographs (Han)
+		return true
+	case r >= 0xAC00 && r <= 0xD7A3: // Hangul syllables
+		return true
+	case r >= 0xF900 && r <= 0xFAFF: // CJK Compatibility Ideographs
+		return true
+	case r >= 0x20000 && r <= 0x2FA1F: // CJK Ext-B and beyond (supplementary plane)
+		return true
+	}
+	return false
+}
+
+// hasCJKLetter confirms an actual CJK letter, after scanScriptBytes' cheap byte gate
+// said "maybe" (so the rune decode runs only on the rare ≥0xE3 line, never on ASCII or
+// the common European non-ASCII).
+func hasCJKLetter(s string) bool {
+	for _, r := range s {
+		if isCJKLetter(r) {
 			return true
 		}
 	}
@@ -103,6 +137,75 @@ func (a *App) pollFallbackFont() {
 	case data := <-a.fallbackFontRes:
 		a.ctx.SetFallbackFonts(data)
 		a.rasterText = "" // re-raster the visible message with the broader coverage
+	default:
+	}
+}
+
+// cjkFontList picks the CJK faces to load: the FIRST present broad-Han (+ Kana) face,
+// plus Korean malgun for Hangul (the Han faces don't include it — proven by
+// TestFontCoverageMatrix). One Han face (not several — they overlap and are 13-35 MB
+// each) keeps the CJK tier near ~30 MB. os.Stat (disk) — called only off-thread.
+func cjkFontList() []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	var out []string
+	for _, p := range []string{
+		`C:\Windows\Fonts\msyh.ttc`,     // Microsoft YaHei — Simplified Chinese Han + Kana (most Windows)
+		`C:\Windows\Fonts\YuGothR.ttc`,  // Yu Gothic — Japanese kanji + Kana (Han fallback)
+		`C:\Windows\Fonts\msgothic.ttc`, // MS Gothic — older Japanese fallback
+		`C:\Windows\Fonts\mingliub.ttc`, // PMingLiU — Traditional Chinese (last resort)
+	} {
+		if fileReadable(p) {
+			out = append(out, p)
+			break
+		}
+	}
+	if fileReadable(`C:\Windows\Fonts\malgun.ttf`) {
+		out = append(out, `C:\Windows\Fonts\malgun.ttf`) // Korean Hangul — not in the Han faces
+	}
+	return out
+}
+
+func fileReadable(p string) bool {
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
+// ensureCJKFontLoad reads the CJK faces ONCE, off-thread, the first time a CJK LETTER
+// is drawn. Its latch (cjkLoadStarted) is INDEPENDENT of the broad-fallback latch: a
+// session routinely hits a European non-ASCII name before any CJK, loading the broad
+// set — if CJK detection shared that guard it would die silently after the first
+// accent and never fire.
+func (a *App) ensureCJKFontLoad() {
+	if a.cjkLoadStarted {
+		return
+	}
+	a.cjkLoadStarted = true
+	go func() {
+		var data [][]byte
+		for _, p := range cjkFontList() {
+			if b, err := os.ReadFile(p); err == nil && len(b) > 0 && len(b) <= fontFileMaxBytes {
+				data = append(data, b)
+			}
+		}
+		if len(data) == 0 {
+			return
+		}
+		select {
+		case a.cjkFontRes <- data:
+		default:
+		}
+	}()
+}
+
+// pollCJKFont installs the CJK faces on the render thread once their bytes land,
+// re-rastering the visible message so a previously-tofu CJK name/line repaints.
+func (a *App) pollCJKFont() {
+	select {
+	case data := <-a.cjkFontRes:
+		a.ctx.SetCJKFonts(data)
+		a.rasterText = ""
 	default:
 	}
 }

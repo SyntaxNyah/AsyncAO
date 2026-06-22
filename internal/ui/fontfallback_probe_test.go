@@ -51,11 +51,22 @@ func TestFontCoverageMatrix(t *testing.T) {
 		t.Error("embedded font unexpectedly covers CJK — coverage assumption wrong")
 	}
 
-	// Per-candidate coverage claims (skip the absent ones).
+	const (
+		han    = 0x4E00 // 一  CJK Unified Ideograph
+		kana   = 0x3042 // あ  Hiragana
+		hangul = 0xAC00 // 가  Hangul syllable
+	)
+	// Per-candidate coverage claims (skip the absent ones). The CJK rows pin which
+	// system face actually covers Han / Kana / Hangul so the auto-load set isn't a
+	// guess (a Japanese face's kanji is NOT Simplified Chinese; Korean needs Hangul).
 	want := map[string][]rune{
-		`C:\Windows\Fonts\segoeui.ttf`: {cyrillicA},    // broad European
-		`C:\Windows\Fonts\ebrima.ttf`:  {tifinaghYath}, // THE reported Tifinagh gap
-		`C:\Windows\Fonts\Nirmala.ttc`: {devanagariA},  // Indic (a .ttc collection)
+		`C:\Windows\Fonts\segoeui.ttf`:  {cyrillicA},    // broad European
+		`C:\Windows\Fonts\ebrima.ttf`:   {tifinaghYath}, // THE reported Tifinagh gap
+		`C:\Windows\Fonts\Nirmala.ttc`:  {devanagariA},  // Indic (a .ttc collection)
+		`C:\Windows\Fonts\YuGothR.ttc`:  {han, kana},    // Japanese: Han (kanji) + Kana
+		`C:\Windows\Fonts\msgothic.ttc`: {han, kana},    // Japanese fallback
+		`C:\Windows\Fonts\malgun.ttf`:   {hangul, han},  // Korean: Hangul (+ Hanja)
+		`C:\Windows\Fonts\msyh.ttc`:     {han, kana},    // YaHei: Han + Kana but NOT Hangul (proven) — Korean needs malgun
 	}
 	for path, runes := range want {
 		b, err := os.ReadFile(path)
@@ -120,6 +131,37 @@ func TestPickFontSelectsCoveringFace(t *testing.T) {
 	for _, tc := range cases {
 		if got := pickFont(fonts, cover, &buf, tc.text); got != tc.want {
 			t.Errorf("%s: pickFont picked the wrong face", tc.name)
+		}
+	}
+}
+
+// TestScriptLoadGate pins the cheap byte/rune gate that decides which font tiers load:
+// pure-ASCII trips nothing (the 0-perf invariant), European non-ASCII trips the broad
+// tier but NOT the heavy CJK one, and only an actual Han/Kana/Hangul LETTER (not CJK
+// punctuation) trips CJK. Keeps a stray accent from pulling in ~30 MB of CJK faces.
+func TestScriptLoadGate(t *testing.T) {
+	cases := []struct {
+		text             string
+		nonASCII, cjkMab bool
+		cjkLetter        bool
+	}{
+		{"Hello, world!", false, false, false}, // pure ASCII → nothing
+		{"café", true, false, false},           // Latin-1 accent → broad only
+		{"Привет", true, false, false},         // Cyrillic → broad only, no CJK
+		{"ⵜⵉⴼⴻⵔⴰ", true, false, false},         // Tifinagh (U+2D30, lead 0xE2) → broad, not CJK
+		{"日本語", true, true, true},              // Han → CJK
+		{"あいう", true, true, true},              // Kana → CJK
+		{"안녕하세요", true, true, true},            // Hangul → CJK
+		{"hi 世界", true, true, true},            // mixed Latin + Han → both
+		{"。、！", true, true, false},             // CJK punctuation only → byte gate yes, letter no
+	}
+	for _, tc := range cases {
+		nonASCII, cjkMab := scanScriptBytes(tc.text)
+		if nonASCII != tc.nonASCII || cjkMab != tc.cjkMab {
+			t.Errorf("scanScriptBytes(%q) = (%v,%v), want (%v,%v)", tc.text, nonASCII, cjkMab, tc.nonASCII, tc.cjkMab)
+		}
+		if got := hasCJKLetter(tc.text); got != tc.cjkLetter {
+			t.Errorf("hasCJKLetter(%q) = %v, want %v", tc.text, got, tc.cjkLetter)
 		}
 	}
 }

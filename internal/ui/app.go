@@ -300,6 +300,11 @@ type App struct {
 	// single-font fast path (pickSet len==1) is untouched — zero perf change.
 	fallbackFontRes     chan [][]byte
 	fallbackLoadStarted bool
+	// CJK tier (Han/Kana + Hangul), read off-thread only when a CJK letter is drawn —
+	// independent latch so the broad load can't swallow it (a Cyrillic name usually
+	// comes first). 13-35 MB, so kept out of the common non-ASCII path.
+	cjkFontRes     chan [][]byte
+	cjkLoadStarted bool
 
 	// --- case notebook loads (per-server; payload routes by key) ---
 	notebookRes chan notebookLoad
@@ -1382,6 +1387,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		fontRes:         make(chan fontLoad, 1),
 		emojiFontRes:    make(chan []byte, 1),
 		fallbackFontRes: make(chan [][]byte, 1),
+		cjkFontRes:      make(chan [][]byte, 1),
 		notebookRes:     make(chan notebookLoad, 1),
 		jukeRes:         make(chan *config.Jukebox, 1),
 		jukeIORes:       make(chan string, 4),
@@ -3161,6 +3167,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.ensureFallbackFontLoad()
 	}
 	a.pollFallbackFont()
+	if a.ctx.TakeWantsCJK() { // a CJK letter was drawn → kick the (independent) CJK-font read
+		a.ensureCJKFontLoad()
+	}
+	a.pollCJKFont()
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollCharBind()

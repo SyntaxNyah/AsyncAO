@@ -274,6 +274,12 @@ type Ctx struct {
 	embeddedCover *sfnt.Font
 	sfntBuf       sfnt.Buffer
 	wantFallback  bool
+	// CJK tier: big Han/Kana + Hangul faces (13-35 MB each), loaded only when a CJK
+	// LETTER is actually drawn (not on every non-ASCII), appended after the broad set.
+	// Separate from fallbackData so the two tiers load independently.
+	cjkData  [][]byte
+	cjkCover []*sfnt.Font
+	wantCJK  bool
 
 	// uiPct is the global render scale percent; mouse coordinates
 	// unproject through it so logical hit-tests stay exact.
@@ -519,21 +525,44 @@ func (c *Ctx) LogFontFor(pct int, text string) *ttf.Font {
 	return c.pickSet(&c.logSet, pct, text)
 }
 
-// noteScript raises the one-time fallback-load latch the first time a non-ASCII
-// rune is seen and the broad faces aren't loaded yet. Once they're in (fallbackData
-// set) or the latch is already up, it short-circuits before the scan — a pure-ASCII
-// session never trips it, so the single-font fast path stays untouched (0-perf rule).
+// noteScript raises the load latches the first time their script is seen: the broad
+// fallback on any non-ASCII rune, the (independent) CJK tier on a Han/Kana/Hangul
+// letter. Once a tier is loaded or already latched its check drops out, and when both
+// are settled it returns before the byte scan — so a pure-ASCII session never trips it
+// and the single-font fast path stays untouched (0-perf rule). The CJK latch is kept
+// SEPARATE from the broad one so the broad load (fired by the first European accent)
+// can't swallow a later CJK trigger.
 func (c *Ctx) noteScript(text string) {
-	if c.fallbackData == nil && !c.wantFallback && hasNonASCII(text) {
+	needBroad := c.fallbackData == nil && !c.wantFallback
+	needCJK := c.cjkData == nil && !c.wantCJK
+	if !needBroad && !needCJK {
+		return
+	}
+	nonASCII, cjkMaybe := scanScriptBytes(text)
+	if !nonASCII {
+		return
+	}
+	if needBroad {
 		c.wantFallback = true
+	}
+	if needCJK && cjkMaybe && hasCJKLetter(text) {
+		c.wantCJK = true
 	}
 }
 
-// TakeWantsFallback reports (and clears) whether a non-ASCII rune was seen since the
-// last drain, so the App kicks the off-thread fallback-font read exactly when needed.
+// TakeWantsFallback / TakeWantsCJK report (and clear) whether their script was seen
+// since the last drain, so the App kicks the matching off-thread font read on demand.
 func (c *Ctx) TakeWantsFallback() bool {
 	if c.wantFallback {
 		c.wantFallback = false
+		return true
+	}
+	return false
+}
+
+func (c *Ctx) TakeWantsCJK() bool {
+	if c.wantCJK {
+		c.wantCJK = false
 		return true
 	}
 	return false
@@ -631,6 +660,14 @@ func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
 			s.cover = append(s.cover, coverAt(c.fallbackCover, i))
 		}
 	}
+	// CJK tier last (the big Han/Kana/Hangul faces) — reached only for runes nothing
+	// above covers. Loaded lazily, so nil for the vast majority of sessions.
+	for i, data := range c.cjkData {
+		if f, err := memFont(data, size); err == nil {
+			s.fonts = append(s.fonts, f)
+			s.cover = append(s.cover, coverAt(c.cjkCover, i))
+		}
+	}
 	return s.fonts
 }
 
@@ -673,6 +710,21 @@ func (c *Ctx) SetFallbackFonts(data [][]byte) {
 		c.fallbackCover = append(c.fallbackCover, parseCover(d)) // cmap face for the PICK
 	}
 	c.fontChainGen++ // force every fontSet to rebuild with the fallbacks included
+}
+
+// SetCJKFonts installs the CJK tier (Han/Kana + Hangul faces) read off-thread; mirrors
+// SetFallbackFonts. Appended after the broad set, so a CJK line resolves to one of
+// these only when nothing earlier covered it. Render thread.
+func (c *Ctx) SetCJKFonts(data [][]byte) {
+	if len(data) == 0 && c.cjkData == nil {
+		return
+	}
+	c.cjkData = data
+	c.cjkCover = c.cjkCover[:0]
+	for _, d := range data {
+		c.cjkCover = append(c.cjkCover, parseCover(d))
+	}
+	c.fontChainGen++
 }
 
 // EmojiFont returns the color-emoji fallback face at pct percent (the chat/log
