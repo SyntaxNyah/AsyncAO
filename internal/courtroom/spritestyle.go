@@ -94,21 +94,21 @@ func resolvePct(v uint8, lo, hi int) int {
 
 // --- zero-width wire codec --------------------------------------------------
 //
-// The style travels as a run of INVISIBLE characters appended to the message
-// text. Two zero-width symbols encode bits and a sentinel rune frames the run, so
-// AsyncAO can locate + decode + strip it while AO2/webAO render nothing (the only
-// channel that survives an arbitrary server is the message text — the same reason
-// \cN colours ride there — and zero-width keeps standard clients truly unaffected,
-// unlike a visible marker). The payload is a fixed 5 bytes: R, G, B, Opacity,
-// Flags; a benign failure mode (a mangled run just yields no style) keeps a
-// length-truncating server from ever corrupting the visible message.
+// The style travels as a run of INVISIBLE characters appended to the message text:
+// a sentinel rune (zwStart) frames the run, then the fixed payload is packed THREE
+// bits per rune across an alphabet of eight zero-width symbols, so AsyncAO can
+// locate + decode + strip it while AO2/webAO render nothing (the only channel that
+// survives an arbitrary server is the message text — the same reason \cN colours
+// ride there). Three bits per rune (instead of one) keeps the invisible tail SHORT:
+// other clients typewriter the invisible run and blip on each character, so a long
+// run was audible blip-spam to webAO listeners (a real playtest complaint). The
+// payload is version-tagged; a benign failure mode (a mangled run just yields no
+// style) keeps a length-truncating server from corrupting the visible text.
 //
-// The codec runes are written as hex code points (NOT literal glyphs) so the
-// source stays visible and can't be mangled by an editor or a codepage pipe.
+// The codec runes are written as hex code points (NOT literal glyphs) so the source
+// stays visible and can't be mangled by an editor or a codepage pipe.
 const (
-	zwBit0  rune = 0x200B // ZERO WIDTH SPACE      → bit 0
-	zwBit1  rune = 0x200C // ZERO WIDTH NON-JOINER → bit 1
-	zwStart rune = 0x2060 // WORD JOINER           → payload sentinel
+	zwStart rune = 0x2060 // WORD JOINER — payload sentinel (proven to pass the wire)
 
 	styleFlagTint     = 1 << 0
 	styleFlagGlow     = 1 << 1
@@ -121,8 +121,36 @@ const (
 	// a decoder that doesn't recognise the version yields no style (benign).
 	spriteStyleVersion = 1
 	spriteStyleBytes   = 9 // version, flags, R, G, B, opacity, brightness, scale, rotation
-	spriteStyleBits    = spriteStyleBytes * 8
 )
+
+// octalSyms maps an octal digit (3 bits) to one invisible code point. All eight are
+// format (Cf) characters that render nothing on AO2/webAO and pass the wire: the
+// classic zero-width trio (200B/C/D), the invisible math operators (siblings of the
+// proven zwStart sentinel — same Unicode block + Cf category, so anywhere it passes
+// they pass), and the zero-width no-break space. stripZeroWidth drops all of them
+// plus zwStart, so it also cleans an OLDER client's 1-bit marker (200B/200C are in
+// this set), leaking no invisible runes into the log during a mixed-build playtest.
+var octalSyms = [8]rune{
+	0x200B, // ZERO WIDTH SPACE
+	0x200C, // ZERO WIDTH NON-JOINER
+	0x200D, // ZERO WIDTH JOINER
+	0x2061, // FUNCTION APPLICATION
+	0x2062, // INVISIBLE TIMES
+	0x2063, // INVISIBLE SEPARATOR
+	0x2064, // INVISIBLE PLUS
+	0xFEFF, // ZERO WIDTH NO-BREAK SPACE
+}
+
+// octalIndex is the inverse of octalSyms: a rune's 0..7 value, or -1 when it isn't a
+// codec data symbol (which ends a run).
+func octalIndex(r rune) int {
+	for i, s := range octalSyms {
+		if r == s {
+			return i
+		}
+	}
+	return -1
+}
 
 // payloadBytes packs the style into its fixed wire form (version-tagged).
 func (s SpriteStyle) payloadBytes() [spriteStyleBytes]byte {
@@ -180,16 +208,19 @@ func (s SpriteStyle) EncodeMarker() string {
 	}
 	pb := s.payloadBytes()
 	var sb strings.Builder
-	sb.Grow((spriteStyleBits + 1) * 3) // each rune is 3 bytes UTF-8
+	sb.Grow((spriteStyleBytes*8/3 + 2) * 3) // ~24 data runes + sentinel, 3 UTF-8 bytes each
 	sb.WriteRune(zwStart)
+	acc, nbits := 0, 0
 	for _, by := range pb {
-		for bit := 7; bit >= 0; bit-- { // MSB first
-			if by&(1<<uint(bit)) != 0 {
-				sb.WriteRune(zwBit1)
-			} else {
-				sb.WriteRune(zwBit0)
-			}
+		acc = acc<<8 | int(by)
+		nbits += 8
+		for nbits >= 3 { // emit whole octal digits, MSB first
+			nbits -= 3
+			sb.WriteRune(octalSyms[(acc>>uint(nbits))&0x7])
 		}
+	}
+	if nbits > 0 { // pad a trailing partial digit (no-op while spriteStyleBytes*8 is /3)
+		sb.WriteRune(octalSyms[(acc<<uint(3-nbits))&0x7])
 	}
 	return sb.String()
 }
@@ -227,31 +258,26 @@ func decodeFirstMarker(text string) SpriteStyle {
 	if i < 0 {
 		return SpriteStyle{}
 	}
-	var bits [spriteStyleBits]byte
-	n := 0
-	for _, r := range text[i+len(string(zwStart)):] {
-		if r == zwBit0 {
-			bits[n] = 0
-		} else if r == zwBit1 {
-			bits[n] = 1
-		} else {
-			break // first non-bit rune ends the run
-		}
-		n++
-		if n == spriteStyleBits {
-			break
-		}
-	}
-	if n < spriteStyleBits {
-		return SpriteStyle{}
-	}
 	var pb [spriteStyleBytes]byte
-	for bi := 0; bi < spriteStyleBytes; bi++ {
-		var v byte
-		for k := 0; k < 8; k++ {
-			v = v<<1 | bits[bi*8+k]
+	acc, nbits, nbytes := 0, 0, 0
+	for _, r := range text[i+len(string(zwStart)):] {
+		idx := octalIndex(r)
+		if idx < 0 {
+			break // first non-symbol rune ends the run
 		}
-		pb[bi] = v
+		acc = acc<<3 | idx
+		nbits += 3
+		if nbits >= 8 {
+			nbits -= 8
+			pb[nbytes] = byte((acc >> uint(nbits)) & 0xFF)
+			nbytes++
+			if nbytes == spriteStyleBytes {
+				break
+			}
+		}
+	}
+	if nbytes < spriteStyleBytes {
+		return SpriteStyle{} // short/corrupt run → no style (benign)
 	}
 	return styleFromBytes(pb)
 }
@@ -260,11 +286,9 @@ func decodeFirstMarker(text string) SpriteStyle {
 // visible-only text. Only reached when a sentinel is present.
 func stripZeroWidth(text string) string {
 	return strings.Map(func(r rune) rune {
-		switch r {
-		case zwStart, zwBit0, zwBit1:
-			return -1 // drop
-		default:
-			return r
+		if r == zwStart || octalIndex(r) >= 0 {
+			return -1 // drop the sentinel + every codec data symbol
 		}
+		return r
 	}, text)
 }

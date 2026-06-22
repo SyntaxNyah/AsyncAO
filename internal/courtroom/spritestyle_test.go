@@ -60,9 +60,15 @@ func TestMarkerIsInvisible(t *testing.T) {
 		t.Fatal("expected a non-empty marker")
 	}
 	for _, r := range marker {
-		if r != zwStart && r != zwBit0 && r != zwBit1 {
-			t.Errorf("marker contains a visible rune U+%04X — standard clients would show it", r)
+		if r != zwStart && octalIndex(r) < 0 {
+			t.Errorf("marker contains a non-codec rune U+%04X — standard clients might show it", r)
 		}
+	}
+	// Density guard: the 9-byte payload packs 3 bits/rune → 24 data runes + the
+	// sentinel = 25. (A regression to 1 bit/rune is the ~73-rune blip-spam tail that
+	// webAO listeners complained about.)
+	if n := len([]rune(marker)); n != 25 {
+		t.Errorf("marker is %d runes, want 25 (sentinel + 24 at 3 bits/rune)", n)
 	}
 }
 
@@ -107,12 +113,33 @@ func TestStripRemovesAllZeroWidth(t *testing.T) {
 	msg := "a" + SpriteStyle{Glow: true}.EncodeMarker() + "b"
 	clean := StripSpriteStyle(msg)
 	for _, r := range clean {
-		if r == zwStart || r == zwBit0 || r == zwBit1 {
+		if r == zwStart || octalIndex(r) >= 0 {
 			t.Fatalf("clean text still has a codec rune U+%04X", r)
 		}
 	}
 	if clean != "ab" {
 		t.Errorf("clean = %q, want %q", clean, "ab")
+	}
+}
+
+// TestStripsOlderClientMarker pins the mixed-build playtest case: a NEW client must
+// fully clean an OLDER client's 1-bit marker (U+2060 framing a run of U+200B/U+200C)
+// so no invisible runes leak into the log — 200B/200C are in the new symbol set, so
+// strip drops them. (Decode yields no style: the old run mis-parses under the 3-bit
+// reader, the intended benign degrade until everyone updates to render styles again.)
+func TestStripsOlderClientMarker(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("hi")
+	b.WriteRune(0x2060)       // old sentinel (same rune as the new zwStart)
+	for i := 0; i < 72; i++ { // 72 one-bit runes = the old 9-byte encoding
+		if i%2 == 0 {
+			b.WriteRune(0x200B)
+		} else {
+			b.WriteRune(0x200C)
+		}
+	}
+	if clean := StripSpriteStyle(b.String()); clean != "hi" {
+		t.Errorf("old 1-bit marker not fully stripped: %q (%d runes left)", clean, len([]rune(clean))-2)
 	}
 }
 
