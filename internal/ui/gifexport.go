@@ -103,6 +103,7 @@ const (
 	exportGIF   exportKind = iota // animated GIF (paletted, every frame held for gifenc)
 	exportWebP                    // animated WebP (libwebp streams + compresses each frame)
 	exportVideo                   // MP4/WebM via a system ffmpeg (videoenc streams frames)
+	exportComic                   // a single PNG storyboard: one still panel per IC line (pure Go)
 )
 
 // maxVideoFrames caps a single video export. Unlike the GIF cap (bounded by the
@@ -248,6 +249,7 @@ type gifExportJob struct {
 	room     *courtroom.Courtroom
 	ct       *render.CaptureTarget
 	frames   []*image.Paletted // GIF only — every frame, for gifenc.EncodeGIF
+	panels   []*image.RGBA     // Comic only — one still per IC line, composed into a PNG page at the end
 	events   []recEvent
 	idx      int
 	name     string
@@ -312,6 +314,12 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	opts := a.d.Prefs.ExportOpts()
 	h := int32(opts.HeightPx)
 	w := h * 4 / 3
+	// A comic page renders fixed, small panels (one per line) regardless of the
+	// animation Size knob — predictable page dimensions and a bounded held-RGBA
+	// budget (maxComicPanels panels at this size).
+	if kind == exportComic {
+		w, h = comicPanelW, comicPanelH
+	}
 	fps := opts.FPS
 	if fps < 1 {
 		fps = 1
@@ -330,6 +338,9 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	maxFrames := exportMaxFrames(w, h)
 	if kind == exportVideo {
 		maxFrames = maxVideoFrames
+	}
+	if kind == exportComic {
+		maxFrames = maxComicPanels // one page's worth of panels (the cap bounds the held RGBA)
 	}
 
 	ct, err := render.NewCaptureTarget(a.ctx.Ren, w, h)
@@ -443,6 +454,10 @@ func (a *App) tickGifExport() {
 		a.tickGifWarm(j) // wait for the scene's sprites to decode before capturing
 		return
 	}
+	if j.kind == exportComic {
+		a.tickComicExport(j) // one still panel per IC line, composed into a PNG page at the end
+		return
+	}
 	for n := 0; n < gifFramesPerTick; n++ {
 		if j.captured >= j.maxFrames {
 			a.finishGifExport()
@@ -515,7 +530,7 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 	timedOut := now.Sub(j.warmStarted) > gifWarmMax
 	if allReady || quiesced || timedOut || len(j.warmRefs) == 0 {
 		j.warming = false
-		a.warnLine = "Rendering GIF…"
+		a.warnLine = "Rendering…" // kind-neutral; the progress overlay names the format
 		a.warnAt = now
 	}
 }
@@ -645,6 +660,15 @@ func (a *App) finishGifExport() {
 
 	if j.kind == exportVideo {
 		a.finishVideoExport(j) // ffmpeg has been writing vidPath all along — just flush + wait
+		return
+	}
+	if j.kind == exportComic {
+		// Sits AFTER the shared teardown above (ct.Close / chatRaster.Destroy /
+		// restoreViewportPreanim) on purpose: an early return would leak the capture
+		// target and leave the viewport's preanim callback dangling at the dead comic
+		// room, corrupting the next LIVE message. The captured panels are CPU copies,
+		// so closing the target first is fine.
+		a.finishComicExport(j)
 		return
 	}
 	stem := j.name + "-" + time.Now().Format("20060102-150405")
@@ -845,6 +869,8 @@ func (a *App) drawGifProgress(winW, winH int32) {
 			label = "🎬  Rendering WebP…"
 		case exportVideo:
 			label = "🎥  Rendering video…"
+		case exportComic:
+			label = "🖼  Rendering comic…"
 		}
 	}
 	c.Label(cx-120, cy-30, label, ColText)
@@ -855,11 +881,17 @@ func (a *App) drawGifProgress(winW, winH int32) {
 	// through the events we are — a real 0–100%, not a sliver of the huge cap.
 	var frac float64
 	var sub string
-	if j != nil && j.kind == exportVideo {
+	if j != nil && (j.kind == exportVideo || j.kind == exportComic) {
+		// Both stream the script rather than fill a memory-budgeted frame cap, so the
+		// bar tracks how far through the events we are — a real 0–100%.
 		if n := len(j.events); n > 0 {
 			frac = float64(j.idx) / float64(n)
 		}
-		sub = fmt.Sprintf("%d frames written (%d%% of the script)", done, int(frac*100))
+		if j.kind == exportComic {
+			sub = fmt.Sprintf("%d panels (%d%% of the script)", done, int(frac*100))
+		} else {
+			sub = fmt.Sprintf("%d frames written (%d%% of the script)", done, int(frac*100))
+		}
 	} else {
 		capFrames := maxGifFrames
 		if j != nil && j.maxFrames > 0 {

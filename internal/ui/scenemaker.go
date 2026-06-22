@@ -836,6 +836,10 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 		a.startSceneExport(a.trimmedScene(), a.makerName, exportVideo) // MP4/WebM via ffmpeg (format in ⚙ Export)
 	}
 	bx += 112
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 110, H: btnH}, "🖼 Comic") {
+		a.startSceneExport(a.trimmedScene(), a.makerName, exportComic) // PNG storyboard page (pure Go), cropped
+	}
+	bx += 118
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 104, H: btnH}, "⚙ Export") {
 		a.makerExportOpen = !a.makerExportOpen // size / fps / quality / loop / speed
 	}

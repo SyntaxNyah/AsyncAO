@@ -1005,7 +1005,10 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 			if c.Button(sdl.Rect{X: pad + 282, Y: y, W: 78, H: btnH}, "🎥 Video") {
 				a.sceneExportFromPath(r.path, exportVideo) // MP4/WebM via ffmpeg (Export-options format)
 			}
-			c.LabelClipped(pad+368, y+4, w-pad-368-scrollBarW, r.name, ColText)
+			if c.Button(sdl.Rect{X: pad + 364, Y: y, W: 82, H: btnH}, "🖼 Comic") {
+				a.sceneExportFromPath(r.path, exportComic) // single PNG storyboard page (pure Go)
+			}
+			c.LabelClipped(pad+450, y+4, w-pad-450-scrollBarW, r.name, ColText)
 			y += 28
 		}
 	}
