@@ -1959,6 +1959,7 @@ func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
 		return false
 	}
 	if c.rightClicked {
+		c.hoverID = id // pin it so close-on-leave keeps the box up after an instant open
 		return true
 	}
 	if c.hoverID != id {

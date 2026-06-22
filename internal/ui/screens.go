@@ -369,9 +369,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 	_ = c.Ren.SetClipRect(nil)
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false)
-		if c.clicked {
-			a.previewBase = ""
-		}
+		a.closeSpritePreviewOnLeave()
 	}
 }
 
@@ -506,7 +504,6 @@ func (a *App) drawCharSelect(w, h int32) {
 
 	dlOn := a.d.Prefs.CharDownloaderEnabled() // read once per frame, not per cell
 	col, row := int32(0), int32(0)
-	previewRequested := false
 	// Clip the grid to its own viewport (below the top bar) so scrolled cells
 	// slide UNDER the fixed search/tabs/buttons instead of painting over them: the
 	// bar is drawn first, so without this the later cell draws covered it as you
@@ -526,7 +523,6 @@ func (a *App) drawCharSelect(w, h int32) {
 			if c.HoverPreview("char:"+slot.Name, cell) {
 				a.previewBase = a.urls.Emote(slot.Name, "normal", courtroom.EmoteIdle)
 				a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(slot.Name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
-				previewRequested = true
 			}
 		}
 		col++
@@ -536,14 +532,9 @@ func (a *App) drawCharSelect(w, h int32) {
 		}
 	}
 	_ = c.Ren.SetClipRect(nil)
-	if !previewRequested && !c.rightClicked {
-		// keep showing while hovered; HoverPreview clears hoverID on exit
-	}
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false)
-		if c.clicked || (a.ctx.hoverID == "" && !previewRequested) {
-			a.previewBase = ""
-		}
+		a.closeSpritePreviewOnLeave()
 	}
 }
 
@@ -719,6 +710,19 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 	}
 	if cycling {
 		a.drawPreviewEmoteNav(frame)
+	}
+}
+
+// closeSpritePreviewOnLeave dismisses the hover sprite-preview box once the cursor
+// is over NEITHER a preview-triggering cell (HoverPreview clears hoverID on exit) NOR
+// the box itself (previewFrameRect — so you can still mouse onto it to zoom/drag) — or
+// on any click (selecting commits and dismisses). Replaces the old click-only close
+// that forced a manual dismiss (playtesters: "had to manually close the box"). Pure
+// per-frame state check; called only while a preview is up, so it's off the hot path.
+func (a *App) closeSpritePreviewOnLeave() {
+	c := a.ctx
+	if c.clicked || (c.hoverID == "" && !c.hovering(a.previewFrameRect)) {
+		a.previewBase = ""
 	}
 }
 
@@ -3371,9 +3375,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 
 	if a.previewBase != "" {
 		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H, false)
-		if c.clicked {
-			a.previewBase = ""
-		}
+		a.closeSpritePreviewOnLeave()
 	}
 }
 
