@@ -491,7 +491,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			}
 		}
 		if next, changed := c.Dropdown("posdd", r, choices, cur); changed {
-			a.sidePref = choices[next]
+			a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 		}
 	}
 	if r, ok := lay.rect("pair_button"); ok {

@@ -4017,9 +4017,9 @@ func (a *App) mySide() string {
 func (a *App) handleChatCommand(text string) bool {
 	switch {
 	case strings.HasPrefix(text, "/pos "):
-		if side := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(text, "/pos "))); side != "" {
-			a.sidePref = side
-		}
+		// applySide lowercases/trims and forwards /pos to the server, so typing it
+		// in the IC box now moves you instantly too (matching the OOC-box command).
+		a.applySide(strings.TrimPrefix(text, "/pos "))
 		return true
 	case strings.HasPrefix(text, "/pair "):
 		if id, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(text, "/pair "))); err == nil {

@@ -530,7 +530,7 @@ func (a *App) cyclePos() {
 			break
 		}
 	}
-	a.sidePref = next
+	a.applySide(next) // also /pos the server so the cycle moves you instantly
 }
 
 // stopMusic stops the music. It HALTS OUR playback immediately, then also asks

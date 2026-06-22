@@ -538,6 +538,28 @@ func (a *App) posChoices() []string {
 	return standardPositions
 }
 
+// applySide sets OUR side and, when we're connected, immediately tells the server
+// with the /pos OOC command — the exact path a playtester confirmed moves them
+// instantly. AO2-Client's pos dropdown is local-only: the chosen side merely rides
+// the NEXT IC message (on_pos_dropdown_changed sends nothing to the server), so on a
+// tsuserver-family server picking a position felt inert — nothing visibly happened
+// until you spoke. Firing /pos here mirrors typing it in the OOC box, so the move
+// (and the server's SP/BG echo that repaints the scene) lands the moment you pick;
+// a.sidePref still rides later IC messages exactly as before. A deliberate, minimal
+// deviation from AO2-Client. User-initiated only (dropdown / Ctrl+P cycle / IC-box
+// "/pos") — never per frame, so the render loop and its alloc gate are untouched —
+// and the same-side guard makes a re-pick of the current side a no-op (no resend).
+func (a *App) applySide(side string) {
+	side = strings.ToLower(strings.TrimSpace(side))
+	if side == "" || side == a.sidePref {
+		return
+	}
+	a.sidePref = side
+	if a.sess != nil {
+		a.sess.SendOOC(a.oocNameOrDefault(), "/pos "+side)
+	}
+}
+
 // posSelectW fits the widest standard side ("Pos" label drawn separately).
 const posSelectW = 64
 
@@ -560,7 +582,7 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 		}
 	}
 	if next, changed := c.Dropdown("posdd", sdl.Rect{X: x, Y: y, W: posSelectW, H: h}, choices, cur); changed {
-		a.sidePref = choices[next]
+		a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 	}
 	return x + posSelectW + 6
 }
