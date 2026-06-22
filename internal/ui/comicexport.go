@@ -34,10 +34,14 @@ const (
 	comicPanelW = 360
 	comicPanelH = 270
 
-	// maxComicPanels bounds one page: the held panel RGBA (hard rule §17.4) AND the
-	// final image size. A longer scene exports its first maxComicPanels lines (the
-	// user is told); pagination is a later slice.
-	maxComicPanels = 30
+	// comicPanelsPerPage is one PNG page's worth of panels (comicCols × rows). 30 at
+	// 3 cols = a 10-row page; a scene with more lines spills onto further pages.
+	comicPanelsPerPage = 30
+	// maxComicPages bounds how many pages one export writes, and with it the TOTAL
+	// held panel RGBA (hard rule §17.4): maxComicPanels × (W·H·4) ≈ 35 MB at 360×270.
+	// A longer scene exports its first maxComicPanels lines (the user is told).
+	maxComicPages  = 3
+	maxComicPanels = comicPanelsPerPage * maxComicPages
 
 	// Page layout (a storyboard grid): comicCols panels per row, comicGutter between
 	// panels, comicMargin around the page, a comicBorder frame per panel. comicMargin
@@ -146,16 +150,31 @@ func (a *App) finishComicExport(j *gifExportJob) {
 	go func() { a.gifResultCh <- composeAndWriteComic(panels, stem, capped) }()
 }
 
-// composeAndWriteComic (off-thread) lays the panels into a page, PNG-encodes it, and
-// writes recordings\<stem>.png. Returns the result line for the UI.
-func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) string {
-	page := composeComicPage(panels, comicCols, comicPanelW, comicPanelH, comicGutter, comicMargin, comicBorder)
-	if page == nil {
-		return "Comic export failed: no panels."
+// paginateComic splits the captured panels into pages of at most perPage each, in
+// order, so a long scene becomes a multi-page comic instead of one giant image.
+// Pure + bounded — unit-tested. Returns nil for no panels.
+func paginateComic(panels []*image.RGBA, perPage int) [][]*image.RGBA {
+	if perPage < 1 {
+		perPage = 1
 	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, page); err != nil {
-		return "Comic export failed: " + err.Error()
+	var pages [][]*image.RGBA
+	for i := 0; i < len(panels); i += perPage {
+		end := i + perPage
+		if end > len(panels) {
+			end = len(panels)
+		}
+		pages = append(pages, panels[i:end])
+	}
+	return pages
+}
+
+// composeAndWriteComic (off-thread) paginates the panels, composes + PNG-encodes
+// each page, and writes recordings\<stem>.png (single page) or \<stem>-pN.png (one
+// per page). Returns the result line for the UI.
+func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) string {
+	pages := paginateComic(panels, comicPanelsPerPage)
+	if len(pages) == 0 {
+		return "Comic export failed: no panels."
 	}
 	dir := recordingsDir()
 	if dir == "" {
@@ -164,13 +183,35 @@ func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) string
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "Comic export failed: " + err.Error()
 	}
-	name := stem + ".png"
-	if err := os.WriteFile(filepath.Join(dir, name), buf.Bytes(), 0o644); err != nil {
-		return "Comic export failed: " + err.Error()
+	var totalBytes int
+	for i, pagePanels := range pages {
+		img := composeComicPage(pagePanels, comicCols, comicPanelW, comicPanelH, comicGutter, comicMargin, comicBorder)
+		if img == nil {
+			continue
+		}
+		var buf bytes.Buffer
+		if err := png.Encode(&buf, img); err != nil {
+			return "Comic export failed: " + err.Error()
+		}
+		name := stem + ".png"
+		if len(pages) > 1 { // number the files only when the comic spans multiple pages
+			name = fmt.Sprintf("%s-p%d.png", stem, i+1)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), buf.Bytes(), 0o644); err != nil {
+			return "Comic export failed: " + err.Error()
+		}
+		totalBytes += buf.Len()
 	}
-	msg := fmt.Sprintf("Comic saved: recordings\\%s (%d panels, %.1f MB).", name, len(panels), float64(buf.Len())/(1024*1024))
+	saved := stem + ".png"
+	pageNote := ""
+	if len(pages) > 1 {
+		saved = fmt.Sprintf("%s-p1..p%d.png", stem, len(pages))
+		pageNote = fmt.Sprintf(" across %d pages", len(pages))
+	}
+	msg := fmt.Sprintf("Comic saved: recordings\\%s (%d panels%s, %.1f MB).",
+		saved, len(panels), pageNote, float64(totalBytes)/(1024*1024))
 	if capped {
-		msg += fmt.Sprintf(" Showing the first %d lines (one page's worth).", len(panels))
+		msg += fmt.Sprintf(" Showing the first %d lines (the %d-page max).", len(panels), maxComicPages)
 	}
 	return msg
 }

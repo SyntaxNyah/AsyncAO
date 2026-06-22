@@ -76,3 +76,37 @@ func TestComposeComicPageSingleRow(t *testing.T) {
 		t.Fatalf("single-row page = %dx%d, want %dx%d", b.Dx(), b.Dy(), wantW, wantH)
 	}
 }
+
+// TestPaginateComic pins the multi-page split: full pages then a short remainder,
+// an exact multiple, fewer-than-a-page, the empty case, and perPage floored to 1.
+func TestPaginateComic(t *testing.T) {
+	mk := func(n int) []*image.RGBA {
+		s := make([]*image.RGBA, n)
+		for i := range s {
+			s[i] = solidPanel(2, 2, color.RGBA{A: 255})
+		}
+		return s
+	}
+	cases := []struct {
+		n, perPage int
+		wantPages  []int // panels on each resulting page
+	}{
+		{50, 24, []int{24, 24, 2}},
+		{48, 24, []int{24, 24}}, // exact multiple — no empty trailing page
+		{10, 24, []int{10}},     // fewer than a page
+		{0, 24, nil},            // nothing
+		{3, 0, []int{1, 1, 1}},  // perPage floored to 1 (no divide-by-zero / infinite loop)
+	}
+	for _, tc := range cases {
+		pages := paginateComic(mk(tc.n), tc.perPage)
+		if len(pages) != len(tc.wantPages) {
+			t.Errorf("paginate(n=%d,perPage=%d): %d pages, want %d", tc.n, tc.perPage, len(pages), len(tc.wantPages))
+			continue
+		}
+		for i, want := range tc.wantPages {
+			if len(pages[i]) != want {
+				t.Errorf("paginate(n=%d,perPage=%d) page %d = %d panels, want %d", tc.n, tc.perPage, i, len(pages[i]), want)
+			}
+		}
+	}
+}
