@@ -400,7 +400,8 @@ func (a *App) drawMakerPreviewPane(x, y, w, h int32) {
 	a.d.Viewport.Render(c.Ren, &a.makerPreviewRoom.Scene, stage)
 	sc := &a.makerPreviewRoom.Scene
 	if sc.ShownameText != "" || sc.MessageText != "" {
-		c.LabelClipped(stage.X, stage.Y+stage.H+4, stage.W, strings.TrimSpace(sc.ShownameText+": "+sc.MessageText), ColText)
+		line := strings.TrimSpace(sc.ShownameText + ": " + sc.MessageText)
+		c.LabelClippedFont(c.LogFontFor(DefaultScalePct, line), stage.X, stage.Y+stage.H+4, stage.W, line, ColText) // covering face for non-Latin previews
 	}
 }
 

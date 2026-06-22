@@ -1227,7 +1227,10 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
 	}
-	a.labelEmoji(c.font, c.EmojiFont(DefaultScalePct), box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
+	// Pick a covering face for the showname (a Tifinagh / Cyrillic NAME would tofu on
+	// the fixed chrome font); ChatFontFor returns the chrome font for ASCII, so plain
+	// names are unchanged. DefaultScalePct matches the emoji face size below.
+	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
 
 	wrapW := box.W - 16
 	a.ensureChatRaster(wrapW, skinned)

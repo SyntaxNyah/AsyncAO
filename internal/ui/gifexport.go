@@ -653,7 +653,9 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour, same as the live chatbox
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
 	}
-	c.Label(box.X+8, box.Y+4, sc.ShownameText, nameCol)
+	// Same covering-face pick as the live nameplate, so a non-Latin showname renders
+	// into the exported comic/video instead of tofu (ASCII names keep the chrome font).
+	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
 
 	if j.chatRaster != nil {
 		_ = c.Ren.SetClipRect(&box) // the cap case stays inside the box, never off-frame
