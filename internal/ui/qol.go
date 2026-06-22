@@ -758,7 +758,16 @@ func (a *App) oocWrapped(width int32) []string {
 			// Per-paragraph font pick: wraps measure with the font that will draw
 			// the line (the CJK chain rule).
 			font := a.ctx.LogFontFor(a.logPct, para)
-			lines := wrapToWidth(font, strings.TrimRight(para, "\r"), width, oocWrapMaxLinesPerEntry)
+			trimmed := strings.TrimRight(para, "\r")
+			// Emoji-aware wrap for emoji lines (the plain font sizes colour emoji as
+			// narrow tofu, so an emoji-laden line overflowed instead of wrapping); plain
+			// lines keep the cheap word-wrap.
+			var lines []string
+			if ef := a.ctx.EmojiFont(a.logPct); ef != nil && render.NeedsEmojiFallback(trimmed) {
+				lines = render.WrapEmojiAware(font, ef, trimmed, width, oocWrapMaxLinesPerEntry)
+			} else {
+				lines = wrapToWidth(font, trimmed, width, oocWrapMaxLinesPerEntry)
+			}
 			if len(lines) == 0 {
 				out = append(out, "") // blank MOTD spacer lines survive
 				name = append(name, "")
@@ -817,9 +826,18 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		if showStamps && a.icLog[i].stamp != "" {
 			text = a.icLog[i].stamp + "  " + text
 		}
-		// Wrap with the font that will draw the entry (CJK chain rule).
+		// Wrap with the font that will draw the entry (CJK chain rule). An emoji entry
+		// wraps with the emoji-AWARE measure: the plain font sizes colour emoji as narrow
+		// tofu, so a long emoji showname overflowed + clipped instead of wrapping. Plain
+		// entries keep the cheap word-wrap.
 		font := a.ctx.LogFontFor(a.logPct, text)
-		for _, ln := range wrapToWidth(font, text, width, icWrapMaxLinesPerEntry) {
+		var wrapped []string
+		if ef := a.ctx.EmojiFont(a.logPct); ef != nil && render.NeedsEmojiFallback(text) {
+			wrapped = render.WrapEmojiAware(font, ef, text, width, icWrapMaxLinesPerEntry)
+		} else {
+			wrapped = wrapToWidth(font, text, width, icWrapMaxLinesPerEntry)
+		}
+		for _, ln := range wrapped {
 			out = append(out, icWrapLine{text: ln, entry: i})
 		}
 	}

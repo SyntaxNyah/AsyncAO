@@ -200,6 +200,38 @@ func measureRuns(fonts []*ttf.Font, runes []rune, lo, hi int) int32 {
 	return w
 }
 
+// WrapEmojiAware word-wraps text to maxW pixels, measuring emoji runes with the EMOJI
+// font — the primary font sizes colour emoji as narrow tofu, so a line of wide emoji
+// (a heart-laden showname) would otherwise never break and overflow the column. Returns
+// the wrapped lines, capped at maxLines (0 = uncapped). emoji may be nil → a plain
+// single-font wrap. Used by the IC/OOC log, whose rows render through this same
+// per-rune fallback, so the wrap must measure the way the draw will. Build-time only
+// (the log caches its wrap), so the per-rune allocation never touches the render loop.
+func WrapEmojiAware(primary, emoji *ttf.Font, text string, maxW int32, maxLines int) []string {
+	runes := []rune(text)
+	if len(runes) == 0 || primary == nil {
+		return nil
+	}
+	fonts := make([]*ttf.Font, len(runes))
+	mask := assignEmoji(runes)
+	for i := range runes {
+		if mask[i] && emoji != nil {
+			fonts[i] = emoji
+		} else {
+			fonts[i] = primary
+		}
+	}
+	ranges := wrapMultiFont(fonts, runes, maxW)
+	if maxLines > 0 && len(ranges) > maxLines {
+		ranges = ranges[:maxLines]
+	}
+	out := make([]string, 0, len(ranges))
+	for _, lr := range ranges {
+		out = append(out, string(runes[lr.start:lr.end]))
+	}
+	return out
+}
+
 // wrapMultiFont greedily word-wraps runes to maxW px under per-rune fonts (mirrors
 // wrapStyled's visuals, but measures mixed-face prefixes). Build-time, fallback
 // path only.
