@@ -1,8 +1,11 @@
 package videoenc
 
 import (
+	"bytes"
 	"image"
+	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -140,6 +143,110 @@ func TestEncodeRealVideo(t *testing.T) {
 				t.Errorf("encoded %s is empty", FormatExt(f))
 			}
 		})
+	}
+}
+
+// TestMuxArgsShape pins the audio-mux command line: copy the video, encode the
+// audio to the container codec, delay+pad it, stop at the video length.
+func TestMuxArgsShape(t *testing.T) {
+	mp4 := strings.Join(muxArgs("v.mp4", "a.wav", "out.mp4", 0, FormatMP4), " ")
+	for _, want := range []string{"-i v.mp4", "-i a.wav", "-map 0:v:0", "-c:v copy", "-map 1:a:0", "-c:a aac", "-af apad", "-shortest"} {
+		if !strings.Contains(mp4, want) {
+			t.Errorf("mp4 mux args missing %q in %q", want, mp4)
+		}
+	}
+	if !strings.HasSuffix(mp4, "out.mp4") {
+		t.Errorf("mux args must end with the output path: %q", mp4)
+	}
+	// A start delay inserts an adelay filter before apad.
+	delayed := strings.Join(muxArgs("v.mp4", "a.wav", "o.mp4", 1500, FormatMP4), " ")
+	if !strings.Contains(delayed, "adelay=delays=1500:all=1,apad") {
+		t.Errorf("delayed mux args missing the adelay filter: %q", delayed)
+	}
+	// WebM uses Opus, not AAC.
+	webm := strings.Join(muxArgs("v.webm", "a.wav", "o.webm", 0, FormatWebM), " ")
+	if !strings.Contains(webm, "-c:a libopus") {
+		t.Errorf("webm mux args missing libopus: %q", webm)
+	}
+}
+
+// minimalWAV writes a tiny 16-bit mono PCM WAV (≈0.5 s of a quiet tone) so the mux
+// test has a REAL audio file without any Go audio decoding.
+func minimalWAV(t *testing.T, path string) {
+	t.Helper()
+	const rate, samples = 8000, 4000 // 0.5 s
+	pcm := make([]byte, 0, samples*2)
+	for i := 0; i < samples; i++ {
+		v := int16(3000 * math.Sin(2*math.Pi*440*float64(i)/rate))
+		pcm = append(pcm, byte(v), byte(v>>8))
+	}
+	var b []byte
+	put4 := func(s string) { b = append(b, s...) }
+	put32 := func(v int) { b = append(b, byte(v), byte(v>>8), byte(v>>16), byte(v>>24)) }
+	put16 := func(v int) { b = append(b, byte(v), byte(v>>8)) }
+	put4("RIFF")
+	put32(36 + len(pcm))
+	put4("WAVE")
+	put4("fmt ")
+	put32(16)
+	put16(1)
+	put16(1)
+	put32(rate)
+	put32(rate * 2)
+	put16(2)
+	put16(16)
+	put4("data")
+	put32(len(pcm))
+	b = append(b, pcm...)
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatalf("write wav: %v", err)
+	}
+}
+
+// TestMuxAudioBedReal is the end-to-end proof: encode a real silent clip, mux a real
+// WAV in, and confirm the output actually carries an audio stream. Skips without
+// ffmpeg (CI stays green; the dev box exercises it).
+func TestMuxAudioBedReal(t *testing.T) {
+	if !Available() {
+		t.Skip("ffmpeg not on PATH — mux path can't be exercised here")
+	}
+	const w, h = 64, 48
+	dir := t.TempDir()
+	silent := filepath.Join(dir, "silent.mp4")
+	enc, err := New(silent, w, h, 10, 70, FormatMP4)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for i := 0; i < 10; i++ { // ~1 s of video
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		for p := 0; p+3 < len(img.Pix); p += 4 {
+			img.Pix[p], img.Pix[p+1], img.Pix[p+2], img.Pix[p+3] = 120, byte(i*20), 60, 255
+		}
+		if err := enc.AddFrame(img); err != nil {
+			enc.Close()
+			t.Fatalf("AddFrame: %v", err)
+		}
+	}
+	if err := enc.Finish(); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	wav := filepath.Join(dir, "song.wav")
+	minimalWAV(t, wav)
+	out := filepath.Join(dir, "withaudio.mp4")
+	if err := MuxAudioBed(silent, wav, out, 0, FormatMP4); err != nil {
+		t.Fatalf("MuxAudioBed: %v", err)
+	}
+	if st, err := os.Stat(out); err != nil || st.Size() == 0 {
+		t.Fatalf("muxed output missing/empty: %v", err)
+	}
+	// Confirm an audio stream is present (ffmpeg -i prints stream info to stderr and
+	// exits non-zero with no output file — that's expected for a probe).
+	probe := exec.Command(FFmpegPath(), "-i", out)
+	var pst bytes.Buffer
+	probe.Stderr = &pst
+	_ = probe.Run()
+	if !strings.Contains(pst.String(), "Audio:") {
+		t.Errorf("muxed file has no audio stream; ffmpeg -i said:\n%s", pst.String())
 	}
 }
 

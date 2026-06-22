@@ -194,6 +194,67 @@ func ffmpegArgs(outPath string, w, h, fps, quality int, format Format) []string 
 	return append(args, outPath)
 }
 
+// MuxAudioBed remuxes an existing (silent) video with a single audio file as its
+// soundtrack bed: it COPIES the video stream (no re-encode — fast) and encodes the
+// audio to the container's codec. The audio is delayed by delayMs (when the song
+// started in the scene) and padded with silence so the OUTPUT is exactly the
+// video's length — apad makes the audio infinite, -shortest then trims it to the
+// video, so a song shorter than the video can't truncate it and a longer one is cut
+// to fit. ffmpeg decodes the source audio (any codec it supports) — there is no Go
+// audio decoding (spec §8); ffmpeg is an external process. MUST run off the render
+// thread (it blocks until ffmpeg exits). Guard with Available() first.
+func MuxAudioBed(videoPath, audioPath, outPath string, delayMs int, format Format) error {
+	bin := FFmpegPath()
+	if bin == "" {
+		return fmt.Errorf("videoenc: ffmpeg not found on PATH")
+	}
+	cmd := exec.Command(bin, muxArgs(videoPath, audioPath, outPath, delayMs, format)...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		s := strings.TrimSpace(stderr.String())
+		if len(s) > stderrTailBytes {
+			s = s[len(s)-stderrTailBytes:]
+		}
+		if i := strings.LastIndexByte(s, '\n'); i >= 0 { // the cause is the last line
+			s = strings.TrimSpace(s[i+1:])
+		}
+		if s != "" {
+			return fmt.Errorf("ffmpeg mux: %s", s)
+		}
+		return fmt.Errorf("videoenc: mux failed: %w", err)
+	}
+	return nil
+}
+
+// muxArgs builds the audio-mux command line: copy the video stream, encode the
+// audio (AAC for MP4, Opus for WebM — both standard for their container), optionally
+// delay the audio to its scene start, pad it to the video length, and stop at the
+// video's end. Pure so the argument shape is unit-tested.
+func muxArgs(videoPath, audioPath, outPath string, delayMs int, format Format) []string {
+	af := "apad" // pad the audio with trailing silence; -shortest trims to the video
+	if delayMs > 0 {
+		// adelay's all=1 delays every channel by delayMs regardless of channel count
+		// (mono or stereo source), so the song lands where it started in the scene.
+		af = "adelay=delays=" + strconv.Itoa(delayMs) + ":all=1,apad"
+	}
+	acodec := "aac"
+	if format == FormatWebM {
+		acodec = "libopus"
+	}
+	return []string{
+		"-y",
+		"-loglevel", "error",
+		"-i", videoPath, // 0: the silent video
+		"-i", audioPath, // 1: the song
+		"-map", "0:v:0", "-c:v", "copy", // keep the encoded video as-is
+		"-map", "1:a:0", "-c:a", acodec, // encode the song to the container's codec
+		"-af", af,
+		"-shortest", // output length = the video (apad keeps audio from cutting it short)
+		outPath,
+	}
+}
+
 // AddFrame writes one RGBA frame to ffmpeg's stdin. Synchronous, like webpenc's
 // AddFrame: the OS pipe buffers the small frame and the export owns the window,
 // so a brief stall while ffmpeg encodes only stutters the progress overlay, never

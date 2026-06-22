@@ -261,8 +261,10 @@ type gifExportJob struct {
 	// Video only — a system ffmpeg streams frames to vidPath as they arrive (so,
 	// like WebP, no frames are held). vidPath is resolved up front because ffmpeg
 	// owns the file the whole time it runs.
-	vid     *videoenc.Encoder
-	vidPath string
+	vid       *videoenc.Encoder
+	vidPath   string
+	vidFormat videoenc.Format // Video only — codec choice for the post-capture audio mux
+	musicCap  *musicCapture   // Video only — records the scene's music for the audio mux (#99)
 
 	// Per-export output settings (from config ExportOptions, resolved once).
 	w, h      int32         // capture/output size (4:3)
@@ -352,6 +354,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	var enc *webpenc.Encoder
 	var vid *videoenc.Encoder
 	var vidPath string
+	var vidFormat videoenc.Format
 	switch kind {
 	case exportWebP:
 		if enc, err = webpenc.New(int(w), int(h), opts.Quality, frameMs, opts.Loop); err != nil {
@@ -361,28 +364,39 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 			return
 		}
 	case exportVideo:
-		format := videoenc.FormatFromString(opts.VideoFormat)
-		vidPath, err = videoExportPath(sanitizeStem(name), format)
+		vidFormat = videoenc.FormatFromString(opts.VideoFormat)
+		vidPath, err = videoExportPath(sanitizeStem(name), vidFormat)
 		if err != nil {
 			ct.Close()
 			a.warnLine = "Video export unavailable: " + err.Error()
 			a.warnAt = time.Now()
 			return
 		}
-		if vid, err = videoenc.New(vidPath, int(w), int(h), fps, opts.Quality, format); err != nil {
+		if vid, err = videoenc.New(vidPath, int(w), int(h), fps, opts.Quality, vidFormat); err != nil {
 			ct.Close()
 			a.warnLine = "Video export unavailable: " + err.Error()
 			a.warnAt = time.Now()
 			return
 		}
 	}
-	// A comic is a silent still page, and its fast-forward collapses each line with a
-	// huge dt — which would otherwise blast the WHOLE line's blips in one Update and
-	// rip through every music event. Feed the comic room a no-op audio sink; the
-	// animated kinds keep real audio (paced by their small per-frame dt).
+	// Audio sink per kind: GIF/WebP keep real audio (paced by their small per-frame
+	// dt). A comic is a silent still page whose fast-forward would blast the whole
+	// line's blips at once + rip through music, so it gets a no-op sink. A video is
+	// silent at capture (export speed garbles live audio), but a musicCapture sink
+	// records the scene's song so finishVideoExport can mux it in afterward (#99).
 	var audio courtroom.AudioSink = a.d.Audio
-	if kind == exportComic {
+	var musicCap *musicCapture
+	switch kind {
+	case exportComic:
 		audio = courtroom.NopAudio{}
+	case exportVideo:
+		musicCap = &musicCapture{frameRef: func() int {
+			if a.gif != nil {
+				return a.gif.captured
+			}
+			return 0
+		}}
+		audio = musicCap
 	}
 	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(scene.Origin), a.d.Manager, nil, audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
@@ -431,6 +445,8 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		webp:         enc,
 		vid:          vid,
 		vidPath:      vidPath,
+		vidFormat:    vidFormat,
+		musicCap:     musicCap,
 		w:            w,
 		h:            h,
 		frameDt:      frameDt,
@@ -742,12 +758,34 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 		a.warnAt = time.Now()
 		return
 	}
+	// Resolve the music bed NOW, on the render thread — the capture sink's cues are
+	// complete and a.gif is about to be cleared. frameMs converts the song's start
+	// frame to ms. The mux itself (download + 2nd ffmpeg) runs off-thread below; on
+	// ANY failure it degrades to the silent video that was just written (#99).
+	var songURL string
+	var delayMs int
+	if j.musicCap != nil {
+		frameMs := int(j.frameDt / time.Millisecond)
+		if frameMs < 1 {
+			frameMs = 1
+		}
+		songURL, delayMs, _ = j.musicCap.firstSong(frameMs)
+	}
+	format := j.vidFormat
 	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
 	a.warnAt = time.Now()
 	go func() {
 		if err := enc.Finish(); err != nil {
 			_ = os.Remove(path) // a failed encode leaves a corrupt file — don't keep it
 			a.gifResultCh <- "Video export failed: " + err.Error()
+			return
+		}
+		if songURL != "" {
+			if finalPath, ok := muxMusicBed(path, songURL, delayMs, format); ok {
+				a.gifResultCh <- videoSavedMsg(finalPath) + "  ♪ music added"
+				return
+			}
+			a.gifResultCh <- videoSavedMsg(path) + "  (couldn't add the music — saved silent)"
 			return
 		}
 		a.gifResultCh <- videoSavedMsg(path)
