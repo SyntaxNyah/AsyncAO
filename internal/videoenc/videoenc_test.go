@@ -2,6 +2,7 @@ package videoenc
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"math"
 	"os"
@@ -239,15 +240,49 @@ func TestMuxAudioBedReal(t *testing.T) {
 	if st, err := os.Stat(out); err != nil || st.Size() == 0 {
 		t.Fatalf("muxed output missing/empty: %v", err)
 	}
-	// Confirm an audio stream is present (ffmpeg -i prints stream info to stderr and
-	// exits non-zero with no output file — that's expected for a probe).
-	probe := exec.Command(FFmpegPath(), "-i", out)
-	var pst bytes.Buffer
-	probe.Stderr = &pst
-	_ = probe.Run()
-	if !strings.Contains(pst.String(), "Audio:") {
-		t.Errorf("muxed file has no audio stream; ffmpeg -i said:\n%s", pst.String())
+	// Probe the result: ffmpeg -i prints stream info to stderr and exits non-zero with
+	// no output — that's expected for a probe.
+	info := ffmpegProbe(t, out)
+	if !strings.Contains(info, "Audio:") {
+		t.Errorf("muxed file has no audio stream; ffmpeg -i said:\n%s", info)
 	}
+	// The output must be the VIDEO's length (~1.0 s at 10 frames / 10 fps), NOT the
+	// shorter song's (0.5 s). This is the whole point of apad + -shortest: a short
+	// song is padded so it can't truncate the video. Without this assertion the test
+	// would still pass on a silently-truncated 0.5 s file (it has audio + bytes).
+	if d := parseDurationSec(t, info); d < 0.8 {
+		t.Errorf("muxed duration = %.2fs, want ~1.0s (the video length, not the 0.5s song — apad/-shortest broke)", d)
+	}
+}
+
+// ffmpegProbe runs `ffmpeg -i path` and returns its stderr (where ffmpeg prints
+// container/stream info). The non-zero exit (no output specified) is expected.
+func ffmpegProbe(t *testing.T, path string) string {
+	t.Helper()
+	cmd := exec.Command(FFmpegPath(), "-i", path)
+	var st bytes.Buffer
+	cmd.Stderr = &st
+	_ = cmd.Run()
+	return st.String()
+}
+
+// parseDurationSec pulls "Duration: HH:MM:SS.ss" out of ffmpeg -i output as seconds.
+func parseDurationSec(t *testing.T, info string) float64 {
+	t.Helper()
+	i := strings.Index(info, "Duration: ")
+	if i < 0 {
+		t.Fatalf("no Duration line in ffmpeg output:\n%s", info)
+	}
+	ts := info[i+len("Duration: "):]
+	if j := strings.IndexByte(ts, ','); j >= 0 {
+		ts = ts[:j] // "00:00:01.00"
+	}
+	var hh, mm int
+	var ss float64
+	if _, err := fmt.Sscanf(strings.TrimSpace(ts), "%d:%d:%f", &hh, &mm, &ss); err != nil {
+		t.Fatalf("parse duration %q: %v", ts, err)
+	}
+	return float64(hh*3600+mm*60) + ss
 }
 
 // TestSizeMismatchRejected confirms a wrong-sized frame is rejected, not piped to
