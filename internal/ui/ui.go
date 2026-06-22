@@ -12,6 +12,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
 	"golang.org/x/image/font/gofont/goregular"
+	"golang.org/x/image/font/sfnt"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
@@ -249,12 +250,30 @@ type Ctx struct {
 	// an override chain is installed). Cleared on any font rebuild.
 	pickMemo map[string]*ttf.Font
 	// Color-emoji fallback face (e.g. Segoe UI Emoji), kept SEPARATE from the
-	// chain so the common single-font fast path (pickCached len==1) is unchanged.
+	// chain so the common single-font fast path (pickSet len==1) is unchanged.
 	// emojiData is the font file bytes (read off-thread by the App; nil = none/not
 	// loaded); emojiFonts builds faces per size lazily. RWFromMem aliases the bytes,
 	// so emojiData must outlive the faces.
 	emojiData  []byte
 	emojiFonts map[int]*ttf.Font
+	// Broad-Unicode TEXT fallback faces (Segoe UI, Ebrima, Nirmala, Segoe UI Symbol),
+	// loaded LAZILY off-thread only after a message carries a non-ASCII rune. Unlike
+	// the emoji face these DO join the per-size set (after the embedded font), so
+	// pickFont resolves a single-script run (a Cyrillic / Tifinagh / Indic showname)
+	// to a covering face. nil until the first non-ASCII message → pure-ASCII sessions
+	// keep the len==1 fast path. RWFromMem aliases the bytes, so they must outlive the
+	// faces. Bumping fontChainGen on install rebuilds every set.
+	fallbackData [][]byte
+	// sfnt coverage faces for the PICK (parsed once from the same bytes as the ttf
+	// faces, in the same order as a set's entries: chain, embedded, fallback). The
+	// embedded one is parsed lazily on first build. sfntBuf is the reused GlyphIndex
+	// scratch (render thread only). wantFallback is the latch the cheap non-ASCII scan
+	// raises in ChatFontFor/LogFontFor; the App drains it to kick the off-thread load.
+	chainCover    []*sfnt.Font
+	fallbackCover []*sfnt.Font
+	embeddedCover *sfnt.Font
+	sfntBuf       sfnt.Buffer
+	wantFallback  bool
 
 	// uiPct is the global render scale percent; mouse coordinates
 	// unproject through it so logical hit-tests stay exact.
@@ -459,9 +478,14 @@ func loadEmbeddedFont(size int) (*ttf.Font, error) {
 func (c *Ctx) Font() *ttf.Font { return c.font }
 
 // fontSet is one scaled font chain: override fonts in order, the
-// embedded font as the guaranteed last entry.
+// embedded font, then any broad-Unicode fallbacks. cover holds the sfnt
+// face for each entry (same order) for the cmap-based coverage PICK —
+// SDL_ttf's GlyphMetrics can't report coverage in this build (it returns
+// .notdef metrics without error), so the rendering ttf.Font and the
+// coverage sfnt.Font are parsed separately from the same bytes.
 type fontSet struct {
 	fonts []*ttf.Font
+	cover []*sfnt.Font
 	pct   int
 	gen   int
 }
@@ -476,10 +500,12 @@ func (c *Ctx) ChatFont(pct int) *ttf.Font {
 	return c.fontsFor(&c.chatSet, pct)[0]
 }
 
-// ChatFontFor picks the first chain font that covers every rune of text
-// (the CJK fallback rule), the embedded font as last resort.
+// ChatFontFor picks the font that covers every rune of text: the embedded
+// font for Latin/Greek/Cyrillic, a broad fallback face (once loaded) for the
+// scripts it lacks. Non-ASCII text also latches the one-time fallback load.
 func (c *Ctx) ChatFontFor(pct int, text string) *ttf.Font {
-	return c.pickCached(c.fontsFor(&c.chatSet, pct), text)
+	c.noteScript(text)
+	return c.pickSet(&c.chatSet, pct, text)
 }
 
 // LogFont returns the log/OOC list PRIMARY font at pct percent.
@@ -487,21 +513,43 @@ func (c *Ctx) LogFont(pct int) *ttf.Font {
 	return c.fontsFor(&c.logSet, pct)[0]
 }
 
-// LogFontFor picks the covering chain font for one log line.
+// LogFontFor picks the covering font for one log line (see ChatFontFor).
 func (c *Ctx) LogFontFor(pct int, text string) *ttf.Font {
-	return c.pickCached(c.fontsFor(&c.logSet, pct), text)
+	c.noteScript(text)
+	return c.pickSet(&c.logSet, pct, text)
 }
 
-// pickCached memoizes pickFont per line: repeat draws cost one map probe.
-// The no-override case (single-font set) costs nothing at all.
-func (c *Ctx) pickCached(fonts []*ttf.Font, text string) *ttf.Font {
+// noteScript raises the one-time fallback-load latch the first time a non-ASCII
+// rune is seen and the broad faces aren't loaded yet. Once they're in (fallbackData
+// set) or the latch is already up, it short-circuits before the scan — a pure-ASCII
+// session never trips it, so the single-font fast path stays untouched (0-perf rule).
+func (c *Ctx) noteScript(text string) {
+	if c.fallbackData == nil && !c.wantFallback && hasNonASCII(text) {
+		c.wantFallback = true
+	}
+}
+
+// TakeWantsFallback reports (and clears) whether a non-ASCII rune was seen since the
+// last drain, so the App kicks the off-thread fallback-font read exactly when needed.
+func (c *Ctx) TakeWantsFallback() bool {
+	if c.wantFallback {
+		c.wantFallback = false
+		return true
+	}
+	return false
+}
+
+// pickSet memoizes the per-line coverage pick: repeat draws cost one map probe, and
+// the no-fallback single-font set costs nothing at all (the len==1 fast path).
+func (c *Ctx) pickSet(s *fontSet, pct int, text string) *ttf.Font {
+	fonts := c.fontsFor(s, pct)
 	if len(fonts) == 1 {
 		return fonts[0]
 	}
 	if f, ok := c.pickMemo[text]; ok {
 		return f
 	}
-	f := pickFont(fonts, text)
+	f := pickFont(fonts, s.cover, &c.sfntBuf, text)
 	if c.pickMemo == nil {
 		c.pickMemo = make(map[string]*ttf.Font, 256)
 	} else if len(c.pickMemo) >= textCacheMax {
@@ -519,6 +567,10 @@ func (c *Ctx) SetFontChain(names []string, data [][]byte) {
 		names, data = names[:fontChainCap], data[:fontChainCap]
 	}
 	c.fontNames, c.fontChain = names, data
+	c.chainCover = c.chainCover[:0]
+	for _, d := range data {
+		c.chainCover = append(c.chainCover, parseCover(d)) // cmap face for the PICK
+	}
 	c.fontChainGen++
 }
 
@@ -542,14 +594,18 @@ func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
 	c.purgeTextCache()
 	c.pickMemo = nil
 	s.fonts = s.fonts[:0]
+	s.cover = s.cover[:0]
 	s.pct, s.gen = pct, c.fontChainGen
 	size := UIFontSize * pct / DefaultScalePct
 	if size < 1 {
 		size = 1
 	}
-	for _, data := range c.fontChain {
+	// Each entry appends its rendering font (per size) and its sfnt cover face (size-
+	// independent, parsed once) in lockstep, so a skipped face never desyncs them.
+	for i, data := range c.fontChain {
 		if f, err := memFont(data, size); err == nil {
 			s.fonts = append(s.fonts, f)
+			s.cover = append(s.cover, coverAt(c.chainCover, i))
 		}
 	}
 	// Embedded last resort; share the chrome font at 1:1 (no duplicate
@@ -560,6 +616,20 @@ func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
 		s.fonts = append(s.fonts, f)
 	} else {
 		s.fonts = append(s.fonts, c.font)
+	}
+	if c.embeddedCover == nil {
+		c.embeddedCover = parseCover(goregular.TTF) // goregular's cmap; parsed once
+	}
+	s.cover = append(s.cover, c.embeddedCover)
+	// Broad-Unicode fallbacks AFTER the embedded font: only runes the embedded font
+	// (and any user chain) lacks fall through to them, so Latin keeps the embedded
+	// look. nil for pure-ASCII sessions (never loaded) → set stays single-font and
+	// pickSet short-circuits. A bad/absent face is skipped.
+	for i, data := range c.fallbackData {
+		if f, err := memFont(data, size); err == nil {
+			s.fonts = append(s.fonts, f)
+			s.cover = append(s.cover, coverAt(c.fallbackCover, i))
+		}
 	}
 	return s.fonts
 }
@@ -585,6 +655,24 @@ func (c *Ctx) SetEmojiFont(data []byte) {
 	c.emojiFonts = nil
 	c.emojiData = data
 	c.purgeEmojiCache() // cached rasters used the OLD emoji face — rebuild on next draw
+}
+
+// SetFallbackFonts installs the broad-Unicode TEXT fallback faces (read off-thread by
+// the App after a non-ASCII message; nil clears). The byte slices must stay
+// referenced for the faces' lifetime (RWFromMem aliases them). Bumps fontChainGen so
+// every per-size set rebuilds with the new faces appended after the embedded font.
+// Idempotent on identical bytes — guarded by the App's one-shot load gate. Render
+// thread.
+func (c *Ctx) SetFallbackFonts(data [][]byte) {
+	if len(data) == 0 && c.fallbackData == nil {
+		return
+	}
+	c.fallbackData = data
+	c.fallbackCover = c.fallbackCover[:0]
+	for _, d := range data {
+		c.fallbackCover = append(c.fallbackCover, parseCover(d)) // cmap face for the PICK
+	}
+	c.fontChainGen++ // force every fontSet to rebuild with the fallbacks included
 }
 
 // EmojiFont returns the color-emoji fallback face at pct percent (the chat/log
@@ -615,37 +703,45 @@ func (c *Ctx) EmojiFont(pct int) *ttf.Font {
 	return f
 }
 
-// pickFont returns the first font covering every rune of text — mixed
-// Latin+CJK lines resolve to the first CJK-capable entry (CJK fonts
-// cover Latin). The last entry is the unconditional fallback.
-func pickFont(fonts []*ttf.Font, text string) *ttf.Font {
+// pickFont returns the rendering font for the first set entry whose sfnt cover
+// provides every rune of text — a Cyrillic line stays on the embedded font, a
+// Tifinagh / Indic line resolves to the covering fallback face. cover is aligned
+// with fonts; the last entry is the unconditional fallback (used when nothing
+// covers, so the result is at worst the same .notdef box as before).
+func pickFont(fonts []*ttf.Font, cover []*sfnt.Font, buf *sfnt.Buffer, text string) *ttf.Font {
 	if len(fonts) == 1 {
 		return fonts[0]
 	}
-	for _, f := range fonts[:len(fonts)-1] {
-		if fontCovers(f, text) {
+	for i, f := range fonts[:len(fonts)-1] {
+		if i < len(cover) && coverHasAll(cover[i], buf, text) {
 			return f
 		}
 	}
 	return fonts[len(fonts)-1]
 }
 
-// fontCovers reports whether f provides a glyph for every rune.
-// GlyphMetrics errors exactly on missing glyphs; SDL_ttf's metrics are
-// BMP-only, so supplementary-plane runes count as uncovered.
-func fontCovers(f *ttf.Font, text string) bool {
+// coverHasAll reports whether the sfnt face provides a glyph (cmap index != 0,
+// i.e. not .notdef) for every rune of text. A nil face (parse failure) covers
+// nothing. The reused buffer keeps the per-rune lookup allocation-free.
+func coverHasAll(f *sfnt.Font, buf *sfnt.Buffer, text string) bool {
 	if f == nil {
 		return false
 	}
 	for _, r := range text {
-		if r > 0xFFFF {
-			return false
-		}
-		if _, err := f.GlyphMetrics(r); err != nil {
+		if idx, err := f.GlyphIndex(buf, r); err != nil || idx == 0 {
 			return false
 		}
 	}
 	return true
+}
+
+// coverAt returns the cover face at i, or nil when out of range — keeps the
+// fonts/cover slices aligned even if a face failed to build or parse.
+func coverAt(s []*sfnt.Font, i int) *sfnt.Font {
+	if i < len(s) {
+		return s[i]
+	}
+	return nil
 }
 
 // BeginFrame opens a frame: it clears the input snapshot, so it must run

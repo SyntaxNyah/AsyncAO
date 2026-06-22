@@ -16,4 +16,7 @@ require github.com/coder/websocket v1.8.12
 
 require github.com/veandco/go-sdl2 v0.4.40
 
-require github.com/klauspost/compress v1.18.6 // indirect
+require (
+	github.com/klauspost/compress v1.18.6 // indirect
+	golang.org/x/text v0.16.0 // indirect
+)

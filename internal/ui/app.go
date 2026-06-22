@@ -292,6 +292,14 @@ type App struct {
 	// types emoji never pays the 11.9 MB read.
 	emojiFontRes     chan []byte
 	emojiLoadStarted bool
+	// Broad-Unicode TEXT fallback: system fonts (Segoe UI, Ebrima, Nirmala, Segoe UI
+	// Symbol) covering scripts the embedded font lacks (Cyrillic→Tifinagh→Indic→
+	// symbols). Read off-thread the FIRST time a message has a non-ASCII rune
+	// (fallbackLoadStarted gates the one read), landing on fallbackFontRes →
+	// ctx.SetFallbackFonts. Lazy so a pure-ASCII session never loads them and the
+	// single-font fast path (pickSet len==1) is untouched — zero perf change.
+	fallbackFontRes     chan [][]byte
+	fallbackLoadStarted bool
 
 	// --- case notebook loads (per-server; payload routes by key) ---
 	notebookRes chan notebookLoad
@@ -1373,6 +1381,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		manifestRes:     make(chan manifestFetch, 1),
 		fontRes:         make(chan fontLoad, 1),
 		emojiFontRes:    make(chan []byte, 1),
+		fallbackFontRes: make(chan [][]byte, 1),
 		notebookRes:     make(chan notebookLoad, 1),
 		jukeRes:         make(chan *config.Jukebox, 1),
 		jukeIORes:       make(chan string, 4),
@@ -3148,6 +3157,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollManifest()
 	a.pollFontChain()
 	a.pollEmojiFont()
+	if a.ctx.TakeWantsFallback() { // a non-ASCII rune was drawn → kick the one broad-font read
+		a.ensureFallbackFontLoad()
+	}
+	a.pollFallbackFont()
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollCharBind()
