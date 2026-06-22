@@ -7,33 +7,50 @@ import (
 	"testing"
 )
 
-// TestAudioCaptureFirstSong pins the soundtrack pick: the FIRST real track and its
-// start delay (frame × frameMs), skipping a leading stop, and ok=false when no music
-// ever played (only stops / empty cues).
-func TestAudioCaptureFirstSong(t *testing.T) {
+// TestAudioCaptureSongSegments pins the multi-song windowing: each track plays from
+// its cue to the next cue (change OR stop) or the video end; a stop bounds the
+// previous window and adds none of its own; a single song is one untrimmed segment.
+func TestAudioCaptureSongSegments(t *testing.T) {
+	const frameMs, endFrame = 50, 100
+
+	// No music → no segments.
+	empty := &audioCapture{frameRef: func() int { return 0 }}
+	if segs := empty.songSegments(frameMs, endFrame); len(segs) != 0 {
+		t.Errorf("no music: got %d segments, want 0", len(segs))
+	}
+
+	// A single song from frame 10 → one untrimmed segment running to the end.
 	frame := 0
-	m := &audioCapture{frameRef: func() int { return frame }}
-
-	if _, _, ok := m.firstSong(50); ok {
-		t.Error("firstSong with no cues should be ok=false")
-	}
-
-	frame = 0
-	m.StopMusic() // a leading stop is skipped
+	one := &audioCapture{frameRef: func() int { return frame }}
 	frame = 10
-	m.PlayMusic("https://cdn/song.opus") // the primary bed
-	frame = 20
-	m.PlayMusic("https://cdn/second.opus") // a later change isn't slice-1's pick
-	url, delay, ok := m.firstSong(50)
-	if !ok || url != "https://cdn/song.opus" || delay != 10*50 {
-		t.Errorf("firstSong = (%q, %d, %v), want (song.opus, 500, true)", url, delay, ok)
+	one.PlayMusic("A")
+	if segs := one.songSegments(frameMs, endFrame); len(segs) != 1 || segs[0] != (songSegment{url: "A", startMs: 500, trimMs: 0}) {
+		t.Errorf("single song: %+v, want one {A 500 0}", segs)
 	}
 
-	only := &audioCapture{frameRef: func() int { return 0 }}
-	only.StopMusic()
-	only.PlayMusic("") // empty url = a stop, never a track
-	if _, _, ok := only.firstSong(50); ok {
-		t.Error("firstSong with only stops should be ok=false")
+	// A → (frame 40) B: A trimmed to B's start (30 frames = 1500 ms), B untrimmed.
+	frame = 0
+	chg := &audioCapture{frameRef: func() int { return frame }}
+	frame = 10
+	chg.PlayMusic("A")
+	frame = 40
+	chg.PlayMusic("B")
+	want := []songSegment{{url: "A", startMs: 500, trimMs: 1500}, {url: "B", startMs: 2000, trimMs: 0}}
+	if segs := chg.songSegments(frameMs, endFrame); len(segs) != 2 || segs[0] != want[0] || segs[1] != want[1] {
+		t.Errorf("song change: %+v, want %+v", chg.songSegments(frameMs, endFrame), want)
+	}
+
+	// (leading stop, ignored) A → (frame 30) stop: A trimmed to the stop; stop adds none.
+	frame = 0
+	stop := &audioCapture{frameRef: func() int { return frame }}
+	frame = 5
+	stop.StopMusic()
+	frame = 10
+	stop.PlayMusic("A")
+	frame = 30
+	stop.StopMusic()
+	if segs := stop.songSegments(frameMs, endFrame); len(segs) != 1 || segs[0] != (songSegment{url: "A", startMs: 500, trimMs: 1000}) {
+		t.Errorf("song then stop: %+v, want one {A 500 1000}", stop.songSegments(frameMs, endFrame))
 	}
 }
 

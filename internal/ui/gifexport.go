@@ -762,15 +762,14 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 	// complete and a.gif is about to be cleared. frameMs converts a cue's start frame
 	// to ms. The mux itself (download + ResolveRaw + 2nd ffmpeg) runs off-thread below
 	// and degrades to the silent video on ANY failure (#99).
-	var musicURL string
-	var musicDelay int
+	var songs []songSegment
 	var sfx []sfxPlacement
 	if j.audioCap != nil {
 		frameMs := int(j.frameDt / time.Millisecond)
 		if frameMs < 1 {
 			frameMs = 1
 		}
-		musicURL, musicDelay, _ = j.audioCap.firstSong(frameMs)
+		songs = j.audioCap.songSegments(frameMs, j.captured) // windows to the final frame count
 		sfx = j.audioCap.sfxPlacements(frameMs)
 	}
 	format := j.vidFormat
@@ -783,8 +782,8 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 			a.gifResultCh <- "Video export failed: " + err.Error()
 			return
 		}
-		if musicURL != "" || len(sfx) > 0 {
-			if finalPath, ok := muxSceneAudio(mgr, path, musicURL, musicDelay, sfx, format); ok {
+		if len(songs) > 0 || len(sfx) > 0 {
+			if finalPath, ok := muxSceneAudio(mgr, path, songs, sfx, format); ok {
 				a.gifResultCh <- videoSavedMsg(finalPath) + "  ♪ with sound"
 				return
 			}

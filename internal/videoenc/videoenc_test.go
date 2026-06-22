@@ -313,11 +313,14 @@ func encodeTestVideo(t *testing.T, dir string, frames int) string {
 // TestMuxMixArgsShape pins the multi-input filter graph: one adelay per clip, the
 // summed full-volume amix, the POST-mix apad (not per-input), and the mapped output.
 func TestMuxMixArgsShape(t *testing.T) {
-	clips := []AudioClip{{Path: "song.opus", DelayMs: 0}, {Path: "obj.wav", DelayMs: 1500}}
+	// A trimmed music segment (ends at 30 s when the next song starts) + an untrimmed
+	// one-shot SFX.
+	clips := []AudioClip{{Path: "song.opus", DelayMs: 0, TrimMs: 30000}, {Path: "obj.wav", DelayMs: 1500}}
 	got := strings.Join(muxMixArgs("v.mp4", clips, "out.mp4", FormatMP4), " ")
 	for _, want := range []string{
 		"-i v.mp4", "-i song.opus", "-i obj.wav",
-		"[1:a]adelay=delays=0:all=1[a0]", "[2:a]adelay=delays=1500:all=1[a1]",
+		"[1:a]atrim=end=30.000,adelay=delays=0:all=1[a0]", // trimmed segment
+		"[2:a]adelay=delays=1500:all=1[a1]",               // untrimmed SFX (no atrim)
 		"[a0][a1]amix=inputs=2:normalize=0,apad[aout]",
 		"-map 0:v:0", "-c:v copy", "-map [aout]", "-c:a aac", "-shortest",
 	} {
@@ -367,7 +370,9 @@ func TestMuxAudioMixReal(t *testing.T) {
 	minimalWAV(t, music)
 	minimalWAV(t, sfx)
 	out := filepath.Join(dir, "mix.mp4")
-	clips := []AudioClip{{Path: music, DelayMs: 0}, {Path: sfx, DelayMs: 300}}
+	// Trim the music to 0.3 s (as if a second song started there) + a one-shot SFX.
+	// apad must still fill the mix to the video's ~1.0 s.
+	clips := []AudioClip{{Path: music, DelayMs: 0, TrimMs: 300}, {Path: sfx, DelayMs: 300}}
 	if err := MuxAudioMix(silent, clips, out, FormatMP4); err != nil {
 		t.Fatalf("MuxAudioMix: %v", err)
 	}

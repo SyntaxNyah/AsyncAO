@@ -58,15 +58,39 @@ func (m *audioCapture) PlaySFX(base string, _ time.Duration) {
 func (m *audioCapture) PlayBlip(string)  {}
 func (m *audioCapture) SetBlipScale(int) {}
 
-// firstSong returns the first real track + its start delay (frame × frameMs), or
-// ok=false if no music played. Slice-1 bed; multi-song windows are a later slice.
-func (m *audioCapture) firstSong(frameMs int) (url string, delayMs int, ok bool) {
-	for _, c := range m.music {
-		if c.url != "" {
-			return c.url, c.frame * frameMs, true
+// songSegment is one music window resolved to video time: the track URL, when it
+// starts (ms), and an optional trim (ms; 0 = play to the end, apad fills the tail).
+type songSegment struct {
+	url     string
+	startMs int
+	trimMs  int
+}
+
+// songSegments turns the captured music cues into ordered, non-overlapping windows:
+// each track plays from its cue until the NEXT cue (a song change OR a stop), or — for
+// the last track — to the video's end (endFrame). A stop cue bounds the previous
+// window and contributes none of its own. frameMs converts frames to ms. A single
+// song collapses to one untrimmed segment (the slice-1 bed); changes become several.
+func (m *audioCapture) songSegments(frameMs, endFrame int) []songSegment {
+	var segs []songSegment
+	for i, c := range m.music {
+		if c.url == "" {
+			continue // a stop only bounds the previous window (the end calc below)
 		}
+		end := endFrame
+		if i+1 < len(m.music) {
+			end = m.music[i+1].frame
+		}
+		if end <= c.frame {
+			continue // zero/negative window (back-to-back cues) — skip
+		}
+		trim := (end - c.frame) * frameMs
+		if end == endFrame {
+			trim = 0 // runs to the video end → no trim; apad fills any tail
+		}
+		segs = append(segs, songSegment{url: c.url, startMs: c.frame * frameMs, trimMs: trim})
 	}
-	return "", 0, false
+	return segs
 }
 
 // sfxPlacement is one captured SFX resolved to its time in the video.
@@ -146,15 +170,17 @@ func writeTempBytes(data []byte) (string, error) {
 	return f.Name(), nil
 }
 
-// muxSceneAudio (off-thread) assembles the captured music + SFX into timed clips and
-// muxes them into the finished silent video at silentPath, writing the result beside
-// it as "<name>-audio.<ext>" and removing the silent original on success. Returns the
-// final path + true, or ("", false) to keep the silent video. Degrades in steps: full
-// mix (music + SFX) → music-only bed → silent, so the most important audio survives.
-// mgr.ResolveRaw resolves each SFX base to its bytes (the same candidate logic the
-// render path uses; off-thread-safe — the archive exporter resolves the same way).
-// Touches no App state, so it's race-free on the finish goroutine.
-func muxSceneAudio(mgr *assets.Manager, silentPath, musicURL string, musicDelayMs int, sfx []sfxPlacement, format videoenc.Format) (string, bool) {
+// muxSceneAudio (off-thread) assembles the captured music windows + SFX into timed
+// clips and muxes them into the finished silent video at silentPath, writing the
+// result beside it as "<name>-audio.<ext>" and removing the silent original on
+// success. Returns the final path + true, or ("", false) to keep the silent video.
+// Degrades in steps: full mix (all songs + SFX) → first-song bed → silent, so the
+// most important audio survives. Music tracks download once per UNIQUE url (a song
+// reused in two windows shares the file); SFX bases resolve to bytes via
+// mgr.ResolveRaw (the render path's candidate logic; off-thread-safe — the archive
+// exporter resolves the same way). Touches no App state, so it's race-free on the
+// finish goroutine.
+func muxSceneAudio(mgr *assets.Manager, silentPath string, songs []songSegment, sfx []sfxPlacement, format videoenc.Format) (string, bool) {
 	var temps []string
 	defer func() {
 		for _, t := range temps {
@@ -162,16 +188,30 @@ func muxSceneAudio(mgr *assets.Manager, silentPath, musicURL string, musicDelayM
 		}
 	}()
 
+	// Music segments first (so clips[0] is the first song for the degrade path): one
+	// trimmed clip per window, each unique track downloaded once.
 	var clips []videoenc.AudioClip
-	if musicURL != "" {
-		if p, err := downloadTempAudio(musicURL); err == nil {
-			temps = append(temps, p)
-			clips = append(clips, videoenc.AudioClip{Path: p, DelayMs: musicDelayMs}) // the bed is always clips[0]
+	dl := map[string]string{} // url → temp path ("" caches a failed download)
+	for _, s := range songs {
+		if len(clips) >= maxAudioClips {
+			break
+		}
+		path, seen := dl[s.url]
+		if !seen {
+			if p, err := downloadTempAudio(s.url); err == nil {
+				path = p
+				temps = append(temps, p)
+			}
+			dl[s.url] = path
+		}
+		if path != "" {
+			clips = append(clips, videoenc.AudioClip{Path: path, DelayMs: s.startMs, TrimMs: s.trimMs})
 		}
 	}
-	hasMusic := len(clips) == 1
+	musicClips := len(clips)
 
-	resolved := map[string]string{} // base → temp path ("" caches a miss; dedupe resolution)
+	// SFX/shouts: one-shot at their time; resolve each unique base once.
+	resolved := map[string]string{}
 	for _, s := range sfx {
 		if len(clips) >= maxAudioClips {
 			break
@@ -196,25 +236,23 @@ func muxSceneAudio(mgr *assets.Manager, silentPath, musicURL string, musicDelayM
 
 	ext := videoenc.FormatExt(format)
 	finalPath := strings.TrimSuffix(silentPath, "."+ext) + "-audio." + ext
-	musicCount := 0
-	if hasMusic {
-		musicCount = 1
-	}
 
-	// SFX present → the multi-input mix (music bed + each SFX). On failure, degrade to
-	// the music bed if we have one, else keep the silent video.
-	if len(clips) > musicCount {
+	// One untrimmed song and nothing else → the simple single-input bed. Anything
+	// else (multiple songs, a trimmed song, or SFX) → the multi-input mix; on failure
+	// degrade to the first song as a plain bed, else silent.
+	simpleBed := musicClips == 1 && len(clips) == 1 && clips[0].TrimMs == 0
+	if !simpleBed {
 		if err := videoenc.MuxAudioMix(silentPath, clips, finalPath, format); err == nil {
 			os.Remove(silentPath)
 			return finalPath, true
 		}
 		os.Remove(finalPath)
-		if !hasMusic {
+		if musicClips == 0 {
 			return "", false
 		}
 	}
-	// Music-only bed (no SFX, or the mix failed back to just the music).
-	if err := videoenc.MuxAudioBed(silentPath, clips[0].Path, finalPath, clips[0].DelayMs, format); err != nil {
+	bed := clips[0] // the first music segment
+	if err := videoenc.MuxAudioBed(silentPath, bed.Path, finalPath, bed.DelayMs, format); err != nil {
 		os.Remove(finalPath)
 		return "", false
 	}

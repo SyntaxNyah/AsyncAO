@@ -208,10 +208,14 @@ func MuxAudioBed(videoPath, audioPath, outPath string, delayMs int, format Forma
 }
 
 // AudioClip is one timed audio file for the multi-input mux: the local file ffmpeg
-// reads and the ms it starts at in the scene.
+// reads, the ms it starts at in the scene, and an optional trim. TrimMs > 0 cuts the
+// clip to that length — a music segment that must end when the NEXT song starts;
+// TrimMs == 0 plays the clip in full (a one-shot SFX, or the final song whose tail
+// the post-mix apad fills to the video's end).
 type AudioClip struct {
 	Path    string
 	DelayMs int
+	TrimMs  int
 }
 
 // MuxAudioMix remuxes the silent video with SEVERAL timed audio clips summed into one
@@ -236,7 +240,13 @@ func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Form
 	var fc, labels strings.Builder
 	for i, c := range clips {
 		args = append(args, "-i", c.Path)
-		fmt.Fprintf(&fc, "[%d:a]adelay=delays=%d:all=1[a%d];", i+1, c.DelayMs, i)
+		// A music segment is trimmed to its window (it ends when the next song starts);
+		// SFX and the final song play in full. adelay then shifts the clip to its time.
+		if c.TrimMs > 0 {
+			fmt.Fprintf(&fc, "[%d:a]atrim=end=%s,adelay=delays=%d:all=1[a%d];", i+1, secs(c.TrimMs), c.DelayMs, i)
+		} else {
+			fmt.Fprintf(&fc, "[%d:a]adelay=delays=%d:all=1[a%d];", i+1, c.DelayMs, i)
+		}
 		fmt.Fprintf(&labels, "[a%d]", i)
 	}
 	// Sum the clips at full volume, THEN pad to the video's length. apad MUST come
@@ -255,6 +265,9 @@ func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Form
 		outPath,
 	)
 }
+
+// secs renders milliseconds as an ffmpeg seconds timestamp (S.mmm) for atrim.
+func secs(ms int) string { return fmt.Sprintf("%d.%03d", ms/1000, ms%1000) }
 
 // runMux runs an ffmpeg mux command and surfaces the last stderr line on failure.
 func runMux(args []string) error {
