@@ -376,7 +376,15 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 			return
 		}
 	}
-	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(scene.Origin), a.d.Manager, nil, a.d.Audio)
+	// A comic is a silent still page, and its fast-forward collapses each line with a
+	// huge dt — which would otherwise blast the WHOLE line's blips in one Update and
+	// rip through every music event. Feed the comic room a no-op audio sink; the
+	// animated kinds keep real audio (paced by their small per-frame dt).
+	var audio courtroom.AudioSink = a.d.Audio
+	if kind == exportComic {
+		audio = courtroom.NopAudio{}
+	}
+	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(scene.Origin), a.d.Manager, nil, audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
 	room.ReduceMotion = false // export the authored effects (screenshake/flash), not the viewer's accessibility pref
