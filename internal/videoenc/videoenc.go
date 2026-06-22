@@ -204,11 +204,65 @@ func ffmpegArgs(outPath string, w, h, fps, quality int, format Format) []string 
 // audio decoding (spec §8); ffmpeg is an external process. MUST run off the render
 // thread (it blocks until ffmpeg exits). Guard with Available() first.
 func MuxAudioBed(videoPath, audioPath, outPath string, delayMs int, format Format) error {
+	return runMux(muxArgs(videoPath, audioPath, outPath, delayMs, format))
+}
+
+// AudioClip is one timed audio file for the multi-input mux: the local file ffmpeg
+// reads and the ms it starts at in the scene.
+type AudioClip struct {
+	Path    string
+	DelayMs int
+}
+
+// MuxAudioMix remuxes the silent video with SEVERAL timed audio clips summed into one
+// track — the music bed plus each one-shot SFX/shout at its moment. Like MuxAudioBed
+// it copies the video stream (no re-encode); each clip is delayed to its start and
+// the clips are amix'd at full volume (normalize=0 — normalize would duck the music
+// on every SFX, which pumps; occasional clipping is the accepted v1 trade). Off the
+// render thread; guard with Available(). Used only when there ARE SFX cues; a
+// music-only export takes the simpler MuxAudioBed.
+func MuxAudioMix(videoPath string, clips []AudioClip, outPath string, format Format) error {
+	if len(clips) == 0 {
+		return fmt.Errorf("videoenc: no audio clips")
+	}
+	return runMux(muxMixArgs(videoPath, clips, outPath, format))
+}
+
+// muxMixArgs builds the multi-input mux command. Each clip is input i+1 (input 0 is
+// the video), delayed to its start; the delayed streams are summed and THEN padded.
+// Pure so the filter graph is unit-tested.
+func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Format) []string {
+	args := []string{"-y", "-loglevel", "error", "-i", videoPath}
+	var fc, labels strings.Builder
+	for i, c := range clips {
+		args = append(args, "-i", c.Path)
+		fmt.Fprintf(&fc, "[%d:a]adelay=delays=%d:all=1[a%d];", i+1, c.DelayMs, i)
+		fmt.Fprintf(&labels, "[a%d]", i)
+	}
+	// Sum the clips at full volume, THEN pad to the video's length. apad MUST come
+	// after amix, never per-input: a SFX-only mix (no infinite music bed) would
+	// otherwise end at the last SFX and -shortest would truncate the VIDEO.
+	fmt.Fprintf(&fc, "%samix=inputs=%d:normalize=0,apad[aout]", labels.String(), len(clips))
+	acodec := "aac"
+	if format == FormatWebM {
+		acodec = "libopus"
+	}
+	return append(args,
+		"-filter_complex", fc.String(),
+		"-map", "0:v:0", "-c:v", "copy",
+		"-map", "[aout]", "-c:a", acodec,
+		"-shortest",
+		outPath,
+	)
+}
+
+// runMux runs an ffmpeg mux command and surfaces the last stderr line on failure.
+func runMux(args []string) error {
 	bin := FFmpegPath()
 	if bin == "" {
 		return fmt.Errorf("videoenc: ffmpeg not found on PATH")
 	}
-	cmd := exec.Command(bin, muxArgs(videoPath, audioPath, outPath, delayMs, format)...)
+	cmd := exec.Command(bin, args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

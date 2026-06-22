@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// TestMusicCaptureFirstSong pins the soundtrack pick: the FIRST real track and its
+// TestAudioCaptureFirstSong pins the soundtrack pick: the FIRST real track and its
 // start delay (frame × frameMs), skipping a leading stop, and ok=false when no music
 // ever played (only stops / empty cues).
-func TestMusicCaptureFirstSong(t *testing.T) {
+func TestAudioCaptureFirstSong(t *testing.T) {
 	frame := 0
-	m := &musicCapture{frameRef: func() int { return frame }}
+	m := &audioCapture{frameRef: func() int { return frame }}
 
 	if _, _, ok := m.firstSong(50); ok {
 		t.Error("firstSong with no cues should be ok=false")
@@ -29,11 +29,35 @@ func TestMusicCaptureFirstSong(t *testing.T) {
 		t.Errorf("firstSong = (%q, %d, %v), want (song.opus, 500, true)", url, delay, ok)
 	}
 
-	only := &musicCapture{frameRef: func() int { return 0 }}
+	only := &audioCapture{frameRef: func() int { return 0 }}
 	only.StopMusic()
 	only.PlayMusic("") // empty url = a stop, never a track
 	if _, _, ok := only.firstSong(50); ok {
 		t.Error("firstSong with only stops should be ok=false")
+	}
+}
+
+// TestAudioCaptureSFXPlacements pins SFX/shout capture: every PlaySFX + PlayShout
+// becomes a placement at its frame × frameMs, in fire order.
+func TestAudioCaptureSFXPlacements(t *testing.T) {
+	frame := 0
+	m := &audioCapture{frameRef: func() int { return frame }}
+	frame = 4
+	m.PlaySFX("base/sounds/general/sfx-stab", 0)
+	frame = 9
+	m.PlayShout("base/sounds/general/objection")
+	got := m.sfxPlacements(50)
+	want := []sfxPlacement{
+		{base: "base/sounds/general/sfx-stab", delayMs: 200},
+		{base: "base/sounds/general/objection", delayMs: 450},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("sfxPlacements = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("placement %d = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }
 

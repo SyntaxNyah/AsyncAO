@@ -264,7 +264,7 @@ type gifExportJob struct {
 	vid       *videoenc.Encoder
 	vidPath   string
 	vidFormat videoenc.Format // Video only — codec choice for the post-capture audio mux
-	musicCap  *musicCapture   // Video only — records the scene's music for the audio mux (#99)
+	audioCap  *audioCapture   // Video only — records the scene's music + SFX for the audio mux (#99)
 
 	// Per-export output settings (from config ExportOptions, resolved once).
 	w, h      int32         // capture/output size (4:3)
@@ -382,21 +382,21 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	// Audio sink per kind: GIF/WebP keep real audio (paced by their small per-frame
 	// dt). A comic is a silent still page whose fast-forward would blast the whole
 	// line's blips at once + rip through music, so it gets a no-op sink. A video is
-	// silent at capture (export speed garbles live audio), but a musicCapture sink
-	// records the scene's song so finishVideoExport can mux it in afterward (#99).
+	// silent at capture (export speed garbles live audio), but an audioCapture sink
+	// records the scene's music + SFX so finishVideoExport can mux them in (#99).
 	var audio courtroom.AudioSink = a.d.Audio
-	var musicCap *musicCapture
+	var audioCap *audioCapture
 	switch kind {
 	case exportComic:
 		audio = courtroom.NopAudio{}
 	case exportVideo:
-		musicCap = &musicCapture{frameRef: func() int {
+		audioCap = &audioCapture{frameRef: func() int {
 			if a.gif != nil {
 				return a.gif.captured
 			}
 			return 0
 		}}
-		audio = musicCap
+		audio = audioCap
 	}
 	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(scene.Origin), a.d.Manager, nil, audio)
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
@@ -446,7 +446,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		vid:          vid,
 		vidPath:      vidPath,
 		vidFormat:    vidFormat,
-		musicCap:     musicCap,
+		audioCap:     audioCap,
 		w:            w,
 		h:            h,
 		frameDt:      frameDt,
@@ -758,20 +758,23 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 		a.warnAt = time.Now()
 		return
 	}
-	// Resolve the music bed NOW, on the render thread — the capture sink's cues are
-	// complete and a.gif is about to be cleared. frameMs converts the song's start
-	// frame to ms. The mux itself (download + 2nd ffmpeg) runs off-thread below; on
-	// ANY failure it degrades to the silent video that was just written (#99).
-	var songURL string
-	var delayMs int
-	if j.musicCap != nil {
+	// Resolve the soundtrack NOW, on the render thread — the capture sink's cues are
+	// complete and a.gif is about to be cleared. frameMs converts a cue's start frame
+	// to ms. The mux itself (download + ResolveRaw + 2nd ffmpeg) runs off-thread below
+	// and degrades to the silent video on ANY failure (#99).
+	var musicURL string
+	var musicDelay int
+	var sfx []sfxPlacement
+	if j.audioCap != nil {
 		frameMs := int(j.frameDt / time.Millisecond)
 		if frameMs < 1 {
 			frameMs = 1
 		}
-		songURL, delayMs, _ = j.musicCap.firstSong(frameMs)
+		musicURL, musicDelay, _ = j.audioCap.firstSong(frameMs)
+		sfx = j.audioCap.sfxPlacements(frameMs)
 	}
 	format := j.vidFormat
+	mgr := a.d.Manager
 	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
 	a.warnAt = time.Now()
 	go func() {
@@ -780,12 +783,12 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 			a.gifResultCh <- "Video export failed: " + err.Error()
 			return
 		}
-		if songURL != "" {
-			if finalPath, ok := muxMusicBed(path, songURL, delayMs, format); ok {
-				a.gifResultCh <- videoSavedMsg(finalPath) + "  ♪ music added"
+		if musicURL != "" || len(sfx) > 0 {
+			if finalPath, ok := muxSceneAudio(mgr, path, musicURL, musicDelay, sfx, format); ok {
+				a.gifResultCh <- videoSavedMsg(finalPath) + "  ♪ with sound"
 				return
 			}
-			a.gifResultCh <- videoSavedMsg(path) + "  (couldn't add the music — saved silent)"
+			a.gifResultCh <- videoSavedMsg(path) + "  (couldn't add the sound — saved silent)"
 			return
 		}
 		a.gifResultCh <- videoSavedMsg(path)

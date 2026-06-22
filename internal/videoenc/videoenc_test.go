@@ -285,6 +285,98 @@ func parseDurationSec(t *testing.T, info string) float64 {
 	return float64(hh*3600+mm*60) + ss
 }
 
+// encodeTestVideo writes a real ~frames/10 s silent MP4 (64×48) and returns its path.
+func encodeTestVideo(t *testing.T, dir string, frames int) string {
+	t.Helper()
+	const w, h = 64, 48
+	path := filepath.Join(dir, "silent.mp4")
+	enc, err := New(path, w, h, 10, 70, FormatMP4)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	for i := 0; i < frames; i++ {
+		img := image.NewRGBA(image.Rect(0, 0, w, h))
+		for p := 0; p+3 < len(img.Pix); p += 4 {
+			img.Pix[p], img.Pix[p+1], img.Pix[p+2], img.Pix[p+3] = 100, byte(i*15), 80, 255
+		}
+		if err := enc.AddFrame(img); err != nil {
+			enc.Close()
+			t.Fatalf("AddFrame: %v", err)
+		}
+	}
+	if err := enc.Finish(); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	return path
+}
+
+// TestMuxMixArgsShape pins the multi-input filter graph: one adelay per clip, the
+// summed full-volume amix, the POST-mix apad (not per-input), and the mapped output.
+func TestMuxMixArgsShape(t *testing.T) {
+	clips := []AudioClip{{Path: "song.opus", DelayMs: 0}, {Path: "obj.wav", DelayMs: 1500}}
+	got := strings.Join(muxMixArgs("v.mp4", clips, "out.mp4", FormatMP4), " ")
+	for _, want := range []string{
+		"-i v.mp4", "-i song.opus", "-i obj.wav",
+		"[1:a]adelay=delays=0:all=1[a0]", "[2:a]adelay=delays=1500:all=1[a1]",
+		"[a0][a1]amix=inputs=2:normalize=0,apad[aout]",
+		"-map 0:v:0", "-c:v copy", "-map [aout]", "-c:a aac", "-shortest",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("mix args missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "all=1,apad[a0]") { // apad must NOT be per-input
+		t.Errorf("apad must follow amix, never each input: %q", got)
+	}
+}
+
+// TestMuxAudioMixSFXOnlyKeepsLength is the load-bearing guard: a SFX-only mix (no
+// music bed) must still produce a FULL-length video. With apad per-input this would
+// truncate the video to the 0.5 s SFX; post-mix apad keeps it the video's ~1.0 s.
+func TestMuxAudioMixSFXOnlyKeepsLength(t *testing.T) {
+	if !Available() {
+		t.Skip("ffmpeg not on PATH")
+	}
+	dir := t.TempDir()
+	silent := encodeTestVideo(t, dir, 10) // ~1.0 s
+	sfx := filepath.Join(dir, "sfx.wav")
+	minimalWAV(t, sfx) // 0.5 s
+	out := filepath.Join(dir, "sfxonly.mp4")
+	if err := MuxAudioMix(silent, []AudioClip{{Path: sfx, DelayMs: 0}}, out, FormatMP4); err != nil {
+		t.Fatalf("MuxAudioMix: %v", err)
+	}
+	info := ffmpegProbe(t, out)
+	if !strings.Contains(info, "Audio:") {
+		t.Errorf("sfx-only mix has no audio stream:\n%s", info)
+	}
+	if d := parseDurationSec(t, info); d < 0.8 {
+		t.Errorf("sfx-only mix = %.2fs, want ~1.0s — post-mix apad failed (video truncated to the 0.5s SFX)", d)
+	}
+}
+
+// TestMuxAudioMixReal: a music bed + a one-shot SFX summed → audio present, full
+// length.
+func TestMuxAudioMixReal(t *testing.T) {
+	if !Available() {
+		t.Skip("ffmpeg not on PATH")
+	}
+	dir := t.TempDir()
+	silent := encodeTestVideo(t, dir, 10)
+	music := filepath.Join(dir, "music.wav")
+	sfx := filepath.Join(dir, "sfx.wav")
+	minimalWAV(t, music)
+	minimalWAV(t, sfx)
+	out := filepath.Join(dir, "mix.mp4")
+	clips := []AudioClip{{Path: music, DelayMs: 0}, {Path: sfx, DelayMs: 300}}
+	if err := MuxAudioMix(silent, clips, out, FormatMP4); err != nil {
+		t.Fatalf("MuxAudioMix: %v", err)
+	}
+	info := ffmpegProbe(t, out)
+	if !strings.Contains(info, "Audio:") || parseDurationSec(t, info) < 0.8 {
+		t.Errorf("mix output wrong (want audio + ~1.0s):\n%s", info)
+	}
+}
+
 // TestSizeMismatchRejected confirms a wrong-sized frame is rejected, not piped to
 // ffmpeg as corrupt rawvideo.
 func TestSizeMismatchRejected(t *testing.T) {
