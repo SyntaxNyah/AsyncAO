@@ -19,12 +19,16 @@ type WireProfile struct {
 
 const (
 	// Wire field caps in BYTES (not runes) — the cap bounds the zero-width run's length
-	// on the wire. Kept tight on purpose: other clients typewriter the invisible run and
+	// on the wire. Kept DELIBERATELY tight: other clients typewriter the invisible run and
 	// blip on each character, and the payload also eats into the server's IC
-	// message-length limit. (The local profile fields can be longer; only this subset
-	// transmits, clamped.)
-	wireProfilePronounsMax = 24
-	wireProfileTagMax      = 48
+	// message-length limit (a tsuserver default is ~256 chars). The codec packs 3 bits
+	// per invisible rune, so the worst case here (16+24 fields + ~4 overhead = 44 bytes)
+	// is ~117 invisible runes on ONE message; send-on-change means it rides at most a
+	// player's first post-join message, not every line. The local profile fields can be
+	// longer — only this subset transmits, clamped. (Tightening these shrinks the blip
+	// and the length cost; loosening them grows both.)
+	wireProfilePronounsMax = 16
+	wireProfileTagMax      = 24
 
 	// profileFrameMagic is the first payload byte of a profile frame, deliberately
 	// distinct from spriteStyleVersion (1) so the shared zero-width frame scanner tells
