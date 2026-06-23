@@ -644,6 +644,7 @@ type AssetPreferences struct {
 	PostScanlines          bool                         `json:"postScanlines"`
 	PostGrain              bool                         `json:"postGrain"`
 	AnimateEntrances       bool                         `json:"animateEntrances"`
+	DepthOfField           bool                         `json:"depthOfField"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -858,6 +859,7 @@ type prefsJSON struct {
 	PostScanlines          bool             `json:"postScanlines"`          // default OFF
 	PostGrain              bool             `json:"postGrain"`              // default OFF
 	AnimateEntrances       bool             `json:"animateEntrances"`       // default OFF
+	DepthOfField           bool             `json:"depthOfField"`           // default OFF
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1367,6 +1369,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.PostScanlines = onDisk.PostScanlines
 	p.PostGrain = onDisk.PostGrain
 	p.AnimateEntrances = onDisk.AnimateEntrances
+	p.DepthOfField = onDisk.DepthOfField
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3274,6 +3277,17 @@ func (p *AssetPreferences) AnimateEntrancesOn() bool {
 
 // SetAnimateEntrances toggles the entrance slide-in.
 func (p *AssetPreferences) SetAnimateEntrances(on bool) { p.setBoolPref(&p.AnimateEntrances, on) }
+
+// DepthOfFieldOn reports the #11 toggle (OFF by default): soft-focus + dim the background
+// behind the sharp speaker.
+func (p *AssetPreferences) DepthOfFieldOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DepthOfField
+}
+
+// SetDepthOfField toggles the background depth-of-field.
+func (p *AssetPreferences) SetDepthOfField(on bool) { p.setBoolPref(&p.DepthOfField, on) }
 
 // setBoolPref sets *field to on under the lock, marking dirty only on a real change.
 func (p *AssetPreferences) setBoolPref(field *bool, on bool) {

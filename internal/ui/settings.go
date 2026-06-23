@@ -643,6 +643,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetAnimateEntrances(next)
 	}
 	y += 26
+	dof := a.d.Prefs.DepthOfFieldOn()
+	if next := c.Checkbox(pad, y, "Depth of field (OFF by default): soft-focus + dim the background behind the speaker", dof); next != dof {
+		a.d.Prefs.SetDepthOfField(next)
+	}
+	y += 26
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()

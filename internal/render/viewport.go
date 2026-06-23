@@ -128,6 +128,7 @@ type SpriteFX struct {
 	Spin       bool // slow continuous rotation
 	ShoutPunch bool // #12: quick scale-pop of the whole stage when a shout appears
 	Entrance   bool // #9: slide the speaker in when a new character takes the stage
+	DoF        bool // #11: soft-focus + dim the background behind the sharp speaker
 
 	Speed     int // rainbow hue speed slider [1,100] (higher = faster)
 	Vividness int // rainbow saturation slider [0,100] (higher = more neon)
@@ -346,7 +347,11 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		vp.Y += int32(amp / 2 * math.Cos(phase*1.3))
 	}
 
-	v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp)
+	if v.fx.DoF {
+		v.drawBackgroundDoF(ren, scene.BackgroundBase, &v.bgAnim, vp) // #11 soft-focus + dim
+	} else {
+		v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp)
+	}
 
 	// Pair hue offset for the "desync" effect: half a period so the two
 	// characters show opposite hues. Zero unless rainbow + desync are both on,
@@ -424,6 +429,52 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 	frame := clampFrame(anim.frame, len(page.Frames))
 	v.fillRect = vp
 	_ = ren.Copy(page.Frames[frame], nil, &v.fillRect)
+}
+
+// Depth-of-field tuning (#11). A real Gaussian needs per-texture linear filtering that
+// go-sdl2 doesn't expose, so the background is soft-focused by smearing it: the sharp bg
+// plus eight low-alpha offset ghosts (the outlineDirs ring), then a dim overlay to push it
+// behind the sharp speaker. All blits + a scratch rect → 0 alloc.
+const (
+	dofBlurDivisor = 90  // ghost offset = vp.H / divisor (floored)
+	dofBlurMin     = 3   //
+	dofAlphaCard   = 120 // cardinal ghost strength
+	dofAlphaDiag   = 80  // diagonal ghost strength
+	dofDimAlpha    = 95  // darkening over the blurred bg
+)
+
+// drawBackgroundDoF draws the background soft-focused + dimmed (#11). The bg store page's
+// alpha is set per ghost and RESTORED to opaque after (the page is shared T1). 0-alloc.
+func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect) {
+	if base == "" {
+		return
+	}
+	page, ok := anim.resolve(v.store)
+	if !ok || len(page.Frames) == 0 {
+		return
+	}
+	tex := page.Frames[clampFrame(anim.frame, len(page.Frames))]
+	r := vp.H / dofBlurDivisor
+	if r < dofBlurMin {
+		r = dofBlurMin
+	}
+	v.fillRect = vp // the sharp base
+	_ = ren.Copy(tex, nil, &v.fillRect)
+	for i := range outlineDirs { // eight offset ghosts → a smear blur
+		a := uint8(dofAlphaCard)
+		if i >= 4 { // outlineDirs[4:] are the diagonals
+			a = dofAlphaDiag
+		}
+		_ = tex.SetAlphaMod(a)
+		v.fillRect = vp
+		v.fillRect.X += outlineDirs[i][0] * r
+		v.fillRect.Y += outlineDirs[i][1] * r
+		_ = ren.Copy(tex, nil, &v.fillRect)
+	}
+	_ = tex.SetAlphaMod(255)
+	v.fillRect = vp // dim overlay, pushing the bg behind the sharp speaker
+	_ = ren.SetDrawColor(0, 0, 0, dofDimAlpha)
+	_ = ren.FillRect(&v.fillRect)
 }
 
 // drawSprite draws a character layer: scaled to viewport height preserving

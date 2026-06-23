@@ -3752,6 +3752,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		Spin:       a.d.Prefs.SpriteSpinOn(),
 		ShoutPunch: a.d.Prefs.ShoutPunchOn(),
 		Entrance:   a.d.Prefs.AnimateEntrancesOn(),
+		DoF:        a.d.Prefs.DepthOfFieldOn(),
 		Speed:      a.d.Prefs.RainbowSpeed(),
 		Vividness:  a.d.Prefs.RainbowVividness(),
 	}
