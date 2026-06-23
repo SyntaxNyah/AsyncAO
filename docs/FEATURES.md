@@ -248,10 +248,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   texture once** and then **displaces + tints it per frame** with cheap scalar
   math (no re-rasterise), pinned **0-alloc** by `BenchmarkAnimatedTextDraw` /
   `TestAnimatedTextDrawZeroAllocs`. **Viewer control:** Reduce-motion pins rainbow
-  to a static hue and stops all displacement (the photosensitivity floor). *(Inline
-  `\cN` colour + emoji/CJK per-glyph fallback don't compose with effects yet —
-  effects use a single base colour, rainbow overriding per glyph — a planned
-  follow-up.)*
+  to a static hue and stops all displacement (the photosensitivity floor).
+  **Colour composes:** an inline `\cN` colour (or the wire `text_color`) rides
+  *with* the motion, so you can send a **red shaking** word (the rainbow effect
+  still overrides colour per glyph). *(Emoji/CJK per-glyph fallback and bold/italic
+  inside an animated message are still single-base — a planned follow-up.)*
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

@@ -4210,7 +4210,30 @@ const glyphCacheCap = 512
 func renderAnimated(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int) (*render.AnimatedText, *ttf.Font) {
 	col := chatBaseColor(a, sc, skinned, false)
 	font := a.ctx.ChatFontFor(pct, sc.MessageText)
-	return render.RasterizeAnimated(font, sc.MessageText, toRenderEffectSpans(sc.MessageEffects), col, wrapW), font
+	return render.RasterizeAnimated(font, sc.MessageText, toRenderEffectSpans(sc.MessageEffects), animColors(sc, col), wrapW), font
+}
+
+// animColors flattens the message's inline-colour runs into a per-rune colour slice so #M5
+// effects compose with \cN colours (a red shaking word; the rainbow EFFECT still overrides
+// per glyph at draw time). A message with no inline styling returns a single-element slice —
+// RasterizeAnimated clamps every rune to that base colour. Bold/italic don't compose with
+// effects yet (the animated path is single-font); only colour does.
+func animColors(sc *courtroom.Scene, base sdl.Color) []sdl.Color {
+	if !sceneNeedsStyled(sc.MessageStyles) {
+		return []sdl.Color{base}
+	}
+	spans := buildColorSpans(sc.MessageStyles, base)
+	n := 0
+	for _, s := range spans {
+		n += s.Len
+	}
+	out := make([]sdl.Color, 0, n)
+	for _, s := range spans {
+		for k := 0; k < s.Len; k++ {
+			out = append(out, s.Color)
+		}
+	}
+	return out
 }
 
 // toRenderEffectSpans maps the courtroom (SDL-free) spans to the render package's spans. The

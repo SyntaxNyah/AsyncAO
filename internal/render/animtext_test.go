@@ -48,7 +48,7 @@ func TestAnimatedTextDrawZeroAllocs(t *testing.T) {
 		{2 * third, n - 2*third, EffectRainbow},
 	}
 	white := sdl.Color{R: 255, G: 255, B: 255, A: 255}
-	at := RasterizeAnimated(font, text, spans, white, 1000)
+	at := RasterizeAnimated(font, text, spans, []sdl.Color{white}, 1000)
 	at.Draw(ren, gc, font, 0, at.total, 10, 10, false) // warm the glyph cache
 
 	if allocs := testing.AllocsPerRun(200, func() {
@@ -73,7 +73,7 @@ func BenchmarkAnimatedTextDraw(b *testing.B) {
 	gc := NewGlyphCache(512)
 	defer gc.Purge()
 	text := "The quick brown fox jumps over the lazy dog!"
-	at := RasterizeAnimated(font, text, []EffectSpan{{0, len([]rune(text)), EffectRainbow}}, sdl.Color{R: 255, G: 255, B: 255, A: 255}, 1000)
+	at := RasterizeAnimated(font, text, []EffectSpan{{0, len([]rune(text)), EffectRainbow}}, []sdl.Color{{R: 255, G: 255, B: 255, A: 255}}, 1000)
 	at.Draw(ren, gc, font, 0, at.total, 10, 10, false) // warm
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -87,7 +87,7 @@ func BenchmarkAnimatedTextDraw(b *testing.B) {
 func TestRasterizeAnimatedLayout(t *testing.T) {
 	font, fcleanup := newAnimTestFont(t, 18)
 	defer fcleanup()
-	at := RasterizeAnimated(font, "abcdef", []EffectSpan{{2, 2, EffectWave}}, sdl.Color{R: 255, G: 255, B: 255, A: 255}, 1000)
+	at := RasterizeAnimated(font, "abcdef", []EffectSpan{{2, 2, EffectWave}}, []sdl.Color{{R: 255, G: 255, B: 255, A: 255}}, 1000)
 	if at.TotalRunes() != 6 {
 		t.Fatalf("TotalRunes = %d, want 6", at.TotalRunes())
 	}
@@ -101,5 +101,36 @@ func TestRasterizeAnimatedLayout(t *testing.T) {
 		if at.runes[i].x < at.runes[i-1].x {
 			t.Errorf("rune %d x=%d < prev x=%d (must be left to right)", i, at.runes[i].x, at.runes[i-1].x)
 		}
+	}
+}
+
+// TestRasterizeAnimatedColors pins colour composition (#M5 finish): each glyph takes its
+// per-rune colour so \cN composes with shake/wave; a single-element slice paints uniformly;
+// a short slice clamps the wrapped/overflow tail to the last colour.
+func TestRasterizeAnimatedColors(t *testing.T) {
+	font, fcleanup := newAnimTestFont(t, 18)
+	defer fcleanup()
+	red := sdl.Color{R: 255, A: 255}
+	grn := sdl.Color{G: 255, A: 255}
+	blu := sdl.Color{B: 255, A: 255}
+
+	cols := []sdl.Color{red, red, grn, grn, blu, blu}
+	at := RasterizeAnimated(font, "abcdef", nil, cols, 1000)
+	for i, want := range cols {
+		if at.runes[i].color != want {
+			t.Errorf("rune %d colour = %v, want %v", i, at.runes[i].color, want)
+		}
+	}
+
+	at = RasterizeAnimated(font, "abc", nil, []sdl.Color{grn}, 1000) // single → uniform
+	for i := range at.runes {
+		if at.runes[i].color != grn {
+			t.Errorf("uniform rune %d colour = %v, want green", i, at.runes[i].color)
+		}
+	}
+
+	at = RasterizeAnimated(font, "abcde", nil, []sdl.Color{red, grn}, 1000) // short → tail clamps
+	if at.runes[4].color != grn {
+		t.Errorf("clamped tail colour = %v, want green", at.runes[4].color)
 	}
 }

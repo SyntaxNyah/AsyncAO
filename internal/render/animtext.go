@@ -62,12 +62,16 @@ const (
 	rainbowSat     = 0.85
 )
 
-// RasterizeAnimated lays out text (wrapped to wrapW) into per-glyph animRunes, tagging
-// each rune with its effect (from spans) and base colour. No textures here — Draw resolves
-// them from the GlyphCache. Render thread; call once per message.
-func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, color sdl.Color, wrapW int32) *AnimatedText {
+// RasterizeAnimated lays out text (wrapped to wrapW) into per-glyph animRunes, tagging each
+// rune with its effect (from spans) and base colour (from colors, a per-clean-rune slice so
+// inline \cN colours COMPOSE with shake/wave — a red shaking word). The rainbow effect still
+// overrides the colour per frame at draw time. colors is indexed by the same global rune
+// index the effect spans use, so colour + effect stay locked together; nil/short → white /
+// the last colour. No textures here — Draw resolves them from the GlyphCache. Render thread;
+// call once per message.
+func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, colors []sdl.Color, wrapW int32) *AnimatedText {
 	at := &AnimatedText{lineH: int32(font.Height())}
-	gi := 0 // global rune index into the clean text (what spans reference)
+	gi := 0 // global rune index into the clean text (what spans + colors reference)
 	for li, line := range wrapText(font, text, wrapW) {
 		runes := []rune(line)
 		baseY := int32(li) * at.lineH
@@ -83,7 +87,7 @@ func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, color sd
 				x:      x,
 				y:      baseY,
 				effect: effectAt(gi, spans),
-				color:  color,
+				color:  colorAt(gi, colors),
 			})
 			gi++
 		}
@@ -101,6 +105,20 @@ func effectAt(gi int, spans []EffectSpan) uint8 {
 		}
 	}
 	return EffectNone
+}
+
+// colorAt returns the base colour for global rune index gi: white when colors is empty, the
+// last colour when gi runs past the slice (a wrapped tail beyond the styled runs), else the
+// per-rune colour. Lets a uniform message pass a single-element slice and have every rune
+// take it (the clamp), while a \cN message passes a full per-rune slice.
+func colorAt(gi int, colors []sdl.Color) sdl.Color {
+	if len(colors) == 0 {
+		return glyphWhite
+	}
+	if gi >= len(colors) {
+		return colors[len(colors)-1]
+	}
+	return colors[gi]
 }
 
 // TotalRunes / Height mirror MessageRaster so the chatbox can size + reveal the same way.

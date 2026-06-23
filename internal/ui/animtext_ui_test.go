@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/veandco/go-sdl2/sdl"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -43,6 +45,28 @@ func TestRemoteEffectsThroughRoom(t *testing.T) {
 	a.room.SkipToIdle()
 	if len(a.room.Scene.MessageEffects) != 0 {
 		t.Errorf("a plain message left %d effect spans on the Scene, want 0", len(a.room.Scene.MessageEffects))
+	}
+}
+
+// TestAnimColors pins the chatbox-side colour flattening for #M5 colour+animation: a plain
+// message yields a single base colour (uniform), a \cN-styled message yields per-rune
+// colours so the effect can compose with the colour.
+func TestAnimColors(t *testing.T) {
+	base := sdl.Color{R: 10, G: 20, B: 30, A: 255}
+	plain := &courtroom.Scene{MessageText: "hello", MessageStyles: []courtroom.StyleRun{{Len: 5, Color: courtroom.ColorDefault}}}
+	if got := animColors(plain, base); len(got) != 1 || got[0] != base {
+		t.Fatalf("plain animColors = %v, want one base entry", got)
+	}
+	styled := &courtroom.Scene{MessageText: "abcd", MessageStyles: []courtroom.StyleRun{{Len: 2, Color: courtroom.ColorDefault}, {Len: 2, Color: 2}}}
+	got := animColors(styled, base)
+	if len(got) != 4 {
+		t.Fatalf("styled animColors len = %d, want 4 (one per rune)", len(got))
+	}
+	if got[0] != base || got[1] != base {
+		t.Errorf("runes 0-1 = %v/%v, want base on both", got[0], got[1])
+	}
+	if got[2] != render.TextColor(2) || got[3] != render.TextColor(2) {
+		t.Errorf("runes 2-3 = %v/%v, want palette colour 2", got[2], got[3])
 	}
 }
 
