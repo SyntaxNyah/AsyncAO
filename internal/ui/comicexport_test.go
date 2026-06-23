@@ -4,7 +4,33 @@ import (
 	"image"
 	"image/color"
 	"testing"
+
+	"github.com/veandco/go-sdl2/sdl"
 )
+
+// TestComicBubbleRect pins the speech-bubble geometry: it spans the panel width (minus
+// margins), sits at the bottom, sizes to the text, and a huge message is capped so it
+// can't swallow the panel (the top stays clear for the sprite).
+func TestComicBubbleRect(t *testing.T) {
+	vp := sdl.Rect{X: 5, Y: 7, W: 360, H: 270}
+	b := comicBubbleRect(vp, 40)
+	if b.X != vp.X+comicBubbleMargin || b.W != vp.W-2*comicBubbleMargin {
+		t.Errorf("bubble x/w = %d/%d, want %d/%d", b.X, b.W, vp.X+comicBubbleMargin, vp.W-2*comicBubbleMargin)
+	}
+	if want := int32(40 + 2*comicBubblePad); b.H != want {
+		t.Errorf("bubble H = %d, want %d", b.H, want)
+	}
+	if got, want := b.Y+b.H, vp.Y+vp.H-comicBubbleMargin; got != want {
+		t.Errorf("bubble bottom = %d, want %d", got, want)
+	}
+	big := comicBubbleRect(vp, 10000)
+	if big.H > vp.H*3/5 {
+		t.Errorf("bubble H %d exceeds the 3/5 cap %d", big.H, vp.H*3/5)
+	}
+	if big.Y < vp.Y {
+		t.Error("a capped bubble starts above the panel top")
+	}
+}
 
 // solidPanel builds a w×h RGBA filled with one colour — a synthetic comic panel for
 // the layout test (no SDL capture needed).

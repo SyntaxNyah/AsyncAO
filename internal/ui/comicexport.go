@@ -124,7 +124,7 @@ func (a *App) captureComicPanel(j *gifExportJob, ev recEvent) {
 	if !j.room.Scene.IsBlankPost && j.room.Scene.MessageText != "" {
 		img, err := j.ct.Capture(a.ctx.Ren, func(dst sdl.Rect) {
 			a.d.Viewport.Render(a.ctx.Ren, &j.room.Scene, dst)
-			a.drawGifChatbox(j, &j.room.Scene, dst) // same speech box as the GIF export
+			a.drawComicBubble(j, &j.room.Scene, dst) // a paper speech bubble, not the dark GIF box
 		})
 		if err != nil {
 			a.pushDebug("comic capture: " + err.Error())
@@ -290,4 +290,112 @@ func drawComicText(img *image.RGBA, x, y int, text string, col color.RGBA) {
 		Face: basicfont.Face7x13,
 		Dot:  fixed.P(x, y),
 	}).DrawString(text)
+}
+
+// --- comic speech bubble -----------------------------------------------------
+//
+// Each comic panel renders a paper SPEECH BUBBLE (a tail pointing up to the speaker +
+// a dark name caption) instead of the GIF export's flat dark chatbox, so a storyboard
+// reads like a comic. It is drawn during CAPTURE via SDL (not the off-thread compose),
+// so it reuses the live font stack — Unicode / emoji shownames and inline \cN colours
+// render instead of tofu — with the message text forced to dark "ink" (renderRaster's
+// comicInk) so it reads on the white bubble. Render thread only.
+const (
+	comicBubbleMargin = 10 // gap from the panel edges
+	comicBubblePad    = 8  // text padding inside the bubble
+	comicNameTagH     = 20 // speaker name-caption height (straddles the bubble top)
+	comicTailHalf     = 11 // half-width of the tail's base
+	comicTailH        = 13 // tail height (its apex points up toward the speaker)
+)
+
+var (
+	comicBubbleFill = sdl.Color{R: 248, G: 248, B: 252, A: 240} // paper
+	comicBubbleInk  = sdl.Color{R: 26, G: 26, B: 38, A: 255}    // dark text + border on the paper
+	comicNameFill   = sdl.Color{R: 26, G: 26, B: 42, A: 255}    // name caption tag
+	comicNameInk    = sdl.Color{R: 246, G: 246, B: 250, A: 255} // name text
+)
+
+// comicBubbleRect places the speech bubble across the bottom of a panel viewport vp,
+// sized to the rasterized text height (capped so it can't swallow the panel — the top
+// stays clear for the sprite, floored so a one-word line still reads). Pure (sdl.Rect
+// is a plain struct), so the geometry is unit-tested.
+func comicBubbleRect(vp sdl.Rect, textH int32) sdl.Rect {
+	bubbleH := textH + 2*comicBubblePad
+	if maxH := vp.H * 3 / 5; bubbleH > maxH {
+		bubbleH = maxH
+	}
+	if minH := int32(comicNameTagH + comicBubblePad); bubbleH < minH {
+		bubbleH = minH
+	}
+	return sdl.Rect{
+		X: vp.X + comicBubbleMargin,
+		Y: vp.Y + vp.H - comicBubbleMargin - bubbleH,
+		W: vp.W - 2*comicBubbleMargin,
+		H: bubbleH,
+	}
+}
+
+// drawComicBubble draws the paper speech bubble (tail + bubble + dark name caption) and
+// the message text for one panel. Mirrors drawGifChatbox's fit/cache, but ink-on-paper.
+// Render thread only (inside the capture callback).
+func (a *App) drawComicBubble(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) {
+	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
+		return
+	}
+	c := a.ctx
+	innerW := vp.W - 2*comicBubbleMargin - 2*comicBubblePad
+	if j.chatRaster == nil || j.chatText != sc.MessageText {
+		if j.chatRaster != nil {
+			j.chatRaster.Destroy()
+			j.chatRaster = nil
+		}
+		if sc.MessageText != "" {
+			j.chatRaster = a.fitChatRaster(sc, innerW, vp.H, j.chatPct, true) // comicInk → dark text
+		}
+		j.chatText = sc.MessageText
+	}
+	textH := int32(0)
+	if j.chatRaster != nil {
+		textH = j.chatRaster.Height()
+	}
+	bubble := comicBubbleRect(vp, textH)
+
+	// Tail first (it rises FROM the bubble's top edge toward the speaker); then the paper
+	// bubble + dark border over it.
+	a.drawComicTail(bubble.X+bubble.W*2/3, bubble.Y, comicTailHalf, comicTailH)
+	c.Fill(bubble, comicBubbleFill)
+	c.Border(bubble, comicBubbleInk)
+
+	if j.chatRaster != nil {
+		_ = c.Ren.SetClipRect(&bubble) // a long line clips INSIDE the bubble, never off-panel
+		j.chatRaster.Draw(c.Ren, sc.VisibleRunes, bubble.X+comicBubblePad, bubble.Y+comicBubblePad)
+		_ = c.Ren.SetClipRect(nil)
+	}
+
+	// Speaker name: a dark caption tag straddling the bubble's top-left, drawn with the
+	// covering-face pick so a non-Latin showname renders instead of tofu.
+	if sc.ShownameText != "" {
+		nameW := c.TextWidth(sc.ShownameText) + 14
+		if nameW > bubble.W {
+			nameW = bubble.W
+		}
+		tag := sdl.Rect{X: bubble.X + 6, Y: bubble.Y - comicNameTagH + 1, W: nameW, H: comicNameTagH}
+		c.Fill(tag, comicNameFill)
+		a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), tag.X+7, tag.Y+3, tag.W-12, sc.ShownameText, comicNameInk)
+	}
+}
+
+// drawComicTail fills an upward speech-bubble tail: apex at (cx, baseY-h), base of
+// half-width `half` at baseY (the bubble's top edge). A dark span then a 1px-inset paper
+// span per row gives the slanted sides a border. Render thread only.
+func (a *App) drawComicTail(cx, baseY, half, h int32) {
+	c := a.ctx
+	for dy := int32(0); dy < h; dy++ {
+		w := half * dy / h // widens from the apex (0) down to the base (half)
+		y := baseY - h + dy
+		c.Fill(sdl.Rect{X: cx - w - 1, Y: y, W: 2*w + 2, H: 1}, comicBubbleInk) // dark border row
+		if w > 0 {
+			c.Fill(sdl.Rect{X: cx - w, Y: y, W: 2 * w, H: 1}, comicBubbleFill) // paper inset
+		}
+	}
 }

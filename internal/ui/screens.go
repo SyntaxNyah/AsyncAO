@@ -1264,7 +1264,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	if sc.MessageText == "" {
 		return
 	}
-	raster, err := renderRaster(a, sc, wrapW, skinned, a.chatPct)
+	raster, err := renderRaster(a, sc, wrapW, skinned, a.chatPct, false)
 	if err != nil {
 		return
 	}
@@ -4072,15 +4072,22 @@ func (a *App) handleChatCommand(text string) bool {
 	return false
 }
 
-// renderRaster rasterizes the current message with its AO color.
-func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int) (*render.MessageRaster, error) {
+// renderRaster rasterizes the current message with its AO color. comicInk forces the
+// DEFAULT colour to dark "ink" for the comic export's paper speech bubble (explicit
+// \cN colours still win), so light default text isn't invisible on the white bubble.
+func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int, comicInk bool) (*render.MessageRaster, error) {
 	// The chat zoom font: rebuilt only when the Text knob changes. The
 	// theme's "message" color replaces only AO's DEFAULT color (code 0)
 	// — explicit message colors (green/red/...) always win — and only
 	// while the theme's own chatbox skin is drawn: theme colors assume
 	// their skin (black text on white paper), not our dark flat panel.
 	col := render.TextColor(sc.TextColor)
-	if skinned && sc.TextColor == 0 && a.themeHasMsg {
+	switch {
+	case sc.TextColor != 0:
+		// an explicit message colour always wins (reads on either background)
+	case comicInk:
+		col = comicBubbleInk // dark ink on the paper comic bubble
+	case skinned && a.themeHasMsg:
 		col = a.themeMsgCol
 	}
 	// Per-message font pick at the given scale (pct): the override chain's first

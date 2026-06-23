@@ -591,13 +591,13 @@ func gifChatboxHeight(textH, vpH int32) int32 {
 // the frame), so a full ~256-char line always fits instead of clipping — "fit it
 // no matter what". Converges fast (fewer wrapped lines as the font drops); bounded
 // iterations, floored at the min chat scale. Render thread only.
-func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int) *render.MessageRaster {
+func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, comicInk bool) *render.MessageRaster {
 	maxTextH := vpH*3/5 - gifChatNameRowH - 10
 	if maxTextH < gifChatNameRowH {
 		maxTextH = gifChatNameRowH
 	}
 	for attempt := 0; attempt < 5; attempt++ {
-		r, err := renderRaster(a, sc, wrapW, false, pct)
+		r, err := renderRaster(a, sc, wrapW, false, pct, comicInk)
 		if err != nil {
 			return nil
 		}
@@ -615,7 +615,7 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int) *ren
 			pct = next
 		}
 	}
-	r, _ := renderRaster(a, sc, wrapW, false, config.MinChatScalePercent) // safety: show text at the floor
+	r, _ := renderRaster(a, sc, wrapW, false, config.MinChatScalePercent, comicInk) // safety: show text at the floor
 	return r
 }
 
@@ -635,7 +635,7 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 			j.chatRaster = nil
 		}
 		if sc.MessageText != "" {
-			j.chatRaster = a.fitChatRaster(sc, wrapW, vp.H, j.chatPct)
+			j.chatRaster = a.fitChatRaster(sc, wrapW, vp.H, j.chatPct, false)
 		}
 		j.chatText = sc.MessageText
 	}
