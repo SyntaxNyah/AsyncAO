@@ -46,6 +46,17 @@ func TestRemoteEffectsThroughRoom(t *testing.T) {
 	}
 }
 
+// TestICEmojiSetAllRouteToEmojiFont guards the picker against tofu: every entry must be
+// detected as needing the colour-emoji font. A BMP symbol (✨ ⭐ ❓ …) only qualifies with a
+// trailing U+FE0F selector — without it it's a text code point and would render as a box.
+func TestICEmojiSetAllRouteToEmojiFont(t *testing.T) {
+	for _, e := range icEmojiSet {
+		if !render.NeedsEmojiFallback(e) {
+			t.Errorf("picker emoji %q (% x) won't reach the colour-emoji font — a BMP symbol needs a U+FE0F variation selector", e, []byte(e))
+		}
+	}
+}
+
 // TestIsASCII pins the cheap gate that keeps plain fields on the single-font fast path.
 func TestIsASCII(t *testing.T) {
 	for _, s := range []string{"", "hello", "a/b [shake] 123! ~done"} {

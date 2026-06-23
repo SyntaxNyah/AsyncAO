@@ -10,15 +10,20 @@ import "github.com/veandco/go-sdl2/sdl"
 // beneath; the picker + its button use the raw pointIn hit test, like the dropdown.
 
 // icEmojiSet is a curated set of common reaction/chat emojis (emojiPickerCols per row).
-// Kept to widely-shipped code points (Unicode ≤ 11) so they don't box on an older system
-// emoji font — the very newest faces (e.g. 🫡 🫠, Unicode 14/2021) are absent from emoji
-// fonts that predate them, and a streaming client can't ship its own coloured glyphs.
+// Two coverage rules so none render as tofu boxes:
+//  1. BMP symbol emoji (U+2xxx: ✨ ⭐ ❓ ❗ ✅ ❌ …) carry a trailing VARIATION SELECTOR-16
+//     (U+FE0F). Without it they're text-presentation code points and never reach the
+//     colour-emoji font (isEmojiBase only auto-promotes the supplementary plane) — they'd
+//     box. The selector is invisible; ❤️ ✌️ ⚖️ already have it.
+//  2. No bleeding-edge code points: the very newest faces (e.g. 🫡 🫠, Unicode 14/2021) are
+//     absent from emoji fonts that predate them, and a streaming client can't ship its own
+//     coloured glyphs, so the set stays within widely-shipped (≤ Unicode 11) pictographs.
 var icEmojiSet = []string{
 	"😀", "😂", "🙂", "😉", "😍", "😎", "😭", "😡",
 	"👍", "👎", "👏", "🙏", "💪", "🤝", "✌️", "👋",
-	"❤️", "💔", "💯", "🔥", "✨", "⭐", "🎉", "💀",
+	"❤️", "💔", "💯", "🔥", "✨️", "⭐️", "🎉", "💀",
 	"😱", "😳", "🤔", "😴", "😅", "😏", "🥺", "😤",
-	"⚖️", "🔨", "📌", "❓", "❗", "✅", "❌", "💬",
+	"⚖️", "🔨", "📌", "❓️", "❗️", "✅️", "❌️", "💬",
 	"🤣", "😘", "😩", "🙄", "🤡", "👀", "🤗", "😬",
 }
 
