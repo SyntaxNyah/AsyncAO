@@ -76,10 +76,13 @@ version:
   > to remove Discord; that just breaks the app. To get a binary with the
   > Discord code gone, use the `-nodiscord` build below instead.
 - `go build -tags nodiscord ./cmd/asyncao` compiles the integration out
-  entirely; the package becomes a no-op stub with the same API, and the
-  Settings section explains it was built out. CI publishes a prebuilt
-  `asyncao-<platform>-nodiscord` artifact for this — no need to build it
-  yourself.
+  **entirely**: `internal/presence` becomes a no-op stub, and the whole
+  **Settings → Discord** section is compiled out too (it lives in a
+  build-tagged file). So a Discord-free binary carries **no Discord code at
+  all** — not even the settings UI — and is a touch smaller. CI publishes a
+  prebuilt `asyncao-<platform>-nodiscord` artifact for every platform (in the
+  **Actions** tab → latest run → **Artifacts**; downloading needs a free GitHub
+  account), so you don't have to build it yourself.
 
 ## Troubleshooting
 

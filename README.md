@@ -39,9 +39,13 @@ everything in memory and on disk, and renders without allocating.
   Discord profile — server, character, showname, area — with per-field privacy
   toggles. Off by default, and there is **no DLL and no Discord dependency** of
   any kind: it speaks Discord's local IPC pipe in pure Go, so a missing or
-  closed Discord never stops AsyncAO from launching. Build it out entirely with
-  `-tags nodiscord` if you want zero Discord code. See
-  [docs/DISCORD.md](docs/DISCORD.md).
+  closed Discord never stops AsyncAO from launching. **Don't want Discord at
+  all?** Every CI run also builds a **Discord-free** flavour — grab it from
+  **GitHub Actions** (the **Actions** tab → latest run → **Artifacts**, named
+  `asyncao-<platform>-nodiscord`; downloading artifacts needs a free GitHub
+  account). It's compiled with `-tags nodiscord`, which strips out **all** the
+  Discord code *including the settings UI*, so the binary is a little smaller and
+  carries nothing Discord-related. See [docs/DISCORD.md](docs/DISCORD.md).
 - **Niceties** — hover an emote or character icon for 3 seconds (or
   right-click) to preview the full sprite; saved shownames; live-loading
   character grid with search; per-type format toggles.
