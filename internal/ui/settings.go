@@ -784,6 +784,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetChatboxOpacity(v)
 	}
 	y += 34
+	tint := a.d.Prefs.ChatboxTintOn()
+	if next := c.Checkbox(pad, y, "Per-character chatbox tint (OFF by default): the chatbox takes a hint of each speaker's colour", tint); next != tint {
+		a.d.Prefs.SetChatboxTint(next)
+	}
+	y += 26
 
 	y = a.settingsSection(y, w, "Window")
 	// Window size / fullscreen: pick your own client dimensions (a window bigger

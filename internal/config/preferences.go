@@ -634,6 +634,7 @@ type AssetPreferences struct {
 	SpriteSolidTint        bool                         `json:"spriteSolidTint"`
 	SpriteTintColor        int                          `json:"spriteTintColor"`
 	ShoutPunch             bool                         `json:"shoutPunch"`
+	ChatboxTint            bool                         `json:"chatboxTint"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -843,6 +844,7 @@ type prefsJSON struct {
 	SpriteSpin             bool             `json:"spriteSpin"`             // default OFF
 	SpriteSolidTint        bool             `json:"spriteSolidTint"`        // default OFF
 	ShoutPunch             bool             `json:"shoutPunch"`             // default OFF
+	ChatboxTint            bool             `json:"chatboxTint"`            // default OFF
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1347,6 +1349,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.SpriteSpin = onDisk.SpriteSpin
 	p.SpriteSolidTint = onDisk.SpriteSolidTint
 	p.ShoutPunch = onDisk.ShoutPunch
+	p.ChatboxTint = onDisk.ChatboxTint
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3201,6 +3204,26 @@ func (p *AssetPreferences) SetShoutPunch(on bool) {
 		return
 	}
 	p.ShoutPunch = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ChatboxTintOn reports the "per-character chatbox tint" toggle (OFF by default): the
+// chatbox panel takes a hint of each speaker's stable hue (#14). Viewer-local.
+func (p *AssetPreferences) ChatboxTintOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ChatboxTint
+}
+
+// SetChatboxTint toggles the per-character chatbox tint.
+func (p *AssetPreferences) SetChatboxTint(on bool) {
+	p.mu.Lock()
+	if p.ChatboxTint == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ChatboxTint = on
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -1219,7 +1219,11 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 		// border stays solid for legibility. Read once here, off the 0-alloc
 		// render gate (that's render.Viewport; this UI overlay already reads prefs).
 		alpha := uint8(255 * a.d.Prefs.ChatboxOpacityPct() / 100)
-		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: alpha})
+		bg := sdl.Color{R: 16, G: 16, B: 24, A: alpha}
+		if a.d.Prefs.ChatboxTintOn() && sc.ShownameText != "" { // #14 per-character tint
+			bg = chatboxTintFor(sc.ShownameText, bg)
+		}
+		c.Fill(box, bg)
 		c.Border(box, ColAccent)
 	}
 	// Theme text colors are designed against the theme's own skin; on the

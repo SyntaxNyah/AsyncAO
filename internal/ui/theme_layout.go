@@ -568,7 +568,11 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 		skinned = true
 	}
 	if !skinned {
-		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+		bg := sdl.Color{R: 16, G: 16, B: 24, A: 215}
+		if a.d.Prefs.ChatboxTintOn() && sc.ShownameText != "" { // #14 per-character tint
+			bg = chatboxTintFor(sc.ShownameText, bg)
+		}
+		c.Fill(box, bg)
 		c.Border(box, ColAccent)
 	}
 

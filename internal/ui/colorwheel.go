@@ -34,6 +34,32 @@ func nameColor(name string, sat, val float64) sdl.Color {
 	return sdl.Color{R: r, G: g, B: b, A: 255}
 }
 
+// Per-character chatbox tint (#14): blend a hint of the speaker's stable hue into the flat
+// chatbox panel so each character's box carries their colour while staying dark enough to
+// read light text on. Viewer-local; shares nameColor's hue, so a tinted box and a coloured
+// name match for the same speaker.
+const (
+	chatboxTintSat = 0.85 // vivid hue source
+	chatboxTintVal = 0.55 // mid-tone so the blend shifts colour without lightening the box
+	chatboxTintMix = 30   // percent of the speaker hue mixed into the base (subtle, stays dark)
+)
+
+// chatboxTintFor blends the speaker's hue into base. Pure, allocation-free.
+func chatboxTintFor(name string, base sdl.Color) sdl.Color {
+	t := nameColor(name, chatboxTintSat, chatboxTintVal)
+	return sdl.Color{
+		R: mixByte(base.R, t.R, chatboxTintMix),
+		G: mixByte(base.G, t.G, chatboxTintMix),
+		B: mixByte(base.B, t.B, chatboxTintMix),
+		A: base.A,
+	}
+}
+
+// mixByte blends a→b by mix percent (0..100): a*(100-mix)/100 + b*mix/100.
+func mixByte(a, b uint8, mix int) uint8 {
+	return uint8((int(a)*(100-mix) + int(b)*mix) / 100)
+}
+
 // drawNameColorPicker draws the per-speaker name-colour controls — a toggle,
 // saturation + brightness rows (brightness floored so names stay readable), and
 // a live preview of sample names in their computed colours. OFF by default;
