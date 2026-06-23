@@ -35,6 +35,13 @@ everything in memory and on disk, and renders without allocating.
 - **Local asset mode** — a checkbox turns off streaming entirely and reads
   from any folders you choose (AO2-style mount paths), for servers without an
   asset URL.
+- **Discord Rich Presence (optional)** — show what you're playing on your
+  Discord profile — server, character, showname, area — with per-field privacy
+  toggles. Off by default, and there is **no DLL and no Discord dependency** of
+  any kind: it speaks Discord's local IPC pipe in pure Go, so a missing or
+  closed Discord never stops AsyncAO from launching. Build it out entirely with
+  `-tags nodiscord` if you want zero Discord code. See
+  [docs/DISCORD.md](docs/DISCORD.md).
 - **Niceties** — hover an emote or character icon for 3 seconds (or
   right-click) to preview the full sprite; saved shownames; live-loading
   character grid with search; per-type format toggles.
@@ -68,6 +75,7 @@ asyncao -debug          # pprof on localhost:6060
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Recorded numbers for every gate |
 | [docs/adr/0001-zero-fallback-by-default.md](docs/adr/0001-zero-fallback-by-default.md) | Why zero fallbacks |
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | The AO2 wire protocol as implemented |
+| [docs/DISCORD.md](docs/DISCORD.md) | Discord Rich Presence: setup, privacy, building without it |
 | [docs/user/lobby.md](docs/user/lobby.md) | Lobby, phone book, direct connect |
 | [docs/user/asset-preferences.md](docs/user/asset-preferences.md) | Format settings guide |
 | [docs/user/pairing.md](docs/user/pairing.md) | Pairing guide |

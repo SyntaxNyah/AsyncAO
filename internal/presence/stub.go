@@ -3,7 +3,7 @@
 // The -tags nodiscord build: the entire presence implementation compiles
 // out and this no-op stub keeps the call sites identical. Discord is
 // never a build requirement either way — the real implementation is
-// stdlib-only local IPC (see docs/BUILDING.md).
+// stdlib-only local IPC (see BUILDING.md).
 package presence
 
 import "time"

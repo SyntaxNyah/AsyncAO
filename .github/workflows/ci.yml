@@ -1,5 +1,11 @@
 # AsyncAO CI: lint + race tests + alloc-gated benchmarks, then binary builds
 # for every platform. Pull requests get downloadable binaries as artifacts.
+#
+# Each platform builds TWICE via a `variant` matrix: the default binary (Discord
+# Rich Presence bundled — pure stdlib IPC, no DLL, off by default) and a
+# `-tags nodiscord` "Discord-free" binary with the integration compiled out
+# entirely. Discord is never a forced dependency either way; the second artifact
+# exists for anyone who wants a binary with zero Discord code at all.
 name: CI
 
 on:
@@ -39,6 +45,9 @@ jobs:
       - name: Tests (race detector — §17.8 gate)
         run: go test -race -timeout 600s -count=1 ./...
 
+      - name: Tests (Discord compiled out — the nodiscord stub must build & pass)
+        run: go test -tags nodiscord -timeout 600s -count=1 ./...
+
       - name: Benchmarks (alloc gates — §15)
         run: |
           go test -run=NONE -bench=. -benchmem -benchtime=200ms -count=1 ./... | tee bench.txt
@@ -55,9 +64,14 @@ jobs:
           path: bench.txt
 
   build-linux:
-    name: Binary (Linux x86_64)
+    name: Binary (Linux x86_64)${{ matrix.variant.label }}
     runs-on: ubuntu-latest
     needs: test
+    strategy:
+      matrix:
+        variant:
+          - { label: "", tags: "", suffix: "" }
+          - { label: " - Discord-free", tags: "nodiscord", suffix: "-nodiscord" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -70,16 +84,21 @@ jobs:
             libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev
       - name: Build
         run: |
-          go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
+          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
       - uses: actions/upload-artifact@v4
         with:
-          name: asyncao-linux-x86_64
+          name: asyncao-linux-x86_64${{ matrix.variant.suffix }}
           path: asyncao
 
   build-windows:
-    name: Binary (Windows x86_64)
+    name: Binary (Windows x86_64)${{ matrix.variant.label }}
     runs-on: windows-latest
     needs: test
+    strategy:
+      matrix:
+        variant:
+          - { label: "", tags: "", suffix: "" }
+          - { label: " - Discord-free", tags: "nodiscord", suffix: "-nodiscord" }
     defaults:
       run:
         shell: msys2 {0}
@@ -112,20 +131,25 @@ jobs:
         run: |
           export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
           export CGO_ENABLED=1
-          go build -pgo=auto -trimpath -ldflags "-s -w" -o dist/asyncao.exe ./cmd/asyncao
+          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o dist/asyncao.exe ./cmd/asyncao
           # Ship the runtime DLLs next to the exe so it runs anywhere.
           ldd dist/asyncao.exe | grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do
             cp "$dll" dist/
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: asyncao-windows-x86_64
+          name: asyncao-windows-x86_64${{ matrix.variant.suffix }}
           path: dist/
 
   build-macos:
-    name: Binary (macOS arm64)
+    name: Binary (macOS arm64)${{ matrix.variant.label }}
     runs-on: macos-latest
     needs: test
+    strategy:
+      matrix:
+        variant:
+          - { label: "", tags: "", suffix: "" }
+          - { label: " - Discord-free", tags: "nodiscord", suffix: "-nodiscord" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -136,8 +160,8 @@ jobs:
       - name: Build
         run: |
           export CGO_ENABLED=1
-          go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
+          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
       - uses: actions/upload-artifact@v4
         with:
-          name: asyncao-macos-arm64
+          name: asyncao-macos-arm64${{ matrix.variant.suffix }}
           path: asyncao

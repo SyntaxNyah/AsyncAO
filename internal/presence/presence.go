@@ -5,7 +5,7 @@
 // module, nothing linked: pure stdlib. Discord is never required to
 // build OR run AsyncAO; when Discord isn't running (or the feature is
 // off) this package quietly does nothing. Build with -tags nodiscord to
-// compile even this file out (see docs/BUILDING.md).
+// compile even this file out (see BUILDING.md).
 package presence
 
 import (

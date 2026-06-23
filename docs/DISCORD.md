@@ -64,9 +64,22 @@ version:
 - The default build has **no Discord dependency** — `internal/presence`
   is pure standard library. With Discord not running, the worker idles
   (one paced probe per 30 s, and only while an update is pending).
+- **There is no Discord DLL.** The integration is compiled straight into
+  the AsyncAO binary as pure Go — there is no separate file to delete or
+  manage, and nothing Discord-related to "turn off" at the filesystem
+  level (the Settings toggle does that). The default build therefore
+  *cannot* fail to boot because of Discord, whether or not Discord is
+  installed.
+  > ⚠️ The DLLs shipped next to `asyncao.exe` on Windows
+  > (`SDL2.dll`, `libwebp`, `libavif`, …) are the rendering/audio engine —
+  > **the client needs those to run at all.** Don't delete them expecting
+  > to remove Discord; that just breaks the app. To get a binary with the
+  > Discord code gone, use the `-nodiscord` build below instead.
 - `go build -tags nodiscord ./cmd/asyncao` compiles the integration out
   entirely; the package becomes a no-op stub with the same API, and the
-  Settings section explains it was built out.
+  Settings section explains it was built out. CI publishes a prebuilt
+  `asyncao-<platform>-nodiscord` artifact for this — no need to build it
+  yourself.
 
 ## Troubleshooting
 

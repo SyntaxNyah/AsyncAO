@@ -125,10 +125,16 @@ fetched, or vendored.
 
 - **Default build**: the feature exists but is OFF until the user enables
   it in Settings. Without Discord running it idles silently (one paced
-  reconnect probe per 30 s, only while updates are pending).
+  reconnect probe per 30 s, only while updates are pending). There is no
+  Discord DLL — the code is in the exe itself; the DLLs staged next to
+  `asyncao.exe` on Windows are the SDL2/webp/avif engine and are required
+  regardless of Discord, so deleting one breaks the client (it does not
+  "remove Discord").
 - **`-tags nodiscord`**: even that code compiles out; the package becomes
   a no-op stub with the same API. Use this if your distro policy wants
-  zero proprietary-service integration in the binary.
+  zero proprietary-service integration in the binary. CI builds every
+  platform in both flavors, so you can also just download the prebuilt
+  `asyncao-<platform>-nodiscord` artifact (Actions → latest run).
 - To get the AsyncAO icon on profiles, create a Discord application named
   "AsyncAO" in the developer portal, upload the icon under the asset key
   `appicon`, and paste the application ID into Settings → Discord.
