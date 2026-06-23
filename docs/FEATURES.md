@@ -233,6 +233,25 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   text and the chip updates for others **after you next speak**. Your own chip shows
   immediately. Standard clients are unaffected; **0-alloc** on the render path (a plain
   map lookup per row, chip drawn only when a status is set).
+- **Animated chat text — transmitted, cross-AsyncAO** (#M5): make spans of your
+  IC message **shake**, **wave**, or **rainbow**. **One-click** from the **IC-bar
+  emoji button → Text FX strip** (wraps your whole message), or per-word with
+  inline **`[shake]…[/shake]` / `[wave]…[/wave]` / `[rainbow]…[/rainbow]`** markup.
+  Every other AsyncAO player sees the animation; **AO2 / webAO see the plain
+  message** — the markup is stripped before send and the effect spans ride an
+  **invisible zero-width frame** on the same channel as the sprite style / profile
+  / status (told apart by a magic byte, so the four coexist on one message). The
+  span indices align with the receiver's visible text because the effect tags and
+  `\cN` chat markup use disjoint characters (the two strips commute). **Performance:
+  plain messages are byte-identical to before** — only a message that actually
+  carries effects takes the per-glyph path, which renders each glyph to a **white
+  texture once** and then **displaces + tints it per frame** with cheap scalar
+  math (no re-rasterise), pinned **0-alloc** by `BenchmarkAnimatedTextDraw` /
+  `TestAnimatedTextDrawZeroAllocs`. **Viewer control:** Reduce-motion pins rainbow
+  to a static hue and stops all displacement (the photosensitivity floor). *(Inline
+  `\cN` colour + emoji/CJK per-glyph fallback don't compose with effects yet —
+  effects use a single base colour, rainbow overriding per glyph — a planned
+  follow-up.)*
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

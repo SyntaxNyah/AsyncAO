@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -42,6 +43,32 @@ func TestRemoteEffectsThroughRoom(t *testing.T) {
 	a.room.SkipToIdle()
 	if len(a.room.Scene.MessageEffects) != 0 {
 		t.Errorf("a plain message left %d effect spans on the Scene, want 0", len(a.room.Scene.MessageEffects))
+	}
+}
+
+// TestWrapICEffect pins the one-click Text FX strip: it wraps the whole input, toggles the
+// same effect off, no-ops on empty input, and the wrap round-trips through ParseTextEffects
+// to a span over the original text.
+func TestWrapICEffect(t *testing.T) {
+	a := &App{ctx: &Ctx{}}
+	a.icInput = "hello world"
+	a.wrapICEffect("rainbow")
+	if a.icInput != "[rainbow]hello world[/rainbow]" {
+		t.Fatalf("wrap = %q", a.icInput)
+	}
+	// Round-trips: the wire text is the plain message, with one span over all of it.
+	wire, spans := courtroom.ParseTextEffects(a.icInput)
+	if wire != "hello world" || len(spans) != 1 || spans[0].Effect != courtroom.TextEffectRainbow {
+		t.Fatalf("wrap doesn't parse back: wire=%q spans=%v", wire, spans)
+	}
+	a.wrapICEffect("rainbow") // toggle off
+	if a.icInput != "hello world" {
+		t.Errorf("toggle-off = %q, want \"hello world\"", a.icInput)
+	}
+	a.icInput = "   "
+	a.wrapICEffect("shake") // whitespace-only → no-op
+	if strings.TrimSpace(a.icInput) != "" {
+		t.Errorf("empty wrap mutated input to %q", a.icInput)
 	}
 }
 
