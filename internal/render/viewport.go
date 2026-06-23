@@ -126,6 +126,7 @@ type SpriteFX struct {
 	PerCharHue bool // rainbow: offset each character's hue by a hash of its name
 	Wobble     bool // gentle continuous position sway
 	Spin       bool // slow continuous rotation
+	ShoutPunch bool // #12: quick scale-pop of the whole stage when a shout appears
 
 	Speed     int // rainbow hue speed slider [1,100] (higher = faster)
 	Vividness int // rainbow saturation slider [0,100] (higher = more neon)
@@ -165,6 +166,11 @@ type Viewport struct {
 	// own period and stay continuous without a shared wrap glitch.
 	fxClock time.Duration
 
+	// punchLeft counts down a #12 shout screen-punch; prevShoutOn edge-detects the
+	// shout's appearance in Update so the pop fires once per shout. Viewer-local.
+	punchLeft   time.Duration
+	prevShoutOn bool
+
 	// scratch rects reused every frame (no allocs in the loop): taking the
 	// address of a stack value for a cgo call would force a heap escape
 	// per draw, so every Copy destination lives on the Viewport.
@@ -199,6 +205,18 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.curCycle = cycleForSpeed(v.fx.Speed)
 	v.rainbowPhase = (v.rainbowPhase + dt) % v.curCycle
 	v.fxClock += dt // free-running clock for the motion effects (wobble/spin)
+
+	// #12 shout punch: fire the pop once on the frame a shout appears (ShoutBase goes
+	// non-empty), then count it down. Tracked unconditionally (cheap, no allocation); the
+	// scale is only *applied* in Render when fx.ShoutPunch is on, so it's free when off.
+	shoutOn := scene.ShoutBase != ""
+	if shoutOn && !v.prevShoutOn {
+		v.punchLeft = shoutPunchDuration
+	}
+	v.prevShoutOn = shoutOn
+	if v.punchLeft -= dt; v.punchLeft < 0 {
+		v.punchLeft = 0
+	}
 
 	shoutBase := effectiveShoutBase(scene, v.store)
 	v.syncAnimSticky(&v.bgAnim, scene.BackgroundBase)
@@ -260,6 +278,19 @@ func (v *Viewport) syncAnimSticky(a *animState, base string) {
 // Screenshake jitters the whole stage rect; the realization flash paints
 // over everything (do_screenshake / do_flash parity, zero allocations).
 func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
+	// #12 shout punch: inflate the stage rect around its centre by a decaying factor, so
+	// every blit below scales up together (a zoom pop that settles). Off → vp untouched →
+	// byte-identical to before. Applied before the shake so the two compose.
+	if v.fx.ShoutPunch && v.punchLeft > 0 {
+		if s := punchScale(v.punchLeft); s > 0 {
+			dw := int32(float64(vp.W) * s)
+			dh := int32(float64(vp.H) * s)
+			vp.X -= dw / 2
+			vp.Y -= dh / 2
+			vp.W += dw
+			vp.H += dh
+		}
+	}
 	if scene.ShakeLeft > 0 {
 		// Decaying sinusoid: amplitude follows the remaining time, so the
 		// shake settles instead of cutting off.
@@ -554,6 +585,27 @@ const (
 	wobbleAmpDivisor = 40                      // sway amplitude = vp.W / divisor
 	spinPeriod       = 4 * time.Second         // one full rotation
 )
+
+// Shout-punch tuning (#12): a snappy zoom pop on objections. Short so it reads as impact, not
+// a zoom; the peak scale is small so the inflated art barely overspills the stage.
+const (
+	shoutPunchDuration = 240 * time.Millisecond // how long the pop takes to settle
+	shoutPunchPeak     = 0.06                   // peak extra scale (+6%) at the instant of the shout
+)
+
+// punchScale is the extra-scale fraction for the shout punch at the given remaining time:
+// an instant attack to the peak that eases out as the clock runs down (frac², so it decays
+// fast then smooths to zero). Pure — no allocation, safe on the render path.
+func punchScale(left time.Duration) float64 {
+	if left <= 0 {
+		return 0
+	}
+	frac := float64(left) / float64(shoutPunchDuration)
+	if frac > 1 {
+		frac = 1
+	}
+	return shoutPunchPeak * frac * frac
+}
 
 // oscFrac returns clock's phase within period as a fraction in [0,1).
 func oscFrac(clock, period time.Duration) float64 {

@@ -617,6 +617,11 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetSpriteSpin(next)
 	}
 	y += 26
+	punch := a.d.Prefs.ShoutPunchOn()
+	if next := c.Checkbox(pad, y, "Shout punch (OFF by default): a quick zoom-pop of the whole stage when an objection/shout appears", punch); next != punch {
+		a.d.Prefs.SetShoutPunch(next)
+	}
+	y += 26
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()

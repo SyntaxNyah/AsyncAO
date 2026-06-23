@@ -3748,6 +3748,7 @@ func (a *App) spriteFX() render.SpriteFX {
 		PerCharHue: a.d.Prefs.RainbowPerCharOn(),
 		Wobble:     a.d.Prefs.SpriteWobbleOn(),
 		Spin:       a.d.Prefs.SpriteSpinOn(),
+		ShoutPunch: a.d.Prefs.ShoutPunchOn(),
 		Speed:      a.d.Prefs.RainbowSpeed(),
 		Vividness:  a.d.Prefs.RainbowVividness(),
 	}

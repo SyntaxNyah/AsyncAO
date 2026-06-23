@@ -633,6 +633,7 @@ type AssetPreferences struct {
 	SpriteSpin             bool                         `json:"spriteSpin"`
 	SpriteSolidTint        bool                         `json:"spriteSolidTint"`
 	SpriteTintColor        int                          `json:"spriteTintColor"`
+	ShoutPunch             bool                         `json:"shoutPunch"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -841,6 +842,7 @@ type prefsJSON struct {
 	SpriteWobble           bool             `json:"spriteWobble"`           // default OFF
 	SpriteSpin             bool             `json:"spriteSpin"`             // default OFF
 	SpriteSolidTint        bool             `json:"spriteSolidTint"`        // default OFF
+	ShoutPunch             bool             `json:"shoutPunch"`             // default OFF
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1344,6 +1346,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.SpriteWobble = onDisk.SpriteWobble
 	p.SpriteSpin = onDisk.SpriteSpin
 	p.SpriteSolidTint = onDisk.SpriteSolidTint
+	p.ShoutPunch = onDisk.ShoutPunch
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3178,6 +3181,26 @@ func (p *AssetPreferences) SetSpriteSolidTint(on bool) {
 		return
 	}
 	p.SpriteSolidTint = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ShoutPunchOn reports the "shout punch" toggle (OFF by default): a quick scale-pop of the
+// whole stage when a shout/objection appears, for extra impact (#12). Viewer-local.
+func (p *AssetPreferences) ShoutPunchOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ShoutPunch
+}
+
+// SetShoutPunch toggles the shout screen-punch.
+func (p *AssetPreferences) SetShoutPunch(on bool) {
+	p.mu.Lock()
+	if p.ShoutPunch == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ShoutPunch = on
 	p.mu.Unlock()
 	p.markDirty()
 }
