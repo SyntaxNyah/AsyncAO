@@ -36,6 +36,13 @@ type SpriteStyle struct {
 	Brightness uint8
 	Scale      uint8
 	Rotation   uint8
+	// Outline / DropShadow (#8) are silhouette effects drawn BEHIND the sprite. The
+	// flags byte above is full (bits 0-7), so these ride a SECOND flags byte appended to
+	// the wire payload ONLY when one is set — so a normal style stays the original 9-byte
+	// frame and an OLDER AsyncAO client (which reads only the first 9 bytes) still gets
+	// the tint/glow/etc., just without the outline.
+	Outline    bool // a white silhouette border around the sprite
+	DropShadow bool // a soft dark silhouette offset down-right
 }
 
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or
@@ -54,7 +61,7 @@ const (
 // renderer leaves the blit byte-identical when there's nothing to do).
 func (s SpriteStyle) Active() bool {
 	return s.Tint || s.Glow || s.Wobble || s.Spin || s.HueCycle || s.FlipH ||
-		s.Invert || s.Grayscale ||
+		s.Invert || s.Grayscale || s.Outline || s.DropShadow ||
 		(s.Opacity != 0 && s.Opacity != 100) ||
 		(s.Brightness != 0 && s.Brightness != 100) ||
 		(s.Scale != 0 && s.Scale != 100) ||
@@ -70,6 +77,11 @@ const (
 	VariantNone VariantEffect = iota
 	VariantInvert
 	VariantGrayscale
+	// VariantSilhouette fills every non-transparent pixel white (keeping alpha). The
+	// renderer ColorMod-tints + offset-blits it BEHIND the sprite to draw the #8 outline
+	// (white) and drop-shadow (dark). It is NOT a main-sprite variant — Variant() never
+	// returns it; the render asks for it directly when Outline/DropShadow is set.
+	VariantSilhouette
 )
 
 // Variant returns the per-pixel variant this style needs (VariantNone when none).
@@ -145,12 +157,22 @@ const (
 	styleFlagHueCycle  = 1 << 4
 	styleFlagFlipH     = 1 << 5
 	styleFlagInvert    = 1 << 6
-	styleFlagGrayscale = 1 << 7 // flags is one byte (bits 0-7) — full now; a new effect needs a payload-format bump
+	styleFlagGrayscale = 1 << 7 // flags (byte 1) is full (bits 0-7); new effects ride flags2 below
+
+	// flags2 (byte 9) carries effects added after the first flags byte filled up. It is
+	// appended to the payload ONLY when one of its bits is set, so a style without them
+	// stays the original spriteStyleBytes-long frame (older clients + existing tests
+	// unaffected). A decoder reads it only when the frame is long enough.
+	styleFlag2Outline    = 1 << 0
+	styleFlag2DropShadow = 1 << 1
 
 	// spriteStyleVersion tags the payload so a later field change is detectable —
-	// a decoder that doesn't recognise the version yields no style (benign).
+	// a decoder that doesn't recognise the version yields no style (benign). It stays 1:
+	// flags2 is a backward-compatible APPEND, not a format change (an old decoder reads
+	// the first spriteStyleBytes and ignores the extra byte).
 	spriteStyleVersion = 1
-	spriteStyleBytes   = 9 // version, flags, R, G, B, opacity, brightness, scale, rotation
+	spriteStyleBytes   = 9  // version, flags, R, G, B, opacity, brightness, scale, rotation
+	spriteStyleBytesV2 = 10 // …+ flags2 (only present when an outline/shadow is set)
 )
 
 // octalSyms maps an octal digit (3 bits) to one invisible code point. All eight are
@@ -182,8 +204,11 @@ func octalIndex(r rune) int {
 	return -1
 }
 
-// payloadBytes packs the style into its fixed wire form (version-tagged).
-func (s SpriteStyle) payloadBytes() [spriteStyleBytes]byte {
+// payloadBytes packs the style into its wire form (version-tagged). It returns the original
+// spriteStyleBytes-long payload, plus a trailing flags2 byte ONLY when an outline/shadow is
+// set — so the common case is byte-identical to before and an older client still decodes the
+// first 9 bytes.
+func (s SpriteStyle) payloadBytes() []byte {
 	var flags byte
 	if s.Tint {
 		flags |= styleFlagTint
@@ -209,16 +234,29 @@ func (s SpriteStyle) payloadBytes() [spriteStyleBytes]byte {
 	if s.Grayscale {
 		flags |= styleFlagGrayscale
 	}
-	return [spriteStyleBytes]byte{spriteStyleVersion, flags, s.R, s.G, s.B, s.Opacity, s.Brightness, s.Scale, s.Rotation}
+	b := []byte{spriteStyleVersion, flags, s.R, s.G, s.B, s.Opacity, s.Brightness, s.Scale, s.Rotation}
+	var flags2 byte
+	if s.Outline {
+		flags2 |= styleFlag2Outline
+	}
+	if s.DropShadow {
+		flags2 |= styleFlag2DropShadow
+	}
+	if flags2 != 0 { // append the second flags byte only when it carries something
+		b = append(b, flags2)
+	}
+	return b
 }
 
-// styleFromBytes is the inverse of payloadBytes.
-func styleFromBytes(b [spriteStyleBytes]byte) SpriteStyle {
-	if b[0] != spriteStyleVersion {
-		return SpriteStyle{} // unknown version → no style
+// styleFromBytes is the inverse of payloadBytes. b must be at least spriteStyleBytes long; a
+// trailing flags2 byte (a v2 frame) is decoded when present, and ignored cleanly when absent
+// (a v1 frame from an older client).
+func styleFromBytes(b []byte) SpriteStyle {
+	if len(b) < spriteStyleBytes || b[0] != spriteStyleVersion {
+		return SpriteStyle{} // unknown version / truncated → no style
 	}
 	flags := b[1]
-	return SpriteStyle{
+	s := SpriteStyle{
 		Tint:       flags&styleFlagTint != 0,
 		Glow:       flags&styleFlagGlow != 0,
 		Wobble:     flags&styleFlagWobble != 0,
@@ -235,6 +273,12 @@ func styleFromBytes(b [spriteStyleBytes]byte) SpriteStyle {
 		Scale:      b[7],
 		Rotation:   b[8],
 	}
+	if len(b) >= spriteStyleBytesV2 { // v2: the appended flags2 byte
+		flags2 := b[9]
+		s.Outline = flags2&styleFlag2Outline != 0
+		s.DropShadow = flags2&styleFlag2DropShadow != 0
+	}
+	return s
 }
 
 // EncodeMarker returns the invisible zero-width run that carries this style,
@@ -251,8 +295,7 @@ func (s SpriteStyle) EncodeMarker() string {
 // send-on-change path uses it to transmit a CLEAR: an inactive style encodes to the
 // default payload, which tells receivers to stop styling that speaker.
 func (s SpriteStyle) encodeMarker() string {
-	pb := s.payloadBytes()
-	return packZeroWidth(pb[:])
+	return packZeroWidth(s.payloadBytes())
 }
 
 // packZeroWidth emits one zero-width run: the sentinel (zwStart) followed by payload
@@ -351,9 +394,7 @@ func StripSpriteStyle(text string) string {
 func findStyleFrame(text string) (SpriteStyle, bool) {
 	for _, fr := range scanZeroWidthFrames(text) {
 		if len(fr) >= spriteStyleBytes && fr[0] == spriteStyleVersion {
-			var pb [spriteStyleBytes]byte
-			copy(pb[:], fr[:spriteStyleBytes])
-			return styleFromBytes(pb), true
+			return styleFromBytes(fr), true // styleFromBytes reads the v2 flags2 byte if present
 		}
 	}
 	return SpriteStyle{}, false

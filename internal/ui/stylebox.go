@@ -258,6 +258,17 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	y += 26
 
+	// Outline / drop-shadow (#8) — silhouette effects drawn behind the sprite, transmitted.
+	if next := c.Checkbox(x, y, "Outline", p.Outline); next != p.Outline {
+		p.Outline = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	if next := c.Checkbox(x+86, y, "Shadow", p.DropShadow); next != p.DropShadow {
+		p.DropShadow = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	y += 26
+
 	if c.Button(sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}, "Clear style") {
 		a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})
 	}

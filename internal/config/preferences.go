@@ -319,8 +319,12 @@ type SpriteStylePref struct {
 	FlipH    bool `json:"flipH,omitempty"`
 	// Per-pixel effects (#103 slice 2): negate / desaturate. The renderer builds a
 	// cached variant texture for these (SetColorMod can't do either).
-	Invert     bool  `json:"invert,omitempty"`
-	Grayscale  bool  `json:"grayscale,omitempty"`
+	Invert    bool `json:"invert,omitempty"`
+	Grayscale bool `json:"grayscale,omitempty"`
+	// Silhouette effects (#8): a white outline and a dark drop-shadow drawn behind the
+	// sprite. Transmitted via a backward-compatible flags2 byte on the style wire.
+	Outline    bool  `json:"outline,omitempty"`
+	DropShadow bool  `json:"dropShadow,omitempty"`
 	Brightness uint8 `json:"brightness,omitempty"`
 	Scale      uint8 `json:"scale,omitempty"`
 	Rotation   uint8 `json:"rotation,omitempty"`

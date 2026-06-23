@@ -131,5 +131,11 @@ func applyVariant(pix []byte, effect uint8) {
 			y := byte((299*int(pix[i]) + 587*int(pix[i+1]) + 114*int(pix[i+2])) / 1000)
 			pix[i], pix[i+1], pix[i+2] = y, y, y
 		}
+	case courtroom.VariantSilhouette:
+		// Flat WHITE shape, alpha untouched: a per-pixel ColorMod tints it to the outline
+		// (white) or shadow (dark) colour at draw time, so one variant serves both (#8).
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i], pix[i+1], pix[i+2] = 255, 255, 255
+		}
 	}
 }

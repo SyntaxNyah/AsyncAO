@@ -176,7 +176,23 @@ type Viewport struct {
 	// per draw, so every Copy destination lives on the Viewport.
 	dstRect  sdl.Rect
 	fillRect sdl.Rect
+	fxRect   sdl.Rect // #8 outline/shadow offset-blit destination (kept off dstRect)
 }
+
+// Sprite outline / drop-shadow tuning (#8). The outline is drawn as 8 offset silhouette
+// blits (cardinals + diagonals) around the sprite; the shadow is one offset down-right.
+var (
+	outlineDirs = [8][2]int32{{-1, 0}, {1, 0}, {0, -1}, {0, 1}, {-1, -1}, {-1, 1}, {1, -1}, {1, 1}}
+	shadowDir   = [1][2]int32{{1, 1}} // down-right
+)
+
+const (
+	outlineAlpha    = 235 // near-solid white outline
+	shadowAlpha     = 110 // soft dark shadow
+	outlineDivisor  = 170 // outline width = vp.H / divisor (scales with the stage), floored
+	outlineWidthMin = 2
+	shadowMultiple  = 3 // shadow offset = outline width * this
+)
 
 // NewViewport builds a viewport over the texture store.
 func NewViewport(store *TextureStore) *Viewport {
@@ -510,6 +526,25 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if spin {
 		angle += spinDegrees(v.fxClock)
 	}
+	// #8 outline + drop-shadow: draw a tinted silhouette BEHIND the sprite, using the FINAL
+	// dstRect/angle/flip so it tracks scale + wobble + rotation. Gated so a normal sprite is
+	// byte-identical. The silhouette page is a cached white-filled variant; drawSilhouette
+	// set→blit→restores ColorMod AND AlphaMod each call so nothing bleeds onto the next user.
+	if st := layer.Style; st.Outline || st.DropShadow {
+		if sil, ok := v.store.VariantPage(layer.Active, courtroom.VariantSilhouette); ok && frame < len(sil.Frames) {
+			silTex := sil.Frames[frame]
+			ow := vp.H / outlineDivisor
+			if ow < outlineWidthMin {
+				ow = outlineWidthMin
+			}
+			if st.DropShadow {
+				v.drawSilhouette(ren, silTex, angle, flip, shadowDir[:], ow*shadowMultiple, 0, 0, 0, shadowAlpha)
+			}
+			if st.Outline {
+				v.drawSilhouette(ren, silTex, angle, flip, outlineDirs[:], ow, 255, 255, 255, outlineAlpha)
+			}
+		}
+	}
 	_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
 	if doColorMod {
 		_ = tex.SetColorMod(255, 255, 255)
@@ -520,6 +555,23 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if glow {
 		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	}
+}
+
+// drawSilhouette blits the (shared, cached) silhouette texture at each dir offset (scaled by
+// width), tinted (r,g,b,a) — the #8 outline/shadow. ColorMod + AlphaMod are set once and
+// restored to neutral after the group, so the shared page never carries a leftover mod into
+// the next frame or another consumer. 0-alloc: a Viewport scratch rect + scalar math.
+func (v *Viewport) drawSilhouette(ren *sdl.Renderer, tex *sdl.Texture, angle float64, flip sdl.RendererFlip, dirs [][2]int32, width int32, r, g, b, a uint8) {
+	_ = tex.SetColorMod(r, g, b)
+	_ = tex.SetAlphaMod(a)
+	for _, d := range dirs {
+		v.fxRect = v.dstRect
+		v.fxRect.X += d[0] * width
+		v.fxRect.Y += d[1] * width
+		_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
+	}
+	_ = tex.SetColorMod(255, 255, 255)
+	_ = tex.SetAlphaMod(255)
 }
 
 func clampFrame(frame, count int) int {
