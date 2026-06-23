@@ -19,6 +19,11 @@ import (
 	"time"
 )
 
+// Compiled reports whether the real Discord integration is built into this binary
+// (true here; false in the -tags nodiscord stub). The Settings UI reads it to hide the
+// Discord section entirely in a Discord-free build, rather than show dead controls.
+const Compiled = true
+
 const (
 	// opHandshake / opFrame are the Discord IPC opcodes we use.
 	opHandshake = 0

@@ -16,6 +16,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
+	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -1992,8 +1993,15 @@ func (a *App) drawSettingsAccount(y, w int32) int32 {
 	y += 34
 
 	y = a.settingsSection(y, w, "Discord")
-	// Discord Rich Presence (optional — never required to build or run).
-	y = a.drawDiscordRow(y, w)
+	if presence.Compiled {
+		// Discord Rich Presence (optional — never required to build or run).
+		y = a.drawDiscordRow(y, w)
+	} else {
+		// Discord-free build (-tags nodiscord): the integration is compiled out, so
+		// there's nothing to configure — say so instead of showing dead controls.
+		c.LabelClipped(pad, y, w-pad*2, "Rich Presence is compiled out of this build (-tags nodiscord) — use the standard build to enable it.", ColTextDim)
+		y += 26
+	}
 	return y
 }
 
