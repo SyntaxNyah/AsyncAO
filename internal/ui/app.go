@@ -3923,8 +3923,9 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 			a.d.Audio.PlayAlert()
 		}
 	}
-	// Desktop (OS) toast — rate-limited so a chatty friend can't storm it.
-	if a.d.Prefs.FriendOSToastOn() && time.Since(a.lastOSToast) >= osToastMinInterval {
+	// Desktop (OS) toast — only while you're tabbed away (#M4), rate-limited so a chatty
+	// friend can't storm it.
+	if a.d.Prefs.FriendOSToastOn() && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
 		a.lastOSToast = time.Now()
 		name := strings.TrimSpace(m.Showname)
 		if name == "" {
@@ -3944,8 +3945,8 @@ func (a *App) signalFriend(serverName string, m *protocol.ChatMessage) {
 // friend toast's rate limit so a modcall storm can't flood the desktop. Called
 // at both seams (active + background tab).
 func (a *App) signalModcall(serverName, notice string) {
-	if !a.d.Prefs.ModcallToastOn() || a.d.Prefs.StreamerMode() {
-		return
+	if !a.d.Prefs.ModcallToastOn() || a.d.Prefs.StreamerMode() || a.ctx.WindowFocused() {
+		return // #M4: only toast when tabbed away (the in-app OOC + flash cover the focused case)
 	}
 	if time.Since(a.lastOSToast) < osToastMinInterval {
 		return

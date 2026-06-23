@@ -1689,6 +1689,11 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	if next := c.Checkbox(pad, y, "Toast when a callword is heard (ON by default): a popup names the word, like the modcall/friend toasts.", ct); next != ct {
 		a.d.Prefs.SetCallwordToast(next)
 	}
+	y += 26
+	cot := a.d.Prefs.CallwordOSToastOn()
+	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification when AsyncAO is in the background (OFF by default; Windows; rate-limited)", cot); next != cot {
+		a.d.Prefs.SetCallwordOSToast(next)
+	}
 	y += 30
 	y = a.settingsSection(y, w, "Do Not Disturb")
 	// Do Not Disturb: session-only by default (clears every launch so it can't

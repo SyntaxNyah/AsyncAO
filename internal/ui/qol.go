@@ -626,6 +626,13 @@ func (a *App) checkCallwords(text string) {
 				a.warnLine = clampLine("Heard your callword: " + w)
 				a.warnAt = time.Now()
 			}
+			// #M4: desktop (OS) toast when you're tabbed away (opt-in, rate-limited so a
+			// spammed word can't storm the notification centre). The in-app toast + flash
+			// + ping cover the focused case.
+			if a.d.Prefs.CallwordOSToastOn() && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+				a.lastOSToast = time.Now()
+				showOSToast("AsyncAO — callword", "Heard your callword: "+w)
+			}
 			a.ctx.FlashWindow()
 			return
 		}

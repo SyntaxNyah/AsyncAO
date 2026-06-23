@@ -420,6 +420,17 @@ func NewCtx(ren *sdl.Renderer) (*Ctx, error) {
 // SetWindow attaches the SDL window for attention requests (FlashWindow).
 func (c *Ctx) SetWindow(win *sdl.Window) { c.win = win }
 
+// WindowFocused reports whether the window currently has input focus and isn't
+// minimised — used to gate desktop (OS) toasts to "you're tabbed away" only (#M4). A nil
+// window (headless tests) reads as focused, so tests never toast. Render thread only.
+func (c *Ctx) WindowFocused() bool {
+	if c.win == nil {
+		return true
+	}
+	f := c.win.GetFlags()
+	return f&sdl.WINDOW_INPUT_FOCUS != 0 && f&sdl.WINDOW_MINIMIZED == 0
+}
+
 // FlashWindow requests user attention until the window regains focus —
 // AO2-Client's QApplication::alert on modcalls/case announcements.
 func (c *Ctx) FlashWindow() {

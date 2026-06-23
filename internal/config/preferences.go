@@ -635,6 +635,7 @@ type AssetPreferences struct {
 	SpriteTintColor        int                          `json:"spriteTintColor"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
+	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
 	FriendGlowPulse        bool                         `json:"friendGlowPulse"`
 	FriendSound            bool                         `json:"friendSound"`
 	FriendSoundFile        string                       `json:"friendSoundFile"`
@@ -843,6 +844,7 @@ type prefsJSON struct {
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
+	CallwordOSToast        bool             `json:"callwordOSToast"`        // #M4 default OFF
 	FriendGlowPulse        bool             `json:"friendGlowPulse"`        // default OFF
 	FriendSound            bool             `json:"friendSound"`            // default OFF
 	FriendSoundFile        string           `json:"friendSoundFile"`
@@ -1347,6 +1349,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
+	p.CallwordOSToast = onDisk.CallwordOSToast
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
 	p.FriendSound = onDisk.FriendSound
 	p.FriendSoundFile = onDisk.FriendSoundFile
@@ -3290,6 +3293,25 @@ func (p *AssetPreferences) SetFriendOSToast(on bool) {
 	p.mu.Lock()
 	if p.FriendOSToast != on {
 		p.FriendOSToast = on
+		p.mu.Unlock()
+		p.markDirty()
+		return
+	}
+	p.mu.Unlock()
+}
+
+// CallwordOSToastOn / SetCallwordOSToast: pop a DESKTOP (OS) notification when a callword
+// is heard while AsyncAO is in the background (#M4; OFF by default; Windows only).
+func (p *AssetPreferences) CallwordOSToastOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CallwordOSToast
+}
+
+func (p *AssetPreferences) SetCallwordOSToast(on bool) {
+	p.mu.Lock()
+	if p.CallwordOSToast != on {
+		p.CallwordOSToast = on
 		p.mu.Unlock()
 		p.markDirty()
 		return

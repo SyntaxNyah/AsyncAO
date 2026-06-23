@@ -670,8 +670,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   halted it). The alert has its **own volume** (Settings → Audio · "Callword/alert
   volume"), **independent of SFX** — quietening or muting SFX never silences your
   name-pings. An **optional toast** (Settings → **ON by default**) names the
-  heard word, like the modcall/friend toasts. (Opus support needs the codec DLLs
-  loaded at startup — see the audio note below.)
+  heard word, like the modcall/friend toasts; a further **desktop (OS) notification**
+  (#M4, OFF by default) pops a real Windows toast when your callword lands. All three
+  **desktop toasts** (callword, friend, modcall) now fire **only while AsyncAO is
+  tabbed away or minimised** — when it's focused the in-app toast/flash already covers
+  it. (Opus support needs the codec DLLs loaded at startup — see the audio note below.)
 - **Do Not Disturb** (M15; **Ctrl+D**, or Settings → Audio & Chat): a one-click
   mode that **mutes the personal pings** — callword *and* friend alerts (their
   sound, toast, and window flash) — while **duty signals still come through**
