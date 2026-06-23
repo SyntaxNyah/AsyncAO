@@ -602,6 +602,7 @@ type App struct {
 	jukeOpen        int    // -1 = playlist list; else the open playlist index
 	jukeSearch      string // filters playlists (top) or songs (inside one)
 	jukeScroll      int32
+	aboutScroll     int32  // About screen scroll offset (the page outgrew small windows)
 	jukeNewName     string // "new playlist" input
 	jukeAddURL      string // "add song" URL input
 	jukeAddTitle    string // "add song" optional title input

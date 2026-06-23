@@ -31,8 +31,9 @@ var aboutLines = []string{
 	"needs, learns what formats your server ships, caches everything, and",
 	"renders on a zero-allocation hot path. Every millisecond counts.",
 	"",
-	"Optional Discord Rich Presence shows what you're playing - off by",
-	"default, with no Discord dependency. Enable it in Settings -> Discord.",
+	"Optional Discord Rich Presence shows what you're playing - off by default,",
+	"no Discord dependency, in Settings -> Discord. Don't want it at all? A",
+	"Discord-free build (no Discord code, slightly smaller) is on GitHub Actions.",
 	"",
 	"All credit to the original Attorney Online developers:",
 	"  • FanatSors — creator of the original Attorney Online",
@@ -79,11 +80,30 @@ func (a *App) drawAbout(w, h int32) {
 	}
 
 	lineH := int32(c.font.Height()) + 4
-	y := pad + 48*1
+	top := pad + 48 // content viewport starts below the heading
+	viewH := h - top - pad
+	// The page outgrew small windows, so it scrolls. Total height = text lines + the
+	// gap + the link buttons; clamp the wheel offset to the ends.
+	contentH := int32(len(aboutLines))*lineH + 10 + int32(len(aboutLinks))*(btnH+6)
+	maxScroll := contentH - viewH
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	a.aboutScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
+	if a.aboutScroll < 0 {
+		a.aboutScroll = 0
+	}
+	if a.aboutScroll > maxScroll {
+		a.aboutScroll = maxScroll
+	}
+
+	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
+	_ = c.Ren.SetClipRect(&clip)
+	defer func() { _ = c.Ren.SetClipRect(nil) }()
+	y := top - a.aboutScroll
 	for _, line := range aboutLines {
 		col := ColText
-		if line == "Pull requests, bug fixes and feature requests are welcome!" ||
-			line == "  Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag" {
+		if line == "Pull requests, bug fixes and feature requests are welcome!" {
 			col = ColAccent
 		}
 		c.Label(pad, y, line, col)
@@ -93,8 +113,12 @@ func (a *App) drawAbout(w, h int32) {
 	y += 10
 	for _, link := range aboutLinks {
 		bw := c.TextWidth(link.label) + 24
-		if c.Button(sdl.Rect{X: pad, Y: y, W: bw, H: btnH}, link.label) {
-			openBrowser(link.url)
+		// Only draw + hit-test a button while it's inside the scroll viewport, so one
+		// scrolled out of view can't be clicked through the heading or the page edge.
+		if y+btnH > top && y < top+viewH {
+			if c.Button(sdl.Rect{X: pad, Y: y, W: bw, H: btnH}, link.label) {
+				openBrowser(link.url)
+			}
 		}
 		y += btnH + 6
 	}
