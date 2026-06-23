@@ -460,6 +460,10 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	y = a.drawAutoStatusSettings(y, w)
 	y += 8
 
+	y = a.settingsSection(y, w, "AsyncAO appearance")
+	y = a.drawChromeSettings(y, w)
+	y += 8
+
 	y = a.settingsSection(y, w, "Display & behaviour")
 	anims := a.d.Prefs.AnimationsEnabled()
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {

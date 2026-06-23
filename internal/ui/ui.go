@@ -77,6 +77,12 @@ var defaultKitColors = [...]sdl.Color{
 	ColBackground, ColPanel, ColPanelHi, ColAccent, ColText, ColTextDim, ColDanger,
 }
 
+// activeKitColors is the BASE palette applyThemePalette restores to — the stock dark by
+// default, or the user's chosen chrome preset (#M3 AsyncAO chrome themes). An AO2 theme's
+// stylesheet colours still overlay it; with no theme colours (the common case) the preset
+// IS the client chrome. Set on the render thread (theme/preset change), so no lock.
+var activeKitColors = defaultKitColors
+
 // Palette derivation ratios for slots QSS doesn't define directly: the
 // window background sits a step darker than panels and dim text a step
 // darker than text, preserving the kit's depth cues under theme colors.
@@ -112,9 +118,9 @@ const paletteLightPanelLuma = 128
 // panel, dim text from text) so partial stylesheets stay coherent.
 func applyThemePalette(p theme.Palette) {
 	ColBackground, ColPanel, ColPanelHi, ColAccent, ColText, ColTextDim, ColDanger =
-		defaultKitColors[0], defaultKitColors[1], defaultKitColors[2],
-		defaultKitColors[3], defaultKitColors[4], defaultKitColors[5],
-		defaultKitColors[6]
+		activeKitColors[0], activeKitColors[1], activeKitColors[2],
+		activeKitColors[3], activeKitColors[4], activeKitColors[5],
+		activeKitColors[6]
 	if p.Empty() {
 		return
 	}

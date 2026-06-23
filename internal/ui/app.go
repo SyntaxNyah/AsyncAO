@@ -491,6 +491,7 @@ type App struct {
 	themeChatbox bool // theme://chatbox resident (mirror of themeTex)
 	themeMsgCol  sdl.Color
 	themeHasMsg  bool
+	themePalette theme.Palette // last theme's chrome palette, kept so a #M3 chrome-preset change can re-overlay it
 	themeNameCol sdl.Color
 	themeHasName bool
 	// Theme courtroom geometry (courtroom_design.ini): design-space rects
@@ -1464,6 +1465,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			a.autoConnectPending = true
 		}
 	}
+	a.applyChromePreset(d.Prefs.ChromeTheme()) // #M3: apply the saved client chrome theme at launch
 	return a
 }
 
@@ -3523,6 +3525,7 @@ func (a *App) pollThemeApply() {
 	a.themeAt = time.Now() // restart the theme-art animation clock
 	// Apply (or restore) the stylesheet palette; label textures are
 	// color-keyed, so purge the text cache to re-rasterize in new colors.
+	a.themePalette = res.palette // remember it so a chrome-preset change can re-overlay it (#M3)
 	applyThemePalette(res.palette)
 	a.ctx.purgeTextCache()
 	a.pushRealizationToRoom()

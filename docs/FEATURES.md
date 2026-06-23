@@ -1021,6 +1021,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   restart). **Theater mode** (Ctrl+T, the UI... panel, Esc exits): the
   borderless stage alone — viewport, chat overlay, splashes — session-
   only by design.
+- **AsyncAO chrome themes** (#M3, **Settings → AsyncAO appearance**): pick the
+  **client UI** palette — **Dark** (default), **Midnight**, **Light**, or **High
+  contrast** — applied to AsyncAO's own panels, **separate from AO2 courtroom
+  themes**. The choice is the *base* palette; a server theme that ships chrome
+  colours (`courtroom_stylesheets.css`) still overlays it, and a built-in
+  readability floor keeps text legible either way. 100% local, persisted, and
+  free on the render loop (the kit colours are package vars read as values —
+  reassigned only on a theme/preset change, never per frame).
 - **Font override with CJK fallback chain** (Settings → IC/OOC font):
   semicolon-separated TTF/TTC paths; every message and log line picks
   the first chain font covering all its runes (CJK fonts cover Latin, so

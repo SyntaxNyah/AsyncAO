@@ -724,7 +724,8 @@ type AssetPreferences struct {
 	CallWordList       []string                  `json:"callWords"`
 	HotkeyMap          map[string]string         `json:"hotkeys"`
 	DiscordRPC         DiscordPrefs              `json:"discord"`
-	MyAutoStatus       AutoStatusPref            `json:"autoStatus"` // #M1 auto-status from typed words
+	MyAutoStatus       AutoStatusPref            `json:"autoStatus"`            // #M1 auto-status from typed words
+	ChromeThemeKey     string                    `json:"chromeTheme,omitempty"` // #M3 AsyncAO chrome theme preset
 	// CharDownloaderOn enables the opt-in single-character/background
 	// downloader (off by default — it writes files to disk on demand).
 	CharDownloaderOn bool `json:"charDownloader"`
@@ -938,6 +939,7 @@ type prefsJSON struct {
 	Hotkeys            map[string]string         `json:"hotkeys"`
 	Discord            *DiscordPrefs             `json:"discord"`
 	AutoStatus         *AutoStatusPref           `json:"autoStatus,omitempty"`
+	ChromeTheme        *string                   `json:"chromeTheme,omitempty"`
 	CharDownloader     bool                      `json:"charDownloader"`
 
 	ShowAssetWarnings  bool     `json:"showAssetWarnings"`    // default OFF (zero value)
@@ -1195,6 +1197,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		MultiTabCap:            DefaultMultiTabCap,
 		DiscordRPC:             defaultDiscordPrefs(),
 		MyAutoStatus:           defaultAutoStatusPref(),
+		ChromeThemeKey:         "dark",
 		ViewportPct:            DefaultViewportPercent,
 		ChatScalePct:           DefaultScalePercent,
 		ChatBoxPct:             DefaultScalePercent,
@@ -1545,6 +1548,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.AutoStatus != nil {
 		p.MyAutoStatus = sanitizeAutoStatus(*onDisk.AutoStatus)
+	}
+	if onDisk.ChromeTheme != nil {
+		p.ChromeThemeKey = *onDisk.ChromeTheme
 	}
 	return p, nil
 }
@@ -3600,6 +3606,28 @@ func (p *AssetPreferences) SetAutoStatus(a AutoStatusPref) {
 		return
 	}
 	p.MyAutoStatus = a
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ChromeTheme reports the AsyncAO chrome theme preset key (#M3; "dark" default).
+func (p *AssetPreferences) ChromeTheme() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.ChromeThemeKey == "" {
+		return "dark"
+	}
+	return p.ChromeThemeKey
+}
+
+// SetChromeTheme stores the chrome theme preset key.
+func (p *AssetPreferences) SetChromeTheme(key string) {
+	p.mu.Lock()
+	if p.ChromeThemeKey == key {
+		p.mu.Unlock()
+		return
+	}
+	p.ChromeThemeKey = key
 	p.mu.Unlock()
 	p.markDirty()
 }
