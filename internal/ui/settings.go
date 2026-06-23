@@ -16,7 +16,6 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
-	"github.com/SyntaxNyah/AsyncAO/internal/presence"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
@@ -1992,16 +1991,9 @@ func (a *App) drawSettingsAccount(y, w int32) int32 {
 	}
 	y += 34
 
-	y = a.settingsSection(y, w, "Discord")
-	if presence.Compiled {
-		// Discord Rich Presence (optional — never required to build or run).
-		y = a.drawDiscordRow(y, w)
-	} else {
-		// Discord-free build (-tags nodiscord): the integration is compiled out, so
-		// there's nothing to configure — say so instead of showing dead controls.
-		c.LabelClipped(pad, y, w-pad*2, "Rich Presence is compiled out of this build (-tags nodiscord) — use the standard build to enable it.", ColTextDim)
-		y += 26
-	}
+	// Discord Rich Presence: the whole section lives in a build-tagged file, so a
+	// -tags nodiscord binary compiles it out entirely (no section, no code).
+	y = a.drawDiscordSection(y, w)
 	return y
 }
 
@@ -2295,58 +2287,6 @@ func containsExt(list []string, ext string) bool {
 		}
 	}
 	return false
-}
-
-// drawDiscordRow renders the optional Rich Presence section: a master
-// toggle (default OFF), one checkbox per displayed field (the tick-on
-// defaults show showname + character + server; the area stays private
-// unless chosen), and the application-ID field. Returns the next y.
-func (a *App) drawDiscordRow(y, w int32) int32 {
-	c := a.ctx
-	dp := a.d.Prefs.Discord()
-	changed := false
-	if next := c.Checkbox(pad, y, "Discord Rich Presence (\"Playing AsyncAO\" on your profile while Discord runs; fully optional)", dp.Enabled); next != dp.Enabled {
-		dp.Enabled = next
-		changed = true
-	}
-	y += 26
-	if dp.Enabled {
-		c.Label(pad+20, y+2, "Show:", ColTextDim)
-		x := pad + 70
-		fields := []struct {
-			label string
-			v     *bool
-		}{
-			{"server", &dp.ShowServer},
-			{"character", &dp.ShowChar},
-			{"showname", &dp.ShowName},
-			{"area", &dp.ShowArea},
-		}
-		for _, f := range fields {
-			if next := c.Checkbox(x, y, f.label, *f.v); next != *f.v {
-				*f.v = next
-				changed = true
-			}
-			x += c.TextWidth(f.label) + 52
-		}
-		y += 28
-		c.Label(pad+20, y+4, "App ID:", ColText)
-		if next, _ := c.TextField("discordappid", sdl.Rect{X: pad + 90, Y: y, W: 220, H: fieldH}, dp.AppID, "Discord application ID"); next != dp.AppID {
-			dp.AppID = next
-			changed = true
-		}
-		status := "(create an app named AsyncAO at discord.com/developers, icon asset \"appicon\"; ID changes apply on restart)"
-		if a.d.Presence != nil {
-			status = "status: " + a.d.Presence.Status() + " — ID changes apply on restart"
-		}
-		c.LabelClipped(pad+320, y+4, w-pad-330, status, ColTextDim)
-		y += 32
-	}
-	if changed {
-		a.d.Prefs.SetDiscord(dp)
-		a.updatePresence()
-	}
-	return y + 4
 }
 
 // drawDownloaderSettings renders the opt-in single-asset downloader section:

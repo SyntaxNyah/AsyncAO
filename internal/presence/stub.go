@@ -15,10 +15,6 @@ type Activity struct {
 	Start   time.Time
 }
 
-// Compiled is false in the -tags nodiscord build, so the Settings UI hides the Discord
-// section entirely (nothing to configure when the integration is compiled out).
-const Compiled = false
-
 // Client is the inert stand-in.
 type Client struct{}
 
