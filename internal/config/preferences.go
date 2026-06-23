@@ -643,6 +643,7 @@ type AssetPreferences struct {
 	PostVignette           bool                         `json:"postVignette"`
 	PostScanlines          bool                         `json:"postScanlines"`
 	PostGrain              bool                         `json:"postGrain"`
+	AnimateEntrances       bool                         `json:"animateEntrances"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -856,6 +857,7 @@ type prefsJSON struct {
 	PostVignette           bool             `json:"postVignette"`           // default OFF
 	PostScanlines          bool             `json:"postScanlines"`          // default OFF
 	PostGrain              bool             `json:"postGrain"`              // default OFF
+	AnimateEntrances       bool             `json:"animateEntrances"`       // default OFF
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1364,6 +1366,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.PostVignette = onDisk.PostVignette
 	p.PostScanlines = onDisk.PostScanlines
 	p.PostGrain = onDisk.PostGrain
+	p.AnimateEntrances = onDisk.AnimateEntrances
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3260,6 +3263,17 @@ func (p *AssetPreferences) PostGrainOn() bool { p.mu.RLock(); defer p.mu.RUnlock
 func (p *AssetPreferences) SetPostVignette(on bool)  { p.setBoolPref(&p.PostVignette, on) }
 func (p *AssetPreferences) SetPostScanlines(on bool) { p.setBoolPref(&p.PostScanlines, on) }
 func (p *AssetPreferences) SetPostGrain(on bool)     { p.setBoolPref(&p.PostGrain, on) }
+
+// AnimateEntrancesOn reports the #9 entrance-slide toggle (OFF by default): a new speaker
+// slides in when they take the stage.
+func (p *AssetPreferences) AnimateEntrancesOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AnimateEntrances
+}
+
+// SetAnimateEntrances toggles the entrance slide-in.
+func (p *AssetPreferences) SetAnimateEntrances(on bool) { p.setBoolPref(&p.AnimateEntrances, on) }
 
 // setBoolPref sets *field to on under the lock, marking dirty only on a real change.
 func (p *AssetPreferences) setBoolPref(field *bool, on bool) {

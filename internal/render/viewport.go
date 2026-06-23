@@ -127,6 +127,7 @@ type SpriteFX struct {
 	Wobble     bool // gentle continuous position sway
 	Spin       bool // slow continuous rotation
 	ShoutPunch bool // #12: quick scale-pop of the whole stage when a shout appears
+	Entrance   bool // #9: slide the speaker in when a new character takes the stage
 
 	Speed     int // rainbow hue speed slider [1,100] (higher = faster)
 	Vividness int // rainbow saturation slider [0,100] (higher = more neon)
@@ -170,6 +171,11 @@ type Viewport struct {
 	// shout's appearance in Update so the pop fires once per shout. Viewer-local.
 	punchLeft   time.Duration
 	prevShoutOn bool
+
+	// #9 entrance: entranceLeft counts down a speaker slide-in; prevSpeaker edge-detects a
+	// NEW character taking the stage (name change) so the slide fires once per entrance.
+	entranceLeft time.Duration
+	prevSpeaker  string
 
 	// scratch rects reused every frame (no allocs in the loop): taking the
 	// address of a stack value for a cgo call would force a heap escape
@@ -241,6 +247,19 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.prevShoutOn = shoutOn
 	if v.punchLeft -= dt; v.punchLeft < 0 {
 		v.punchLeft = 0
+	}
+
+	// #9 entrance: a NEW character on stage (the speaker's name changed) arms a slide-in.
+	// Tracked unconditionally; only *applied* in Render when fx.Entrance is on, so it's free
+	// when off. Same-speaker consecutive messages (or an empty speaker) never re-trigger.
+	if sp := scene.Speaker.Name; sp != "" && sp != v.prevSpeaker {
+		if v.prevSpeaker != "" { // don't slide the very first speaker of a fresh session
+			v.entranceLeft = entranceDuration
+		}
+		v.prevSpeaker = sp
+	}
+	if v.entranceLeft -= dt; v.entranceLeft < 0 {
+		v.entranceLeft = 0
 	}
 
 	shoutBase := effectiveShoutBase(scene, v.store)
@@ -338,15 +357,21 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		pairShift = v.curCycle / 2
 	}
 
+	// #9 entrance: a new speaker slides in from the left, easing to position (the slide rect
+	// is the speaker's only; the pair stays put). Off / settled → spkVP == vp → unchanged.
+	spkVP := vp
+	if v.fx.Entrance && v.entranceLeft > 0 {
+		spkVP.X += entranceSlide(v.entranceLeft, vp.W)
+	}
 	if scene.PairActive && !scene.SpeakerInFront {
 		// Speaker behind: draw speaker first, pair over it.
-		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, vp, 0)
+		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0)
 		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift)
 	} else if scene.PairActive {
 		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift)
-		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, vp, 0)
+		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0)
 	} else {
-		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, vp, 0)
+		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0)
 	}
 
 	if scene.ShowDesk {
@@ -597,6 +622,23 @@ func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle f
 	_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
 	_ = tex.SetColorMod(255, 255, 255)
 	_ = tex.SetAlphaMod(255)
+}
+
+// Entrance tuning (#9): a quick slide-in for a newly-arrived speaker.
+const (
+	entranceDuration  = 320 * time.Millisecond // slide settle time
+	entranceSlideFrac = 0.22                   // start offset = vp.W * this (slides from the left)
+)
+
+// entranceSlide returns the speaker's horizontal slide offset (negative → from the left) at
+// the given remaining time: most offset at the start, easing to 0 (frac² snap-in). Pure,
+// 0-alloc.
+func entranceSlide(left time.Duration, vpW int32) int32 {
+	frac := float64(left) / float64(entranceDuration)
+	if frac > 1 {
+		frac = 1
+	}
+	return -int32(float64(vpW) * entranceSlideFrac * frac * frac)
 }
 
 // Glitch tuning (#13): a chromatic split that shimmers + a periodic horizontal jolt.
