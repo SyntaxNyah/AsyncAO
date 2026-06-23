@@ -720,7 +720,10 @@ type sessionState struct {
 	emoteIconAsk   []time.Time
 	// #M2 S1: the IC-bar emoji picker (local; insert emoji into your message).
 	// showEmojiPicker toggles the grid overlay; emojiBtnRect anchors it above the button.
+	// emojiFenceOn tracks that WE set the modal fence so it's RELEASED when the picker
+	// closes — modalOn persists across frames, so an un-released fence freezes the UI.
 	showEmojiPicker bool
+	emojiFenceOn    bool
 	emojiBtnRect    sdl.Rect
 
 	// --- courtroom chrome ---
@@ -3254,6 +3257,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.confirmDisconnect || a.hidePrompt != "" {
 		a.ctx.fencePointer()
 	}
+
+	// #M2 S1: set/RELEASE the emoji-picker modal fence before any screen draws. modalOn
+	// persists across frames, so an un-released fence freezes the whole UI (the reported
+	// open-then-close bug).
+	a.emojiPickerFence(a.ctx)
 
 	if a.gifExporting {
 		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a

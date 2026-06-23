@@ -873,12 +873,6 @@ func (a *App) drawCourtroom(w, h int32) {
 		return
 	}
 
-	// #M2 S1: while the emoji picker is open, fence the whole courtroom so a click on a
-	// picker cell can't fall through to the stage/log/emotes (the picker uses raw pointIn).
-	// Set before BOTH layouts dispatch; c.modalOn releases next BeginFrame.
-	if a.showEmojiPicker {
-		c.modalOn = true
-	}
 	// Theme-driven geometry: when the theme ships courtroom_design.ini
 	// (and the toggle is on), the courtroom IS the theme's layout.
 	if lay := a.themeLayout(w, h); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
