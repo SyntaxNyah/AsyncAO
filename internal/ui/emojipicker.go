@@ -10,13 +10,16 @@ import "github.com/veandco/go-sdl2/sdl"
 // beneath; the picker + its button use the raw pointIn hit test, like the dropdown.
 
 // icEmojiSet is a curated set of common reaction/chat emojis (emojiPickerCols per row).
+// Kept to widely-shipped code points (Unicode ≤ 11) so they don't box on an older system
+// emoji font — the very newest faces (e.g. 🫡 🫠, Unicode 14/2021) are absent from emoji
+// fonts that predate them, and a streaming client can't ship its own coloured glyphs.
 var icEmojiSet = []string{
 	"😀", "😂", "🙂", "😉", "😍", "😎", "😭", "😡",
 	"👍", "👎", "👏", "🙏", "💪", "🤝", "✌️", "👋",
 	"❤️", "💔", "💯", "🔥", "✨", "⭐", "🎉", "💀",
 	"😱", "😳", "🤔", "😴", "😅", "😏", "🥺", "😤",
 	"⚖️", "🔨", "📌", "❓", "❗", "✅", "❌", "💬",
-	"🤣", "😘", "😩", "🙄", "🤡", "👀", "🫡", "🫠",
+	"🤣", "😘", "😩", "🙄", "🤡", "👀", "🤗", "😬",
 }
 
 const (
@@ -33,13 +36,21 @@ func (a *App) drawEmojiBarButton(btn sdl.Rect) bool {
 	c := a.ctx
 	a.emojiBtnRect = btn
 	c.Fill(btn, ColPanel)
-	if a.showEmojiPicker || pointIn(c.mouseX, c.mouseY, btn) {
+	hover := pointIn(c.mouseX, c.mouseY, btn)
+	if a.showEmojiPicker || hover {
 		c.Border(btn, ColAccent)
 	} else {
 		c.Border(btn, ColTextDim)
 	}
+	// Pre-warm the ~12 MB colour-emoji face on HOVER, so the grid (and this button's own
+	// glyph) are already in colour by the time the picker opens — no first-open tofu flash
+	// while the off-thread read lands. Lazy is preserved: a user who never reaches for the
+	// emoji button never triggers the read.
+	if hover {
+		a.ensureEmojiFontLoad()
+	}
 	a.labelEmoji(c.font, c.EmojiFont(emojiBtnPct), btn.X+4, btn.Y+(btn.H-18)/2, btn.W-6, "🙂", ColText)
-	return c.clicked && pointIn(c.mouseX, c.mouseY, btn)
+	return c.clicked && hover
 }
 
 // drawEmojiPicker draws the open picker overlay (a grid anchored above the button) and

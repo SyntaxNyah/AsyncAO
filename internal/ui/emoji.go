@@ -52,8 +52,10 @@ func (a *App) pollEmojiFont() {
 	select {
 	case data := <-a.emojiFontRes:
 		a.ctx.SetEmojiFont(data)
-		a.ctx.EmojiFont(a.chatPct) // pre-warm at the chat size
-		a.rasterText = ""          // re-raster the visible message with the emoji face
+		a.ctx.EmojiFont(a.chatPct)      // pre-warm at the chat size
+		a.ctx.EmojiFont(emojiPickerPct) // …and the picker-grid size, so the grid paints colour at once
+		a.ctx.EmojiFont(emojiBtnPct)    // …and the IC-bar button size
+		a.rasterText = ""               // re-raster the visible message with the emoji face
 	default:
 	}
 }
