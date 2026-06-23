@@ -711,6 +711,12 @@ type sessionState struct {
 	emoteBtnOffGen uint64
 	emoteBtnOn     []*render.TexturePage
 	emoteBtnOnGen  uint64
+	// emoteIconPages: the active character's icon (one slot), drawn behind the emote
+	// label when an emotions/button<N> image is absent/streaming — a face beats a bare
+	// grey box. Same gen-/index-keyed page cache, so it's nulled on a character change.
+	emoteIconPages []*render.TexturePage
+	emoteIconGen   uint64
+	emoteIconAsk   []time.Time
 
 	// --- courtroom chrome ---
 	icInput  string
@@ -2997,7 +3003,7 @@ func (a *App) pollCharINI() {
 		// New emote list = new button art; the gen-keyed page caches key
 		// by INDEX, so a same-length iniswap would show the old char's
 		// buttons without this.
-		a.emoteBtnOff, a.emoteBtnOn = nil, nil
+		a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
 		if res.err != nil || res.ini == nil {
 			// Surface WHY the emote list is a bare default (better than a
 			// silent single "normal" chip).
@@ -3531,8 +3537,8 @@ func (a *App) pollThemeApply() {
 	// until demandAsset's per-slot retry window elapses. Force a fresh
 	// re-demand so the emote grid heals immediately after a theme switch
 	// (the same invariant pollCharINI applies on a character change).
-	a.emoteBtnOff, a.emoteBtnOn = nil, nil
-	a.emoteAsk = nil
+	a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
+	a.emoteAsk, a.emoteIconAsk = nil, nil
 }
 
 // ensureThemeForSession re-applies the theme whenever the session's

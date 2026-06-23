@@ -3581,9 +3581,22 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 	if ok && len(page.Frames) > 0 {
 		_ = c.Ren.Copy(page.Frames[0], nil, &btn)
 	} else {
-		c.Fill(btn, ColPanel)
-		c.Border(btn, ColPanelHi)
-		c.LabelClipped(btn.X+3, btn.Y+btn.H/2-8, btn.W-6, label, ColTextDim)
+		// No emotions/button<N> art (404 / still streaming): fall back to the character
+		// ICON — a face beats a bare grey box (players disliked the grey). The emote label
+		// rides a strip at the bottom so emotes stay distinguishable even when every cell
+		// shows the same icon. Grey only remains until even the icon streams in. One small
+		// icon per character (NOT the full sprite), so no streaming storm / budget hit.
+		iconBase := a.urls.CharIcon(me)
+		if ip, iok := a.cachedPage(&a.emoteIconPages, &a.emoteIconGen, 1, 0, iconBase); iok && len(ip.Frames) > 0 {
+			_ = c.Ren.Copy(ip.Frames[0], nil, &btn)
+		} else {
+			a.demandAsset(&a.emoteIconAsk, 1, 0, iconBase, assets.AssetTypeCharIcon) // AssetType: CharIcon
+			c.Fill(btn, ColPanel)
+			c.Border(btn, ColPanelHi)
+		}
+		strip := sdl.Rect{X: btn.X, Y: btn.Y + btn.H - 15, W: btn.W, H: 15}
+		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 150})
+		c.LabelClipped(btn.X+3, strip.Y+1, btn.W-6, label, ColText)
 	}
 	return c.hovering(btn) && c.clicked
 }
