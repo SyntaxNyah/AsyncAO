@@ -398,6 +398,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			field.X += field.H + 4
 			field.W -= field.H + 4
 		}
+		// #M5: dedicated Text FX button (only when the field still has room after it).
+		if field.W > fxBtnW+120 {
+			a.fxButton(sdl.Rect{X: field.X, Y: field.Y, W: fxBtnW, H: field.H})
+			field.X += fxBtnW + 4
+			field.W -= fxBtnW + 4
+		}
 		var send bool
 		icCounterOn := a.d.Prefs.MessageCounterOn()
 		if icCounterOn {

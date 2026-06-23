@@ -46,29 +46,42 @@ func TestRemoteEffectsThroughRoom(t *testing.T) {
 	}
 }
 
-// TestWrapICEffect pins the one-click Text FX strip: it wraps the whole input, toggles the
-// same effect off, no-ops on empty input, and the wrap round-trips through ParseTextEffects
-// to a span over the original text.
-func TestWrapICEffect(t *testing.T) {
-	a := &App{ctx: &Ctx{}}
-	a.icInput = "hello world"
-	a.wrapICEffect("rainbow")
-	if a.icInput != "[rainbow]hello world[/rainbow]" {
-		t.Fatalf("wrap = %q", a.icInput)
+// TestNextICEffect pins the cycle order Off → Shake → Wave → Rainbow → Off.
+func TestNextICEffect(t *testing.T) {
+	got := []uint8{courtroom.TextEffectNone}
+	for i := 0; i < 4; i++ {
+		got = append(got, nextICEffect(got[len(got)-1]))
 	}
-	// Round-trips: the wire text is the plain message, with one span over all of it.
-	wire, spans := courtroom.ParseTextEffects(a.icInput)
+	want := []uint8{courtroom.TextEffectNone, courtroom.TextEffectShake, courtroom.TextEffectWave, courtroom.TextEffectRainbow, courtroom.TextEffectNone}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("cycle = %v, want %v", got, want)
+		}
+	}
+}
+
+// TestApplyStickyEffect pins the dedicated FX button's send-time wrap: it wraps a normal
+// message, but is a no-op when off, on a blankpost, or when the user already typed inline
+// markup (inline wins). The wrap round-trips through ParseTextEffects to a whole-message span.
+func TestApplyStickyEffect(t *testing.T) {
+	a := &App{}
+	a.icEffect = courtroom.TextEffectRainbow
+	if got := a.applyStickyEffect("hello world"); got != "[rainbow]hello world[/rainbow]" {
+		t.Fatalf("wrap = %q", got)
+	}
+	wire, spans := courtroom.ParseTextEffects(a.applyStickyEffect("hello world"))
 	if wire != "hello world" || len(spans) != 1 || spans[0].Effect != courtroom.TextEffectRainbow {
-		t.Fatalf("wrap doesn't parse back: wire=%q spans=%v", wire, spans)
+		t.Fatalf("sticky wrap doesn't parse back: wire=%q spans=%v", wire, spans)
 	}
-	a.wrapICEffect("rainbow") // toggle off
-	if a.icInput != "hello world" {
-		t.Errorf("toggle-off = %q, want \"hello world\"", a.icInput)
+	if got := a.applyStickyEffect(" "); got != " " { // blankpost untouched
+		t.Errorf("blankpost wrap = %q, want \" \"", got)
 	}
-	a.icInput = "   "
-	a.wrapICEffect("shake") // whitespace-only → no-op
-	if strings.TrimSpace(a.icInput) != "" {
-		t.Errorf("empty wrap mutated input to %q", a.icInput)
+	if got := a.applyStickyEffect("type [shake]hi[/shake]"); strings.HasPrefix(got, "[rainbow]") {
+		t.Errorf("sticky wrapped a message that already has inline markup: %q", got)
+	}
+	a.icEffect = courtroom.TextEffectNone
+	if got := a.applyStickyEffect("plain"); got != "plain" { // off → untouched
+		t.Errorf("off wrap = %q, want \"plain\"", got)
 	}
 }
 

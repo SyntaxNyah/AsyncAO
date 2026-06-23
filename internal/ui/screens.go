@@ -3179,6 +3179,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.showEmojiPicker = !a.showEmojiPicker
 	}
 	icX += fH + 4
+	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow).
+	a.fxButton(sdl.Rect{X: icX, Y: icY, W: fxBtnW, H: fH})
+	icX += fxBtnW + 4
 	icCounterOn := a.d.Prefs.MessageCounterOn()
 	icW := vp.W - (icX - pad)
 	if icCounterOn {
@@ -3982,11 +3985,14 @@ func (a *App) sendIC(shout int) {
 	if blip == "" {
 		blip = a.charBlips
 	}
-	// #M5 animated text: pull the [shake]/[wave]/[rainbow] markup out into the wire text
-	// (tags removed, \cN colour kept) plus the display-indexed effect spans. The spans ride
-	// an invisible frame appended below, so AO2/webAO render the plain message; the spans
-	// align with the receiver's MessageText because the two strips commute. 0-alloc when the
-	// input has no '['. A markup-only message (no visible text left) falls back to a blankpost.
+	// #M5 animated text: the sticky FX button wraps the whole message first (no-op when off
+	// / blankpost / you already typed inline markup), then ParseTextEffects pulls all the
+	// [shake]/[wave]/[rainbow] markup out into the wire text (tags removed, \cN colour kept)
+	// plus the display-indexed effect spans. The spans ride an invisible frame appended
+	// below, so AO2/webAO render the plain message; the spans align with the receiver's
+	// MessageText because the two strips commute. 0-alloc when the input has no '['. A
+	// markup-only message (no visible text left) falls back to a blankpost.
+	text = a.applyStickyEffect(text)
 	text, effectSpans := courtroom.ParseTextEffects(text)
 	if strings.TrimSpace(text) == "" && shout == 0 {
 		text, effectSpans = " ", nil

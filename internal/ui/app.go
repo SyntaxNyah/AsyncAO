@@ -764,7 +764,8 @@ type sessionState struct {
 	// render.ExtColorAt (icExtColor-1); 0 = none, so the &App{} zero value stays
 	// idle. Mutually exclusive with the wire palette / Rainbow / Random.
 	icExtColor  int
-	icImmediate bool // MS Immediate: preanim plays without holding the text (session toggle)
+	icImmediate bool  // MS Immediate: preanim plays without holding the text (session toggle)
+	icEffect    uint8 // #M5 sticky Text FX (courtroom.TextEffect*); 0 = off. Wraps every message you send.
 	// pair placement (session-scoped: each tab keeps its own, seeded from prefs in
 	// resetSessionState, so it can't leak across tabs like the App-global version
 	// did). pairOffXText/Y are the typed edit buffers (commit on valid parse).
