@@ -117,6 +117,11 @@ type Scene struct {
 	// differently-colored messages can share the same stripped MessageText.
 	MessageStyles []StyleRun
 	MessageRaw    string
+	// MessageEffects tags spans of MessageText with an animated effect (#M5:
+	// shake / wave / rainbow), decoded from the speaker's zero-width effects
+	// frame. Rune indices into MessageText. Empty (the common case) → the plain
+	// raster fast path; the UI maps these to render.EffectSpan only when present.
+	MessageEffects []TextEffectSpan
 	// IsBlankPost is set when the message's text is empty or whitespace-only
 	// (an AO "blankpost": animate the sprite, say nothing). The UI hides the
 	// whole chatbox — frame, showname and text — so only the sprite shows.
@@ -218,6 +223,10 @@ type Courtroom struct {
 	// re-decode the style); we never mutate it.
 	currentText string
 	blipBase    string
+	// pendingEffects holds the current message's decoded animated-text spans (#M5),
+	// set in begin() and copied onto Scene.MessageEffects when the text shows
+	// (startTalking) — effects are per-message content, never recalled.
+	pendingEffects []TextEffectSpan
 
 	// styleByChar remembers each speaker's last TRANSMITTED sprite style, keyed by
 	// msg.CharID. Senders transmit the marker only when their style CHANGES
@@ -439,6 +448,12 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if st, ok := DecodeStatusMarker(msg.Message); ok {
 		c.rememberStatus(msg.CharName, st)
 	}
+	// Animated-text spans (#M5) — same channel, distinct magic. Per-message content (not
+	// recalled): decode straight from this message, kept until the text shows (startTalking).
+	c.pendingEffects = c.pendingEffects[:0]
+	if spans, ok := DecodeEffectsMarker(msg.Message); ok {
+		c.pendingEffects = append(c.pendingEffects, spans...)
+	}
 	if c.HideSpriteStyles {
 		style = SpriteStyle{} // viewer opted out of others' styles
 	} else if c.ReduceMotion {
@@ -563,6 +578,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.Scene.MessageText = ""
 	c.Scene.MessageRaw = ""
 	c.Scene.MessageStyles = c.Scene.MessageStyles[:0]
+	c.Scene.MessageEffects = c.Scene.MessageEffects[:0]
 	c.Scene.VisibleRunes = 0
 	// Blankpost decided up front from the raw text (StripChatMarkup is pinned
 	// to the typewriter by TestStripMatchesTypewriter, so this matches what
@@ -611,6 +627,11 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.MessageText = c.Typewriter.Text()
 	c.Scene.MessageRaw = c.currentText
 	c.Scene.MessageStyles = append(c.Scene.MessageStyles[:0], c.Typewriter.Styles()...)
+	if spans, ok := DecodeEffectsMarker(msg.Message); ok { // #M5 spans (one-frame flash still shows them)
+		c.Scene.MessageEffects = append(c.Scene.MessageEffects[:0], spans...)
+	} else {
+		c.Scene.MessageEffects = c.Scene.MessageEffects[:0]
+	}
 	c.Scene.VisibleRunes = c.Typewriter.Visible()
 	// Same blankpost rule as begin(); this path doesn't route through it.
 	c.Scene.IsBlankPost = strings.TrimSpace(c.Scene.MessageText) == ""
@@ -698,6 +719,7 @@ func (c *Courtroom) startTalking() {
 	c.Scene.MessageText = c.Typewriter.Text()
 	c.Scene.MessageRaw = c.currentText
 	c.Scene.MessageStyles = append(c.Scene.MessageStyles[:0], c.Typewriter.Styles()...) // copy: Start reuses its slice
+	c.Scene.MessageEffects = append(c.Scene.MessageEffects[:0], c.pendingEffects...)    // #M5 spans, decoded in begin
 	c.Scene.VisibleRunes = 0
 	if !c.Scene.Speaker.PlayOnce {
 		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
