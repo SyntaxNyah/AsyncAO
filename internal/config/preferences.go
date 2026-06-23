@@ -325,6 +325,7 @@ type SpriteStylePref struct {
 	// sprite. Transmitted via a backward-compatible flags2 byte on the style wire.
 	Outline    bool  `json:"outline,omitempty"`
 	DropShadow bool  `json:"dropShadow,omitempty"`
+	Glitch     bool  `json:"glitch,omitempty"` // #13 chromatic-aberration glitch
 	Brightness uint8 `json:"brightness,omitempty"`
 	Scale      uint8 `json:"scale,omitempty"`
 	Rotation   uint8 `json:"rotation,omitempty"`

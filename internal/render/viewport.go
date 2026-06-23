@@ -442,11 +442,11 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	// takes precedence over the viewer's local wash for that layer; otherwise the
 	// local wash (rainbow / solid) applies exactly as before.
 	var (
-		modR, modG, modB            uint8 = 255, 255, 255
-		alphaMod                    uint8 = 255
-		doColorMod, glow, wob, spin bool
-		scalePct                    = 100
-		rotDeg                      float64
+		modR, modG, modB                    uint8 = 255, 255, 255
+		alphaMod                            uint8 = 255
+		doColorMod, glow, wob, spin, glitch bool
+		scalePct                            = 100
+		rotDeg                              float64
 	)
 	if st := layer.Style; st.Active() {
 		// Colour: a transmitted hue-cycle rainbow, else the tint colour, then
@@ -469,6 +469,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		}
 		alphaMod = st.AlphaMod() // opacity (floored so a received style can't go invisible)
 		glow, wob, spin = st.Glow, st.Wobble, st.Spin
+		glitch = st.Glitch
 		scalePct = st.ScalePct()
 		rotDeg = st.RotationDeg()
 		if st.FlipH { // transmitted mirror toggles the layer's own flip
@@ -534,6 +535,14 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		v.dstRect.X += dx
 		v.dstRect.Y += dy
 	}
+	// #13 glitch: an occasional horizontal jolt moves the WHOLE sprite (solid + outline +
+	// the chromatic fringe below) together; glitchSplit is the chromatic offset for the fringe.
+	var glitchSplit int32
+	if glitch {
+		var jolt int32
+		glitchSplit, jolt = glitchParams(v.fxClock, vp.H)
+		v.dstRect.X += jolt
+	}
 	angle := rotDeg // transmitted fixed tilt (spin adds to it)
 	if spin {
 		angle += spinDegrees(v.fxClock)
@@ -567,6 +576,55 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if glow {
 		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	}
+	// #13 chromatic fringe: a red ghost left + blue ghost right over the solid sprite (the
+	// mods above are already restored, so these set + restore their own). 0-alloc.
+	if glitch {
+		v.drawGlitchFringe(ren, tex, angle, flip, glitchSplit)
+	}
+}
+
+// drawGlitchFringe overlays a red and a blue offset ghost of the sprite (chromatic
+// aberration). Shared tex: set→blit→RESTORE ColorMod + AlphaMod so nothing bleeds. 0-alloc.
+func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle float64, flip sdl.RendererFlip, split int32) {
+	_ = tex.SetAlphaMod(glitchFringeAlpha)
+	_ = tex.SetColorMod(255, 0, 0) // red ghost, offset left
+	v.fxRect = v.dstRect
+	v.fxRect.X -= split
+	_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
+	_ = tex.SetColorMod(0, 0, 255) // blue ghost, offset right
+	v.fxRect = v.dstRect
+	v.fxRect.X += split
+	_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
+	_ = tex.SetColorMod(255, 255, 255)
+	_ = tex.SetAlphaMod(255)
+}
+
+// Glitch tuning (#13): a chromatic split that shimmers + a periodic horizontal jolt.
+const (
+	glitchSplitDivisor = 220                     // base chromatic offset = vp.H / divisor (floored)
+	glitchSplitMin     = 2                       //
+	glitchFringeAlpha  = 150                     // chromatic ghost strength
+	glitchShimmerHz    = 7.0                     // how fast the split pulses
+	glitchJoltPeriod   = 1300 * time.Millisecond // a jolt every period
+	glitchJoltWindow   = 90 * time.Millisecond   // …lasting this long
+	glitchJoltMultiple = 3                       // jolt distance = split * this
+)
+
+// glitchParams returns the chromatic split (px) and the horizontal jolt (px) at the given
+// clock for a stage of height vpH. Pure scalar math — 0-alloc, safe on the render path.
+func glitchParams(clock time.Duration, vpH int32) (split, jolt int32) {
+	split = vpH / glitchSplitDivisor
+	if split < glitchSplitMin {
+		split = glitchSplitMin
+	}
+	split += int32(math.Abs(math.Sin(clock.Seconds()*glitchShimmerHz)) * float64(split)) // shimmer
+	if clock%glitchJoltPeriod < glitchJoltWindow {                                       // periodic jolt
+		jolt = split * glitchJoltMultiple
+		if int64(clock/glitchJoltPeriod)%2 == 0 {
+			jolt = -jolt
+		}
+	}
+	return split, jolt
 }
 
 // drawSilhouette blits the (shared, cached) silhouette texture at each dir offset (scaled by

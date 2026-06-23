@@ -268,6 +268,11 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26
+	if next := c.Checkbox(x, y, "Glitch", p.Glitch); next != p.Glitch { // #13 chromatic aberration
+		p.Glitch = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	y += 26
 
 	if c.Button(sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}, "Clear style") {
 		a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})

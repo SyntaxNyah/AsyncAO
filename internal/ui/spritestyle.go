@@ -21,7 +21,7 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 		Opacity: p.Opacity, Glow: p.Glow, Wobble: p.Wobble, Spin: p.Spin,
 		HueCycle: p.HueCycle, FlipH: p.FlipH,
 		Invert: p.Invert, Grayscale: p.Grayscale,
-		Outline: p.Outline, DropShadow: p.DropShadow,
+		Outline: p.Outline, DropShadow: p.DropShadow, Glitch: p.Glitch,
 		Brightness: p.Brightness, Scale: p.Scale, Rotation: p.Rotation,
 	}
 }

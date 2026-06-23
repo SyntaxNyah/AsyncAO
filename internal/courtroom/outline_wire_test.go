@@ -8,7 +8,7 @@ import "testing"
 // edit can't silently break mixed-build compatibility.
 func TestSpriteStyleOutlineWire(t *testing.T) {
 	// v2 round-trip: the new flags survive alongside a base field.
-	s := SpriteStyle{Tint: true, R: 10, G: 20, B: 30, Outline: true, DropShadow: true}
+	s := SpriteStyle{Tint: true, R: 10, G: 20, B: 30, Outline: true, DropShadow: true, Glitch: true}
 	got, clean := DecodeSpriteStyle("hi" + s.EncodeMarker())
 	if clean != "hi" {
 		t.Fatalf("clean = %q, want hi", clean)

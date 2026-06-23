@@ -30,8 +30,8 @@ func TestSpriteOutlineShadowZeroAlloc(t *testing.T) {
 	scene := benchScene(store)
 	// Outline + shadow composed with the cheap-bracket effects, on both layers, plus a
 	// rotation so the silhouette blits exercise the CopyEx angle/flip path.
-	scene.Speaker.Style = courtroom.SpriteStyle{Outline: true, DropShadow: true, Glow: true, Rotation: 40}
-	scene.Pair.Style = courtroom.SpriteStyle{Outline: true, DropShadow: true, Tint: true, R: 200, G: 60, B: 60}
+	scene.Speaker.Style = courtroom.SpriteStyle{Outline: true, DropShadow: true, Glitch: true, Glow: true, Rotation: 40}
+	scene.Pair.Style = courtroom.SpriteStyle{Outline: true, DropShadow: true, Glitch: true, Tint: true, R: 200, G: 60, B: 60}
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 
 	allocs := testing.AllocsPerRun(200, func() {

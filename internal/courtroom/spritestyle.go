@@ -43,6 +43,7 @@ type SpriteStyle struct {
 	// the tint/glow/etc., just without the outline.
 	Outline    bool // a white silhouette border around the sprite
 	DropShadow bool // a soft dark silhouette offset down-right
+	Glitch     bool // #13 chromatic-aberration + occasional jolt (a digital glitch look)
 }
 
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or
@@ -61,7 +62,7 @@ const (
 // renderer leaves the blit byte-identical when there's nothing to do).
 func (s SpriteStyle) Active() bool {
 	return s.Tint || s.Glow || s.Wobble || s.Spin || s.HueCycle || s.FlipH ||
-		s.Invert || s.Grayscale || s.Outline || s.DropShadow ||
+		s.Invert || s.Grayscale || s.Outline || s.DropShadow || s.Glitch ||
 		(s.Opacity != 0 && s.Opacity != 100) ||
 		(s.Brightness != 0 && s.Brightness != 100) ||
 		(s.Scale != 0 && s.Scale != 100) ||
@@ -165,6 +166,7 @@ const (
 	// unaffected). A decoder reads it only when the frame is long enough.
 	styleFlag2Outline    = 1 << 0
 	styleFlag2DropShadow = 1 << 1
+	styleFlag2Glitch     = 1 << 2
 
 	// spriteStyleVersion tags the payload so a later field change is detectable —
 	// a decoder that doesn't recognise the version yields no style (benign). It stays 1:
@@ -242,6 +244,9 @@ func (s SpriteStyle) payloadBytes() []byte {
 	if s.DropShadow {
 		flags2 |= styleFlag2DropShadow
 	}
+	if s.Glitch {
+		flags2 |= styleFlag2Glitch
+	}
 	if flags2 != 0 { // append the second flags byte only when it carries something
 		b = append(b, flags2)
 	}
@@ -277,6 +282,7 @@ func styleFromBytes(b []byte) SpriteStyle {
 		flags2 := b[9]
 		s.Outline = flags2&styleFlag2Outline != 0
 		s.DropShadow = flags2&styleFlag2DropShadow != 0
+		s.Glitch = flags2&styleFlag2Glitch != 0
 	}
 	return s
 }
