@@ -46,6 +46,33 @@ func TestRemoteEffectsThroughRoom(t *testing.T) {
 	}
 }
 
+// TestIsASCII pins the cheap gate that keeps plain fields on the single-font fast path.
+func TestIsASCII(t *testing.T) {
+	for _, s := range []string{"", "hello", "a/b [shake] 123! ~done"} {
+		if !isASCII(s) {
+			t.Errorf("isASCII(%q) = false, want true", s)
+		}
+	}
+	for _, s := range []string{"héllo", "emoji 😀", "Привет", "日本語"} {
+		if isASCII(s) {
+			t.Errorf("isASCII(%q) = true, want false", s)
+		}
+	}
+}
+
+// TestICFieldFontsASCIIFastPath pins that a plain message asks for NO fallback fonts, so the
+// IC/OOC input boxes keep the exact single-font path (no per-frame font work) — the
+// performance guarantee for the common case.
+func TestICFieldFontsASCIIFastPath(t *testing.T) {
+	a := &App{ctx: &Ctx{}}
+	if p, e := a.icFieldFonts("plain ascii message"); p != nil || e != nil {
+		t.Errorf("ASCII field got fallback fonts, want nil,nil (fast path)")
+	}
+	if p, e := a.icFieldFonts(""); p != nil || e != nil {
+		t.Errorf("empty field got fallback fonts, want nil,nil")
+	}
+}
+
 // TestNextICEffect pins the cycle order Off → Shake → Wave → Rainbow → Off.
 func TestNextICEffect(t *testing.T) {
 	got := []uint8{courtroom.TextEffectNone}

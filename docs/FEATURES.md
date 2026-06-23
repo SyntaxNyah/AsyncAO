@@ -1071,7 +1071,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   never types emoji never pays the ~12 MB read) and pre-warmed at the chat size.
   Compound sequences (variation selectors, ZWJ, keycaps) are absorbed into one
   emoji run so they don't fragment. (Where there's no system emoji font, emoji
-  fall back to the chat font as before.)
+  fall back to the chat font as before.) The **IC / OOC input boxes** render
+  through the same per-glyph fallback, so emoji + non-Latin scripts you **type**
+  show real glyphs instead of tofu — gated on a non-ASCII byte so a plain message
+  keeps the field's exact single-font fast path (the caret is exact for ASCII).
 - **Case notebook** (Notes tab, per server): right-click an IC log line
   or hit "Pin to notebook" on evidence; free-form notes + copy-all; one
   JSON per server, async writes, capped.

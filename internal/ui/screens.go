@@ -3188,7 +3188,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		icW -= msgCounterReserve
 	}
 	icBox := sdl.Rect{X: icX, Y: icY, W: icW, H: fH}
-	a.icInput, send = c.TextField("ic", icBox, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)")
+	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
+	a.icInput, send = c.TextFieldEmoji("ic", icBox, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
 	a.drawMsgCounter(icBox, icCounterOn)
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
@@ -3219,7 +3220,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			a.d.Prefs.SetOOCName(a.oocName) // permanent OOC name
 		}
 		var sendOOC bool
-		a.oocInput, sendOOC = c.TextField("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w - nameW - 3*pad - 6, H: fH}, a.oocInput, "OOC chat... (full history in the OOC tab)")
+		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput) // #M5: emoji/unicode in the OOC box too
+		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w - nameW - 3*pad - 6, H: fH}, a.oocInput, "OOC chat... (full history in the OOC tab)", oocPrimary, oocEmoji)
 		if sendOOC && strings.TrimSpace(a.oocInput) != "" {
 			a.sess.SendOOC(a.oocName, a.oocInput)
 			a.oocInput = ""

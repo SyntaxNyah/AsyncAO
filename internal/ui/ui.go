@@ -1449,17 +1449,32 @@ func cycleField(seq []string, cur string, back bool) string {
 	return seq[0]
 }
 
+// fieldFonts carries the optional emoji/unicode-aware faces for a text field. Zero value
+// (both nil) = the plain single-font path (TextField / PasswordField), byte-identical to
+// before. TextFieldEmoji passes a fallback-capable primary (a chat/log-set face, whose
+// embedded member IS the chrome font at 1:1) + the colour-emoji face, so what you TYPE shows
+// real glyphs instead of tofu — used by the IC / OOC inputs.
+type fieldFonts struct{ primary, emoji *ttf.Font }
+
 // TextField edits value in place; id keys focus. Returns (newValue,
 // enterPressed).
 func (c *Ctx) TextField(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
-	return c.textField(id, r, value, placeholder, false)
+	return c.textField(id, r, value, placeholder, false, fieldFonts{})
+}
+
+// TextFieldEmoji is TextField that renders typed emoji / non-Latin runes through the
+// per-glyph fallback raster (primary = a chat/log-set face, emoji = the colour-emoji face),
+// so the input box doesn't show tofu while you type them. Plain ASCII stays on the exact
+// single-font fast path (the caret math is unchanged), so the common case is byte-identical.
+func (c *Ctx) TextFieldEmoji(id string, r sdl.Rect, value, placeholder string, primary, emoji *ttf.Font) (string, bool) {
+	return c.textField(id, r, value, placeholder, false, fieldFonts{primary: primary, emoji: emoji})
 }
 
 // PasswordField is TextField rendered as asterisks (screenshare-safe).
 // Ctrl+C/X never put the secret on the clipboard either — clipboard
 // viewers are just as visible on a stream; Ctrl+X still clears.
 func (c *Ctx) PasswordField(id string, r sdl.Rect, value string, placeholder string) (string, bool) {
-	return c.textField(id, r, value, placeholder, true)
+	return c.textField(id, r, value, placeholder, true, fieldFonts{})
 }
 
 // editOp is a caret movement / forward-delete a text field applies this frame.
@@ -1532,7 +1547,7 @@ func editStep(value string, caret int, in editInput) (string, int) {
 	return value, caret
 }
 
-func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string, mask bool) (string, bool) {
+func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string, mask bool, fb fieldFonts) (string, bool) {
 	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
 	hover := c.hovering(r)
 	if c.clicked {
@@ -1670,18 +1685,46 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 				sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
 		}
 	}
-	if scroll > 0 {
-		// Clip to the field interior so the scrolled-off head doesn't spill left.
-		cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
-		c.Label(r.X+padX-scroll, textY, show, col)
-		c.popClip(cp, ch)
-	} else {
-		c.LabelClipped(r.X+padX, textY, avail, show, col)
+	// #M5 emoji/unicode input: when the field opted in (IC/OOC) and the text has any
+	// non-ASCII rune, draw it through the per-glyph fallback raster so emoji + non-Latin
+	// scripts show real glyphs instead of the chrome font's tofu. Plain ASCII (the common
+	// case) and every other field stay on the exact single-font path below — caret math is
+	// unchanged, so it's approximate only for the rare wide glyph (far better than tofu).
+	drawn := false
+	if fb.primary != nil && !mask && show != "" && !isASCII(show) {
+		if m := c.emojiRaster(show, col, fb.primary, fb.emoji); m != nil {
+			cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
+			m.Draw(c.Ren, m.TotalRunes(), r.X+padX-scroll, r.Y+(r.H-m.Height())/2)
+			c.popClip(cp, ch)
+			drawn = true
+		}
+	}
+	if !drawn {
+		if scroll > 0 {
+			// Clip to the field interior so the scrolled-off head doesn't spill left.
+			cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
+			c.Label(r.X+padX-scroll, textY, show, col)
+			c.popClip(cp, ch)
+		} else {
+			c.LabelClipped(r.X+padX, textY, avail, show, col)
+		}
 	}
 	if focused && c.caretOn {
 		c.Fill(sdl.Rect{X: r.X + padX + caretX - scroll, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
 	}
 	return value, enter
+}
+
+// isASCII reports whether s is all 7-bit ASCII — the cheap gate that keeps a plain text
+// field on the single-font fast path (no per-frame font work) until it actually holds
+// emoji / non-Latin runes.
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 // caretPixelX is the x-pixel offset of the caret (a rune index) within display.

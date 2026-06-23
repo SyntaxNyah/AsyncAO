@@ -409,7 +409,8 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if icCounterOn {
 			field.W -= msgCounterReserve
 		}
-		a.icInput, send = c.TextField("ic", field, a.icInput, "Say something in character...")
+		icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
+		a.icInput, send = c.TextFieldEmoji("ic", field, a.icInput, "Say something in character...", icPrimary, icEmoji)
 		a.drawMsgCounter(field, icCounterOn)
 		if send {
 			a.sendIC(0)
