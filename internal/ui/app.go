@@ -717,6 +717,10 @@ type sessionState struct {
 	emoteIconPages []*render.TexturePage
 	emoteIconGen   uint64
 	emoteIconAsk   []time.Time
+	// #M2 S1: the IC-bar emoji picker (local; insert emoji into your message).
+	// showEmojiPicker toggles the grid overlay; emojiBtnRect anchors it above the button.
+	showEmojiPicker bool
+	emojiBtnRect    sdl.Rect
 
 	// --- courtroom chrome ---
 	icInput  string
@@ -3276,6 +3280,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		case ScreenCourtroom:
 			a.drawCourtroom(winW, winH)
 			a.drawFloatingExtras(winW, winH) // non-blocking, on top of the live courtroom (input already restored)
+			a.drawEmojiPicker(winW, winH)    // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
 		case ScreenSettings:
 			a.drawSettings(winW, winH)
 		case ScreenAbout:

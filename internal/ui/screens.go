@@ -873,6 +873,12 @@ func (a *App) drawCourtroom(w, h int32) {
 		return
 	}
 
+	// #M2 S1: while the emoji picker is open, fence the whole courtroom so a click on a
+	// picker cell can't fall through to the stage/log/emotes (the picker uses raw pointIn).
+	// Set before BOTH layouts dispatch; c.modalOn releases next BeginFrame.
+	if a.showEmojiPicker {
+		c.modalOn = true
+	}
 	// Theme-driven geometry: when the theme ships courtroom_design.ini
 	// (and the toggle is on), the courtroom IS the theme's layout.
 	if lay := a.themeLayout(w, h); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
@@ -3153,6 +3159,11 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	c.Tooltip(sdl.Rect{X: immedX, Y: icY, W: immedW, H: fH}, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	var send bool
 	icX := immedX + immedW + 6
+	// #M2 S1: emoji picker button on the IC bar's left edge.
+	if a.drawEmojiBarButton(sdl.Rect{X: icX, Y: icY, W: fH, H: fH}) {
+		a.showEmojiPicker = !a.showEmojiPicker
+	}
+	icX += fH + 4
 	icCounterOn := a.d.Prefs.MessageCounterOn()
 	icW := vp.W - (icX - pad)
 	if icCounterOn {

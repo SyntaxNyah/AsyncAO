@@ -147,7 +147,8 @@ func hexNibble(b byte) (uint8, bool) {
 // its torn-off widgets) yields to those and reappears when they close.
 func (a *App) courtModalOpen() bool {
 	return a.showIni || a.bgPick.show || a.showEvid || a.showModcall ||
-		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair
+		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair ||
+		a.showEmojiPicker
 }
 
 // extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any

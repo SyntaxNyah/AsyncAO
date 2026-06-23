@@ -390,6 +390,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			fieldW -= themedImmedW
 		}
 		field := sdl.Rect{X: fieldX, Y: in.Y, W: fieldW, H: in.H}
+		// #M2 S1: emoji picker button on the IC field's left edge (when there's room).
+		if field.W > field.H+120 {
+			if a.drawEmojiBarButton(sdl.Rect{X: field.X, Y: field.Y, W: field.H, H: field.H}) {
+				a.showEmojiPicker = !a.showEmojiPicker
+			}
+			field.X += field.H + 4
+			field.W -= field.H + 4
+		}
 		var send bool
 		icCounterOn := a.d.Prefs.MessageCounterOn()
 		if icCounterOn {
