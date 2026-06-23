@@ -18,6 +18,7 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -221,6 +222,20 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	}
 	c.Tooltip(sdl.Rect{X: follX, Y: r.Y + 3, W: follW, H: 16},
 		"Off (default): no follow. On: each row gets a Follow button that auto-jumps you to that player's area whenever they move.")
+	// #M1: your own cross-client status — a cycle button (none → AFK → Busy → Writing →
+	// LFRP). Send-on-change transmits it on your next IC message; AsyncAO players see a
+	// coloured chip on your row, standard clients see nothing.
+	statLbl := statusLabel(a.myStatus)
+	if statLbl == "" {
+		statLbl = "none"
+	}
+	statBtnW := c.TextWidth("Status: Writing") + 18 // size to the widest label so it doesn't jump
+	statBtnX := follX - statBtnW - 12
+	statBtn := sdl.Rect{X: statBtnX, Y: r.Y, W: statBtnW, H: 22}
+	if c.Button(statBtn, "Status: "+statLbl) {
+		a.myStatus = (a.myStatus + 1) % courtroom.StatusCount
+	}
+	c.Tooltip(statBtn, "Set your status (AFK / Busy / Writing / LFRP). Other AsyncAO players see a chip on your row after your next message; standard clients are unaffected.")
 	status := strconv.Itoa(len(a.rosterView())) + " here · live"
 	if !a.rosterLegacy && !a.livePlayersOn && len(a.areaPlayers) == 0 {
 		status += " · fetching details…" // CharsCheck fallback; the rich /getarea snapshot hasn't landed
@@ -231,7 +246,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			status += "  ·  as of " + a.areaListAt.Format("15:04") // a snapshot, not live
 		}
 	}
-	c.LabelClipped(statusX, r.Y+5, follX-statusX-8, status, ColTextDim)
+	c.LabelClipped(statusX, r.Y+5, statBtnX-statusX-8, status, ColTextDim)
 	r.Y += 28
 	r.H -= 28
 
@@ -470,6 +485,20 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	}
 	if isSpec {
 		cx += a.drawRosterChip(cx, row.Y+4, "SPEC", chipSpecColor, ColText) + 5
+	}
+	// Status chip (#M1): your own from a.myStatus, others from the room's per-character
+	// status memory. RemoteStatus is a plain map read (0-alloc), safe per row per frame;
+	// only a set status draws a chip, so the common (none) case costs nothing.
+	st := courtroom.StatusNone
+	if isMe {
+		st = a.myStatus
+	} else if a.room != nil {
+		if rs, ok := a.room.RemoteStatus(p.name); ok {
+			st = rs
+		}
+	}
+	if lbl := statusLabel(st); lbl != "" {
+		cx += a.drawRosterChip(cx, row.Y+4, lbl, statusColor(st), ColText) + 5
 	}
 	ic := "[" + p.uid + "]  " + p.name
 	if !strings.EqualFold(display, p.name) {

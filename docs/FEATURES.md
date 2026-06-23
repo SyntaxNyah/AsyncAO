@@ -226,6 +226,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   art image**) stay **local** — too large for the message channel — so the remote card
   shows name · pronouns / tagline only. *(A richer hosted version with the full card
   is a possible later slice.)*
+- **Player-list status flags** (#M1, the **"Status:"** button in the Players-tab
+  header): set yourself **AFK / Busy / Writing / LFRP** (cycle the button) and other
+  AsyncAO players see a **coloured chip** on your roster row. Like the profile it rides
+  the invisible **zero-width** IC channel, **send-on-change**, so AO2 / webAO see clean
+  text and the chip updates for others **after you next speak**. Your own chip shows
+  immediately. Standard clients are unaffected; **0-alloc** on the render path (a plain
+  map lookup per row, chip drawn only when a status is set).
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

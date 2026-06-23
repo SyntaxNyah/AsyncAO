@@ -3968,6 +3968,11 @@ func (a *App) sendIC(shout int) {
 		text += pm
 	}
 	a.lastSentProfile = curProfile
+	// Cross-client presence status (#M1): same invisible channel, send-on-change.
+	if sm := courtroom.EncodeStatusChangeMarker(a.myStatus, a.lastSentStatus); sm != "" {
+		text += sm
+	}
+	a.lastSentStatus = a.myStatus
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
 		PreEmote:   emote.Preanim,

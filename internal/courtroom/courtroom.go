@@ -233,6 +233,11 @@ type Courtroom struct {
 	// maxRememberedProfiles.
 	profileByName map[string]WireProfile
 
+	// statusByName remembers each speaker's transmitted presence Status (#M1), keyed by
+	// bare character name — the same send-on-change zero-width channel as the profile and
+	// sprite style. A clear (StatusNone) frees the entry; bounded by maxRememberedStatuses.
+	statusByName map[string]Status
+
 	// Predictor warms the predicted next speaker's sprite (optional).
 	Predictor *assets.Prefetcher
 
@@ -430,6 +435,10 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if prof, ok := DecodeProfileMarker(msg.Message); ok {
 		c.rememberProfile(msg.CharName, prof)
 	}
+	// And this speaker's presence status (#M1) — same channel, told apart by frame magic.
+	if st, ok := DecodeStatusMarker(msg.Message); ok {
+		c.rememberStatus(msg.CharName, st)
+	}
 	if c.HideSpriteStyles {
 		style = SpriteStyle{} // viewer opted out of others' styles
 	} else if c.ReduceMotion {
@@ -593,6 +602,9 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	}
 	if prof, ok := DecodeProfileMarker(msg.Message); ok {
 		c.rememberProfile(msg.CharName, prof) // and the per-character profile memory (#101)
+	}
+	if st, ok := DecodeStatusMarker(msg.Message); ok {
+		c.rememberStatus(msg.CharName, st) // and the per-character status (#M1)
 	}
 	c.Typewriter.Start(c.currentText)
 	c.Typewriter.SkipToEnd()
