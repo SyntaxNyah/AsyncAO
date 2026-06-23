@@ -177,6 +177,15 @@ type Viewport struct {
 	dstRect  sdl.Rect
 	fillRect sdl.Rect
 	fxRect   sdl.Rect // #8 outline/shadow offset-blit destination (kept off dstRect)
+
+	// #10 post-processing overlays: cached, size-stable textures blended over the stage.
+	postFX               PostFX
+	vignetteTex          *sdl.Texture
+	scanlineTex          *sdl.Texture
+	scanlineW, scanlineH int32
+	grainTex             [grainFrames]*sdl.Texture
+	grainIdx             int
+	postRect             sdl.Rect // post-FX blit destination scratch
 }
 
 // Sprite outline / drop-shadow tuning (#8). The outline is drawn as 8 offset silhouette
@@ -294,6 +303,7 @@ func (v *Viewport) syncAnimSticky(a *animState, base string) {
 // Screenshake jitters the whole stage rect; the realization flash paints
 // over everything (do_screenshake / do_flash parity, zero allocations).
 func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect) {
+	stage := vp // the unmodified stage frame, for the #10 post-FX overlays (not the punched art)
 	// #12 shout punch: inflate the stage rect around its centre by a decaying factor, so
 	// every blit below scales up together (a zoom pop that settles). Off → vp untouched →
 	// byte-identical to before. Applied before the shake so the two compose.
@@ -356,6 +366,8 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		_ = ren.SetDrawColor(255, 255, 255, uint8(255*frac))
 		_ = ren.FillRect(&v.fillRect)
 	}
+
+	v.applyPostFX(ren, stage) // #10 retro overlays over the whole stage frame (free when off)
 }
 
 // effectiveShoutBase picks which shout bubble to draw: the character's own

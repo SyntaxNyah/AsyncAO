@@ -1782,6 +1782,7 @@ func (a *App) Disconnect() {
 	}
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
+		a.d.Viewport.PurgePostFX() // #10: free the cached retro-overlay textures
 	}
 	a.closeActiveTab()
 	a.resetSessionState()
@@ -3246,6 +3247,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.room.Update(dt)
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
+		a.d.Viewport.SetPostFX(a.postFX()) // #10 retro overlays
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		// Music ducking: dip music while a message is on stage (shout/preanim/
 		// talking), restore at idle/linger. Transition-driven — SetVolumes is
@@ -3759,6 +3761,15 @@ func (a *App) spriteFX() render.SpriteFX {
 		fx.SolidB = uint8(rgb & 0xFF)
 	}
 	return fx
+}
+
+// postFX mirrors the user's #10 post-processing toggles onto the viewport each frame.
+func (a *App) postFX() render.PostFX {
+	return render.PostFX{
+		Vignette:  a.d.Prefs.PostVignetteOn(),
+		Scanlines: a.d.Prefs.PostScanlinesOn(),
+		Grain:     a.d.Prefs.PostGrainOn(),
+	}
 }
 
 // applySpriteOverrides lets the user's drag positions win over the

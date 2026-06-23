@@ -718,6 +718,7 @@ func (a *App) driveReplay(dt time.Duration) {
 	a.advanceReplay(dt)
 	a.replayRoom.Update(dt)
 	a.d.Viewport.SetSpriteFX(a.spriteFX())
+	a.d.Viewport.SetPostFX(a.postFX()) // #10 retro overlays in replay viewing
 	a.d.Viewport.Update(&a.replayRoom.Scene, dt)
 }
 

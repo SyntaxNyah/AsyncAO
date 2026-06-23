@@ -639,6 +639,9 @@ type AssetPreferences struct {
 	SpriteTintColor        int                          `json:"spriteTintColor"`
 	ShoutPunch             bool                         `json:"shoutPunch"`
 	ChatboxTint            bool                         `json:"chatboxTint"`
+	PostVignette           bool                         `json:"postVignette"`
+	PostScanlines          bool                         `json:"postScanlines"`
+	PostGrain              bool                         `json:"postGrain"`
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -849,6 +852,9 @@ type prefsJSON struct {
 	SpriteSolidTint        bool             `json:"spriteSolidTint"`        // default OFF
 	ShoutPunch             bool             `json:"shoutPunch"`             // default OFF
 	ChatboxTint            bool             `json:"chatboxTint"`            // default OFF
+	PostVignette           bool             `json:"postVignette"`           // default OFF
+	PostScanlines          bool             `json:"postScanlines"`          // default OFF
+	PostGrain              bool             `json:"postGrain"`              // default OFF
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1354,6 +1360,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.SpriteSolidTint = onDisk.SpriteSolidTint
 	p.ShoutPunch = onDisk.ShoutPunch
 	p.ChatboxTint = onDisk.ChatboxTint
+	p.PostVignette = onDisk.PostVignette
+	p.PostScanlines = onDisk.PostScanlines
+	p.PostGrain = onDisk.PostGrain
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3228,6 +3237,37 @@ func (p *AssetPreferences) SetChatboxTint(on bool) {
 		return
 	}
 	p.ChatboxTint = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Post-processing overlay toggles (#10, all OFF by default): retro looks blended over the
+// stage — a vignette, scanlines, and film grain.
+func (p *AssetPreferences) PostVignetteOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PostVignette
+}
+func (p *AssetPreferences) PostScanlinesOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PostScanlines
+}
+func (p *AssetPreferences) PostGrainOn() bool { p.mu.RLock(); defer p.mu.RUnlock(); return p.PostGrain }
+
+// SetPostVignette / SetPostScanlines / SetPostGrain toggle the overlays.
+func (p *AssetPreferences) SetPostVignette(on bool)  { p.setBoolPref(&p.PostVignette, on) }
+func (p *AssetPreferences) SetPostScanlines(on bool) { p.setBoolPref(&p.PostScanlines, on) }
+func (p *AssetPreferences) SetPostGrain(on bool)     { p.setBoolPref(&p.PostGrain, on) }
+
+// setBoolPref sets *field to on under the lock, marking dirty only on a real change.
+func (p *AssetPreferences) setBoolPref(field *bool, on bool) {
+	p.mu.Lock()
+	if *field == on {
+		p.mu.Unlock()
+		return
+	}
+	*field = on
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -622,6 +622,22 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetShoutPunch(next)
 	}
 	y += 26
+	// Post-processing overlays (#10): retro looks blended over the whole stage. All OFF.
+	vig := a.d.Prefs.PostVignetteOn()
+	if next := c.Checkbox(pad, y, "Vignette (OFF by default): darken the stage edges for a cinematic frame", vig); next != vig {
+		a.d.Prefs.SetPostVignette(next)
+	}
+	y += 26
+	scan := a.d.Prefs.PostScanlinesOn()
+	if next := c.Checkbox(pad, y, "Scanlines (OFF by default): faint CRT scan lines over the stage", scan); next != scan {
+		a.d.Prefs.SetPostScanlines(next)
+	}
+	y += 26
+	grain := a.d.Prefs.PostGrainOn()
+	if next := c.Checkbox(pad, y, "Film grain (OFF by default): subtle animated noise over the stage", grain); next != grain {
+		a.d.Prefs.SetPostGrain(next)
+	}
+	y += 26
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()
