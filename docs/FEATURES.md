@@ -217,11 +217,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   on the list, while AO2 / webAO are unaffected (they just see the normal list).
   **Configurable**: an **Enable** master switch and a "**Show my profile on the
   player list**" toggle. Every field is **length-clamped** (the pref file stays
-  bounded), and the editor shows a **live preview** of the card. *Slice 1 is the
-  local model + editor + card render; the cross-client transmission — a tiny
-  zero-width fingerprint in IC, never the art bytes, so standard clients stay
-  unaffected — is slice 2, gated on confirming the zero-width channel survives the
-  live server.*
+  bounded), and the editor shows a **live preview** of the card. **Cross-client
+  (slice 2):** your **pronouns + tagline** ride an invisible **zero-width marker** on
+  your IC messages (the same channel as the transmitted sprite style), so other
+  AsyncAO players see them on your card **after you speak** — sent **only on change**,
+  so the marker rides at most your first post-join message. Standard AO2 / webAO
+  clients render nothing and are unaffected. The bigger fields (**bio, theme song,
+  art image**) stay **local** — too large for the message channel — so the remote card
+  shows name · pronouns / tagline only. *(A richer hosted version with the full card
+  is a possible later slice.)*
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

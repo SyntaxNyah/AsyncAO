@@ -226,6 +226,13 @@ type Courtroom struct {
 	// inactive style) frees the entry; the map is bounded by maxRememberedStyles.
 	styleByChar map[int]SpriteStyle
 
+	// profileByName remembers each speaker's transmitted WireProfile (#101 slice 2),
+	// keyed by the bare character name (the player list rows key by character too). Like
+	// the style memory it's send-on-change: a message carries the profile marker only when
+	// it changed; an empty profile (a clear) frees the entry. Bounded by
+	// maxRememberedProfiles.
+	profileByName map[string]WireProfile
+
 	// Predictor warms the predicted next speaker's sprite (optional).
 	Predictor *assets.Prefetcher
 
@@ -407,13 +414,21 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	style, clean := DecodeSpriteStyle(msg.Message)
 	c.currentText = clean
 	// Send-on-change: a message carries the style marker only when this speaker's
-	// style CHANGED. With a marker, remember it (an update — or a clear that frees the
-	// entry); without one, reuse the speaker's last remembered style so a styled
-	// character stays styled across the messages that omit the marker.
-	if hasMarker(msg.Message) {
+	// style CHANGED. With a STYLE marker, remember it (an update — or a clear that frees
+	// the entry); without one, reuse the speaker's last remembered style so a styled
+	// character stays styled across the messages that omit the marker. Gate on
+	// HasStyleMarker (not any zero-width run): a profile-only message (#101 shares this
+	// invisible channel) must NOT be misread as a style clear that wipes the style.
+	if HasStyleMarker(msg.Message) {
 		c.rememberStyle(msg.CharID, style)
 	} else {
 		style = c.RecalledStyle(msg.CharID)
+	}
+	// Remember this speaker's transmitted character profile (#101 slice 2) — the same
+	// invisible channel, told apart by frame magic. The player list reads it per
+	// character; an empty profile (a clear) frees the entry.
+	if prof, ok := DecodeProfileMarker(msg.Message); ok {
+		c.rememberProfile(msg.CharName, prof)
 	}
 	if c.HideSpriteStyles {
 		style = SpriteStyle{} // viewer opted out of others' styles
@@ -573,8 +588,11 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.TextColor = msg.TextColor
 	caStyle, caClean := DecodeSpriteStyle(msg.Message) // strip the style marker (catch-up never redraws the sprite)
 	c.currentText = caClean
-	if hasMarker(msg.Message) {
+	if HasStyleMarker(msg.Message) {
 		c.rememberStyle(msg.CharID, caStyle) // keep the per-speaker style memory consistent through a catch-up
+	}
+	if prof, ok := DecodeProfileMarker(msg.Message); ok {
+		c.rememberProfile(msg.CharName, prof) // and the per-character profile memory (#101)
 	}
 	c.Typewriter.Start(c.currentText)
 	c.Typewriter.SkipToEnd()

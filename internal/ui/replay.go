@@ -128,8 +128,12 @@ func (a *App) startRecording() {
 // speaker's last style (a no-marker line doesn't change it). The caller fills OffsetMs
 // (it owns the time base). Shared by the recorder and the instant-replay buffer.
 func (a *App) recEventFrom(ev courtroom.Event) recEvent {
+	// Gate on HasStyleMarker, not "any zero-width marker": a line may carry a #101
+	// PROFILE marker but no style marker, and such a line from a styled speaker still
+	// needs the style re-injected for a self-contained clip. DecodeSpriteStyle scans all
+	// frames, so appending the style after an existing profile marker decodes fine.
 	if ev.Kind == courtroom.EventMessage && ev.Message != nil && a.room != nil &&
-		!courtroom.HasSpriteMarker(ev.Message.Message) {
+		!courtroom.HasStyleMarker(ev.Message.Message) {
 		if style := a.room.RecalledStyle(ev.Message.CharID); style.Active() {
 			msgCopy := *ev.Message
 			msgCopy.Message = ev.Message.Message + style.EncodeMarker()

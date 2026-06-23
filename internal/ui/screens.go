@@ -3959,6 +3959,15 @@ func (a *App) sendIC(shout int) {
 		text += marker
 	}
 	a.lastSentStyle = curStyle
+	// Transmitted character profile (#101 slice 2): the same invisible channel, also
+	// send-on-CHANGE, appended AFTER the style marker (an older AsyncAO client reads only
+	// the first zero-width run, so the style must stay first). Only pronouns + tagline
+	// ride; the receiver shows them on this character's player-list card.
+	curProfile := a.myWireProfile()
+	if pm := curProfile.EncodeChangeMarker(a.lastSentProfile); pm != "" {
+		text += pm
+	}
+	a.lastSentProfile = curProfile
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
 		PreEmote:   emote.Preanim,

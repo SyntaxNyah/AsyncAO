@@ -252,11 +252,18 @@ func (s SpriteStyle) EncodeMarker() string {
 // default payload, which tells receivers to stop styling that speaker.
 func (s SpriteStyle) encodeMarker() string {
 	pb := s.payloadBytes()
+	return packZeroWidth(pb[:])
+}
+
+// packZeroWidth emits one zero-width run: the sentinel (zwStart) followed by payload
+// packed THREE bits per rune over octalSyms, MSB first. Shared low-level encoder for
+// both the sprite-style and the profile (#101) codecs.
+func packZeroWidth(payload []byte) string {
 	var sb strings.Builder
-	sb.Grow((spriteStyleBytes*8/3 + 2) * 3) // ~24 data runes + sentinel, 3 UTF-8 bytes each
+	sb.Grow((len(payload)*8/3 + 2) * 3) // data runes + sentinel, 3 UTF-8 bytes each
 	sb.WriteRune(zwStart)
 	acc, nbits := 0, 0
-	for _, by := range pb {
+	for _, by := range payload {
 		acc = acc<<8 | int(by)
 		nbits += 8
 		for nbits >= 3 { // emit whole octal digits, MSB first
@@ -264,7 +271,7 @@ func (s SpriteStyle) encodeMarker() string {
 			sb.WriteRune(octalSyms[(acc>>uint(nbits))&0x7])
 		}
 	}
-	if nbits > 0 { // pad a trailing partial digit (no-op while spriteStyleBytes*8 is /3)
+	if nbits > 0 { // pad a trailing partial digit
 		sb.WriteRune(octalSyms[(acc<<uint(3-nbits))&0x7])
 	}
 	return sb.String()
@@ -310,7 +317,22 @@ func DecodeSpriteStyle(text string) (SpriteStyle, string) {
 	if !hasMarker(text) {
 		return SpriteStyle{}, text
 	}
-	return decodeFirstMarker(text), stripZeroWidth(text)
+	s, _ := findStyleFrame(text)
+	return s, stripZeroWidth(text)
+}
+
+// HasStyleMarker reports whether text carries a sprite-STYLE frame specifically (not
+// just any zero-width run). The sprite-style and profile (#101) codecs share this
+// channel and sentinel, so a profile-only message also has a zwStart run; the receiver
+// must NOT treat that as a style — a style "clear" frees the speaker's remembered style,
+// so misreading a profile frame would wipe an active style. Frames are told apart by
+// their leading payload byte (a style frame's is spriteStyleVersion).
+func HasStyleMarker(text string) bool {
+	if !hasMarker(text) {
+		return false
+	}
+	_, ok := findStyleFrame(text)
+	return ok
 }
 
 // StripSpriteStyle returns just the cleaned text (for callers that only need to
@@ -322,35 +344,61 @@ func StripSpriteStyle(text string) string {
 	return stripZeroWidth(text)
 }
 
-// decodeFirstMarker reads the first complete zero-width payload after a sentinel.
-// A short or corrupt run yields the zero-value style (benign: no style applied).
-func decodeFirstMarker(text string) SpriteStyle {
-	i := strings.IndexRune(text, zwStart)
-	if i < 0 {
-		return SpriteStyle{}
+// findStyleFrame returns the first zero-width frame whose payload is a sprite style
+// (leading byte == spriteStyleVersion, full length) and whether one was found. Scanning
+// every frame — not just the first sentinel run — keeps the decode correct when a profile
+// frame shares the message. A short/corrupt run yields no style (benign).
+func findStyleFrame(text string) (SpriteStyle, bool) {
+	for _, fr := range scanZeroWidthFrames(text) {
+		if len(fr) >= spriteStyleBytes && fr[0] == spriteStyleVersion {
+			var pb [spriteStyleBytes]byte
+			copy(pb[:], fr[:spriteStyleBytes])
+			return styleFromBytes(pb), true
+		}
 	}
-	var pb [spriteStyleBytes]byte
-	acc, nbits, nbytes := 0, 0, 0
-	for _, r := range text[i+len(string(zwStart)):] {
+	return SpriteStyle{}, false
+}
+
+// scanZeroWidthFrames decodes every zero-width run in text into its payload bytes
+// (MSB-first, 3 bits per symbol — the shared packing of the sprite-style and profile
+// codecs). A sentinel (zwStart) opens a run; the next sentinel or any non-symbol rune
+// closes it, so one message can carry more than one frame (a style AND a profile). Only
+// reached when a sentinel is present; each codec picks the frame whose leading magic
+// byte is its own.
+func scanZeroWidthFrames(text string) [][]byte {
+	var frames [][]byte
+	var cur []byte
+	inRun := false
+	acc, nbits := 0, 0
+	flush := func() {
+		if inRun {
+			frames = append(frames, cur)
+		}
+		inRun, cur, acc, nbits = false, nil, 0, 0
+	}
+	for _, r := range text {
+		if r == zwStart {
+			flush() // a fresh sentinel ends any prior run and opens a new one
+			inRun = true
+			continue
+		}
+		if !inRun {
+			continue
+		}
 		idx := octalIndex(r)
 		if idx < 0 {
-			break // first non-symbol rune ends the run
+			flush() // first non-symbol rune ends the run
+			continue
 		}
 		acc = acc<<3 | idx
 		nbits += 3
 		if nbits >= 8 {
 			nbits -= 8
-			pb[nbytes] = byte((acc >> uint(nbits)) & 0xFF)
-			nbytes++
-			if nbytes == spriteStyleBytes {
-				break
-			}
+			cur = append(cur, byte((acc>>uint(nbits))&0xFF))
 		}
 	}
-	if nbytes < spriteStyleBytes {
-		return SpriteStyle{} // short/corrupt run → no style (benign)
-	}
-	return styleFromBytes(pb)
+	flush()
+	return frames
 }
 
 // stripZeroWidth removes every rune in the codec's private alphabet, yielding the

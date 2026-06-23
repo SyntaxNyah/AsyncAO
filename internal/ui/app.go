@@ -734,8 +734,12 @@ type sessionState struct {
 	// so the invisible run rides change-messages only — zero value = nothing sent yet,
 	// so the first active style (re)transmits on a fresh connection.
 	lastSentStyle courtroom.SpriteStyle
-	iniWarmed     string // last char.ini hover-warmed (dedupe)
-	icColor       int    // outgoing MS text_color (dropdown)
+	// lastSentProfile is the cross-client character profile (#101 slice 2) we last
+	// TRANSMITTED this session — send-on-change like lastSentStyle (a profile rarely
+	// changes, so the invisible run rides at most our first post-join message).
+	lastSentProfile courtroom.WireProfile
+	iniWarmed       string // last char.ini hover-warmed (dedupe)
+	icColor         int    // outgoing MS text_color (dropdown)
 	// icExtColor selects an extended AsyncAO colour (#98), 1-based into
 	// render.ExtColorAt (icExtColor-1); 0 = none, so the &App{} zero value stays
 	// idle. Mutually exclusive with the wire palette / Rainbow / Random.

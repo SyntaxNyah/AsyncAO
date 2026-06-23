@@ -4,14 +4,16 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
-// Character profile (#101) — SLICE 1: the local model, this Settings editor, and
-// a reusable card renderer (with a live preview). Configurable: Enable is the
-// master switch, "Show on player list" controls visibility. Entirely local and
-// standard-client-safe; the cross-client WIRE (other players' cards on the
-// roster, via a tiny zero-width IC fingerprint) is slice 2, gated on confirming
-// the zero-width channel survives the live server.
+// Character profile (#101): the local model, this Settings editor, a reusable card
+// renderer (with a live preview), and the cross-client wire (slice 2). Configurable:
+// Enable is the master switch, "Show on player list" controls visibility. The card is
+// standard-client-safe; the cross-client slice (pronouns + tagline) rides the same
+// invisible zero-width IC channel as the sprite style (courtroom.WireProfile), so other
+// AsyncAO players see it AFTER you speak, while AO2/webAO are unaffected. The bigger
+// fields (bio, theme song, art) stay LOCAL — too large for the message channel.
 
 // drawProfileSettings draws the "Your profile" Settings section and returns the y
 // below it. Settings-only; never a hot path.
@@ -56,21 +58,43 @@ func (a *App) drawProfileSettings(y, w int32) int32 {
 	}
 
 	y += 6
-	c.Label(pad, y, "Preview (what other AsyncAO players see):", ColTextDim)
+	c.Label(pad, y, "Other AsyncAO players see your name, pronouns and tagline after you", ColTextDim)
+	y += 18
+	c.Label(pad, y, "speak; bio, theme song and art stay on this device. Standard clients see nothing.", ColTextDim)
 	y += 22
 	return a.drawProfileCard(pad, y, pr, a.effectiveShowname())
 }
 
-// profileFor returns the profile to show for a roster row, if any. SLICE 1 only
-// knows the LOCAL user's profile (when Enabled + ShowOnList); slice 2 adds a
-// remote store keyed by UID, populated from the zero-width IC fingerprint.
+// profileFor returns the profile to show for a roster row, if any. For our own row
+// it's the LOCAL profile (when Enabled + ShowOnList); for other players it's the
+// cross-client slice (#101 slice 2) received over the zero-width IC channel — pronouns
+// + tagline only, keyed by the bare character name. The lookup is a plain map read so
+// it stays allocation-free per row per frame.
 func (a *App) profileFor(p *areaPlayer, isMe bool) (config.ProfilePref, bool) {
 	if isMe {
 		if pr := a.d.Prefs.Profile(); pr.Enabled && pr.ShowOnList {
 			return pr, true
 		}
+		return config.ProfilePref{}, false
+	}
+	if a.room != nil && p != nil && p.name != "" {
+		if wp, ok := a.room.RemoteProfile(p.name); ok {
+			return config.ProfilePref{Enabled: true, ShowOnList: true, Pronouns: wp.Pronouns, Tag: wp.Tag}, true
+		}
 	}
 	return config.ProfilePref{}, false
+}
+
+// myWireProfile is the cross-client slice of our profile to transmit (#101 slice 2):
+// empty unless the profile is enabled AND set to show on the list (the same gate the
+// local card uses), so disabling either stops transmitting (and sends a clear). Only
+// pronouns + tagline travel — the receiver's card title uses our live showname.
+func (a *App) myWireProfile() courtroom.WireProfile {
+	pr := a.d.Prefs.Profile()
+	if !pr.Enabled || !pr.ShowOnList {
+		return courtroom.WireProfile{}
+	}
+	return courtroom.WireProfile{Pronouns: pr.Pronouns, Tag: pr.Tag}
 }
 
 // openProfileCard opens the player-list profile popover for pr/name.
