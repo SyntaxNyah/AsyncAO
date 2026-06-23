@@ -129,6 +129,7 @@ func (a *App) parkActive() {
 		a.msRaster.Destroy()
 		a.msRaster = nil
 	}
+	a.msAnim, a.msAnimFont = nil, nil // #M5: drop the parked tab's animated message too
 	a.tabs[a.activeTab].inCourt = a.room != nil
 	a.room = nil
 	if a.d.Viewport != nil {

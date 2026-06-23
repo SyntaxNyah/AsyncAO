@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -1238,10 +1239,14 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 
 	wrapW := box.W - 16
 	a.ensureChatRaster(wrapW, skinned)
-	if a.msRaster != nil {
+	if a.msAnim != nil || a.msRaster != nil {
 		// Clip to the box: oversized Text settings stay INSIDE it.
 		_ = c.Ren.SetClipRect(&box)
-		a.msRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
+		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, a.d.Prefs.ReduceMotion())
+		} else {
+			a.msRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
+		}
 		_ = c.Ren.SetClipRect(nil)
 	}
 
@@ -1253,28 +1258,44 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 // classic overlay and the themed chatbox.
 func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
-	if a.msRaster != nil && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
-		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned {
+	effSig := effectsSig(sc.MessageEffects)
+	if (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
+		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig {
 		return
 	}
 	if a.msRaster != nil {
 		a.msRaster.Destroy()
 		a.msRaster = nil
 	}
+	a.msAnim = nil // AnimatedText owns no textures (the glyph cache does); just drop it
+	a.msAnimFont = nil
 	if sc.MessageText == "" {
 		return
 	}
-	raster, err := renderRaster(a, sc, wrapW, skinned, a.chatPct, false)
-	if err != nil {
-		return
+	// #M5: a message with effect spans takes the per-glyph animated path; every other
+	// message keeps the untouched MessageRaster fast paths (zero change for the common case).
+	if len(sc.MessageEffects) > 0 {
+		if a.glyphCache == nil {
+			a.glyphCache = render.NewGlyphCache(glyphCacheCap)
+		}
+		anim, font := renderAnimated(a, sc, wrapW, skinned, a.chatPct)
+		anim.Warm(a.ctx.Ren, a.glyphCache, font) // render all glyphs up front → 0-alloc draws
+		a.msAnim = anim
+		a.msAnimFont = font
+	} else {
+		raster, err := renderRaster(a, sc, wrapW, skinned, a.chatPct, false)
+		if err != nil {
+			return
+		}
+		a.msRaster = raster
 	}
-	a.msRaster = raster
 	a.rasterText = sc.MessageText
 	a.rasterRaw = sc.MessageRaw
 	a.rasterColor = sc.TextColor
 	a.rasterScale = a.chatPct
 	a.rasterW = wrapW
 	a.rasterSkinned = skinned
+	a.rasterEffSig = effSig
 }
 
 // chatZoomWheel: Ctrl+wheel over the chatbox zooms the chat text
@@ -3961,6 +3982,15 @@ func (a *App) sendIC(shout int) {
 	if blip == "" {
 		blip = a.charBlips
 	}
+	// #M5 animated text: pull the [shake]/[wave]/[rainbow] markup out into the wire text
+	// (tags removed, \cN colour kept) plus the display-indexed effect spans. The spans ride
+	// an invisible frame appended below, so AO2/webAO render the plain message; the spans
+	// align with the receiver's MessageText because the two strips commute. 0-alloc when the
+	// input has no '['. A markup-only message (no visible text left) falls back to a blankpost.
+	text, effectSpans := courtroom.ParseTextEffects(text)
+	if strings.TrimSpace(text) == "" && shout == 0 {
+		text, effectSpans = " ", nil
+	}
 	// #M1 auto-status: a trigger word you typed (e.g. "brb") flips your status on the raw
 	// text, BEFORE markup/markers, so the status change rides this very message.
 	a.applyAutoStatus(text)
@@ -3994,6 +4024,12 @@ func (a *App) sendIC(shout int) {
 		text += sm
 	}
 	a.lastSentStatus = a.myStatus
+	// Animated-text spans (#M5): same invisible channel, appended LAST. Unlike the
+	// send-on-change markers above, the effects frame is per-message CONTENT, so it rides
+	// every message that carries [shake]/[wave]/[rainbow] markup.
+	if marker := courtroom.EncodeEffectsMarker(effectSpans); marker != "" {
+		text += marker
+	}
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)
 		PreEmote:   emote.Preanim,
@@ -4102,20 +4138,8 @@ func (a *App) handleChatCommand(text string) bool {
 // DEFAULT colour to dark "ink" for the comic export's paper speech bubble (explicit
 // \cN colours still win), so light default text isn't invisible on the white bubble.
 func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int, comicInk bool) (*render.MessageRaster, error) {
-	// The chat zoom font: rebuilt only when the Text knob changes. The
-	// theme's "message" color replaces only AO's DEFAULT color (code 0)
-	// — explicit message colors (green/red/...) always win — and only
-	// while the theme's own chatbox skin is drawn: theme colors assume
-	// their skin (black text on white paper), not our dark flat panel.
-	col := render.TextColor(sc.TextColor)
-	switch {
-	case sc.TextColor != 0:
-		// an explicit message colour always wins (reads on either background)
-	case comicInk:
-		col = comicBubbleInk // dark ink on the paper comic bubble
-	case skinned && a.themeHasMsg:
-		col = a.themeMsgCol
-	}
+	// The chat zoom font: rebuilt only when the Text knob changes.
+	col := chatBaseColor(a, sc, skinned, comicInk)
 	// Per-message font pick at the given scale (pct): the override chain's first
 	// covering font (CJK fallback), the embedded font otherwise. The live chatbox
 	// passes a.chatPct; the export passes a size fitted to the capture frame.
@@ -4145,6 +4169,68 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 		return render.RasterizeStyled(a.ctx.Ren, font, sc.MessageText, buildColorSpans(sc.MessageStyles, col), wrapW)
 	}
 	return render.Rasterize(a.ctx.Ren, font, sc.MessageText, wrapW, col)
+}
+
+// chatBaseColor resolves a message's DEFAULT text colour (used as the whole-message colour
+// and as the base for the animated-text path). The theme's "message" colour replaces only
+// AO's default code 0 — explicit \cN colours always win — and only while the theme's own
+// chatbox skin is drawn (theme colours assume their skin: black on paper, not our dark
+// panel). comicInk forces dark ink for the comic export's white bubble.
+func chatBaseColor(a *App, sc *courtroom.Scene, skinned, comicInk bool) sdl.Color {
+	col := render.TextColor(sc.TextColor)
+	switch {
+	case sc.TextColor != 0:
+		// an explicit message colour always wins (reads on either background)
+	case comicInk:
+		col = comicBubbleInk
+	case skinned && a.themeHasMsg:
+		col = a.themeMsgCol
+	}
+	return col
+}
+
+// glyphCacheCap bounds the shared #M5 white-glyph cache. One chatbox message is ≤ the AO
+// ~256-char limit, so this comfortably holds a whole message's distinct glyphs across a
+// couple of font sizes without evicting its own glyphs mid-reveal (NewGlyphCache floors it).
+const glyphCacheCap = 512
+
+// renderAnimated builds the #M5 animated-text layout for a message that carries effect spans
+// — the per-glyph path that can shake/wave/displace and rainbow-recolour. Single base colour
+// (the message default) with rainbow overriding per glyph; inline \cN colour + emoji/CJK
+// per-glyph fallback don't compose with effects yet (a documented follow-up). Returns the
+// layout and the face it used (the glyph cache keys on it).
+func renderAnimated(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int) (*render.AnimatedText, *ttf.Font) {
+	col := chatBaseColor(a, sc, skinned, false)
+	font := a.ctx.ChatFontFor(pct, sc.MessageText)
+	return render.RasterizeAnimated(font, sc.MessageText, toRenderEffectSpans(sc.MessageEffects), col, wrapW), font
+}
+
+// toRenderEffectSpans maps the courtroom (SDL-free) spans to the render package's spans. The
+// effect ids are pinned equal by TestEffectIDsMatchRender, so the cast is a straight copy.
+// Allocates once per effects message (build time), never per frame.
+func toRenderEffectSpans(spans []courtroom.TextEffectSpan) []render.EffectSpan {
+	if len(spans) == 0 {
+		return nil
+	}
+	out := make([]render.EffectSpan, len(spans))
+	for i, s := range spans {
+		out[i] = render.EffectSpan{Start: s.Start, Len: s.Len, Effect: s.Effect}
+	}
+	return out
+}
+
+// effectsSig folds the effect spans into a cache key so ensureChatRaster rebuilds when they
+// change even if the visible text didn't (the zero-width effects frame is stripped out of
+// MessageRaw, so two messages with the same text but different effects share a raw key).
+func effectsSig(spans []courtroom.TextEffectSpan) uint64 {
+	const fnvOffset, fnvPrime = 1469598103934665603, 1099511628211
+	h := uint64(fnvOffset)
+	for _, s := range spans {
+		h = (h ^ uint64(uint32(s.Start))) * fnvPrime
+		h = (h ^ uint64(uint32(s.Len))) * fnvPrime
+		h = (h ^ uint64(s.Effect)) * fnvPrime
+	}
+	return h
 }
 
 // sceneNeedsStyled reports whether any style run has a non-default color or

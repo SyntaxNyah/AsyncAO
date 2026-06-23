@@ -183,6 +183,12 @@ func NewViewport(store *TextureStore) *Viewport {
 // existing blit, so updating it costs nothing and never allocates.
 func (v *Viewport) SetSpriteFX(fx SpriteFX) { v.fx = fx }
 
+// AnimClock returns the free-running motion clock advanced by Update (the same clock the
+// sprite Wobble/Spin read). The chatbox uses it to drive #M5 animated text, so text and
+// sprite motion stay in step in every mode (live / replay / maker) — each path calls
+// Update, so the clock tracks whatever scene is on stage.
+func (v *Viewport) AnimClock() time.Duration { return v.fxClock }
+
 // Update advances animation clocks against the active scene.
 func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	// Derive this frame's hue period from the speed slider and advance the

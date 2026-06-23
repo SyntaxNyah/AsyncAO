@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -1132,6 +1133,17 @@ type sessionState struct {
 
 	// last-applied scene text color (raster invalidation)
 	rasterColor int
+
+	// Animated chat text (#M5): when the message carries effect spans, msAnim
+	// replaces msRaster for this message (the per-glyph path that can displace +
+	// recolour). msAnimFont is the face it was laid out with (the glyph cache keys
+	// on it); glyphCache holds the white glyph textures, shared + bounded. A plain
+	// message never builds msAnim, so its draw path is byte-identical to before.
+	// rasterEffSig folds the effect spans into the raster cache key.
+	msAnim       *render.AnimatedText
+	msAnimFont   *ttf.Font
+	glyphCache   *render.GlyphCache
+	rasterEffSig uint64
 }
 
 type lobbyFetch struct {
@@ -1763,6 +1775,9 @@ func (a *App) Disconnect() {
 	}
 	if a.msRaster != nil {
 		a.msRaster.Destroy()
+	}
+	if a.glyphCache != nil {
+		a.glyphCache.Purge() // free the #M5 white-glyph textures
 	}
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil

@@ -591,9 +591,13 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), nameX, nameY, nameW, sc.ShownameText, nameCol)
 
 	a.ensureChatRaster(wrapW, skinned)
-	if a.msRaster != nil {
+	if a.msAnim != nil || a.msRaster != nil {
 		_ = c.Ren.SetClipRect(&box)
-		a.msRaster.Draw(c.Ren, sc.VisibleRunes, msgX, msgY)
+		if a.msAnim != nil { // #M5 animated message
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, msgX, msgY, a.d.Prefs.ReduceMotion())
+		} else {
+			a.msRaster.Draw(c.Ren, sc.VisibleRunes, msgX, msgY)
+		}
 		_ = c.Ren.SetClipRect(nil)
 	}
 	a.chatZoomWheel(box)

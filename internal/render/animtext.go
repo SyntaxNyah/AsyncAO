@@ -118,6 +118,16 @@ func (at *AnimatedText) Height() int32 {
 	return maxY + at.lineH
 }
 
+// Warm pre-renders every glyph into the cache so subsequent Draws — including each frame of
+// the typewriter reveal, when new runes appear — are allocation-free. Render thread; call
+// once right after RasterizeAnimated (mirrors MessageRaster building all its line textures
+// up front, so an effects message carries the same one-time build cost, not a per-frame one).
+func (at *AnimatedText) Warm(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font) {
+	for i := range at.runes {
+		gc.glyph(ren, font, at.runes[i].r)
+	}
+}
+
 // Draw renders the animated message up to visibleRunes (the typewriter reveal) at origin
 // (ox, oy). reduceMotion pins rainbow to a static hue and stops all displacement — the
 // accessibility / photosensitivity floor. ZERO allocations per frame on a warm glyph
