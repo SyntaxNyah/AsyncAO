@@ -386,6 +386,45 @@ func clampLen(s string, n int) string {
 	return string(r[:n])
 }
 
+// AutoStatusPref (#M1) auto-sets your presence status from words you type in IC. Each
+// field is a comma-separated list of trigger words; when an outgoing message contains
+// one (whole-word, case-insensitive), your status flips — so announcing "brb" can flip
+// you to AFK on that very message. OFF by default; ClearWords (e.g. "back") returns you
+// to no status. The status indices map to courtroom.Status (None/AFK/Busy/Writing/LFRP);
+// config stays courtroom-free by using one field per status.
+type AutoStatusPref struct {
+	Enabled      bool   `json:"enabled,omitempty"`
+	ClearWords   string `json:"clearWords,omitempty"` // → no status (e.g. "back")
+	AFKWords     string `json:"afkWords,omitempty"`
+	BusyWords    string `json:"busyWords,omitempty"`
+	WritingWords string `json:"writingWords,omitempty"`
+	LFRPWords    string `json:"lfrpWords,omitempty"`
+}
+
+// autoStatusWordsMax bounds each trigger-word field so a hand-edited prefs file can't
+// smuggle in a huge string.
+const autoStatusWordsMax = 200
+
+// defaultAutoStatusPref: OFF, with sensible word lists pre-filled so enabling it just
+// works (and they're editable / removable).
+func defaultAutoStatusPref() AutoStatusPref {
+	return AutoStatusPref{
+		ClearWords: "back",
+		AFKWords:   "brb, afk, away",
+		BusyWords:  "busy, dnd",
+	}
+}
+
+// sanitizeAutoStatus bounds every word field (the setter and the load-merge both run it).
+func sanitizeAutoStatus(a AutoStatusPref) AutoStatusPref {
+	a.ClearWords = clampLen(a.ClearWords, autoStatusWordsMax)
+	a.AFKWords = clampLen(a.AFKWords, autoStatusWordsMax)
+	a.BusyWords = clampLen(a.BusyWords, autoStatusWordsMax)
+	a.WritingWords = clampLen(a.WritingWords, autoStatusWordsMax)
+	a.LFRPWords = clampLen(a.LFRPWords, autoStatusWordsMax)
+	return a
+}
+
 // Per-speaker name colours (OFF by default): each speaker's name is tinted by a
 // stable hash of the name. Saturation/value are user-tunable; value has a floor
 // so a name can't go unreadable-dark on the chat panel.
@@ -685,6 +724,7 @@ type AssetPreferences struct {
 	CallWordList       []string                  `json:"callWords"`
 	HotkeyMap          map[string]string         `json:"hotkeys"`
 	DiscordRPC         DiscordPrefs              `json:"discord"`
+	MyAutoStatus       AutoStatusPref            `json:"autoStatus"` // #M1 auto-status from typed words
 	// CharDownloaderOn enables the opt-in single-character/background
 	// downloader (off by default — it writes files to disk on demand).
 	CharDownloaderOn bool `json:"charDownloader"`
@@ -897,6 +937,7 @@ type prefsJSON struct {
 	CallWords          []string                  `json:"callWords"`
 	Hotkeys            map[string]string         `json:"hotkeys"`
 	Discord            *DiscordPrefs             `json:"discord"`
+	AutoStatus         *AutoStatusPref           `json:"autoStatus,omitempty"`
 	CharDownloader     bool                      `json:"charDownloader"`
 
 	ShowAssetWarnings  bool     `json:"showAssetWarnings"`    // default OFF (zero value)
@@ -1153,6 +1194,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		CatchUpThreshold:       DefaultCatchUpThreshold,
 		MultiTabCap:            DefaultMultiTabCap,
 		DiscordRPC:             defaultDiscordPrefs(),
+		MyAutoStatus:           defaultAutoStatusPref(),
 		ViewportPct:            DefaultViewportPercent,
 		ChatScalePct:           DefaultScalePercent,
 		ChatBoxPct:             DefaultScalePercent,
@@ -1500,6 +1542,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.Discord != nil {
 		p.DiscordRPC = *onDisk.Discord
+	}
+	if onDisk.AutoStatus != nil {
+		p.MyAutoStatus = sanitizeAutoStatus(*onDisk.AutoStatus)
 	}
 	return p, nil
 }
@@ -3535,6 +3580,26 @@ func (p *AssetPreferences) SetDiscord(dp DiscordPrefs) {
 		return
 	}
 	p.DiscordRPC = dp
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AutoStatus reports the auto-status configuration (#M1: typed words → presence status).
+func (p *AssetPreferences) AutoStatus() AutoStatusPref {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MyAutoStatus
+}
+
+// SetAutoStatus stores the auto-status configuration (word fields bounded).
+func (p *AssetPreferences) SetAutoStatus(a AutoStatusPref) {
+	a = sanitizeAutoStatus(a)
+	p.mu.Lock()
+	if p.MyAutoStatus == a {
+		p.mu.Unlock()
+		return
+	}
+	p.MyAutoStatus = a
 	p.mu.Unlock()
 	p.markDirty()
 }

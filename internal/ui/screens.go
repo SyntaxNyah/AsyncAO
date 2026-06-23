@@ -3943,6 +3943,9 @@ func (a *App) sendIC(shout int) {
 	if blip == "" {
 		blip = a.charBlips
 	}
+	// #M1 auto-status: a trigger word you typed (e.g. "brb") flips your status on the raw
+	// text, BEFORE markup/markers, so the status change rides this very message.
+	a.applyAutoStatus(text)
 	// M61 fun colour: rainbow (\cr prefix), an extended AsyncAO colour (\c<letter>
 	// + nearest-standard wire fallback, #98), or a random palette colour per message.
 	text, msgColor := funColor(text, a.icColor, a.icExtColor-1, a.d.Prefs.RainbowMessagesOn(), a.d.Prefs.RandomMessageColorOn(), rand.IntN(render.TextColorCount))
