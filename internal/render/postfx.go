@@ -166,6 +166,7 @@ func (v *Viewport) PurgePostFX() {
 			v.grainTex[i] = nil
 		}
 	}
+	v.particles.purge() // #124 free the cached weather dot texture too
 }
 
 func clampF(v, lo, hi float64) float64 {

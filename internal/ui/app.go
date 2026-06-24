@@ -3300,7 +3300,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.room.Update(dt)
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
-		a.d.Viewport.SetPostFX(a.postFX()) // #10 retro overlays
+		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
+		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		// Music ducking: dip music while a message is on stage (shout/preanim/
 		// talking), restore at idle/linger. Transition-driven — SetVolumes is
@@ -3827,6 +3828,15 @@ func (a *App) spriteFX() render.SpriteFX {
 		fx.SolidB = uint8(rgb & 0xFF)
 	}
 	return fx
+}
+
+// cycleWeather advances the #124 ambient weather (None → Snow → Rain → Sakura → Embers → None)
+// and flashes the new name — the hands-free keybind.
+func (a *App) cycleWeather() {
+	w := (a.d.Prefs.WeatherType() + 1) % int(render.WeatherCount)
+	a.d.Prefs.SetWeatherType(w)
+	a.warnLine = "Weather: " + render.WeatherName(render.Weather(w))
+	a.warnAt = time.Now()
 }
 
 // postFX mirrors the user's #10 post-processing toggles onto the viewport each frame.

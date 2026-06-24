@@ -655,6 +655,8 @@ type AssetPreferences struct {
 	BreathRate             int                          `json:"breathSpeed"`       // speed [1,100], 0 = unset → default
 	Reflection             bool                         `json:"reflection"`        // #123 glass-floor reflection (default OFF)
 	ReflectOpacity         int                          `json:"reflectStrength"`   // opacity [0,100], 0 = unset → default
+	WeatherKind            int                          `json:"weatherType"`       // #124 ambient weather (0 = None/off)
+	WeatherDensity         int                          `json:"weatherIntensity"`  // intensity [1,100], 0 = unset → default
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -880,6 +882,8 @@ type prefsJSON struct {
 	BreathRate             int              `json:"breathSpeed"`            // 0 = unset → default
 	Reflection             bool             `json:"reflection"`             // #123 default OFF
 	ReflectOpacity         int              `json:"reflectStrength"`        // 0 = unset → default
+	WeatherKind            int              `json:"weatherType"`            // #124 0 = None/off
+	WeatherDensity         int              `json:"weatherIntensity"`       // 0 = unset → default
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1400,6 +1404,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.BreathRate = onDisk.BreathRate
 	p.Reflection = onDisk.Reflection
 	p.ReflectOpacity = onDisk.ReflectOpacity
+	p.WeatherKind = onDisk.WeatherKind
+	p.WeatherDensity = onDisk.WeatherDensity
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3467,6 +3473,40 @@ func (p *AssetPreferences) ReflectStrength() int {
 
 // SetReflectStrength stores the reflection opacity (clamped to [0,100]).
 func (p *AssetPreferences) SetReflectStrength(v int) { p.setIntPref(&p.ReflectOpacity, v, 0, 100) }
+
+// weatherKindMax is the highest valid weather index (render.WeatherCount-1 = embers); the
+// config can't import render, so it's pinned here and a ui test keeps the two equal.
+const (
+	weatherKindMax        = 4 // None=0, Snow, Rain, Sakura, Embers
+	defaultWeatherDensity = 60
+)
+
+// WeatherType reports the ambient-weather index (#124); 0 = None (off). Clamped to the valid
+// range so a hand-edited pref can't select a non-existent weather.
+func (p *AssetPreferences) WeatherType() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.WeatherKind < 0 || p.WeatherKind > weatherKindMax {
+		return 0
+	}
+	return p.WeatherKind
+}
+
+// SetWeatherType stores the weather index (clamped to [0,weatherKindMax]).
+func (p *AssetPreferences) SetWeatherType(v int) { p.setIntPref(&p.WeatherKind, v, 0, weatherKindMax) }
+
+// WeatherIntensity reports the density slider [1,100]; 0 (unset) resolves to the default.
+func (p *AssetPreferences) WeatherIntensity() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.WeatherDensity == 0 {
+		return defaultWeatherDensity
+	}
+	return p.WeatherDensity
+}
+
+// SetWeatherIntensity stores the density (clamped to [1,100]).
+func (p *AssetPreferences) SetWeatherIntensity(v int) { p.setIntPref(&p.WeatherDensity, v, 1, 100) }
 
 // setBoolPref sets *field to on under the lock, marking dirty only on a real change.
 func (p *AssetPreferences) setBoolPref(field *bool, on bool) {

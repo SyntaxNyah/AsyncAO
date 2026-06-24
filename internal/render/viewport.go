@@ -207,6 +207,9 @@ type Viewport struct {
 	grainTex             [grainFrames]*sdl.Texture
 	grainIdx             int
 	postRect             sdl.Rect // post-FX blit destination scratch
+
+	// #124 particle weather: a bounded pool + one cached dot texture (snow/rain/sakura/embers).
+	particles particleField
 }
 
 // Sprite outline / drop-shadow tuning (#8). The outline is drawn as 8 offset silhouette
@@ -250,7 +253,8 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	// only *read* when a wash is enabled.
 	v.curCycle = cycleForSpeed(v.fx.Speed)
 	v.rainbowPhase = (v.rainbowPhase + dt) % v.curCycle
-	v.fxClock += dt // free-running clock for the motion effects (wobble/spin)
+	v.fxClock += dt        // free-running clock for the motion effects (wobble/spin)
+	v.particles.update(dt) // #124 advance the weather pool (no-op when off)
 
 	// #12 shout punch: fire the pop once on the frame a shout appears (ShoutBase goes
 	// non-empty), then count it down. Tracked unconditionally (cheap, no allocation); the
@@ -427,7 +431,8 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		_ = ren.FillRect(&v.fillRect)
 	}
 
-	v.applyPostFX(ren, stage) // #10 retro overlays over the whole stage frame (free when off)
+	v.particles.draw(ren, stage) // #124 ambient weather over the stage (free when off), under the post-FX
+	v.applyPostFX(ren, stage)    // #10 retro overlays over the whole stage frame (free when off)
 }
 
 // effectiveShoutBase picks which shout bubble to draw: the character's own

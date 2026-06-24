@@ -70,6 +70,7 @@ const (
 	hotkeySpotlight  = "spotlight"   // toggle speaker spotlight (#121)
 	hotkeyIdleBreath = "idle_breath" // toggle idle breathing (#122)
 	hotkeyReflection = "reflection"  // toggle glass-floor reflection (#123)
+	hotkeyWeather    = "weather"     // cycle ambient weather (#124)
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -122,6 +123,7 @@ var hotkeyDefs = []struct {
 	{hotkeySpotlight, "Toggle speaker spotlight", "["},                     // Ctrl+[ — letters are exhausted, FX toggles use the free symbol keys
 	{hotkeyIdleBreath, "Toggle idle breathing", "]"},                       // Ctrl+]
 	{hotkeyReflection, "Toggle glass-floor reflection", ";"},               // Ctrl+;
+	{hotkeyWeather, "Cycle ambient weather", "'"},                          // Ctrl+'
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -350,6 +352,8 @@ func (a *App) handleHotkeys() {
 		a.toggleFXPref(a.d.Prefs.IdleBreathOn(), a.d.Prefs.SetIdleBreath, "Idle breathing")
 	case a.hotkeyFor(hotkeyReflection):
 		a.toggleFXPref(a.d.Prefs.ReflectionOn(), a.d.Prefs.SetReflection, "Glass-floor reflection")
+	case a.hotkeyFor(hotkeyWeather):
+		a.cycleWeather()
 	case a.hotkeyFor(hotkeyFavEmotes):
 		a.toggleFavEmoteBox()
 	}

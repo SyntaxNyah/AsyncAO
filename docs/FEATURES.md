@@ -323,6 +323,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   an Opacity slider. Each has a **rebindable keybind** (Settings → Controls; the Ctrl+letter
   space is full so the viewer-FX toggles default to the free symbol keys — spotlight `Ctrl+[`,
   breathing `Ctrl+]`, reflection `Ctrl+;`).
+- **Particle weather** (#124, Settings → General, **OFF by default**): an ambient overlay of
+  **snow / rain / sakura / embers** drifting over the scene. A fixed, bounded particle pool
+  (§17.4) drawn from **one cached soft-dot texture**, tinted + shaped per weather (rain
+  stretches into streaks, embers rise + glow additively + fade), with an **Intensity** slider
+  that scales the active count. Positions are viewport fractions (resolution-independent);
+  motion + respawn are pure math off a per-particle PRNG, so the overlay is **0-alloc** per
+  frame (`TestParticleWeatherZeroAlloc` covers the uniform-alpha and the fade/additive paths)
+  and **byte-identical when off** (early return). Confined to the stage with the same
+  don't-stomp-the-zoom-clip guard as the reflection. The picker cycles None → Snow → Rain →
+  Sakura → Embers; keybind `Ctrl+'` cycles it hands-free.
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

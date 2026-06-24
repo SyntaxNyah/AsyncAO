@@ -726,6 +726,24 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", op), ColAccent)
 		y += 26
 	}
+	// #124 ambient weather: a cycle picker (None → Snow → Rain → Sakura → Embers) + an
+	// Intensity slider while a weather is on. The keybind cycles it hands-free.
+	wk := a.d.Prefs.WeatherType()
+	c.Label(pad, y+4, "Weather (OFF by default):", ColTextDim)
+	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 90, H: 22}, render.WeatherName(render.Weather(wk))) {
+		a.d.Prefs.SetWeatherType((wk + 1) % int(render.WeatherCount))
+	}
+	y += 26
+	if wk != 0 {
+		wi := a.d.Prefs.WeatherIntensity()
+		c.Label(pad+16, y+4, "Intensity:", ColTextDim)
+		if next := int(c.Slider("wxint", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(wi), 100)); next != wi {
+			a.d.Prefs.SetWeatherIntensity(next)
+			wi = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", wi), ColAccent)
+		y += 26
+	}
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()
