@@ -47,6 +47,7 @@ const (
 	// cleanGapPx is the breathing room between stacked clean-layout panels.
 	cleanOOCMinH int32 = 96
 	cleanGapPx   int32 = 6
+	cleanHeaderH int32 = 20 // titled-header bar height on clean-layout boxes
 )
 
 func osHostname() (string, error) { return os.Hostname() }
@@ -959,8 +960,11 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect) {
 	box := sdl.Rect{X: rcol.X, Y: rcol.Y + logH + cleanGapPx, W: rcol.W, H: oocH}
 	c.Fill(box, ColPanel)
 	c.Border(box, ColAccent)
-	c.Label(box.X+8, box.Y+5, "OOC", ColTextDim)
-	a.drawOOCPanel(sdl.Rect{X: box.X + 5, Y: box.Y + 24, W: box.W - 10, H: box.H - 29})
+	// Titled header bar so it reads as a clean, distinct box (brighter label = legible at a glance).
+	hdr := sdl.Rect{X: box.X + 1, Y: box.Y + 1, W: box.W - 2, H: cleanHeaderH}
+	c.Fill(hdr, ColPanelHi)
+	c.Label(hdr.X+7, hdr.Y+3, "OOC", ColText)
+	a.drawOOCPanel(sdl.Rect{X: box.X + 5, Y: box.Y + cleanHeaderH + 4, W: box.W - 10, H: box.H - cleanHeaderH - 8})
 }
 
 // drawCourtroomModals draws whichever return-to-top courtroom popup is open and
