@@ -654,15 +654,20 @@ type App struct {
 // tabs don't animate, and activation rebuilds it via enterCourtroom.
 type sessionState struct {
 	// --- connection / session ---
-	conn         *protocol.Conn
-	sess         *courtroom.Session
-	room         *courtroom.Courtroom
-	urls         courtroom.URLBuilder
-	serverName   string
-	serverKey    string // ws URL: keys the per-server warm state in prefs
-	connErr      string
-	lastConnName string // M2: the server we were dropped from, for one-click Reconnect
-	lastConnURL  string // its ws URL (serverKey), captured before Disconnect clears it
+	conn *protocol.Conn
+	sess *courtroom.Session
+	room *courtroom.Courtroom
+	urls courtroom.URLBuilder
+	// #130 CM/mod dashboard: per-server software override (SoftwareUnknown = auto-detect from
+	// the ID packet). Parks per tab; a fresh connect's new sessionState resets it to auto.
+	cmSoftwareOverride courtroom.ServerSoftware
+	showModDash        bool // the dashboard panel is open
+	modDashTarget      int  // selected roster index in the dashboard (-1 = none)
+	serverName         string
+	serverKey          string // ws URL: keys the per-server warm state in prefs
+	connErr            string
+	lastConnName       string // M2: the server we were dropped from, for one-click Reconnect
+	lastConnURL        string // its ws URL (serverKey), captured before Disconnect clears it
 	// M2 auto-reconnect: after an unexpected drop, retry lastConnURL with backoff.
 	// autoReconnectAt is the next attempt (zero = not retrying); pollAutoReconnect
 	// fires it from the frame loop (a single time compare when idle — 0 per-frame
