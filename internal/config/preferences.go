@@ -628,6 +628,7 @@ type AssetPreferences struct {
 	Export                 ExportOptions                `json:"export"`
 	MySpriteStyle          SpriteStylePref              `json:"mySpriteStyle"`    // the user's own transmitted sprite style (#103)
 	HideSpriteStyles       bool                         `json:"hideSpriteStyles"` // ignore others' transmitted styles (default OFF = show)
+	HideReactions          bool                         `json:"hideReactions"`    // ignore others' transmitted emoji reactions (#2) (default OFF = show)
 	MyProfile              ProfilePref                  `json:"profile"`          // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
@@ -844,6 +845,7 @@ type prefsJSON struct {
 	Export                 *ExportOptions   `json:"export"`                 // absent = default
 	MySpriteStyle          *SpriteStylePref `json:"mySpriteStyle"`          // absent = no style (#103)
 	HideSpriteStyles       bool             `json:"hideSpriteStyles"`       // default OFF (show others' styles)
+	HideReactions          bool             `json:"hideReactions"`          // default OFF (show others' reactions, #2)
 	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
 	ChatboxOpacity         *int             `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
@@ -1348,6 +1350,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.MySpriteStyle = s
 	}
 	p.HideSpriteStyles = onDisk.HideSpriteStyles
+	p.HideReactions = onDisk.HideReactions
 	if onDisk.Profile != nil {
 		p.MyProfile = clampProfile(*onDisk.Profile)
 	}
@@ -3007,6 +3010,26 @@ func (p *AssetPreferences) SetHideSpriteStyles(b bool) {
 		return
 	}
 	p.HideSpriteStyles = b
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// HideReactionsOn reports whether the viewer ignores others' transmitted emoji
+// reactions (#2) (default false = show the floating emoji).
+func (p *AssetPreferences) HideReactionsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.HideReactions
+}
+
+// SetHideReactions toggles ignoring others' transmitted emoji reactions.
+func (p *AssetPreferences) SetHideReactions(b bool) {
+	p.mu.Lock()
+	if p.HideReactions == b {
+		p.mu.Unlock()
+		return
+	}
+	p.HideReactions = b
 	p.mu.Unlock()
 	p.markDirty()
 }

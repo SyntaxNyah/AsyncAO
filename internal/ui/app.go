@@ -727,6 +727,29 @@ type sessionState struct {
 	emojiFenceOn    bool
 	emojiBtnRect    sdl.Rect
 
+	// #2 real reactions. reactionFloats is the bounded ring of emoji rising over the stage
+	// (drawReactionFloats); reactBadges caches one alpha-fadeable texture per palette index
+	// (built once the colour-emoji face lands); reactRect is the reused draw scratch (a fresh
+	// local would heap-escape through cgo). reactSpawnSeq scatters floats horizontally.
+	reactionFloats []reactionFloat
+	reactBadges    map[uint8]*render.Badge
+	reactRect      sdl.Rect
+	reactSpawnSeq  int32
+	// React trigger: showReactPicker toggles the palette (reactFenceOn tracks our modal
+	// fence so it's released on close, like the emoji picker); reactBtnRect anchors it.
+	// reactTarget{Ref,Name} is the message snapshotted when the palette opened. pendingReact
+	// (+set) is the queued reaction that rides the next IC send; lastReact{Ref,Name} tracks
+	// the most recent IC message, the snapshot source.
+	showReactPicker bool
+	reactFenceOn    bool
+	reactBtnRect    sdl.Rect
+	reactTargetRef  uint32
+	reactTargetName string
+	pendingReact    courtroom.WireReaction
+	pendingReactSet bool
+	lastReactRef    uint32
+	lastReactName   string
+
 	// --- courtroom chrome ---
 	icInput  string
 	oocInput string
@@ -2031,6 +2054,20 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				force := a.d.Prefs.ForceCharNamesOn()
 				line, speaker := icLogLineDisplay(ev.Message, force, a.friendNick(ev.Message))
 				a.pushIC(line, ev.Message.TextColor, fr, fc, speaker)
+				// #2 reactions: stamp this entry with its CONTENT-STABLE ref, computed from the
+				// RAW wire fields (CharName + marker-free text) — NOT the display line, which
+				// bakes in client-local showname / nick / timestamp and so wouldn't match a
+				// peer's ref. A real speaker line becomes a reaction target; track it as the
+				// "last message" the React button snapshots, and float any reaction this very
+				// message carries (the reactor piggybacks on their next line).
+				if speaker != "" {
+					ref := courtroom.MakeReactionRef(ev.Message.CharName, courtroom.StripSpriteStyle(ev.Message.Message))
+					a.icLog[len(a.icLog)-1].ref = ref
+					a.lastReactRef, a.lastReactName = ref, speaker
+				}
+				if r, ok := courtroom.DecodeReactionMarker(ev.Message.Message); ok {
+					a.onIncomingReaction(r)
+				}
 				a.noteShowname(ev.Message.CharName, ev.Message.Showname) // live-roster name cache
 				if sn := ev.Message.SFXName; sn != "" && sn != "0" && sn != "1" {
 					a.lastSFXName = sn // M11: remember the most-recent SFX for one-click "Mute last SFX"
@@ -3280,6 +3317,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// persists across frames, so an un-released fence freezes the whole UI (the reported
 	// open-then-close bug).
 	a.emojiPickerFence(a.ctx)
+	a.reactPickerFence(a.ctx) // #2: same modal-fence discipline as the emoji picker
 
 	if a.gifExporting {
 		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a
@@ -3309,6 +3347,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawCourtroom(winW, winH)
 			a.drawFloatingExtras(winW, winH) // non-blocking, on top of the live courtroom (input already restored)
 			a.drawEmojiPicker(winW, winH)    // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
+			a.drawReactPalette(winW, winH)   // #2: reaction palette overlay (modal-fenced)
 		case ScreenSettings:
 			a.drawSettings(winW, winH)
 		case ScreenAbout:
@@ -3870,6 +3909,7 @@ type icEntry struct {
 	friendColor int32  // per-friend glow RGB (0xRRGGBB) from a `name=hex` entry; -1 = default friend tint
 	speaker     string // displayed name prefix (for per-speaker name colours); "" = system/evidence line
 	stamp       string // local arrival time ("15:04"), formatted once on append; prefixed in the log when ICTimestamps is on
+	ref         uint32 // content-stable reaction ref (#2): MakeReactionRef(CharName, clean text); 0 = system line
 }
 
 // icStampLayout formats the IC log's per-line local time (24-hour HH:MM).

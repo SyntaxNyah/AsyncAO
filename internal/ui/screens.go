@@ -912,6 +912,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	}
 	a.drawChatOverlay(vp)
 	a.drawCourtOverlays(vp, nil) // HP bars, clocks, badges, splashes
+	a.drawReactionFloats(vp)     // #2: emoji reactions rising over the stage (0-alloc when none)
 
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
@@ -3186,6 +3187,11 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow).
 	a.fxButton(sdl.Rect{X: icX, Y: icY, W: fxBtnW, H: fH})
 	icX += fxBtnW + 4
+	// #2: React button — queue an emoji reaction to the last message (rides your next send).
+	if a.reactButton(sdl.Rect{X: icX, Y: icY, W: reactBtnW, H: fH}) {
+		a.toggleReactPicker()
+	}
+	icX += reactBtnW + 4
 	icCounterOn := a.d.Prefs.MessageCounterOn()
 	icW := vp.W - (icX - pad)
 	if icCounterOn {
@@ -4041,6 +4047,17 @@ func (a *App) sendIC(shout int) {
 	// every message that carries [shake]/[wave]/[rainbow] markup.
 	if marker := courtroom.EncodeEffectsMarker(effectSpans); marker != "" {
 		text += marker
+	}
+	// #2 reactions: a queued reaction (you clicked React + picked an emoji) rides THIS
+	// message as an invisible frame referencing the message you reacted to, then clears —
+	// per-message content like the effects frame. AsyncAO viewers float the emoji; AO2/webAO
+	// see clean text. When your own message echoes back you'll see it float too (matched
+	// against your log), so there's no separate local echo.
+	if a.pendingReactSet {
+		if marker := a.pendingReact.EncodeMarker(); marker != "" {
+			text += marker
+		}
+		a.pendingReactSet = false
 	}
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)

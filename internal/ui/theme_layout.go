@@ -262,6 +262,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.drawChatOverlay(vp)
 	}
 	a.drawCourtOverlays(vp, lay)
+	a.drawReactionFloats(vp) // #2: emoji reactions rising over the stage (0-alloc when none)
 
 	// Modal popups: same shared list as the classic path, so the two can't
 	// drift (the bg picker once drew in classic but was missing here).
@@ -403,6 +404,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			a.fxButton(sdl.Rect{X: field.X, Y: field.Y, W: fxBtnW, H: field.H})
 			field.X += fxBtnW + 4
 			field.W -= fxBtnW + 4
+		}
+		// #2: React button (only when the field still has room after it).
+		if field.W > reactBtnW+120 {
+			if a.reactButton(sdl.Rect{X: field.X, Y: field.Y, W: reactBtnW, H: field.H}) {
+				a.toggleReactPicker()
+			}
+			field.X += reactBtnW + 4
+			field.W -= reactBtnW + 4
 		}
 		var send bool
 		icCounterOn := a.d.Prefs.MessageCounterOn()

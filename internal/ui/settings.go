@@ -487,6 +487,13 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		}
 	}
 	y += 26
+	// #2: viewer opt-out of OTHER players' emoji reactions (the floating emoji over the
+	// stage). Sending your own reactions is unaffected — this only hides incoming floats.
+	hideReact := a.d.Prefs.HideReactionsOn()
+	if next := c.Checkbox(pad, y, "Hide other players' emoji reactions: don't float their reaction emoji over the stage (#2)", hideReact); next != hideReact {
+		a.d.Prefs.SetHideReactions(next)
+	}
+	y += 26
 	emoteImgs := a.d.Prefs.EmoteButtonImagesEnabled()
 	if next := c.Checkbox(pad, y, "Image emote buttons (characters/<char>/emotions/button art — WebP by default, formats in Assets)", emoteImgs); next != emoteImgs {
 		a.d.Prefs.SetEmoteButtonImages(next)
