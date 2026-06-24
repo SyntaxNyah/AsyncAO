@@ -161,16 +161,6 @@ func (a *App) warmReactBadges() {
 	}
 }
 
-// purgeReactBadges frees the cached badge textures. The reaction badges live for the
-// emoji face's lifetime (install-once, never swapped at runtime), so this isn't wired into
-// the per-session teardown; it exists for tests and a future face swap.
-func (a *App) purgeReactBadges() {
-	for k, b := range a.reactBadges {
-		b.Destroy()
-		delete(a.reactBadges, k)
-	}
-}
-
 // onIncomingReaction handles a decoded reaction frame: float it only if its ref matches a
 // recent message we've actually seen (a stray / late-join ref matches nothing — benign).
 // Gated by the HideReactions viewer opt-out.

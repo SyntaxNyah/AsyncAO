@@ -91,7 +91,11 @@ func MakeReactionRef(charName, cleanText string) uint32 {
 	for i := 0; i < len(charName); i++ {
 		h = (h ^ uint32(charName[i])) * fnvPrime32
 	}
-	h = (h ^ 0x00) * fnvPrime32 // field separator
+	// Field separator: feed one 0x00 byte through the FNV-1a step so "ab"+"c" can't hash the
+	// same as "a"+"bc". FNV-1a of a 0x00 byte is (h ^ 0) * prime = h * prime — the XOR is
+	// elided (it's a no-op; staticcheck SA4016 flags `h ^ 0x00`), but this IS that separator
+	// step, so the ref value is unchanged and stays cross-client stable.
+	h *= fnvPrime32
 	for i := 0; i < len(cleanText); i++ {
 		h = (h ^ uint32(cleanText[i])) * fnvPrime32
 	}
