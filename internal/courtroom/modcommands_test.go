@@ -22,6 +22,8 @@ func TestBanCommand(t *testing.T) {
 		// Athena / Nyathena: flags; prefers IPID (-i, offline-capable), -d duration, reason last.
 		{"athena ipid", SoftwareAthena, "1234", "5", Ban1Week, "ban evading", `/ban -i 1234 -d 1w ban evading`},
 		{"athena uid only", SoftwareAthena, "", "5", Ban6Hours, "spam", `/ban -u 5 -d 6h spam`},
+		// Nyathena forks Athena → byte-identical ban syntax (same builder path).
+		{"nyathena ipid", SoftwareNyathena, "1234", "5", Ban1Week, "ban evading", `/ban -i 1234 -d 1w ban evading`},
 		// Whisker: UID, "reason" then "duration" (quoted), human token.
 		{"whisker", SoftwareWhisker, "1234", "5", Ban3Days, "ban evading", `/ban 5 "ban evading" "3 days"`},
 		// Blank reason → a default (so the quoted-reason servers get a non-empty arg).
@@ -85,7 +87,8 @@ func TestDetectSoftware(t *testing.T) {
 		"tsuserver3":           SoftwareTsuserver,
 		"tsuserverCC":          SoftwareTsuserver,
 		"Athena":               SoftwareAthena,
-		"Nyathena":             SoftwareAthena, // contains "athena"
+		"Nyathena":             SoftwareNyathena, // must NOT fall through to Athena (substring)
+		"Nyathena v1.0.2":      SoftwareNyathena,
 		"Whisker":              SoftwareWhisker,
 		"witches-akashi-party": SoftwareAkashi,
 		"some random server":   SoftwareUnknown,
@@ -94,6 +97,61 @@ func TestDetectSoftware(t *testing.T) {
 	for s, want := range cases {
 		if got := DetectSoftware(s); got != want {
 			t.Errorf("DetectSoftware(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
+
+// TestCMControls pins the area (CM) room-control commands per software, including the cases that
+// vary (the area-kick spelling) or are absent (Whisker has no /cm model).
+func TestCMControls(t *testing.T) {
+	// /cm + /uncm exist on tsuserver/Athena/Nyathena/Akashi, NOT Whisker, NOT until a software is picked.
+	for _, sw := range []ServerSoftware{SoftwareTsuserver, SoftwareAthena, SoftwareNyathena, SoftwareAkashi} {
+		if CMClaim(sw) != "/cm" || CMRelease(sw) != "/uncm" {
+			t.Errorf("%v: want /cm + /uncm, got %q + %q", sw, CMClaim(sw), CMRelease(sw))
+		}
+	}
+	if CMClaim(SoftwareWhisker) != "" || CMRelease(SoftwareWhisker) != "" {
+		t.Error("Whisker has no /cm model — CMClaim/CMRelease must be blank")
+	}
+	if CMClaim(SoftwareUnknown) != "" {
+		t.Error("Unknown software must not offer /cm until the user picks one")
+	}
+	// Lock/unlock are universal across the four known families.
+	for _, sw := range []ServerSoftware{SoftwareTsuserver, SoftwareAthena, SoftwareAkashi, SoftwareWhisker} {
+		if LockArea(sw) != "/lock" || UnlockArea(sw) != "/unlock" {
+			t.Errorf("%v: want /lock + /unlock, got %q + %q", sw, LockArea(sw), UnlockArea(sw))
+		}
+	}
+	if LockArea(SoftwareUnknown) != "" {
+		t.Error("Unknown software must not offer /lock until the user picks one")
+	}
+	// Area-kick varies: /kickarea (Athena) vs /area_kick (KFO/Akashi); Whisker has none.
+	if got := AreaKick(SoftwareAthena, "12"); got != "/kickarea 12" {
+		t.Errorf("Athena area-kick = %q, want /kickarea 12", got)
+	}
+	if got := AreaKick(SoftwareNyathena, "12"); got != "/kickarea 12" {
+		t.Errorf("Nyathena area-kick = %q, want /kickarea 12", got)
+	}
+	if got := AreaKick(SoftwareTsuserver, "12"); got != "/area_kick 12" {
+		t.Errorf("KFO area-kick = %q, want /area_kick 12", got)
+	}
+	if got := AreaKick(SoftwareAkashi, "12"); got != "/area_kick 12" {
+		t.Errorf("Akashi area-kick = %q, want /area_kick 12", got)
+	}
+	if AreaKick(SoftwareWhisker, "12") != "" {
+		t.Error("Whisker has no area-kick command")
+	}
+	if AreaKick(SoftwareAkashi, "") != "" {
+		t.Error("a blank uid must refuse the area-kick")
+	}
+}
+
+// TestCommandReference pins that every known software has a non-empty reference and the unknown
+// one prompts the user to pick (the dashboard's "look at the server's commands" panel).
+func TestCommandReference(t *testing.T) {
+	for sw := SoftwareUnknown; sw < ServerSoftwareCount; sw++ {
+		if len(CommandReference(sw)) == 0 {
+			t.Errorf("%v: empty command reference", sw)
 		}
 	}
 }

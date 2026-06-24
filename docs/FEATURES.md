@@ -55,6 +55,29 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   reconnect, disconnect) or the toggle flips. **Off → no goroutine at all**, so it's
   genuinely zero-cost by default; on, the chip draw is 0-alloc (Fill bars + a cached
   tooltip rebuilt only when the ms moves). Keybind `Ctrl+\``.
+- **CM / mod dashboard — server-software-aware** (#130, **Extras → Mod / CM**, or
+  `Ctrl+/`; a standalone panel, never bloats the player list): one place to moderate
+  that **builds each command for the server you're actually on**. AO moderation is
+  OOC slash-commands whose syntax **differs per server software**, so a `/ban` copied
+  from another server silently fails. The dashboard detects the software from the ID
+  packet on join (`KFO/tsuserver`, `Athena`, `Nyathena`, `Akashi`, `Whisker`) — or
+  you override it with **Change** — then **Ban** / **Kick** open a box with a
+  duration picker, a reason field, and a **live preview of the exact command** before
+  it sends, so you see precisely what goes out. It picks the right identifier per
+  software (IPID for KFO/Akashi, UID for Whisker, `-i`/`-u` flags for Athena/Nyathena);
+  when a server bans by **IPID** (mod-only) and it hasn't surfaced yet, the box says so
+  and offers a one-click **/getarea** fetch rather than a dead button. The target is
+  keyed by **UID** (never a roster row index) and **frozen** when the box opens, so a
+  join/leave can't repoint a ban at the wrong person. Room (**CM**) controls — claim /
+  release CM, lock / unlock, kick-from-area — appear when you're CM (Claim sits outside
+  that gate so you can become CM), and a per-software **command reference** is always
+  shown. The ban/kick/CM *syntax* is shared between Athena and Nyathena (byte-identical
+  on the wire — verified from both servers' sources); Nyathena is a distinct family only
+  for its **richer** area toolkit + auto-detection (it must announce `Nyathena` in its
+  ID packet, else it reads as Athena and still works). **Closed by default = zero cost**;
+  detection + command building run only while the panel draws (never per frame). The
+  per-software builders live in `internal/courtroom/modcommands.go` (unit-tested against
+  every format). Keybind `Ctrl+/`.
 - **High-res art is downscaled at decode, in high quality** (automatic, no
   setting): packs increasingly ship **huge** sprites (Skrapegropen's are
   ~2000×2000 px), and shrinking a 2000 px source into a ~700 px viewport with

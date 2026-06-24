@@ -661,13 +661,25 @@ type sessionState struct {
 	// #130 CM/mod dashboard: per-server software override (SoftwareUnknown = auto-detect from
 	// the ID packet). Parks per tab; a fresh connect's new sessionState resets it to auto.
 	cmSoftwareOverride courtroom.ServerSoftware
-	showModDash        bool // the dashboard panel is open
-	modDashTarget      int  // selected roster index in the dashboard (-1 = none)
-	serverName         string
-	serverKey          string // ws URL: keys the per-server warm state in prefs
-	connErr            string
-	lastConnName       string // M2: the server we were dropped from, for one-click Reconnect
-	lastConnURL        string // its ws URL (serverKey), captured before Disconnect clears it
+	showModDash        bool   // the dashboard panel is open
+	modDashTargetUID   string // selected target's UID ("" = none) — keyed by UID, never a roster
+	// index: rebuildLiveRoster replaces the slice on every join/leave, so an index would repoint
+	// a ban at whoever shifted into that slot.
+	// Ban/Kick box (#130): a FROZEN snapshot of the target, taken when the box opens, so a roster
+	// rebuild while the reason is being typed can never repoint a destructive command at someone
+	// else. Only the IPID is allowed to fill in later (re-resolved by the frozen UID — same person).
+	banBoxKind    int                   // 0 = closed, 1 = ban box, 2 = kick box
+	banBoxUID     string                // snapshot: target UID (the identity anchor)
+	banBoxIPID    string                // snapshot: target IPID (mod-only; "" until a /getarea enrich)
+	banBoxName    string                // snapshot: display name for the box header
+	banBoxDur     courtroom.BanDuration // chosen duration (ban only)
+	banBoxReason  string                // typed reason
+	modDashScroll int32                 // dashboard roster scroll offset
+	serverName    string
+	serverKey     string // ws URL: keys the per-server warm state in prefs
+	connErr       string
+	lastConnName  string // M2: the server we were dropped from, for one-click Reconnect
+	lastConnURL   string // its ws URL (serverKey), captured before Disconnect clears it
 	// M2 auto-reconnect: after an unexpected drop, retry lastConnURL with backoff.
 	// autoReconnectAt is the next attempt (zero = not retrying); pollAutoReconnect
 	// fires it from the frame loop (a single time compare when idle — 0 per-frame

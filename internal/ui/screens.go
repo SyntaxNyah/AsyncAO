@@ -958,6 +958,8 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawLoginDialog(w, h)
 	case a.pairPopupOpen:
 		a.drawPairPopup(w, h)
+	case a.showModDash:
+		a.drawModDashPanel(w, h)
 	default:
 		return false
 	}

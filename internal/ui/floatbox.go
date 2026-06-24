@@ -66,6 +66,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
 			{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.showEvid = true }},
 			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
+			{"Mod / CM", "Server-aware moderation + room (CM) controls — ban/kick with a live command preview", hotkeyModDash, func() { a.toggleModDash() }},
 			{"Pair", "Pair up — share the stage with another character", hotkeyPairMenu, func() { a.showPair = true }},
 			{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
 			{"★ Fav Emotes", "Floating box of just your starred emotes (Ctrl+A)", hotkeyFavEmotes, func() { a.d.Prefs.SetFavEmoteBox(true) }},
@@ -148,7 +149,7 @@ func hexNibble(b byte) (uint8, bool) {
 func (a *App) courtModalOpen() bool {
 	return a.showIni || a.bgPick.show || a.showEvid || a.showModcall ||
 		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair ||
-		a.showEmojiPicker
+		a.showEmojiPicker || a.showModDash
 }
 
 // extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any

@@ -73,6 +73,7 @@ const (
 	hotkeyWeather    = "weather"     // cycle ambient weather (#124)
 	hotkeyCharBundle = "char_bundle" // toggle full-character sprite prefetch (#127)
 	hotkeyPingChip   = "ping_chip"   // toggle the connection-quality chip (#128)
+	hotkeyModDash    = "mod_dash"    // open the CM / mod dashboard (#130)
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -128,6 +129,7 @@ var hotkeyDefs = []struct {
 	{hotkeyWeather, "Cycle ambient weather", "'"},                          // Ctrl+'
 	{hotkeyCharBundle, "Toggle full-character sprite preload", "\\"},       // Ctrl+\
 	{hotkeyPingChip, "Toggle connection ping chip", "`"},                   // Ctrl+`
+	{hotkeyModDash, "Open the CM / mod dashboard", "/"},                    // Ctrl+/ — mnemonic for a slash-command panel
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -362,6 +364,8 @@ func (a *App) handleHotkeys() {
 		a.toggleFXPref(a.d.Prefs.CharBundlePrefetchOn(), a.d.Prefs.SetCharBundlePrefetch, "Full-character preload")
 	case a.hotkeyFor(hotkeyPingChip):
 		a.toggleFXPref(a.d.Prefs.PingChipOn(), a.d.Prefs.SetPingChip, "Ping chip")
+	case a.hotkeyFor(hotkeyModDash):
+		a.toggleModDash()
 	case a.hotkeyFor(hotkeyFavEmotes):
 		a.toggleFavEmoteBox()
 	}

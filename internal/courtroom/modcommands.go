@@ -17,9 +17,16 @@ type ServerSoftware uint8
 const (
 	SoftwareUnknown   ServerSoftware = iota
 	SoftwareTsuserver                // KFO / tsuserverCC / tsuserver3: IPID, positional, reason-then-duration (quoted)
-	SoftwareAthena                   // Athena / Nyathena (Go): flags -u/-i, -d duration, reason at end (UID or IPID)
+	SoftwareAthena                   // Athena (Go): flags -u/-i, -d duration, reason at end (UID or IPID)
 	SoftwareAkashi                   // Akashi (C++) + witches/wizards forks: IPID, positional, duration-then-reason
 	SoftwareWhisker                  // Whisker (C3): UID, positional, reason-then-duration (quoted)
+	// SoftwareNyathena forks Athena: the ban/kick/CM *syntax* is byte-identical (the command
+	// builders share Athena's path), but it ships a richer area/CM toolkit, so it gets its own
+	// reference. Stock Nyathena announces "Athena" on the wire (it inherited Athena's hard-coded
+	// ID string), so it's indistinguishable from Athena UNLESS the operator sets the ID packet's
+	// software field to "Nyathena" — then DetectSoftware picks it up (and the user can also select
+	// it by hand). Kept last so the existing enum values stay stable.
+	SoftwareNyathena
 	ServerSoftwareCount
 )
 
@@ -29,11 +36,13 @@ func (s ServerSoftware) String() string {
 	case SoftwareTsuserver:
 		return "KFO / tsuserver"
 	case SoftwareAthena:
-		return "Athena / Nyathena"
+		return "Athena"
 	case SoftwareAkashi:
 		return "Akashi"
 	case SoftwareWhisker:
 		return "Whisker"
+	case SoftwareNyathena:
+		return "Nyathena"
 	default:
 		return "Unknown"
 	}
@@ -51,7 +60,9 @@ func DetectSoftware(software string) ServerSoftware {
 		return SoftwareAkashi
 	case strings.Contains(s, "kfo"), strings.Contains(s, "tsuserver"):
 		return SoftwareTsuserver
-	case strings.Contains(s, "athena"): // covers Nyathena
+	case strings.Contains(s, "nyathena"): // MUST precede "athena" (it's a substring of "nyathena")
+		return SoftwareNyathena
+	case strings.Contains(s, "athena"):
 		return SoftwareAthena
 	case strings.Contains(s, "whisker"):
 		return SoftwareWhisker
@@ -137,7 +148,7 @@ func BanCommand(sw ServerSoftware, ipid, uid string, dur BanDuration, reason str
 			return ""
 		}
 		return fmt.Sprintf("/ban %s %s %s", ipid, d, reason)
-	case SoftwareAthena: // /ban -i <ipid> | -u <uid>  -d <duration> <reason>
+	case SoftwareAthena, SoftwareNyathena: // /ban -i <ipid> | -u <uid>  -d <duration> <reason>  (Nyathena forks Athena — same flags)
 		target := banTarget(ipid, uid)
 		if target == "" {
 			return ""
@@ -162,7 +173,7 @@ func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 			return ""
 		}
 		return strings.TrimSpace(fmt.Sprintf("/kick %s %s", ipid, reason))
-	case SoftwareAthena: // /kick -i <ipid> | -u <uid> <reason>
+	case SoftwareAthena, SoftwareNyathena: // /kick -i <ipid> | -u <uid> <reason>
 		target := banTarget(ipid, uid)
 		if target == "" {
 			return ""
@@ -175,6 +186,96 @@ func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 		return strings.TrimSpace(fmt.Sprintf("/kick %s %s", uid, reason))
 	}
 	return ""
+}
+
+// --- CM / area room controls (#130) -----------------------------------------------------------
+// AO area moderation ("CM" = case maker) is OOC slash commands too, and which exist + how they
+// spell the area-kick varies by software (read from the server sources). These build the exact
+// command (or "" when the software doesn't have it / the user hasn't picked a software yet), so
+// the dashboard's room controls match the server. Unit-tested alongside the ban/kick builders.
+
+// CMClaim / CMRelease claim or hand back area CM. tsuserver/Athena/Akashi share /cm + /uncm;
+// Whisker uses a different area model (no /cm), and Unknown stays blank until the user picks a
+// software via the dashboard's Change button. "" means the dashboard hides the control.
+func CMClaim(sw ServerSoftware) string   { return cmCommand(sw, "/cm", true) }
+func CMRelease(sw ServerSoftware) string { return cmCommand(sw, "/uncm", true) }
+
+// LockArea / UnlockArea seal the area to newcomers — universal across the four known families.
+func LockArea(sw ServerSoftware) string   { return cmCommand(sw, "/lock", false) }
+func UnlockArea(sw ServerSoftware) string { return cmCommand(sw, "/unlock", false) }
+
+// cmCommand returns cmd for a known software, "" for Unknown; cmModel commands (/cm, /uncm) are
+// additionally blank on Whisker (no CM model there).
+func cmCommand(sw ServerSoftware, cmd string, cmModel bool) string {
+	if sw == SoftwareUnknown {
+		return ""
+	}
+	if cmModel && sw == SoftwareWhisker {
+		return ""
+	}
+	return cmd
+}
+
+// AreaKick removes uid from the current area (a CM room control). Athena/Nyathena spell it
+// /kickarea; KFO/Akashi use /area_kick; Whisker has no area-kick command. Returns "" when the
+// software lacks it or uid is blank (the dashboard then disables the button).
+func AreaKick(sw ServerSoftware, uid string) string {
+	if uid == "" {
+		return ""
+	}
+	switch sw {
+	case SoftwareAthena, SoftwareNyathena:
+		return "/kickarea " + uid
+	case SoftwareTsuserver, SoftwareAkashi:
+		return "/area_kick " + uid
+	default: // Whisker / unknown
+		return ""
+	}
+}
+
+// CommandReference is the human "look at this server's commands" panel for the dashboard: a short
+// list of sw's moderation + CM syntax, "<label> — <command form>". Mirrors what the builders emit.
+func CommandReference(sw ServerSoftware) []string {
+	switch sw {
+	case SoftwareTsuserver:
+		return []string{
+			`Ban — /ban <ipid> "reason" "duration"`,
+			`Kick — /kick <ipid> [reason]`,
+			`Area kick — /area_kick <id>`,
+			`CM — /cm · /uncm · /lock · /unlock`,
+		}
+	case SoftwareAthena:
+		return []string{
+			`Ban — /ban -i <ipid> | -u <uid>  -d <dur>  reason`,
+			`Kick — /kick -i <ipid> | -u <uid>  reason`,
+			`Area kick — /kickarea <uid>`,
+			`CM — /cm · /uncm · /lock [-s] · /unlock`,
+		}
+	case SoftwareNyathena: // forks Athena: same syntax, richer area/CM toolkit
+		return []string{
+			`Ban — /ban -i <ipid> | -u <uid>  -d <dur>  reason`,
+			`Kick — /kick -i <ipid> | -u <uid>  reason`,
+			`Area kick — /kickarea <uid>`,
+			`CM — /cm · /uncm · /lock [-s] · /unlock`,
+			`+ /invite · /uninvite · /lockbg · /lockmusic · /spectate · /status`,
+		}
+	case SoftwareAkashi:
+		return []string{
+			`Ban — /ban <ipid> <duration> reason`,
+			`Kick — /kick <ipid> reason`,
+			`Area kick — /area_kick <uid>`,
+			`CM — /cm · /uncm · /lock · /unlock`,
+		}
+	case SoftwareWhisker:
+		return []string{
+			`Ban — /ban <uid> "reason" "duration"`,
+			`Kick — /kick <uid> [reason]`,
+			`Lock — /lock · /unlock`,
+			`(no /cm model on Whisker)`,
+		}
+	default:
+		return []string{`Unknown server software — use "Change" to pick one and enable commands.`}
+	}
 }
 
 // banTarget picks the Athena/Nyathena flag form: prefer IPID (offline-capable), else UID.
