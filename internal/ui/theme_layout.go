@@ -799,6 +799,27 @@ func (a *App) drawThemedExtrasButton(w, h int32) {
 	}
 	c.Border(el, ColAccent)
 	c.Tooltip(el, "Live layout editor — drag & resize every box (log, OOC, stage, buttons). Tab cycles overlapping; saves per theme.")
+
+	// Mod / CM launchers (only while you hold the role), chained after Edit Layout — in the row, so
+	// they never float over the emote sprites.
+	prev := el
+	if a.amIMod() {
+		m := sdl.Rect{X: prev.X + prev.W + 4, Y: r.Y, W: c.TextWidth("Mod") + 14, H: bh}
+		if c.Button(m, "Mod") {
+			a.toggleModDash()
+		}
+		c.Border(m, ColDanger)
+		c.Tooltip(m, "Moderation tools — server-aware ban / kick")
+		prev = m
+	}
+	if a.amICMNow {
+		cm := sdl.Rect{X: prev.X + prev.W + 4, Y: r.Y, W: c.TextWidth("CM") + 14, H: bh}
+		if c.Button(cm, "CM") {
+			a.toggleCMPanel()
+		}
+		c.Border(cm, chipCMColor)
+		c.Tooltip(cm, "CM area controls — lock / kick-from-area")
+	}
 }
 
 // drawWidgetsPanel moved to floatbox.go as the non-blocking drawFloatingExtras.

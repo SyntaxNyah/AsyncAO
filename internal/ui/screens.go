@@ -912,7 +912,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	}
 	a.drawChatOverlay(vp)
 	a.drawCourtOverlays(vp, nil) // HP bars, clocks, badges, splashes
-	a.drawReactionFloats(vp) // #2: emoji reactions rising over the stage (0-alloc when none)
+	a.drawReactionFloats(vp)     // #2: emoji reactions rising over the stage (0-alloc when none)
 
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
@@ -3134,6 +3134,46 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.openSpriteStyle()
 	}
 	c.Tooltip(styleR, "Recolour / glow your character on the fly — other AsyncAO players see it")
+	x += styleW + btnGap
+
+	// Edit Layout (front door to the live layout editor) + Mod / CM launchers, in the button row so
+	// they never float over the emote grid. Wrap to a fresh row as a group if they wouldn't fit.
+	editW := int32(94)
+	modW, cmW := int32(0), int32(0)
+	if a.amIMod() {
+		modW = 54
+	}
+	if a.amICMNow {
+		cmW = 46
+	}
+	if x+editW+modW+cmW+btnGap*2 > w-pad {
+		y2 += btnH + 4
+		x = pad
+	}
+	edR := sdl.Rect{X: x, Y: y2, W: editW, H: btnH}
+	if c.Button(edR, "Edit Layout") {
+		a.openLayoutEditor()
+	}
+	c.Tooltip(edR, "Live layout editor — drag & resize every box. (Needs a theme that ships a layout.)")
+	x += editW + btnGap
+	if modW > 0 {
+		mR := sdl.Rect{X: x, Y: y2, W: modW, H: btnH}
+		if c.Button(mR, "Mod") {
+			a.toggleModDash()
+		}
+		c.Border(mR, ColDanger)
+		c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
+		x += modW + btnGap
+	}
+	if cmW > 0 {
+		cR := sdl.Rect{X: x, Y: y2, W: cmW, H: btnH}
+		if c.Button(cR, "CM") {
+			a.toggleCMPanel()
+		}
+		c.Border(cR, chipCMColor)
+		c.Tooltip(cR, "CM area controls — lock / kick-from-area")
+		x += cmW + btnGap
+	}
 
 	// Judge strip (JD grant, or the judge stand when pos-dependent).
 	icY := y2 + btnH + 6

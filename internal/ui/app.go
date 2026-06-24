@@ -3422,10 +3422,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawCharSelect(winW, winH)
 		case ScreenCourtroom:
 			a.drawCourtroom(winW, winH)
-			a.drawModCornerButtons(winW, winH) // #130: Mod / CM chips on top, so the input bars can't cover them
-			a.drawFloatingExtras(winW, winH)   // non-blocking, on top of the live courtroom (input already restored)
-			a.drawEmojiPicker(winW, winH)      // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
-			a.drawReactPalette(winW, winH)     // #2: reaction palette overlay (modal-fenced)
+			a.drawFloatingExtras(winW, winH) // non-blocking, on top of the live courtroom (input already restored)
+			a.drawEmojiPicker(winW, winH)    // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
+			a.drawReactPalette(winW, winH)   // #2: reaction palette overlay (modal-fenced)
 		case ScreenSettings:
 			a.drawSettings(winW, winH)
 		case ScreenAbout:

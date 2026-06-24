@@ -7,74 +7,13 @@ import (
 )
 
 // #130 — the CM (area control) tools live in their OWN panel, separate from the mod (ban/kick)
-// dashboard, and surface only while you actually hold CM. Two pieces:
-//
-//   - drawModCornerButtons: the dedicated, always-on launcher. A "Mod" chip appears only when
-//     you're mod-authed, a "CM" chip only when you hold CM, tucked in the bottom-right corner —
-//     so a regular player sees no new chrome at all. 0-alloc per frame: amIMod() is a plain bool
-//     read and amICMNow is the event-cached CM flag (refreshed on ARUP/PU, never per frame).
-//   - drawCMPanel: claim is via /cm (the chip's appearance IS "it showed up"); this panel is the
-//     room controls once you're CM — lock/unlock, release CM, and a per-player area-kick. It
-//     self-closes the instant you stop holding CM.
+// dashboard, and surface only while you actually hold CM. Both panels are launched from compact
+// "Mod" / "CM" buttons in the courtroom's button row (classic drawICControls / themed
+// drawThemedExtrasButton), shown only when you hold the role — in the row, so they never float
+// over the emote sprites. Claiming CM is via /cm; this panel is the room controls once you're CM.
 
-const (
-	modCornerChipH = int32(24)
-	modCornerGap   = int32(6)
-	// modCornerLiftPx raises the chips off the very bottom so they sit ABOVE the ping chip and the
-	// IC/OOC input bars (the bottom-left is the courtroom's one clear overlay zone — the ping chip
-	// lives there). The chips are drawn last (on top), so the input bars can't cover them.
-	modCornerLiftPx = int32(64)
-)
-
-// toggleCMPanel opens / closes the CM panel (corner chip + hotkey).
+// toggleCMPanel opens / closes the CM panel (its row button + the mod dashboard's pointer).
 func (a *App) toggleCMPanel() { a.showCMPanel = !a.showCMPanel }
-
-// drawModCornerButtons paints the context-aware Mod / CM launcher chips, bottom-left, ON TOP of
-// the whole courtroom (called from the screen dispatch, after drawCourtroom — like the ping chip —
-// so the IC/OOC input bars can't cover them). Skipped while a blocking popup is up. A regular
-// player (neither mod nor CM) gets no chrome at all. 0-alloc per frame: amIMod() is a bool read
-// and amICMNow is the event-cached CM flag.
-func (a *App) drawModCornerButtons(w, h int32) {
-	if a.sess == nil || a.courtModalOpen() {
-		return
-	}
-	isMod, isCM := a.amIMod(), a.amICMNow
-	if !isMod && !isCM {
-		return // a regular player gets no new chrome
-	}
-	x := int32(8)
-	y := h - modCornerLiftPx - modCornerChipH
-	if isMod {
-		x = a.drawCornerChip(x, y, "Mod", a.showModDash, a.toggleModDash)
-	}
-	if isCM {
-		a.drawCornerChip(x, y, "CM", a.showCMPanel, a.toggleCMPanel)
-	}
-}
-
-// drawCornerChip draws one launcher pill at left edge x, highlighted while its panel is open. A
-// click runs onClick and is CONSUMED so it can't also land on the chrome behind. Returns the next
-// chip's left x.
-func (a *App) drawCornerChip(x, y int32, label string, active bool, onClick func()) int32 {
-	c := a.ctx
-	cw := c.TextWidth(label) + 22
-	r := sdl.Rect{X: x, Y: y, W: cw, H: modCornerChipH}
-	bg, fg := ColPanel, ColText
-	switch {
-	case active:
-		bg, fg = ColAccent, ColBackground
-	case c.hovering(r):
-		bg = ColPanelHi
-	}
-	c.Fill(r, bg)
-	c.Border(r, ColAccent)
-	c.Label(x+(cw-c.TextWidth(label))/2, y+4, label, fg)
-	if c.clicked && c.hovering(r) {
-		c.clicked = false // consume so the click can't leak to the scene / chrome behind
-		onClick()
-	}
-	return x + cw + modCornerGap
-}
 
 // drawCMPanel is the standalone CM (area control) panel: lock/unlock the area, release CM, and a
 // per-player kick-from-area. Gold-bordered (CM colour). Self-closes the moment amICMNow drops.
