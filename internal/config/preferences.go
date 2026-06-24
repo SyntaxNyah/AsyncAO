@@ -649,6 +649,7 @@ type AssetPreferences struct {
 	HideReactions          bool                         `json:"hideReactions"`          // ignore others' transmitted emoji reactions (#2) (default OFF = show)
 	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`     // #127 pre-grab a char's FULL sprite set on load (default OFF)
 	PingChip               bool                         `json:"pingChip"`               // #128 show the connection-quality chip (default OFF)
+	LegacyDevTheme         bool                         `json:"legacyDevTheme"`         // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
 	MyProfile              ProfilePref                  `json:"profile"`                // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
@@ -880,6 +881,7 @@ type prefsJSON struct {
 	HideReactions          bool             `json:"hideReactions"`          // default OFF (show others' reactions, #2)
 	CharBundlePrefetch     bool             `json:"charBundlePrefetch"`     // #127 default OFF
 	PingChip               bool             `json:"pingChip"`               // #128 default OFF
+	LegacyDevTheme         bool             `json:"legacyDevTheme"`         // tickbox revert to the old look; default OFF = new layout
 	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
 	ChatboxOpacity         *int             `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
@@ -1399,6 +1401,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.HideReactions = onDisk.HideReactions
 	p.CharBundlePrefetch = onDisk.CharBundlePrefetch
 	p.PingChip = onDisk.PingChip
+	p.LegacyDevTheme = onDisk.LegacyDevTheme
 	if onDisk.Profile != nil {
 		p.MyProfile = clampProfile(*onDisk.Profile)
 	}
@@ -3225,6 +3228,17 @@ func (p *AssetPreferences) PingChipOn() bool {
 
 // SetPingChip toggles the connection-quality chip.
 func (p *AssetPreferences) SetPingChip(b bool) { p.setBoolPref(&p.PingChip, b) }
+
+// LegacyDevThemeOn reports whether the user ticked the built-in "Legacy Developer" theme (the old
+// look). Default OFF — the new optimal layout (OOC-as-a-box, grouped buttons) is the main theme.
+func (p *AssetPreferences) LegacyDevThemeOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.LegacyDevTheme
+}
+
+// SetLegacyDevTheme toggles the Legacy Developer theme tickbox.
+func (p *AssetPreferences) SetLegacyDevTheme(b bool) { p.setBoolPref(&p.LegacyDevTheme, b) }
 
 // Profile reports the user's character profile (#101).
 func (p *AssetPreferences) Profile() ProfilePref {

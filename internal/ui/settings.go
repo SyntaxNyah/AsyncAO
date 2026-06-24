@@ -1230,6 +1230,13 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	y += 36
 
 	y = a.settingsSection(y, w, "Layout & fit")
+	// Built-in look: the new optimal layout (OOC as its own box, etc.) is the main theme; ticking
+	// "Legacy Developer" reverts to the old developer layout exactly (OOC back in a tab).
+	legacy := a.d.Prefs.LegacyDevThemeOn()
+	if next := c.Checkbox(pad, y, "Legacy Developer theme (revert to the old built-in look — OOC back in a tab; off = the new optimal layout)", legacy); next != legacy {
+		a.d.Prefs.SetLegacyDevTheme(next)
+	}
+	y += 28
 	// Theme-driven courtroom geometry (courtroom_design.ini).
 	tlay := a.d.Prefs.ThemeLayoutEnabled()
 	if next := c.Checkbox(pad, y, "Use the theme's courtroom layout (courtroom_design.ini positions every widget; off = classic layout)", tlay); next != tlay {

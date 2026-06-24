@@ -43,6 +43,10 @@ const (
 	// scrollBarW/Gap reserve the scrollbar lane beside scrolling lists.
 	scrollBarW   int32 = 12
 	scrollBarGap int32 = 6
+	// cleanOOCMinH floors the new-layout OOC box (and the IC log above it) so neither is crushed;
+	// cleanGapPx is the breathing room between stacked clean-layout panels.
+	cleanOOCMinH int32 = 96
+	cleanGapPx   int32 = 6
 )
 
 func osHostname() (string, error) { return os.Hostname() }
@@ -921,15 +925,42 @@ func (a *App) drawCourtroom(w, h int32) {
 		return
 	}
 
-	// Right column: log + music.
+	// Right column: log + music. In the new (default) layout the OOC gets its OWN always-visible
+	// box under the IC log; the Legacy Developer theme keeps OOC as a tab (its old handling).
 	rx := vp.X + vp.W + pad
 	rw := w - rx - pad
 	if !a.panelHidden(panelLog) {
-		a.drawLogPanel(sdl.Rect{X: rx, Y: pad, W: rw, H: vpH}, vp)
+		rcol := sdl.Rect{X: rx, Y: pad, W: rw, H: vpH}
+		if a.d.Prefs.LegacyDevThemeOn() {
+			a.drawLogPanel(rcol, vp)
+		} else {
+			a.drawCleanRightColumn(rcol, vp)
+		}
 	}
 
 	// Bottom: IC input, emotes, controls.
 	a.drawICControls(w, h, vp)
+}
+
+// drawCleanRightColumn is the new-default right column: the IC log on top and the OOC as its own
+// bordered, always-visible box below (instead of Legacy's OOC-in-a-tab). The split keeps the OOC
+// roughly a third of the height with a sane floor so its input never gets crushed on short windows.
+func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect) {
+	c := a.ctx
+	oocH := rcol.H * 32 / 100
+	if oocH < cleanOOCMinH {
+		oocH = cleanOOCMinH
+	}
+	if oocH > rcol.H-cleanOOCMinH { // never starve the IC log either
+		oocH = rcol.H - cleanOOCMinH
+	}
+	logH := rcol.H - oocH - cleanGapPx
+	a.drawLogPanel(sdl.Rect{X: rcol.X, Y: rcol.Y, W: rcol.W, H: logH}, vp)
+	box := sdl.Rect{X: rcol.X, Y: rcol.Y + logH + cleanGapPx, W: rcol.W, H: oocH}
+	c.Fill(box, ColPanel)
+	c.Border(box, ColAccent)
+	c.Label(box.X+8, box.Y+5, "OOC", ColTextDim)
+	a.drawOOCPanel(sdl.Rect{X: box.X + 5, Y: box.Y + 24, W: box.W - 10, H: box.H - 29})
 }
 
 // drawCourtroomModals draws whichever return-to-top courtroom popup is open and
