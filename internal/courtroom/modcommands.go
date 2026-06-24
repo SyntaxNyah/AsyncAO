@@ -39,6 +39,27 @@ func (s ServerSoftware) String() string {
 	}
 }
 
+// DetectSoftware maps the server's announced software string (Session.Software — the ID
+// packet's field 1, e.g. "Akashi 1.8", "KFO-Server", "Nyathena", "Athena", "Whisker") to its
+// family, so the dashboard auto-selects the right command syntax on join. Case-insensitive
+// substring match (the strings carry a version too); an unrecognised one is Unknown, and the
+// dashboard then asks the user to pick. Mirrors the heuristic the built-in login already uses.
+func DetectSoftware(software string) ServerSoftware {
+	s := strings.ToLower(software)
+	switch {
+	case strings.Contains(s, "akashi"): // incl. witches/wizards forks
+		return SoftwareAkashi
+	case strings.Contains(s, "kfo"), strings.Contains(s, "tsuserver"):
+		return SoftwareTsuserver
+	case strings.Contains(s, "athena"): // covers Nyathena
+		return SoftwareAthena
+	case strings.Contains(s, "whisker"):
+		return SoftwareWhisker
+	default:
+		return SoftwareUnknown
+	}
+}
+
 // BanDuration is a friendly preset the UI offers; each maps to the software's own token format.
 type BanDuration uint8
 

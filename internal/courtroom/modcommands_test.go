@@ -76,6 +76,28 @@ func TestKickCommand(t *testing.T) {
 	}
 }
 
+// TestDetectSoftware pins the join-time auto-detection from the real software strings each
+// server announces in its ID packet (the same strings the built-in login matches).
+func TestDetectSoftware(t *testing.T) {
+	cases := map[string]ServerSoftware{
+		"Akashi 1.8":           SoftwareAkashi,
+		"KFO-Server":           SoftwareTsuserver,
+		"tsuserver3":           SoftwareTsuserver,
+		"tsuserverCC":          SoftwareTsuserver,
+		"Athena":               SoftwareAthena,
+		"Nyathena":             SoftwareAthena, // contains "athena"
+		"Whisker":              SoftwareWhisker,
+		"witches-akashi-party": SoftwareAkashi,
+		"some random server":   SoftwareUnknown,
+		"":                     SoftwareUnknown,
+	}
+	for s, want := range cases {
+		if got := DetectSoftware(s); got != want {
+			t.Errorf("DetectSoftware(%q) = %v, want %v", s, got, want)
+		}
+	}
+}
+
 // TestDurationToken pins the human-vs-short split + perma.
 func TestDurationToken(t *testing.T) {
 	if durationToken(SoftwareAkashi, BanPerma) != "perma" || durationToken(SoftwareTsuserver, BanPerma) != "perma" {
