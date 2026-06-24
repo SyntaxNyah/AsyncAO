@@ -339,6 +339,23 @@ func clampOpacity(v uint8) uint8 {
 	return v
 }
 
+// StylePreset (#126) is a named, saved bundle of the user's own visual identity — sprite
+// style + text colour, plus an optional emote applied by NAME when the current character has
+// one by that name (so a preset stays useful across characters). Applied in one click, or
+// bound to a bare key for hands-free swapping (Key; the bind-capture flow mirrors the M6
+// showname keybinds). All local — applying a preset just sets your existing style/colour/emote.
+type StylePreset struct {
+	Name  string          `json:"name"`
+	Style SpriteStylePref `json:"style"`
+	Color int             `json:"color"`           // icColor text-colour index
+	Emote string          `json:"emote,omitempty"` // best-effort emote anim name
+	Key   string          `json:"key,omitempty"`   // bound bare key ("" = none)
+}
+
+// stylePresetCap bounds the saved presets (hard rule §17.4 — a pref list can't grow without
+// bound); a real user keeps a handful of moods.
+const stylePresetCap = 48
+
 // Character profile (#101) field length caps — bounded so the pref file (and, in
 // a later slice, anything transmitted) can't balloon. The wire slice will send a
 // tiny fingerprint, not these bytes, so art/song are URLs, never data.
@@ -626,10 +643,11 @@ type AssetPreferences struct {
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
 	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
 	Export                 ExportOptions                `json:"export"`
-	MySpriteStyle          SpriteStylePref              `json:"mySpriteStyle"`    // the user's own transmitted sprite style (#103)
-	HideSpriteStyles       bool                         `json:"hideSpriteStyles"` // ignore others' transmitted styles (default OFF = show)
-	HideReactions          bool                         `json:"hideReactions"`    // ignore others' transmitted emoji reactions (#2) (default OFF = show)
-	MyProfile              ProfilePref                  `json:"profile"`          // the user's character profile (#101)
+	MySpriteStyle          SpriteStylePref              `json:"mySpriteStyle"`          // the user's own transmitted sprite style (#103)
+	SavedStyles            []StylePreset                `json:"stylePresets,omitempty"` // #126 saved style+colour+emote moods
+	HideSpriteStyles       bool                         `json:"hideSpriteStyles"`       // ignore others' transmitted styles (default OFF = show)
+	HideReactions          bool                         `json:"hideReactions"`          // ignore others' transmitted emoji reactions (#2) (default OFF = show)
+	MyProfile              ProfilePref                  `json:"profile"`                // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
@@ -855,6 +873,7 @@ type prefsJSON struct {
 	ReplayPlaybackSpeed    *int             `json:"replaySpeed"`            // absent = default
 	Export                 *ExportOptions   `json:"export"`                 // absent = default
 	MySpriteStyle          *SpriteStylePref `json:"mySpriteStyle"`          // absent = no style (#103)
+	SavedStyles            []StylePreset    `json:"stylePresets,omitempty"` // #126 saved moods
 	HideSpriteStyles       bool             `json:"hideSpriteStyles"`       // default OFF (show others' styles)
 	HideReactions          bool             `json:"hideReactions"`          // default OFF (show others' reactions, #2)
 	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
@@ -1371,6 +1390,7 @@ func load(path string) (*AssetPreferences, error) {
 		s.Opacity = clampOpacity(s.Opacity)
 		p.MySpriteStyle = s
 	}
+	p.SavedStyles = sanitizeStylePresets(onDisk.SavedStyles) // #126 (bounded + opacity-clamped)
 	p.HideSpriteStyles = onDisk.HideSpriteStyles
 	p.HideReactions = onDisk.HideReactions
 	if onDisk.Profile != nil {
@@ -3025,6 +3045,107 @@ func (p *AssetPreferences) SetSpriteStyle(s SpriteStylePref) {
 	p.MySpriteStyle = s
 	p.mu.Unlock()
 	p.markDirty()
+}
+
+// --- #126 style presets (saved style+colour+emote moods) -----------------------------------
+
+// sanitizeStylePresets bounds the list, drops nameless entries, and clamps each style's
+// opacity — applied on load so a hand-edited pref file can't grow or corrupt the list.
+func sanitizeStylePresets(in []StylePreset) []StylePreset {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]StylePreset, 0, len(in))
+	for _, pr := range in {
+		if strings.TrimSpace(pr.Name) == "" || len(out) >= stylePresetCap {
+			continue
+		}
+		pr.Style.Opacity = clampOpacity(pr.Style.Opacity)
+		pr.Key = strings.ToLower(strings.TrimSpace(pr.Key))
+		out = append(out, pr)
+	}
+	return out
+}
+
+// StylePresets returns a copy of the saved presets (so a caller can't mutate the live slice).
+func (p *AssetPreferences) StylePresets() []StylePreset {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.SavedStyles) == 0 {
+		return nil
+	}
+	return append([]StylePreset(nil), p.SavedStyles...)
+}
+
+// AddStylePreset appends a preset (its opacity clamped), ignoring a blank name or a list at
+// the cap. A duplicate name overwrites the existing one (so "save" updates a mood in place).
+func (p *AssetPreferences) AddStylePreset(pr StylePreset) {
+	if strings.TrimSpace(pr.Name) == "" {
+		return
+	}
+	pr.Style.Opacity = clampOpacity(pr.Style.Opacity)
+	pr.Key = strings.ToLower(strings.TrimSpace(pr.Key))
+	p.mu.Lock()
+	for i := range p.SavedStyles {
+		if p.SavedStyles[i].Name == pr.Name {
+			pr.Key = p.SavedStyles[i].Key // keep an existing key binding across an overwrite
+			p.SavedStyles[i] = pr
+			p.mu.Unlock()
+			p.markDirty()
+			return
+		}
+	}
+	if len(p.SavedStyles) >= stylePresetCap {
+		p.mu.Unlock()
+		return
+	}
+	p.SavedStyles = append(p.SavedStyles, pr)
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DeleteStylePreset removes the preset at i (bounds-checked).
+func (p *AssetPreferences) DeleteStylePreset(i int) {
+	p.mu.Lock()
+	if i >= 0 && i < len(p.SavedStyles) {
+		p.SavedStyles = append(p.SavedStyles[:i], p.SavedStyles[i+1:]...)
+		p.markDirty()
+	}
+	p.mu.Unlock()
+}
+
+// SetStylePresetKey binds (or clears, key=="") a bare key to preset i, removing that key from
+// any other preset first so a key maps to exactly one mood.
+func (p *AssetPreferences) SetStylePresetKey(i int, key string) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	p.mu.Lock()
+	if i < 0 || i >= len(p.SavedStyles) {
+		p.mu.Unlock()
+		return
+	}
+	if key != "" {
+		for j := range p.SavedStyles {
+			if j != i && p.SavedStyles[j].Key == key {
+				p.SavedStyles[j].Key = ""
+			}
+		}
+	}
+	p.SavedStyles[i].Key = key
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// StylePresetForKey returns the preset bound to a bare key (ok=false when none).
+func (p *AssetPreferences) StylePresetForKey(key string) (StylePreset, bool) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, pr := range p.SavedStyles {
+		if pr.Key != "" && pr.Key == key {
+			return pr, true
+		}
+	}
+	return StylePreset{}, false
 }
 
 // HideSpriteStylesOn reports whether the viewer ignores others' transmitted
