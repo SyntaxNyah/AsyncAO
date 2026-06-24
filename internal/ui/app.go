@@ -3798,25 +3798,27 @@ func (a *App) warnActive() bool {
 // render paths.
 func (a *App) spriteFX() render.SpriteFX {
 	fx := render.SpriteFX{
-		Rainbow:        a.d.Prefs.RainbowSpritesOn(),
-		Solid:          a.d.Prefs.SpriteSolidTintOn(),
-		Glow:           a.d.Prefs.RainbowSpriteGlowOn(),
-		PairDesync:     a.d.Prefs.RainbowPairDesyncOn(),
-		PerCharHue:     a.d.Prefs.RainbowPerCharOn(),
-		Wobble:         a.d.Prefs.SpriteWobbleOn(),
-		Spin:           a.d.Prefs.SpriteSpinOn(),
-		ShoutPunch:     a.d.Prefs.ShoutPunchOn(),
-		Entrance:       a.d.Prefs.AnimateEntrancesOn(),
-		DoF:            a.d.Prefs.DepthOfFieldOn(),
-		Spotlight:      a.d.Prefs.SpotlightOn(),
-		IdleBreath:     a.d.Prefs.IdleBreathOn() && !a.d.Prefs.ReduceMotion(), // #122; ReduceMotion suppresses (accessibility)
-		BreathBob:      a.d.Prefs.BreathBobOn(),
-		BreathScale:    a.d.Prefs.BreathScaleOn(),
-		Speed:          a.d.Prefs.RainbowSpeed(),
-		Vividness:      a.d.Prefs.RainbowVividness(),
-		SpotlightLevel: a.d.Prefs.SpotlightLevel(),
-		BreathAmp:      a.d.Prefs.BreathAmp(),
-		BreathSpeed:    a.d.Prefs.BreathSpeed(),
+		Rainbow:         a.d.Prefs.RainbowSpritesOn(),
+		Solid:           a.d.Prefs.SpriteSolidTintOn(),
+		Glow:            a.d.Prefs.RainbowSpriteGlowOn(),
+		PairDesync:      a.d.Prefs.RainbowPairDesyncOn(),
+		PerCharHue:      a.d.Prefs.RainbowPerCharOn(),
+		Wobble:          a.d.Prefs.SpriteWobbleOn(),
+		Spin:            a.d.Prefs.SpriteSpinOn(),
+		ShoutPunch:      a.d.Prefs.ShoutPunchOn(),
+		Entrance:        a.d.Prefs.AnimateEntrancesOn(),
+		DoF:             a.d.Prefs.DepthOfFieldOn(),
+		Spotlight:       a.d.Prefs.SpotlightOn(),
+		IdleBreath:      a.d.Prefs.IdleBreathOn() && !a.d.Prefs.ReduceMotion(), // #122; ReduceMotion suppresses (accessibility)
+		BreathBob:       a.d.Prefs.BreathBobOn(),
+		BreathScale:     a.d.Prefs.BreathScaleOn(),
+		Reflection:      a.d.Prefs.ReflectionOn(),
+		Speed:           a.d.Prefs.RainbowSpeed(),
+		Vividness:       a.d.Prefs.RainbowVividness(),
+		SpotlightLevel:  a.d.Prefs.SpotlightLevel(),
+		BreathAmp:       a.d.Prefs.BreathAmp(),
+		BreathSpeed:     a.d.Prefs.BreathSpeed(),
+		ReflectStrength: a.d.Prefs.ReflectStrength(),
 	}
 	if fx.Solid && !fx.Rainbow { // colour only matters for the solid wash, and rainbow wins
 		rgb := a.d.Prefs.SpriteTintColorRGB()

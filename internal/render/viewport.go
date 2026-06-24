@@ -136,12 +136,14 @@ type SpriteFX struct {
 	IdleBreath  bool
 	BreathBob   bool // the vertical-bob component
 	BreathScale bool // the breathing scale-pulse component
+	Reflection  bool // #123: a flipped, faded "glass floor" mirror of the sprites below the floor line
 
-	Speed          int // rainbow hue speed slider [1,100] (higher = faster)
-	Vividness      int // rainbow saturation slider [0,100] (higher = more neon)
-	SpotlightLevel int // spotlight dim intensity [0,100] (higher = darker non-speakers)
-	BreathAmp      int // idle-breathing amplitude [1,100] (higher = more motion)
-	BreathSpeed    int // idle-breathing speed [1,100] (higher = faster)
+	Speed           int // rainbow hue speed slider [1,100] (higher = faster)
+	Vividness       int // rainbow saturation slider [0,100] (higher = more neon)
+	SpotlightLevel  int // spotlight dim intensity [0,100] (higher = darker non-speakers)
+	BreathAmp       int // idle-breathing amplitude [1,100] (higher = more motion)
+	BreathSpeed     int // idle-breathing speed [1,100] (higher = faster)
+	ReflectStrength int // reflection opacity [0,100] (higher = more visible)
 
 	SolidR, SolidG, SolidB uint8 // fixed tint colour (Solid)
 }
@@ -194,6 +196,8 @@ type Viewport struct {
 	dstRect  sdl.Rect
 	fillRect sdl.Rect
 	fxRect   sdl.Rect // #8 outline/shadow offset-blit destination (kept off dstRect)
+	reflRect sdl.Rect // #123 reflection blit destination
+	reflClip sdl.Rect // #123 reflection clip rect (confine to the stage when not already clipped)
 
 	// #10 post-processing overlays: cached, size-stable textures blended over the stage.
 	postFX               PostFX
@@ -399,6 +403,12 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
 	}
 
+	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line,
+	// drawn AFTER the sprites and BEFORE the desk so the desk occludes it naturally. Off →
+	// skipped entirely (byte-identical).
+	if v.fx.Reflection {
+		v.drawReflections(ren, scene, vp, spkVP)
+	}
 	if scene.ShowDesk {
 		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp, spotPct)
 	}
@@ -460,6 +470,79 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 	if dimPct < 100 {
 		_ = tex.SetColorMod(255, 255, 255) // restore the shared page
 	}
+}
+
+// Reflection tuning (#123): the mirror line and how strong the default reflection is.
+const (
+	reflectFloorPct   = 85  // mirror axis at vp.H * pct/100 down (≈ where feet land)
+	reflectMinAlpha   = 10  // floor so "on" always shows something
+	reflectMaxAlpha   = 200 // ceiling so a reflection never reads as a second solid sprite
+	reflectDefaultPct = 30  // default opacity when unset
+)
+
+// drawReflections mirrors the speaker (+ pair) below the floor line as a flipped, faded glass
+// reflection, confined to the stage. Called from Render between the sprites and the desk.
+func (v *Viewport) drawReflections(ren *sdl.Renderer, scene *courtroom.Scene, vp, spkVP sdl.Rect) {
+	floorY := vp.Y + vp.H*reflectFloorPct/100
+	alpha := reflectAlpha(v.fx.ReflectStrength)
+	// Confine the reflection to the stage so it can't bleed past the viewport bottom — but
+	// only when a clip isn't already active (the zoom path clips to the stage itself), so we
+	// never stomp the camera-zoom clip.
+	needClip := !ren.IsClipEnabled()
+	if needClip {
+		v.reflClip = vp
+		_ = ren.SetClipRect(&v.reflClip)
+	}
+	v.drawReflection(ren, &scene.Speaker, &v.speakerAnim, spkVP, floorY, alpha)
+	if scene.PairActive {
+		v.drawReflection(ren, &scene.Pair, &v.pairAnim, vp, floorY, alpha)
+	}
+	if needClip {
+		_ = ren.SetClipRect(nil)
+	}
+}
+
+// drawReflection blits one sprite vertically flipped with its mirror axis at floorY, at the
+// given alpha (restored after — shared T1 page). The clip in drawReflections keeps it inside
+// the stage; the desk drawn after occludes its lower part. 0-alloc (reused scratch rect).
+func (v *Viewport) drawReflection(ren *sdl.Renderer, layer *courtroom.SpriteLayer, anim *animState, vp sdl.Rect, floorY int32, alpha uint8) {
+	if !layer.Visible || layer.Active == "" {
+		return
+	}
+	page, ok := anim.resolve(v.store)
+	if !ok || len(page.Frames) == 0 {
+		return
+	}
+	frame := clampFrame(anim.frame, len(page.Frames))
+	scaledW := vp.H * page.W / page.H
+	v.reflRect.W = scaledW
+	v.reflRect.H = vp.H
+	v.reflRect.X = vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
+	v.reflRect.Y = floorY // flipped: the texture's bottom (feet) lands at the mirror axis
+	var flip sdl.RendererFlip = sdl.FLIP_VERTICAL
+	if layer.Flip {
+		flip |= sdl.FLIP_HORIZONTAL
+	}
+	tex := page.Frames[frame]
+	_ = tex.SetAlphaMod(alpha)
+	_ = ren.CopyEx(tex, nil, &v.reflRect, 0, nil, flip)
+	_ = tex.SetAlphaMod(255) // restore the shared page
+}
+
+// reflectAlpha maps the ReflectStrength slider [0,100] to an 0..255 opacity, clamped to a
+// visible floor and a ceiling so a reflection never reads as a second solid sprite.
+func reflectAlpha(strength int) uint8 {
+	if strength <= 0 {
+		strength = reflectDefaultPct
+	}
+	a := strength * 255 / 100
+	if a < reflectMinAlpha {
+		a = reflectMinAlpha
+	}
+	if a > reflectMaxAlpha {
+		a = reflectMaxAlpha
+	}
+	return uint8(a)
 }
 
 // Depth-of-field tuning (#11). A real Gaussian needs per-texture linear filtering that

@@ -653,6 +653,8 @@ type AssetPreferences struct {
 	BreathNoScale          bool                         `json:"breathNoScale"`     // inverted: false = scale component ON (default)
 	BreathAmount           int                          `json:"breathAmp"`         // amplitude [1,100], 0 = unset → default
 	BreathRate             int                          `json:"breathSpeed"`       // speed [1,100], 0 = unset → default
+	Reflection             bool                         `json:"reflection"`        // #123 glass-floor reflection (default OFF)
+	ReflectOpacity         int                          `json:"reflectStrength"`   // opacity [0,100], 0 = unset → default
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -876,6 +878,8 @@ type prefsJSON struct {
 	BreathNoScale          bool             `json:"breathNoScale"`          // false = scale ON
 	BreathAmount           int              `json:"breathAmp"`              // 0 = unset → default
 	BreathRate             int              `json:"breathSpeed"`            // 0 = unset → default
+	Reflection             bool             `json:"reflection"`             // #123 default OFF
+	ReflectOpacity         int              `json:"reflectStrength"`        // 0 = unset → default
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1394,6 +1398,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.BreathNoScale = onDisk.BreathNoScale
 	p.BreathAmount = onDisk.BreathAmount
 	p.BreathRate = onDisk.BreathRate
+	p.Reflection = onDisk.Reflection
+	p.ReflectOpacity = onDisk.ReflectOpacity
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3433,6 +3439,34 @@ func (p *AssetPreferences) BreathSpeed() int {
 // SetBreathAmp / SetBreathSpeed store the sliders (clamped to [1,100]).
 func (p *AssetPreferences) SetBreathAmp(v int)   { p.setIntPref(&p.BreathAmount, v, 1, 100) }
 func (p *AssetPreferences) SetBreathSpeed(v int) { p.setIntPref(&p.BreathRate, v, 1, 100) }
+
+// defaultReflectStrength is the #123 reflection opacity when unset (so the slider shows a
+// sensible value and enabling the toggle is visible at once).
+const defaultReflectStrength = 30
+
+// ReflectionOn reports the #123 toggle (OFF by default): a flipped, faded glass-floor mirror
+// of the sprites.
+func (p *AssetPreferences) ReflectionOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.Reflection
+}
+
+// SetReflection toggles the glass-floor reflection.
+func (p *AssetPreferences) SetReflection(on bool) { p.setBoolPref(&p.Reflection, on) }
+
+// ReflectStrength reports the reflection opacity [0,100]; 0 (unset) resolves to the default.
+func (p *AssetPreferences) ReflectStrength() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.ReflectOpacity == 0 {
+		return defaultReflectStrength
+	}
+	return p.ReflectOpacity
+}
+
+// SetReflectStrength stores the reflection opacity (clamped to [0,100]).
+func (p *AssetPreferences) SetReflectStrength(v int) { p.setIntPref(&p.ReflectOpacity, v, 0, 100) }
 
 // setBoolPref sets *field to on under the lock, marking dirty only on a real change.
 func (p *AssetPreferences) setBoolPref(field *bool, on bool) {

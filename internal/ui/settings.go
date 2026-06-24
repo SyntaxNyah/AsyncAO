@@ -709,6 +709,23 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		}
 		y += 26
 	}
+	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line.
+	refl := a.d.Prefs.ReflectionOn()
+	if next := c.Checkbox(pad, y, "Glass-floor reflection (OFF by default): a flipped, faded mirror of the characters on the floor below them", refl); next != refl {
+		a.d.Prefs.SetReflection(next)
+		refl = next
+	}
+	y += 26
+	if refl {
+		op := a.d.Prefs.ReflectStrength()
+		c.Label(pad+16, y+4, "Opacity:", ColTextDim)
+		if next := int(c.Slider("reflop", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(op), 100)); next != op {
+			a.d.Prefs.SetReflectStrength(next)
+			op = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", op), ColAccent)
+		y += 26
+	}
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()

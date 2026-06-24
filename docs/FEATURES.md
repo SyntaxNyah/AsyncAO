@@ -317,9 +317,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the two compose without double-dimming); and **idle breathing** (#122) gives every static
   sprite a gentle vertical bob + breathing scale-pulse so it feels alive, with Amount / Speed
   sliders and per-component (bob / scale) toggles — pure math off the free-running clock,
-  suppressed by Reduce-motion like wobble/spin. Each has a **rebindable keybind** (Settings →
-  Controls; the Ctrl+letter space is full so the viewer-FX toggles default to the free symbol
-  keys — spotlight `Ctrl+[`, breathing `Ctrl+]`).
+  suppressed by Reduce-motion like wobble/spin; and **glass-floor reflection** (#123) mirrors
+  the characters below the floor line as a flipped, faded copy (one `CopyEx` with
+  `FLIP_VERTICAL`, clipped to the stage, drawn before the desk so it occludes naturally), with
+  an Opacity slider. Each has a **rebindable keybind** (Settings → Controls; the Ctrl+letter
+  space is full so the viewer-FX toggles default to the free symbol keys — spotlight `Ctrl+[`,
+  breathing `Ctrl+]`, reflection `Ctrl+;`).
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on
