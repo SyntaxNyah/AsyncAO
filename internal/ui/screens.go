@@ -964,7 +964,7 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect) {
 	hdr := sdl.Rect{X: box.X + 1, Y: box.Y + 1, W: box.W - 2, H: cleanHeaderH}
 	c.Fill(hdr, ColPanelHi)
 	c.Label(hdr.X+7, hdr.Y+3, "OOC", ColText)
-	a.drawOOCPanel(sdl.Rect{X: box.X + 5, Y: box.Y + cleanHeaderH + 4, W: box.W - 10, H: box.H - cleanHeaderH - 8})
+	a.drawOOCPanel(sdl.Rect{X: box.X + 5, Y: box.Y + cleanHeaderH + 4, W: box.W - 10, H: box.H - cleanHeaderH - 8}, true)
 }
 
 // drawCourtroomModals draws whichever return-to-top courtroom popup is open and
@@ -1472,7 +1472,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		a.drawPlayerList(inner)
 		return
 	case logTabOOC:
-		a.drawOOCPanel(inner)
+		a.drawOOCPanel(inner, false)
 		return
 	case logTabNotes:
 		a.drawNotesTab(inner)
@@ -1823,10 +1823,14 @@ func (a *App) submitOOC() {
 // drawOOCPanel is the actual OOC box: full scrollable history plus the
 // identity fields — IC showname (live; outgoing messages read it per
 // send) and the permanent OOC name. Both persist via the debounced saver.
-func (a *App) drawOOCPanel(r sdl.Rect) {
+func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	c := a.ctx
 	fH := a.inputFieldH()
-	fieldsH := 2*(fH+6) + 4
+	nFields := int32(2) // IC showname + permanent OOC name
+	if withInput {
+		nFields = 3 // + the OOC message input, so the box is a complete OOC chat (one thing)
+	}
+	fieldsH := nFields*(fH+6) + 4
 	list := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - fieldsH}
 
 	font := c.LogFont(a.logPct)
@@ -1890,6 +1894,16 @@ func (a *App) drawOOCPanel(r sdl.Rect) {
 	// Identity fields: full width (side labels squished the boxes in the
 	// narrow right column) — the placeholders carry the labels.
 	fy := r.Y + r.H - fieldsH + 4
+	if withInput {
+		// The OOC message bar lives INSIDE the box now (one unified OOC chat), not a separate bottom row.
+		var sent bool
+		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput)
+		a.oocInput, sent = c.TextFieldEmoji("oocmsg", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocInput, "OOC chat… (Enter to send)", oocPrimary, oocEmoji)
+		if sent {
+			a.submitOOC()
+		}
+		fy += fH + 6
+	}
 	shown := a.d.Prefs.SavedShowname()
 	if next, _ := c.TextField("icshowname", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, shown, "IC showname (blank = character name)"); next != shown {
 		a.d.Prefs.SetShowname(next)
@@ -3420,10 +3434,10 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.drawEmoteRow(sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}, vp)
 	}
 
-	// OOC row at the very bottom: name + a FULL-width input (the squished
-	// half-width box is gone — history lives in the OOC tab now).
+	// OOC row at the very bottom: name + a FULL-width input. Legacy only — in the new default the
+	// OOC input lives INSIDE the OOC box (one unified OOC chat), so this bottom bar is dropped.
 	oocY := h - fH - 4
-	if !a.panelHidden(panelOOC) {
+	if !a.panelHidden(panelOOC) && a.d.Prefs.LegacyDevThemeOn() {
 		nameW := int32(120)
 		ocW, ocDD := nameW, int32(0)
 		if len(a.nameOpts) > 1 { // same tiny ▾ saved-name picker, fitted inside the name box
