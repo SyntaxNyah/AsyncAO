@@ -88,6 +88,9 @@ type Audio struct {
 	musicBytes []byte // keeps streamed music memory alive while playing
 	musicRW    *sdl.RWops
 	music      *mix.Music
+	musicURL   string // the URL of the track currently playing ("" = none); makes PlayMusic
+	//          idempotent so a room rebuild (random char, char switch, tab reactivation)
+	//          re-seeding the SAME track doesn't restart it.
 
 	// Volumes in percent (0–100), applied as mixer volume at play time
 	// (music globally, chunks per returned channel).
@@ -433,7 +436,7 @@ func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
 	p, wanted := a.pending[asset.Base]
 	if wanted && p.kind == pendingMusic {
 		delete(a.pending, asset.Base)
-		a.startMusic(asset.Data)
+		a.startMusic(asset.Base, asset.Data)
 		return
 	}
 	chunk := a.loadChunk(asset.Base, asset.Data)
@@ -563,10 +566,16 @@ func (a *Audio) PlaySFX(base string, _ time.Duration) { a.request(base, pendingS
 // PlayBlip fires one chat blip. // AssetType: Blip
 func (a *Audio) PlayBlip(base string) { a.request(base, pendingBlip) }
 
-// PlayMusic streams a track from its full URL. // AssetType: Music
+// PlayMusic streams a track from its full URL. Idempotent: if that exact track is already
+// playing, it's a no-op — so a room rebuild (random char, char switch, tab reactivation)
+// re-seeding the current song doesn't restart it from the top. A genuinely new track (or a
+// resume after the song stopped) plays as normal. // AssetType: Music
 func (a *Audio) PlayMusic(url string) {
 	if !a.enabled {
 		return
+	}
+	if url == a.musicURL && a.music != nil {
+		return // already playing this exact track — don't restart
 	}
 	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL)}
 	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
@@ -588,8 +597,8 @@ func (a *Audio) StopMusic() {
 	}
 }
 
-func (a *Audio) startMusic(data []byte) {
-	a.stopMusic()
+func (a *Audio) startMusic(url string, data []byte) {
+	a.stopMusic() // clears musicURL; set below only on a successful start
 	rw, err := sdl.RWFromMem(data)
 	if err != nil {
 		return
@@ -609,6 +618,7 @@ func (a *Audio) startMusic(data []byte) {
 		a.stopMusic()
 		return
 	}
+	a.musicURL = url // now this exact track is playing — PlayMusic(url) becomes a no-op
 	mix.VolumeMusic(mixVolume(a.musicVol))
 }
 
@@ -623,4 +633,5 @@ func (a *Audio) stopMusic() {
 		a.musicRW = nil
 	}
 	a.musicBytes = nil
+	a.musicURL = "" // nothing playing now; a later PlayMusic of the same URL plays again
 }
