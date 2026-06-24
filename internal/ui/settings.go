@@ -673,6 +673,42 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", lv), ColAccent)
 		y += 26
 	}
+	// #122 idle breathing: a gentle bob + breathing-scale on static sprites (AsyncAO-only).
+	// The amplitude/speed sliders + the two component toggles show only while it's on. The
+	// keybind (Settings → Keybinds, or the default below) toggles it hands-free.
+	brth := a.d.Prefs.IdleBreathOn()
+	if next := c.Checkbox(pad, y, "Idle breathing (OFF by default): static sprites gently bob + breathe so they feel alive — only other AsyncAO users won't see your local view, this is your viewer", brth); next != brth {
+		a.d.Prefs.SetIdleBreath(next)
+		brth = next
+	}
+	y += 26
+	if brth {
+		amp := a.d.Prefs.BreathAmp()
+		c.Label(pad+16, y+4, "Amount:", ColTextDim)
+		if next := int(c.Slider("breathamp", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(amp), 100)); next != amp {
+			a.d.Prefs.SetBreathAmp(next)
+			amp = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", amp), ColAccent)
+		y += 26
+		spd := a.d.Prefs.BreathSpeed()
+		c.Label(pad+16, y+4, "Speed:", ColTextDim)
+		if next := int(c.Slider("breathspd", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(spd), 100)); next != spd {
+			a.d.Prefs.SetBreathSpeed(next)
+			spd = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", spd), ColAccent)
+		y += 26
+		bob := a.d.Prefs.BreathBobOn()
+		if next := c.Checkbox(pad+16, y, "Vertical bob", bob); next != bob {
+			a.d.Prefs.SetBreathBob(next)
+		}
+		scl := a.d.Prefs.BreathScaleOn()
+		if next := c.Checkbox(pad+180, y, "Breathing scale", scl); next != scl {
+			a.d.Prefs.SetBreathScale(next)
+		}
+		y += 26
+	}
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()

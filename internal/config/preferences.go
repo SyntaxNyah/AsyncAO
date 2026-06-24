@@ -648,6 +648,11 @@ type AssetPreferences struct {
 	DepthOfField           bool                         `json:"depthOfField"`
 	Spotlight              bool                         `json:"spotlight"`         // #121 dim non-speakers (default OFF)
 	SpotlightStrength      int                          `json:"spotlightStrength"` // dim intensity [10,90], 0 = unset → default
+	IdleBreath             bool                         `json:"idleBreath"`        // #122 idle breathing (default OFF)
+	BreathNoBob            bool                         `json:"breathNoBob"`       // inverted: false = bob component ON (default)
+	BreathNoScale          bool                         `json:"breathNoScale"`     // inverted: false = scale component ON (default)
+	BreathAmount           int                          `json:"breathAmp"`         // amplitude [1,100], 0 = unset → default
+	BreathRate             int                          `json:"breathSpeed"`       // speed [1,100], 0 = unset → default
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -866,6 +871,11 @@ type prefsJSON struct {
 	DepthOfField           bool             `json:"depthOfField"`           // default OFF
 	Spotlight              bool             `json:"spotlight"`              // #121 default OFF
 	SpotlightStrength      int              `json:"spotlightStrength"`      // 0 = unset → default
+	IdleBreath             bool             `json:"idleBreath"`             // #122 default OFF
+	BreathNoBob            bool             `json:"breathNoBob"`            // false = bob ON
+	BreathNoScale          bool             `json:"breathNoScale"`          // false = scale ON
+	BreathAmount           int              `json:"breathAmp"`              // 0 = unset → default
+	BreathRate             int              `json:"breathSpeed"`            // 0 = unset → default
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1379,6 +1389,11 @@ func load(path string) (*AssetPreferences, error) {
 	p.DepthOfField = onDisk.DepthOfField
 	p.Spotlight = onDisk.Spotlight
 	p.SpotlightStrength = onDisk.SpotlightStrength
+	p.IdleBreath = onDisk.IdleBreath
+	p.BreathNoBob = onDisk.BreathNoBob
+	p.BreathNoScale = onDisk.BreathNoScale
+	p.BreathAmount = onDisk.BreathAmount
+	p.BreathRate = onDisk.BreathRate
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3361,6 +3376,64 @@ func (p *AssetPreferences) SetSpotlightLevel(v int) {
 	p.markDirty()
 }
 
+// Idle-breathing (#122) defaults. The two components default ON (stored inverted so the
+// zero-value pref breathes both ways); amplitude/speed default to a gentle middle.
+const (
+	defaultBreathAmp   = 40
+	defaultBreathSpeed = 50
+)
+
+// IdleBreathOn reports the #122 master toggle (OFF by default): a gentle bob + breathing-scale
+// so static sprites feel alive (AsyncAO-only, viewer-local).
+func (p *AssetPreferences) IdleBreathOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.IdleBreath
+}
+
+// SetIdleBreath toggles idle breathing.
+func (p *AssetPreferences) SetIdleBreath(on bool) { p.setBoolPref(&p.IdleBreath, on) }
+
+// BreathBobOn / BreathScaleOn report whether each component is enabled (both default ON; the
+// pref stores the inverted "disabled" flag so the zero value means on).
+func (p *AssetPreferences) BreathBobOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return !p.BreathNoBob
+}
+func (p *AssetPreferences) BreathScaleOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return !p.BreathNoScale
+}
+
+// SetBreathBob / SetBreathScale toggle each component (stored inverted).
+func (p *AssetPreferences) SetBreathBob(on bool)   { p.setBoolPref(&p.BreathNoBob, !on) }
+func (p *AssetPreferences) SetBreathScale(on bool) { p.setBoolPref(&p.BreathNoScale, !on) }
+
+// BreathAmp / BreathSpeed report the sliders [1,100]; 0 (unset) resolves to the default.
+func (p *AssetPreferences) BreathAmp() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.BreathAmount == 0 {
+		return defaultBreathAmp
+	}
+	return p.BreathAmount
+}
+
+func (p *AssetPreferences) BreathSpeed() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.BreathRate == 0 {
+		return defaultBreathSpeed
+	}
+	return p.BreathRate
+}
+
+// SetBreathAmp / SetBreathSpeed store the sliders (clamped to [1,100]).
+func (p *AssetPreferences) SetBreathAmp(v int)   { p.setIntPref(&p.BreathAmount, v, 1, 100) }
+func (p *AssetPreferences) SetBreathSpeed(v int) { p.setIntPref(&p.BreathRate, v, 1, 100) }
+
 // setBoolPref sets *field to on under the lock, marking dirty only on a real change.
 func (p *AssetPreferences) setBoolPref(field *bool, on bool) {
 	p.mu.Lock()
@@ -3369,6 +3442,20 @@ func (p *AssetPreferences) setBoolPref(field *bool, on bool) {
 		return
 	}
 	*field = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// setIntPref clamps v to [lo,hi] and stores it under the lock, marking dirty only on a real
+// change. Shared by the slider-backed prefs.
+func (p *AssetPreferences) setIntPref(field *int, v, lo, hi int) {
+	v = clampPercent(v, lo, hi)
+	p.mu.Lock()
+	if *field == v {
+		p.mu.Unlock()
+		return
+	}
+	*field = v
 	p.mu.Unlock()
 	p.markDirty()
 }

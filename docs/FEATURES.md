@@ -310,8 +310,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   grain** (each a cached texture in one stretched blit — the practical "GPU-accelerated
   shader" path for SDL2's 2D renderer, which has no fragment-shader entry point, #47);
   **entrance slide-in** drifts a new speaker's sprite in from the side on the first line;
-  and **depth-of-field** soft-focuses + dims the background behind the speaker (a
-  multi-offset smear, since go-sdl2 exposes no per-texture scale mode for a true blur).
+  **depth-of-field** soft-focuses + dims the background behind the speaker (a multi-offset
+  smear, since go-sdl2 exposes no per-texture scale mode for a true blur); **speaker
+  spotlight** (#121) dims the non-speaker layers — the pair partner + the desk — toward
+  shadow so the talker pops, with a Dim slider (the background is left to depth-of-field, so
+  the two compose without double-dimming); and **idle breathing** (#122) gives every static
+  sprite a gentle vertical bob + breathing scale-pulse so it feels alive, with Amount / Speed
+  sliders and per-component (bob / scale) toggles — pure math off the free-running clock,
+  suppressed by Reduce-motion like wobble/spin. Each has a **rebindable keybind** (Settings →
+  Controls; the Ctrl+letter space is full so the viewer-FX toggles default to the free symbol
+  keys — spotlight `Ctrl+[`, breathing `Ctrl+]`).
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on

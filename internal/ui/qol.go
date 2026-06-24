@@ -65,6 +65,10 @@ const (
 	hotkeyQuickConnect  = "quick_connect"  // dial the saved last server (works offline / in the lobby)
 	hotkeyFavEmotes     = "fav_emote_box"  // toggle the floating favourite-emotes box
 	hotkeyClipReplay    = "clip_replay"    // save the last window of conversation (instant replay)
+	// Viewer-FX toggles (#121+ roadmap). The Ctrl+letter space is full, so these default to the
+	// free symbol keys (and are rebindable in Settings → Controls like every hotkey).
+	hotkeySpotlight  = "spotlight"   // toggle speaker spotlight (#121)
+	hotkeyIdleBreath = "idle_breath" // toggle idle breathing (#122)
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -114,6 +118,8 @@ var hotkeyDefs = []struct {
 	{hotkeyQuickConnect, "Connect to last server", "q"},                    // dial the saved server (lobby)
 	{hotkeyFavEmotes, "Favourite-emotes box", "a"},                         // toggle the floating box of starred emotes
 	{hotkeyClipReplay, "Clip the last conversation (Instant Replay)", "."}, // Ctrl+. — every letter is taken; pairs with settings (Ctrl+,)
+	{hotkeySpotlight, "Toggle speaker spotlight", "["},                     // Ctrl+[ — letters are exhausted, FX toggles use the free symbol keys
+	{hotkeyIdleBreath, "Toggle idle breathing", "]"},                       // Ctrl+]
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -127,6 +133,17 @@ func (a *App) hotkeyFor(action string) string {
 		}
 	}
 	return ""
+}
+
+// toggleFXPref flips a bool viewer-FX pref via its setter and flashes a brief on/off toast —
+// the shared body of the FX toggle hotkeys (#121+), so every effect gets a hands-free keybind.
+func (a *App) toggleFXPref(cur bool, set func(bool), label string) {
+	set(!cur)
+	a.warnLine = label + " off"
+	if !cur {
+		a.warnLine = label + " on"
+	}
+	a.warnAt = time.Now()
 }
 
 // hotkeyConflictKeys returns the set of keys bound to more than one action. The
@@ -325,6 +342,10 @@ func (a *App) handleHotkeys() {
 		a.reshowSprites()
 	case a.hotkeyFor(hotkeyHideDesk):
 		a.toggleHideDesk()
+	case a.hotkeyFor(hotkeySpotlight):
+		a.toggleFXPref(a.d.Prefs.SpotlightOn(), a.d.Prefs.SetSpotlight, "Speaker spotlight")
+	case a.hotkeyFor(hotkeyIdleBreath):
+		a.toggleFXPref(a.d.Prefs.IdleBreathOn(), a.d.Prefs.SetIdleBreath, "Idle breathing")
 	case a.hotkeyFor(hotkeyFavEmotes):
 		a.toggleFavEmoteBox()
 	}

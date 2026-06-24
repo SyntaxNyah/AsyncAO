@@ -130,10 +130,18 @@ type SpriteFX struct {
 	Entrance   bool // #9: slide the speaker in when a new character takes the stage
 	DoF        bool // #11: soft-focus + dim the background behind the sharp speaker
 	Spotlight  bool // #121: dim the non-speaker layers (pair partner + desk) so the talker pops
+	// #122 idle breathing (AsyncAO-only local life): a gentle continuous bob + breathing-scale
+	// on every sprite so static art feels alive. IdleBreath is the master; Bob / Scale toggle
+	// the two components (both default on). Suppressed by ReduceMotion like wobble/spin.
+	IdleBreath  bool
+	BreathBob   bool // the vertical-bob component
+	BreathScale bool // the breathing scale-pulse component
 
 	Speed          int // rainbow hue speed slider [1,100] (higher = faster)
 	Vividness      int // rainbow saturation slider [0,100] (higher = more neon)
 	SpotlightLevel int // spotlight dim intensity [0,100] (higher = darker non-speakers)
+	BreathAmp      int // idle-breathing amplitude [1,100] (higher = more motion)
+	BreathSpeed    int // idle-breathing speed [1,100] (higher = faster)
 
 	SolidR, SolidG, SolidB uint8 // fixed tint colour (Solid)
 }
@@ -607,6 +615,21 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		doColorMod = true
 	}
 
+	// #122 idle breathing: fold the breathing scale-pulse into scalePct (applied below) and
+	// stash the bob to add after the wobble. Local + AsyncAO-only, pure math off the free-running
+	// clock; v.fx already has it cleared under ReduceMotion. Composes with a transmitted scale +
+	// the wobble; off → breathBobY 0 and scalePct unchanged, so the blit is byte-identical.
+	var breathBobY int32
+	if v.fx.IdleBreath {
+		bobY, addScale := breathTransform(v.fxClock, vp, v.fx.BreathAmp, v.fx.BreathSpeed)
+		if v.fx.BreathBob {
+			breathBobY = bobY
+		}
+		if v.fx.BreathScale {
+			scalePct += addScale
+		}
+	}
+
 	// Apply each modulation, then restore EACH to neutral after the blit so it
 	// never bleeds onto the next user of this SHARED T1 page (next frame, emote
 	// preview, wardrobe grid). ColorMod leaves alpha alone so the transparent
@@ -641,6 +664,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		dx, dy := wobbleOffset(v.fxClock, vp)
 		v.dstRect.X += dx
 		v.dstRect.Y += dy
+	}
+	if breathBobY != 0 { // #122 idle breathing's vertical bob (folded scale was applied above)
+		v.dstRect.Y += breathBobY
 	}
 	// #13 glitch: an occasional horizontal jolt moves the WHOLE sprite (solid + outline +
 	// the chromatic fringe below) together; glitchSplit is the chromatic offset for the fringe.
@@ -890,6 +916,42 @@ func wobbleOffset(clock time.Duration, vp sdl.Rect) (dx, dy int32) {
 // spinDegrees is the continuous rotation angle (0..360) for the Spin effect.
 func spinDegrees(clock time.Duration) float64 {
 	return oscFrac(clock, spinPeriod) * 360
+}
+
+// Idle-breathing tuning (#122). Slow + small so a static sprite reads as gently alive.
+const (
+	breathPeriodMin = 1500 * time.Millisecond // fastest breath (speed = 100)
+	breathPeriodMax = 5000 * time.Millisecond // slowest breath (speed = 1)
+	breathBobDiv    = 50                      // bob amplitude at amp=100 = vp.H / div (px)
+	breathScaleMax  = 5                       // scale-pulse adds up to +5% at amp=100
+)
+
+// breathPeriod maps the BreathSpeed slider [1,100] to a breathing period (higher = faster).
+func breathPeriod(speed int) time.Duration {
+	if speed < 1 {
+		speed = 1
+	}
+	if speed > 100 {
+		speed = 100
+	}
+	span := breathPeriodMax - breathPeriodMin
+	return breathPeriodMax - time.Duration(int64(span)*int64(speed-1)/99)
+}
+
+// breathTransform is the #122 idle-breathing offsets at the given clock: a vertical bob and a
+// scale-pulse (an "inhale" that only expands, 0..max, via (1+sin)/2), both scaled by the
+// amplitude slider. Pure math off the free-running fxClock — no allocation. The caller gates
+// each component (Bob / Scale) and folds scaleAddPct into the sprite's scale.
+func breathTransform(clock time.Duration, vp sdl.Rect, ampPct, speedPct int) (bobY int32, scaleAddPct int) {
+	if ampPct < 1 {
+		ampPct = 1
+	} else if ampPct > 100 {
+		ampPct = 100
+	}
+	s := math.Sin(2 * math.Pi * oscFrac(clock, breathPeriod(speedPct)))
+	bobY = int32(float64(vp.H) * float64(ampPct) / 100 / breathBobDiv * s)
+	scaleAddPct = int(float64(breathScaleMax) * float64(ampPct) / 100 * (1 + s) / 2)
+	return bobY, scaleAddPct
 }
 
 // charHueOffset hashes a sprite's base name to a stable hue offset in [0,cycle)
