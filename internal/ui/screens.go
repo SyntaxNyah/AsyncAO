@@ -913,7 +913,10 @@ func (a *App) drawCourtroom(w, h int32) {
 		vpW = vpH * 4 / 3
 	}
 	vpDef := sdl.Rect{X: pad, Y: pad, W: vpW, H: vpH}
-	vp := a.slotMove(slotViewport, vpDef, w, h) // movable stage; its 4:3 size stays owned by the View knob
+	// Movable + resizable stage. With no override the View knob / divider own its
+	// 4:3 size (vpDef); once you drag a viewport handle in the editor, that override
+	// wins (free position + size; the scene fills it) until you reset the box.
+	vp := a.slotRect(slotViewport, vpDef, w, h)
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.renderViewportZoomed(vp)
 	a.drawStageRecordButton(vp)
@@ -1039,7 +1042,7 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 // the View knob's own clamp so the two never disagree.
 func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 	c := a.ctx
-	if !a.d.Prefs.DragLayoutOn() || a.vpZoom > 1 || a.courtModalOpen() { // off, zoomed, or a blocking popup (Pair menu, evidence…) is up over the edge
+	if !a.d.Prefs.DragLayoutOn() || a.vpZoom > 1 || a.courtModalOpen() || a.viewportOverridden() { // off, zoomed, a blocking popup, or the stage has an editor size override (the divider would change the now-shadowed vpPct)
 		a.dragVpDivider = false
 		a.dividerPrevDwn = c.mouseDown
 		return

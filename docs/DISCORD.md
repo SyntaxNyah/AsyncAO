@@ -34,8 +34,9 @@ Line composition (all optional, see Privacy):
      asset key **`appicon`** (exactly that string — the client
      references it as `largeImageKey`).
    - Copy the **Application ID** from *General Information*.
-2. In AsyncAO: **Settings → Discord** → tick *Enable*, paste the
-   Application ID into **App ID**.
+2. In AsyncAO: **Settings → Discord** — *Enable* is already ticked on a
+   normal build, so just paste the Application ID into **App ID** (untick
+   *Enable* instead if you'd rather it stay off).
 3. Restart AsyncAO (the ID is read when the presence worker starts).
 
 No Discord SDK is installed and nothing is downloaded: the client talks
@@ -46,7 +47,13 @@ handshake (`op 0`) / activity (`op 1` `SET_ACTIVITY`) frames.
 
 ## Privacy model
 
-- **Off by default.** Fresh installs never touch the pipe.
+- **The Enable toggle is pre-ticked on Discord-capable builds** (you can
+  untick it in Settings → Discord). But Rich Presence has a *second* gate:
+  without an **Application ID** the worker never dials, so a fresh install
+  still shows nothing and never touches the pipe until you add an App ID
+  (or the project bakes in a default ID — see the plan below).
+  `-tags nodiscord` builds carry no Discord code at all, and a saved prefs
+  file keeps whatever you last chose (this default only seeds fresh installs).
 - When you enable it, the default field set is **server + character +
   showname**; **area is off** until you opt in (some people don't want
   their room broadcast).

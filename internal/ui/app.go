@@ -549,8 +549,9 @@ type App struct {
 	classicEditDrag  int // 0 none, 1 move, 2 resize
 	classicEditStart [2]int32
 	classicEditBase  sdl.Rect
-	classicEditPrev  bool // press-edge latch (mouse-down rising edge)
-	classicEditMoved bool // a drag actually moved/resized (else a click persists nothing)
+	classicEditEdges uint8 // which edges a resize drags (edgeL/R/T/B bitmask); 0 mid-move
+	classicEditPrev  bool  // press-edge latch (mouse-down rising edge)
+	classicEditMoved bool  // a drag actually moved/resized (else a click persists nothing)
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage

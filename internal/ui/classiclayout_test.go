@@ -6,7 +6,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-// A zero App is enough here: slotRect/slotMove touch only classicOv + classicEdit.
+// A zero App is enough here: slotRect touches only classicOv + classicEdit.
 
 func TestSlotRectOverrideAndDefault(t *testing.T) {
 	var a App
@@ -28,22 +28,6 @@ func TestSlotRectOverrideAndDefault(t *testing.T) {
 	}
 }
 
-func TestSlotMoveKeepsDefaultSize(t *testing.T) {
-	var a App
-	def := sdl.Rect{X: 8, Y: 8, W: 640, H: 480}
-	const w, h = 1280, 720
-	a.classicOv = map[string][4]float64{
-		// X/Y are honored; the stored W/H are deliberately bogus and must be ignored
-		// (the viewport is move-only — its size belongs to the View knob).
-		slotViewport: {0.25, 0.1, 0.99, 0.99},
-	}
-	got := a.slotMove(slotViewport, def, w, h)
-	want := sdl.Rect{X: 320, Y: 72, W: 640, H: 480}
-	if got != want {
-		t.Fatalf("slotMove = %+v, want %+v (size must come from def)", got, want)
-	}
-}
-
 // TestSlotNoAlloc pins the hard rule: the render path (no edit mode) allocates
 // nothing, even with an override present (the worst case runs fracToRect).
 func TestSlotNoAlloc(t *testing.T) {
@@ -56,9 +40,33 @@ func TestSlotNoAlloc(t *testing.T) {
 	}
 	if n := testing.AllocsPerRun(200, func() {
 		_ = a.slotRect(slotOOC, def, w, h)
-		_ = a.slotMove(slotViewport, def, w, h)
+		_ = a.slotRect(slotViewport, def, w, h)
 	}); n != 0 {
-		t.Fatalf("slotRect/slotMove allocate %v/op on the render path; want 0", n)
+		t.Fatalf("slotRect allocates %v/op on the render path; want 0", n)
+	}
+}
+
+func TestClassicEdgeAt(t *testing.T) {
+	r := sdl.Rect{X: 100, Y: 100, W: 200, H: 120}
+	const m = 12
+	cases := []struct {
+		name string
+		x, y int32
+		want uint8
+	}{
+		{"interior", 200, 160, 0},
+		{"right edge", 300, 160, edgeR},
+		{"left edge", 100, 160, edgeL},
+		{"top edge", 200, 100, edgeT},
+		{"bottom edge", 200, 220, edgeB},
+		{"top-right corner", 300, 100, edgeR | edgeT},
+		{"bottom-left corner", 100, 220, edgeL | edgeB},
+		{"outside", 400, 160, 0},
+	}
+	for _, tc := range cases {
+		if got := classicEdgeAt(tc.x, tc.y, r, m); got != tc.want {
+			t.Errorf("%s: classicEdgeAt = %04b, want %04b", tc.name, got, tc.want)
+		}
 	}
 }
 

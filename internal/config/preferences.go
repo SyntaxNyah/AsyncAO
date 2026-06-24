@@ -1048,9 +1048,13 @@ type DiscordPrefs struct {
 	AppID string `json:"appId"`
 }
 
-// defaultDiscordPrefs: off, with the tick-on defaults pre-set.
+// defaultDiscordPrefs: ON by default on a normal (Discord-capable) build, with
+// the detail toggles pre-set. Rich Presence is pure-stdlib IPC (no DLL); it
+// silently no-ops when Discord isn't running, and users who don't want it can
+// flip it off in Settings or run a `-tags nodiscord` build. A saved prefs file
+// keeps whatever the user last chose (this default only seeds fresh installs).
 func defaultDiscordPrefs() DiscordPrefs {
-	return DiscordPrefs{ShowServer: true, ShowChar: true, ShowName: true}
+	return DiscordPrefs{Enabled: true, ShowServer: true, ShowChar: true, ShowName: true}
 }
 
 // ServerWarmInfo remembers what a server looked like last visit, so a

@@ -1359,16 +1359,20 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   nothing misfires.
 - **Live layout editor on the default & Legacy layouts** (the same "Edit
   Layout" button — control row, Extras box, or UI…): the non-themed
-  courtroom is editable too. Drag the **stage** anywhere (it stays 4:3 —
-  its size still belongs to the View knob, so the editor only *moves* it),
-  and drag/resize the **log / right column** and the **OOC box**
-  independently. Right-click a box to reset it, **Reset all** to clear
-  every override, **Snap** to tidy placement. Overrides are saved as window
-  *fractions* (config `classicLayout`), so they survive window resizes and
-  persist across sessions — with **zero render-loop cost** when you haven't
-  edited anything (the slot path is allocation-free; an un-edited courtroom
-  is pixel-identical to before). More widgets (IC input, button groups,
-  music) become draggable in later slices.
+  courtroom is editable too, and **both** the new default *and* the Legacy
+  Developer theme share it. **Drag a box to move it; grab an edge to resize
+  one dimension (horizontal *or* vertical) or a corner for both** — 8 handles
+  per box. The **stage/viewport** moves *and* freely resizes (the scene fills
+  it; while un-edited the View knob still owns its 4:3 size, and resetting the
+  box hands size back to the knob); the **log / right column** (both themes)
+  and the **OOC box** (new default) move/resize independently. Right-click a
+  box to reset it, **Reset all** to clear every override, **Snap** to tidy
+  placement. Overrides are saved as window *fractions* (config `classicLayout`),
+  so they survive window resizes and persist across sessions — with **zero
+  render-loop cost** when you haven't edited anything (the slot path is
+  allocation-free; an un-edited courtroom is pixel-identical to before). More
+  widgets (IC input, button groups, music, tear-off log tabs) become draggable
+  in later slices.
 - **Tabbed settings**: the settings screen is split into category tabs
   (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
   one long scroll — click a tab, scroll within it, each tab remembers its
@@ -1484,8 +1488,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the active grab and the whole queue (Settings); and an optional **bandwidth
   cap** (KiB/s, 0 = unlimited) paces downloads so a big grab doesn't hog your
   connection.
-- **Discord Rich Presence**: optional, per-field privacy checkboxes,
-  zero build/run dependency — full guide in [DISCORD.md](DISCORD.md).
+- **Discord Rich Presence**: **enabled by default** on a normal build (untick
+  in Settings → Discord, or run a `-tags nodiscord` build), per-field privacy
+  checkboxes, zero build/run dependency. Note it still needs an Application ID
+  to actually connect — full guide in [DISCORD.md](DISCORD.md).
 - **Update check + "What's New"** (Settings → on by default): one async check
   of the GitHub Releases API at launch — fired once, after the window is up,
   **never on the boot path** (zero startup cost), and a dev build skips it

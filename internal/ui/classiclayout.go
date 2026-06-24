@@ -3,15 +3,16 @@ package ui
 // Classic-layout slots: the DEFAULT (non-themed) courtroom — and the Legacy
 // Developer theme, which shares the same procedural geometry — are laid out
 // fresh every frame, so unlike the themed editor there are no design rects to
-// drag. Instead each movable widget draws through slotRect / slotMove, which
-// return a user override (persisted as a window FRACTION, so the drag is
-// resolution-independent) or — when nothing is overridden — the exact rect the
-// layout already computed. Un-edited ⇒ pixel-identical to before (the safety
+// drag. Instead each movable widget draws through slotRect, which returns a user
+// override (persisted as a window FRACTION, so the drag is resolution-
+// independent) or — when nothing is overridden — the exact rect the layout
+// already computed. Un-edited ⇒ pixel-identical to before (the safety
 // invariant); the override path is purely additive and off the hot frame.
 //
 // The editor (drawClassicEditor) reuses the themed editor's feel — drag = move,
-// corner grip = resize, right-click = reset a box, Snap, Esc/Done — but works in
-// screen space over the live courtroom and persists to config.ClassicLayout.
+// edge / corner handles = resize (independently horizontal or vertical),
+// right-click = reset a box, Snap, Esc/Done — but works in screen space over the
+// live courtroom and persists to config.ClassicLayout.
 
 import (
 	"sort"
@@ -22,16 +23,18 @@ import (
 // Slot names — string literals so the render path never formats a key (which
 // would allocate every frame). Keep in sync with the call sites in drawCourtroom.
 const (
-	slotViewport = "viewport" // the 4:3 stage (move-only; size owned by the View knob)
+	slotViewport = "viewport" // the stage (free move + resize; the scene fills it)
 	slotRightCol = "rightcol" // IC log / right column (both themes)
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
 )
 
-// classicMoveOnly marks slots whose SIZE is owned elsewhere and must not be
-// free-resized. The viewport is 4:3 aspect-locked and already resizes via the
-// View knob / divider (which write vpPct); letting the editor resize it too
-// would put two masters on its size and break the aspect — so it only MOVES.
-var classicMoveOnly = map[string]bool{slotViewport: true}
+// Resize-edge bitmask: which sides of a box a drag moves.
+const (
+	edgeL uint8 = 1 << iota
+	edgeR
+	edgeT
+	edgeB
+)
 
 const (
 	// classicSlotRegCap pre-sizes the per-frame slot registry (cosmetic; the
@@ -44,19 +47,17 @@ const (
 )
 
 // slotInfo records, per registered slot this frame, the rect it actually drew at
-// (cur), the rect it WOULD draw at with no override (def, for reset), and whether
-// resize is allowed. Populated only while editing, so the common frame is
-// alloc-free.
+// (cur) and the rect it WOULD draw at with no override (def, for reset).
+// Populated only while editing, so the common frame is alloc-free.
 type slotInfo struct {
-	cur      sdl.Rect
-	def      sdl.Rect
-	moveOnly bool
+	cur sdl.Rect
+	def sdl.Rect
 }
 
 // ensureClassicOv loads the persisted overrides into the App-local snapshot once
 // (the editor is the sole writer thereafter). A nil snapshot means "no edits" —
-// slotRect / slotMove then just return the computed default. Called every
-// courtroom frame; after the first it is a single bool check (alloc-free).
+// slotRect then just returns the computed default. Called every courtroom frame;
+// after the first it is a single bool check (alloc-free).
 func (a *App) ensureClassicOv() {
 	if a.classicOvLoaded {
 		return
@@ -93,7 +94,7 @@ func (a *App) regSlot(name string, cur, def sdl.Rect) {
 	if a.slotReg == nil {
 		a.slotReg = make(map[string]slotInfo, classicSlotRegCap)
 	}
-	a.slotReg[name] = slotInfo{cur: cur, def: def, moveOnly: classicMoveOnly[name]}
+	a.slotReg[name] = slotInfo{cur: cur, def: def}
 }
 
 // slotRect returns a movable+resizable widget's rect: the user override (frac→px)
@@ -103,21 +104,6 @@ func (a *App) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
 	cur := def
 	if ov, ok := a.classicOv[name]; ok {
 		cur = fracToRect(ov, w, h)
-	}
-	if a.classicEdit {
-		a.regSlot(name, cur, def)
-	}
-	return cur
-}
-
-// slotMove is slotRect for MOVE-ONLY widgets (the viewport): only X/Y come from
-// the override; W/H always track the computed default, whose size is owned by the
-// View knob / divider.
-func (a *App) slotMove(name string, def sdl.Rect, w, h int32) sdl.Rect {
-	cur := def
-	if ov, ok := a.classicOv[name]; ok {
-		cur.X = int32(ov[0] * float64(w))
-		cur.Y = int32(ov[1] * float64(h))
 	}
 	if a.classicEdit {
 		a.regSlot(name, cur, def)
@@ -138,13 +124,54 @@ func classicSnap(v int32) int32 {
 func classicSlotLabel(k string) string {
 	switch k {
 	case slotViewport:
-		return "Viewport (stage) — move"
+		return "Viewport (stage)"
 	case slotRightCol:
 		return "Log / right column"
 	case slotOOC:
 		return "OOC box"
 	default:
 		return k
+	}
+}
+
+// classicEdgeAt reports which sides of r the cursor grips, within margin px. A
+// corner returns two adjacent sides; 0 means "inside / not on an edge" (= move).
+func classicEdgeAt(mx, my int32, r sdl.Rect, margin int32) uint8 {
+	if mx < r.X-margin || mx > r.X+r.W+margin || my < r.Y-margin || my > r.Y+r.H+margin {
+		return 0
+	}
+	var e uint8
+	if abs32(mx-r.X) <= margin {
+		e |= edgeL
+	}
+	if abs32(mx-(r.X+r.W)) <= margin {
+		e |= edgeR
+	}
+	if abs32(my-r.Y) <= margin {
+		e |= edgeT
+	}
+	if abs32(my-(r.Y+r.H)) <= margin {
+		e |= edgeB
+	}
+	return e
+}
+
+// classicHandles returns the 8 resize handles (4 corners + 4 edge midpoints) of r
+// so the editor can paint them — making "drag an edge to resize one dimension"
+// discoverable.
+func classicHandles(r sdl.Rect) [8]sdl.Rect {
+	const hp = layoutHandlePx
+	cx := r.X + r.W/2 - hp/2
+	cy := r.Y + r.H/2 - hp/2
+	return [8]sdl.Rect{
+		{X: r.X, Y: r.Y, W: hp, H: hp},                       // top-left
+		{X: r.X + r.W - hp, Y: r.Y, W: hp, H: hp},            // top-right
+		{X: r.X, Y: r.Y + r.H - hp, W: hp, H: hp},            // bottom-left
+		{X: r.X + r.W - hp, Y: r.Y + r.H - hp, W: hp, H: hp}, // bottom-right
+		{X: cx, Y: r.Y, W: hp, H: hp},                        // top edge
+		{X: cx, Y: r.Y + r.H - hp, W: hp, H: hp},             // bottom edge
+		{X: r.X, Y: cy, W: hp, H: hp},                        // left edge
+		{X: r.X + r.W - hp, Y: cy, W: hp, H: hp},             // right edge
 	}
 }
 
@@ -159,9 +186,10 @@ func (a *App) startClassicEdit() {
 	a.bgPick.show = false
 	a.classicEditKey = ""
 	a.classicEditDrag = 0
+	a.classicEditEdges = 0
 	a.classicEditMoved = false
 	a.layoutSnap = true // tidy placement by default; toggle off in the editor
-	a.pushDebug("edit layout (default courtroom): drag a box to move, corner to resize, Esc to finish")
+	a.pushDebug("edit layout (default courtroom): drag to move, edges/corners to resize, Esc to finish")
 }
 
 // stopClassicEdit disarms and releases the input fence.
@@ -169,6 +197,7 @@ func (a *App) stopClassicEdit() {
 	a.classicEdit = false
 	a.classicEditKey = ""
 	a.classicEditDrag = 0
+	a.classicEditEdges = 0
 	a.ctx.modalOn = false
 }
 
@@ -179,6 +208,15 @@ func (a *App) classicEditFence() {
 	if a.classicEdit {
 		a.ctx.modalOn = true
 	}
+}
+
+// viewportOverridden reports whether the user has dragged/resized the stage in
+// the classic editor. The View knob and the edge divider then defer to that
+// override (it would otherwise change vpPct silently, which the override shadows)
+// until the box is reset.
+func (a *App) viewportOverridden() bool {
+	_, ok := a.classicOv[slotViewport]
+	return ok
 }
 
 // clearClassicSlot drops one slot's override from both the durable pref and the
@@ -192,7 +230,7 @@ func (a *App) clearClassicSlot(name string) {
 
 // drawClassicEditor paints the slot-editor overlay and owns every interaction.
 // Called LAST from drawCourtroom (default layout only), after every widget has
-// registered its rect via slotRect / slotMove this frame.
+// registered its rect via slotRect this frame.
 func (a *App) drawClassicEditor(w, h int32) {
 	c := a.ctx
 	if w <= 0 || h <= 0 {
@@ -201,7 +239,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 
 	// Banner + chrome (raw-hit chips — the fence blocks kit buttons).
-	banner := "EDIT LAYOUT — drag = move · corner grip = resize · right-click = reset a box · Esc = done"
+	banner := "EDIT LAYOUT — drag = move · edges/corners = resize · right-click = reset a box · Esc = done"
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 210})
 	c.Label(pad, 5, banner, ColTierYellow)
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
@@ -256,29 +294,24 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 	}
 
-	// Begin a drag on press: RESIZE (corner grip, resizable slots only) takes
-	// priority, else MOVE the hovered box.
+	// Begin a drag on press: RESIZE (an edge/corner of some box is gripped) takes
+	// priority over MOVE. Among gripped boxes, the SMALLEST wins so a small box's
+	// handle isn't swallowed by a big box behind it.
 	if pressed && a.classicEditDrag == 0 && c.mouseY > classicBannerH {
-		resizeKey := ""
-		var gripArea int64 = -1
+		resizeKey, resizeEdges, best := "", uint8(0), int64(-1)
 		for _, k := range keys {
-			si := a.slotReg[k]
-			if si.moveOnly {
-				continue
-			}
-			r := si.cur
-			grip := sdl.Rect{X: r.X + r.W - layoutHandlePx, Y: r.Y + r.H - layoutHandlePx, W: layoutHandlePx, H: layoutHandlePx}
-			if pointIn(c.mouseX, c.mouseY, grip) {
-				if area := int64(r.W) * int64(r.H); area > gripArea {
-					resizeKey, gripArea = k, area
+			r := a.slotReg[k].cur
+			if e := classicEdgeAt(c.mouseX, c.mouseY, r, layoutHandlePx); e != 0 {
+				if area := int64(r.W) * int64(r.H); best < 0 || area < best {
+					resizeKey, resizeEdges, best = k, e, area
 				}
 			}
 		}
 		switch {
 		case resizeKey != "":
-			a.classicEditKey, a.classicEditDrag = resizeKey, 2
+			a.classicEditKey, a.classicEditDrag, a.classicEditEdges = resizeKey, 2, resizeEdges
 		case hoverKey != "":
-			a.classicEditKey, a.classicEditDrag = hoverKey, 1
+			a.classicEditKey, a.classicEditDrag, a.classicEditEdges = hoverKey, 1, 0
 		}
 		if a.classicEditDrag != 0 {
 			a.classicEditStart = [2]int32{c.mouseX, c.mouseY}
@@ -292,42 +325,56 @@ func (a *App) drawClassicEditor(w, h int32) {
 		a.clearClassicSlot(hoverKey)
 	}
 
-	// Live drag: screen deltas applied directly (screen space), floored, clamped
-	// on-stage, snapped, then written to the App-local override (px→frac) so the
-	// widget redraws at the new spot NEXT frame.
+	// Live drag: screen deltas applied directly (screen space), clamped on-stage,
+	// snapped, then written to the App-local override (px→frac) so the widget
+	// redraws at the new spot NEXT frame.
 	if a.classicEditDrag != 0 && c.mouseDown && a.classicEditKey != "" {
 		dx := c.mouseX - a.classicEditStart[0]
 		dy := c.mouseY - a.classicEditStart[1]
 		if dx != 0 || dy != 0 {
 			a.classicEditMoved = true
 		}
-		r := a.classicEditBase
-		if a.classicEditDrag == 1 {
-			r.X += dx
-			r.Y += dy
-		} else {
-			r.W += dx
-			r.H += dy
+		base := a.classicEditBase
+		r := base
+		if a.classicEditDrag == 1 { // move
+			r.X = base.X + dx
+			r.Y = base.Y + dy
+		} else { // resize the gripped edges (one or both dimensions)
+			e := a.classicEditEdges
+			if e&edgeR != 0 {
+				r.W = base.W + dx
+			}
+			if e&edgeL != 0 {
+				r.X = base.X + dx
+				r.W = base.W - dx
+			}
+			if e&edgeB != 0 {
+				r.H = base.H + dy
+			}
+			if e&edgeT != 0 {
+				r.Y = base.Y + dy
+				r.H = base.H - dy
+			}
+			if r.W < classicMinPx { // floor without inverting; keep the anchored edge fixed
+				if e&edgeL != 0 {
+					r.X = base.X + base.W - classicMinPx
+				}
+				r.W = classicMinPx
+			}
+			if r.H < classicMinPx {
+				if e&edgeT != 0 {
+					r.Y = base.Y + base.H - classicMinPx
+				}
+				r.H = classicMinPx
+			}
+		}
+		if a.layoutSnap {
+			r.X, r.Y, r.W, r.H = classicSnap(r.X), classicSnap(r.Y), classicSnap(r.W), classicSnap(r.H)
 			if r.W < classicMinPx {
 				r.W = classicMinPx
 			}
 			if r.H < classicMinPx {
 				r.H = classicMinPx
-			}
-		}
-		if a.layoutSnap {
-			if a.classicEditDrag == 1 {
-				r.X = classicSnap(r.X)
-				r.Y = classicSnap(r.Y)
-			} else {
-				r.W = classicSnap(r.W)
-				r.H = classicSnap(r.H)
-				if r.W < classicMinPx {
-					r.W = classicMinPx
-				}
-				if r.H < classicMinPx {
-					r.H = classicMinPx
-				}
 			}
 		}
 		// Keep it on-screen (solid feel; below the editor banner).
@@ -359,20 +406,17 @@ func (a *App) drawClassicEditor(w, h int32) {
 			}
 		}
 		a.classicEditDrag = 0
+		a.classicEditEdges = 0
 		a.classicEditMoved = false
 	}
 
-	// Overlay: outline every slot, label it, show the resize grip on resizables.
-	// A slot mid-drag reflects its live (this-frame) override position.
+	// Overlay: outline every slot, label it, paint the 8 resize handles. A slot
+	// mid-drag reflects its live (this-frame) override position.
 	for _, k := range keys {
-		si := a.slotReg[k]
-		r := si.cur
+		r := a.slotReg[k].cur
 		if a.classicEditDrag != 0 && k == a.classicEditKey {
 			if ov, ok := a.classicOv[k]; ok {
 				r = fracToRect(ov, w, h)
-				if si.moveOnly { // size is fixed for move-only slots
-					r.W, r.H = si.cur.W, si.cur.H
-				}
 			}
 		}
 		col := ColAccent
@@ -383,14 +427,14 @@ func (a *App) drawClassicEditor(w, h int32) {
 			col = ColTierYellow
 		}
 		c.Border(r, col)
-		if !si.moveOnly {
-			c.Fill(sdl.Rect{X: r.X + r.W - layoutHandlePx, Y: r.Y + r.H - layoutHandlePx, W: layoutHandlePx, H: layoutHandlePx}, col)
+		for _, hnd := range classicHandles(r) {
+			c.Fill(hnd, col)
 		}
 		c.LabelClipped(r.X+4, r.Y+3, r.W-8, classicSlotLabel(k), col)
 	}
 	if a.classicEditKey != "" {
 		c.Label(pad, h-22, "editing: "+classicSlotLabel(a.classicEditKey), ColText)
 	} else if len(keys) > 0 {
-		c.Label(pad, h-22, "drag any outlined box — moves & sizes save automatically", ColTextDim)
+		c.Label(pad, h-22, "drag a box to move · grab an edge or corner to resize · saves automatically", ColTextDim)
 	}
 }
