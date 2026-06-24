@@ -1418,24 +1418,42 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// content — adjust volume while the log stays on screen and you keep chatting
 	// (the IC box below is untouched). The tabs share the rest of the row.
 	const volBtnW = int32(36)
-	const numLogTabs = 7
+	// New default: OOC is its OWN box, so the OOC tab is dropped (and the rest reindex); Legacy keeps
+	// the 7-tab strip. If the tab was on OOC when we drop it, fall back to the IC log.
+	legacyTabs := a.d.Prefs.LegacyDevThemeOn()
+	if !legacyTabs && a.logTab == logTabOOC {
+		a.logTab = logTabLog
+	}
+	numLogTabs := int32(7)
+	if !legacyTabs {
+		numLogTabs = 6
+	}
 	tab := (r.W - volBtnW) / numLogTabs
 	tabBtn := func(i int32, id int, label string) {
 		bw := tab
-		if int(i) == numLogTabs-1 {
+		if i == numLogTabs-1 {
 			bw = (r.W - volBtnW) - (numLogTabs-1)*tab // last tab takes the remainder before the Vol toggle
 		}
 		if c.Button(sdl.Rect{X: r.X + i*tab, Y: r.Y, W: bw, H: btnH}, label) {
 			a.logTab = id
 		}
 	}
-	tabBtn(0, logTabLog, "Log")
-	tabBtn(1, logTabMusic, "Music")
-	tabBtn(2, logTabAreas, "Areas")
-	tabBtn(3, logTabPlayers, "Players")
-	tabBtn(4, logTabOOC, "OOC")
-	tabBtn(5, logTabNotes, "Notes")
-	tabBtn(6, logTabFriends, "Friends")
+	ti := int32(0)
+	tabBtn(ti, logTabLog, "Log")
+	ti++
+	tabBtn(ti, logTabMusic, "Music")
+	ti++
+	tabBtn(ti, logTabAreas, "Areas")
+	ti++
+	tabBtn(ti, logTabPlayers, "Players")
+	ti++
+	if legacyTabs {
+		tabBtn(ti, logTabOOC, "OOC")
+		ti++
+	}
+	tabBtn(ti, logTabNotes, "Notes")
+	ti++
+	tabBtn(ti, logTabFriends, "Friends")
 	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}
 	if c.Button(volBtn, "Vol") {
 		a.volStripOn = !a.volStripOn
