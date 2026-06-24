@@ -2206,9 +2206,10 @@ func icLogLine(m *protocol.ChatMessage, forceChar bool) string {
 }
 
 // icMessageBody is an IC message's display text for the log: markup stripped (no raw
-// \cN / { }) and known :shortcode: inline emotes (#18) expanded to their emoji. Pure.
+// \cN / { }) and known :shortcode: inline emotes (#18) expanded to their emoji — the same
+// expansion the live chatbox does (Courtroom.InlineEmote), so the log and the box agree.
 func icMessageBody(m *protocol.ChatMessage) string {
-	return expandInlineEmotes(courtroom.StripChatMarkup(m.Message))
+	return courtroom.ExpandInlineEmotes(courtroom.StripChatMarkup(m.Message), inlineEmoteFor)
 }
 
 // icSpeakerName is the displayed name an IC log line is prefixed with — the
@@ -2529,6 +2530,7 @@ func (a *App) buildRoom() {
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
 	a.room.SFXMuted = func(name string) bool { return a.d.Prefs.IsSFXMuted(name) }        // M11 per-SFX mute (reads live prefs)
 	a.room.BlipVolumeFor = func(char string) int { return a.d.Prefs.BlipVolumeFor(char) } // M11 per-character blip volume (reads live prefs)
+	a.room.InlineEmote = inlineEmoteFor                                                   // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
 	urls := a.urls
 	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character, emote string) string {
 		if emote == "" {

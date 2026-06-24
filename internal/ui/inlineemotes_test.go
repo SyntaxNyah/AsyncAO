@@ -3,8 +3,15 @@ package ui
 import (
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
+
+// expandInlineEmotes is the ui-side convenience: the courtroom parser fed this package's
+// registry — exactly how icMessageBody / the chatbox resolve shortcodes.
+func expandInlineEmotes(s string) string {
+	return courtroom.ExpandInlineEmotes(s, inlineEmoteFor)
+}
 
 // TestExpandInlineEmotes pins the #18 slice-1 substitution: known shortcodes become emoji,
 // unknown tokens and stray colons (URLs, times) stay exactly as typed, and several can sit

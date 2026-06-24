@@ -212,6 +212,11 @@ type Courtroom struct {
 	// character folder name. Set by the App to read live prefs; nil = full.
 	BlipVolumeFor func(char string) int
 
+	// InlineEmote, when set, resolves a :shortcode: stem to its emoji (#18). begin()
+	// substitutes known shortcodes in the speaker's text so the chatbox renders them like
+	// the IC log; nil = leave the text as-is. Set by the App (the registry lives in ui).
+	InlineEmote func(stem string) (string, bool)
+
 	queue []*protocol.ChatMessage
 	phase MessagePhase
 	timer time.Duration
@@ -454,6 +459,18 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if spans, ok := DecodeEffectsMarker(msg.Message); ok {
 		c.pendingEffects = append(c.pendingEffects, spans...)
 	}
+	// #18 inline emotes: expand known :shortcode: tokens in the speaker's visible text to
+	// their emoji, so the chatbox renders them like the IC log. GATED to messages with NO
+	// effect spans: the wire span indices were computed over the literal text and a
+	// substitution shifts rune counts, so expanding would misalign them (the colour runs are
+	// parsed from currentText just below, so those stay aligned for free). This MUST run here
+	// — after the pendingEffects decode (so the gate can read it) and BEFORE IsBlankPost and
+	// Typewriter.Start — so the reveal, the blankpost test, and the raster all consume the
+	// same substituted text. The wire msg.Message is untouched, so the reaction ref and the
+	// recording stay literal/cross-client-stable.
+	if c.InlineEmote != nil && len(c.pendingEffects) == 0 {
+		c.currentText = ExpandInlineEmotes(c.currentText, c.InlineEmote)
+	}
 	if c.HideSpriteStyles {
 		style = SpriteStyle{} // viewer opted out of others' styles
 	} else if c.ReduceMotion {
@@ -613,6 +630,13 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.TextColor = msg.TextColor
 	caStyle, caClean := DecodeSpriteStyle(msg.Message) // strip the style marker (catch-up never redraws the sprite)
 	c.currentText = caClean
+	// #18 inline emotes: mirror begin()'s gated expansion so a backlog flash agrees with the
+	// (already-expanded) IC log. Same gate — no expansion when the message carries effect spans.
+	if c.InlineEmote != nil {
+		if _, hasEffects := DecodeEffectsMarker(msg.Message); !hasEffects {
+			c.currentText = ExpandInlineEmotes(c.currentText, c.InlineEmote)
+		}
+	}
 	if HasStyleMarker(msg.Message) {
 		c.rememberStyle(msg.CharID, caStyle) // keep the per-speaker style memory consistent through a catch-up
 	}
