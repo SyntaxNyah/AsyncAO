@@ -129,9 +129,11 @@ type SpriteFX struct {
 	ShoutPunch bool // #12: quick scale-pop of the whole stage when a shout appears
 	Entrance   bool // #9: slide the speaker in when a new character takes the stage
 	DoF        bool // #11: soft-focus + dim the background behind the sharp speaker
+	Spotlight  bool // #121: dim the non-speaker layers (pair partner + desk) so the talker pops
 
-	Speed     int // rainbow hue speed slider [1,100] (higher = faster)
-	Vividness int // rainbow saturation slider [0,100] (higher = more neon)
+	Speed          int // rainbow hue speed slider [1,100] (higher = faster)
+	Vividness      int // rainbow saturation slider [0,100] (higher = more neon)
+	SpotlightLevel int // spotlight dim intensity [0,100] (higher = darker non-speakers)
 
 	SolidR, SolidG, SolidB uint8 // fixed tint colour (Solid)
 }
@@ -350,7 +352,7 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if v.fx.DoF {
 		v.drawBackgroundDoF(ren, scene.BackgroundBase, &v.bgAnim, vp) // #11 soft-focus + dim
 	} else {
-		v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp)
+		v.drawFill(ren, scene.BackgroundBase, &v.bgAnim, vp, 100) // bg full-bright (spotlight dims pair+desk, not bg)
 	}
 
 	// Pair hue offset for the "desync" effect: half a period so the two
@@ -362,6 +364,16 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		pairShift = v.curCycle / 2
 	}
 
+	// #121 speaker spotlight: the non-speaker layers (the pair partner + the desk overlay)
+	// draw dimmed toward shadow so the talking character pops; the speaker and the shout
+	// bubble stay at full brightness. noDim (100%) leaves a layer byte-identical, so with the
+	// effect off every draw below is unchanged. The background is left alone here (the DoF
+	// effect owns the background dim), so the two compose without double-dimming.
+	const noDim = 100
+	spotPct := noDim
+	if v.fx.Spotlight {
+		spotPct = spotlightBrightness(v.fx.SpotlightLevel)
+	}
 	// #9 entrance: a new speaker slides in from the left, easing to position (the slide rect
 	// is the speaker's only; the pair stays put). Off / settled → spkVP == vp → unchanged.
 	spkVP := vp
@@ -370,20 +382,20 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	}
 	if scene.PairActive && !scene.SpeakerInFront {
 		// Speaker behind: draw speaker first, pair over it.
-		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0)
-		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift)
+		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
+		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift, spotPct)
 	} else if scene.PairActive {
-		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift)
-		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0)
+		v.drawSprite(ren, &scene.Pair, &v.pairAnim, vp, pairShift, spotPct)
+		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
 	} else {
-		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0)
+		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
 	}
 
 	if scene.ShowDesk {
-		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp)
+		v.drawFill(ren, scene.DeskBase, &v.deskAnim, vp, spotPct)
 	}
 	if shoutBase := effectiveShoutBase(scene, v.store); shoutBase != "" {
-		v.drawFill(ren, shoutBase, &v.shoutAnim, vp)
+		v.drawFill(ren, shoutBase, &v.shoutAnim, vp, noDim)
 	}
 
 	if scene.FlashLeft > 0 {
@@ -418,7 +430,10 @@ func effectiveShoutBase(scene *courtroom.Scene, store *TextureStore) string {
 
 // drawFill stretches an asset across the whole viewport (backgrounds, desks,
 // shout bubbles — AO renders all of them viewport-sized).
-func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect) {
+// drawFill blits a full-viewport layer (background / desk / shout bubble). dimPct < 100
+// darkens it via a grey ColorMod (the #121 spotlight dims the desk) — set→copy→RESTORE on
+// the shared T1 page so nothing bleeds onto the next user; dimPct == 100 is byte-identical.
+func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp sdl.Rect, dimPct int) {
 	if base == "" {
 		return
 	}
@@ -427,8 +442,16 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 		return
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
+	tex := page.Frames[frame]
 	v.fillRect = vp
-	_ = ren.Copy(page.Frames[frame], nil, &v.fillRect)
+	if dimPct < 100 {
+		d := scaleChannel(255, dimPct)
+		_ = tex.SetColorMod(d, d, d)
+	}
+	_ = ren.Copy(tex, nil, &v.fillRect)
+	if dimPct < 100 {
+		_ = tex.SetColorMod(255, 255, 255) // restore the shared page
+	}
 }
 
 // Depth-of-field tuning (#11). A real Gaussian needs per-texture linear filtering that
@@ -480,7 +503,7 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animS
 // drawSprite draws a character layer: scaled to viewport height preserving
 // aspect, bottom-centered, shifted by percent offsets, optionally mirrored.
 // hueShift offsets this layer's rainbow phase (used to desync the pair).
-func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, anim *animState, vp sdl.Rect, hueShift time.Duration) {
+func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, anim *animState, vp sdl.Rect, hueShift time.Duration, dimPct int) {
 	if !layer.Visible || layer.Active == "" {
 		return
 	}
@@ -574,6 +597,14 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			glow = fx.Glow // local glow rides the local tint (unchanged)
 		}
 		wob, spin = fx.Wobble, fx.Spin
+	}
+
+	// #121 spotlight: dim this non-speaker layer by scaling its colour toward black, ON TOP of
+	// whatever tint / brightness / wash resolved above (a dimmed pair keeps its own style, just
+	// darker). Forces a ColorMod; the speaker passes dimPct 100 → no-op, byte-identical.
+	if dimPct < 100 {
+		modR, modG, modB = scaleChannel(modR, dimPct), scaleChannel(modG, dimPct), scaleChannel(modB, dimPct)
+		doColorMod = true
 	}
 
 	// Apply each modulation, then restore EACH to neutral after the blit so it
@@ -745,6 +776,23 @@ func clampFrame(frame, count int) int {
 		return 0
 	}
 	return frame
+}
+
+// spotlightMinBrightness floors how dark the #121 spotlight can push a non-speaker layer, so
+// it reads as "in shadow" rather than a black silhouette even at the max slider.
+const spotlightMinBrightness = 15
+
+// spotlightBrightness maps the SpotlightLevel slider [0,100] (dim intensity, higher = darker)
+// to the brightness percent a non-speaker layer is drawn at, floored so it never blacks out.
+func spotlightBrightness(level int) int {
+	b := 100 - level
+	if b < spotlightMinBrightness {
+		return spotlightMinBrightness
+	}
+	if b > 100 {
+		return 100
+	}
+	return b
 }
 
 // cycleForSpeed maps the Speed slider [1,100] to a hue-rotation period, higher

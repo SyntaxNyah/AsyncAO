@@ -655,6 +655,24 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 		a.d.Prefs.SetDepthOfField(next)
 	}
 	y += 26
+	// #121 speaker spotlight: dim the non-speaker characters + the desk. The Dim slider only
+	// shows while it's on (like the rainbow knobs above).
+	spot := a.d.Prefs.SpotlightOn()
+	if next := c.Checkbox(pad, y, "Speaker spotlight (OFF by default): dim the other characters + the desk so the talking character pops", spot); next != spot {
+		a.d.Prefs.SetSpotlight(next)
+		spot = next
+	}
+	y += 26
+	if spot {
+		lv := a.d.Prefs.SpotlightLevel()
+		c.Label(pad+16, y+4, "Dim:", ColTextDim)
+		if next := int(c.Slider("spotdim", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(lv), 100)); next != lv {
+			a.d.Prefs.SetSpotlightLevel(next)
+			lv = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", lv), ColAccent)
+		y += 26
+	}
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()

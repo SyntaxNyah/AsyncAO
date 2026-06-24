@@ -646,6 +646,8 @@ type AssetPreferences struct {
 	PostGrain              bool                         `json:"postGrain"`
 	AnimateEntrances       bool                         `json:"animateEntrances"`
 	DepthOfField           bool                         `json:"depthOfField"`
+	Spotlight              bool                         `json:"spotlight"`         // #121 dim non-speakers (default OFF)
+	SpotlightStrength      int                          `json:"spotlightStrength"` // dim intensity [10,90], 0 = unset → default
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -862,6 +864,8 @@ type prefsJSON struct {
 	PostGrain              bool             `json:"postGrain"`              // default OFF
 	AnimateEntrances       bool             `json:"animateEntrances"`       // default OFF
 	DepthOfField           bool             `json:"depthOfField"`           // default OFF
+	Spotlight              bool             `json:"spotlight"`              // #121 default OFF
+	SpotlightStrength      int              `json:"spotlightStrength"`      // 0 = unset → default
 	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
 	FriendNotify           bool             `json:"friendNotify"`           // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
@@ -1373,6 +1377,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.PostGrain = onDisk.PostGrain
 	p.AnimateEntrances = onDisk.AnimateEntrances
 	p.DepthOfField = onDisk.DepthOfField
+	p.Spotlight = onDisk.Spotlight
+	p.SpotlightStrength = onDisk.SpotlightStrength
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -3311,6 +3317,49 @@ func (p *AssetPreferences) DepthOfFieldOn() bool {
 
 // SetDepthOfField toggles the background depth-of-field.
 func (p *AssetPreferences) SetDepthOfField(on bool) { p.setBoolPref(&p.DepthOfField, on) }
+
+// Spotlight dim-strength bounds + default. The slider range is kept off 0/100 so "on" always
+// reads as a spotlight (a usable shadow, never full black, never invisible).
+const (
+	minSpotlightStrength     = 10
+	maxSpotlightStrength     = 90
+	defaultSpotlightStrength = 55
+)
+
+// SpotlightOn reports the #121 toggle (OFF by default): dim the non-speaker layers (the pair
+// partner + the desk) so the talking character pops.
+func (p *AssetPreferences) SpotlightOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.Spotlight
+}
+
+// SetSpotlight toggles the speaker spotlight.
+func (p *AssetPreferences) SetSpotlight(on bool) { p.setBoolPref(&p.Spotlight, on) }
+
+// SpotlightLevel reports the dim intensity [10,90] (higher = darker non-speakers); 0 (unset)
+// resolves to the default so enabling the toggle always shows a visible effect.
+func (p *AssetPreferences) SpotlightLevel() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.SpotlightStrength == 0 {
+		return defaultSpotlightStrength
+	}
+	return p.SpotlightStrength
+}
+
+// SetSpotlightLevel stores the dim intensity (clamped to [10,90]).
+func (p *AssetPreferences) SetSpotlightLevel(v int) {
+	v = clampPercent(v, minSpotlightStrength, maxSpotlightStrength)
+	p.mu.Lock()
+	if p.SpotlightStrength == v {
+		p.mu.Unlock()
+		return
+	}
+	p.SpotlightStrength = v
+	p.mu.Unlock()
+	p.markDirty()
+}
 
 // setBoolPref sets *field to on under the lock, marking dirty only on a real change.
 func (p *AssetPreferences) setBoolPref(field *bool, on bool) {
