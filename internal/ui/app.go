@@ -2202,7 +2202,13 @@ func (a *App) logMusicChange(ev courtroom.Event) {
 
 func icLogLine(m *protocol.ChatMessage, forceChar bool) string {
 	// Strip inline markup so the log reads like the chatbox (no raw \cN / { }).
-	return icSpeakerName(m, forceChar) + ": " + courtroom.StripChatMarkup(m.Message)
+	return icSpeakerName(m, forceChar) + ": " + icMessageBody(m)
+}
+
+// icMessageBody is an IC message's display text for the log: markup stripped (no raw
+// \cN / { }) and known :shortcode: inline emotes (#18) expanded to their emoji. Pure.
+func icMessageBody(m *protocol.ChatMessage) string {
+	return expandInlineEmotes(courtroom.StripChatMarkup(m.Message))
 }
 
 // icSpeakerName is the displayed name an IC log line is prefixed with — the
@@ -2240,7 +2246,7 @@ func (a *App) friendNick(m *protocol.ChatMessage) string {
 func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string) (line, speaker string) {
 	speaker = icSpeakerName(m, force)
 	if !force && nick != "" {
-		return nick + " (" + speaker + "): " + courtroom.StripChatMarkup(m.Message), speaker
+		return nick + " (" + speaker + "): " + icMessageBody(m), speaker
 	}
 	return icLogLine(m, force), speaker
 }
