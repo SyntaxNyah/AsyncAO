@@ -869,6 +869,9 @@ func (a *App) drawCourtroom(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 	a.pollCharINI()
 	if a.room == nil || a.sess == nil {
+		if a.classicEdit {
+			a.stopClassicEdit() // session dropped mid-edit — release the fence so the lobby isn't stuck
+		}
 		a.screen = ScreenLobby
 		return
 	}
