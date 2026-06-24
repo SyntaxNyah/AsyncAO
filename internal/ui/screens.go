@@ -3089,121 +3089,231 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// viewport scale or window width).
 	y2 := y + btnH + 4
 	x = pad
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character") {
-		// Back to char select; the session stays, the server re-picks via
-		// CC → PV and EventCharPicked rebuilds the courtroom.
-		a.screen = ScreenCharSelect
-	}
-	x += 106
-	// Wardrobe (iniswap): accent + tooltip so it's easy to spot.
-	wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
-	if c.Button(wr, "Wardrobe") {
-		a.openIniswap()
-	}
-	c.Border(wr, ColAccent)
-	c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
-	x += 96
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
-		a.openBgPicker()
-	}
-	x += 106
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
-		a.prevScreen = ScreenCourtroom
-		a.screen = ScreenSettings
-	}
-	x += 96
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About") {
-		a.prevScreen = ScreenCourtroom
-		a.screen = ScreenAbout
-	}
-	x += 86
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
-		a.requestDisconnect() // confirm first unless instant-disconnect is set
-		return
-	}
-	x += 116
-	evLabel := "Evidence"
-	if a.evidPresent {
-		evLabel = "Evidence ●" // armed: next IC message presents it
-	}
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
-		a.showEvid = true
-	}
-	x += 106
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
-		a.showModcall = true
-	}
-	x += 86
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
-		a.openLoginDialog()
-	}
-	x += 76
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
-		a.showUICfg = true
-	}
-	x += 56
-	x = a.drawPosSelect(x, y2, btnH)
-	// "Hotkeys" (#96) + "Restyle" (#103/#104) are the trailing convenience buttons,
-	// appended after Pos so no existing button shifts. At a narrow window width the
-	// long Row 2 would push the PAIR off the right edge, so wrap them down to a
-	// fresh row when they wouldn't fit. Everything below keys off y2 (icY = y2 +
-	// btnH + …), so bumping it in place drops the IC area and judge strip with it.
-	// Constant widths keep this alloc-free.
-	const keysW, styleW, btnGap int32 = 90, 84, 6
-	if x+keysW+btnGap+styleW > w-pad {
-		y2 += btnH + 4
-		x = pad
-	}
-	keysR := sdl.Rect{X: x, Y: y2, W: keysW, H: btnH}
-	if c.Button(keysR, "Hotkeys") {
-		a.openHotkeyCheatSheet()
-	}
-	c.Tooltip(keysR, "Show all your hotkeys & custom binds (also F1)")
-	x += keysW + btnGap
-	styleR := sdl.Rect{X: x, Y: y2, W: styleW, H: btnH}
-	if c.Button(styleR, "Restyle") {
-		a.openSpriteStyle()
-	}
-	c.Tooltip(styleR, "Recolour / glow your character on the fly — other AsyncAO players see it")
-	x += styleW + btnGap
+	if a.d.Prefs.LegacyDevThemeOn() {
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character") {
+			// Back to char select; the session stays, the server re-picks via
+			// CC → PV and EventCharPicked rebuilds the courtroom.
+			a.screen = ScreenCharSelect
+		}
+		x += 106
+		// Wardrobe (iniswap): accent + tooltip so it's easy to spot.
+		wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+		if c.Button(wr, "Wardrobe") {
+			a.openIniswap()
+		}
+		c.Border(wr, ColAccent)
+		c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
+		x += 96
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
+			a.openBgPicker()
+		}
+		x += 106
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
+			a.prevScreen = ScreenCourtroom
+			a.screen = ScreenSettings
+		}
+		x += 96
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About") {
+			a.prevScreen = ScreenCourtroom
+			a.screen = ScreenAbout
+		}
+		x += 86
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
+			a.requestDisconnect() // confirm first unless instant-disconnect is set
+			return
+		}
+		x += 116
+		evLabel := "Evidence"
+		if a.evidPresent {
+			evLabel = "Evidence ●" // armed: next IC message presents it
+		}
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
+			a.showEvid = true
+		}
+		x += 106
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
+			a.showModcall = true
+		}
+		x += 86
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
+			a.openLoginDialog()
+		}
+		x += 76
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
+			a.showUICfg = true
+		}
+		x += 56
+		x = a.drawPosSelect(x, y2, btnH)
+		// "Hotkeys" (#96) + "Restyle" (#103/#104) are the trailing convenience buttons,
+		// appended after Pos so no existing button shifts. At a narrow window width the
+		// long Row 2 would push the PAIR off the right edge, so wrap them down to a
+		// fresh row when they wouldn't fit. Everything below keys off y2 (icY = y2 +
+		// btnH + …), so bumping it in place drops the IC area and judge strip with it.
+		// Constant widths keep this alloc-free.
+		const keysW, styleW, btnGap int32 = 90, 84, 6
+		if x+keysW+btnGap+styleW > w-pad {
+			y2 += btnH + 4
+			x = pad
+		}
+		keysR := sdl.Rect{X: x, Y: y2, W: keysW, H: btnH}
+		if c.Button(keysR, "Hotkeys") {
+			a.openHotkeyCheatSheet()
+		}
+		c.Tooltip(keysR, "Show all your hotkeys & custom binds (also F1)")
+		x += keysW + btnGap
+		styleR := sdl.Rect{X: x, Y: y2, W: styleW, H: btnH}
+		if c.Button(styleR, "Restyle") {
+			a.openSpriteStyle()
+		}
+		c.Tooltip(styleR, "Recolour / glow your character on the fly — other AsyncAO players see it")
+		x += styleW + btnGap
 
-	// Edit Layout (front door to the live layout editor) + Mod / CM launchers, in the button row so
-	// they never float over the emote grid. Wrap to a fresh row as a group if they wouldn't fit.
-	editW := int32(94)
-	modW, cmW := int32(0), int32(0)
-	if a.amIMod() {
-		modW = 54
-	}
-	if a.amICMNow {
-		cmW = 46
-	}
-	if x+editW+modW+cmW+btnGap*2 > w-pad {
-		y2 += btnH + 4
-		x = pad
-	}
-	edR := sdl.Rect{X: x, Y: y2, W: editW, H: btnH}
-	if c.Button(edR, "Edit Layout") {
-		a.openLayoutEditor()
-	}
-	c.Tooltip(edR, "Live layout editor — drag & resize every box. (Needs a theme that ships a layout.)")
-	x += editW + btnGap
-	if modW > 0 {
-		mR := sdl.Rect{X: x, Y: y2, W: modW, H: btnH}
-		if c.Button(mR, "Mod") {
-			a.toggleModDash()
+		// Edit Layout (front door to the live layout editor) + Mod / CM launchers, in the button row so
+		// they never float over the emote grid. Wrap to a fresh row as a group if they wouldn't fit.
+		editW := int32(94)
+		modW, cmW := int32(0), int32(0)
+		if a.amIMod() {
+			modW = 54
 		}
-		c.Border(mR, ColDanger)
-		c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
-		x += modW + btnGap
-	}
-	if cmW > 0 {
-		cR := sdl.Rect{X: x, Y: y2, W: cmW, H: btnH}
-		if c.Button(cR, "CM") {
-			a.toggleCMPanel()
+		if a.amICMNow {
+			cmW = 46
 		}
-		c.Border(cR, chipCMColor)
-		c.Tooltip(cR, "CM area controls — lock / kick-from-area")
-		x += cmW + btnGap
+		if x+editW+modW+cmW+btnGap*2 > w-pad {
+			y2 += btnH + 4
+			x = pad
+		}
+		edR := sdl.Rect{X: x, Y: y2, W: editW, H: btnH}
+		if c.Button(edR, "Edit Layout") {
+			a.openLayoutEditor()
+		}
+		c.Tooltip(edR, "Live layout editor — drag & resize every box. (Needs a theme that ships a layout.)")
+		x += editW + btnGap
+		if modW > 0 {
+			mR := sdl.Rect{X: x, Y: y2, W: modW, H: btnH}
+			if c.Button(mR, "Mod") {
+				a.toggleModDash()
+			}
+			c.Border(mR, ColDanger)
+			c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
+			x += modW + btnGap
+		}
+		if cmW > 0 {
+			cR := sdl.Rect{X: x, Y: y2, W: cmW, H: btnH}
+			if c.Button(cR, "CM") {
+				a.toggleCMPanel()
+			}
+			c.Border(cR, chipCMColor)
+			c.Tooltip(cR, "CM area controls — lock / kick-from-area")
+			x += cmW + btnGap
+		}
+	} else {
+		// New default: the same buttons grouped by purpose (Character · Scene · Moderation · System),
+		// a wider gap between groups, the leave button set apart at the end. Inline (no closures) so
+		// the row stays alloc-free.
+		const gGap = int32(16) // gap between groups
+		evLabel := "Evidence"
+		if a.evidPresent {
+			evLabel = "Evidence ●"
+		}
+		// — Character —
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character") {
+			a.screen = ScreenCharSelect
+		}
+		x += 106
+		wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+		if c.Button(wr, "Wardrobe") {
+			a.openIniswap()
+		}
+		c.Border(wr, ColAccent)
+		c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
+		x += 96
+		reR := sdl.Rect{X: x, Y: y2, W: 84, H: btnH}
+		if c.Button(reR, "Restyle") {
+			a.openSpriteStyle()
+		}
+		c.Tooltip(reR, "Recolour / glow your character on the fly — other AsyncAO players see it")
+		x += 84 + gGap
+		// — Scene —
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
+			a.openBgPicker()
+		}
+		x += 106
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
+			a.showEvid = true
+		}
+		x += 106
+		x = a.drawPosSelect(x, y2, btnH)
+		x += gGap
+		// — Moderation —
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
+			a.showModcall = true
+		}
+		x += 86
+		if a.amIMod() {
+			mR := sdl.Rect{X: x, Y: y2, W: 54, H: btnH}
+			if c.Button(mR, "Mod") {
+				a.toggleModDash()
+			}
+			c.Border(mR, ColDanger)
+			c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
+			x += 60
+		}
+		if a.amICMNow {
+			cR := sdl.Rect{X: x, Y: y2, W: 46, H: btnH}
+			if c.Button(cR, "CM") {
+				a.toggleCMPanel()
+			}
+			c.Border(cR, chipCMColor)
+			c.Tooltip(cR, "CM area controls — lock / kick-from-area")
+			x += 52
+		}
+		x += gGap
+		// — System — wrap to a fresh row as a block if it would run off the right edge.
+		if x+90+56+100+96+86+76 > w-pad {
+			y2 += btnH + 4
+			x = pad
+		}
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
+			a.prevScreen = ScreenCourtroom
+			a.screen = ScreenSettings
+		}
+		x += 96
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
+			a.showUICfg = true
+		}
+		x += 56
+		edR := sdl.Rect{X: x, Y: y2, W: 94, H: btnH}
+		if c.Button(edR, "Edit Layout") {
+			a.openLayoutEditor()
+		}
+		c.Tooltip(edR, "Live layout editor — drag & resize every box. (Needs a theme that ships a layout.)")
+		x += 100
+		hkR := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+		if c.Button(hkR, "Hotkeys") {
+			a.openHotkeyCheatSheet()
+		}
+		c.Tooltip(hkR, "Show all your hotkeys & custom binds (also F1)")
+		x += 96
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About") {
+			a.prevScreen = ScreenCourtroom
+			a.screen = ScreenAbout
+		}
+		x += 86
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
+			a.openLoginDialog()
+		}
+		x += 76
+		// — Leave — set apart at the end.
+		x += gGap
+		if x+110 > w-pad {
+			y2 += btnH + 4
+			x = pad
+		}
+		if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
+			a.requestDisconnect()
+			return
+		}
+		x += 116
 	}
 
 	// Judge strip (JD grant, or the judge stand when pos-dependent).
