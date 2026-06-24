@@ -141,11 +141,10 @@ func (a *App) drawCMRoster(r sdl.Rect, sw courtroom.ServerSoftware) {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No players in the live list yet.", ColTextDim)
 		return
 	}
-	lineH := int32(26)
 	if !c.ctrlHeld {
 		a.cmRosterScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	contentH := int32(len(roster)) * lineH
+	contentH := int32(len(roster)) * modRosterRowH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.cmRosterScroll = c.VScrollbar("cmroster", track, a.cmRosterScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
@@ -157,8 +156,8 @@ func (a *App) drawCMRoster(r sdl.Rect, sw courtroom.ServerSoftware) {
 		if rowY > r.Y+r.H {
 			break
 		}
-		if rowY >= r.Y-lineH {
-			rrow := sdl.Rect{X: r.X, Y: rowY, W: rowW, H: lineH - 2}
+		if rowY >= r.Y-modRosterRowH {
+			rrow := sdl.Rect{X: r.X, Y: rowY, W: rowW, H: modRosterRowH - 2}
 			if c.hovering(rrow) {
 				c.Fill(rrow, ColPanelHi)
 			}
@@ -166,15 +165,14 @@ func (a *App) drawCMRoster(r sdl.Rect, sw courtroom.ServerSoftware) {
 			// Per-row area-kick when the software supports it and the row has a UID.
 			if cmd := courtroom.AreaKick(sw, p.uid); cmd != "" {
 				kw := c.TextWidth("Kick") + 14
-				kr := sdl.Rect{X: rrow.X + rowW - kw - 2, Y: rowY + 1, W: kw, H: lineH - 4}
+				kr := sdl.Rect{X: rrow.X + rowW - kw - 2, Y: rowY + (modRosterRowH-btnH)/2, W: kw, H: btnH}
 				if c.Button(kr, "Kick") {
 					a.sendModCommand(cmd)
 				}
 				textW = rowW - kw - 16
 			}
-			label := "[" + p.uid + "] " + rosterDisplayName(p)
-			c.LabelClipped(rrow.X+6, rrow.Y+4, textW, label, ColText)
+			a.drawModRosterIdentity(p, rrow.X+6, rowY, textW, ColText)
 		}
-		rowY += lineH
+		rowY += modRosterRowH
 	}
 }

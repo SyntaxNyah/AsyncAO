@@ -2,11 +2,42 @@ package ui
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
+
+// modRosterRowH is the height of a rich (two-line) roster row in the mod / CM panels.
+const modRosterRowH = int32(40)
+
+// drawModRosterIdentity paints the rich two-line identity for one roster row, shared by the mod
+// dashboard and the CM panel: line 1 "[uid] showname · character", line 2 "OOC: … · IPID: …"
+// (dimmer). nameCol recolours line 1 (e.g. a selected row); textW caps the width so a caller can
+// leave room for a per-row button. Off the hot path (opt-in panels), so the string building is fine.
+func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol sdl.Color) {
+	c := a.ctx
+	display := rosterDisplayName(p)
+	ic := "[" + p.uid + "] " + display
+	if p.name != "" && !strings.EqualFold(display, p.name) {
+		ic = "[" + p.uid + "] " + display + " · " + p.name // showname (IC name) then the character
+	}
+	c.LabelClipped(x, rowY+3, textW, ic, nameCol)
+	sub := ""
+	if p.ooc != "" && p.showname != "" { // skip OOC when it was promoted to the identity line above
+		sub = "OOC: " + p.ooc
+	}
+	if p.ipid != "" { // mod-only; show whenever we actually have it
+		if sub != "" {
+			sub += "   ·   "
+		}
+		sub += "IPID: " + p.ipid
+	}
+	if sub != "" {
+		c.LabelClipped(x, rowY+21, textW, sub, ColTextDim)
+	}
+}
 
 // #130 CM / mod dashboard — a STANDALONE panel (its own thing; it never bloats the player list)
 // for server-software-aware moderation + area (CM) control. Opened from the Extras "Mod / CM"
@@ -131,7 +162,7 @@ func (a *App) drawModDashPanel(w, h int32) {
 	c.Border(panel, ColAccent)
 	x := panel.X + modDashIn
 
-	c.Heading(x, panel.Y+12, "Mod / CM Dashboard", ColText)
+	c.Heading(x, panel.Y+12, "Moderation — Ban / Kick", ColText)
 	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
 		a.showModDash = false
 		return
@@ -172,7 +203,7 @@ func (a *App) drawModDashPanel(w, h int32) {
 	leftW := int32(322)
 	rightX := x + leftW + 16
 	rightW := panel.X + pw - modDashIn - rightX
-	c.Label(x, bodyTop, "Players in area ("+strconv.Itoa(len(a.liveRoster))+")", ColTextDim)
+	c.Label(x, bodyTop, "Players in area ("+strconv.Itoa(len(a.rosterView()))+")", ColTextDim)
 	a.drawModDashRoster(sdl.Rect{X: x, Y: bodyTop + 22, W: leftW, H: bodyBottom - (bodyTop + 22)})
 	a.drawModDashActions(rightX, bodyTop, rightW)
 
@@ -255,33 +286,34 @@ func (a *App) drawModDashActions(x, y, w int32) {
 	}
 }
 
-// drawModDashRoster renders the live roster as a clickable, scrollable list. Selecting a row sets
-// modDashTargetUID (by UID, never index). Mod-only IPID is shown inline when enriched.
+// drawModDashRoster renders the live roster as a clickable, scrollable list with rich two-line
+// rows (showname · IC · OOC · UID · IPID). Selecting a row sets modDashTargetUID (by UID, never
+// index, so a roster rebuild can't repoint it).
 func (a *App) drawModDashRoster(r sdl.Rect) {
 	c := a.ctx
 	c.Border(r, ColPanelHi)
-	if len(a.liveRoster) == 0 {
+	roster := a.rosterView()
+	if len(roster) == 0 {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No players yet (or no live list on this server).", ColTextDim)
 		return
 	}
-	lineH := int32(26)
 	if !c.ctrlHeld {
 		a.modDashScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	contentH := int32(len(a.liveRoster)) * lineH
+	contentH := int32(len(roster)) * modRosterRowH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.modDashScroll = c.VScrollbar("moddashroster", track, a.modDashScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
 	rowY := r.Y - a.modDashScroll
 	rowW := r.W - scrollBarW - 4
-	for i := range a.liveRoster {
-		p := a.liveRoster[i]
+	for i := range roster {
+		p := roster[i]
 		if rowY > r.Y+r.H {
 			break
 		}
-		if rowY >= r.Y-lineH {
-			rrow := sdl.Rect{X: r.X, Y: rowY, W: rowW, H: lineH - 2}
+		if rowY >= r.Y-modRosterRowH {
+			rrow := sdl.Rect{X: r.X, Y: rowY, W: rowW, H: modRosterRowH - 2}
 			selected := p.uid != "" && p.uid == a.modDashTargetUID
 			if selected {
 				c.Fill(rrow, ColAccent)
@@ -291,17 +323,13 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 			if c.hovering(rrow) && c.clicked && p.uid != "" {
 				a.modDashTargetUID = p.uid
 			}
-			label := "[" + p.uid + "] " + rosterDisplayName(p)
-			if p.ipid != "" {
-				label += "  · ip:" + p.ipid
-			}
-			col := ColText
+			nameCol := ColText
 			if selected {
-				col = ColBackground
+				nameCol = ColBackground
 			}
-			c.LabelClipped(rrow.X+6, rrow.Y+4, rowW-12, label, col)
+			a.drawModRosterIdentity(p, rrow.X+6, rowY, rowW-12, nameCol)
 		}
-		rowY += lineH
+		rowY += modRosterRowH
 	}
 }
 
