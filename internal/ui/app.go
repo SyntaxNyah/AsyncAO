@@ -3122,13 +3122,26 @@ func (a *App) pollCharINI() {
 		// at emote 0 — see clampEmoteSel.
 		a.emoteIdx, a.emotePage = clampEmoteSel(a.emoteIdx, a.emotePage, len(a.emotes))
 		a.emoteAsk = nil // fresh char: re-demand its button art from scratch
-		// Prefetch the first few emotes speculatively.
+		// Speculatively prefetch emote sprites at LOW priority (sheds under load, never blocks
+		// live HIGH fetches). #127: with the bundle toggle on, grab this character's FULL set —
+		// every emote's idle AND talk (with the bare-spelling fallback) — so switching emotes is
+		// instant; off keeps the lightweight first-few-idles default. Fired once per char load
+		// (this branch runs on the char.ini result), and singleflight collapses any that are
+		// already cached/in-flight.
 		me := a.myCharName()
-		for i, e := range a.emotes {
-			if i >= 8 {
-				break
+		if a.d.Prefs.CharBundlePrefetchOn() {
+			for _, e := range a.emotes {
+				bare := a.urls.EmoteBare(me, e.Anim)
+				a.d.Manager.PrefetchWithFallback(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), bare, assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
+				a.d.Manager.PrefetchWithFallback(a.urls.Emote(me, e.Anim, courtroom.EmoteTalk), bare, assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
 			}
-			a.d.Manager.Prefetch(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
+		} else {
+			for i, e := range a.emotes {
+				if i >= 8 {
+					break
+				}
+				a.d.Manager.Prefetch(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
+			}
 		}
 	default:
 	}

@@ -1422,6 +1422,15 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	}
 	y += 28
 
+	// #127 full-character bundle prefetch (default OFF): pre-grab a character's whole sprite
+	// set on load so emote switches are instant — speculative + low priority, so it sheds
+	// under load and never blocks live fetches (it uses more bandwidth + cache up front).
+	bundle := a.d.Prefs.CharBundlePrefetchOn()
+	if next := c.Checkbox(pad, y, "Preload a character's whole sprite set (OFF by default): grabs every emote up front so switching is instant — speculative, low-priority, more bandwidth", bundle); next != bundle {
+		a.d.Prefs.SetCharBundlePrefetch(next)
+	}
+	y += 28
+
 	// Missing-asset banner: opt-in (default OFF). The failures always reach the
 	// debug overlay; this only governs the red on-screen banner.
 	showWarn := a.d.Prefs.AssetWarningsOn()

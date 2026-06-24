@@ -647,6 +647,7 @@ type AssetPreferences struct {
 	SavedStyles            []StylePreset                `json:"stylePresets,omitempty"` // #126 saved style+colour+emote moods
 	HideSpriteStyles       bool                         `json:"hideSpriteStyles"`       // ignore others' transmitted styles (default OFF = show)
 	HideReactions          bool                         `json:"hideReactions"`          // ignore others' transmitted emoji reactions (#2) (default OFF = show)
+	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`     // #127 pre-grab a char's FULL sprite set on load (default OFF)
 	MyProfile              ProfilePref                  `json:"profile"`                // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
@@ -876,6 +877,7 @@ type prefsJSON struct {
 	SavedStyles            []StylePreset    `json:"stylePresets,omitempty"` // #126 saved moods
 	HideSpriteStyles       bool             `json:"hideSpriteStyles"`       // default OFF (show others' styles)
 	HideReactions          bool             `json:"hideReactions"`          // default OFF (show others' reactions, #2)
+	CharBundlePrefetch     bool             `json:"charBundlePrefetch"`     // #127 default OFF
 	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
 	ChatboxOpacity         *int             `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
@@ -1393,6 +1395,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.SavedStyles = sanitizeStylePresets(onDisk.SavedStyles) // #126 (bounded + opacity-clamped)
 	p.HideSpriteStyles = onDisk.HideSpriteStyles
 	p.HideReactions = onDisk.HideReactions
+	p.CharBundlePrefetch = onDisk.CharBundlePrefetch
 	if onDisk.Profile != nil {
 		p.MyProfile = clampProfile(*onDisk.Profile)
 	}
@@ -3195,6 +3198,19 @@ func (p *AssetPreferences) SetHideReactions(b bool) {
 	p.mu.Unlock()
 	p.markDirty()
 }
+
+// CharBundlePrefetchOn reports the #127 toggle (OFF by default): when on, loading a character
+// pre-grabs its FULL emote set (every idle + talk) at low priority, so emote switches are
+// instant. Speculative + sheddable, so it never blocks live fetches; off keeps the lightweight
+// "first few emotes" default.
+func (p *AssetPreferences) CharBundlePrefetchOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CharBundlePrefetch
+}
+
+// SetCharBundlePrefetch toggles full-character bundle prefetch.
+func (p *AssetPreferences) SetCharBundlePrefetch(b bool) { p.setBoolPref(&p.CharBundlePrefetch, b) }
 
 // Profile reports the user's character profile (#101).
 func (p *AssetPreferences) Profile() ProfilePref {

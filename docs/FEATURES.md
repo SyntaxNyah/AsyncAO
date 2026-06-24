@@ -39,6 +39,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   is evicted from the texture cache mid-message (memory pressure in a packed
   room, or a hover-preview fetch), it is re-demanded at high priority within a
   paced window instead of vanishing to black.
+- **Full-character sprite preload** (#127, Settings → Assets, **OFF by default**):
+  on a character load the default grabs only the first few emotes' idle sprites;
+  with this on, AsyncAO pre-grabs the character's **whole** set — every emote's
+  idle *and* talk (with the bare-spelling fallback) — at **LOW priority**, so
+  switching emotes is instant. Speculative, so backpressure **sheds** it before
+  any live HIGH fetch and singleflight collapses anything already cached; it just
+  costs more bandwidth + cache up front, hence opt-in. Keybind `Ctrl+\`.
 - **High-res art is downscaled at decode, in high quality** (automatic, no
   setting): packs increasingly ship **huge** sprites (Skrapegropen's are
   ~2000×2000 px), and shrinking a 2000 px source into a ~700 px viewport with
