@@ -14,6 +14,7 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -110,6 +111,24 @@ func (a *App) stopLayoutEdit() {
 	a.ctx.modalOn = false
 }
 
+// openLayoutEditor launches the live layout editor from a menu entry (the discoverable front door),
+// or flashes how to enable it when the current theme has no editable layout. The editor needs a
+// theme that ships courtroom_design.ini and the theme-layout option on; on the bare default layout
+// there are no editable boxes yet.
+func (a *App) openLayoutEditor() {
+	if a.themeLay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+		a.showUICfg = false
+		a.startLayoutEdit()
+		return
+	}
+	if !a.d.Prefs.ThemeLayoutEnabled() {
+		a.warnLine = "Layout editor: turn on Settings → Use theme layout, then load a theme that ships a layout."
+	} else {
+		a.warnLine = "Layout editor: this theme has no editable layout (needs courtroom_design.ini) — try another theme."
+	}
+	a.warnAt = a.now()
+}
+
 // layoutEditFence claims the pointer for the editor BEFORE the themed
 // widgets draw (they see hovering()==false everywhere and stay inert).
 func (a *App) layoutEditFence() {
@@ -134,7 +153,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Banner + chrome (raw-hit buttons — the fence blocks kit ones).
-	banner := "LAYOUT EDIT — drag moves, corner grip resizes, right-click resets one, Ctrl+Z/Y undo/redo, Esc exits"
+	banner := "LAYOUT EDIT — drag = move, corner grip = resize, Tab = cycle overlapping boxes, right-click = reset, Ctrl+Z/Y = undo, Esc = exit"
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: 26}, sdl.Color{R: 0, G: 0, B: 0, A: 210})
 	c.Label(pad, 5, banner, ColTierYellow)
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
@@ -185,8 +204,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		a.layoutSnap = !a.layoutSnap
 	}
 
-	// Hover pick: the SMALLEST rect under the cursor wins (stable order
-	// via sorted keys so ties don't flicker).
+	// Editable keys (skip the design canvas + chatbox children).
 	keys := make([]string, 0, len(lay.r))
 	for k := range lay.r {
 		if !layoutEditSkip[k] {
@@ -194,30 +212,63 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 	sort.Strings(keys)
-	hoverKey := ""
-	var hoverArea int64 = 1 << 62
+	// The stack of boxes under the cursor, SMALLEST area first (stable). Tab cycles which one is
+	// armed for a move, so a big box hidden under a small one is still reachable. The index resets
+	// whenever the stack under the cursor changes.
+	var stack []string
 	for _, k := range keys {
-		r := lay.r[k]
-		if pointIn(c.mouseX, c.mouseY, r) {
-			if area := int64(r.W) * int64(r.H); area < hoverArea {
-				hoverKey, hoverArea = k, area
-			}
+		if pointIn(c.mouseX, c.mouseY, lay.r[k]) {
+			stack = append(stack, k)
 		}
 	}
-
-	// Begin a drag on press: corner grip = resize, anywhere else = move.
-	if pressed && a.editDrag == 0 && hoverKey != "" && c.mouseY > 26 {
-		a.editKey = hoverKey
-		r := lay.r[hoverKey]
-		grip := sdl.Rect{X: r.X + r.W - layoutHandlePx, Y: r.Y + r.H - layoutHandlePx, W: layoutHandlePx, H: layoutHandlePx}
-		if pointIn(c.mouseX, c.mouseY, grip) {
-			a.editDrag = 2 // resize
-		} else {
-			a.editDrag = 1 // move
+	sort.SliceStable(stack, func(i, j int) bool {
+		ri, rj := lay.r[stack[i]], lay.r[stack[j]]
+		return int64(ri.W)*int64(ri.H) < int64(rj.W)*int64(rj.H)
+	})
+	hoverKey := ""
+	switch {
+	case a.editDrag != 0:
+		hoverKey = a.editKey // mid-drag: keep the grabbed box highlighted
+	case len(stack) > 0:
+		if sig := strings.Join(stack, "\x00"); sig != a.editPickSig {
+			a.editPickSig, a.editPickIdx = sig, 0 // a new stack under the cursor
 		}
-		a.editStart = [2]int32{c.mouseX, c.mouseY}
-		a.editBase = a.themeRects[hoverKey]
-		a.pushLayoutUndo() // snapshot before the move/resize (popped at release if it was a no-op)
+		if c.keyPressed == sdl.K_TAB {
+			a.editPickIdx++
+			c.keyPressed = 0
+		}
+		a.editPickIdx %= len(stack)
+		hoverKey = stack[a.editPickIdx]
+	default:
+		a.editPickSig, a.editPickIdx = "", 0
+	}
+
+	// Begin a drag on press. RESIZE takes priority and reaches the LARGEST box whose corner grip is
+	// under the cursor — so a big box's grip can't be blocked by a small box sitting on its corner.
+	// Otherwise MOVE the armed box (hoverKey, Tab-cyclable).
+	if pressed && a.editDrag == 0 && c.mouseY > 26 {
+		resizeKey := ""
+		var gripArea int64 = -1
+		for _, k := range keys {
+			r := lay.r[k]
+			grip := sdl.Rect{X: r.X + r.W - layoutHandlePx, Y: r.Y + r.H - layoutHandlePx, W: layoutHandlePx, H: layoutHandlePx}
+			if pointIn(c.mouseX, c.mouseY, grip) {
+				if area := int64(r.W) * int64(r.H); area > gripArea {
+					resizeKey, gripArea = k, area
+				}
+			}
+		}
+		switch {
+		case resizeKey != "":
+			a.editKey, a.editDrag = resizeKey, 2 // resize
+		case hoverKey != "":
+			a.editKey, a.editDrag = hoverKey, 1 // move
+		}
+		if a.editDrag != 0 {
+			a.editStart = [2]int32{c.mouseX, c.mouseY}
+			a.editBase = a.themeRects[a.editKey]
+			a.pushLayoutUndo() // snapshot before the move/resize (popped at release if it was a no-op)
+		}
 	}
 	// Right-click resets the hovered widget to the theme's own rect.
 	if c.rightClicked && hoverKey != "" {
@@ -313,6 +364,10 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	if a.editKey != "" {
 		r := a.themeRects[a.editKey]
 		c.Label(pad, h-22, fmt.Sprintf("%s: x=%d y=%d w=%d h=%d (design px)", a.editKey, r.X, r.Y, r.W, r.H), ColText)
+	}
+	// Stacked-boxes hint: when several boxes overlap under the cursor, surface that Tab cycles them.
+	if a.editDrag == 0 && len(stack) > 1 {
+		c.Label(pad, h-40, fmt.Sprintf("%s — %d boxes stacked here, Tab to cycle (%d/%d)", hoverKey, len(stack), a.editPickIdx+1, len(stack)), ColTierYellow)
 	}
 }
 

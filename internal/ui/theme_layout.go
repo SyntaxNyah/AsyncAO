@@ -788,6 +788,17 @@ func (a *App) drawThemedExtrasButton(w, h int32) {
 	}
 	c.Border(st, ColAccent)
 	c.Tooltip(st, "Recolour / glow your character on the fly — other AsyncAO players see it")
+
+	// Sibling "Edit Layout" button: the live layout editor was buried in Hide chrome and nobody
+	// found it. Surface it right next to Extras — AO2 themes are exactly where it works. Drag and
+	// resize every box live; saves per theme.
+	elLabel := "Edit Layout"
+	el := sdl.Rect{X: st.X + st.W + 4, Y: r.Y, W: c.TextWidth(elLabel) + 14, H: bh}
+	if c.Button(el, elLabel) {
+		a.openLayoutEditor()
+	}
+	c.Border(el, ColAccent)
+	c.Tooltip(el, "Live layout editor — drag & resize every box (log, OOC, stage, buttons). Tab cycles overlapping; saves per theme.")
 }
 
 // drawWidgetsPanel moved to floatbox.go as the non-blocking drawFloatingExtras.

@@ -525,6 +525,11 @@ type App struct {
 	editStart  [2]int32
 	editBase   theme.Rect
 	layoutSnap bool // snap edits to a design-space grid (toggle in the editor)
+	// Overlap cycling: Tab steps through the stack of boxes under the cursor (smallest first) so a
+	// big box hidden under a small one is still reachable. editPickSig is the current stack's
+	// fingerprint — the index resets when the stack changes.
+	editPickIdx int
+	editPickSig string
 	// Layout-editor undo/redo: each edit snapshots the whole rect map (≈40
 	// entries) before changing it; Ctrl+Z restores, Ctrl+Y redoes. Bounded.
 	editUndo []map[string]theme.Rect
