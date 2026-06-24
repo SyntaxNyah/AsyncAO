@@ -3179,23 +3179,43 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	c.Tooltip(sdl.Rect{X: immedX, Y: icY, W: immedW, H: fH}, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	var send bool
 	icX := immedX + immedW + 6
-	// #M2 S1: emoji picker button on the IC bar's left edge.
-	if a.drawEmojiBarButton(sdl.Rect{X: icX, Y: icY, W: fH, H: fH}) {
-		a.showEmojiPicker = !a.showEmojiPicker
-	}
-	icX += fH + 4
-	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow).
-	a.fxButton(sdl.Rect{X: icX, Y: icY, W: fxBtnW, H: fH})
-	icX += fxBtnW + 4
-	// #2: React button — queue an emoji reaction to the last message (rides your next send).
-	if a.reactButton(sdl.Rect{X: icX, Y: icY, W: reactBtnW, H: fH}) {
-		a.toggleReactPicker()
-	}
-	icX += reactBtnW + 4
 	icCounterOn := a.d.Prefs.MessageCounterOn()
+	// The IC input must always keep at least minICInputW (plus the counter's reserve when it's
+	// on). Each IC-bar button is placed ONLY if it still leaves that room, so a narrow stage
+	// drops them right-to-left — React, then FX, then emoji — instead of pushing the text input
+	// off the edge. Regression guard: adding the React button collapsed the input to zero width
+	// for users with a narrower stage ("the IC bar disappeared"). Inlined (no closure) to keep
+	// this per-frame row allocation-free.
+	const minICInputW = 150
+	tailReserve := int32(minICInputW)
+	if icCounterOn {
+		tailReserve += msgCounterReserve
+	}
+	// #M2 S1: emoji picker button on the IC bar's left edge.
+	if vp.W-(icX-pad)-(fH+4) >= tailReserve {
+		if a.drawEmojiBarButton(sdl.Rect{X: icX, Y: icY, W: fH, H: fH}) {
+			a.showEmojiPicker = !a.showEmojiPicker
+		}
+		icX += fH + 4
+	}
+	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow).
+	if vp.W-(icX-pad)-(fxBtnW+4) >= tailReserve {
+		a.fxButton(sdl.Rect{X: icX, Y: icY, W: fxBtnW, H: fH})
+		icX += fxBtnW + 4
+	}
+	// #2: React button — queue an emoji reaction to the last message (rides your next send).
+	if vp.W-(icX-pad)-(reactBtnW+4) >= tailReserve {
+		if a.reactButton(sdl.Rect{X: icX, Y: icY, W: reactBtnW, H: fH}) {
+			a.toggleReactPicker()
+		}
+		icX += reactBtnW + 4
+	}
 	icW := vp.W - (icX - pad)
 	if icCounterOn {
 		icW -= msgCounterReserve
+	}
+	if icW < minICInputW {
+		icW = minICInputW // defensive floor: never collapse the input, even on a tiny stage
 	}
 	icBox := sdl.Rect{X: icX, Y: icY, W: icW, H: fH}
 	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
