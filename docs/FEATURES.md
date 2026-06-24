@@ -210,7 +210,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   controls:** Reduce-motion drops a received style's wobble/spin, and **Settings →
   General** has a "**Hide other players' sprite styles**" off-switch. *(Per-pixel
   effects — invert / grayscale — are a planned follow-up that builds cached
-  variant textures.)*
+  variant textures.)* **Style presets (#126):** the box's bottom section saves the
+  current look — **style + text colour + the selected emote (by name)** — as a named
+  **mood**; click to apply, or **bind a bare key** to it (a key-capture flow like the
+  showname keybinds) and **swap moods hands-free** in the courtroom. Bounded, persisted;
+  the bind machinery keeps one key → one preset.
 - **Character profile** (#101, **Settings → General → Your profile**, OFF by
   default): a small **card** — name, **pronouns**, a one-line **tagline**, a short
   **bio**, and **URLs** for art / theme-song — that other AsyncAO players will see

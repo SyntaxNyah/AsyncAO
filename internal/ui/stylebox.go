@@ -47,6 +47,8 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 26 // glow / wobble / spin row
 	bh += 26 // invert / grayscale row
 	bh += 30 // clear button
+	// #126 presets: a header, a Save row, and one row per saved mood.
+	bh += 22 + 28 + int32(a.d.Prefs.StylePresetCount())*26
 	bh += styleBoxPad
 	bw := styleBoxW
 	if a.styleBoxUserW > 0 {
@@ -277,6 +279,8 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if c.Button(sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}, "Clear style") {
 		a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})
 	}
+	y += btnH + 8
+	a.drawStylePresets(c, x, y, r.W-styleBoxPad*2) // #126 saved moods + keybinds
 
 	// Right-edge width grip: drag to widen the box (the notes / sliders / buttons
 	// all follow r.W). Height stays content-driven. The hit strip sits in the right

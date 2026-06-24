@@ -253,7 +253,7 @@ func (a *App) handleEmoteKeys() {
 // (and dispatches macro keybinds, then character keybinds — macros win
 // a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
-	if !a.handleMacroKeys() && !a.handleJukeboxKeys() && !a.handleShownameKeys() && !a.handleICPhraseKeys() {
+	if !a.handleMacroKeys() && !a.handleJukeboxKeys() && !a.handleShownameKeys() && !a.handleICPhraseKeys() && !a.handleStylePresetKeys() {
 		a.handleCharKeys()
 		a.handleEmoteKeys()
 	}

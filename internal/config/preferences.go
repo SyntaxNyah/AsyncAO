@@ -3067,6 +3067,14 @@ func sanitizeStylePresets(in []StylePreset) []StylePreset {
 	return out
 }
 
+// StylePresetCount returns how many presets are saved (no allocation — for the Style box's
+// per-frame height calc).
+func (p *AssetPreferences) StylePresetCount() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return len(p.SavedStyles)
+}
+
 // StylePresets returns a copy of the saved presets (so a caller can't mutate the live slice).
 func (p *AssetPreferences) StylePresets() []StylePreset {
 	p.mu.RLock()

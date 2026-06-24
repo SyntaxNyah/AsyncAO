@@ -903,6 +903,10 @@ type sessionState struct {
 	shownameBindFor string
 	shownameKeys    map[string]string // key name → showname
 	shownameKeysRev map[string]string // showname → key name (badges)
+	// #126 custom style presets: stylePresetBindFor is the preset NAME awaiting a key-capture
+	// ("" = none); stylePresetNameInput is the Style box's "name this mood" field.
+	stylePresetBindFor   string
+	stylePresetNameInput string
 	// IC quick-phrases (ic_phrase.go): a bare key sends a canned IC line.
 	// icPhraseBindFor is the phrase a Settings key-capture is armed for ("" = none);
 	// icPhraseKeys caches the global key→phrase binds for the per-frame dispatch.
@@ -3272,8 +3276,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollMacroBind()
 	a.pollShownameBind()
 	a.pollICPhraseBind()
-	a.pollAutoReconnect() // M2: due auto-retry fires from the lobby; a single time-compare otherwise
-	a.pollTimer()         // #97 local alarm: one compare while running, zero cost when idle
+	a.pollStylePresetBind() // #126
+	a.pollAutoReconnect()   // M2: due auto-retry fires from the lobby; a single time-compare otherwise
+	a.pollTimer()           // #97 local alarm: one compare while running, zero cost when idle
 	a.pollDownload()
 	a.pollMakerExport() // M16: deliver the self-contained archive export result
 	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
