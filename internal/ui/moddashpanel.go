@@ -204,7 +204,6 @@ func (a *App) drawModDashChip(x, y int32, label string, on bool) int32 {
 // yet when you claim it); the uncm / area-kick / lock controls are gated on actually being CM.
 func (a *App) drawModDashActions(x, y, w int32) {
 	c := a.ctx
-	sw := a.detectedSoftware()
 	row, hasTarget := a.rosterByUID(a.modDashTargetUID)
 
 	if hasTarget {
@@ -244,45 +243,16 @@ func (a *App) drawModDashActions(x, y, w int32) {
 		y += btnH + 10
 	}
 
-	// Room (CM) controls.
+	// CM (area control) is its OWN panel now (#130) — it opens from the corner "CM" chip the
+	// moment you hold CM, so the mod dashboard stays focused on ban / kick. Claim CM with /cm.
+	y += 6
 	c.Label(x, y, "Room (CM)", ColAccent)
 	y += 20
-	if !a.amICM() {
-		if claim := courtroom.CMClaim(sw); claim != "" {
-			if c.Button(sdl.Rect{X: x, Y: y, W: 160, H: btnH}, "Claim CM (/cm)") {
-				a.sendModCommand(claim)
-			}
-			y += btnH + 6
-			c.LabelClipped(x, y, w, "Claim CM to unlock the room controls.", ColTextDim)
-		} else if a.dashSoftwareKnown() {
-			c.LabelClipped(x, y, w, "This software has no /cm model.", ColTextDim)
-		}
-		return
+	if a.amICMNow {
+		c.LabelClipped(x, y, w, "You hold CM — open the CM panel from the corner chip.", ColTextDim)
+	} else {
+		c.LabelClipped(x, y, w, "Type /cm to claim CM; its controls open from the corner chip.", ColTextDim)
 	}
-	// We are CM: flow the room-control buttons, wrapping within the column.
-	bx := x
-	mk := func(label, cmd string) {
-		if cmd == "" {
-			return
-		}
-		bw := c.TextWidth(label) + 18
-		if bx+bw > x+w {
-			bx = x
-			y += btnH + 6
-		}
-		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, label) {
-			a.sendModCommand(cmd)
-		}
-		bx += bw + 6
-	}
-	tuid := ""
-	if hasTarget {
-		tuid = row.uid
-	}
-	mk("Release CM", courtroom.CMRelease(sw))
-	mk("Lock", courtroom.LockArea(sw))
-	mk("Unlock", courtroom.UnlockArea(sw))
-	mk("Kick from area", courtroom.AreaKick(sw, tuid)) // "" (skipped) when no target / unsupported
 }
 
 // drawModDashRoster renders the live roster as a clickable, scrollable list. Selecting a row sets
@@ -355,7 +325,7 @@ func (a *App) drawModDashBanBox(w, h int32) {
 		return
 	}
 	isBan := a.banBoxKind == 1
-	bw, bh := int32(540), int32(330)
+	bw, bh := int32(560), int32(372) // ban: taller — the duration presets wrap to two rows
 	if !isBan {
 		bh = 250
 	}

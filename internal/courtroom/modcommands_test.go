@@ -173,4 +173,17 @@ func TestDurationToken(t *testing.T) {
 	if got := durationToken(SoftwareWhisker, Ban6Hours); got != "6 hours" {
 		t.Errorf("Whisker 6 hours = %q, want '6 hours'", got)
 	}
+	// Longer presets (#130 follow-up): 3 weeks short/human, and 1 month → a universal day count.
+	if got := durationToken(SoftwareAthena, Ban3Weeks); got != "3w" {
+		t.Errorf("Athena 3 weeks = %q, want '3w'", got)
+	}
+	if got := durationToken(SoftwareTsuserver, Ban3Weeks); got != "3 weeks" {
+		t.Errorf("KFO 3 weeks = %q, want '3 weeks'", got)
+	}
+	if got := durationToken(SoftwareTsuserver, Ban1Month); got != "30 days" {
+		t.Errorf("KFO 1 month = %q, want '30 days' (months parse inconsistently)", got)
+	}
+	if got := durationToken(SoftwareAkashi, Ban1Month); got != "30d" {
+		t.Errorf("Akashi 1 month = %q, want '30d'", got)
+	}
 }

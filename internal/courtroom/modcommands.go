@@ -81,6 +81,9 @@ const (
 	Ban1Day
 	Ban3Days
 	Ban1Week
+	Ban2Weeks
+	Ban3Weeks
+	Ban1Month
 	BanDurationCount
 )
 
@@ -103,6 +106,14 @@ func durationToken(sw ServerSoftware, d BanDuration) string {
 		return pick(human, "3 days", "3d")
 	case Ban1Week:
 		return pick(human, "1 week", "1w")
+	case Ban2Weeks:
+		return pick(human, "2 weeks", "2w")
+	case Ban3Weeks:
+		return pick(human, "3 weeks", "3w")
+	case Ban1Month:
+		// Months parse inconsistently (Akashi's "m" is minutes; not every parser takes "1mo"),
+		// so emit a day count every server accepts. The label still reads "1 month".
+		return pick(human, "30 days", "30d")
 	}
 	return ""
 }
@@ -122,6 +133,12 @@ func BanDurationLabel(d BanDuration) string {
 		return "3 days"
 	case Ban1Week:
 		return "1 week"
+	case Ban2Weeks:
+		return "2 weeks"
+	case Ban3Weeks:
+		return "3 weeks"
+	case Ban1Month:
+		return "1 month"
 	}
 	return ""
 }

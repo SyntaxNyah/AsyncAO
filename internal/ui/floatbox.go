@@ -149,7 +149,7 @@ func hexNibble(b byte) (uint8, bool) {
 func (a *App) courtModalOpen() bool {
 	return a.showIni || a.bgPick.show || a.showEvid || a.showModcall ||
 		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair ||
-		a.showEmojiPicker || a.showModDash
+		a.showEmojiPicker || a.showModDash || a.showCMPanel
 }
 
 // extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any
