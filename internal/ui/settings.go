@@ -1431,6 +1431,14 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	}
 	y += 28
 
+	// #128 connection-quality chip: a tiny signal-bar icon (bottom-left) showing the server
+	// round-trip time, with the exact ms on hover. Off by default → no ping loop runs.
+	pingChip := a.d.Prefs.PingChipOn()
+	if next := c.Checkbox(pad, y, "Connection ping chip (OFF by default): a tiny signal-bar icon (bottom-left); hover it for the exact ms", pingChip); next != pingChip {
+		a.d.Prefs.SetPingChip(next)
+	}
+	y += 28
+
 	// Missing-asset banner: opt-in (default OFF). The failures always reach the
 	// debug overlay; this only governs the red on-screen banner.
 	showWarn := a.d.Prefs.AssetWarningsOn()

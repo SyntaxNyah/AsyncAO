@@ -130,6 +130,18 @@ func (c *Conn) readLoop() {
 	}
 }
 
+// Ping sends a WebSocket ping control frame and returns the round-trip time once the peer's
+// pong arrives (or an error if ctx fires first / the conn died). coder/websocket permits Ping
+// concurrently with the read loop and Send, so a background ping-loop can measure latency
+// without disturbing traffic. Used by the optional connection-quality chip (#128).
+func (c *Conn) Ping(ctx context.Context) (time.Duration, error) {
+	start := time.Now()
+	if err := c.ws.Ping(ctx); err != nil {
+		return 0, err
+	}
+	return time.Since(start), nil
+}
+
 // ConnStats is a point-in-time counter snapshot.
 type ConnStats struct {
 	Sent     int64

@@ -46,6 +46,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   switching emotes is instant. Speculative, so backpressure **sheds** it before
   any live HIGH fetch and singleflight collapses anything already cached; it just
   costs more bandwidth + cache up front, hence opt-in. Keybind `Ctrl+\`.
+- **Connection-quality chip** (#128, Settings → Assets, **OFF by default**): a tiny
+  signal-bar icon (bottom-left) showing the WebSocket round-trip — four bars,
+  green / amber / red by latency — with the **exact ms on hover**. A single
+  background goroutine pings the **active** connection (`Conn.Ping` → a WS ping/pong,
+  safe alongside the read loop) and stores the RTT atomically; the frame loop
+  starts / stops / retargets it as the active conn changes (connect, tab switch,
+  reconnect, disconnect) or the toggle flips. **Off → no goroutine at all**, so it's
+  genuinely zero-cost by default; on, the chip draw is 0-alloc (Fill bars + a cached
+  tooltip rebuilt only when the ms moves). Keybind `Ctrl+\``.
 - **High-res art is downscaled at decode, in high quality** (automatic, no
   setting): packs increasingly ship **huge** sprites (Skrapegropen's are
   ~2000×2000 px), and shrinking a 2000 px source into a ~700 px viewport with

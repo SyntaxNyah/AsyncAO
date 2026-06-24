@@ -188,6 +188,18 @@ type App struct {
 	pinging  bool
 	pingGen  int
 
+	// #128 connection-quality chip (optional, off by default). A single background goroutine
+	// pings the ACTIVE conn and stores the round-trip time; the frame loop (updatePingLoop)
+	// starts/stops/retargets it as the active conn changes (connect / tab switch / reconnect /
+	// disconnect) or the chip toggles. pingRTT is the only field the goroutine touches (atomic,
+	// read by the render thread); the rest are render-thread-only. When the chip is off there's
+	// no goroutine at all, so it's truly zero-cost by default.
+	pingRTT     atomic.Int64       // round-trip nanoseconds (0 = unknown); goroutine→render
+	pingConn    *protocol.Conn     // the conn the live loop targets (nil = no loop)
+	pingCancel  context.CancelFunc // stops the live loop
+	pingLabel   string             // cached tooltip text, rebuilt only when the ms bucket changes
+	pingLabelMs int                // the ms the cached label was built for (-1 = none)
+
 	// --- the active server session (every per-server field) ---
 	// sessionState is EMBEDDED so the whole session parks/restores as one
 	// struct move when tabs switch — see tabs.go. Field names stay
@@ -3274,6 +3286,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollManifest()
 	a.pollFontChain()
 	a.pollEmojiFont()
+	a.updatePingLoop()             // #128: keep the ping loop targeting the active conn (no-op/no goroutine when the chip is off)
 	if a.ctx.TakeWantsFallback() { // a non-ASCII rune was drawn → kick the one broad-font read
 		a.ensureFallbackFontLoad()
 	}
@@ -3396,6 +3409,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawTabBar(winW)
 	// Download progress chip floats under the strip while a grab runs.
 	a.drawDownloadIndicator(winW)
+	a.drawPingChip(8, winH-16) // #128 connection-quality chip (bottom-left; off by default)
 	// Perf HUD (F3) and the debug overlay paint over every screen
 	// (allocs acceptable: opt-in diagnostics paths, never on by default).
 	if a.perfHUD {
