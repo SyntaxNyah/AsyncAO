@@ -253,6 +253,65 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   *with* the motion, so you can send a **red shaking** word (the rainbow effect
   still overrides colour per glyph). *(Emoji/CJK per-glyph fallback and bold/italic
   inside an animated message are still single-base — a planned follow-up.)*
+- **Sprite outline / drop-shadow / glitch — transmitted** (#8 / #13, **Extras →
+  Sprite Style**): three more **transmitted** sprite effects on the same invisible
+  channel as the style above. **Outline** draws a white silhouette border,
+  **drop-shadow** a soft dark offset, and **glitch** a chromatic-aberration shimmer
+  with an occasional jolt — every AsyncAO player sees them on your sprite; AO2 / webAO
+  see a normal character. Because the style's flags byte was full, these ride a
+  **second flags byte appended only when one is set**, so the wire stays the original
+  length for a plain style and an **older AsyncAO client still decodes the rest** (the
+  version stays 1 — a bump would make old clients drop the whole style). Render builds
+  **one cached white silhouette** variant, `SetColorMod`-tinted and offset-blitted
+  behind the sprite (8 directions for the outline, 1 for the shadow) and overlays
+  red/blue ghost copies for the glitch; the scratch rects live on the viewport and both
+  colour **and** alpha mods are restored on the shared page, so a received effect is
+  **0-alloc** and an unset one is byte-identical.
+- **Real reactions — transmitted, cross-AsyncAO** (#2, the **React button** on the IC
+  bar): react to the last message with an emoji from a fixed palette; every AsyncAO
+  player sees it **float up over the stage** (rise + fade), while AO2 / webAO see clean
+  text. AO has no immediate side-channel (the wall that killed an earlier reactions
+  attempt), so the reaction **piggybacks on your next IC message** as an **invisible
+  zero-width frame** (a new magic byte, alongside style / profile / status / effects).
+  It names its target by a **content-stable hash** of the message's character name +
+  clean text — computed identically on every client — so the float anchors to the right
+  message everywhere; a stray / late-join reference simply matches nothing (benign). The
+  active-float ring is **bounded** and the overlay is a **0-alloc early return when
+  nothing is floating** (and 0-alloc with floats active — pinned by a dedicated ui test,
+  since the overlay isn't on `render.Viewport`). The target is **snapshotted when you
+  open the palette**, so a message landing mid-pick can't shift it; the pick **rides your
+  next message** and clears (your own reaction floats when that message echoes back, so
+  there's no separate local echo). Drawn in **both** the classic and themed courtroom.
+  **Viewer opt-out:** Settings → "Hide other players' emoji reactions" (default OFF =
+  show), like received sprite styles.
+- **Inline emotes** (#18): Discord-style **`:joy:` / `:fire:` / `:thumbsup:`** shortcodes
+  render as a **colour emoji** in **both the IC log and the live chatbox** (~31
+  built-ins). **No wire** — the shortcode text travels **literally**, so AO2 / webAO show
+  the readable `:joy:` while AsyncAO substitutes the emoji at display time through the
+  existing colour-emoji path (no new render machinery). The parser
+  (`courtroom.ExpandInlineEmotes`, resolver-param so the chatbox path in the courtroom
+  reducer shares the ui-side registry) is **known-shortcode-only**, so a URL's `http://`,
+  a `12:30`, or an unknown `:foo:` is never touched, and it's **0-alloc** when a line
+  carries no shortcode. The chatbox substitution happens in `begin()` **after the effect
+  spans are decoded and before the typewriter starts**, so the per-rune reveal, the
+  blankpost test, and the raster all consume the same text — and it is **gated off when
+  the message carries `[shake]`/`[wave]` spans** (whose wire indices were measured over
+  the literal text). Expansion is **display-only**: the input box still shows `:joy:` as
+  you type, and the wire `msg.Message` stays literal, so the reaction ref and recordings
+  are unaffected. *(Custom image-URL emotes — an actual fetched picture instead of an
+  emoji — are a possible later slice.)*
+- **Local viewport FX** (Settings, all **OFF by default**, pure local eye-candy —
+  nothing on the wire, nobody else sees it): a batch of viewer-side polish, each
+  **0-alloc** when on and **byte-identical** when off (pinned per feature, and
+  `BenchmarkRenderFrame` stays 0/op). **Shout screen-punch** pops the stage scale when an
+  interjection lands (composes with the existing screenshake); **per-character chatbox
+  tint** blends the speaker's name-colour hue into the chatbox so you can tell who's
+  talking at a glance; **post-processing** overlays a **vignette / scanlines / film
+  grain** (each a cached texture in one stretched blit — the practical "GPU-accelerated
+  shader" path for SDL2's 2D renderer, which has no fragment-shader entry point, #47);
+  **entrance slide-in** drifts a new speaker's sprite in from the side on the first line;
+  and **depth-of-field** soft-focuses + dims the background behind the speaker (a
+  multi-offset smear, since go-sdl2 exposes no per-texture scale mode for a true blur).
 - **Animated theme art plays**: chatbox skins, `btn/` buttons, screen
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on
