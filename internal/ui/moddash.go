@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -31,22 +32,30 @@ func (a *App) amIMod() bool {
 }
 
 // myAreaInfo returns the live ARUP state for our current area (ok=false when unknown). AreaInfo
-// is parallel to the area-name list, so we match our current area's name to its index.
+// is parallel to the area-name list, so we match our area's name to its index. We use myAreaName()
+// — the server-pushed area of OUR uid (a.sess.PlayerArea(PlayerID)), falling back to the
+// click-driven curArea — NOT curArea directly: a freshly-joined CM hasn't clicked an area, so
+// curArea would be empty/stale and the CM section would never appear.
 func (a *App) myAreaInfo() (courtroom.AreaInfo, bool) {
 	if a.sess == nil {
 		return courtroom.AreaInfo{}, false
 	}
+	name := a.myAreaName()
 	for i := range a.sess.Areas {
-		if a.sess.Areas[i] == a.curArea && i < len(a.sess.AreaInfo) {
+		if a.sess.Areas[i] == name && i < len(a.sess.AreaInfo) {
 			return a.sess.AreaInfo[i], true
 		}
 	}
 	return courtroom.AreaInfo{}, false
 }
 
-// amICM reports whether the ARUP CM column for our area names us — a best-effort identity match
-// (showname or character), so the CM menu surfaces once a /cm takes effect on the wire. "FREE" /
-// blank means no CM.
+// amICM reports whether the ARUP CM column for our area names us, so the CM menu surfaces once a
+// /cm takes effect on the wire. "FREE" / blank means no CM. Servers spell that column differently
+// — Athena/Nyathena write "<char> (<uid>)" (server.go sendCMArup), others use the showname or OOC
+// name — so this is a best-effort match of ANY of our identities. The UID (a.sess.PlayerID, our
+// own client id) is the STRONGEST signal where present: it's matched in Athena's parened form
+// "(<uid>)" exactly, before the looser substring fallbacks. Best-effort by design — it only ever
+// reveals harmless room controls, never anything destructive.
 func (a *App) amICM() bool {
 	info, ok := a.myAreaInfo()
 	if !ok {
@@ -56,11 +65,17 @@ func (a *App) amICM() bool {
 	if cm == "" || cm == "free" || cm == "-" {
 		return false
 	}
-	if name := strings.ToLower(strings.TrimSpace(a.effectiveShowname())); name != "" && strings.Contains(cm, name) {
+	// Exact: our uid in the Athena/Nyathena "(<uid>)" form (no false positive — the parens fence
+	// it off from other numbers like a longer uid or a name's digits).
+	if a.sess != nil && a.sess.PlayerID > 0 && strings.Contains(cm, "("+strconv.Itoa(a.sess.PlayerID)+")") {
 		return true
 	}
-	if char := strings.ToLower(strings.TrimSpace(a.myCharName())); char != "" && strings.Contains(cm, char) {
-		return true
+	// Looser: our showname / character / OOC name as a substring (covers the servers that name the
+	// CM by one of those instead of the uid).
+	for _, id := range []string{a.effectiveShowname(), a.myCharName(), a.oocName} {
+		if id = strings.ToLower(strings.TrimSpace(id)); id != "" && strings.Contains(cm, id) {
+			return true
+		}
 	}
 	return false
 }

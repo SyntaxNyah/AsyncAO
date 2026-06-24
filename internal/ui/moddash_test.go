@@ -51,6 +51,20 @@ func TestDashDetection(t *testing.T) {
 	if a.amICM() {
 		t.Error("'FREE' (no CM) must not count")
 	}
+	// UID match: Athena/Nyathena write the CM column as "<char> (<uid>)", so our own client uid
+	// (PlayerID) in that parened form is an exact CM signal — even when the name doesn't match.
+	a.sess.PlayerID = 7
+	a.shownameOverride = "Zzz" // ensure ONLY the uid can match
+	a.sess.AreaInfo[1].CM = "Apollo Justice (7)"
+	if !a.amICM() {
+		t.Error("our uid in the '(7)' form should read as us being CM")
+	}
+	a.sess.AreaInfo[1].CM = "Apollo Justice (17)" // a different uid that merely contains '7'
+	if a.amICM() {
+		t.Error("uid 7 must not match '(17)' — the parens fence the number off")
+	}
+	a.sess.PlayerID = 0 // reset so the substring-only checks below aren't affected
+
 	// A non-matching identity reads as not-CM (no false positive).
 	a.shownameOverride = "Nobody"
 	a.sess.AreaInfo[1].CM = "Apollo"
