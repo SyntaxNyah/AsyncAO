@@ -262,8 +262,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.drawChatOverlay(vp)
 	}
 	a.drawCourtOverlays(vp, lay)
-	a.drawReactionFloats(vp)     // #2: emoji reactions rising over the stage (0-alloc when none)
-	a.drawModCornerButtons(w, h) // #130: Mod / CM launcher chips (only when you're mod / CM)
+	a.drawReactionFloats(vp) // #2: emoji reactions rising over the stage (0-alloc when none)
 
 	// Modal popups: same shared list as the classic path, so the two can't
 	// drift (the bg picker once drew in classic but was missing here).

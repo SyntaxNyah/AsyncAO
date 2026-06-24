@@ -18,16 +18,22 @@ import (
 //     self-closes the instant you stop holding CM.
 
 const (
-	modCornerMargin = int32(12) // gap from the screen edges
-	modCornerChipH  = int32(26)
-	modCornerGap    = int32(6)
+	modCornerChipH = int32(24)
+	modCornerGap   = int32(6)
+	// modCornerLiftPx raises the chips off the very bottom so they sit ABOVE the ping chip and the
+	// IC/OOC input bars (the bottom-left is the courtroom's one clear overlay zone — the ping chip
+	// lives there). The chips are drawn last (on top), so the input bars can't cover them.
+	modCornerLiftPx = int32(64)
 )
 
 // toggleCMPanel opens / closes the CM panel (corner chip + hotkey).
 func (a *App) toggleCMPanel() { a.showCMPanel = !a.showCMPanel }
 
-// drawModCornerButtons paints the context-aware Mod / CM launcher chips, bottom-right, on top of
-// the live scene. Skipped while a blocking popup is up (so it can't eat that popup's clicks).
+// drawModCornerButtons paints the context-aware Mod / CM launcher chips, bottom-left, ON TOP of
+// the whole courtroom (called from the screen dispatch, after drawCourtroom — like the ping chip —
+// so the IC/OOC input bars can't cover them). Skipped while a blocking popup is up. A regular
+// player (neither mod nor CM) gets no chrome at all. 0-alloc per frame: amIMod() is a bool read
+// and amICMNow is the event-cached CM flag.
 func (a *App) drawModCornerButtons(w, h int32) {
 	if a.sess == nil || a.courtModalOpen() {
 		return
@@ -36,23 +42,23 @@ func (a *App) drawModCornerButtons(w, h int32) {
 	if !isMod && !isCM {
 		return // a regular player gets no new chrome
 	}
-	rightX := w - modCornerMargin
-	y := h - modCornerMargin - modCornerChipH
-	if isCM {
-		rightX = a.drawCornerChip(rightX, y, "CM", a.showCMPanel, a.toggleCMPanel)
-	}
+	x := int32(8)
+	y := h - modCornerLiftPx - modCornerChipH
 	if isMod {
-		a.drawCornerChip(rightX, y, "Mod", a.showModDash, a.toggleModDash)
+		x = a.drawCornerChip(x, y, "Mod", a.showModDash, a.toggleModDash)
+	}
+	if isCM {
+		a.drawCornerChip(x, y, "CM", a.showCMPanel, a.toggleCMPanel)
 	}
 }
 
-// drawCornerChip draws one right-aligned launcher pill ending at rightX, highlighted while its
-// panel is open. A click runs onClick and is CONSUMED so it can't also land on the chrome behind.
-// Returns the next chip's right edge.
-func (a *App) drawCornerChip(rightX, y int32, label string, active bool, onClick func()) int32 {
+// drawCornerChip draws one launcher pill at left edge x, highlighted while its panel is open. A
+// click runs onClick and is CONSUMED so it can't also land on the chrome behind. Returns the next
+// chip's left x.
+func (a *App) drawCornerChip(x, y int32, label string, active bool, onClick func()) int32 {
 	c := a.ctx
-	cw := c.TextWidth(label) + 24
-	r := sdl.Rect{X: rightX - cw, Y: y, W: cw, H: modCornerChipH}
+	cw := c.TextWidth(label) + 22
+	r := sdl.Rect{X: x, Y: y, W: cw, H: modCornerChipH}
 	bg, fg := ColPanel, ColText
 	switch {
 	case active:
@@ -62,12 +68,12 @@ func (a *App) drawCornerChip(rightX, y int32, label string, active bool, onClick
 	}
 	c.Fill(r, bg)
 	c.Border(r, ColAccent)
-	c.Label(r.X+(cw-c.TextWidth(label))/2, y+5, label, fg)
+	c.Label(x+(cw-c.TextWidth(label))/2, y+4, label, fg)
 	if c.clicked && c.hovering(r) {
 		c.clicked = false // consume so the click can't leak to the scene / chrome behind
 		onClick()
 	}
-	return rightX - cw - modCornerGap
+	return x + cw + modCornerGap
 }
 
 // drawCMPanel is the standalone CM (area control) panel: lock/unlock the area, release CM, and a

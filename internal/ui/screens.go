@@ -912,8 +912,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	}
 	a.drawChatOverlay(vp)
 	a.drawCourtOverlays(vp, nil) // HP bars, clocks, badges, splashes
-	a.drawReactionFloats(vp)     // #2: emoji reactions rising over the stage (0-alloc when none)
-	a.drawModCornerButtons(w, h) // #130: Mod / CM launcher chips (only when you're mod / CM)
+	a.drawReactionFloats(vp) // #2: emoji reactions rising over the stage (0-alloc when none)
 
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
