@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -713,28 +714,33 @@ type AssetPreferences struct {
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
-	DiskZstd               bool                         `json:"diskZstd"`
-	StreamerModeOn         bool                         `json:"streamerMode"`
-	ThemeName              string                       `json:"themeName"`
-	ThemeDir               string                       `json:"themeDir"`
-	OOCName                string                       `json:"oocName"`
-	ViewportPct            int                          `json:"viewportPercent"`
-	ChatScalePct           int                          `json:"chatScalePercent"`
-	ChatBoxPct             int                          `json:"chatBoxPercent"`
-	LogScalePct            int                          `json:"logScalePercent"`
-	InputHeightPct         int                          `json:"inputHeightPercent"`
-	UIScalePct             int                          `json:"uiScalePercent"`
-	WindowW                int                          `json:"windowWidth"`  // 0 = default
-	WindowH                int                          `json:"windowHeight"` // 0 = default
-	WindowFull             bool                         `json:"windowFullscreen"`
-	MusicVol               int                          `json:"musicVolume"`
-	SFXVol                 int                          `json:"sfxVolume"`
-	BlipVol                int                          `json:"blipVolume"`
-	AlertVol               int                          `json:"alertVolume"`
-	MasterVol              int                          `json:"masterVolume"` // scales all three (default 100)
-	HoldClearOn            bool                         `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
-	HoldClearKey           string                       `json:"holdClearKey"` // which key (default "Backspace"), rebindable
-	HoldClearMs            int                          `json:"holdClearMs"`  // hold duration to clear (default 1500)
+	// ClassicLayout holds per-slot position/size overrides for the DEFAULT
+	// (non-themed) courtroom, as window fractions [x,y,w,h] in 0..1 — the live
+	// classic-layout editor writes them, slotRect reads them. Fractions keep the
+	// drag resolution-independent (unlike the themed editor's design-space ints).
+	ClassicLayout  map[string][4]float64 `json:"classicLayout,omitempty"`
+	DiskZstd       bool                  `json:"diskZstd"`
+	StreamerModeOn bool                  `json:"streamerMode"`
+	ThemeName      string                `json:"themeName"`
+	ThemeDir       string                `json:"themeDir"`
+	OOCName        string                `json:"oocName"`
+	ViewportPct    int                   `json:"viewportPercent"`
+	ChatScalePct   int                   `json:"chatScalePercent"`
+	ChatBoxPct     int                   `json:"chatBoxPercent"`
+	LogScalePct    int                   `json:"logScalePercent"`
+	InputHeightPct int                   `json:"inputHeightPercent"`
+	UIScalePct     int                   `json:"uiScalePercent"`
+	WindowW        int                   `json:"windowWidth"`  // 0 = default
+	WindowH        int                   `json:"windowHeight"` // 0 = default
+	WindowFull     bool                  `json:"windowFullscreen"`
+	MusicVol       int                   `json:"musicVolume"`
+	SFXVol         int                   `json:"sfxVolume"`
+	BlipVol        int                   `json:"blipVolume"`
+	AlertVol       int                   `json:"alertVolume"`
+	MasterVol      int                   `json:"masterVolume"` // scales all three (default 100)
+	HoldClearOn    bool                  `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
+	HoldClearKey   string                `json:"holdClearKey"` // which key (default "Backspace"), rebindable
+	HoldClearMs    int                   `json:"holdClearMs"`  // hold duration to clear (default 1500)
 	// Extras-box theming (all hex like "78aaff"; "" = the stock kit colour).
 	ExtrasBg           string                    `json:"extrasBg"`
 	ExtrasBg2          string                    `json:"extrasBg2"` // gradient bottom colour
@@ -949,8 +955,9 @@ type prefsJSON struct {
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
 	ThemeRectOverrides map[string]map[string][4]int `json:"themeRectOverrides"`
-	DiskZstd           bool                         `json:"diskZstd"`     // default OFF (measured trade)
-	StreamerMode       bool                         `json:"streamerMode"` // default OFF
+	ClassicLayout      map[string][4]float64        `json:"classicLayout"` // default-courtroom slot overrides (window fractions)
+	DiskZstd           bool                         `json:"diskZstd"`      // default OFF (measured trade)
+	StreamerMode       bool                         `json:"streamerMode"`  // default OFF
 	ThemeName          string                       `json:"themeName"`
 	ThemeDir           string                       `json:"themeDir"`
 	OOCName            string                       `json:"oocName"`
@@ -1527,6 +1534,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
 	p.ThemeRectOv = onDisk.ThemeRectOverrides
+	p.ClassicLayout = sanitizeClassicLayout(onDisk.ClassicLayout)
 	p.DiskZstd = onDisk.DiskZstd
 	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
@@ -5494,6 +5502,9 @@ const (
 	// themeOvRectsCap bounds edited widgets per theme (more than the
 	// layout engine even defines).
 	themeOvRectsCap = 64
+	// classicSlotCap bounds named slots in the default-courtroom layout
+	// (rule §17.4) — comfortably above every widget we ever register.
+	classicSlotCap = 48
 )
 
 // ThemeRectOverrides returns a copy of one theme's user-dragged widget
@@ -5552,6 +5563,90 @@ func (p *AssetPreferences) ClearThemeRectOverride(theme, key string) {
 				delete(p.ThemeRectOv, theme)
 			}
 		}
+	}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// sanitizeClassicLayout validates persisted default-courtroom slot overrides on
+// load: it drops NaN/inf, clamps fractions into a sane on-screen range, and
+// bounds the map (rule §17.4). Unknown slot names are harmless — slotRect only
+// ever reads names it queries — so they're kept (forward/back compatibility).
+func sanitizeClassicLayout(in map[string][4]float64) map[string][4]float64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string][4]float64, len(in))
+	for k, v := range in {
+		if k == "" || len(out) >= classicSlotCap {
+			continue
+		}
+		ok := true
+		for _, f := range v {
+			if math.IsNaN(f) || math.IsInf(f, 0) {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			continue
+		}
+		// X/Y may sit slightly off-stage (negative) by design; width/height must
+		// stay positive. The wide clamp just rejects corrupt/garbage values.
+		if v[2] <= 0 || v[3] <= 0 || v[0] < -1 || v[0] > 2 || v[1] < -1 || v[1] > 2 || v[2] > 2 || v[3] > 2 {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// ClassicLayoutOverrides returns a sanitized copy of the default-courtroom slot
+// overrides (window fractions). The classic-layout editor snapshots this once
+// into an App-local map so the render path reads it lock-free.
+func (p *AssetPreferences) ClassicLayoutOverrides() map[string][4]float64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.ClassicLayout) == 0 {
+		return nil
+	}
+	out := make(map[string][4]float64, len(p.ClassicLayout))
+	for k, v := range p.ClassicLayout {
+		out[k] = v
+	}
+	return out
+}
+
+// SetClassicSlot stores one default-courtroom slot's override (window fraction
+// [x,y,w,h]). Bounded by classicSlotCap.
+func (p *AssetPreferences) SetClassicSlot(name string, frac [4]float64) {
+	if name == "" {
+		return
+	}
+	p.mu.Lock()
+	if p.ClassicLayout == nil {
+		p.ClassicLayout = map[string][4]float64{}
+	}
+	if _, exists := p.ClassicLayout[name]; !exists && len(p.ClassicLayout) >= classicSlotCap {
+		p.mu.Unlock()
+		return
+	}
+	p.ClassicLayout[name] = frac
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClearClassicSlot drops one slot's override (name "" clears every slot, the
+// editor's "Reset all").
+func (p *AssetPreferences) ClearClassicSlot(name string) {
+	p.mu.Lock()
+	if name == "" {
+		p.ClassicLayout = nil
+	} else {
+		delete(p.ClassicLayout, name)
 	}
 	p.mu.Unlock()
 	p.markDirty()

@@ -534,6 +534,23 @@ type App struct {
 	// entries) before changing it; Ctrl+Z restores, Ctrl+Y redoes. Bounded.
 	editUndo []map[string]theme.Rect
 	editRedo []map[string]theme.Rect
+
+	// --- classic-layout slot editor (the default/non-themed courtroom) ---
+	// Mirrors the themed editor's feel, but edits SCREEN-space "slots" persisted
+	// as window FRACTIONS (config.ClassicLayout) so they survive window resizes.
+	// classicOv is an App-local lock-free snapshot read by slotRect on the render
+	// path (the editor is the sole writer); slotReg is this frame's registered
+	// slots, populated ONLY while editing so the common frame stays alloc-free.
+	classicEdit      bool
+	classicOv        map[string][4]float64
+	classicOvLoaded  bool
+	slotReg          map[string]slotInfo
+	classicEditKey   string
+	classicEditDrag  int // 0 none, 1 move, 2 resize
+	classicEditStart [2]int32
+	classicEditBase  sdl.Rect
+	classicEditPrev  bool // press-edge latch (mouse-down rising edge)
+	classicEditMoved bool // a drag actually moved/resized (else a click persists nothing)
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage

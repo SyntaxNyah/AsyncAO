@@ -111,22 +111,18 @@ func (a *App) stopLayoutEdit() {
 	a.ctx.modalOn = false
 }
 
-// openLayoutEditor launches the live layout editor from a menu entry (the discoverable front door),
-// or flashes how to enable it when the current theme has no editable layout. The editor needs a
-// theme that ships courtroom_design.ini and the theme-layout option on; on the bare default layout
-// there are no editable boxes yet.
+// openLayoutEditor launches the live layout editor from a menu entry (the discoverable front door).
+// On a themed courtroom (a theme that ships courtroom_design.ini, with the theme-layout option on)
+// it edits the theme's design rects; on the default/Legacy layout it arms the classic SLOT editor,
+// so the stage, log column and OOC box are draggable there too.
 func (a *App) openLayoutEditor() {
 	if a.themeLay.valid && a.d.Prefs.ThemeLayoutEnabled() {
 		a.showUICfg = false
 		a.startLayoutEdit()
 		return
 	}
-	if !a.d.Prefs.ThemeLayoutEnabled() {
-		a.warnLine = "Layout editor: turn on Settings → Use theme layout, then load a theme that ships a layout."
-	} else {
-		a.warnLine = "Layout editor: this theme has no editable layout (needs courtroom_design.ini) — try another theme."
-	}
-	a.warnAt = a.now()
+	a.showUICfg = false
+	a.startClassicEdit()
 }
 
 // layoutEditFence claims the pointer for the editor BEFORE the themed

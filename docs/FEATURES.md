@@ -1357,6 +1357,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   design-space overrides (window resizes keep working; the theme's own
   files are never touched). While editing, the real UI is input-fenced so
   nothing misfires.
+- **Live layout editor on the default & Legacy layouts** (the same "Edit
+  Layout" button — control row, Extras box, or UI…): the non-themed
+  courtroom is editable too. Drag the **stage** anywhere (it stays 4:3 —
+  its size still belongs to the View knob, so the editor only *moves* it),
+  and drag/resize the **log / right column** and the **OOC box**
+  independently. Right-click a box to reset it, **Reset all** to clear
+  every override, **Snap** to tidy placement. Overrides are saved as window
+  *fractions* (config `classicLayout`), so they survive window resizes and
+  persist across sessions — with **zero render-loop cost** when you haven't
+  edited anything (the slot path is allocation-free; an un-edited courtroom
+  is pixel-identical to before). More widgets (IC input, button groups,
+  music) become draggable in later slices.
 - **Tabbed settings**: the settings screen is split into category tabs
   (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
   one long scroll — click a tab, scroll within it, each tab remembers its

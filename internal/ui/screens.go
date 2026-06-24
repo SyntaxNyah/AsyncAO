@@ -872,9 +872,13 @@ func (a *App) drawCourtroom(w, h int32) {
 		a.screen = ScreenLobby
 		return
 	}
+	a.ensureClassicOv() // load persisted default-layout slot overrides once (then just a bool check)
 
 	// Theater mode preempts BOTH layouts: stage only, Esc exits.
 	if a.theaterOn {
+		if a.classicEdit {
+			a.stopClassicEdit() // can't edit the layout from theater mode — release the fence
+		}
 		a.drawTheater(w, h)
 		return
 	}
@@ -882,14 +886,21 @@ func (a *App) drawCourtroom(w, h int32) {
 	// Theme-driven geometry: when the theme ships courtroom_design.ini
 	// (and the toggle is on), the courtroom IS the theme's layout.
 	if lay := a.themeLayout(w, h); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+		if a.classicEdit {
+			a.stopClassicEdit() // a themed layout took over; classic edit is default-only
+		}
 		a.drawCourtroomThemed(w, h, lay)
 		return
 	}
-	// The editor only exists over themed geometry; release its fence if
+	// The themed editor only exists over themed geometry; release its fence if
 	// the theme (or the toggle) went away mid-edit.
 	if a.layoutEdit {
 		a.stopLayoutEdit()
 	}
+	// Classic slot editor (default layout only): fence the pointer BEFORE any
+	// widget draws so its clicks reach the editor, not the courtroom; the overlay
+	// itself draws LAST (after drawICControls).
+	a.classicEditFence()
 
 	// Viewport: AO 4:3 at the user's width percent (View −/+ buttons).
 	vpW := w * int32(a.vpPct) / DefaultScalePct
@@ -898,7 +909,8 @@ func (a *App) drawCourtroom(w, h int32) {
 		vpH = h - 220
 		vpW = vpH * 4 / 3
 	}
-	vp := sdl.Rect{X: pad, Y: pad, W: vpW, H: vpH}
+	vpDef := sdl.Rect{X: pad, Y: pad, W: vpW, H: vpH}
+	vp := a.slotMove(slotViewport, vpDef, w, h) // movable stage; its 4:3 size stays owned by the View knob
 	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
 	a.renderViewportZoomed(vp)
 	a.drawStageRecordButton(vp)
@@ -922,31 +934,41 @@ func (a *App) drawCourtroom(w, h int32) {
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
 	// as the iniswap menu. Shared with the themed path (drawCourtroomModals).
-	if a.drawCourtroomModals(w, h) {
-		return
+	if !a.classicEdit && a.drawCourtroomModals(w, h) {
+		return // skipped while editing: modals are closed on entry, so the editor is never stranded
 	}
 
 	// Right column: log + music. In the new (default) layout the OOC gets its OWN always-visible
 	// box under the IC log; the Legacy Developer theme keeps OOC as a tab (its old handling).
-	rx := vp.X + vp.W + pad
+	// Anchored to the DEFAULT stage spot (vpDef), not the moved viewport — each box is placed
+	// independently, so dragging the stage doesn't drag the column with it. The whole column is a
+	// slot ("rightcol"), draggable/resizable on BOTH the default and Legacy themes.
+	rx := vpDef.X + vpDef.W + pad
 	rw := w - rx - pad
 	if !a.panelHidden(panelLog) {
-		rcol := sdl.Rect{X: rx, Y: pad, W: rw, H: vpH}
+		rcolDef := sdl.Rect{X: rx, Y: pad, W: rw, H: vpDef.H}
+		rcol := a.slotRect(slotRightCol, rcolDef, w, h)
 		if a.d.Prefs.LegacyDevThemeOn() {
-			a.drawLogPanel(rcol, vp)
+			a.drawLogPanel(rcol, vpDef)
 		} else {
-			a.drawCleanRightColumn(rcol, vp)
+			a.drawCleanRightColumn(rcol, vpDef, w, h)
 		}
 	}
 
-	// Bottom: IC input, emotes, controls.
-	a.drawICControls(w, h, vp)
+	// Bottom: IC input, emotes, controls — anchored to the default stage spot so moving the
+	// viewport doesn't drag them (they become their own slots in a later slice).
+	a.drawICControls(w, h, vpDef)
+
+	// Live slot editor overlay (default layout only) — drawn LAST so it sits over every widget.
+	if a.classicEdit {
+		a.drawClassicEditor(w, h)
+	}
 }
 
 // drawCleanRightColumn is the new-default right column: the IC log on top and the OOC as its own
 // bordered, always-visible box below (instead of Legacy's OOC-in-a-tab). The split keeps the OOC
 // roughly a third of the height with a sane floor so its input never gets crushed on short windows.
-func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect) {
+func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	c := a.ctx
 	oocH := rcol.H * 32 / 100
 	if oocH < cleanOOCMinH {
@@ -957,7 +979,9 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect) {
 	}
 	logH := rcol.H - oocH - cleanGapPx
 	a.drawLogPanel(sdl.Rect{X: rcol.X, Y: rcol.Y, W: rcol.W, H: logH}, vp)
-	box := sdl.Rect{X: rcol.X, Y: rcol.Y + logH + cleanGapPx, W: rcol.W, H: oocH}
+	// The OOC box is its OWN slot — drag it anywhere / resize it independently of the log.
+	boxDef := sdl.Rect{X: rcol.X, Y: rcol.Y + logH + cleanGapPx, W: rcol.W, H: oocH}
+	box := a.slotRect(slotOOC, boxDef, w, h)
 	c.Fill(box, ColPanel)
 	c.Border(box, ColAccent)
 	// Titled header bar so it reads as a clean, distinct box (brighter label = legible at a glance).
@@ -3222,7 +3246,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		if c.Button(edR, "Edit Layout") {
 			a.openLayoutEditor()
 		}
-		c.Tooltip(edR, "Live layout editor — drag & resize every box. (Needs a theme that ships a layout.)")
+		c.Tooltip(edR, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
 		x += editW + btnGap
 		if modW > 0 {
 			mR := sdl.Rect{X: x, Y: y2, W: modW, H: btnH}
@@ -3322,7 +3346,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		if c.Button(edR, "Edit Layout") {
 			a.openLayoutEditor()
 		}
-		c.Tooltip(edR, "Live layout editor — drag & resize every box. (Needs a theme that ships a layout.)")
+		c.Tooltip(edR, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
 		x += 100
 		hkR := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
 		if c.Button(hkR, "Hotkeys") {
