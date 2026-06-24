@@ -288,6 +288,13 @@ type Session struct {
 	AssetURL string
 
 	Background string
+	// MusicTrack is the area's currently-playing song (the last real MC track; "" =
+	// nothing / stopped). Persisted on the session like Background so a room rebuilt
+	// LATER — entering the courtroom after the join handshake already announced the
+	// song, or a tab reactivation — can resume it (buildRoom re-seeds it). Without this
+	// the track lived only on the throwaway Scene, so a song playing when the room is
+	// (re)built fell silent while the background, tracked here, survived.
+	MusicTrack string
 	MyCharID   int
 
 	// Live court state (AO2-Client parity; all mutated only by HandlePacket
@@ -401,6 +408,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		s.phase = PhaseLoading
 		s.Chars = s.Chars[:0]
 		s.Music = s.Music[:0]
+		s.MusicTrack = "" // fresh handshake: let the server's join MC repopulate (no stale resume)
 		s.Areas = s.Areas[:0]
 		s.reply(protocol.NewPacket("RC"))
 
@@ -492,7 +500,20 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	case "MC":
 		// Field 2 (showname) and field 1 (charID) name who played it for the IC
 		// log line; both are optional on the wire (short legacy MC packets).
-		return []Event{{Kind: EventMusic, Text: p.Field(0), Int: atoiOr(p.Field(1), protocol.UnpairedCharID), Name: p.Field(2)}}
+		track := p.Field(0)
+		// Persist the current REAL song on the session (like Background), so a room
+		// rebuilt later can resume it. Mirror the courtroom's play classification
+		// (courtroom.go EventMusic): a stop clears it; an area-name transfer leaves the
+		// playing song alone (the song continues across an area move until a new MC).
+		switch {
+		case track == "" || isAreaTransfer(track):
+			// not a song — leave s.MusicTrack as-is
+		case isMusicStop(track):
+			s.MusicTrack = ""
+		default:
+			s.MusicTrack = track
+		}
+		return []Event{{Kind: EventMusic, Text: track, Int: atoiOr(p.Field(1), protocol.UnpairedCharID), Name: p.Field(2)}}
 
 	case "BN":
 		s.Background = p.Field(0)

@@ -2534,6 +2534,14 @@ func (a *App) buildRoom() {
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
 	}
+	// Resume the area's current song into the fresh room — symmetric with the background
+	// above. The track was announced (MC) before this room existed (the join handshake, or
+	// a tab reactivation), so without this re-seed the music fell silent on (re)entry while
+	// the background came back. A direct HandleEvent (not handleSessionEvents) so it plays
+	// without re-logging "has played a song". (It restarts the song from the top — acceptable.)
+	if a.sess.MusicTrack != "" {
+		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: a.sess.MusicTrack})
+	}
 	a.applyTimingToRoom()
 	a.pushRealizationToRoom()
 	a.d.Prefs.RememberServerChar(a.serverKey, a.myCharName())
