@@ -21,6 +21,13 @@ import (
 //go:embed assets/mayo.png
 var mayoPNG []byte
 
+// SetWindowIcon sets the window / taskbar icon to Mayo. It's split per-platform
+// (mascot_icon_*.go): on Windows it's a no-op because the executable embeds a
+// proper multi-resolution .ico resource (cmd/asyncao/rsrc_windows.syso) that
+// Windows renders crisply at every size — handing SDL one big surface would
+// override that resource with a badly downscaled icon. Elsewhere it uploads the
+// embedded art via SDL_SetWindowIcon.
+
 // decodeMayoRGBA decodes the embedded mascot into a tightly-packed RGBA image
 // (image.RGBA byte order == SDL ABGR8888). ok=false on any decode failure, so
 // every caller degrades to "no image" instead of crashing.
@@ -36,28 +43,6 @@ func decodeMayoRGBA() (*image.RGBA, bool) {
 	rgba := image.NewRGBA(b)
 	draw.Draw(rgba, b, img, b.Min, draw.Src)
 	return rgba, true
-}
-
-// SetWindowIcon sets the window / taskbar icon to Mayo. Call once after the
-// window is created, on the main (render) thread. SDL copies the surface, so
-// freeing it here is safe; any failure is ignored (the default icon stays).
-func SetWindowIcon(win *sdl.Window) {
-	if win == nil {
-		return
-	}
-	rgba, ok := decodeMayoRGBA()
-	if !ok {
-		return
-	}
-	b := rgba.Bounds()
-	surf, err := sdl.CreateRGBSurfaceWithFormatFrom(
-		unsafe.Pointer(&rgba.Pix[0]), int32(b.Dx()), int32(b.Dy()), 32, int32(rgba.Stride),
-		uint32(sdl.PIXELFORMAT_ABGR8888))
-	if err != nil {
-		return
-	}
-	win.SetIcon(surf)
-	surf.Free()
 }
 
 // mayoTexture lazily uploads the mascot art to a static SDL texture for the About
