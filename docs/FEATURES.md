@@ -1376,11 +1376,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   rows + the scale knobs, dragged as one unit — mostly vertically, since it
   stays full width) all move independently. Right-click a
   box to reset it, **Reset all** to clear every override, **Snap** to tidy
-  placement. Overrides are saved as window *fractions* (config `classicLayout`),
+  placement, **Ctrl+Z / Ctrl+Y** to undo / redo (right-click only goes back to
+  *default* — undo gets a previous *custom* spot back), and **Tab** to cycle the
+  stack of boxes under the cursor when they overlap (the bottom hint shows how
+  many are stacked). Overrides are saved as window *fractions* (config `classicLayout`),
   so they survive window resizes and persist across sessions — with **zero
   render-loop cost** when you haven't edited anything (the slot path is
   allocation-free; an un-edited courtroom is pixel-identical to before).
-- **Tear-off tab "menus"**: in the layout editor a bottom tray lets you **pop a
+- **Tear-off tab "menus"**: in the layout editor a tray (just under the banner at
+  the top, so it never covers bottom-anchored bars) lets you **pop a
   log tab (Music, Areas, Players, Notes, Friends) out of the docked strip into
   its own movable, resizable floating panel** that renders the tab's real
   content — drag/resize it like any other box, and it persists across sessions.
