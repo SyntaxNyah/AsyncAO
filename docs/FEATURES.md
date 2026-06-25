@@ -1044,7 +1044,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   selection and the banner names what 404'd — see also Settings → formats).
   **Hovering an emote previews it** large (3 s, or instantly on right-click):
   if the emote has a **pre-animation** that flourish plays (looped) so you can
-  watch it before sending; otherwise its talking sprite. Both layouts.
+  watch it before sending; otherwise its talking sprite. Both layouts. The box
+  stays up while you **move the cursor onto it** (it keeps a travel corridor open
+  so it doesn't vanish on the way), where the **mouse-wheel zooms** in/out and a
+  **left-drag repositions** it; it closes once the cursor leaves the box (or you
+  click).
 - **Emote favourites** (#77/#85): characters ship dozens of emotes but you use a
   handful. Every emote button carries a **★ in its corner** — **dim grey** when
   not yet a favourite, **gold** once it is — so favouriting is always one click
@@ -1387,6 +1391,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   drag/resize/persist machinery at **zero render cost when nothing is torn**.
   (The music list may become its own slot in a later slice; it's largely
   covered already since the Music tab tears off.)
+- **OOC: own box ⇄ log tab** — by default OOC chat gets its own box in the right
+  column, but the layout editor's tray has an **OOC** chip that puts it back as a
+  **tab in the log panel** (the old layout): the OOC tab shows the scrollback and
+  the bottom OOC bar carries the input. Saved across sessions; hidden on the
+  Legacy theme (which always tabs OOC). OOC itself only ever shows an **OOC name**
+  and the **OOC chat** — the IC showname lives on the IC bar and in Settings, not
+  in the OOC box.
 - **Tabbed settings**: the settings screen is split into category tabs
   (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
   one long scroll — click a tab, scroll within it, each tab remembers its
