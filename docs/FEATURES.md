@@ -1172,9 +1172,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   borderless stage alone — viewport, chat overlay, splashes — session-
   only by design.
 - **AsyncAO chrome themes** (#M3, **Settings → AsyncAO appearance**): pick the
-  **client UI** palette — **Dark** (default), **Midnight**, **Light**, or **High
-  contrast** — applied to AsyncAO's own panels, **separate from AO2 courtroom
-  themes**. The choice is the *base* palette; a server theme that ships chrome
+  **client UI** palette — **Dark** (default), **Soft Dark** and **Warm** (the
+  eye-friendly pair: gentler contrast, one calm accent, dim-but-readable
+  secondary text — Warm is low-blue for long sessions), **Midnight**, **Light**,
+  or **High contrast** — applied to AsyncAO's own panels, **separate from AO2
+  courtroom themes**. The choice is the *base* palette; a server theme that ships chrome
   colours (`courtroom_stylesheets.css`) still overlays it, and a built-in
   readability floor keeps text legible either way. 100% local, persisted, and
   free on the render loop (the kit colours are package vars read as values —
