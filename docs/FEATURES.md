@@ -1399,11 +1399,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   covered already since the Music tab tears off.)
 - **OOC: own box ⇄ log tab** — by default OOC chat gets its own box in the right
   column, but the layout editor's tray has an **OOC** chip that puts it back as a
-  **tab in the log panel** (the old layout): the OOC tab shows the scrollback and
-  the bottom OOC bar carries the input. Saved across sessions; hidden on the
-  Legacy theme (which always tabs OOC). OOC itself only ever shows an **OOC name**
-  and the **OOC chat** — the IC showname lives on the IC bar and in Settings, not
-  in the OOC box.
+  **tab in the log panel** (the old layout). In tab mode it's a **hybrid**: the OOC
+  tab is a complete OOC chat (scrollback + its own input + your OOC name), and a
+  **full-width OOC bar across the bottom** is a *second*, always-visible input — type
+  from either; they share one draft. Saved across sessions; hidden on the Legacy
+  theme (which always tabs OOC). OOC only ever has an **OOC name** (set once, in the
+  box/tab) and the **OOC chat** — no IC showname (that lives on the IC bar and in
+  Settings), and no duplicate name box on the bottom bar.
 - **Tabbed settings**: the settings screen is split into category tabs
   (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
   one long scroll — click a tab, scroll within it, each tab remembers its

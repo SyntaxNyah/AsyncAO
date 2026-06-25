@@ -1556,9 +1556,10 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		a.drawPlayerList(inner)
 		return
 	case logTabOOC:
-		// Scrollback only: whenever OOC is a tab (Legacy or the opt-in toggle) the bottom OOC
-		// bar carries the input — the old layout, and it keeps exactly one OOC input live.
-		a.drawOOCPanel(inner, false)
+		// The OOC tab is a COMPLETE OOC chat: scrollback + its own input + the OOC name. The
+		// bottom OOC bar is a SECOND, always-visible input (no name) for a hybrid setup — type
+		// from either; both share the same OOC draft (a.oocInput).
+		a.drawOOCPanel(inner, true)
 		return
 	case logTabNotes:
 		a.drawNotesTab(inner)
@@ -3562,47 +3563,27 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
 	}
 
-	// OOC row at the very bottom: name + a FULL-width input. Shown whenever OOC is a tab (Legacy
-	// theme, or the opt-in "OOC in the log tab" toggle) — the tab is scrollback-only, so this bar
-	// is the OOC input. In the new-default OOC BOX the input lives inside the box instead, so this
-	// bar is dropped (the box is one unified OOC chat).
+	// OOC row at the very bottom: a FULL-width OOC chat INPUT (no name box — the OOC name
+	// lives in the OOC box/tab now; it used to be duplicated here, which is the redundancy
+	// a tester flagged). Shown whenever OOC is a tab (Legacy theme, or the opt-in "OOC in the
+	// log tab" toggle), as a SECOND always-visible input alongside the tab's own — the hybrid.
+	// In the new-default OOC BOX the input lives inside the box, so this bar is dropped.
 	oocY := h - fH - 4
 	if !a.panelHidden(panelOOC) && (a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn()) {
-		nameW := int32(120)
-		// The bottom OOC bar is its own movable + resizable slot ("oocbar"), mirroring the IC
-		// bar: its default spans the bottom row, so an un-edited courtroom is pixel-identical.
-		// Contents lay out relative to oocBar.X / .W (name box, then a full-width input), the
-		// row centred within the slot height. Registered only while this bar actually draws, so
-		// the editor offers a handle for it only when OOC is a tab (the box mode uses slotOOC).
+		// The bottom OOC bar is its own movable + resizable slot ("oocbar"): its default spans
+		// the bottom row, the row centred within the slot height. Registered only while it
+		// actually draws, so the editor offers a handle for it only when OOC is a tab.
 		oocBarDef := sdl.Rect{X: pad, Y: oocY, W: w - 3*pad, H: fH}
 		oocBar := a.slotRect(slotOOCBar, oocBarDef, w, h)
 		oocRowY := oocBar.Y
 		if oocBar.H > fH {
 			oocRowY = oocBar.Y + (oocBar.H-fH)/2
 		}
-		ocW, ocDD := nameW, int32(0)
-		if len(a.nameOpts) > 1 { // same tiny ▾ saved-name picker, fitted inside the name box
-			ocDD = 22
-			ocW -= ocDD + 2
-		}
-		prevOOC := a.oocName
-		a.oocName, _ = c.TextField("oocname", sdl.Rect{X: oocBar.X, Y: oocRowY, W: ocW, H: fH}, a.oocName, "OOC name")
-		if name := a.pickNameDropdown("oocpick", sdl.Rect{X: oocBar.X + ocW + 2, Y: oocRowY, W: ocDD, H: fH}); name != "" {
-			a.oocName = name
-		}
-		if a.oocName != prevOOC {
-			a.d.Prefs.SetOOCName(a.oocName) // permanent OOC name
-		}
+		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput) // #M5: emoji/unicode in the OOC bar too
 		var sendOOC bool
-		oocInputW := oocBar.W - nameW - 6
-		if oocInputW < minICInputW { // share the IC bar's floor: the input never collapses on a tiny bar
-			oocInputW = minICInputW
-		}
-		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput) // #M5: emoji/unicode in the OOC box too
-		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X + nameW + 6, Y: oocRowY, W: oocInputW, H: fH}, a.oocInput, "OOC chat... (full history in the OOC tab)", oocPrimary, oocEmoji)
-		if sendOOC && strings.TrimSpace(a.oocInput) != "" {
-			a.sess.SendOOC(a.oocName, a.oocInput)
-			a.oocInput = ""
+		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}, a.oocInput, "OOC chat…  (set your OOC name in the OOC tab)", oocPrimary, oocEmoji)
+		if sendOOC {
+			a.submitOOC() // shared OOC send: uses your OOC name (or the server default) + clears
 		}
 		// Ctrl+wheel over the OOC row: same log/OOC text-size shortcut.
 		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}) {
