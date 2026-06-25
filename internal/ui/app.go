@@ -717,6 +717,7 @@ type sessionState struct {
 	autoReconnectMsg   string
 	connAt             time.Time // session start (Rich Presence elapsed timer)
 	curArea            string    // last area WE clicked (Rich Presence, best-effort)
+	presenceInit       bool      // false until the first lobby presence push (so "Playing AsyncAO" shows on launch, not only in-court)
 	// Per-area IC scrollback (opt-in): areaLogs holds each visited area's saved
 	// icLog, areaLogOrder is the visit order for bounded FIFO eviction
 	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
@@ -1978,8 +1979,16 @@ func (a *App) updatePresence() {
 		return
 	}
 	dp := a.d.Prefs.Discord()
-	if !dp.Enabled || a.sess == nil {
+	if !dp.Enabled {
 		a.d.Presence.Clear()
+		return
+	}
+	if a.sess == nil {
+		// In the lobby / server list — keep "Playing AsyncAO" up (the user asked for
+		// presence to persist there too, not vanish until you join a room). No
+		// server/character/showname applies yet, and no elapsed timer (it'd reset on
+		// every connect); just a neutral line.
+		a.d.Presence.Set(presence.Activity{Details: "In the lobby"})
 		return
 	}
 	act := presence.Activity{Start: a.connAt, Details: "In court"}
@@ -3279,6 +3288,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
 	a.recordFrameDt(float32(dt.Seconds() * 1000))
+	// One-time: push the initial Discord presence once the app is up, so "Playing
+	// AsyncAO — In the lobby" appears immediately on launch (not only after you join
+	// a room). updatePresence no-ops when presence is unset or the toggle is off.
+	if !a.presenceInit {
+		a.presenceInit = true
+		a.updatePresence()
+	}
 	// Stamp the sprite-preview config onto the context once per frame so every
 	// HoverPreview call this frame reads a consistent, lock-free value.
 	a.ctx.SetHoverPreview(a.d.Prefs.SpritePreviewsOn(), a.d.Prefs.PreviewHoverDelay())

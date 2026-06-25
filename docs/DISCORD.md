@@ -14,7 +14,11 @@ document is the complete setup, privacy, and troubleshooting reference.
 > Nyah as Phoenix — Courtroom 1
 > `[AsyncAO icon]` · elapsed time since connect
 
-Line composition (all optional, see Privacy):
+While you're in the lobby / server list (not yet in a room) it stays up as a
+plain **Playing AsyncAO — In the lobby** (no server/character/timer), so your
+profile shows it for the whole session, not only in-court.
+
+Line composition in a room (all optional, see Privacy):
 
 | Field | Source | Default when enabled |
 |---|---|---|
@@ -61,8 +65,9 @@ handshake (`op 0`) / activity (`op 1` `SET_ACTIVITY`) frames.
   their room broadcast).
 - Each field has its own checkbox in Settings → Discord; unticked
   fields are omitted from the payload entirely (not blanked — absent).
-- Disconnecting, returning to the lobby, or disabling the toggle clears
-  the activity immediately.
+- Disconnecting or returning to the lobby drops the room details back to the
+  neutral "In the lobby" line; **disabling the toggle clears the activity
+  entirely**, immediately.
 - Nothing is sent anywhere except the local Discord client's pipe.
 
 ## Building without Discord
