@@ -1054,7 +1054,7 @@ type DiscordPrefs struct {
 // Presence works out of the box — users toggle presence on/off in Settings but
 // never the app identity. Dialed directly (see cmd/asyncao), so it applies even
 // to existing saved prefs whose AppID predates the bake.
-const DefaultDiscordAppID = "1519615001814499470"
+const DefaultDiscordAppID = "1519625107188744222"
 
 // defaultDiscordPrefs: ON by default on a normal (Discord-capable) build, with
 // the detail toggles pre-set. Rich Presence is pure-stdlib IPC (no DLL); it
