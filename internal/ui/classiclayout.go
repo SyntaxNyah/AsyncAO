@@ -228,6 +228,26 @@ func (a *App) classicEditFence() {
 	}
 }
 
+// controlsBlockOrigin computes the control-button block's draw origin (clusterX,
+// blockY), its vertical offset from the default top (dy), and the row-wrap edge
+// (clusterRight) from the block's slot override, if present. The content width is
+// held CONSTANT at w-2*pad, so the wrap structure — and therefore the block's row
+// count and height — is invariant to the move; that is what lets drawICControls
+// recover the un-moved bottom as (y2 - dy) and stay byte-identical when un-edited
+// (no override ⇒ clusterX==pad, dy==0, clusterRight==w-pad). Width/height of the
+// override are ignored by design (the block stays full width). Pure + alloc-free so
+// the invariant is unit-pinnable; the drawICControls call site reads classicOv first.
+func controlsBlockOrigin(ov [4]float64, ok bool, w, h, defY int32) (clusterX, blockY, dy, clusterRight int32) {
+	clusterX, blockY = pad, defY
+	if ok {
+		r := fracToRect(ov, w, h)
+		clusterX, blockY = r.X, r.Y
+	}
+	dy = blockY - defY
+	clusterRight = clusterX + (w - 2*pad)
+	return
+}
+
 // viewportOverridden reports whether the user has dragged/resized the stage in
 // the classic editor. The View knob and the edge divider then defer to that
 // override (it would otherwise change vpPct silently, which the override shadows)

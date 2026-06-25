@@ -46,6 +46,41 @@ func TestSlotNoAlloc(t *testing.T) {
 	}
 }
 
+// TestControlsBlockOrigin pins the control-button block's safety invariant: with no
+// override the block draws exactly where it always did (clusterX==pad, dy==0,
+// clusterRight==w-pad), so icY = y2 - dy + btnH + 6 reduces to y2 + btnH + 6 and the
+// un-edited courtroom is byte-identical. An override translates X/Y only; the constant
+// content width keeps the wrap edge at clusterX + (w-2*pad).
+func TestControlsBlockOrigin(t *testing.T) {
+	const w, h, defY = 1000, 700, 480
+
+	// No override → default origin, zero offset, default wrap edge.
+	if cx, by, dy, cr := controlsBlockOrigin([4]float64{}, false, w, h, defY); cx != pad || by != defY || dy != 0 || cr != w-pad {
+		t.Fatalf("no-override origin = (x=%d y=%d dy=%d right=%d), want (x=%d y=%d dy=0 right=%d)",
+			cx, by, dy, cr, pad, defY, w-pad)
+	}
+
+	// Override at frac (0.1, 0.5, …) → translated origin; width/height ignored.
+	ov := [4]float64{0.1, 0.5, 0.4, 0.2} // x=100 y=350 (W/H ignored by design)
+	wantX, wantY := int32(100), int32(350)
+	if cx, by, dy, cr := controlsBlockOrigin(ov, true, w, h, defY); cx != wantX || by != wantY || dy != wantY-defY || cr != wantX+(w-2*pad) {
+		t.Fatalf("override origin = (x=%d y=%d dy=%d right=%d), want (x=%d y=%d dy=%d right=%d)",
+			cx, by, dy, cr, wantX, wantY, wantY-defY, wantX+(w-2*pad))
+	}
+}
+
+// TestControlsBlockOriginNoAlloc keeps the block-origin calc off the allocator: it
+// runs every courtroom frame on the render path.
+func TestControlsBlockOriginNoAlloc(t *testing.T) {
+	const w, h, defY = 800, 600, 400
+	ov := [4]float64{0.2, 0.3, 0.4, 0.1}
+	if n := testing.AllocsPerRun(200, func() {
+		_, _, _, _ = controlsBlockOrigin(ov, true, w, h, defY)
+	}); n != 0 {
+		t.Fatalf("controlsBlockOrigin allocates %v/op on the render path; want 0", n)
+	}
+}
+
 func TestClassicEdgeAt(t *testing.T) {
 	r := sdl.Rect{X: 100, Y: 100, W: 200, H: 120}
 	const m = 12

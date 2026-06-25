@@ -3099,14 +3099,10 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// un-edited courtroom pixel-identical (clusterX == pad, y == defY, dy == 0 ⇒ every
 	// rect, every wrap edge identical). Width/height resize is ignored (the block stays
 	// full width; its height is content-driven). The override is read lock-free; off the
-	// edit path this is one map lookup, no alloc.
-	clusterX, y := pad, defY
-	if ov, ok := a.classicOv[slotControls]; ok {
-		r := fracToRect(ov, w, h)
-		clusterX, y = r.X, r.Y
-	}
-	dy := y - defY                         // vertical block offset (0 when un-moved)
-	clusterRight := clusterX + (w - 2*pad) // wrap edge; constant width keeps the row count invariant
+	// edit path this is one map lookup, no alloc. controlsBlockOrigin is the pure core
+	// (unit-pinned: TestControlsBlockOrigin).
+	ctrlOv, ctrlEdited := a.classicOv[slotControls]
+	clusterX, y, dy, clusterRight := controlsBlockOrigin(ctrlOv, ctrlEdited, w, h, defY)
 
 	// Row 1: shouts, pairing, and the live layout knobs (both hideable).
 	x := clusterX
