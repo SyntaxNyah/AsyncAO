@@ -18,8 +18,21 @@ type chromePreset struct {
 }
 
 // chromePresets are the built-in chrome palettes. "dark" mirrors the stock look.
+// "soft"/"warm" are the eye-friendly pair (lower contrast, a single calm accent, dim
+// but readable secondary text) — added so the default look can be made gentler without
+// a global recolour: pick one in Settings → Theme, it applies live and persists.
 var chromePresets = []chromePreset{
 	{"dark", "Dark", defaultKitColors},
+	{"soft", "Soft Dark", [7]sdl.Color{ // gentle contrast, one calm blue accent, warm-neutral dark
+		{R: 28, G: 30, B: 34, A: 255}, {R: 40, G: 43, B: 49, A: 255}, {R: 55, G: 59, B: 67, A: 255},
+		{R: 122, G: 174, B: 232, A: 255}, {R: 221, G: 223, B: 228, A: 255}, {R: 148, G: 152, B: 160, A: 255},
+		{R: 226, G: 98, B: 104, A: 255},
+	}},
+	{"warm", "Warm", [7]sdl.Color{ // low-blue, sepia-leaning dark for long sessions; amber accent
+		{R: 32, G: 29, B: 26, A: 255}, {R: 45, G: 41, B: 37, A: 255}, {R: 60, G: 55, B: 49, A: 255},
+		{R: 232, G: 172, B: 112, A: 255}, {R: 228, G: 222, B: 212, A: 255}, {R: 160, G: 150, B: 138, A: 255},
+		{R: 222, G: 102, B: 92, A: 255},
+	}},
 	{"midnight", "Midnight", [7]sdl.Color{
 		{R: 12, G: 14, B: 22, A: 255}, {R: 20, G: 24, B: 36, A: 255}, {R: 34, G: 40, B: 56, A: 255},
 		{R: 110, G: 150, B: 240, A: 255}, {R: 222, G: 226, B: 238, A: 255}, {R: 132, G: 138, B: 154, A: 255},
