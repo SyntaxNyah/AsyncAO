@@ -19,10 +19,15 @@ const (
 	aboutAOSDLURL  = "https://github.com/AttorneyOnline/AO-SDL"
 	aboutAOSiteURL = "https://aceattorneyonline.com"
 	aboutArtistURL = "https://www.instagram.com/hlenbchan2" // app icon artist
-	// aboutMascotPx is the on-screen size of the Mayo portrait at the top of the
-	// page (downscaled from the 512² embed; the render scale-quality hint smooths it).
+	// aboutMascotPx is the on-screen (logical) size of the Mayo portrait, drawn in
+	// the Mayo section; the texture is Catmull-Rom downscaled to this exact size.
 	aboutMascotPx = int32(200)
 )
+
+// aboutMayoHeadLine is the first line of the Mayo section. The portrait draws
+// directly above it, so the constant is shared by the text and the draw matcher
+// (they can't drift).
+const aboutMayoHeadLine = "Mayo — the AsyncAO mascot and app icon. The client was almost"
 
 var aboutLines = []string{
 	"AsyncAO " + protocol.Version,
@@ -58,7 +63,7 @@ var aboutLines = []string{
 	"financially, and gave me the inspiration to keep going. Without that",
 	"support AsyncAO wouldn't have come this far this fast. Thank you.",
 	"",
-	"Mayo — the AsyncAO mascot and app icon (above). The client was almost",
+	aboutMayoHeadLine,
 	"named \"MayAO\" (Maya + AO), but became AsyncAO — we wanted more Maya",
 	"representation, since the AO2 client only ever showed Phoenix and",
 	"Edgeworth. So the mascot is Mayo: inspired by Maya Fey from Ace",
@@ -96,21 +101,15 @@ func (a *App) drawAbout(w, h int32) {
 	lineH := int32(c.font.Height()) + 4
 	top := pad + 48 // content viewport starts below the heading
 	viewH := h - top - pad
-	// Mayo portrait at the top of the scroll content (uploaded once, lazily). Square
-	// art, but keep aspect defensively in case the embed is ever swapped.
-	mayoTex, mayoW, mayoH := a.mayoTexture()
-	mascotDW, mascotDH, mascotBlock := int32(0), int32(0), int32(0)
-	if mayoTex != nil && mayoW > 0 && mayoH > 0 {
-		mascotDW, mascotDH = aboutMascotPx, aboutMascotPx
-		if mayoW > mayoH {
-			mascotDH = aboutMascotPx * mayoH / mayoW
-		} else if mayoH > mayoW {
-			mascotDW = aboutMascotPx * mayoW / mayoH
-		}
-		mascotBlock = mascotDH + 14 // portrait + gap before the text
+	// Mayo portrait — built once (lazily), drawn within the Mayo section below (not
+	// alone at the top). mayoTexture returns the logical draw size.
+	mayoTex, mayoLogW, mayoLogH := a.mayoTexture()
+	mascotBlock := int32(0)
+	if mayoTex != nil && mayoLogW > 0 && mayoLogH > 0 {
+		mascotBlock = mayoLogH + 12 // portrait + gap above the Mayo text
 	}
-	// The page outgrew small windows, so it scrolls. Total height = portrait + text
-	// lines + the gap + the link buttons; clamp the wheel offset to the ends.
+	// The page outgrew small windows, so it scrolls. Total height = text lines + the
+	// portrait + the gap + the link buttons; clamp the wheel offset to the ends.
 	contentH := mascotBlock + int32(len(aboutLines))*lineH + 10 + int32(len(aboutLinks))*(btnH+6)
 	maxScroll := contentH - viewH
 	if maxScroll < 0 {
@@ -128,12 +127,14 @@ func (a *App) drawAbout(w, h int32) {
 	_ = c.Ren.SetClipRect(&clip)
 	defer func() { _ = c.Ren.SetClipRect(nil) }()
 	y := top - a.aboutScroll
-	if mascotBlock > 0 { // Mayo, centered, above the text (clip handles partial visibility)
-		dst := sdl.Rect{X: (w - mascotDW) / 2, Y: y, W: mascotDW, H: mascotDH}
-		_ = c.Ren.Copy(mayoTex, nil, &dst)
-		y += mascotBlock
-	}
 	for _, line := range aboutLines {
+		// The Mayo portrait sits with its section (centered above the head line),
+		// not floating alone at the top of the page. Clip handles partial visibility.
+		if line == aboutMayoHeadLine && mascotBlock > 0 {
+			dst := sdl.Rect{X: (w - mayoLogW) / 2, Y: y, W: mayoLogW, H: mayoLogH}
+			_ = c.Ren.Copy(mayoTex, nil, &dst)
+			y += mascotBlock
+		}
 		col := ColText
 		if line == "Pull requests, bug fixes and feature requests are welcome!" {
 			col = ColAccent

@@ -388,12 +388,15 @@ type App struct {
 	// and the in-progress hex field text.
 	colorWheel *sdl.Texture
 	colorHex   string
-	// Mayo mascot portrait on the About page: the texture is uploaded once (lazily,
-	// on the render thread) from the embedded art. mayoTexTried latches a failed
-	// decode so it isn't retried every frame. (mascot.go)
-	mayoTex      *sdl.Texture
-	mayoW, mayoH int32
-	mayoTexTried bool
+	// Mayo mascot portrait on the About page: a high-quality Catmull-Rom downscale
+	// of the embedded art, uploaded once (lazily, render thread). Baked to the exact
+	// PHYSICAL pixel size (logical × UI scale) so it draws 1:1 — crisp at any scale —
+	// and rebuilt only when the UI scale changes. mayoTexFailed latches a failed
+	// decode/upload so it isn't retried every frame. Zero per-frame cost. (mascot.go)
+	mayoTex            *sdl.Texture
+	mayoLogW, mayoLogH int32 // on-screen (logical) size; the texture itself is physical px
+	mayoTexScale       int   // UIScale() the texture was baked at
+	mayoTexFailed      bool
 
 	// spriteTintHex is the in-progress hex text for the solid sprite-tint field
 	// (Settings); reflected from the pref when the field isn't focused.

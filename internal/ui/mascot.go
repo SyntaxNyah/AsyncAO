@@ -16,6 +16,7 @@ import (
 	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
+	xdraw "golang.org/x/image/draw"
 )
 
 //go:embed assets/mayo.png
@@ -45,29 +46,54 @@ func decodeMayoRGBA() (*image.RGBA, bool) {
 	return rgba, true
 }
 
-// mayoTexture lazily uploads the mascot art to a static SDL texture for the About
-// page (render thread only — drawAbout runs there). Cached on the App; nil on
-// failure (About then omits the portrait). Mirrors the colour-wheel texture path.
+// mayoTexture returns the About-page portrait texture and the LOGICAL size to draw
+// it at (aboutMascotPx, aspect-kept). The texture is a high-quality Catmull-Rom
+// downscale of the embedded 512² art, baked to the exact PHYSICAL pixel size
+// (logical × the UI render scale) so it draws 1:1 on screen — far sharper than
+// letting the GPU shrink the full-res art, and independent of the smooth-scaling
+// setting. Built once (render thread), cached, and rebuilt only when the UI scale
+// changes; nil on failure (About omits the portrait). ZERO per-frame cost — the
+// resample never touches the render loop.
 func (a *App) mayoTexture() (*sdl.Texture, int32, int32) {
+	scale := a.UIScale() // percent; bake to physical px = logical × scale
 	if a.mayoTex != nil {
-		return a.mayoTex, a.mayoW, a.mayoH
+		if a.mayoTexScale == scale {
+			return a.mayoTex, a.mayoLogW, a.mayoLogH
+		}
+		_ = a.mayoTex.Destroy() // UI scale changed — rebake at the new physical size
+		a.mayoTex = nil
+	} else if a.mayoTexFailed {
+		return nil, 0, 0 // decode/upload failed once — don't retry (and re-resample) every frame
 	}
-	if a.mayoTexTried {
-		return nil, 0, 0 // decode/upload already failed once — don't retry every frame
-	}
-	a.mayoTexTried = true
-	rgba, ok := decodeMayoRGBA()
+	a.mayoTexScale = scale
+
+	src, ok := decodeMayoRGBA()
 	if !ok {
+		a.mayoTexFailed = true
 		return nil, 0, 0
 	}
-	b := rgba.Bounds()
-	w, h := int32(b.Dx()), int32(b.Dy())
-	tex, err := a.ctx.Ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_STATIC, w, h)
+	sb := src.Bounds()
+	// Logical (on-screen) size: cap the larger side to aboutMascotPx, keep aspect.
+	logW, logH := aboutMascotPx, aboutMascotPx
+	if sb.Dx() > sb.Dy() {
+		logH = aboutMascotPx * int32(sb.Dy()) / int32(sb.Dx())
+	} else if sb.Dy() > sb.Dx() {
+		logW = aboutMascotPx * int32(sb.Dx()) / int32(sb.Dy())
+	}
+	// Physical pixels actually shown = logical × UI scale. Bake exactly that (1:1),
+	// capped at the source resolution so we never upscale past the art.
+	physW := clampInt(int(logW)*scale/100, 1, sb.Dx())
+	physH := clampInt(int(logH)*scale/100, 1, sb.Dy())
+	dst := image.NewRGBA(image.Rect(0, 0, physW, physH))
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), src, sb, xdraw.Src, nil)
+
+	tex, err := a.ctx.Ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_STATIC, int32(physW), int32(physH))
 	if err != nil {
+		a.mayoTexFailed = true
 		return nil, 0, 0
 	}
 	_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
-	_ = tex.Update(nil, unsafe.Pointer(&rgba.Pix[0]), rgba.Stride)
-	a.mayoTex, a.mayoW, a.mayoH = tex, w, h
-	return tex, w, h
+	_ = tex.Update(nil, unsafe.Pointer(&dst.Pix[0]), dst.Stride)
+	a.mayoTex, a.mayoLogW, a.mayoLogH = tex, logW, logH
+	return tex, logW, logH
 }
