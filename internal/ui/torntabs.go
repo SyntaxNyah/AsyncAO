@@ -229,16 +229,21 @@ func (a *App) drawTornTabs(w, h int32) {
 	}
 }
 
-// drawClassicTabTray is the editor's bottom strip: one chip per tear-offable tab,
-// clicked to pop it out (or redock it). Returns whether the cursor is over the
-// tray, so the editor suppresses a slot-move when you press a chip. Edit-only.
+// drawClassicTabTray is the editor's tray strip (just under the banner, at the TOP):
+// one chip per tear-offable tab, clicked to pop it out (or redock it), plus the OOC
+// box/tab chip. Returns whether the cursor is over the tray, so the editor suppresses a
+// slot-move when you press a chip. It lives at the top, not the bottom, so it doesn't
+// cover bottom-anchored bars (the OOC bar / emote grid) — a tester couldn't drag the OOC
+// bar to the bottom because the old bottom tray hid it and blocked the grab. Big boxes
+// (stage / right column) are grabbed by their bodies, so a top strip costs them nothing.
+// Edit-only.
 func (a *App) drawClassicTabTray(w, h int32) bool {
 	c := a.ctx
-	trayY := h - 50
+	trayY := int32(classicBannerH + 8)
 	// A dark backing strip so the tray reads as chrome even if a slot's outline
 	// crosses it (the slot overlay draws after this). The WHOLE strip suppresses a
 	// slot-move (overTray), not just the chips — else pressing a gap would grab a
-	// box parked at the bottom.
+	// box parked under it.
 	trayStrip := sdl.Rect{X: 0, Y: trayY - 4, W: w, H: 40}
 	c.Fill(trayStrip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
 	c.Label(pad, trayY-2, "Pop a tab out into its own movable panel (click again to redock):", ColTierYellow)
