@@ -3381,7 +3381,20 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// text_color 0–9), the dropdown names it (AO2's color dropdown). The
 	// showname box OVERRIDES the Settings showname for the session.
 	fH := a.inputFieldH()
-	swatch := sdl.Rect{X: pad, Y: icY, W: 26, H: fH}
+	// The whole IC bar is a movable + resizable slot ("icbar"). Its default spans the
+	// stage width (vp.W) at the controls' computed row (icY), so an un-edited courtroom
+	// is pixel-identical. Everything inside lays out relative to the slot (icBar.X / .W)
+	// and the fH-tall row is centred within the slot height, so a drag moves the bar and
+	// a width resize widens / narrows the text input (still floored at minICInputW). The
+	// emoji / FX / React buttons store their live rects as they draw, so their pop-ups
+	// follow the bar wherever it lands. slotRect is alloc-free off the edit path.
+	icBarDef := sdl.Rect{X: pad, Y: icY, W: vp.W, H: fH}
+	icBar := a.slotRect(slotICBar, icBarDef, w, h)
+	rowY := icBar.Y
+	if icBar.H > fH { // centre the row when the box was dragged taller; never above the box top
+		rowY = icBar.Y + (icBar.H-fH)/2
+	}
+	swatch := sdl.Rect{X: icBar.X, Y: rowY, W: 26, H: fH}
 	// The selector also offers the extended AsyncAO colours (#98) and the two
 	// "fun colour" modes (#79): they sit after the palette so they're picked like
 	// any colour instead of being buried in Settings. icColorSelected drives the
@@ -3390,11 +3403,11 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	icSel, sw := a.icColorSelected()
 	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
-	if next, changed := c.Dropdown("colordd", sdl.Rect{X: pad + 32, Y: icY, W: colorSelectW, H: fH}, icColorChoices, icSel); changed {
+	if next, changed := c.Dropdown("colordd", sdl.Rect{X: icBar.X + 32, Y: rowY, W: colorSelectW, H: fH}, icColorChoices, icSel); changed {
 		a.applyICColorChoice(next)
 	}
 	const shownameBoxW = 140
-	nameX := pad + 32 + colorSelectW + 6
+	nameX := icBar.X + 32 + colorSelectW + 6
 	namePlaceholder := a.d.Prefs.SavedShowname()
 	if namePlaceholder == "" {
 		namePlaceholder = "Showname"
@@ -3405,8 +3418,8 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		snDD = 22
 		snW -= snDD + 2
 	}
-	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameX, Y: icY, W: snW, H: fH}, a.shownameOverride, namePlaceholder)
-	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameX + snW + 2, Y: icY, W: snDD, H: fH}); name != "" {
+	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameX, Y: rowY, W: snW, H: fH}, a.shownameOverride, namePlaceholder)
+	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameX + snW + 2, Y: rowY, W: snDD, H: fH}); name != "" {
 		a.shownameOverride = name
 	}
 	// Immediate (AO non-interrupting preanim): the preanim plays without
@@ -3414,49 +3427,50 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// OutgoingMS.Immediate. Vertically centered against the fH-tall inputs.
 	const immedW = 70
 	immedX := nameX + shownameBoxW + 6
-	a.icImmediate = c.Checkbox(immedX, icY+(fH-16)/2, "Immed", a.icImmediate)
-	c.Tooltip(sdl.Rect{X: immedX, Y: icY, W: immedW, H: fH}, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
+	a.icImmediate = c.Checkbox(immedX, rowY+(fH-16)/2, "Immed", a.icImmediate)
+	c.Tooltip(sdl.Rect{X: immedX, Y: rowY, W: immedW, H: fH}, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	var send bool
 	icX := immedX + immedW + 6
 	icCounterOn := a.d.Prefs.MessageCounterOn()
 	// The IC input must always keep at least minICInputW (plus the counter's reserve when it's
-	// on). Each IC-bar button is placed ONLY if it still leaves that room, so a narrow stage
+	// on). Each IC-bar button is placed ONLY if it still leaves that room, so a narrow bar
 	// drops them right-to-left — React, then FX, then emoji — instead of pushing the text input
 	// off the edge. Regression guard: adding the React button collapsed the input to zero width
-	// for users with a narrower stage ("the IC bar disappeared"). Inlined (no closure) to keep
-	// this per-frame row allocation-free.
+	// for users with a narrower stage ("the IC bar disappeared"). Widths key off the slot
+	// (icBar.W), so the same guard holds after the bar is moved/resized. Inlined (no closure) to
+	// keep this per-frame row allocation-free.
 	const minICInputW = 150
 	tailReserve := int32(minICInputW)
 	if icCounterOn {
 		tailReserve += msgCounterReserve
 	}
 	// #M2 S1: emoji picker button on the IC bar's left edge.
-	if vp.W-(icX-pad)-(fH+4) >= tailReserve {
-		if a.drawEmojiBarButton(sdl.Rect{X: icX, Y: icY, W: fH, H: fH}) {
+	if icBar.W-(icX-icBar.X)-(fH+4) >= tailReserve {
+		if a.drawEmojiBarButton(sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}) {
 			a.showEmojiPicker = !a.showEmojiPicker
 		}
 		icX += fH + 4
 	}
 	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow).
-	if vp.W-(icX-pad)-(fxBtnW+4) >= tailReserve {
-		a.fxButton(sdl.Rect{X: icX, Y: icY, W: fxBtnW, H: fH})
+	if icBar.W-(icX-icBar.X)-(fxBtnW+4) >= tailReserve {
+		a.fxButton(sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH})
 		icX += fxBtnW + 4
 	}
 	// #2: React button — queue an emoji reaction to the last message (rides your next send).
-	if vp.W-(icX-pad)-(reactBtnW+4) >= tailReserve {
-		if a.reactButton(sdl.Rect{X: icX, Y: icY, W: reactBtnW, H: fH}) {
+	if icBar.W-(icX-icBar.X)-(reactBtnW+4) >= tailReserve {
+		if a.reactButton(sdl.Rect{X: icX, Y: rowY, W: reactBtnW, H: fH}) {
 			a.toggleReactPicker()
 		}
 		icX += reactBtnW + 4
 	}
-	icW := vp.W - (icX - pad)
+	icW := icBar.W - (icX - icBar.X)
 	if icCounterOn {
 		icW -= msgCounterReserve
 	}
 	if icW < minICInputW {
 		icW = minICInputW // defensive floor: never collapse the input, even on a tiny stage
 	}
-	icBox := sdl.Rect{X: icX, Y: icY, W: icW, H: fH}
+	icBox := sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}
 	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
 	a.icInput, send = c.TextFieldEmoji("ic", icBox, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
 	a.drawMsgCounter(icBox, icCounterOn)

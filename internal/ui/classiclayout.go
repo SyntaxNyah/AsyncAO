@@ -27,6 +27,7 @@ const (
 	slotRightCol = "rightcol" // IC log / right column (both themes)
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
 	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
+	slotICBar    = "icbar"    // the IC input bar (colour · showname · Immed · emoji/FX/React · text)
 )
 
 // Resize-edge bitmask: which sides of a box a drag moves.
@@ -132,6 +133,8 @@ func classicSlotLabel(k string) string {
 		return "OOC box"
 	case slotEmotes:
 		return "Emote grid"
+	case slotICBar:
+		return "IC input bar"
 	default:
 		// Torn-off tab panels carry a "tab:<name>" key.
 		for i := range tornTabTable {
