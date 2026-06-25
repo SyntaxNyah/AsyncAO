@@ -165,3 +165,10 @@ genuinely libre. The protocol comes from the GPLv3
 clean-room in Go (protocols aren't copyrightable, and GPLv3 is AGPLv3-compatible
 regardless). **Full per-dependency list with licences & links:
 [docs/THIRD-PARTY-LICENSES.md](docs/THIRD-PARTY-LICENSES.md).**
+
+**Copyright © 2026 SyntaxNyah and the AsyncAO contributors.** Because AsyncAO and
+all of its dependencies are AGPL-v3-compatible free software, it may be freely
+redistributed — **including binary GitHub releases** — in full compliance with
+the AGPL v3 and every dependency's licence. Binary releases should ship the
+third-party licence notices listed above alongside the [LICENSE](LICENSE) and a
+link to this source. See the [NOTICE](NOTICE) file for the short version.

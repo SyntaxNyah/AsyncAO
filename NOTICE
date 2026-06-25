@@ -1,0 +1,24 @@
+AsyncAO
+Copyright (c) 2026 SyntaxNyah and the AsyncAO contributors
+
+AsyncAO is free software, licensed under the GNU Affero General Public License
+version 3 (see the LICENSE file).
+
+It is free software all the way down: every dependency is open-source under a
+licence compatible with the AGPL v3 (permissive MIT / BSD / ISC / zlib / libpng /
+FreeType licences, MPL-2.0, LGPL, and the GCC Runtime Library Exception). There
+are no proprietary or licence-incompatible components.
+
+Because of that, AsyncAO may be freely redistributed -- in source form and as
+binary releases (e.g. GitHub Releases) -- in full compliance with the AGPL v3 and
+with every applicable dependency licence. When distributing binaries, include the
+third-party libraries' licence notices alongside this NOTICE, the LICENSE file,
+and a link to the source at https://github.com/SyntaxNyah/AsyncAO.
+
+The full, per-dependency list of components and their licences is in
+docs/THIRD-PARTY-LICENSES.md.
+
+Mascot / app-icon artwork ("Mayo") is (c) hlenbchan (Instagram @hlenbchan2),
+commissioned by Nyah and used with permission; it is not covered by the AGPL.
+
+This NOTICE is a good-faith summary maintained by the project, not legal advice.

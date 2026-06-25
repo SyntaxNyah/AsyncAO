@@ -81,6 +81,11 @@ var aboutLines = []string{
 	"Each one is linked and credited below — please support them too. Full details:",
 	"docs/THIRD-PARTY-LICENSES.md in the repo.",
 	"",
+	"Copyright (c) 2026 SyntaxNyah and the AsyncAO contributors. Because the whole",
+	"stack is AGPL-v3-compatible free software, AsyncAO may be freely redistributed",
+	"— including as binary GitHub releases — in full compliance with the AGPL and",
+	"every dependency's licence (ship the third-party notices alongside binaries).",
+	"",
 	"Pull requests, bug fixes and feature requests are welcome!",
 }
 

@@ -1,6 +1,7 @@
 # Third-party licences — AsyncAO is free software, top to bottom
 
-**AsyncAO is licensed under the [GNU AGPL v3](../LICENSE).** This document lists
+**Copyright © 2026 SyntaxNyah and the AsyncAO contributors. Licensed under the
+[GNU AGPL v3](../LICENSE).** This document lists
 every dependency and its licence, and explains why the whole stack is compatible
 with the AGPL v3 — i.e. AsyncAO is *genuinely* free/libre software with no
 proprietary or licence-incompatible pieces.
