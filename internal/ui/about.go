@@ -19,6 +19,9 @@ const (
 	aboutAOSDLURL  = "https://github.com/AttorneyOnline/AO-SDL"
 	aboutAOSiteURL = "https://aceattorneyonline.com"
 	aboutArtistURL = "https://www.instagram.com/hlenbchan2" // app icon artist
+	// aboutMascotPx is the on-screen size of the Mayo portrait at the top of the
+	// page (downscaled from the 512² embed; the render scale-quality hint smooths it).
+	aboutMascotPx = int32(200)
 )
 
 var aboutLines = []string{
@@ -55,8 +58,14 @@ var aboutLines = []string{
 	"financially, and gave me the inspiration to keep going. Without that",
 	"support AsyncAO wouldn't have come this far this fast. Thank you.",
 	"",
-	"App icon: commissioned by Nyah and illustrated by hlenbchan — please go",
-	"support their work! Instagram: @hlenbchan2. Thank you for the artwork.",
+	"Mayo — the AsyncAO mascot and app icon (above). The client was almost",
+	"named \"MayAO\" (Maya + AO), but became AsyncAO — we wanted more Maya",
+	"representation, since the AO2 client only ever showed Phoenix and",
+	"Edgeworth. So the mascot is Mayo: inspired by Maya Fey from Ace",
+	"Attorney, with the Go gopher's blue palette (AsyncAO is written in Go).",
+	"",
+	"Art commissioned by Nyah and illustrated by hlenbchan — please go support",
+	"their work! Instagram: @hlenbchan2. Thank you for bringing Mayo to life.",
 	"",
 	"Pull requests, bug fixes and feature requests are welcome!",
 }
@@ -87,9 +96,22 @@ func (a *App) drawAbout(w, h int32) {
 	lineH := int32(c.font.Height()) + 4
 	top := pad + 48 // content viewport starts below the heading
 	viewH := h - top - pad
-	// The page outgrew small windows, so it scrolls. Total height = text lines + the
-	// gap + the link buttons; clamp the wheel offset to the ends.
-	contentH := int32(len(aboutLines))*lineH + 10 + int32(len(aboutLinks))*(btnH+6)
+	// Mayo portrait at the top of the scroll content (uploaded once, lazily). Square
+	// art, but keep aspect defensively in case the embed is ever swapped.
+	mayoTex, mayoW, mayoH := a.mayoTexture()
+	mascotDW, mascotDH, mascotBlock := int32(0), int32(0), int32(0)
+	if mayoTex != nil && mayoW > 0 && mayoH > 0 {
+		mascotDW, mascotDH = aboutMascotPx, aboutMascotPx
+		if mayoW > mayoH {
+			mascotDH = aboutMascotPx * mayoH / mayoW
+		} else if mayoH > mayoW {
+			mascotDW = aboutMascotPx * mayoW / mayoH
+		}
+		mascotBlock = mascotDH + 14 // portrait + gap before the text
+	}
+	// The page outgrew small windows, so it scrolls. Total height = portrait + text
+	// lines + the gap + the link buttons; clamp the wheel offset to the ends.
+	contentH := mascotBlock + int32(len(aboutLines))*lineH + 10 + int32(len(aboutLinks))*(btnH+6)
 	maxScroll := contentH - viewH
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -106,6 +128,11 @@ func (a *App) drawAbout(w, h int32) {
 	_ = c.Ren.SetClipRect(&clip)
 	defer func() { _ = c.Ren.SetClipRect(nil) }()
 	y := top - a.aboutScroll
+	if mascotBlock > 0 { // Mayo, centered, above the text (clip handles partial visibility)
+		dst := sdl.Rect{X: (w - mascotDW) / 2, Y: y, W: mascotDW, H: mascotDH}
+		_ = c.Ren.Copy(mayoTex, nil, &dst)
+		y += mascotBlock
+	}
 	for _, line := range aboutLines {
 		col := ColText
 		if line == "Pull requests, bug fixes and feature requests are welcome!" {

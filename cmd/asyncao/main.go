@@ -271,7 +271,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer uiCtx.Destroy()
-	uiCtx.SetWindow(window) // modcall/case-alert taskbar flashing
+	uiCtx.SetWindow(window)  // modcall/case-alert taskbar flashing
+	ui.SetWindowIcon(window) // window / taskbar icon = the Mayo mascot (mascot.go)
 
 	// Discord Rich Presence: stdlib-only local IPC, fully optional at
 	// build (-tags nodiscord) AND runtime — it idles silently when the

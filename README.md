@@ -10,6 +10,11 @@ is, let's be honest, a bit slow. AsyncAO streams exactly the assets it needs,
 learns what formats your server ships (one probe per asset, ever), caches
 everything in memory and on disk, and renders without allocating.
 
+<p align="center">
+  <img src="internal/ui/assets/mayo.png" alt="Mayo — the AsyncAO mascot and app icon" width="220"><br>
+  <sub><b>Mayo</b> — the AsyncAO mascot &amp; app icon, by <a href="https://www.instagram.com/hlenbchan2">hlenbchan</a> (see <a href="#mayo--the-mascot--app-icon">Credits</a>)</sub>
+</p>
+
 ## Highlights
 
 - **Zero fallbacks by default** — prefer WebP? You get WebP or a visible
@@ -112,12 +117,18 @@ A special thank-you to **Northgate** — who backed the project, including
 financially, and gave the inspiration to keep going. Without that support
 AsyncAO wouldn't have come this far this fast.
 
-### Artwork
+### Mayo — the mascot & app icon
 
-The AsyncAO app icon was **commissioned by Nyah** and illustrated by
+Meet **Mayo** (shown at the top), AsyncAO's mascot and app icon. The client was
+almost called **"MayAO"** (Maya + AO), but became **AsyncAO** — we wanted more
+Maya representation, since the AO2 client only ever showed Phoenix and Edgeworth.
+So the mascot is Mayo: inspired by **Maya Fey** from *Ace Attorney*, with the
+**Go gopher's** blue palette (AsyncAO is written in Go).
+
+Art **commissioned by Nyah** and illustrated by
 **[hlenbchan](https://www.instagram.com/hlenbchan2)** (Instagram
-**[@hlenbchan2](https://www.instagram.com/hlenbchan2)**). All credit for the
-icon goes to them — please go support their work!
+**[@hlenbchan2](https://www.instagram.com/hlenbchan2)**) — all credit for the
+icon goes to them, please go support their work!
 
 Thank you everyone for spending the time to read this.
 
