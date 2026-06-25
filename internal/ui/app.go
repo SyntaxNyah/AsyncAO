@@ -620,7 +620,13 @@ type App struct {
 	previewDragStart         [2]int32
 	previewDragBase          [2]int32
 	previewFrameRect         sdl.Rect
-	hidden                   map[string]bool
+	// Close-on-leave travel state: previewTriggerRect is the cell that opened the box,
+	// previewEntered latches once the cursor has reached the box. Together they let the
+	// cursor cross the gap from the cell to the bottom-right box without it vanishing,
+	// then close it the moment the cursor leaves the box (beta feedback).
+	previewTriggerRect sdl.Rect
+	previewEntered     bool
+	hidden             map[string]bool
 
 	iniRes chan iniswapFetch
 

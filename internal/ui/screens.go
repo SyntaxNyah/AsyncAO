@@ -719,17 +719,61 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 	}
 }
 
-// closeSpritePreviewOnLeave dismisses the hover sprite-preview box once the cursor
-// is over NEITHER a preview-triggering cell (HoverPreview clears hoverID on exit) NOR
-// the box itself (previewFrameRect — so you can still mouse onto it to zoom/drag) — or
-// on any click (selecting commits and dismisses). Replaces the old click-only close
-// that forced a manual dismiss (playtesters: "had to manually close the box"). Pure
-// per-frame state check; called only while a preview is up, so it's off the hot path.
+// closeSpritePreviewOnLeave dismisses the hover sprite-preview box. The box opens on a
+// hovered cell but lives in the bottom-right corner, so the cursor has to TRAVEL from
+// the cell across a gap to reach the box — and an "over neither" close would kill the box
+// mid-travel (beta report: "the preview disappears the moment you move the mouse"). So
+// while the cursor hasn't reached the box yet, the box stays up over the cell, the box,
+// OR the corridor spanning the two; it closes the instant the cursor strays off that path
+// (so it still vanishes when you simply move away — the other half of the feedback). Once
+// the cursor has reached the box, it closes as soon as the cursor leaves the box (or goes
+// back onto a trigger). Any click also dismisses (a selection commits). Pure per-frame
+// state check, called only while a preview is up — off the hot path.
 func (a *App) closeSpritePreviewOnLeave() {
 	c := a.ctx
-	if c.clicked || (c.hoverID == "" && !c.hovering(a.previewFrameRect)) {
-		a.previewBase = ""
+	if c.clicked {
+		a.closeSpritePreview()
+		return
 	}
+	overBox := c.hovering(a.previewFrameRect)
+	overTrigger := c.hoverID != ""
+	if overTrigger && !overBox {
+		a.previewEntered = false           // back on a cell → (re)enter the travel phase
+		a.previewTriggerRect = c.hoverRect // remember it so the corridor spans cell→box
+	}
+	if overBox {
+		a.previewEntered = true
+	}
+	switch {
+	case a.previewEntered:
+		if !overBox && !overTrigger {
+			a.closeSpritePreview() // used the box, then left it → close
+		}
+	case overTrigger || overBox || c.hovering(unionRect(a.previewTriggerRect, a.previewFrameRect)):
+		// still on the cell, the box, or the corridor between them → keep it up to travel
+	default:
+		a.closeSpritePreview() // strayed off the travel path → close
+	}
+}
+
+// closeSpritePreview tears down the hover-preview box and resets its travel state.
+func (a *App) closeSpritePreview() {
+	a.previewBase = ""
+	a.previewEntered = false
+}
+
+// unionRect is the smallest rect covering both a and b — the hover-preview "travel
+// corridor" from the trigger cell to the box. A zero-area rect contributes nothing.
+func unionRect(a, b sdl.Rect) sdl.Rect {
+	if a.W <= 0 || a.H <= 0 {
+		return b
+	}
+	if b.W <= 0 || b.H <= 0 {
+		return a
+	}
+	x0, y0 := min(a.X, b.X), min(a.Y, b.Y)
+	x1, y1 := max(a.X+a.W, b.X+b.W), max(a.Y+a.H, b.Y+b.H)
+	return sdl.Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}
 }
 
 // previewDragBottomReserve keeps the bottom strip of the preview box (the − / +

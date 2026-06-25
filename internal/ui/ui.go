@@ -370,6 +370,7 @@ type Ctx struct {
 	// hover preview tracking
 	hoverID    string
 	hoverSince time.Time
+	hoverRect  sdl.Rect // the currently-hovered preview trigger's rect (for the close-on-leave travel corridor)
 	// Delayed-tooltip dwell (TooltipAfter): the pointer must rest on a target
 	// for tooltipDwell before its hint shows. Separate from hoverID so the
 	// sprite-preview dwell and tooltip dwell never clobber each other.
@@ -2150,6 +2151,7 @@ func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
 		}
 		return false
 	}
+	c.hoverRect = r // remember the hovered trigger's rect for the close-on-leave corridor
 	if c.rightClicked {
 		c.hoverID = id // pin it so close-on-leave keeps the box up after an instant open
 		return true
