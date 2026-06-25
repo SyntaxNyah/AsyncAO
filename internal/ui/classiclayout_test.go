@@ -105,6 +105,71 @@ func TestClassicEdgeAt(t *testing.T) {
 	}
 }
 
+// TestCloneClassicOvNoAlias pins the undo-history landmine: a snapshot must be an
+// independent copy, so a later edit can't reach back and mutate it.
+func TestCloneClassicOvNoAlias(t *testing.T) {
+	orig := map[string][4]float64{"a": {1, 2, 3, 4}}
+	cp := cloneClassicOv(orig)
+	orig["a"] = [4]float64{9, 9, 9, 9}
+	orig["b"] = [4]float64{5, 5, 5, 5}
+	if cp["a"] != ([4]float64{1, 2, 3, 4}) {
+		t.Fatal("clone aliased the original: a value mutation leaked into the snapshot")
+	}
+	if _, ok := cp["b"]; ok {
+		t.Fatal("clone aliased the original: a new key leaked into the snapshot")
+	}
+	if cloneClassicOv(nil) != nil || cloneClassicOv(map[string][4]float64{}) != nil {
+		t.Fatal("empty/nil must clone to nil (the no-overrides state)")
+	}
+}
+
+// TestPushClassicUndoCap pins the bounded history (hard rule 4).
+func TestPushClassicUndoCap(t *testing.T) {
+	var a App
+	for i := 0; i < layoutUndoCap+10; i++ {
+		a.pushClassicUndo()
+	}
+	if len(a.classicUndo) != layoutUndoCap {
+		t.Fatalf("undo stack = %d, want capped at %d", len(a.classicUndo), layoutUndoCap)
+	}
+}
+
+// TestClassicEditUndoReSyncsPref drives two edits then two undos, asserting each undo
+// restores BOTH the live overrides AND the durable pref (so undo survives a relog).
+func TestClassicEditUndoReSyncsPref(t *testing.T) {
+	a := testTabApp(t)
+	undo := func() { // mirror the editor's Ctrl+Z
+		a.classicRedo = append(a.classicRedo, cloneClassicOv(a.classicOv))
+		snap := a.classicUndo[len(a.classicUndo)-1]
+		a.classicUndo = a.classicUndo[:len(a.classicUndo)-1]
+		a.restoreClassicOv(snap)
+	}
+
+	a.pushClassicUndo() // snapshot the empty state
+	a.classicOv = map[string][4]float64{slotOOC: {0.1, 0.1, 0.2, 0.2}}
+	a.d.Prefs.SetClassicSlot(slotOOC, a.classicOv[slotOOC])
+
+	a.pushClassicUndo() // snapshot OOC-at-0.1
+	a.classicOv[slotOOC] = [4]float64{0.5, 0.5, 0.2, 0.2}
+	a.d.Prefs.SetClassicSlot(slotOOC, a.classicOv[slotOOC])
+
+	undo() // back to OOC-at-0.1
+	if got := a.classicOv[slotOOC]; got != ([4]float64{0.1, 0.1, 0.2, 0.2}) {
+		t.Fatalf("after undo, live OOC = %v, want the 0.1 spot", got)
+	}
+	if got := a.d.Prefs.ClassicLayoutOverrides()[slotOOC]; got != ([4]float64{0.1, 0.1, 0.2, 0.2}) {
+		t.Fatalf("after undo, durable OOC = %v, want the 0.1 spot (undo must re-sync the pref)", got)
+	}
+
+	undo() // back to empty
+	if len(a.classicOv) != 0 {
+		t.Fatalf("after undoing the first edit, live overrides = %v, want none", a.classicOv)
+	}
+	if len(a.d.Prefs.ClassicLayoutOverrides()) != 0 {
+		t.Fatal("after undoing the first edit, the durable pref must be empty too")
+	}
+}
+
 func TestFracRectRoundTrip(t *testing.T) {
 	const w, h = 1600, 900
 	r := sdl.Rect{X: 240, Y: 90, W: 800, H: 450}

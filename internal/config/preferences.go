@@ -5679,6 +5679,28 @@ func (p *AssetPreferences) ClearClassicSlot(name string) {
 	p.markDirty()
 }
 
+// SetClassicLayout REPLACES every default-courtroom slot override at once — the
+// classic editor's undo/redo restores a whole snapshot, so it can't go slot-by-slot.
+// The map is copied (never aliased), empty keys skipped, and bounded by classicSlotCap;
+// a nil/empty map clears all overrides.
+func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
+	p.mu.Lock()
+	if len(m) == 0 {
+		p.ClassicLayout = nil
+	} else {
+		cp := make(map[string][4]float64, len(m))
+		for k, v := range m {
+			if k == "" || len(cp) >= classicSlotCap {
+				continue
+			}
+			cp[k] = v
+		}
+		p.ClassicLayout = cp
+	}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // Macros returns a copy of the user macro list.
 func (p *AssetPreferences) Macros() []MacroSpec {
 	p.mu.RLock()

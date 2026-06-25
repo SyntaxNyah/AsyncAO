@@ -15,7 +15,9 @@ package ui
 // live courtroom and persists to config.ClassicLayout.
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -206,8 +208,10 @@ func (a *App) startClassicEdit() {
 	a.classicEditDrag = 0
 	a.classicEditEdges = 0
 	a.classicEditMoved = false
+	a.classicUndo, a.classicRedo = nil, nil
+	a.classicPickSig, a.classicPickIdx = "", 0
 	a.layoutSnap = true // tidy placement by default; toggle off in the editor
-	a.pushDebug("edit layout (default courtroom): drag to move, edges/corners to resize, Esc to finish")
+	a.pushDebug("edit layout (default courtroom): drag to move, edges/corners to resize, Ctrl+Z to undo, Esc to finish")
 }
 
 // stopClassicEdit disarms and releases the input fence.
@@ -216,6 +220,7 @@ func (a *App) stopClassicEdit() {
 	a.classicEditKey = ""
 	a.classicEditDrag = 0
 	a.classicEditEdges = 0
+	a.classicUndo, a.classicRedo = nil, nil // free the history (it's edit-session-scoped)
 	a.ctx.modalOn = false
 }
 
@@ -266,6 +271,39 @@ func (a *App) clearClassicSlot(name string) {
 	}
 }
 
+// cloneClassicOv copies the override map for the undo history — the map is a reference,
+// so aliasing it would let a later edit silently mutate a snapshot (the classic undo
+// bug). An empty map clones to nil = the "no overrides" state, so it round-trips.
+func cloneClassicOv(m map[string][4]float64) map[string][4]float64 {
+	if len(m) == 0 {
+		return nil
+	}
+	cp := make(map[string][4]float64, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
+}
+
+// pushClassicUndo snapshots the overrides BEFORE an edit and forks history (a fresh edit
+// drops the redo stack). Bounded by layoutUndoCap; edit-mode only, never on the render
+// frame, so the alloc-free guarantee for normal play is untouched.
+func (a *App) pushClassicUndo() {
+	a.classicUndo = append(a.classicUndo, cloneClassicOv(a.classicOv))
+	if len(a.classicUndo) > layoutUndoCap {
+		a.classicUndo = a.classicUndo[1:]
+	}
+	a.classicRedo = a.classicRedo[:0]
+}
+
+// restoreClassicOv applies an undo/redo snapshot: it becomes the live overrides AND the
+// durable pref (so the result survives a relog, like the themed editor's restoreLayout).
+// The snapshot is cloned so the live map never aliases a history entry.
+func (a *App) restoreClassicOv(snap map[string][4]float64) {
+	a.classicOv = cloneClassicOv(snap)
+	a.d.Prefs.SetClassicLayout(a.classicOv)
+}
+
 // drawClassicEditor paints the slot-editor overlay and owns every interaction.
 // Called LAST from drawCourtroom (default layout only), after every widget has
 // registered its rect via slotRect this frame.
@@ -277,7 +315,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 
 	// Banner + chrome (raw-hit chips — the fence blocks kit buttons).
-	banner := "EDIT LAYOUT — drag = move · edges/corners = resize · right-click = reset a box · Esc = done"
+	banner := "EDIT LAYOUT — drag=move · edges/corners=resize · right-click=reset · Ctrl+Z=undo · Tab=cycle · Esc=done"
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 210})
 	c.Label(pad, 5, banner, ColTierYellow)
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
@@ -294,11 +332,29 @@ func (a *App) drawClassicEditor(w, h int32) {
 	pressed := c.mouseDown && !a.classicEditPrev
 	a.classicEditPrev = c.mouseDown
 
+	// Undo / redo (Ctrl+Z / Ctrl+Y): swap the whole override map with a snapshot and
+	// re-sync the durable pref, so a misdrag is one keystroke away — and the result
+	// persists. (Right-click only resets to DEFAULT; undo gets a previous CUSTOM spot back.)
+	if c.ctrlHeld && c.keyPressed == sdl.K_z && len(a.classicUndo) > 0 {
+		a.classicRedo = append(a.classicRedo, cloneClassicOv(a.classicOv))
+		snap := a.classicUndo[len(a.classicUndo)-1]
+		a.classicUndo = a.classicUndo[:len(a.classicUndo)-1]
+		a.restoreClassicOv(snap)
+		c.keyPressed = 0
+	} else if c.ctrlHeld && c.keyPressed == sdl.K_y && len(a.classicRedo) > 0 {
+		a.classicUndo = append(a.classicUndo, cloneClassicOv(a.classicOv))
+		snap := a.classicRedo[len(a.classicRedo)-1]
+		a.classicRedo = a.classicRedo[:len(a.classicRedo)-1]
+		a.restoreClassicOv(snap)
+		c.keyPressed = 0
+	}
+
 	if c.escPressed || (c.clicked && pointIn(c.mouseX, c.mouseY, doneBtn)) {
 		a.stopClassicEdit()
 		return
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, resetBtn) {
+		a.pushClassicUndo() // so Reset all is itself undoable
 		a.d.Prefs.ClearClassicSlot("")
 		a.classicOv = nil
 		a.pushDebug("edit layout: all boxes reset to default")
@@ -319,20 +375,36 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 	sort.Strings(keys)
 
-	// Hover: the SMALLEST box under the cursor (so a small box sitting on a big
-	// one is still grabbable). The slice-1 slots don't overlap, so no Tab-cycle.
+	// Hover: the stack of boxes under the cursor, SMALLEST area first (so a small box on
+	// a big one is grabbable), with Tab cycling which is armed — now that there are many
+	// slots they really can overlap (drag the control block over the emote grid, etc.).
+	// The pick index resets whenever the stack under the cursor changes.
 	hoverKey := ""
+	var stack []string
 	if a.classicEditDrag != 0 {
 		hoverKey = a.classicEditKey // mid-drag: keep the grabbed box highlighted
 	} else {
-		var best int64 = -1
 		for _, k := range keys {
-			r := a.slotReg[k].cur
-			if pointIn(c.mouseX, c.mouseY, r) {
-				if area := int64(r.W) * int64(r.H); best < 0 || area < best {
-					best, hoverKey = area, k
-				}
+			if pointIn(c.mouseX, c.mouseY, a.slotReg[k].cur) {
+				stack = append(stack, k)
 			}
+		}
+		sort.SliceStable(stack, func(i, j int) bool {
+			ri, rj := a.slotReg[stack[i]].cur, a.slotReg[stack[j]].cur
+			return int64(ri.W)*int64(ri.H) < int64(rj.W)*int64(rj.H)
+		})
+		if len(stack) > 0 {
+			if sig := strings.Join(stack, "\x00"); sig != a.classicPickSig {
+				a.classicPickSig, a.classicPickIdx = sig, 0 // a new stack under the cursor
+			}
+			if c.keyPressed == sdl.K_TAB {
+				a.classicPickIdx++
+				c.keyPressed = 0
+			}
+			a.classicPickIdx %= len(stack)
+			hoverKey = stack[a.classicPickIdx]
+		} else {
+			a.classicPickSig, a.classicPickIdx = "", 0
 		}
 	}
 
@@ -359,12 +431,18 @@ func (a *App) drawClassicEditor(w, h int32) {
 			a.classicEditStart = [2]int32{c.mouseX, c.mouseY}
 			a.classicEditBase = a.slotReg[a.classicEditKey].cur
 			a.classicEditMoved = false
+			a.pushClassicUndo() // snapshot before the move/resize (popped at release if it was a no-op)
 		}
 	}
 
-	// Right-click resets the hovered slot to its computed default.
+	// Right-click resets the hovered slot to its computed default (undoable, but only
+	// snapshot when there's actually an override to clear — else a right-click on a
+	// default box would litter the history with no-ops).
 	if c.rightClicked && hoverKey != "" {
-		a.clearClassicSlot(hoverKey)
+		if _, ov := a.classicOv[hoverKey]; ov {
+			a.pushClassicUndo()
+			a.clearClassicSlot(hoverKey)
+		}
 	}
 
 	// Live drag: screen deltas applied directly (screen space), clamped on-stage,
@@ -440,12 +518,15 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 	}
 
-	// Release persists the edit (a no-move click changes nothing).
+	// Release persists the edit (a no-move click changes nothing — and discards the
+	// begin snapshot so a bare click doesn't leave a no-op on the undo stack).
 	if a.classicEditDrag != 0 && !c.mouseDown {
 		if a.classicEditMoved && a.classicEditKey != "" {
 			if ov, ok := a.classicOv[a.classicEditKey]; ok {
 				a.d.Prefs.SetClassicSlot(a.classicEditKey, ov)
 			}
+		} else if n := len(a.classicUndo); n > 0 {
+			a.classicUndo = a.classicUndo[:n-1]
 		}
 		a.classicEditDrag = 0
 		a.classicEditEdges = 0
@@ -474,9 +555,13 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 		c.LabelClipped(r.X+4, r.Y+3, r.W-8, classicSlotLabel(k), col)
 	}
-	if a.classicEditKey != "" {
+	switch {
+	case a.classicEditKey != "":
 		c.Label(pad, h-22, "editing: "+classicSlotLabel(a.classicEditKey), ColText)
-	} else if len(keys) > 0 {
-		c.Label(pad, h-22, "drag a box to move · grab an edge or corner to resize · saves automatically", ColTextDim)
+	case len(stack) > 1:
+		c.Label(pad, h-22, fmt.Sprintf("%s — %d boxes stacked here, Tab to cycle (%d/%d)",
+			classicSlotLabel(hoverKey), len(stack), a.classicPickIdx+1, len(stack)), ColTierYellow)
+	case len(keys) > 0:
+		c.Label(pad, h-22, "drag = move · edge/corner = resize · right-click = reset · Ctrl+Z = undo · saves automatically", ColTextDim)
 	}
 }

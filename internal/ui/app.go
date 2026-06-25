@@ -561,6 +561,13 @@ type App struct {
 	classicEditEdges uint8 // which edges a resize drags (edgeL/R/T/B bitmask); 0 mid-move
 	classicEditPrev  bool  // press-edge latch (mouse-down rising edge)
 	classicEditMoved bool  // a drag actually moved/resized (else a click persists nothing)
+	// Undo/redo history of the whole override map (Ctrl+Z / Ctrl+Y), edit-mode only and
+	// bounded by layoutUndoCap. classicPickIdx/Sig drive Tab-cycling the stack of slots
+	// under the cursor so a big box hidden under a small one is still reachable.
+	classicUndo    []map[string][4]float64
+	classicRedo    []map[string][4]float64
+	classicPickIdx int
+	classicPickSig string
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage
