@@ -3493,28 +3493,44 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	oocY := h - fH - 4
 	if !a.panelHidden(panelOOC) && a.d.Prefs.LegacyDevThemeOn() {
 		nameW := int32(120)
+		// The Legacy OOC bar is its own movable + resizable slot ("oocbar"), mirroring the IC
+		// bar: its default spans the bottom row, so an un-edited Legacy courtroom is pixel-
+		// identical. Contents lay out relative to oocBar.X / .W (name box, then a full-width
+		// input), the row centred within the slot height. Registered only while this Legacy bar
+		// actually draws, so the editor never offers a handle for it on the new default (which
+		// uses the right-column OOC box, slotOOC, instead).
+		oocBarDef := sdl.Rect{X: pad, Y: oocY, W: w - 3*pad, H: fH}
+		oocBar := a.slotRect(slotOOCBar, oocBarDef, w, h)
+		oocRowY := oocBar.Y
+		if oocBar.H > fH {
+			oocRowY = oocBar.Y + (oocBar.H-fH)/2
+		}
 		ocW, ocDD := nameW, int32(0)
 		if len(a.nameOpts) > 1 { // same tiny ▾ saved-name picker, fitted inside the name box
 			ocDD = 22
 			ocW -= ocDD + 2
 		}
 		prevOOC := a.oocName
-		a.oocName, _ = c.TextField("oocname", sdl.Rect{X: pad, Y: oocY, W: ocW, H: fH}, a.oocName, "OOC name")
-		if name := a.pickNameDropdown("oocpick", sdl.Rect{X: pad + ocW + 2, Y: oocY, W: ocDD, H: fH}); name != "" {
+		a.oocName, _ = c.TextField("oocname", sdl.Rect{X: oocBar.X, Y: oocRowY, W: ocW, H: fH}, a.oocName, "OOC name")
+		if name := a.pickNameDropdown("oocpick", sdl.Rect{X: oocBar.X + ocW + 2, Y: oocRowY, W: ocDD, H: fH}); name != "" {
 			a.oocName = name
 		}
 		if a.oocName != prevOOC {
 			a.d.Prefs.SetOOCName(a.oocName) // permanent OOC name
 		}
 		var sendOOC bool
+		oocInputW := oocBar.W - nameW - 6
+		if oocInputW < minICInputW { // share the IC bar's floor: the input never collapses on a tiny bar
+			oocInputW = minICInputW
+		}
 		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput) // #M5: emoji/unicode in the OOC box too
-		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: pad + nameW + 6, Y: oocY, W: w - nameW - 3*pad - 6, H: fH}, a.oocInput, "OOC chat... (full history in the OOC tab)", oocPrimary, oocEmoji)
+		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X + nameW + 6, Y: oocRowY, W: oocInputW, H: fH}, a.oocInput, "OOC chat... (full history in the OOC tab)", oocPrimary, oocEmoji)
 		if sendOOC && strings.TrimSpace(a.oocInput) != "" {
 			a.sess.SendOOC(a.oocName, a.oocInput)
 			a.oocInput = ""
 		}
 		// Ctrl+wheel over the OOC row: same log/OOC text-size shortcut.
-		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: pad, Y: oocY, W: w - 2*pad, H: fH}) {
+		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}) {
 			a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
 				config.MinLogScalePercent, config.MaxLogScalePercent)
 			a.saveLayout()
