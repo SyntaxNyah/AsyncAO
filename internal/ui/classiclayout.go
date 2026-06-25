@@ -26,6 +26,7 @@ const (
 	slotViewport = "viewport" // the stage (free move + resize; the scene fills it)
 	slotRightCol = "rightcol" // IC log / right column (both themes)
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
+	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
 )
 
 // Resize-edge bitmask: which sides of a box a drag moves.
@@ -129,6 +130,8 @@ func classicSlotLabel(k string) string {
 		return "Log / right column"
 	case slotOOC:
 		return "OOC box"
+	case slotEmotes:
+		return "Emote grid"
 	default:
 		// Torn-off tab panels carry a "tab:<name>" key.
 		for i := range tornTabTable {

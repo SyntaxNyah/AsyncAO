@@ -3464,10 +3464,14 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.sendIC(pendingShout)
 	}
 
-	// Emote row.
+	// Emote row — a movable/resizable slot (the grid pages within whatever rect it
+	// gets, so drag/resize is free). slotRect stays INSIDE the hidden guard so the
+	// editor never registers a handle for a grid that isn't drawn. The default is
+	// byte-identical to before, so an un-edited courtroom is pixel-identical.
 	emoteY := icY + fH + 6
 	if !a.panelHidden(panelEmotes) {
-		a.drawEmoteRow(sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}, vp)
+		emoteDef := sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}
+		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
 	}
 
 	// OOC row at the very bottom: name + a FULL-width input. Legacy only — in the new default the
