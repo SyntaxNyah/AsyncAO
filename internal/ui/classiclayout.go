@@ -130,6 +130,12 @@ func classicSlotLabel(k string) string {
 	case slotOOC:
 		return "OOC box"
 	default:
+		// Torn-off tab panels carry a "tab:<name>" key.
+		for i := range tornTabTable {
+			if tornTabTable[i].key == k {
+				return tornTabTable[i].title + " (panel)"
+			}
+		}
 		return k
 	}
 }
@@ -270,6 +276,10 @@ func (a *App) drawClassicEditor(w, h int32) {
 		a.layoutSnap = !a.layoutSnap
 	}
 
+	// Pop-out tray (bottom): tear a log tab out into its own movable panel, or
+	// redock it. overTray suppresses a slot-move when you press a chip. (torntabs.go)
+	overTray := a.drawClassicTabTray(w, h)
+
 	// Slot names this frame, stable order.
 	keys := make([]string, 0, len(a.slotReg))
 	for k := range a.slotReg {
@@ -297,7 +307,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Begin a drag on press: RESIZE (an edge/corner of some box is gripped) takes
 	// priority over MOVE. Among gripped boxes, the SMALLEST wins so a small box's
 	// handle isn't swallowed by a big box behind it.
-	if pressed && a.classicEditDrag == 0 && c.mouseY > classicBannerH {
+	if pressed && a.classicEditDrag == 0 && c.mouseY > classicBannerH && !overTray {
 		resizeKey, resizeEdges, best := "", uint8(0), int64(-1)
 		for _, k := range keys {
 			r := a.slotReg[k].cur

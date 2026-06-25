@@ -64,7 +64,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Wardrobe", "Iniswap — borrow another character's look", hotkeyWardrobe, func() { a.openIniswap() }},
 			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
 			{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
-			{"Edit Layout", "Drag & resize EVERY box live — move the log / OOC / stage anywhere, saved across sessions", "", func() { a.openLayoutEditor() }},
+			{"Edit Layout", "Drag & resize EVERY box live — move the log / OOC / stage, and pop tabs (Music, Players…) out into their own panels; saved across sessions", "", func() { a.openLayoutEditor() }},
 			{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.showEvid = true }},
 			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
 			{"Mod / CM", "Server-aware moderation + room (CM) controls — ban/kick with a live command preview", hotkeyModDash, func() { a.toggleModDash() }},
@@ -267,6 +267,15 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	}
 	if a.showStyleBox && pointIn(mx, my, a.styleBoxRect(w, h)) {
 		return true
+	}
+	// Torn-off tab panels (torntabs.go) fence the scene too — their list content is
+	// clickable, so a click in one must not also land on the stage behind it.
+	if len(a.classicOv) > 0 {
+		for i := range tornTabTable {
+			if r, ok := a.tornTabRect(tornTabTable[i].key, w, h); ok && pointIn(mx, my, r) {
+				return true
+			}
+		}
 	}
 	return false
 }

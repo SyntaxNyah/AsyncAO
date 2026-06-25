@@ -3441,8 +3441,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		case ScreenCourtroom:
 			a.drawCourtroom(winW, winH)
 			a.drawFloatingExtras(winW, winH) // non-blocking, on top of the live courtroom (input already restored)
-			a.drawEmojiPicker(winW, winH)    // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
-			a.drawReactPalette(winW, winH)   // #2: reaction palette overlay (modal-fenced)
+			if a.extrasSurfaceLive() {       // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
+				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)
+			}
+			a.drawEmojiPicker(winW, winH)  // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
+			a.drawReactPalette(winW, winH) // #2: reaction palette overlay (modal-fenced)
 		case ScreenSettings:
 			a.drawSettings(winW, winH)
 		case ScreenAbout:

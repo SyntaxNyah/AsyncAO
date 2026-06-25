@@ -966,7 +966,12 @@ func (a *App) drawCourtroom(w, h int32) {
 	a.drawICControls(w, h, vpDef)
 
 	// Live slot editor overlay (default layout only) — drawn LAST so it sits over every widget.
+	// Torn-off tab panels draw HERE while editing (before the editor) so slotRect registers them
+	// and the editor hands them drag/resize handles this same frame; their content shows (inert)
+	// so you see what you're arranging. In normal play they draw post-courtroom (app.go) where the
+	// content is interactive and the pointer is fenced over them. (torntabs.go)
 	if a.classicEdit {
+		a.drawTornTabs(w, h)
 		a.drawClassicEditor(w, h)
 	}
 }
@@ -1449,41 +1454,24 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// (the IC box below is untouched). The tabs share the rest of the row.
 	const volBtnW = int32(36)
 	// New default: OOC is its OWN box, so the OOC tab is dropped (and the rest reindex); Legacy keeps
-	// the 7-tab strip. If the tab was on OOC when we drop it, fall back to the IC log.
+	// the 7-tab strip. If the active tab was OOC (new default) or has been torn into its own floating
+	// panel (torntabs.go), fall back to the IC log so the docked area still shows something.
 	legacyTabs := a.d.Prefs.LegacyDevThemeOn()
-	if !legacyTabs && a.logTab == logTabOOC {
+	if (!legacyTabs && a.logTab == logTabOOC) || a.tabTorn(a.logTab) {
 		a.logTab = logTabLog
 	}
-	numLogTabs := int32(7)
-	if !legacyTabs {
-		numLogTabs = 6
-	}
+	// The docked strip skips any torn-off tab and compacts the rest (0-alloc stack array).
+	docked, numLogTabs := a.dockedLogTabs(legacyTabs)
 	tab := (r.W - volBtnW) / numLogTabs
-	tabBtn := func(i int32, id int, label string) {
+	for i := int32(0); i < numLogTabs; i++ {
 		bw := tab
 		if i == numLogTabs-1 {
 			bw = (r.W - volBtnW) - (numLogTabs-1)*tab // last tab takes the remainder before the Vol toggle
 		}
-		if c.Button(sdl.Rect{X: r.X + i*tab, Y: r.Y, W: bw, H: btnH}, label) {
-			a.logTab = id
+		if c.Button(sdl.Rect{X: r.X + i*tab, Y: r.Y, W: bw, H: btnH}, docked[i].label) {
+			a.logTab = docked[i].id
 		}
 	}
-	ti := int32(0)
-	tabBtn(ti, logTabLog, "Log")
-	ti++
-	tabBtn(ti, logTabMusic, "Music")
-	ti++
-	tabBtn(ti, logTabAreas, "Areas")
-	ti++
-	tabBtn(ti, logTabPlayers, "Players")
-	ti++
-	if legacyTabs {
-		tabBtn(ti, logTabOOC, "OOC")
-		ti++
-	}
-	tabBtn(ti, logTabNotes, "Notes")
-	ti++
-	tabBtn(ti, logTabFriends, "Friends")
 	volBtn := sdl.Rect{X: r.X + r.W - volBtnW, Y: r.Y, W: volBtnW, H: btnH}
 	if c.Button(volBtn, "Vol") {
 		a.volStripOn = !a.volStripOn

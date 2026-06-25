@@ -1370,9 +1370,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   placement. Overrides are saved as window *fractions* (config `classicLayout`),
   so they survive window resizes and persist across sessions — with **zero
   render-loop cost** when you haven't edited anything (the slot path is
-  allocation-free; an un-edited courtroom is pixel-identical to before). More
-  widgets (IC input, button groups, music, tear-off log tabs) become draggable
-  in later slices.
+  allocation-free; an un-edited courtroom is pixel-identical to before).
+- **Tear-off tab "menus"**: in the layout editor a bottom tray lets you **pop a
+  log tab (Music, Areas, Players, Notes, Friends) out of the docked strip into
+  its own movable, resizable floating panel** that renders the tab's real
+  content — drag/resize it like any other box, and it persists across sessions.
+  The docked strip compacts to fill the freed space; **Log** stays put as the
+  home tab. Click the tray chip again (or right-click the panel, or **Reset
+  all**) to redock — so the default is still plain buttons. Each torn tab is
+  just another layout *slot* under a `tab:<name>` key, so it reuses the editor's
+  drag/resize/persist machinery at **zero render cost when nothing is torn**.
+  More widgets (IC input, button groups, music bar) become draggable in later
+  slices.
 - **Tabbed settings**: the settings screen is split into category tabs
   (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
   one long scroll — click a tab, scroll within it, each tab remembers its
