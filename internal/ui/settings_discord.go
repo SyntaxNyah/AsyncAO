@@ -2,8 +2,6 @@
 
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
-
 // Discord Rich Presence settings live in their own build-tagged file. A Discord-free
 // build (-tags nodiscord) compiles this file out entirely and the no-op
 // drawDiscordSection in settings_discord_nodiscord.go takes over, so that binary
@@ -17,9 +15,10 @@ func (a *App) drawDiscordSection(y, w int32) int32 {
 }
 
 // drawDiscordRow renders the optional Rich Presence section: a master
-// toggle (default OFF), one checkbox per displayed field (the tick-on
+// toggle (default ON), one checkbox per displayed field (the tick-on
 // defaults show showname + character + server; the area stays private
-// unless chosen), and the application-ID field. Returns the next y.
+// unless chosen), and the live presence status. The app identity is baked
+// in (DefaultDiscordAppID), so there is no user-editable ID box. Returns the next y.
 func (a *App) drawDiscordRow(y, w int32) int32 {
 	c := a.ctx
 	dp := a.d.Prefs.Discord()
@@ -49,17 +48,14 @@ func (a *App) drawDiscordRow(y, w int32) int32 {
 			x += c.TextWidth(f.label) + 52
 		}
 		y += 28
-		c.Label(pad+20, y+4, "App ID:", ColText)
-		if next, _ := c.TextField("discordappid", sdl.Rect{X: pad + 90, Y: y, W: 220, H: fieldH}, dp.AppID, "Discord application ID"); next != dp.AppID {
-			dp.AppID = next
-			changed = true
-		}
-		status := "(create an app named AsyncAO at discord.com/developers, icon asset \"appicon\"; ID changes apply on restart)"
+		// The app identity is baked in (the official AsyncAO app) — no user-editable
+		// ID box. Show only the live presence status so they can see it connect.
+		status := "(shows \"Playing AsyncAO\" on your Discord profile while Discord is running)"
 		if a.d.Presence != nil {
-			status = "status: " + a.d.Presence.Status() + " — ID changes apply on restart"
+			status = "status: " + a.d.Presence.Status()
 		}
-		c.LabelClipped(pad+320, y+4, w-pad-330, status, ColTextDim)
-		y += 32
+		c.LabelClipped(pad+20, y+4, w-pad-30, status, ColTextDim)
+		y += 28
 	}
 	if changed {
 		a.d.Prefs.SetDiscord(dp)

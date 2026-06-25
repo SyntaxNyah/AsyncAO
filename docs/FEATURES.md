@@ -1490,8 +1490,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   connection.
 - **Discord Rich Presence**: **enabled by default** on a normal build (untick
   in Settings → Discord, or run a `-tags nodiscord` build), per-field privacy
-  checkboxes, zero build/run dependency. Note it still needs an Application ID
-  to actually connect — full guide in [DISCORD.md](DISCORD.md).
+  checkboxes, zero build/run dependency. The official AsyncAO **Application ID
+  is baked in** (no user-editable ID box), so it shows "Playing AsyncAO" out of
+  the box whenever Discord is running — full guide in [DISCORD.md](DISCORD.md).
 - **Update check + "What's New"** (Settings → on by default): one async check
   of the GitHub Releases API at launch — fired once, after the window is up,
   **never on the boot path** (zero startup cost), and a dev build skips it

@@ -3,9 +3,9 @@
 AsyncAO can show what you're playing on your Discord profile — the
 server, your character, your showname, your area — with **per-field
 privacy checkboxes** and **zero build- or run-time dependency on
-Discord**. This document is the complete setup, privacy, and
-troubleshooting reference, plus the plan for shipping a default
-application ID later.
+Discord**. The official AsyncAO application ID is **baked in**, so it
+works the moment you tick it on — no developer-portal setup. This
+document is the complete setup, privacy, and troubleshooting reference.
 
 ## What it looks like
 
@@ -26,18 +26,20 @@ Line composition (all optional, see Privacy):
 
 ## Enabling it
 
-1. **Create a Discord application** (one-time, ~2 minutes):
-   - Open <https://discord.com/developers/applications> → *New
-     Application* → name it **AsyncAO** (the name is what profiles show
-     after "Playing").
-   - *Rich Presence → Art Assets* → upload the AsyncAO icon under the
-     asset key **`appicon`** (exactly that string — the client
-     references it as `largeImageKey`).
-   - Copy the **Application ID** from *General Information*.
-2. In AsyncAO: **Settings → Discord** — *Enable* is already ticked on a
-   normal build, so just paste the Application ID into **App ID** (untick
-   *Enable* instead if you'd rather it stay off).
-3. Restart AsyncAO (the ID is read when the presence worker starts).
+Nothing to set up — the official **AsyncAO** application ID is baked
+into the client.
+
+1. Make sure the **Discord desktop app is running** (the browser client
+   has no IPC pipe, so it can't show presence).
+2. In AsyncAO: **Settings → Discord** — *Enable* is **already ticked** on
+   a normal build, so presence is on out of the box. Untick it there if
+   you'd rather it stay off, and tick/untick the per-field boxes (server,
+   character, showname, area) to choose what's shown.
+
+That's it. The app identity isn't user-editable (there's no App ID box) —
+it's always the official AsyncAO app so the name and icon are consistent
+for everyone. Want a *different* identity (custom name/icon)? Edit
+`DefaultDiscordAppID` in `internal/config/preferences.go` and rebuild.
 
 No Discord SDK is installed and nothing is downloaded: the client talks
 to your locally running Discord app over its IPC pipe
@@ -47,11 +49,11 @@ handshake (`op 0`) / activity (`op 1` `SET_ACTIVITY`) frames.
 
 ## Privacy model
 
-- **The Enable toggle is pre-ticked on Discord-capable builds** (you can
-  untick it in Settings → Discord). But Rich Presence has a *second* gate:
-  without an **Application ID** the worker never dials, so a fresh install
-  still shows nothing and never touches the pipe until you add an App ID
-  (or the project bakes in a default ID — see the plan below).
+- **Rich Presence is ON by default on Discord-capable builds, and now
+  works out of the box** — the official Application ID is baked in, so a
+  fresh install with Discord running shows presence immediately (no ID to
+  paste). Untick *Enable* in Settings → Discord to turn it off; that gate
+  is enforced live (it clears the activity the moment you untick it).
   `-tags nodiscord` builds carry no Discord code at all, and a saved prefs
   file keeps whatever you last chose (this default only seeds fresh installs).
 - When you enable it, the default field set is **server + character +
@@ -95,28 +97,24 @@ version:
 
 | Symptom | Cause / fix |
 |---|---|
-| Settings shows "idle — no application ID" | Paste an App ID and restart; without one the worker never dials. |
+| Settings shows "off" | *Enable* is unticked in Settings → Discord — tick it (it's on by default). The app ID is baked in, so there's nothing else to set. |
 | "Discord not detected (retrying)" | Discord isn't running, or it's the browser client (no IPC pipe). Start the desktop app; the worker probes pipes 0–9 every 30 s while an update is pending. |
 | Presence shows but no icon | The art asset isn't named exactly `appicon`, or assets are still propagating (Discord caches; give it a few minutes / restart Discord). |
 | Activity sticks after disconnect | The clear is sent on disconnect; if Discord missed it (pipe died), it expires with the Discord-side timeout — reconnecting AsyncAO overwrites it. |
 | Profile shows the app name only | All field checkboxes are unticked — the activity carries no Details/State lines. |
 
-## Plan: shipping a default application ID
+## The baked-in application ID
 
-Today every user creates their own Discord application because the
-project doesn't ship one. The intended end state:
+The official **AsyncAO** Discord application is registered under the
+project maintainer's account, and its ID ships in the client as
+`config.DefaultDiscordAppID` (`internal/config/preferences.go`). The
+presence worker is dialed with that constant directly in
+`cmd/asyncao/main.go`, so it applies to **everyone** — including existing
+installs whose saved prefs predate the bake (their old per-user `AppID`
+field is ignored; the constant wins).
 
-1. Register a single project-owned "AsyncAO" application (owner: the
-   project maintainer account), upload `appicon` once.
-2. Bake its ID into `defaultDiscordPrefs` in
-   `internal/config/preferences.go` as the **default** `AppID` — the
-   Settings field stays, so users can still substitute their own app
-   (custom name/icon) and the empty-string→idle behavior is preserved
-   for `nodiscord`-adjacent distro patches.
-3. Document the baked ID here and drop step 1 of *Enabling it*.
-
-Nothing in the code needs to change for this beyond the one default —
-the worker, Settings UI, and per-field privacy all already key off the
-preference value. It is deliberately **not** done yet so the published
-ID is created under the project account rather than a contributor's
-personal one.
+There is intentionally **no Settings box to change the ID**: the app
+identity (name "AsyncAO", icon asset `appicon`) is meant to be consistent
+for every player. A distro or fork that wants a different identity edits
+the one constant and rebuilds — the `Enabled` toggle and per-field
+privacy are unchanged and still key off the saved preference.

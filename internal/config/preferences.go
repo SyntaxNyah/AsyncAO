@@ -1043,10 +1043,18 @@ type DiscordPrefs struct {
 	ShowChar   bool `json:"showChar"`
 	ShowName   bool `json:"showName"`
 	ShowArea   bool `json:"showArea"`
-	// AppID is the user's Discord application ID (developer portal app
-	// named AsyncAO with the icon uploaded as asset "appicon").
-	AppID string `json:"appId"`
+	// AppID is retained for back-compat with older saved prefs only; the dial
+	// now uses the baked-in DefaultDiscordAppID and the field is no longer
+	// user-editable (the Settings box was removed).
+	AppID string `json:"appId,omitempty"`
 }
+
+// DefaultDiscordAppID is the official AsyncAO Discord application (registered
+// under the maintainer's account; icon asset "appicon"). It is baked in so Rich
+// Presence works out of the box — users toggle presence on/off in Settings but
+// never the app identity. Dialed directly (see cmd/asyncao), so it applies even
+// to existing saved prefs whose AppID predates the bake.
+const DefaultDiscordAppID = "1519615001814499470"
 
 // defaultDiscordPrefs: ON by default on a normal (Discord-capable) build, with
 // the detail toggles pre-set. Rich Presence is pure-stdlib IPC (no DLL); it
@@ -1054,7 +1062,7 @@ type DiscordPrefs struct {
 // flip it off in Settings or run a `-tags nodiscord` build. A saved prefs file
 // keeps whatever the user last chose (this default only seeds fresh installs).
 func defaultDiscordPrefs() DiscordPrefs {
-	return DiscordPrefs{Enabled: true, ShowServer: true, ShowChar: true, ShowName: true}
+	return DiscordPrefs{Enabled: true, ShowServer: true, ShowChar: true, ShowName: true, AppID: DefaultDiscordAppID}
 }
 
 // ServerWarmInfo remembers what a server looked like last visit, so a

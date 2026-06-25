@@ -275,8 +275,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 
 	// Discord Rich Presence: stdlib-only local IPC, fully optional at
 	// build (-tags nodiscord) AND runtime — it idles silently when the
-	// Settings toggle is off or Discord isn't running.
-	pres := presence.New(prefs.Discord().AppID)
+	// Settings toggle is off or Discord isn't running. The app identity is the
+	// baked-in official AsyncAO app (not user-editable); the Enabled toggle is
+	// enforced dynamically in updatePresence, so dialing it unconditionally here
+	// is safe and works even for saved prefs whose AppID predates the bake.
+	pres := presence.New(config.DefaultDiscordAppID)
 	defer pres.Close()
 
 	app := ui.NewApp(uiCtx, ui.Deps{
