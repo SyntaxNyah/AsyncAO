@@ -651,6 +651,7 @@ type AssetPreferences struct {
 	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`     // #127 pre-grab a char's FULL sprite set on load (default OFF)
 	PingChip               bool                         `json:"pingChip"`               // #128 show the connection-quality chip (default OFF)
 	LegacyDevTheme         bool                         `json:"legacyDevTheme"`         // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
+	OOCInLogTab            bool                         `json:"oocInLogTab"`            // revert OOC to a tab in the log panel (the old way) instead of its own box; default OFF = OOC box
 	MyProfile              ProfilePref                  `json:"profile"`                // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
@@ -888,6 +889,7 @@ type prefsJSON struct {
 	CharBundlePrefetch     bool             `json:"charBundlePrefetch"`     // #127 default OFF
 	PingChip               bool             `json:"pingChip"`               // #128 default OFF
 	LegacyDevTheme         bool             `json:"legacyDevTheme"`         // tickbox revert to the old look; default OFF = new layout
+	OOCInLogTab            bool             `json:"oocInLogTab"`            // OOC as a log tab (old way); default OFF = OOC box
 	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
 	ChatboxOpacity         *int             `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
@@ -1421,6 +1423,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.CharBundlePrefetch = onDisk.CharBundlePrefetch
 	p.PingChip = onDisk.PingChip
 	p.LegacyDevTheme = onDisk.LegacyDevTheme
+	p.OOCInLogTab = onDisk.OOCInLogTab
 	if onDisk.Profile != nil {
 		p.MyProfile = clampProfile(*onDisk.Profile)
 	}
@@ -3259,6 +3262,18 @@ func (p *AssetPreferences) LegacyDevThemeOn() bool {
 
 // SetLegacyDevTheme toggles the Legacy Developer theme tickbox.
 func (p *AssetPreferences) SetLegacyDevTheme(b bool) { p.setBoolPref(&p.LegacyDevTheme, b) }
+
+// OOCInLogTabOn reports whether OOC should render as a tab in the log panel (the old
+// layout) instead of its own box. Independent of the Legacy theme, which always tabs
+// OOC — so the effective "OOC is a tab" condition is LegacyDevThemeOn() || OOCInLogTabOn().
+func (p *AssetPreferences) OOCInLogTabOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.OOCInLogTab
+}
+
+// SetOOCInLogTab toggles OOC-as-a-log-tab (the old layout).
+func (p *AssetPreferences) SetOOCInLogTab(b bool) { p.setBoolPref(&p.OOCInLogTab, b) }
 
 // Profile reports the user's character profile (#101).
 func (p *AssetPreferences) Profile() ProfilePref {

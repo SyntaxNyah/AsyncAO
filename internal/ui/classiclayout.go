@@ -28,7 +28,7 @@ const (
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
 	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
 	slotICBar    = "icbar"    // the IC input bar (colour · showname · Immed · emoji/FX/React · text)
-	slotOOCBar   = "oocbar"   // the Legacy bottom OOC bar (name + full-width input; Legacy theme only)
+	slotOOCBar   = "oocbar"   // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
 	slotControls = "controls" // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
 )
 
@@ -138,7 +138,7 @@ func classicSlotLabel(k string) string {
 	case slotICBar:
 		return "IC input bar"
 	case slotOOCBar:
-		return "OOC bar (Legacy)"
+		return "OOC bar"
 	case slotControls:
 		return "Control buttons"
 	default:

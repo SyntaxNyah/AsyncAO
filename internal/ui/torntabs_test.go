@@ -16,7 +16,7 @@ func TestTornKeyFor(t *testing.T) {
 		logTabNotes:   "tab:notes",
 		logTabFriends: "tab:friends",
 		logTabLog:     "", // home / fallback tab — never tear-offable
-		logTabOOC:     "", // its own box (default) / legacy tab — not tear-offable
+		logTabOOC:     "", // own box (default) or a log tab (Legacy/opt-in) — never tear-offable
 	}
 	for id, want := range cases {
 		if got := tornKeyFor(id); got != want {
@@ -53,9 +53,20 @@ func TestDockedLogTabs(t *testing.T) {
 		t.Fatalf("first docked tab = %d, want Log", d[0].id)
 	}
 
-	// Legacy keeps the OOC tab in the strip.
-	if _, n := a.dockedLogTabs(true); n != 7 {
-		t.Fatalf("legacy docked count = %d, want 7", n)
+	// OOC-as-a-tab (the Legacy theme OR the opt-in "OOC in the log tab" toggle) keeps
+	// the OOC tab in the strip — and the OOC tab is actually one of them.
+	dt, dn := a.dockedLogTabs(true)
+	if dn != 7 {
+		t.Fatalf("ooc-as-tab docked count = %d, want 7", dn)
+	}
+	oocPresent := false
+	for i := int32(0); i < dn; i++ {
+		if dt[i].id == logTabOOC {
+			oocPresent = true
+		}
+	}
+	if !oocPresent {
+		t.Fatal("ooc-as-tab: OOC tab missing from the docked strip")
 	}
 
 	// Tear Music + Players out → they leave the strip and the rest compact.

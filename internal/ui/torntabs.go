@@ -81,8 +81,9 @@ func (a *App) tabTorn(id int) bool {
 
 // dockedLogTabs builds the docked tab strip, skipping any tab torn into a floating
 // panel. Returns a fixed-size array (by value → stack, 0-alloc) and the live count.
-// Log is always present (the home/fallback tab); OOC only on the Legacy theme.
-func (a *App) dockedLogTabs(legacy bool) ([7]dockTab, int32) {
+// Log is always present (the home/fallback tab); OOC appears only when it's a tab
+// (oocAsTab = the Legacy theme, or the opt-in "OOC in the log tab" toggle).
+func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 	var d [7]dockTab
 	n := int32(0)
 	d[n] = dockTab{logTabLog, "Log"} // never tear-offable
@@ -99,7 +100,7 @@ func (a *App) dockedLogTabs(legacy bool) ([7]dockTab, int32) {
 		d[n] = dockTab{logTabPlayers, "Players"}
 		n++
 	}
-	if legacy { // OOC is a tab only on Legacy; not tear-offable
+	if oocAsTab { // OOC in the strip (Legacy or the opt-in toggle); not tear-offable
 		d[n] = dockTab{logTabOOC, "OOC"}
 		n++
 	}
@@ -266,6 +267,33 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 			}
 		}
 		tx += cw + 6
+	}
+	// OOC placement chip (yellow, set apart): switch OOC between its own box (new
+	// default) and a tab in the log panel (the old layout). Hidden on Legacy, where
+	// OOC is always a tab — toggling there would be a no-op. Lives here because this
+	// strip is "where tabs get arranged", which is what the maintainer asked for.
+	if !a.d.Prefs.LegacyDevThemeOn() {
+		tx += 14 // separate it from the tear-off chips
+		inTab := a.d.Prefs.OOCInLogTabOn()
+		label := "OOC: own box"
+		if inTab {
+			label = "OOC: log tab"
+		}
+		ow := c.TextWidth(label) + 18
+		ooChip := sdl.Rect{X: tx, Y: trayY + 14, W: ow, H: 22}
+		bg := ColPanel
+		if inTab {
+			bg = ColAccent
+		} else if pointIn(c.mouseX, c.mouseY, ooChip) {
+			bg = ColPanelHi
+		}
+		c.Fill(ooChip, bg)
+		c.Border(ooChip, ColTierYellow)
+		c.LabelClipped(ooChip.X+6, ooChip.Y+3, ooChip.W-12, label, ColText)
+		c.Tooltip(ooChip, "OOC chat: its own box (new) or back as a tab in the log panel (the old way)")
+		if c.clicked && pointIn(c.mouseX, c.mouseY, ooChip) {
+			a.d.Prefs.SetOOCInLogTab(!inTab)
+		}
 	}
 	return overTray
 }

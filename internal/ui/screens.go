@@ -954,7 +954,10 @@ func (a *App) drawCourtroom(w, h int32) {
 	if !a.panelHidden(panelLog) {
 		rcolDef := sdl.Rect{X: rx, Y: pad, W: rw, H: vpDef.H}
 		rcol := a.slotRect(slotRightCol, rcolDef, w, h)
-		if a.d.Prefs.LegacyDevThemeOn() {
+		// OOC lives in its own box by default; the Legacy theme — or the opt-in
+		// "OOC in the log tab" toggle (the old layout, set in the layout editor) —
+		// instead routes the whole column to the tabbed log with an OOC tab.
+		if a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn() {
 			a.drawLogPanel(rcol, vpDef)
 		} else {
 			a.drawCleanRightColumn(rcol, vpDef, w, h)
@@ -1453,15 +1456,16 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// content — adjust volume while the log stays on screen and you keep chatting
 	// (the IC box below is untouched). The tabs share the rest of the row.
 	const volBtnW = int32(36)
-	// New default: OOC is its OWN box, so the OOC tab is dropped (and the rest reindex); Legacy keeps
-	// the 7-tab strip. If the active tab was OOC (new default) or has been torn into its own floating
-	// panel (torntabs.go), fall back to the IC log so the docked area still shows something.
-	legacyTabs := a.d.Prefs.LegacyDevThemeOn()
-	if (!legacyTabs && a.logTab == logTabOOC) || a.tabTorn(a.logTab) {
+	// By default OOC is its OWN box, so the OOC tab is dropped (and the rest reindex). The Legacy theme
+	// — or the opt-in "OOC in the log tab" toggle — instead keeps OOC in the strip. If the active tab
+	// was OOC while OOC is a box, or it has been torn into its own floating panel (torntabs.go), fall
+	// back to the IC log so the docked area still shows something.
+	oocAsTab := a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn()
+	if (!oocAsTab && a.logTab == logTabOOC) || a.tabTorn(a.logTab) {
 		a.logTab = logTabLog
 	}
 	// The docked strip skips any torn-off tab and compacts the rest (0-alloc stack array).
-	docked, numLogTabs := a.dockedLogTabs(legacyTabs)
+	docked, numLogTabs := a.dockedLogTabs(oocAsTab)
 	tab := (r.W - volBtnW) / numLogTabs
 	for i := int32(0); i < numLogTabs; i++ {
 		bw := tab
@@ -1508,6 +1512,8 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		a.drawPlayerList(inner)
 		return
 	case logTabOOC:
+		// Scrollback only: whenever OOC is a tab (Legacy or the opt-in toggle) the bottom OOC
+		// bar carries the input — the old layout, and it keeps exactly one OOC input live.
 		a.drawOOCPanel(inner, false)
 		return
 	case logTabNotes:
@@ -1862,9 +1868,9 @@ func (a *App) submitOOC() {
 func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	c := a.ctx
 	fH := a.inputFieldH()
-	nFields := int32(2) // IC showname + permanent OOC name
+	nFields := int32(1) // permanent OOC name (OOC is only an OOC name + OOC chat — no IC showname here)
 	if withInput {
-		nFields = 3 // + the OOC message input, so the box is a complete OOC chat (one thing)
+		nFields = 2 // + the OOC message input, so the box is a complete OOC chat (one thing)
 	}
 	fieldsH := nFields*(fH+6) + 4
 	list := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - fieldsH}
@@ -1940,11 +1946,8 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 		}
 		fy += fH + 6
 	}
-	shown := a.d.Prefs.SavedShowname()
-	if next, _ := c.TextField("icshowname", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, shown, "IC showname (blank = character name)"); next != shown {
-		a.d.Prefs.SetShowname(next)
-	}
-	fy += fH + 6
+	// OOC carries only an OOC name + the OOC chat — the IC showname is set on the IC bar
+	// and in Settings, so it has no business in the OOC box (beta feedback).
 	prev := a.oocName
 	a.oocName, _ = c.TextField("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "Permanent OOC name")
 	if a.oocName != prev {
@@ -3515,17 +3518,18 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
 	}
 
-	// OOC row at the very bottom: name + a FULL-width input. Legacy only — in the new default the
-	// OOC input lives INSIDE the OOC box (one unified OOC chat), so this bottom bar is dropped.
+	// OOC row at the very bottom: name + a FULL-width input. Shown whenever OOC is a tab (Legacy
+	// theme, or the opt-in "OOC in the log tab" toggle) — the tab is scrollback-only, so this bar
+	// is the OOC input. In the new-default OOC BOX the input lives inside the box instead, so this
+	// bar is dropped (the box is one unified OOC chat).
 	oocY := h - fH - 4
-	if !a.panelHidden(panelOOC) && a.d.Prefs.LegacyDevThemeOn() {
+	if !a.panelHidden(panelOOC) && (a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn()) {
 		nameW := int32(120)
-		// The Legacy OOC bar is its own movable + resizable slot ("oocbar"), mirroring the IC
-		// bar: its default spans the bottom row, so an un-edited Legacy courtroom is pixel-
-		// identical. Contents lay out relative to oocBar.X / .W (name box, then a full-width
-		// input), the row centred within the slot height. Registered only while this Legacy bar
-		// actually draws, so the editor never offers a handle for it on the new default (which
-		// uses the right-column OOC box, slotOOC, instead).
+		// The bottom OOC bar is its own movable + resizable slot ("oocbar"), mirroring the IC
+		// bar: its default spans the bottom row, so an un-edited courtroom is pixel-identical.
+		// Contents lay out relative to oocBar.X / .W (name box, then a full-width input), the
+		// row centred within the slot height. Registered only while this bar actually draws, so
+		// the editor offers a handle for it only when OOC is a tab (the box mode uses slotOOC).
 		oocBarDef := sdl.Rect{X: pad, Y: oocY, W: w - 3*pad, H: fH}
 		oocBar := a.slotRect(slotOOCBar, oocBarDef, w, h)
 		oocRowY := oocBar.Y
