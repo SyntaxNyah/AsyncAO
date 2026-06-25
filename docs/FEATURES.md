@@ -1367,8 +1367,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   box hands size back to the knob); the **log / right column** (both themes),
   the **OOC box** (new default), the **emote grid** (it pages within whatever
   rect it gets), the **IC input bar** (colour · showname · Immed · emoji/FX/
-  React · text — widen it for a longer input, the text field never collapses)
-  and the **Legacy bottom OOC bar** all move/resize independently. Right-click a
+  React · text — widen it for a longer input, the text field never collapses),
+  the **Legacy bottom OOC bar**, and the **control-button block** (both button
+  rows + the scale knobs, dragged as one unit — mostly vertically, since it
+  stays full width) all move independently. Right-click a
   box to reset it, **Reset all** to clear every override, **Snap** to tidy
   placement. Overrides are saved as window *fractions* (config `classicLayout`),
   so they survive window resizes and persist across sessions — with **zero
@@ -1383,8 +1385,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   all**) to redock — so the default is still plain buttons. Each torn tab is
   just another layout *slot* under a `tab:<name>` key, so it reuses the editor's
   drag/resize/persist machinery at **zero render cost when nothing is torn**.
-  More widgets (the control button groups, the scale knobs, the Legacy OOC bar)
-  become draggable in later slices.
+  (The music list may become its own slot in a later slice; it's largely
+  covered already since the Music tab tears off.)
 - **Tabbed settings**: the settings screen is split into category tabs
   (General · Theme · Assets · Audio & Chat · Account · Hotkeys) instead of
   one long scroll — click a tab, scroll within it, each tab remembers its
