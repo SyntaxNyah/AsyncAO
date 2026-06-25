@@ -211,6 +211,16 @@ func (a *App) drawTornTabs(w, h int32) {
 		hdr := sdl.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: tornTabHeaderH}
 		c.Fill(hdr, ColPanelHi)
 		c.Label(hdr.X+7, hdr.Y+3, t.title, ColText)
+		// Normal-mode close = redock (back into the docked strip), matching the Extras
+		// detached-box "x" idiom. Hidden while editing — there the header is a drag
+		// handle and redock is the tray / right-click, so an x would be inert clutter.
+		if !a.classicEdit {
+			xb := sdl.Rect{X: r.X + r.W - tornTabHeaderH - 1, Y: r.Y + 1, W: tornTabHeaderH, H: tornTabHeaderH}
+			if c.Button(xb, "x") {
+				a.clearClassicSlot(t.key)
+				continue // redocked — skip its body; other panels still draw
+			}
+		}
 		inner := sdl.Rect{X: r.X + 5, Y: r.Y + tornTabHeaderH + 4, W: r.W - 10, H: r.H - tornTabHeaderH - 9}
 		if inner.W > 8 && inner.H > 8 {
 			a.drawTabContent(t.id, inner)
@@ -225,10 +235,13 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 	c := a.ctx
 	trayY := h - 50
 	// A dark backing strip so the tray reads as chrome even if a slot's outline
-	// crosses it (the slot overlay draws after this).
-	c.Fill(sdl.Rect{X: 0, Y: trayY - 4, W: w, H: 40}, sdl.Color{R: 0, G: 0, B: 0, A: 205})
+	// crosses it (the slot overlay draws after this). The WHOLE strip suppresses a
+	// slot-move (overTray), not just the chips — else pressing a gap would grab a
+	// box parked at the bottom.
+	trayStrip := sdl.Rect{X: 0, Y: trayY - 4, W: w, H: 40}
+	c.Fill(trayStrip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
 	c.Label(pad, trayY-2, "Pop a tab out into its own movable panel (click again to redock):", ColTierYellow)
-	overTray := false
+	overTray := pointIn(c.mouseX, c.mouseY, trayStrip)
 	tx := int32(pad)
 	for i := range tornTabTable {
 		t := tornTabTable[i]
@@ -245,14 +258,11 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 		c.Fill(chip, bg)
 		c.Border(chip, ColAccent)
 		c.LabelClipped(chip.X+6, chip.Y+3, chip.W-12, t.title, ColText)
-		if pointIn(c.mouseX, c.mouseY, chip) {
-			overTray = true
-			if c.clicked {
-				if torn {
-					a.clearClassicSlot(t.key) // redock
-				} else {
-					a.tearOffTab(t.id, w, h)
-				}
+		if c.clicked && pointIn(c.mouseX, c.mouseY, chip) {
+			if torn {
+				a.clearClassicSlot(t.key) // redock
+			} else {
+				a.tearOffTab(t.id, w, h)
 			}
 		}
 		tx += cw + 6
