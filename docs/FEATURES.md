@@ -1366,9 +1366,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   it; while un-edited the View knob still owns its 4:3 size, and resetting the
   box hands size back to the knob); the **log / right column** (both themes),
   the **OOC box** (new default), the **emote grid** (it pages within whatever
-  rect it gets) and the **IC input bar** (colour · showname · Immed · emoji/FX/
+  rect it gets), the **IC input bar** (colour · showname · Immed · emoji/FX/
   React · text — widen it for a longer input, the text field never collapses)
-  all move/resize independently. Right-click a
+  and the **Legacy bottom OOC bar** all move/resize independently. Right-click a
   box to reset it, **Reset all** to clear every override, **Snap** to tidy
   placement. Overrides are saved as window *fractions* (config `classicLayout`),
   so they survive window resizes and persist across sessions — with **zero
