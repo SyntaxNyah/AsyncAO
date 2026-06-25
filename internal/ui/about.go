@@ -18,6 +18,7 @@ const (
 	aboutWebAOURL  = "https://github.com/AttorneyOnline/webAO"
 	aboutAOSDLURL  = "https://github.com/AttorneyOnline/AO-SDL"
 	aboutAOSiteURL = "https://aceattorneyonline.com"
+	aboutArtistURL = "https://www.instagram.com/hlenbchan2" // app icon artist
 )
 
 var aboutLines = []string{
@@ -31,9 +32,9 @@ var aboutLines = []string{
 	"needs, learns what formats your server ships, caches everything, and",
 	"renders on a zero-allocation hot path. Every millisecond counts.",
 	"",
-	"Optional Discord Rich Presence shows what you're playing - off by default,",
-	"no Discord dependency, in Settings -> Discord. Don't want it at all? A",
-	"Discord-free build (no Discord code, slightly smaller) is on GitHub Actions.",
+	"Optional Discord Rich Presence shows what you're playing - on by default,",
+	"toggle it in Settings -> Discord, and there's no Discord dependency. Don't",
+	"want it at all? A Discord-free build (no Discord code) is on GitHub Actions.",
 	"",
 	"All credit to the original Attorney Online developers:",
 	"  • FanatSors — creator of the original Attorney Online",
@@ -54,6 +55,9 @@ var aboutLines = []string{
 	"financially, and gave me the inspiration to keep going. Without that",
 	"support AsyncAO wouldn't have come this far this fast. Thank you.",
 	"",
+	"App icon: commissioned by Nyah and illustrated by hlenbchan — please go",
+	"support their work! Instagram: @hlenbchan2. Thank you for the artwork.",
+	"",
 	"Pull requests, bug fixes and feature requests are welcome!",
 }
 
@@ -68,6 +72,7 @@ var aboutLinks = []aboutLink{
 	{"webAO — AO in the browser", aboutWebAOURL},
 	{"AO-SDL — SDL2 AO client", aboutAOSDLURL},
 	{"aceattorneyonline.com", aboutAOSiteURL},
+	{"hlenbchan — app icon artist (Instagram)", aboutArtistURL},
 }
 
 func (a *App) drawAbout(w, h int32) {

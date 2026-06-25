@@ -112,6 +112,13 @@ A special thank-you to **Northgate** — who backed the project, including
 financially, and gave the inspiration to keep going. Without that support
 AsyncAO wouldn't have come this far this fast.
 
+### Artwork
+
+The AsyncAO app icon was **commissioned by Nyah** and illustrated by
+**[hlenbchan](https://www.instagram.com/hlenbchan2)** (Instagram
+**[@hlenbchan2](https://www.instagram.com/hlenbchan2)**). All credit for the
+icon goes to them — please go support their work!
+
 Thank you everyone for spending the time to read this.
 
 ## Contributing
