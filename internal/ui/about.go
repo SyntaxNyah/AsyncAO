@@ -22,6 +22,8 @@ const (
 	// aboutMascotPx is the on-screen (logical) size of the Mayo portrait, drawn in
 	// the Mayo section; the texture is Catmull-Rom downscaled to this exact size.
 	aboutMascotPx = int32(200)
+	// aboutLinkHeaderGap is the leading space before a section header in the link list.
+	aboutLinkHeaderGap = int32(12)
 )
 
 // aboutMayoHeadLine is the first line of the Mayo section. The portrait draws
@@ -72,21 +74,60 @@ var aboutLines = []string{
 	"Art commissioned by Nyah and illustrated by hlenbchan — please go support",
 	"their work! Instagram: @hlenbchan2. Thank you for bringing Mayo to life.",
 	"",
+	"AsyncAO is FREE SOFTWARE — licensed under the GNU AGPL v3 (the LICENSE file),",
+	"and free all the way down: EVERY dependency is open-source under an AGPL-v3-",
+	"compatible licence (MIT / BSD / ISC / zlib / MPL-2.0 / LGPL, plus the GCC",
+	"runtime's linking exception). No proprietary or closed-source pieces anywhere.",
+	"Each one is linked and credited below — please support them too. Full details:",
+	"docs/THIRD-PARTY-LICENSES.md in the repo.",
+	"",
 	"Pull requests, bug fixes and feature requests are welcome!",
 }
 
+// aboutLink is one row in the About link list. A blank url marks a SECTION HEADER
+// (drawn as a label, not a clickable button) — so the list renders as titled
+// groups; a blank label is just a spacer.
 type aboutLink struct {
 	label string
 	url   string
 }
 
 var aboutLinks = []aboutLink{
-	{"AsyncAO repository (PRs welcome!)", aboutRepoURL},
-	{"AO2-Client — the original client", aboutAO2URL},
-	{"webAO — AO in the browser", aboutWebAOURL},
-	{"AO-SDL — SDL2 AO client", aboutAOSDLURL},
-	{"aceattorneyonline.com", aboutAOSiteURL},
-	{"hlenbchan — app icon artist (Instagram)", aboutArtistURL},
+	{"AsyncAO — source & pull requests (AGPL-3.0)", aboutRepoURL},
+
+	{"Attorney Online — the project AsyncAO builds on", ""},
+	{"AO2-Client — the original client (GPLv3)", aboutAO2URL},
+	{"webAO — AO in the browser (asset URL conventions)", aboutWebAOURL},
+	{"AO-SDL — an SDL2 AO client (thread-model reference)", aboutAOSDLURL},
+	{"aceattorneyonline.com — the AO community", aboutAOSiteURL},
+
+	{"Artwork", ""},
+	{"hlenbchan — Mayo mascot & app icon artist (Instagram)", aboutArtistURL},
+
+	// Every dependency, linked + credited. All AGPL-v3-compatible free software.
+	{"Open-source dependencies — Go libraries (all free software)", ""},
+	{"coder/websocket — WebSocket client (ISC)", "https://github.com/coder/websocket"},
+	{"veandco/go-sdl2 — SDL2 / mixer / ttf bindings (BSD-3)", "https://github.com/veandco/go-sdl2"},
+	{"golang.org/x/image — image scaling & codecs (BSD-3)", "https://pkg.go.dev/golang.org/x/image"},
+	{"golang.org/x/sync — concurrency primitives (BSD-3)", "https://pkg.go.dev/golang.org/x/sync"},
+	{"golang.org/x/text — text encoding (BSD-3)", "https://pkg.go.dev/golang.org/x/text"},
+	{"cespare/xxhash — fast hashing for cache keys (MIT)", "https://github.com/cespare/xxhash"},
+	{"hashicorp/golang-lru — LRU caches (MPL-2.0)", "https://github.com/hashicorp/golang-lru"},
+	{"kettek/apng — animated-PNG decoding (BSD)", "https://github.com/kettek/apng"},
+	{"klauspost/compress — compression (BSD-3)", "https://github.com/klauspost/compress"},
+
+	{"Native engine — bundled C libraries (all free software)", ""},
+	{"SDL2 — windowing, rendering & audio (zlib)", "https://www.libsdl.org"},
+	{"libwebp — WebP image codec (BSD)", "https://chromium.googlesource.com/webm/libwebp"},
+	{"libavif — AVIF image codec (BSD)", "https://github.com/AOMediaCodec/libavif"},
+	{"dav1d / libaom — AV1 decoders (BSD)", "https://code.videolan.org/videolan/dav1d"},
+	{"FreeType — font rasterizer (FreeType License)", "https://freetype.org"},
+	{"HarfBuzz — text shaping (MIT)", "https://harfbuzz.github.io"},
+	{"Opus / Ogg / Vorbis — audio codecs (BSD, Xiph.Org)", "https://xiph.org"},
+	{"libpng / zlib — PNG & deflate (libpng / zlib licences)", "https://www.libpng.org"},
+
+	{"Font", ""},
+	{"OpenDyslexic — the dyslexia-friendly font (SIL OFL 1.1)", "https://opendyslexic.org"},
 }
 
 func (a *App) drawAbout(w, h int32) {
@@ -109,8 +150,20 @@ func (a *App) drawAbout(w, h int32) {
 		mascotBlock = mayoLogH + 12 // portrait + gap above the Mayo text
 	}
 	// The page outgrew small windows, so it scrolls. Total height = text lines + the
-	// portrait + the gap + the link buttons; clamp the wheel offset to the ends.
-	contentH := mascotBlock + int32(len(aboutLines))*lineH + 10 + int32(len(aboutLinks))*(btnH+6)
+	// portrait + the gap + the link rows. Link rows are buttons (btnH) or section
+	// headers (a label, taller by the leading gap); sum exactly so the clamp is right.
+	linksH := int32(0)
+	for _, link := range aboutLinks {
+		if link.url == "" { // section header (or blank spacer)
+			linksH += aboutLinkHeaderGap
+			if link.label != "" {
+				linksH += lineH
+			}
+		} else {
+			linksH += btnH + 6
+		}
+	}
+	contentH := mascotBlock + int32(len(aboutLines))*lineH + 10 + linksH
 	maxScroll := contentH - viewH
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -145,6 +198,18 @@ func (a *App) drawAbout(w, h int32) {
 
 	y += 10
 	for _, link := range aboutLinks {
+		// A blank url is a SECTION HEADER (accent label), so the long credits list
+		// reads as titled groups instead of one undifferentiated wall of buttons.
+		if link.url == "" {
+			y += aboutLinkHeaderGap
+			if link.label != "" {
+				if y+lineH > top && y < top+viewH {
+					c.Label(pad, y, link.label, ColAccent)
+				}
+				y += lineH
+			}
+			continue
+		}
 		bw := c.TextWidth(link.label) + 24
 		// Only draw + hit-test a button while it's inside the scroll viewport, so one
 		// scrolled out of view can't be clicked through the heading or the page edge.

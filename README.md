@@ -137,4 +137,31 @@ Thank you everyone for spending the time to read this.
 **Pull requests, bug fixes and feature requests are welcome!**
 → [github.com/SyntaxNyah/AsyncAO](https://github.com/SyntaxNyah/AsyncAO)
 
-AsyncAO is licensed under the [AGPL-3.0](LICENSE).
+## License & free software
+
+AsyncAO is **free software**, licensed under the **[GNU AGPL v3](LICENSE)** — and
+it's free *all the way down*. **Every dependency is open-source under an
+AGPL-v3-compatible licence**, with no proprietary or licence-incompatible pieces:
+
+- **Go libraries** — ISC ([coder/websocket](https://github.com/coder/websocket)),
+  MIT ([xxhash](https://github.com/cespare/xxhash)), BSD-3
+  ([go-sdl2](https://github.com/veandco/go-sdl2),
+  [kettek/apng](https://github.com/kettek/apng),
+  [klauspost/compress](https://github.com/klauspost/compress), and the
+  `golang.org/x/*` libraries), and MPL-2.0
+  ([hashicorp/golang-lru](https://github.com/hashicorp/golang-lru)).
+- **Bundled engine** — zlib ([SDL2](https://www.libsdl.org) / ttf / mixer); BSD
+  ([libwebp](https://chromium.googlesource.com/webm/libwebp),
+  [libavif](https://github.com/AOMediaCodec/libavif) + dav1d/aom,
+  [Opus/Vorbis](https://xiph.org)); the [FreeType](https://freetype.org),
+  [HarfBuzz](https://harfbuzz.github.io), [libpng](https://www.libpng.org) and
+  [zlib](https://zlib.net) licences; LGPL (GLib, gettext, mpg123 — used as
+  separate DLLs); and the GCC runtime under its **Runtime Library Exception**.
+- **Font** — [OpenDyslexic](https://opendyslexic.org), SIL OFL 1.1.
+
+MPL-2.0, LGPL and the GCC exception are all AGPL-compatible, so the whole stack is
+genuinely libre. The protocol comes from the GPLv3
+[AO2-Client](https://github.com/AttorneyOnline/AO2-Client), reimplemented
+clean-room in Go (protocols aren't copyrightable, and GPLv3 is AGPLv3-compatible
+regardless). **Full per-dependency list with licences & links:
+[docs/THIRD-PARTY-LICENSES.md](docs/THIRD-PARTY-LICENSES.md).**
