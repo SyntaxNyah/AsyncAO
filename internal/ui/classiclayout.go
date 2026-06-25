@@ -29,6 +29,7 @@ const (
 	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
 	slotICBar    = "icbar"    // the IC input bar (colour · showname · Immed · emoji/FX/React · text)
 	slotOOCBar   = "oocbar"   // the Legacy bottom OOC bar (name + full-width input; Legacy theme only)
+	slotControls = "controls" // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
 )
 
 // Resize-edge bitmask: which sides of a box a drag moves.
@@ -138,6 +139,8 @@ func classicSlotLabel(k string) string {
 		return "IC input bar"
 	case slotOOCBar:
 		return "OOC bar (Legacy)"
+	case slotControls:
+		return "Control buttons"
 	default:
 		// Torn-off tab panels carry a "tab:<name>" key.
 		for i := range tornTabTable {

@@ -3088,10 +3088,28 @@ func (a *App) scaleControl(x, y int32, name string, value *int, step, min, max i
 
 func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	c := a.ctx
-	y := vp.Y + vp.H + pad
+	defY := vp.Y + vp.H + pad // default top of the control-button block
+
+	// Control-button slot ("controls"): the two button rows — shouts / pair / layout
+	// knobs (row 1) and the utility buttons (row 2, which wraps) — move together as one
+	// block. Translate-only with a CONSTANT content width (w-2*pad), so the wrap
+	// structure — and therefore the block's row count and height — is invariant to the
+	// move. That makes the un-moved bottom recoverable as (y2 - dy), which keeps the
+	// downstream judge / IC bar / emote DEFAULTS anchored where they were and an
+	// un-edited courtroom pixel-identical (clusterX == pad, y == defY, dy == 0 ⇒ every
+	// rect, every wrap edge identical). Width/height resize is ignored (the block stays
+	// full width; its height is content-driven). The override is read lock-free; off the
+	// edit path this is one map lookup, no alloc.
+	clusterX, y := pad, defY
+	if ov, ok := a.classicOv[slotControls]; ok {
+		r := fracToRect(ov, w, h)
+		clusterX, y = r.X, r.Y
+	}
+	dy := y - defY                         // vertical block offset (0 when un-moved)
+	clusterRight := clusterX + (w - 2*pad) // wrap edge; constant width keeps the row count invariant
 
 	// Row 1: shouts, pairing, and the live layout knobs (both hideable).
-	x := pad
+	x := clusterX
 	var pendingShout int
 	if !a.panelHidden(panelShouts) {
 		shoutW := int32(96)
@@ -3142,7 +3160,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// Row 2: utility buttons (their own row so nothing overlaps at any
 	// viewport scale or window width).
 	y2 := y + btnH + 4
-	x = pad
+	x = clusterX
 	if a.d.Prefs.LegacyDevThemeOn() {
 		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character") {
 			// Back to char select; the session stays, the server re-picks via
@@ -3205,9 +3223,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		// btnH + …), so bumping it in place drops the IC area and judge strip with it.
 		// Constant widths keep this alloc-free.
 		const keysW, styleW, btnGap int32 = 90, 84, 6
-		if x+keysW+btnGap+styleW > w-pad {
+		if x+keysW+btnGap+styleW > clusterRight {
 			y2 += btnH + 4
-			x = pad
+			x = clusterX
 		}
 		keysR := sdl.Rect{X: x, Y: y2, W: keysW, H: btnH}
 		if c.Button(keysR, "Hotkeys") {
@@ -3232,9 +3250,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		if a.amICMNow {
 			cmW = 46
 		}
-		if x+editW+modW+cmW+btnGap*2 > w-pad {
+		if x+editW+modW+cmW+btnGap*2 > clusterRight {
 			y2 += btnH + 4
-			x = pad
+			x = clusterX
 		}
 		edR := sdl.Rect{X: x, Y: y2, W: editW, H: btnH}
 		if c.Button(edR, "Edit Layout") {
@@ -3323,9 +3341,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		}
 		x += gGap
 		// — System — wrap to a fresh row as a block if it would run off the right edge.
-		if x+90+56+100+96+86+76 > w-pad {
+		if x+90+56+100+96+86+76 > clusterRight {
 			y2 += btnH + 4
-			x = pad
+			x = clusterX
 		}
 		if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
 			a.prevScreen = ScreenCourtroom
@@ -3359,9 +3377,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		x += 76
 		// — Leave — set apart at the end.
 		x += gGap
-		if x+110 > w-pad {
+		if x+110 > clusterRight {
 			y2 += btnH + 4
-			x = pad
+			x = clusterX
 		}
 		if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
 			a.requestDisconnect()
@@ -3370,8 +3388,21 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		x += 116
 	}
 
-	// Judge strip (JD grant, or the judge stand when pos-dependent).
-	icY := y2 + btnH + 6
+	// The control-button block ends here. Register it for the editor (its height is
+	// content-driven, so measure it now); the grab box is full content width, which the
+	// editor's on-screen clamp turns into a mostly-vertical move (the block stays full
+	// width by design). cur vs def heights are equal because the row count is invariant.
+	if a.classicEdit {
+		blockW := w - 2*pad
+		a.regSlot(slotControls,
+			sdl.Rect{X: clusterX, Y: y, W: blockW, H: y2 + btnH - y},
+			sdl.Rect{X: pad, Y: defY, W: blockW, H: y2 - dy + btnH - defY})
+	}
+
+	// Judge strip (JD grant, or the judge stand when pos-dependent). Everything below
+	// anchors to the block's UN-MOVED bottom (y2 - dy), so dragging the buttons elsewhere
+	// doesn't drag the judge strip, the IC bar or the emote grid with them.
+	icY := y2 - dy + btnH + 6
 	if a.judgeVisible() {
 		icY += a.drawJudgeRow(pad, icY)
 	}
