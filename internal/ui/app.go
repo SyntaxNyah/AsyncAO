@@ -659,6 +659,10 @@ type App struct {
 	// set, so the view-only pass can't eat an async result meant for the primary —
 	// the pinned client is already fully loaded in its parked sessionState.
 	pinnedPass bool
+	// pendingControlSwap: a click on the floating client's view requests "control
+	// this server" (make it the live, fully-interactive courtroom). Applied at the
+	// NEXT frame's top — never mid-render — since it swaps the active session/room.
+	pendingControlSwap bool
 	// Full-theme view zoom/pan: clientZoom magnifies (1 = fit), clientPan{X,Y} is the
 	// view centre in texture space (0..1) when zoomed. clientPanning tracks a drag.
 	// clientZoomLbl memoizes the readout so the per-frame draw doesn't Sprintf.
@@ -2752,6 +2756,9 @@ const (
 	clientZoomMin  = 1.0
 	clientZoomMax  = 6.0
 	clientZoomStep = 1.15 // wheel multiplier per notch
+	// clientClickSlop is the max cursor travel (logical px) for a press+release on the
+	// floating client to count as a CLICK ("control this server") rather than a pan drag.
+	clientClickSlop = 4
 )
 
 // splitActive reports whether the floating client window should render: a pinned
@@ -2776,6 +2783,46 @@ func (a *App) clearSplit() {
 	if a.clientTex != nil {
 		_ = a.clientTex.Destroy()
 		a.clientTex = nil
+	}
+}
+
+// controlPinnedClient makes the floating (pinned) server the LIVE, fully interactive
+// courtroom and demotes the current primary into the float — the "click to control"
+// gesture. The two servers trade places; both stay on screen, you drive whichever you
+// clicked. Reuses the proven tab machinery (activateTab + pinToSplit), so the new
+// primary is the REAL courtroom — real emotes, IC bar, every button — with no second
+// interactive-render machinery (which would collide widget ids / leak App-global state).
+func (a *App) controlPinnedClient() {
+	if !a.splitActive() {
+		return
+	}
+	pinned := a.splitTab
+	pi := -1
+	for i, t := range a.tabs {
+		if t == pinned {
+			pi = i
+			break
+		}
+	}
+	if pi < 0 {
+		return
+	}
+	prev := a.activeTab
+	a.activateTab(pi) // parks the current primary, activates the pinned (this clears the split)
+	if prev >= 0 && prev < len(a.tabs) && a.tabs[prev] != a.splitTab {
+		a.pinToSplit(a.tabs[prev]) // the old primary becomes the new floating view
+	}
+}
+
+// clientControlClick requests a control-swap when the floating client's view rect gets
+// a CLICK (press+release with little travel — a drag there pans/zooms instead). The
+// swap is deferred to the next frame top (pendingControlSwap) so we never mutate the
+// active session/room mid-render.
+func (a *App) clientControlClick(view sdl.Rect) {
+	c := a.ctx
+	if c.clicked && !a.clientPanning && pointIn(c.mouseX, c.mouseY, view) &&
+		absInt(int(c.mouseX-c.downX))+absInt(int(c.mouseY-c.downY)) <= clientClickSlop {
+		a.pendingControlSwap = true
 	}
 }
 
@@ -2880,129 +2927,25 @@ func (a *App) canRenderFullClient() bool {
 	return !a.theaterOn && !a.classicEdit && !a.layoutEdit
 }
 
-// clientCtlH is the floating client's control-bar row height (emote / side / colour).
-const clientCtlH = 24
-
-// drawClientBody lays the pinned server's stage (4:3, capped), chat log, control bar,
-// and IC input into the client window's body rect (below the title bar).
+// drawClientBody lays the pinned server's live stage (4:3, capped), chat log, and IC
+// input into the client window's body rect. Clicking the stage takes control of that
+// server (the full, real courtroom); the strip lets you fire a quick line without
+// swapping.
 func (a *App) drawClientBody(r sdl.Rect) {
 	c := a.ctx
 	inputRow := sdl.Rect{X: r.X, Y: r.Y + r.H - splitInputH, W: r.W, H: splitInputH}
-	ctrlRow := sdl.Rect{X: r.X, Y: inputRow.Y - clientCtlH, W: r.W, H: clientCtlH}
 	sceneH := r.W * 3 / 4
-	if maxH := (r.H - splitInputH - clientCtlH) * 55 / 100; sceneH > maxH {
+	if maxH := (r.H - splitInputH) * 55 / 100; sceneH > maxH {
 		sceneH = maxH
 	}
 	stage := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: sceneH}
 	a.splitVP.Render(c.Ren, &a.splitRoom.Scene, stage)
+	a.clientControlClick(stage) // click the stage → take control of this server
 	logTop := stage.Y + stage.H + 3
-	logRect := sdl.Rect{X: r.X, Y: logTop, W: r.W, H: ctrlRow.Y - logTop}
+	logRect := sdl.Rect{X: r.X, Y: logTop, W: r.W, H: inputRow.Y - logTop}
 	c.Fill(sdl.Rect{X: logRect.X, Y: logRect.Y - 2, W: logRect.W, H: 1}, ColPanelHi) // rule above the log
 	a.drawSplitLog(logRect, &a.splitTab.state)
-	a.drawClientControls(ctrlRow)
 	a.drawSplitInput(inputRow)
-}
-
-// drawClientControls draws a SAFE control bar for the pinned client — emote ◀▶, side,
-// and colour cyclers — operating directly on its parked sessionState (plain rect-hit
-// buttons, no second drawCourtroom, no shared widget ids), so you can actually PLAY the
-// second server while the view (compact stage or full theme) stays display-only. The
-// next IC send (the strip below) carries whatever you pick here, since sendICSplit
-// reads the same sessionState. The literal buttons drawn inside the full-theme texture
-// stay display-only: clicking those would need a second interactive courtroom, which
-// would collide widget ids and leak App-global state into your primary client.
-func (a *App) drawClientControls(r sdl.Rect) {
-	c := a.ctx
-	s := &a.splitTab.state
-	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: 1}, ColPanelHi) // rule above the bar
-	y, bh := r.Y+3, r.H-6
-	x := r.X + 4
-	if c.Button(sdl.Rect{X: x, Y: y, W: 20, H: bh}, "<") { // previous emote
-		a.cycleSplitEmote(-1)
-	}
-	x += 22
-	nameW := r.W*44/100 - 44
-	if nameW < 50 {
-		nameW = 50
-	}
-	c.Fill(sdl.Rect{X: x, Y: y, W: nameW, H: bh}, ColPanel)
-	c.Border(sdl.Rect{X: x, Y: y, W: nameW, H: bh}, ColPanelHi)
-	c.LabelClipped(x+5, y+(bh-int32(c.font.Height()))/2, nameW-10, splitEmoteName(s), ColText)
-	x += nameW + 2
-	if c.Button(sdl.Rect{X: x, Y: y, W: 20, H: bh}, ">") { // next emote
-		a.cycleSplitEmote(1)
-	}
-	x += 24
-	rest := r.X + r.W - 4 - x // split the remainder between side + colour
-	if rest < 80 {
-		return // window too narrow for the side/colour cyclers — emote is enough
-	}
-	posW := rest / 2
-	side := s.sidePref
-	if side == "" {
-		side = "wit"
-	}
-	if c.Button(sdl.Rect{X: x, Y: y, W: posW - 2, H: bh}, side) { // click to cycle side
-		a.cycleSplitPos(1)
-	}
-	x += posW
-	names := render.TextColorNames()
-	col := "colour"
-	if s.icColor >= 0 && s.icColor < len(names) {
-		col = names[s.icColor]
-	}
-	if c.Button(sdl.Rect{X: x, Y: y, W: r.X + r.W - 4 - x, H: bh}, col) { // click to cycle colour
-		a.cycleSplitColor(1)
-	}
-}
-
-// splitEmoteName is the pinned client's current emote caption (Comment, else the
-// sprite stem) — both are stored strings, so reading them per frame is alloc-free.
-func splitEmoteName(s *sessionState) string {
-	if s.emoteIdx >= 0 && s.emoteIdx < len(s.emotes) {
-		if e := s.emotes[s.emoteIdx]; e.Comment != "" {
-			return e.Comment
-		} else {
-			return e.Anim
-		}
-	}
-	return "(no emote)"
-}
-
-// cycleSplitEmote / cycleSplitPos / cycleSplitColor step the pinned client's outgoing
-// selection (all in its sessionState, so the next sendICSplit carries them). Wrapping.
-func (a *App) cycleSplitEmote(d int) {
-	s := &a.splitTab.state
-	if n := len(s.emotes); n > 0 {
-		s.emoteIdx = ((s.emoteIdx+d)%n + n) % n
-	}
-}
-
-func (a *App) cycleSplitPos(d int) {
-	s := &a.splitTab.state
-	choices := standardPositions
-	if s.sess != nil && len(s.sess.PosList) > 0 {
-		choices = s.sess.PosList
-	}
-	n := len(choices)
-	if n == 0 {
-		return
-	}
-	cur := 0
-	for i, p := range choices {
-		if p == s.sidePref {
-			cur = i
-			break
-		}
-	}
-	s.sidePref = choices[((cur+d)%n+n)%n]
-}
-
-func (a *App) cycleSplitColor(d int) {
-	s := &a.splitTab.state
-	if n := len(render.TextColorNames()); n > 0 {
-		s.icColor = ((s.icColor+d)%n + n) % n
-	}
 }
 
 // drawClientFull renders the WHOLE pinned client (the full theme — emote grid,
@@ -3013,30 +2956,34 @@ func (a *App) cycleSplitColor(d int) {
 func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	c := a.ctx
 	inputRow := sdl.Rect{X: body.X, Y: body.Y + body.H - splitInputH, W: body.W, H: splitInputH}
-	ctrlRow := sdl.Rect{X: body.X, Y: inputRow.Y - clientCtlH, W: body.W, H: clientCtlH}
-	view := sdl.Rect{X: body.X, Y: body.Y, W: body.W, H: body.H - splitInputH - clientCtlH}
+	view := sdl.Rect{X: body.X, Y: body.Y, W: body.W, H: body.H - splitInputH}
 	a.renderFullClientTexture(w, h)
 	if a.clientTex == nil {
 		c.LabelClipped(view.X+10, view.Y+10, view.W-20, "Full-theme view unavailable on this renderer.", ColTextDim)
-		a.drawClientControls(ctrlRow)
 		a.drawSplitInput(inputRow)
 		return
 	}
 	a.handleClientZoomPan(view, pressed) // scroll = zoom (cursor-anchored), drag = pan
+	a.clientControlClick(view)           // a plain click on the client = take control of that server
 	src := a.clientViewSrc()             // sub-rect of the texture from zoom + pan
 	_ = c.Ren.Copy(a.clientTex, &src, &view)
+	// "Click to control" hint (top-left pill) — the rendered theme is a live view; a
+	// click makes this server the real, fully-interactive courtroom (swaps with primary).
+	const ctlHint = "▶ Click to control this server (buttons + chat)"
+	hintPill := sdl.Rect{X: view.X, Y: view.Y, W: c.TextWidth(ctlHint) + 12, H: 18}
+	c.Fill(hintPill, sdl.Color{R: 0, G: 0, B: 0, A: 150})
+	c.LabelClipped(hintPill.X+6, hintPill.Y+3, view.W-12, ctlHint, ColAccent)
 	// Zoom readout / hint (memoized so the per-frame draw never Sprintfs), on a small
 	// dark pill for legibility over the rendered client.
 	pct := int(a.clientZoom*100 + 0.5)
 	if pct != a.clientZoomLblPct {
 		a.clientZoomLblPct = pct
-		a.clientZoomLbl = fmt.Sprintf("Zoom %d%%  ·  scroll to zoom · drag to pan · dbl-click reset", pct)
+		a.clientZoomLbl = fmt.Sprintf("Zoom %d%%  ·  scroll to zoom · drag to pan", pct)
 	}
 	pill := sdl.Rect{X: view.X, Y: view.Y + view.H - 18, W: c.TextWidth(a.clientZoomLbl) + 12, H: 18}
 	c.Fill(pill, sdl.Color{R: 0, G: 0, B: 0, A: 150})
 	c.LabelClipped(pill.X+6, pill.Y+3, view.W-12, a.clientZoomLbl, ColAccent)
-	a.drawClientControls(ctrlRow) // emote / side / colour cyclers (drive the pinned server)
-	a.drawSplitInput(inputRow)    // real input strip (sendICSplit) so you can chat in full view
+	a.drawSplitInput(inputRow) // quick-chat strip (sendICSplit) — fire a line without taking control
 }
 
 // clientViewSrc is the sub-rectangle of clientTex shown in the window, derived from
@@ -3107,9 +3054,6 @@ func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
 	} else {
 		a.clientPanning = false
 		a.clientPanX, a.clientPanY = 0.5, 0.5
-	}
-	if hover && c.dblClick { // reset to fit
-		a.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5
 	}
 }
 
@@ -4054,7 +3998,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
-	a.handleTabBar(winW) // chip clicks resolve BEFORE screens see them
+	a.handleTabBar(winW)      // chip clicks resolve BEFORE screens see them
+	if a.pendingControlSwap { // a click on the floating client last frame → take control now (before any draw)
+		a.pendingControlSwap = false
+		a.controlPinnedClient()
+	}
 	a.drainWarnings()
 	a.pollThemeApply()
 	a.pollManifest()

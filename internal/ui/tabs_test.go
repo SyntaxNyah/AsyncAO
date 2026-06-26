@@ -195,36 +195,56 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSplitControlCyclers pins the floating-client control bar's cyclers: they step the
-// pinned tab's OWN sessionState (emote / side / colour) with wrap and touch nothing
-// else — so "playing" the second client from the bar can't reach the primary.
-func TestSplitControlCyclers(t *testing.T) {
+// TestControlPinnedClientSwaps pins click-to-control: making the floating (pinned)
+// server the live courtroom promotes it to the active tab and demotes the old primary
+// into the float — the two trade places, both stay open.
+func TestControlPinnedClientSwaps(t *testing.T) {
 	a := testTabApp(t)
-	a.splitTab = &courtTab{state: sessionState{
-		emotes:   []courtroom.Emote{{Comment: "a"}, {Comment: "b"}, {Comment: "c"}},
-		sidePref: "wit",
-	}}
-	a.cycleSplitEmote(1)
-	if a.splitTab.state.emoteIdx != 1 {
-		t.Fatalf("emote +1 = %d, want 1", a.splitTab.state.emoteIdx)
+	if !a.allocateTab() {
+		t.Fatal("allocate primary tab")
 	}
-	a.cycleSplitEmote(-1)
-	a.cycleSplitEmote(-1) // 1 → 0 → 2 (wrap past the start)
-	if a.splitTab.state.emoteIdx != 2 {
-		t.Fatalf("emote wrap = %d, want 2", a.splitTab.state.emoteIdx)
+	a.serverName, a.serverKey = "Primary", "wss://primary"
+	a.sess = courtroom.NewRehearsalSession("", []string{"P"})
+	a.tabs = append(a.tabs, &courtTab{state: sessionState{
+		serverName: "Pinned", serverKey: "wss://pinned",
+		sess: courtroom.NewRehearsalSession("", []string{"Q"}),
+	}})
+	a.activeTab, a.tabDragFrom = 0, -1
+	a.pinToSplit(a.tabs[1])
+	if !a.splitActive() || a.splitTab != a.tabs[1] {
+		t.Fatal("setup: tab 1 must be pinned as the float")
 	}
-	if got := splitEmoteName(&a.splitTab.state); got != "c" {
-		t.Errorf("emote name = %q, want c", got)
+
+	a.controlPinnedClient()
+
+	if a.activeTab != 1 || a.serverName != "Pinned" {
+		t.Fatalf("the pinned server must become the live primary: activeTab=%d name=%q", a.activeTab, a.serverName)
 	}
-	n := len(render.TextColorNames())
-	a.splitTab.state.icColor = n - 1
-	a.cycleSplitColor(1) // wraps the palette back to 0
-	if a.splitTab.state.icColor != 0 {
-		t.Errorf("colour wrap = %d, want 0", a.splitTab.state.icColor)
+	if !a.splitActive() || a.splitTab != a.tabs[0] {
+		t.Fatal("the old primary must become the new float")
 	}
-	a.cycleSplitPos(1) // advances off the default side
-	if a.splitTab.state.sidePref == "wit" || a.splitTab.state.sidePref == "" {
-		t.Errorf("side must advance off wit, got %q", a.splitTab.state.sidePref)
+}
+
+// TestClientControlClick pins the gesture filter: a plain click in the client view
+// requests a control swap, but a drag (cursor travel) does not (that's a pan).
+func TestClientControlClick(t *testing.T) {
+	a := testTabApp(t)
+	c := a.ctx
+	view := sdl.Rect{X: 0, Y: 0, W: 200, H: 200}
+
+	a.pendingControlSwap, a.clientPanning = false, false
+	c.clicked = true
+	c.mouseX, c.mouseY, c.downX, c.downY = 50, 50, 50, 50 // released where pressed → a click
+	a.clientControlClick(view)
+	if !a.pendingControlSwap {
+		t.Error("a click in the view must request control")
+	}
+
+	a.pendingControlSwap = false
+	c.mouseX, c.mouseY, c.downX, c.downY = 150, 150, 50, 50 // travelled far → a drag, not a click
+	a.clientControlClick(view)
+	if a.pendingControlSwap {
+		t.Error("a drag must not request control (it pans)")
 	}
 }
 
