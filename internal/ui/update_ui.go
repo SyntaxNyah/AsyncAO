@@ -58,10 +58,11 @@ func (a *App) maybeKickUpdateCheck() {
 	}
 	res := a.updateRes
 	go func() {
-		// assetMatch = GOOS so the (future) self-replace step grabs this
-		// platform's release asset. A failed or already-current check is
-		// silent — the updater never nags.
-		rel, err := update.Check(context.Background(), "", update.Version, runtime.GOOS)
+		// assetMatch identifies THIS platform's ONE swappable default binary
+		// (see update.SelfUpdateAssetMatch — a bare GOOS match could grab a
+		// .zip bundle and brick the self-replace). A failed or already-current
+		// check is silent — the updater never nags.
+		rel, err := update.Check(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(runtime.GOOS))
 		if err != nil || rel == nil {
 			return
 		}

@@ -74,6 +74,56 @@ func TestCheckNewer(t *testing.T) {
 	}
 }
 
+// ghMultiAssetJSON is a realistic release carrying, for every platform, the
+// default build + the Discord-free build + (Windows) a DLL bundle .zip, in
+// SCRAMBLED order. Asset matching is the brick-risk path: a wrong pick gets
+// renamed over the running exe on the next self-update, so Check MUST land on
+// the one swappable default binary per platform regardless of order.
+const ghMultiAssetJSON = `{
+  "tag_name": "v2.0.0",
+  "body": "notes",
+  "html_url": "https://example/rel",
+  "assets": [
+    {"name": "asyncao-windows-x86_64-bundle.zip",          "browser_download_url": "https://example/win-bundle.zip"},
+    {"name": "AsyncAO-linux-x86_64-nodiscord.AppImage",    "browser_download_url": "https://example/linux-nd.AppImage"},
+    {"name": "asyncao-macos-nodiscord-arm64",              "browser_download_url": "https://example/mac-nd"},
+    {"name": "asyncao-windows-x86_64.exe",                 "browser_download_url": "https://example/win.exe"},
+    {"name": "AsyncAO-linux-x86_64.AppImage",              "browser_download_url": "https://example/linux.AppImage"},
+    {"name": "asyncao-windows-x86_64-nodiscord.exe",       "browser_download_url": "https://example/win-nd.exe"},
+    {"name": "asyncao-macos-arm64",                        "browser_download_url": "https://example/mac"},
+    {"name": "asyncao-windows-x86_64-nodiscord-bundle.zip","browser_download_url": "https://example/win-nd-bundle.zip"}
+  ]
+}`
+
+// TestSelfUpdatePicksSwappableDefault pins that SelfUpdateAssetMatch + Check
+// land on the bare/self-contained default binary for each platform — never the
+// .zip bundle (which a self-replace would rename over the .exe) or the
+// Discord-free variant.
+func TestSelfUpdatePicksSwappableDefault(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(ghMultiAssetJSON))
+	}))
+	defer srv.Close()
+
+	want := map[string]string{
+		"windows": "https://example/win.exe",
+		"linux":   "https://example/linux.AppImage",
+		"darwin":  "https://example/mac",
+	}
+	for goos, wantURL := range want {
+		rel, err := Check(context.Background(), srv.URL, "v1.0.0", SelfUpdateAssetMatch(goos))
+		if err != nil {
+			t.Fatalf("%s: Check: %v", goos, err)
+		}
+		if rel == nil {
+			t.Fatalf("%s: a higher tag must report an update", goos)
+		}
+		if rel.AssetURL != wantURL {
+			t.Errorf("%s: self-update picked %q, want the swappable default %q", goos, rel.AssetURL, wantURL)
+		}
+	}
+}
+
 func TestCheckNotNewer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(ghJSON))

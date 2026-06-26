@@ -128,6 +128,38 @@ func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Relea
 	return rel, nil
 }
 
+// SelfUpdateAssetMatch returns the release-asset name substring that UNIQUELY
+// identifies this platform's self-replaceable build, for Check's assetMatch.
+//
+// It is deliberately more specific than the bare GOOS. A release carries several
+// assets whose name contains the OS token — the default build, the Discord-free
+// build, and (on Windows) a DLL bundle .zip — and Check takes the FIRST match,
+// so matching on "windows" alone is order-dependent and could hand the
+// self-replace a .zip, which it would rename over the running .exe and brick the
+// install. These tokens match EXACTLY the one swappable default binary per
+// platform; the release workflow names assets to suit:
+//
+//	windows -> asyncao-windows-x86_64.exe     (bare exe; the runtime DLLs already sit beside it)
+//	linux   -> AsyncAO-linux-x86_64.AppImage  (self-contained single file)
+//	darwin  -> asyncao-macos-arm64            (bare arm64 binary)
+//
+// Every non-default variant (…-nodiscord.*, …-bundle.zip) is named so it does
+// NOT contain the platform's token. An unknown GOOS falls back to the bare OS
+// name (old behaviour: best-effort first match). Match is case-insensitive
+// (Check lowercases both sides), so the .AppImage capitalisation is fine.
+func SelfUpdateAssetMatch(goos string) string {
+	switch goos {
+	case "windows":
+		return "windows-x86_64.exe"
+	case "linux":
+		return "linux-x86_64.appimage"
+	case "darwin":
+		return "macos-arm64"
+	default:
+		return goos
+	}
+}
+
 // trimVPrefix drops a single leading v/V from a tag.
 func trimVPrefix(s string) string {
 	s = strings.TrimSpace(s)
