@@ -195,6 +195,58 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 }
 
+// TestClientViewSrcZoom pins the full-view zoom/pan source-rect math: zoom 1 shows the
+// whole texture (fit), zooming in shows a centred window, and panning clamps so the
+// window never leaves the texture.
+func TestClientViewSrcZoom(t *testing.T) {
+	a := testTabApp(t)
+	a.clientTexW, a.clientTexH = 1000, 800
+	a.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
+	if s := a.clientViewSrc(); s.X != 0 || s.Y != 0 || s.W != 1000 || s.H != 800 {
+		t.Fatalf("zoom 1 must show the whole texture, got %+v", s)
+	}
+	a.clientZoom = 2 // centred: middle 500×400 at (250,200)
+	if s := a.clientViewSrc(); s.W != 500 || s.H != 400 || s.X != 250 || s.Y != 200 {
+		t.Fatalf("zoom 2 centred = 500x400 at (250,200), got %+v", s)
+	}
+	a.clientPanX, a.clientPanY = 0, 0 // pan past the corner → clamps to (0,0)
+	a.clampClientPan()
+	if s := a.clientViewSrc(); s.X != 0 || s.Y != 0 {
+		t.Fatalf("pan to corner must clamp src to (0,0), got %+v", s)
+	}
+	a.clientPanX, a.clientPanY = 1, 1 // pan past the far corner → clamps to (tw-sw, th-sh)
+	a.clampClientPan()
+	if s := a.clientViewSrc(); s.X != 500 || s.Y != 400 {
+		t.Fatalf("pan to far corner must clamp src to (500,400), got %+v", s)
+	}
+}
+
+// TestClientZoomWheel pins wheel-zoom: scrolling up over the view zooms in and consumes
+// the wheel; scrolling all the way out clamps back to the fit floor.
+func TestClientZoomWheel(t *testing.T) {
+	a := testTabApp(t)
+	a.clientTexW, a.clientTexH = 1000, 800
+	a.clientZoom, a.clientPanX, a.clientPanY = 1, 0.5, 0.5
+	c := a.ctx
+	view := sdl.Rect{X: 0, Y: 0, W: 400, H: 300}
+	pressed := false
+	c.mouseX, c.mouseY, c.wheelY = 200, 150, 1
+	a.handleClientZoomPan(view, &pressed)
+	if a.clientZoom <= 1 {
+		t.Fatalf("wheel up must zoom in, got %v", a.clientZoom)
+	}
+	if c.wheelY != 0 {
+		t.Error("zoom must consume the wheel so panels behind don't also scroll")
+	}
+	for i := 0; i < 50; i++ { // scroll all the way back out
+		c.mouseX, c.mouseY, c.wheelY = 200, 150, -1
+		a.handleClientZoomPan(view, &pressed)
+	}
+	if a.clientZoom != clientZoomMin {
+		t.Fatalf("zoom out must clamp to the fit floor %v, got %v", clientZoomMin, a.clientZoom)
+	}
+}
+
 // TestRenderFullClientTextureRestores is a headless smoke test of the full-theme
 // view's swap/restore plumbing — the path with the most ways to SILENTLY corrupt the
 // primary (half-restored sessionState/room/viewport, render target left bound, scale

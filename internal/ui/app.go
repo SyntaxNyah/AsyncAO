@@ -659,6 +659,16 @@ type App struct {
 	// set, so the view-only pass can't eat an async result meant for the primary —
 	// the pinned client is already fully loaded in its parked sessionState.
 	pinnedPass bool
+	// Full-theme view zoom/pan: clientZoom magnifies (1 = fit), clientPan{X,Y} is the
+	// view centre in texture space (0..1) when zoomed. clientPanning tracks a drag.
+	// clientZoomLbl memoizes the readout so the per-frame draw doesn't Sprintf.
+	clientZoom                     float64
+	clientPanX, clientPanY         float64
+	clientPanning                  bool
+	clientPanGrabX, clientPanGrabY int32
+	clientPanBaseX, clientPanBaseY float64
+	clientZoomLbl                  string
+	clientZoomLblPct               int
 	// Per-instance chat-raster cache for the full-theme pass, swapped in around its
 	// drawCourtroom so it does NOT thrash the PRIMARY's single-slot msRaster (which
 	// would otherwise rebuild a GPU texture every frame). Mirrors the primary fields.
@@ -2750,6 +2760,11 @@ const (
 	clientWinDefH = 470
 	clientWinMinW = 360 // resize floor: stage + log + input stay usable
 	clientWinMinH = 300
+	// Full-theme view zoom: 1 = the whole client shrunk to fit the window, up to
+	// clientZoomMax magnification (scroll to zoom around the cursor, drag to pan).
+	clientZoomMin  = 1.0
+	clientZoomMax  = 6.0
+	clientZoomStep = 1.15 // wheel multiplier per notch
 )
 
 // splitActive reports whether the floating client window should render: a pinned
@@ -2795,6 +2810,7 @@ func (a *App) pinToSplit(t *courtTab) {
 	a.splitTab = t
 	a.splitRoom = courtroom.NewCourtroom(t.state.urls, a.d.Manager, t.state.sess, courtroom.NopAudio{})
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
+	a.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5 // fresh pin starts at fit
 	if t.state.sess.Background != "" {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})
 	}
@@ -2863,7 +2879,7 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	a.floatWinResize(&a.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
 	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH}
 	if a.clientFull && a.canRenderFullClient() {
-		a.drawClientFull(w, h, body)
+		a.drawClientFull(w, h, body, pressed)
 	} else {
 		a.drawClientBody(body)
 	}
@@ -2897,20 +2913,129 @@ func (a *App) drawClientBody(r sdl.Rect) {
 
 // drawClientFull renders the WHOLE pinned client (the full theme — emote grid,
 // buttons, themed chatbox, everything) into the window: the pinned drawCourtroom is
-// drawn to clientTex (view-only) and shrink-blitted into the view area, with a live
-// IC input strip below it so you can still chat. Two servers, both fully visible.
-func (a *App) drawClientFull(w, h int32, body sdl.Rect) {
+// drawn to clientTex (view-only) and blitted into the view area, with a live IC input
+// strip below it so you can still chat. Scroll to ZOOM (around the cursor) and drag to
+// PAN for a closer look; double-click resets to fit.
+func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	c := a.ctx
 	inputRow := sdl.Rect{X: body.X, Y: body.Y + body.H - splitInputH, W: body.W, H: splitInputH}
 	view := sdl.Rect{X: body.X, Y: body.Y, W: body.W, H: body.H - splitInputH}
 	a.renderFullClientTexture(w, h)
-	if a.clientTex != nil {
-		src := sdl.Rect{X: 0, Y: 0, W: a.clientTexW, H: a.clientTexH}
-		_ = c.Ren.Copy(a.clientTex, &src, &view) // shrink the full-size client into the window
-	} else {
+	if a.clientTex == nil {
 		c.LabelClipped(view.X+10, view.Y+10, view.W-20, "Full-theme view unavailable on this renderer.", ColTextDim)
+		a.drawSplitInput(inputRow)
+		return
 	}
+	a.handleClientZoomPan(view, pressed) // scroll = zoom (cursor-anchored), drag = pan
+	src := a.clientViewSrc()             // sub-rect of the texture from zoom + pan
+	_ = c.Ren.Copy(a.clientTex, &src, &view)
+	// Zoom readout / hint (memoized so the per-frame draw never Sprintfs), on a small
+	// dark pill for legibility over the rendered client.
+	pct := int(a.clientZoom*100 + 0.5)
+	if pct != a.clientZoomLblPct {
+		a.clientZoomLblPct = pct
+		a.clientZoomLbl = fmt.Sprintf("Zoom %d%%  ·  scroll to zoom · drag to pan · dbl-click reset", pct)
+	}
+	pill := sdl.Rect{X: view.X, Y: view.Y + view.H - 18, W: c.TextWidth(a.clientZoomLbl) + 12, H: 18}
+	c.Fill(pill, sdl.Color{R: 0, G: 0, B: 0, A: 150})
+	c.LabelClipped(pill.X+6, pill.Y+3, view.W-12, a.clientZoomLbl, ColAccent)
 	a.drawSplitInput(inputRow) // real input strip (sendICSplit) so you can chat in full view
+}
+
+// clientViewSrc is the sub-rectangle of clientTex shown in the window, derived from
+// the zoom factor and pan centre. At zoom 1 it's the whole texture (shrunk to fit);
+// zoomed in it's a centred-on-pan window that magnifies.
+func (a *App) clientViewSrc() sdl.Rect {
+	z := a.clientZoom
+	if z < clientZoomMin {
+		z = clientZoomMin
+	}
+	tw, th := float64(a.clientTexW), float64(a.clientTexH)
+	sw, sh := tw/z, th/z
+	sx := a.clientPanX*tw - sw/2
+	sy := a.clientPanY*th - sh/2
+	sx = clampF(sx, 0, tw-sw)
+	sy = clampF(sy, 0, th-sh)
+	return sdl.Rect{X: int32(sx), Y: int32(sy), W: int32(sw), H: int32(sh)}
+}
+
+// handleClientZoomPan applies wheel-zoom (anchored at the cursor) and drag-pan over
+// the full-view area, and double-click-to-reset. Pan/zoom are clamped so the source
+// window never leaves the texture.
+func (a *App) handleClientZoomPan(view sdl.Rect, pressed *bool) {
+	c := a.ctx
+	if a.clientZoom < clientZoomMin {
+		a.clientZoom = clientZoomMin
+	}
+	hover := pointIn(c.mouseX, c.mouseY, view)
+	if hover && c.wheelY != 0 { // zoom around the cursor
+		old := a.clientZoom
+		nz := old * clientZoomStep
+		if c.wheelY < 0 {
+			nz = old / clientZoomStep
+		}
+		nz = clampF(nz, clientZoomMin, clientZoomMax)
+		if nz != old {
+			src := a.clientViewSrc()
+			fx := float64(c.mouseX-view.X) / float64(view.W)
+			fy := float64(c.mouseY-view.Y) / float64(view.H)
+			texX := float64(src.X) + fx*float64(src.W) // texture point under the cursor
+			texY := float64(src.Y) + fy*float64(src.H)
+			tw, th := float64(a.clientTexW), float64(a.clientTexH)
+			sw, sh := tw/nz, th/nz
+			a.clientZoom = nz
+			a.clientPanX = (texX - fx*sw + sw/2) / tw // keep that point under the cursor
+			a.clientPanY = (texY - fy*sh + sh/2) / th
+			a.clampClientPan()
+		}
+		c.wheelY = 0 // consumed
+	}
+	if a.clientZoom > clientZoomMin { // drag to pan (only meaningful when zoomed)
+		if *pressed && hover {
+			*pressed = false
+			a.clientPanning = true
+			a.clientPanGrabX, a.clientPanGrabY = c.mouseX, c.mouseY
+			a.clientPanBaseX, a.clientPanBaseY = a.clientPanX, a.clientPanY
+		}
+		if !c.mouseDown {
+			a.clientPanning = false
+		}
+		if a.clientPanning {
+			tw, th := float64(a.clientTexW), float64(a.clientTexH)
+			sw, sh := tw/a.clientZoom, th/a.clientZoom
+			a.clientPanX = a.clientPanBaseX - float64(c.mouseX-a.clientPanGrabX)/float64(view.W)*sw/tw
+			a.clientPanY = a.clientPanBaseY - float64(c.mouseY-a.clientPanGrabY)/float64(view.H)*sh/th
+			a.clampClientPan()
+		}
+	} else {
+		a.clientPanning = false
+		a.clientPanX, a.clientPanY = 0.5, 0.5
+	}
+	if hover && c.dblClick { // reset to fit
+		a.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5
+	}
+}
+
+// clampClientPan keeps the pan centre so the zoomed source window stays inside the
+// texture (its half-extent is 0.5/zoom in normalized space).
+func (a *App) clampClientPan() {
+	half := 0.5 / a.clientZoom
+	a.clientPanX = clampF(a.clientPanX, half, 1-half)
+	a.clientPanY = clampF(a.clientPanY, half, 1-half)
+}
+
+// clampF clamps a float64 to [lo, hi] (lo wins if the range is inverted).
+func clampF(v, lo, hi float64) float64 {
+	if hi < lo {
+		return lo
+	}
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // renderFullClientTexture renders the pinned client's full drawCourtroom into

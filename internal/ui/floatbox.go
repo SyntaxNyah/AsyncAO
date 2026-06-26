@@ -256,7 +256,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	}
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
-		a.hkWin.dragging || a.hkWin.resizing || a.clientWin.dragging || a.clientWin.resizing {
+		a.hkWin.dragging || a.hkWin.resizing || a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
@@ -404,7 +404,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
 			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
-			a.clientWin.dragging || a.clientWin.resizing {
+			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
