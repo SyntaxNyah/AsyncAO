@@ -2634,6 +2634,10 @@ func (a *App) buildRoom() {
 	a.room.SFXMuted = func(name string) bool { return a.d.Prefs.IsSFXMuted(name) }        // M11 per-SFX mute (reads live prefs)
 	a.room.BlipVolumeFor = func(char string) int { return a.d.Prefs.BlipVolumeFor(char) } // M11 per-character blip volume (reads live prefs)
 	a.room.InlineEmote = inlineEmoteFor                                                   // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
+	// Per-server audio: apply THIS server's volume profile (or the global one) now,
+	// so the music re-seeded below plays at the right level and switching between
+	// two in-court tabs carries each server's own volumes / muted blips.
+	a.applyAudioVolumes()
 	urls := a.urls
 	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character, emote string) string {
 		if emote == "" {

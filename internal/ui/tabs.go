@@ -132,6 +132,14 @@ func (a *App) parkActive() {
 	a.msAnim, a.msAnimFont = nil, nil // #M5: drop the parked tab's animated message too
 	a.tabs[a.activeTab].inCourt = a.room != nil
 	a.room = nil
+	// A parked server falls SILENT. Music is a single looping stream, so without
+	// this the parked tab's song keeps playing under the next tab — and the
+	// activated tab's buildRoom only replays its OWN track (and not at all if its
+	// area has no song), so you'd hear the wrong server. buildRoom re-seeds the
+	// foreground tab's music on activation, so audio follows the active server.
+	if a.d.Audio != nil {
+		a.d.Audio.StopMusic()
+	}
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
 	}
@@ -532,6 +540,15 @@ func (a *App) drawTabBar(w int32) {
 		c.LabelClipped(r.X+6, r.Y+3, r.W-24, a.tabChipLabel(i), col)
 		if i != a.activeTab {
 			c.Label(r.X+r.W-14, r.Y+3, "✕", ColTextDim)
+		}
+		// Discoverability: hovering a chip explains it can be dragged (reorder)
+		// and clicked/closed — the drag-to-reorder gesture wasn't obvious.
+		if !a.tabDragging {
+			hint := "Click to switch  •  drag to reorder  •  ✕ to close"
+			if i == a.activeTab {
+				hint = "Drag to reorder  •  click to browse the lobby"
+			}
+			c.Tooltip(r, hint)
 		}
 	}
 	// "+" new-session chip: accent-bordered so it reads as an action, with a

@@ -25,8 +25,10 @@ var serverHelpIntro = []string{
 	"Then advertise the ws:// (and wss://) ports on the master server, and web + desktop clients can finally reach you.",
 }
 
-// serverHelpLegend explains the per-server capability ticks below.
-var serverHelpLegend = "Each server is tagged:  WS (yellow ✓ — every server here speaks it)  ·  WSS (green ✓ = native secure WebSocket, red ✕ = needs a reverse proxy)  ·  Players (green ✓ = modern live player list, yellow ✓ = via a plugin, red ✕ = none)."
+// serverHelpLegend explains the per-server capability chips below. Worded with
+// colours + "tick/cross" rather than ✓/✕ glyphs — the chips draw the marks as
+// shapes (drawCheck/drawCrossMark), and the glyphs would render as tofu here.
+var serverHelpLegend = "Each server carries three capability chips. WS — a yellow tick (every server here speaks plain WebSockets). WSS — a green tick for native secure WebSockets, or a red cross if it needs a reverse proxy for TLS. Players — a green tick for the modern live player list, a yellow tick if it comes via a plugin, or a red cross for none."
 
 // serverProject is one catalog entry.
 type serverProject struct {
@@ -321,26 +323,60 @@ var serverCapBox = sdl.Color{R: 78, G: 82, B: 96, A: 255}
 // "plugin", or a red ✕.
 func (a *App) drawServerCaps(x, y int32, p *serverProject) {
 	c := a.ctx
-	cell := func(bx int32, label, glyph string, glyphCol sdl.Color) int32 {
-		w := c.TextWidth(label+" "+glyph) + 16
-		c.Fill(sdl.Rect{X: bx, Y: y, W: w, H: 20}, serverCapBox)
-		c.Label(bx+8, y+2, label+" ", ColText)
-		c.Label(bx+8+c.TextWidth(label+" "), y+2, glyph, glyphCol)
-		return bx + w + 8
+	const icon = 13
+	// cell: label, then a DRAWN tick/cross (not a glyph — see drawCheck), then an
+	// optional suffix word ("plugin"). ok picks tick vs cross; okCol tints the tick.
+	cell := func(bx int32, label string, ok bool, okCol sdl.Color, suffix string) int32 {
+		labelW := c.TextWidth(label + " ")
+		sufW := int32(0)
+		if suffix != "" {
+			sufW = c.TextWidth(" " + suffix)
+		}
+		cw := labelW + icon + sufW + 16
+		c.Fill(sdl.Rect{X: bx, Y: y, W: cw, H: 20}, serverCapBox)
+		c.Label(bx+8, y+2, label, ColText)
+		ix := bx + 8 + labelW
+		if ok {
+			c.drawCheck(ix, y+3, icon, okCol)
+		} else {
+			c.drawCrossMark(ix, y+3, icon, ColDanger)
+		}
+		if suffix != "" {
+			c.Label(ix+icon+2, y+2, suffix, okCol)
+		}
+		return bx + cw + 8
 	}
-	bx := cell(x, "WS", "✓", ColTierYellow)
-	if p.wss {
-		bx = cell(bx, "WSS", "✓", ColTierGreen)
-	} else {
-		bx = cell(bx, "WSS", "✕", ColDanger)
-	}
+	bx := cell(x, "WS", true, ColTierYellow, "") // every catalog server speaks WS
+	bx = cell(bx, "WSS", p.wss, ColTierGreen, "")
 	switch {
 	case p.plist:
-		cell(bx, "Players", "✓", ColTierGreen)
+		cell(bx, "Players", true, ColTierGreen, "")
 	case p.plistPlugin:
-		cell(bx, "Players", "✓ plugin", ColTierYellow)
+		cell(bx, "Players", true, ColTierYellow, "plugin")
 	default:
-		cell(bx, "Players", "✕", ColDanger)
+		cell(bx, "Players", false, ColDanger, "")
+	}
+}
+
+// drawCheck / drawCrossMark render a tick / cross as short thick strokes instead
+// of the ✓ / ✕ glyphs — the embedded font lacks them, so the glyphs rendered as
+// tofu (□). s is the icon box size. Same rationale as drawForkConnector.
+func (c *Ctx) drawCheck(x, y, s int32, col sdl.Color) {
+	_ = c.Ren.SetDrawColor(col.R, col.G, col.B, col.A)
+	ax, ay := x+s*15/100, y+s*55/100
+	bx, by := x+s*40/100, y+s*80/100
+	cx, cy := x+s*85/100, y+s*20/100
+	for d := int32(0); d < 3; d++ { // a few offset passes = a readable stroke width
+		_ = c.Ren.DrawLine(ax, ay+d, bx, by+d)
+		_ = c.Ren.DrawLine(bx, by+d, cx, cy+d)
+	}
+}
+
+func (c *Ctx) drawCrossMark(x, y, s int32, col sdl.Color) {
+	_ = c.Ren.SetDrawColor(col.R, col.G, col.B, col.A)
+	for d := int32(0); d < 3; d++ {
+		_ = c.Ren.DrawLine(x+s*2/10, y+s*2/10+d, x+s*8/10, y+s*8/10+d)
+		_ = c.Ren.DrawLine(x+s*8/10, y+s*2/10+d, x+s*2/10, y+s*8/10+d)
 	}
 }
 

@@ -442,7 +442,15 @@ const duckMusicPercent = 35
 // when active. Call it wherever those states change so they're always honored.
 func (a *App) applyAudioVolumes() {
 	music, sfx, blip := a.d.Prefs.AudioVolumes()
-	alert := a.d.Prefs.AlertVolume() // callword/friend ping — independent of SFX
+	master := a.d.Prefs.MasterVolume()
+	// Per-server audio (sandboxed tab sound): the ACTIVE server's override, when
+	// enabled, replaces the global mixer levels — so each tab can carry its own
+	// volumes / muted blips. Re-applied on courtroom entry + every tab switch
+	// (buildRoom), so the levels follow whichever server is in front.
+	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
+		master, music, sfx, blip = m, mu, s, b
+	}
+	alert := a.d.Prefs.AlertVolume() // callword/friend ping — independent of SFX, always global
 	if a.sfxMuted {
 		sfx = 0
 	}
@@ -451,9 +459,9 @@ func (a *App) applyAudioVolumes() {
 	}
 	// Master multiplier scales everything (composes over mute/duck) — the one
 	// "too loud / too quiet" knob.
-	if m := a.d.Prefs.MasterVolume(); m != 100 {
-		music, sfx, blip = music*m/100, sfx*m/100, blip*m/100
-		alert = alert * m / 100
+	if master != 100 {
+		music, sfx, blip = music*master/100, sfx*master/100, blip*master/100
+		alert = alert * master / 100
 	}
 	a.d.Audio.SetVolumes(music, sfx, blip)
 	a.d.Audio.SetAlertVolume(alert)

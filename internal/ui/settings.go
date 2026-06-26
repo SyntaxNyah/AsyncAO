@@ -379,16 +379,17 @@ func (a *App) drawSettings(w, h int32) {
 
 const (
 	settContentTop = 44   // header band height (title + search row)
-	settSidebarW   = 168  // left category-nav width
-	settSidebarGap = 16   // gap between the sidebar and the content card
+	settSidebarW   = 140  // left category-nav width (slim: the labels are short)
+	settSidebarGap = 12   // gap between the sidebar and the content card
 	settNavItemH   = 32   // height of one sidebar nav row
-	settCardPadX   = 18   // content card horizontal padding (row inset)
-	settMaxCardW   = 1000 // cap the card width so rows stay readable on wide windows
-	settMinCardW   = 320  // floor so rows never collapse on a narrow window
-	settCardGap    = 14   // page-coloured gap band separating cards
-	settCardTopPad = 14   // padding above a card title
-	settSectionMid = 22   // title baseline → hairline
-	settSectionBot = 12   // hairline → the section's first row
+	settCardPadX   = 14   // content card horizontal padding (row inset)
+	settMaxCardW   = 1400 // cap the card width on ultrawide; high enough that the
+	// widest multi-column rows (offsets up to ~pad+700) never clip on normal monitors.
+	settMinCardW   = 320 // floor so rows never collapse on a narrow window
+	settCardGap    = 14  // page-coloured gap band separating cards
+	settCardTopPad = 14  // padding above a card title
+	settSectionMid = 22  // title baseline → hairline
+	settSectionBot = 12  // hairline → the section's first row
 )
 
 // settingsSection delimits one card: it punches a page-coloured gap above the
@@ -1714,30 +1715,58 @@ func (a *App) drawSettingsAudioChat(y, _ int32) int32 {
 	pad := a.formX
 	w := a.formW2()
 	y = a.settingsSection(y, w, "Volume")
-	// Master volume — scales everything; also on the Extras box for quick access.
-	if mv := a.volumeRow(y, "Master volume", a.d.Prefs.MasterVolume()); mv != a.d.Prefs.MasterVolume() {
-		a.d.Prefs.SetMasterVolume(mv)
-		a.applyAudioVolumes()
+	// Per-server audio (sandbox this tab's sound): when on, the four volumes below
+	// are THIS server's own — applied whenever its tab is active — so you can mute
+	// blips on one server and keep them on another. Off = the shared global mix.
+	psOn := false
+	if a.serverKey != "" {
+		psOn, _, _, _, _ = a.d.Prefs.ServerAudio(a.serverKey)
+		label := "Separate audio for this server"
+		if a.serverName != "" {
+			label = "Separate audio for " + a.serverName
+		}
+		if next := c.Checkbox(pad, y, label+" — its own volumes / muted blips, applied while this tab is active", psOn); next != psOn {
+			if next { // seed from the current global so the sliders start where you'd expect
+				gmu, gs, gb := a.d.Prefs.AudioVolumes()
+				a.d.Prefs.SetServerAudioVolumes(a.serverKey, a.d.Prefs.MasterVolume(), gmu, gs, gb)
+			}
+			a.d.Prefs.SetServerAudioOn(a.serverKey, next)
+			a.applyAudioVolumes()
+			psOn = next
+		}
+		y += 28
 	}
+	// The effective set: this server's override when on, else the global mix.
+	em := a.d.Prefs.MasterVolume()
+	emu, es, eb := a.d.Prefs.AudioVolumes()
+	if psOn {
+		_, em, emu, es, eb = a.d.Prefs.ServerAudio(a.serverKey)
+	}
+	nm := a.volumeRow(y, "Master volume", em) // scales everything; also on the Extras box
 	y += 30
-	music, sfx, blip := a.d.Prefs.AudioVolumes()
-	music = a.volumeRow(y, "Music volume", music)
+	nmu := a.volumeRow(y, "Music volume", emu)
 	y += 26
-	sfx = a.volumeRow(y, "SFX volume", sfx)
+	ns := a.volumeRow(y, "SFX volume", es)
 	y += 26
-	blip = a.volumeRow(y, "Blip volume", blip)
+	nb := a.volumeRow(y, "Blip volume", eb)
 	y += 26
-	// Callword/friend ping volume — its OWN control, independent of SFX (so a
-	// quiet SFX mix or the SFX mute never silences your name-pings).
+	if nm != em || nmu != emu || ns != es || nb != eb {
+		if psOn {
+			a.d.Prefs.SetServerAudioVolumes(a.serverKey, nm, nmu, ns, nb)
+		} else {
+			a.d.Prefs.SetMasterVolume(nm)
+			a.d.Prefs.SetAudioVolumes(nmu, ns, nb)
+		}
+		a.applyAudioVolumes() // honors the session SFX mute
+	}
+	// Callword/friend ping volume — its OWN control, independent of SFX (so a quiet
+	// SFX mix or the SFX mute never silences your name-pings) and global (alerts
+	// should reach you the same on every server).
 	if av := a.volumeRow(y, "Callword/alert volume", a.d.Prefs.AlertVolume()); av != a.d.Prefs.AlertVolume() {
 		a.d.Prefs.SetAlertVolume(av)
 		a.applyAudioVolumes()
 	}
 	y += 32
-	if m0, s0, b0 := a.d.Prefs.AudioVolumes(); m0 != music || s0 != sfx || b0 != blip {
-		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
-		a.applyAudioVolumes() // honors the session SFX mute
-	}
 	// Music ducking (off by default): dip the music while a message plays.
 	duck := a.d.Prefs.MusicDucking()
 	if next := c.Checkbox(pad, y, "Duck music while someone talks (lower music during a message so dialogue stays clear)", duck); next != duck {

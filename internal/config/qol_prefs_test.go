@@ -348,6 +348,47 @@ func TestServerIgnorePref(t *testing.T) {
 	}
 }
 
+// TestServerAudioPref pins the per-server audio override (the "sandbox each tab's
+// sound" option): off by default, values are per-server, clamp to 0–100, and
+// survive a save→reload.
+func TestServerAudioPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	const key = "wss://example.test/ws"
+	if on, _, _, _, _ := p.ServerAudio(key); on {
+		t.Error("per-server audio should be off by default")
+	}
+	p.SetServerAudioVolumes(key, 80, 70, 0, 50) // e.g. mute SFX on this server only
+	p.SetServerAudioOn(key, true)
+	if on, m, mu, s, b := p.ServerAudio(key); !on || m != 80 || mu != 70 || s != 0 || b != 50 {
+		t.Fatalf("ServerAudio = %v/%d/%d/%d/%d, want true/80/70/0/50", on, m, mu, s, b)
+	}
+	if on, _, _, _, _ := p.ServerAudio("wss://other/ws"); on {
+		t.Error("per-server audio must be per-server (another server stays on global)")
+	}
+	p.SetServerAudioVolumes(key, 999, -5, 50, 50) // out-of-range clamps to [0,100]
+	if _, m, mu, _, _ := p.ServerAudio(key); m != 100 || mu != 0 {
+		t.Errorf("clamp failed: master=%d music=%d, want 100/0", m, mu)
+	}
+
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetServerAudioVolumes(key, 60, 40, 20, 10)
+	q.SetServerAudioOn(key, true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if on, m, mu, s, b := r.ServerAudio(key); !on || m != 60 || mu != 40 || s != 20 || b != 10 {
+		t.Errorf("after reload ServerAudio = %v/%d/%d/%d/%d, want true/60/40/20/10", on, m, mu, s, b)
+	}
+}
+
 // TestServerFriendNickColor pins #82: a friend entry parses into name + custom
 // glow colour + personal nickname, the colour stays parseable when a nickname is
 // present, commas are stripped from nicknames (they'd corrupt the comma-separated

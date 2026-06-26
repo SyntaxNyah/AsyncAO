@@ -1094,6 +1094,15 @@ type ServerWarmInfo struct {
 	// Origin is the server's asset URL from the last visit — rehearsal
 	// mode rebuilds asset paths from it without connecting.
 	Origin string `json:"origin,omitempty"`
+	// Per-server audio override — the "sandbox each tab's sound" option. When
+	// AudioOn, these 0–100 levels replace the global mixer volumes while this
+	// server's tab is active (so you can mute blips on one server and keep them
+	// on another); off = the shared global volumes. AudioMaster scales the rest.
+	AudioOn     bool `json:"audioOn,omitempty"`
+	AudioMaster int  `json:"audioMaster,omitempty"`
+	AudioMusic  int  `json:"audioMusic,omitempty"`
+	AudioSFX    int  `json:"audioSFX,omitempty"`
+	AudioBlip   int  `json:"audioBlip,omitempty"`
 	// Chars is the server's character list from the last visit
 	// (≤ WarmCharsCap) — the rehearsal char select.
 	Chars []string `json:"chars,omitempty"`
@@ -4501,6 +4510,32 @@ func (p *AssetPreferences) SetServerLogin(key, user, pass string, auto bool) {
 // server applies it, disconnecting restores the global pick.
 func (p *AssetPreferences) SetServerTheme(key, themeName string) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.Theme = themeName })
+}
+
+// ServerAudio returns a server's per-server audio override. on=false means the
+// global mixer volumes apply; the four levels are 0–100 (master scales the rest).
+// The "sandbox each tab's sound" feature — applied while this server's tab is active.
+func (p *AssetPreferences) ServerAudio(key string) (on bool, master, music, sfx, blip int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	w := p.ServerWarm[key]
+	return w.AudioOn, w.AudioMaster, w.AudioMusic, w.AudioSFX, w.AudioBlip
+}
+
+// SetServerAudioOn toggles one server's per-server audio override.
+func (p *AssetPreferences) SetServerAudioOn(key string, on bool) {
+	p.rememberServer(key, func(w *ServerWarmInfo) { w.AudioOn = on })
+}
+
+// SetServerAudioVolumes records a server's per-server mixer volumes (0–100 each).
+func (p *AssetPreferences) SetServerAudioVolumes(key string, master, music, sfx, blip int) {
+	master = clampPercent(master, 0, defaultAudioVolume)
+	music = clampPercent(music, 0, defaultAudioVolume)
+	sfx = clampPercent(sfx, 0, defaultAudioVolume)
+	blip = clampPercent(blip, 0, defaultAudioVolume)
+	p.rememberServer(key, func(w *ServerWarmInfo) {
+		w.AudioMaster, w.AudioMusic, w.AudioSFX, w.AudioBlip = master, music, sfx, blip
+	})
 }
 
 // RememberServerChars records the character list for rehearsal mode
