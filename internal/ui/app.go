@@ -629,6 +629,17 @@ type App struct {
 	splitTab  *courtTab
 	splitRoom *courtroom.Courtroom
 	splitVP   *render.Viewport
+	// Pinned-pane chat log: wrapped rows cached by (width, pinned log seq) so the
+	// steady-state right-pane render is 0-alloc — rebuilt only when a message lands
+	// or the pane resizes (the pinned "slow chat" rarely changes).
+	splitWrapW    int32
+	splitWrapSeq  uint64
+	splitWrapRows []splitLogRow
+	// Pinned-pane header text cached by server name so the right-pane draw never
+	// re-concats per frame (the split is a deliberate power mode, but it holds the
+	// same 0-alloc discipline as the single-pane path).
+	splitHdr     string
+	splitHdrName string
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32
@@ -2691,13 +2702,15 @@ func (a *App) buildRoom() {
 	a.rebuildLiveRoster()      // seed the live player list from the handshake's CharsCheck
 }
 
-// --- multi-server split (pass 2a) -------------------------------------------
-// A pinned BACKGROUND tab's live stage renders in the right pane while you play
-// in the left. Scene-only for now (log + a single IC input come next). The
-// pinned room runs on courtroom.NopAudio so the single music stream stays with
-// the focused (left) pane; its second viewport shares the texture store.
+// --- multi-server split (passes 2a–2c) --------------------------------------
+// A pinned BACKGROUND tab's live stage + chat log + IC input render in the right
+// pane while you play in the left — two servers on screen at once, type into
+// either (click a field to focus it). The pinned room runs on courtroom.NopAudio
+// so the single music stream stays with the focused (left) pane; its second
+// viewport shares the texture store (origin-qualified keys, so no asset clash).
 
 const splitHeaderH = 22 // right-pane header strip height
+const splitInputH = 30  // right-pane IC input row height (pass 2c)
 
 // splitActive reports whether the right pane should render: a pinned background
 // tab with a live session + room (and not disconnected).
@@ -2707,7 +2720,12 @@ func (a *App) splitActive() bool {
 }
 
 // clearSplit tears the split down (keeps the viewport for reuse).
-func (a *App) clearSplit() { a.splitTab, a.splitRoom = nil, nil }
+func (a *App) clearSplit() {
+	a.splitTab, a.splitRoom = nil, nil
+	if a.ctx != nil && a.ctx.focusID == "ic-split" {
+		a.ctx.focusID = "" // the right-pane field is gone — don't leave focus dangling on it
+	}
+}
 
 // pinToSplit pins a BACKGROUND tab as the right-pane stage (toggle: re-pinning the
 // same tab clears it). Builds a throwaway room over the tab's OWN session + URL
@@ -2735,19 +2753,124 @@ func (a *App) pinToSplit(t *courtTab) {
 	}
 }
 
-// drawSplitPane renders the pinned second server's live stage into the right pane.
+// drawSplitPane renders the pinned second server's live stage + chat log + a
+// typing line into the right pane (pass 2c: you can chat in the pinned server
+// without leaving the primary — click the field to focus it; the kit is
+// single-focus so one keyboard drives whichever pane you clicked).
 func (a *App) drawSplitPane(r sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColBackground)
-	c.Fill(sdl.Rect{X: r.X - 1, Y: 0, W: 2, H: r.H}, ColPanelHi) // divider
+	c.Fill(sdl.Rect{X: r.X - 1, Y: 0, W: 2, H: r.H}, ColPanelHi) // divider between panes
 	if !a.splitActive() {
 		c.LabelClipped(r.X+10, r.Y+10, r.W-20, "The pinned server disconnected — right-click a tab to re-split.", ColTextDim)
 		return
 	}
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: splitHeaderH}, ColPanelHi)
-	c.LabelClipped(r.X+8, r.Y+4, r.W-16, "Watching "+a.splitTab.state.serverName+" — right-click its tab to close the split", ColAccent)
-	stage := sdl.Rect{X: r.X, Y: r.Y + splitHeaderH, W: r.W, H: r.H - splitHeaderH}
+	if a.splitHdrName != a.splitTab.state.serverName { // memoized: no per-frame concat
+		a.splitHdrName = a.splitTab.state.serverName
+		a.splitHdr = "Watching " + a.splitHdrName + " — right-click its tab to close the split"
+	}
+	c.LabelClipped(r.X+8, r.Y+4, r.W-16, a.splitHdr, ColAccent)
+	// Bottom: the IC input row (pinned to the floor); middle: chat log; top: stage.
+	inputRow := sdl.Rect{X: r.X, Y: r.Y + r.H - splitInputH, W: r.W, H: splitInputH}
+	// Stage (4:3, capped so the chat log keeps room) sits below the header.
+	sceneH := r.W * 3 / 4
+	if maxH := (r.H - splitHeaderH - splitInputH) * 55 / 100; sceneH > maxH {
+		sceneH = maxH
+	}
+	stage := sdl.Rect{X: r.X, Y: r.Y + splitHeaderH, W: r.W, H: sceneH}
 	a.splitVP.Render(c.Ren, &a.splitRoom.Scene, stage)
+	logTop := stage.Y + stage.H + 3
+	logRect := sdl.Rect{X: r.X, Y: logTop, W: r.W, H: inputRow.Y - logTop}
+	c.Fill(sdl.Rect{X: logRect.X, Y: logRect.Y - 2, W: logRect.W, H: 1}, ColPanelHi) // rule above the log
+	a.drawSplitLog(logRect, &a.splitTab.state)
+	a.drawSplitInput(inputRow)
+}
+
+// drawSplitInput draws the pinned pane's IC field. It edits the PINNED tab's own
+// icInput (its sessionState, not the embedded primary's), and on Enter routes to
+// sendICSplit, which momentarily swaps that state into the embedded slot so the
+// untouched sendIC sends on the pinned conn. The field id "ic-split" is distinct
+// from the primary "ic", so the kit's ID-keyed focus makes it click-to-focus for
+// free — no side-swap. 0-alloc: icFieldFonts is nil for ASCII and the placeholder
+// is a constant.
+func (a *App) drawSplitInput(r sdl.Rect) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: 1}, ColPanelHi) // rule above the input
+	box := sdl.Rect{X: r.X + 6, Y: r.Y + 5, W: r.W - 12, H: r.H - 10}
+	s := &a.splitTab.state
+	primary, emoji := a.icFieldFonts(s.icInput)
+	var send bool
+	s.icInput, send = c.TextFieldEmoji("ic-split", box, s.icInput, "Chat in the pinned server — click to focus", primary, emoji)
+	if send {
+		a.sendICSplit(0)
+	}
+}
+
+// sendICSplit sends an IC message on the PINNED (right-pane) server. Every field
+// sendIC reads lives in sessionState (verified: emotes/emoteIdx, pair*, icColor,
+// charBlips, evid*, lastSent*, shownameOverride, sidePref…), and sendIC + all its
+// helpers + handleChatCommand never touch a.room — so we momentarily swap the
+// pinned tab's state into the embedded slot, reuse the untouched sendIC (its
+// SendChat then targets the pinned conn), capture the side effects back into the
+// tab, and restore the primary. Synchronous + single-threaded: no frame renders
+// and pumpBackgroundTabs cannot interleave between the two swaps.
+func (a *App) sendICSplit(shout int) {
+	if a.splitTab == nil {
+		return
+	}
+	savedFocus := a.ctx.focusID
+	saved := a.sessionState
+	a.sessionState = a.splitTab.state
+	a.sendIC(shout)
+	a.splitTab.state = a.sessionState // capture cleared input, lastSent* markers, emote roll, rate-limit stamp
+	a.sessionState = saved
+	// sendIC's random-emote path (off by default) refocuses "ic"; keep the caret
+	// in the right pane so the user can keep typing where they were.
+	if savedFocus == "ic-split" {
+		a.ctx.focusNext = "ic-split"
+	}
+}
+
+// splitLogRow is one wrapped, coloured line of the pinned pane's chat log.
+type splitLogRow struct {
+	text string
+	col  sdl.Color
+}
+
+// drawSplitLog renders the pinned session's IC log (read-only, newest at the
+// bottom) into r. Wrapping is cached by (width, log seq), so a steady frame is
+// 0-alloc; it rebuilds only when a message lands or the pane resizes.
+func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
+	c := a.ctx
+	font := c.LogFont(a.logPct)
+	lineH := int32(font.Height()) + 2
+	wrapW := r.W - 8
+	if wrapW != a.splitWrapW || s.icLogSeq != a.splitWrapSeq {
+		a.splitWrapW, a.splitWrapSeq = wrapW, s.icLogSeq
+		a.splitWrapRows = a.splitWrapRows[:0]
+		for i := range s.icLog {
+			e := &s.icLog[i]
+			col := ColText
+			if e.color > 0 {
+				col = render.TextColor(e.color)
+			}
+			for _, ln := range c.WrapText(e.text, wrapW, 0) {
+				a.splitWrapRows = append(a.splitWrapRows, splitLogRow{text: ln, col: col})
+			}
+		}
+	}
+	rows := a.splitWrapRows
+	clipPrev, clipHad := c.pushClip(r)
+	y := r.Y + r.H - lineH // newest line pinned to the bottom, drawing upward
+	for ri := len(rows) - 1; ri >= 0; ri-- {
+		if y < r.Y-lineH {
+			break
+		}
+		c.LabelClippedFont(font, r.X+4, y, wrapW, rows[ri].text, rows[ri].col)
+		y -= lineH
+	}
+	c.popClip(clipPrev, clipHad)
 }
 
 // applyTimingToRoom pushes the persisted crawl/stay knobs into the live
@@ -3593,7 +3716,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	// The tab strip floats over every screen (input was consumed at the
 	// top of the frame; this is just paint).
-	a.drawTabBar(winW)
+	a.drawTabBar(winW, winH)
 	// Download progress chip floats under the strip while a grab runs.
 	a.drawDownloadIndicator(winW)
 	a.drawPingChip(8, winH-16) // #128 connection-quality chip (bottom-left; off by default)

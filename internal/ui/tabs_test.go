@@ -2,8 +2,11 @@ package ui
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
@@ -189,6 +192,121 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 	if a.tabs[0].state.serverName != "" {
 		t.Fatal("the active tab's parked slot must be zeroed")
+	}
+}
+
+// TestTabTearOffToSplit pins the pass-4 gesture: dragging a BACKGROUND chip below
+// the strip enters tear-off mode (suspending reorder), and releasing there pins
+// that tab as the split's right pane — while the ACTIVE tab can never tear off
+// (it is the left pane already). handleTabDrag takes the chip rects directly, so
+// the gesture drives without the font-dependent tabBarRects.
+func TestTabTearOffToSplit(t *testing.T) {
+	a := testTabApp(t)
+	c := a.ctx
+	a.tabs = []*courtTab{
+		{}, // index 0: the active (left) tab — its live session lives in a.sessionState
+		{state: sessionState{serverName: "Pinned", sess: courtroom.NewRehearsalSession("", []string{"X"})}},
+	}
+	a.activeTab = 0
+	a.tabDragFrom = -1 // NewApp seeds this idle sentinel; the raw test App needs it too
+	rects := []sdl.Rect{{X: 0, Y: 0, W: 60, H: tabBarH}, {X: 64, Y: 0, W: 60, H: tabBarH}}
+
+	// Press on the background chip's body (index 1), inside the strip.
+	c.mouseDown, c.mouseX, c.mouseY = true, 80, 10
+	a.handleTabDrag(rects, true)
+	// Pull it down past the threshold: promotes to a drag and enters tear-off.
+	c.mouseX, c.mouseY = 80, tabTearOffY+20
+	if a.handleTabDrag(rects, false) {
+		t.Fatal("an in-progress drag must not report completion")
+	}
+	if !a.tabTearingOff() {
+		t.Fatal("a background chip dragged below the strip must be in tear-off mode")
+	}
+	// Release below the strip → the background tab pins to the split's right pane.
+	c.mouseDown = false
+	if !a.handleTabDrag(rects, false) {
+		t.Fatal("releasing a drag must report completion so the click is swallowed")
+	}
+	if a.splitTab != a.tabs[1] || !a.splitActive() {
+		t.Fatalf("tear-off release must pin the background tab to the split")
+	}
+
+	// The active tab can't tear off: a drag on it below the strip never enters
+	// tear-off mode and never creates a split.
+	a.clearSplit()
+	c.mouseDown, c.mouseX, c.mouseY = true, 20, 10
+	a.handleTabDrag(rects, true) // arm on index 0 (the active tab)
+	c.mouseX, c.mouseY = 20, tabTearOffY+20
+	a.handleTabDrag(rects, false)
+	if a.tabTearingOff() {
+		t.Error("the active tab must never enter tear-off mode")
+	}
+	c.mouseDown = false
+	a.handleTabDrag(rects, false)
+	if a.splitActive() {
+		t.Error("dragging the active tab below the strip must not create a split")
+	}
+}
+
+// TestSendICSplitTargetsPinnedSession pins the dual-input invariant (pass 2c):
+// typing into the right pane sends on the PINNED server (its conn, its char id)
+// via a momentary sessionState swap, consumes the PINNED input, and leaves the
+// primary session bit-for-bit untouched. The swap reuses the unmodified sendIC,
+// so a regression that forgets to restore the primary — or that sends on the
+// wrong conn/identity — fails here.
+func TestSendICSplitTargetsPinnedSession(t *testing.T) {
+	a := testTabApp(t)
+	// Primary (left) session: a distinct identity that must survive the send.
+	a.serverName = "PrimaryServer"
+	a.icInput = "primary draft"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.sess.MyCharID = 1
+
+	// Pinned (right) session on a send-capturing conn, with a distinctive char id
+	// (4242) so "the pinned identity was used" is unambiguous against MS's many
+	// small numeric fields.
+	var sent []protocol.Packet
+	pinnedSess := courtroom.NewSession(func(p protocol.Packet) error { sent = append(sent, p); return nil }, "")
+	pinnedSess.MyCharID = 4242
+	pin := &courtTab{state: sessionState{
+		serverName: "PinnedServer",
+		sess:       pinnedSess,
+		sidePref:   "wit",
+		evidIdx:    -1,
+		pairWith:   protocol.UnpairedCharID,
+		icInput:    "hello from the right pane",
+	}}
+	a.tabs = append(a.tabs, pin)
+	a.splitTab = pin
+	a.ctx.focusID = "ic-split"
+
+	a.sendICSplit(0)
+
+	// 1. Exactly one MS went out, and on the PINNED conn (the primary's send is a
+	//    no-op rehearsal func, so capturing it here proves the routing).
+	if len(sent) != 1 || sent[0].Header != "MS" {
+		t.Fatalf("want one MS on the pinned conn, got %d packets: %+v", len(sent), sent)
+	}
+	if !slices.Contains(sent[0].Fields, "hello from the right pane") {
+		t.Errorf("the pinned input must ride the wire, fields=%v", sent[0].Fields)
+	}
+	if !slices.Contains(sent[0].Fields, "4242") {
+		t.Errorf("the message must carry the PINNED char id 4242 (swap fed the right identity), fields=%v", sent[0].Fields)
+	}
+	// 2. The pinned input was consumed (the swap captured sendIC's clear back).
+	if pin.state.icInput != "" {
+		t.Errorf("pinned input must clear after send, got %q", pin.state.icInput)
+	}
+	// 3. The primary session is fully restored — name and its own draft intact.
+	if a.serverName != "PrimaryServer" || a.icInput != "primary draft" {
+		t.Errorf("primary must be untouched: name=%q input=%q", a.serverName, a.icInput)
+	}
+	if a.sess.MyCharID != 1 {
+		t.Errorf("primary session pointer must be restored (MyCharID 1), got %d", a.sess.MyCharID)
+	}
+	// 4. Focus stays in the right pane so you can keep typing there.
+	if a.ctx.focusNext != "ic-split" {
+		t.Errorf("focus must stay on the split field, focusNext=%q", a.ctx.focusNext)
 	}
 }
 

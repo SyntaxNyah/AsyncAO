@@ -51,6 +51,11 @@ const (
 	// a chip becomes a reorder drag instead of a switch/close click — mirrors
 	// the wardrobe's iniDragThreshold.
 	tabDragThreshold = 6
+	// tabTearOffY is the Y (logical px) below which an in-progress chip drag stops
+	// reordering and becomes a TEAR-OFF: releasing there drops a background tab
+	// into the split's right pane (pass 4). Comfortably below the tabBarH strip so
+	// a horizontal reorder never trips it; pulling the chip down is the gesture.
+	tabTearOffY = tabBarH + 34
 )
 
 // courtTab is one parked server session. While a tab is ACTIVE its state
@@ -481,11 +486,22 @@ func (a *App) handleTabBar(w int32) {
 	}
 }
 
+// tabTearingOff reports that the in-progress chip drag has been pulled below the
+// strip while holding a BACKGROUND tab — the gesture that drops it into the
+// split's right pane (pass 4) instead of reordering. The active tab can't tear
+// off (it's already the left pane), so it stays in plain reorder mode.
+func (a *App) tabTearingOff() bool {
+	return a.tabDragging && a.tabDragFrom >= 0 && a.tabDragFrom != a.activeTab &&
+		a.ctx.mouseY > tabTearOffY
+}
+
 // handleTabDrag arms a reorder on press over a chip body, promotes it to a
 // drag once the cursor passes tabDragThreshold, and reorders the strip live as
-// the cursor crosses chips. Returns true when a release ended a drag, so the
-// caller swallows the click (a reorder must not also switch/close the tab).
-// Pressing the right ✕ third never arms — that stays a close-click target.
+// the cursor crosses chips. Pulling a background chip below the strip switches
+// to tear-off mode (no reorder); releasing there pins it as the split's right
+// pane. Returns true when a release ended a drag, so the caller swallows the
+// click (a reorder/tear-off must not also switch/close the tab). Pressing the
+// right ✕ third never arms — that stays a close-click target.
 func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
 	c := a.ctx
 	if pressed && a.tabDragFrom < 0 {
@@ -505,7 +521,7 @@ func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
 				a.tabDragging = true
 			}
 		}
-		if a.tabDragging {
+		if a.tabDragging && !a.tabTearingOff() { // tear-off mode: hold position, don't reorder
 			target := a.tabDragFrom
 			last := rects[len(rects)-1]
 			switch {
@@ -529,9 +545,14 @@ func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
 	}
 	if !c.mouseDown {
 		wasDragging := a.tabDragging
+		tearOff := a.tabTearingOff() // capture before clearing the drag state
+		from := a.tabDragFrom
 		a.tabDragFrom, a.tabDragging = -1, false
 		if wasDragging {
 			c.clicked = false
+			if tearOff && from >= 0 && from < len(a.tabs) {
+				a.pinToSplit(a.tabs[from]) // dropped below the strip → open in the split's right pane
+			}
 			return true
 		}
 	}
@@ -539,9 +560,20 @@ func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
 }
 
 // drawTabBar paints the strip (after the screens, before overlays).
-func (a *App) drawTabBar(w int32) {
-	rects, add := a.tabBarRects(w)
+func (a *App) drawTabBar(w, h int32) {
 	c := a.ctx
+	// Tear-off drop preview (pass 4): while a background chip is dragged below the
+	// strip, highlight the right pane it will land in — so the split gesture is
+	// discoverable and the user can see where the drop goes. Aligned to the same
+	// half drawCourtroom splits at (lw = w/2), and drawn under the chips.
+	if a.tabTearingOff() {
+		lw := w / 2
+		zone := sdl.Rect{X: lw, Y: 0, W: w - lw, H: h}
+		c.Fill(zone, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 48})
+		c.Border(zone, ColAccent)
+		c.Label(zone.X+16, h/2-8, "▶ Release to open "+a.tabName(a.tabDragFrom)+" in split view", ColAccent)
+	}
+	rects, add := a.tabBarRects(w)
 	for i, r := range rects {
 		bg := ColPanel
 		col := ColTextDim
@@ -566,7 +598,7 @@ func (a *App) drawTabBar(w int32) {
 		// Discoverability: hovering a chip explains it can be dragged (reorder)
 		// and clicked/closed — the drag-to-reorder gesture wasn't obvious.
 		if !a.tabDragging {
-			hint := "Click to switch  •  drag to reorder  •  ✕ to close"
+			hint := "Click to switch  •  drag to reorder (↓ to split)  •  ✕ to close"
 			if i == a.activeTab {
 				hint = "Drag to reorder  •  click to browse the lobby"
 			}
