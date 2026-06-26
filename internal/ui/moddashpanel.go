@@ -49,9 +49,11 @@ func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol 
 // internal/courtroom/modcommands.go (unit-tested); this file is only their UI.
 
 const (
-	modDashW  = int32(680)
-	modDashH  = int32(520)
-	modDashIn = int32(18) // inner padding
+	modDashW    = int32(680)
+	modDashH    = int32(520)
+	modDashIn   = int32(18)  // inner padding
+	modDashMinW = int32(560) // floating-box size floors (resizable down to here)
+	modDashMinH = int32(420)
 )
 
 // modDashChipOn is the "active" status-chip colour (green; matches the ping chip's "good").
@@ -139,27 +141,26 @@ func (a *App) fetchAreaForBan() {
 }
 
 // drawModDashPanel paints the dashboard (or the ban/kick box on top of it) and handles its input.
-func (a *App) drawModDashPanel(w, h int32) {
+// modDashRect is the Mod dashboard's floating-window rect (floatwin.go).
+func (a *App) modDashRect(w, h int32) sdl.Rect {
+	return a.modWin.rect(modDashW, modDashH, modDashMinW, modDashMinH, w, h)
+}
+
+func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 210}) // backdrop dim
-	if a.banBoxKind != 0 {
-		a.drawModDashBanBox(w, h) // the box owns all input while open
-		return
-	}
 	if c.escPressed {
 		a.showModDash = false
 		return
 	}
-	pw, ph := modDashW, modDashH
-	if pw > w-16 {
-		pw = w - 16
-	}
-	if ph > h-16 {
-		ph = h - 16
-	}
-	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
+	panel := a.modDashRect(w, h) // floating box: movable / resizable, non-blocking
+	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
+	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
+	a.floatWinDrag(&a.modWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	mgrip := sdl.Rect{X: panel.X + panel.W - floatGripSz, Y: panel.Y + panel.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.modWin, mgrip, panel, modDashMinW, modDashMinH, pressed)
+	a.drawResizeGrip(mgrip)
 	x := panel.X + modDashIn
 
 	c.Heading(x, panel.Y+12, "Moderation — Ban / Kick", ColText)
@@ -339,6 +340,7 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 // yet, it explains and offers a one-click fetch instead of silently disabling the button.
 func (a *App) drawModDashBanBox(w, h int32) {
 	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 210}) // backdrop dim (blocking confirm)
 	// Lazy IPID fill: re-resolve the FROZEN uid's IPID (same person — safe) from the enriched
 	// roster, else from the raw /getarea snapshot, so a fetch populates the preview live.
 	if a.banBoxIPID == "" {

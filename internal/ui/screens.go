@@ -1075,10 +1075,8 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawLoginDialog(w, h)
 	case a.pairPopupOpen:
 		a.drawPairPopup(w, h)
-	case a.showModDash:
-		a.drawModDashPanel(w, h)
-	case a.showCMPanel:
-		a.drawCMPanel(w, h)
+	case a.banBoxKind != 0:
+		a.drawModDashBanBox(w, h) // the ban/kick confirm stays a blocking modal
 	default:
 		return false
 	}

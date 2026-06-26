@@ -613,10 +613,11 @@ type App struct {
 	extrasResizing       bool           // the bottom-right resize grip is being dragged
 	extrasCloseHintShown bool           // one-shot "how to reopen" toast on first × close
 	extrasWidgetCache    []extrasWidget // canonical widget table, built once
-	// pairWin is the Pairing panel's floating-window geometry (floatwin.go): the
-	// panel is a movable/resizable, non-blocking box (chat stays live behind it),
-	// not a modal. Geometry is global; whether it's open is per-tab (showPair).
-	pairWin floatWin
+	// pairWin / modWin / cmWin are floating-window geometries (floatwin.go) for the
+	// Pairing, Mod dashboard and CM panels — each a movable/resizable, non-blocking
+	// box (chat stays live behind it) rather than a modal. Geometry is global; open
+	// state is per-tab (showPair / showModDash / showCMPanel).
+	pairWin, modWin, cmWin floatWin
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32

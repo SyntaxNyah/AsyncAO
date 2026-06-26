@@ -148,11 +148,13 @@ func hexNibble(b byte) (uint8, bool) {
 // courtModalOpen reports whether a blocking courtroom popup is up. The box (and
 // its torn-off widgets) yields to those and reappears when they close.
 func (a *App) courtModalOpen() bool {
-	// NOTE: a.showPair is deliberately NOT here — the Pair menu is a non-blocking
-	// floating box now (floatwin.go), so the courtroom stays live behind it.
+	// NOTE: showPair / showModDash / showCMPanel are deliberately NOT here — they're
+	// non-blocking floating boxes now (floatwin.go), so the courtroom stays live
+	// behind them. The ban/kick confirm (banBoxKind) IS blocking — a deliberate
+	// destructive confirm — so it stays a modal.
 	return a.showIni || a.bgPick.show || a.showEvid || a.showModcall ||
 		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen ||
-		a.showEmojiPicker || a.showModDash || a.showCMPanel || a.classicEdit
+		a.showEmojiPicker || a.banBoxKind != 0 || a.classicEdit
 }
 
 // extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any
@@ -252,14 +254,21 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if !a.extrasSurfaceLive() {
 		return false
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing || a.pairWin.dragging || a.pairWin.resizing {
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
+		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
 	if a.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
 		return true
 	}
-	if a.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair menu fences too
+	if a.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
+		return true
+	}
+	if a.showModDash && pointIn(mx, my, a.modDashRect(w, h)) {
+		return true
+	}
+	if a.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
 		return true
 	}
 	for i := range a.extrasDetached {
@@ -386,13 +395,21 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
-			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing || a.pairWin.dragging || a.pairWin.resizing {
+			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
+			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
 	a.drawFloatingExtras(w, h, &pressed)
-	if a.showPair { // the Pair menu is a floating box now, drawn last = on top
+	// Pair / Mod / CM are floating boxes now (drawn last = on top, real input).
+	if a.showPair {
 		a.drawPairPanel(w, h, &pressed)
+	}
+	if a.showModDash {
+		a.drawModDashPanel(w, h, &pressed)
+	}
+	if a.showCMPanel {
+		a.drawCMPanel(w, h, &pressed)
 	}
 }
 
