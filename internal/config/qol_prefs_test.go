@@ -370,6 +370,17 @@ func TestServerAudioPref(t *testing.T) {
 		t.Errorf("clamp failed: master=%d music=%d, want 100/0", m, mu)
 	}
 
+	// A profile that's "on" but never set some channels (nil) must fall those back to
+	// the GLOBAL default — NOT a silent 0 — so a channel like SFX can't be muted just by
+	// the profile existing (the regression that silenced objection / emote sounds). Only
+	// an EXPLICIT 0 (set above for sfx) mutes.
+	p.SetAudioVolumes(90, 85, 80) // global music=90 sfx=85 blip=80
+	mv := 50
+	p.ServerWarm["wss://partial/ws"] = ServerWarmInfo{AudioOn: true, AudioMaster: &mv} // music/sfx/blip unset
+	if on, m, mu, s, b := p.ServerAudio("wss://partial/ws"); !on || m != 50 || mu != 90 || s != 85 || b != 80 {
+		t.Errorf("unset channels must fall back to global: got %v/%d/%d/%d/%d, want true/50/90/85/80", on, m, mu, s, b)
+	}
+
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	q, err := newWithDebounce(path, testDebounce)
 	if err != nil {

@@ -1363,9 +1363,16 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 
 	wrapW := box.W - 16
 	a.ensureChatRaster(wrapW, skinned)
+	// Drag the message to highlight it, Ctrl+C / right-click to copy (webAO-style).
+	textRect := sdl.Rect{X: box.X + 8, Y: box.Y + 26, W: wrapW, H: box.Y + box.H - (box.Y + 26)}
+	a.handleChatSelect(textRect, sc)
 	if a.msAnim != nil || a.msRaster != nil {
 		// Clip to the box: oversized Text settings stay INSIDE it.
 		_ = c.Ren.SetClipRect(&box)
+		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
+			lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
+			c.Fill(sdl.Rect{X: textRect.X, Y: textRect.Y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
+		}
 		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
 			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, a.d.Prefs.ReduceMotion())
 		} else {
@@ -1377,6 +1384,67 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 	a.chatZoomWheel(box)
 }
 
+// handleChatSelect runs whole-message drag-select + Ctrl+C / right-click copy for the
+// in-viewport chatbox: a drag in the text highlights the message, a plain click clears
+// it, and Ctrl+C (no field focused) or right-click copies the message text. Its own
+// press edge so it's independent of the log selection's; activating it clears any log
+// selection so the two never fight over a Ctrl+C.
+func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
+	c := a.ctx
+	pressed := c.mouseDown && !a.chatSelPrevDown
+	a.chatSelPrevDown = c.mouseDown
+	inText := c.hovering(textRect)
+	if pressed {
+		if inText {
+			a.chatSelDragging = true
+			a.chatSelDownX, a.chatSelDownY = c.mouseX, c.mouseY
+		} else {
+			a.chatSelActive = false // a press elsewhere clears the highlight
+		}
+	}
+	if a.chatSelDragging {
+		if c.mouseDown {
+			if absInt(int(c.mouseX-a.chatSelDownX))+absInt(int(c.mouseY-a.chatSelDownY)) > 3 {
+				if !a.chatSelActive {
+					a.chatSelActive = true // moved enough → a selection, not a click
+					a.logSelActive = false // …and it owns the highlight now
+				}
+			}
+		} else {
+			a.chatSelDragging = false
+			if a.chatSelActive {
+				c.clicked = false // a real drag isn't a click on whatever's under it
+				c.focusID = ""    // unfocus so Ctrl+C copies the message, not a still-focused field
+			}
+		}
+	}
+	if a.chatSelActive && sc.MessageText != "" {
+		if (c.copyReq && c.focusID == "") || (c.rightClicked && inText) {
+			_ = sdl.SetClipboardText(sc.MessageText)
+			a.warnLine = "Copied message to clipboard"
+			a.warnAt = time.Now()
+			c.copyReq = false
+			if inText {
+				c.rightClicked = false
+			}
+		}
+	}
+}
+
+// chatMsgLines is the chatbox message's wrapped-line count (the raster's own count when
+// present, else an approximate re-wrap) — sizes the whole-message selection block.
+func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
+	if a.msRaster != nil {
+		if n := a.msRaster.Lines(); n > 0 {
+			return n
+		}
+	}
+	if n := len(a.ctx.WrapText(sc.MessageText, wrapW, 0)); n > 0 {
+		return n
+	}
+	return 1
+}
+
 // ensureChatRaster (re)rasterizes the current message when the text,
 // color, zoom, wrap width, or skin presence changed — shared by the
 // classic overlay and the themed chatbox.
@@ -1386,6 +1454,9 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	if (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
 		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered {
 		return
+	}
+	if a.rasterRaw != sc.MessageRaw {
+		a.chatSelActive = false // a new message — drop the stale chatbox highlight/selection
 	}
 	if a.msRaster != nil {
 		a.msRaster.Destroy()

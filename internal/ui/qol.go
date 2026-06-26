@@ -444,9 +444,10 @@ func (a *App) applyAudioVolumes() {
 	music, sfx, blip := a.d.Prefs.AudioVolumes()
 	master := a.d.Prefs.MasterVolume()
 	// Per-server audio (sandboxed tab sound): the ACTIVE server's override, when
-	// enabled, replaces the global mixer levels — so each tab can carry its own
-	// volumes / muted blips. Re-applied on courtroom entry + every tab switch
-	// (buildRoom), so the levels follow whichever server is in front.
+	// enabled, replaces the global mixer levels — so each tab carries its own volumes.
+	// ServerAudio falls back to the global per channel for any level this server never
+	// set, so a profile can't silently mute a channel (e.g. SFX) just by existing — only
+	// an explicit 0 mutes. Re-applied on courtroom entry + every tab switch (buildRoom).
 	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
 		master, music, sfx, blip = m, mu, s, b
 	}
@@ -474,7 +475,7 @@ func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
 	music, sfx, blip = a.d.Prefs.AudioVolumes()
 	if a.serverKey != "" {
 		if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
-			master, music, sfx, blip = m, mu, s, b
+			master, music, sfx, blip = m, mu, s, b // each falls back to global if this server never set it
 		}
 	}
 	return

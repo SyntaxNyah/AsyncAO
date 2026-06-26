@@ -141,6 +141,7 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 		a.logSelAnchor, a.logSelHead = p, p
 		a.logSelActive = true
 		a.logSelDragging = true
+		a.chatSelActive = false // the log owns the highlight now (don't double-select with the chatbox)
 	}
 	if a.logSelDragging && a.logSelWhich == which {
 		if c.mouseDown {

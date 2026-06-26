@@ -1719,7 +1719,7 @@ func (a *App) drawSettingsAudioChat(y, _ int32) int32 {
 	// anything) on one server leaves the others untouched — each tab keeps its own.
 	// Edited from the lobby they set the global default new servers start from.
 	if a.serverName != "" {
-		c.Label(pad, y, "Saved for this server ("+a.serverName+") — each tab keeps its own volumes.", ColTextDim)
+		c.Label(pad, y, "Saved for this server ("+a.serverName+") — each tab keeps its own volumes; a channel you never touch follows the global default.", ColTextDim)
 		y += 22
 	}
 	em, emu, es, eb := a.effectiveVolumes()

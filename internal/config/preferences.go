@@ -651,7 +651,7 @@ type AssetPreferences struct {
 	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`     // #127 pre-grab a char's FULL sprite set on load (default OFF)
 	PingChip               bool                         `json:"pingChip"`               // #128 show the connection-quality chip (default OFF)
 	LegacyDevTheme         bool                         `json:"legacyDevTheme"`         // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
-	OOCInLogTab            bool                         `json:"oocInLogTab"`            // revert OOC to a tab in the log panel (the old way) instead of its own box; default OFF = OOC box
+	OOCInLogTab            bool                         `json:"oocInLogTab"`            // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default ON. Off = OOC gets its own box.
 	MyProfile              ProfilePref                  `json:"profile"`                // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
@@ -889,7 +889,7 @@ type prefsJSON struct {
 	CharBundlePrefetch     bool             `json:"charBundlePrefetch"`     // #127 default OFF
 	PingChip               bool             `json:"pingChip"`               // #128 default OFF
 	LegacyDevTheme         bool             `json:"legacyDevTheme"`         // tickbox revert to the old look; default OFF = new layout
-	OOCInLogTab            bool             `json:"oocInLogTab"`            // OOC as a log tab (old way); default OFF = OOC box
+	OOCInLogTab            bool             `json:"oocInLogTab"`            // OOC as a log tab + bottom OOC bar; default ON (Off = OOC box)
 	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
 	ChatboxOpacity         *int             `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
 	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
@@ -1094,15 +1094,19 @@ type ServerWarmInfo struct {
 	// Origin is the server's asset URL from the last visit — rehearsal
 	// mode rebuilds asset paths from it without connecting.
 	Origin string `json:"origin,omitempty"`
-	// Per-server audio override — the "sandbox each tab's sound" option. When
-	// AudioOn, these 0–100 levels replace the global mixer volumes while this
-	// server's tab is active (so you can mute blips on one server and keep them
-	// on another); off = the shared global volumes. AudioMaster scales the rest.
+	// Per-server audio override — the "sandbox each tab's sound" option. When AudioOn,
+	// these 0–100 levels replace the global mixer volumes while this server's tab is
+	// active (so you can mute blips on one server and keep them on another); off = the
+	// shared global volumes. AudioMaster scales the rest. The channels are POINTERS so
+	// "never set on this server" (nil) is distinct from "muted" (explicit 0): a nil
+	// channel falls back to the global default (so a channel like SFX can't be silently
+	// muted just because a profile exists — only an explicit 0 mutes). omitempty omits a
+	// nil pointer; a non-nil &0 (a deliberate mute) is kept.
 	AudioOn     bool `json:"audioOn,omitempty"`
-	AudioMaster int  `json:"audioMaster,omitempty"`
-	AudioMusic  int  `json:"audioMusic,omitempty"`
-	AudioSFX    int  `json:"audioSFX,omitempty"`
-	AudioBlip   int  `json:"audioBlip,omitempty"`
+	AudioMaster *int `json:"audioMaster,omitempty"`
+	AudioMusic  *int `json:"audioMusic,omitempty"`
+	AudioSFX    *int `json:"audioSFX,omitempty"`
+	AudioBlip   *int `json:"audioBlip,omitempty"`
 	// Chars is the server's character list from the last visit
 	// (≤ WarmCharsCap) — the rehearsal char select.
 	Chars []string `json:"chars,omitempty"`
@@ -1304,20 +1308,22 @@ func defaultPrefs(path string) *AssetPreferences {
 		LogScalePct:            DefaultScalePercent,
 		InputHeightPct:         DefaultScalePercent,
 		UIScalePct:             DefaultScalePercent,
-		MusicVol:               defaultAudioVolume,
-		SFXVol:                 defaultAudioVolume,
-		BlipVol:                defaultAudioVolume,
-		AlertVol:               defaultAudioVolume,
-		MasterVol:              defaultAudioVolume,
-		HoldClearOn:            defaultHoldClearOn,
-		HoldClearKey:           defaultHoldClearKey,
-		HoldClearMs:            DefaultHoldClearMs,
-		TextCrawlMs:            DefaultTextCrawlMs,
-		TextStayMs:             DefaultTextStayMs,
-		ChatRateLimitMs:        DefaultChatRateLimitMs,
-		AssetTypes:             defaultAssetTypes(),
-		LearnedFormats:         map[string][]string{},
-		path:                   path,
+		OOCInLogTab:            true, // default OOC = a log tab + bottom OOC bar (Legacy-style, hybrid); the OOC-box layout is opt-out
+
+		MusicVol:        defaultAudioVolume,
+		SFXVol:          defaultAudioVolume,
+		BlipVol:         defaultAudioVolume,
+		AlertVol:        defaultAudioVolume,
+		MasterVol:       defaultAudioVolume,
+		HoldClearOn:     defaultHoldClearOn,
+		HoldClearKey:    defaultHoldClearKey,
+		HoldClearMs:     DefaultHoldClearMs,
+		TextCrawlMs:     DefaultTextCrawlMs,
+		TextStayMs:      DefaultTextStayMs,
+		ChatRateLimitMs: DefaultChatRateLimitMs,
+		AssetTypes:      defaultAssetTypes(),
+		LearnedFormats:  map[string][]string{},
+		path:            path,
 	}
 }
 
@@ -4519,7 +4525,21 @@ func (p *AssetPreferences) ServerAudio(key string) (on bool, master, music, sfx,
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	w := p.ServerWarm[key]
-	return w.AudioOn, w.AudioMaster, w.AudioMusic, w.AudioSFX, w.AudioBlip
+	// Each channel: this server's explicit level if it set one, else the global default
+	// (so an unset channel — e.g. SFX a prior build never wrote — is never silently 0).
+	return w.AudioOn,
+		ptrOr(w.AudioMaster, p.MasterVol),
+		ptrOr(w.AudioMusic, p.MusicVol),
+		ptrOr(w.AudioSFX, p.SFXVol),
+		ptrOr(w.AudioBlip, p.BlipVol)
+}
+
+// ptrOr returns *v when set, else the fallback — the per-channel "unset → global default".
+func ptrOr(v *int, def int) int {
+	if v != nil {
+		return *v
+	}
+	return def
 }
 
 // SetServerAudioOn toggles one server's per-server audio override.
@@ -4527,15 +4547,17 @@ func (p *AssetPreferences) SetServerAudioOn(key string, on bool) {
 	p.rememberServer(key, func(w *ServerWarmInfo) { w.AudioOn = on })
 }
 
-// SetServerAudioVolumes records a server's per-server mixer volumes (0–100 each).
+// SetServerAudioVolumes records a server's per-server mixer volumes (0–100 each). All
+// four channels are written explicitly (as pointers), so once a server has a profile
+// every channel is a real chosen value — none silently defaults to a muted 0.
 func (p *AssetPreferences) SetServerAudioVolumes(key string, master, music, sfx, blip int) {
-	master = clampPercent(master, 0, defaultAudioVolume)
-	music = clampPercent(music, 0, defaultAudioVolume)
-	sfx = clampPercent(sfx, 0, defaultAudioVolume)
-	blip = clampPercent(blip, 0, defaultAudioVolume)
+	m := clampPercent(master, 0, defaultAudioVolume)
+	mu := clampPercent(music, 0, defaultAudioVolume)
+	s := clampPercent(sfx, 0, defaultAudioVolume)
+	b := clampPercent(blip, 0, defaultAudioVolume)
 	p.rememberServer(key, func(w *ServerWarmInfo) {
 		w.AudioOn = true // adjusting volumes makes this server's own profile "exist"
-		w.AudioMaster, w.AudioMusic, w.AudioSFX, w.AudioBlip = master, music, sfx, blip
+		w.AudioMaster, w.AudioMusic, w.AudioSFX, w.AudioBlip = &m, &mu, &s, &b
 	})
 }
 

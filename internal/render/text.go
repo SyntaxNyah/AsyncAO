@@ -435,6 +435,15 @@ func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int
 	}
 }
 
+// Lines returns the number of wrapped display lines — so the UI can size a
+// selection highlight to the actual text block (webAO-style "highlight the message").
+func (m *MessageRaster) Lines() int {
+	if m.styled != nil {
+		return len(m.styled)
+	}
+	return len(m.lines)
+}
+
 // TotalRunes returns the rasterized rune count (lines joined).
 func (m *MessageRaster) TotalRunes() int {
 	if m.styled != nil {

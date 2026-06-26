@@ -384,6 +384,14 @@ type App struct {
 	logSelPressed  bool
 	logSelPrevDown bool
 	logSelFill     sdl.Color // configured highlight colour, cached per frame
+	// Chatbox (in-viewport IC message) selection: drag the message to highlight it,
+	// then Ctrl+C / right-click copies the whole message. Whole-message (not per-rune)
+	// — the chatbox is one short message and the raster doesn't expose glyph metrics.
+	chatSelActive   bool
+	chatSelDragging bool
+	chatSelPrevDown bool
+	chatSelDownX    int32
+	chatSelDownY    int32
 	// Highlight-colour picker (Settings): the hue/sat wheel texture (built once)
 	// and the in-progress hex field text.
 	colorWheel *sdl.Texture
