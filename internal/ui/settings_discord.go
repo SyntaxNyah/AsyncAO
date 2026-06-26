@@ -19,10 +19,10 @@ func (a *App) drawDiscordSection(y, w int32) int32 {
 // defaults show showname + character + server; the area stays private
 // unless chosen), and the live presence status. The app identity is baked
 // in (DefaultDiscordAppID), so there is no user-editable ID box. Returns the next y.
-func (a *App) drawDiscordRow(y, w int32) int32 {
+func (a *App) drawDiscordRow(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	dp := a.d.Prefs.Discord()
 	changed := false
 	if next := c.Checkbox(pad, y, "Discord Rich Presence (\"Playing AsyncAO\" on your profile while Discord runs; fully optional)", dp.Enabled); next != dp.Enabled {

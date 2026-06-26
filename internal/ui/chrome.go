@@ -72,10 +72,10 @@ func (a *App) applyChromePreset(key string) {
 // drawChromeSettings draws the AsyncAO chrome-theme picker (#M3): a colour swatch + a
 // button per preset, the active one ringed. Picking one applies it live and persists it.
 // Settings-only; never a hot path.
-func (a *App) drawChromeSettings(y, w int32) int32 {
+func (a *App) drawChromeSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	cur := a.d.Prefs.ChromeTheme()
 	c.Label(pad, y, "Client UI colours — AsyncAO's own panels, separate from AO2 courtroom themes.", ColTextDim)
 	y += 24

@@ -334,10 +334,10 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 // pick ANY known server (connected or not) and configure its account
 // ahead of time — the credentials wait in its per-server slot and fire
 // (auto or manual) the next time you join. Returns the next y.
-func (a *App) drawLoginSettings(y, w int32) int32 {
+func (a *App) drawLoginSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	c.Label(pad, y+4, "Auto-login — for ANY server account (member perks, donator ranks, mod powers). Credentials per server; the wire flow picks itself:", ColText)
 	y += 20
 	c.Label(pad+12, y, "Athena/Nyathena/Whisker: /login username password   ·   KFO: /login password   ·   Akashi: /login ⏎ then username password ⏎", ColTextDim)

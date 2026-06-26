@@ -417,10 +417,10 @@ func (a *App) settingsSection(y, w int32, title string) int32 {
 func (a *App) formW2() int32 { return a.formX + a.formW + scrollBarW }
 
 // drawSettingsGeneral: identity + display toggles + UI scale + font chain.
-func (a *App) drawSettingsGeneral(y, w int32) int32 {
+func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX // rebase every pad-relative box into the content card
-	w = a.formW2()
+	w := a.formW2()
 	y = a.settingsSection(y, w, "Identity")
 	// Showname: write-through to prefs. A stale once-per-session copy here
 	// used to overwrite names typed in the courtroom on Back.
@@ -1098,10 +1098,10 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 
 // drawSettingsStudio: the "Studio" tab — scene recording, the recordings
 // library/replay picker, and (soon) GIF/video export. See replay.go.
-func (a *App) drawSettingsStudio(y, w int32) int32 {
+func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	y = a.settingsSection(y, w, "Scene recording")
 	c.Label(pad, y, "Record the courtroom to a tiny .aorec replay file — it stores the scene EVENTS (who spoke,", ColTextDim)
 	y += 18
@@ -1422,10 +1422,10 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 
 // drawSettingsAssets: format probing, audio fallbacks, local mounts, the
 // opt-in downloader, and the cache browser/actions.
-func (a *App) drawSettingsAssets(y, w int32) int32 {
+func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	y = a.settingsSection(y, w, "Image formats")
 	global := a.d.Prefs.GlobalFallbacks()
 	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {
@@ -1709,10 +1709,10 @@ func (a *App) applyPrefsToState() {
 }
 
 // drawSettingsAudioChat: volumes, message timing, casing alerts, callwords.
-func (a *App) drawSettingsAudioChat(y, w int32) int32 {
+func (a *App) drawSettingsAudioChat(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	y = a.settingsSection(y, w, "Volume")
 	// Master volume — scales everything; also on the Extras box for quick access.
 	if mv := a.volumeRow(y, "Master volume", a.d.Prefs.MasterVolume()); mv != a.d.Prefs.MasterVolume() {
@@ -2196,10 +2196,10 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 }
 
 // drawSettingsAccount: per-server login, the master-list override, Discord.
-func (a *App) drawSettingsAccount(y, w int32) int32 {
+func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	y = a.settingsSection(y, w, "Login")
 	// Auto-login: ITS OWN automation, not a macro — per-server creds,
 	// software-detected wire flow, fires on join (or via hotkey/button).
@@ -2222,10 +2222,10 @@ func (a *App) drawSettingsAccount(y, w int32) int32 {
 }
 
 // drawSettingsHotkeys: hotkey rebinds, macros, and the whole-settings bundle.
-func (a *App) drawSettingsHotkeys(y, w int32) int32 {
+func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	y = a.settingsSection(y, w, "Hotkeys")
 	c.Label(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
 	y += 24
@@ -2521,10 +2521,10 @@ func containsExt(list []string, ext string) bool {
 // folder with open / add-to-mounts actions, and the live job status + Cancel.
 // Returns the next y. (Folds into its own tab when the settings screen is
 // tabbed.)
-func (a *App) drawDownloaderSettings(y, w int32) int32 {
+func (a *App) drawDownloaderSettings(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	on := a.d.Prefs.CharDownloaderEnabled()
 	if next := c.Checkbox(pad, y, "Built-in downloader (OFF by default) — grab one character or background straight from the server", on); next != on {
 		a.d.Prefs.SetCharDownloader(next)
@@ -2667,10 +2667,10 @@ func (a *App) drawThemePreview(y int32) int32 {
 // drawThemeBindRow binds the PICKED theme to a chosen server: joining
 // that server applies the bound theme, leaving restores the global one.
 // Works for any known server (same picker as the login section).
-func (a *App) drawThemeBindRow(y, w int32) int32 {
+func (a *App) drawThemeBindRow(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	w = a.formW2()
+	w := a.formW2()
 	names, keys := a.loginTargets()
 	if len(names) == 0 {
 		return y
