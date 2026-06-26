@@ -195,6 +195,39 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSplitControlCyclers pins the floating-client control bar's cyclers: they step the
+// pinned tab's OWN sessionState (emote / side / colour) with wrap and touch nothing
+// else — so "playing" the second client from the bar can't reach the primary.
+func TestSplitControlCyclers(t *testing.T) {
+	a := testTabApp(t)
+	a.splitTab = &courtTab{state: sessionState{
+		emotes:   []courtroom.Emote{{Comment: "a"}, {Comment: "b"}, {Comment: "c"}},
+		sidePref: "wit",
+	}}
+	a.cycleSplitEmote(1)
+	if a.splitTab.state.emoteIdx != 1 {
+		t.Fatalf("emote +1 = %d, want 1", a.splitTab.state.emoteIdx)
+	}
+	a.cycleSplitEmote(-1)
+	a.cycleSplitEmote(-1) // 1 → 0 → 2 (wrap past the start)
+	if a.splitTab.state.emoteIdx != 2 {
+		t.Fatalf("emote wrap = %d, want 2", a.splitTab.state.emoteIdx)
+	}
+	if got := splitEmoteName(&a.splitTab.state); got != "c" {
+		t.Errorf("emote name = %q, want c", got)
+	}
+	n := len(render.TextColorNames())
+	a.splitTab.state.icColor = n - 1
+	a.cycleSplitColor(1) // wraps the palette back to 0
+	if a.splitTab.state.icColor != 0 {
+		t.Errorf("colour wrap = %d, want 0", a.splitTab.state.icColor)
+	}
+	a.cycleSplitPos(1) // advances off the default side
+	if a.splitTab.state.sidePref == "wit" || a.splitTab.state.sidePref == "" {
+		t.Errorf("side must advance off wit, got %q", a.splitTab.state.sidePref)
+	}
+}
+
 // TestClientViewSrcZoom pins the full-view zoom/pan source-rect math: zoom 1 shows the
 // whole texture (fit), zooming in shows a centred window, and panning clamps so the
 // window never leaves the texture.

@@ -669,19 +669,6 @@ type App struct {
 	clientPanBaseX, clientPanBaseY float64
 	clientZoomLbl                  string
 	clientZoomLblPct               int
-	// Per-instance chat-raster cache for the full-theme pass, swapped in around its
-	// drawCourtroom so it does NOT thrash the PRIMARY's single-slot msRaster (which
-	// would otherwise rebuild a GPU texture every frame). Mirrors the primary fields.
-	cliMs            *render.MessageRaster
-	cliAnim          *render.AnimatedText
-	cliAnimFont      *ttf.Font
-	cliRasterText    string
-	cliRasterRaw     string
-	cliRasterColor   int
-	cliRasterScale   int
-	cliRasterW       int32
-	cliRasterSkinned bool
-	cliRasterEffSig  uint64
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32
@@ -2775,8 +2762,13 @@ func (a *App) splitActive() bool {
 }
 
 // clearSplit tears the floating client down (keeps the viewport for reuse) and
-// frees the full-theme render target + its per-instance raster.
+// frees the full-theme render target + the pinned tab's chat raster (built by the
+// full-view pass; it lives in the tab's sessionState, so this tab is its sole owner).
 func (a *App) clearSplit() {
+	if a.splitTab != nil && a.splitTab.state.msRaster != nil {
+		a.splitTab.state.msRaster.Destroy()
+		a.splitTab.state.msRaster = nil
+	}
 	a.splitTab, a.splitRoom = nil, nil
 	if a.ctx != nil && a.ctx.focusID == "ic-split" {
 		a.ctx.focusID = "" // the client's field is gone — don't leave focus dangling on it
@@ -2785,11 +2777,6 @@ func (a *App) clearSplit() {
 		_ = a.clientTex.Destroy()
 		a.clientTex = nil
 	}
-	if a.cliMs != nil {
-		a.cliMs.Destroy()
-		a.cliMs = nil
-	}
-	a.cliAnim, a.cliAnimFont = nil, nil
 }
 
 // pinToSplit pins a BACKGROUND tab as the floating client window (toggle:
@@ -2893,22 +2880,129 @@ func (a *App) canRenderFullClient() bool {
 	return !a.theaterOn && !a.classicEdit && !a.layoutEdit
 }
 
-// drawClientBody lays the pinned server's stage (4:3, capped), chat log, and IC
-// input into the client window's body rect (below the title bar).
+// clientCtlH is the floating client's control-bar row height (emote / side / colour).
+const clientCtlH = 24
+
+// drawClientBody lays the pinned server's stage (4:3, capped), chat log, control bar,
+// and IC input into the client window's body rect (below the title bar).
 func (a *App) drawClientBody(r sdl.Rect) {
 	c := a.ctx
 	inputRow := sdl.Rect{X: r.X, Y: r.Y + r.H - splitInputH, W: r.W, H: splitInputH}
+	ctrlRow := sdl.Rect{X: r.X, Y: inputRow.Y - clientCtlH, W: r.W, H: clientCtlH}
 	sceneH := r.W * 3 / 4
-	if maxH := (r.H - splitInputH) * 55 / 100; sceneH > maxH {
+	if maxH := (r.H - splitInputH - clientCtlH) * 55 / 100; sceneH > maxH {
 		sceneH = maxH
 	}
 	stage := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: sceneH}
 	a.splitVP.Render(c.Ren, &a.splitRoom.Scene, stage)
 	logTop := stage.Y + stage.H + 3
-	logRect := sdl.Rect{X: r.X, Y: logTop, W: r.W, H: inputRow.Y - logTop}
+	logRect := sdl.Rect{X: r.X, Y: logTop, W: r.W, H: ctrlRow.Y - logTop}
 	c.Fill(sdl.Rect{X: logRect.X, Y: logRect.Y - 2, W: logRect.W, H: 1}, ColPanelHi) // rule above the log
 	a.drawSplitLog(logRect, &a.splitTab.state)
+	a.drawClientControls(ctrlRow)
 	a.drawSplitInput(inputRow)
+}
+
+// drawClientControls draws a SAFE control bar for the pinned client — emote ◀▶, side,
+// and colour cyclers — operating directly on its parked sessionState (plain rect-hit
+// buttons, no second drawCourtroom, no shared widget ids), so you can actually PLAY the
+// second server while the view (compact stage or full theme) stays display-only. The
+// next IC send (the strip below) carries whatever you pick here, since sendICSplit
+// reads the same sessionState. The literal buttons drawn inside the full-theme texture
+// stay display-only: clicking those would need a second interactive courtroom, which
+// would collide widget ids and leak App-global state into your primary client.
+func (a *App) drawClientControls(r sdl.Rect) {
+	c := a.ctx
+	s := &a.splitTab.state
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: 1}, ColPanelHi) // rule above the bar
+	y, bh := r.Y+3, r.H-6
+	x := r.X + 4
+	if c.Button(sdl.Rect{X: x, Y: y, W: 20, H: bh}, "<") { // previous emote
+		a.cycleSplitEmote(-1)
+	}
+	x += 22
+	nameW := r.W*44/100 - 44
+	if nameW < 50 {
+		nameW = 50
+	}
+	c.Fill(sdl.Rect{X: x, Y: y, W: nameW, H: bh}, ColPanel)
+	c.Border(sdl.Rect{X: x, Y: y, W: nameW, H: bh}, ColPanelHi)
+	c.LabelClipped(x+5, y+(bh-int32(c.font.Height()))/2, nameW-10, splitEmoteName(s), ColText)
+	x += nameW + 2
+	if c.Button(sdl.Rect{X: x, Y: y, W: 20, H: bh}, ">") { // next emote
+		a.cycleSplitEmote(1)
+	}
+	x += 24
+	rest := r.X + r.W - 4 - x // split the remainder between side + colour
+	if rest < 80 {
+		return // window too narrow for the side/colour cyclers — emote is enough
+	}
+	posW := rest / 2
+	side := s.sidePref
+	if side == "" {
+		side = "wit"
+	}
+	if c.Button(sdl.Rect{X: x, Y: y, W: posW - 2, H: bh}, side) { // click to cycle side
+		a.cycleSplitPos(1)
+	}
+	x += posW
+	names := render.TextColorNames()
+	col := "colour"
+	if s.icColor >= 0 && s.icColor < len(names) {
+		col = names[s.icColor]
+	}
+	if c.Button(sdl.Rect{X: x, Y: y, W: r.X + r.W - 4 - x, H: bh}, col) { // click to cycle colour
+		a.cycleSplitColor(1)
+	}
+}
+
+// splitEmoteName is the pinned client's current emote caption (Comment, else the
+// sprite stem) — both are stored strings, so reading them per frame is alloc-free.
+func splitEmoteName(s *sessionState) string {
+	if s.emoteIdx >= 0 && s.emoteIdx < len(s.emotes) {
+		if e := s.emotes[s.emoteIdx]; e.Comment != "" {
+			return e.Comment
+		} else {
+			return e.Anim
+		}
+	}
+	return "(no emote)"
+}
+
+// cycleSplitEmote / cycleSplitPos / cycleSplitColor step the pinned client's outgoing
+// selection (all in its sessionState, so the next sendICSplit carries them). Wrapping.
+func (a *App) cycleSplitEmote(d int) {
+	s := &a.splitTab.state
+	if n := len(s.emotes); n > 0 {
+		s.emoteIdx = ((s.emoteIdx+d)%n + n) % n
+	}
+}
+
+func (a *App) cycleSplitPos(d int) {
+	s := &a.splitTab.state
+	choices := standardPositions
+	if s.sess != nil && len(s.sess.PosList) > 0 {
+		choices = s.sess.PosList
+	}
+	n := len(choices)
+	if n == 0 {
+		return
+	}
+	cur := 0
+	for i, p := range choices {
+		if p == s.sidePref {
+			cur = i
+			break
+		}
+	}
+	s.sidePref = choices[((cur+d)%n+n)%n]
+}
+
+func (a *App) cycleSplitColor(d int) {
+	s := &a.splitTab.state
+	if n := len(render.TextColorNames()); n > 0 {
+		s.icColor = ((s.icColor+d)%n + n) % n
+	}
 }
 
 // drawClientFull renders the WHOLE pinned client (the full theme — emote grid,
@@ -2919,10 +3013,12 @@ func (a *App) drawClientBody(r sdl.Rect) {
 func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	c := a.ctx
 	inputRow := sdl.Rect{X: body.X, Y: body.Y + body.H - splitInputH, W: body.W, H: splitInputH}
-	view := sdl.Rect{X: body.X, Y: body.Y, W: body.W, H: body.H - splitInputH}
+	ctrlRow := sdl.Rect{X: body.X, Y: inputRow.Y - clientCtlH, W: body.W, H: clientCtlH}
+	view := sdl.Rect{X: body.X, Y: body.Y, W: body.W, H: body.H - splitInputH - clientCtlH}
 	a.renderFullClientTexture(w, h)
 	if a.clientTex == nil {
 		c.LabelClipped(view.X+10, view.Y+10, view.W-20, "Full-theme view unavailable on this renderer.", ColTextDim)
+		a.drawClientControls(ctrlRow)
 		a.drawSplitInput(inputRow)
 		return
 	}
@@ -2939,7 +3035,8 @@ func (a *App) drawClientFull(w, h int32, body sdl.Rect, pressed *bool) {
 	pill := sdl.Rect{X: view.X, Y: view.Y + view.H - 18, W: c.TextWidth(a.clientZoomLbl) + 12, H: 18}
 	c.Fill(pill, sdl.Color{R: 0, G: 0, B: 0, A: 150})
 	c.LabelClipped(pill.X+6, pill.Y+3, view.W-12, a.clientZoomLbl, ColAccent)
-	a.drawSplitInput(inputRow) // real input strip (sendICSplit) so you can chat in full view
+	a.drawClientControls(ctrlRow) // emote / side / colour cyclers (drive the pinned server)
+	a.drawSplitInput(inputRow)    // real input strip (sendICSplit) so you can chat in full view
 }
 
 // clientViewSrc is the sub-rectangle of clientTex shown in the window, derived from
@@ -3040,12 +3137,14 @@ func clampF(v, lo, hi float64) float64 {
 
 // renderFullClientTexture renders the pinned client's full drawCourtroom into
 // clientTex at the logical screen size (w,h) — so the theme lays out exactly as the
-// primary — for the shrink-blit. The pinned session + live room + viewport + chat-
-// raster cache are temp-swapped into the embedded slots (the proven sendICSplit
-// pattern, extended), input is neutralized, and a.screen / ctx.fieldSeq / ctx.tipText
-// are snapshotted+restored so the VIEW-ONLY pass can't leak navigation, Tab-focus
-// order, or tooltips into the primary. The per-instance raster cache (cli*) means the
-// pass doesn't thrash the primary's single-slot msRaster (a per-frame GPU rebuild).
+// primary — for the shrink-blit. The pinned session (incl. its own chat-raster cache,
+// which lives in sessionState) + live room + viewport are temp-swapped into the
+// embedded slots, input is neutralized, and a.screen / ctx.fieldSeq / ctx.tipText are
+// snapshotted+restored so the VIEW-ONLY pass can't leak navigation, Tab-focus order,
+// or tooltips into the primary. View-only is deliberate: the kit is single-instance,
+// so a fully interactive second courtroom would collide widget ids AND leak App-global
+// writes (a.screen, the zoom-% knobs, warnings) — interaction is via the control bar
+// (drawClientControls), which drives only the isolated pinned sessionState.
 func (a *App) renderFullClientTexture(w, h int32) {
 	c := a.ctx
 	if w <= 0 || h <= 0 {
@@ -3083,38 +3182,30 @@ func (a *App) renderFullClientTexture(w, h int32) {
 	_ = c.Ren.Clear()
 
 	// --- swap the pinned client into the embedded slots ---
+	// The chat-raster cache (msRaster + its keys) lives in sessionState, so the swap
+	// below already gives the pinned pass its OWN raster — no thrash with the primary's
+	// and no separate per-instance copy (a separate copy would alias splitTab.state's
+	// pointer and double-free on clearSplit).
 	savedSess := a.sessionState
 	savedVP := a.d.Viewport
-	pMs, pAnim, pFont := a.msRaster, a.msAnim, a.msAnimFont // lend the raster slot to the pinned pass
-	pRText, pRRaw, pRCol := a.rasterText, a.rasterRaw, a.rasterColor
-	pRScale, pRW, pRSkin, pREff := a.rasterScale, a.rasterW, a.rasterSkinned, a.rasterEffSig
 	savedScreen := a.screen // view-only pass must not change the primary's screen…
 	savedTip := c.tipText   // …tooltip…
 	savedSeqLen := len(c.fieldSeq)
 	in := a.snapshotInput() // …focus order, or handle any input
 
-	a.sessionState = a.splitTab.state // promotes a.sess / a.icInput / a.emote* … to the pinned tab
+	a.sessionState = a.splitTab.state // promotes a.sess / a.icInput / a.emote* / msRaster … to the pinned tab
 	a.room = a.splitRoom              // drive the pinned LIVE room (a parked tab's sessionState.room is nil)
 	a.d.Viewport = a.splitVP
-	a.msRaster, a.msAnim, a.msAnimFont = a.cliMs, a.cliAnim, a.cliAnimFont
-	a.rasterText, a.rasterRaw, a.rasterColor = a.cliRasterText, a.cliRasterRaw, a.cliRasterColor
-	a.rasterScale, a.rasterW, a.rasterSkinned, a.rasterEffSig = a.cliRasterScale, a.cliRasterW, a.cliRasterSkinned, a.cliRasterEffSig
 	a.pinnedPass = true
 
 	a.drawCourtroom(w, h)
 
 	// --- capture the pinned pass's side effects, then restore the primary ---
 	a.pinnedPass = false
-	a.cliMs, a.cliAnim, a.cliAnimFont = a.msRaster, a.msAnim, a.msAnimFont
-	a.cliRasterText, a.cliRasterRaw, a.cliRasterColor = a.rasterText, a.rasterRaw, a.rasterColor
-	a.cliRasterScale, a.cliRasterW, a.cliRasterSkinned, a.cliRasterEffSig = a.rasterScale, a.rasterW, a.rasterSkinned, a.rasterEffSig
 	a.room = nil                      // a parked tab keeps no room — don't persist splitRoom into its slot
-	a.splitTab.state = a.sessionState // capture emote/scroll/etc. side effects of the view-only pass
-	a.sessionState = savedSess        // restores a.room (primary), a.sess, everything promoted
+	a.splitTab.state = a.sessionState // capture emote/scroll/raster/etc. side effects of the view-only pass
+	a.sessionState = savedSess        // restores a.room + a.sess + msRaster + everything promoted
 	a.d.Viewport = savedVP
-	a.msRaster, a.msAnim, a.msAnimFont = pMs, pAnim, pFont
-	a.rasterText, a.rasterRaw, a.rasterColor = pRText, pRRaw, pRCol
-	a.rasterScale, a.rasterW, a.rasterSkinned, a.rasterEffSig = pRScale, pRW, pRSkin, pREff
 	a.screen = savedScreen
 	c.tipText = savedTip
 	if len(c.fieldSeq) > savedSeqLen {
