@@ -391,6 +391,22 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			fieldW -= themedImmedW
 		}
 		field := sdl.Rect{X: fieldX, Y: in.Y, W: fieldW, H: in.H}
+		// SFX picker (AO2-style): a sound for your NEXT message, overriding the emote's
+		// own until set back to "auto". Picking one previews it. First so it survives a
+		// narrow field longest.
+		a.ensureSFXChoices()
+		if field.W > 92+120 {
+			sfxRect := sdl.Rect{X: field.X, Y: field.Y, W: 92, H: field.H}
+			if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
+				a.sfxChoiceIdx = next
+				if next > 0 && next < len(a.sfxChoices) {
+					a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
+				}
+			}
+			c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override.")
+			field.X += 92 + 4
+			field.W -= 92 + 4
+		}
 		// #M2 S1: emoji picker button on the IC field's left edge (when there's room).
 		if field.W > field.H+120 {
 			if a.drawEmojiBarButton(sdl.Rect{X: field.X, Y: field.Y, W: field.H, H: field.H}) {

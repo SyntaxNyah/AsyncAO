@@ -1431,6 +1431,43 @@ func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 	}
 }
 
+// sfxAutoLabel is the SFX picker's "no override" entry: use the selected emote's own
+// char.ini sound (the default behaviour).
+const sfxAutoLabel = "SFX: auto"
+
+// ensureSFXChoices (re)builds the IC-bar SFX picker list when the character or its emote
+// list changes: "SFX: auto" (the emote's own sound) then this character's DISTINCT emote
+// sounds (char.ini [SoundN]; "0"/"1"/empty are AO silence, skipped). The picked sound
+// overrides the emote's on every send until set back to auto. Off the per-frame path
+// (rebuild only on a char/emote-count change) so the IC bar stays alloc-free.
+func (a *App) ensureSFXChoices() {
+	key := a.activeCharName() + ":" + strconv.Itoa(len(a.emotes))
+	if a.sfxChoicesFor == key {
+		return
+	}
+	a.sfxChoicesFor = key
+	a.sfxChoices = append(a.sfxChoices[:0], sfxAutoLabel)
+	for i := range a.emotes {
+		s := a.emotes[i].SFXName
+		if s == "" || s == "0" || s == "1" {
+			continue
+		}
+		dup := false
+		for _, ex := range a.sfxChoices {
+			if ex == s {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			a.sfxChoices = append(a.sfxChoices, s)
+		}
+	}
+	if a.sfxChoiceIdx >= len(a.sfxChoices) {
+		a.sfxChoiceIdx = 0
+	}
+}
+
 // chatMsgLines is the chatbox message's wrapped-line count (the raster's own count when
 // present, else an approximate re-wrap) — sizes the whole-message selection block.
 func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
@@ -3589,6 +3626,22 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	if icCounterOn {
 		tailReserve += msgCounterReserve
 	}
+	// SFX picker (AO2-style): pick a sound to ride your NEXT message — overrides the
+	// emote's own sound until set back to "auto". Picking one previews it. Placed first
+	// so on a narrow bar it survives longest (the buttons drop right-to-left).
+	const sfxDDW = 92
+	a.ensureSFXChoices()
+	if icBar.W-(icX-icBar.X)-(sfxDDW+4) >= tailReserve {
+		sfxRect := sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}
+		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
+			a.sfxChoiceIdx = next
+			if next > 0 && next < len(a.sfxChoices) {
+				a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
+			}
+		}
+		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it.")
+		icX += sfxDDW + 4
+	}
 	// #M2 S1: emoji picker button on the IC bar's left edge.
 	if icBar.W-(icX-icBar.X)-(fH+4) >= tailReserve {
 		if a.drawEmojiBarButton(sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}) {
@@ -4421,6 +4474,9 @@ func (a *App) sendIC(shout int) {
 	// Per-emote audio from char.ini ([SoundN]/[SoundT]/[SoundL]); "1" is
 	// the AO wire value for silence (get_sfx_name's empty default).
 	sfxName := emote.SFXName
+	if a.sfxChoiceIdx > 0 && a.sfxChoiceIdx < len(a.sfxChoices) {
+		sfxName = a.sfxChoices[a.sfxChoiceIdx] // IC-bar SFX picker override (until set back to auto)
+	}
 	if sfxName == "" {
 		sfxName = "1"
 	}
@@ -4514,7 +4570,8 @@ func (a *App) sendIC(shout int) {
 		OffsetX:   a.pairOffX,
 		OffsetY:   a.pairOffY,
 		Flip:      a.pairFlip,
-		Immediate: a.icImmediate, // non-interrupting preanim (IC-row toggle)
+		Immediate: a.icImmediate,      // non-interrupting preanim (IC-row toggle)
+		KFOCompat: a.sess.KFOCompat(), // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
 	}
 	// Named custom interjection (2.10): the wire carries "4&<stem>"
 	// (formatObjection assembles it; courtroom.cpp:2142).

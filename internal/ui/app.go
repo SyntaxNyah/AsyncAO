@@ -956,6 +956,13 @@ type sessionState struct {
 	emoteIdx                   int
 	emotePage                  int // emote grid paging (classic + themed)
 	emotePerPage               int // emotes per page last frame (number-key select)
+	// SFX picker (IC-bar dropdown): the chosen sound that OVERRIDES this character's
+	// emote sound on every send until set back to "auto". sfxChoices[0]="SFX: auto"
+	// (the emote's own sound), then the character's distinct emote sounds; idx 0 = auto.
+	// Rebuilt by ensureSFXChoices when the character (sfxChoicesFor) changes.
+	sfxChoiceIdx  int
+	sfxChoices    []string
+	sfxChoicesFor string
 	// emotePageLabel memoizes the "page x/y · N emotes" counter so the per-frame
 	// emote-grid draw allocates nothing while paging is stable; rebuilt only when
 	// {page, pages, total} change (same idiom as the generation-cached pages).

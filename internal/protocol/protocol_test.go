@@ -376,6 +376,46 @@ func TestOutgoingMSWithoutEffectsOmitsPairOrder(t *testing.T) {
 	}
 }
 
+// TestOutgoingMSKFOCompat pins the KFO-Server fix: its MS validator rejects EMPTY
+// strings for the STR-typed frame/effect fields (where AO2-Client always sends a
+// non-empty value), so with KFOCompat the empty frame fields become AO2's frame
+// template and an empty effect becomes "||" — while a NON-KFO server's wire is
+// byte-identical (the empties stay).
+func TestOutgoingMSKFOCompat(t *testing.T) {
+	feats := ParseFeatures([]string{FeatureCCCCIC, FeatureLoopingSFX, FeatureEffects})
+	msg := OutgoingMS{PreEmote: "-", Emote: "normal"} // FrameShake/Realize/SFX/Effects all empty
+
+	normal := msg.Fields(feats)
+	kfo := msg
+	kfo.KFOCompat = true
+	kfoFields := kfo.Fields(feats)
+
+	if len(normal) != len(kfoFields) {
+		t.Fatalf("KFO must not change the field count: normal=%d kfo=%d", len(normal), len(kfoFields))
+	}
+	const tmpl = "-^(b)normal^(a)normal^"
+	nTmpl, hasEff := 0, false
+	for _, f := range kfoFields {
+		if f == tmpl {
+			nTmpl++
+		}
+		if f == "||" {
+			hasEff = true
+		}
+	}
+	if nTmpl != 3 {
+		t.Errorf("KFO: want 3 frame fields = %q, got %d (fields=%v)", tmpl, nTmpl, kfoFields)
+	}
+	if !hasEff {
+		t.Errorf("KFO: an empty effect must become \"||\", fields=%v", kfoFields)
+	}
+	for _, f := range normal {
+		if f == tmpl || f == "||" {
+			t.Errorf("a non-KFO server's wire must be unchanged, found %q in %v", f, normal)
+		}
+	}
+}
+
 // TestOutgoingMSDefaultPairOrderStaysBare pins the LemmyAO-compat fix: a paired
 // message with the DEFAULT order (speaker in front) emits a BARE id even on a
 // full-feature/effects server — "4", not "4^0" — while the non-default "behind"

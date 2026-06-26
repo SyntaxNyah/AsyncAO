@@ -330,6 +330,25 @@ func TestMCEventCarriesPlayer(t *testing.T) {
 	}
 }
 
+// TestKFOCompatDetect pins that KFOCompat keys off the ID packet's software name
+// (KFO-Server's tsuserver.py sets self.software = "KFO-Server"), and that other
+// server families do NOT trip it — the KFO MS workaround must stay KFO-only.
+func TestKFOCompatDetect(t *testing.T) {
+	s := NewSession(func(protocol.Packet) error { return nil }, "h")
+	if s.KFOCompat() {
+		t.Error("a fresh session (no ID yet) must not report KFO")
+	}
+	feed(t, s, "ID#0#KFO-Server#1.0.0#%")
+	if !s.KFOCompat() {
+		t.Errorf("ID software %q must enable KFO compat", s.Software)
+	}
+	other := NewSession(func(protocol.Packet) error { return nil }, "h")
+	feed(t, other, "ID#0#Athena#1.8.0#%")
+	if other.KFOCompat() {
+		t.Errorf("a non-KFO server (%q) must NOT enable KFO compat", other.Software)
+	}
+}
+
 func TestPositionSceneTable(t *testing.T) {
 	cases := map[string][2]string{
 		"def":    {"defenseempty", "defensedesk"},

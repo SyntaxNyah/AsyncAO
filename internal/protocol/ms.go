@@ -271,6 +271,18 @@ type OutgoingMS struct {
 	// 2.9+ extensions.
 	Blipname string
 	Slide    bool
+
+	// KFOCompat fills the frame/effect fields the AO2-Client way (non-empty) when the
+	// server is KFO-Server, whose MS validator rejects empty STR values. Off for every
+	// other server, so their wire is byte-identical to before.
+	KFOCompat bool
+}
+
+// kfoFrameTemplate is AO2-Client's per-emote frame field (courtroom.cpp ~2272):
+// "<pre>^(b)<emote>^(a)<emote>^" — non-empty, so KFO-Server's strict MS validator
+// accepts it. AsyncAO tracks no per-frame SFX data, so it's the bare template.
+func kfoFrameTemplate(pre, emote string) string {
+	return pre + "^(b)" + emote + "^(a)" + emote + "^"
 }
 
 // Fields serializes the outgoing message honoring the server's features.
@@ -306,19 +318,36 @@ func (o OutgoingMS) Fields(features FeatureSet) []string {
 	}
 
 	if features.Has(FeatureLoopingSFX) {
+		shake, realize, sfx := o.FrameShake, o.FrameRealize, o.FrameSFX
+		if o.KFOCompat { // KFO rejects empty STR frame fields; AO2-Client sends the frame template
+			t := kfoFrameTemplate(o.PreEmote, o.Emote)
+			if shake == "" {
+				shake = t
+			}
+			if realize == "" {
+				realize = t
+			}
+			if sfx == "" {
+				sfx = t
+			}
+		}
 		fields = append(fields,
 			boolField(o.LoopingSFX),
 			boolField(o.Screenshake),
-			o.FrameShake,
-			o.FrameRealize,
-			o.FrameSFX,
+			shake,
+			realize,
+			sfx,
 		)
 	}
 	if features.Has(FeatureAdditive) {
 		fields = append(fields, boolField(o.Additive))
 	}
 	if features.Has(FeatureEffects) {
-		fields = append(fields, o.Effects)
+		eff := o.Effects
+		if o.KFOCompat && eff == "" {
+			eff = "||" // KFO rejects an empty effect (STR); AO2-Client sends "<effect>|<folder>|<sound>", "||" when none
+		}
+		fields = append(fields, eff)
 	}
 	if features.Has(FeatureCustomBlips) {
 		fields = append(fields, o.Blipname, boolField(o.Slide))

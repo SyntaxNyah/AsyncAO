@@ -370,6 +370,15 @@ func (s *Session) reply(p protocol.Packet) {
 	}
 }
 
+// KFOCompat reports whether the connected server is KFO-Server (from the ID packet's
+// software name; tsuserver.py sets self.software = "KFO-Server"). KFO's MS validator
+// (validate_net_cmd) rejects EMPTY strings for the frame/effect fields it types STR —
+// where AO2-Client always sends a non-empty value — so the outgoing MS must fill them
+// the same way. Scoped to KFO so every other server's wire is unchanged.
+func (s *Session) KFOCompat() bool {
+	return strings.Contains(strings.ToLower(s.Software), "kfo")
+}
+
 // HandlePacket reduces one server packet into state + events.
 func (s *Session) HandlePacket(p protocol.Packet) []Event {
 	switch p.Header {

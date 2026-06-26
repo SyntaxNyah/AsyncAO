@@ -195,6 +195,37 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 }
 
+// TestEnsureSFXChoices pins the IC-bar SFX picker list: "auto" first, then the
+// character's DISTINCT emote sounds (char.ini [SoundN]); the AO silence values
+// ("0"/"1"/empty) and duplicates are dropped, and an out-of-range pick clamps to auto.
+func TestEnsureSFXChoices(t *testing.T) {
+	a := testTabApp(t)
+	a.iniChar = "TestChar" // activeCharName() → this, no session needed
+	a.emotes = []courtroom.Emote{
+		{Anim: "normal", SFXName: "0"},       // silence → skipped
+		{Anim: "slam", SFXName: "deskslam"},  // sound
+		{Anim: "point", SFXName: "deskslam"}, // duplicate → skipped
+		{Anim: "gavel", SFXName: "gavel"},    // sound
+		{Anim: "idle", SFXName: ""},          // silence → skipped
+		{Anim: "shout", SFXName: "1"},        // silence → skipped
+	}
+	a.ensureSFXChoices()
+	want := []string{sfxAutoLabel, "deskslam", "gavel"}
+	if len(a.sfxChoices) != len(want) {
+		t.Fatalf("choices = %v, want %v", a.sfxChoices, want)
+	}
+	for i, w := range want {
+		if a.sfxChoices[i] != w {
+			t.Errorf("choice %d = %q, want %q", i, a.sfxChoices[i], w)
+		}
+	}
+	a.sfxChoiceIdx, a.sfxChoicesFor = 5, "" // out-of-range pick + force a rebuild
+	a.ensureSFXChoices()
+	if a.sfxChoiceIdx != 0 {
+		t.Errorf("out-of-range pick must clamp to auto (0), got %d", a.sfxChoiceIdx)
+	}
+}
+
 // TestControlPinnedClientSwaps pins click-to-control: making the floating (pinned)
 // server the live courtroom promotes it to the active tab and demotes the old primary
 // into the float — the two trade places, both stay open.
