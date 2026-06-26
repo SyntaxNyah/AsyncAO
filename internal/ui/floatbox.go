@@ -255,7 +255,8 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return false
 	}
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
-		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing {
+		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
+		a.hkWin.dragging || a.hkWin.resizing {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
@@ -269,6 +270,9 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return true
 	}
 	if a.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
+		return true
+	}
+	if a.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
 		return true
 	}
 	for i := range a.extrasDetached {
@@ -468,8 +472,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	// Sound sliders at the top — Master + the three channels (players' top ask:
 	// "the volume is in a bad place", and they liked this design). Master scales
 	// the others; each channel is independent.
-	master := a.d.Prefs.MasterVolume()
-	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	master, music, sfx, blip := a.effectiveVolumes() // per-server when connected, else global
 	volY := r.Y + extrasTitleH + 4
 	drawVol := func(id, label string, val int) int {
 		c.Label(r.X+10, volY+2, label, pal.text)
@@ -480,20 +483,16 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 		return nv
 	}
 	if nv := drawVol("master", "Master", master); nv != master {
-		a.d.Prefs.SetMasterVolume(nv)
-		a.applyAudioVolumes()
+		a.setEffectiveVolumes(nv, music, sfx, blip)
 	}
 	if nv := drawVol("music", "Music", music); nv != music {
-		a.d.Prefs.SetAudioVolumes(nv, sfx, blip)
-		a.applyAudioVolumes()
+		a.setEffectiveVolumes(master, nv, sfx, blip)
 	}
 	if nv := drawVol("sfx", "SFX", sfx); nv != sfx {
-		a.d.Prefs.SetAudioVolumes(music, nv, blip)
-		a.applyAudioVolumes()
+		a.setEffectiveVolumes(master, music, nv, blip)
 	}
 	if nv := drawVol("blip", "Blip", blip); nv != blip {
-		a.d.Prefs.SetAudioVolumes(music, sfx, nv)
-		a.applyAudioVolumes()
+		a.setEffectiveVolumes(master, music, sfx, nv)
 	}
 
 	widgets := a.extrasWidgets()

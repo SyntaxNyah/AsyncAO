@@ -613,11 +613,22 @@ type App struct {
 	extrasResizing       bool           // the bottom-right resize grip is being dragged
 	extrasCloseHintShown bool           // one-shot "how to reopen" toast on first × close
 	extrasWidgetCache    []extrasWidget // canonical widget table, built once
-	// pairWin / modWin / cmWin are floating-window geometries (floatwin.go) for the
-	// Pairing, Mod dashboard and CM panels — each a movable/resizable, non-blocking
-	// box (chat stays live behind it) rather than a modal. Geometry is global; open
-	// state is per-tab (showPair / showModDash / showCMPanel).
-	pairWin, modWin, cmWin floatWin
+	// pairWin / modWin / cmWin / hkWin are floating-window geometries (floatwin.go)
+	// for the Pairing, Mod dashboard, CM, and Hotkey-sheet panels — each a
+	// movable/resizable, non-blocking box (chat stays live behind it) rather than a
+	// modal. Geometry is global; open state is per-tab / per-flag.
+	pairWin, modWin, cmWin, hkWin floatWin
+	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
+	// screen (outside the courtroom box pass), so it can't share that pass's edge.
+	hkPrevDown bool
+	// Multi-server split (pass 2a): splitTab pins a BACKGROUND tab whose live stage
+	// renders in the RIGHT pane (splitRoom over that tab's own session + URL builder
+	// on courtroom.NopAudio so only the focused left pane makes sound; splitVP over
+	// the shared store — origin-qualified keys, so no texture clash) while you play
+	// in the left. nil = no split; the single-pane path stays byte-identical.
+	splitTab  *courtTab
+	splitRoom *courtroom.Courtroom
+	splitVP   *render.Viewport
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32
@@ -2680,6 +2691,65 @@ func (a *App) buildRoom() {
 	a.rebuildLiveRoster()      // seed the live player list from the handshake's CharsCheck
 }
 
+// --- multi-server split (pass 2a) -------------------------------------------
+// A pinned BACKGROUND tab's live stage renders in the right pane while you play
+// in the left. Scene-only for now (log + a single IC input come next). The
+// pinned room runs on courtroom.NopAudio so the single music stream stays with
+// the focused (left) pane; its second viewport shares the texture store.
+
+const splitHeaderH = 22 // right-pane header strip height
+
+// splitActive reports whether the right pane should render: a pinned background
+// tab with a live session + room (and not disconnected).
+func (a *App) splitActive() bool {
+	return a.splitTab != nil && a.splitRoom != nil && a.splitVP != nil &&
+		a.splitTab.state.sess != nil && !a.splitTab.dead
+}
+
+// clearSplit tears the split down (keeps the viewport for reuse).
+func (a *App) clearSplit() { a.splitTab, a.splitRoom = nil, nil }
+
+// pinToSplit pins a BACKGROUND tab as the right-pane stage (toggle: re-pinning the
+// same tab clears it). Builds a throwaway room over the tab's OWN session + URL
+// builder with NopAudio, plus a second viewport over the shared store, and seeds
+// the current background + song so the pane isn't blank on pin.
+func (a *App) pinToSplit(t *courtTab) {
+	if t == nil || t.state.sess == nil || t.dead {
+		return
+	}
+	if a.splitTab == t { // toggle off
+		a.clearSplit()
+		return
+	}
+	if a.splitVP == nil {
+		a.splitVP = render.NewViewport(a.d.Store)
+	}
+	a.splitTab = t
+	a.splitRoom = courtroom.NewCourtroom(t.state.urls, a.d.Manager, t.state.sess, courtroom.NopAudio{})
+	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
+	if t.state.sess.Background != "" {
+		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})
+	}
+	if t.state.sess.MusicTrack != "" {
+		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: t.state.sess.MusicTrack}) // NopAudio: silent
+	}
+}
+
+// drawSplitPane renders the pinned second server's live stage into the right pane.
+func (a *App) drawSplitPane(r sdl.Rect) {
+	c := a.ctx
+	c.Fill(r, ColBackground)
+	c.Fill(sdl.Rect{X: r.X - 1, Y: 0, W: 2, H: r.H}, ColPanelHi) // divider
+	if !a.splitActive() {
+		c.LabelClipped(r.X+10, r.Y+10, r.W-20, "The pinned server disconnected — right-click a tab to re-split.", ColTextDim)
+		return
+	}
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: splitHeaderH}, ColPanelHi)
+	c.LabelClipped(r.X+8, r.Y+4, r.W-16, "Watching "+a.splitTab.state.serverName+" — right-click its tab to close the split", ColAccent)
+	stage := sdl.Rect{X: r.X, Y: r.Y + splitHeaderH, W: r.W, H: r.H - splitHeaderH}
+	a.splitVP.Render(c.Ren, &a.splitRoom.Scene, stage)
+}
+
 // applyTimingToRoom pushes the persisted crawl/stay knobs into the live
 // courtroom (the crawl applies from the next message — Start precomputes
 // per-rune delays).
@@ -3437,6 +3507,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
+		if a.splitActive() { // drive the pinned right-pane stage on its OWN viewport
+			a.splitRoom.Update(dt)
+			a.splitVP.SetSpriteFX(a.spriteFX())
+			a.splitVP.Update(&a.splitRoom.Scene, dt)
+		}
 		// Music ducking: dip music while a message is on stage (shout/preanim/
 		// talking), restore at idle/linger. Transition-driven — SetVolumes is
 		// touched only when the duck state flips, and the prefs read is
@@ -3495,7 +3570,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		case ScreenCharSelect:
 			a.drawCharSelect(winW, winH)
 		case ScreenCourtroom:
-			a.drawCourtroom(winW, winH)
+			if a.splitActive() {
+				lw := winW / 2
+				a.drawCourtroom(lw, winH) // primary session in the LEFT pane (lays out within lw)
+				a.drawSplitPane(sdl.Rect{X: lw, Y: 0, W: winW - lw, H: winH})
+			} else {
+				a.drawCourtroom(winW, winH)
+			}
 			a.drawFloatingPanels(winW, winH) // non-blocking Extras + Pair, on top of the live courtroom (input already restored)
 			if a.extrasSurfaceLive() {       // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
 				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)

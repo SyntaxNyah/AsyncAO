@@ -467,6 +467,32 @@ func (a *App) applyAudioVolumes() {
 	a.d.Audio.SetAlertVolume(alert)
 }
 
+// effectiveVolumes reads the volumes that apply right now: the active server's own
+// per-server profile if it has one, else the global defaults.
+func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
+	master = a.d.Prefs.MasterVolume()
+	music, sfx, blip = a.d.Prefs.AudioVolumes()
+	if a.serverKey != "" {
+		if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
+			master, music, sfx, blip = m, mu, s, b
+		}
+	}
+	return
+}
+
+// setEffectiveVolumes writes a volume change to the active server's OWN profile
+// when connected — so muting blips on one server leaves another untouched (each
+// tab keeps its own) — else to the global defaults. Applies it live.
+func (a *App) setEffectiveVolumes(master, music, sfx, blip int) {
+	if a.serverKey != "" {
+		a.d.Prefs.SetServerAudioVolumes(a.serverKey, master, music, sfx, blip)
+	} else {
+		a.d.Prefs.SetMasterVolume(master)
+		a.d.Prefs.SetAudioVolumes(music, sfx, blip)
+	}
+	a.applyAudioVolumes()
+}
+
 // nudgeMasterVolume steps the master volume from the keyboard (Ctrl+-/Ctrl+=),
 // clamps it, applies it, and toasts the new level. Master scales every channel,
 // so this is the quick "turn it down/up" without reaching for a slider.
@@ -485,44 +511,67 @@ func (a *App) nudgeMasterVolume(delta int) {
 // bindings (a remapped action or anything you created) show their key in gold so
 // they stand out from the defaults. Rows are cached per open (hkCache); drawing
 // only happens while open, so it costs nothing closed.
+const (
+	hkRowH   = int32(20)
+	hkColW   = int32(360)
+	hkKeyGap = int32(116) // label x-offset within a column
+)
+
+// hkSheetRect is the hotkey cheat sheet's floating-window rect (floatwin.go):
+// movable + resizable, default-sized to fit its two columns of shortcuts.
+func (a *App) hkSheetRect(w, h int32) sdl.Rect {
+	if a.hkCache == nil {
+		a.hkCache = a.hotkeyCheatEntries()
+	}
+	rowsPerCol := (int32(len(a.hkCache)) + 1) / 2
+	if rowsPerCol < 1 {
+		rowsPerCol = 1
+	}
+	return a.hkWin.rect(hkColW*2+pad*3, rowsPerCol*hkRowH+48, 320, 160, w, h)
+}
+
+// drawHotkeyCheatSheet is now a movable/resizable, non-blocking floating box —
+// drag the title to park it out of the way and keep it open while you play.
 func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	c := a.ctx
 	if a.hkCache == nil { // opened without openHotkeyCheatSheet (defensive)
 		a.hkCache = a.hotkeyCheatEntries()
 	}
 	entries := a.hkCache
-	const (
-		rowH   = int32(20)
-		colW   = int32(360)
-		keyGap = int32(116) // label x-offset within a column
-	)
+	pressed := c.mouseDown && !a.hkPrevDown // own press edge (drawn over every screen)
+	a.hkPrevDown = c.mouseDown
+	r := a.hkSheetRect(w, h)
+	c.Fill(r, sdl.Color{R: 12, G: 12, B: 18, A: 245})
+	c.Border(r, ColAccent)
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
+	c.Heading(r.X+pad, r.Y+6, "Hotkeys — your shortcuts", ColText)
+	if c.Button(sdl.Rect{X: r.X + r.W - 28, Y: r.Y + 5, W: 20, H: 20}, "x") {
+		a.showHotkeys = false
+		a.hkCache = nil
+		return
+	}
+	c.Label(r.X+r.W-150, r.Y+10, "F1 to close", ColTextDim)
+	wasManip := a.hkWin.dragging || a.hkWin.resizing
+	a.floatWinDrag(&a.hkWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 160, H: floatTitleH}, &pressed)
+	hgrip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.hkWin, hgrip, r, 320, 160, &pressed)
+	a.drawResizeGrip(hgrip)
+	if !c.mouseDown && wasManip {
+		c.clicked = false // a finished drag/resize isn't a click underneath
+	}
+
+	colTop := r.Y + floatTitleH + 4
 	rowsPerCol := (int32(len(entries)) + 1) / 2
 	if rowsPerCol < 1 {
 		rowsPerCol = 1
 	}
-	pw := colW*2 + pad*3
-	ph := rowsPerCol*rowH + 48
-	if max := h - 20; ph > max { // never taller than the window
-		ph = max
-	}
-	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
-	c.Fill(panel, sdl.Color{R: 12, G: 12, B: 18, A: 245})
-	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+6, "Hotkeys — your shortcuts", ColText)
-	if c.Button(sdl.Rect{X: panel.X + pw - 28, Y: panel.Y + 6, W: 20, H: 20}, "x") {
-		a.showHotkeys = false
-		a.hkCache = nil
-	}
-	c.Label(panel.X+pw-150, panel.Y+10, "F1 to close", ColTextDim)
-
-	colTop := panel.Y + 34
 	for i, e := range entries {
 		col := int32(i) / rowsPerCol
 		row := int32(i) % rowsPerCol
-		x := panel.X + pad + col*(colW+pad)
-		y := colTop + row*rowH
-		if y+rowH > panel.Y+panel.H-4 {
-			continue // clip rather than overflow (the height cap keeps this rare)
+		x := r.X + pad + col*(hkColW+pad)
+		y := colTop + row*hkRowH
+		if y+hkRowH > r.Y+r.H-4 || x+hkColW > r.X+r.W {
+			continue // clip rather than overflow
 		}
 		if e.header {
 			c.Label(x, y, e.label, ColStar)
@@ -533,7 +582,7 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 			keyCol = ColStar // a binding you remapped or created
 		}
 		c.Label(x, y, e.key, keyCol)
-		c.LabelClipped(x+keyGap, y, colW-keyGap, e.label, ColText)
+		c.LabelClipped(x+hkKeyGap, y, hkColW-hkKeyGap, e.label, ColText)
 	}
 }
 

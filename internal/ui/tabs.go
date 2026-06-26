@@ -155,6 +155,9 @@ func (a *App) activateTab(i int) {
 	if i < 0 || i >= len(a.tabs) || i == a.activeTab {
 		return
 	}
+	if a.tabs[i] == a.splitTab {
+		a.clearSplit() // the pinned tab is becoming the primary
+	}
 	a.parkActive()
 	t := a.tabs[i]
 	a.sessionState = t.state
@@ -227,6 +230,9 @@ func (a *App) closeParkedTab(i int) {
 		return
 	}
 	t := a.tabs[i]
+	if t == a.splitTab {
+		a.clearSplit()
+	}
 	if t.state.conn != nil {
 		t.state.conn.Close()
 	}
@@ -263,11 +269,17 @@ func (a *App) pumpBackgroundTabs() {
 				if !ok {
 					t.dead = true
 					s.conn = nil
+					if t == a.splitTab {
+						a.clearSplit() // the pinned right-pane server dropped
+					}
 					a.pushDebug("tab " + s.serverName + ": connection closed in background")
 					break
 				}
 				for _, ev := range s.sess.HandlePacket(p) {
 					a.routeBackgroundEvent(t, ev)
+					if t == a.splitTab && a.splitRoom != nil {
+						a.splitRoom.HandleEvent(ev) // drive the pinned right-pane stage
+					}
 				}
 			default:
 				drained = tabPumpBudget // empty: stop draining this tab
@@ -421,6 +433,16 @@ func (a *App) handleTabBar(w int32) {
 	}
 	if a.handleTabDrag(rects, pressed) {
 		return // a reorder drag consumed this gesture; don't switch/close
+	}
+	// Right-click a BACKGROUND tab to pin/unpin it as the split's right pane.
+	if c.rightClicked {
+		for i, r := range rects {
+			if i != a.activeTab && c.hovering(r) {
+				a.pinToSplit(a.tabs[i])
+				c.rightClicked = false
+				return
+			}
+		}
 	}
 	if !c.clicked {
 		return

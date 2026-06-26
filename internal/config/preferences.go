@@ -4534,6 +4534,7 @@ func (p *AssetPreferences) SetServerAudioVolumes(key string, master, music, sfx,
 	sfx = clampPercent(sfx, 0, defaultAudioVolume)
 	blip = clampPercent(blip, 0, defaultAudioVolume)
 	p.rememberServer(key, func(w *ServerWarmInfo) {
+		w.AudioOn = true // adjusting volumes makes this server's own profile "exist"
 		w.AudioMaster, w.AudioMusic, w.AudioSFX, w.AudioBlip = master, music, sfx, blip
 	})
 }

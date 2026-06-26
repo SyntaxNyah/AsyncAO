@@ -1715,33 +1715,14 @@ func (a *App) drawSettingsAudioChat(y, _ int32) int32 {
 	pad := a.formX
 	w := a.formW2()
 	y = a.settingsSection(y, w, "Volume")
-	// Per-server audio (sandbox this tab's sound): when on, the four volumes below
-	// are THIS server's own — applied whenever its tab is active — so you can mute
-	// blips on one server and keep them on another. Off = the shared global mix.
-	psOn := false
-	if a.serverKey != "" {
-		psOn, _, _, _, _ = a.d.Prefs.ServerAudio(a.serverKey)
-		label := "Separate audio for this server"
-		if a.serverName != "" {
-			label = "Separate audio for " + a.serverName
-		}
-		if next := c.Checkbox(pad, y, label+" — its own volumes / muted blips, applied while this tab is active", psOn); next != psOn {
-			if next { // seed from the current global so the sliders start where you'd expect
-				gmu, gs, gb := a.d.Prefs.AudioVolumes()
-				a.d.Prefs.SetServerAudioVolumes(a.serverKey, a.d.Prefs.MasterVolume(), gmu, gs, gb)
-			}
-			a.d.Prefs.SetServerAudioOn(a.serverKey, next)
-			a.applyAudioVolumes()
-			psOn = next
-		}
-		y += 28
+	// Volumes save PER SERVER while you're connected to one, so muting blips (or
+	// anything) on one server leaves the others untouched — each tab keeps its own.
+	// Edited from the lobby they set the global default new servers start from.
+	if a.serverName != "" {
+		c.Label(pad, y, "Saved for this server ("+a.serverName+") — each tab keeps its own volumes.", ColTextDim)
+		y += 22
 	}
-	// The effective set: this server's override when on, else the global mix.
-	em := a.d.Prefs.MasterVolume()
-	emu, es, eb := a.d.Prefs.AudioVolumes()
-	if psOn {
-		_, em, emu, es, eb = a.d.Prefs.ServerAudio(a.serverKey)
-	}
+	em, emu, es, eb := a.effectiveVolumes()
 	nm := a.volumeRow(y, "Master volume", em) // scales everything; also on the Extras box
 	y += 30
 	nmu := a.volumeRow(y, "Music volume", emu)
@@ -1751,13 +1732,7 @@ func (a *App) drawSettingsAudioChat(y, _ int32) int32 {
 	nb := a.volumeRow(y, "Blip volume", eb)
 	y += 26
 	if nm != em || nmu != emu || ns != es || nb != eb {
-		if psOn {
-			a.d.Prefs.SetServerAudioVolumes(a.serverKey, nm, nmu, ns, nb)
-		} else {
-			a.d.Prefs.SetMasterVolume(nm)
-			a.d.Prefs.SetAudioVolumes(nmu, ns, nb)
-		}
-		a.applyAudioVolumes() // honors the session SFX mute
+		a.setEffectiveVolumes(nm, nmu, ns, nb) // per-server when connected, else global
 	}
 	// Callword/friend ping volume — its OWN control, independent of SFX (so a quiet
 	// SFX mix or the SFX mute never silences your name-pings) and global (alerts
