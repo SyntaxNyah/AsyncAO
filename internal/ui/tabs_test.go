@@ -228,7 +228,22 @@ func TestTabTearOffToSplit(t *testing.T) {
 		t.Fatal("releasing a drag must report completion so the click is swallowed")
 	}
 	if a.splitTab != a.tabs[1] || !a.splitActive() {
-		t.Fatalf("tear-off release must pin the background tab to the split")
+		t.Fatalf("tear-off release must pop the background tab out as a floating client")
+	}
+	if !a.clientWin.placed {
+		t.Error("tear-off drop must place the floating client window at the cursor")
+	}
+
+	// Re-tearing the ALREADY-pinned tab repositions its window instead of toggling
+	// it closed (the drop guard): drag tab 1 again and drop elsewhere — it stays up.
+	c.mouseDown, c.mouseX, c.mouseY = true, 80, 10
+	a.handleTabDrag(rects, true)
+	c.mouseX, c.mouseY = 300, tabTearOffY+40
+	a.handleTabDrag(rects, false)
+	c.mouseDown = false
+	a.handleTabDrag(rects, false)
+	if !a.splitActive() || a.splitTab != a.tabs[1] {
+		t.Fatal("re-dropping the pinned tab must reposition its window, not close it")
 	}
 
 	// The active tab can't tear off: a drag on it below the strip never enters

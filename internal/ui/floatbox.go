@@ -256,10 +256,13 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	}
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
-		a.hkWin.dragging || a.hkWin.resizing {
+		a.hkWin.dragging || a.hkWin.resizing || a.clientWin.dragging || a.clientWin.resizing {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
+	if a.splitActive() && pointIn(mx, my, a.clientWinRect(w, h)) { // the floating client window fences too
+		return true
+	}
 	if a.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
 		return true
 	}
@@ -400,9 +403,16 @@ func (a *App) drawFloatingPanels(w, h int32) {
 		a.extrasPressing = false // a cell press can't outlive the button
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
 			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
-			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing {
+			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
+			a.clientWin.dragging || a.clientWin.resizing {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
+	}
+	// The floating client window (a pinned second server) draws FIRST — it's the
+	// big interaction surface, so it sits at the bottom of the float stack (the
+	// smaller Extras / Pair / Mod panels overlay it). draw-first = input priority.
+	if a.splitActive() {
+		a.drawFloatClient(w, h, &pressed)
 	}
 	a.drawFloatingExtras(w, h, &pressed)
 	// Pair / Mod / CM are floating boxes now (drawn last = on top, real input).

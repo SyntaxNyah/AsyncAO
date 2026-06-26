@@ -635,11 +635,13 @@ type App struct {
 	splitWrapW    int32
 	splitWrapSeq  uint64
 	splitWrapRows []splitLogRow
-	// Pinned-pane header text cached by server name so the right-pane draw never
-	// re-concats per frame (the split is a deliberate power mode, but it holds the
-	// same 0-alloc discipline as the single-pane path).
-	splitHdr     string
-	splitHdrName string
+	// The pinned server draws in a free-floating, movable/resizable "second client"
+	// window (clientWin geometry; the floatWin pattern) overlaying the primary —
+	// drag it anywhere, not a fixed split. clientHdr caches the title by server name
+	// so the per-frame draw never re-concats (0-alloc, like the single-pane path).
+	clientWin     floatWin
+	clientHdr     string
+	clientHdrName string
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32
@@ -2702,18 +2704,26 @@ func (a *App) buildRoom() {
 	a.rebuildLiveRoster()      // seed the live player list from the handshake's CharsCheck
 }
 
-// --- multi-server split (passes 2a–2c) --------------------------------------
-// A pinned BACKGROUND tab's live stage + chat log + IC input render in the right
-// pane while you play in the left — two servers on screen at once, type into
-// either (click a field to focus it). The pinned room runs on courtroom.NopAudio
-// so the single music stream stays with the focused (left) pane; its second
-// viewport shares the texture store (origin-qualified keys, so no asset clash).
+// --- multi-server floating client (passes 2a–2c + the float rework) ---------
+// A pinned BACKGROUND tab renders as a free-floating, movable + resizable "second
+// client" window (clientWin, the floatWin pattern) overlaying the full-size
+// primary courtroom — drag it ANYWHERE, resize it, overlap the primary however
+// you like (a strict superset of the old fixed split). It carries that server's
+// live stage + chat log + IC input; you type into either client (click to focus).
+// The pinned room runs on courtroom.NopAudio so the single music stream stays
+// with the primary; its second viewport shares the texture store (origin-
+// qualified keys, so two servers' assets never clash).
 
-const splitHeaderH = 22 // right-pane header strip height
-const splitInputH = 30  // right-pane IC input row height (pass 2c)
+const splitInputH = 30 // pinned client's IC input row height (pass 2c)
+const (
+	clientWinDefW = 520 // floating client window default size
+	clientWinDefH = 470
+	clientWinMinW = 360 // resize floor: stage + log + input stay usable
+	clientWinMinH = 300
+)
 
-// splitActive reports whether the right pane should render: a pinned background
-// tab with a live session + room (and not disconnected).
+// splitActive reports whether the floating client window should render: a pinned
+// background tab with a live session + room (and not disconnected).
 func (a *App) splitActive() bool {
 	return a.splitTab != nil && a.splitRoom != nil && a.splitVP != nil &&
 		a.splitTab.state.sess != nil && !a.splitTab.dead
@@ -2727,10 +2737,10 @@ func (a *App) clearSplit() {
 	}
 }
 
-// pinToSplit pins a BACKGROUND tab as the right-pane stage (toggle: re-pinning the
-// same tab clears it). Builds a throwaway room over the tab's OWN session + URL
-// builder with NopAudio, plus a second viewport over the shared store, and seeds
-// the current background + song so the pane isn't blank on pin.
+// pinToSplit pins a BACKGROUND tab as the floating client window (toggle:
+// re-pinning the same tab closes it). Builds a throwaway room over the tab's OWN
+// session + URL builder with NopAudio, plus a second viewport over the shared
+// store, and seeds the current background + song so the window isn't blank on pin.
 func (a *App) pinToSplit(t *courtTab) {
 	if t == nil || t.state.sess == nil || t.dead {
 		return
@@ -2753,32 +2763,68 @@ func (a *App) pinToSplit(t *courtTab) {
 	}
 }
 
-// drawSplitPane renders the pinned second server's live stage + chat log + a
-// typing line into the right pane (pass 2c: you can chat in the pinned server
-// without leaving the primary — click the field to focus it; the kit is
-// single-focus so one keyboard drives whichever pane you clicked).
-func (a *App) drawSplitPane(r sdl.Rect) {
-	c := a.ctx
-	c.Fill(r, ColBackground)
-	c.Fill(sdl.Rect{X: r.X - 1, Y: 0, W: 2, H: r.H}, ColPanelHi) // divider between panes
+// placeClientAt positions the floating client window centred under (mx,my) — used
+// by the drag-tab tear-off so the window lands where you drop it (Chrome-style).
+// Uses the window's current width if it was resized, else the default.
+func (a *App) placeClientAt(mx, my int32) {
+	w := a.clientWin.w
+	if w <= 0 {
+		w = clientWinDefW
+	}
+	a.clientWin.x = mx - w/2
+	a.clientWin.y = my - floatTitleH/2
+	a.clientWin.placed = true
+}
+
+// clientWinRect is the floating client window's clamped screen rect.
+func (a *App) clientWinRect(w, h int32) sdl.Rect {
+	return a.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
+}
+
+// drawFloatClient draws the pinned server as a movable + resizable floating
+// "second client" window over the primary courtroom: a title bar (drag handle + ✕
+// close), the server's live stage, its chat log, and an IC input — drag it
+// anywhere, resize it from the corner. Shares the per-frame press edge from
+// drawFloatingPanels (so one press moves/grabs one window). Reuses the unchanged
+// drawSplitLog / drawSplitInput, so the steady frame stays 0-alloc.
+func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	if !a.splitActive() {
-		c.LabelClipped(r.X+10, r.Y+10, r.W-20, "The pinned server disconnected — right-click a tab to re-split.", ColTextDim)
 		return
 	}
-	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: splitHeaderH}, ColPanelHi)
-	if a.splitHdrName != a.splitTab.state.serverName { // memoized: no per-frame concat
-		a.splitHdrName = a.splitTab.state.serverName
-		a.splitHdr = "Watching " + a.splitHdrName + " — right-click its tab to close the split"
+	c := a.ctx
+	r := a.clientWinRect(w, h)
+	c.Fill(r, ColBackground)
+	c.Border(r, ColAccent)
+	// Title bar = drag handle + close.
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
+	if a.clientHdrName != a.splitTab.state.serverName { // memoized: no per-frame concat
+		a.clientHdrName = a.splitTab.state.serverName
+		a.clientHdr = "▣ " + a.clientHdrName
 	}
-	c.LabelClipped(r.X+8, r.Y+4, r.W-16, a.splitHdr, ColAccent)
-	// Bottom: the IC input row (pinned to the floor); middle: chat log; top: stage.
+	c.LabelClipped(r.X+10, r.Y+8, r.W-44, a.clientHdr, ColAccent)
+	if c.Button(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 5, W: 20, H: floatTitleH - 10}, "x") {
+		a.clearSplit()
+		return
+	}
+	a.floatWinDrag(&a.clientWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 30, H: floatTitleH}, pressed)
+	// Bottom-right resize grip — handled before the body so a corner press resizes
+	// rather than landing in the log / input beneath it.
+	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
+	a.drawClientBody(sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH})
+	a.drawResizeGrip(grip)
+}
+
+// drawClientBody lays the pinned server's stage (4:3, capped), chat log, and IC
+// input into the client window's body rect (below the title bar).
+func (a *App) drawClientBody(r sdl.Rect) {
+	c := a.ctx
 	inputRow := sdl.Rect{X: r.X, Y: r.Y + r.H - splitInputH, W: r.W, H: splitInputH}
-	// Stage (4:3, capped so the chat log keeps room) sits below the header.
 	sceneH := r.W * 3 / 4
-	if maxH := (r.H - splitHeaderH - splitInputH) * 55 / 100; sceneH > maxH {
+	if maxH := (r.H - splitInputH) * 55 / 100; sceneH > maxH {
 		sceneH = maxH
 	}
-	stage := sdl.Rect{X: r.X, Y: r.Y + splitHeaderH, W: r.W, H: sceneH}
+	stage := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: sceneH}
 	a.splitVP.Render(c.Ren, &a.splitRoom.Scene, stage)
 	logTop := stage.Y + stage.H + 3
 	logRect := sdl.Rect{X: r.X, Y: logTop, W: r.W, H: inputRow.Y - logTop}
@@ -3693,14 +3739,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		case ScreenCharSelect:
 			a.drawCharSelect(winW, winH)
 		case ScreenCourtroom:
-			if a.splitActive() {
-				lw := winW / 2
-				a.drawCourtroom(lw, winH) // primary session in the LEFT pane (lays out within lw)
-				a.drawSplitPane(sdl.Rect{X: lw, Y: 0, W: winW - lw, H: winH})
-			} else {
-				a.drawCourtroom(winW, winH)
-			}
-			a.drawFloatingPanels(winW, winH) // non-blocking Extras + Pair, on top of the live courtroom (input already restored)
+			a.drawCourtroom(winW, winH)      // primary always full-screen; the pinned server floats on top
+			a.drawFloatingPanels(winW, winH) // non-blocking Extras + Pair + the floating client window, on top of the live courtroom (input already restored)
 			if a.extrasSurfaceLive() {       // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
 				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)
 			}

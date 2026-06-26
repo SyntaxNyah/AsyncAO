@@ -52,9 +52,9 @@ const (
 	// the wardrobe's iniDragThreshold.
 	tabDragThreshold = 6
 	// tabTearOffY is the Y (logical px) below which an in-progress chip drag stops
-	// reordering and becomes a TEAR-OFF: releasing there drops a background tab
-	// into the split's right pane (pass 4). Comfortably below the tabBarH strip so
-	// a horizontal reorder never trips it; pulling the chip down is the gesture.
+	// reordering and becomes a TEAR-OFF: releasing there pops a background tab out
+	// as a floating client window at the cursor. Comfortably below the tabBarH strip
+	// so a horizontal reorder never trips it; pulling the chip down is the gesture.
 	tabTearOffY = tabBarH + 34
 )
 
@@ -487,9 +487,9 @@ func (a *App) handleTabBar(w int32) {
 }
 
 // tabTearingOff reports that the in-progress chip drag has been pulled below the
-// strip while holding a BACKGROUND tab — the gesture that drops it into the
-// split's right pane (pass 4) instead of reordering. The active tab can't tear
-// off (it's already the left pane), so it stays in plain reorder mode.
+// strip while holding a BACKGROUND tab — the gesture that pops it out as a
+// floating client window instead of reordering. The active tab can't tear off
+// (it's the primary client already), so it stays in plain reorder mode.
 func (a *App) tabTearingOff() bool {
 	return a.tabDragging && a.tabDragFrom >= 0 && a.tabDragFrom != a.activeTab &&
 		a.ctx.mouseY > tabTearOffY
@@ -498,10 +498,10 @@ func (a *App) tabTearingOff() bool {
 // handleTabDrag arms a reorder on press over a chip body, promotes it to a
 // drag once the cursor passes tabDragThreshold, and reorders the strip live as
 // the cursor crosses chips. Pulling a background chip below the strip switches
-// to tear-off mode (no reorder); releasing there pins it as the split's right
-// pane. Returns true when a release ended a drag, so the caller swallows the
-// click (a reorder/tear-off must not also switch/close the tab). Pressing the
-// right ✕ third never arms — that stays a close-click target.
+// to tear-off mode (no reorder); releasing there pops it out as a floating client
+// window at the cursor. Returns true when a release ended a drag, so the caller
+// swallows the click (a reorder/tear-off must not also switch/close the tab).
+// Pressing the right ✕ third never arms — that stays a close-click target.
 func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
 	c := a.ctx
 	if pressed && a.tabDragFrom < 0 {
@@ -551,7 +551,11 @@ func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
 		if wasDragging {
 			c.clicked = false
 			if tearOff && from >= 0 && from < len(a.tabs) {
-				a.pinToSplit(a.tabs[from]) // dropped below the strip → open in the split's right pane
+				t := a.tabs[from]
+				if a.splitTab != t {
+					a.pinToSplit(t) // pop this background server out as a floating window
+				}
+				a.placeClientAt(c.mouseX, c.mouseY) // land where you dropped it (reposition if already open)
 			}
 			return true
 		}
@@ -562,16 +566,24 @@ func (a *App) handleTabDrag(rects []sdl.Rect, pressed bool) bool {
 // drawTabBar paints the strip (after the screens, before overlays).
 func (a *App) drawTabBar(w, h int32) {
 	c := a.ctx
-	// Tear-off drop preview (pass 4): while a background chip is dragged below the
-	// strip, highlight the right pane it will land in — so the split gesture is
-	// discoverable and the user can see where the drop goes. Aligned to the same
-	// half drawCourtroom splits at (lw = w/2), and drawn under the chips.
+	// Tear-off drop preview: while a background chip is dragged below the strip,
+	// draw a GHOST of the floating client window under the cursor so you can see
+	// where it will pop out (Chrome-style), at the size it will appear. Drawn over
+	// everything (the strip paints after the screens) so it reads as a drag preview.
 	if a.tabTearingOff() {
-		lw := w / 2
-		zone := sdl.Rect{X: lw, Y: 0, W: w - lw, H: h}
-		c.Fill(zone, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 48})
-		c.Border(zone, ColAccent)
-		c.Label(zone.X+16, h/2-8, "▶ Release to open "+a.tabName(a.tabDragFrom)+" in split view", ColAccent)
+		pw, ph := a.clientWin.w, a.clientWin.h
+		if pw <= 0 {
+			pw = clientWinDefW
+		}
+		if ph <= 0 {
+			ph = clientWinDefH
+		}
+		ghost := sdl.Rect{X: c.mouseX - pw/2, Y: c.mouseY - floatTitleH/2, W: pw, H: ph}
+		c.Fill(ghost, sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 40})
+		c.Border(ghost, ColAccent)
+		c.Fill(sdl.Rect{X: ghost.X, Y: ghost.Y, W: ghost.W, H: floatTitleH}, sdl.Color{R: ColPanelHi.R, G: ColPanelHi.G, B: ColPanelHi.B, A: 220})
+		c.LabelClipped(ghost.X+10, ghost.Y+8, ghost.W-20, "▣ "+a.tabName(a.tabDragFrom), ColAccent)
+		c.LabelClipped(ghost.X+10, ghost.Y+floatTitleH+10, ghost.W-20, "Release to pop out as a floating window", ColText)
 	}
 	rects, add := a.tabBarRects(w)
 	for i, r := range rects {
@@ -598,7 +610,7 @@ func (a *App) drawTabBar(w, h int32) {
 		// Discoverability: hovering a chip explains it can be dragged (reorder)
 		// and clicked/closed — the drag-to-reorder gesture wasn't obvious.
 		if !a.tabDragging {
-			hint := "Click to switch  •  drag to reorder (↓ to split)  •  ✕ to close"
+			hint := "Click to switch  •  drag to reorder (↓ to pop out as a window)  •  ✕ to close"
 			if i == a.activeTab {
 				hint = "Drag to reorder  •  click to browse the lobby"
 			}
