@@ -142,7 +142,7 @@ func classicSlotLabel(k string) string {
 	case slotOOCBar:
 		return "OOC bar"
 	case slotControls:
-		return "Control buttons"
+		return "Control buttons (move only)"
 	default:
 		// Torn-off tab panels carry a "tab:<name>" key.
 		for i := range tornTabTable {
@@ -174,6 +174,51 @@ func classicEdgeAt(mx, my int32, r sdl.Rect, margin int32) uint8 {
 		e |= edgeB
 	}
 	return e
+}
+
+// slotResizable reports whether a slot honours width/height edits. The control-button
+// block is MOVE-ONLY: its width is held constant so the button wrap (and the IC bar /
+// emote grid anchored below it) stays put, so resizing it would do nothing. Move-only
+// slots paint no resize handles and are skipped by the resize hit-test — critically so
+// they can't STEAL a neighbour's edge grip (smallest-area-wins would otherwise let the
+// little control block swallow the resize of a box it merely touches, then do nothing —
+// the "boxes in the middle won't resize" bug).
+func slotResizable(name string) bool {
+	return name != slotControls
+}
+
+// pickResizeSlot chooses which slot a resize grip at (mx,my) targets. It RESPECTS the
+// hovered box — the same box move would act on (the highlighted, Tab-selectable one) —
+// so "if I can move it, I can resize it": resize the hovered box when it's resizable
+// and its edge is gripped, otherwise don't resize it (the caller moves it). This is the
+// fix for "boxes in the middle won't resize": the old code resized the smallest gripped
+// box across ALL boxes, so a neighbour merely touching the edge (or the move-only
+// control block) would steal the grip. Only when the cursor is over NO box (a grip in
+// the outer margin between/around boxes) does it fall back to the smallest gripped
+// RESIZABLE box. Move-only slots are always skipped. Pure + testable.
+func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx, my, margin int32) (string, uint8) {
+	if hoverKey != "" { // pointing at a box → only that box may resize (matches move)
+		if slotResizable(hoverKey) {
+			if e := classicEdgeAt(mx, my, reg[hoverKey].cur, margin); e != 0 {
+				return hoverKey, e
+			}
+		}
+		return "", 0
+	}
+	best := int64(-1) // cursor outside every box: smallest gripped resizable wins
+	bestKey, bestEdges := "", uint8(0)
+	for _, k := range keys {
+		if !slotResizable(k) {
+			continue
+		}
+		r := reg[k].cur
+		if e := classicEdgeAt(mx, my, r, margin); e != 0 {
+			if area := int64(r.W) * int64(r.H); best < 0 || area < best {
+				bestKey, bestEdges, best = k, e, area
+			}
+		}
+	}
+	return bestKey, bestEdges
 }
 
 // classicHandles returns the 8 resize handles (4 corners + 4 edge midpoints) of r
@@ -314,20 +359,23 @@ func (a *App) drawClassicEditor(w, h int32) {
 		return
 	}
 
-	// Banner + chrome (raw-hit chips — the fence blocks kit buttons).
-	banner := "EDIT LAYOUT — drag=move · edges/corners=resize · right-click=reset · Ctrl+Z=undo · Tab=cycle · Esc=done"
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 210})
-	c.Label(pad, 5, banner, ColTierYellow)
-	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
-	resetBtn := sdl.Rect{X: doneBtn.X - 96, Y: 2, W: 90, H: 22}
-	snapBtn := sdl.Rect{X: resetBtn.X - 106, Y: 2, W: 100, H: 22}
+	// Banner: a short title + ONE concise hint + the toolbar chips (raw-hit — the
+	// fence blocks kit buttons). The full per-box context lives on the bottom line, so
+	// the top stays calm instead of a wall of instructions.
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 222})
+	c.Label(pad, 6, "Edit Layout", ColTierYellow)
+	doneBtn := sdl.Rect{X: w - 62 - pad, Y: 2, W: 62, H: classicBannerH - 4}
+	resetBtn := sdl.Rect{X: doneBtn.X - 90 - 6, Y: 2, W: 90, H: classicBannerH - 4}
 	snapLabel := "Snap: off"
 	if a.layoutSnap {
 		snapLabel = "Snap: on"
 	}
-	a.rawChip(doneBtn, "Done")
-	a.rawChip(resetBtn, "Reset all")
+	snapBtn := sdl.Rect{X: resetBtn.X - 92 - 6, Y: 2, W: 92, H: classicBannerH - 4}
+	hintX := pad + c.TextWidth("Edit Layout") + 18
+	c.LabelClipped(hintX, 6, snapBtn.X-hintX-10, "Hover a box, then drag to move or grab an edge to resize", ColTextDim)
 	a.rawChip(snapBtn, snapLabel)
+	a.rawChip(resetBtn, "Reset all")
+	a.rawChip(doneBtn, "Done")
 
 	pressed := c.mouseDown && !a.classicEditPrev
 	a.classicEditPrev = c.mouseDown
@@ -408,19 +456,12 @@ func (a *App) drawClassicEditor(w, h int32) {
 		}
 	}
 
-	// Begin a drag on press: RESIZE (an edge/corner of some box is gripped) takes
-	// priority over MOVE. Among gripped boxes, the SMALLEST wins so a small box's
-	// handle isn't swallowed by a big box behind it.
+	// Begin a drag on press: RESIZE (an edge/corner is gripped) takes priority over
+	// MOVE. pickResizeSlot targets the HOVERED box (so resize hits the box you're
+	// pointing at, like move does) and skips move-only slots so the little control
+	// block can't steal a neighbour's edge grip.
 	if pressed && a.classicEditDrag == 0 && c.mouseY > classicBannerH && !overTray {
-		resizeKey, resizeEdges, best := "", uint8(0), int64(-1)
-		for _, k := range keys {
-			r := a.slotReg[k].cur
-			if e := classicEdgeAt(c.mouseX, c.mouseY, r, layoutHandlePx); e != 0 {
-				if area := int64(r.W) * int64(r.H); best < 0 || area < best {
-					resizeKey, resizeEdges, best = k, e, area
-				}
-			}
-		}
+		resizeKey, resizeEdges := pickResizeSlot(a.slotReg, keys, hoverKey, c.mouseX, c.mouseY, layoutHandlePx)
 		switch {
 		case resizeKey != "":
 			a.classicEditKey, a.classicEditDrag, a.classicEditEdges = resizeKey, 2, resizeEdges
@@ -533,8 +574,13 @@ func (a *App) drawClassicEditor(w, h int32) {
 		a.classicEditMoved = false
 	}
 
-	// Overlay: outline every slot, label it, paint the 8 resize handles. A slot
-	// mid-drag reflects its live (this-frame) override position.
+	// Overlay: a QUIET outline on every slot so the layout structure reads, but the
+	// full treatment — bright border + resize handles + a name tag — ONLY on the box
+	// under the cursor (or being dragged). This keeps the editor from being a wall of
+	// boxes, handles and labels, and a slot's name never sits on the real buttons it
+	// covers (the tag floats just above the box). A dragged slot reflects its live
+	// (this-frame) override position.
+	dimEdge := blendCol(ColAccent, ColBackground, 0.6)
 	for _, k := range keys {
 		r := a.slotReg[k].cur
 		if a.classicEditDrag != 0 && k == a.classicEditKey {
@@ -542,26 +588,63 @@ func (a *App) drawClassicEditor(w, h int32) {
 				r = fracToRect(ov, w, h)
 			}
 		}
-		col := ColAccent
 		switch {
 		case k == a.classicEditKey:
-			col = ColDanger
+			c.Border(r, ColDanger)
+			a.drawSlotHandles(r, k, ColDanger)
+			a.drawSlotTag(r, k, ColDanger)
 		case k == hoverKey:
-			col = ColTierYellow
+			c.Border(r, ColTierYellow)
+			a.drawSlotHandles(r, k, ColTierYellow)
+			a.drawSlotTag(r, k, ColTierYellow)
+		default:
+			c.Border(r, dimEdge) // resting: structure only, no clutter
 		}
-		c.Border(r, col)
-		for _, hnd := range classicHandles(r) {
-			c.Fill(hnd, col)
-		}
-		c.LabelClipped(r.X+4, r.Y+3, r.W-8, classicSlotLabel(k), col)
 	}
-	switch {
+	switch { // bottom line: the per-box context (kept off the busy top banner)
 	case a.classicEditKey != "":
-		c.Label(pad, h-22, "editing: "+classicSlotLabel(a.classicEditKey), ColText)
+		c.Label(pad, h-22, "Moving "+classicSlotLabel(a.classicEditKey)+"  ·  release to save", ColText)
 	case len(stack) > 1:
-		c.Label(pad, h-22, fmt.Sprintf("%s — %d boxes stacked here, Tab to cycle (%d/%d)",
+		c.Label(pad, h-22, fmt.Sprintf("%s  ·  %d boxes here — Tab to pick (%d/%d)",
 			classicSlotLabel(hoverKey), len(stack), a.classicPickIdx+1, len(stack)), ColTierYellow)
+	case hoverKey != "":
+		c.Label(pad, h-22, classicSlotLabel(hoverKey)+"  ·  drag to move · grab an edge to resize · right-click to reset", ColTierYellow)
 	case len(keys) > 0:
-		c.Label(pad, h-22, "drag = move · edge/corner = resize · right-click = reset · Ctrl+Z = undo · saves automatically", ColTextDim)
+		c.Label(pad, h-22, "Hover a box to move or resize it  ·  Ctrl+Z undo  ·  changes save automatically", ColTextDim)
 	}
+}
+
+// drawSlotHandles paints the 8 resize grips on a slot (none for move-only slots),
+// each with a dark outline so the bright squares read on any background underneath.
+func (a *App) drawSlotHandles(r sdl.Rect, key string, col sdl.Color) {
+	if !slotResizable(key) {
+		return
+	}
+	c := a.ctx
+	for _, hnd := range classicHandles(r) {
+		c.Fill(hnd, col)
+		c.Border(hnd, sdl.Color{R: 0, G: 0, B: 0, A: 170})
+	}
+}
+
+// drawSlotTag floats a slot's name on a small dark pill just ABOVE the box (so it
+// never covers the box's own content), tucking it just inside the top edge only when
+// there's no room above. Drawn only for the hovered / active slot, so at most one tag
+// shows at a time — no labels plastered across every box.
+func (a *App) drawSlotTag(r sdl.Rect, key string, col sdl.Color) {
+	c := a.ctx
+	label := classicSlotLabel(key)
+	const th = int32(16)
+	tw := c.TextWidth(label) + 14
+	if tw > r.W && r.W > 0 {
+		tw = r.W
+	}
+	tagY := r.Y - th - 2
+	if tagY < classicBannerH+2 { // top boxes: no room above → tuck inside the top edge
+		tagY = r.Y + 2
+	}
+	tag := sdl.Rect{X: r.X, Y: tagY, W: tw, H: th}
+	c.Fill(tag, sdl.Color{R: 12, G: 14, B: 20, A: 235})
+	c.Border(tag, col)
+	c.LabelClipped(tag.X+6, tag.Y+1, tw-12, label, col)
 }

@@ -122,6 +122,10 @@ type Scene struct {
 	// frame. Rune indices into MessageText. Empty (the common case) → the plain
 	// raster fast path; the UI maps these to render.EffectSpan only when present.
 	MessageEffects []TextEffectSpan
+	// Centered renders the chatbox text centre-aligned (the webAO "~~" prefix
+	// convention). Set per message in begin; the "~~" marker is stripped from the
+	// display text. Off (the common case) = the untouched left-aligned raster.
+	Centered bool
 	// IsBlankPost is set when the message's text is empty or whitespace-only
 	// (an AO "blankpost": animate the sprite, say nothing). The UI hides the
 	// whole chatbox — frame, showname and text — so only the sprite shows.
@@ -413,6 +417,32 @@ func (c *Courtroom) setBackground(bg string) {
 // begin starts one message: prefetch everything in parallel at HIGH priority
 // (speaker and pair resolve concurrently — the §11 wall-clock gate), then
 // enter the first phase.
+// applyCenterPrefix implements webAO's "~~" convention: a message whose visible text
+// starts with "~~" is centred in the chatbox. Strip the 2-rune marker from the display
+// text, raise Scene.Centered, and shift any transmitted effect spans left by 2 so they
+// stay aligned (the sender computed them over the text that still carried the "~~").
+// Operates on c.currentText (already sprite-style-stripped); a no-prefix message just
+// clears Centered, so the common path is one HasPrefix check.
+func (c *Courtroom) applyCenterPrefix() {
+	if !strings.HasPrefix(c.currentText, "~~") {
+		c.Scene.Centered = false
+		return
+	}
+	c.currentText = c.currentText[2:]
+	c.Scene.Centered = true
+	for i := range c.pendingEffects {
+		if c.pendingEffects[i].Start >= 2 {
+			c.pendingEffects[i].Start -= 2
+			continue
+		}
+		c.pendingEffects[i].Len -= 2 - c.pendingEffects[i].Start // span began inside the marker: clip it
+		c.pendingEffects[i].Start = 0
+		if c.pendingEffects[i].Len < 0 {
+			c.pendingEffects[i].Len = 0
+		}
+	}
+}
+
 func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.current = msg
 	// Packed-room catch-up: a backlog behind this message means the stage is
@@ -459,6 +489,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if spans, ok := DecodeEffectsMarker(msg.Message); ok {
 		c.pendingEffects = append(c.pendingEffects, spans...)
 	}
+	// "~~" prefix → centre the chatbox text (webAO). Strip the marker (and realign any
+	// transmitted effect spans) BEFORE the blankpost test / inline-emote expand / reveal.
+	c.applyCenterPrefix()
 	// #18 inline emotes: expand known :shortcode: tokens in the speaker's visible text to
 	// their emoji, so the chatbox renders them like the IC log. GATED to messages with NO
 	// effect spans: the wire span indices were computed over the literal text and a
@@ -630,6 +663,10 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.TextColor = msg.TextColor
 	caStyle, caClean := DecodeSpriteStyle(msg.Message) // strip the style marker (catch-up never redraws the sprite)
 	c.currentText = caClean
+	// "~~" centre prefix (webAO): strip it so the one-frame flash doesn't show the marker.
+	if c.Scene.Centered = strings.HasPrefix(c.currentText, "~~"); c.Scene.Centered {
+		c.currentText = c.currentText[2:]
+	}
 	// #18 inline emotes: mirror begin()'s gated expansion so a backlog flash agrees with the
 	// (already-expanded) IC log. Same gate — no expansion when the message carries effect spans.
 	if c.InlineEmote != nil {

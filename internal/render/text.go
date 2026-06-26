@@ -115,8 +115,47 @@ type MessageRaster struct {
 	styled [][]rasterSpan // nil unless this is a multi-color message
 	lineH  int32
 	text   string
-	srcGet sdl.Rect // scratch
-	dstGet sdl.Rect // scratch
+	// centerOff[i] horizontally centers line i within the chatbox width (webAO's
+	// "~~" prefix). nil = left-aligned (the default / common case). Set once by
+	// Center after rasterizing — never on the per-frame Draw path.
+	centerOff []int32
+	srcGet    sdl.Rect // scratch
+	dstGet    sdl.Rect // scratch
+}
+
+// Center aligns every wrapped line to the centre of alignW px — the webAO "~~"
+// convention. Call once after Rasterize / RasterizeStyled / RasterizeFallback; lines
+// already at or past alignW stay flush left. Off the per-frame path, so the small
+// per-line slice is fine.
+func (m *MessageRaster) Center(alignW int32) {
+	off := func(lineW int32) int32 {
+		if d := (alignW - lineW) / 2; d > 0 {
+			return d
+		}
+		return 0
+	}
+	if m.styled != nil {
+		m.centerOff = make([]int32, len(m.styled))
+		for i, spans := range m.styled {
+			if n := len(spans); n > 0 {
+				last := spans[n-1]
+				m.centerOff[i] = off(last.xOffset + last.w) // spans tile L→R: last's right edge = line width
+			}
+		}
+		return
+	}
+	m.centerOff = make([]int32, len(m.lines))
+	for i := range m.lines {
+		m.centerOff[i] = off(m.lines[i].w)
+	}
+}
+
+// lineOffset returns the centering offset for line i (0 when left-aligned).
+func (m *MessageRaster) lineOffset(i int) int32 {
+	if i < len(m.centerOff) {
+		return m.centerOff[i]
+	}
+	return 0
 }
 
 // Rasterize renders text wrapped to wrapW pixels in the given font/color.
@@ -356,7 +395,7 @@ func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 		if line.tex != nil && show > 0 {
 			width := line.advances[show]
 			m.srcGet = sdl.Rect{X: 0, Y: 0, W: width, H: line.h}
-			m.dstGet = sdl.Rect{X: x, Y: lineY, W: width, H: line.h}
+			m.dstGet = sdl.Rect{X: x + m.lineOffset(i), Y: lineY, W: width, H: line.h}
 			_ = ren.Copy(line.tex, &m.srcGet, &m.dstGet)
 		}
 		remaining -= line.runes
@@ -369,10 +408,12 @@ func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 	remaining := visibleRunes
 	lineY := y
-	for _, spans := range m.styled {
+	for li := range m.styled {
+		spans := m.styled[li]
 		if remaining <= 0 {
 			return
 		}
+		lineX := x + m.lineOffset(li)
 		for i := range spans {
 			sp := &spans[i]
 			if remaining <= 0 {
@@ -385,7 +426,7 @@ func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int
 			if sp.tex != nil && show > 0 {
 				width := sp.advances[show]
 				m.srcGet = sdl.Rect{X: 0, Y: 0, W: width, H: sp.h}
-				m.dstGet = sdl.Rect{X: x + sp.xOffset, Y: lineY + sp.yOff, W: width, H: sp.h} // yOff baseline-aligns the emoji fallback (0 for plain color spans)
+				m.dstGet = sdl.Rect{X: lineX + sp.xOffset, Y: lineY + sp.yOff, W: width, H: sp.h} // yOff baseline-aligns the emoji fallback (0 for plain color spans)
 				_ = ren.Copy(sp.tex, &m.srcGet, &m.dstGet)
 			}
 			remaining -= sp.runes

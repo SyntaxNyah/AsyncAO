@@ -1384,7 +1384,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
 	effSig := effectsSig(sc.MessageEffects)
 	if (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
-		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig {
+		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered {
 		return
 	}
 	if a.msRaster != nil {
@@ -1420,6 +1420,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	a.rasterW = wrapW
 	a.rasterSkinned = skinned
 	a.rasterEffSig = effSig
+	a.rasterCentered = sc.Centered
 }
 
 // chatZoomWheel: Ctrl+wheel over the chatbox zooms the chat text
@@ -4550,14 +4551,27 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 			spans = []render.ColorSpan{{Len: len([]rune(sc.MessageText)), Color: col}}
 		}
 		textFonts := a.ctx.coverRunes(font, []rune(sc.MessageText))
-		return render.RasterizeFallback(a.ctx.Ren, textFonts, a.ctx.EmojiFont(pct), sc.MessageText, spans, wrapW)
+		m, err := render.RasterizeFallback(a.ctx.Ren, textFonts, a.ctx.EmojiFont(pct), sc.MessageText, spans, wrapW)
+		return centerRaster(m, err, sc, wrapW)
 	}
 	// Inline \cN colors → the multi-color span raster; plain messages keep the
 	// untouched single-color path (col is their whole-message color).
 	if sceneNeedsStyled(sc.MessageStyles) {
-		return render.RasterizeStyled(a.ctx.Ren, font, sc.MessageText, buildColorSpans(sc.MessageStyles, col), wrapW)
+		m, err := render.RasterizeStyled(a.ctx.Ren, font, sc.MessageText, buildColorSpans(sc.MessageStyles, col), wrapW)
+		return centerRaster(m, err, sc, wrapW)
 	}
-	return render.Rasterize(a.ctx.Ren, font, sc.MessageText, wrapW, col)
+	m, err := render.Rasterize(a.ctx.Ren, font, sc.MessageText, wrapW, col)
+	return centerRaster(m, err, sc, wrapW)
+}
+
+// centerRaster applies the webAO "~~" centre alignment to a freshly built raster when
+// the scene asked for it (Scene.Centered). Wraps the (raster, err) return so the three
+// build paths stay one-liners; a no-op for the common left-aligned case and on error.
+func centerRaster(m *render.MessageRaster, err error, sc *courtroom.Scene, wrapW int32) (*render.MessageRaster, error) {
+	if err == nil && m != nil && sc.Centered {
+		m.Center(wrapW)
+	}
+	return m, err
 }
 
 // chatBaseColor resolves a message's DEFAULT text colour (used as the whole-message colour

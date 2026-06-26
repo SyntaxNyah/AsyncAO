@@ -1321,6 +1321,9 @@ type sessionState struct {
 	msAnimFont   *ttf.Font
 	glyphCache   *render.GlyphCache
 	rasterEffSig uint64
+	// rasterCentered folds the webAO "~~" centre flag into the raster cache key, so a
+	// centred "hi" and a plain "hi" (same stripped text) don't share one raster.
+	rasterCentered bool
 }
 
 type lobbyFetch struct {

@@ -94,3 +94,44 @@ func TestChatboxExpandsInlineEmotes(t *testing.T) {
 		t.Error("precondition failed: the effects frame didn't decode, so the gate wasn't exercised")
 	}
 }
+
+// TestCenterPrefix pins the webAO "~~" convention through begin(): a message whose
+// visible text starts with ~~ centres the chatbox (Scene.Centered) and the marker is
+// stripped from the display text; a plain message does neither; and a ~~ message
+// carrying transmitted effect spans keeps them aligned (shifted left by the 2 stripped
+// runes).
+func TestCenterPrefix(t *testing.T) {
+	icMsg := func(text string) *protocol.ChatMessage {
+		return &protocol.ChatMessage{
+			CharName: "Phoenix", Emote: "normal", Message: text, Side: "wit",
+			EmoteMod: protocol.EmoteModIdle,
+		}
+	}
+
+	room, _, _, _ := newCourtroomRig(t)
+	room.HandleEvent(Event{Kind: EventMessage, Message: icMsg("~~hello")})
+	room.SkipToIdle()
+	if !room.Scene.Centered || room.Scene.MessageText != "hello" {
+		t.Errorf("~~hello: Centered=%v MessageText=%q, want true/\"hello\"", room.Scene.Centered, room.Scene.MessageText)
+	}
+
+	plain, _, _, _ := newCourtroomRig(t)
+	plain.HandleEvent(Event{Kind: EventMessage, Message: icMsg("hello")})
+	plain.SkipToIdle()
+	if plain.Scene.Centered || plain.Scene.MessageText != "hello" {
+		t.Errorf("hello: Centered=%v MessageText=%q, want false/\"hello\"", plain.Scene.Centered, plain.Scene.MessageText)
+	}
+
+	// ~~ + an effect span over "shake" (index 2..6 in "~~shake me") → stripped, centred,
+	// and the span shifts to 0..4 so it still covers "shake" in the displayed "shake me".
+	fx, _, _, _ := newCourtroomRig(t)
+	withFX := "~~shake me" + EncodeEffectsMarker([]TextEffectSpan{{Start: 2, Len: 5, Effect: TextEffectShake}})
+	fx.HandleEvent(Event{Kind: EventMessage, Message: icMsg(withFX)})
+	fx.SkipToIdle()
+	if !fx.Scene.Centered || fx.Scene.MessageText != "shake me" {
+		t.Errorf("~~ + fx: Centered=%v MessageText=%q, want true/\"shake me\"", fx.Scene.Centered, fx.Scene.MessageText)
+	}
+	if len(fx.Scene.MessageEffects) != 1 || fx.Scene.MessageEffects[0].Start != 0 || fx.Scene.MessageEffects[0].Len != 5 {
+		t.Errorf("effect span must shift left by the stripped ~~ (Start 0, Len 5): got %+v", fx.Scene.MessageEffects)
+	}
+}

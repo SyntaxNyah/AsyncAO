@@ -105,6 +105,34 @@ func TestClassicEdgeAt(t *testing.T) {
 	}
 }
 
+// TestPickResizeSlot pins the resize-targeting fix: resize follows the HOVERED box
+// (so "if you can move it, you can resize it"), the move-only control block never grabs
+// a resize (it would do nothing and steal it from a neighbour — the "middle boxes won't
+// resize" bug), and an outer-margin grip falls back to the smallest resizable box.
+func TestPickResizeSlot(t *testing.T) {
+	const m = 12
+	reg := map[string]slotInfo{
+		slotOOC:      {cur: sdl.Rect{X: 100, Y: 100, W: 200, H: 100}}, // resizable
+		slotControls: {cur: sdl.Rect{X: 280, Y: 100, W: 60, H: 40}},   // MOVE-ONLY, overlaps ooc's right edge
+		slotViewport: {cur: sdl.Rect{X: 0, Y: 0, W: 400, H: 400}},     // big, behind everything
+	}
+	keys := []string{slotControls, slotOOC, slotViewport}
+
+	// Hovering OOC, gripping its right edge → resize OOC (not the move-only controls
+	// touching the same spot, not the big viewport behind it).
+	if k, e := pickResizeSlot(reg, keys, slotOOC, 296, 150, m); k != slotOOC || e&edgeR == 0 {
+		t.Fatalf("hovering ooc at its right edge must resize ooc/edgeR, got %q/%04b", k, e)
+	}
+	// Hovering the move-only control block → no resize (the caller moves it instead).
+	if k, _ := pickResizeSlot(reg, keys, slotControls, 282, 102, m); k != "" {
+		t.Fatalf("the move-only control block must never resize, got %q", k)
+	}
+	// Cursor over no box, in OOC's outer-edge margin → smallest resizable (ooc).
+	if k, _ := pickResizeSlot(reg, keys, "", 100, 150, m); k != slotOOC {
+		t.Fatalf("outer-margin grip must pick the smallest resizable box (ooc), got %q", k)
+	}
+}
+
 // TestCloneClassicOvNoAlias pins the undo-history landmine: a snapshot must be an
 // independent copy, so a later edit can't reach back and mutate it.
 func TestCloneClassicOvNoAlias(t *testing.T) {
