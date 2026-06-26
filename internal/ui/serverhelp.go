@@ -207,88 +207,128 @@ var serverProjects = []serverProject{
 	},
 }
 
-// drawServerHelp renders the catalog (scrollable; every link clickable).
+// Server-catalog card layout.
+const (
+	shMaxColW    = 960 // reading-column cap (centered); wide enough for chips + text
+	shCardPad    = 16  // inner padding of a server card
+	shCardGap    = 12  // vertical gap between server cards
+	shForkIndent = 26  // a fork card is indented under its upstream (+ a connector)
+	shCapsH      = 20  // capability-chip row height
+)
+
+// drawServerHelp renders the catalog as a centered column of per-server CARDS
+// (scrollable; every link clickable). Every fork link and credit is kept — the
+// cards + fork connectors are what make the ecosystem read at a glance.
 func (a *App) drawServerHelp(w, h int32) {
 	c := a.ctx
 	a.drawScreenBackdrop(w, h, "lobbybackground")
-	c.Heading(pad, pad, "For server owners — supporting modern clients", ColText)
+	c.Heading(pad, pad, "For server owners — the AsyncAO-ready ecosystem", ColText)
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
 		a.screen = ScreenLobby
 		return
 	}
+	top := pad + 44
+	c.Fill(sdl.Rect{X: 0, Y: top - 8, W: w, H: 1}, ColPanelHi) // hairline under the header
+	view := sdl.Rect{X: 0, Y: top, W: w, H: h - top - pad}
 
-	const lineH = 18
-	view := sdl.Rect{X: 0, Y: pad + 40, W: w, H: h - pad - 44}
-	wrapW := w - 2*pad - scrollBarW - 12
+	// Centered reading column.
+	colW := w - 2*pad - scrollBarW - 2*pad
+	if colW > shMaxColW {
+		colW = shMaxColW
+	}
+	if colW < 320 {
+		colW = 320
+	}
+	x0 := (w - scrollBarW - colW) / 2
+	if x0 < pad {
+		x0 = pad
+	}
+	lineH := int32(c.font.Height()) + 4
 
-	// Measure pass for the scrollbar, then draw. Wrapping is cached by
-	// the kit's width memo; the catalog is a dozen entries — cheap.
+	_ = c.Ren.SetClipRect(&view) // keep scrolled content out of the header band
+	defer func() { _ = c.Ren.SetClipRect(nil) }()
+
+	// Two passes: measure (for the scrollbar), then draw. WrapText is width-memoized,
+	// so the doubled calls are cheap; the catalog is a dozen entries.
 	draw := func(measure bool) int32 {
-		y := view.Y - a.helpScroll
-		put := func(line string, col sdl.Color) {
-			if !measure && line != "" && y > view.Y-lineH && y < view.Y+view.H {
-				c.LabelClipped(pad, y, wrapW, line, col)
-			}
-			y += lineH
-		}
-		for _, para := range serverHelpIntro {
-			if para == "" {
-				y += lineH / 2
-				continue
-			}
-			for _, line := range c.WrapText(para, wrapW, 8) {
-				put(line, ColText)
-			}
-		}
-		y += lineH / 2
-		for _, line := range c.WrapText(serverHelpLegend, wrapW, 8) {
-			put(line, ColTextDim)
-		}
-		y += lineH
-		for i := range serverProjects {
-			p := &serverProjects[i]
-			nameX := pad
-			header := p.name + "  ·  " + p.lang
-			if p.parent != "" { // a fork: indent under its upstream + a connector line
-				nameX = pad + 22
-				header = p.name + "  ·  " + p.lang + "  ·  fork of " + p.parent
-			}
-			if !measure && y > view.Y-lineH && y < view.Y+view.H {
-				if p.parent != "" {
-					a.drawForkConnector(y, lineH)
-				}
-				c.LabelClipped(nameX, y, wrapW-(nameX-pad), header, ColAccent)
-			}
-			y += lineH
-			if !measure && y > view.Y-20 && y < view.Y+view.H {
-				a.drawServerCaps(nameX, y, p)
-			}
-			y += lineH + 4
-			for _, sentence := range p.desc {
-				for _, line := range c.WrapText(sentence, wrapW, 6) {
-					put(line, ColText)
-				}
-			}
-			if p.warn != "" {
-				put("⚠ "+p.warn, ColDanger)
-			}
-			if p.credits != "" {
-				for _, line := range c.WrapText("Credits: "+p.credits, wrapW, 8) {
-					put(line, ColTextDim)
-				}
-			}
-			for _, link := range p.links {
-				if !measure {
-					a.linkLabel(pad+12, y, wrapW-12, link)
+		y := top - a.helpScroll
+		para := func(text string, col sdl.Color, x, wrapW int32, maxLines int) {
+			for _, ln := range c.WrapText(text, wrapW, maxLines) {
+				if !measure && y+lineH > top && y < top+view.H {
+					c.Label(x, y, ln, col)
 				}
 				y += lineH
 			}
-			y += lineH // entry gap
 		}
-		for _, line := range c.WrapText(serverHelpOutro, wrapW, 6) {
-			put(line, ColTextDim)
+		for _, p := range serverHelpIntro {
+			if p == "" {
+				y += lineH / 2
+				continue
+			}
+			para(p, ColText, x0, colW, 10)
 		}
-		return y + a.helpScroll - view.Y // content height
+		y += lineH / 2
+		para(serverHelpLegend, ColTextDim, x0, colW, 10)
+		y += lineH + 4
+
+		for i := range serverProjects {
+			p := &serverProjects[i]
+			cardX, cardW := x0, colW
+			if p.parent != "" { // a fork: indent the card under its upstream
+				cardX, cardW = x0+shForkIndent, colW-shForkIndent
+			}
+			innerW := cardW - 2*shCardPad
+			ch := a.serverCardHeight(p, innerW, lineH)
+			if !measure && y+ch > top && y < top+view.H {
+				card := sdl.Rect{X: cardX, Y: y, W: cardW, H: ch}
+				c.Fill(card, cardColor())
+				c.Border(card, ColPanelHi)
+				if p.parent != "" {
+					a.drawForkConnector(x0, cardX, y)
+				}
+				ix, cy := cardX+shCardPad, y+shCardPad
+				header := p.name + "  ·  " + p.lang
+				if p.parent != "" {
+					header += "  ·  fork of " + p.parent
+				}
+				c.Label(ix, cy, header, ColAccent)
+				cy += lineH
+				a.drawServerCaps(ix, cy, p)
+				cy += shCapsH + 8
+				for _, s := range p.desc {
+					for _, ln := range c.WrapText(s, innerW, 8) {
+						c.Label(ix, cy, ln, ColText)
+						cy += lineH
+					}
+				}
+				if p.warn != "" {
+					for _, ln := range c.WrapText("⚠ "+p.warn, innerW, 6) {
+						c.Label(ix, cy, ln, ColDanger)
+						cy += lineH
+					}
+				}
+				if p.credits != "" {
+					cy += 6
+					for _, ln := range c.WrapText("Credits: "+p.credits, innerW, 10) {
+						c.Label(ix, cy, ln, ColTextDim)
+						cy += lineH
+					}
+				}
+				if len(p.links) > 0 {
+					cy += 6
+					for _, link := range p.links {
+						if cy+lineH > top && cy < top+view.H { // per-link viewport guard (hit-test isn't clipped)
+							a.linkLabel(ix, cy, innerW, link)
+						}
+						cy += lineH
+					}
+				}
+			}
+			y += ch + shCardGap
+		}
+		y += lineH / 2
+		para(serverHelpOutro, ColTextDim, x0, colW, 8)
+		return (y + a.helpScroll) - top // content height
 	}
 
 	contentH := draw(true)
@@ -300,16 +340,37 @@ func (a *App) drawServerHelp(w, h int32) {
 	draw(false)
 }
 
-// drawForkConnector draws a small line linking a fork to the upstream listed
-// above it: a short vertical drop in the indent gutter plus a horizontal stub
-// into the indented name. Drawn as lines, not glyphs, so it never depends on a
-// font having box-drawing characters.
-func (a *App) drawForkConnector(y, lineH int32) {
+// serverCardHeight is one card's pixel height — it MUST track drawServerHelp's
+// vertical advances exactly so the card background fits its content.
+func (a *App) serverCardHeight(p *serverProject, innerW, lineH int32) int32 {
 	c := a.ctx
-	railX := int32(pad + 7)
-	mid := y + lineH/2
-	c.Fill(sdl.Rect{X: railX, Y: y - lineH/2, W: 2, H: lineH}, ColAccent) // vertical drop from above
-	c.Fill(sdl.Rect{X: railX, Y: mid, W: 13, H: 2}, ColAccent)            // horizontal into the name
+	hgt := int32(shCardPad) // top padding
+	hgt += lineH            // header (name · lang · fork-of)
+	hgt += shCapsH + 8      // capability chips + gap
+	for _, s := range p.desc {
+		hgt += int32(len(c.WrapText(s, innerW, 8))) * lineH
+	}
+	if p.warn != "" {
+		hgt += int32(len(c.WrapText("⚠ "+p.warn, innerW, 6))) * lineH
+	}
+	if p.credits != "" {
+		hgt += 6 + int32(len(c.WrapText("Credits: "+p.credits, innerW, 10)))*lineH
+	}
+	if len(p.links) > 0 {
+		hgt += 6 + int32(len(p.links))*lineH
+	}
+	return hgt + shCardPad // bottom padding
+}
+
+// drawForkConnector links a fork CARD to the upstream above it: a vertical drop
+// in the indent gutter from the gap above down to the card's header, plus a stub
+// into the card. Drawn as lines, not glyphs, so it never needs box-drawing chars.
+func (a *App) drawForkConnector(x0, cardX, y int32) {
+	c := a.ctx
+	railX := x0 + 9
+	headMid := y + shCardPad + 7 // ≈ the header text's vertical middle
+	c.Fill(sdl.Rect{X: railX, Y: y - shCardGap, W: 2, H: headMid - (y - shCardGap)}, ColAccent)
+	c.Fill(sdl.Rect{X: railX, Y: headMid, W: cardX - railX, H: 2}, ColAccent)
 }
 
 // serverCapBox is the slightly-brighter cell behind each WS/WSS/Players tick, so
