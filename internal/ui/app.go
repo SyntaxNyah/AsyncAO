@@ -613,6 +613,10 @@ type App struct {
 	extrasResizing       bool           // the bottom-right resize grip is being dragged
 	extrasCloseHintShown bool           // one-shot "how to reopen" toast on first × close
 	extrasWidgetCache    []extrasWidget // canonical widget table, built once
+	// pairWin is the Pairing panel's floating-window geometry (floatwin.go): the
+	// panel is a movable/resizable, non-blocking box (chat stays live behind it),
+	// not a modal. Geometry is global; whether it's open is per-tab (showPair).
+	pairWin floatWin
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32
@@ -3491,7 +3495,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawCharSelect(winW, winH)
 		case ScreenCourtroom:
 			a.drawCourtroom(winW, winH)
-			a.drawFloatingExtras(winW, winH) // non-blocking, on top of the live courtroom (input already restored)
+			a.drawFloatingPanels(winW, winH) // non-blocking Extras + Pair, on top of the live courtroom (input already restored)
 			if a.extrasSurfaceLive() {       // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
 				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)
 			}

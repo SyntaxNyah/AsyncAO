@@ -3625,9 +3625,6 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		}
 	}
 
-	if a.showPair {
-		a.drawPairPanel(w, h)
-	}
 }
 
 // previewEmote points the hover preview at an emote: its pre-animation when it
@@ -3994,31 +3991,34 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 // drawPairPanel: partner picking is a searchable click-to-pick list (the
 // old one-by-one </> cycle was unusable on 4000-char servers); offsets,
 // flip and z-order live in the right column.
-func (a *App) drawPairPanel(w, h int32) {
+func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	ph := h - 120
-	if ph > 540 {
-		ph = 540
-	}
-	if ph < 320 {
-		ph = 320
-	}
-	panel := sdl.Rect{X: w/2 - 290, Y: h/2 - ph/2, W: 580, H: ph}
-	c.Fill(panel, ColPanel)
-	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+8, "Pairing", ColText)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + 8, W: 90, H: btnH}, "Close") {
+	r := a.pairPanelRect(w, h)
+	c.Fill(r, ColPanel)
+	c.Border(r, ColAccent)
+	// Title bar / drag handle + close + bottom-right resize grip — a non-blocking
+	// floating box (drawn in the box pass), so the courtroom behind stays live:
+	// you can keep chatting with the pair menu open, and drag/resize it freely.
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
+	c.Heading(r.X+pad, r.Y+6, "Pairing", ColText)
+	if c.Button(sdl.Rect{X: r.X + r.W - 84 - pad, Y: r.Y + 3, W: 84, H: btnH}, "Close") {
 		a.showPair = false
 		return
 	}
+	a.floatWinDrag(&a.pairWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 94 - pad, H: floatTitleH}, pressed)
+	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.pairWin, grip, r, pairPanelMinW, pairPanelMinH, pressed)
+	a.drawResizeGrip(grip)
+
+	contentTop := r.Y + floatTitleH + 10
 
 	// Left: searchable partner list.
-	listW := panel.W/2 - pad*2
-	y := panel.Y + 44
-	c.LabelClipped(panel.X+pad, y, listW, "Partner: "+a.pairLabel(), ColAccent)
+	listW := r.W/2 - pad*2
+	y := contentTop
+	c.LabelClipped(r.X+pad, y, listW, "Partner: "+a.pairLabel(), ColAccent)
 	y += 24
-	a.pairSearch, _ = c.TextField("pairsearch", sdl.Rect{X: panel.X + pad, Y: y, W: listW - 80, H: fieldH}, a.pairSearch, "Search...")
-	if c.Button(sdl.Rect{X: panel.X + pad + listW - 74, Y: y, W: 74, H: btnH}, "Unpair") {
+	a.pairSearch, _ = c.TextField("pairsearch", sdl.Rect{X: r.X + pad, Y: y, W: listW - 80, H: fieldH}, a.pairSearch, "Search...")
+	if c.Button(sdl.Rect{X: r.X + pad + listW - 74, Y: y, W: 74, H: btnH}, "Unpair") {
 		a.pairWith = protocol.UnpairedCharID
 	}
 	y += fieldH + 8
@@ -4027,17 +4027,17 @@ func (a *App) drawPairPanel(w, h int32) {
 	query := a.pairQ.get(a.pairSearch)
 	lineH := int32(22)
 	listTop := y
-	listH := panel.Y + panel.H - listTop - pad
+	listH := r.Y + r.H - listTop - pad
 	matches := int32(0)
 	for i := range a.sess.Chars {
 		if i != a.sess.MyCharID && (query == "" || strings.Contains(a.charLower[i], query)) {
 			matches++
 		}
 	}
-	if c.hovering(sdl.Rect{X: panel.X + pad, Y: listTop, W: listW, H: listH}) {
+	if c.hovering(sdl.Rect{X: r.X + pad, Y: listTop, W: listW, H: listH}) {
 		a.pairScroll -= c.wheelY * scrollStepPx
 	}
-	track := sdl.Rect{X: panel.X + pad + listW - scrollBarW, Y: listTop, W: scrollBarW, H: listH}
+	track := sdl.Rect{X: r.X + pad + listW - scrollBarW, Y: listTop, W: scrollBarW, H: listH}
 	a.pairScroll = c.VScrollbar("pairscroll", track, a.pairScroll, matches*lineH, listH)
 	rowY := listTop - a.pairScroll
 	for i := range a.sess.Chars {
@@ -4051,7 +4051,7 @@ func (a *App) drawPairPanel(w, h int32) {
 			break
 		}
 		if rowY >= listTop-lineH {
-			row := sdl.Rect{X: panel.X + pad, Y: rowY, W: listW - scrollBarW - scrollBarGap, H: lineH - 2}
+			row := sdl.Rect{X: r.X + pad, Y: rowY, W: listW - scrollBarW - scrollBarGap, H: lineH - 2}
 			hover := c.hovering(row)
 			if i == a.pairWith {
 				c.Fill(row, ColAccent)
@@ -4068,8 +4068,8 @@ func (a *App) drawPairPanel(w, h int32) {
 
 	// Right: placement controls (type the number, nudge with −/+, or
 	// mousewheel over the row — all three work).
-	rx := panel.X + panel.W/2 + pad
-	ry := panel.Y + 44
+	rx := r.X + r.W/2 + pad
+	ry := contentTop
 	if next := a.offsetControl("pairoffx", rx, ry, "Offset X %", a.pairOffX, &a.pairOffXText); next != a.pairOffX {
 		a.pairOffX = next
 		a.persistPairPrefs()
@@ -4102,11 +4102,24 @@ func (a *App) drawPairPanel(w, h int32) {
 
 	// Offset ghost editor: drag your sprite live; partner shows as a
 	// translucent ghost at their last-known placement.
-	pv := sdl.Rect{X: rx, Y: ry, W: panel.W/2 - 2*pad, H: panel.Y + panel.H - pad - ry}
+	pv := sdl.Rect{X: rx, Y: ry, W: r.W/2 - 2*pad, H: r.Y + r.H - pad - ry}
 	if pv.H >= ghostMinHeightPx {
 		a.drawPairGhost(pv)
 	}
 }
+
+// pairPanelRect is the Pair menu's floating-window rect (floatwin.go): movable +
+// resizable, clamped on-screen, with a window-height-responsive default size.
+func (a *App) pairPanelRect(w, h int32) sdl.Rect {
+	defH := clampI32(h-120, pairPanelMinH, 560)
+	return a.pairWin.rect(pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h)
+}
+
+const (
+	pairPanelDefW = 580 // default width
+	pairPanelMinW = 440 // floor: the two columns need room
+	pairPanelMinH = 320 // floor: list + controls
+)
 
 // ghostMinHeightPx is the smallest useful ghost stage; below it the panel
 // keeps just the numeric controls.

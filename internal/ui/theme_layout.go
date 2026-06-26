@@ -550,9 +550,6 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if a.warnActive() {
 		c.LabelClipped(pad, h-44, w-2*pad, a.warnLine, ColDanger)
 	}
-	if a.showPair {
-		a.drawPairPanel(w, h)
-	}
 
 	// Layout editor overlay: last, above everything it edits.
 	if a.layoutEdit {

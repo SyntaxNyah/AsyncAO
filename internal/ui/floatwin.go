@@ -1,0 +1,102 @@
+package ui
+
+import "github.com/veandco/go-sdl2/sdl"
+
+// floatWin is a generic movable + resizable, non-blocking floating window — the
+// pattern the Extras box pioneered, factored out so the Pair menu and the Mod/CM
+// panel can reuse it instead of being blocking modals. Geometry is session state
+// (one position per window, shared across tabs); while the cursor is over an open
+// floatWin the courtroom pass fences the pointer (boxFencesPointer), so the
+// courtroom behind stays interactive everywhere else — you can still chat with
+// one of these open.
+type floatWin struct {
+	x, y, w, h     int32 // current rect; w/h ≤ 0 = use the caller's default size
+	placed         bool  // dragged/resized at least once (else centered default)
+	dragging       bool
+	resizing       bool
+	grabDX, grabDY int32
+}
+
+const (
+	floatWinMargin = 8  // keep a window this far inside the window edges
+	floatGripSz    = 16 // bottom-right resize grip size
+	floatTitleH    = 30 // title bar / drag-handle height
+)
+
+// rect clamps the window on-screen, using the default size until first placed and
+// a centered default position. Mirrors extrasBoxRect's clamping so a resize or a
+// shrunk window can never strand it off-edge or oversize it.
+func (fw *floatWin) rect(defW, defH, minW, minH, winW, winH int32) sdl.Rect {
+	w, h := fw.w, fw.h
+	if w <= 0 {
+		w = defW
+	}
+	if h <= 0 {
+		h = defH
+	}
+	hiW, hiH := winW-2*floatWinMargin, winH-2*floatWinMargin
+	if hiW < minW {
+		hiW = minW
+	}
+	if hiH < minH {
+		hiH = minH
+	}
+	w, h = clampI32(w, minW, hiW), clampI32(h, minH, hiH)
+	x, y := fw.x, fw.y
+	if !fw.placed {
+		x, y = (winW-w)/2, (winH-h)/2
+	}
+	maxX, maxY := winW-w-floatWinMargin, winH-h-floatWinMargin
+	if maxX < floatWinMargin {
+		maxX = floatWinMargin
+	}
+	if maxY < floatWinMargin {
+		maxY = floatWinMargin
+	}
+	return sdl.Rect{X: clampI32(x, floatWinMargin, maxX), Y: clampI32(y, floatWinMargin, maxY), W: w, H: h}
+}
+
+// floatWinDrag moves a window by its title-bar handle. pressed is the shared
+// per-frame press edge — zeroed when this window grabs it, so one press moves one
+// window. Runs in the box pass (real pointer).
+func (a *App) floatWinDrag(fw *floatWin, handle sdl.Rect, pressed *bool) {
+	c := a.ctx
+	if *pressed && pointIn(c.mouseX, c.mouseY, handle) {
+		*pressed = false
+		fw.dragging = true
+		fw.grabDX, fw.grabDY = c.mouseX-handle.X, c.mouseY-handle.Y
+	}
+	if !c.mouseDown {
+		fw.dragging = false
+	}
+	if fw.dragging {
+		fw.x, fw.y = c.mouseX-fw.grabDX, c.mouseY-fw.grabDY
+		fw.placed = true
+	}
+}
+
+// floatWinResize grows a window from its bottom-right grip, pinning the top-left.
+// Floors at min here so a far-inward drag can't drive the size to ≤0 (which rect
+// would misread as "unset → default"); rect clamps the ceiling.
+func (a *App) floatWinResize(fw *floatWin, grip, r sdl.Rect, minW, minH int32, pressed *bool) {
+	c := a.ctx
+	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {
+		*pressed = false
+		fw.resizing = true
+		fw.x, fw.y, fw.placed = r.X, r.Y, true // pin the corner so resizing doesn't re-center
+		fw.grabDX, fw.grabDY = (r.X+r.W)-c.mouseX, (r.Y+r.H)-c.mouseY
+	}
+	if !c.mouseDown {
+		fw.resizing = false
+	}
+	if fw.resizing {
+		nw, nh := (c.mouseX+fw.grabDX)-r.X, (c.mouseY+fw.grabDY)-r.Y
+		if nw < minW {
+			nw = minW
+		}
+		if nh < minH {
+			nh = minH
+		}
+		fw.w, fw.h = nw, nh
+	}
+}

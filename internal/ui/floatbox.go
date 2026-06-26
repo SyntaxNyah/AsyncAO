@@ -148,8 +148,10 @@ func hexNibble(b byte) (uint8, bool) {
 // courtModalOpen reports whether a blocking courtroom popup is up. The box (and
 // its torn-off widgets) yields to those and reappears when they close.
 func (a *App) courtModalOpen() bool {
+	// NOTE: a.showPair is deliberately NOT here — the Pair menu is a non-blocking
+	// floating box now (floatwin.go), so the courtroom stays live behind it.
 	return a.showIni || a.bgPick.show || a.showEvid || a.showModcall ||
-		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen || a.showPair ||
+		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen ||
 		a.showEmojiPicker || a.showModDash || a.showCMPanel || a.classicEdit
 }
 
@@ -250,11 +252,14 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if !a.extrasSurfaceLive() {
 		return false
 	}
-	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing {
+	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing || a.pairWin.dragging || a.pairWin.resizing {
 		return true
 	}
 	mx, my := a.ctx.mouseX, a.ctx.mouseY
 	if a.showWidgets && pointIn(mx, my, a.extrasBoxRect(w, h)) {
+		return true
+	}
+	if a.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair menu fences too
 		return true
 	}
 	for i := range a.extrasDetached {
@@ -365,38 +370,48 @@ func (a *App) extrasTearDetect(id int, cell sdl.Rect, pressed *bool) bool {
 // on top of the live courtroom. Picking a widget runs its action but LEAVES the
 // box open (non-invasive); a widget that opens its own blocking panel hides the
 // surface until that panel closes, then it returns.
-func (a *App) drawFloatingExtras(w, h int32) {
-	if !a.extrasSurfaceLive() {
+// drawFloatingPanels draws every non-blocking floating panel on the live
+// courtroom — the Extras boxes AND the Pair menu — sharing ONE mouse-press edge
+// per frame so exactly one panel grabs a given press (no double-grab where two
+// overlap). Called after drawCourtroom with input restored, so they draw on top
+// with real input while the courtroom behind stays interactive everywhere the
+// cursor isn't over a panel (you can still chat with one open).
+func (a *App) drawFloatingPanels(w, h int32) {
+	if !a.extrasSurfaceLive() { // live courtroom, no blocking modal
 		return
 	}
-	favOpen := a.d.Prefs.FavEmoteBoxOn()
-	if !a.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.showStyleBox {
-		return // every floating box closed — nothing to draw
-	}
 	c := a.ctx
-	// One mouse-press edge per frame, shared by every box so exactly one grabs
-	// a given press.
 	pressed := c.mouseDown && !a.extrasPrevDown
 	a.extrasPrevDown = c.mouseDown
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
-		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing {
+		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
+			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing || a.pairWin.dragging || a.pairWin.resizing {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
 	}
-
-	if a.showWidgets {
-		a.drawExtrasMainBox(w, h, &pressed)
+	a.drawFloatingExtras(w, h, &pressed)
+	if a.showPair { // the Pair menu is a floating box now, drawn last = on top
+		a.drawPairPanel(w, h, &pressed)
 	}
-	// Torn-off widgets persist even with the main box closed.
-	a.drawExtrasDetached(w, h, &pressed)
-	// The favourite-emotes and Sprite Style boxes share the same press edge
-	// (drawn last = on top).
+}
+
+// drawFloatingExtras draws the Extras boxes (main + torn-off + favourite-emotes +
+// Sprite Style), sharing the press edge from drawFloatingPanels.
+func (a *App) drawFloatingExtras(w, h int32, pressed *bool) {
+	favOpen := a.d.Prefs.FavEmoteBoxOn()
+	if !a.showWidgets && len(a.extrasDetached) == 0 && !favOpen && !a.showStyleBox {
+		return // every Extras box closed — nothing to draw
+	}
+	if a.showWidgets {
+		a.drawExtrasMainBox(w, h, pressed)
+	}
+	a.drawExtrasDetached(w, h, pressed) // torn-off widgets persist even with the main box closed
 	if favOpen {
-		a.drawFavEmoteBox(w, h, &pressed)
+		a.drawFavEmoteBox(w, h, pressed)
 	}
 	if a.showStyleBox {
-		a.drawSpriteStyleBox(w, h, &pressed)
+		a.drawSpriteStyleBox(w, h, pressed)
 	}
 }
 
