@@ -239,23 +239,6 @@ func (a *App) drawSettings(w, h int32) {
 		return
 	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
-	c.Heading(pad, pad, "Settings", ColText)
-	// Search: type a term, press Enter to jump to the tab that has it.
-	q, committed := c.TextField("settsearch", sdl.Rect{X: pad + 110, Y: pad, W: 230, H: fieldH}, settings.search, "Search settings...")
-	settings.search = q
-	if mt := settingsSearchMatch(q); mt >= 0 {
-		c.LabelClipped(pad+350, pad+4, w-pad-350-110, "→ "+settingsTabNames[mt]+"  (Enter)", ColAccent)
-		if committed {
-			settings.tab = mt
-			settings.search = ""
-		}
-	}
-	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
-		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
-		_ = a.d.Prefs.SaveNow() // Settings-Apply synchronous flush
-		a.screen = a.prevScreen
-		return
-	}
 
 	if !settings.loaded {
 		settings.themeName, settings.themeDir = a.d.Prefs.Theme()
@@ -287,39 +270,73 @@ func (a *App) drawSettings(w, h int32) {
 	default:
 	}
 
-	// Tab strip: one row of category chips, the active one highlighted.
-	tabY := pad + 38
-	tabW := (w - 2*pad) / int32(len(settingsTabNames))
-	for i, name := range settingsTabNames {
-		r := sdl.Rect{X: pad + int32(i)*tabW, Y: tabY, W: tabW, H: btnH}
-		bg := ColPanel
-		if i == settings.tab {
-			bg = ColPanelHi
+	// --- header band: title, search, Back -----------------------------------
+	c.Heading(pad, pad, "Settings", ColText)
+	// Search: type a term, press Enter to jump to the tab that has it.
+	q, committed := c.TextField("settsearch", sdl.Rect{X: pad + 130, Y: pad + 2, W: 240, H: fieldH}, settings.search, "Search settings…")
+	settings.search = q
+	if mt := settingsSearchMatch(q); mt >= 0 {
+		c.LabelClipped(pad+382, pad+6, w-pad-382-110, "→ "+settingsTabNames[mt]+"  (Enter)", ColAccent)
+		if committed {
+			settings.tab = mt
+			settings.search = ""
 		}
-		c.Fill(r, bg)
-		c.Border(r, ColPanelHi)
+	}
+	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
+		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
+		_ = a.d.Prefs.SaveNow() // Settings-Apply synchronous flush
+		a.screen = a.prevScreen
+		return
+	}
+	contentTop := pad + settContentTop
+	c.Fill(sdl.Rect{X: 0, Y: contentTop - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
+
+	// --- left sidebar: a vertical category list (replaces the old chip row) --
+	navY := contentTop + 4
+	for i, name := range settingsTabNames {
+		r := sdl.Rect{X: pad, Y: navY, W: settSidebarW, H: settNavItemH}
+		active := i == settings.tab
+		switch {
+		case active:
+			c.Fill(r, ColPanelHi)
+			c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, ColAccent) // selected accent rail
+		case c.hovering(r):
+			c.Fill(r, cardColor())
+		}
 		col := ColTextDim
-		if i == settings.tab {
+		if active {
 			col = ColAccent
 		}
-		c.LabelClipped(r.X+8, r.Y+5, r.W-12, name, col)
-		if i == settings.tab { // active-tab accent underline (modern selected state)
-			c.Fill(sdl.Rect{X: r.X, Y: r.Y + r.H - 2, W: r.W, H: 2}, ColAccent)
-		}
+		c.LabelClipped(r.X+14, r.Y+8, r.W-20, name, col)
 		if c.hovering(r) && c.clicked {
 			settings.tab = i
 		}
+		navY += settNavItemH + 2
 	}
 
-	// Content scrolls per-tab (each tab remembers its position). The wheel
-	// handler + bar live at the end, where the content height is known.
-	top := tabY + btnH + 10
+	// --- content card region (right of the sidebar) -------------------------
+	// formX/formW define where the section + row helpers draw; they rebase their
+	// pad-relative layout onto formX so every box lands inside this card.
+	cardX := pad + settSidebarW + settSidebarGap
+	cardW := (w - scrollBarW - pad) - cardX
+	if cardW > settMaxCardW {
+		cardW = settMaxCardW
+	}
+	if cardW < settMinCardW {
+		cardW = settMinCardW
+	}
+	a.formX = cardX + settCardPadX
+	a.formW = cardW - 2*settCardPadX
+
+	viewH := h - contentTop - pad
 	scroll := &settings.tabScroll[settings.tab]
-	y := top - *scroll
-	// Clip the scrolled content to below the tab strip: a scrolled-up row
-	// would otherwise draw over the tab chips (the strip is full-width, so
-	// it's glaring — same overspill class as the log-list fix).
-	clipPrev, clipHad := c.pushClip(sdl.Rect{X: 0, Y: top, W: w, H: h - top})
+
+	// Clip everything below the header; fill the card surface (a step between the
+	// page background and panels) so each section reads as a card, separated by
+	// page-coloured gap bands punched in by settingsSection.
+	clipPrev, clipHad := c.pushClip(sdl.Rect{X: cardX, Y: contentTop, W: cardW, H: viewH})
+	c.Fill(sdl.Rect{X: cardX, Y: contentTop, W: cardW, H: viewH}, cardColor())
+	y := contentTop - *scroll
 	switch settings.tab {
 	case tabGeneral:
 		y = a.drawSettingsGeneral(y, w)
@@ -337,46 +354,73 @@ func (a *App) drawSettings(w, h int32) {
 		y = a.drawSettingsStudio(y, w)
 	}
 	if settings.statusLine != "" {
-		c.Label(pad, y, settings.statusLine, ColAccent)
-		y += 24
+		c.Label(a.formX, y+6, settings.statusLine, ColAccent)
+		y += 28
+	}
+	// Page-coloured fill below the last card so the surface base doesn't run on.
+	if y < contentTop+viewH {
+		fy := y
+		if fy < contentTop {
+			fy = contentTop
+		}
+		c.Fill(sdl.Rect{X: cardX, Y: fy, W: cardW, H: contentTop + viewH - fy}, ColBackground)
 	}
 	c.popClip(clipPrev, clipHad)
 
-	contentH := (y + *scroll) - top + pad
-	visibleH := h - top - pad
+	contentH := (y + *scroll) - contentTop + pad
 	if !c.ctrlHeld && !c.wheelTaken {
 		*scroll -= c.wheelY * scrollStepPx
 	}
-	track := sdl.Rect{X: w - scrollBarW - 2, Y: top, W: scrollBarW, H: visibleH}
-	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, visibleH)
+	track := sdl.Rect{X: w - scrollBarW - 2, Y: contentTop, W: scrollBarW, H: viewH}
+	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, viewH)
 }
 
-// --- modernized settings layout (flat headers + airy spacing) ----------------
+// --- modernized settings layout: sidebar nav + content cards -----------------
 
 const (
-	settSectionTop = 18 // airy gap above each section header
-	settSectionMid = 22 // header baseline → divider
-	settSectionBot = 12 // divider → the section's first row
+	settContentTop = 44   // header band height (title + search row)
+	settSidebarW   = 168  // left category-nav width
+	settSidebarGap = 16   // gap between the sidebar and the content card
+	settNavItemH   = 32   // height of one sidebar nav row
+	settCardPadX   = 18   // content card horizontal padding (row inset)
+	settMaxCardW   = 1000 // cap the card width so rows stay readable on wide windows
+	settMinCardW   = 320  // floor so rows never collapse on a narrow window
+	settCardGap    = 14   // page-coloured gap band separating cards
+	settCardTopPad = 14   // padding above a card title
+	settSectionMid = 22   // title baseline → hairline
+	settSectionBot = 12   // hairline → the section's first row
 )
 
-// settingsSection draws a flat section header — an uppercase title in the accent
-// colour with a hairline divider beneath — and returns the y of the section's
-// first row. It's the unit of the modernized settings look: clear grouping with
-// room to breathe, instead of one dense undifferentiated scroll. Pure draw (no
-// widget ids), so it never disturbs hit-testing, per-tab scroll, or search.
+// settingsSection delimits one card: it punches a page-coloured gap above the
+// card (separating it from the previous one over the cardColor surface base),
+// then draws the card's uppercase accent title and a hairline, returning the y
+// of the card's first row. Pure draw (no widget ids), so it never disturbs
+// hit-testing, per-tab scroll, or search. The w param is unused (the region is
+// taken from a.formX/a.formW) but kept so existing call sites need no change.
 func (a *App) settingsSection(y, w int32, title string) int32 {
 	c := a.ctx
-	y += settSectionTop
-	c.Label(pad, y, strings.ToUpper(title), ColAccent)
+	cardX := a.formX - settCardPadX
+	cardW := a.formW + 2*settCardPadX
+	c.Fill(sdl.Rect{X: cardX, Y: y, W: cardW, H: settCardGap}, ColBackground)
+	y += settCardGap + settCardTopPad
+	c.Label(a.formX, y, strings.ToUpper(title), ColAccent)
 	y += settSectionMid
-	c.Fill(sdl.Rect{X: pad, Y: y, W: w - 2*pad - scrollBarW, H: 1}, ColPanelHi)
+	c.Fill(sdl.Rect{X: a.formX, Y: y, W: a.formW, H: 1}, ColPanelHi)
 	y += settSectionBot
 	return y
 }
 
+// formW2 returns the shadow value for a section/helper's `w` parameter so its
+// existing `w - pad - K - scrollBarW` width math and `w - scrollBarW` right edge
+// resolve inside the content card. Paired with `pad := a.formX` at the top of
+// every settings draw helper. (See drawSettingsGeneral for the pattern.)
+func (a *App) formW2() int32 { return a.formX + a.formW + scrollBarW }
+
 // drawSettingsGeneral: identity + display toggles + UI scale + font chain.
 func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX // rebase every pad-relative box into the content card
+	w = a.formW2()
 	y = a.settingsSection(y, w, "Identity")
 	// Showname: write-through to prefs. A stale once-per-session copy here
 	// used to overwrite names typed in the courtroom on Back.
@@ -922,7 +966,7 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 	}
 	y += 28
 	if a.d.Prefs.WindowFullscreen() {
-		c.LabelClipped(pad, y+4, w-2*pad-scrollBarW, "Press F11 or untick Fullscreen to return to a window.", ColTextDim)
+		c.LabelClipped(pad, y+4, a.formW, "Press F11 or untick Fullscreen to return to a window.", ColTextDim)
 		y += 28
 	} else {
 		cw, ch := a.ctx.WindowSize()
@@ -1056,6 +1100,8 @@ func (a *App) drawSettingsGeneral(y, w int32) int32 {
 // library/replay picker, and (soon) GIF/video export. See replay.go.
 func (a *App) drawSettingsStudio(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	y = a.settingsSection(y, w, "Scene recording")
 	c.Label(pad, y, "Record the courtroom to a tiny .aorec replay file — it stores the scene EVENTS (who spoke,", ColTextDim)
 	y += 18
@@ -1176,13 +1222,16 @@ func (a *App) drawSettingsStudio(y, w int32) int32 {
 	y += 18
 	c.Label(pad, y, "on a recording above, or build one in the Scene Maker. These settings apply to every export:", ColTextDim)
 	y += 26
-	y = a.drawExportOptions(y, false) // speed lives in the Replay-playback section above
+	y = a.drawExportOptions(a.formX, y, false) // speed lives in the Replay-playback section above
 	return y
 }
 
 // drawSettingsTheme: theme picker/folder, layout toggle, live preview, bind.
 func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	winW := w // real window width, kept for the aspect-true fit preview
+	w = a.formW2()
 	y = a.settingsSection(y, w, "Theme")
 	c.Label(pad, y+4, "Theme:", ColText)
 	// Direct-jump dropdown so a big theme collection is one click + scroll away,
@@ -1260,12 +1309,12 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	if fit == config.ThemeFitCustom {
 		// Big interactive preview (window-shaped): drag to pan, scroll to zoom.
 		boxW := int32(560)
-		if avail := w - 2*pad - scrollBarW; boxW > avail {
+		if avail := a.formW; boxW > avail {
 			boxW = avail
 		}
-		boxH := boxW * h / w // match the real window aspect so the crop is true
+		boxH := boxW * h / winW // match the real window aspect so the crop is true
 		if boxH > 340 {
-			boxH, boxW = 340, 340*w/h
+			boxH, boxW = 340, 340*winW/h
 		}
 		if boxH < 160 {
 			boxH = 160
@@ -1375,6 +1424,8 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 // opt-in downloader, and the cache browser/actions.
 func (a *App) drawSettingsAssets(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	y = a.settingsSection(y, w, "Image formats")
 	global := a.d.Prefs.GlobalFallbacks()
 	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {
@@ -1484,8 +1535,8 @@ func (a *App) drawSettingsAssets(y, w int32) int32 {
 	}
 	y += 32
 	for i, m := range mounts {
-		c.LabelClipped(pad+20, y+4, w-220, fmt.Sprintf("%d. %s", i+1, m), ColText)
-		if c.Button(sdl.Rect{X: w - 180, Y: y, W: 90, H: 24}, "Remove") {
+		c.LabelClipped(pad+20, y+4, a.formW-130, fmt.Sprintf("%d. %s", i+1, m), ColText)
+		if c.Button(sdl.Rect{X: a.formX + a.formW - 90, Y: y, W: 90, H: 24}, "Remove") {
 			next := append(append([]string{}, mounts[:i]...), mounts[i+1:]...)
 			a.d.Prefs.SetLocalAssets(enabled, next)
 			a.rebuildAssetOrigin()
@@ -1660,6 +1711,8 @@ func (a *App) applyPrefsToState() {
 // drawSettingsAudioChat: volumes, message timing, casing alerts, callwords.
 func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	y = a.settingsSection(y, w, "Volume")
 	// Master volume — scales everything; also on the Extras box for quick access.
 	if mv := a.volumeRow(y, "Master volume", a.d.Prefs.MasterVolume()); mv != a.d.Prefs.MasterVolume() {
@@ -2145,6 +2198,8 @@ func (a *App) drawSettingsAudioChat(y, w int32) int32 {
 // drawSettingsAccount: per-server login, the master-list override, Discord.
 func (a *App) drawSettingsAccount(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	y = a.settingsSection(y, w, "Login")
 	// Auto-login: ITS OWN automation, not a macro — per-server creds,
 	// software-detected wire flow, fires on join (or via hotkey/button).
@@ -2169,6 +2224,8 @@ func (a *App) drawSettingsAccount(y, w int32) int32 {
 // drawSettingsHotkeys: hotkey rebinds, macros, and the whole-settings bundle.
 func (a *App) drawSettingsHotkeys(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	y = a.settingsSection(y, w, "Hotkeys")
 	c.Label(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
 	y += 24
@@ -2388,6 +2445,7 @@ func importLearnedAsync(a *App) {
 // OptionalImageFormats order.
 func (a *App) drawTypeFormatRow(typeName string, y int32) int32 {
 	c := a.ctx
+	pad := a.formX
 	c.Label(pad, y+2, typeName+":", ColText)
 	x := pad + 110
 
@@ -2465,6 +2523,8 @@ func containsExt(list []string, ext string) bool {
 // tabbed.)
 func (a *App) drawDownloaderSettings(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	on := a.d.Prefs.CharDownloaderEnabled()
 	if next := c.Checkbox(pad, y, "Built-in downloader (OFF by default) — grab one character or background straight from the server", on); next != on {
 		a.d.Prefs.SetCharDownloader(next)
@@ -2490,10 +2550,10 @@ func (a *App) drawDownloaderSettings(y, w int32) int32 {
 		y += 30
 		root := downloadsRoot()
 		c.LabelClipped(pad+20, y+4, w-pad-360-scrollBarW, "Folder: "+root, ColText)
-		if c.Button(sdl.Rect{X: w - pad - 340 - scrollBarW, Y: y, W: 150, H: btnH}, "Open folder") {
+		if c.Button(sdl.Rect{X: a.formX + a.formW - 340, Y: y, W: 150, H: btnH}, "Open folder") {
 			_ = exec.Command("explorer.exe", root).Start()
 		}
-		if c.Button(sdl.Rect{X: w - pad - 180 - scrollBarW, Y: y, W: 180, H: btnH}, "Add to local mounts") {
+		if c.Button(sdl.Rect{X: a.formX + a.formW - 180, Y: y, W: 180, H: btnH}, "Add to local mounts") {
 			enabled, mounts := a.d.Prefs.LocalAssets()
 			a.d.Prefs.SetLocalAssets(enabled, append(mounts, root))
 			a.rebuildAssetOrigin()
@@ -2508,10 +2568,10 @@ func (a *App) drawDownloaderSettings(y, w int32) int32 {
 				status = "Paused — " + status
 			}
 			c.LabelClipped(pad+20, y+4, w-pad-240-scrollBarW, status, ColAccent)
-			if c.Button(sdl.Rect{X: w - pad - 218 - scrollBarW, Y: y, W: 100, H: btnH}, pauseLabel) {
+			if c.Button(sdl.Rect{X: a.formX + a.formW - 218, Y: y, W: 100, H: btnH}, pauseLabel) {
 				a.dlPaused.Store(!a.dlPaused.Load())
 			}
-			if c.Button(sdl.Rect{X: w - pad - 110 - scrollBarW, Y: y, W: 110, H: btnH}, "Cancel") {
+			if c.Button(sdl.Rect{X: a.formX + a.formW - 110, Y: y, W: 110, H: btnH}, "Cancel") {
 				a.cancelDownload()
 			}
 			y += 30
@@ -2539,6 +2599,7 @@ var casingRoles = []struct {
 // changes re-subscribe live when connected. Returns the next y.
 func (a *App) drawCasingRow(y int32) int32 {
 	c := a.ctx
+	pad := a.formX
 	enabled, roles := a.d.Prefs.Casing()
 	changed := false
 	if next := c.Checkbox(pad, y, "Case announcements (get notified when someone needs your role)", enabled); next != enabled {
@@ -2572,6 +2633,7 @@ func (a *App) drawCasingRow(y int32) int32 {
 // proof of what the current pick actually changes. Returns the next y.
 func (a *App) drawThemePreview(y int32) int32 {
 	c := a.ctx
+	pad := a.formX // rebase into the settings content card
 	const prevW, prevH = 340, 70
 	prev := sdl.Rect{X: pad, Y: y, W: prevW, H: prevH}
 	skinned := false
@@ -2607,6 +2669,8 @@ func (a *App) drawThemePreview(y int32) int32 {
 // Works for any known server (same picker as the login section).
 func (a *App) drawThemeBindRow(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	names, keys := a.loginTargets()
 	if len(names) == 0 {
 		return y
@@ -2749,6 +2813,7 @@ func normalizeThemeRoot(path string) (root, pickName string) {
 // +/- buttons — far nicer to set than stepping a button. Continuous 0–100.
 func (a *App) volumeRow(y int32, name string, value int) int {
 	c := a.ctx
+	pad := a.formX
 	c.Label(pad, y+4, name+":", ColText)
 	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}
 	value = int(c.Slider(name, track, int32(value), 100))
@@ -2760,6 +2825,7 @@ func (a *App) volumeRow(y int32, name string, value int) int {
 // −/+ plus mousewheel over the row).
 func (a *App) numberRow(y int32, label string, value, step, min, max int) int {
 	c := a.ctx
+	pad := a.formX
 	c.Label(pad, y+4, label+":", ColText)
 	if c.Button(sdl.Rect{X: pad + 130, Y: y, W: 24, H: 24}, "-") && value-step >= min {
 		value -= step
@@ -2785,6 +2851,7 @@ func (a *App) numberRow(y int32, label string, value, step, min, max int) int {
 // the step grid and clamps to [min, max].
 func (a *App) sliderRow(y int32, label string, value, step, min, max int) int {
 	c := a.ctx
+	pad := a.formX
 	c.Label(pad, y+4, label+":", ColText)
 	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 90, H: 16}
 	if span := max - min; span > 0 {
@@ -2816,6 +2883,7 @@ func (a *App) sliderRow(y int32, label string, value, step, min, max int) int {
 // authoritative — and the result snaps to the half-second grid.
 func (a *App) previewDelayRow(y int32, ms int) int {
 	c := a.ctx
+	pad := a.formX
 	const (
 		minMs  = 500   // == config.minPreviewHoverMs (setter is authoritative)
 		maxMs  = 15000 // == config.maxPreviewHoverMs

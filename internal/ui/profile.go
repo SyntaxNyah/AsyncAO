@@ -19,6 +19,8 @@ import (
 // below it. Settings-only; never a hot path.
 func (a *App) drawProfileSettings(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX // rebase into the settings content card
+	_ = w          // laid out by formX/formW; w param kept for the call signature
 	pr := a.d.Prefs.Profile()
 	if next := c.Checkbox(pad, y, "Enable my character profile — a small card other AsyncAO players can see", pr.Enabled); next != pr.Enabled {
 		pr.Enabled = next

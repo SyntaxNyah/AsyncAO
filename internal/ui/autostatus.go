@@ -60,6 +60,8 @@ func (a *App) applyAutoStatus(text string) {
 // comma-separated trigger-word field per status. Settings-only; never a hot path.
 func (a *App) drawAutoStatusSettings(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	_ = w // laid out by formX/formW; w param kept for the call signature
 	as := a.d.Prefs.AutoStatus()
 	if next := c.Checkbox(pad, y, "Auto-set my status from words I type in IC (e.g. \"brb\" → AFK)", as.Enabled); next != as.Enabled {
 		as.Enabled = next

@@ -74,6 +74,8 @@ func (a *App) applyChromePreset(key string) {
 // Settings-only; never a hot path.
 func (a *App) drawChromeSettings(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	cur := a.d.Prefs.ChromeTheme()
 	c.Label(pad, y, "Client UI colours — AsyncAO's own panels, separate from AO2 courtroom themes.", ColTextDim)
 	y += 24

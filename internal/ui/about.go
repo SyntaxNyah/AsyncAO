@@ -22,76 +22,61 @@ const (
 	// aboutMascotPx is the on-screen (logical) size of the Mayo portrait, drawn in
 	// the Mayo section; the texture is Catmull-Rom downscaled to this exact size.
 	aboutMascotPx = int32(200)
-	// aboutLinkHeaderGap is the leading space before a section header in the link list.
-	aboutLinkHeaderGap = int32(12)
+	// Reading-column + card geometry. The prose is constrained to a comfortable
+	// measure (not stretched edge-to-edge on wide windows) and centered.
+	aboutMaxColW  = 760 // max reading-column width
+	aboutParaGap  = 12  // vertical space between paragraphs / blocks
+	aboutCardGap  = 12  // vertical space between credit cards
+	aboutCardPad  = 16  // inner padding of a credit card
+	aboutLinkGap  = 6   // vertical space between link buttons in a card
+	aboutTitleGap = 6   // gap under a card title, before its first row
 )
 
-// aboutMayoHeadLine is the first line of the Mayo section. The portrait draws
-// directly above it, so the constant is shared by the text and the draw matcher
-// (they can't drift).
-const aboutMayoHeadLine = "Mayo — the AsyncAO mascot and app icon. The client was almost"
+// aboutBlockKind classifies a prose block so the renderer can colour/indent it.
+type aboutBlockKind int
 
-var aboutLines = []string{
-	"AsyncAO " + protocol.Version,
-	"",
-	"Made by SyntaxNyah.",
-	"",
-	"Why this exists: I was tired of people having to download 20 gigabytes of",
-	"files just to play, of client lookups taking ages, and — let's be honest —",
-	"the AO2 client being a bit slow. AsyncAO streams exactly the assets it",
-	"needs, learns what formats your server ships, caches everything, and",
-	"renders on a zero-allocation hot path. Every millisecond counts.",
-	"",
-	"Optional Discord Rich Presence shows what you're playing - on by default,",
-	"toggle it in Settings -> Discord, and there's no Discord dependency. Don't",
-	"want it at all? A Discord-free build (no Discord code) is on GitHub Actions.",
-	"",
-	"All credit to the original Attorney Online developers:",
-	"  • FanatSors — creator of the original Attorney Online",
-	"  • OmniTroid — original AO2-Client developer, and a huge help on the",
-	"    protocol documentation",
-	"  • The AttorneyOnline organization and every AO2-Client contributor —",
-	"    AsyncAO mirrors their protocol and courtroom semantics",
-	"  • The webAO developers — the asset-URL conventions come from their work",
-	"  • The AO-SDL developers — the SDL2 rendering model reference",
-	"Thank you for two decades of courtroom drama. None of this would exist",
-	"without the things you built and the inspiration they provided.",
-	"",
-	"Closed-source beta testers — thank you for the bug reports, feature",
-	"requests and feedback that shaped AsyncAO during development:",
-	"  Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag · CherriPop",
-	"",
-	"A special thank-you to Northgate — who backed this project, including",
-	"financially, and gave me the inspiration to keep going. Without that",
-	"support AsyncAO wouldn't have come this far this fast. Thank you.",
-	"",
-	aboutMayoHeadLine,
-	"named \"MayAO\" (Maya + AO), but became AsyncAO — we wanted more Maya",
-	"representation, since the AO2 client only ever showed Phoenix and",
-	"Edgeworth. So the mascot is Mayo: inspired by Maya Fey from Ace",
-	"Attorney, with the Go gopher's blue palette (AsyncAO is written in Go).",
-	"",
-	"Art commissioned by Nyah and illustrated by hlenbchan — please go support",
-	"their work! Instagram: @hlenbchan2. Thank you for bringing Mayo to life.",
-	"",
-	"AsyncAO is FREE SOFTWARE — licensed under the GNU AGPL v3 (the LICENSE file),",
-	"and free all the way down: EVERY dependency is open-source under an AGPL-v3-",
-	"compatible licence (MIT / BSD / ISC / zlib / MPL-2.0 / LGPL, plus the GCC",
-	"runtime's linking exception). No proprietary or closed-source pieces anywhere.",
-	"Each one is linked and credited below — please support them too. Full details:",
-	"docs/THIRD-PARTY-LICENSES.md in the repo.",
-	"",
-	"Copyright (c) 2026 SyntaxNyah and the AsyncAO contributors. Because the whole",
-	"stack is AGPL-v3-compatible free software, AsyncAO may be freely redistributed",
-	"— including as binary GitHub releases — in full compliance with the AGPL and",
-	"every dependency's licence (ship the third-party notices alongside binaries).",
-	"",
-	"Pull requests, bug fixes and feature requests are welcome!",
+const (
+	abTitle  aboutBlockKind = iota // the app name + version (accent)
+	abPara                         // a normal wrapped paragraph
+	abBullet                       // a "• " item with a hanging indent
+	abMayo                         // a paragraph with the Mayo portrait centered above it
+	abAccent                       // an accent-coloured call to action
+)
+
+// aboutBlock is one unit of About prose. The text is stored UN-wrapped (full
+// paragraphs); the renderer reflows it to the current column width. The wording
+// is identical to the old hard-wrapped lines — only the line breaks are gone, so
+// the page reads as paragraphs at any width.
+type aboutBlock struct {
+	kind aboutBlockKind
+	text string
+}
+
+var aboutBlocks = []aboutBlock{
+	{abTitle, "AsyncAO " + protocol.Version},
+	{abPara, "Made by SyntaxNyah."},
+	{abPara, "Why this exists: I was tired of people having to download 20 gigabytes of files just to play, of client lookups taking ages, and — let's be honest — the AO2 client being a bit slow. AsyncAO streams exactly the assets it needs, learns what formats your server ships, caches everything, and renders on a zero-allocation hot path. Every millisecond counts."},
+	{abPara, "Optional Discord Rich Presence shows what you're playing - on by default, toggle it in Settings -> Discord, and there's no Discord dependency. Don't want it at all? A Discord-free build (no Discord code) is on GitHub Actions."},
+	{abPara, "All credit to the original Attorney Online developers:"},
+	{abBullet, "FanatSors — creator of the original Attorney Online"},
+	{abBullet, "OmniTroid — original AO2-Client developer, and a huge help on the protocol documentation"},
+	{abBullet, "The AttorneyOnline organization and every AO2-Client contributor — AsyncAO mirrors their protocol and courtroom semantics"},
+	{abBullet, "The webAO developers — the asset-URL conventions come from their work"},
+	{abBullet, "The AO-SDL developers — the SDL2 rendering model reference"},
+	{abPara, "Thank you for two decades of courtroom drama. None of this would exist without the things you built and the inspiration they provided."},
+	{abPara, "Closed-source beta testers — thank you for the bug reports, feature requests and feedback that shaped AsyncAO during development:"},
+	{abPara, "Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag · CherriPop"},
+	{abPara, "A special thank-you to Northgate — who backed this project, including financially, and gave me the inspiration to keep going. Without that support AsyncAO wouldn't have come this far this fast. Thank you."},
+	{abMayo, "Mayo — the AsyncAO mascot and app icon. The client was almost named \"MayAO\" (Maya + AO), but became AsyncAO — we wanted more Maya representation, since the AO2 client only ever showed Phoenix and Edgeworth. So the mascot is Mayo: inspired by Maya Fey from Ace Attorney, with the Go gopher's blue palette (AsyncAO is written in Go)."},
+	{abPara, "Art commissioned by Nyah and illustrated by hlenbchan — please go support their work! Instagram: @hlenbchan2. Thank you for bringing Mayo to life."},
+	{abPara, "AsyncAO is FREE SOFTWARE — licensed under the GNU AGPL v3 (the LICENSE file), and free all the way down: EVERY dependency is open-source under an AGPL-v3-compatible licence (MIT / BSD / ISC / zlib / MPL-2.0 / LGPL, plus the GCC runtime's linking exception). No proprietary or closed-source pieces anywhere. Each one is linked and credited below — please support them too. Full details: docs/THIRD-PARTY-LICENSES.md in the repo."},
+	{abPara, "Copyright (c) 2026 SyntaxNyah and the AsyncAO contributors. Because the whole stack is AGPL-v3-compatible free software, AsyncAO may be freely redistributed — including as binary GitHub releases — in full compliance with the AGPL and every dependency's licence (ship the third-party notices alongside binaries)."},
+	{abAccent, "Pull requests, bug fixes and feature requests are welcome!"},
 }
 
 // aboutLink is one row in the About link list. A blank url marks a SECTION HEADER
-// (drawn as a label, not a clickable button) — so the list renders as titled
-// groups; a blank label is just a spacer.
+// (a card title) — so the list renders as titled cards; the items under it are
+// clickable buttons.
 type aboutLink struct {
 	label string
 	url   string
@@ -135,40 +120,113 @@ var aboutLinks = []aboutLink{
 	{"OpenDyslexic — the dyslexia-friendly font (SIL OFL 1.1)", "https://opendyslexic.org"},
 }
 
+// aboutFlatLine is one rendered line after a block is wrapped to the column.
+type aboutFlatLine struct {
+	text   string
+	indent int32 // x offset within the column (bullet hanging indent)
+	col    sdl.Color
+	mayo   bool  // draw the Mayo portrait centered above this line
+	gap    int32 // extra vertical space BEFORE this line (paragraph spacing)
+}
+
+// buildAboutFlat reflows every prose block to colW. Cached by width in drawAbout
+// so it runs only on a resize, never per frame.
+func (a *App) buildAboutFlat(c *Ctx, colW int32) []aboutFlatLine {
+	out := make([]aboutFlatLine, 0, len(aboutBlocks)*3)
+	bulletIndent := c.TextWidth("•  ")
+	for bi, b := range aboutBlocks {
+		col := ColText
+		switch b.kind {
+		case abTitle, abAccent:
+			col = ColAccent
+		}
+		gap := int32(aboutParaGap)
+		if bi == 0 {
+			gap = 0
+		}
+		switch b.kind {
+		case abBullet:
+			lines := c.WrapText(b.text, colW-bulletIndent, 0)
+			for i, ln := range lines {
+				fl := aboutFlatLine{text: ln, col: col, indent: bulletIndent}
+				if i == 0 {
+					fl.text = "•  " + ln
+					fl.indent = 0
+					fl.gap = 2 // bullets pack tighter than paragraphs
+				}
+				out = append(out, fl)
+			}
+		default:
+			lines := c.WrapText(b.text, colW, 0)
+			for i, ln := range lines {
+				fl := aboutFlatLine{text: ln, col: col}
+				if i == 0 {
+					fl.gap = gap
+					fl.mayo = b.kind == abMayo
+				}
+				out = append(out, fl)
+			}
+		}
+	}
+	return out
+}
+
 func (a *App) drawAbout(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
+
+	// --- header band ---------------------------------------------------------
 	c.Heading(pad, pad, "About AsyncAO", ColText)
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
 		a.screen = a.prevScreen
 		return
 	}
+	top := pad + 48
+	c.Fill(sdl.Rect{X: 0, Y: top - 10, W: w, H: 1}, ColPanelHi) // hairline under the header
+	viewH := h - top - pad
+
+	// --- centered reading column --------------------------------------------
+	colW := w - 2*pad - scrollBarW - 2*pad
+	if colW > aboutMaxColW {
+		colW = aboutMaxColW
+	}
+	if colW < 200 {
+		colW = 200
+	}
+	x0 := (w - scrollBarW - colW) / 2
+	if x0 < pad {
+		x0 = pad
+	}
+
+	// Reflow only when the column width changes (off the hot path, but kept
+	// alloc-free per frame per this repo's UI bar).
+	if a.aboutFlat == nil || a.aboutFlatW != colW {
+		a.aboutFlat = a.buildAboutFlat(c, colW)
+		a.aboutFlatW = colW
+	}
 
 	lineH := int32(c.font.Height()) + 4
-	top := pad + 48 // content viewport starts below the heading
-	viewH := h - top - pad
-	// Mayo portrait — built once (lazily), drawn within the Mayo section below (not
-	// alone at the top). mayoTexture returns the logical draw size.
 	mayoTex, mayoLogW, mayoLogH := a.mayoTexture()
-	mascotBlock := int32(0)
-	if mayoTex != nil && mayoLogW > 0 && mayoLogH > 0 {
-		mascotBlock = mayoLogH + 12 // portrait + gap above the Mayo text
+	hasMayo := mayoTex != nil && mayoLogW > 0 && mayoLogH > 0
+	mayoBlock := int32(0)
+	if hasMayo {
+		mayoBlock = mayoLogH + 12
 	}
-	// The page outgrew small windows, so it scrolls. Total height = text lines + the
-	// portrait + the gap + the link rows. Link rows are buttons (btnH) or section
-	// headers (a label, taller by the leading gap); sum exactly so the clamp is right.
-	linksH := int32(0)
-	for _, link := range aboutLinks {
-		if link.url == "" { // section header (or blank spacer)
-			linksH += aboutLinkHeaderGap
-			if link.label != "" {
-				linksH += lineH
-			}
-		} else {
-			linksH += btnH + 6
+
+	// --- total content height (prose + portrait + link cards) ---------------
+	contentH := int32(0)
+	for _, fl := range a.aboutFlat {
+		contentH += fl.gap + lineH
+		if fl.mayo && hasMayo {
+			contentH += mayoBlock
 		}
 	}
-	contentH := mascotBlock + int32(len(aboutLines))*lineH + 10 + linksH
+	contentH += aboutParaGap
+	for _, g := range aboutLinkGroups() {
+		contentH += aboutCardGap + g.height(lineH)
+	}
+	contentH += pad
+
 	maxScroll := contentH - viewH
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -184,47 +242,107 @@ func (a *App) drawAbout(w, h int32) {
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
 	_ = c.Ren.SetClipRect(&clip)
 	defer func() { _ = c.Ren.SetClipRect(nil) }()
+
 	y := top - a.aboutScroll
-	for _, line := range aboutLines {
-		// The Mayo portrait sits with its section (centered above the head line),
-		// not floating alone at the top of the page. Clip handles partial visibility.
-		if line == aboutMayoHeadLine && mascotBlock > 0 {
-			dst := sdl.Rect{X: (w - mayoLogW) / 2, Y: y, W: mayoLogW, H: mayoLogH}
+	for _, fl := range a.aboutFlat {
+		y += fl.gap
+		if fl.mayo && hasMayo {
+			dst := sdl.Rect{X: x0 + (colW-mayoLogW)/2, Y: y, W: mayoLogW, H: mayoLogH}
 			_ = c.Ren.Copy(mayoTex, nil, &dst)
-			y += mascotBlock
+			y += mayoBlock
 		}
-		col := ColText
-		if line == "Pull requests, bug fixes and feature requests are welcome!" {
-			col = ColAccent
+		if y+lineH > top && y < top+viewH { // skip lines scrolled out of view
+			c.Label(x0+fl.indent, y, fl.text, fl.col)
 		}
-		c.Label(pad, y, line, col)
 		y += lineH
 	}
 
-	y += 10
-	for _, link := range aboutLinks {
-		// A blank url is a SECTION HEADER (accent label), so the long credits list
-		// reads as titled groups instead of one undifferentiated wall of buttons.
-		if link.url == "" {
-			y += aboutLinkHeaderGap
-			if link.label != "" {
-				if y+lineH > top && y < top+viewH {
-					c.Label(pad, y, link.label, ColAccent)
-				}
-				y += lineH
+	// --- credit cards --------------------------------------------------------
+	y += aboutParaGap
+	for _, g := range aboutLinkGroups() {
+		y += aboutCardGap
+		ch := g.height(lineH)
+		// Only draw + hit-test a card while any of it is on screen.
+		if y+ch > top && y < top+viewH {
+			card := sdl.Rect{X: x0, Y: y, W: colW, H: ch}
+			c.Fill(card, cardColor())
+			c.Border(card, ColPanelHi)
+			ry := y + aboutCardPad
+			if g.title != "" {
+				c.Label(x0+aboutCardPad, ry, g.title, ColAccent)
+				ry += lineH + aboutTitleGap
 			}
+			for _, it := range g.items {
+				bw := c.TextWidth(it.label) + 24
+				if bw > colW-2*aboutCardPad {
+					bw = colW - 2*aboutCardPad
+				}
+				// Per-button viewport guard: the kit hit-tests by cursor position,
+				// not the clip rect, so a button scrolled behind the header must
+				// not draw OR hit-test (else a header click opens a hidden link).
+				if ry+btnH > top && ry < top+viewH {
+					if c.Button(sdl.Rect{X: x0 + aboutCardPad, Y: ry, W: bw, H: btnH}, it.label) {
+						openBrowser(it.url)
+					}
+				}
+				ry += btnH + aboutLinkGap
+			}
+		}
+		y += ch
+	}
+}
+
+// aboutLinkGroup is a titled card of links. Built once from aboutLinks.
+type aboutLinkGroup struct {
+	title string
+	items []aboutLink
+}
+
+// height is the card's pixel height for a given line height: padding, an optional
+// title line, and one button per item.
+func (g aboutLinkGroup) height(lineH int32) int32 {
+	hgt := int32(2 * aboutCardPad)
+	if g.title != "" {
+		hgt += lineH + aboutTitleGap
+	}
+	n := int32(len(g.items))
+	hgt += n*btnH + max32(0, n-1)*aboutLinkGap
+	return hgt
+}
+
+func max32(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// aboutGroupsCache holds the parsed link groups (aboutLinks is static).
+var aboutGroupsCache []aboutLinkGroup
+
+// aboutLinkGroups parses aboutLinks into titled cards once: a blank-url entry
+// starts a new card (its label is the title); url entries are that card's items.
+// Items before the first header (the AsyncAO repo link) form an untitled card.
+func aboutLinkGroups() []aboutLinkGroup {
+	if aboutGroupsCache != nil {
+		return aboutGroupsCache
+	}
+	var groups []aboutLinkGroup
+	cur := -1
+	for _, l := range aboutLinks {
+		if l.url == "" { // section header → new card
+			groups = append(groups, aboutLinkGroup{title: l.label})
+			cur = len(groups) - 1
 			continue
 		}
-		bw := c.TextWidth(link.label) + 24
-		// Only draw + hit-test a button while it's inside the scroll viewport, so one
-		// scrolled out of view can't be clicked through the heading or the page edge.
-		if y+btnH > top && y < top+viewH {
-			if c.Button(sdl.Rect{X: pad, Y: y, W: bw, H: btnH}, link.label) {
-				openBrowser(link.url)
-			}
+		if cur < 0 { // leading item with no header yet
+			groups = append(groups, aboutLinkGroup{})
+			cur = 0
 		}
-		y += btnH + 6
+		groups[cur].items = append(groups[cur].items, l)
 	}
+	aboutGroupsCache = groups
+	return aboutGroupsCache
 }
 
 // openBrowser launches the system browser (go-sdl2 has no SDL_OpenURL

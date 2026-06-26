@@ -21,3 +21,7 @@ coverage.out
 
 # Local release packages (CI artifacts are the shipping builds)
 /dist/
+
+# AppImage build scratch (scripts/build-appimage.sh)
+/AppDir/
+*.AppImage

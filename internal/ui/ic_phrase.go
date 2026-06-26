@@ -79,6 +79,8 @@ func (a *App) pollICPhraseBind() {
 // one canned IC line.
 func (a *App) drawICPhraseSettings(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	_ = w // laid out by formX/formW; w param kept for the call signature
 	binds := a.d.Prefs.ICPhraseBinds()
 	c.Label(pad, y+4, fmt.Sprintf("IC quick-phrases (%d) — a bound key makes your CHARACTER say the line in IC:", len(binds)), ColText)
 	y += 26
@@ -89,8 +91,8 @@ func (a *App) drawICPhraseSettings(y, w int32) int32 {
 	}
 	sort.Strings(keys) // stable display order
 	for _, k := range keys {
-		c.LabelClipped(pad+12, y+3, w-pad*2-80, clampLine(fmt.Sprintf("[%s]  %s", strings.ToUpper(k), binds[k])), ColTextDim)
-		if c.Button(sdl.Rect{X: w - pad - scrollBarW - 56, Y: y, W: 50, H: 22}, "✕") {
+		c.LabelClipped(pad+12, y+3, a.formW-90, clampLine(fmt.Sprintf("[%s]  %s", strings.ToUpper(k), binds[k])), ColTextDim)
+		if c.Button(sdl.Rect{X: a.formX + a.formW - 56, Y: y, W: 50, H: 22}, "✕") {
 			a.d.Prefs.SetICPhraseKey(k, "") // empty clears the bind
 			a.refreshICPhraseKeys()
 		}
@@ -98,12 +100,12 @@ func (a *App) drawICPhraseSettings(y, w int32) int32 {
 	}
 
 	// Editor: the phrase + a key-capture button (the next key binds to this line).
-	settings.icPhrase, _ = c.TextField("icphrase", sdl.Rect{X: pad, Y: y, W: w - pad*2 - 130 - scrollBarW, H: fieldH}, settings.icPhrase, "what your character says, e.g. Happy Pride Month")
+	settings.icPhrase, _ = c.TextField("icphrase", sdl.Rect{X: pad, Y: y, W: a.formW - 130, H: fieldH}, settings.icPhrase, "what your character says, e.g. Happy Pride Month")
 	keyLabel := "Bind key"
 	if a.icPhraseBindFor != "" {
 		keyLabel = "press..."
 	}
-	if c.Button(sdl.Rect{X: w - pad - scrollBarW - 124, Y: y, W: 118, H: btnH}, keyLabel) {
+	if c.Button(sdl.Rect{X: a.formX + a.formW - 124, Y: y, W: 118, H: btnH}, keyLabel) {
 		if p := strings.TrimSpace(settings.icPhrase); p != "" {
 			a.icPhraseBindFor = p // arm: pollICPhraseBind binds the next key to this line
 			a.ctx.focusID = ""

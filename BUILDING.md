@@ -85,6 +85,28 @@ Package names if you'd rather install manually:
 - **Fedora:** `SDL2-devel SDL2_ttf-devel SDL2_mixer-devel libwebp-devel`
 - **Arch:** `sdl2 sdl2_ttf sdl2_mixer libwebp`
 
+### Linux AppImage (self-contained download)
+
+The bare binary above runs only where the SDL2/webp/avif shared libraries are
+already installed. To produce a **single self-contained executable** that
+bundles those libraries (the Linux equivalent of the Windows DLL bundle):
+
+```bash
+./scripts/setup-deps.sh           # the dev libraries, once
+sudo apt-get install -y patchelf desktop-file-utils   # AppImage tooling
+./scripts/build-appimage.sh       # → dist/AsyncAO-x86_64.AppImage
+```
+
+The script builds the release binary, downloads `linuxdeploy` (cached under
+`/.deps/`), bundles the binary's shared-library dependencies, and packs them
+with the Mayo icon and `packaging/linux/asyncao.desktop`. The result runs on any
+reasonably modern x86_64 desktop with no install step. CI builds the same
+AppImage on every push in two flavors (Actions → latest run):
+`asyncao-linux-x86_64-AppImage` (default) and
+`asyncao-linux-x86_64-AppImage-nodiscord` (Discord integration compiled out,
+`-tags nodiscord`). To build the Discord-free one locally, pass your own binary:
+`go build -tags nodiscord -o asyncao ./cmd/asyncao && APPIMAGE_OUTPUT=AsyncAO-nodiscord-x86_64.AppImage ./scripts/build-appimage.sh ./asyncao`.
+
 ## macOS
 
 ```bash

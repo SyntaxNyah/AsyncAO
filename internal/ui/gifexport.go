@@ -157,8 +157,12 @@ func nearestPresetIdx(presets []int, v int) int {
 // Settings → Studio and the in-maker "⚙ Export options" panel so they can't
 // drift. withSpeed is off in Settings (its Replay-playback section owns the
 // slider) and on in the maker (so the speed is editable while building).
-func (a *App) drawExportOptions(y int32, withSpeed bool) int32 {
+func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	c := a.ctx
+	// Shared by the settings Studio tab and the scene maker; align to the
+	// caller's content origin so the rows + sliders land in the right column.
+	a.formX = x
+	pad := a.formX
 	opts := a.d.Prefs.ExportOpts()
 	fx := int32(pad + 130)
 

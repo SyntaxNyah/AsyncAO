@@ -1540,3 +1540,23 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   no matching asset degrades to opening the release page. Verification is
   **integrity** (size / SHA-256), not yet authenticity — release signing can
   slot in later.
+- **Settings & About — sidebar + cards layout**: both pages were re-laid-out for
+  a cleaner, more professional look (**all the text is unchanged**). **Settings**
+  now has a **left category sidebar** (General · Theme · Assets · Audio & Chat ·
+  Account · Hotkeys · Studio) instead of the cramped top chip row, and each
+  section is a **card** on a distinct surface inside a width-constrained content
+  column, so labels and controls line up and the page no longer stretches
+  edge-to-edge on wide monitors. **About** reflows its prose into a **centered
+  reading column** (paragraphs wrap to the window instead of fixed hard-wrapped
+  lines), keeps the Mayo portrait in its section, and groups the credits/links
+  into **titled cards**. Pure layout work — the About wrap is cached by width
+  (no per-frame allocations), and the `BenchmarkRenderFrame` alloc gate is
+  unchanged.
+- **Linux AppImage** (CI + `scripts/build-appimage.sh`): a self-contained,
+  single-file Linux download that **bundles the SDL2 / SDL2_ttf / SDL2_mixer /
+  libwebp / libavif runtime** (resolved from the binary by `linuxdeploy`) so it
+  runs with no install step — the Linux equivalent of the Windows DLL bundle. CI
+  builds it on every push in **two flavors**, default and **Discord-free**
+  (`-tags nodiscord`), uploaded as `asyncao-linux-x86_64-AppImage` and
+  `…-AppImage-nodiscord`. Build it locally with `scripts/build-appimage.sh`
+  (see [BUILDING.md](../BUILDING.md)).

@@ -895,7 +895,7 @@ func (a *App) drawMakerExportPanel(x, y int32) {
 	c := a.ctx
 	c.Label(x, y, "⚙ Export options — apply to 🎞 GIF / 🎬 WebP (buttons above)", ColAccent)
 	y += 30
-	y = a.drawExportOptions(y, true)
+	y = a.drawExportOptions(x, y, true)
 	y += 10
 	c.Label(x, y, "Bigger size / higher frame-rate = a larger file and a shorter GIF (WebP can run longer).", ColTextDim)
 	y += 20

@@ -66,6 +66,8 @@ func mixByte(a, b uint8, mix int) uint8 {
 // returns the y below the section. Settings-only, not a hot path.
 func (a *App) drawNameColorPicker(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX // rebase into the settings content card
+	_ = w
 	on := a.d.Prefs.NameColorsOn()
 	if next := c.Checkbox(pad, y, "Colour each speaker's name (OFF by default): every name gets its own stable colour from its text", on); next != on {
 		a.d.Prefs.SetNameColors(next)
@@ -212,6 +214,8 @@ func (a *App) ensureColorWheel() *sdl.Texture {
 // sets all three.
 func (a *App) drawHighlightPicker(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX // rebase into the settings content card
+	_ = w
 	cur := a.d.Prefs.HighlightColorRGB()
 	r8, g8, b8 := uint8(cur>>16), uint8(cur>>8), uint8(cur)
 	h, s, v := rgbToHSV(r8, g8, b8)

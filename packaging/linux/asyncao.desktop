@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=AsyncAO
+GenericName=Attorney Online 2 Client
+Comment=Maximum-performance Attorney Online 2 client with zero-fallback asset streaming
+Exec=asyncao
+Icon=asyncao
+Terminal=false
+Categories=Game;Network;
+Keywords=AttorneyOnline;AO2;AO;courtroom;visual-novel;
+StartupWMClass=asyncao

@@ -104,6 +104,17 @@ func scaleColor(c sdl.Color, pct int) sdl.Color {
 	return sdl.Color{R: mul(c.R), G: mul(c.G), B: mul(c.B), A: c.A}
 }
 
+// blendCol linearly mixes two colors (t=0 → a, t=1 → b), alpha from a.
+func blendCol(a, b sdl.Color, t float64) sdl.Color {
+	mix := func(x, y uint8) uint8 { return uint8(float64(x) + (float64(y)-float64(x))*t) }
+	return sdl.Color{R: mix(a.R, b.R), G: mix(a.G, b.G), B: mix(a.B, b.B), A: a.A}
+}
+
+// cardColor is the Settings/About "card" surface: a step between the page
+// background and the panel colour, so panel-coloured widgets still read clearly
+// on top of it. Derived from the live palette, so chrome presets recolour it.
+func cardColor() sdl.Color { return blendCol(ColBackground, ColPanel, 0.55) }
+
 // paletteDarkText is the dark ink the readability floor falls back to on
 // LIGHT theme panels (light panels with unreadable sheet text).
 var paletteDarkText = sdl.Color{R: 20, G: 20, B: 24, A: 255}

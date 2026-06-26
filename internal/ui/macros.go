@@ -271,6 +271,8 @@ const macroLineSeparator = "|"
 // drawMacroSettings renders the macro list + editor. Returns the next y.
 func (a *App) drawMacroSettings(y int32, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	_ = w // laid out by formX/formW; w param kept for the call signature
 	macros := a.d.Prefs.Macros()
 	c.Label(pad, y+4, fmt.Sprintf("Macros (%d/%d) — chain OOC commands with %q and fire the whole chain from one key:", len(macros), config.MacroCap, macroLineSeparator), ColText)
 	y += 26
@@ -282,8 +284,8 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 			key = "—"
 		}
 		line := fmt.Sprintf("[%s] %s: %s", key, m.Name, strings.Join(m.Lines, " "+macroLineSeparator+" "))
-		c.LabelClipped(pad+12, y+3, w-pad*2-80, clampLine(line), ColTextDim)
-		if c.Button(sdl.Rect{X: w - pad - scrollBarW - 56, Y: y, W: 50, H: 22}, "✕") {
+		c.LabelClipped(pad+12, y+3, a.formW-90, clampLine(line), ColTextDim)
+		if c.Button(sdl.Rect{X: a.formX + a.formW - 56, Y: y, W: 50, H: 22}, "✕") {
 			removeIdx = i
 		}
 		y += 24
@@ -306,9 +308,9 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 		a.macroBind = 0 // arm capture (Esc cancels)
 		a.ctx.focusID = ""
 	}
-	settings.macroLines, _ = c.TextField("macrolines", sdl.Rect{X: pad + 228, Y: y, W: w - pad*2 - 228 - 130 - scrollBarW, H: fieldH},
+	settings.macroLines, _ = c.TextField("macrolines", sdl.Rect{X: pad + 228, Y: y, W: a.formW - 358, H: fieldH},
 		settings.macroLines, `/cm `+macroLineSeparator+` /area 2 `+macroLineSeparator+` /tsundere 1   (each `+macroLineSeparator+` step sends as its own ENTER)`)
-	if c.Button(sdl.Rect{X: w - pad - scrollBarW - 124, Y: y, W: 118, H: btnH}, "Add macro") {
+	if c.Button(sdl.Rect{X: a.formX + a.formW - 124, Y: y, W: 118, H: btnH}, "Add macro") {
 		name := strings.TrimSpace(settings.macroName)
 		var lines []string
 		for _, l := range strings.Split(settings.macroLines, macroLineSeparator) {
@@ -334,6 +336,8 @@ func (a *App) drawMacroSettings(y int32, w int32) int32 {
 // (auto or manual) the next time you join. Returns the next y.
 func (a *App) drawLoginSettings(y, w int32) int32 {
 	c := a.ctx
+	pad := a.formX
+	w = a.formW2()
 	c.Label(pad, y+4, "Auto-login — for ANY server account (member perks, donator ranks, mod powers). Credentials per server; the wire flow picks itself:", ColText)
 	y += 20
 	c.Label(pad+12, y, "Athena/Nyathena/Whisker: /login username password   ·   KFO: /login password   ·   Akashi: /login ⏎ then username password ⏎", ColTextDim)

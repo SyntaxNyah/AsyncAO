@@ -653,15 +653,24 @@ type App struct {
 	// --- jukebox (global DJ /play music-link library) ---
 	// App-global like dlPaused and OUTSIDE sessionState: the library is shared
 	// across every server and must survive disconnects and tab switches.
-	juke            *config.Jukebox      // global store, loaded off-thread
-	jukeRes         chan *config.Jukebox // off-thread load landing
-	jukeIORes       chan string          // off-thread export/import result → in-app toast
-	jukeCache       []config.Playlist    // rev-keyed Playlists() snapshot for drawing
-	jukeCacheRev    int64
-	jukeOpen        int    // -1 = playlist list; else the open playlist index
-	jukeSearch      string // filters playlists (top) or songs (inside one)
-	jukeScroll      int32
-	aboutScroll     int32  // About screen scroll offset (the page outgrew small windows)
+	juke         *config.Jukebox      // global store, loaded off-thread
+	jukeRes      chan *config.Jukebox // off-thread load landing
+	jukeIORes    chan string          // off-thread export/import result → in-app toast
+	jukeCache    []config.Playlist    // rev-keyed Playlists() snapshot for drawing
+	jukeCacheRev int64
+	jukeOpen     int    // -1 = playlist list; else the open playlist index
+	jukeSearch   string // filters playlists (top) or songs (inside one)
+	jukeScroll   int32
+	aboutScroll  int32 // About screen scroll offset (the page outgrew small windows)
+	// About: the prose is reflowed to the current column width with WrapText and
+	// cached here (keyed by width), so the wrap runs only on a resize, never per
+	// frame (the page is off the hot path, but this repo keeps UI draws alloc-free).
+	aboutFlatW int32           // content width the cache was built for (0 = none)
+	aboutFlat  []aboutFlatLine // flattened, wrapped render lines
+	// Settings: the content region (right of the sidebar) the section/row helpers
+	// draw into. Set once per frame by drawSettings; the helpers rebase their
+	// pad-relative layout onto formX so every box lands inside the content card.
+	formX, formW    int32
 	jukeNewName     string // "new playlist" input
 	jukeAddURL      string // "add song" URL input
 	jukeAddTitle    string // "add song" optional title input
