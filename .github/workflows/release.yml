@@ -1,0 +1,187 @@
+# AsyncAO release pipeline. Pushing a tag like `v0.1.0` builds every platform
+# (Discord-bundled default + a `-tags nodiscord` flavour), STAMPS the running
+# version into the binary (so the in-app self-update check works — an unstamped
+# build reports "dev" and never updates), and publishes a GitHub Release with all
+# the assets attached. This is the "use the GitHub API instead of shipping to
+# testers by hand" pipeline: tag, push, done.
+#
+# Asset names are deliberate — the self-updater downloads ONE asset and renames
+# it straight over the running executable, so the swappable default MUST be a bare
+# binary whose name carries this platform's token (see update.SelfUpdateAssetMatch):
+#   asyncao-windows-x86_64.exe        <- Windows self-update target (DLLs already beside it)
+#   asyncao-windows-x86_64-bundle.zip <- Windows FIRST install (exe + runtime DLLs)
+#   AsyncAO-linux-x86_64.AppImage     <- Linux: self-contained, serves install AND self-update
+#   asyncao-macos-arm64               <- macOS (Apple Silicon) bare binary
+# The -nodiscord / -bundle variants are named so they never collide with a token.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Manual re-run for debugging the pipeline without cutting a tag (publishes
+  # nothing unless a matching tag exists — gh --verify-tag guards that).
+  workflow_dispatch:
+
+permissions:
+  contents: write # gh release create writes a Release on this repo
+
+env:
+  GO_VERSION: "1.24"
+  # The version stamped into every binary for the self-update check (inlined into
+  # each build step as `…Version=${{ github.ref_name }}`). github.ref_name is the
+  # tag (e.g. v0.1.0) on a tag push; a manual dispatch from a branch stamps the
+  # branch name, which compareSemver reads as 0.0.0 (harmless — that run won't
+  # publish anyway, see the release job's tag guard).
+
+jobs:
+  build-windows:
+    name: Windows x86_64${{ matrix.variant.label }}
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        variant:
+          - { id: default, label: "", tags: "", exe: "asyncao-windows-x86_64.exe", zip: "asyncao-windows-x86_64-bundle.zip" }
+          - { id: nodiscord, label: " (Discord-free)", tags: "nodiscord", exe: "asyncao-windows-x86_64-nodiscord.exe", zip: "asyncao-windows-x86_64-nodiscord-bundle.zip" }
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-SDL2
+            mingw-w64-ucrt-x86_64-SDL2_ttf
+            mingw-w64-ucrt-x86_64-SDL2_mixer
+            mingw-w64-ucrt-x86_64-libwebp
+            mingw-w64-ucrt-x86_64-libavif
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      # See ci.yml: setup-go's PATH edit is invisible to the MSYS2 shell, so
+      # republish GOROOT (a non-PATH env var DOES cross into MSYS2).
+      - name: Expose GOROOT to the MSYS2 shell
+        shell: pwsh
+        run: '"GOROOT=$(go env GOROOT)" | Out-File -FilePath $env:GITHUB_ENV -Append'
+      - name: Build + bundle DLLs
+        run: |
+          export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
+          export CGO_ENABLED=1
+          mkdir -p dist
+          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
+            -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
+            -o dist/asyncao.exe ./cmd/asyncao
+          # Ship the runtime DLLs next to the exe so the bundle runs anywhere.
+          ldd dist/asyncao.exe | grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do
+            cp "$dll" dist/
+          done
+      - name: Name the release assets (bare exe + DLL bundle)
+        shell: pwsh
+        run: |
+          Copy-Item dist\asyncao.exe ".\${{ matrix.variant.exe }}"
+          Compress-Archive -Path dist\* -DestinationPath ".\${{ matrix.variant.zip }}" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-${{ matrix.variant.id }}
+          path: |
+            ${{ matrix.variant.exe }}
+            ${{ matrix.variant.zip }}
+
+  build-linux:
+    name: Linux x86_64 AppImage${{ matrix.variant.label }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        variant:
+          - { id: default, label: "", tags: "", out: "AsyncAO-linux-x86_64.AppImage" }
+          - { id: nodiscord, label: " (Discord-free)", tags: "nodiscord", out: "AsyncAO-linux-x86_64-nodiscord.AppImage" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Install SDL2 + libwebp + libavif + AppImage tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev \
+            patchelf desktop-file-utils
+      - name: Build (version-stamped)
+        run: |
+          export CGO_ENABLED=1
+          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
+            -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
+            -o asyncao ./cmd/asyncao
+      - name: Package the AppImage
+        run: |
+          chmod +x scripts/build-appimage.sh
+          APPIMAGE_OUTPUT="${{ matrix.variant.out }}" scripts/build-appimage.sh ./asyncao
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-${{ matrix.variant.id }}
+          path: dist/${{ matrix.variant.out }}
+
+  build-macos:
+    name: macOS arm64${{ matrix.variant.label }}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        variant:
+          - { id: default, label: "", tags: "", asset: "asyncao-macos-arm64" }
+          - { id: nodiscord, label: " (Discord-free)", tags: "nodiscord", asset: "asyncao-macos-nodiscord-arm64" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Install SDL2 + libwebp + libavif
+        run: brew install sdl2 sdl2_ttf sdl2_mixer webp libavif pkg-config
+      - name: Build (version-stamped)
+        run: |
+          export CGO_ENABLED=1
+          go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
+            -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
+            -o "${{ matrix.variant.asset }}" ./cmd/asyncao
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-${{ matrix.variant.id }}
+          path: ${{ matrix.variant.asset }}
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    # Only publish on a real tag push — a manual workflow_dispatch from a branch
+    # builds the binaries (handy for debugging the pipeline) but doesn't publish.
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the annotated tag's message for the release notes
+      - name: Collect all built assets
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
+      - name: Build release notes from the tag annotation
+        run: |
+          git tag -l --format='%(contents)' "${{ github.ref_name }}" > notes.md
+          if [ ! -s notes.md ]; then
+            echo "AsyncAO ${{ github.ref_name }}" > notes.md
+          fi
+          echo "----- release notes -----"; cat notes.md
+          echo "----- assets -----"; ls -la dist
+      - name: Create / update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "AsyncAO ${{ github.ref_name }}" \
+            --notes-file notes.md \
+            --verify-tag \
+            dist/*
