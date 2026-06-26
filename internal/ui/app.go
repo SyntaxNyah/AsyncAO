@@ -642,6 +642,36 @@ type App struct {
 	clientWin     floatWin
 	clientHdr     string
 	clientHdrName string
+	// clientFull toggles the full-theme view (the WHOLE pinned client UI, view-only)
+	// vs compact (stage + log + input). Full-theme renders the pinned drawCourtroom
+	// into clientTex at the logical screen size (so the theme lays out exactly as the
+	// primary), then shrink-blits it into the window — recreated only on a size change.
+	// VIEW-ONLY by necessity: the kit is single-instance (fixed widget ids would
+	// collide with the primary's, and a.screen / modal writes would leak), so input is
+	// neutralized during that pass; you watch the whole theme and chat via the input
+	// strip below it. Opt-in (default compact) — the primary path is untouched.
+	clientFull bool
+	clientTex  *sdl.Texture
+	clientTexW int32
+	clientTexH int32
+	// pinnedPass is true ONLY during the full-theme drawCourtroom render of the
+	// pinned client. Single-consumer App channel drains (pollCharINI) skip while it's
+	// set, so the view-only pass can't eat an async result meant for the primary —
+	// the pinned client is already fully loaded in its parked sessionState.
+	pinnedPass bool
+	// Per-instance chat-raster cache for the full-theme pass, swapped in around its
+	// drawCourtroom so it does NOT thrash the PRIMARY's single-slot msRaster (which
+	// would otherwise rebuild a GPU texture every frame). Mirrors the primary fields.
+	cliMs            *render.MessageRaster
+	cliAnim          *render.AnimatedText
+	cliAnimFont      *ttf.Font
+	cliRasterText    string
+	cliRasterRaw     string
+	cliRasterColor   int
+	cliRasterScale   int
+	cliRasterW       int32
+	cliRasterSkinned bool
+	cliRasterEffSig  uint64
 	// theme-fit Custom preview (Settings → Theme): drag to pan the big preview.
 	themeFitDrag      bool
 	themeFitDragStart [2]int32
@@ -2729,12 +2759,22 @@ func (a *App) splitActive() bool {
 		a.splitTab.state.sess != nil && !a.splitTab.dead
 }
 
-// clearSplit tears the split down (keeps the viewport for reuse).
+// clearSplit tears the floating client down (keeps the viewport for reuse) and
+// frees the full-theme render target + its per-instance raster.
 func (a *App) clearSplit() {
 	a.splitTab, a.splitRoom = nil, nil
 	if a.ctx != nil && a.ctx.focusID == "ic-split" {
-		a.ctx.focusID = "" // the right-pane field is gone — don't leave focus dangling on it
+		a.ctx.focusID = "" // the client's field is gone — don't leave focus dangling on it
 	}
+	if a.clientTex != nil {
+		_ = a.clientTex.Destroy()
+		a.clientTex = nil
+	}
+	if a.cliMs != nil {
+		a.cliMs.Destroy()
+		a.cliMs = nil
+	}
+	a.cliAnim, a.cliAnimFont = nil, nil
 }
 
 // pinToSplit pins a BACKGROUND tab as the floating client window (toggle:
@@ -2782,11 +2822,11 @@ func (a *App) clientWinRect(w, h int32) sdl.Rect {
 }
 
 // drawFloatClient draws the pinned server as a movable + resizable floating
-// "second client" window over the primary courtroom: a title bar (drag handle + ✕
-// close), the server's live stage, its chat log, and an IC input — drag it
-// anywhere, resize it from the corner. Shares the per-frame press edge from
-// drawFloatingPanels (so one press moves/grabs one window). Reuses the unchanged
-// drawSplitLog / drawSplitInput, so the steady frame stays 0-alloc.
+// "second client" window over the primary courtroom: a title bar (drag handle +
+// Full/Compact toggle + ✕ close), then either the COMPACT body (stage + log +
+// input) or the FULL-THEME view (the whole pinned UI, view-only, + the input
+// strip). Shares the per-frame press edge from drawFloatingPanels (so one press
+// moves/grabs one window).
 func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	if !a.splitActive() {
 		return
@@ -2795,24 +2835,46 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	r := a.clientWinRect(w, h)
 	c.Fill(r, ColBackground)
 	c.Border(r, ColAccent)
-	// Title bar = drag handle + close.
+	// Title bar = drag handle + Full/Compact toggle + close.
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
 	if a.clientHdrName != a.splitTab.state.serverName { // memoized: no per-frame concat
 		a.clientHdrName = a.splitTab.state.serverName
 		a.clientHdr = "▣ " + a.clientHdrName
 	}
-	c.LabelClipped(r.X+10, r.Y+8, r.W-44, a.clientHdr, ColAccent)
+	c.LabelClipped(r.X+10, r.Y+8, r.W-102, a.clientHdr, ColAccent)
+	// Full ⇄ Compact: show the whole theme (view-only) or just stage+log+input.
+	tgl := sdl.Rect{X: r.X + r.W - 92, Y: r.Y + 5, W: 60, H: floatTitleH - 10}
+	tglLabel := "Full view"
+	if a.clientFull {
+		tglLabel = "Compact"
+	}
+	if c.Button(tgl, tglLabel) {
+		a.clientFull = !a.clientFull
+	}
+	c.TooltipAfter("cli-full", tgl, "Show the WHOLE theme (emote grid, buttons…) — view-only; chat in the strip below. Roughly doubles render cost while open.")
 	if c.Button(sdl.Rect{X: r.X + r.W - 26, Y: r.Y + 5, W: 20, H: floatTitleH - 10}, "x") {
 		a.clearSplit()
 		return
 	}
-	a.floatWinDrag(&a.clientWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 30, H: floatTitleH}, pressed)
+	a.floatWinDrag(&a.clientWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 98, H: floatTitleH}, pressed)
 	// Bottom-right resize grip — handled before the body so a corner press resizes
 	// rather than landing in the log / input beneath it.
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
-	a.drawClientBody(sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH})
+	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH}
+	if a.clientFull && a.canRenderFullClient() {
+		a.drawClientFull(w, h, body)
+	} else {
+		a.drawClientBody(body)
+	}
 	a.drawResizeGrip(grip)
+}
+
+// canRenderFullClient gates the full-theme render off the primary's exclusive
+// modes (theater / either layout editor): those reskin drawCourtroom globally, so
+// the pinned pass would fight them. Compact view is shown instead while they're on.
+func (a *App) canRenderFullClient() bool {
+	return !a.theaterOn && !a.classicEdit && !a.layoutEdit
 }
 
 // drawClientBody lays the pinned server's stage (4:3, capped), chat log, and IC
@@ -2831,6 +2893,157 @@ func (a *App) drawClientBody(r sdl.Rect) {
 	c.Fill(sdl.Rect{X: logRect.X, Y: logRect.Y - 2, W: logRect.W, H: 1}, ColPanelHi) // rule above the log
 	a.drawSplitLog(logRect, &a.splitTab.state)
 	a.drawSplitInput(inputRow)
+}
+
+// drawClientFull renders the WHOLE pinned client (the full theme — emote grid,
+// buttons, themed chatbox, everything) into the window: the pinned drawCourtroom is
+// drawn to clientTex (view-only) and shrink-blitted into the view area, with a live
+// IC input strip below it so you can still chat. Two servers, both fully visible.
+func (a *App) drawClientFull(w, h int32, body sdl.Rect) {
+	c := a.ctx
+	inputRow := sdl.Rect{X: body.X, Y: body.Y + body.H - splitInputH, W: body.W, H: splitInputH}
+	view := sdl.Rect{X: body.X, Y: body.Y, W: body.W, H: body.H - splitInputH}
+	a.renderFullClientTexture(w, h)
+	if a.clientTex != nil {
+		src := sdl.Rect{X: 0, Y: 0, W: a.clientTexW, H: a.clientTexH}
+		_ = c.Ren.Copy(a.clientTex, &src, &view) // shrink the full-size client into the window
+	} else {
+		c.LabelClipped(view.X+10, view.Y+10, view.W-20, "Full-theme view unavailable on this renderer.", ColTextDim)
+	}
+	a.drawSplitInput(inputRow) // real input strip (sendICSplit) so you can chat in full view
+}
+
+// renderFullClientTexture renders the pinned client's full drawCourtroom into
+// clientTex at the logical screen size (w,h) — so the theme lays out exactly as the
+// primary — for the shrink-blit. The pinned session + live room + viewport + chat-
+// raster cache are temp-swapped into the embedded slots (the proven sendICSplit
+// pattern, extended), input is neutralized, and a.screen / ctx.fieldSeq / ctx.tipText
+// are snapshotted+restored so the VIEW-ONLY pass can't leak navigation, Tab-focus
+// order, or tooltips into the primary. The per-instance raster cache (cli*) means the
+// pass doesn't thrash the primary's single-slot msRaster (a per-frame GPU rebuild).
+func (a *App) renderFullClientTexture(w, h int32) {
+	c := a.ctx
+	if w <= 0 || h <= 0 {
+		return
+	}
+	if a.clientTex == nil || a.clientTexW != w || a.clientTexH != h {
+		if a.clientTex != nil {
+			_ = a.clientTex.Destroy()
+			a.clientTex = nil
+		}
+		tex, err := c.Ren.CreateTexture(uint32(sdl.PIXELFORMAT_ABGR8888), sdl.TEXTUREACCESS_TARGET, w, h)
+		if err != nil {
+			return
+		}
+		a.clientTex, a.clientTexW, a.clientTexH = tex, w, h
+	}
+
+	// Bind the target and draw at 1:1 logical scale. The render-target + scale restore
+	// is DEFERRED so even a panic inside drawCourtroom can't leave the screen rendering
+	// into the texture (a black primary) — the worst silent failure of this path.
+	prevTarget := c.Ren.GetRenderTarget()
+	if c.Ren.SetRenderTarget(a.clientTex) != nil {
+		return
+	}
+	defer func() {
+		_ = c.Ren.SetRenderTarget(prevTarget)
+		s := float32(a.UIScale()) / 100 // restore main's per-frame render scale
+		if s <= 0 {
+			s = 1 // never strand the renderer at scale 0 (UIScale unset)
+		}
+		_ = c.Ren.SetScale(s, s)
+	}()
+	_ = c.Ren.SetScale(1, 1)
+	_ = c.Ren.SetDrawColor(0, 0, 0, 255)
+	_ = c.Ren.Clear()
+
+	// --- swap the pinned client into the embedded slots ---
+	savedSess := a.sessionState
+	savedVP := a.d.Viewport
+	pMs, pAnim, pFont := a.msRaster, a.msAnim, a.msAnimFont // lend the raster slot to the pinned pass
+	pRText, pRRaw, pRCol := a.rasterText, a.rasterRaw, a.rasterColor
+	pRScale, pRW, pRSkin, pREff := a.rasterScale, a.rasterW, a.rasterSkinned, a.rasterEffSig
+	savedScreen := a.screen // view-only pass must not change the primary's screen…
+	savedTip := c.tipText   // …tooltip…
+	savedSeqLen := len(c.fieldSeq)
+	in := a.snapshotInput() // …focus order, or handle any input
+
+	a.sessionState = a.splitTab.state // promotes a.sess / a.icInput / a.emote* … to the pinned tab
+	a.room = a.splitRoom              // drive the pinned LIVE room (a parked tab's sessionState.room is nil)
+	a.d.Viewport = a.splitVP
+	a.msRaster, a.msAnim, a.msAnimFont = a.cliMs, a.cliAnim, a.cliAnimFont
+	a.rasterText, a.rasterRaw, a.rasterColor = a.cliRasterText, a.cliRasterRaw, a.cliRasterColor
+	a.rasterScale, a.rasterW, a.rasterSkinned, a.rasterEffSig = a.cliRasterScale, a.cliRasterW, a.cliRasterSkinned, a.cliRasterEffSig
+	a.pinnedPass = true
+
+	a.drawCourtroom(w, h)
+
+	// --- capture the pinned pass's side effects, then restore the primary ---
+	a.pinnedPass = false
+	a.cliMs, a.cliAnim, a.cliAnimFont = a.msRaster, a.msAnim, a.msAnimFont
+	a.cliRasterText, a.cliRasterRaw, a.cliRasterColor = a.rasterText, a.rasterRaw, a.rasterColor
+	a.cliRasterScale, a.cliRasterW, a.cliRasterSkinned, a.cliRasterEffSig = a.rasterScale, a.rasterW, a.rasterSkinned, a.rasterEffSig
+	a.room = nil                      // a parked tab keeps no room — don't persist splitRoom into its slot
+	a.splitTab.state = a.sessionState // capture emote/scroll/etc. side effects of the view-only pass
+	a.sessionState = savedSess        // restores a.room (primary), a.sess, everything promoted
+	a.d.Viewport = savedVP
+	a.msRaster, a.msAnim, a.msAnimFont = pMs, pAnim, pFont
+	a.rasterText, a.rasterRaw, a.rasterColor = pRText, pRRaw, pRCol
+	a.rasterScale, a.rasterW, a.rasterSkinned, a.rasterEffSig = pRScale, pRW, pRSkin, pREff
+	a.screen = savedScreen
+	c.tipText = savedTip
+	if len(c.fieldSeq) > savedSeqLen {
+		c.fieldSeq = c.fieldSeq[:savedSeqLen] // drop the pinned client's field ids from Tab-cycle
+	}
+	a.restoreInput(in)
+	// (render target + scale restored by the deferred func above)
+}
+
+// ctxInput snapshots the per-frame Ctx input fields so the view-only full-client
+// pass can be run with every click/key/wheel signal cleared (mouse parked far
+// off-screen → hovering() is false everywhere), then restored. Opt-in path, so the
+// small value copy is fine.
+type ctxInput struct {
+	mouseX, mouseY, downX, downY, wheelY     int32
+	clicked, dblClick, rightClicked          bool
+	mouseDown, middleHeld                    bool
+	backspace, enter, tabPressed, escPressed bool
+	keyPressed, hotkey                       sdl.Keycode
+	typed, pasted, dropped, dragID           string
+	copyReq, cutReq, selectAll, wheelTaken   bool
+}
+
+func (a *App) snapshotInput() ctxInput {
+	c := a.ctx
+	in := ctxInput{
+		mouseX: c.mouseX, mouseY: c.mouseY, downX: c.downX, downY: c.downY, wheelY: c.wheelY,
+		clicked: c.clicked, dblClick: c.dblClick, rightClicked: c.rightClicked,
+		mouseDown: c.mouseDown, middleHeld: c.middleHeld,
+		backspace: c.backspace, enter: c.enter, tabPressed: c.tabPressed, escPressed: c.escPressed,
+		keyPressed: c.keyPressed, hotkey: c.hotkey,
+		typed: c.typed, pasted: c.pasted, dropped: c.dropped, dragID: c.dragID,
+		copyReq: c.copyReq, cutReq: c.cutReq, selectAll: c.selectAll, wheelTaken: c.wheelTaken,
+	}
+	c.mouseX, c.mouseY = -30000, -30000 // park off-screen: every hovering()/pointIn is false
+	c.downX, c.downY, c.wheelY = -30000, -30000, 0
+	c.clicked, c.dblClick, c.rightClicked = false, false, false
+	c.mouseDown, c.middleHeld = false, false
+	c.backspace, c.enter, c.tabPressed, c.escPressed = false, false, false, false
+	c.keyPressed, c.hotkey = 0, 0
+	c.typed, c.pasted, c.dropped, c.dragID = "", "", "", ""
+	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = false, false, false, false
+	return in
+}
+
+func (a *App) restoreInput(in ctxInput) {
+	c := a.ctx
+	c.mouseX, c.mouseY, c.downX, c.downY, c.wheelY = in.mouseX, in.mouseY, in.downX, in.downY, in.wheelY
+	c.clicked, c.dblClick, c.rightClicked = in.clicked, in.dblClick, in.rightClicked
+	c.mouseDown, c.middleHeld = in.mouseDown, in.middleHeld
+	c.backspace, c.enter, c.tabPressed, c.escPressed = in.backspace, in.enter, in.tabPressed, in.escPressed
+	c.keyPressed, c.hotkey = in.keyPressed, in.hotkey
+	c.typed, c.pasted, c.dropped, c.dragID = in.typed, in.pasted, in.dropped, in.dragID
+	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = in.copyReq, in.cutReq, in.selectAll, in.wheelTaken
 }
 
 // drawSplitInput draws the pinned pane's IC field. It edits the PINNED tab's own
@@ -3424,6 +3637,9 @@ func (a *App) loadCharINI() {
 }
 
 func (a *App) pollCharINI() {
+	if a.pinnedPass {
+		return // the full-theme pinned render must not drain the primary's char.ini result
+	}
 	select {
 	case res := <-a.charINIres:
 		if res.key != a.serverKey {

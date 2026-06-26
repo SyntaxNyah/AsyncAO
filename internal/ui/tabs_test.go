@@ -195,6 +195,69 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRenderFullClientTextureRestores is a headless smoke test of the full-theme
+// view's swap/restore plumbing — the path with the most ways to SILENTLY corrupt the
+// primary (half-restored sessionState/room/viewport, render target left bound, scale
+// not reset). The pinned tab's swapped-in session is nil, so the inner drawCourtroom
+// hits its sess==nil early-return (no fonts/room/theme harness needed); the test then
+// asserts every piece of primary state — and the renderer — was restored.
+func TestRenderFullClientTextureRestores(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	a := testTabApp(t)
+	a.ctx.Ren = ren
+	a.uiScalePct = 100
+	// Distinctive primary state that must survive the pinned pass untouched.
+	a.serverName = "PrimaryServer"
+	a.screen = ScreenCourtroom
+	primaryVP := render.NewViewport(nil)
+	a.d.Viewport = primaryVP
+	// A pinned client whose swapped-in session is nil → the inner drawCourtroom
+	// early-returns (and sets a.screen=lobby, which the snapshot must undo).
+	a.splitVP = render.NewViewport(nil)
+	a.splitRoom = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
+	a.splitTab = &courtTab{state: sessionState{serverName: "PinnedServer"}} // sess stays nil
+
+	a.renderFullClientTexture(640, 480)
+
+	if a.serverName != "PrimaryServer" {
+		t.Errorf("primary sessionState not restored: serverName=%q", a.serverName)
+	}
+	if a.d.Viewport != primaryVP {
+		t.Error("primary viewport (a.d.Viewport) not restored")
+	}
+	if a.screen != ScreenCourtroom {
+		t.Errorf("primary screen not restored: got %v (the pinned pass set it to lobby)", a.screen)
+	}
+	if a.room != nil {
+		t.Error("primary room not restored (must stay nil here, not the splitRoom)")
+	}
+	if a.pinnedPass {
+		t.Error("pinnedPass left set — primary polls would stay suppressed")
+	}
+	if a.ctx.Ren.GetRenderTarget() != nil {
+		t.Error("render target left bound to the texture — the screen would render into it")
+	}
+	if a.clientTex == nil {
+		t.Error("clientTex should have been created")
+	}
+}
+
+// BenchmarkClientInputSnapshot pins that the per-frame glue the full-theme view adds
+// AROUND the second drawCourtroom render — snapshotting, neutralizing, then restoring
+// the Ctx input so the view-only pass handles nothing — is allocation-free. The second
+// render itself is the inherent, opt-in ~2× cost of a live second client; this proves
+// we add no per-frame GARBAGE on top of it (the avoidable sin). The default/compact
+// path never runs any of this (gated on clientFull && splitActive).
+func BenchmarkClientInputSnapshot(b *testing.B) {
+	a := &App{ctx: &Ctx{}}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		in := a.snapshotInput()
+		a.restoreInput(in)
+	}
+}
+
 // TestTabTearOffToSplit pins the pass-4 gesture: dragging a BACKGROUND chip below
 // the strip enters tear-off mode (suspending reorder), and releasing there pins
 // that tab as the split's right pane — while the ACTIVE tab can never tear off
