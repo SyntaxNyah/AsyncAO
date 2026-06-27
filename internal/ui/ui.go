@@ -19,10 +19,12 @@ import (
 )
 
 const (
-	// UIFontSize is the default chrome font size.
-	UIFontSize = 14
+	// UIFontSize is the default chrome font size. Sized toward classic Windows UI
+	// (~12px) so the base renders compact AND crisp — we never scale the renderer
+	// DOWN (bitmap-downscaled text is a blurry mess); users only ever scale UP.
+	UIFontSize = 12
 	// UIFontSizeBig is for headings.
-	UIFontSizeBig = 22
+	UIFontSizeBig = 18
 
 	// textCacheMax bounds the rendered-label texture cache; past it the
 	// cache purges wholesale. Sized ABOVE the worst case visible at once:

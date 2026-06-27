@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	pad      int32 = 10
-	rowH     int32 = 28
-	fieldH   int32 = 26
-	btnH     int32 = 28
+	pad      int32 = 8 // base unit, rebased ~0.8 toward classic-Windows compactness (was 10)
+	rowH     int32 = 22
+	fieldH   int32 = 21
+	btnH     int32 = 22
 	iconCell int32 = 64
 	iconGap  int32 = 8
 	// previewMax bounds the hover-preview pop-up edge; small sprites
