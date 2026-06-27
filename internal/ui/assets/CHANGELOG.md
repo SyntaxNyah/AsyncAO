@@ -4,7 +4,7 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.0.0 — upcoming
+## v1.0.0 — 2026-06-27
 
 The first stable public release. (The earlier v0.1.x previews were withdrawn —
 see the note at the bottom.)

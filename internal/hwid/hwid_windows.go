@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"os/user"
 	"strings"
+	"syscall"
 )
 
 // roots returns Windows identity roots, strongest first: the per-account SID
@@ -31,8 +32,12 @@ func roots() []string {
 // dependency for one value; reg.exe is a signed in-box tool, run once per connect
 // (cold path). A missing or blocked reg.exe simply drops this root.
 func machineGUID() string {
-	out, err := exec.Command("reg", "query",
-		`HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid").Output()
+	cmd := exec.Command("reg", "query",
+		`HKLM\SOFTWARE\Microsoft\Cryptography`, "/v", "MachineGuid")
+	// HideWindow stops reg.exe flashing a console window when AsyncAO is linked as
+	// a GUI app (-H windowsgui); harmless on a console build.
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
