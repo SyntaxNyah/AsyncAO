@@ -24,6 +24,9 @@ see the note at the bottom.)
 - "~~" center-text prefix, a revamped message editor, a dedicated bottom OOC bar, and drag-select + copy straight from the chatbox.
 - Per-server audio settings with a global fallback.
 
+### Security & moderation
+- Hardened device ID (HDID) — servers key bans on it, so it now derives from stable per-machine/account roots (Windows account SID + machine GUID, Linux machine-id, macOS hardware UUID), salted-SHA-256 hashed so no raw hardware value leaves your machine. Renaming your PC no longer changes it; fit new parts or reinstall and you simply appear as a new device, never false-flagged against an old ban.
+
 ### Updates & packaging
 - Self-update from GitHub Releases: one quiet check on launch, shows the patch notes, then downloads and swaps the binary in place.
 - Automated, version-stamped release pipeline; Linux AppImage builds; an optional Discord-free build.

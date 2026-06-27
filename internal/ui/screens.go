@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -49,8 +48,6 @@ const (
 	cleanGapPx   int32 = 6
 	cleanHeaderH int32 = 20 // titled-header bar height on clean-layout boxes
 )
-
-func osHostname() (string, error) { return os.Hostname() }
 
 // --- LOBBY ------------------------------------------------------------------------
 

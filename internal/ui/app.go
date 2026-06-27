@@ -19,6 +19,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/hwid"
 	"github.com/SyntaxNyah/AsyncAO/internal/metrics"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/presence"
@@ -2134,14 +2135,10 @@ func (a *App) updatePresence() {
 	a.d.Presence.Set(act)
 }
 
-// hdid derives a stable hardware-ish ID (AO servers key bans on it).
-func hdid() string {
-	host, err := hostName()
-	if err != nil {
-		host = "asyncao"
-	}
-	return fmt.Sprintf("asyncao-%x", stringHash(host))
-}
+// hdid is the device ID AO servers key bans on. It derives from stable
+// per-machine/account roots (hwid.Compute) rather than the hostname — see
+// internal/hwid for the roots, hashing and graceful fallback.
+func hdid() string { return hwid.Compute() }
 
 // pumpConnection drains incoming packets into the session each frame.
 func (a *App) pumpConnection() {
@@ -5018,21 +5015,6 @@ func hostOfURL(u string) string {
 		return rest[:j]
 	}
 	return rest
-}
-
-func stringHash(s string) uint64 {
-	// FNV-1a, dependency-free (cache.Key would drag xxhash here for one id).
-	const offset, prime = 14695981039346656037, 1099511628211
-	h := uint64(offset)
-	for i := 0; i < len(s); i++ {
-		h ^= uint64(s[i])
-		h *= prime
-	}
-	return h
-}
-
-func hostName() (string, error) {
-	return osHostname()
 }
 
 // tierColor maps a server entry to its lobby color.
