@@ -799,6 +799,56 @@ func TestViewportExactWidth(t *testing.T) {
 	}
 }
 
+// TestOOCScaleIndependent pins that the OOC log text size is its own pref,
+// clamps to the log-scale bounds, round-trips, and — for legacy configs with no
+// stored value — inherits the IC log size on load (so the OOC box doesn't jump
+// on upgrade) rather than collapsing to the clamp floor.
+func TestOOCScaleIndependent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prefs.json")
+	p, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	// Set the IC log to a non-default size and the OOC independently.
+	p.SetLayoutScales(DefaultViewportPercent, DefaultScalePercent, DefaultScalePercent, 180, DefaultScalePercent)
+	p.SetOOCScale(130)
+	if got := p.OOCScale(); got != 130 {
+		t.Fatalf("OOC scale = %d, want 130 (independent of the 180 log size)", got)
+	}
+	if _, _, _, logT, _ := p.LayoutScales(); logT != 180 {
+		t.Fatalf("log scale = %d, want 180 (OOC change must not touch it)", logT)
+	}
+	p.SetOOCScale(9999) // clamps to the log-scale ceiling
+	if got := p.OOCScale(); got != MaxLogScalePercent {
+		t.Fatalf("OOC clamp = %d, want %d", got, MaxLogScalePercent)
+	}
+	p.SetOOCScale(125)
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	if q, err := load(path); err != nil {
+		t.Fatal(err)
+	} else if got := q.OOCScale(); got != 125 {
+		t.Fatalf("reloaded OOC scale = %d, want 125", got)
+	}
+
+	// Legacy config: a saved file with a log size but NO oocScalePercent must load
+	// the OOC at the log size (inherit once), not at the clamp floor.
+	legacy := filepath.Join(t.TempDir(), "legacy.json")
+	if err := os.WriteFile(legacy, []byte(`{"logScalePercent":170}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lp, err := load(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lp.OOCScale(); got != 170 {
+		t.Fatalf("legacy OOC scale = %d, want 170 (inherit the IC log size)", got)
+	}
+}
+
 // TestNameColorClamp pins the name-colour slider bounds: saturation clamps to
 // 0..100 and brightness is floored at minNameColorVal so a name can't go dark.
 func TestNameColorClamp(t *testing.T) {

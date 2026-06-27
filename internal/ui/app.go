@@ -714,6 +714,7 @@ type App struct {
 
 	// layout scales (percent; mirrors prefs, saved on change)
 	vpPct, chatPct, boxPct, logPct, inputPct int
+	oocPct                                   int // OOC log text size, independent of logPct (IC log)
 	musicPct                                 int // music-list font scale, independent of the log so long titles can shrink without shrinking IC
 	uiScalePct                               int // global renderer scale (manual)
 	// detectedScalePct is the display-DPI-derived scale (96 dpi = 100%),
@@ -1669,6 +1670,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	}()
 	a.applyThemeAsync()                                                         // chatbox skin + font colors from the saved theme
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // pair placement is seeded per-session in resetSessionState (above)
+	a.oocPct = d.Prefs.OOCScale()                                               // OOC log text size, independent of the IC log
 	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
 	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
 	a.uiScalePct = d.Prefs.UIScale()
@@ -1745,6 +1747,7 @@ func (a *App) setDND(on bool) {
 // saveLayout persists the courtroom layout knobs (debounced saver flushes).
 func (a *App) saveLayout() {
 	a.d.Prefs.SetLayoutScales(a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct)
+	a.d.Prefs.SetOOCScale(a.oocPct) // independent OOC log text size
 }
 
 // inputFieldH is the scaled IC/OOC input height.

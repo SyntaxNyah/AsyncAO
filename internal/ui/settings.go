@@ -952,6 +952,11 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.saveLayout()
 	}
 	y += 30
+	if v := a.sliderRow(y, "OOC text size %", a.oocPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent); v != a.oocPct {
+		a.oocPct = v
+		a.saveLayout()
+	}
+	y += 30
 	if v := a.sliderRow(y, "Chatbox text size %", a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent); v != a.chatPct {
 		a.chatPct = v
 		a.saveLayout()
@@ -1706,6 +1711,7 @@ func (a *App) applyPrefsToState() {
 	a.pairOffX, a.pairOffY = a.d.Prefs.PairOffsets()
 	a.pairFlip = a.d.Prefs.PairFlipped()
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
+	a.oocPct = a.d.Prefs.OOCScale()
 	a.uiScalePct = a.d.Prefs.UIScale()
 	a.ctx.SetUIScale(a.UIScale())
 	a.oocName = a.d.Prefs.SavedShowname()

@@ -778,8 +778,9 @@ type AssetPreferences struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
-	EmoteCaptions      bool                      `json:"emoteCaptions"`  // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
-	ViewportExactW     int                       `json:"viewportExactW"` // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
+	EmoteCaptions      bool                      `json:"emoteCaptions"`   // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
+	ViewportExactW     int                       `json:"viewportExactW"`  // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
+	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1021,8 +1022,9 @@ type prefsJSON struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
-	EmoteCaptions      bool                      `json:"emoteCaptions"`  // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
-	ViewportExactW     int                       `json:"viewportExactW"` // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
+	EmoteCaptions      bool                      `json:"emoteCaptions"`   // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
+	ViewportExactW     int                       `json:"viewportExactW"`  // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
+	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1599,6 +1601,14 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.LogScalePct != 0 {
 		p.LogScalePct = clampPercent(onDisk.LogScalePct, MinLogScalePercent, MaxLogScalePercent)
+	}
+	// OOC log text size is independent of the IC log. Legacy configs (no value)
+	// inherit the IC log size once so the OOC box doesn't visibly jump on upgrade;
+	// thereafter the two diverge as each is zoomed on its own.
+	if onDisk.OOCScalePct != 0 {
+		p.OOCScalePct = clampPercent(onDisk.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
+	} else {
+		p.OOCScalePct = p.LogScalePct
 	}
 	if onDisk.InputHeightPct != 0 {
 		p.InputHeightPct = clampPercent(onDisk.InputHeightPct, MinInputPercent, MaxInputPercent)
@@ -4693,6 +4703,26 @@ func (p *AssetPreferences) SetLayoutScales(viewport, chatText, chatBox, logText,
 	}
 	p.ViewportPct, p.ChatScalePct, p.ChatBoxPct, p.LogScalePct, p.InputHeightPct =
 		viewport, chatText, chatBox, logText, input
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// OOCScale reports the OOC log text size percent (independent of the IC log).
+func (p *AssetPreferences) OOCScale() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.OOCScalePct
+}
+
+// SetOOCScale clamps and persists the OOC log text size.
+func (p *AssetPreferences) SetOOCScale(pct int) {
+	pct = clampPercent(pct, MinLogScalePercent, MaxLogScalePercent)
+	p.mu.Lock()
+	if p.OOCScalePct == pct {
+		p.mu.Unlock()
+		return
+	}
+	p.OOCScalePct = pct
 	p.mu.Unlock()
 	p.markDirty()
 }

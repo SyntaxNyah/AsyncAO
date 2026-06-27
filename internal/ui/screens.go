@@ -1692,8 +1692,11 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// The Music tab tunes its OWN scale (musicPct) so you can shrink long track
 	// titles without shrinking the IC log.
 	scale := &a.logPct
-	if a.logTab == logTabMusic {
-		scale = &a.musicPct
+	switch a.logTab {
+	case logTabMusic:
+		scale = &a.musicPct // the Music tab tunes its own scale
+	case logTabOOC:
+		scale = &a.oocPct // the OOC tab resizes OOC text, independent of the IC log
 	}
 	a.zoomWheel(r, scale, config.MinLogScalePercent, config.MaxLogScalePercent)
 	switch a.logTab {
@@ -1952,7 +1955,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 // identity fields).
 func (a *App) drawOOCLogList(list sdl.Rect) {
 	c := a.ctx
-	font := c.LogFont(a.logPct)
+	font := c.LogFont(a.oocPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
 	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
@@ -1964,8 +1967,8 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	}
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
-	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the OOC text.
-	zoomed := a.zoomWheel(list, &a.logPct, config.MinLogScalePercent, config.MaxLogScalePercent)
+	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the OOC text (independent of the IC log).
+	zoomed := a.zoomWheel(list, &a.oocPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	maxScroll := contentH - list.H
 	if maxScroll < 0 {
 		maxScroll = 0
@@ -1994,7 +1997,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 		}
 		if y >= list.Y-lineH {
 			col := ColText
-			font := c.LogFontFor(a.logPct, line)
+			font := c.LogFontFor(a.oocPct, line)
 			// Selection highlight sits under the text.
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
 			// Links in OOC are openable (click) and copyable (right-click) —
@@ -2009,7 +2012,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
-			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
+			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
 		}
 		y += lineH
 	}
@@ -2071,7 +2074,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	fieldsH := nFields*(fH+6) + 4
 	list := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - fieldsH}
 
-	font := c.LogFont(a.logPct)
+	font := c.LogFont(a.oocPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
 	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
@@ -2083,11 +2086,15 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	}
 	contentH := int32(len(lines)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
+	// Ctrl+wheel (fine) / wheel-button (fast) zooms the OOC text, INDEPENDENT of the IC
+	// log. As a docked tab the right-column zoom already consumed the wheel (wheelTaken);
+	// as the standalone default OOC box this is the only handler.
+	zoomed := a.zoomWheel(list, &a.oocPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	maxScroll := contentH - list.H
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
+	if !zoomed { // a zoom consumed the wheel — don't also scroll
 		if d := c.WheelIn(list); d != 0 {
 			a.oocScroll -= d * scrollStepPx
 			a.oocStick = a.oocScroll >= maxScroll // bottom re-sticks, up releases
@@ -2112,7 +2119,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 		}
 		if y >= list.Y-lineH {
 			col := ColText
-			font := c.LogFontFor(a.logPct, line)
+			font := c.LogFontFor(a.oocPct, line)
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
 			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
@@ -2123,7 +2130,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
-			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
+			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
 		}
 		y += lineH
 	}
@@ -3779,9 +3786,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		if sendOOC {
 			a.submitOOC() // shared OOC send: uses your OOC name (or the server default) + clears
 		}
-		// Ctrl+wheel over the OOC row: same log/OOC text-size shortcut.
+		// Ctrl+wheel over the OOC row resizes the OOC text (independent of the IC log).
 		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}) {
-			a.logPct = clampInt(a.logPct+int(c.wheelY)*config.ScaleStepPercent,
+			a.oocPct = clampInt(a.oocPct+int(c.wheelY)*config.ScaleStepPercent,
 				config.MinLogScalePercent, config.MaxLogScalePercent)
 			a.saveLayout()
 		}
