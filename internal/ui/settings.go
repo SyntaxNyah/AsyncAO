@@ -13,6 +13,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -1465,6 +1466,43 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	w := a.formW2()
+
+	// Per-server format profile: probe exactly the formats a given server uses,
+	// seeded instantly so the very first probe is right (no webp-first waste). The
+	// official-vanilla servers carry a built-in example; apply or clear it per server.
+	y = a.settingsSection(y, w, "Server format profile")
+	host := hostOfURL(a.urls.Origin())
+	if host == "" {
+		c.Label(pad, y, "Connect to a server to set its format profile.", ColTextDim)
+		y += 26
+	} else {
+		hasCustom := a.d.Prefs.ExtProfile(host) != ""
+		status := "no profile — fetches this server's extensions.json, else your global default"
+		switch {
+		case hasCustom:
+			status = "custom profile active"
+		case a.extProfileFor(host) != "":
+			status = "built-in official-vanilla profile active"
+		}
+		c.LabelClipped(pad, y, w-pad-scrollBarW, "This server ("+host+"): "+status, ColTextDim)
+		y += 24
+		if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, "Apply official-vanilla profile here") {
+			a.d.Prefs.SetExtProfile(host, assets.BundledVanillaManifestJSON)
+			a.manifestFor = ""     // allow a re-seed
+			a.fetchManifestAsync() // apply instantly
+		}
+		if hasCustom {
+			if c.Button(sdl.Rect{X: pad + 310, Y: y, W: 130, H: btnH}, "Clear profile") {
+				a.d.Prefs.SetExtProfile(host, "")
+				a.manifestFor = ""
+				a.fetchManifestAsync()
+			}
+		}
+		y += btnH + 6
+		c.LabelClipped(pad, y, w-pad-scrollBarW, "A profile probes exactly the formats it lists (per server, instant) and overrides both the server's manifest and your global default — for this server only.", ColTextDim)
+		y += 22
+	}
+
 	y = a.settingsSection(y, w, "Image formats")
 	global := a.d.Prefs.GlobalFallbacks()
 	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {

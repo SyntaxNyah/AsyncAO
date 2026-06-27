@@ -2549,6 +2549,30 @@ func (a *App) pickCharacter(idx int) {
 // stone cold. Default ON (Settings → auto-detect); switching it off keeps
 // the manual per-type probing in full control, and manual orders still
 // govern servers without a manifest either way.
+// extProfileFor returns the effective format profile (extensions.json text) for
+// an asset host: a user-set per-server profile wins; otherwise the AO official
+// vanilla base/server gets the bundled vanilla example. "" = no profile, so the
+// server's own extensions.json is fetched (and the global default still covers a
+// server that ships none).
+func (a *App) extProfileFor(host string) string {
+	if p := a.d.Prefs.ExtProfile(host); p != "" {
+		return p
+	}
+	if a.isOfficialVanilla(host) {
+		return assets.BundledVanillaManifestJSON
+	}
+	return ""
+}
+
+// isOfficialVanilla matches the AO official vanilla base by asset host, or the
+// official vanilla server by the connected server key, so joining it uses the
+// vanilla format profile (the example).
+func (a *App) isOfficialVanilla(assetHost string) bool {
+	h := strings.ToLower(assetHost)
+	return strings.Contains(h, "attorneyoffline.de") ||
+		strings.Contains(strings.ToLower(a.serverKey), "vanilla.aceattorneyonline.com")
+}
+
 func (a *App) fetchManifestAsync() {
 	origin := a.urls.Origin()
 	if !a.d.Prefs.FormatAutoDetect() || a.manifestFor == origin ||
@@ -2557,6 +2581,19 @@ func (a *App) fetchManifestAsync() {
 	}
 	a.manifestFor = origin
 	host := hostOfURL(origin)
+	// A per-host format profile (user-set, or the built-in official-vanilla example)
+	// wins and seeds INSTANTLY — no network round-trip to race the cold load, so the
+	// very first probe already uses the right formats and the server manifest can't be
+	// shadowed by the global default. Unprofiled hosts fall through to the fetch below;
+	// the global default is never touched.
+	if profile := a.extProfileFor(host); profile != "" {
+		if m, err := assets.ParseManifest([]byte(profile)); err == nil {
+			n := m.SeedLearned(a.d.Prefs, host)
+			a.d.Resolver.WarmFromPrefs()
+			a.pushDebug(fmt.Sprintf("format profile: seeded %d classes for %s (instant)", n, host))
+			return
+		}
+	}
 	url := origin + assets.ManifestFileName
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)

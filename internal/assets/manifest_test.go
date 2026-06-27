@@ -36,6 +36,33 @@ func TestManifestParseSanitizes(t *testing.T) {
 	}
 }
 
+// TestBundledVanillaManifest pins the shipped official-vanilla example: it parses
+// and carries the AO defaults — PNG for char icons / emote buttons / backgrounds,
+// .apng-first for emote sprites — and seeds without error.
+func TestBundledVanillaManifest(t *testing.T) {
+	m := BundledVanillaManifest()
+	if len(m.Background) != 1 || m.Background[0] != config.ExtPNG {
+		t.Errorf("vanilla background = %v, want [.png]", m.Background)
+	}
+	if len(m.CharIcon) != 1 || m.CharIcon[0] != config.ExtPNG {
+		t.Errorf("vanilla charicon = %v, want [.png]", m.CharIcon)
+	}
+	if len(m.Emotions) != 1 || m.Emotions[0] != config.ExtPNG {
+		t.Errorf("vanilla emotions = %v, want [.png]", m.Emotions)
+	}
+	if len(m.Emote) == 0 || m.Emote[0] != config.ExtAPNG {
+		t.Errorf("vanilla emote = %v, want .apng first", m.Emote)
+	}
+	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer prefs.Close()
+	if n := m.SeedLearned(prefs, "vanilla.example"); n == 0 {
+		t.Error("bundled vanilla manifest seeded nothing")
+	}
+}
+
 // TestManifestSeedLearned pins the seeding fan-out: emote art covers
 // sprites + shout bubbles + misc, backgrounds cover desk overlays, empty
 // classes seed nothing, and the learned slot gets the FIRST extension.

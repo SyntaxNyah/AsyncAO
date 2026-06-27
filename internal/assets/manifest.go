@@ -44,6 +44,35 @@ var manifestKnownExts = map[string]bool{
 	config.ExtJPG:  true,
 }
 
+// bundledVanillaManifestJSON is the official AO vanilla base's extensions.json
+// (attorneyoffline.de/newvanillabase). It ships as the default for servers that
+// publish no reachable extensions.json of their own: vanilla AO servers serve
+// PNG art, so seeding .png-first beats the webp-led global default and a vanilla
+// server stops wasting a webp probe on every background / icon / emote button. A
+// server that actually serves webp self-corrects on the first probe (RecordSuccess).
+const bundledVanillaManifestJSON = `{
+	"charicon_extensions": [".png"],
+	"emote_extensions": [".apng", ".webp", ".png"],
+	"emotions_extensions": [".png"],
+	"background_extensions": [".png"]
+}`
+
+// BundledVanillaManifestJSON is the official-vanilla manifest as text, exposed so
+// the UI can offer it as the ready-made example a player applies to a per-server
+// format profile (Settings → Assets).
+const BundledVanillaManifestJSON = bundledVanillaManifestJSON
+
+// BundledVanillaManifest returns the parsed official-vanilla default manifest,
+// used to seed a host that has no reachable extensions.json. Parsed fresh on
+// each (rare) call; the const is always valid so the error path can't trigger.
+func BundledVanillaManifest() *Manifest {
+	m, err := ParseManifest([]byte(bundledVanillaManifestJSON))
+	if err != nil {
+		return &Manifest{}
+	}
+	return m
+}
+
 // ParseManifest decodes and sanitizes extensions.json content.
 func ParseManifest(data []byte) (*Manifest, error) {
 	var m Manifest

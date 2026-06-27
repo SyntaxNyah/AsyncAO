@@ -788,13 +788,14 @@ type AssetPreferences struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
-	EmoteCaptions      bool                      `json:"emoteCaptions"`   // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
-	ViewportExactW     int                       `json:"viewportExactW"`  // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
-	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
-	CustomChromeHex    [7]string                 `json:"customChrome"`    // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
-	BoldNamesOff       bool                      `json:"boldNamesOff"`    // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
-	BlipRate           int                       `json:"blipRate"`        // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
-	BlipOnSpaces       bool                      `json:"blipOnSpaces"`    // also blip on spaces (default OFF = skip whitespace)
+	EmoteCaptions      bool                      `json:"emoteCaptions"`         // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
+	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
+	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
+	CustomChromeHex    [7]string                 `json:"customChrome"`          // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
+	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
+	BlipRate           int                       `json:"blipRate"`              // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
+	BlipOnSpaces       bool                      `json:"blipOnSpaces"`          // also blip on spaces (default OFF = skip whitespace)
+	ExtProfiles        map[string]string         `json:"extProfiles,omitempty"` // per asset-host extensions.json override (format profile); seeded instantly on connect, takes precedence over the fetched server manifest + the global default
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1036,13 +1037,14 @@ type prefsJSON struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
-	EmoteCaptions      bool                      `json:"emoteCaptions"`   // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
-	ViewportExactW     int                       `json:"viewportExactW"`  // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
-	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
-	CustomChromeHex    [7]string                 `json:"customChrome"`    // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
-	BoldNamesOff       bool                      `json:"boldNamesOff"`    // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
-	BlipRate           int                       `json:"blipRate"`        // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
-	BlipOnSpaces       bool                      `json:"blipOnSpaces"`    // also blip on spaces (default OFF = skip whitespace)
+	EmoteCaptions      bool                      `json:"emoteCaptions"`         // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
+	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
+	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
+	CustomChromeHex    [7]string                 `json:"customChrome"`          // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
+	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
+	BlipRate           int                       `json:"blipRate"`              // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
+	BlipOnSpaces       bool                      `json:"blipOnSpaces"`          // also blip on spaces (default OFF = skip whitespace)
+	ExtProfiles        map[string]string         `json:"extProfiles,omitempty"` // per asset-host extensions.json override (format profile); seeded instantly on connect, takes precedence over the fetched server manifest + the global default
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1565,6 +1567,9 @@ func load(path string) (*AssetPreferences, error) {
 		p.BlipRate = clampPercent(onDisk.BlipRate, MinBlipRate, MaxBlipRate)
 	}
 	p.BlipOnSpaces = onDisk.BlipOnSpaces
+	if onDisk.ExtProfiles != nil {
+		p.ExtProfiles = onDisk.ExtProfiles
+	}
 	if onDisk.ThemeLayout != nil {
 		p.ThemeLayoutOn = *onDisk.ThemeLayout
 	}
@@ -5632,6 +5637,33 @@ func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 		p.LearnedFormats = map[string][]string{}
 	}
 	p.LearnedFormats[key] = []string{ext}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ExtProfile returns the per-host extensions.json format profile (raw JSON), or
+// "" if none. A profile is seeded synchronously on connect and overrides both the
+// fetched server manifest and the global default — for that host only.
+func (p *AssetPreferences) ExtProfile(host string) string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ExtProfiles[host]
+}
+
+// SetExtProfile sets (or clears, with "") a host's format profile.
+func (p *AssetPreferences) SetExtProfile(host, profileJSON string) {
+	if host == "" {
+		return
+	}
+	p.mu.Lock()
+	if p.ExtProfiles == nil {
+		p.ExtProfiles = map[string]string{}
+	}
+	if profileJSON == "" {
+		delete(p.ExtProfiles, host)
+	} else {
+		p.ExtProfiles[host] = profileJSON
+	}
 	p.mu.Unlock()
 	p.markDirty()
 }
