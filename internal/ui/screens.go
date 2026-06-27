@@ -692,6 +692,11 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 	a.previewFrameRect = frame // cached for handlePreviewInput (wheel zoom + drag)
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
+	if a.previewPinned { // close button for the pinned box (click handled in handlePreviewInput)
+		xb := sdl.Rect{X: frame.X + frame.W - 20, Y: frame.Y + 2, W: 18, H: 18}
+		c.Fill(xb, ColPanelHi)
+		c.Label(xb.X+5, xb.Y+1, "x", ColText)
+	}
 	if ready {
 		tex := page.Frames[pageFrameLoop(page, a.now().Sub(a.previewAt))]
 		if a.previewZoom > 1 {
@@ -734,6 +739,9 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 // state check, called only while a preview is up — off the hot path.
 func (a *App) closeSpritePreviewOnLeave() {
 	c := a.ctx
+	if a.previewPinned {
+		return // pinned: the box stays open until its x is clicked (handlePreviewInput)
+	}
 	if c.clicked {
 		a.closeSpritePreview()
 		return
@@ -763,6 +771,7 @@ func (a *App) closeSpritePreviewOnLeave() {
 func (a *App) closeSpritePreview() {
 	a.previewBase = ""
 	a.previewEntered = false
+	a.previewPinned = false
 }
 
 // unionRect is the smallest rect covering both a and b — the hover-preview "travel
@@ -798,6 +807,14 @@ func (a *App) handlePreviewInput() {
 	box := a.previewFrameRect
 	if box.W == 0 { // no preview drawn yet
 		return
+	}
+	if a.previewPinned { // pinned box: its x claims the click before the drag-start below
+		xb := sdl.Rect{X: box.X + box.W - 20, Y: box.Y + 2, W: 18, H: 18}
+		if c.clicked && c.hovering(xb) {
+			a.closeSpritePreview()
+			c.clicked = false
+			return
+		}
 	}
 	// Wheel zoom in/out over the box; claim the wheel so the list/grid under it
 	// doesn't also scroll (same range as the − / + buttons).
@@ -3879,6 +3896,9 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		// emote has a pre-animation, scrub THAT (it loops in the preview box) so
 		// you can watch the flourish before sending; otherwise the TALKING
 		// sprite — what actually plays when this emote is sent.
+		if c.rightClicked && c.hovering(btn) {
+			a.previewPinned = true // right-click pins the preview open until you close it
+		}
 		if c.HoverPreview("emote:"+e.Anim, btn) {
 			a.previewEmote(me, e)
 		}

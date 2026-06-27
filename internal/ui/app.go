@@ -706,6 +706,7 @@ type App struct {
 	// then close it the moment the cursor leaves the box (beta feedback).
 	previewTriggerRect sdl.Rect
 	previewEntered     bool
+	previewPinned      bool // right-click pins the sprite-preview box open until you close it (its x)
 	hidden             map[string]bool
 
 	iniRes chan iniswapFetch
