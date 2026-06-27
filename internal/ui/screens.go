@@ -3636,10 +3636,32 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			a.screen = ScreenAbout
 		}
 		x += 86
-		if a.movableButton("ctrl.login", sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...", w, h) {
-			a.openLoginDialog()
+		// Login / account button: once you've saved an account for this server it shows
+		// your username (left-click views your profile via /account); otherwise it's the
+		// plain "Login..." that opens the dialog. Right-click always opens the dialog (log
+		// in / switch / re-login). Account name is per-server (a.serverKey), so it's
+		// correct across multi-server tabs.
+		acct := strings.TrimSpace(a.d.Prefs.ServerWarmInfoFor(a.serverKey).LoginUser)
+		loginLabel, loginW := "Login...", int32(70)
+		if acct != "" {
+			loginLabel, loginW = acct, c.TextWidth(acct)+18
 		}
-		x += 76
+		loginR := a.slotRect("ctrl.login", sdl.Rect{X: x, Y: y2, W: loginW, H: btnH}, w, h)
+		if c.Button(loginR, loginLabel) {
+			if acct != "" {
+				a.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
+			} else {
+				a.openLoginDialog()
+			}
+		}
+		if acct != "" {
+			if c.rightClicked && c.hovering(loginR) {
+				a.openLoginDialog() // re-login / switch account
+			} else if c.hovering(loginR) { // build the hint string only on hover (0-alloc otherwise)
+				c.Tooltip(loginR, "Logged in as "+acct+" — click: view profile (/account) · right-click: log in / switch")
+			}
+		}
+		x += loginW + 6
 		// — Leave — set apart at the end.
 		x += gGap
 		if x+110 > clusterRight {
