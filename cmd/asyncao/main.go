@@ -133,6 +133,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	}
 	sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, scaleHint)
 	sdl.SetHint(sdl.HINT_RENDER_BATCHING, "1")
+	// Mark the process per-monitor DPI-aware BEFORE video init, so Windows renders
+	// us at NATIVE resolution instead of bitmap-upscaling the whole window at
+	// 125%/150% system scaling (the blurry-UI report). No-op off Windows.
+	sdl.SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
 	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO | sdl.INIT_EVENTS); err != nil {
 		return err
 	}
@@ -303,8 +307,13 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// HiDPI: derive the auto UI scale from the desktop DPI (96 dpi =
 	// 100%); the app snaps it to the settings step and the auto-scale
 	// preference (default ON) decides whether it governs.
+	// Now that we're DPI-aware we render at native resolution, so the auto scale
+	// must NOT upscale: ren.SetScale > 1 bitmap-upscales the text into a blur (the
+	// exact complaint at 125%). Cap the detected value at 100% — the base UI is
+	// already compact, and anyone who wants it bigger can opt into the (blurrier)
+	// manual scale-up via the slider.
 	if ddpi, _, _, err := sdl.GetDisplayDPI(0); err == nil && ddpi > 0 {
-		app.SetDetectedUIScale(int(ddpi/baselineDPI*100 + 0.5))
+		app.SetDetectedUIScale(min(100, int(ddpi/baselineDPI*100+0.5)))
 	}
 
 	if serverURL != "" {
