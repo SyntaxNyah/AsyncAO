@@ -976,7 +976,8 @@ type sessionState struct {
 	posBgPages   []*render.TexturePage
 	posBgGen     uint64
 	posBgKey     string
-	posBgAsk     []time.Time // demandAsset pacing for the pos-dropdown thumbnails
+	posBgAsk     []time.Time               // demandAsset pacing for the pos-dropdown thumbnails
+	posThumbFn   func(idx int, r sdl.Rect) // stable (one-time) pos-thumbnail draw fn — avoids a per-frame closure alloc on the hot Pos selector
 	emotes       []courtroom.Emote
 	emoteIdx     int
 	emotePage    int // emote grid paging (classic + themed)

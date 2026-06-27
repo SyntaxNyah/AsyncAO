@@ -1861,12 +1861,18 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 	}
 	c.Fill(r, bg)
 	c.Border(r, ColAccent)
+	labelX := r.X + 6
+	if thumbW > 0 && thumb != nil { // a thumbnail of the CURRENT pick on the closed control, sized to its height
+		tw := (r.H - 4) * 4 / 3
+		thumb(cur, sdl.Rect{X: r.X + 2, Y: r.Y + 2, W: tw, H: r.H - 4})
+		labelX = r.X + 2 + tw + 4
+	}
 	if t, ok := c.textTexture(options[cur], ColText, c.font); ok {
 		w := t.w
-		if maxW := r.W - 22; w > maxW && maxW > 0 {
+		if maxW := r.X + r.W - 16 - labelX; w > maxW && maxW > 0 {
 			w = maxW
 		}
-		c.blitLabel(t, r.X+6, r.Y+(r.H-t.h)/2, w)
+		c.blitLabel(t, labelX, r.Y+(r.H-t.h)/2, w)
 	}
 	c.Label(r.X+r.W-14, r.Y+(r.H-int32(c.font.Height()))/2, "▾", ColTextDim)
 

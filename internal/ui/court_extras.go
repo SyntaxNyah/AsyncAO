@@ -583,8 +583,9 @@ const colorSelectW = 86
 // positions this background actually has art for) instead of guessing from "wit
 // / def / pro …" codes. 48×36 = 4:3.
 const (
-	posThumbW    = 48
-	posThumbRowH = 40
+	posThumbW       = 48
+	posThumbRowH    = 40
+	posSelectThumbW = 96 // closed Pos control width when it carries a bg thumbnail (thumb + side code + chevron)
 )
 
 // drawPosSelect renders the side selector as a real dropdown (AO2's
@@ -605,18 +606,12 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 			break
 		}
 	}
-	ctrl := sdl.Rect{X: x, Y: y, W: posSelectW, H: h}
 	bg := ""
 	if a.sess != nil {
 		bg = a.sess.Background
 	}
-	// The thumbnail closure captures state, so it heap-allocates when built — only
-	// pay that while the list is actually OPEN (a transient user action). The closed
-	// control draws every frame through the plain text path, so the steady-state
-	// courtroom frame stays allocation-free (the open frame's alloc is user-driven).
-	// On the opening click the list is still text for one frame (ddOpen flips inside
-	// the call), then thumbnails from the next frame — an imperceptible flash.
-	if bg == "" || c.ddOpen != "posdd" {
+	if bg == "" { // no background yet → nothing to thumbnail; plain text dropdown
+		ctrl := sdl.Rect{X: x, Y: y, W: posSelectW, H: h}
 		if next, changed := c.Dropdown("posdd", ctrl, choices, cur); changed {
 			a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 		}
@@ -625,25 +620,44 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 	if a.posBgKey != bg { // bg changed: drop the now-wrong thumbnails (cachedPage keys by index, not URL)
 		a.posBgPages, a.posBgKey = nil, bg
 	}
-	// Deferred (FinishFrame, render thread): paint the idx-th row's stage thumbnail.
-	thumb := func(i int, tr sdl.Rect) {
-		if i < 0 || i >= len(choices) {
-			return
-		}
-		bgPart, _ := courtroom.PositionScene(choices[i])
-		base := a.urls.Background(bg, bgPart)
-		if page, ok := a.cachedPage(&a.posBgPages, &a.posBgGen, len(choices), i, base); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &tr)
-		} else {
-			c.Fill(tr, sdl.Color{R: 10, G: 10, B: 14, A: 255})
-			a.demandAsset(&a.posBgAsk, len(choices), i, base, assets.AssetTypeBackground) // AssetType: Background (pos thumb, on open)
-		}
-		c.Border(tr, ColPanelHi)
+	if a.posThumbFn == nil { // bind once: a stable fn (reads the live bg/choices), so the per-frame Pos selector never allocates a closure
+		a.posThumbFn = a.posThumbDraw
 	}
-	if next, changed := c.DropdownThumbs("posdd", ctrl, choices, cur, posThumbRowH, posThumbW, thumb); changed {
+	// Wider control so the CLOSED box fits the current position's bg thumbnail + the
+	// side code + the chevron (playtest: "show the thing that's already selected").
+	ctrl := sdl.Rect{X: x, Y: y, W: posSelectThumbW, H: h}
+	if next, changed := c.DropdownThumbs("posdd", ctrl, choices, cur, posThumbRowH, posThumbW, a.posThumbFn); changed {
 		a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 	}
-	return x + posSelectW + 6
+	return x + posSelectThumbW + 6
+}
+
+// posThumbDraw paints the i-th position's background thumbnail into tr — used by
+// both the open dropdown rows and the closed control's "currently selected" chip.
+// Stored once as a.posThumbFn (not a per-frame closure), and reads the live
+// bg/choices so it's always current. On the render thread (FinishFrame or the
+// closed-control draw), so the on-demand cachedPage / paced fetch is safe.
+func (a *App) posThumbDraw(i int, tr sdl.Rect) {
+	c := a.ctx
+	choices := a.posChoices()
+	bg := ""
+	if a.sess != nil {
+		bg = a.sess.Background
+	}
+	if i < 0 || i >= len(choices) || bg == "" {
+		c.Fill(tr, sdl.Color{R: 10, G: 10, B: 14, A: 255})
+		c.Border(tr, ColPanelHi)
+		return
+	}
+	bgPart, _ := courtroom.PositionScene(choices[i])
+	base := a.urls.Background(bg, bgPart)
+	if page, ok := a.cachedPage(&a.posBgPages, &a.posBgGen, len(choices), i, base); ok && len(page.Frames) > 0 {
+		_ = c.Ren.Copy(page.Frames[0], nil, &tr)
+	} else {
+		c.Fill(tr, sdl.Color{R: 10, G: 10, B: 14, A: 255})
+		a.demandAsset(&a.posBgAsk, len(choices), i, base, assets.AssetTypeBackground) // AssetType: Background (pos thumb)
+	}
+	c.Border(tr, ColPanelHi)
 }
 
 // --- casing ----------------------------------------------------------------------
