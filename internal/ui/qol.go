@@ -610,8 +610,8 @@ func (a *App) drawTheater(w, h int32) {
 		a.handleSpriteHide(vp) // right-click → hide-sprite confirm (default ON)
 	}
 	a.handleHotkeys()
-	a.drawChatOverlay(vp)
-	a.drawCourtOverlays(vp, nil) // splashes/HP still play — part of the show
+	a.drawChatOverlay(vp, false, 0, 0) // theater mode keeps the clean stage-bottom chatbox
+	a.drawCourtOverlays(vp, nil)       // splashes/HP still play — part of the show
 	c.Label(w-c.TextWidth(theaterHint)-8, 6, theaterHint, ColTextDim)
 	if c.escPressed {
 		a.setTheater(false)

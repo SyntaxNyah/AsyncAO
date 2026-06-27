@@ -34,6 +34,7 @@ const (
 	// layout" work). Each defaults to its spot in the bar — so an un-edited or
 	// whole-bar-moved layout is pixel-identical — and only goes free once dragged.
 	slotICImmediate = "icbar.immediate" // the Immediate (non-interrupting preanim) toggle
+	slotChatbox     = "chatbox"         // the in-stage message box (showname + text); move it off the sprites
 	slotOOCBar      = "oocbar"          // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
 	slotControls    = "controls"        // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
 )
@@ -158,6 +159,8 @@ func classicSlotLabel(k string) string {
 		return "IC input bar"
 	case slotICImmediate:
 		return "Immediate toggle"
+	case slotChatbox:
+		return "Chatbox (message)"
 	case slotOOCBar:
 		return "OOC bar"
 	case slotControls:

@@ -1015,9 +1015,9 @@ func (a *App) drawCourtroom(w, h int32) {
 	if a.rehearsal {
 		c.Label(vp.X+8, vp.Y+8, rehearsalBadge, ColTierYellow)
 	}
-	a.drawChatOverlay(vp)
-	a.drawCourtOverlays(vp, nil) // HP bars, clocks, badges, splashes
-	a.drawReactionFloats(vp)     // #2: emoji reactions rising over the stage (0-alloc when none)
+	a.drawChatOverlay(vp, true, w, h) // classic layout: the chatbox is a movable slot
+	a.drawCourtOverlays(vp, nil)      // HP bars, clocks, badges, splashes
+	a.drawReactionFloats(vp)          // #2: emoji reactions rising over the stage (0-alloc when none)
 
 	// Modal popups: the kit has no z-aware input, so the controls
 	// underneath simply don't draw (and don't see clicks) — same pattern
@@ -1355,7 +1355,12 @@ func (a *App) reshowSprites() {
 	a.warnAt = time.Now()
 }
 
-func (a *App) drawChatOverlay(vp sdl.Rect) {
+// drawChatOverlay paints the message box (showname + spoken text) over the stage.
+// movableBox (classic layout only) routes the box rect through slotRect so it can
+// be dragged off the sprites / out of the stage in the layout editor; w,h give the
+// override its window-fraction frame. The themed and replay paths pass false (the
+// theme owns its chatbox geometry there).
+func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	c := a.ctx
 	sc := a.renderScene() // live room, slideshow override, OR the replay scene (M16)
 	// Blankpost hides the whole chatbox (frame + showname + text) so only the
@@ -1371,6 +1376,12 @@ func (a *App) drawChatOverlay(vp sdl.Rect) {
 		boxH = max
 	}
 	box := sdl.Rect{X: vp.X, Y: vp.Y + vp.H - boxH, W: vp.W, H: boxH}
+	// Movable chatbox (classic layout): its default sits at the stage bottom, but a
+	// layout-editor override lifts it anywhere — off the sprites or out of the stage
+	// entirely. Everything below lays out relative to box, so move + resize follow.
+	if movableBox {
+		box = a.slotRect(slotChatbox, box, w, h)
+	}
 	// Theme chatbox skin when the theme ships one; flat translucent
 	// panel otherwise (themePage self-heals T1 eviction).
 	skinned := false

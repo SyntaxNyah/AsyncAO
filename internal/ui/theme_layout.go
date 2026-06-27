@@ -259,7 +259,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	if box, ok := lay.rect("ao2_chatbox"); ok {
 		a.drawThemedChatBox(box, lay)
 	} else {
-		a.drawChatOverlay(vp)
+		a.drawChatOverlay(vp, false, 0, 0) // themed layout owns its chatbox geometry
 	}
 	a.drawCourtOverlays(vp, lay)
 	a.drawReactionFloats(vp) // #2: emoji reactions rising over the stage (0-alloc when none)
