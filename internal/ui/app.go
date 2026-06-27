@@ -2249,7 +2249,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				continue // #81: ignored player's OOC — drop it (room ignores OOC, so this is a clean skip)
 			}
 			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
-			if !looksLikeAreaList(ev.Text) { // your own /ga roster lists your name — don't self-ping
+			if a.d.Prefs.CallwordsOOCOn() && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
 				a.checkCallwords(ev.Text)
 			}
 			a.scanModActionOOC(ev.Name, ev.Text) // #60: optional ban/kick/mute feedback sound

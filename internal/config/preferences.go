@@ -795,6 +795,7 @@ type AssetPreferences struct {
 	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
 	BlipRate           int                       `json:"blipRate"`              // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
 	BlipOnSpaces       bool                      `json:"blipOnSpaces"`          // also blip on spaces (default OFF = skip whitespace)
+	CallwordsOOC       bool                      `json:"callwordsOOC"`          // also alert on callwords in OOC messages (default OFF — IC only, avoids /ga & chatter pings)
 	ExtProfiles        map[string]string         `json:"extProfiles,omitempty"` // per asset-host extensions.json override (format profile); seeded instantly on connect, takes precedence over the fetched server manifest + the global default
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1044,6 +1045,7 @@ type prefsJSON struct {
 	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
 	BlipRate           int                       `json:"blipRate"`              // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
 	BlipOnSpaces       bool                      `json:"blipOnSpaces"`          // also blip on spaces (default OFF = skip whitespace)
+	CallwordsOOC       bool                      `json:"callwordsOOC"`          // also alert on callwords in OOC messages (default OFF — IC only, avoids /ga & chatter pings)
 	ExtProfiles        map[string]string         `json:"extProfiles,omitempty"` // per asset-host extensions.json override (format profile); seeded instantly on connect, takes precedence over the fetched server manifest + the global default
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1567,6 +1569,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.BlipRate = clampPercent(onDisk.BlipRate, MinBlipRate, MaxBlipRate)
 	}
 	p.BlipOnSpaces = onDisk.BlipOnSpaces
+	p.CallwordsOOC = onDisk.CallwordsOOC
 	if onDisk.ExtProfiles != nil {
 		p.ExtProfiles = onDisk.ExtProfiles
 	}
@@ -5637,6 +5640,26 @@ func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 		p.LearnedFormats = map[string][]string{}
 	}
 	p.LearnedFormats[key] = []string{ext}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// CallwordsOOCOn reports whether callwords also alert on OOC messages (default
+// OFF — IC only, so /ga rosters and OOC chatter don't constantly ping).
+func (p *AssetPreferences) CallwordsOOCOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CallwordsOOC
+}
+
+// SetCallwordsOOC toggles OOC callword alerts.
+func (p *AssetPreferences) SetCallwordsOOC(on bool) {
+	p.mu.Lock()
+	if p.CallwordsOOC == on {
+		p.mu.Unlock()
+		return
+	}
+	p.CallwordsOOC = on
 	p.mu.Unlock()
 	p.markDirty()
 }

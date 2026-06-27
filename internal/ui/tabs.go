@@ -334,7 +334,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		if a.d.Prefs.NotifyOnOOCOn() {
 			t.unread++
 		}
-		if !looksLikeAreaList(ev.Text) { // /ga roster output isn't chat — never self-ping
+		if a.d.Prefs.CallwordsOOCOn() && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
 			a.checkCallwords(ev.Text)
 		}
 	case courtroom.EventModcall:

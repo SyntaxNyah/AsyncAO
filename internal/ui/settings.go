@@ -2023,6 +2023,11 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	if next := c.Checkbox(pad+16, y, "Also pop a DESKTOP (OS) notification when AsyncAO is in the background (OFF by default; Windows; rate-limited)", cot); next != cot {
 		a.d.Prefs.SetCallwordOSToast(next)
 	}
+	y += 26
+	cooc := a.d.Prefs.CallwordsOOCOn()
+	if next := c.Checkbox(pad, y, "Check OOC messages for callwords too (OFF by default — IC only; on = also ping on OOC, e.g. someone typing your room ID)", cooc); next != cooc {
+		a.d.Prefs.SetCallwordsOOC(next)
+	}
 	y += 30
 	y = a.settingsSection(y, w, "Do Not Disturb")
 	// Do Not Disturb: session-only by default (clears every launch so it can't
