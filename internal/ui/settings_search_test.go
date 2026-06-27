@@ -11,13 +11,15 @@ func TestSettingsSearchMatch(t *testing.T) {
 		tab int
 	}{
 		// Previously-missing sections that the report was about.
-		{"friends", tabAudioChat},
-		{"ignore", tabAudioChat},
-		{"dnd", tabAudioChat},
-		{"music history", tabAudioChat},
-		{"mod tools", tabAudioChat},
-		{"callword", tabAudioChat},
-		{"blip", tabAudioChat},
+		{"friends", tabChat},
+		{"ignore", tabChat},
+		{"dnd", tabChat},
+		{"music history", tabChat},
+		{"mod tools", tabChat},
+		{"callword", tabChat},
+		{"blip", tabAudio},
+		{"volume", tabAudio},
+		{"reset to defaults", tabReset},
 		{"zstd", tabAssets},
 		{"download", tabAssets},
 		{"cache", tabAssets},

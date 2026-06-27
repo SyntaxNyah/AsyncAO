@@ -115,10 +115,10 @@ var settings = settingsState{
 // Settings tabs: the screen is split into these categories so it's
 // navigable instead of one long scroll. numSettingsTabs sizes the per-tab
 // scroll array (keep it == len(settingsTabNames)).
-const numSettingsTabs = 7
+const numSettingsTabs = 9
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Assets", "Audio & Chat", "Account", "Hotkeys", "Studio",
+	"General", "Theme", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Reset",
 }
 
 // Tab indices (order matches settingsTabNames).
@@ -126,10 +126,12 @@ const (
 	tabGeneral = iota
 	tabTheme
 	tabAssets
-	tabAudioChat
+	tabAudio
+	tabChat
 	tabAccount
 	tabHotkeys
 	tabStudio
+	tabReset
 )
 
 // settingsSearchKeywords maps each tab to terms the search box matches. It folds
@@ -164,11 +166,15 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"local assets", "local", "mount", "downloader", "download",
 		"cache", "disk cache", "disk", "zstd", "learned formats", "learned", "clear cache",
 	},
-	tabAudioChat: {
-		// sections: Volume, Text & typing, Chat log, Case alerts, Callwords, Do Not
-		// Disturb, Messages & connection, Sound effects, Music history, Friends,
-		// Ignored players, Mod tools.
-		"volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
+	tabAudio: {
+		// sections: Volume (master / music / SFX / blip / alert), music ducking.
+		"audio", "volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
+		"alert volume", "music ducking", "duck",
+	},
+	tabChat: {
+		// sections: Text & typing, Chat log, Case alerts, Callwords, Do Not Disturb,
+		// Messages & connection, Sound effects, Music history, Friends, Ignored
+		// players, Mod tools.
 		"text", "typing", "text crawl", "text stay", "text speed", "chat limit", "catch up",
 		"chat log", "ic log", "timestamps", "log", "song url", "song link", "full link", "music url",
 		"case alerts", "casing", "case", "callword", "callwords", "ping", "alert",
@@ -193,6 +199,11 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"studio", "scene recording", "record", "recording", "instant replay", "clip", "rolling buffer",
 		"scene maker", "maker", "aorec", "recordings", "replay", "replay playback", "playback speed",
 		"export", "gif", "webp", "video", "mp4", "webm", "movie", "frame rate", "quality", "scene", "capture", "archive",
+	},
+	tabReset: {
+		// sections: Reset / clear data.
+		"reset", "factory reset", "reset to defaults", "restore defaults", "wipe", "fresh install",
+		"clear settings", "clear data", "defaults",
 	},
 }
 
@@ -345,14 +356,18 @@ func (a *App) drawSettings(w, h int32) {
 		y = a.drawSettingsTheme(y, w, h)
 	case tabAssets:
 		y = a.drawSettingsAssets(y, w)
-	case tabAudioChat:
-		y = a.drawSettingsAudioChat(y, w)
+	case tabAudio:
+		y = a.drawSettingsAudio(y, w)
+	case tabChat:
+		y = a.drawSettingsChat(y, w)
 	case tabAccount:
 		y = a.drawSettingsAccount(y, w)
 	case tabHotkeys:
 		y = a.drawSettingsHotkeys(y, w)
 	case tabStudio:
 		y = a.drawSettingsStudio(y, w)
+	case tabReset:
+		y = a.drawSettingsReset(y, w)
 	}
 	if settings.statusLine != "" {
 		c.Label(a.formX, y+6, settings.statusLine, ColAccent)
@@ -1631,12 +1646,25 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad, y, "in mind if a character or background looks stale right after a server update.", ColTextDim)
 	y += 30
 
+	return y
+}
+
+// drawSettingsReset is the dedicated Reset tab: the factory-reset launcher, moved
+// out of the Assets tab into its own section so it stands alone and isn't a
+// misclick risk among other controls (playtest: "make reset all settings its own
+// section. Split the settings.").
+func (a *App) drawSettingsReset(y, _ int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	w := a.formW2()
+	y = a.settingsSection(y, w, "Reset")
+	c.Label(pad, y, "Reset the settings page, or wipe everything (favourites, logins, data, cache).", ColTextDim)
+	y += 26
 	// Factory reset: opens a pop-up offering settings-only or a full wipe.
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 220, H: btnH}, "Reset to defaults…") {
 		a.showReset = true
 	}
-	c.Label(pad+232, y+5, "Reset the settings page, or wipe everything (favourites, logins, data, cache).", ColTextDim)
-	y += 30
+	y += 34
 	return y
 }
 
@@ -1733,8 +1761,10 @@ func (a *App) applyPrefsToState() {
 	}
 }
 
-// drawSettingsAudioChat: volumes, message timing, casing alerts, callwords.
-func (a *App) drawSettingsAudioChat(y, _ int32) int32 {
+// drawSettingsAudio: per-channel volumes (master/music/SFX/blip/alert) and music
+// ducking. Split out of the old combined Audio & Chat tab so audio settings stand
+// on their own (playtest: "why is audio and chat in the same group").
+func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	w := a.formW2()
@@ -1772,6 +1802,16 @@ func (a *App) drawSettingsAudioChat(y, _ int32) int32 {
 		a.d.Prefs.SetMusicDucking(next)
 	}
 	y += 28
+	return y
+}
+
+// drawSettingsChat: message timing, typing, casing alerts, callwords, plus the
+// friends / ignore / DND / music-history / mod sections — everything from the old
+// Audio & Chat tab except the volumes (now their own Audio tab).
+func (a *App) drawSettingsChat(y, _ int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	w := a.formW2()
 
 	y = a.settingsSection(y, w, "Text & typing")
 	// Hold-to-clear: hold a key (default Backspace, rebindable) to wipe a text
