@@ -367,5 +367,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	app.CloseTranscript()  // flush + close the detailed-log file (no-op when off/unopened)
 	app.CloseJukebox()     // flush the global music library (no-op until loaded)
 	_ = prefs.SaveNow()
+	app.MaybeRelaunch() // "Restart to apply": start the new binary now that we've shut down cleanly
 	return nil
 }

@@ -374,6 +374,7 @@ type App struct {
 	updateBusy     bool
 	updateStaged   bool
 	updateErr      string
+	relaunchOnExit bool // "Restart to apply": relaunch the new binary after a clean shutdown
 
 	// --- IC/OOC log text selection (drag to highlight, Ctrl+C to copy) ---
 	// Anchored to (wrapped-line index, rune offset in that line); see

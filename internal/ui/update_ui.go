@@ -13,12 +13,14 @@ package ui
 import (
 	"context"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/update"
+	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
 const (
@@ -146,6 +148,30 @@ func (a *App) startSelfUpdate() {
 	}()
 }
 
+// requestRelaunch is the "Restart to apply" action: flag a relaunch and quit
+// cleanly via SDL_QUIT. The new binary starts AFTER the main loop exits and
+// prefs/tabs are flushed (see MaybeRelaunch), so the two instances never fight
+// over the prefs file or the window.
+func (a *App) requestRelaunch() {
+	a.relaunchOnExit = true
+	_, _ = sdl.PushEvent(&sdl.QuitEvent{Type: sdl.QUIT})
+}
+
+// MaybeRelaunch starts the freshly-installed binary if "Restart to apply" was
+// clicked. Called by main AFTER the run loop exits and state is saved.
+func (a *App) MaybeRelaunch() {
+	if !a.relaunchOnExit {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(exe)
+	winexec.Hide(cmd) // dev builds are console-subsystem; no console flash on relaunch
+	_ = cmd.Start()
+}
+
 // updateChipRect is the persistent reopen chip, top-right and clear of the
 // centre tab strip.
 func (a *App) updateChipRect(w int32) sdl.Rect {
@@ -195,8 +221,10 @@ func (a *App) handleUpdateInput(w, h int32) {
 	}
 	switch {
 	case c.hovering(getBtn):
-		if !a.updateBusy && !a.updateStaged {
-			a.startSelfUpdate() // download → verify → staged swap (or degrade)
+		if a.updateStaged {
+			a.requestRelaunch() // "Restart to apply": relaunch into the new binary
+		} else if !a.updateBusy {
+			a.startSelfUpdate() // download, verify, staged swap (or degrade)
 		}
 	case c.hovering(laterBtn):
 		a.updateShow = false
