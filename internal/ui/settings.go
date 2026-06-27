@@ -545,6 +545,12 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetEmoteButtonImages(next)
 	}
 	y += 26
+	favStars := a.d.Prefs.EmoteFavStarsOn()
+	if next := c.Checkbox(pad, y, "Emote favourites (OFF by default): show a ★ on every emote button so you can star the ones you use, plus the ★ Favs filter. Off keeps the grid clean if you don't use it.", favStars); next != favStars {
+		a.d.Prefs.SetEmoteFavStars(next)
+		a.emoteFavRev++ // rebuild the view for the new state
+	}
+	y += 26
 	favOnly := a.d.Prefs.EmoteFavOnlyOn()
 	if next := c.Checkbox(pad, y, "Show favourite emotes only (OFF by default): hides everything but the emotes you've starred. Click the ★ on an emote button to favourite it (per character). The classic grid also has a ★ Favs button.", favOnly); next != favOnly {
 		a.d.Prefs.SetEmoteFavOnly(next)

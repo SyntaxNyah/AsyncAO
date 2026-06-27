@@ -766,6 +766,7 @@ type AssetPreferences struct {
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
+	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1006,6 +1007,7 @@ type prefsJSON struct {
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
+	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
@@ -1658,6 +1660,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.BlipVols = onDisk.BlipVols
 	p.EmoteFavs = onDisk.EmoteFavs
 	p.EmoteFavOnly = onDisk.EmoteFavOnly
+	p.EmoteFavStars = onDisk.EmoteFavStars
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
@@ -6589,6 +6592,27 @@ func (p *AssetPreferences) SetEmoteFavOnly(on bool) {
 		return
 	}
 	p.EmoteFavOnly = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// EmoteFavStarsOn reports whether the favourite ★ badges show on emote cells.
+// The whole emote-favourites feature is opt-in (default OFF) so the badge can't
+// clutter the grid for people who don't use it.
+func (p *AssetPreferences) EmoteFavStarsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.EmoteFavStars
+}
+
+// SetEmoteFavStars toggles the emote-favourites feature (the per-cell stars).
+func (p *AssetPreferences) SetEmoteFavStars(on bool) {
+	p.mu.Lock()
+	if p.EmoteFavStars == on {
+		p.mu.Unlock()
+		return
+	}
+	p.EmoteFavStars = on
 	p.mu.Unlock()
 	p.markDirty()
 }

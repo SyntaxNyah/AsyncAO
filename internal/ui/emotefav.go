@@ -79,6 +79,9 @@ func (a *App) toggleEmoteFav(realIdx int) {
 // idle grid stays subtle, not noisy. Must be drawn AFTER the cell button (sits on
 // top) and its result must win over the button's pick — see the call sites.
 func (a *App) drawEmoteFavStar(cell sdl.Rect, realIdx int) bool {
+	if !a.d.Prefs.EmoteFavStarsOn() {
+		return false // favourites are opt-in (default off): no badge, no tofu on every cell
+	}
 	c := a.ctx
 	_, fav := a.emoteFavSet[realIdx]
 	sr := sdl.Rect{X: cell.X + cell.W - emoteFavStarPx, Y: cell.Y, W: emoteFavStarPx, H: emoteFavStarPx}
@@ -101,6 +104,9 @@ func (a *App) drawEmoteFavStar(cell sdl.Rect, realIdx int) bool {
 // the (persisted) pref when clicked, invalidating the view. Shared by both
 // emote grids. Highlighted while the filter is on.
 func (a *App) drawEmoteFavToggle(btn sdl.Rect) {
+	if !a.d.Prefs.EmoteFavStarsOn() {
+		return // feature off: no "★ Favs" filter button either
+	}
 	c := a.ctx
 	on := a.d.Prefs.EmoteFavOnlyOn()
 	if on { // accent ring so it's clearly engaged
