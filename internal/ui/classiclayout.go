@@ -123,6 +123,17 @@ func (a *App) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
 	return cur
 }
 
+// movableButton draws a control button that can be pulled out of its row into its
+// own spot in the classic editor. Its rect routes through slotRect(key), so an
+// override repositions it, while the caller keeps advancing its layout cursor by the
+// button's DEFAULT width — so an un-edited row is pixel-identical and moving one
+// button never cascades the rest (the "wrap, not extract" pattern). key MUST be a
+// string literal (no per-frame formatting) to keep the row allocation-free. Returns
+// whether the button was clicked this frame.
+func (a *App) movableButton(key string, def sdl.Rect, label string, w, h int32) bool {
+	return a.ctx.Button(a.slotRect(key, def, w, h), label)
+}
+
 // classicSnap rounds a screen coordinate to the editor's grid (shared 8 px).
 func classicSnap(v int32) int32 {
 	if v < 0 {
@@ -152,6 +163,10 @@ func classicSlotLabel(k string) string {
 	case slotControls:
 		return "Control buttons (move only)"
 	default:
+		// Individually-movable control buttons carry a "ctrl.<name>" key.
+		if rest, ok := strings.CutPrefix(k, "ctrl."); ok {
+			return strings.ToUpper(rest[:1]) + rest[1:] + " button"
+		}
 		// Torn-off tab panels carry a "tab:<name>" key.
 		for i := range tornTabTable {
 			if tornTabTable[i].key == k {

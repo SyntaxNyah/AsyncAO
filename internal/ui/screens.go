@@ -3340,12 +3340,19 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	var pendingShout int
 	if !a.panelHidden(panelShouts) {
 		shoutW := int32(96)
+		// Each shout is individually movable in the layout editor (literal slot keys
+		// keep the row alloc-free; the struct is range-only so it stays on the stack).
 		shouts := []struct {
+			key   string
 			label string
 			mod   int
-		}{{"Hold It!", protocol.ShoutHoldIt}, {"Objection!", protocol.ShoutObjection}, {"Take That!", protocol.ShoutTakeThat}}
+		}{
+			{"ctrl.holdit", "Hold It!", protocol.ShoutHoldIt},
+			{"ctrl.objection", "Objection!", protocol.ShoutObjection},
+			{"ctrl.takethat", "Take That!", protocol.ShoutTakeThat},
+		}
 		for _, s := range shouts {
-			if c.Button(sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, s.label) {
+			if a.movableButton(s.key, sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, s.label, w, h) {
 				pendingShout = s.mod
 			}
 			x += shoutW + 6
@@ -3372,7 +3379,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			}
 		}
 	}
-	if c.Button(sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...") {
+	if a.movableButton("ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
 		a.showPair = !a.showPair
 	}
 	x += 80
@@ -3517,41 +3524,41 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			evLabel = "Evidence ●"
 		}
 		// — Character —
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character") {
+		if a.movableButton("ctrl.character", sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character", w, h) {
 			a.screen = ScreenCharSelect
 		}
 		x += 106
-		wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+		wr := a.slotRect("ctrl.wardrobe", sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, w, h)
 		if c.Button(wr, "Wardrobe") {
 			a.openIniswap()
 		}
 		c.Border(wr, ColAccent)
 		c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
 		x += 96
-		reR := sdl.Rect{X: x, Y: y2, W: 84, H: btnH}
+		reR := a.slotRect("ctrl.restyle", sdl.Rect{X: x, Y: y2, W: 84, H: btnH}, w, h)
 		if c.Button(reR, "Restyle") {
 			a.openSpriteStyle()
 		}
 		c.Tooltip(reR, "Recolour / glow your character on the fly — other AsyncAO players see it")
 		x += 84 + gGap
 		// — Scene —
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
+		if a.movableButton("ctrl.background", sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background", w, h) {
 			a.openBgPicker()
 		}
 		x += 106
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
+		if a.movableButton("ctrl.evidence", sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel, w, h) {
 			a.showEvid = true
 		}
 		x += 106
 		x = a.drawPosSelect(x, y2, btnH)
 		x += gGap
 		// — Moderation —
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
+		if a.movableButton("ctrl.mods", sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...", w, h) {
 			a.showModcall = true
 		}
 		x += 86
 		if a.amIMod() {
-			mR := sdl.Rect{X: x, Y: y2, W: 54, H: btnH}
+			mR := a.slotRect("ctrl.mod", sdl.Rect{X: x, Y: y2, W: 54, H: btnH}, w, h)
 			if c.Button(mR, "Mod") {
 				a.toggleModDash()
 			}
@@ -3560,7 +3567,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			x += 60
 		}
 		if a.amICMNow {
-			cR := sdl.Rect{X: x, Y: y2, W: 46, H: btnH}
+			cR := a.slotRect("ctrl.cm", sdl.Rect{X: x, Y: y2, W: 46, H: btnH}, w, h)
 			if c.Button(cR, "CM") {
 				a.toggleCMPanel()
 			}
@@ -3574,33 +3581,33 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			y2 += btnH + 4
 			x = clusterX
 		}
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
+		if a.movableButton("ctrl.settings", sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings", w, h) {
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenSettings
 		}
 		x += 96
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
+		if a.movableButton("ctrl.ui", sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...", w, h) {
 			a.showUICfg = true
 		}
 		x += 56
-		edR := sdl.Rect{X: x, Y: y2, W: 94, H: btnH}
+		edR := a.slotRect("ctrl.editlayout", sdl.Rect{X: x, Y: y2, W: 94, H: btnH}, w, h)
 		if c.Button(edR, "Edit Layout") {
 			a.openLayoutEditor()
 		}
 		c.Tooltip(edR, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
 		x += 100
-		hkR := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+		hkR := a.slotRect("ctrl.hotkeys", sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, w, h)
 		if c.Button(hkR, "Hotkeys") {
 			a.openHotkeyCheatSheet()
 		}
 		c.Tooltip(hkR, "Show all your hotkeys & custom binds (also F1)")
 		x += 96
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About") {
+		if a.movableButton("ctrl.about", sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About", w, h) {
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenAbout
 		}
 		x += 86
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
+		if a.movableButton("ctrl.login", sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...", w, h) {
 			a.openLoginDialog()
 		}
 		x += 76
@@ -3610,7 +3617,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			y2 += btnH + 4
 			x = clusterX
 		}
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
+		if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
 			a.requestDisconnect()
 			return
 		}
