@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
 // Format selects the container/codec pair.
@@ -140,6 +142,7 @@ func New(outPath string, w, h, fps, quality int, format Format) (*Encoder, error
 		fps = 1
 	}
 	cmd := exec.Command(bin, ffmpegArgs(outPath, w, h, fps, quality, format)...)
+	winexec.Hide(cmd) // GUI-subsystem build: no ffmpeg console window on export
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -276,6 +279,7 @@ func runMux(args []string) error {
 		return fmt.Errorf("videoenc: ffmpeg not found on PATH")
 	}
 	cmd := exec.Command(bin, args...)
+	winexec.Hide(cmd)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

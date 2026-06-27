@@ -18,6 +18,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
+	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
 // settingsState lives on App lazily (kept here for file cohesion).
@@ -2928,7 +2929,9 @@ func browseForFolder() {
 			`$d = New-Object System.Windows.Forms.FolderBrowserDialog; ` +
 			`$d.Description = 'Pick the folder that CONTAINS themes\<name>'; ` +
 			`if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`
-		out, err := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog).Output()
+		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
+		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
+		out, err := cmd.Output()
 		path := strings.TrimSpace(string(out))
 		if err != nil || path == "" {
 			settings.folderRes <- ""

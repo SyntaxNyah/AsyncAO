@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
 // osToastMinInterval rate-limits desktop toasts so a chatty friend can't storm
@@ -74,6 +76,8 @@ func showOSToast(title, body string) {
 	}
 	enc := base64.StdEncoding.EncodeToString(raw)
 	go func() {
-		_ = exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", enc).Start()
+		cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", enc)
+		winexec.Hide(cmd)
+		_ = cmd.Start()
 	}()
 }
