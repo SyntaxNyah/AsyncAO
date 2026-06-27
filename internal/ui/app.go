@@ -40,6 +40,9 @@ const (
 	// ScreenServerHelp is the legacy-server-owner upgrade guide (reached
 	// from the lobby's NOT SUPPORTED notice).
 	ScreenServerHelp
+	// ScreenChangelog is the "What's New" version-history view (reached from the
+	// lobby top bar); it renders the embedded CHANGELOG.md.
+	ScreenChangelog
 )
 
 const (
@@ -735,6 +738,11 @@ type App struct {
 	// frame (the page is off the hot path, but this repo keeps UI draws alloc-free).
 	aboutFlatW int32           // content width the cache was built for (0 = none)
 	aboutFlat  []aboutFlatLine // flattened, wrapped render lines
+	// Changelog ("What's New" version history): same width-keyed reflow cache as
+	// About — the embedded CHANGELOG.md is wrapped only on a resize, never per frame.
+	changelogScroll int32
+	changelogFlatW  int32
+	changelogFlat   []aboutFlatLine
 	// Settings: the content region (right of the sidebar) the section/row helpers
 	// draw into. Set once per frame by drawSettings; the helpers rebase their
 	// pad-relative layout onto formX so every box lands inside the content card.
@@ -4148,6 +4156,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawSettings(winW, winH)
 		case ScreenAbout:
 			a.drawAbout(winW, winH)
+		case ScreenChangelog:
+			a.drawChangelog(winW, winH)
 		case ScreenServerHelp:
 			a.drawServerHelp(winW, winH)
 		}

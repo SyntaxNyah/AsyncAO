@@ -34,6 +34,11 @@ const devVersion = "dev"
 // update available (a developer running their own build isn't nagged).
 var Version = devVersion
 
+// IsDev reports whether the running build is an unstamped (non-release) build.
+// Callers use it to skip release-only UI cues (e.g. the changelog's "installed"
+// marker) without duplicating the devVersion literal.
+func IsDev() bool { return Version == "" || Version == devVersion }
+
 const (
 	// DefaultReleasesURL is the GitHub Releases API for this repo's latest
 	// published (non-draft, non-prerelease) release.

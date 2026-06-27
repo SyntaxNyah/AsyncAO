@@ -94,6 +94,12 @@ func (a *App) drawLobby(w, h int32) {
 		a.prevScreen = ScreenLobby
 		a.screen = ScreenAbout
 	}
+	// "What's New" — the full, always-available version history (the post-update
+	// modal only shows the latest release's notes).
+	if c.Button(sdl.Rect{X: w - 710 - pad, Y: pad, W: 110, H: btnH}, "What's New") {
+		a.prevScreen = ScreenLobby
+		a.screen = ScreenChangelog
+	}
 	// Connect-time ("ping") sort: probe joinable servers and sort by RTT. A
 	// second press goes back to the player-count sort. Off until pressed.
 	pingBtn := sdl.Rect{X: w - 470 - pad, Y: pad, W: 110, H: btnH}
