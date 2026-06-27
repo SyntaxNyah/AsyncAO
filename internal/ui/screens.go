@@ -976,6 +976,24 @@ func (a *App) drawCourtroom(w, h int32) {
 		vpH = h - 220
 		vpW = vpH * 4 / 3
 	}
+	// Precise (exact-px) sizing overrides the % knob: the native stage art is
+	// 256×192, so an exact width that's an integer multiple stays crisp where the
+	// %-of-window size lands between multiples and blurs. If the chosen size doesn't
+	// fit the window, snap DOWN to the largest 256×192 multiple that does — clamping
+	// to raw px would re-introduce the very blur this control removes.
+	if ew := int32(a.d.Prefs.ViewportExactWidth()); ew > 0 {
+		vpW, vpH = ew, ew*config.ViewportArtH/config.ViewportArtW
+		if vpW > w-2*pad || vpH > h-220 {
+			fitM := (h - 220) / config.ViewportArtH
+			if wM := (w - 2*pad) / config.ViewportArtW; wM < fitM {
+				fitM = wM
+			}
+			if fitM < 1 {
+				fitM = 1
+			}
+			vpW, vpH = fitM*config.ViewportArtW, fitM*config.ViewportArtH
+		}
+	}
 	vpDef := sdl.Rect{X: pad, Y: pad, W: vpW, H: vpH}
 	// Movable + resizable stage. With no override the View knob / divider own its
 	// 4:3 size (vpDef); once you drag a viewport handle in the editor, that override
@@ -1137,6 +1155,12 @@ func (a *App) handleVpDivider(vp sdl.Rect, w int32) {
 		return
 	}
 	if a.dragVpDivider && w > 0 {
+		// Grabbing the edge is a deliberate "size it freely" gesture, so it takes
+		// back control from an exact-px pin (else the drag would silently no-op
+		// against the shadowing fixed size).
+		if a.d.Prefs.ViewportExactWidth() != 0 {
+			a.d.Prefs.SetViewportExactWidth(0)
+		}
 		pct := int(int64(c.mouseX-vp.X) * int64(DefaultScalePct) / int64(w))
 		if pct < config.MinViewportPercent {
 			pct = config.MinViewportPercent
@@ -3346,7 +3370,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	}
 	x += 80
 	if !a.panelHidden(panelKnobs) && !a.d.Prefs.DragLayoutOn() { // drag-resize mode hides the +/− knobs
-		x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
+		if a.d.Prefs.ViewportExactWidth() == 0 { // exact-px sizing shadows vpPct, so the View knob would no-op — hide it (set the size in Settings instead)
+			x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
+		}
 		x = a.scaleControl(x, y, "Text", &a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent)
 		x = a.scaleControl(x, y, "MsgBox", &a.boxPct, config.ScaleStepPercent, config.MinChatBoxPercent, config.MaxChatBoxPercent)
 		x = a.scaleControl(x, y, "Log", &a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent)

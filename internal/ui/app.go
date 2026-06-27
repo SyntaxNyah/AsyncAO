@@ -706,7 +706,8 @@ type App struct {
 	// then close it the moment the cursor leaves the box (beta feedback).
 	previewTriggerRect sdl.Rect
 	previewEntered     bool
-	previewPinned      bool // right-click pins the sprite-preview box open until you close it (its x)
+	previewPinned      bool   // right-click pins the sprite-preview box open until you close it (its x)
+	vpExactBuf         string // edit buffer for the Settings exact-stage-width px field (commit on Enter)
 	hidden             map[string]bool
 
 	iniRes chan iniswapFetch

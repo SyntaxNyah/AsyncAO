@@ -941,6 +941,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		}
 	}
 	y += 34
+	y = a.drawViewportSizeRow(y)
 
 	// Independent text size: scale the IC/OOC log + chatbox message text WITHOUT
 	// zooming the courtroom art (that's the UI scale above — it's a whole-frame
@@ -2891,6 +2892,94 @@ func (a *App) sliderRow(y int32, label string, value, step, min, max int) int {
 	}
 	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%d", value), ColAccent)
 	return value
+}
+
+// drawViewportSizeRow is the precise stage-size control. The AO stage art is
+// 256×192, so the stage stays sharp at integer multiples and softens at the
+// %-of-window sizes that fall between them. Preset chips pick the crisp
+// multiples, a slider / mouse-wheel step through them, and an entry box takes an
+// exact px width for power users; 0 px = "Fit" (size by the View % knob / edge
+// drag, the prior behaviour). The entry buffer is written only on edit / commit
+// / chip / slider — never reseeded per frame — so it stays freely editable.
+// Settings screen only; off the courtroom hot path.
+func (a *App) drawViewportSizeRow(y int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	cur := a.d.Prefs.ViewportExactWidth()
+	set := func(px int) { // apply + resync the entry buffer to the clamped result
+		a.d.Prefs.SetViewportExactWidth(px)
+		cur = a.d.Prefs.ViewportExactWidth()
+		if cur == 0 {
+			a.vpExactBuf = ""
+		} else {
+			a.vpExactBuf = strconv.Itoa(cur)
+		}
+	}
+
+	c.Label(pad, y+4, "Stage size:", ColText)
+	x := pad + 130
+	chip := func(label string, px int) {
+		bw := c.TextWidth(label) + 16
+		r := sdl.Rect{X: x, Y: y, W: bw, H: btnH}
+		if c.Button(r, label) {
+			set(px)
+		}
+		if cur == px {
+			c.Border(r, ColAccent) // the active size
+		}
+		x += bw + 5
+	}
+	chip("Fit", 0)
+	for m := 1; m <= 4; m++ {
+		chip(fmt.Sprintf("%d×", m), m*config.ViewportArtW)
+	}
+	y += 30
+
+	// Slider + wheel step in art-multiples (so every slider stop is a crisp size);
+	// 0 = the leftmost stop = Fit.
+	maxM := config.MaxViewportExactPx / config.ViewportArtW
+	curM := cur / config.ViewportArtW
+	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 160, H: 16}
+	newM := int(c.Slider("vpexact", track, int32(curM), int32(maxM)))
+	if c.hovering(sdl.Rect{X: track.X - 6, Y: y, W: track.W + 12, H: 26}) && c.wheelY != 0 {
+		c.wheelTaken = true // hovered control owns the wheel — no page scroll
+		newM = curM + int(c.wheelY)
+	}
+	if newM < 0 {
+		newM = 0
+	}
+	if newM > maxM {
+		newM = maxM
+	}
+	if newM != curM {
+		set(newM * config.ViewportArtW) // 0 ⇒ Fit
+	}
+
+	// Exact-px entry for "specific numbers" (commit on Enter; mirrors the
+	// window-size inputs — no live filtering, Atoi just ignores junk on submit).
+	box := sdl.Rect{X: track.X + track.W + 14, Y: y, W: 64, H: fieldH}
+	next, submitted := c.TextField("vpexactpx", box, a.vpExactBuf, "px")
+	a.vpExactBuf = next
+	if submitted {
+		if v, err := strconv.Atoi(strings.TrimSpace(a.vpExactBuf)); err == nil {
+			set(v)
+		}
+	}
+
+	rx := box.X + box.W + 12
+	if cur == 0 {
+		c.LabelClipped(rx, y+4, a.formX+a.formW-rx, "Fit window (sized by the View % knob / edge drag)", ColTextDim)
+	} else {
+		hh := cur * config.ViewportArtH / config.ViewportArtW
+		if cur%config.ViewportArtW == 0 {
+			c.Label(rx, y+4, fmt.Sprintf("%d×%d  ·  %d× — sharp", cur, hh, cur/config.ViewportArtW), ColAccent)
+		} else {
+			c.Label(rx, y+4, fmt.Sprintf("%d×%d  ·  off-grid — may blur", cur, hh), ColTierYellow)
+		}
+	}
+	y += 28
+	c.LabelClipped(pad, y, a.formW, "Integer multiples of 256×192 stay sharp; for pixel-perfect scaling also turn Smooth texture scaling off.", ColTextDim)
+	return y + 20
 }
 
 // previewDelayRow draws the sprite-preview hover dwell as a draggable slider

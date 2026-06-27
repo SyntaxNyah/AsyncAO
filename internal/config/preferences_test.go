@@ -757,6 +757,48 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 	}
 }
 
+// TestViewportExactWidth pins the precise-stage-size pref: 0 means "off" and
+// passes through, a non-zero value clamps into [Min,Max], and the choice
+// survives a save/reload round-trip.
+func TestViewportExactWidth(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "prefs.json")
+	p, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	if got := p.ViewportExactWidth(); got != 0 {
+		t.Fatalf("default exact width = %d, want 0 (off)", got)
+	}
+	p.SetViewportExactWidth(100) // below Min → clamps up
+	if got := p.ViewportExactWidth(); got != MinViewportExactPx {
+		t.Fatalf("clamp-up = %d, want %d", got, MinViewportExactPx)
+	}
+	p.SetViewportExactWidth(99999) // above Max → clamps down
+	if got := p.ViewportExactWidth(); got != MaxViewportExactPx {
+		t.Fatalf("clamp-down = %d, want %d", got, MaxViewportExactPx)
+	}
+	p.SetViewportExactWidth(512) // a clean 2× multiple passes through
+	if got := p.ViewportExactWidth(); got != 512 {
+		t.Fatalf("exact = %d, want 512", got)
+	}
+	if err := p.SaveNow(); err != nil {
+		t.Fatal(err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := q.ViewportExactWidth(); got != 512 {
+		t.Fatalf("reloaded exact width = %d, want 512", got)
+	}
+	q.SetViewportExactWidth(0) // 0 turns it back off (must round-trip, not re-clamp to Min)
+	if got := q.ViewportExactWidth(); got != 0 {
+		t.Fatalf("clear = %d, want 0", got)
+	}
+}
+
 // TestNameColorClamp pins the name-colour slider bounds: saturation clamps to
 // 0..100 and brightness is floored at minNameColorVal so a name can't go dark.
 func TestNameColorClamp(t *testing.T) {

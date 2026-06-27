@@ -479,6 +479,16 @@ const (
 	MinViewportPercent     = 40
 	MaxViewportPercent     = 85
 
+	// Exact viewport sizing (the "precise size" control): the stage's native art
+	// is 256×192, so width is measured in px and crisp at integer multiples of
+	// ViewportArtW. Min = one full multiple; max caps it at 4K-ish so a typo can't
+	// produce an off-screen stage. 0 (not in [Min,Max]) means "off — size by %".
+	ViewportArtW        = 256  // native AO stage width (height = ×3/4 = 192)
+	ViewportArtH        = 192  // native AO stage height
+	MinViewportExactPx  = 256  // 1× — anything smaller isn't worth a fixed size
+	MaxViewportExactPx  = 4096 // 16× — sanity cap (no off-screen typos)
+	ViewportExactStepPx = 256  // wheel / slider step = one crisp art-multiple
+
 	// Chat = the IC message TEXT size (independent of its box); ChatBox =
 	// the message box height; Log = log/OOC list text; Input = the IC/OOC
 	// entry field height.
@@ -768,7 +778,8 @@ type AssetPreferences struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
-	EmoteCaptions      bool                      `json:"emoteCaptions"` // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
+	EmoteCaptions      bool                      `json:"emoteCaptions"`  // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
+	ViewportExactW     int                       `json:"viewportExactW"` // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1010,7 +1021,8 @@ type prefsJSON struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
-	EmoteCaptions      bool                      `json:"emoteCaptions"` // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
+	EmoteCaptions      bool                      `json:"emoteCaptions"`  // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
+	ViewportExactW     int                       `json:"viewportExactW"` // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1664,6 +1676,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.EmoteFavOnly = onDisk.EmoteFavOnly
 	p.EmoteFavStars = onDisk.EmoteFavStars
 	p.EmoteCaptions = onDisk.EmoteCaptions
+	p.ViewportExactW = clampViewportExactPx(onDisk.ViewportExactW)
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
@@ -6640,6 +6653,45 @@ func (p *AssetPreferences) SetEmoteCaptions(on bool) {
 		return
 	}
 	p.EmoteCaptions = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// clampViewportExactPx normalizes the exact-viewport-width pref: 0 (off) passes
+// through; any other value is clamped into [Min,Max] so a hand-edited or stale
+// config can't size the stage off-screen.
+func clampViewportExactPx(px int) int {
+	if px == 0 {
+		return 0
+	}
+	if px < MinViewportExactPx {
+		return MinViewportExactPx
+	}
+	if px > MaxViewportExactPx {
+		return MaxViewportExactPx
+	}
+	return px
+}
+
+// ViewportExactWidth reports the user's fixed stage width in px (0 = size by the
+// View % knob / divider instead). Read once per courtroom frame; lock-light.
+func (p *AssetPreferences) ViewportExactWidth() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ViewportExactW
+}
+
+// SetViewportExactWidth pins (or clears, with 0) the exact stage width. The
+// courtroom snaps an over-large value DOWN to the largest crisp multiple that
+// fits the window at draw time, so this only needs the coarse sanity clamp.
+func (p *AssetPreferences) SetViewportExactWidth(px int) {
+	px = clampViewportExactPx(px)
+	p.mu.Lock()
+	if p.ViewportExactW == px {
+		p.mu.Unlock()
+		return
+	}
+	p.ViewportExactW = px
 	p.mu.Unlock()
 	p.markDirty()
 }
