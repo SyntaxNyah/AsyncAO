@@ -72,8 +72,9 @@ jobs:
           export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
           export CGO_ENABLED=1
           mkdir -p dist
+          # -H=windowsgui: GUI subsystem, so the released exe opens no console window.
           go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
-            -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
+            -ldflags "-s -w -H=windowsgui -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
             -o dist/asyncao.exe ./cmd/asyncao
           # Ship the runtime DLLs next to the exe so the bundle runs anywhere.
           ldd dist/asyncao.exe | grep -io '/ucrt64/bin/[a-z0-9_.+-]*\.dll' | sort -u | while read -r dll; do

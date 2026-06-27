@@ -23,7 +23,9 @@ if ($Release) {
     # Stamp the build version for the self-update check (M13) from the git tag,
     # e.g. v1.2.3 or v1.2.3-5-gabc1234-dirty. No tag -> stays "dev" (a dev build
     # never self-updates). Dev (non -Release) builds are intentionally unstamped.
-    $ldflags = "-s -w"
+    # -H=windowsgui links a GUI-subsystem exe so no console window opens on
+    # launch (release builds only; dev builds keep the console for logs).
+    $ldflags = "-s -w -H=windowsgui"
     $ver = (git describe --tags --dirty 2>$null)
     if ($LASTEXITCODE -eq 0 -and $ver) {
         $ldflags = "$ldflags -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=$ver"

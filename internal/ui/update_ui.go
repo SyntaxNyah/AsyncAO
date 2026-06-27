@@ -137,6 +137,11 @@ func (a *App) startSelfUpdate() {
 			res <- err
 			return
 		}
+		// Uninstall the old binary now. On Unix the renamed-away old exe unlinks
+		// immediately (the running process keeps its open inode); on Windows it is
+		// still locked, so this no-ops and the next-launch CleanupOldVersion
+		// finishes the job — a running .exe can't delete itself.
+		update.CleanupOldVersion(exe)
 		res <- nil
 	}()
 }
