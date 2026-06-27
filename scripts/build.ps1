@@ -39,25 +39,33 @@ go build @flags -o bin\asyncao.exe .\cmd\asyncao
 if (-not $?) { exit 1 }
 Write-Host "Built bin\asyncao.exe"
 
-# Copy runtime DLLs next to the exe so it runs without MSYS2 on PATH.
-$dlls = @(
-    "SDL2.dll", "SDL2_ttf.dll", "SDL2_mixer.dll",
-    "libwebp-7.dll", "libwebpdemux-2.dll", "libwebpmux-3.dll", "libsharpyuv-0.dll",
-    # AVIF decode chain (libavif links every codec it was built against).
-    "libavif-16.dll", "libaom.dll", "libdav1d-7.dll", "libyuv.dll",
-    "librav1e.dll", "libSvtAv1Enc-4.dll",
-    "libfreetype-6.dll", "libbz2-1.dll", "libbrotlidec.dll", "libbrotlicommon.dll",
-    "libpng16-16.dll", "zlib1.dll", "libharfbuzz-0.dll", "libglib-2.0-0.dll",
-    "libgraphite2.dll", "libintl-8.dll", "libiconv-2.dll", "libpcre2-8-0.dll",
-    "libopusfile-0.dll", "libopus-0.dll", "libogg-0.dll", "libvorbis-0.dll",
-    "libvorbisfile-3.dll", "libmpg123-0.dll", "libwavpack-1.dll",
-    "libgcc_s_seh-1.dll", "libwinpthread-1.dll", "libstdc++-6.dll",
-    "libxmp.dll", "libgme.dll", "libzstd.dll", "libshlwapi.dll"
-)
-foreach ($dll in $dlls) {
-    $src = Join-Path "$msys\bin" $dll
-    if (Test-Path $src) { Copy-Item $src bin\ -Force }
+# Stage the runtime DLL closure next to the exe so it runs without MSYS2 on PATH.
+# Walked recursively from the exe's import table (objdump) and resolved against
+# the UCRT64 bin, rather than a hardcoded list: that list silently rotted once
+# (SDL2_mixer pulled in libFLAC/libjpeg-8, the list didn't, the dev build broke
+# with "DLL missing"). This computes the exact set, so it can't drift again.
+# CI's release path does the equivalent with `ldd`.
+$seen = @{}
+$queue = New-Object System.Collections.Generic.Queue[string]
+$queue.Enqueue("bin\asyncao.exe")
+$staged = 0
+while ($queue.Count -gt 0) {
+    $f = $queue.Dequeue()
+    $imports = & "$msys\bin\objdump.exe" -p $f 2>$null |
+        Select-String "DLL Name:" |
+        ForEach-Object { ($_ -split "DLL Name: ")[1].Trim() }
+    foreach ($d in $imports) {
+        $key = $d.ToLower()
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        $src = Join-Path "$msys\bin" $d
+        if (Test-Path $src) {        # a UCRT64-provided DLL => stage it and recurse
+            Copy-Item $src bin\ -Force
+            $queue.Enqueue($src)
+            $staged++
+        }
+    }
 }
-Write-Host "Runtime DLLs staged in bin\"
+Write-Host "Runtime DLLs staged in bin\ ($staged)"
 
 if ($Run) { & bin\asyncao.exe }
