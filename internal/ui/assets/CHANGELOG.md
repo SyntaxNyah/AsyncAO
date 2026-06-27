@@ -4,6 +4,70 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.0.5 — 2026-06-27
+
+A big quality-of-life and bug-fix release, driven almost entirely by playtest
+feedback. **Huge thanks to Nightingale**, who tore the client apart, stress-tested
+every corner and bluntly reported the whole pile of annoyances and fixes below —
+most of this release exists because of his testing.
+
+### Build-your-own layout
+- The IC bar is no longer one fixed strip. The **Immediate** toggle, every
+  **control button** (the shouts, Pair, Character, Wardrobe, Restyle, Background,
+  Evidence, Mods, Settings, About, Login, Disconnect and more) and the **chatbox**
+  itself can each be dragged out into its own spot in the layout editor — scatter
+  them anywhere on screen, or lift the chatbox right off the sprites.
+- **Precise stage sizing** (Settings → Scale): the courtroom art is 256×192, so
+  the stage now snaps to crisp integer multiples (Fit / 1× / 2× / 3× / 4×, plus a
+  slider and an exact-pixel box) instead of landing between them and going blurry.
+- Hold **Shift** while dragging or resizing in the layout editor for pixel-precise
+  placement (bypasses the grid snap), and thin bars resize back down again instead
+  of getting stuck tall.
+
+### Appearance & themes
+- **Custom colour scheme**: a new "Custom" entry in the theme picker lets you set
+  every UI colour (background, panels, accent, text, danger) by hex with a live
+  preview. A readability guard stops you painting the text invisible.
+- The whole UI was **rebased more compact** — the default no longer looks like
+  it's running at 125% system scaling.
+- The client now renders **DPI-aware**: crisp on 125% / 150% displays instead of
+  being bitmap-upscaled into a blur, and the UI-scale slider is free to go to 100%.
+
+### Areas list
+- Each area is now its own **bordered button card** — locked rooms get a red card,
+  the area you're in is highlighted, and the player count sits on an indented
+  second line. No more flat grey wall where every room looked the same.
+
+### Emotes
+- **Right-click an emote** to pin its full-size preview open: it stays until you
+  close it, follows your mouse across other emotes, and keeps wheel-cycle / zoom /
+  drag — a permanent alternative to the hover preview.
+- The emote-name text that overlaid icon-fallback buttons is **gone by default**
+  (clean icons); a Settings toggle brings it back if you relied on it.
+- Emote **favourite ★ badges are opt-in** now (off by default) so they don't
+  clutter the grid for people who don't use them.
+
+### Courtroom & chat
+- The **position dropdown** shows a background thumbnail per position, so you can
+  see at a glance which positions a background actually supports.
+- The **pairing preview** draws the real background behind the ghosts, so you
+  place your sprite against the actual scene instead of a black void.
+- **OOC and IC-log text sizes are independent** — Ctrl+scroll (or wheel-button) on
+  one no longer resizes both. Added an OOC text-size slider in Settings.
+
+### Fixes & polish
+- Opening the **theme / folder pickers** (and the screenshot toast / video export)
+  no longer flashes an empty console window — a regression from the console-free
+  v1.0.0 build.
+- **Esc** now closes the full-screen Settings / About / What's-New / Server-help
+  views, back to wherever you were.
+- The preanim toggle is labelled **"Immediate"** in full (was the cryptic "Immed").
+- **"Restart to apply"** after an update actually relaunches the app now.
+
+### Thanks
+- **Nightingale** — extensive testing and brutally honest bug reports across the
+  whole v1.0.x line; added to the beta-tester credits. This one's for you.
+
 ## v1.0.0 — 2026-06-27
 
 The first stable public release. (The earlier v0.1.x previews were withdrawn —
