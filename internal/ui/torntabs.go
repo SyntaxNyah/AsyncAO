@@ -212,12 +212,13 @@ func (a *App) drawTornTabs(w, h int32) {
 		hdr := sdl.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: tornTabHeaderH}
 		c.Fill(hdr, ColPanelHi)
 		c.Label(hdr.X+7, hdr.Y+3, t.title, ColText)
-		// Normal-mode close = redock (back into the docked strip), matching the Extras
-		// detached-box "x" idiom. Hidden while editing — there the header is a drag
-		// handle and redock is the tray / right-click, so an x would be inert clutter.
+		// Redock: RIGHT-CLICK the header — a deliberate gesture. The old one-click "x"
+		// sat in the corner and was far too easy to hit by accident during normal play
+		// (playtest: "really easy to accidentally click, I just did it"), so it's gone.
+		// In edit mode the tray chip / right-click-reset handle redocking instead.
 		if !a.classicEdit {
-			xb := sdl.Rect{X: r.X + r.W - tornTabHeaderH - 1, Y: r.Y + 1, W: tornTabHeaderH, H: tornTabHeaderH}
-			if c.Button(xb, "x") {
+			c.TooltipAfter("redock:"+t.key, hdr, "Right-click to redock this panel")
+			if c.rightClicked && c.hovering(hdr) {
 				a.clearClassicSlot(t.key)
 				continue // redocked — skip its body; other panels still draw
 			}
