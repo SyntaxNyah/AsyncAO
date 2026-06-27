@@ -2575,17 +2575,15 @@ func (a *App) isOfficialVanilla(assetHost string) bool {
 
 func (a *App) fetchManifestAsync() {
 	origin := a.urls.Origin()
-	if !a.d.Prefs.FormatAutoDetect() || a.manifestFor == origin ||
-		!strings.HasPrefix(origin, "http") {
+	if a.manifestFor == origin || !strings.HasPrefix(origin, "http") {
 		return
 	}
 	a.manifestFor = origin
 	host := hostOfURL(origin)
 	// A per-host format profile (user-set, or the built-in official-vanilla example)
-	// wins and seeds INSTANTLY — no network round-trip to race the cold load, so the
-	// very first probe already uses the right formats and the server manifest can't be
-	// shadowed by the global default. Unprofiled hosts fall through to the fetch below;
-	// the global default is never touched.
+	// applies even when auto-detect is OFF — it's an explicit per-server override, not
+	// the autodetect fetch. It seeds INSTANTLY (no network race) so the very first probe
+	// already uses the right formats; it wins over the global default for THIS host only.
 	if profile := a.extProfileFor(host); profile != "" {
 		if m, err := assets.ParseManifest([]byte(profile)); err == nil {
 			n := m.SeedLearned(a.d.Prefs, host)
@@ -2593,6 +2591,11 @@ func (a *App) fetchManifestAsync() {
 			a.pushDebug(fmt.Sprintf("format profile: seeded %d classes for %s (instant)", n, host))
 			return
 		}
+	}
+	// The NETWORK fetch of the server's own extensions.json is gated on auto-detect
+	// (the per-server profile above is not — it always applies).
+	if !a.d.Prefs.FormatAutoDetect() {
+		return
 	}
 	url := origin + assets.ManifestFileName
 	go func() {
