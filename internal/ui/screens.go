@@ -1074,9 +1074,21 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 		oocH = rcol.H - cleanOOCMinH
 	}
 	logH := rcol.H - oocH - cleanGapPx
-	a.drawLogPanel(sdl.Rect{X: rcol.X, Y: rcol.Y, W: rcol.W, H: logH}, vp)
-	// The OOC box is its OWN slot — drag it anywhere / resize it independently of the log.
 	boxDef := sdl.Rect{X: rcol.X, Y: rcol.Y + logH + cleanGapPx, W: rcol.W, H: oocH}
+	// If the OOC box is hidden, or has been dragged to its own spot (a slot override), it
+	// no longer sits under the log — so the log reclaims the FULL column instead of leaving
+	// a dead gap where the OOC used to be (playtest: "unpin OOC and the IC log is stuck
+	// with empty space that never goes away").
+	_, oocMoved := a.classicOv[slotOOC]
+	oocHidden := a.panelHidden(panelOOC)
+	if oocMoved || oocHidden {
+		logH = rcol.H
+	}
+	a.drawLogPanel(sdl.Rect{X: rcol.X, Y: rcol.Y, W: rcol.W, H: logH}, vp)
+	if oocHidden {
+		return // the log fills the column; there's no OOC box to draw
+	}
+	// The OOC box is its OWN slot — drag it anywhere / resize it independently of the log.
 	box := a.slotRect(slotOOC, boxDef, w, h)
 	c.Fill(box, ColPanel)
 	c.Border(box, ColAccent)
