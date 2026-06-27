@@ -389,7 +389,9 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Banner: a short title + ONE concise hint + the toolbar chips (raw-hit — the
 	// fence blocks kit buttons). The full per-box context lives on the bottom line, so
 	// the top stays calm instead of a wall of instructions.
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 222})
+	// Translucent so widgets parked in the top strip stay visible through it while
+	// editing (you can now drag boxes up there — playtest: "make use of that space").
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 150})
 	c.Label(pad, 6, "Edit Layout", ColTierYellow)
 	doneBtn := sdl.Rect{X: w - 62 - pad, Y: 2, W: 62, H: classicBannerH - 4}
 	resetBtn := sdl.Rect{X: doneBtn.X - 90 - 6, Y: 2, W: 90, H: classicBannerH - 4}
@@ -404,7 +406,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 	aspectBtn := sdl.Rect{X: snapBtn.X - 80 - 6, Y: 2, W: 80, H: classicBannerH - 4}
 	hintX := pad + c.TextWidth("Edit Layout") + 18
-	c.LabelClipped(hintX, 6, aspectBtn.X-hintX-10, "Drag to move · grab an edge to resize · Alt = always move · Shift = precise", ColTextDim)
+	c.LabelClipped(hintX, 6, aspectBtn.X-hintX-10, "Drag to move · edge to resize · Alt = move · Shift = precise · the top strip is free to use", ColTextDim)
 	a.rawChip(aspectBtn, aspectLabel)
 	a.rawChip(snapBtn, snapLabel)
 	a.rawChip(resetBtn, "Reset all")
@@ -496,7 +498,11 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// MOVE. pickResizeSlot targets the HOVERED box (so resize hits the box you're
 	// pointing at, like move does) and skips move-only slots so the little control
 	// block can't steal a neighbour's edge grip.
-	if pressed && a.classicEditDrag == 0 && c.mouseY > classicBannerH && !overTray {
+	// A drag can begin ANYWHERE except over the editor's own chips (so the top strip
+	// is grabbable instead of a blanket no-drag banner row) or the pop-out tray.
+	overChip := pointIn(c.mouseX, c.mouseY, doneBtn) || pointIn(c.mouseX, c.mouseY, resetBtn) ||
+		pointIn(c.mouseX, c.mouseY, snapBtn) || pointIn(c.mouseX, c.mouseY, aspectBtn)
+	if pressed && a.classicEditDrag == 0 && !overChip && !overTray {
 		// Alt forces a MOVE (skips the resize-edge test). A small widget — a single
 		// button — is almost ALL edge, so a plain drag kept resizing it instead of
 		// moving it (playtest: "I try to drag Disconnect and it just resizes unless I
@@ -598,8 +604,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 		if r.X < 0 {
 			r.X = 0
 		}
-		if r.Y < classicBannerH {
-			r.Y = classicBannerH
+		if r.Y < 0 { // the top strip is usable now (the banner is translucent and only its chips block a drag)
+			r.Y = 0
 		}
 		if r.X+r.W > w {
 			r.X = w - r.W
