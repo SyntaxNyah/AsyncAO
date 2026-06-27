@@ -4,6 +4,20 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.0.7 — 2026-06-27
+
+A focused fix for server asset formats.
+
+### Asset formats
+- **A server's own `extensions.json` is honoured again.** v1.0.6 added per-server
+  format profiles — and bundled one for the official **vanilla** server — but they
+  were skipped whenever you had asset **auto-detect turned off**, so the client
+  kept probing its default WebP formats and vanilla content came up broken. A
+  per-server profile is an explicit override, not part of auto-detect, so it now
+  applies the instant you connect **regardless of the auto-detect toggle**. Join
+  the official vanilla server and its formats (`.png` icons, backgrounds and
+  sprites) are seeded immediately; your global default is left untouched.
+
 ## v1.0.6 — 2026-06-27
 
 Another playtest-driven round — the layout editor grew up, formats got fixed, and
