@@ -3610,9 +3610,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// Immediate (AO non-interrupting preanim): the preanim plays without
 	// holding back the text. Session toggle; rides the next message via
 	// OutgoingMS.Immediate. Vertically centered against the fH-tall inputs.
-	const immedW = 70
+	const immedW = 96 // fits the full "Immediate" label without truncating to "Immed"
 	immedX := nameX + shownameBoxW + 6
-	a.icImmediate = c.Checkbox(immedX, rowY+(fH-16)/2, "Immed", a.icImmediate)
+	a.icImmediate = c.Checkbox(immedX, rowY+(fH-16)/2, "Immediate", a.icImmediate)
 	c.Tooltip(sdl.Rect{X: immedX, Y: rowY, W: immedW, H: fH}, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	var send bool
 	icX := immedX + immedW + 6

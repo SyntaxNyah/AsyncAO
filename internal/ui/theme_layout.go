@@ -381,11 +381,11 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// Immediate toggle (parity with the classic IC row), but only when the
 		// theme's message rect is wide enough to keep a usable field after it.
 		const (
-			themedImmedW    = 64  // space reserved for the "Immed" checkbox
+			themedImmedW    = 96  // space reserved for the "Immediate" checkbox
 			themedImmedKeep = 120 // min field width to still host the checkbox
 		)
 		if fieldW > themedImmedW+themedImmedKeep {
-			a.icImmediate = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Immed", a.icImmediate)
+			a.icImmediate = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Immediate", a.icImmediate)
 			c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedImmedW, H: in.H}, "Immediate: the preanim plays without holding back the text")
 			fieldX += themedImmedW
 			fieldW -= themedImmedW
