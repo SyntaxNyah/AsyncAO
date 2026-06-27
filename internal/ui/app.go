@@ -4000,6 +4000,18 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		}
 		a.ctx.keyPressed = 0
 	}
+	// ESC closes a full-screen sub-view back to where it opened — the instinctive
+	// keystroke (the Back button still works). Skipped while a text field is
+	// focused, a key-bind capture is live, or an overlay (hotkey sheet / update
+	// modal) owns ESC, so it never steals their key.
+	if a.ctx.keyPressed == sdl.K_ESCAPE && a.ctx.focusID == "" &&
+		a.bindingFor == "" && a.shownameBindFor == "" && !a.showHotkeys && !a.updateShow {
+		switch a.screen {
+		case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp:
+			a.screen = a.prevScreen
+			a.ctx.keyPressed = 0
+		}
+	}
 	// F11 toggles fullscreen on any screen — the keyboard escape when a too-big
 	// window has dragged the Settings controls off the edge of the monitor.
 	if a.ctx.fullscreenReq {
