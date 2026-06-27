@@ -399,8 +399,10 @@ type App struct {
 	chatSelDownY    int32
 	// Highlight-colour picker (Settings): the hue/sat wheel texture (built once)
 	// and the in-progress hex field text.
-	colorWheel *sdl.Texture
-	colorHex   string
+	colorWheel     *sdl.Texture
+	colorHex       string
+	chromeEditSlot int    // which custom-chrome kit colour the wheel edits (0..6)
+	chromeHexBuf   string // in-progress hex for the custom-chrome wheel's hex field
 	// Mayo mascot portrait on the About page: a high-quality Catmull-Rom downscale
 	// of the embedded art, uploaded once (lazily, render thread). Baked to the exact
 	// PHYSICAL pixel size (logical × UI scale) so it draws 1:1 — crisp at any scale —

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -164,36 +166,108 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	return y + 10
 }
 
-// drawCustomChromeEditor edits each kit colour by hex (rrggbb; blank = the stock
-// dark colour for that slot). Mirrors the Extras-box colour rows: label + live
-// swatch + hex field. Edits apply live (recolour + cache purge) and persist.
+// drawCustomChromeEditor edits the 7 kit colours with a colour WHEEL (playtest:
+// "improve custom colours to like a wheel"): a row of swatches picks which kit
+// colour to edit, then a hue/saturation disc + a brightness slider + a hex field
+// set it. A blank/untouched slot uses the stock dark colour. Edits apply live
+// (recolour + cache purge) and persist. Reuses the highlight picker's wheel.
 func (a *App) drawCustomChromeEditor(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	labels := [7]string{"Background", "Panel", "Raised panel", "Accent", "Text", "Dim text", "Danger"}
-	cur := a.d.Prefs.CustomChrome()
-	next := cur
-	c.LabelClipped(pad, y, a.formW, "Hex like 78aaff — blank uses the stock dark colour for that slot. Applies live.", ColTextDim)
-	y += 22
-	for i := range labels {
-		c.Label(pad+16, y+4, labels[i], ColTextDim)
-		swatch := defaultKitColors[i] // stock dark for blank / unparseable
-		if col, ok := parseHexColor(next[i]); ok {
-			swatch = col
+	hex := a.d.Prefs.CustomChrome()
+	colOf := func(i int) sdl.Color {
+		if col, ok := parseHexColor(hex[i]); ok {
+			return col
 		}
-		swR := sdl.Rect{X: pad + 130, Y: y + 1, W: 18, H: 18}
-		c.Fill(swR, swatch)
-		c.Border(swR, ColTextDim)
-		next[i], _ = c.TextField("chromecol"+strconv.Itoa(i), sdl.Rect{X: pad + 156, Y: y, W: 110, H: fieldH}, next[i], "rrggbb")
-		y += 26
+		return defaultKitColors[i] // stock dark for blank / unparseable
 	}
-	if next != cur {
-		a.d.Prefs.SetCustomChrome(next)
+	apply := func(i int, col sdl.Color) {
+		hex[i] = fmt.Sprintf("%02x%02x%02x", col.R, col.G, col.B)
+		a.d.Prefs.SetCustomChrome(hex)
 		a.applyChromePreset(chromeCustomKey) // live recolour
 	}
-	if c.Button(sdl.Rect{X: pad + 16, Y: y, W: 130, H: btnH}, "Reset to Dark") {
+	if a.chromeEditSlot < 0 || a.chromeEditSlot >= len(labels) {
+		a.chromeEditSlot = 0
+	}
+
+	c.LabelClipped(pad, y, a.formW, "Pick a colour, then drag the wheel / brightness or type a hex. Untouched slots stay stock dark.", ColTextDim)
+	y += 24
+	// Swatch row — click to choose which kit colour the wheel edits.
+	sx := pad
+	for i := range labels {
+		sw := sdl.Rect{X: sx, Y: y, W: 28, H: 28}
+		c.Fill(sw, colOf(i))
+		ring := ColTextDim
+		if i == a.chromeEditSlot {
+			ring = ColAccent
+		}
+		c.Border(sw, ring)
+		if c.clicked && c.hovering(sw) {
+			a.chromeEditSlot = i
+		}
+		c.TooltipAfter("chromeslot"+strconv.Itoa(i), sw, labels[i])
+		sx += 34
+	}
+	y += 36
+	sel := a.chromeEditSlot
+	c.Label(pad, y, "Editing: "+labels[sel], ColAccent)
+	y += 22
+
+	cur := colOf(sel)
+	hh, ss, vv := rgbToHSV(cur.R, cur.G, cur.B)
+	const diam = colorWheelDiam
+	rad := float64(diam) / 2
+	wheel := sdl.Rect{X: pad, Y: y, W: diam, H: diam}
+	if tex := a.ensureColorWheel(); tex != nil {
+		_ = c.Ren.Copy(tex, nil, &wheel)
+	}
+	ang := hh * 2 * math.Pi
+	dotX := wheel.X + int32(rad+math.Cos(ang)*ss*rad)
+	dotY := wheel.Y + int32(rad+math.Sin(ang)*ss*rad)
+	c.Border(sdl.Rect{X: dotX - 5, Y: dotY - 5, W: 10, H: 10}, ColText)
+	c.Border(sdl.Rect{X: dotX - 4, Y: dotY - 4, W: 8, H: 8}, ColBackground)
+	if c.mouseDown && c.hovering(wheel) {
+		dx := float64(c.mouseX-wheel.X) - rad
+		dy := float64(c.mouseY-wheel.Y) - rad
+		if dist := math.Hypot(dx, dy); dist <= rad {
+			nh := math.Atan2(dy, dx) / (2 * math.Pi)
+			nr, ng, nb := hsvToRGB(nh, dist/rad, math.Max(vv, 0.05)) // keep brightness (floor so a near-black pick still shows hue)
+			apply(sel, sdl.Color{R: nr, G: ng, B: nb, A: 255})
+		}
+	}
+	// Brightness slider (full at top → black at bottom), of the current hue/sat.
+	slR := sdl.Rect{X: wheel.X + diam + 18, Y: y, W: 26, H: diam}
+	for i := int32(0); i < slR.H; i++ {
+		br := 1 - float64(i)/float64(slR.H)
+		rr, gg, bb := hsvToRGB(hh, ss, br)
+		c.Fill(sdl.Rect{X: slR.X, Y: slR.Y + i, W: slR.W, H: 1}, sdl.Color{R: rr, G: gg, B: bb, A: 255})
+	}
+	c.Border(slR, ColPanelHi)
+	knobY := slR.Y + int32((1-vv)*float64(slR.H-4))
+	c.Border(sdl.Rect{X: slR.X - 2, Y: knobY, W: slR.W + 4, H: 4}, ColText)
+	if c.mouseDown && c.hovering(slR) {
+		nv := clampF64(1-float64(c.mouseY-slR.Y)/float64(slR.H), 0, 1)
+		nr, ng, nb := hsvToRGB(hh, ss, nv)
+		apply(sel, sdl.Color{R: nr, G: ng, B: nb, A: 255})
+	}
+	// Live swatch + hex field for the selected slot + Reset.
+	hx := slR.X + slR.W + 20
+	c.Fill(sdl.Rect{X: hx, Y: y, W: 90, H: 34}, cur)
+	c.Border(sdl.Rect{X: hx, Y: y, W: 90, H: 34}, ColPanelHi)
+	if c.focusID != "chromehex" {
+		a.chromeHexBuf = fmt.Sprintf("%02x%02x%02x", cur.R, cur.G, cur.B) // reflect wheel/slider edits when not typing
+	}
+	if next, _ := c.TextField("chromehex", sdl.Rect{X: hx, Y: y + 42, W: 100, H: fieldH}, a.chromeHexBuf, "RRGGBB"); next != a.chromeHexBuf {
+		a.chromeHexBuf = next
+		if col, ok := parseHexColor(next); ok {
+			apply(sel, col)
+		}
+	}
+	c.Label(hx, y+42+fieldH+4, "hex code", ColTextDim)
+	if c.Button(sdl.Rect{X: hx, Y: y + 42 + fieldH + 24, W: 130, H: btnH}, "Reset all to Dark") {
 		a.d.Prefs.SetCustomChrome([7]string{})
 		a.applyChromePreset(chromeCustomKey)
 	}
-	return y + btnH + 6
+	return y + diam + 14
 }
