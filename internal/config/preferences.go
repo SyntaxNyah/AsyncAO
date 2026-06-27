@@ -781,6 +781,7 @@ type AssetPreferences struct {
 	EmoteCaptions      bool                      `json:"emoteCaptions"`   // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	ViewportExactW     int                       `json:"viewportExactW"`  // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
+	CustomChromeHex    [7]string                 `json:"customChrome"`    // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1025,6 +1026,7 @@ type prefsJSON struct {
 	EmoteCaptions      bool                      `json:"emoteCaptions"`   // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	ViewportExactW     int                       `json:"viewportExactW"`  // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
+	CustomChromeHex    [7]string                 `json:"customChrome"`    // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1610,6 +1612,7 @@ func load(path string) (*AssetPreferences, error) {
 	} else {
 		p.OOCScalePct = p.LogScalePct
 	}
+	p.CustomChromeHex = onDisk.CustomChromeHex // hex strings; validated (parsed/ignored) at apply time
 	if onDisk.InputHeightPct != 0 {
 		p.InputHeightPct = clampPercent(onDisk.InputHeightPct, MinInputPercent, MaxInputPercent)
 	}
@@ -4723,6 +4726,27 @@ func (p *AssetPreferences) SetOOCScale(pct int) {
 		return
 	}
 	p.OOCScalePct = pct
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// CustomChrome returns the user's "Custom" chrome scheme as 7 hex strings
+// (bg, panel, panelHi, accent, text, textDim, danger); a blank slot means
+// "use the stock dark colour". Active only while ChromeTheme is "custom".
+func (p *AssetPreferences) CustomChrome() [7]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CustomChromeHex
+}
+
+// SetCustomChrome stores the 7-colour custom chrome scheme (hex strings).
+func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
+	p.mu.Lock()
+	if p.CustomChromeHex == hex {
+		p.mu.Unlock()
+		return
+	}
+	p.CustomChromeHex = hex
 	p.mu.Unlock()
 	p.markDirty()
 }

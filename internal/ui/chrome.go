@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"strconv"
+
+	"github.com/veandco/go-sdl2/sdl"
+)
 
 // AsyncAO chrome themes (#M3): user-pickable palettes for the CLIENT UI itself,
 // independent of AO2 courtroom themes. The chosen preset becomes the BASE palette
@@ -50,6 +54,10 @@ var chromePresets = []chromePreset{
 	}},
 }
 
+// chromeCustomKey selects the user-defined "Custom" scheme (colours read live from
+// prefs, not the static chromePresets table).
+const chromeCustomKey = "custom"
+
 // chromePresetIndex returns the index of the preset with key, or 0 (Dark) if unknown.
 func chromePresetIndex(key string) int {
 	for i := range chromePresets {
@@ -60,11 +68,42 @@ func chromePresetIndex(key string) int {
 	return 0
 }
 
+// customChromeColors builds the user's Custom palette: each kit slot is the saved hex
+// colour, or the stock dark colour when that slot is blank / unparseable — so a
+// half-filled custom scheme is always coherent (no black-on-black slots).
+func (a *App) customChromeColors() [7]sdl.Color {
+	out := defaultKitColors
+	hex := a.d.Prefs.CustomChrome()
+	for i := range out {
+		if col, ok := parseHexColor(hex[i]); ok {
+			out[i] = col
+		}
+	}
+	// Readability floor: a custom scheme gets no AO2-theme overlay, so the kit-wide
+	// guard in applyThemePalette never runs for it. Re-derive Text (and dim text)
+	// from the Panel's lightness when the chosen Text would vanish into the Panel, so
+	// a user can't accidentally paint the Settings text invisible and get stuck.
+	if absInt(colLuma(out[4])-colLuma(out[1])) < minInkSkinContrast {
+		if colLuma(out[1]) < paletteLightPanelLuma {
+			out[4] = defaultKitColors[4] // light ink on a dark panel
+		} else {
+			out[4] = paletteDarkText // dark ink on a light panel
+		}
+		out[5] = scaleColor(out[4], paletteDimPct)
+	}
+	return out
+}
+
 // applyChromePreset makes the preset for key the base palette and re-overlays the current
 // AO2 theme (if any), then purges the colour-keyed text cache so labels re-rasterise in
-// the new colours. Called on startup (from prefs) and when the user picks a theme.
+// the new colours. Called on startup (from prefs) and when the user picks a theme. The
+// "custom" key reads the user's saved colours instead of the static table.
 func (a *App) applyChromePreset(key string) {
-	activeKitColors = chromePresets[chromePresetIndex(key)].colors
+	if key == chromeCustomKey {
+		activeKitColors = a.customChromeColors()
+	} else {
+		activeKitColors = chromePresets[chromePresetIndex(key)].colors
+	}
 	applyThemePalette(a.themePalette) // restore the new base, then re-lay the theme over it
 	a.ctx.purgeTextCache()
 }
@@ -102,5 +141,59 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 			y += btnH + 8
 		}
 	}
-	return y + btnH + 10
+	// The user-defined "Custom" scheme, picked like any preset; its swatch previews
+	// the saved colours (stock dark for any slot left blank).
+	custom := a.customChromeColors()
+	csw := sdl.Rect{X: x, Y: y + 3, W: 22, H: 22}
+	c.Fill(csw, custom[1])                                        // Panel
+	c.Fill(sdl.Rect{X: x + 14, Y: y + 3, W: 8, H: 22}, custom[3]) // Accent stripe
+	c.Border(csw, ColTextDim)
+	cbw := c.TextWidth("Custom") + 18
+	cbtn := sdl.Rect{X: x + 26, Y: y, W: cbw, H: btnH}
+	if c.Button(cbtn, "Custom") {
+		a.d.Prefs.SetChromeTheme(chromeCustomKey)
+		a.applyChromePreset(chromeCustomKey)
+	}
+	if cur == chromeCustomKey {
+		c.Border(cbtn, ColAccent) // ring the active scheme
+	}
+	y += btnH + 10
+	if cur == chromeCustomKey { // edit the colours only when Custom is the active scheme
+		y = a.drawCustomChromeEditor(y)
+	}
+	return y + 10
+}
+
+// drawCustomChromeEditor edits each kit colour by hex (rrggbb; blank = the stock
+// dark colour for that slot). Mirrors the Extras-box colour rows: label + live
+// swatch + hex field. Edits apply live (recolour + cache purge) and persist.
+func (a *App) drawCustomChromeEditor(y int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	labels := [7]string{"Background", "Panel", "Raised panel", "Accent", "Text", "Dim text", "Danger"}
+	cur := a.d.Prefs.CustomChrome()
+	next := cur
+	c.LabelClipped(pad, y, a.formW, "Hex like 78aaff — blank uses the stock dark colour for that slot. Applies live.", ColTextDim)
+	y += 22
+	for i := range labels {
+		c.Label(pad+16, y+4, labels[i], ColTextDim)
+		swatch := defaultKitColors[i] // stock dark for blank / unparseable
+		if col, ok := parseHexColor(next[i]); ok {
+			swatch = col
+		}
+		swR := sdl.Rect{X: pad + 130, Y: y + 1, W: 18, H: 18}
+		c.Fill(swR, swatch)
+		c.Border(swR, ColTextDim)
+		next[i], _ = c.TextField("chromecol"+strconv.Itoa(i), sdl.Rect{X: pad + 156, Y: y, W: 110, H: fieldH}, next[i], "rrggbb")
+		y += 26
+	}
+	if next != cur {
+		a.d.Prefs.SetCustomChrome(next)
+		a.applyChromePreset(chromeCustomKey) // live recolour
+	}
+	if c.Button(sdl.Rect{X: pad + 16, Y: y, W: 130, H: btnH}, "Reset to Dark") {
+		a.d.Prefs.SetCustomChrome([7]string{})
+		a.applyChromePreset(chromeCustomKey)
+	}
+	return y + btnH + 6
 }

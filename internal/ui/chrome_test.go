@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"path/filepath"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
+	"github.com/veandco/go-sdl2/sdl"
 )
 
 // TestChromePresetApplies pins #M3: a non-dark preset changes the kit colours; dark
@@ -52,6 +55,46 @@ func TestChromePresetsLegible(t *testing.T) {
 		if d := absInt(colLuma(p.colors[idxAccent]) - colLuma(p.colors[idxPanel])); d < 40 {
 			t.Errorf("%s: accent-vs-panel contrast %d < 40 (accent vanishes)", p.key, d)
 		}
+	}
+}
+
+// TestCustomChromeApplies pins the user "Custom" scheme: filled hex slots apply,
+// blank slots stay stock dark, and the readability floor forces dark text on a
+// light custom panel so a user can't paint the UI into an unreadable corner.
+func TestCustomChromeApplies(t *testing.T) {
+	defer func() {
+		activeKitColors = defaultKitColors
+		applyThemePalette(theme.Palette{})
+	}()
+	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
+	if err != nil {
+		t.Fatalf("config.New: %v", err)
+	}
+	t.Cleanup(func() { _ = prefs.Close() })
+	a := &App{ctx: &Ctx{}, d: Deps{Prefs: prefs}}
+
+	// All-blank custom = stock dark in every slot.
+	a.applyChromePreset(chromeCustomKey)
+	if ColPanel != defaultKitColors[1] || ColAccent != defaultKitColors[3] {
+		t.Fatalf("blank custom should be stock dark: panel=%+v accent=%+v", ColPanel, ColAccent)
+	}
+
+	// Filled panel + accent apply; the blank slots stay stock.
+	prefs.SetCustomChrome([7]string{"", "203040", "", "ff8800", "", "", ""})
+	a.applyChromePreset(chromeCustomKey)
+	if want := (sdl.Color{R: 0x20, G: 0x30, B: 0x40, A: 255}); ColPanel != want {
+		t.Errorf("custom panel = %+v, want %+v", ColPanel, want)
+	}
+	if want := (sdl.Color{R: 0xff, G: 0x88, B: 0x00, A: 255}); ColAccent != want {
+		t.Errorf("custom accent = %+v, want %+v", ColAccent, want)
+	}
+
+	// Readability floor: a light panel with the (unset → stock light) text would be
+	// illegible, so Text is forced dark — the user can't get stuck on invisible text.
+	prefs.SetCustomChrome([7]string{"", "f0f0f0", "", "", "", "", ""})
+	a.applyChromePreset(chromeCustomKey)
+	if colLuma(ColText) >= paletteLightPanelLuma {
+		t.Errorf("light custom panel should force dark text, got text luma %d", colLuma(ColText))
 	}
 }
 
