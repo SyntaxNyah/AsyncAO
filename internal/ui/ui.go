@@ -1818,6 +1818,8 @@ type ddDraw struct {
 	cur     int
 	scroll  int32
 	rowH    int32
+	thumbW  int32                     // per-row thumbnail strip width (0 = text-only)
+	thumb   func(idx int, r sdl.Rect) // paints the idx-th row's thumbnail (deferred, in FinishFrame)
 }
 
 // ddMaxVisibleRows caps an open dropdown list's height; longer lists
@@ -1830,6 +1832,20 @@ const ddMaxVisibleRows = 12
 // is modally captured so widgets underneath stay inert. Returns the
 // (possibly new) index and whether it changed this frame.
 func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, bool) {
+	return c.dropdownEx(id, r, options, cur, 0, 0, nil)
+}
+
+// DropdownThumbs is Dropdown with a thumbnail strip down the left of each open
+// row: rowHWant sets the (taller) open-row height, thumbW the strip width, and
+// thumb paints the idx-th row's image at end-of-frame (it shares the deferred
+// overlay paint, so the thumbnails sit above everything like the list itself).
+// The closed control is unchanged. thumb runs on the render thread in
+// FinishFrame, so an on-demand cachedPage/Prefetch from it is safe.
+func (c *Ctx) DropdownThumbs(id string, r sdl.Rect, options []string, cur int, rowHWant, thumbW int32, thumb func(idx int, r sdl.Rect)) (int, bool) {
+	return c.dropdownEx(id, r, options, cur, rowHWant, thumbW, thumb)
+}
+
+func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHWant, thumbW int32, thumb func(idx int, r sdl.Rect)) (int, bool) {
 	if len(options) == 0 {
 		return cur, false
 	}
@@ -1869,13 +1885,16 @@ func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, b
 	if rowH < int32(c.font.Height())+6 {
 		rowH = int32(c.font.Height()) + 6
 	}
+	if rowHWant > rowH { // thumbnail rows want to be taller than the closed control
+		rowH = rowHWant
+	}
 	visible := int32(len(options))
 	if visible > ddMaxVisibleRows {
 		visible = ddMaxVisibleRows
 	}
 	listW := r.W
 	for _, o := range options {
-		if w := c.TextWidth(o) + 16; w > listW {
+		if w := c.TextWidth(o) + 16 + thumbW; w > listW { // leave room for the thumbnail strip
 			listW = w
 		}
 	}
@@ -1932,6 +1951,7 @@ func (c *Ctx) Dropdown(id string, r sdl.Rect, options []string, cur int) (int, b
 	}
 	c.ddDraws = append(c.ddDraws, ddDraw{
 		list: list, options: options, cur: next, scroll: c.ddScroll, rowH: rowH,
+		thumbW: thumbW, thumb: thumb,
 	})
 	return next, changed
 }
@@ -2010,12 +2030,17 @@ func (c *Ctx) FinishFrame() {
 			case c.hovering(row):
 				c.Fill(row, ColPanelHi)
 			}
+			labelX := row.X + 6
+			if d.thumbW > 0 && d.thumb != nil { // thumbnail strip down the left; text shifts past it
+				d.thumb(idx, sdl.Rect{X: row.X + 2, Y: row.Y + 2, W: d.thumbW, H: d.rowH - 4})
+				labelX = row.X + d.thumbW + 8
+			}
 			if t, ok := c.textTexture(opt, ColText, c.font); ok {
 				w := t.w
-				if maxW := row.W - 12; w > maxW && maxW > 0 {
+				if maxW := row.X + row.W - labelX - 6; w > maxW && maxW > 0 {
 					w = maxW
 				}
-				c.blitLabel(t, row.X+6, row.Y+(d.rowH-t.h)/2, w)
+				c.blitLabel(t, labelX, row.Y+(d.rowH-t.h)/2, w)
 			}
 		}
 	}

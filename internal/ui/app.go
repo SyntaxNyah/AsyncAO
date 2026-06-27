@@ -966,9 +966,16 @@ type sessionState struct {
 	pairOffXText, pairOffYText string
 	// Pair-preview background cache (drawPairGhost): the stage bg drawn behind the
 	// ghost sprites via cachedPage; pairBgKey invalidates it when the bg/position changes.
-	pairBgPages  []*render.TexturePage
-	pairBgGen    uint64
-	pairBgKey    string
+	pairBgPages []*render.TexturePage
+	pairBgGen   uint64
+	pairBgKey   string
+	// Pos-dropdown thumbnail cache (drawPosSelect): one bg thumbnail per position,
+	// keyed by row index; posBgKey (the current bg name) invalidates the whole set
+	// when the background changes so a stale stage can't show under the wrong bg.
+	posBgPages   []*render.TexturePage
+	posBgGen     uint64
+	posBgKey     string
+	posBgAsk     []time.Time // demandAsset pacing for the pos-dropdown thumbnails
 	emotes       []courtroom.Emote
 	emoteIdx     int
 	emotePage    int // emote grid paging (classic + themed)

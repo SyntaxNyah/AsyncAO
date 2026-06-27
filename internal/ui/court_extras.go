@@ -566,9 +566,21 @@ const posSelectW = 64
 // colorSelectW fits the widest color name ("Orange") in the IC selector.
 const colorSelectW = 86
 
+// Pos-dropdown thumbnail geometry: open rows show a 4:3 stage thumbnail of each
+// position's background down the left, so you can SEE the placement (and which
+// positions this background actually has art for) instead of guessing from "wit
+// / def / pro …" codes. 48×36 = 4:3.
+const (
+	posThumbW    = 48
+	posThumbRowH = 40
+)
+
 // drawPosSelect renders the side selector as a real dropdown (AO2's
 // ui_pos_dropdown; playtest asked for dropdowns over cyclers) at the given
-// height. Returns the next x. The Ctrl+P hotkey still cycles (cyclePos).
+// height. Returns the next x. The Ctrl+P hotkey still cycles (cyclePos). When a
+// background is loaded, each open row carries a bg thumbnail (fetched on demand
+// only while the list is open — one probe per position, within the streaming
+// design); without one it falls back to the plain text dropdown.
 func (a *App) drawPosSelect(x, y, h int32) int32 {
 	c := a.ctx
 	c.Label(x, y+(h-int32(c.font.Height()))/2, "Pos", ColTextDim)
@@ -581,7 +593,42 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 			break
 		}
 	}
-	if next, changed := c.Dropdown("posdd", sdl.Rect{X: x, Y: y, W: posSelectW, H: h}, choices, cur); changed {
+	ctrl := sdl.Rect{X: x, Y: y, W: posSelectW, H: h}
+	bg := ""
+	if a.sess != nil {
+		bg = a.sess.Background
+	}
+	// The thumbnail closure captures state, so it heap-allocates when built — only
+	// pay that while the list is actually OPEN (a transient user action). The closed
+	// control draws every frame through the plain text path, so the steady-state
+	// courtroom frame stays allocation-free (the open frame's alloc is user-driven).
+	// On the opening click the list is still text for one frame (ddOpen flips inside
+	// the call), then thumbnails from the next frame — an imperceptible flash.
+	if bg == "" || c.ddOpen != "posdd" {
+		if next, changed := c.Dropdown("posdd", ctrl, choices, cur); changed {
+			a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
+		}
+		return x + posSelectW + 6
+	}
+	if a.posBgKey != bg { // bg changed: drop the now-wrong thumbnails (cachedPage keys by index, not URL)
+		a.posBgPages, a.posBgKey = nil, bg
+	}
+	// Deferred (FinishFrame, render thread): paint the idx-th row's stage thumbnail.
+	thumb := func(i int, tr sdl.Rect) {
+		if i < 0 || i >= len(choices) {
+			return
+		}
+		bgPart, _ := courtroom.PositionScene(choices[i])
+		base := a.urls.Background(bg, bgPart)
+		if page, ok := a.cachedPage(&a.posBgPages, &a.posBgGen, len(choices), i, base); ok && len(page.Frames) > 0 {
+			_ = c.Ren.Copy(page.Frames[0], nil, &tr)
+		} else {
+			c.Fill(tr, sdl.Color{R: 10, G: 10, B: 14, A: 255})
+			a.demandAsset(&a.posBgAsk, len(choices), i, base, assets.AssetTypeBackground) // AssetType: Background (pos thumb, on open)
+		}
+		c.Border(tr, ColPanelHi)
+	}
+	if next, changed := c.DropdownThumbs("posdd", ctrl, choices, cur, posThumbRowH, posThumbW, thumb); changed {
 		a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 	}
 	return x + posSelectW + 6
