@@ -108,6 +108,7 @@ asyncao -debug          # pprof on localhost:6060
 Planned, not yet built:
 
 - **Eventual mobile support** — native Android / iOS binaries.
+- Eventual Legacy AO2 demo file converter to MP4/Video, for Archival.
 
 ## Credits
 
