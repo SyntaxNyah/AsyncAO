@@ -1802,6 +1802,20 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 		a.d.Prefs.SetMusicDucking(next)
 	}
 	y += 28
+
+	y = a.settingsSection(y, w, "Blips")
+	rate, onSpaces := a.d.Prefs.BlipTyping()
+	if v := a.sliderRow(y, "Blip rate (1 blip / N letters)", rate, 1, config.MinBlipRate, config.MaxBlipRate); v != rate {
+		a.d.Prefs.SetBlipTyping(v, onSpaces)
+		a.applyTimingToRoom() // applies from the next message
+	}
+	c.LabelClipped(pad+300, y+4, w-pad-300-scrollBarW, "2 = Ace Attorney style · 1 = every letter", ColTextDim)
+	y += 30
+	if next := c.Checkbox(pad, y, "Blip on spaces too (off = skip whitespace, like Ace Attorney)", onSpaces); next != onSpaces {
+		a.d.Prefs.SetBlipTyping(rate, next)
+		a.applyTimingToRoom()
+	}
+	y += 28
 	return y
 }
 

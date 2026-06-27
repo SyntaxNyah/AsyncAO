@@ -65,6 +65,16 @@ const defaultPreferAnimated = true
 // doesn't cover.
 const defaultFormatAutoDetect = true
 
+// Blip cadence: one chat blip per N revealed letters. defaultBlipRate ships at 2
+// (Ace Attorney style — the cadence most players expect); 1 = a blip every
+// letter. MaxBlipRate caps the slider. Mirrors courtroom.DefaultBlipRate (config
+// can't import courtroom).
+const (
+	defaultBlipRate = 2
+	MinBlipRate     = 1
+	MaxBlipRate     = 10
+)
+
 // defaultUIScaleAuto ships ON: the UI scale follows the display DPI
 // (HiDPI screens render readable out of the box); unticking it re-arms
 // the manual UI scale row in Settings.
@@ -783,6 +793,8 @@ type AssetPreferences struct {
 	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	CustomChromeHex    [7]string                 `json:"customChrome"`    // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
 	BoldNamesOff       bool                      `json:"boldNamesOff"`    // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
+	BlipRate           int                       `json:"blipRate"`        // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
+	BlipOnSpaces       bool                      `json:"blipOnSpaces"`    // also blip on spaces (default OFF = skip whitespace)
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1029,6 +1041,8 @@ type prefsJSON struct {
 	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	CustomChromeHex    [7]string                 `json:"customChrome"`    // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
 	BoldNamesOff       bool                      `json:"boldNamesOff"`    // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
+	BlipRate           int                       `json:"blipRate"`        // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
+	BlipOnSpaces       bool                      `json:"blipOnSpaces"`    // also blip on spaces (default OFF = skip whitespace)
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1313,6 +1327,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		NameVal:                defaultNameColorVal,
 		BgSlideshowSecs:        defaultBgSlideshowSecs,
 		AutoDetectFormats:      defaultFormatAutoDetect,
+		BlipRate:               defaultBlipRate,
 		ThemeLayoutOn:          defaultThemeLayout,
 		ThemeFit:               defaultThemeFit,
 		ThemeFitZoom:           DefaultThemeZoom,
@@ -1546,6 +1561,10 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.FormatAutoDetect != nil {
 		p.AutoDetectFormats = *onDisk.FormatAutoDetect
 	}
+	if onDisk.BlipRate != 0 { // 0 (absent) keeps the default-2 cadence
+		p.BlipRate = clampPercent(onDisk.BlipRate, MinBlipRate, MaxBlipRate)
+	}
+	p.BlipOnSpaces = onDisk.BlipOnSpaces
 	if onDisk.ThemeLayout != nil {
 		p.ThemeLayoutOn = *onDisk.ThemeLayout
 	}
@@ -5613,6 +5632,31 @@ func (p *AssetPreferences) RecordLearned(host, typeName, ext string) {
 		p.LearnedFormats = map[string][]string{}
 	}
 	p.LearnedFormats[key] = []string{ext}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// BlipTyping reports the chat-blip cadence: one blip per `rate` revealed letters
+// (default 2), and whether spaces also blip (default false = skip whitespace).
+func (p *AssetPreferences) BlipTyping() (rate int, onSpaces bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	r := p.BlipRate
+	if r < MinBlipRate {
+		r = defaultBlipRate
+	}
+	return r, p.BlipOnSpaces
+}
+
+// SetBlipTyping clamps and persists the blip cadence + whitespace toggle.
+func (p *AssetPreferences) SetBlipTyping(rate int, onSpaces bool) {
+	rate = clampPercent(rate, MinBlipRate, MaxBlipRate)
+	p.mu.Lock()
+	if p.BlipRate == rate && p.BlipOnSpaces == onSpaces {
+		p.mu.Unlock()
+		return
+	}
+	p.BlipRate, p.BlipOnSpaces = rate, onSpaces
 	p.mu.Unlock()
 	p.markDirty()
 }
