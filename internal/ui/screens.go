@@ -2195,8 +2195,8 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			break
 		}
 		if y >= r.Y-lineH {
-			row := sdl.Rect{X: r.X, Y: y, W: r.W - scrollBarW - scrollBarGap, H: lineH - 3}
-			hover := c.hovering(row)
+			card := sdl.Rect{X: r.X + 2, Y: y + 2, W: r.W - scrollBarW - scrollBarGap - 4, H: lineH - areaCardGap}
+			hover := c.hovering(card)
 			current := area == a.curArea
 			// Two-row entry: the name (population-coloured) on top, an indented
 			// detail line (count / status / lock / CM) under it. A locked room tints
@@ -2234,23 +2234,23 @@ func (a *App) drawAreaList(r sdl.Rect) {
 					detail += "  ·  CM: " + info.CM
 				}
 			}
-			switch { // row background: locked red, current area accent, hover on top
+			fill, border := ColPanel, ColPanelHi // resting card = a plain button (bordered + filled = visually separate)
+			switch {
 			case locked:
-				c.Fill(row, areaLockedBg)
-				nameCol = ColText
+				fill, border, nameCol = areaLockedBg, areaLockedBorder, ColText
 			case current:
-				c.Fill(row, areaCurrentBg)
-				nameCol = ColAccent
+				fill, border, nameCol = areaCurrentBg, ColAccent, ColAccent
 			case hover:
-				c.Fill(row, ColPanelHi)
+				fill, border = ColPanelHi, ColAccent
 			}
+			c.Fill(card, fill)
+			c.Border(card, border)
 			subH := int32(font.Height())
-			c.LabelClippedFont(font, r.X+6, y+3, row.W-12, area, nameCol)
+			c.LabelClippedFont(font, card.X+6, card.Y+3, card.W-12, area, nameCol)
 			if detail != "" {
-				c.LabelClippedFont(font, r.X+20, y+5+subH, row.W-26, detail, ColTextDim)
+				c.LabelClippedFont(font, card.X+18, card.Y+5+subH, card.W-24, detail, ColTextDim)
 			}
-			c.Fill(sdl.Rect{X: row.X + 4, Y: y + lineH - 2, W: row.W - 8, H: 1}, ColPanelHi) // separator between entries
-			if c.ClickedIn(row) {                                                            // press+release in-row: a drag-in release must not transfer areas
+			if c.ClickedIn(card) { // press+release in-card: a drag-in release must not transfer areas
 				a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves
 				a.sess.RequestMusic(area)    // area transfer rides MC
 				a.curArea = area             // Rich Presence (best-effort)
@@ -4683,13 +4683,18 @@ func (a *App) sendIC(shout int) {
 	a.icInput = ""
 }
 
-// areaLockedBg / areaCurrentBg tint a locked area's row dark red and the area
-// you're in a dim accent (light text stays readable on top) — clearer at a
-// glance than colouring just the name.
+// areaLockedBg / areaCurrentBg fill a locked area's card dark red and the area
+// you're in a dim accent (light text stays readable on top); areaLockedBorder is
+// the brighter red outline that makes a locked card pop as its own button.
 var (
-	areaLockedBg  = sdl.Color{R: 96, G: 32, B: 32, A: 255}
-	areaCurrentBg = sdl.Color{R: 40, G: 56, B: 96, A: 255}
+	areaLockedBg     = sdl.Color{R: 96, G: 32, B: 32, A: 255}
+	areaLockedBorder = sdl.Color{R: 170, G: 64, B: 64, A: 255}
+	areaCurrentBg    = sdl.Color{R: 40, G: 56, B: 96, A: 255}
 )
+
+// areaCardGap is the vertical space left between area cards so each reads as a
+// separate button rather than one continuous striped list (playtest request).
+const areaCardGap = 5
 
 // areaStatusColor keys the area row color to the tsuserver status set.
 func areaStatusColor(status string) sdl.Color {
