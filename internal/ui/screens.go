@@ -2162,15 +2162,20 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			// ARUP columns: "name [players] (STATUS) [lock] CM: x",
 			// row color keyed by status — the live "which area is
 			// active" signal (courtroom.cpp list_areas).
-			line, col := area, ColText
+			line, col := area, ColTextDim
 			if i < len(a.sess.AreaInfo) {
 				info := &a.sess.AreaInfo[i]
+				if info.Players > 0 {
+					col = ColText // populated areas read at full strength, not muted gray
+				}
 				if info.Players >= 0 {
 					line += fmt.Sprintf("  [%d]", info.Players)
 				}
 				if info.Status != "" {
 					line += " " + info.Status
-					col = areaStatusColor(info.Status)
+					if strings.ToUpper(info.Status) != "IDLE" {
+						col = areaStatusColor(info.Status) // a real status colours it; IDLE keeps the population colour
+					}
 				}
 				switch strings.ToUpper(info.Lock) {
 				case "LOCKED":
@@ -2182,6 +2187,9 @@ func (a *App) drawAreaList(r sdl.Rect) {
 				if info.CM != "" && !strings.EqualFold(info.CM, "FREE") {
 					line += " CM: " + info.CM
 				}
+			}
+			if area == a.curArea {
+				col = ColAccent // highlight the area you're currently in
 			}
 			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, line, col)
 			if c.ClickedIn(row) { // press+release in-row: a drag-in release must not transfer areas
