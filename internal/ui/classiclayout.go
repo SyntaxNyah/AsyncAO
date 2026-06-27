@@ -398,7 +398,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 	snapBtn := sdl.Rect{X: resetBtn.X - 92 - 6, Y: 2, W: 92, H: classicBannerH - 4}
 	hintX := pad + c.TextWidth("Edit Layout") + 18
-	c.LabelClipped(hintX, 6, snapBtn.X-hintX-10, "Hover a box, then drag to move or grab an edge to resize", ColTextDim)
+	c.LabelClipped(hintX, 6, snapBtn.X-hintX-10, "Drag to move · grab an edge to resize · Alt = always move · Shift = precise", ColTextDim)
 	a.rawChip(snapBtn, snapLabel)
 	a.rawChip(resetBtn, "Reset all")
 	a.rawChip(doneBtn, "Done")
@@ -487,7 +487,15 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// pointing at, like move does) and skips move-only slots so the little control
 	// block can't steal a neighbour's edge grip.
 	if pressed && a.classicEditDrag == 0 && c.mouseY > classicBannerH && !overTray {
-		resizeKey, resizeEdges := pickResizeSlot(a.slotReg, keys, hoverKey, c.mouseX, c.mouseY, layoutHandlePx)
+		// Alt forces a MOVE (skips the resize-edge test). A small widget — a single
+		// button — is almost ALL edge, so a plain drag kept resizing it instead of
+		// moving it (playtest: "I try to drag Disconnect and it just resizes unless I
+		// make it very big"). Hold Alt to grab-and-move anything regardless of size.
+		// Shift stays pixel-precise, so Alt+Shift = a precise move.
+		resizeKey, resizeEdges := "", uint8(0)
+		if sdl.GetModState()&sdl.KMOD_ALT == 0 {
+			resizeKey, resizeEdges = pickResizeSlot(a.slotReg, keys, hoverKey, c.mouseX, c.mouseY, layoutHandlePx)
+		}
 		switch {
 		case resizeKey != "":
 			a.classicEditKey, a.classicEditDrag, a.classicEditEdges = resizeKey, 2, resizeEdges
@@ -637,7 +645,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		c.Label(pad, h-22, fmt.Sprintf("%s  ·  %d boxes here — Tab to pick (%d/%d)",
 			classicSlotLabel(hoverKey), len(stack), a.classicPickIdx+1, len(stack)), ColTierYellow)
 	case hoverKey != "":
-		c.Label(pad, h-22, classicSlotLabel(hoverKey)+"  ·  drag to move · grab an edge to resize · right-click to reset", ColTierYellow)
+		c.Label(pad, h-22, classicSlotLabel(hoverKey)+"  ·  drag to move (Alt = always move) · edge to resize · right-click to reset", ColTierYellow)
 	case len(keys) > 0:
 		c.Label(pad, h-22, "Hover a box to move or resize it  ·  Ctrl+Z undo  ·  changes save automatically", ColTextDim)
 	}

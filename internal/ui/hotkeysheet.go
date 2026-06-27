@@ -42,6 +42,18 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 		out = append(out, hkEntry{key: fx.key, label: fx.label})
 	}
 
+	// Layout editor gestures (UI… → Edit Layout, or the classic knobs-off editor).
+	out = append(out, hkEntry{label: "Layout editor", header: true})
+	for _, e := range [...]struct{ key, label string }{
+		{"drag", "move a box · grab an edge to resize"},
+		{"Alt+drag", "always move (for small buttons that would otherwise resize)"},
+		{"Shift+drag", "pixel-precise (bypass the grid snap)"},
+		{"right-click", "reset a box to default · redock a torn panel"},
+		{"Ctrl+Z / Ctrl+Y", "undo / redo a layout change"},
+	} {
+		out = append(out, hkEntry{key: e.key, label: e.label})
+	}
+
 	// Your macros (custom-made; a macro may be saved without a key bound).
 	if macros := a.d.Prefs.Macros(); len(macros) > 0 {
 		out = append(out, hkEntry{label: "Your macros", header: true})
