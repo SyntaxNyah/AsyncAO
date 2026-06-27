@@ -79,24 +79,49 @@ func (a *App) tabTorn(id int) bool {
 	return ok
 }
 
+// tabHideID maps a log tab to its hide pref id, or "" for the always-present
+// Log / OOC tabs (which aren't individually hideable here).
+func tabHideID(tab int) string {
+	switch tab {
+	case logTabMusic:
+		return panelTabMusic
+	case logTabAreas:
+		return panelTabAreas
+	case logTabPlayers:
+		return panelTabPlayers
+	case logTabNotes:
+		return panelTabNotes
+	case logTabFriends:
+		return panelTabFriends
+	}
+	return ""
+}
+
+// tabHidden reports whether the user fully hid a right-column tab (UI… popup):
+// gone from the docked strip AND not drawn even if it was torn out.
+func (a *App) tabHidden(tab int) bool {
+	id := tabHideID(tab)
+	return id != "" && a.panelHidden(id)
+}
+
 // dockedLogTabs builds the docked tab strip, skipping any tab torn into a floating
-// panel. Returns a fixed-size array (by value → stack, 0-alloc) and the live count.
-// Log is always present (the home/fallback tab); OOC appears only when it's a tab
-// (oocAsTab = the Legacy theme, or the opt-in "OOC in the log tab" toggle).
+// panel OR fully hidden. Returns a fixed-size array (by value → stack, 0-alloc) and
+// the live count. Log is always present (the home/fallback tab); OOC appears only
+// when it's a tab (oocAsTab = the Legacy theme, or the opt-in "OOC in the log tab").
 func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 	var d [7]dockTab
 	n := int32(0)
 	d[n] = dockTab{logTabLog, "Log"} // never tear-offable
 	n++
-	if !a.tabTorn(logTabMusic) {
+	if !a.tabTorn(logTabMusic) && !a.tabHidden(logTabMusic) {
 		d[n] = dockTab{logTabMusic, "Music"}
 		n++
 	}
-	if !a.tabTorn(logTabAreas) {
+	if !a.tabTorn(logTabAreas) && !a.tabHidden(logTabAreas) {
 		d[n] = dockTab{logTabAreas, "Areas"}
 		n++
 	}
-	if !a.tabTorn(logTabPlayers) {
+	if !a.tabTorn(logTabPlayers) && !a.tabHidden(logTabPlayers) {
 		d[n] = dockTab{logTabPlayers, "Players"}
 		n++
 	}
@@ -104,11 +129,11 @@ func (a *App) dockedLogTabs(oocAsTab bool) ([7]dockTab, int32) {
 		d[n] = dockTab{logTabOOC, "OOC"}
 		n++
 	}
-	if !a.tabTorn(logTabNotes) {
+	if !a.tabTorn(logTabNotes) && !a.tabHidden(logTabNotes) {
 		d[n] = dockTab{logTabNotes, "Notes"}
 		n++
 	}
-	if !a.tabTorn(logTabFriends) {
+	if !a.tabTorn(logTabFriends) && !a.tabHidden(logTabFriends) {
 		d[n] = dockTab{logTabFriends, "Friends"}
 		n++
 	}
@@ -202,6 +227,9 @@ func (a *App) drawTornTabs(w, h int32) {
 		t := tornTabTable[i]
 		if _, torn := a.classicOv[t.key]; !torn {
 			continue
+		}
+		if a.tabHidden(t.id) {
+			continue // fully hidden: don't draw it even though it has a torn-out override
 		}
 		r := a.slotRect(t.key, a.tornTabDefaultRect(i, w, h), w, h)
 		if r.W < classicMinPx || r.H < classicMinPx {

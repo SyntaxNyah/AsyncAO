@@ -56,6 +56,13 @@ const (
 	panelTestimony = "testimony"
 	panelJudge     = "judge"
 	panelExtras    = "extras"
+	// Individual right-column tabs — hide ones you never use (e.g. Friends/Notes). A
+	// hidden tab leaves the docked strip AND isn't drawn even if it was torn out.
+	panelTabMusic   = "tab.music"
+	panelTabAreas   = "tab.areas"
+	panelTabPlayers = "tab.players"
+	panelTabNotes   = "tab.notes"
+	panelTabFriends = "tab.friends"
 )
 
 // hideablePanels drives the UI popup: id + human label, draw order.
@@ -64,6 +71,11 @@ var hideablePanels = []struct{ id, label string }{
 	{panelKnobs, "Layout knobs (View/Text/MsgBox/Log/Input)"},
 	{panelEmotes, "Emote buttons"},
 	{panelLog, "Right column (log/music/areas/OOC tabs)"},
+	{panelTabMusic, "Music tab"},
+	{panelTabAreas, "Areas tab"},
+	{panelTabPlayers, "Players tab"},
+	{panelTabNotes, "Notes tab"},
+	{panelTabFriends, "Friends tab"},
 	{panelOOC, "Bottom OOC row"},
 	{panelHP, "Penalty bars"},
 	{panelTimers, "Server timers"},

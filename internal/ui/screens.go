@@ -1682,7 +1682,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// was OOC while OOC is a box, or it has been torn into its own floating panel (torntabs.go), fall
 	// back to the IC log so the docked area still shows something.
 	oocAsTab := a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn()
-	if (!oocAsTab && a.logTab == logTabOOC) || a.tabTorn(a.logTab) {
+	if (!oocAsTab && a.logTab == logTabOOC) || a.tabTorn(a.logTab) || a.tabHidden(a.logTab) {
 		a.logTab = logTabLog
 	}
 	// The docked strip skips any torn-off tab and compacts the rest (0-alloc stack array).
