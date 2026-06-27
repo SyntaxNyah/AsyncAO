@@ -129,7 +129,7 @@ of their work and follows their protocol and conventions:
 
 Thank you to everyone who tested AsyncAO while it was closed source — finding
 bugs, requesting features, and giving the feedback that shaped it:
-**Cocoa Bean, Lala, Peen, Emerald, Extra7, Poki, Xocfti, Dag, CherriPop**.
+**Cocoa Bean, Lala, Nightingale, Peen, Emerald, Extra7, Poki, Xocfti, Dag, CherriPop**.
 
 A special thank-you to **Northgate** — who backed the project, including
 financially, and gave the inspiration to keep going. Without that support
