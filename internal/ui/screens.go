@@ -2142,7 +2142,7 @@ func (a *App) drawAreaList(r sdl.Rect) {
 		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.logPct)
-	lineH := int32(font.Height()) + 10
+	lineH := int32(font.Height())*2 + 11 // two-row entries: name + an indented detail line
 	contentH := int32(len(a.sess.Areas)) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
@@ -2154,45 +2154,62 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			break
 		}
 		if y >= r.Y-lineH {
-			row := sdl.Rect{X: r.X, Y: y, W: r.W - scrollBarW - scrollBarGap, H: lineH - 4}
+			row := sdl.Rect{X: r.X, Y: y, W: r.W - scrollBarW - scrollBarGap, H: lineH - 3}
 			hover := c.hovering(row)
-			if hover {
-				c.Fill(row, ColPanelHi)
-			}
-			// ARUP columns: "name [players] (STATUS) [lock] CM: x",
-			// row color keyed by status — the live "which area is
-			// active" signal (courtroom.cpp list_areas).
-			line, col := area, ColTextDim
+			current := area == a.curArea
+			// Two-row entry: the name (population-coloured) on top, an indented
+			// detail line (count / status / lock / CM) under it. A locked room tints
+			// the whole row red, the area you're IN is accent. Fixes "it's all gray,
+			// I can't tell what's busy or where I am / every area looked the same".
+			nameCol := ColTextDim
+			detail := ""
+			locked := false
 			if i < len(a.sess.AreaInfo) {
 				info := &a.sess.AreaInfo[i]
 				if info.Players > 0 {
-					col = ColText // populated areas read at full strength, not muted gray
+					nameCol = ColText // populated reads at full strength
 				}
 				if info.Players >= 0 {
-					line += fmt.Sprintf("  [%d]", info.Players)
+					unit := "users"
+					if info.Players == 1 {
+						unit = "user"
+					}
+					detail = fmt.Sprintf("%d %s", info.Players, unit)
 				}
 				if info.Status != "" {
-					line += " " + info.Status
+					detail += "  ·  " + info.Status
 					if strings.ToUpper(info.Status) != "IDLE" {
-						col = areaStatusColor(info.Status) // a real status colours it; IDLE keeps the population colour
+						nameCol = areaStatusColor(info.Status) // a real status colours it; IDLE keeps the population colour
 					}
 				}
 				switch strings.ToUpper(info.Lock) {
 				case "LOCKED":
-					line += " [locked]"
-					col = ColDanger
+					detail += "  ·  locked"
+					locked = true
 				case "SPECTATABLE":
-					line += " [spec]"
+					detail += "  ·  spectatable"
 				}
 				if info.CM != "" && !strings.EqualFold(info.CM, "FREE") {
-					line += " CM: " + info.CM
+					detail += "  ·  CM: " + info.CM
 				}
 			}
-			if area == a.curArea {
-				col = ColAccent // highlight the area you're currently in
+			switch { // row background: locked red, current area accent, hover on top
+			case locked:
+				c.Fill(row, areaLockedBg)
+				nameCol = ColText
+			case current:
+				c.Fill(row, areaCurrentBg)
+				nameCol = ColAccent
+			case hover:
+				c.Fill(row, ColPanelHi)
 			}
-			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, line, col)
-			if c.ClickedIn(row) { // press+release in-row: a drag-in release must not transfer areas
+			subH := int32(font.Height())
+			c.LabelClippedFont(font, r.X+6, y+3, row.W-12, area, nameCol)
+			if detail != "" {
+				c.LabelClippedFont(font, r.X+20, y+5+subH, row.W-26, detail, ColTextDim)
+			}
+			c.Fill(sdl.Rect{X: row.X + 4, Y: y + lineH - 2, W: row.W - 8, H: 1}, ColPanelHi) // separator between entries
+			if c.ClickedIn(row) {                                                            // press+release in-row: a drag-in release must not transfer areas
 				a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves
 				a.sess.RequestMusic(area)    // area transfer rides MC
 				a.curArea = area             // Rich Presence (best-effort)
@@ -4614,6 +4631,14 @@ func (a *App) sendIC(shout int) {
 	a.lastICSend = time.Now()
 	a.icInput = ""
 }
+
+// areaLockedBg / areaCurrentBg tint a locked area's row dark red and the area
+// you're in a dim accent (light text stays readable on top) — clearer at a
+// glance than colouring just the name.
+var (
+	areaLockedBg  = sdl.Color{R: 96, G: 32, B: 32, A: 255}
+	areaCurrentBg = sdl.Color{R: 40, G: 56, B: 96, A: 255}
+)
 
 // areaStatusColor keys the area row color to the tsuserver status set.
 func areaStatusColor(status string) sdl.Color {
