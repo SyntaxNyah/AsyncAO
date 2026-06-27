@@ -281,7 +281,8 @@ func (a *App) startClassicEdit() {
 	a.classicEditMoved = false
 	a.classicUndo, a.classicRedo = nil, nil
 	a.classicPickSig, a.classicPickIdx = "", 0
-	a.layoutSnap = true // tidy placement by default; toggle off in the editor
+	a.layoutSnap = true   // tidy placement by default; toggle off in the editor
+	a.layoutAspect = true // keep the stage 4:3 while resizing (toggle off for a free / letterboxed stage)
 	a.pushDebug("edit layout (default courtroom): drag to move, edges/corners to resize, Ctrl+Z to undo, Esc to finish")
 }
 
@@ -397,8 +398,14 @@ func (a *App) drawClassicEditor(w, h int32) {
 		snapLabel = "Snap: on"
 	}
 	snapBtn := sdl.Rect{X: resetBtn.X - 92 - 6, Y: 2, W: 92, H: classicBannerH - 4}
+	aspectLabel := "4:3: off"
+	if a.layoutAspect {
+		aspectLabel = "4:3: on"
+	}
+	aspectBtn := sdl.Rect{X: snapBtn.X - 80 - 6, Y: 2, W: 80, H: classicBannerH - 4}
 	hintX := pad + c.TextWidth("Edit Layout") + 18
-	c.LabelClipped(hintX, 6, snapBtn.X-hintX-10, "Drag to move · grab an edge to resize · Alt = always move · Shift = precise", ColTextDim)
+	c.LabelClipped(hintX, 6, aspectBtn.X-hintX-10, "Drag to move · grab an edge to resize · Alt = always move · Shift = precise", ColTextDim)
+	a.rawChip(aspectBtn, aspectLabel)
 	a.rawChip(snapBtn, snapLabel)
 	a.rawChip(resetBtn, "Reset all")
 	a.rawChip(doneBtn, "Done")
@@ -436,6 +443,9 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, snapBtn) {
 		a.layoutSnap = !a.layoutSnap
+	}
+	if c.clicked && pointIn(c.mouseX, c.mouseY, aspectBtn) {
+		a.layoutAspect = !a.layoutAspect // lock/unlock the stage's 4:3 while resizing it
 	}
 
 	// Pop-out tray (bottom): tear a log tab out into its own movable panel, or
@@ -561,6 +571,15 @@ func (a *App) drawClassicEditor(w, h int32) {
 					r.Y = base.Y + base.H - classicMinPx
 				}
 				r.H = classicMinPx
+			}
+			// Lock the stage to 4:3 while resizing (banner toggle): drive the other
+			// dimension from the edge you grabbed, so the scene never stretches off 4:3.
+			if a.layoutAspect && a.classicEditKey == slotViewport {
+				if e&(edgeL|edgeR) != 0 { // a side handle → width drives height
+					r.H = r.W * 3 / 4
+				} else if e&(edgeT|edgeB) != 0 { // a top/bottom handle → height drives width
+					r.W = r.H * 4 / 3
+				}
 			}
 		}
 		// Hold Shift while dragging = pixel-precise: it bypasses the grid for this

@@ -540,13 +540,14 @@ type App struct {
 	themeLay       themeLayoutCache
 
 	// --- live layout editor (themed courtroom; overrides persist per theme) ---
-	layoutEdit bool
-	editKey    string
-	editDrag   int // 0 none, 1 move, 2 resize
-	editPrev   bool
-	editStart  [2]int32
-	editBase   theme.Rect
-	layoutSnap bool // snap edits to a design-space grid (toggle in the editor)
+	layoutEdit   bool
+	editKey      string
+	editDrag     int // 0 none, 1 move, 2 resize
+	editPrev     bool
+	editStart    [2]int32
+	editBase     theme.Rect
+	layoutSnap   bool // snap edits to a design-space grid (toggle in the editor)
+	layoutAspect bool // lock the viewport (stage) to 4:3 while resizing it in the editor
 	// Overlap cycling: Tab steps through the stack of boxes under the cursor (smallest first) so a
 	// big box hidden under a small one is still reachable. editPickSig is the current stack's
 	// fingerprint — the index resets when the stack changes.
