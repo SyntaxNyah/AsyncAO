@@ -21,9 +21,9 @@ import (
 // caller passes "" for non-first rows and system lines, so no draw-time
 // re-parsing of ": "). The rest of the line draws in col. Falls back to a plain
 // draw otherwise. Shared by the IC and OOC log render paths.
-func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64) {
+func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64, bold bool) {
 	c := a.ctx
-	if nameOn && speaker != "" && strings.HasPrefix(line, speaker) {
+	if speaker != "" && (nameOn || bold) && strings.HasPrefix(line, speaker) {
 		// An emoji line OR a mixed-script line no single face covers skips the
 		// per-speaker name-colour split (the split draws with one `font`, which can't
 		// do per-glyph faces) and renders whole via the raster — coverage wins over the
@@ -33,7 +33,14 @@ func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, lin
 			return
 		}
 		if nw, _, err := font.SizeUTF8(speaker); err == nil {
-			c.LabelClippedFont(font, x, y, wrapW, speaker, nameColor(speaker, sat, val))
+			nameCol := col
+			if nameOn {
+				nameCol = nameColor(speaker, sat, val)
+			}
+			c.LabelClippedFont(font, x, y, wrapW, speaker, nameCol)
+			if bold { // faux-bold: a 1px-shifted second pass thickens the strokes (no bold font needed)
+				c.LabelClippedFont(font, x+1, y, wrapW, speaker, nameCol)
+			}
 			c.LabelClippedFont(font, x+int32(nw), y, wrapW-int32(nw), line[len(speaker):], col)
 			return
 		}

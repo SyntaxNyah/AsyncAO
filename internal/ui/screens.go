@@ -1426,6 +1426,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// Pick a covering face for the showname (a Tifinagh / Cyrillic NAME would tofu on
 	// the fixed chrome font); ChatFontFor returns the chrome font for ASCII, so plain
 	// names are unchanged. DefaultScalePct matches the emoji face size below.
+	if a.d.Prefs.BoldNamesOn() { // faux-bold the showname (1px-shifted second pass) for readability — default on
+		a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), box.X+9, box.Y+4, box.W-16, sc.ShownameText, nameCol)
+	}
 	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
 
 	wrapW := box.W - 16
@@ -1852,6 +1855,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	// Per-speaker name colours (read once): tint each entry's name prefix on its
 	// first wrapped row. Short-circuit so the default OFF path adds nothing.
 	nameColorsOn := a.d.Prefs.NameColorsOn()
+	boldNames := a.d.Prefs.BoldNamesOn() // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -1928,7 +1932,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if nameColorsOn && (ri == 0 || rows[ri-1].entry != row.entry) {
 				lineSpeaker = a.icLog[row.entry].speaker
 			}
-			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X, y, wrapW, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal)
+			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X, y, wrapW, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
 			if u := a.icLog[row.entry].url; u != "" {
 				if c.hovering(rowRect) {
 					c.Tooltip(rowRect, "Open "+u)
@@ -1983,6 +1987,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	wrapW := list.W - scrollBarW - scrollBarGap
 	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
 	nameColorsOn := a.d.Prefs.NameColorsOn() // per-speaker OOC name colours (read once)
+	boldNames := a.d.Prefs.BoldNamesOn()     // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -2035,7 +2040,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
-			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
+			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal, boldNames)
 		}
 		y += lineH
 	}
@@ -2102,6 +2107,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	wrapW := list.W - scrollBarW - scrollBarGap
 	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
 	nameColorsOn := a.d.Prefs.NameColorsOn() // per-speaker OOC name colours (read once)
+	boldNames := a.d.Prefs.BoldNamesOn()     // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -2153,7 +2159,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
-			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal)
+			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal, boldNames)
 		}
 		y += lineH
 	}

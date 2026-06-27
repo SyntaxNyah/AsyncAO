@@ -782,6 +782,7 @@ type AssetPreferences struct {
 	ViewportExactW     int                       `json:"viewportExactW"`  // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	CustomChromeHex    [7]string                 `json:"customChrome"`    // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
+	BoldNamesOff       bool                      `json:"boldNamesOff"`    // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1027,6 +1028,7 @@ type prefsJSON struct {
 	ViewportExactW     int                       `json:"viewportExactW"`  // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"` // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	CustomChromeHex    [7]string                 `json:"customChrome"`    // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
+	BoldNamesOff       bool                      `json:"boldNamesOff"`    // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1613,6 +1615,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.OOCScalePct = p.LogScalePct
 	}
 	p.CustomChromeHex = onDisk.CustomChromeHex // hex strings; validated (parsed/ignored) at apply time
+	p.BoldNamesOff = onDisk.BoldNamesOff       // inverted: absent (false) = bold names ON
 	if onDisk.InputHeightPct != 0 {
 		p.InputHeightPct = clampPercent(onDisk.InputHeightPct, MinInputPercent, MaxInputPercent)
 	}
@@ -4747,6 +4750,27 @@ func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
 		return
 	}
 	p.CustomChromeHex = hex
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// BoldNamesOn reports whether speaker names render bold (IC/OOC log + chatbox).
+// Default ON — the pref is stored inverted (BoldNamesOff) so an absent value
+// means bold, matching the on-by-default behaviour.
+func (p *AssetPreferences) BoldNamesOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return !p.BoldNamesOff
+}
+
+// SetBoldNames toggles bold speaker names.
+func (p *AssetPreferences) SetBoldNames(on bool) {
+	p.mu.Lock()
+	if p.BoldNamesOff == !on {
+		p.mu.Unlock()
+		return
+	}
+	p.BoldNamesOff = !on
 	p.mu.Unlock()
 	p.markDirty()
 }
