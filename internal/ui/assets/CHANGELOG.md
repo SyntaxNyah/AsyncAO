@@ -4,6 +4,51 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.0.6 — 2026-06-27
+
+Another playtest-driven round — the layout editor grew up, formats got fixed, and
+a pile of small annoyances are gone. **Thanks again to Nightingale** for relentless
+testing, and to **Crystalwarrior** for the blip-rate report.
+
+### Build-your-own layout
+- **Alt+drag = move** anything in the layout editor — small widgets (a single
+  button, the right column) stop resizing when you only wanted to move them.
+- The **top strip is now usable**: drag widgets up next to the tabs (the editor
+  banner went translucent and only its buttons block a drag).
+- **4:3 lock**: a toggle in the editor keeps the stage from stretching off 4:3
+  while you resize it.
+- **Hide any tab** — Music / Areas / Players / Notes / Friends can be fully
+  hidden (not just unpinned) in the UI… popup.
+- The IC log now **fills the column** when you move or hide the OOC box (no more
+  dead empty space), and torn-off panels **redock on right-click** instead of a
+  corner "x" you kept hitting by accident.
+
+### Appearance
+- **Custom colour scheme → colour wheel**: pick a swatch, then a hue/saturation
+  wheel + brightness slider set it (Settings → Theme → Custom).
+- **Bold speaker names** by default in the log and chatbox (toggle in Settings).
+- The closed **Pos** selector shows the current position's background thumbnail.
+
+### Settings & account
+- The "Audio & Chat" tab is split into **Audio**, **Chat**, and a dedicated
+  **Reset** tab.
+- The **Login** button shows your **account name** once you've saved one —
+  left-click views your profile (/account), right-click to log in / switch.
+
+### Chat & audio
+- **Blip rate is configurable** (Settings → Audio → Blips): one blip per N letters
+  (default 2, Ace Attorney style) plus a "blip on spaces" toggle.
+- **OOC callwords are now opt-in** (off by default) — no more constant pings from
+  OOC chatter or /ga rosters; turn it on if you want it.
+
+### Asset formats
+- **Per-server format profiles**: probe exactly the formats a server uses, seeded
+  instantly on connect — so a server's own `extensions.json` is honoured from the
+  first frame instead of the default winning the race. Your global default is left
+  alone. The official **vanilla** manifest ships as a ready-made example and
+  auto-applies on the official vanilla server (Settings → Assets → Server format
+  profile).
+
 ## v1.0.5 — 2026-06-27
 
 A big quality-of-life and bug-fix release, driven almost entirely by playtest
