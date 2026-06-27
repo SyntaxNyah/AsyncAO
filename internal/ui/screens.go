@@ -4269,7 +4269,22 @@ const ghostAlpha = 110
 // viewport: percent of stage width/height.
 func (a *App) drawPairGhost(pv sdl.Rect) {
 	c := a.ctx
-	c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
+	// Real background behind the ghosts, so you place your sprite against the
+	// actual stage instead of a black void ("otherwise what's the point"). Uses
+	// YOUR position's bg; a flat fill stands in until it streams in.
+	bgPart, _ := courtroom.PositionScene(a.mySide())
+	base := a.urls.Background(a.sess.Background, bgPart)
+	if base != a.pairBgKey {
+		a.pairBgPages, a.pairBgKey = nil, base
+	}
+	if page, ok := a.cachedPage(&a.pairBgPages, &a.pairBgGen, 1, 0, base); ok && len(page.Frames) > 0 {
+		_ = c.Ren.Copy(page.Frames[0], nil, &pv)
+	} else {
+		c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
+		if a.sess.Background != "" {
+			a.d.Manager.Prefetch(base, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (pair preview)
+		}
+	}
 	c.Border(pv, ColPanelHi)
 
 	// Partner ghost first (behind), then me.

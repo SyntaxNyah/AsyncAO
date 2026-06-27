@@ -962,10 +962,15 @@ type sessionState struct {
 	pairOffX, pairOffY         int
 	pairFlip                   bool
 	pairOffXText, pairOffYText string
-	emotes                     []courtroom.Emote
-	emoteIdx                   int
-	emotePage                  int // emote grid paging (classic + themed)
-	emotePerPage               int // emotes per page last frame (number-key select)
+	// Pair-preview background cache (drawPairGhost): the stage bg drawn behind the
+	// ghost sprites via cachedPage; pairBgKey invalidates it when the bg/position changes.
+	pairBgPages  []*render.TexturePage
+	pairBgGen    uint64
+	pairBgKey    string
+	emotes       []courtroom.Emote
+	emoteIdx     int
+	emotePage    int // emote grid paging (classic + themed)
+	emotePerPage int // emotes per page last frame (number-key select)
 	// SFX picker (IC-bar dropdown): the chosen sound that OVERRIDES this character's
 	// emote sound on every send until set back to "auto". sfxChoices[0]="SFX: auto"
 	// (the emote's own sound), then the character's distinct emote sounds; idx 0 = auto.
