@@ -26,8 +26,9 @@ func TestComputeStableAndShaped(t *testing.T) {
 // compute() (the un-memoised core) must be deterministic: two runs on the same
 // machine produce the same id — that is what makes a ban stick.
 func TestComputeDeterministic(t *testing.T) {
-	if compute() != compute() {
-		t.Error("compute() is non-deterministic")
+	first, second := compute(), compute()
+	if first != second {
+		t.Errorf("compute() is non-deterministic: %q != %q", first, second)
 	}
 }
 
@@ -35,10 +36,11 @@ func TestComputeDeterministic(t *testing.T) {
 // at least one stable root, but a bare environment legitimately has none (then
 // compute() uses the hostname), so an empty result is not a failure.
 func TestRootsDeterministic(t *testing.T) {
-	if len(roots()) != len(roots()) {
-		t.Error("roots() changed between calls")
+	first, second := roots(), roots()
+	if len(first) != len(second) {
+		t.Errorf("roots() changed between calls: %d != %d", len(first), len(second))
 	}
-	for _, r := range roots() {
+	for _, r := range first {
 		if !strings.Contains(r, "=") {
 			t.Errorf("root %q is not label=value", r)
 		}
