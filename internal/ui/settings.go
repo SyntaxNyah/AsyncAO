@@ -545,6 +545,11 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetEmoteButtonImages(next)
 	}
 	y += 26
+	emoteCaps := a.d.Prefs.EmoteCaptionsOn()
+	if next := c.Checkbox(pad, y, "Emote-name captions (OFF by default): when a character has no button art, overlay the emote name on the fallback icon. Off keeps the buttons clean (just icons); on helps tell identical fallback icons apart.", emoteCaps); next != emoteCaps {
+		a.d.Prefs.SetEmoteCaptions(next)
+	}
+	y += 26
 	favStars := a.d.Prefs.EmoteFavStarsOn()
 	if next := c.Checkbox(pad, y, "Emote favourites (OFF by default): show a ★ on every emote button so you can star the ones you use, plus the ★ Favs filter. Off keeps the grid clean if you don't use it.", favStars); next != favStars {
 		a.d.Prefs.SetEmoteFavStars(next)

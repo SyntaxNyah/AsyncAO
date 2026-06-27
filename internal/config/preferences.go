@@ -768,6 +768,7 @@ type AssetPreferences struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
+	EmoteCaptions      bool                      `json:"emoteCaptions"` // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1009,6 +1010,7 @@ type prefsJSON struct {
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
 	EmoteFavStars      bool                      `json:"emoteFavStars"`            // show the ★ favourite badge on every emote cell (default OFF — opt-in)
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
+	EmoteCaptions      bool                      `json:"emoteCaptions"` // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	LocalAssetsPaths   []string                  `json:"localAssetsPaths"`
 	Favorites          []FavoriteServer          `json:"favorites"`
 	Wardrobe           []string                  `json:"wardrobe"`
@@ -1661,6 +1663,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.EmoteFavs = onDisk.EmoteFavs
 	p.EmoteFavOnly = onDisk.EmoteFavOnly
 	p.EmoteFavStars = onDisk.EmoteFavStars
+	p.EmoteCaptions = onDisk.EmoteCaptions
 	p.LocalAssetsEnabled = onDisk.LocalAssetsEnabled
 	p.LocalAssetsPaths = onDisk.LocalAssetsPaths
 	p.Favorites = onDisk.Favorites
@@ -6613,6 +6616,30 @@ func (p *AssetPreferences) SetEmoteFavStars(on bool) {
 		return
 	}
 	p.EmoteFavStars = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// EmoteCaptionsOn reports whether the emote-name caption strip is drawn over
+// icon-fallback emote buttons (the buttons shown when a character has no
+// emotions/button art). Default OFF: the buttons show as clean icons with no
+// text overlay — players found the name strip cluttered, especially when every
+// fallback cell shows the same character icon. Opt-in for those who relied on
+// the captions to tell otherwise-identical fallback cells apart.
+func (p *AssetPreferences) EmoteCaptionsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.EmoteCaptions
+}
+
+// SetEmoteCaptions toggles the icon-fallback emote-name caption overlay.
+func (p *AssetPreferences) SetEmoteCaptions(on bool) {
+	p.mu.Lock()
+	if p.EmoteCaptions == on {
+		p.mu.Unlock()
+		return
+	}
+	p.EmoteCaptions = on
 	p.mu.Unlock()
 	p.markDirty()
 }

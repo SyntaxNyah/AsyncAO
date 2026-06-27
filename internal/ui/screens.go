@@ -4152,9 +4152,14 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 			c.Fill(btn, ColPanel)
 			c.Border(btn, ColPanelHi)
 		}
-		strip := sdl.Rect{X: btn.X, Y: btn.Y + btn.H - 15, W: btn.W, H: 15}
-		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 150})
-		c.LabelClipped(btn.X+3, strip.Y+1, btn.W-6, label, ColText)
+		// Emote-name caption: opt-in (default OFF). Off ⇒ the fallback shows a clean
+		// icon with no text overlay, which is what most players want; on ⇒ the name
+		// strip returns for telling otherwise-identical fallback cells apart.
+		if a.d.Prefs.EmoteCaptionsOn() {
+			strip := sdl.Rect{X: btn.X, Y: btn.Y + btn.H - 15, W: btn.W, H: 15}
+			c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 150})
+			c.LabelClipped(btn.X+3, strip.Y+1, btn.W-6, label, ColText)
+		}
 	}
 	return c.hovering(btn) && c.clicked
 }
