@@ -3687,10 +3687,17 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// OutgoingMS.Immediate. Vertically centered against the fH-tall inputs.
 	const immedW = 96 // fits the full "Immediate" label without truncating to "Immed"
 	immedX := nameX + shownameBoxW + 6
-	a.icImmediate = c.Checkbox(immedX, rowY+(fH-16)/2, "Immediate", a.icImmediate)
-	c.Tooltip(sdl.Rect{X: immedX, Y: rowY, W: immedW, H: fH}, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
+	// Slice 1 of the movable IC bar: the Immediate toggle can be pulled out into its
+	// own spot in the classic editor. Its default rides the bar (un-edited / whole-bar
+	// move stays pixel-identical), and everything downstream keeps flowing from the
+	// DEFAULT immedX below — never the override — so freeing Immediate doesn't cascade
+	// the rest of the row. slotRect is alloc-free off the edit path.
+	immedDef := sdl.Rect{X: immedX, Y: rowY, W: immedW, H: fH}
+	immedBox := a.slotRect(slotICImmediate, immedDef, w, h)
+	a.icImmediate = c.Checkbox(immedBox.X, immedBox.Y+(immedBox.H-16)/2, "Immediate", a.icImmediate)
+	c.Tooltip(immedBox, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	var send bool
-	icX := immedX + immedW + 6
+	icX := immedX + immedW + 6 // downstream flows from the DEFAULT position, not the override
 	icCounterOn := a.d.Prefs.MessageCounterOn()
 	// The IC input must always keep at least minICInputW (plus the counter's reserve when it's
 	// on). Each IC-bar button is placed ONLY if it still leaves that room, so a narrow bar

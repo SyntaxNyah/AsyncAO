@@ -30,8 +30,12 @@ const (
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
 	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
 	slotICBar    = "icbar"    // the IC input bar (colour · showname · Immed · emoji/FX/React · text)
-	slotOOCBar   = "oocbar"   // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
-	slotControls = "controls" // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
+	// Individually-movable pieces pulled OUT of the IC bar (the "build your own
+	// layout" work). Each defaults to its spot in the bar — so an un-edited or
+	// whole-bar-moved layout is pixel-identical — and only goes free once dragged.
+	slotICImmediate = "icbar.immediate" // the Immediate (non-interrupting preanim) toggle
+	slotOOCBar      = "oocbar"          // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
+	slotControls    = "controls"        // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
 )
 
 // Resize-edge bitmask: which sides of a box a drag moves.
@@ -141,6 +145,8 @@ func classicSlotLabel(k string) string {
 		return "Emote grid"
 	case slotICBar:
 		return "IC input bar"
+	case slotICImmediate:
+		return "Immediate toggle"
 	case slotOOCBar:
 		return "OOC bar"
 	case slotControls:
