@@ -46,8 +46,10 @@ const (
 	// classicSlotRegCap pre-sizes the per-frame slot registry (cosmetic; the
 	// durable bound is config.classicSlotCap on what persists).
 	classicSlotRegCap = 24
-	// classicMinPx floors a resized slot in screen px so a box can't vanish.
-	classicMinPx = 48
+	// classicMinPx floors a resized slot in screen px so a box can't vanish. Kept
+	// small so thin bars (the IC input / OOC bar) shrink back to natural height —
+	// 48 stranded them tall, unable to resize back down.
+	classicMinPx = 20
 	// classicBannerH is the editor's top banner height (drags stay below it).
 	classicBannerH = 26
 )
@@ -529,7 +531,10 @@ func (a *App) drawClassicEditor(w, h int32) {
 				r.H = classicMinPx
 			}
 		}
-		if a.layoutSnap {
+		// Hold Shift while dragging = pixel-precise: it bypasses the grid for this
+		// drag (the "Snap" button is the persistent toggle). GetModState is a cheap
+		// render-thread query, so the default snap path stays allocation-free.
+		if a.layoutSnap && sdl.GetModState()&sdl.KMOD_SHIFT == 0 {
 			r.X, r.Y, r.W, r.H = classicSnap(r.X), classicSnap(r.Y), classicSnap(r.W), classicSnap(r.H)
 			if r.W < classicMinPx {
 				r.W = classicMinPx
