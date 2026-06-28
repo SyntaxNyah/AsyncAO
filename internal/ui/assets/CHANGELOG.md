@@ -4,6 +4,49 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.15.0 — 2026-06-28
+
+A feature release: a much bigger moderation dashboard, a real SFX browser, and a
+batch of quality-of-life fixes from your suggestions. (Numbered 1.15.0 so it sorts
+above 1.1.0 in the in-app updater.)
+
+### Moderation dashboard, rebuilt
+- **The roster now shows character icons and is grouped by area** — exactly like the
+  player list, organised by your server software's own `/gas` / `/getareas` order, with
+  a header and count per area. The same warm icon cache feeds both, so faces appear
+  instantly.
+- **Bulk ban / kick.** Tick the box on any rows (up to 50 at once) and ban or kick the
+  whole batch from one box — one shared duration + reason, with a live count of how many
+  are ready. Commands are paced out one at a time so a big sweep never floods the server.
+- **Quick-reason templates.** One-click chips (Spam, Harassment, NSFW, Disruptive,
+  Trolling, Ban evasion, Disrespect) fill the reason field; still fully editable.
+- **A session audit log.** Every ban / kick you send from the dashboard is recorded with
+  its time, target and exact command — flip the left column to **Audit** to review what
+  went out this session.
+
+### Sound
+- **New SFX Browser** (Extras → **SFX Browser**, or the tip on the IC-bar sound picker).
+  Browse and **preview** (▶) sounds, **favourite** (★) the ones you use — favourites are
+  saved and follow you across characters and servers — and **type any sound name** to use
+  it directly, since a streaming client can't list the whole server. Picking one fills the
+  IC-bar sound picker as before.
+
+### Quality of life
+- **Press ↑ in the IC box to bring back your last message** (and ↑/↓ to walk further back),
+  shell-style — edit and resend without retyping.
+- **Per-channel mute.** Click a channel's label in the sidebar volume strip (Master /
+  Music / SFX / Blips) to mute just that channel; click again to restore. Master mute
+  silences everything, including the call-word alert.
+- **Clearer connection errors.** A failed connect now tells you *why* in plain language —
+  host not found, refused, timed out, "that's an `https://` page, try `ws(s)://`", or
+  "that's not a WebSocket server" — instead of a raw Go error.
+- **Fixed OOC log word-wrap.** Long OOC lines no longer overflow the panel edge — the wrap
+  width now matches the OOC text size. ([#1](https://github.com/SyntaxNyah/AsyncAO/issues/1))
+
+### For theme-makers
+- The `asyncao_ic_*` `courtroom_design.ini` keys for placing each IC control separately are
+  now documented in [docs/user/themes.md](https://github.com/SyntaxNyah/AsyncAO/blob/main/docs/user/themes.md).
+
 ## v1.1.0 — 2026-06-28
 
 A playtest-driven release built straight from your GitHub issues. **Huge thanks to

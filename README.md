@@ -51,15 +51,16 @@ everything in memory and on disk, and renders without allocating.
 - **Accessible by default** — colour emoji, broad Unicode + CJK font fallback,
   an **OpenDyslexic** font option, adjustable UI scale, and desktop toasts.
 - **Audio that obeys you** — master + per-channel volume with *per-server* and
-  *per-character* mixing, per-SFX mute, an **SFX picker** on the IC bar, callword
-  alerts on a dedicated channel, and a cross-server **jukebox** (with history)
-  for the `/play` links DJs share.
+  *per-character* mixing, per-channel and per-SFX mute, an **SFX picker + browser**
+  (preview and saved favourites) on the IC bar, callword alerts on a dedicated
+  channel, and a cross-server **jukebox** (with history) for the `/play` links DJs share.
 - **Plays well with others** — cross-client character profiles, reactions and
   inline emoji ride a side-channel that **degrades gracefully** on stock
   AO2/webAO clients. Export a scene to **MP4/WebM**, or a replay to a **comic
   strip**.
-- **Mod & CM tools** — a standalone Mod/CM dashboard (UID roster, ban/kick with
-  a live command preview, area controls) that speaks each server family's syntax.
+- **Mod & CM tools** — a standalone Mod/CM dashboard with an **area-grouped roster
+  and character icons**, single or **bulk** ban/kick with a live command preview,
+  reason templates and a session audit log — speaking each server family's syntax.
 - **Phone book & local mode** — favourite and pin any server (master-list or
   private), direct-connect by `ip:port` / `url:port` / `ws(s)://`, or turn
   streaming off entirely and read from local AO2 asset folders.
