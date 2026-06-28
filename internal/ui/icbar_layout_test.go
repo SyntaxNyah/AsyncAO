@@ -49,3 +49,23 @@ func TestICBarSlotsAreEditable(t *testing.T) {
 		t.Errorf("override: slotRect = %+v, want the moved spot %+v", got, want)
 	}
 }
+
+// TestThemeKeysExposeAsyncICControls pins #4b: the AsyncAO-only IC controls are listed
+// in themeLayoutKeys, so a custom theme that defines asyncao_ic_<x> in its design.ini has
+// those rects loaded — letting theme-makers place colour/SFX/buttons separately instead
+// of having AsyncAO cram them into ao2_ic_chat_message.
+func TestThemeKeysExposeAsyncICControls(t *testing.T) {
+	want := []string{
+		"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_sfx",
+		"asyncao_ic_emoji", "asyncao_ic_fx", "asyncao_ic_react",
+	}
+	have := map[string]bool{}
+	for _, k := range themeLayoutKeys {
+		have[k] = true
+	}
+	for _, k := range want {
+		if !have[k] {
+			t.Errorf("themeLayoutKeys missing %q — a theme can't position it (#4b)", k)
+		}
+	}
+}

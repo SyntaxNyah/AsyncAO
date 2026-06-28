@@ -1579,6 +1579,12 @@ var themeLayoutKeys = []string{
 	"music_list", "music_search",
 	"ooc_chat_message", "ooc_chat_name",
 	"ao2_ic_chat_message", "ao2_ic_chat_name",
+	// AsyncAO-only IC controls (#4b, Crystalwarrior): OPTIONAL keys a theme can add to
+	// place these where it likes instead of having AsyncAO cram them into
+	// ao2_ic_chat_message. Absent ⇒ the classic crammed row (every existing theme is
+	// unchanged). x,y,w,h in design space, same as any AO2 element.
+	"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_sfx",
+	"asyncao_ic_emoji", "asyncao_ic_fx", "asyncao_ic_react",
 	"pos_dropdown", "pair_button",
 	"hold_it", "objection", "take_that", "custom_objection",
 	"witness_testimony", "cross_examination", "not_guilty", "guilty",

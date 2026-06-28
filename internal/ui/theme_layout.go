@@ -215,6 +215,19 @@ func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 	return c.Button(r, label)
 }
 
+// drawThemedSFXPicker draws the per-message SFX dropdown at rect — shared by the themed
+// IC row's crammed and theme-placed (asyncao_ic_sfx, #4b) paths so they can't drift.
+func (a *App) drawThemedSFXPicker(rect sdl.Rect) {
+	c := a.ctx
+	if next, changed := c.Dropdown("sfxdd", rect, a.sfxChoices, a.sfxChoiceIdx); changed {
+		a.sfxChoiceIdx = next
+		if next > 0 && next < len(a.sfxChoices) {
+			a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
+		}
+	}
+	c.TooltipAfter("sfxdd-tip", rect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override.")
+}
+
 // drawCourtroomThemed is the design-driven courtroom. Geometry comes from
 // the theme; behavior is shared with the classic path (same state, same
 // send/poll helpers, same modals).
@@ -368,23 +381,33 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// the classic row's full colour list + helpers (palette, extended #98,
 	// Rainbow/Random) so the two layouts stay in lock-step.
 	if in, ok := lay.rect("ao2_ic_chat_message"); ok {
-		swatch := sdl.Rect{X: in.X, Y: in.Y, W: 12, H: in.H}
 		icSel, sw := a.icColorSelected()
+		const themedColorW = 64
+		// Colour swatch + dropdown: at its OWN theme rect (asyncao_ic_color, #4b) if the
+		// theme places it there, else crammed at the message rect's left edge (classic).
+		colorR, ownColor := lay.rect("asyncao_ic_color")
+		lead := int32(0)
+		if !ownColor {
+			colorR = sdl.Rect{X: in.X, Y: in.Y, W: 14 + themedColorW, H: in.H}
+			lead = 14 + themedColorW + 4 // crammed: the field starts after the colour
+		}
+		swatch := sdl.Rect{X: colorR.X, Y: colorR.Y, W: 12, H: colorR.H}
 		c.Fill(swatch, sw)
 		c.Border(swatch, ColPanelHi)
-		const themedColorW = 64
-		if next, changed := c.Dropdown("colordd", sdl.Rect{X: in.X + 14, Y: in.Y, W: themedColorW, H: in.H}, icColorChoices, icSel); changed {
+		if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorR.X + 14, Y: colorR.Y, W: themedColorW, H: colorR.H}, icColorChoices, icSel); changed {
 			a.applyICColorChoice(next)
 		}
-		lead := int32(14 + themedColorW + 4)
 		fieldX, fieldW := in.X+lead, in.W-lead
-		// Immediate toggle (parity with the classic IC row), but only when the
-		// theme's message rect is wide enough to keep a usable field after it.
+		// Immediate toggle: at its OWN theme rect (asyncao_ic_immediate, #4b) if placed,
+		// else crammed into the field (only when the message rect is wide enough after it).
 		const (
 			themedImmedW    = 96  // space reserved for the "Immediate" checkbox
 			themedImmedKeep = 120 // min field width to still host the checkbox
 		)
-		if fieldW > themedImmedW+themedImmedKeep {
+		if ir, ownImmed := lay.rect("asyncao_ic_immediate"); ownImmed {
+			a.icImmediate = c.Checkbox(ir.X, ir.Y+(ir.H-16)/2, "Immediate", a.icImmediate)
+			c.Tooltip(ir, "Immediate: the preanim plays without holding back the text")
+		} else if fieldW > themedImmedW+themedImmedKeep {
 			a.icImmediate = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Immediate", a.icImmediate)
 			c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedImmedW, H: in.H}, "Immediate: the preanim plays without holding back the text")
 			fieldX += themedImmedW
@@ -395,34 +418,39 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// own until set back to "auto". Picking one previews it. First so it survives a
 		// narrow field longest.
 		a.ensureSFXChoices()
-		if field.W > 92+120 {
-			sfxRect := sdl.Rect{X: field.X, Y: field.Y, W: 92, H: field.H}
-			if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
-				a.sfxChoiceIdx = next
-				if next > 0 && next < len(a.sfxChoices) {
-					a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
-				}
-			}
-			c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override.")
+		if sr, ownSFX := lay.rect("asyncao_ic_sfx"); ownSFX { // own theme rect (#4b)
+			a.drawThemedSFXPicker(sr)
+		} else if field.W > 92+120 {
+			a.drawThemedSFXPicker(sdl.Rect{X: field.X, Y: field.Y, W: 92, H: field.H})
 			field.X += 92 + 4
 			field.W -= 92 + 4
 		}
-		// #M2 S1: emoji picker button on the IC field's left edge (when there's room).
-		if field.W > field.H+120 {
+		// emoji / FX / React buttons: each at its OWN theme rect (asyncao_ic_emoji / _fx /
+		// _react, #4b) if the theme places it there, else crammed into the field
+		// left-to-right (only when there's room — #M2 S1 / #M5 / #2).
+		if er, ownEmoji := lay.rect("asyncao_ic_emoji"); ownEmoji {
+			if a.drawEmojiBarButton(er) {
+				a.showEmojiPicker = !a.showEmojiPicker
+			}
+		} else if field.W > field.H+120 {
 			if a.drawEmojiBarButton(sdl.Rect{X: field.X, Y: field.Y, W: field.H, H: field.H}) {
 				a.showEmojiPicker = !a.showEmojiPicker
 			}
 			field.X += field.H + 4
 			field.W -= field.H + 4
 		}
-		// #M5: dedicated Text FX button (only when the field still has room after it).
-		if field.W > fxBtnW+120 {
+		if fr, ownFX := lay.rect("asyncao_ic_fx"); ownFX {
+			a.fxButton(fr)
+		} else if field.W > fxBtnW+120 {
 			a.fxButton(sdl.Rect{X: field.X, Y: field.Y, W: fxBtnW, H: field.H})
 			field.X += fxBtnW + 4
 			field.W -= fxBtnW + 4
 		}
-		// #2: React button (only when the field still has room after it).
-		if field.W > reactBtnW+120 {
+		if rr, ownReact := lay.rect("asyncao_ic_react"); ownReact {
+			if a.reactButton(rr) {
+				a.toggleReactPicker()
+			}
+		} else if field.W > reactBtnW+120 {
 			if a.reactButton(sdl.Rect{X: field.X, Y: field.Y, W: reactBtnW, H: field.H}) {
 				a.toggleReactPicker()
 			}
@@ -435,7 +463,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			field.W -= msgCounterReserve
 		}
 		icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
-		a.icInput, send = c.TextFieldEmoji("ic", field, a.icInput, "Say something in character...", icPrimary, icEmoji)
+		a.icInput, send = c.TextFieldEmoji("ic", field, a.icInput, "Talk in-character here…", icPrimary, icEmoji)
 		a.drawMsgCounter(field, icCounterOn)
 		if send {
 			a.sendIC(0)
