@@ -4,6 +4,42 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.17.0 — 2026-06-29
+
+A UX-polish batch from playtest feedback — logs, the lobby, menus, and a few
+quality-of-life touches.
+
+### Logs
+- **Transcripts now save like AO.** Detailed logging (Settings → Audio & Chat)
+  writes a file **per server** — `logs/<server>/<date_time>.log`, one per session —
+  with a readable line: **`[time] showname (char): message`** (showname first, no
+  server column or pipes). Replaces the single `transcript.log` that crammed every
+  server together.
+
+### Lobby
+- **Hover a server** to see its **connect URL and description** ("MOTD") without
+  clicking to expand the row.
+- **Keyboard navigation** — **↑ / ↓** move through the joinable servers (skipping
+  legacy rows, scrolling to keep the selection in view) and **Enter** joins the
+  highlighted one.
+
+### Quality of life
+- **Esc reliably leaves a menu.** Settings / About / What's New / the server-owner
+  guide already closed on Esc, but a focused search or text box used to swallow the
+  key — now Esc first drops the field (or closes an open dropdown), then leaves, so
+  it always gets you out. (The reset-confirm cancels on Esc too.)
+- **Pair status in the player list** (opt-in — the **"Pairs"** toggle next to
+  Follow): shows who each player is currently paired with (⇄), tracked from their
+  IC messages. Off by default.
+- **Floating panels snap** to the screen edges and centre while you drag them, so
+  the Mod/CM, Pair, Hotkeys and evidence windows line up cleanly instead of landing
+  a few pixels off.
+- **Colour-code your tabs** — **Ctrl+click** a server tab to cycle its chip through
+  a colour (a stripe along the top). Handy when you're juggling several servers.
+- **Hover tooltips on the terse settings** — the slider / number rows (UI scale,
+  text sizes, max tabs, chatbox opacity…) now explain themselves on hover, like the
+  checkboxes already do in their labels.
+
 ## v1.16.0 — 2026-06-28
 
 A moderation fix plus two quality-of-life touches, on top of v1.15.0.
