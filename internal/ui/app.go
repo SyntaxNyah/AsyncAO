@@ -355,6 +355,10 @@ type App struct {
 	// above. activeTab indexes tabs, −1 = no active session (lobby).
 	tabs      []*courtTab
 	activeTab int
+	// tabColors tints a tab chip by a palette index (#22), keyed by the tab's serverKey (stable
+	// across park/activate), so colour-coding survives switching tabs. 0 = default (no tint).
+	// Lazily inited, bounded by tabColorsCap. Ctrl+click a chip to cycle it.
+	tabColors map[string]int
 	// Tab drag-reorder: tabDragFrom is the chip armed on press (−1 = none),
 	// tabDragging flips once the cursor passes tabDragThreshold (then a release
 	// reorders instead of switching). tabPrevDown is this strip's own

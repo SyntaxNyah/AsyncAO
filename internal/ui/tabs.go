@@ -95,6 +95,67 @@ func (a *App) tabName(i int) string {
 	return a.tabs[i].state.serverName
 }
 
+// tabKey returns a tab's serverKey (its ws URL) — stable across park/activate, so per-tab colour
+// (#22) sticks to the server, not the slot. "" for an unkeyed tab (it then never colours).
+func (a *App) tabKey(i int) string {
+	if i == a.activeTab {
+		return a.serverKey
+	}
+	if i >= 0 && i < len(a.tabs) {
+		return a.tabs[i].state.serverKey
+	}
+	return ""
+}
+
+// tabColorsCap bounds the per-tab colour map (#22; hard rule #4: no unbounded maps).
+const tabColorsCap = 64
+
+// tabPalette is the cycle of tab-chip tints (#22): index 0 is "no tint" (a fresh chip is unchanged),
+// then a handful of distinct hues.
+var tabPalette = []sdl.Color{
+	{},                               // 0 = none
+	{R: 200, G: 70, B: 70, A: 255},   // red
+	{R: 210, G: 140, B: 50, A: 255},  // amber
+	{R: 90, G: 170, B: 90, A: 255},   // green
+	{R: 70, G: 140, B: 210, A: 255},  // blue
+	{R: 160, G: 110, B: 210, A: 255}, // violet
+	{R: 200, G: 110, B: 170, A: 255}, // pink
+}
+
+// cycleTabColor advances a tab's chip colour to the next palette entry (Ctrl+click), wrapping back
+// to none. Keyed by serverKey so it follows the server across switches; drops the entry at 0 so the
+// map only ever holds coloured tabs.
+func (a *App) cycleTabColor(i int) {
+	key := a.tabKey(i)
+	if key == "" {
+		return
+	}
+	next := (a.tabColors[key] + 1) % len(tabPalette)
+	if next == 0 {
+		delete(a.tabColors, key)
+		return
+	}
+	if _, ok := a.tabColors[key]; !ok && len(a.tabColors) >= tabColorsCap {
+		return // bounded
+	}
+	if a.tabColors == nil {
+		a.tabColors = make(map[string]int)
+	}
+	a.tabColors[key] = next
+}
+
+// tabChipTint returns a tab chip's colour-coding tint and whether one is set (#22).
+func (a *App) tabChipTint(i int) (sdl.Color, bool) {
+	if len(a.tabColors) == 0 {
+		return sdl.Color{}, false
+	}
+	idx := a.tabColors[a.tabKey(i)]
+	if idx <= 0 || idx >= len(tabPalette) {
+		return sdl.Color{}, false
+	}
+	return tabPalette[idx], true
+}
+
 // allocateTab claims a slot for a NEW session: dead tabs are reaped
 // first; at the cap it fails with a visible reason. The caller becomes
 // the active tab with a fresh sessionState.
@@ -482,6 +543,16 @@ func (a *App) handleTabBar(w, h int32) {
 	if !c.clicked {
 		return
 	}
+	// Ctrl+click a chip cycles its colour-coding (#22) — consumes the click so it doesn't switch.
+	if c.ctrlHeld {
+		for i, r := range rects {
+			if c.hovering(r) {
+				a.cycleTabColor(i)
+				c.clicked = false
+				return
+			}
+		}
+	}
 	if add.W > 0 && c.hovering(add) {
 		// "+" — open another server: park the active session (it keeps
 		// running in the background) and show the lobby, where connecting
@@ -628,6 +699,9 @@ func (a *App) drawTabBar(w, h int32) {
 			col = ColAccent
 		}
 		c.Fill(r, sdl.Color{R: bg.R, G: bg.G, B: bg.B, A: 235})
+		if tint, ok := a.tabChipTint(i); ok { // #22: colour-coding stripe along the chip's top
+			c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: 3}, tint)
+		}
 		border := ColPanelHi
 		if a.tabDragging && i == a.tabDragFrom {
 			border = ColAccent // lifted: this chip is mid-reorder
@@ -640,7 +714,7 @@ func (a *App) drawTabBar(w, h int32) {
 		// Discoverability: hovering a chip explains it can be dragged (reorder)
 		// and clicked/closed — the drag-to-reorder gesture wasn't obvious.
 		if !a.tabDragging {
-			hint := "Click to switch  •  drag to reorder (↓ to pop out as a window)  •  ✕ to close"
+			hint := "Click to switch  •  drag to reorder (↓ to pop out)  •  Ctrl+click to colour  •  ✕ to close"
 			if i == a.activeTab {
 				hint = "Drag to reorder  •  click to browse the lobby"
 			}
