@@ -217,6 +217,31 @@ func (a *App) drawLobby(w, h int32) {
 			y += boxH
 		}
 	}
+
+	// Keyboard navigation (#18): arrows move the selection through joinable servers, Enter joins —
+	// when no text field is focused. The selection drives the same expand + scroll as a click.
+	if c.focusID == "" {
+		switch c.keyPressed {
+		case sdl.K_DOWN:
+			if nx := a.nextJoinableServer(a.selServer, 1); nx >= 0 {
+				a.selectServerRow(nx, w)
+				a.scrollServerIntoView(nx, listTop, h)
+			}
+			c.keyPressed = 0
+		case sdl.K_UP:
+			if nx := a.nextJoinableServer(a.selServer, -1); nx >= 0 {
+				a.selectServerRow(nx, w)
+				a.scrollServerIntoView(nx, listTop, h)
+			}
+			c.keyPressed = 0
+		case sdl.K_RETURN, sdl.K_KP_ENTER:
+			if a.selServer >= 0 && a.selServer < len(a.servers) && a.servers[a.selServer].Joinable() {
+				e := &a.servers[a.selServer]
+				a.Connect(e.Name, e.WebSocketURL())
+				return
+			}
+		}
+	}
 }
 
 func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
@@ -230,6 +255,9 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 		bg = ColPanelHi
 	}
 	c.Fill(row, bg)
+	if hover { // #17: hover shows the URL + description ("MOTD") without clicking to expand
+		a.serverRowTooltip(row, e)
+	}
 
 	// Tier swatch.
 	c.Fill(sdl.Rect{X: row.X + 2, Y: y + 4, W: 14, H: rowH - 10}, tierColor(*e))
@@ -309,20 +337,84 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 			a.Connect(e.Name, e.WebSocketURL())
 			return
 		}
-		a.selServer = idx
-		desc := e.Description
-		if desc == "" {
-			desc = "(no description)"
-		}
-		// Wrapped ONCE per selection — drawing reuses the cached lines;
-		// any links in the description become clickable rows below it.
-		a.descLines = c.WrapText(desc, w-2*pad-40, maxDescLines)
-		a.descLinks = extractURLs(desc, maxDescLinks)
+		a.selectServerRow(idx, w) // select + (re)build the cached description lines/links
 	}
 }
 
 // maxDescLinks bounds the clickable-link rows under a description.
 const maxDescLinks = 4
+
+// selectServerRow selects a lobby row and (re)builds its cached description lines + links — shared
+// by a row click and keyboard navigation (#18) so both show the same expanded detail.
+func (a *App) selectServerRow(idx int, w int32) {
+	if idx < 0 || idx >= len(a.servers) {
+		return
+	}
+	a.selServer = idx
+	desc := a.servers[idx].Description
+	if desc == "" {
+		desc = "(no description)"
+	}
+	a.descLines = a.ctx.WrapText(desc, w-2*pad-40, maxDescLines)
+	a.descLinks = extractURLs(desc, maxDescLinks)
+}
+
+// serverRowTooltip shows a lobby row's details on hover (#17): the connect URL and the server's
+// description ("MOTD"), which otherwise only appear once you click the row to expand it. (Real,
+// live MOTD arrives after the handshake; this is what the master list advertises pre-connect.)
+func (a *App) serverRowTooltip(row sdl.Rect, e *network.ServerEntry) {
+	tip := e.WebSocketURL()
+	if d := strings.TrimSpace(e.Description); d != "" {
+		tip = d + "   —   " + tip
+	}
+	a.ctx.Tooltip(row, tip)
+}
+
+// nextJoinableServer returns the index of the next joinable server from `from` in direction dir
+// (+1 down / -1 up), respecting the Phone Book filter; -1 when there's none that way (no wrap).
+func (a *App) nextJoinableServer(from, dir int) int {
+	n := len(a.servers)
+	for i := from + dir; i >= 0 && i < n; i += dir {
+		e := &a.servers[i]
+		if a.phoneBookPage && !e.Favorite {
+			continue
+		}
+		if e.Joinable() {
+			return i
+		}
+	}
+	return -1
+}
+
+// scrollServerIntoView adjusts lobbyScroll so the row at idx is fully visible — accounting for the
+// "NOT SUPPORTED" legacy header and the Phone Book filter, so keyboard nav never selects off-screen.
+func (a *App) scrollServerIntoView(idx int, listTop, h int32) {
+	top := int32(0) // content-space offset (pre-scroll) of row idx's top
+	legacyDrawn := false
+	for i := range a.servers {
+		e := &a.servers[i]
+		if a.phoneBookPage && !e.Favorite {
+			continue
+		}
+		if !e.Joinable() && !legacyDrawn {
+			top += rowH // the legacy-servers header row
+			legacyDrawn = true
+		}
+		if i == idx {
+			break
+		}
+		top += rowH
+	}
+	view := h - listTop
+	if top < a.lobbyScroll {
+		a.lobbyScroll = top
+	} else if top+rowH > a.lobbyScroll+view {
+		a.lobbyScroll = top + rowH - view
+	}
+	if a.lobbyScroll < 0 {
+		a.lobbyScroll = 0
+	}
+}
 
 // drawWardrobeGrid is the char-select grid over the wardrobe menu: same
 // cells, same demand pipeline, same search box. Picking claims the first
