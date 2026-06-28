@@ -368,10 +368,11 @@ type App struct {
 	// once in NewApp when RestoreTabs is on, drained one reconnect per frame by
 	// pumpTabRestore so the blocking dials never pile into a single boot freeze.
 	restoreQueue []config.OpenTab
-	// translog is the detailed-transcript writer (opt-in): one file for all
-	// servers (each line names the server), opened lazily on the first logged
-	// message, closed at shutdown. nil = off / not yet opened.
-	translog *transcriptWriter
+	// translogs are the detailed-transcript writers (opt-in), ONE PER SERVER:
+	// logs/<server>/<session>.log, opened lazily on that server's first logged
+	// message and closed at shutdown. Bounded by transcriptServerCap. nil/empty
+	// = off / nothing logged yet.
+	translogs map[string]*transcriptWriter
 
 	// --- M13 self-update (one-shot launch check; see internal/update) ---
 	// updateRes carries a newer release found by the off-thread probe; the
@@ -2386,7 +2387,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				if fr {
 					a.signalFriend(a.serverName, ev.Message)
 				}
-				a.logDetailed(a.serverName, a.curArea, ev.Message) // detailed transcript (opt-in)
+				a.logDetailed(a.serverName, ev.Message) // detailed transcript (opt-in)
 				a.noteEvidencePresented(ev.Message)
 				a.checkCallwords(ev.Message.Message)
 			}
@@ -5063,26 +5064,46 @@ func (a *App) switchAreaScrollback(toArea string) {
 // goroutine, so the message seam never blocks. A no-op (one pref read) when off,
 // so the default path is unaffected. Called at both message seams (active +
 // background tab), so the transcript captures every server you're connected to.
-func (a *App) logDetailed(server, area string, m *protocol.ChatMessage) {
+func (a *App) logDetailed(server string, m *protocol.ChatMessage) {
 	if m == nil || !a.d.Prefs.DetailedLogOn() {
 		return
 	}
-	if a.translog == nil {
-		path, err := transcriptPath()
-		if err != nil {
-			return
-		}
-		w, err := newTranscriptWriter(path)
-		if err != nil {
-			return
-		}
-		a.translog = w
+	if w := a.transcriptFor(server); w != nil {
+		w.write(detailedLogLine(time.Now(), m))
 	}
-	a.translog.write(detailedLogLine(time.Now(), server, area, m))
 }
 
-// CloseTranscript flushes and closes the detailed-log writer at shutdown.
-func (a *App) CloseTranscript() { a.translog.close() }
+// transcriptFor returns this server's transcript writer, opening its session file
+// (logs/<server>/<date_time>.log) on first use. Bounded by transcriptServerCap so
+// a churn of servers can't open unbounded files/goroutines. nil on error / at cap.
+func (a *App) transcriptFor(server string) *transcriptWriter {
+	if a.translogs == nil {
+		a.translogs = make(map[string]*transcriptWriter)
+	}
+	if w, ok := a.translogs[server]; ok {
+		return w
+	}
+	if len(a.translogs) >= transcriptServerCap {
+		return nil
+	}
+	path, err := transcriptPathFor(server, time.Now())
+	if err != nil {
+		return nil
+	}
+	w, err := newTranscriptWriter(path)
+	if err != nil {
+		return nil
+	}
+	a.translogs[server] = w
+	return w
+}
+
+// CloseTranscript flushes and closes every detailed-log writer at shutdown.
+func (a *App) CloseTranscript() {
+	for _, w := range a.translogs {
+		w.close()
+	}
+}
 
 func (a *App) pushIC(line string, color int, friend bool, friendColor int32, speaker string) {
 	url := ""

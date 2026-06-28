@@ -317,7 +317,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			if fr {
 				a.signalFriend(s.serverName, ev.Message) // alert even from a backgrounded server
 			}
-			a.logDetailed(s.serverName, "", ev.Message) // detailed transcript (opt-in); bg area unknown
+			a.logDetailed(s.serverName, ev.Message) // detailed transcript (opt-in)
 			a.checkCallwords(ev.Message.Message)
 		}
 	case courtroom.EventOOC:

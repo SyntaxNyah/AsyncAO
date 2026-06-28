@@ -1,11 +1,12 @@
 package ui
 
 // Detailed transcript logging (opt-in, OFF by default): when enabled, IC
-// messages are appended to logs/transcript.log beside the exe with a timestamp,
-// the server, the area, and "CharName (Showname)" — a full chat record for
-// casing. All disk I/O runs on ONE background goroutine fed by a bounded channel
-// (rule §2: no synchronous disk I/O on the message path; §17.4: bounded queue),
-// so the message seam on the render thread never blocks on the disk.
+// messages are appended to a per-server log file — logs/<server>/<date_time>.log
+// beside the exe — AO-style: "[timestamp] showname (char): message" (showname
+// first, the server is the folder so it isn't repeated per line, no area/pipe
+// columns). One file per server per session. All disk I/O runs on a background
+// goroutine per server fed by a bounded channel (rule §2: no synchronous disk I/O
+// on the message path; §17.4: bounded queue), so the message seam never blocks.
 
 import (
 	"bufio"
@@ -69,39 +70,65 @@ func (w *transcriptWriter) close() {
 	w.wg.Wait()
 }
 
-// detailedLogLine formats one IC message for the transcript: timestamp, server,
-// area, "CharName (Showname)" (showname omitted when blank or same as the
-// character), then the message text. Pure — unit-tested directly.
-func detailedLogLine(now time.Time, server, area string, m *protocol.ChatMessage) string {
-	who := m.CharName
-	if show := strings.TrimSpace(m.Showname); show != "" && !strings.EqualFold(show, m.CharName) {
-		who = m.CharName + " (" + show + ")"
-	}
-	if area == "" {
-		area = "-"
+// detailedLogLine formats one IC message for the transcript, AO-style: a bracketed timestamp, then
+// "showname (char)" — showname FIRST, falling back to just the character when there's no distinct
+// showname — then the message. No server (it's the folder) or area/pipe columns. Pure — unit-tested.
+func detailedLogLine(now time.Time, m *protocol.ChatMessage) string {
+	char := strings.TrimSpace(m.CharName)
+	show := strings.TrimSpace(m.Showname)
+	who := show
+	switch {
+	case who == "":
+		who = char
+	case char != "" && !strings.EqualFold(show, char):
+		who = show + " (" + char + ")" // showname (character)
 	}
 	var b strings.Builder
+	b.WriteByte('[')
 	b.WriteString(now.Format("2006-01-02 15:04:05"))
-	b.WriteString(" | ")
-	b.WriteString(server)
-	b.WriteString(" | ")
-	b.WriteString(area)
-	b.WriteString(" | ")
+	b.WriteString("] ")
 	b.WriteString(who)
-	b.WriteString(" | ")
+	b.WriteString(": ")
 	b.WriteString(m.Message)
 	return b.String()
 }
 
-// transcriptPath is logs/transcript.log beside the exe (the dir is created).
-func transcriptPath() (string, error) {
+// transcriptServerCap bounds how many distinct servers get a live transcript writer in one run
+// (hard rule #4: no unbounded goroutines / open files). A generous ceiling — nobody logs to dozens
+// of servers in one session; past it a new server simply isn't transcribed.
+const transcriptServerCap = 64
+
+// sanitizeLogFolder makes a server name safe as a folder name: path separators and the
+// Windows-reserved characters become "_", control chars drop, surrounding spaces/dots trim (Windows
+// rejects trailing dots/spaces), empty → "server". Never lets a name escape logs/.
+func sanitizeLogFolder(server string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(server) {
+		switch {
+		case r < 0x20: // control characters
+			continue
+		case strings.ContainsRune(`/\:*?"<>|`, r):
+			b.WriteByte('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	if out := strings.Trim(b.String(), " ."); out != "" {
+		return out
+	}
+	return "server"
+}
+
+// transcriptPathFor is logs/<server>/<YYYY-MM-DD_HH-MM-SS>.log beside the exe — one session file per
+// server (the dirs are created). The timestamp names the file so each run is its own log.
+func transcriptPathFor(server string, now time.Time) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(filepath.Dir(exe), "logs")
+	dir := filepath.Join(filepath.Dir(exe), "logs", sanitizeLogFolder(server))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "transcript.log"), nil
+	return filepath.Join(dir, now.Format("2006-01-02_15-04-05")+".log"), nil
 }
