@@ -265,14 +265,14 @@ func CommandReference(sw ServerSoftware) []string {
 	case SoftwareAthena:
 		return []string{
 			`Ban — /ban -i <ipid> | -u <uid>  -d <dur>  reason`,
-			`Kick — /kick -i <ipid> | -u <uid>  reason`,
+			`Kick — /kick -u <uid>  reason`,
 			`Area kick — /kickarea <uid>`,
 			`CM — /cm · /uncm · /lock [-s] · /unlock`,
 		}
 	case SoftwareNyathena: // forks Athena: same syntax, richer area/CM toolkit
 		return []string{
 			`Ban — /ban -i <ipid> | -u <uid>  -d <dur>  reason`,
-			`Kick — /kick -i <ipid> | -u <uid>  reason`,
+			`Kick — /kick -u <uid>  reason`,
 			`Area kick — /kickarea <uid>`,
 			`CM — /cm · /uncm · /lock [-s] · /unlock`,
 			`+ /invite · /uninvite · /lockbg · /lockmusic · /spectate · /status`,
