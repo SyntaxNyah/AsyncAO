@@ -101,6 +101,7 @@ asyncao -debug          # pprof on localhost:6060
 | [docs/PROTOCOL.md](docs/PROTOCOL.md) | The AO2 wire protocol as implemented |
 | [docs/DISCORD.md](docs/DISCORD.md) | Discord Rich Presence: setup, privacy, building without it |
 | [docs/user/lobby.md](docs/user/lobby.md) | Lobby, phone book, direct connect |
+| [docs/user/themes.md](docs/user/themes.md) | Using AO2 themes + the `asyncao_ic_*` keys for placing IC controls |
 | [docs/user/asset-preferences.md](docs/user/asset-preferences.md) | Format settings guide |
 | [docs/user/pairing.md](docs/user/pairing.md) | Pairing guide |
 | [docs/user/themes.md](docs/user/themes.md) | Migrating AO2 themes |
