@@ -287,51 +287,91 @@ func (a *App) drawModDashActions(x, y, w int32) {
 	}
 }
 
-// drawModDashRoster renders the live roster as a clickable, scrollable list with rich two-line
-// rows (showname · IC · OOC · UID · IPID). Selecting a row sets modDashTargetUID (by UID, never
-// index, so a roster rebuild can't repoint it).
+// drawModDashRoster renders the live roster as a clickable, scrollable list with a character icon
+// and rich two-line rows (showname · IC · OOC · UID · IPID). It reuses the player list's grouped,
+// memoized row layout (playerRosterRows), so a /gas spanning areas shows the SAME area-grouped
+// headers the player list does — organised by the server software's own area order — and shares
+// the player list's index-keyed icon cache (same rosterView indices), so faces stay warm in both.
+// Selecting a row sets modDashTargetUID (by UID, never index, so a roster rebuild can't repoint it).
 func (a *App) drawModDashRoster(r sdl.Rect) {
 	c := a.ctx
 	c.Border(r, ColPanelHi)
-	roster := a.rosterView()
-	if len(roster) == 0 {
+	if len(a.rosterView()) == 0 {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No players yet (or no live list on this server).", ColTextDim)
 		return
 	}
+	// Pass the SAME speaker arg the player list passes: playerRosterRows memoizes on it over one
+	// shared backing slice, so a mismatch would rebuild that slice every frame while both panels
+	// are open (a per-frame allocation). currentSpeakerName is what drawPlayerList feeds it too.
+	speaker := a.currentSpeakerName()
+	rows := a.playerRosterRows(speaker) // flat for a /ga, area-grouped (with headers) for a /gas
 	if !c.ctrlHeld {
 		a.modDashScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	contentH := int32(len(roster)) * modRosterRowH
+	contentH := int32(0)
+	for i := range rows {
+		contentH += modRowHeight(rows[i])
+	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.modDashScroll = c.VScrollbar("moddashroster", track, a.modDashScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
-	rowY := r.Y - a.modDashScroll
 	rowW := r.W - scrollBarW - 4
-	for i := range roster {
-		p := roster[i]
+	rowY := r.Y - a.modDashScroll
+	for i := range rows {
+		rh := modRowHeight(rows[i])
 		if rowY > r.Y+r.H {
 			break
 		}
-		if rowY >= r.Y-modRosterRowH {
-			rrow := sdl.Rect{X: r.X, Y: rowY, W: rowW, H: modRosterRowH - 2}
-			selected := p.uid != "" && p.uid == a.modDashTargetUID
-			if selected {
-				c.Fill(rrow, ColAccent)
-			} else if c.hovering(rrow) {
-				c.Fill(rrow, ColPanelHi)
+		if rowY >= r.Y-rh {
+			if rows[i].header {
+				a.drawAreaHeaderRow(rows[i], sdl.Rect{X: r.X, Y: rowY, W: rowW, H: rh - 2})
+			} else {
+				a.drawModRosterRow(rows[i].idx, sdl.Rect{X: r.X, Y: rowY, W: rowW, H: rh - 2})
 			}
-			if c.hovering(rrow) && c.clicked && p.uid != "" {
-				a.modDashTargetUID = p.uid
-			}
-			nameCol := ColText
-			if selected {
-				nameCol = ColBackground
-			}
-			a.drawModRosterIdentity(p, rrow.X+6, rowY, rowW-12, nameCol)
 		}
-		rowY += modRosterRowH
+		rowY += rh
 	}
+}
+
+// modRowHeight is the display height of one mod-dashboard roster row. Area-group headers are short
+// (playerHeaderH, shared with the player list); player rows keep the full two-line identity height
+// (modRosterRowH). Unlike the player list it does NOT scale with the Players-tab zoom — the
+// dashboard wants a stable target row a mod can reliably click.
+func modRowHeight(row rosterRow) int32 {
+	if row.header {
+		return playerHeaderH
+	}
+	return modRosterRowH
+}
+
+// drawModRosterRow is one mod-dashboard player row: a character icon (shared player-list cache),
+// the rich two-line identity, and click-to-target (by UID). It mirrors the player list's row so a
+// mod sees the same faces, but the click selects a ban / kick target instead of the pair / copy
+// actions. idx is the rosterView index — the icon-cache key, valid because it came from
+// playerRosterRows iterating that same rosterView.
+func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
+	c := a.ctx
+	p := &a.rosterView()[idx]
+	selected := p.uid != "" && p.uid == a.modDashTargetUID
+	if selected {
+		c.Fill(rrow, ColAccent)
+	} else if c.hovering(rrow) {
+		c.Fill(rrow, ColPanelHi)
+	}
+	if c.hovering(rrow) && c.clicked && p.uid != "" {
+		a.modDashTargetUID = p.uid
+	}
+	isSpec := strings.EqualFold(p.name, "Spectator")
+	iconSz := modRosterRowH - 12
+	iconR := sdl.Rect{X: rrow.X + 6, Y: rrow.Y + (rrow.H-iconSz)/2, W: iconSz, H: iconSz}
+	a.drawPlayerIcon(p, idx, iconR, isSpec)
+	nameCol := ColText
+	if selected {
+		nameCol = ColBackground
+	}
+	textX := rrow.X + 6 + iconSz + 8
+	a.drawModRosterIdentity(*p, textX, rrow.Y, rrow.X+rrow.W-textX-6, nameCol)
 }
 
 // drawModDashBanBox is the Ban (kind 1) / Kick (kind 2) sub-modal: the frozen target, a duration
