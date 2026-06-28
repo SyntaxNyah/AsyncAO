@@ -134,8 +134,9 @@ of their work and follows their protocol and conventions:
 
 Thank you to everyone who tested AsyncAO while it was closed source — finding
 bugs, requesting features, and giving the feedback that shaped it:
-**Cocoa Bean, Lala, Nightingale, Peen, Emerald, Extra7, Poki, Xocfti, Dag, CherriPop,
-ZeitHeld, Crystalwarrior**.
+**Cocoa Bean, Lala, Nightingale, Peen, Emerald, Extra7, Poki, Xocfti, Dag, CherriPop**.
+
+Special thanks to Nightingale - an enormous share of the v1.0.x quality-of-life polish came straight from their relentless, detailed playtesting. Go show them some love.
 
 **v1.1.0** was driven by **Crystalwarrior** and **ZeitHeld** — the IC-bar rework, the
 floating evidence window and the audio fixes all came from their suggestions, feedback
