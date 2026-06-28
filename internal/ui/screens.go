@@ -2111,6 +2111,7 @@ func (a *App) submitOOC() {
 		return
 	}
 	a.sess.SendOOC(a.oocNameOrDefault(), a.oocInput)
+	a.recordSentOOC(a.oocInput) // remember the raw line for Up-arrow recall (mirrors IC #8)
 	a.oocInput = ""
 }
 
@@ -2201,6 +2202,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 		if sent {
 			a.submitOOC()
 		}
+		a.recallOOC() // Up/Down recall recently-sent OOC lines when this field is focused
 		fy += fH + 6
 	}
 	// OOC carries only an OOC name + the OOC chat — the IC showname is set on the IC bar
@@ -3900,6 +3902,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		if sendOOC {
 			a.submitOOC() // shared OOC send: uses your OOC name (or the server default) + clears
 		}
+		a.recallOOC() // Up/Down recall recently-sent OOC lines when the bar is focused
 		// Ctrl+wheel over the OOC row resizes the OOC text (independent of the IC log).
 		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}) {
 			a.oocPct = clampInt(a.oocPct+int(c.wheelY)*config.ScaleStepPercent,
@@ -4805,57 +4808,70 @@ func (a *App) sendIC(shout int) {
 	a.icInput = ""
 }
 
-// icSentHistCap bounds the per-tab IC recall ring (#8).
-const icSentHistCap = 30
+// sentHistCap bounds a per-tab message recall ring (#8: IC, and the OOC ring that mirrors it).
+const sentHistCap = 30
 
-// recordSentIC pushes a just-sent IC line onto the recall ring (newest last), skipping
-// blankposts and consecutive duplicates, and resets the recall cursor to the live draft.
-// Off the render path (called once per send), so the append's growth never touches a frame.
-func (a *App) recordSentIC(raw string) {
-	a.icRecallIdx = -1 // any send returns you to a fresh draft
+// recordSentLine pushes a just-sent line onto a recall ring (newest last), skipping blankposts and
+// consecutive duplicates, capping at sentHistCap, and resetting the cursor (*idx) to the live draft.
+// Shared by IC and OOC; off the render path (called once per send), so the growth never hits a frame.
+func recordSentLine(raw string, hist *[]string, idx *int) {
+	*idx = -1 // any send returns you to a fresh draft
 	t := strings.TrimSpace(raw)
 	if t == "" { // blankpost / whitespace-only — nothing to recall
 		return
 	}
-	if n := len(a.icSentHist); n > 0 && a.icSentHist[n-1] == t {
+	if n := len(*hist); n > 0 && (*hist)[n-1] == t {
 		return // don't stack the same line twice in a row
 	}
-	a.icSentHist = append(a.icSentHist, t)
-	if len(a.icSentHist) > icSentHistCap {
-		a.icSentHist = a.icSentHist[len(a.icSentHist)-icSentHistCap:]
+	*hist = append(*hist, t)
+	if len(*hist) > sentHistCap {
+		*hist = (*hist)[len(*hist)-sentHistCap:]
 	}
 }
 
-// recallIC walks the IC recall ring when the IC field is focused and Up/Down is pressed
-// (shell-style): Up goes older, Down newer and back to the stashed live draft. Consumes
-// the key so it can't double-act. A few comparisons per frame, no alloc.
-func (a *App) recallIC() {
-	c := a.ctx
-	if c.focusID != "ic" || len(a.icSentHist) == 0 {
+// recallLine walks a recall ring (shell-style) when its field is focused and Up/Down is pressed: Up
+// goes older, Down newer and back to the stashed live draft. Consumes the key so it can't double-act
+// (also dedups when two fields sharing one input both call it in a frame). A few comparisons, no alloc.
+func recallLine(c *Ctx, focused bool, input *string, hist []string, idx *int, draft *string) {
+	if !focused || len(hist) == 0 {
 		return
 	}
 	switch c.keyPressed {
 	case sdl.K_UP:
-		if a.icRecallIdx == -1 { // entering history: stash the live draft first
-			a.icRecallDraft = a.icInput
-			a.icRecallIdx = len(a.icSentHist)
+		if *idx == -1 { // entering history: stash the live draft first
+			*draft = *input
+			*idx = len(hist)
 		}
-		if a.icRecallIdx > 0 {
-			a.icRecallIdx--
-			a.icInput = a.icSentHist[a.icRecallIdx]
+		if *idx > 0 {
+			*idx--
+			*input = hist[*idx]
 		}
 		c.keyPressed = 0
 	case sdl.K_DOWN:
-		if a.icRecallIdx >= 0 {
-			a.icRecallIdx++
-			if a.icRecallIdx >= len(a.icSentHist) {
-				a.icInput, a.icRecallIdx = a.icRecallDraft, -1 // back to the draft
+		if *idx >= 0 {
+			*idx++
+			if *idx >= len(hist) {
+				*input, *idx = *draft, -1 // back to the draft
 			} else {
-				a.icInput = a.icSentHist[a.icRecallIdx]
+				*input = hist[*idx]
 			}
 		}
 		c.keyPressed = 0
 	}
+}
+
+// recordSentIC / recallIC: the IC recall ring (#8).
+func (a *App) recordSentIC(raw string) { recordSentLine(raw, &a.icSentHist, &a.icRecallIdx) }
+func (a *App) recallIC() {
+	recallLine(a.ctx, a.ctx.focusID == "ic", &a.icInput, a.icSentHist, &a.icRecallIdx, &a.icRecallDraft)
+}
+
+// recordSentOOC / recallOOC: the OOC recall ring — the same Up/Down history, fired from any of the
+// OOC inputs (the OOC box "oocmsg", the bottom bar "ooc", the themed "ooc"), all sharing oocInput.
+func (a *App) recordSentOOC(raw string) { recordSentLine(raw, &a.oocSentHist, &a.oocRecallIdx) }
+func (a *App) recallOOC() {
+	f := a.ctx.focusID
+	recallLine(a.ctx, f == "ooc" || f == "oocmsg", &a.oocInput, a.oocSentHist, &a.oocRecallIdx, &a.oocRecallDraft)
 }
 
 // areaLockedBg / areaCurrentBg fill a locked area's card dark red and the area

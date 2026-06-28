@@ -21,11 +21,11 @@ func TestRecordSentIC(t *testing.T) {
 	if a.icRecallIdx != -1 {
 		t.Errorf("a send must reset icRecallIdx to -1, got %d", a.icRecallIdx)
 	}
-	for i := 0; i < icSentHistCap+10; i++ {
+	for i := 0; i < sentHistCap+10; i++ {
 		a.recordSentIC("m" + string(rune('a'+i%26)) + string(rune('0'+i/26)))
 	}
-	if len(a.icSentHist) > icSentHistCap {
-		t.Errorf("history len = %d, want <= %d", len(a.icSentHist), icSentHistCap)
+	if len(a.icSentHist) > sentHistCap {
+		t.Errorf("history len = %d, want <= %d", len(a.icSentHist), sentHistCap)
 	}
 }
 

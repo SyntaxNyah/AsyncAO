@@ -952,6 +952,12 @@ type sessionState struct {
 	icSentHist    []string
 	icRecallIdx   int
 	icRecallDraft string
+	// OOC message recall: the same Up/Down history walk for the OOC inputs (the OOC box,
+	// the bottom OOC bar, and the themed OOC field — they all share oocInput). Its own ring,
+	// separate from IC, so OOC and IC histories never bleed together.
+	oocSentHist    []string
+	oocRecallIdx   int
+	oocRecallDraft string
 	// Friends-tab PM composer (#friends): the selected friend + the message being
 	// typed. Sends as "/pm <their uid> <message>" over OOC.
 	pmTarget string

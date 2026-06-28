@@ -332,6 +332,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			if send {
 				a.submitOOC()
 			}
+			a.recallOOC() // Up/Down recall recently-sent OOC lines when the themed field is focused
 		}
 		if nameR, ok := lay.rect("ooc_chat_name"); ok {
 			a.ensureNameOpts()
