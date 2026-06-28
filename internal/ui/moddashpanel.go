@@ -60,11 +60,89 @@ const (
 // modDashChipOn is the "active" status-chip colour (green; matches the ping chip's "good").
 var modDashChipOn = sdl.Color{R: 70, G: 200, B: 90, A: 255}
 
-// modReasonTemplates are one-click canned ban / kick reasons (#13). Clicking one fills the reason
-// field; the mod can still edit or clear it. Built-in and fixed — covering the common cases keeps
-// it zero-config (no new prefs surface); a user-editable list can come later if asked.
-var modReasonTemplates = []string{
-	"Spam", "Harassment", "NSFW", "Disruptive", "Trolling", "Ban evasion", "Disrespect",
+// drawReasonTemplateChips draws the editable ban/kick reason chips (from prefs). Clicking a chip
+// fills banBoxReason; the active one is outlined. When manage is set (the single box, which has the
+// room — the bulk box passes false to stay compact) it also shows "+ Save" (store the current
+// reason as a chip) and an Edit toggle whose chips show a × that removes them. Returns the y past
+// the block. Shared by the single and bulk boxes so the list and behaviour can't drift apart.
+func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
+	c := a.ctx
+	tpls := a.d.Prefs.ModReasonTemplatesList()
+	editing := manage && a.modTemplatesEdit
+	tx := x
+	for _, tpl := range tpls {
+		label := tpl
+		if editing {
+			label = "× " + tpl
+		}
+		tw := c.TextWidth(label) + 16
+		if tx+tw > x+maxW {
+			tx = x
+			y += btnH + 6
+		}
+		tr := sdl.Rect{X: tx, Y: y, W: tw, H: btnH}
+		if c.Button(tr, label) {
+			if editing {
+				a.d.Prefs.RemoveModReasonTemplate(tpl)
+			} else {
+				a.banBoxReason = tpl
+			}
+		}
+		if !editing && a.banBoxReason == tpl {
+			c.Border(tr, ColAccent) // outline the active template
+		}
+		tx += tw + 6
+	}
+	y += btnH + 6
+	if manage {
+		if !editing && strings.TrimSpace(a.banBoxReason) != "" {
+			if c.Button(sdl.Rect{X: x, Y: y, W: 150, H: btnH}, "+ Save reason") {
+				a.d.Prefs.AddModReasonTemplate(a.banBoxReason)
+			}
+		}
+		editLabel := "Edit"
+		if editing {
+			editLabel = "Done"
+		}
+		if c.Button(sdl.Rect{X: x + maxW - 64, Y: y, W: 64, H: btnH}, editLabel) {
+			a.modTemplatesEdit = !a.modTemplatesEdit
+		}
+		y += btnH + 6
+	}
+	return y + 6
+}
+
+// formatModAudit renders the session audit log as plain text (one tab-separated row per entry) for
+// the clipboard export. Pure — testable without SDL.
+func (a *App) formatModAudit() string {
+	var b strings.Builder
+	b.WriteString("AsyncAO mod audit")
+	if a.serverName != "" {
+		b.WriteString(" — " + a.serverName)
+	}
+	b.WriteByte('\n')
+	for _, e := range a.modAudit {
+		b.WriteString(e.at.Format("2006-01-02 15:04:05"))
+		b.WriteByte('\t')
+		b.WriteString(e.action)
+		b.WriteByte('\t')
+		b.WriteString(e.target)
+		b.WriteByte('\t')
+		b.WriteString(e.cmd)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// copyModAudit puts the audit log on the clipboard — the "export" path. Clipboard, not a file, so
+// there's no disk I/O on the render thread (the phone book / jukebox share the same way, §17.2).
+func (a *App) copyModAudit() {
+	if len(a.modAudit) == 0 {
+		return
+	}
+	_ = sdl.SetClipboardText(a.formatModAudit())
+	a.warnLine = clampLine("Copied " + strconv.Itoa(len(a.modAudit)) + " audit entries to the clipboard.")
+	a.warnAt = a.now()
 }
 
 // modAuditCap bounds the session audit log (hard rule #4 / spec §17.4: every buffer is capped).
@@ -259,6 +337,7 @@ func (a *App) openModDashBox(kind int) {
 	a.banBoxName = rosterDisplayName(row)
 	a.banBoxReason = ""
 	a.banBoxDur = courtroom.Ban1Day // a sane default duration
+	a.modTemplatesEdit = false      // start in normal (fill) mode, not the template editor
 }
 
 // fetchAreaForBan asks the server for the area roster (/getarea), the mod-only reply that carries
@@ -352,6 +431,11 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 		c.Border(auditBtn, ColAccent)
 	} else {
 		c.Border(rosterBtn, ColAccent)
+	}
+	if a.modDashShowAudit && len(a.modAudit) > 0 { // export the audit log to the clipboard
+		if c.Button(sdl.Rect{X: auditBtn.X + auditBtn.W + 8, Y: bodyTop, W: 60, H: btnH}, "Copy") {
+			a.copyModAudit()
+		}
 	}
 	leftRect := sdl.Rect{X: x, Y: bodyTop + btnH + 6, W: leftW, H: bodyBottom - (bodyTop + btnH + 6)}
 	if a.modDashShowAudit {
@@ -631,9 +715,9 @@ func (a *App) drawModDashBanBox(w, h int32) {
 		return
 	}
 	isBan := a.banBoxKind == 1
-	bw, bh := int32(560), int32(452) // ban: taller — duration presets + quick-reason chips each wrap
+	bw, bh := int32(560), int32(490) // ban: duration presets + quick-reason chips + the manage row
 	if !isBan {
-		bh = 330 // kick: no duration row, but the quick-reason chips still wrap to two rows
+		bh = 368 // kick: no duration row, but the chips + manage row still stack
 	}
 	panel := sdl.Rect{X: (w - bw) / 2, Y: (h - bh) / 2, W: bw, H: bh}
 	c.Fill(panel, ColPanel)
@@ -683,24 +767,8 @@ func (a *App) drawModDashBanBox(w, h int32) {
 	a.banBoxReason, _ = c.TextField("moddashreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, "reason (optional for kick)")
 	y += fieldH + 8
 
-	// Quick-reason templates (#13): one click fills the field above; still freely editable after.
-	tx := x
-	for _, tpl := range modReasonTemplates {
-		tw := c.TextWidth(tpl) + 16
-		if tx+tw > x+maxW {
-			tx = x
-			y += btnH + 6
-		}
-		tr := sdl.Rect{X: tx, Y: y, W: tw, H: btnH}
-		if c.Button(tr, tpl) {
-			a.banBoxReason = tpl
-		}
-		if a.banBoxReason == tpl {
-			c.Border(tr, ColAccent) // highlight when the field matches this template
-		}
-		tx += tw + 6
-	}
-	y += btnH + 12
+	// Quick-reason templates: editable chips fill the field; the single box gets the manage row.
+	y = a.drawReasonTemplateChips(x, y, maxW, true)
 
 	// Live preview of the exact command.
 	var cmd string
@@ -829,23 +897,7 @@ func (a *App) drawModBulkBox(w, h int32) {
 	y += 20
 	a.banBoxReason, _ = c.TextField("modbulkreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, "reason (optional for kick)")
 	y += fieldH + 8
-	tx := x
-	for _, tpl := range modReasonTemplates {
-		tw := c.TextWidth(tpl) + 16
-		if tx+tw > x+maxW {
-			tx = x
-			y += btnH + 6
-		}
-		tr := sdl.Rect{X: tx, Y: y, W: tw, H: btnH}
-		if c.Button(tr, tpl) {
-			a.banBoxReason = tpl
-		}
-		if a.banBoxReason == tpl {
-			c.Border(tr, ColAccent)
-		}
-		tx += tw + 6
-	}
-	y += btnH + 12
+	y = a.drawReasonTemplateChips(x, y, maxW, false) // compact (no manage row) in the busy bulk box
 
 	// Readiness: how many frozen targets have a buildable command right now (the rest need an IPID
 	// this server hasn't surfaced yet). Ground truth — we just try to build each command.

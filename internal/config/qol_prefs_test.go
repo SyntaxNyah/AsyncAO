@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -943,6 +944,67 @@ func TestSfxFavoritesRoundTrip(t *testing.T) {
 	}
 	if !q.IsSfxFavorite("sfx-stab") {
 		t.Error("starred SFX lost across save/load")
+	}
+}
+
+// TestModReasonTemplates pins the editable reason chips: defaults when empty, add (case-preserved,
+// deduped case-insensitively), remove a seeded default, and the cap.
+func TestModReasonTemplates(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	def := p.ModReasonTemplatesList()
+	if len(def) == 0 {
+		t.Fatal("an unset list must return the built-in defaults")
+	}
+	if !p.AddModReasonTemplate("Metagaming") {
+		t.Error("AddModReasonTemplate should report a change")
+	}
+	if p.AddModReasonTemplate("metagaming") { // case-insensitive duplicate
+		t.Error("dup add must be a no-op")
+	}
+	list := p.ModReasonTemplatesList()
+	if len(list) != len(def)+1 || list[len(list)-1] != "Metagaming" {
+		t.Errorf("after add = %v, want the defaults + Metagaming", list)
+	}
+	if !p.RemoveModReasonTemplate("spam") { // case-insensitive remove of the "Spam" default
+		t.Error("removing a seeded default should work")
+	}
+	for _, s := range p.ModReasonTemplatesList() {
+		if s == "Spam" {
+			t.Error("Spam should be gone after removal")
+		}
+	}
+	// Cap: piling on can't grow past modReasonTemplatesCap.
+	for i := 0; i < modReasonTemplatesCap+10; i++ {
+		p.AddModReasonTemplate("r" + strconv.Itoa(i))
+	}
+	if len(p.ModReasonTemplatesList()) > modReasonTemplatesCap {
+		t.Errorf("list grew to %d, want capped at %d", len(p.ModReasonTemplatesList()), modReasonTemplatesCap)
+	}
+}
+
+// TestModReasonTemplatesRoundTrip pins that a custom reason survives save → load.
+func TestModReasonTemplatesRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	p.AddModReasonTemplate("Metagaming")
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	found := false
+	for _, s := range q.ModReasonTemplatesList() {
+		if s == "Metagaming" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("custom reason template lost across save/load")
 	}
 }
 

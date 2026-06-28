@@ -848,6 +848,7 @@ type sessionState struct {
 	modAuditScroll   int32           // audit list scroll offset
 	modDashSelected  map[string]bool // UIDs ticked for a bulk ban / kick (lazily inited; ≤ modBulkCap)
 	bulkBoxUIDs      []string        // frozen snapshot of the ticked UIDs when a bulk box opens
+	modTemplatesEdit bool            // the ban box's reason-template editor is open (× removes a chip)
 	serverName       string
 	serverKey        string    // ws URL: keys the per-server warm state in prefs
 	connAt           time.Time // session start (Rich Presence elapsed timer)

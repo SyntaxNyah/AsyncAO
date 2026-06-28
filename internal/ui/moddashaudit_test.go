@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -32,5 +33,27 @@ func TestRecordModAudit(t *testing.T) {
 	}
 	if last := a.modAudit[len(a.modAudit)-1].cmd; last != "/kick 1 "+strconv.Itoa(modAuditCap+25-1) {
 		t.Errorf("newest entry = %q, want the last command recorded", last)
+	}
+}
+
+// TestFormatModAudit pins the clipboard export text: a header line (with the server) plus one
+// tab-separated row per entry (action, target, command), in record order.
+func TestFormatModAudit(t *testing.T) {
+	a := testTabApp(t)
+	a.serverName = "Test Server"
+	a.recordModAudit("Kick", "[5] Phoenix", "/kick 5 spam")
+	a.recordModAudit("Ban", "[7] Maya", "/ban -u 7 -d perma trolling")
+	out := a.formatModAudit()
+	if !strings.Contains(out, "AsyncAO mod audit — Test Server") {
+		t.Errorf("missing header: %q", out)
+	}
+	if !strings.Contains(out, "\tKick\t[5] Phoenix\t/kick 5 spam\n") {
+		t.Errorf("missing kick row: %q", out)
+	}
+	if !strings.Contains(out, "\tBan\t[7] Maya\t/ban -u 7 -d perma trolling\n") {
+		t.Errorf("missing ban row: %q", out)
+	}
+	if n := strings.Count(out, "\n"); n != 3 { // header + 2 entries
+		t.Errorf("line count = %d, want 3", n)
 	}
 }

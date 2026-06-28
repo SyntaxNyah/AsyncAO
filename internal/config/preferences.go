@@ -790,7 +790,8 @@ type AssetPreferences struct {
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	ICPhraseKeys       map[string]string         `json:"icPhraseKeys,omitempty"` // key name → canned IC line (hotkeyed)
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
-	SfxFavorites       []string                  `json:"sfxFavorites,omitempty"` // #12 starred SFX names (global, bare; preview/use in the SFX Browser)
+	SfxFavorites       []string                  `json:"sfxFavorites,omitempty"`       // #12 starred SFX names (global, bare; preview/use in the SFX Browser)
+	ModReasonTemplates []string                  `json:"modReasonTemplates,omitempty"` // editable ban/kick reason chips (seed defaults when empty)
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
@@ -1041,7 +1042,8 @@ type prefsJSON struct {
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	ICPhraseKeys       map[string]string         `json:"icPhraseKeys,omitempty"` // key name → canned IC line (hotkeyed)
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
-	SfxFavorites       []string                  `json:"sfxFavorites,omitempty"` // #12 starred SFX names (global, bare; preview/use in the SFX Browser)
+	SfxFavorites       []string                  `json:"sfxFavorites,omitempty"`       // #12 starred SFX names (global, bare; preview/use in the SFX Browser)
+	ModReasonTemplates []string                  `json:"modReasonTemplates,omitempty"` // editable ban/kick reason chips (seed defaults when empty)
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
@@ -1724,6 +1726,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ICPhraseKeys = onDisk.ICPhraseKeys
 	p.MutedSFX = onDisk.MutedSFX
 	p.SfxFavorites = onDisk.SfxFavorites
+	p.ModReasonTemplates = onDisk.ModReasonTemplates
 	p.BlipVols = onDisk.BlipVols
 	p.EmoteFavs = onDisk.EmoteFavs
 	p.EmoteFavOnly = onDisk.EmoteFavOnly
@@ -6669,6 +6672,77 @@ func (p *AssetPreferences) ToggleSfxFavorite(name string) bool {
 	p.mu.Unlock()
 	p.markDirty()
 	return true
+}
+
+// defaultModReasonTemplates are the built-in ban/kick reason chips shown until the user edits the
+// list. Seeded (not just shown) on the first add/remove so editing starts from these.
+var defaultModReasonTemplates = []string{
+	"Spam", "Harassment", "NSFW", "Disruptive", "Trolling", "Ban evasion", "Disrespect",
+}
+
+// modReasonTemplatesCap bounds the editable reason-template list (hard rule #4).
+const modReasonTemplatesCap = 32
+
+// ModReasonTemplatesList returns the editable ban/kick reason chips (a clone). When the stored list
+// is empty it returns the built-in defaults — so a brand-new config (and a fully-cleared one) always
+// has something. Deleting every entry therefore re-seeds the defaults on next read, by design.
+func (p *AssetPreferences) ModReasonTemplatesList() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.ModReasonTemplates) == 0 {
+		return cloneStrings(defaultModReasonTemplates)
+	}
+	return cloneStrings(p.ModReasonTemplates)
+}
+
+// seedModTemplatesLocked populates the stored list with the defaults if it's empty, so a mutation
+// (add/remove) starts from what the user sees rather than from nothing. Caller holds the lock.
+func (p *AssetPreferences) seedModTemplatesLocked() {
+	if len(p.ModReasonTemplates) == 0 {
+		p.ModReasonTemplates = cloneStrings(defaultModReasonTemplates)
+	}
+}
+
+// AddModReasonTemplate appends a reason (trimmed, deduped case-insensitively, bounded). Reports
+// whether it changed. Case is preserved — these are display labels, not match keys.
+func (p *AssetPreferences) AddModReasonTemplate(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	p.mu.Lock()
+	p.seedModTemplatesLocked()
+	if len(p.ModReasonTemplates) >= modReasonTemplatesCap {
+		p.mu.Unlock()
+		return false
+	}
+	for _, t := range p.ModReasonTemplates {
+		if strings.EqualFold(t, s) {
+			p.mu.Unlock()
+			return false
+		}
+	}
+	p.ModReasonTemplates = append(p.ModReasonTemplates, s)
+	p.mu.Unlock()
+	p.markDirty()
+	return true
+}
+
+// RemoveModReasonTemplate drops a reason (case-insensitive). Reports whether it changed.
+func (p *AssetPreferences) RemoveModReasonTemplate(s string) bool {
+	s = strings.TrimSpace(s)
+	p.mu.Lock()
+	p.seedModTemplatesLocked()
+	for i, t := range p.ModReasonTemplates {
+		if strings.EqualFold(t, s) {
+			p.ModReasonTemplates = append(p.ModReasonTemplates[:i], p.ModReasonTemplates[i+1:]...)
+			p.mu.Unlock()
+			p.markDirty()
+			return true
+		}
+	}
+	p.mu.Unlock()
+	return false
 }
 
 // blipVolsCap bounds the per-character blip-volume map (hard rule #4: no
