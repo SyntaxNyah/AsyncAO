@@ -880,7 +880,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 26
 	tabCap := a.d.Prefs.TabCap()
-	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 99); next != tabCap {
+	if next := a.numberRow(y, "Max server tabs", tabCap, 1, 1, 99,
+		"How many servers you can have open at once — each Join opens a tab (up to 99)."); next != tabCap {
 		a.d.Prefs.SetTabCap(next)
 	}
 	c.Label(pad+270, y+4, "servers you can keep open at once — each is a live connection (default 6)", ColTextDim)
@@ -954,7 +955,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	if scaleAuto {
 		c.Label(pad, y+4, fmt.Sprintf("UI scale %%:  %d (auto)", a.UIScale()), ColTextDim)
 	} else {
-		uiPct := a.sliderRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent)
+		uiPct := a.sliderRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent,
+			"Zooms the WHOLE interface — text and sprites together. Auto-set from your display DPI unless you untick HiDPI auto-scale.")
 		if uiPct != a.uiScalePct {
 			a.uiScalePct = uiPct
 			a.ctx.SetUIScale(uiPct)
@@ -968,17 +970,20 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// zooming the courtroom art (that's the UI scale above — it's a whole-frame
 	// zoom). These map to the same persisted layout scales the in-courtroom
 	// Ctrl+wheel zoom tunes, so a change here shows at once and survives restart.
-	if v := a.sliderRow(y, "Chat log text size %", a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent); v != a.logPct {
+	if v := a.sliderRow(y, "Chat log text size %", a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent,
+		"Size of the IC/OOC log text only — not the courtroom art. Ctrl+wheel over the log does the same."); v != a.logPct {
 		a.logPct = v
 		a.saveLayout()
 	}
 	y += 30
-	if v := a.sliderRow(y, "OOC text size %", a.oocPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent); v != a.oocPct {
+	if v := a.sliderRow(y, "OOC text size %", a.oocPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent,
+		"Size of the OOC log text. Ctrl+wheel over the OOC area does the same."); v != a.oocPct {
 		a.oocPct = v
 		a.saveLayout()
 	}
 	y += 30
-	if v := a.sliderRow(y, "Chatbox text size %", a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent); v != a.chatPct {
+	if v := a.sliderRow(y, "Chatbox text size %", a.chatPct, config.ScaleStepPercent, config.MinChatScalePercent, config.MaxChatScalePercent,
+		"Size of the message text in the chatbox (the line over the sprite) — not the log."); v != a.chatPct {
 		a.chatPct = v
 		a.saveLayout()
 	}
@@ -986,7 +991,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// See-through chatbox: panel opacity (0 = fully transparent, 100 = solid).
 	// Only affects the flat fallback skin; a theme chatbox keeps its own art.
 	op := a.d.Prefs.ChatboxOpacityPct()
-	if v := a.sliderRow(y, "Chatbox opacity %", op, 5, config.MinChatboxOpacity, config.MaxChatboxOpacity); v != op {
+	if v := a.sliderRow(y, "Chatbox opacity %", op, 5, config.MinChatboxOpacity, config.MaxChatboxOpacity,
+		"How see-through the chatbox panel is: 0 = text only, 100 = solid. Only the flat fallback panel — a theme's own skin keeps its art."); v != op {
 		a.d.Prefs.SetChatboxOpacity(v)
 	}
 	y += 34
@@ -2952,7 +2958,7 @@ func (a *App) volumeRow(y int32, name string, value int) int {
 
 // numberRow is volumeRow for arbitrary units/steps/bounds (spinbox-style:
 // −/+ plus mousewheel over the row).
-func (a *App) numberRow(y int32, label string, value, step, min, max int) int {
+func (a *App) numberRow(y int32, label string, value, step, min, max int, tip ...string) int {
 	c := a.ctx
 	pad := a.formX
 	c.Label(pad, y+4, label+":", ColText)
@@ -2963,14 +2969,25 @@ func (a *App) numberRow(y int32, label string, value, step, min, max int) int {
 	if c.Button(sdl.Rect{X: pad + 224, Y: y, W: 24, H: 24}, "+") && value+step <= max {
 		value += step
 	}
-	if c.hovering(sdl.Rect{X: pad, Y: y, W: 252, H: 26}) && c.wheelY != 0 {
+	row := sdl.Rect{X: pad, Y: y, W: 252, H: 26}
+	if c.hovering(row) && c.wheelY != 0 {
 		c.wheelTaken = true // a hovered spinbox owns the wheel — no page scroll
 		next := value + int(c.wheelY)*step
 		if next >= min && next <= max {
 			value = next
 		}
 	}
+	settingTip(c, row, tip) // #19: optional "what's this" hover explanation
 	return value
+}
+
+// settingTip shows a value row's "what's this" tooltip (#19) when one was passed — a hover
+// explanation for the terse slider / number controls that can't carry a full inline label like the
+// (already self-documenting) checkboxes do.
+func settingTip(c *Ctx, row sdl.Rect, tip []string) {
+	if len(tip) > 0 && tip[0] != "" {
+		c.Tooltip(row, tip[0])
+	}
 }
 
 // sliderRow is numberRow drawn as a draggable slider (same signature, so it's
@@ -2978,7 +2995,7 @@ func (a *App) numberRow(y int32, label string, value, step, min, max int) int {
 // pad+270 help text the settings rows use. Drag for coarse; mousewheel over
 // the row still fine-tunes by ±step (numberRow parity). The result snaps to
 // the step grid and clamps to [min, max].
-func (a *App) sliderRow(y int32, label string, value, step, min, max int) int {
+func (a *App) sliderRow(y int32, label string, value, step, min, max int, tip ...string) int {
 	c := a.ctx
 	pad := a.formX
 	c.Label(pad, y+4, label+":", ColText)
@@ -3003,6 +3020,7 @@ func (a *App) sliderRow(y int32, label string, value, step, min, max int) int {
 		}
 	}
 	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%d", value), ColAccent)
+	settingTip(c, sdl.Rect{X: pad, Y: y, W: 252, H: 26}, tip) // #19: optional "what's this" hover explanation
 	return value
 }
 
