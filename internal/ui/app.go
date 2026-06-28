@@ -161,6 +161,24 @@ type App struct {
 	screen     Screen
 	prevScreen Screen // for settings/about back navigation
 
+	// --- connection lifecycle (lobby-global; deliberately NOT in sessionState) ---
+	// These outlive any single session: the lobby shows the last disconnect
+	// reason and a one-click Reconnect, and auto-reconnect retries ACROSS the
+	// very resetSessionState() that Disconnect runs. They must live on App, not
+	// sessionState — a past refactor swept them into sessionState, so Disconnect
+	// wiped them mid-teardown and silently killed the reason text, the Reconnect
+	// button and the backoff counter. Keep them here.
+	connErr      string // last lobby error/notice (disconnect reason, dial failure, …)
+	lastConnName string // M2: the server we were dropped from, for one-click Reconnect
+	lastConnURL  string // its ws URL (serverKey); set on connect, re-captured at Disconnect
+	// M2 auto-reconnect: after an unexpected drop, retry lastConnURL with backoff.
+	// autoReconnectAt is the next attempt (zero = not retrying); pollAutoReconnect
+	// fires it from the frame loop (a single time compare when idle — 0 per-frame
+	// cost). autoReconnectMsg is the cached lobby status (rebuilt per attempt only).
+	autoReconnectAt    time.Time
+	autoReconnectTries int
+	autoReconnectMsg   string
+
 	// --- lobby state ---
 	masterEntries []network.ServerEntry // raw master list (no favorites)
 	servers       []network.ServerEntry
@@ -566,10 +584,15 @@ type App struct {
 	// classicOv is an App-local lock-free snapshot read by slotRect on the render
 	// path (the editor is the sole writer); slotReg is this frame's registered
 	// slots, populated ONLY while editing so the common frame stays alloc-free.
-	classicEdit      bool
-	classicOv        map[string][4]float64
-	classicOvLoaded  bool
-	slotReg          map[string]slotInfo
+	classicEdit     bool
+	classicOv       map[string][4]float64
+	classicOvLoaded bool
+	slotReg         map[string]slotInfo
+	// dockLeftX caches the docked log/tab strip's left edge (rcol.X), refreshed by
+	// drawCourtroom each frame. The floating server-tab strip centres its DEFAULT
+	// position in the space LEFT of it (over the stage) so it no longer overlaps the
+	// dock tabs (issue #2). Zero until the first courtroom frame ⇒ window-centre.
+	dockLeftX        int32
 	classicEditKey   string
 	classicEditDrag  int // 0 none, 1 move, 2 resize
 	classicEditStart [2]int32
@@ -819,20 +842,10 @@ type sessionState struct {
 	modDashScroll  int32                 // mod dashboard roster scroll offset
 	cmRosterScroll int32                 // CM panel roster scroll offset
 	serverName     string
-	serverKey      string // ws URL: keys the per-server warm state in prefs
-	connErr        string
-	lastConnName   string // M2: the server we were dropped from, for one-click Reconnect
-	lastConnURL    string // its ws URL (serverKey), captured before Disconnect clears it
-	// M2 auto-reconnect: after an unexpected drop, retry lastConnURL with backoff.
-	// autoReconnectAt is the next attempt (zero = not retrying); pollAutoReconnect
-	// fires it from the frame loop (a single time compare when idle — 0 per-frame
-	// cost). autoReconnectMsg is the cached lobby status (rebuilt per attempt only).
-	autoReconnectAt    time.Time
-	autoReconnectTries int
-	autoReconnectMsg   string
-	connAt             time.Time // session start (Rich Presence elapsed timer)
-	curArea            string    // last area WE clicked (Rich Presence, best-effort)
-	presenceInit       bool      // false until the first lobby presence push (so "Playing AsyncAO" shows on launch, not only in-court)
+	serverKey      string    // ws URL: keys the per-server warm state in prefs
+	connAt         time.Time // session start (Rich Presence elapsed timer)
+	curArea        string    // last area WE clicked (Rich Presence, best-effort)
+	presenceInit   bool      // false until the first lobby presence push (so "Playing AsyncAO" shows on launch, not only in-court)
 	// Per-area IC scrollback (opt-in): areaLogs holds each visited area's saved
 	// icLog, areaLogOrder is the visit order for bounded FIFO eviction
 	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
@@ -1880,6 +1893,7 @@ func (a *App) Connect(name, wsURL string) {
 // context.Background() (Dial's full 10s budget); restore-on-launch passes a
 // short timeout so a dead remembered server can't freeze boot for long.
 func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
+	a.connErr = ""                              // a fresh attempt clears any stale lobby error/reason
 	a.lastConnName, a.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
 	a.d.Prefs.SetLastServer(name, wsURL)        // persist for auto-connect / quick-connect on next launch
 	a.pinging = false                           // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
@@ -2008,6 +2022,15 @@ func (a *App) Disconnect() {
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
 		a.d.Viewport.PurgePostFX() // #10: free the cached retro-overlay textures
+	}
+	// Remember which server this was so the lobby's Reconnect button and
+	// auto-reconnect target the session that actually dropped — correct even
+	// with other tabs still connected (lastConn* is global, so set-at-connect
+	// alone would hold whatever was connected most recently). Guarded on a live
+	// socket so rehearsal / an already-dead tab can't claim a phantom target;
+	// connectWith seeds lastConn* for the dial-FAILURE case (no session here).
+	if a.conn != nil {
+		a.lastConnName, a.lastConnURL = a.serverName, a.serverKey
 	}
 	a.closeActiveTab()
 	a.resetSessionState()
@@ -2174,6 +2197,15 @@ func (a *App) pumpConnection() {
 		a.sess.Ping()
 	}
 	for {
+		// A handled packet can tear the session down mid-drain: a server
+		// kick/ban (KK/KB/BD → EventDisconnect) calls Disconnect(), whose
+		// resetSessionState() zeroes conn/sess. Re-check before the select
+		// touches a.conn.Incoming()/a.sess.HandlePacket again, or the next
+		// iteration nil-derefs (conn.go:73). The plain socket-close path
+		// returns immediately below, so only the kick/ban packet hit this.
+		if a.conn == nil || a.sess == nil {
+			return
+		}
 		select {
 		case p, ok := <-a.conn.Incoming():
 			if !ok {
@@ -4096,8 +4128,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
-	a.handleTabBar(winW)      // chip clicks resolve BEFORE screens see them
-	if a.pendingControlSwap { // a click on the floating client last frame → take control now (before any draw)
+	a.handleTabBar(winW, winH) // chip clicks resolve BEFORE screens see them
+	if a.pendingControlSwap {  // a click on the floating client last frame → take control now (before any draw)
 		a.pendingControlSwap = false
 		a.controlPinnedClient()
 	}

@@ -1033,9 +1033,11 @@ func (a *App) drawCourtroom(w, h int32) {
 	// slot ("rightcol"), draggable/resizable on BOTH the default and Legacy themes.
 	rx := vpDef.X + vpDef.W + pad
 	rw := w - rx - pad
+	a.dockLeftX = w // log hidden ⇒ no dock strip; the server-tab strip falls back to window-centre
 	if !a.panelHidden(panelLog) {
 		rcolDef := sdl.Rect{X: rx, Y: pad, W: rw, H: vpDef.H}
 		rcol := a.slotRect(slotRightCol, rcolDef, w, h)
+		a.dockLeftX = rcol.X // keep the floating server-tab strip LEFT of the dock tabs (issue #2)
 		// OOC lives in its own box by default; the Legacy theme — or the opt-in
 		// "OOC in the log tab" toggle (the old layout, set in the layout editor) —
 		// instead routes the whole column to the tabbed log with an OOC tab.

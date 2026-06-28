@@ -4,6 +4,24 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.0.75 — 2026-06-28
+
+A small patch — three bug fixes. **Thanks to Crystalwarrior** for the tab-overlap report.
+
+### Fixes
+- **No more crash on kick/ban.** Getting kicked or banned by a server (or a server
+  that disconnects you with a notice) could crash the client outright. It now drops
+  cleanly back to the lobby.
+- **The disconnect reason and Reconnect come back.** After a drop you again see *why*
+  in the lobby ("Kicked: …" / "Banned: …"), the one-click **Reconnect** button returns,
+  and **auto-reconnect** arms after an unexpected drop — these had been getting wiped
+  the instant you were disconnected.
+- **The server-tab switcher no longer covers the Log/Music/Areas tabs.** It used to
+  float dead-centre on top of the dock tabs, so reaching for "Log" would instead browse
+  you back to the lobby and cut the music. It now defaults clear of them (over the
+  stage), and you can **drag it anywhere** in **Edit Layout** (it's a move-only box —
+  right-click resets it, "Reset all" re-centres it).
+
 ## v1.0.7 — 2026-06-27
 
 A focused fix for server asset formats.

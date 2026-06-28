@@ -358,9 +358,10 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 // --- tab bar (floating strip, drawn over every screen) ----------------------
 
 // tabBarRects computes the chip rects for the current frame plus the "+"
-// new-session chip (add.W == 0 when at the tab cap); the strip floats
-// top-center so no screen layout has to move.
-func (a *App) tabBarRects(w int32) (rects []sdl.Rect, add sdl.Rect) {
+// new-session chip (add.W == 0 when at the tab cap). The strip floats over the
+// stage (a move-only "tabbar" slot — see tabStripDefaultX) so no screen layout
+// has to move; it used to float dead-centre, on top of the dock tabs (issue #2).
+func (a *App) tabBarRects(w, h int32) (rects []sdl.Rect, add sdl.Rect) {
 	if len(a.tabs) == 0 {
 		return nil, sdl.Rect{}
 	}
@@ -375,18 +376,40 @@ func (a *App) tabBarRects(w int32) (rects []sdl.Rect, add sdl.Rect) {
 	if showAdd {
 		total += addTabChipW + 4
 	}
-	x := (w - total) / 2
-	if x < 0 {
-		x = 0
-	}
+	// Default origin: centred in the space LEFT of the dock tabs (over the stage), so
+	// the strip no longer sits ON the Log/Music/Areas tabs (issue #2). The whole strip
+	// is a MOVE-ONLY layout slot — drag it anywhere in the Edit Layout editor; un-edited
+	// it uses this default. ensureClassicOv loads the override map slotRect reads.
+	a.ensureClassicOv()
+	defX := tabStripDefaultX(total, a.dockLeftX, w)
+	origin := a.slotRect(slotTabBar, sdl.Rect{X: defX, Y: 0, W: total, H: tabBarH}, w, h)
+	x, y := origin.X, origin.Y
 	for i := range rects {
-		rects[i].X, rects[i].Y, rects[i].H = x, 0, tabBarH
+		rects[i].X, rects[i].Y, rects[i].H = x, y, tabBarH
 		x += rects[i].W + 4
 	}
 	if showAdd {
-		add = sdl.Rect{X: x, Y: 0, W: addTabChipW, H: tabBarH}
+		add = sdl.Rect{X: x, Y: y, W: addTabChipW, H: tabBarH}
 	}
 	return rects, add
+}
+
+// tabStripDefaultX centres the server-tab strip in the gap LEFT of the dock tabs
+// (dockLeftX = the docked log strip's left edge), so its default no longer overlaps
+// the Log/Music/Areas tabs (issue #2). dockLeftX<=0 (pre-courtroom) or a hidden log
+// (dockLeftX>=w) falls back to the original window-centre. Clamped to the left edge so
+// a very narrow stage can't push it off-screen — it stays clear of the dock tabs (the
+// actual bug) even then. Pure + alloc-free so the non-overlap invariant is unit-pinnable.
+func tabStripDefaultX(total, dockLeftX, w int32) int32 {
+	right := dockLeftX
+	if right <= 0 || right > w {
+		right = w
+	}
+	x := (right - total) / 2
+	if x < 0 {
+		x = 0
+	}
+	return x
 }
 
 // buildTabChipLabel formats a chip's text from its key: the (clipped) name,
@@ -427,9 +450,16 @@ func (a *App) tabChipLabel(i int) string {
 // handleTabBar consumes clicks on the strip BEFORE the screens draw, so
 // chips can never double-act with widgets underneath; drawTabBar paints
 // the same rects after the screens (so chips stack on top visually).
-func (a *App) handleTabBar(w int32) {
+func (a *App) handleTabBar(w, h int32) {
 	c := a.ctx
-	rects, add := a.tabBarRects(w)
+	rects, add := a.tabBarRects(w, h) // also registers the strip's slot for the editor
+	// While the Edit Layout editor is open it OWNS the strip (drag the whole slot to
+	// move it); don't also switch / park-to-lobby / close on the same press. The
+	// tabBarRects call above already registered the slot, so the editor can grab it.
+	if a.classicEdit {
+		a.tabDragFrom, a.tabDragging = -1, false
+		return
+	}
 	pressed := c.mouseDown && !a.tabPrevDown
 	a.tabPrevDown = c.mouseDown
 	if rects == nil {
@@ -585,7 +615,7 @@ func (a *App) drawTabBar(w, h int32) {
 		c.LabelClipped(ghost.X+10, ghost.Y+8, ghost.W-20, "▣ "+a.tabName(a.tabDragFrom), ColAccent)
 		c.LabelClipped(ghost.X+10, ghost.Y+floatTitleH+10, ghost.W-20, "Release to pop out as a floating window", ColText)
 	}
-	rects, add := a.tabBarRects(w)
+	rects, add := a.tabBarRects(w, h)
 	for i, r := range rects {
 		bg := ColPanel
 		col := ColTextDim

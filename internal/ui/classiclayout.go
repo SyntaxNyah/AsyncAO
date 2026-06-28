@@ -37,6 +37,7 @@ const (
 	slotChatbox     = "chatbox"         // the in-stage message box (showname + text); move it off the sprites
 	slotOOCBar      = "oocbar"          // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
 	slotControls    = "controls"        // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
+	slotTabBar      = "tabbar"          // the floating server-tab switcher strip (move-only; issue #2 — it used to overlap the dock tabs)
 )
 
 // Resize-edge bitmask: which sides of a box a drag moves.
@@ -165,6 +166,8 @@ func classicSlotLabel(k string) string {
 		return "OOC bar"
 	case slotControls:
 		return "Control buttons (move only)"
+	case slotTabBar:
+		return "Server tabs (move only)"
 	default:
 		// Individually-movable control buttons carry a "ctrl.<name>" key.
 		if rest, ok := strings.CutPrefix(k, "ctrl."); ok {
@@ -210,7 +213,9 @@ func classicEdgeAt(mx, my int32, r sdl.Rect, margin int32) uint8 {
 // little control block swallow the resize of a box it merely touches, then do nothing —
 // the "boxes in the middle won't resize" bug).
 func slotResizable(name string) bool {
-	return name != slotControls
+	// The server-tab strip sizes itself from its chips (like the control block), so
+	// resizing it would do nothing — move-only, same as slotControls.
+	return name != slotControls && name != slotTabBar
 }
 
 // pickResizeSlot chooses which slot a resize grip at (mx,my) targets. It RESPECTS the
