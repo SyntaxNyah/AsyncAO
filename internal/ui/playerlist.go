@@ -222,6 +222,19 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	}
 	c.Tooltip(sdl.Rect{X: follX, Y: r.Y + 3, W: follW, H: 16},
 		"Off (default): no follow. On: each row gets a Follow button that auto-jumps you to that player's area whenever they move.")
+	// Pair-status toggle (#20, opt-in / OFF by default): when on, a row shows who that player is
+	// currently paired with (⇄), tracked from IC messages. Sits left of Follow on the right edge.
+	const pairLbl = "Pairs"
+	pairW := int32(22) + c.TextWidth(pairLbl)
+	pairX := follX - pairW - 12
+	pairOn := a.d.Prefs.ShowPairStatusOn()
+	a.pairStatusShow = pairOn // cache once per frame (no per-row lock)
+	if next := c.Checkbox(pairX, r.Y+3, pairLbl, pairOn); next != pairOn {
+		a.d.Prefs.SetShowPairStatus(next)
+		a.pairStatusShow = next
+	}
+	c.Tooltip(sdl.Rect{X: pairX, Y: r.Y + 3, W: pairW, H: 16},
+		"Off (default). On: each row shows who that player is currently paired with (⇄), updated as they speak.")
 	// #M1: your own cross-client status — a cycle button (none → AFK → Busy → Writing →
 	// LFRP). Send-on-change transmits it on your next IC message; AsyncAO players see a
 	// coloured chip on your row, standard clients see nothing.
@@ -500,6 +513,12 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if lbl := statusLabel(st); lbl != "" {
 		cx += a.drawRosterChip(cx, row.Y+4, lbl, statusColor(st), ColText) + 5
 	}
+	// Pair chip (#20, opt-in): who this player is currently paired with (⇄), from their IC messages.
+	if a.pairStatusShow {
+		if partner := a.pairPartnerOf(p); partner != "" {
+			cx += a.drawRosterChip(cx, row.Y+4, "⇄ "+partner, chipPairColor, ColBackground) + 5
+		}
+	}
 	ic := "[" + p.uid + "]  " + p.name
 	if !strings.EqualFold(display, p.name) {
 		ic = "[" + p.uid + "]  " + display + "  ·  " + p.name
@@ -543,6 +562,10 @@ func (a *App) drawPlayerIcon(p *areaPlayer, idx int, cell sdl.Rect, isSpec bool)
 	}
 	c.Label(cell.X+4, cell.Y+cell.H/2-8, initial, ColTextDim)
 }
+
+// chipPairColor is the pair-status chip's fill (#20) — a soft violet, distinct from the CM/SPEC/
+// status chips so a paired marker reads at a glance.
+var chipPairColor = sdl.Color{R: 168, G: 140, B: 224, A: 255}
 
 // drawRosterChip draws a small filled pill (e.g. "CM", "SPEC") and returns its
 // width so the caller can advance the cursor.

@@ -647,6 +647,7 @@ type AssetPreferences struct {
 	RightClickHideSprite   bool                         `json:"rightClickHideSprite"`
 	DragLayout             bool                         `json:"dragLayout"`
 	FollowEnabled          bool                         `json:"followEnabled"`
+	ShowPairStatus         bool                         `json:"showPairStatus"`
 	PlayerListSort         int                          `json:"playerListSort"`     // remembered Players-tab player sort
 	PlayerListAreaSort     int                          `json:"playerListAreaSort"` // remembered Players-tab /gas area-group order
 	DyslexiaFont           bool                         `json:"dyslexiaFont"`
@@ -897,6 +898,7 @@ type prefsJSON struct {
 	RightClickHideSprite   *bool            `json:"rightClickHideSprite"` // default ON (pointer: absent != off)
 	DragLayout             *bool            `json:"dragLayout"`           // default ON (pointer: absent != off)
 	FollowEnabled          bool             `json:"followEnabled"`        // default OFF (opt-in)
+	ShowPairStatus         bool             `json:"showPairStatus"`       // #20 default OFF (opt-in)
 	PlayerListSort         int              `json:"playerListSort"`       // default 0 (UID)
 	PlayerListAreaSort     int              `json:"playerListAreaSort"`   // default 0 (/gas order)
 	DyslexiaFont           bool             `json:"dyslexiaFont"`         // default OFF
@@ -1430,6 +1432,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.DragLayout = *onDisk.DragLayout
 	}
 	p.FollowEnabled = onDisk.FollowEnabled
+	p.ShowPairStatus = onDisk.ShowPairStatus
 	p.PlayerListSort = onDisk.PlayerListSort
 	p.PlayerListAreaSort = onDisk.PlayerListAreaSort
 	p.DyslexiaFont = onDisk.DyslexiaFont
@@ -3908,6 +3911,25 @@ func (p *AssetPreferences) SetFollowEnabled(on bool) {
 		return
 	}
 	p.FollowEnabled = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ShowPairStatusOn reports whether the player list shows each player's current pair (#20, opt-in).
+func (p *AssetPreferences) ShowPairStatusOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ShowPairStatus
+}
+
+// SetShowPairStatus toggles the opt-in pair-status chip in the player list.
+func (p *AssetPreferences) SetShowPairStatus(on bool) {
+	p.mu.Lock()
+	if p.ShowPairStatus == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ShowPairStatus = on
 	p.mu.Unlock()
 	p.markDirty()
 }

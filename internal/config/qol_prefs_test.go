@@ -1008,6 +1008,30 @@ func TestModReasonTemplatesRoundTrip(t *testing.T) {
 	}
 }
 
+// TestShowPairStatusRoundTrip pins the #20 opt-in pref: default OFF, and it survives save → load
+// (guarding the copy-on-load line that bool prefs need).
+func TestShowPairStatusRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if p.ShowPairStatusOn() {
+		t.Error("ShowPairStatus must default OFF")
+	}
+	p.SetShowPairStatus(true)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !q.ShowPairStatusOn() {
+		t.Error("ShowPairStatus lost across save/load (missing copy-on-load line?)")
+	}
+}
+
 // TestBlipVolume pins the M11 per-character blip scale: default 100, clamp,
 // case-insensitive key, no-op detection, and that resetting to 100 clears the
 // entry (so the map only holds real adjustments).

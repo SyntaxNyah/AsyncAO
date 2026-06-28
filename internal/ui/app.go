@@ -1319,6 +1319,10 @@ type sessionState struct {
 	livePlayersOn bool         // PR/PU server roster is the live source (else the CharsCheck fallback)
 	liveRoster    []areaPlayer // M1 live roster (PR/PU players, or CharsCheck taken chars + ARUP spectators)
 	liveRosterAt  time.Time    // live roster's last change — the rows/order memo key
+	// pairPartners maps a lowercased character → who they last spoke PAIRED with (#20, opt-in
+	// player-list chip). A paired IC message sets it; a solo one clears it, so it tracks the
+	// player's CURRENT pair as of their latest line. Per-tab; bounded by pairPartnersCap.
+	pairPartners map[string]string
 	// Player-list profile card popover (#101): which profile to show + its title.
 	profileCardShow       bool
 	profileCardPr         config.ProfilePref
@@ -1332,6 +1336,7 @@ type sessionState struct {
 	followUID      string
 	lastFollowJump time.Time
 	followShow     bool // FollowEnabled pref, read once per player-list frame (no per-row lock)
+	pairStatusShow bool // ShowPairStatus pref (#20), read once per player-list frame (no per-row lock)
 	// areaHistory is the most-recently-visited areas (MRU, index 0 = current),
 	// driven by our own PR/PU area; the Areas tab shows the rest as jump-back
 	// chips (M3). Bounded by areaHistoryCap.
@@ -2378,6 +2383,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 					a.onIncomingReaction(r)
 				}
 				a.noteShowname(ev.Message.CharName, ev.Message.Showname) // live-roster name cache
+				a.notePairPartner(ev.Message)                            // #20: track each player's current pair
 				if sn := ev.Message.SFXName; sn != "" && sn != "0" && sn != "1" {
 					a.lastSFXName = sn // M11: remember the most-recent SFX for one-click "Mute last SFX"
 				}

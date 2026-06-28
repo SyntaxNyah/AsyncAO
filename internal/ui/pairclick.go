@@ -12,8 +12,46 @@ import (
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 	"github.com/veandco/go-sdl2/sdl"
 )
+
+// pairPartnersCap bounds the per-tab pair-tracking map (#20; hard rule #4: no unbounded maps).
+const pairPartnersCap = 256
+
+// notePairPartner records (or clears) a speaker's current pair partner from an IC message, for the
+// opt-in player-list pair chip (#20). A paired message stores "char → partner char"; a solo message
+// drops the entry, so the map always reflects each player's pairing as of their latest line. Keyed
+// by lowercased character (the MS wire identity — the same spoofable key friends/ignore use).
+func (a *App) notePairPartner(m *protocol.ChatMessage) {
+	if m == nil {
+		return
+	}
+	char := strings.ToLower(strings.TrimSpace(m.CharName))
+	if char == "" {
+		return
+	}
+	if m.Pair.Active() {
+		if a.pairPartners == nil {
+			a.pairPartners = make(map[string]string)
+		}
+		if _, ok := a.pairPartners[char]; !ok && len(a.pairPartners) >= pairPartnersCap {
+			return // bounded: don't grow past the cap with new speakers
+		}
+		a.pairPartners[char] = strings.TrimSpace(m.Pair.Name)
+	} else if a.pairPartners != nil {
+		delete(a.pairPartners, char) // a solo line clears their pairing
+	}
+}
+
+// pairPartnerOf returns the partner a roster player is currently paired with ("" = none), for the
+// opt-in player-list chip. Matched by lowercased character.
+func (a *App) pairPartnerOf(p *areaPlayer) string {
+	if len(a.pairPartners) == 0 || p.name == "" {
+		return ""
+	}
+	return a.pairPartners[strings.ToLower(p.name)]
+}
 
 // areaPlayer is one parsed /getarea player. One row per UID (never deduped by
 // name — two "Spectator" rows are two different people). ipid is mod-only data
