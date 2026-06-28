@@ -3739,32 +3739,37 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	if icBar.H > fH { // centre the row when the box was dragged taller; never above the box top
 		rowY = icBar.Y + (icBar.H-fH)/2
 	}
-	swatch := sdl.Rect{X: icBar.X, Y: rowY, W: 26, H: fH}
-	// The selector also offers the extended AsyncAO colours (#98) and the two
-	// "fun colour" modes (#79): they sit after the palette so they're picked like
-	// any colour instead of being buried in Settings. icColorSelected drives the
-	// active row + swatch; applyICColorChoice routes the pick — both shared with
-	// the themed row so the two layouts can't drift.
+	// Colour swatch + dropdown — an individually movable slot (#4a). The selector also
+	// offers the extended AsyncAO colours (#98) and the two "fun colour" modes (#79): they
+	// sit after the palette so they're picked like any colour instead of being buried in
+	// Settings. icColorSelected drives the active row + swatch; applyICColorChoice routes
+	// the pick — both shared with the themed row so the two layouts can't drift.
+	colorBox := a.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
+	swatch := sdl.Rect{X: colorBox.X, Y: colorBox.Y, W: 26, H: fH}
 	icSel, sw := a.icColorSelected()
 	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
-	if next, changed := c.Dropdown("colordd", sdl.Rect{X: icBar.X + 32, Y: rowY, W: colorSelectW, H: fH}, icColorChoices, icSel); changed {
+	if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorBox.X + 32, Y: colorBox.Y, W: colorSelectW, H: fH}, icColorChoices, icSel); changed {
 		a.applyICColorChoice(next)
 	}
 	const shownameBoxW = 140
-	nameX := icBar.X + 32 + colorSelectW + 6
+	nameX := icBar.X + 32 + colorSelectW + 6 // DEFAULT spot; downstream (immedX) flows from here
 	namePlaceholder := a.d.Prefs.SavedShowname()
 	if namePlaceholder == "" {
 		namePlaceholder = "Showname"
 	}
 	a.ensureNameOpts()
+	// Showname box (+ saved-name picker) — an individually movable slot (#4a). Draws at
+	// the slot; the row cursor below flows from the DEFAULT nameX so moving it never
+	// cascades the rest.
+	nameBox := a.slotRect(slotICShowname, sdl.Rect{X: nameX, Y: rowY, W: shownameBoxW, H: fH}, w, h)
 	snW, snDD := int32(shownameBoxW), int32(0)
 	if len(a.nameOpts) > 1 { // a tiny ▾ saved-name picker, fitted INSIDE the box width so nothing downstream shifts
 		snDD = 22
 		snW -= snDD + 2
 	}
-	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameX, Y: rowY, W: snW, H: fH}, a.shownameOverride, namePlaceholder)
-	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameX + snW + 2, Y: rowY, W: snDD, H: fH}); name != "" {
+	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: fH}, a.shownameOverride, namePlaceholder)
+	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameBox.X + snW + 2, Y: nameBox.Y, W: snDD, H: fH}); name != "" {
 		a.shownameOverride = name
 	}
 	// Immediate (AO non-interrupting preanim): the preanim plays without
@@ -3802,7 +3807,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	const sfxDDW = 92
 	a.ensureSFXChoices()
 	if icBar.W-(icX-icBar.X)-(sfxDDW+4) >= tailReserve {
-		sfxRect := sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}
+		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
 		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
 			a.sfxChoiceIdx = next
 			if next > 0 && next < len(a.sfxChoices) {
@@ -3812,21 +3817,21 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it.")
 		icX += sfxDDW + 4
 	}
-	// #M2 S1: emoji picker button on the IC bar's left edge.
+	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a).
 	if icBar.W-(icX-icBar.X)-(fH+4) >= tailReserve {
-		if a.drawEmojiBarButton(sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}) {
+		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
 			a.showEmojiPicker = !a.showEmojiPicker
 		}
 		icX += fH + 4
 	}
-	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow).
+	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow) — movable (#4a).
 	if icBar.W-(icX-icBar.X)-(fxBtnW+4) >= tailReserve {
-		a.fxButton(sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH})
+		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
 		icX += fxBtnW + 4
 	}
-	// #2: React button — queue an emoji reaction to the last message (rides your next send).
+	// #2: React button — queue an emoji reaction to the last message (rides your next send) — movable (#4a).
 	if icBar.W-(icX-icBar.X)-(reactBtnW+4) >= tailReserve {
-		if a.reactButton(sdl.Rect{X: icX, Y: rowY, W: reactBtnW, H: fH}) {
+		if a.reactButton(a.slotRect(slotICReact, sdl.Rect{X: icX, Y: rowY, W: reactBtnW, H: fH}, w, h)) {
 			a.toggleReactPicker()
 		}
 		icX += reactBtnW + 4
@@ -3838,9 +3843,11 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	if icW < minICInputW {
 		icW = minICInputW // defensive floor: never collapse the input, even on a tiny stage
 	}
-	icBox := sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}
+	// The IC text input itself is a movable + resizable slot (#4a) — default fills the rest
+	// of the bar; an override repositions/resizes it and the message counter rides along.
+	icBox := a.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
 	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
-	a.icInput, send = c.TextFieldEmoji("ic", icBox, a.icInput, "Say something in character... (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
+	a.icInput, send = c.TextFieldEmoji("ic", icBox, a.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
 	a.drawMsgCounter(icBox, icCounterOn)
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)

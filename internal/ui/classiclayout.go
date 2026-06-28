@@ -34,10 +34,21 @@ const (
 	// layout" work). Each defaults to its spot in the bar — so an un-edited or
 	// whole-bar-moved layout is pixel-identical — and only goes free once dragged.
 	slotICImmediate = "icbar.immediate" // the Immediate (non-interrupting preanim) toggle
-	slotChatbox     = "chatbox"         // the in-stage message box (showname + text); move it off the sprites
-	slotOOCBar      = "oocbar"          // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
-	slotControls    = "controls"        // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
-	slotTabBar      = "tabbar"          // the floating server-tab switcher strip (move-only; issue #2 — it used to overlap the dock tabs)
+	// More IC-bar pieces pulled out individually (#4a, Crystalwarrior — "split it up so
+	// colours, checkboxes, etc. are located elsewhere"). Same wrap-not-extract rule as
+	// Immediate: each draws through slotRect but the row cursor advances by the DEFAULT
+	// width, so an un-edited bar is pixel-identical and moving one never cascades the rest.
+	slotICColor    = "icbar.color"    // the text-colour swatch + dropdown
+	slotICShowname = "icbar.showname" // the per-session showname box
+	slotICSFX      = "icbar.sfx"      // the per-message SFX picker
+	slotICEmoji    = "icbar.emoji"    // the emoji-picker button
+	slotICFx       = "icbar.fx"       // the Text-FX cycle button
+	slotICReact    = "icbar.react"    // the React button
+	slotICInput    = "icbar.input"    // the IC text input field itself
+	slotChatbox    = "chatbox"        // the in-stage message box (showname + text); move it off the sprites
+	slotOOCBar     = "oocbar"         // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
+	slotControls   = "controls"       // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
+	slotTabBar     = "tabbar"         // the floating server-tab switcher strip (move-only; issue #2 — it used to overlap the dock tabs)
 )
 
 // Resize-edge bitmask: which sides of a box a drag moves.
@@ -168,6 +179,20 @@ func classicSlotLabel(k string) string {
 		return "Control buttons (move only)"
 	case slotTabBar:
 		return "Server tabs (move only)"
+	case slotICColor:
+		return "IC colour picker"
+	case slotICShowname:
+		return "IC showname box"
+	case slotICSFX:
+		return "IC sound picker"
+	case slotICEmoji:
+		return "Emoji button"
+	case slotICFx:
+		return "Text-FX button"
+	case slotICReact:
+		return "React button"
+	case slotICInput:
+		return "IC text input"
 	default:
 		// Individually-movable control buttons carry a "ctrl.<name>" key.
 		if rest, ok := strings.CutPrefix(k, "ctrl."); ok {
