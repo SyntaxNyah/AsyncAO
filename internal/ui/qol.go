@@ -835,7 +835,7 @@ const oocWrapMaxLinesPerEntry = 24
 func (a *App) oocWrapped(width int32) []string {
 	streamer := a.d.Prefs.StreamerMode()
 	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq && a.oocWrapGen == a.ctx.fontChainGen &&
-		a.oocWrapW == width && a.oocWrapPct == a.logPct && a.oocWrapMask == streamer {
+		a.oocWrapW == width && a.oocWrapPct == a.oocPct && a.oocWrapMask == streamer {
 		return a.oocWrap
 	}
 	out := a.oocWrap[:0]
@@ -861,15 +861,17 @@ func (a *App) oocWrapped(width int32) []string {
 			if streamer {
 				para = streamerMaskLine(para)
 			}
-			// Per-paragraph font pick: wraps measure with the font that will draw
-			// the line (the CJK chain rule).
-			font := a.ctx.LogFontFor(a.logPct, para)
+			// Per-paragraph font pick: wraps measure with the font that will DRAW the
+			// line — the OOC log draws at oocPct (its own scale, independent of the IC
+			// log's logPct), so the wrap must measure at oocPct too or a scaled-up OOC
+			// message overflows instead of wrapping (#1). (Also the CJK chain rule.)
+			font := a.ctx.LogFontFor(a.oocPct, para)
 			trimmed := strings.TrimRight(para, "\r")
 			// Emoji-aware wrap for emoji lines (the plain font sizes colour emoji as
 			// narrow tofu, so an emoji-laden line overflowed instead of wrapping); plain
 			// lines keep the cheap word-wrap.
 			var lines []string
-			if ef := a.ctx.EmojiFont(a.logPct); ef != nil && render.NeedsEmojiFallback(trimmed) {
+			if ef := a.ctx.EmojiFont(a.oocPct); ef != nil && render.NeedsEmojiFallback(trimmed) {
 				lines = render.WrapEmojiAware(font, ef, trimmed, width, oocWrapMaxLinesPerEntry)
 			} else {
 				lines = wrapToWidth(font, trimmed, width, oocWrapMaxLinesPerEntry)
@@ -896,7 +898,7 @@ func (a *App) oocWrapped(width int32) []string {
 		out = []string{}
 	}
 	a.oocWrap, a.oocWrapName, a.oocWrapURL = out, name, urls
-	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.logPct, streamer
+	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.oocPct, streamer
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out
 }
