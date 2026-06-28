@@ -3357,9 +3357,24 @@ func (a *App) scaleControl(x, y int32, name string, value *int, step, min, max i
 	return x + 30
 }
 
+// icBarUnderStage is the #8 default layout: the IC input bar sits DIRECTLY under the
+// stage (icBarTop, the classic AO spot so it's obvious where you talk IC), and the
+// control-button block sits fH + a small gap below it (defY). Pure, so the "input is
+// under the viewport, above the controls" invariant is unit-pinnable.
+func icBarUnderStage(vp sdl.Rect, fH int32) (icBarTop, defY int32) {
+	icBarTop = vp.Y + vp.H + pad
+	defY = icBarTop + fH + 8 // gap below the input row
+	return
+}
+
 func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	c := a.ctx
-	defY := vp.Y + vp.H + pad // default top of the control-button block
+	// #8 (ZeitHeld): the IC INPUT BAR sits DIRECTLY under the stage — the classic AO
+	// spot — so it's obvious where you talk IC; the control buttons, judge strip and
+	// emote grid follow BELOW it. fH (the input-row height) is needed up here to place
+	// the control block below the bar.
+	fH := a.inputFieldH()
+	icBarTop, defY := icBarUnderStage(vp, fH) // IC bar under the stage; control block below it
 
 	// Control-button slot ("controls"): the two button rows — shouts / pair / layout
 	// knobs (row 1) and the utility buttons (row 2, which wraps) — move together as one
@@ -3697,27 +3712,28 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			sdl.Rect{X: pad, Y: defY, W: blockW, H: y2 - dy + btnH - defY})
 	}
 
-	// Judge strip (JD grant, or the judge stand when pos-dependent). Everything below
-	// anchors to the block's UN-MOVED bottom (y2 - dy), so dragging the buttons elsewhere
-	// doesn't drag the judge strip, the IC bar or the emote grid with them.
-	icY := y2 - dy + btnH + 6
+	// Judge strip (JD grant, or the judge stand when pos-dependent) + the emote grid now
+	// follow the control block, which sits BELOW the IC bar (#8). They anchor to the
+	// block's UN-MOVED bottom (y2 - dy). The IC bar itself anchors to icBarTop (under the
+	// stage), independent of this chain, so the judge strip never pushes the input around.
+	postY := y2 - dy + btnH + 6
 	if a.judgeVisible() {
-		icY += a.drawJudgeRow(pad, icY)
+		postY += a.drawJudgeRow(pad, postY)
 	}
 
 	// IC input row (height follows the Box knob), led by the AO2 text
 	// color selector: a swatch previews the active wire color (MS
 	// text_color 0–9), the dropdown names it (AO2's color dropdown). The
 	// showname box OVERRIDES the Settings showname for the session.
-	fH := a.inputFieldH()
-	// The whole IC bar is a movable + resizable slot ("icbar"). Its default spans the
-	// stage width (vp.W) at the controls' computed row (icY), so an un-edited courtroom
-	// is pixel-identical. Everything inside lays out relative to the slot (icBar.X / .W)
-	// and the fH-tall row is centred within the slot height, so a drag moves the bar and
-	// a width resize widens / narrows the text input (still floored at minICInputW). The
-	// emoji / FX / React buttons store their live rects as they draw, so their pop-ups
-	// follow the bar wherever it lands. slotRect is alloc-free off the edit path.
-	icBarDef := sdl.Rect{X: pad, Y: icY, W: vp.W, H: fH}
+	// The whole IC bar is a movable + resizable slot ("icbar"). Its default now spans the
+	// stage width (vp.W) DIRECTLY under the stage (icBarTop, #8) — the first thing below
+	// the viewport. Everything inside lays out relative to the slot (icBar.X / .W) and the
+	// fH-tall row is centred within the slot height, so a drag moves the bar and a width
+	// resize widens / narrows the text input (still floored at minICInputW). The emoji /
+	// FX / React buttons store their live rects as they draw, so their pop-ups follow the
+	// bar wherever it lands. slotRect is alloc-free off the edit path. (fH is computed at
+	// the top now, to place the control block below this bar.)
+	icBarDef := sdl.Rect{X: pad, Y: icBarTop, W: vp.W, H: fH}
 	icBar := a.slotRect(slotICBar, icBarDef, w, h)
 	rowY := icBar.Y
 	if icBar.H > fH { // centre the row when the box was dragged taller; never above the box top
@@ -3834,7 +3850,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// gets, so drag/resize is free). slotRect stays INSIDE the hidden guard so the
 	// editor never registers a handle for a grid that isn't drawn. The default is
 	// byte-identical to before, so an un-edited courtroom is pixel-identical.
-	emoteY := icY + fH + 6
+	emoteY := postY // #8: the emote grid follows the control block + judge strip, below the IC bar
 	if !a.panelHidden(panelEmotes) {
 		emoteDef := sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}
 		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
