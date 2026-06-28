@@ -652,11 +652,11 @@ type App struct {
 	extrasResizing       bool           // the bottom-right resize grip is being dragged
 	extrasCloseHintShown bool           // one-shot "how to reopen" toast on first × close
 	extrasWidgetCache    []extrasWidget // canonical widget table, built once
-	// pairWin / modWin / cmWin / hkWin are floating-window geometries (floatwin.go)
-	// for the Pairing, Mod dashboard, CM, and Hotkey-sheet panels — each a
-	// movable/resizable, non-blocking box (chat stays live behind it) rather than a
-	// modal. Geometry is global; open state is per-tab / per-flag.
-	pairWin, modWin, cmWin, hkWin floatWin
+	// pairWin / modWin / cmWin / hkWin / evidWin are floating-window geometries
+	// (floatwin.go) for the Pairing, Mod dashboard, CM, Hotkey-sheet, and Evidence
+	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
+	// rather than a modal. Geometry is global; open state is per-tab / per-flag.
+	pairWin, modWin, cmWin, hkWin, evidWin floatWin
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool

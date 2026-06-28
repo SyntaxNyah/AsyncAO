@@ -716,37 +716,70 @@ func (a *App) demandEvidence(idx int, url string) {
 	a.d.Manager.PrefetchExact(url, assets.AssetTypeMisc, network.PriorityLow) // AssetType: Misc (evidence thumbnail, exact URL)
 }
 
-// drawEvidencePanel is the modal evidence browser/editor: a thumbnail grid
-// of the server's LE list, an inspector for the selection, present-arming,
-// and the PE/DE/EE editor ops.
-func (a *App) drawEvidencePanel(w, h int32) {
+// evidPanelDefW etc. size the floating Evidence window; the min keeps the grid +
+// inspector usable.
+const (
+	evidPanelDefW = 560
+	evidPanelDefH = 420
+	evidPanelMinW = 360
+	evidPanelMinH = 240
+)
+
+// evidPanelRect is the Evidence window's screen rect. Its FIRST-OPEN default tucks
+// into the top-LEFT over the stage (not centred), so the IC input (bottom) and the log
+// (right column) stay visible — you can keep talking and follow the conversation while
+// you browse evidence (#5). Once dragged/resized (placed) the floatWin geometry wins.
+func (a *App) evidPanelRect(w, h int32) sdl.Rect {
+	if !a.evidWin.placed {
+		dw := clampI32(evidPanelDefW, evidPanelMinW, w-2*floatWinMargin)
+		dh := clampI32(evidPanelDefH, evidPanelMinH, h-2*floatWinMargin)
+		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
+	}
+	return a.evidWin.rect(evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, w, h)
+}
+
+// drawEvidencePanel is the evidence browser/editor — a NON-BLOCKING floating window
+// (floatWin: drag the title bar, resize the bottom-right grip) so the courtroom stays
+// live behind it: you can keep talking, follow the chat and pre-write a message while
+// you browse or arm evidence (#5, Crystalwarrior). A thumbnail grid of the server's LE
+// list, an inspector for the selection, present-arming, and the PE/DE/EE editor ops.
+func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	panel := sdl.Rect{X: w / 8, Y: h / 8, W: w * 3 / 4, H: h * 3 / 4}
-	c.Fill(panel, ColPanel)
-	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+pad, fmt.Sprintf("Evidence (%d)", len(a.sess.Evidence)), ColText)
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 80 - pad, Y: panel.Y + pad, W: 80, H: btnH}, "Close") {
+	r := a.evidPanelRect(w, h)
+	c.Fill(r, ColPanel)
+	c.Border(r, ColAccent)
+	// Title bar / drag handle + close + "Add new" + a bottom-right resize grip.
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
+	c.Heading(r.X+pad, r.Y+6, fmt.Sprintf("Evidence (%d)", len(a.sess.Evidence)), ColText)
+	closeB := sdl.Rect{X: r.X + r.W - 80 - pad, Y: r.Y + 3, W: 80, H: btnH}
+	if c.Button(closeB, "Close") {
 		a.showEvid = false
 		return
 	}
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 170 - pad, Y: panel.Y + pad, W: 84, H: btnH}, "Add new") {
+	addB := sdl.Rect{X: closeB.X - 90, Y: r.Y + 3, W: 84, H: btnH}
+	if c.Button(addB, "Add new") {
 		a.evidEditing, a.evidIdx = true, -1
 		a.evidName, a.evidDesc, a.evidImage = "", "", "empty.png"
 	}
+	a.floatWinDrag(&a.evidWin, sdl.Rect{X: r.X, Y: r.Y, W: addB.X - r.X - 4, H: floatTitleH}, pressed)
+	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.evidWin, grip, r, evidPanelMinW, evidPanelMinH, pressed)
+	a.drawResizeGrip(grip)
+	contentTop := r.Y + floatTitleH + 8
 
 	// Editor mode replaces the grid: 3 fields + save/cancel.
 	if a.evidEditing {
-		fy := panel.Y + pad + 40
-		c.Label(panel.X+pad, fy+4, "Name:", ColText)
-		a.evidName, _ = c.TextField("evname", sdl.Rect{X: panel.X + pad + 90, Y: fy, W: panel.W - 2*pad - 90, H: fieldH}, a.evidName, "Evidence name")
+		fy := contentTop
+		c.Label(r.X+pad, fy+4, "Name:", ColText)
+		a.evidName, _ = c.TextField("evname", sdl.Rect{X: r.X + pad + 90, Y: fy, W: r.W - 2*pad - 90, H: fieldH}, a.evidName, "Evidence name")
 		fy += 32
-		c.Label(panel.X+pad, fy+4, "Description:", ColText)
-		a.evidDesc, _ = c.TextField("evdesc", sdl.Rect{X: panel.X + pad + 90, Y: fy, W: panel.W - 2*pad - 90, H: fieldH}, a.evidDesc, "What it proves")
+		c.Label(r.X+pad, fy+4, "Description:", ColText)
+		a.evidDesc, _ = c.TextField("evdesc", sdl.Rect{X: r.X + pad + 90, Y: fy, W: r.W - 2*pad - 90, H: fieldH}, a.evidDesc, "What it proves")
 		fy += 32
-		c.Label(panel.X+pad, fy+4, "Image file:", ColText)
-		a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: panel.X + pad + 90, Y: fy, W: panel.W - 2*pad - 90, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
+		c.Label(r.X+pad, fy+4, "Image file:", ColText)
+		a.evidImage, _ = c.TextField("evimg", sdl.Rect{X: r.X + pad + 90, Y: fy, W: r.W - 2*pad - 90, H: fieldH}, a.evidImage, "knife.png (base/evidence/)")
 		fy += 40
-		if c.Button(sdl.Rect{X: panel.X + pad, Y: fy, W: 90, H: btnH}, "Save") {
+		if c.Button(sdl.Rect{X: r.X + pad, Y: fy, W: 90, H: btnH}, "Save") {
 			name, desc, img := strings.TrimSpace(a.evidName), strings.TrimSpace(a.evidDesc), strings.TrimSpace(a.evidImage)
 			if name != "" {
 				if a.evidIdx < 0 {
@@ -757,7 +790,7 @@ func (a *App) drawEvidencePanel(w, h int32) {
 				a.evidEditing = false
 			}
 		}
-		if c.Button(sdl.Rect{X: panel.X + pad + 100, Y: fy, W: 90, H: btnH}, "Cancel") {
+		if c.Button(sdl.Rect{X: r.X + pad + 100, Y: fy, W: 90, H: btnH}, "Cancel") {
 			a.evidEditing = false
 		}
 		return
@@ -765,8 +798,8 @@ func (a *App) drawEvidencePanel(w, h int32) {
 
 	// Thumbnail grid (left 60%) + inspector (right 40%).
 	const cell, cellGap = int32(72), int32(8)
-	gridW := panel.W * 6 / 10
-	grid := sdl.Rect{X: panel.X + pad, Y: panel.Y + pad + 40, W: gridW - 2*pad, H: panel.H - 2*pad - 40}
+	gridW := r.W * 6 / 10
+	grid := sdl.Rect{X: r.X + pad, Y: contentTop, W: gridW - 2*pad, H: r.Y + r.H - contentTop - pad}
 	cols := grid.W / (cell + cellGap)
 	if cols < 1 {
 		cols = 1
@@ -783,28 +816,28 @@ func (a *App) drawEvidencePanel(w, h int32) {
 		if cy+cell < grid.Y || cy > grid.Y+grid.H {
 			continue
 		}
-		r := sdl.Rect{X: cx, Y: cy, W: cell, H: cell}
+		rc := sdl.Rect{X: cx, Y: cy, W: cell, H: cell}
 		if i == a.evidIdx {
-			c.Fill(sdl.Rect{X: r.X - 2, Y: r.Y - 2, W: r.W + 4, H: r.H + 4}, ColAccent)
+			c.Fill(sdl.Rect{X: rc.X - 2, Y: rc.Y - 2, W: rc.W + 4, H: rc.H + 4}, ColAccent)
 		}
 		url := a.urls.Evidence(item.Image)
 		if page, ok := a.d.Store.Get(url); ok && len(page.Frames) > 0 {
-			_ = c.Ren.Copy(page.Frames[0], nil, &r)
+			_ = c.Ren.Copy(page.Frames[0], nil, &rc)
 		} else {
-			c.Fill(r, ColPanelHi)
+			c.Fill(rc, ColPanelHi)
 			a.demandEvidence(i, url)
 		}
-		c.Border(r, ColPanelHi)
+		c.Border(rc, ColPanelHi)
 		c.LabelClipped(cx, cy+cell+2, cell, item.Name, ColTextDim)
-		if c.hovering(r) && c.clicked {
+		if c.hovering(rc) && c.clicked {
 			a.evidIdx = i
 		}
 	}
 
 	// Inspector.
-	ix := panel.X + gridW + pad
-	iw := panel.W - gridW - 2*pad
-	iy := panel.Y + pad + 40
+	ix := r.X + gridW + pad
+	iw := r.W - gridW - 2*pad
+	iy := contentTop
 	if a.evidIdx < 0 || a.evidIdx >= len(a.sess.Evidence) {
 		c.Label(ix, iy, "Select an item.", ColTextDim)
 		return

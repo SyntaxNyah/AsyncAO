@@ -148,11 +148,12 @@ func hexNibble(b byte) (uint8, bool) {
 // courtModalOpen reports whether a blocking courtroom popup is up. The box (and
 // its torn-off widgets) yields to those and reappears when they close.
 func (a *App) courtModalOpen() bool {
-	// NOTE: showPair / showModDash / showCMPanel are deliberately NOT here — they're
-	// non-blocking floating boxes now (floatwin.go), so the courtroom stays live
-	// behind them. The ban/kick confirm (banBoxKind) IS blocking — a deliberate
-	// destructive confirm — so it stays a modal.
-	return a.showIni || a.bgPick.show || a.showEvid || a.showModcall ||
+	// NOTE: showPair / showModDash / showCMPanel / showEvid are deliberately NOT here —
+	// they're non-blocking floating boxes now (floatwin.go), so the courtroom stays live
+	// behind them (you can keep chatting / follow the log while evidence is open, #5).
+	// The ban/kick confirm (banBoxKind) IS blocking — a deliberate destructive confirm —
+	// so it stays a modal.
+	return a.showIni || a.bgPick.show || a.showModcall ||
 		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen ||
 		a.showEmojiPicker || a.banBoxKind != 0 || a.classicEdit
 }
@@ -256,6 +257,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	}
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
+		a.evidWin.dragging || a.evidWin.resizing ||
 		a.hkWin.dragging || a.hkWin.resizing || a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 		return true
 	}
@@ -273,6 +275,9 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return true
 	}
 	if a.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
+		return true
+	}
+	if a.showEvid && pointIn(mx, my, a.evidPanelRect(w, h)) { // the floating evidence box fences too (#5)
 		return true
 	}
 	if a.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
@@ -404,6 +409,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
 			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
+			a.evidWin.dragging || a.evidWin.resizing ||
 			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
@@ -424,6 +430,9 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	if a.showCMPanel {
 		a.drawCMPanel(w, h, &pressed)
+	}
+	if a.showEvid { // evidence is a floating box now (#5) — chat stays live behind it
+		a.drawEvidencePanel(w, h, &pressed)
 	}
 }
 
