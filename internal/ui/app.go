@@ -4164,15 +4164,26 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		}
 		a.ctx.keyPressed = 0
 	}
-	// ESC closes a full-screen sub-view back to where it opened — the instinctive
-	// keystroke (the Back button still works). Skipped while a text field is
-	// focused, a key-bind capture is live, or an overlay (hotkey sheet / update
-	// modal) owns ESC, so it never steals their key.
-	if a.ctx.keyPressed == sdl.K_ESCAPE && a.ctx.focusID == "" &&
-		a.bindingFor == "" && a.shownameBindFor == "" && !a.showHotkeys && !a.updateShow {
+	// ESC leaves a full-screen menu back to where it opened — the instinctive
+	// keystroke (the Back button still works). Two-step so it ALWAYS makes
+	// progress out: a focused text field (a search / callword box, the common
+	// case) releases on the first ESC, then the second ESC leaves — instead of
+	// the field silently swallowing the key ("ESC did nothing in Settings").
+	// Scoped to the menu screens so the courtroom's own ESC behaviour is
+	// untouched; skipped while a key-bind capture or an ESC-owning overlay
+	// (hotkey sheet / update modal) is up so it never steals their key.
+	if a.ctx.keyPressed == sdl.K_ESCAPE &&
+		a.bindingFor == "" && a.shownameBindFor == "" && !a.showHotkeys && !a.updateShow && !a.showReset {
 		switch a.screen {
 		case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp:
-			a.screen = a.prevScreen
+			switch {
+			case a.ctx.ddOpen != "":
+				a.ctx.ddOpen = "" // first ESC: close an open dropdown
+			case a.ctx.focusID != "":
+				a.ctx.focusID = "" // …or drop a focused field
+			default:
+				a.screen = a.prevScreen // then leave the menu
+			}
 			a.ctx.keyPressed = 0
 		}
 	}

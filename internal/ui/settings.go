@@ -1712,6 +1712,10 @@ func (a *App) drawSettingsReset(y, _ int32) int32 {
 // settings widgets underneath.
 func (a *App) drawResetConfirm(w, h int32) {
 	c := a.ctx
+	if c.escPressed { // ESC cancels the confirm (the safe default), like Cancel
+		a.showReset = false
+		return
+	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 235})
 	pw, ph := int32(620), int32(300)
 	panel := sdl.Rect{X: (w - pw) / 2, Y: (h - ph) / 2, W: pw, H: ph}
