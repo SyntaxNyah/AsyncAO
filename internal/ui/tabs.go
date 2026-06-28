@@ -686,6 +686,7 @@ func (a *App) resetSessionState() {
 		spriteOv:       map[string][2]int{},
 		pmThreads:      map[string][]pmLine{},
 		evidIdx:        -1,
+		icRecallIdx:    -1, // -1 = editing the live draft, not browsing history (#8)
 		// Full bars so the first HP packets don't fire penalty sfx.
 		hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
 		// Logs follow the tail until the user scrolls up.

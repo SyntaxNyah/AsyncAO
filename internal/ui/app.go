@@ -939,6 +939,12 @@ type sessionState struct {
 	// --- courtroom chrome ---
 	icInput  string
 	oocInput string
+	// IC message recall (#8): Up/Down in the IC field walk your recently-sent messages,
+	// shell-style. icRecallIdx == -1 = editing the live draft; icRecallDraft stashes that
+	// draft while you browse history. Per-tab (lives in sessionState).
+	icSentHist    []string
+	icRecallIdx   int
+	icRecallDraft string
 	// Friends-tab PM composer (#friends): the selected friend + the message being
 	// typed. Sends as "/pm <their uid> <message>" over OOC.
 	pmTarget string

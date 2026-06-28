@@ -3848,6 +3848,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	icBox := a.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
 	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
 	a.icInput, send = c.TextFieldEmoji("ic", icBox, a.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
+	a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 	a.drawMsgCounter(icBox, icCounterOn)
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
@@ -4786,7 +4787,61 @@ func (a *App) sendIC(shout int) {
 	a.sess.SendChat(out)
 	a.evidPresent = false // presenting is one-shot
 	a.lastICSend = time.Now()
+	a.recordSentIC(a.icInput) // #8: remember the raw typed line for Up-arrow recall
 	a.icInput = ""
+}
+
+// icSentHistCap bounds the per-tab IC recall ring (#8).
+const icSentHistCap = 30
+
+// recordSentIC pushes a just-sent IC line onto the recall ring (newest last), skipping
+// blankposts and consecutive duplicates, and resets the recall cursor to the live draft.
+// Off the render path (called once per send), so the append's growth never touches a frame.
+func (a *App) recordSentIC(raw string) {
+	a.icRecallIdx = -1 // any send returns you to a fresh draft
+	t := strings.TrimSpace(raw)
+	if t == "" { // blankpost / whitespace-only — nothing to recall
+		return
+	}
+	if n := len(a.icSentHist); n > 0 && a.icSentHist[n-1] == t {
+		return // don't stack the same line twice in a row
+	}
+	a.icSentHist = append(a.icSentHist, t)
+	if len(a.icSentHist) > icSentHistCap {
+		a.icSentHist = a.icSentHist[len(a.icSentHist)-icSentHistCap:]
+	}
+}
+
+// recallIC walks the IC recall ring when the IC field is focused and Up/Down is pressed
+// (shell-style): Up goes older, Down newer and back to the stashed live draft. Consumes
+// the key so it can't double-act. A few comparisons per frame, no alloc.
+func (a *App) recallIC() {
+	c := a.ctx
+	if c.focusID != "ic" || len(a.icSentHist) == 0 {
+		return
+	}
+	switch c.keyPressed {
+	case sdl.K_UP:
+		if a.icRecallIdx == -1 { // entering history: stash the live draft first
+			a.icRecallDraft = a.icInput
+			a.icRecallIdx = len(a.icSentHist)
+		}
+		if a.icRecallIdx > 0 {
+			a.icRecallIdx--
+			a.icInput = a.icSentHist[a.icRecallIdx]
+		}
+		c.keyPressed = 0
+	case sdl.K_DOWN:
+		if a.icRecallIdx >= 0 {
+			a.icRecallIdx++
+			if a.icRecallIdx >= len(a.icSentHist) {
+				a.icInput, a.icRecallIdx = a.icRecallDraft, -1 // back to the draft
+			} else {
+				a.icInput = a.icSentHist[a.icRecallIdx]
+			}
+		}
+		c.keyPressed = 0
+	}
 }
 
 // areaLockedBg / areaCurrentBg fill a locked area's card dark red and the area
