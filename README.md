@@ -137,6 +137,10 @@ bugs, requesting features, and giving the feedback that shaped it:
 **Cocoa Bean, Lala, Nightingale, Peen, Emerald, Extra7, Poki, Xocfti, Dag, CherriPop,
 ZeitHeld, Crystalwarrior**.
 
+**v1.1.0** was driven by **Crystalwarrior** and **ZeitHeld** — the IC-bar rework, the
+floating evidence window and the audio fixes all came from their suggestions, feedback
+and detailed issue reports. The ideas are theirs.
+
 A special thank-you to **Northgate** — who backed the project, including
 financially, and gave the inspiration to keep going. Without that support
 AsyncAO wouldn't have come this far this fast.
