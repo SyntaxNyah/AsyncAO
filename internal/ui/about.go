@@ -65,7 +65,7 @@ var aboutBlocks = []aboutBlock{
 	{abBullet, "The AO-SDL developers — the SDL2 rendering model reference"},
 	{abPara, "Thank you for two decades of courtroom drama. None of this would exist without the things you built and the inspiration they provided."},
 	{abPara, "Closed-source beta testers — thank you for the bug reports, feature requests and feedback that shaped AsyncAO during development:"},
-	{abPara, "Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag · CherriPop · Nightingale · ZeitHeld · Crystalwarrior"},
+	{abPara, "Cocoa Bean · Lala · Peen · Emerald · Extra7 · Poki · Xocfti · Dag · CherriPop · Nightingale ·"},
 	{abAccent, "Special thanks to Nightingale — an enormous share of the v1.0.x quality-of-life polish came straight from their relentless, detailed playtesting. Go show them some love."},
 	{abAccent, "And to Crystalwarrior and ZeitHeld — whose suggestions, feedback and detailed issue reports drove the whole v1.1.0 release (the IC-bar rework, the floating evidence window and the audio fixes all came from what they asked for). The ideas are theirs; go support them too."},
 	{abPara, "A special thank-you to Northgate — who backed this project, including financially, and gave me the inspiration to keep going. Without that support AsyncAO wouldn't have come this far this fast. Thank you."},
