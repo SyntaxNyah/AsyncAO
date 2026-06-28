@@ -225,7 +225,7 @@ func (a *App) drawThemedSFXPicker(rect sdl.Rect) {
 			a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
 		}
 	}
-	c.TooltipAfter("sfxdd-tip", rect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override.")
+	c.TooltipAfter("sfxdd-tip", rect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Extras → SFX Browser for favourites & any sound by name.")
 }
 
 // drawCourtroomThemed is the design-driven courtroom. Geometry comes from

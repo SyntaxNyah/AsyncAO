@@ -902,6 +902,50 @@ func TestMutedSFXRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSfxFavorites pins the #12 starred-SFX list: case-insensitive store/match, toggle on/off,
+// dedup, and survival across save → load.
+func TestSfxFavorites(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.IsSfxFavorite("sfx-stab") {
+		t.Error("nothing should be starred initially")
+	}
+	if !p.ToggleSfxFavorite("SFX-Stab") { // stored lowercase; reports now-starred
+		t.Error("first toggle should report starred (true)")
+	}
+	if !p.IsSfxFavorite("sfx-stab") || !p.IsSfxFavorite("SFX-STAB") {
+		t.Error("a starred SFX should match case-insensitively")
+	}
+	if l := p.SfxFavoritesList(); len(l) != 1 || l[0] != "sfx-stab" {
+		t.Fatalf("list = %v, want [sfx-stab]", l)
+	}
+	if p.ToggleSfxFavorite("sfx-stab") { // toggling again unstars; reports false
+		t.Error("second toggle should report unstarred (false)")
+	}
+	if p.IsSfxFavorite("sfx-stab") {
+		t.Error("toggle should have unstarred it")
+	}
+}
+
+// TestSfxFavoritesRoundTrip pins that the starred list survives save → load.
+func TestSfxFavoritesRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	p.ToggleSfxFavorite("sfx-stab")
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !q.IsSfxFavorite("sfx-stab") {
+		t.Error("starred SFX lost across save/load")
+	}
+}
+
 // TestBlipVolume pins the M11 per-character blip scale: default 100, clamp,
 // case-insensitive key, no-op detection, and that resetting to 100 clears the
 // entry (so the map only holds real adjustments).

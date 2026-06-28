@@ -74,6 +74,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Hotkeys", "Show every keyboard shortcut, including your custom ones (F1)", "", func() { a.openHotkeyCheatSheet() }},
 			{"Timer", "A personal countdown timer + alarm (for RP / casing pace)", "", func() { a.openTimer() }},
 			{"Sprite Style", "Recolour / glow / warp your character — other AsyncAO players see it", "", func() { a.openSpriteStyle() }},
+			{"SFX Browser", "Browse, preview (▶) and favourite (★) sounds for your next IC message — incl. any sound by name", "", func() { a.toggleSfxBrowser() }},
 			{"Hide chrome", "Hide/show AsyncAO's on-screen widgets", hotkeyUIChrome, func() { a.showUICfg = true }},
 			{"Theater", "Theater mode — stage only, Esc exits", hotkeyTheater, func() { a.setTheater(!a.theaterOn) }},
 			{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},

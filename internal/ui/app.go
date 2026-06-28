@@ -1018,6 +1018,12 @@ type sessionState struct {
 	sfxChoiceIdx  int
 	sfxChoices    []string
 	sfxChoicesFor string
+	// #12 SFX Browser: an opt-in modal that expands the dropdown with persisted favourites,
+	// per-row preview, and a free-text "use any sound name" entry. It picks into the SAME
+	// sfxChoiceIdx override (find-or-append), so the dropdown reflects whatever it chose.
+	showSfxBrowser   bool
+	sfxBrowserQuery  string // the search / free-text field (filters the list; usable as an exact name)
+	sfxBrowserScroll int32
 	// emotePageLabel memoizes the "page x/y · N emotes" counter so the per-frame
 	// emote-grid draw allocates nothing while paging is stable; rebuilt only when
 	// {page, pages, total} change (same idiom as the generation-cached pages).

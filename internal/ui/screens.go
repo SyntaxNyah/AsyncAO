@@ -1127,6 +1127,8 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawPairPopup(w, h)
 	case a.banBoxKind != 0:
 		a.drawModDashBanBox(w, h) // the ban/kick confirm stays a blocking modal
+	case a.showSfxBrowser:
+		a.drawSfxBrowser(w, h) // #12 SFX Browser modal (preview + favourites)
 	default:
 		return false
 	}
@@ -3826,7 +3828,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 				a.d.Audio.PlaySFX(a.urls.SFX(a.sfxChoices[next]), 0) // preview the picked sound
 			}
 		}
-		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it.")
+		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it. Extras → SFX Browser for favourites & any sound by name.")
 		icX += sfxDDW + 4
 	}
 	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a).

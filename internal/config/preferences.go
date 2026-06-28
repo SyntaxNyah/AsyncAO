@@ -790,6 +790,7 @@ type AssetPreferences struct {
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	ICPhraseKeys       map[string]string         `json:"icPhraseKeys,omitempty"` // key name → canned IC line (hotkeyed)
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
+	SfxFavorites       []string                  `json:"sfxFavorites,omitempty"` // #12 starred SFX names (global, bare; preview/use in the SFX Browser)
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
@@ -1040,6 +1041,7 @@ type prefsJSON struct {
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
 	ICPhraseKeys       map[string]string         `json:"icPhraseKeys,omitempty"` // key name → canned IC line (hotkeyed)
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
+	SfxFavorites       []string                  `json:"sfxFavorites,omitempty"` // #12 starred SFX names (global, bare; preview/use in the SFX Browser)
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
@@ -1721,6 +1723,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ShownameKeys = onDisk.ShownameKeys
 	p.ICPhraseKeys = onDisk.ICPhraseKeys
 	p.MutedSFX = onDisk.MutedSFX
+	p.SfxFavorites = onDisk.SfxFavorites
 	p.BlipVols = onDisk.BlipVols
 	p.EmoteFavs = onDisk.EmoteFavs
 	p.EmoteFavOnly = onDisk.EmoteFavOnly
@@ -6607,6 +6610,65 @@ func (p *AssetPreferences) UnmuteSFX(name string) bool {
 	}
 	p.mu.Unlock()
 	return false
+}
+
+// sfxFavoritesCap bounds the starred-SFX list (hard rule #4: no unbounded
+// lists). A generous ceiling — nobody favourites hundreds of sounds.
+const sfxFavoritesCap = 128
+
+// SfxFavoritesList returns a copy of the starred SFX names (#12, global, persisted,
+// lowercased bare names resolved per-server by urls.SFX).
+func (p *AssetPreferences) SfxFavoritesList() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.SfxFavorites) == 0 {
+		return nil
+	}
+	out := make([]string, len(p.SfxFavorites))
+	copy(out, p.SfxFavorites)
+	return out
+}
+
+// IsSfxFavorite reports whether a sound name is starred (case-insensitive).
+func (p *AssetPreferences) IsSfxFavorite(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, s := range p.SfxFavorites {
+		if s == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ToggleSfxFavorite stars an SFX name if absent (lowercased, deduped, bounded) or unstars it if
+// present. Reports the new state (true = now starred). A no-op (and false) when at the cap adding.
+func (p *AssetPreferences) ToggleSfxFavorite(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return false
+	}
+	p.mu.Lock()
+	for i, s := range p.SfxFavorites {
+		if s == name {
+			p.SfxFavorites = append(p.SfxFavorites[:i], p.SfxFavorites[i+1:]...)
+			p.mu.Unlock()
+			p.markDirty()
+			return false
+		}
+	}
+	if len(p.SfxFavorites) >= sfxFavoritesCap {
+		p.mu.Unlock()
+		return false
+	}
+	p.SfxFavorites = append(p.SfxFavorites, name)
+	p.mu.Unlock()
+	p.markDirty()
+	return true
 }
 
 // blipVolsCap bounds the per-character blip-volume map (hard rule #4: no
