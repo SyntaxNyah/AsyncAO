@@ -4,6 +4,28 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.16.0 — 2026-06-28
+
+A moderation fix plus two quality-of-life touches, on top of v1.15.0.
+
+### Moderation
+- **Kicking works on Athena / Nyathena again.** The dashboard was sending
+  `/kick -i <ipid>` once it had a target's IPID — and those servers silently
+  ignore an IPID kick (the IPID is the *ban* identifier). Kicks now go out as
+  `/kick -u <uid>`, the connected-client form, so they actually land — from both
+  the single Kick box and the bulk kick. (Bans are unchanged; they correctly
+  use the IPID so they survive a disconnect.)
+- **Editable, saved ban/kick reason chips.** The quick-reason buttons are no
+  longer fixed — hit **+ Save reason** to store the one you typed, or **Edit**
+  to remove any (the × on each chip). Your list persists across sessions.
+- **Export the audit log.** The session's ban/kick record now has a **Copy**
+  button (in the dashboard's Audit view) that puts the whole log on your
+  clipboard — paste it into a report or Discord.
+
+### Quality of life
+- **Press ↑ in the OOC box to bring back your last OOC message** (↑/↓ to walk
+  further), exactly like the IC field — with its own separate history.
+
 ## v1.15.0 — 2026-06-28
 
 A feature release: a much bigger moderation dashboard, a real SFX browser, and a
