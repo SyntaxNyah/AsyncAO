@@ -560,8 +560,15 @@ func ClampWindowSize(reqW, reqH, usableW, usableH int) (int, int) {
 	return w, h
 }
 
-// defaultAudioVolume is full volume (the pre-settings behavior).
+// defaultAudioVolume is full volume (the pre-settings behavior) AND the slider
+// ceiling (the load-clamp max), so it must stay 100.
 const defaultAudioVolume = 100
+
+// defaultStartVolume is the INITIAL per-channel level on a fresh install — a little
+// under full so a first launch isn't a blast (#9, ZeitHeld). Master stays at 100 so
+// the effective level is ~70% (master scales the channels) and the ceiling is intact;
+// existing users keep their saved levels.
+const defaultStartVolume = 70
 
 // Hold-to-clear: hold a key (default Backspace, rebindable) this long to wipe a
 // focused text field at once, instead of deleting char-by-char.
@@ -1351,11 +1358,11 @@ func defaultPrefs(path string) *AssetPreferences {
 		UIScalePct:             DefaultScalePercent,
 		OOCInLogTab:            true, // default OOC = a log tab + bottom OOC bar (Legacy-style, hybrid); the OOC-box layout is opt-out
 
-		MusicVol:        defaultAudioVolume,
-		SFXVol:          defaultAudioVolume,
-		BlipVol:         defaultAudioVolume,
-		AlertVol:        defaultAudioVolume,
-		MasterVol:       defaultAudioVolume,
+		MusicVol:        defaultStartVolume,
+		SFXVol:          defaultStartVolume,
+		BlipVol:         defaultStartVolume,
+		AlertVol:        defaultAudioVolume, // alerts/pings stay loud — they should reach you
+		MasterVol:       defaultAudioVolume, // master at 100 (scales the channels; ceiling intact)
 		HoldClearOn:     defaultHoldClearOn,
 		HoldClearKey:    defaultHoldClearKey,
 		HoldClearMs:     DefaultHoldClearMs,

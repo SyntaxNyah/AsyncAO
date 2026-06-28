@@ -708,8 +708,11 @@ func TestLayoutAudioAndOOCNamePrefs(t *testing.T) {
 		logT != DefaultScalePercent || in != DefaultScalePercent {
 		t.Fatalf("defaults = %d/%d/%d/%d/%d", vp, chat, box, logT, in)
 	}
-	if m, s, b := p.AudioVolumes(); m != 100 || s != 100 || b != 100 {
-		t.Fatalf("default volumes = %d/%d/%d, want 100s", m, s, b)
+	if m, s, b := p.AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
+		t.Fatalf("default channel volumes = %d/%d/%d, want %d (start a bit under full, #9)", m, s, b, defaultStartVolume)
+	}
+	if p.MasterVolume() != defaultAudioVolume {
+		t.Fatalf("default master = %d, want %d (master stays full; it scales the channels)", p.MasterVolume(), defaultAudioVolume)
 	}
 	if crawl, stay, rate := p.Timing(); crawl != DefaultTextCrawlMs || stay != DefaultTextStayMs || rate != DefaultChatRateLimitMs {
 		t.Fatalf("default timing = %d/%d/%d", crawl, stay, rate)
@@ -883,7 +886,7 @@ func TestResetSettings(t *testing.T) {
 
 	p.ResetSettings()
 
-	if m, s, b := p.AudioVolumes(); m != 100 || s != 100 || b != 100 {
+	if m, s, b := p.AudioVolumes(); m != defaultStartVolume || s != defaultStartVolume || b != defaultStartVolume {
 		t.Errorf("volumes not reset: %d/%d/%d", m, s, b)
 	}
 	if p.ForceCharNamesOn() {

@@ -1644,30 +1644,41 @@ func clampF64(v, min, max float64) float64 {
 // channels) at the top of the log panel — quick volume without leaving the chat.
 func (a *App) drawVolumeStrip(r sdl.Rect) {
 	c := a.ctx
-	master := a.d.Prefs.MasterVolume()
-	music, sfx, blip := a.d.Prefs.AudioVolumes()
-	colW := r.W / 4
-	cell := func(i int32, id, label string, val int) int {
+	// FIX #9 (ZeitHeld): drive the EFFECTIVE (per-server when connected) volumes, exactly
+	// like the Settings and Extras sliders. The old code read/wrote the GLOBAL prefs, which
+	// a connected server's per-server audio profile overrides — so once you touched volume
+	// anywhere else (Settings/Extras both write per-server), these sidebar sliders moved
+	// nothing audible. Plus a "Rate" column for the blip cadence (the user's ask).
+	master, music, sfx, blip := a.effectiveVolumes()
+	rate, onSpaces := a.d.Prefs.BlipTyping()
+	const cols = 5
+	colW := r.W / cols
+	cell := func(i int32, id, label, tip string, val, lo, hi int32) int32 {
 		x := r.X + i*colW
 		c.Label(x, r.Y+4, label, ColTextDim)
-		track := sdl.Rect{X: x + 34, Y: r.Y + 6, W: colW - 42, H: 12}
-		return int(c.Slider("volstrip:"+id, track, int32(val), 100))
+		track := sdl.Rect{X: x + 30, Y: r.Y + 6, W: colW - 34, H: 12}
+		v := clampI32(c.Slider("volstrip:"+id, track, val, hi), lo, hi)
+		if tip != "" {
+			c.Tooltip(track, tip)
+		}
+		return v
 	}
-	if nv := cell(0, "master", "Mas", master); nv != master {
-		a.d.Prefs.SetMasterVolume(nv)
-		a.applyAudioVolumes()
+	if nv := cell(0, "master", "Mas", "", int32(master), 0, 100); int(nv) != master {
+		a.setEffectiveVolumes(int(nv), music, sfx, blip)
 	}
-	if nv := cell(1, "music", "Mus", music); nv != music {
-		a.d.Prefs.SetAudioVolumes(nv, sfx, blip)
-		a.applyAudioVolumes()
+	if nv := cell(1, "music", "Mus", "", int32(music), 0, 100); int(nv) != music {
+		a.setEffectiveVolumes(master, int(nv), sfx, blip)
 	}
-	if nv := cell(2, "sfx", "SFX", sfx); nv != sfx {
-		a.d.Prefs.SetAudioVolumes(music, nv, blip)
-		a.applyAudioVolumes()
+	if nv := cell(2, "sfx", "SFX", "", int32(sfx), 0, 100); int(nv) != sfx {
+		a.setEffectiveVolumes(master, music, int(nv), blip)
 	}
-	if nv := cell(3, "blip", "Blp", blip); nv != blip {
-		a.d.Prefs.SetAudioVolumes(music, sfx, nv)
-		a.applyAudioVolumes()
+	if nv := cell(3, "blip", "Blp", "", int32(blip), 0, 100); int(nv) != blip {
+		a.setEffectiveVolumes(master, music, sfx, int(nv))
+	}
+	// Blip cadence (1 blip / N letters; left = faster). Mirrors Settings → Blips.
+	if nv := cell(4, "rate", "Rate", "Blip cadence: 1 blip every N letters (left = faster)", int32(rate), int32(config.MinBlipRate), int32(config.MaxBlipRate)); int(nv) != rate {
+		a.d.Prefs.SetBlipTyping(int(nv), onSpaces)
+		a.applyTimingToRoom()
 	}
 }
 
