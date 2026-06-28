@@ -15,12 +15,16 @@ type floatWin struct {
 	dragging       bool
 	resizing       bool
 	grabDX, grabDY int32
+	// Last drawn size + the window dims rect() saw — so floatWinDrag can snap to the screen edges
+	// (#21) without every caller threading them through. Stamped by rect() each frame.
+	lastW, lastH, lastWinW, lastWinH int32
 }
 
 const (
 	floatWinMargin = 8  // keep a window this far inside the window edges
 	floatGripSz    = 16 // bottom-right resize grip size
 	floatTitleH    = 30 // title bar / drag-handle height
+	floatSnapPx    = 12 // a dragged edge within this many px of a screen edge / centre snaps to it
 )
 
 // rect clamps the window on-screen, using the default size until first placed and
@@ -53,7 +57,35 @@ func (fw *floatWin) rect(defW, defH, minW, minH, winW, winH int32) sdl.Rect {
 	if maxY < floatWinMargin {
 		maxY = floatWinMargin
 	}
+	fw.lastW, fw.lastH, fw.lastWinW, fw.lastWinH = w, h, winW, winH // for drag-snap (#21)
 	return sdl.Rect{X: clampI32(x, floatWinMargin, maxX), Y: clampI32(y, floatWinMargin, maxY), W: w, H: h}
+}
+
+// snapToEdges nudges a dragging window's top-left to the screen edges or centre when within
+// floatSnapPx, using the size/window dims rect() last stamped (#21). Two windows snapped to the
+// same edge thereby line up with each other. No-op until rect() has run once (lastWinW/H == 0).
+func (fw *floatWin) snapToEdges() {
+	w, h, winW, winH := fw.lastW, fw.lastH, fw.lastWinW, fw.lastWinH
+	if winW <= 0 || winH <= 0 {
+		return
+	}
+	near := func(a, b int32) bool { return a-b < floatSnapPx && b-a < floatSnapPx }
+	switch {
+	case near(fw.x, floatWinMargin):
+		fw.x = floatWinMargin
+	case near(fw.x+w, winW-floatWinMargin):
+		fw.x = winW - floatWinMargin - w
+	case near(fw.x+w/2, winW/2):
+		fw.x = (winW - w) / 2
+	}
+	switch {
+	case near(fw.y, floatWinMargin):
+		fw.y = floatWinMargin
+	case near(fw.y+h, winH-floatWinMargin):
+		fw.y = winH - floatWinMargin - h
+	case near(fw.y+h/2, winH/2):
+		fw.y = (winH - h) / 2
+	}
 }
 
 // floatWinDrag moves a window by its title-bar handle. pressed is the shared
@@ -71,6 +103,7 @@ func (a *App) floatWinDrag(fw *floatWin, handle sdl.Rect, pressed *bool) {
 	}
 	if fw.dragging {
 		fw.x, fw.y = c.mouseX-fw.grabDX, c.mouseY-fw.grabDY
+		fw.snapToEdges() // #21: snap to screen edges / centre while dragging
 		fw.placed = true
 	}
 }
