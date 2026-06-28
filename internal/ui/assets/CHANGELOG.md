@@ -4,6 +4,43 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.1.0 — 2026-06-28
+
+A playtest-driven release built straight from your GitHub issues. **Huge thanks to
+ZeitHeld and Crystalwarrior** for the detailed reports. (Numbered 1.1.0 rather than
+1.0.8 so it sorts cleanly above 1.0.75 for the in-app updater.)
+
+### Talking IC is obvious now
+- **The IC text input sits directly under the stage** — the classic Attorney Online
+  spot — instead of being buried under the control buttons where it read like the OOC
+  bar. ("At first I thought there was no way to talk IC at all.") (#8, ZeitHeld)
+- **Build-your-own IC bar.** The colour picker, showname box, sound picker, the
+  emoji / Text-FX / React buttons and the text input are now each their own box you
+  can drag anywhere in **Edit Layout** (Default + Legacy layouts) — no more six things
+  crammed into one row. (#4, Crystalwarrior)
+- **Theme-makers can split it too.** A custom theme can place each IC control on its
+  own via new optional keys in `courtroom_design.ini` — `asyncao_ic_color`,
+  `_immediate`, `_sfx`, `_emoji`, `_fx`, `_react`. Themes that don't define them keep
+  the old combined row, unchanged. (#4, Crystalwarrior)
+
+### Evidence without losing the room
+- **The evidence browser is a movable, resizable floating window** — drag the title
+  bar, resize the corner — and the courtroom stays fully live behind it, so you can
+  keep talking and follow the conversation while you browse or arm evidence. (#5,
+  Crystalwarrior)
+
+### Audio
+- **The sidebar "Vol" sliders work again.** They were driving the *global* volumes
+  while the rest of the app uses *per-server* volumes, so once you'd touched volume
+  anywhere they did nothing audible. Fixed. (#9, ZeitHeld)
+- **A "Rate" slider** for the blip cadence now sits next to the volume sliders.
+- **Fresh installs start at 70% volume** instead of full blast.
+
+### Note
+- The default courtroom layout changed (IC input under the stage). If you'd customised
+  the IC bar / control buttons / emote grid, your positions are kept — **Edit Layout →
+  "Reset all"** gives you the new default if you'd rather start fresh.
+
 ## v1.0.75 — 2026-06-28
 
 A small patch — three bug fixes. **Thanks to Crystalwarrior** for the tab-overlap report.

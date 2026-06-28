@@ -27,9 +27,12 @@ everything in memory and on disk, and renders without allocating.
   be **popped out into a floating, movable, resizable second client** you watch
   or play alongside the main one (click it to take control; full-theme view with
   zoom + pan). Drag a tab downward to tear it off, Chrome-style.
-- **Live layout editor** — drag and resize *every* box — viewport, log, music,
-  IC bar, even torn-off panels — on both the default and Legacy layouts, with
-  undo/redo and Tab-cycle. Your layout persists across sessions.
+- **Live layout editor** — drag and resize *every* box on both the default and
+  Legacy layouts: the viewport, log, music, the IC input and each of its controls
+  (colour, showname, sound, the emoji / FX / React buttons), the movable evidence
+  window, even torn-off panels — with undo/redo and Tab-cycle. Custom themes can
+  position the IC controls separately too (via `courtroom_design.ini`). Your layout
+  persists across sessions.
 - **In-app self-update** — AsyncAO checks GitHub Releases on launch and updates
   itself in place, with a "What's new" panel. Install once; no more hand-shipped
   builds.
@@ -131,7 +134,8 @@ of their work and follows their protocol and conventions:
 
 Thank you to everyone who tested AsyncAO while it was closed source — finding
 bugs, requesting features, and giving the feedback that shaped it:
-**Cocoa Bean, Lala, Nightingale, Peen, Emerald, Extra7, Poki, Xocfti, Dag, CherriPop**.
+**Cocoa Bean, Lala, Nightingale, Peen, Emerald, Extra7, Poki, Xocfti, Dag, CherriPop,
+ZeitHeld, Crystalwarrior**.
 
 A special thank-you to **Northgate** — who backed the project, including
 financially, and gave the inspiration to keep going. Without that support
