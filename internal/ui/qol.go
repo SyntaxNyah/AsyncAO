@@ -452,10 +452,30 @@ func (a *App) applyAudioVolumes() {
 		master, music, sfx, blip = m, mu, s, b
 	}
 	alert := a.d.Prefs.AlertVolume() // callword/friend ping — independent of SFX, always global
-	if a.sfxMuted {
+	music, sfx, blip, alert = mixChannels(master, music, sfx, blip, alert,
+		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked)
+	a.d.Audio.SetVolumes(music, sfx, blip)
+	a.d.Audio.SetAlertVolume(alert)
+}
+
+// mixChannels applies the per-channel mutes (#10), the music duck, and the master scale
+// to the effective levels — pure (no audio engine), so the mute/duck/scale math is
+// unit-pinnable. Master mute zeroes EVERYTHING (it scales all channels + the alert); a
+// per-channel mute zeroes just that channel without touching its stored slider level.
+func mixChannels(master, music, sfx, blip, alert int, masterMute, musicMute, sfxMute, blipMute, ducked bool) (mMusic, mSFX, mBlip, mAlert int) {
+	if masterMute {
+		master = 0
+	}
+	if musicMute {
+		music = 0
+	}
+	if sfxMute {
 		sfx = 0
 	}
-	if a.musicDucked {
+	if blipMute {
+		blip = 0
+	}
+	if ducked {
 		music = music * duckMusicPercent / 100
 	}
 	// Master multiplier scales everything (composes over mute/duck) — the one
@@ -464,8 +484,7 @@ func (a *App) applyAudioVolumes() {
 		music, sfx, blip = music*master/100, sfx*master/100, blip*master/100
 		alert = alert * master / 100
 	}
-	a.d.Audio.SetVolumes(music, sfx, blip)
-	a.d.Audio.SetAlertVolume(alert)
+	return music, sfx, blip, alert
 }
 
 // effectiveVolumes reads the volumes that apply right now: the active server's own

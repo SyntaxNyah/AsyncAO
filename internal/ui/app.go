@@ -1253,7 +1253,13 @@ type sessionState struct {
 	// sfxMuted is a session-only SFX mute (Mute SFX hotkey); showHotkeys
 	// toggles the F1 hotkey cheat-sheet overlay; musicDucked tracks whether
 	// music is currently ducked under a playing message (transition-driven).
+	// masterMuted/musicMuted/blipMuted are the per-channel mute toggles in the
+	// volume strip (#10) — session-only, like sfxMuted; they zero the channel in
+	// applyAudioVolumes WITHOUT touching the stored slider level (master mutes all).
 	sfxMuted           bool
+	masterMuted        bool
+	musicMuted         bool
+	blipMuted          bool
 	showHotkeys        bool
 	hkCache            []hkEntry           // hotkey cheat-sheet rows, rebuilt once per open (not per frame)
 	confirmDisconnect  bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)

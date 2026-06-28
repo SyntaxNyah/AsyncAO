@@ -1651,9 +1651,21 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 	rate, onSpaces := a.d.Prefs.BlipTyping()
 	const cols = 5
 	colW := r.W / cols
-	cell := func(i int32, id, label, tip string, val, lo, hi int32) int32 {
+	cell := func(i int32, id, label, tip string, val, lo, hi int32, mute *bool) int32 {
 		x := r.X + i*colW
-		c.Label(x, r.Y+4, label, ColTextDim)
+		labelCol := ColTextDim
+		if mute != nil { // #10: the channel label is a click-to-mute toggle (red = muted)
+			lbl := sdl.Rect{X: x, Y: r.Y, W: 28, H: r.H}
+			if c.ClickedIn(lbl) {
+				*mute = !*mute
+				a.applyAudioVolumes() // the muted channel goes silent; the slider level is kept
+			}
+			if *mute {
+				labelCol = ColDanger
+			}
+			c.Tooltip(lbl, "Click to mute / unmute (the slider level is kept)")
+		}
+		c.Label(x, r.Y+4, label, labelCol)
 		track := sdl.Rect{X: x + 30, Y: r.Y + 6, W: colW - 34, H: 12}
 		v := clampI32(c.Slider("volstrip:"+id, track, val, hi), lo, hi)
 		if tip != "" {
@@ -1661,20 +1673,20 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 		}
 		return v
 	}
-	if nv := cell(0, "master", "Mas", "", int32(master), 0, 100); int(nv) != master {
+	if nv := cell(0, "master", "Mas", "", int32(master), 0, 100, &a.masterMuted); int(nv) != master {
 		a.setEffectiveVolumes(int(nv), music, sfx, blip)
 	}
-	if nv := cell(1, "music", "Mus", "", int32(music), 0, 100); int(nv) != music {
+	if nv := cell(1, "music", "Mus", "", int32(music), 0, 100, &a.musicMuted); int(nv) != music {
 		a.setEffectiveVolumes(master, int(nv), sfx, blip)
 	}
-	if nv := cell(2, "sfx", "SFX", "", int32(sfx), 0, 100); int(nv) != sfx {
+	if nv := cell(2, "sfx", "SFX", "", int32(sfx), 0, 100, &a.sfxMuted); int(nv) != sfx {
 		a.setEffectiveVolumes(master, music, int(nv), blip)
 	}
-	if nv := cell(3, "blip", "Blp", "", int32(blip), 0, 100); int(nv) != blip {
+	if nv := cell(3, "blip", "Blp", "", int32(blip), 0, 100, &a.blipMuted); int(nv) != blip {
 		a.setEffectiveVolumes(master, music, sfx, int(nv))
 	}
-	// Blip cadence (1 blip / N letters; left = faster). Mirrors Settings → Blips.
-	if nv := cell(4, "rate", "Rate", "Blip cadence: 1 blip every N letters (left = faster)", int32(rate), int32(config.MinBlipRate), int32(config.MaxBlipRate)); int(nv) != rate {
+	// Blip cadence (1 blip / N letters; left = faster). Mirrors Settings → Blips. No mute.
+	if nv := cell(4, "rate", "Rate", "Blip cadence: 1 blip every N letters (left = faster)", int32(rate), int32(config.MinBlipRate), int32(config.MaxBlipRate), nil); int(nv) != rate {
 		a.d.Prefs.SetBlipTyping(int(nv), onSpaces)
 		a.applyTimingToRoom()
 	}
