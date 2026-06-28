@@ -169,9 +169,19 @@ jobs:
           path: dist
           pattern: release-*
           merge-multiple: true
-      - name: Build release notes from the tag annotation
+      - name: Build release notes from the CHANGELOG (fall back to the tag annotation)
         run: |
-          git tag -l --format='%(contents)' "${{ github.ref_name }}" > notes.md
+          # The Release notes are the version's CHANGELOG section — the SAME text the
+          # in-app "What's New" tab shows — so the two never drift and every feature for
+          # this version is listed. Falls back to the tag annotation, then a bare title.
+          awk -v ver="${{ github.ref_name }}" '
+            index($0, "## " ver) == 1 { grab=1; next }
+            grab && /^## / { exit }
+            grab { print }
+          ' internal/ui/assets/CHANGELOG.md | sed '/./,$!d' > notes.md
+          if [ ! -s notes.md ]; then
+            git tag -l --format='%(contents)' "${{ github.ref_name }}" > notes.md
+          fi
           if [ ! -s notes.md ]; then
             echo "AsyncAO ${{ github.ref_name }}" > notes.md
           fi
@@ -181,6 +191,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Idempotent: drop any existing Release for this tag (the tag itself is kept) so
+          # a re-pushed tag re-publishes cleanly with the current notes + assets.
+          gh release delete "${{ github.ref_name }}" --yes 2>/dev/null || true
           gh release create "${{ github.ref_name }}" \
             --title "AsyncAO ${{ github.ref_name }}" \
             --notes-file notes.md \
