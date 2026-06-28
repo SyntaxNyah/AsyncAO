@@ -1901,6 +1901,35 @@ func (a *App) Connect(name, wsURL string) {
 	a.connectWith(name, wsURL, context.Background())
 }
 
+// friendlyConnError turns a raw dial error into plain lobby guidance (#9) — the raw
+// error still goes to the debug log. Matches substrings of the lowercased error (Go's
+// net / crypto-tls / websocket wording is stable enough); falls back to the raw text.
+func friendlyConnError(wsURL string, err error) string {
+	s := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(s, "no such host") || strings.Contains(s, "lookup"):
+		return "Couldn't find that server — double-check the address."
+	case strings.Contains(s, "refused"):
+		return "Connection refused — the server may be offline, or the port is wrong."
+	case strings.Contains(s, "timeout") || strings.Contains(s, "deadline exceeded") || strings.Contains(s, "timed out"):
+		return "Timed out — the server didn't respond (it may be down or unreachable)."
+	case strings.Contains(s, "certificate") || strings.Contains(s, "x509") || strings.Contains(s, "tls"):
+		msg := "Secure (wss://) connection failed — the server's certificate looks invalid or expired."
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(wsURL)), "wss://") {
+			msg += " If the server isn't actually secure, try ws:// instead."
+		}
+		return msg
+	case strings.Contains(s, "network is unreachable") || strings.Contains(s, "no route"):
+		return "Network unreachable — check your internet connection."
+	case strings.Contains(s, "bad handshake") || strings.Contains(s, "unexpected") || strings.Contains(s, " status") || strings.Contains(s, "426") || strings.Contains(s, "websocket"):
+		return "The server didn't accept a WebSocket connection — it may not be a WebSocket (AO2 2.11) server. AsyncAO can't use legacy raw-TCP servers."
+	case strings.Contains(s, "unsupported") || strings.Contains(s, "invalid") || strings.Contains(s, "missing") || strings.Contains(s, "parse"):
+		return "That address doesn't look right — use ws:// or wss:// (or host:port)."
+	default:
+		return "Couldn't connect: " + err.Error()
+	}
+}
+
 // connectWith is Connect with a caller-chosen dial context. Manual joins pass
 // context.Background() (Dial's full 10s budget); restore-on-launch passes a
 // short timeout so a dead remembered server can't freeze boot for long.
@@ -1939,7 +1968,8 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	}(wsURL)
 	conn, err := protocol.Dial(dialCtx, wsURL)
 	if err != nil {
-		a.connErr = err.Error()
+		a.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
+		a.pushDebug("connect failed: " + err.Error())
 		a.closeActiveTab()
 		a.screen = ScreenLobby
 		return
