@@ -3,6 +3,7 @@ package ui
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -58,6 +59,39 @@ const (
 
 // modDashChipOn is the "active" status-chip colour (green; matches the ping chip's "good").
 var modDashChipOn = sdl.Color{R: 70, G: 200, B: 90, A: 255}
+
+// modReasonTemplates are one-click canned ban / kick reasons (#13). Clicking one fills the reason
+// field; the mod can still edit or clear it. Built-in and fixed — covering the common cases keeps
+// it zero-config (no new prefs surface); a user-editable list can come later if asked.
+var modReasonTemplates = []string{
+	"Spam", "Harassment", "NSFW", "Disruptive", "Trolling", "Ban evasion", "Disrespect",
+}
+
+// modAuditCap bounds the session audit log (hard rule #4 / spec §17.4: every buffer is capped).
+// Oldest entries drop once it's full — the dashboard only needs "what did I just do this session",
+// not a permanent record.
+const modAuditCap = 100
+
+// modAuditEntry is one logged dashboard command: when it was sent, the action label ("Ban" / "Kick"),
+// the frozen target identity, and the exact OOC command that went out.
+type modAuditEntry struct {
+	at     time.Time
+	action string
+	target string
+	cmd    string
+}
+
+// recordModAudit appends one sent command to the session audit log, dropping the oldest entry when
+// the log is full. It's the only writer; the dashboard's Send paths call it just before sending.
+func (a *App) recordModAudit(action, target, cmd string) {
+	if cmd == "" {
+		return
+	}
+	a.modAudit = append(a.modAudit, modAuditEntry{at: a.now(), action: action, target: target, cmd: cmd})
+	if len(a.modAudit) > modAuditCap {
+		a.modAudit = a.modAudit[len(a.modAudit)-modAuditCap:] // keep the newest modAuditCap entries
+	}
+}
 
 // toggleModDash opens / closes the dashboard (the Extras entry + the hotkey). Closing it also
 // drops any half-filled ban/kick box, so it can't reappear out of context next open.
@@ -204,8 +238,28 @@ func (a *App) drawModDashPanel(w, h int32, pressed *bool) {
 	leftW := int32(322)
 	rightX := x + leftW + 16
 	rightW := panel.X + pw - modDashIn - rightX
-	c.Label(x, bodyTop, "Players in area ("+strconv.Itoa(len(a.rosterView()))+")", ColTextDim)
-	a.drawModDashRoster(sdl.Rect{X: x, Y: bodyTop + 22, W: leftW, H: bodyBottom - (bodyTop + 22)})
+	// Left column: the roster picker OR the session audit log (#13), switched by a two-button toggle.
+	rosterLabel := "Players (" + strconv.Itoa(len(a.rosterView())) + ")"
+	auditLabel := "Audit (" + strconv.Itoa(len(a.modAudit)) + ")"
+	rosterBtn := sdl.Rect{X: x, Y: bodyTop, W: c.TextWidth(rosterLabel) + 22, H: btnH}
+	auditBtn := sdl.Rect{X: rosterBtn.X + rosterBtn.W + 8, Y: bodyTop, W: c.TextWidth(auditLabel) + 22, H: btnH}
+	if c.Button(rosterBtn, rosterLabel) {
+		a.modDashShowAudit = false
+	}
+	if c.Button(auditBtn, auditLabel) {
+		a.modDashShowAudit = true
+	}
+	if a.modDashShowAudit {
+		c.Border(auditBtn, ColAccent)
+	} else {
+		c.Border(rosterBtn, ColAccent)
+	}
+	leftRect := sdl.Rect{X: x, Y: bodyTop + btnH + 6, W: leftW, H: bodyBottom - (bodyTop + btnH + 6)}
+	if a.modDashShowAudit {
+		a.drawModDashAudit(leftRect)
+	} else {
+		a.drawModDashRoster(leftRect)
+	}
 	a.drawModDashActions(rightX, bodyTop, rightW)
 
 	fy := bodyBottom + 12
@@ -374,6 +428,41 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	a.drawModRosterIdentity(*p, textX, rrow.Y, rrow.X+rrow.W-textX-6, nameCol)
 }
 
+// drawModDashAudit renders the session audit log (newest first): a bounded, scrollable list of the
+// ban / kick commands sent from this dashboard, each with its timestamp, action, target and the
+// exact command. Read-only — a record of what went out, not a re-send path. Opt-in (only when the
+// Audit view is selected), so its per-row string building stays off the render hot path.
+func (a *App) drawModDashAudit(r sdl.Rect) {
+	c := a.ctx
+	c.Border(r, ColPanelHi)
+	if len(a.modAudit) == 0 {
+		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No ban / kick actions sent yet this session.", ColTextDim)
+		return
+	}
+	if !c.ctrlHeld {
+		a.modAuditScroll -= c.WheelIn(r) * scrollStepPx
+	}
+	const auditRowH = int32(38)
+	contentH := int32(len(a.modAudit)) * auditRowH
+	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
+	a.modAuditScroll = c.VScrollbar("moddashaudit", track, a.modAuditScroll, contentH, r.H)
+	clipPrev, clipHad := c.pushClip(r)
+	defer c.popClip(clipPrev, clipHad)
+	rowW := r.W - scrollBarW - 8
+	rowY := r.Y - a.modAuditScroll
+	for i := len(a.modAudit) - 1; i >= 0; i-- { // newest first
+		if rowY > r.Y+r.H {
+			break
+		}
+		if rowY >= r.Y-auditRowH {
+			e := a.modAudit[i]
+			c.LabelClipped(r.X+6, rowY+3, rowW, e.at.Format("15:04:05")+"   ·   "+e.action+"   ·   "+e.target, ColText)
+			c.LabelClipped(r.X+6, rowY+20, rowW, e.cmd, ColTextDim)
+		}
+		rowY += auditRowH
+	}
+}
+
 // drawModDashBanBox is the Ban (kind 1) / Kick (kind 2) sub-modal: the frozen target, a duration
 // picker (ban only), a reason field, and a LIVE PREVIEW of the exact command. Send refuses an
 // empty command; when the preview is empty because an IPID-only server hasn't surfaced the IPID
@@ -395,9 +484,9 @@ func (a *App) drawModDashBanBox(w, h int32) {
 		return
 	}
 	isBan := a.banBoxKind == 1
-	bw, bh := int32(560), int32(372) // ban: taller — the duration presets wrap to two rows
+	bw, bh := int32(560), int32(452) // ban: taller — duration presets + quick-reason chips each wrap
 	if !isBan {
-		bh = 250
+		bh = 330 // kick: no duration row, but the quick-reason chips still wrap to two rows
 	}
 	panel := sdl.Rect{X: (w - bw) / 2, Y: (h - bh) / 2, W: bw, H: bh}
 	c.Fill(panel, ColPanel)
@@ -445,7 +534,26 @@ func (a *App) drawModDashBanBox(w, h int32) {
 	c.Label(x, y, "Reason:", ColTextDim)
 	y += 20
 	a.banBoxReason, _ = c.TextField("moddashreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, "reason (optional for kick)")
-	y += fieldH + 12
+	y += fieldH + 8
+
+	// Quick-reason templates (#13): one click fills the field above; still freely editable after.
+	tx := x
+	for _, tpl := range modReasonTemplates {
+		tw := c.TextWidth(tpl) + 16
+		if tx+tw > x+maxW {
+			tx = x
+			y += btnH + 6
+		}
+		tr := sdl.Rect{X: tx, Y: y, W: tw, H: btnH}
+		if c.Button(tr, tpl) {
+			a.banBoxReason = tpl
+		}
+		if a.banBoxReason == tpl {
+			c.Border(tr, ColAccent) // highlight when the field matches this template
+		}
+		tx += tw + 6
+	}
+	y += btnH + 12
 
 	// Live preview of the exact command.
 	var cmd string
@@ -478,6 +586,7 @@ func (a *App) drawModDashBanBox(w, h int32) {
 	if cmd != "" {
 		send := title + " (send)"
 		if c.Button(sdl.Rect{X: x, Y: by, W: 160, H: btnH}, send) {
+			a.recordModAudit(title, "["+a.banBoxUID+"] "+a.banBoxName, cmd) // #13 audit log: record before it goes out
 			a.sendModCommand(cmd)
 			a.banBoxKind = 0
 			return

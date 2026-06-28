@@ -841,11 +841,16 @@ type sessionState struct {
 	banBoxReason   string                // typed reason
 	modDashScroll  int32                 // mod dashboard roster scroll offset
 	cmRosterScroll int32                 // CM panel roster scroll offset
-	serverName     string
-	serverKey      string    // ws URL: keys the per-server warm state in prefs
-	connAt         time.Time // session start (Rich Presence elapsed timer)
-	curArea        string    // last area WE clicked (Rich Presence, best-effort)
-	presenceInit   bool      // false until the first lobby presence push (so "Playing AsyncAO" shows on launch, not only in-court)
+	// #13 mod dashboard v2: a session audit log and the left-column view switch. Per-session
+	// (per-tab): a new server connection starts with an empty log.
+	modDashShowAudit bool            // left column shows the session audit log instead of the roster
+	modAudit         []modAuditEntry // bounded, session-scoped record of commands sent from the dash
+	modAuditScroll   int32           // audit list scroll offset
+	serverName       string
+	serverKey        string    // ws URL: keys the per-server warm state in prefs
+	connAt           time.Time // session start (Rich Presence elapsed timer)
+	curArea          string    // last area WE clicked (Rich Presence, best-effort)
+	presenceInit     bool      // false until the first lobby presence push (so "Playing AsyncAO" shows on launch, not only in-court)
 	// Per-area IC scrollback (opt-in): areaLogs holds each visited area's saved
 	// icLog, areaLogOrder is the visit order for bounded FIFO eviction
 	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
