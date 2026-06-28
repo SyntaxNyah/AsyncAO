@@ -833,7 +833,7 @@ type sessionState struct {
 	// Ban/Kick box (#130): a FROZEN snapshot of the target, taken when the box opens, so a roster
 	// rebuild while the reason is being typed can never repoint a destructive command at someone
 	// else. Only the IPID is allowed to fill in later (re-resolved by the frozen UID — same person).
-	banBoxKind     int                   // 0 = closed, 1 = ban box, 2 = kick box
+	banBoxKind     int                   // 0 = closed, 1 = ban, 2 = kick, 3 = bulk ban, 4 = bulk kick
 	banBoxUID      string                // snapshot: target UID (the identity anchor)
 	banBoxIPID     string                // snapshot: target IPID (mod-only; "" until a /getarea enrich)
 	banBoxName     string                // snapshot: display name for the box header
@@ -841,11 +841,13 @@ type sessionState struct {
 	banBoxReason   string                // typed reason
 	modDashScroll  int32                 // mod dashboard roster scroll offset
 	cmRosterScroll int32                 // CM panel roster scroll offset
-	// #13 mod dashboard v2: a session audit log and the left-column view switch. Per-session
-	// (per-tab): a new server connection starts with an empty log.
+	// #13 mod dashboard v2: a session audit log, bulk targeting, and the left-column view switch.
+	// All per-session (per-tab): a new server connection starts with an empty log and selection.
 	modDashShowAudit bool            // left column shows the session audit log instead of the roster
 	modAudit         []modAuditEntry // bounded, session-scoped record of commands sent from the dash
 	modAuditScroll   int32           // audit list scroll offset
+	modDashSelected  map[string]bool // UIDs ticked for a bulk ban / kick (lazily inited; ≤ modBulkCap)
+	bulkBoxUIDs      []string        // frozen snapshot of the ticked UIDs when a bulk box opens
 	serverName       string
 	serverKey        string    // ws URL: keys the per-server warm state in prefs
 	connAt           time.Time // session start (Rich Presence elapsed timer)

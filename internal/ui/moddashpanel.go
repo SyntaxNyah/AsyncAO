@@ -93,6 +93,105 @@ func (a *App) recordModAudit(action, target, cmd string) {
 	}
 }
 
+// modBulkCap caps how many players can be ticked for a bulk ban / kick at once (#13). It bounds the
+// selection map (hard rule #4) and is a guard rail against a fat-fingered "ban the whole room".
+const modBulkCap = 50
+
+// toggleModSelected ticks / unticks a UID for the bulk action, lazily creating the set and pruning
+// the entry on untick so the map only ever holds ticked UIDs. Refuses to grow past modBulkCap.
+func (a *App) toggleModSelected(uid string) {
+	if uid == "" {
+		return
+	}
+	if a.modDashSelected[uid] {
+		delete(a.modDashSelected, uid)
+		return
+	}
+	if len(a.modDashSelected) >= modBulkCap {
+		a.warnLine = clampLine("Bulk selection is capped at " + strconv.Itoa(modBulkCap) + " players.")
+		a.warnAt = a.now()
+		return
+	}
+	if a.modDashSelected == nil {
+		a.modDashSelected = make(map[string]bool)
+	}
+	a.modDashSelected[uid] = true
+}
+
+// clearModSelected drops the whole bulk selection (the "Clear" button) — also the escape hatch for
+// ticked players who have since left, since their rows are gone and can't be unticked individually.
+func (a *App) clearModSelected() {
+	for k := range a.modDashSelected {
+		delete(a.modDashSelected, k)
+	}
+}
+
+// selectedPresentUIDs returns the ticked UIDs that are STILL in the roster, in roster order. A
+// player who left is silently dropped, so a bulk command never targets a stale slot. Order matches
+// the roster so the bulk box lists people the way the mod sees them.
+func (a *App) selectedPresentUIDs() []string {
+	if len(a.modDashSelected) == 0 {
+		return nil
+	}
+	roster := a.rosterView()
+	out := make([]string, 0, len(a.modDashSelected))
+	for i := range roster {
+		if uid := roster[i].uid; uid != "" && a.modDashSelected[uid] {
+			out = append(out, uid)
+		}
+	}
+	return out
+}
+
+// countSelectedPresent is the allocation-free count of ticked-and-still-present players, for the
+// per-frame button labels (selectedPresentUIDs allocates, so it's reserved for the one-shot freeze).
+func (a *App) countSelectedPresent() int {
+	if len(a.modDashSelected) == 0 {
+		return 0
+	}
+	roster := a.rosterView()
+	n := 0
+	for i := range roster {
+		if uid := roster[i].uid; uid != "" && a.modDashSelected[uid] {
+			n++
+		}
+	}
+	return n
+}
+
+// openModBulkBox freezes the currently-ticked, present UIDs into the bulk box and opens it
+// (banBoxKind 3 = bulk ban, 4 = bulk kick). Freezing by UID matches the single box's safety: a
+// roster rebuild while a reason is typed can't repoint the batch. A reused reason/duration carries
+// over from the single box, so default the reason empty and the duration to a sane value.
+func (a *App) openModBulkBox(kind int) {
+	uids := a.selectedPresentUIDs()
+	if len(uids) == 0 {
+		return
+	}
+	a.banBoxKind = kind
+	a.bulkBoxUIDs = uids
+	a.banBoxReason = ""
+	a.banBoxDur = courtroom.Ban1Day
+}
+
+// bulkCommandFor builds the exact OOC command for one bulk target UID, re-resolving its IPID by UID
+// (from the enriched roster, else the raw /getarea snapshot) — same per-person resolution the single
+// box does. Returns "" when the server needs an identifier we don't have yet (e.g. an un-fetched
+// IPID), so the caller can count and report those instead of sending a broken command.
+func (a *App) bulkCommandFor(uid string, isBan bool) string {
+	ipid := ""
+	if row, ok := a.rosterByUID(uid); ok && row.ipid != "" {
+		ipid = row.ipid
+	} else if ip := a.ipidByUID()[uid]; ip != "" {
+		ipid = ip
+	}
+	sw := a.detectedSoftware()
+	if isBan {
+		return courtroom.BanCommand(sw, ipid, uid, a.banBoxDur, a.banBoxReason)
+	}
+	return courtroom.KickCommand(sw, ipid, uid, a.banBoxReason)
+}
+
 // toggleModDash opens / closes the dashboard (the Extras entry + the hotkey). Closing it also
 // drops any half-filled ban/kick box, so it can't reappear out of context next open.
 func (a *App) toggleModDash() {
@@ -329,6 +428,29 @@ func (a *App) drawModDashActions(x, y, w int32) {
 		y += btnH + 10
 	}
 
+	// Bulk ban / kick (#13): acts on the ticked set, INDEPENDENT of the single target above. The
+	// section only appears once at least one present player is ticked. nStr drives the button labels.
+	if n := a.countSelectedPresent(); n > 0 {
+		y += 2
+		nStr := strconv.Itoa(n)
+		c.Label(x, y, "Bulk — "+nStr+" ticked", modDashChipOn)
+		if c.Button(sdl.Rect{X: x + w - 64, Y: y - 4, W: 64, H: btnH}, "Clear") {
+			a.clearModSelected()
+		}
+		y += 22
+		if a.amIMod() && a.dashSoftwareKnown() {
+			if c.Button(sdl.Rect{X: x, Y: y, W: 110, H: btnH}, "Ban "+nStr+"…") {
+				a.openModBulkBox(3)
+			}
+			if c.Button(sdl.Rect{X: x + 120, Y: y, W: 110, H: btnH}, "Kick "+nStr+"…") {
+				a.openModBulkBox(4)
+			}
+		} else {
+			c.LabelClipped(x, y, w, "Log in as mod (known software) to bulk-act.", ColTextDim)
+		}
+		y += btnH + 10
+	}
+
 	// CM (area control) is its OWN panel now (#130) — it opens from the corner "CM" chip the
 	// moment you hold CM, so the mod dashboard stays focused on ban / kick. Claim CM with /cm.
 	y += 6
@@ -407,15 +529,36 @@ func modRowHeight(row rosterRow) int32 {
 func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	c := a.ctx
 	p := &a.rosterView()[idx]
-	selected := p.uid != "" && p.uid == a.modDashTargetUID
-	if selected {
+	selected := p.uid != "" && p.uid == a.modDashTargetUID // single ban/kick target (accent row)
+	checked := p.uid != "" && a.modDashSelected[p.uid]     // ticked for the bulk batch (green box)
+	switch {
+	case selected:
 		c.Fill(rrow, ColAccent)
-	} else if c.hovering(rrow) {
+	case checked:
+		c.Fill(rrow, sdl.Color{R: modDashChipOn.R, G: modDashChipOn.G, B: modDashChipOn.B, A: 50}) // subtle "ticked" tint
+	case c.hovering(rrow):
 		c.Fill(rrow, ColPanelHi)
 	}
-	if c.hovering(rrow) && c.clicked && p.uid != "" {
+
+	// Bulk tick-box on the right edge. Toggling it CONSUMES the click so the row-body select below
+	// doesn't also fire (the box sits inside the row rect, so both would otherwise see the click).
+	cbSz := int32(18)
+	cb := sdl.Rect{X: rrow.X + rrow.W - cbSz - 6, Y: rrow.Y + (rrow.H-cbSz)/2, W: cbSz, H: cbSz}
+	clickedCB := false
+	if p.uid != "" {
+		c.Border(cb, ColPanelHi)
+		if checked {
+			c.Fill(sdl.Rect{X: cb.X + 4, Y: cb.Y + 4, W: cbSz - 8, H: cbSz - 8}, modDashChipOn)
+		}
+		if c.hovering(cb) && c.clicked {
+			a.toggleModSelected(p.uid)
+			clickedCB = true
+		}
+	}
+	if !clickedCB && c.hovering(rrow) && c.clicked && p.uid != "" {
 		a.modDashTargetUID = p.uid
 	}
+
 	isSpec := strings.EqualFold(p.name, "Spectator")
 	iconSz := modRosterRowH - 12
 	iconR := sdl.Rect{X: rrow.X + 6, Y: rrow.Y + (rrow.H-iconSz)/2, W: iconSz, H: iconSz}
@@ -425,7 +568,7 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 		nameCol = ColBackground
 	}
 	textX := rrow.X + 6 + iconSz + 8
-	a.drawModRosterIdentity(*p, textX, rrow.Y, rrow.X+rrow.W-textX-6, nameCol)
+	a.drawModRosterIdentity(*p, textX, rrow.Y, cb.X-8-textX, nameCol) // stop the text short of the tick-box
 }
 
 // drawModDashAudit renders the session audit log (newest first): a bounded, scrollable list of the
@@ -469,6 +612,10 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 // yet, it explains and offers a one-click fetch instead of silently disabling the button.
 func (a *App) drawModDashBanBox(w, h int32) {
 	c := a.ctx
+	if a.banBoxKind >= 3 { // kinds 3/4 are the BULK ban/kick — a different (frozen-list) box
+		a.drawModBulkBox(w, h)
+		return
+	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 210}) // backdrop dim (blocking confirm)
 	// Lazy IPID fill: re-resolve the FROZEN uid's IPID (same person — safe) from the enriched
 	// roster, else from the raw /getarea snapshot, so a fetch populates the preview live.
@@ -595,4 +742,177 @@ func (a *App) drawModDashBanBox(w, h int32) {
 	if c.Button(sdl.Rect{X: x + 172, Y: by, W: 100, H: btnH}, "Cancel") {
 		a.banBoxKind = 0
 	}
+}
+
+// drawModBulkBox is the bulk Ban (kind 3) / Kick (kind 4) confirm: a FROZEN list of ticked targets,
+// a shared duration (ban) + reason with the same quick-reason templates, a live count of how many
+// commands are ready vs. still missing an identifier, and a Send that queues one paced command per
+// ready target (each audited) through the macro OOC pacing — so a 30-player batch can't flood the
+// server. Frozen by UID like the single box, so a roster churn can't repoint the batch.
+func (a *App) drawModBulkBox(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 210}) // backdrop dim (blocking)
+	if c.escPressed {
+		a.banBoxKind = 0
+		return
+	}
+	isBan := a.banBoxKind == 3
+	bw, bh := int32(560), int32(540)
+	if !isBan {
+		bh = 420 // kick: no duration row
+	}
+	panel := sdl.Rect{X: (w - bw) / 2, Y: (h - bh) / 2, W: bw, H: bh}
+	c.Fill(panel, ColPanel)
+	c.Border(panel, ColDanger)
+	x := panel.X + modDashIn
+	maxW := bw - 2*modDashIn
+
+	title := "Bulk Kick"
+	if isBan {
+		title = "Bulk Ban"
+	}
+	n := len(a.bulkBoxUIDs)
+	c.Heading(x, panel.Y+14, title+"  —  "+strconv.Itoa(n)+" player(s)", ColText)
+	y := panel.Y + 44
+
+	// Frozen target list. Capped display (modBulkCap can be 50): show the first rows, then "…and K
+	// more" so the box never grows unbounded. Each line: "[uid] name" (or "(left)" if they've gone).
+	const maxListRows = int32(6)
+	listH := maxListRows*16 + 8
+	listR := sdl.Rect{X: x, Y: y, W: maxW, H: listH}
+	c.Border(listR, ColPanelHi)
+	clipPrev, clipHad := c.pushClip(listR)
+	ly := listR.Y + 4
+	shown, more := a.bulkBoxUIDs, 0
+	if int32(len(shown)) > maxListRows {
+		more = len(shown) - int(maxListRows-1)
+		shown = shown[:maxListRows-1]
+	}
+	for _, uid := range shown {
+		label := "[" + uid + "] (left)"
+		if row, ok := a.rosterByUID(uid); ok {
+			label = "[" + uid + "] " + rosterDisplayName(row)
+		}
+		c.LabelClipped(listR.X+6, ly, maxW-12, label, ColTextDim)
+		ly += 16
+	}
+	if more > 0 {
+		c.LabelClipped(listR.X+6, ly, maxW-12, "…and "+strconv.Itoa(more)+" more", ColTextDim)
+	}
+	c.popClip(clipPrev, clipHad)
+	y += listH + 12
+
+	if isBan {
+		c.Label(x, y, "Duration (applied to all):", ColTextDim)
+		y += 20
+		dx := x
+		for d := courtroom.BanPerma; d < courtroom.BanDurationCount; d++ {
+			label := courtroom.BanDurationLabel(d)
+			dw := c.TextWidth(label) + 16
+			if dx+dw > x+maxW {
+				dx = x
+				y += btnH + 6
+			}
+			br := sdl.Rect{X: dx, Y: y, W: dw, H: btnH}
+			if c.Button(br, label) {
+				a.banBoxDur = d
+			}
+			if d == a.banBoxDur {
+				c.Border(br, ColAccent)
+			}
+			dx += dw + 6
+		}
+		y += btnH + 10
+	}
+
+	c.Label(x, y, "Reason (applied to all):", ColTextDim)
+	y += 20
+	a.banBoxReason, _ = c.TextField("modbulkreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, "reason (optional for kick)")
+	y += fieldH + 8
+	tx := x
+	for _, tpl := range modReasonTemplates {
+		tw := c.TextWidth(tpl) + 16
+		if tx+tw > x+maxW {
+			tx = x
+			y += btnH + 6
+		}
+		tr := sdl.Rect{X: tx, Y: y, W: tw, H: btnH}
+		if c.Button(tr, tpl) {
+			a.banBoxReason = tpl
+		}
+		if a.banBoxReason == tpl {
+			c.Border(tr, ColAccent)
+		}
+		tx += tw + 6
+	}
+	y += btnH + 12
+
+	// Readiness: how many frozen targets have a buildable command right now (the rest need an IPID
+	// this server hasn't surfaced yet). Ground truth — we just try to build each command.
+	ready := 0
+	for _, uid := range a.bulkBoxUIDs {
+		if a.bulkCommandFor(uid, isBan) != "" {
+			ready++
+		}
+	}
+	switch {
+	case !a.dashSoftwareKnown():
+		c.LabelClipped(x, y, maxW, "Pick the server software first (Cancel, then Change).", ColDanger)
+	case ready == 0:
+		c.LabelClipped(x, y, maxW, "No targets are ready — this server needs IPIDs (mod-only). Fetch them:", ColDanger)
+		if c.Button(sdl.Rect{X: x, Y: y + 22, W: 210, H: btnH}, "Fetch area info (/getarea)") {
+			a.fetchAreaForBan()
+		}
+	default:
+		msg := "Will send " + strconv.Itoa(ready) + " command(s) — one per player, paced."
+		if skipped := n - ready; skipped > 0 {
+			msg += "  " + strconv.Itoa(skipped) + " skipped (no IPID yet)."
+		}
+		c.LabelClipped(x, y, maxW, msg, ColAccent)
+	}
+
+	by := panel.Y + bh - btnH - 14
+	if ready > 0 {
+		if c.Button(sdl.Rect{X: x, Y: by, W: 200, H: btnH}, title+" (send "+strconv.Itoa(ready)+")") {
+			a.sendBulk(isBan)
+			a.banBoxKind = 0
+			return
+		}
+	}
+	if c.Button(sdl.Rect{X: x + 212, Y: by, W: 100, H: btnH}, "Cancel") {
+		a.banBoxKind = 0
+	}
+}
+
+// sendBulk builds and queues one paced OOC command per ready frozen target (skipping any that still
+// lack an identifier), audits each individually, then clears the selection. Paced through
+// queueOOCLines (the macro pipeline) so a large batch never floods the server. Returns the number
+// queued (for the test / the toast).
+func (a *App) sendBulk(isBan bool) int {
+	action := "Kick"
+	if isBan {
+		action = "Ban"
+	}
+	cmds := make([]string, 0, len(a.bulkBoxUIDs))
+	for _, uid := range a.bulkBoxUIDs {
+		cmd := a.bulkCommandFor(uid, isBan)
+		if cmd == "" {
+			continue // not ready (no identifier yet) — never send a broken command
+		}
+		target := "[" + uid + "]"
+		if row, ok := a.rosterByUID(uid); ok {
+			target = "[" + uid + "] " + rosterDisplayName(row)
+		}
+		a.recordModAudit(action, target, cmd)
+		cmds = append(cmds, cmd)
+	}
+	if len(cmds) == 0 {
+		return 0
+	}
+	a.queueOOCLines(cmds) // paced + capped (macroQueueCap)
+	a.clearModSelected()
+	a.bulkBoxUIDs = nil
+	a.warnLine = clampLine("Queued " + strconv.Itoa(len(cmds)) + " " + action + " command(s).")
+	a.warnAt = a.now()
+	return len(cmds)
 }
