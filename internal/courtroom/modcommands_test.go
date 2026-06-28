@@ -67,8 +67,12 @@ func TestKickCommand(t *testing.T) {
 		{SoftwareTsuserver, "1234", "", "spam", "/kick 1234 spam"},
 		{SoftwareTsuserver, "1234", "", "", "/kick 1234"}, // blank reason → no trailing arg
 		{SoftwareAkashi, "1234", "", "rude", "/kick 1234 rude"},
-		{SoftwareAthena, "1234", "5", "spam", "/kick -i 1234 spam"},
+		// Athena/Nyathena kick a CONNECTED client by UID — never the IPID, even when we have it
+		// (an IPID kick is a silent no-op there, the "kick does nothing" bug).
+		{SoftwareAthena, "1234", "5", "spam", "/kick -u 5 spam"},
 		{SoftwareAthena, "", "5", "spam", "/kick -u 5 spam"},
+		{SoftwareNyathena, "1234", "5", "spamming", "/kick -u 5 spamming"},
+		{SoftwareAthena, "1234", "", "spam", ""}, // no UID → can't kick (won't fall back to the IPID)
 		{SoftwareWhisker, "", "5", "", "/kick 5"},
 	}
 	for _, tc := range cases {

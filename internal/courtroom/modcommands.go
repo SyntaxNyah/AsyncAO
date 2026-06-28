@@ -180,8 +180,10 @@ func BanCommand(sw ServerSoftware, ipid, uid string, dur BanDuration, reason str
 	return ""
 }
 
-// KickCommand builds the OOC /kick for sw (same identifier rules as BanCommand). A blank reason
-// is allowed (the servers default it).
+// KickCommand builds the OOC /kick for sw. A blank reason is allowed (the servers default it).
+// NOTE: kick is NOT the same as ban — it disconnects a CONNECTED client, so the Athena/Nyathena
+// family targets the live client UID (-u), never the IPID. "/kick -i <ipid>" is silently a no-op
+// there (the IPID is the offline-capable BAN identifier), which read as "kick does nothing".
 func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 	reason = sanitizeReason(reason)
 	switch sw {
@@ -190,12 +192,11 @@ func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 			return ""
 		}
 		return strings.TrimSpace(fmt.Sprintf("/kick %s %s", ipid, reason))
-	case SoftwareAthena, SoftwareNyathena: // /kick -i <ipid> | -u <uid> <reason>
-		target := banTarget(ipid, uid)
-		if target == "" {
+	case SoftwareAthena, SoftwareNyathena: // /kick -u <uid> <reason>  (connected client → UID, never IPID)
+		if uid == "" {
 			return ""
 		}
-		return strings.TrimSpace(fmt.Sprintf("/kick %s %s", target, reason))
+		return strings.TrimSpace(fmt.Sprintf("/kick -u %s %s", uid, reason))
 	case SoftwareWhisker: // /kick <uid> [reason]
 		if uid == "" {
 			return ""
