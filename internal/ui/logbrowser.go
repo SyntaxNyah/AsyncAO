@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -295,6 +296,38 @@ func logsRootDir() string {
 	return filepath.Join(filepath.Dir(exe), "logs")
 }
 
+// exportLogView writes the current filtered result lines to a timestamped text file
+// under logs/exports/, off the render thread — a "save this search" for sharing or
+// archiving. Each line carries its server · session so a mixed-scope export stays
+// attributable.
+func (a *App) exportLogView(idx []int) {
+	lb := &a.logBrowser
+	if len(idx) == 0 {
+		a.warnLine = "Log export: nothing to export."
+		a.warnAt = a.now()
+		return
+	}
+	lines := make([]string, 0, len(idx))
+	for _, i := range idx {
+		ln := lb.lines[i]
+		lines = append(lines, "["+ln.server+" · "+ln.session+"] "+ln.text)
+	}
+	stamp := time.Now().Format("2006-01-02_15-04-05")
+	a.warnLine = clampLine("Exported " + strconv.Itoa(len(lines)) + " lines -> logs/exports/search-" + stamp + ".txt")
+	a.warnAt = a.now()
+	root := logsRootDir()
+	go func() {
+		if root == "" {
+			return
+		}
+		dir := filepath.Join(root, "exports")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return
+		}
+		_ = os.WriteFile(filepath.Join(dir, "search-"+stamp+".txt"), []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	}()
+}
+
 // listLogServerDirs returns the server folder names under logs\, sorted, bounded.
 func listLogServerDirs(root string) []string {
 	if root == "" {
@@ -452,6 +485,9 @@ func (a *App) drawLogBrowser(w, h int32) {
 	}
 
 	idx := a.logFiltered()
+	if c.Button(sdl.Rect{X: w - 230 - pad, Y: pad, W: 110, H: btnH}, "Export") {
+		a.exportLogView(idx)
+	}
 	scope := "All servers"
 	if lb.selServer >= 0 && lb.selServer < len(lb.servers) {
 		scope = lb.servers[lb.selServer]
