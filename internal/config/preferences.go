@@ -1283,14 +1283,15 @@ type OpenTab struct {
 	URL  string `json:"url"`
 }
 
-// DefaultPath returns the standard preferences file location:
-// <os.UserConfigDir>/AsyncAO/asset_preferences.json.
+// DefaultPath returns the preferences file location. It is portable-first: a
+// config set beside the executable (<exeDir>/config/) wins, otherwise the
+// classic OS config dir (<os.UserConfigDir>/AsyncAO/) — see ConfigBaseDir.
 func DefaultPath() (string, error) {
-	dir, err := os.UserConfigDir()
+	dir, err := ConfigBaseDir()
 	if err != nil {
-		return "", fmt.Errorf("config: locating user config dir: %w", err)
+		return "", err
 	}
-	return filepath.Join(dir, PrefsDirName, PrefsFileName), nil
+	return filepath.Join(dir, PrefsFileName), nil
 }
 
 // New loads preferences from path (built-in defaults when the file is absent
