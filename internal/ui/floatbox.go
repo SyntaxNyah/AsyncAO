@@ -175,6 +175,8 @@ func (a *App) closeTopOverlay() bool {
 	case c.ddOpen != "":
 		c.ddOpen = "" // an open dropdown first
 	// Blocking / confirm modals (highest priority).
+	case a.showQuitConfirm:
+		a.showQuitConfirm = false
 	case a.banBoxKind != 0:
 		a.banBoxKind = 0
 	case a.showReset:

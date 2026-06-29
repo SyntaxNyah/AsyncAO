@@ -680,6 +680,9 @@ type App struct {
 	// voiceAudio is the live capture/playback engine — non-nil ONLY while joined to
 	// a voice channel (opt-in); nil = presence-only / not in voice (voiceaudio.go).
 	voiceAudio *voiceEngine
+	// showQuitConfirm: the "Quit AsyncAO?" dialog is up (Esc in the lobby, or a
+	// quit hotkey). Skipped when QuitConfirmSkip ("don't ask again") is set.
+	showQuitConfirm bool
 	// Group Chat panel (messaging): floating, non-blocking, global (not per-session).
 	// msgSel = selected conversation (partner char name); msgInput = compose buffer.
 	showMessages   bool
@@ -4321,6 +4324,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 					a.screen = a.prevScreen // then leave the menu
 				}
 				handled = true
+			case ScreenLobby:
+				// Lobby with nothing open: Esc offers to quit — the escape hatch when
+				// you're fullscreen and can't reach the window's close button.
+				a.requestQuit()
+				handled = true
 			}
 		}
 		if handled {
@@ -4437,7 +4445,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// While a confirm modal (Disconnect / hide-sprite) is up, the modal OWNS the
 	// pointer: fence it so the screen + overlays behind draw click-proof (no
 	// fat-finger underneath). Restored just before the modal draws, below.
-	if a.confirmDisconnect || a.hidePrompt != "" {
+	if a.confirmDisconnect || a.hidePrompt != "" || a.showQuitConfirm {
 		a.ctx.fencePointer()
 	}
 
@@ -4514,11 +4522,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawUpdateAvailable(winW, winH)
 	// Confirm modals: restore the pointer (fenced above) for the modal's own
 	// buttons, then paint it over everything. One at a time.
-	if a.confirmDisconnect || a.hidePrompt != "" {
+	if a.confirmDisconnect || a.hidePrompt != "" || a.showQuitConfirm {
 		a.ctx.unfencePointer()
-		if a.confirmDisconnect {
+		switch {
+		case a.showQuitConfirm:
+			a.drawQuitConfirm(winW, winH)
+		case a.confirmDisconnect:
 			a.drawDisconnectConfirm(winW, winH)
-		} else {
+		default:
 			a.drawHideSpriteConfirm(winW, winH)
 		}
 	}

@@ -693,6 +693,7 @@ type AssetPreferences struct {
 	AssetOrigin            string                       `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
 	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
 	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
+	QuitConfirmSkip        bool                         `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on the quit dialog
 	LegacyDevTheme         bool                         `json:"legacyDevTheme"`             // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
 	OOCInLogTab            bool                         `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default ON. Off = OOC gets its own box.
 	MyProfile              ProfilePref                  `json:"profile"`                    // the user's character profile (#101)
@@ -950,6 +951,7 @@ type prefsJSON struct {
 	AssetOrigin            string           `json:"assetOrigin,omitempty"`      // Security: Origin/Referer override for asset fetches
 	VoiceInputDevice       string           `json:"voiceInputDevice,omitempty"` // voice mic device ("" = default)
 	VoiceOutVolume         int              `json:"voiceOutVolume,omitempty"`   // voice output volume (0 = default 100)
+	QuitConfirmSkip        bool             `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on quit
 	LegacyDevTheme         bool             `json:"legacyDevTheme"`             // tickbox revert to the old look; default OFF = new layout
 	OOCInLogTab            bool             `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar; default ON (Off = OOC box)
 	Profile                *ProfilePref     `json:"profile"`                    // absent = no profile (#101)
@@ -1522,6 +1524,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.AssetOrigin = strings.TrimSpace(onDisk.AssetOrigin)
 	p.VoiceInputDevice = onDisk.VoiceInputDevice
 	p.VoiceOutVolume = onDisk.VoiceOutVolume
+	p.QuitConfirmSkip = onDisk.QuitConfirmSkip
 	p.LegacyDevTheme = onDisk.LegacyDevTheme
 	p.OOCInLogTab = onDisk.OOCInLogTab
 	if onDisk.Profile != nil {
@@ -3461,6 +3464,26 @@ func (p *AssetPreferences) SetVoiceOutVol(v int) {
 		return
 	}
 	p.VoiceOutVolume = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// QuitConfirmSkipOn reports whether the user ticked "don't ask again" on the quit
+// dialog (so the quit hotkey exits immediately). Default OFF.
+func (p *AssetPreferences) QuitConfirmSkipOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.QuitConfirmSkip
+}
+
+// SetQuitConfirmSkip persists the quit-confirm "don't ask again" choice.
+func (p *AssetPreferences) SetQuitConfirmSkip(on bool) {
+	p.mu.Lock()
+	if p.QuitConfirmSkip == on {
+		p.mu.Unlock()
+		return
+	}
+	p.QuitConfirmSkip = on
 	p.mu.Unlock()
 	p.markDirty()
 }

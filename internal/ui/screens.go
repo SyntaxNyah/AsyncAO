@@ -1403,6 +1403,48 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 	}
 }
 
+// requestQuit asks to close AsyncAO: straight to quit if the user ticked "don't
+// ask again", otherwise the confirm dialog. The Esc-in-lobby escape hatch (you
+// can't always reach the window's X in fullscreen) routes through here.
+func (a *App) requestQuit() {
+	if a.d.Prefs.QuitConfirmSkipOn() {
+		a.doQuit()
+		return
+	}
+	a.showQuitConfirm = true
+}
+
+// doQuit pushes an SDL quit event, which the main loop drains to shut down
+// cleanly (prefs flush, etc.) — same path as the window's close button.
+func (a *App) doQuit() {
+	_, _ = sdl.PushEvent(&sdl.QuitEvent{Type: sdl.QUIT})
+}
+
+// drawQuitConfirm is the "Quit AsyncAO?" modal (Esc in the lobby): Quit / Cancel
+// plus a "Don't ask again" tick. Drawn top-level so it fences the screen behind.
+func (a *App) drawQuitConfirm(w, h int32) {
+	c := a.ctx
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
+	const mw, mh = 460, 184
+	m := sdl.Rect{X: (w - mw) / 2, Y: (h - mh) / 2, W: mw, H: mh}
+	c.Fill(m, ColPanel)
+	c.Border(m, ColAccent)
+	c.Heading(m.X+pad, m.Y+pad, "Quit AsyncAO?", ColText)
+	c.Label(m.X+pad, m.Y+50, "Close the AsyncAO window?", ColText)
+	skip := a.d.Prefs.QuitConfirmSkipOn()
+	if next := c.Checkbox(m.X+pad, m.Y+82, "Don't ask again", skip); next != skip {
+		a.d.Prefs.SetQuitConfirmSkip(next)
+	}
+	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 120, H: btnH}, "Quit") {
+		a.showQuitConfirm = false
+		a.doQuit()
+		return
+	}
+	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
+		a.showQuitConfirm = false
+	}
+}
+
 // handleSpriteHide opens the "hide this sprite?" confirm when the user right-clicks
 // a character sprite (default ON; Settings can disable). Hidden sprites are dropped
 // from the viewport for the session — for players who'd rather not see certain art.
