@@ -38,10 +38,27 @@ func (a *App) msgPanelRect(w, h int32) sdl.Rect {
 	return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
 }
 
-// msgConversations builds the left-column entries: existing DM threads first
-// (alphabetical), then AsyncAO-detected players in the room you don't yet have a
-// thread with (prefixed "+"). Returns display labels and the parallel partner names.
-func (a *App) msgConversations() (labels, names []string) {
+// msgEntry is one left-column row: a group (gid != 0) or a DM (keyed by name).
+type msgEntry struct {
+	label string
+	gid   uint32
+	name  string
+}
+
+// msgEntries builds the left column: groups first (alphabetical, "# name"), then DM
+// threads, then AsyncAO-detected players in the room without a thread yet ("+ name").
+func (a *App) msgEntries() []msgEntry {
+	var out []msgEntry
+	if len(a.msgGroups) > 0 {
+		gs := make([]*msgGroup, 0, len(a.msgGroups))
+		for _, g := range a.msgGroups {
+			gs = append(gs, g)
+		}
+		sort.Slice(gs, func(i, j int) bool { return strings.ToLower(gs[i].name) < strings.ToLower(gs[j].name) })
+		for _, g := range gs {
+			out = append(out, msgEntry{label: "# " + g.name, gid: g.id})
+		}
+	}
 	seen := map[string]bool{}
 	threads := make([]string, 0, len(a.pmThreads))
 	for k := range a.pmThreads {
@@ -50,24 +67,21 @@ func (a *App) msgConversations() (labels, names []string) {
 	sort.Strings(threads)
 	for _, k := range threads {
 		seen[k] = true
-		names = append(names, k)
-		labels = append(labels, k)
+		out = append(out, msgEntry{label: k, name: k})
 	}
-	if a.room == nil {
-		return labels, names
-	}
-	roster := a.rosterView()
-	for i := range roster {
-		name := strings.TrimSpace(roster[i].name)
-		lk := strings.ToLower(name)
-		if name == "" || seen[lk] || !a.room.RemoteIsAsyncAO(name) {
-			continue
+	if a.room != nil {
+		roster := a.rosterView()
+		for i := range roster {
+			name := strings.TrimSpace(roster[i].name)
+			lk := strings.ToLower(name)
+			if name == "" || seen[lk] || !a.room.RemoteIsAsyncAO(name) {
+				continue
+			}
+			seen[lk] = true
+			out = append(out, msgEntry{label: "+ " + name, name: name})
 		}
-		seen[lk] = true
-		names = append(names, name)
-		labels = append(labels, "+ "+name)
 	}
-	return labels, names
+	return out
 }
 
 // drawMessagesPanel paints the floating Group Chat window. pressed is the shared
@@ -92,43 +106,64 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	top := r.Y + floatTitleH + 8
 	bottom := r.Y + r.H - pad
 
-	// Left: conversations / AsyncAO users to start a chat with.
+	// Left column: a scrollable list of chats + a "+ New Group" button beneath it.
 	const leftW = int32(170)
 	c.Label(r.X+pad, top, "Chats", ColTextDim)
-	listR := sdl.Rect{X: r.X + pad, Y: top + 18, W: leftW, H: bottom - (top + 18)}
-	labels, names := a.msgConversations()
+	listR := sdl.Rect{X: r.X + pad, Y: top + 18, W: leftW, H: bottom - (top + 18) - btnH - 6}
+	entries := a.msgEntries()
+	labels := make([]string, len(entries))
 	sel := -1
-	for i, n := range names {
-		if strings.EqualFold(n, a.msgSel) {
+	for i, e := range entries {
+		labels[i] = e.label
+		if e.gid != 0 {
+			if e.gid == a.msgSelGroup {
+				sel = i
+			}
+		} else if a.msgSelGroup == 0 && strings.EqualFold(e.name, a.msgSel) {
 			sel = i
-			break
 		}
 	}
-	if clicked := a.drawLogList("msgchats", listR, labels, sel, &a.msgListScroll); clicked >= 0 && clicked < len(names) {
-		a.msgSel = names[clicked]
+	if clicked := a.drawLogList("msgchats", listR, labels, sel, &a.msgListScroll); clicked >= 0 && clicked < len(entries) {
+		if e := entries[clicked]; e.gid != 0 {
+			a.msgSelGroup, a.msgSel, a.msgGroupManage = e.gid, "", false
+		} else {
+			a.msgSel, a.msgSelGroup = e.name, 0
+		}
+	}
+	if c.Button(sdl.Rect{X: listR.X, Y: bottom - btnH, W: leftW, H: btnH}, "+ New Group") {
+		a.createGroup("New group")
 	}
 
-	// Right: profile header + thread + compose.
+	// Right column: group view, DM view, or a hint.
 	rx := listR.X + leftW + 10
 	rw := r.X + r.W - pad - rx
 	if rw < 140 {
 		rw = 140
 	}
-	if a.msgSel == "" {
-		c.LabelClipped(rx, top, rw, "Pick an AsyncAO player (AO badge) on the left to start a private chat.", ColTextDim)
-		return
+	switch {
+	case a.msgSelGroup != 0:
+		a.drawGroupView(rx, top, rw, bottom)
+	case a.msgSel != "":
+		a.drawDMView(rx, top, rw, bottom)
+	default:
+		c.LabelClipped(rx, top, rw, "Pick an AsyncAO player (AO badge) to DM, or + New Group to start a group chat.", ColTextDim)
 	}
-	// Profile card: name + pronouns / tagline when the partner has transmitted one.
+}
+
+// drawDMView renders the selected 1:1 conversation: profile card, thread, compose.
+func (a *App) drawDMView(rx, top, rw, bottom int32) {
+	c := a.ctx
 	hy := top
 	c.LabelClipped(rx, hy, rw, a.msgSel, ColAccent)
 	hy += 18
-	if p, ok := a.room.RemoteProfile(a.msgSel); ok {
-		if line := strings.TrimSpace(p.Pronouns + "   " + p.Tag); line != "" {
-			c.LabelClipped(rx, hy, rw, line, ColTextDim)
-			hy += 16
+	if a.room != nil {
+		if p, ok := a.room.RemoteProfile(a.msgSel); ok {
+			if line := strings.TrimSpace(p.Pronouns + "   " + p.Tag); line != "" {
+				c.LabelClipped(rx, hy, rw, line, ColTextDim)
+				hy += 16
+			}
 		}
 	}
-	// Compose row pinned to the bottom.
 	composeY := bottom - fieldH
 	sendW := c.TextWidth("Send") + 16
 	var send bool
@@ -137,8 +172,125 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 		a.sendDirectMessage(a.msgSel, a.msgInput)
 		a.msgInput = ""
 	}
-	// Thread fills the space between the header and the compose row.
 	a.drawMsgThreadBody(sdl.Rect{X: rx, Y: hy + 2, W: rw, H: composeY - (hy + 2) - 6})
+}
+
+// drawGroupView renders the selected group: header + Members / Leave, then either the
+// members/invite manager or the chat (thread + compose).
+func (a *App) drawGroupView(rx, top, rw, bottom int32) {
+	c := a.ctx
+	g := a.msgGroups[a.msgSelGroup]
+	if g == nil {
+		a.msgSelGroup = 0
+		return
+	}
+	c.LabelClipped(rx, top, rw-170, "# "+g.name, ColAccent)
+	if c.Button(sdl.Rect{X: rx + rw - 162, Y: top - 2, W: 86, H: btnH}, "Members") {
+		a.msgGroupManage = !a.msgGroupManage
+	}
+	if c.Button(sdl.Rect{X: rx + rw - 70, Y: top - 2, W: 70, H: btnH}, "Leave") {
+		a.leaveGroup(g)
+		return
+	}
+	hy := top + 22
+	if a.msgGroupManage {
+		a.drawGroupManage(g, sdl.Rect{X: rx, Y: hy, W: rw, H: bottom - hy})
+		return
+	}
+	composeY := bottom - fieldH
+	sendW := c.TextWidth("Send") + 16
+	var send bool
+	a.msgInput, send = c.TextField("msgcompose", sdl.Rect{X: rx, Y: composeY, W: rw - sendW - 6, H: fieldH}, a.msgInput, "message the group…")
+	if c.Button(sdl.Rect{X: rx + rw - sendW, Y: composeY, W: sendW, H: fieldH}, "Send") || send {
+		a.sendGroupText(g, a.msgInput)
+		a.msgInput = ""
+	}
+	a.drawGroupThread(g, sdl.Rect{X: rx, Y: hy, W: rw, H: composeY - hy - 6})
+}
+
+// drawGroupManage lists members (with a Kick for the owner) and the AsyncAO players
+// in the room you can invite. Top half = members, bottom half = invite.
+func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
+	c := a.ctx
+	owner := g.ownerUID == a.myUID()
+	const rowH = int32(20)
+	y := box.Y
+	c.Label(box.X, y, "Members:", ColTextDim)
+	y += 18
+	for _, m := range g.members {
+		if y > box.Y+box.H/2-rowH {
+			break
+		}
+		label := m.name
+		if m.uid == g.ownerUID {
+			label += "  (owner)"
+		}
+		if m.uid == a.myUID() {
+			label += "  (you)"
+		}
+		c.LabelClipped(box.X+8, y+2, box.W-90, label, ColText)
+		if owner && m.uid != a.myUID() {
+			if c.Button(sdl.Rect{X: box.X + box.W - 68, Y: y, W: 62, H: rowH - 2}, "Kick") {
+				a.kickMember(g, m.uid)
+			}
+		}
+		y += rowH
+	}
+	y = box.Y + box.H/2
+	c.Label(box.X, y, "Invite AsyncAO players here:", ColTextDim)
+	y += 18
+	if a.room == nil {
+		return
+	}
+	roster := a.rosterView()
+	for i := range roster {
+		if y > box.Y+box.H-rowH {
+			break
+		}
+		name := strings.TrimSpace(roster[i].name)
+		uid, _ := strconv.Atoi(roster[i].uid)
+		if name == "" || uid == 0 || g.hasMember(uid) || !a.room.RemoteIsAsyncAO(name) {
+			continue
+		}
+		c.LabelClipped(box.X+8, y+2, box.W-90, name, ColText)
+		if c.Button(sdl.Rect{X: box.X + box.W - 80, Y: y, W: 74, H: rowH - 2}, "Invite") {
+			a.inviteToGroup(g, uid, name)
+		}
+		y += rowH
+	}
+}
+
+// drawGroupThread renders a group's messages, newest at the bottom.
+func (a *App) drawGroupThread(g *msgGroup, box sdl.Rect) {
+	if box.H < 24 {
+		return
+	}
+	c := a.ctx
+	c.Border(box, ColPanelHi)
+	if len(g.lines) == 0 {
+		c.LabelClipped(box.X+6, box.Y+6, box.W-12, "No messages yet — say hi below.", ColTextDim)
+		return
+	}
+	const lh = int32(18)
+	clipPrev, clipHad := c.pushClip(box)
+	defer c.popClip(clipPrev, clipHad)
+	rows := int((box.H - 8) / lh)
+	if rows < 1 {
+		rows = 1
+	}
+	start := 0
+	if len(g.lines) > rows {
+		start = len(g.lines) - rows
+	}
+	y := box.Y + 4
+	for _, ln := range g.lines[start:] {
+		col, who := ColText, ln.from+": "
+		if ln.fromMe {
+			col, who = ColAccent, "You: "
+		}
+		c.LabelClipped(box.X+6, y, box.W-12, who+ln.text, col)
+		y += lh
+	}
 }
 
 // drawMsgThreadBody renders the selected DM thread, newest at the bottom.

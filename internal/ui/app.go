@@ -676,11 +676,13 @@ type App struct {
 	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin floatWin
 	// Group Chat panel (messaging): floating, non-blocking, global (not per-session).
 	// msgSel = selected conversation (partner char name); msgInput = compose buffer.
-	showMessages  bool
-	msgSel        string
-	msgInput      string
-	msgListScroll int32
-	msgGroups     map[uint32]*msgGroup // client-side group chats (keyed by group id)
+	showMessages   bool
+	msgSel         string
+	msgSelGroup    uint32 // selected group id (0 = a DM is selected via msgSel)
+	msgGroupManage bool   // group view is showing the members / invite panel
+	msgInput       string
+	msgListScroll  int32
+	msgGroups      map[uint32]*msgGroup // client-side group chats (keyed by group id)
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
