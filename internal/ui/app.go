@@ -1420,6 +1420,10 @@ type sessionState struct {
 	playerIconPages    []*render.TexturePage
 	playerIconPagesGen uint64
 	playerIconAsk      []time.Time
+	// voiceIconAsk paces char-icon fetches for the voice panel rows (timing stamps
+	// only — the texture itself comes straight from the URL-keyed Store, so there's
+	// no index→page cache to corrupt). Sized to the live peer count.
+	voiceIconAsk []time.Time
 
 	// client-side sprite position overrides, keyed by lowercased character
 	// folder: the server keeps setting positions per message, the client

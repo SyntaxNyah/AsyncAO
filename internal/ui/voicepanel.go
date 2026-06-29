@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 )
 
 // The Voice panel — a Nyathena-gated, non-blocking floating panel for the
@@ -149,6 +151,19 @@ func (a *App) voiceReconcilePeers() {
 	}
 }
 
+// voicePeerChar resolves a voice peer uid to its CHARACTER name (for the icon +
+// profile lookup) via the live roster — "" when unknown (spectator / not in this
+// area's roster snapshot).
+func (a *App) voicePeerChar(uid int) string {
+	want := strconv.Itoa(uid)
+	for _, p := range a.rosterView() {
+		if p.uid == want {
+			return strings.TrimSpace(p.name)
+		}
+	}
+	return ""
+}
+
 // drawVoicePanel paints the floating voice panel. pressed is the shared floatWin
 // press edge from drawFloatingPanels.
 func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
@@ -238,32 +253,56 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	peers := a.sess.VoicePeers()
 	sort.Ints(peers)
 	me := a.myUID()
-	for _, uid := range peers {
-		if y > r.Y+r.H-18 {
+	const vIcon = int32(20) // char-icon thumbnail size per row
+	for i, uid := range peers {
+		if y > r.Y+r.H-vIcon {
 			break
 		}
-		col := ColTextDim
-		if a.sess.VoiceIsSpeaking(uid) {
-			col = ColAccent // currently transmitting → the dot lights up
+		speaking := a.sess.VoiceIsSpeaking(uid)
+		dotCol := ColTextDim
+		if speaking {
+			dotCol = ColAccent // currently transmitting → the dot lights up
 		}
-		name := a.voicePeerName(uid)
+		c.Label(x, y+4, "•", dotCol)
+		// Character icon: straight from the URL-keyed texture Store (no index→page
+		// cache, so no reorder hazard); a paced fetch + placeholder on a miss. A
+		// speaking peer gets an accent frame so you can see who's talking at a glance.
+		ch := a.voicePeerChar(uid)
+		iconR := sdl.Rect{X: x + 14, Y: y, W: vIcon, H: vIcon}
+		c.Fill(iconR, ColPanelHi)
+		if ch != "" {
+			base := a.urls.CharIcon(ch)
+			if page, ok := a.d.Store.Get(base); ok && len(page.Frames) > 0 {
+				_ = c.Ren.Copy(page.Frames[0], nil, &iconR)
+			} else {
+				a.demandAsset(&a.voiceIconAsk, len(peers), i, base, assets.AssetTypeCharIcon) // AssetType: CharIcon
+			}
+		}
+		if speaking {
+			c.Border(iconR, ColAccent)
+		}
 		// [UID] name — the username + id the user asked to see; "(you)" for self.
+		name := a.voicePeerName(uid)
 		label := "[" + strconv.Itoa(uid) + "] " + name
 		if uid == me {
 			label += " (you)"
 		}
-		// Custom profile (pronouns · tagline) when the peer has shared one — the
-		// existing cross-client profile channel, surfaced here too.
+		// Custom profile (pronouns · tagline) from the existing cross-client profile
+		// channel — keyed by the character name, falling back to the display name.
 		if a.room != nil {
-			if p, ok := a.room.RemoteProfile(name); ok {
+			key := ch
+			if key == "" {
+				key = name
+			}
+			if p, ok := a.room.RemoteProfile(key); ok {
 				if extra := strings.TrimSpace(strings.TrimSpace(p.Pronouns) + "  " + strings.TrimSpace(p.Tag)); extra != "" {
 					label += "  ·  " + extra
 				}
 			}
 		}
-		c.Label(x, y, "•", col)
-		c.LabelClipped(x+16, y, right-(x+16), label, ColText)
-		y += 18
+		tx := x + 14 + vIcon + 6
+		c.LabelClipped(tx, y+4, right-tx, label, ColText)
+		y += vIcon + 4
 	}
 	if len(peers) == 0 {
 		c.LabelClipped(x, y, right-x, "Nobody's in voice yet.", ColTextDim)
