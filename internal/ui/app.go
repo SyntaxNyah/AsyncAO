@@ -250,6 +250,8 @@ type App struct {
 	macroBind int
 	// holdKeyArmed: the Settings hold-to-clear rebind is capturing the next key.
 	holdKeyArmed bool
+	// voicePTTBindArmed: the Voice settings push-to-talk rebind is capturing a key.
+	voicePTTBindArmed bool
 	// F3 perf HUD: toggle + the frame-time ring it graphs.
 	perfHUD     bool
 	frameDts    [perfHUDFrames]float32 // milliseconds
@@ -4387,6 +4389,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollMacroBind()
 	a.pollShownameBind()
 	a.pollICPhraseBind()
+	a.pollVoicePTT()        // voice push-to-talk: capture the rebind, or toggle the mic on the bound key
 	a.pollStylePresetBind() // #126
 	a.pollAutoReconnect()   // M2: due auto-retry fires from the lobby; a single time-compare otherwise
 	a.pollTimer()           // #97 local alarm: one compare while running, zero cost when idle

@@ -2578,6 +2578,27 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 	}
 	c.Label(pad+310, y+4, strconv.Itoa(a.d.Prefs.VoiceOutVol())+"%", ColTextDim)
 	y += 30
+
+	y = a.settingsSection(y, w, "Push-to-talk")
+	c.Label(pad, y+4, "Mic toggle key:", ColText)
+	keyLabel := a.d.Prefs.VoicePTT()
+	if a.voicePTTBindArmed {
+		keyLabel = "press a key…  (Esc cancels)"
+	} else if keyLabel == "" {
+		keyLabel = "(unbound)"
+	}
+	c.Label(pad+120, y+4, keyLabel, ColAccent)
+	y += 26
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 130, H: btnH}, "Bind key") {
+		a.voicePTTBindArmed = !a.voicePTTBindArmed
+	}
+	if c.Button(sdl.Rect{X: pad + 140, Y: y, W: 90, H: btnH}, "Clear") {
+		a.d.Prefs.SetVoicePTT("")
+		a.voicePTTBindArmed = false
+	}
+	y += 30
+	c.Label(pad, y, "Press the bound key while in voice to toggle your mic on/off (same as the Talk button).", ColTextDim)
+	y += 24
 	c.Label(pad, y, "Voice chat appears on servers that support it (Nyathena) — the Voice button shows when you enter a voice-enabled area.", ColTextDim)
 	y += 24
 	return y

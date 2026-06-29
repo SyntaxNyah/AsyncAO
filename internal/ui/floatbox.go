@@ -168,7 +168,35 @@ func (a *App) courtModalOpen() bool {
 // CANCEL, so the global Esc handler must stand down while one is active.
 func (a *App) capturingKey() bool {
 	return a.bindingFor != "" || a.shownameBindFor != "" || a.jukeBindFor != "" ||
-		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed || a.macroBind >= 0
+		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed ||
+		a.voicePTTBindArmed || a.macroBind >= 0
+}
+
+// pollVoicePTT handles the push-to-talk key: captures it when the Voice-settings
+// rebind is armed, and otherwise — while in voice — toggles the mic when the bound
+// key is pressed (gated like the other plain-key binds: no field focused, no Ctrl,
+// no other capture).
+func (a *App) pollVoicePTT() {
+	c := a.ctx
+	if a.voicePTTBindArmed {
+		if c.escPressed {
+			a.voicePTTBindArmed = false // Esc cancels the capture
+			return
+		}
+		if c.keyPressed != 0 {
+			a.d.Prefs.SetVoicePTT(sdl.GetKeyName(c.keyPressed))
+			a.voicePTTBindArmed = false
+			c.keyPressed = 0
+		}
+		return
+	}
+	if !a.voiceJoined || c.keyPressed == 0 || c.focusID != "" || c.ctrlHeld || a.capturingKey() {
+		return
+	}
+	if key := a.d.Prefs.VoicePTT(); key != "" && sdl.GetKeyName(c.keyPressed) == key {
+		a.voiceSetMic(!a.voiceMicOn)
+		c.keyPressed = 0
+	}
 }
 
 // closeTopOverlay closes the single topmost open popup / floating panel (most

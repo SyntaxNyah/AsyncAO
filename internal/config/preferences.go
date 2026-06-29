@@ -693,6 +693,7 @@ type AssetPreferences struct {
 	AssetOrigin            string                       `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
 	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
 	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
+	VoicePTTKey            string                       `json:"voicePttKey,omitempty"`      // push-to-talk key name that toggles the mic; empty = unbound
 	QuitConfirmSkip        bool                         `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on the quit dialog
 	LegacyDevTheme         bool                         `json:"legacyDevTheme"`             // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
 	OOCInLogTab            bool                         `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default ON. Off = OOC gets its own box.
@@ -951,6 +952,7 @@ type prefsJSON struct {
 	AssetOrigin            string           `json:"assetOrigin,omitempty"`      // Security: Origin/Referer override for asset fetches
 	VoiceInputDevice       string           `json:"voiceInputDevice,omitempty"` // voice mic device ("" = default)
 	VoiceOutVolume         int              `json:"voiceOutVolume,omitempty"`   // voice output volume (0 = default 100)
+	VoicePTTKey            string           `json:"voicePttKey,omitempty"`      // push-to-talk toggle key
 	QuitConfirmSkip        bool             `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on quit
 	LegacyDevTheme         bool             `json:"legacyDevTheme"`             // tickbox revert to the old look; default OFF = new layout
 	OOCInLogTab            bool             `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar; default ON (Off = OOC box)
@@ -1524,6 +1526,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.AssetOrigin = strings.TrimSpace(onDisk.AssetOrigin)
 	p.VoiceInputDevice = onDisk.VoiceInputDevice
 	p.VoiceOutVolume = onDisk.VoiceOutVolume
+	p.VoicePTTKey = onDisk.VoicePTTKey
 	p.QuitConfirmSkip = onDisk.QuitConfirmSkip
 	p.LegacyDevTheme = onDisk.LegacyDevTheme
 	p.OOCInLogTab = onDisk.OOCInLogTab
@@ -3464,6 +3467,25 @@ func (p *AssetPreferences) SetVoiceOutVol(v int) {
 		return
 	}
 	p.VoiceOutVolume = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// VoicePTT reports the push-to-talk toggle key name ("" = unbound).
+func (p *AssetPreferences) VoicePTT() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.VoicePTTKey
+}
+
+// SetVoicePTT sets (or clears) the push-to-talk toggle key.
+func (p *AssetPreferences) SetVoicePTT(k string) {
+	p.mu.Lock()
+	if p.VoicePTTKey == k {
+		p.mu.Unlock()
+		return
+	}
+	p.VoicePTTKey = k
 	p.mu.Unlock()
 	p.markDirty()
 }
