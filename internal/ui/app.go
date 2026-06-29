@@ -1798,12 +1798,17 @@ func (a *App) UIScale() int {
 	return a.uiScalePct
 }
 
-// autoScaleRefHeight is the window height (physical px) treated as 100% UI scale.
-// A taller window scales the UI up proportionally (capped) so a maximized window
-// on a big display isn't a tiny island of fixed-pixel widgets — the recurring
-// "text is too small" reports. ~800 keeps a small/medium window at 1:1 (crisp)
-// and lifts a 1080p-maximized window to ~130%.
-const autoScaleRefHeight = 800
+// autoScaleRefWidth / autoScaleRefHeight are the window size (physical px) treated
+// as 100% UI scale. A larger window scales the UI up proportionally (capped) so a
+// maximized window on a big display isn't a tiny island of fixed-pixel widgets —
+// the recurring "text is too small" reports. SetAutoScaleFromWindow scales by the
+// MORE-constrained axis (min of the two) so the UI never overflows a narrow / tall
+// (portrait) window. A ~1280x800 window stays at 1:1 (crisp); a 1080p-maximized
+// window lifts to ~130%.
+const (
+	autoScaleRefWidth  = 1280
+	autoScaleRefHeight = 800
+)
 
 // SetDisplayDPIScale records the display-DPI-derived auto scale (96 dpi = 100%),
 // floored at 100 so an unreliable / low GetDisplayDPI reading can never auto-
@@ -1827,8 +1832,10 @@ func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 		return // manual scale governs; the detected value is unused
 	}
 	winPct := 100
-	if winH > 0 {
-		winPct = int(winH) * 100 / autoScaleRefHeight
+	if winW > 0 && winH > 0 {
+		// Scale by the MORE-constrained axis so a tall / narrow (portrait) window
+		// can't drive the UI past its width and clip the fixed-size widgets.
+		winPct = min(int(winW)*100/autoScaleRefWidth, int(winH)*100/autoScaleRefHeight)
 	}
 	pct := max(100, a.dpiScalePct, winPct)
 	pct = pct / config.UIScaleStepPercent * config.UIScaleStepPercent

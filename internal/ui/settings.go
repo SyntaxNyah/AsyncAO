@@ -944,9 +944,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y = a.settingsSection(y, w, "Scale & text size")
 	// Global scale: DPI-driven by default, manual spinbox when auto is off.
 	scaleAuto := a.d.Prefs.UIScaleAuto()
-	scaleAutoLabel := "Auto UI scale from display DPI"
+	scaleAutoLabel := "Auto UI scale (fits the window + display DPI)"
 	if a.detectedScalePct > 0 {
-		scaleAutoLabel = fmt.Sprintf("Auto UI scale from display DPI (this display: %d%%)", a.detectedScalePct)
+		scaleAutoLabel = fmt.Sprintf("Auto UI scale — fits the window + display DPI (now: %d%%)", a.detectedScalePct)
 	}
 	if next := c.Checkbox(pad, y, scaleAutoLabel, scaleAuto); next != scaleAuto {
 		a.d.Prefs.SetUIScaleAuto(next)
@@ -957,7 +957,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad, y+4, fmt.Sprintf("UI scale %%:  %d (auto)", a.UIScale()), ColTextDim)
 	} else {
 		uiPct := a.sliderRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent,
-			"Zooms the WHOLE interface — text and sprites together. Auto-set from your display DPI unless you untick HiDPI auto-scale.")
+			"Zooms the WHOLE interface — text and sprites together. Auto-scale fits it to the window + display DPI; untick that above to set this yourself.")
 		if uiPct != a.uiScalePct {
 			a.uiScalePct = uiPct
 			a.ctx.SetUIScale(uiPct)
