@@ -290,6 +290,8 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	}
 	y = box.Y + box.H/2
 	c.Label(box.X, y, "Invite players in this area:", ColTextDim)
+	y += 16
+	c.LabelClipped(box.X, y, box.W-8, "Invite AsyncAO users for the full group chat — others just get a one-off PM.", ColTierYellow)
 	y += 18
 	if a.room == nil {
 		return
@@ -310,11 +312,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if name == "" || roster[i].uid == "" || uid == me || g.hasMember(uid) {
 			continue
 		}
-		label := name
-		if a.room.RemoteIsAsyncAO(name) {
-			label = name + "  (AO)" // confirmed on AsyncAO
-		}
-		c.LabelClipped(box.X+8, y+2, box.W-90, label, ColText)
+		c.LabelClipped(box.X+8, y+2, box.W-90, name, ColText)
 		if c.Button(sdl.Rect{X: box.X + box.W - 80, Y: y, W: 74, H: rowH - 2}, "Invite") {
 			a.inviteToGroup(g, uid, name)
 		}
