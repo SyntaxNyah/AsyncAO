@@ -4,6 +4,13 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.19.9 — 2026-06-29
+
+- **Fixed the OOC box overlapping the log tabs.** If you'd moved the OOC box in
+  Edit Layout (or changed UI scale afterwards), its saved position could land on
+  top of the Log / Music / Areas / … tab row. The OOC box now keeps clear of the
+  tab strip so those stay visible and clickable.
+
 ## v1.19.8 — 2026-06-29
 
 **Voice chat is confirmed working** on Nyathena — talk and hear in a

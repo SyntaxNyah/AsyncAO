@@ -1191,6 +1191,19 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	}
 	// The OOC box is its OWN slot — drag it anywhere / resize it independently of the log.
 	box := a.slotRect(slotOOC, boxDef, w, h)
+	// Guard against a stale slot override (saved at a different window size / UI scale)
+	// dropping the OOC box onto the log's tab strip — the "OOC overlapping the menu
+	// bars" report. While it sits over the right column, keep its top below the tab row
+	// so Log / Music / Areas / … stay visible and clickable.
+	if box.X < rcol.X+rcol.W && box.X+box.W > rcol.X {
+		if top := rcol.Y + btnH + 4; box.Y < top {
+			box.H -= top - box.Y
+			box.Y = top
+			if box.H < cleanOOCMinH {
+				box.H = cleanOOCMinH
+			}
+		}
+	}
 	c.Fill(box, ColPanel)
 	c.Border(box, ColAccent)
 	// Titled header bar so it reads as a clean, distinct box (brighter label = legible at a glance).
