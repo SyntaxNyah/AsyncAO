@@ -406,6 +406,7 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		s.oocSeq++
 		t.unread++
 		a.signalModcall(s.serverName, ev.Text)
+		a.autoClipModcall(s.serverName, s.icLog, ev.Text) // freeze IC context even on a backgrounded server
 	case courtroom.EventBackground:
 		a.d.Prefs.RememberServerBackground(s.serverKey, ev.Text)
 	case courtroom.EventDisconnect:

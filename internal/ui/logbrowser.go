@@ -378,6 +378,63 @@ func (a *App) exportLogView(idx []int) {
 	}()
 }
 
+// modcallClipLines is how many recent IC lines a modcall clip captures — enough
+// context to see what triggered the call without dumping the whole session.
+const modcallClipLines = 60
+
+// autoClipModcall snapshots the recent IC log when a modcall fires (sent or
+// received) and writes it to logs/<server>/modcalls/<ts>-modcall.txt off the
+// render thread, so mods/CMs always have a frozen record of the surrounding
+// context. The tail is flattened to fresh strings on the (main) calling thread
+// before the writer goroutine runs, so it never races the live icLog. Opt-out via
+// the AutoClipModcall pref (default ON); a no-op (one pref read) when off.
+func (a *App) autoClipModcall(server string, log []icEntry, notice string) {
+	if !a.d.Prefs.AutoClipModcallOn() {
+		return
+	}
+	root := logsRootDir()
+	if root == "" {
+		return
+	}
+	now := time.Now()
+	lines := buildModcallClip(server, notice, log, modcallClipLines, now)
+	folder := sanitizeLogFolder(server)
+	stamp := now.Format("2006-01-02_15-04-05")
+	a.warnLine = clampLine("Modcall clip saved -> logs/" + folder + "/modcalls/" + stamp + "-modcall.txt")
+	a.warnAt = a.now()
+	go func() {
+		dir := filepath.Join(root, folder, "modcalls")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return
+		}
+		_ = os.WriteFile(filepath.Join(dir, stamp+"-modcall.txt"), []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	}()
+}
+
+// buildModcallClip flattens the header + the last min(n, len(log)) IC lines into
+// plain text. Pure (now injected) so the clip contents are unit-testable without
+// touching disk; the returned strings are fresh, so the caller can hand them to a
+// writer goroutine without racing the live icLog.
+func buildModcallClip(server, notice string, log []icEntry, n int, now time.Time) []string {
+	if n > len(log) {
+		n = len(log)
+	}
+	lines := make([]string, 0, n+5)
+	lines = append(lines, "AsyncAO modcall clip")
+	lines = append(lines, "Server : "+server)
+	lines = append(lines, "When   : "+now.Format("2006-01-02 15:04:05"))
+	lines = append(lines, "Notice : "+notice)
+	lines = append(lines, "--- last "+strconv.Itoa(n)+" IC lines ---")
+	for _, e := range log[len(log)-n:] {
+		if e.stamp != "" {
+			lines = append(lines, "["+e.stamp+"] "+e.text)
+		} else {
+			lines = append(lines, e.text)
+		}
+	}
+	return lines
+}
+
 // listLogServerDirs returns the server folder names under logs\, sorted, bounded.
 func listLogServerDirs(root string) []string {
 	if root == "" {

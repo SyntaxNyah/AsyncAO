@@ -2500,7 +2500,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.pushOOC("[MOD CALL] "+ev.Text, "")
 			a.playThemeSFX("mod_call")
 			a.ctx.FlashWindow()
-			a.signalModcall(a.serverName, ev.Text) // desktop toast (opt-in)
+			a.signalModcall(a.serverName, ev.Text)            // desktop toast (opt-in)
+			a.autoClipModcall(a.serverName, a.icLog, ev.Text) // freeze IC context for mods (opt-out)
 		case courtroom.EventAuth:
 			// AO2 surfaces auth transitions as CLIENT lines in the OOC log
 			// (on_authentication_state_received).

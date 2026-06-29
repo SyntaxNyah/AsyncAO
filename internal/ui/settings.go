@@ -1972,6 +1972,12 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.SetDetailedLog(next)
 	}
 	y += 26
+	// Auto-clip on modcall (opt-out): save the recent IC log when a modcall fires.
+	clipMod := a.d.Prefs.AutoClipModcallOn()
+	if next := c.Checkbox(pad, y, "Auto-clip on modcall (ON by default): when a mod is called, save the last IC lines to logs/<server>/modcalls/ as evidence", clipMod); next != clipMod {
+		a.d.Prefs.SetAutoClipModcall(next)
+	}
+	y += 26
 	// Show the full song URL in the "has played a song" log line instead of just
 	// the name (a song's link, on request).
 	songURL := a.d.Prefs.ShowSongURLOn()

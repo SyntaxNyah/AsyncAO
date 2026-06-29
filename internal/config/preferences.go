@@ -155,6 +155,12 @@ const defaultEmoteButtonImages = true
 // the panel.
 const defaultShowFriendButton = true
 
+// defaultAutoClipModcall saves a small text clip of the recent IC log whenever a
+// modcall fires (sent or received), so there's always a frozen record of what was
+// happening — useful evidence for mods/CMs. Default-ON (it only writes on the rare
+// modcall event); a Settings toggle disables it.
+const defaultAutoClipModcall = true
+
 // defaultRightClickHideSprite makes right-clicking a character sprite offer to
 // hide it from the viewport (default ON; a Settings toggle disables it).
 const defaultRightClickHideSprite = true
@@ -742,6 +748,7 @@ type AssetPreferences struct {
 	MusicDuckingOn         bool                         `json:"musicDucking"`
 	PerAreaScroll          bool                         `json:"perAreaScrollback"`
 	DetailedLog            bool                         `json:"detailedLog"`
+	AutoClipModcall        bool                         `json:"autoClipModcall"`
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
@@ -998,6 +1005,7 @@ type prefsJSON struct {
 	MusicDucking           bool             `json:"musicDucking"`      // default OFF (zero value)
 	PerAreaScrollback      bool             `json:"perAreaScrollback"` // default OFF (zero value)
 	DetailedLog            bool             `json:"detailedLog"`       // default OFF (zero value)
+	AutoClipModcall        *bool            `json:"autoClipModcall"`   // default ON (pointer: absent != off)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -1321,6 +1329,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		PreferAnimated:       defaultPreferAnimated,
 		EmoteButtonImages:    defaultEmoteButtonImages,
 		ShowFriendButton:     defaultShowFriendButton,
+		AutoClipModcall:      defaultAutoClipModcall,
 		RightClickHideSprite: defaultRightClickHideSprite,
 		DragLayout:           defaultDragLayout,
 
@@ -1631,6 +1640,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.MusicDuckingOn = onDisk.MusicDucking
 	p.PerAreaScroll = onDisk.PerAreaScrollback
 	p.DetailedLog = onDisk.DetailedLog
+	if onDisk.AutoClipModcall != nil { // pointer: absent keeps the default-ON
+		p.AutoClipModcall = *onDisk.AutoClipModcall
+	}
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
 	p.ThemeRectOv = onDisk.ThemeRectOverrides
@@ -5275,6 +5287,27 @@ func (p *AssetPreferences) SetDetailedLog(on bool) {
 		return
 	}
 	p.DetailedLog = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AutoClipModcallOn reports the auto-clip-on-modcall toggle (ON by default): when
+// on, a modcall (sent or received) saves a small text clip of the recent IC log
+// to logs/<server>/modcalls/ as a frozen record for mods/CMs.
+func (p *AssetPreferences) AutoClipModcallOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AutoClipModcall
+}
+
+// SetAutoClipModcall toggles saving an IC-log clip when a modcall fires.
+func (p *AssetPreferences) SetAutoClipModcall(on bool) {
+	p.mu.Lock()
+	if p.AutoClipModcall == on {
+		p.mu.Unlock()
+		return
+	}
+	p.AutoClipModcall = on
 	p.mu.Unlock()
 	p.markDirty()
 }
