@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -82,5 +83,41 @@ func TestResolveConfigBase(t *testing.T) {
 				t.Errorf("portable = %v, want %v", portable, tc.wantPortable)
 			}
 		})
+	}
+}
+
+func TestCopyTree(t *testing.T) {
+	src := t.TempDir()
+	dst := filepath.Join(t.TempDir(), "config") // dst should be created
+
+	write := func(rel, body string) {
+		full := filepath.Join(src, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(PrefsFileName, `{"a":1}`)
+	write(JukeboxFileName, `{"playlists":[]}`)
+	write(filepath.Join(NotebookDirName, "miku-pizza-deadbeef.json"), `{"lines":["x"]}`)
+	write(writeProbeName, "junk") // must be skipped
+
+	if err := copyTree(src, dst); err != nil {
+		t.Fatalf("copyTree: %v", err)
+	}
+
+	for _, rel := range []string{PrefsFileName, JukeboxFileName, filepath.Join(NotebookDirName, "miku-pizza-deadbeef.json")} {
+		if _, err := os.Stat(filepath.Join(dst, rel)); err != nil {
+			t.Errorf("missing copied %s: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dst, writeProbeName)); err == nil {
+		t.Errorf("write-probe %q should not have been copied", writeProbeName)
+	}
+	// Source is left intact (copy, never move).
+	if _, err := os.Stat(filepath.Join(src, PrefsFileName)); err != nil {
+		t.Errorf("source prefs vanished after copy: %v", err)
 	}
 }

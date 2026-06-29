@@ -1,10 +1,17 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sync"
 )
+
+// ErrAlreadyPortable is returned by MigrateToPortable when the active config is
+// already the portable one (nothing to copy).
+var ErrAlreadyPortable = errors.New("config: already portable")
 
 // PortableDirName is the folder beside the executable that holds a *portable*
 // config set (asset_preferences.json, notebooks/, jukebox.json). Its presence
@@ -30,28 +37,44 @@ const writeProbeName = ".asyncao-writetest"
 //     (the common case — unzipped to Desktop/Downloads/a stick); else fall back
 //     to the OS config dir (Program Files / locked-down installs).
 //
-// This runs once at startup (off every hot path), so the writability probe in
-// step 3 — a single create+delete — is fine under hard rule #2.
-func ConfigBaseDir() (string, error) {
-	exeDir := executableDir()
-	osDir, osErr := os.UserConfigDir()
-	if exeDir == "" && osDir == "" {
-		return "", fmt.Errorf("config: locating config dir: %w", osErr)
-	}
-	dir, _ := resolveConfigBase(exeDir, osDir, fileExists, dirWritable)
-	return dir, nil
+// The result is memoized: the active location is fixed for the process lifetime,
+// so the writability probe in step 3 (a single create+delete) runs exactly once
+// — never per call. That matters because DefaultPath() flows through here and is
+// read on hot paths (e.g. the settings screen shows the path every frame); a
+// per-frame disk probe would violate hard rule #2.
+var (
+	configBaseOnce     sync.Once
+	configBaseDirCache string
+	configBasePortable bool
+	configBaseErr      error
+)
+
+func resolveConfigBaseOnce() {
+	configBaseOnce.Do(func() {
+		exeDir := executableDir()
+		osDir, osErr := os.UserConfigDir()
+		if exeDir == "" && osDir == "" {
+			configBaseErr = fmt.Errorf("config: locating config dir: %w", osErr)
+			return
+		}
+		configBaseDirCache, configBasePortable = resolveConfigBase(exeDir, osDir, fileExists, dirWritable)
+	})
 }
 
-// ConfigIsPortable reports whether ConfigBaseDir resolves to a portable location
-// beside the executable (vs. the OS config dir). Drives the Data-tab readout.
+// ConfigBaseDir returns the directory that holds asset_preferences.json and the
+// rest of AsyncAO's per-user data. See the package doc above for the policy.
+func ConfigBaseDir() (string, error) {
+	resolveConfigBaseOnce()
+	return configBaseDirCache, configBaseErr
+}
+
+// ConfigIsPortable reports whether the active config (ConfigBaseDir) is the
+// portable location beside the executable (vs. the OS config dir). Memoized;
+// after a MigrateToPortable it still reflects *this* session — the move takes
+// effect on the next launch, which is exactly what the UI should report.
 func ConfigIsPortable() bool {
-	exeDir := executableDir()
-	osDir, _ := os.UserConfigDir()
-	if exeDir == "" && osDir == "" {
-		return false
-	}
-	_, portable := resolveConfigBase(exeDir, osDir, fileExists, dirWritable)
-	return portable
+	resolveConfigBaseOnce()
+	return configBasePortable
 }
 
 // PortableConfigDir returns where a portable config set would live for this exe
@@ -109,6 +132,93 @@ func resolveConfigBase(exeDir, osDir string, exists func(string) bool, writable 
 	}
 	// Only reachable when osDir is empty; portableDir is the sole option.
 	return portableDir, portableDir != ""
+}
+
+// MigrateToPortable copies the *entire* active config set — preferences,
+// notebooks/ and jukebox.json — into the portable folder beside the executable
+// (<exeDir>/config), so the next launch resolves there and the folder travels
+// with a copied install or a USB stick. The source (e.g. AppData) is left
+// untouched: migration is a copy, never a move, so a botched run can't lose
+// settings. Takes effect on the next launch. Returns the destination directory.
+//
+// All three are copied together because, while resolution keeps them in one
+// place automatically, the migration copy is the single spot where that
+// consistency isn't free — copying only prefs would strand notebooks/jukebox.
+func (p *AssetPreferences) MigrateToPortable() (string, error) {
+	dest := PortableConfigDir()
+	if dest == "" {
+		return "", errors.New("config: cannot locate the executable directory")
+	}
+	src := filepath.Dir(p.path)
+	if filepath.Clean(src) == filepath.Clean(dest) {
+		return dest, ErrAlreadyPortable
+	}
+	// Flush any debounced changes so the on-disk source is current before copy.
+	if err := p.SaveNow(); err != nil {
+		return "", err
+	}
+	if err := copyTree(src, dest); err != nil {
+		return "", err
+	}
+	return dest, nil
+}
+
+// copyTree recursively copies the contents of src into dst (creating dst), never
+// removing anything from src. The write-probe throwaway is skipped.
+func copyTree(src, dst string) error {
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return fmt.Errorf("config: reading %s: %w", src, err)
+	}
+	if err := os.MkdirAll(dst, prefsDirPerm); err != nil {
+		return fmt.Errorf("config: creating %s: %w", dst, err)
+	}
+	for _, e := range entries {
+		if e.Name() == writeProbeName {
+			continue
+		}
+		s := filepath.Join(src, e.Name())
+		d := filepath.Join(dst, e.Name())
+		if e.IsDir() {
+			if err := copyTree(s, d); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := copyFile(s, d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// copyFile copies a single regular file s to d (overwriting), via a temp file +
+// rename so an interrupted copy can't leave a half-written destination.
+func copyFile(s, d string) error {
+	in, err := os.Open(s)
+	if err != nil {
+		return fmt.Errorf("config: opening %s: %w", s, err)
+	}
+	defer in.Close()
+	tmp, err := os.CreateTemp(filepath.Dir(d), prefsTmpPattern)
+	if err != nil {
+		return fmt.Errorf("config: temp for %s: %w", d, err)
+	}
+	tmpName := tmp.Name()
+	if _, err := io.Copy(tmp, in); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("config: copying %s: %w", s, err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, d); err != nil {
+		_ = os.Remove(tmpName)
+		return fmt.Errorf("config: placing %s: %w", d, err)
+	}
+	return nil
 }
 
 // executableDir returns the directory containing the running executable, with
