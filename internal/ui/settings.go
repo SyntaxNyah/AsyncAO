@@ -192,9 +192,10 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 	},
 	tabHotkeys: {
-		// sections: Hotkeys, Macros, IC quick-phrases.
+		// sections: Hotkeys, Macros, IC quick-phrases, Export/Import + config folder.
 		"hotkey", "hotkeys", "keybind", "keybinding", "shortcut",
 		"macro", "macros", "ic quick", "quick phrase", "phrase", "export hotkeys", "import", "backup",
+		"config folder", "config location", "settings file", "where are my settings", "appdata", "asset_preferences", "open config",
 	},
 	tabStudio: {
 		// sections: Scene recording, Instant replay, Scene maker, Recordings, Replay
@@ -2464,6 +2465,13 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 		}
 	}
 	y += 36
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 200, H: btnH}, "Open config folder") {
+		openConfigFolder()
+	}
+	c.Label(pad+210, y+5, "your settings (asset_preferences.json), case notebooks & jukebox live here:", ColTextDim)
+	y += 24
+	c.LabelClipped(pad, y, a.formW2()-pad, configDir(), ColAccent) // the actual path, so it's easy to find
+	y += 30
 	return y
 }
 
