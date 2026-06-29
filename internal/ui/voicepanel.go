@@ -267,6 +267,19 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		hdr += " / max " + strconv.Itoa(caps.MaxPeers)
 	}
 	c.Label(x, y, hdr, ColTextDim)
+	// Voice-latency chip: the output buffer depth (ms) we're adding — grows when the
+	// adaptive jitter buffer deepens on a shaky connection, shrinks when it's smooth.
+	if a.voiceJoined && a.voiceAudio != nil {
+		lat := a.voiceAudio.bufferMs()
+		latCol := ColTierGreen
+		if lat > 120 {
+			latCol = ColTierYellow
+		}
+		if lat > 240 {
+			latCol = ColDanger
+		}
+		c.Label(right-90, y, "~"+strconv.Itoa(lat)+" ms", latCol)
+	}
 	y += 18
 	peers := a.sess.VoicePeers()
 	sort.Ints(peers)

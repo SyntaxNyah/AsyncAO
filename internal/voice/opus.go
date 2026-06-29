@@ -11,6 +11,12 @@ package voice
 /*
 #cgo pkg-config: opus
 #include <opus.h>
+
+// opus_encoder_ctl is variadic, which cgo can't call directly — wrap the few
+// request macros we use in fixed-signature helpers.
+static int asyncao_opus_set_bitrate(OpusEncoder *e, int v)   { return opus_encoder_ctl(e, OPUS_SET_BITRATE(v)); }
+static int asyncao_opus_set_dtx(OpusEncoder *e, int v)       { return opus_encoder_ctl(e, OPUS_SET_DTX(v)); }
+static int asyncao_opus_set_complexity(OpusEncoder *e, int v){ return opus_encoder_ctl(e, OPUS_SET_COMPLEXITY(v)); }
 */
 import "C"
 
@@ -71,6 +77,32 @@ func (e *Encoder) Close() {
 	if e.enc != nil {
 		C.opus_encoder_destroy(e.enc)
 		e.enc = nil
+	}
+}
+
+// Tune applies AsyncAO's voice encoder settings: a target bitrate (bits/sec), DTX
+// (discontinuous transmission — don't send during silence, which cuts bandwidth
+// and is the main resilience lever over a reliable TCP/WebSocket transport), and a
+// middling complexity (good quality, low CPU). Best-effort; a failed ctl is
+// non-fatal (voice still works at the encoder defaults).
+func (e *Encoder) Tune(bitrate int, dtx bool) {
+	if e.enc == nil {
+		return
+	}
+	C.asyncao_opus_set_bitrate(e.enc, C.int(bitrate))
+	d := C.int(0)
+	if dtx {
+		d = 1
+	}
+	C.asyncao_opus_set_dtx(e.enc, d)
+	C.asyncao_opus_set_complexity(e.enc, 5)
+}
+
+// SetBitrate adjusts the encoder's target bitrate (bits/sec) live — used for the
+// adaptive-bitrate path (drop it when the jitter buffer backs up). Best-effort.
+func (e *Encoder) SetBitrate(bps int) {
+	if e.enc != nil {
+		C.asyncao_opus_set_bitrate(e.enc, C.int(bps))
 	}
 }
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/base64"
+	"time"
 	"unsafe"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -40,6 +41,22 @@ const (
 	// voiceCaptureDrainCap caps frames encoded per pump so a backlog can't stall a
 	// frame (bounded work per render frame).
 	voiceCaptureDrainCap = 4
+
+	// Adaptive jitter buffer bounds (in 20 ms frames): the playback target grows
+	// toward Max when audio runs dry while frames are still arriving (network jitter
+	// — TCP retransmit delays, since voice rides the reliable WebSocket), and decays
+	// toward Min when steady, trading latency for smoothness only as needed.
+	voicePlayMinFrames = 2
+	voicePlayMaxFrames = 10
+	// voiceBytesPerMs converts queued bytes → ms of audio (48 kHz * 2 bytes / 1000).
+	voiceBytesPerMs = voice.SampleRate * 2 / 1000
+	// voiceAdaptEveryFrames re-evaluates the buffer/bitrate ~once a second (60 fps).
+	voiceAdaptEveryFrames = 60
+
+	// Opus target bitrates (bits/sec): steady vs. the lower rate used when the buffer
+	// keeps backing up (a struggling connection — fewer bytes catch up faster).
+	voiceBitrate    = 24000
+	voiceBitrateLow = 12000
 )
 
 // voicePeer is one remote speaker: its decoder + a bounded jitter FIFO of decoded
@@ -66,6 +83,13 @@ type voiceEngine struct {
 	acc        []int32   // reusable mix accumulator (FrameSize)
 	out        []int16   // reusable mixed-output scratch (FrameSize)
 	mixScratch [][]int16 // reusable per-frame "one frame per active peer" gather
+
+	// Adaptive jitter buffer + bitrate state.
+	playTarget int       // current output-buffer target, in frames (voicePlayMin..Max)
+	lastRecv   time.Time // when the last peer frame arrived (to tell jitter from silence)
+	starves    int       // dry-buffer-while-receiving events this adapt window
+	adaptCtr   int       // frames since the last adapt evaluation
+	lowBitrate bool      // currently on the reduced bitrate
 }
 
 // newVoiceEngine opens the audio devices and the encoder. captureDev is the mic
@@ -87,13 +111,14 @@ func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voic
 		outVol = 100
 	}
 	e := &voiceEngine{
-		playback: play,
-		peers:    make(map[int]*voicePeer),
-		send:     send,
-		outVol:   outVol,
-		capBuf:   make([]byte, voiceFrameBytes),
-		acc:      make([]int32, voice.FrameSize),
-		out:      make([]int16, voice.FrameSize),
+		playback:   play,
+		peers:      make(map[int]*voicePeer),
+		send:       send,
+		outVol:     outVol,
+		capBuf:     make([]byte, voiceFrameBytes),
+		acc:        make([]int32, voice.FrameSize),
+		out:        make([]int16, voice.FrameSize),
+		playTarget: voicePlayTargetFrames,
 	}
 	sdl.PauseAudioDevice(play, false) // start the output clock
 
@@ -101,6 +126,7 @@ func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voic
 	// asks SDL for the system-default recording device.
 	if cap, err := sdl.OpenAudioDevice(captureDev, true, &spec, nil, 0); err == nil {
 		if enc, err := voice.NewEncoder(); err == nil {
+			enc.Tune(voiceBitrate, true) // DTX on (skip silence) + steady VOIP bitrate
 			e.capture, e.enc = cap, enc
 			sdl.PauseAudioDevice(cap, false)
 		} else {
@@ -159,6 +185,7 @@ func (e *voiceEngine) pushRemote(uid int, b64 string) {
 	if err != nil {
 		return
 	}
+	e.lastRecv = time.Now() // mark "audio is arriving" — distinguishes jitter from silence
 	p.frames = append(p.frames, pcm)
 	if len(p.frames) > voiceJitterCap { // drop oldest — bounded backlog
 		p.frames = p.frames[len(p.frames)-voiceJitterCap:]
@@ -184,6 +211,46 @@ func (e *voiceEngine) pump() {
 	}
 	e.pumpCapture()
 	e.pumpPlayback()
+	e.adaptVoice()
+}
+
+// adaptVoice re-tunes the jitter buffer + bitrate ~once a second: if the output
+// ran dry while frames were still arriving (network jitter), deepen the buffer and
+// drop to the lower bitrate; when it's been steady, shrink the buffer back toward
+// minimum and restore full bitrate. Bounded both ways, so the worst case is a
+// slightly deeper buffer, never broken audio.
+func (e *voiceEngine) adaptVoice() {
+	if e.adaptCtr++; e.adaptCtr < voiceAdaptEveryFrames {
+		return
+	}
+	e.adaptCtr = 0
+	if e.starves > 0 { // jittery → more buffer, less bitrate
+		if e.playTarget < voicePlayMaxFrames {
+			e.playTarget++
+		}
+		if !e.lowBitrate && e.enc != nil {
+			e.enc.SetBitrate(voiceBitrateLow)
+			e.lowBitrate = true
+		}
+	} else { // steady → ease back toward low latency / full quality
+		if e.playTarget > voicePlayMinFrames {
+			e.playTarget--
+		}
+		if e.lowBitrate && e.playTarget <= voicePlayTargetFrames && e.enc != nil {
+			e.enc.SetBitrate(voiceBitrate)
+			e.lowBitrate = false
+		}
+	}
+	e.starves = 0
+}
+
+// bufferMs reports how much audio is buffered for playback, in milliseconds — the
+// voice output latency we add (shown on the voice-latency chip). 0 when not in voice.
+func (e *voiceEngine) bufferMs() int {
+	if e == nil || e.playback == 0 {
+		return 0
+	}
+	return int(sdl.GetQueuedAudioSize(e.playback)) / voiceBytesPerMs
 }
 
 func (e *voiceEngine) pumpCapture() {
@@ -206,9 +273,15 @@ func (e *voiceEngine) pumpCapture() {
 }
 
 func (e *voiceEngine) pumpPlayback() {
-	// Pace to the output queue so latency stays bounded: only mix-and-queue while
-	// fewer than the target frames are buffered.
-	for sdl.GetQueuedAudioSize(e.playback) < voicePlayTargetFrames*voiceFrameBytes {
+	// Starve = the output ran dry while a peer's audio was arriving (< ~250 ms ago) —
+	// a real jitter underrun, not just silence (DTX stops frames during silence, so a
+	// quiet gap must NOT be counted). adaptVoice deepens the buffer when this happens.
+	if sdl.GetQueuedAudioSize(e.playback) == 0 && time.Since(e.lastRecv) < 250*time.Millisecond {
+		e.starves++
+	}
+	// Pace to the (adaptive) output target so latency stays bounded: only mix-and-queue
+	// while fewer than playTarget frames are buffered.
+	for sdl.GetQueuedAudioSize(e.playback) < uint32(e.playTarget)*voiceFrameBytes {
 		if !e.mixOneFrame() {
 			return // nobody has audio queued — let the buffer drain to silence
 		}

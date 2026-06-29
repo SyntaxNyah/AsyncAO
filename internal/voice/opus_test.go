@@ -49,6 +49,26 @@ func TestOpusRoundTrip(t *testing.T) {
 	}
 }
 
+func TestOpusTune(t *testing.T) {
+	enc, err := NewEncoder()
+	if err != nil {
+		t.Fatalf("NewEncoder: %v", err)
+	}
+	defer enc.Close()
+	enc.Tune(voiceTestBitrate, true) // DTX on + a bitrate
+	enc.SetBitrate(12000)            // live bitrate change (adaptive path)
+	// Still encodes a full frame after tuning.
+	pcm := make([]int16, FrameSize)
+	for i := range pcm {
+		pcm[i] = int16(4000 * math.Sin(2*math.Pi*220*float64(i)/SampleRate))
+	}
+	if pkt, err := enc.Encode(pcm); err != nil || len(pkt) == 0 {
+		t.Fatalf("Encode after Tune: pkt=%d err=%v", len(pkt), err)
+	}
+}
+
+const voiceTestBitrate = 24000
+
 func TestOpusEncodeWrongFrameSize(t *testing.T) {
 	enc, err := NewEncoder()
 	if err != nil {
