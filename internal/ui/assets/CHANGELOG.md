@@ -4,6 +4,30 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.19.5 — 2026-06-29
+
+Voice chat can actually talk now, and Group Chat is much easier to find — both
+from playtest feedback on Skrapegropen.
+
+### Voice chat — live audio
+- **You can talk and hear now.** On a **Nyathena** server, open **Voice
+  (Nyathena)**, **Join voice**, and hit **Talk** — your mic is Opus-encoded and
+  relayed to the room, and you hear everyone else mixed together. Plus an
+  **output volume** slider and **Mute others**.
+- It's **opt-in** (nothing runs until you join a voice channel) and **fail-safe**:
+  no microphone falls back to **listen-only**, no audio device falls back to
+  **presence-only** — it never interferes with anything else.
+- **Each voice row shows the person's character portrait, `[UID]` + name, and
+  their custom profile** (pronouns · tagline), and the icon gets an **accent
+  frame while they're talking** so you can see who's speaking at a glance.
+
+### Group Chat — easier to find
+- **A main "Group Chat" button** in the courtroom button row (on by default —
+  hide it in **Settings → Chat**), so it's not buried in Extras.
+- **Start a group from the Friends list** — a **"+ New group chat"** button opens
+  the panel ready to invite your friends.
+- Fixed the Group Chat chip overlapping the OOC chip in the layout editor.
+
 ## v1.19.0 — 2026-06-29
 
 A big one — private messaging between AsyncAO players, the first slice of
