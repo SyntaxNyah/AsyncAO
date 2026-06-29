@@ -4302,19 +4302,30 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// Scoped to the menu screens so the courtroom's own ESC behaviour is
 	// untouched; skipped while a key-bind capture or an ESC-owning overlay
 	// (hotkey sheet / update modal) is up so it never steals their key.
-	if a.ctx.keyPressed == sdl.K_ESCAPE &&
-		a.bindingFor == "" && a.shownameBindFor == "" && !a.showHotkeys && !a.updateShow && !a.showReset {
-		switch a.screen {
-		case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenLogs:
-			switch {
-			case a.ctx.ddOpen != "":
-				a.ctx.ddOpen = "" // first ESC: close an open dropdown
-			case a.ctx.focusID != "":
-				a.ctx.focusID = "" // …or drop a focused field
-			default:
-				a.screen = a.prevScreen // then leave the menu
+	// Esc backs out of whatever's open — one layer per press. On a full-screen MENU
+	// it closes a dropdown / field then leaves; on the courtroom or lobby it closes
+	// the topmost popup or floating panel (Group Chat, Voice, Evidence, Pair, Mod,
+	// CM, Call Mod, Timer, …) via closeTopOverlay. Skipped while a key-bind capture
+	// or the layout editor owns Esc.
+	if a.ctx.keyPressed == sdl.K_ESCAPE && a.bindingFor == "" && a.shownameBindFor == "" && !a.classicEdit {
+		// Close the topmost popup / panel first (works on any screen — e.g. the
+		// reset-confirm or a dropdown over Settings); only if nothing was open do we
+		// fall back to leaving a full-screen menu (drop a focused field, then exit).
+		handled := a.closeTopOverlay()
+		if !handled {
+			switch a.screen {
+			case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenLogs:
+				if a.ctx.focusID != "" {
+					a.ctx.focusID = "" // first ESC: drop a focused field
+				} else {
+					a.screen = a.prevScreen // then leave the menu
+				}
+				handled = true
 			}
+		}
+		if handled {
 			a.ctx.keyPressed = 0
+			a.ctx.escPressed = false // don't let a draw-time Esc handler double-fire
 		}
 	}
 	// F11 toggles fullscreen on any screen — the keyboard escape when a too-big

@@ -163,6 +163,63 @@ func (a *App) courtModalOpen() bool {
 		a.showEmojiPicker || a.banBoxKind != 0 || a.classicEdit
 }
 
+// closeTopOverlay closes the single topmost open popup / floating panel (most
+// modal first), returning whether it closed anything. This is the Esc "back out
+// of whatever's open" handler for the courtroom & lobby — one press, one layer,
+// so repeated Esc peels overlays off in order. The layout editor (classicEdit)
+// is excluded: it owns Esc itself (Done + save). Menu SCREENS are handled by the
+// caller; this is only the overlay flags.
+func (a *App) closeTopOverlay() bool {
+	c := a.ctx
+	switch {
+	case c.ddOpen != "":
+		c.ddOpen = "" // an open dropdown first
+	// Blocking / confirm modals (highest priority).
+	case a.banBoxKind != 0:
+		a.banBoxKind = 0
+	case a.showReset:
+		a.showReset = false
+	case a.updateShow:
+		a.updateShow = false
+	case a.showLogin:
+		a.showLogin = false
+	case a.showEmojiPicker:
+		a.showEmojiPicker = false
+	case a.showReactPicker:
+		a.showReactPicker = false
+	case a.bgPick.show:
+		a.bgPick.show = false
+	case a.showIni:
+		a.showIni = false
+	case a.showTimer:
+		a.showTimer = false
+	case a.showUICfg:
+		a.showUICfg = false
+	case a.pairPopupOpen:
+		a.pairPopupOpen = false
+	case a.showHotkeys:
+		a.showHotkeys, a.hkCache = false, nil
+	// Non-blocking floating panels.
+	case a.showVoice:
+		a.showVoice = false
+	case a.showMessages:
+		a.showMessages = false
+	case a.showEvid:
+		a.showEvid = false
+	case a.showModcall:
+		a.showModcall = false
+	case a.showModDash:
+		a.showModDash = false
+	case a.showCMPanel:
+		a.showCMPanel = false
+	case a.showPair:
+		a.showPair = false
+	default:
+		return false
+	}
+	return true
+}
+
 // extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any
 // torn-off boxes) may show at all: a live courtroom with no blocking popup over
 // it. Torn-off boxes ride on this alone, so they persist when the main box is
