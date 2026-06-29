@@ -86,7 +86,7 @@ func (a *App) voiceJoinChannel() {
 			if a.sess != nil {
 				a.sess.VoiceFrame(b64) // single send path: main loop only
 			}
-		})
+		}, a.d.Prefs.VoiceInput(), a.d.Prefs.VoiceOutVol())
 		if err == nil {
 			a.voiceAudio = eng
 		}
@@ -233,6 +233,7 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		}
 		if nv := c.Slider("voiceOutVol", sdl.Rect{X: x + 140, Y: y, W: right - (x + 140), H: btnH}, vol, 100); nv != vol && a.voiceAudio != nil {
 			a.voiceAudio.setOutVol(int(nv))
+			a.d.Prefs.SetVoiceOutVol(int(nv)) // remember across sessions
 		}
 		y += btnH + 6
 	}

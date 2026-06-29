@@ -116,10 +116,10 @@ var settings = settingsState{
 // Settings tabs: the screen is split into these categories so it's
 // navigable instead of one long scroll. numSettingsTabs sizes the per-tab
 // scroll array (keep it == len(settingsTabNames)).
-const numSettingsTabs = 10
+const numSettingsTabs = 11
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Reset",
+	"General", "Theme", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Reset",
 }
 
 // Tab indices (order matches settingsTabNames).
@@ -133,6 +133,7 @@ const (
 	tabHotkeys
 	tabStudio
 	tabData
+	tabVoice
 	tabReset
 )
 
@@ -201,6 +202,11 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// sections: Your settings file, Back up / move, Other data.
 		"data", "settings file", "config folder", "config location", "open config", "open settings file",
 		"asset_preferences", "where are my settings", "appdata", "export", "import", "backup", "portable", "usb", "move to another pc", "json",
+	},
+	tabVoice: {
+		// sections: Microphone, Output.
+		"voice", "voice chat", "microphone", "mic", "input device", "recording device", "capture",
+		"output volume", "speaker", "nyathena", "vc", "ptt", "talk",
 	},
 	tabStudio: {
 		// sections: Scene recording, Instant replay, Scene maker, Recordings, Replay
@@ -377,6 +383,8 @@ func (a *App) drawSettings(w, h int32) {
 		y = a.drawSettingsStudio(y, w)
 	case tabData:
 		y = a.drawSettingsData(y, w)
+	case tabVoice:
+		y = a.drawSettingsVoice(y, w)
 	case tabReset:
 		y = a.drawSettingsReset(y, w)
 	}
@@ -2530,6 +2538,72 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	c.Label(pad, y, "The streamed-asset cache is separate — view or clear it under Assets → Cache.", ColTextDim)
 	y += 24
 	return y
+}
+
+// drawSettingsVoice is the Voice tab: pick the microphone (system default unless
+// you choose another) and set the output volume. Voice chat itself only appears
+// on servers that support it (Nyathena) — the Voice button shows in a VC area.
+func (a *App) drawSettingsVoice(y, _ int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	w := a.formW2()
+
+	y = a.settingsSection(y, w, "Microphone")
+	cur := a.d.Prefs.VoiceInput()
+	curLabel := cur
+	if curLabel == "" {
+		curLabel = "System default"
+	}
+	c.Label(pad, y+4, "Input device:", ColText)
+	c.LabelClipped(pad+110, y+4, w-pad-110, curLabel, ColAccent)
+	y += 26
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Next device") {
+		a.cycleVoiceInput()
+	}
+	if c.Button(sdl.Rect{X: pad + 160, Y: y, W: 150, H: btnH}, "System default") {
+		a.d.Prefs.SetVoiceInput("")
+	}
+	y += 30
+	c.Label(pad, y, "Uses your system default mic unless you pick another. Takes effect next time you Join voice.", ColTextDim)
+	y += 24
+
+	y = a.settingsSection(y, w, "Output")
+	c.Label(pad, y+4, "Volume:", ColText)
+	vol := int32(a.d.Prefs.VoiceOutVol())
+	if nv := c.Slider("voiceOutVolSet", sdl.Rect{X: pad + 80, Y: y, W: 220, H: btnH}, vol, 100); nv != vol {
+		a.d.Prefs.SetVoiceOutVol(int(nv))
+		if a.voiceAudio != nil {
+			a.voiceAudio.setOutVol(int(nv)) // apply live if we're in voice
+		}
+	}
+	c.Label(pad+310, y+4, strconv.Itoa(a.d.Prefs.VoiceOutVol())+"%", ColTextDim)
+	y += 30
+	c.Label(pad, y, "Voice chat appears on servers that support it (Nyathena) — the Voice button shows when you enter a voice-enabled area.", ColTextDim)
+	y += 24
+	return y
+}
+
+// cycleVoiceInput advances the chosen mic to the next capture device (wrapping
+// through "System default"). Enumerated on click, so there's no per-frame SDL
+// device scan.
+func (a *App) cycleVoiceInput() {
+	n := sdl.GetNumAudioDevices(true)
+	devs := make([]string, 0, n+1)
+	devs = append(devs, "") // system default first
+	for i := 0; i < n; i++ {
+		if name := sdl.GetAudioDeviceName(i, true); name != "" {
+			devs = append(devs, name)
+		}
+	}
+	cur := a.d.Prefs.VoiceInput()
+	idx := 0
+	for i, d := range devs {
+		if d == cur {
+			idx = i
+			break
+		}
+	}
+	a.d.Prefs.SetVoiceInput(devs[(idx+1)%len(devs)])
 }
 
 // measureDiskCacheAsync walks the T3 directory off-thread and reports the

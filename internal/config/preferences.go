@@ -683,17 +683,19 @@ type AssetPreferences struct {
 	RainbowSpriteSpeed     int                          `json:"rainbowSpriteSpeed"`
 	ReplayPlaybackSpeed    int                          `json:"replaySpeed"`
 	Export                 ExportOptions                `json:"export"`
-	MySpriteStyle          SpriteStylePref              `json:"mySpriteStyle"`          // the user's own transmitted sprite style (#103)
-	SavedStyles            []StylePreset                `json:"stylePresets,omitempty"` // #126 saved style+colour+emote moods
-	HideSpriteStyles       bool                         `json:"hideSpriteStyles"`       // ignore others' transmitted styles (default OFF = show)
-	HideReactions          bool                         `json:"hideReactions"`          // ignore others' transmitted emoji reactions (#2) (default OFF = show)
-	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`     // #127 pre-grab a char's FULL sprite set on load (default OFF)
-	PingChip               bool                         `json:"pingChip"`               // #128 show the connection-quality chip (default OFF)
-	ValidateTLSCerts       bool                         `json:"validateTLSCerts"`       // power-user Security toggle: strictly verify wss:// TLS certs. Default OFF = accept self-signed (most community AO servers use them)
-	AssetOrigin            string                       `json:"assetOrigin,omitempty"`  // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
-	LegacyDevTheme         bool                         `json:"legacyDevTheme"`         // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
-	OOCInLogTab            bool                         `json:"oocInLogTab"`            // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default ON. Off = OOC gets its own box.
-	MyProfile              ProfilePref                  `json:"profile"`                // the user's character profile (#101)
+	MySpriteStyle          SpriteStylePref              `json:"mySpriteStyle"`              // the user's own transmitted sprite style (#103)
+	SavedStyles            []StylePreset                `json:"stylePresets,omitempty"`     // #126 saved style+colour+emote moods
+	HideSpriteStyles       bool                         `json:"hideSpriteStyles"`           // ignore others' transmitted styles (default OFF = show)
+	HideReactions          bool                         `json:"hideReactions"`              // ignore others' transmitted emoji reactions (#2) (default OFF = show)
+	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`         // #127 pre-grab a char's FULL sprite set on load (default OFF)
+	PingChip               bool                         `json:"pingChip"`                   // #128 show the connection-quality chip (default OFF)
+	ValidateTLSCerts       bool                         `json:"validateTLSCerts"`           // power-user Security toggle: strictly verify wss:// TLS certs. Default OFF = accept self-signed (most community AO servers use them)
+	AssetOrigin            string                       `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
+	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
+	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
+	LegacyDevTheme         bool                         `json:"legacyDevTheme"`             // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
+	OOCInLogTab            bool                         `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default ON. Off = OOC gets its own box.
+	MyProfile              ProfilePref                  `json:"profile"`                    // the user's character profile (#101)
 	ChatboxOpacity         int                          `json:"chatboxOpacity"`
 	RainbowSpriteVividness int                          `json:"rainbowSpriteVividness"`
 	RainbowSpriteGlow      bool                         `json:"rainbowSpriteGlow"`
@@ -935,52 +937,54 @@ type prefsJSON struct {
 	AutoConnectOnLaunch    bool             `json:"autoConnectOnLaunch"`  // default OFF
 	LastServerName         string           `json:"lastServerName"`
 	LastServerURL          string           `json:"lastServerURL"`
-	RainbowSpriteSpeed     *int             `json:"rainbowSpriteSpeed"`     // absent = default
-	ReplayPlaybackSpeed    *int             `json:"replaySpeed"`            // absent = default
-	Export                 *ExportOptions   `json:"export"`                 // absent = default
-	MySpriteStyle          *SpriteStylePref `json:"mySpriteStyle"`          // absent = no style (#103)
-	SavedStyles            []StylePreset    `json:"stylePresets,omitempty"` // #126 saved moods
-	HideSpriteStyles       bool             `json:"hideSpriteStyles"`       // default OFF (show others' styles)
-	HideReactions          bool             `json:"hideReactions"`          // default OFF (show others' reactions, #2)
-	CharBundlePrefetch     bool             `json:"charBundlePrefetch"`     // #127 default OFF
-	PingChip               bool             `json:"pingChip"`               // #128 default OFF
-	ValidateTLSCerts       bool             `json:"validateTLSCerts"`       // Security: strict wss cert check; default OFF (accept self-signed)
-	AssetOrigin            string           `json:"assetOrigin,omitempty"`  // Security: Origin/Referer override for asset fetches
-	LegacyDevTheme         bool             `json:"legacyDevTheme"`         // tickbox revert to the old look; default OFF = new layout
-	OOCInLogTab            bool             `json:"oocInLogTab"`            // OOC as a log tab + bottom OOC bar; default ON (Off = OOC box)
-	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
-	ChatboxOpacity         *int             `json:"chatboxOpacity"`         // absent = default (0 is valid → pointer)
-	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"` // absent = default (0 is valid → pointer)
-	RainbowSpriteGlow      bool             `json:"rainbowSpriteGlow"`      // default OFF
-	RainbowPairDesync      bool             `json:"rainbowPairDesync"`      // default OFF
-	RainbowPerChar         bool             `json:"rainbowPerChar"`         // default OFF
-	SpriteWobble           bool             `json:"spriteWobble"`           // default OFF
-	SpriteSpin             bool             `json:"spriteSpin"`             // default OFF
-	SpriteSolidTint        bool             `json:"spriteSolidTint"`        // default OFF
-	ShoutPunch             bool             `json:"shoutPunch"`             // default OFF
-	ChatboxTint            bool             `json:"chatboxTint"`            // default OFF
-	PostVignette           bool             `json:"postVignette"`           // default OFF
-	PostScanlines          bool             `json:"postScanlines"`          // default OFF
-	PostGrain              bool             `json:"postGrain"`              // default OFF
-	AnimateEntrances       bool             `json:"animateEntrances"`       // default OFF
-	DepthOfField           bool             `json:"depthOfField"`           // default OFF
-	Spotlight              bool             `json:"spotlight"`              // #121 default OFF
-	SpotlightStrength      int              `json:"spotlightStrength"`      // 0 = unset → default
-	IdleBreath             bool             `json:"idleBreath"`             // #122 default OFF
-	BreathNoBob            bool             `json:"breathNoBob"`            // false = bob ON
-	BreathNoScale          bool             `json:"breathNoScale"`          // false = scale ON
-	BreathAmount           int              `json:"breathAmp"`              // 0 = unset → default
-	BreathRate             int              `json:"breathSpeed"`            // 0 = unset → default
-	Reflection             bool             `json:"reflection"`             // #123 default OFF
-	ReflectOpacity         int              `json:"reflectStrength"`        // 0 = unset → default
-	WeatherKind            int              `json:"weatherType"`            // #124 0 = None/off
-	WeatherDensity         int              `json:"weatherIntensity"`       // 0 = unset → default
-	SpriteTintColor        *int             `json:"spriteTintColor"`        // absent = default
-	FriendNotify           bool             `json:"friendNotify"`           // default OFF
-	FriendOSToast          bool             `json:"friendOSToast"`          // default OFF
-	CallwordOSToast        bool             `json:"callwordOSToast"`        // #M4 default OFF
-	FriendGlowPulse        bool             `json:"friendGlowPulse"`        // default OFF
-	FriendSound            bool             `json:"friendSound"`            // default OFF
+	RainbowSpriteSpeed     *int             `json:"rainbowSpriteSpeed"`         // absent = default
+	ReplayPlaybackSpeed    *int             `json:"replaySpeed"`                // absent = default
+	Export                 *ExportOptions   `json:"export"`                     // absent = default
+	MySpriteStyle          *SpriteStylePref `json:"mySpriteStyle"`              // absent = no style (#103)
+	SavedStyles            []StylePreset    `json:"stylePresets,omitempty"`     // #126 saved moods
+	HideSpriteStyles       bool             `json:"hideSpriteStyles"`           // default OFF (show others' styles)
+	HideReactions          bool             `json:"hideReactions"`              // default OFF (show others' reactions, #2)
+	CharBundlePrefetch     bool             `json:"charBundlePrefetch"`         // #127 default OFF
+	PingChip               bool             `json:"pingChip"`                   // #128 default OFF
+	ValidateTLSCerts       bool             `json:"validateTLSCerts"`           // Security: strict wss cert check; default OFF (accept self-signed)
+	AssetOrigin            string           `json:"assetOrigin,omitempty"`      // Security: Origin/Referer override for asset fetches
+	VoiceInputDevice       string           `json:"voiceInputDevice,omitempty"` // voice mic device ("" = default)
+	VoiceOutVolume         int              `json:"voiceOutVolume,omitempty"`   // voice output volume (0 = default 100)
+	LegacyDevTheme         bool             `json:"legacyDevTheme"`             // tickbox revert to the old look; default OFF = new layout
+	OOCInLogTab            bool             `json:"oocInLogTab"`                // OOC as a log tab + bottom OOC bar; default ON (Off = OOC box)
+	Profile                *ProfilePref     `json:"profile"`                    // absent = no profile (#101)
+	ChatboxOpacity         *int             `json:"chatboxOpacity"`             // absent = default (0 is valid → pointer)
+	RainbowSpriteVividness *int             `json:"rainbowSpriteVividness"`     // absent = default (0 is valid → pointer)
+	RainbowSpriteGlow      bool             `json:"rainbowSpriteGlow"`          // default OFF
+	RainbowPairDesync      bool             `json:"rainbowPairDesync"`          // default OFF
+	RainbowPerChar         bool             `json:"rainbowPerChar"`             // default OFF
+	SpriteWobble           bool             `json:"spriteWobble"`               // default OFF
+	SpriteSpin             bool             `json:"spriteSpin"`                 // default OFF
+	SpriteSolidTint        bool             `json:"spriteSolidTint"`            // default OFF
+	ShoutPunch             bool             `json:"shoutPunch"`                 // default OFF
+	ChatboxTint            bool             `json:"chatboxTint"`                // default OFF
+	PostVignette           bool             `json:"postVignette"`               // default OFF
+	PostScanlines          bool             `json:"postScanlines"`              // default OFF
+	PostGrain              bool             `json:"postGrain"`                  // default OFF
+	AnimateEntrances       bool             `json:"animateEntrances"`           // default OFF
+	DepthOfField           bool             `json:"depthOfField"`               // default OFF
+	Spotlight              bool             `json:"spotlight"`                  // #121 default OFF
+	SpotlightStrength      int              `json:"spotlightStrength"`          // 0 = unset → default
+	IdleBreath             bool             `json:"idleBreath"`                 // #122 default OFF
+	BreathNoBob            bool             `json:"breathNoBob"`                // false = bob ON
+	BreathNoScale          bool             `json:"breathNoScale"`              // false = scale ON
+	BreathAmount           int              `json:"breathAmp"`                  // 0 = unset → default
+	BreathRate             int              `json:"breathSpeed"`                // 0 = unset → default
+	Reflection             bool             `json:"reflection"`                 // #123 default OFF
+	ReflectOpacity         int              `json:"reflectStrength"`            // 0 = unset → default
+	WeatherKind            int              `json:"weatherType"`                // #124 0 = None/off
+	WeatherDensity         int              `json:"weatherIntensity"`           // 0 = unset → default
+	SpriteTintColor        *int             `json:"spriteTintColor"`            // absent = default
+	FriendNotify           bool             `json:"friendNotify"`               // default OFF
+	FriendOSToast          bool             `json:"friendOSToast"`              // default OFF
+	CallwordOSToast        bool             `json:"callwordOSToast"`            // #M4 default OFF
+	FriendGlowPulse        bool             `json:"friendGlowPulse"`            // default OFF
+	FriendSound            bool             `json:"friendSound"`                // default OFF
 	FriendSoundFile        string           `json:"friendSoundFile"`
 	ModBanSFX              bool             `json:"modBanSFX"`        // default OFF
 	ModKickSFX             bool             `json:"modKickSFX"`       // default OFF
@@ -1516,6 +1520,8 @@ func load(path string) (*AssetPreferences, error) {
 	p.PingChip = onDisk.PingChip
 	p.ValidateTLSCerts = onDisk.ValidateTLSCerts
 	p.AssetOrigin = strings.TrimSpace(onDisk.AssetOrigin)
+	p.VoiceInputDevice = onDisk.VoiceInputDevice
+	p.VoiceOutVolume = onDisk.VoiceOutVolume
 	p.LegacyDevTheme = onDisk.LegacyDevTheme
 	p.OOCInLogTab = onDisk.OOCInLogTab
 	if onDisk.Profile != nil {
@@ -3406,6 +3412,55 @@ func (p *AssetPreferences) SetAssetOriginHeader(s string) {
 		return
 	}
 	p.AssetOrigin = s
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// VoiceInput reports the chosen voice mic device name ("" = system default).
+func (p *AssetPreferences) VoiceInput() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.VoiceInputDevice
+}
+
+// SetVoiceInput sets (or clears, for system default) the voice mic device.
+func (p *AssetPreferences) SetVoiceInput(s string) {
+	p.mu.Lock()
+	if p.VoiceInputDevice == s {
+		p.mu.Unlock()
+		return
+	}
+	p.VoiceInputDevice = s
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// VoiceOutVol reports the voice output volume 0..100 (default 100 when unset).
+func (p *AssetPreferences) VoiceOutVol() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.VoiceOutVolume <= 0 {
+		return 100
+	}
+	if p.VoiceOutVolume > 100 {
+		return 100
+	}
+	return p.VoiceOutVolume
+}
+
+// SetVoiceOutVol clamps and persists the voice output volume.
+func (p *AssetPreferences) SetVoiceOutVol(v int) {
+	if v < 0 {
+		v = 0
+	} else if v > 100 {
+		v = 100
+	}
+	p.mu.Lock()
+	if p.VoiceOutVolume == v {
+		p.mu.Unlock()
+		return
+	}
+	p.VoiceOutVolume = v
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -68,10 +68,11 @@ type voiceEngine struct {
 	mixScratch [][]int16 // reusable per-frame "one frame per active peer" gather
 }
 
-// newVoiceEngine opens the audio devices and the encoder. Playback is required;
-// capture is best-effort (no mic ⇒ listen-only). Returns an error only when no
-// audio at all is possible — the caller then stays in presence-only mode.
-func newVoiceEngine(send func(b64 string)) (*voiceEngine, error) {
+// newVoiceEngine opens the audio devices and the encoder. captureDev is the mic
+// device name ("" = system default); outVol is the initial output volume (0..100).
+// Playback is required; capture is best-effort (no mic ⇒ listen-only). Returns an
+// error only when no audio at all is possible — the caller stays presence-only.
+func newVoiceEngine(send func(b64 string), captureDev string, outVol int) (*voiceEngine, error) {
 	spec := sdl.AudioSpec{
 		Freq:     voice.SampleRate,
 		Format:   sdl.AUDIO_S16SYS, // native order ⇒ []int16 aliases the bytes 1:1
@@ -82,19 +83,23 @@ func newVoiceEngine(send func(b64 string)) (*voiceEngine, error) {
 	if err != nil {
 		return nil, err // no output ⇒ no audio engine (presence-only)
 	}
+	if outVol <= 0 || outVol > 100 {
+		outVol = 100
+	}
 	e := &voiceEngine{
 		playback: play,
 		peers:    make(map[int]*voicePeer),
 		send:     send,
-		outVol:   100,
+		outVol:   outVol,
 		capBuf:   make([]byte, voiceFrameBytes),
 		acc:      make([]int32, voice.FrameSize),
 		out:      make([]int16, voice.FrameSize),
 	}
 	sdl.PauseAudioDevice(play, false) // start the output clock
 
-	// Capture is optional: a machine with no mic can still listen.
-	if cap, err := sdl.OpenAudioDevice("", true, &spec, nil, 0); err == nil {
+	// Capture is optional: a machine with no mic can still listen. captureDev ""
+	// asks SDL for the system-default recording device.
+	if cap, err := sdl.OpenAudioDevice(captureDev, true, &spec, nil, 0); err == nil {
 		if enc, err := voice.NewEncoder(); err == nil {
 			e.capture, e.enc = cap, enc
 			sdl.PauseAudioDevice(cap, false)
