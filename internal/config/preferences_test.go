@@ -687,8 +687,12 @@ func TestDefaultPathShape(t *testing.T) {
 	if filepath.Base(path) != PrefsFileName {
 		t.Errorf("DefaultPath file = %s, want %s", filepath.Base(path), PrefsFileName)
 	}
-	if filepath.Base(filepath.Dir(path)) != PrefsDirName {
-		t.Errorf("DefaultPath dir = %s, want %s", filepath.Base(filepath.Dir(path)), PrefsDirName)
+	// Portable-first (see location.go): the dir is the portable "config" folder
+	// beside the exe when that's writable (the CI case — no pre-existing config),
+	// else the classic OS "AsyncAO" dir (a dev box that already has one). Both are
+	// valid; pin that it's one of them, not a fixed name.
+	if dir := filepath.Base(filepath.Dir(path)); dir != PrefsDirName && dir != PortableDirName {
+		t.Errorf("DefaultPath dir = %s, want %s (OS config) or %s (portable)", dir, PrefsDirName, PortableDirName)
 	}
 }
 
