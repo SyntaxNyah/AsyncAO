@@ -19,6 +19,15 @@ _Playtest backlog cleared (2026-06-21) — every Discord/playtest request shippe
 (see `docs/FEATURES.md`). New asks land here. The only milestone left is the
 gamepad track below._
 
+- **Config presets** (Nightingale feedback, 2026-06-29) — the settings file is
+  comprehensive (~130 KB once everything's learned), which is great for power
+  users but heavy if you just want a couple of named "profiles" to switch
+  between. Idea: a small, separate preset layer — pick/save a handful of named
+  setting bundles — on top of the existing one-JSON store, so the full file
+  stays the source of truth and presets are an opt-in convenience. Tracked
+  separately from the v1.19.0 portable-config work (which moved the file beside
+  the exe and is shipped). No transmitted/wire impact; off the hot path.
+
 ---
 
 ## Already shipped (rebuild to get them)
