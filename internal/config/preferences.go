@@ -678,6 +678,7 @@ type AssetPreferences struct {
 	HideReactions          bool                         `json:"hideReactions"`          // ignore others' transmitted emoji reactions (#2) (default OFF = show)
 	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`     // #127 pre-grab a char's FULL sprite set on load (default OFF)
 	PingChip               bool                         `json:"pingChip"`               // #128 show the connection-quality chip (default OFF)
+	ValidateTLSCerts       bool                         `json:"validateTLSCerts"`       // power-user Security toggle: strictly verify wss:// TLS certs. Default OFF = accept self-signed (most community AO servers use them)
 	LegacyDevTheme         bool                         `json:"legacyDevTheme"`         // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
 	OOCInLogTab            bool                         `json:"oocInLogTab"`            // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default ON. Off = OOC gets its own box.
 	MyProfile              ProfilePref                  `json:"profile"`                // the user's character profile (#101)
@@ -929,6 +930,7 @@ type prefsJSON struct {
 	HideReactions          bool             `json:"hideReactions"`          // default OFF (show others' reactions, #2)
 	CharBundlePrefetch     bool             `json:"charBundlePrefetch"`     // #127 default OFF
 	PingChip               bool             `json:"pingChip"`               // #128 default OFF
+	ValidateTLSCerts       bool             `json:"validateTLSCerts"`       // Security: strict wss cert check; default OFF (accept self-signed)
 	LegacyDevTheme         bool             `json:"legacyDevTheme"`         // tickbox revert to the old look; default OFF = new layout
 	OOCInLogTab            bool             `json:"oocInLogTab"`            // OOC as a log tab + bottom OOC bar; default ON (Off = OOC box)
 	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
@@ -1492,6 +1494,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.HideReactions = onDisk.HideReactions
 	p.CharBundlePrefetch = onDisk.CharBundlePrefetch
 	p.PingChip = onDisk.PingChip
+	p.ValidateTLSCerts = onDisk.ValidateTLSCerts
 	p.LegacyDevTheme = onDisk.LegacyDevTheme
 	p.OOCInLogTab = onDisk.OOCInLogTab
 	if onDisk.Profile != nil {
@@ -3344,6 +3347,20 @@ func (p *AssetPreferences) PingChipOn() bool {
 
 // SetPingChip toggles the connection-quality chip.
 func (p *AssetPreferences) SetPingChip(b bool) { p.setBoolPref(&p.PingChip, b) }
+
+// ValidateTLSCertsOn reports the power-user Security toggle (OFF by default):
+// when ON, wss:// connections strictly verify the server's TLS certificate
+// chain. The default is OFF — most community AO servers run self-signed certs,
+// and rejecting them would leave them unreachable. Turning it ON trades that
+// reach for a guarantee the wss endpoint is who it claims to be.
+func (p *AssetPreferences) ValidateTLSCertsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ValidateTLSCerts
+}
+
+// SetValidateTLSCerts toggles strict wss certificate verification.
+func (p *AssetPreferences) SetValidateTLSCerts(b bool) { p.setBoolPref(&p.ValidateTLSCerts, b) }
 
 // LegacyDevThemeOn reports whether the user ticked the built-in "Legacy Developer" theme (the old
 // look). Default OFF — the new optimal layout (OOC-as-a-box, grouped buttons) is the main theme.

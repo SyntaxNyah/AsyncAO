@@ -44,6 +44,9 @@ const (
 	// ScreenChangelog is the "What's New" version-history view (reached from the
 	// lobby top bar); it renders the embedded CHANGELOG.md.
 	ScreenChangelog
+	// ScreenLogs is the transcript log browser / search (reached from the lobby
+	// top bar and Extras); it reads logs/<server>/*.log written by detailed logging.
+	ScreenLogs
 )
 
 const (
@@ -321,6 +324,10 @@ type App struct {
 
 	// --- font override pipeline (file bytes read off-thread) ---
 	fontRes chan fontLoad
+	// themeFontFile is the active theme's bundled font path (.ttf/.otf), resolved
+	// off-thread on theme apply; applyFontConfig uses it when no manual font / the
+	// dyslexia toggle is set (#6).
+	themeFontFile string
 	// Color-emoji fallback face: the system emoji font (e.g. Segoe UI Emoji) is read
 	// off-thread the FIRST time a message needs it (emojiLoadStarted gates the one
 	// read), landing on emojiFontRes → ctx.SetEmojiFont. Lazy so a user who never
@@ -340,6 +347,11 @@ type App struct {
 	// comes first). 13-35 MB, so kept out of the common non-ASCII path.
 	cjkFontRes     chan [][]byte
 	cjkLoadStarted bool
+
+	// --- log browser (ScreenLogs): search saved transcripts across servers ---
+	// Global (not per-session): the loader runs off-thread, lands on logBrowserRes.
+	logBrowser    logBrowserState
+	logBrowserRes chan logBrowserLoad
 
 	// --- case notebook loads (per-server; payload routes by key) ---
 	notebookRes chan notebookLoad
@@ -661,7 +673,7 @@ type App struct {
 	// (floatwin.go) for the Pairing, Mod dashboard, CM, Hotkey-sheet, and Evidence
 	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
 	// rather than a modal. Geometry is global; open state is per-tab / per-flag.
-	pairWin, modWin, cmWin, hkWin, evidWin floatWin
+	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin floatWin
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
@@ -752,6 +764,10 @@ type App struct {
 	// snapped to the settings step; UIScale() prefers it while the
 	// auto-HiDPI preference is on. 0 = detection unavailable.
 	detectedScalePct int
+	// dpiScalePct is the display-DPI-only component of the auto scale (floored at
+	// 100); SetAutoScaleFromWindow combines it with a window-size factor each
+	// frame so a maximized window fills out, and a resize recomputes cleanly.
+	dpiScalePct int
 	// theaterOn is the borderless viewport-only mode (Esc exits).
 	// Deliberately session-only: it can never persist someone into a
 	// chrome-less client across runs.
@@ -1489,6 +1505,7 @@ type themeApply struct {
 	iniKeys     int
 	probed      []string
 	inkGuard    string // readability guard verdict ("" = colors kept)
+	fontPath    string // the active theme's bundled font file (.ttf/.otf), "" = none (#6)
 }
 
 // themeStemChatbox is the chatbox skin's stem in themeTex / T1.
@@ -1705,6 +1722,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		iniRes:          make(chan iniswapFetch, 1),
 		manifestRes:     make(chan manifestFetch, 1),
 		fontRes:         make(chan fontLoad, 1),
+		logBrowserRes:   make(chan logBrowserLoad, 1),
 		emojiFontRes:    make(chan []byte, 1),
 		fallbackFontRes: make(chan [][]byte, 1),
 		cjkFontRes:      make(chan [][]byte, 1),
@@ -1780,13 +1798,45 @@ func (a *App) UIScale() int {
 	return a.uiScalePct
 }
 
-// SetDetectedUIScale feeds the display-DPI scale measured by main after
-// SDL init (96 dpi = 100%), snapped to the settings step so auto and
-// manual values share one scale, clamped to the manual bounds.
-func (a *App) SetDetectedUIScale(pct int) {
+// autoScaleRefHeight is the window height (physical px) treated as 100% UI scale.
+// A taller window scales the UI up proportionally (capped) so a maximized window
+// on a big display isn't a tiny island of fixed-pixel widgets — the recurring
+// "text is too small" reports. ~800 keeps a small/medium window at 1:1 (crisp)
+// and lifts a 1080p-maximized window to ~130%.
+const autoScaleRefHeight = 800
+
+// SetDisplayDPIScale records the display-DPI-derived auto scale (96 dpi = 100%),
+// floored at 100 so an unreliable / low GetDisplayDPI reading can never auto-
+// SHRINK the UI (#6). Combined with the window-size factor each frame in
+// SetAutoScaleFromWindow.
+func (a *App) SetDisplayDPIScale(pct int) {
+	a.dpiScalePct = max(100, pct)
+}
+
+// SetAutoScaleFromWindow updates the auto UI scale from the current PHYSICAL
+// window size (only while the auto-scale preference is on). The UI is fixed
+// logical pixels, so on a large window it reads as tiny — scaling up with the
+// window keeps it proportional (the "text too small on big monitors" reports,
+// and why shrinking the window already looked right). It takes the larger of the
+// DPI scale and the window-height scale, floors at 100 (never shrink), snaps to
+// the step, and caps at the manual bounds. ren.SetScale does the upscale —
+// slightly soft on non-integer factors; crisp resolution-independent scaling is
+// a roadmap item (docs/ROADMAP.md).
+func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
+	if !a.d.Prefs.UIScaleAuto() {
+		return // manual scale governs; the detected value is unused
+	}
+	winPct := 100
+	if winH > 0 {
+		winPct = int(winH) * 100 / autoScaleRefHeight
+	}
+	pct := max(100, a.dpiScalePct, winPct)
 	pct = pct / config.UIScaleStepPercent * config.UIScaleStepPercent
-	a.detectedScalePct = clampInt(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
-	a.ctx.SetUIScale(a.UIScale()) // mouse unprojection follows immediately
+	pct = clampInt(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
+	if pct != a.detectedScalePct {
+		a.detectedScalePct = pct
+		a.ctx.SetUIScale(a.UIScale()) // mouse unprojection follows immediately
+	}
 }
 
 // setTheater flips the borderless viewport-only mode. The SDL border
@@ -2002,7 +2052,11 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 			}
 		}
 	}(wsURL)
-	conn, err := protocol.Dial(dialCtx, wsURL)
+	// TLS: default OFF accepts self-signed wss certs (most community AO servers);
+	// the power-user Security toggle flips on strict verification.
+	conn, err := protocol.Dial(dialCtx, wsURL, protocol.DialOptions{
+		SkipTLSVerify: !a.d.Prefs.ValidateTLSCertsOn(),
+	})
 	if err != nil {
 		a.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
 		a.pushDebug("connect failed: " + err.Error())
@@ -2770,8 +2824,15 @@ func (a *App) applyFontConfig() {
 	case fontSourceDyslexia:
 		a.ctx.SetFontChain([]string{dyslexiaFontName}, [][]byte{openDyslexicOTF})
 		a.rasterText = "" // re-raster the visible message in the new font
-	default: // manual path or built-in — loadFontChainAsync clears on empty
-		a.loadFontChainAsync(a.d.Prefs.FontPaths())
+	default:
+		// Manual font paths win; otherwise the active theme's own bundled font
+		// (an AO theme that ships a .ttf — #6, Crystalwarrior); otherwise the
+		// embedded font (loadFontChainAsync clears on an empty string).
+		paths := strings.TrimSpace(a.d.Prefs.FontPaths())
+		if paths == "" {
+			paths = a.themeFontFile
+		}
+		a.loadFontChainAsync(paths)
 	}
 }
 
@@ -4185,7 +4246,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.ctx.keyPressed == sdl.K_ESCAPE &&
 		a.bindingFor == "" && a.shownameBindFor == "" && !a.showHotkeys && !a.updateShow && !a.showReset {
 		switch a.screen {
-		case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp:
+		case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenLogs:
 			switch {
 			case a.ctx.ddOpen != "":
 				a.ctx.ddOpen = "" // first ESC: close an open dropdown
@@ -4227,6 +4288,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollThemeApply()
 	a.pollManifest()
 	a.pollFontChain()
+	a.pollLogBrowser()
 	a.pollEmojiFont()
 	a.updatePingLoop()             // #128: keep the ping loop targeting the active conn (no-op/no goroutine when the chip is off)
 	if a.ctx.TakeWantsFallback() { // a non-ASCII rune was drawn → kick the one broad-font read
@@ -4354,6 +4416,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawChangelog(winW, winH)
 		case ScreenServerHelp:
 			a.drawServerHelp(winW, winH)
+		case ScreenLogs:
+			a.drawLogBrowser(winW, winH)
 		}
 	}
 	// The tab strip floats over every screen (input was consumed at the
@@ -4443,6 +4507,7 @@ func (a *App) applyThemeAsync() {
 		if err == nil {
 			res.iniKeys = t.KeyCount()
 			res.probed = t.Dirs()
+			res.fontPath = t.FontFile() // the theme's own bundled font, if any (#6)
 			if msg := t.Font("message"); t.HasFont("message") {
 				res.msgCol = sdl.Color{R: msg.Color.R, G: msg.Color.G, B: msg.Color.B, A: 255}
 				res.hasMsg = true
@@ -4599,6 +4664,13 @@ func (a *App) pollThemeApply() {
 	a.themeNameCol, a.themeHasName = res.nameCol, res.hasName
 	a.rasterText = "" // re-raster the current message with theme colors
 	a.themeAppliedName = res.name
+	// Theme font (#6): an AO theme that ships its own .ttf now applies it (below a
+	// manual font / the dyslexia toggle). Re-resolve only when it actually changed,
+	// so a same-font theme switch doesn't re-kick the off-thread font read.
+	if a.themeFontFile != res.fontPath {
+		a.themeFontFile = res.fontPath
+		a.applyFontConfig()
+	}
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)
 	a.pushDebug(line)

@@ -48,3 +48,22 @@ it's a stale build (`scripts\build.ps1 -Release`).
   was built.
 - ~~**M8 Gamepad support** *(#44)*~~ — **dropped** (2026-06-21, by request — no
   need for it). The whole milestone backlog is now closed.
+
+## Future / larger tracks (not scheduled)
+
+- **SDL3 migration — real GPU/shader pipeline.** The post-processing FX (vignette,
+  scanlines, grain, chroma / glitch, depth-of-field) are currently a
+  cached-texture multi-blit *approximation* because SDL2's renderer has no shader
+  stage and no per-texture scale-mode control. SDL3's GPU API (render passes +
+  shaders) would make those real, cheaper, and composable — but it's a large,
+  cross-cutting port (every `internal/render` call site, the texture tiers, the
+  SDL_mixer audio back-end) and stays parked until the FX / perf win clearly
+  justifies the churn.
+- **Crisp resolution-independent UI text.** The global UI scale is applied with
+  `ren.SetScale`, which bitmap-upscales already-rasterized text — correct size but
+  slightly soft above 100% (see `SetAutoScaleFromWindow` and the v1.2.0 #6 fix).
+  The proper fix rasterizes glyphs at the *target* pixel size (`pt × scale`) so any
+  scale stays sharp, which means threading the scale through the label atlas /
+  glyph cache and every text draw **without** regressing the 0-alloc render gate.
+  Big enough to be its own track: the window-relative auto-scale lands the *sizing*
+  now (v1.2.0); this lands the *sharpness* later.

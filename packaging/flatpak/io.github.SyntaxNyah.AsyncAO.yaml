@@ -1,0 +1,81 @@
+# Flatpak manifest for AsyncAO (AGPLv3 — that's why we ship one).
+#
+# Builds the Go/CGO binary against the freedesktop runtime using the golang SDK
+# extension, plus the SDL2 satellite libraries AsyncAO links that the base
+# runtime doesn't ship (SDL2_ttf, SDL2_mixer). SDL2, libwebp, libavif and dav1d
+# come from the runtime.
+#
+# NOTE: authored on a Windows dev box with no Flatpak to test against, so it is
+# validated/iterated through CI (the non-blocking `build-flatpak` job in
+# release.yml). Pinned tags may need a bump as upstreams move, and if the runtime
+# turns out NOT to ship libwebp/libavif those become extra modules — the CI log
+# says which.
+#
+# This file is a TEMPLATE: @ASYNCAO_TAGS@ / @ASYNCAO_VERSION@ are substituted to
+# produce the two variants (Discord-bundled default and a `nodiscord` flavour),
+# exactly like the Windows/Linux/macOS matrix. Build it through
+# scripts/build-flatpak.sh (or the CI job), not directly.
+app-id: io.github.SyntaxNyah.AsyncAO
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: asyncao
+
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri               # GPU-accelerated SDL rendering
+  - --share=network            # AO is a network client (WebSocket + asset streaming)
+  # AsyncAO writes prefs / logs / recordings / screenshots / disk cache beside its
+  # data dir; grant its own XDG dirs (created on first run).
+  - --filesystem=xdg-config/asyncao:create
+  - --filesystem=xdg-data/asyncao:create
+
+modules:
+  # SDL2_ttf and SDL2_mixer are not in the base runtime — build them from the
+  # SDL release branches (autotools).
+  - name: sdl2_ttf
+    buildsystem: autotools
+    sources:
+      - type: git
+        url: https://github.com/libsdl-org/SDL_ttf.git
+        tag: release-2.22.0
+
+  - name: sdl2_mixer
+    buildsystem: autotools
+    config-opts:
+      - --disable-music-cmd
+    sources:
+      - type: git
+        url: https://github.com/libsdl-org/SDL_mixer.git
+        tag: release-2.8.0
+
+  - name: asyncao
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/golang/bin
+      env:
+        GOTOOLCHAIN: local
+        GOFLAGS: '-trimpath'
+      # This is a self-hosted CI bundle, NOT a Flathub submission, so we allow the
+      # build sandbox network access and let `go build` fetch modules directly
+      # (Flathub would require a vendored / flatpak-go-mod sources file instead).
+      build-args:
+        - --share=network
+    build-commands:
+      # @ASYNCAO_TAGS@ = "" (Discord default) or "nodiscord"; @ASYNCAO_VERSION@ =
+      # the release tag (stamped for the About / What's New version display).
+      - CGO_ENABLED=1 go build -tags "@ASYNCAO_TAGS@" -pgo=auto -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=@ASYNCAO_VERSION@" -o /app/bin/asyncao ./cmd/asyncao
+      - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.desktop
+          /app/share/applications/io.github.SyntaxNyah.AsyncAO.desktop
+      - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.metainfo.xml
+          /app/share/metainfo/io.github.SyntaxNyah.AsyncAO.metainfo.xml
+      - install -Dm644 internal/ui/assets/mayo.png
+          /app/share/icons/hicolor/512x512/apps/io.github.SyntaxNyah.AsyncAO.png
+    sources:
+      - type: dir
+        path: ../..

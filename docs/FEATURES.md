@@ -645,9 +645,30 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   fewer frames (the GIF gets shorter, never over-budget; WebP streams compressed so
   it can run longer). The panel shows the resulting max length and notes that
   screenshake / busy backgrounds bloat a GIF (every pixel changes each frame).
-- **Screenshot** the whole window to a **PNG** under `screenshots/` (Ctrl+S),
-  written off the render thread; ~10× smaller than the old BMP and it previews
-  inline in Discord etc.
+- **Screenshot** the whole window to a **PNG** under `screenshots/` — **Ctrl+S**
+  or the **Extras → Screenshot** button — written off the render thread; ~10×
+  smaller than the old BMP and it previews inline in Discord etc.
+- **Log browser / search** (lobby **Logs** button, or **Extras → Logs**): browse
+  and search every saved transcript — pick any **server**, then any **session**,
+  and **filter the lines by text** (name, word, phrase) across the whole scope;
+  click a line to copy it. Reads the per-server `logs/` files **off the render
+  thread**, hard-bounded (files / lines capped), with the live filter memoized so
+  typing never re-scans. Needs detailed logging on (Settings → Audio & Chat).
+- **Window-relative UI scale.** Auto UI scale now follows the **window size** (a
+  reference height = 100%, larger windows scale up, capped) as well as the display
+  DPI, and is **floored at 100%** so an unreliable DPI reading can never auto-shrink
+  the UI — fixing "everything is tiny" on big monitors / maximized windows ([#6]).
+  Manual scale (Settings → General) still overrides.
+- **Call-mod is a floating panel.** The Call Mod window is now a movable / resizable
+  **non-blocking** floating box (like Evidence / Pair) — keep talking and watching
+  the courtroom while it's open.
+- **Theme fonts.** An AO theme that ships its own font (a `.ttf`/`.otf` in the theme
+  folder, named by its `courtroom_fonts.ini` `*_font` family) now loads it for the
+  IC/OOC text — below a manual font override and the dyslexia font ([#6]).
+- **TLS certificate validation** (Settings → Account → **Security**; power users,
+  **OFF by default**): strictly verify a `wss://` server's certificate. Off by
+  default so the many community servers on self-signed certs stay reachable; on for
+  those who want to be sure the encrypted connection is to the real server.
 - **IC log**: 1024-line color-preserving scrollback with search, Copy to
   clipboard, and TXT/HTML export (`logs/` beside the exe; HTML keeps the
   AO palette). Lines **word-wrap to the list width** (cached against

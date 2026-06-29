@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for the AsyncAO Flatpak. The Mayo mascot icon is
+     © hlenbchan, used with permission (not under the AGPL); everything else is
+     AGPL-3.0-or-later. -->
+<component type="desktop-application">
+  <id>io.github.SyntaxNyah.AsyncAO</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <name>AsyncAO</name>
+  <summary>Maximum-performance Attorney Online 2 client</summary>
+  <description>
+    <p>
+      AsyncAO is a fast, native Attorney Online 2 client: zero-fallback asset
+      streaming (one network probe per asset, formats learned per server), a
+      zero-allocation render loop under a tight memory budget, and full AO2
+      pairing. It connects to WebSocket (ws:// / wss://) servers.
+    </p>
+    <p>
+      Features include the full courtroom (shouts, evidence, pairing, judge
+      penalty bars), a live player list, moderation tools, a music jukebox, a
+      scene recorder / replay studio, per-server transcript logs with search,
+      and extensive theming and accessibility options.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.SyntaxNyah.AsyncAO.desktop</launchable>
+  <url type="homepage">https://github.com/SyntaxNyah/AsyncAO</url>
+  <url type="bugtracker">https://github.com/SyntaxNyah/AsyncAO/issues</url>
+  <developer id="io.github.syntaxnyah">
+    <name>SyntaxNyah and the AsyncAO contributors</name>
+  </developer>
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+  </content_rating>
+  <releases>
+    <release version="1.2.0" date="2026-06-29"/>
+  </releases>
+</component>

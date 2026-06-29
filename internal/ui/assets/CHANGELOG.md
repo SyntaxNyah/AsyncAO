@@ -4,6 +4,52 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.18.0 — 2026-06-29
+
+A fixes-and-features release from playtest feedback — readable UI on big monitors,
+a log search browser, AO theme fonts, a screenshot button, a pop-out Call Mod, an
+optional strict-TLS mode, and a Linux Flatpak. **Thanks to Crystalwarrior (Alex
+Noir)** for the font report (#6).
+
+### Text was too small — fixed
+- **The UI scales with the window now.** On a large or maximized window the
+  fixed-size widgets used to look like a tiny island in empty space — so the auto
+  UI scale now follows the **window size** (bigger window → bigger UI, up to a
+  cap) on top of the display DPI. It's also **floored at 100%**, so an unreliable
+  display-DPI reading can no longer auto-*shrink* everything below 100% — the root
+  of the "default fonts are really tiny" report. (#6, Crystalwarrior) Manual UI
+  scale (Settings → General) still overrides — turn auto-scale off there if you
+  prefer a fixed size.
+- **AO theme fonts load.** A theme that ships its own font — a `.ttf` / `.otf` in
+  the theme folder, named by its `courtroom_fonts.ini` `…_font` family — now
+  applies to the IC / OOC text instead of being ignored. (A manual font override
+  and the dyslexia font still take priority.) (#6)
+
+### Search your logs
+- **A log browser** — the **Logs** button in the lobby (and **Extras → Logs**).
+  Pick **any server**, then **any session**, and **filter the lines by text** (a
+  name, a word, a phrase) across the whole scope; click a line to copy it. It reads
+  the per-server transcripts that detailed logging writes (turn it on in Settings →
+  Audio & Chat), off the render thread.
+
+### Quality of life
+- **Screenshot button.** Saving a PNG of the current frame to `screenshots/` was
+  already on **Ctrl+S** — now there's an **Extras → Screenshot** button too.
+- **Call Mod is a floating window.** The modcall box is now movable, resizable and
+  **non-blocking** (like Evidence / Pair), so you can keep talking and watching the
+  courtroom while it's open.
+
+### Security (power users)
+- **Strict TLS option** (Settings → Account → **Security**, **off by default**):
+  strictly verify a `wss://` server's certificate. It's off by default because most
+  community AO servers use self-signed certs and would otherwise be unreachable;
+  turn it on if you want to be sure the encrypted connection is to the real server.
+
+### Linux
+- **Flatpak packaging** (AsyncAO is AGPLv3, so it ships one) in **Discord** and
+  **Discord-free** variants, like every other platform — built in CI alongside the
+  AppImage (`packaging/flatpak/`).
+
 ## v1.17.0 — 2026-06-29
 
 A UX-polish batch from playtest feedback — logs, the lobby, menus, and a few

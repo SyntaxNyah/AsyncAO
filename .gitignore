@@ -25,3 +25,7 @@ coverage.out
 # AppImage build scratch (scripts/build-appimage.sh)
 /AppDir/
 *.AppImage
+
+# Flatpak generated manifest (scripts/build-flatpak.sh substitutes the template)
+/packaging/flatpak/_build.yaml
+*.flatpak

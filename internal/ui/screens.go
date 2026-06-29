@@ -97,6 +97,12 @@ func (a *App) drawLobby(w, h int32) {
 		a.prevScreen = ScreenLobby
 		a.screen = ScreenChangelog
 	}
+	// Log browser: search your saved transcripts (any server, any session).
+	if c.Button(sdl.Rect{X: w - 830 - pad, Y: pad, W: 110, H: btnH}, "Logs") {
+		a.prevScreen = ScreenLobby
+		a.openLogBrowser()
+		a.screen = ScreenLogs
+	}
 	// Connect-time ("ping") sort: probe joinable servers and sort by RTT. A
 	// second press goes back to the player-count sort. Off until pressed.
 	pingBtn := sdl.Rect{X: w - 470 - pad, Y: pad, W: 110, H: btnH}
@@ -1207,8 +1213,6 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawIniswapPanel(w, h)
 	case a.bgPick.show:
 		a.drawBgPanel(w, h)
-	case a.showModcall:
-		a.drawModcallDialog(w, h)
 	case a.showTimer:
 		a.drawTimerPanel(w, h)
 	case a.showUICfg:

@@ -874,24 +874,54 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 	}
 }
 
-// --- modcall dialog ---------------------------------------------------------------
+// --- modcall panel ----------------------------------------------------------------
 
-// drawModcallDialog collects the reason and fires ZZ (servers without
-// modcall_reason get the bare packet — Session.CallMod handles both).
-func (a *App) drawModcallDialog(w, h int32) {
+const (
+	modcallPanelDefW = 460
+	modcallPanelDefH = 150
+	modcallPanelMinW = 300
+	modcallPanelMinH = 120
+)
+
+// modcallPanelRect is the Call-Mod window's screen rect. First-open tucks top-left
+// (like the evidence panel) so the IC input and log stay clear; once dragged or
+// resized (placed) the floatWin geometry wins.
+func (a *App) modcallPanelRect(w, h int32) sdl.Rect {
+	if !a.modcallWin.placed {
+		dw := clampI32(modcallPanelDefW, modcallPanelMinW, w-2*floatWinMargin)
+		dh := clampI32(modcallPanelDefH, modcallPanelMinH, h-2*floatWinMargin)
+		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
+	}
+	return a.modcallWin.rect(modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, w, h)
+}
+
+// drawModcallPanel collects the reason and fires ZZ — a NON-BLOCKING floating
+// window (floatWin: drag the title bar, resize the bottom-right grip) so the
+// courtroom stays live behind it: you can keep talking and watching while the
+// call is open. Servers without modcall_reason get the bare packet (Session.CallMod
+// handles both).
+func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 	c := a.ctx
-	panel := sdl.Rect{X: w/2 - 230, Y: h/2 - 70, W: 460, H: 140}
-	c.Fill(panel, ColPanel)
-	c.Border(panel, ColDanger)
-	c.Label(panel.X+pad, panel.Y+10, "Call a moderator — reason:", ColText)
-	a.modReason, _ = c.TextField("modreason", sdl.Rect{X: panel.X + pad, Y: panel.Y + 36, W: panel.W - 2*pad, H: fieldH}, a.modReason, "What needs attention?")
-	by := panel.Y + panel.H - btnH - 12
-	if c.Button(sdl.Rect{X: panel.X + pad, Y: by, W: 110, H: btnH}, "Call mod") {
+	r := a.modcallPanelRect(w, h)
+	c.Fill(r, ColPanel)
+	c.Border(r, ColDanger)
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
+	c.Heading(r.X+pad, r.Y+6, "Call a moderator", ColText)
+	closeB := sdl.Rect{X: r.X + r.W - 80 - pad, Y: r.Y + 3, W: 80, H: btnH}
+	if c.Button(closeB, "Close") {
+		a.showModcall, a.modReason = false, ""
+		return
+	}
+	a.floatWinDrag(&a.modcallWin, sdl.Rect{X: r.X, Y: r.Y, W: closeB.X - r.X - 4, H: floatTitleH}, pressed)
+	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.modcallWin, grip, r, modcallPanelMinW, modcallPanelMinH, pressed)
+	a.drawResizeGrip(grip)
+
+	c.Label(r.X+pad, r.Y+floatTitleH+8, "Reason (some servers make it optional):", ColText)
+	a.modReason, _ = c.TextField("modreason", sdl.Rect{X: r.X + pad, Y: r.Y + floatTitleH + 32, W: r.W - 2*pad, H: fieldH}, a.modReason, "What needs attention?")
+	if c.Button(sdl.Rect{X: r.X + pad, Y: r.Y + r.H - btnH - 12, W: 110, H: btnH}, "Call mod") {
 		a.sess.CallMod(strings.TrimSpace(a.modReason))
 		a.pushOOC("CLIENT: Moderator called.", "")
-		a.showModcall, a.modReason = false, ""
-	}
-	if c.Button(sdl.Rect{X: panel.X + pad + 120, Y: by, W: 90, H: btnH}, "Cancel") {
 		a.showModcall, a.modReason = false, ""
 	}
 }

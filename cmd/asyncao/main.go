@@ -304,16 +304,16 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	pump := render.NewPump(store, manager, app.IsLiveBase)
 	app.SetPump(pump)
 
-	// HiDPI: derive the auto UI scale from the desktop DPI (96 dpi =
-	// 100%); the app snaps it to the settings step and the auto-scale
-	// preference (default ON) decides whether it governs.
-	// Now that we're DPI-aware we render at native resolution, so the auto scale
-	// must NOT upscale: ren.SetScale > 1 bitmap-upscales the text into a blur (the
-	// exact complaint at 125%). Cap the detected value at 100% — the base UI is
-	// already compact, and anyone who wants it bigger can opt into the (blurrier)
-	// manual scale-up via the slider.
+	// Auto UI scale has two inputs, combined per frame in SetAutoScaleFromWindow:
+	// the display DPI (HiDPI laptops) and the WINDOW SIZE (a maximized window on a
+	// big display would otherwise show a tiny island of fixed-pixel widgets — the
+	// "text is too small" reports; it's also why shrinking the window already
+	// looked right). Both are floored at 100% so we never auto-SHRINK: SDL's
+	// GetDisplayDPI is unreliable and once reported low, shrinking the whole UI
+	// below 100% (#6). Record the DPI component here; the per-frame call in the
+	// loop adds the window factor, snaps to the step, and caps at MaxUIScalePercent.
 	if ddpi, _, _, err := sdl.GetDisplayDPI(0); err == nil && ddpi > 0 {
-		app.SetDetectedUIScale(min(100, int(ddpi/baselineDPI*100+0.5)))
+		app.SetDisplayDPIScale(int(ddpi/baselineDPI*100 + 0.5))
 	}
 
 	if serverURL != "" {
@@ -355,9 +355,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// Global UI scale: render at logical size, let the GPU scale the
 		// whole frame; the kit unprojects the mouse through the same
 		// factor, so every widget scales without per-element math.
+		w, h := window.GetSize()
+		app.SetAutoScaleFromWindow(w, h) // window-relative auto scale (when auto-scale is on)
 		scale := float32(app.UIScale()) / 100
 		_ = ren.SetScale(scale, scale)
-		w, h := window.GetSize()
 		lw := int32(float32(w) / scale)
 		lh := int32(float32(h) / scale)
 		_ = ren.SetDrawColor(0, 0, 0, 255)

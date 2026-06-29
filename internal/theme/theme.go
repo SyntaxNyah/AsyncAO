@@ -41,6 +41,7 @@ type FontSpec struct {
 	Size  int
 	Bold  bool
 	Color RGB
+	Font  string // optional "<name>_font" family (AO2); used to find a bundled .ttf
 }
 
 // RGB is a theme color tuple.
@@ -152,6 +153,9 @@ func (t *Theme) Font(name string) FontSpec {
 	if raw, ok := t.fonts.Get(name + "_bold"); ok {
 		spec.Bold = raw == "1"
 	}
+	if raw, ok := t.fonts.Get(name + "_font"); ok {
+		spec.Font = strings.TrimSpace(raw)
+	}
 	return spec
 }
 
@@ -163,6 +167,44 @@ func (t *Theme) HasFont(name string) bool {
 	}
 	_, ok := t.fonts.Get(name + "_color")
 	return ok
+}
+
+// FontFile returns the path to a font file (.ttf/.otf) bundled inside the ACTIVE
+// theme's own directory, so a streaming client can honour a theme that ships its
+// own font (#6, Crystalwarrior). The family declared by "message_font" is
+// preferred when a file name matches it; otherwise the first font file found. The
+// default-theme fallback dirs are skipped — only the active theme may impose a
+// font. "" = none found.
+func (t *Theme) FontFile() string {
+	family := strings.ToLower(strings.TrimSpace(t.Font("message").Font))
+	var fallback string
+	for _, dir := range t.dirs {
+		if filepath.Base(dir) != t.Name {
+			continue // skip the default-theme fallback dirs
+		}
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range ents {
+			if e.IsDir() {
+				continue
+			}
+			switch strings.ToLower(filepath.Ext(e.Name())) {
+			case ".ttf", ".otf":
+			default:
+				continue
+			}
+			full := filepath.Join(dir, e.Name())
+			if family != "" && strings.Contains(strings.ToLower(e.Name()), family) {
+				return full // file name carries the declared family — best match
+			}
+			if fallback == "" {
+				fallback = full
+			}
+		}
+	}
+	return fallback
 }
 
 // SoundName returns the courtroom_sounds.ini entry (e.g. "word_call").

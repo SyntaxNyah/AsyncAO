@@ -185,9 +185,10 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"mod tools", "moderator", "modcall", "ipid",
 	},
 	tabAccount: {
-		// sections: Login, Master list, Discord.
+		// sections: Login, Master list, Security, Discord.
 		"login", "password", "username", "credential", "auto login",
 		"master list", "server list", "discord", "presence", "rich presence",
+		"security", "tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify",
 	},
 	tabHotkeys: {
 		// sections: Hotkeys, Macros, IC quick-phrases.
@@ -2349,6 +2350,15 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 		a.d.Prefs.SetMasterList(next)
 	}
 	y += 34
+
+	// Security: power-user TLS control. Default OFF accepts self-signed wss certs
+	// so community servers stay reachable; ON verifies the certificate strictly.
+	y = a.settingsSection(y, w, "Security")
+	validate := a.d.Prefs.ValidateTLSCertsOn()
+	if next := c.Checkbox(pad, y, "Validate server certificates (wss, OFF by default): strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this on can make them unreachable — it's for power users who want to be sure the encrypted connection is to the real server.", validate); next != validate {
+		a.d.Prefs.SetValidateTLSCerts(next)
+	}
+	y += 30
 
 	// Discord Rich Presence: the whole section lives in a build-tagged file, so a
 	// -tags nodiscord binary compiles it out entirely (no section, no code).

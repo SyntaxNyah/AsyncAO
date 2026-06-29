@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"sync"
@@ -45,14 +46,37 @@ type Conn struct {
 	received atomic.Int64
 }
 
+// DialOptions tunes a Dial. The zero value is the secure default: wss:// TLS
+// certificates are verified by the transport. SkipTLSVerify mirrors the
+// power-user "Validate server certificates" setting being OFF (the app default,
+// so self-signed community AO servers stay reachable). ws:// is never affected.
+type DialOptions struct {
+	SkipTLSVerify bool
+}
+
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.
-func Dial(ctx context.Context, wsURL string) (*Conn, error) {
+// An optional DialOptions controls TLS verification; the zero value verifies.
+func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 
-	ws, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
+	dialOpts := &websocket.DialOptions{
 		HTTPHeader: http.Header{"User-Agent": []string{userAgent}},
-	})
+	}
+	// Only wss:// is affected — ws:// upgrades over plain TCP and ignores the TLS
+	// config. We install a custom client ONLY when skipping verification, so the
+	// verifying default keeps coder/websocket's shared default client untouched.
+	if len(opts) > 0 && opts[0].SkipTLSVerify {
+		dialOpts.HTTPClient = &http.Client{
+			Transport: &http.Transport{
+				// Opt-in, gated behind the power-user Security toggle (default OFF =
+				// accept self-signed, which most community AO servers use).
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
+	}
+
+	ws, _, err := websocket.Dial(ctx, wsURL, dialOpts)
 	if err != nil {
 		return nil, fmt.Errorf("protocol: dialing %s: %w", wsURL, err)
 	}
