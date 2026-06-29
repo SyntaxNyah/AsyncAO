@@ -4,6 +4,80 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.19.0 — 2026-06-29
+
+A big one — private messaging between AsyncAO players, the first slice of
+Nyathena voice chat, portable settings, a much more powerful log browser, and
+groundwork for signed builds. **Thanks to Nightingale** (config simplicity &
+portability) and **Gaygay** (the UI-scale report) for the feedback that drove it.
+
+### Message other AsyncAO players — DMs & group chats
+- **Group Chat** (Extras → **Group Chat**, or its Edit-Layout slot) — a floating,
+  movable/resizable/hideable panel for **private 1:1 DMs and group chats** with
+  other AsyncAO players. The client **auto-detects** who else is on AsyncAO and
+  badges them (**AO**) in the player list, so starting a chat is one click.
+- **Full group chats:** create a group, **invite** other AsyncAO users, and as the
+  **owner** you can **kick**; anyone can **leave**. Member profiles show in the
+  panel. Invites arrive as an **Accept / Decline** banner **and a desktop toast** —
+  never auto-join.
+- **Confidential and non-disruptive by design.** It rides the **server's `/pm`**
+  (Nyathena / Athena), so it's **isolated to the people in the chat** — it never
+  posts in an area, normal players can't read other people's messages, and roles
+  (who owns a group, who sent what) are **server-attributed**, so they can't be
+  spoofed. Server owners can still see `/pm` traffic, as always.
+- Zero cost on the render loop — the whole system is off the hot path.
+
+### Voice chat for Nyathena (first slice)
+- On a **Nyathena** server (one that advertises voice), **Extras → "Voice
+  (Nyathena)"** opens a panel: **join the voice channel**, see **who else is in
+  voice and who's currently talking** (live speaking indicators), and **toggle your
+  own speak state**. The option is **hidden on servers that don't support voice**,
+  exactly like a server wire.
+- Under the hood this ships the **full Nyathena `VS_*` voice protocol** (relayed
+  over the existing connection — no peer-to-peer, so IPs never leak) and an **Opus
+  codec**. **Live microphone audio** (actually talking and hearing) is the **next
+  slice**, validated on a live Nyathena server.
+
+### Your settings are portable now
+- **Config travels with the program.** AsyncAO now keeps your settings (and
+  notebooks, jukebox) in a **`config/` folder right next to the program** when it
+  can — so a copied folder or a **USB stick** carries everything with it. If
+  there's no portable config and you've an existing one in the OS config folder
+  (AppData on Windows), it **keeps using that** — nobody's settings move without
+  asking.
+- **New Settings → Data tab** puts it all in one place: the **exact path**, whether
+  you're portable or not, **Open config folder**, **Open settings file**,
+  **Export / Import**, and a **Make portable** button that copies your settings
+  beside the program (your old copy is left untouched; takes effect on restart).
+- Documented in `docs/user/config-location.md`.
+
+### Log browser — filters, export, stats, modcall clips
+- **Filters:** **regex** and **per-speaker** filtering on top of text search, and
+  **click any result to jump to its surrounding context**.
+- **Export** the current filtered view to `logs/exports/<timestamp>.txt`.
+- **Stats:** per-speaker line and word counts, plus totals, for the current scope.
+- **Auto-clip on modcall** (on by default): when a mod is called, the recent IC log
+  is saved to `logs/<server>/modcalls/` as a frozen record — evidence for mods/CMs.
+  Toggle in Settings → Audio & Chat.
+
+### Asset streaming (power users)
+- **Origin / CORS header override** (Settings → Assets) for servers that block
+  streaming from their own base URL or only allow specific referrers. **Only touch
+  this if you know what you're doing** — it's for power users; leave it blank
+  otherwise.
+
+### Quality of life
+- **Manual UI scale is actually usable.** It now applies **on release** (not while
+  you drag, which fought your cursor) and has **preset chips** for quick sizes —
+  fixing the "manual scale is super hard to use" report on high-resolution screens.
+
+### Under the hood
+- **Signed builds (groundwork).** The release pipeline can now Authenticode-sign
+  the Windows `.exe` and Developer-ID-codesign/notarize the macOS binary — **gated
+  on signing secrets**, so unsigned builds still ship until certificates are added
+  (`docs/CODE-SIGNING.md`). This is the path to fewer SmartScreen / Gatekeeper
+  warnings.
+
 ## v1.18.0 — 2026-06-29
 
 A fixes-and-features release from playtest feedback — readable UI on big monitors,
