@@ -177,10 +177,11 @@ func randGroupID() uint32 {
 // createGroup makes a new group I own (members = just me) and selects it; invite
 // others from the group view.
 func (a *App) createGroup(name string) {
-	if a.myUID() == 0 {
-		// No server-assigned UID yet (not fully joined) — group chat rides /pm by
-		// UID, so it can't work. Say so instead of silently doing nothing.
-		a.warnLine = clampLine("Group chat needs you fully connected to a server first.")
+	// Gate on CONNECTION, not the UID: some servers (Nyathena seen in the wild)
+	// assign player-id 0, so myUID()==0 is a valid connected state — the old guard
+	// wrongly blocked group creation with "needs you fully connected".
+	if a.sess == nil || a.room == nil {
+		a.warnLine = clampLine("Group chat needs you connected to a server first.")
 		a.warnAt = a.now()
 		return
 	}
