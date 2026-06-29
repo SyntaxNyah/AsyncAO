@@ -2471,7 +2471,13 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	c.Label(pad, y, "Every setting is ONE editable JSON file (asset_preferences.json). Close AsyncAO before hand-editing — it autosaves.", ColTextDim)
 	y += 22
 	c.LabelClipped(pad, y, w-pad, configDir(), ColAccent) // the actual path
-	y += 26
+	y += 24
+	if config.ConfigIsPortable() {
+		c.Label(pad, y, "Storage: PORTABLE — this folder sits next to AsyncAO, so it travels with a copied install / USB stick.", ColAccent)
+	} else {
+		c.Label(pad, y, "Storage: OS config folder. Use \"Make portable\" to keep settings beside AsyncAO (USB stick / copy).", ColTextDim)
+	}
+	y += 24
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Open config folder") {
 		openConfigFolder()
 	}
@@ -2479,6 +2485,13 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 		openSettingsFile()
 	}
 	y += 38
+	if !config.ConfigIsPortable() {
+		if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, "Make portable (copy beside AsyncAO)") {
+			makePortableAsync(a)
+		}
+		c.Label(pad+270, y+6, "Copies settings next to the program; takes effect on restart.", ColTextDim)
+		y += 38
+	}
 
 	y = a.settingsSection(y, w, "Back up / move to another PC")
 	c.Label(pad, y, "Export everything (favourites, layout, hotkeys, wardrobes, learned formats — NOT passwords) to a portable JSON; import it elsewhere.", ColTextDim)
@@ -2559,6 +2572,29 @@ func exportLearnedAsync(a *App) {
 		line := "Learned formats exported to " + path
 		if err != nil {
 			line = "Export failed: " + err.Error()
+		}
+		select {
+		case settings.ioRes <- line:
+		default:
+		}
+	}()
+}
+
+// makePortableAsync copies the active config set (settings + notebooks + jukebox)
+// into a config/ folder beside the executable so it travels with a portable copy
+// or USB stick. Off-thread (§17.2: no sync disk I/O on the render thread); the
+// move takes effect on the next launch.
+func makePortableAsync(a *App) {
+	go func() {
+		dest, err := a.d.Prefs.MigrateToPortable()
+		var line string
+		switch {
+		case err == config.ErrAlreadyPortable:
+			line = "Config is already portable (" + dest + ")."
+		case err != nil:
+			line = "Make portable failed: " + err.Error()
+		default:
+			line = "Copied your settings to " + dest + " — restart AsyncAO to start using the portable copy."
 		}
 		select {
 		case settings.ioRes <- line:
