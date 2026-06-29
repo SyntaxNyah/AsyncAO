@@ -101,6 +101,24 @@ type Client struct {
 	cached404s atomic.Int64
 	failures   atomic.Int64
 	bytesRead  atomic.Int64
+
+	// assetOrigin, when set, is sent as the Origin (and matching Referer) header on
+	// every asset fetch — a power-user override for servers that gate their asset
+	// base by Origin / CORS. nil = unset (default). Read on the fetch goroutines,
+	// set from the Security setting; atomic so it's race-free.
+	assetOrigin atomic.Pointer[string]
+}
+
+// SetAssetOrigin sets the Origin (and Referer) header sent on every asset fetch.
+// Empty clears it (the default — no header). Safe to call from any goroutine. The
+// power-user escape hatch for servers that only serve their base to a specific web
+// origin (a "join only via https://webao.example" setup).
+func (c *Client) SetAssetOrigin(origin string) {
+	if origin == "" {
+		c.assetOrigin.Store(nil)
+		return
+	}
+	c.assetOrigin.Store(&origin)
 }
 
 // NewClient builds a Client with the §7 transport tuning.
@@ -234,6 +252,10 @@ func (c *Client) fetchOnce(url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("network: building request for %s: %w", url, err)
+	}
+	if o := c.assetOrigin.Load(); o != nil { // power-user Origin/CORS override
+		req.Header.Set("Origin", *o)
+		req.Header.Set("Referer", *o+"/") // some bases gate by Referer (hotlink protection) rather than Origin
 	}
 
 	start := time.Now()

@@ -679,6 +679,7 @@ type AssetPreferences struct {
 	CharBundlePrefetch     bool                         `json:"charBundlePrefetch"`     // #127 pre-grab a char's FULL sprite set on load (default OFF)
 	PingChip               bool                         `json:"pingChip"`               // #128 show the connection-quality chip (default OFF)
 	ValidateTLSCerts       bool                         `json:"validateTLSCerts"`       // power-user Security toggle: strictly verify wss:// TLS certs. Default OFF = accept self-signed (most community AO servers use them)
+	AssetOrigin            string                       `json:"assetOrigin,omitempty"`  // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
 	LegacyDevTheme         bool                         `json:"legacyDevTheme"`         // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
 	OOCInLogTab            bool                         `json:"oocInLogTab"`            // OOC as a log tab + bottom OOC bar (Legacy-style hybrid); default ON. Off = OOC gets its own box.
 	MyProfile              ProfilePref                  `json:"profile"`                // the user's character profile (#101)
@@ -931,6 +932,7 @@ type prefsJSON struct {
 	CharBundlePrefetch     bool             `json:"charBundlePrefetch"`     // #127 default OFF
 	PingChip               bool             `json:"pingChip"`               // #128 default OFF
 	ValidateTLSCerts       bool             `json:"validateTLSCerts"`       // Security: strict wss cert check; default OFF (accept self-signed)
+	AssetOrigin            string           `json:"assetOrigin,omitempty"`  // Security: Origin/Referer override for asset fetches
 	LegacyDevTheme         bool             `json:"legacyDevTheme"`         // tickbox revert to the old look; default OFF = new layout
 	OOCInLogTab            bool             `json:"oocInLogTab"`            // OOC as a log tab + bottom OOC bar; default ON (Off = OOC box)
 	Profile                *ProfilePref     `json:"profile"`                // absent = no profile (#101)
@@ -1495,6 +1497,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.CharBundlePrefetch = onDisk.CharBundlePrefetch
 	p.PingChip = onDisk.PingChip
 	p.ValidateTLSCerts = onDisk.ValidateTLSCerts
+	p.AssetOrigin = strings.TrimSpace(onDisk.AssetOrigin)
 	p.LegacyDevTheme = onDisk.LegacyDevTheme
 	p.OOCInLogTab = onDisk.OOCInLogTab
 	if onDisk.Profile != nil {
@@ -3361,6 +3364,27 @@ func (p *AssetPreferences) ValidateTLSCertsOn() bool {
 
 // SetValidateTLSCerts toggles strict wss certificate verification.
 func (p *AssetPreferences) SetValidateTLSCerts(b bool) { p.setBoolPref(&p.ValidateTLSCerts, b) }
+
+// AssetOriginHeader reports the power-user Origin/Referer override sent on asset
+// fetches (empty = none). For servers that gate their asset base by Origin/CORS.
+func (p *AssetPreferences) AssetOriginHeader() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AssetOrigin
+}
+
+// SetAssetOriginHeader sets (or clears, when blank) the asset-fetch Origin override.
+func (p *AssetPreferences) SetAssetOriginHeader(s string) {
+	s = strings.TrimSpace(s)
+	p.mu.Lock()
+	if p.AssetOrigin == s {
+		p.mu.Unlock()
+		return
+	}
+	p.AssetOrigin = s
+	p.mu.Unlock()
+	p.markDirty()
+}
 
 // LegacyDevThemeOn reports whether the user ticked the built-in "Legacy Developer" theme (the old
 // look). Default OFF — the new optimal layout (OOC-as-a-box, grouped buttons) is the main theme.

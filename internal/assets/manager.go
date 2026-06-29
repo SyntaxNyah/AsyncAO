@@ -137,6 +137,14 @@ func (m *Manager) SetArchiveSource(f Fetcher) { m.archiveSrc.Store(&f) }
 // ClearArchiveSource removes the bundled-archive source override.
 func (m *Manager) ClearArchiveSource() { m.archiveSrc.Store(nil) }
 
+// SetAssetOrigin forwards a power-user Origin / CORS header override to the network
+// source. No-op in local / no-streaming mode (the source isn't a network client).
+func (m *Manager) SetAssetOrigin(origin string) {
+	if c, ok := m.client.(*network.Client); ok {
+		c.SetAssetOrigin(origin)
+	}
+}
+
 // ManagerDeps wires a Manager; every field is required except T1Contains.
 type ManagerDeps struct {
 	Resolver *Resolver

@@ -116,6 +116,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	defer disk.Close()
 
 	client := network.NewClient()
+	client.SetAssetOrigin(prefs.AssetOriginHeader()) // power-user Origin/CORS override for asset streaming
 	pool := network.NewPool(network.DefaultWorkers)
 	defer pool.Close()
 	decoder := assets.NewDecoderPool(assets.DecodeWorkers())

@@ -189,6 +189,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"login", "password", "username", "credential", "auto login",
 		"master list", "server list", "discord", "presence", "rich presence",
 		"security", "tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify",
+		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 	},
 	tabHotkeys: {
 		// sections: Hotkeys, Macros, IC quick-phrases.
@@ -2353,6 +2354,18 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 		a.d.Prefs.SetValidateTLSCerts(next)
 	}
 	y += 30
+	// Asset Origin / CORS override — for servers that only serve their asset base to
+	// a specific web client (joinable via a particular https:// link). Mainly power
+	// users; applied live to the streaming client.
+	c.Label(pad, y+4, "Asset Origin override:", ColText)
+	origin := a.d.Prefs.AssetOriginHeader()
+	if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 170, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
+		a.d.Prefs.SetAssetOriginHeader(next)
+		a.d.Manager.SetAssetOrigin(next)
+	}
+	y += 24
+	c.Label(pad, y, "⚠ Power users only — only touch this if you know what you're doing. Sends this Origin/Referer on asset downloads, so a server that only serves its base to its own web client will still stream to AsyncAO.", ColTextDim)
+	y += 22
 
 	// Discord Rich Presence: the whole section lives in a build-tagged file, so a
 	// -tags nodiscord binary compiles it out entirely (no section, no code).
