@@ -4,6 +4,20 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.19.8 — 2026-06-29
+
+**Voice chat is confirmed working** on Nyathena — talk and hear in a
+voice-enabled area. This patch fixes two things found right after:
+
+- **Esc actually closes menus now.** It turns out Esc was never reaching the
+  close handler (an input-routing bug), so it did nothing on any build. Fixed — Esc
+  now backs out of popups/panels and the menus as intended (and offers to quit
+  from the lobby).
+- **Clicking a floating box no longer moves you to another room.** The Voice,
+  Group Chat and Call Mod panels weren't blocking clicks from falling through to
+  the area list underneath, so pressing their buttons could swap your area.
+  They now fence the click like the other panels.
+
 ## v1.19.7 — 2026-06-29
 
 More playtest fixes + voice/quit quality-of-life.
