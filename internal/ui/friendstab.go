@@ -244,7 +244,7 @@ func (a *App) routeIncomingPM(uid int, sender, body string) {
 	if ok {
 		switch m.Kind {
 		case courtroom.MsgInvite:
-			a.applyGroupInvite(m.GroupID, m.GroupName, uid, sender)
+			a.queueGroupInvite(m.GroupID, m.GroupName, uid, sender) // explicit Accept/Decline, not auto-join
 			return
 		case courtroom.MsgGroupText:
 			a.applyGroupText(m.GroupID, uid, sender, clean)

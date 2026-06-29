@@ -683,6 +683,7 @@ type App struct {
 	msgInput       string
 	msgListScroll  int32
 	msgGroups      map[uint32]*msgGroup // client-side group chats (keyed by group id)
+	pendingInvites []groupInvite        // group invites awaiting Accept / Decline
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
@@ -4433,8 +4434,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			if a.extrasSurfaceLive() {       // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
 				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)
 			}
-			a.drawEmojiPicker(winW, winH)  // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
-			a.drawReactPalette(winW, winH) // #2: reaction palette overlay (modal-fenced)
+			a.drawEmojiPicker(winW, winH)      // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
+			a.drawReactPalette(winW, winH)     // #2: reaction palette overlay (modal-fenced)
+			a.drawGroupInviteToast(winW, winH) // group invite Accept/Decline banner (only when one is pending)
 		case ScreenSettings:
 			a.drawSettings(winW, winH)
 		case ScreenAbout:
