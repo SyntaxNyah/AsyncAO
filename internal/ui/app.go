@@ -673,7 +673,13 @@ type App struct {
 	// (floatwin.go) for the Pairing, Mod dashboard, CM, Hotkey-sheet, and Evidence
 	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
 	// rather than a modal. Geometry is global; open state is per-tab / per-flag.
-	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin floatWin
+	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin floatWin
+	// Group Chat panel (messaging): floating, non-blocking, global (not per-session).
+	// msgSel = selected conversation (partner char name); msgInput = compose buffer.
+	showMessages  bool
+	msgSel        string
+	msgInput      string
+	msgListScroll int32
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
