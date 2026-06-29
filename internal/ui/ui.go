@@ -1052,13 +1052,12 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 					c.hotkey = e.Keysym.Sym
 				}
 			case sdl.K_a:
-				// Select-all needs a focused field; with nothing focused let Ctrl+A
-				// fall through to the hotkeys (the Favourite-emotes default is "a").
-				if c.focusID != "" {
-					c.selectAll = true
-				} else {
-					c.hotkey = e.Keysym.Sym
-				}
+				// Arm select-all on the focused field: the next typed or
+				// pasted text replaces the whole value, backspace clears
+				// it, Ctrl+C/X already act on the full value. (Kept
+				// unconditional — select-all matters more than the Ctrl+A
+				// Fav-emotes hotkey, which stays on the Extras button.)
+				c.selectAll = true
 			default:
 				// Everything else is the app's: configurable Ctrl-chord
 				// hotkeys (shouts, pos cycle, screenshot, ...).

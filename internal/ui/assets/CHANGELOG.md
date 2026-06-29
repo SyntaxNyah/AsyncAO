@@ -23,10 +23,9 @@ voice-enabled area. This patch fixes two things found right after:
   others get a one-off PM and never see a menu. A note in the picker says so.
 - **Push-to-talk key** (Settings → Voice → **Push-to-talk**): bind a key that
   toggles your mic on/off while in voice.
-- **Desk-visibility hotkey works** again (and the Favourite-emotes hotkey): they
-  default to Ctrl+V / Ctrl+A, which were being eaten by clipboard paste /
-  select-all — now they fire when no text field is focused. *(Bug found by
-  cherripop — thanks!)*
+- **Desk-visibility hotkey works** again: it defaults to Ctrl+V, which was being
+  eaten by clipboard paste — now it fires when no text field is focused. *(Bug
+  found by cherripop — thanks!)*
 
 ## v1.19.7 — 2026-06-29
 
