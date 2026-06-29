@@ -1157,6 +1157,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	// content is interactive and the pointer is fenced over them. (torntabs.go)
 	if a.classicEdit {
 		a.drawTornTabs(w, h)
+		a.drawMessagesSlotGhost(w, h) // Group Chat panel: inert placeholder so the editor gives it handles
 		a.drawClassicEditor(w, h)
 	}
 }

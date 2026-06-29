@@ -329,5 +329,35 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 			a.d.Prefs.SetOOCInLogTab(!inTab)
 		}
 	}
+	// Group Chat panel placement chip (both themes): give the Group Chat / DMs panel a
+	// fixed home in this layout you can drag here (click again to remove it). It only
+	// owns WHERE the panel sits — whether it's shown stays the Extras → Group Chat toggle.
+	tx += 14
+	_, gcPlaced := a.classicOv[slotMessages]
+	gcLabel := "Group Chat"
+	gw := c.TextWidth(gcLabel) + 18
+	gcChip := sdl.Rect{X: tx, Y: trayY + 14, W: gw, H: 22}
+	bg := ColPanel
+	if gcPlaced {
+		bg = ColAccent // has a home → highlighted
+	} else if pointIn(c.mouseX, c.mouseY, gcChip) {
+		bg = ColPanelHi
+	}
+	c.Fill(gcChip, bg)
+	c.Border(gcChip, ColAccent)
+	c.LabelClipped(gcChip.X+6, gcChip.Y+3, gcChip.W-12, gcLabel, ColText)
+	c.Tooltip(gcChip, "Give the Group Chat / DMs panel a fixed home here (then drag it). Open it with Extras → Group Chat.")
+	if c.clicked && pointIn(c.mouseX, c.mouseY, gcChip) {
+		if gcPlaced {
+			a.clearClassicSlot(slotMessages)
+		} else {
+			frac := rectToFrac(a.msgSlotDefaultRect(w, h), w, h)
+			if a.classicOv == nil {
+				a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+			}
+			a.classicOv[slotMessages] = frac
+			a.d.Prefs.SetClassicSlot(slotMessages, frac)
+		}
+	}
 	return overTray
 }

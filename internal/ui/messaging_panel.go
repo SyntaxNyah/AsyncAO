@@ -27,15 +27,62 @@ const (
 
 func (a *App) toggleMessages() { a.showMessages = !a.showMessages }
 
-// msgPanelRect is the panel's screen rect; first-open tucks top-left, then the
-// floatWin geometry (drag / resize) wins.
+// msgPanelRect is the panel's screen rect. First open this session seeds from the
+// persisted layout slot (if you positioned it in Edit Layout), else tucks it
+// top-left; thereafter the live floatWin geometry (drag / resize) wins.
 func (a *App) msgPanelRect(w, h int32) sdl.Rect {
 	if !a.msgWin.placed {
+		if ov, ok := a.classicOv[slotMessages]; ok { // positioned via Edit Layout → start there
+			r := fracToRect(ov, w, h)
+			a.msgWin.x, a.msgWin.y, a.msgWin.w, a.msgWin.h, a.msgWin.placed = r.X, r.Y, r.W, r.H, true
+			return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
+		}
 		dw := clampI32(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
 		dh := clampI32(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
 	}
 	return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
+}
+
+// msgSlotDefaultRect is where the Group Chat slot lands when first added from the
+// layout editor (the "Group Chat" tray chip): centred, default size, clamped.
+func (a *App) msgSlotDefaultRect(w, h int32) sdl.Rect {
+	dw := clampI32(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
+	dh := clampI32(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
+	return sdl.Rect{X: (w - dw) / 2, Y: (h - dh) / 2, W: dw, H: dh}
+}
+
+// persistMsgSlot writes the live panel's current rect back to the layout slot, so
+// a drag/resize survives a relaunch. Called only on the drag/resize-END frame, so
+// it never writes per-frame; the in-memory classicOv write is cheap and the disk
+// flush is the debounced saver (SetClassicSlot marks dirty).
+func (a *App) persistMsgSlot(w, h int32) {
+	frac := rectToFrac(a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
+	if a.classicOv == nil {
+		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	}
+	a.classicOv[slotMessages] = frac
+	a.d.Prefs.SetClassicSlot(slotMessages, frac)
+}
+
+// drawMessagesSlotGhost draws an inert titled placeholder for the Group Chat panel
+// while the layout editor is open, registering it via slotRect so the generic
+// editor hands it move/resize handles. Edit-only and only when the slot exists
+// (added via the tray chip); the real interactive panel draws in normal mode.
+func (a *App) drawMessagesSlotGhost(w, h int32) {
+	if _, ok := a.classicOv[slotMessages]; !ok {
+		return
+	}
+	c := a.ctx
+	r := a.slotRect(slotMessages, a.msgSlotDefaultRect(w, h), w, h)
+	if r.W < classicMinPx || r.H < classicMinPx {
+		return
+	}
+	c.Fill(r, ColPanel)
+	c.Border(r, ColAccent)
+	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
+	c.Label(r.X+pad, r.Y+6, "Group Chat", ColText)
+	c.LabelClipped(r.X+pad, r.Y+floatTitleH+8, r.W-2*pad, "(opens here when you click Extras → Group Chat)", ColTextDim)
 }
 
 // msgEntry is one left-column row: a group (gid != 0) or a DM (keyed by name).
@@ -88,6 +135,7 @@ func (a *App) msgEntries() []msgEntry {
 // floatWin press edge from drawFloatingPanels.
 func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	c := a.ctx
+	wasActive := a.msgWin.dragging || a.msgWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.msgPanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
@@ -102,6 +150,9 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.msgWin, grip, r, msgPanelMinW, msgPanelMinH, pressed)
 	a.drawResizeGrip(grip)
+	if wasActive && !a.msgWin.dragging && !a.msgWin.resizing { // drag/resize just ended → remember where
+		a.persistMsgSlot(w, h)
+	}
 
 	top := r.Y + floatTitleH + 8
 	bottom := r.Y + r.H - pad

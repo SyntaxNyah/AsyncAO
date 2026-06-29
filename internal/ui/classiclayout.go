@@ -49,6 +49,11 @@ const (
 	slotOOCBar     = "oocbar"         // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
 	slotControls   = "controls"       // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
 	slotTabBar     = "tabbar"         // the floating server-tab switcher strip (move-only; issue #2 — it used to overlap the dock tabs)
+	// slotMessages is the Group Chat / DMs panel's PERSISTED home. Unlike a torn
+	// tab, slot presence is geometry only — visibility stays the orthogonal
+	// showMessages toggle (Extras → Group Chat). The live floatWin (msgWin) seeds
+	// from this slot on open and writes back on drag/resize end (messaging_panel.go).
+	slotMessages = "panel:messages"
 )
 
 // Resize-edge bitmask: which sides of a box a drag moves.
@@ -193,6 +198,8 @@ func classicSlotLabel(k string) string {
 		return "React button"
 	case slotICInput:
 		return "IC text input"
+	case slotMessages:
+		return "Group Chat (panel)"
 	default:
 		// Individually-movable control buttons carry a "ctrl.<name>" key.
 		if rest, ok := strings.CutPrefix(k, "ctrl."); ok {
