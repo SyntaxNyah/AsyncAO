@@ -161,6 +161,11 @@ const defaultShowFriendButton = true
 // modcall event); a Settings toggle disables it.
 const defaultAutoClipModcall = true
 
+// defaultGroupChatButton shows the Group Chat / DMs launcher as a main on-screen
+// button in the courtroom control row (not just Extras). Default-ON for
+// discoverability; a Settings → Chat toggle hides it.
+const defaultGroupChatButton = true
+
 // defaultRightClickHideSprite makes right-clicking a character sprite offer to
 // hide it from the viewport (default ON; a Settings toggle disables it).
 const defaultRightClickHideSprite = true
@@ -749,6 +754,7 @@ type AssetPreferences struct {
 	PerAreaScroll          bool                         `json:"perAreaScrollback"`
 	DetailedLog            bool                         `json:"detailedLog"`
 	AutoClipModcall        bool                         `json:"autoClipModcall"`
+	GroupChatButton        bool                         `json:"groupChatButton"`
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
@@ -1006,6 +1012,7 @@ type prefsJSON struct {
 	PerAreaScrollback      bool             `json:"perAreaScrollback"` // default OFF (zero value)
 	DetailedLog            bool             `json:"detailedLog"`       // default OFF (zero value)
 	AutoClipModcall        *bool            `json:"autoClipModcall"`   // default ON (pointer: absent != off)
+	GroupChatButton        *bool            `json:"groupChatButton"`   // default ON (pointer: absent != off)
 
 	FontPaths          string                       `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                  `json:"macros"`
@@ -1330,6 +1337,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		EmoteButtonImages:    defaultEmoteButtonImages,
 		ShowFriendButton:     defaultShowFriendButton,
 		AutoClipModcall:      defaultAutoClipModcall,
+		GroupChatButton:      defaultGroupChatButton,
 		RightClickHideSprite: defaultRightClickHideSprite,
 		DragLayout:           defaultDragLayout,
 
@@ -1642,6 +1650,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.DetailedLog = onDisk.DetailedLog
 	if onDisk.AutoClipModcall != nil { // pointer: absent keeps the default-ON
 		p.AutoClipModcall = *onDisk.AutoClipModcall
+	}
+	if onDisk.GroupChatButton != nil { // pointer: absent keeps the default-ON
+		p.GroupChatButton = *onDisk.GroupChatButton
 	}
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
@@ -5308,6 +5319,25 @@ func (p *AssetPreferences) SetAutoClipModcall(on bool) {
 		return
 	}
 	p.AutoClipModcall = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// GroupChatButtonOn reports the on-screen Group Chat button toggle (ON by default).
+func (p *AssetPreferences) GroupChatButtonOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.GroupChatButton
+}
+
+// SetGroupChatButton toggles the courtroom's main Group Chat button.
+func (p *AssetPreferences) SetGroupChatButton(on bool) {
+	p.mu.Lock()
+	if p.GroupChatButton == on {
+		p.mu.Unlock()
+		return
+	}
+	p.GroupChatButton = on
 	p.mu.Unlock()
 	p.markDirty()
 }

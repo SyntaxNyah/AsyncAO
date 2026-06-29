@@ -1879,6 +1879,13 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	pad := a.formX
 	w := a.formW2()
 
+	y = a.settingsSection(y, w, "Group chat")
+	gcBtn := a.d.Prefs.GroupChatButtonOn()
+	if next := c.Checkbox(pad, y, "Show the Group Chat button in the courtroom (ON by default): a main button to open DMs & group chats with other AsyncAO players. It's always in Extras → Group Chat too.", gcBtn); next != gcBtn {
+		a.d.Prefs.SetGroupChatButton(next)
+	}
+	y += 30
+
 	y = a.settingsSection(y, w, "Text & typing")
 	// Hold-to-clear: hold a key (default Backspace, rebindable) to wipe a text
 	// box at once instead of deleting char-by-char.

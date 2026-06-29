@@ -3682,6 +3682,22 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			c.Tooltip(cR, "CM area controls — lock / kick-from-area")
 			x += cmW + btnGap
 		}
+		// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
+		// Appended last so it can't shift the buttons before it; skipped (no x advance) off.
+		if a.d.Prefs.GroupChatButtonOn() {
+			const gcW = int32(96)
+			if x+gcW > clusterRight {
+				y2 += btnH + 4
+				x = clusterX
+			}
+			gcR := sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}
+			if c.Button(gcR, "Group Chat") {
+				a.toggleMessages()
+			}
+			c.Border(gcR, ColAccent)
+			c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
+			x += gcW + btnGap
+		}
 	} else {
 		// New default: the same buttons grouped by purpose (Character · Scene · Moderation · System),
 		// a wider gap between groups, the leave button set apart at the end. Inline (no closures) so
@@ -3801,6 +3817,24 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			}
 		}
 		x += loginW + 6
+		// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
+		// APPENDED at the end of the functional buttons so it can never shift the ones
+		// before it; when off it's skipped entirely (no x advance), so the row is
+		// byte-identical to before. A movable slot, so Edit Layout can reposition it.
+		if a.d.Prefs.GroupChatButtonOn() {
+			const gcW = int32(96)
+			if x+gcW > clusterRight {
+				y2 += btnH + 4
+				x = clusterX
+			}
+			gcR := a.slotRect("ctrl.groupchat", sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}, w, h)
+			if c.Button(gcR, "Group Chat") {
+				a.toggleMessages()
+			}
+			c.Border(gcR, ColAccent)
+			c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
+			x += gcW + 6
+		}
 		// — Leave — set apart at the end.
 		x += gGap
 		if x+110 > clusterRight {
