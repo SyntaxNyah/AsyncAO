@@ -32,6 +32,13 @@ func openConfigFolder() {
 	}
 }
 
+// openSettingsFile opens asset_preferences.json itself with the OS default handler.
+func openSettingsFile() {
+	if p, err := config.DefaultPath(); err == nil {
+		openInFileManager(p)
+	}
+}
+
 // configDir returns the AsyncAO config directory's path for display, or "" if it
 // can't be resolved.
 func configDir() string {

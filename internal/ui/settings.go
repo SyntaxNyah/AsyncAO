@@ -116,10 +116,10 @@ var settings = settingsState{
 // Settings tabs: the screen is split into these categories so it's
 // navigable instead of one long scroll. numSettingsTabs sizes the per-tab
 // scroll array (keep it == len(settingsTabNames)).
-const numSettingsTabs = 9
+const numSettingsTabs = 10
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Reset",
+	"General", "Theme", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Reset",
 }
 
 // Tab indices (order matches settingsTabNames).
@@ -132,6 +132,7 @@ const (
 	tabAccount
 	tabHotkeys
 	tabStudio
+	tabData
 	tabReset
 )
 
@@ -192,10 +193,14 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 	},
 	tabHotkeys: {
-		// sections: Hotkeys, Macros, IC quick-phrases, Export/Import + config folder.
+		// sections: Hotkeys, Macros, IC quick-phrases.
 		"hotkey", "hotkeys", "keybind", "keybinding", "shortcut",
-		"macro", "macros", "ic quick", "quick phrase", "phrase", "export hotkeys", "import", "backup",
-		"config folder", "config location", "settings file", "where are my settings", "appdata", "asset_preferences", "open config",
+		"macro", "macros", "ic quick", "quick phrase", "phrase",
+	},
+	tabData: {
+		// sections: Your settings file, Back up / move, Other data.
+		"data", "settings file", "config folder", "config location", "open config", "open settings file",
+		"asset_preferences", "where are my settings", "appdata", "export", "import", "backup", "portable", "usb", "move to another pc", "json",
 	},
 	tabStudio: {
 		// sections: Scene recording, Instant replay, Scene maker, Recordings, Replay
@@ -370,6 +375,8 @@ func (a *App) drawSettings(w, h int32) {
 		y = a.drawSettingsHotkeys(y, w)
 	case tabStudio:
 		y = a.drawSettingsStudio(y, w)
+	case tabData:
+		y = a.drawSettingsData(y, w)
 	case tabReset:
 		y = a.drawSettingsReset(y, w)
 	}
@@ -2448,30 +2455,54 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	// Bind a key to a canned IC line your CHARACTER says (the IC counterpart to macros).
 	y = a.drawICPhraseSettings(y, w)
 	y += 8
+	// (Export / Import / Open config moved to their own "Data" tab.)
+	return y
+}
 
-	// Whole-settings portability: the new-PC bundle (every knob, favorites,
-	// per-server wardrobes/keybinds, learned formats — minus passwords).
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Export settings") {
+// drawSettingsData is the dedicated "where's my stuff / back it up" tab — one place
+// for the settings file, its folder, and export/import, so nobody hunts through
+// %AppData% (the recurring confusion).
+func (a *App) drawSettingsData(y, _ int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	w := a.formW2()
+
+	y = a.settingsSection(y, w, "Your settings file")
+	c.Label(pad, y, "Every setting is ONE editable JSON file (asset_preferences.json). Close AsyncAO before hand-editing — it autosaves.", ColTextDim)
+	y += 22
+	c.LabelClipped(pad, y, w-pad, configDir(), ColAccent) // the actual path
+	y += 26
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Open config folder") {
+		openConfigFolder()
+	}
+	if c.Button(sdl.Rect{X: pad + 190, Y: y, W: 180, H: btnH}, "Open settings file") {
+		openSettingsFile()
+	}
+	y += 38
+
+	y = a.settingsSection(y, w, "Back up / move to another PC")
+	c.Label(pad, y, "Export everything (favourites, layout, hotkeys, wardrobes, learned formats — NOT passwords) to a portable JSON; import it elsewhere.", ColTextDim)
+	y += 22
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Export settings") {
 		exportSettingsAsync(a)
 	}
 	importLabel := "Import settings..."
 	if settings.importArmed {
 		importLabel = "Drop the .json here"
 	}
-	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, importLabel) {
+	if c.Button(sdl.Rect{X: pad + 190, Y: y, W: 200, H: btnH}, importLabel) {
 		settings.importArmed = !settings.importArmed
 		if settings.importArmed {
 			settings.statusLine = "Drop an exported asyncao-settings .json anywhere on this window."
 		}
 	}
-	y += 36
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 200, H: btnH}, "Open config folder") {
-		openConfigFolder()
-	}
-	c.Label(pad+210, y+5, "your settings (asset_preferences.json), case notebooks & jukebox live here:", ColTextDim)
+	y += 38
+
+	y = a.settingsSection(y, w, "Other data")
+	c.Label(pad, y, "logs / recordings / screenshots sit next to the AsyncAO program (portable).", ColTextDim)
+	y += 20
+	c.Label(pad, y, "The streamed-asset cache is separate — view or clear it under Assets → Cache.", ColTextDim)
 	y += 24
-	c.LabelClipped(pad, y, a.formW2()-pad, configDir(), ColAccent) // the actual path, so it's easy to find
-	y += 30
 	return y
 }
 
