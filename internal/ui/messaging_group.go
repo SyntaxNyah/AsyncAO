@@ -178,6 +178,10 @@ func randGroupID() uint32 {
 // others from the group view.
 func (a *App) createGroup(name string) {
 	if a.myUID() == 0 {
+		// No server-assigned UID yet (not fully joined) — group chat rides /pm by
+		// UID, so it can't work. Say so instead of silently doing nothing.
+		a.warnLine = clampLine("Group chat needs you fully connected to a server first.")
+		a.warnAt = a.now()
 		return
 	}
 	g := a.ensureGroup(randGroupID())

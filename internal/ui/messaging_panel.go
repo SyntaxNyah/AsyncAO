@@ -183,6 +183,7 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	}
 	if c.Button(sdl.Rect{X: listR.X, Y: bottom - btnH, W: leftW, H: btnH}, "+ New Group") {
 		a.createGroup("New group")
+		a.msgGroupManage = true // jump straight to the members / invite picker
 	}
 
 	// Right column: group view, DM view, or a hint.
@@ -294,6 +295,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		return
 	}
 	roster := a.rosterView()
+	shown := 0
 	for i := range roster {
 		if y > box.Y+box.H-rowH {
 			break
@@ -308,6 +310,15 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 			a.inviteToGroup(g, uid, name)
 		}
 		y += rowH
+		shown++
+	}
+	// Group chat is AsyncAO-to-AsyncAO; a player only becomes invitable once we've
+	// SEEN them on AsyncAO (they've sent a message → the AO badge). Explain the empty
+	// list so it doesn't read as broken ("+ New Group did nothing").
+	if shown == 0 {
+		c.LabelClipped(box.X+8, y+2, box.W-12, "No other AsyncAO players detected here yet.", ColTextDim)
+		y += rowH
+		c.LabelClipped(box.X+8, y+2, box.W-12, "They appear once they've spoken (look for the AO badge in the player list).", ColTextDim)
 	}
 }
 
