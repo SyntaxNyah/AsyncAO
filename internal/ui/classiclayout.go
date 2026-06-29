@@ -152,6 +152,22 @@ func (a *App) movableButton(key string, def sdl.Rect, label string, w, h int32) 
 	return a.ctx.Button(a.slotRect(key, def, w, h), label)
 }
 
+// ctrlSlot positions one courtroom control button at the shared row cursor *x and
+// advances it past the button — UNLESS the user hid that button (the customizable
+// toolbar: UI… popup → Buttons), in which case it returns ok=false and leaves the
+// cursor PUT, so the row COMPACTS with no gap. `adv` is the exact cursor step
+// (width + spacing) the inline row used, so a row with nothing hidden is
+// pixel-identical to before. The returned rect still routes through slotRect, so an
+// Edit-Layout override repositions a visible button as usual.
+func (a *App) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect, bool) {
+	if a.panelHidden(key) {
+		return sdl.Rect{}, false
+	}
+	r := a.slotRect(key, sdl.Rect{X: *x, Y: y2, W: wdt, H: btnH}, w, h)
+	*x += adv
+	return r, true
+}
+
 // classicSnap rounds a screen coordinate to the editor's grid (shared 8 px).
 func classicSnap(v int32) int32 {
 	if v < 0 {

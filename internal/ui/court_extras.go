@@ -84,6 +84,26 @@ var hideablePanels = []struct{ id, label string }{
 	{panelExtras, "Extras button (AsyncAO features menu — themed mode; the 'x' hotkey still opens it)"},
 }
 
+// hideableButtons drives the "Control buttons" grid in the UI popup — the
+// customizable courtroom toolbar (screens.go ctrlSlot). Each id is a ctrl.*
+// slot key; ticking one hides that button and the row compacts with no gap.
+// "UI…" itself is deliberately absent (it's the way back to this popup) and so
+// are the contextual buttons (Mod/CM/Pos/Group/Voice/Disconnect) that already
+// appear and disappear on their own.
+var hideableButtons = []struct{ id, label string }{
+	{"ctrl.character", "Character"},
+	{"ctrl.wardrobe", "Wardrobe"},
+	{"ctrl.restyle", "Restyle"},
+	{"ctrl.background", "Background"},
+	{"ctrl.evidence", "Evidence"},
+	{"ctrl.mods", "Mods"},
+	{"ctrl.settings", "Settings"},
+	{"ctrl.editlayout", "Edit Layout"},
+	{"ctrl.hotkeys", "Hotkeys"},
+	{"ctrl.about", "About"},
+	{"ctrl.login", "Login"},
+}
+
 // panelHidden reports whether the user hid a chrome region.
 func (a *App) panelHidden(id string) bool { return a.hidden[id] }
 
@@ -932,7 +952,11 @@ func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 // persists across sessions (Prefs.HiddenPanels).
 func (a *App) drawUICfgPanel(w, h int32) {
 	c := a.ctx
-	panelH := int32(len(hideablePanels))*26 + 70
+	const cfgRow = int32(26) // checkbox row pitch (matches the chrome list)
+	const btnCols = int32(3) // the control-button grid is 3 wide
+	btnRows := (int32(len(hideableButtons)) + btnCols - 1) / btnCols
+	// pad+34 heading · chrome list · 30 sub-heading · button grid · btnH+18 bottom row
+	panelH := pad + 34 + int32(len(hideablePanels))*cfgRow + 30 + btnRows*cfgRow + btnH + 18
 	panel := sdl.Rect{X: w/2 - 280, Y: h/2 - panelH/2, W: 560, H: panelH}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -943,7 +967,21 @@ func (a *App) drawUICfgPanel(w, h int32) {
 		if next := c.Checkbox(panel.X+pad, y, "Hide "+p.label, hidden); next != hidden {
 			a.setPanelHidden(p.id, next)
 		}
-		y += 26
+		y += cfgRow
+	}
+	// Control buttons — the customizable toolbar row. Tick to HIDE a button
+	// (same checked = hidden semantics as the chrome list above); the row
+	// compacts with no gap. "UI…" stays put so this popup is always reachable.
+	c.Label(panel.X+pad, y+4, "Control buttons (tick to hide from the toolbar row):", ColTextDim)
+	y += 30
+	colW := (panel.W - 2*pad) / btnCols
+	for i, b := range hideableButtons {
+		cx := panel.X + pad + int32(i)%btnCols*colW
+		cy := y + int32(i)/btnCols*cfgRow
+		hidden := a.panelHidden(b.id)
+		if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
+			a.setPanelHidden(b.id, next)
+		}
 	}
 	// Theater: the logical extreme of hiding chrome — stage only,
 	// borderless, Esc (or the hotkey) exits.

@@ -3779,40 +3779,44 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		if a.evidPresent {
 			evLabel = "Evidence ●"
 		}
-		// — Character —
-		if a.movableButton("ctrl.character", sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character", w, h) {
-			a.screen = ScreenCharSelect
+		// — Character — (each button hideable via UI… → Buttons; hidden ones compact away)
+		if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.character"); ok {
+			if c.Button(r, "Character") {
+				a.screen = ScreenCharSelect
+			}
 		}
-		x += 106
-		wr := a.slotRect("ctrl.wardrobe", sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, w, h)
-		if c.Button(wr, "Wardrobe") {
-			a.openIniswap()
+		if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
+			if c.Button(r, "Wardrobe") {
+				a.openIniswap()
+			}
+			c.Border(r, ColAccent)
+			c.Tooltip(r, "Wardrobe / iniswap — swap your character's sprites & emotes")
 		}
-		c.Border(wr, ColAccent)
-		c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
-		x += 96
-		reR := a.slotRect("ctrl.restyle", sdl.Rect{X: x, Y: y2, W: 84, H: btnH}, w, h)
-		if c.Button(reR, "Restyle") {
-			a.openSpriteStyle()
+		if r, ok := a.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
+			if c.Button(r, "Restyle") {
+				a.openSpriteStyle()
+			}
+			c.Tooltip(r, "Recolour / glow your character on the fly — other AsyncAO players see it")
 		}
-		c.Tooltip(reR, "Recolour / glow your character on the fly — other AsyncAO players see it")
-		x += 84 + gGap
 		// — Scene —
-		if a.movableButton("ctrl.background", sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background", w, h) {
-			a.openBgPicker()
+		if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.background"); ok {
+			if c.Button(r, "Background") {
+				a.openBgPicker()
+			}
 		}
-		x += 106
-		if a.movableButton("ctrl.evidence", sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel, w, h) {
-			a.showEvid = true
+		if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.evidence"); ok {
+			if c.Button(r, evLabel) {
+				a.showEvid = true
+			}
 		}
-		x += 106
 		x = a.drawPosSelect(x, y2, btnH)
 		x += gGap
 		// — Moderation —
-		if a.movableButton("ctrl.mods", sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...", w, h) {
-			a.showModcall = true
+		if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.mods"); ok {
+			if c.Button(r, "Mods...") {
+				a.showModcall = true
+			}
 		}
-		x += 86
 		if a.amIMod() {
 			mR := a.slotRect("ctrl.mod", sdl.Rect{X: x, Y: y2, W: 54, H: btnH}, w, h)
 			if c.Button(mR, "Mod") {
@@ -3837,32 +3841,35 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			y2 += btnH + 4
 			x = clusterX
 		}
-		if a.movableButton("ctrl.settings", sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings", w, h) {
-			a.prevScreen = ScreenCourtroom
-			a.screen = ScreenSettings
+		if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.settings"); ok {
+			if c.Button(r, "Settings") {
+				a.prevScreen = ScreenCourtroom
+				a.screen = ScreenSettings
+			}
 		}
-		x += 96
+		// UI… is the access point to the button-customise list, so it's never hidden.
 		if a.movableButton("ctrl.ui", sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...", w, h) {
 			a.showUICfg = true
 		}
 		x += 56
-		edR := a.slotRect("ctrl.editlayout", sdl.Rect{X: x, Y: y2, W: 94, H: btnH}, w, h)
-		if c.Button(edR, "Edit Layout") {
-			a.openLayoutEditor()
+		if r, ok := a.ctrlSlot(&x, y2, 94, 100, w, h, "ctrl.editlayout"); ok {
+			if c.Button(r, "Edit Layout") {
+				a.openLayoutEditor()
+			}
+			c.Tooltip(r, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
 		}
-		c.Tooltip(edR, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
-		x += 100
-		hkR := a.slotRect("ctrl.hotkeys", sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, w, h)
-		if c.Button(hkR, "Hotkeys") {
-			a.openHotkeyCheatSheet()
+		if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.hotkeys"); ok {
+			if c.Button(r, "Hotkeys") {
+				a.openHotkeyCheatSheet()
+			}
+			c.Tooltip(r, "Show all your hotkeys & custom binds (also F1)")
 		}
-		c.Tooltip(hkR, "Show all your hotkeys & custom binds (also F1)")
-		x += 96
-		if a.movableButton("ctrl.about", sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About", w, h) {
-			a.prevScreen = ScreenCourtroom
-			a.screen = ScreenAbout
+		if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.about"); ok {
+			if c.Button(r, "About") {
+				a.prevScreen = ScreenCourtroom
+				a.screen = ScreenAbout
+			}
 		}
-		x += 86
 		// Login / account button: once you've saved an account for this server it shows
 		// your username (left-click views your profile via /account); otherwise it's the
 		// plain "Login..." that opens the dialog. Right-click always opens the dialog (log
@@ -3873,22 +3880,22 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		if acct != "" {
 			loginLabel, loginW = acct, c.TextWidth(acct)+18
 		}
-		loginR := a.slotRect("ctrl.login", sdl.Rect{X: x, Y: y2, W: loginW, H: btnH}, w, h)
-		if c.Button(loginR, loginLabel) {
+		if loginR, ok := a.ctrlSlot(&x, y2, loginW, loginW+6, w, h, "ctrl.login"); ok {
+			if c.Button(loginR, loginLabel) {
+				if acct != "" {
+					a.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
+				} else {
+					a.openLoginDialog()
+				}
+			}
 			if acct != "" {
-				a.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
-			} else {
-				a.openLoginDialog()
+				if c.rightClicked && c.hovering(loginR) {
+					a.openLoginDialog() // re-login / switch account
+				} else if c.hovering(loginR) { // build the hint string only on hover (0-alloc otherwise)
+					c.Tooltip(loginR, "Logged in as "+acct+" — click: view profile (/account) · right-click: log in / switch")
+				}
 			}
 		}
-		if acct != "" {
-			if c.rightClicked && c.hovering(loginR) {
-				a.openLoginDialog() // re-login / switch account
-			} else if c.hovering(loginR) { // build the hint string only on hover (0-alloc otherwise)
-				c.Tooltip(loginR, "Logged in as "+acct+" — click: view profile (/account) · right-click: log in / switch")
-			}
-		}
-		x += loginW + 6
 		// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
 		// APPENDED at the end of the functional buttons so it can never shift the ones
 		// before it; when off it's skipped entirely (no x advance), so the row is
