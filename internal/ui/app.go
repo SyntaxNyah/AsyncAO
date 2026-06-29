@@ -4310,7 +4310,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// the topmost popup or floating panel (Group Chat, Voice, Evidence, Pair, Mod,
 	// CM, Call Mod, Timer, …) via closeTopOverlay. Skipped while a key-bind capture
 	// or the layout editor owns Esc.
-	if a.ctx.keyPressed == sdl.K_ESCAPE && a.bindingFor == "" && a.shownameBindFor == "" && !a.classicEdit {
+	// NOTE: Esc arrives as ctx.escPressed (HandleEvent maps K_ESCAPE there, NOT to
+	// keyPressed) — the old keyPressed==K_ESCAPE test never fired, which is why "Esc
+	// did nothing". Gate on escPressed.
+	if a.ctx.escPressed && !a.capturingKey() && !a.classicEdit {
 		// Close the topmost popup / panel first (works on any screen — e.g. the
 		// reset-confirm or a dropdown over Settings); only if nothing was open do we
 		// fall back to leaving a full-screen menu (drop a focused field, then exit).
@@ -4332,8 +4335,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			}
 		}
 		if handled {
-			a.ctx.keyPressed = 0
-			a.ctx.escPressed = false // don't let a draw-time Esc handler double-fire
+			a.ctx.escPressed = false // consume it so a draw-time Esc handler can't double-fire
 		}
 	}
 	// F11 toggles fullscreen on any screen — the keyboard escape when a too-big

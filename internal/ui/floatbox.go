@@ -163,6 +163,14 @@ func (a *App) courtModalOpen() bool {
 		a.showEmojiPicker || a.banBoxKind != 0 || a.classicEdit
 }
 
+// capturingKey reports whether ANY key-bind capture is armed (hotkey, showname,
+// jukebox, macro, IC-phrase, style-preset, hold-to-clear). Those use Esc to
+// CANCEL, so the global Esc handler must stand down while one is active.
+func (a *App) capturingKey() bool {
+	return a.bindingFor != "" || a.shownameBindFor != "" || a.jukeBindFor != "" ||
+		a.icPhraseBindFor != "" || a.stylePresetBindFor != "" || a.holdKeyArmed || a.macroBind >= 0
+}
+
 // closeTopOverlay closes the single topmost open popup / floating panel (most
 // modal first), returning whether it closed anything. This is the Esc "back out
 // of whatever's open" handler for the courtroom & lobby — one press, one layer,
