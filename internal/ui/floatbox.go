@@ -78,6 +78,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Screenshot", "Save a PNG of the current frame to the screenshots\\ folder next to AsyncAO — for sharing a moment (Ctrl+S)", hotkeyScreenshot, func() { a.captureScreenshot() }},
 			{"Logs", "Search your saved chat transcripts — any server, any session, filter by text", "", func() { a.prevScreen = ScreenCourtroom; a.openLogBrowser(); a.screen = ScreenLogs }},
 			{"Group Chat", "Private DMs & group chats with other AsyncAO players — over the server's /pm, never the room", "", func() { a.toggleMessages() }},
+			{voiceExtraLabel, "Voice chat (Nyathena): join the voice channel, see who's talking. Live mic audio is coming; for now it shares presence + speaking state", "", func() { a.toggleVoice() }},
 			{"Hide chrome", "Hide/show AsyncAO's on-screen widgets", hotkeyUIChrome, func() { a.showUICfg = true }},
 			{"Theater", "Theater mode — stage only, Esc exits", hotkeyTheater, func() { a.setTheater(!a.theaterOn) }},
 			{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
@@ -262,6 +263,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
+		a.voiceWin.dragging || a.voiceWin.resizing ||
 		a.hkWin.dragging || a.hkWin.resizing || a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 		return true
 	}
@@ -414,6 +416,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 			a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
+			a.voiceWin.dragging || a.voiceWin.resizing ||
 			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
@@ -443,6 +446,9 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	if a.showMessages { // Group Chat / DMs — non-blocking floating panel
 		a.drawMessagesPanel(w, h, &pressed)
+	}
+	if a.showVoice { // Voice (Nyathena) — non-blocking floating panel
+		a.drawVoicePanel(w, h, &pressed)
 	}
 }
 
@@ -533,6 +539,9 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	for id, wd := range widgets {
 		if a.widgetDetached(id) {
 			continue
+		}
+		if wd.label == voiceExtraLabel && !a.voiceOfferable() {
+			continue // voice option only shows on servers that advertise it (Nyathena)
 		}
 		col, row := slot%cols, slot/cols
 		slot++
@@ -639,6 +648,9 @@ func (a *App) drawExtrasDetached(w, h int32, pressed *bool) {
 			continue
 		}
 		wd := widgets[id]
+		if wd.label == voiceExtraLabel && !a.voiceOfferable() {
+			continue // hidden on non-Nyathena servers, even if it was torn off earlier
+		}
 		r := a.detachedBoxRect(i, w, h)
 		if pal.gradient {
 			c.FillGradient(r, pal.bg, pal.bg2)

@@ -31,7 +31,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev libopus-dev
 
       - name: go vet
         run: go vet ./...
@@ -81,7 +81,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev libopus-dev
       - name: Build
         run: |
           go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
@@ -189,7 +189,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev \
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev libopus-dev \
             patchelf desktop-file-utils
       - name: Build the binary
         run: |

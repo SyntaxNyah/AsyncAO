@@ -673,7 +673,10 @@ type App struct {
 	// (floatwin.go) for the Pairing, Mod dashboard, CM, Hotkey-sheet, and Evidence
 	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
 	// rather than a modal. Geometry is global; open state is per-tab / per-flag.
-	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin floatWin
+	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, voiceWin floatWin
+	// Voice chat (Nyathena VS_* relay): showVoice = the floating panel's open state
+	// (global); membership/mic state is per-session (sessionState.voiceJoined/MicOn).
+	showVoice bool
 	// Group Chat panel (messaging): floating, non-blocking, global (not per-session).
 	// msgSel = selected conversation (partner char name); msgInput = compose buffer.
 	showMessages   bool
@@ -858,9 +861,13 @@ type sessionState struct {
 	// #130 CM/mod dashboard: per-server software override (SoftwareUnknown = auto-detect from
 	// the ID packet). Parks per tab; a fresh connect's new sessionState resets it to auto.
 	cmSoftwareOverride courtroom.ServerSoftware
-	showModDash        bool // the mod (ban/kick) dashboard panel is open
-	showCMPanel        bool // the separate CM (area control) panel is open
-	amICMNow           bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// Voice chat membership (per-server, so it parks per tab): voiceJoined = we've
+	// sent VS_JOIN; voiceMicOn = our speak state is on (announced via VS_SPEAK).
+	voiceJoined bool
+	voiceMicOn  bool
+	showModDash bool // the mod (ban/kick) dashboard panel is open
+	showCMPanel bool // the separate CM (area control) panel is open
+	amICMNow    bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
