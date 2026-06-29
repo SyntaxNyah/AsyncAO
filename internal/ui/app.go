@@ -677,6 +677,9 @@ type App struct {
 	// Voice chat (Nyathena VS_* relay): showVoice = the floating panel's open state
 	// (global); membership/mic state is per-session (sessionState.voiceJoined/MicOn).
 	showVoice bool
+	// voiceAudio is the live capture/playback engine — non-nil ONLY while joined to
+	// a voice channel (opt-in); nil = presence-only / not in voice (voiceaudio.go).
+	voiceAudio *voiceEngine
 	// Group Chat panel (messaging): floating, non-blocking, global (not per-session).
 	// msgSel = selected conversation (partner char name); msgInput = compose buffer.
 	showMessages   bool
@@ -2166,6 +2169,8 @@ func (a *App) Disconnect() {
 	if a.d.Audio != nil {
 		a.d.Audio.StopMusic()
 	}
+	a.stopVoiceAudio() // free the voice capture/playback devices with the connection
+	a.voiceJoined, a.voiceMicOn = false, false
 	// Rehearsal mode ends with the session: reopen the network gate.
 	if a.rehearsal {
 		a.d.Manager.SetOffline(false)
@@ -2503,6 +2508,10 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 		case courtroom.EventWTCE:
 			a.handleWTCE(ev.Text, ev.Int)
+		case courtroom.EventVoiceAudio:
+			a.voiceOnAudio(ev.Int, ev.Text) // decode + queue a peer's frame for the mixer
+		case courtroom.EventVoicePeers:
+			a.voiceReconcilePeers() // someone joined/left voice — sync the decoder set
 		case courtroom.EventModcall:
 			a.pushOOC("[MOD CALL] "+ev.Text, "")
 			a.playThemeSFX("mod_call")
@@ -4315,6 +4324,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.handleUpdateInput(winW, winH) // modal/chip clicks resolve before screens
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
+	a.voicePump()              // live voice: drain mic→encode→send + decode→mix→play (no-op unless joined)
 	a.handleTabBar(winW, winH) // chip clicks resolve BEFORE screens see them
 	if a.pendingControlSwap {  // a click on the floating client last frame → take control now (before any draw)
 		a.pendingControlSwap = false

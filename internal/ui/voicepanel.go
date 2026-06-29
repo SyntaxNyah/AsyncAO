@@ -69,6 +69,86 @@ func (a *App) voicePeerName(uid int) string {
 	return "UID " + want
 }
 
+// voiceJoinChannel joins the server's voice channel and starts the live audio
+// engine (opt-in: this is the only place the audio path turns on). Engine start
+// is fail-safe — if no audio device is available we stay joined for PRESENCE
+// (you still appear in voice and see others), just without sound.
+func (a *App) voiceJoinChannel() {
+	if a.sess == nil || a.voiceJoined {
+		return
+	}
+	a.sess.VoiceJoin()
+	a.voiceJoined = true
+	if a.voiceAudio == nil {
+		eng, err := newVoiceEngine(func(b64 string) {
+			if a.sess != nil {
+				a.sess.VoiceFrame(b64) // single send path: main loop only
+			}
+		})
+		if err == nil {
+			a.voiceAudio = eng
+		}
+	}
+}
+
+// voiceLeaveChannel leaves voice and tears down the audio engine.
+func (a *App) voiceLeaveChannel() {
+	if a.sess != nil {
+		if a.voiceMicOn {
+			a.sess.VoiceSpeak(false)
+		}
+		a.sess.VoiceLeave()
+	}
+	a.voiceMicOn = false
+	a.voiceJoined = false
+	a.stopVoiceAudio()
+}
+
+// voiceSetMic flips transmit on/off — both the engine (capture) and the wire
+// (VS_SPEAK so peers see your speaking state).
+func (a *App) voiceSetMic(on bool) {
+	a.voiceMicOn = on
+	if a.voiceAudio != nil {
+		a.voiceAudio.setMic(on)
+	}
+	if a.sess != nil {
+		a.sess.VoiceSpeak(on)
+	}
+}
+
+// stopVoiceAudio closes the engine (devices + codecs). Safe any time; called on
+// leave, disconnect and teardown.
+func (a *App) stopVoiceAudio() {
+	if a.voiceAudio != nil {
+		a.voiceAudio.close()
+		a.voiceAudio = nil
+	}
+}
+
+// voicePump drives capture→encode→send and decode→mix→play once per frame.
+// No-op (one nil check) unless the audio engine is running.
+func (a *App) voicePump() { a.voiceAudio.pump() }
+
+// voiceOnAudio feeds one inbound peer frame (VS_AUDIO) to the mixer.
+func (a *App) voiceOnAudio(uid int, b64 string) { a.voiceAudio.pushRemote(uid, b64) }
+
+// voiceReconcilePeers drops decoders for peers who have left voice (VS_LEAVE /
+// VS_PEERS), keeping the engine's peer set in step with the session's.
+func (a *App) voiceReconcilePeers() {
+	if a.voiceAudio == nil || a.sess == nil {
+		return
+	}
+	live := map[int]bool{}
+	for _, uid := range a.sess.VoicePeers() {
+		live[uid] = true
+	}
+	for uid := range a.voiceAudio.peers {
+		if !live[uid] {
+			a.voiceAudio.dropPeer(uid)
+		}
+	}
+}
+
 // drawVoicePanel paints the floating voice panel. pressed is the shared floatWin
 // press edge from drawFloatingPanels.
 func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
@@ -100,35 +180,52 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	// Join / Leave + (when joined) your speak toggle.
 	if !a.voiceJoined {
 		if c.Button(sdl.Rect{X: x, Y: y, W: 130, H: btnH}, "Join voice") {
-			a.sess.VoiceJoin()
-			a.voiceJoined = true
+			a.voiceJoinChannel()
 		}
 		c.LabelClipped(x+140, y+5, right-(x+140), "Join the server's voice channel.", ColTextDim)
+		y += btnH + 6
 	} else {
 		if c.Button(sdl.Rect{X: x, Y: y, W: 130, H: btnH}, "Leave voice") {
-			if a.voiceMicOn {
-				a.sess.VoiceSpeak(false)
-				a.voiceMicOn = false
-			}
-			a.sess.VoiceLeave()
-			a.voiceJoined = false
+			a.voiceLeaveChannel()
 		}
+		canTalk := a.voiceAudio.canTalk()
 		talk := "Talk: off"
 		if a.voiceMicOn {
 			talk = "Talk: ON"
+		}
+		if !canTalk {
+			talk = "No mic"
 		}
 		tw := right - (x + 140)
 		if tw < 90 {
 			tw = 90
 		}
-		if c.Button(sdl.Rect{X: x + 140, Y: y, W: tw, H: btnH}, talk) {
-			a.voiceMicOn = !a.voiceMicOn
-			a.sess.VoiceSpeak(a.voiceMicOn)
+		if c.Button(sdl.Rect{X: x + 140, Y: y, W: tw, H: btnH}, talk) && canTalk {
+			a.voiceSetMic(!a.voiceMicOn)
 		}
+		y += btnH + 6
+		// Output volume + mute (listen controls).
+		muteLbl := "Mute others"
+		if a.voiceAudio != nil && a.voiceAudio.muted {
+			muteLbl = "Unmute"
+		}
+		if c.Button(sdl.Rect{X: x, Y: y, W: 130, H: btnH}, muteLbl) && a.voiceAudio != nil {
+			a.voiceAudio.setMuted(!a.voiceAudio.muted)
+		}
+		vol := int32(100)
+		if a.voiceAudio != nil {
+			vol = int32(a.voiceAudio.outVol)
+		}
+		if nv := c.Slider("voiceOutVol", sdl.Rect{X: x + 140, Y: y, W: right - (x + 140), H: btnH}, vol, 100); nv != vol && a.voiceAudio != nil {
+			a.voiceAudio.setOutVol(int(nv))
+		}
+		y += btnH + 6
 	}
-	y += btnH + 6
-	c.LabelClipped(x, y, right-x, "Live mic audio is coming; for now this shares your speaking state.", ColTextDim)
-	y += 18
+	// Status line: presence-only when the engine couldn't start (no audio device).
+	if a.voiceJoined && a.voiceAudio == nil {
+		c.LabelClipped(x, y, right-x, "Audio unavailable on this device — presence only (no sound).", ColTierYellow)
+		y += 18
+	}
 
 	// Peer list with live speaking indicators.
 	caps := a.sess.VoiceCapsInfo()

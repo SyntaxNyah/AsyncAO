@@ -59,6 +59,7 @@ jobs:
             mingw-w64-ucrt-x86_64-SDL2_mixer
             mingw-w64-ucrt-x86_64-libwebp
             mingw-w64-ucrt-x86_64-libavif
+            mingw-w64-ucrt-x86_64-opus
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -137,7 +138,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev \
+            libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev libopus-dev \
             patchelf desktop-file-utils
       - name: Build (version-stamped)
         run: |
@@ -168,7 +169,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Install SDL2 + libwebp + libavif
-        run: brew install sdl2 sdl2_ttf sdl2_mixer webp libavif pkg-config
+        run: brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus pkg-config
       - name: Build (version-stamped)
         run: |
           export CGO_ENABLED=1
