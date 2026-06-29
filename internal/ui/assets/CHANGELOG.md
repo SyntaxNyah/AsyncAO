@@ -17,6 +17,16 @@ voice-enabled area. This patch fixes two things found right after:
   Group Chat and Call Mod panels weren't blocking clicks from falling through to
   the area list underneath, so pressing their buttons could swap your area.
   They now fence the click like the other panels.
+- **Group invites just work now.** The invite picker lists **everyone in the
+  room** instead of only "detected" AsyncAO players (which needed them to send a
+  special message first). Invite anyone — AsyncAO users get the full group chat,
+  others get a one-off PM and never see a menu. A note in the picker says so.
+- **Push-to-talk key** (Settings → Voice → **Push-to-talk**): bind a key that
+  toggles your mic on/off while in voice.
+- **Desk-visibility hotkey works** again (and the Favourite-emotes hotkey): they
+  default to Ctrl+V / Ctrl+A, which were being eaten by clipboard paste /
+  select-all — now they fire when no text field is focused. *(Bug found by
+  cherripop — thanks!)*
 
 ## v1.19.7 — 2026-06-29
 
