@@ -43,6 +43,41 @@ it's a stale build (`scripts\build.ps1 -Release`).
 ---
 
 ## In flight / larger (separate tracks)
+
+- **Voice chat — Nyathena-gated** *(#17, requested for v1.2; DEFERRED past v1.19.0)*.
+  User constraint: *"Only show the voice chat option for Nyathena, like a server
+  wire, since most software don't support this."* So it must be **capability-gated
+  on the server's `VS_CAPS` advert** and invisible everywhere else.
+
+  Wire protocol (confirmed from the Nyathena/LemmyAO `aolib` `VS_*` packets — the
+  canonical source; server-relayed over the existing WebSocket, **not** P2P/WebRTC):
+  - `VS_CAPS` (s2c) — `enabled, pttOnly, maxPeers, codec, sampleRate, frameMs,
+    maxFrameBytes`. Arrives twice (after `FL` and after `DONE`); idempotent.
+  - `VS_PEERS` (s2c) — `uids[]`: the voice-active peers on join.
+  - `VS_JOIN` / `VS_LEAVE` — bidirectional, asymmetric: client sends empty, server
+    rebroadcasts `{uid}` (same server-attribution pattern as `/pm`).
+  - `VS_SPEAK` — `{on}` out, `{uid,on}` in: speaking-state toggle (PTT / VAD).
+  - `VS_FRAME` (c2s) — `{payload}`: base64 Opus, our mic frame.
+  - `VS_AUDIO` (s2c) — `{fromUid, payload}`: a peer's base64 Opus frame.
+
+  **Why it's deferred, not built blind:** AsyncAO today has **no audio-capture or
+  voice-codec path** ("opus" in-tree is only a music/SFX *file extension*; SDL_mixer
+  is playback-only). Real voice needs, as discrete slices, each needing the user's
+  Nyathena server + a microphone to validate:
+  1. **Signaling** (pure, testable now): `VS_CAPS/PEERS/JOIN/LEAVE/SPEAK` parse/build
+     in `internal/protocol` + Nyathena gating. No audio.
+  2. **Capture + encode**: SDL2 capture device (`iscapture=1`) off the render thread
+     → **new libopus CGO binding** (DLLs ship in MSYS2; not yet bound — new dep,
+     needs `docs/ARCHITECTURE.md` justification + AGPL/THIRD-PARTY-LICENSES note;
+     Opus is BSD = AGPL-compatible) → base64 → `VS_FRAME`.
+  3. **Receive + playback**: `VS_AUDIO` → decode → **mix N peers** → output, with a
+     small **jitter buffer**. PTT + per-peer volume/mute UI; advisor checkpoint per
+     hard-rule §17 (no SDL off the render thread, bounded buffers).
+
+  Honors hard rules: server-relayed (no new transport), gated so normal servers are
+  byte-identical, all buffers bounded. **Blocked on:** user's Nyathena test server +
+  a mic; do slice 1 first, advisor-check before any audio slice.
+
 - **M16 Scene studio** — recording, replay player, scene maker, GIF + animated
   WebP export, crop/trim, per-line effects, **proportional timeline strip with
   draggable In/Out handles _and drag-to-reorder_** (#75 + follow-up, shipped),
