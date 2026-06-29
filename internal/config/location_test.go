@@ -28,30 +28,30 @@ func TestResolveConfigBase(t *testing.T) {
 	no := func(string) bool { return false }
 
 	cases := []struct {
-		name         string
+		name          string
 		exeDir, osDir string
-		exists       func(string) bool
-		writable     func(string) bool
-		wantDir      string
-		wantPortable bool
+		exists        func(string) bool
+		writable      func(string) bool
+		wantDir       string
+		wantPortable  bool
 	}{
 		{
-			name: "existing portable wins even when classic also exists",
+			name:   "existing portable wins even when classic also exists",
 			exeDir: exe, osDir: os_, exists: set(portableFile, classicFile), writable: yes,
 			wantDir: portable, wantPortable: true,
 		},
 		{
-			name: "existing classic keeps existing users in place",
+			name:   "existing classic keeps existing users in place",
 			exeDir: exe, osDir: os_, exists: set(classicFile), writable: yes,
 			wantDir: classic, wantPortable: false,
 		},
 		{
-			name: "fresh + writable exe dir => portable",
+			name:   "fresh + writable exe dir => portable",
 			exeDir: exe, osDir: os_, exists: no, writable: yes,
 			wantDir: portable, wantPortable: true,
 		},
 		{
-			name: "fresh + read-only exe dir => classic fallback",
+			name:   "fresh + read-only exe dir => classic fallback",
 			exeDir: exe, osDir: os_, exists: no, writable: no,
 			wantDir: classic, wantPortable: false,
 		},
@@ -62,12 +62,12 @@ func TestResolveConfigBase(t *testing.T) {
 			wantDir: classic, wantPortable: false,
 		},
 		{
-			name: "no exe path (go test/install w/o exe) => classic",
+			name:   "no exe path (go test/install w/o exe) => classic",
 			exeDir: "", osDir: os_, exists: no, writable: yes,
 			wantDir: classic, wantPortable: false,
 		},
 		{
-			name: "no OS dir => portable is the only option",
+			name:   "no OS dir => portable is the only option",
 			exeDir: exe, osDir: "", exists: no, writable: yes,
 			wantDir: portable, wantPortable: true,
 		},
