@@ -289,12 +289,17 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		y += rowH
 	}
 	y = box.Y + box.H/2
-	c.Label(box.X, y, "Invite AsyncAO players here:", ColTextDim)
+	c.Label(box.X, y, "Invite players in this area:", ColTextDim)
 	y += 18
 	if a.room == nil {
 		return
 	}
+	// Show EVERYONE in the room (no AsyncAO-detection filter — that needed people to
+	// send a marked IC message, so it usually showed nobody). Inviting rides /pm:
+	// AsyncAO clients get the rich invite, others get a readable PM they can ignore.
+	// "(AO)" tags players we've already confirmed are on AsyncAO.
 	roster := a.rosterView()
+	me := a.myUID()
 	shown := 0
 	for i := range roster {
 		if y > box.Y+box.H-rowH {
@@ -302,23 +307,22 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		}
 		name := strings.TrimSpace(roster[i].name)
 		uid, _ := strconv.Atoi(roster[i].uid)
-		if name == "" || uid == 0 || g.hasMember(uid) || !a.room.RemoteIsAsyncAO(name) {
+		if name == "" || roster[i].uid == "" || uid == me || g.hasMember(uid) {
 			continue
 		}
-		c.LabelClipped(box.X+8, y+2, box.W-90, name, ColText)
+		label := name
+		if a.room.RemoteIsAsyncAO(name) {
+			label = name + "  (AO)" // confirmed on AsyncAO
+		}
+		c.LabelClipped(box.X+8, y+2, box.W-90, label, ColText)
 		if c.Button(sdl.Rect{X: box.X + box.W - 80, Y: y, W: 74, H: rowH - 2}, "Invite") {
 			a.inviteToGroup(g, uid, name)
 		}
 		y += rowH
 		shown++
 	}
-	// Group chat is AsyncAO-to-AsyncAO; a player only becomes invitable once we've
-	// SEEN them on AsyncAO (they've sent a message → the AO badge). Explain the empty
-	// list so it doesn't read as broken ("+ New Group did nothing").
 	if shown == 0 {
-		c.LabelClipped(box.X+8, y+2, box.W-12, "No other AsyncAO players detected here yet.", ColTextDim)
-		y += rowH
-		c.LabelClipped(box.X+8, y+2, box.W-12, "They appear once they've spoken (look for the AO badge in the player list).", ColTextDim)
+		c.LabelClipped(box.X+8, y+2, box.W-12, "No other players in this area. Open the player list to see who's around.", ColTextDim)
 	}
 }
 
