@@ -50,6 +50,21 @@ func TestFilterLogLines(t *testing.T) {
 	}
 }
 
+func TestComputeLogStats(t *testing.T) {
+	lines := []logLine{
+		{who: "Phoenix", text: "[t] Phoenix: hello there", session: "s1"},
+		{who: "Phoenix", text: "[t] Phoenix: objection", session: "s1"},
+		{who: "Maya", text: "[t] Maya: hi", session: "s2"},
+	}
+	stats, tl, tw, sess := computeLogStats(lines)
+	if tl != 3 || sess != 2 || tw == 0 {
+		t.Errorf("totals: lines=%d words=%d sessions=%d", tl, tw, sess)
+	}
+	if len(stats) != 2 || stats[0].name != "Phoenix" || stats[0].lines != 2 {
+		t.Errorf("stats = %+v (want Phoenix with 2 lines first)", stats)
+	}
+}
+
 func TestReadLogScope(t *testing.T) {
 	root := t.TempDir()
 	mk := func(server, file, body string) {

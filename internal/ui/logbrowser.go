@@ -66,11 +66,16 @@ type logBrowserState struct {
 	selSession int // index into sessions; -1 = all sessions of the server
 
 	query         string
-	useRegex      bool     // treat the query as a regular expression
-	charFilter    string   // restrict to one speaker ("" = all)
-	regexErr      bool     // the current regex query didn't compile (matched as text)
-	chars         []string // distinct speakers in the loaded scope (the speaker-filter cycle)
-	scroll        int32    // results list
+	useRegex      bool      // treat the query as a regular expression
+	charFilter    string    // restrict to one speaker ("" = all)
+	regexErr      bool      // the current regex query didn't compile (matched as text)
+	chars         []string  // distinct speakers in the loaded scope (the speaker-filter cycle)
+	showStats     bool      // results pane shows per-speaker stats instead of lines
+	stats         []logStat // per-speaker line/word counts, computed once on load
+	statLines     int
+	statWords     int
+	statSessions  int
+	scroll        int32 // results list
 	serverScroll  int32
 	sessionScroll int32
 
@@ -102,8 +107,9 @@ func (a *App) openLogBrowser() {
 	lb := &a.logBrowser
 	lb.selServer, lb.selSession = -1, -1
 	lb.query, lb.charFilter, lb.useRegex, lb.regexErr = "", "", false, false
+	lb.showStats = false
 	lb.scroll, lb.serverScroll, lb.sessionScroll = 0, 0, 0
-	lb.lines, lb.filtered, lb.chars = nil, nil, nil
+	lb.lines, lb.filtered, lb.chars, lb.stats = nil, nil, nil, nil
 	lb.filterKey = logFilterUnset
 	lb.servers, lb.sessions = nil, nil
 	a.kickLogScope()
@@ -149,6 +155,7 @@ func (a *App) pollLogBrowser() {
 		lb.sessions = out.sessions
 		lb.lines = out.lines
 		lb.chars = distinctChars(out.lines)
+		lb.stats, lb.statLines, lb.statWords, lb.statSessions = computeLogStats(out.lines)
 		lb.charFilter = "" // a new scope resets the speaker filter
 		lb.filtered = nil
 		lb.filterKey = logFilterUnset // force one refilter against the new data
@@ -218,6 +225,49 @@ func parseLogWho(line string) string {
 		return ""
 	}
 	return strings.TrimSpace(rest[:j])
+}
+
+// logStat is one speaker's tally in the loaded scope.
+type logStat struct {
+	name  string
+	lines int
+	words int
+}
+
+// computeLogStats tallies per-speaker line and word counts plus scope totals. Pure
+// — unit-tested. Speakers sort by line count, descending.
+func computeLogStats(lines []logLine) (stats []logStat, totalLines, totalWords, sessions int) {
+	byName := map[string]*logStat{}
+	sess := map[string]bool{}
+	for i := range lines {
+		ln := &lines[i]
+		sess[ln.session] = true
+		w := len(strings.Fields(ln.text))
+		totalLines++
+		totalWords += w
+		who := ln.who
+		if who == "" {
+			who = "(server)"
+		}
+		s := byName[who]
+		if s == nil {
+			s = &logStat{name: who}
+			byName[who] = s
+		}
+		s.lines++
+		s.words += w
+	}
+	stats = make([]logStat, 0, len(byName))
+	for _, s := range byName {
+		stats = append(stats, *s)
+	}
+	sort.Slice(stats, func(i, j int) bool {
+		if stats[i].lines != stats[j].lines {
+			return stats[i].lines > stats[j].lines
+		}
+		return stats[i].name < stats[j].name
+	})
+	return stats, totalLines, totalWords, len(sess)
 }
 
 // distinctChars returns the distinct speakers across lines, sorted, bounded.
@@ -488,6 +538,13 @@ func (a *App) drawLogBrowser(w, h int32) {
 	if c.Button(sdl.Rect{X: w - 230 - pad, Y: pad, W: 110, H: btnH}, "Export") {
 		a.exportLogView(idx)
 	}
+	statsLabel := "Stats"
+	if lb.showStats {
+		statsLabel = "Hide stats"
+	}
+	if c.Button(sdl.Rect{X: w - 350 - pad, Y: pad, W: 110, H: btnH}, statsLabel) {
+		lb.showStats = !lb.showStats
+	}
 	scope := "All servers"
 	if lb.selServer >= 0 && lb.selServer < len(lb.servers) {
 		scope = lb.servers[lb.selServer]
@@ -567,7 +624,50 @@ func (a *App) drawLogBrowser(w, h int32) {
 		c.LabelClipped(mainX+96+cbW, fy, mainW-96-cbW, "invalid regex — matching as text", ColDanger)
 	}
 	resTop := fy + btnH + 8
-	a.drawLogResults(sdl.Rect{X: mainX, Y: resTop, W: mainW, H: bottom - resTop}, idx)
+	resBox := sdl.Rect{X: mainX, Y: resTop, W: mainW, H: bottom - resTop}
+	if lb.showStats {
+		a.drawLogStats(resBox)
+	} else {
+		a.drawLogResults(resBox, idx)
+	}
+}
+
+// drawLogStats renders the cached per-speaker tallies for the loaded scope: a totals
+// line, then each speaker with a line-count bar and their line / word counts.
+func (a *App) drawLogStats(box sdl.Rect) {
+	c := a.ctx
+	lb := &a.logBrowser
+	c.Border(box, ColPanelHi)
+	if lb.statLines == 0 {
+		c.LabelClipped(box.X+6, box.Y+6, box.W-12, "No lines in this scope.", ColTextDim)
+		return
+	}
+	y := box.Y + 6
+	c.LabelClipped(box.X+8, y, box.W-16,
+		fmt.Sprintf("%d lines · %d words · %d session(s)", lb.statLines, lb.statWords, lb.statSessions), ColAccent)
+	y += 22
+	maxLines := 1
+	if len(lb.stats) > 0 && lb.stats[0].lines > 0 {
+		maxLines = lb.stats[0].lines
+	}
+	const rowH = int32(18)
+	clipPrev, clipHad := c.pushClip(box)
+	defer c.popClip(clipPrev, clipHad)
+	barX := box.X + 170
+	barMaxW := box.W - 170 - 96
+	for _, s := range lb.stats {
+		if y > box.Y+box.H-rowH {
+			break
+		}
+		c.LabelClipped(box.X+8, y, 158, s.name, ColText)
+		if barMaxW > 0 {
+			if bw := int32(s.lines) * barMaxW / int32(maxLines); bw > 0 {
+				c.Fill(sdl.Rect{X: barX, Y: y + 2, W: bw, H: rowH - 6}, ColAccent)
+			}
+		}
+		c.LabelClipped(box.X+box.W-90, y, 84, fmt.Sprintf("%dL  %dW", s.lines, s.words), ColTextDim)
+		y += rowH
+	}
 }
 
 // drawLogList draws a bordered, scrollable, single-select list of labels in r,
