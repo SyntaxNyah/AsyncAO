@@ -328,6 +328,7 @@ func (a *App) drawClassicTabTray(w, h int32) bool {
 		if c.clicked && pointIn(c.mouseX, c.mouseY, ooChip) {
 			a.d.Prefs.SetOOCInLogTab(!inTab)
 		}
+		tx += ow // advance past the OOC chip so the next chip doesn't overlap it
 	}
 	// Group Chat panel placement chip (both themes): give the Group Chat / DMs panel a
 	// fixed home in this layout you can drag here (click again to remove it). It only
