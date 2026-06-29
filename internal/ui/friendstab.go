@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -230,6 +231,17 @@ func (a *App) detectIncomingPM(text string) {
 	if sender, msg, ok := parseIncomingPM(text); ok {
 		a.pmAppend(sender, false, msg)
 	}
+}
+
+// routeIncomingPM files a received private message into its DM thread. This is the
+// ROBUST path for servers that attribute the sender in the CT NAME field — Nyathena
+// / Athena deliver a PM as a server message whose name is "[PM] [UID n] <name>"
+// (courtroom.ParsePMSender), which the text-shape detectIncomingPM can't see. Any
+// AsyncAO control frame in the body is stripped before it's shown. Group routing
+// layers onto this later.
+func (a *App) routeIncomingPM(sender, body string) {
+	_, clean, _ := courtroom.DecodeMessageFrame(body) // drop a hidden control frame if present
+	a.pmAppend(sender, false, clean)
 }
 
 // parseIncomingPM extracts (sender, message) from a received-PM OOC line, or

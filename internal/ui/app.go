@@ -2424,6 +2424,12 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			if a.serverKey != "" && a.d.Prefs.ServerIgnoreMatch(a.serverKey, ev.Name) {
 				continue // #81: ignored player's OOC — drop it (room ignores OOC, so this is a clean skip)
 			}
+			// Received private message (Nyathena / Athena attribute the sender in the
+			// CT name as "[PM] [UID n] <name>"): file it in its DM thread. It also
+			// stays in the OOC log below, so a miss loses nothing.
+			if _, sender, ok := courtroom.ParsePMSender(ev.Name); ok {
+				a.routeIncomingPM(sender, ev.Text)
+			}
 			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
 			if a.d.Prefs.CallwordsOOCOn() && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
 				a.checkCallwords(ev.Text)
