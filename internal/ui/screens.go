@@ -3748,12 +3748,13 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 				y2 += btnH + 4
 				x = clusterX
 			}
+			vcLabel, vcBord := a.voiceButtonState()
 			vcR := sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}
-			if c.Button(vcR, "Voice") {
+			if c.Button(vcR, vcLabel) {
 				a.toggleVoice()
 			}
-			c.Border(vcR, ColTierGreen)
-			c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena).")
+			c.Border(vcR, vcBord)
+			c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
 			x += vcW + btnGap
 		}
 	} else {
@@ -3902,12 +3903,13 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 				y2 += btnH + 4
 				x = clusterX
 			}
+			vcLabel, vcBord := a.voiceButtonState()
 			vcR := a.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
-			if c.Button(vcR, "Voice") {
+			if c.Button(vcR, vcLabel) {
 				a.toggleVoice()
 			}
-			c.Border(vcR, ColTierGreen)
-			c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena).")
+			c.Border(vcR, vcBord)
+			c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
 			x += vcW + 6
 		}
 		// — Leave — set apart at the end.

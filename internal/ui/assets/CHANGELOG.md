@@ -16,6 +16,9 @@ More playtest fixes + voice/quit quality-of-life.
   again"** tick so it just quits next time.
 - **Voice settings tab** (Settings → **Voice**): pick your **microphone**
   (system default unless you choose another) and set the **output volume**.
+- **Live-mic indicator:** while you're transmitting, the **Voice** button turns
+  into a red **● Voice** and the panel shows **● MIC LIVE**, so you always know
+  when your mic is hot.
 - **Group Chat fix:** "+ New Group" no longer says *"needs you fully connected"*
   when you already are — it now checks the connection, not a player-id that some
   servers (Nyathena) report as 0.

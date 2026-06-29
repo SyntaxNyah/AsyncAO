@@ -41,6 +41,20 @@ func (a *App) voiceOfferable() bool {
 
 func (a *App) toggleVoice() { a.showVoice = !a.showVoice }
 
+// voiceButtonState gives the courtroom Voice button its label + colour so it
+// doubles as a transmit indicator: a red "● Voice" while your mic is live, an
+// accent "Voice ✓" when you're in voice (mic off), plain green when available.
+func (a *App) voiceButtonState() (label string, border sdl.Color) {
+	switch {
+	case a.voiceJoined && a.voiceMicOn:
+		return "● Voice", ColDanger // transmitting
+	case a.voiceJoined:
+		return "Voice ✓", ColAccent // in voice, not talking
+	default:
+		return "Voice", ColTierGreen // available here
+	}
+}
+
 func (a *App) voicePanelRect(w, h int32) sdl.Rect {
 	if !a.voiceWin.placed {
 		dw := clampI32(voicePanelDefW, voicePanelMinW, w-2*floatWinMargin)
@@ -173,6 +187,9 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	c.Border(r, ColAccent)
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: floatTitleH}, ColPanelHi)
 	c.Heading(r.X+pad, r.Y+6, "Voice", ColText)
+	if a.voiceJoined && a.voiceMicOn { // your mic is live → a red transmit indicator
+		c.Label(r.X+pad+58, r.Y+6, "● MIC LIVE", ColDanger)
+	}
 	closeB := sdl.Rect{X: r.X + r.W - 70 - pad, Y: r.Y + 3, W: 70, H: btnH}
 	if c.Button(closeB, "Close") {
 		a.showVoice = false
