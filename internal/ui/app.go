@@ -868,9 +868,12 @@ type sessionState struct {
 	// sent VS_JOIN; voiceMicOn = our speak state is on (announced via VS_SPEAK).
 	voiceJoined bool
 	voiceMicOn  bool
-	showModDash bool // the mod (ban/kick) dashboard panel is open
-	showCMPanel bool // the separate CM (area control) panel is open
-	amICMNow    bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// voiceCapsAnnounced: we've posted the one-time "this area supports voice" OOC
+	// hint this session (so it confirms VS_CAPS arrived + points at the button).
+	voiceCapsAnnounced bool
+	showModDash        bool // the mod (ban/kick) dashboard panel is open
+	showCMPanel        bool // the separate CM (area control) panel is open
+	amICMNow           bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
@@ -2512,6 +2515,13 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 		case courtroom.EventWTCE:
 			a.handleWTCE(ev.Text, ev.Int)
+		case courtroom.EventVoiceCaps:
+			// Voice just became available here (VS_CAPS) — point the user at the
+			// Voice button once per session (also confirms VS_CAPS reached us).
+			if a.sess != nil && a.sess.VoiceAvailable() && !a.voiceCapsAnnounced {
+				a.voiceCapsAnnounced = true
+				a.pushOOC("[Voice] This area supports voice chat — use the Voice button (bottom row / Extras) to join.", "")
+			}
 		case courtroom.EventVoiceAudio:
 			a.voiceOnAudio(ev.Int, ev.Text) // decode + queue a peer's frame for the mixer
 		case courtroom.EventVoicePeers:

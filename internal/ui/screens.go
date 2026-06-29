@@ -3698,6 +3698,22 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
 			x += gcW + btnGap
 		}
+		// Voice button — only in a voice-enabled area (VS_CAPS / Nyathena); appears
+		// when you enter a VC room, hidden otherwise. Appended; no x advance when off.
+		if a.voiceOfferable() {
+			const vcW = int32(80)
+			if x+vcW > clusterRight {
+				y2 += btnH + 4
+				x = clusterX
+			}
+			vcR := sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}
+			if c.Button(vcR, "Voice") {
+				a.toggleVoice()
+			}
+			c.Border(vcR, ColTierGreen)
+			c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena).")
+			x += vcW + btnGap
+		}
 	} else {
 		// New default: the same buttons grouped by purpose (Character · Scene · Moderation · System),
 		// a wider gap between groups, the leave button set apart at the end. Inline (no closures) so
@@ -3834,6 +3850,23 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			c.Border(gcR, ColAccent)
 			c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
 			x += gcW + 6
+		}
+		// Voice button — appears ONLY in an area that advertises voice (VS_CAPS, i.e.
+		// Nyathena), so it shows up when you move into a VC-supported room and hides
+		// elsewhere. Appended like the others; skipped (no x advance) when unavailable.
+		if a.voiceOfferable() {
+			const vcW = int32(80)
+			if x+vcW > clusterRight {
+				y2 += btnH + 4
+				x = clusterX
+			}
+			vcR := a.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
+			if c.Button(vcR, "Voice") {
+				a.toggleVoice()
+			}
+			c.Border(vcR, ColTierGreen)
+			c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena).")
+			x += vcW + 6
 		}
 		// — Leave — set apart at the end.
 		x += gGap
