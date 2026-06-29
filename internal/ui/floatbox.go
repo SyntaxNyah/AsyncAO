@@ -353,6 +353,15 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showEvid && pointIn(mx, my, a.evidPanelRect(w, h)) { // the floating evidence box fences too (#5)
 		return true
 	}
+	if a.showModcall && pointIn(mx, my, a.modcallPanelRect(w, h)) { // Call Mod box
+		return true
+	}
+	if a.showMessages && pointIn(mx, my, a.msgPanelRect(w, h)) { // Group Chat / DMs box
+		return true
+	}
+	if a.showVoice && pointIn(mx, my, a.voicePanelRect(w, h)) { // Voice box — clicks must not fall through to the area list (was swapping rooms)
+		return true
+	}
 	if a.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
 		return true
 	}
