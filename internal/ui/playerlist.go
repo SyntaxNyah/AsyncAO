@@ -499,6 +499,13 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	if isSpec {
 		cx += a.drawRosterChip(cx, row.Y+4, "SPEC", chipSpecColor, ColText) + 5
 	}
+	// AsyncAO chip: this player is on AsyncAO — detected because we've received their
+	// cross-client zero-width channel (AO2 / webAO never emit it). Passive: shows once
+	// they've spoken / reacted; your own row always shows it. It's a hint, not proof —
+	// the badge can be self-faked but never used to impersonate another player.
+	if a.room != nil && (isMe || a.room.RemoteIsAsyncAO(p.name)) {
+		cx += a.drawRosterChip(cx, row.Y+4, "AO", ColAccent, ColBackground) + 5
+	}
 	// Status chip (#M1): your own from a.myStatus, others from the room's per-character
 	// status memory. RemoteStatus is a plain map read (0-alloc), safe per row per frame;
 	// only a set status draws a chip, so the common (none) case costs nothing.

@@ -251,6 +251,12 @@ type Courtroom struct {
 	// maxRememberedProfiles.
 	profileByName map[string]WireProfile
 
+	// asyncAOByName flags characters seen emitting the cross-client zero-width channel
+	// — i.e. driven by an AsyncAO client (AO2 / webAO never emit it). The player list
+	// badges them; detection is passive (after they speak / react). Bounded by
+	// maxDetectedAsyncAO.
+	asyncAOByName map[string]struct{}
+
 	// statusByName remembers each speaker's transmitted presence Status (#M1), keyed by
 	// bare character name — the same send-on-change zero-width channel as the profile and
 	// sprite style. A clear (StatusNone) frees the entry; bounded by maxRememberedStatuses.
@@ -476,6 +482,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// Remember this speaker's transmitted character profile (#101 slice 2) — the same
 	// invisible channel, told apart by frame magic. The player list reads it per
 	// character; an empty profile (a clear) frees the entry.
+	if hasMarker(msg.Message) {
+		c.rememberAsyncAO(msg.CharName) // any cross-client frame ⇒ this speaker is on AsyncAO
+	}
 	if prof, ok := DecodeProfileMarker(msg.Message); ok {
 		c.rememberProfile(msg.CharName, prof)
 	}
@@ -676,6 +685,9 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	}
 	if HasStyleMarker(msg.Message) {
 		c.rememberStyle(msg.CharID, caStyle) // keep the per-speaker style memory consistent through a catch-up
+	}
+	if hasMarker(msg.Message) {
+		c.rememberAsyncAO(msg.CharName) // any cross-client frame ⇒ this speaker is on AsyncAO
 	}
 	if prof, ok := DecodeProfileMarker(msg.Message); ok {
 		c.rememberProfile(msg.CharName, prof) // and the per-character profile memory (#101)
