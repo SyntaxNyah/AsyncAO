@@ -2,13 +2,13 @@ package ui
 
 import "testing"
 
-// TestCtrlSlotCompaction pins the customizable toolbar's core invariant: with
-// nothing hidden the control-button row is pixel-identical to the old inline
-// row (each button sits at the running cursor, the cursor steps by the exact
-// per-button advance), and hiding a button removes it AND shifts every later
-// button left by precisely that button's advance — the row compacts with no
-// gap, no overlap. This is the mechanical check that catches a wrong advance
-// constant in screens.go, which I can't verify by eye.
+// TestCtrlSlotCompaction pins the ctrlSlot HELPER's contract (not screens.go's
+// own advance constants — those are a synthetic row here, verified against the
+// real call sites by manual diff): with nothing hidden each button sits at the
+// running cursor and the cursor steps by the exact per-button advance, so the
+// row is pixel-identical to the old inline one; hiding a button removes it AND
+// shifts every later button left by precisely that button's advance — the row
+// compacts with no gap, no overlap.
 func TestCtrlSlotCompaction(t *testing.T) {
 	a := testTabApp(t)
 	a.hidden = map[string]bool{}

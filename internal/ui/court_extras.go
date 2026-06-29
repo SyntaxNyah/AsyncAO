@@ -954,9 +954,19 @@ func (a *App) drawUICfgPanel(w, h int32) {
 	c := a.ctx
 	const cfgRow = int32(26) // checkbox row pitch (matches the chrome list)
 	const btnCols = int32(3) // the control-button grid is 3 wide
-	btnRows := (int32(len(hideableButtons)) + btnCols - 1) / btnCols
-	// pad+34 heading · chrome list · 30 sub-heading · button grid · btnH+18 bottom row
-	panelH := pad + 34 + int32(len(hideablePanels))*cfgRow + 30 + btnRows*cfgRow + btnH + 18
+	// The control-button grid only applies to the new-default toolbar: the
+	// legacy/themed row (drawICControls' LegacyDevThemeOn branch) draws fixed
+	// inline buttons that don't consult the hidden set, so showing the grid
+	// there would be a dead toggle. It — and its height — appears only when the
+	// new-default layout is active.
+	showBtnGrid := !a.d.Prefs.LegacyDevThemeOn()
+	gridBlock := int32(0)
+	if showBtnGrid {
+		btnRows := (int32(len(hideableButtons)) + btnCols - 1) / btnCols
+		gridBlock = 30 + btnRows*cfgRow // 30 = sub-heading
+	}
+	// pad+34 heading · chrome list · [grid block] · btnH+18 bottom row
+	panelH := pad + 34 + int32(len(hideablePanels))*cfgRow + gridBlock + btnH + 18
 	panel := sdl.Rect{X: w/2 - 280, Y: h/2 - panelH/2, W: 560, H: panelH}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -972,15 +982,17 @@ func (a *App) drawUICfgPanel(w, h int32) {
 	// Control buttons — the customizable toolbar row. Tick to HIDE a button
 	// (same checked = hidden semantics as the chrome list above); the row
 	// compacts with no gap. "UI…" stays put so this popup is always reachable.
-	c.Label(panel.X+pad, y+4, "Control buttons (tick to hide from the toolbar row):", ColTextDim)
-	y += 30
-	colW := (panel.W - 2*pad) / btnCols
-	for i, b := range hideableButtons {
-		cx := panel.X + pad + int32(i)%btnCols*colW
-		cy := y + int32(i)/btnCols*cfgRow
-		hidden := a.panelHidden(b.id)
-		if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
-			a.setPanelHidden(b.id, next)
+	if showBtnGrid {
+		c.Label(panel.X+pad, y+4, "Control buttons (tick to hide from the toolbar row):", ColTextDim)
+		y += 30
+		colW := (panel.W - 2*pad) / btnCols
+		for i, b := range hideableButtons {
+			cx := panel.X + pad + int32(i)%btnCols*colW
+			cy := y + int32(i)/btnCols*cfgRow
+			hidden := a.panelHidden(b.id)
+			if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
+				a.setPanelHidden(b.id, next)
+			}
 		}
 	}
 	// Theater: the logical extreme of hiding chrome — stage only,
