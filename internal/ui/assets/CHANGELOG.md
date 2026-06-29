@@ -4,6 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.19.7 — 2026-06-29
+
+More playtest fixes + voice/quit quality-of-life.
+
+- **Esc closes any open menu or popup.** One press backs out of the topmost
+  thing — a dropdown, a confirm, then the floating panels (Voice, Group Chat,
+  Evidence, Call Mod, Mod, CM, Pair) — on the courtroom or over a menu screen.
+- **Quit from the lobby with Esc.** In the lobby (handy in fullscreen, where the
+  window's X is out of reach), Esc asks **"Quit AsyncAO?"** — with a **"Don't ask
+  again"** tick so it just quits next time.
+- **Voice settings tab** (Settings → **Voice**): pick your **microphone**
+  (system default unless you choose another) and set the **output volume**.
+- **Group Chat fix:** "+ New Group" no longer says *"needs you fully connected"*
+  when you already are — it now checks the connection, not a player-id that some
+  servers (Nyathena) report as 0.
+
 ## v1.19.6 — 2026-06-29
 
 A small follow-up from playtesting v1.19.5.
