@@ -955,16 +955,10 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	if scaleAuto {
 		c.Label(pad, y+4, fmt.Sprintf("UI scale %%:  %d (auto)", a.UIScale()), ColTextDim)
+		y += 34
 	} else {
-		uiPct := a.sliderRow(y, "UI scale %", a.uiScalePct, config.UIScaleStepPercent, config.MinUIScalePercent, config.MaxUIScalePercent,
-			"Zooms the WHOLE interface — text and sprites together. Auto-scale fits it to the window + display DPI; untick that above to set this yourself.")
-		if uiPct != a.uiScalePct {
-			a.uiScalePct = uiPct
-			a.ctx.SetUIScale(uiPct)
-			a.d.Prefs.SetUIScale(uiPct)
-		}
+		y = a.drawManualUIScale(y)
 	}
-	y += 34
 	y = a.drawViewportSizeRow(y)
 
 	// Independent text size: scale the IC/OOC log + chatbox message text WITHOUT
@@ -3032,6 +3026,65 @@ func (a *App) sliderRow(y int32, label string, value, step, min, max int, tip ..
 	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%d", value), ColAccent)
 	settingTip(c, sdl.Rect{X: pad, Y: y, W: 252, H: 26}, tip) // #19: optional "what's this" hover explanation
 	return value
+}
+
+// uiScaleSliderID is the manual UI-scale slider's drag id (== the label passed to
+// sliderRow), used to detect the drag for commit-on-release.
+const uiScaleSliderID = "UI scale %"
+
+// drawManualUIScale draws the manual UI-scale control. Applying the scale LIVE
+// rescales the whole UI — this very slider included — so a live drag chases the
+// cursor (the "super hard to use" report). Fix: the slider COMMITS ON RELEASE
+// (preview the number while dragging, apply on mouse-up), and a row of preset
+// chips gives a one-click path that never fights the cursor. Returns the new y.
+func (a *App) drawManualUIScale(y int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	next := a.sliderRow(y, uiScaleSliderID, a.uiScalePct, config.UIScaleStepPercent,
+		config.MinUIScalePercent, config.MaxUIScalePercent,
+		"Zooms the WHOLE interface. Drag to preview, release to apply (applying mid-drag would rescale this slider under your cursor); or click a preset below.")
+	switch {
+	case c.dragID == uiScaleSliderID:
+		// Dragging: remember the value but DON'T rescale yet (that's the feedback loop).
+		a.uiScaleDragging = true
+		a.uiScalePending = next
+	case a.uiScaleDragging:
+		// Released → apply once.
+		a.uiScaleDragging = false
+		a.applyManualUIScale(a.uiScalePending)
+	case next != a.uiScalePct:
+		// Wheel or click-to-set (no drag) — discrete, no feedback loop.
+		a.applyManualUIScale(next)
+	}
+	y += 30
+
+	// Preset chips: a no-drag, one-click path (the easy way to land 150/175% on a
+	// big screen). A click is instantaneous, so it can't chase the cursor.
+	cx := pad + 130
+	for _, p := range []int{100, 125, 150, 175, 200} {
+		r := sdl.Rect{X: cx, Y: y, W: 46, H: btnH}
+		if c.Button(r, fmt.Sprintf("%d%%", p)) {
+			a.applyManualUIScale(p)
+		}
+		if a.uiScalePct == p {
+			c.Border(r, ColAccent) // mark the active preset
+		}
+		cx += 52
+	}
+	return y + 34
+}
+
+// applyManualUIScale commits a manual UI scale: clamp, store, push to the kit
+// (mouse unprojection) and persist. The single chokepoint for the slider's
+// release, the wheel, and the preset chips.
+func (a *App) applyManualUIScale(pct int) {
+	pct = clampInt(pct, config.MinUIScalePercent, config.MaxUIScalePercent)
+	if pct == a.uiScalePct {
+		return
+	}
+	a.uiScalePct = pct
+	a.ctx.SetUIScale(pct)
+	a.d.Prefs.SetUIScale(pct)
 }
 
 // drawViewportSizeRow is the precise stage-size control. The AO stage art is

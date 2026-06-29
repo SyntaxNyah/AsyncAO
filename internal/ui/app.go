@@ -760,6 +760,11 @@ type App struct {
 	oocPct                                   int // OOC log text size, independent of logPct (IC log)
 	musicPct                                 int // music-list font scale, independent of the log so long titles can shrink without shrinking IC
 	uiScalePct                               int // global renderer scale (manual)
+	// Manual UI-scale slider COMMITS ON RELEASE: applying live rescales the slider
+	// under the cursor (feedback loop → "super hard to use"). These hold the in-drag
+	// preview value and drag state so the scale applies once, on mouse-up.
+	uiScalePending  int
+	uiScaleDragging bool
 	// detectedScalePct is the display-DPI-derived scale (96 dpi = 100%),
 	// snapped to the settings step; UIScale() prefers it while the
 	// auto-HiDPI preference is on. 0 = detection unavailable.
