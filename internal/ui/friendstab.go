@@ -23,6 +23,17 @@ func (a *App) drawFriendsTab(r sdl.Rect) {
 	}
 	names := a.d.Prefs.ServerFriends(a.serverKey)
 	c.Label(r.X+4, r.Y+4, fmt.Sprintf("Friends here (%d) — add with \"+ Friend\" on a player:", len(names)), ColTextDim)
+	// Start a group chat right from the friends list — the natural place to gather
+	// friends. Opens the Group Chat panel on a fresh group's invite view.
+	ngLabel := "+ New group chat"
+	ngW := c.TextWidth(ngLabel) + 16
+	ngR := sdl.Rect{X: r.X + r.W - ngW - 4, Y: r.Y, W: ngW, H: 22}
+	if c.Button(ngR, ngLabel) {
+		a.showMessages = true
+		a.createGroup("New group")
+		a.msgGroupManage = true // open straight on the members / invite view
+	}
+	c.Tooltip(ngR, "Start a group chat with other AsyncAO players, then invite them in the Group Chat panel")
 
 	// No friend picked: the list owns the whole tab.
 	if a.pmTarget == "" {
