@@ -59,7 +59,10 @@ modules:
     build-options:
       append-path: /usr/lib/sdk/golang/bin
       env:
-        GOTOOLCHAIN: local
+        # The 24.08 golang SDK extension predates Go 1.24 (go.mod's floor); with the
+        # build network shared (below), `auto` fetches the required toolchain instead
+        # of failing as `local` would.
+        GOTOOLCHAIN: auto
         GOFLAGS: '-trimpath'
       # This is a self-hosted CI bundle, NOT a Flathub submission, so we allow the
       # build sandbox network access and let `go build` fetch modules directly

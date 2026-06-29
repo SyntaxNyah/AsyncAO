@@ -171,7 +171,10 @@ jobs:
       - name: Install flatpak + flatpak-builder + the runtime/SDK
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
+          # elfutils provides eu-strip / eu-elfcompress, which flatpak-builder uses to
+          # strip module debuginfo — absent on the runner, the SDL2_ttf build fails at
+          # the strip step ("Failed to execute child process eu-strip").
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder elfutils
           flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak install -y --user flathub \
             org.freedesktop.Platform//24.08 \
