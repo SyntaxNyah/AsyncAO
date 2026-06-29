@@ -26,18 +26,27 @@ func TestTruncateRunes(t *testing.T) {
 
 func TestFilterLogLines(t *testing.T) {
 	lines := []logLine{
-		{text: "Phoenix: Objection!", lower: "phoenix: objection!"},
-		{text: "Edgeworth: Hold it", lower: "edgeworth: hold it"},
-		{text: "Phoenix: Take that", lower: "phoenix: take that"},
+		{who: "Phoenix", text: "Phoenix: Objection!", lower: "phoenix: objection!"},
+		{who: "Edgeworth", text: "Edgeworth: Hold it", lower: "edgeworth: hold it"},
+		{who: "Phoenix", text: "Phoenix: Take that", lower: "phoenix: take that"},
 	}
-	if got := filterLogLines(lines, ""); len(got) != 3 {
+	if got := filterLogLines(lines, "", false, ""); len(got) != 3 {
 		t.Errorf("empty query matched %d, want 3", len(got))
 	}
-	if got := filterLogLines(lines, "phoenix"); len(got) != 2 || got[0] != 0 || got[1] != 2 {
-		t.Errorf("phoenix filter = %v", got)
+	if got := filterLogLines(lines, "phoenix", false, ""); len(got) != 2 || got[0] != 0 || got[1] != 2 {
+		t.Errorf("substring filter = %v", got)
 	}
-	if got := filterLogLines(lines, "OBJECTION"); len(got) != 1 || got[0] != 0 {
-		t.Errorf("case-insensitive filter = %v", got)
+	if got := filterLogLines(lines, "OBJECTION", false, ""); len(got) != 1 || got[0] != 0 {
+		t.Errorf("case-insensitive substring = %v", got)
+	}
+	if got := filterLogLines(lines, "", false, "Edgeworth"); len(got) != 1 || got[0] != 1 {
+		t.Errorf("speaker filter = %v", got)
+	}
+	if got := filterLogLines(lines, "objection|hold", true, ""); len(got) != 2 {
+		t.Errorf("regex filter = %v", got)
+	}
+	if got := filterLogLines(lines, "(unclosed", true, ""); len(got) != 0 {
+		t.Errorf("bad regex should fall back to substring (no match) = %v", got)
 	}
 }
 

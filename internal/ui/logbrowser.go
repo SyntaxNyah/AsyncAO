@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -53,6 +54,7 @@ type logLine struct {
 	session string // session label
 	text    string // the line as written ("[ts] who: message"), truncated
 	lower   string // text lowercased once, for the 0-alloc live filter
+	who     string // speaker parsed from the line, for the per-character filter
 }
 
 // logBrowserState is all the browser's state (one field on App).
@@ -63,13 +65,17 @@ type logBrowserState struct {
 	selSession int // index into sessions; -1 = all sessions of the server
 
 	query         string
-	scroll        int32 // results list
+	useRegex      bool     // treat the query as a regular expression
+	charFilter    string   // restrict to one speaker ("" = all)
+	regexErr      bool     // the current regex query didn't compile (matched as text)
+	chars         []string // distinct speakers in the loaded scope (the speaker-filter cycle)
+	scroll        int32    // results list
 	serverScroll  int32
 	sessionScroll int32
 
 	lines     []logLine // the loaded scope, in memory
-	filtered  []int     // indices into lines matching query (memoized)
-	filterKey string    // the query filtered was built for
+	filtered  []int     // indices into lines matching the filter (memoized)
+	filterKey string    // the filter (query + regex + speaker) filtered was built for
 
 	loading bool
 	gen     int // scope-load generation; a stale async result is dropped
@@ -94,9 +100,9 @@ type logBrowserLoad struct {
 func (a *App) openLogBrowser() {
 	lb := &a.logBrowser
 	lb.selServer, lb.selSession = -1, -1
-	lb.query = ""
+	lb.query, lb.charFilter, lb.useRegex, lb.regexErr = "", "", false, false
 	lb.scroll, lb.serverScroll, lb.sessionScroll = 0, 0, 0
-	lb.lines, lb.filtered = nil, nil
+	lb.lines, lb.filtered, lb.chars = nil, nil, nil
 	lb.filterKey = logFilterUnset
 	lb.servers, lb.sessions = nil, nil
 	a.kickLogScope()
@@ -141,6 +147,8 @@ func (a *App) pollLogBrowser() {
 		lb.servers = out.servers
 		lb.sessions = out.sessions
 		lb.lines = out.lines
+		lb.chars = distinctChars(out.lines)
+		lb.charFilter = "" // a new scope resets the speaker filter
 		lb.filtered = nil
 		lb.filterKey = logFilterUnset // force one refilter against the new data
 	default:
@@ -151,31 +159,102 @@ func (a *App) pollLogBrowser() {
 // when the query (or the scope data) changed — so typing never re-scans per frame.
 func (a *App) logFiltered() []int {
 	lb := &a.logBrowser
-	if lb.filterKey != lb.query {
-		lb.filtered = filterLogLines(lb.lines, lb.query)
-		lb.filterKey = lb.query
+	key := fmt.Sprintf("%t\x00%s\x00%s", lb.useRegex, lb.charFilter, lb.query)
+	if lb.filterKey != key {
+		lb.regexErr = lb.useRegex && strings.TrimSpace(lb.query) != "" && !validRegex(lb.query)
+		lb.filtered = filterLogLines(lb.lines, lb.query, lb.useRegex, lb.charFilter)
+		lb.filterKey = key
 	}
 	return lb.filtered
 }
 
 // filterLogLines returns the indices of lines whose text contains query
 // (case-insensitive). An empty query matches everything. Pure — unit-tested.
-func filterLogLines(lines []logLine, query string) []int {
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "" {
-		idx := make([]int, len(lines))
-		for i := range lines {
-			idx[i] = i
-		}
-		return idx
+func filterLogLines(lines []logLine, query string, useRegex bool, who string) []int {
+	who = strings.ToLower(strings.TrimSpace(who))
+	q := strings.TrimSpace(query)
+	var re *regexp.Regexp
+	if useRegex && q != "" {
+		re, _ = regexp.Compile("(?i)" + q) // nil on a bad pattern → falls through to substring
 	}
+	ql := strings.ToLower(q)
 	idx := make([]int, 0, 64)
 	for i := range lines {
-		if strings.Contains(lines[i].lower, q) {
-			idx = append(idx, i)
+		if who != "" && strings.ToLower(lines[i].who) != who {
+			continue
 		}
+		switch {
+		case q == "":
+		case re != nil:
+			if !re.MatchString(lines[i].text) {
+				continue
+			}
+		default:
+			if !strings.Contains(lines[i].lower, ql) {
+				continue
+			}
+		}
+		idx = append(idx, i)
 	}
 	return idx
+}
+
+// validRegex reports whether q compiles as a case-insensitive regex.
+func validRegex(q string) bool {
+	_, err := regexp.Compile("(?i)" + strings.TrimSpace(q))
+	return err == nil
+}
+
+// parseLogWho extracts the speaker from a transcript line "[ts] who: message".
+func parseLogWho(line string) string {
+	i := strings.Index(line, "] ")
+	if i < 0 {
+		return ""
+	}
+	rest := line[i+2:]
+	j := strings.Index(rest, ": ")
+	if j < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:j])
+}
+
+// distinctChars returns the distinct speakers across lines, sorted, bounded.
+func distinctChars(lines []logLine) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, 32)
+	for i := range lines {
+		w := lines[i].who
+		if w == "" || seen[strings.ToLower(w)] {
+			continue
+		}
+		seen[strings.ToLower(w)] = true
+		out = append(out, w)
+		if len(out) >= 200 {
+			break
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// cycleChar advances the speaker filter: "" (All) → chars[0] → … → "".
+func cycleChar(chars []string, cur string) string {
+	if cur == "" {
+		if len(chars) > 0 {
+			return chars[0]
+		}
+		return ""
+	}
+	for i, ch := range chars {
+		if ch == cur {
+			if i+1 < len(chars) {
+				return chars[i+1]
+			}
+			return ""
+		}
+	}
+	return ""
 }
 
 // sessionLabel turns a transcript file name (2006-01-02_15-04-05.log) into a
@@ -324,7 +403,7 @@ func readLogScope(root, server, session string) []logLine {
 				continue
 			}
 			t = truncateRunes(t, maxLogLineRunes)
-			lines = append(lines, logLine{server: srv, session: label, text: t, lower: strings.ToLower(t)})
+			lines = append(lines, logLine{server: srv, session: label, text: t, lower: strings.ToLower(t), who: parseLogWho(t)})
 		}
 		return true
 	}
@@ -433,9 +512,25 @@ func (a *App) drawLogBrowser(w, h int32) {
 		}
 	}
 
-	// MAIN PANE: live text filter + results.
-	lb.query, _ = c.TextField("logquery", sdl.Rect{X: mainX, Y: top, W: mainW, H: fieldH}, lb.query, "filter — type a name, word, or phrase…")
-	resTop := top + fieldH + 10
+	// MAIN PANE: live filter (text / regex / speaker) + results.
+	lb.query, _ = c.TextField("logquery", sdl.Rect{X: mainX, Y: top, W: mainW, H: fieldH}, lb.query, "filter — name, word, phrase, or a regex…")
+	fy := top + fieldH + 6
+	lb.useRegex = c.Checkbox(mainX, fy, "Regex", lb.useRegex)
+	charLabel := "Speaker: All"
+	if lb.charFilter != "" {
+		charLabel = "Speaker: " + lb.charFilter
+	}
+	cbW := c.TextWidth(charLabel) + 24
+	if cbW > 220 {
+		cbW = 220
+	}
+	if c.Button(sdl.Rect{X: mainX + 90, Y: fy - 2, W: cbW, H: btnH}, charLabel) {
+		lb.charFilter = cycleChar(lb.chars, lb.charFilter)
+	}
+	if lb.regexErr {
+		c.LabelClipped(mainX+96+cbW, fy, mainW-96-cbW, "invalid regex — matching as text", ColDanger)
+	}
+	resTop := fy + btnH + 8
 	a.drawLogResults(sdl.Rect{X: mainX, Y: resTop, W: mainW, H: bottom - resTop}, idx)
 }
 
@@ -523,9 +618,18 @@ func (a *App) drawLogResults(r sdl.Rect, idx []int) {
 			if c.hovering(rr) {
 				c.Fill(rr, ColPanelHi)
 				if c.clicked {
-					_ = sdl.SetClipboardText(ln.text)
-					a.warnLine = clampLine("Copied: " + ln.text)
-					a.warnAt = a.now()
+					if strings.TrimSpace(lb.query) != "" || lb.charFilter != "" {
+						// Jump to context: clear the filter and scroll to this line.
+						lb.query, lb.charFilter, lb.useRegex = "", "", false
+						lb.filterKey = logFilterUnset
+						lb.scroll = int32(li)*rowH - r.H/2 // VScrollbar clamps next frame
+						a.warnLine = clampLine("Jumped to context")
+						a.warnAt = a.now()
+					} else {
+						_ = sdl.SetClipboardText(ln.text)
+						a.warnLine = clampLine("Copied: " + ln.text)
+						a.warnAt = a.now()
+					}
 				}
 			}
 			tx := rr.X + 6
