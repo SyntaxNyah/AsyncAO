@@ -239,9 +239,28 @@ func (a *App) detectIncomingPM(text string) {
 // (courtroom.ParsePMSender), which the text-shape detectIncomingPM can't see. Any
 // AsyncAO control frame in the body is stripped before it's shown. Group routing
 // layers onto this later.
-func (a *App) routeIncomingPM(sender, body string) {
-	_, clean, _ := courtroom.DecodeMessageFrame(body) // drop a hidden control frame if present
-	a.pmAppend(sender, false, clean)
+func (a *App) routeIncomingPM(uid int, sender, body string) {
+	m, clean, ok := courtroom.DecodeMessageFrame(body)
+	if ok {
+		switch m.Kind {
+		case courtroom.MsgInvite:
+			a.applyGroupInvite(m.GroupID, m.GroupName, uid, sender)
+			return
+		case courtroom.MsgGroupText:
+			a.applyGroupText(m.GroupID, uid, sender, clean)
+			return
+		case courtroom.MsgJoin:
+			a.applyGroupJoin(m.GroupID, uid, sender)
+			return
+		case courtroom.MsgLeave:
+			a.applyGroupLeave(m.GroupID, uid)
+			return
+		case courtroom.MsgKick:
+			a.applyGroupKick(m.GroupID, uid, m.TargetUID)
+			return
+		}
+	}
+	a.pmAppend(sender, false, clean) // plain DM (MsgDM or no control frame)
 }
 
 // parseIncomingPM extracts (sender, message) from a received-PM OOC line, or

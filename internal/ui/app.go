@@ -680,6 +680,7 @@ type App struct {
 	msgSel        string
 	msgInput      string
 	msgListScroll int32
+	msgGroups     map[uint32]*msgGroup // client-side group chats (keyed by group id)
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
@@ -2433,8 +2434,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// Received private message (Nyathena / Athena attribute the sender in the
 			// CT name as "[PM] [UID n] <name>"): file it in its DM thread. It also
 			// stays in the OOC log below, so a miss loses nothing.
-			if _, sender, ok := courtroom.ParsePMSender(ev.Name); ok {
-				a.routeIncomingPM(sender, ev.Text)
+			if uid, sender, ok := courtroom.ParsePMSender(ev.Name); ok {
+				a.routeIncomingPM(uid, sender, ev.Text)
 			}
 			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
 			if a.d.Prefs.CallwordsOOCOn() && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
