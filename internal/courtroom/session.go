@@ -183,6 +183,18 @@ const (
 	// EventPlayersUpdated signals the live player list changed (PR/PU from the
 	// server's PlayerStateObserver); the UI re-reads Players().
 	EventPlayersUpdated
+	// EventVoiceCaps signals the server's voice capability advert arrived
+	// (VS_CAPS); the UI re-reads VoiceCaps() to decide whether to offer voice.
+	EventVoiceCaps
+	// EventVoicePeers signals the voice peer set changed (VS_PEERS/JOIN/LEAVE);
+	// the UI re-reads VoicePeers().
+	EventVoicePeers
+	// EventVoiceSpeak is a peer speaking-state toggle (VS_SPEAK): Int = uid,
+	// Int2 = 1 speaking / 0 stopped.
+	EventVoiceSpeak
+	// EventVoiceAudio is one inbound opus frame (VS_AUDIO): Int = from-uid,
+	// Text = base64 opus payload. Consumed by the audio layer (decode + play).
+	EventVoiceAudio
 )
 
 // Event is one session occurrence. Fields are populated per Kind.
@@ -311,6 +323,13 @@ type Session struct {
 	// ModGranted reports mod authentication (AUTH 1, or the legacy OOC
 	// confirmation line on servers without auth_packet).
 	ModGranted bool
+
+	// Voice (Nyathena/LemmyAO VS_* relay): the caps the server advertised, the
+	// live voice peer set, and who's currently transmitting. All mutated only by
+	// HandlePacket on the caller's loop, like the rest of the live state.
+	voiceCaps     VoiceCaps
+	voicePeers    map[int]bool // uids currently in voice (≤ voicePeerCap)
+	voiceSpeaking map[int]bool // uids currently transmitting (subset of voicePeers)
 
 	// Rehearsal marks an offline session (NewRehearsalSession): picks
 	// resolve locally, sends are swallowed, nothing network exists.
@@ -590,6 +609,9 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			return nil
 		}
 		return []Event{{Kind: EventModcall, Text: p.Field(0)}}
+
+	case "VS_CAPS", "VS_PEERS", "VS_JOIN", "VS_LEAVE", "VS_SPEAK", "VS_AUDIO":
+		return s.handleVoicePacket(p)
 
 	case "ARUP":
 		// ARUP#<type>#<area0>#<area1>…: type 0 players, 1 status, 2 CM,
