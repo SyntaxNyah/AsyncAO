@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.19.6 — 2026-06-29
+
+A small follow-up from playtesting v1.19.5.
+
+- **Voice button in the bottom button row.** When you move into an **area that
+  supports voice** (Nyathena VS_CAPS), a **Voice** button now appears in the
+  courtroom controls — not just in Extras — and a one-time note points you to it.
+  It hides again in areas without voice.
+- **Group Chat: "+ New Group" now opens the invite picker** straight away, with a
+  clear message when no other AsyncAO players have been detected yet (they show
+  up once they've spoken — look for the AO badge). Creating a group also tells you
+  if you're not fully connected yet, instead of doing nothing.
+
 ## v1.19.5 — 2026-06-29
 
 Voice chat can actually talk now, and Group Chat is much easier to find — both
