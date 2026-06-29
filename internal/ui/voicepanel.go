@@ -244,14 +244,25 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 		}
 		col := ColTextDim
 		if a.sess.VoiceIsSpeaking(uid) {
-			col = ColAccent // currently transmitting
+			col = ColAccent // currently transmitting → the dot lights up
 		}
 		name := a.voicePeerName(uid)
+		// [UID] name — the username + id the user asked to see; "(you)" for self.
+		label := "[" + strconv.Itoa(uid) + "] " + name
 		if uid == me {
-			name += " (you)"
+			label += " (you)"
+		}
+		// Custom profile (pronouns · tagline) when the peer has shared one — the
+		// existing cross-client profile channel, surfaced here too.
+		if a.room != nil {
+			if p, ok := a.room.RemoteProfile(name); ok {
+				if extra := strings.TrimSpace(strings.TrimSpace(p.Pronouns) + "  " + strings.TrimSpace(p.Tag)); extra != "" {
+					label += "  ·  " + extra
+				}
+			}
 		}
 		c.Label(x, y, "•", col)
-		c.LabelClipped(x+16, y, right-(x+16), name, ColText)
+		c.LabelClipped(x+16, y, right-(x+16), label, ColText)
 		y += 18
 	}
 	if len(peers) == 0 {
