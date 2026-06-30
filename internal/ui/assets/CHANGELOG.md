@@ -4,6 +4,33 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.20.0 — 2026-06-30
+
+- **The Ban / Kick menus are a movable box now, not a screen-blocking pop-up.**
+  Opening Ban or Kick used to dim the whole courtroom so you couldn't see or use
+  chat while it was up. It's a floating box now — drag it by the title bar, resize
+  it from the bottom-right corner, and keep chatting and watching the room behind
+  it. The frozen target and the live "this is the exact command that will send"
+  preview are unchanged, so it's no easier to mis-ban.
+- **Hide the courtroom control buttons you don't use.** Open *UI…* → **Control
+  buttons** and untick any of Character, Wardrobe, Restyle, Background, Evidence,
+  Mods, Settings, Edit Layout, Hotkeys, About or Login to drop it from the button
+  row — the row compacts with no gap and your choice is remembered. (New-default
+  layout.)
+- **Long hover tooltips wrap instead of running off the screen.** A long server
+  description (or any long hint) now word-wraps into a tidy box that always stays
+  fully on-screen, instead of spilling past the window edge.
+- **Voice chat holds up better on a shaky connection.** Voice now skips
+  transmitting silence (Opus DTX) and rides an adaptive jitter buffer that deepens
+  only when the audio actually stutters and eases back when it's smooth, with a
+  small chip showing the latency it's adding — trading a little delay for fewer
+  dropouts, and only when the connection needs it.
+- **The Discord-free downloads are now also voice-free.** The
+  `asyncao-…-nodiscord` builds compile out the optional voice chat as well — its
+  panel, buttons, settings and codec — a leaner build for anyone who wants neither
+  integration. Music still plays normally (Opus included); this only affects the
+  separate Discord-free download, not the standard build.
+
 ## v1.19.9 — 2026-06-29
 
 - **Fixed the OOC box overlapping the log tabs.** If you'd moved the OOC box in
