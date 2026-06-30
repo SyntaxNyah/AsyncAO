@@ -336,6 +336,12 @@ type Ctx struct {
 	dropped    string      // SDL_DROPFILE path this frame ("" = none)
 	hotkey     sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
 	tipText    string      // hover hint to paint at end-of-frame ("" = none)
+	// Cached word-wrap of the current tooltip, rebuilt only when the text or the wrap
+	// width changes (drawTooltip) — so a hovered tooltip doesn't re-wrap (and re-allocate)
+	// every frame. See WrapText's "callers cache the result" note.
+	tipWrapText string
+	tipWrapW    int32
+	tipWrapLn   []string
 
 	focusID    string
 	caretOn    bool
@@ -2006,25 +2012,84 @@ func (c *Ctx) TooltipAfter(id string, r sdl.Rect, text string) {
 	}
 }
 
-// drawTooltip paints the armed hover hint near the cursor, flipped at the
-// window edges so it never spills off-screen. Called last in the frame.
+const (
+	tooltipMargin = 8   // keep the tooltip box this far inside the window edges
+	tooltipPad    = 6   // inner padding around the text
+	tooltipLineH  = 18  // wrapped-line pitch
+	tooltipMaxLn  = 10  // line cap so a huge description can't wallpaper the screen (WrapText ellipsizes)
+	tooltipMaxW   = 460 // preferred max text width before it word-wraps
+)
+
+// tipBox places a tooltip of size boxW×boxH near the cursor (mx,my): it offsets to
+// the lower-right, flips to the other side of the pointer when that would overflow,
+// and then clamps so the WHOLE box stays inside the w×h window — even when the box
+// is wider/taller than the room on either side (a long server description). Pure, so
+// the "never off-screen" rule (the reported bug) is unit-tested.
+func tipBox(mx, my, boxW, boxH, w, h int32) sdl.Rect {
+	x := mx + 16
+	if x+boxW > w-tooltipMargin {
+		x = mx - boxW - 8 // flip left of the pointer
+	}
+	if x+boxW > w-tooltipMargin {
+		x = w - tooltipMargin - boxW // still over (box wider than the flip room): pin to the right edge
+	}
+	if x < tooltipMargin {
+		x = tooltipMargin
+	}
+	y := my + 18
+	if y+boxH > h-tooltipMargin {
+		y = my - boxH - 6 // flip above the pointer
+	}
+	if y+boxH > h-tooltipMargin {
+		y = h - tooltipMargin - boxH
+	}
+	if y < tooltipMargin {
+		y = tooltipMargin
+	}
+	return sdl.Rect{X: x, Y: y, W: boxW, H: boxH}
+}
+
+// drawTooltip paints the armed hover hint near the cursor. Long text (e.g. a server
+// description) WORD-WRAPS to a capped width instead of running off-screen, and the
+// box flips/clamps at the window edges so it's always fully visible. Called last in
+// the frame. The wrap is cached (tipWrapText/W) so a hovered tooltip costs nothing
+// extra per frame.
 func (c *Ctx) drawTooltip(w, h int32) {
 	if c.tipText == "" {
 		return
 	}
-	box := sdl.Rect{X: c.mouseX + 16, Y: c.mouseY + 18, W: c.TextWidth(c.tipText) + 12, H: 22}
-	if box.X+box.W > w {
-		box.X = c.mouseX - box.W - 8 // flip left of the pointer
+	// Wrap to the smaller of the preferred max and the window width (minus margins/pad).
+	maxW := int32(tooltipMaxW)
+	if lim := w - 2*tooltipMargin - 2*tooltipPad; maxW > lim {
+		maxW = lim
 	}
-	if box.X < 0 {
-		box.X = 0
+	if maxW < 40 {
+		maxW = 40
 	}
-	if box.Y+box.H > h {
-		box.Y = c.mouseY - box.H - 6 // flip above the pointer
+	if c.tipWrapText != c.tipText || c.tipWrapW != maxW { // re-wrap only when the text or width changed
+		c.tipWrapLn = c.WrapText(c.tipText, maxW, tooltipMaxLn)
+		c.tipWrapText, c.tipWrapW = c.tipText, maxW
 	}
+	lines := c.tipWrapLn
+	if len(lines) == 0 {
+		return
+	}
+	boxW := int32(0)
+	for _, ln := range lines {
+		if tw := c.TextWidth(ln); tw > boxW {
+			boxW = tw
+		}
+	}
+	boxW += 2 * tooltipPad
+	boxH := int32(len(lines))*tooltipLineH + 2*tooltipPad
+	box := tipBox(c.mouseX, c.mouseY, boxW, boxH, w, h)
 	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 235})
 	c.Border(box, ColAccent)
-	c.Label(box.X+6, box.Y+3, c.tipText, ColText)
+	ty := box.Y + tooltipPad
+	for _, ln := range lines {
+		c.Label(box.X+tooltipPad, ty, ln, ColText)
+		ty += tooltipLineH
+	}
 }
 
 func (c *Ctx) FinishFrame() {
