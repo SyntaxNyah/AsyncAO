@@ -4,6 +4,63 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.30.0 — 2026-06-30
+
+A big quality-of-life release — most of it straight from **Nightingale's** ideas
+and UI suggestions, with bug-finds from **Dag** and the playtest crew. Thank you.
+
+### Layout & the courtroom
+- **Save and switch layout presets.** Settings → Theme → *Layout presets*: save the
+  whole default-courtroom arrangement under a name and flip between setups, plus
+  one-click *Theater / Wide / Compact* stage presets. Stored as window fractions, so a
+  preset looks right at any window size.
+- **One toolbox to show or hide every UI piece.** The layout editor (*Edit Layout*)
+  now has a single strip listing every panel and control button as a chip — click to
+  show/hide, **drag a chip onto the stage to place it**, or **drag a piece onto the
+  strip to hide it**. Replaces the old separate "hide UI pieces" checkbox menu.
+- **The log panel borders in the accent colour** like the rest of the UI, instead of
+  being the lone grey outline.
+- **"Show volume sliders" stays on** across restarts now.
+
+### Keyboard & navigation
+- **Esc leaves the server** from the courtroom or character select — through the
+  confirm, so a stray tap can't drop you. Handy in fullscreen.
+- **Back is always top-right.** On character select it used to sit mid-screen while
+  *Disconnect* took the top-right spot, so it was easy to leave by mistake. Back is
+  top-right like every other screen now, and Disconnect is red and out of the way.
+
+### Chat & reading
+- **IC timestamps are off by default** (cleaner log; still toggleable in Settings → Chat).
+- **Speaker names — and the timestamp — are bold** for readability (on by default).
+- **"X is typing…" between AsyncAO users** (opt-in, OFF by default): a small caption
+  above the IC box when other AsyncAO players are composing.
+- **Settings search jumps to the section,** not just the tab — search "scene maker"
+  and you land right on it.
+- The **New group chat** invite list shows people's shownames + OOC names and flags
+  who's on AsyncAO, like the player list.
+
+### Looks
+- **More recolour swatches and a new Sepia effect** in the Sprite Style box.
+- A green **"unread" dot on *What's New*** after an update, until you open it.
+- A **new player flashes** briefly in the player list as they join.
+
+### Privacy & help
+- A **Glossary** and a deep **Privacy** explainer (from the server-select screen):
+  what each server can see, how AsyncAO handles your HDID, WS vs WSS (and why WSS
+  stops a man-in-the-middle), VPN advice, and how the voice chat avoids leaking your IP.
+
+### Voice & performance
+- **Test your mic without joining a call:** Settings → Voice → *Test microphone* shows
+  a live level meter and can play your mic back (sidetone) so you can check levels.
+- A **predictive-prefetch** slider (Settings → Assets) to tune how aggressively the
+  next sprites are warmed.
+
+### Fixes
+- **"Fix stuck / repeated images"** (Settings → Assets → Cache): if a character's emote
+  buttons all show the same image, this clears the learned format and cache together so
+  the art re-fetches. (Thanks Dag.)
+- Emoji no longer render at the wrong size when the same one shows in two places at once.
+
 ## v1.20.0 — 2026-06-30
 
 - **The Ban / Kick menus are a movable box now, not a screen-blocking pop-up.**
