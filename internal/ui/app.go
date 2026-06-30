@@ -632,6 +632,12 @@ type App struct {
 	// layoutPresetName is the Settings name field for saving the current layout as a
 	// named preset (#34, internal/ui/layoutpresets.go + the Theme settings section).
 	layoutPresetName string
+	// toolboxDrag* track a chip dragged out of the editor toolbox (#27 slice 2b): press
+	// a chip and drag it onto the stage to SHOW that piece; a release without moving is a
+	// plain hide/show toggle. toolboxDragID is "" when no chip drag is active.
+	toolboxDragID    string
+	toolboxDragStart [2]int32
+	toolboxDragMoved bool
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage

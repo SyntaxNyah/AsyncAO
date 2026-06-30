@@ -509,7 +509,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Show/hide toolbox (#27): chips for every hideable piece, click to toggle. Like
 	// the tab tray, being over it suppresses a slot-move so a chip click can't grab a
 	// box parked beneath the strip.
-	overToolbox := a.drawClassicToolbox(w, h)
+	overToolbox := a.drawClassicToolbox(w, h, pressed)
 
 	// Slot names this frame, stable order.
 	keys := make([]string, 0, len(a.slotReg))

@@ -23,6 +23,9 @@ const (
 	// toolboxTop is the strip's top, just under the tear-off tab tray (which sits at
 	// classicBannerH+8 with a 40 px strip).
 	toolboxTop = int32(classicBannerH + 8 + 40 + 4)
+	// toolboxDragThresh is the manhattan pixel distance a press must travel before it's
+	// a chip DRAG (place on the stage) rather than a click (toggle) — #27 slice 2b.
+	toolboxDragThresh = 4
 )
 
 // toolboxItem is one chip: a hideable id and its short label.
@@ -83,7 +86,7 @@ func (a *App) classicToolboxItems() []toolboxItem {
 // drawClassicToolbox paints the show/hide chip strip and toggles a piece on click.
 // Returns whether the cursor is over the strip, so the editor suppresses a slot-move
 // under it (like the tab tray's overTray). Edit-only.
-func (a *App) drawClassicToolbox(w, h int32) bool {
+func (a *App) drawClassicToolbox(w, h int32, pressed bool) bool {
 	c := a.ctx
 	items := a.classicToolboxItems()
 
@@ -102,22 +105,43 @@ func (a *App) drawClassicToolbox(w, h int32) bool {
 	strip := sdl.Rect{X: 0, Y: toolboxTop - 4, W: w, H: stripH}
 	over := pointIn(c.mouseX, c.mouseY, strip)
 	// "Drop here to hide" affordance: while dragging a slotted piece, the strip arms
-	// (greenish) and the heading invites the release (#27 slice 2 drag-to-hide).
+	// (greenish) and the heading invites the release (slice 2a drag-to-hide).
 	dropArmed := a.classicEditDrag != 0 && hideableForSlot(a.classicEditKey) != ""
 	stripCol := sdl.Color{R: 0, G: 0, B: 0, A: 205}
 	if dropArmed && over {
 		stripCol = sdl.Color{R: 25, G: 70, B: 30, A: 225}
 	}
 	c.Fill(strip, stripCol)
-	heading := "Show / hide UI pieces (click a chip — dim = hidden):"
+	heading := "Show / hide UI pieces (click a chip, or drag one onto the stage to place it):"
 	if dropArmed {
 		heading = "Release here to HIDE " + classicSlotLabel(a.classicEditKey)
 	}
 	c.Label(pad, toolboxTop-2, heading, ColTierYellow)
 
-	// Second pass: draw + handle clicks.
+	// Resolve a chip drag that ended this frame, then track an in-progress one (#27
+	// slice 2b): a release without moving toggles the piece (slice 1); dragging a HIDDEN
+	// chip out onto the stage shows it.
+	if a.toolboxDragID != "" && !c.mouseDown {
+		a.resolveToolboxDrag(over)
+		a.toolboxDragID, a.toolboxDragMoved = "", false
+	}
+	if a.toolboxDragID != "" && c.mouseDown {
+		dx, dy := c.mouseX-a.toolboxDragStart[0], c.mouseY-a.toolboxDragStart[1]
+		if dx < 0 {
+			dx = -dx
+		}
+		if dy < 0 {
+			dy = -dy
+		}
+		if dx+dy > toolboxDragThresh {
+			a.toolboxDragMoved = true
+		}
+	}
+
+	// Second pass: draw the chips + arm a drag on press over one.
 	x = int32(pad)
 	y := toolboxTop + 16
+	dragLabel := ""
 	for _, it := range items {
 		cw := c.TextWidth(it.label) + 18
 		if x > pad && x+cw > w-pad {
@@ -130,8 +154,8 @@ func (a *App) drawClassicToolbox(w, h int32) bool {
 		if !hidden {
 			bg = ColAccent // shown → filled accent
 		}
-		if pointIn(c.mouseX, c.mouseY, chip) {
-			bg = ColPanelHi // hover
+		if a.toolboxDragID == it.id || pointIn(c.mouseX, c.mouseY, chip) {
+			bg = ColPanelHi // hover / grabbed
 		}
 		c.Fill(chip, bg)
 		c.Border(chip, ColAccent)
@@ -140,10 +164,40 @@ func (a *App) drawClassicToolbox(w, h int32) bool {
 			txtCol = ColTextDim
 		}
 		c.LabelClipped(chip.X+6, chip.Y+3, chip.W-12, it.label, txtCol)
-		if c.clicked && pointIn(c.mouseX, c.mouseY, chip) {
-			a.setPanelHidden(it.id, !hidden)
+		if pressed && a.toolboxDragID == "" && pointIn(c.mouseX, c.mouseY, chip) {
+			a.toolboxDragID = it.id
+			a.toolboxDragStart = [2]int32{c.mouseX, c.mouseY}
+			a.toolboxDragMoved = false
+		}
+		if it.id == a.toolboxDragID {
+			dragLabel = it.label
 		}
 		x += cw + 6
 	}
+
+	// Ghost chip trailing the cursor while a chip is dragged out, so you can see what
+	// you're placing on the stage.
+	if a.toolboxDragID != "" && a.toolboxDragMoved && dragLabel != "" {
+		gw := c.TextWidth(dragLabel) + 18
+		ghost := sdl.Rect{X: c.mouseX - gw/2, Y: c.mouseY - toolboxChipH/2, W: gw, H: toolboxChipH}
+		c.Fill(ghost, ColAccent)
+		c.Border(ghost, ColTierYellow)
+		c.LabelClipped(ghost.X+6, ghost.Y+3, ghost.W-12, dragLabel, ColText)
+	}
 	return over
+}
+
+// resolveToolboxDrag finishes a chip drag (#27 slice 2b): a click (no move) toggles the
+// piece; dragging a HIDDEN chip out onto the stage (released off the toolbox) shows it.
+// Dragging a shown chip, or dropping back on the toolbox, is a no-op.
+func (a *App) resolveToolboxDrag(overToolbox bool) {
+	id := a.toolboxDragID
+	hidden := a.panelHidden(id)
+	switch {
+	case !a.toolboxDragMoved:
+		a.setPanelHidden(id, !hidden)
+	case hidden && !overToolbox:
+		a.setPanelHidden(id, false)
+		a.pushDebug("layout: dragged a piece onto the stage → shown")
+	}
 }
