@@ -120,6 +120,16 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	cur := a.d.Prefs.ChromeTheme()
 	c.Label(pad, y, "Client UI colours — AsyncAO's own panels, separate from AO2 courtroom themes.", ColTextDim)
 	y += 24
+	// Quick accent picker (#41): one click to edit JUST the UI accent on the Custom
+	// scheme (the colour wheel below opens on the Accent slot), so "recolour the accent"
+	// doesn't need hunting through the full editor.
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Customize accent…") {
+		a.d.Prefs.SetChromeTheme(chromeCustomKey)
+		a.applyChromePreset(chromeCustomKey)
+		a.chromeEditSlot = 3 // the Accent slot → the wheel below edits it directly
+	}
+	c.LabelClipped(pad+180, y+5, w-pad-180-scrollBarW, "Recolour the whole UI accent — or pick a preset / edit every colour below.", ColTextDim)
+	y += btnH + 12
 	x := pad
 	for i := range chromePresets {
 		p := &chromePresets[i]
