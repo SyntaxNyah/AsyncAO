@@ -253,6 +253,17 @@ func (a *App) closeTopOverlay() bool {
 		a.showCMPanel = false
 	case a.showPair:
 		a.showPair = false
+	case a.showSfxBrowser:
+		a.showSfxBrowser = false
+	case a.showStyleBox:
+		a.showStyleBox = false
+	// The Extras box LAST of the panels: a picker opened from it (SFX / style) closes
+	// first, then the box itself. (#28: every courtroom popup answers Esc — and so Esc
+	// can't fall through to the courtroom's leave-the-server shortcut while one is open.)
+	case a.showWidgets:
+		a.showWidgets = false
+	case a.theaterOn: // theater mode's "Esc exits" — handled here so it beats the leave-server shortcut
+		a.setTheater(false)
 	default:
 		return false
 	}
