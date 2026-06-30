@@ -234,11 +234,17 @@ func settingsSearchMatch(query string) int {
 	}
 	// A tab-name match wins (you typed the destination directly).
 	for i, name := range settingsTabNames {
+		if !voiceBuilt && i == tabVoice {
+			continue // no Voice tab in the -tags novoice build
+		}
 		if strings.Contains(strings.ToLower(name), q) {
 			return i
 		}
 	}
 	for i, kws := range settingsSearchKeywords {
+		if !voiceBuilt && i == tabVoice {
+			continue
+		}
 		for _, kw := range kws {
 			if strings.Contains(kw, q) {
 				return i
@@ -321,6 +327,9 @@ func (a *App) drawSettings(w, h int32) {
 	// --- left sidebar: a vertical category list (replaces the old chip row) --
 	navY := contentTop + 4
 	for i, name := range settingsTabNames {
+		if !voiceBuilt && i == tabVoice {
+			continue // voice chat is compiled out (-tags novoice): no Voice tab
+		}
 		r := sdl.Rect{X: pad, Y: navY, W: settSidebarW, H: settNavItemH}
 		active := i == settings.tab
 		switch {
@@ -2538,93 +2547,6 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	c.Label(pad, y, "The streamed-asset cache is separate — view or clear it under Assets → Cache.", ColTextDim)
 	y += 24
 	return y
-}
-
-// drawSettingsVoice is the Voice tab: pick the microphone (system default unless
-// you choose another) and set the output volume. Voice chat itself only appears
-// on servers that support it (Nyathena) — the Voice button shows in a VC area.
-func (a *App) drawSettingsVoice(y, _ int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	w := a.formW2()
-
-	y = a.settingsSection(y, w, "Microphone")
-	cur := a.d.Prefs.VoiceInput()
-	curLabel := cur
-	if curLabel == "" {
-		curLabel = "System default"
-	}
-	c.Label(pad, y+4, "Input device:", ColText)
-	c.LabelClipped(pad+110, y+4, w-pad-110, curLabel, ColAccent)
-	y += 26
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Next device") {
-		a.cycleVoiceInput()
-	}
-	if c.Button(sdl.Rect{X: pad + 160, Y: y, W: 150, H: btnH}, "System default") {
-		a.d.Prefs.SetVoiceInput("")
-	}
-	y += 30
-	c.Label(pad, y, "Uses your system default mic unless you pick another. Takes effect next time you Join voice.", ColTextDim)
-	y += 24
-
-	y = a.settingsSection(y, w, "Output")
-	c.Label(pad, y+4, "Volume:", ColText)
-	vol := int32(a.d.Prefs.VoiceOutVol())
-	if nv := c.Slider("voiceOutVolSet", sdl.Rect{X: pad + 80, Y: y, W: 220, H: btnH}, vol, 100); nv != vol {
-		a.d.Prefs.SetVoiceOutVol(int(nv))
-		if a.voiceAudio != nil {
-			a.voiceAudio.setOutVol(int(nv)) // apply live if we're in voice
-		}
-	}
-	c.Label(pad+310, y+4, strconv.Itoa(a.d.Prefs.VoiceOutVol())+"%", ColTextDim)
-	y += 30
-
-	y = a.settingsSection(y, w, "Push-to-talk")
-	c.Label(pad, y+4, "Mic toggle key:", ColText)
-	keyLabel := a.d.Prefs.VoicePTT()
-	if a.voicePTTBindArmed {
-		keyLabel = "press a key…  (Esc cancels)"
-	} else if keyLabel == "" {
-		keyLabel = "(unbound)"
-	}
-	c.Label(pad+120, y+4, keyLabel, ColAccent)
-	y += 26
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 130, H: btnH}, "Bind key") {
-		a.voicePTTBindArmed = !a.voicePTTBindArmed
-	}
-	if c.Button(sdl.Rect{X: pad + 140, Y: y, W: 90, H: btnH}, "Clear") {
-		a.d.Prefs.SetVoicePTT("")
-		a.voicePTTBindArmed = false
-	}
-	y += 30
-	c.Label(pad, y, "Press the bound key while in voice to toggle your mic on/off (same as the Talk button).", ColTextDim)
-	y += 24
-	c.Label(pad, y, "Voice chat appears on servers that support it (Nyathena) — the Voice button shows when you enter a voice-enabled area.", ColTextDim)
-	y += 24
-	return y
-}
-
-// cycleVoiceInput advances the chosen mic to the next capture device (wrapping
-// through "System default"). Enumerated on click, so there's no per-frame SDL
-// device scan.
-func (a *App) cycleVoiceInput() {
-	n := sdl.GetNumAudioDevices(true)
-	devs := make([]string, 0, n+1)
-	devs = append(devs, "") // system default first
-	for i := 0; i < n; i++ {
-		if name := sdl.GetAudioDeviceName(i, true); name != "" {
-			devs = append(devs, name)
-		}
-	}
-	cur := a.d.Prefs.VoiceInput()
-	idx := 0
-	for i, d := range devs {
-		if d == cur {
-			idx = i
-			break
-		}
-	}
-	a.d.Prefs.SetVoiceInput(devs[(idx+1)%len(devs)])
 }
 
 // measureDiskCacheAsync walks the T3 directory off-thread and reports the

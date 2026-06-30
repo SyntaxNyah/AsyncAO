@@ -67,9 +67,10 @@ everything in memory and on disk, and renders without allocating.
 - **Discord Rich Presence (optional, no DLL)** — show server, character,
   showname and area on your profile, with per-field privacy toggles. Off by
   default and **pure-Go IPC** — no DLL, no Discord dependency, and a closed
-  Discord never blocks launch. A **Discord-free** `-tags nodiscord` build (all
-  Discord code stripped, settings UI included) ships alongside every release. See
-  [docs/DISCORD.md](docs/DISCORD.md).
+  Discord never blocks launch. A lean **Discord-free** build (`-tags "nodiscord
+  novoice"` — all Discord code *and* the optional voice chat stripped, settings
+  UI included) ships alongside every release. See [docs/DISCORD.md](docs/DISCORD.md)
+  and [BUILDING.md](BUILDING.md).
 - **Quality-of-life everything** — a non-blocking **floating Extras box**, a live
   **player list** that groups a `/gas` by area and jumps you there on a click,
   friend highlights and name colours, instant replay, a scene timeline, sprite

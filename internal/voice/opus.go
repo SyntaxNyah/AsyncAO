@@ -1,3 +1,5 @@
+//go:build !novoice
+
 // Package voice is AsyncAO's Opus codec for the Nyathena/LemmyAO server-relayed
 // voice transport (internal/courtroom owns the VS_* wire; internal/render owns
 // mic capture + playback). It is deliberately SDL-FREE (hard rule #1): it speaks

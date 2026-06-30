@@ -12,7 +12,7 @@
 # says which.
 #
 # This file is a TEMPLATE: @ASYNCAO_TAGS@ / @ASYNCAO_VERSION@ are substituted to
-# produce the two variants (Discord-bundled default and a `nodiscord` flavour),
+# produce the two variants (full default and a lean `nodiscord novoice` flavour),
 # exactly like the Windows/Linux/macOS matrix. Build it through
 # scripts/build-flatpak.sh (or the CI job), not directly.
 app-id: io.github.SyntaxNyah.AsyncAO
@@ -70,7 +70,8 @@ modules:
       build-args:
         - --share=network
     build-commands:
-      # @ASYNCAO_TAGS@ = "" (Discord default) or "nodiscord"; @ASYNCAO_VERSION@ =
+      # @ASYNCAO_TAGS@ = "" (full default) or "nodiscord novoice" (lean: no Discord,
+      # no voice — quoted below, so the embedded space is safe); @ASYNCAO_VERSION@ =
       # the release tag (stamped for the About / What's New version display).
       - CGO_ENABLED=1 go build -tags "@ASYNCAO_TAGS@" -pgo=auto -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=@ASYNCAO_VERSION@" -o /app/bin/asyncao ./cmd/asyncao
       - install -Dm644 packaging/flatpak/io.github.SyntaxNyah.AsyncAO.desktop

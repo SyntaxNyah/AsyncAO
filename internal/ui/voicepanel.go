@@ -1,3 +1,5 @@
+//go:build !novoice
+
 package ui
 
 import (
@@ -25,6 +27,12 @@ import (
 // voiceExtraLabel is the Extras-menu entry; the draw loops skip it when voice
 // isn't offered, so it's hidden on non-Nyathena servers.
 const voiceExtraLabel = "Voice (Nyathena)"
+
+// voiceBuilt is true in this (voice-enabled) build. The -tags novoice stub sets
+// it false, which makes the Settings sidebar omit the Voice tab and the search
+// skip it. It's a compile-time const, so the default build's settings render
+// carries zero added cost.
+const voiceBuilt = true
 
 const (
 	voicePanelDefW = 320

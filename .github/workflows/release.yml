@@ -1,5 +1,6 @@
 # AsyncAO release pipeline. Pushing a tag like `v0.1.0` builds every platform
-# (Discord-bundled default + a `-tags nodiscord` flavour), STAMPS the running
+# (full default + a lean `-tags "nodiscord novoice"` flavour with Discord Rich
+# Presence AND the LemmyAO/Nyathena voice chat compiled out), STAMPS the running
 # version into the binary (so the in-app self-update check works — an unstamped
 # build reports "dev" and never updates), and publishes a GitHub Release with all
 # the assets attached. This is the "use the GitHub API instead of shipping to
@@ -41,7 +42,7 @@ jobs:
       matrix:
         variant:
           - { id: default, label: "", tags: "", exe: "asyncao-windows-x86_64.exe", zip: "asyncao-windows-x86_64-bundle.zip" }
-          - { id: nodiscord, label: " (Discord-free)", tags: "nodiscord", exe: "asyncao-windows-x86_64-nodiscord.exe", zip: "asyncao-windows-x86_64-nodiscord-bundle.zip" }
+          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", exe: "asyncao-windows-x86_64-nodiscord.exe", zip: "asyncao-windows-x86_64-nodiscord-bundle.zip" }
     defaults:
       run:
         shell: msys2 {0}
@@ -128,7 +129,7 @@ jobs:
       matrix:
         variant:
           - { id: default, label: "", tags: "", out: "AsyncAO-linux-x86_64.AppImage" }
-          - { id: nodiscord, label: " (Discord-free)", tags: "nodiscord", out: "AsyncAO-linux-x86_64-nodiscord.AppImage" }
+          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", out: "AsyncAO-linux-x86_64-nodiscord.AppImage" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -162,7 +163,7 @@ jobs:
       matrix:
         variant:
           - { id: default, label: "", tags: "", asset: "asyncao-macos-arm64" }
-          - { id: nodiscord, label: " (Discord-free)", tags: "nodiscord", asset: "asyncao-macos-nodiscord-arm64" }
+          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", asset: "asyncao-macos-nodiscord-arm64" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -235,7 +236,7 @@ jobs:
       matrix:
         variant:
           - { id: default, label: "", tags: "", out: "AsyncAO-linux-x86_64.flatpak" }
-          - { id: nodiscord, label: " (Discord-free)", tags: "nodiscord", out: "AsyncAO-linux-x86_64-nodiscord.flatpak" }
+          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", out: "AsyncAO-linux-x86_64-nodiscord.flatpak" }
     steps:
       - uses: actions/checkout@v4
       - name: Install flatpak + flatpak-builder + the runtime/SDK

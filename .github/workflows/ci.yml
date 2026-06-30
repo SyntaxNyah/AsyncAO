@@ -1,11 +1,12 @@
 # AsyncAO CI: lint + race tests + alloc-gated benchmarks, then binary builds
 # for every platform. Pull requests get downloadable binaries as artifacts.
 #
-# Each platform builds TWICE via a `variant` matrix: the default binary (Discord
-# Rich Presence bundled — pure stdlib IPC, no DLL, off by default) and a
-# `-tags nodiscord` "Discord-free" binary with the integration compiled out
-# entirely. Discord is never a forced dependency either way; the second artifact
-# exists for anyone who wants a binary with zero Discord code at all.
+# Each platform builds TWICE via a `variant` matrix: the full default binary
+# (Discord Rich Presence bundled — pure stdlib IPC, no DLL, off by default; voice
+# chat included) and a lean `-tags "nodiscord novoice"` binary with BOTH the
+# Discord integration and the LemmyAO/Nyathena voice chat compiled out entirely.
+# Neither is ever a forced dependency; the second artifact exists for anyone who
+# wants a binary with zero Discord and zero voice code at all.
 name: CI
 
 on:
@@ -45,8 +46,8 @@ jobs:
       - name: Tests (race detector — §17.8 gate)
         run: go test -race -timeout 600s -count=1 ./...
 
-      - name: Tests (Discord compiled out — the nodiscord stub must build & pass)
-        run: go test -tags nodiscord -timeout 600s -count=1 ./...
+      - name: Tests (lean build — Discord + voice compiled out: the nodiscord+novoice stubs must build & pass)
+        run: go test -tags "nodiscord novoice" -timeout 600s -count=1 ./...
 
       - name: Benchmarks (alloc gates — §15)
         run: |
@@ -71,7 +72,7 @@ jobs:
       matrix:
         variant:
           - { label: "", tags: "", suffix: "" }
-          - { label: " - Discord-free", tags: "nodiscord", suffix: "-nodiscord" }
+          - { label: " - Discord-free, no voice", tags: "nodiscord novoice", suffix: "-nodiscord" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -98,7 +99,7 @@ jobs:
       matrix:
         variant:
           - { label: "", tags: "", suffix: "" }
-          - { label: " - Discord-free", tags: "nodiscord", suffix: "-nodiscord" }
+          - { label: " - Discord-free, no voice", tags: "nodiscord novoice", suffix: "-nodiscord" }
     defaults:
       run:
         shell: msys2 {0}
@@ -149,7 +150,7 @@ jobs:
       matrix:
         variant:
           - { label: "", tags: "", suffix: "" }
-          - { label: " - Discord-free", tags: "nodiscord", suffix: "-nodiscord" }
+          - { label: " - Discord-free, no voice", tags: "nodiscord novoice", suffix: "-nodiscord" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -179,7 +180,7 @@ jobs:
       matrix:
         variant:
           - { label: "", tags: "", suffix: "", output: "AsyncAO-x86_64.AppImage" }
-          - { label: " - Discord-free", tags: "nodiscord", suffix: "-nodiscord", output: "AsyncAO-nodiscord-x86_64.AppImage" }
+          - { label: " - Discord-free, no voice", tags: "nodiscord novoice", suffix: "-nodiscord", output: "AsyncAO-nodiscord-x86_64.AppImage" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

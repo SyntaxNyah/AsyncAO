@@ -103,9 +103,9 @@ with the Mayo icon and `packaging/linux/asyncao.desktop`. The result runs on any
 reasonably modern x86_64 desktop with no install step. CI builds the same
 AppImage on every push in two flavors (Actions → latest run):
 `asyncao-linux-x86_64-AppImage` (default) and
-`asyncao-linux-x86_64-AppImage-nodiscord` (Discord integration compiled out,
-`-tags nodiscord`). To build the Discord-free one locally, pass your own binary:
-`go build -tags nodiscord -o asyncao ./cmd/asyncao && APPIMAGE_OUTPUT=AsyncAO-nodiscord-x86_64.AppImage ./scripts/build-appimage.sh ./asyncao`.
+`asyncao-linux-x86_64-AppImage-nodiscord` (the lean build: Discord **and** voice
+chat compiled out, `-tags "nodiscord novoice"`). To build the lean one locally:
+`go build -tags "nodiscord novoice" -o asyncao ./cmd/asyncao && APPIMAGE_OUTPUT=AsyncAO-nodiscord-x86_64.AppImage ./scripts/build-appimage.sh ./asyncao`.
 
 ## macOS
 
@@ -122,6 +122,22 @@ Works on Apple Silicon and Intel.
 Out of scope: the SDL2 + CGO toolchain story on mobile is a project of its
 own. Desktop Windows/Linux/macOS are the supported targets.
 
+## Supported platforms (why no 32-bit or Windows 7 build)
+
+AsyncAO ships **64-bit Windows 10+ / Linux / macOS** only. A 32-bit Windows 7
+build has been asked about; it isn't offered, for two independent reasons:
+
+- **Windows 7/8 — blocked by Go.** Go dropped Windows 7/8 support in **Go 1.21**;
+  Go 1.20 was the last release whose binaries run there. AsyncAO is on Go ≥ 1.24,
+  so *any* build from this tree (32- or 64-bit) won't start on Windows 7.
+  Supporting it would mean pinning the whole project back to Go 1.20, with the
+  dependency downgrades and permanent dual-toolchain upkeep that implies.
+- **32-bit — no maintained CGO toolchain.** The C dependencies come from MSYS2,
+  which dropped 32-bit (i686 / MINGW32) packages — no new ones since Dec 2023,
+  and the community 32-bit repo went dark in Nov 2025. The AVIF decode chain is
+  the worst offender (SVT-AV1 is x86-64-only), so a 32-bit build would also have
+  to drop AVIF. It's a from-scratch toolchain project, not a CI flag.
+
 ---
 
 ## Build variants
@@ -134,6 +150,7 @@ own. Desktop Windows/Linux/macOS are the supported targets.
 | `go build -tags nocgo_webp ...` | pure-Go WebP fallback (static images only; animated WebP errors visibly) |
 | `go build -tags nocgo_avif ...` | no libavif binding (AVIF sniffing stays; decode errors visibly) |
 | `go build -tags nodiscord ...` | Rich Presence compiled out entirely (see below) |
+| `go build -tags novoice ...` | voice chat compiled out entirely — the LemmyAO/Nyathena VS_* relay + Opus codec, plus its UI, buttons and settings (see below). Opus **music** is unaffected. |
 | `CGO_ENABLED=0 go build ./cmd/asyncao-cache` | cache companion CLI (stats/inspect/prune/warm T3) — pure Go, no SDL/CGO, builds anywhere |
 
 ## Discord (never required)
@@ -156,10 +173,31 @@ fetched, or vendored.
   a no-op stub with the same API. Use this if your distro policy wants
   zero proprietary-service integration in the binary. CI builds every
   platform in both flavors, so you can also just download the prebuilt
-  `asyncao-<platform>-nodiscord` artifact (Actions → latest run).
+  `asyncao-<platform>-nodiscord` artifact (Actions → latest run) — which is
+  also **voice-free** (built `-tags "nodiscord novoice"`; see *Voice chat* below).
 - To get the AsyncAO icon on profiles, create a Discord application named
   "AsyncAO" in the developer portal, upload the icon under the asset key
   `appicon`, and paste the application ID into Settings → Discord.
+
+## Voice chat (never required)
+
+The optional **voice chat** — the LemmyAO/Nyathena server-relayed VS_* transport
+plus the Opus codec in `internal/voice` — is off unless a server advertises it
+(VS_CAPS) and you join. Like Discord, it can be compiled out entirely:
+
+- **`-tags novoice`**: the whole voice stack is removed — the Opus encoder/
+  decoder binding, the VS_* protocol reducer, the floating voice panel, the
+  courtroom **Voice** button, the Extras → *Voice* entry, and the **Settings →
+  Voice** tab. The remaining UI surface is inert no-op stubs, so no voice control
+  ever appears.
+- **Opus MUSIC keeps working.** Music and SFX play through SDL2_mixer, which
+  links `libopusfile`/`libopus` independently of the voice binding, so `.opus`
+  tracks still decode in a `novoice` build (those DLLs ship via SDL2_mixer either
+  way — the voice binding was never what carried them).
+- The **prebuilt Discord-free downloads are also voice-free**: every
+  `asyncao-<platform>-nodiscord` artifact is built `-tags "nodiscord novoice"`,
+  so the "no Discord" build is the lean build with neither Discord nor voice.
+  Build it locally with `go build -tags "nodiscord novoice" ./cmd/asyncao`.
 
 ## Tests & benchmarks
 

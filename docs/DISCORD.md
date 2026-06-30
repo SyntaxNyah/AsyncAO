@@ -96,7 +96,9 @@ version:
   all** — not even the settings UI — and is a touch smaller. CI publishes a
   prebuilt `asyncao-<platform>-nodiscord` artifact for every platform (in the
   **Actions** tab → latest run → **Artifacts**; downloading needs a free GitHub
-  account), so you don't have to build it yourself.
+  account), so you don't have to build it yourself. That prebuilt artifact is
+  the **lean build** — it also has **voice chat** compiled out (built `-tags
+  "nodiscord novoice"`); see *Voice chat (never required)* in `BUILDING.md`.
 
 ## Troubleshooting
 

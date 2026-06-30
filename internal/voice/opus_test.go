@@ -1,3 +1,5 @@
+//go:build !novoice
+
 package voice
 
 import (
