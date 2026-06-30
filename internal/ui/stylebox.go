@@ -7,6 +7,56 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
+// stylePathBox is the side of the draw-a-path square (#34).
+const stylePathBox = int32(112)
+
+// pathCellCenter maps a packed 4-bit X/Y waypoint to the centre of its cell inside box.
+func pathCellCenter(p byte, box sdl.Rect) (x, y int32) {
+	return box.X + int32(p>>4)*box.W/16 + box.W/32, box.Y + int32(p&0x0F)*box.H/16 + box.H/32
+}
+
+// drawStylePathEditor draws the "draw your own motion path" box (#34, B2): click inside it
+// to drop up to maxPathPoints waypoints (centre = the sprite's rest spot); your sprite loops
+// through them, overriding the Move cycle, transmitted + stacking. A Clear button removes it.
+// Click-to-place keeps it simple + bounded (no freehand stroke buffer). Returns the next y.
+func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
+	c := a.ctx
+	c.Label(x, y, "Or draw a custom path (click points · centre = rest):", ColTextDim)
+	y += 18
+	box := sdl.Rect{X: x, Y: y, W: stylePathBox, H: stylePathBox}
+	c.Fill(box, ColPanel)
+	c.Border(box, ColAccent)
+	c.Fill(sdl.Rect{X: box.X + box.W/2 - 1, Y: box.Y + 4, W: 2, H: box.H - 8}, ColPanelHi) // crosshair = rest
+	c.Fill(sdl.Rect{X: box.X + 4, Y: box.Y + box.H/2 - 1, W: box.W - 8, H: 2}, ColPanelHi)
+	// Existing waypoints + the connecting loop.
+	if n := int(p.PathLen); n >= 1 {
+		_ = c.Ren.SetDrawColor(ColAccent.R, ColAccent.G, ColAccent.B, 255)
+		for i := 0; i < n; i++ {
+			ax, ay := pathCellCenter(p.Path[i], box)
+			if n >= 2 {
+				bx, by := pathCellCenter(p.Path[(i+1)%n], box)
+				_ = c.Ren.DrawLine(ax, ay, bx, by)
+			}
+			c.Fill(sdl.Rect{X: ax - 3, Y: ay - 3, W: 6, H: 6}, ColTierGreen)
+		}
+	}
+	// Click to drop a waypoint (grid 0..15 per axis; centre cell = no offset).
+	if c.clicked && pointIn(c.mouseX, c.mouseY, box) && int(p.PathLen) < len(p.Path) {
+		gx := uint8(clampInt(int((c.mouseX-box.X)*16/box.W), 0, 15))
+		gy := uint8(clampInt(int((c.mouseY-box.Y)*16/box.H), 0, 15))
+		p.Path[p.PathLen] = gx<<4 | gy
+		p.PathLen++
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	if c.Button(sdl.Rect{X: box.X + box.W + 8, Y: box.Y, W: 80, H: btnH}, "Clear path") {
+		p.Path, p.PathLen = [6]uint8{}, 0
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	c.Label(box.X+box.W+8, box.Y+btnH+6, "Up to 6 points;", ColTextDim)
+	c.Label(box.X+box.W+8, box.Y+btnH+22, "loops forever.", ColTextDim)
+	return y + stylePathBox + 8
+}
+
 // motionName labels a transmitted sprite-motion path for the cycle button (#34).
 func motionName(m uint8) string {
 	switch m {
@@ -64,14 +114,15 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 		rows := int32((len(spriteStylePresets) + styleSwatchCols - 1) / styleSwatchCols)
 		bh += rows*(styleSwatchSz+styleSwatchGap) + 4 + 62 // preset swatches + R/G/B sliders
 	}
-	bh += 30 // opacity (Fade)
-	bh += 26 // Rainbow / Mirror row
-	bh += 66 // Brightness / Size / Tilt sliders
-	bh += 26 // glow / wobble / spin row
-	bh += 26 // invert / grayscale / sepia row
-	bh += 26 // posterize row (#34)
-	bh += 30 // movement-path cycle (#34)
-	bh += 30 // clear button
+	bh += 30                    // opacity (Fade)
+	bh += 26                    // Rainbow / Mirror row
+	bh += 66                    // Brightness / Size / Tilt sliders
+	bh += 26                    // glow / wobble / spin row
+	bh += 26                    // invert / grayscale / sepia row
+	bh += 26                    // posterize row (#34)
+	bh += 30                    // movement-path cycle (#34)
+	bh += 18 + stylePathBox + 8 // draw-your-own path editor (#34 B2)
+	bh += 30                    // clear button
 	// #126 presets: a header, a Save row, and one row per saved mood.
 	bh += 22 + 28 + int32(a.d.Prefs.StylePresetCount())*26
 	bh += styleBoxPad
@@ -303,6 +354,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	c.Tooltip(mb, "A looping movement path your sprite follows on the viewport — orbit, bounce, sway or drift. Transmitted to other AsyncAO players; stacks with the colour/glow effects above.")
 	y += 30
+	y = a.drawStylePathEditor(x, y, p) // #34 B2: draw-your-own custom path
 
 	// Outline / drop-shadow (#8) — silhouette effects drawn behind the sprite, transmitted.
 	if next := c.Checkbox(x, y, "Outline", p.Outline); next != p.Outline {
