@@ -3445,6 +3445,19 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 		a.d.Prefs.SetAudioVolumes(music, sfx, nv)
 		a.applyAudioVolumes()
 	}
+	// Blip rate, right under the Blip volume — the same cadence control as the volume
+	// strip's "Rate" column and Settings → Blips, mirrored here so it's adjustable straight
+	// from the Music menu's volume view. Range is clamped like the strip (left = faster).
+	rate, onSpaces := a.d.Prefs.BlipTyping()
+	c.Label(r.X, y+6, "Blip rate", ColText)
+	rtrack := sdl.Rect{X: r.X + 80, Y: y + 7, W: r.W - 80 - 56, H: 16}
+	nr := clampI32(c.Slider("musicvol:rate", rtrack, int32(rate), int32(config.MaxBlipRate)), int32(config.MinBlipRate), int32(config.MaxBlipRate))
+	c.Tooltip(rtrack, "Blip cadence: 1 blip every N letters (left = faster)")
+	c.Label(r.X+r.W-48, y+6, "1/"+strconv.Itoa(int(nr)), ColTextDim)
+	if int(nr) != rate {
+		a.d.Prefs.SetBlipTyping(int(nr), onSpaces)
+		a.applyTimingToRoom()
+	}
 }
 
 func (a *App) drawMusicList(r sdl.Rect) {

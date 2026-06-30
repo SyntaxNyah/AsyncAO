@@ -12,6 +12,11 @@ tagged "installed" below.
   *what a server can see about you*, and *what all the AO jargon means*. They used to
   be hidden inside a generic "Help" button off in the corner.
 
+### Audio
+- **Blip-rate slider in the Music menu's volume view**, right under the Blip volume —
+  tune the typing-sound cadence without leaving the Music tab. It was only on the
+  compact volume strip and in Settings before.
+
 ## v1.30.0 — 2026-06-30
 
 A big quality-of-life release — most of it straight from **Nightingale's** ideas
