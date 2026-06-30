@@ -31,6 +31,7 @@ type SpriteStyle struct {
 	// renderer builds a cached variant texture from the sprite's transformed pixels.
 	Invert    bool // negate RGB (keep alpha)
 	Grayscale bool // luma-weighted desaturate (keep alpha)
+	Sepia     bool // #34 luma → warm brown-tone (keep alpha) — another per-pixel variant
 	// Brightness/Scale are percents with 0 = unset (= 100%). Rotation is a fixed
 	// tilt: 0 = none, else degrees via Rotation*360/256 (full circle).
 	Brightness uint8
@@ -62,7 +63,7 @@ const (
 // renderer leaves the blit byte-identical when there's nothing to do).
 func (s SpriteStyle) Active() bool {
 	return s.Tint || s.Glow || s.Wobble || s.Spin || s.HueCycle || s.FlipH ||
-		s.Invert || s.Grayscale || s.Outline || s.DropShadow || s.Glitch ||
+		s.Invert || s.Grayscale || s.Sepia || s.Outline || s.DropShadow || s.Glitch ||
 		(s.Opacity != 0 && s.Opacity != 100) ||
 		(s.Brightness != 0 && s.Brightness != 100) ||
 		(s.Scale != 0 && s.Scale != 100) ||
@@ -78,6 +79,7 @@ const (
 	VariantNone VariantEffect = iota
 	VariantInvert
 	VariantGrayscale
+	VariantSepia // #34: luma → warm brown tone
 	// VariantSilhouette fills every non-transparent pixel white (keeping alpha). The
 	// renderer ColorMod-tints + offset-blits it BEHIND the sprite to draw the #8 outline
 	// (white) and drop-shadow (dark). It is NOT a main-sprite variant — Variant() never
@@ -92,6 +94,8 @@ func (s SpriteStyle) Variant() VariantEffect {
 		return VariantInvert
 	case s.Grayscale:
 		return VariantGrayscale
+	case s.Sepia:
+		return VariantSepia
 	default:
 		return VariantNone
 	}
@@ -167,6 +171,7 @@ const (
 	styleFlag2Outline    = 1 << 0
 	styleFlag2DropShadow = 1 << 1
 	styleFlag2Glitch     = 1 << 2
+	styleFlag2Sepia      = 1 << 3 // #34
 
 	// spriteStyleVersion tags the payload so a later field change is detectable —
 	// a decoder that doesn't recognise the version yields no style (benign). It stays 1:
@@ -247,6 +252,9 @@ func (s SpriteStyle) payloadBytes() []byte {
 	if s.Glitch {
 		flags2 |= styleFlag2Glitch
 	}
+	if s.Sepia {
+		flags2 |= styleFlag2Sepia
+	}
 	if flags2 != 0 { // append the second flags byte only when it carries something
 		b = append(b, flags2)
 	}
@@ -283,6 +291,7 @@ func styleFromBytes(b []byte) SpriteStyle {
 		s.Outline = flags2&styleFlag2Outline != 0
 		s.DropShadow = flags2&styleFlag2DropShadow != 0
 		s.Glitch = flags2&styleFlag2Glitch != 0
+		s.Sepia = flags2&styleFlag2Sepia != 0
 	}
 	return s
 }

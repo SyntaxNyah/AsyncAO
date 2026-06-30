@@ -344,6 +344,7 @@ type SpriteStylePref struct {
 	// cached variant texture for these (SetColorMod can't do either).
 	Invert    bool `json:"invert,omitempty"`
 	Grayscale bool `json:"grayscale,omitempty"`
+	Sepia     bool `json:"sepia,omitempty"` // #34 warm brown-tone per-pixel variant
 	// Silhouette effects (#8): a white outline and a dark drop-shadow drawn behind the
 	// sprite. Transmitted via a backward-compatible flags2 byte on the style wire.
 	Outline    bool  `json:"outline,omitempty"`

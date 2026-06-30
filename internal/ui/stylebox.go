@@ -258,6 +258,10 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		p.Grayscale = next
 		a.d.Prefs.SetSpriteStyle(p)
 	}
+	if next := c.Checkbox(x+186, y, "Sepia", p.Sepia); next != p.Sepia { // #34 warm brown tone
+		p.Sepia = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
 	y += 26
 
 	// Outline / drop-shadow (#8) — silhouette effects drawn behind the sprite, transmitted.

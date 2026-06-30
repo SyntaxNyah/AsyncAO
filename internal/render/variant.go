@@ -131,6 +131,24 @@ func applyVariant(pix []byte, effect uint8) {
 			y := byte((299*int(pix[i]) + 587*int(pix[i+1]) + 114*int(pix[i+2])) / 1000)
 			pix[i], pix[i+1], pix[i+2] = y, y, y
 		}
+	case courtroom.VariantSepia:
+		// Classic sepia matrix (integer, alloc-free), clamped to 255. #34.
+		for i := 0; i+3 < len(pix); i += 4 {
+			r, g, b := int(pix[i]), int(pix[i+1]), int(pix[i+2])
+			nr := (393*r + 769*g + 189*b) / 1000
+			ng := (349*r + 686*g + 168*b) / 1000
+			nb := (272*r + 534*g + 131*b) / 1000
+			if nr > 255 {
+				nr = 255
+			}
+			if ng > 255 {
+				ng = 255
+			}
+			if nb > 255 {
+				nb = 255
+			}
+			pix[i], pix[i+1], pix[i+2] = byte(nr), byte(ng), byte(nb)
+		}
 	case courtroom.VariantSilhouette:
 		// Flat WHITE shape, alpha untouched: a per-pixel ColorMod tints it to the outline
 		// (white) or shadow (dark) colour at draw time, so one variant serves both (#8).
