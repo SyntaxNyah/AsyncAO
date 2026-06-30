@@ -2235,8 +2235,14 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 
 	ts := a.d.Prefs.ICTimestampsOn()
-	if next := c.Checkbox(pad, y, "Show local timestamps in the IC log (ON by default): each line is prefixed with the time it arrived, so you can see when people spoke.", ts); next != ts {
+	if next := c.Checkbox(pad, y, "Show local timestamps in the IC log (OFF by default): prefixes each line with the time it arrived, so you can see when people spoke.", ts); next != ts {
 		a.d.Prefs.SetICTimestamps(next)
+	}
+	y += 26
+
+	ti := a.d.Prefs.TypingIndicatorOn()
+	if next := c.Checkbox(pad, y, "Show \"X is typing…\" between AsyncAO users (OFF by default): a live caption when other AsyncAO players are composing. Uses a hidden, throttled OOC signal only AsyncAO reads; off = your client sends nothing.", ti); next != ti {
+		a.d.Prefs.SetTypingIndicator(next)
 	}
 	y += 26
 

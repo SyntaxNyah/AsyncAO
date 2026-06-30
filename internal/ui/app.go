@@ -638,6 +638,13 @@ type App struct {
 	toolboxDragID    string
 	toolboxDragStart [2]int32
 	toolboxDragMoved bool
+	// Typing indicator (#3): typingPeers maps a peer's OOC name → when they last pulsed
+	// "typing" (active-tab scope; pruned by typingExpiry). The send side throttles via
+	// lastTypingSent and spots keystrokes by diffing icInput against icInputLast/icTypedAt.
+	typingPeers    map[string]time.Time
+	lastTypingSent time.Time
+	icInputLast    string
+	icTypedAt      time.Time
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage
@@ -2486,6 +2493,10 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 		case courtroom.EventOOC:
 			if a.serverKey != "" && a.d.Prefs.ServerIgnoreMatch(a.serverKey, ev.Name) {
 				continue // #81: ignored player's OOC — drop it (room ignores OOC, so this is a clean skip)
+			}
+			if courtroom.IsTypingMarker(ev.Text) { // #3: a typing pulse — show the caption, NEVER log it
+				a.notePeerTyping(ev.Name)
+				continue // suppress before PM/log/callword/modaction (it's not real OOC)
 			}
 			// Received private message (Nyathena / Athena attribute the sender in the
 			// CT name as "[PM] [UID n] <name>"): file it in its DM thread. It also
@@ -4547,6 +4558,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawEmojiPicker(winW, winH)      // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
 			a.drawReactPalette(winW, winH)     // #2: reaction palette overlay (modal-fenced)
 			a.drawGroupInviteToast(winW, winH) // group invite Accept/Decline banner (only when one is pending)
+			a.typingMaybeSend()                // #3: emit a throttled "typing…" pulse if the opt-in is on (a.icInput is current)
 		case ScreenSettings:
 			a.drawSettings(winW, winH)
 		case ScreenAbout:

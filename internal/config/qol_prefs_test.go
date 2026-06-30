@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+// TestTypingIndicatorDefaultOff pins #3: the typing indicator ships OFF (so the client
+// sends zero typing traffic out of the box), and toggles on persistently.
+func TestTypingIndicatorDefaultOff(t *testing.T) {
+	p := &AssetPreferences{}
+	if p.TypingIndicatorOn() {
+		t.Error("TypingIndicatorOn default must be false (opt-in)")
+	}
+	p.SetTypingIndicator(true)
+	if !p.TypingIndicatorOn() {
+		t.Error("SetTypingIndicator(true) did not stick")
+	}
+}
+
 // TestChangelogSeenRoundTrip pins the What's New unread-dot pref (#23): empty by
 // default, then it persists the version the user last opened.
 func TestChangelogSeenRoundTrip(t *testing.T) {
