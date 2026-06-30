@@ -30,6 +30,10 @@ type settingsState struct {
 	tab        int                    // active settings tab (index into settingsTabNames)
 	tabScroll  [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
 	search     string                 // settings search query (jumps to the matching tab)
+	// scrollToSection holds a lowercased query for one frame after a search jump: the
+	// first section card whose title contains it scrolls itself to the top, so search
+	// lands on the SECTION (e.g. "scene maker"), not just the tab. Cleared each frame.
+	scrollToSection string
 
 	// callword manager add-field buffer: a fresh empty field (NOT preloaded with
 	// the word list — the words render as ×-removable rows below it).
@@ -158,12 +162,16 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"fonts", "font", "cjk", "dyslexia", "dyslexic", "emoji", "smooth scaling", "tabs", "server tabs", "max tabs",
 	},
 	tabTheme: {
-		// sections: Theme, Layout & fit, Lobby, Preview & binding.
+		// sections: Theme, Layout & fit, Layout presets, Lobby, Preview & binding.
 		"theme", "theme picker", "chatbox", "skin", "default theme",
 		"layout", "fit", "courtroom design", "lobby", "preview", "bind", "binding",
+		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
 	},
 	tabAssets: {
-		// sections: Image formats, Audio formats, Local assets, Downloader, Cache.
+		// sections: Server format profile, Predictive prefetch, Image formats, Audio
+		// formats, Local assets, Downloader, Cache.
+		"server format profile", "format profile", "profile",
+		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
 		"image format", "format", "fallback", "autodetect", "webp", "png", "apng", "avif", "extensions",
 		"audio format", "opus", "ogg", "mp3",
 		"local assets", "local", "mount", "downloader", "download",
@@ -204,9 +212,10 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"asset_preferences", "where are my settings", "appdata", "export", "import", "backup", "portable", "usb", "move to another pc", "json",
 	},
 	tabVoice: {
-		// sections: Microphone, Output.
+		// sections: Microphone, Test microphone, Output, Push-to-talk.
 		"voice", "voice chat", "microphone", "mic", "input device", "recording device", "capture",
-		"output volume", "speaker", "nyathena", "vc", "ptt", "talk",
+		"test microphone", "mic test", "sidetone", "hear myself", "level meter", "meter",
+		"output volume", "speaker", "nyathena", "vc", "ptt", "talk", "push-to-talk", "push to talk",
 	},
 	tabStudio: {
 		// sections: Scene recording, Instant replay, Scene maker, Recordings, Replay
@@ -312,6 +321,7 @@ func (a *App) drawSettings(w, h int32) {
 		c.LabelClipped(pad+382, pad+6, w-pad-382-110, "→ "+settingsTabNames[mt]+"  (Enter)", ColAccent)
 		if committed {
 			settings.tab = mt
+			settings.scrollToSection = strings.ToLower(strings.TrimSpace(q)) // also scroll to the matching SECTION (#26)
 			settings.search = ""
 		}
 	}
@@ -417,6 +427,7 @@ func (a *App) drawSettings(w, h int32) {
 	}
 	track := sdl.Rect{X: w - scrollBarW - 2, Y: contentTop, W: scrollBarW, H: viewH}
 	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, viewH)
+	settings.scrollToSection = "" // one-shot: consumed by the matching section this frame, else dropped
 }
 
 // --- modernized settings layout: sidebar nav + content cards -----------------
@@ -444,6 +455,17 @@ const (
 // taken from a.formX/a.formW) but kept so existing call sites need no change.
 func (a *App) settingsSection(y, w int32, title string) int32 {
 	c := a.ctx
+	// Search jump (#26): the FIRST section card whose title contains the pending query
+	// scrolls itself to the top, so a search lands on the SECTION (e.g. "scene maker"),
+	// not just the tab. One-shot; takes effect next frame and is clamped by the page
+	// scrollbar (so a bottom section just sits as low as it can).
+	if settings.scrollToSection != "" && strings.Contains(strings.ToLower(title), settings.scrollToSection) {
+		settings.tabScroll[settings.tab] += y - (pad + settContentTop)
+		if settings.tabScroll[settings.tab] < 0 {
+			settings.tabScroll[settings.tab] = 0
+		}
+		settings.scrollToSection = ""
+	}
 	cardX := a.formX - settCardPadX
 	cardW := a.formW + 2*settCardPadX
 	c.Fill(sdl.Rect{X: cardX, Y: y, W: cardW, H: settCardGap}, ColBackground)
