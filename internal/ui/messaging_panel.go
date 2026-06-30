@@ -291,7 +291,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	y = box.Y + box.H/2
 	c.Label(box.X, y, "Invite players in this area:", ColTextDim)
 	y += 16
-	c.LabelClipped(box.X, y, box.W-8, "Invite AsyncAO users for the full group chat — others just get a one-off PM.", ColTierYellow)
+	c.LabelClipped(box.X, y, box.W-8, "Green = on AsyncAO (gets the full group chat). Others can still be invited — they get a one-off PM.", ColTierYellow)
 	y += 18
 	if a.room == nil {
 		return
@@ -307,12 +307,31 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if y > box.Y+box.H-rowH {
 			break
 		}
-		name := strings.TrimSpace(roster[i].name)
-		uid, _ := strconv.Atoi(roster[i].uid)
-		if name == "" || roster[i].uid == "" || uid == me || g.hasMember(uid) {
+		p := &roster[i]
+		name := strings.TrimSpace(p.name)
+		uid, _ := strconv.Atoi(p.uid)
+		if name == "" || p.uid == "" || uid == me || g.hasMember(uid) {
 			continue
 		}
-		c.LabelClipped(box.X+8, y+2, box.W-90, name, ColText)
+		isAO := a.room.RemoteIsAsyncAO(name)
+		// AsyncAO users get the FULL group chat, so highlight their row green ("compatible");
+		// everyone else can still be invited (they just get a one-off PM).
+		if isAO {
+			c.Fill(sdl.Rect{X: box.X, Y: y, W: box.W, H: rowH - 2}, sdl.Color{R: ColTierGreen.R, G: ColTierGreen.G, B: ColTierGreen.B, A: 46})
+		}
+		tx := box.X + 8
+		if isAO { // blue "AO" chip, same as the player list
+			tx += a.drawRosterChip(tx, y+2, "AO", ColAccent, ColBackground) + 5
+		}
+		// Showname + OOC name, so you know who you're inviting (not just the character).
+		disp := strings.TrimSpace(p.showname)
+		if disp == "" {
+			disp = name
+		}
+		if oc := strings.TrimSpace(p.ooc); oc != "" && !strings.EqualFold(oc, disp) {
+			disp += "   ·   OOC: " + oc
+		}
+		c.LabelClipped(tx, y+2, box.X+box.W-80-tx, disp, ColText)
 		if c.Button(sdl.Rect{X: box.X + box.W - 80, Y: y, W: 74, H: rowH - 2}, "Invite") {
 			a.inviteToGroup(g, uid, name)
 		}
