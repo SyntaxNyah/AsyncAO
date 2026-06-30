@@ -55,7 +55,7 @@ func TestPrivacySections(t *testing.T) {
 		}
 		all += s.heading + " " + strings.Join(s.body, " ")
 	}
-	for _, want := range []string{"HDID", "IPID", "IP address", "AO2", "SHA-256", "nginx", "VPN", "WSS", "TLS", "Wireshark", "exit node", "WebSocket"} {
+	for _, want := range []string{"HDID", "IPID", "IP address", "AO2", "SHA-256", "nginx", "VPN", "WSS", "TLS", "Wireshark", "exit node", "WebSocket", "man-in-the-middle"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("privacy explainer should mention %q", want)
 		}
