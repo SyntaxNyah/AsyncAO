@@ -40,7 +40,10 @@ and UI suggestions, with bug-finds from **Dag** and the playtest crew. Thank you
   who's on AsyncAO, like the player list.
 
 ### Looks
-- **More recolour swatches and a new Sepia effect** in the Sprite Style box.
+- **A lot more in the Sprite Style box.** New **Sepia** and **Posterize** effects, more
+  recolour swatches, and transmitted **movement** — make your sprite **Orbit, Bounce, Sway,
+  Drift, Shake, Spiral or Pendulum** on the viewport, or **draw your own looping path** for
+  it to follow. Other AsyncAO players see it; it stacks with every other effect.
 - A green **"unread" dot on *What's New*** after an update, until you open it.
 - A **new player flashes** briefly in the player list as they join.
 
