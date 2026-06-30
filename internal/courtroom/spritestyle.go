@@ -55,12 +55,15 @@ type SpriteStyle struct {
 // Sprite-motion paths (#34): a 3-bit enum (0..7), so up to 8 named movements with room
 // to grow. The render maps each to a clamped parametric offset; the UI cycles them.
 const (
-	MotionNone   uint8 = iota // no movement (default)
-	MotionOrbit               // circle around the spot
-	MotionBounce              // bob up and down
-	MotionSway                // side to side
-	MotionDrift               // a slow figure-8 roam
-	MotionCount               // number of motions, for cycling
+	MotionNone     uint8 = iota // no movement (default)
+	MotionOrbit                 // circle around the spot
+	MotionBounce                // bob up and down
+	MotionSway                  // side to side
+	MotionDrift                 // a slow figure-8 roam
+	MotionShake                 // fast small jitter (vibrate)
+	MotionSpiral                // orbit with a pulsing radius (spirals in/out)
+	MotionPendulum              // pendulum swing, side to side with a lift at the ends
+	MotionCount                 // number of motions, for cycling (fills the 3-bit enum, 0..7)
 )
 
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or

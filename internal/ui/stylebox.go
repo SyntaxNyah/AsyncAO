@@ -18,6 +18,12 @@ func motionName(m uint8) string {
 		return "Move: Sway"
 	case courtroom.MotionDrift:
 		return "Move: Drift"
+	case courtroom.MotionShake:
+		return "Move: Shake"
+	case courtroom.MotionSpiral:
+		return "Move: Spiral"
+	case courtroom.MotionPendulum:
+		return "Move: Pendulum"
 	default:
 		return "Move: None"
 	}

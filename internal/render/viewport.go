@@ -1037,6 +1037,17 @@ func motionOffset(motion uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32)
 	case courtroom.MotionDrift:
 		dx = int32(amp * math.Sin(t)) // a slow figure-8 roam
 		dy = int32(amp * 0.5 * math.Sin(2*t))
+	case courtroom.MotionShake:
+		ft := 2 * math.Pi * oscFrac(clock, motionPeriod/6) // fast jitter, small amplitude
+		dx = int32(amp * 0.25 * math.Sin(ft))
+		dy = int32(amp * 0.25 * math.Sin(ft*1.7)) // off-ratio so it's not a clean diagonal
+	case courtroom.MotionSpiral:
+		rad := 0.4 + 0.6*math.Abs(math.Sin(t/2)) // orbit whose radius pulses in and out
+		dx = int32(amp * rad * math.Cos(t))
+		dy = int32(amp * 0.55 * rad * math.Sin(t))
+	case courtroom.MotionPendulum:
+		dx = int32(amp * math.Sin(t))                   // swing side to side…
+		dy = int32(-amp * 0.25 * math.Abs(math.Cos(t))) // …lifting slightly at each end (an arc)
 	}
 	return dx, dy
 }
