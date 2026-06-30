@@ -4358,6 +4358,30 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// you're fullscreen and can't reach the window's close button.
 				a.requestQuit()
 				handled = true
+			case ScreenCourtroom:
+				// AsyncAO is built for fullscreen, so Esc is the keyboard exit (playtest):
+				// the bare courtroom — nothing else open — leaves the server THROUGH the
+				// confirm (requestDisconnect), so an accidental tap can't instantly drop you
+				// ("you press it by accident and you're dead"). A focused field (the IC input)
+				// eats the first Esc, exactly like every menu screen.
+				if a.ctx.focusID != "" {
+					a.ctx.focusID = ""
+				} else {
+					a.requestDisconnect()
+				}
+				handled = true
+			case ScreenCharSelect:
+				// Same fullscreen keyboard exit on char-select. Re-picking from the courtroom
+				// backs out to it (matches the top-right Back, non-destructive); a fresh
+				// char-select's only exit is leaving the server, through the confirm.
+				if a.ctx.focusID != "" {
+					a.ctx.focusID = ""
+				} else if a.room != nil {
+					a.screen = ScreenCourtroom
+				} else {
+					a.requestDisconnect()
+				}
+				handled = true
 			}
 		}
 		if handled {
