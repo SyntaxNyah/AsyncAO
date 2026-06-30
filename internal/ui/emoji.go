@@ -13,6 +13,17 @@ import (
 // empty boxes). COLRv0 is vector, small (~1.4 MB) and is exactly the format
 // SDL_ttf renders in colour, so it also gives Linux/macOS colour emoji for free.
 //
+// KNOWN GAP (#35): this is mozilla/twemoji-colr v0.7.0 (2020) — the only published
+// COLRv0 Twemoji TTF, and that project is dormant. It predates Unicode 14/15, so the
+// NEWEST emoji tofu on a machine with no renderable OS emoji font (e.g. Windows'
+// COLRv1 Segoe): the pink / grey / light-blue hearts (U+1FA75–77), a handful of
+// 2021–22 faces, etc. Verified by cmap probe — the classic set (every standard heart,
+// face and symbol) renders; only the post-2021 additions are missing. A full fix is a
+// newer renderable emoji font: Noto Color Emoji (CBDT bitmap, SDL_ttf-renderable, full
+// coverage) does it but is ~10 MB and restyles every emoji; the maintained Twemoji
+// (jdecked, U16) ships SVG only, so a fresh COLRv0 build would need the nanoemoji
+// pipeline. Left as a deliberate size/style decision, not a silent 7× bundle swap.
+//
 //go:embed fonts/TwemojiMozilla.ttf
 var twemojiTTF []byte
 
