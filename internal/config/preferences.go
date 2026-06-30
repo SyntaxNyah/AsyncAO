@@ -754,6 +754,7 @@ type AssetPreferences struct {
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
 	MultiTabCap            int                          `json:"multiTabCap"`
 	RestoreTabs            bool                         `json:"restoreTabs"`
+	VolStripOn             bool                         `json:"volStripOn"` // on-screen volume strip toggle (default OFF)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	MusicDuckingOn         bool                         `json:"musicDucking"`
@@ -1021,6 +1022,7 @@ type prefsJSON struct {
 	NameColorSat           *int             `json:"nameColorSat"`      // absent = default
 	NameColorVal           *int             `json:"nameColorVal"`      // absent = default
 	RestoreTabs            bool             `json:"restoreTabs"`       // default OFF (zero value)
+	VolStripOn             bool             `json:"volStripOn"`        // on-screen volume strip toggle (default OFF)
 	OpenTabs               []OpenTab        `json:"openTabs"`          // remembered tabs for restore-on-launch
 	ReduceMotion           bool             `json:"reduceMotion"`      // default OFF (zero value)
 	MusicDucking           bool             `json:"musicDucking"`      // default OFF (zero value)
@@ -1664,6 +1666,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.NameVal = clampPercent(*onDisk.NameColorVal, minNameColorVal, 100)
 	}
 	p.RestoreTabs = onDisk.RestoreTabs
+	p.VolStripOn = onDisk.VolStripOn
 	p.OpenTabs = onDisk.OpenTabs
 	p.ReduceMotionOn = onDisk.ReduceMotion
 	p.MusicDuckingOn = onDisk.MusicDucking
@@ -5330,6 +5333,26 @@ func (p *AssetPreferences) SetRestoreTabs(on bool) {
 		return
 	}
 	p.RestoreTabs = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// VolStripShownOn reports the log panel's on-screen volume-strip toggle (OFF by
+// default). Persisted so it survives a restart (playtest: it used to reset every launch).
+func (p *AssetPreferences) VolStripShownOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.VolStripOn
+}
+
+// SetVolStripShown persists the on-screen volume-strip toggle.
+func (p *AssetPreferences) SetVolStripShown(on bool) {
+	p.mu.Lock()
+	if p.VolStripOn == on {
+		p.mu.Unlock()
+		return
+	}
+	p.VolStripOn = on
 	p.mu.Unlock()
 	p.markDirty()
 }

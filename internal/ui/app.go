@@ -1813,6 +1813,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.applyThemeAsync()                                                         // chatbox skin + font colors from the saved theme
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // pair placement is seeded per-session in resetSessionState (above)
 	a.oocPct = d.Prefs.OOCScale()                                               // OOC log text size, independent of the IC log
+	a.volStripOn = d.Prefs.VolStripShownOn()                                    // restore the on-screen volume strip toggle (persisted)
 	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
 	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
 	a.uiScalePct = d.Prefs.UIScale()
