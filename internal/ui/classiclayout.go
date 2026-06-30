@@ -681,12 +681,26 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Release persists the edit (a no-move click changes nothing — and discards the
 	// begin snapshot so a bare click doesn't leave a no-op on the undo stack).
 	if a.classicEditDrag != 0 && !c.mouseDown {
-		if a.classicEditMoved && a.classicEditKey != "" {
+		// Drag-to-hide (#27 slice 2): release a slotted piece over the toolbox to hide it,
+		// dropping its position override so re-showing returns it to the default spot.
+		// Only slotted pieces map (hideableForSlot); everything else saves normally.
+		dropHideID := ""
+		if overToolbox && a.classicEditKey != "" {
+			dropHideID = hideableForSlot(a.classicEditKey)
+		}
+		switch {
+		case dropHideID != "":
+			a.setPanelHidden(dropHideID, true)
+			a.clearClassicSlot(a.classicEditKey)
+			a.pushDebug("layout: dragged " + classicSlotLabel(a.classicEditKey) + " to the toolbox → hidden")
+		case a.classicEditMoved && a.classicEditKey != "":
 			if ov, ok := a.classicOv[a.classicEditKey]; ok {
 				a.d.Prefs.SetClassicSlot(a.classicEditKey, ov)
 			}
-		} else if n := len(a.classicUndo); n > 0 {
-			a.classicUndo = a.classicUndo[:n-1]
+		default:
+			if n := len(a.classicUndo); n > 0 {
+				a.classicUndo = a.classicUndo[:n-1]
+			}
 		}
 		a.classicEditDrag = 0
 		a.classicEditEdges = 0

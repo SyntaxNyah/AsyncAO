@@ -28,6 +28,41 @@ const (
 // toolboxItem is one chip: a hideable id and its short label.
 type toolboxItem struct{ id, label string }
 
+// hideableSlot maps a hideable element id → the layout slot the editor positions it
+// through. Only elements WITH a slot are drag show/hide targets (#27 slice 2): you can
+// drag them between the stage and the toolbox. The rest (penalty bars, timers,
+// testimony, judge, extras, the shouts/knobs that live inside the controls block, and
+// the tabs — which the tab tray tears) stay click-toggle only. For the control buttons
+// the hideable id IS the slot key.
+var hideableSlot = map[string]string{
+	panelEmotes:       slotEmotes,
+	panelOOC:          slotOOC,
+	panelLog:          slotRightCol,
+	"ctrl.character":  "ctrl.character",
+	"ctrl.wardrobe":   "ctrl.wardrobe",
+	"ctrl.restyle":    "ctrl.restyle",
+	"ctrl.background": "ctrl.background",
+	"ctrl.evidence":   "ctrl.evidence",
+	"ctrl.mods":       "ctrl.mods",
+	"ctrl.settings":   "ctrl.settings",
+	"ctrl.editlayout": "ctrl.editlayout",
+	"ctrl.hotkeys":    "ctrl.hotkeys",
+	"ctrl.about":      "ctrl.about",
+	"ctrl.login":      "ctrl.login",
+}
+
+// hideableForSlot returns the hideable element id a slot key positions, or "" when the
+// slot has no hideable mapping (the viewport, the IC bar, the controls block, …). Used
+// on drag-release to turn "dropped a piece on the toolbox" into a hide.
+func hideableForSlot(slotKey string) string {
+	for id, sk := range hideableSlot {
+		if sk == slotKey {
+			return id
+		}
+	}
+	return ""
+}
+
 // classicToolboxItems gathers the chips for this frame: every chrome panel, plus the
 // control buttons when the new-default toolbar is active (the legacy/themed row draws
 // fixed inline buttons that ignore the hidden set, so a chip there would be a dead
@@ -65,9 +100,20 @@ func (a *App) drawClassicToolbox(w, h int32) bool {
 	}
 	stripH := 18 + rows*toolboxRowPitch + 4
 	strip := sdl.Rect{X: 0, Y: toolboxTop - 4, W: w, H: stripH}
-	c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
-	c.Label(pad, toolboxTop-2, "Show / hide UI pieces (click a chip — dim = hidden):", ColTierYellow)
 	over := pointIn(c.mouseX, c.mouseY, strip)
+	// "Drop here to hide" affordance: while dragging a slotted piece, the strip arms
+	// (greenish) and the heading invites the release (#27 slice 2 drag-to-hide).
+	dropArmed := a.classicEditDrag != 0 && hideableForSlot(a.classicEditKey) != ""
+	stripCol := sdl.Color{R: 0, G: 0, B: 0, A: 205}
+	if dropArmed && over {
+		stripCol = sdl.Color{R: 25, G: 70, B: 30, A: 225}
+	}
+	c.Fill(strip, stripCol)
+	heading := "Show / hide UI pieces (click a chip — dim = hidden):"
+	if dropArmed {
+		heading = "Release here to HIDE " + classicSlotLabel(a.classicEditKey)
+	}
+	c.Label(pad, toolboxTop-2, heading, ColTierYellow)
 
 	// Second pass: draw + handle clicks.
 	x = int32(pad)

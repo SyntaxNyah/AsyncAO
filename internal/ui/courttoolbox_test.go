@@ -15,6 +15,45 @@ func TestHideablePanelsHaveShortLabels(t *testing.T) {
 	}
 }
 
+// TestHideableForSlot pins the drag show/hide mapping (#27 slice 2): a slot key
+// resolves to its hideable element id, and non-mapped slots return "".
+func TestHideableForSlot(t *testing.T) {
+	if got := hideableForSlot(slotEmotes); got != panelEmotes {
+		t.Errorf("hideableForSlot(emotes) = %q, want %q", got, panelEmotes)
+	}
+	if got := hideableForSlot(slotRightCol); got != panelLog {
+		t.Errorf("hideableForSlot(rightcol) = %q, want %q", got, panelLog)
+	}
+	if got := hideableForSlot("ctrl.mods"); got != "ctrl.mods" {
+		t.Errorf("hideableForSlot(ctrl.mods) = %q, want ctrl.mods", got)
+	}
+	// The viewport and the IC bar are not hide targets; toggle-only pieces (hp) have
+	// no slot. Both must resolve to "" so a drag-release there never hides anything.
+	if got := hideableForSlot(slotViewport); got != "" {
+		t.Errorf("hideableForSlot(viewport) = %q, want empty", got)
+	}
+	if got := hideableForSlot(panelHP); got != "" {
+		t.Errorf("hideableForSlot(hp) = %q, want empty (no slot)", got)
+	}
+}
+
+// TestHideableSlotKeysKnown guards the map's keys against drift: every mapped id must
+// be a real hideable panel or button.
+func TestHideableSlotKeysKnown(t *testing.T) {
+	known := make(map[string]bool)
+	for _, p := range hideablePanels {
+		known[p.id] = true
+	}
+	for _, b := range hideableButtons {
+		known[b.id] = true
+	}
+	for id := range hideableSlot {
+		if !known[id] {
+			t.Errorf("hideableSlot maps unknown id %q", id)
+		}
+	}
+}
+
 // TestToolboxIDsUnique guards against a duplicate id across the panel + button sets,
 // which would make two toolbox chips toggle the same hidden-state key.
 func TestToolboxIDsUnique(t *testing.T) {
