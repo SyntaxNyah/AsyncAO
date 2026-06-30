@@ -264,6 +264,12 @@ func (a *App) closeTopOverlay() bool {
 		a.showWidgets = false
 	case a.theaterOn: // theater mode's "Esc exits" — handled here so it beats the leave-server shortcut
 		a.setTheater(false)
+	// Char-select wardrobe popups: close them on Esc before the char-select screen's own
+	// Esc (back / leave) can fire (#28).
+	case a.wardDelFolder != "":
+		a.wardDelFolder = ""
+	case a.iniMenuChar != "":
+		a.iniMenuChar = ""
 	default:
 		return false
 	}
