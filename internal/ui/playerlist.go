@@ -26,6 +26,13 @@ const (
 	playerRowH    = int32(44) // a char icon flanked by two text rows (IC identity, OOC)
 	playerIconSz  = int32(38)
 	playerHeaderH = int32(26) // a /gas area-group header row (name + count, click to jump)
+	// playerStackWidth: below this row width (a narrow / windowed player panel) the action
+	// buttons can't share the name's line without squeezing the showname to nothing — the
+	// "player list scales wrong unless fullscreen" report. Under it, the buttons drop to
+	// their own line below the name, which gets the full width. playerStackBtnH is the
+	// extra height that second line needs.
+	playerStackWidth = int32(360)
+	playerStackBtnH  = int32(26)
 )
 
 // Roster sort modes, cycled by the Sort button (orders PLAYERS, flat or within
@@ -290,18 +297,19 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	if !c.ctrlHeld {
 		a.playerScroll -= c.WheelIn(r) * scrollStepPx
 	}
+	rowW := r.W - scrollBarW - 6
+	narrow := rowW < playerStackWidth // stack each row's action buttons below the name when tight
 	contentH := int32(0)
 	for i := range rows {
-		contentH += a.rowHeight(rows[i])
+		contentH += a.rowHeight(rows[i], narrow)
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.playerScroll = c.VScrollbar("playerlist", track, a.playerScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
-	rowW := r.W - scrollBarW - 6
 	y := r.Y - a.playerScroll
 	for i := range rows {
-		rh := a.rowHeight(rows[i])
+		rh := a.rowHeight(rows[i], narrow)
 		if y > r.Y+r.H {
 			break
 		}
@@ -309,7 +317,7 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			if rows[i].header {
 				a.drawAreaHeaderRow(rows[i], sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 2})
 			} else {
-				a.drawPlayerRow(rows[i].idx, sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 4}, myUID, speaker, cmSet)
+				a.drawPlayerRow(rows[i].idx, sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 4}, myUID, speaker, cmSet, narrow)
 			}
 		}
 		y += rh
@@ -319,11 +327,15 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 
 // rowHeight is the display height of one roster row (area headers are shorter);
 // player rows scale with the Players-tab text zoom (Ctrl+wheel).
-func (a *App) rowHeight(row rosterRow) int32 {
+func (a *App) rowHeight(row rosterRow, narrow bool) int32 {
 	if row.header {
 		return playerHeaderH
 	}
-	return playerRowH * int32(a.playerPct) / 100
+	h := playerRowH * int32(a.playerPct) / 100
+	if narrow {
+		h += playerStackBtnH // room for the action buttons on their own line
+	}
+	return h
 }
 
 // drawPlayerRow is one player: char icon + "[uid] showname · character" with the
@@ -333,7 +345,7 @@ func (a *App) rowHeight(row rosterRow) int32 {
 // joinFlashColor is the amber "just joined" row tint, faded out over joinFlashWindow.
 var joinFlashColor = sdl.Color{R: 240, G: 200, B: 90, A: 255}
 
-func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet map[string]bool) {
+func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet map[string]bool, narrow bool) {
 	c := a.ctx
 	p := &a.rosterView()[idx]
 	isSpec := strings.EqualFold(p.name, "Spectator")
@@ -394,8 +406,13 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	iconR := sdl.Rect{X: row.X + 6, Y: row.Y + (row.H-iconSz)/2, W: iconSz, H: iconSz}
 	a.drawPlayerIcon(p, idx, iconR, isSpec)
 
-	// Right cluster: Pair + compact Copy buttons (mod also gets Copy-IPID).
+	// Right cluster: Pair + compact Copy buttons (mod also gets Copy-IPID). On a narrow
+	// panel the cluster drops to its OWN line at the bottom of the row, so the name above
+	// gets the full width instead of being squeezed to one letter (the windowed-mode bug).
 	btnY := row.Y + (row.H-22)/2
+	if narrow {
+		btnY = row.Y + row.H - 24
+	}
 	bx := row.X + row.W - 4
 	// Pair / Copy-UID need a UID. The PR/PU live roster now carries it, so these
 	// show on live rows too; the CharsCheck-only fallback has none (hence the gate).
@@ -498,9 +515,13 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		c.Tooltip(pb, "View this player's AsyncAO profile card")
 	}
 
-	// Text column between the icon and the button cluster.
+	// Text column between the icon and the button cluster (the FULL width to the panel
+	// edge when the buttons dropped to their own line below — see narrow above).
 	textX := row.X + 6 + iconSz + 8
 	textW := bx - textX - 8
+	if narrow {
+		textW = row.X + row.W - 4 - textX
+	}
 	if textW < 40 {
 		textW = 40
 	}
