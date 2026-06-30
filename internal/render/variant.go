@@ -149,6 +149,14 @@ func applyVariant(pix []byte, effect uint8) {
 			}
 			pix[i], pix[i+1], pix[i+2] = byte(nr), byte(ng), byte(nb)
 		}
+	case courtroom.VariantPosterize:
+		// Quantise each channel to 4 evenly-spaced levels (0/85/170/255) — a poster /
+		// cel-shaded look. Alloc-free. #34.
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i] = (pix[i] >> 6) * 85
+			pix[i+1] = (pix[i+1] >> 6) * 85
+			pix[i+2] = (pix[i+2] >> 6) * 85
+		}
 	case courtroom.VariantSilhouette:
 		// Flat WHITE shape, alpha untouched: a per-pixel ColorMod tints it to the outline
 		// (white) or shadow (dark) colour at draw time, so one variant serves both (#8).

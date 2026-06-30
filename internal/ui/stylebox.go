@@ -45,7 +45,8 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 26 // Rainbow / Mirror row
 	bh += 66 // Brightness / Size / Tilt sliders
 	bh += 26 // glow / wobble / spin row
-	bh += 26 // invert / grayscale row
+	bh += 26 // invert / grayscale / sepia row
+	bh += 26 // posterize row (#34)
 	bh += 30 // clear button
 	// #126 presets: a header, a Save row, and one row per saved mood.
 	bh += 22 + 28 + int32(a.d.Prefs.StylePresetCount())*26
@@ -260,6 +261,11 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	if next := c.Checkbox(x+186, y, "Sepia", p.Sepia); next != p.Sepia { // #34 warm brown tone
 		p.Sepia = next
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	y += 26
+	if next := c.Checkbox(x, y, "Posterize", p.Posterize); next != p.Posterize { // #34 poster / cel look
+		p.Posterize = next
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26

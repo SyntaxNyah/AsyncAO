@@ -150,9 +150,10 @@ func TestSpriteStyleVariantFlags(t *testing.T) {
 	for _, s := range []SpriteStyle{
 		{Invert: true},
 		{Grayscale: true},
-		{Sepia: true}, // #34: flags2 bit round-trips
+		{Sepia: true},     // #34: flags2 bit round-trips
+		{Posterize: true}, // #34
 		{Invert: true, Grayscale: true, Tint: true, R: 9, Glow: true},
-		{Sepia: true, Outline: true, Tint: true, R: 9}, // Sepia rides flags2 alongside the others
+		{Sepia: true, Posterize: true, Outline: true, Tint: true, R: 9}, // ride flags2 alongside the others
 	} {
 		if got, _ := DecodeSpriteStyle("hi" + s.EncodeMarker()); got != s {
 			t.Errorf("round-trip: got %+v, want %+v", got, s)
@@ -160,6 +161,9 @@ func TestSpriteStyleVariantFlags(t *testing.T) {
 	}
 	if (SpriteStyle{Sepia: true}).Variant() != VariantSepia {
 		t.Error("sepia → VariantSepia")
+	}
+	if (SpriteStyle{Posterize: true}).Variant() != VariantPosterize {
+		t.Error("posterize → VariantPosterize")
 	}
 	if (SpriteStyle{Invert: true, Sepia: true}).Variant() != VariantInvert {
 		t.Error("invert wins over sepia")
