@@ -1,6 +1,7 @@
 package assets
 
 import (
+	"sort"
 	"sync"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -19,6 +20,9 @@ const (
 	emoteChainCap = 2048
 	// lastEmoteCap bounds the per-character last-emote map.
 	lastEmoteCap = 256
+	// prefetchMaxPredict caps the predictive-prefetch aggressiveness slider (#100):
+	// how many of the top predicted next sprites to warm per message.
+	prefetchMaxPredict = 4
 )
 
 // EmoteBaseFunc builds the idle-sprite URL base for a character's emote
@@ -48,6 +52,7 @@ type Prefetcher struct {
 	lastEmote  map[string]string // char → last seen emote
 
 	predictions int64
+	maxPredict  int // top-N predicted sprites to warm per message (1 = conservative; #100 slider)
 }
 
 // NewPrefetcher wires the predictor to the manager.
@@ -58,6 +63,7 @@ func NewPrefetcher(mgr *Manager, emoteBase EmoteBaseFunc) *Prefetcher {
 		transitions: map[string]map[string]int{},
 		emoteChain:  map[string]map[string]int{},
 		lastEmote:   map[string]string{},
+		maxPredict:  1,
 	}
 }
 
@@ -103,15 +109,78 @@ func (p *Prefetcher) OnMessage(speaker, pairPartner, emote string) {
 	}
 
 	p.learnEmoteLocked(speaker, emote)
-	predicted := p.predictLocked(speaker, pairPartner)
-	predictedEmote := p.predictEmoteLocked(predicted)
+	n := p.maxPredict
+	if n < 1 {
+		n = 1
+	}
+	warm := make([]warmTarget, 0, n)
+	for _, pc := range p.predictTopNLocked(speaker, pairPartner, n) {
+		if pc == "" || pc == speaker {
+			continue
+		}
+		warm = append(warm, warmTarget{pc, p.predictEmoteLocked(pc)})
+		p.predictions++
+	}
 	p.mu.Unlock()
 
-	if predicted == "" || predicted == speaker {
-		return
+	// Warm each predicted next sprite at LOW priority — shed-able speculation (§10).
+	for _, w := range warm {
+		p.mgr.Prefetch(p.emoteBase(w.char, w.emote), AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker+emote)
 	}
-	p.predictions++
-	p.mgr.Prefetch(p.emoteBase(predicted, predictedEmote), AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker+emote)
+}
+
+// warmTarget is one predicted (character, emote) sprite to warm, carried out of the
+// lock so the Prefetch call happens unlocked.
+type warmTarget struct{ char, emote string }
+
+// SetAggressiveness sets how many of the top predicted next sprites to warm per
+// message (#100): 1 = conservative (just the single best guess), higher warms more
+// guesses at the cost of more speculative bandwidth. Clamped to a sane range.
+func (p *Prefetcher) SetAggressiveness(n int) {
+	if n < 1 {
+		n = 1
+	}
+	if n > prefetchMaxPredict {
+		n = prefetchMaxPredict
+	}
+	p.mu.Lock()
+	p.maxPredict = n
+	p.mu.Unlock()
+}
+
+// predictTopNLocked returns up to n most likely next speakers after current, best
+// first (the active pair partner keeps the 2× prior). The per-speaker transition
+// fan-out is small, so the partial sort is cheap; n<=1 fast-paths to predictLocked.
+func (p *Prefetcher) predictTopNLocked(current, pairPartner string, n int) []string {
+	if n <= 1 {
+		if s := p.predictLocked(current, pairPartner); s != "" {
+			return []string{s}
+		}
+		return nil
+	}
+	type cand struct {
+		name  string
+		score int
+	}
+	cands := make([]cand, 0, len(p.transitions[current])+1)
+	seenPartner := false
+	for to, count := range p.transitions[current] {
+		score := count
+		if to == pairPartner && pairPartner != "" {
+			score *= pairPartnerPriorWeight
+			seenPartner = true
+		}
+		cands = append(cands, cand{to, score})
+	}
+	if pairPartner != "" && !seenPartner {
+		cands = append(cands, cand{pairPartner, 1}) // no history yet — still a good guess
+	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].score > cands[j].score })
+	out := make([]string, 0, n)
+	for i := 0; i < len(cands) && len(out) < n; i++ {
+		out = append(out, cands[i].name)
+	}
+	return out
 }
 
 // learnEmoteLocked records the speaker's emote transition.

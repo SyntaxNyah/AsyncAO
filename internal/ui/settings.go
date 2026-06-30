@@ -1489,6 +1489,20 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 
 // drawSettingsAssets: format probing, audio fallbacks, local mounts, the
 // opt-in downloader, and the cache browser/actions.
+// prefetchAggroLabel names the predictive-prefetch level (#100) for the slider readout.
+func prefetchAggroLabel(n int) string {
+	switch n {
+	case 1:
+		return "Conservative (1 sprite)"
+	case 2:
+		return "Balanced (2 sprites)"
+	case 3:
+		return "Eager (3 sprites)"
+	default:
+		return "Aggressive (4 sprites)"
+	}
+}
+
 func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -1529,6 +1543,23 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 		c.LabelClipped(pad, y, w-pad-scrollBarW, "A profile probes exactly the formats it lists (per server, instant) and overrides both the server's manifest and your global default — for this server only.", ColTextDim)
 		y += 22
 	}
+
+	y = a.settingsSection(y, w, "Predictive prefetch")
+	c.LabelClipped(pad, y, w-pad-scrollBarW, "How many of the next sprites AsyncAO guesses ahead and warms while you chat — higher means snappier sprite swaps but more speculative downloading.", ColTextDim)
+	y += 22
+	aggro := int32(a.d.Prefs.PrefetchAggressiveness())
+	c.Label(pad, y+4, "Level:", ColText)
+	if nv := c.Slider("prefetchaggro", sdl.Rect{X: pad + 70, Y: y, W: 200, H: btnH}, aggro, 4); nv != aggro {
+		if nv < 1 {
+			nv = 1
+		}
+		a.d.Prefs.SetPrefetchAggressiveness(int(nv))
+		if a.room != nil && a.room.Predictor != nil {
+			a.room.Predictor.SetAggressiveness(int(nv)) // apply live to the running predictor
+		}
+	}
+	c.Label(pad+285, y+4, prefetchAggroLabel(a.d.Prefs.PrefetchAggressiveness()), ColAccent)
+	y += 30
 
 	y = a.settingsSection(y, w, "Image formats")
 	global := a.d.Prefs.GlobalFallbacks()

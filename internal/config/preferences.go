@@ -693,6 +693,7 @@ type AssetPreferences struct {
 	AssetOrigin            string                       `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
 	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
 	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
+	PrefetchAggro          int                          `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (0/absent = 1, conservative) (#100)
 	VoicePTTKey            string                       `json:"voicePttKey,omitempty"`      // push-to-talk key name that toggles the mic; empty = unbound
 	QuitConfirmSkip        bool                         `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on the quit dialog
 	LegacyDevTheme         bool                         `json:"legacyDevTheme"`             // tickbox: revert to the old "developer" look. Default OFF = the new optimal layout is the main theme
@@ -952,6 +953,7 @@ type prefsJSON struct {
 	AssetOrigin            string           `json:"assetOrigin,omitempty"`      // Security: Origin/Referer override for asset fetches
 	VoiceInputDevice       string           `json:"voiceInputDevice,omitempty"` // voice mic device ("" = default)
 	VoiceOutVolume         int              `json:"voiceOutVolume,omitempty"`   // voice output volume (0 = default 100)
+	PrefetchAggro          int              `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (#100)
 	VoicePTTKey            string           `json:"voicePttKey,omitempty"`      // push-to-talk toggle key
 	QuitConfirmSkip        bool             `json:"quitConfirmSkip,omitempty"`  // "don't ask again" on quit
 	LegacyDevTheme         bool             `json:"legacyDevTheme"`             // tickbox revert to the old look; default OFF = new layout
@@ -1526,6 +1528,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.AssetOrigin = strings.TrimSpace(onDisk.AssetOrigin)
 	p.VoiceInputDevice = onDisk.VoiceInputDevice
 	p.VoiceOutVolume = onDisk.VoiceOutVolume
+	p.PrefetchAggro = onDisk.PrefetchAggro
 	p.VoicePTTKey = onDisk.VoicePTTKey
 	p.QuitConfirmSkip = onDisk.QuitConfirmSkip
 	p.LegacyDevTheme = onDisk.LegacyDevTheme
@@ -3467,6 +3470,37 @@ func (p *AssetPreferences) SetVoiceOutVol(v int) {
 		return
 	}
 	p.VoiceOutVolume = v
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// PrefetchAggressiveness reports how many of the top predicted next sprites the
+// Markov prefetcher warms per message, 1..4 (default 1 = conservative). #100.
+func (p *AssetPreferences) PrefetchAggressiveness() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.PrefetchAggro < 1 {
+		return 1
+	}
+	if p.PrefetchAggro > 4 {
+		return 4
+	}
+	return p.PrefetchAggro
+}
+
+// SetPrefetchAggressiveness clamps (1..4) and persists the prefetch aggressiveness.
+func (p *AssetPreferences) SetPrefetchAggressiveness(n int) {
+	if n < 1 {
+		n = 1
+	} else if n > 4 {
+		n = 4
+	}
+	p.mu.Lock()
+	if p.PrefetchAggro == n {
+		p.mu.Unlock()
+		return
+	}
+	p.PrefetchAggro = n
 	p.mu.Unlock()
 	p.markDirty()
 }

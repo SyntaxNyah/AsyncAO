@@ -3040,6 +3040,7 @@ func (a *App) buildRoom() {
 		}
 		return urls.Emote(character, emote, courtroom.EmoteIdle)
 	})
+	a.room.Predictor.SetAggressiveness(a.d.Prefs.PrefetchAggressiveness()) // #100 predictive-prefetch level
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
