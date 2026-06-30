@@ -4,7 +4,24 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
+
+// motionName labels a transmitted sprite-motion path for the cycle button (#34).
+func motionName(m uint8) string {
+	switch m {
+	case courtroom.MotionOrbit:
+		return "Move: Orbit"
+	case courtroom.MotionBounce:
+		return "Move: Bounce"
+	case courtroom.MotionSway:
+		return "Move: Sway"
+	case courtroom.MotionDrift:
+		return "Move: Drift"
+	default:
+		return "Move: None"
+	}
+}
 
 // minVisibleStyleOpacity floors the Fade slider so a style can't go invisible. It
 // mirrors courtroom.minVisibleOpacity (the render side floors it too); kept here
@@ -47,6 +64,7 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 26 // glow / wobble / spin row
 	bh += 26 // invert / grayscale / sepia row
 	bh += 26 // posterize row (#34)
+	bh += 30 // movement-path cycle (#34)
 	bh += 30 // clear button
 	// #126 presets: a header, a Save row, and one row per saved mood.
 	bh += 22 + 28 + int32(a.d.Prefs.StylePresetCount())*26
@@ -269,6 +287,16 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26
+	// Movement path (#34): a transmitted looping motion — None → Orbit → Bounce → Sway →
+	// Drift. Other AsyncAO players see your sprite follow it; it stacks with the effects
+	// above. The viewer's ReduceMotion suppresses it (accessibility).
+	mb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
+	if c.Button(mb, motionName(p.Motion)) {
+		p.Motion = (p.Motion + 1) % courtroom.MotionCount
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	c.Tooltip(mb, "A looping movement path your sprite follows on the viewport — orbit, bounce, sway or drift. Transmitted to other AsyncAO players; stacks with the colour/glow effects above.")
+	y += 30
 
 	// Outline / drop-shadow (#8) — silhouette effects drawn behind the sprite, transmitted.
 	if next := c.Checkbox(x, y, "Outline", p.Outline); next != p.Outline {

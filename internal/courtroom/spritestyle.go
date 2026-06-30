@@ -33,6 +33,10 @@ type SpriteStyle struct {
 	Grayscale bool // luma-weighted desaturate (keep alpha)
 	Sepia     bool // #34 luma → warm brown-tone (keep alpha) — another per-pixel variant
 	Posterize bool // #34 quantise each channel to 4 levels (poster / cel-shaded look)
+	// Motion is a transmitted, looping movement PATH the sprite follows on the viewport
+	// (#34) — none / orbit / bounce / sway / drift. A 3-bit enum (one path at a time, not a
+	// flag each) packed into the top of flags2. The viewer's ReduceMotion drops it.
+	Motion uint8
 	// Brightness/Scale are percents with 0 = unset (= 100%). Rotation is a fixed
 	// tilt: 0 = none, else degrees via Rotation*360/256 (full circle).
 	Brightness uint8
@@ -47,6 +51,17 @@ type SpriteStyle struct {
 	DropShadow bool // a soft dark silhouette offset down-right
 	Glitch     bool // #13 chromatic-aberration + occasional jolt (a digital glitch look)
 }
+
+// Sprite-motion paths (#34): a 3-bit enum (0..7), so up to 8 named movements with room
+// to grow. The render maps each to a clamped parametric offset; the UI cycles them.
+const (
+	MotionNone   uint8 = iota // no movement (default)
+	MotionOrbit               // circle around the spot
+	MotionBounce              // bob up and down
+	MotionSway                // side to side
+	MotionDrift               // a slow figure-8 roam
+	MotionCount               // number of motions, for cycling
+)
 
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or
 // near-fully) invisible sprite at others — clamp applied at render time.
@@ -64,7 +79,7 @@ const (
 // renderer leaves the blit byte-identical when there's nothing to do).
 func (s SpriteStyle) Active() bool {
 	return s.Tint || s.Glow || s.Wobble || s.Spin || s.HueCycle || s.FlipH ||
-		s.Invert || s.Grayscale || s.Sepia || s.Posterize || s.Outline || s.DropShadow || s.Glitch ||
+		s.Invert || s.Grayscale || s.Sepia || s.Posterize || s.Motion != 0 || s.Outline || s.DropShadow || s.Glitch ||
 		(s.Opacity != 0 && s.Opacity != 100) ||
 		(s.Brightness != 0 && s.Brightness != 100) ||
 		(s.Scale != 0 && s.Scale != 100) ||
@@ -263,7 +278,8 @@ func (s SpriteStyle) payloadBytes() []byte {
 	if s.Posterize {
 		flags2 |= styleFlag2Posterize
 	}
-	if flags2 != 0 { // append the second flags byte only when it carries something
+	flags2 |= (s.Motion & 0x07) << 5 // motion path rides the top 3 bits of flags2 (#34)
+	if flags2 != 0 {                 // append the second flags byte only when it carries something
 		b = append(b, flags2)
 	}
 	return b
@@ -301,6 +317,9 @@ func styleFromBytes(b []byte) SpriteStyle {
 		s.Glitch = flags2&styleFlag2Glitch != 0
 		s.Sepia = flags2&styleFlag2Sepia != 0
 		s.Posterize = flags2&styleFlag2Posterize != 0
+		if m := flags2 >> 5; m < MotionCount { // top 3 bits = motion path (#34); unknown ⇒ none
+			s.Motion = m
+		}
 	}
 	return s
 }

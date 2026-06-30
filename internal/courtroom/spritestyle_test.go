@@ -150,10 +150,12 @@ func TestSpriteStyleVariantFlags(t *testing.T) {
 	for _, s := range []SpriteStyle{
 		{Invert: true},
 		{Grayscale: true},
-		{Sepia: true},     // #34: flags2 bit round-trips
-		{Posterize: true}, // #34
+		{Sepia: true},         // #34: flags2 bit round-trips
+		{Posterize: true},     // #34
+		{Motion: MotionOrbit}, // #34: motion enum in flags2's top 3 bits
+		{Motion: MotionDrift}, // #34: the highest motion value used
 		{Invert: true, Grayscale: true, Tint: true, R: 9, Glow: true},
-		{Sepia: true, Posterize: true, Outline: true, Tint: true, R: 9}, // ride flags2 alongside the others
+		{Sepia: true, Posterize: true, Motion: MotionSway, Outline: true, Tint: true, R: 9}, // ride flags2 together
 	} {
 		if got, _ := DecodeSpriteStyle("hi" + s.EncodeMarker()); got != s {
 			t.Errorf("round-trip: got %+v, want %+v", got, s)

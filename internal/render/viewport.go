@@ -640,6 +640,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		modR, modG, modB                    uint8 = 255, 255, 255
 		alphaMod                            uint8 = 255
 		doColorMod, glow, wob, spin, glitch bool
+		motion                              uint8 // #34 transmitted movement path (0 = none)
 		scalePct                            = 100
 		rotDeg                              float64
 	)
@@ -664,6 +665,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		}
 		alphaMod = st.AlphaMod() // opacity (floored so a received style can't go invisible)
 		glow, wob, spin = st.Glow, st.Wobble, st.Spin
+		motion = st.Motion
 		glitch = st.Glitch
 		scalePct = st.ScalePct()
 		rotDeg = st.RotationDeg()
@@ -752,6 +754,11 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		dx, dy := wobbleOffset(v.fxClock, vp)
 		v.dstRect.X += dx
 		v.dstRect.Y += dy
+	}
+	if motion != 0 { // #34 transmitted movement path — pure math, off ⇒ this whole block is skipped
+		mdx, mdy := motionOffset(motion, v.fxClock, vp)
+		v.dstRect.X += mdx
+		v.dstRect.Y += mdy
 	}
 	if breathBobY != 0 { // #122 idle breathing's vertical bob (folded scale was applied above)
 		v.dstRect.Y += breathBobY
@@ -1004,6 +1011,34 @@ func wobbleOffset(clock time.Duration, vp sdl.Rect) (dx, dy int32) {
 // spinDegrees is the continuous rotation angle (0..360) for the Spin effect.
 func spinDegrees(clock time.Duration) float64 {
 	return oscFrac(clock, spinPeriod) * 360
+}
+
+// Sprite-motion tuning (#34). Amplitude is a fraction of the viewport width (clamped so a
+// roaming sprite can't leave the stage); the period is one slow loop.
+const (
+	motionAmpDivisor = 7.0                     // motion amplitude = vp.W / divisor
+	motionPeriod     = 3500 * time.Millisecond // one full loop
+)
+
+// motionOffset returns the per-frame (dx,dy) for a transmitted Motion path (#34): a clamped
+// parametric loop off the free-running clock. Pure math, no allocation; MotionNone never
+// reaches here (the caller skips motion==0), so the no-motion case stays byte-identical.
+func motionOffset(motion uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32) {
+	amp := float64(vp.W) / motionAmpDivisor
+	t := 2 * math.Pi * oscFrac(clock, motionPeriod)
+	switch motion {
+	case courtroom.MotionOrbit:
+		dx = int32(amp * math.Cos(t))
+		dy = int32(amp * 0.55 * math.Sin(t)) // a flattened ellipse reads as "around the box"
+	case courtroom.MotionBounce:
+		dy = int32(-amp * 0.8 * math.Abs(math.Sin(t))) // bob UP from the baseline
+	case courtroom.MotionSway:
+		dx = int32(amp * math.Sin(t))
+	case courtroom.MotionDrift:
+		dx = int32(amp * math.Sin(t)) // a slow figure-8 roam
+		dy = int32(amp * 0.5 * math.Sin(2*t))
+	}
+	return dx, dy
 }
 
 // Idle-breathing tuning (#122). Slow + small so a static sprite reads as gently alive.

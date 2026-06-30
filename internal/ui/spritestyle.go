@@ -20,7 +20,7 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 		Tint: p.Tint, R: p.R, G: p.G, B: p.B,
 		Opacity: p.Opacity, Glow: p.Glow, Wobble: p.Wobble, Spin: p.Spin,
 		HueCycle: p.HueCycle, FlipH: p.FlipH,
-		Invert: p.Invert, Grayscale: p.Grayscale, Sepia: p.Sepia, Posterize: p.Posterize,
+		Invert: p.Invert, Grayscale: p.Grayscale, Sepia: p.Sepia, Posterize: p.Posterize, Motion: p.Motion,
 		Outline: p.Outline, DropShadow: p.DropShadow, Glitch: p.Glitch,
 		Brightness: p.Brightness, Scale: p.Scale, Rotation: p.Rotation,
 	}

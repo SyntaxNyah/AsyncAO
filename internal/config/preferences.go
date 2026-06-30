@@ -342,10 +342,11 @@ type SpriteStylePref struct {
 	FlipH    bool `json:"flipH,omitempty"`
 	// Per-pixel effects (#103 slice 2): negate / desaturate. The renderer builds a
 	// cached variant texture for these (SetColorMod can't do either).
-	Invert    bool `json:"invert,omitempty"`
-	Grayscale bool `json:"grayscale,omitempty"`
-	Sepia     bool `json:"sepia,omitempty"`     // #34 warm brown-tone per-pixel variant
-	Posterize bool `json:"posterize,omitempty"` // #34 channel-quantise (poster look)
+	Invert    bool  `json:"invert,omitempty"`
+	Grayscale bool  `json:"grayscale,omitempty"`
+	Sepia     bool  `json:"sepia,omitempty"`     // #34 warm brown-tone per-pixel variant
+	Posterize bool  `json:"posterize,omitempty"` // #34 channel-quantise (poster look)
+	Motion    uint8 `json:"motion,omitempty"`    // #34 transmitted movement path (0 none / orbit / bounce / sway / drift)
 	// Silhouette effects (#8): a white outline and a dark drop-shadow drawn behind the
 	// sprite. Transmitted via a backward-compatible flags2 byte on the style wire.
 	Outline    bool  `json:"outline,omitempty"`

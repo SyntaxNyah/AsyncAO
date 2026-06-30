@@ -516,7 +516,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if c.HideSpriteStyles {
 		style = SpriteStyle{} // viewer opted out of others' styles
 	} else if c.ReduceMotion {
-		style.Wobble, style.Spin = false, false // accessibility: drop transmitted motion
+		style.Wobble, style.Spin, style.Motion = false, false, 0 // accessibility: drop transmitted motion
 	}
 	speakerName := msg.CharName
 
