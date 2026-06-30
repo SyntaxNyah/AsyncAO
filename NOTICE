@@ -21,4 +21,8 @@ docs/THIRD-PARTY-LICENSES.md.
 Mascot / app-icon artwork ("Mayo") is (c) hlenbchan (Instagram @hlenbchan2),
 commissioned by Nyah and used with permission; it is not covered by the AGPL.
 
+Bundled colour-emoji artwork ("Twemoji", internal/ui/fonts/TwemojiMozilla.ttf) is
+(c) Twitter, Inc and other contributors, licensed CC-BY 4.0; see
+internal/ui/fonts/TwemojiMozilla-LICENSE.txt for the required attribution.
+
 This NOTICE is a good-faith summary maintained by the project, not legal advice.

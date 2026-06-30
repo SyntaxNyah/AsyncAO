@@ -12,6 +12,12 @@ tagged "installed" below.
   it from the bottom-right corner, and keep chatting and watching the room behind
   it. The frozen target and the live "this is the exact command that will send"
   preview are unchanged, so it's no easier to mis-ban.
+- **Emoji render in colour again, even after the latest Windows update.** A 2025
+  Windows update changed the system emoji font to a format the renderer couldn't
+  draw (COLRv1), so emoji — and `:skull:`-style shortcodes — turned into empty
+  boxes. AsyncAO now bundles a colour-emoji font (Twemoji) and uses it whenever
+  the system font can't be drawn, so emoji show in colour again. Where the system
+  emoji font still works, it's used as before.
 - **Hide the courtroom control buttons you don't use.** Open *UI…* → **Control
   buttons** and untick any of Character, Wardrobe, Restyle, Background, Evidence,
   Mods, Settings, Edit Layout, Hotkeys, About or Login to drop it from the button

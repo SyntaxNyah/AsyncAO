@@ -1,0 +1,19 @@
+Twemoji — Twitter Emoji
+=======================
+
+Bundled file: TwemojiMozilla.ttf
+This is the COLRv0 colour build of Twemoji, taken unmodified from
+https://github.com/mozilla/twemoji-colr (release v0.7.0).
+
+Copyright 2020 Twitter, Inc and other contributors.
+
+Graphics licensed under CC-BY 4.0:
+    https://creativecommons.org/licenses/by/4.0/
+
+Original artwork:  https://github.com/twitter/twemoji
+COLR/CPAL packaging (build tooling, MIT): https://github.com/mozilla/twemoji-colr
+
+AsyncAO embeds this font as the colour-emoji fallback face so that emoji render
+in colour even when the operating system's emoji font cannot be rendered by
+SDL_ttf — notably Windows' 2025 Segoe UI Emoji, which is a COLRv1 font. The font
+is used unmodified; this notice provides the attribution required by CC-BY 4.0.
