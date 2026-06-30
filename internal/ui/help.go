@@ -57,8 +57,15 @@ var privacySections = []privacySection{
 		"Moderators normally DON'T see your raw IP: the server shows them an IPID instead — a scrambled stand-in that lets them recognise and ban a troublemaker without exposing the real address. (A server's own operator can still see raw IPs in their logs.)",
 	}},
 	{"Your device ID (HDID)", []string{
-		"AsyncAO sends a Hardware ID so a server can ban a device, not just a name. It is NOT your hardware serial numbers: it's a salted, one-way hash of a few stable system identifiers, so the server gets a fingerprint it can match but can't reverse into 'this exact PC'.",
-		"It stays the same across reinstalls and name changes — that's the point, so ban-evaders can't just rename — but it carries no personal information.",
+		"AsyncAO sends a Hardware ID so a server can ban a device, not just a name. It builds one from stable, per-install identifiers the OS exposes — your Windows account SID and MachineGuid, Linux's machine-id, or the macOS hardware UUID — then SALTS and SHA-256-hashes them. Only that hash (asyncao- followed by 64 hex characters) ever leaves your machine; the raw identifiers never cross the wire.",
+		"It's an exact hash with no fuzzy matching, so swapping real hardware gives a brand-new, unrelated ID — a genuine hardware change can't be mistaken for someone else's ban. It's stable across reinstalls and renames (so ban-evaders can't just rename) and carries no personal information. It's a pseudonym, not anonymity: a server can still ban your device, it just never sees what your device actually is.",
+	}},
+	{"How this differs from the standard AO2 client", []string{
+		"The classic AO2 (Qt) client sends a RAW identifier as its HDID — not a hash. On Windows that's your actual Windows account SID (S-1-5-21-…); on macOS it's your Mac's real hardware serial number; on Linux it's the machine-id. That real value travels over the connection — the server usually hashes it for storage, but the raw value was already transmitted, and on a non-encrypted server anyone on the network path could read it.",
+		"AsyncAO never puts a raw identifier on the wire: it hashes on your device first, and mixes several roots so the fingerprint is harder to forge. One trade-off to know: because the schemes differ, your AsyncAO HDID is a different value from the one AO2 would send for the same PC — they aren't interchangeable. You're still just as bannable; the difference is that your real account and hardware IDs stay on your computer.",
+	}},
+	{"On the server side (IPID & HDID)", []string{
+		"What a server DOES with these is up to its software. It turns your IP into an IPID — a short hash — so moderators see a stable token instead of your address; the exact hashing differs between server software (tsuserver, Akashi, Athena and the rest each have their own). It also stores the HDID you send (often hashed again) so it can ban a device across names. None of that changes what AsyncAO puts on the wire — a hashed HDID — only how the server files it.",
 	}},
 	{"What you type and pick", []string{
 		"Everything you say IC and OOC, your character, showname and OOC name, the music and evidence you present, and which area you're in are all visible to the room — that's the game. Treat OOC like a public chat: don't share anything you wouldn't post publicly.",
@@ -107,6 +114,13 @@ func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 		}
 	}
 	return out
+}
+
+// openHelp switches to the Help screen on a given section tab (0 = Glossary,
+// 1 = Privacy), re-reflowing for that section. Callers set prevScreen first.
+func (a *App) openHelp(tab int) {
+	a.helpTab, a.helpFlat, a.helpDocScroll = tab, nil, 0
+	a.screen = ScreenHelp
 }
 
 func (a *App) drawHelp(w, h int32) {
