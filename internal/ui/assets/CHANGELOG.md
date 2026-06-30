@@ -4,6 +4,14 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.31.0 — in progress
+
+### Newcomer-friendly phone book
+- **Privacy and Glossary are front-and-centre** now. They're two prominent buttons
+  in the middle of the phone-book header — the two things a newcomer most needs:
+  *what a server can see about you*, and *what all the AO jargon means*. They used to
+  be hidden inside a generic "Help" button off in the corner.
+
 ## v1.30.0 — 2026-06-30
 
 A big quality-of-life release — most of it straight from **Nightingale's** ideas

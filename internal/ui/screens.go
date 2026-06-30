@@ -56,7 +56,7 @@ func (a *App) drawLobby(w, h int32) {
 	a.pollPing() // drain connect-time probes (no-op unless a sweep is running)
 	c := a.ctx
 	a.drawScreenBackdrop(w, h, "lobbybackground")
-	c.Heading(pad, pad, "AsyncAO — Server Phone Book & Lobby", ColText)
+	c.Heading(pad, pad, "AsyncAO", ColText)
 	c.Label(pad, pad+30, a.lobbyStatus, ColTextDim)
 	if a.connErr != "" {
 		c.Label(pad+220, pad+30, a.connErr, ColDanger)
@@ -109,8 +109,37 @@ func (a *App) drawLobby(w, h int32) {
 		a.openLogBrowser()
 		a.screen = ScreenLogs
 	}
-	// Help: newcomer glossary + a plain-English privacy explainer (Privacy tab).
-	if c.Button(sdl.Rect{X: w - 590 - pad, Y: pad, W: 110, H: btnH}, "Help") {
+	// Privacy + Glossary: the two things a newcomer most needs — what the server can see,
+	// and what the AO jargon means. They sit CENTRE STAGE in the header (larger + accent-
+	// styled) instead of buried in the right-hand utility cluster, and replace the old
+	// generic "Help" button — each opens its Help-screen tab. Centred in the gap between the
+	// title and that cluster; the width shrinks and anchors after the title on a narrow
+	// window so the pair never overlaps either side.
+	const (
+		helpBtnWMax     = int32(132) // prominent width when there's room (fullscreen)
+		helpBtnWMin     = int32(96)  // floor so "Glossary" stays readable when squeezed
+		helpBtnGap      = int32(12)
+		headerTitleZone = int32(180) // reserved width for the "AsyncAO" heading on the left
+	)
+	titleRight := pad + headerTitleZone
+	utilLeft := w - 830 - pad // Logs is the leftmost utility button
+	helpBtnW := helpBtnWMax
+	if zoneW := utilLeft - titleRight; helpBtnW*2+helpBtnGap > zoneW {
+		if helpBtnW = (zoneW - helpBtnGap) / 2; helpBtnW < helpBtnWMin {
+			helpBtnW = helpBtnWMin
+		}
+	}
+	pairW := helpBtnW*2 + helpBtnGap
+	helpX := (titleRight+utilLeft)/2 - pairW/2
+	if helpX < titleRight { // narrow window: anchor just after the title
+		helpX = titleRight
+	}
+	helpY, helpH := pad-2, btnH+4 // a touch taller than the utility buttons
+	if c.ButtonCol(sdl.Rect{X: helpX, Y: helpY, W: helpBtnW, H: helpH}, "Privacy", ColPanel, ColPanelHi, ColAccent, ColAccent) {
+		a.prevScreen = ScreenLobby
+		a.openHelp(1)
+	}
+	if c.ButtonCol(sdl.Rect{X: helpX + helpBtnW + helpBtnGap, Y: helpY, W: helpBtnW, H: helpH}, "Glossary", ColPanel, ColPanelHi, ColAccent, ColAccent) {
 		a.prevScreen = ScreenLobby
 		a.openHelp(0)
 	}
