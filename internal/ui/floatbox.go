@@ -153,14 +153,14 @@ func hexNibble(b byte) (uint8, bool) {
 // courtModalOpen reports whether a blocking courtroom popup is up. The box (and
 // its torn-off widgets) yields to those and reappears when they close.
 func (a *App) courtModalOpen() bool {
-	// NOTE: showPair / showModDash / showCMPanel / showEvid are deliberately NOT here —
-	// they're non-blocking floating boxes now (floatwin.go), so the courtroom stays live
-	// behind them (you can keep chatting / follow the log while evidence is open, #5).
-	// The ban/kick confirm (banBoxKind) IS blocking — a deliberate destructive confirm —
-	// so it stays a modal.
+	// NOTE: showPair / showModDash / showCMPanel / showEvid / banBoxKind are deliberately
+	// NOT here — they're non-blocking floating boxes now (floatwin.go), so the courtroom
+	// stays live behind them (you can keep chatting / follow the log while one is open). The
+	// ban/kick box used to be a blocking modal; it's a draggable floating box now too, with
+	// the live preview + the explicit Send button keeping the destructive-action safety.
 	return a.showIni || a.bgPick.show ||
 		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen ||
-		a.showEmojiPicker || a.banBoxKind != 0 || a.classicEdit
+		a.showEmojiPicker || a.classicEdit
 }
 
 // capturingKey reports whether ANY key-bind capture is armed (hotkey, showname,
@@ -358,7 +358,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-		a.voiceWin.dragging || a.voiceWin.resizing ||
+		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing ||
 		a.hkWin.dragging || a.hkWin.resizing || a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 		return true
 	}
@@ -372,7 +372,10 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.showPair && pointIn(mx, my, a.pairPanelRect(w, h)) { // the Pair / Mod / CM boxes fence too
 		return true
 	}
-	if a.showModDash && pointIn(mx, my, a.modDashRect(w, h)) {
+	if a.showModDash && a.banBoxKind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
+		return true
+	}
+	if a.banBoxKind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
 		return true
 	}
 	if a.showCMPanel && pointIn(mx, my, a.cmPanelRect(w, h)) {
@@ -520,7 +523,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 			a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-			a.voiceWin.dragging || a.voiceWin.resizing ||
+			a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing ||
 			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
@@ -536,7 +539,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.showPair {
 		a.drawPairPanel(w, h, &pressed)
 	}
-	if a.showModDash {
+	if a.showModDash && a.banBoxKind == 0 { // the dashboard hides while its ban/kick box is open (below)
 		a.drawModDashPanel(w, h, &pressed)
 	}
 	if a.showCMPanel {
@@ -553,6 +556,12 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	if a.showVoice { // Voice (Nyathena) — non-blocking floating panel
 		a.drawVoicePanel(w, h, &pressed)
+	}
+	// The ban/kick box draws last = topmost (it's the focused destructive action). It's drawn
+	// INSTEAD of the dashboard (above), which mirrors the old blocking modal that hid the dashboard
+	// — only now the courtroom behind stays live, so the mod can drag it aside and keep chatting.
+	if a.banBoxKind != 0 {
+		a.drawModDashBanBox(w, h, &pressed)
 	}
 }
 

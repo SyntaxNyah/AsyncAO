@@ -57,6 +57,39 @@ const (
 	modDashMinH = int32(420)
 )
 
+// The ban/kick box is a non-blocking floating box too (its own floatWin: banWin),
+// so a mod can drag it aside and keep chatting while it's open — it never blanks
+// the courtroom. Width is shared; the HEIGHT defaults + floors are per-kind
+// (banBoxDims) because the four boxes carry different content (kick has no
+// duration row; the bulk boxes carry a frozen target list).
+const (
+	banBoxDefW = int32(560)
+	banBoxMinW = int32(440)
+)
+
+// banBoxDims gives the default + minimum HEIGHT for the ban/kick box of a given
+// kind (1 ban, 2 kick, 3 bulk ban, 4 bulk kick). The min floors each fit that
+// kind's content so a resize-to-minimum never overlaps the bottom Send/Cancel row.
+func banBoxDims(kind int) (defH, minH int32) {
+	switch kind {
+	case 2: // kick — no duration row
+		return 392, 360
+	case 3: // bulk ban — frozen list + duration + reason + readiness
+		return 560, 500
+	case 4: // bulk kick — frozen list + reason + readiness (no duration)
+		return 452, 412
+	default: // ban (kind 1)
+		return 512, 470
+	}
+}
+
+// banBoxRect is the ban/kick box's floating-window rect (floatwin.go), sized for
+// the open kind. Shared banWin geometry: a position/size the mod set carries over.
+func (a *App) banBoxRect(w, h int32) sdl.Rect {
+	defH, minH := banBoxDims(a.banBoxKind)
+	return a.banWin.rect(banBoxDefW, defH, banBoxMinW, minH, w, h)
+}
+
 // modDashChipOn is the "active" status-chip colour (green; matches the ping chip's "good").
 var modDashChipOn = sdl.Color{R: 70, G: 200, B: 90, A: 255}
 
@@ -690,17 +723,19 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 	}
 }
 
-// drawModDashBanBox is the Ban (kind 1) / Kick (kind 2) sub-modal: the frozen target, a duration
+// drawModDashBanBox is the Ban (kind 1) / Kick (kind 2) box: the frozen target, a duration
 // picker (ban only), a reason field, and a LIVE PREVIEW of the exact command. Send refuses an
 // empty command; when the preview is empty because an IPID-only server hasn't surfaced the IPID
-// yet, it explains and offers a one-click fetch instead of silently disabling the button.
-func (a *App) drawModDashBanBox(w, h int32) {
-	c := a.ctx
+// yet, it explains and offers a one-click fetch instead of silently disabling the button. It's a
+// NON-BLOCKING floating box now (floatWin: drag the title bar, resize the bottom-right grip), so a
+// mod can drag it aside and keep chatting — the live preview + the explicit Send keep the
+// don't-accidentally-ban safety the old blocking confirm had.
+func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	if a.banBoxKind >= 3 { // kinds 3/4 are the BULK ban/kick — a different (frozen-list) box
-		a.drawModBulkBox(w, h)
+		a.drawModBulkBox(w, h, pressed)
 		return
 	}
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 210}) // backdrop dim (blocking confirm)
+	c := a.ctx
 	// Lazy IPID fill: re-resolve the FROZEN uid's IPID (same person — safe) from the enriched
 	// roster, else from the raw /getarea snapshot, so a fetch populates the preview live.
 	if a.banBoxIPID == "" {
@@ -715,21 +750,28 @@ func (a *App) drawModDashBanBox(w, h int32) {
 		return
 	}
 	isBan := a.banBoxKind == 1
-	bw, bh := int32(560), int32(490) // ban: duration presets + quick-reason chips + the manage row
-	if !isBan {
-		bh = 368 // kick: no duration row, but the chips + manage row still stack
-	}
-	panel := sdl.Rect{X: (w - bw) / 2, Y: (h - bh) / 2, W: bw, H: bh}
+	_, minH := banBoxDims(a.banBoxKind)
+	panel := a.banBoxRect(w, h) // floating box: movable / resizable, non-blocking
+	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColDanger)
+	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
+	a.floatWinDrag(&a.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	bgrip := sdl.Rect{X: panel.X + pw - floatGripSz, Y: panel.Y + ph - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.banWin, bgrip, panel, banBoxMinW, minH, pressed)
+	a.drawResizeGrip(bgrip)
 	x := panel.X + modDashIn
-	maxW := bw - 2*modDashIn
+	maxW := pw - 2*modDashIn
 
 	title := "Kick"
 	if isBan {
 		title = "Ban"
 	}
-	c.Heading(x, panel.Y+14, title+"  ["+a.banBoxUID+"] "+a.banBoxName, ColText)
+	c.Heading(x, panel.Y+12, title+"  ["+a.banBoxUID+"] "+a.banBoxName, ColText)
+	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
+		a.banBoxKind = 0
+		return
+	}
 	y := panel.Y + 44
 	ipShown := a.banBoxIPID
 	if ipShown == "" {
@@ -796,8 +838,8 @@ func (a *App) drawModDashBanBox(w, h int32) {
 		}
 	}
 
-	// Send (only when a real command exists) + Cancel.
-	by := panel.Y + bh - btnH - 14
+	// Send (only when a real command exists) + Cancel, anchored to the box bottom.
+	by := panel.Y + ph - btnH - 14
 	if cmd != "" {
 		send := title + " (send)"
 		if c.Button(sdl.Rect{X: x, Y: by, W: 160, H: btnH}, send) {
@@ -812,35 +854,42 @@ func (a *App) drawModDashBanBox(w, h int32) {
 	}
 }
 
-// drawModBulkBox is the bulk Ban (kind 3) / Kick (kind 4) confirm: a FROZEN list of ticked targets,
+// drawModBulkBox is the bulk Ban (kind 3) / Kick (kind 4) box: a FROZEN list of ticked targets,
 // a shared duration (ban) + reason with the same quick-reason templates, a live count of how many
 // commands are ready vs. still missing an identifier, and a Send that queues one paced command per
 // ready target (each audited) through the macro OOC pacing — so a 30-player batch can't flood the
-// server. Frozen by UID like the single box, so a roster churn can't repoint the batch.
-func (a *App) drawModBulkBox(w, h int32) {
+// server. Frozen by UID like the single box, so a roster churn can't repoint the batch. Also a
+// NON-BLOCKING floating box (floatWin: drag the title bar, resize the grip) — chat stays live.
+func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	c := a.ctx
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 210}) // backdrop dim (blocking)
 	if c.escPressed {
 		a.banBoxKind = 0
 		return
 	}
 	isBan := a.banBoxKind == 3
-	bw, bh := int32(560), int32(540)
-	if !isBan {
-		bh = 420 // kick: no duration row
-	}
-	panel := sdl.Rect{X: (w - bw) / 2, Y: (h - bh) / 2, W: bw, H: bh}
+	_, minH := banBoxDims(a.banBoxKind)
+	panel := a.banBoxRect(w, h) // floating box: movable / resizable, non-blocking
+	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColDanger)
+	c.Fill(sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W, H: floatTitleH}, ColPanelHi) // title bar / drag handle
+	a.floatWinDrag(&a.banWin, sdl.Rect{X: panel.X, Y: panel.Y, W: panel.W - 84 - modDashIn, H: floatTitleH}, pressed)
+	bgrip := sdl.Rect{X: panel.X + pw - floatGripSz, Y: panel.Y + ph - floatGripSz, W: floatGripSz, H: floatGripSz}
+	a.floatWinResize(&a.banWin, bgrip, panel, banBoxMinW, minH, pressed)
+	a.drawResizeGrip(bgrip)
 	x := panel.X + modDashIn
-	maxW := bw - 2*modDashIn
+	maxW := pw - 2*modDashIn
 
 	title := "Bulk Kick"
 	if isBan {
 		title = "Bulk Ban"
 	}
 	n := len(a.bulkBoxUIDs)
-	c.Heading(x, panel.Y+14, title+"  —  "+strconv.Itoa(n)+" player(s)", ColText)
+	c.Heading(x, panel.Y+12, title+"  —  "+strconv.Itoa(n)+" player(s)", ColText)
+	if c.Button(sdl.Rect{X: panel.X + pw - modDashIn - 74, Y: panel.Y + 12, W: 74, H: btnH}, "Close") {
+		a.banBoxKind = 0
+		return
+	}
 	y := panel.Y + 44
 
 	// Frozen target list. Capped display (modBulkCap can be 50): show the first rows, then "…and K
@@ -923,7 +972,7 @@ func (a *App) drawModBulkBox(w, h int32) {
 		c.LabelClipped(x, y, maxW, msg, ColAccent)
 	}
 
-	by := panel.Y + bh - btnH - 14
+	by := panel.Y + ph - btnH - 14
 	if ready > 0 {
 		if c.Button(sdl.Rect{X: x, Y: by, W: 200, H: btnH}, title+" (send "+strconv.Itoa(ready)+")") {
 			a.sendBulk(isBan)

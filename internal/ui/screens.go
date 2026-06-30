@@ -1235,8 +1235,6 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawLoginDialog(w, h)
 	case a.pairPopupOpen:
 		a.drawPairPopup(w, h)
-	case a.banBoxKind != 0:
-		a.drawModDashBanBox(w, h) // the ban/kick confirm stays a blocking modal
 	case a.showSfxBrowser:
 		a.drawSfxBrowser(w, h) // #12 SFX Browser modal (preview + favourites)
 	default:

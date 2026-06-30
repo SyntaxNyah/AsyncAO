@@ -675,7 +675,7 @@ type App struct {
 	// (floatwin.go) for the Pairing, Mod dashboard, CM, Hotkey-sheet, and Evidence
 	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
 	// rather than a modal. Geometry is global; open state is per-tab / per-flag.
-	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, voiceWin floatWin
+	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, voiceWin, banWin floatWin
 	// Voice chat (Nyathena VS_* relay): showVoice = the floating panel's open state
 	// (global); membership/mic state is per-session (sessionState.voiceJoined/MicOn).
 	showVoice bool
