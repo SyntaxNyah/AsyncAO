@@ -82,7 +82,7 @@ var privacySections = []privacySection{
 		"On top of that, nearly every AO server LOGS your messages — for moderation and their own record-keeping — so what you type tends to stick around, not vanish when you leave. Treat it like a public, permanent chat: keep your real-life details off the server, don't reveal anything you wouldn't post publicly, and you never know what someone might do with information you hand out. A good habit is a showname/username that ISN'T tied to your real identity.",
 	}},
 	{"If someone crosses a line: report it", []string{
-		"If you hit harassment, someone leaking or misusing personal information, or anyone breaking the rules, report it to that server's own staff — its moderators or CMs (the Call Mod button). They're the ones who can actually act on it; AsyncAO is just the client and can't moderate other people's servers for you. That's the right channel — and that's it.",
+		"If you hit harassment, someone leaking or misusing personal information, or anyone breaking the rules, press the Call Mod button to alert that server's staff. They're the ones who can actually act on it; AsyncAO is just the client and can't moderate other people's servers for you. That's the right channel — and that's it.",
 	}},
 	{"Encrypted vs plain connections", []string{
 		"Servers on the GREEN lobby tier use WSS (encryption), so your traffic is protected in transit. A plain server sends messages as readable text that someone on the same network could in principle see. Prefer encrypted servers where you can.",
