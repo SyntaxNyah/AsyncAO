@@ -65,23 +65,24 @@ const (
 	panelTabFriends = "tab.friends"
 )
 
-// hideablePanels drives the UI popup: id + human label, draw order.
-var hideablePanels = []struct{ id, label string }{
-	{panelShouts, "Shout buttons (Hold It / Objection / Take That)"},
-	{panelKnobs, "Layout knobs (View/Text/MsgBox/Log/Input)"},
-	{panelEmotes, "Emote buttons"},
-	{panelLog, "Right column (log/music/areas/OOC tabs)"},
-	{panelTabMusic, "Music tab"},
-	{panelTabAreas, "Areas tab"},
-	{panelTabPlayers, "Players tab"},
-	{panelTabNotes, "Notes tab"},
-	{panelTabFriends, "Friends tab"},
-	{panelOOC, "Bottom OOC row"},
-	{panelHP, "Penalty bars"},
-	{panelTimers, "Server timers"},
-	{panelTestimony, "Testimony recording badge"},
-	{panelJudge, "Judge controls (even when granted)"},
-	{panelExtras, "Extras button (AsyncAO features menu — themed mode; the 'x' hotkey still opens it)"},
+// hideablePanels drives the UI popup AND the editor toolbox (#27): id + human label
+// (the dialog's checkbox text) + a SHORT chip label (the toolbox), draw order.
+var hideablePanels = []struct{ id, label, short string }{
+	{panelShouts, "Shout buttons (Hold It / Objection / Take That)", "Shouts"},
+	{panelKnobs, "Layout knobs (View/Text/MsgBox/Log/Input)", "Knobs"},
+	{panelEmotes, "Emote buttons", "Emotes"},
+	{panelLog, "Right column (log/music/areas/OOC tabs)", "Right column"},
+	{panelTabMusic, "Music tab", "Music tab"},
+	{panelTabAreas, "Areas tab", "Areas tab"},
+	{panelTabPlayers, "Players tab", "Players tab"},
+	{panelTabNotes, "Notes tab", "Notes tab"},
+	{panelTabFriends, "Friends tab", "Friends tab"},
+	{panelOOC, "Bottom OOC row", "OOC bar"},
+	{panelHP, "Penalty bars", "Penalty bars"},
+	{panelTimers, "Server timers", "Timers"},
+	{panelTestimony, "Testimony recording badge", "Testimony"},
+	{panelJudge, "Judge controls (even when granted)", "Judge"},
+	{panelExtras, "Extras button (AsyncAO features menu — themed mode; the 'x' hotkey still opens it)", "Extras btn"},
 }
 
 // hideableButtons drives the "Control buttons" grid in the UI popup — the

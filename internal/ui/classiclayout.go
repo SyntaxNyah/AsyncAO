@@ -506,6 +506,10 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Pop-out tray (bottom): tear a log tab out into its own movable panel, or
 	// redock it. overTray suppresses a slot-move when you press a chip. (torntabs.go)
 	overTray := a.drawClassicTabTray(w, h)
+	// Show/hide toolbox (#27): chips for every hideable piece, click to toggle. Like
+	// the tab tray, being over it suppresses a slot-move so a chip click can't grab a
+	// box parked beneath the strip.
+	overToolbox := a.drawClassicToolbox(w, h)
 
 	// Slot names this frame, stable order.
 	keys := make([]string, 0, len(a.slotReg))
@@ -555,7 +559,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// is grabbable instead of a blanket no-drag banner row) or the pop-out tray.
 	overChip := pointIn(c.mouseX, c.mouseY, doneBtn) || pointIn(c.mouseX, c.mouseY, resetBtn) ||
 		pointIn(c.mouseX, c.mouseY, snapBtn) || pointIn(c.mouseX, c.mouseY, aspectBtn)
-	if pressed && a.classicEditDrag == 0 && !overChip && !overTray {
+	if pressed && a.classicEditDrag == 0 && !overChip && !overTray && !overToolbox {
 		// Alt forces a MOVE (skips the resize-edge test). A small widget — a single
 		// button — is almost ALL edge, so a plain drag kept resizing it instead of
 		// moving it (playtest: "I try to drag Disconnect and it just resizes unless I
@@ -582,7 +586,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Right-click resets the hovered slot to its computed default (undoable, but only
 	// snapshot when there's actually an override to clear — else a right-click on a
 	// default box would litter the history with no-ops).
-	if c.rightClicked && hoverKey != "" {
+	if c.rightClicked && hoverKey != "" && !overTray && !overToolbox {
 		if _, ov := a.classicOv[hoverKey]; ov {
 			a.pushClassicUndo()
 			a.clearClassicSlot(hoverKey)
