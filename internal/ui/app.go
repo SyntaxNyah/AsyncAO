@@ -629,6 +629,9 @@ type App struct {
 	classicRedo    []map[string][4]float64
 	classicPickIdx int
 	classicPickSig string
+	// layoutPresetName is the Settings name field for saving the current layout as a
+	// named preset (#34, internal/ui/layoutpresets.go + the Theme settings section).
+	layoutPresetName string
 	// themePages is the generation-keyed page cache for theme:// textures
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage

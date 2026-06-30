@@ -1407,6 +1407,80 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		y += 30
 	}
 
+	// Layout presets (#34): save the whole default-courtroom arrangement under a name
+	// and flip between setups. Presets are window fractions, so they travel across sizes.
+	// applyLayoutPreset/applyStagePreset (layoutpresets.go) take effect the same frame.
+	y = a.settingsSection(y, w, "Layout presets")
+	for _, ln := range c.WrapText("Save the default-courtroom layout (Extras → Edit Layout lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. Stored as window fractions, so a preset looks right at any window size.", w-8, 0) {
+		c.Label(pad, y, ln, ColTextDim)
+		y += 16
+	}
+	y += 8
+	// Quick stage premades — overlay just the stage; every other box keeps its spot.
+	c.Label(pad, y+4, "Quick stage:", ColText)
+	bx := pad + c.TextWidth("Quick stage:") + 12
+	for _, pm := range []struct {
+		label string
+		vp    [4]float64
+	}{
+		{"Theater 4:3", a.theaterStageFrac(winW, h)},
+		{"Wide stage", [4]float64{0, 0, 0.74, 0.66}},
+		{"Compact", [4]float64{0, 0, 0.50, 0.46}},
+	} {
+		bw := c.TextWidth(pm.label) + 16
+		if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, pm.label) {
+			a.applyStagePreset(pm.vp)
+			a.pushDebug("layout: stage preset applied")
+		}
+		bx += bw + 6
+	}
+	y += btnH + 8
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Reset to stock") {
+		a.applyLayoutPreset(nil)
+		a.pushDebug("layout: reset to stock")
+	}
+	y += btnH + 12
+
+	// Save the CURRENT arrangement under a name.
+	c.Label(pad, y+4, "Save current as:", ColText)
+	nameX := pad + c.TextWidth("Save current as:") + 10
+	saveW := int32(64)
+	fieldW := int32(200)
+	if maxW := w - nameX - saveW - 10; fieldW > maxW {
+		fieldW = maxW
+	}
+	if fieldW < 80 {
+		fieldW = 80
+	}
+	a.layoutPresetName, _ = c.TextField("layoutpreset", sdl.Rect{X: nameX, Y: y, W: fieldW, H: fieldH}, a.layoutPresetName, "preset name")
+	if c.Button(sdl.Rect{X: nameX + fieldW + 8, Y: y, W: saveW, H: fieldH}, "Save") {
+		if name := strings.TrimSpace(a.layoutPresetName); name != "" {
+			a.d.Prefs.SaveLayoutPreset(name, a.d.Prefs.ClassicLayoutOverrides())
+			a.layoutPresetName = ""
+		}
+	}
+	y += fieldH + 10
+
+	// Saved presets: load / delete each.
+	if names := a.d.Prefs.LayoutPresetNames(); len(names) == 0 {
+		c.Label(pad, y, "No saved presets yet — arrange your layout, then Save it above.", ColTextDim)
+		y += 20
+	} else {
+		sort.Strings(names)
+		for _, name := range names {
+			if c.Button(sdl.Rect{X: pad, Y: y, W: 60, H: btnH}, "Load") {
+				a.applyLayoutPreset(a.d.Prefs.LayoutPreset(name))
+				a.pushDebug("layout: preset loaded")
+			}
+			if c.Button(sdl.Rect{X: pad + 66, Y: y, W: 64, H: btnH}, "Delete") {
+				a.d.Prefs.DeleteLayoutPreset(name)
+			}
+			c.LabelClipped(pad+140, y+4, w-(pad+140)-8, name, ColText)
+			y += btnH + 6
+		}
+	}
+	y += 4
+
 	y = a.settingsSection(y, w, "Lobby")
 	// Plain lobby: the server list keeps the readable client backdrop instead of
 	// the theme's lobbybackground (which is built for AO2's own list and often
