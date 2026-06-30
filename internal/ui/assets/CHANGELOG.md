@@ -4,7 +4,7 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.31.0 — in progress
+## v1.31.0 — 2026-06-30
 
 ### Newcomer-friendly phone book
 - **Privacy and Glossary are front-and-centre** now. They're two prominent buttons
