@@ -47,6 +47,9 @@ const (
 	// ScreenLogs is the transcript log browser / search (reached from the lobby
 	// top bar and Extras); it reads logs/<server>/*.log written by detailed logging.
 	ScreenLogs
+	// ScreenHelp is the newcomer Help screen (glossary of AO terms + a plain-English
+	// privacy explainer), reached from the lobby top bar and the courtroom Extras menu.
+	ScreenHelp
 )
 
 const (
@@ -821,6 +824,11 @@ type App struct {
 	changelogScroll int32
 	changelogFlatW  int32
 	changelogFlat   []aboutFlatLine
+	// Help screen (glossary + privacy explainer): the same width-keyed reflow cache.
+	helpTab       int
+	helpDocScroll int32
+	helpFlatW     int32
+	helpFlat      []aboutFlatLine
 	// Settings: the content region (right of the sidebar) the section/row helpers
 	// draw into. Set once per frame by drawSettings; the helpers rebase their
 	// pad-relative layout onto formX so every box lands inside the content card.
@@ -4322,7 +4330,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		handled := a.closeTopOverlay()
 		if !handled {
 			switch a.screen {
-			case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenLogs:
+			case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenLogs, ScreenHelp:
 				if a.ctx.focusID != "" {
 					a.ctx.focusID = "" // first ESC: drop a focused field
 				} else {
@@ -4503,6 +4511,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawServerHelp(winW, winH)
 		case ScreenLogs:
 			a.drawLogBrowser(winW, winH)
+		case ScreenHelp:
+			a.drawHelp(winW, winH)
 		}
 	}
 	// The tab strip floats over every screen (input was consumed at the

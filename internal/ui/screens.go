@@ -103,6 +103,11 @@ func (a *App) drawLobby(w, h int32) {
 		a.openLogBrowser()
 		a.screen = ScreenLogs
 	}
+	// Help: newcomer glossary + a plain-English privacy explainer.
+	if c.Button(sdl.Rect{X: w - 590 - pad, Y: pad, W: 110, H: btnH}, "Help") {
+		a.prevScreen = ScreenLobby
+		a.screen = ScreenHelp
+	}
 	// Connect-time ("ping") sort: probe joinable servers and sort by RTT. A
 	// second press goes back to the player-count sort. Off until pressed.
 	pingBtn := sdl.Rect{X: w - 470 - pad, Y: pad, W: 110, H: btnH}
