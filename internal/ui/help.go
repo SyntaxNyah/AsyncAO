@@ -12,7 +12,7 @@ import (
 
 // helpSectionNames drives the section tab row (which hides itself when there's
 // only one section).
-var helpSectionNames = []string{"Glossary"}
+var helpSectionNames = []string{"Glossary", "Privacy"}
 
 // glossaryEntry is one Attorney Online term and its plain-English explanation.
 type glossaryEntry struct{ term, def string }
@@ -39,12 +39,61 @@ var glossaryEntries = []glossaryEntry{
 	{"Spectator", "Someone in a room who hasn't chosen a character: they can watch and use OOC, but can't speak IC until they pick one."},
 }
 
+// privacySection is one heading + its paragraphs in the Privacy explainer.
+type privacySection struct {
+	heading string
+	body    []string
+}
+
+// privacySections is the plain-English "what a server can see" explainer. Honest
+// and specific: it names exactly what AsyncAO sends (see internal/hwid for the
+// HDID) so there are no surprises, rather than vaguely reassuring.
+var privacySections = []privacySection{
+	{"What every server can see", []string{
+		"Connecting to an Attorney Online server — like opening any website or joining any game — lets it see a few things about you. AsyncAO can't hide these, so here's exactly what they are.",
+	}},
+	{"Your IP address", []string{
+		"The server sees your IP address; that's just how an internet connection works. From it an operator can roughly tell your region and internet provider — not your name or address.",
+		"Moderators normally DON'T see your raw IP: the server shows them an IPID instead — a scrambled stand-in that lets them recognise and ban a troublemaker without exposing the real address. (A server's own operator can still see raw IPs in their logs.)",
+	}},
+	{"Your device ID (HDID)", []string{
+		"AsyncAO sends a Hardware ID so a server can ban a device, not just a name. It is NOT your hardware serial numbers: it's a salted, one-way hash of a few stable system identifiers, so the server gets a fingerprint it can match but can't reverse into 'this exact PC'.",
+		"It stays the same across reinstalls and name changes — that's the point, so ban-evaders can't just rename — but it carries no personal information.",
+	}},
+	{"What you type and pick", []string{
+		"Everything you say IC and OOC, your character, showname and OOC name, the music and evidence you present, and which area you're in are all visible to the room — that's the game. Treat OOC like a public chat: don't share anything you wouldn't post publicly.",
+	}},
+	{"Encrypted vs plain connections", []string{
+		"Servers on the GREEN lobby tier use WSS (encryption), so your traffic is protected in transit. A plain server sends messages as readable text that someone on the same network could in principle see. Prefer encrypted servers where you can.",
+	}},
+	{"What AsyncAO does NOT do", []string{
+		"AsyncAO has no analytics, ads or tracking. It only talks to the network for things you'd expect: the public server list (to fill the lobby), the assets you load from a server, and an optional update check. Discord Rich Presence and voice chat are both OFF until you turn them on, and Discord-free / voice-free builds exist.",
+	}},
+}
+
 // buildHelpFlat reflows the active Help section to colW (cached by width via
 // a.helpFlat / a.helpFlatW). The aboutFlatLine model + the draw loop mirror
 // drawChangelog, so the wrap runs only on a resize, never per frame.
 func (a *App) buildHelpFlat(c *Ctx, colW int32) []aboutFlatLine {
 	out := make([]aboutFlatLine, 0, 128)
 	switch a.helpTab {
+	case 1: // Privacy — what a server can see
+		for si, s := range privacySections {
+			gap := int32(16)
+			if si == 0 {
+				gap = 0
+			}
+			out = append(out, aboutFlatLine{text: s.heading, col: ColAccent, gap: gap})
+			for pi, p := range s.body {
+				for i, ln := range c.WrapText(p, colW, 0) {
+					fl := aboutFlatLine{text: ln, col: ColText}
+					if i == 0 && pi > 0 {
+						fl.gap = 8 // space between paragraphs in a section
+					}
+					out = append(out, fl)
+				}
+			}
+		}
 	default: // Glossary
 		for i, e := range glossaryEntries {
 			gap := int32(12)
@@ -64,7 +113,7 @@ func (a *App) drawHelp(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 	c.Heading(pad, pad, "Help", ColText)
-	c.Label(pad, pad+30, "New to Attorney Online? Here's what the words mean.", ColTextDim)
+	c.Label(pad, pad+30, "What the words mean — and what a server can see about you.", ColTextDim)
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
 		a.screen = a.prevScreen
 		return

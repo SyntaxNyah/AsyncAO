@@ -35,3 +35,38 @@ func TestGlossaryContent(t *testing.T) {
 		}
 	}
 }
+
+// TestPrivacySections pins the privacy explainer: every section has a heading and
+// at least one paragraph, the Privacy tab is registered, and it honestly names
+// the three things newcomers worry about (IP, IPID, HDID).
+func TestPrivacySections(t *testing.T) {
+	if len(privacySections) < 4 {
+		t.Fatalf("privacy explainer too short: %d sections", len(privacySections))
+	}
+	all := ""
+	for _, s := range privacySections {
+		if strings.TrimSpace(s.heading) == "" || len(s.body) == 0 {
+			t.Errorf("empty privacy section: %+v", s)
+		}
+		for _, p := range s.body {
+			if strings.TrimSpace(p) == "" {
+				t.Errorf("empty paragraph in section %q", s.heading)
+			}
+		}
+		all += s.heading + " " + strings.Join(s.body, " ")
+	}
+	for _, want := range []string{"HDID", "IPID", "IP address"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("privacy explainer should mention %q", want)
+		}
+	}
+	found := false
+	for _, n := range helpSectionNames {
+		if n == "Privacy" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("helpSectionNames must include the Privacy tab")
+	}
+}
