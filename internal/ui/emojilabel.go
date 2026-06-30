@@ -37,7 +37,10 @@ const (
 type emojiKey struct {
 	text  string
 	color sdl.Color
-	font  *ttf.Font
+	font  *ttf.Font // the primary (text) face
+	emoji *ttf.Font // the colour-emoji face — DISTINCT per size, so the same emoji at two
+	// sizes (picker vs IC-bar button vs reaction float) can't share one cached raster and
+	// render at the wrong size. Omitting it was a cross-size cache collision (#36).
 }
 
 // labelEmoji draws text that may contain colour emoji, clipped to maxW. Plain
@@ -93,7 +96,7 @@ func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) 
 	if primary == nil {
 		return nil
 	}
-	key := emojiKey{text: text, color: col, font: primary}
+	key := emojiKey{text: text, color: col, font: primary, emoji: emoji}
 	if m, ok := c.emojiCache[key]; ok {
 		return m
 	}
