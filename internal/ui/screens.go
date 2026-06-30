@@ -522,13 +522,33 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 	c.Heading(pad, pad, title, ColText)
 
-	if c.Button(sdl.Rect{X: w - 120 - pad, Y: pad, W: 120, H: btnH}, "Disconnect") {
+	// Top-right is the consistent "leave this screen" slot (matches Settings/About/
+	// Help/etc.) so muscle memory doesn't land on Disconnect (playtest: "in char select
+	// the top-right is Disconnect, not Back — I keep almost pressing it"). Re-picking a
+	// character from the courtroom puts a safe Back there; Disconnect is ALWAYS danger-
+	// tinted (red outline + label) and kept out of that spot. Buttons lay out R→L.
+	rightX := w - pad
+	if a.room != nil {
+		backW := int32(90)
+		rightX -= backW
+		if c.Button(sdl.Rect{X: rightX, Y: pad, W: backW, H: btnH}, "Back") {
+			a.screen = ScreenCourtroom
+			return
+		}
+		rightX -= 8
+	}
+	dcW := int32(120)
+	rightX -= dcW
+	if c.ButtonCol(sdl.Rect{X: rightX, Y: pad, W: dcW, H: btnH}, "Disconnect", ColPanel, ColPanelHi, ColDanger, ColDanger) {
 		a.requestDisconnect() // confirm first unless instant-disconnect is set
 		return
 	}
-	// Privacy: a dedicated button (opens the Help screen's Privacy tab) so "what can
-	// this server see about me?" is one click away before you commit to playing here.
-	if c.Button(sdl.Rect{X: w - 250 - pad, Y: pad, W: 120, H: btnH}, "Privacy") {
+	rightX -= 8
+	// Privacy: opens the Help screen's Privacy tab so "what can this server see about
+	// me?" is one click away before you commit to playing here.
+	privW := int32(120)
+	rightX -= privW
+	if c.Button(sdl.Rect{X: rightX, Y: pad, W: privW, H: btnH}, "Privacy") {
 		a.prevScreen = ScreenCharSelect
 		a.openHelp(1)
 	}
@@ -572,14 +592,8 @@ func (a *App) drawCharSelect(w, h int32) {
 		a.enterCourtroom()
 		return
 	}
-	if a.room != nil {
-		// Re-picking from the courtroom ("Change character"): allow backing
-		// out without dropping the session.
-		if c.Button(sdl.Rect{X: specX + 96, Y: pad + 36, W: 90, H: btnH}, "Back") {
-			a.screen = ScreenCourtroom
-			return
-		}
-	}
+	// (Re-pick "Back" → courtroom now lives in the top-right header slot above, so it
+	// matches every other screen instead of sitting mid-row.)
 	if a.warnActive() {
 		c.LabelClipped(specX+200, pad+42, w-specX-200-pad, a.warnLine, ColDanger)
 	}
