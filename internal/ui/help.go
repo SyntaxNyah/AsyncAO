@@ -77,8 +77,9 @@ var privacySections = []privacySection{
 		"Choose a provider with an INDEPENDENTLY AUDITED no-logs policy — such as Mullvad, IVPN or ProtonVPN — not a random free one (free VPNs often monetise your traffic). Favour a privacy-respecting jurisdiction, outside the Five Eyes (and ideally the wider Nine / Fourteen Eyes) intelligence-sharing networks: ProtonVPN is based in Switzerland; Mullvad and IVPN in Sweden are trusted for their audited no-logs record. Do your own research before trusting any of them.",
 		"With a reputable VPN in front and AsyncAO's hashed HDID, there's nothing on the wire that personally identifies you: the server sees a VPN IP and an opaque device hash, and that's it.",
 	}},
-	{"What you type and pick", []string{
-		"Everything you say IC and OOC, your character, showname and OOC name, the music and evidence you present, and which area you're in are all visible to the room — that's the game. Treat OOC like a public chat: don't share anything you wouldn't post publicly.",
+	{"What you type — and that it's logged", []string{
+		"Everything you say IC and OOC, your character, showname and OOC name, the music and evidence you present, and which area you're in are visible to the room — that's the game.",
+		"On top of that, nearly every AO server LOGS your messages — for moderation and their own record-keeping — so what you type tends to stick around, not vanish when you leave. Treat it like a public, permanent chat: keep your real-life details off the server, don't reveal anything you wouldn't post publicly, and you never know what someone might do with information you hand out. A good habit is a showname/username that ISN'T tied to your real identity.",
 	}},
 	{"Encrypted vs plain connections", []string{
 		"Servers on the GREEN lobby tier use WSS (encryption), so your traffic is protected in transit. A plain server sends messages as readable text that someone on the same network could in principle see. Prefer encrypted servers where you can.",
