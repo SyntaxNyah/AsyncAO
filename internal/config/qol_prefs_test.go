@@ -36,8 +36,8 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.MessageCounterOn() {
 		t.Error("MessageCounterOn default must be true")
 	}
-	if !p.ICTimestampsOn() {
-		t.Error("ICTimestampsOn default must be true")
+	if p.ICTimestampsOn() {
+		t.Error("ICTimestampsOn default must be false (playtest: timestamps off by default)")
 	}
 	if !p.AutoReconnectOn() {
 		t.Error("AutoReconnectOn default must be true")
@@ -700,7 +700,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetAutoLoginToast(false)   // explicit false must survive the absent-default-ON pointer
 	p.SetCallwordToast(false)    // same absent-default-ON pointer
 	p.SetMessageCounter(false)   // same absent-default-ON pointer
-	p.SetICTimestamps(false)     // same absent-default-ON pointer
+	p.SetICTimestamps(true)      // explicit non-default true must survive the absent-default-OFF pointer
 	p.SetAutoReconnect(false)    // same absent-default-ON pointer
 	p.SetMusicHistory(false)     // same absent-default-ON pointer
 	p.SetRainbowSprites(true)    // default-OFF plain bool — must survive as true

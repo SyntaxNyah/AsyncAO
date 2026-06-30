@@ -228,9 +228,10 @@ const defaultCallwordToast = true
 // long a message is getting (servers truncate very long lines).
 const defaultMessageCounter = true
 
-// defaultICTimestamps ships ON: each IC log line is prefixed with the local time
-// it arrived, so you can see when people spoke. Toggleable off in Settings.
-const defaultICTimestamps = true
+// defaultICTimestamps ships OFF (playtest): when ON, each IC log line is prefixed
+// with the local time it arrived, so you can see when people spoke. Toggleable in
+// Settings → Chat.
+const defaultICTimestamps = false
 
 // defaultAutoReconnect ships ON: after an unexpected drop, AsyncAO auto-retries
 // the last server with backoff (the manual Reconnect button still works, and a
@@ -867,7 +868,7 @@ type AssetPreferences struct {
 	CallwordToast bool `json:"callwordToast"`
 	// MessageCounter shows a live character count by the IC input (ON by default).
 	MessageCounter bool `json:"messageCounter"`
-	// ICTimestamps prefixes each IC log line with its local arrival time (ON by default).
+	// ICTimestamps prefixes each IC log line with its local arrival time (OFF by default).
 	ICTimestamps bool `json:"icTimestamps"`
 	// AutoReconnect auto-retries the last server after an unexpected drop (ON by default).
 	AutoReconnect bool `json:"autoReconnect"`
@@ -1116,7 +1117,7 @@ type prefsJSON struct {
 	AutoLoginToast     *bool    `json:"autoLoginToast"`       // absent = default ON
 	CallwordToast      *bool    `json:"callwordToast"`        // absent = default ON
 	MessageCounter     *bool    `json:"messageCounter"`       // absent = default ON
-	ICTimestamps       *bool    `json:"icTimestamps"`         // absent = default ON
+	ICTimestamps       *bool    `json:"icTimestamps"`         // absent = default OFF
 	AutoReconnect      *bool    `json:"autoReconnect"`        // absent = default ON
 	MusicHistory       *bool    `json:"musicHistory"`         // absent = default ON
 	MusicHosts         []string `json:"musicHosts,omitempty"` // absent = default list
@@ -2398,7 +2399,7 @@ func (p *AssetPreferences) SetMessageCounter(on bool) {
 	p.markDirty()
 }
 
-// ICTimestampsOn reports the IC-log local-time prefix toggle (ON by default).
+// ICTimestampsOn reports the IC-log local-time prefix toggle (OFF by default).
 func (p *AssetPreferences) ICTimestampsOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
