@@ -73,13 +73,13 @@ const (
 func banBoxDims(kind int) (defH, minH int32) {
 	switch kind {
 	case 2: // kick — no duration row
-		return 392, 360
-	case 3: // bulk ban — frozen list + duration + reason + readiness
-		return 560, 500
-	case 4: // bulk kick — frozen list + reason + readiness (no duration)
-		return 452, 412
+		return 416, 384
+	case 3: // bulk ban — frozen list + duration + reason + summary + readiness
+		return 584, 524
+	case 4: // bulk kick — frozen list + reason + summary + readiness
+		return 476, 436
 	default: // ban (kind 1)
-		return 512, 470
+		return 536, 494
 	}
 }
 
@@ -723,6 +723,20 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 	}
 }
 
+// banActionSummary is the plain-English "who · how long · why" line shown in the ban/kick box, so a
+// mod sees exactly what they're about to do — even before the server-specific command can be built
+// (e.g. an IPID-only server hasn't surfaced the IPID yet). Pure; unit-tested.
+func banActionSummary(isBan bool, who string, dur courtroom.BanDuration, reason string) string {
+	s := "Kick " + who
+	if isBan {
+		s = "Ban " + who + " for " + courtroom.BanDurationLabel(dur)
+	}
+	if r := strings.TrimSpace(reason); r != "" {
+		return s + " — reason: " + r
+	}
+	return s + " — (no reason given)"
+}
+
 // drawModDashBanBox is the Ban (kind 1) / Kick (kind 2) box: the frozen target, a duration
 // picker (ban only), a reason field, and a LIVE PREVIEW of the exact command. Send refuses an
 // empty command; when the preview is empty because an IPID-only server hasn't surfaced the IPID
@@ -811,6 +825,11 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 
 	// Quick-reason templates: editable chips fill the field; the single box gets the manage row.
 	y = a.drawReasonTemplateChips(x, y, maxW, true)
+
+	// At-a-glance summary of the action (always shown, even before the exact command below can be
+	// built) so the mod sees who, how long and why — the "ban someone 6 hours for disrespect" feedback.
+	c.LabelClipped(x, y, maxW, banActionSummary(isBan, "["+a.banBoxUID+"] "+a.banBoxName, a.banBoxDur, a.banBoxReason), ColText)
+	y += 24
 
 	// Live preview of the exact command.
 	var cmd string
@@ -947,6 +966,10 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	a.banBoxReason, _ = c.TextField("modbulkreason", sdl.Rect{X: x, Y: y, W: maxW, H: fieldH}, a.banBoxReason, "reason (optional for kick)")
 	y += fieldH + 8
 	y = a.drawReasonTemplateChips(x, y, maxW, false) // compact (no manage row) in the busy bulk box
+
+	// At-a-glance summary of the bulk action (always shown), so the mod sees how long and why.
+	c.LabelClipped(x, y, maxW, banActionSummary(isBan, strconv.Itoa(n)+" player(s)", a.banBoxDur, a.banBoxReason), ColText)
+	y += 22
 
 	// Readiness: how many frozen targets have a buildable command right now (the rest need an IPID
 	// this server hasn't surfaced yet). Ground truth — we just try to build each command.
