@@ -15,21 +15,58 @@ func pathCellCenter(p byte, box sdl.Rect) (x, y int32) {
 	return box.X + int32(p>>4)*box.W/16 + box.W/32, box.Y + int32(p&0x0F)*box.H/16 + box.H/32
 }
 
-// drawStylePathEditor draws the "draw your own motion path" box (#34, B2): click inside it
-// to drop up to maxPathPoints waypoints (centre = the sprite's rest spot); your sprite loops
-// through them, overriding the Move cycle, transmitted + stacking. A Clear button removes it.
-// Click-to-place keeps it simple + bounded (no freehand stroke buffer). Returns the next y.
+// pathStrokeCap bounds the freehand stroke buffer (rule §17.4).
+const pathStrokeCap = 256
+
+// drawStylePathEditor draws the "draw your own motion path" box (#34, B2): DRAG inside it to
+// sketch a loop (sampled to up to 6 waypoints on release), or CLICK to drop a single waypoint;
+// centre = the sprite's rest spot. Your sprite loops through the path — overriding the Move
+// cycle — transmitted + stacking. Shows the live stroke / saved path; a Clear button removes it.
 func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	c := a.ctx
-	c.Label(x, y, "Or draw a custom path (click points · centre = rest):", ColTextDim)
+	c.Label(x, y, "Or draw a custom path (drag to sketch · click to add a point · centre = rest):", ColTextDim)
 	y += 18
 	box := sdl.Rect{X: x, Y: y, W: stylePathBox, H: stylePathBox}
 	c.Fill(box, ColPanel)
 	c.Border(box, ColAccent)
 	c.Fill(sdl.Rect{X: box.X + box.W/2 - 1, Y: box.Y + 4, W: 2, H: box.H - 8}, ColPanelHi) // crosshair = rest
 	c.Fill(sdl.Rect{X: box.X + 4, Y: box.Y + box.H/2 - 1, W: box.W - 8, H: 2}, ColPanelHi)
-	// Existing waypoints + the connecting loop.
-	if n := int(p.PathLen); n >= 1 {
+
+	inBox := pointIn(c.mouseX, c.mouseY, box)
+	press := c.mouseDown && !a.pathPrevDown
+	a.pathPrevDown = c.mouseDown
+	if press && inBox { // begin a stroke
+		a.pathDrawing, a.pathStroke = true, a.pathStroke[:0]
+	}
+	if a.pathDrawing && c.mouseDown && len(a.pathStroke) < pathStrokeCap {
+		a.pathStroke = append(a.pathStroke, sdl.Point{
+			X: int32(clampInt(int(c.mouseX), int(box.X), int(box.X+box.W))),
+			Y: int32(clampInt(int(c.mouseY), int(box.Y), int(box.Y+box.H))),
+		})
+	}
+	if a.pathDrawing && !c.mouseDown { // release: a real drag samples a new path; a tap adds one point
+		a.pathDrawing = false
+		switch {
+		case strokeMoved(a.pathStroke):
+			p.Path, p.PathLen = samplePathStroke(a.pathStroke, box)
+			a.d.Prefs.SetSpriteStyle(p)
+		case inBox && int(p.PathLen) < len(p.Path):
+			gx := uint8(clampInt(int((c.mouseX-box.X)*16/box.W), 0, 15))
+			gy := uint8(clampInt(int((c.mouseY-box.Y)*16/box.H), 0, 15))
+			p.Path[p.PathLen] = gx<<4 | gy
+			p.PathLen++
+			a.d.Prefs.SetSpriteStyle(p)
+		}
+		a.pathStroke = a.pathStroke[:0]
+	}
+
+	// The live stroke while sketching, else the saved path (dots + connecting loop).
+	if a.pathDrawing && len(a.pathStroke) > 1 {
+		_ = c.Ren.SetDrawColor(ColTierGreen.R, ColTierGreen.G, ColTierGreen.B, 255)
+		for i := 1; i < len(a.pathStroke); i++ {
+			_ = c.Ren.DrawLine(a.pathStroke[i-1].X, a.pathStroke[i-1].Y, a.pathStroke[i].X, a.pathStroke[i].Y)
+		}
+	} else if n := int(p.PathLen); n >= 1 {
 		_ = c.Ren.SetDrawColor(ColAccent.R, ColAccent.G, ColAccent.B, 255)
 		for i := 0; i < n; i++ {
 			ax, ay := pathCellCenter(p.Path[i], box)
@@ -40,14 +77,6 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 			c.Fill(sdl.Rect{X: ax - 3, Y: ay - 3, W: 6, H: 6}, ColTierGreen)
 		}
 	}
-	// Click to drop a waypoint (grid 0..15 per axis; centre cell = no offset).
-	if c.clicked && pointIn(c.mouseX, c.mouseY, box) && int(p.PathLen) < len(p.Path) {
-		gx := uint8(clampInt(int((c.mouseX-box.X)*16/box.W), 0, 15))
-		gy := uint8(clampInt(int((c.mouseY-box.Y)*16/box.H), 0, 15))
-		p.Path[p.PathLen] = gx<<4 | gy
-		p.PathLen++
-		a.d.Prefs.SetSpriteStyle(p)
-	}
 	if c.Button(sdl.Rect{X: box.X + box.W + 8, Y: box.Y, W: 80, H: btnH}, "Clear path") {
 		p.Path, p.PathLen = [6]uint8{}, 0
 		a.d.Prefs.SetSpriteStyle(p)
@@ -55,6 +84,50 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	c.Label(box.X+box.W+8, box.Y+btnH+6, "Up to 6 points;", ColTextDim)
 	c.Label(box.X+box.W+8, box.Y+btnH+22, "loops forever.", ColTextDim)
 	return y + stylePathBox + 8
+}
+
+// strokeMoved reports whether a freehand stroke is a real drag (vs a click/tap): its bounding
+// box spans more than a few pixels.
+func strokeMoved(stroke []sdl.Point) bool {
+	if len(stroke) < 3 {
+		return false
+	}
+	minX, maxX, minY, maxY := stroke[0].X, stroke[0].X, stroke[0].Y, stroke[0].Y
+	for _, sp := range stroke {
+		if sp.X < minX {
+			minX = sp.X
+		}
+		if sp.X > maxX {
+			maxX = sp.X
+		}
+		if sp.Y < minY {
+			minY = sp.Y
+		}
+		if sp.Y > maxY {
+			maxY = sp.Y
+		}
+	}
+	return maxX-minX > 8 || maxY-minY > 8
+}
+
+// samplePathStroke reduces a raw freehand stroke to up to 6 evenly-spaced waypoints, packed as
+// 4-bit X/Y bytes on the box's grid. Returns the points + count (>=2, else 0).
+func samplePathStroke(stroke []sdl.Point, box sdl.Rect) (pts [6]uint8, count uint8) {
+	n := len(stroke)
+	if n < 2 || box.W <= 0 || box.H <= 0 {
+		return pts, 0
+	}
+	k := len(pts)
+	if n < k {
+		k = n
+	}
+	for i := 0; i < k; i++ {
+		sp := stroke[i*(n-1)/(k-1)] // evenly spaced, including the first + last points
+		gx := uint8(clampInt(int((sp.X-box.X)*16/box.W), 0, 15))
+		gy := uint8(clampInt(int((sp.Y-box.Y)*16/box.H), 0, 15))
+		pts[i] = gx<<4 | gy
+	}
+	return pts, uint8(k)
 }
 
 // motionName labels a transmitted sprite-motion path for the cycle button (#34).

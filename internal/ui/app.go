@@ -638,6 +638,12 @@ type App struct {
 	toolboxDragID    string
 	toolboxDragStart [2]int32
 	toolboxDragMoved bool
+	// pathStroke is the in-progress freehand stroke for the Sprite Style "draw a path" box
+	// (#34 B2): raw box-relative points captured while dragging, sampled to <=6 waypoints on
+	// release. pathDrawing = mid-stroke; pathPrevDown is its press-edge latch. Bounded.
+	pathStroke   []sdl.Point
+	pathDrawing  bool
+	pathPrevDown bool
 	// Typing indicator (#3): typingPeers maps a peer's OOC name → when they last pulsed
 	// "typing" (active-tab scope; pruned by typingExpiry). The send side throttles via
 	// lastTypingSent and spots keystrokes by diffing icInput against icInputLast/icTypedAt.
