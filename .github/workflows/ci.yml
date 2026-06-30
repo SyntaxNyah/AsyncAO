@@ -46,7 +46,7 @@ jobs:
       - name: Tests (race detector — §17.8 gate)
         run: go test -race -timeout 600s -count=1 ./...
 
-      - name: Tests (lean build — Discord + voice compiled out: the nodiscord+novoice stubs must build & pass)
+      - name: "Tests (lean build — Discord + voice compiled out; nodiscord+novoice stubs must build & pass)"
         run: go test -tags "nodiscord novoice" -timeout 600s -count=1 ./...
 
       - name: Benchmarks (alloc gates — §15)
