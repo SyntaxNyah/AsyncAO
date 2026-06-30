@@ -84,8 +84,12 @@ var privacySections = []privacySection{
 	{"If someone crosses a line: report it", []string{
 		"If you hit harassment, someone leaking or misusing personal information, or anyone breaking the rules, press the Call Mod button to alert that server's staff. They're the ones who can actually act on it; AsyncAO is just the client and can't moderate other people's servers for you. That's the right channel — and that's it.",
 	}},
-	{"Encrypted vs plain connections", []string{
-		"Servers on the GREEN lobby tier use WSS (encryption), so your traffic is protected in transit. A plain server sends messages as readable text that someone on the same network could in principle see. Prefer encrypted servers where you can.",
+	{"Green vs yellow servers (WS vs WSS)", []string{
+		"In the lobby, a GREEN server speaks WSS and a YELLOW one speaks plain WS. (A server pinned black at the very bottom is a legacy raw-TCP server AsyncAO can't connect to at all.) The difference between green and yellow is encryption, and it's a real one.",
+		"WS (yellow) is a plain, UNENCRYPTED connection. Everything — your messages, your showname, and any password if the server uses logins — travels as readable text. Anyone sitting on the network path can read it: whoever runs the public Wi-Fi you're on, others on that same network, and to a degree your ISP. They can also plainly see which server you're talking to and your IP.",
+		"WSS (green) is that same connection wrapped in TLS — the exact encryption that puts the padlock on an https:// website. A snooper on the path now only sees THAT you connected to the server; the contents are scrambled and unreadable to them. On public or untrusted Wi-Fi that's the whole difference between 'anyone nearby can read everything you type' and 'they can't'.",
+		"So GREEN / WSS is the recommendation, especially away from home — it protects what you say and any login in transit. Be clear on the limits, though: WSS encrypts the link only up to the server (whose proxy decrypts it), so it shields you from network snoopers, NOT from the server operator, who still sees everything once it lands. And AsyncAO accepts self-signed wss certificates by default so small community servers stay reachable — that proves the link is encrypted but not necessarily WHO you're encrypted to; turn on 'Validate server certificates' in Settings if you want that checked strictly.",
+		"Bottom line: prefer green (WSS) servers, treat yellow (WS) like a postcard anyone on the way can read, and pair either with a VPN if your IP is also a concern.",
 	}},
 	{"What AsyncAO does NOT do", []string{
 		"AsyncAO has no analytics, ads or tracking. It only talks to the network for things you'd expect: the public server list (to fill the lobby), the assets you load from a server, and an optional update check. Discord Rich Presence and voice chat are both OFF until you turn them on, and Discord-free / voice-free builds exist.",
