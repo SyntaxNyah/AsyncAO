@@ -526,6 +526,12 @@ func (a *App) drawCharSelect(w, h int32) {
 		a.requestDisconnect() // confirm first unless instant-disconnect is set
 		return
 	}
+	// Privacy: a dedicated button (opens the Help screen's Privacy tab) so "what can
+	// this server see about me?" is one click away before you commit to playing here.
+	if c.Button(sdl.Rect{X: w - 250 - pad, Y: pad, W: 120, H: btnH}, "Privacy") {
+		a.prevScreen = ScreenCharSelect
+		a.openHelp(1)
+	}
 	if a.sess == nil {
 		c.Label(pad, pad+40, "Loading...", ColTextDim)
 		return
