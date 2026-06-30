@@ -43,4 +43,8 @@ var spriteStylePresets = []struct {
 	{"Lime", 150, 240, 70}, {"Green", 60, 220, 90}, {"Cyan", 60, 220, 230},
 	{"Blue", 80, 140, 255}, {"Purple", 180, 90, 245}, {"Pink", 255, 110, 220},
 	{"White", 255, 255, 255}, {"Shadow", 70, 70, 95},
+	// More recolour options (#34): a fuller palette so a mood is one swatch away.
+	{"Crimson", 180, 30, 55}, {"Magenta", 235, 50, 190}, {"Indigo", 85, 65, 200},
+	{"Teal", 25, 170, 160}, {"Mint", 155, 245, 205}, {"Lavender", 200, 175, 255},
+	{"Rose", 255, 150, 175}, {"Brown", 150, 100, 60}, {"Slate", 110, 125, 150},
 }
