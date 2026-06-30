@@ -754,7 +754,8 @@ type AssetPreferences struct {
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
 	MultiTabCap            int                          `json:"multiTabCap"`
 	RestoreTabs            bool                         `json:"restoreTabs"`
-	VolStripOn             bool                         `json:"volStripOn"` // on-screen volume strip toggle (default OFF)
+	VolStripOn             bool                         `json:"volStripOn"`                     // on-screen volume strip toggle (default OFF)
+	ChangelogSeen          string                       `json:"changelogSeenVersion,omitempty"` // last What's New version opened (#23 unread dot)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	MusicDuckingOn         bool                         `json:"musicDucking"`
@@ -1013,23 +1014,24 @@ type prefsJSON struct {
 	ThemeFitZoom           int              `json:"themeFitZoom"`     // 0 (absent) = default 100
 	ThemeFitPanX           int              `json:"themeFitPanX"`
 	ThemeFitPanY           int              `json:"themeFitPanY"`
-	PlainLobby             *bool            `json:"plainLobby"`        // absent = default ON
-	UIScaleAuto            *bool            `json:"uiScaleAuto"`       // absent = default ON (HiDPI)
-	CatchUpWhenBehind      *bool            `json:"catchUpWhenBehind"` // absent = default ON
-	CatchUpThreshold       *int             `json:"catchUpThreshold"`  // absent = default
-	MultiTabCap            *int             `json:"multiTabCap"`       // absent = default
-	NameColors             bool             `json:"nameColors"`        // default OFF (zero value)
-	NameColorSat           *int             `json:"nameColorSat"`      // absent = default
-	NameColorVal           *int             `json:"nameColorVal"`      // absent = default
-	RestoreTabs            bool             `json:"restoreTabs"`       // default OFF (zero value)
-	VolStripOn             bool             `json:"volStripOn"`        // on-screen volume strip toggle (default OFF)
-	OpenTabs               []OpenTab        `json:"openTabs"`          // remembered tabs for restore-on-launch
-	ReduceMotion           bool             `json:"reduceMotion"`      // default OFF (zero value)
-	MusicDucking           bool             `json:"musicDucking"`      // default OFF (zero value)
-	PerAreaScrollback      bool             `json:"perAreaScrollback"` // default OFF (zero value)
-	DetailedLog            bool             `json:"detailedLog"`       // default OFF (zero value)
-	AutoClipModcall        *bool            `json:"autoClipModcall"`   // default ON (pointer: absent != off)
-	GroupChatButton        *bool            `json:"groupChatButton"`   // default ON (pointer: absent != off)
+	PlainLobby             *bool            `json:"plainLobby"`           // absent = default ON
+	UIScaleAuto            *bool            `json:"uiScaleAuto"`          // absent = default ON (HiDPI)
+	CatchUpWhenBehind      *bool            `json:"catchUpWhenBehind"`    // absent = default ON
+	CatchUpThreshold       *int             `json:"catchUpThreshold"`     // absent = default
+	MultiTabCap            *int             `json:"multiTabCap"`          // absent = default
+	NameColors             bool             `json:"nameColors"`           // default OFF (zero value)
+	NameColorSat           *int             `json:"nameColorSat"`         // absent = default
+	NameColorVal           *int             `json:"nameColorVal"`         // absent = default
+	RestoreTabs            bool             `json:"restoreTabs"`          // default OFF (zero value)
+	VolStripOn             bool             `json:"volStripOn"`           // on-screen volume strip toggle (default OFF)
+	ChangelogSeen          string           `json:"changelogSeenVersion"` // last What's New version opened (#23)
+	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
+	ReduceMotion           bool             `json:"reduceMotion"`         // default OFF (zero value)
+	MusicDucking           bool             `json:"musicDucking"`         // default OFF (zero value)
+	PerAreaScrollback      bool             `json:"perAreaScrollback"`    // default OFF (zero value)
+	DetailedLog            bool             `json:"detailedLog"`          // default OFF (zero value)
+	AutoClipModcall        *bool            `json:"autoClipModcall"`      // default ON (pointer: absent != off)
+	GroupChatButton        *bool            `json:"groupChatButton"`      // default ON (pointer: absent != off)
 
 	FontPaths          string                           `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                      `json:"macros"`
@@ -1667,6 +1669,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.RestoreTabs = onDisk.RestoreTabs
 	p.VolStripOn = onDisk.VolStripOn
+	p.ChangelogSeen = onDisk.ChangelogSeen
 	p.OpenTabs = onDisk.OpenTabs
 	p.ReduceMotionOn = onDisk.ReduceMotion
 	p.MusicDuckingOn = onDisk.MusicDucking
@@ -5353,6 +5356,28 @@ func (p *AssetPreferences) SetVolStripShown(on bool) {
 		return
 	}
 	p.VolStripOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ChangelogSeenVersion reports the build version whose "What's New" the user last
+// opened (#23). Empty until they open it; compared to update.Version to decide the
+// unread dot after an app update.
+func (p *AssetPreferences) ChangelogSeenVersion() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ChangelogSeen
+}
+
+// SetChangelogSeen records that the user opened the changelog for build version v,
+// clearing the unread dot until the next update changes the version.
+func (p *AssetPreferences) SetChangelogSeen(v string) {
+	p.mu.Lock()
+	if p.ChangelogSeen == v {
+		p.mu.Unlock()
+		return
+	}
+	p.ChangelogSeen = v
 	p.mu.Unlock()
 	p.markDirty()
 }

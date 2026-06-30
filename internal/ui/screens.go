@@ -92,10 +92,16 @@ func (a *App) drawLobby(w, h int32) {
 		a.screen = ScreenAbout
 	}
 	// "What's New" — the full, always-available version history (the post-update
-	// modal only shows the latest release's notes).
-	if c.Button(sdl.Rect{X: w - 710 - pad, Y: pad, W: 110, H: btnH}, "What's New") {
+	// modal only shows the latest release's notes). A green unread dot nags after an
+	// app update until you open it (#23).
+	wnBtn := sdl.Rect{X: w - 710 - pad, Y: pad, W: 110, H: btnH}
+	if c.Button(wnBtn, "What's New") {
 		a.prevScreen = ScreenLobby
 		a.screen = ScreenChangelog
+		a.markChangelogSeen() // opening it clears the unread dot
+	}
+	if a.changelogUnread() {
+		a.drawUnreadDot(wnBtn)
 	}
 	// Log browser: search your saved transcripts (any server, any session).
 	if c.Button(sdl.Rect{X: w - 830 - pad, Y: pad, W: 110, H: btnH}, "Logs") {

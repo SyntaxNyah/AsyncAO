@@ -7,6 +7,19 @@ import (
 	"testing"
 )
 
+// TestChangelogSeenRoundTrip pins the What's New unread-dot pref (#23): empty by
+// default, then it persists the version the user last opened.
+func TestChangelogSeenRoundTrip(t *testing.T) {
+	p := &AssetPreferences{}
+	if p.ChangelogSeenVersion() != "" {
+		t.Fatalf("ChangelogSeenVersion default = %q, want empty", p.ChangelogSeenVersion())
+	}
+	p.SetChangelogSeen("v1.30.0")
+	if p.ChangelogSeenVersion() != "v1.30.0" {
+		t.Fatalf("ChangelogSeenVersion = %q, want v1.30.0", p.ChangelogSeenVersion())
+	}
+}
+
 // TestQoLPrefDefaults pins the out-of-the-box values for the QoL-roadmap prefs:
 // previews ON at a 5 s dwell, and the three opt-ins (banner, sprite-move,
 // desk-follows-manifest) OFF.

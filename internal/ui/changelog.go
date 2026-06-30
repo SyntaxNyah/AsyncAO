@@ -112,6 +112,37 @@ func changelogHeaderMatches(title, cur string) bool {
 	return strings.TrimPrefix(fields[0], "v") == cur
 }
 
+// changelogUnread reports whether "What's New" has unseen notes (#23): a stamped
+// release build whose version differs from the last one the user opened. Dev builds
+// never nag. Drives the green unread dot on the lobby's What's New button.
+func (a *App) changelogUnread() bool {
+	if update.IsDev() {
+		return false
+	}
+	return a.d.Prefs.ChangelogSeenVersion() != strings.TrimSpace(update.Version)
+}
+
+// markChangelogSeen clears the unread dot by recording the current build version as
+// seen — called when the user opens the What's New screen.
+func (a *App) markChangelogSeen() {
+	a.d.Prefs.SetChangelogSeen(strings.TrimSpace(update.Version))
+}
+
+// drawUnreadDot paints a small green "unread" badge at the top-right corner of a
+// button — the nag that tells people to read the new patch notes (#23). Approximated
+// from rects (no circle primitive): a centre square with trimmed corners reads round.
+func (a *App) drawUnreadDot(btn sdl.Rect) {
+	c := a.ctx
+	const d = 10 // dot diameter
+	x := btn.X + btn.W - d + 2
+	y := btn.Y - 2
+	// A dark halo so the dot stays visible over any backdrop, then the green disc.
+	c.Fill(sdl.Rect{X: x - 1, Y: y - 1, W: d + 2, H: d + 2}, ColBackground)
+	c.Fill(sdl.Rect{X: x + 2, Y: y, W: d - 4, H: d}, ColTierGreen)         // tall centre column
+	c.Fill(sdl.Rect{X: x, Y: y + 2, W: d, H: d - 4}, ColTierGreen)         // wide centre row
+	c.Fill(sdl.Rect{X: x + 1, Y: y + 1, W: d - 2, H: d - 2}, ColTierGreen) // fill the corners' inner step
+}
+
 func (a *App) drawChangelog(w, h int32) {
 	c := a.ctx
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
