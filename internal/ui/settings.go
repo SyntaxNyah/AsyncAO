@@ -2388,10 +2388,15 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	// so community servers stay reachable; ON verifies the certificate strictly.
 	y = a.settingsSection(y, w, "Security")
 	validate := a.d.Prefs.ValidateTLSCertsOn()
-	if next := c.Checkbox(pad, y, "Validate server certificates (wss, OFF by default): strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this on can make them unreachable — it's for power users who want to be sure the encrypted connection is to the real server.", validate); next != validate {
+	if next := c.Checkbox(pad, y, "Validate server certificates (wss) — OFF by default", validate); next != validate {
 		a.d.Prefs.SetValidateTLSCerts(next)
 	}
-	y += 30
+	y += 24
+	for _, ln := range c.WrapText("Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this on can make them unreachable — it's for power users who want to be sure the encrypted connection is to the real server.", w-8, 0) {
+		c.Label(pad, y, ln, ColTextDim)
+		y += 16
+	}
+	y += 10
 	// Asset Origin / CORS override — for servers that only serve their asset base to
 	// a specific web client (joinable via a particular https:// link). Mainly power
 	// users; applied live to the streaming client.
@@ -2402,8 +2407,11 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 		a.d.Manager.SetAssetOrigin(next)
 	}
 	y += 24
-	c.Label(pad, y, "⚠ Power users only — only touch this if you know what you're doing. Sends this Origin/Referer on asset downloads, so a server that only serves its base to its own web client will still stream to AsyncAO.", ColTextDim)
-	y += 22
+	for _, ln := range c.WrapText("Power users only — only touch this if you know what you're doing. Sends this Origin/Referer on asset downloads, so a server that only serves its base to its own web client will still stream to AsyncAO.", w-8, 0) {
+		c.Label(pad, y, ln, ColTextDim)
+		y += 16
+	}
+	y += 6
 
 	// Discord Rich Presence: the whole section lives in a build-tagged file, so a
 	// -tags nodiscord binary compiles it out entirely (no section, no code).
