@@ -1380,6 +1380,11 @@ type sessionState struct {
 	livePlayersOn bool         // PR/PU server roster is the live source (else the CharsCheck fallback)
 	liveRoster    []areaPlayer // M1 live roster (PR/PU players, or CharsCheck taken chars + ARUP spectators)
 	liveRosterAt  time.Time    // live roster's last change — the rows/order memo key
+	// New-joiner highlight (#107): joinFlash[uid] = when a UID first appeared in the live
+	// roster (zero value = present at the first population, never flashed). Updated only on a
+	// roster change (updateJoinFlash); the per-frame row draw just reads it (0-alloc).
+	joinFlash     map[string]time.Time
+	joinFlashInit bool
 	// pairPartners maps a lowercased character → who they last spoke PAIRED with (#20, opt-in
 	// player-list chip). A paired IC message sets it; a solo one clears it, so it tracks the
 	// player's CURRENT pair as of their latest line. Per-tab; bounded by pairPartnersCap.

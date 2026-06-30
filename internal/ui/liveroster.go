@@ -189,6 +189,42 @@ func (a *App) rebuildLiveRoster() {
 	a.liveRoster = next
 	a.playerIconPages = nil // re-resolve icons (same-length new roster reuses indices)
 	a.liveRosterAt = a.now()
+	a.updateJoinFlash(a.liveRosterAt) // new-joiner highlight (#107)
+}
+
+// joinFlashWindow is how long a newly-joined player's row stays highlighted.
+const joinFlashWindow = 4 * time.Second
+
+// updateJoinFlash reconciles the new-joiner highlight timestamps against the live
+// roster: a UID newly present is stamped (its row flashes briefly), one that left is
+// dropped (so a rejoin flashes again, and the map stays bounded). The very first
+// population isn't flashed — joining a busy room shouldn't light up every row. Called
+// only from rebuildLiveRoster on a real roster change, so the per-frame draw just does
+// a 0-alloc map lookup.
+func (a *App) updateJoinFlash(now time.Time) {
+	if a.joinFlash == nil {
+		a.joinFlash = make(map[string]time.Time, len(a.liveRoster)+4)
+	}
+	stampNew := a.joinFlashInit // skip flashing the initial population
+	for i := range a.liveRoster {
+		uid := a.liveRoster[i].uid
+		if uid == "" {
+			continue
+		}
+		if _, ok := a.joinFlash[uid]; !ok {
+			if stampNew {
+				a.joinFlash[uid] = now
+			} else {
+				a.joinFlash[uid] = time.Time{} // present at first sight — never flashed
+			}
+		}
+	}
+	a.joinFlashInit = true
+	for uid := range a.joinFlash {
+		if _, ok := a.rosterByUID(uid); !ok {
+			delete(a.joinFlash, uid)
+		}
+	}
 }
 
 // rosterRefetchDebounce bounds how often a join/leave re-pulls the rich /getarea

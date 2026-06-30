@@ -330,6 +330,9 @@ func (a *App) rowHeight(row rosterRow) int32 {
 // OOC/IPID detail beneath, role highlight (you / speaker / friend), Spectator/CM
 // chips, and right-aligned Pair / Copy-UID / Copy-IPID actions. idx is the index
 // into areaPlayers (sort-stable) — the key for the icon cache.
+// joinFlashColor is the amber "just joined" row tint, faded out over joinFlashWindow.
+var joinFlashColor = sdl.Color{R: 240, G: 200, B: 90, A: 255}
+
 func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet map[string]bool) {
 	c := a.ctx
 	p := &a.rosterView()[idx]
@@ -368,6 +371,16 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 		c.Fill(row, sdl.Color{R: ColTierGreen.R, G: ColTierGreen.G, B: ColTierGreen.B, A: 46})
 	case friend:
 		c.Fill(row, friendTintColor)
+	}
+	// New-joiner highlight (#107): a brief, fading amber tint when this UID just
+	// appeared in the live roster, so a join is easy to spot. 0-alloc (a map lookup).
+	if p.uid != "" {
+		if t, ok := a.joinFlash[p.uid]; ok && !t.IsZero() {
+			if el := a.now().Sub(t); el >= 0 && el < joinFlashWindow {
+				fa := uint8(70 * int64(joinFlashWindow-el) / int64(joinFlashWindow))
+				c.Fill(row, sdl.Color{R: joinFlashColor.R, G: joinFlashColor.G, B: joinFlashColor.B, A: fa})
+			}
+		}
 	}
 	if bar, ok := rosterBarColor(isMe, isSpeaker, friend); ok {
 		c.Fill(sdl.Rect{X: row.X, Y: row.Y, W: 3, H: row.H}, bar)
