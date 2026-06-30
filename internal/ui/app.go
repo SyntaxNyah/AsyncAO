@@ -701,6 +701,7 @@ type App struct {
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
+	hkScroll   int32 // hotkey cheat-sheet scroll offset (it's a scrollable list now)
 	// Multi-server split (pass 2a): splitTab pins a BACKGROUND tab whose live stage
 	// renders in the RIGHT pane (splitRoom over that tab's own session + URL builder
 	// on courtroom.NopAudio so only the focused left pane makes sound; splitVP over

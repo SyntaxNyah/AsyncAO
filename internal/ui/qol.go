@@ -532,9 +532,11 @@ func (a *App) nudgeMasterVolume(delta int) {
 // they stand out from the defaults. Rows are cached per open (hkCache); drawing
 // only happens while open, so it costs nothing closed.
 const (
-	hkRowH   = int32(20)
-	hkColW   = int32(360)
-	hkKeyGap = int32(116) // label x-offset within a column
+	hkRowH      = int32(20)
+	hkKeyGap    = int32(116) // label x-offset (the key column width)
+	hkSheetDefW = int32(470) // default width — a single scrollable column
+	hkSheetMinW = int32(300)
+	hkSheetMinH = int32(160)
 )
 
 // hkSheetRect is the hotkey cheat sheet's floating-window rect (floatwin.go):
@@ -543,11 +545,13 @@ func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 	if a.hkCache == nil {
 		a.hkCache = a.hotkeyCheatEntries()
 	}
-	rowsPerCol := (int32(len(a.hkCache)) + 1) / 2
-	if rowsPerCol < 1 {
-		rowsPerCol = 1
+	// Default tall enough to show a good chunk; the list scrolls, so the exact fit
+	// doesn't matter and resizing smaller never drops rows.
+	defH := int32(len(a.hkCache))*hkRowH + floatTitleH + 14
+	if defH > 540 {
+		defH = 540
 	}
-	return a.hkWin.rect(hkColW*2+pad*3, rowsPerCol*hkRowH+48, 320, 160, w, h)
+	return a.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
 }
 
 // drawHotkeyCheatSheet is now a movable/resizable, non-blocking floating box —
@@ -574,35 +578,43 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	wasManip := a.hkWin.dragging || a.hkWin.resizing
 	a.floatWinDrag(&a.hkWin, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 160, H: floatTitleH}, &pressed)
 	hgrip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
-	a.floatWinResize(&a.hkWin, hgrip, r, 320, 160, &pressed)
+	a.floatWinResize(&a.hkWin, hgrip, r, hkSheetMinW, hkSheetMinH, &pressed)
 	a.drawResizeGrip(hgrip)
 	if !c.mouseDown && wasManip {
 		c.clicked = false // a finished drag/resize isn't a click underneath
 	}
 
-	colTop := r.Y + floatTitleH + 4
-	rowsPerCol := (int32(len(entries)) + 1) / 2
-	if rowsPerCol < 1 {
-		rowsPerCol = 1
+	// Scrollable single-column list: resizing smaller never drops rows now, and each
+	// label gets the full window width instead of being cut off at a fixed column.
+	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH + 2, W: r.W, H: r.Y + r.H - 4 - (r.Y + floatTitleH + 2)}
+	if body.H < hkRowH {
+		return
 	}
-	for i, e := range entries {
-		col := int32(i) / rowsPerCol
-		row := int32(i) % rowsPerCol
-		x := r.X + pad + col*(hkColW+pad)
-		y := colTop + row*hkRowH
-		if y+hkRowH > r.Y+r.H-4 || x+hkColW > r.X+r.W {
-			continue // clip rather than overflow
+	contentH := int32(len(entries)) * hkRowH
+	if !c.ctrlHeld {
+		a.hkScroll -= c.WheelIn(body) * scrollStepPx
+	}
+	track := sdl.Rect{X: r.X + r.W - scrollBarW - 2, Y: body.Y, W: scrollBarW, H: body.H}
+	a.hkScroll = c.VScrollbar("hkscroll", track, a.hkScroll, contentH, body.H)
+	clipPrev, clipHad := c.pushClip(body)
+	defer c.popClip(clipPrev, clipHad)
+	x := r.X + pad
+	labelW := (r.X + r.W - scrollBarW - 8) - (x + hkKeyGap) // label fills to the scrollbar
+	y := body.Y - a.hkScroll
+	for _, e := range entries {
+		if y+hkRowH > body.Y && y < body.Y+body.H { // only draw rows in view
+			if e.header {
+				c.Label(x, y, e.label, ColStar)
+			} else {
+				keyCol := ColAccent
+				if e.custom {
+					keyCol = ColStar // a binding you remapped or created
+				}
+				c.Label(x, y, e.key, keyCol)
+				c.LabelClipped(x+hkKeyGap, y, labelW, e.label, ColText)
+			}
 		}
-		if e.header {
-			c.Label(x, y, e.label, ColStar)
-			continue
-		}
-		keyCol := ColAccent
-		if e.custom {
-			keyCol = ColStar // a binding you remapped or created
-		}
-		c.Label(x, y, e.key, keyCol)
-		c.LabelClipped(x+hkKeyGap, y, hkColW-hkKeyGap, e.label, ColText)
+		y += hkRowH
 	}
 }
 
