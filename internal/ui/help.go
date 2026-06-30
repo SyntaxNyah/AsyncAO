@@ -194,17 +194,10 @@ func (a *App) drawHelp(w, h int32) {
 		contentH += fl.gap + lineH
 	}
 	contentH += pad
-	maxScroll := contentH - viewH
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
 	a.helpDocScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
-	if a.helpDocScroll < 0 {
-		a.helpDocScroll = 0
-	}
-	if a.helpDocScroll > maxScroll {
-		a.helpDocScroll = maxScroll
-	}
+	// A draggable scrollbar on the right for fast up/down navigation.
+	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
+	a.helpDocScroll = c.VScrollbar("helpdocbar", track, a.helpDocScroll, contentH, viewH)
 
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
 	_ = c.Ren.SetClipRect(&clip)

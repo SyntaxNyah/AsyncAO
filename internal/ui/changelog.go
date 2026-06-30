@@ -158,17 +158,10 @@ func (a *App) drawChangelog(w, h int32) {
 	}
 	contentH += pad
 
-	maxScroll := contentH - viewH
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
 	a.changelogScroll -= c.WheelIn(sdl.Rect{X: 0, Y: top, W: w, H: viewH}) * scrollStepPx
-	if a.changelogScroll < 0 {
-		a.changelogScroll = 0
-	}
-	if a.changelogScroll > maxScroll {
-		a.changelogScroll = maxScroll
-	}
+	// A draggable scrollbar on the right for fast up/down navigation of a long history.
+	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
+	a.changelogScroll = c.VScrollbar("changelogbar", track, a.changelogScroll, contentH, viewH)
 
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
 	_ = c.Ren.SetClipRect(&clip)
