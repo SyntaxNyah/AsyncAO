@@ -149,9 +149,17 @@ func (a *App) stopVoiceAudio() {
 	}
 }
 
-// voicePump drives capture→encode→send and decode→mix→play once per frame.
-// No-op (one nil check) unless the audio engine is running.
-func (a *App) voicePump() { a.voiceAudio.pump() }
+// voicePump drives capture→encode→send and decode→mix→play once per frame, plus the
+// settings mic-test loopback. No-op (a couple of nil checks) unless the audio engine
+// or a mic test is running. The mic test auto-stops the moment we leave the Voice
+// settings tab — so the test mic never stays open in the background (#84).
+func (a *App) voicePump() {
+	a.voiceAudio.pump()
+	if a.micTest != nil && (a.screen != ScreenSettings || settings.tab != tabVoice) {
+		a.stopMicTest()
+	}
+	a.micTestPump()
+}
 
 // voiceOnAudio feeds one inbound peer frame (VS_AUDIO) to the mixer.
 func (a *App) voiceOnAudio(uid int, b64 string) { a.voiceAudio.pushRemote(uid, b64) }

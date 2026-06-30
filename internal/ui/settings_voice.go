@@ -40,6 +40,34 @@ func (a *App) drawSettingsVoice(y, _ int32) int32 {
 	c.Label(pad, y, "Uses your system default mic unless you pick another. Takes effect next time you Join voice.", ColTextDim)
 	y += 24
 
+	// Mic test (#84): check the mic + levels (and optionally hear yourself) without
+	// joining a call. The tester owns its own device and auto-stops when you leave
+	// this tab (voicemictest.go); driven from the frame loop by voicePump.
+	y = a.settingsSection(y, w, "Test microphone")
+	testing := a.micTest != nil
+	btnLabel := "Start mic test"
+	if testing {
+		btnLabel = "Stop mic test"
+	}
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, btnLabel) {
+		if testing {
+			a.stopMicTest()
+		} else {
+			a.startMicTest(a.micTestSidetone)
+		}
+	}
+	if next := c.Checkbox(pad+162, y+2, "Hear myself (sidetone)", a.micTestSidetone); next != a.micTestSidetone {
+		a.micTestSidetone = next
+		if a.micTest != nil {
+			a.startMicTest(next) // restart to (de)activate the loopback device
+		}
+	}
+	y += 32
+	a.drawMicMeter(pad, y, 320, a.micMeterLevel())
+	y += 22
+	c.Label(pad, y, "Speak and watch the bar. Sidetone plays your mic back so you can check levels — use headphones to avoid an echo.", ColTextDim)
+	y += 24
+
 	y = a.settingsSection(y, w, "Output")
 	c.Label(pad, y+4, "Volume:", ColText)
 	vol := int32(a.d.Prefs.VoiceOutVol())

@@ -26,6 +26,10 @@ const voiceExtraLabel = "Voice (Nyathena)"
 // App.voiceAudio field keeps a type but stays nil in this build.
 type voiceEngine struct{}
 
+// micTester is the inert stand-in for the Settings mic-test (#84); App.micTest keeps
+// a type but stays nil in this build (the whole Voice settings tab is compiled out).
+type micTester struct{}
+
 func (*App) voiceOfferable() bool                  { return false }
 func (*App) voiceButtonState() (string, sdl.Color) { return "", sdl.Color{} }
 func (*App) toggleVoice()                          {}
@@ -41,4 +45,6 @@ func (*App) drawSettingsVoice(y, _ int32) int32    { return y }
 // fields (and thus the voiceEngine stub type) so they don't register as unused
 // in the voice-free build; they back the live engine in voiceaudio.go for the
 // voice-enabled build.
-func (a *App) stopVoiceAudio() { _, _ = a.voiceAudio, a.voiceIconAsk }
+func (a *App) stopVoiceAudio() {
+	_, _, _, _ = a.voiceAudio, a.voiceIconAsk, a.micTest, a.micTestSidetone
+}

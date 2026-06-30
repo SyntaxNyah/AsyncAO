@@ -688,6 +688,11 @@ type App struct {
 	// voiceAudio is the live capture/playback engine — non-nil ONLY while joined to
 	// a voice channel (opt-in); nil = presence-only / not in voice (voiceaudio.go).
 	voiceAudio *voiceEngine
+	// micTest is the Settings → Voice "Test microphone" tool (#84): an independent
+	// capture (+ optional sidetone playback) device, non-nil only while a test runs
+	// (voicemictest.go). micTestSidetone remembers the "hear myself" toggle.
+	micTest         *micTester
+	micTestSidetone bool
 	// showQuitConfirm: the "Quit AsyncAO?" dialog is up (Esc in the lobby, or a
 	// quit hotkey). Skipped when QuitConfirmSkip ("don't ask again") is set.
 	showQuitConfirm bool
