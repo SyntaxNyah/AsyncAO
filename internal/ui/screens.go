@@ -1872,7 +1872,7 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
 	c.Fill(r, ColPanel)
-	c.Border(r, ColPanelHi)
+	c.Border(r, ColAccent) // match the rest of the UI (buttons/OOC box/panels all border in the accent) — playtest: the log panel was the lone grey outline
 	// A "🔊" toggle at the right end drops a compact volume strip above the panel
 	// content — adjust volume while the log stays on screen and you keep chatting
 	// (the IC box below is untouched). The tabs share the rest of the row.
