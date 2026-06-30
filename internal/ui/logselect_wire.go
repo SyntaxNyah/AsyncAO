@@ -23,26 +23,44 @@ import (
 // draw otherwise. Shared by the IC and OOC log render paths.
 func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, line, speaker string, col sdl.Color, nameOn bool, sat, val float64, bold bool) {
 	c := a.ctx
-	if speaker != "" && (nameOn || bold) && strings.HasPrefix(line, speaker) {
-		// An emoji line OR a mixed-script line no single face covers skips the
-		// per-speaker name-colour split (the split draws with one `font`, which can't
-		// do per-glyph faces) and renders whole via the raster — coverage wins over the
-		// name tint for the rare mixed name. Both are rare; plain names take the split.
-		if (emojiFont != nil && render.NeedsEmojiFallback(line)) || !c.covers(line) {
-			a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
-			return
-		}
-		if nw, _, err := font.SizeUTF8(speaker); err == nil {
-			nameCol := col
-			if nameOn {
-				nameCol = nameColor(speaker, sat, val)
+	if speaker != "" && (nameOn || bold) {
+		// The speaker may sit AFTER a leading prefix ("16:11 LowGuy: …") when IC
+		// timestamps are on, so locate it by index rather than HasPrefix: the prefix
+		// (the timestamp, if any) bolds in the line colour, the name bolds + tints, and
+		// the rest draws plain. This also lets name colours apply with timestamps on.
+		// idx<0 (name not in the line — shouldn't happen) falls through to the plain draw.
+		if idx := strings.Index(line, speaker); idx >= 0 {
+			// An emoji line OR a mixed-script line no single face covers skips the
+			// per-speaker split (one `font` can't do per-glyph faces) and renders whole
+			// via the raster — coverage wins over the tint/bold for the rare mixed name.
+			if (emojiFont != nil && render.NeedsEmojiFallback(line)) || !c.covers(line) {
+				a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
+				return
 			}
-			c.LabelClippedFont(font, x, y, wrapW, speaker, nameCol)
-			if bold { // faux-bold: a 1px-shifted second pass thickens the strokes (no bold font needed)
-				c.LabelClippedFont(font, x+1, y, wrapW, speaker, nameCol)
+			px, used := x, int32(0)
+			if pre := line[:idx]; pre != "" { // timestamp / leading prefix — bold, line colour
+				if pw, _, err := font.SizeUTF8(pre); err == nil {
+					c.LabelClippedFont(font, px, y, wrapW-used, pre, col)
+					if bold {
+						c.LabelClippedFont(font, px+1, y, wrapW-used, pre, col)
+					}
+					px += int32(pw)
+					used += int32(pw)
+				}
 			}
-			c.LabelClippedFont(font, x+int32(nw), y, wrapW-int32(nw), line[len(speaker):], col)
-			return
+			if nw, _, err := font.SizeUTF8(speaker); err == nil {
+				nameCol := col
+				if nameOn {
+					nameCol = nameColor(speaker, sat, val)
+				}
+				c.LabelClippedFont(font, px, y, wrapW-used, speaker, nameCol)
+				if bold { // faux-bold: a 1px-shifted second pass thickens the strokes (no bold font needed)
+					c.LabelClippedFont(font, px+1, y, wrapW-used, speaker, nameCol)
+				}
+				used += int32(nw)
+				c.LabelClippedFont(font, px+int32(nw), y, wrapW-used, line[idx+len(speaker):], col)
+				return
+			}
 		}
 	}
 	// Default path: labelEmoji is the byte-identical LabelClippedFont for plain

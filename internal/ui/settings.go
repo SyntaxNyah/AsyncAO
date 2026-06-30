@@ -948,7 +948,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// saturation/brightness sliders + a live preview. OFF by default.
 	y = a.drawNameColorPicker(y, w)
 	boldNames := a.d.Prefs.BoldNamesOn()
-	if next := c.Checkbox(pad, y, "Bold speaker names (ON by default): renders the name prefix in the IC/OOC log and the chatbox in bold for readability.", boldNames); next != boldNames {
+	if next := c.Checkbox(pad, y, "Bold speaker names + timestamps (ON by default): renders the name prefix (and the IC-log time stamp) in the log and chatbox in bold for readability.", boldNames); next != boldNames {
 		a.d.Prefs.SetBoldNames(next)
 	}
 	y += 28
