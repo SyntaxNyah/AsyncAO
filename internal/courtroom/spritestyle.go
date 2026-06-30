@@ -37,6 +37,15 @@ type SpriteStyle struct {
 	// (#34) — none / orbit / bounce / sway / drift. A 3-bit enum (one path at a time, not a
 	// flag each) packed into the top of flags2. The viewer's ReduceMotion drops it.
 	Motion uint8
+	// Path is a CUSTOM looping motion the user drew (#34): up to maxPathPoints waypoints, each
+	// a byte packing a 4-bit X (high nibble) and 4-bit Y (low nibble) on a 16×16 grid centred
+	// at 8,8. PathLen (0 = none, else 2..maxPathPoints) is how many are active; unused slots
+	// stay 0 so equal paths compare equal (SpriteStyle is used with ==). When set it OVERRIDES
+	// Motion. A fixed array (not a slice) keeps the struct comparable. It rides the existing
+	// send-on-change style frame (the fatter payload is sent only when the style CHANGES, never
+	// per message — so no webAO blip-spam) and the viewer's ReduceMotion drops it.
+	Path    [maxPathPoints]uint8
+	PathLen uint8
 	// Brightness/Scale are percents with 0 = unset (= 100%). Rotation is a fixed
 	// tilt: 0 = none, else degrees via Rotation*360/256 (full circle).
 	Brightness uint8
@@ -66,6 +75,11 @@ const (
 	MotionCount                 // number of motions, for cycling (fills the 3-bit enum, 0..7)
 )
 
+// maxPathPoints caps a custom drawn motion path (#34). Each point is one byte (packed
+// 4-bit X/Y), so the whole path is a short, send-on-change tail — kept small on purpose
+// (the zero-width run is otherwise blip-spam to webAO). A path needs at least 2 points.
+const maxPathPoints = 6
+
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or
 // near-fully) invisible sprite at others — clamp applied at render time.
 const minVisibleOpacity = 25
@@ -82,7 +96,7 @@ const (
 // renderer leaves the blit byte-identical when there's nothing to do).
 func (s SpriteStyle) Active() bool {
 	return s.Tint || s.Glow || s.Wobble || s.Spin || s.HueCycle || s.FlipH ||
-		s.Invert || s.Grayscale || s.Sepia || s.Posterize || s.Motion != 0 || s.Outline || s.DropShadow || s.Glitch ||
+		s.Invert || s.Grayscale || s.Sepia || s.Posterize || s.Motion != 0 || s.PathLen >= 2 || s.Outline || s.DropShadow || s.Glitch ||
 		(s.Opacity != 0 && s.Opacity != 100) ||
 		(s.Brightness != 0 && s.Brightness != 100) ||
 		(s.Scale != 0 && s.Scale != 100) ||
@@ -282,8 +296,15 @@ func (s SpriteStyle) payloadBytes() []byte {
 		flags2 |= styleFlag2Posterize
 	}
 	flags2 |= (s.Motion & 0x07) << 5 // motion path rides the top 3 bits of flags2 (#34)
-	if flags2 != 0 {                 // append the second flags byte only when it carries something
+	// Append flags2 when it carries anything OR a custom path follows it: the path region sits
+	// right after flags2, so flags2 must be present to keep byte positions deterministic.
+	hasPath := s.PathLen >= 2 && s.PathLen <= maxPathPoints
+	if flags2 != 0 || hasPath {
 		b = append(b, flags2)
+		if hasPath { // #34 custom path: [len][len packed-XY bytes] — rides send-on-change only
+			b = append(b, s.PathLen)
+			b = append(b, s.Path[:s.PathLen]...)
+		}
 	}
 	return b
 }
@@ -322,6 +343,13 @@ func styleFromBytes(b []byte) SpriteStyle {
 		s.Posterize = flags2&styleFlag2Posterize != 0
 		if m := flags2 >> 5; m < MotionCount { // top 3 bits = motion path (#34); unknown ⇒ none
 			s.Motion = m
+		}
+		// Custom path (#34) right after flags2: b[10] = point count, b[11:] = packed XY bytes.
+		if len(b) >= spriteStyleBytesV2+1 {
+			if pl := b[spriteStyleBytesV2]; pl >= 2 && pl <= maxPathPoints && len(b) >= spriteStyleBytesV2+1+int(pl) {
+				copy(s.Path[:], b[spriteStyleBytesV2+1:spriteStyleBytesV2+1+int(pl)])
+				s.PathLen = pl
+			}
 		}
 	}
 	return s

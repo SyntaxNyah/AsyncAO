@@ -16,7 +16,7 @@ import (
 // styleFromPref converts the persisted config pref into the courtroom value the
 // wire codec + renderer use (config can't import courtroom).
 func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
-	return courtroom.SpriteStyle{
+	s := courtroom.SpriteStyle{
 		Tint: p.Tint, R: p.R, G: p.G, B: p.B,
 		Opacity: p.Opacity, Glow: p.Glow, Wobble: p.Wobble, Spin: p.Spin,
 		HueCycle: p.HueCycle, FlipH: p.FlipH,
@@ -24,6 +24,13 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 		Outline: p.Outline, DropShadow: p.DropShadow, Glitch: p.Glitch,
 		Brightness: p.Brightness, Scale: p.Scale, Rotation: p.Rotation,
 	}
+	// Custom motion path (#34): both are the same [6]uint8 array; ≥2 active points = on
+	// (PathLen 0 ⇒ no custom path, the render falls back to Motion).
+	s.Path = p.Path
+	if p.PathLen >= 2 && int(p.PathLen) <= len(s.Path) {
+		s.PathLen = p.PathLen
+	}
+	return s
 }
 
 // mySpriteStyle is the user's current transmitted style, for the send path.

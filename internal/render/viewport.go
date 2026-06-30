@@ -640,7 +640,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		modR, modG, modB                    uint8 = 255, 255, 255
 		alphaMod                            uint8 = 255
 		doColorMod, glow, wob, spin, glitch bool
-		motion                              uint8 // #34 transmitted movement path (0 = none)
+		motion                              uint8    // #34 transmitted movement path (0 = none)
+		pathLen                             uint8    // #34 custom-path point count (0 = none, else 2..6)
+		pathPts                             [6]uint8 // #34 custom-path waypoints (matches courtroom maxPathPoints)
 		scalePct                            = 100
 		rotDeg                              float64
 	)
@@ -666,6 +668,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		alphaMod = st.AlphaMod() // opacity (floored so a received style can't go invisible)
 		glow, wob, spin = st.Glow, st.Wobble, st.Spin
 		motion = st.Motion
+		pathPts, pathLen = st.Path, st.PathLen // #34 custom path (a cheap 6-byte array copy)
 		glitch = st.Glitch
 		scalePct = st.ScalePct()
 		rotDeg = st.RotationDeg()
@@ -755,7 +758,14 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		v.dstRect.X += dx
 		v.dstRect.Y += dy
 	}
-	if motion != 0 { // #34 transmitted movement path — pure math, off ⇒ this whole block is skipped
+	// #34 movement: a custom drawn PATH wins over a predefined motion; both are pure math
+	// off the free-running clock, so when neither is set this whole block is skipped.
+	switch {
+	case pathLen >= 2:
+		mdx, mdy := pathOffset(pathPts[:], pathLen, v.fxClock, vp)
+		v.dstRect.X += mdx
+		v.dstRect.Y += mdy
+	case motion != 0:
 		mdx, mdy := motionOffset(motion, v.fxClock, vp)
 		v.dstRect.X += mdx
 		v.dstRect.Y += mdy
@@ -1050,6 +1060,34 @@ func motionOffset(motion uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32)
 		dy = int32(-amp * 0.25 * math.Abs(math.Cos(t))) // …lifting slightly at each end (an arc)
 	}
 	return dx, dy
+}
+
+// pathOffset returns the per-frame (dx,dy) along a user-drawn custom path (#34): the sprite
+// traverses the waypoints over one motionPeriod, lerping between them and looping back to the
+// first. Each waypoint is a packed 4-bit X/Y on a 16×16 grid centred at 8,8. Pure math, no
+// allocation (path is a slice of a stack array the caller owns).
+func pathOffset(path []byte, pathLen uint8, clock time.Duration, vp sdl.Rect) (dx, dy int32) {
+	n := int(pathLen)
+	if n < 2 || n > len(path) {
+		return 0, 0
+	}
+	amp := float64(vp.W) / motionAmpDivisor
+	seg := oscFrac(clock, motionPeriod) * float64(n) // 0..n across the whole loop
+	i := int(seg)
+	if i >= n {
+		i = n - 1
+	}
+	frac := seg - float64(i)
+	j := (i + 1) % n // wrap to the first point so the path loops
+	x0, y0 := pathPointPx(path[i], amp)
+	x1, y1 := pathPointPx(path[j], amp)
+	return int32(x0 + (x1-x0)*frac), int32(y0 + (y1-y0)*frac)
+}
+
+// pathPointPx maps a packed 4-bit X/Y waypoint (each 0..15, centred at 8) to a pixel offset
+// scaled to amp.
+func pathPointPx(p byte, amp float64) (x, y float64) {
+	return float64(int(p>>4)-8) / 8.0 * amp, float64(int(p&0x0F)-8) / 8.0 * amp
 }
 
 // Idle-breathing tuning (#122). Slow + small so a static sprite reads as gently alive.

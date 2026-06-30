@@ -154,6 +154,8 @@ func TestSpriteStyleVariantFlags(t *testing.T) {
 		{Posterize: true},     // #34
 		{Motion: MotionOrbit}, // #34: motion enum in flags2's top 3 bits
 		{Motion: MotionDrift}, // #34: the highest motion value used
+		{Path: [maxPathPoints]uint8{0x88, 0xF8, 0x8F, 0x08}, PathLen: 4},  // #34: a custom 4-point path round-trips
+		{Sepia: true, Path: [maxPathPoints]uint8{0x80, 0x8F}, PathLen: 2}, // path forces flags2 present beside an effect
 		{Invert: true, Grayscale: true, Tint: true, R: 9, Glow: true},
 		{Sepia: true, Posterize: true, Motion: MotionSway, Outline: true, Tint: true, R: 9}, // ride flags2 together
 	} {
