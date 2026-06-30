@@ -1838,6 +1838,25 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad, y, "in mind if a character or background looks stale right after a server update.", ColTextDim)
 	y += 30
 
+	// One-click "fix stuck images" (#36, Dag): when a character's emote-button art (or any
+	// asset) gets stuck on a wrong-format / cached 404, the emote grid falls back to the
+	// SAME character icon for every cell ("all the images are the same"). Neither clear
+	// button alone fixes it — you need the learned format AND the cached 404 gone together —
+	// so this does both in one click; the next probe re-derives the right format from scratch.
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, "Fix stuck / repeated images") {
+		a.d.Prefs.ClearLearned()
+		a.d.Resolver.InvalidateAll()
+		settings.statusLine = "Cleared learned formats + disk cache — images re-derive on next use."
+		if err := a.d.Manager.ClearDisk(); err != nil {
+			settings.statusLine = "Cleared learned formats; disk clear failed: " + err.Error()
+		}
+	}
+	y += 22
+	c.Label(pad, y, "Use if emote buttons (or other art) all show the SAME image: clears the learned format AND the", ColTextDim)
+	y += 18
+	c.Label(pad, y, "cached 404 together, so a wrongly-probed format re-derives from scratch.", ColTextDim)
+	y += 30
+
 	return y
 }
 
