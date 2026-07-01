@@ -467,6 +467,11 @@ type App struct {
 	// caption. Session-only — a bit of joy that resets each launch.
 	mayoPets  int
 	mayoPetAt time.Time
+	// #234 "…and all of that": each pet also launches a bouncing, spinning Mayo
+	// that roams the About screen DVD-logo style. Bounded pile; mayoRoamAt stamps
+	// the last update so the motion is frame-rate independent.
+	mayoRoamers []mayoRoamer
+	mayoRoamAt  time.Time
 
 	// spriteTintHex is the in-progress hex text for the solid sprite-tint field
 	// (Settings); reflected from the pref when the field isn't focused.

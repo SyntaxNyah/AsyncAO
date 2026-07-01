@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/rand"
 	"os/exec"
 	"runtime"
 	"time"
@@ -183,6 +184,7 @@ func (a *App) drawAbout(w, h int32) {
 	// --- header band ---------------------------------------------------------
 	c.Heading(pad, pad, "About AsyncAO", ColText)
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
+		a.mayoRoamers = a.mayoRoamers[:0] // #234: leave the loose Mayos behind
 		a.screen = a.prevScreen
 		return
 	}
@@ -295,6 +297,11 @@ func (a *App) drawAbout(w, h int32) {
 		}
 		y += ch
 	}
+
+	// #234: let any loose bouncing Mayos roam the reading area, drawn on top of
+	// the content and confined to the scroll viewport (the active clip) so they
+	// don't scribble over the header / Back button.
+	a.updateAndDrawRoamers(c, mayoTex, clip)
 }
 
 // Pet-the-gopher easter egg (#234).
@@ -339,6 +346,7 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect, top, view
 		if c.clicked {
 			a.mayoPets++
 			a.mayoPetAt = a.now()
+			a.spawnMayoRoamer(dst)
 		}
 	}
 	// Floating caption drifting up above the portrait for a moment after each pet.
@@ -407,6 +415,87 @@ func mayoPetFlavor(n int) string {
 		return "Mayo eternal. You win. (1000)"
 	default:
 		return fmt.Sprintf("*pet pet*  (%d)", n)
+	}
+}
+
+// mayoRoamer is a loose bouncing Mayo spawned by the #234 easter egg: it drifts
+// across the About screen DVD-logo style, bouncing off the edges and spinning.
+type mayoRoamer struct {
+	x, y   float64 // top-left, screen space
+	vx, vy float64 // px/sec
+	angle  float64 // current rotation, degrees
+	spin   float64 // deg/sec
+	size   int32   // drawn square size
+}
+
+// Roaming-Mayo tuning (#234). Everything bounded per the repo's no-unbounded rule.
+const (
+	maxRoamingMayos  = 24                    // cap on the loose-Mayo pile (oldest drops out when full)
+	roamerSize       = int32(72)             // drawn size of a roaming Mayo
+	roamerMinSpeed   = 140.0                 // launch speed floor (px/sec)
+	roamerSpeedRange = 220.0                 // …plus up to this
+	roamerMaxSpin    = 240.0                 // spin range, ± deg/sec
+	roamerDtCap      = 60 * time.Millisecond // clamp dt so leaving + returning to About can't teleport them
+)
+
+// spawnMayoRoamer launches a new bouncing Mayo from the portrait centre. Bounded:
+// at the cap the oldest roamer drops out so the pile can't grow without limit.
+func (a *App) spawnMayoRoamer(from sdl.Rect) {
+	ang := rand.Float64() * 2 * math.Pi
+	speed := roamerMinSpeed + rand.Float64()*roamerSpeedRange
+	r := mayoRoamer{
+		x:    float64(from.X + (from.W-roamerSize)/2),
+		y:    float64(from.Y + (from.H-roamerSize)/2),
+		vx:   math.Cos(ang) * speed,
+		vy:   math.Sin(ang) * speed,
+		spin: (rand.Float64()*2 - 1) * roamerMaxSpin,
+		size: roamerSize,
+	}
+	if len(a.mayoRoamers) >= maxRoamingMayos {
+		copy(a.mayoRoamers, a.mayoRoamers[1:]) // drop the oldest
+		a.mayoRoamers[len(a.mayoRoamers)-1] = r
+		return
+	}
+	a.mayoRoamers = append(a.mayoRoamers, r)
+}
+
+// updateAndDrawRoamers advances every loose Mayo (bouncing off box, spinning) and
+// draws it, confined to box (the About scroll viewport). dt is clamped so a
+// tab-away doesn't fling them; when none are loose it just re-stamps the clock.
+func (a *App) updateAndDrawRoamers(c *Ctx, tex *sdl.Texture, box sdl.Rect) {
+	if len(a.mayoRoamers) == 0 || tex == nil {
+		a.mayoRoamAt = a.now()
+		return
+	}
+	now := a.now()
+	dt := now.Sub(a.mayoRoamAt)
+	a.mayoRoamAt = now
+	if dt < 0 {
+		dt = 0
+	} else if dt > roamerDtCap {
+		dt = roamerDtCap
+	}
+	secs := dt.Seconds()
+	for i := range a.mayoRoamers {
+		r := &a.mayoRoamers[i]
+		r.x += r.vx * secs
+		r.y += r.vy * secs
+		r.angle += r.spin * secs
+		sz := float64(r.size)
+		switch { // bounce horizontally
+		case r.x < float64(box.X):
+			r.x, r.vx = float64(box.X), math.Abs(r.vx)
+		case r.x+sz > float64(box.X+box.W):
+			r.x, r.vx = float64(box.X+box.W)-sz, -math.Abs(r.vx)
+		}
+		switch { // bounce vertically
+		case r.y < float64(box.Y):
+			r.y, r.vy = float64(box.Y), math.Abs(r.vy)
+		case r.y+sz > float64(box.Y+box.H):
+			r.y, r.vy = float64(box.Y+box.H)-sz, -math.Abs(r.vy)
+		}
+		dst := sdl.Rect{X: int32(r.x), Y: int32(r.y), W: r.size, H: r.size}
+		_ = c.Ren.CopyEx(tex, nil, &dst, r.angle, nil, sdl.FLIP_NONE)
 	}
 }
 
