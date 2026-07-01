@@ -111,7 +111,7 @@ asyncao -debug          # pprof on localhost:6060
 
 ## Roadmap
 
-Planned, not yet built:
+Planned, not yet built but future expansions:
 
 - **Eventual mobile support** — native Android / iOS binaries.
 - Eventual Legacy AO2 demo file converter to MP4/Video, for Archival.
