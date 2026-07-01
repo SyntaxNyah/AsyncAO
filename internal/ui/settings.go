@@ -1433,7 +1433,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// and flip between setups. Presets are window fractions, so they travel across sizes.
 	// applyLayoutPreset/applyStagePreset (layoutpresets.go) take effect the same frame.
 	y = a.settingsSection(y, w, "Layout presets")
-	for _, ln := range c.WrapText("Save the default-courtroom layout (Extras → Edit Layout lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. Stored as window fractions, so a preset looks right at any window size.", w-8, 0) {
+	for _, ln := range c.WrapText("Save the default-courtroom layout (Extras → Edit Layout lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. Stored as window fractions, so a preset looks right at any window size.", a.formW-8, 0) {
 		c.Label(pad, y, ln, ColTextDim)
 		y += 16
 	}
@@ -2544,7 +2544,7 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 		a.d.Prefs.SetValidateTLSCerts(next)
 	}
 	y += 24
-	for _, ln := range c.WrapText("Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this on can make them unreachable — it's for power users who want to be sure the encrypted connection is to the real server.", w-8, 0) {
+	for _, ln := range c.WrapText("Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this on can make them unreachable — it's for power users who want to be sure the encrypted connection is to the real server.", a.formW-8, 0) {
 		c.Label(pad, y, ln, ColTextDim)
 		y += 16
 	}
@@ -2559,7 +2559,7 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 		a.d.Manager.SetAssetOrigin(next)
 	}
 	y += 24
-	for _, ln := range c.WrapText("Power users only — only touch this if you know what you're doing. Sends this Origin/Referer on asset downloads, so a server that only serves its base to its own web client will still stream to AsyncAO.", w-8, 0) {
+	for _, ln := range c.WrapText("Power users only — only touch this if you know what you're doing. Sends this Origin/Referer on asset downloads, so a server that only serves its base to its own web client will still stream to AsyncAO.", a.formW-8, 0) {
 		c.Label(pad, y, ln, ColTextDim)
 		y += 16
 	}
