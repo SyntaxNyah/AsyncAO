@@ -19,21 +19,20 @@ _Playtest backlog cleared (2026-06-21) — every Discord/playtest request shippe
 (see `docs/FEATURES.md`). New asks land here. The only milestone left is the
 gamepad track below._
 
-- **More power-user knobs — the menu** (2026-07-01, "add even more"): candidates for
-  the next knob batch, each needing its own care because they live in the network /
-  cache tiers: **404-TTL override** (how long a missing asset stays "missing"),
-  **per-host deadline multiplier** (the TTFB-EWMA 8× cap), **texture-budget
-  override** (T1's share of the 256 MiB), **decode-downscale override** (the
-  automatic CatmullRom display-height target: off / 50–200 %) and a **speaker-swap
-  crossfade** (render: alpha-blend previous→new over N ms — composes with
-  hold-previous). The v1.40.0 batch shipped the renderer + courtroom-core set (three
-  cold-load modes + wait strictness/timeout, hold max-age + tint, shout/preanim/
-  queue/catch-up sliders, the nuke reset).
+- ~~**More power-user knobs — the menu**~~ — **all shipped in v1.40.0** (404 TTL,
+  deadline multiple, downscale override, texture budget, crossfade — see FEATURES),
+  along with the **adaptive frame pacing** that fixed the idle GPU burn. Still open
+  from that conversation: **true damage/dirty-rect rendering** (skip the re-render
+  entirely when nothing changed, not just pace it — SDL2's renderer makes this
+  awkward; realistically part of the SDL3 track below) and a **wake-on-input frame
+  loop** (SDL_WaitEventTimeout instead of poll+sleep, so idle input latency is 0 ms
+  instead of ≤ one idle frame).
 - ~~**Low-quality persistent sprite cache**~~ — **shipped in v1.40.0** (Settings →
-  Power user → "Sprite thumbnail cache", default OFF; see FEATURES). Possible later
-  tweak: a byte-budget auto-prune on the thumbs directory (today: the Clear button +
-  the `asyncao-cache` CLI prune the folder).
-- **Cold-load per-stage profiling** (Nightingale, 2026-07-01) — add per-stage timing
+  Power user → "Sprite thumbnail cache", default OFF; see FEATURES), including the
+  byte-budget auto-prune (oldest-first past the cap).
+- ~~**Cold-load per-stage profiling**~~ — **shipped in v1.40.0**: the debug overlay
+  carries a `cold-load · fetch · decode · upload` EWMA line (F8 / Settings → Power
+  user → Diagnostics). Original note kept for context: add per-stage timing
   (fetch TTFB/transfer · decode+CatmullRom-downscale · upload) to the metrics
   cold-load report so the bottleneck is measured, not asserted. Confirmed by hand:
   the dominant cost for an uncached sprite is **network transfer + latency**, but the
@@ -41,7 +40,9 @@ gamepad track below._
   real secondary cost (the old "blurry huge WebP" was this path pre-fix). Hold-
   previous is **bottleneck-agnostic** — it covers the gap whatever the cause — so it
   was the right first move regardless.
-- **Config presets** (Nightingale feedback, 2026-06-29) — the settings file is
+- ~~**Config presets**~~ — **shipped in v1.40.0** (Settings → Data → "Setting
+  presets": named full-settings bundles, apply-on-restart via the import path).
+  Original ask (Nightingale, 2026-06-29) — the settings file is
   comprehensive (~130 KB once everything's learned), which is great for power
   users but heavy if you just want a couple of named "profiles" to switch
   between. Idea: a small, separate preset layer — pick/save a handful of named

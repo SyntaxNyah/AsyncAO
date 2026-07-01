@@ -2,6 +2,9 @@ package assets
 
 import (
 	"image"
+	"os"
+	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -37,6 +40,7 @@ type ThumbCache struct {
 	enabled atomic.Bool
 	height  atomic.Int32 // target thumb height px (ThumbHeightDefault when 0)
 	quality atomic.Int32 // webp lossy quality (ThumbQualityDefault when 0)
+	budget  atomic.Int64 // store byte budget (thumbBudgetDefaultBytes when 0); prune drops oldest past it
 
 	stored  atomic.Int64 // encodes written (diagnostics)
 	dropped atomic.Int64 // enqueues shed on a full queue (diagnostics)
@@ -78,6 +82,14 @@ const (
 	// thumbFrameMs is the still frame's nominal duration inside the 1-frame
 	// animated-WebP container webpenc produces (never played as animation).
 	thumbFrameMs = 1000
+	// thumbBudgetDefaultBytes bounds the store when the knob is unset: 64 MiB
+	// ≈ ~60k thumbnails at the default params — effectively unlimited in
+	// practice, but a hard ceiling by construction (§17.4).
+	thumbBudgetDefaultBytes = 64 << 20
+	// thumbPruneEvery is how many stores pass between prune sweeps (the sweep
+	// also runs once at open). A dir walk every store would be wasteful; one
+	// every N bounds the overshoot to N × ~1 KB.
+	thumbPruneEvery = 64
 )
 
 // NewThumbCache opens (creating if needed) the thumbnail store rooted at root
@@ -114,6 +126,11 @@ func (t *ThumbCache) SetParams(heightPx, quality int) {
 	t.height.Store(int32(heightPx))
 	t.quality.Store(int32(quality))
 }
+
+// SetBudget caps the store's on-disk bytes (0 = the default 64 MiB). The next
+// prune sweep (at open, then every thumbPruneEvery stores) drops the OLDEST
+// thumbnails until under budget.
+func (t *ThumbCache) SetBudget(bytes int64) { t.budget.Store(bytes) }
 
 // Store shrinks a freshly-decoded sprite's first frame to thumb size and
 // enqueues the small copy for encoding. The shrink runs HERE, synchronously on
@@ -202,11 +219,18 @@ func (t *ThumbCache) params() (h, q int) {
 // — the feature degrades to "no thumbs", never a fault.
 func (t *ThumbCache) encodeWorker() {
 	defer t.done.Done()
+	t.prune() // enforce the byte budget on whatever a previous session left
+	sincePrune := 0
 	for {
 		select {
 		case <-t.stop:
 			return
 		case job := <-t.jobs:
+			sincePrune++
+			if sincePrune >= thumbPruneEvery {
+				sincePrune = 0
+				t.prune()
+			}
 			_, q := t.params()
 			w, h := job.small.Rect.Dx(), job.small.Rect.Dy()
 			enc, err := webpenc.New(w, h, q, thumbFrameMs, false)
@@ -224,6 +248,54 @@ func (t *ThumbCache) encodeWorker() {
 			}
 			t.disk.Put(job.base, blob) // the disk tier's own bounded async writer
 			t.stored.Add(1)
+		}
+	}
+}
+
+// prune enforces the byte budget: when the store's files sum past it, the
+// OLDEST (mtime) are deleted until under. Runs on the encode worker (off every
+// hot path) at open and every thumbPruneEvery stores; a walk of even a full
+// 64 MiB store (~60k tiny files) is an occasional background dir scan, not a
+// per-frame cost. Errors are ignored per-file (a locked file just survives to
+// the next sweep).
+func (t *ThumbCache) prune() {
+	budget := t.budget.Load()
+	if budget <= 0 {
+		budget = thumbBudgetDefaultBytes
+	}
+	root := t.disk.Root()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	type fileAge struct {
+		path string
+		size int64
+		mod  int64
+	}
+	var total int64
+	files := make([]fileAge, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		total += info.Size()
+		files = append(files, fileAge{path: filepath.Join(root, e.Name()), size: info.Size(), mod: info.ModTime().UnixNano()})
+	}
+	if total <= budget {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mod < files[j].mod }) // oldest first
+	for _, f := range files {
+		if total <= budget {
+			break
+		}
+		if os.Remove(f.path) == nil {
+			total -= f.size
 		}
 	}
 }

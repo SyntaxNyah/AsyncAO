@@ -60,6 +60,8 @@ type settingsState struct {
 
 	// importArmed routes the next dropped .json into ImportSettings.
 	importArmed bool
+	// presetName is the "Save as preset" name buffer (setting presets).
+	presetName string
 
 	// macro editor buffers (name, captured key, |-separated lines).
 	macroName  string
@@ -2590,7 +2592,10 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			if th := a.d.Manager.Thumbs(); th != nil {
 				th.SetEnabled(false) // the thumbnail store follows its reset pref (stored thumbs are kept — Clear is separate)
 				th.SetParams(0, 0)
+				th.SetBudget(0)
 			}
+			a.d.Manager.SetAdaptiveLatencyMultiple(0) // back to the ×8 default, live
+			a.applySpriteCap()                        // re-derive the downscale cap from defaults
 			a.warnLine = "Power-user options reset to defaults."
 			a.warnAt = a.now()
 		}
@@ -2662,6 +2667,82 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		}
 		y += 26
 	}
+	c.Label(pad, y+4, "Speaker-swap crossfade:", ColText)
+	cfMs := a.d.Prefs.CrossfadeMs()
+	cftrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+	ncf := int(clampI32(c.Slider("crossfadems", cftrack, int32(cfMs), config.CrossfadeMaxMs), 0, config.CrossfadeMaxMs))
+	if ncf != 0 && ncf < config.CrossfadeMinMs {
+		ncf = 0 // bottom of the track = off (the default hard swap)
+	}
+	c.Tooltip(cftrack, "Blend a sprite change: the new sprite fades in over this long instead of snapping (0 = off). Suppressed by Reduce motion.")
+	cfLabel := "off (hard swap)"
+	if ncf != 0 {
+		cfLabel = formatWaitMs(ncf)
+	}
+	c.Label(pad+200+236, y+4, cfLabel, ColTextDim)
+	if ncf != cfMs {
+		a.d.Prefs.SetCrossfadeMs(ncf)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "WHAT IT DOES: every time the on-stage character or emote changes, the new sprite alpha-fades in over the old one instead of hard-swapping — a softer, film-dissolve feel for the whole courtroom. Purely local eye-candy; a cold (still-loading) sprite starts its fade the moment it arrives, so it composes with the cold-load modes above. (Note: with a crossfade set, the idle frame-rate throttle below stands down so fades always play smoothly.)", ColTextDim)
+	y += 10
+
+	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
+	y = a.settingsSection(y, w, "Frame rate & GPU")
+	y = a.settingsDesc(pad, y, "WHY THIS EXISTS: the client used to redraw the ENTIRE interface every monitor refresh — on a 144/165 Hz laptop panel that's a full-screen GPU composite 165 times a second while showing a static image (spinning fans, +10 °C, \"why is an AO client using a third of my GPU\"). AsyncAO now paces itself ADAPTIVELY instead: full speed the instant you interact or anything animates, a calm idle rate when the screen is genuinely static, and a trickle when another window has focus. Responsiveness is untouched — input snaps it back to full rate immediately; only the wasted redraws are gone.", ColTextDim)
+	y += 6
+	c.Label(pad, y+4, "Active frame rate:", ColText)
+	fcap := a.d.Prefs.FPSCap()
+	fctrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
+	nfc := int(clampI32(c.Slider("fpscap", fctrack, int32(fcap), config.FPSCapMax), 0, config.FPSCapMax))
+	if nfc != 0 && nfc < config.FPSCapMin {
+		nfc = 0 // bottom of the track = the default (60)
+	}
+	c.Tooltip(fctrack, "The ceiling while you're interacting or something is animating (30–240). 60 is plenty for AO; raise it only if you want your high-refresh panel exercised.")
+	fcLabel := "default (60 fps)"
+	if nfc != 0 {
+		fcLabel = strconv.Itoa(nfc) + " fps"
+	}
+	c.Label(pad+210+226, y+4, fcLabel, ColTextDim)
+	if nfc != fcap {
+		a.d.Prefs.SetFPSCap(nfc)
+	}
+	y += 26
+	c.Label(pad, y+4, "Idle frame rate:", ColText)
+	ifps := a.d.Prefs.IdleFPS()
+	iftrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
+	nif := int(clampI32(c.Slider("idlefps", iftrack, int32(ifps), config.IdleFPSMax), 0, config.IdleFPSMax))
+	if nif != 0 && nif < config.IdleFPSMin {
+		nif = 0 // bottom of the track = the default (30)
+	}
+	c.Tooltip(iftrack, "The rate when nothing is animating and you haven't touched anything for a second (10–120). Any input snaps back to the active rate instantly.")
+	ifLabel := "default (30 fps)"
+	if nif != 0 {
+		ifLabel = strconv.Itoa(nif) + " fps"
+	}
+	c.Label(pad+210+226, y+4, ifLabel, ColTextDim)
+	if nif != ifps {
+		a.d.Prefs.SetIdleFPS(nif)
+	}
+	y += 26
+	c.Label(pad, y+4, "Background frame rate:", ColText)
+	ufps := a.d.Prefs.UnfocusedFPS()
+	uftrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
+	nuf := int(clampI32(c.Slider("unfocusedfps", uftrack, int32(ufps), config.UnfocusedFPSMax), 0, config.UnfocusedFPSMax))
+	if nuf != 0 && nuf < config.UnfocusedFPSMin {
+		nuf = 0 // bottom of the track = the default (10)
+	}
+	c.Tooltip(uftrack, "The rate while another window has focus (5–60) — you're not looking, so the client barely sips. Minimized stops drawing entirely, as before.")
+	ufLabel := "default (10 fps)"
+	if nuf != 0 {
+		ufLabel = strconv.Itoa(nuf) + " fps"
+	}
+	c.Label(pad+210+226, y+4, ufLabel, ColTextDim)
+	if nuf != ufps {
+		a.d.Prefs.SetUnfocusedFPS(nuf)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "WHAT COUNTS AS \"ANIMATING\": a message typing out (or queued), shouts/preanims, screen shake & flashes, replays, the Scene Maker, exports, voice, reaction emoji, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you've enabled (rainbow wash, wobble/spin, breathing, weather, a crossfade). Sprite idle loops and animated theme art play at ~10–15 fps by their own frame timings, so the 30 fps idle default never visibly slows them. If some animation you care about looks choppy while idle, raise the idle rate.", ColTextDim)
 	y += 10
 
 	// Sprite thumbnail cache — the persistent low-q stand-in store.
@@ -2714,6 +2795,24 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			if ntq != tq {
 				a.d.Prefs.SetThumbQuality(ntq)
 				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
+			}
+			y += 26
+			c.Label(pad, y+4, "Thumbnail store budget:", ColText)
+			tb := a.d.Prefs.ThumbBudgetMiB()
+			btrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+			ntb := int(clampI32(c.Slider("thumbbudget", btrack, int32(tb), config.ThumbBudgetMaxMiB), 0, config.ThumbBudgetMaxMiB))
+			if ntb != 0 && ntb < config.ThumbBudgetMinMiB {
+				ntb = 0 // bottom of the track = the default (64 MiB)
+			}
+			c.Tooltip(btrack, "Hard cap on the thumbnail folder (8–512 MiB): past it the OLDEST thumbnails auto-delete. 64 MiB ≈ ~60,000 thumbnails.")
+			tbLabel := "default (64 MiB)"
+			if ntb != 0 {
+				tbLabel = strconv.Itoa(ntb) + " MiB"
+			}
+			c.Label(pad+200+236, y+4, tbLabel, ColTextDim)
+			if ntb != tb {
+				a.d.Prefs.SetThumbBudgetMiB(ntb)
+				th.SetBudget(int64(a.d.Prefs.ThumbBudgetMiB()) << 20)
 			}
 			y += 26
 			if c.Button(sdl.Rect{X: pad, Y: y, W: 200, H: btnH}, "Clear stored thumbnails") {
@@ -2841,6 +2940,96 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	y += 24
 	y = a.settingsDesc(pad, y, "Sends this Origin header on the SERVER CONNECTION itself (the WebSocket handshake), for the rare server that only accepts its own web client — e.g. one that requires \"webao.<its domain>\". Applies on the next connect. Wrong value can get the connection refused — leave it blank unless a server demands it.", ColDanger)
+	y += 10
+
+	// Network tuning — the streaming pipeline's self-tuning bounds, exposed.
+	y = a.settingsSection(y, w, "Network tuning")
+	c.Label(pad, y+4, "Missing-asset (404) memory:", ColText)
+	ttl := a.d.Prefs.NotFoundTTLSec()
+	ntrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
+	nttl := int(clampI32(c.Slider("notfoundttl", ntrack, int32(ttl), config.NotFoundTTLMaxSec), 0, config.NotFoundTTLMaxSec))
+	if nttl != 0 && nttl < config.NotFoundTTLMinSec {
+		nttl = 0 // bottom of the track = the default (5 min)
+	}
+	c.Tooltip(ntrack, "How long a 404'd asset stays \"missing\" before AsyncAO will probe it again (30 s – 60 min). Applies on RESTART.")
+	ttlLabel := "default (5 min)"
+	if nttl != 0 {
+		ttlLabel = formatWaitMs(nttl * 1000)
+	}
+	c.Label(pad+210+226, y+4, ttlLabel, ColTextDim)
+	if nttl != ttl {
+		a.d.Prefs.SetNotFoundTTLSec(nttl)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "WHAT IT DOES: when an asset 404s, AsyncAO remembers the miss and won't re-ask the server for it until this long has passed (that's what keeps the client at ~one probe per asset). SHORTER = a server admin uploading missing art shows up sooner; LONGER = fewer wasted probes on servers with genuinely sparse packs. Takes effect on the next restart (the miss-memory is built at startup).", ColTextDim)
+	y += 8
+	c.Label(pad, y+4, "Slow-host patience:", ColText)
+	lm := a.d.Prefs.AdaptiveLatMultiple()
+	ltrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
+	nlm := int(clampI32(c.Slider("latmultiple", ltrack, int32(lm), config.AdaptiveLatMultipleMax), 0, config.AdaptiveLatMultipleMax))
+	if nlm != 0 && nlm < config.AdaptiveLatMultipleMin {
+		nlm = 0 // bottom of the track = the default (×8)
+	}
+	c.Tooltip(ltrack, "Each asset host's request deadline = THIS × its observed response-time average (2–32). Applies immediately.")
+	lmLabel := "default (×8)"
+	if nlm != 0 {
+		lmLabel = "×" + strconv.Itoa(nlm)
+	}
+	c.Label(pad+210+226, y+4, lmLabel, ColTextDim)
+	if nlm != lm {
+		a.d.Prefs.SetAdaptiveLatMultiple(nlm)
+		a.d.Manager.SetAdaptiveLatencyMultiple(a.d.Prefs.AdaptiveLatMultiple())
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "WHAT IT DOES: AsyncAO watches how fast each asset host answers and gives it a deadline of N × that average, so ONE dying mirror can't pin the whole download lane. LOWER = give up on a degrading host sooner (snappier, but jittery Wi-Fi may see spurious timeouts and re-fetches); HIGHER = more patient with slow-but-honest hosts.", ColTextDim)
+	y += 10
+
+	// Decode downscale + texture memory — how big decoded art lives on the GPU.
+	y = a.settingsSection(y, w, "Decode downscale & texture memory")
+	dsOff := a.d.Prefs.SpriteDownscaleOffOn()
+	if next := c.Checkbox(pad, y, "Disable the automatic sprite downscale entirely (keep EXACT source art)", dsOff); next != dsOff {
+		a.d.Prefs.SetSpriteDownscaleOff(next)
+		a.applySpriteCap()
+	}
+	y += 24
+	c.Label(pad, y+4, "Downscale target:", ColText)
+	dsPct := a.d.Prefs.SpriteDownscalePct()
+	dtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
+	nds := int(clampI32(c.Slider("downscalepct", dtrack, int32(dsPct), config.SpriteDownscaleMaxPct), 0, config.SpriteDownscaleMaxPct))
+	if nds != 0 && nds < config.SpriteDownscaleMinPct {
+		nds = 0 // bottom of the track = the default (100 % of the display height)
+	}
+	c.Tooltip(dtrack, "The decode-time downscale shrinks huge art toward your display height; this scales that target (50–200 %). Applies to NEWLY loaded art.")
+	dsLabel := "default (100% of display)"
+	if nds != 0 {
+		dsLabel = strconv.Itoa(nds) + "%"
+	}
+	c.Label(pad+210+226, y+4, dsLabel, ColTextDim)
+	if nds != dsPct {
+		a.d.Prefs.SetSpriteDownscalePct(nds)
+		a.applySpriteCap()
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "WHAT IT DOES: packs increasingly ship HUGE sprites (2000×2000 px); AsyncAO shrinks anything taller than your display ONCE at load, in high quality — sharper than letting the GPU crush it every frame, and it uses a fraction of the memory. LOWER % = smaller textures (easier on weak GPUs / laptops, slightly softer art); HIGHER % or the off-switch = keep more source detail (for heavy Ctrl+wheel zoom users), at real memory cost. Already-loaded art keeps its size until it naturally reloads.", ColTextDim)
+	y += 8
+	c.Label(pad, y+4, "Texture memory budget:", ColText)
+	txb := a.d.Prefs.TexBudgetMiB()
+	xtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
+	ntx := int(clampI32(c.Slider("texbudget", xtrack, int32(txb), config.TexBudgetMaxMiB), 0, config.TexBudgetMaxMiB))
+	if ntx != 0 && ntx < config.TexBudgetMinMiB {
+		ntx = 0 // bottom of the track = the default (64 MiB)
+	}
+	c.Tooltip(xtrack, "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32–128 MiB). Applies on RESTART.")
+	txLabel := "default (64 MiB)"
+	if ntx != 0 {
+		txLabel = strconv.Itoa(ntx) + " MiB"
+	}
+	c.Label(pad+210+226, y+4, txLabel, ColTextDim)
+	if ntx != txb {
+		a.d.Prefs.SetTexBudgetMiB(ntx)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "WHAT IT DOES: the texture cache holds every decoded sprite/background on the GPU; past this budget the least-recently-seen are dropped (and quietly re-fetched if needed again — that's the \"sprite vanished then healed\" moment in a packed room). BIGGER = fewer evictions in crowded rooms, more memory used; SMALLER = lighter footprint, more churn. Lives inside AsyncAO's overall 256 MiB memory promise, hence the cap. Takes effect on the next restart.", ColTextDim)
 	y += 10
 
 	// Character-folder casing.
@@ -3063,11 +3252,63 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	}
 	y += 38
 
+	// Setting presets (Nightingale): named bundles of the WHOLE settings file.
+	y = a.settingsSection(y, w, "Setting presets")
+	y = a.settingsDesc(pad, y, "Save your current settings under a name and switch between saved bundles — e.g. a \"casing\" setup and a \"casual\" one. A preset is a full settings snapshot (passwords are never included); APPLYING one replaces your settings and takes effect on the next restart (this session's further changes won't save, exactly like an import). Your current settings are not lost silently — save them as their own preset first if you want to come back.", ColTextDim)
+	y += 6
+	settings.presetName, _ = c.TextField("presetname", sdl.Rect{X: pad, Y: y, W: 220, H: fieldH}, settings.presetName, "preset name (e.g. casing)")
+	if c.Button(sdl.Rect{X: pad + 228, Y: y, W: 170, H: btnH}, "💾 Save as preset") {
+		savePresetAsync(a, settings.presetName)
+		settings.presetName = ""
+	}
+	y += btnH + 8
+	for _, name := range a.d.Prefs.ListPresets() {
+		c.Label(pad, y+4, name, ColText)
+		if c.Button(sdl.Rect{X: pad + 240, Y: y, W: 150, H: btnH}, "Apply (restart)") {
+			applyPresetAsync(a, name)
+		}
+		if c.Button(sdl.Rect{X: pad + 396, Y: y, W: 30, H: btnH}, "×") {
+			_ = a.d.Prefs.DeletePreset(name)
+		}
+		y += btnH + 4
+	}
+	y += 6
+
 	y = a.settingsSection(y, w, "Other data")
 	y = a.settingsDesc(pad, y, "logs / recordings / screenshots sit next to the AsyncAO program (portable).", ColTextDim)
 	y = a.settingsDesc(pad, y, "The streamed-asset cache is separate — view or clear it under Assets → Cache.", ColTextDim)
 	y += 8
 	return y
+}
+
+// savePresetAsync snapshots the current settings under presets/<name>.json
+// (the export machinery: flush, strip passwords, write) off-thread.
+func savePresetAsync(a *App, name string) {
+	go func() {
+		line := "Preset saved — pick it from the list any time."
+		if err := a.d.Prefs.SavePreset(name); err != nil {
+			line = "Save preset failed: " + err.Error()
+		}
+		select {
+		case settings.ioRes <- line:
+		default:
+		}
+	}()
+}
+
+// applyPresetAsync stages a preset as the live settings (the import machinery:
+// validate + atomic replace, applied on the next start) off-thread.
+func applyPresetAsync(a *App, name string) {
+	go func() {
+		line := "Preset \"" + name + "\" staged — RESTART AsyncAO to apply (changes made this session won't save)."
+		if err := a.d.Prefs.ApplyPreset(name); err != nil {
+			line = "Apply preset failed: " + err.Error()
+		}
+		select {
+		case settings.ioRes <- line:
+		default:
+		}
+	}()
 }
 
 // measureDiskCacheAsync walks the T3 directory off-thread and reports the

@@ -788,6 +788,16 @@ type AssetPreferences struct {
 	ThumbCache             bool                         `json:"thumbCache,omitempty"`           // opt-in persistent low-q sprite thumbnail cache (default OFF)
 	ThumbHeightPxVal       int                          `json:"thumbHeightPx,omitempty"`        // thumbnail height px (0/absent = 64)
 	ThumbQualityVal        int                          `json:"thumbQuality,omitempty"`         // thumbnail webp quality (0/absent = 20)
+	ThumbBudgetMiBVal      int                          `json:"thumbBudgetMiB,omitempty"`       // thumbnail store byte budget, MiB (0/absent = 64; auto-prunes oldest)
+	NotFoundTTLSecVal      int                          `json:"notFoundTTLSec,omitempty"`       // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
+	AdaptiveLatMultipleVal int                          `json:"adaptiveLatMultiple,omitempty"`  // per-host deadline = N × TTFB EWMA (0/absent = 8)
+	SpriteDownscaleOff     bool                         `json:"spriteDownscaleOff,omitempty"`   // disable the automatic decode downscale entirely (default OFF = downscale on)
+	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60)
+	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30)
+	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10)
+	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
+	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
+	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
 	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
 	TypingIndicator        bool                         `json:"typingIndicator"`                // opt-in cross-client "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
@@ -1080,6 +1090,16 @@ type prefsJSON struct {
 	ThumbCache             bool             `json:"thumbCache"`           // low-q sprite thumbnail cache (default OFF)
 	ThumbHeightPx          int              `json:"thumbHeightPx"`        // thumb height px (0 = 64)
 	ThumbQuality           int              `json:"thumbQuality"`         // thumb webp quality (0 = 20)
+	ThumbBudgetMiB         int              `json:"thumbBudgetMiB"`       // thumb store budget MiB (0 = 64)
+	NotFoundTTLSec         int              `json:"notFoundTTLSec"`       // 404 TTL seconds (0 = default; restart)
+	AdaptiveLatMultiple    int              `json:"adaptiveLatMultiple"`  // deadline multiple (0 = 8)
+	SpriteDownscaleOff     bool             `json:"spriteDownscaleOff"`   // disable decode downscale (default OFF)
+	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60)
+	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30)
+	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10)
+	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
+	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
+	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
 	MusicVolMode           bool             `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
 	TypingIndicator        bool             `json:"typingIndicator"`      // opt-in "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
@@ -1770,6 +1790,43 @@ func load(path string) (*AssetPreferences, error) {
 	p.ThumbQualityVal = onDisk.ThumbQuality
 	if p.ThumbQualityVal != 0 {
 		p.ThumbQualityVal = clampPercent(p.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
+	}
+	p.ThumbBudgetMiBVal = onDisk.ThumbBudgetMiB
+	if p.ThumbBudgetMiBVal != 0 {
+		p.ThumbBudgetMiBVal = clampPercent(p.ThumbBudgetMiBVal, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
+	}
+	p.NotFoundTTLSecVal = onDisk.NotFoundTTLSec
+	if p.NotFoundTTLSecVal != 0 {
+		p.NotFoundTTLSecVal = clampPercent(p.NotFoundTTLSecVal, NotFoundTTLMinSec, NotFoundTTLMaxSec)
+	}
+	p.AdaptiveLatMultipleVal = onDisk.AdaptiveLatMultiple
+	if p.AdaptiveLatMultipleVal != 0 {
+		p.AdaptiveLatMultipleVal = clampPercent(p.AdaptiveLatMultipleVal, AdaptiveLatMultipleMin, AdaptiveLatMultipleMax)
+	}
+	p.SpriteDownscaleOff = onDisk.SpriteDownscaleOff
+	p.SpriteDownscalePctVal = onDisk.SpriteDownscalePct
+	if p.SpriteDownscalePctVal != 0 {
+		p.SpriteDownscalePctVal = clampPercent(p.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
+	}
+	p.FPSCapVal = onDisk.FPSCap
+	if p.FPSCapVal != 0 {
+		p.FPSCapVal = clampPercent(p.FPSCapVal, FPSCapMin, FPSCapMax)
+	}
+	p.IdleFPSVal = onDisk.IdleFPS
+	if p.IdleFPSVal != 0 {
+		p.IdleFPSVal = clampPercent(p.IdleFPSVal, IdleFPSMin, IdleFPSMax)
+	}
+	p.UnfocusedFPSVal = onDisk.UnfocusedFPS
+	if p.UnfocusedFPSVal != 0 {
+		p.UnfocusedFPSVal = clampPercent(p.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
+	}
+	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
+	if p.TexBudgetMiBVal != 0 {
+		p.TexBudgetMiBVal = clampPercent(p.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
+	}
+	p.CrossfadeMsVal = onDisk.CrossfadeMs
+	if p.CrossfadeMsVal != 0 {
+		p.CrossfadeMsVal = clampPercent(p.CrossfadeMsVal, CrossfadeMinMs, CrossfadeMaxMs)
 	}
 	p.MusicVolMode = onDisk.MusicVolMode
 	p.ChangelogSeen = onDisk.ChangelogSeen
@@ -5645,6 +5702,60 @@ const (
 	ThumbQualityDefault  = 20  // matches assets.ThumbQualityDefault (pinned by test)
 	ThumbQualityMin      = 5   // maximum crunch
 	ThumbQualityMax      = 60  // still clearly a placeholder
+
+	// Thumb-store byte budget (auto-prunes oldest past it). At ~1 KB each the
+	// 64 MiB default is ~60k thumbnails — effectively "everything you've seen".
+	ThumbBudgetDefaultMiB = 64
+	ThumbBudgetMinMiB     = 8
+	ThumbBudgetMaxMiB     = 512
+
+	// Negative-cache (404) TTL knob: how long a missing asset stays "missing"
+	// before a re-probe is allowed. RESTART-applied (the LRU takes its TTL at
+	// construction). Shorter = a server admin uploading a missing sprite shows
+	// up sooner; longer = fewer wasted probes on genuinely-absent art.
+	NotFoundTTLMinSec = 30
+	NotFoundTTLMaxSec = 3600
+
+	// Per-host adaptive-deadline multiple: request deadline = N × the host's
+	// TTFB EWMA, clamped. Lower sheds a degrading mirror sooner (risking
+	// spurious timeouts on jittery links); higher is more patient.
+	AdaptiveLatMultipleMin = 2
+	AdaptiveLatMultipleMax = 32
+
+	// Decode-downscale override: the automatic CatmullRom cap targets the
+	// display height; this scales that target (100 = default). Lower = smaller
+	// textures (less VRAM, softer sprites); higher keeps more source detail
+	// for heavy zoom users. SpriteDownscaleOff disables the cap entirely.
+	SpriteDownscaleMinPct = 50
+	SpriteDownscaleMaxPct = 200
+
+	// T1 texture byte budget, MiB. RESTART-applied. ⚠ T1 + T2 (128 MiB) live
+	// inside the 256 MiB memory budget — the max leaves headroom for the rest
+	// of the client; raising it trades eviction churn for peak memory.
+	TexBudgetDefaultMiB = 64
+	TexBudgetMinMiB     = 32
+	TexBudgetMaxMiB     = 128
+
+	// Speaker-swap crossfade: the new sprite fades in over N ms (0 = off, the
+	// default hard swap). Suppressed by Reduce motion.
+	CrossfadeMinMs = 50
+	CrossfadeMaxMs = 1000
+
+	// Frame pacing (the GPU-burn fix): the loop used to re-render the whole UI
+	// every monitor refresh — on a 144/165 Hz laptop panel that's a full-screen
+	// GPU composite 165×/sec while IDLE (fans, +10 °C — the playtest report).
+	// Three caps, all sleep-based (vsync stays on for tear-free presents):
+	// foreground (the ceiling), idle (nothing animating), unfocused (another
+	// window has focus; minimized already naps).
+	FPSCapDefault       = 60
+	FPSCapMin           = 30
+	FPSCapMax           = 240
+	IdleFPSDefault      = 30
+	IdleFPSMin          = 10
+	IdleFPSMax          = 120
+	UnfocusedFPSDefault = 10
+	UnfocusedFPSMin     = 5
+	UnfocusedFPSMax     = 60
 )
 
 // SpriteWaitPairOn / SpriteWaitPreanimOn report the wait-mode strictness knobs
@@ -5856,6 +5967,254 @@ func (p *AssetPreferences) SetThumbQuality(q int) {
 	p.markDirty()
 }
 
+// ThumbBudgetMiB reports the thumbnail store's byte budget in MiB
+// (ThumbBudgetDefaultMiB when unset); the store auto-prunes oldest past it.
+func (p *AssetPreferences) ThumbBudgetMiB() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.ThumbBudgetMiBVal == 0 {
+		return ThumbBudgetDefaultMiB
+	}
+	return p.ThumbBudgetMiBVal
+}
+
+// SetThumbBudgetMiB persists the thumb-store budget (0 = default; else clamped).
+func (p *AssetPreferences) SetThumbBudgetMiB(mib int) {
+	if mib != 0 {
+		mib = clampPercent(mib, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
+	}
+	p.mu.Lock()
+	if p.ThumbBudgetMiBVal == mib {
+		p.mu.Unlock()
+		return
+	}
+	p.ThumbBudgetMiBVal = mib
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// NotFoundTTLSec reports the 404 negative-cache TTL override in seconds
+// (0 = the network default; applies on restart).
+func (p *AssetPreferences) NotFoundTTLSec() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.NotFoundTTLSecVal
+}
+
+// SetNotFoundTTLSec persists the 404 TTL (0 = default; else clamped).
+func (p *AssetPreferences) SetNotFoundTTLSec(sec int) {
+	if sec != 0 {
+		sec = clampPercent(sec, NotFoundTTLMinSec, NotFoundTTLMaxSec)
+	}
+	p.mu.Lock()
+	if p.NotFoundTTLSecVal == sec {
+		p.mu.Unlock()
+		return
+	}
+	p.NotFoundTTLSecVal = sec
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AdaptiveLatMultiple reports the per-host deadline multiple (0 = the network
+// default, ×8). Live-applied.
+func (p *AssetPreferences) AdaptiveLatMultiple() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AdaptiveLatMultipleVal
+}
+
+// SetAdaptiveLatMultiple persists the deadline multiple (0 = default; clamped).
+func (p *AssetPreferences) SetAdaptiveLatMultiple(n int) {
+	if n != 0 {
+		n = clampPercent(n, AdaptiveLatMultipleMin, AdaptiveLatMultipleMax)
+	}
+	p.mu.Lock()
+	if p.AdaptiveLatMultipleVal == n {
+		p.mu.Unlock()
+		return
+	}
+	p.AdaptiveLatMultipleVal = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SpriteDownscaleOffOn reports whether the automatic decode downscale is
+// disabled entirely (default OFF = the downscale runs).
+func (p *AssetPreferences) SpriteDownscaleOffOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteDownscaleOff
+}
+
+// SetSpriteDownscaleOff persists the downscale-disable knob.
+func (p *AssetPreferences) SetSpriteDownscaleOff(off bool) {
+	p.setBoolPref(&p.SpriteDownscaleOff, off)
+}
+
+// SpriteDownscalePct reports the decode-downscale target as a % of display
+// height (0 = the default 100 %). Live-applied to NEW decodes.
+func (p *AssetPreferences) SpriteDownscalePct() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteDownscalePctVal
+}
+
+// SetSpriteDownscalePct persists the downscale percent (0 = default; clamped).
+func (p *AssetPreferences) SetSpriteDownscalePct(pct int) {
+	if pct != 0 {
+		pct = clampPercent(pct, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
+	}
+	p.mu.Lock()
+	if p.SpriteDownscalePctVal == pct {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteDownscalePctVal = pct
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// TexBudgetMiB reports the T1 texture byte budget in MiB (TexBudgetDefaultMiB
+// when unset; applies on restart).
+func (p *AssetPreferences) TexBudgetMiB() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.TexBudgetMiBVal == 0 {
+		return TexBudgetDefaultMiB
+	}
+	return p.TexBudgetMiBVal
+}
+
+// SetTexBudgetMiB persists the T1 budget (0 = default; else clamped).
+func (p *AssetPreferences) SetTexBudgetMiB(mib int) {
+	if mib != 0 {
+		mib = clampPercent(mib, TexBudgetMinMiB, TexBudgetMaxMiB)
+	}
+	p.mu.Lock()
+	if p.TexBudgetMiBVal == mib {
+		p.mu.Unlock()
+		return
+	}
+	p.TexBudgetMiBVal = mib
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// CrossfadeMs reports the speaker-swap crossfade duration (0 = off, the default).
+func (p *AssetPreferences) CrossfadeMs() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CrossfadeMsVal
+}
+
+// SetCrossfadeMs persists the crossfade duration (0 = off; else clamped).
+func (p *AssetPreferences) SetCrossfadeMs(ms int) {
+	if ms != 0 {
+		ms = clampPercent(ms, CrossfadeMinMs, CrossfadeMaxMs)
+	}
+	p.mu.Lock()
+	if p.CrossfadeMsVal == ms {
+		p.mu.Unlock()
+		return
+	}
+	p.CrossfadeMsVal = ms
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
+// (defaults when unset): the foreground ceiling, the nothing-is-animating
+// idle rate, and the another-window-has-focus rate.
+func (p *AssetPreferences) FPSCap() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.FPSCapVal == 0 {
+		return FPSCapDefault
+	}
+	return p.FPSCapVal
+}
+
+// SetFPSCap persists the foreground frame cap (0 = default; else clamped).
+func (p *AssetPreferences) SetFPSCap(fps int) {
+	if fps != 0 {
+		fps = clampPercent(fps, FPSCapMin, FPSCapMax)
+	}
+	p.mu.Lock()
+	if p.FPSCapVal == fps {
+		p.mu.Unlock()
+		return
+	}
+	p.FPSCapVal = fps
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// IdleFPS reports the idle frame rate (IdleFPSDefault when unset).
+func (p *AssetPreferences) IdleFPS() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.IdleFPSVal == 0 {
+		return IdleFPSDefault
+	}
+	return p.IdleFPSVal
+}
+
+// SetIdleFPS persists the idle frame rate (0 = default; else clamped).
+func (p *AssetPreferences) SetIdleFPS(fps int) {
+	if fps != 0 {
+		fps = clampPercent(fps, IdleFPSMin, IdleFPSMax)
+	}
+	p.mu.Lock()
+	if p.IdleFPSVal == fps {
+		p.mu.Unlock()
+		return
+	}
+	p.IdleFPSVal = fps
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// UnfocusedFPS reports the unfocused frame rate (UnfocusedFPSDefault when unset).
+func (p *AssetPreferences) UnfocusedFPS() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.UnfocusedFPSVal == 0 {
+		return UnfocusedFPSDefault
+	}
+	return p.UnfocusedFPSVal
+}
+
+// SetUnfocusedFPS persists the unfocused frame rate (0 = default; else clamped).
+func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
+	if fps != 0 {
+		fps = clampPercent(fps, UnfocusedFPSMin, UnfocusedFPSMax)
+	}
+	p.mu.Lock()
+	if p.UnfocusedFPSVal == fps {
+		p.mu.Unlock()
+		return
+	}
+	p.UnfocusedFPSVal = fps
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// EffectiveSpriteCap derives the decode-downscale height cap from the
+// display-derived base and the two power-user knobs: off → 0 (no cap, exact
+// source art), else base × pct/100 (pct 0 = the default 100 %). Pure — shared
+// by the boot path (cmd/asyncao) and the live Settings re-derive so the two
+// can never disagree.
+func EffectiveSpriteCap(base int, off bool, pct int) int {
+	if off || base <= 0 {
+		return 0
+	}
+	if pct == 0 {
+		pct = 100
+	}
+	return base * pct / 100
+}
+
 // ResetPowerUser reverts EVERY power-user option to its shipped default — the
 // "nuke" button on the Power user tab. Scoped strictly to that tab's knobs: TLS
 // validation, both Origin overrides, character-folder casing, the whole renderer
@@ -5882,6 +6241,16 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.ThumbCache = false
 	p.ThumbHeightPxVal = 0
 	p.ThumbQualityVal = 0
+	p.ThumbBudgetMiBVal = 0
+	p.NotFoundTTLSecVal = 0
+	p.AdaptiveLatMultipleVal = 0
+	p.SpriteDownscaleOff = false
+	p.SpriteDownscalePctVal = 0
+	p.TexBudgetMiBVal = 0
+	p.CrossfadeMsVal = 0
+	p.FPSCapVal = 0
+	p.IdleFPSVal = 0
+	p.UnfocusedFPSVal = 0
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()
@@ -6448,6 +6817,107 @@ func (p *AssetPreferences) ExportSettings(destPath string) error {
 		return err
 	}
 	return os.WriteFile(destPath, data, prefsFilePerm)
+}
+
+// --- setting presets (Nightingale: named bundles on top of the one-JSON store) ---
+// A preset IS a settings export (passwords stripped, same loadable shape) saved
+// under presets/<name>.json beside the live file; applying one IS an import
+// (validated, atomic replace, applied on the next start). The full file stays
+// the single source of truth — presets are an opt-in convenience layer, exactly
+// as scoped on the roadmap.
+
+const (
+	// presetsDirName holds the saved bundles beside the live preferences file.
+	presetsDirName = "presets"
+	// presetsCap bounds how many presets may exist (hard rule #4).
+	presetsCap = 16
+	// presetNameMaxLen keeps names filesystem- and UI-friendly.
+	presetNameMaxLen = 32
+)
+
+// PresetsDir is the presets directory path (beside the preferences file).
+func (p *AssetPreferences) PresetsDir() string {
+	return filepath.Join(filepath.Dir(p.path), presetsDirName)
+}
+
+// sanitizePresetName reduces a user-typed preset name to a safe file stem:
+// letters, digits, space, dash, underscore; trimmed; length-capped. Empty
+// after sanitizing = invalid.
+func sanitizePresetName(name string) string {
+	var b strings.Builder
+	for _, r := range strings.TrimSpace(name) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == ' ', r == '-', r == '_':
+			b.WriteRune(r)
+		}
+	}
+	s := strings.TrimSpace(b.String())
+	if len(s) > presetNameMaxLen {
+		s = strings.TrimSpace(s[:presetNameMaxLen])
+	}
+	return s
+}
+
+// SavePreset snapshots the CURRENT settings as a named preset (passwords
+// stripped, like every export). Overwrites a same-named preset; refuses past
+// presetsCap distinct names or an empty/invalid name.
+func (p *AssetPreferences) SavePreset(name string) error {
+	stem := sanitizePresetName(name)
+	if stem == "" {
+		return fmt.Errorf("config: preset name is empty after removing special characters")
+	}
+	existing := p.ListPresets()
+	replacing := false
+	for _, e := range existing {
+		if strings.EqualFold(e, stem) {
+			replacing = true
+			break
+		}
+	}
+	if !replacing && len(existing) >= presetsCap {
+		return fmt.Errorf("config: preset cap reached (%d) — delete one first", presetsCap)
+	}
+	return p.ExportSettings(filepath.Join(p.PresetsDir(), stem+".json"))
+}
+
+// ListPresets names the saved presets (sorted stems; missing dir = none).
+func (p *AssetPreferences) ListPresets() []string {
+	entries, err := os.ReadDir(p.PresetsDir())
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(e.Name(), ".json"))
+		if len(names) >= presetsCap {
+			break // bounded even if the dir was stuffed by hand
+		}
+	}
+	slices.Sort(names) // the package already imports slices, not sort
+	return names
+}
+
+// ApplyPreset stages a saved preset as the live preferences file — the import
+// path: validated, atomically replaced, applied on the NEXT start (the live
+// state has too many mirrors to hot-swap; the caller shows the restart note).
+func (p *AssetPreferences) ApplyPreset(name string) error {
+	stem := sanitizePresetName(name)
+	if stem == "" {
+		return fmt.Errorf("config: bad preset name")
+	}
+	return p.ImportSettings(filepath.Join(p.PresetsDir(), stem+".json"))
+}
+
+// DeletePreset removes a saved preset file.
+func (p *AssetPreferences) DeletePreset(name string) error {
+	stem := sanitizePresetName(name)
+	if stem == "" {
+		return fmt.Errorf("config: bad preset name")
+	}
+	return os.Remove(filepath.Join(p.PresetsDir(), stem+".json"))
 }
 
 // stripExportPasswords blanks every serverWarm[].loginPass in a marshaled

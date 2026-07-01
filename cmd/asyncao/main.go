@@ -127,10 +127,15 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		defer thumbs.Close()
 		thumbs.SetEnabled(prefs.ThumbCacheOn())
 		thumbs.SetParams(prefs.ThumbHeightPx(), prefs.ThumbQuality())
+		thumbs.SetBudget(int64(prefs.ThumbBudgetMiB()) << 20)
 	}
 
-	client := network.NewClient()
+	// Power-user network knobs: the 404 TTL is boot-applied (the negative-cache
+	// LRU takes its TTL at construction — the Settings row says "restart");
+	// the per-host deadline multiple is live but seeded here too.
+	client := network.NewClientNotFoundTTL(time.Duration(prefs.NotFoundTTLSec()) * time.Second)
 	client.SetAssetOrigin(prefs.AssetOriginHeader()) // power-user Origin/CORS override for asset streaming
+	client.SetAdaptiveLatencyMultiple(prefs.AdaptiveLatMultiple())
 	pool := network.NewPool(network.DefaultWorkers)
 	defer pool.Close()
 	decoder := assets.NewDecoderPool(assets.DecodeWorkers())
@@ -203,13 +208,18 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		stageBottomReservePx = 220 // mirrors screens.go default-courtroom chatbox reserve
 		minSpriteCapPx       = 480
 	)
+	spriteCapBase := 0 // display-derived downscale base (0 = display unknown → no cap)
 	if di, err := window.GetDisplayIndex(); err == nil {
 		if db, err := sdl.GetDisplayBounds(di); err == nil && db.H > 0 {
-			spriteCap := int(db.H) - stageBottomReservePx
-			if spriteCap < minSpriteCapPx {
-				spriteCap = int(db.H) // tiny display: keep full height, don't over-shrink
+			spriteCapBase = int(db.H) - stageBottomReservePx
+			if spriteCapBase < minSpriteCapPx {
+				spriteCapBase = int(db.H) // tiny display: keep full height, don't over-shrink
 			}
-			decoder.SetSpriteCap(spriteCap)
+			// Power-user downscale override rides ON TOP of the display-derived
+			// base: a percent scales the target, the off switch drops the cap
+			// entirely (config.EffectiveSpriteCap owns the math; the App re-derives
+			// it live when the Settings sliders move).
+			decoder.SetSpriteCap(config.EffectiveSpriteCap(spriteCapBase, prefs.SpriteDownscaleOffOn(), prefs.SpriteDownscalePct()))
 		}
 	}
 
@@ -232,7 +242,9 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// every alpha Fill opaque. Textures set their own mode at upload.
 	_ = ren.SetDrawBlendMode(sdl.BLENDMODE_BLEND)
 
-	store, err := render.NewTextureStore(ren)
+	// Power-user T1 budget (restart-applied; the default 64 MiB fits the 256 MiB
+	// memory budget alongside T2's 128 MiB).
+	store, err := render.NewTextureStoreBudget(ren, int64(prefs.TexBudgetMiB())<<20)
 	if err != nil {
 		return err
 	}
@@ -319,6 +331,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	})
 	pump := render.NewPump(store, manager, app.IsLiveBase)
 	app.SetPump(pump)
+	app.SetSpriteCapBase(spriteCapBase) // the Settings downscale sliders re-derive the cap from this live
 
 	// Auto UI scale has two inputs, combined per frame in SetAutoScaleFromWindow:
 	// the display DPI (HiDPI laptops) and the WINDOW SIZE (a maximized window on a
@@ -355,11 +368,16 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// that HandleEvent fills, so it must run before the event poll.
 		// (Inverting these erased every click before the UI saw it.)
 		uiCtx.BeginFrame(dt)
+		sawEvent := false
 		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
 			if _, ok := ev.(*sdl.QuitEvent); ok {
 				running = false
 			}
 			uiCtx.HandleEvent(ev)
+			sawEvent = true
+		}
+		if sawEvent {
+			app.NoteInput() // frame pacing: interaction snaps back to full rate
 		}
 
 		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
@@ -382,8 +400,21 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		app.Frame(dt, lw, lh)
 		ren.Present()
 
-		if !vsync {
-			if sleep := frameCap - time.Since(now); sleep > 0 {
+		// Frame pacing (the GPU-burn fix): sleep the frame's remaining budget.
+		// vsync stays on for tear-free presents, but it CANNOT be the throttle —
+		// it ties the loop to the panel (165 Hz laptops burned GPU while idle)
+		// and some windowed present paths don't block at all (the "54% GPU in a
+		// tiny window" report). The budget adapts: full cap while interacting /
+		// animating, the idle rate when the client is a static image, the
+		// unfocused rate when another window has focus. With vsync off this
+		// subsumes the old fixed frameCap sleep (FramePace's foreground cap
+		// defaults to the same 60).
+		pace := app.FramePace(window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0)
+		if !vsync && (pace == 0 || pace > frameCap) {
+			pace = frameCap // -vsync=false keeps at least its old 60 fps ceiling
+		}
+		if pace > 0 {
+			if sleep := pace - time.Since(now); sleep > 0 {
 				time.Sleep(sleep)
 			}
 		}

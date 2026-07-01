@@ -6,9 +6,48 @@ tagged "installed" below.
 
 ## v1.40.0 — 2026-07-01
 
-Renderer polish and power-user knobs, plus a couple of fixes — a big batch of
-playtest feedback. **Thanks to Nightingale for the bulk of these ideas** — the
-renderer work and the optimisation / UX suggestions.
+Renderer polish, a huge power-user knob suite, and a real GPU fix — a big batch
+of playtest feedback. **Thanks to Nightingale for the bulk of these ideas** —
+the renderer work and the optimisation / UX suggestions.
+
+### The GPU fix (adaptive frame pacing)
+- **AsyncAO no longer redraws the world for no reason.** The client used to
+  re-render + present the ENTIRE interface every monitor refresh — on a 144/165 Hz
+  laptop panel that's a full-screen GPU composite 165×/second while showing a
+  static image, and on some windowed present paths it spun even faster (the
+  "using a third of my GPU" / "54% in a tiny window" reports — fans, +10 °C).
+  The loop now paces itself **adaptively**: **full rate (default 60 fps) the
+  instant you interact or anything animates** — typing, messages, shouts,
+  replays, effects — a **calm idle rate (default 30) when the screen is
+  genuinely static**, and a **trickle (default 10) when another window has
+  focus** (minimized still draws nothing). Input snaps it back to full rate
+  immediately, so responsiveness is untouched — a flat low cap would have been
+  a band-aid; this only removes the wasted redraws. All three rates are
+  **sliders** (Settings → Power user → "Frame rate & GPU"), with the full list
+  of what counts as "animating" written next to them.
+
+### More power-user knobs (Settings → Power user, every one explained in-tab)
+- **Network tuning:** the **404 memory** (how long a missing asset stays
+  "missing" before a re-probe — 30 s–60 min, restart-applied) and **slow-host
+  patience** (each host's request deadline = N × its observed response average,
+  ×2–×32, live).
+- **Decode downscale & texture memory:** scale the automatic sprite downscale
+  target (50–200 % of your display height) or **disable it entirely** (exact
+  source art); set the **GPU texture budget** (32–128 MiB, restart-applied).
+- **Speaker-swap crossfade:** the new sprite fades in over the old one
+  (50–1000 ms; 0 = off, the default hard swap). Suppressed by Reduce motion.
+- **Thumbnail store budget:** a hard cap on the thumbnail folder (8–512 MiB) —
+  past it the oldest thumbnails auto-delete.
+- **Cold-load profiler in the debug overlay:** a per-stage line — `fetch ·
+  decode · upload` averages — so "what's the bottleneck on a cold sprite?" is
+  measured, not guessed (Settings → Power user → Diagnostics, or F8).
+- The **⟲ nuke reset** covers all of the new knobs too.
+
+### Setting presets
+- **Save your whole setup under a name and switch between them** (Settings →
+  Data): a "casing" bundle, a "casual" one, a streaming one… A preset is a full
+  settings snapshot (passwords never included); applying one takes effect on the
+  next restart, exactly like an import. Up to 16.
 
 ### Renderer (power user)
 - **Cold-load sprite modes — no more blank flash.** When someone speaks with a

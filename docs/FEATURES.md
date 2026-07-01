@@ -88,6 +88,38 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   but keeps the stored thumbs (Clear is deliberate). Pinned by
   `TestThumbCacheRoundTrip`, `TestThumbStandIn` (draw order + 0-alloc) and
   `TestThumbDefaultsPinned` (config↔assets constants).
+- **Adaptive frame pacing** (the GPU-burn fix; Settings → Power user → "Frame
+  rate & GPU"): the main loop paces to `App.FramePace(focused)` instead of the
+  monitor — **full cap** (default 60) while the user interacts (`NoteInput` +
+  a 1 s grace) or anything animates (`wantsFullRate`: message ceremony/queue,
+  shake/flash, transmitted sprite motion, replay/maker/export/voice, reaction
+  floats, toasts, the pinned second courtroom, the perf HUD, and the
+  always-animating FX prefs), **idle rate** (default 30) when the screen is
+  static, **unfocused rate** (default 10) when another window has focus;
+  minimized still draws nothing. vsync stays on for tear-free presents but is
+  no longer the throttle (165 Hz panels burned GPU idle; some windowed present
+  paths never blocked at all). Sprite idle loops / animated theme art run at
+  ≤ ~15 fps by their own frame delays, so the 30 fps idle floor is visually
+  free. Three sliders, nuke-scoped; `TestFramePace` pins the transitions.
+- **Network / decode / texture / pacing knob suite** (Settings → Power user,
+  each with an in-depth WHAT-IT-DOES): 404 negative-cache TTL
+  (`NewClientNotFoundTTL`, restart-applied), per-host adaptive-deadline
+  multiple (`SetAdaptiveLatencyMultiple`, live), decode-downscale percent /
+  off-switch (`config.EffectiveSpriteCap` → `DecoderPool.SetSpriteCap`, live
+  for new decodes), T1 texture budget (`NewTextureStoreBudget`,
+  restart-applied), speaker-swap **crossfade** (render: the new sprite
+  alpha-ramps over the old — `animState.fadeLeft`, armed in `syncAnim`, ticked
+  only while resident so a cold load never eats the fade; Reduce-motion zeroes
+  it; `TestSpeakerSwapCrossfade` pins blend/completion/0-alloc), thumbnail
+  store **byte budget** (oldest-mtime auto-prune on the encode worker;
+  `TestThumbPruneBudget`), and the **cold-load profiler line** in the debug
+  overlay (fetch TTFB / decode / upload EWMAs — `Client.AvgTTFB`,
+  `DecoderStats.AvgDecode`, `TextureStore.AvgUpload`).
+- **Setting presets** (Settings → Data): named full-settings bundles under
+  `presets/<name>.json` — `SavePreset` rides the password-stripping export,
+  `ApplyPreset` rides the validated atomic import (restart-applied), capped at
+  16, names sanitized (`TestSettingPresets`). User data — the power-user nuke
+  never touches them.
 - **WS-handshake Origin override** (Settings → Power user → Origin overrides): the
   connection-side sibling of the asset Origin — sent on the WebSocket upgrade for
   the rare server that allowlists only its own web client's origin. Blank (default)

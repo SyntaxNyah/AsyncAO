@@ -108,6 +108,34 @@ type TextureStore struct {
 	// manager's prefetch gate, so it carries its own lock.
 	failedMu sync.Mutex
 	failed   map[string]time.Time
+
+	// budget is the T1 byte budget this store was built with (the default, or
+	// the power-user override); error messages and Settings read it.
+	budget int64
+	// uploadNsEWMA tracks Upload wall time (cold-load profiling; the debug
+	// overlay's per-stage line reads it via AvgUpload).
+	uploadNsEWMA atomic.Int64
+}
+
+// AvgUpload reports the texture-upload wall-time EWMA (zero until the first
+// upload) — the upload stage of the cold-load profiling line.
+func (s *TextureStore) AvgUpload() time.Duration { return time.Duration(s.uploadNsEWMA.Load()) }
+
+// uploadEWMAWeightDen is the upload EWMA weight (1/4, matching the decode and
+// TTFB EWMAs so the three profiling stages average alike).
+const uploadEWMAWeightDen = 4
+
+// foldUploadEWMA folds one duration sample into an atomic nanosecond EWMA.
+func foldUploadEWMA(dst *atomic.Int64, sample time.Duration) {
+	if sample <= 0 {
+		return
+	}
+	old := dst.Load()
+	if old == 0 {
+		dst.Store(int64(sample))
+		return
+	}
+	dst.Store(old + (int64(sample)-old)/uploadEWMAWeightDen)
 }
 
 // MarkFailed records that base failed to DECODE and reports whether this is a
@@ -157,14 +185,25 @@ func (s *TextureStore) clearFailed(base string) {
 	s.failedMu.Unlock()
 }
 
-// NewTextureStore builds T1 over the given renderer.
+// NewTextureStore builds T1 over the given renderer at the default budget.
 func NewTextureStore(ren *sdl.Renderer) (*TextureStore, error) {
+	return NewTextureStoreBudget(ren, int64(T1BudgetBytes))
+}
+
+// NewTextureStoreBudget is NewTextureStore with a power-user T1 byte budget
+// (≤ 0 = the default). BOOT-applied by design: resizing a live LRU would be an
+// eviction storm mid-session — the Settings row says "applies on restart".
+func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore, error) {
+	if budgetBytes <= 0 {
+		budgetBytes = int64(T1BudgetBytes)
+	}
 	s := &TextureStore{
 		ren:     ren,
 		pinned:  map[string]*TexturePage{},
 		destroy: make(chan *TexturePage, destroyQueueCap),
+		budget:  budgetBytes,
 	}
-	t1, err := cache.NewByteBudgetLRU(t1MaxEntries, int64(T1BudgetBytes), func(_ string, page *TexturePage, _ int64) {
+	t1, err := cache.NewByteBudgetLRU(t1MaxEntries, budgetBytes, func(_ string, page *TexturePage, _ int64) {
 		s.generation.Add(1) // cached page pointers must re-resolve
 		select {
 		case s.destroy <- page:
@@ -232,10 +271,12 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 // Render thread only. The Decoded is released here.
 func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 	defer d.Release()
+	start := time.Now()
 	page, err := s.buildPage(d)
 	if err != nil {
 		return err
 	}
+	foldUploadEWMA(&s.uploadNsEWMA, time.Since(start)) // cold-load profiling: GPU-upload stage
 	if !s.t1.Add(base, page, page.bytes) {
 		// Bigger than the entire T1 budget: the LRU refuses it, and before
 		// this check the freshly created textures leaked silently — sprites
@@ -243,7 +284,7 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 		// (assets.maxDecodedAssetBytes) keeps this branch unreachable for
 		// well-formed assets; pathological ones get a loud error instead.
 		page.destroy()
-		return fmt.Errorf("render: %s decoded to %d bytes, above the %d-byte T1 budget", base, page.bytes, int64(T1BudgetBytes))
+		return fmt.Errorf("render: %s decoded to %d bytes, above the %d-byte T1 budget", base, page.bytes, s.budget)
 	}
 	s.generation.Add(1)
 	s.clearFailed(base) // it decoded fine — drop any stale negative-cache entry

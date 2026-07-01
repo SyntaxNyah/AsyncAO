@@ -51,6 +51,11 @@ type animState struct {
 	// coldFor accumulates how long this layer's base has been unresolved (ticked
 	// in Update, reset on a hit) — the hold-previous max-age knob reads it.
 	coldFor time.Duration
+	// fadeLeft counts down a speaker-swap crossfade: armed on a base change
+	// (syncAnim) when the knob is on, ticked only while the NEW sprite is
+	// resident (a cold load doesn't consume the fade), and while > 0 the draw
+	// blends lastGood under the alpha-ramped new sprite.
+	fadeLeft time.Duration
 	// thumbKey is this base's precomputed thumb:// T1 key ("" when no base) —
 	// built once in reset so the cold-load miss path stays allocation-free.
 	thumbKey string
@@ -247,6 +252,11 @@ type Viewport struct {
 	// beats the previous character at full quality.
 	thumbSprites bool
 
+	// crossfade (0 = off, the default hard swap) blends a sprite swap: the new
+	// sprite alpha-ramps in over this duration while lastGood draws underneath.
+	// The App mirrors the pref here (and zeroes it under Reduce motion).
+	crossfade time.Duration
+
 	// punchLeft counts down a #12 shout screen-punch; prevShoutOn edge-detects the
 	// shout's appearance in Update so the pop fires once per shout. Viewer-local.
 	punchLeft   time.Duration
@@ -394,6 +404,14 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 func (v *Viewport) syncAnim(a *animState, base string) {
 	if a.base != base {
 		a.reset(base)
+		// Speaker-swap crossfade: arm on the swap when the knob is on and there
+		// is a previous sprite to blend from. lastGood is only ever set by
+		// drawSprite, so shout-bubble layers (drawFill) can never arm a fade.
+		if v.crossfade > 0 && a.lastGood != "" && a.lastGood != base {
+			a.fadeLeft = v.crossfade
+		} else {
+			a.fadeLeft = 0
+		}
 	}
 }
 
@@ -707,14 +725,21 @@ func (v *Viewport) SetHoldDebugTint(on bool) { v.tintHeld = on }
 // path (opt-in pref, default OFF). The App mirrors the pref here per frame.
 func (v *Viewport) SetThumbSprites(on bool) { v.thumbSprites = on }
 
+// SetCrossfade sets the speaker-swap blend duration (0 = off, the default hard
+// swap). The App mirrors the pref here per frame and zeroes it under Reduce
+// motion (a fade is motion).
+func (v *Viewport) SetCrossfade(d time.Duration) { v.crossfade = d }
+
 // ThumbKeyPrefix namespaces thumbnail uploads in T1 (like theme:// — a scheme
 // prefix can never collide with an asset URL base). The ui uploads loaded
 // thumbs under ThumbKeyPrefix+base; animState precomputes the same key.
 const ThumbKeyPrefix = "thumb://"
 
 // tickCold advances a char layer's cold-time (base set but not resolved) and
-// resets it on residency — the hold-previous max-age clock. resolve is
-// generation-cached, so the steady-state cost is pointer math.
+// resets it on residency — the hold-previous max-age clock. It also ticks a
+// running crossfade, but ONLY while resident: a cold load never consumes the
+// fade, so the blend plays from the frame the new sprite first draws. resolve
+// is generation-cached, so the steady-state cost is pointer math.
 func (v *Viewport) tickCold(a *animState, dt time.Duration) {
 	if a.base == "" {
 		a.coldFor = 0
@@ -722,6 +747,9 @@ func (v *Viewport) tickCold(a *animState, dt time.Duration) {
 	}
 	if _, ok := a.resolve(v.store); ok {
 		a.coldFor = 0
+		if a.fadeLeft > 0 {
+			a.fadeLeft -= dt
+		}
 		return
 	}
 	a.coldFor += dt
@@ -804,8 +832,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	// Remember the sprite we're about to draw so a later cold swap can hold it.
 	// (A plain assign is alloc-free; guard it so steady state doesn't even copy the
-	// string header when nothing changed.)
-	if anim.lastGood != anim.base {
+	// string header when nothing changed.) During a crossfade the update WAITS —
+	// lastGood must keep naming the OLD sprite while it draws under the ramp.
+	if anim.fadeLeft <= 0 && anim.lastGood != anim.base {
 		anim.lastGood = anim.base
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
@@ -907,6 +936,23 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if dimPct < 100 {
 		modR, modG, modB = scaleChannel(modR, dimPct), scaleChannel(modG, dimPct), scaleChannel(modB, dimPct)
 		doColorMod = true
+	}
+
+	// Speaker-swap crossfade (power-user, 0 = off): while fadeLeft runs, the
+	// PREVIOUS sprite draws underneath at full strength and this (new) sprite
+	// alpha-ramps in on top — lastGood still names the old sprite here by
+	// design (its update above waits for the fade to end). Resolved by string
+	// through the store like every stand-in; an evicted under-layer just means
+	// the ramp plays over the background.
+	if anim.fadeLeft > 0 && v.crossfade > 0 && anim.lastGood != "" && anim.lastGood != anim.base {
+		if under, okU := v.store.Get(anim.lastGood); okU && len(under.Frames) > 0 {
+			v.drawHeldSprite(ren, layer, under, vp)
+		}
+		ramp := 255 - int(255*anim.fadeLeft/v.crossfade) // 0 → 255 across the fade
+		if ramp < 0 {
+			ramp = 0
+		}
+		alphaMod = uint8(int(alphaMod) * ramp / 255)
 	}
 
 	// #122 idle breathing: fold the breathing scale-pulse into scalePct (applied below) and

@@ -97,6 +97,80 @@ func TestSpriteLoadHoldPrevious(t *testing.T) {
 	}
 }
 
+// TestSpeakerSwapCrossfade pins the crossfade knob: mid-fade, BOTH the old
+// (red) and new (green) sprites contribute to the frame; after the fade only
+// the new one does; off (the default) the swap is a hard cut. 0-alloc during
+// an active fade.
+func TestSpeakerSwapCrossfade(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	if err := store.Upload("red", decodedFixture()); err != nil { // red fixture
+		t.Fatal(err)
+	}
+	green := &assets.Decoded{Width: 64, Height: 64}
+	gimg := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	for p := 0; p < len(gimg.Pix); p += 4 {
+		gimg.Pix[p+1], gimg.Pix[p+3] = 0xFF, 0xFF
+	}
+	green.Frames = append(green.Frames, gimg)
+	green.Delays = append(green.Delays, 50*time.Millisecond)
+	if err := store.Upload("green", green); err != nil {
+		t.Fatal(err)
+	}
+	ct, err := NewCaptureTarget(ren, 512, 384)
+	if err != nil {
+		t.Skipf("capture target unavailable headlessly: %v", err)
+	}
+	defer ct.Close()
+
+	vp := NewViewport(store)
+	vp.SetCrossfade(400 * time.Millisecond)
+	scene := &courtroom.Scene{}
+	scene.Speaker.Visible = true
+	scene.Speaker.Active = "red"
+	centre := func() (r, g uint8) {
+		img, err := ct.Capture(ren, func(dst sdl.Rect) { vp.Render(ren, scene, dst) })
+		if err != nil {
+			t.Skipf("ReadPixels unavailable headlessly: %v", err)
+		}
+		px := img.RGBAAt(256, 192)
+		return px.R, px.G
+	}
+	vp.Update(scene, 16*time.Millisecond) // draw + remember red
+	if r, _ := centre(); r == 0 {
+		t.Fatal("setup: red sprite did not draw")
+	}
+
+	scene.Speaker.Active = "green"         // swap: both resident → the fade arms
+	vp.Update(scene, 200*time.Millisecond) // halfway through the 400ms fade
+	if r, g := centre(); r == 0 || g == 0 {
+		t.Fatalf("mid-fade both sprites must contribute, got r=%d g=%d", r, g)
+	}
+	allocs := testing.AllocsPerRun(100, func() {
+		vp.Render(ren, scene, sdl.Rect{X: 0, Y: 0, W: 512, H: 384})
+	})
+	if allocs != 0 {
+		t.Errorf("crossfade render allocates %.1f/op, want 0", allocs)
+	}
+	vp.Update(scene, 400*time.Millisecond) // fade done
+	if r, g := centre(); r != 0 || g == 0 {
+		t.Errorf("after the fade only the new sprite draws, got r=%d g=%d", r, g)
+	}
+
+	// Off = the default hard cut: swap back with the knob off.
+	vp.SetCrossfade(0)
+	scene.Speaker.Active = "red"
+	vp.Update(scene, 16*time.Millisecond)
+	if r, g := centre(); r == 0 || g != 0 {
+		t.Errorf("crossfade off must hard-swap, got r=%d g=%d", r, g)
+	}
+}
+
 // TestThumbStandIn pins the opt-in thumbnail stand-in: with SetThumbSprites on,
 // a COLD sprite whose thumb:// page is resident draws that low-q stand-in — and
 // it WINS over hold-previous (the right character at low quality beats the

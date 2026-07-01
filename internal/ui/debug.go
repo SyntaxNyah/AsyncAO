@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -30,13 +31,15 @@ func (a *App) drawDebugOverlay(w, h int32) {
 	}
 	// Header + lines, anchored bottom-left; 55% width leaves the right
 	// column (logs/music) readable underneath.
-	panelH := int32(len(lines)+2)*lineH + 2*panelPad // 2 header lines (health + diag)
+	panelH := int32(len(lines)+3)*lineH + 2*panelPad // 3 header lines (health + diag + cold-load)
 	panel := sdl.Rect{X: 0, Y: h - panelH, W: w * 55 / 100, H: panelH}
 	c.Fill(panel, sdl.Color{R: 0, G: 0, B: 0, A: 200})
 	y := panel.Y + panelPad
 	c.LabelClipped(panel.X+6, y, panel.W-12, a.debugHealthLine(), ColAccent)
 	y += lineH
 	c.LabelClipped(panel.X+6, y, panel.W-12, a.debugDiagLine(), ColAccent)
+	y += lineH
+	c.LabelClipped(panel.X+6, y, panel.W-12, a.debugColdLoadLine(), ColAccent)
 	y += lineH
 	for _, ln := range lines {
 		c.LabelClipped(panel.X+6, y, panel.W-12, ln, ColTextDim)
@@ -81,4 +84,22 @@ func (a *App) debugDiagLine() string {
 	}
 	return fmt.Sprintf("diag · tabs %d · area %s · queue %d · ic %d · ooc %d · goroutines %d",
 		len(a.tabs), area, queue, len(a.icLog), len(a.oocLog), runtime.NumGoroutine())
+}
+
+// debugColdLoadLine is the cold-load profiling readout (the playtest "profile
+// the client and nail down the exact bottleneck" ask): per-stage EWMAs of what
+// an UNCACHED asset costs — network fetch (all-hosts TTFB) · decode+downscale ·
+// GPU upload. The big number is the bottleneck. Computed only while the opt-in
+// overlay draws; a stage with no samples yet reads "—".
+func (a *App) debugColdLoadLine() string {
+	fetch, decode := a.d.Manager.ColdLoadStats()
+	up := a.d.Store.AvgUpload()
+	ms := func(d time.Duration) string {
+		if d <= 0 {
+			return "—"
+		}
+		return strconv.FormatFloat(float64(d)/float64(time.Millisecond), 'f', 1, 64) + "ms"
+	}
+	return "cold-load · fetch " + ms(fetch) + " · decode " + ms(decode) + " · upload " + ms(up) +
+		"  (EWMAs; the big one is the bottleneck)"
 }

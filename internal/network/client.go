@@ -107,6 +107,42 @@ type Client struct {
 	// base by Origin / CORS. nil = unset (default). Read on the fetch goroutines,
 	// set from the Security setting; atomic so it's race-free.
 	assetOrigin atomic.Pointer[string]
+
+	// latMultiple overrides adaptiveLatencyMultiple when non-zero (the power-user
+	// per-host deadline knob): each host's request deadline = multiple × its TTFB
+	// EWMA, clamped. Atomic — read per request, set from Settings.
+	latMultiple atomic.Int32
+
+	// globalTTFBNs is the all-hosts TTFB EWMA (cold-load profiling: the debug
+	// overlay's per-stage line wants ONE fetch number, not a per-host map walk).
+	globalTTFBNs atomic.Int64
+}
+
+// AvgTTFB reports the all-hosts time-to-first-byte EWMA (zero until the first
+// sample) — the fetch stage of the cold-load profiling line.
+func (c *Client) AvgTTFB() time.Duration { return time.Duration(c.globalTTFBNs.Load()) }
+
+// Hard bounds the deadline-multiple setter enforces regardless of what the
+// caller sends (a runaway pref can't produce a 0× or 1000× deadline).
+const (
+	latMultipleFloor = 1
+	latMultipleCeil  = 64
+)
+
+// SetAdaptiveLatencyMultiple overrides the per-host adaptive-deadline multiple
+// (0 = the built-in default, adaptiveLatencyMultiple). Live-safe: read per
+// request. Lower = give up on a degrading mirror sooner (snappier shedding,
+// more spurious timeouts on jittery links); higher = more patient.
+func (c *Client) SetAdaptiveLatencyMultiple(n int) {
+	if n != 0 {
+		if n < latMultipleFloor {
+			n = latMultipleFloor
+		}
+		if n > latMultipleCeil {
+			n = latMultipleCeil
+		}
+	}
+	c.latMultiple.Store(int32(n))
 }
 
 // SetAssetOrigin sets the Origin (and Referer) header sent on every asset fetch.
@@ -124,6 +160,18 @@ func (c *Client) SetAssetOrigin(origin string) {
 // NewClient builds a Client with the §7 transport tuning.
 func NewClient() *Client {
 	return newClient(DefaultRequestTimeout, NotFoundCacheTTL)
+}
+
+// NewClientNotFoundTTL is NewClient with a power-user negative-cache TTL (how
+// long a 404 stays "missing" before a re-probe is allowed; 0 = the default
+// NotFoundCacheTTL). BOOT-applied by design: the expirable LRU takes its TTL at
+// construction, and rebuilding it live would flush every cached 404 — the
+// Settings row says "applies on restart".
+func NewClientNotFoundTTL(ttl time.Duration) *Client {
+	if ttl <= 0 {
+		ttl = NotFoundCacheTTL
+	}
+	return newClient(DefaultRequestTimeout, ttl)
 }
 
 // newClient lets tests shrink timeouts and TTLs.
@@ -202,10 +250,16 @@ func (c *Client) Fetch(ctx context.Context, url string) ([]byte, error) {
 // sample — fine for statistics, free of CAS loops on the fetch path.
 type hostLatency struct{ ewmaNs atomic.Int64 }
 
-// observeLatency folds one time-to-first-byte sample into host's EWMA.
+// observeLatency folds one time-to-first-byte sample into host's EWMA (and the
+// all-hosts one the profiling line reads).
 func (c *Client) observeLatency(host string, sample time.Duration) {
 	if host == "" || sample <= 0 {
 		return
+	}
+	if old := c.globalTTFBNs.Load(); old == 0 {
+		c.globalTTFBNs.Store(int64(sample))
+	} else {
+		c.globalTTFBNs.Store(old + (int64(sample)-old)/ewmaWeightDen)
 	}
 	v, _ := c.hostLat.LoadOrStore(host, &hostLatency{})
 	lat := v.(*hostLatency)
@@ -229,7 +283,11 @@ func (c *Client) adaptiveTimeout(host string) time.Duration {
 	if ewma <= 0 {
 		return c.timeout
 	}
-	d := ewma * adaptiveLatencyMultiple
+	multiple := time.Duration(c.latMultiple.Load())
+	if multiple == 0 {
+		multiple = adaptiveLatencyMultiple // the built-in default (power-user knob unset)
+	}
+	d := ewma * multiple
 	if d < adaptiveTimeoutFloor {
 		return adaptiveTimeoutFloor
 	}

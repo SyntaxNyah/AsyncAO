@@ -1031,6 +1031,16 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetThumbCache(true)
 	p.SetThumbHeightPx(120)
 	p.SetThumbQuality(40)
+	p.SetThumbBudgetMiB(256)
+	p.SetNotFoundTTLSec(60)
+	p.SetAdaptiveLatMultiple(4)
+	p.SetSpriteDownscaleOff(true)
+	p.SetSpriteDownscalePct(150)
+	p.SetTexBudgetMiB(96)
+	p.SetCrossfadeMs(300)
+	p.SetFPSCap(144)
+	p.SetIdleFPS(60)
+	p.SetUnfocusedFPS(30)
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1052,8 +1062,20 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.ClipSpritesToStageOn() {
 		t.Error("nuke must restore the sprite mask to its default ON")
 	}
-	if p.ThumbCacheOn() || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault {
+	if p.ThumbCacheOn() || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault || p.ThumbBudgetMiB() != ThumbBudgetDefaultMiB {
 		t.Error("nuke must reset the thumbnail-cache knobs (stored thumbs on disk are untouched — Clear is separate)")
+	}
+	if p.NotFoundTTLSec() != 0 || p.AdaptiveLatMultiple() != 0 {
+		t.Error("nuke must reset the network knobs to their 0 = default sentinels")
+	}
+	if p.SpriteDownscaleOffOn() || p.SpriteDownscalePct() != 0 || p.TexBudgetMiB() != TexBudgetDefaultMiB {
+		t.Error("nuke must reset the downscale + texture-budget knobs")
+	}
+	if p.CrossfadeMs() != 0 {
+		t.Error("nuke must reset the crossfade to off")
+	}
+	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
+		t.Error("nuke must reset the frame-pacing rates to their defaults")
 	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)

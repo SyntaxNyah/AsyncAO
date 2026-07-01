@@ -950,7 +950,13 @@ type sessionState struct {
 	// click arms (label flips), the second fires ResetPowerUser. Cleared on the reveal
 	// toggle and on fire, so a stale arm can't linger across visits.
 	powerNukeArm bool
-	amICMNow     bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// spriteCapBase is the display-derived decode-downscale base height (set once
+	// from cmd/asyncao); the downscale knobs scale it (config.EffectiveSpriteCap).
+	spriteCapBase int
+	// lastInputAt is the most recent SDL input event (frame pacing: full rate
+	// through fullRateInputGrace after any interaction).
+	lastInputAt time.Time
+	amICMNow    bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
@@ -3821,6 +3827,108 @@ func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 	c.popClip(clipPrev, clipHad)
 }
 
+// crossfadeDur is the speaker-swap blend the viewports get: the pref, zeroed
+// under Reduce motion (a fade is motion — the accessibility floor wins).
+func (a *App) crossfadeDur() time.Duration {
+	if a.d.Prefs.ReduceMotion() {
+		return 0
+	}
+	return time.Duration(a.d.Prefs.CrossfadeMs()) * time.Millisecond
+}
+
+// --- frame pacing (the GPU-burn fix) -------------------------------------------
+// The loop used to re-render + present the whole UI every pass: vsync tied it to
+// the monitor (144/165 Hz laptop panels = a full-screen composite 165×/sec while
+// IDLE), and where vsync doesn't block (small windowed presents on some drivers)
+// it spun far past that — the "54% GPU in a tiny window" report. FramePace hands
+// the main loop a per-frame budget instead: the foreground cap while you're
+// interacting or anything is animating, the idle rate when the client is a
+// static image, the unfocused rate when another window has focus. Input snaps it
+// back to full instantly (NoteInput + a grace window), so responsiveness is
+// untouched — a flat low cap would be a band-aid; only wasted redraws go.
+
+// fullRateInputGrace keeps full rate this long after the last input event, so
+// interaction (typing, dragging, scrolling) never feels the idle cap.
+const fullRateInputGrace = 1 * time.Second
+
+// NoteInput marks "the user just interacted" — the main loop calls it whenever
+// an SDL event arrives, and wantsFullRate holds full rate through the grace.
+func (a *App) NoteInput() { a.lastInputAt = time.Now() }
+
+// FramePace returns the frame budget the main loop should pace to (0 = no cap).
+// focused is the window's input-focus state.
+func (a *App) FramePace(focused bool) time.Duration {
+	fps := a.d.Prefs.FPSCap()
+	if !focused {
+		fps = a.d.Prefs.UnfocusedFPS()
+	} else if !a.wantsFullRate() {
+		fps = a.d.Prefs.IdleFPS()
+	}
+	if fps <= 0 {
+		return 0
+	}
+	return time.Second / time.Duration(fps)
+}
+
+// wantsFullRate reports whether something on screen genuinely needs the full
+// frame rate: recent input, a message mid-ceremony (typewriter/preanim/shout/
+// linger — or anything queued), stage effects in flight, an open replay/maker/
+// export/voice surface, floating reactions, a live toast, the pinned second
+// courtroom, the perf HUD's scrolling graph, or an always-animating FX pref
+// (rainbow wash, wobble/spin, idle breathing, weather, a crossfade knob).
+// Everything here degrades gracefully anyway — the idle rate still RENDERS
+// (default 30 fps), so a missed signal means a slightly less smooth ambient
+// animation, never a hang. Sprite idle loops and animated theme art run at
+// ≤ ~15 fps by their own frame delays, so the 30 fps idle floor never visibly
+// costs them.
+func (a *App) wantsFullRate() bool {
+	if time.Since(a.lastInputAt) < fullRateInputGrace {
+		return true
+	}
+	if a.room != nil {
+		if a.room.Phase() != courtroom.PhaseIdle || a.room.QueueLen() > 0 {
+			return true
+		}
+		sc := &a.room.Scene
+		if sc.ShakeLeft > 0 || sc.FlashLeft > 0 {
+			return true
+		}
+		// Transmitted per-sprite motion animates while the room is otherwise idle.
+		for _, st := range [2]courtroom.SpriteStyle{sc.Speaker.Style, sc.Pair.Style} {
+			if st.Active() && (st.Wobble || st.Spin || st.HueCycle || st.Glitch || st.Motion != 0) {
+				return true
+			}
+		}
+	}
+	if a.replaying || a.makerOpen || a.gifExporting || a.showVoice || a.perfHUD {
+		return true
+	}
+	if len(a.reactionFloats) > 0 || a.warnActive() || a.splitActive() {
+		return true
+	}
+	// Local always-animating FX prefs (each opt-in; on = the user chose motion).
+	fx := a.spriteFX()
+	if fx.Rainbow || fx.Wobble || fx.Spin || fx.IdleBreath {
+		return true
+	}
+	if a.d.Prefs.WeatherType() != 0 || a.crossfadeDur() != 0 {
+		return true
+	}
+	return false
+}
+
+// SetSpriteCapBase hands the App the display-derived decode-downscale base
+// (cmd/asyncao computes it once at boot), so the Settings downscale sliders can
+// re-derive the effective cap live via applySpriteCap.
+func (a *App) SetSpriteCapBase(px int) { a.spriteCapBase = px }
+
+// applySpriteCap pushes the effective decode-downscale cap (base × the two
+// power-user knobs) to the decoder pool. Called from the Settings rows; new
+// decodes pick it up (already-decoded textures keep their size until eviction).
+func (a *App) applySpriteCap() {
+	a.d.Manager.SetSpriteCap(config.EffectiveSpriteCap(a.spriteCapBase, a.d.Prefs.SpriteDownscaleOffOn(), a.d.Prefs.SpriteDownscalePct()))
+}
+
 // vpSpriteLoadMode maps the 3-way cold-load pref onto the renderer's 2-way switch:
 // Wait is a MESSAGE-lifecycle gate (courtroom), so for the renderer it falls back to
 // hold-previous — if a hold times out (404 / dead link) the stage keeps the previous
@@ -4695,6 +4803,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)
 		a.d.Viewport.SetThumbSprites(a.d.Prefs.ThumbCacheOn())                                         // opt-in low-q thumbnail stand-ins on the cold miss path
+		a.d.Viewport.SetCrossfade(a.crossfadeDur())                                                    // speaker-swap blend (0 = off; zeroed under Reduce motion)
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
@@ -4706,6 +4815,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)
 			a.splitVP.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())
 			a.splitVP.SetThumbSprites(a.d.Prefs.ThumbCacheOn())
+			a.splitVP.SetCrossfade(a.crossfadeDur())
 			a.splitVP.Update(&a.splitRoom.Scene, dt)
 		}
 		// Music ducking: dip music while a message is on stage (shout/preanim/

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -144,6 +145,28 @@ func (m *Manager) SetAssetOrigin(origin string) {
 	if c, ok := m.client.(*network.Client); ok {
 		c.SetAssetOrigin(origin)
 	}
+}
+
+// SetAdaptiveLatencyMultiple forwards the power-user per-host deadline multiple
+// to the network source (0 = the built-in default). No-op in local mode.
+func (m *Manager) SetAdaptiveLatencyMultiple(n int) {
+	if c, ok := m.client.(*network.Client); ok {
+		c.SetAdaptiveLatencyMultiple(n)
+	}
+}
+
+// SetSpriteCap forwards the decode-downscale height cap to the decoder pool
+// (0 = no cap). Live-safe; applies to NEW decodes.
+func (m *Manager) SetSpriteCap(px int) { m.decoder.SetSpriteCap(px) }
+
+// ColdLoadStats reports the fetch (all-hosts TTFB) and decode (+fit) EWMAs for
+// the debug overlay's cold-load profiling line; the upload stage comes from the
+// render-side TextureStore. Zeroes until samples exist / in local mode.
+func (m *Manager) ColdLoadStats() (fetch, decode time.Duration) {
+	if c, ok := m.client.(*network.Client); ok {
+		fetch = c.AvgTTFB()
+	}
+	return fetch, m.decoder.Stats().AvgDecode
 }
 
 // ManagerDeps wires a Manager; every field is required except T1Contains.

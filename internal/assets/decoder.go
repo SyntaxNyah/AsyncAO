@@ -201,6 +201,27 @@ type DecoderPool struct {
 	// source every frame. atomic because workers read it while the SDL thread
 	// stores it at startup.
 	spriteCap atomic.Int64
+
+	// decodeNsEWMA tracks decode+fit wall time (cold-load profiling; the debug
+	// overlay's per-stage line reads it via Stats).
+	decodeNsEWMA atomic.Int64
+}
+
+// ewmaFoldWeightDen is the EWMA weight (1/4 — matches the network TTFB EWMA)
+// for the cold-load profiling averages.
+const ewmaFoldWeightDen = 4
+
+// foldEWMA folds one duration sample into an atomic nanosecond EWMA.
+func foldEWMA(dst *atomic.Int64, sample time.Duration) {
+	if sample <= 0 {
+		return
+	}
+	old := dst.Load()
+	if old == 0 {
+		dst.Store(int64(sample))
+		return
+	}
+	dst.Store(old + (int64(sample)-old)/ewmaFoldWeightDen)
 }
 
 // NewDecoderPool starts workers decode goroutines (DecodeWorkers() when
@@ -317,12 +338,16 @@ func (p *DecoderPool) runJob(req DecodeRequest) {
 		}
 	}
 
+	start := time.Now()
 	d, err := DecodeImage(req.Data, req.PlayAnimations)
 	if err != nil {
 		p.failed.Add(1)
 	} else {
 		d = p.fit(req.Type, d)
 		p.decoded.Add(1)
+		// Cold-load profiling: fold decode+fit wall time into the EWMA (weight
+		// 1/4, same as the network TTFB) — the debug overlay's per-stage line.
+		foldEWMA(&p.decodeNsEWMA, time.Since(start))
 	}
 	req.OnDone(req.URL, d, err)
 }
@@ -343,11 +368,18 @@ func sniffMaybeAnimated(data []byte) bool {
 type DecoderStats struct {
 	Decoded int64
 	Failed  int64
+	// AvgDecode is the decode+fit wall-time EWMA (cold-load profiling; zero
+	// until the first successful decode).
+	AvgDecode time.Duration
 }
 
 // Stats snapshots the pool's counters.
 func (p *DecoderPool) Stats() DecoderStats {
-	return DecoderStats{Decoded: p.decoded.Load(), Failed: p.failed.Load()}
+	return DecoderStats{
+		Decoded:   p.decoded.Load(),
+		Failed:    p.failed.Load(),
+		AvgDecode: time.Duration(p.decodeNsEWMA.Load()),
+	}
 }
 
 // DecodeImage decodes a payload by sniffed format. Exported for benchmarks

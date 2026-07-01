@@ -2,6 +2,8 @@ package assets
 
 import (
 	"image"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -80,6 +82,48 @@ func TestThumbCacheRoundTrip(t *testing.T) {
 	}
 	if tc.Stored() == 0 {
 		t.Error("Stored() should count the encode")
+	}
+}
+
+// TestThumbPruneBudget pins the auto-prune: files past the byte budget are
+// deleted OLDEST-first until under it. Driven directly against prune() with
+// hand-written files and staggered mtimes (deterministic, no encoder needed).
+func TestThumbPruneBudget(t *testing.T) {
+	tc, err := NewThumbCache(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tc.Close()
+	root := tc.Root()
+	blob := make([]byte, 1024)
+	names := []string{"a.bin", "b.bin", "c.bin", "d.bin"}
+	base := time.Now().Add(-time.Hour)
+	for i, n := range names { // a = oldest … d = newest
+		p := filepath.Join(root, n)
+		if err := os.WriteFile(p, blob, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mt := base.Add(time.Duration(i) * time.Minute)
+		if err := os.Chtimes(p, mt, mt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tc.SetBudget(2048) // room for two files
+	tc.prune()
+	for _, n := range []string{"a.bin", "b.bin"} { // oldest two go
+		if _, err := os.Stat(filepath.Join(root, n)); !os.IsNotExist(err) {
+			t.Errorf("%s should have been pruned (oldest-first)", n)
+		}
+	}
+	for _, n := range []string{"c.bin", "d.bin"} { // newest two stay
+		if _, err := os.Stat(filepath.Join(root, n)); err != nil {
+			t.Errorf("%s should have survived the prune: %v", n, err)
+		}
+	}
+	tc.SetBudget(1 << 30) // huge budget: prune is a no-op
+	tc.prune()
+	if _, err := os.Stat(filepath.Join(root, "d.bin")); err != nil {
+		t.Error("an under-budget store must not be pruned")
 	}
 }
 
