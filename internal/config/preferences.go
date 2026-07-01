@@ -346,6 +346,7 @@ type SpriteStylePref struct {
 	Grayscale bool      `json:"grayscale,omitempty"`
 	Sepia     bool      `json:"sepia,omitempty"`         // #34 warm brown-tone per-pixel variant
 	Posterize bool      `json:"posterize,omitempty"`     // #34 channel-quantise (poster look)
+	Restyle   uint8     `json:"restyle,omitempty"`       // extra per-pixel look picker (0 none, else a courtroom.Variant* redscale/solarize/neon…)
 	Motion    uint8     `json:"motion,omitempty"`        // #34 transmitted movement path (0 none / orbit / bounce / sway / drift)
 	Path      [16]uint8 `json:"motionPath,omitempty"`    // #34 custom drawn path waypoints (packed 4-bit X/Y); a fixed array so SpriteStylePref stays == comparable (size MUST match courtroom maxPathPoints)
 	PathLen   uint8     `json:"motionPathLen,omitempty"` // # active waypoints (0 = none, else 2..16)

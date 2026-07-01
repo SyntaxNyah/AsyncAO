@@ -186,6 +186,38 @@ func TestSpriteStyleVariantFlags(t *testing.T) {
 	}
 }
 
+// TestRestyleWire pins the "10 more restyles" wire (#M5+): a restyle round-trips through the
+// marker (alone, beside another effect, and beside a custom path), it OVERRIDES the classic
+// per-pixel bools in Variant(), and an out-of-range restyle byte is dropped by the decoder — the
+// graceful path for an OLDER client's smaller enum (or a NEWER client's look).
+func TestRestyleWire(t *testing.T) {
+	for _, s := range []SpriteStyle{
+		{Restyle: uint8(VariantNeon)},
+		{Restyle: uint8(VariantSolarize), Tint: true, R: 9},
+		{Restyle: uint8(VariantInfrared), Path: [maxPathPoints]uint8{0x88, 0xF8, 0x8F, 0x08}, PathLen: 4},
+		{Restyle: uint8(VariantRedscale), Sepia: true, Motion: MotionOrbit},
+	} {
+		if got, _ := DecodeSpriteStyle("hi" + s.EncodeMarker()); got != s {
+			t.Errorf("restyle round-trip: got %+v, want %+v", got, s)
+		}
+	}
+
+	// Variant() priority: the restyle picker wins over Invert/Grayscale/Sepia/Posterize.
+	if v := (SpriteStyle{Invert: true, Restyle: uint8(VariantNeon)}).Variant(); v != VariantNeon {
+		t.Errorf("restyle should override the classic bools in Variant(), got %v", v)
+	}
+	if v := (SpriteStyle{Invert: true}).Variant(); v != VariantInvert {
+		t.Errorf("no restyle → the classic bool still wins, got %v", v)
+	}
+
+	// Degradation: an out-of-range restyle byte drops to none but keeps the rest of the style.
+	b := (SpriteStyle{Tint: true, R: 7}).payloadBytes()
+	b = append(b, 0, 0, uint8(VariantCount)+3) // flags2=0, pathLen=0, an unknown restyle id
+	if d := styleFromBytes(b); d.Restyle != 0 || !d.Tint {
+		t.Errorf("over-range restyle: got Restyle=%d Tint=%v, want 0 / true", d.Restyle, d.Tint)
+	}
+}
+
 // TestSpriteStyleLongPath pins the raised custom-path cap (#34): a FULL
 // maxPathPoints-point path round-trips through the marker, and the decoder drops a
 // path whose claimed length exceeds maxPathPoints — which is exactly how an OLDER

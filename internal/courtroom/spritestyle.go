@@ -33,6 +33,10 @@ type SpriteStyle struct {
 	Grayscale bool // luma-weighted desaturate (keep alpha)
 	Sepia     bool // #34 luma → warm brown-tone (keep alpha) — another per-pixel variant
 	Posterize bool // #34 quantise each channel to 4 levels (poster / cel-shaded look)
+	// Restyle is the extra per-pixel look picker (the "10 more restyles" set): 0 = none, else a
+	// VariantEffect in firstRestyle..VariantCount-1 (redscale, solarize, neon…). It OVERRIDES the
+	// Invert/Grayscale/Sepia/Posterize bools when set, and rides ONE extra wire byte (send-on-change).
+	Restyle uint8
 	// Motion is a transmitted, looping movement PATH the sprite follows on the viewport
 	// (#34) — none / orbit / bounce / sway / drift. A 3-bit enum (one path at a time, not a
 	// flag each) packed into the top of flags2. The viewer's ReduceMotion drops it.
@@ -101,7 +105,7 @@ const (
 // renderer leaves the blit byte-identical when there's nothing to do).
 func (s SpriteStyle) Active() bool {
 	return s.Tint || s.Glow || s.Wobble || s.Spin || s.HueCycle || s.FlipH ||
-		s.Invert || s.Grayscale || s.Sepia || s.Posterize || s.Motion != 0 || s.PathLen >= 2 || s.Outline || s.DropShadow || s.Glitch ||
+		s.Invert || s.Grayscale || s.Sepia || s.Posterize || s.Restyle != 0 || s.Motion != 0 || s.PathLen >= 2 || s.Outline || s.DropShadow || s.Glitch ||
 		(s.Opacity != 0 && s.Opacity != 100) ||
 		(s.Brightness != 0 && s.Brightness != 100) ||
 		(s.Scale != 0 && s.Scale != 100) ||
@@ -124,10 +128,34 @@ const (
 	// (white) and drop-shadow (dark). It is NOT a main-sprite variant — Variant() never
 	// returns it; the render asks for it directly when Outline/DropShadow is set.
 	VariantSilhouette
+	// The "10 more restyles" set — extra per-pixel looks pickable ONE at a time via
+	// SpriteStyle.Restyle (a single byte on the wire), cached like the others. New values,
+	// so an older AsyncAO client drops them (renders the plain sprite); AO2/webAO never see
+	// the frame. firstRestyle marks the start of this range.
+	VariantRedscale // 6 — monochrome red (luma in the red channel)
+	VariantGreenscale
+	VariantBluescale
+	VariantSolarize  // invert channels above mid — a psychedelic tone-flip
+	VariantThreshold // 1-bit black & white
+	VariantDuotone   // luma mapped across a fixed two-colour ramp
+	VariantWarm      // push warm (more red, less blue)
+	VariantCool      // push cool (more blue, less red)
+	VariantNeon      // hard contrast punch (vivid)
+	VariantInfrared  // false-colour channel rotate
+	VariantCount     // MUST stay last (UI + decode bound)
 )
 
-// Variant returns the per-pixel variant this style needs (VariantNone when none).
+// firstRestyle is the first VariantEffect in the extra-restyle range (VariantRedscale). Values
+// below it are the original variants (or the internal silhouette); the Restyle picker + the wire
+// only carry firstRestyle..VariantCount-1.
+const firstRestyle = VariantRedscale
+
+// Variant returns the per-pixel variant this style needs (VariantNone when none). The extra-restyle
+// picker (Restyle) wins over the classic Invert/Grayscale/Sepia/Posterize bools when it's set.
 func (s SpriteStyle) Variant() VariantEffect {
+	if s.Restyle >= uint8(firstRestyle) && s.Restyle < uint8(VariantCount) {
+		return VariantEffect(s.Restyle)
+	}
 	switch {
 	case s.Invert:
 		return VariantInvert
@@ -304,11 +332,18 @@ func (s SpriteStyle) payloadBytes() []byte {
 	// Append flags2 when it carries anything OR a custom path follows it: the path region sits
 	// right after flags2, so flags2 must be present to keep byte positions deterministic.
 	hasPath := s.PathLen >= 2 && s.PathLen <= maxPathPoints
-	if flags2 != 0 || hasPath {
+	hasRestyle := s.Restyle != 0 // the "10 more restyles" picker — one extra byte after the path region
+	if flags2 != 0 || hasPath || hasRestyle {
 		b = append(b, flags2)
-		if hasPath { // #34 custom path: [len][len packed-XY bytes] — rides send-on-change only
+		switch {
+		case hasPath: // #34 custom path: [len][len packed-XY bytes] — rides send-on-change only
 			b = append(b, s.PathLen)
 			b = append(b, s.Path[:s.PathLen]...)
+		case hasRestyle:
+			b = append(b, 0) // pathLen 0 (no path) so the restyle byte lands at a deterministic offset
+		}
+		if hasRestyle {
+			b = append(b, s.Restyle)
 		}
 	}
 	return b
@@ -350,10 +385,21 @@ func styleFromBytes(b []byte) SpriteStyle {
 			s.Motion = m
 		}
 		// Custom path (#34) right after flags2: b[10] = point count, b[11:] = packed XY bytes.
+		restyleOff := spriteStyleBytesV2 // if there's no path region at all, nothing follows flags2
 		if len(b) >= spriteStyleBytesV2+1 {
-			if pl := b[spriteStyleBytesV2]; pl >= 2 && pl <= maxPathPoints && len(b) >= spriteStyleBytesV2+1+int(pl) {
+			pl := b[spriteStyleBytesV2]
+			restyleOff = spriteStyleBytesV2 + 1 // past the pathLen byte
+			if pl >= 2 && pl <= maxPathPoints && len(b) >= spriteStyleBytesV2+1+int(pl) {
 				copy(s.Path[:], b[spriteStyleBytesV2+1:spriteStyleBytesV2+1+int(pl)])
 				s.PathLen = pl
+				restyleOff = spriteStyleBytesV2 + 1 + int(pl) // past the path bytes
+			}
+		}
+		// Extra restyle (#M5+): one byte after the path region. An out-of-range value (an older
+		// enum, or a newer client's look) is ignored → the plain sprite, never a wrong variant.
+		if len(b) > restyleOff {
+			if r := b[restyleOff]; r >= uint8(firstRestyle) && r < uint8(VariantCount) {
+				s.Restyle = r
 			}
 		}
 	}

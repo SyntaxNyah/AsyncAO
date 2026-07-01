@@ -34,6 +34,27 @@ func TestApplyVariant(t *testing.T) {
 	}
 }
 
+// TestApplyVariantRestyles pins a few of the "10 more restyles" per-pixel transforms (#M5+):
+// redscale keeps luma in the red channel, threshold is 1-bit, infrared rotates channels — and
+// alpha is always preserved.
+func TestApplyVariantRestyles(t *testing.T) {
+	red := []byte{100, 150, 50, 200}
+	applyVariant(red, uint8(courtroom.VariantRedscale)) // luma 123 → red channel only
+	if want := []byte{123, 0, 0, 200}; !equalBytes(red, want) {
+		t.Errorf("redscale = %v, want %v", red, want)
+	}
+	th := []byte{100, 150, 50, 200}
+	applyVariant(th, uint8(courtroom.VariantThreshold)) // luma 123 ≤ 127 → black, alpha kept
+	if want := []byte{0, 0, 0, 200}; !equalBytes(th, want) {
+		t.Errorf("threshold = %v, want %v", th, want)
+	}
+	ir := []byte{100, 150, 50, 200}
+	applyVariant(ir, uint8(courtroom.VariantInfrared)) // channel rotate R<-G<-B, alpha kept
+	if want := []byte{150, 50, 100, 200}; !equalBytes(ir, want) {
+		t.Errorf("infrared = %v, want %v", ir, want)
+	}
+}
+
 // TestVariantPageInverts is the end-to-end proof: upload a known 2×1 base, build its
 // invert variant, and read the variant's pixels back — confirming the render-target
 // readback yields STRAIGHT (non-premultiplied) pixels (the NONE-blend copy), the

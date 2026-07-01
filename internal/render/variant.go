@@ -163,5 +163,83 @@ func applyVariant(pix []byte, effect uint8) {
 		for i := 0; i+3 < len(pix); i += 4 {
 			pix[i], pix[i+1], pix[i+2] = 255, 255, 255
 		}
+	// --- the "10 more restyles" set (all alloc-free, alpha preserved) ---
+	case courtroom.VariantRedscale:
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i], pix[i+1], pix[i+2] = byte(luma601(pix[i], pix[i+1], pix[i+2])), 0, 0
+		}
+	case courtroom.VariantGreenscale:
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i], pix[i+1], pix[i+2] = 0, byte(luma601(pix[i], pix[i+1], pix[i+2])), 0
+		}
+	case courtroom.VariantBluescale:
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i], pix[i+1], pix[i+2] = 0, 0, byte(luma601(pix[i], pix[i+1], pix[i+2]))
+		}
+	case courtroom.VariantSolarize: // flip channels above mid — a psychedelic tone-swap
+		for i := 0; i+3 < len(pix); i += 4 {
+			for k := 0; k < 3; k++ {
+				if pix[i+k] > 127 {
+					pix[i+k] = 255 - pix[i+k]
+				}
+			}
+		}
+	case courtroom.VariantThreshold: // 1-bit black & white by luma
+		for i := 0; i+3 < len(pix); i += 4 {
+			v := byte(0)
+			if luma601(pix[i], pix[i+1], pix[i+2]) > 127 {
+				v = 255
+			}
+			pix[i], pix[i+1], pix[i+2] = v, v, v
+		}
+	case courtroom.VariantDuotone: // luma across a fixed indigo -> gold ramp
+		for i := 0; i+3 < len(pix); i += 4 {
+			y := luma601(pix[i], pix[i+1], pix[i+2])
+			pix[i] = byte(duoShadowR + (duoHiR-duoShadowR)*y/255)
+			pix[i+1] = byte(duoShadowG + (duoHiG-duoShadowG)*y/255)
+			pix[i+2] = byte(duoShadowB + (duoHiB-duoShadowB)*y/255)
+		}
+	case courtroom.VariantWarm: // push warm: more red, less blue
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i] = clamp8(int(pix[i]) + restyleShift)
+			pix[i+2] = clamp8(int(pix[i+2]) - restyleShift)
+		}
+	case courtroom.VariantCool: // push cool: more blue, less red
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i+2] = clamp8(int(pix[i+2]) + restyleShift)
+			pix[i] = clamp8(int(pix[i]) - restyleShift)
+		}
+	case courtroom.VariantNeon: // hard contrast punch around mid-grey
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i] = clamp8((int(pix[i])-128)*3/2 + 128)
+			pix[i+1] = clamp8((int(pix[i+1])-128)*3/2 + 128)
+			pix[i+2] = clamp8((int(pix[i+2])-128)*3/2 + 128)
+		}
+	case courtroom.VariantInfrared: // false-colour channel rotate (R<-G<-B<-R)
+		for i := 0; i+3 < len(pix); i += 4 {
+			pix[i], pix[i+1], pix[i+2] = pix[i+1], pix[i+2], pix[i]
+		}
 	}
+}
+
+// Restyle pixel-math tuning + helpers (pure, alloc-free).
+const (
+	restyleShift = 32 // warm/cool channel push
+	// Duotone shadow -> highlight ramp (deep indigo -> warm gold).
+	duoShadowR, duoShadowG, duoShadowB = 40, 30, 80
+	duoHiR, duoHiG, duoHiB             = 255, 210, 120
+)
+
+// luma601 is the Rec.601 luma of an RGB triple (integer, 0..255).
+func luma601(r, g, b byte) int { return (299*int(r) + 587*int(g) + 114*int(b)) / 1000 }
+
+// clamp8 clamps an int to a 0..255 byte.
+func clamp8(v int) byte {
+	if v < 0 {
+		return 0
+	}
+	if v > 255 {
+		return 255
+	}
+	return byte(v)
 }

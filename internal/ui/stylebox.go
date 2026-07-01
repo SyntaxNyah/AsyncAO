@@ -162,6 +162,46 @@ func motionName(m uint8) string {
 	}
 }
 
+// restyleName labels the extra per-pixel restyle for its cycle button (the "10 more restyles" set).
+func restyleName(r uint8) string {
+	switch courtroom.VariantEffect(r) {
+	case courtroom.VariantRedscale:
+		return "Restyle: Redscale"
+	case courtroom.VariantGreenscale:
+		return "Restyle: Greenscale"
+	case courtroom.VariantBluescale:
+		return "Restyle: Bluescale"
+	case courtroom.VariantSolarize:
+		return "Restyle: Solarize"
+	case courtroom.VariantThreshold:
+		return "Restyle: Threshold"
+	case courtroom.VariantDuotone:
+		return "Restyle: Duotone"
+	case courtroom.VariantWarm:
+		return "Restyle: Warm"
+	case courtroom.VariantCool:
+		return "Restyle: Cool"
+	case courtroom.VariantNeon:
+		return "Restyle: Neon"
+	case courtroom.VariantInfrared:
+		return "Restyle: Infrared"
+	default:
+		return "Restyle: None"
+	}
+}
+
+// nextRestyle cycles None → the 10 restyles → None (the restyle values are contiguous).
+func nextRestyle(r uint8) uint8 {
+	switch {
+	case r == 0:
+		return uint8(courtroom.VariantRedscale)
+	case r >= uint8(courtroom.VariantInfrared):
+		return 0
+	default:
+		return r + 1
+	}
+}
+
 // minVisibleStyleOpacity floors the Fade slider so a style can't go invisible. It
 // mirrors courtroom.minVisibleOpacity (the render side floors it too); kept here
 // because config/courtroom consts aren't exported.
@@ -203,6 +243,7 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 26                    // glow / wobble / spin row
 	bh += 26                    // invert / grayscale / sepia row
 	bh += 26                    // posterize row (#34)
+	bh += 30                    // extra-restyle cycle (#M5+)
 	bh += 30                    // movement-path cycle (#34)
 	bh += 18 + stylePathBox + 8 // draw-your-own path editor (#34 B2)
 	bh += 30                    // clear button
@@ -427,6 +468,14 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26
+	// Extra restyle (#M5+): cycle one of 10 per-pixel looks (redscale, solarize, neon…), transmitted.
+	rsb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
+	if c.Button(rsb, restyleName(p.Restyle)) {
+		p.Restyle = nextRestyle(p.Restyle)
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	c.Tooltip(rsb, "An extra per-pixel restyle for your sprite — redscale, greenscale, bluescale, solarize, threshold, duotone, warm, cool, neon, infrared. Overrides Invert/Grayscale/Sepia/Posterize; other AsyncAO players see it.")
+	y += 30
 	// Movement path (#34): a transmitted looping motion — None → Orbit → Bounce → Sway →
 	// Drift. Other AsyncAO players see your sprite follow it; it stacks with the effects
 	// above. The viewer's ReduceMotion suppresses it (accessibility).
