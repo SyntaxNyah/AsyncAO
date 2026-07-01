@@ -771,6 +771,12 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 26
 	// Post-processing overlays (#10): retro looks blended over the whole stage. All OFF.
+	// #77 CRT preset leads the group: one toggle for the whole old-TV look.
+	crt := a.d.Prefs.PostCRTOn()
+	if next := c.Checkbox(pad, y, "CRT / retro TV (OFF by default): scanlines + an RGB phosphor grille + vignette — the whole old-TV look in one toggle", crt); next != crt {
+		a.d.Prefs.SetPostCRT(next)
+	}
+	y += 26
 	vig := a.d.Prefs.PostVignetteOn()
 	if next := c.Checkbox(pad, y, "Vignette (OFF by default): darken the stage edges for a cinematic frame", vig); next != vig {
 		a.d.Prefs.SetPostVignette(next)

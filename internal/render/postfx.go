@@ -15,15 +15,20 @@ import (
 // texture regenerates only when the stage size changes — never per frame. Steady-state is
 // 0-alloc: the overlays are reused and the blit destination is a Viewport scratch rect.
 
-// PostFX selects which overlays are active (all OFF/false = no work).
+// PostFX selects which overlays are active (all OFF/false = no work). CRT is a
+// PRESET: it forces scanlines + vignette and adds a phosphor/aperture-grille mask,
+// so one toggle gives the whole retro-TV look. (True barrel curvature + bloom need
+// the whole stage captured to a render target — a perf-sensitive change deferred
+// out of this 0-alloc overlay path.)
 type PostFX struct {
 	Vignette  bool
 	Scanlines bool
 	Grain     bool
+	CRT       bool
 }
 
 // Active reports whether any overlay is on (so applyPostFX returns immediately when off).
-func (p PostFX) Active() bool { return p.Vignette || p.Scanlines || p.Grain }
+func (p PostFX) Active() bool { return p.Vignette || p.Scanlines || p.Grain || p.CRT }
 
 const (
 	vignetteSize   = 256  // the radial-gradient texture is square and stretched to the stage
@@ -35,6 +40,13 @@ const (
 	grainTileSize  = 96   // noise tile (stretched over the stage — random, so blur is fine)
 	grainAlpha     = 26   // subtle
 	grainSeed      = 0x5eed
+
+	// #77 CRT aperture-grille mask: vertical R/G/B phosphor stripes multiplied
+	// (BLENDMODE_MOD) over the stage. phosphorStripeW is each colour stripe's
+	// width (the RGB triad is 3× it); phosphorDim is what the two non-lit channels
+	// of a stripe are multiplied to (out of 255) — high, so the tint stays subtle.
+	phosphorStripeW = 2
+	phosphorDim     = 200
 )
 
 // SetPostFX mirrors the user's post-processing prefs onto the viewport (once per frame, like
@@ -48,13 +60,25 @@ func (v *Viewport) applyPostFX(ren *sdl.Renderer, vp sdl.Rect) {
 	if !v.postFX.Active() {
 		return
 	}
-	if v.postFX.Scanlines {
+	// CRT is a preset that layers scanlines + an aperture-grille mask + vignette,
+	// so those two overlays turn on with it as well as on their own toggles.
+	scan := v.postFX.Scanlines || v.postFX.CRT
+	vign := v.postFX.Vignette || v.postFX.CRT
+	if scan {
 		if t := v.ensureScanlines(ren, vp.W, vp.H); t != nil {
 			v.postRect = vp
 			_ = ren.Copy(t, nil, &v.postRect)
 		}
 	}
-	if v.postFX.Vignette {
+	if v.postFX.CRT {
+		// Phosphor stripes MULTIPLY the stage (+ scanlines) — drawn before the
+		// vignette so the darkened edges sit on top of the grille.
+		if t := v.ensureCRTMask(ren, vp.W, vp.H); t != nil {
+			v.postRect = vp
+			_ = ren.Copy(t, nil, &v.postRect)
+		}
+	}
+	if vign {
 		if v.vignetteTex == nil {
 			v.vignetteTex = buildVignette(ren)
 		}
@@ -103,6 +127,48 @@ func (v *Viewport) ensureScanlines(ren *sdl.Renderer, w, h int32) *sdl.Texture {
 		return nil
 	}
 	v.scanlineTex, v.scanlineW, v.scanlineH = t, w, h
+	return t
+}
+
+// ensureCRTMask returns the W×H aperture-grille mask (vertical R/G/B phosphor
+// stripes), rebuilding it only when the stage size changed. Its blend mode is MOD
+// so blitting MULTIPLIES the stage: the "lit" channel of each stripe stays 255
+// (×1) while the other two scale to phosphorDim/255 — a subtle colour shimmer.
+// 0-alloc after the one-time (per size) build, like the scanline texture.
+func (v *Viewport) ensureCRTMask(ren *sdl.Renderer, w, h int32) *sdl.Texture {
+	if w <= 0 || h <= 0 {
+		return nil
+	}
+	if v.crtMaskTex != nil && v.crtMaskW == w && v.crtMaskH == h {
+		return v.crtMaskTex
+	}
+	if v.crtMaskTex != nil {
+		_ = v.crtMaskTex.Destroy()
+		v.crtMaskTex = nil
+	}
+	pix := make([]byte, int(w)*int(h)*4)
+	for y := 0; y < int(h); y++ {
+		row := y * int(w) * 4
+		for x := 0; x < int(w); x++ {
+			r, g, b := byte(phosphorDim), byte(phosphorDim), byte(phosphorDim)
+			switch (x / phosphorStripeW) % 3 { // which phosphor this column lights
+			case 0:
+				r = 255
+			case 1:
+				g = 255
+			default:
+				b = 255
+			}
+			i := row + x*4
+			pix[i], pix[i+1], pix[i+2], pix[i+3] = r, g, b, 255
+		}
+	}
+	t, err := uploadPixels(ren, pix, w, h)
+	if err != nil {
+		return nil
+	}
+	_ = t.SetBlendMode(sdl.BLENDMODE_MOD) // blit multiplies the stage
+	v.crtMaskTex, v.crtMaskW, v.crtMaskH = t, w, h
 	return t
 }
 
@@ -159,6 +225,10 @@ func (v *Viewport) PurgePostFX() {
 	if v.scanlineTex != nil {
 		_ = v.scanlineTex.Destroy()
 		v.scanlineTex = nil
+	}
+	if v.crtMaskTex != nil {
+		_ = v.crtMaskTex.Destroy()
+		v.crtMaskTex = nil
 	}
 	for i := range v.grainTex {
 		if v.grainTex[i] != nil {

@@ -207,6 +207,10 @@ type Viewport struct {
 	grainTex             [grainFrames]*sdl.Texture
 	grainIdx             int
 	postRect             sdl.Rect // post-FX blit destination scratch
+	// #77 CRT preset: a cached aperture-grille (RGB phosphor stripe) mask blended
+	// MOD over the stage, rebuilt only on a resize like the scanline texture.
+	crtMaskTex         *sdl.Texture
+	crtMaskW, crtMaskH int32
 
 	// #124 particle weather: a bounded pool + one cached dot texture (snow/rain/sakura/embers).
 	particles particleField

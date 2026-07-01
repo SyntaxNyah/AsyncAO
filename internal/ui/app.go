@@ -5216,6 +5216,7 @@ func (a *App) postFX() render.PostFX {
 		Vignette:  a.d.Prefs.PostVignetteOn(),
 		Scanlines: a.d.Prefs.PostScanlinesOn(),
 		Grain:     a.d.Prefs.PostGrainOn(),
+		CRT:       a.d.Prefs.PostCRTOn(),
 	}
 }
 

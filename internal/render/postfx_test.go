@@ -7,9 +7,10 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-// TestPostFXZeroAlloc pins #10: all three overlays on render with zero per-frame heap
-// allocations — the textures build once during AllocsPerRun's warm-up, then every frame is
-// cached blits. (A disabled PostFX is an early return, byte-identical to before.)
+// TestPostFXZeroAlloc pins #10/#77: every overlay on (incl. the CRT preset's phosphor
+// mask) renders with zero per-frame heap allocations — the textures build once during
+// AllocsPerRun's warm-up, then every frame is cached blits. (A disabled PostFX is an early
+// return, byte-identical to before.)
 func TestPostFXZeroAlloc(t *testing.T) {
 	ren, cleanup := newHeadlessRenderer(t)
 	defer cleanup()
@@ -26,7 +27,7 @@ func TestPostFXZeroAlloc(t *testing.T) {
 	vp := NewViewport(store)
 	defer vp.PurgePostFX()
 	scene := benchScene(store)
-	vp.SetPostFX(PostFX{Vignette: true, Scanlines: true, Grain: true})
+	vp.SetPostFX(PostFX{Vignette: true, Scanlines: true, Grain: true, CRT: true})
 	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
 
 	allocs := testing.AllocsPerRun(200, func() {
@@ -46,5 +47,8 @@ func TestPostFXActive(t *testing.T) {
 	}
 	if !(PostFX{Grain: true}).Active() {
 		t.Error("PostFX with grain should be active")
+	}
+	if !(PostFX{CRT: true}).Active() {
+		t.Error("PostFX with the CRT preset should be active")
 	}
 }

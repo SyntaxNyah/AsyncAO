@@ -725,6 +725,7 @@ type AssetPreferences struct {
 	PostVignette           bool                         `json:"postVignette"`
 	PostScanlines          bool                         `json:"postScanlines"`
 	PostGrain              bool                         `json:"postGrain"`
+	PostCRT                bool                         `json:"postCRT"`
 	AnimateEntrances       bool                         `json:"animateEntrances"`
 	DepthOfField           bool                         `json:"depthOfField"`
 	Spotlight              bool                         `json:"spotlight"`         // #121 dim non-speakers (default OFF)
@@ -994,6 +995,7 @@ type prefsJSON struct {
 	PostVignette           bool             `json:"postVignette"`               // default OFF
 	PostScanlines          bool             `json:"postScanlines"`              // default OFF
 	PostGrain              bool             `json:"postGrain"`                  // default OFF
+	PostCRT                bool             `json:"postCRT"`                    // #77 default OFF
 	AnimateEntrances       bool             `json:"animateEntrances"`           // default OFF
 	DepthOfField           bool             `json:"depthOfField"`               // default OFF
 	Spotlight              bool             `json:"spotlight"`                  // #121 default OFF
@@ -1580,6 +1582,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.PostVignette = onDisk.PostVignette
 	p.PostScanlines = onDisk.PostScanlines
 	p.PostGrain = onDisk.PostGrain
+	p.PostCRT = onDisk.PostCRT
 	p.AnimateEntrances = onDisk.AnimateEntrances
 	p.DepthOfField = onDisk.DepthOfField
 	p.Spotlight = onDisk.Spotlight
@@ -3889,11 +3892,13 @@ func (p *AssetPreferences) PostScanlinesOn() bool {
 	return p.PostScanlines
 }
 func (p *AssetPreferences) PostGrainOn() bool { p.mu.RLock(); defer p.mu.RUnlock(); return p.PostGrain }
+func (p *AssetPreferences) PostCRTOn() bool   { p.mu.RLock(); defer p.mu.RUnlock(); return p.PostCRT }
 
-// SetPostVignette / SetPostScanlines / SetPostGrain toggle the overlays.
+// SetPostVignette / SetPostScanlines / SetPostGrain / SetPostCRT toggle the overlays.
 func (p *AssetPreferences) SetPostVignette(on bool)  { p.setBoolPref(&p.PostVignette, on) }
 func (p *AssetPreferences) SetPostScanlines(on bool) { p.setBoolPref(&p.PostScanlines, on) }
 func (p *AssetPreferences) SetPostGrain(on bool)     { p.setBoolPref(&p.PostGrain, on) }
+func (p *AssetPreferences) SetPostCRT(on bool)       { p.setBoolPref(&p.PostCRT, on) }
 
 // AnimateEntrancesOn reports the #9 entrance-slide toggle (OFF by default): a new speaker
 // slides in when they take the stage.
