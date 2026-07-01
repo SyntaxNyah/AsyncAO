@@ -120,10 +120,10 @@ var settings = settingsState{
 // Settings tabs: the screen is split into these categories so it's
 // navigable instead of one long scroll. numSettingsTabs sizes the per-tab
 // scroll array (keep it == len(settingsTabNames)).
-const numSettingsTabs = 11
+const numSettingsTabs = 12
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Reset",
+	"General", "Theme", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Power user", "Reset",
 }
 
 // Tab indices (order matches settingsTabNames).
@@ -138,6 +138,7 @@ const (
 	tabStudio
 	tabData
 	tabVoice
+	tabPowerUser
 	tabReset
 )
 
@@ -168,11 +169,10 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
 	},
 	tabAssets: {
-		// sections: Server format profile, Predictive prefetch, Image formats, Audio
-		// formats, Local assets, Downloader, Cache.
+		// sections: Server format profile, Predictive prefetch, Audio formats, Local
+		// assets, Downloader, Cache. (Image formats moved to Power user.)
 		"server format profile", "format profile", "profile",
 		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
-		"image format", "format", "fallback", "autodetect", "webp", "png", "apng", "avif", "extensions",
 		"audio format", "opus", "ogg", "mp3",
 		"local assets", "local", "mount", "downloader", "download",
 		"cache", "disk cache", "disk", "zstd", "learned formats", "learned", "clear cache",
@@ -195,11 +195,9 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"mod tools", "moderator", "modcall", "ipid",
 	},
 	tabAccount: {
-		// sections: Login, Master list, Security, Discord.
+		// sections: Login, Master list, Discord. (TLS / Asset Origin moved to Power user.)
 		"login", "password", "username", "credential", "auto login",
 		"master list", "server list", "discord", "presence", "rich presence",
-		"security", "tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify",
-		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 	},
 	tabHotkeys: {
 		// sections: Hotkeys, Macros, IC quick-phrases.
@@ -228,6 +226,14 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		// sections: Reset / clear data.
 		"reset", "factory reset", "reset to defaults", "restore defaults", "wipe", "fresh install",
 		"clear settings", "clear data", "defaults",
+	},
+	tabPowerUser: {
+		// sections: TLS, Asset Origin, character-folder casing, Image formats.
+		"power user", "advanced", "expert",
+		"tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify", "security",
+		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
+		"casing", "capital", "capitalize", "capitalise", "uppercase", "lowercase", "character folder", "folder case",
+		"image format", "format", "fallback", "autodetect", "auto-detect", "extensions.json", "extensions", "webp", "png", "apng", "avif", "desk format",
 	},
 }
 
@@ -404,6 +410,8 @@ func (a *App) drawSettings(w, h int32) {
 		y = a.drawSettingsData(y, w)
 	case tabVoice:
 		y = a.drawSettingsVoice(y, w)
+	case tabPowerUser:
+		y = a.drawSettingsPowerUser(y, w)
 	case tabReset:
 		y = a.drawSettingsReset(y, w)
 	}
@@ -482,6 +490,17 @@ func (a *App) settingsSection(y, w int32, title string) int32 {
 // resolve inside the content card. Paired with `pad := a.formX` at the top of
 // every settings draw helper. (See drawSettingsGeneral for the pattern.)
 func (a *App) formW2() int32 { return a.formX + a.formW + scrollBarW }
+
+// settingsDesc draws a WORD-WRAPPED description block at (pad, y) inside the settings card and
+// returns the y past it. Plain c.Label doesn't wrap, so long help text ran off the card; route it
+// through here (wraps to the card content width, 16 px per line — matching the hand-rolled blocks).
+func (a *App) settingsDesc(pad, y int32, text string, col sdl.Color) int32 {
+	for _, ln := range a.ctx.WrapText(text, a.formW-8, 0) {
+		a.ctx.Label(pad, y, ln, col)
+		y += 16
+	}
+	return y
+}
 
 // drawSettingsGeneral: identity + display toggles + UI scale + font chain.
 func (a *App) drawSettingsGeneral(y, _ int32) int32 {
@@ -1657,59 +1676,7 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad+285, y+4, prefetchAggroLabel(a.d.Prefs.PrefetchAggressiveness()), ColAccent)
 	y += 30
 
-	y = a.settingsSection(y, w, "Image formats")
-	global := a.d.Prefs.GlobalFallbacks()
-	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {
-		a.d.Prefs.SetGlobalFallbacks(next)
-		a.d.Resolver.InvalidateAll()
-		a.d.Resolver.WarmFromPrefs()
-	}
-	y += 26
-
-	// Format detection mode: the server manifest by default, manual per-type
-	// probing when off. While auto is ON the manual rows are read-only.
-	auto := a.d.Prefs.FormatAutoDetect()
-	if next := c.Checkbox(pad, y, "Auto-detect formats from the server's extensions.json on connect (recommended)", auto); next != auto {
-		auto = next
-		a.d.Prefs.SetFormatAutoDetect(next)
-		if next {
-			a.manifestFor = "" // re-check the current server right away
-			a.fetchManifestAsync()
-		}
-	}
-	y += 26
-	if auto {
-		c.Label(pad, y, "Manual tuning disabled — formats come from each server's extensions.json (untick above to tune by hand):", ColTextDim)
-		y += 22
-		for _, typeName := range imageTypeNames {
-			c.Label(pad, y+2, typeName+":", ColTextDim)
-			c.Label(pad+110, y+2, strings.Join(a.d.Prefs.FormatOrder(typeName), "  "), ColTextDim)
-			y += 26
-		}
-	} else {
-		c.Label(pad, y, "Image formats probed per asset type (defaults: char_icon=PNG only, everything else=WebP only):", ColTextDim)
-		y += 22
-		for _, typeName := range imageTypeNames {
-			y = a.drawTypeFormatRow(typeName, y)
-		}
-	}
-	y += 8
-
-	// Desk format policy: desks default to WebP and stay WebP even when a
-	// server's extensions.json declares another format for backgrounds (which
-	// desks share) — unless the player opts in here. Reachable in either mode.
-	deskWebP := !a.d.Prefs.DeskFollowsManifest()
-	if next := c.Checkbox(pad, y, "Always use WebP for desks, ignoring the server's extensions.json (recommended)", deskWebP); next != deskWebP {
-		a.d.Prefs.SetDeskFollowManifest(!next)
-		a.d.Prefs.ClearLearnedType(config.TypeDeskOverlay) // re-derive on next probe
-		a.d.Resolver.InvalidateAll()
-		a.d.Resolver.WarmFromPrefs()
-		if !next { // now following the manifest: re-seed from the current server
-			a.manifestFor = ""
-			a.fetchManifestAsync()
-		}
-	}
-	y += 28
+	// (Image formats + desk-format policy moved to the Power user tab.)
 
 	// #127 full-character bundle prefetch (default OFF): pre-grab a character's whole sprite
 	// set on load so emote switches are instant — speculative + low priority, so it sheds
@@ -2537,6 +2504,113 @@ func charCaseLabel(c uint8) string {
 	}
 }
 
+// drawSettingsPowerUser is the advanced Settings card (its own left-sidebar tab): TLS validation,
+// the Asset Origin header, character-folder casing, and image-format tuning — options that can
+// BREAK connections or asset fetching if set wrong. The whole card hides behind a reveal button and
+// its warnings are red. Moved here out of Account / Assets so everyday settings stay uncluttered.
+func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	w := a.formW2()
+
+	y = a.settingsSection(y, w, "Power user (advanced)")
+	y = a.settingsDesc(pad, y, "⚠ Everything here is for people who KNOW what their server needs. The wrong value can make characters fetch 0 assets or stop you connecting. If unsure, leave it all at the defaults.", ColDanger)
+	y += 4
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.showPowerUser)) {
+		a.showPowerUser = !a.showPowerUser
+	}
+	y += btnH + 8
+	if !a.showPowerUser {
+		return y
+	}
+
+	// TLS certificate validation.
+	y = a.settingsSection(y, w, "TLS certificate")
+	validate := a.d.Prefs.ValidateTLSCertsOn()
+	if next := c.Checkbox(pad, y, "Validate server certificates (wss) — OFF by default", validate); next != validate {
+		a.d.Prefs.SetValidateTLSCerts(next)
+	}
+	y += 24
+	y = a.settingsDesc(pad, y, "Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this ON can make them UNREACHABLE — it's only for confirming the encrypted connection is to the real server.", ColDanger)
+	y += 10
+
+	// Asset Origin / CORS override.
+	y = a.settingsSection(y, w, "Asset Origin override")
+	c.Label(pad, y+4, "Origin/Referer:", ColText)
+	origin := a.d.Prefs.AssetOriginHeader()
+	if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 130, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
+		a.d.Prefs.SetAssetOriginHeader(next)
+		a.d.Manager.SetAssetOrigin(next)
+	}
+	y += 24
+	y = a.settingsDesc(pad, y, "Sends this Origin/Referer header on asset downloads, so a server that only serves its base to its own web client still streams to AsyncAO. Wrong value = assets stop loading — leave it blank unless you know you need it.", ColDanger)
+	y += 10
+
+	// Character-folder casing.
+	y = a.settingsSection(y, w, "Character folder casing")
+	cs := a.d.Prefs.AssetCharCasing()
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, charCaseLabel(cs)) {
+		a.d.Prefs.SetAssetCharCasing((cs + 1) % courtroom.CharCaseCount)
+		a.rebuildAssetOrigin() // apply the new casing to the URL builder immediately
+	}
+	y += btnH + 6
+	y = a.settingsDesc(pad, y, "How the character FOLDER is capitalised in asset URLs. The VAST MAJORITY of servers are lowercase (the default) — CHECK YOUR SERVER FIRST: the wrong choice makes EVERY character fetch 0 assets. \"First cap\" = Phoenix wright · \"Title\" = Phoenix Wright.", ColDanger)
+	y += 10
+
+	// Image formats (moved from Assets — it decides the one probe per asset).
+	y = a.settingsSection(y, w, "Image formats")
+	y = a.settingsDesc(pad, y, "Controls WHICH image file types AsyncAO asks a server for, per asset kind (sprites, icons, backgrounds…). AsyncAO streams with exactly one network probe per asset, so this list decides that probe — get it wrong and assets 404 (0 fetched), or extra formats are probed and the cold load slows down.", ColTextDim)
+	y += 6
+	global := a.d.Prefs.GlobalFallbacks()
+	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {
+		a.d.Prefs.SetGlobalFallbacks(next)
+		a.d.Resolver.InvalidateAll()
+		a.d.Resolver.WarmFromPrefs()
+	}
+	y += 24
+	y = a.settingsDesc(pad, y, "When ON, if the preferred format 404s the client tries older ones (WebP → PNG → APNG → GIF): safer (finds more art) but can cost extra probes. When OFF, exactly one format is tried per asset.", ColTextDim)
+	y += 8
+	auto := a.d.Prefs.FormatAutoDetect()
+	if next := c.Checkbox(pad, y, "Auto-detect formats from the server's extensions.json on connect (recommended)", auto); next != auto {
+		auto = next
+		a.d.Prefs.SetFormatAutoDetect(next)
+		if next {
+			a.manifestFor = "" // re-check the current server right away
+			a.fetchManifestAsync()
+		}
+	}
+	y += 24
+	y = a.settingsDesc(pad, y, "Recommended ON: reads the server's extensions.json to learn which formats it actually ships, so the single probe per asset is correct. Turn it OFF only to force the formats by hand below.", ColTextDim)
+	y += 6
+	if auto {
+		y = a.settingsDesc(pad, y, "Manual tuning is disabled while auto-detect is on — the rows below show what each server's extensions.json resolved to. Untick auto-detect above to force them by hand.", ColTextDim)
+		for _, typeName := range imageTypeNames {
+			c.Label(pad, y+2, typeName+":", ColTextDim)
+			c.Label(pad+110, y+2, strings.Join(a.d.Prefs.FormatOrder(typeName), "  "), ColTextDim)
+			y += 26
+		}
+	} else {
+		y = a.settingsDesc(pad, y, "Formats probed per asset type (defaults: char_icon = PNG only, everything else = WebP only). Add only the formats your server actually uses — extra ones just waste probes.", ColTextDim)
+		for _, typeName := range imageTypeNames {
+			y = a.drawTypeFormatRow(typeName, y)
+		}
+	}
+	y += 8
+	deskWebP := !a.d.Prefs.DeskFollowsManifest()
+	if next := c.Checkbox(pad, y, "Always use WebP for desks, ignoring the server's extensions.json (recommended)", deskWebP); next != deskWebP {
+		a.d.Prefs.SetDeskFollowManifest(!next)
+		a.d.Prefs.ClearLearnedType(config.TypeDeskOverlay) // re-derive on next probe
+		a.d.Resolver.InvalidateAll()
+		a.d.Resolver.WarmFromPrefs()
+		if !next { // now following the manifest: re-seed from the current server
+			a.manifestFor = ""
+			a.fetchManifestAsync()
+		}
+	}
+	y += 28
+	return y
+}
+
 func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -2556,59 +2630,6 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	}
 	y += 34
 
-	// Power user (advanced): TLS, Asset Origin, and asset-folder casing. These can BREAK the
-	// connection or asset fetching if set wrong, so they hide behind a reveal button and their
-	// descriptions are drawn in red.
-	y = a.settingsSection(y, w, "Power user (advanced)")
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.showPowerUser)) {
-		a.showPowerUser = !a.showPowerUser
-	}
-	y += btnH + 6
-	for _, ln := range c.WrapText("These can break your connection or make characters fetch 0 assets. Only change them if you KNOW what your server needs.", a.formW-8, 0) {
-		c.Label(pad, y, ln, ColDanger)
-		y += 16
-	}
-	y += 6
-	if a.showPowerUser {
-		validate := a.d.Prefs.ValidateTLSCertsOn()
-		if next := c.Checkbox(pad, y, "Validate server certificates (wss) — OFF by default", validate); next != validate {
-			a.d.Prefs.SetValidateTLSCerts(next)
-		}
-		y += 24
-		for _, ln := range c.WrapText("Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this on can make them unreachable — it's for power users who want to be sure the encrypted connection is to the real server.", a.formW-8, 0) {
-			c.Label(pad, y, ln, ColDanger)
-			y += 16
-		}
-		y += 10
-		// Asset Origin / CORS override — for servers that only serve their asset base to
-		// a specific web client (joinable via a particular https:// link). Mainly power
-		// users; applied live to the streaming client.
-		c.Label(pad, y+4, "Asset Origin override:", ColText)
-		origin := a.d.Prefs.AssetOriginHeader()
-		if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 170, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
-			a.d.Prefs.SetAssetOriginHeader(next)
-			a.d.Manager.SetAssetOrigin(next)
-		}
-		y += 24
-		for _, ln := range c.WrapText("Power users only — only touch this if you know what you're doing. Sends this Origin/Referer on asset downloads, so a server that only serves its base to its own web client will still stream to AsyncAO.", a.formW-8, 0) {
-			c.Label(pad, y, ln, ColDanger)
-			y += 16
-		}
-		y += 10
-		c.Label(pad, y+4, "Character folder casing:", ColText)
-		cs := a.d.Prefs.AssetCharCasing()
-		if c.Button(sdl.Rect{X: pad + 200, Y: y, W: 250, H: btnH}, charCaseLabel(cs)) {
-			a.d.Prefs.SetAssetCharCasing((cs + 1) % courtroom.CharCaseCount)
-			a.rebuildAssetOrigin() // apply the new casing to the URL builder immediately
-		}
-		y += 24
-		for _, ln := range c.WrapText("How the character FOLDER is capitalised in asset URLs. The VAST MAJORITY of servers are lowercase (the default). CHECK YOUR SERVER FIRST: the wrong choice makes EVERY character fetch 0 assets. First cap = Phoenix wright, Title = Phoenix Wright.", a.formW-8, 0) {
-			c.Label(pad, y, ln, ColDanger)
-			y += 16
-		}
-	}
-	y += 6
-
 	// Discord Rich Presence: the whole section lives in a build-tagged file, so a
 	// -tags nodiscord binary compiles it out entirely (no section, no code).
 	y = a.drawDiscordSection(y, w)
@@ -2621,8 +2642,8 @@ func (a *App) drawSettingsHotkeys(y, _ int32) int32 {
 	pad := a.formX
 	w := a.formW2()
 	y = a.settingsSection(y, w, "Hotkeys")
-	c.Label(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
-	y += 24
+	y = a.settingsDesc(pad, y, "Click a binding, then press a key (Ctrl + that key triggers it). Esc cancels · right-click resets to default.", ColTextDim)
+	y += 8
 	// Conflict scan: two actions resolving to the same key clash — only the first
 	// in the dispatch switch fires — so flag both rather than fail silently.
 	hkConflicts := a.hotkeyConflictKeys()
@@ -2702,16 +2723,16 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	w := a.formW2()
 
 	y = a.settingsSection(y, w, "Your settings file")
-	c.Label(pad, y, "Every setting is ONE editable JSON file (asset_preferences.json). Close AsyncAO before hand-editing — it autosaves.", ColTextDim)
-	y += 22
+	y = a.settingsDesc(pad, y, "Every setting is ONE editable JSON file (asset_preferences.json). Close AsyncAO before hand-editing — it autosaves.", ColTextDim)
+	y += 6
 	c.LabelClipped(pad, y, w-pad, configDir(), ColAccent) // the actual path
 	y += 24
 	if config.ConfigIsPortable() {
-		c.Label(pad, y, "Storage: PORTABLE — this folder sits next to AsyncAO, so it travels with a copied install / USB stick.", ColAccent)
+		y = a.settingsDesc(pad, y, "Storage: PORTABLE — this folder sits next to AsyncAO, so it travels with a copied install / USB stick.", ColAccent)
 	} else {
-		c.Label(pad, y, "Storage: OS config folder. Use \"Make portable\" to keep settings beside AsyncAO (USB stick / copy).", ColTextDim)
+		y = a.settingsDesc(pad, y, "Storage: OS config folder. Use \"Make portable\" to keep settings beside AsyncAO (USB stick / copy).", ColTextDim)
 	}
-	y += 24
+	y += 6
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Open config folder") {
 		openConfigFolder()
 	}
@@ -2728,8 +2749,8 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	}
 
 	y = a.settingsSection(y, w, "Back up / move to another PC")
-	c.Label(pad, y, "Export everything (favourites, layout, hotkeys, wardrobes, learned formats — NOT passwords) to a portable JSON; import it elsewhere.", ColTextDim)
-	y += 22
+	y = a.settingsDesc(pad, y, "Export everything (favourites, layout, hotkeys, wardrobes, learned formats — NOT passwords) to a portable JSON; import it elsewhere.", ColTextDim)
+	y += 6
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 180, H: btnH}, "Export settings") {
 		exportSettingsAsync(a)
 	}
@@ -2746,10 +2767,9 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 	y += 38
 
 	y = a.settingsSection(y, w, "Other data")
-	c.Label(pad, y, "logs / recordings / screenshots sit next to the AsyncAO program (portable).", ColTextDim)
-	y += 20
-	c.Label(pad, y, "The streamed-asset cache is separate — view or clear it under Assets → Cache.", ColTextDim)
-	y += 24
+	y = a.settingsDesc(pad, y, "logs / recordings / screenshots sit next to the AsyncAO program (portable).", ColTextDim)
+	y = a.settingsDesc(pad, y, "The streamed-asset cache is separate — view or clear it under Assets → Cache.", ColTextDim)
+	y += 8
 	return y
 }
 
