@@ -3840,7 +3840,7 @@ func (a *App) crossfadeDur() time.Duration {
 // The loop used to re-render + present the whole UI every pass: vsync tied it to
 // the monitor (144/165 Hz laptop panels = a full-screen composite 165×/sec while
 // IDLE), and where vsync doesn't block (small windowed presents on some drivers)
-// it spun far past that — the "54% GPU in a tiny window" report. FramePace hands
+// it spun far past that (high GPU use even in a tiny window). FramePace hands
 // the main loop a per-frame budget instead: the foreground cap while you're
 // interacting or anything is animating, the idle rate when the client is a
 // static image, the unfocused rate when another window has focus. Input snaps it

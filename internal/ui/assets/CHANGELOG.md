@@ -4,6 +4,13 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.40.1 — 2026-07-02
+
+### Text cleanup
+- **The Power-user tab reads like a settings page again.** Every explanation
+  there was rewritten to be short and factual — same options, same defaults,
+  just far less to read.
+
 ## v1.40.0 — 2026-07-01
 
 Renderer polish, a huge power-user knob suite, and a real GPU fix — a big batch
@@ -12,19 +19,17 @@ the renderer work and the optimisation / UX suggestions.
 
 ### The GPU fix (adaptive frame pacing)
 - **AsyncAO no longer redraws the world for no reason.** The client used to
-  re-render + present the ENTIRE interface every monitor refresh — on a 144/165 Hz
-  laptop panel that's a full-screen GPU composite 165×/second while showing a
-  static image, and on some windowed present paths it spun even faster (the
-  "using a third of my GPU" / "54% in a tiny window" reports — fans, +10 °C).
-  The loop now paces itself **adaptively**: **full rate (default 60 fps) the
-  instant you interact or anything animates** — typing, messages, shouts,
-  replays, effects — a **calm idle rate (default 30) when the screen is
-  genuinely static**, and a **trickle (default 10) when another window has
-  focus** (minimized still draws nothing). Input snaps it back to full rate
-  immediately, so responsiveness is untouched — a flat low cap would have been
-  a band-aid; this only removes the wasted redraws. All three rates are
-  **sliders** (Settings → Power user → "Frame rate & GPU"), with the full list
-  of what counts as "animating" written next to them.
+  re-render + present the entire interface every monitor refresh — on a
+  144/165 Hz panel that's a full-screen GPU composite 165×/second while showing
+  a static image, and on some windowed present paths it spun even faster
+  (fans + heat for nothing). The loop now paces itself **adaptively**: **full
+  rate (default 60 fps) the instant you interact or anything animates** —
+  typing, messages, shouts, replays, effects — a **calm idle rate (default 30)
+  when the screen is genuinely static**, and a **trickle (default 10) when
+  another window has focus** (minimized still draws nothing). Input snaps it
+  back to full rate immediately, so responsiveness is untouched — this only
+  removes wasted redraws. All three rates are **sliders** (Settings → Power
+  user → "Frame rate & GPU").
 
 ### More power-user knobs (Settings → Power user, every one explained in-tab)
 - **Network tuning:** the **404 memory** (how long a missing asset stays

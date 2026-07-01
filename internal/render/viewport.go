@@ -185,7 +185,7 @@ func (f SpriteFX) tinted() bool { return f.Rainbow || f.Solid }
 // Values MUST match config.SpriteLoad* (the UI mirrors the pref straight in).
 const (
 	// SpriteLoadBlank draws nothing until the sprite lands — the original
-	// behaviour, and the ~¼-second "flash" EuP reported on a cold sprite.
+	// behaviour, and the ~¼-second cold-sprite "flash" from the playtests.
 	SpriteLoadBlank = 0
 	// SpriteLoadHoldPrev keeps the layer's LAST drawn sprite on screen until the
 	// new one lands (webAO-style), so the stage never blanks between speakers.

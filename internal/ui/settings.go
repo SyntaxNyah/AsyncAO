@@ -2602,11 +2602,11 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.powerNukeArm = !a.powerNukeArm
 	}
 	y += btnH + 6
-	y = a.settingsDesc(pad, y, "Puts every option below back to its out-of-the-box value (TLS off, no Origin overrides, lowercase folders, default renderer + timings, sprite mask on). Image-format probing is left alone — it has its own controls below.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Puts every option on this tab back to its default. Image-format probing keeps its own controls below; saved presets and mod chips are untouched.", ColTextDim)
 	y += 10
 
 	// Renderer — what a character layer shows while a NEW, uncached sprite is still
-	// streaming + decoding (the cold-load flash EuP reported). Purely cosmetic and
+	// streaming + decoding (the playtest cold-load flash report). Purely cosmetic and
 	// fully isolated (it can't break a connection or an asset fetch), but it touches
 	// the render path, so it sits behind the reveal with the rest of the advanced kit.
 	y = a.settingsSection(y, w, "Renderer — uncached sprite loading")
@@ -2616,7 +2616,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.applyTimingToRoom() // the wait gate lives on the live room — flip it now
 	}
 	y += btnH + 6
-	y = a.settingsDesc(pad, y, "When someone speaks with a sprite you haven't downloaded yet, it takes a moment to stream + decode (worse on huge art or high ping). This chooses what happens in that gap. \"Show nothing\" (default) leaves the layer blank until it lands — the current behaviour. \"Keep the previous one\" holds the last sprite on screen until the new one is ready (like webAO). \"Hold the message\" doesn't show the message at all until its sprite is ready (like the desktop AO client) — capped by the timeout below so a broken sprite can only ever delay a message, never stall the room (and if it does time out, the previous sprite is kept rather than flashing blank). All of it is cosmetic only, and completely free once a sprite is cached.", ColTextDim)
+	y = a.settingsDesc(pad, y, "What shows while an uncached sprite is still downloading. Show nothing = blank until it lands. Keep the previous one = the last sprite stays until the new one is ready (webAO-style). Hold the message = the message waits for its sprite, capped by the timeout below (a broken sprite only ever delays it; on timeout the previous sprite is kept). Cosmetic only; no cost once a sprite is cached.", ColTextDim)
 	y += 6
 	if slm == config.SpriteLoadWait {
 		c.Label(pad, y+4, "Max hold per message:", ColText)
@@ -2631,13 +2631,13 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		}
 		y += 26
 		wp := a.d.Prefs.SpriteWaitPairOn()
-		if next := c.Checkbox(pad, y, "Also wait for the PAIR partner's sprite (stricter: a paired scene never shows half-loaded)", wp); next != wp {
+		if next := c.Checkbox(pad, y, "Also wait for the pair partner's sprite", wp); next != wp {
 			a.d.Prefs.SetSpriteWaitPair(next)
 			a.applyTimingToRoom()
 		}
 		y += 24
 		wpre := a.d.Prefs.SpriteWaitPreanimOn()
-		if next := c.Checkbox(pad, y, "Also wait for the PREANIMATION (stricter: an emote's flourish never starts missing)", wpre); next != wpre {
+		if next := c.Checkbox(pad, y, "Also wait for the pre-animation", wpre); next != wpre {
 			a.d.Prefs.SetSpriteWaitPreanim(next)
 			a.applyTimingToRoom()
 		}
@@ -2662,7 +2662,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		}
 		y += 26
 		tint := a.d.Prefs.HoldDebugTintOn()
-		if next := c.Checkbox(pad, y, "Tint stand-in sprites amber (diagnostics: SEE when the previous sprite is bridging a load)", tint); next != tint {
+		if next := c.Checkbox(pad, y, "Tint stand-in sprites amber (diagnostic: shows when a stand-in is bridging a load)", tint); next != tint {
 			a.d.Prefs.SetHoldDebugTint(next)
 		}
 		y += 26
@@ -2684,12 +2684,12 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.d.Prefs.SetCrossfadeMs(ncf)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "WHAT IT DOES: every time the on-stage character or emote changes, the new sprite alpha-fades in over the old one instead of hard-swapping — a softer, film-dissolve feel for the whole courtroom. Purely local eye-candy; a cold (still-loading) sprite starts its fade the moment it arrives, so it composes with the cold-load modes above. (Note: with a crossfade set, the idle frame-rate throttle below stands down so fades always play smoothly.)", ColTextDim)
+	y = a.settingsDesc(pad, y, "Fades the new sprite in over the old on every character/emote change instead of hard-swapping. Local only; a still-loading sprite starts its fade when it arrives. With a crossfade set, the idle frame-rate cap stands down so fades stay smooth.", ColTextDim)
 	y += 10
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
-	y = a.settingsDesc(pad, y, "WHY THIS EXISTS: the client used to redraw the ENTIRE interface every monitor refresh — on a 144/165 Hz laptop panel that's a full-screen GPU composite 165 times a second while showing a static image (spinning fans, +10 °C, \"why is an AO client using a third of my GPU\"). AsyncAO now paces itself ADAPTIVELY instead: full speed the instant you interact or anything animates, a calm idle rate when the screen is genuinely static, and a trickle when another window has focus. Responsiveness is untouched — input snaps it back to full rate immediately; only the wasted redraws are gone.", ColTextDim)
+	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly.", ColTextDim)
 	y += 6
 	c.Label(pad, y+4, "Active frame rate:", ColText)
 	fcap := a.d.Prefs.FPSCap()
@@ -2698,7 +2698,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	if nfc != 0 && nfc < config.FPSCapMin {
 		nfc = 0 // bottom of the track = the default (60)
 	}
-	c.Tooltip(fctrack, "The ceiling while you're interacting or something is animating (30–240). 60 is plenty for AO; raise it only if you want your high-refresh panel exercised.")
+	c.Tooltip(fctrack, "The ceiling while interacting or animating (30–240). 60 is plenty for AO.")
 	fcLabel := "default (60 fps)"
 	if nfc != 0 {
 		fcLabel = strconv.Itoa(nfc) + " fps"
@@ -2715,7 +2715,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	if nif != 0 && nif < config.IdleFPSMin {
 		nif = 0 // bottom of the track = the default (30)
 	}
-	c.Tooltip(iftrack, "The rate when nothing is animating and you haven't touched anything for a second (10–120). Any input snaps back to the active rate instantly.")
+	c.Tooltip(iftrack, "The rate when nothing is animating and there's been no input for a second (10–120). Input returns to the active rate instantly.")
 	ifLabel := "default (30 fps)"
 	if nif != 0 {
 		ifLabel = strconv.Itoa(nif) + " fps"
@@ -2732,7 +2732,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	if nuf != 0 && nuf < config.UnfocusedFPSMin {
 		nuf = 0 // bottom of the track = the default (10)
 	}
-	c.Tooltip(uftrack, "The rate while another window has focus (5–60) — you're not looking, so the client barely sips. Minimized stops drawing entirely, as before.")
+	c.Tooltip(uftrack, "The rate while another window has focus (5–60). Minimized draws nothing.")
 	ufLabel := "default (10 fps)"
 	if nuf != 0 {
 		ufLabel = strconv.Itoa(nuf) + " fps"
@@ -2742,7 +2742,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.d.Prefs.SetUnfocusedFPS(nuf)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "WHAT COUNTS AS \"ANIMATING\": a message typing out (or queued), shouts/preanims, screen shake & flashes, replays, the Scene Maker, exports, voice, reaction emoji, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you've enabled (rainbow wash, wobble/spin, breathing, weather, a crossfade). Sprite idle loops and animated theme art play at ~10–15 fps by their own frame timings, so the 30 fps idle default never visibly slows them. If some animation you care about looks choppy while idle, raise the idle rate.", ColTextDim)
+	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, voice, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
 	y += 10
 
 	// Sprite thumbnail cache — the persistent low-q stand-in store.
@@ -2758,7 +2758,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			th.SetEnabled(next)
 		}
 		y += 26
-		y = a.settingsDesc(pad, y, "WHAT IT DOES: every character sprite that finishes loading also leaves a heavily-compressed ~1 KB thumbnail on disk (its own folder beside the asset cache — NOT the normal cache, so thumbnails stick around long after the full sprite was evicted). The next time that sprite is needed cold, the thumbnail shows INSTANTLY — the right character, visibly low quality — while the full-quality one streams in, then swaps. Composes with the cold-load modes above: the thumbnail covers the case where there IS no previous sprite to hold. THE TRADE: a little disk (a 500-sprite server ≈ 0.5 MB of thumbs) and a moment of obviously-crunchy art; the full-quality sprite always replaces it. If sprites look blocky for a second on a cold load, this is why — that's the feature working, not the art breaking.", ColTextDim)
+		y = a.settingsDesc(pad, y, "Every sprite that finishes loading leaves a ~1 KB low-quality thumbnail on disk (its own folder, kept after the full sprite is evicted). The next cold load shows the thumbnail instantly while the real one streams, then swaps — covering the case where there's no previous sprite to hold. Costs a little disk and a moment of visibly crunchy art.", ColTextDim)
 		y += 6
 		if a.d.Prefs.ThumbCacheOn() {
 			c.Label(pad, y+4, "Thumbnail height:", ColText)
@@ -2899,7 +2899,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.applyTimingToRoom()
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "These change the FEEL of every message: a shorter shout snaps the room along, a longer one lets big bubble art breathe; a shorter preanim cap starts text sooner when a flourish is slow to decode, a longer one gives huge preanims time to play. The queue depth trades memory of a pile-up against staying current, and the catch-up linger trades drain speed for readability. Every slider's far LEFT is the canonical default — set and forget unless you know you want a different pace.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Shout and preanim pace the message ceremony; queue depth bounds how much backlog is kept; catch-up linger holds each fast-forwarded backlog message a touch longer. Far left on every slider = the canonical AO2 default.", ColTextDim)
 	y += 10
 
 	// Viewport sprite mask — confine offset sprites to the stage.
@@ -2909,7 +2909,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.d.Prefs.SetClipSpritesToStage(next)
 	}
 	y += 24
-	y = a.settingsDesc(pad, y, "Keeps a big pair / reposition OFFSET from spilling a character sprite over the chatbox or the log — the sprite is masked to the stage rect. On by default; turn it off for freeform placement past the stage edges.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Masks character sprites to the stage so a large pair/reposition offset can't spill over the chatbox or log. Off = free placement past the stage edges.", ColTextDim)
 	y += 10
 
 	// TLS certificate validation.
@@ -2961,7 +2961,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.d.Prefs.SetNotFoundTTLSec(nttl)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "WHAT IT DOES: when an asset 404s, AsyncAO remembers the miss and won't re-ask the server for it until this long has passed (that's what keeps the client at ~one probe per asset). SHORTER = a server admin uploading missing art shows up sooner; LONGER = fewer wasted probes on servers with genuinely sparse packs. Takes effect on the next restart (the miss-memory is built at startup).", ColTextDim)
+	y = a.settingsDesc(pad, y, "How long a missing (404) asset is remembered before it may be probed again. Shorter picks up newly-uploaded art sooner; longer wastes fewer probes on sparse packs. Applies on restart.", ColTextDim)
 	y += 8
 	c.Label(pad, y+4, "Slow-host patience:", ColText)
 	lm := a.d.Prefs.AdaptiveLatMultiple()
@@ -2981,7 +2981,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.d.Manager.SetAdaptiveLatencyMultiple(a.d.Prefs.AdaptiveLatMultiple())
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "WHAT IT DOES: AsyncAO watches how fast each asset host answers and gives it a deadline of N × that average, so ONE dying mirror can't pin the whole download lane. LOWER = give up on a degrading host sooner (snappier, but jittery Wi-Fi may see spurious timeouts and re-fetches); HIGHER = more patient with slow-but-honest hosts.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Each asset host's request deadline is N × its average response time, so one dying mirror can't stall the download lane. Lower gives up sooner (jittery links may see spurious timeouts); higher is more patient.", ColTextDim)
 	y += 10
 
 	// Decode downscale + texture memory — how big decoded art lives on the GPU.
@@ -3010,7 +3010,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.applySpriteCap()
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "WHAT IT DOES: packs increasingly ship HUGE sprites (2000×2000 px); AsyncAO shrinks anything taller than your display ONCE at load, in high quality — sharper than letting the GPU crush it every frame, and it uses a fraction of the memory. LOWER % = smaller textures (easier on weak GPUs / laptops, slightly softer art); HIGHER % or the off-switch = keep more source detail (for heavy Ctrl+wheel zoom users), at real memory cost. Already-loaded art keeps its size until it naturally reloads.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Art taller than your display is downscaled once at load (high quality) instead of every frame on the GPU. Lower % = smaller textures, less memory; higher % or the off-switch = more source detail for heavy zooming, at memory cost. Applies to newly loaded art.", ColTextDim)
 	y += 8
 	c.Label(pad, y+4, "Texture memory budget:", ColText)
 	txb := a.d.Prefs.TexBudgetMiB()
@@ -3029,7 +3029,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.d.Prefs.SetTexBudgetMiB(ntx)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "WHAT IT DOES: the texture cache holds every decoded sprite/background on the GPU; past this budget the least-recently-seen are dropped (and quietly re-fetched if needed again — that's the \"sprite vanished then healed\" moment in a packed room). BIGGER = fewer evictions in crowded rooms, more memory used; SMALLER = lighter footprint, more churn. Lives inside AsyncAO's overall 256 MiB memory promise, hence the cap. Takes effect on the next restart.", ColTextDim)
+	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms; smaller = lighter footprint. Capped to fit the 256 MiB memory budget. Applies on restart.", ColTextDim)
 	y += 10
 
 	// Character-folder casing.
@@ -3254,7 +3254,7 @@ func (a *App) drawSettingsData(y, _ int32) int32 {
 
 	// Setting presets (Nightingale): named bundles of the WHOLE settings file.
 	y = a.settingsSection(y, w, "Setting presets")
-	y = a.settingsDesc(pad, y, "Save your current settings under a name and switch between saved bundles — e.g. a \"casing\" setup and a \"casual\" one. A preset is a full settings snapshot (passwords are never included); APPLYING one replaces your settings and takes effect on the next restart (this session's further changes won't save, exactly like an import). Your current settings are not lost silently — save them as their own preset first if you want to come back.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Save your current settings under a name and switch between bundles. A preset is a full snapshot (passwords excluded); applying one replaces your settings on the next restart, like an import. Save your current setup as its own preset first if you'll want it back.", ColTextDim)
 	y += 6
 	settings.presetName, _ = c.TextField("presetname", sdl.Rect{X: pad, Y: y, W: 220, H: fieldH}, settings.presetName, "preset name (e.g. casing)")
 	if c.Button(sdl.Rect{X: pad + 228, Y: y, W: 170, H: btnH}, "💾 Save as preset") {
