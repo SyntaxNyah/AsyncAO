@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/veandco/go-sdl2/sdl"
 	"github.com/veandco/go-sdl2/ttf"
@@ -722,51 +724,146 @@ func (a *App) inLoginGrace() bool {
 // in IC/OOC traffic (AO2-Client callwords: get_court_sfx("word_call")).
 // Streamer mode suppresses both — an on-stream name ping is exactly the
 // leak the toggle exists to prevent.
-func (a *App) checkCallwords(text string) {
+func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 	if a.d.Prefs.StreamerMode() || a.dndOn {
 		return
 	}
 	// Brief grace after a login flow: the server's login replies (and the Akashi
-	// prompt) routinely echo your handle/name, which would self-ping your callword
-	// the instant you join. The window is short so a real callword seconds later
-	// still alerts.
-	if a.inLoginGrace() {
-		return
-	}
-	words := a.d.Prefs.CallWords()
-	if len(words) == 0 || text == "" {
+	// prompt) routinely echo your handle/name, which would self-ping the instant
+	// you join. The window is short so a real callword seconds later still alerts.
+	if a.inLoginGrace() || text == "" {
 		return
 	}
 	lower := strings.ToLower(text)
-	for _, w := range words {
+	// Configured highlight words: substring match (AO2-Client get_court_sfx
+	// "word_call" parity — deliberately loose so "obj" catches "objection").
+	for _, w := range a.d.Prefs.CallWords() {
 		if strings.Contains(lower, w) {
-			// Custom sound if set, else the built-in ping — ALWAYS audible. We
-			// deliberately do NOT route through the theme's word_call: a theme
-			// that names word_call but ships no (loadable) file would play
-			// nothing, silencing the alert — the exact "callwords don't work"
-			// report. The built-in ping is the reliable default.
-			if f := a.d.Prefs.CallwordSoundPath(); f != "" {
-				a.d.Audio.PlayFile(f)
-			} else {
-				a.d.Audio.PlayAlert()
-			}
-			// Optional in-app toast naming the word (like the modcall/friend
-			// toasts) so you can see WHY it pinged, not just hear it.
-			if a.d.Prefs.CallwordToastOn() {
-				a.warnLine = clampLine("Heard your callword: " + w)
-				a.warnAt = time.Now()
-			}
-			// #M4: desktop (OS) toast when you're tabbed away (opt-in, rate-limited so a
-			// spammed word can't storm the notification centre). The in-app toast + flash
-			// + ping cover the focused case.
-			if a.d.Prefs.CallwordOSToastOn() && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
-				a.lastOSToast = time.Now()
-				showOSToast("AsyncAO — callword", "Heard your callword: "+w)
-			}
-			a.ctx.FlashWindow()
+			a.callwordAlert("AsyncAO — callword", "Heard your callword: "+w)
 			return
 		}
 	}
+	// #203 name mentions: your own showname / character name, matched as a WHOLE
+	// word (so "Max" doesn't fire on "maximum") and NEVER on your own message —
+	// the server echoes your IC back and RP lines routinely contain your name.
+	// The names are session-scoped: the caller passes THIS message's session's
+	// identity, so multi-server play pings the right name per tab.
+	if mine || !a.d.Prefs.MentionSelfOn() {
+		return
+	}
+	for _, n := range selfNames {
+		n = strings.TrimSpace(n)
+		if utf8.RuneCountInString(n) < mentionMinRunes {
+			continue // too short to match as a whole word without chat-noise pings
+		}
+		if containsWord(lower, strings.ToLower(n)) {
+			a.callwordAlert("AsyncAO — mention", "Mentioned by name: "+n)
+			return
+		}
+	}
+}
+
+// callwordAlert fires the shared personal-alert side effects — a sound (custom
+// if set, else the built-in ping; NOT the theme's word_call, which a theme may
+// name without shipping a loadable file, silently killing the alert), an optional
+// in-app toast, an optional rate-limited desktop toast while tabbed away, and a
+// window flash. Streamer / DND / login-grace are gated by the caller before here.
+func (a *App) callwordAlert(osTitle, body string) {
+	if f := a.d.Prefs.CallwordSoundPath(); f != "" {
+		a.d.Audio.PlayFile(f)
+	} else {
+		a.d.Audio.PlayAlert()
+	}
+	if a.d.Prefs.CallwordToastOn() {
+		a.warnLine = clampLine(body)
+		a.warnAt = time.Now()
+	}
+	if a.d.Prefs.CallwordOSToastOn() && !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+		a.lastOSToast = time.Now()
+		showOSToast(osTitle, body)
+	}
+	a.ctx.FlashWindow()
+}
+
+// mentionMinRunes is the shortest self-name that triggers a #203 mention alert:
+// a 1-rune name, even as a whole word, matches far too much ordinary chat.
+const mentionMinRunes = 2
+
+// containsWord reports whether needle occurs in haystack as a whole word — not
+// flanked by a letter or digit on either side (so "max" matches "hi max" and
+// "max!" but not "maximum"). Both args must already be lowercased. Alloc-free
+// and Unicode-safe: it scans with strings.Index and checks the rune on each
+// side, so accented names work and there are no byte-boundary false splits.
+func containsWord(haystack, needle string) bool {
+	if needle == "" {
+		return false
+	}
+	for from := 0; from <= len(haystack)-len(needle); {
+		i := strings.Index(haystack[from:], needle)
+		if i < 0 {
+			return false
+		}
+		i += from
+		if wordBoundary(haystack, i) && wordBoundary(haystack, i+len(needle)) {
+			return true
+		}
+		from = i + 1 // overlap-safe: step one byte past this (rejected) hit
+	}
+	return false
+}
+
+// wordBoundary reports whether byte offset i in s is a word edge: the start/end
+// of the string, or a spot where the adjacent rune isn't a letter/digit. Used on
+// both ends of a candidate match by containsWord.
+func wordBoundary(s string, i int) bool {
+	if i <= 0 || i >= len(s) {
+		return true
+	}
+	before, _ := utf8.DecodeLastRuneInString(s[:i])
+	after, _ := utf8.DecodeRuneInString(s[i:])
+	return !isWordRune(before) || !isWordRune(after)
+}
+
+// isWordRune classifies letters and digits as "inside a word" for the mention
+// boundary test (Unicode-aware, so accented / non-Latin names work).
+func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// mentionNames returns the names that count as "you" in the ACTIVE session for
+// #203 mention alerts: your effective showname (override or saved) and your
+// selected character. checkCallwords drops the blank / too-short ones.
+func (a *App) mentionNames() []string {
+	return []string{a.effectiveShowname(), a.myCharName()}
+}
+
+// mentionNamesFor returns the mention names for a BACKGROUND session tab: its
+// selected character (session-scoped, so multi-server play pings the right name)
+// and your saved showname — a parked tab can't carry the live showname override.
+func (a *App) mentionNamesFor(s *sessionState) []string {
+	return []string{sessionCharName(s), a.d.Prefs.SavedShowname()}
+}
+
+// sessionCharName is the character a session is playing (its wire identity), or
+// "" if none is selected yet.
+func sessionCharName(s *sessionState) string {
+	if s.sess == nil || s.sess.MyCharID < 0 || s.sess.MyCharID >= len(s.sess.Chars) {
+		return ""
+	}
+	return s.sess.Chars[s.sess.MyCharID].Name
+}
+
+// isSelfName reports whether name is (case-insensitively) one of selfNames — the
+// #203 self-ping guard, so your own echoed IC/OOC never alerts you by name.
+func isSelfName(name string, selfNames []string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, n := range selfNames {
+		if strings.EqualFold(name, strings.TrimSpace(n)) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- screenshots ----------------------------------------------------------------------

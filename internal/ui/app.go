@@ -2542,7 +2542,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 			a.pushOOC(ev.Name+": "+ev.Text, ev.Name)
 			if a.d.Prefs.CallwordsOOCOn() && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
-				a.checkCallwords(ev.Text)
+				names := a.mentionNames()
+				a.checkCallwords(ev.Text, names, isSelfName(ev.Name, names))
 			}
 			a.scanModActionOOC(ev.Name, ev.Text) // #60: optional ban/kick/mute feedback sound
 		case courtroom.EventMessage:
@@ -2581,7 +2582,8 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				}
 				a.logDetailed(a.serverName, ev.Message) // detailed transcript (opt-in)
 				a.noteEvidencePresented(ev.Message)
-				a.checkCallwords(ev.Message.Message)
+				names := a.mentionNames()
+				a.checkCallwords(ev.Message.Message, names, isSelfName(ev.Message.CharName, names))
 			}
 		case courtroom.EventHP:
 			// Direction decides the penalty sfx (set_hp_bar compares the

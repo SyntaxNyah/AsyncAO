@@ -38,7 +38,7 @@ func TestDoNotDisturbSilencesCallword(t *testing.T) {
 	a := testTabApp(t)
 	a.d.Prefs.SetCallWords([]string{"phoenix"})
 	a.dndOn = true
-	a.checkCallwords("objection, phoenix!") // must early-return, not touch Audio
+	a.checkCallwords("objection, phoenix!", nil, false) // must early-return, not touch Audio
 	if a.warnLine != "" {
 		t.Errorf("DND must suppress the callword toast, got warnLine=%q", a.warnLine)
 	}

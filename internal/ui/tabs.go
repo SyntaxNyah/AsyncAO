@@ -379,7 +379,8 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 				a.signalFriend(s.serverName, ev.Message) // alert even from a backgrounded server
 			}
 			a.logDetailed(s.serverName, ev.Message) // detailed transcript (opt-in)
-			a.checkCallwords(ev.Message.Message)
+			names := a.mentionNamesFor(s)
+			a.checkCallwords(ev.Message.Message, names, isSelfName(ev.Message.CharName, names))
 		}
 	case courtroom.EventOOC:
 		if courtroom.IsTypingMarker(ev.Text) {
@@ -399,7 +400,8 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			t.unread++
 		}
 		if a.d.Prefs.CallwordsOOCOn() && !looksLikeAreaList(ev.Text) { // OOC callwords opt-in (default OFF); /ga roster never self-pings
-			a.checkCallwords(ev.Text)
+			names := a.mentionNamesFor(s)
+			a.checkCallwords(ev.Text, names, isSelfName(ev.Name, names))
 		}
 	case courtroom.EventModcall:
 		// A modcall on a backgrounded server still alerts the mod (toast +

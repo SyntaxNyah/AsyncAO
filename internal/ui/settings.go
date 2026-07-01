@@ -2128,6 +2128,15 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y = a.drawCasingRow(y)
 
 	y = a.settingsSection(y, w, "Callwords")
+	// #203 self-mention: auto-treat your own showname / character name as a
+	// callword (whole-word match, never your own messages) so you're pinged when
+	// addressed by name without adding it manually. Honours the sound/toast/OS
+	// options below and the streamer / DND / login-grace suppressions.
+	ms := a.d.Prefs.MentionSelfOn()
+	if next := c.Checkbox(pad, y, "Alert me when someone says my name (OFF by default): treats your showname + character as callwords, matched as whole words and never on your own lines", ms); next != ms {
+		a.d.Prefs.SetMentionSelf(next)
+	}
+	y += 30
 	// Callwords manager: type a word (or paste "a, b, c") + Add, and each shows
 	// below with a × to remove. Flash + sound + toast fire on an IC/OOC match.
 	c.Label(pad, y+4, "Add word(s):", ColTextDim)

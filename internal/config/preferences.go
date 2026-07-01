@@ -882,6 +882,9 @@ type AssetPreferences struct {
 	CallwordToast bool `json:"callwordToast"`
 	// MessageCounter shows a live character count by the IC input (ON by default).
 	MessageCounter bool `json:"messageCounter"`
+	// MentionSelf treats your character name / showname as a callword (#203); OFF
+	// by default. Powers the "alert me when someone says my name" behaviour.
+	MentionSelf bool `json:"mentionSelf"`
 	// ICTimestamps prefixes each IC log line with its local arrival time (OFF by default).
 	ICTimestamps bool `json:"icTimestamps"`
 	// AutoReconnect auto-retries the last server after an unexpected drop (ON by default).
@@ -1008,6 +1011,7 @@ type prefsJSON struct {
 	FriendNotify           bool             `json:"friendNotify"`               // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`              // default OFF
 	CallwordOSToast        bool             `json:"callwordOSToast"`            // #M4 default OFF
+	MentionSelf            bool             `json:"mentionSelf"`                // #203 default OFF
 	FriendGlowPulse        bool             `json:"friendGlowPulse"`            // default OFF
 	FriendSound            bool             `json:"friendSound"`                // default OFF
 	FriendSoundFile        string           `json:"friendSoundFile"`
@@ -1595,6 +1599,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.FriendNotify = onDisk.FriendNotify
 	p.FriendOSToast = onDisk.FriendOSToast
 	p.CallwordOSToast = onDisk.CallwordOSToast
+	p.MentionSelf = onDisk.MentionSelf
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
 	p.FriendSound = onDisk.FriendSound
 	p.FriendSoundFile = onDisk.FriendSoundFile
@@ -2415,6 +2420,26 @@ func (p *AssetPreferences) SetMessageCounter(on bool) {
 		return
 	}
 	p.MessageCounter = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MentionSelfOn reports the self-mention toggle (OFF by default): treat your own
+// character name / showname as a callword so being addressed by name alerts you.
+func (p *AssetPreferences) MentionSelfOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MentionSelf
+}
+
+// SetMentionSelf toggles self-mention alerts.
+func (p *AssetPreferences) SetMentionSelf(on bool) {
+	p.mu.Lock()
+	if p.MentionSelf == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MentionSelf = on
 	p.mu.Unlock()
 	p.markDirty()
 }

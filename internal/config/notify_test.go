@@ -22,3 +22,21 @@ func TestCallwordOSToastPref(t *testing.T) {
 		t.Error("SetCallwordOSToast(true) didn't take")
 	}
 }
+
+// TestMentionSelfPref pins the #203 self-mention pref: OFF by default and a
+// round-trip through the setter (covers the load-merge).
+func TestMentionSelfPref(t *testing.T) {
+	p, err := New(filepath.Join(t.TempDir(), PrefsFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	if p.MentionSelfOn() {
+		t.Error("self-mention should default OFF")
+	}
+	p.SetMentionSelf(true)
+	if !p.MentionSelfOn() {
+		t.Error("SetMentionSelf(true) didn't take")
+	}
+}
