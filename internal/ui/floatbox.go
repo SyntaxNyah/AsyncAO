@@ -72,6 +72,7 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Login", "Log in with saved credentials", hotkeyLogin, func() { a.openLoginDialog() }},
 			{"★ Fav Emotes", "Floating box of just your starred emotes (Ctrl+A)", hotkeyFavEmotes, func() { a.d.Prefs.SetFavEmoteBox(true) }},
 			{"Hotkeys", "Show every keyboard shortcut, including your custom ones (F1)", "", func() { a.openHotkeyCheatSheet() }},
+			{"Debug", "Diagnostics: server software, live packet inspector, performance + asset/prefetch stats, and the failure log", "", func() { a.toggleDebugPanel() }},
 			{"Timer", "A personal countdown timer + alarm (for RP / casing pace)", "", func() { a.openTimer() }},
 			{"Sprite Style", "Recolour / glow / warp your character — other AsyncAO players see it", "", func() { a.openSpriteStyle() }},
 			{"SFX Browser", "Browse, preview (▶) and favourite (★) sounds for your next IC message — incl. any sound by name", "", func() { a.toggleSfxBrowser() }},
@@ -249,6 +250,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showModcall = false
 	case a.showModDash:
 		a.showModDash = false
+	case a.showDebugPanel:
+		a.showDebugPanel = false
 	case a.showCMPanel:
 		a.showCMPanel = false
 	case a.showPair:
@@ -376,7 +379,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing ||
+		a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
 		a.hkWin.dragging || a.hkWin.resizing || a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 		return true
 	}
@@ -391,6 +394,9 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return true
 	}
 	if a.showModDash && a.banBoxKind == 0 && pointIn(mx, my, a.modDashRect(w, h)) { // dashboard hides while its ban box is open
+		return true
+	}
+	if a.showDebugPanel && pointIn(mx, my, a.debugPanelRect(w, h)) { // the Debug panel fences too
 		return true
 	}
 	if a.banBoxKind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
@@ -541,7 +547,7 @@ func (a *App) drawFloatingPanels(w, h int32) {
 			a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 			a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 			a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||
-			a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing ||
+			a.voiceWin.dragging || a.voiceWin.resizing || a.banWin.dragging || a.banWin.resizing || a.debugWin.dragging || a.debugWin.resizing ||
 			a.clientWin.dragging || a.clientWin.resizing || a.clientPanning {
 			c.clicked = false // a finished drag/resize isn't a click on whatever's now underneath
 		}
@@ -559,6 +565,9 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	if a.showModDash && a.banBoxKind == 0 { // the dashboard hides while its ban/kick box is open (below)
 		a.drawModDashPanel(w, h, &pressed)
+	}
+	if a.showDebugPanel {
+		a.drawDebugPanel(w, h, &pressed)
 	}
 	if a.showCMPanel {
 		a.drawCMPanel(w, h, &pressed)

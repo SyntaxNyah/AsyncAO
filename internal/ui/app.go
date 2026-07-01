@@ -324,6 +324,10 @@ type App struct {
 	lastPktHdr  string   // newest server packet header (health line)
 	lastPktAt   time.Time
 
+	// --- packet inspector (#333): Debug panel's live packet ring + counts ---
+	pkts    packetLog      // bounded ring + per-header in/out counts (active conn)
+	pktConn *protocol.Conn // the conn pkts currently reflects; a change resets it
+
 	// --- server format manifest (extensions.json autodetect) ---
 	manifestRes chan manifestFetch
 
@@ -700,7 +704,7 @@ type App struct {
 	// (floatwin.go) for the Pairing, Mod dashboard, CM, Hotkey-sheet, and Evidence
 	// panels — each a movable/resizable, non-blocking box (chat stays live behind it)
 	// rather than a modal. Geometry is global; open state is per-tab / per-flag.
-	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, voiceWin, banWin floatWin
+	pairWin, modWin, cmWin, hkWin, evidWin, modcallWin, msgWin, voiceWin, banWin, debugWin floatWin
 	// Voice chat (Nyathena VS_* relay): showVoice = the floating panel's open state
 	// (global); membership/mic state is per-session (sessionState.voiceJoined/MicOn).
 	showVoice bool
@@ -914,7 +918,13 @@ type sessionState struct {
 	voiceCapsAnnounced bool
 	showModDash        bool // the mod (ban/kick) dashboard panel is open
 	showCMPanel        bool // the separate CM (area control) panel is open
-	amICMNow           bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// Debug panel (Extras → Debug): sectioned diagnostics view (#333 packet inspector + perf + log).
+	showDebugPanel bool
+	debugSection   int         // active tab: 0 Session · 1 Packets · 2 Perf · 3 Log
+	debugPktScroll int32       // Packets list scroll offset
+	debugLogScroll int32       // Log list scroll offset
+	debugPktBuf    []packetRec // reused recent()-into buffer (alloc-free draw)
+	amICMNow       bool        // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
@@ -2152,7 +2162,12 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	}
 	a.conn = conn
 	a.lastPing = time.Now()
+	a.pkts.reset() // a fresh connection starts a clean packet history
+	a.pktConn = conn
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
+		if conn == a.conn { // record only the ACTIVE connection's sends (a parked tab's Ping won't match)
+			a.recordPacket(p, true)
+		}
 		return conn.Send(context.Background(), p)
 	}, hdid())
 	a.screen = ScreenCharSelect
@@ -2439,6 +2454,8 @@ func (a *App) pumpConnection() {
 				return
 			}
 			a.lastPktHdr, a.lastPktAt = p.Header, time.Now()
+			a.notePktConn() // reset the packet ring if the active conn changed (tab switch / reconnect)
+			a.recordPacket(p, false)
 			a.handleSessionEvents(a.sess.HandlePacket(p))
 		default:
 			return
