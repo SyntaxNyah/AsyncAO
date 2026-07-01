@@ -26,4 +26,9 @@ func TestURLCharCasing(t *testing.T) {
 	if got := NewURLBuilder(origin).WithCharCase(99).CharIcon("Phoenix"); got != origin+"characters/phoenix/char_icon" {
 		t.Errorf("out-of-range casing = %q, want lowercase", got)
 	}
+	// CharCaseAuto is an App-level mode (the App resolves it to a concrete casing before the
+	// builder). If it ever reaches the builder it falls through to lowercase — never a broken URL.
+	if got := NewURLBuilder(origin).WithCharCase(CharCaseAuto).CharIcon("Phoenix"); got != origin+"characters/phoenix/char_icon" {
+		t.Errorf("CharCaseAuto in the builder = %q, want lowercase", got)
+	}
 }

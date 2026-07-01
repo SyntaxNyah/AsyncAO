@@ -65,6 +65,11 @@ const (
 	CharCaseLower    uint8 = iota // lowercase (default — the safe, correct choice for almost every server)
 	CharCaseFirstCap              // First-letter capital: "Phoenix wright"
 	CharCaseTitle                 // Title Case: "Phoenix Wright"
+	// CharCaseAuto asks the App to LEARN the casing per server (probe a character's icon in each
+	// casing once, apply the winner). OFF unless the user picks it. The URLBuilder never applies it
+	// directly — the App resolves Auto to a concrete lower/firstcap/title before WithCharCase, so a
+	// stray Auto reaching charSeg falls through to lowercase (its default), never a broken URL.
+	CharCaseAuto
 	CharCaseCount
 )
 

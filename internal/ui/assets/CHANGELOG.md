@@ -41,9 +41,10 @@ a real diagnostics panel, and a tidier, safer Settings screen.
   character-folder casing, and image-format tuning — behind a reveal button with red
   warnings, so they stay clear of everyday settings.
 - **Optional capitalised asset fetching** (power-user, OFF by default): for the rare
-  server whose character folders are capitalised, fetch as *Phoenix wright* or
-  *Phoenix Wright* instead of lowercase. ⚠ Check your server first — the wrong choice
-  makes every character load nothing.
+  server whose character folders are capitalised, fetch as *Phoenix wright*, *Phoenix
+  Wright*, or **Auto-detect** — which probes one character per server once and learns
+  the casing, staying on lowercase unless lowercase actually fails. ⚠ Check your server
+  first; a wrong *manual* choice makes every character load nothing.
 
 ### Fixes
 - **The chatbox grows to fit a long message** instead of clipping the bottom lines —

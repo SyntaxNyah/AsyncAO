@@ -331,6 +331,12 @@ type App struct {
 	// --- server format manifest (extensions.json autodetect) ---
 	manifestRes chan manifestFetch
 
+	// --- asset-casing auto-detect (OFF unless AssetCharCasing == CharCaseAuto) ---
+	charCaseLearned  map[string]uint8 // host → learned character-folder casing
+	casingProbing    bool             // a casing probe is in flight
+	casingProbedHost string           // host already probed this session (probe once per host)
+	casingRes        chan casingProbeResult
+
 	// --- font override pipeline (file bytes read off-thread) ---
 	fontRes chan fontLoad
 	// themeFontFile is the active theme's bundled font path (.ttf/.otf), resolved
@@ -1815,6 +1821,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		updateApplyRes:  make(chan error, 1),
 		iniRes:          make(chan iniswapFetch, 1),
 		manifestRes:     make(chan manifestFetch, 1),
+		casingRes:       make(chan casingProbeResult, 1),
 		fontRes:         make(chan fontLoad, 1),
 		logBrowserRes:   make(chan logBrowserLoad, 1),
 		emojiFontRes:    make(chan []byte, 1),
@@ -2763,7 +2770,7 @@ func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string) (line, s
 func (a *App) rebuildAssetOrigin() {
 	if enabled, mounts := a.d.Prefs.LocalAssets(); enabled && len(mounts) > 0 {
 		local := assets.NewLocalFetcher(mounts)
-		a.urls = courtroom.NewURLBuilder(local.BaseURL()).WithCharCase(a.d.Prefs.AssetCharCasing())
+		a.urls = courtroom.NewURLBuilder(local.BaseURL()).WithCharCase(a.charCasingFor(local.BaseURL()))
 		log.Printf("ui: local asset mode over %d mounts", len(mounts))
 		return
 	}
@@ -2775,7 +2782,7 @@ func (a *App) rebuildAssetOrigin() {
 		a.connErr = "server provided no asset URL — enable local assets in Settings"
 		return
 	}
-	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.d.Prefs.AssetCharCasing())
+	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.charCasingFor(origin))
 	if a.rehearsal {
 		return // offline: no DNS warm, no manifest fetch
 	}
@@ -2869,6 +2876,115 @@ func (a *App) isOfficialVanilla(assetHost string) bool {
 	h := strings.ToLower(assetHost)
 	return strings.Contains(h, "attorneyoffline.de") ||
 		strings.Contains(strings.ToLower(a.serverKey), "vanilla.aceattorneyonline.com")
+}
+
+// casingProbeResult carries an asset-casing probe's outcome back to the render thread.
+type casingProbeResult struct {
+	host   string
+	casing uint8
+}
+
+// charCasingFor resolves the character-folder casing for origin's host: the manual pref as-is, or —
+// only when the user selected CharCaseAuto — the LEARNED casing for that host (lowercase until it's
+// learned). Resolving Auto here keeps it out of the SDL-free URLBuilder.
+func (a *App) charCasingFor(origin string) uint8 {
+	c := a.d.Prefs.AssetCharCasing()
+	if c != courtroom.CharCaseAuto {
+		return c // manual (incl. the lowercase default) — no probing, no learning
+	}
+	if host := hostOfURL(origin); host != "" {
+		if learned, ok := a.charCaseLearned[host]; ok {
+			return learned
+		}
+	}
+	return courtroom.CharCaseLower // Auto, not yet learned → the safe default
+}
+
+// maybeProbeCasing kicks off a ONE-TIME casing probe for the current server, but ONLY when the user
+// has selected Auto casing, the char list is known, and this host hasn't been probed yet. A cheap
+// per-frame no-op otherwise, so it costs nothing unless Auto is on.
+func (a *App) maybeProbeCasing() {
+	if a.d.Prefs.AssetCharCasing() != courtroom.CharCaseAuto || a.casingProbing || a.sess == nil {
+		return
+	}
+	origin := a.urls.Origin()
+	host := hostOfURL(origin)
+	if host == "" || !strings.HasPrefix(origin, "http") || a.casingProbedHost == host {
+		return // not a network origin, or already handled this host this session
+	}
+	name := ""
+	for i := range a.sess.Chars {
+		if n := strings.TrimSpace(a.sess.Chars[i].Name); n != "" {
+			name = n
+			break
+		}
+	}
+	if name == "" {
+		return // no character names yet — try again next frame
+	}
+	a.casingProbing = true
+	a.casingProbedHost = host
+	go a.probeCasing(host, name, origin)
+}
+
+// probeCasing fetches character name's icon in each casing (lowercase → first-cap → title) and
+// reports the FIRST that exists — so Auto stays on lowercase unless lowercase actually 404s. Two
+// common icon formats are tried per casing; the whole burst is one-time per server (the sanctioned
+// learning exception to one-probe-per-asset). Background goroutine — touches only the result channel.
+func (a *App) probeCasing(host, name, origin string) {
+	ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+	defer cancel()
+	winner := courtroom.CharCaseLower
+	for _, cc := range []uint8{courtroom.CharCaseLower, courtroom.CharCaseFirstCap, courtroom.CharCaseTitle} {
+		base := courtroom.NewURLBuilder(origin).WithCharCase(cc).CharIcon(name)
+		found := false
+		for _, ext := range []string{config.ExtPNG, config.ExtWebP} {
+			if _, err := a.d.Manager.FetchRaw(ctx, base+ext); err == nil {
+				found = true
+				break
+			}
+		}
+		if found {
+			winner = cc
+			break
+		}
+	}
+	select {
+	case <-a.casingRes:
+	default:
+	}
+	a.casingRes <- casingProbeResult{host: host, casing: winner}
+}
+
+// pollCasingProbe lands a casing probe: record the learned casing for its host and, if we're still
+// on that server, apply it to the URL builder so subsequent fetches use it (a no-op when it stayed
+// lowercase). Render thread.
+func (a *App) pollCasingProbe() {
+	select {
+	case res := <-a.casingRes:
+		a.casingProbing = false
+		if a.charCaseLearned == nil {
+			a.charCaseLearned = map[string]uint8{}
+		}
+		a.charCaseLearned[res.host] = res.casing
+		if hostOfURL(a.urls.Origin()) == res.host { // still on this server → apply now
+			a.urls = a.urls.WithCharCase(res.casing)
+		}
+		a.pushDebug("asset casing auto-detect: " + res.host + " → " + charCaseName(res.casing))
+	default:
+	}
+}
+
+// charCaseName is a short label for a resolved casing (debug log).
+func charCaseName(c uint8) string {
+	switch c {
+	case courtroom.CharCaseFirstCap:
+		return "First cap"
+	case courtroom.CharCaseTitle:
+		return "Title"
+	default:
+		return "lowercase"
+	}
 }
 
 func (a *App) fetchManifestAsync() {
@@ -4464,6 +4580,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drainWarnings()
 	a.pollThemeApply()
 	a.pollManifest()
+	a.maybeProbeCasing() // OFF unless the user picked Auto casing (cheap no-op otherwise)
+	a.pollCasingProbe()
 	a.pollFontChain()
 	a.pollLogBrowser()
 	a.pollEmojiFont()

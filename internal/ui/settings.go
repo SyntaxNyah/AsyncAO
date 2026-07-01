@@ -2499,6 +2499,8 @@ func charCaseLabel(c uint8) string {
 		return "Casing: First cap (Phoenix wright)"
 	case courtroom.CharCaseTitle:
 		return "Casing: Title (Phoenix Wright)"
+	case courtroom.CharCaseAuto:
+		return "Casing: Auto-detect (learn per server)"
 	default:
 		return "Casing: lowercase (default)"
 	}
@@ -2554,7 +2556,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.rebuildAssetOrigin() // apply the new casing to the URL builder immediately
 	}
 	y += btnH + 6
-	y = a.settingsDesc(pad, y, "How the character FOLDER is capitalised in asset URLs. The VAST MAJORITY of servers are lowercase (the default) — CHECK YOUR SERVER FIRST: the wrong choice makes EVERY character fetch 0 assets. \"First cap\" = Phoenix wright · \"Title\" = Phoenix Wright.", ColDanger)
+	y = a.settingsDesc(pad, y, "How the character FOLDER is capitalised in asset URLs. The VAST MAJORITY of servers are lowercase (the default) — CHECK YOUR SERVER FIRST: the wrong choice makes EVERY character fetch 0 assets. \"First cap\" = Phoenix wright · \"Title\" = Phoenix Wright. \"Auto-detect\" (OFF unless you pick it) probes one character per server once and learns the casing, staying on lowercase unless lowercase actually fails.", ColDanger)
 	y += 10
 
 	// Image formats (moved from Assets — it decides the one probe per asset).
