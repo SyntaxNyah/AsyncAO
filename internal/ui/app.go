@@ -462,6 +462,11 @@ type App struct {
 	mayoLogW, mayoLogH int32 // on-screen (logical) size; the texture itself is physical px
 	mayoTexScale       int   // UIScale() the texture was baked at
 	mayoTexFailed      bool
+	// #234 pet-the-gopher easter egg: clicking the About portrait "pets" Mayo.
+	// mayoPets is the session pet count; mayoPetAt drives the wiggle + floating
+	// caption. Session-only — a bit of joy that resets each launch.
+	mayoPets  int
+	mayoPetAt time.Time
 
 	// spriteTintHex is the in-progress hex text for the solid sprite-tint field
 	// (Settings); reflected from the pref when the field isn't focused.

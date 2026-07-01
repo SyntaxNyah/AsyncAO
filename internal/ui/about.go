@@ -1,9 +1,12 @@
 package ui
 
 import (
+	"fmt"
 	"log"
+	"math"
 	"os/exec"
 	"runtime"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -250,7 +253,7 @@ func (a *App) drawAbout(w, h int32) {
 		y += fl.gap
 		if fl.mayo && hasMayo {
 			dst := sdl.Rect{X: x0 + (colW-mayoLogW)/2, Y: y, W: mayoLogW, H: mayoLogH}
-			_ = c.Ren.Copy(mayoTex, nil, &dst)
+			a.drawMayoPortrait(c, mayoTex, dst, top, viewH)
 			y += mayoBlock
 		}
 		if y+lineH > top && y < top+viewH { // skip lines scrolled out of view
@@ -291,6 +294,119 @@ func (a *App) drawAbout(w, h int32) {
 			}
 		}
 		y += ch
+	}
+}
+
+// Pet-the-gopher easter egg (#234).
+const (
+	mayoWiggleDur   = 520 * time.Millisecond  // portrait wiggle time after a pet
+	mayoWiggleDeg   = 7.0                     // peak wiggle angle (degrees)
+	mayoCaptionDur  = 1100 * time.Millisecond // floating caption lifetime after a pet
+	mayoCaptionRise = int32(34)               // px the caption drifts up over its life
+)
+
+// drawMayoPortrait draws the About Mayo portrait and runs the #234 easter egg:
+// clicking her "pets" her — bumping a session counter, wiggling the art and
+// floating a caption. It ONLY hit-tests while the portrait is actually on screen
+// in the scroll viewport (the same guard the About link buttons use), so a click
+// where she WOULD be while scrolled off never pets invisibly. About is off the
+// hot path, so the fmt/label allocations here are fine.
+func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect, top, viewH int32) {
+	if tex == nil {
+		return
+	}
+	// Wiggle: a decaying oscillation for a short window after the last pet.
+	angle := 0.0
+	if !a.mayoPetAt.IsZero() {
+		if el := a.now().Sub(a.mayoPetAt); el >= 0 && el < mayoWiggleDur {
+			p := float64(el) / float64(mayoWiggleDur)
+			angle = mayoWiggleDeg * (1 - p) * math.Sin(p*2*math.Pi*1.5)
+		}
+	}
+	if angle != 0 {
+		_ = c.Ren.CopyEx(tex, nil, &dst, angle, nil, sdl.FLIP_NONE)
+	} else {
+		_ = c.Ren.Copy(tex, nil, &dst)
+	}
+
+	onScreen := dst.Y+dst.H > top && dst.Y < top+viewH
+	if onScreen && c.hovering(dst) {
+		tip := "Pet Mayo!"
+		if a.mayoPets > 0 {
+			tip = fmt.Sprintf("Pet Mayo!  (petted %d)", a.mayoPets)
+		}
+		c.Tooltip(dst, tip)
+		if c.clicked {
+			a.mayoPets++
+			a.mayoPetAt = a.now()
+		}
+	}
+	// Floating caption drifting up above the portrait for a moment after each pet.
+	if !a.mayoPetAt.IsZero() {
+		if el := a.now().Sub(a.mayoPetAt); el >= 0 && el < mayoCaptionDur {
+			frac := float64(el) / float64(mayoCaptionDur) // 0 → 1
+			msg := mayoPetFlavor(a.mayoPets)
+			cx := dst.X + (dst.W-c.TextWidth(msg))/2
+			cy := dst.Y + 4 - int32(float64(mayoCaptionRise)*frac)
+			col := ColAccent
+			col.A = uint8(255 * (1 - frac)) // fade out (if the kit honours text alpha)
+			c.Label(cx, cy, msg, col)
+		}
+	}
+}
+
+// mayoPetFlavor is the playful caption for the Nth pet — a milestone fires at its
+// EXACT count (so it flashes as you cross it), and every other pet just shows the
+// running count. A big pile of milestones, several nodding to Maya Fey lore
+// (burgers, spirit channelling, the Steel Samurai).
+func mayoPetFlavor(n int) string {
+	switch n {
+	case 1:
+		return "You petted Mayo!"
+	case 5:
+		return "Mayo wags happily (5)"
+	case 10:
+		return "Mayo is delighted! (10)"
+	case 15:
+		return "Mayo leans into it (15)"
+	case 20:
+		return "Mayo does a happy spin (20)"
+	case 25:
+		return "Mayo purrs contentedly (25)"
+	case 30:
+		return "Mayo shares her burger (30)"
+	case 40:
+		return "Mayo channels a spirit (40)"
+	case 50:
+		return "Mayo loves you! (50)"
+	case 69:
+		return "Nice. Mayo approves (69)"
+	case 75:
+		return "Mayo is your best friend now (75)"
+	case 100:
+		return "Mayo has ascended! (100)"
+	case 125:
+		return "Mayo can't stop giggling (125)"
+	case 150:
+		return "Mayo demands more burgers (150)"
+	case 200:
+		return "OBJECTION! ...to you stopping (200)"
+	case 250:
+		return "Mayo is basically a cat now (250)"
+	case 300:
+		return "Mayo is overwhelmed with joy (300)"
+	case 400:
+		return "Steel Samurai marathon! (400)"
+	case 500:
+		return "Mayo: certified gopher (500)"
+	case 666:
+		return "Mayo channels something spooky (666)"
+	case 750:
+		return "...are your fingers okay? (750)"
+	case 1000:
+		return "Mayo eternal. You win. (1000)"
+	default:
+		return fmt.Sprintf("*pet pet*  (%d)", n)
 	}
 }
 
