@@ -185,6 +185,8 @@ func restyleName(r uint8) string {
 		return "Restyle: Neon"
 	case courtroom.VariantInfrared:
 		return "Restyle: Infrared"
+	case courtroom.VariantPixelArt:
+		return "Restyle: Pixel art"
 	default:
 		return "Restyle: None"
 	}
@@ -195,7 +197,7 @@ func nextRestyle(r uint8) uint8 {
 	switch {
 	case r == 0:
 		return uint8(courtroom.VariantRedscale)
-	case r >= uint8(courtroom.VariantInfrared):
+	case r >= uint8(courtroom.VariantPixelArt):
 		return 0
 	default:
 		return r + 1
@@ -477,7 +479,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		p.Restyle = nextRestyle(p.Restyle)
 		a.d.Prefs.SetSpriteStyle(p)
 	}
-	c.Tooltip(rsb, "An extra per-pixel restyle for your sprite — redscale, greenscale, bluescale, solarize, threshold, duotone, warm, cool, neon, infrared. Overrides Invert/Grayscale/Sepia/Posterize; other AsyncAO players see it.")
+	c.Tooltip(rsb, "An extra per-pixel restyle for your sprite — redscale, greenscale, bluescale, solarize, threshold, duotone, warm, cool, neon, infrared, pixel art. Overrides Invert/Grayscale/Sepia/Posterize; other AsyncAO players see it.")
 	y += 30
 	// Movement path (#34): a transmitted looping motion — None → Orbit → Bounce → Sway →
 	// Drift. Other AsyncAO players see your sprite follow it; it stacks with the effects

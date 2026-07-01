@@ -14,21 +14,21 @@ import (
 func TestApplyVariant(t *testing.T) {
 	// Invert: RGB negated, alpha untouched (incl. a semi-transparent pixel).
 	inv := []byte{10, 20, 30, 255, 200, 100, 50, 128}
-	applyVariant(inv, uint8(courtroom.VariantInvert))
+	applyVariant(inv, 2, 1, uint8(courtroom.VariantInvert))
 	if want := []byte{245, 235, 225, 255, 55, 155, 205, 128}; !equalBytes(inv, want) {
 		t.Errorf("invert = %v, want %v", inv, want)
 	}
 
 	// Grayscale: each pixel → its luma, alpha kept. Red 255 → 76; mix → 140.
 	gray := []byte{255, 0, 0, 255, 100, 150, 200, 64}
-	applyVariant(gray, uint8(courtroom.VariantGrayscale))
+	applyVariant(gray, 2, 1, uint8(courtroom.VariantGrayscale))
 	if want := []byte{76, 76, 76, 255, 140, 140, 140, 64}; !equalBytes(gray, want) {
 		t.Errorf("grayscale = %v, want %v", gray, want)
 	}
 
 	// None: untouched.
 	none := []byte{10, 20, 30, 255}
-	applyVariant(none, uint8(courtroom.VariantNone))
+	applyVariant(none, 1, 1, uint8(courtroom.VariantNone))
 	if want := []byte{10, 20, 30, 255}; !equalBytes(none, want) {
 		t.Errorf("none changed the buffer: %v", none)
 	}
@@ -39,19 +39,32 @@ func TestApplyVariant(t *testing.T) {
 // alpha is always preserved.
 func TestApplyVariantRestyles(t *testing.T) {
 	red := []byte{100, 150, 50, 200}
-	applyVariant(red, uint8(courtroom.VariantRedscale)) // luma 123 → red channel only
+	applyVariant(red, 1, 1, uint8(courtroom.VariantRedscale)) // luma 123 → red channel only
 	if want := []byte{123, 0, 0, 200}; !equalBytes(red, want) {
 		t.Errorf("redscale = %v, want %v", red, want)
 	}
 	th := []byte{100, 150, 50, 200}
-	applyVariant(th, uint8(courtroom.VariantThreshold)) // luma 123 ≤ 127 → black, alpha kept
+	applyVariant(th, 1, 1, uint8(courtroom.VariantThreshold)) // luma 123 ≤ 127 → black, alpha kept
 	if want := []byte{0, 0, 0, 200}; !equalBytes(th, want) {
 		t.Errorf("threshold = %v, want %v", th, want)
 	}
 	ir := []byte{100, 150, 50, 200}
-	applyVariant(ir, uint8(courtroom.VariantInfrared)) // channel rotate R<-G<-B, alpha kept
+	applyVariant(ir, 1, 1, uint8(courtroom.VariantInfrared)) // channel rotate R<-G<-B, alpha kept
 	if want := []byte{150, 50, 100, 200}; !equalBytes(ir, want) {
 		t.Errorf("infrared = %v, want %v", ir, want)
+	}
+}
+
+// TestApplyPixelArt pins the #77 mosaic: a block is averaged ALPHA-WEIGHTED (so a
+// transparent neighbour can't drag the colour toward black), palette-quantised, and
+// written back uniformly; the block's alpha becomes the mean. Here w<block, so both
+// pixels are one cell: colour = the opaque pixel's (200,100,50) quantised to the
+// 6-level palette (204,102,51); alpha = mean(255,0) = 127.
+func TestApplyPixelArt(t *testing.T) {
+	pix := []byte{200, 100, 50, 255, 0, 0, 0, 0}
+	applyVariant(pix, 2, 1, uint8(courtroom.VariantPixelArt))
+	if want := []byte{204, 102, 51, 127, 204, 102, 51, 127}; !equalBytes(pix, want) {
+		t.Errorf("pixel art = %v, want %v", pix, want)
 	}
 }
 

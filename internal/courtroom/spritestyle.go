@@ -146,6 +146,7 @@ const (
 	VariantCool      // push cool (more blue, less red)
 	VariantNeon      // hard contrast punch (vivid)
 	VariantInfrared  // false-colour channel rotate
+	VariantPixelArt  // #77 mosaic (block-average) + palette quantise → an anime pixel-art look
 	VariantCount     // MUST stay last (UI + decode bound)
 )
 

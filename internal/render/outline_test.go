@@ -48,7 +48,7 @@ func TestSpriteOutlineShadowZeroAlloc(t *testing.T) {
 // colour).
 func TestVariantSilhouette(t *testing.T) {
 	pix := []byte{10, 20, 30, 255, 0, 0, 0, 0, 200, 100, 50, 128}
-	applyVariant(pix, uint8(courtroom.VariantSilhouette))
+	applyVariant(pix, 3, 1, uint8(courtroom.VariantSilhouette))
 	want := []byte{255, 255, 255, 255, 255, 255, 255, 0, 255, 255, 255, 128}
 	for i := range want {
 		if pix[i] != want[i] {

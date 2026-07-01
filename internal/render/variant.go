@@ -60,7 +60,7 @@ func (s *TextureStore) buildVariant(base *TexturePage, effect uint8) (*TexturePa
 			v.destroy()
 			return nil, err
 		}
-		applyVariant(pix, effect)
+		applyVariant(pix, int(base.W), int(base.H), effect)
 		tex, err := uploadPixels(s.ren, pix, base.W, base.H)
 		if err != nil {
 			v.destroy()
@@ -119,8 +119,9 @@ func uploadPixels(ren *sdl.Renderer, pix []byte, w, h int32) (*sdl.Texture, erro
 
 // applyVariant transforms an ABGR8888 buffer (R,G,B,A per pixel) IN PLACE, preserving
 // alpha. Pure (no SDL) so the maths is unit-tested. Invert negates RGB; grayscale uses
-// Rec.601 luma (integer, alloc-free).
-func applyVariant(pix []byte, effect uint8) {
+// Rec.601 luma (integer, alloc-free). w,h are the frame dimensions — only the pixel-art
+// mosaic needs them (the per-pixel effects ignore them).
+func applyVariant(pix []byte, w, h int, effect uint8) {
 	switch courtroom.VariantEffect(effect) {
 	case courtroom.VariantInvert:
 		for i := 0; i+3 < len(pix); i += 4 {
@@ -219,7 +220,76 @@ func applyVariant(pix []byte, effect uint8) {
 		for i := 0; i+3 < len(pix); i += 4 {
 			pix[i], pix[i+1], pix[i+2] = pix[i+1], pix[i+2], pix[i]
 		}
+	case courtroom.VariantPixelArt: // #77 mosaic (block-average) + palette quantise
+		applyPixelArt(pix, w, h)
 	}
+}
+
+// Pixel-art tuning (#77): the mosaic block size and how many levels each colour
+// channel is quantised to (a small palette → the flat, "anime pixel-art" look).
+const (
+	pixelArtBlock  = 6
+	pixelArtLevels = 6
+)
+
+// applyPixelArt turns an ABGR8888 frame into blocky, palette-reduced pixel art IN
+// PLACE: it averages each pixelArtBlock×pixelArtBlock cell (alpha-weighted, so
+// transparent edge pixels don't darken the colour), quantises the block colour to
+// a small palette, and writes it back to every pixel in the cell. Alpha is the
+// block's mean, so cutout edges pixelate too. Pure + alloc-free.
+func applyPixelArt(pix []byte, w, h int) {
+	if w <= 0 || h <= 0 || len(pix) < w*h*4 {
+		return
+	}
+	for by := 0; by < h; by += pixelArtBlock {
+		y1 := by + pixelArtBlock
+		if y1 > h {
+			y1 = h
+		}
+		for bx := 0; bx < w; bx += pixelArtBlock {
+			x1 := bx + pixelArtBlock
+			if x1 > w {
+				x1 = w
+			}
+			// Alpha-weighted colour sum + plain alpha sum over the block.
+			var sr, sg, sb, sa, n int
+			for y := by; y < y1; y++ {
+				row := y * w * 4
+				for x := bx; x < x1; x++ {
+					i := row + x*4
+					a := int(pix[i+3])
+					sr += int(pix[i]) * a
+					sg += int(pix[i+1]) * a
+					sb += int(pix[i+2]) * a
+					sa += a
+					n++
+				}
+			}
+			var r, g, b, av byte
+			if n > 0 {
+				av = byte(sa / n)
+			}
+			if sa > 0 { // alpha-weighted mean colour, then palette-quantised
+				r = quantizePixelArt(byte(sr / sa))
+				g = quantizePixelArt(byte(sg / sa))
+				b = quantizePixelArt(byte(sb / sa))
+			}
+			for y := by; y < y1; y++ {
+				row := y * w * 4
+				for x := bx; x < x1; x++ {
+					i := row + x*4
+					pix[i], pix[i+1], pix[i+2], pix[i+3] = r, g, b, av
+				}
+			}
+		}
+	}
+}
+
+// quantizePixelArt snaps a 0..255 channel to one of pixelArtLevels evenly-spaced
+// values (a small palette), rounding to the nearest level.
+func quantizePixelArt(c byte) byte {
+	lvl := (int(c)*(pixelArtLevels-1) + 127) / 255
+	return byte(lvl * 255 / (pixelArtLevels - 1))
 }
 
 // Restyle pixel-math tuning + helpers (pure, alloc-free).

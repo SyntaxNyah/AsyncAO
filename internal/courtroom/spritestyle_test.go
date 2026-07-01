@@ -196,6 +196,7 @@ func TestRestyleWire(t *testing.T) {
 		{Restyle: uint8(VariantSolarize), Tint: true, R: 9},
 		{Restyle: uint8(VariantInfrared), Path: [maxPathPoints]uint8{0x88, 0xF8, 0x8F, 0x08}, PathLen: 4},
 		{Restyle: uint8(VariantRedscale), Sepia: true, Motion: MotionOrbit},
+		{Restyle: uint8(VariantPixelArt)}, // #77 the new pixel-art restyle round-trips
 	} {
 		if got, _ := DecodeSpriteStyle("hi" + s.EncodeMarker()); got != s {
 			t.Errorf("restyle round-trip: got %+v, want %+v", got, s)
