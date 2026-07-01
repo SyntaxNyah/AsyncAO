@@ -4,6 +4,42 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.33.0 — 2026-07-01
+
+A looks-and-quality-of-life release: a one-click CRT filter, pixel-art sprites,
+name-mention alerts and a live cache view — plus a bit of hidden fun on About.
+
+### Looks & effects
+- **CRT / retro-TV filter.** One toggle (Settings, with the other post-processing
+  overlays) layers **scanlines + an RGB phosphor grille + a vignette** for the whole
+  old-TV look. Local eye-candy, off by default. *(True screen-curvature and bloom
+  need the whole stage rendered to a texture first — a bigger job saved for later.)*
+- **Pixel-art sprite restyle.** A new **Pixel art** entry in the Sprite Style box's
+  **Restyle** picker mosaics your character into flat, palette-reduced anime pixel
+  art — transmitted to other AsyncAO players like the other restyles (AO2 / webAO
+  still see your normal sprite).
+
+### Chat & quality of life
+- **A "↓ Latest" button in the IC log.** When you've scrolled up to re-read
+  something and nothing new has arrived, a jump-to-newest button now appears so you
+  don't have to drag the scrollbar all the way back down. (The "↓ N new" pill still
+  covers the case where messages arrived while you were scrolled up.)
+- **Get alerted when someone says your name.** A new option treats your **showname
+  and character name as callwords** — matched as **whole words** (so "Max" doesn't
+  fire on "maximum") and **never on your own messages**. Off by default; turn it on
+  at the top of **Settings → Callwords**, where it shares the same sound / in-app
+  toast / desktop-notification options as your other callwords.
+
+### Diagnostics
+- **A Cache tab in the Debug panel** (Extras → *Debug* → *Cache*): where your assets
+  loaded from this session (memory / disk / network), each cache tier's fill vs its
+  budget and hit rate, learned per-server formats, and network probe counts.
+
+### Fun
+- **Pet Mayo.** Click the mascot on the About page to pet her — she wiggles and
+  counts your pets through a long line of milestones, and if you keep going she'll
+  start bouncing around the screen.
+
 ## v1.32.0 — 2026-07-01
 
 A big looks-and-power-user release: two fresh grab-bags of transmitted effects,
