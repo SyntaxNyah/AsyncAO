@@ -112,12 +112,16 @@ func buildLivePlayers(players []courtroom.LivePlayer, areas []string, ipidByUID 
 			area = areas[p.AreaID]
 		}
 		uid := strconv.Itoa(p.ID)
+		ipid := p.IPID // WAP streams the mod-only IPID live in the PU name — prefer it
+		if ipid == "" {
+			ipid = ipidByUID[uid] // else a /getarea snapshot (other IPID-only servers); "" is safe
+		}
 		out = append(out, areaPlayer{
 			uid:      uid,
 			name:     name,
 			showname: p.Showname,
 			ooc:      p.OOCName,
-			ipid:     ipidByUID[uid], // "" when no snapshot (nil map read is safe)
+			ipid:     ipid,
 			area:     area,
 		})
 	}

@@ -27,6 +27,16 @@ const (
 	// software field to "Nyathena" — then DetectSoftware picks it up (and the user can also select
 	// it by hand). Kept last so the existing enum values stay stable.
 	SoftwareNyathena
+	// SoftwareWitches is the witches-akashi-party (WAP) fork of Akashi. Its ban /
+	// kick / CM *syntax* is Akashi's (positional IPID, duration-then-reason — the
+	// command builders reuse the Akashi cases), so it earns its own family for one
+	// reason: WAP runs a PlayerStateObserver that streams the mod-only IPID inside
+	// the live PU name field ("web71 (eea20f10)") to authenticated mods, so the ban
+	// box fills straight from the player list with NO /getarea (see
+	// courtroom.splitTrailingIPID; ../witches-akashi-party/src/playerstateobserver.cpp).
+	// Detected from an ID string carrying "wap"/"witches"; kept last so the earlier
+	// enum values stay stable.
+	SoftwareWitches
 	ServerSoftwareCount
 )
 
@@ -43,6 +53,8 @@ func (s ServerSoftware) String() string {
 		return "Whisker"
 	case SoftwareNyathena:
 		return "Nyathena"
+	case SoftwareWitches:
+		return "WAP-Akashi"
 	default:
 		return "Unknown"
 	}
@@ -56,7 +68,9 @@ func (s ServerSoftware) String() string {
 func DetectSoftware(software string) ServerSoftware {
 	s := strings.ToLower(software)
 	switch {
-	case strings.Contains(s, "akashi"): // incl. witches/wizards forks
+	case strings.Contains(s, "wap"), strings.Contains(s, "witches"): // witches-akashi-party — MUST precede "akashi" ("WAP-Akashi" contains both)
+		return SoftwareWitches
+	case strings.Contains(s, "akashi"): // stock Akashi + the wizards-akashi-rave fork
 		return SoftwareAkashi
 	case strings.Contains(s, "kfo"), strings.Contains(s, "tsuserver"):
 		return SoftwareTsuserver
@@ -160,7 +174,7 @@ func BanCommand(sw ServerSoftware, ipid, uid string, dur BanDuration, reason str
 			return ""
 		}
 		return fmt.Sprintf("/ban %s %s %s", ipid, quote(reason), quote(d))
-	case SoftwareAkashi: // /ban <ipid> <duration> <reason>   (duration BEFORE reason)
+	case SoftwareAkashi, SoftwareWitches: // /ban <ipid> <duration> <reason>   (duration BEFORE reason; WAP forks Akashi's cmdBan)
 		if ipid == "" {
 			return ""
 		}
@@ -187,7 +201,7 @@ func BanCommand(sw ServerSoftware, ipid, uid string, dur BanDuration, reason str
 func KickCommand(sw ServerSoftware, ipid, uid, reason string) string {
 	reason = sanitizeReason(reason)
 	switch sw {
-	case SoftwareTsuserver, SoftwareAkashi: // /kick <ipid> [reason]
+	case SoftwareTsuserver, SoftwareAkashi, SoftwareWitches: // /kick <ipid> [reason]  (WAP kicks by IPID unless prefixed "*<id>")
 		if ipid == "" {
 			return ""
 		}
@@ -244,7 +258,7 @@ func AreaKick(sw ServerSoftware, uid string) string {
 	switch sw {
 	case SoftwareAthena, SoftwareNyathena:
 		return "/kickarea " + uid
-	case SoftwareTsuserver, SoftwareAkashi:
+	case SoftwareTsuserver, SoftwareAkashi, SoftwareWitches:
 		return "/area_kick " + uid
 	default: // Whisker / unknown
 		return ""
@@ -280,6 +294,13 @@ func CommandReference(sw ServerSoftware) []string {
 	case SoftwareAkashi:
 		return []string{
 			`Ban — /ban <ipid> <duration> reason`,
+			`Kick — /kick <ipid> reason`,
+			`Area kick — /area_kick <uid>`,
+			`CM — /cm · /uncm · /lock · /unlock`,
+		}
+	case SoftwareWitches: // WAP forks Akashi's syntax; the difference is the IPID source
+		return []string{
+			`Ban — /ban <ipid> <duration> reason   (IPID auto-fills from the player list)`,
 			`Kick — /kick <ipid> reason`,
 			`Area kick — /area_kick <uid>`,
 			`CM — /cm · /uncm · /lock · /unlock`,

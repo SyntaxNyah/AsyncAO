@@ -220,6 +220,12 @@ type LivePlayer struct {
 	Char     string
 	Showname string
 	AreaID   int
+	// IPID is mod-only, and only some server families surface it in the live
+	// list: the witches/wizards Akashi-party forks append it to a mod's PU NAME
+	// field as a trailing "(<hex>)" token (../witches-akashi-party/src/
+	// playerstateobserver.cpp). Empty on every other server / for non-mods; the
+	// UI still falls back to a /getarea snapshot when it's blank. Never persisted.
+	IPID string
 }
 
 // livePlayerCap bounds the live roster map (hard rule #4: no unbounded caches).
@@ -240,6 +246,67 @@ const (
 	puShowname = 2
 	puAreaID   = 3
 )
+
+// ipidHexMin / ipidHexMax bound the parenthesised IPID token the witches-akashi-
+// party fork appends to a mod's PU name. Akashi IPIDs are 8 hex chars (the last
+// 4 bytes of a SHA hash — akashi/src/aoclient.cpp calculateIpid: toHex().right(8));
+// the slack tolerates a fork widening it while staying clear of the short hex
+// words a real OOC name might end in ("cafe", "beef").
+const (
+	ipidHexMin = 6
+	ipidHexMax = 12
+)
+
+// embedsIPIDInName reports whether the connected server's family streams the
+// mod-only IPID inside the PU name field. ONLY the witches-akashi-party (WAP)
+// fork does (SoftwareWitches, announced as "WAP-Akashi") — the fork author draws
+// exactly this line: stock Akashi has no PlayerStateObserver and never puts IPIDs
+// in the player list, so it's deliberately kept out. This also excludes
+// Athena/Nyathena/KFO/Whisker — they push PU packets too, so gating stops a
+// parenthesised OOC name on those servers being mis-read as an IPID (which, via
+// BanCommand's -i flag, could otherwise build a wrong-target ban).
+func (s *Session) embedsIPIDInName() bool {
+	return DetectSoftware(s.Software) == SoftwareWitches
+}
+
+// splitTrailingIPID peels a trailing "(<hex>)" IPID token off a witches-akashi-
+// party PU name: "web71 (eea20f10)" → "web71", "eea20f10"; a bare "(eea20f10)"
+// → "", "eea20f10". Returns the input unchanged with an empty ipid when there is
+// no IPID-looking token, so an ordinary parenthesised name ("Bob (cafe)") — or
+// any name on a server that doesn't do this — is left intact. Callers gate on
+// embedsIPIDInName; the hex + length test is a second guard.
+// (../witches-akashi-party/src/playerstateobserver.cpp.)
+func splitTrailingIPID(s string) (name, ipid string) {
+	t := strings.TrimRight(s, " \t\r\n")
+	if !strings.HasSuffix(t, ")") {
+		return s, ""
+	}
+	open := strings.LastIndexByte(t, '(') // the LAST group — the IPID is always the final token
+	if open < 0 {
+		return s, ""
+	}
+	tok := t[open+1 : len(t)-1]
+	if !looksLikeIPID(tok) {
+		return s, ""
+	}
+	return strings.TrimRight(t[:open], " \t\r\n"), tok
+}
+
+// looksLikeIPID reports whether tok is an Akashi-style hex IPID (all hex digits,
+// within the length bounds), so splitTrailingIPID never mistakes a word-in-parens
+// for one.
+func looksLikeIPID(tok string) bool {
+	if len(tok) < ipidHexMin || len(tok) > ipidHexMax {
+		return false
+	}
+	for i := 0; i < len(tok); i++ {
+		c := tok[i]
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return true
+}
 
 // Players returns the live roster (PR/PU) as a slice sorted by UID for a stable
 // display order. Empty when the server doesn't push the player-list packets (an
@@ -491,7 +558,22 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		}
 		switch atoiOr(p.Field(1), -1) {
 		case puOOCName:
-			pl.OOCName = protocol.DecodeField(p.Field(2))
+			// The witches/wizards Akashi-party forks stream a mod's target IPID
+			// as a trailing "(<hex>)" token on the PU name ("web71 (eea20f10)"),
+			// and as a bare "(eea20f10)" ADD follow-up. Peel it into pl.IPID so
+			// the ban box fills without a /getarea. Gated to that family so a
+			// normal server's parenthesised OOC name is never touched.
+			name := protocol.DecodeField(p.Field(2))
+			if s.embedsIPIDInName() {
+				if stripped, ipid := splitTrailingIPID(name); ipid != "" {
+					pl.IPID = ipid      // sticky: a later clean-name update won't clear it
+					if stripped == "" { // a bare "(ipid)" follow-up carries no name — keep the one we have
+						break
+					}
+					name = stripped
+				}
+			}
+			pl.OOCName = name
 		case puChar:
 			pl.Char = protocol.DecodeField(p.Field(2))
 		case puShowname:

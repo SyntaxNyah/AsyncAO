@@ -94,7 +94,8 @@ func TestDetectSoftware(t *testing.T) {
 		"Nyathena":             SoftwareNyathena, // must NOT fall through to Athena (substring)
 		"Nyathena v1.0.2":      SoftwareNyathena,
 		"Whisker":              SoftwareWhisker,
-		"witches-akashi-party": SoftwareAkashi,
+		"WAP-Akashi":           SoftwareWitches, // the ID string the fork now announces
+		"witches-akashi-party": SoftwareWitches, // …and its canonical name — both precede "akashi"
 		"some random server":   SoftwareUnknown,
 		"":                     SoftwareUnknown,
 	}

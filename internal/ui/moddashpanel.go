@@ -373,15 +373,20 @@ func (a *App) openModDashBox(kind int) {
 	a.modTemplatesEdit = false      // start in normal (fill) mode, not the template editor
 }
 
-// fetchAreaForBan asks the server for the area roster (/getarea), the mod-only reply that carries
-// IPIDs. The ban box re-resolves the frozen target's IPID from that reply (by UID), so an
-// IPID-only server's ban preview fills in once it lands.
+// fetchAreaForBan asks the server for the area roster — the mod-only reply that carries IPIDs — so
+// the ban box re-resolves the frozen target's IPID from it (by UID). It sends /getareas (ALL areas),
+// not /getarea (current area only): the target may be in another area, and Akashi surfaces the
+// mod-only IPID via /getareas (the user confirmed plain /getarea doesn't). pairAreaReset starts a
+// clean roster (Akashi's "=== area ===" blocks carry no "----" reset marker), and the reply burst is
+// kept out of OOC like the other roster pulls. (WAP doesn't reach here — its IPID arrives live.)
 func (a *App) fetchAreaForBan() {
 	if a.sess == nil {
 		return
 	}
-	a.queueOOCLines([]string{"/getarea"})
-	a.warnLine = "Fetching area info (/getarea) — IPID fills in when the server replies."
+	a.pairAreaReset = true
+	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow)
+	a.queueOOCLines([]string{"/getareas"})
+	a.warnLine = "Fetching area info (/getareas) — IPID fills in when the server replies."
 	a.warnAt = a.now()
 }
 
@@ -843,13 +848,17 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	if cmd != "" {
 		c.LabelClipped(x, y, maxW, cmd, ColAccent)
 	} else {
-		needIPID := a.banBoxIPID == "" && (sw == courtroom.SoftwareTsuserver || sw == courtroom.SoftwareAkashi)
+		needIPID := a.banBoxIPID == "" && (sw == courtroom.SoftwareTsuserver || sw == courtroom.SoftwareAkashi || sw == courtroom.SoftwareWitches)
 		switch {
 		case !a.dashSoftwareKnown():
 			c.LabelClipped(x, y, maxW, "Pick the server software first (Close, then Change).", ColDanger)
+		case needIPID && sw == courtroom.SoftwareWitches:
+			// WAP streams the IPID to authenticated mods inside the live player list — nothing to
+			// fetch; the mod just has to be logged in for it to arrive on the target's PU name.
+			c.LabelClipped(x, y, maxW, "WAP sends the IPID to mods in the player list. Log in as a server mod (Extras → Login) and it fills in.", ColDanger)
 		case needIPID:
 			c.LabelClipped(x, y, maxW, "This server bans by IPID (mod-only). Fetch it, then it fills in:", ColDanger)
-			if c.Button(sdl.Rect{X: x, Y: y + 22, W: 210, H: btnH}, "Fetch area info (/getarea)") {
+			if c.Button(sdl.Rect{X: x, Y: y + 22, W: 240, H: btnH}, "Fetch area info (/getareas)") {
 				a.fetchAreaForBan()
 			}
 		default:
