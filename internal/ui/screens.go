@@ -1579,6 +1579,29 @@ func (a *App) reshowSprites() {
 	a.warnAt = time.Now()
 }
 
+// chatBoxTopStrip is the showname strip above the message text (text draws at box.Y+chatBoxTopStrip);
+// chatBoxBottomPad leaves a little air under the last line. Used to grow the box to fit its message.
+const (
+	chatBoxTopStrip  = int32(26)
+	chatBoxBottomPad = int32(8)
+)
+
+// grownChatBoxH is the chatbox height needed to show `lines` lines of `lineH`-tall text in full
+// (plus the showname strip + bottom pad) — never below baseH (the MsgBox-knob band) and never above
+// 3/5 of the stage height vpH. Pins the "grow to fit so a resized/long message isn't cut off at the
+// bottom" rule; drawChatOverlay applies it to the flat fallback panel (a theme's own skin keeps its
+// authored size). Pure + unit-tested.
+func grownChatBoxH(baseH, vpH, lines, lineH int32) int32 {
+	needH := chatBoxTopStrip + lines*lineH + chatBoxBottomPad
+	if maxH := vpH * 3 / 5; needH > maxH {
+		needH = maxH
+	}
+	if needH < baseH {
+		return baseH
+	}
+	return needH
+}
+
 // drawChatOverlay paints the message box (showname + spoken text) over the stage.
 // movableBox (classic layout only) routes the box rect through slotRect so it can
 // be dragged off the sprites / out of the stage in the layout editor; w,h give the
@@ -1605,6 +1628,17 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// entirely. Everything below lays out relative to box, so move + resize follow.
 	if movableBox {
 		box = a.slotRect(slotChatbox, box, w, h)
+	}
+	// Grow the FLAT fallback panel to fit the whole wrapped message so long text isn't cut off
+	// at the bottom — notably after a viewport/box resize wraps it to more lines (reported bug).
+	// A theme's own chatbox skin keeps its authored size (stretching the art looks wrong). Grows
+	// UPWARD from the current bottom edge, capped inside grownChatBoxH.
+	if _, hasSkin := a.themePage(themeStemChatbox); !hasSkin {
+		lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
+		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-16, sc)), lineH); g > box.H {
+			box.Y -= g - box.H
+			box.H = g
+		}
 	}
 	// Theme chatbox skin when the theme ships one; flat translucent
 	// panel otherwise (themePage self-heals T1 eviction).
