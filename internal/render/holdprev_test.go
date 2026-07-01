@@ -97,6 +97,78 @@ func TestSpriteLoadHoldPrevious(t *testing.T) {
 	}
 }
 
+// TestThumbStandIn pins the opt-in thumbnail stand-in: with SetThumbSprites on,
+// a COLD sprite whose thumb:// page is resident draws that low-q stand-in — and
+// it WINS over hold-previous (the right character at low quality beats the
+// previous character at full quality). Off (the default), the miss path is
+// exactly the mode's own behaviour.
+func TestThumbStandIn(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	if err := store.Upload("spk", decodedFixture()); err != nil { // red: the "previous" sprite
+		t.Fatal(err)
+	}
+	// The ghost's thumbnail: a GREEN page under its thumb:// key, so the readback
+	// tells the three cases (blank / red held / green thumb) apart.
+	green := &assets.Decoded{Width: 64, Height: 64}
+	gimg := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	for p := 0; p < len(gimg.Pix); p += 4 {
+		gimg.Pix[p+1], gimg.Pix[p+3] = 0xFF, 0xFF
+	}
+	green.Frames = append(green.Frames, gimg)
+	green.Delays = append(green.Delays, 50*time.Millisecond)
+	if err := store.Upload(ThumbKeyPrefix+"ghost", green); err != nil {
+		t.Fatal(err)
+	}
+	ct, err := NewCaptureTarget(ren, 512, 384)
+	if err != nil {
+		t.Skipf("capture target unavailable headlessly: %v", err)
+	}
+	defer ct.Close()
+
+	vp := NewViewport(store)
+	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
+	scene := &courtroom.Scene{}
+	scene.Speaker.Visible = true
+	scene.Speaker.Active = "spk"
+	centre := func() (r, g uint8) {
+		img, err := ct.Capture(ren, func(dst sdl.Rect) { vp.Render(ren, scene, dst) })
+		if err != nil {
+			t.Skipf("ReadPixels unavailable headlessly: %v", err)
+		}
+		px := img.RGBAAt(256, 192)
+		return px.R, px.G
+	}
+	vp.Update(scene, 16*time.Millisecond) // remember the red sprite
+	if r, _ := centre(); r == 0 {
+		t.Fatal("setup: cached sprite did not draw")
+	}
+	scene.Speaker.Active = "ghost" // cold swap
+	vp.Update(scene, 16*time.Millisecond)
+
+	// Thumbs OFF (default): hold-previous bridges with the RED previous sprite.
+	if r, g := centre(); r == 0 || g != 0 {
+		t.Fatalf("thumbs off: expected the red held sprite, got r=%d g=%d", r, g)
+	}
+	// Thumbs ON: the GREEN thumbnail wins over the held sprite.
+	vp.SetThumbSprites(true)
+	if r, g := centre(); g == 0 || r != 0 {
+		t.Errorf("thumbs on: expected the green thumb stand-in, got r=%d g=%d", r, g)
+	}
+	// 0-alloc while a thumb stand-in is actively drawing.
+	allocs := testing.AllocsPerRun(200, func() {
+		vp.Render(ren, scene, sdl.Rect{X: 0, Y: 0, W: 512, H: 384})
+	})
+	if allocs != 0 {
+		t.Errorf("thumb stand-in render allocates %.1f/op, want 0", allocs)
+	}
+}
+
 // TestHoldMaxAgeAndTint pins the two hold-previous power knobs: the max-age cap
 // (a stand-in past its age gives up to blank; 0 = forever) and the diagnostic
 // amber tint's restore discipline (the wash may never bleed onto the shared T1

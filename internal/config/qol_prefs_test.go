@@ -1028,6 +1028,9 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetPreanimTimeoutMs(5000)
 	p.SetICQueueCap(128)
 	p.SetCatchUpLingerMs(250)
+	p.SetThumbCache(true)
+	p.SetThumbHeightPx(120)
+	p.SetThumbQuality(40)
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1048,6 +1051,9 @@ func TestResetPowerUser(t *testing.T) {
 	}
 	if !p.ClipSpritesToStageOn() {
 		t.Error("nuke must restore the sprite mask to its default ON")
+	}
+	if p.ThumbCacheOn() || p.ThumbHeightPx() != ThumbHeightDefaultPx || p.ThumbQuality() != ThumbQualityDefault {
+		t.Error("nuke must reset the thumbnail-cache knobs (stored thumbs on disk are untouched — Clear is separate)")
 	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)

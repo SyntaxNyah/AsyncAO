@@ -70,6 +70,24 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   tab — TLS, both Origin overrides, folder casing, renderer modes + knobs, sprite
   mask, timings — while user *data* (saved mod chips, learned formats) survives
   (`TestResetPowerUser` pins the scope).
+- **Sprite thumbnail cache** (Settings → Power user, **OFF by default**): the
+  opt-in persistent low-quality stand-in store (`internal/assets/thumbcache.go`).
+  Every character sprite that decodes leaves a **~1 KB WebP still** (frame 0,
+  CatmullRom-shrunk to a tunable height, tunable quality) in `cache/thumbs/` —
+  its **own DiskCache instance** beside T3, so thumbs outlive the full sprites
+  they stand in for. On a cold sprite the paced heal path requests the thumb, a
+  dedicated loader reads + decodes it **off-thread**, the render thread uploads
+  it under a **`thumb://` T1 key** (the `theme://` scheme-prefix precedent), and
+  the miss path draws it **before** hold-previous (right character > right
+  quality; the key is precomputed per base-change so the miss path allocates
+  nothing). Every hand-off queue is **bounded and sheds** (thumbs are
+  speculative); the store hook rides the Manager's decode completion
+  (char-sprite type only, non-blocking); a webpenc-less fallback build simply
+  never stores. **Free when off** (one atomic gate per entry point); knobs:
+  height (32–160 px), quality (5–60), Clear button; the nuke reset disables it
+  but keeps the stored thumbs (Clear is deliberate). Pinned by
+  `TestThumbCacheRoundTrip`, `TestThumbStandIn` (draw order + 0-alloc) and
+  `TestThumbDefaultsPinned` (config↔assets constants).
 - **WS-handshake Origin override** (Settings → Power user → Origin overrides): the
   connection-side sibling of the asset Origin — sent on the WebSocket upgrade for
   the rare server that allowlists only its own web client's origin. Blank (default)

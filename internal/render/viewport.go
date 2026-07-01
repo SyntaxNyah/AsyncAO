@@ -51,6 +51,9 @@ type animState struct {
 	// coldFor accumulates how long this layer's base has been unresolved (ticked
 	// in Update, reset on a hit) — the hold-previous max-age knob reads it.
 	coldFor time.Duration
+	// thumbKey is this base's precomputed thumb:// T1 key ("" when no base) —
+	// built once in reset so the cold-load miss path stays allocation-free.
+	thumbKey string
 
 	// lastGood is the base of the last sprite this layer actually DREW (set in
 	// drawSprite on a hit). It is deliberately NOT cleared by reset, so when the
@@ -62,7 +65,9 @@ type animState struct {
 }
 
 // reset rebinds the state to a new asset base. lastGood survives on purpose (see
-// the field comment) — the cold-load hold reads it after a base change.
+// the field comment) — the cold-load hold reads it after a base change. thumbKey
+// is precomputed HERE (a base change is a rare, event-driven moment) so the
+// per-frame miss path never builds a string.
 func (a *animState) reset(base string) {
 	a.base = base
 	a.frame = 0
@@ -70,6 +75,10 @@ func (a *animState) reset(base string) {
 	a.finished = false
 	a.page = nil
 	a.pageGen = 0
+	a.thumbKey = ""
+	if base != "" {
+		a.thumbKey = ThumbKeyPrefix + base
+	}
 }
 
 // resolve returns the cached page, re-querying the store only when its
@@ -230,6 +239,13 @@ type Viewport struct {
 	// washes stand-in sprites amber so the mitigation is VISIBLE while tuning.
 	holdMaxAge time.Duration
 	tintHeld   bool
+
+	// thumbSprites (opt-in pref, default OFF) lets the cold-load miss path show
+	// the RIGHT character's persistent low-quality thumbnail (uploaded under a
+	// thumb:// T1 key by the ui) while the full sprite streams. Independent of
+	// spriteLoadMode and checked FIRST — the correct character at low quality
+	// beats the previous character at full quality.
+	thumbSprites bool
 
 	// punchLeft counts down a #12 shout screen-punch; prevShoutOn edge-detects the
 	// shout's appearance in Update so the pop fires once per shout. Viewer-local.
@@ -687,6 +703,15 @@ func (v *Viewport) SetHoldMaxAge(d time.Duration) { v.holdMaxAge = d }
 // so the cold-load mitigation is visible while tuning it.
 func (v *Viewport) SetHoldDebugTint(on bool) { v.tintHeld = on }
 
+// SetThumbSprites toggles the low-q thumbnail stand-in on the cold-load miss
+// path (opt-in pref, default OFF). The App mirrors the pref here per frame.
+func (v *Viewport) SetThumbSprites(on bool) { v.thumbSprites = on }
+
+// ThumbKeyPrefix namespaces thumbnail uploads in T1 (like theme:// — a scheme
+// prefix can never collide with an asset URL base). The ui uploads loaded
+// thumbs under ThumbKeyPrefix+base; animState precomputes the same key.
+const ThumbKeyPrefix = "thumb://"
+
 // tickCold advances a char layer's cold-time (base set but not resolved) and
 // resets it on residency — the hold-previous max-age clock. resolve is
 // generation-cached, so the steady-state cost is pointer math.
@@ -753,13 +778,22 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	page, ok := anim.resolve(v.store)
 	if !ok || len(page.Frames) == 0 {
 		// Cold-load gap: the incoming sprite hasn't finished streaming + decoding.
-		// SpriteLoadHoldPrev keeps the layer's LAST drawn sprite on screen until it
-		// lands (webAO-style) instead of flashing empty. We resolve the HELD base
-		// through the store (never a stashed page pointer — the LRU owns lifetime,
-		// so an eviction just falls back to blank + self-heals). This lives ONLY on
-		// the draw path: resolve()/Update never see the held page, so the preanim
-		// lifecycle and packed-room catch-up pacing are untouched. SpriteLoadBlank
-		// → the original byte-identical early return.
+		// The opt-in THUMBNAIL wins first — the right character at low quality
+		// (uploaded by the ui under the precomputed thumb:// key) beats the
+		// previous character at full quality.
+		if v.thumbSprites && anim.thumbKey != "" {
+			if tp, ok2 := v.store.Get(anim.thumbKey); ok2 && len(tp.Frames) > 0 {
+				v.drawHeldSprite(ren, layer, tp, vp)
+				return
+			}
+		}
+		// Else SpriteLoadHoldPrev keeps the layer's LAST drawn sprite on screen
+		// until the new one lands (webAO-style) instead of flashing empty. We
+		// resolve the HELD base through the store (never a stashed page pointer —
+		// the LRU owns lifetime, so an eviction just falls back to blank +
+		// self-heals). This lives ONLY on the draw path: resolve()/Update never see
+		// the held page, so the preanim lifecycle and packed-room catch-up pacing
+		// are untouched. SpriteLoadBlank → the original byte-identical early return.
 		if v.spriteLoadMode == SpriteLoadHoldPrev && anim.lastGood != "" && anim.lastGood != anim.base &&
 			(v.holdMaxAge <= 0 || anim.coldFor <= v.holdMaxAge) { // max-age knob: 0 = bridge forever
 			if held, ok2 := v.store.Get(anim.lastGood); ok2 && len(held.Frames) > 0 {

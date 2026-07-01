@@ -47,6 +47,20 @@ renderer work and the optimisation / UX suggestions.
   Origin override for the **WebSocket handshake itself** — for the rare server that
   only accepts its own web client (e.g. one requiring `webao.<its domain>`).
 
+### Sprite thumbnail cache (power user, OFF by default)
+- **Tiny low-quality stand-ins for cold sprites** — the "compressed 1 KB sprite"
+  idea from the playtest. Turn it on and every character sprite that finishes
+  loading also leaves a **~1 KB heavily-compressed thumbnail** in its own folder
+  beside the asset cache (independent lifetime — thumbs are ~100× smaller, so they
+  stick around long after the full sprite was evicted). The next time that sprite
+  is needed cold, the thumbnail shows **instantly** — the **right character**,
+  visibly low quality — while the full-quality one streams in, then swaps. It
+  composes with the cold-load modes: the thumbnail covers the case where there's
+  **no previous sprite to hold**, and it always wins over hold-previous (the right
+  character at low quality beats the previous one at full quality). **Height** and
+  **quality** sliders tune the size/crunch trade, and a **Clear stored thumbnails**
+  button empties the store. Completely free while off.
+
 ### Mod / CM dashboard
 - **Savable custom ban durations.** Beside the preset chips you can now **save your
   own** ("45m", "2 days", "1w", "perma") — validated, rendered in each server

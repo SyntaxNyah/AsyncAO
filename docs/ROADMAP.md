@@ -29,15 +29,10 @@ gamepad track below._
   hold-previous). The v1.40.0 batch shipped the renderer + courtroom-core set (three
   cold-load modes + wait strictness/timeout, hold max-age + tint, shout/preanim/
   queue/catch-up sliders, the nuke reset).
-- **Low-quality persistent sprite cache** (Nightingale, 2026-07-01, **low priority**)
-  — an opt-in, power-user-only secondary cache of heavily-compressed ~1 KB sprite
-  thumbnails, kept across sessions. On an incoming message: show the tiny thumbnail
-  instantly, then swap to the full-quality sprite when it streams in. Complements the
-  hold-previous mode (covers the case with **no** previous sprite — first paint / a
-  brand-new character). **Default OFF** — full quality is the promise and the client
-  stays lightweight by default ("let them optimise it"). Reuse the CatmullRom decode
-  path to bake a nearest-neighbour/low-q variant. "Playing around with optimisation",
-  so not urgent.
+- ~~**Low-quality persistent sprite cache**~~ — **shipped in v1.40.0** (Settings →
+  Power user → "Sprite thumbnail cache", default OFF; see FEATURES). Possible later
+  tweak: a byte-budget auto-prune on the thumbs directory (today: the Clear button +
+  the `asyncao-cache` CLI prune the folder).
 - **Cold-load per-stage profiling** (Nightingale, 2026-07-01) — add per-stage timing
   (fetch TTFB/transfer · decode+CatmullRom-downscale · upload) to the metrics
   cold-load report so the bottleneck is measured, not asserted. Confirmed by hand:

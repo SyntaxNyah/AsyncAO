@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	_ "net/http/pprof"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"time"
@@ -114,6 +115,19 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer disk.Close()
+	// The opt-in low-q sprite thumbnail store (power user, default OFF) lives in
+	// its own directory BESIDE the T3 asset cache — independent lifetime by
+	// design: thumbs are ~100× smaller than their sprites, so they stay useful
+	// long after the full asset was pruned. Non-fatal: no thumbs ≠ no client.
+	thumbs, err := assets.NewThumbCache(filepath.Join(filepath.Dir(diskRoot), "thumbs"))
+	if err != nil {
+		log.Printf("thumbcache: %v (thumbnails disabled)", err)
+		thumbs = nil
+	} else {
+		defer thumbs.Close()
+		thumbs.SetEnabled(prefs.ThumbCacheOn())
+		thumbs.SetParams(prefs.ThumbHeightPx(), prefs.ThumbQuality())
+	}
 
 	client := network.NewClient()
 	client.SetAssetOrigin(prefs.AssetOriginHeader()) // power-user Origin/CORS override for asset streaming
@@ -240,6 +254,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		LocalMode:  localMode,
 		Pool:       pool,
 		Decoder:    decoder,
+		Thumbs:     thumbs, // opt-in low-q sprite thumbnails (nil when unavailable)
 		T1Contains: store.Contains,
 		T1Failed:   store.FailedRecently,
 	})

@@ -4636,6 +4636,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.controlPinnedClient()
 	}
 	a.drainWarnings()
+	a.drainThumbs() // loaded low-q stand-ins → T1 (render thread; bounded per frame)
 	a.pollThemeApply()
 	a.pollManifest()
 	a.maybeProbeCasing() // OFF unless the user picked Auto casing (cheap no-op otherwise)
@@ -4693,6 +4694,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())                                  // viewport sprite mask (default ON): offsets can't spill past the stage
 		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)
+		a.d.Viewport.SetThumbSprites(a.d.Prefs.ThumbCacheOn())                                         // opt-in low-q thumbnail stand-ins on the cold miss path
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
@@ -4703,6 +4705,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.splitVP.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())
 			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)
 			a.splitVP.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())
+			a.splitVP.SetThumbSprites(a.d.Prefs.ThumbCacheOn())
 			a.splitVP.Update(&a.splitRoom.Scene, dt)
 		}
 		// Music ducking: dip music while a message is on stage (shout/preanim/
@@ -5185,6 +5188,27 @@ func (a *App) pushDebug(line string) {
 	}
 }
 
+// drainThumbs uploads loaded low-q sprite thumbnails into T1 under their
+// thumb:// keys (render thread — Upload's home). Bounded per frame so a burst
+// of thumb loads can't stall a frame; the channel itself is bounded too.
+func (a *App) drainThumbs() {
+	th := a.d.Manager.Thumbs()
+	if th == nil {
+		return
+	}
+	const perFrame = 2 // thumbs are tiny; two uploads/frame clears any real burst
+	for i := 0; i < perFrame; i++ {
+		select {
+		case r := <-th.Results():
+			if r.Asset != nil {
+				_ = a.d.Store.Upload(render.ThumbKeyPrefix+r.Base, r.Asset)
+			}
+		default:
+			return
+		}
+	}
+}
+
 // drainWarnings empties the manager's missing-asset lane (bounded by its
 // channel cap), keeping the newest for the §4 on-screen banner.
 func (a *App) drainWarnings() {
@@ -5344,6 +5368,12 @@ func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, ask
 	}
 	*askBase, *askAt = layer.Active, now
 	a.d.Manager.PrefetchWithFallback(layer.Active, bareSpriteBase(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite)
+	// Cold sprite + thumbnails on: also ask for the low-q stand-in (paced by the
+	// same retry window above; the loader reads + decodes off-thread and
+	// drainThumbs uploads under the thumb:// key the renderer probes).
+	if th := a.d.Manager.Thumbs(); th != nil && th.Enabled() && !a.d.Store.Contains(render.ThumbKeyPrefix+layer.Active) {
+		th.RequestLoad(layer.Active)
+	}
 }
 
 // bareSpriteBase reconstructs the unprefixed sprite spelling from an active

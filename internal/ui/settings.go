@@ -2587,6 +2587,10 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 			a.d.Manager.SetAssetOrigin("") // the live network override too, not just the pref
 			a.rebuildAssetOrigin()         // re-derive the URL builder (character casing reset)
 			a.applyTimingToRoom()          // push the reset renderer/timing knobs to the live room
+			if th := a.d.Manager.Thumbs(); th != nil {
+				th.SetEnabled(false) // the thumbnail store follows its reset pref (stored thumbs are kept — Clear is separate)
+				th.SetParams(0, 0)
+			}
 			a.warnLine = "Power-user options reset to defaults."
 			a.warnAt = a.now()
 		}
@@ -2659,6 +2663,71 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		y += 26
 	}
 	y += 10
+
+	// Sprite thumbnail cache — the persistent low-q stand-in store.
+	y = a.settingsSection(y, w, "Sprite thumbnail cache")
+	th := a.d.Manager.Thumbs()
+	if th == nil {
+		y = a.settingsDesc(pad, y, "Unavailable in this build (the thumbnail store could not open).", ColTextDim)
+		y += 10
+	} else {
+		tcOn := a.d.Prefs.ThumbCacheOn()
+		if next := c.Checkbox(pad, y, "Keep tiny low-quality thumbnails of every sprite (default OFF)", tcOn); next != tcOn {
+			a.d.Prefs.SetThumbCache(next)
+			th.SetEnabled(next)
+		}
+		y += 26
+		y = a.settingsDesc(pad, y, "WHAT IT DOES: every character sprite that finishes loading also leaves a heavily-compressed ~1 KB thumbnail on disk (its own folder beside the asset cache — NOT the normal cache, so thumbnails stick around long after the full sprite was evicted). The next time that sprite is needed cold, the thumbnail shows INSTANTLY — the right character, visibly low quality — while the full-quality one streams in, then swaps. Composes with the cold-load modes above: the thumbnail covers the case where there IS no previous sprite to hold. THE TRADE: a little disk (a 500-sprite server ≈ 0.5 MB of thumbs) and a moment of obviously-crunchy art; the full-quality sprite always replaces it. If sprites look blocky for a second on a cold load, this is why — that's the feature working, not the art breaking.", ColTextDim)
+		y += 6
+		if a.d.Prefs.ThumbCacheOn() {
+			c.Label(pad, y+4, "Thumbnail height:", ColText)
+			tHp := a.d.Prefs.ThumbHeightPx()
+			ttrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+			nth := int(clampI32(c.Slider("thumbheight", ttrack, int32(tHp), config.ThumbHeightMaxPx), 0, config.ThumbHeightMaxPx))
+			if nth != 0 && nth < config.ThumbHeightMinPx {
+				nth = 0 // bottom of the track = the default (64 px)
+			}
+			c.Tooltip(ttrack, "How tall a stored thumbnail is (32–160 px). Bigger = sharper stand-in, bigger files. Applies to NEWLY stored thumbnails.")
+			thLabel := "default (64 px)"
+			if nth != 0 {
+				thLabel = strconv.Itoa(nth) + " px"
+			}
+			c.Label(pad+200+236, y+4, thLabel, ColTextDim)
+			if nth != tHp {
+				a.d.Prefs.SetThumbHeightPx(nth)
+				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
+			}
+			y += 26
+			c.Label(pad, y+4, "Thumbnail quality:", ColText)
+			tq := a.d.Prefs.ThumbQuality()
+			qtrack2 := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+			ntq := int(clampI32(c.Slider("thumbquality", qtrack2, int32(tq), config.ThumbQualityMax), 0, config.ThumbQualityMax))
+			if ntq != 0 && ntq < config.ThumbQualityMin {
+				ntq = 0
+			}
+			c.Tooltip(qtrack2, "WebP quality of a stored thumbnail (5–60). Lower = smaller + crunchier; the default 20 lands ~1 KB.")
+			tqLabel := "default (20)"
+			if ntq != 0 {
+				tqLabel = strconv.Itoa(ntq)
+			}
+			c.Label(pad+200+236, y+4, tqLabel, ColTextDim)
+			if ntq != tq {
+				a.d.Prefs.SetThumbQuality(ntq)
+				th.SetParams(a.d.Prefs.ThumbHeightPx(), a.d.Prefs.ThumbQuality())
+			}
+			y += 26
+			if c.Button(sdl.Rect{X: pad, Y: y, W: 200, H: btnH}, "Clear stored thumbnails") {
+				if err := th.Clear(); err != nil {
+					a.warnLine = clampLine("Clear thumbnails: " + err.Error())
+				} else {
+					a.warnLine = "Stored thumbnails cleared."
+				}
+				a.warnAt = a.now()
+			}
+			y += btnH + 6
+		}
+		y += 10
+	}
 
 	// Core message timings — the courtroom ceremony's hard-coded spans, exposed.
 	y = a.settingsSection(y, w, "Core message timings")

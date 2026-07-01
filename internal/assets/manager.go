@@ -68,6 +68,7 @@ type Manager struct {
 	client   Fetcher
 	pool     *network.Pool
 	decoder  *DecoderPool
+	thumbs   *ThumbCache // optional persistent low-q sprite thumbnails (nil = feature absent)
 
 	// localMode skips the T3 disk cache (assets already live on disk).
 	localMode bool
@@ -160,6 +161,9 @@ type ManagerDeps struct {
 	Decoder    *DecoderPool
 	T1Contains func(url string) bool
 	T1Failed   func(base string) bool
+	// Thumbs, when set, receives every successfully-decoded character sprite for
+	// low-q thumbnailing (the opt-in cold-load stand-in cache). nil = absent.
+	Thumbs *ThumbCache
 }
 
 // NewManager builds the pipeline orchestrator.
@@ -173,6 +177,7 @@ func NewManager(deps ManagerDeps) *Manager {
 		localMode:  deps.LocalMode,
 		pool:       deps.Pool,
 		decoder:    deps.Decoder,
+		thumbs:     deps.Thumbs,
 		t1Contains: deps.T1Contains,
 		t1Failed:   deps.T1Failed,
 		decodedCh:  make(chan DecodedAsset, decodedChanCap),
@@ -530,10 +535,20 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte) {
 		Type:           t,
 		PlayAnimations: m.prefs.AnimationsEnabled(),
 		OnDone: func(doneURL string, d *Decoded, err error) {
+			// Opt-in thumbnail store: every character sprite that decodes leaves a
+			// tiny low-q stand-in behind (ThumbCache gates on its own enable and
+			// Store is a non-blocking enqueue, so this is free when off).
+			if m.thumbs != nil && err == nil && t == AssetTypeCharSprite {
+				m.thumbs.Store(base, d)
+			}
 			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err}
 		},
 	})
 }
+
+// Thumbs exposes the optional low-q thumbnail store (nil when the app was
+// built/wired without one) — the ui reaches it for loads, knobs and Clear.
+func (m *Manager) Thumbs() *ThumbCache { return m.thumbs }
 
 // ClearDisk wipes the T3 cache (Settings "Clear Disk Cache" button).
 func (m *Manager) ClearDisk() error {

@@ -785,6 +785,9 @@ type AssetPreferences struct {
 	PreanimTimeoutMsVal    int                          `json:"preanimTimeoutMs,omitempty"`     // preanim wait cap in ms (0/absent = the canonical default)
 	ICQueueCapVal          int                          `json:"icQueueCap,omitempty"`           // IC backlog queue depth (0/absent = the canonical default 64)
 	CatchUpLingerMsVal     int                          `json:"catchUpLingerMs,omitempty"`      // per-message linger while catching up, ms (default 0 = one per frame)
+	ThumbCache             bool                         `json:"thumbCache,omitempty"`           // opt-in persistent low-q sprite thumbnail cache (default OFF)
+	ThumbHeightPxVal       int                          `json:"thumbHeightPx,omitempty"`        // thumbnail height px (0/absent = 64)
+	ThumbQualityVal        int                          `json:"thumbQuality,omitempty"`         // thumbnail webp quality (0/absent = 20)
 	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
 	TypingIndicator        bool                         `json:"typingIndicator"`                // opt-in cross-client "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
@@ -1074,6 +1077,9 @@ type prefsJSON struct {
 	PreanimTimeoutMs       int              `json:"preanimTimeoutMs"`     // preanim cap in ms (0 = default)
 	ICQueueCap             int              `json:"icQueueCap"`           // IC queue depth (0 = default 64)
 	CatchUpLingerMs        int              `json:"catchUpLingerMs"`      // catch-up per-message linger ms (default 0)
+	ThumbCache             bool             `json:"thumbCache"`           // low-q sprite thumbnail cache (default OFF)
+	ThumbHeightPx          int              `json:"thumbHeightPx"`        // thumb height px (0 = 64)
+	ThumbQuality           int              `json:"thumbQuality"`         // thumb webp quality (0 = 20)
 	MusicVolMode           bool             `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
 	TypingIndicator        bool             `json:"typingIndicator"`      // opt-in "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
@@ -1756,6 +1762,15 @@ func load(path string) (*AssetPreferences, error) {
 		p.ICQueueCapVal = clampPercent(p.ICQueueCapVal, ICQueueCapMin, ICQueueCapMax)
 	}
 	p.CatchUpLingerMsVal = clampPercent(onDisk.CatchUpLingerMs, 0, CatchUpLingerMaxMs) // default IS zero, so no sentinel
+	p.ThumbCache = onDisk.ThumbCache
+	p.ThumbHeightPxVal = onDisk.ThumbHeightPx
+	if p.ThumbHeightPxVal != 0 { // 0 = the shipped default
+		p.ThumbHeightPxVal = clampPercent(p.ThumbHeightPxVal, ThumbHeightMinPx, ThumbHeightMaxPx)
+	}
+	p.ThumbQualityVal = onDisk.ThumbQuality
+	if p.ThumbQualityVal != 0 {
+		p.ThumbQualityVal = clampPercent(p.ThumbQualityVal, ThumbQualityMin, ThumbQualityMax)
+	}
 	p.MusicVolMode = onDisk.MusicVolMode
 	p.ChangelogSeen = onDisk.ChangelogSeen
 	p.TypingIndicator = onDisk.TypingIndicator
@@ -5620,6 +5635,16 @@ const (
 	ICQueueCapMin       = 8     // shallowest useful backlog (still bounded — courtroom floors ≥ 1 regardless)
 	ICQueueCapMax       = 256   // deepest backlog before "just read the log"
 	CatchUpLingerMaxMs  = 1000  // longest per-message flash while catching up (default 0 = one per frame)
+
+	// Thumbnail-cache knobs (opt-in low-q sprite stand-ins). The defaults land
+	// ~1 KB per sprite: visibly low-quality by design — instantly recognisable,
+	// never mistaken for the real art.
+	ThumbHeightDefaultPx = 64  // matches assets.ThumbHeightDefault (pinned by test)
+	ThumbHeightMinPx     = 32  // barely a silhouette
+	ThumbHeightMaxPx     = 160 // "low-q" stops meaning anything past this
+	ThumbQualityDefault  = 20  // matches assets.ThumbQualityDefault (pinned by test)
+	ThumbQualityMin      = 5   // maximum crunch
+	ThumbQualityMax      = 60  // still clearly a placeholder
 )
 
 // SpriteWaitPairOn / SpriteWaitPreanimOn report the wait-mode strictness knobs
@@ -5768,6 +5793,69 @@ func (p *AssetPreferences) SetCatchUpLingerMs(ms int) {
 	p.markDirty()
 }
 
+// ThumbCacheOn reports the opt-in persistent low-quality sprite thumbnail cache
+// (OFF by default): every character sprite that decodes leaves a tiny (~1 KB)
+// heavily-compressed still behind, shown instantly as a stand-in when that
+// sprite is next needed cold.
+func (p *AssetPreferences) ThumbCacheOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ThumbCache
+}
+
+// SetThumbCache persists the thumbnail-cache toggle.
+func (p *AssetPreferences) SetThumbCache(on bool) { p.setBoolPref(&p.ThumbCache, on) }
+
+// ThumbHeightPx reports the thumbnail height (ThumbHeightDefaultPx when unset).
+func (p *AssetPreferences) ThumbHeightPx() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.ThumbHeightPxVal == 0 {
+		return ThumbHeightDefaultPx
+	}
+	return p.ThumbHeightPxVal
+}
+
+// SetThumbHeightPx persists the thumbnail height (0 = default; else clamped).
+func (p *AssetPreferences) SetThumbHeightPx(px int) {
+	if px != 0 {
+		px = clampPercent(px, ThumbHeightMinPx, ThumbHeightMaxPx)
+	}
+	p.mu.Lock()
+	if p.ThumbHeightPxVal == px {
+		p.mu.Unlock()
+		return
+	}
+	p.ThumbHeightPxVal = px
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ThumbQuality reports the thumbnail WebP quality (ThumbQualityDefault when unset).
+func (p *AssetPreferences) ThumbQuality() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.ThumbQualityVal == 0 {
+		return ThumbQualityDefault
+	}
+	return p.ThumbQualityVal
+}
+
+// SetThumbQuality persists the thumbnail quality (0 = default; else clamped).
+func (p *AssetPreferences) SetThumbQuality(q int) {
+	if q != 0 {
+		q = clampPercent(q, ThumbQualityMin, ThumbQualityMax)
+	}
+	p.mu.Lock()
+	if p.ThumbQualityVal == q {
+		p.mu.Unlock()
+		return
+	}
+	p.ThumbQualityVal = q
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // ResetPowerUser reverts EVERY power-user option to its shipped default — the
 // "nuke" button on the Power user tab. Scoped strictly to that tab's knobs: TLS
 // validation, both Origin overrides, character-folder casing, the whole renderer
@@ -5791,6 +5879,9 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.PreanimTimeoutMsVal = 0
 	p.ICQueueCapVal = 0
 	p.CatchUpLingerMsVal = 0
+	p.ThumbCache = false
+	p.ThumbHeightPxVal = 0
+	p.ThumbQualityVal = 0
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()
