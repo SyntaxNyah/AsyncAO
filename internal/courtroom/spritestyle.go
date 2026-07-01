@@ -60,9 +60,13 @@ type SpriteStyle struct {
 	// the wire payload ONLY when one is set — so a normal style stays the original 9-byte
 	// frame and an OLDER AsyncAO client (which reads only the first 9 bytes) still gets
 	// the tint/glow/etc., just without the outline.
-	Outline    bool // a white silhouette border around the sprite
+	Outline    bool // a silhouette border around the sprite (white by default, or OutlineR/G/B)
 	DropShadow bool // a soft dark silhouette offset down-right
 	Glitch     bool // #13 chromatic-aberration + occasional jolt (a digital glitch look)
+	// OutlineR/G/B colour the #8 outline; 0,0,0 = the default WHITE (so pure black isn't a choice).
+	// Sent as three extra bytes only when Outline is on AND a colour is set; a client that doesn't
+	// read them just draws the white outline (graceful).
+	OutlineR, OutlineG, OutlineB uint8
 }
 
 // Sprite-motion paths (#34): a 3-bit enum (0..7), so up to 8 named movements with room
@@ -332,18 +336,23 @@ func (s SpriteStyle) payloadBytes() []byte {
 	// Append flags2 when it carries anything OR a custom path follows it: the path region sits
 	// right after flags2, so flags2 must be present to keep byte positions deterministic.
 	hasPath := s.PathLen >= 2 && s.PathLen <= maxPathPoints
-	hasRestyle := s.Restyle != 0 // the "10 more restyles" picker — one extra byte after the path region
-	if flags2 != 0 || hasPath || hasRestyle {
+	hasRestyle := s.Restyle != 0                                                          // the "10 more restyles" picker
+	hasOutlineCol := s.Outline && (s.OutlineR != 0 || s.OutlineG != 0 || s.OutlineB != 0) // a coloured #8 outline
+	hasExt := hasRestyle || hasOutlineCol                                                 // fields after the path share the restyle-byte slot for a deterministic offset
+	if flags2 != 0 || hasPath || hasExt {
 		b = append(b, flags2)
 		switch {
 		case hasPath: // #34 custom path: [len][len packed-XY bytes] — rides send-on-change only
 			b = append(b, s.PathLen)
 			b = append(b, s.Path[:s.PathLen]...)
-		case hasRestyle:
-			b = append(b, 0) // pathLen 0 (no path) so the restyle byte lands at a deterministic offset
+		case hasExt:
+			b = append(b, 0) // pathLen 0 (no path) so the extension bytes land at a deterministic offset
 		}
-		if hasRestyle {
-			b = append(b, s.Restyle)
+		if hasExt {
+			b = append(b, s.Restyle) // 0 when only an outline colour follows
+			if hasOutlineCol {
+				b = append(b, s.OutlineR, s.OutlineG, s.OutlineB)
+			}
 		}
 	}
 	return b
@@ -395,11 +404,15 @@ func styleFromBytes(b []byte) SpriteStyle {
 				restyleOff = spriteStyleBytesV2 + 1 + int(pl) // past the path bytes
 			}
 		}
-		// Extra restyle (#M5+): one byte after the path region. An out-of-range value (an older
-		// enum, or a newer client's look) is ignored → the plain sprite, never a wrong variant.
+		// Extension region after the path: the restyle byte, then (optionally) a 3-byte outline
+		// colour. An out-of-range restyle (an older enum, or a newer client's look) is ignored →
+		// the plain sprite, never a wrong variant. A shorter frame simply carries fewer fields.
 		if len(b) > restyleOff {
 			if r := b[restyleOff]; r >= uint8(firstRestyle) && r < uint8(VariantCount) {
 				s.Restyle = r
+			}
+			if colOff := restyleOff + 1; len(b) >= colOff+3 { // coloured #8 outline
+				s.OutlineR, s.OutlineG, s.OutlineB = b[colOff], b[colOff+1], b[colOff+2]
 			}
 		}
 	}

@@ -246,7 +246,10 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 30                    // extra-restyle cycle (#M5+)
 	bh += 30                    // movement-path cycle (#34)
 	bh += 18 + stylePathBox + 8 // draw-your-own path editor (#34 B2)
-	bh += 30                    // clear button
+	if a.d.Prefs.SpriteStyle().Outline {
+		bh += 82 // outline-colour swatch + R/G/B sliders (only while Outline is on)
+	}
+	bh += 30 // clear button
 	// #126 presets: a header, a Save row, and one row per saved mood.
 	bh += 22 + 28 + int32(a.d.Prefs.StylePresetCount())*26
 	bh += styleBoxPad
@@ -498,6 +501,32 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26
+	if p.Outline { // custom outline colour (0,0,0 = the default white) — 3 sliders + a live swatch
+		sw := sdl.Color{R: p.OutlineR, G: p.OutlineG, B: p.OutlineB, A: 255}
+		if sw.R == 0 && sw.G == 0 && sw.B == 0 {
+			sw = sdl.Color{R: 255, G: 255, B: 255, A: 255}
+		}
+		lblW := c.TextWidth("Outline colour")
+		c.Label(x, y+1, "Outline colour", ColTextDim)
+		swR := sdl.Rect{X: x + lblW + 6, Y: y, W: 16, H: 16}
+		c.Fill(swR, sw)
+		c.Border(swR, ColBackground)
+		y += 20
+		osw := r.W - 24 - styleBoxPad*2
+		nr := c.Slider("outlineR", sdl.Rect{X: x + 22, Y: y, W: osw, H: 14}, int32(p.OutlineR), 255)
+		c.Label(x, y, "R", ColTextDim)
+		y += 20
+		ng := c.Slider("outlineG", sdl.Rect{X: x + 22, Y: y, W: osw, H: 14}, int32(p.OutlineG), 255)
+		c.Label(x, y, "G", ColTextDim)
+		y += 20
+		nb := c.Slider("outlineB", sdl.Rect{X: x + 22, Y: y, W: osw, H: 14}, int32(p.OutlineB), 255)
+		c.Label(x, y, "B", ColTextDim)
+		y += 22
+		if nr != int32(p.OutlineR) || ng != int32(p.OutlineG) || nb != int32(p.OutlineB) {
+			p.OutlineR, p.OutlineG, p.OutlineB = uint8(nr), uint8(ng), uint8(nb)
+			a.d.Prefs.SetSpriteStyle(p)
+		}
+	}
 	if next := c.Checkbox(x, y, "Glitch", p.Glitch); next != p.Glitch { // #13 chromatic aberration
 		p.Glitch = next
 		a.d.Prefs.SetSpriteStyle(p)

@@ -23,6 +23,7 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 		Invert: p.Invert, Grayscale: p.Grayscale, Sepia: p.Sepia, Posterize: p.Posterize, Motion: p.Motion,
 		Restyle: p.Restyle, // the "10 more restyles" picker (a courtroom.Variant* code, or 0)
 		Outline: p.Outline, DropShadow: p.DropShadow, Glitch: p.Glitch,
+		OutlineR: p.OutlineR, OutlineG: p.OutlineG, OutlineB: p.OutlineB, // custom outline colour (0,0,0 = white)
 		Brightness: p.Brightness, Scale: p.Scale, Rotation: p.Rotation,
 	}
 	// Custom motion path (#34): both are the same [6]uint8 array; ≥2 active points = on

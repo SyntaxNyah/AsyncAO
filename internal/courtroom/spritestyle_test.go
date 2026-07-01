@@ -218,6 +218,28 @@ func TestRestyleWire(t *testing.T) {
 	}
 }
 
+// TestOutlineColourWire pins the coloured #8 outline (#M5+): a colour round-trips (alone, and
+// alongside a restyle or a path), while 0,0,0 stays the default white and sends NO colour bytes
+// (an outline-only frame keeps its original size, so older clients are unaffected).
+func TestOutlineColourWire(t *testing.T) {
+	for _, s := range []SpriteStyle{
+		{Outline: true, OutlineR: 255, OutlineG: 80, OutlineB: 40},
+		{Outline: true, OutlineR: 10, OutlineG: 200, OutlineB: 255, Restyle: uint8(VariantNeon)},
+		{Outline: true, OutlineB: 255, Path: [maxPathPoints]uint8{0x11, 0x22}, PathLen: 2},
+	} {
+		if got, _ := DecodeSpriteStyle("x" + s.EncodeMarker()); got != s {
+			t.Errorf("outline-colour round-trip: got %+v, want %+v", got, s)
+		}
+	}
+	white := SpriteStyle{Outline: true} // 0,0,0 → default white: no colour bytes, unchanged frame size
+	if got, _ := DecodeSpriteStyle("x" + white.EncodeMarker()); got != white {
+		t.Errorf("default-white outline changed on the wire: got %+v", got)
+	}
+	if b := white.payloadBytes(); len(b) != spriteStyleBytesV2 {
+		t.Errorf("default outline payload = %d bytes, want %d (no colour bytes appended)", len(b), spriteStyleBytesV2)
+	}
+}
+
 // TestSpriteStyleLongPath pins the raised custom-path cap (#34): a FULL
 // maxPathPoints-point path round-trips through the marker, and the decoder drops a
 // path whose claimed length exceeds maxPathPoints — which is exactly how an OLDER

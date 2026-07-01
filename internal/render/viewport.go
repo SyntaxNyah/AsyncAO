@@ -800,7 +800,11 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 				v.drawSilhouette(ren, silTex, angle, flip, shadowDir[:], ow*shadowMultiple, 0, 0, 0, shadowAlpha)
 			}
 			if st.Outline {
-				v.drawSilhouette(ren, silTex, angle, flip, outlineDirs[:], ow, 255, 255, 255, outlineAlpha)
+				or, og, ob := uint8(255), uint8(255), uint8(255) // white by default
+				if st.OutlineR != 0 || st.OutlineG != 0 || st.OutlineB != 0 {
+					or, og, ob = st.OutlineR, st.OutlineG, st.OutlineB // #M5+ custom outline colour
+				}
+				v.drawSilhouette(ren, silTex, angle, flip, outlineDirs[:], ow, or, og, ob, outlineAlpha)
 			}
 		}
 	}

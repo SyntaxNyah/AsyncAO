@@ -352,9 +352,13 @@ type SpriteStylePref struct {
 	PathLen   uint8     `json:"motionPathLen,omitempty"` // # active waypoints (0 = none, else 2..16)
 	// Silhouette effects (#8): a white outline and a dark drop-shadow drawn behind the
 	// sprite. Transmitted via a backward-compatible flags2 byte on the style wire.
-	Outline    bool  `json:"outline,omitempty"`
-	DropShadow bool  `json:"dropShadow,omitempty"`
-	Glitch     bool  `json:"glitch,omitempty"` // #13 chromatic-aberration glitch
+	Outline    bool `json:"outline,omitempty"`
+	DropShadow bool `json:"dropShadow,omitempty"`
+	Glitch     bool `json:"glitch,omitempty"` // #13 chromatic-aberration glitch
+	// OutlineR/G/B colour the #8 outline (0,0,0 = default white). Transmitted with the outline.
+	OutlineR   uint8 `json:"outlineR,omitempty"`
+	OutlineG   uint8 `json:"outlineG,omitempty"`
+	OutlineB   uint8 `json:"outlineB,omitempty"`
 	Brightness uint8 `json:"brightness,omitempty"`
 	Scale      uint8 `json:"scale,omitempty"`
 	Rotation   uint8 `json:"rotation,omitempty"`
