@@ -2530,6 +2530,18 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	pad := a.formX
 	w := a.formW2()
 
+	// Diagnostics — the Debug panel only READS state, so it sits ABOVE the
+	// dangerous reveal gate below. Opening it returns to the courtroom, where the
+	// floating panel draws. Also on F8 anywhere, and Extras → Debug.
+	y = a.settingsSection(y, w, "Diagnostics")
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 260, H: btnH}, "Open Debug panel (F8)") {
+		a.showDebugPanel = true
+		a.screen = a.prevScreen // back to the courtroom, where the panel is drawn
+	}
+	y += btnH + 6
+	y = a.settingsDesc(pad, y, "Server software, live packet inspector, performance (frame graph, heap vs budget, GC), the three-tier asset cache, and the failure log — one floating panel. Also opens with F8 anywhere, or Extras → Debug.", ColTextDim)
+	y += 10
+
 	y = a.settingsSection(y, w, "Power user (advanced)")
 	y = a.settingsDesc(pad, y, "⚠ Everything here is for people who KNOW what their server needs. The wrong value can make characters fetch 0 assets or stop you connecting. If unsure, leave it all at the defaults.", ColDanger)
 	y += 4

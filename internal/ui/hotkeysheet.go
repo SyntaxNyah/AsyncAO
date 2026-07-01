@@ -36,6 +36,7 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 	for _, fx := range [...]struct{ key, label string }{
 		{"F1", "show / hide this list"},
 		{"F3", "performance HUD"},
+		{"F8", "Debug panel (diagnostics)"},
 		{"Esc", "close menus / exit theater"},
 		{"Ctrl+wheel", "resize text · zoom the stage"},
 	} {

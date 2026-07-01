@@ -34,7 +34,8 @@ const (
 // debugSections are the panel's tabs, indexed by a.debugSection.
 var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log"}
 
-// toggleDebugPanel opens / closes the Debug panel (Extras → Debug).
+// toggleDebugPanel opens / closes the Debug panel (Extras → Debug, the F8 key,
+// or Settings → Power user → Diagnostics).
 func (a *App) toggleDebugPanel() { a.showDebugPanel = !a.showDebugPanel }
 
 // debugPanelRect is the Debug panel's floating-window rect (floatwin.go).

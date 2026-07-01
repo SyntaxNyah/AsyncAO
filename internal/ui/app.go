@@ -4497,6 +4497,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		}
 		a.ctx.keyPressed = 0
 	}
+	// F8 toggles the interactive Debug panel on any screen — the superset of the F3
+	// perf HUD, also reachable from Extras → Debug and Settings → Power user.
+	// Consumed so a plain-key macro/char bind named "f8" can't double-fire.
+	if a.ctx.keyPressed == sdl.K_F8 {
+		a.toggleDebugPanel()
+		a.ctx.keyPressed = 0
+	}
 	// ESC leaves a full-screen menu back to where it opened — the instinctive
 	// keystroke (the Back button still works). Two-step so it ALWAYS makes
 	// progress out: a focused text field (a search / callword box, the common
