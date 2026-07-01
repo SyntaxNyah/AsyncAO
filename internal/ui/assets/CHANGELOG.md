@@ -4,6 +4,14 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.33.5 — 2026-07-01
+
+### Diagnostics
+- **The Debug panel now has a keybind and a Settings home.** Press **F8** anywhere
+  to open or close it (it's the interactive superset of the F3 performance HUD), or
+  open it from **Settings → Power user → Diagnostics**. It's still on **Extras →
+  Debug** too, and it's listed in the **F1** hotkey sheet.
+
 ## v1.33.0 — 2026-07-01
 
 A looks-and-quality-of-life release: a one-click CRT filter, pixel-art sprites,
