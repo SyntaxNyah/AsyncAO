@@ -4,6 +4,53 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.32.0 — 2026-07-01
+
+A big looks-and-power-user release: two fresh grab-bags of transmitted effects,
+a real diagnostics panel, and a tidier, safer Settings screen.
+
+### Looks & effects
+- **10 new animated text effects.** The IC bar's **FX** button is now a picker (13
+  effects were too many to cycle): **Bounce, Sway, Shiver, Wobble, Tremble, Float**
+  move your letters, and **Pulse, Gradient, Blink, Sparkle** colour them. Other
+  AsyncAO players see the animation; AO2 / webAO see plain text. You can still type
+  `[bounce]…[/bounce]` inline for a single word.
+- **10 new sprite restyles.** A new **Restyle** picker in the Sprite Style box:
+  **Redscale, Greenscale, Bluescale, Solarize, Threshold, Duotone, Warm, Cool, Neon**
+  and **Infrared** — one-click per-pixel looks, transmitted to other AsyncAO players.
+- **Colour your character's outline** instead of just white — three RGB sliders
+  appear when Outline is on (transmitted, stacks with everything else).
+- **Custom movement paths can have up to 16 points** now (was 6), with an **Undo
+  point** button for building a path click by click.
+
+### Moderation
+- **The ban button fills the IPID from the player list on WAP-Akashi servers.** The
+  witches-akashi-party fork streams the mod-only IPID live in the roster, so a
+  logged-in mod's ban box fills in with no `/getarea`. (Stock Akashi still fetches
+  it, now via `/getareas`, which also covers a target in another area.)
+
+### Diagnostics
+- **A proper Debug panel** (Extras → *Debug*): tabs for **Session** (server
+  software, live ping, connection), a **packet inspector** (recent packets + in/out
+  counts), **performance** (frame graph, heap vs the memory budget, GC, cache hit
+  rate, prefetch probes), and the failure log.
+
+### Settings
+- **A dedicated "Power user" tab** on the left gathers the options that can break
+  things if set wrong — TLS certificate validation, the Asset Origin header,
+  character-folder casing, and image-format tuning — behind a reveal button with red
+  warnings, so they stay clear of everyday settings.
+- **Optional capitalised asset fetching** (power-user, OFF by default): for the rare
+  server whose character folders are capitalised, fetch as *Phoenix wright* or
+  *Phoenix Wright* instead of lowercase. ⚠ Check your server first — the wrong choice
+  makes every character load nothing.
+
+### Fixes
+- **The chatbox grows to fit a long message** instead of clipping the bottom lines —
+  most noticeable after resizing the viewport narrower.
+- **Long Settings descriptions word-wrap** inside the card now (the Hotkeys, TLS and
+  Data notes ran off the edge before).
+
 ## v1.31.0 — 2026-06-30
 
 ### Newcomer-friendly phone book
