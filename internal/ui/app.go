@@ -1866,6 +1866,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // pair placement is seeded per-session in resetSessionState (above)
 	a.oocPct = d.Prefs.OOCScale()                                               // OOC log text size, independent of the IC log
 	a.volStripOn = d.Prefs.VolStripShownOn()                                    // restore the on-screen volume strip toggle (persisted)
+	a.musicVolMode = d.Prefs.MusicVolModeOn()                                   // restore the Music-menu volume-sliders view (persisted)
 	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
 	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
 	a.uiScalePct = d.Prefs.UIScale()
@@ -4650,12 +4651,16 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.room.Update(dt)
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
+		a.d.Viewport.SetSpriteLoadMode(a.d.Prefs.SpriteLoadMode())                                     // cold-load flash mitigation (power user; default Blank = byte-identical)
+		a.d.Viewport.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())                                  // viewport sprite mask (default ON): offsets can't spill past the stage
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		if a.splitActive() { // drive the pinned right-pane stage on its OWN viewport
 			a.splitRoom.Update(dt)
 			a.splitVP.SetSpriteFX(a.spriteFX())
+			a.splitVP.SetSpriteLoadMode(a.d.Prefs.SpriteLoadMode())
+			a.splitVP.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())
 			a.splitVP.Update(&a.splitRoom.Scene, dt)
 		}
 		// Music ducking: dip music while a message is on stage (shout/preanim/

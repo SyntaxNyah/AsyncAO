@@ -238,6 +238,11 @@ const defaultICTimestamps = false
 // deliberate Disconnect never auto-retries).
 const defaultAutoReconnect = true
 
+// defaultClipSpritesToStage clips the character sprites to the stage rect so a
+// large pair / reposition OFFSET can't spill a sprite over the chatbox or the log.
+// Default ON (a power-user Settings toggle turns it off for freeform placement).
+const defaultClipSpritesToStage = true
+
 // defaultMusicHistory ships ON: AsyncAO keeps a session list of the songs played
 // in the room (the Jukebox "Recently played" view) so you can grab a link
 // someone /played. Toggleable off in Settings.
@@ -666,6 +671,7 @@ type AssetPreferences struct {
 	RandomEmote            bool                         `json:"randomEmote"`
 	FriendHighlight        bool                         `json:"friendHighlight"`
 	ShowFriendButton       bool                         `json:"showFriendButton"`
+	ClipSpritesToStage     bool                         `json:"clipSpritesToStage"` // clip character sprites to the stage so an offset can't spill over the chatbox/log (default ON)
 	RightClickHideSprite   bool                         `json:"rightClickHideSprite"`
 	DragLayout             bool                         `json:"dragLayout"`
 	FollowEnabled          bool                         `json:"followEnabled"`
@@ -768,6 +774,8 @@ type AssetPreferences struct {
 	RestoreTabs            bool                         `json:"restoreTabs"`
 	VolStripOn             bool                         `json:"volStripOn"`                     // on-screen volume strip toggle (default OFF)
 	ChangelogSeen          string                       `json:"changelogSeenVersion,omitempty"` // last What's New version opened (#23 unread dot)
+	SpriteLoadModeVal      int                          `json:"spriteLoadMode,omitempty"`       // power-user cold-load sprite behaviour: 0 blank/default, 1 hold-previous (see SpriteLoad*)
+	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
 	TypingIndicator        bool                         `json:"typingIndicator"`                // opt-in cross-client "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
@@ -938,6 +946,7 @@ type prefsJSON struct {
 	RandomEmote            bool             `json:"randomEmote"`          // default OFF
 	FriendHighlight        bool             `json:"friendHighlight"`      // default OFF
 	ShowFriendButton       *bool            `json:"showFriendButton"`     // default ON (pointer: absent != off)
+	ClipSpritesToStage     *bool            `json:"clipSpritesToStage"`   // clip sprites to the stage (default ON; pointer: absent != off)
 	RightClickHideSprite   *bool            `json:"rightClickHideSprite"` // default ON (pointer: absent != off)
 	DragLayout             *bool            `json:"dragLayout"`           // default ON (pointer: absent != off)
 	FollowEnabled          bool             `json:"followEnabled"`        // default OFF (opt-in)
@@ -1043,6 +1052,8 @@ type prefsJSON struct {
 	RestoreTabs            bool             `json:"restoreTabs"`          // default OFF (zero value)
 	VolStripOn             bool             `json:"volStripOn"`           // on-screen volume strip toggle (default OFF)
 	ChangelogSeen          string           `json:"changelogSeenVersion"` // last What's New version opened (#23)
+	SpriteLoadMode         int              `json:"spriteLoadMode"`       // power-user cold-load sprite behaviour (0 blank/default, 1 hold-previous)
+	MusicVolMode           bool             `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
 	TypingIndicator        bool             `json:"typingIndicator"`      // opt-in "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
 	ReduceMotion           bool             `json:"reduceMotion"`         // default OFF (zero value)
@@ -1375,6 +1386,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		PreferAnimated:       defaultPreferAnimated,
 		EmoteButtonImages:    defaultEmoteButtonImages,
 		ShowFriendButton:     defaultShowFriendButton,
+		ClipSpritesToStage:   defaultClipSpritesToStage,
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
 		RightClickHideSprite: defaultRightClickHideSprite,
@@ -1488,6 +1500,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.ShowFriendButton != nil { // pointer: absent keeps the default-ON
 		p.ShowFriendButton = *onDisk.ShowFriendButton
+	}
+	if onDisk.ClipSpritesToStage != nil { // pointer: absent keeps the default-ON
+		p.ClipSpritesToStage = *onDisk.ClipSpritesToStage
 	}
 	if onDisk.DragLayout != nil { // pointer: absent keeps the default-ON
 		p.DragLayout = *onDisk.DragLayout
@@ -1690,6 +1705,11 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.RestoreTabs = onDisk.RestoreTabs
 	p.VolStripOn = onDisk.VolStripOn
+	p.SpriteLoadModeVal = onDisk.SpriteLoadMode
+	if p.SpriteLoadModeVal < SpriteLoadBlank || p.SpriteLoadModeVal >= SpriteLoadModeCount {
+		p.SpriteLoadModeVal = SpriteLoadBlank // clamp to a known mode (a garbage / newer value falls back to default)
+	}
+	p.MusicVolMode = onDisk.MusicVolMode
 	p.ChangelogSeen = onDisk.ChangelogSeen
 	p.TypingIndicator = onDisk.TypingIndicator
 	p.OpenTabs = onDisk.OpenTabs
@@ -2756,6 +2776,27 @@ func (p *AssetPreferences) SetShowFriendButton(on bool) {
 		return
 	}
 	p.ShowFriendButton = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClipSpritesToStageOn reports the viewport sprite mask (ON by default): character
+// sprites are clipped to the stage so a big pair / reposition offset can't spill
+// over the chatbox or the log.
+func (p *AssetPreferences) ClipSpritesToStageOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ClipSpritesToStage
+}
+
+// SetClipSpritesToStage toggles the viewport sprite mask.
+func (p *AssetPreferences) SetClipSpritesToStage(on bool) {
+	p.mu.Lock()
+	if p.ClipSpritesToStage == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ClipSpritesToStage = on
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -5420,6 +5461,61 @@ func (p *AssetPreferences) SetVolStripShown(on bool) {
 		return
 	}
 	p.VolStripOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Cold-load sprite behaviour (SpriteLoadMode): what a character layer shows while
+// an uncached sprite is still streaming + decoding. The values MUST equal
+// render.SpriteLoad* (the UI mirrors the pref straight into the viewport); kept as
+// plain ints here to avoid a config→render import.
+const (
+	SpriteLoadBlank     = 0 // draw nothing until the sprite lands (default; the cold-load flash)
+	SpriteLoadHoldPrev  = 1 // keep the previous sprite until the new one lands (webAO-style)
+	SpriteLoadModeCount = 2 // number of valid modes (for the Settings cycle button + load clamp)
+)
+
+// SpriteLoadMode reports the power-user cold-load sprite behaviour (SpriteLoadBlank
+// default). It never affects a cached sprite — only what shows during the fetch/
+// decode gap for an uncached one.
+func (p *AssetPreferences) SpriteLoadMode() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteLoadModeVal
+}
+
+// SetSpriteLoadMode persists the cold-load sprite behaviour (clamped to a known mode).
+func (p *AssetPreferences) SetSpriteLoadMode(mode int) {
+	if mode < SpriteLoadBlank || mode >= SpriteLoadModeCount {
+		mode = SpriteLoadBlank
+	}
+	p.mu.Lock()
+	if p.SpriteLoadModeVal == mode {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteLoadModeVal = mode
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MusicVolModeOn reports whether the Music menu shows the volume sliders instead of
+// the track list. Persisted so the choice survives a restart (playtest: it used to
+// reset to the track list every launch).
+func (p *AssetPreferences) MusicVolModeOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MusicVolMode
+}
+
+// SetMusicVolMode persists the Music-menu volume-view toggle.
+func (p *AssetPreferences) SetMusicVolMode(on bool) {
+	p.mu.Lock()
+	if p.MusicVolMode == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MusicVolMode = on
 	p.mu.Unlock()
 	p.markDirty()
 }

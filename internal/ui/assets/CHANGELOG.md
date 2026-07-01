@@ -4,6 +4,36 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.40.0 — 2026-07-01
+
+Renderer polish and power-user knobs, plus a couple of fixes — a big batch of
+playtest feedback. **Thanks to Nightingale for the bulk of these ideas** — the
+renderer work and the optimisation / UX suggestions.
+
+### Renderer (power user)
+- **Cold-load sprite modes — no more blank flash.** When someone speaks with a
+  sprite you haven't downloaded yet, there's a moment while it streams + decodes
+  (worse on huge art or high ping) where the sprite used to flash empty. A new
+  **Settings → Power user → Renderer** option chooses what shows in that gap:
+  **"Show nothing"** (the default — the current behaviour) or **"Keep the previous
+  one"**, which holds the last sprite on screen until the new one is ready (like
+  webAO) so the stage never blanks between speakers. Purely cosmetic, fully isolated
+  on the render path, and **free once a sprite is cached** (the render loop stays at
+  0 allocs/op). *(A third "wait until it loads" mode — hold the whole message
+  off-stage — is planned; it lives in the message queue, not the renderer.)*
+- **Viewport sprite mask (default ON).** Character sprites are now clipped to the
+  stage, so a big **pair / reposition offset** can't spill a sprite over the chatbox
+  or the log. A **Settings → Power user** toggle turns it off for freeform placement.
+
+### Fixes
+- **"Don't ask again" on the disconnect prompt.** The confirm dialog — which the
+  Disconnect button **and Esc** both go through — now has a **"Don't ask again"**
+  tick that switches you to instant disconnect from then on (the same pattern as the
+  Quit prompt).
+- **The Music menu's volume view is remembered.** If you switch the Music tab to the
+  volume sliders, it stays on that view across restarts instead of reverting to the
+  track list.
+
 ## v1.33.5 — 2026-07-01
 
 ### Diagnostics

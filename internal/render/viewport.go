@@ -47,9 +47,18 @@ type animState struct {
 
 	page    *TexturePage
 	pageGen uint64
+
+	// lastGood is the base of the last sprite this layer actually DREW (set in
+	// drawSprite on a hit). It is deliberately NOT cleared by reset, so when the
+	// layer swaps to a still-loading base the renderer can keep the previous
+	// sprite on screen (SpriteLoadHoldPrev) instead of flashing empty. Held by
+	// STRING, re-Get through the store each frame — never a cached page pointer,
+	// which could be evicted underfoot.
+	lastGood string
 }
 
-// reset rebinds the state to a new asset base.
+// reset rebinds the state to a new asset base. lastGood survives on purpose (see
+// the field comment) — the cold-load hold reads it after a base change.
 func (a *animState) reset(base string) {
 	a.base = base
 	a.frame = 0
@@ -152,6 +161,22 @@ type SpriteFX struct {
 // work — and stays byte-identical to the original blit — when nothing's on).
 func (f SpriteFX) tinted() bool { return f.Rainbow || f.Solid }
 
+// SpriteLoadMode selects what a character layer draws while its NEW sprite is
+// still streaming + decoding (an uncached emote/character). Cold-load only —
+// once the sprite is in T1 every frame is byte-identical, whatever the mode.
+// Values MUST match config.SpriteLoad* (the UI mirrors the pref straight in).
+const (
+	// SpriteLoadBlank draws nothing until the sprite lands — the original
+	// behaviour, and the ~¼-second "flash" EuP reported on a cold sprite.
+	SpriteLoadBlank = 0
+	// SpriteLoadHoldPrev keeps the layer's LAST drawn sprite on screen until the
+	// new one lands (webAO-style), so the stage never blanks between speakers.
+	SpriteLoadHoldPrev = 1
+	// A third "wait" mode (client-AO: hold the whole message off-stage until its
+	// sprite resolves) is NOT a renderer concern — it lives in the message
+	// lifecycle and fights packed-room catch-up. Tracked in ROADMAP.
+)
+
 // Viewport renders a courtroom.Scene into a destination rect. Steady-state
 // Render performs zero heap allocations: all rects and states are reused.
 type Viewport struct {
@@ -180,6 +205,20 @@ type Viewport struct {
 	// own period and stay continuous without a shared wrap glitch.
 	fxClock time.Duration
 
+	// spriteLoadMode (SpriteLoadBlank default) chooses what a character layer draws
+	// while its NEW sprite is still streaming + decoding — the cold-load flash
+	// mitigation. The App mirrors the user pref here once per frame
+	// (SetSpriteLoadMode), exactly like SetSpriteFX. It only ever affects the miss
+	// path in drawSprite, so a cached scene is byte-identical whatever it's set to.
+	spriteLoadMode int
+
+	// clipSprites (ON by default via the pref) masks the character sprites to the
+	// stage rect so a big pair / reposition OFFSET can't spill a sprite over the
+	// chatbox or the log. Only the sprite draws are clipped (the bg/desk already
+	// fill the stage), and only when no clip is already active, so screenshake and
+	// the reflection's own clip are untouched. The App mirrors the pref here.
+	clipSprites bool
+
 	// punchLeft counts down a #12 shout screen-punch; prevShoutOn edge-detects the
 	// shout's appearance in Update so the pop fires once per shout. Viewer-local.
 	punchLeft   time.Duration
@@ -198,6 +237,7 @@ type Viewport struct {
 	fxRect   sdl.Rect // #8 outline/shadow offset-blit destination (kept off dstRect)
 	reflRect sdl.Rect // #123 reflection blit destination
 	reflClip sdl.Rect // #123 reflection clip rect (confine to the stage when not already clipped)
+	maskClip sdl.Rect // viewport sprite mask: clip character sprites to the stage so an offset can't spill out
 
 	// #10 post-processing overlays: cached, size-stable textures blended over the stage.
 	postFX               PostFX
@@ -400,6 +440,17 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	if v.fx.Entrance && v.entranceLeft > 0 {
 		spkVP.X += entranceSlide(v.entranceLeft, vp.W)
 	}
+	// Viewport sprite mask (default ON): clip the character sprites to the ORIGINAL
+	// stage rect so a big pair / reposition OFFSET can't spill a sprite over the
+	// chatbox or the log. Only the sprites are clipped (the bg/desk already fill the
+	// stage), and only when nothing else already owns a clip — so we restore to
+	// exactly the prior state and never fight the reflection's own clip (which runs
+	// just after this). Off → no SetClipRect at all → byte-identical to before.
+	spriteClip := v.clipSprites && !ren.IsClipEnabled()
+	if spriteClip {
+		v.maskClip = stage
+		_ = ren.SetClipRect(&v.maskClip)
+	}
 	if scene.PairActive && !scene.SpeakerInFront {
 		// Speaker behind: draw speaker first, pair over it.
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
@@ -409,6 +460,9 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
 	} else {
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
+	}
+	if spriteClip {
+		_ = ren.SetClipRect(nil)
 	}
 
 	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line,
@@ -600,6 +654,39 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animS
 	_ = ren.FillRect(&v.fillRect)
 }
 
+// SetSpriteLoadMode picks what a character layer draws while its new sprite is
+// still streaming + decoding (SpriteLoadBlank default = original behaviour). The
+// App mirrors the user pref here once per frame, like SetSpriteFX.
+func (v *Viewport) SetSpriteLoadMode(mode int) { v.spriteLoadMode = mode }
+
+// SetClipSprites toggles the viewport sprite mask (ON by default): confine the
+// character sprites to the stage so an offset can't spill them out. The App
+// mirrors the user pref here once per frame.
+func (v *Viewport) SetClipSprites(on bool) { v.clipSprites = on }
+
+// drawHeldSprite blits a layer's previously-resolved sprite as a plain stand-in
+// during the cold-load gap (SpriteLoadHoldPrev). Deliberately minimal — no style,
+// variant, wash, spotlight or breathing — it's a transient bridge, sized to the
+// HELD page's own aspect and bottom-centered with the incoming layer's offset +
+// flip so it sits where the new character will. Frame 0 is fine for a sub-second
+// hold. Alloc-free (reuses v.dstRect) and only ever on the miss path, so the
+// cached steady state is untouched.
+func (v *Viewport) drawHeldSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, page *TexturePage, vp sdl.Rect) {
+	if page.H == 0 {
+		return
+	}
+	scaledW := vp.H * page.W / page.H
+	v.dstRect.W = scaledW
+	v.dstRect.H = vp.H
+	v.dstRect.X = vp.X + (vp.W-scaledW)/2 + vp.W*int32(layer.OffsetX)/offsetPercentDivisor
+	v.dstRect.Y = vp.Y + vp.H*int32(layer.OffsetY)/offsetPercentDivisor
+	flip := sdl.FLIP_NONE
+	if layer.Flip {
+		flip = sdl.FLIP_HORIZONTAL
+	}
+	_ = ren.CopyEx(page.Frames[0], nil, &v.dstRect, 0, nil, flip)
+}
+
 // drawSprite draws a character layer: scaled to viewport height preserving
 // aspect, bottom-centered, shifted by percent offsets, optionally mirrored.
 // hueShift offsets this layer's rainbow phase (used to desync the pair).
@@ -609,7 +696,26 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	page, ok := anim.resolve(v.store)
 	if !ok || len(page.Frames) == 0 {
+		// Cold-load gap: the incoming sprite hasn't finished streaming + decoding.
+		// SpriteLoadHoldPrev keeps the layer's LAST drawn sprite on screen until it
+		// lands (webAO-style) instead of flashing empty. We resolve the HELD base
+		// through the store (never a stashed page pointer — the LRU owns lifetime,
+		// so an eviction just falls back to blank + self-heals). This lives ONLY on
+		// the draw path: resolve()/Update never see the held page, so the preanim
+		// lifecycle and packed-room catch-up pacing are untouched. SpriteLoadBlank
+		// → the original byte-identical early return.
+		if v.spriteLoadMode == SpriteLoadHoldPrev && anim.lastGood != "" && anim.lastGood != anim.base {
+			if held, ok2 := v.store.Get(anim.lastGood); ok2 && len(held.Frames) > 0 {
+				v.drawHeldSprite(ren, layer, held, vp)
+			}
+		}
 		return
+	}
+	// Remember the sprite we're about to draw so a later cold swap can hold it.
+	// (A plain assign is alloc-free; guard it so steady state doesn't even copy the
+	// string header when nothing changed.)
+	if anim.lastGood != anim.base {
+		anim.lastGood = anim.base
 	}
 	frame := clampFrame(anim.frame, len(page.Frames))
 

@@ -39,6 +39,24 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   is evicted from the texture cache mid-message (memory pressure in a packed
   room, or a hover-preview fetch), it is re-demanded at high priority within a
   paced window instead of vanishing to black.
+- **Cold-load sprite modes** (Settings → Power user → Renderer): what a character
+  layer shows while its NEW, uncached sprite is still streaming + decoding (the
+  cold-load gap — worse on huge art / high ping). **"Show nothing"** (default =
+  original behaviour, the blank flash) or **"Keep the previous one"** (webAO-style:
+  the layer's last drawn sprite stays on screen until the new one lands). Pure render
+  path (`render.SpriteLoadMode`): the held sprite is resolved by BASE string through
+  the store each frame (never a stashed page pointer, so an eviction just falls back
+  to blank + self-heals), and it's done **only in the draw path** — `resolve()`/
+  `Update` never see the held page, so the preanim lifecycle and packed-room catch-up
+  pacing are untouched. A cached scene is **byte-identical** whatever the mode, and
+  holding is **0-alloc** (`TestSpriteLoadHoldPrevious`). *(A "wait until it loads"
+  mode is planned — see ROADMAP.)*
+- **Viewport sprite mask** (Settings → Power user, **ON by default**): character
+  sprites are clipped to the stage rect, so a big **pair / reposition offset** can't
+  spill a sprite over the chatbox or the log. Only the sprite draws are clipped (the
+  bg/desk already fill the stage) and only when nothing else owns a clip, so
+  screenshake and the reflection's own clip are untouched; **off → no `SetClipRect`
+  at all → byte-identical** (`TestSpriteMaskClipsToStage`, 0-alloc with the mask on).
 - **Full-character sprite preload** (#127, Settings → Assets, **OFF by default**):
   on a character load the default grabs only the first few emotes' idle sprites;
   with this on, AsyncAO pre-grabs the character's **whole** set — every emote's

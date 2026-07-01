@@ -2499,6 +2499,15 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 }
 
 // drawSettingsAccount: per-server login, the master-list override, Discord.
+// spriteLoadModeLabel is the cycle-button label for the power-user cold-load sprite
+// behaviour: what a character layer shows while its NEW (uncached) sprite streams.
+func spriteLoadModeLabel(mode int) string {
+	if mode == config.SpriteLoadHoldPrev {
+		return "Uncached sprite: keep the previous one (webAO-style)"
+	}
+	return "Uncached sprite: show nothing until it loads (default)"
+}
+
 // powerUserToggleLabel is the reveal-button label for the advanced (power-user) settings.
 func powerUserToggleLabel(on bool) string {
 	if on {
@@ -2552,6 +2561,29 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	if !a.showPowerUser {
 		return y
 	}
+
+	// Renderer — what a character layer shows while a NEW, uncached sprite is still
+	// streaming + decoding (the cold-load flash EuP reported). Purely cosmetic and
+	// fully isolated (it can't break a connection or an asset fetch), but it touches
+	// the render path, so it sits behind the reveal with the rest of the advanced kit.
+	y = a.settingsSection(y, w, "Renderer — uncached sprite loading")
+	slm := a.d.Prefs.SpriteLoadMode()
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 440, H: btnH}, spriteLoadModeLabel(slm)) {
+		a.d.Prefs.SetSpriteLoadMode((slm + 1) % config.SpriteLoadModeCount)
+	}
+	y += btnH + 6
+	y = a.settingsDesc(pad, y, "When someone speaks with a sprite you haven't downloaded yet, it takes a moment to stream + decode (worse on huge art or high ping). This chooses what shows in that gap. \"Show nothing\" (default) leaves the layer blank until it lands — the current behaviour. \"Keep the previous one\" holds the last sprite on screen until the new one is ready (like webAO), so the stage never flashes empty. Cosmetic only, and completely free once a sprite is cached.", ColTextDim)
+	y += 10
+
+	// Viewport sprite mask — confine offset sprites to the stage.
+	y = a.settingsSection(y, w, "Viewport sprite mask")
+	clipS := a.d.Prefs.ClipSpritesToStageOn()
+	if next := c.Checkbox(pad, y, "Clip sprites to the stage (default ON)", clipS); next != clipS {
+		a.d.Prefs.SetClipSpritesToStage(next)
+	}
+	y += 24
+	y = a.settingsDesc(pad, y, "Keeps a big pair / reposition OFFSET from spilling a character sprite over the chatbox or the log — the sprite is masked to the stage rect. On by default; turn it off for freeform placement past the stage edges.", ColTextDim)
+	y += 10
 
 	// TLS certificate validation.
 	y = a.settingsSection(y, w, "TLS certificate")

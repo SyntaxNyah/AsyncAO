@@ -1463,7 +1463,13 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 	c.Border(m, ColAccent)
 	c.Heading(m.X+pad, m.Y+pad, "Disconnect from the server?", ColText)
 	c.Label(m.X+pad, m.Y+50, "Yes will disconnect you from the server (you'll return to the lobby).", ColText)
-	c.Label(m.X+pad, m.Y+74, "Tip: enable \"Instant disconnect\" in Settings → General to skip this.", ColTextDim)
+	// "Don't ask again" reuses the Quit-modal pattern: it ticks the existing
+	// Instant-disconnect pref, so future Disconnects — the button AND Esc, both
+	// routed through requestDisconnect — skip straight through. Untickable here too.
+	inst := a.d.Prefs.InstantDisconnectOn()
+	if next := c.Checkbox(m.X+pad, m.Y+78, "Don't ask again (disconnect instantly from now on)", inst); next != inst {
+		a.d.Prefs.SetInstantDisconnect(next)
+	}
 	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 170, H: btnH}, "Yes, disconnect") {
 		a.confirmDisconnect = false
 		a.Disconnect()
@@ -3535,6 +3541,7 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	volRect := sdl.Rect{X: r.X + r.W - 96, Y: r.Y, W: 96, H: 24}
 	if c.Button(volRect, volLabel) {
 		a.musicVolMode = !a.musicVolMode
+		a.d.Prefs.SetMusicVolMode(a.musicVolMode) // persist so the volume view survives a restart
 	}
 	c.Tooltip(volRect, "Swap the track list for volume sliders (Master/Music/SFX/Blip) and back — chat stays live.")
 	// Now-Playing indicator: the current track from the server's MC (cleared on
