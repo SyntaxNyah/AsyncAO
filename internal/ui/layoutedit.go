@@ -96,7 +96,7 @@ func (a *App) startLayoutEdit() {
 	a.showUICfg = false
 	a.showIni, a.showEvid, a.showModcall, a.showLogin, a.showPair = false, false, false, false, false
 	a.showModDash, a.banBoxKind, a.showCMPanel = false, 0, false
-	a.showDebugPanel = false
+	a.showDebugPanel, a.showFxPicker = false, false
 	a.bgPick.show = false
 	a.editKey = ""
 	a.editDrag = 0

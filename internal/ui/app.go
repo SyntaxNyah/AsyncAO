@@ -924,7 +924,10 @@ type sessionState struct {
 	debugPktScroll int32       // Packets list scroll offset
 	debugLogScroll int32       // Log list scroll offset
 	debugPktBuf    []packetRec // reused recent()-into buffer (alloc-free draw)
-	amICMNow       bool        // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// Text FX picker (#M5): the FX button opens a floating effect list instead of cycling 13 effects.
+	showFxPicker bool
+	fxBtnRect    sdl.Rect // last-drawn FX button rect (the picker anchors above it + the fence finds it)
+	amICMNow     bool     // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster

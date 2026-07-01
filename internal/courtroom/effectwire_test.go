@@ -73,6 +73,32 @@ func TestEffectsMarkerRoundTrip(t *testing.T) {
 	}
 }
 
+// TestNewEffectsParseAndDegrade pins the #M5+ additions: every new tag parses to its effect id,
+// a new effect round-trips through the marker, and an effect id past TextEffectCount is dropped by
+// the decoder — the graceful path an OLDER client takes for a NEWER client's effect.
+func TestNewEffectsParseAndDegrade(t *testing.T) {
+	for tag, want := range map[string]uint8{
+		"bounce": TextEffectBounce, "sway": TextEffectSway, "shiver": TextEffectShiver,
+		"wobble": TextEffectWobble, "tremble": TextEffectTremble, "float": TextEffectFloat,
+		"pulse": TextEffectPulse, "gradient": TextEffectGradient, "blink": TextEffectBlink,
+		"sparkle": TextEffectSparkle,
+	} {
+		if _, spans := ParseTextEffects("[" + tag + "]hi[/" + tag + "]"); len(spans) != 1 || spans[0].Effect != want {
+			t.Errorf("[%s] parsed to %v, want one span with effect %d", tag, spans, want)
+		}
+	}
+
+	spans := []TextEffectSpan{{0, 4, TextEffectSparkle}} // a new effect round-trips through the wire
+	if got, ok := DecodeEffectsMarker("word" + EncodeEffectsMarker(spans)); !ok || !reflect.DeepEqual(got, spans) {
+		t.Errorf("sparkle round-trip = %v ok=%v, want %v", got, ok, spans)
+	}
+
+	over := []TextEffectSpan{{0, 3, TextEffectCount + 5}} // an id past the cap (a newer client's effect)
+	if _, ok := DecodeEffectsMarker("word" + EncodeEffectsMarker(over)); ok {
+		t.Error("an effect id >= TextEffectCount must be dropped by the decoder (graceful old-client degradation)")
+	}
+}
+
 // TestEffectsFourFrameCoexist proves the four zero-width frame types (style / profile /
 // status / effects) ride one message together and each decodes independently — the channel
 // is magic-byte discriminated.

@@ -21,6 +21,18 @@ const (
 	EffectShake
 	EffectWave
 	EffectRainbow
+	// #M5+ — MUST stay in the same order/values as courtroom.TextEffect* (pinned by
+	// TestEffectIDsMatchRender). Motion effects first, then colour effects.
+	EffectBounce
+	EffectSway
+	EffectShiver
+	EffectWobble
+	EffectTremble
+	EffectFloat
+	EffectPulse
+	EffectGradient
+	EffectBlink
+	EffectSparkle
 )
 
 // EffectSpan marks Len consecutive runes (from Start, a rune index into the CLEAN visible
@@ -60,6 +72,33 @@ const (
 	rainbowDegSec  = 95.0 // hue degrees per second
 	rainbowDegRune = 16.0 // hue degrees per rune (a band sliding across the word)
 	rainbowSat     = 0.85
+
+	// #M5+ additional effects — same "small + gentle so text stays readable" budget.
+	bounceAmpPx      = 3.0
+	bounceFreqHz     = 3.0
+	bounceRunePhase  = 0.6 // radians of hop phase per rune (the hop travels along the word)
+	swayAmpPx        = 2.4
+	swaySpeedHz      = 3.6
+	swayRunePhase    = 0.5
+	shiverAmpPx      = 1.2
+	shiverFreqHz     = 30.0
+	wobbleAmpPx      = 1.8
+	wobbleSpeedHz    = 1.6
+	wobbleRunePhase  = 0.9
+	trembleAmpPx     = 1.1
+	trembleFreqHz    = 27.0
+	floatAmpPx       = 2.0
+	floatSpeedHz     = 0.9 // slow, synchronised (no per-rune phase)
+	pulseFreqHz      = 2.2
+	pulseRunePhase   = 0.35
+	pulseFloor       = 0.60 // dimmest brightness factor (stays readable)
+	gradientDegRune  = 26.0 // hue degrees per rune for the static colour band
+	gradientSat      = 0.85
+	blinkFreqHz      = 2.6
+	blinkFloor       = 0.35 // off-phase brightness (dim, not black — still legible)
+	sparkleFreqHz    = 1.3  // twinkle rate per glyph
+	sparkleRunePhase = 1.7  // desync each glyph's twinkle
+	sparkleSharp     = 6.0  // higher = briefer, sharper flashes
 )
 
 // RasterizeAnimated lays out text (wrapped to wrapW) into per-glyph animRunes, tagging each
@@ -175,6 +214,44 @@ func (at *AnimatedText) Draw(ren *sdl.Renderer, gc *GlyphCache, font *ttf.Font, 
 			} else {
 				col = rainbowColor(t, i)
 			}
+		case EffectBounce:
+			if !reduceMotion {
+				dy = bounceOffset(t, i)
+			}
+		case EffectSway:
+			if !reduceMotion {
+				dx = swayOffset(t, i)
+			}
+		case EffectShiver:
+			if !reduceMotion {
+				dx = shiverOffset(t, i)
+			}
+		case EffectWobble:
+			if !reduceMotion {
+				dx, dy = wobbleGlyphOffset(t, i)
+			}
+		case EffectTremble:
+			if !reduceMotion {
+				dy = trembleOffset(t, i)
+			}
+		case EffectFloat:
+			if !reduceMotion {
+				dy = floatOffset(t)
+			}
+		case EffectPulse:
+			if !reduceMotion {
+				col = pulseColor(ar.color, t, i)
+			}
+		case EffectGradient:
+			col = gradientColor(i) // static band — identical under reduceMotion
+		case EffectBlink:
+			if !reduceMotion {
+				col = scaleColor(ar.color, blinkFactor(t))
+			}
+		case EffectSparkle:
+			if !reduceMotion {
+				col = sparkleColor(ar.color, t, i)
+			}
 		}
 		_ = cg.tex.SetColorMod(col.R, col.G, col.B)
 		at.dst = sdl.Rect{X: ox + ar.x + dx, Y: oy + ar.y + dy, W: cg.w, H: cg.h}
@@ -222,4 +299,77 @@ func hsvToRGB(h, s, v float64) sdl.Color {
 		r, g, b = c, 0, x
 	}
 	return sdl.Color{R: uint8((r + m) * 255), G: uint8((g + m) * 255), B: uint8((b + m) * 255), A: 255}
+}
+
+// --- #M5+ effect math (all pure + 0-alloc; deterministic in the clock so a replay/export matches) ---
+
+// bounceOffset lifts glyph idx in a hopping sequence (up-only from the baseline).
+func bounceOffset(t float64, idx int) int32 {
+	p := t*bounceFreqHz*2*math.Pi - float64(idx)*bounceRunePhase
+	return -int32(math.Round(math.Abs(math.Sin(p)) * bounceAmpPx))
+}
+
+// swayOffset is a travelling horizontal sine — the x-cousin of the wave.
+func swayOffset(t float64, idx int) int32 {
+	p := t*swaySpeedHz*2*math.Pi + float64(idx)*swayRunePhase
+	return int32(math.Round(math.Sin(p) * swayAmpPx))
+}
+
+// shiverOffset is a fast, tiny horizontal tremor (a nervous shiver).
+func shiverOffset(t float64, idx int) int32 {
+	p := t*shiverFreqHz*2*math.Pi + float64(idx)*2.4
+	return int32(math.Round(math.Sin(p) * shiverAmpPx))
+}
+
+// wobbleGlyphOffset drifts a glyph in a slow circle, phase-shifted per rune (a floaty roam). Named
+// to avoid the sprite-layer wobbleOffset (viewport.go), which is a different, whole-sprite wobble.
+func wobbleGlyphOffset(t float64, idx int) (int32, int32) {
+	p := t*wobbleSpeedHz*2*math.Pi + float64(idx)*wobbleRunePhase
+	return int32(math.Round(math.Cos(p) * wobbleAmpPx)), int32(math.Round(math.Sin(p) * wobbleAmpPx))
+}
+
+// trembleOffset is a fast, tiny VERTICAL tremor (the y-cousin of shiver).
+func trembleOffset(t float64, idx int) int32 {
+	p := t*trembleFreqHz*2*math.Pi + float64(idx)*2.1
+	return int32(math.Round(math.Sin(p) * trembleAmpPx))
+}
+
+// floatOffset is a slow, synchronised vertical drift (calm — every glyph together).
+func floatOffset(t float64) int32 {
+	return int32(math.Round(math.Sin(t*floatSpeedHz*2*math.Pi) * floatAmpPx))
+}
+
+// scaleColor multiplies a colour's RGB by k (keeping alpha) — a brightness dim.
+func scaleColor(base sdl.Color, k float64) sdl.Color {
+	return sdl.Color{R: uint8(float64(base.R) * k), G: uint8(float64(base.G) * k), B: uint8(float64(base.B) * k), A: base.A}
+}
+
+// pulseColor shimmers a glyph's brightness with a wave travelling along the word (floored readable).
+func pulseColor(base sdl.Color, t float64, idx int) sdl.Color {
+	k := pulseFloor + (1-pulseFloor)*0.5*(1+math.Sin(t*pulseFreqHz*2*math.Pi-float64(idx)*pulseRunePhase))
+	return scaleColor(base, k)
+}
+
+// blinkFactor is a brightness on/off (squared sine → more time bright, a snappy dim between).
+func blinkFactor(t float64) float64 {
+	s := math.Sin(t * blinkFreqHz * 2 * math.Pi)
+	return blinkFloor + (1-blinkFloor)*s*s
+}
+
+// gradientColor is a STATIC per-rune hue band (no animation): colourful but calm, always readable
+// (identical under ReduceMotion).
+func gradientColor(idx int) sdl.Color {
+	return hsvToRGB(math.Mod(float64(idx)*gradientDegRune, 360), gradientSat, 1)
+}
+
+// sparkleColor briefly flashes a glyph toward white on its own twinkle phase — a shimmer of stars.
+func sparkleColor(base sdl.Color, t float64, idx int) sdl.Color {
+	s := 0.5 * (1 + math.Sin(t*sparkleFreqHz*2*math.Pi+float64(idx)*sparkleRunePhase))
+	f := math.Pow(s, sparkleSharp) // sharp, brief peaks
+	return sdl.Color{
+		R: uint8(float64(base.R) + (255-float64(base.R))*f),
+		G: uint8(float64(base.G) + (255-float64(base.G))*f),
+		B: uint8(float64(base.B) + (255-float64(base.B))*f),
+		A: base.A,
+	}
 }

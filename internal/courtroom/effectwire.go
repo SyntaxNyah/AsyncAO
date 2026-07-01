@@ -21,7 +21,21 @@ const (
 	TextEffectShake
 	TextEffectWave
 	TextEffectRainbow
-	textEffectCount
+	// Motion effects (glyph displacement):
+	TextEffectBounce  // each glyph hops up in sequence
+	TextEffectSway    // horizontal travelling sway (the x-cousin of wave)
+	TextEffectShiver  // fast tiny horizontal tremor (nervous)
+	TextEffectWobble  // slow circular per-glyph drift (floaty / ghostly)
+	TextEffectTremble // fast tiny VERTICAL tremor (the y-cousin of shiver)
+	TextEffectFloat   // gentle synchronised up-and-down drift (calm)
+	// Colour effects (per-glyph colour):
+	TextEffectPulse    // rhythmic brightness shimmer travelling along the word
+	TextEffectGradient // a STATIC multicolour band — colourful but calm (readable + photosensitive-safe)
+	TextEffectBlink    // hard brightness on/off (attention)
+	TextEffectSparkle  // occasional twinkle toward white per glyph
+	// TextEffectCount MUST stay last. The UI cycles modulo it, and the decoder drops any effect
+	// id >= it — so a NEWER client's effect renders as plain text on an OLDER one (graceful).
+	TextEffectCount
 )
 
 // TextEffectSpan tags Len consecutive runes (from Start — a rune index into the CLEAN
@@ -61,9 +75,19 @@ const (
 // markup, deliberately NOT braces: AO uses `{ }` for typewriter speed, so braces would be
 // eaten by the pipeline. The tags are stripped before send and never reach the wire.
 var effectTags = map[string]uint8{
-	"shake":   TextEffectShake,
-	"wave":    TextEffectWave,
-	"rainbow": TextEffectRainbow,
+	"shake":    TextEffectShake,
+	"wave":     TextEffectWave,
+	"rainbow":  TextEffectRainbow,
+	"bounce":   TextEffectBounce,
+	"sway":     TextEffectSway,
+	"shiver":   TextEffectShiver,
+	"wobble":   TextEffectWobble,
+	"tremble":  TextEffectTremble,
+	"float":    TextEffectFloat,
+	"pulse":    TextEffectPulse,
+	"gradient": TextEffectGradient,
+	"blink":    TextEffectBlink,
+	"sparkle":  TextEffectSparkle,
 }
 
 // ParseTextEffects splits a raw IC input into the WIRE text (effect tags removed; all other
@@ -214,7 +238,7 @@ func DecodeEffectsMarker(text string) ([]TextEffectSpan, bool) {
 			off := 2 + i*effectSpanBytes
 			eff := fr[off]
 			ln := int(fr[off+3])
-			if eff == TextEffectNone || eff >= textEffectCount || ln == 0 {
+			if eff == TextEffectNone || eff >= TextEffectCount || ln == 0 {
 				continue // unknown effect or empty span → drop it
 			}
 			spans = append(spans, TextEffectSpan{

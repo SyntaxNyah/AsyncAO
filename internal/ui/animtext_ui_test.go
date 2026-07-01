@@ -17,7 +17,17 @@ func TestEffectIDsMatchRender(t *testing.T) {
 	if courtroom.TextEffectNone != render.EffectNone ||
 		courtroom.TextEffectShake != render.EffectShake ||
 		courtroom.TextEffectWave != render.EffectWave ||
-		courtroom.TextEffectRainbow != render.EffectRainbow {
+		courtroom.TextEffectRainbow != render.EffectRainbow ||
+		courtroom.TextEffectBounce != render.EffectBounce ||
+		courtroom.TextEffectSway != render.EffectSway ||
+		courtroom.TextEffectShiver != render.EffectShiver ||
+		courtroom.TextEffectWobble != render.EffectWobble ||
+		courtroom.TextEffectTremble != render.EffectTremble ||
+		courtroom.TextEffectFloat != render.EffectFloat ||
+		courtroom.TextEffectPulse != render.EffectPulse ||
+		courtroom.TextEffectGradient != render.EffectGradient ||
+		courtroom.TextEffectBlink != render.EffectBlink ||
+		courtroom.TextEffectSparkle != render.EffectSparkle {
 		t.Fatal("courtroom.TextEffect* must equal render.Effect* — toRenderEffectSpans relies on it")
 	}
 }
@@ -108,17 +118,26 @@ func TestICFieldFontsASCIIFastPath(t *testing.T) {
 	}
 }
 
-// TestNextICEffect pins the cycle order Off → Shake → Wave → Rainbow → Off.
-func TestNextICEffect(t *testing.T) {
-	got := []uint8{courtroom.TextEffectNone}
-	for i := 0; i < 4; i++ {
-		got = append(got, nextICEffect(got[len(got)-1]))
-	}
-	want := []uint8{courtroom.TextEffectNone, courtroom.TextEffectShake, courtroom.TextEffectWave, courtroom.TextEffectRainbow, courtroom.TextEffectNone}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("cycle = %v, want %v", got, want)
+// TestFxEffectCoverage pins that the FX picker lists Off + EVERY effect exactly once, and each
+// real effect has a distinct label and a markup tag — so no effect is unreachable from the UI.
+func TestFxEffectCoverage(t *testing.T) {
+	seen := map[uint8]bool{}
+	for _, e := range fxEffectOrder {
+		if seen[e] {
+			t.Fatalf("effect %d is listed twice in the picker", e)
 		}
+		seen[e] = true
+		if e != courtroom.TextEffectNone {
+			if icEffectLabel(e) == "FX" {
+				t.Errorf("effect %d falls back to the generic FX label (missing a name)", e)
+			}
+			if effectTagName(e) == "" {
+				t.Errorf("effect %d has no markup tag", e)
+			}
+		}
+	}
+	if len(fxEffectOrder) != int(courtroom.TextEffectCount) {
+		t.Fatalf("picker lists %d entries, want %d (Off + every effect)", len(fxEffectOrder), courtroom.TextEffectCount)
 	}
 }
 
