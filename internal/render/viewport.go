@@ -640,9 +640,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		modR, modG, modB                    uint8 = 255, 255, 255
 		alphaMod                            uint8 = 255
 		doColorMod, glow, wob, spin, glitch bool
-		motion                              uint8    // #34 transmitted movement path (0 = none)
-		pathLen                             uint8    // #34 custom-path point count (0 = none, else 2..6)
-		pathPts                             [6]uint8 // #34 custom-path waypoints (matches courtroom maxPathPoints)
+		motion                              uint8     // #34 transmitted movement path (0 = none)
+		pathLen                             uint8     // #34 custom-path point count (0 = none, else 2..16)
+		pathPts                             [16]uint8 // #34 custom-path waypoints (size MUST match courtroom maxPathPoints)
 		scalePct                            = 100
 		rotDeg                              float64
 	)
@@ -668,7 +668,7 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		alphaMod = st.AlphaMod() // opacity (floored so a received style can't go invisible)
 		glow, wob, spin = st.Glow, st.Wobble, st.Spin
 		motion = st.Motion
-		pathPts, pathLen = st.Path, st.PathLen // #34 custom path (a cheap 6-byte array copy)
+		pathPts, pathLen = st.Path, st.PathLen // #34 custom path (a cheap fixed-size array copy)
 		glitch = st.Glitch
 		scalePct = st.ScalePct()
 		rotDeg = st.RotationDeg()

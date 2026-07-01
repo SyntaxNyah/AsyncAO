@@ -19,7 +19,7 @@ func pathCellCenter(p byte, box sdl.Rect) (x, y int32) {
 const pathStrokeCap = 256
 
 // drawStylePathEditor draws the "draw your own motion path" box (#34, B2): DRAG inside it to
-// sketch a loop (sampled to up to 6 waypoints on release), or CLICK to drop a single waypoint;
+// sketch a loop (sampled to up to 16 waypoints on release), or CLICK to drop a single waypoint;
 // centre = the sprite's rest spot. Your sprite loops through the path — overriding the Move
 // cycle — transmitted + stacking. Shows the live stroke / saved path; a Clear button removes it.
 func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
@@ -77,12 +77,21 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 			c.Fill(sdl.Rect{X: ax - 3, Y: ay - 3, W: 6, H: 6}, ColTierGreen)
 		}
 	}
-	if c.Button(sdl.Rect{X: box.X + box.W + 8, Y: box.Y, W: 80, H: btnH}, "Clear path") {
-		p.Path, p.PathLen = [6]uint8{}, 0
+	rx := box.X + box.W + 8
+	if c.Button(sdl.Rect{X: rx, Y: box.Y, W: 84, H: btnH}, "Clear path") {
+		p.Path, p.PathLen = [16]uint8{}, 0
 		a.d.Prefs.SetSpriteStyle(p)
 	}
-	c.Label(box.X+box.W+8, box.Y+btnH+6, "Up to 6 points;", ColTextDim)
-	c.Label(box.X+box.W+8, box.Y+btnH+22, "loops forever.", ColTextDim)
+	if p.PathLen > 0 { // undo the last waypoint (handy when click-building a path point by point)
+		if c.Button(sdl.Rect{X: rx, Y: box.Y + btnH + 6, W: 84, H: btnH}, "Undo point") {
+			p.PathLen--
+			p.Path[p.PathLen] = 0 // zero the freed slot so equal paths stay == (the pref is compared by value)
+			a.d.Prefs.SetSpriteStyle(p)
+		}
+	}
+	ly := box.Y + 2*(btnH+6)
+	c.Label(rx, ly, "Up to 16 points;", ColTextDim)
+	c.Label(rx, ly+16, "loops forever.", ColTextDim)
 	return y + stylePathBox + 8
 }
 
@@ -110,9 +119,10 @@ func strokeMoved(stroke []sdl.Point) bool {
 	return maxX-minX > 8 || maxY-minY > 8
 }
 
-// samplePathStroke reduces a raw freehand stroke to up to 6 evenly-spaced waypoints, packed as
-// 4-bit X/Y bytes on the box's grid. Returns the points + count (>=2, else 0).
-func samplePathStroke(stroke []sdl.Point, box sdl.Rect) (pts [6]uint8, count uint8) {
+// samplePathStroke reduces a raw freehand stroke to up to len(pts) evenly-spaced waypoints, packed
+// as 4-bit X/Y bytes on the box's grid. Returns the points + count (>=2, else 0). The array size
+// (and so the point cap) tracks config.SpriteStylePref.Path.
+func samplePathStroke(stroke []sdl.Point, box sdl.Rect) (pts [16]uint8, count uint8) {
 	n := len(stroke)
 	if n < 2 || box.W <= 0 || box.H <= 0 {
 		return pts, 0

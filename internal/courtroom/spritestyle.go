@@ -76,9 +76,14 @@ const (
 )
 
 // maxPathPoints caps a custom drawn motion path (#34). Each point is one byte (packed
-// 4-bit X/Y), so the whole path is a short, send-on-change tail — kept small on purpose
+// 4-bit X/Y), so the whole path is a short, send-on-change tail — kept modest on purpose
 // (the zero-width run is otherwise blip-spam to webAO). A path needs at least 2 points.
-const maxPathPoints = 6
+// The wire is length-prefixed ([len][len bytes]), so raising this stays backward-compatible:
+// an older AsyncAO client decodes pl > its own max and simply drops the path (no motion),
+// while AO2 / webAO never see the zero-width run at all. This value MUST equal the size of
+// config.SpriteStylePref.Path and render's pathPts array (compiler-enforced at s.Path = p.Path
+// and pathPts = st.Path).
+const maxPathPoints = 16
 
 // minVisibleOpacity floors a received opacity so nobody can post a fully (or
 // near-fully) invisible sprite at others — clamp applied at render time.

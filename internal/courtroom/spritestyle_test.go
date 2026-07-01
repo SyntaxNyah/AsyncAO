@@ -186,6 +186,33 @@ func TestSpriteStyleVariantFlags(t *testing.T) {
 	}
 }
 
+// TestSpriteStyleLongPath pins the raised custom-path cap (#34): a FULL
+// maxPathPoints-point path round-trips through the marker, and the decoder drops a
+// path whose claimed length exceeds maxPathPoints — which is exactly how an OLDER
+// AsyncAO client (a smaller cap) gracefully ignores a longer path from a newer one
+// (the wire is length-prefixed, so the rest of the style still decodes).
+func TestSpriteStyleLongPath(t *testing.T) {
+	var full SpriteStyle
+	full.PathLen = maxPathPoints
+	for i := 0; i < maxPathPoints; i++ {
+		full.Path[i] = uint8(i)<<4 | uint8((i*3)&0x0F) // a distinct packed X/Y per point
+	}
+	if got, _ := DecodeSpriteStyle("hi" + full.EncodeMarker()); got != full {
+		t.Fatalf("full %d-point path: got %+v, want %+v", maxPathPoints, got, full)
+	}
+
+	// Over-cap degradation: a frame claiming pl = maxPathPoints+1 drops to no path
+	// but keeps the rest of the style — the graceful old-client behaviour.
+	over := SpriteStyle{Tint: true, R: 7}
+	b := over.payloadBytes()                        // v1 tint payload (no flags2 yet)
+	b = append(b, 0)                                // flags2 = 0 (present so the path region is deterministic)
+	b = append(b, maxPathPoints+1)                  // claimed length, one past the cap
+	b = append(b, make([]byte, maxPathPoints+1)...) // its (ignored) bytes
+	if d := styleFromBytes(b); d.PathLen != 0 || !d.Tint {
+		t.Fatalf("over-cap path: got PathLen=%d Tint=%v, want 0 / true (dropped path, style kept)", d.PathLen, d.Tint)
+	}
+}
+
 // TestEncodeChangeMarker pins send-on-change: the marker rides only style CHANGES.
 // No change → nothing; a new/changed active style → its marker; turning a style off →
 // a CLEAR marker (decodes to the default, non-active); inactive→inactive → nothing.
