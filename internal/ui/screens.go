@@ -2243,6 +2243,24 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				}
 			}
 		}
+	} else if !a.icStick && maxScroll > 0 {
+		// #217 scroll-to-bottom: scrolled up with nothing new to announce, so the
+		// accent "N new" pill above doesn't fire — offer a plain "jump to latest"
+		// button (Discord-style) so you don't have to drag the scrollbar all the
+		// way down after re-reading. Subtler colour than the unread pill because
+		// there's nothing new pulling the eye. Anchored bottom-right by the bar.
+		label := "↓ Latest"
+		bw := c.TextWidth(label) + 20
+		pill := sdl.Rect{X: list.X + list.W - scrollBarW - scrollBarGap - bw, Y: list.Y + list.H - 26, W: bw, H: 22}
+		c.Fill(pill, ColPanelHi)
+		c.Border(pill, ColAccent)
+		c.Label(pill.X+10, pill.Y+4, label, ColText)
+		if c.hovering(pill) {
+			c.Tooltip(pill, "Jump to the newest message")
+			if c.clicked {
+				a.icScroll, a.icStick = maxScroll, true
+			}
+		}
 	}
 	c.popClip(clipPrev, clipHad)
 }
