@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 )
 
 // Debug panel (Extras → Debug): the comprehensive, interactive diagnostics view
@@ -30,7 +32,7 @@ const (
 )
 
 // debugSections are the panel's tabs, indexed by a.debugSection.
-var debugSections = []string{"Session", "Packets", "Perf", "Log"}
+var debugSections = []string{"Session", "Packets", "Perf", "Cache", "Log"}
 
 // toggleDebugPanel opens / closes the Debug panel (Extras → Debug).
 func (a *App) toggleDebugPanel() { a.showDebugPanel = !a.showDebugPanel }
@@ -86,6 +88,8 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 	case 2:
 		a.drawDebugPerf(body)
 	case 3:
+		a.drawDebugCache(body)
+	case 4:
 		a.drawDebugLogSection(body)
 	default:
 		a.drawDebugSession(body)
@@ -208,6 +212,69 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 		}
 	}
 	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Goroutines: %d", runtime.NumGoroutine()), ColTextDim)
+}
+
+// drawDebugCache renders the three-tier asset cache inspector (#164): where
+// assets are coming from this session (T1 / T2 / disk / network breakdown) plus
+// each tier's live fill, hit rate and eviction/error counters. Every number is a
+// cached atomic snapshot (no directory walk — DiskStats reads counters, not the
+// disk), so it is safe to draw each frame the panel is open. Nil-guarded so a
+// minimal (test) App with no pipeline wired still renders without panicking.
+func (a *App) drawDebugCache(r sdl.Rect) {
+	c := a.ctx
+	y := r.Y
+	line := func(s string, col sdl.Color) {
+		c.LabelClipped(r.X, y, r.W, s, col)
+		y += 19
+	}
+
+	// Source breakdown: which tier served each demand this session (the streaming
+	// win is a high T1/T2/disk share and a low network count).
+	if a.d.Manager != nil {
+		ms := a.d.Manager.Stats()
+		line("Asset sources this session:", ColAccent)
+		line(fmt.Sprintf("  T1 %d · T2 %d · disk %d · network %d · missing %d",
+			ms.T1Hits, ms.T2Hits, ms.DiskHits, ms.NetFetches, ms.Missing), ColText)
+	}
+	// T1 — decoded textures (render side).
+	if a.d.Store != nil {
+		line("T1 decoded textures — "+memTierLine(a.d.Store.Stats()), ColText)
+	}
+	// T2 raw bytes + T3 on-disk cache (both owned by the asset manager).
+	if a.d.Manager != nil {
+		line("T2 raw bytes — "+memTierLine(a.d.Manager.T2Stats()), ColText)
+		d := a.d.Manager.DiskStats()
+		line(fmt.Sprintf("T3 disk cache — hit %d · miss %d · writes %d · dropped %d · errors %d",
+			d.Hits, d.Misses, d.Writes, d.Dropped, d.WriteErrors), ColText)
+	}
+	// Resolver — learned per-host formats (the zero-fallback streaming premise).
+	if a.d.Resolver != nil {
+		rs := a.d.Resolver.Stats()
+		line(fmt.Sprintf("Learned formats — hit %d · miss %d (%s)",
+			rs.LearnedHits, rs.LearnedMisses, hitRatePct(rs.LearnedHits, rs.LearnedMisses)), ColTextDim)
+	}
+	// Network client — total probes + cached 404s (never re-probed inside TTL).
+	if a.d.Client != nil {
+		ns := a.d.Client.Stats()
+		line(fmt.Sprintf("Network — %d requests · %d cached 404s", ns.Requests, ns.Cached404s), ColTextDim)
+	}
+}
+
+// memTierLine formats a byte-budgeted memory tier (T1/T2) for the cache
+// inspector: entry count, MiB used vs budget, hit rate and evictions.
+func memTierLine(s cache.MemoryStats) string {
+	return fmt.Sprintf("%d items · %.1f/%d MiB · hit %s · evict %d",
+		s.Entries, float64(s.Bytes)/(1<<20), s.Budget>>20, hitRatePct(s.Hits, s.Misses), s.Evictions)
+}
+
+// hitRatePct renders hits/(hits+misses) as a percentage, or "n/a" before any
+// traffic (so an idle tier doesn't read as a 0% miss storm).
+func hitRatePct(hits, misses int64) string {
+	total := hits + misses
+	if total <= 0 {
+		return "n/a"
+	}
+	return fmt.Sprintf("%.0f%%", float64(hits)*100/float64(total))
 }
 
 // drawFrameBars draws the frame-time bar graph into r (oldest → newest, green

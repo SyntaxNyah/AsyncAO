@@ -563,6 +563,15 @@ func (m *Manager) T2Stats() cache.MemoryStats {
 	return m.t2.Stats()
 }
 
+// DiskStats snapshots the T3 disk-tier counters from cached atomics (the debug
+// cache inspector, #164) — no directory walk, so it is safe to read per frame.
+func (m *Manager) DiskStats() cache.DiskStats {
+	if m.disk == nil {
+		return cache.DiskStats{}
+	}
+	return m.disk.Stats()
+}
+
 // reportMissing surfaces the §4 visible warning; the warning lane may drop
 // under flood (advisory, not a result).
 func (m *Manager) reportMissing(base string, t AssetType, tried []string) {
