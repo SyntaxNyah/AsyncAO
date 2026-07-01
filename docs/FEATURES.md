@@ -39,18 +39,41 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   is evicted from the texture cache mid-message (memory pressure in a packed
   room, or a hover-preview fetch), it is re-demanded at high priority within a
   paced window instead of vanishing to black.
-- **Cold-load sprite modes** (Settings → Power user → Renderer): what a character
-  layer shows while its NEW, uncached sprite is still streaming + decoding (the
-  cold-load gap — worse on huge art / high ping). **"Show nothing"** (default =
-  original behaviour, the blank flash) or **"Keep the previous one"** (webAO-style:
-  the layer's last drawn sprite stays on screen until the new one lands). Pure render
-  path (`render.SpriteLoadMode`): the held sprite is resolved by BASE string through
-  the store each frame (never a stashed page pointer, so an eviction just falls back
-  to blank + self-heals), and it's done **only in the draw path** — `resolve()`/
-  `Update` never see the held page, so the preanim lifecycle and packed-room catch-up
-  pacing are untouched. A cached scene is **byte-identical** whatever the mode, and
-  holding is **0-alloc** (`TestSpriteLoadHoldPrevious`). *(A "wait until it loads"
-  mode is planned — see ROADMAP.)*
+- **Cold-load sprite modes** (Settings → Power user → Renderer): what happens while
+  a NEW, uncached sprite is still streaming + decoding (the cold-load gap — worse on
+  huge art / high ping). **"Show nothing"** (default = original behaviour, the blank
+  flash), **"Keep the previous one"** (webAO-style: the layer's last drawn sprite
+  stays on screen until the new one lands), or **"Hold the message"** (client-AO
+  -style: the message stays **off-stage** until its speaker's idle sprite has
+  decoded). Hold-previous is pure render path (`render.SpriteLoadMode`): the held
+  sprite is resolved by BASE string through the store each frame (never a stashed
+  page pointer, so an eviction just falls back to blank + self-heals), and it's done
+  **only in the draw path** — `resolve()`/`Update` never see the held page, so the
+  preanim lifecycle and packed-room catch-up pacing are untouched. **Wait** is a
+  courtroom **message-lifecycle gate** (`Courtroom.SpriteWait` + a `SpriteReady`
+  residency callback): the held message parks at the head of the IC queue, its
+  sprites are prefetched at HIGH on arming, and a **tunable timeout** (50 ms–30 s,
+  default 1.5 s) releases it regardless — so a 404/decode failure can only ever
+  *delay* a message, never hang the room; **shouts play instantly** (AO2 parity) and
+  **packed-room catch-up always wins** (a backlog never waits). Two strictness ticks
+  extend the gate to the **pair partner's idle** and the **preanimation**; on a
+  timeout the renderer falls back to hold-previous so the stage still never flashes.
+  Hold-previous has its own knobs: a **max-age** cap on the stand-in (0 = forever)
+  and a **diagnostic amber tint** so you can SEE it bridging. A cached scene is
+  **byte-identical** whatever the mode, and holding is **0-alloc**
+  (`TestSpriteLoadHoldPrevious`, `TestHoldMaxAgeAndTint`, `TestSpriteWaitGate`).
+- **Core message timings + queue knobs** (Settings → Power user, every slider's far
+  left = the canonical default): **shout bubble duration** (~0.72 s), **preanim wait
+  cap** (2.5 s), **IC backlog queue depth** (64; hard-floored ≥ 1 so the queue stays
+  bounded whatever the pref says) and **catch-up flash linger** (0 = one per frame).
+  A **⟲ Reset ALL power-user options** button (two-click confirm) reverts the whole
+  tab — TLS, both Origin overrides, folder casing, renderer modes + knobs, sprite
+  mask, timings — while user *data* (saved mod chips, learned formats) survives
+  (`TestResetPowerUser` pins the scope).
+- **WS-handshake Origin override** (Settings → Power user → Origin overrides): the
+  connection-side sibling of the asset Origin — sent on the WebSocket upgrade for
+  the rare server that allowlists only its own web client's origin. Blank (default)
+  = no header, byte-identical handshake (`TestDialWSOriginHeader`).
 - **Viewport sprite mask** (Settings → Power user, **ON by default**): character
   sprites are clipped to the stage rect, so a big **pair / reposition offset** can't
   spill a sprite over the chatbox or the log. Only the sprite draws are clipped (the
@@ -84,7 +107,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   it sends, so you see precisely what goes out. It picks the right identifier per
   software (IPID for KFO/Akashi, UID for Whisker, `-i`/`-u` flags for Athena/Nyathena);
   when a server bans by **IPID** (mod-only) and it hasn't surfaced yet, the box says so
-  and offers a one-click **/getarea** fetch rather than a dead button. The target is
+  and offers a one-click **/getarea** fetch rather than a dead button. The duration
+  picker's preset chips are joined by **savable custom durations** ("45m", "2 days",
+  "perma" — validated via `courtroom.CanonicalBanDuration`, stored as canonical short
+  tokens, rendered in each software's own format by `BanCommandToken`, Edit → × to
+  remove; the bulk box shows them too), alongside the **savable reason chips**. The target is
   keyed by **UID** (never a roster row index) and **frozen** when the box opens, so a
   join/leave can't repoint a ban at the wrong person. Room (**CM**) controls — claim /
   release CM, lock / unlock, kick-from-area — appear when you're CM (Claim sits outside

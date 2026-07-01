@@ -25,7 +25,41 @@ renderer work and the optimisation / UX suggestions.
   stage, so a big **pair / reposition offset** can't spill a sprite over the chatbox
   or the log. A **Settings → Power user** toggle turns it off for freeform placement.
 
+### Renderer & core knobs (power user — every one labeled in Settings)
+- **Third cold-load mode: "hold the message"** (client-AO-style). The uncached-sprite
+  picker gains **Wait**: a message stays off-stage until its speaker's sprite has
+  decoded, with a **tunable hold cap** (50 ms – 30 s; a broken sprite can only ever
+  *delay* a message) — and if the cap expires, the previous sprite is kept rather
+  than flashing blank. Two **strictness ticks** widen the gate to the **pair
+  partner's sprite** and the **pre-animation**. Shouts always play instantly, and a
+  packed-room backlog never waits (catch-up wins).
+- **Hold-previous fine-tuning.** A **max-age slider** caps how long the previous
+  sprite may bridge a still-loading one (far left = forever), and a **diagnostic
+  amber tint** shows stand-ins while you tune.
+- **Core message timings, exposed.** **Shout bubble duration** (~0.72 s default),
+  **pre-animation wait cap** (2.5 s default), **IC backlog queue depth** (64
+  default) and **catch-up flash linger** (0 default) are all sliders now — every
+  far-left position is the canonical AO2-matched default.
+- **⟲ Reset ALL power-user options** — one (two-click) button puts the whole tab
+  back to its out-of-the-box values. Saved mod-menu chips and per-server learned
+  formats are user data and survive it.
+- **Connection Origin override.** Beside the asset-fetch Origin there's now an
+  Origin override for the **WebSocket handshake itself** — for the rare server that
+  only accepts its own web client (e.g. one requiring `webao.<its domain>`).
+
+### Mod / CM dashboard
+- **Savable custom ban durations.** Beside the preset chips you can now **save your
+  own** ("45m", "2 days", "1w", "perma") — validated, rendered in each server
+  software's own duration format, one click to apply, Edit → × to remove. They ride
+  the same live command preview, and the bulk box shows them too. (Reason chips
+  could already be saved — the two now match.)
+
 ### Fixes
+- **Dropdown options over a floating panel take clicks again.** In a custom layout,
+  an open dropdown list that flipped up over a torn-off tab had dead rows (the
+  panel's click-shield swallowed them — "can't select higher than Gray"). The open
+  list now owns the pointer wherever it is, and a click it handles can't also land
+  on anything beneath.
 - **"Don't ask again" on the disconnect prompt.** The confirm dialog — which the
   Disconnect button **and Esc** both go through — now has a **"Don't ask again"**
   tick that switches you to instant disconnect from then on (the same pattern as the

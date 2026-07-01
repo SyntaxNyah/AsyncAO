@@ -22,6 +22,10 @@ const (
 	DefaultTextStayTime = 200 * time.Millisecond
 	// messageQueueCap bounds the IC message queue (spec §17.4).
 	messageQueueCap = 64
+	// DefaultQueueCap is the exported canonical queue depth (= messageQueueCap):
+	// what QueueCap seeds to, and what the App restores when the power-user pref
+	// is back at its 0 = default sentinel.
+	DefaultQueueCap = messageQueueCap
 	// blipVolumeFull is the unattenuated per-character blip scale (M11): 100%,
 	// used when no BlipVolumeFor callback is wired (tests/embedders).
 	blipVolumeFull = 100
@@ -221,6 +225,53 @@ type Courtroom struct {
 	// the IC log; nil = leave the text as-is. Set by the App (the registry lives in ui).
 	InlineEmote func(stem string) (string, bool)
 
+	// Cold-load "wait" mode (the third SpriteLoadMode; client-AO flavour): hold a
+	// message OFF-STAGE until its speaker's idle sprite has decoded, so the stage
+	// never shows the message with a missing sprite. SpriteWait turns it on;
+	// SpriteReady reports texture residency (the App wires render.TextureStore
+	// .Contains — same-thread, a plain map probe; nil = gate off, so courtroom
+	// stays SDL-free); SpriteWaitTimeout caps one message's hold so a 404 or a
+	// decode failure can only ever DELAY a message, never hang the queue (a zero
+	// timeout deliberately never holds — a wiring bug degrades to mode-off).
+	// Shouts bypass (AO2 parity: they nuke the queue and play NOW) and packed-room
+	// catch-up wins (a backlog never waits — beginCaughtUp doesn't redraw the
+	// sprite anyway).
+	SpriteWait        bool
+	SpriteWaitTimeout time.Duration
+	SpriteReady       func(base string) bool
+	// SpriteWaitPair / SpriteWaitPreanim widen the gate (power-user strictness
+	// knobs, both default off): also hold until the pair partner's idle sprite /
+	// the message's preanimation have decoded. The timeout caps the whole hold
+	// either way.
+	SpriteWaitPair    bool
+	SpriteWaitPreanim bool
+
+	// ShoutDuration / PreanimTimeout are the core message-ceremony timings,
+	// exposed as power-user knobs (defaults = the canonical AO2-flavoured
+	// DefaultShoutDuration / DefaultPreanimTimeout, seeded in NewCourtroom):
+	// how long an interjection bubble holds the stage, and how long a preanim
+	// may play before the text starts anyway when its real length is unknown
+	// (asset still decoding — NotifyPreanimDone always cuts it short).
+	ShoutDuration  time.Duration
+	PreanimTimeout time.Duration
+
+	// QueueCap bounds the IC message queue (power-user; seeded to
+	// messageQueueCap in NewCourtroom and ALWAYS ≥ 1, so the queue stays
+	// bounded whatever the pref says — §17.4). Past it the oldest unplayed
+	// message drops; the IC log still records everything.
+	QueueCap int
+	// CatchUpLinger holds each fast-forwarded backlog message on screen before
+	// the next dequeues (power-user; the canonical default is catchUpLinger =
+	// zero — drain one per frame). A small value lets you actually read the
+	// backlog flashing past, trading catch-up speed for legibility.
+	CatchUpLinger time.Duration
+
+	// waitLeft counts down an armed hold; waitFor is the exact message it was
+	// armed for (pointer identity — queue entries are stable), so a new head
+	// re-arms fresh and begin() clears it.
+	waitLeft time.Duration
+	waitFor  *protocol.ChatMessage
+
 	queue []*protocol.ChatMessage
 	phase MessagePhase
 	timer time.Duration
@@ -296,6 +347,12 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 		// Catch-up defaults OFF so direct callers (tests/embedders) keep the
 		// full lifecycle; the App enables it from prefs (default ON there).
 		CatchUpThreshold: catchUpDefaultThreshold,
+		// Power-user core-timing knobs, seeded to the canonical AO2 values so
+		// direct callers behave exactly as before; the App overrides from prefs.
+		ShoutDuration:  DefaultShoutDuration,
+		PreanimTimeout: DefaultPreanimTimeout,
+		QueueCap:       messageQueueCap,
+		CatchUpLinger:  catchUpLinger,
 	}
 	c.Scene.SpeakerInFront = true
 	return c
@@ -383,6 +440,57 @@ func isAreaTransfer(track string) bool {
 	return !hasAudioExt(track)
 }
 
+// waitHolds reports whether the cold-load "wait" gate holds msg off-stage this
+// tick (SpriteWait mode): the speaker's idle sprite — the first thing the stage
+// would show — hasn't decoded yet and the timeout hasn't expired. behind is how
+// many messages are queued BEHIND msg (matching begin()'s post-pop catch-up
+// check, so the two triggers can never disagree); dt advances the countdown
+// (pass 0 at an arm-only site). Arming fires the SAME idle/talk prefetch begin()
+// would — at HIGH, with the bare-spelling fallback — so the wait can actually
+// end (singleflight makes begin()'s repeat a no-op). The readiness key is the
+// PREFIXED base: PrefetchWithFallback keeps it the asset's identity whichever
+// spelling the server ships (CLAUDE.md).
+func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Duration) bool {
+	if !c.SpriteWait || c.SpriteReady == nil || msg == nil || msg.IsShout() {
+		return false
+	}
+	if c.CatchUp && behind >= c.CatchUpThreshold {
+		c.waitFor = nil // catch-up wins: this message fast-forwards, waiting would only add lag
+		return false
+	}
+	idle := c.urls.Emote(msg.CharName, msg.Emote, EmoteIdle)
+	ready := c.SpriteReady(idle)
+	if ready && c.SpriteWaitPair && msg.Pair.Active() { // strictness knob: the pair partner's idle too
+		ready = c.SpriteReady(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle))
+	}
+	if ready && c.SpriteWaitPreanim && hasPreanim(msg) { // strictness knob: the preanimation too
+		ready = c.SpriteReady(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim))
+	}
+	if ready {
+		c.waitFor = nil
+		return false
+	}
+	if c.waitFor != msg { // a new head arms: start the countdown + warm its sprites
+		c.waitFor = msg
+		c.waitLeft = c.SpriteWaitTimeout
+		bare := c.urls.EmoteBare(msg.CharName, msg.Emote)
+		c.mgr.PrefetchWithFallback(idle, bare, assets.AssetTypeCharSprite, network.PriorityHigh)                                             // AssetType: CharSprite (wait-gate warm)
+		c.mgr.PrefetchWithFallback(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk), bare, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm)
+		if c.SpriteWaitPair && msg.Pair.Active() {
+			c.mgr.PrefetchWithFallback(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), c.urls.EmoteBare(msg.Pair.Name, msg.Pair.Emote), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, pair)
+		}
+		if c.SpriteWaitPreanim && hasPreanim(msg) {
+			c.mgr.Prefetch(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, preanim)
+		}
+	}
+	c.waitLeft -= dt
+	if c.waitLeft <= 0 {
+		c.waitFor = nil // timed out: play anyway (the renderer's own cold-load mode covers the gap)
+		return false
+	}
+	return true
+}
+
 // enqueue mirrors AO2-Client chatmessage_enqueue: shouts nuke the queue and
 // play immediately; otherwise messages process in order.
 func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
@@ -395,17 +503,29 @@ func (c *Courtroom) enqueue(msg *protocol.ChatMessage) {
 		return
 	}
 	if c.phase == PhaseIdle && len(c.queue) == 0 {
+		// Wait mode: a cold sprite parks the message in the queue instead of
+		// beginning — Update's PhaseIdle case drains it once ready / timed out.
+		if c.waitHolds(msg, 0, 0) {
+			c.queue = append(c.queue, msg)
+			return
+		}
 		c.begin(msg)
 		return
 	}
-	if len(c.queue) < messageQueueCap {
+	// The cap is the power-user QueueCap, hard-floored ≥ 1 so a bad pref can
+	// never unbound the queue (rule §17.4).
+	qcap := c.QueueCap
+	if qcap < 1 {
+		qcap = 1
+	}
+	if len(c.queue) < qcap {
 		c.queue = append(c.queue, msg)
 	}
 	// Beyond the cap the oldest unplayed message drops — bounded queues
 	// beat unbounded lag (rule §17.4); IC history still records via logs.
-	if len(c.queue) == messageQueueCap {
+	if len(c.queue) == qcap {
 		copy(c.queue, c.queue[1:])
-		c.queue = c.queue[:messageQueueCap-1]
+		c.queue = c.queue[:qcap-1]
 		c.queue = append(c.queue, msg)
 	}
 }
@@ -451,6 +571,7 @@ func (c *Courtroom) applyCenterPrefix() {
 
 func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.current = msg
+	c.waitFor = nil // beginning ends any armed wait-gate hold
 	// Packed-room catch-up: a backlog behind this message means the stage is
 	// behind real-time. Fast-forward this one (no shout/preanim/typewriter/
 	// effects/sfx/prefetch) and linger briefly so the queue drains. The trigger
@@ -653,7 +774,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.Scene.ShoutFallbackBase = c.ShoutDefaultBase // misc/default when the char has none
 		c.Scene.ShoutCustom = msg.Objection == protocol.ShoutCustom
 		c.phase = PhaseShout
-		c.timer = DefaultShoutDuration
+		c.timer = c.ShoutDuration // power-user knob; seeded to DefaultShoutDuration
 	default:
 		c.enterAfterShout()
 	}
@@ -710,7 +831,7 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	c.Scene.IsBlankPost = strings.TrimSpace(c.Scene.MessageText) == ""
 	c.preanimDone = false
 	c.phase = PhaseLinger
-	c.timer = catchUpLinger
+	c.timer = c.CatchUpLinger // power-user knob; the canonical default is zero (drain one per frame)
 }
 
 // enterAfterShout picks preanim vs talking, mirroring handle_emote_mod:
@@ -732,7 +853,7 @@ func (c *Courtroom) enterAfterShout() {
 	}
 	if blockOnPre {
 		c.phase = PhasePreanim
-		c.timer = DefaultPreanimTimeout
+		c.timer = c.PreanimTimeout // power-user knob; seeded to DefaultPreanimTimeout
 		return
 	}
 	c.startTalking()
@@ -876,6 +997,21 @@ func (c *Courtroom) Update(dt time.Duration) {
 		c.timer -= dt
 		if c.timer <= 0 {
 			c.phase = PhaseIdle
+			// Wait mode: a cold next sprite holds in the queue (the PhaseIdle case
+			// below keeps ticking it). Gate off → waitHolds is false immediately and
+			// the next message dequeues THIS tick, exactly as before.
+			if len(c.queue) > 0 && c.waitHolds(c.queue[0], len(c.queue)-1, 0) {
+				break
+			}
+			c.dequeue()
+		}
+
+	case PhaseIdle:
+		// Only the wait gate can leave a message queued while idle (every other
+		// path drains on arrival / linger-end), so this case is a no-op unless a
+		// hold is in flight: tick it and begin the moment the sprite lands or the
+		// timeout expires.
+		if len(c.queue) > 0 && !c.waitHolds(c.queue[0], len(c.queue)-1, dt) {
 			c.dequeue()
 		}
 	}

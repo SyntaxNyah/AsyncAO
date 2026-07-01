@@ -374,6 +374,7 @@ type Ctx struct {
 	// and releases at the BeginFrame after the close.
 	ddOpen       string
 	ddScroll     int32
+	ddOpenList   sdl.Rect // the OPEN dropdown's list rect (flip-adjusted), stashed each draw — read by boxFencesPointer so a list over a floating panel stays clickable
 	modalOn      bool
 	modalRelease bool
 	ddDraws      []ddDraw // deferred overlay draws this frame (0 or 1)
@@ -1935,6 +1936,11 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 	// fall through to it. The dropdown uses the raw pointIn() hit test below for
 	// its own interaction (the fence would otherwise blank it too).
 	c.modalOn = true
+	// Publish the open list rect for boxFencesPointer: the list paints ABOVE the
+	// floating panels (FinishFrame), so input must follow the visuals — while the
+	// cursor is over the list, the courtroom pass must not run pointer-blind, or a
+	// list flipped up over a torn tab has dead rows (the custom-layout playtest bug).
+	c.ddOpenList = list
 
 	// Wheel scrolls long lists (raw hit test, since hovering() is fenced while open).
 	contentH := int32(len(options)) * rowH
@@ -1949,7 +1955,10 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 		c.ddScroll = 0
 	}
 
-	// Interaction resolves NOW (frame-consistent); painting defers.
+	// Interaction resolves NOW (frame-consistent); painting defers. Every branch
+	// CONSUMES the click (the modal owns it): widgets later in the frame — floating
+	// panels draw with the pointer restored — must never also react to a click that
+	// visually landed on (or dismissed) the list.
 	next, changed := cur, false
 	if c.clicked {
 		switch {
@@ -1969,6 +1978,7 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 			c.ddOpen = ""
 			c.modalRelease = true
 		}
+		c.clicked = false
 	}
 	c.ddDraws = append(c.ddDraws, ddDraw{
 		list: list, options: options, cur: next, scroll: c.ddScroll, rowH: rowH,

@@ -1008,6 +1008,101 @@ func TestModReasonTemplates(t *testing.T) {
 	}
 }
 
+// TestResetPowerUser pins the nuke button's scope: every power-user knob reverts to
+// its shipped default, and the deliberately-excluded state (custom mod durations —
+// user data, not a knob) survives. If a new power-user pref is added, it belongs in
+// ResetPowerUser AND in this list.
+func TestResetPowerUser(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	// Scramble every knob off its default.
+	p.SetValidateTLSCerts(true)
+	p.SetAssetOriginHeader("https://a.example")
+	p.SetWSOriginHeader("https://b.example")
+	p.SetSpriteLoadMode(SpriteLoadWait)
+	p.SetSpriteWaitMs(4000)
+	p.SetSpriteWaitPair(true)
+	p.SetSpriteWaitPreanim(true)
+	p.SetHoldPrevMaxAgeMs(9000)
+	p.SetHoldDebugTint(true)
+	p.SetShoutDurationMs(1000)
+	p.SetPreanimTimeoutMs(5000)
+	p.SetICQueueCap(128)
+	p.SetCatchUpLingerMs(250)
+	p.SetClipSpritesToStage(false)
+	p.AddModDuration("45m") // user data — must SURVIVE the nuke
+
+	p.ResetPowerUser()
+
+	if p.ValidateTLSCertsOn() || p.AssetOriginHeader() != "" || p.WSOriginHeader() != "" {
+		t.Error("nuke must clear TLS + both Origin overrides")
+	}
+	if p.SpriteLoadMode() != SpriteLoadBlank || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
+		p.SpriteWaitPairOn() || p.SpriteWaitPreanimOn() {
+		t.Error("nuke must reset the cold-load mode + wait knobs")
+	}
+	if p.HoldPrevMaxAgeMs() != 0 || p.HoldDebugTintOn() {
+		t.Error("nuke must reset the hold-previous knobs")
+	}
+	if p.ShoutDurationMs() != 0 || p.PreanimTimeoutMs() != 0 || p.ICQueueCap() != 0 || p.CatchUpLingerMs() != 0 {
+		t.Error("nuke must reset the core timings + queue knobs to their defaults")
+	}
+	if !p.ClipSpritesToStageOn() {
+		t.Error("nuke must restore the sprite mask to its default ON")
+	}
+	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
+		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)
+	}
+}
+
+// TestModDurations pins the saved custom ban-duration chips: empty by default (the
+// enum presets are the built-ins), add (deduped case-insensitively), remove, the cap,
+// and persistence across a save → load.
+func TestModDurations(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if got := p.ModDurationsList(); len(got) != 0 {
+		t.Fatalf("a fresh config must have no custom durations, got %v", got)
+	}
+	if !p.AddModDuration("45m") {
+		t.Error("AddModDuration should report a change")
+	}
+	if p.AddModDuration("45M") { // case-insensitive duplicate
+		t.Error("dup add must be a no-op")
+	}
+	if p.AddModDuration("  ") {
+		t.Error("blank add must be a no-op")
+	}
+	p.AddModDuration("2d")
+	if got := p.ModDurationsList(); len(got) != 2 || got[0] != "45m" || got[1] != "2d" {
+		t.Errorf("after adds = %v, want [45m 2d]", got)
+	}
+	if !p.RemoveModDuration("45m") {
+		t.Error("removing a saved duration should work")
+	}
+	if p.RemoveModDuration("45m") {
+		t.Error("removing a missing duration must be a no-op")
+	}
+	for i := 0; i < modDurationsCap+10; i++ {
+		p.AddModDuration(strconv.Itoa(i+1) + "h")
+	}
+	if n := len(p.ModDurationsList()); n > modDurationsCap {
+		t.Errorf("list grew to %d, want capped at %d", n, modDurationsCap)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := q.ModDurationsList(); len(got) == 0 || got[0] != "2d" {
+		t.Errorf("custom durations lost across save/load: %v", got)
+	}
+}
+
 // TestModReasonTemplatesRoundTrip pins that a custom reason survives save → load.
 func TestModReasonTemplatesRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)

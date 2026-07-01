@@ -378,6 +378,16 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if !a.extrasSurfaceLive() {
 		return false
 	}
+	// An OPEN dropdown owns the pointer modally: hovering() is already blanked for
+	// every other widget, and its list PAINTS ABOVE the floating panels (deferred to
+	// FinishFrame) — so while the cursor is over that list, input must follow the
+	// visuals and the courtroom pass must NOT run pointer-blind, or the dropdown's
+	// own click resolution (raw pointIn in dropdownEx) goes blind with it. Without
+	// this, a list flipped up over a torn-tab panel had dead rows exactly where the
+	// two overlapped (custom-layout playtest: "can't select higher than Gray").
+	if a.ctx.ddOpen != "" && pointIn(a.ctx.mouseX, a.ctx.mouseY, a.ctx.ddOpenList) {
+		return false
+	}
 	if a.extrasDragging || a.extrasDetachDragging || a.extrasPressing || a.extrasResizing || a.extrasDetachResizing || a.favBoxDragging || a.styleBoxDragging || a.styleBoxResizing ||
 		a.pairWin.dragging || a.pairWin.resizing || a.modWin.dragging || a.modWin.resizing || a.cmWin.dragging || a.cmWin.resizing ||
 		a.evidWin.dragging || a.evidWin.resizing || a.modcallWin.dragging || a.modcallWin.resizing || a.msgWin.dragging || a.msgWin.resizing ||

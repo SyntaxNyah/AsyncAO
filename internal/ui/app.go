@@ -946,7 +946,11 @@ type sessionState struct {
 	// showPowerUser reveals the advanced/power-user Settings options (TLS, Asset Origin, asset
 	// casing) — hidden by default so they're not changed by accident. Session-only.
 	showPowerUser bool
-	amICMNow      bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// powerNukeArm is the two-click confirm on "Reset all power-user options": the first
+	// click arms (label flips), the second fires ResetPowerUser. Cleared on the reveal
+	// toggle and on fire, so a stale arm can't linger across visits.
+	powerNukeArm bool
+	amICMNow     bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
@@ -955,14 +959,15 @@ type sessionState struct {
 	// Ban/Kick box (#130): a FROZEN snapshot of the target, taken when the box opens, so a roster
 	// rebuild while the reason is being typed can never repoint a destructive command at someone
 	// else. Only the IPID is allowed to fill in later (re-resolved by the frozen UID — same person).
-	banBoxKind     int                   // 0 = closed, 1 = ban, 2 = kick, 3 = bulk ban, 4 = bulk kick
-	banBoxUID      string                // snapshot: target UID (the identity anchor)
-	banBoxIPID     string                // snapshot: target IPID (mod-only; "" until a /getarea enrich)
-	banBoxName     string                // snapshot: display name for the box header
-	banBoxDur      courtroom.BanDuration // chosen duration (ban only)
-	banBoxReason   string                // typed reason
-	modDashScroll  int32                 // mod dashboard roster scroll offset
-	cmRosterScroll int32                 // CM panel roster scroll offset
+	banBoxKind      int                   // 0 = closed, 1 = ban, 2 = kick, 3 = bulk ban, 4 = bulk kick
+	banBoxUID       string                // snapshot: target UID (the identity anchor)
+	banBoxIPID      string                // snapshot: target IPID (mod-only; "" until a /getarea enrich)
+	banBoxName      string                // snapshot: display name for the box header
+	banBoxDur       courtroom.BanDuration // chosen duration (ban only)
+	banBoxCustomDur string                // a saved CUSTOM duration chip's canonical token ("45m"); "" = the enum preset banBoxDur applies
+	banBoxReason    string                // typed reason
+	modDashScroll   int32                 // mod dashboard roster scroll offset
+	cmRosterScroll  int32                 // CM panel roster scroll offset
 	// #13 mod dashboard v2: a session audit log, bulk targeting, and the left-column view switch.
 	// All per-session (per-tab): a new server connection starts with an empty log and selection.
 	modDashShowAudit bool            // left column shows the session audit log instead of the roster
@@ -971,6 +976,8 @@ type sessionState struct {
 	modDashSelected  map[string]bool // UIDs ticked for a bulk ban / kick (lazily inited; ≤ modBulkCap)
 	bulkBoxUIDs      []string        // frozen snapshot of the ticked UIDs when a bulk box opens
 	modTemplatesEdit bool            // the ban box's reason-template editor is open (× removes a chip)
+	modDurEdit       bool            // the ban box's custom-duration editor is open (× removes a chip)
+	modDurInput      string          // the "add custom duration" field's draft ("45m", "2 days", …)
 	serverName       string
 	serverKey        string    // ws URL: keys the per-server warm state in prefs
 	connAt           time.Time // session start (Rich Presence elapsed timer)
@@ -2176,6 +2183,7 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	// the power-user Security toggle flips on strict verification.
 	conn, err := protocol.Dial(dialCtx, wsURL, protocol.DialOptions{
 		SkipTLSVerify: !a.d.Prefs.ValidateTLSCertsOn(),
+		Origin:        a.d.Prefs.WSOriginHeader(), // power-user: servers that allowlist their web client's origin ("" = none)
 	})
 	if err != nil {
 		a.connErr = friendlyConnError(wsURL, err) // #9: human guidance, not a raw Go error
@@ -3213,6 +3221,7 @@ func (a *App) buildRoom() {
 	a.room.SFXMuted = func(name string) bool { return a.d.Prefs.IsSFXMuted(name) }        // M11 per-SFX mute (reads live prefs)
 	a.room.BlipVolumeFor = func(char string) int { return a.d.Prefs.BlipVolumeFor(char) } // M11 per-character blip volume (reads live prefs)
 	a.room.InlineEmote = inlineEmoteFor                                                   // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
+	a.room.SpriteReady = func(base string) bool { return a.d.Store.Contains(base) }       // wait-mode residency probe (same-thread T1 map hit; the flags ride applyTimingToRoom)
 	// Per-server audio: apply THIS server's volume profile (or the global one) now,
 	// so the music re-seeded below plays at the right level and switching between
 	// two in-court tabs carries each server's own volumes / muted blips.
@@ -3812,6 +3821,18 @@ func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 	c.popClip(clipPrev, clipHad)
 }
 
+// vpSpriteLoadMode maps the 3-way cold-load pref onto the renderer's 2-way switch:
+// Wait is a MESSAGE-lifecycle gate (courtroom), so for the renderer it falls back to
+// hold-previous — if a hold times out (404 / dead link) the stage keeps the previous
+// sprite instead of flashing blank, composing the two mitigations.
+func (a *App) vpSpriteLoadMode() int {
+	mode := a.d.Prefs.SpriteLoadMode()
+	if mode == config.SpriteLoadWait {
+		return config.SpriteLoadHoldPrev
+	}
+	return mode
+}
+
 // applyTimingToRoom pushes the persisted crawl/stay knobs into the live
 // courtroom (the crawl applies from the next message — Start precomputes
 // per-rune delays).
@@ -3824,6 +3845,23 @@ func (a *App) applyTimingToRoom() {
 	a.room.TextStay = time.Duration(stayMs) * time.Millisecond
 	a.room.Typewriter.BlipRate, a.room.Typewriter.BlipOnSpaces = a.d.Prefs.BlipTyping() // #7: blip cadence + skip-whitespace
 	a.room.CatchUp, a.room.CatchUpThreshold = a.d.Prefs.CatchUp()
+	a.room.SpriteWait = a.d.Prefs.SpriteLoadMode() == config.SpriteLoadWait               // cold-load mode 3: hold a message until its sprite decodes
+	a.room.SpriteWaitTimeout = time.Duration(a.d.Prefs.SpriteWaitMs()) * time.Millisecond // its user-tunable hold cap
+	a.room.SpriteWaitPair = a.d.Prefs.SpriteWaitPairOn()                                  // strictness: gate on the pair partner too
+	a.room.SpriteWaitPreanim = a.d.Prefs.SpriteWaitPreanimOn()                            // strictness: gate on the preanim too
+	a.room.ShoutDuration = courtroom.DefaultShoutDuration                                 // core-timing knobs: 0 = the canonical defaults
+	if ms := a.d.Prefs.ShoutDurationMs(); ms != 0 {
+		a.room.ShoutDuration = time.Duration(ms) * time.Millisecond
+	}
+	a.room.PreanimTimeout = courtroom.DefaultPreanimTimeout
+	if ms := a.d.Prefs.PreanimTimeoutMs(); ms != 0 {
+		a.room.PreanimTimeout = time.Duration(ms) * time.Millisecond
+	}
+	a.room.QueueCap = courtroom.DefaultQueueCap // 0-pref = the canonical depth; always assigned so a nuke-reset restores it
+	if n := a.d.Prefs.ICQueueCap(); n != 0 {
+		a.room.QueueCap = n
+	}
+	a.room.CatchUpLinger = time.Duration(a.d.Prefs.CatchUpLingerMs()) * time.Millisecond
 	a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
 	a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() // #103: viewer opt-out of others' styles
@@ -4651,16 +4689,20 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.room.Update(dt)
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
-		a.d.Viewport.SetSpriteLoadMode(a.d.Prefs.SpriteLoadMode())                                     // cold-load flash mitigation (power user; default Blank = byte-identical)
+		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (power user; default Blank = byte-identical)
 		a.d.Viewport.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())                                  // viewport sprite mask (default ON): offsets can't spill past the stage
+		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
+		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
 		if a.splitActive() { // drive the pinned right-pane stage on its OWN viewport
 			a.splitRoom.Update(dt)
 			a.splitVP.SetSpriteFX(a.spriteFX())
-			a.splitVP.SetSpriteLoadMode(a.d.Prefs.SpriteLoadMode())
+			a.splitVP.SetSpriteLoadMode(a.vpSpriteLoadMode())
 			a.splitVP.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())
+			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)
+			a.splitVP.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())
 			a.splitVP.Update(&a.splitRoom.Scene, dt)
 		}
 		// Music ducking: dip music while a message is on stage (shout/preanim/

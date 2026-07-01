@@ -11,13 +11,13 @@ import (
 // disrespect" feedback): a ban names the duration + reason, a kick omits the duration, and an
 // empty reason reads "no reason given".
 func TestBanActionSummary(t *testing.T) {
-	ban := banActionSummary(true, "[12] Phoenix", courtroom.Ban1Day, "trolling")
+	ban := banActionSummary(true, "[12] Phoenix", courtroom.BanDurationLabel(courtroom.Ban1Day), "trolling")
 	for _, want := range []string{"Ban", "Phoenix", "trolling", " for "} {
 		if !strings.Contains(ban, want) {
 			t.Errorf("ban summary %q missing %q", ban, want)
 		}
 	}
-	kick := banActionSummary(false, "[12] Phoenix", courtroom.Ban1Day, "")
+	kick := banActionSummary(false, "[12] Phoenix", courtroom.BanDurationLabel(courtroom.Ban1Day), "")
 	if !strings.Contains(kick, "Kick") {
 		t.Errorf("kick summary should say Kick: %q", kick)
 	}

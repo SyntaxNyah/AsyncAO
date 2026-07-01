@@ -708,6 +708,7 @@ type AssetPreferences struct {
 	PingChip               bool                         `json:"pingChip"`                   // #128 show the connection-quality chip (default OFF)
 	ValidateTLSCerts       bool                         `json:"validateTLSCerts"`           // power-user Security toggle: strictly verify wss:// TLS certs. Default OFF = accept self-signed (most community AO servers use them)
 	AssetOrigin            string                       `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
+	WSOrigin               string                       `json:"wsOrigin,omitempty"`         // power-user: Origin header sent on the WebSocket HANDSHAKE (servers that allowlist their own web client's origin); empty = none
 	AssetCharCase          uint8                        `json:"assetCharCase,omitempty"`    // POWER-USER: character-folder casing for the rare capitalised-folder server (0 lowercase default / 1 first-cap / 2 title). A wrong value 404s every character.
 	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
 	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
@@ -774,7 +775,16 @@ type AssetPreferences struct {
 	RestoreTabs            bool                         `json:"restoreTabs"`
 	VolStripOn             bool                         `json:"volStripOn"`                     // on-screen volume strip toggle (default OFF)
 	ChangelogSeen          string                       `json:"changelogSeenVersion,omitempty"` // last What's New version opened (#23 unread dot)
-	SpriteLoadModeVal      int                          `json:"spriteLoadMode,omitempty"`       // power-user cold-load sprite behaviour: 0 blank/default, 1 hold-previous (see SpriteLoad*)
+	SpriteLoadModeVal      int                          `json:"spriteLoadMode,omitempty"`       // power-user cold-load sprite behaviour: 0 blank/default, 1 hold-previous, 2 wait (see SpriteLoad*)
+	SpriteWaitMsVal        int                          `json:"spriteWaitMs,omitempty"`         // wait-mode hold cap in ms (0/absent = SpriteWaitDefaultMs)
+	SpriteWaitPair         bool                         `json:"spriteWaitPair,omitempty"`       // wait mode also gates on the PAIR partner's idle sprite (default OFF)
+	SpriteWaitPreanim      bool                         `json:"spriteWaitPreanim,omitempty"`    // wait mode also gates on the message's PREANIM (default OFF)
+	HoldPrevMaxAgeMsVal    int                          `json:"holdPrevMaxAgeMs,omitempty"`     // hold-previous stand-in cap in ms (0/absent = bridge forever)
+	HoldDebugTint          bool                         `json:"holdDebugTint,omitempty"`        // amber-tint stand-in sprites (power-user diagnostics, default OFF)
+	ShoutDurationMsVal     int                          `json:"shoutDurationMs,omitempty"`      // shout-bubble hold in ms (0/absent = the canonical default)
+	PreanimTimeoutMsVal    int                          `json:"preanimTimeoutMs,omitempty"`     // preanim wait cap in ms (0/absent = the canonical default)
+	ICQueueCapVal          int                          `json:"icQueueCap,omitempty"`           // IC backlog queue depth (0/absent = the canonical default 64)
+	CatchUpLingerMsVal     int                          `json:"catchUpLingerMs,omitempty"`      // per-message linger while catching up, ms (default 0 = one per frame)
 	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
 	TypingIndicator        bool                         `json:"typingIndicator"`                // opt-in cross-client "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
@@ -841,6 +851,7 @@ type AssetPreferences struct {
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
 	SfxFavorites       []string                  `json:"sfxFavorites,omitempty"`       // #12 starred SFX names (global, bare; preview/use in the SFX Browser)
 	ModReasonTemplates []string                  `json:"modReasonTemplates,omitempty"` // editable ban/kick reason chips (seed defaults when empty)
+	ModDurations       []string                  `json:"modDurations,omitempty"`       // saved CUSTOM ban-duration chips (canonical short tokens: "45m", "2d"); the enum presets are the defaults
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
@@ -983,6 +994,7 @@ type prefsJSON struct {
 	PingChip               bool             `json:"pingChip"`                   // #128 default OFF
 	ValidateTLSCerts       bool             `json:"validateTLSCerts"`           // Security: strict wss cert check; default OFF (accept self-signed)
 	AssetOrigin            string           `json:"assetOrigin,omitempty"`      // Security: Origin/Referer override for asset fetches
+	WSOrigin               string           `json:"wsOrigin,omitempty"`         // Security: Origin override for the WS handshake
 	VoiceInputDevice       string           `json:"voiceInputDevice,omitempty"` // voice mic device ("" = default)
 	VoiceOutVolume         int              `json:"voiceOutVolume,omitempty"`   // voice output volume (0 = default 100)
 	PrefetchAggro          int              `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (#100)
@@ -1052,7 +1064,16 @@ type prefsJSON struct {
 	RestoreTabs            bool             `json:"restoreTabs"`          // default OFF (zero value)
 	VolStripOn             bool             `json:"volStripOn"`           // on-screen volume strip toggle (default OFF)
 	ChangelogSeen          string           `json:"changelogSeenVersion"` // last What's New version opened (#23)
-	SpriteLoadMode         int              `json:"spriteLoadMode"`       // power-user cold-load sprite behaviour (0 blank/default, 1 hold-previous)
+	SpriteLoadMode         int              `json:"spriteLoadMode"`       // power-user cold-load sprite behaviour (0 blank/default, 1 hold-previous, 2 wait)
+	SpriteWaitMs           int              `json:"spriteWaitMs"`         // wait-mode hold cap in ms (0 = default)
+	SpriteWaitPair         bool             `json:"spriteWaitPair"`       // wait mode gates on the pair too (default OFF)
+	SpriteWaitPreanim      bool             `json:"spriteWaitPreanim"`    // wait mode gates on the preanim too (default OFF)
+	HoldPrevMaxAgeMs       int              `json:"holdPrevMaxAgeMs"`     // hold-previous cap in ms (0 = forever)
+	HoldDebugTint          bool             `json:"holdDebugTint"`        // tint stand-in sprites (default OFF)
+	ShoutDurationMs        int              `json:"shoutDurationMs"`      // shout hold in ms (0 = default)
+	PreanimTimeoutMs       int              `json:"preanimTimeoutMs"`     // preanim cap in ms (0 = default)
+	ICQueueCap             int              `json:"icQueueCap"`           // IC queue depth (0 = default 64)
+	CatchUpLingerMs        int              `json:"catchUpLingerMs"`      // catch-up per-message linger ms (default 0)
 	MusicVolMode           bool             `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
 	TypingIndicator        bool             `json:"typingIndicator"`      // opt-in "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
@@ -1115,6 +1136,7 @@ type prefsJSON struct {
 	MutedSFX           []string                  `json:"mutedSFX,omitempty"`
 	SfxFavorites       []string                  `json:"sfxFavorites,omitempty"`       // #12 starred SFX names (global, bare; preview/use in the SFX Browser)
 	ModReasonTemplates []string                  `json:"modReasonTemplates,omitempty"` // editable ban/kick reason chips (seed defaults when empty)
+	ModDurations       []string                  `json:"modDurations,omitempty"`       // saved CUSTOM ban-duration chips (canonical short tokens: "45m", "2d"); the enum presets are the defaults
 	BlipVols           map[string]int            `json:"blipVolumes,omitempty"`
 	EmoteFavs          map[string][]int          `json:"emoteFavorites,omitempty"` // lowercased char -> favourited emote slice indices
 	EmoteFavOnly       bool                      `json:"emoteFavOnly"`             // grid shows only favourited emotes (default OFF)
@@ -1570,6 +1592,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.PingChip = onDisk.PingChip
 	p.ValidateTLSCerts = onDisk.ValidateTLSCerts
 	p.AssetOrigin = strings.TrimSpace(onDisk.AssetOrigin)
+	p.WSOrigin = strings.TrimSpace(onDisk.WSOrigin)
 	p.VoiceInputDevice = onDisk.VoiceInputDevice
 	p.VoiceOutVolume = onDisk.VoiceOutVolume
 	p.PrefetchAggro = onDisk.PrefetchAggro
@@ -1709,6 +1732,30 @@ func load(path string) (*AssetPreferences, error) {
 	if p.SpriteLoadModeVal < SpriteLoadBlank || p.SpriteLoadModeVal >= SpriteLoadModeCount {
 		p.SpriteLoadModeVal = SpriteLoadBlank // clamp to a known mode (a garbage / newer value falls back to default)
 	}
+	p.SpriteWaitMsVal = onDisk.SpriteWaitMs
+	if p.SpriteWaitMsVal != 0 { // 0 = "use the default"; a set value clamps into range
+		p.SpriteWaitMsVal = clampPercent(p.SpriteWaitMsVal, SpriteWaitMinMs, SpriteWaitMaxMs)
+	}
+	p.SpriteWaitPair = onDisk.SpriteWaitPair
+	p.SpriteWaitPreanim = onDisk.SpriteWaitPreanim
+	p.HoldPrevMaxAgeMsVal = onDisk.HoldPrevMaxAgeMs
+	if p.HoldPrevMaxAgeMsVal != 0 { // 0 = bridge forever; a set value clamps into range
+		p.HoldPrevMaxAgeMsVal = clampPercent(p.HoldPrevMaxAgeMsVal, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
+	}
+	p.HoldDebugTint = onDisk.HoldDebugTint
+	p.ShoutDurationMsVal = onDisk.ShoutDurationMs
+	if p.ShoutDurationMsVal != 0 { // 0 = the canonical default
+		p.ShoutDurationMsVal = clampPercent(p.ShoutDurationMsVal, ShoutDurationMinMs, ShoutDurationMaxMs)
+	}
+	p.PreanimTimeoutMsVal = onDisk.PreanimTimeoutMs
+	if p.PreanimTimeoutMsVal != 0 { // 0 = the canonical default
+		p.PreanimTimeoutMsVal = clampPercent(p.PreanimTimeoutMsVal, PreanimTimeoutMinMs, PreanimTimeoutMaxMs)
+	}
+	p.ICQueueCapVal = onDisk.ICQueueCap
+	if p.ICQueueCapVal != 0 { // 0 = the canonical default (64)
+		p.ICQueueCapVal = clampPercent(p.ICQueueCapVal, ICQueueCapMin, ICQueueCapMax)
+	}
+	p.CatchUpLingerMsVal = clampPercent(onDisk.CatchUpLingerMs, 0, CatchUpLingerMaxMs) // default IS zero, so no sentinel
 	p.MusicVolMode = onDisk.MusicVolMode
 	p.ChangelogSeen = onDisk.ChangelogSeen
 	p.TypingIndicator = onDisk.TypingIndicator
@@ -1830,6 +1877,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.MutedSFX = onDisk.MutedSFX
 	p.SfxFavorites = onDisk.SfxFavorites
 	p.ModReasonTemplates = onDisk.ModReasonTemplates
+	p.ModDurations = onDisk.ModDurations
 	p.BlipVols = onDisk.BlipVols
 	p.EmoteFavs = onDisk.EmoteFavs
 	p.EmoteFavOnly = onDisk.EmoteFavOnly
@@ -3517,6 +3565,30 @@ func (p *AssetPreferences) SetAssetOriginHeader(s string) {
 		return
 	}
 	p.AssetOrigin = s
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// WSOriginHeader reports the power-user Origin override sent on the WebSocket
+// HANDSHAKE (empty = none, the default). For servers that allowlist only their
+// own web client's origin on the socket — the connection-side sibling of
+// AssetOriginHeader (which covers asset fetches).
+func (p *AssetPreferences) WSOriginHeader() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.WSOrigin
+}
+
+// SetWSOriginHeader sets (or clears, when blank) the WS-handshake Origin override.
+// Applies on the NEXT connect (an open socket keeps its handshake).
+func (p *AssetPreferences) SetWSOriginHeader(s string) {
+	s = strings.TrimSpace(s)
+	p.mu.Lock()
+	if p.WSOrigin == s {
+		p.mu.Unlock()
+		return
+	}
+	p.WSOrigin = s
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -5472,7 +5544,19 @@ func (p *AssetPreferences) SetVolStripShown(on bool) {
 const (
 	SpriteLoadBlank     = 0 // draw nothing until the sprite lands (default; the cold-load flash)
 	SpriteLoadHoldPrev  = 1 // keep the previous sprite until the new one lands (webAO-style)
-	SpriteLoadModeCount = 2 // number of valid modes (for the Settings cycle button + load clamp)
+	SpriteLoadWait      = 2 // hold the MESSAGE off-stage until its sprite decodes (client-AO-style; courtroom wait gate, timeout-capped)
+	SpriteLoadModeCount = 3 // number of valid modes (for the Settings cycle button + load clamp)
+)
+
+// Wait-mode timeout bounds (SpriteLoadWait): how long one message may be held for
+// its sprite before playing anyway. User-tunable within [min,max] — deliberately a
+// WIDE range (power user: from a near-instant 50 ms nudge to a patient 30 s on a
+// dial-up-grade link); the default is generous enough for a big sprite on a slow
+// link without stalling conversation.
+const (
+	SpriteWaitDefaultMs = 1500
+	SpriteWaitMinMs     = 50
+	SpriteWaitMaxMs     = 30000
 )
 
 // SpriteLoadMode reports the power-user cold-load sprite behaviour (SpriteLoadBlank
@@ -5495,6 +5579,219 @@ func (p *AssetPreferences) SetSpriteLoadMode(mode int) {
 		return
 	}
 	p.SpriteLoadModeVal = mode
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SpriteWaitMs reports the wait-mode hold cap in milliseconds (SpriteWaitDefaultMs
+// when unset): how long SpriteLoadWait may hold one message for its sprite before
+// playing anyway.
+func (p *AssetPreferences) SpriteWaitMs() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.SpriteWaitMsVal == 0 {
+		return SpriteWaitDefaultMs
+	}
+	return p.SpriteWaitMsVal
+}
+
+// SetSpriteWaitMs persists the wait-mode hold cap (clamped to the tunable range).
+func (p *AssetPreferences) SetSpriteWaitMs(ms int) {
+	ms = clampPercent(ms, SpriteWaitMinMs, SpriteWaitMaxMs)
+	p.mu.Lock()
+	if p.SpriteWaitMsVal == ms {
+		p.mu.Unlock()
+		return
+	}
+	p.SpriteWaitMsVal = ms
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Bounds for the remaining renderer / core-timing power knobs. Every "0 = default"
+// sentinel keeps the pref file byte-identical for anyone who never touches them.
+const (
+	HoldPrevMaxAgeMinMs = 100   // shortest useful stand-in bridge
+	HoldPrevMaxAgeMaxMs = 30000 // past this, give up to blank (0 = bridge forever)
+	ShoutDurationMinMs  = 100   // a blink of a bubble
+	ShoutDurationMaxMs  = 3000  // a leisurely bubble
+	PreanimTimeoutMinMs = 200   // barely wait for a preanim
+	PreanimTimeoutMaxMs = 10000 // very patient preanim cap
+	ICQueueCapMin       = 8     // shallowest useful backlog (still bounded — courtroom floors ≥ 1 regardless)
+	ICQueueCapMax       = 256   // deepest backlog before "just read the log"
+	CatchUpLingerMaxMs  = 1000  // longest per-message flash while catching up (default 0 = one per frame)
+)
+
+// SpriteWaitPairOn / SpriteWaitPreanimOn report the wait-mode strictness knobs
+// (both OFF by default): also hold a message for the pair partner's idle sprite /
+// its preanimation.
+func (p *AssetPreferences) SpriteWaitPairOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteWaitPair
+}
+
+// SetSpriteWaitPair persists the wait-covers-pair knob.
+func (p *AssetPreferences) SetSpriteWaitPair(on bool) { p.setBoolPref(&p.SpriteWaitPair, on) }
+
+// SpriteWaitPreanimOn reports the wait-covers-preanim knob.
+func (p *AssetPreferences) SpriteWaitPreanimOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SpriteWaitPreanim
+}
+
+// SetSpriteWaitPreanim persists the wait-covers-preanim knob.
+func (p *AssetPreferences) SetSpriteWaitPreanim(on bool) { p.setBoolPref(&p.SpriteWaitPreanim, on) }
+
+// HoldPrevMaxAgeMs reports how long hold-previous may bridge a cold sprite before
+// giving up to blank (0 = bridge forever, the default).
+func (p *AssetPreferences) HoldPrevMaxAgeMs() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.HoldPrevMaxAgeMsVal
+}
+
+// SetHoldPrevMaxAgeMs persists the stand-in cap (0 = forever; else clamped).
+func (p *AssetPreferences) SetHoldPrevMaxAgeMs(ms int) {
+	if ms != 0 {
+		ms = clampPercent(ms, HoldPrevMaxAgeMinMs, HoldPrevMaxAgeMaxMs)
+	}
+	p.mu.Lock()
+	if p.HoldPrevMaxAgeMsVal == ms {
+		p.mu.Unlock()
+		return
+	}
+	p.HoldPrevMaxAgeMsVal = ms
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// HoldDebugTintOn reports the stand-in diagnostic tint (OFF by default).
+func (p *AssetPreferences) HoldDebugTintOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.HoldDebugTint
+}
+
+// SetHoldDebugTint persists the stand-in tint knob.
+func (p *AssetPreferences) SetHoldDebugTint(on bool) { p.setBoolPref(&p.HoldDebugTint, on) }
+
+// ShoutDurationMs reports the shout-bubble hold in milliseconds (0 = the
+// canonical courtroom default — see courtroom.DefaultShoutDuration).
+func (p *AssetPreferences) ShoutDurationMs() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ShoutDurationMsVal
+}
+
+// SetShoutDurationMs persists the shout hold (0 = default; else clamped).
+func (p *AssetPreferences) SetShoutDurationMs(ms int) {
+	if ms != 0 {
+		ms = clampPercent(ms, ShoutDurationMinMs, ShoutDurationMaxMs)
+	}
+	p.mu.Lock()
+	if p.ShoutDurationMsVal == ms {
+		p.mu.Unlock()
+		return
+	}
+	p.ShoutDurationMsVal = ms
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// PreanimTimeoutMs reports the preanim wait cap in milliseconds (0 = the
+// canonical courtroom default — see courtroom.DefaultPreanimTimeout).
+func (p *AssetPreferences) PreanimTimeoutMs() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PreanimTimeoutMsVal
+}
+
+// SetPreanimTimeoutMs persists the preanim cap (0 = default; else clamped).
+func (p *AssetPreferences) SetPreanimTimeoutMs(ms int) {
+	if ms != 0 {
+		ms = clampPercent(ms, PreanimTimeoutMinMs, PreanimTimeoutMaxMs)
+	}
+	p.mu.Lock()
+	if p.PreanimTimeoutMsVal == ms {
+		p.mu.Unlock()
+		return
+	}
+	p.PreanimTimeoutMsVal = ms
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ICQueueCap reports the IC backlog queue depth (0 = the courtroom's canonical
+// default, 64). How many unplayed messages a packed room may stack before the
+// oldest drops (the IC log records everything regardless).
+func (p *AssetPreferences) ICQueueCap() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ICQueueCapVal
+}
+
+// SetICQueueCap persists the queue depth (0 = default; else clamped).
+func (p *AssetPreferences) SetICQueueCap(n int) {
+	if n != 0 {
+		n = clampPercent(n, ICQueueCapMin, ICQueueCapMax)
+	}
+	p.mu.Lock()
+	if p.ICQueueCapVal == n {
+		p.mu.Unlock()
+		return
+	}
+	p.ICQueueCapVal = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// CatchUpLingerMs reports how long each fast-forwarded backlog message lingers
+// while packed-room catch-up drains (default 0 = one per frame).
+func (p *AssetPreferences) CatchUpLingerMs() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CatchUpLingerMsVal
+}
+
+// SetCatchUpLingerMs persists the catch-up linger (clamped; 0 = the default).
+func (p *AssetPreferences) SetCatchUpLingerMs(ms int) {
+	ms = clampPercent(ms, 0, CatchUpLingerMaxMs)
+	p.mu.Lock()
+	if p.CatchUpLingerMsVal == ms {
+		p.mu.Unlock()
+		return
+	}
+	p.CatchUpLingerMsVal = ms
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ResetPowerUser reverts EVERY power-user option to its shipped default — the
+// "nuke" button on the Power user tab. Scoped strictly to that tab's knobs: TLS
+// validation, both Origin overrides, character-folder casing, the whole renderer
+// block (cold-load mode + wait/hold knobs + tint), the sprite mask, and the core
+// timings. The image-format block is deliberately NOT touched (probe orders +
+// learned formats are per-server warm state with their own controls, and the full
+// "Reset settings" already covers them). A guard test pins this field list.
+func (p *AssetPreferences) ResetPowerUser() {
+	p.mu.Lock()
+	p.ValidateTLSCerts = false
+	p.AssetOrigin = ""
+	p.WSOrigin = ""
+	p.AssetCharCase = 0
+	p.SpriteLoadModeVal = SpriteLoadBlank
+	p.SpriteWaitMsVal = 0
+	p.SpriteWaitPair = false
+	p.SpriteWaitPreanim = false
+	p.HoldPrevMaxAgeMsVal = 0
+	p.HoldDebugTint = false
+	p.ShoutDurationMsVal = 0
+	p.PreanimTimeoutMsVal = 0
+	p.ICQueueCapVal = 0
+	p.CatchUpLingerMsVal = 0
+	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -7318,6 +7615,60 @@ func (p *AssetPreferences) AddModReasonTemplate(s string) bool {
 	p.mu.Unlock()
 	p.markDirty()
 	return true
+}
+
+// modDurationsCap bounds the saved custom ban-duration chips (hard rule #4). The
+// enum presets already cover the common spans, so 16 customs is plenty.
+const modDurationsCap = 16
+
+// ModDurationsList returns the saved custom ban-duration chips (a clone) — canonical
+// short tokens ("45m", "2d"). Empty by default: the BanDuration enum presets are the
+// built-ins, customs only add to them.
+func (p *AssetPreferences) ModDurationsList() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return cloneStrings(p.ModDurations)
+}
+
+// AddModDuration appends a custom duration chip (deduped, bounded). The caller
+// canonicalizes first (courtroom.CanonicalBanDuration) — config stays courtroom-free,
+// so it stores what it's given, trimmed. Reports whether it changed.
+func (p *AssetPreferences) AddModDuration(token string) bool {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return false
+	}
+	p.mu.Lock()
+	if len(p.ModDurations) >= modDurationsCap {
+		p.mu.Unlock()
+		return false
+	}
+	for _, t := range p.ModDurations {
+		if strings.EqualFold(t, token) {
+			p.mu.Unlock()
+			return false
+		}
+	}
+	p.ModDurations = append(p.ModDurations, token)
+	p.mu.Unlock()
+	p.markDirty()
+	return true
+}
+
+// RemoveModDuration drops a custom duration chip. Reports whether it changed.
+func (p *AssetPreferences) RemoveModDuration(token string) bool {
+	token = strings.TrimSpace(token)
+	p.mu.Lock()
+	for i, t := range p.ModDurations {
+		if strings.EqualFold(t, token) {
+			p.ModDurations = append(p.ModDurations[:i], p.ModDurations[i+1:]...)
+			p.mu.Unlock()
+			p.markDirty()
+			return true
+		}
+	}
+	p.mu.Unlock()
+	return false
 }
 
 // RemoveModReasonTemplate drops a reason (case-insensitive). Reports whether it changed.

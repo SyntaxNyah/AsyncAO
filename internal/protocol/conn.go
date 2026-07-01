@@ -50,8 +50,17 @@ type Conn struct {
 // certificates are verified by the transport. SkipTLSVerify mirrors the
 // power-user "Validate server certificates" setting being OFF (the app default,
 // so self-signed community AO servers stay reachable). ws:// is never affected.
+//
+// Origin, when non-empty, is sent as the HTTP Origin header on the WebSocket
+// handshake — the power-user escape hatch for servers that allowlist only their
+// own web client's origin on the SOCKET (e.g. sof.beauty accepts only
+// "webao.sof.beauty"; the check is trivially spoofable, but without the header
+// the server refuses the upgrade). Empty = no Origin header (today's behaviour;
+// a native client normally sends none). The asset-fetch counterpart is the
+// separate Asset Origin override in internal/network.
 type DialOptions struct {
 	SkipTLSVerify bool
+	Origin        string
 }
 
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.
@@ -62,6 +71,11 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 
 	dialOpts := &websocket.DialOptions{
 		HTTPHeader: http.Header{"User-Agent": []string{userAgent}},
+	}
+	// Power-user WS Origin override (see DialOptions.Origin). Set only when
+	// configured, so the default handshake is byte-identical to before.
+	if len(opts) > 0 && opts[0].Origin != "" {
+		dialOpts.HTTPHeader.Set("Origin", opts[0].Origin)
 	}
 	// Only wss:// is affected — ws:// upgrades over plain TCP and ignores the TLS
 	// config. We install a custom client ONLY when skipping verification, so the

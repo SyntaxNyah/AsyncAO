@@ -2,6 +2,7 @@ package courtroom
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -157,13 +158,118 @@ func BanDurationLabel(d BanDuration) string {
 	return ""
 }
 
+// --- custom durations (savable duration chips) --------------------------------------------------
+
+// banDurationUnits maps a duration-unit spelling to its canonical single letter.
+// Every server family's parser (str2duration, Akashi parseTime, pytimeparse) takes
+// minutes/hours/days/weeks; months/years are deliberately excluded — the presets
+// already cover "1 month", and "1mo vs 1m" ambiguity isn't worth it.
+var banDurationUnits = map[string]byte{
+	"m": 'm', "min": 'm', "mins": 'm', "minute": 'm', "minutes": 'm',
+	"h": 'h', "hr": 'h', "hrs": 'h', "hour": 'h', "hours": 'h',
+	"d": 'd', "day": 'd', "days": 'd',
+	"w": 'w', "wk": 'w', "wks": 'w', "week": 'w', "weeks": 'w',
+}
+
+// maxCustomBanNumber bounds a custom duration's count so a typo ("100000d") can't
+// save a nonsense chip. 9999 of any unit comfortably covers real moderation.
+const maxCustomBanNumber = 9999
+
+// CanonicalBanDuration parses a user-typed custom ban duration ("45m", "45 min",
+// "2 days", "12H", "perma") into its canonical short token ("45m", "2d", "12h",
+// "perma") — the form the saved duration chips store and BanCommandToken renders
+// per software. Reports ok=false for anything unparseable, so garbage can't
+// become a chip.
+func CanonicalBanDuration(s string) (string, bool) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "perma" || s == "permanent" || s == "forever" {
+		return "perma", true
+	}
+	i := 0
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	if i == 0 || i > 4 { // no number, or absurdly long (> maxCustomBanNumber digits)
+		return "", false
+	}
+	n, err := strconv.Atoi(s[:i])
+	if err != nil || n < 1 || n > maxCustomBanNumber {
+		return "", false
+	}
+	unit, ok := banDurationUnits[strings.TrimSpace(s[i:])]
+	if !ok {
+		return "", false
+	}
+	return strconv.Itoa(n) + string(unit), true
+}
+
+// BanDurationTokenLabel is the friendly UI label for a canonical custom token
+// ("45m" → "45 minutes", "1d" → "1 day", "perma" → "Permanent") — the custom-chip
+// counterpart of BanDurationLabel.
+func BanDurationTokenLabel(token string) string {
+	if token == "perma" {
+		return "Permanent"
+	}
+	return banDurationHuman(token)
+}
+
+// banDurationHuman renders a canonical short token in words ("45m" → "45 minutes",
+// "1h" → "1 hour") for the servers whose parsers take human phrasing.
+func banDurationHuman(token string) string {
+	if len(token) < 2 {
+		return token
+	}
+	num, unit := token[:len(token)-1], token[len(token)-1]
+	var word string
+	switch unit {
+	case 'm':
+		word = "minute"
+	case 'h':
+		word = "hour"
+	case 'd':
+		word = "day"
+	case 'w':
+		word = "week"
+	default:
+		return token
+	}
+	if num != "1" {
+		word += "s"
+	}
+	return num + " " + word
+}
+
 // BanCommand builds the OOC /ban for sw. ipid / uid are the target's identifiers (one may be
 // ""); the function uses whichever the software bans by — IPID for KFO/Akashi, UID for Whisker,
 // and Athena prefers IPID (offline-capable) but falls back to UID. Returns "" when the required
 // identifier is missing (the caller then can't ban that target on that software). reason is
 // sanitized so it can't break the quoting / command.
 func BanCommand(sw ServerSoftware, ipid, uid string, dur BanDuration, reason string) string {
-	d := durationToken(sw, dur)
+	return banCommandWith(sw, ipid, uid, durationToken(sw, dur), reason)
+}
+
+// BanCommandToken is BanCommand with a CUSTOM duration: token is a canonical short
+// duration ("45m", "2d", "1w", "perma" — what CanonicalBanDuration returns; the
+// saved custom-duration chips store exactly this). It renders the token in the
+// software's own format — human ("45 minutes") for the pytimeparse/Whisker servers,
+// short for the rest — mirroring durationToken's split.
+func BanCommandToken(sw ServerSoftware, ipid, uid, token, reason string) string {
+	if token == "" {
+		return ""
+	}
+	d := token
+	if sw == SoftwareTsuserver || sw == SoftwareWhisker {
+		d = banDurationHuman(token)
+	}
+	if token == "perma" {
+		d = "perma"
+	}
+	return banCommandWith(sw, ipid, uid, d, reason)
+}
+
+// banCommandWith builds the per-software /ban with an already-rendered duration
+// string — the shared body of BanCommand (preset) and BanCommandToken (custom).
+func banCommandWith(sw ServerSoftware, ipid, uid, d, reason string) string {
 	reason = sanitizeReason(reason)
 	if reason == "" {
 		reason = "No reason given" // a ban always carries a reason (the quoted-reason servers need a non-empty arg)

@@ -2499,11 +2499,22 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 }
 
 // drawSettingsAccount: per-server login, the master-list override, Discord.
+// formatWaitMs renders a millisecond knob compactly ("850 ms", "1.5 s").
+func formatWaitMs(ms int) string {
+	if ms < 1000 {
+		return strconv.Itoa(ms) + " ms"
+	}
+	return strconv.FormatFloat(float64(ms)/1000, 'f', -1, 64) + " s"
+}
+
 // spriteLoadModeLabel is the cycle-button label for the power-user cold-load sprite
 // behaviour: what a character layer shows while its NEW (uncached) sprite streams.
 func spriteLoadModeLabel(mode int) string {
-	if mode == config.SpriteLoadHoldPrev {
+	switch mode {
+	case config.SpriteLoadHoldPrev:
 		return "Uncached sprite: keep the previous one (webAO-style)"
+	case config.SpriteLoadWait:
+		return "Uncached sprite: hold the message until it loads (client-AO-style)"
 	}
 	return "Uncached sprite: show nothing until it loads (default)"
 }
@@ -2556,11 +2567,34 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 4
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.showPowerUser)) {
 		a.showPowerUser = !a.showPowerUser
+		a.powerNukeArm = false // never carry an armed nuke across a hide/reveal
 	}
 	y += btnH + 8
 	if !a.showPowerUser {
 		return y
 	}
+
+	// The nuke: reset EVERY option on this tab to its shipped default (two-click
+	// confirm — arming flips the label). Scoped to this tab; the image-format block
+	// keeps its own controls (its learned state is per-server, not a "knob").
+	nukeLabel := "⟲ Reset ALL power-user options to defaults"
+	if a.powerNukeArm {
+		nukeLabel = "⚠ Click again to confirm the reset"
+	}
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 340, H: btnH}, nukeLabel) {
+		if a.powerNukeArm {
+			a.d.Prefs.ResetPowerUser()
+			a.d.Manager.SetAssetOrigin("") // the live network override too, not just the pref
+			a.rebuildAssetOrigin()         // re-derive the URL builder (character casing reset)
+			a.applyTimingToRoom()          // push the reset renderer/timing knobs to the live room
+			a.warnLine = "Power-user options reset to defaults."
+			a.warnAt = a.now()
+		}
+		a.powerNukeArm = !a.powerNukeArm
+	}
+	y += btnH + 6
+	y = a.settingsDesc(pad, y, "Puts every option below back to its out-of-the-box value (TLS off, no Origin overrides, lowercase folders, default renderer + timings, sprite mask on). Image-format probing is left alone — it has its own controls below.", ColTextDim)
+	y += 10
 
 	// Renderer — what a character layer shows while a NEW, uncached sprite is still
 	// streaming + decoding (the cold-load flash EuP reported). Purely cosmetic and
@@ -2568,11 +2602,136 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	// the render path, so it sits behind the reveal with the rest of the advanced kit.
 	y = a.settingsSection(y, w, "Renderer — uncached sprite loading")
 	slm := a.d.Prefs.SpriteLoadMode()
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 440, H: btnH}, spriteLoadModeLabel(slm)) {
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 460, H: btnH}, spriteLoadModeLabel(slm)) {
 		a.d.Prefs.SetSpriteLoadMode((slm + 1) % config.SpriteLoadModeCount)
+		a.applyTimingToRoom() // the wait gate lives on the live room — flip it now
 	}
 	y += btnH + 6
-	y = a.settingsDesc(pad, y, "When someone speaks with a sprite you haven't downloaded yet, it takes a moment to stream + decode (worse on huge art or high ping). This chooses what shows in that gap. \"Show nothing\" (default) leaves the layer blank until it lands — the current behaviour. \"Keep the previous one\" holds the last sprite on screen until the new one is ready (like webAO), so the stage never flashes empty. Cosmetic only, and completely free once a sprite is cached.", ColTextDim)
+	y = a.settingsDesc(pad, y, "When someone speaks with a sprite you haven't downloaded yet, it takes a moment to stream + decode (worse on huge art or high ping). This chooses what happens in that gap. \"Show nothing\" (default) leaves the layer blank until it lands — the current behaviour. \"Keep the previous one\" holds the last sprite on screen until the new one is ready (like webAO). \"Hold the message\" doesn't show the message at all until its sprite is ready (like the desktop AO client) — capped by the timeout below so a broken sprite can only ever delay a message, never stall the room (and if it does time out, the previous sprite is kept rather than flashing blank). All of it is cosmetic only, and completely free once a sprite is cached.", ColTextDim)
+	y += 6
+	if slm == config.SpriteLoadWait {
+		c.Label(pad, y+4, "Max hold per message:", ColText)
+		waitMs := a.d.Prefs.SpriteWaitMs()
+		wtrack := sdl.Rect{X: pad + 170, Y: y + 2, W: 260, H: 16}
+		nw := int(clampI32(c.Slider("spritewaitms", wtrack, int32(waitMs), config.SpriteWaitMaxMs), config.SpriteWaitMinMs, config.SpriteWaitMaxMs))
+		c.Tooltip(wtrack, "How long one message may wait for its sprite before playing anyway (50 ms – 30 s).")
+		c.Label(pad+170+266, y+4, formatWaitMs(nw), ColTextDim)
+		if nw != waitMs {
+			a.d.Prefs.SetSpriteWaitMs(nw)
+			a.applyTimingToRoom()
+		}
+		y += 26
+		wp := a.d.Prefs.SpriteWaitPairOn()
+		if next := c.Checkbox(pad, y, "Also wait for the PAIR partner's sprite (stricter: a paired scene never shows half-loaded)", wp); next != wp {
+			a.d.Prefs.SetSpriteWaitPair(next)
+			a.applyTimingToRoom()
+		}
+		y += 24
+		wpre := a.d.Prefs.SpriteWaitPreanimOn()
+		if next := c.Checkbox(pad, y, "Also wait for the PREANIMATION (stricter: an emote's flourish never starts missing)", wpre); next != wpre {
+			a.d.Prefs.SetSpriteWaitPreanim(next)
+			a.applyTimingToRoom()
+		}
+		y += 26
+	}
+	if slm != config.SpriteLoadBlank { // hold-previous applies in Hold mode AND as Wait's timeout fallback
+		c.Label(pad, y+4, "Keep the previous sprite for:", ColText)
+		ageMs := a.d.Prefs.HoldPrevMaxAgeMs()
+		atrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+		na := int(clampI32(c.Slider("holdmaxage", atrack, int32(ageMs), config.HoldPrevMaxAgeMaxMs), 0, config.HoldPrevMaxAgeMaxMs))
+		if na != 0 && na < config.HoldPrevMaxAgeMinMs {
+			na = 0 // the bottom of the track snaps to "forever" (0)
+		}
+		c.Tooltip(atrack, "How long the stand-in may bridge a still-loading sprite before giving up to blank. Far left = forever.")
+		ageLabel := "forever"
+		if na != 0 {
+			ageLabel = formatWaitMs(na)
+		}
+		c.Label(pad+200+236, y+4, ageLabel, ColTextDim)
+		if na != ageMs {
+			a.d.Prefs.SetHoldPrevMaxAgeMs(na)
+		}
+		y += 26
+		tint := a.d.Prefs.HoldDebugTintOn()
+		if next := c.Checkbox(pad, y, "Tint stand-in sprites amber (diagnostics: SEE when the previous sprite is bridging a load)", tint); next != tint {
+			a.d.Prefs.SetHoldDebugTint(next)
+		}
+		y += 26
+	}
+	y += 10
+
+	// Core message timings — the courtroom ceremony's hard-coded spans, exposed.
+	y = a.settingsSection(y, w, "Core message timings")
+	c.Label(pad, y+4, "Shout bubble duration:", ColText)
+	shoutMs := a.d.Prefs.ShoutDurationMs()
+	strack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+	ns := int(clampI32(c.Slider("shoutdurms", strack, int32(shoutMs), config.ShoutDurationMaxMs), 0, config.ShoutDurationMaxMs))
+	if ns != 0 && ns < config.ShoutDurationMinMs {
+		ns = 0 // bottom of the track = the canonical default
+	}
+	c.Tooltip(strack, "How long an Objection!/Hold It!/Take That! bubble holds the stage. Far left = the canonical AO2 timing (~0.72 s).")
+	shoutLabel := "default (0.72 s)"
+	if ns != 0 {
+		shoutLabel = formatWaitMs(ns)
+	}
+	c.Label(pad+200+236, y+4, shoutLabel, ColTextDim)
+	if ns != shoutMs {
+		a.d.Prefs.SetShoutDurationMs(ns)
+		a.applyTimingToRoom()
+	}
+	y += 26
+	c.Label(pad, y+4, "Pre-animation wait cap:", ColText)
+	preMs := a.d.Prefs.PreanimTimeoutMs()
+	ptrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+	np := int(clampI32(c.Slider("preanimms", ptrack, int32(preMs), config.PreanimTimeoutMaxMs), 0, config.PreanimTimeoutMaxMs))
+	if np != 0 && np < config.PreanimTimeoutMinMs {
+		np = 0
+	}
+	c.Tooltip(ptrack, "How long a pre-animation may play before the text starts anyway when its real length is unknown (still decoding). Far left = the canonical default (2.5 s).")
+	preLabel := "default (2.5 s)"
+	if np != 0 {
+		preLabel = formatWaitMs(np)
+	}
+	c.Label(pad+200+236, y+4, preLabel, ColTextDim)
+	if np != preMs {
+		a.d.Prefs.SetPreanimTimeoutMs(np)
+		a.applyTimingToRoom()
+	}
+	y += 26
+	c.Label(pad, y+4, "IC backlog queue depth:", ColText)
+	qcap := a.d.Prefs.ICQueueCap()
+	qtrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+	nq := int(clampI32(c.Slider("icqueuecap", qtrack, int32(qcap), config.ICQueueCapMax), 0, config.ICQueueCapMax))
+	if nq != 0 && nq < config.ICQueueCapMin {
+		nq = 0 // bottom of the track = the canonical default (64)
+	}
+	c.Tooltip(qtrack, "How many unplayed messages a packed room may stack before the OLDEST drops (the IC log records everything regardless). Far left = the default (64).")
+	qLabel := "default (64)"
+	if nq != 0 {
+		qLabel = strconv.Itoa(nq) + " messages"
+	}
+	c.Label(pad+200+236, y+4, qLabel, ColTextDim)
+	if nq != qcap {
+		a.d.Prefs.SetICQueueCap(nq)
+		a.applyTimingToRoom()
+	}
+	y += 26
+	c.Label(pad, y+4, "Catch-up flash linger:", ColText)
+	cul := a.d.Prefs.CatchUpLingerMs()
+	ctrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+	nc := int(clampI32(c.Slider("catchuplinger", ctrack, int32(cul), config.CatchUpLingerMaxMs), 0, config.CatchUpLingerMaxMs))
+	c.Tooltip(ctrack, "How long each fast-forwarded backlog message stays up while catch-up drains a pile-up. 0 (default) = one per frame — fastest; a little linger makes the backlog readable as it flashes past.")
+	culLabel := "default (one per frame)"
+	if nc != 0 {
+		culLabel = formatWaitMs(nc)
+	}
+	c.Label(pad+200+236, y+4, culLabel, ColTextDim)
+	if nc != cul {
+		a.d.Prefs.SetCatchUpLingerMs(nc)
+		a.applyTimingToRoom()
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "These change the FEEL of every message: a shorter shout snaps the room along, a longer one lets big bubble art breathe; a shorter preanim cap starts text sooner when a flourish is slow to decode, a longer one gives huge preanims time to play. The queue depth trades memory of a pile-up against staying current, and the catch-up linger trades drain speed for readability. Every slider's far LEFT is the canonical default — set and forget unless you know you want a different pace.", ColTextDim)
 	y += 10
 
 	// Viewport sprite mask — confine offset sprites to the stage.
@@ -2595,16 +2754,24 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this ON can make them UNREACHABLE — it's only for confirming the encrypted connection is to the real server.", ColDanger)
 	y += 10
 
-	// Asset Origin / CORS override.
-	y = a.settingsSection(y, w, "Asset Origin override")
-	c.Label(pad, y+4, "Origin/Referer:", ColText)
+	// Origin overrides (asset fetches + the WS handshake).
+	y = a.settingsSection(y, w, "Origin overrides")
+	c.Label(pad, y+4, "Assets Origin/Referer:", ColText)
 	origin := a.d.Prefs.AssetOriginHeader()
-	if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 130, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
+	if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
 		a.d.Prefs.SetAssetOriginHeader(next)
 		a.d.Manager.SetAssetOrigin(next)
 	}
 	y += 24
 	y = a.settingsDesc(pad, y, "Sends this Origin/Referer header on asset downloads, so a server that only serves its base to its own web client still streams to AsyncAO. Wrong value = assets stop loading — leave it blank unless you know you need it.", ColDanger)
+	y += 8
+	c.Label(pad, y+4, "Connection Origin:", ColText)
+	wsOrigin := a.d.Prefs.WSOriginHeader()
+	if next, _ := c.TextField("wsorigin", sdl.Rect{X: pad + 160, Y: y, W: 340, H: fieldH}, wsOrigin, "https://webao.example  (blank = off)"); next != wsOrigin {
+		a.d.Prefs.SetWSOriginHeader(next)
+	}
+	y += 24
+	y = a.settingsDesc(pad, y, "Sends this Origin header on the SERVER CONNECTION itself (the WebSocket handshake), for the rare server that only accepts its own web client — e.g. one that requires \"webao.<its domain>\". Applies on the next connect. Wrong value can get the connection refused — leave it blank unless a server demands it.", ColDanger)
 	y += 10
 
 	// Character-folder casing.

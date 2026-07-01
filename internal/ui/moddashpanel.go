@@ -74,12 +74,12 @@ func banBoxDims(kind int) (defH, minH int32) {
 	switch kind {
 	case 2: // kick — no duration row
 		return 416, 384
-	case 3: // bulk ban — frozen list + duration + reason + summary + readiness
-		return 584, 524
+	case 3: // bulk ban — frozen list + duration (+ custom chips) + reason + summary + readiness
+		return 612, 552
 	case 4: // bulk kick — frozen list + reason + summary + readiness
 		return 476, 436
-	default: // ban (kind 1)
-		return 536, 494
+	default: // ban (kind 1) — duration presets + custom chips + the add/edit manage row
+		return 600, 556
 	}
 }
 
@@ -143,6 +143,81 @@ func (a *App) drawReasonTemplateChips(x, y, maxW int32, manage bool) int32 {
 		y += btnH + 6
 	}
 	return y + 6
+}
+
+// drawDurationChips draws the ban-duration row: the BanDuration enum presets, then the
+// user's SAVED custom-duration chips (prefs), each clickable — an enum pick clears the
+// custom, a custom pick overrides the enum — with the active one outlined. When manage
+// is set (the single box; the bulk box stays compact) it adds an "add custom" field
+// ("45m", "2 days", validated via courtroom.CanonicalBanDuration so garbage can't
+// become a chip) and an Edit toggle whose chips show × to remove. Shared by the single
+// and bulk boxes so the list and behaviour can't drift apart. Returns the y past the block.
+func (a *App) drawDurationChips(x, y, maxW int32, manage bool) int32 {
+	c := a.ctx
+	dx := x
+	chip := func(label string, active bool, onClick func()) {
+		dw := c.TextWidth(label) + 16
+		if dx+dw > x+maxW {
+			dx = x
+			y += btnH + 6
+		}
+		br := sdl.Rect{X: dx, Y: y, W: dw, H: btnH}
+		if c.Button(br, label) {
+			onClick()
+		}
+		if active {
+			c.Border(br, ColAccent) // outline the chosen duration
+		}
+		dx += dw + 6
+	}
+	for d := courtroom.BanPerma; d < courtroom.BanDurationCount; d++ {
+		d := d
+		chip(courtroom.BanDurationLabel(d), a.banBoxCustomDur == "" && d == a.banBoxDur, func() {
+			a.banBoxDur, a.banBoxCustomDur = d, ""
+		})
+	}
+	editing := manage && a.modDurEdit
+	for _, token := range a.d.Prefs.ModDurationsList() {
+		token := token
+		label := courtroom.BanDurationTokenLabel(token)
+		if editing {
+			label = "× " + label
+		}
+		chip(label, !editing && a.banBoxCustomDur == token, func() {
+			if editing {
+				a.d.Prefs.RemoveModDuration(token)
+				if a.banBoxCustomDur == token {
+					a.banBoxCustomDur = "" // removing the active chip falls back to the enum preset
+				}
+			} else {
+				a.banBoxCustomDur = token
+			}
+		})
+	}
+	y += btnH + 6
+	if manage {
+		a.modDurInput, _ = c.TextField("moddashdur", sdl.Rect{X: x, Y: y, W: 150, H: fieldH}, a.modDurInput, "e.g. 45m, 2 days")
+		if c.Button(sdl.Rect{X: x + 156, Y: y, W: 130, H: btnH}, "+ Save duration") {
+			if token, ok := courtroom.CanonicalBanDuration(a.modDurInput); ok {
+				if a.d.Prefs.AddModDuration(token) {
+					a.banBoxCustomDur = token // a fresh chip becomes the pick — what you just typed is what you meant
+				}
+				a.modDurInput = ""
+			} else {
+				a.warnLine = "Custom duration not understood — try 45m, 12h, 2 days, 1w or perma"
+				a.warnAt = a.now()
+			}
+		}
+		editLabel := "Edit"
+		if a.modDurEdit {
+			editLabel = "Done"
+		}
+		if c.Button(sdl.Rect{X: x + maxW - 64, Y: y, W: 64, H: btnH}, editLabel) {
+			a.modDurEdit = !a.modDurEdit
+		}
+		y += btnH + 6
+	}
+	return y + 4
 }
 
 // formatModAudit renders the session audit log as plain text (one tab-separated row per entry) for
@@ -283,6 +358,7 @@ func (a *App) openModBulkBox(kind int) {
 	a.bulkBoxUIDs = uids
 	a.banBoxReason = ""
 	a.banBoxDur = courtroom.Ban1Day
+	a.banBoxCustomDur = "" // a fresh box starts on the sane preset, never a stale custom chip
 }
 
 // bulkCommandFor builds the exact OOC command for one bulk target UID, re-resolving its IPID by UID
@@ -298,7 +374,7 @@ func (a *App) bulkCommandFor(uid string, isBan bool) string {
 	}
 	sw := a.detectedSoftware()
 	if isBan {
-		return courtroom.BanCommand(sw, ipid, uid, a.banBoxDur, a.banBoxReason)
+		return a.banCmdFor(sw, ipid, uid) // custom-duration-aware, same builder as the single box
 	}
 	return courtroom.KickCommand(sw, ipid, uid, a.banBoxReason)
 }
@@ -370,6 +446,7 @@ func (a *App) openModDashBox(kind int) {
 	a.banBoxName = rosterDisplayName(row)
 	a.banBoxReason = ""
 	a.banBoxDur = courtroom.Ban1Day // a sane default duration
+	a.banBoxCustomDur = ""          // never a stale custom chip from the last box
 	a.modTemplatesEdit = false      // start in normal (fill) mode, not the template editor
 }
 
@@ -728,13 +805,33 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 	}
 }
 
+// banBoxDurLabel is the friendly label of the CURRENTLY chosen duration — the custom
+// chip's when one is active, else the enum preset's.
+func (a *App) banBoxDurLabel() string {
+	if a.banBoxCustomDur != "" {
+		return courtroom.BanDurationTokenLabel(a.banBoxCustomDur)
+	}
+	return courtroom.BanDurationLabel(a.banBoxDur)
+}
+
+// banCmdFor builds the /ban for the chosen duration — the custom token when a custom
+// chip is active, else the enum preset. One spot so the preview, the single Send and
+// the bulk builder can never disagree.
+func (a *App) banCmdFor(sw courtroom.ServerSoftware, ipid, uid string) string {
+	if a.banBoxCustomDur != "" {
+		return courtroom.BanCommandToken(sw, ipid, uid, a.banBoxCustomDur, a.banBoxReason)
+	}
+	return courtroom.BanCommand(sw, ipid, uid, a.banBoxDur, a.banBoxReason)
+}
+
 // banActionSummary is the plain-English "who · how long · why" line shown in the ban/kick box, so a
 // mod sees exactly what they're about to do — even before the server-specific command can be built
-// (e.g. an IPID-only server hasn't surfaced the IPID yet). Pure; unit-tested.
-func banActionSummary(isBan bool, who string, dur courtroom.BanDuration, reason string) string {
+// (e.g. an IPID-only server hasn't surfaced the IPID yet). durLabel is the friendly duration text
+// (a preset label or a custom chip's — see banBoxDurLabel). Pure; unit-tested.
+func banActionSummary(isBan bool, who string, durLabel string, reason string) string {
 	s := "Kick " + who
 	if isBan {
-		s = "Ban " + who + " for " + courtroom.BanDurationLabel(dur)
+		s = "Ban " + who + " for " + durLabel
 	}
 	if r := strings.TrimSpace(reason); r != "" {
 		return s + " — reason: " + r
@@ -803,24 +900,9 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 	if isBan {
 		c.Label(x, y, "Duration:", ColTextDim)
 		y += 20
-		dx := x
-		for d := courtroom.BanPerma; d < courtroom.BanDurationCount; d++ {
-			label := courtroom.BanDurationLabel(d)
-			dw := c.TextWidth(label) + 16
-			if dx+dw > x+maxW {
-				dx = x
-				y += btnH + 6
-			}
-			br := sdl.Rect{X: dx, Y: y, W: dw, H: btnH}
-			if c.Button(br, label) {
-				a.banBoxDur = d
-			}
-			if d == a.banBoxDur {
-				c.Border(br, ColAccent) // highlight the chosen preset
-			}
-			dx += dw + 6
-		}
-		y += btnH + 10
+		// Preset + saved-custom duration chips, with the add/edit manage row (shared
+		// with the bulk box, which passes manage=false to stay compact).
+		y = a.drawDurationChips(x, y, maxW, true)
 	}
 
 	c.Label(x, y, "Reason:", ColTextDim)
@@ -833,13 +915,13 @@ func (a *App) drawModDashBanBox(w, h int32, pressed *bool) {
 
 	// At-a-glance summary of the action (always shown, even before the exact command below can be
 	// built) so the mod sees who, how long and why — the "ban someone 6 hours for disrespect" feedback.
-	c.LabelClipped(x, y, maxW, banActionSummary(isBan, "["+a.banBoxUID+"] "+a.banBoxName, a.banBoxDur, a.banBoxReason), ColText)
+	c.LabelClipped(x, y, maxW, banActionSummary(isBan, "["+a.banBoxUID+"] "+a.banBoxName, a.banBoxDurLabel(), a.banBoxReason), ColText)
 	y += 24
 
 	// Live preview of the exact command.
 	var cmd string
 	if isBan {
-		cmd = courtroom.BanCommand(sw, a.banBoxIPID, a.banBoxUID, a.banBoxDur, a.banBoxReason)
+		cmd = a.banCmdFor(sw, a.banBoxIPID, a.banBoxUID)
 	} else {
 		cmd = courtroom.KickCommand(sw, a.banBoxIPID, a.banBoxUID, a.banBoxReason)
 	}
@@ -950,24 +1032,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	if isBan {
 		c.Label(x, y, "Duration (applied to all):", ColTextDim)
 		y += 20
-		dx := x
-		for d := courtroom.BanPerma; d < courtroom.BanDurationCount; d++ {
-			label := courtroom.BanDurationLabel(d)
-			dw := c.TextWidth(label) + 16
-			if dx+dw > x+maxW {
-				dx = x
-				y += btnH + 6
-			}
-			br := sdl.Rect{X: dx, Y: y, W: dw, H: btnH}
-			if c.Button(br, label) {
-				a.banBoxDur = d
-			}
-			if d == a.banBoxDur {
-				c.Border(br, ColAccent)
-			}
-			dx += dw + 6
-		}
-		y += btnH + 10
+		y = a.drawDurationChips(x, y, maxW, false) // compact: presets + saved customs, no manage row
 	}
 
 	c.Label(x, y, "Reason (applied to all):", ColTextDim)
@@ -977,7 +1042,7 @@ func (a *App) drawModBulkBox(w, h int32, pressed *bool) {
 	y = a.drawReasonTemplateChips(x, y, maxW, false) // compact (no manage row) in the busy bulk box
 
 	// At-a-glance summary of the bulk action (always shown), so the mod sees how long and why.
-	c.LabelClipped(x, y, maxW, banActionSummary(isBan, strconv.Itoa(n)+" player(s)", a.banBoxDur, a.banBoxReason), ColText)
+	c.LabelClipped(x, y, maxW, banActionSummary(isBan, strconv.Itoa(n)+" player(s)", a.banBoxDurLabel(), a.banBoxReason), ColText)
 	y += 22
 
 	// Readiness: how many frozen targets have a buildable command right now (the rest need an IPID

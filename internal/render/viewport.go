@@ -48,6 +48,10 @@ type animState struct {
 	page    *TexturePage
 	pageGen uint64
 
+	// coldFor accumulates how long this layer's base has been unresolved (ticked
+	// in Update, reset on a hit) — the hold-previous max-age knob reads it.
+	coldFor time.Duration
+
 	// lastGood is the base of the last sprite this layer actually DREW (set in
 	// drawSprite on a hit). It is deliberately NOT cleared by reset, so when the
 	// layer swaps to a still-loading base the renderer can keep the previous
@@ -219,6 +223,14 @@ type Viewport struct {
 	// the reflection's own clip are untouched. The App mirrors the pref here.
 	clipSprites bool
 
+	// holdMaxAge caps how long SpriteLoadHoldPrev may keep showing the previous
+	// sprite (0 = forever, the default): past it the layer goes blank rather than
+	// showing an ever-staler stand-in. Each char layer's animState.coldFor ticks
+	// in Update while its base is unresolved. tintHeld (power-user diagnostics)
+	// washes stand-in sprites amber so the mitigation is VISIBLE while tuning.
+	holdMaxAge time.Duration
+	tintHeld   bool
+
 	// punchLeft counts down a #12 shout screen-punch; prevShoutOn edge-detects the
 	// shout's appearance in Update so the pop fires once per shout. Viewer-local.
 	punchLeft   time.Duration
@@ -331,6 +343,10 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	v.syncAnim(&v.shoutAnim, shoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
+	// Hold-previous max-age clock: how long each char layer has been cold
+	// (resolve is generation-cached — steady state is pointer math).
+	v.tickCold(&v.speakerAnim, dt)
+	v.tickCold(&v.pairAnim, dt)
 
 	if page, ok := v.bgAnim.resolve(v.store); ok {
 		v.bgAnim.advance(page, dt, false)
@@ -664,6 +680,28 @@ func (v *Viewport) SetSpriteLoadMode(mode int) { v.spriteLoadMode = mode }
 // mirrors the user pref here once per frame.
 func (v *Viewport) SetClipSprites(on bool) { v.clipSprites = on }
 
+// SetHoldMaxAge caps how long hold-previous may bridge a cold sprite (0 = forever).
+func (v *Viewport) SetHoldMaxAge(d time.Duration) { v.holdMaxAge = d }
+
+// SetHoldDebugTint washes stand-in (held) sprites amber — a power-user diagnostic
+// so the cold-load mitigation is visible while tuning it.
+func (v *Viewport) SetHoldDebugTint(on bool) { v.tintHeld = on }
+
+// tickCold advances a char layer's cold-time (base set but not resolved) and
+// resets it on residency — the hold-previous max-age clock. resolve is
+// generation-cached, so the steady-state cost is pointer math.
+func (v *Viewport) tickCold(a *animState, dt time.Duration) {
+	if a.base == "" {
+		a.coldFor = 0
+		return
+	}
+	if _, ok := a.resolve(v.store); ok {
+		a.coldFor = 0
+		return
+	}
+	a.coldFor += dt
+}
+
 // drawHeldSprite blits a layer's previously-resolved sprite as a plain stand-in
 // during the cold-load gap (SpriteLoadHoldPrev). Deliberately minimal — no style,
 // variant, wash, spotlight or breathing — it's a transient bridge, sized to the
@@ -684,8 +722,26 @@ func (v *Viewport) drawHeldSprite(ren *sdl.Renderer, layer *courtroom.SpriteLaye
 	if layer.Flip {
 		flip = sdl.FLIP_HORIZONTAL
 	}
-	_ = ren.CopyEx(page.Frames[0], nil, &v.dstRect, 0, nil, flip)
+	tex := page.Frames[0]
+	if v.tintHeld {
+		// Diagnostic amber wash so a stand-in is visibly a stand-in. Restored to
+		// neutral right after — the shared T1 page rule (see the drawSprite
+		// INVARIANT; this is the one other MOD-bracket, same restore discipline).
+		_ = tex.SetColorMod(heldTintR, heldTintG, heldTintB)
+	}
+	_ = ren.CopyEx(tex, nil, &v.dstRect, 0, nil, flip)
+	if v.tintHeld {
+		_ = tex.SetColorMod(255, 255, 255)
+	}
 }
+
+// heldTint* is the debug wash for stand-in sprites (a warm amber: R full, G/B
+// cut — obvious on any art without hiding it).
+const (
+	heldTintR = 255
+	heldTintG = 190
+	heldTintB = 120
+)
 
 // drawSprite draws a character layer: scaled to viewport height preserving
 // aspect, bottom-centered, shifted by percent offsets, optionally mirrored.
@@ -704,7 +760,8 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		// the draw path: resolve()/Update never see the held page, so the preanim
 		// lifecycle and packed-room catch-up pacing are untouched. SpriteLoadBlank
 		// → the original byte-identical early return.
-		if v.spriteLoadMode == SpriteLoadHoldPrev && anim.lastGood != "" && anim.lastGood != anim.base {
+		if v.spriteLoadMode == SpriteLoadHoldPrev && anim.lastGood != "" && anim.lastGood != anim.base &&
+			(v.holdMaxAge <= 0 || anim.coldFor <= v.holdMaxAge) { // max-age knob: 0 = bridge forever
 			if held, ok2 := v.store.Get(anim.lastGood); ok2 && len(held.Frames) > 0 {
 				v.drawHeldSprite(ren, layer, held, vp)
 			}
@@ -840,8 +897,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	//
 	// INVARIANT: drawSprite is the *only* place the renderer MOD-brackets a texture
 	// for drawing — SetColorMod / SetBlendMode / SetAlphaMod (besides the upload
-	// default BLENDMODE_BLEND at textures.go, and the variant readback in variant.go,
-	// which flips a frame to BLENDMODE_NONE for an exact copy and restores BLEND).
+	// default BLENDMODE_BLEND at textures.go, the variant readback in variant.go,
+	// which flips a frame to BLENDMODE_NONE for an exact copy and restores BLEND,
+	// and drawHeldSprite's debug-tint bracket, which restores neutral the same way).
 	// Any future effect that mods a texture elsewhere MUST restore it too, or art bleeds.
 	if doColorMod {
 		_ = tex.SetColorMod(modR, modG, modB)

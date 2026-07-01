@@ -19,15 +19,16 @@ _Playtest backlog cleared (2026-06-21) — every Discord/playtest request shippe
 (see `docs/FEATURES.md`). New asks land here. The only milestone left is the
 gamepad track below._
 
-- **Cold-load "wait" sprite mode** (Nightingale, 2026-07-01) — the third uncached-
-  sprite mode (client-AO style): hold the whole IC message off-stage until its
-  speaker sprite has decoded, then play it. Modes 1 (blank/default) + 2 (hold
-  previous, webAO) shipped in v1.40.0 as a pure-render power-user setting; "wait"
-  lives in the **message lifecycle**, not the renderer — gate `begin()` on the
-  sprite resolving, with a **timeout** so a 404/decode-fail can't hang the queue,
-  and reconcile it with **packed-room catch-up** (which deliberately skips the
-  queue). Ship it as the third option once that gate exists. `render.SpriteLoadMode`
-  already reserves the value.
+- **More power-user knobs — the menu** (2026-07-01, "add even more"): candidates for
+  the next knob batch, each needing its own care because they live in the network /
+  cache tiers: **404-TTL override** (how long a missing asset stays "missing"),
+  **per-host deadline multiplier** (the TTFB-EWMA 8× cap), **texture-budget
+  override** (T1's share of the 256 MiB), **decode-downscale override** (the
+  automatic CatmullRom display-height target: off / 50–200 %) and a **speaker-swap
+  crossfade** (render: alpha-blend previous→new over N ms — composes with
+  hold-previous). The v1.40.0 batch shipped the renderer + courtroom-core set (three
+  cold-load modes + wait strictness/timeout, hold max-age + tint, shout/preanim/
+  queue/catch-up sliders, the nuke reset).
 - **Low-quality persistent sprite cache** (Nightingale, 2026-07-01, **low priority**)
   — an opt-in, power-user-only secondary cache of heavily-compressed ~1 KB sprite
   thumbnails, kept across sessions. On an incoming message: show the tiny thumbnail
@@ -37,20 +38,6 @@ gamepad track below._
   stays lightweight by default ("let them optimise it"). Reuse the CatmullRom decode
   path to bake a nearest-neighbour/low-q variant. "Playing around with optimisation",
   so not urgent.
-- **Configurable WebSocket `Origin` header** (2026-07-01, sof.beauty tangent) — some
-  servers gate the **socket** by `Origin` (e.g. only `webao.sof.beauty`). We already
-  have a power-user **Asset Origin** override for asset *fetches* (Settings → Power
-  user); extend the same idea to the **WS handshake** so a client-allowlisting server
-  is reachable. (The check is trivially spoofable server-side, but harmless to
-  support.)
-- **Dropdown click leak in custom layouts** (Nightingale, 2026-07-01) — in a moved
-  layout where the open IC-colour dropdown flips up over the **stage**, its top
-  options don't take clicks (bottom ones, over the IC bar, do). The main stage input
-  (`handleSpriteDrag`, `handleViewportZoom`) already fences via `c.hovering()`, so
-  it's a **deferred-draw / overlap** issue: a later-drawn overlay in that layout sits
-  over the flip-up list. **Needs the exact layout to repro** before a fix (candidate:
-  make the open dropdown's list the last thing drawn AND the first input consumer for
-  its rect).
 - **Cold-load per-stage profiling** (Nightingale, 2026-07-01) — add per-stage timing
   (fetch TTFB/transfer · decode+CatmullRom-downscale · upload) to the metrics
   cold-load report so the bottleneck is measured, not asserted. Confirmed by hand:
