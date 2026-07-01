@@ -702,6 +702,7 @@ type AssetPreferences struct {
 	PingChip               bool                         `json:"pingChip"`                   // #128 show the connection-quality chip (default OFF)
 	ValidateTLSCerts       bool                         `json:"validateTLSCerts"`           // power-user Security toggle: strictly verify wss:// TLS certs. Default OFF = accept self-signed (most community AO servers use them)
 	AssetOrigin            string                       `json:"assetOrigin,omitempty"`      // power-user: Origin/Referer header sent on asset fetches (servers that gate their base by CORS); empty = none
+	AssetCharCase          uint8                        `json:"assetCharCase,omitempty"`    // POWER-USER: character-folder casing for the rare capitalised-folder server (0 lowercase default / 1 first-cap / 2 title). A wrong value 404s every character.
 	VoiceInputDevice       string                       `json:"voiceInputDevice,omitempty"` // voice chat mic device name; empty = system default
 	VoiceOutVolume         int                          `json:"voiceOutVolume,omitempty"`   // voice chat output volume 0..100 (0/absent = default 100)
 	PrefetchAggro          int                          `json:"prefetchAggro,omitempty"`    // predictive-prefetch aggressiveness 1..4 (0/absent = 1, conservative) (#100)
@@ -3447,6 +3448,26 @@ func (p *AssetPreferences) SetAssetOriginHeader(s string) {
 		return
 	}
 	p.AssetOrigin = s
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AssetCharCasing returns the character-folder casing mode (0 lowercase default / 1 first-cap /
+// 2 title). A POWER-USER setting: the wrong value 404s every character asset.
+func (p *AssetPreferences) AssetCharCasing() uint8 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AssetCharCase
+}
+
+// SetAssetCharCasing sets the character-folder casing mode.
+func (p *AssetPreferences) SetAssetCharCasing(c uint8) {
+	p.mu.Lock()
+	if p.AssetCharCase == c {
+		p.mu.Unlock()
+		return
+	}
+	p.AssetCharCase = c
 	p.mu.Unlock()
 	p.markDirty()
 }

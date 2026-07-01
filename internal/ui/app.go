@@ -927,7 +927,10 @@ type sessionState struct {
 	// Text FX picker (#M5): the FX button opens a floating effect list instead of cycling 13 effects.
 	showFxPicker bool
 	fxBtnRect    sdl.Rect // last-drawn FX button rect (the picker anchors above it + the fence finds it)
-	amICMNow     bool     // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// showPowerUser reveals the advanced/power-user Settings options (TLS, Asset Origin, asset
+	// casing) — hidden by default so they're not changed by accident. Session-only.
+	showPowerUser bool
+	amICMNow      bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
@@ -2760,7 +2763,7 @@ func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string) (line, s
 func (a *App) rebuildAssetOrigin() {
 	if enabled, mounts := a.d.Prefs.LocalAssets(); enabled && len(mounts) > 0 {
 		local := assets.NewLocalFetcher(mounts)
-		a.urls = courtroom.NewURLBuilder(local.BaseURL())
+		a.urls = courtroom.NewURLBuilder(local.BaseURL()).WithCharCase(a.d.Prefs.AssetCharCasing())
 		log.Printf("ui: local asset mode over %d mounts", len(mounts))
 		return
 	}
@@ -2772,7 +2775,7 @@ func (a *App) rebuildAssetOrigin() {
 		a.connErr = "server provided no asset URL — enable local assets in Settings"
 		return
 	}
-	a.urls = courtroom.NewURLBuilder(origin)
+	a.urls = courtroom.NewURLBuilder(origin).WithCharCase(a.d.Prefs.AssetCharCasing())
 	if a.rehearsal {
 		return // offline: no DNS warm, no manifest fetch
 	}

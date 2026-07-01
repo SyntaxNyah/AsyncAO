@@ -2517,6 +2517,26 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 }
 
 // drawSettingsAccount: per-server login, the master-list override, Discord.
+// powerUserToggleLabel is the reveal-button label for the advanced (power-user) settings.
+func powerUserToggleLabel(on bool) string {
+	if on {
+		return "Hide advanced options"
+	}
+	return "Show advanced (power-user) options"
+}
+
+// charCaseLabel is the cycle-button label for the character-folder asset casing (power-user only).
+func charCaseLabel(c uint8) string {
+	switch c {
+	case courtroom.CharCaseFirstCap:
+		return "Casing: First cap (Phoenix wright)"
+	case courtroom.CharCaseTitle:
+		return "Casing: Title (Phoenix Wright)"
+	default:
+		return "Casing: lowercase (default)"
+	}
+}
+
 func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -2536,32 +2556,56 @@ func (a *App) drawSettingsAccount(y, _ int32) int32 {
 	}
 	y += 34
 
-	// Security: power-user TLS control. Default OFF accepts self-signed wss certs
-	// so community servers stay reachable; ON verifies the certificate strictly.
-	y = a.settingsSection(y, w, "Security")
-	validate := a.d.Prefs.ValidateTLSCertsOn()
-	if next := c.Checkbox(pad, y, "Validate server certificates (wss) — OFF by default", validate); next != validate {
-		a.d.Prefs.SetValidateTLSCerts(next)
+	// Power user (advanced): TLS, Asset Origin, and asset-folder casing. These can BREAK the
+	// connection or asset fetching if set wrong, so they hide behind a reveal button and their
+	// descriptions are drawn in red.
+	y = a.settingsSection(y, w, "Power user (advanced)")
+	if c.Button(sdl.Rect{X: pad, Y: y, W: 270, H: btnH}, powerUserToggleLabel(a.showPowerUser)) {
+		a.showPowerUser = !a.showPowerUser
 	}
-	y += 24
-	for _, ln := range c.WrapText("Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this on can make them unreachable — it's for power users who want to be sure the encrypted connection is to the real server.", a.formW-8, 0) {
-		c.Label(pad, y, ln, ColTextDim)
+	y += btnH + 6
+	for _, ln := range c.WrapText("These can break your connection or make characters fetch 0 assets. Only change them if you KNOW what your server needs.", a.formW-8, 0) {
+		c.Label(pad, y, ln, ColDanger)
 		y += 16
 	}
-	y += 10
-	// Asset Origin / CORS override — for servers that only serve their asset base to
-	// a specific web client (joinable via a particular https:// link). Mainly power
-	// users; applied live to the streaming client.
-	c.Label(pad, y+4, "Asset Origin override:", ColText)
-	origin := a.d.Prefs.AssetOriginHeader()
-	if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 170, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
-		a.d.Prefs.SetAssetOriginHeader(next)
-		a.d.Manager.SetAssetOrigin(next)
-	}
-	y += 24
-	for _, ln := range c.WrapText("Power users only — only touch this if you know what you're doing. Sends this Origin/Referer on asset downloads, so a server that only serves its base to its own web client will still stream to AsyncAO.", a.formW-8, 0) {
-		c.Label(pad, y, ln, ColTextDim)
-		y += 16
+	y += 6
+	if a.showPowerUser {
+		validate := a.d.Prefs.ValidateTLSCertsOn()
+		if next := c.Checkbox(pad, y, "Validate server certificates (wss) — OFF by default", validate); next != validate {
+			a.d.Prefs.SetValidateTLSCerts(next)
+		}
+		y += 24
+		for _, ln := range c.WrapText("Strictly verify the TLS certificate when connecting over wss://. Most community AO servers use self-signed certs, so turning this on can make them unreachable — it's for power users who want to be sure the encrypted connection is to the real server.", a.formW-8, 0) {
+			c.Label(pad, y, ln, ColDanger)
+			y += 16
+		}
+		y += 10
+		// Asset Origin / CORS override — for servers that only serve their asset base to
+		// a specific web client (joinable via a particular https:// link). Mainly power
+		// users; applied live to the streaming client.
+		c.Label(pad, y+4, "Asset Origin override:", ColText)
+		origin := a.d.Prefs.AssetOriginHeader()
+		if next, _ := c.TextField("assetorigin", sdl.Rect{X: pad + 170, Y: y, W: 340, H: fieldH}, origin, "https://webao.example  (blank = off)"); next != origin {
+			a.d.Prefs.SetAssetOriginHeader(next)
+			a.d.Manager.SetAssetOrigin(next)
+		}
+		y += 24
+		for _, ln := range c.WrapText("Power users only — only touch this if you know what you're doing. Sends this Origin/Referer on asset downloads, so a server that only serves its base to its own web client will still stream to AsyncAO.", a.formW-8, 0) {
+			c.Label(pad, y, ln, ColDanger)
+			y += 16
+		}
+		y += 10
+		c.Label(pad, y+4, "Character folder casing:", ColText)
+		cs := a.d.Prefs.AssetCharCasing()
+		if c.Button(sdl.Rect{X: pad + 200, Y: y, W: 250, H: btnH}, charCaseLabel(cs)) {
+			a.d.Prefs.SetAssetCharCasing((cs + 1) % courtroom.CharCaseCount)
+			a.rebuildAssetOrigin() // apply the new casing to the URL builder immediately
+		}
+		y += 24
+		for _, ln := range c.WrapText("How the character FOLDER is capitalised in asset URLs. The VAST MAJORITY of servers are lowercase (the default). CHECK YOUR SERVER FIRST: the wrong choice makes EVERY character fetch 0 assets. First cap = Phoenix wright, Title = Phoenix Wright.", a.formW-8, 0) {
+			c.Label(pad, y, ln, ColDanger)
+			y += 16
+		}
 	}
 	y += 6
 

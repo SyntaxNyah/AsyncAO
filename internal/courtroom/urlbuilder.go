@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 )
@@ -48,12 +49,32 @@ const (
 // resolver appends candidates). Origin is the server asset URL or the local
 // mount origin, always with a trailing slash.
 type URLBuilder struct {
-	origin string
+	origin   string
+	charCase uint8 // character-folder casing (CharCase*); 0 = lowercase (default)
 }
 
 // NewURLBuilder normalizes the origin (exactly one trailing slash).
 func NewURLBuilder(origin string) URLBuilder {
 	return URLBuilder{origin: strings.TrimRight(origin, "/") + "/"}
+}
+
+// Character-folder casing — a POWER-USER setting for the rare server whose character folders are
+// capitalised. The vast majority ship lowercase, so lowercase is the default; the wrong choice
+// makes every character asset 404. Applied ONLY to the character-folder segment, never to emotes.
+const (
+	CharCaseLower    uint8 = iota // lowercase (default — the safe, correct choice for almost every server)
+	CharCaseFirstCap              // First-letter capital: "Phoenix wright"
+	CharCaseTitle                 // Title Case: "Phoenix Wright"
+	CharCaseCount
+)
+
+// WithCharCase returns a copy of u with the character-folder casing set (keeping the origin), so
+// the App can rebuild the builder when the pref changes without re-resolving the origin.
+func (u URLBuilder) WithCharCase(c uint8) URLBuilder {
+	if c < CharCaseCount {
+		u.charCase = c
+	}
+	return u
 }
 
 // Origin returns the normalized origin.
@@ -83,16 +104,60 @@ var encodeURIRestores = strings.NewReplacer(
 	"%7E", "~",
 )
 
-// seg escapes one path segment, webAO-style: lowercased (AO asset hosts are
-// case-sensitive; packs ship lowercase) and percent-encoded exactly like
-// encodeURI (parentheses and friends stay literal).
-func seg(name string) string {
-	return encodeURIRestores.Replace(url.PathEscape(strings.ToLower(name)))
+// segRaw percent-encodes one path segment webAO-style (encodeURI: parentheses and friends stay
+// literal) WITHOUT touching case — the caller decides the casing.
+func segRaw(name string) string {
+	return encodeURIRestores.Replace(url.PathEscape(name))
+}
+
+// seg escapes one path segment, lowercased (AO asset hosts are case-sensitive; packs ship
+// lowercase). Used for EVERY segment except the character folder, which honours charSeg.
+func seg(name string) string { return segRaw(strings.ToLower(name)) }
+
+// charSeg escapes the CHARACTER-folder segment honouring the builder's casing setting — lowercase
+// by default (the correct choice for almost every server), or the first-cap / title-case forms for
+// the rare capitalised-folder server. Emotes and every other segment stay lowercase (seg).
+func (u URLBuilder) charSeg(name string) string {
+	switch u.charCase {
+	case CharCaseFirstCap:
+		return segRaw(firstCap(name))
+	case CharCaseTitle:
+		return segRaw(titleCase(name))
+	default:
+		return seg(name)
+	}
+}
+
+// firstCap lowercases s then upper-cases the first letter ("phoenix wright" → "Phoenix wright").
+func firstCap(s string) string {
+	r := []rune(strings.ToLower(s))
+	if len(r) == 0 {
+		return ""
+	}
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
+}
+
+// titleCase lowercases s then upper-cases the first letter of each word ("phoenix wright" →
+// "Phoenix Wright"); a word break is a space, underscore or hyphen.
+func titleCase(s string) string {
+	r := []rune(strings.ToLower(s))
+	capNext := true
+	for i, c := range r {
+		switch {
+		case capNext && unicode.IsLetter(c):
+			r[i] = unicode.ToUpper(c)
+			capNext = false
+		case c == ' ' || c == '_' || c == '-':
+			capNext = true
+		}
+	}
+	return string(r)
 }
 
 // CharIcon returns the char-select icon base. // AssetType: CharIcon
 func (u URLBuilder) CharIcon(character string) string {
-	return u.origin + charactersDir + seg(character) + "/" + charIconStem
+	return u.origin + charactersDir + u.charSeg(character) + "/" + charIconStem
 }
 
 // Emote returns a character sprite base for the given kind.
@@ -105,7 +170,7 @@ func (u URLBuilder) Emote(character, emote string, kind EmoteKind) string {
 	case EmoteTalk:
 		prefix = talkPrefix
 	}
-	return u.origin + charactersDir + seg(character) + "/" + seg(prefix+emote)
+	return u.origin + charactersDir + u.charSeg(character) + "/" + seg(prefix+emote)
 }
 
 // EmoteBare returns the unprefixed sprite base — the second spelling
@@ -114,7 +179,7 @@ func (u URLBuilder) Emote(character, emote string, kind EmoteKind) string {
 // files like "1.webp"). Pass as the fallback to PrefetchWithFallback.
 // AssetType: CharSprite
 func (u URLBuilder) EmoteBare(character, emote string) string {
-	return u.origin + charactersDir + seg(character) + "/" + seg(emote)
+	return u.origin + charactersDir + u.charSeg(character) + "/" + seg(emote)
 }
 
 // EmoteButton returns the emote-picker button art base for the 1-based
@@ -126,7 +191,7 @@ func (u URLBuilder) EmoteButton(character string, n int, on bool) string {
 	if on {
 		state = "_on"
 	}
-	return u.origin + charactersDir + seg(character) + "/" + emotionsDir + emoteButtonStem + strconv.Itoa(n) + state
+	return u.origin + charactersDir + u.charSeg(character) + "/" + emotionsDir + emoteButtonStem + strconv.Itoa(n) + state
 }
 
 // ShoutBubble returns the per-character shout bubble base ("holdit_bubble",
@@ -136,7 +201,7 @@ func (u URLBuilder) ShoutBubble(character, shoutName string, custom bool) string
 	if custom {
 		stem = customShoutStem
 	}
-	return u.origin + charactersDir + seg(character) + "/" + seg(stem)
+	return u.origin + charactersDir + u.charSeg(character) + "/" + seg(stem)
 }
 
 // NamedCustomShout returns a 2.10 named custom interjection base
@@ -148,7 +213,7 @@ func (u URLBuilder) NamedCustomShout(character, name string) string {
 	if dot := strings.LastIndexByte(name, '.'); dot > 0 {
 		name = name[:dot]
 	}
-	return u.origin + charactersDir + seg(character) + "/" + customObjDir + seg(name)
+	return u.origin + charactersDir + u.charSeg(character) + "/" + customObjDir + seg(name)
 }
 
 // DefaultShoutBubble returns the misc/default fallback bubble base.
@@ -159,7 +224,7 @@ func (u URLBuilder) DefaultShoutBubble(shoutName string) string {
 
 // ShoutSFX returns the per-character shout sound base. // AssetType: SFX
 func (u URLBuilder) ShoutSFX(character, shoutName string) string {
-	return u.origin + charactersDir + seg(character) + "/" + seg(shoutName)
+	return u.origin + charactersDir + u.charSeg(character) + "/" + seg(shoutName)
 }
 
 // Background returns a background part base (defenseempty, stand, ...).
@@ -179,7 +244,7 @@ func (u URLBuilder) BackgroundsRoot() string {
 // CharFolder returns one character's folder URL (with trailing slash) — the
 // recursive-download root and (on an autoindex host) its file listing.
 func (u URLBuilder) CharFolder(character string) string {
-	return u.origin + charactersDir + seg(character) + "/"
+	return u.origin + charactersDir + u.charSeg(character) + "/"
 }
 
 // BackgroundFolder returns one background's folder URL (with trailing slash).
