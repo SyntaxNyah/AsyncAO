@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"image"
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // TestFramePace pins the adaptive frame pacing (the GPU-burn fix): idle = the
@@ -93,6 +96,52 @@ func TestTalkBudget(t *testing.T) {
 	a.room.Typewriter.Interval = 200 * time.Millisecond
 	if got, want := a.talkBudget(full), paceBudget(staticTalkFPS); got != want {
 		t.Fatalf("slow text talk budget = %v, want the base %v", got, want)
+	}
+}
+
+// TestFramePaceUnfocusedFollowsAnim pins the unfocused tier onto a LIVE stage
+// animation's schedule — an unfocused window is still visible (second-monitor
+// play), and the flat trickle rate there was the "idle animations go choppy
+// the moment I click into another window" report. With a resident 2×80 ms
+// speaker loop: unfocused paces at the 80 ms flip cadence (not the flat
+// 100 ms trickle), focused idle keeps its existing [full, idle] clamp, and a
+// stage with nothing animating stays on the flat rate.
+func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	store, err := render.NewTextureStore(ren)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	a := testTabApp(t)
+	a.room = &courtroom.Courtroom{}
+	a.d.Viewport = render.NewViewport(store)
+	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
+
+	// Nothing animating: the flat unfocused trickle (regression guard).
+	if got := a.FramePace(false); got != budget(10) {
+		t.Fatalf("static unfocused pace = %v, want the flat 10 fps budget", got)
+	}
+
+	dec := &assets.Decoded{
+		Frames:   []*image.RGBA{image.NewRGBA(image.Rect(0, 0, 4, 4)), image.NewRGBA(image.Rect(0, 0, 4, 4))},
+		Delays:   []time.Duration{80 * time.Millisecond, 80 * time.Millisecond},
+		Animated: true,
+		Width:    4, Height: 4,
+	}
+	if err := store.Upload("anim://speaker", dec); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	a.room.Scene.Speaker.Visible = true
+	a.room.Scene.Speaker.Active = "anim://speaker"
+	a.d.Viewport.Update(&a.room.Scene, 0) // bind the page (fresh frame: full 80 ms due)
+
+	if got := a.FramePace(false); got != 80*time.Millisecond {
+		t.Errorf("unfocused pace with a live 80ms loop = %v, want the 80ms flip cadence", got)
+	}
+	// Focused idle is unchanged: the same loop clamps at the 30 fps idle budget.
+	if got := a.FramePace(true); got != budget(30) {
+		t.Errorf("focused idle pace with the same loop = %v, want the idle cap %v", got, budget(30))
 	}
 }
 

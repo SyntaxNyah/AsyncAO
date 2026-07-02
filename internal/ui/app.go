@@ -981,6 +981,9 @@ type sessionState struct {
 	// heartbeat: a statically-skipped screen still gets one real frame per
 	// paceHeartbeat, bounding how stale any missed signal can leave it.
 	lastFrameDrawn time.Time
+	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
+	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
+	sceneWarmLastDemand time.Time
 	// winW/winH cache the logical window size Frame was last given, for draw
 	// helpers deep in a call chain that need window bounds (e.g. the sprite
 	// preview's on-screen clamp) without threading params through every layer.
@@ -2068,6 +2071,7 @@ func (a *App) Background(dt time.Duration) {
 	// burst — exactly what a drawn frame does (the emote row touches these after
 	// Pump.Frame too). Touching before the pump let the burst supersede it.
 	a.keepActiveAssetsWarm()
+	a.keepSceneAssetsWarm() // the un-drawn stage must survive the burst too
 	a.d.Store.DrainDestroyQueue()
 }
 
@@ -2106,6 +2110,66 @@ func (a *App) warmBase(base string, t assets.AssetType) {
 		return
 	}
 	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+}
+
+// sceneWarmRedemandEvery throttles keepSceneAssetsWarm's heal path: a cold
+// stage base re-demands at most this often (across the whole scene), so the
+// per-frame warm can never spam the pool with duplicate jobs while a sprite
+// is still streaming in — the message's own HIGH prefetch stays the loader;
+// this is only the safety net for the already-evicted edge.
+const sceneWarmRedemandEvery = 250 * time.Millisecond
+
+// keepSceneAssetsWarm pins the LIVE stage's textures at the MRU end every
+// tick: background, desk, both character layers (plus the speaker's idle
+// base — the imminent talk→idle swap target), and the chat skin. The draw
+// path's resolve() only re-Gets on a store-generation change, so after a
+// long stable stretch these sit LRU-cold and one big upload burst (a
+// char-select scroll, a background tab, the prefetcher) could evict the
+// picture currently ON SCREEN — the "window randomly redraws / stage blinks
+// for a beat" report. Runs right after Pump.Frame in BOTH the drawn and the
+// skipped/minimized paths (recency must win over this tick's burst — same
+// reasoning as keepActiveAssetsWarm). Steady state is a handful of map
+// probes on the render-thread-owned store: no locks, no allocations, no I/O.
+func (a *App) keepSceneAssetsWarm() {
+	if a.room == nil && !(a.replaying && a.replayRoom != nil) {
+		return // no stage on screen (lobby) — nothing to pin
+	}
+	sc := a.renderScene()
+	now := time.Now()
+	throttleOpen := now.Sub(a.sceneWarmLastDemand) >= sceneWarmRedemandEvery
+	demanded := false
+	warm := func(base string, t assets.AssetType) {
+		if base == "" {
+			return
+		}
+		if a.d.Store.Contains(base) {
+			a.d.Store.Get(base) // touch → most-recent, the last to evict
+			return
+		}
+		// Evicted (or never landed): re-demand, throttled scene-wide. A bare-
+		// spelling sprite may 404 here where the message's fallback chain
+		// succeeded — harmless: the 404 cache absorbs it and the next message
+		// re-runs the full chain.
+		if throttleOpen && !demanded {
+			a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+			demanded = true
+			a.sceneWarmLastDemand = now
+		}
+	}
+	warm(sc.BackgroundBase, assets.AssetTypeBackground)
+	if sc.ShowDesk {
+		warm(sc.DeskBase, assets.AssetTypeDeskOverlay)
+	}
+	if sc.Speaker.Visible {
+		warm(sc.Speaker.Active, assets.AssetTypeCharSprite)
+		if sc.Speaker.IdleBase != sc.Speaker.Active {
+			warm(sc.Speaker.IdleBase, assets.AssetTypeCharSprite)
+		}
+	}
+	if sc.PairActive {
+		warm(sc.Pair.Active, assets.AssetTypeCharSprite)
+	}
+	warm(sc.ChatSkinBase, assets.AssetTypeMisc)
 }
 
 // frameCrashLog is the last-resort diagnostic: a panic that escaped every
@@ -3986,6 +4050,19 @@ func (a *App) FramePace(focused bool) time.Duration {
 				unf = tb
 			}
 		}
+		// An unfocused window is still VISIBLE (second monitor, side-by-side
+		// chat): a live stage animation keeps its OWN schedule, exactly like
+		// the focused branch below — the flat trickle rate here was the
+		// "idle animations go choppy the moment I click into another window"
+		// playtest report. Costs nothing on a static stage (ok=false), wakes
+		// no more often than the tier budget already did for fast loops
+		// (clamped at full), and for slow loops it redraws LESS than the flat
+		// rate — one frame per flip, right on the flip.
+		if unf > 0 && a.room != nil && a.d.Viewport != nil {
+			if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
+				unf = clampDur(due, full, unf)
+			}
+		}
 		return unf
 	}
 	if a.wantsFullRate() {
@@ -4996,6 +5073,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	}
 	a.d.Audio.Frame()
 	a.d.Pump.Frame()
+	// Touch AFTER the pump so the live stage wins recency over this tick's
+	// upload burst — an eviction of the picture on screen was the "window
+	// randomly redraws" blink. Map probes only; see keepSceneAssetsWarm.
+	a.keepSceneAssetsWarm()
 	a.d.Store.DrainDestroyQueue()
 
 	// Sprite-preview wheel zoom + drag, claimed before any screen draws so it

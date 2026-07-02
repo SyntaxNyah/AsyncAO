@@ -351,18 +351,27 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 
 	// --- main loop: fixed-cadence update + single render pass ---
 	last := time.Now()
+	// scheduledNap is the sleep WE chose last pass (pacing tier / skip nap /
+	// minimized nap): the stall guard below must allow it in full, or every
+	// pacing tier slower than maxFrameDelta plays animation clocks in slow
+	// motion (dt loss ate real time — the "anims crawl at 5 fps unfocused"
+	// class of bug).
+	scheduledNap := time.Duration(0)
 	running := true
 	for running {
 		now := time.Now()
 		dt := now.Sub(last)
 		last = now
-		// Pacing guard: after a stall (window drag, AV freeze, sleep
+		// Pacing guard: after a STALL (window drag, driver freeze, sleep
 		// wake) an unbounded dt would dump the typewriter's whole backlog
-		// and machine-gun its blips in one frame. Clamping keeps the
-		// reveal cadence smooth; animation clocks just resume.
-		if dt > maxFrameDelta {
-			dt = maxFrameDelta
+		// and machine-gun its blips in one frame. A stall is time beyond
+		// what we scheduled: the allowance is the chosen nap plus the usual
+		// margin, so deliberate slow cadences stay honest while real stalls
+		// still clamp. Animation clocks just resume.
+		if limit := scheduledNap + maxFrameDelta; dt > limit {
+			dt = limit
 		}
+		scheduledNap = 0
 
 		// Order matters: BeginFrame resets the per-frame input snapshot
 		// that HandleEvent fills, so it must run before the event poll.
@@ -389,6 +398,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 
 		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
 			app.Background(dt) // keep the session alive, draw nothing
+			scheduledNap = minimizedNap
 			time.Sleep(minimizedNap)
 			continue
 		}
@@ -407,6 +417,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			if nap <= 0 || nap > maxFrameDelta {
 				nap = maxFrameDelta
 			}
+			scheduledNap = nap
 			time.Sleep(nap)
 			continue
 		}
@@ -440,6 +451,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		}
 		if pace > 0 {
 			if sleep := pace - time.Since(now); sleep > 0 {
+				scheduledNap = sleep
 				time.Sleep(sleep)
 			}
 		}
