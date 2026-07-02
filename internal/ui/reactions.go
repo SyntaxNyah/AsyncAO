@@ -47,8 +47,6 @@ const (
 
 	// reactPaletteCols lays the fixed palette out as a compact grid above the React button.
 	reactPaletteCols = 6
-	// reactBtnW is the IC-bar React button width (fits "React" in the chrome font).
-	reactBtnW = 58
 )
 
 // reactionFloat is one emoji rising over the stage. Plain data; the index keys the cached
@@ -193,30 +191,10 @@ func (a *App) reactionTargetKnown(ref uint32) bool {
 	return false
 }
 
-// --- react trigger: button + palette --------------------------------------------------
-
-// reactButton draws the IC-bar React button (stores its rect so the palette can anchor
-// above it) and reports a toggle click. Accent border while the palette is open OR a
-// reaction is queued — the "queued" affordance the user otherwise couldn't see (the
-// reaction doesn't send until their next message). Raw pointIn hit test so it works under
-// the palette's modal fence, like the emoji button.
-func (a *App) reactButton(btn sdl.Rect) bool {
-	c := a.ctx
-	a.reactBtnRect = btn
-	label, border, txt := "React", ColTextDim, ColText
-	if a.showReactPicker || a.pendingReactSet {
-		border, txt = ColAccent, ColAccent
-	}
-	clicked := c.ButtonCol(btn, label, ColPanel, ColPanelHi, border, txt)
-	tip := "React to the last message with an emoji — it rides your next message so other AsyncAO players see it float (AO2/webAO see plain text)."
-	if a.pendingReactSet {
-		if e, ok := courtroom.ReactionEmoji(a.pendingReact.Index); ok {
-			tip = "Reaction " + e + " queued — it sends with your next message. Click to change."
-		}
-	}
-	c.Tooltip(btn, tip)
-	return clicked
-}
+// --- react trigger: palette ------------------------------------------------------------
+// The IC-bar React BUTTON was removed by request (playtest: unused). The rest of
+// the reaction machinery stays: INCOMING floats from other AsyncAO clients still
+// render (Hide-reactions still hides them), and the wire codec is untouched.
 
 // toggleReactPicker opens or closes the palette. Opening SNAPSHOTS the current "last
 // message" as the reaction target, so a message arriving while the palette is open doesn't

@@ -4305,13 +4305,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
 		icX += fxBtnW + 4
 	}
-	// #2: React button — queue an emoji reaction to the last message (rides your next send) — movable (#4a).
-	if icBar.W-(icX-icBar.X)-(reactBtnW+4) >= tailReserve {
-		if a.reactButton(a.slotRect(slotICReact, sdl.Rect{X: icX, Y: rowY, W: reactBtnW, H: fH}, w, h)) {
-			a.toggleReactPicker()
-		}
-		icX += reactBtnW + 4
-	}
+	// The #2 React BUTTON was removed by request (playtest: unused) — incoming
+	// reaction floats still render (and Hide-reactions still hides them), the
+	// IC bar just doesn't spend a slot on sending one.
 	icW := icBar.W - (icX - icBar.X)
 	if icCounterOn {
 		icW -= msgCounterReserve

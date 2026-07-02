@@ -447,17 +447,8 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			field.X += fxBtnW + 4
 			field.W -= fxBtnW + 4
 		}
-		if rr, ownReact := lay.rect("asyncao_ic_react"); ownReact {
-			if a.reactButton(rr) {
-				a.toggleReactPicker()
-			}
-		} else if field.W > reactBtnW+120 {
-			if a.reactButton(sdl.Rect{X: field.X, Y: field.Y, W: reactBtnW, H: field.H}) {
-				a.toggleReactPicker()
-			}
-			field.X += reactBtnW + 4
-			field.W -= reactBtnW + 4
-		}
+		// The #2 React BUTTON was removed by request (playtest: unused); the
+		// asyncao_ic_react theme key is now a no-op for compatibility.
 		var send bool
 		icCounterOn := a.d.Prefs.MessageCounterOn()
 		if icCounterOn {
