@@ -330,12 +330,16 @@ type Ctx struct {
 	// wheelTaken marks this frame's wheel as consumed by a hovered widget
 	// (spinbox rows, WheelIn lists) so page-level scrolls don't double-act.
 	wheelTaken bool
-	mouseDown  bool        // left button currently held (event-tracked)
-	middleHeld bool        // middle (wheel) button held — fast log zoom modifier (event-tracked)
-	dragID     string      // widget owning the active drag ("" = none)
-	dropped    string      // SDL_DROPFILE path this frame ("" = none)
-	hotkey     sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
-	tipText    string      // hover hint to paint at end-of-frame ("" = none)
+	mouseDown  bool   // left button currently held (event-tracked)
+	middleHeld bool   // middle (wheel) button held — fast log zoom modifier (event-tracked)
+	dragID     string // widget owning the active drag ("" = none)
+	// onRow, when non-nil, receives every Checkbox's label + drawn y — the
+	// settings search's collect pass (#26 gather) uses it to index all tabs'
+	// rows. nil in normal play: the hook costs one nil check per checkbox.
+	onRow   func(label string, y int32)
+	dropped string      // SDL_DROPFILE path this frame ("" = none)
+	hotkey  sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
+	tipText string      // hover hint to paint at end-of-frame ("" = none)
 	// Cached word-wrap of the current tooltip, rebuilt only when the text or the wrap
 	// width changes (drawTooltip) — so a hovered tooltip doesn't re-wrap (and re-allocate)
 	// every frame. See WrapText's "callers cache the result" note.
@@ -1431,6 +1435,9 @@ func (c *Ctx) ButtonCol(r sdl.Rect, label string, bg, hoverBg, border, text sdl.
 
 // Checkbox draws a toggle; returns the (possibly flipped) value.
 func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
+	if c.onRow != nil {
+		c.onRow(label, y) // settings-search collect pass (#26 gather): record and draw as normal
+	}
 	const box = 16
 	r := sdl.Rect{X: x, Y: y, W: box, H: box}
 	c.Fill(r, ColPanel)

@@ -34,6 +34,14 @@ type settingsState struct {
 	// first section card whose title contains it scrolls itself to the top, so search
 	// lands on the SECTION (e.g. "scene maker"), not just the tab. Cleared each frame.
 	scrollToSection string
+	// #26 gather-search: the collected all-tabs row index (label + tab + the row's
+	// offset within its tab at zero scroll), built once per search session by a
+	// fenced, clipped-away draw of every tab. flash* highlight the landed row.
+	index      []settingsIndexRow
+	indexBuilt bool
+	flashTab   int
+	flashY     int32
+	flashUntil time.Time
 
 	// callword manager add-field buffer: a fresh empty field (NOT preloaded with
 	// the word list — the words render as ×-removable rows below it).
@@ -271,6 +279,19 @@ func settingsSearchMatch(query string) int {
 	return -1
 }
 
+// settingsIndexRow is one collected settings row for the gather-search (#26):
+// its (trimmed) label, the tab it lives on, and its y offset within that tab's
+// content at zero scroll — enough to list it and to jump straight to it.
+type settingsIndexRow struct {
+	label string
+	tab   int
+	y     int32
+}
+
+// settingsIndexCap bounds the collected index (hard rule §17.4) — ~600 rows is
+// several times the real settings count; past it the collector just stops.
+const settingsIndexCap = 600
+
 // imageTypes get the per-format toggle treatment.
 var imageTypeNames = []string{
 	config.TypeCharIcon,
@@ -322,16 +343,13 @@ func (a *App) drawSettings(w, h int32) {
 
 	// --- header band: title, search, Back -----------------------------------
 	c.Heading(pad, pad, "Settings", ColText)
-	// Search: type a term, press Enter to jump to the tab that has it.
+	// Search (#26 gather): type a term and the page becomes a live list of EVERY
+	// matching setting across every tab — click (or Enter for the top hit) jumps
+	// straight to that row. The old jump-to-tab hint is superseded.
 	q, committed := c.TextField("settsearch", sdl.Rect{X: pad + 130, Y: pad + 2, W: 240, H: fieldH}, settings.search, "Search settings…")
 	settings.search = q
-	if mt := settingsSearchMatch(q); mt >= 0 {
-		c.LabelClipped(pad+382, pad+6, w-pad-382-110, "→ "+settingsTabNames[mt]+"  (Enter)", ColAccent)
-		if committed {
-			settings.tab = mt
-			settings.scrollToSection = strings.ToLower(strings.TrimSpace(q)) // also scroll to the matching SECTION (#26)
-			settings.search = ""
-		}
+	if strings.TrimSpace(q) != "" {
+		c.LabelClipped(pad+382, pad+6, w-pad-382-110, "showing every match — click one (or Enter for the top hit)", ColTextDim)
 	}
 	if c.Button(sdl.Rect{X: w - 90 - pad, Y: pad, W: 90, H: btnH}, "Back") {
 		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
@@ -390,8 +408,56 @@ func (a *App) drawSettings(w, h int32) {
 	// page-coloured gap bands punched in by settingsSection.
 	clipPrev, clipHad := c.pushClip(sdl.Rect{X: cardX, Y: contentTop, W: cardW, H: viewH})
 	c.Fill(sdl.Rect{X: cardX, Y: contentTop, W: cardW, H: viewH}, cardColor())
+
+	// #26 gather-search: with a query typed, the card region becomes a RESULTS
+	// list of every matching setting across every tab (click → jump + flash).
+	if q := strings.ToLower(strings.TrimSpace(settings.search)); q != "" {
+		if !settings.indexBuilt {
+			a.buildSettingsIndex(w, contentTop)
+			settings.indexBuilt = true
+		}
+		a.drawSettingsSearchResults(q, committed, cardX, cardW, contentTop, viewH)
+		c.popClip(clipPrev, clipHad)
+		return
+	}
+	settings.indexBuilt = false // stale the index when the search closes (rows move as prefs change)
+
 	y := contentTop - *scroll
-	switch settings.tab {
+	y = a.drawSettingsTabBody(settings.tab, y, w, h)
+	// Landed-row flash: after a search jump, pulse a band around the row so the
+	// eye finds it (the scroll already put it near the top).
+	if settings.flashUntil.After(time.Now()) && settings.flashTab == settings.tab {
+		fy := contentTop - *scroll + settings.flashY
+		c.Border(sdl.Rect{X: cardX + 4, Y: fy - 5, W: cardW - 8, H: 30}, ColAccent)
+		c.Border(sdl.Rect{X: cardX + 5, Y: fy - 4, W: cardW - 10, H: 28}, ColAccent)
+	}
+	if settings.statusLine != "" {
+		c.Label(a.formX, y+6, settings.statusLine, ColAccent)
+		y += 28
+	}
+	// Page-coloured fill below the last card so the surface base doesn't run on.
+	if y < contentTop+viewH {
+		fy := y
+		if fy < contentTop {
+			fy = contentTop
+		}
+		c.Fill(sdl.Rect{X: cardX, Y: fy, W: cardW, H: contentTop + viewH - fy}, ColBackground)
+	}
+	c.popClip(clipPrev, clipHad)
+
+	contentH := (y + *scroll) - contentTop + pad
+	if !c.ctrlHeld && !c.wheelTaken {
+		*scroll -= c.wheelY * scrollStepPx
+	}
+	track := sdl.Rect{X: w - scrollBarW - 2, Y: contentTop, W: scrollBarW, H: viewH}
+	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, viewH)
+	settings.scrollToSection = "" // one-shot: consumed by the matching section this frame, else dropped
+}
+
+// drawSettingsTabBody dispatches one tab's rows starting at y — shared by the
+// normal page draw and the search collector's fenced all-tabs pass (#26).
+func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
+	switch tab {
 	case tabGeneral:
 		y = a.drawSettingsGeneral(y, w)
 	case tabTheme:
@@ -417,27 +483,96 @@ func (a *App) drawSettings(w, h int32) {
 	case tabReset:
 		y = a.drawSettingsReset(y, w)
 	}
-	if settings.statusLine != "" {
-		c.Label(a.formX, y+6, settings.statusLine, ColAccent)
-		y += 28
-	}
-	// Page-coloured fill below the last card so the surface base doesn't run on.
-	if y < contentTop+viewH {
-		fy := y
-		if fy < contentTop {
-			fy = contentTop
-		}
-		c.Fill(sdl.Rect{X: cardX, Y: fy, W: cardW, H: contentTop + viewH - fy}, ColBackground)
-	}
-	c.popClip(clipPrev, clipHad)
+	return y
+}
 
-	contentH := (y + *scroll) - contentTop + pad
-	if !c.ctrlHeld && !c.wheelTaken {
-		*scroll -= c.wheelY * scrollStepPx
+// buildSettingsIndex runs every tab's draw once with the input FENCED and all
+// drawing CLIPPED AWAY, purely to collect each row's label/tab/offset through
+// the Ctx.onRow hook (checkboxes; sections + slider rows record directly).
+// A few milliseconds, once per search session — never on a normal frame.
+func (a *App) buildSettingsIndex(w, contentTop int32) {
+	c := a.ctx
+	settings.index = settings.index[:0]
+	savedClicked, savedRight, savedDown := c.clicked, c.rightClicked, c.mouseDown
+	savedKey, savedWheel, savedModal := c.keyPressed, c.wheelY, c.modalOn
+	c.clicked, c.rightClicked, c.mouseDown, c.keyPressed, c.wheelY, c.modalOn = false, false, false, 0, 0, true
+	clipPrev, clipHad := c.pushClip(sdl.Rect{X: -1 << 14, Y: -1 << 14, W: 1, H: 1}) // off-screen: nothing lands
+	curTab := 0
+	c.onRow = func(label string, y int32) {
+		label = strings.TrimSpace(label)
+		if label == "" || len(settings.index) >= settingsIndexCap {
+			return
+		}
+		settings.index = append(settings.index, settingsIndexRow{label: label, tab: curTab, y: y - contentTop})
 	}
-	track := sdl.Rect{X: w - scrollBarW - 2, Y: contentTop, W: scrollBarW, H: viewH}
-	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, viewH)
-	settings.scrollToSection = "" // one-shot: consumed by the matching section this frame, else dropped
+	for t := 0; t < numSettingsTabs; t++ {
+		if (!voiceBuilt && t == tabVoice) || t == tabReset {
+			continue // no Voice tab in lean builds; the Reset tab is all danger buttons — don't index it
+		}
+		curTab = t
+		a.drawSettingsTabBody(t, contentTop, w, contentTop) // h only matters for the Theme grid's own scroll — harmless here
+	}
+	c.onRow = nil
+	c.popClip(clipPrev, clipHad)
+	c.clicked, c.rightClicked, c.mouseDown = savedClicked, savedRight, savedDown
+	c.keyPressed, c.wheelY, c.modalOn = savedKey, savedWheel, savedModal
+}
+
+// drawSettingsSearchResults lists every collected row matching q (substring,
+// case-blind) in the card region; clicking one — or Enter for the first —
+// switches to its tab, scrolls the row to the top, and arms the flash band.
+func (a *App) drawSettingsSearchResults(q string, enter bool, cardX, cardW, contentTop, viewH int32) {
+	c := a.ctx
+	const rowH = int32(26)
+	y := contentTop + 8
+	shown, total := 0, 0
+	maxRows := int((viewH - 40) / rowH)
+	jump := func(m settingsIndexRow) {
+		settings.tab = m.tab
+		sc := m.y - 8
+		if sc < 0 {
+			sc = 0
+		}
+		settings.tabScroll[m.tab] = sc // the page scrollbar clamps overshoot next frame
+		settings.flashTab, settings.flashY, settings.flashUntil = m.tab, m.y, time.Now().Add(2*time.Second)
+		settings.search = ""
+		settings.indexBuilt = false
+	}
+	for _, m := range settings.index {
+		if !strings.Contains(strings.ToLower(m.label), q) {
+			continue
+		}
+		total++
+		if shown >= maxRows {
+			continue // keep counting for the "+N more" line
+		}
+		if enter && shown == 0 {
+			jump(m)
+			return
+		}
+		r := sdl.Rect{X: cardX + 6, Y: y, W: cardW - 12, H: rowH - 2}
+		if c.hovering(r) {
+			c.Fill(r, ColPanelHi)
+			c.Border(r, ColAccent)
+		}
+		tabName := "[" + settingsTabNames[m.tab] + "]"
+		tw := c.TextWidth(tabName)
+		c.Label(r.X+6, r.Y+4, tabName, ColAccent)
+		c.LabelClipped(r.X+6+tw+10, r.Y+4, r.W-tw-24, m.label, ColText)
+		if c.clicked && c.hovering(r) {
+			jump(m)
+			c.clicked = false
+			return
+		}
+		y += rowH
+		shown++
+	}
+	switch {
+	case total == 0:
+		c.LabelClipped(cardX+8, y+4, cardW-16, "No settings match — try a shorter word (matches are by label text).", ColTextDim)
+	case total > shown:
+		c.LabelClipped(cardX+8, y+4, cardW-16, fmt.Sprintf("+ %d more — narrow the search to see the rest.", total-shown), ColTextDim)
+	}
 }
 
 // --- modernized settings layout: sidebar nav + content cards -----------------
@@ -465,6 +600,9 @@ const (
 // taken from a.formX/a.formW) but kept so existing call sites need no change.
 func (a *App) settingsSection(y, w int32, title string) int32 {
 	c := a.ctx
+	if c.onRow != nil {
+		c.onRow("§ "+title, y+settCardTopPad+2) // gather-search: sections are jumpable headers
+	}
 	// Search jump (#26): the FIRST section card whose title contains the pending query
 	// scrolls itself to the top, so a search lands on the SECTION (e.g. "scene maker"),
 	// not just the tab. One-shot; takes effect next frame and is clamped by the page
@@ -3894,6 +4032,9 @@ func settingTip(c *Ctx, row sdl.Rect, tip []string) {
 func (a *App) sliderRow(y int32, label string, value, step, min, max int, tip ...string) int {
 	c := a.ctx
 	pad := a.formX
+	if c.onRow != nil {
+		c.onRow(label, y) // gather-search: slider rows are findable like checkboxes
+	}
 	c.Label(pad, y+4, label+":", ColText)
 	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 90, H: 16}
 	if span := max - min; span > 0 {
