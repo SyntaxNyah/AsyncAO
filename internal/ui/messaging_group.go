@@ -3,6 +3,7 @@ package ui
 import (
 	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
@@ -30,6 +31,8 @@ type groupLine struct {
 	from   string
 	text   string
 	fromMe bool
+	char   string    // sender's character folder at receipt (bubble icon lookup)
+	at     time.Time // local receipt time (bubble timestamp)
 }
 
 type msgGroup struct {
@@ -38,6 +41,7 @@ type msgGroup struct {
 	ownerUID int
 	members  []msgMember
 	lines    []groupLine
+	unread   int // lines landed while the group wasn't on screen (chat-list badge)
 }
 
 func (g *msgGroup) hasMember(uid int) bool {
@@ -66,8 +70,8 @@ func (g *msgGroup) removeMember(uid int) {
 	g.members = out
 }
 
-func (g *msgGroup) appendLine(from, text string, fromMe bool) {
-	g.lines = append(g.lines, groupLine{from: from, text: text, fromMe: fromMe})
+func (g *msgGroup) appendLine(from, text string, fromMe bool, char string) {
+	g.lines = append(g.lines, groupLine{from: from, text: text, fromMe: fromMe, char: char, at: time.Now()})
 	if len(g.lines) > maxGroupLines { // keep the newest; fresh backing frees the old head
 		g.lines = append([]groupLine(nil), g.lines[len(g.lines)-maxGroupLines:]...)
 	}
@@ -106,14 +110,19 @@ func (a *App) applyGroupJoin(id uint32, uid int, name string) {
 }
 
 // applyGroupText files a received group message (the sender is implicitly a member).
-// Ignored when we don't know the group (no invite seen).
+// Ignored when we don't know the group (no invite seen). The sender's character
+// (for the bubble icon) resolves from the live roster at receipt; a group that
+// isn't on screen counts the line as unread (the chat-list badge).
 func (a *App) applyGroupText(id uint32, fromUID int, fromName, text string) {
 	g := a.msgGroups[id]
 	if g == nil {
 		return
 	}
 	g.addMember(fromUID, fromName)
-	g.appendLine(fromName, text, false)
+	g.appendLine(fromName, text, false, a.rosterCharByUID(fromUID))
+	if !a.showMessages || a.msgSelGroup != id {
+		g.unread++
+	}
 }
 
 // applyGroupKick removes a member — but ONLY when the kick came from the group's
@@ -208,7 +217,7 @@ func (a *App) sendGroupText(g *msgGroup, text string) {
 		body := text + courtroom.WireMessage{Kind: courtroom.MsgGroupText, GroupID: g.id}.EncodeMarker()
 		a.sess.SendOOC(a.oocNameOrDefault(), courtroom.PMCommand(ids, body))
 	}
-	g.appendLine(a.oocNameOrDefault(), text, true)
+	g.appendLine(a.oocNameOrDefault(), text, true, a.activeCharName())
 }
 
 // inviteToGroup invites one player (uid + name) to a group I'm in; the visible body

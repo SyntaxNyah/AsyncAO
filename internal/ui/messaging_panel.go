@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/veandco/go-sdl2/sdl"
@@ -103,7 +104,7 @@ func (a *App) msgEntries() []msgEntry {
 		}
 		sort.Slice(gs, func(i, j int) bool { return strings.ToLower(gs[i].name) < strings.ToLower(gs[j].name) })
 		for _, g := range gs {
-			out = append(out, msgEntry{label: "# " + g.name, gid: g.id})
+			out = append(out, msgEntry{label: groupUnreadLabel(g.name, g.unread), gid: g.id})
 		}
 	}
 	seen := map[string]bool{}
@@ -177,6 +178,9 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 	if clicked := a.drawLogList("msgchats", listR, labels, sel, &a.msgListScroll); clicked >= 0 && clicked < len(entries) {
 		if e := entries[clicked]; e.gid != 0 {
 			a.msgSelGroup, a.msgSel, a.msgGroupManage = e.gid, "", false
+			if g := a.msgGroups[e.gid]; g != nil {
+				g.unread = 0 // opening the group reads it
+			}
 		} else {
 			a.msgSel, a.msgSelGroup = e.name, 0
 		}
@@ -206,8 +210,11 @@ func (a *App) drawMessagesPanel(w, h int32, pressed *bool) {
 func (a *App) drawDMView(rx, top, rw, bottom int32) {
 	c := a.ctx
 	hy := top
-	c.LabelClipped(rx, hy, rw, a.msgSel, ColAccent)
-	hy += 18
+	// Partner's character icon (resolved from the live roster) beside the name.
+	partnerChar := a.rosterCharByName(a.msgSel)
+	a.drawMsgCharIcon(partnerChar, a.msgSel, sdl.Rect{X: rx, Y: hy - 2, W: 22, H: 22})
+	c.LabelClipped(rx+28, hy, rw-28, a.msgSel, nameColor(a.msgSel, msgNameSat, msgNameVal))
+	hy += 22
 	if a.room != nil {
 		if p, ok := a.room.RemoteProfile(a.msgSel); ok {
 			if line := strings.TrimSpace(p.Pronouns + "   " + p.Tag); line != "" {
@@ -236,7 +243,15 @@ func (a *App) drawGroupView(rx, top, rw, bottom int32) {
 		a.msgSelGroup = 0
 		return
 	}
-	c.LabelClipped(rx, top, rw-170, "# "+g.name, ColAccent)
+	g.unread = 0 // on screen = read (the chat-list badge clears)
+	// Per-group accent chip + name + member count + your owner star.
+	chip := groupChipColor(g.id)
+	c.Fill(sdl.Rect{X: rx, Y: top + 1, W: 10, H: 14}, chip)
+	head := "# " + g.name + "  ·  " + strconv.Itoa(len(g.members)) + " members"
+	if g.ownerUID == a.myUID() {
+		head += "  ★"
+	}
+	c.LabelClipped(rx+14, top, rw-184, head, ColAccent)
 	if c.Button(sdl.Rect{X: rx + rw - 162, Y: top - 2, W: 86, H: btnH}, "Members") {
 		a.msgGroupManage = !a.msgGroupManage
 	}
@@ -273,14 +288,17 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if y > box.Y+box.H/2-rowH {
 			break
 		}
+		// Char icon (live-roster lookup; offline members keep the initial disc)
+		// + the member's stable name colour — same identity language as the thread.
+		a.drawMsgCharIcon(a.rosterCharByUID(m.uid), m.name, sdl.Rect{X: box.X + 6, Y: y, W: rowH - 4, H: rowH - 4})
 		label := m.name
 		if m.uid == g.ownerUID {
-			label += "  (owner)"
+			label += "  ★ owner"
 		}
 		if m.uid == a.myUID() {
 			label += "  (you)"
 		}
-		c.LabelClipped(box.X+8, y+2, box.W-90, label, ColText)
+		c.LabelClipped(box.X+8+rowH, y+2, box.W-98-rowH, label, nameColor(m.name, msgNameSat, msgNameVal))
 		if owner && m.uid != a.myUID() {
 			if c.Button(sdl.Rect{X: box.X + box.W - 68, Y: y, W: 62, H: rowH - 2}, "Kick") {
 				a.kickMember(g, m.uid)
@@ -343,40 +361,27 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 	}
 }
 
-// drawGroupThread renders a group's messages, newest at the bottom.
+// drawGroupThread renders a group's messages as chat bubbles, newest at the
+// bottom (drawChatBubbles walks backwards, so variable-height wrapped bubbles
+// fill the box naturally).
 func (a *App) drawGroupThread(g *msgGroup, box sdl.Rect) {
 	if box.H < 24 {
 		return
 	}
 	c := a.ctx
 	c.Border(box, ColPanelHi)
-	if len(g.lines) == 0 {
-		c.LabelClipped(box.X+6, box.Y+6, box.W-12, "No messages yet — say hi below.", ColTextDim)
-		return
-	}
-	const lh = int32(18)
-	clipPrev, clipHad := c.pushClip(box)
-	defer c.popClip(clipPrev, clipHad)
-	rows := int((box.H - 8) / lh)
-	if rows < 1 {
-		rows = 1
-	}
-	start := 0
-	if len(g.lines) > rows {
-		start = len(g.lines) - rows
-	}
-	y := box.Y + 4
-	for _, ln := range g.lines[start:] {
-		col, who := ColText, ln.from+": "
+	a.drawChatBubbles(box, len(g.lines), func(i int) (string, string, bool, string, time.Time) {
+		ln := &g.lines[i]
+		from := ln.from
 		if ln.fromMe {
-			col, who = ColAccent, "You: "
+			from = "You"
 		}
-		c.LabelClipped(box.X+6, y, box.W-12, who+ln.text, col)
-		y += lh
-	}
+		return from, ln.text, ln.fromMe, ln.char, ln.at
+	})
 }
 
-// drawMsgThreadBody renders the selected DM thread, newest at the bottom.
+// drawMsgThreadBody renders the selected DM thread as chat bubbles, newest at
+// the bottom. The partner's char icon resolves once from the live roster.
 func (a *App) drawMsgThreadBody(box sdl.Rect) {
 	if box.H < 24 {
 		return
@@ -384,30 +389,14 @@ func (a *App) drawMsgThreadBody(box sdl.Rect) {
 	c := a.ctx
 	c.Border(box, ColPanelHi)
 	lines := a.pmThreads[strings.ToLower(strings.TrimSpace(a.msgSel))]
-	if len(lines) == 0 {
-		c.LabelClipped(box.X+6, box.Y+6, box.W-12, "No messages yet — say hi below.", ColTextDim)
-		return
-	}
-	const lh = int32(18)
-	clipPrev, clipHad := c.pushClip(box)
-	defer c.popClip(clipPrev, clipHad)
-	rows := int((box.H - 8) / lh)
-	if rows < 1 {
-		rows = 1
-	}
-	start := 0
-	if len(lines) > rows {
-		start = len(lines) - rows // anchor to the newest, like a chat
-	}
-	y := box.Y + 4
-	for _, ln := range lines[start:] {
-		col, who := ColText, a.msgSel+": "
+	partnerChar := a.rosterCharByName(a.msgSel)
+	a.drawChatBubbles(box, len(lines), func(i int) (string, string, bool, string, time.Time) {
+		ln := &lines[i]
 		if ln.fromMe {
-			col, who = ColAccent, "You: "
+			return "You", ln.text, true, "", ln.at
 		}
-		c.LabelClipped(box.X+6, y, box.W-12, who+ln.text, col)
-		y += lh
-	}
+		return a.msgSel, ln.text, false, partnerChar, ln.at
+	})
 }
 
 // sendDirectMessage sends text to one partner over the server's /pm, tagging it with

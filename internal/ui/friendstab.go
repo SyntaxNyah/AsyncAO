@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/veandco/go-sdl2/sdl"
@@ -172,6 +173,7 @@ func (a *App) friendUID(name string) string {
 type pmLine struct {
 	fromMe bool
 	text   string
+	at     time.Time // local receipt time (the bubble timestamp; zero = no stamp)
 }
 
 const (
@@ -193,7 +195,7 @@ func (a *App) pmAppend(partner string, fromMe bool, text string) {
 	if _, ok := a.pmThreads[key]; !ok && len(a.pmThreads) >= pmThreadCap {
 		return // already at the conversation cap — drop the new partner, stay bounded
 	}
-	cur := append(a.pmThreads[key], pmLine{fromMe: fromMe, text: text})
+	cur := append(a.pmThreads[key], pmLine{fromMe: fromMe, text: text, at: time.Now()})
 	if len(cur) > pmThreadLineCap { // keep the newest; fresh backing so the old head frees
 		cur = append([]pmLine(nil), cur[len(cur)-pmThreadLineCap:]...)
 	}

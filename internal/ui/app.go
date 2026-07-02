@@ -749,6 +749,7 @@ type App struct {
 	msgListScroll  int32
 	msgGroups      map[uint32]*msgGroup // client-side group chats (keyed by group id)
 	pendingInvites []groupInvite        // group invites awaiting Accept / Decline
+	msgIconAsk     map[string]time.Time // paced char-icon demands for the messaging surfaces (bounded)
 	// hkPrevDown is the hotkey sheet's own mouse-press edge: it draws over EVERY
 	// screen (outside the courtroom box pass), so it can't share that pass's edge.
 	hkPrevDown bool
