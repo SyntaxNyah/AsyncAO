@@ -4,6 +4,38 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.50.5 — 2026-07-02
+
+Same-day patch from the v1.50.0 playtest — **thanks Nightingale** for the
+rapid-fire reports.
+
+### Typing in any language
+- **Fixed the Cyrillic caret** — the cursor sat several letters away from
+  where it really was in non-Latin text. The field now measures the caret,
+  the scroll, and click positioning through the exact glyphs it draws.
+- **Fixed the size jump** — "as soon as I typed ТЕКСТ it all went up a size."
+  Non-Latin text rendered at the log-zoom size inside input boxes; it now
+  always matches the field's normal text size, whatever your log zoom is.
+
+### The "sent to the movie room" bug
+- Clipped lists (Areas, Music, rosters…) could **hit-test past their panel
+  edge**: an invisible, half-scrolled row under the IC bar took the hover and
+  the click — so pressing FX joined an area. Input now respects clipping
+  everywhere: if you can't see it, you can't click it.
+
+### Layout editor, round two
+- **The IC input bar panel is gone.** Every element — colour, showname,
+  Immediate, SFX, emoji, FX, the text input — is its own independent movable
+  **and resizable** piece. The showname box and colour picker actually resize
+  now (they showed the handles but ignored them).
+- **The /pos selector is movable + resizable** (it was the one stuck piece).
+- **Hidden buttons no longer ghost in the editor** — hide something and its
+  handles disappear with it (the toolbox chip remains the way to bring it
+  back).
+- **The hide list is complete**: Pair, Pos, Group Chat, Voice, Disconnect
+  (Esc still leaves the server), and the emote grid's Rand char + ★ Favs
+  filter — which are now movable pieces too, not welded to the grid corner.
+
 ## v1.50.0 — 2026-07-02
 
 A huge batch: AO2 demo backwards compatibility, a full studio upgrade, group
