@@ -21,8 +21,9 @@ import (
 // drawn while the maker is open — no live-render cost.
 
 const (
-	makerTimelineH = int32(58) // total strip height (label + track + handle overhang)
+	makerTimelineH = int32(72) // total strip height (label + track + scrub lane + overhang)
 	makerTrackH    = int32(30) // coloured segment track height
+	makerScrubH    = int32(12) // #68 scrub lane under the track (drag = continuous preview)
 	makerSegMinPx  = int32(9)  // min clickable segment width
 	makerSegGap    = int32(1)  // 1px seam between segments
 	makerHandleW   = int32(9)  // crop-handle grab width
@@ -31,6 +32,7 @@ const (
 	makerDragThreshPx = int32(6)  // px the press must travel before a click becomes a reorder drag
 	makerTLEdgePx     = int32(28) // a drag within this of a strip edge auto-scrolls toward it
 	makerSegDragID    = "maker_tl_seg"
+	makerScrubDragID  = "maker_tl_scrub"
 
 	makerTLMinMs  = 150.0  // floor so a near-instant bg/music change still shows
 	makerTLMaxMs  = 6000.0 // ceiling so dead air can't dominate the axis
@@ -145,7 +147,7 @@ func (a *App) makerTLGapAt(mx, stripX int32) int {
 func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 	c := a.ctx
 	evs := a.makerScene.Events
-	c.Label(x, y, "Timeline — width ∝ recorded pacing · click a block to select · drag a block to reorder · drag ⟦ ⟧ to crop In/Out", ColTextDim)
+	c.Label(x, y, "Timeline — width ∝ pacing · click selects · drag a block reorders · ⟦ ⟧ crop · drag the lane below to SCRUB", ColTextDim)
 	ty := y + 18
 	track := sdl.Rect{X: x, Y: ty, W: w, H: makerTrackH}
 	c.Fill(track, ColPanel)
@@ -199,6 +201,54 @@ func (a *App) drawMakerTimeline(x, y, w int32, press bool) {
 				text = text[:60] + "…"
 			}
 			c.Tooltip(seg, fmt.Sprintf("#%d  %s  %s", i+1, tag, text))
+		}
+	}
+
+	// #68 scrub lane: a slim strip under the track — press/drag along it and the
+	// SELECTION follows the segment under the cursor continuously, so the preview
+	// pane re-plays each line as you sweep (ensureMakerPreview rebuilds on any
+	// makerSel change — that's the whole trick). The playhead knob marks the
+	// selected segment's centre. Its own lane, so it can't fight the reorder drag.
+	lane := sdl.Rect{X: x, Y: ty + makerTrackH + 2, W: w, H: makerScrubH}
+	c.Fill(lane, ColBackground)
+	c.Border(lane, ColPanelHi)
+	if a.makerSel >= 0 && a.makerSel < len(a.makerSegX) {
+		px := x + a.makerSegX[a.makerSel] + (a.makerSegW[a.makerSel]-makerSegGap)/2 - a.makerTLScroll
+		if px >= x && px <= x+w {
+			c.Fill(sdl.Rect{X: px - 1, Y: lane.Y + 1, W: 2, H: lane.H - 2}, ColAccent)
+			c.Fill(sdl.Rect{X: px - 3, Y: lane.Y + lane.H/2 - 3, W: 6, H: 6}, ColAccent)
+		}
+	}
+	if press && pointIn(c.mouseX, c.mouseY, lane) {
+		a.makerScrub = true
+	}
+	if a.makerScrub {
+		if !c.mouseDown {
+			a.makerScrub = false
+			c.clicked = false // a finished scrub isn't a click
+		} else {
+			c.dragID = makerScrubDragID // own the pointer while sweeping
+			seg := a.makerTLSegAt(c.mouseX, x)
+			if seg < 0 { // past the ends → clamp
+				if c.mouseX <= x {
+					seg = 0
+				} else {
+					seg = len(evs) - 1
+				}
+			}
+			a.makerSel = seg
+			switch { // edge auto-scroll, same feel as the reorder drag
+			case c.mouseX < x+makerTLEdgePx:
+				a.makerTLScroll -= makerTLWheelPx
+			case c.mouseX > x+w-makerTLEdgePx:
+				a.makerTLScroll += makerTLWheelPx
+			}
+			if a.makerTLScroll < 0 {
+				a.makerTLScroll = 0
+			}
+			if a.makerTLScroll > scrollMax {
+				a.makerTLScroll = scrollMax
+			}
 		}
 	}
 

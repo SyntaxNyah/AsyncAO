@@ -549,6 +549,7 @@ type App struct {
 	makerDragSeg    int
 	makerDragMoved  bool
 	makerDragX      int32
+	makerScrub      bool // #68: dragging the timeline's scrub lane (selection follows the cursor)
 	// makerPreviewRoom is a throwaway courtroom that renders the selected line
 	// into the maker's live preview pane (the "studio" WYSIWYG). makerPreviewIdx
 	// is the line it currently reflects, so the pane is rebuilt only when the
