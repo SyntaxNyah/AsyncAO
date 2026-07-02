@@ -166,6 +166,11 @@ const defaultAutoClipModcall = true
 // discoverability; a Settings → Chat toggle hides it.
 const defaultGroupChatButton = true
 
+// defaultCharChatbox draws a speaking character's own chatbox skin (char.ini
+// chat=<misc>) like AO2/webAO — canonical behaviour, so default-ON; a
+// Settings → Chat toggle disables it (which also stops the misc fetches).
+const defaultCharChatbox = true
+
 // defaultRightClickHideSprite makes right-clicking a character sprite offer to
 // hide it from the viewport (default ON; a Settings toggle disables it).
 const defaultRightClickHideSprite = true
@@ -822,6 +827,7 @@ type AssetPreferences struct {
 	DetailedLog            bool                         `json:"detailedLog"`
 	AutoClipModcall        bool                         `json:"autoClipModcall"`
 	GroupChatButton        bool                         `json:"groupChatButton"`
+	CharChatbox            bool                         `json:"charChatbox"` // per-character chatbox skins (default ON)
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
@@ -1125,6 +1131,7 @@ type prefsJSON struct {
 	DetailedLog            bool             `json:"detailedLog"`          // default OFF (zero value)
 	AutoClipModcall        *bool            `json:"autoClipModcall"`      // default ON (pointer: absent != off)
 	GroupChatButton        *bool            `json:"groupChatButton"`      // default ON (pointer: absent != off)
+	CharChatbox            *bool            `json:"charChatbox"`          // default ON (pointer: absent != off)
 
 	FontPaths          string                           `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                      `json:"macros"`
@@ -1453,6 +1460,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		ClipSpritesToStage:   defaultClipSpritesToStage,
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
+		CharChatbox:          defaultCharChatbox,
 		RightClickHideSprite: defaultRightClickHideSprite,
 		DragLayout:           defaultDragLayout,
 
@@ -1858,6 +1866,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.GroupChatButton != nil { // pointer: absent keeps the default-ON
 		p.GroupChatButton = *onDisk.GroupChatButton
+	}
+	if onDisk.CharChatbox != nil { // pointer: absent keeps the default-ON
+		p.CharChatbox = *onDisk.CharChatbox
 	}
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
@@ -6486,6 +6497,26 @@ func (p *AssetPreferences) SetAutoClipModcall(on bool) {
 		return
 	}
 	p.AutoClipModcall = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// CharChatboxOn reports the per-character chatbox-skin toggle (ON by default:
+// a speaker's char.ini chat=<misc> art draws as their chatbox, AO2-parity).
+func (p *AssetPreferences) CharChatboxOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CharChatbox
+}
+
+// SetCharChatbox toggles per-character chatbox skins.
+func (p *AssetPreferences) SetCharChatbox(on bool) {
+	p.mu.Lock()
+	if p.CharChatbox == on {
+		p.mu.Unlock()
+		return
+	}
+	p.CharChatbox = on
 	p.mu.Unlock()
 	p.markDirty()
 }

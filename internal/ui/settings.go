@@ -949,6 +949,13 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetPostGrain(next)
 	}
 	y += 26
+	// Per-character chatbox skins (char.ini chat=<misc>): canonical AO2/webAO
+	// behaviour, default ON; off also stops the misc art fetches.
+	ccb := a.d.Prefs.CharChatboxOn()
+	if next := c.Checkbox(pad, y, "Per-character chatbox skins (ON by default): a speaker with their own chatbox art (char.ini chat=) shows it, like AO2/webAO", ccb); next != ccb {
+		a.d.Prefs.SetCharChatbox(next)
+	}
+	y += 26
 	// #56 stage frame: a decorative border around the viewport (Off by default).
 	c.Label(pad, y+4, "Stage frame:", ColText)
 	sf := a.d.Prefs.StageFrame()

@@ -116,6 +116,10 @@ type Scene struct {
 	MessageText  string // full text (markup stripped); VisibleRunes gates the reveal
 	VisibleRunes int
 	TextColor    int
+	// ChatSkinBase is the speaker's per-character chatbox art (char.ini
+	// chat=<misc> → misc/<misc>/chatbox), "" for the client's normal box. Set
+	// per message in begin(); the ui draws it when the texture is resident.
+	ChatSkinBase string
 	// MessageStyles colors runs of MessageText (inline \cN markup). MessageRaw
 	// is the pre-strip message — the raster cache keys on it, since two
 	// differently-colored messages can share the same stripped MessageText.
@@ -219,6 +223,19 @@ type Courtroom struct {
 	// (0–100, 100 = no attenuation; M11 per-character blip volume) for a
 	// character folder name. Set by the App to read live prefs; nil = full.
 	BlipVolumeFor func(char string) int
+
+	// BlipNameFor, when set, resolves a speaker's blip set from their char.ini
+	// ([Options] blips / legacy gender) — the webAO-parity fallback for
+	// messages whose wire Blipname field is empty (pre-2.10.2 senders, short
+	// packets). The App answers from its per-URL char.ini cache and fires the
+	// fetch on a miss; "" = unknown (the AO default set plays this message,
+	// the speaker's next message picks the fetched value up).
+	BlipNameFor func(char string) string
+
+	// ChatSkinFor, when set, resolves a speaker's chatbox-skin misc folder
+	// (char.ini [Options] chat, AO2-Client get_chat) — same cache/fetch
+	// behaviour as BlipNameFor. "" = no per-character skin.
+	ChatSkinFor func(char string) string
 
 	// InlineEmote, when set, resolves a :shortcode: stem to its emoji (#18). begin()
 	// substitutes known shortcodes in the speaker's text so the chatbox renders them like
@@ -690,11 +707,27 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	}
 
 	blip := msg.Blipname
+	if blip == "" && c.BlipNameFor != nil {
+		// webAO parity: senders that omit the wire field (pre-2.10.2 clients,
+		// short packets) still blip with THEIR char.ini set, not the default.
+		blip = c.BlipNameFor(speakerName)
+	}
 	if blip == "" {
 		blip = "male" // AO default blip set
 	}
 	c.blipBase = c.urls.Blip(blip)
 	c.mgr.Prefetch(c.blipBase, assets.AssetTypeBlip, network.PriorityHigh) // AssetType: Blip
+
+	// Per-character chatbox skin (char.ini chat=<misc>, AO2 get_chat): the scene
+	// carries the misc art's base; the ui draws it as the chatbox background
+	// when resident (and the client's normal box until then / when absent).
+	c.Scene.ChatSkinBase = ""
+	if c.ChatSkinFor != nil {
+		if misc := c.ChatSkinFor(speakerName); misc != "" {
+			c.Scene.ChatSkinBase = c.urls.MiscChatbox(misc)
+			c.mgr.Prefetch(c.Scene.ChatSkinBase, assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (chatbox skin)
+		}
+	}
 
 	// M11 per-character blip volume: attenuate this speaker's blips by their
 	// stored scale. One int-set per message — the render loop is untouched.

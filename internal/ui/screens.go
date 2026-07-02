@@ -854,11 +854,12 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 			pw = previewMinW
 		}
 	}
-	// Default bottom-right, shifted by the user's drag and clamped on-screen
-	// (the WINDOW — the box is free to leave the stage; playtest: "it shouldn't
-	// be stuck there").
+	// Default CENTERED-RIGHT, shifted by the user's drag and clamped on-screen
+	// (the whole window — the box is free to leave the stage). Centre-right
+	// instead of the old bottom-right: down there it layered over the IC bar
+	// and the bottom controls (playtest ask — spawn it higher up).
 	capH := ph + previewCaptionH
-	baseX, baseY := w-pw-pad*2, h-capH-pad*2
+	baseX, baseY := w-pw-pad*2, (h-capH)/2
 	hiX, hiY := w-pw-pad, h-capH-pad
 	if hiX < pad {
 		hiX = pad
@@ -1710,23 +1711,39 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	if movableBox {
 		box = a.slotRect(slotChatbox, box, w, h)
 	}
+	// Per-character chatbox skin (char.ini chat=<misc>, playtest ask): the
+	// SPEAKER's own box art wins over the theme skin — AO2's get_chat priority.
+	// Drawn only once the misc texture is resident; until then the theme/flat
+	// box covers the fetch gap, so nothing ever flashes empty.
+	var charSkin *sdl.Texture
+	if sc.ChatSkinBase != "" {
+		if page, ok := a.d.Store.Get(sc.ChatSkinBase); ok && len(page.Frames) > 0 {
+			charSkin = page.Frames[0]
+		}
+	}
 	// Grow the FLAT fallback panel to fit the whole wrapped message so long text isn't cut off
 	// at the bottom — notably after a viewport/box resize wraps it to more lines (reported bug).
-	// A theme's own chatbox skin keeps its authored size (stretching the art looks wrong). Grows
+	// Authored skin art (theme OR per-character) keeps its box (stretching looks wrong). Grows
 	// UPWARD from the current bottom edge, capped inside grownChatBoxH.
-	if _, hasSkin := a.themePage(themeStemChatbox); !hasSkin {
+	if _, hasSkin := a.themePage(themeStemChatbox); !hasSkin && charSkin == nil {
 		lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-16, sc)), lineH); g > box.H {
 			box.Y -= g - box.H
 			box.H = g
 		}
 	}
-	// Theme chatbox skin when the theme ships one; flat translucent
-	// panel otherwise (themePage self-heals T1 eviction).
-	skinned := false
-	if page, ok := a.themePage(themeStemChatbox); ok {
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &box)
+	// Skin priority: the speaker's own art, else the theme's, else the flat
+	// translucent panel (themePage self-heals T1 eviction).
+	skinned, themeSkinned := false, false
+	if charSkin != nil {
+		_ = c.Ren.Copy(charSkin, nil, &box)
 		skinned = true
+	}
+	if !skinned {
+		if page, ok := a.themePage(themeStemChatbox); ok {
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &box)
+			skinned, themeSkinned = true, true
+		}
 	}
 	if !skinned {
 		// Panel opacity is user-tunable (Settings → see-through chatbox); the
@@ -1741,10 +1758,11 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		c.Border(box, ColAccent)
 	}
 	// Theme text colors are designed against the theme's own skin; on the
-	// flat fallback panel they can be unreadable (black-on-dark was a real
-	// report), so they only apply while the skin actually drew.
+	// flat fallback panel (or a per-character skin) they can be unreadable
+	// (black-on-dark was a real report), so they only apply while the THEME
+	// skin actually drew.
 	nameCol := ColAccent
-	if skinned && a.themeHasName {
+	if themeSkinned && a.themeHasName {
 		nameCol = a.themeNameCol
 	}
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
@@ -1759,7 +1777,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
 
 	wrapW := box.W - 16
-	a.ensureChatRaster(wrapW, skinned)
+	a.ensureChatRaster(wrapW, themeSkinned) // theme ink only with the THEME's skin; char skins keep our readable text
 	// Drag the message to highlight it, Ctrl+C / right-click to copy (webAO-style).
 	textRect := sdl.Rect{X: box.X + 8, Y: box.Y + 26, W: wrapW, H: box.Y + box.H - (box.Y + 26)}
 	a.handleChatSelect(textRect, sc)

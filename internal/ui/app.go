@@ -751,6 +751,10 @@ type App struct {
 	msgGroups      map[uint32]*msgGroup // client-side group chats (keyed by group id)
 	pendingInvites []groupInvite        // group invites awaiting Accept / Decline
 	msgIconAsk     map[string]time.Time // paced char-icon demands for the messaging surfaces (bounded)
+	// Remote-speaker char.ini metadata (blips + chatbox skin) — URL-keyed cache
+	// + async fetch results (charmeta.go). Bounded; per-server by key structure.
+	charMetaCache map[string]charMeta
+	charMetaRes   chan charMetaFetch
 	// #39 command palette (Ctrl+Space): open state, live query, keyboard selection.
 	paletteOpen  bool
 	paletteQuery string
@@ -3258,6 +3262,7 @@ func (a *App) buildRoom() {
 	a.room = courtroom.NewCourtroom(a.urls, a.d.Manager, a.sess, a.d.Audio)
 	a.room.SFXMuted = func(name string) bool { return a.d.Prefs.IsSFXMuted(name) }        // M11 per-SFX mute (reads live prefs)
 	a.room.BlipVolumeFor = func(char string) int { return a.d.Prefs.BlipVolumeFor(char) } // M11 per-character blip volume (reads live prefs)
+	a.wireRoomCharMeta(a.room)                                                            // per-character blips + chatbox skins from the speaker's char.ini
 	a.room.InlineEmote = inlineEmoteFor                                                   // #18: expand :shortcode: emotes in the chatbox (registry lives in ui)
 	a.room.SpriteReady = func(base string) bool { return a.d.Store.Contains(base) }       // wait-mode residency probe (same-thread T1 map hit; the flags ride applyTimingToRoom)
 	// Per-server audio: apply THIS server's volume profile (or the global one) now,
@@ -4933,6 +4938,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollDownload()
 	a.pollMakerExport() // M16: deliver the self-contained archive export result
 	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
+	a.pollCharMeta()    // land remote char.ini fetches (per-character blips + chatbox skins)
 	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)
 	a.processOOCQueue()
 	a.iconAskBudget = charIconAskPerFrame // shared demand budget (icons, emote buttons)

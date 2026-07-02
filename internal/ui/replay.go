@@ -575,6 +575,7 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	}
 	defer a.recoverReplay("start") // building the room / seeding must never crash the app
 	a.replayRoom = courtroom.NewCourtroom(courtroom.NewURLBuilder(rec.Origin), a.d.Manager, nil, a.d.Audio)
+	a.wireRoomCharMeta(a.replayRoom)                                           // speakers blip/skin the same in replays
 	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // slower than live + slider-driven
 	a.replayRoom.CatchUp = false                                               // play every recorded line in full; the driver feeds one at a time
 	// A maker Preview is authoring (show the scene's screenshake/flash); a normal

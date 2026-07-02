@@ -286,6 +286,7 @@ func (a *App) ensureMakerPreview() {
 		return // unchanged — keep playing the current preview
 	}
 	room := courtroom.NewCourtroom(courtroom.NewURLBuilder(a.makerScene.Origin), a.d.Manager, nil, a.d.Audio)
+	a.wireRoomCharMeta(room) // preview speakers blip/skin like live
 	room.Typewriter.Interval, room.TextStay = a.replayTiming()
 	room.CatchUp = false
 	room.ReduceMotion = false // authored WYSIWYG: show the line's screenshake/flash even if live reduce-motion is on

@@ -267,6 +267,13 @@ func (u URLBuilder) Blip(name string) string {
 	return u.origin + soundsBlips + seg(name)
 }
 
+// MiscChatbox returns a per-character chatbox skin base: char.ini chat=<misc>
+// → misc/<misc>/chatbox (AO2-Client get_chat; webAO serves the same layout).
+// AssetType: Misc
+func (u URLBuilder) MiscChatbox(misc string) string {
+	return u.origin + "misc/" + seg(misc) + "/chatbox"
+}
+
 // MusicURL returns the FULL music URL: AO music lists carry the extension in
 // the track name, and tracks starting with http(s):// are direct URLs
 // (AO2-Client get_music_path). Use Manager.PrefetchExact with this.

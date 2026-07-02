@@ -44,7 +44,11 @@ type CharINI struct {
 	Showname string
 	Side     string
 	Blips    string
-	Emotes   []Emote
+	// Chat is the [Options] chat= misc folder: the character's own chatbox
+	// skin lives at misc/<Chat>/chatbox (AO2-Client get_chat). Empty = the
+	// client's normal chatbox.
+	Chat   string
+	Emotes []Emote
 	// CustomName renames the character's base "custom" shout ([Shouts]
 	// custom_name); empty when the ini doesn't define it.
 	CustomName string
@@ -82,6 +86,7 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 		// Legacy key.
 		out.Blips, _ = ini.GetSection(charINIOptionsSection, "gender")
 	}
+	out.Chat, _ = ini.GetSection(charINIOptionsSection, "chat") // per-character chatbox skin (misc folder)
 
 	countRaw, _ := ini.GetSection(charINIEmotionsSection, "number")
 	count := atoiOr(countRaw, 0)
