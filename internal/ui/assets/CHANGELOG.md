@@ -4,32 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.50.11 — 2026-07-02
+## v1.51.0 — 2026-07-02
 
-Round two on the same server, driven by a debug-log screenshot — then every
-fix verified by running the real asset pipeline against the live mirror
-until all of it resolved.
+Server compatibility fixes, tested live against the reported server.
 
-- **The third sprite spelling.** Packs there ship emotes as literal
-  `(a)`-folder trees (`(a)/emotes/Witch Standard Normal/normal1.webp`) and
-  as bare nested files (`lazy/7.webp`) — AsyncAO only probed the glued
-  `(a)X` and bare forms, and escaped the slashes in nested names in a way
-  only some servers forgave. All three spellings now probe in order with
-  real slashes, so whole characters that never appeared now do.
-- **The format seed can't be wiped anymore.** One missing optional file
-  (a `button1_on` that a pack never shipped) used to erase what
-  `extensions.json` taught us about the server's formats — from then on
-  emote buttons probed the wrong format and vanished. An absent file no
-  longer un-learns a format; a genuinely repacked server still re-learns.
-- **Live music and area list refreshes.** Servers that swap the music list
-  per area (this one pushes a 2000-track list on every move) or update the
-  area list mid-session were being ignored — both packets now apply
-  instantly, matching desktop AO2.
-
-Verified end-to-end on the live server: the nested-emote witch, the bare-
-file characters, the blips, and the server's own chatbox all stream; a
-character whose art genuinely isn't on the mirror misses cleanly instead
-of poisoning anything.
+- Sprites stored in `(a)`/`(b)` folders or as bare nested files now load —
+  characters that never appeared before show up.
+- Emote buttons no longer stop loading partway through a session (a missing
+  optional file was making the client forget the server's formats).
+- Live music and area list updates from the server now apply instantly.
 
 ## v1.50.10 — 2026-07-02
 
