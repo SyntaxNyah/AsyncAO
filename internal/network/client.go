@@ -23,6 +23,8 @@ import (
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
 	"golang.org/x/sync/singleflight"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/update"
 )
 
 const (
@@ -297,6 +299,15 @@ func (c *Client) adaptiveTimeout(host string) time.Duration {
 	return d
 }
 
+// clientUserAgent identifies AsyncAO to asset hosts. Go's default
+// "Go-http-client" UA sits on WAF/bot-filter lists (asset mirrors live
+// behind Cloudflare and friends), and an identifiable agent lets server
+// owners find this client in their access logs when debugging reports.
+// update.Version is link-time stamped, so init sees the real release
+// version ("dev" on unstamped builds). The WS handshake and the updater
+// already send their own identities (protocol.conn, update).
+var clientUserAgent = "AsyncAO/" + update.Version
+
 const (
 	// transientFetchAttempts bounds how many times one singleflight pass
 	// tries a URL that failed TRANSIENTLY (transport error / 5xx). Flaky
@@ -344,6 +355,7 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("network: building request for %s: %w", url, err)
 	}
+	req.Header.Set("User-Agent", clientUserAgent)
 	if o := c.assetOrigin.Load(); o != nil { // power-user Origin/CORS override
 		req.Header.Set("Origin", *o)
 		req.Header.Set("Referer", *o+"/") // some bases gate by Referer (hotlink protection) rather than Origin

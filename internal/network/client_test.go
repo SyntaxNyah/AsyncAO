@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -50,6 +51,27 @@ func TestSingleflightCollapsesConcurrentFetches(t *testing.T) {
 		if string(results[i]) != "sprite-bytes" {
 			t.Errorf("caller %d got %q", i, results[i])
 		}
+	}
+}
+
+// TestFetchSendsIdentifiableUserAgent pins the asset-fetch identity: Go's
+// default "Go-http-client" UA trips WAF bot filters on real mirrors and
+// hides the client from server access logs — every fetch identifies as
+// AsyncAO/<version> instead.
+func TestFetchSendsIdentifiableUserAgent(t *testing.T) {
+	var got atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.Store(r.Header.Get("User-Agent"))
+		fmt.Fprint(w, "ok")
+	}))
+	defer srv.Close()
+	c := NewClient()
+	if _, err := c.Fetch(context.Background(), srv.URL+"/a.webp"); err != nil {
+		t.Fatal(err)
+	}
+	ua, _ := got.Load().(string)
+	if !strings.HasPrefix(ua, "AsyncAO/") {
+		t.Errorf("User-Agent = %q, want an AsyncAO/... identity", ua)
 	}
 }
 

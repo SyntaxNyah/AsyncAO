@@ -207,6 +207,7 @@ func FetchServerList(ctx context.Context, listURL string) ([]ServerEntry, error)
 	if err != nil {
 		return nil, fmt.Errorf("network: building master request: %w", err)
 	}
+	req.Header.Set("User-Agent", clientUserAgent)
 	masterETagMu.Lock()
 	prev, hasPrev := masterETagCache[listURL]
 	masterETagMu.Unlock()
