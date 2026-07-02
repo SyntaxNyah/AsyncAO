@@ -33,6 +33,14 @@ type DecodedAsset struct {
 	Type  AssetType
 	Asset *Decoded
 	Err   error
+	// Transient marks a NETWORK-stage failure (5xx, timeout, host backoff):
+	// the bytes were never seen, so nothing is known about the asset itself
+	// and it must stay re-demandable. Only non-transient errors (the bytes
+	// arrived and failed to DECODE) may enter the texture store's negative
+	// cache — conflating the two pinned every asset touched during a flaky
+	// origin's backoff window as "failed" for decodeFailTTL (the
+	// "whole server's files go missing in waves" report).
+	Transient bool
 }
 
 // AudioAsset is the manager's handoff to the audio system: raw bytes for
@@ -327,7 +335,7 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 	case errors.Is(err, network.ErrAssetNotFound):
 		m.reportMissing(url, t, nil)
 	default:
-		m.decodedCh <- DecodedAsset{URL: url, Base: url, Type: t, Err: err}
+		m.decodedCh <- DecodedAsset{URL: url, Base: url, Type: t, Err: err, Transient: true}
 	}
 }
 
@@ -556,8 +564,9 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 			tried404 = append(tried404, ext)
 			continue // probe the next candidate
 		default:
-			// Transport trouble: the render side hears the error.
-			m.decodedCh <- DecodedAsset{URL: url, Base: deliverBase, Type: t, Err: err}
+			// Transport trouble: the render side hears the error — tagged
+			// transient, so it never enters the decode negative cache.
+			m.decodedCh <- DecodedAsset{URL: url, Base: deliverBase, Type: t, Err: err, Transient: true}
 			return true, tried404
 		}
 	}

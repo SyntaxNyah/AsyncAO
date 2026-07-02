@@ -53,6 +53,56 @@ func TestSingleflightCollapsesConcurrentFetches(t *testing.T) {
 	}
 }
 
+// TestFetchRetriesTransient pins the bounded transient retry (live report: a
+// flaky mirror behind Cloudflare answered intermittent 522s and every hiccup
+// surfaced as a missing asset): one 5xx followed by a 200 recovers within a
+// single Fetch, a definitive 404 never retries, and a persistently sick
+// origin stops after exactly transientFetchAttempts tries.
+func TestFetchRetriesTransient(t *testing.T) {
+	var upstream atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/flaky.webp" && upstream.Add(1) == 1:
+			w.WriteHeader(http.StatusBadGateway) // first try: origin hiccup
+		case r.URL.Path == "/flaky.webp":
+			fmt.Fprint(w, "recovered-bytes")
+		case r.URL.Path == "/missing.webp":
+			upstream.Add(1)
+			http.NotFound(w, r)
+		default:
+			upstream.Add(1)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient()
+	data, err := c.Fetch(context.Background(), srv.URL+"/flaky.webp")
+	if err != nil || string(data) != "recovered-bytes" {
+		t.Fatalf("flaky fetch = %q, %v — want recovery on the bounded retry", data, err)
+	}
+	if got := upstream.Load(); got != 2 {
+		t.Errorf("flaky upstream requests = %d, want 2 (one retry)", got)
+	}
+
+	upstream.Store(0)
+	if _, err := c.Fetch(context.Background(), srv.URL+"/missing.webp"); !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("missing fetch err = %v, want ErrAssetNotFound", err)
+	}
+	if got := upstream.Load(); got != 1 {
+		t.Errorf("404 upstream requests = %d, want 1 (definitive, no retry)", got)
+	}
+
+	upstream.Store(0)
+	c2 := NewClient() // fresh backoff state: the sick-origin case stands alone
+	if _, err := c2.Fetch(context.Background(), srv.URL+"/sick.webp"); err == nil {
+		t.Fatal("persistently sick origin must still error")
+	}
+	if got := upstream.Load(); got != transientFetchAttempts {
+		t.Errorf("sick upstream requests = %d, want %d (bounded)", got, transientFetchAttempts)
+	}
+}
+
 func TestNotFoundCachedWithinTTL(t *testing.T) {
 	var upstream atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

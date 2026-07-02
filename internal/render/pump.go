@@ -21,6 +21,10 @@ type Pump struct {
 	IsLive func(base string) bool
 
 	uploadErrs int64
+	// transientErrs counts network-stage failures that reached the pump
+	// (debug visibility; they are deliberately neither logged nor
+	// negative-cached — see the upload closure).
+	transientErrs int64
 }
 
 // NewPump wires the upload pump.
@@ -45,6 +49,17 @@ func (p *Pump) Frame() {
 	}
 	upload := func(d assets.DecodedAsset) {
 		if d.Err != nil || d.Asset == nil {
+			// TRANSIENT (network-stage) failures never enter the negative
+			// cache: the bytes were never seen, so the asset is fine and the
+			// next demand (message prefetch, scene warm) must retry it.
+			// Pinning these for decodeFailTTL made one flaky-origin backoff
+			// window blank every asset it touched for 30 s — the "whole
+			// server's files go missing in waves" report. They're counted,
+			// not logged (a backoff burst would flood the log).
+			if d.Err != nil && d.Transient {
+				p.transientErrs++
+				return
+			}
 			// A DECODE failure (corrupt/truncated bytes) records to the negative
 			// cache so the manager's prefetch gate backs off — and we log it only
 			// once per decodeFailTTL, not on every retry, killing the flood.

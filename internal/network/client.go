@@ -297,11 +297,44 @@ func (c *Client) adaptiveTimeout(host string) time.Duration {
 	return d
 }
 
-// fetchOnce performs the single upstream request behind singleflight. It
-// runs detached from any one caller's context, bounded by the host's
-// adaptive deadline, so one impatient caller cannot kill the fetch for
-// everyone and one slow host cannot pin workers for the global timeout.
+const (
+	// transientFetchAttempts bounds how many times one singleflight pass
+	// tries a URL that failed TRANSIENTLY (transport error / 5xx). Flaky
+	// origins behind CDNs — a live AO mirror was observed returning
+	// intermittent Cloudflare 522s — succeed on an immediate retry far more
+	// often than not, and without one a single hiccup surfaced as "asset
+	// missing" for the whole message. 404 is definitive and never retried.
+	transientFetchAttempts = 2
+	// transientRetryDelay separates the attempts: long enough for the CDN
+	// to pick a healthy origin connection, short enough to resolve within
+	// one message's ceremony.
+	transientRetryDelay = 300 * time.Millisecond
+)
+
+// fetchOnce performs the upstream request behind singleflight — one bounded
+// transient retry included, so every collapsed waiter shares the recovery.
+// It runs detached from any one caller's context, bounded per attempt by the
+// host's adaptive deadline, so one impatient caller cannot kill the fetch
+// for everyone and one slow host cannot pin workers for the global timeout.
 func (c *Client) fetchOnce(url string) ([]byte, error) {
+	var lastErr error
+	for attempt := 0; attempt < transientFetchAttempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(transientRetryDelay)
+		}
+		data, err := c.fetchAttempt(url)
+		if err == nil || errors.Is(err, ErrAssetNotFound) {
+			return data, err // success, or a definitive miss — no retry
+		}
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+// fetchAttempt is one upstream request: 200 → bytes, 404 → the definitive
+// negative-cached miss, anything else → a transient error (the caller may
+// retry once).
+func (c *Client) fetchAttempt(url string) ([]byte, error) {
 	c.requests.Add(1)
 	host := hostOf(url)
 	ctx, cancel := context.WithTimeout(context.Background(), c.adaptiveTimeout(host))
@@ -350,6 +383,11 @@ func (c *Client) fetchOnce(url string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %s", ErrAssetNotFound, url)
 
 	default:
+		// 5xx and friends: the HOST is misbehaving, not just this asset —
+		// count it toward host backoff like a transport failure (it never
+		// was, which let a sick origin dodge the backoff entirely) and let
+		// fetchOnce's bounded retry absorb the one-off hiccups.
+		c.recordFailure(host)
 		c.failures.Add(1)
 		return nil, fmt.Errorf("network: fetching %s: unexpected status %s", url, resp.Status)
 	}

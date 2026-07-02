@@ -2,8 +2,11 @@ package render
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,9 +20,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
-// buildPumpManager wires a minimal asset manager over a local source folder —
+// buildPumpManager wires a minimal asset manager over the given source —
 // the same shape the app uses, enough to fetch + decode + emit on Decoded().
-func buildPumpManager(t *testing.T, source assets.Fetcher) (*assets.Manager, *assets.Resolver) {
+// localMode true = a mount-folder source; false = a real network client.
+func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) (*assets.Manager, *assets.Resolver) {
 	t.Helper()
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
@@ -42,7 +46,7 @@ func buildPumpManager(t *testing.T, source assets.Fetcher) (*assets.Manager, *as
 	t.Cleanup(decoder.Close)
 	mgr := assets.NewManager(assets.ManagerDeps{
 		Resolver: resolver, Prefs: prefs, T2: t2, Disk: disk,
-		Source: source, LocalMode: true, Pool: pool, Decoder: decoder,
+		Source: source, LocalMode: localMode, Pool: pool, Decoder: decoder,
 	})
 	return mgr, resolver
 }
@@ -86,7 +90,7 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	rel, _ := strings.CutPrefix(base, origin)
 	writeTestPNG(t, filepath.Join(dir, filepath.FromSlash(rel+config.ExtPNG)))
 
-	mgr, resolver := buildPumpManager(t, local)
+	mgr, resolver := buildPumpManager(t, local, true)
 	// The default probe list is webp-only; this fixture is PNG, so seed the host's
 	// learned format (what a real extensions.json / a prior learned hit provides).
 	resolver.RecordSuccess(assets.HostOf(base), assets.AssetTypeCharSprite, config.ExtPNG)
@@ -109,5 +113,62 @@ func TestPumpUploadsPrefetchByBase(t *testing.T) {
 	}
 	if !store.Contains(base) {
 		t.Fatalf("sprite never became resident under base %q — the export pre-warm would time out on an empty stage", base)
+	}
+}
+
+// TestPumpTransientErrorsDontPin pins the negative-cache split (live report:
+// a flaky mirror behind Cloudflare 5xx'd in bursts and every touched asset
+// vanished for decodeFailTTL): a NETWORK-stage failure reaching the pump must
+// stay out of the decode negative cache — the asset remains re-demandable the
+// moment the origin recovers — while genuinely corrupt bytes still pin.
+func TestPumpTransientErrorsDontPin(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+
+	// Two servers = two hosts, so the sick origin's host backoff can never
+	// couple into the corrupt-bytes assertion.
+	srvSick := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway) // network-stage failure (sick origin)
+	}))
+	defer srvSick.Close()
+	srvCorrupt := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "these bytes are not an image") // 200 → a real DECODE failure
+	}))
+	defer srvCorrupt.Close()
+
+	mgr, _ := buildPumpManager(t, network.NewClient(), false)
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	pump := NewPump(store, mgr, nil)
+
+	// Sick origin: the fetch (with its bounded retry) fails at the network
+	// stage → transient → counted, NOT pinned.
+	sick := srvSick.URL + "/characters/witch/(a)sick"
+	mgr.Prefetch(sick, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (test)
+	deadline := time.Now().Add(5 * time.Second)
+	for pump.transientErrs == 0 && time.Now().Before(deadline) {
+		pump.Frame()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if pump.transientErrs == 0 {
+		t.Fatal("the network failure never reached the pump as transient")
+	}
+	if store.FailedRecently(sick) {
+		t.Error("a transient network failure entered the decode negative cache — the asset would stay blank for decodeFailTTL after the origin recovers")
+	}
+
+	// Corrupt bytes: a genuine decode failure still pins (the cache's job).
+	corrupt := srvCorrupt.URL + "/characters/witch/(a)corrupt"
+	mgr.Prefetch(corrupt, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (test)
+	deadline = time.Now().Add(5 * time.Second)
+	for !store.FailedRecently(corrupt) && time.Now().Before(deadline) {
+		pump.Frame()
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !store.FailedRecently(corrupt) {
+		t.Error("corrupt bytes never entered the decode negative cache")
 	}
 }

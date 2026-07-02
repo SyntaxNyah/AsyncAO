@@ -4,6 +4,28 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.50.10 — 2026-07-02
+
+Investigated a server whose players reported files going missing on AsyncAO.
+Its asset mirror intermittently drops requests under load — and AsyncAO was
+turning each hiccup into lasting damage. Not any more:
+
+- **One network hiccup no longer blanks a file for 30 seconds.** A failed
+  download was being remembered in the same penalty box as corrupt images —
+  so a perfectly good sprite whose fetch flaked once stayed missing until
+  the timer ran out. Network failures now heal the moment the server does.
+- **Downloads retry once.** A momentary server error (the classic Cloudflare
+  522) gets a single, quick second attempt before giving up — on flaky
+  mirrors that recovers most fetches invisibly. Real 404s are never retried.
+- **Server-error storms now trip the download backoff properly** (they never
+  counted toward it before), so a genuinely struggling server gets breathing
+  room instead of a request flood — and when it recovers, everything streams
+  in again immediately instead of in ragged 30-second waves.
+
+Also verified on that server while investigating: its layout (lowercase
+paths, opus sounds, png misc art) matches everything v1.50.9 fixed — the
+custom chatbox its characters declare streams correctly on this build.
+
 ## v1.50.9 — 2026-07-02
 
 Live-fire round two: tested against the playtest server's real asset mirror,
