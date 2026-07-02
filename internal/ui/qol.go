@@ -76,6 +76,7 @@ const (
 	hotkeyCharBundle = "char_bundle" // toggle full-character sprite prefetch (#127)
 	hotkeyPingChip   = "ping_chip"   // toggle the connection-quality chip (#128)
 	hotkeyModDash    = "mod_dash"    // open the CM / mod dashboard (#130)
+	hotkeyPalette    = "palette"     // command palette (#39) — fuzzy search every action + server command
 )
 
 // volumeKeyStep is how much the master-volume hotkeys nudge per press (percent).
@@ -132,6 +133,7 @@ var hotkeyDefs = []struct {
 	{hotkeyCharBundle, "Toggle full-character sprite preload", "\\"},       // Ctrl+\
 	{hotkeyPingChip, "Toggle connection ping chip", "`"},                   // Ctrl+`
 	{hotkeyModDash, "Open the CM / mod dashboard", "/"},                    // Ctrl+/ — mnemonic for a slash-command panel
+	{hotkeyPalette, "Command palette (search every action)", "space"},      // Ctrl+Space — the one shortcut that finds the rest
 }
 
 // hotkeyFor resolves an action's key name (pref override or default).
@@ -297,6 +299,8 @@ func (a *App) handleHotkeys() {
 		a.toggleReplay()
 	case a.hotkeyFor(hotkeyClipReplay):
 		a.clipInstantReplay()
+	case a.hotkeyFor(hotkeyPalette):
+		a.togglePalette()
 	case a.hotkeyFor(hotkeyTheater):
 		a.setTheater(!a.theaterOn)
 	case a.hotkeyFor(hotkeyLogin):

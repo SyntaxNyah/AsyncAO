@@ -224,6 +224,11 @@ func (a *App) closeTopOverlay() bool {
 	switch {
 	case c.ddOpen != "":
 		c.ddOpen = "" // an open dropdown first
+	case a.paletteOpen: // #39: the palette sits above everything it launches
+		a.paletteOpen = false
+		if c.focusID == paletteInputID {
+			c.focusID = ""
+		}
 	// Blocking / confirm modals (highest priority).
 	case a.showQuitConfirm:
 		a.showQuitConfirm = false
