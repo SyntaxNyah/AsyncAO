@@ -4,6 +4,94 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.50.0 — 2026-07-02
+
+A huge batch: AO2 demo backwards compatibility, a full studio upgrade, group
+chats that actually look like chats, a command palette, smarter settings
+search — plus a same-day stream of playtest fixes. **Thanks to Nightingale
+for the live feedback that shaped half of this.**
+
+### Backwards compatibility: AO2 .demo files
+- **AsyncAO reads AO2's demo recordings.** Drop a `.demo` in `recordings\`
+  (or drag it onto the window) and it appears in Settings → Studio: **Play**
+  it in the replay player, **✎ Edit** it in the Scene Maker, or export it
+  straight to GIF/WebP/Video/Comic. Broken pre-2.9.1 demos (the wait-desync
+  bug) are repaired on load the same way AO2 repairs them.
+- **And writes them.** The Scene Maker's new **⇄ .demo** button exports any
+  scene as a demo vanilla AO2 can watch — full server-shape messages, a
+  self-consistent character list, real timing.
+
+### Studio
+- **Chapters:** every replay gets a ☰ jump list of its beats — scene changes,
+  music changes, shouts. Jumping seeds the landing point (right background,
+  track, and speaker) without replaying anything in between.
+- **Timeline scrubbing:** drag the new lane under the scene-maker timeline and
+  the preview replays each line as you sweep.
+- **Subtitles:** video exports can write `.srt` + `.vtt` beside the file,
+  cue-timed to the exported frames (Settings → Studio → Export).
+- **Watermark:** opt-in corner stamp on GIF/WebP/Video exports — your text, or
+  the recording's server + date.
+- **Copy to clipboard:** opt-in — a finished export lands on the clipboard as
+  a real file; paste it straight into Discord.
+- **Drag-and-drop import:** drop a `.aorec` or `.demo` on the window — it's
+  imported into `recordings\` and starts playing.
+
+### Group chats, de-boring-ified
+- **Char icons everywhere** — thread bubbles, member rows, DM headers — with
+  per-person name colours and HH:MM timestamps.
+- **Real chat bubbles** (yours right in accent, theirs left with their icon),
+  wrapped text, newest at the bottom.
+- **Group identity:** a per-group colour chip, member count, an ★ owner mark —
+  and **unread badges** in the chat list ("# case prep (3)").
+
+### Command palette — Ctrl+Space
+- One fuzzy search over **every** client action plus the connected server's
+  slash commands (software-aware). Enter runs an action; picking a command
+  inserts its form into the OOC box for you to fill in. Rebindable.
+
+### Settings search that gathers
+- Search "sprite" and the page becomes a list of **every matching setting
+  across every tab** — click one (or Enter) to jump straight to that row,
+  flashed so your eye lands on it. No matches? It suggests the tab that
+  covers the concept.
+
+### Performance (the "it should be lightweight on real hardware" thread)
+- **Static skip:** a genuinely static courtroom now skips rendering entirely —
+  idle GPU cost drops to ~zero (a heartbeat frame twice a second keeps
+  everything honest).
+- **Content-cadence redraws:** an animated sprite/background wakes the
+  renderer exactly when its next frame is due — smooth at ANY idle-FPS
+  setting, never faster than your cap. Fixes "idle animations went choppy".
+- **Talk rate:** a message over all-static art paces to the text crawl instead
+  of full rate — and **blips keep their cadence at any frame rate**, focused
+  or tabbed out (they used to thin out at low FPS).
+- Fixed the biggest "redraws for no reason": a nonzero crossfade *setting*
+  held full rate forever, even with no fade running.
+
+### Feel & fixes (playtest stream)
+- **Smooth log scrolling** — the IC log glides instead of teleporting, wheel
+  and new-message jumps both.
+- **Every slider takes the mouse wheel** (1% steps on percent sliders).
+- **The Vol strip is readable now** — "Master 70%" labels with live percents
+  over full-width sliders (labels still click-to-mute), instead of the old
+  bare-bones thumb row.
+- **Sprite preview overhaul:** consistent size for every character (192 px
+  tall, resizable via a corner grip), a "source × scale" caption line, and it
+  can finally be dragged **out of the viewport**.
+- **Stage frames:** eight decorative viewport borders (Brass, Neon, Film
+  strip, Wood…) in Settings — pure looks, zero cost when Off.
+- The layout editor's **4:3 button acts the moment you click it** (and grid
+  snap no longer breaks the ratio mid-drag).
+- The **emoji picker no longer hides** the Extras box and torn-off tabs
+  ("pressing emoji made all the areas disappear").
+- The **current area is marked** in the grouped player/mod rosters — accent
+  bar + "(current)" instead of a mystery row pinned on top.
+- **React button removed** (unused). Incoming reactions from others still
+  show, and Hide-reactions still hides them.
+- Nyathena ban weirdness diagnosed: it's the server's flag parsing (flags
+  must come before the reason; `-r` isn't a flag there). The Mod/CM
+  dashboard's generated commands were already in the correct shape.
+
 ## v1.40.1 — 2026-07-02
 
 ### Text cleanup

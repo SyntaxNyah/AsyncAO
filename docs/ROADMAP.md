@@ -15,6 +15,17 @@ items move to `docs/FEATURES.md` as they ship.
 
 ## Planned
 
+- **Screenshot annotator (#72)** — quick arrows/boxes/text on a captured
+  screenshot before sharing. Deferred from the v1.50.0 batch (the studio +
+  playtest-fix stream ate the session); the natural entry point is an
+  "Annotate last screenshot" action in Extras + the Ctrl+Space palette, with
+  the marks rendered through render.CaptureTarget and saved as
+  `-annotated.png`. Next batch's lead item.
+- **Crisp text at scale (#77)** — see the standing "Crisp
+  resolution-independent UI text" track below; picked for v1.50.0 but
+  deliberately not rushed at the tail of a marathon batch (it threads scale
+  through the glyph/label caches and must not regress the 0-alloc gate).
+
 _Playtest backlog cleared (2026-06-21) — every Discord/playtest request shipped
 (see `docs/FEATURES.md`). New asks land here. The only milestone left is the
 gamepad track below._
