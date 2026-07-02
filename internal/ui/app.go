@@ -1244,12 +1244,19 @@ type sessionState struct {
 	icLog        []icEntry
 	icLogSeq     uint64 // bumps per mutation: keys the filter cache
 	icScroll     int32
-	logSearch    string
-	oocSeq       uint64
-	oocLog       []string
-	oocSpeakers  []string // parallel to oocLog: speaker per line ("" = system line); for name colours
-	oocScroll    int32
-	musicScroll  int32
+	// icScrollVis is the EASED on-screen scroll offset (#22 smooth scrolling):
+	// icScroll is the target (wheel/stick/bar writes it), the visual glides
+	// toward it exponentially so wheel steps and the sticky-bottom's new-line
+	// jumps stop teleporting. frameDtMs (stamped per drawn frame) drives the
+	// time constant so the feel is frame-rate independent.
+	icScrollVis float64
+	frameDtMs   float32
+	logSearch   string
+	oocSeq      uint64
+	oocLog      []string
+	oocSpeakers []string // parallel to oocLog: speaker per line ("" = system line); for name colours
+	oocScroll   int32
+	musicScroll int32
 	// Music-list search (AO2/webAO parity): the query plus a memoized filter so
 	// a list of thousands isn't re-scanned (and re-lowercased — that allocates)
 	// every frame. musicFiltered holds matching indices into a.sess.Music.
@@ -4759,7 +4766,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.frameNow = time.Now()
 	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
 	a.winW, a.winH = winW, winH   // cached for deep draw helpers (preview clamp)
-	a.recordFrameDt(float32(dt.Seconds() * 1000))
+	a.frameDtMs = float32(dt.Seconds() * 1000)
+	a.recordFrameDt(a.frameDtMs)
 	// One-time: push the initial Discord presence once the app is up, so "Playing
 	// AsyncAO — In the lobby" appears immediately on launch (not only after you join
 	// a room). updatePresence no-ops when presence is unset or the toggle is off.

@@ -2151,6 +2151,34 @@ func (a *App) zoomWheel(rect sdl.Rect, pct *int, min, max int) bool {
 	return true
 }
 
+// logScrollEaseTauMs is the smooth-scroll time constant (#22): the glide covers
+// ~63% of the remaining distance per τ, visually settled in ~4τ (≈0.2 s) —
+// well inside the input full-rate grace, so the pacer keeps it fluid.
+const logScrollEaseTauMs = 50.0
+
+// easeICScroll advances the eased on-screen offset toward the a.icScroll
+// target and returns it clamped. snap (a scrollbar drag) pins it 1:1 — a drag
+// must track the hand exactly. Frame-rate independent via frameDtMs.
+func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
+	target := float64(a.icScroll)
+	if snap || math.Abs(target-a.icScrollVis) < 0.5 {
+		a.icScrollVis = target
+	} else {
+		dt := float64(a.frameDtMs)
+		if dt <= 0 {
+			dt = 16
+		}
+		a.icScrollVis += (target - a.icScrollVis) * (1 - math.Exp(-dt/logScrollEaseTauMs))
+	}
+	if a.icScrollVis < 0 {
+		a.icScrollVis = 0
+	}
+	if m := float64(maxScroll); a.icScrollVis > m {
+		a.icScrollVis = m
+	}
+	return int32(a.icScrollVis)
+}
+
 // drawICLogList renders the colored IC scrollback (search-filtered,
 // word-wrapped to the list width) into rect — used by the classic Log tab
 // and the themed ic_chatlog element.
@@ -2188,8 +2216,14 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	if a.icReadMark > len(a.icLog) {
 		a.icReadMark = len(a.icLog) // log was capped/cleared
 	}
+	// #22 smooth scrolling: the on-screen offset EASES toward the target so
+	// wheel steps and sticky-bottom jumps glide instead of teleporting
+	// ("messages just instantly appear"). A scrollbar drag snaps 1:1 (dragging
+	// must track the hand), and everything below — selection hit-math included
+	// — uses the SAME visual offset, so clicks always land on what's shown.
+	visScroll := a.easeICScroll(maxScroll, c.dragID == "icscroll")
 	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
-	a.handleLogSelect(logSelIC, list, a.icScroll, lineH, wrapW)
+	a.handleLogSelect(logSelIC, list, visScroll, lineH, wrapW)
 	// Pin-to-notes can also fire on a configurable Ctrl-chord (default Ctrl+N):
 	// it pins the HOVERED line, like right-click. Resolved once (the chord is
 	// one key/frame); handleHotkeys leaves an unrecognized chord in c.hotkey.
@@ -2231,7 +2265,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	// Scissor the scrollback to the list rect so the partially scrolled
 	// top/bottom row can't draw past it onto the tab strip above.
 	clipPrev, clipHad := c.pushClip(list)
-	y := list.Y - a.icScroll
+	y := list.Y - visScroll
 	for ri := range rows {
 		if y > list.Y+list.H-lineH {
 			break
