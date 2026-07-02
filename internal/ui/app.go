@@ -3912,6 +3912,26 @@ func (a *App) serverTimersLive() bool {
 	return false
 }
 
+// talkBudget is the frame budget while a message plays over all-static art:
+// fast enough that AT MOST ONE typewriter rune reveals per frame, so every blip
+// boundary lands its own frame — blips fire from the per-frame room Update, so
+// a frame slower than the rune interval audibly coalesces them (playtest: "at
+// a lower framerate the blips are ALSO at a lower framerate"). Base cadence is
+// staticTalkFPS; faster text (the speed slider / {} spans) tightens it; full
+// (the cap's budget) still bounds it.
+func (a *App) talkBudget(full time.Duration) time.Duration {
+	talk := paceBudget(staticTalkFPS)
+	if a.room != nil {
+		if iv := a.room.Typewriter.Interval; iv > 0 && iv < talk {
+			talk = iv
+		}
+	}
+	if talk < full {
+		talk = full // never above the cap
+	}
+	return talk
+}
+
 // FramePace returns the frame budget the main loop should pace to (0 = no cap).
 // focused is the window's input-focus state. Four tiers:
 //   - full rate: interaction, effects in flight, or an always-animating surface
@@ -3919,14 +3939,22 @@ func (a *App) serverTimersLive() bool {
 //     next frame flip (smooth at ANY idle setting — the pace can never be
 //     slower than the content — and never above the cap)
 //   - talk rate: a message is playing over all-static art → the text crawl's
-//     cadence (staticTalkFPS), not full rate
+//     cadence (talkBudget), not full rate
 //   - idle rate: a static screen (the deeper SkipFrame tier then usually skips
 //     the render entirely)
 func (a *App) FramePace(focused bool) time.Duration {
-	if !focused {
-		return paceBudget(a.d.Prefs.UnfocusedFPS()) // background window: flat low rate
-	}
 	full := paceBudget(a.d.Prefs.FPSCap())
+	if !focused {
+		unf := paceBudget(a.d.Prefs.UnfocusedFPS())
+		// A message playing while tabbed out is still AUDIBLE: hold the blip
+		// cadence so the background window's low rate doesn't thin the blips.
+		if a.roomBusy() {
+			if tb := a.talkBudget(full); unf == 0 || tb < unf {
+				unf = tb
+			}
+		}
+		return unf
+	}
 	if a.wantsFullRate() {
 		return full
 	}
@@ -3937,14 +3965,11 @@ func (a *App) FramePace(focused bool) time.Duration {
 		}
 	}
 	if a.roomBusy() {
-		talk := staticTalkFPS
-		if i := a.d.Prefs.IdleFPS(); i > talk {
-			talk = i // never below the user's idle smoothness
+		talk := a.talkBudget(full)
+		if idle > 0 && idle < talk {
+			talk = idle // never below the user's idle smoothness
 		}
-		if c := a.d.Prefs.FPSCap(); c > 0 && c < talk {
-			talk = c // never above their cap
-		}
-		return paceBudget(talk)
+		return talk
 	}
 	return idle
 }

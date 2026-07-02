@@ -3,6 +3,8 @@ package ui
 import (
 	"testing"
 	"time"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 // TestFramePace pins the adaptive frame pacing (the GPU-burn fix): idle = the
@@ -56,5 +58,61 @@ func TestFramePace(t *testing.T) {
 	a.perfHUD = true
 	if got := a.FramePace(true); got != budget(120) {
 		t.Errorf("perf-HUD pace = %v, want the full cap", got)
+	}
+}
+
+// TestTalkBudget pins the blip-cadence floor (playtest: "at a lower framerate
+// the blips are ALSO at a lower framerate"): while a message plays, the frame
+// budget must never be slower than the typewriter's rune interval — one rune
+// per frame keeps every blip boundary on its own frame — and never faster than
+// the user's cap.
+func TestTalkBudget(t *testing.T) {
+	a := &App{}
+	full := paceBudget(60)
+
+	// No room: the flat staticTalkFPS cadence.
+	if got, want := a.talkBudget(full), paceBudget(staticTalkFPS); got != want {
+		t.Fatalf("no-room talk budget = %v, want %v", got, want)
+	}
+
+	// A faster typewriter tightens the budget to its rune interval.
+	a.room = &courtroom.Courtroom{}
+	a.room.Typewriter.Interval = 20 * time.Millisecond
+	if got := a.talkBudget(full); got != 20*time.Millisecond {
+		t.Fatalf("fast text talk budget = %v, want the 20ms rune interval", got)
+	}
+
+	// …but never past the frame cap.
+	a.room.Typewriter.Interval = 5 * time.Millisecond
+	if got := a.talkBudget(full); got != full {
+		t.Fatalf("talk budget must floor at the cap budget: got %v, want %v", got, full)
+	}
+
+	// A slower typewriter than staticTalkFPS keeps the base cadence (the crawl
+	// doesn't need MORE frames, but motion between runes still reads smoother).
+	a.room.Typewriter.Interval = 200 * time.Millisecond
+	if got, want := a.talkBudget(full), paceBudget(staticTalkFPS); got != want {
+		t.Fatalf("slow text talk budget = %v, want the base %v", got, want)
+	}
+}
+
+// TestPaceHelpers pins the tiny pace math: non-positive fps = uncapped, and
+// clampDur is [lo,hi] inclusive.
+func TestPaceHelpers(t *testing.T) {
+	if paceBudget(0) != 0 || paceBudget(-3) != 0 {
+		t.Error("non-positive fps must mean uncapped (0)")
+	}
+	if paceBudget(50) != 20*time.Millisecond {
+		t.Errorf("paceBudget(50) = %v, want 20ms", paceBudget(50))
+	}
+	lo, hi := 10*time.Millisecond, 100*time.Millisecond
+	if clampDur(5*time.Millisecond, lo, hi) != lo {
+		t.Error("clampDur must floor at lo")
+	}
+	if clampDur(500*time.Millisecond, lo, hi) != hi {
+		t.Error("clampDur must cap at hi")
+	}
+	if clampDur(50*time.Millisecond, lo, hi) != 50*time.Millisecond {
+		t.Error("clampDur must pass an in-range value through")
 	}
 }
