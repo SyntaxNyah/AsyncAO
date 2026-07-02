@@ -29,7 +29,9 @@ const (
 	slotRightCol = "rightcol" // IC log / right column (both themes)
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
 	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
-	slotICBar    = "icbar"    // the IC input bar (colour · showname · Immed · emoji/FX/React · text)
+	// The whole-bar "icbar" slot was REMOVED in v1.50.5 (Nightingale: "remove
+	// the panel, make every element independent") — the pieces below are the
+	// only IC-bar slots now. A stale "icbar" override in old prefs is ignored.
 	// Individually-movable pieces pulled OUT of the IC bar (the "build your own
 	// layout" work). Each defaults to its spot in the bar — so an un-edited or
 	// whole-bar-moved layout is pixel-identical — and only goes free once dragged.
@@ -221,8 +223,6 @@ func classicSlotLabel(k string) string {
 		return "OOC box"
 	case slotEmotes:
 		return "Emote grid"
-	case slotICBar:
-		return "IC input bar"
 	case slotICImmediate:
 		return "Immediate toggle"
 	case slotChatbox:
@@ -249,6 +249,16 @@ func classicSlotLabel(k string) string {
 		return "IC text input"
 	case slotMessages:
 		return "Group Chat (panel)"
+	case "ctrl.pos":
+		return "Pos selector"
+	case "ctrl.groupchat":
+		return "Group Chat button"
+	case "ctrl.voice":
+		return "Voice chat button"
+	case "ctrl.randchar":
+		return "Rand char button"
+	case "ctrl.favsfilter":
+		return "★ Favs filter"
 	default:
 		// Individually-movable control buttons carry a "ctrl.<name>" key.
 		if rest, ok := strings.CutPrefix(k, "ctrl."); ok {

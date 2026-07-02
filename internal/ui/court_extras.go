@@ -103,6 +103,17 @@ var hideableButtons = []struct{ id, label string }{
 	{"ctrl.hotkeys", "Hotkeys"},
 	{"ctrl.about", "About"},
 	{"ctrl.login", "Login"},
+	// v1.50.5 (Nightingale: "your hide menus are missing quite a few — I can't
+	// hide the voice chat or gc"): the once-"contextual" buttons are hideable
+	// too. Each still self-gates (Voice only in VC areas, GC behind its pref);
+	// hiding wins over both. Mod/CM stay auto-only (moderation affordances).
+	{"ctrl.pair", "Pair"},
+	{"ctrl.pos", "Pos selector"},
+	{"ctrl.groupchat", "Group Chat"},
+	{"ctrl.voice", "Voice chat"},
+	{"ctrl.disconnect", "Disconnect (Esc still leaves)"},
+	{"ctrl.randchar", "Rand char (emote grid)"},
+	{"ctrl.favsfilter", "★ Favs filter (emote grid)"},
 }
 
 // panelHidden reports whether the user hid a chrome region.
@@ -617,8 +628,29 @@ const (
 // design); without one it falls back to the plain text dropdown.
 func (a *App) drawPosSelect(x, y, h int32) int32 {
 	c := a.ctx
-	c.Label(x, y+(h-int32(c.font.Height()))/2, "Pos", ColTextDim)
-	x += c.TextWidth("Pos") + 6
+	labelW := c.TextWidth("Pos") + 6
+	// v1.50.5 (Nightingale: "everything is movable EXCEPT the /pos thing"): the
+	// whole Pos control (label + dropdown) is a movable+resizable "ctrl.pos"
+	// slot — and hideable like any control button. The row cursor advances by
+	// the DEFAULT width either way (wrap-not-extract), so moving or hiding it
+	// never cascades the rest of the row.
+	ddDefW := int32(posSelectW)
+	if a.sess != nil && a.sess.Background != "" {
+		// Wider control so the CLOSED box fits the current position's bg thumbnail
+		// + the side code + the chevron ("show the thing that's already selected").
+		ddDefW = int32(posSelectThumbW)
+	}
+	adv := labelW + ddDefW + 6
+	if a.panelHidden("ctrl.pos") {
+		return x // hidden: the row compacts, exactly like ctrlSlot
+	}
+	r := a.slotRect("ctrl.pos", sdl.Rect{X: x, Y: y, W: labelW + ddDefW, H: h}, a.winW, a.winH)
+	c.Label(r.X, r.Y+(r.H-int32(c.font.Height()))/2, "Pos", ColTextDim)
+	ddW := r.W - labelW
+	if ddW < 60 {
+		ddW = 60 // floor: the dropdown stays clickable however small the slot is dragged
+	}
+	ctrl := sdl.Rect{X: r.X + labelW, Y: r.Y, W: ddW, H: r.H}
 	choices := a.posChoices()
 	cur := 0
 	for i, p := range choices {
@@ -632,11 +664,10 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 		bg = a.sess.Background
 	}
 	if bg == "" { // no background yet → nothing to thumbnail; plain text dropdown
-		ctrl := sdl.Rect{X: x, Y: y, W: posSelectW, H: h}
 		if next, changed := c.Dropdown("posdd", ctrl, choices, cur); changed {
 			a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 		}
-		return x + posSelectW + 6
+		return x + adv
 	}
 	if a.posBgKey != bg { // bg changed: drop the now-wrong thumbnails (cachedPage keys by index, not URL)
 		a.posBgPages, a.posBgKey = nil, bg
@@ -644,13 +675,10 @@ func (a *App) drawPosSelect(x, y, h int32) int32 {
 	if a.posThumbFn == nil { // bind once: a stable fn (reads the live bg/choices), so the per-frame Pos selector never allocates a closure
 		a.posThumbFn = a.posThumbDraw
 	}
-	// Wider control so the CLOSED box fits the current position's bg thumbnail + the
-	// side code + the chevron (playtest: "show the thing that's already selected").
-	ctrl := sdl.Rect{X: x, Y: y, W: posSelectThumbW, H: h}
 	if next, changed := c.DropdownThumbs("posdd", ctrl, choices, cur, posThumbRowH, posThumbW, a.posThumbFn); changed {
 		a.applySide(choices[next]) // also /pos the server so the move is instant, not next-message
 	}
-	return x + posSelectThumbW + 6
+	return x + adv
 }
 
 // posThumbDraw paints the i-th position's background thumbnail into tr — used by

@@ -1147,6 +1147,14 @@ func (a *App) drawPreviewEmoteNav(frame sdl.Rect) {
 
 func (a *App) drawCourtroom(w, h int32) {
 	c := a.ctx
+	// v1.50.5 (Nightingale: "disabled buttons still show up in editor view"):
+	// the slot registry is rebuilt from THIS frame's draws while editing, so a
+	// piece hidden mid-session stops ghosting handles the moment it stops
+	// drawing — stale registrations from when it was visible used to live in
+	// the map forever. Edit-mode only (the registry isn't read otherwise).
+	if a.classicEdit {
+		clear(a.slotReg)
+	}
 	// Fence the courtroom under the non-blocking Extras box: while the pointer is
 	// over the box, this whole pass runs pointer-blind so a click in the box can't
 	// also land on the scene/log. The deferred unfence is a direct method (no
@@ -3840,10 +3848,12 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			}
 		}
 	}
-	if a.movableButton("ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
-		a.showPair = !a.showPair
+	if !a.panelHidden("ctrl.pair") { // hideable (v1.50.5): hiding compacts, like ctrlSlot
+		if a.movableButton("ctrl.pair", sdl.Rect{X: x, Y: y, W: 70, H: btnH}, "Pair...", w, h) {
+			a.showPair = !a.showPair
+		}
+		x += 80
 	}
-	x += 80
 	if !a.panelHidden(panelKnobs) && !a.d.Prefs.DragLayoutOn() { // drag-resize mode hides the +/− knobs
 		if a.d.Prefs.ViewportExactWidth() == 0 { // exact-px sizing shadows vpPct, so the View knob would no-op — hide it (set the size in Settings instead)
 			x = a.scaleControl(x, y, "View", &a.vpPct, config.ViewportStepPercent, config.MinViewportPercent, config.MaxViewportPercent)
@@ -3977,7 +3987,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		}
 		// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
 		// Appended last so it can't shift the buttons before it; skipped (no x advance) off.
-		if a.d.Prefs.GroupChatButtonOn() {
+		if a.d.Prefs.GroupChatButtonOn() && !a.panelHidden("ctrl.groupchat") {
 			const gcW = int32(96)
 			if x+gcW > clusterRight {
 				y2 += btnH + 4
@@ -3993,7 +4003,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		}
 		// Voice button — only in a voice-enabled area (VS_CAPS / Nyathena); appears
 		// when you enter a VC room, hidden otherwise. Appended; no x advance when off.
-		if a.voiceOfferable() {
+		if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
 			const vcW = int32(80)
 			if x+vcW > clusterRight {
 				y2 += btnH + 4
@@ -4138,7 +4148,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		// APPENDED at the end of the functional buttons so it can never shift the ones
 		// before it; when off it's skipped entirely (no x advance), so the row is
 		// byte-identical to before. A movable slot, so Edit Layout can reposition it.
-		if a.d.Prefs.GroupChatButtonOn() {
+		if a.d.Prefs.GroupChatButtonOn() && !a.panelHidden("ctrl.groupchat") {
 			const gcW = int32(96)
 			if x+gcW > clusterRight {
 				y2 += btnH + 4
@@ -4155,7 +4165,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		// Voice button — appears ONLY in an area that advertises voice (VS_CAPS, i.e.
 		// Nyathena), so it shows up when you move into a VC-supported room and hides
 		// elsewhere. Appended like the others; skipped (no x advance) when unavailable.
-		if a.voiceOfferable() {
+		if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
 			const vcW = int32(80)
 			if x+vcW > clusterRight {
 				y2 += btnH + 4
@@ -4176,11 +4186,13 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			y2 += btnH + 4
 			x = clusterX
 		}
-		if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
-			a.requestDisconnect()
-			return
+		if !a.panelHidden("ctrl.disconnect") { // hideable (v1.50.5): Esc still leaves the server
+			if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
+				a.requestDisconnect()
+				return
+			}
+			x += 116
 		}
-		x += 116
 	}
 
 	// The control-button block ends here. Register it for the editor (its height is
@@ -4215,23 +4227,29 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// FX / React buttons store their live rects as they draw, so their pop-ups follow the
 	// bar wherever it lands. slotRect is alloc-free off the edit path. (fH is computed at
 	// the top now, to place the control block below this bar.)
-	icBarDef := sdl.Rect{X: pad, Y: icBarTop, W: vp.W, H: fH}
-	icBar := a.slotRect(slotICBar, icBarDef, w, h)
+	// v1.50.5 (Nightingale): the whole-bar "IC input bar" PANEL slot is gone —
+	// every element below is its own independent movable+resizable slot, so the
+	// bar is just the DEFAULT row geometry they lay out from. (An old "icbar"
+	// override in prefs is simply ignored; Reset all clears it.)
+	icBar := sdl.Rect{X: pad, Y: icBarTop, W: vp.W, H: fH}
 	rowY := icBar.Y
-	if icBar.H > fH { // centre the row when the box was dragged taller; never above the box top
-		rowY = icBar.Y + (icBar.H-fH)/2
-	}
 	// Colour swatch + dropdown — an individually movable slot (#4a). The selector also
 	// offers the extended AsyncAO colours (#98) and the two "fun colour" modes (#79): they
 	// sit after the palette so they're picked like any colour instead of being buried in
 	// Settings. icColorSelected drives the active row + swatch; applyICColorChoice routes
 	// the pick — both shared with the themed row so the two layouts can't drift.
 	colorBox := a.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
-	swatch := sdl.Rect{X: colorBox.X, Y: colorBox.Y, W: 26, H: fH}
+	// The pieces fill the SLOT rect (v1.50.5): a resize genuinely widens the
+	// dropdown / grows the row height instead of being silently ignored.
+	swatch := sdl.Rect{X: colorBox.X, Y: colorBox.Y, W: 26, H: colorBox.H}
 	icSel, sw := a.icColorSelected()
 	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
-	if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorBox.X + 32, Y: colorBox.Y, W: colorSelectW, H: fH}, icColorChoices, icSel); changed {
+	colorDDW := colorBox.W - 32
+	if colorDDW < 60 {
+		colorDDW = 60 // floor: the dropdown stays clickable however small the slot is dragged
+	}
+	if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorBox.X + 32, Y: colorBox.Y, W: colorDDW, H: colorBox.H}, icColorChoices, icSel); changed {
 		a.applyICColorChoice(next)
 	}
 	const shownameBoxW = 140
@@ -4245,13 +4263,19 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// the slot; the row cursor below flows from the DEFAULT nameX so moving it never
 	// cascades the rest.
 	nameBox := a.slotRect(slotICShowname, sdl.Rect{X: nameX, Y: rowY, W: shownameBoxW, H: fH}, w, h)
-	snW, snDD := int32(shownameBoxW), int32(0)
+	// v1.50.5 fix ("the showname box is not resizable — it has the ui for it but
+	// it does nothing"): the field fills the SLOT'S live width/height, not the
+	// fixed default, so the editor's resize handles actually take effect.
+	snW, snDD := nameBox.W, int32(0)
 	if len(a.nameOpts) > 1 { // a tiny ▾ saved-name picker, fitted INSIDE the box width so nothing downstream shifts
 		snDD = 22
 		snW -= snDD + 2
 	}
-	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: fH}, a.shownameOverride, namePlaceholder)
-	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameBox.X + snW + 2, Y: nameBox.Y, W: snDD, H: fH}); name != "" {
+	if snW < 40 {
+		snW = 40 // floor: never collapse the field into an unclickable sliver
+	}
+	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: nameBox.H}, a.shownameOverride, namePlaceholder)
+	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameBox.X + snW + 2, Y: nameBox.Y, W: snDD, H: nameBox.H}); name != "" {
 		a.shownameOverride = name
 	}
 	// Immediate (AO non-interrupting preanim): the preanim plays without
@@ -4535,13 +4559,20 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	}
 
 	// ★ Favs filter toggle (always present, so you can switch it off even with an
-	// empty favs-only grid) + Random. Bottom-right, clear of the page arrows.
-	a.drawEmoteFavToggle(sdl.Rect{X: r.X + r.W - 158, Y: r.Y + r.H - btnH, W: 64, H: btnH})
+	// empty favs-only grid) + Random. Their DEFAULT is the grid's bottom-right
+	// corner, but each is its own movable slot now (v1.50.5 — "the random char
+	// button is always stuck in the emote grid corner") and hideable like any
+	// control button.
+	if !a.panelHidden("ctrl.favsfilter") {
+		a.drawEmoteFavToggle(a.slotRect("ctrl.favsfilter", sdl.Rect{X: r.X + r.W - 158, Y: r.Y + r.H - btnH, W: 64, H: btnH}, a.winW, a.winH))
+	}
 	// Swap to a random available character — replaced the old "Random" emote
 	// button (redundant with per-send auto-random + the wheel cycling emotes).
-	rcb := sdl.Rect{X: r.X + r.W - 92, Y: r.Y + r.H - btnH, W: 92, H: btnH}
-	if c.Button(rcb, "Rand char") {
-		a.randomChar()
+	if !a.panelHidden("ctrl.randchar") {
+		rcb := a.slotRect("ctrl.randchar", sdl.Rect{X: r.X + r.W - 92, Y: r.Y + r.H - btnH, W: 92, H: btnH}, a.winW, a.winH)
+		if c.Button(rcb, "Rand char") {
+			a.randomChar()
+		}
 	}
 
 	if a.previewBase != "" {
