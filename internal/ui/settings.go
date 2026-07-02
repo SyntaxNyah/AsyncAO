@@ -794,6 +794,14 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetPostGrain(next)
 	}
 	y += 26
+	// #56 stage frame: a decorative border around the viewport (Off by default).
+	c.Label(pad, y+4, "Stage frame:", ColText)
+	sf := a.d.Prefs.StageFrame()
+	if next, changed := c.Dropdown("stageframe", sdl.Rect{X: pad + 130, Y: y, W: 170, H: fieldH}, stageFrameNames, sf); changed {
+		a.d.Prefs.SetStageFrame(next)
+	}
+	c.Label(pad+312, y+4, "a decorative border on the stage — pure looks, zero cost when Off", ColTextDim)
+	y += 30
 	ent := a.d.Prefs.AnimateEntrancesOn()
 	if next := c.Checkbox(pad, y, "Animate entrances (OFF by default): a new speaker slides in when they take the stage", ent); next != ent {
 		a.d.Prefs.SetAnimateEntrances(next)

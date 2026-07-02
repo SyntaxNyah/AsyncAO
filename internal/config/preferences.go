@@ -746,6 +746,7 @@ type AssetPreferences struct {
 	ReflectOpacity         int                          `json:"reflectStrength"`   // opacity [0,100], 0 = unset → default
 	WeatherKind            int                          `json:"weatherType"`       // #124 ambient weather (0 = None/off)
 	WeatherDensity         int                          `json:"weatherIntensity"`  // intensity [1,100], 0 = unset → default
+	StageFrameKind         int                          `json:"stageFrame"`        // #56 decorative viewport frame (0 = Off)
 	FriendNotify           bool                         `json:"friendNotify"`
 	FriendOSToast          bool                         `json:"friendOSToast"`
 	CallwordOSToast        bool                         `json:"callwordOSToast"` // #M4 desktop toast on callword
@@ -1043,6 +1044,7 @@ type prefsJSON struct {
 	ReflectOpacity         int              `json:"reflectStrength"`            // 0 = unset → default
 	WeatherKind            int              `json:"weatherType"`                // #124 0 = None/off
 	WeatherDensity         int              `json:"weatherIntensity"`           // 0 = unset → default
+	StageFrameKind         int              `json:"stageFrame"`                 // #56 0 = Off
 	SpriteTintColor        *int             `json:"spriteTintColor"`            // absent = default
 	FriendNotify           bool             `json:"friendNotify"`               // default OFF
 	FriendOSToast          bool             `json:"friendOSToast"`              // default OFF
@@ -1660,6 +1662,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ReflectOpacity = onDisk.ReflectOpacity
 	p.WeatherKind = onDisk.WeatherKind
 	p.WeatherDensity = onDisk.WeatherDensity
+	p.StageFrameKind = onDisk.StageFrameKind
 	if onDisk.SpriteTintColor != nil {
 		p.SpriteTintColor = *onDisk.SpriteTintColor & 0xFFFFFF
 	}
@@ -4256,6 +4259,27 @@ func (p *AssetPreferences) WeatherType() int {
 
 // SetWeatherType stores the weather index (clamped to [0,weatherKindMax]).
 func (p *AssetPreferences) SetWeatherType(v int) { p.setIntPref(&p.WeatherKind, v, 0, weatherKindMax) }
+
+// stageFrameKindMax is the highest valid stage-frame style index (#56). The style
+// list lives in ui (stageFrameNames); a ui contract test keeps the two equal, the
+// same arrangement as weatherKindMax above.
+const stageFrameKindMax = 7
+
+// StageFrame reports the decorative viewport-frame style (#56); 0 = Off (the
+// default). Clamped so a hand-edited pref can't select a non-existent style.
+func (p *AssetPreferences) StageFrame() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.StageFrameKind < 0 || p.StageFrameKind > stageFrameKindMax {
+		return 0
+	}
+	return p.StageFrameKind
+}
+
+// SetStageFrame stores the stage-frame style (clamped to [0,stageFrameKindMax]).
+func (p *AssetPreferences) SetStageFrame(v int) {
+	p.setIntPref(&p.StageFrameKind, v, 0, stageFrameKindMax)
+}
 
 // WeatherIntensity reports the density slider [1,100]; 0 (unset) resolves to the default.
 func (p *AssetPreferences) WeatherIntensity() int {
