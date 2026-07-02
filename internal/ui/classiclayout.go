@@ -119,6 +119,39 @@ func rectToFrac(r sdl.Rect, w, h int32) [4]float64 {
 	}
 }
 
+// snapViewportTo43 sets the stage to 4:3 RIGHT NOW (width wins, height derived,
+// shrunk only if the result would leave the window) — the immediate feedback for
+// the editor's "4:3" toggle. Undoable and persisted like any drag. No-op when
+// the stage is already 4:3 or isn't registered this frame.
+func (a *App) snapViewportTo43(w, h int32) {
+	info, ok := a.slotReg[slotViewport]
+	if !ok {
+		return
+	}
+	r := info.cur
+	nh := r.W * 3 / 4
+	if nh < classicMinPx { // keep the ratio by growing width off the floor instead
+		nh = classicMinPx
+		r.W = nh * 4 / 3
+	}
+	if r.Y+nh > h { // keep it on-screen: shrink until the derived height fits
+		nh = h - r.Y
+		r.W = nh * 4 / 3
+	}
+	if nh == r.H && r.W == info.cur.W {
+		return // already 4:3 — no phantom undo entry
+	}
+	r.H = nh
+	a.pushClassicUndo()
+	if a.classicOv == nil {
+		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	}
+	ov := rectToFrac(r, w, h)
+	a.classicOv[slotViewport] = ov
+	a.d.Prefs.SetClassicSlot(slotViewport, ov)
+	a.pushDebug("edit layout: stage snapped to 4:3")
+}
+
 // regSlot records a slot's drawn/default rects for the editor (edit-only path).
 func (a *App) regSlot(name string, cur, def sdl.Rect) {
 	if a.slotReg == nil {
@@ -502,6 +535,12 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, aspectBtn) {
 		a.layoutAspect = !a.layoutAspect // lock/unlock the stage's 4:3 while resizing it
+		// Turning it ON snaps the stage to 4:3 RIGHT NOW (width wins) — the old
+		// behaviour only constrained future resize drags, which read as "the 4:3
+		// button does nothing" in the playtest.
+		if a.layoutAspect {
+			a.snapViewportTo43(w, h)
+		}
 	}
 
 	// Pop-out tray (bottom): tear a log tab out into its own movable panel, or
@@ -636,15 +675,6 @@ func (a *App) drawClassicEditor(w, h int32) {
 				}
 				r.H = classicMinPx
 			}
-			// Lock the stage to 4:3 while resizing (banner toggle): drive the other
-			// dimension from the edge you grabbed, so the scene never stretches off 4:3.
-			if a.layoutAspect && a.classicEditKey == slotViewport {
-				if e&(edgeL|edgeR) != 0 { // a side handle → width drives height
-					r.H = r.W * 3 / 4
-				} else if e&(edgeT|edgeB) != 0 { // a top/bottom handle → height drives width
-					r.W = r.H * 4 / 3
-				}
-			}
 		}
 		// Hold Shift while dragging = pixel-precise: it bypasses the grid for this
 		// drag (the "Snap" button is the persistent toggle). GetModState is a cheap
@@ -656,6 +686,19 @@ func (a *App) drawClassicEditor(w, h int32) {
 			}
 			if r.H < classicMinPx {
 				r.H = classicMinPx
+			}
+		}
+		// Lock the stage to 4:3 while resizing (banner toggle): drive the other
+		// dimension from the edge you grabbed, so the scene never stretches off
+		// 4:3. Applied AFTER the grid snap — snapping W and H independently used
+		// to re-break the ratio the lock had just computed (the driven dimension
+		// deliberately leaves the grid; the ratio is the point of the lock).
+		if a.layoutAspect && a.classicEditDrag != 1 && a.classicEditKey == slotViewport {
+			e := a.classicEditEdges
+			if e&(edgeL|edgeR) != 0 { // a side/corner handle → width drives height
+				r.H = r.W * 3 / 4
+			} else if e&(edgeT|edgeB) != 0 { // a top/bottom handle → height drives width
+				r.W = r.H * 4 / 3
 			}
 		}
 		// Keep it on-screen (solid feel; below the editor banner).

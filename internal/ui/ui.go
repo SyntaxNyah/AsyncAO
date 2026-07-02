@@ -2223,6 +2223,10 @@ func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int
 // by id, hover-gated, and mouse-down anywhere on the track jumps the thumb —
 // so it's grabbable rather than a fiddly +/- button press. Continuous (any
 // int in range).
+// sliderWheelDivisor sets the wheel step to 1/100 of a slider's range (≥1), so
+// the ubiquitous percent sliders step by exactly 1 per tick.
+const sliderWheelDivisor = 100
+
 func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 	if maxVal <= 0 {
 		return 0
@@ -2250,6 +2254,24 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 				pos = span
 			}
 			value = pos * maxVal / span
+		}
+	}
+	// Wheel over the track nudges the value (playtest ask: every slider scrolls).
+	// One tick = 1/sliderWheelDivisor of the range, floored at 1 so a percent
+	// slider steps by exactly 1. Claiming the wheel keeps the page beneath from
+	// scrolling on the same tick (the hovered-control-owns-the-wheel contract).
+	if !c.wheelTaken && c.wheelY != 0 && c.hovering(grab) {
+		c.wheelTaken = true
+		step := maxVal / sliderWheelDivisor
+		if step < 1 {
+			step = 1
+		}
+		value += c.wheelY * step
+		if value < 0 {
+			value = 0
+		}
+		if value > maxVal {
+			value = maxVal
 		}
 	}
 	c.Fill(track, ColPanel)
