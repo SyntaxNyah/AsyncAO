@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.50.6 — 2026-07-02
+
+- **Non-Latin caret, actually fixed.** v1.50.5 corrected the caret's font but
+  read the wrong raster shape for fallback text, so the cursor drew pinned at
+  the field's left edge. It now reads the exact per-letter positions of both
+  raster shapes — the cursor sits where you type, in every script.
+- **Hide anything, round two:** the Hold It / Objection / Take That buttons
+  are individually hideable (the group toggle still hides the row), and the
+  IC bar's **emoji button** can be hidden too — both in the UI… popup and the
+  editor toolbox.
+
 ## v1.50.5 — 2026-07-02
 
 Same-day patch from the v1.50.0 playtest — **thanks Nightingale** for the
