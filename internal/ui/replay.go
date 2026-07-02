@@ -427,7 +427,9 @@ func listRecordings() []recordingFile {
 	}
 	var all []withMod
 	for _, en := range entries {
-		if en.IsDir() || !strings.HasSuffix(en.Name(), recordingExt) {
+		// .aorec is ours; .demo is AO2's recorder format (played/edited via the
+		// on-the-fly converter in demofile.go — backwards compatibility).
+		if en.IsDir() || !(strings.HasSuffix(en.Name(), recordingExt) || strings.HasSuffix(strings.ToLower(en.Name()), demoExt)) {
 			continue
 		}
 		info, err := en.Info()
@@ -478,7 +480,7 @@ func (a *App) replayFromPath(path string) {
 		a.warnAt = time.Now()
 		return
 	}
-	rec, err := loadRecording(path)
+	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
 		a.warnLine = "Couldn't load recording: " + err.Error()
 		a.warnAt = time.Now()
@@ -537,7 +539,7 @@ func (a *App) toggleReplay() {
 		a.warnAt = time.Now()
 		return
 	}
-	rec, err := loadRecording(path)
+	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
 		a.warnLine = "Couldn't load recording: " + err.Error()
 		a.warnAt = time.Now()

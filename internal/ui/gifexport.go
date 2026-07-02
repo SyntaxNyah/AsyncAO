@@ -53,7 +53,7 @@ func (a *App) sceneExportFromPath(path string, kind exportKind) {
 		a.warnAt = time.Now()
 		return
 	}
-	rec, err := loadRecording(path)
+	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
 		a.warnLine = "Couldn't load recording: " + err.Error()
 		a.warnAt = time.Now()
@@ -62,7 +62,9 @@ func (a *App) sceneExportFromPath(path string, kind exportKind) {
 	if rec.Bundled {
 		a.beginBundledReplay(rec, filepath.Dir(path)) // archive source + repoint Origin
 	}
-	a.startSceneExport(rec, strings.TrimSuffix(filepath.Base(path), recordingExt), kind)
+	stem := strings.TrimSuffix(filepath.Base(path), recordingExt)
+	stem = strings.TrimSuffix(stem, demoExt)
+	a.startSceneExport(rec, stem, kind)
 }
 
 // Scene GIF export (M16): render a scene through a throwaway replay room into a

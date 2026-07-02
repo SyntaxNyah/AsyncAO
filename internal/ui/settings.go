@@ -1271,6 +1271,10 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	c.Label(pad, y, "background and music, set the Origin/CDN the assets load from, then Preview and Save a .aorec.", ColTextDim)
 	y += 18
 	c.Label(pad, y, ".aorec files are plain text (JSON) — you can also open one in any text editor to tweak it by hand.", ColTextDim)
+	y += 18
+	c.Label(pad, y, "AO2 .demo files work here too: drop them in recordings\\ to Play / Edit / export them, and the", ColTextDim)
+	y += 18
+	c.Label(pad, y, "Scene Maker's ⇄ .demo button writes scenes AO2's own demo player can watch.", ColTextDim)
 	y += 26
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "🎬 New scene") {
 		a.newScene()

@@ -202,13 +202,15 @@ func (a *App) newScene() {
 // editRecordingInMaker loads a saved .aorec into the maker for editing (the
 // Studio "Edit" entry point).
 func (a *App) editRecordingInMaker(path string) {
-	rec, err := loadRecording(path)
+	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
 	if err != nil {
 		a.warnLine = "Couldn't open recording: " + err.Error()
 		a.warnAt = time.Now()
 		return
 	}
-	a.openSceneMaker(rec, strings.TrimSuffix(filepath.Base(path), recordingExt))
+	stem := strings.TrimSuffix(filepath.Base(path), recordingExt)
+	stem = strings.TrimSuffix(stem, demoExt)
+	a.openSceneMaker(rec, stem)
 }
 
 // closeSceneMaker hides the maker, frees its buffer, and tears down the preview
@@ -819,6 +821,11 @@ func (a *App) drawSceneMaker(winW, winH int32) {
 		a.makerSave()
 	}
 	bx += 128
+	if c.Button(sdl.Rect{X: bx, Y: y, W: 96, H: btnH}, "⇄ .demo") {
+		a.makerExportDemo() // AO2 interchange: plays in AO2's own demo player
+	}
+	c.Tooltip(sdl.Rect{X: bx, Y: y, W: 96, H: btnH}, "Export as an AO2 .demo — watchable in vanilla AO2 (backwards compatibility). AO2 demos also OPEN here (📂 Open / Settings → Studio).")
+	bx += 104
 	if a.makerExporting {
 		c.Label(bx, y+6, "📦 exporting…", ColAccent)
 	} else if c.Button(sdl.Rect{X: bx, Y: y, W: 136, H: btnH}, "📦 Export archive") {
