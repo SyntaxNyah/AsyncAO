@@ -1,6 +1,10 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+)
 
 // TestEmojiPickerFenceReleases pins the frozen-UI fix: the modal fence is ON while the
 // picker is open and RELEASED the frame it closes (modalOn persists across frames, so an
@@ -36,5 +40,32 @@ func TestEmojiPickerFenceReleases(t *testing.T) {
 	}
 	if c.modalOn {
 		t.Error("the fence must not be stranded on another screen")
+	}
+}
+
+// TestEmojiPickerKeepsPanels pins the playtest fix "the emoji button makes all
+// the areas disappear": the picker still FENCES the pointer (courtModalOpen)
+// but no longer counts as a blocking popup, so the Extras surface — the box and
+// every torn-off tab panel (Areas!) — keeps drawing while it's open. Truly
+// blocking popups still hide them.
+func TestEmojiPickerKeepsPanels(t *testing.T) {
+	a := &App{ctx: &Ctx{}, screen: ScreenCourtroom}
+	a.room = &courtroom.Courtroom{}
+	a.sess = &courtroom.Session{}
+
+	if !a.extrasSurfaceLive() {
+		t.Fatal("a live court with nothing open must show the Extras surface")
+	}
+	a.showEmojiPicker = true
+	if !a.courtModalOpen() {
+		t.Error("the open picker must still fence the pointer (courtModalOpen)")
+	}
+	if !a.extrasSurfaceLive() {
+		t.Error("the open picker must NOT hide torn-off panels / the Extras box")
+	}
+	a.showEmojiPicker = false
+	a.showIni = true // a genuinely blocking popup still hides them
+	if a.extrasSurfaceLive() {
+		t.Error("a blocking popup must hide the Extras surface")
 	}
 }

@@ -152,9 +152,10 @@ func hexNibble(b byte) (uint8, bool) {
 	return 0, false
 }
 
-// courtModalOpen reports whether a blocking courtroom popup is up. The box (and
-// its torn-off widgets) yields to those and reappears when they close.
-func (a *App) courtModalOpen() bool {
+// blockingCourtPopup reports a truly BLOCKING courtroom popup — one that takes
+// the whole screen's attention, so the Extras box and torn-off tab panels yield
+// to it (and reappear when it closes).
+func (a *App) blockingCourtPopup() bool {
 	// NOTE: showPair / showModDash / showCMPanel / showEvid / banBoxKind are deliberately
 	// NOT here — they're non-blocking floating boxes now (floatwin.go), so the courtroom
 	// stays live behind them (you can keep chatting / follow the log while one is open). The
@@ -162,7 +163,18 @@ func (a *App) courtModalOpen() bool {
 	// the live preview + the explicit Send button keeping the destructive-action safety.
 	return a.showIni || a.bgPick.show ||
 		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen ||
-		a.showEmojiPicker || a.classicEdit
+		a.classicEdit
+}
+
+// courtModalOpen reports whether ANY pointer-fencing courtroom popup is up —
+// the blocking set plus the emoji picker. Input paths (stage zoom, sprite drag,
+// the viewport divider) key off this; panel VISIBILITY keys off
+// blockingCourtPopup instead, because the emoji picker is a tiny anchored popup
+// whose fence already stops click-through — hiding the Extras box and every
+// torn-off tab for it read as "the emoji button makes all the areas disappear"
+// in the playtest.
+func (a *App) courtModalOpen() bool {
+	return a.blockingCourtPopup() || a.showEmojiPicker
 }
 
 // capturingKey reports whether ANY key-bind capture is armed (hotkey, showname,
@@ -282,11 +294,12 @@ func (a *App) closeTopOverlay() bool {
 }
 
 // extrasSurfaceLive reports whether the Extras surface (the MAIN box and/or any
-// torn-off boxes) may show at all: a live courtroom with no blocking popup over
-// it. Torn-off boxes ride on this alone, so they persist when the main box is
-// closed — closing the main box must not yank the widgets you dragged out.
+// torn-off boxes) may show at all: a live courtroom with no BLOCKING popup over
+// it (the emoji picker doesn't count — see blockingCourtPopup). Torn-off boxes
+// ride on this alone, so they persist when the main box is closed — closing the
+// main box must not yank the widgets you dragged out.
 func (a *App) extrasSurfaceLive() bool {
-	return a.room != nil && a.sess != nil && !a.courtModalOpen()
+	return a.room != nil && a.sess != nil && !a.blockingCourtPopup()
 }
 
 // extrasBoxVisible reports whether the MAIN box should draw: opened (showWidgets)
