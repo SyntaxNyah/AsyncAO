@@ -590,8 +590,9 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	a.replayEvents = rec.Events
 	a.replayIdx = 0
 	a.replayName = name
-	a.replayRec = rec      // kept so ⏮ Restart can rebuild from the top
-	a.replayPaused = false // a fresh replay starts playing
+	a.replayRec = rec                                  // kept so ⏮ Restart can rebuild from the top
+	a.replayChapters = buildReplayChapters(rec.Events) // #70 the jump list (idempotent across restarts/jumps)
+	a.replayPaused = false                             // a fresh replay starts playing
 	a.replaying = true
 	a.warnLine = "▶ Replaying " + name + " — press the Replay key to stop"
 	a.warnAt = time.Now()
@@ -667,6 +668,8 @@ func (a *App) stopReplay() {
 	a.replayName = ""
 	a.replayPaused = false
 	a.replayRec = nil
+	a.replayChapters = nil
+	a.replayChaptersOpen = false
 	if a.d.Viewport != nil { // rebind preanim completion to the live room (or clear it)
 		if a.room != nil {
 			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
@@ -696,6 +699,8 @@ func (a *App) recoverReplay(where string) {
 	a.replayName = ""
 	a.replayPaused = false
 	a.replayRec = nil
+	a.replayChapters = nil
+	a.replayChaptersOpen = false
 	if a.d.Viewport != nil {
 		if a.room != nil {
 			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
@@ -812,6 +817,7 @@ func (a *App) drawReplayOverlay(w, h int32) {
 		a.stopReplay()
 	}
 	a.drawReplayControls(stage, w)
+	a.drawReplayChapters(stage, w) // #70: the jump list, right of the transport strip
 }
 
 // drawReplayControls draws the player transport strip below the stage: Restart,

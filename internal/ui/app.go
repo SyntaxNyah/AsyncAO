@@ -513,6 +513,10 @@ type App struct {
 	replayName   string
 	replayPaused bool            // player ⏸ — freeze the scene (Next/Restart still work)
 	replayRec    *sceneRecording // the source, kept so ⏮ Restart can rebuild from the top
+	// #70 auto-chapters: the jump list derived once per replay (bg/music/shout
+	// beats) and whether its panel is open in the overlay player.
+	replayChapters     []replayChapter
+	replayChaptersOpen bool
 
 	// Scene maker (M16 [3/3], see scenemaker.go): an in-app editor over the SAME
 	// .aorec model — build a scene from scratch or edit a recording, preview it
