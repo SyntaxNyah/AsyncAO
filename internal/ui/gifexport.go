@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"image"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,6 +218,22 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	}
 	y += 28
 
+	// #74 watermark: a small corner credit on GIF/WebP/Video exports (not the comic).
+	if next := c.Checkbox(pad, y, "Watermark the export (top-right corner stamp)", opts.Watermark); next != opts.Watermark {
+		opts.Watermark = next
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	y += 28
+	if opts.Watermark {
+		c.Label(pad+16, y+5, "Text:", ColTextDim)
+		if next, _ := c.TextField("exp_wmtext", sdl.Rect{X: fx, Y: y, W: 220, H: fieldH}, opts.WatermarkText, "blank = server · date"); next != opts.WatermarkText {
+			opts.WatermarkText = next
+			a.d.Prefs.SetExportOpts(opts)
+		}
+		c.Label(fx+230, y+5, "blank stamps the recording's server + date", ColTextDim)
+		y += 30
+	}
+
 	// Playback speed is shared with the replay player (it drives the export's
 	// pacing too) — surfaced here so the whole "look" is set in one place.
 	if withSpeed {
@@ -276,6 +293,7 @@ type gifExportJob struct {
 	delayCs   int           // GIF per-frame delay, centiseconds
 	loop      bool          // loop the animation forever vs play once
 	maxFrames int           // frame cap for this size (memory-budgeted)
+	stamp     string        // #74 watermark text ("" = off), resolved once at start
 
 	// Conversation chatbox raster, rebuilt per message and revealed rune-by-rune
 	// (so the GIF shows people talking). Self-cached here, never the live a.msRaster.
@@ -457,6 +475,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		delayCs:      delayCs,
 		loop:         opts.Loop,
 		maxFrames:    maxFrames,
+		stamp:        exportStamp(opts, scene),
 		chatPct:      exportChatPct(h, opts.TextScale), // font fitted to the capture, not the live zoom
 		warming:      true,
 		warmRefs:     warmRefs,
@@ -505,6 +524,7 @@ func (a *App) tickGifExport() {
 		img, err := j.ct.Capture(a.ctx.Ren, func(dst sdl.Rect) {
 			a.d.Viewport.Render(a.ctx.Ren, &j.room.Scene, dst)
 			a.drawGifChatbox(j, &j.room.Scene, dst) // composite the conversation over the scene
+			a.drawExportStamp(j, dst)               // #74 opt-in watermark, top-right
 		})
 		if err != nil {
 			a.pushDebug("scene export capture: " + err.Error())
@@ -666,6 +686,47 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 		j.chatRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+gifChatNameRowH)
 		_ = c.Ren.SetClipRect(nil)
 	}
+}
+
+// exportStamp resolves the #74 watermark text once per export: the user's custom
+// text, or — blank — the recording's asset host + its recorded date. "" = off.
+// A bundled archive's rewritten local origin (loopback) is skipped: stamping
+// "127.0.0.1" credits nobody, so those fall back to the date alone.
+func exportStamp(opts config.ExportOptions, rec *sceneRecording) string {
+	if !opts.Watermark {
+		return ""
+	}
+	if t := strings.TrimSpace(opts.WatermarkText); t != "" {
+		return t
+	}
+	date := time.Now().Format("2 Jan 2006")
+	if ts, err := time.Parse(time.RFC3339, rec.RecordedAt); err == nil {
+		date = ts.Format("2 Jan 2006")
+	}
+	host := ""
+	if u, err := url.Parse(rec.Origin); err == nil {
+		host = u.Host
+	}
+	if h := strings.ToLower(host); h == "" || strings.HasPrefix(h, "127.0.0.1") || strings.HasPrefix(h, "localhost") {
+		return date
+	}
+	return host + " · " + date
+}
+
+// drawExportStamp paints the watermark in the capture's top-right (the chatbox
+// owns the bottom band): a 1-px shadow pass keeps it readable over any scene.
+// The stamp string is constant per export, so the label texture is cached after
+// the first frame. Render thread only (inside the capture callback).
+func (a *App) drawExportStamp(j *gifExportJob, vp sdl.Rect) {
+	if j.stamp == "" {
+		return
+	}
+	c := a.ctx
+	w := c.TextWidth(j.stamp)
+	x := vp.X + vp.W - w - 8
+	y := vp.Y + 6
+	c.Label(x+1, y+1, j.stamp, sdl.Color{R: 10, G: 10, B: 12, A: 255})
+	c.Label(x, y, j.stamp, sdl.Color{R: 228, G: 228, B: 232, A: 255})
 }
 
 // finishGifExport tears down the capture, restores the viewport's preanim

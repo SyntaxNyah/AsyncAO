@@ -310,7 +310,15 @@ type ExportOptions struct {
 	// VideoFormat picks the 🎥 Video container/codec ("mp4" H.264 or "webm" VP9);
 	// it has no effect on the GIF/WebP buttons. Empty = the MP4 default.
 	VideoFormat string `json:"videoFormat,omitempty"`
+	// Watermark (#74) stamps the export's top-right corner with WatermarkText, or —
+	// when that's blank — the recording's server + date. Off by default.
+	Watermark     bool   `json:"watermark,omitempty"`
+	WatermarkText string `json:"watermarkText,omitempty"`
 }
+
+// maxWatermarkLen bounds the custom watermark stamp — it's a corner credit, not a
+// caption (and the label raster keys a texture per distinct string).
+const maxWatermarkLen = 64
 
 // defaultExportOptions is the out-of-box export look.
 func defaultExportOptions() ExportOptions {
@@ -3406,6 +3414,9 @@ func (p *AssetPreferences) SetExportOpts(o ExportOptions) {
 	o.Quality = clampPercent(o.Quality, minExportQuality, maxExportQuality)
 	o.TextScale = clampPercent(o.TextScale, minExportText, maxExportText)
 	o.VideoFormat = normalizeVideoFormat(o.VideoFormat)
+	if runes := []rune(o.WatermarkText); len(runes) > maxWatermarkLen {
+		o.WatermarkText = string(runes[:maxWatermarkLen]) // rune-safe: never split a glyph
+	}
 	p.mu.Lock()
 	if p.Export == o {
 		p.mu.Unlock()
