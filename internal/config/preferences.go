@@ -317,6 +317,9 @@ type ExportOptions struct {
 	// Subtitles (#69) writes .srt + .vtt sidecars beside a 🎥 Video export,
 	// cue-timed to the exported frames. Off by default.
 	Subtitles bool `json:"subtitles,omitempty"`
+	// CopyToClipboard (#71) puts the finished export FILE on the OS clipboard
+	// (Windows) so it pastes straight into Discord. Off by default.
+	CopyToClipboard bool `json:"copyToClipboard,omitempty"`
 }
 
 // maxWatermarkLen bounds the custom watermark stamp — it's a corner credit, not a

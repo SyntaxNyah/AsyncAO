@@ -568,7 +568,7 @@ type App struct {
 	// only while exporting; zero cost on the live path otherwise.
 	gifExporting bool
 	gif          *gifExportJob
-	gifResultCh  chan string // off-thread encode → UI (result line)
+	gifResultCh  chan exportResult // off-thread encode → UI (result line + artifact path)
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current

@@ -174,20 +174,22 @@ func paginateComic(panels []*image.RGBA, perPage int) [][]*image.RGBA {
 
 // composeAndWriteComic (off-thread) paginates the panels, composes + PNG-encodes
 // each page, and writes recordings\<stem>.png (single page) or \<stem>-pN.png (one
-// per page). Returns the result line for the UI.
-func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) string {
+// per page). Returns the result line for the UI (+ the first page's path, so the
+// #71 clipboard-copy hook has an artifact to grab).
+func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) exportResult {
 	pages := paginateComic(panels, comicPanelsPerPage)
 	if len(pages) == 0 {
-		return "Comic export failed: no panels."
+		return exportResult{msg: "Comic export failed: no panels."}
 	}
 	dir := recordingsDir()
 	if dir == "" {
-		return "Comic export failed: no recordings folder."
+		return exportResult{msg: "Comic export failed: no recordings folder."}
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "Comic export failed: " + err.Error()
+		return exportResult{msg: "Comic export failed: " + err.Error()}
 	}
 	var totalBytes, startNum int = 0, 1
+	firstPath := ""
 	for i, pagePanels := range pages {
 		img := composeComicPage(pagePanels, comicCols, comicPanelW, comicPanelH, comicGutter, comicMargin, comicBorder, startNum)
 		startNum += len(pagePanels) // page 2's panels continue numbering, not restart at 1
@@ -196,14 +198,18 @@ func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) string
 		}
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, img); err != nil {
-			return "Comic export failed: " + err.Error()
+			return exportResult{msg: "Comic export failed: " + err.Error()}
 		}
 		name := stem + ".png"
 		if len(pages) > 1 { // number the files only when the comic spans multiple pages
 			name = fmt.Sprintf("%s-p%d.png", stem, i+1)
 		}
-		if err := os.WriteFile(filepath.Join(dir, name), buf.Bytes(), 0o644); err != nil {
-			return "Comic export failed: " + err.Error()
+		full := filepath.Join(dir, name)
+		if err := os.WriteFile(full, buf.Bytes(), 0o644); err != nil {
+			return exportResult{msg: "Comic export failed: " + err.Error()}
+		}
+		if firstPath == "" {
+			firstPath = full
 		}
 		totalBytes += buf.Len()
 	}
@@ -218,7 +224,7 @@ func composeAndWriteComic(panels []*image.RGBA, stem string, capped bool) string
 	if capped {
 		msg += fmt.Sprintf(" Showing the first %d lines (the %d-page max).", len(panels), maxComicPages)
 	}
-	return msg
+	return exportResult{msg: msg, path: firstPath}
 }
 
 // composeComicPage lays panels into a storyboard grid: `cols` per row (fewer if

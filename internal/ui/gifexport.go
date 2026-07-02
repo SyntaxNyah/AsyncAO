@@ -95,6 +95,14 @@ const (
 	gifWarmMax   = 6 * time.Second
 )
 
+// exportResult is one finished export delivered back to the UI thread: the
+// toast line plus — on success — the artifact's path, so the #71 clipboard-copy
+// hook (and any future "reveal in folder") knows what was produced.
+type exportResult struct {
+	msg  string
+	path string // "" on failure
+}
+
 // exportKind selects the output format one gifExportJob produces. GIF and WebP
 // share the held/streamed encoders already here; Video streams raw frames into a
 // system ffmpeg (internal/videoenc).
@@ -200,6 +208,14 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	// #69: subtitle sidecar for the video export (cue-timed to the video itself).
 	if next := c.Checkbox(pad, y, "Write subtitles beside the video (.srt + .vtt, speaker + line)", opts.Subtitles); next != opts.Subtitles {
 		opts.Subtitles = next
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	y += 28
+
+	// #71: put the finished export FILE on the clipboard (Windows) — paste it
+	// straight into Discord without opening the recordings folder.
+	if next := c.Checkbox(pad, y, "Copy the finished file to the clipboard (paste straight into Discord — Windows)", opts.CopyToClipboard); next != opts.CopyToClipboard {
+		opts.CopyToClipboard = next
 		a.d.Prefs.SetExportOpts(opts)
 	}
 	y += 28
@@ -449,7 +465,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: scene.StartBg})
 	}
 	if a.gifResultCh == nil {
-		a.gifResultCh = make(chan string, 1)
+		a.gifResultCh = make(chan exportResult, 1)
 	}
 
 	// Pre-warm: enumerate every sprite / background / desk the scene needs and
@@ -823,7 +839,7 @@ func (a *App) finishWebpExport(j *gifExportJob, stem string) {
 		data, err := enc.Assemble()
 		enc.Close()
 		if err != nil {
-			a.gifResultCh <- "WebP export failed: " + err.Error()
+			a.gifResultCh <- exportResult{msg: "WebP export failed: " + err.Error()}
 			return
 		}
 		a.gifResultCh <- writeWebp(data, stem)
@@ -874,7 +890,7 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 	go func() {
 		if err := enc.Finish(); err != nil {
 			_ = os.Remove(path) // a failed encode leaves a corrupt file — don't keep it
-			a.gifResultCh <- "Video export failed: " + err.Error()
+			a.gifResultCh <- exportResult{msg: "Video export failed: " + err.Error()}
 			return
 		}
 		subNote := ""
@@ -883,13 +899,13 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 		}
 		if len(songs) > 0 || len(sfx) > 0 {
 			if finalPath, ok := muxSceneAudio(mgr, path, songs, sfx, format); ok {
-				a.gifResultCh <- videoSavedMsg(finalPath) + "  ♪ with sound" + subNote
+				a.gifResultCh <- exportResult{msg: videoSavedMsg(finalPath) + "  ♪ with sound" + subNote, path: finalPath}
 				return
 			}
-			a.gifResultCh <- videoSavedMsg(path) + "  (couldn't add the sound — saved silent)" + subNote
+			a.gifResultCh <- exportResult{msg: videoSavedMsg(path) + "  (couldn't add the sound — saved silent)" + subNote, path: path}
 			return
 		}
-		a.gifResultCh <- videoSavedMsg(path) + subNote
+		a.gifResultCh <- exportResult{msg: videoSavedMsg(path) + subNote, path: path}
 	}()
 }
 
@@ -934,49 +950,58 @@ func (a *App) restoreViewportPreanim() {
 }
 
 // encodeAndWriteGIF (off-thread) encodes the frames and writes recordings\<stem>.gif.
-func encodeAndWriteGIF(frames []*image.Paletted, stem string, delayCs int, loop bool) string {
+func encodeAndWriteGIF(frames []*image.Paletted, stem string, delayCs int, loop bool) exportResult {
 	data, err := gifenc.EncodeGIF(frames, delayCs, loop)
 	if err != nil {
-		return "GIF export failed: " + err.Error()
+		return exportResult{msg: "GIF export failed: " + err.Error()}
 	}
 	dir := recordingsDir()
 	if dir == "" {
-		return "GIF export failed: no recordings folder."
+		return exportResult{msg: "GIF export failed: no recordings folder."}
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "GIF export failed: " + err.Error()
+		return exportResult{msg: "GIF export failed: " + err.Error()}
 	}
 	name := stem + ".gif"
-	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
-		return "GIF export failed: " + err.Error()
+	full := filepath.Join(dir, name)
+	if err := os.WriteFile(full, data, 0o644); err != nil {
+		return exportResult{msg: "GIF export failed: " + err.Error()}
 	}
-	return fmt.Sprintf("GIF saved: recordings\\%s (%.1f MB).", name, float64(len(data))/(1024*1024))
+	return exportResult{msg: fmt.Sprintf("GIF saved: recordings\\%s (%.1f MB).", name, float64(len(data))/(1024*1024)), path: full}
 }
 
 // writeWebp (off-thread) writes the assembled animated WebP to recordings\<stem>.webp.
-func writeWebp(data []byte, stem string) string {
+func writeWebp(data []byte, stem string) exportResult {
 	dir := recordingsDir()
 	if dir == "" {
-		return "WebP export failed: no recordings folder."
+		return exportResult{msg: "WebP export failed: no recordings folder."}
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "WebP export failed: " + err.Error()
+		return exportResult{msg: "WebP export failed: " + err.Error()}
 	}
 	name := stem + ".webp"
-	if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
-		return "WebP export failed: " + err.Error()
+	full := filepath.Join(dir, name)
+	if err := os.WriteFile(full, data, 0o644); err != nil {
+		return exportResult{msg: "WebP export failed: " + err.Error()}
 	}
-	return fmt.Sprintf("WebP saved: recordings\\%s (%.2f MB).", name, float64(len(data))/(1024*1024))
+	return exportResult{msg: fmt.Sprintf("WebP saved: recordings\\%s (%.2f MB).", name, float64(len(data))/(1024*1024)), path: full}
 }
 
-// pollGifExport delivers the off-thread encode result to the UI.
+// pollGifExport delivers the off-thread encode result to the UI — and, when the
+// #71 opt-in is on and the export succeeded, puts the finished FILE on the OS
+// clipboard so it pastes straight into Discord/Explorer.
 func (a *App) pollGifExport() {
 	if a.gifResultCh == nil {
 		return
 	}
 	select {
-	case msg := <-a.gifResultCh:
-		a.warnLine = msg
+	case res := <-a.gifResultCh:
+		a.warnLine = res.msg
+		if res.path != "" && a.d.Prefs.ExportOpts().CopyToClipboard {
+			if copyFileToClipboard(res.path) {
+				a.warnLine += "  📋 on the clipboard"
+			}
+		}
 		a.warnAt = time.Now()
 	default:
 	}
