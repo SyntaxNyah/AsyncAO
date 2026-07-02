@@ -569,6 +569,23 @@ func (a *App) drawSettingsSearchResults(q string, enter bool, cardX, cardW, cont
 	}
 	switch {
 	case total == 0:
+		// Keyword fallback: no row label matched, but the per-tab keyword table
+		// (settingsSearchMatch) may still know the CONCEPT ("volume" → Audio).
+		if mt := settingsSearchMatch(q); mt >= 0 {
+			r := sdl.Rect{X: cardX + 6, Y: y, W: cardW - 12, H: rowH - 2}
+			if c.hovering(r) {
+				c.Fill(r, ColPanelHi)
+				c.Border(r, ColAccent)
+			}
+			c.LabelClipped(r.X+6, r.Y+4, r.W-12, "→ the "+settingsTabNames[mt]+" tab covers this — open it", ColAccent)
+			if enter || (c.clicked && c.hovering(r)) {
+				settings.tab = mt
+				settings.search = ""
+				settings.indexBuilt = false
+				c.clicked = false
+			}
+			return
+		}
 		c.LabelClipped(cardX+8, y+4, cardW-16, "No settings match — try a shorter word (matches are by label text).", ColTextDim)
 	case total > shown:
 		c.LabelClipped(cardX+8, y+4, cardW-16, fmt.Sprintf("+ %d more — narrow the search to see the rest.", total-shown), ColTextDim)

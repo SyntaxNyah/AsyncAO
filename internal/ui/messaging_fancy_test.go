@@ -39,7 +39,9 @@ func TestGroupUnreadFlow(t *testing.T) {
 // TestGroupChipColorStable pins the per-group accent: deterministic per id,
 // different for different ids (the two-groups-look-identical fix).
 func TestGroupChipColorStable(t *testing.T) {
-	if groupChipColor(42) != groupChipColor(42) {
+	first := groupChipColor(42)
+	again := groupChipColor(42) // separate calls: SA4000-clean determinism check
+	if first != again {
 		t.Error("chip colour must be stable per group id")
 	}
 	if groupChipColor(41) == groupChipColor(140) {
