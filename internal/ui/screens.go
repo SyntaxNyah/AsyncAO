@@ -5320,10 +5320,31 @@ func (a *App) sendIC(shout int) {
 		out.EvidenceID = a.evidIdx + 1
 	}
 	a.sess.SendChat(out)
-	a.evidPresent = false // presenting is one-shot
 	a.lastICSend = time.Now()
 	a.recordSentIC(a.icInput) // #8: remember the raw typed line for Up-arrow recall
-	a.icInput = ""
+	// Keep-until-echo (AO2-Client parity, courtroom.cpp handle_chatmessage):
+	// the input is NOT cleared here — noteOwnICEcho clears it when the server
+	// echoes our message back. tsuserver-family servers silently swallow an MS
+	// that lands inside another message's area-wide delay window
+	// (area.set_next_msg_delay), so an optimistic clear cost the whole typed
+	// line whenever two people sent at once and the other side won the race.
+	// evidPresent stays armed for the same reason (AO2 resets it on the echo):
+	// a swallowed send must not disarm the evidence you presented.
+	a.icPendingSent = a.icInput
+}
+
+// noteOwnICEcho lands the server's echo of OUR OWN IC message (CHAR_ID ==
+// MyCharID) — the AO2-Client own-echo block in handle_chatmessage. Clear the
+// input only if it still holds exactly what we sent (typing that raced the
+// echo survives), and consume the one-shot evidence-present state. A send the
+// server swallowed never echoes, so everything stays put for an immediate
+// re-Enter.
+func (s *sessionState) noteOwnICEcho() {
+	if s.icInput == s.icPendingSent {
+		s.icInput = ""
+	}
+	s.icPendingSent = ""
+	s.evidPresent = false // presenting is one-shot: consumed by the message that displayed
 }
 
 // sentHistCap bounds a per-tab message recall ring (#8: IC, and the OOC ring that mirrors it).

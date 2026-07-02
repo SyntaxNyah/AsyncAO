@@ -366,6 +366,12 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 	switch ev.Kind {
 	case courtroom.EventMessage:
 		if ev.Message != nil {
+			// A parked/pinned tab's own send clears on ITS server's echo too
+			// (keep-until-echo — the split pane's input must not vanish when
+			// that server swallows a raced send; see noteOwnICEcho).
+			if s.sess != nil && ev.Message.CharID == s.sess.MyCharID {
+				s.noteOwnICEcho()
+			}
 			fr, fc := a.friendMessage(s.serverKey, ev.Message)
 			force := a.d.Prefs.ForceCharNamesOn()
 			s.icLog = append(s.icLog, icEntry{text: capLogLine(icLogLine(ev.Message, force)), color: ev.Message.TextColor, friend: fr, friendColor: fc, speaker: icSpeakerName(ev.Message, force), stamp: a.icStamp()})

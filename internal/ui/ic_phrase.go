@@ -40,8 +40,11 @@ func (a *App) handleICPhraseKeys() bool {
 
 // sendICPhrase sends a canned line through the normal IC pipeline (current
 // character / emote / colour) WITHOUT disturbing whatever is in the IC draft: it
-// swaps the input, sends, then restores the draft (sendIC clears the input on a
-// successful send). A "/command" phrase runs as the command, same as typing it.
+// swaps the input, sends, then restores the draft. The phrase rides out as the
+// pending-echo snapshot, so the restored draft never matches it and the echo
+// can't clear your draft (keep-until-echo, noteOwnICEcho); if the server
+// swallows a phrase, re-pressing its key is the natural retry. A "/command"
+// phrase runs as the command, same as typing it.
 func (a *App) sendICPhrase(phrase string) {
 	if a.sess == nil || a.sess.MyCharID < 0 || strings.TrimSpace(phrase) == "" {
 		return

@@ -1112,8 +1112,15 @@ type sessionState struct {
 	lastReactName   string
 
 	// --- courtroom chrome ---
-	icInput  string
-	oocInput string
+	icInput string
+	// icPendingSent snapshots icInput at IC send time. AO2-Client parity
+	// (courtroom.cpp handle_chatmessage): the input box clears only when the
+	// server ECHOES our message back (CHAR_ID == m_cid) — tsuserver-family
+	// servers silently swallow an MS that lands inside another message's
+	// area-wide delay window (area.can_send_message), so clearing at send
+	// time threw the whole typed line away whenever two people sent at once.
+	icPendingSent string
+	oocInput      string
 	// IC message recall (#8): Up/Down in the IC field walk your recently-sent messages,
 	// shell-style. icRecallIdx == -1 = editing the live draft; icRecallDraft stashes that
 	// draft while you browse history. Per-tab (lives in sessionState).
@@ -2673,6 +2680,12 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.scanModActionOOC(ev.Name, ev.Text) // #60: optional ban/kick/mute feedback sound
 		case courtroom.EventMessage:
 			if ev.Message != nil {
+				// Our own message echoed back — the server accepted it, so NOW
+				// the input clears (keep-until-echo, see noteOwnICEcho). Above
+				// the ignore filter: it's our line, filtering is display-only.
+				if a.sess != nil && ev.Message.CharID == a.sess.MyCharID {
+					a.noteOwnICEcho()
+				}
 				if a.serverKey != "" && a.ignoreSpeaker(ev.Message) {
 					continue // #81: ignored player — drop IC entirely (no log, no sprite/blip via room, no recording)
 				}

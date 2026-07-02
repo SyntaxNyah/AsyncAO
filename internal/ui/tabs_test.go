@@ -464,10 +464,10 @@ func TestTabTearOffToSplit(t *testing.T) {
 
 // TestSendICSplitTargetsPinnedSession pins the dual-input invariant (pass 2c):
 // typing into the right pane sends on the PINNED server (its conn, its char id)
-// via a momentary sessionState swap, consumes the PINNED input, and leaves the
-// primary session bit-for-bit untouched. The swap reuses the unmodified sendIC,
-// so a regression that forgets to restore the primary — or that sends on the
-// wrong conn/identity — fails here.
+// via a momentary sessionState swap, marks the PINNED input pending (keep-until-
+// echo), and leaves the primary session bit-for-bit untouched. The swap reuses
+// the unmodified sendIC, so a regression that forgets to restore the primary —
+// or that sends on the wrong conn/identity — fails here.
 func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	a := testTabApp(t)
 	// Primary (left) session: a distinct identity that must survive the send.
@@ -507,9 +507,17 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	if !slices.Contains(sent[0].Fields, "4242") {
 		t.Errorf("the message must carry the PINNED char id 4242 (swap fed the right identity), fields=%v", sent[0].Fields)
 	}
-	// 2. The pinned input was consumed (the swap captured sendIC's clear back).
-	if pin.state.icInput != "" {
-		t.Errorf("pinned input must clear after send, got %q", pin.state.icInput)
+	// 2. The pinned input is KEPT until the pinned server echoes it back
+	//    (keep-until-echo: a send the server swallows must not cost the typed
+	//    line) — the send only snapshots it as pending, in the PINNED state.
+	if pin.state.icInput != "hello from the right pane" {
+		t.Errorf("pinned input must be kept until the echo, got %q", pin.state.icInput)
+	}
+	if pin.state.icPendingSent != "hello from the right pane" {
+		t.Errorf("pinned pending snapshot = %q, want the sent line", pin.state.icPendingSent)
+	}
+	if a.icPendingSent != "" {
+		t.Errorf("the PRIMARY session must not inherit the pinned pending, got %q", a.icPendingSent)
 	}
 	// 3. The primary session is fully restored — name and its own draft intact.
 	if a.serverName != "PrimaryServer" || a.icInput != "primary draft" {
