@@ -262,30 +262,51 @@ func (u URLBuilder) SFX(name string) string {
 	return u.origin + soundsGeneral + seg(name)
 }
 
-// Blip returns a blip set base. // AssetType: Blip
+// Blip returns a blip set base (lowercased — the identity, matching the
+// client-wide seg() convention and webAO-style mirrors). // AssetType: Blip
 func (u URLBuilder) Blip(name string) string {
 	return u.origin + soundsBlips + seg(name)
 }
 
-// MiscChatbox returns a per-character chatbox skin base: char.ini chat=<misc>
-// → misc/<misc>/chat — AO2-Client's PRIMARY stem (courtroom.cpp:3328 tries
-// setImage("chat", misc) before "chatbox"; modern packs ship chat.png). The
-// misc value is authored by the pack to name a REAL folder, so unlike other
-// segments its case is preserved (seg() lowercasing broke every CamelCase
-// pack on case-sensitive mirrors — chat=HallA probed misc/halla/) and its
-// slashes survive as path separators (nested values like "VA-11/Jill" are
-// common in the wild; PathEscape turned them into a dead %2F segment).
-// AssetType: Misc
-func (u URLBuilder) MiscChatbox(misc string) string {
-	return u.origin + "misc/" + escapePreservingSlashes(strings.TrimSpace(misc)) + "/chat"
+// BlipAuthored is Blip in the set's authored casing — the chain alt for
+// case-preserving mirrors (blips=YTTD is sounds/blips/yttd.opus on a
+// lowercase mirror but sounds/blips/YTTD.wav on a raw content folder; AO2's
+// case-insensitive local FS never had to choose). // AssetType: Blip
+func (u URLBuilder) BlipAuthored(name string) string {
+	return u.origin + soundsBlips + segRaw(name)
 }
 
-// MiscChatboxLegacy is the same skin's second spelling — misc/<misc>/chatbox,
-// the stem AO2-Client falls back to when "chat" misses (courtroom.cpp:3330).
-// Feed it to PrefetchWithFallback as the alt; MiscChatbox stays the identity
-// base everywhere (scene field, T1 key). // AssetType: Misc
-func (u URLBuilder) MiscChatboxLegacy(misc string) string {
-	return u.origin + "misc/" + escapePreservingSlashes(strings.TrimSpace(misc)) + "/chatbox"
+// MiscChatboxCandidates returns the ordered spellings of a per-character
+// chatbox skin (char.ini chat=<misc>), first entry = the asset's identity.
+// Two axes multiply, both real in the wild:
+//
+//   - Stem: AO2-Client loads misc/<misc>/chat before misc/<misc>/chatbox
+//     (courtroom.cpp:3328-3330; modern packs ship chat.png).
+//   - Case: AO2 reads a case-INSENSITIVE local filesystem, but web mirrors
+//     are case-sensitive and split two ways — webAO-convention mirrors
+//     lowercase every path (miku.pizza ships misc/yttd/chat.png for
+//     chat=YTTD), while raw content-folder mirrors keep the authored case
+//     (misc/HallA/...). Lowercase leads (it's this client's URL convention,
+//     seg() everywhere); the authored spelling follows when it differs.
+//
+// Slashes survive as path separators (nested values like "VA-11/Jill" are
+// common; PathEscape's %2F was a dead URL), spaces still escape per segment.
+// Feed [0] to the scene and the rest to PrefetchChain — ≤ 4 entries, each
+// miss 404-cached. // AssetType: Misc
+func (u URLBuilder) MiscChatboxCandidates(misc string) []string {
+	misc = strings.TrimSpace(misc)
+	lower := escapePreservingSlashes(strings.ToLower(misc))
+	cands := []string{
+		u.origin + "misc/" + lower + "/chat",
+		u.origin + "misc/" + lower + "/chatbox",
+	}
+	if authored := escapePreservingSlashes(misc); authored != lower {
+		cands = append(cands,
+			u.origin+"misc/"+authored+"/chat",
+			u.origin+"misc/"+authored+"/chatbox",
+		)
+	}
+	return cands
 }
 
 // MusicURL returns the FULL music URL: AO music lists carry the extension in

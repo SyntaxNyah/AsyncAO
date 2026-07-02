@@ -54,8 +54,17 @@ const (
 var OptionalImageFormats = []string{ExtWebP, ExtAVIF, ExtAPNG, ExtGIF, ExtPNG, ExtJPG}
 
 // defaultFormatOrders is the zero-fallback probe list per asset type: with
-// fallbacks disabled this is the *entire* probe list (spec §4). Every
-// default is a single format, so a cold asset costs exactly one probe.
+// fallbacks disabled this is the *entire* probe list (spec §4). Every bulk
+// type defaults to a single format, so a cold asset costs exactly one probe.
+//
+// Misc is the deliberate exception (two formats): chatbox skins have no
+// extensions.json key and no per-host convention — ONE live mirror serves
+// misc/yttd/chat.png beside misc/helltaker/chatbox.webp, so a single
+// per-host format can never cover the type. It's also the rarest probe in
+// the client (one URL per chat=-declaring character, then cached), so the
+// extra candidate costs nothing measurable. Per-host learning still
+// front-runs the order; a learned miss falls back to this full list within
+// the same pass (spec §4's stale-learned re-probe).
 //
 // Note there is no ".webp.animated": animation is a property of the .webp
 // payload (VP8X ANIM flag), detected at decode time, never a separate probe.
@@ -63,9 +72,9 @@ var defaultFormatOrders = map[string][]string{
 	TypeCharIcon:    {ExtPNG},
 	TypeCharSprite:  {ExtWebP},
 	TypeBackground:  {ExtWebP},
+	TypeMisc:        {ExtPNG, ExtWebP}, // png = AO2's stock misc convention; webp = the modern packs
 	TypeDeskOverlay: {ExtWebP},
 	TypeShoutBubble: {ExtWebP},
-	TypeMisc:        {ExtWebP},
 	TypeSFX:         {ExtOpus},
 	TypeMusic:       {ExtOpus},
 	TypeBlip:        {ExtOpus},
@@ -81,7 +90,7 @@ var legacyFallbackChains = map[string][]string{
 	TypeBackground:  {ExtAPNG, ExtGIF, ExtPNG},
 	TypeDeskOverlay: {ExtAPNG, ExtGIF, ExtPNG},
 	TypeShoutBubble: {ExtAPNG, ExtGIF, ExtPNG},
-	TypeMisc:        {ExtAPNG, ExtGIF, ExtPNG},
+	TypeMisc:        {ExtAPNG, ExtGIF}, // png + webp are both in the default order already
 	TypeSFX:         {ExtOgg, ExtWAV, ExtMP3},
 	TypeMusic:       {ExtOgg, ExtMP3},
 	TypeBlip:        {ExtOgg, ExtWAV, ExtMP3},

@@ -77,17 +77,17 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 		t.Errorf("wire blip must win: blipBase = %q", room.blipBase)
 	}
 
-	// The misc value is authored to name a REAL folder: case survives
-	// (case-sensitive mirrors; lowercasing broke chat=HallA) and slashes are
-	// path separators (chat=VA-11/Jill nests — PathEscape's %2F was a dead
-	// URL). Spaces still escape per segment.
+	// The identity spelling is LOWERCASE with slashes kept as path
+	// separators (chat=VA-11/Jill nests — PathEscape's %2F was a dead URL);
+	// spaces still escape per segment. The authored casing rides the chain
+	// as an alt (MiscChatboxCandidates), never the scene key.
 	msgCase := icMsg("case test")
 	msgCase.CharName = "dorothy"
 	room.ChatSkinFor = func(string) string { return "VA-11 HallA/Jill Stingray" }
 	room.HandleEvent(Event{Kind: EventMessage, Message: msgCase})
 	room.SkipToIdle()
-	if !strings.Contains(room.Scene.ChatSkinBase, "misc/VA-11%20HallA/Jill%20Stingray/chat") {
-		t.Errorf("nested/cased chat skin base = %q, want misc/VA-11%%20HallA/Jill%%20Stingray/chat", room.Scene.ChatSkinBase)
+	if !strings.Contains(room.Scene.ChatSkinBase, "misc/va-11%20halla/jill%20stingray/chat") {
+		t.Errorf("nested chat skin base = %q, want misc/va-11%%20halla/jill%%20stingray/chat", room.Scene.ChatSkinBase)
 	}
 
 	// A skinless speaker clears the scene's skin (no stale carry-over).

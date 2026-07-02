@@ -203,6 +203,7 @@ func TestURLBuilderConventions(t *testing.T) {
 		u.Background("Courtroom 1", "defenseempty"):    "http://cdn.example.com/base/background/courtroom%201/defenseempty",
 		u.SFX("sfx-Stab"):                              "http://cdn.example.com/base/sounds/general/sfx-stab",
 		u.Blip("Male"):                                 "http://cdn.example.com/base/sounds/blips/male",
+		u.BlipAuthored("YTTD"):                         "http://cdn.example.com/base/sounds/blips/YTTD",
 		u.MusicURL("Objection.opus"):                   "http://cdn.example.com/base/sounds/music/objection.opus",
 		u.MusicURL("https://radio.example.com/x.opus"): "https://radio.example.com/x.opus",
 	}
@@ -210,6 +211,50 @@ func TestURLBuilderConventions(t *testing.T) {
 		if got != want {
 			t.Errorf("url = %q, want %q", got, want)
 		}
+	}
+}
+
+// TestMiscChatboxCandidates pins the chatbox-skin spelling chain: lowercase
+// identity first in AO2's stem order (chat before chatbox,
+// courtroom.cpp:3328), then the authored casing for case-preserving mirrors —
+// and nothing more when the value is already lowercase. Nested values keep
+// their slashes as path separators; spaces escape per segment. The live
+// grounding: miku.pizza serves misc/yttd/chat.png for chat=YTTD (webAO-style
+// lowercase mirror), a raw content mirror serves misc/HallA/chat.png as
+// authored.
+func TestMiscChatboxCandidates(t *testing.T) {
+	u := NewURLBuilder("http://cdn.example.com/base/")
+
+	got := u.MiscChatboxCandidates("YTTD")
+	want := []string{
+		"http://cdn.example.com/base/misc/yttd/chat",
+		"http://cdn.example.com/base/misc/yttd/chatbox",
+		"http://cdn.example.com/base/misc/YTTD/chat",
+		"http://cdn.example.com/base/misc/YTTD/chatbox",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("cased candidates = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("candidate[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// Already-lowercase value: the authored pair would duplicate — omitted.
+	got = u.MiscChatboxCandidates("chatdr")
+	if len(got) != 2 || got[0] != "http://cdn.example.com/base/misc/chatdr/chat" ||
+		got[1] != "http://cdn.example.com/base/misc/chatdr/chatbox" {
+		t.Errorf("lowercase candidates = %v, want the two-stem pair only", got)
+	}
+
+	// Nested + spaced: slashes are separators, spaces escape, case chains.
+	got = u.MiscChatboxCandidates("VA-11 HallA/Jill")
+	if got[0] != "http://cdn.example.com/base/misc/va-11%20halla/jill/chat" {
+		t.Errorf("nested identity = %q, want the lowercase chat stem", got[0])
+	}
+	if len(got) != 4 || got[2] != "http://cdn.example.com/base/misc/VA-11%20HallA/Jill/chat" {
+		t.Errorf("nested authored alt = %v, want the authored chat stem third", got)
 	}
 }
 

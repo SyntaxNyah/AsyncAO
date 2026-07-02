@@ -186,6 +186,55 @@ func TestEveryTypeHasDefaultsAndLegacyChain(t *testing.T) {
 	}
 }
 
+// TestMiscFormatDefaultMigration pins the one-shot webp→png default flip for
+// Misc (chatbox skins ship as png; the old webp default was the emote class
+// bleeding over): a stored order equal to the OLD default was never a user
+// choice and advances to the new default on load; any other stored order is
+// deliberate and survives byte-for-byte.
+func TestMiscFormatDefaultMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	// Simulate a pre-flip prefs file: Misc stored as the old [.webp] default.
+	tp := p.AssetTypes[TypeMisc]
+	tp.FormatOrder = []string{ExtWebP}
+	p.AssetTypes[TypeMisc] = tp
+	p.markDirty()
+	if err := p.SaveNow(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	_ = p.Close()
+
+	re, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	defer re.Close()
+	if got := re.AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtPNG || got[1] != ExtWebP {
+		t.Errorf("old-default Misc order = %v after reload, want the new [%s %s]", got, ExtPNG, ExtWebP)
+	}
+
+	// A customized order (user picked gif-first) must NOT migrate.
+	tp = re.AssetTypes[TypeMisc]
+	tp.FormatOrder = []string{ExtGIF, ExtWebP}
+	re.AssetTypes[TypeMisc] = tp
+	re.markDirty()
+	if err := re.SaveNow(); err != nil {
+		t.Fatalf("save custom: %v", err)
+	}
+	_ = re.Close()
+	re2, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("reload custom: %v", err)
+	}
+	defer re2.Close()
+	if got := re2.AssetTypes[TypeMisc].FormatOrder; len(got) != 2 || got[0] != ExtGIF || got[1] != ExtWebP {
+		t.Errorf("customized Misc order = %v after reload, want [gif webp] untouched", got)
+	}
+}
+
 func TestPersistenceRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := newWithDebounce(path, testDebounce)

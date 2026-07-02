@@ -2305,6 +2305,21 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 26
 
+	y = a.settingsSection(y, w, "Area list")
+	// Current-area highlight (playtest ask): the row you're in reads coloured
+	// at a glance in the player list + mod dashboard; green by default,
+	// recolourable here (the Extras-box hex convention: blank = default).
+	c.Label(pad, y+4, "Your area's colour:", ColTextDim)
+	areaHex := a.d.Prefs.AreaHighlightColorHex()
+	sw := sdl.Rect{X: pad + 160, Y: y + 1, W: 18, H: 18}
+	c.Fill(sw, a.areaHighlightCol())
+	c.Border(sw, ColTextDim)
+	if next, _ := c.TextField("areahicol", sdl.Rect{X: pad + 186, Y: y, W: 110, H: fieldH}, areaHex, "rrggbb"); next != areaHex {
+		a.d.Prefs.SetAreaHighlightColorHex(next)
+	}
+	c.LabelClipped(pad+306, y+4, w-pad-306-scrollBarW, "hex like 4ac96c — blank = the stock green; marks the area you're in", ColTextDim)
+	y += 32
+
 	y = a.settingsSection(y, w, "Case alerts")
 	// Case announcements (CASEA, tsuserver-family): subscribe by role.
 	y = a.drawCasingRow(y)
@@ -3243,14 +3258,21 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Recommended ON: reads the server's extensions.json to learn which formats it actually ships, so the single probe per asset is correct. Turn it OFF only to force the formats by hand below.", ColTextDim)
 	y += 6
 	if auto {
-		y = a.settingsDesc(pad, y, "Manual tuning is disabled while auto-detect is on — the rows below show what each server's extensions.json resolved to. Untick auto-detect above to force them by hand.", ColTextDim)
+		y = a.settingsDesc(pad, y, "Manual tuning is disabled while auto-detect is on — the rows below show what each server's extensions.json resolved to. Untick auto-detect above to force them by hand. Exception: misc (chatbox skins) has no extensions.json key, so its probes stay hand-tunable here.", ColTextDim)
 		for _, typeName := range imageTypeNames {
+			if typeName == config.TypeMisc {
+				// Chatbox-skin art is never declared by extensions.json and
+				// mixes formats pack-by-pack on real servers, so the misc
+				// probes stay adjustable even with auto-detect on.
+				y = a.drawTypeFormatRow(typeName, y)
+				continue
+			}
 			c.Label(pad, y+2, typeName+":", ColTextDim)
 			c.Label(pad+110, y+2, strings.Join(a.d.Prefs.FormatOrder(typeName), "  "), ColTextDim)
 			y += 26
 		}
 	} else {
-		y = a.settingsDesc(pad, y, "Formats probed per asset type (defaults: char_icon = PNG only, everything else = WebP only). Add only the formats your server actually uses — extra ones just waste probes.", ColTextDim)
+		y = a.settingsDesc(pad, y, "Formats probed per asset type (defaults: char_icon = PNG only, misc = PNG then WebP — that's the chatbox skins — everything else = WebP only). Add only the formats your server actually uses — extra ones just waste probes.", ColTextDim)
 		for _, typeName := range imageTypeNames {
 			y = a.drawTypeFormatRow(typeName, y)
 		}

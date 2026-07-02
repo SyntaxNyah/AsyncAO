@@ -111,8 +111,12 @@ func sanitizeManifestExts(in []string) []string {
 }
 
 // manifestSeedTargets maps each manifest class onto the asset types it
-// governs (emote art covers sprites, shout bubbles, and misc art — the
-// same files family on AO servers; backgrounds cover desk overlays).
+// governs (emote art covers sprites and shout bubbles — per-character files;
+// backgrounds cover desk overlays). Misc art is deliberately NOT seeded from
+// the emote class: extensions.json has no misc key, and live mirrors prove
+// the two diverge — miku.pizza declares webp emotes while its misc/ tree
+// mixes chat.png and chatbox.webp pack by pack. Misc keeps its own
+// two-format default order plus per-host learning.
 func (m *Manifest) manifestSeedTargets() []struct {
 	exts  []string
 	types []AssetType
@@ -122,7 +126,7 @@ func (m *Manifest) manifestSeedTargets() []struct {
 		types []AssetType
 	}{
 		{m.CharIcon, []AssetType{AssetTypeCharIcon}},
-		{m.Emote, []AssetType{AssetTypeCharSprite, AssetTypeShoutBubble, AssetTypeMisc}},
+		{m.Emote, []AssetType{AssetTypeCharSprite, AssetTypeShoutBubble}},
 		{m.Emotions, []AssetType{AssetTypeEmoteButton}},
 		{m.Background, []AssetType{AssetTypeBackground, AssetTypeDeskOverlay}},
 	}

@@ -64,8 +64,10 @@ func TestBundledVanillaManifest(t *testing.T) {
 }
 
 // TestManifestSeedLearned pins the seeding fan-out: emote art covers
-// sprites + shout bubbles + misc, backgrounds cover desk overlays, empty
-// classes seed nothing, and the learned slot gets the FIRST extension.
+// sprites + shout bubbles (NOT misc — extensions.json has no misc key, and
+// live mirrors ship png misc art beside webp emotes), backgrounds cover desk
+// overlays, empty classes seed nothing, and the learned slot gets the FIRST
+// extension.
 func TestManifestSeedLearned(t *testing.T) {
 	prefs, err := config.New(filepath.Join(t.TempDir(), config.PrefsFileName))
 	if err != nil {
@@ -80,17 +82,16 @@ func TestManifestSeedLearned(t *testing.T) {
 	}
 	const host = "miku.pizza"
 	// Desks default to WebP and IGNORE the manifest, so the background class
-	// seeds only the background: charicon(1) + emote(sprite, bubble, misc = 3)
-	// + background(1) = 5; DeskOverlay is exempt.
-	if n := m.SeedLearned(prefs, host); n != 5 {
-		t.Fatalf("seeded %d, want 5 (desk exempt by default)", n)
+	// seeds only the background: charicon(1) + emote(sprite, bubble = 2)
+	// + background(1) = 4; DeskOverlay is exempt, Misc unseeded by design.
+	if n := m.SeedLearned(prefs, host); n != 4 {
+		t.Fatalf("seeded %d, want 4 (desk exempt by default, misc never)", n)
 	}
 	snap := prefs.LearnedSnapshot()
 	checks := map[string]string{
 		config.LearnedKey(host, config.TypeCharIcon):    config.ExtPNG,
 		config.LearnedKey(host, config.TypeCharSprite):  config.ExtWebP,
 		config.LearnedKey(host, config.TypeShoutBubble): config.ExtWebP,
-		config.LearnedKey(host, config.TypeMisc):        config.ExtWebP,
 		config.LearnedKey(host, config.TypeBackground):  config.ExtPNG,
 	}
 	for key, want := range checks {
@@ -98,6 +99,9 @@ func TestManifestSeedLearned(t *testing.T) {
 		if len(got) != 1 || got[0] != want {
 			t.Errorf("learned[%s] = %v, want [%s]", key, got, want)
 		}
+	}
+	if _, ok := snap[config.LearnedKey(host, config.TypeMisc)]; ok {
+		t.Error("Misc seeded from the emote class (png misc art beside webp emotes is real — it must learn per host)")
 	}
 	if _, ok := snap[config.LearnedKey(host, config.TypeDeskOverlay)]; ok {
 		t.Error("DeskOverlay seeded from the manifest by default (should stay WebP)")
@@ -108,8 +112,8 @@ func TestManifestSeedLearned(t *testing.T) {
 
 	// Opt in: desks now follow the manifest's background class.
 	prefs.SetDeskFollowManifest(true)
-	if n := m.SeedLearned(prefs, host); n != 6 {
-		t.Fatalf("seeded %d with desk-follow on, want 6", n)
+	if n := m.SeedLearned(prefs, host); n != 5 {
+		t.Fatalf("seeded %d with desk-follow on, want 5", n)
 	}
 	if got := prefs.LearnedSnapshot()[config.LearnedKey(host, config.TypeDeskOverlay)]; len(got) != 1 || got[0] != config.ExtPNG {
 		t.Errorf("DeskOverlay learned = %v, want [%s] when following the manifest", got, config.ExtPNG)

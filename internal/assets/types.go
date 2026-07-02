@@ -157,7 +157,8 @@ func preferredExtFor(t AssetType) string {
 	if t.IsAudio() {
 		return config.ExtOpus
 	}
-	if t == AssetTypeCharIcon {
+	if t == AssetTypeCharIcon || t == AssetTypeMisc {
+		// Icons and misc art (chatbox skins) are png by convention.
 		return config.ExtPNG
 	}
 	return config.ExtWebP

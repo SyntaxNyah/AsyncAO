@@ -869,6 +869,7 @@ type AssetPreferences struct {
 	ExtrasTitle        string                    `json:"extrasTitle"`
 	ExtrasText         string                    `json:"extrasText"`
 	ExtrasGradient     bool                      `json:"extrasGradient"`
+	AreaHighlightHex   string                    `json:"areaHighlightHex,omitempty"` // current-area row colour ("" = the stock green)
 	TextCrawlMs        int                       `json:"textCrawlMs"`
 	TextStayMs         int                       `json:"textStayMs"`
 	ChatRateLimitMs    int                       `json:"chatRateLimitMs"`
@@ -1162,12 +1163,13 @@ type prefsJSON struct {
 	HoldClearKey string `json:"holdClearKey"`
 	HoldClearMs  int    `json:"holdClearMs"`
 	// Extras-box theming (hex; "" = stock colour). Gradient: absent = default OFF.
-	ExtrasBg       string `json:"extrasBg"`
-	ExtrasBg2      string `json:"extrasBg2"`
-	ExtrasBorder   string `json:"extrasBorder"`
-	ExtrasTitle    string `json:"extrasTitle"`
-	ExtrasText     string `json:"extrasText"`
-	ExtrasGradient *bool  `json:"extrasGradient"`
+	ExtrasBg         string `json:"extrasBg"`
+	ExtrasBg2        string `json:"extrasBg2"`
+	ExtrasBorder     string `json:"extrasBorder"`
+	ExtrasTitle      string `json:"extrasTitle"`
+	ExtrasText       string `json:"extrasText"`
+	ExtrasGradient   *bool  `json:"extrasGradient"`
+	AreaHighlightHex string `json:"areaHighlightHex"` // "" = the stock green
 	// Stay/ratelimit use pointers too: 0 means "no linger" / "off".
 	TextCrawlMs        int                       `json:"textCrawlMs"`
 	TextStayMs         *int                      `json:"textStayMs"`
@@ -1945,6 +1947,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.ExtrasBg, p.ExtrasBg2 = onDisk.ExtrasBg, onDisk.ExtrasBg2
 	p.ExtrasBorder, p.ExtrasTitle, p.ExtrasText = onDisk.ExtrasBorder, onDisk.ExtrasTitle, onDisk.ExtrasText
+	p.AreaHighlightHex = onDisk.AreaHighlightHex
 	if onDisk.ExtrasGradient != nil {
 		p.ExtrasGradient = *onDisk.ExtrasGradient
 	}
@@ -1960,6 +1963,15 @@ func load(path string) (*AssetPreferences, error) {
 	p.MasterListURL = onDisk.MasterListURL
 	for name, tp := range onDisk.AssetTypes {
 		if len(tp.FormatOrder) == 0 {
+			tp.FormatOrder = DefaultFormatOrder(name)
+		}
+		// One-shot default migration: Misc's default grew from [webp] to
+		// [png, webp] (chatbox skins mix both in the wild — one mirror
+		// serves chat.png and chatbox.webp pack by pack; the webp-only
+		// default was the emote class bleeding over). A stored order that
+		// still equals the OLD default was never user-customized — advance
+		// it. Anything else is a deliberate choice and stays.
+		if name == TypeMisc && len(tp.FormatOrder) == 1 && tp.FormatOrder[0] == ExtWebP {
 			tp.FormatOrder = DefaultFormatOrder(name)
 		}
 		p.AssetTypes[name] = tp
@@ -5544,6 +5556,28 @@ func (p *AssetPreferences) SetExtrasBoxStyle(bg, bg2, border, title, text string
 	p.mu.Lock()
 	p.ExtrasBg, p.ExtrasBg2, p.ExtrasBorder, p.ExtrasTitle, p.ExtrasText, p.ExtrasGradient =
 		bg, bg2, border, title, text, gradient
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AreaHighlightColorHex is the current-area row highlight colour (hex like
+// "4ac96c"; "" = the stock green). The ui parses it, falling back to the
+// default on any malformed value.
+func (p *AssetPreferences) AreaHighlightColorHex() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AreaHighlightHex
+}
+
+// SetAreaHighlightColorHex persists the current-area highlight colour ("" =
+// back to the stock green).
+func (p *AssetPreferences) SetAreaHighlightColorHex(hex string) {
+	p.mu.Lock()
+	if p.AreaHighlightHex == hex {
+		p.mu.Unlock()
+		return
+	}
+	p.AreaHighlightHex = hex
 	p.mu.Unlock()
 	p.markDirty()
 }

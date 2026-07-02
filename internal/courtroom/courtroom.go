@@ -716,19 +716,23 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		blip = "male" // AO default blip set
 	}
 	c.blipBase = c.urls.Blip(blip)
-	c.mgr.Prefetch(c.blipBase, assets.AssetTypeBlip, network.PriorityHigh) // AssetType: Blip
+	// Same case chain as the chatbox skin: the lowercase identity leads,
+	// the authored spelling follows for case-preserving mirrors (the chain
+	// dedups when they match). // AssetType: Blip
+	c.mgr.PrefetchChain(c.blipBase, []string{c.urls.BlipAuthored(blip)}, assets.AssetTypeBlip, network.PriorityHigh)
 
 	// Per-character chatbox skin (char.ini chat=<misc>, AO2 get_chat): the scene
 	// carries the misc art's base; the ui draws it as the chatbox background
 	// when resident (and the client's normal box until then / when absent).
-	// Two spellings, AO2's probe order (courtroom.cpp:3328): misc/<x>/chat
-	// first, misc/<x>/chatbox when that misses; the chat base stays the
-	// asset's identity (same shape as the (a)-sprite / bare-sprite chain).
+	// The spellings — two stems × two casings, see MiscChatboxCandidates —
+	// walk in order; the first candidate stays the asset's identity (same
+	// shape as the (a)-sprite / bare-sprite chain).
 	c.Scene.ChatSkinBase = ""
 	if c.ChatSkinFor != nil {
 		if misc := c.ChatSkinFor(speakerName); misc != "" {
-			c.Scene.ChatSkinBase = c.urls.MiscChatbox(misc)
-			c.mgr.PrefetchWithFallback(c.Scene.ChatSkinBase, c.urls.MiscChatboxLegacy(misc), assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (chatbox skin)
+			cands := c.urls.MiscChatboxCandidates(misc)
+			c.Scene.ChatSkinBase = cands[0]
+			c.mgr.PrefetchChain(cands[0], cands[1:], assets.AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (chatbox skin)
 		}
 	}
 
