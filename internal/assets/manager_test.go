@@ -398,6 +398,41 @@ func TestManagerUnprefixedSpriteFallback(t *testing.T) {
 	}
 }
 
+// TestManagerPrefetchChain pins the N-spelling generalization (chatbox skins:
+// two stems × two casings): links probe in order, a hit on a LATER link still
+// delivers under the FIRST link's identity, and blank / duplicate links are
+// skipped without a probe.
+func TestManagerPrefetchChain(t *testing.T) {
+	art := encodePNG(t, 8, 8, color.RGBA{B: 220, A: 255})
+	cs := newCountingServer(t, map[string][]byte{
+		"/misc/YTTD/chat.png": art, // only the third spelling exists (misc defaults to png)
+	})
+	rig := newRig(t, network.NewClient(), false)
+	identity := cs.srv.URL + "/misc/yttd/chat"
+	alts := []string{
+		cs.srv.URL + "/misc/yttd/chatbox",
+		"", // blank link: skipped
+		cs.srv.URL + "/misc/YTTD/chat",
+		cs.srv.URL + "/misc/yttd/chatbox", // duplicate: skipped, no re-probe
+	}
+
+	rig.manager.PrefetchChain(identity, alts, AssetTypeMisc, network.PriorityHigh) // AssetType: Misc (test chain)
+	d := waitDecoded(t, rig.manager)
+	if d.Err != nil {
+		t.Fatalf("decode error: %v", d.Err)
+	}
+	d.Asset.Release()
+	if d.Base != identity {
+		t.Errorf("delivered base = %q, want the chain identity %q", d.Base, identity)
+	}
+	// Misc's default order is [png, webp] (mixed-format misc trees are real):
+	// yttd/chat ×2 + yttd/chatbox ×2 + YTTD/chat.png hit = 5, and the blank
+	// and duplicate links must not probe at all.
+	if got := cs.total(); got != 5 {
+		t.Errorf("probes = %d, want exactly 5", got)
+	}
+}
+
 // TestManagerStaleLearnedFormatRecovers covers the server-repack case: the
 // learned format starts 404ing, the manager invalidates it and re-probes the
 // full list once, landing on the new format.

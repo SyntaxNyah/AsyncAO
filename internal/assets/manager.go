@@ -235,6 +235,22 @@ func (m *Manager) Prefetch(base string, t AssetType, prio network.Priority) {
 // from repeating inside its TTL, and once the texture is resident the T1
 // short-circuit costs zero probes.
 func (m *Manager) PrefetchWithFallback(base, alt string, t AssetType, prio network.Priority) {
+	if alt == "" {
+		m.PrefetchChain(base, nil, t, prio)
+		return
+	}
+	m.PrefetchChain(base, []string{alt}, t, prio)
+}
+
+// PrefetchChain is the N-spelling generalization of PrefetchWithFallback:
+// alts are further spellings of the SAME asset, probed in order only while
+// every format of each earlier base 404s. Born for chatbox skins, which need
+// two stems × two casings (AO2's chat→chatbox order on a case-insensitive
+// filesystem, spoken over case-sensitive HTTP mirrors). base stays the
+// identity whichever link answers; the chain is bounded by its call sites
+// (rule §17.4) and every miss is 404-cached, so a settled chain costs zero
+// probes inside the TTL.
+func (m *Manager) PrefetchChain(base string, alts []string, t AssetType, prio network.Priority) {
 	if base == "" || !t.Valid() {
 		return
 	}
@@ -248,7 +264,7 @@ func (m *Manager) PrefetchWithFallback(base, alt string, t AssetType, prio netwo
 			if stale {
 				return
 			}
-			m.resolveChain(base, alt, t)
+			m.resolveChain(base, alts, t)
 		},
 	})
 }
@@ -424,15 +440,15 @@ func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority
 			if stale {
 				return
 			}
-			m.resolveChain(base, "", t)
+			m.resolveChain(base, nil, t)
 		},
 	})
 }
 
-// resolveChain runs the pipeline for primary, then — only when the primary
-// name is missing in every format — for alt, delivering under primary so
-// the asset's identity never changes.
-func (m *Manager) resolveChain(primary, alt string, t AssetType) {
+// resolveChain runs the pipeline for primary, then — only while every
+// format of each earlier name is missing — for each alt in order,
+// delivering under primary so the asset's identity never changes.
+func (m *Manager) resolveChain(primary string, alts []string, t AssetType) {
 	key := primary + config.LearnedKeySeparator + t.Name()
 	if _, loaded := m.inflight.LoadOrStore(key, struct{}{}); loaded {
 		return // an identical pass is already in flight
@@ -452,7 +468,10 @@ func (m *Manager) resolveChain(primary, alt string, t AssetType) {
 	if done {
 		return
 	}
-	if alt != "" && alt != primary {
+	for i, alt := range alts {
+		if alt == "" || alt == primary || containsString(alts[:i], alt) {
+			continue // blank / duplicate spelling — nothing new to probe
+		}
 		var altTried []string
 		done, altTried = m.tryBase(alt, primary, t, host)
 		if done {
