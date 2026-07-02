@@ -3821,6 +3821,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			{"ctrl.takethat", "Take That!", protocol.ShoutTakeThat},
 		}
 		for _, s := range shouts {
+			if a.panelHidden(s.key) {
+				continue // individually hideable (the row compacts); the group toggle still hides all
+			}
 			if a.movableButton(s.key, sdl.Rect{X: x, Y: y, W: shoutW, H: btnH}, s.label, w, h) {
 				pendingShout = s.mod
 			}
@@ -4323,8 +4326,9 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it. Extras → SFX Browser for favourites & any sound by name.")
 		icX += sfxDDW + 4
 	}
-	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a).
-	if icBar.W-(icX-icBar.X)-(fH+4) >= tailReserve {
+	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a) and
+	// hideable (playtest: some players don't want it at all).
+	if icBar.W-(icX-icBar.X)-(fH+4) >= tailReserve && !a.panelHidden(slotICEmoji) {
 		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
 			a.showEmojiPicker = !a.showEmojiPicker
 		}

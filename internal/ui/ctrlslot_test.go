@@ -80,15 +80,18 @@ func TestCtrlSlotCompaction(t *testing.T) {
 }
 
 // TestCtrlSlotKeysAreHideable pins that every key in the customizable-button
-// list is a real ctrl.* slot key, so a tick in the UI popup actually hides a
-// button (a typo'd key would silently toggle nothing).
+// list is a real slot key — ctrl.* for the toolbar buttons, icbar.* for the
+// hideable IC-bar pieces (the emoji button) — so a tick in the UI popup
+// actually hides something (a typo'd key would silently toggle nothing).
 func TestCtrlSlotKeysAreHideable(t *testing.T) {
 	if len(hideableButtons) == 0 {
 		t.Fatal("no hideable buttons registered")
 	}
 	for _, b := range hideableButtons {
-		if len(b.id) < 5 || b.id[:5] != "ctrl." {
-			t.Errorf("hideable button %q must use a ctrl.* slot key", b.id)
+		ctrl := len(b.id) >= 5 && b.id[:5] == "ctrl."
+		icbar := len(b.id) >= 6 && b.id[:6] == "icbar."
+		if !ctrl && !icbar {
+			t.Errorf("hideable button %q must use a ctrl.* or icbar.* slot key", b.id)
 		}
 		if b.label == "" {
 			t.Errorf("hideable button %q has no label", b.id)

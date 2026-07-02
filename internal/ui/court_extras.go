@@ -114,6 +114,12 @@ var hideableButtons = []struct{ id, label string }{
 	{"ctrl.disconnect", "Disconnect (Esc still leaves)"},
 	{"ctrl.randchar", "Rand char (emote grid)"},
 	{"ctrl.favsfilter", "★ Favs filter (emote grid)"},
+	// Individually-hideable shouts (the "Shout buttons" panel toggle above
+	// still hides the whole row) and the IC bar's emoji button.
+	{"ctrl.holdit", "Hold It! shout"},
+	{"ctrl.objection", "Objection! shout"},
+	{"ctrl.takethat", "Take That! shout"},
+	{slotICEmoji, "Emoji button (IC bar)"},
 }
 
 // panelHidden reports whether the user hid a chrome region.

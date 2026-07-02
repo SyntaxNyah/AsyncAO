@@ -464,18 +464,42 @@ func (m *MessageRaster) TotalRunes() int {
 
 // PrefixWidth returns the pixel width of the first n runes on the FIRST line —
 // the text-field caret metric. Fields raster their value unwrapped (a single
-// line), and line.advances already stores the cumulative per-rune advances the
-// DRAW uses, so a caret measured here lands exactly where the glyphs actually
-// are — measuring with a different font put the caret several letters off in
-// non-Latin text (the Cyrillic playtest report). Clamped; 0 for an empty raster.
+// line), and the raster already stores the cumulative per-rune advances the
+// DRAW uses, so a caret measured here lands exactly where the glyphs are.
+// BOTH raster shapes are covered: the single-font `lines` path AND the
+// multi-font `styled` path — RasterizeFallback (what text fields use for
+// non-Latin/emoji) builds the styled shape, and reading only `lines` returned
+// 0 for it, pinning the drawn caret to the field's left edge. Clamped.
 func (m *MessageRaster) PrefixWidth(n int) int32 {
+	if n <= 0 {
+		return 0
+	}
+	if m.styled != nil { // multi-font/multi-color: walk the first line's spans
+		if len(m.styled) == 0 {
+			return 0
+		}
+		w := int32(0)
+		remaining := n
+		for i := range m.styled[0] {
+			sp := &m.styled[0][i]
+			show := sp.runes
+			if remaining < show {
+				show = remaining
+			}
+			if show > 0 && show < len(sp.advances) {
+				w = sp.xOffset + sp.advances[show] // same x math as drawStyled's dst
+			}
+			remaining -= sp.runes
+			if remaining <= 0 {
+				break
+			}
+		}
+		return w
+	}
 	if len(m.lines) == 0 {
 		return 0
 	}
 	line := &m.lines[0]
-	if n < 0 {
-		n = 0
-	}
 	if n > line.runes {
 		n = line.runes
 	}

@@ -429,7 +429,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// emoji / FX / React buttons: each at its OWN theme rect (asyncao_ic_emoji / _fx /
 		// _react, #4b) if the theme places it there, else crammed into the field
 		// left-to-right (only when there's room — #M2 S1 / #M5 / #2).
-		if er, ownEmoji := lay.rect("asyncao_ic_emoji"); ownEmoji {
+		if a.panelHidden(slotICEmoji) {
+			// hideable in both layouts (playtest: some players don't want it)
+		} else if er, ownEmoji := lay.rect("asyncao_ic_emoji"); ownEmoji {
 			if a.drawEmojiBarButton(er) {
 				a.showEmojiPicker = !a.showEmojiPicker
 			}
