@@ -4,6 +4,38 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.50.9 — 2026-07-02
+
+Live-fire round two: tested against the playtest server's real asset mirror,
+character by character, until the boxes actually appeared.
+
+### Custom chatboxes — streaming for real now
+v1.50.8 fixed the wrong-filename bug; probing the live mirror exposed three
+more layers stacked under it, all real, all fixed:
+
+- **Both casings.** Some mirrors lowercase every path (`chat=YTTD` serves
+  `misc/yttd/…`), others keep the authored case (`misc/HallA/…`). Both
+  spellings are probed now, lowercase first, in AO2's chat→chatbox order.
+- **Both formats.** One and the same server ships `chat.png` for one pack
+  and `chatbox.webp` for another — misc art now probes PNG then WebP by
+  default, and the server's `extensions.json` no longer wrongly forces its
+  *emote* format onto chatbox art (it never declared misc art at all).
+- **Power-user control.** The misc (chatbox skin) probe list is hand-tunable
+  in Settings → Power user → Image formats — even while format auto-detect
+  is on, since auto-detect can never learn misc art.
+
+Verified live: two characters with opposite conventions both stream their
+own boxes now. Nothing is bundled or hardcoded — if the mirror ships the
+art, you see it; if it doesn't (dorothy's box isn't up there in any
+spelling), you get the normal box. Blip sets gained the same
+authored-casing fallback while we were in there.
+
+### You are here
+- **The area you're in is highlighted** in the player list and the mod
+  dashboard — the whole row washes green with a matching edge bar (it was
+  just a thin accent line before). Recolour it in Settings → Chat →
+  Area list; blank = the stock green.
+
 ## v1.50.8 — 2026-07-02
 
 The deep-dive patch. Three standing reports — custom chatboxes not showing,
