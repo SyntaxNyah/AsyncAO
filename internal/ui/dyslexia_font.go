@@ -11,8 +11,9 @@ import (
 // weighted letter bottoms and distinct b/d/p/q shapes cut the letter-flip
 // confusion many dyslexic readers hit. We apply it to the IC/OOC chat + log text
 // (the heavy reading surface) — the same override chain the manual font-path
-// setting feeds — so it never disturbs chrome widget metrics. SDL_ttf (FreeType)
-// reads the OTF/CFF outlines directly.
+// setting feeds — so it never disturbs chrome widget metrics; the opt-in
+// "font everywhere" toggle (SetChromeFont) extends it to the chrome too.
+// SDL_ttf (FreeType) reads the OTF/CFF outlines directly.
 //
 //go:embed fonts/OpenDyslexic-Regular.otf
 var openDyslexicOTF []byte

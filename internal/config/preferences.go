@@ -698,6 +698,7 @@ type AssetPreferences struct {
 	PlayerListSort         int                          `json:"playerListSort"`     // remembered Players-tab player sort
 	PlayerListAreaSort     int                          `json:"playerListAreaSort"` // remembered Players-tab /gas area-group order
 	DyslexiaFont           bool                         `json:"dyslexiaFont"`
+	FontEverywhere         bool                         `json:"fontEverywhere"` // active font override also drives the chrome (whole UI), not just chat/log
 	DNDPersist             bool                         `json:"dndPersist"`
 	DNDSaved               bool                         `json:"dndSaved"`
 	RainbowMessages        bool                         `json:"rainbowMessages"`
@@ -1000,6 +1001,7 @@ type prefsJSON struct {
 	PlayerListSort         int              `json:"playerListSort"`       // default 0 (UID)
 	PlayerListAreaSort     int              `json:"playerListAreaSort"`   // default 0 (/gas order)
 	DyslexiaFont           bool             `json:"dyslexiaFont"`         // default OFF
+	FontEverywhere         bool             `json:"fontEverywhere"`       // default OFF (chat/log only)
 	DNDPersist             bool             `json:"dndPersist"`           // default OFF (DND clears each launch)
 	DNDSaved               bool             `json:"dndSaved"`             // persisted DND state (restored only when DNDPersist)
 	RainbowMessages        bool             `json:"rainbowMessages"`      // default OFF
@@ -1586,6 +1588,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.PlayerListSort = onDisk.PlayerListSort
 	p.PlayerListAreaSort = onDisk.PlayerListAreaSort
 	p.DyslexiaFont = onDisk.DyslexiaFont
+	p.FontEverywhere = onDisk.FontEverywhere
 	p.DNDPersist = onDisk.DNDPersist
 	p.DNDSaved = onDisk.DNDSaved
 	p.RainbowMessages = onDisk.RainbowMessages
@@ -2998,6 +3001,29 @@ func (p *AssetPreferences) SetDyslexiaFont(on bool) {
 		return
 	}
 	p.DyslexiaFont = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FontEverywhereOn reports whether the active font override (the dyslexia
+// toggle or the manual font chain) also drives the CHROME — every menu,
+// button, list and tab — instead of just the IC/OOC chat + log text. OFF by
+// default: the chrome's fixed row/button metrics are tuned for the embedded
+// face, so extending an override to the whole UI is an explicit opt-in.
+func (p *AssetPreferences) FontEverywhereOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FontEverywhere
+}
+
+// SetFontEverywhere toggles extending the font override to the whole UI.
+func (p *AssetPreferences) SetFontEverywhere(on bool) {
+	p.mu.Lock()
+	if p.FontEverywhere == on {
+		p.mu.Unlock()
+		return
+	}
+	p.FontEverywhere = on
 	p.mu.Unlock()
 	p.markDirty()
 }

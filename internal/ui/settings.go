@@ -1351,10 +1351,12 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	}
 	y += 28
 
-	// IC/OOC font override: a chain of TTF/TTC paths, first covering font per
-	// line wins (put a CJK-capable font later in the chain). Saved even while the
-	// dyslexia font is on (which overrides it), so it returns when you switch back.
-	c.Label(pad, y+4, "IC/OOC font:", ColText)
+	// Custom font override: a chain of TTF/TTC paths, first covering font per
+	// line wins (put a CJK-capable font later in the chain). Drives the IC/OOC
+	// chat + log text; the "everywhere" checkbox below extends it to the whole
+	// UI. Saved even while the dyslexia font is on (which overrides it), so it
+	// returns when you switch back.
+	c.Label(pad, y+4, "Custom font:", ColText)
 	if !settings.fontLoaded {
 		settings.fontInput = a.d.Prefs.FontPaths()
 		settings.fontLoaded = true
@@ -1379,6 +1381,27 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.LabelClipped(pad+620, y+4, w-pad-620-scrollBarW, "chain: "+strings.Join(names, " → "), ColTextDim)
 	}
 	y += 34
+
+	// Font-everywhere: extend the ACTIVE override (dyslexia toggle or the chain
+	// above) to all chrome text too. Opt-in — the chrome's fixed row/button
+	// metrics are tuned for the embedded face, so an unusual font can sit tight
+	// in buttons; chat/log stay the reading-optimized surface either way.
+	few := a.d.Prefs.FontEverywhereOn()
+	if next := c.Checkbox(pad, y, "Use the font everywhere — menus, buttons, lists & tabs too (not just chat)", few); next != few {
+		a.d.Prefs.SetFontEverywhere(next)
+		a.applyFontConfig()
+		switch {
+		case !next:
+			settings.statusLine = "Whole-UI font off — chrome back on the built-in font."
+		case dys:
+			settings.statusLine = "OpenDyslexic now drives the whole UI."
+		case strings.TrimSpace(a.d.Prefs.FontPaths()) != "":
+			settings.statusLine = "Custom font now drives the whole UI."
+		default:
+			settings.statusLine = "Whole-UI font armed — set a font above (or the dyslexia toggle) to see it."
+		}
+	}
+	y += 28
 	return y
 }
 

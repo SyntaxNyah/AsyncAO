@@ -3212,6 +3212,13 @@ func (a *App) applyFontConfig() {
 	switch fontChainSource(a.d.Prefs.DyslexiaFontOn(), a.d.Prefs.FontPaths()) {
 	case fontSourceDyslexia:
 		a.ctx.SetFontChain([]string{dyslexiaFontName}, [][]byte{openDyslexicOTF})
+		// Font-everywhere (opt-in): the same face drives the chrome too;
+		// otherwise make sure the chrome is back on the embedded font.
+		if a.d.Prefs.FontEverywhereOn() {
+			a.ctx.SetChromeFont(openDyslexicOTF)
+		} else {
+			a.ctx.SetChromeFont(nil)
+		}
 		a.rasterText = "" // re-raster the visible message in the new font
 	default:
 		// Manual font paths win; otherwise the active theme's own bundled font
@@ -3232,7 +3239,8 @@ func (a *App) loadFontChainAsync(raw string) {
 	paths := strings.FieldsFunc(raw, func(r rune) bool { return r == ';' || r == ',' })
 	if len(paths) == 0 {
 		a.ctx.SetFontChain(nil, nil)
-		a.rasterText = "" // re-raster the visible message with the embedded font
+		a.ctx.SetChromeFont(nil) // no override chain → the chrome is embedded again
+		a.rasterText = ""        // re-raster the visible message with the embedded font
 		return
 	}
 	if len(paths) > fontChainCap {
@@ -3280,6 +3288,15 @@ func (a *App) pollFontChain() {
 		// let the stale result clobber it.
 		if len(res.data) > 0 && !a.d.Prefs.DyslexiaFontOn() {
 			a.ctx.SetFontChain(res.names, res.data)
+			// Font-everywhere (opt-in): the chain's PRIMARY face drives the
+			// chrome too; otherwise restore the embedded chrome (the toggle
+			// may have just been switched off). On a failed open the chrome
+			// keeps the embedded font — say so instead of silently ignoring.
+			if !a.d.Prefs.FontEverywhereOn() {
+				a.ctx.SetChromeFont(nil)
+			} else if !a.ctx.SetChromeFont(res.data[0]) {
+				res.note += " — chrome font failed to open, whole-UI font stays embedded"
+			}
 		}
 		a.rasterText = ""
 		settings.statusLine = clampLine(res.note)

@@ -20,6 +20,32 @@ func TestTypingIndicatorDefaultOff(t *testing.T) {
 	}
 }
 
+// TestFontEverywhereRoundTrip pins the whole-UI font toggle: OFF by default
+// (the chrome's fixed metrics are tuned for the embedded face, so extending an
+// override to every menu/button is an explicit opt-in), and an explicit ON
+// survives save→load.
+func TestFontEverywhereRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if p.FontEverywhereOn() {
+		t.Fatal("FontEverywhere must default OFF")
+	}
+	p.SetFontEverywhere(true)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !q.FontEverywhereOn() {
+		t.Error("FontEverywhere=true lost across save→load")
+	}
+}
+
 // TestChangelogSeenRoundTrip pins the What's New unread-dot pref (#23): empty by
 // default, then it persists the version the user last opened.
 func TestChangelogSeenRoundTrip(t *testing.T) {

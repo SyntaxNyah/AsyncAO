@@ -264,6 +264,11 @@ type Ctx struct {
 	fontChain    [][]byte
 	fontNames    []string // diagnostics (settings status line)
 	fontChainGen int      // bumped per SetFontChain; sets rebuild lazily
+	// chromeData holds the whole-UI ("font everywhere") override bytes the
+	// chrome fonts (c.font/c.fontBig) were built from; nil = the embedded
+	// chrome font. SetChromeFont compares by slice identity, so a re-run of
+	// applyFontConfig with the same bytes is a free no-op.
+	chromeData []byte
 	// pickMemo caches per-line font picks (log rows re-pick every frame; an sfnt
 	// coverage scan per rune per row would be a hidden storm once a fallback is
 	// installed). It also records whether the pick FULLY covers the line, so the
@@ -721,6 +726,71 @@ func (c *Ctx) SetFontChain(names []string, data [][]byte) {
 // FontChainNames reports the loaded override names (settings status).
 func (c *Ctx) FontChainNames() []string { return c.fontNames }
 
+// SetChromeFont swaps the CHROME fonts (c.font/c.fontBig — every menu, button,
+// list and heading) to an override face built from data; nil restores the
+// embedded font. The bytes were read off-thread and must stay referenced for
+// the fonts' lifetime (RWFromMem aliases them). Idempotent on the same slice,
+// so applyFontConfig can re-run freely. Returns false when the bytes don't
+// open as a font — the current chrome stays untouched. Render thread.
+func (c *Ctx) SetChromeFont(data []byte) bool {
+	if len(data) == 0 {
+		data = nil // normalize: "no override" is always the nil slice
+	}
+	if data == nil && c.chromeData == nil {
+		return true // already on the embedded font — the common no-op
+	}
+	if data != nil && len(c.chromeData) == len(data) && &c.chromeData[0] == &data[0] {
+		return true // same bytes installed — applyFontConfig re-ran on an unrelated change
+	}
+	// Build the replacements FIRST: a bad file must never tear down the UI font.
+	var nf, nfBig *ttf.Font
+	var err, errBig error
+	if data != nil {
+		nf, err = memFont(data, UIFontSize)
+		nfBig, errBig = memFont(data, UIFontSizeBig)
+	} else {
+		nf, err = loadEmbeddedFont(UIFontSize)
+		nfBig, errBig = loadEmbeddedFont(UIFontSizeBig)
+	}
+	if err != nil || errBig != nil {
+		if nf != nil {
+			nf.Close()
+		}
+		if nfBig != nil {
+			nfBig.Close()
+		}
+		return false
+	}
+	// Drop the chat/log sets BEFORE swapping: they may share c.font (the
+	// pct==100 fast path in fontsFor), and the close-guards everywhere compare
+	// against the CURRENT c.font — swap first and the shared face would be
+	// closed twice.
+	for _, s := range []*fontSet{&c.chatSet, &c.logSet} {
+		for _, f := range s.fonts {
+			if f != c.font && f != nil {
+				f.Close()
+			}
+		}
+		s.fonts, s.cover = nil, nil
+	}
+	old, oldBig := c.font, c.fontBig
+	c.font, c.fontBig = nf, nfBig
+	c.chromeData = data
+	if old != nil {
+		old.Close()
+	}
+	if oldBig != nil {
+		oldBig.Close()
+	}
+	// Every cached label texture, memoized width and line pick carries the old
+	// faces' identity (pointer keys) — purge wholesale. A chrome swap is a
+	// settings action, never per frame.
+	c.purgeTextCache()
+	clear(c.widthCache)
+	c.pickMemo = nil
+	return true
+}
+
 // fontsFor returns the set's fonts, rebuilding when the scale or the
 // chain moved (settings actions — never per frame).
 func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
@@ -753,8 +823,11 @@ func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
 		}
 	}
 	// Embedded last resort; share the chrome font at 1:1 (no duplicate
-	// rasters for the common case).
-	if pct == DefaultScalePct || c.font == nil {
+	// rasters for the common case) — but ONLY while the chrome IS the
+	// embedded face: a custom chrome font ("font everywhere") must not stand
+	// in for the true last resort, since its coverage isn't goregular's and
+	// the cover entry appended below is the embedded cmap.
+	if c.font == nil || (pct == DefaultScalePct && c.chromeData == nil) {
 		s.fonts = append(s.fonts, c.font)
 	} else if f, err := loadEmbeddedFont(size); err == nil {
 		s.fonts = append(s.fonts, f)
