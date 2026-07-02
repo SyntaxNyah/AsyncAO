@@ -268,10 +268,24 @@ func (u URLBuilder) Blip(name string) string {
 }
 
 // MiscChatbox returns a per-character chatbox skin base: char.ini chat=<misc>
-// → misc/<misc>/chatbox (AO2-Client get_chat; webAO serves the same layout).
+// → misc/<misc>/chat — AO2-Client's PRIMARY stem (courtroom.cpp:3328 tries
+// setImage("chat", misc) before "chatbox"; modern packs ship chat.png). The
+// misc value is authored by the pack to name a REAL folder, so unlike other
+// segments its case is preserved (seg() lowercasing broke every CamelCase
+// pack on case-sensitive mirrors — chat=HallA probed misc/halla/) and its
+// slashes survive as path separators (nested values like "VA-11/Jill" are
+// common in the wild; PathEscape turned them into a dead %2F segment).
 // AssetType: Misc
 func (u URLBuilder) MiscChatbox(misc string) string {
-	return u.origin + "misc/" + seg(misc) + "/chatbox"
+	return u.origin + "misc/" + escapePreservingSlashes(strings.TrimSpace(misc)) + "/chat"
+}
+
+// MiscChatboxLegacy is the same skin's second spelling — misc/<misc>/chatbox,
+// the stem AO2-Client falls back to when "chat" misses (courtroom.cpp:3330).
+// Feed it to PrefetchWithFallback as the alt; MiscChatbox stays the identity
+// base everywhere (scene field, T1 key). // AssetType: Misc
+func (u URLBuilder) MiscChatboxLegacy(misc string) string {
+	return u.origin + "misc/" + escapePreservingSlashes(strings.TrimSpace(misc)) + "/chatbox"
 }
 
 // MusicURL returns the FULL music URL: AO music lists carry the extension in

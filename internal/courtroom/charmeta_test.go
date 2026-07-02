@@ -63,8 +63,8 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 	if !strings.HasSuffix(room.blipBase, "sounds/blips/deep") {
 		t.Errorf("empty wire blip must resolve via BlipNameFor: blipBase = %q", room.blipBase)
 	}
-	if !strings.Contains(room.Scene.ChatSkinBase, "misc/dorothybox/chatbox") {
-		t.Errorf("chat skin base = %q, want misc/dorothybox/chatbox", room.Scene.ChatSkinBase)
+	if !strings.Contains(room.Scene.ChatSkinBase, "misc/dorothybox/chat") {
+		t.Errorf("chat skin base = %q, want misc/dorothybox/chat", room.Scene.ChatSkinBase)
 	}
 
 	// A wire blip wins over the char.ini fallback.
@@ -77,7 +77,26 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 		t.Errorf("wire blip must win: blipBase = %q", room.blipBase)
 	}
 
+	// The misc value is authored to name a REAL folder: case survives
+	// (case-sensitive mirrors; lowercasing broke chat=HallA) and slashes are
+	// path separators (chat=VA-11/Jill nests — PathEscape's %2F was a dead
+	// URL). Spaces still escape per segment.
+	msgCase := icMsg("case test")
+	msgCase.CharName = "dorothy"
+	room.ChatSkinFor = func(string) string { return "VA-11 HallA/Jill Stingray" }
+	room.HandleEvent(Event{Kind: EventMessage, Message: msgCase})
+	room.SkipToIdle()
+	if !strings.Contains(room.Scene.ChatSkinBase, "misc/VA-11%20HallA/Jill%20Stingray/chat") {
+		t.Errorf("nested/cased chat skin base = %q, want misc/VA-11%%20HallA/Jill%%20Stingray/chat", room.Scene.ChatSkinBase)
+	}
+
 	// A skinless speaker clears the scene's skin (no stale carry-over).
+	room.ChatSkinFor = func(char string) string {
+		if char == "dorothy" {
+			return "dorothybox"
+		}
+		return ""
+	}
 	msg3 := icMsg("yo")
 	msg3.CharName = "phoenix"
 	room.HandleEvent(Event{Kind: EventMessage, Message: msg3})
