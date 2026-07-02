@@ -4,6 +4,24 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.50.7 — 2026-07-02
+
+Live-server reports, same evening — characters' own sounds and art now come
+through like they do on webAO.
+
+### Every character sounds and looks like themselves
+- **Custom blips.** A speaker's own text noise (their char.ini blip set) now
+  plays even when their client doesn't transmit it — AsyncAO reads the
+  character's char.ini from the asset host, once, and remembers it. A blip
+  sent on the wire still wins.
+- **Custom chatboxes.** Characters with their own chatbox art (char.ini
+  `chat=`) now show it while they speak — character art over theme skin over
+  the flat panel, exactly AO2's priority. Default ON (it's canonical AO);
+  Settings → Chat turns it off, which also stops those fetches. Works in
+  replays and the Scene Maker preview too.
+- The sprite preview now spawns **centred on the right** instead of
+  bottom-right, so it stops layering over the IC bar.
+
 ## v1.50.6 — 2026-07-02
 
 - **Non-Latin caret, actually fixed.** v1.50.5 corrected the caret's font but
