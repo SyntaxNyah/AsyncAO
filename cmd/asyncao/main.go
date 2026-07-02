@@ -386,6 +386,24 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			continue
 		}
 
+		// Static skip (the deepest pacing tier): the courtroom is a genuinely
+		// static image right now — no input this pass, nothing animating, nobody
+		// talking, no toast/caret/timer — so the last presented frame is still
+		// exactly right. Skip render+present entirely (GPU cost → zero), keep
+		// the session pumping, and nap at the idle cadence so the next event is
+		// picked up as fast as an idle-rendered frame would have. App.SkipFrame
+		// heartbeats a real frame every paceHeartbeat to heal anything missed.
+		focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
+		if app.SkipFrame(focused, sawEvent) {
+			app.Background(dt)
+			nap := app.FramePace(focused)
+			if nap <= 0 || nap > maxFrameDelta {
+				nap = maxFrameDelta
+			}
+			time.Sleep(nap)
+			continue
+		}
+
 		// Global UI scale: render at logical size, let the GPU scale the
 		// whole frame; the kit unprojects the mouse through the same
 		// factor, so every widget scales without per-element math.
@@ -409,7 +427,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// unfocused rate when another window has focus. With vsync off this
 		// subsumes the old fixed frameCap sleep (FramePace's foreground cap
 		// defaults to the same 60).
-		pace := app.FramePace(window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0)
+		pace := app.FramePace(focused)
 		if !vsync && (pace == 0 || pace > frameCap) {
 			pace = frameCap // -vsync=false keeps at least its old 60 fps ceiling
 		}

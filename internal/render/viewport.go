@@ -401,6 +401,57 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	}
 }
 
+// NextAnimDue reports the stage's next scheduled animation deadline: 0 while a
+// continuous ramp runs (speaker-swap crossfade, shout punch, entrance slide),
+// else the time until the earliest frame flip of any LIVE multi-frame layer
+// (bg / desk / shout / speaker / pair). ok=false means the stage is visually
+// static — nothing on it is scheduled to change. The frame pacer uses this to
+// redraw exactly when the content needs it (a 100 ms-per-frame idle loop gets
+// ~10 fps redraws; a static stage gets none), fixing both playtest reports:
+// choppy idle animations AND wasted full-rate redraws. Reads only the states
+// Update just advanced (cached page pointers — no store queries, no allocs);
+// render thread only, call after Update with the same scene.
+func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
+	// Continuous ramps: sub-frame-smooth motion → full rate while they run.
+	// Each is gated on its enabling knob, so an armed-but-invisible countdown
+	// (tracked unconditionally in Update) never holds the rate up.
+	if v.fx.ShoutPunch && v.punchLeft > 0 {
+		return 0, true
+	}
+	if v.fx.Entrance && v.entranceLeft > 0 {
+		return 0, true
+	}
+	if v.crossfade > 0 && (v.speakerAnim.fadeLeft > 0 || v.pairAnim.fadeLeft > 0) {
+		return 0, true
+	}
+	due := time.Duration(-1)
+	consider := func(a *animState, visible bool) {
+		if !visible || a.finished || a.page == nil || len(a.page.Frames) <= 1 {
+			return
+		}
+		delay := a.page.Delays[a.frame]
+		if delay <= 0 {
+			return // advance() treats a non-positive delay as frozen — not animating
+		}
+		d := delay - a.elapsed
+		if d < 0 {
+			d = 0
+		}
+		if due < 0 || d < due {
+			due = d
+		}
+	}
+	consider(&v.bgAnim, true)
+	consider(&v.deskAnim, true)
+	consider(&v.shoutAnim, v.shoutAnim.base != "")
+	consider(&v.speakerAnim, scene.Speaker.Visible)
+	consider(&v.pairAnim, scene.PairActive)
+	if due < 0 {
+		return 0, false
+	}
+	return due, true
+}
+
 func (v *Viewport) syncAnim(a *animState, base string) {
 	if a.base != base {
 		a.reset(base)

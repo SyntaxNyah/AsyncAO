@@ -956,7 +956,11 @@ type sessionState struct {
 	// lastInputAt is the most recent SDL input event (frame pacing: full rate
 	// through fullRateInputGrace after any interaction).
 	lastInputAt time.Time
-	amICMNow    bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// lastFrameDrawn is when Frame last actually rendered — SkipFrame's
+	// heartbeat: a statically-skipped screen still gets one real frame per
+	// paceHeartbeat, bounding how stale any missed signal can leave it.
+	lastFrameDrawn time.Time
+	amICMNow       bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
@@ -3855,40 +3859,141 @@ const fullRateInputGrace = 1 * time.Second
 // an SDL event arrives, and wantsFullRate holds full rate through the grace.
 func (a *App) NoteInput() { a.lastInputAt = time.Now() }
 
-// FramePace returns the frame budget the main loop should pace to (0 = no cap).
-// focused is the window's input-focus state.
-func (a *App) FramePace(focused bool) time.Duration {
-	fps := a.d.Prefs.FPSCap()
-	if !focused {
-		fps = a.d.Prefs.UnfocusedFPS()
-	} else if !a.wantsFullRate() {
-		fps = a.d.Prefs.IdleFPS()
-	}
+// staticTalkFPS paces a message whose stage is ALL STATIC art (single-frame
+// sprites, no effects): the only motion is the typewriter's text crawl, which
+// reveals runes at ≥ ~40 ms — 30 fps samples it cleanly, so full rate is pure
+// waste there (the playtest ask: "if it's just an image it shouldn't render at
+// high fps"). The effective rate never drops below the user's idle rate and
+// never exceeds their cap.
+const staticTalkFPS = 30
+
+// paceHeartbeat bounds how stale a statically-skipped screen may go: one real
+// frame at least this often heals anything the busy signal missed (an OOC line
+// landing while idle, an unread badge, a finished background download) and
+// keeps 1-second readouts honest. Two redraws a second is ~1% of a 165 Hz burn.
+const paceHeartbeat = 500 * time.Millisecond
+
+// paceBudget converts an fps knob to a per-frame budget (0 = uncapped).
+func paceBudget(fps int) time.Duration {
 	if fps <= 0 {
 		return 0
 	}
 	return time.Second / time.Duration(fps)
 }
 
+// clampDur bounds d to [lo, hi] (lo = the fastest allowed budget).
+func clampDur(d, lo, hi time.Duration) time.Duration {
+	if d < lo {
+		return lo
+	}
+	if d > hi {
+		return hi
+	}
+	return d
+}
+
+// roomBusy reports a message mid-ceremony on the ACTIVE room — typewriter,
+// preanim, shout, linger, or anything still queued.
+func (a *App) roomBusy() bool {
+	return a.room != nil && (a.room.Phase() != courtroom.PhaseIdle || a.room.QueueLen() > 0)
+}
+
+// serverTimersLive reports any visible courtroom timer chip (TI packets) — its
+// clock readout changes every second, so a static skip would freeze it.
+func (a *App) serverTimersLive() bool {
+	if a.sess == nil {
+		return false
+	}
+	for i := range a.sess.Timers {
+		if a.sess.Timers[i].Visible {
+			return true
+		}
+	}
+	return false
+}
+
+// FramePace returns the frame budget the main loop should pace to (0 = no cap).
+// focused is the window's input-focus state. Four tiers:
+//   - full rate: interaction, effects in flight, or an always-animating surface
+//   - content cadence: only stage animations are moving → wake exactly for the
+//     next frame flip (smooth at ANY idle setting — the pace can never be
+//     slower than the content — and never above the cap)
+//   - talk rate: a message is playing over all-static art → the text crawl's
+//     cadence (staticTalkFPS), not full rate
+//   - idle rate: a static screen (the deeper SkipFrame tier then usually skips
+//     the render entirely)
+func (a *App) FramePace(focused bool) time.Duration {
+	if !focused {
+		return paceBudget(a.d.Prefs.UnfocusedFPS()) // background window: flat low rate
+	}
+	full := paceBudget(a.d.Prefs.FPSCap())
+	if a.wantsFullRate() {
+		return full
+	}
+	idle := paceBudget(a.d.Prefs.IdleFPS())
+	if a.room != nil && a.d.Viewport != nil {
+		if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
+			return clampDur(due, full, idle) // 0 (a running ramp) → full rate
+		}
+	}
+	if a.roomBusy() {
+		talk := staticTalkFPS
+		if i := a.d.Prefs.IdleFPS(); i > talk {
+			talk = i // never below the user's idle smoothness
+		}
+		if c := a.d.Prefs.FPSCap(); c > 0 && c < talk {
+			talk = c // never above their cap
+		}
+		return paceBudget(talk)
+	}
+	return idle
+}
+
+// SkipFrame reports that the last drawn frame is still exactly right, so the
+// main loop may skip render+present entirely this pass (GPU cost → zero) and
+// just keep the session pumping via Background. Any SDL event, any ceremony,
+// any scheduled animation, a live toast, a blinking caret, a ticking timer, or
+// the heartbeat forces a real frame. Conservative by construction: a wrongly
+// SKIPPED signal shows at worst paceHeartbeat-stale pixels, never a hang.
+func (a *App) SkipFrame(focused, sawEvent bool) bool {
+	if sawEvent || a.room == nil || a.sess == nil {
+		return false // input this pass, or not on a courtroom surface (lobby keeps its idle render)
+	}
+	if time.Since(a.lastFrameDrawn) >= paceHeartbeat {
+		return false // heartbeat: one real frame heals anything the signal missed
+	}
+	if a.wantsFullRate() || a.roomBusy() || a.warnActive() {
+		return false
+	}
+	if a.ctx != nil && a.ctx.focusID != "" {
+		return false // a focused text field blinks its caret
+	}
+	if a.timerActive() || a.serverTimersLive() {
+		return false // countdown readouts change every second
+	}
+	if a.d.Viewport != nil {
+		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
+			return false
+		}
+	}
+	_ = focused // both focused and unfocused static screens skip identically
+	return true
+}
+
 // wantsFullRate reports whether something on screen genuinely needs the full
-// frame rate: recent input, a message mid-ceremony (typewriter/preanim/shout/
-// linger — or anything queued), stage effects in flight, an open replay/maker/
-// export/voice surface, floating reactions, a live toast, the pinned second
-// courtroom, the perf HUD's scrolling graph, or an always-animating FX pref
-// (rainbow wash, wobble/spin, idle breathing, weather, a crossfade knob).
-// Everything here degrades gracefully anyway — the idle rate still RENDERS
-// (default 30 fps), so a missed signal means a slightly less smooth ambient
-// animation, never a hang. Sprite idle loops and animated theme art run at
-// ≤ ~15 fps by their own frame delays, so the 30 fps idle floor never visibly
-// costs them.
+// frame rate: recent input, stage effects in flight (shake/flash), transmitted
+// sprite motion, an open replay/maker/export/voice surface, floating reactions,
+// the pinned second courtroom, the perf HUD's scrolling graph, or an
+// always-animating FX pref (rainbow wash, wobble/spin, idle breathing,
+// weather). Message ceremony moved to FramePace's talk/content tiers, and a
+// crossfade counts only while one actually RUNS (Viewport.NextAnimDue) — the
+// old knob-not-state checks held full rate forever and were the "redraws for
+// no reason" playtest report.
 func (a *App) wantsFullRate() bool {
 	if time.Since(a.lastInputAt) < fullRateInputGrace {
 		return true
 	}
 	if a.room != nil {
-		if a.room.Phase() != courtroom.PhaseIdle || a.room.QueueLen() > 0 {
-			return true
-		}
 		sc := &a.room.Scene
 		if sc.ShakeLeft > 0 || sc.FlashLeft > 0 {
 			return true
@@ -3903,7 +4008,7 @@ func (a *App) wantsFullRate() bool {
 	if a.replaying || a.makerOpen || a.gifExporting || a.showVoice || a.perfHUD {
 		return true
 	}
-	if len(a.reactionFloats) > 0 || a.warnActive() || a.splitActive() {
+	if len(a.reactionFloats) > 0 || a.splitActive() {
 		return true
 	}
 	// Local always-animating FX prefs (each opt-in; on = the user chose motion).
@@ -3911,10 +4016,7 @@ func (a *App) wantsFullRate() bool {
 	if fx.Rainbow || fx.Wobble || fx.Spin || fx.IdleBreath {
 		return true
 	}
-	if a.d.Prefs.WeatherType() != 0 || a.crossfadeDur() != 0 {
-		return true
-	}
-	return false
+	return a.d.Prefs.WeatherType() != 0
 }
 
 // SetSpriteCapBase hands the App the display-derived decode-downscale base
@@ -4609,6 +4711,7 @@ func (a *App) mergedFavorites() []network.ServerEntry {
 func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
+	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
 	a.recordFrameDt(float32(dt.Seconds() * 1000))
 	// One-time: push the initial Discord presence once the app is up, so "Playing
 	// AsyncAO — In the lobby" appears immediately on launch (not only after you join
