@@ -4,6 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.51.1 — 2026-07-03
+
+- **Losing a send race no longer eats your message.** When two people send
+  at nearly the same moment, many servers silently drop the slower one —
+  and the client had already wiped your input box, so the whole line was
+  gone. The box now clears only once the server actually accepts your
+  message; if it was swallowed, your text is still sitting there — press
+  Enter again. Evidence you presented stays armed for the retry too.
+- **Your custom font can now cover the whole client.** Settings → Fonts
+  has a new toggle: "Use the font everywhere" applies your custom font (or
+  the dyslexia-friendly font) to every menu, button, list and tab — not
+  just the chat and log. Off by default.
+- Downloads now identify themselves as `AsyncAO/<version>` to asset
+  servers, so bot filters stop mistaking the client for a scraper and
+  server owners can find it in their logs.
+
 ## v1.51.0 — 2026-07-02
 
 Server compatibility fixes, tested live against the reported server.
