@@ -834,7 +834,17 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 	if name == "" {
 		name = "(unnamed area)"
 	}
-	if a.sess != nil && hr.area != "" {
+	// Playtest: the current area floats to the TOP of the /gas order, which read
+	// as "why is the last area first?" — mark it unmistakably: an accent edge
+	// bar, an accent name, and "(current)" where the jump hint would be.
+	current := a.sess != nil && hr.area != "" && hr.area == a.myAreaName()
+	nameCol := ColText
+	switch {
+	case current:
+		nameCol = ColAccent
+		c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, ColAccent)
+		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "(current)", ColAccent)
+	case a.sess != nil && hr.area != "":
 		if c.hovering(r) {
 			c.Border(r, ColAccent)
 		}
@@ -843,7 +853,7 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 		}
 		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "click to jump →", ColTextDim)
 	}
-	c.LabelClipped(r.X+8, r.Y+6, r.W-132, name+"  ·  "+strconv.Itoa(hr.count)+" player(s)", ColText)
+	c.LabelClipped(r.X+8, r.Y+6, r.W-132, name+"  ·  "+strconv.Itoa(hr.count)+" player(s)", nameCol)
 }
 
 // jumpToArea transfers us to area by name (AO switches areas through the music
