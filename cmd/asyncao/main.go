@@ -370,8 +370,15 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		uiCtx.BeginFrame(dt)
 		sawEvent := false
 		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
-			if _, ok := ev.(*sdl.QuitEvent); ok {
+			switch e := ev.(type) {
+			case *sdl.QuitEvent:
 				running = false
+			case *sdl.DropEvent:
+				// Drag-and-drop import (#73): a .aorec / AO2 .demo dropped on the
+				// window imports into recordings\ and starts playing.
+				if e.Type == sdl.DROPFILE {
+					app.HandleFileDrop(e.File)
+				}
 			}
 			uiCtx.HandleEvent(ev)
 			sawEvent = true

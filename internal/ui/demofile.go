@@ -258,6 +258,38 @@ func (a *App) loadRecordingAny(path string) (*sceneRecording, error) {
 	return rec, nil
 }
 
+// HandleFileDrop imports a file dropped onto the window (#73): a .aorec or an
+// AO2 .demo is copied into recordings\ (keeping the name; "-2", "-3", … on
+// collision) and starts playing immediately — share a recording by literally
+// dragging the file onto someone's AsyncAO. Anything else is politely ignored.
+// One-off user action on the event loop (like the Studio picker's reads), not
+// a render-path I/O.
+func (a *App) HandleFileDrop(path string) {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext != recordingExt && ext != demoExt {
+		a.warnLine = "Dropped file isn't a recording (.aorec) or an AO2 demo (.demo) — ignored."
+		a.warnAt = time.Now()
+		return
+	}
+	dest := path
+	if dir := recordingsDir(); dir != "" && filepath.Dir(path) != dir {
+		if err := os.MkdirAll(dir, 0o755); err == nil {
+			base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			cand := filepath.Join(dir, base+ext)
+			for n := 2; ; n++ {
+				if _, err := os.Stat(cand); os.IsNotExist(err) {
+					break
+				}
+				cand = filepath.Join(dir, fmt.Sprintf("%s-%d%s", base, n, ext))
+			}
+			if data, err := os.ReadFile(path); err == nil && os.WriteFile(cand, data, 0o644) == nil {
+				dest = cand // imported: it now lives in the Studio list too
+			}
+		}
+	}
+	a.replayFromPath(dest)
+}
+
 // makerExportDemo writes the maker's scene as recordings\<stem>.demo — the AO2
 // interchange shape (makerSave's .demo sibling; same never-overwrite policy,
 // same off-thread write).
