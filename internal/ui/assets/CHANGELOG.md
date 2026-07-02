@@ -4,6 +4,48 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.50.8 — 2026-07-02
+
+The deep-dive patch. Three standing reports — custom chatboxes not showing,
+the window repainting out of nowhere, idle animations still stuttering —
+each traced to its root cause this time, not papered over.
+
+### Custom chatboxes, for real this time
+- **We fetched the wrong file.** AO2 loads a character's box art as
+  `misc/<chat>/chat.png` first, `chatbox.png` second; AsyncAO only ever asked
+  for `chatbox`, so packs shipping the modern name never showed. Both
+  spellings are probed now, in AO2's order.
+- **Folder names survive as authored.** `chat=` values were being lowercased
+  and their slashes escaped away — `chat=HallA` asked for `misc/halla/…`,
+  and nested packs like `VA-11/Jill` produced a dead URL. The value now
+  reaches the server exactly as the pack wrote it.
+- Heads-up: the art also has to exist on the asset host. A char.ini can point
+  at a `misc/` folder the mirror never shipped — no client can conjure that;
+  the theme skin / flat panel covers it, as always.
+
+### The random repaint, found
+- While frames were being skipped on a quiet stage, a busy download burst
+  could **evict the picture that was on screen** from the texture cache —
+  the next heartbeat frame then blinked the stage back in. The live stage
+  (background, desk, both characters, the chat skin) is now pinned
+  most-recently-used every tick, drawn or skipped, so a burst spends other
+  textures first and the screen never pays for it.
+
+### Idle animations — two real bugs this time
+- **Unfocused is not invisible.** Clicking into another window dropped the
+  client to the flat unfocused rate even while a sprite was mid-loop — the
+  stutter you saw side-by-side with chat. The pacer now follows the
+  animation's own frame schedule while unfocused too: one render per frame
+  flip, right on the flip — typically fewer frames than the old flat rate,
+  just at the correct moments.
+- **Slow motion at low caps.** The anti-stall guard treated any gap over
+  100 ms as a freeze and clamped it away — including our own deliberate
+  pacing sleeps, so low FPS settings played every animation slower than
+  real time. Scheduled naps are exempt now; genuine stalls still clamp.
+
+Performance is untouched where it counts: the fixes are cache touches and
+pacing arithmetic — the render loop's zero-allocation gates all still pass.
+
 ## v1.50.7 — 2026-07-02
 
 Live-server reports, same evening — characters' own sounds and art now come

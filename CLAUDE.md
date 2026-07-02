@@ -49,7 +49,12 @@ powershell -ExecutionPolicy Bypass -File scripts\setup-deps.ps1
 powershell -ExecutionPolicy Bypass -File scripts\build.ps1 -Release
 ```
 
-For raw `go` commands set: `PATH+=C:\msys64\ucrt64\bin`, `CGO_ENABLED=1`,
+For raw `go` commands **PREPEND** `C:\msys64\ucrt64\bin` to PATH — never
+append it. `C:\ProgramData\mingw64\mingw64\bin` on the system PATH ships a
+rival libwinpthread/libgcc_s_seh: with ucrt64 appended, cc1.exe loses the DLL
+race and dies silently (STATUS_DLL_NOT_FOUND, cgo.exe exit 2) and race-built
+test exes abort at startup (TSan "failed to allocate ... error code: 87").
+Then set `CGO_ENABLED=1`,
 `CC=C:\msys64\ucrt64\bin\gcc.exe`, `CGO_CFLAGS=-IC:\msys64\ucrt64\include`,
 `CGO_LDFLAGS=-LC:\msys64\ucrt64\lib`,
 `PKG_CONFIG_PATH=C:\msys64\ucrt64\lib\pkgconfig`.

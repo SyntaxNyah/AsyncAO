@@ -98,9 +98,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   static, **unfocused rate** (default 10) when another window has focus;
   minimized still draws nothing. vsync stays on for tear-free presents but is
   no longer the throttle (165 Hz panels burned GPU idle; some windowed present
-  paths never blocked at all). Sprite idle loops / animated theme art run at
-  ≤ ~15 fps by their own frame delays, so the 30 fps idle floor is visually
-  free. Three sliders, nuke-scoped; `TestFramePace` pins the transitions.
+  paths never blocked at all). A LIVE stage animation always keeps its own
+  frame schedule (`Viewport.NextAnimDue`): the pacer wakes exactly at the
+  next flip, focused (clamped [full, idle]) **and unfocused** (clamped
+  [full, unfocused] — the flat unfocused trickle made idle loops visibly
+  choppy on a second monitor, v1.50.8). The main loop's anti-stall dt clamp
+  exempts its own scheduled naps so sleepy tiers can't slow-motion animation
+  clocks. Three sliders, nuke-scoped; `TestFramePace` +
+  `TestFramePaceUnfocusedFollowsAnim` pin the transitions.
 - **Network / decode / texture / pacing knob suite** (Settings → Power user,
   each with an in-depth WHAT-IT-DOES): 404 negative-cache TTL
   (`NewClientNotFoundTTL`, restart-applied), per-host adaptive-deadline
