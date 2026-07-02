@@ -1970,42 +1970,48 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 	rate, onSpaces := a.d.Prefs.BlipTyping()
 	const cols = 5
 	colW := r.W / cols
-	cell := func(i int32, id, label, tip string, val, lo, hi int32, mute *bool) int32 {
+	// Playtest ("kinda bare bones"): two rows per column — "label NN%" (the
+	// label is still the click-to-mute) above a full-width slider, so the
+	// actual level is always READABLE, not just a thumb position. The sliders
+	// also take the wheel now (kit-wide), so fine steps don't need a drag.
+	cell := func(i int32, id, label, valText, tip string, val, lo, hi int32, mute *bool) int32 {
 		x := r.X + i*colW
 		labelCol := ColTextDim
 		if mute != nil { // #10: the channel label is a click-to-mute toggle (red = muted)
-			lbl := sdl.Rect{X: x, Y: r.Y, W: 28, H: r.H}
+			lbl := sdl.Rect{X: x, Y: r.Y, W: colW - 6, H: 16}
 			if c.ClickedIn(lbl) {
 				*mute = !*mute
 				a.applyAudioVolumes() // the muted channel goes silent; the slider level is kept
 			}
 			if *mute {
 				labelCol = ColDanger
+				valText = "muted"
 			}
 			c.Tooltip(lbl, "Click to mute / unmute (the slider level is kept)")
 		}
-		c.Label(x, r.Y+4, label, labelCol)
-		track := sdl.Rect{X: x + 30, Y: r.Y + 6, W: colW - 34, H: 12}
+		c.Label(x, r.Y+2, label, labelCol)
+		c.LabelClipped(x+c.TextWidth(label)+6, r.Y+2, colW-c.TextWidth(label)-12, valText, ColAccent)
+		track := sdl.Rect{X: x, Y: r.Y + 22, W: colW - 8, H: 14}
 		v := clampI32(c.Slider("volstrip:"+id, track, val, hi), lo, hi)
 		if tip != "" {
 			c.Tooltip(track, tip)
 		}
 		return v
 	}
-	if nv := cell(0, "master", "Mas", "", int32(master), 0, 100, &a.masterMuted); int(nv) != master {
+	if nv := cell(0, "master", "Master", fmt.Sprintf("%d%%", master), "", int32(master), 0, 100, &a.masterMuted); int(nv) != master {
 		a.setEffectiveVolumes(int(nv), music, sfx, blip)
 	}
-	if nv := cell(1, "music", "Mus", "", int32(music), 0, 100, &a.musicMuted); int(nv) != music {
+	if nv := cell(1, "music", "Music", fmt.Sprintf("%d%%", music), "", int32(music), 0, 100, &a.musicMuted); int(nv) != music {
 		a.setEffectiveVolumes(master, int(nv), sfx, blip)
 	}
-	if nv := cell(2, "sfx", "SFX", "", int32(sfx), 0, 100, &a.sfxMuted); int(nv) != sfx {
+	if nv := cell(2, "sfx", "SFX", fmt.Sprintf("%d%%", sfx), "", int32(sfx), 0, 100, &a.sfxMuted); int(nv) != sfx {
 		a.setEffectiveVolumes(master, music, int(nv), blip)
 	}
-	if nv := cell(3, "blip", "Blp", "", int32(blip), 0, 100, &a.blipMuted); int(nv) != blip {
+	if nv := cell(3, "blip", "Blips", fmt.Sprintf("%d%%", blip), "", int32(blip), 0, 100, &a.blipMuted); int(nv) != blip {
 		a.setEffectiveVolumes(master, music, sfx, int(nv))
 	}
 	// Blip cadence (1 blip / N letters; left = faster). Mirrors Settings → Blips. No mute.
-	if nv := cell(4, "rate", "Rate", "Blip cadence: 1 blip every N letters (left = faster)", int32(rate), int32(config.MinBlipRate), int32(config.MaxBlipRate), nil); int(nv) != rate {
+	if nv := cell(4, "rate", "Rate", fmt.Sprintf("1/%d", rate), "Blip cadence: 1 blip every N letters (left = faster)", int32(rate), int32(config.MinBlipRate), int32(config.MaxBlipRate), nil); int(nv) != rate {
 		a.d.Prefs.SetBlipTyping(int(nv), onSpaces)
 		a.applyTimingToRoom()
 	}
@@ -2050,7 +2056,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c.Tooltip(volBtn, "Show/hide volume sliders on screen (chat stays usable)")
 	innerY := r.Y + btnH + 4
 	if a.volStripOn {
-		const stripH = int32(28)
+		const stripH = int32(44) // two rows: "label NN%" (click = mute) over a full-width slider
 		a.drawVolumeStrip(sdl.Rect{X: r.X + 4, Y: innerY, W: r.W - 8, H: stripH})
 		innerY += stripH + 4
 	}
