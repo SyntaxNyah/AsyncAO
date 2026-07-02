@@ -824,6 +824,24 @@ func (a *App) playerRosterRows(speaker string) []rosterRow {
 	return rows
 }
 
+// areaCurrentDefault is the stock current-area highlight — green, the
+// universal "you are here"; Settings → Chat → Area list recolours it.
+var areaCurrentDefault = sdl.Color{R: 74, G: 201, B: 108, A: 255}
+
+// areaHighlightWashAlpha tints the whole current-area row with the highlight
+// colour at this alpha (over the header fill): the row reads coloured at a
+// glance while its text stays legible.
+const areaHighlightWashAlpha = 56
+
+// areaHighlightCol resolves the current-area colour: the user's hex pref, or
+// the stock green when unset/malformed.
+func (a *App) areaHighlightCol() sdl.Color {
+	if col, ok := parseHexColor(a.d.Prefs.AreaHighlightColorHex()); ok {
+		return col
+	}
+	return areaCurrentDefault
+}
+
 // drawAreaHeaderRow draws a /gas area-group header: the area name + headcount,
 // the whole row clickable to jump there (an area transfer by name via the music
 // list). Inert when there's no live session.
@@ -835,15 +853,18 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 		name = "(unnamed area)"
 	}
 	// Playtest: the current area floats to the TOP of the /gas order, which read
-	// as "why is the last area first?" — mark it unmistakably: an accent edge
-	// bar, an accent name, and "(current)" where the jump hint would be.
+	// as "why is the last area first?" — mark it unmistakably: a coloured row
+	// wash ("you are here" green by default, recolourable in Settings → Chat),
+	// a matching edge bar + name, and "(current)" where the jump hint would be.
 	current := a.sess != nil && hr.area != "" && hr.area == a.myAreaName()
 	nameCol := ColText
 	switch {
 	case current:
-		nameCol = ColAccent
-		c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, ColAccent)
-		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "(current)", ColAccent)
+		hi := a.areaHighlightCol()
+		c.Fill(r, sdl.Color{R: hi.R, G: hi.G, B: hi.B, A: areaHighlightWashAlpha})
+		nameCol = hi
+		c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, hi)
+		c.LabelClipped(r.X+r.W-120, r.Y+6, 116, "(current)", hi)
 	case a.sess != nil && hr.area != "":
 		if c.hovering(r) {
 			c.Border(r, ColAccent)
