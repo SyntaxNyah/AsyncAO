@@ -593,6 +593,26 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		}
 		s.reply(protocol.NewPacket("RD"))
 
+	case "FM":
+		// Fetch-music refresh (AO2-Client packet_distribution "FM"): the
+		// MUSIC list alone is replaced, live — tsuserver-family servers push
+		// a fresh list on area moves (per-area jukeboxes; a live server sent
+		// 2106 fields of it and we dropped them on the floor). Every field
+		// is a track verbatim (AO2 appends without the SM area/music split);
+		// the music tab's first/last/len memo picks the swap up next frame.
+		s.Music = append(s.Music[:0], p.Fields...)
+
+	case "FA":
+		// Fetch-areas refresh (packet_distribution "FA"): the AREA list is
+		// replaced and the ARUP table resets to unknown until the next ARUP
+		// lands (AO2 clear_areas + arup_clear with "Unknown" rows).
+		s.Areas = append(s.Areas[:0], p.Fields...)
+		s.AreaInfo = make([]AreaInfo, len(s.Areas))
+		for i := range s.AreaInfo {
+			s.AreaInfo[i].Players = -1
+		}
+		return []Event{{Kind: EventAreasUpdated}}
+
 	case "DONE":
 		s.phase = PhaseReady
 		return []Event{{Kind: EventReady}}

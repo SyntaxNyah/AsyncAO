@@ -5,11 +5,12 @@ import "github.com/SyntaxNyah/AsyncAO/internal/assets"
 // AssetRef is one asset a scene needs, for the self-contained archive exporter.
 // Base is an extensionless AO base (sprite / background / desk) the exporter
 // resolves via Manager.ResolveRaw, OR a complete URL when Exact is set (music
-// carries its own extension). Alt is the bare-spelling sprite fallback that AO
-// packs use instead of the "(a)"/"(b)" prefix ("" for non-sprites).
+// carries its own extension). Alts are the further sprite spellings AO packs
+// use behind the "(a)X" identity — the bare name and the "(a)/X" prefix
+// folder, in EmoteAlts order (nil for non-sprites).
 type AssetRef struct {
 	Base  string
-	Alt   string
+	Alts  []string
 	Type  assets.AssetType
 	Exact bool
 }
@@ -31,7 +32,7 @@ func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 	bg := startBg
 	var out []AssetRef
 	seen := make(map[string]struct{})
-	add := func(base, alt string, t assets.AssetType, exact bool) {
+	add := func(base string, alts []string, t assets.AssetType, exact bool) {
 		if base == "" {
 			return
 		}
@@ -40,7 +41,7 @@ func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 			return
 		}
 		seen[key] = struct{}{}
-		out = append(out, AssetRef{Base: base, Alt: alt, Type: t, Exact: exact})
+		out = append(out, AssetRef{Base: base, Alts: alts, Type: t, Exact: exact})
 	}
 	for _, ev := range events {
 		switch ev.Kind {
@@ -50,7 +51,7 @@ func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 			}
 		case EventMusic:
 			if ev.Text != "" && !isAreaTransfer(ev.Text) && !isMusicStop(ev.Text) {
-				add(urls.MusicURL(ev.Text), "", assets.AssetTypeMusic, true)
+				add(urls.MusicURL(ev.Text), nil, assets.AssetTypeMusic, true)
 			}
 		case EventMessage:
 			m := ev.Message
@@ -58,13 +59,13 @@ func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 				continue
 			}
 			bgPart, deskPart := PositionScene(m.Side) // Scene.Position == msg.Side
-			add(urls.Background(bg, bgPart), "", assets.AssetTypeBackground, false)
-			add(urls.Background(bg, deskPart), "", assets.AssetTypeDeskOverlay, false)
-			bare := urls.EmoteBare(m.CharName, m.Emote) // packs ship "(a)X" OR bare "X"
-			add(urls.Emote(m.CharName, m.Emote, EmoteIdle), bare, assets.AssetTypeCharSprite, false)
-			add(urls.Emote(m.CharName, m.Emote, EmoteTalk), bare, assets.AssetTypeCharSprite, false)
+			add(urls.Background(bg, bgPart), nil, assets.AssetTypeBackground, false)
+			add(urls.Background(bg, deskPart), nil, assets.AssetTypeDeskOverlay, false)
+			// Sprites carry the full spelling chain: "(a)X" → bare X → "(a)/X".
+			add(urls.Emote(m.CharName, m.Emote, EmoteIdle), urls.EmoteAlts(m.CharName, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, false)
+			add(urls.Emote(m.CharName, m.Emote, EmoteTalk), urls.EmoteAlts(m.CharName, m.Emote, EmoteTalk), assets.AssetTypeCharSprite, false)
 			if hasPreanim(m) {
-				add(urls.Emote(m.CharName, m.PreEmote, EmotePreanim), "", assets.AssetTypeCharSprite, false)
+				add(urls.Emote(m.CharName, m.PreEmote, EmotePreanim), nil, assets.AssetTypeCharSprite, false)
 			}
 		}
 	}

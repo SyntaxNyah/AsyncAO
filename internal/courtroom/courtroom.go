@@ -490,11 +490,10 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 	if c.waitFor != msg { // a new head arms: start the countdown + warm its sprites
 		c.waitFor = msg
 		c.waitLeft = c.SpriteWaitTimeout
-		bare := c.urls.EmoteBare(msg.CharName, msg.Emote)
-		c.mgr.PrefetchWithFallback(idle, bare, assets.AssetTypeCharSprite, network.PriorityHigh)                                             // AssetType: CharSprite (wait-gate warm)
-		c.mgr.PrefetchWithFallback(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk), bare, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm)
+		c.mgr.PrefetchChain(idle, c.spriteAlts(msg.CharName, msg.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh)                                             // AssetType: CharSprite (wait-gate warm)
+		c.mgr.PrefetchChain(c.urls.Emote(msg.CharName, msg.Emote, EmoteTalk), c.spriteAlts(msg.CharName, msg.Emote, EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm)
 		if c.SpriteWaitPair && msg.Pair.Active() {
-			c.mgr.PrefetchWithFallback(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), c.urls.EmoteBare(msg.Pair.Name, msg.Pair.Emote), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, pair)
+			c.mgr.PrefetchChain(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), c.spriteAlts(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, pair)
 		}
 		if c.SpriteWaitPreanim && hasPreanim(msg) {
 			c.mgr.Prefetch(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (wait-gate warm, preanim)
@@ -659,13 +658,13 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	speakerName := msg.CharName
 
 	// --- prefetch fan-out (all HIGH, all parallel on the pool) ---
-	// Idle/talk fall back to the bare (unprefixed) file name — packs ship
-	// either spelling (AO2-Client CharLayer::load_image pathlist).
+	// Idle/talk walk the full sprite spelling chain — the glued "(a)X", the
+	// bare file name, then the "(a)/X" prefix FOLDER — packs ship any of the
+	// three (AO2-Client animationlayer.cpp:422-444; order note in EmoteAlts).
 	idle := c.urls.Emote(speakerName, msg.Emote, EmoteIdle)
 	talk := c.urls.Emote(speakerName, msg.Emote, EmoteTalk)
-	bare := c.urls.EmoteBare(speakerName, msg.Emote)
-	c.mgr.PrefetchWithFallback(idle, bare, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
-	c.mgr.PrefetchWithFallback(talk, bare, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	c.mgr.PrefetchChain(idle, c.spriteAlts(speakerName, msg.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	c.mgr.PrefetchChain(talk, c.spriteAlts(speakerName, msg.Emote, EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
 
 	pre := ""
 	if hasPreanim(msg) {
@@ -676,8 +675,7 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	pairIdle := ""
 	if msg.Pair.Active() {
 		pairIdle = c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle)
-		pairBare := c.urls.EmoteBare(msg.Pair.Name, msg.Pair.Emote)
-		c.mgr.PrefetchWithFallback(pairIdle, pairBare, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (pair partner)
+		c.mgr.PrefetchChain(pairIdle, c.spriteAlts(msg.Pair.Name, msg.Pair.Emote, EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (pair partner)
 	}
 
 	if msg.IsShout() {
@@ -1070,6 +1068,12 @@ func (c *Courtroom) dequeue() {
 // hasPreanim mirrors webAO's emptiness checks for the preanim field.
 func hasPreanim(msg *protocol.ChatMessage) bool {
 	return msg.PreEmote != "" && msg.PreEmote != emptyPreanimDash
+}
+
+// spriteAlts is URLBuilder.EmoteAlts through the room's builder (the chain
+// every sprite prefetch in this file feeds to PrefetchChain).
+func (c *Courtroom) spriteAlts(character, emote string, kind EmoteKind) []string {
+	return c.urls.EmoteAlts(character, emote, kind)
 }
 
 // deskVisible collapses desk mods into "draw the desk" for the active

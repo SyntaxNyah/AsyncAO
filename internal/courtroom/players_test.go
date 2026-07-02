@@ -6,6 +6,40 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
+// TestSessionFMFARefresh pins the live list-refresh packets (AO2-Client
+// packet_distribution "FM"/"FA" — a live server pushed a 2106-field FM per
+// area move and we dropped it unhandled): FM replaces the MUSIC list alone,
+// verbatim (no SM area/music split); FA replaces the AREA list and resets
+// the ARUP table to unknown, emitting EventAreasUpdated so the UI rebuilds.
+func TestSessionFMFARefresh(t *testing.T) {
+	s := NewSession(func(protocol.Packet) error { return nil }, "hdid")
+	feed(t, s, "SM#Lobby#==OST==#trial.opus#%") // login-time lists: 1 area, 2 music entries
+
+	if ev := feed(t, s, "FM#==New OST==#turnabout.opus#suspense.opus#%"); len(ev) != 0 {
+		t.Fatalf("FM should refresh silently (music memo self-detects), got %+v", ev)
+	}
+	if len(s.Music) != 3 || s.Music[0] != "==New OST==" || s.Music[2] != "suspense.opus" {
+		t.Errorf("FM music = %v, want the 3 pushed entries verbatim", s.Music)
+	}
+	if len(s.Areas) != 1 || s.Areas[0] != "Lobby" {
+		t.Errorf("FM must not touch areas, got %v", s.Areas)
+	}
+
+	ev := feed(t, s, "FA#Courtroom 1#Courtroom 2#Cafeteria#%")
+	if len(ev) != 1 || ev[0].Kind != EventAreasUpdated {
+		t.Fatalf("FA should emit EventAreasUpdated, got %+v", ev)
+	}
+	if len(s.Areas) != 3 || s.Areas[0] != "Courtroom 1" || s.Areas[2] != "Cafeteria" {
+		t.Errorf("FA areas = %v, want the 3 pushed entries", s.Areas)
+	}
+	if len(s.AreaInfo) != 3 || s.AreaInfo[0].Players != -1 {
+		t.Errorf("FA must reset ARUP to unknown: %+v", s.AreaInfo)
+	}
+	if len(s.Music) != 3 {
+		t.Errorf("FA must not touch music, got %d entries", len(s.Music))
+	}
+}
+
 // TestLivePlayersPRPU pins the live player list reduced from the server's
 // PlayerStateObserver stream (Akashi/Nyathena): PR adds/removes a UID, PU sets a
 // field, the roster is order-robust (a field-first PU still creates the row),

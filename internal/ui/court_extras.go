@@ -520,9 +520,8 @@ func (a *App) prewarmServer() {
 		a.d.Manager.Prefetch(a.urls.CharIcon(info.Char), assets.AssetTypeCharIcon, network.PriorityLow) // AssetType: CharIcon (pre-warm)
 		idle := a.urls.Emote(info.Char, "normal", courtroom.EmoteIdle)
 		talk := a.urls.Emote(info.Char, "normal", courtroom.EmoteTalk)
-		bare := a.urls.EmoteBare(info.Char, "normal")
-		a.d.Manager.PrefetchWithFallback(idle, bare, assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
-		a.d.Manager.PrefetchWithFallback(talk, bare, assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
+		a.d.Manager.PrefetchChain(idle, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
+		a.d.Manager.PrefetchChain(talk, a.urls.EmoteAlts(info.Char, "normal", courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (pre-warm)
 	}
 	if info.Background != "" {
 		// wit/def/pro/jud cover the courtroom core (standardPositions
@@ -541,9 +540,8 @@ func (a *App) prewarmServer() {
 func (a *App) speculateEmote(me string, e *courtroom.Emote) {
 	idle := a.urls.Emote(me, e.Anim, courtroom.EmoteIdle)
 	talk := a.urls.Emote(me, e.Anim, courtroom.EmoteTalk)
-	bare := a.urls.EmoteBare(me, e.Anim)
-	a.d.Manager.PrefetchWithFallback(idle, bare, assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote idle)
-	a.d.Manager.PrefetchWithFallback(talk, bare, assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote talk)
+	a.d.Manager.PrefetchChain(idle, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote idle)
+	a.d.Manager.PrefetchChain(talk, a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked emote talk)
 	if e.Preanim != "" && e.Preanim != "-" {
 		a.d.Manager.Prefetch(a.urls.Emote(me, e.Preanim, courtroom.EmotePreanim), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (picked preanim)
 	}

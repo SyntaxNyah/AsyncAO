@@ -192,20 +192,28 @@ func TestReduceMotionGatesEffects(t *testing.T) {
 func TestURLBuilderConventions(t *testing.T) {
 	u := NewURLBuilder("http://cdn.example.com/base/")
 	cases := map[string]string{
-		u.CharIcon("Phoenix"):                          "http://cdn.example.com/base/characters/phoenix/char_icon",
-		u.Emote("Phoenix", "Normal", EmoteIdle):        "http://cdn.example.com/base/characters/phoenix/(a)normal",
-		u.Emote("Phoenix", "Normal", EmoteTalk):        "http://cdn.example.com/base/characters/phoenix/(b)normal",
-		u.Emote("Phoenix", "zoom", EmotePreanim):       "http://cdn.example.com/base/characters/phoenix/zoom",
-		u.ShoutBubble("Maya", "objection", false):      "http://cdn.example.com/base/characters/maya/objection_bubble",
-		u.ShoutBubble("Maya", "custom", true):          "http://cdn.example.com/base/characters/maya/custom",
-		u.DefaultShoutBubble("holdit"):                 "http://cdn.example.com/base/misc/default/holdit_bubble",
-		u.ShoutSFX("Maya", "objection"):                "http://cdn.example.com/base/characters/maya/objection",
-		u.Background("Courtroom 1", "defenseempty"):    "http://cdn.example.com/base/background/courtroom%201/defenseempty",
-		u.SFX("sfx-Stab"):                              "http://cdn.example.com/base/sounds/general/sfx-stab",
-		u.Blip("Male"):                                 "http://cdn.example.com/base/sounds/blips/male",
-		u.BlipAuthored("YTTD"):                         "http://cdn.example.com/base/sounds/blips/YTTD",
-		u.MusicURL("Objection.opus"):                   "http://cdn.example.com/base/sounds/music/objection.opus",
-		u.MusicURL("https://radio.example.com/x.opus"): "https://radio.example.com/x.opus",
+		u.CharIcon("Phoenix"):                         "http://cdn.example.com/base/characters/phoenix/char_icon",
+		u.Emote("Phoenix", "Normal", EmoteIdle):       "http://cdn.example.com/base/characters/phoenix/(a)normal",
+		u.Emote("Phoenix", "Normal", EmoteTalk):       "http://cdn.example.com/base/characters/phoenix/(b)normal",
+		u.Emote("Phoenix", "zoom", EmotePreanim):      "http://cdn.example.com/base/characters/phoenix/zoom",
+		u.EmoteFolder("Phoenix", "Normal", EmoteIdle): "http://cdn.example.com/base/characters/phoenix/(a)/normal",
+		// Nested emotes (umineko-style packs: "emotes/Witch Standard Normal/normal1",
+		// often with a leading slash) keep their slashes as separators — webAO's
+		// encodeURI leaves '/' literal; the old whole-value escape emitted %2F and
+		// only worked where the edge normalized it back.
+		u.Emote("beatrice", "/emotes/Witch Standard Normal/normal1", EmoteIdle): "http://cdn.example.com/base/characters/beatrice/(a)/emotes/witch%20standard%20normal/normal1",
+		u.EmoteBare("kanon neo", "lazy/7"):                                      "http://cdn.example.com/base/characters/kanon%20neo/lazy/7",
+		u.SFX("folder/Boom 1"):                                                  "http://cdn.example.com/base/sounds/general/folder/boom%201",
+		u.ShoutBubble("Maya", "objection", false):                               "http://cdn.example.com/base/characters/maya/objection_bubble",
+		u.ShoutBubble("Maya", "custom", true):                                   "http://cdn.example.com/base/characters/maya/custom",
+		u.DefaultShoutBubble("holdit"):                                          "http://cdn.example.com/base/misc/default/holdit_bubble",
+		u.ShoutSFX("Maya", "objection"):                                         "http://cdn.example.com/base/characters/maya/objection",
+		u.Background("Courtroom 1", "defenseempty"):                             "http://cdn.example.com/base/background/courtroom%201/defenseempty",
+		u.SFX("sfx-Stab"):                                                       "http://cdn.example.com/base/sounds/general/sfx-stab",
+		u.Blip("Male"):                                                          "http://cdn.example.com/base/sounds/blips/male",
+		u.BlipAuthored("YTTD"):                                                  "http://cdn.example.com/base/sounds/blips/YTTD",
+		u.MusicURL("Objection.opus"):                                            "http://cdn.example.com/base/sounds/music/objection.opus",
+		u.MusicURL("https://radio.example.com/x.opus"):                          "https://radio.example.com/x.opus",
 	}
 	for got, want := range cases {
 		if got != want {

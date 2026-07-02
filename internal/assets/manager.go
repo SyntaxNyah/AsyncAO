@@ -502,6 +502,10 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType) {
 func (m *Manager) tryBase(base, deliverBase string, t AssetType, host string) (done bool, tried404 []string) {
 	cands := m.resolver.BuildCandidates(base, t, host)
 	usedLearned := cands.Learned
+	var learnedExt string
+	if usedLearned && len(cands.URLs) > 0 {
+		learnedExt = cands.URLs[0][len(base):] // learned-first ordering; kept for the absence-restore below
+	}
 	done, tried404 = m.walkCandidates(cands.URLs, base, deliverBase, t, host, make([]string, 0, len(cands.URLs)))
 	m.resolver.PutCandidates(cands)
 	if done || !usedLearned {
@@ -521,6 +525,18 @@ func (m *Manager) tryBase(base, deliverBase string, t AssetType, host string) (d
 	}
 	done, tried404 = m.walkCandidates(rest, base, deliverBase, t, host, tried404)
 	m.resolver.PutCandidates(cands)
+	if !done && learnedExt != "" {
+		// NOTHING answered in any format: the ASSET is absent, and absence
+		// says nothing about the host's formats — the learned entry must
+		// survive. Leaving the slot invalidated let one missing OPTIONAL
+		// file (emotions/buttonN_on ships rarely) wipe a manifest-seeded
+		// format for the whole session: every later probe of that class
+		// fell back to the type default and missed art that exists (live
+		// log: buttons "tried .webp" on a png-buttons server). A genuine
+		// repack still re-learns — its assets DO answer above, and the hit
+		// records the new format.
+		m.resolver.RecordSuccess(host, t, learnedExt)
+	}
 	return done, tried404
 }
 

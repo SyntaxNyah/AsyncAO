@@ -36,8 +36,9 @@ func TestSceneAssetsDedup(t *testing.T) {
 		t.Errorf("music=%d want 1", counts[assets.AssetTypeMusic])
 	}
 	for _, r := range sprites {
-		if r.Alt == "" {
-			t.Errorf("sprite ref should carry the bare-spelling fallback: %+v", r)
+		// AO2's full spelling chain rides along: "(a)/X" folder + bare X.
+		if len(r.Alts) != 2 {
+			t.Errorf("sprite ref should carry the folder + bare alt spellings: %+v", r)
 		}
 	}
 }

@@ -4658,7 +4658,7 @@ func (a *App) setPreviewEmote(i int) {
 	a.previewEmoteIdx = ((i % n) + n) % n
 	anim := a.previewAnims[a.previewEmoteIdx]
 	a.previewBase = a.urls.Emote(a.previewChar, anim, courtroom.EmoteTalk)
-	a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(a.previewChar, anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview cycle)
+	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(a.previewChar, anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview cycle)
 }
 
 // cyclePreviewEmote steps the try-before-wear preview by delta (wrapping).
@@ -4758,9 +4758,8 @@ func (a *App) pollCharINI() {
 		me := a.myCharName()
 		if a.d.Prefs.CharBundlePrefetchOn() {
 			for _, e := range a.emotes {
-				bare := a.urls.EmoteBare(me, e.Anim)
-				a.d.Manager.PrefetchWithFallback(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), bare, assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
-				a.d.Manager.PrefetchWithFallback(a.urls.Emote(me, e.Anim, courtroom.EmoteTalk), bare, assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
+				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
+				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteTalk), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (#127 bundle)
 			}
 		} else {
 			for i, e := range a.emotes {

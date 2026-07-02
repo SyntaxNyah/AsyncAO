@@ -485,11 +485,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 			continue
 		}
 		warmRefs = append(warmRefs, r)
-		if r.Alt != "" {
-			a.d.Manager.PrefetchWithFallback(r.Base, r.Alt, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
-		} else {
-			a.d.Manager.Prefetch(r.Base, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
-		}
+		a.d.Manager.PrefetchChain(r.Base, r.Alts, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
 	}
 
 	now := time.Now()

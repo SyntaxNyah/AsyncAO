@@ -697,7 +697,7 @@ func (a *App) drawCharSelect(w, h int32) {
 			a.drawCharCell(slot, cell, i, dlOn)
 			if c.HoverPreview("char:"+slot.Name, cell) {
 				a.previewBase = a.urls.Emote(slot.Name, "normal", courtroom.EmoteIdle)
-				a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(slot.Name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+				a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(slot.Name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 			}
 		}
 		col++
@@ -3555,8 +3555,8 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick) {
 
 	if c.HoverPreview("iniswap:"+name, cell) {
 		a.previewBase = a.urls.Emote(name, "normal", courtroom.EmoteIdle)
-		a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
-		a.ensurePreviewEmotes(name)                                                                                                         // try-before-wear: load this character's emotes to cycle
+		a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+		a.ensurePreviewEmotes(name)                                                                                                                       // try-before-wear: load this character's emotes to cycle
 	}
 	if c.hovering(cell) {
 		a.iniHoverChar = name // number keys 0-9 quick-file the hovered character
@@ -4464,7 +4464,7 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 		return
 	}
 	a.previewBase = a.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
-	a.d.Manager.PrefetchWithFallback(a.previewBase, a.urls.EmoteBare(char, e.Anim), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
 }
 
 func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
@@ -5069,7 +5069,7 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name string, offX, offY int, flip boo
 			}
 			if len(a.ghostWarm) < ghostWarmCap {
 				a.ghostWarm[name] = base
-				a.d.Manager.PrefetchWithFallback(base, a.urls.EmoteBare(name, "normal"), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (ghost editor)
+				a.d.Manager.PrefetchChain(base, a.urls.EmoteAlts(name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (ghost editor)
 			}
 		}
 		c.Label(pv.X+pv.W/2-c.TextWidth(name)/2, pv.Y+pv.H/2, name, ColTextDim)

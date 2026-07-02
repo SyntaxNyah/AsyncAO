@@ -433,6 +433,45 @@ func TestManagerPrefetchChain(t *testing.T) {
 	}
 }
 
+// TestManagerAbsentAssetKeepsLearned pins the seed-survival fix (live log:
+// one missing OPTIONAL emotions/buttonN_on wiped the manifest-seeded png for
+// the whole host, and every later button probed the webp default and missed
+// art that exists): when the stale-learned re-probe finds NOTHING in any
+// format — the asset is simply absent — the learned format is restored, so
+// the NEXT asset of the class still resolves learned-first in one probe.
+func TestManagerAbsentAssetKeepsLearned(t *testing.T) {
+	art := encodePNG(t, 8, 8, color.RGBA{G: 180, A: 255})
+	cs := newCountingServer(t, map[string][]byte{
+		"/characters/witch/emotions/button2_off.png": art, // button1_on ships no art (optional)
+	})
+	rig := newRig(t, network.NewClient(), false)
+	host := hostOf(cs.srv.URL + "/x")
+	rig.resolver.RecordSuccess(host, AssetTypeEmoteButton, config.ExtPNG) // the extensions.json seed
+
+	// Absent optional asset: learned .png 404s, the one-shot re-probe
+	// (the .webp type default) 404s too — the §4 warning fires with both.
+	rig.manager.Prefetch(cs.srv.URL+"/characters/witch/emotions/button1_on", AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (test)
+	if w := waitWarning(t, rig.manager); len(w.Tried) != 2 {
+		t.Fatalf("absent asset tried = %v, want png + webp", w.Tried)
+	}
+	if ext, ok := rig.resolver.Learned(host, AssetTypeEmoteButton); !ok || ext != config.ExtPNG {
+		t.Fatalf("learned after absence = %q,%v — the seed was wiped", ext, ok)
+	}
+
+	// The next (existing) asset of the class: learned-first, exactly one probe.
+	before := cs.total()
+	d := retryDecoded(t, rig.manager, func() {
+		rig.manager.Prefetch(cs.srv.URL+"/characters/witch/emotions/button2_off", AssetTypeEmoteButton, network.PriorityHigh) // AssetType: EmoteButton (test)
+	})
+	if d.Err != nil {
+		t.Fatalf("existing button decode: %v", d.Err)
+	}
+	d.Asset.Release()
+	if got := cs.total() - before; got != 1 {
+		t.Errorf("existing-button probes = %d, want exactly 1 (the restored learned png)", got)
+	}
+}
+
 // TestManagerStaleLearnedFormatRecovers covers the server-repack case: the
 // learned format starts 404ing, the manager invalidates it and re-probes the
 // full list once, landing on the new format.

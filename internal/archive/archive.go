@@ -67,8 +67,8 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 }
 
 // resolveRef fetches one asset's bytes + the concrete URL it lives at. Exact refs
-// (music) are a direct fetch; bases probe candidates, falling back to the bare
-// sprite spelling.
+// (music) are a direct fetch; bases probe candidates, walking the alternate
+// sprite spellings (bare X, then the "(a)/X" folder — EmoteAlts order).
 func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef) (string, []byte, bool) {
 	if ref.Exact {
 		if data, err := mgr.FetchRaw(ctx, ref.Base); err == nil && len(data) > 0 {
@@ -79,8 +79,11 @@ func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef
 	if url, data, ok := mgr.ResolveRaw(ref.Base, ref.Type); ok {
 		return url, data, true
 	}
-	if ref.Alt != "" {
-		if url, data, ok := mgr.ResolveRaw(ref.Alt, ref.Type); ok {
+	for _, alt := range ref.Alts {
+		if alt == "" {
+			continue
+		}
+		if url, data, ok := mgr.ResolveRaw(alt, ref.Type); ok {
 			return url, data, true
 		}
 	}

@@ -119,6 +119,22 @@ func segRaw(name string) string {
 // lowercase). Used for EVERY segment except the character folder, which honours charSeg.
 func seg(name string) string { return segRaw(strings.ToLower(name)) }
 
+// segPath escapes a path VALUE that may span segments — emote anims nest
+// ("emotes/Witch Standard Normal/normal1") and sfx names may too — lowercased
+// like seg but with slashes kept as separators: webAO's encodeURI leaves '/'
+// literal, and the old whole-value PathEscape produced %2F URLs that only
+// worked where the edge happened to normalize them back (nginx/Cloudflare do;
+// stricter origins don't). Empty parts survive (a leading '/' in a char.ini
+// anim is verbatim AO2 concatenation), so the built URL mirrors AO2's paths
+// byte for byte.
+func segPath(name string) string {
+	parts := strings.Split(strings.ToLower(name), "/")
+	for i, part := range parts {
+		parts[i] = segRaw(part)
+	}
+	return strings.Join(parts, "/")
+}
+
 // charSeg escapes the CHARACTER-folder segment honouring the builder's casing setting — lowercase
 // by default (the correct choice for almost every server), or the first-cap / title-case forms for
 // the rare capitalised-folder server. Emotes and every other segment stay lowercase (seg).
@@ -165,26 +181,61 @@ func (u URLBuilder) CharIcon(character string) string {
 	return u.origin + charactersDir + u.charSeg(character) + "/" + charIconStem
 }
 
-// Emote returns a character sprite base for the given kind.
+// Emote returns a character sprite base for the given kind — the glued
+// spelling "(a)<emote>", AO2-Client's FIRST candidate and the asset's
+// identity everywhere. Nested emotes keep their slashes (segPath).
 // AssetType: CharSprite
 func (u URLBuilder) Emote(character, emote string, kind EmoteKind) string {
-	prefix := ""
-	switch kind {
-	case EmoteIdle:
-		prefix = idlePrefix
-	case EmoteTalk:
-		prefix = talkPrefix
-	}
-	return u.origin + charactersDir + u.charSeg(character) + "/" + seg(prefix+emote)
+	return u.origin + charactersDir + u.charSeg(character) + "/" + segPath(emotePrefix(kind)+emote)
 }
 
-// EmoteBare returns the unprefixed sprite base — the second spelling
-// AO2-Client probes for idle/talk sprites (CharLayer::load_image tries
-// the "(a)"/"(b)" path, then the bare one; many packs ship only bare
-// files like "1.webp"). Pass as the fallback to PrefetchWithFallback.
+// EmoteFolder returns the prefix-as-FOLDER spelling — "(a)/<emote>" — the
+// SECOND candidate AO2-Client probes (animationlayer.cpp:422 pathlist:
+// "(a)X", "(a)/X", bare X): packs that group idle/talk art in literal
+// "(a)"/"(b)" directories need it. A leading '/' on the emote doubles the
+// slash exactly like AO2's string concatenation does. Chain it between
+// Emote and EmoteBare. // AssetType: CharSprite
+func (u URLBuilder) EmoteFolder(character, emote string, kind EmoteKind) string {
+	return u.origin + charactersDir + u.charSeg(character) + "/" + segPath(emotePrefix(kind)) + "/" + segPath(emote)
+}
+
+// EmoteBare returns the unprefixed sprite base — the LAST spelling
+// AO2-Client probes for idle/talk sprites (many packs ship only bare
+// files like "1.webp"). Chain after Emote + EmoteFolder.
 // AssetType: CharSprite
 func (u URLBuilder) EmoteBare(character, emote string) string {
-	return u.origin + charactersDir + u.charSeg(character) + "/" + seg(emote)
+	return u.origin + charactersDir + u.charSeg(character) + "/" + segPath(emote)
+}
+
+// emotePrefix maps an EmoteKind to its AO sprite-name prefix ("" for
+// preanims — they ship unprefixed).
+func emotePrefix(kind EmoteKind) string {
+	switch kind {
+	case EmoteIdle:
+		return idlePrefix
+	case EmoteTalk:
+		return talkPrefix
+	}
+	return ""
+}
+
+// EmoteAlts returns the alternate spellings behind Emote()'s identity: the
+// bare unprefixed file, then the "(a)/" prefix FOLDER. Every sprite prefetch
+// site feeds this to PrefetchChain after the glued Emote() base.
+//
+// Deliberate deviation from AO2-Client's pathlist ORDER (animationlayer.cpp
+// probes "(a)X", "(a)/X", bare X): coverage is identical, but bare files
+// outnumber prefix-folder packs in the wild by far, and a live origin was
+// observed HANGING on folder-form misses (characters without an "(a)" dir
+// timed out instead of 404ing, which aborted the chain before the bare file
+// that existed and back-offed the host). Order only matters when a pack
+// ships BOTH spellings of the same emote — effectively never.
+// AssetType: CharSprite
+func (u URLBuilder) EmoteAlts(character, emote string, kind EmoteKind) []string {
+	return []string{
+		u.EmoteBare(character, emote),
+		u.EmoteFolder(character, emote, kind),
+	}
 }
 
 // EmoteButton returns the emote-picker button art base for the 1-based
@@ -257,9 +308,10 @@ func (u URLBuilder) BackgroundFolder(bg string) string {
 	return u.origin + backgroundDir + seg(bg) + "/"
 }
 
-// SFX returns a general sound base. // AssetType: SFX
+// SFX returns a general sound base. Names may nest in subfolders (AO2's
+// get_sfx joins them as paths), so slashes survive. // AssetType: SFX
 func (u URLBuilder) SFX(name string) string {
-	return u.origin + soundsGeneral + seg(name)
+	return u.origin + soundsGeneral + segPath(name)
 }
 
 // Blip returns a blip set base (lowercased — the identity, matching the
