@@ -76,8 +76,13 @@ func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string
 // ASCII — so a normal message keeps the field's exact single-font fast path with no per-frame
 // font work. For non-ASCII it kicks the colour-emoji load (NeedsEmojiFallback) and returns a
 // log-set covering face (LogFontFor also latches the broad / CJK unicode load via noteScript)
-// at the field's 1:1 size, so typed emoji / non-Latin render real glyphs instead of the
-// chrome font's tofu. #M5 input-tofu fix.
+// so typed emoji / non-Latin render real glyphs instead of the chrome font's tofu. #M5.
+//
+// SIZE: always the CHROME size (DefaultScalePct) — the same size the field's
+// single-font path draws (c.font) — so typing one non-Latin rune never changes
+// the rendered text size. These used to come back at the LOG zoom (a.logPct),
+// which made the whole field visibly grow the moment a Cyrillic letter landed
+// (playtest: "as soon as I typed ТЕКСТ it all went up a size").
 func (a *App) icFieldFonts(text string) (primary, emoji *ttf.Font) {
 	if isASCII(text) {
 		return nil, nil
@@ -85,7 +90,7 @@ func (a *App) icFieldFonts(text string) (primary, emoji *ttf.Font) {
 	if render.NeedsEmojiFallback(text) {
 		a.ensureEmojiFontLoad()
 	}
-	return a.ctx.LogFontFor(a.logPct, text), a.ctx.EmojiFont(a.logPct)
+	return a.ctx.LogFontFor(DefaultScalePct, text), a.ctx.EmojiFont(DefaultScalePct)
 }
 
 // emojiRaster returns (and caches) the multi-font raster for one emoji label, or

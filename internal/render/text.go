@@ -462,6 +462,32 @@ func (m *MessageRaster) TotalRunes() int {
 	return total
 }
 
+// PrefixWidth returns the pixel width of the first n runes on the FIRST line —
+// the text-field caret metric. Fields raster their value unwrapped (a single
+// line), and line.advances already stores the cumulative per-rune advances the
+// DRAW uses, so a caret measured here lands exactly where the glyphs actually
+// are — measuring with a different font put the caret several letters off in
+// non-Latin text (the Cyrillic playtest report). Clamped; 0 for an empty raster.
+func (m *MessageRaster) PrefixWidth(n int) int32 {
+	if len(m.lines) == 0 {
+		return 0
+	}
+	line := &m.lines[0]
+	if n < 0 {
+		n = 0
+	}
+	if n > line.runes {
+		n = line.runes
+	}
+	if n >= len(line.advances) { // defensive: advances is runes+1 entries
+		if l := len(line.advances); l > 0 {
+			return line.advances[l-1]
+		}
+		return 0
+	}
+	return line.advances[n]
+}
+
 // Height returns the rasterized message's full pixel height (all wrapped lines
 // stacked at lineH), so a caller can size a box to fit it. Zero for an empty
 // message.

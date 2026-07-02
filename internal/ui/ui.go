@@ -339,7 +339,12 @@ type Ctx struct {
 	onRow   func(label string, y int32)
 	dropped string      // SDL_DROPFILE path this frame ("" = none)
 	hotkey  sdl.Keycode // non-clipboard Ctrl chord this frame (0 = none)
-	tipText string      // hover hint to paint at end-of-frame ("" = none)
+	// clipOn/clipRect mirror the renderer clip set by pushClip so hovering()
+	// can refuse hits outside it without a cgo query per hit test (a clipped
+	// widget only exists inside its clip — input must agree with the pixels).
+	clipOn   bool
+	clipRect sdl.Rect
+	tipText  string // hover hint to paint at end-of-frame ("" = none)
 	// Cached word-wrap of the current tooltip, rebuilt only when the text or the wrap
 	// width changes (drawTooltip) — so a hovered tooltip doesn't re-wrap (and re-allocate)
 	// every frame. See WrapText's "callers cache the result" note.
@@ -1132,6 +1137,15 @@ func (c *Ctx) hovering(r sdl.Rect) bool {
 	if c.modalOn {
 		return false
 	}
+	// A widget drawn under a pushClip only EXISTS inside that clip: the pointer
+	// past the clip edge must not hover it. Clipping used to be draw-only, so a
+	// list's half-culled bottom row still hit-tested BELOW its panel — hovering
+	// the IC bar highlighted an invisible area row, and clicking FX transferred
+	// you to that area (the "sent to the movie room" playtest bug).
+	if c.clipOn && !(c.mouseX >= c.clipRect.X && c.mouseX < c.clipRect.X+c.clipRect.W &&
+		c.mouseY >= c.clipRect.Y && c.mouseY < c.clipRect.Y+c.clipRect.H) {
+		return false
+	}
 	return c.mouseX >= r.X && c.mouseX < r.X+r.W && c.mouseY >= r.Y && c.mouseY < r.Y+r.H
 }
 
@@ -1230,11 +1244,15 @@ func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
 	had = c.Ren.IsClipEnabled()
 	prev = c.Ren.GetClipRect()
 	_ = c.Ren.SetClipRect(&r)
+	// Mirror the clip in plain fields so hovering() can honour it without a cgo
+	// query per hit test (input clipping — see hovering).
+	c.clipOn, c.clipRect = true, r
 	return prev, had
 }
 
 // popClip restores the clip captured by pushClip.
 func (c *Ctx) popClip(prev sdl.Rect, had bool) {
+	c.clipOn, c.clipRect = had, prev
 	if had {
 		_ = c.Ren.SetClipRect(&prev)
 	} else {
@@ -1639,10 +1657,15 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		if c.caret < 0 {
 			c.caret = 0
 		}
-		// A click positions the caret (measured on the display, so masked maps 1:1).
+		// A click positions the caret (measured on the display, so masked maps
+		// 1:1) — through the SAME raster the field draws with (fieldRaster), so
+		// non-Latin text maps clicks to the right rune (the Cyrillic caret bug).
 		if c.clicked && hover {
 			pre := maskOf(value)
-			c.caret = c.caretIndexAtX(pre, c.mouseX-(r.X+padX)+c.fieldScroll(pre, c.caret, avail))
+			preRaster := c.fieldRaster(fb, mask, pre)
+			preRC := utf8.RuneCountInString(pre)
+			preScroll := scrollFor(c.fieldPrefixW(pre, preRaster, preRC), c.fieldPrefixW(pre, preRaster, c.caret), avail)
+			c.caret = c.fieldIndexAtX(pre, preRaster, c.mouseX-(r.X+padX)+preScroll)
 		}
 		if c.copyReq && value != "" && !mask {
 			_ = sdl.SetClipboardText(value)
@@ -1688,6 +1711,12 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	}
 
 	display := maskOf(value)
+	// The fallback raster the value will DRAW with (nil = single-font path).
+	// Resolved ONCE here so every measurement below — caret x, full width, the
+	// keep-caret-visible scroll — reads the same glyph advances the draw blits.
+	// Measuring with the chrome font while drawing with a fallback face put the
+	// caret several letters off in Cyrillic (the playtest report).
+	fbRaster := c.fieldRaster(fb, mask, display)
 	show := display
 	col := ColText
 	if show == "" && !focused {
@@ -1698,19 +1727,11 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	// Horizontal scroll keeps the CARET visible (roughly centered) once the text
 	// overflows the box — type or arrow anywhere and you can see it, instead of
 	// typing blind past the right edge. Unfocused/fitting fields stay head-aligned.
-	fullW := c.TextWidth(display)
+	fullW := c.fieldPrefixW(display, fbRaster, utf8.RuneCountInString(display))
 	scroll, caretX := int32(0), int32(0)
 	if focused {
-		caretX = c.caretPixelX(display, c.caret)
-		if fullW > avail && avail > 0 {
-			scroll = caretX - avail/2
-			if scroll < 0 {
-				scroll = 0
-			}
-			if m := fullW - avail; scroll > m {
-				scroll = m
-			}
-		}
+		caretX = c.fieldPrefixW(display, fbRaster, c.caret)
+		scroll = scrollFor(fullW, caretX, avail)
 	}
 	if focused && c.selectAll && value != "" {
 		selW := fullW - scroll // select-all highlight behind the visible text
@@ -1728,13 +1749,11 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 	// case) and every other field stay on the exact single-font path below — caret math is
 	// unchanged, so it's approximate only for the rare wide glyph (far better than tofu).
 	drawn := false
-	if fb.primary != nil && !mask && show != "" && !isASCII(show) {
-		if m := c.emojiRaster(show, col, fb.primary, fb.emoji); m != nil {
-			cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
-			m.Draw(c.Ren, m.TotalRunes(), r.X+padX-scroll, r.Y+(r.H-m.Height())/2)
-			c.popClip(cp, ch)
-			drawn = true
-		}
+	if fbRaster != nil && show == display {
+		cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
+		fbRaster.Draw(c.Ren, fbRaster.TotalRunes(), r.X+padX-scroll, r.Y+(r.H-fbRaster.Height())/2)
+		c.popClip(cp, ch)
+		drawn = true
 	}
 	if !drawn {
 		if scroll > 0 {
@@ -1762,6 +1781,63 @@ func isASCII(s string) bool {
 		}
 	}
 	return true
+}
+
+// fieldRaster returns the fallback raster a text field draws its VALUE with
+// (nil = the single-font Label path). One resolution point, shared by the draw
+// and every caret/scroll measurement, so the two can never use different fonts.
+func (c *Ctx) fieldRaster(fb fieldFonts, mask bool, display string) *render.MessageRaster {
+	if fb.primary == nil || mask || display == "" || isASCII(display) {
+		return nil
+	}
+	return c.emojiRaster(display, ColText, fb.primary, fb.emoji)
+}
+
+// fieldPrefixW is the width of display's first n runes as the field will draw
+// them: the raster's own advances when one is in play, else the chrome font.
+func (c *Ctx) fieldPrefixW(display string, m *render.MessageRaster, n int) int32 {
+	if m != nil {
+		return m.PrefixWidth(n)
+	}
+	return c.caretPixelX(display, n)
+}
+
+// fieldIndexAtX maps a click x (relative to the text's left edge) to the
+// nearest rune boundary under the same metrics the field draws with.
+func (c *Ctx) fieldIndexAtX(display string, m *render.MessageRaster, relX int32) int {
+	if m == nil {
+		return c.caretIndexAtX(display, relX)
+	}
+	if relX <= 0 {
+		return 0
+	}
+	n := m.TotalRunes()
+	prevW := int32(0)
+	for i := 1; i <= n; i++ {
+		w := m.PrefixWidth(i)
+		if relX < (prevW+w)/2 {
+			return i - 1
+		}
+		prevW = w
+	}
+	return n
+}
+
+// scrollFor is the keep-the-caret-visible horizontal scroll for a field of
+// interior width avail (caret roughly centered once the text overflows).
+// Stateless (deterministic per caret), so it never jitters frame to frame.
+func scrollFor(fullW, caretX, avail int32) int32 {
+	if fullW <= avail || avail <= 0 {
+		return 0
+	}
+	s := caretX - avail/2
+	if s < 0 {
+		s = 0
+	}
+	if m := fullW - avail; s > m {
+		s = m
+	}
+	return s
 }
 
 // caretPixelX is the x-pixel offset of the caret (a rune index) within display.
@@ -1793,24 +1869,6 @@ func (c *Ctx) caretIndexAtX(display string, relX int32) int {
 		prevW = w
 	}
 	return len(runes)
-}
-
-// fieldScroll is the horizontal pixel scroll that keeps the caret visible in a
-// field of interior width avail — caret roughly centered once the text overflows.
-// Stateless (deterministic per caret), so it never jitters frame to frame.
-func (c *Ctx) fieldScroll(display string, caret int, avail int32) int32 {
-	full := c.TextWidth(display)
-	if full <= avail || avail <= 0 {
-		return 0
-	}
-	scroll := c.caretPixelX(display, caret) - avail/2
-	if scroll < 0 {
-		scroll = 0
-	}
-	if m := full - avail; scroll > m {
-		scroll = m
-	}
-	return scroll
 }
 
 // SetHoldClear stamps the hold-to-clear config for the frame (App resolves it
