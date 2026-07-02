@@ -197,6 +197,13 @@ func (a *App) drawExportOptions(x, y int32, withSpeed bool) int32 {
 	}
 	y += 32
 
+	// #69: subtitle sidecar for the video export (cue-timed to the video itself).
+	if next := c.Checkbox(pad, y, "Write subtitles beside the video (.srt + .vtt, speaker + line)", opts.Subtitles); next != opts.Subtitles {
+		opts.Subtitles = next
+		a.d.Prefs.SetExportOpts(opts)
+	}
+	y += 28
+
 	// Quality drives both the WebP encoder and the video CRF (higher = better/bigger).
 	if next := a.sliderRow(y, "  Quality % (WebP / video)", opts.Quality, 5, 20, 100); next != opts.Quality {
 		opts.Quality = next
@@ -286,6 +293,16 @@ type gifExportJob struct {
 	vidPath   string
 	vidFormat videoenc.Format // Video only — codec choice for the post-capture audio mux
 	audioCap  *audioCapture   // Video only — records the scene's music + SFX for the audio mux (#99)
+
+	// Video only — #69 subtitle cues, tracked while capturing (frame-timed so
+	// they match the video exactly). subPend waits for its text to become
+	// visible; subOpen is on screen now; subs holds the closed cues.
+	subsOn     bool
+	subs       []subCue
+	subPend    subCue
+	subHasPend bool
+	subOpen    subCue
+	subHasOpen bool
 
 	// Per-export output settings (from config ExportOptions, resolved once).
 	w, h      int32         // capture/output size (4:3)
@@ -476,7 +493,8 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		loop:         opts.Loop,
 		maxFrames:    maxFrames,
 		stamp:        exportStamp(opts, scene),
-		chatPct:      exportChatPct(h, opts.TextScale), // font fitted to the capture, not the live zoom
+		subsOn:       kind == exportVideo && opts.Subtitles, // #69 frame-timed .srt/.vtt beside the video
+		chatPct:      exportChatPct(h, opts.TextScale),      // font fitted to the capture, not the live zoom
 		warming:      true,
 		warmRefs:     warmRefs,
 		warmStarted:  now,
@@ -515,7 +533,11 @@ func (a *App) tickGifExport() {
 				a.finishGifExport()
 				return
 			}
-			j.room.HandleEvent(eventFromRec(j.events[j.idx]))
+			ev := j.events[j.idx]
+			if courtroom.EventKind(ev.Kind) == courtroom.EventMessage {
+				j.subFeed(ev.Message, j.captured) // #69: close the on-screen cue, pend the new line
+			}
+			j.room.HandleEvent(eventFromRec(ev))
 			j.idx++
 		}
 		j.room.Update(j.frameDt)
@@ -552,6 +574,7 @@ func (a *App) tickGifExport() {
 		default: // exportGIF
 			j.frames = append(j.frames, gifenc.Quantize(img))
 		}
+		j.subAnchor(j.room.Scene.VisibleRunes, j.captured) // #69: cue starts on the first frame that shows text
 		j.captured++
 	}
 }
@@ -841,6 +864,11 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 	}
 	format := j.vidFormat
 	mgr := a.d.Manager
+	// #69: close the final cue at the last captured frame and hand the cue list to
+	// the finisher goroutine (j is dead after this — the handoff owns the slice).
+	j.subClose(j.captured)
+	subs := j.subs
+	subFrameMs := int(j.frameDt / time.Millisecond)
 	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
 	a.warnAt = time.Now()
 	go func() {
@@ -849,15 +877,19 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 			a.gifResultCh <- "Video export failed: " + err.Error()
 			return
 		}
+		subNote := ""
+		if writeSubtitleFiles(path, subs, subFrameMs) {
+			subNote = "  + subtitles (.srt/.vtt)"
+		}
 		if len(songs) > 0 || len(sfx) > 0 {
 			if finalPath, ok := muxSceneAudio(mgr, path, songs, sfx, format); ok {
-				a.gifResultCh <- videoSavedMsg(finalPath) + "  ♪ with sound"
+				a.gifResultCh <- videoSavedMsg(finalPath) + "  ♪ with sound" + subNote
 				return
 			}
-			a.gifResultCh <- videoSavedMsg(path) + "  (couldn't add the sound — saved silent)"
+			a.gifResultCh <- videoSavedMsg(path) + "  (couldn't add the sound — saved silent)" + subNote
 			return
 		}
-		a.gifResultCh <- videoSavedMsg(path)
+		a.gifResultCh <- videoSavedMsg(path) + subNote
 	}()
 }
 

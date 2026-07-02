@@ -314,6 +314,9 @@ type ExportOptions struct {
 	// when that's blank — the recording's server + date. Off by default.
 	Watermark     bool   `json:"watermark,omitempty"`
 	WatermarkText string `json:"watermarkText,omitempty"`
+	// Subtitles (#69) writes .srt + .vtt sidecars beside a 🎥 Video export,
+	// cue-timed to the exported frames. Off by default.
+	Subtitles bool `json:"subtitles,omitempty"`
 }
 
 // maxWatermarkLen bounds the custom watermark stamp — it's a corner credit, not a
