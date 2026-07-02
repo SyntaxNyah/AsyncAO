@@ -819,6 +819,13 @@ type App struct {
 	previewDragStart         [2]int32
 	previewDragBase          [2]int32
 	previewFrameRect         sdl.Rect
+	// Playtest sizing: every character previews at the same height (previewBaseH,
+	// AO's native 192) regardless of source resolution; the corner grip resizes
+	// (previewUserH, 0 = the default) and a caption line reports source × scale.
+	previewUserH      int32
+	previewResize     bool
+	previewResizeFrom int32 // mouseY at grip press
+	previewResizeBase int32 // previewUserH (resolved) at grip press
 	// Close-on-leave travel state: previewTriggerRect is the cell that opened the box,
 	// previewEntered latches once the cursor has reached the box. Together they let the
 	// cursor cross the gap from the cell to the bottom-right box without it vanishing,
@@ -964,7 +971,11 @@ type sessionState struct {
 	// heartbeat: a statically-skipped screen still gets one real frame per
 	// paceHeartbeat, bounding how stale any missed signal can leave it.
 	lastFrameDrawn time.Time
-	amICMNow       bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
+	// winW/winH cache the logical window size Frame was last given, for draw
+	// helpers deep in a call chain that need window bounds (e.g. the sprite
+	// preview's on-screen clamp) without threading params through every layer.
+	winW, winH int32
+	amICMNow   bool // cached amICM() — refreshed on ARUP/PU events, read per-frame by the
 	// corner badge (0-alloc): the CM column lives in AreaInfo (ARUP), so a roster-stamp memo would
 	// miss a /cm that doesn't change the roster — we recompute on the area/player events instead.
 	modDashTargetUID string // selected target's UID ("" = none) — keyed by UID, never a roster
@@ -4741,6 +4752,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
 	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
+	a.winW, a.winH = winW, winH   // cached for deep draw helpers (preview clamp)
 	a.recordFrameDt(float32(dt.Seconds() * 1000))
 	// One-time: push the initial Discord presence once the app is up, so "Playing
 	// AsyncAO — In the lobby" appears immediately on launch (not only after you join

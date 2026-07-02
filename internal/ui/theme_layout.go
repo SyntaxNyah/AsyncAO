@@ -767,7 +767,9 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		}
 	}
 	if a.previewBase != "" {
-		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H, false)
+		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
+		// (playtest: "you can't move the preview out of the viewport, wth").
+		a.drawSpritePreview(a.winW, a.winH, false)
 		if c.clicked {
 			a.previewBase = ""
 		}

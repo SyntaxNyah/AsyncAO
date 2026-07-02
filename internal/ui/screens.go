@@ -27,11 +27,19 @@ const (
 	btnH     int32 = 22
 	iconCell int32 = 64
 	iconGap  int32 = 8
-	// previewMax bounds the hover-preview pop-up edge; small sprites
-	// integer-upscale toward it so pixel art previews stay readable.
-	previewMax int32 = 520
 	// previewZoomMax caps the preview magnifier (× the fit scale).
 	previewZoomMax = 8
+	// Playtest sizing (consistent previews): every character previews at
+	// previewBaseH — AO's native 192 px stage height — regardless of source
+	// resolution; the corner grip resizes within [previewMinH, previewMaxH];
+	// previewMaxW / previewMinW keep extreme aspects on screen; the
+	// previewCaptionH strip reports "source × shown-scale" AO2-style.
+	previewBaseH    int32 = 192
+	previewMinH     int32 = 96
+	previewMaxH     int32 = 480
+	previewMaxW     int32 = 560
+	previewMinW     int32 = 48
+	previewCaptionH int32 = 20
 	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
 	emoteBtnCell int32 = 40
 	// emoteTextCellW is the fixed cell width for text-mode emote chips, so
@@ -812,9 +820,15 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		a.previewFrameRect = sdl.Rect{} // no box this frame — no phantom wheel/drag target
 		return
 	}
-	// Size to the art when we have it; otherwise a default box so the box and
-	// its ‹ › controls hold their place while the next emote sprite loads.
-	pw, ph := previewMax/2, previewMax/2
+	// Playtest sizing: every character previews at the SAME height — the AO-native
+	// 192 px (or the user's grip-resized height) — with width following the art's
+	// aspect, instead of a per-character size driven by source resolution. The
+	// caption strip below reports that source resolution + the shown scale.
+	boxH := a.previewUserH
+	if boxH == 0 {
+		boxH = previewBaseH
+	}
+	pw, ph := boxH, boxH // placeholder box while the next sprite streams in
 	if ready {
 		// The preview exists to show the sprite — restart its loop per pick so
 		// animated idles play instead of freezing on frame 0.
@@ -823,22 +837,29 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 			a.previewAt = time.Now()
 			a.previewZoom = 1 // a new sprite starts unzoomed
 		}
-		pw, ph = page.W, page.H
-		scale := int32(1)
-		for (pw > previewMax || ph > previewMax) && scale < 8 {
-			pw /= 2
-			ph /= 2
-			scale *= 2
+		srcW, srcH := page.W, page.H
+		if srcW < 1 {
+			srcW = 1
 		}
-		// Small art doubles up toward the box (integer scale keeps pixels crisp).
-		for pw*2 <= previewMax && ph*2 <= previewMax {
-			pw *= 2
-			ph *= 2
+		if srcH < 1 {
+			srcH = 1
+		}
+		ph = boxH
+		pw = srcW * ph / srcH
+		if pw > previewMaxW { // ultra-wide art: cap the width, let the height follow
+			pw = previewMaxW
+			ph = srcH * pw / srcW
+		}
+		if pw < previewMinW {
+			pw = previewMinW
 		}
 	}
-	// Default bottom-right, shifted by the user's drag and clamped on-screen.
-	baseX, baseY := w-pw-pad*2, h-ph-pad*2
-	hiX, hiY := w-pw-pad, h-ph-pad
+	// Default bottom-right, shifted by the user's drag and clamped on-screen
+	// (the WINDOW — the box is free to leave the stage; playtest: "it shouldn't
+	// be stuck there").
+	capH := ph + previewCaptionH
+	baseX, baseY := w-pw-pad*2, h-capH-pad*2
+	hiX, hiY := w-pw-pad, h-capH-pad
 	if hiX < pad {
 		hiX = pad
 	}
@@ -846,8 +867,8 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		hiY = pad
 	}
 	dst := sdl.Rect{X: clampI32(baseX+a.previewOffX, pad, hiX), Y: clampI32(baseY+a.previewOffY, pad, hiY), W: pw, H: ph}
-	frame := sdl.Rect{X: dst.X - 4, Y: dst.Y - 4, W: dst.W + 8, H: dst.H + 8}
-	a.previewFrameRect = frame // cached for handlePreviewInput (wheel zoom + drag)
+	frame := sdl.Rect{X: dst.X - 4, Y: dst.Y - 4, W: dst.W + 8, H: dst.H + 8 + previewCaptionH}
+	a.previewFrameRect = frame // cached for handlePreviewInput (wheel zoom + drag + resize)
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
 	if a.previewPinned { // close button for the pinned box (click handled in handlePreviewInput)
@@ -876,13 +897,27 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		} else {
 			_ = c.Ren.Copy(tex, nil, &dst)
 		}
-		a.drawPreviewZoom(frame)
+		a.drawPreviewZoom(frame, page.W, page.H, dst.H)
+		// Resize grip (◢) at the image's bottom-right, just above the caption
+		// strip — drag it to change the box height (handlePreviewInput).
+		gr := previewGripRect(frame)
+		for i := int32(0); i < 3; i++ {
+			c.Fill(sdl.Rect{X: gr.X + 3 + i*3, Y: gr.Y + gr.H - 3 - i*3, W: 2, H: 2}, ColAccent)
+			c.Fill(sdl.Rect{X: gr.X + gr.W - 3 - i*3, Y: gr.Y + 3 + i*3, W: 2, H: 2}, ColAccent)
+		}
+		c.Tooltip(gr, "Drag to resize the preview")
 	} else {
 		c.LabelClipped(dst.X+4, dst.Y+dst.H/2-8, dst.W-8, "loading…", ColTextDim)
 	}
 	if cycling {
 		a.drawPreviewEmoteNav(frame)
 	}
+}
+
+// previewGripRect is the resize grip's hit rect: the image corner above the
+// caption strip. Shared by the draw and the input handler.
+func previewGripRect(frame sdl.Rect) sdl.Rect {
+	return sdl.Rect{X: frame.X + frame.W - 16, Y: frame.Y + frame.H - previewCaptionH - 16, W: 16, H: 16}
 }
 
 // closeSpritePreviewOnLeave dismisses the hover sprite-preview box. The box opens on a
@@ -981,6 +1016,27 @@ func (a *App) handlePreviewInput() {
 		c.wheelY = 0
 		c.wheelTaken = true
 	}
+	// Corner-grip resize (playtest: "consistently sized… but resizable"): drag
+	// the ◢ vertically to change the box height; width follows the art's aspect
+	// on the next draw. Claims the press before the body move-drag below.
+	grip := previewGripRect(box)
+	if c.mouseDown && !a.previewResize && !a.previewDrag && c.hovering(grip) {
+		a.previewResize = true
+		a.previewResizeFrom = c.mouseY
+		a.previewResizeBase = a.previewUserH
+		if a.previewResizeBase == 0 {
+			a.previewResizeBase = previewBaseH
+		}
+	}
+	if a.previewResize {
+		if c.mouseDown {
+			a.previewUserH = clampI32(a.previewResizeBase+(c.mouseY-a.previewResizeFrom), previewMinH, previewMaxH)
+		} else {
+			a.previewResize = false
+			c.clicked = false // a finished resize isn't a dismiss/selection
+		}
+		return // resizing owns the pointer — no move-drag underneath
+	}
 	// Left-drag to reposition. Start only on the body (not the bottom zoom-button
 	// strip). Claiming the press here keeps a drag from selecting whatever icon is
 	// underneath, and a real move swallows the release so click-to-dismiss/select
@@ -1009,20 +1065,31 @@ func (a *App) handlePreviewInput() {
 	}
 }
 
-// drawPreviewZoom draws the magnifier controls (− / level / +) along the bottom
-// of the preview box and handles their clicks (consumed, so the caller's
-// click-to-dismiss doesn't fire). At >1× the cursor pans the magnified view.
-func (a *App) drawPreviewZoom(frame sdl.Rect) {
+// drawPreviewZoom draws the caption strip along the preview's bottom — the
+// source resolution + the scale it's shown at (the playtest's "resolution scale
+// line, just like existing AO") — flanked by the − / + magnifier buttons, whose
+// clicks are consumed so the caller's click-to-dismiss doesn't fire. At >1× the
+// cursor pans the magnified view.
+func (a *App) drawPreviewZoom(frame sdl.Rect, srcW, srcH, shownH int32) {
 	c := a.ctx
 	const bh, bw int32 = 18, 22
-	y := frame.Y + frame.H - bh
+	y := frame.Y + frame.H - bh - 1
 	minus := sdl.Rect{X: frame.X + 2, Y: y, W: bw, H: bh}
 	plus := sdl.Rect{X: frame.X + frame.W - bw - 2, Y: y, W: bw, H: bh}
-	lvl := sdl.Rect{X: frame.X + frame.W/2 - 16, Y: y, W: 32, H: bh}
+	pct := int32(100)
+	if srcH > 0 {
+		pct = shownH * 100 / srcH
+	}
+	caption := fmt.Sprintf("%d×%d · %d%%", srcW, srcH, pct)
+	if a.previewZoom > 1 {
+		caption += fmt.Sprintf(" · %dx", a.previewZoom)
+	}
+	capW := c.TextWidth(caption) + 12
+	lvl := sdl.Rect{X: frame.X + (frame.W-capW)/2, Y: y, W: capW, H: bh}
 	for _, b := range []struct {
 		r     sdl.Rect
 		label string
-	}{{minus, "-"}, {lvl, fmt.Sprintf("%dx", a.previewZoom)}, {plus, "+"}} {
+	}{{minus, "-"}, {lvl, caption}, {plus, "+"}} {
 		c.Fill(b.r, sdl.Color{R: 0, G: 0, B: 0, A: 205})
 		c.LabelClipped(b.r.X+6, b.r.Y+1, b.r.W-8, b.label, ColAccent)
 	}
@@ -4442,7 +4509,9 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	}
 
 	if a.previewBase != "" {
-		a.drawSpritePreview(vp.X+vp.W, vp.Y+vp.H, false)
+		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
+		// (playtest: "you can't move the preview out of the viewport, wth").
+		a.drawSpritePreview(a.winW, a.winH, false)
 		a.closeSpritePreviewOnLeave()
 	}
 }
