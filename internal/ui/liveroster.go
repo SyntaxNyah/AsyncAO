@@ -145,7 +145,7 @@ func (a *App) ipidByUID() map[string]string {
 }
 
 // rosterEqual reports whether two rosters are identical for display purposes —
-// same length, same per-row identity (name + showname). Used to skip a rebuild
+// same length, same per-row identity and placement. Used to skip a rebuild
 // (and the icon-cache invalidation it forces) when a CharsCheck/ARUP packet
 // didn't actually change the current area's roster.
 func rosterEqual(a, b []areaPlayer) bool {
@@ -154,7 +154,11 @@ func rosterEqual(a, b []areaPlayer) bool {
 	}
 	for i := range a {
 		if a[i].name != b[i].name || a[i].showname != b[i].showname ||
-			a[i].uid != b[i].uid || a[i].ooc != b[i].ooc || a[i].ipid != b[i].ipid {
+			a[i].uid != b[i].uid || a[i].ooc != b[i].ooc || a[i].ipid != b[i].ipid ||
+			// area included: a pure move (PU type 3) changes NOTHING else, and
+			// treating it as "unchanged" froze the Players tab's room grouping
+			// until someone joined or left (playtest report).
+			a[i].area != b[i].area {
 			return false // rich fields included so a /getarea enrich triggers a rebuild
 		}
 	}

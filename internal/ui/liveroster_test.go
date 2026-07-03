@@ -71,4 +71,12 @@ func TestRosterEqual(t *testing.T) {
 	if rosterEqual(a, b) {
 		t.Error("a showname change must not compare equal")
 	}
+	// A pure area move (PU type 3) changes ONLY the area field: it must count as
+	// a change or the Players tab's room grouping freezes until a join/leave
+	// (the playtest report).
+	b[0].showname = "Nick"
+	b[0].area = "Courtroom 2"
+	if rosterEqual(a, b) {
+		t.Error("an area move must not compare equal")
+	}
 }
