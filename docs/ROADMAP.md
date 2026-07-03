@@ -22,9 +22,16 @@ items move to `docs/FEATURES.md` as they ship.
   the marks rendered through render.CaptureTarget and saved as
   `-annotated.png`. Next batch's lead item.
 - **Crisp text at scale (#77)** — see the standing "Crisp
-  resolution-independent UI text" track below; picked for v1.50.0 but
-  deliberately not rushed at the tail of a marathon batch (it threads scale
-  through the glyph/label caches and must not regress the 0-alloc gate).
+  resolution-independent UI text" track below, re-diagnosed 2026-07-03 for the
+  v1.53.5 round (Tifera: the window is a blurry mess at >100%, and 100% is too
+  small). Confirmed: it is NOT Windows DPI virtualization — the process is
+  already per-monitor-v2 aware (`SDL_WINDOWS_DPI_AWARENESS` in main.go) and
+  nearest/linear is already a Settings pref — the residual blur is OUR OWN
+  `ren.SetScale` linearly stretching text that was rasterized at 96 dpi.
+  Deliberately not half-shipped at the tail of the batch; it's the next
+  dedicated milestone. Interim answer for players: 200% + Smooth scaling OFF
+  is pixel-exact (chunky but sharp); non-integer scales with smoothing stay
+  soft until this lands.
 
 _Playtest backlog cleared (2026-06-21) — every Discord/playtest request shipped
 (see `docs/FEATURES.md`). New asks land here. The only milestone left is the
@@ -142,11 +149,26 @@ it's a stale build (`scripts\build.ps1 -Release`).
   cross-cutting port (every `internal/render` call site, the texture tiers, the
   SDL_mixer audio back-end) and stays parked until the FX / perf win clearly
   justifies the churn.
-- **Crisp resolution-independent UI text.** The global UI scale is applied with
-  `ren.SetScale`, which bitmap-upscales already-rasterized text — correct size but
-  slightly soft above 100% (see `SetAutoScaleFromWindow` and the v1.2.0 #6 fix).
-  The proper fix rasterizes glyphs at the *target* pixel size (`pt × scale`) so any
-  scale stays sharp, which means threading the scale through the label atlas /
-  glyph cache and every text draw **without** regressing the 0-alloc render gate.
-  Big enough to be its own track: the window-relative auto-scale lands the *sizing*
-  now (v1.2.0); this lands the *sharpness* later.
+- **Crisp resolution-independent UI text (#77).** The global UI scale is applied
+  with `ren.SetScale`, which bitmap-upscales already-rasterized text — correct
+  size but soft above 100% (see `SetAutoScaleFromWindow` and the v1.2.0 #6 fix).
+  Re-scoped 2026-07-03 (the v1.53.5 DPI dig): the proper fix rasterizes text at
+  the *native device* pixel size — fonts opened at `pt × scale`, the resulting
+  texture drawn into the unchanged *logical* rect, so with the renderer scale
+  active the glyph pixels land 1:1 on device pixels and any scale stays sharp.
+  The kit's coordinate system doesn't change; what does is every place that
+  assumes texture px == logical px:
+  - `TextWidth` / measurement must return LOGICAL units (device ÷ scale), and
+    the width caches + text atlas need the scale in their keys (a scale change
+    is a cache generation bump, like `fontChainGen`).
+  - `blitLabel` / `LabelClipped*` dst rects become `tex.size ÷ scale` with
+    rounding audited (off-by-one at odd scales is the classic failure).
+  - The message raster + typewriter reveal indexes (per-rune positions) and the
+    emoji fallback raster measure with the scaled faces; GIF/comic export paths
+    pick their own scale explicitly (they render offscreen at 100%).
+  - The IC/OOC log wrap caches key on font scale already — they just need the
+    same generation bump on a UI-scale change.
+  All of it **without** regressing the 0-alloc render gate (`BenchmarkRenderFrame`),
+  which is why it's its own milestone and was explicitly not rushed into the
+  v1.50.0 or v1.53.5 batches. The window-relative auto-scale landed the *sizing*;
+  this lands the *sharpness*.
