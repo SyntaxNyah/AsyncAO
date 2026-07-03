@@ -49,6 +49,16 @@ type oocSend struct {
 	due  time.Time
 }
 
+// defaultOOCName is what a FRESH tab's OOC name starts as: the saved
+// default OOC name (the Settings field), else your saved showname —
+// per-tab edits in the courtroom never feed back into it.
+func (a *App) defaultOOCName() string {
+	if s := a.d.Prefs.SavedOOCName(); s != "" {
+		return s
+	}
+	return a.d.Prefs.SavedShowname()
+}
+
 // oocNameOrDefault is the OOC identity every command/macro send uses:
 // the user's name when set, else a sticky random AsyncAO<1-200> minted
 // once per run (so one session keeps one identity).

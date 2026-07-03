@@ -672,11 +672,14 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	if next, _ := c.TextField("showname", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, shown, "your saved showname"); next != shown {
 		a.d.Prefs.SetShowname(next)
 	}
-	// Default OOC name: applied on every join; blank sends a sticky AsyncAO<n>.
+	// Default OOC name: write-through to prefs like the showname; it seeds
+	// every NEW tab (blank sends a sticky AsyncAO<n>). The courtroom OOC-name
+	// fields are tab-local and never write this back.
 	c.Label(pad+390, y+4, "OOC name:", ColText)
-	if next, _ := c.TextField("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, a.oocName, "blank = AsyncAO<n>"); next != a.oocName {
-		a.oocName = next
+	savedOOC := a.d.Prefs.SavedOOCName()
+	if next, _ := c.TextField("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, savedOOC, "blank = AsyncAO<n>"); next != savedOOC {
 		a.d.Prefs.SetOOCName(next)
+		a.oocName = next // the ACTIVE tab adopts the new default right away
 	}
 	y += 38
 
@@ -2133,10 +2136,7 @@ func (a *App) applyPrefsToState() {
 	a.oocPct = a.d.Prefs.OOCScale()
 	a.uiScalePct = a.d.Prefs.UIScale()
 	a.ctx.SetUIScale(a.UIScale())
-	a.oocName = a.d.Prefs.SavedShowname()
-	if s := a.d.Prefs.SavedOOCName(); s != "" {
-		a.oocName = s
-	}
+	a.oocName = a.defaultOOCName() // the active tab re-seeds; parked tabs keep theirs
 	a.refreshCharKeys()
 	a.applyThemeAsync()
 	a.applyAudioVolumes()

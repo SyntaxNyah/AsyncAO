@@ -767,6 +767,15 @@ func (a *App) resetSessionState() {
 		pairWith:       protocol.UnpairedCharID,
 		playerSort:     clampMode(a.d.Prefs.PlayerListSortMode(), playerSortModes), // remembered Players-tab sorts
 		playerAreaSort: clampMode(a.d.Prefs.PlayerListAreaSortMode(), areaSortModes),
+		// OOC name is per-tab (typed names leaked across tabs from App);
+		// fresh tabs start from the saved default.
+		oocName: a.defaultOOCName(),
+		// The volume-view toggles are per-session UI but PERSISTED prefs:
+		// NewApp restored them once and every connect wiped them back to
+		// hidden (playtest: "the show/hide volume option still doesn't
+		// persist"). Seed them on every fresh session instead.
+		volStripOn:   a.d.Prefs.VolStripShownOn(),
+		musicVolMode: a.d.Prefs.MusicVolModeOn(),
 		spriteOv:       map[string][2]int{},
 		pmThreads:      map[string][]pmLine{},
 		evidIdx:        -1,

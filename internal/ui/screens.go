@@ -2614,11 +2614,10 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	}
 	// OOC carries only an OOC name + the OOC chat — the IC showname is set on the IC bar
 	// and in Settings, so it has no business in the OOC box (beta feedback).
-	prev := a.oocName
-	a.oocName, _ = c.TextField("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "Permanent OOC name")
-	if a.oocName != prev {
-		a.d.Prefs.SetOOCName(a.oocName)
-	}
+	// TAB-LOCAL: this field used to write the saved default too, so a name
+	// typed here followed you into every other tab (playtest). The permanent
+	// default lives in Settings → Identity.
+	a.oocName, _ = c.TextField("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "OOC name (this tab)")
 }
 
 // drawAreaList lists the server's areas; clicking one requests the room

@@ -341,13 +341,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 				dd = 20
 				nameR.W -= dd + 2
 			}
-			prev := a.oocName
+			// TAB-LOCAL (like the classic OOC box): the saved default is the
+			// Settings → Identity field only, so a name typed here can't
+			// follow you into other tabs.
 			a.oocName, _ = c.TextField("oocname", nameR, a.oocName, "OOC name")
 			if name := a.pickNameDropdown("oocpick", sdl.Rect{X: nameR.X + nameR.W + 2, Y: nameR.Y, W: dd, H: nameR.H}); name != "" {
 				a.oocName = name
-			}
-			if a.oocName != prev {
-				a.d.Prefs.SetOOCName(a.oocName)
 			}
 		}
 	}

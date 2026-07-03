@@ -553,6 +553,38 @@ func TestResetSessionStatePairIsSessionOnly(t *testing.T) {
 	}
 }
 
+// TestOOCNamePerTab pins the tab isolation (playtest): a name typed in one
+// tab stays in that tab — a fresh session seeds from the SAVED default, the
+// typed name never rewrites that default, and the parked tab keeps its own.
+func TestOOCNamePerTab(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetOOCName("DefaultName")
+	// The connect flow: park → allocate → fresh session (connectWith order).
+	a.parkActive()
+	if !a.allocateTab() {
+		t.Fatal("allocateTab must succeed")
+	}
+	a.resetSessionState()
+	if a.oocName != "DefaultName" {
+		t.Fatalf("fresh tab must seed the saved default, got %q", a.oocName)
+	}
+	a.oocName = "TabOnlyName" // typed into the courtroom field (tab-local)
+	a.parkActive()
+	if !a.allocateTab() {
+		t.Fatal("second allocateTab must succeed")
+	}
+	a.resetSessionState()
+	if a.oocName != "DefaultName" {
+		t.Errorf("a new tab must NOT inherit another tab's typed name, got %q", a.oocName)
+	}
+	if got := a.d.Prefs.SavedOOCName(); got != "DefaultName" {
+		t.Errorf("typing in the courtroom field must not rewrite the saved default, got %q", got)
+	}
+	if got := a.tabs[0].state.oocName; got != "TabOnlyName" {
+		t.Errorf("the parked tab must keep its own typed name, got %q", got)
+	}
+}
+
 // TestResetSessionStateSeedsPlayerSort pins that a fresh session seeds the
 // Players-tab sorts from prefs, clamped to the valid mode range.
 func TestResetSessionStateSeedsPlayerSort(t *testing.T) {

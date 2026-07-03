@@ -240,7 +240,6 @@ type App struct {
 	// (theme art, previews, splashes) read it instead of hitting the OS
 	// clock per draw site.
 	frameNow time.Time
-	oocName  string
 	// defaultOOC is the sticky AsyncAO<n> fallback OOC name, minted once
 	// per run on first use (commands/macros need SOME name to send).
 	defaultOOC string
@@ -1145,6 +1144,11 @@ type sessionState struct {
 	icUndoText  string
 	oocUndoText string
 	oocInput    string
+	// oocName is THIS TAB's OOC chat name, seeded from the saved default in
+	// resetSessionState — it lived on App and a name typed in one tab showed
+	// up in every other (playtest). Only the Settings field writes the saved
+	// default; the courtroom fields are tab-local.
+	oocName string
 	// IC message recall (#8): Up/Down in the IC field walk your recently-sent messages,
 	// shell-style. icRecallIdx == -1 = editing the live draft; icRecallDraft stashes that
 	// draft while you browse history. Per-tab (lives in sessionState).
@@ -1931,7 +1935,6 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		jukeIORes:       make(chan string, 4),
 		jukeOpen:        -1,
 		jukeDelPlaylist: -1,
-		oocName:         d.Prefs.SavedShowname(),
 		selServer:       -1,
 		activeTab:       -1,
 		tabDragFrom:     -1,
@@ -1952,19 +1955,14 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		}
 	}()
 	a.applyThemeAsync()                                                         // chatbox skin + font colors from the saved theme
-	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // pair placement is seeded per-session in resetSessionState (above)
+	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // per-session view state (pair, OOC name, volume views) seeds in resetSessionState (above)
 	a.oocPct = d.Prefs.OOCScale()                                               // OOC log text size, independent of the IC log
-	a.volStripOn = d.Prefs.VolStripShownOn()                                    // restore the on-screen volume strip toggle (persisted)
-	a.musicVolMode = d.Prefs.MusicVolModeOn()                                   // restore the Music-menu volume-sliders view (persisted)
 	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
 	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
 	a.applyFontConfig()                                      // dyslexia toggle or manual font path, resolved once
 	a.dndOn = d.Prefs.DNDPersistOn() && d.Prefs.DNDSavedOn() // else session-only: clears each launch
-	if saved := d.Prefs.SavedOOCName(); saved != "" {
-		a.oocName = saved
-	}
 	a.RefreshServers()
 	// Restore-on-launch (opt-in, OFF by default): queue the remembered tabs;
 	// Frame reconnects them one per frame. Capped to the live tab cap so we
