@@ -207,12 +207,15 @@ func (a *App) ctrlSlot(x *int32, y2, wdt, adv, w, h int32, key string) (sdl.Rect
 	return r, true
 }
 
-// classicSnap rounds a screen coordinate to the editor's grid (shared 8 px).
-func classicSnap(v int32) int32 {
+// classicSnapTo rounds a screen coordinate to the editor's grid step g
+// (user-tunable — the banner's Grid chip; config.LayoutGridSize).
+func classicSnapTo(v, g int32) int32 {
 	if v < 0 {
 		return 0
 	}
-	const g = layoutGridDesign
+	if g <= 0 {
+		g = layoutGridDesign
+	}
 	return (v + g/2) / g * g
 }
 
@@ -538,7 +541,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 	doneBtn := sdl.Rect{X: w - 62 - pad, Y: 2, W: 62, H: classicBannerH - 4}
 	resetBtn := sdl.Rect{X: doneBtn.X - 90 - 6, Y: 2, W: 90, H: classicBannerH - 4}
 	snapBtn := sdl.Rect{X: resetBtn.X - 92 - 6, Y: 2, W: 92, H: classicBannerH - 4}
-	aspectBtn := sdl.Rect{X: snapBtn.X - 80 - 6, Y: 2, W: 80, H: classicBannerH - 4}
+	gridBtn := sdl.Rect{X: snapBtn.X - 78 - 6, Y: 2, W: 78, H: classicBannerH - 4}
+	aspectBtn := sdl.Rect{X: gridBtn.X - 80 - 6, Y: 2, W: 80, H: classicBannerH - 4}
 
 	pressed := c.mouseDown && !a.classicEditPrev
 	a.classicEditPrev = c.mouseDown
@@ -560,6 +564,11 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, snapBtn) {
 		a.layoutSnap = !a.layoutSnap
+	}
+	// Grid chip: cycles the snap step (4 → 8 → 16 → 32, persisted) — playtest
+	// (Tifera): "allow us to edit the snap grid".
+	if c.clicked && pointIn(c.mouseX, c.mouseY, gridBtn) {
+		a.d.Prefs.SetLayoutGridSize(nextLayoutGridSize(a.d.Prefs.LayoutGridSize()))
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, aspectBtn) {
 		a.layoutAspect = !a.layoutAspect // lock/unlock the stage's 4:3 while resizing it
@@ -626,7 +635,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// A drag can begin ANYWHERE except over the editor's own chips (so the top strip
 	// is grabbable instead of a blanket no-drag banner row) or the pop-out tray.
 	overChip := pointIn(c.mouseX, c.mouseY, doneBtn) || pointIn(c.mouseX, c.mouseY, resetBtn) ||
-		pointIn(c.mouseX, c.mouseY, snapBtn) || pointIn(c.mouseX, c.mouseY, aspectBtn)
+		pointIn(c.mouseX, c.mouseY, snapBtn) || pointIn(c.mouseX, c.mouseY, aspectBtn) ||
+		pointIn(c.mouseX, c.mouseY, gridBtn)
 	if pressed && a.classicEditDrag == 0 && !overChip && !overTray && !overToolbox {
 		// Alt forces a MOVE (skips the resize-edge test). A small widget — a single
 		// button — is almost ALL edge, so a plain drag kept resizing it instead of
@@ -704,17 +714,32 @@ func (a *App) drawClassicEditor(w, h int32) {
 				r.H = classicMinPx
 			}
 		}
-		// Hold Shift while dragging = pixel-precise: it bypasses the grid for this
-		// drag (the "Snap" button is the persistent toggle). GetModState is a cheap
-		// render-thread query, so the default snap path stays allocation-free.
+		// Hold Shift while dragging = pixel-precise: it bypasses the grid AND the
+		// alignment magnet for this drag (the "Snap" button is the persistent
+		// toggle). GetModState is a cheap render-thread query, so the default
+		// snap path stays allocation-free.
+		a.alignGuides = a.alignGuides[:0]
 		if a.layoutSnap && sdl.GetModState()&sdl.KMOD_SHIFT == 0 {
-			r.X, r.Y, r.W, r.H = classicSnap(r.X), classicSnap(r.Y), classicSnap(r.W), classicSnap(r.H)
+			g := int32(a.d.Prefs.LayoutGridSize())
+			r.X, r.Y, r.W, r.H = classicSnapTo(r.X, g), classicSnapTo(r.Y, g), classicSnapTo(r.W, g), classicSnapTo(r.H, g)
 			if r.W < classicMinPx {
 				r.W = classicMinPx
 			}
 			if r.H < classicMinPx {
 				r.H = classicMinPx
 			}
+			// Alignment magnet (Tifera: "nothing was aligning properly" — the
+			// defaults aren't grid-aligned, so the grid alone can't make two
+			// boxes flush): the dragged box's edges/centre snap to the OTHER
+			// boxes' edges/centres and the window edges/centre, overriding the
+			// grid on the matched axis. Guides draw in the overlay below.
+			a.alignScratch = a.alignScratch[:0]
+			for _, k := range keys {
+				if k != a.classicEditKey {
+					a.alignScratch = append(a.alignScratch, a.slotReg[k].cur)
+				}
+			}
+			r, a.alignGuides = alignRect(r, a.alignScratch, w, h, a.classicEditDrag == 1, a.classicEditEdges, a.alignGuides)
 		}
 		// Lock the stage to 4:3 while resizing (banner toggle): drive the other
 		// dimension from the edge you grabbed, so the scene never stretches off
@@ -806,6 +831,17 @@ func (a *App) drawClassicEditor(w, h int32) {
 			c.Border(r, dimEdge) // resting: structure only, no clutter
 		}
 	}
+	// Alignment guides: full-length hairlines at whatever the dragged box just
+	// snapped flush to — the Inkscape-style "you are aligned" feedback.
+	if a.classicEditDrag != 0 {
+		for _, g := range a.alignGuides {
+			if g.vertical {
+				c.Fill(sdl.Rect{X: g.pos, Y: 0, W: 1, H: h}, ColTierGreen)
+			} else {
+				c.Fill(sdl.Rect{X: 0, Y: g.pos, W: w, H: 1}, ColTierGreen)
+			}
+		}
+	}
 	// Editor chrome LAST — topmost over every outline, tag and strip. It stays
 	// translucent so widgets parked in the top strip remain visible through it
 	// (you can drag boxes up there — playtest: "make use of that space"). A
@@ -822,8 +858,9 @@ func (a *App) drawClassicEditor(w, h int32) {
 		aspectLabel = "4:3: on"
 	}
 	hintX := pad + c.TextWidth("Edit Layout") + 18
-	c.LabelClipped(hintX, 6, aspectBtn.X-hintX-10, "Drag to move · edge to resize · Alt = move · Shift = precise · the top strip is free to use", ColTextDim)
+	c.LabelClipped(hintX, 6, aspectBtn.X-hintX-10, "Drag to move · edge to resize · green lines = aligned · Alt = move · Shift = precise", ColTextDim)
 	a.rawChip(aspectBtn, aspectLabel)
+	a.rawChip(gridBtn, fmt.Sprintf("Grid: %d", a.d.Prefs.LayoutGridSize()))
 	a.rawChip(snapBtn, snapLabel)
 	a.rawChip(resetBtn, "Reset all")
 	a.rawChip(doneBtn, "Done")

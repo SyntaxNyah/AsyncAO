@@ -658,6 +658,11 @@ type App struct {
 	// frame — slot name tags clamp below it so a box parked in the top strip
 	// can't plaster its tag over the editor's own controls.
 	classicChromeBot int32
+	// alignGuides/alignScratch are the editor's per-drag-frame alignment
+	// results and its reusable other-slots buffer (classicalign.go). Editor
+	// path only; reused so a long drag allocates nothing after warm-up.
+	alignGuides  []alignGuide
+	alignScratch []sdl.Rect
 	// layoutPresetName is the Settings name field for saving the current layout as a
 	// named preset (#34, internal/ui/layoutpresets.go + the Theme settings section).
 	layoutPresetName string

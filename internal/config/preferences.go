@@ -841,29 +841,32 @@ type AssetPreferences struct {
 	// LayoutPresets are named snapshots of ClassicLayout the user can save and
 	// reload from the layout editor (#34). Each value is a full slot-override map
 	// (same [x,y,w,h] window-fraction shape); bounded by layoutPresetCap.
-	LayoutPresets  map[string]map[string][4]float64 `json:"layoutPresets,omitempty"`
-	DiskZstd       bool                             `json:"diskZstd"`
-	StreamerModeOn bool                             `json:"streamerMode"`
-	ThemeName      string                           `json:"themeName"`
-	ThemeDir       string                           `json:"themeDir"`
-	OOCName        string                           `json:"oocName"`
-	ViewportPct    int                              `json:"viewportPercent"`
-	ChatScalePct   int                              `json:"chatScalePercent"`
-	ChatBoxPct     int                              `json:"chatBoxPercent"`
-	LogScalePct    int                              `json:"logScalePercent"`
-	InputHeightPct int                              `json:"inputHeightPercent"`
-	UIScalePct     int                              `json:"uiScalePercent"`
-	WindowW        int                              `json:"windowWidth"`  // 0 = default
-	WindowH        int                              `json:"windowHeight"` // 0 = default
-	WindowFull     bool                             `json:"windowFullscreen"`
-	MusicVol       int                              `json:"musicVolume"`
-	SFXVol         int                              `json:"sfxVolume"`
-	BlipVol        int                              `json:"blipVolume"`
-	AlertVol       int                              `json:"alertVolume"`
-	MasterVol      int                              `json:"masterVolume"` // scales all three (default 100)
-	HoldClearOn    bool                             `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
-	HoldClearKey   string                           `json:"holdClearKey"` // which key (default "Backspace"), rebindable
-	HoldClearMs    int                              `json:"holdClearMs"`  // hold duration to clear (default 1500)
+	LayoutPresets map[string]map[string][4]float64 `json:"layoutPresets,omitempty"`
+	// LayoutGridPx is the layout editor's snap-grid step in logical px
+	// (playtest, Tifera: "allow us to edit the snap grid"); 0 = the default 8.
+	LayoutGridPx   int    `json:"layoutGridPx,omitempty"`
+	DiskZstd       bool   `json:"diskZstd"`
+	StreamerModeOn bool   `json:"streamerMode"`
+	ThemeName      string `json:"themeName"`
+	ThemeDir       string `json:"themeDir"`
+	OOCName        string `json:"oocName"`
+	ViewportPct    int    `json:"viewportPercent"`
+	ChatScalePct   int    `json:"chatScalePercent"`
+	ChatBoxPct     int    `json:"chatBoxPercent"`
+	LogScalePct    int    `json:"logScalePercent"`
+	InputHeightPct int    `json:"inputHeightPercent"`
+	UIScalePct     int    `json:"uiScalePercent"`
+	WindowW        int    `json:"windowWidth"`  // 0 = default
+	WindowH        int    `json:"windowHeight"` // 0 = default
+	WindowFull     bool   `json:"windowFullscreen"`
+	MusicVol       int    `json:"musicVolume"`
+	SFXVol         int    `json:"sfxVolume"`
+	BlipVol        int    `json:"blipVolume"`
+	AlertVol       int    `json:"alertVolume"`
+	MasterVol      int    `json:"masterVolume"` // scales all three (default 100)
+	HoldClearOn    bool   `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
+	HoldClearKey   string `json:"holdClearKey"` // which key (default "Backspace"), rebindable
+	HoldClearMs    int    `json:"holdClearMs"`  // hold duration to clear (default 1500)
 	// Extras-box theming (all hex like "78aaff"; "" = the stock kit colour).
 	ExtrasBg           string                    `json:"extrasBg"`
 	ExtrasBg2          string                    `json:"extrasBg2"` // gradient bottom colour
@@ -1141,6 +1144,7 @@ type prefsJSON struct {
 	ThemeRectOverrides map[string]map[string][4]int     `json:"themeRectOverrides"`
 	ClassicLayout      map[string][4]float64            `json:"classicLayout"` // default-courtroom slot overrides (window fractions)
 	LayoutPresets      map[string]map[string][4]float64 `json:"layoutPresets"` // named layout snapshots (#34)
+	LayoutGridPx       int                              `json:"layoutGridPx"`  // editor snap-grid step (0 = default 8)
 	DiskZstd           bool                             `json:"diskZstd"`      // default OFF (measured trade)
 	StreamerMode       bool                             `json:"streamerMode"`  // default OFF
 	ThemeName          string                           `json:"themeName"`
@@ -1882,6 +1886,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ThemeRectOv = onDisk.ThemeRectOverrides
 	p.ClassicLayout = sanitizeClassicLayout(onDisk.ClassicLayout)
 	p.LayoutPresets = sanitizeLayoutPresets(onDisk.LayoutPresets)
+	p.LayoutGridPx = clampLayoutGridPx(onDisk.LayoutGridPx)
 	p.DiskZstd = onDisk.DiskZstd
 	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
@@ -7574,6 +7579,55 @@ func (p *AssetPreferences) ClearClassicSlot(name string) {
 	} else {
 		delete(p.ClassicLayout, name)
 	}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Layout-editor snap grid (playtest, Tifera: "allow us to edit the snap
+// grid"). The step is clamped to [MinLayoutGridPx, MaxLayoutGridPx]; the
+// editor's Grid chip cycles a sensible subset.
+const (
+	// DefaultLayoutGridPx is the long-standing 8 px editor grid.
+	DefaultLayoutGridPx = 8
+	// MinLayoutGridPx / MaxLayoutGridPx bound a stored grid step so a stale
+	// or hand-edited pref can't make snapping useless (1) or absurd (256).
+	MinLayoutGridPx = 2
+	MaxLayoutGridPx = 64
+)
+
+func clampLayoutGridPx(v int) int {
+	if v == 0 {
+		return 0 // absent: LayoutGridSize resolves the default
+	}
+	if v < MinLayoutGridPx {
+		return MinLayoutGridPx
+	}
+	if v > MaxLayoutGridPx {
+		return MaxLayoutGridPx
+	}
+	return v
+}
+
+// LayoutGridSize reports the layout editor's snap-grid step in logical px
+// (DefaultLayoutGridPx when unset).
+func (p *AssetPreferences) LayoutGridSize() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.LayoutGridPx == 0 {
+		return DefaultLayoutGridPx
+	}
+	return p.LayoutGridPx
+}
+
+// SetLayoutGridSize persists the editor snap-grid step, clamped.
+func (p *AssetPreferences) SetLayoutGridSize(px int) {
+	px = clampLayoutGridPx(px)
+	p.mu.Lock()
+	if p.LayoutGridPx == px {
+		p.mu.Unlock()
+		return
+	}
+	p.LayoutGridPx = px
 	p.mu.Unlock()
 	p.markDirty()
 }
