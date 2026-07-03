@@ -1662,7 +1662,13 @@ type lobbyFetch struct {
 type iniswapFetch struct {
 	key   string // serverKey the fetch was made for (tab-switch guard)
 	names []string
-	err   error
+	// bgs is the background/ autoindex fetched alongside the txt (nil when the
+	// host has no listing): pollIniswap filters background folder names OUT of
+	// the iniswap list — some servers publish one combined "everything
+	// streamable" file (playtest: half of one server's iniswap.txt was its
+	// background dir, and a background wears like a broken character).
+	bgs []string
+	err error
 }
 
 type charINIFetch struct {
@@ -4427,8 +4433,17 @@ func (a *App) ensureIniList() {
 	a.iniBusy = true
 	a.iniListErr = ""
 	url := a.urls.Origin() + iniswapFileName
+	bgURL := a.urls.BackgroundsRoot()
 	key := a.serverKey
 	go func() {
+		// Same guard as the background-list goroutine: a malformed autoindex
+		// tripping parseAutoindexDirs must degrade, never hard-crash off-thread.
+		defer func() {
+			if r := recover(); r != nil {
+				writeCrashLog("iniswap list goroutine panic: ", r)
+				a.iniRes <- iniswapFetch{key: key, err: fmt.Errorf("iniswap list failed: %v", r)}
+			}
+		}()
 		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
 		defer cancel()
 		data, err := a.d.Manager.FetchRaw(ctx, url)
@@ -4436,7 +4451,16 @@ func (a *App) ensureIniList() {
 			a.iniRes <- iniswapFetch{key: key, err: err}
 			return
 		}
-		a.iniRes <- iniswapFetch{key: key, names: parseIniswapList(data)}
+		names := parseIniswapList(data)
+		// The backgrounds root rides the same cached fetch path (the bg picker
+		// shares the URL, so at most one network hit between them) purely to
+		// FILTER the list; a host with no listing is not an error (nil = the
+		// remembered names alone do the filtering).
+		var bgs []string
+		if bgData, bgErr := a.d.Manager.FetchRaw(ctx, bgURL); bgErr == nil {
+			bgs = parseAutoindexDirs(bgData)
+		}
+		a.iniRes <- iniswapFetch{key: key, names: names, bgs: bgs}
 	}()
 }
 
@@ -4451,7 +4475,8 @@ func (a *App) pollIniswap() {
 			a.iniListErr = "no server list (" + res.err.Error() + ") — your wardrobe still works"
 			a.iniServer = nil
 		} else {
-			a.iniServer = res.names
+			a.iniServer = filterServerIniswaps(res.names, res.bgs,
+				a.d.Prefs.ServerWarmInfoFor(a.serverKey).Backgrounds)
 		}
 		a.rebuildIniMenu()
 	default:
@@ -4560,6 +4585,35 @@ func mergeWardrobe(wardrobe, server []string) (names []string, stars, inServer [
 		inServer = append(inServer, true)
 	}
 	return names, stars, inServer
+}
+
+// filterServerIniswaps drops background folder names from the server's parsed
+// iniswap list. Some servers publish one combined "everything streamable" txt
+// (playtest: 187 of one server's 376 iniswap entries were its background/ dir),
+// and a background wears like a broken character. The exclusion set is the live
+// background/ autoindex (fetched alongside the txt) plus last session's
+// remembered names — either half may be missing (no listing / first visit), so
+// they union. Tradeoff, deliberately accepted: a real character sharing a
+// background's exact folder name is hidden from the grids too, but it can
+// still be worn by name (the Iniswaps search box or the wardrobe Add field).
+func filterServerIniswaps(names, liveBgs, warmBgs []string) []string {
+	if len(liveBgs) == 0 && len(warmBgs) == 0 {
+		return names
+	}
+	bgSet := make(map[string]struct{}, len(liveBgs)+len(warmBgs))
+	for _, b := range liveBgs {
+		bgSet[strings.ToLower(b)] = struct{}{}
+	}
+	for _, b := range warmBgs {
+		bgSet[strings.ToLower(b)] = struct{}{}
+	}
+	kept := names[:0] // in place: names is pollIniswap's own parse result
+	for _, n := range names {
+		if _, isBg := bgSet[strings.ToLower(n)]; !isBg {
+			kept = append(kept, n)
+		}
+	}
+	return kept
 }
 
 // parseIniswapList parses iniswap.txt: one character folder name per line,

@@ -74,6 +74,33 @@ func TestParseIniswapList(t *testing.T) {
 	}
 }
 
+// TestFilterServerIniswaps pins the wardrobe's background filter (playtest:
+// a server's combined iniswap.txt put its whole background/ dir in the
+// Iniswaps grid). Exclusion = live autoindex ∪ remembered names, matched
+// case-insensitively; with neither list the input passes through untouched.
+func TestFilterServerIniswaps(t *testing.T) {
+	names := func() []string { return []string{"Aigis", "uminekobeach", "Zeta", "HigurashiSchoolDay"} }
+
+	if got := filterServerIniswaps(names(), nil, nil); len(got) != 4 {
+		t.Fatalf("no background lists → pass through, got %v", got)
+	}
+	got := filterServerIniswaps(names(), []string{"UminekoBeach"}, []string{"higurashischoolday"})
+	want := []string{"Aigis", "Zeta"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("filtered = %v, want %v (live ∪ warm, case-insensitive)", got, want)
+	}
+
+	// The poll path applies the filter before the merge, so the backgrounds
+	// stay out of BOTH the Iniswaps grid and the Characters section's extras.
+	a := testTabApp(t)
+	a.iniRes = make(chan iniswapFetch, 1)
+	a.iniRes <- iniswapFetch{names: names(), bgs: []string{"uminekobeach", "higurashischoolday"}}
+	a.pollIniswap()
+	if len(a.iniServer) != 2 || a.iniServer[0] != "Aigis" || a.iniServer[1] != "Zeta" {
+		t.Fatalf("pollIniswap must drop background names, iniServer = %v", a.iniServer)
+	}
+}
+
 // TestParseAutoindexDirs pins the background-listing parser: trailing-slash
 // hrefs only (folders), parent/self/absolute/external/sort links skipped,
 // files skipped, percent-decoded, case-insensitively de-duplicated, sorted.
