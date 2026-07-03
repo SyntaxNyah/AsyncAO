@@ -3655,8 +3655,13 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 	c := a.ctx
 	c.LabelClipped(r.X, r.Y, r.W, "Volume — the IC box stays live below, so adjust and keep chatting.", ColTextDim)
 	y := r.Y + 30
-	master := a.d.Prefs.MasterVolume()
-	music, sfx, blip := a.d.Prefs.AudioVolumes()
+	// FIX #9 parity (playtest: "Volume button in Music tab does not work"): drive the
+	// EFFECTIVE (per-server when connected) volumes, exactly like the strip and the
+	// Settings/Extras sliders. This menu used to read/write the GLOBAL prefs, which a
+	// connected server's per-server audio profile overrides — so as soon as volume had
+	// been touched anywhere else (those all write per-server), these sliders moved
+	// values nothing was listening to.
+	master, music, sfx, blip := a.effectiveVolumes()
 	row := func(id, label string, val int) int {
 		c.Label(r.X, y+6, label, ColText)
 		track := sdl.Rect{X: r.X + 80, Y: y + 7, W: r.W - 80 - 56, H: 16}
@@ -3666,20 +3671,16 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 		return nv
 	}
 	if nv := row("master", "Master", master); nv != master {
-		a.d.Prefs.SetMasterVolume(nv)
-		a.applyAudioVolumes()
+		a.setEffectiveVolumes(nv, music, sfx, blip)
 	}
 	if nv := row("music", "Music", music); nv != music {
-		a.d.Prefs.SetAudioVolumes(nv, sfx, blip)
-		a.applyAudioVolumes()
+		a.setEffectiveVolumes(master, nv, sfx, blip)
 	}
 	if nv := row("sfx", "SFX", sfx); nv != sfx {
-		a.d.Prefs.SetAudioVolumes(music, nv, blip)
-		a.applyAudioVolumes()
+		a.setEffectiveVolumes(master, music, nv, blip)
 	}
 	if nv := row("blip", "Blip", blip); nv != blip {
-		a.d.Prefs.SetAudioVolumes(music, sfx, nv)
-		a.applyAudioVolumes()
+		a.setEffectiveVolumes(master, music, sfx, nv)
 	}
 	// Blip rate, right under the Blip volume — the same cadence control as the volume
 	// strip's "Rate" column and Settings → Blips, mirrored here so it's adjustable straight
