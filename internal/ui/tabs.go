@@ -776,11 +776,11 @@ func (a *App) resetSessionState() {
 		// persist"). Seed them on every fresh session instead.
 		volStripOn:   a.d.Prefs.VolStripShownOn(),
 		musicVolMode: a.d.Prefs.MusicVolModeOn(),
-		spriteOv:       map[string][2]int{},
-		pmThreads:      map[string][]pmLine{},
-		evidIdx:        -1,
-		icRecallIdx:    -1, // -1 = editing the live draft, not browsing history (#8)
-		oocRecallIdx:   -1, // same, for the OOC recall ring
+		spriteOv:     map[string][2]int{},
+		pmThreads:    map[string][]pmLine{},
+		evidIdx:      -1,
+		icRecallIdx:  -1, // -1 = editing the live draft, not browsing history (#8)
+		oocRecallIdx: -1, // same, for the OOC recall ring
 		// Full bars so the first HP packets don't fire penalty sfx.
 		hpPrev: [2]int{courtroom.HPBarMax, courtroom.HPBarMax},
 		// Logs follow the tail until the user scrolls up.

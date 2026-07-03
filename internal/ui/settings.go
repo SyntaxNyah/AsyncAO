@@ -756,6 +756,13 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 8
 
 	y = a.settingsSection(y, w, "Display & behaviour")
+	// Streamer mode leads the section (playtest: it's the one people need to
+	// find FAST, right before going live).
+	streamer := a.d.Prefs.StreamerMode()
+	if next := c.Checkbox(pad, y, "Streamer mode (masks OOC names + IPs in the log display, silences callword pings)", streamer); next != streamer {
+		a.d.Prefs.SetStreamerMode(next)
+	}
+	y += 26
 	anims := a.d.Prefs.AnimationsEnabled()
 	if next := c.Checkbox(pad, y, "Play animations (off = render first frames only; never affects network probes)", anims); next != anims {
 		a.d.Prefs.SetAnimationsEnabled(next)
@@ -817,11 +824,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetDebugOverlay(next)
 	}
 	y += 26
-	streamer := a.d.Prefs.StreamerMode()
-	if next := c.Checkbox(pad, y, "Streamer mode (masks OOC names + IPs in the log display, silences callword pings)", streamer); next != streamer {
-		a.d.Prefs.SetStreamerMode(next)
-	}
-	y += 26
 	notifOOC := a.d.Prefs.NotifyOnOOCOn()
 	if next := c.Checkbox(pad, y, "Count OOC in the unread tab badge (OFF by default): otherwise only IC chat lights up a background tab's \"(N)\" — so server auto-messages (hourly reminders, etc.) don't ping you", notifOOC); next != notifOOC {
 		a.d.Prefs.SetNotifyOnOOC(next)
@@ -835,238 +837,6 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		}
 	}
 	y += 26
-	re := a.d.Prefs.RandomEmoteOn()
-	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {
-		a.d.Prefs.SetRandomEmote(next)
-	}
-	y += 26
-	rmc := a.d.Prefs.RandomMessageColorOn()
-	if next := c.Checkbox(pad, y, "Random colour for each IC message (OFF by default): every message you send picks a random text colour — everyone sees it (standard colour field)", rmc); next != rmc {
-		a.d.Prefs.SetRandomMessageColor(next)
-	}
-	y += 26
-	rbw := a.d.Prefs.RainbowMessagesOn()
-	if next := c.Checkbox(pad, y, "Rainbow IC messages (OFF by default): your text cycles the palette per letter (takes priority over random; renders on clients that read inline \\cr colour)", rbw); next != rbw {
-		a.d.Prefs.SetRainbowMessages(next)
-	}
-	y += 26
-	// Sprite colour FX (all OFF by default): a render-side wash over the
-	// on-stage characters. Local eye-candy only — nothing on the wire, nobody
-	// else sees it, and zero render cost when everything's off.
-	rbs := a.d.Prefs.RainbowSpritesOn()
-	if next := c.Checkbox(pad, y, "Rainbow character sprites (OFF by default): washes every on-stage sprite through a hue cycle — local eye-candy only, nobody else sees it, zero render cost when off", rbs); next != rbs {
-		a.d.Prefs.SetRainbowSprites(next)
-	}
-	y += 26
-	if rbs {
-		sp := a.d.Prefs.RainbowSpeed()
-		c.Label(pad+16, y+4, "Speed:", ColTextDim)
-		if next := int(c.Slider("rbspeed", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(sp), 100)); next != sp {
-			a.d.Prefs.SetRainbowSpriteSpeed(next)
-			sp = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", sp), ColAccent)
-		y += 26
-		vv := a.d.Prefs.RainbowVividness()
-		c.Label(pad+16, y+4, "Vividness:", ColTextDim)
-		if next := int(c.Slider("rbvivid", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(vv), 100)); next != vv {
-			a.d.Prefs.SetRainbowSpriteVividness(next)
-			vv = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", vv), ColAccent)
-		y += 26
-		dsy := a.d.Prefs.RainbowPairDesyncOn()
-		if next := c.Checkbox(pad+16, y, "Desync the pair's colour (the two characters show different hues at once)", dsy); next != dsy {
-			a.d.Prefs.SetRainbowPairDesync(next)
-		}
-		y += 26
-		pch := a.d.Prefs.RainbowPerCharOn()
-		if next := c.Checkbox(pad+16, y, "Different hue per character (each on-stage character cycles to its own colour)", pch); next != pch {
-			a.d.Prefs.SetRainbowPerChar(next)
-		}
-		y += 26
-	}
-	sst := a.d.Prefs.SpriteSolidTintOn()
-	if next := c.Checkbox(pad, y, "Solid colour sprite tint (OFF by default): wash sprites in one fixed colour instead of a cycle (rainbow takes priority if both are on)", sst); next != sst {
-		a.d.Prefs.SetSpriteSolidTint(next)
-	}
-	y += 26
-	if sst {
-		c.Label(pad+16, y+4, "Tint colour:", ColTextDim)
-		cur := a.d.Prefs.SpriteTintColorRGB()
-		sw := sdl.Rect{X: pad + 130, Y: y, W: 28, H: fieldH}
-		c.Fill(sw, sdl.Color{R: uint8(cur >> 16 & 0xFF), G: uint8(cur >> 8 & 0xFF), B: uint8(cur & 0xFF), A: 255})
-		c.Border(sw, ColPanelHi)
-		if c.focusID != "spritetinthex" {
-			a.spriteTintHex = fmt.Sprintf("%06x", cur) // reflect the pref when not typing
-		}
-		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.spriteTintHex, "RRGGBB"); next != a.spriteTintHex {
-			a.spriteTintHex = next
-			if rgb, ok := parseHex6(next); ok {
-				a.d.Prefs.SetSpriteTintColor(rgb)
-			}
-		}
-		y += 28
-	}
-	if rbs || sst { // glow applies to whichever wash is on
-		glw := a.d.Prefs.RainbowSpriteGlowOn()
-		if next := c.Checkbox(pad+16, y, "Neon glow (additive): the tint adds light so sprites glow — they become translucent neon ghosts (you can see the room through them)", glw); next != glw {
-			a.d.Prefs.SetRainbowSpriteGlow(next)
-		}
-		y += 26
-	}
-	// Motion FX (independent of the colour wash, OFF by default).
-	wob := a.d.Prefs.SpriteWobbleOn()
-	if next := c.Checkbox(pad, y, "Wobble sprites (OFF by default): a gentle, continuous sway", wob); next != wob {
-		a.d.Prefs.SetSpriteWobble(next)
-	}
-	y += 26
-	spn := a.d.Prefs.SpriteSpinOn()
-	if next := c.Checkbox(pad, y, "Spin sprites (OFF by default): the on-stage characters rotate slowly — maximum chaos", spn); next != spn {
-		a.d.Prefs.SetSpriteSpin(next)
-	}
-	y += 26
-	punch := a.d.Prefs.ShoutPunchOn()
-	if next := c.Checkbox(pad, y, "Shout punch (OFF by default): a quick zoom-pop of the whole stage when an objection/shout appears", punch); next != punch {
-		a.d.Prefs.SetShoutPunch(next)
-	}
-	y += 26
-	// Post-processing overlays (#10): retro looks blended over the whole stage. All OFF.
-	// #77 CRT preset leads the group: one toggle for the whole old-TV look.
-	crt := a.d.Prefs.PostCRTOn()
-	if next := c.Checkbox(pad, y, "CRT / retro TV (OFF by default): scanlines + an RGB phosphor grille + vignette — the whole old-TV look in one toggle", crt); next != crt {
-		a.d.Prefs.SetPostCRT(next)
-	}
-	y += 26
-	vig := a.d.Prefs.PostVignetteOn()
-	if next := c.Checkbox(pad, y, "Vignette (OFF by default): darken the stage edges for a cinematic frame", vig); next != vig {
-		a.d.Prefs.SetPostVignette(next)
-	}
-	y += 26
-	scan := a.d.Prefs.PostScanlinesOn()
-	if next := c.Checkbox(pad, y, "Scanlines (OFF by default): faint CRT scan lines over the stage", scan); next != scan {
-		a.d.Prefs.SetPostScanlines(next)
-	}
-	y += 26
-	grain := a.d.Prefs.PostGrainOn()
-	if next := c.Checkbox(pad, y, "Film grain (OFF by default): subtle animated noise over the stage", grain); next != grain {
-		a.d.Prefs.SetPostGrain(next)
-	}
-	y += 26
-	// Per-character chatbox skins (char.ini chat=<misc>): canonical AO2/webAO
-	// behaviour, default ON; off also stops the misc art fetches.
-	ccb := a.d.Prefs.CharChatboxOn()
-	if next := c.Checkbox(pad, y, "Per-character chatbox skins (ON by default): a speaker with their own chatbox art (char.ini chat=) shows it, like AO2/webAO", ccb); next != ccb {
-		a.d.Prefs.SetCharChatbox(next)
-	}
-	y += 26
-	// #56 stage frame: a decorative border around the viewport (Off by default).
-	c.Label(pad, y+4, "Stage frame:", ColText)
-	sf := a.d.Prefs.StageFrame()
-	if next, changed := c.Dropdown("stageframe", sdl.Rect{X: pad + 130, Y: y, W: 170, H: fieldH}, stageFrameNames, sf); changed {
-		a.d.Prefs.SetStageFrame(next)
-	}
-	c.Label(pad+312, y+4, "a decorative border on the stage — pure looks, zero cost when Off", ColTextDim)
-	y += 30
-	ent := a.d.Prefs.AnimateEntrancesOn()
-	if next := c.Checkbox(pad, y, "Animate entrances (OFF by default): a new speaker slides in when they take the stage", ent); next != ent {
-		a.d.Prefs.SetAnimateEntrances(next)
-	}
-	y += 26
-	dof := a.d.Prefs.DepthOfFieldOn()
-	if next := c.Checkbox(pad, y, "Depth of field (OFF by default): soft-focus + dim the background behind the speaker", dof); next != dof {
-		a.d.Prefs.SetDepthOfField(next)
-	}
-	y += 26
-	// #121 speaker spotlight: dim the non-speaker characters + the desk. The Dim slider only
-	// shows while it's on (like the rainbow knobs above).
-	spot := a.d.Prefs.SpotlightOn()
-	if next := c.Checkbox(pad, y, "Speaker spotlight (OFF by default): dim the other characters + the desk so the talking character pops", spot); next != spot {
-		a.d.Prefs.SetSpotlight(next)
-		spot = next
-	}
-	y += 26
-	if spot {
-		lv := a.d.Prefs.SpotlightLevel()
-		c.Label(pad+16, y+4, "Dim:", ColTextDim)
-		if next := int(c.Slider("spotdim", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(lv), 100)); next != lv {
-			a.d.Prefs.SetSpotlightLevel(next)
-			lv = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", lv), ColAccent)
-		y += 26
-	}
-	// #122 idle breathing: a gentle bob + breathing-scale on static sprites (AsyncAO-only).
-	// The amplitude/speed sliders + the two component toggles show only while it's on. The
-	// keybind (Settings → Keybinds, or the default below) toggles it hands-free.
-	brth := a.d.Prefs.IdleBreathOn()
-	if next := c.Checkbox(pad, y, "Idle breathing (OFF by default): static sprites gently bob + breathe so they feel alive — only other AsyncAO users won't see your local view, this is your viewer", brth); next != brth {
-		a.d.Prefs.SetIdleBreath(next)
-		brth = next
-	}
-	y += 26
-	if brth {
-		amp := a.d.Prefs.BreathAmp()
-		c.Label(pad+16, y+4, "Amount:", ColTextDim)
-		if next := int(c.Slider("breathamp", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(amp), 100)); next != amp {
-			a.d.Prefs.SetBreathAmp(next)
-			amp = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", amp), ColAccent)
-		y += 26
-		spd := a.d.Prefs.BreathSpeed()
-		c.Label(pad+16, y+4, "Speed:", ColTextDim)
-		if next := int(c.Slider("breathspd", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(spd), 100)); next != spd {
-			a.d.Prefs.SetBreathSpeed(next)
-			spd = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", spd), ColAccent)
-		y += 26
-		bob := a.d.Prefs.BreathBobOn()
-		if next := c.Checkbox(pad+16, y, "Vertical bob", bob); next != bob {
-			a.d.Prefs.SetBreathBob(next)
-		}
-		scl := a.d.Prefs.BreathScaleOn()
-		if next := c.Checkbox(pad+180, y, "Breathing scale", scl); next != scl {
-			a.d.Prefs.SetBreathScale(next)
-		}
-		y += 26
-	}
-	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line.
-	refl := a.d.Prefs.ReflectionOn()
-	if next := c.Checkbox(pad, y, "Glass-floor reflection (OFF by default): a flipped, faded mirror of the characters on the floor below them", refl); next != refl {
-		a.d.Prefs.SetReflection(next)
-		refl = next
-	}
-	y += 26
-	if refl {
-		op := a.d.Prefs.ReflectStrength()
-		c.Label(pad+16, y+4, "Opacity:", ColTextDim)
-		if next := int(c.Slider("reflop", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(op), 100)); next != op {
-			a.d.Prefs.SetReflectStrength(next)
-			op = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", op), ColAccent)
-		y += 26
-	}
-	// #124 ambient weather: a cycle picker (None → Snow → Rain → Sakura → Embers) + an
-	// Intensity slider while a weather is on. The keybind cycles it hands-free.
-	wk := a.d.Prefs.WeatherType()
-	c.Label(pad, y+4, "Weather (OFF by default):", ColTextDim)
-	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 90, H: 22}, render.WeatherName(render.Weather(wk))) {
-		a.d.Prefs.SetWeatherType((wk + 1) % int(render.WeatherCount))
-	}
-	y += 26
-	if wk != 0 {
-		wi := a.d.Prefs.WeatherIntensity()
-		c.Label(pad+16, y+4, "Intensity:", ColTextDim)
-		if next := int(c.Slider("wxint", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(wi), 100)); next != wi {
-			a.d.Prefs.SetWeatherIntensity(next)
-			wi = next
-		}
-		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", wi), ColAccent)
-		y += 26
-	}
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
 	prev := a.d.Prefs.SpritePreviewsOn()
@@ -1746,6 +1516,239 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	y = a.drawThemePreview(y)
 	// Per-server theme binding: "this server always uses that theme".
 	y = a.drawThemeBindRow(y, w)
+	y = a.drawSettingsStageFX(y)
+	return y
+}
+
+// drawSettingsStageFX: every render-side stage/viewport look — the sprite
+// colour washes, motion FX, the retro post-process overlays (CRT / vignette /
+// scanlines / grain), chatbox skins, the stage frame and the ambient extras
+// (spotlight, breathing, reflection, weather). Lived in General → Display &
+// behaviour; moved to the Theme tab on playtest feedback (Tifera: settings
+// were overwhelming — these edit how the VIEWPORT looks, which is theme
+// territory). Rows are unchanged, only re-homed.
+func (a *App) drawSettingsStageFX(y int32) int32 {
+	c := a.ctx
+	pad := a.formX // rebase every pad-relative box into the content card
+	w := a.formW2()
+	y = a.settingsSection(y, w, "Stage & viewport effects")
+	// Sprite colour FX (all OFF by default): a render-side wash over the
+	// on-stage characters. Local eye-candy only — nothing on the wire, nobody
+	// else sees it, and zero render cost when everything's off.
+	rbs := a.d.Prefs.RainbowSpritesOn()
+	if next := c.Checkbox(pad, y, "Rainbow character sprites (OFF by default): washes every on-stage sprite through a hue cycle — local eye-candy only, nobody else sees it, zero render cost when off", rbs); next != rbs {
+		a.d.Prefs.SetRainbowSprites(next)
+	}
+	y += 26
+	if rbs {
+		sp := a.d.Prefs.RainbowSpeed()
+		c.Label(pad+16, y+4, "Speed:", ColTextDim)
+		if next := int(c.Slider("rbspeed", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(sp), 100)); next != sp {
+			a.d.Prefs.SetRainbowSpriteSpeed(next)
+			sp = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", sp), ColAccent)
+		y += 26
+		vv := a.d.Prefs.RainbowVividness()
+		c.Label(pad+16, y+4, "Vividness:", ColTextDim)
+		if next := int(c.Slider("rbvivid", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(vv), 100)); next != vv {
+			a.d.Prefs.SetRainbowSpriteVividness(next)
+			vv = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", vv), ColAccent)
+		y += 26
+		dsy := a.d.Prefs.RainbowPairDesyncOn()
+		if next := c.Checkbox(pad+16, y, "Desync the pair's colour (the two characters show different hues at once)", dsy); next != dsy {
+			a.d.Prefs.SetRainbowPairDesync(next)
+		}
+		y += 26
+		pch := a.d.Prefs.RainbowPerCharOn()
+		if next := c.Checkbox(pad+16, y, "Different hue per character (each on-stage character cycles to its own colour)", pch); next != pch {
+			a.d.Prefs.SetRainbowPerChar(next)
+		}
+		y += 26
+	}
+	sst := a.d.Prefs.SpriteSolidTintOn()
+	if next := c.Checkbox(pad, y, "Solid colour sprite tint (OFF by default): wash sprites in one fixed colour instead of a cycle (rainbow takes priority if both are on)", sst); next != sst {
+		a.d.Prefs.SetSpriteSolidTint(next)
+	}
+	y += 26
+	if sst {
+		c.Label(pad+16, y+4, "Tint colour:", ColTextDim)
+		cur := a.d.Prefs.SpriteTintColorRGB()
+		sw := sdl.Rect{X: pad + 130, Y: y, W: 28, H: fieldH}
+		c.Fill(sw, sdl.Color{R: uint8(cur >> 16 & 0xFF), G: uint8(cur >> 8 & 0xFF), B: uint8(cur & 0xFF), A: 255})
+		c.Border(sw, ColPanelHi)
+		if c.focusID != "spritetinthex" {
+			a.spriteTintHex = fmt.Sprintf("%06x", cur) // reflect the pref when not typing
+		}
+		if next, _ := c.TextField("spritetinthex", sdl.Rect{X: pad + 166, Y: y, W: 100, H: fieldH}, a.spriteTintHex, "RRGGBB"); next != a.spriteTintHex {
+			a.spriteTintHex = next
+			if rgb, ok := parseHex6(next); ok {
+				a.d.Prefs.SetSpriteTintColor(rgb)
+			}
+		}
+		y += 28
+	}
+	if rbs || sst { // glow applies to whichever wash is on
+		glw := a.d.Prefs.RainbowSpriteGlowOn()
+		if next := c.Checkbox(pad+16, y, "Neon glow (additive): the tint adds light so sprites glow — they become translucent neon ghosts (you can see the room through them)", glw); next != glw {
+			a.d.Prefs.SetRainbowSpriteGlow(next)
+		}
+		y += 26
+	}
+	// Motion FX (independent of the colour wash, OFF by default).
+	wob := a.d.Prefs.SpriteWobbleOn()
+	if next := c.Checkbox(pad, y, "Wobble sprites (OFF by default): a gentle, continuous sway", wob); next != wob {
+		a.d.Prefs.SetSpriteWobble(next)
+	}
+	y += 26
+	spn := a.d.Prefs.SpriteSpinOn()
+	if next := c.Checkbox(pad, y, "Spin sprites (OFF by default): the on-stage characters rotate slowly — maximum chaos", spn); next != spn {
+		a.d.Prefs.SetSpriteSpin(next)
+	}
+	y += 26
+	punch := a.d.Prefs.ShoutPunchOn()
+	if next := c.Checkbox(pad, y, "Shout punch (OFF by default): a quick zoom-pop of the whole stage when an objection/shout appears", punch); next != punch {
+		a.d.Prefs.SetShoutPunch(next)
+	}
+	y += 26
+	// Post-processing overlays (#10): retro looks blended over the whole stage. All OFF.
+	// #77 CRT preset leads the group: one toggle for the whole old-TV look.
+	crt := a.d.Prefs.PostCRTOn()
+	if next := c.Checkbox(pad, y, "CRT / retro TV (OFF by default): scanlines + an RGB phosphor grille + vignette — the whole old-TV look in one toggle", crt); next != crt {
+		a.d.Prefs.SetPostCRT(next)
+	}
+	y += 26
+	vig := a.d.Prefs.PostVignetteOn()
+	if next := c.Checkbox(pad, y, "Vignette (OFF by default): darken the stage edges for a cinematic frame", vig); next != vig {
+		a.d.Prefs.SetPostVignette(next)
+	}
+	y += 26
+	scan := a.d.Prefs.PostScanlinesOn()
+	if next := c.Checkbox(pad, y, "Scanlines (OFF by default): faint CRT scan lines over the stage", scan); next != scan {
+		a.d.Prefs.SetPostScanlines(next)
+	}
+	y += 26
+	grain := a.d.Prefs.PostGrainOn()
+	if next := c.Checkbox(pad, y, "Film grain (OFF by default): subtle animated noise over the stage", grain); next != grain {
+		a.d.Prefs.SetPostGrain(next)
+	}
+	y += 26
+	// Per-character chatbox skins (char.ini chat=<misc>): canonical AO2/webAO
+	// behaviour, default ON; off also stops the misc art fetches.
+	ccb := a.d.Prefs.CharChatboxOn()
+	if next := c.Checkbox(pad, y, "Per-character chatbox skins (ON by default): a speaker with their own chatbox art (char.ini chat=) shows it, like AO2/webAO", ccb); next != ccb {
+		a.d.Prefs.SetCharChatbox(next)
+	}
+	y += 26
+	// #56 stage frame: a decorative border around the viewport (Off by default).
+	c.Label(pad, y+4, "Stage frame:", ColText)
+	sf := a.d.Prefs.StageFrame()
+	if next, changed := c.Dropdown("stageframe", sdl.Rect{X: pad + 130, Y: y, W: 170, H: fieldH}, stageFrameNames, sf); changed {
+		a.d.Prefs.SetStageFrame(next)
+	}
+	c.Label(pad+312, y+4, "a decorative border on the stage — pure looks, zero cost when Off", ColTextDim)
+	y += 30
+	ent := a.d.Prefs.AnimateEntrancesOn()
+	if next := c.Checkbox(pad, y, "Animate entrances (OFF by default): a new speaker slides in when they take the stage", ent); next != ent {
+		a.d.Prefs.SetAnimateEntrances(next)
+	}
+	y += 26
+	dof := a.d.Prefs.DepthOfFieldOn()
+	if next := c.Checkbox(pad, y, "Depth of field (OFF by default): soft-focus + dim the background behind the speaker", dof); next != dof {
+		a.d.Prefs.SetDepthOfField(next)
+	}
+	y += 26
+	// #121 speaker spotlight: dim the non-speaker characters + the desk. The Dim slider only
+	// shows while it's on (like the rainbow knobs above).
+	spot := a.d.Prefs.SpotlightOn()
+	if next := c.Checkbox(pad, y, "Speaker spotlight (OFF by default): dim the other characters + the desk so the talking character pops", spot); next != spot {
+		a.d.Prefs.SetSpotlight(next)
+		spot = next
+	}
+	y += 26
+	if spot {
+		lv := a.d.Prefs.SpotlightLevel()
+		c.Label(pad+16, y+4, "Dim:", ColTextDim)
+		if next := int(c.Slider("spotdim", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(lv), 100)); next != lv {
+			a.d.Prefs.SetSpotlightLevel(next)
+			lv = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", lv), ColAccent)
+		y += 26
+	}
+	// #122 idle breathing: a gentle bob + breathing-scale on static sprites (AsyncAO-only).
+	// The amplitude/speed sliders + the two component toggles show only while it's on. The
+	// keybind (Settings → Keybinds, or the default below) toggles it hands-free.
+	brth := a.d.Prefs.IdleBreathOn()
+	if next := c.Checkbox(pad, y, "Idle breathing (OFF by default): static sprites gently bob + breathe so they feel alive — only other AsyncAO users won't see your local view, this is your viewer", brth); next != brth {
+		a.d.Prefs.SetIdleBreath(next)
+		brth = next
+	}
+	y += 26
+	if brth {
+		amp := a.d.Prefs.BreathAmp()
+		c.Label(pad+16, y+4, "Amount:", ColTextDim)
+		if next := int(c.Slider("breathamp", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(amp), 100)); next != amp {
+			a.d.Prefs.SetBreathAmp(next)
+			amp = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", amp), ColAccent)
+		y += 26
+		spd := a.d.Prefs.BreathSpeed()
+		c.Label(pad+16, y+4, "Speed:", ColTextDim)
+		if next := int(c.Slider("breathspd", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(spd), 100)); next != spd {
+			a.d.Prefs.SetBreathSpeed(next)
+			spd = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", spd), ColAccent)
+		y += 26
+		bob := a.d.Prefs.BreathBobOn()
+		if next := c.Checkbox(pad+16, y, "Vertical bob", bob); next != bob {
+			a.d.Prefs.SetBreathBob(next)
+		}
+		scl := a.d.Prefs.BreathScaleOn()
+		if next := c.Checkbox(pad+180, y, "Breathing scale", scl); next != scl {
+			a.d.Prefs.SetBreathScale(next)
+		}
+		y += 26
+	}
+	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line.
+	refl := a.d.Prefs.ReflectionOn()
+	if next := c.Checkbox(pad, y, "Glass-floor reflection (OFF by default): a flipped, faded mirror of the characters on the floor below them", refl); next != refl {
+		a.d.Prefs.SetReflection(next)
+		refl = next
+	}
+	y += 26
+	if refl {
+		op := a.d.Prefs.ReflectStrength()
+		c.Label(pad+16, y+4, "Opacity:", ColTextDim)
+		if next := int(c.Slider("reflop", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(op), 100)); next != op {
+			a.d.Prefs.SetReflectStrength(next)
+			op = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", op), ColAccent)
+		y += 26
+	}
+	// #124 ambient weather: a cycle picker (None → Snow → Rain → Sakura → Embers) + an
+	// Intensity slider while a weather is on. The keybind cycles it hands-free.
+	wk := a.d.Prefs.WeatherType()
+	c.Label(pad, y+4, "Weather (OFF by default):", ColTextDim)
+	if c.Button(sdl.Rect{X: pad + 210, Y: y, W: 90, H: 22}, render.WeatherName(render.Weather(wk))) {
+		a.d.Prefs.SetWeatherType((wk + 1) % int(render.WeatherCount))
+	}
+	y += 26
+	if wk != 0 {
+		wi := a.d.Prefs.WeatherIntensity()
+		c.Label(pad+16, y+4, "Intensity:", ColTextDim)
+		if next := int(c.Slider("wxint", sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}, int32(wi), 100)); next != wi {
+			a.d.Prefs.SetWeatherIntensity(next)
+			wi = next
+		}
+		c.Label(pad+312, y+4, fmt.Sprintf("%3d%%", wi), ColAccent)
+		y += 26
+	}
 	return y
 }
 
@@ -2299,6 +2302,24 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		}
 		y += 30
 	}
+	// Message-send extras — lived in General → Display & behaviour; moved here
+	// on playtest feedback (Tifera: "move messaging settings to Chat"). They
+	// shape the messages you TYPE, so they belong with text & typing.
+	re := a.d.Prefs.RandomEmoteOn()
+	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {
+		a.d.Prefs.SetRandomEmote(next)
+	}
+	y += 26
+	rmc := a.d.Prefs.RandomMessageColorOn()
+	if next := c.Checkbox(pad, y, "Random colour for each IC message (OFF by default): every message you send picks a random text colour — everyone sees it (standard colour field)", rmc); next != rmc {
+		a.d.Prefs.SetRandomMessageColor(next)
+	}
+	y += 26
+	rbw := a.d.Prefs.RainbowMessagesOn()
+	if next := c.Checkbox(pad, y, "Rainbow IC messages (OFF by default): your text cycles the palette per letter (takes priority over random; renders on clients that read inline \\cr colour)", rbw); next != rbw {
+		a.d.Prefs.SetRainbowMessages(next)
+	}
+	y += 26
 
 	y = a.settingsSection(y, w, "Chat log")
 	// Per-area IC scrollback (opt-in): each visited area keeps its own log.
