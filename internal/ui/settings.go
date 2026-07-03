@@ -2129,8 +2129,6 @@ func (a *App) applyPrefsToState() {
 	for _, id := range a.d.Prefs.HiddenPanels() {
 		a.hidden[id] = true
 	}
-	a.pairOffX, a.pairOffY = a.d.Prefs.PairOffsets()
-	a.pairFlip = a.d.Prefs.PairFlipped()
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
 	a.oocPct = a.d.Prefs.OOCScale()
 	a.uiScalePct = a.d.Prefs.UIScale()

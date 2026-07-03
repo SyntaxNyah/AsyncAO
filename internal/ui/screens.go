@@ -4930,15 +4930,9 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	// mousewheel over the row — all three work).
 	rx := r.X + r.W/2 + pad
 	ry := contentTop
-	if next := a.offsetControl("pairoffx", rx, ry, "Offset X %", a.pairOffX, &a.pairOffXText); next != a.pairOffX {
-		a.pairOffX = next
-		a.persistPairPrefs()
-	}
+	a.pairOffX = a.offsetControl("pairoffx", rx, ry, "Offset X %", a.pairOffX, &a.pairOffXText)
 	ry += 34
-	if next := a.offsetControl("pairoffy", rx, ry, "Offset Y %", a.pairOffY, &a.pairOffYText); next != a.pairOffY {
-		a.pairOffY = next
-		a.persistPairPrefs()
-	}
+	a.pairOffY = a.offsetControl("pairoffy", rx, ry, "Offset Y %", a.pairOffY, &a.pairOffYText)
 	ry += 34
 	a.pairFlip = c.Checkbox(rx, ry, "Flip my sprite", a.pairFlip)
 	ry += 28
@@ -5016,16 +5010,32 @@ func (a *App) drawPairGhost(pv sdl.Rect) {
 	// Partner ghost first (behind), then me.
 	if a.pairWith >= 0 && a.pairWith < len(a.sess.Chars) {
 		name := a.sess.Chars[a.pairWith].Name
-		// The scene's pair layer knows their REAL offsets once a paired
-		// message arrived; before that they stand centered.
+		// The scene's pair layer knows their REAL offsets — and their real idle
+		// sprite — once a paired message arrived; before that they stand
+		// centered on the "normal" guess.
 		gx, gy := 0, 0
+		base := a.urls.Emote(name, ghostFallbackEmote, courtroom.EmoteIdle)
+		alts := a.urls.EmoteAlts(name, ghostFallbackEmote, courtroom.EmoteIdle)
 		if sc := &a.room.Scene; sc.PairActive && strings.EqualFold(sc.Pair.Name, name) {
 			gx, gy = sc.Pair.OffsetX, sc.Pair.OffsetY
+			if sc.Pair.IdleBase != "" {
+				base, alts = sc.Pair.IdleBase, nil // the exact sprite on stage — already resolved
+			}
 		}
-		a.drawGhostSprite(pv, name, gx, gy, false, ghostAlpha)
+		a.drawGhostSprite(pv, name, base, alts, gx, gy, false, ghostAlpha)
 	}
-	if me := a.myCharName(); me != "" {
-		a.drawGhostSprite(pv, me, a.pairOffX, a.pairOffY, a.pairFlip, 255)
+	if me := a.activeCharName(); me != "" { // iniswap-aware: preview the folder that actually renders
+		// YOUR ghost is the SELECTED emote's idle — the sprite the next message
+		// really shows. The old hardcoded "normal" drew nothing for the many
+		// packs without a normal.* sprite (playtest: "the sprite doesn't
+		// display at all") while the live viewport worked fine.
+		anim := ghostFallbackEmote
+		if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
+			anim = a.emotes[a.emoteIdx].Anim
+		}
+		base := a.urls.Emote(me, anim, courtroom.EmoteIdle)
+		alts := a.urls.EmoteAlts(me, anim, courtroom.EmoteIdle)
+		a.drawGhostSprite(pv, me, base, alts, a.pairOffX, a.pairOffY, a.pairFlip, 255)
 	}
 	c.Label(pv.X+4, pv.Y+2, "drag your sprite to place — arrow keys nudge 1%", ColTextDim)
 
@@ -5044,13 +5054,12 @@ func (a *App) drawPairGhost(pv sdl.Rect) {
 	if a.ghostDrag && pv.W > 0 && pv.H > 0 {
 		a.pairOffX = clampOffset(a.ghostBase[0] + int(c.mouseX-a.ghostStart[0])*100/int(pv.W))
 		a.pairOffY = clampOffset(a.ghostBase[1] + int(c.mouseY-a.ghostStart[1])*100/int(pv.H))
-		a.persistPairPrefs()
+		a.refreshPairOffsetBufs() // a focused numeric row must follow the drag live
 	}
 	// Arrow keys nudge your offset 1% for fine placement — only with no text
 	// field focused (otherwise arrows move the text caret). Up = toward the
 	// top of the stage (lower Y), matching the drag.
 	if c.focusID == "" {
-		nudged := true
 		switch c.keyPressed {
 		case sdl.K_LEFT:
 			a.pairOffX = clampOffset(a.pairOffX - 1)
@@ -5060,32 +5069,34 @@ func (a *App) drawPairGhost(pv sdl.Rect) {
 			a.pairOffY = clampOffset(a.pairOffY - 1)
 		case sdl.K_DOWN:
 			a.pairOffY = clampOffset(a.pairOffY + 1)
-		default:
-			nudged = false
-		}
-		if nudged {
-			a.persistPairPrefs()
 		}
 	}
 }
 
-// drawGhostSprite draws one character's idle at offset% of the stage,
-// sized like the real viewport sizes sprites (full stage height). The
-// texture's alpha-mod restores immediately — pages are shared with the
-// live viewport.
-func (a *App) drawGhostSprite(pv sdl.Rect, name string, offX, offY int, flip bool, alpha uint8) {
+// ghostFallbackEmote is the idle guessed for a character whose real sprite
+// isn't known yet (no emote list / no paired message) — AO's conventional
+// default idle.
+const ghostFallbackEmote = "normal"
+
+// drawGhostSprite draws one character's sprite (base + its spelling alts)
+// at offset% of the stage, sized like the real viewport sizes sprites
+// (full stage height). The texture's alpha-mod restores immediately —
+// pages are shared with the live viewport.
+func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, offX, offY int, flip bool, alpha uint8) {
 	c := a.ctx
-	base := a.urls.Emote(name, "normal", courtroom.EmoteIdle)
 	page, ok := a.d.Store.Get(base)
 	if !ok || len(page.Frames) == 0 || page.H == 0 {
-		// Warm it once per (panel, character) — not per frame.
+		// Warm once per (character, base) — not per frame. Re-warms when the
+		// base CHANGES (emote pick, pair message) even with the table full:
+		// only brand-new characters count against the cap.
 		if a.ghostWarm[name] != base {
 			if a.ghostWarm == nil {
 				a.ghostWarm = map[string]string{}
 			}
-			if len(a.ghostWarm) < ghostWarmCap {
+			_, known := a.ghostWarm[name]
+			if known || len(a.ghostWarm) < ghostWarmCap {
 				a.ghostWarm[name] = base
-				a.d.Manager.PrefetchChain(base, a.urls.EmoteAlts(name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (ghost editor)
+				a.d.Manager.PrefetchChain(base, alts, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (ghost editor)
 			}
 		}
 		c.Label(pv.X+pv.W/2-c.TextWidth(name)/2, pv.Y+pv.H/2, name, ColTextDim)
@@ -5128,6 +5139,7 @@ func (a *App) offsetControl(id string, x, y int32, label string, val int, buf *s
 			val = clampOffset(n)
 		}
 	}
+	typed := val // the value as of the typed commit — any change below is a mouse edit
 	bx := fx + fieldW + 6
 	if c.Button(sdl.Rect{X: bx, Y: y, W: 24, H: 24}, "-") {
 		val = clampOffset(val - offsetStep)
@@ -5138,6 +5150,14 @@ func (a *App) offsetControl(id string, x, y int32, label string, val int, buf *s
 	row := sdl.Rect{X: x, Y: y, W: bx + 52 - x, H: 26}
 	if c.hovering(row) && c.wheelY != 0 {
 		val = clampOffset(val + int(c.wheelY)*offsetStep)
+	}
+	// A mouse edit (−/+ button, wheel) while the field is FOCUSED: the field
+	// displays the edit buffer, not val, so refresh it — wheeling never blurs,
+	// and the row froze at its old number until a click-off (playtest: "they
+	// react to the buttons and the wheel but stay at 0 until I click off").
+	// Typing keeps its partial-input buffer: this only fires on mouse edits.
+	if val != typed && c.focusID == id {
+		*buf = strconv.Itoa(val) // textField clamps the caret to the new length
 	}
 	return val
 }
@@ -5152,9 +5172,16 @@ func clampOffset(v int) int {
 	return v
 }
 
-func (a *App) persistPairPrefs() {
-	a.d.Prefs.SetPairOffsets(a.pairOffX, a.pairOffY)
-	a.d.Prefs.SetPairFlipped(a.pairFlip)
+// refreshPairOffsetBufs re-mirrors a FOCUSED offset field's edit buffer after
+// the value changed somewhere else (stage drag, arrow nudge) — while focused
+// the field displays the buffer, so without this the number froze until blur.
+func (a *App) refreshPairOffsetBufs() {
+	switch a.ctx.focusID {
+	case "pairoffx":
+		a.pairOffXText = strconv.Itoa(a.pairOffX)
+	case "pairoffy":
+		a.pairOffYText = strconv.Itoa(a.pairOffY)
+	}
 }
 
 func (a *App) pairLabel() string {
@@ -5526,7 +5553,7 @@ func (a *App) handleChatCommand(text string) bool {
 				a.pairOffY = clampOffset(y)
 			}
 		}
-		a.persistPairPrefs()
+		a.refreshPairOffsetBufs() // pair panel rows mirror the command
 		return true
 	}
 	return false

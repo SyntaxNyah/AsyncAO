@@ -759,14 +759,12 @@ func (l *loweredCache) get(src string) string {
 // initialized, sentinel ids set) — used by NewApp, Disconnect, and the
 // park path.
 func (a *App) resetSessionState() {
-	// Pair placement is per-session, seeded from the global "last used" pref, so it
-	// can't leak across tabs (it used to live on App proper and be shared).
-	offX, offY := a.d.Prefs.PairOffsets()
 	a.sessionState = sessionState{
+		// Pair placement is per-session AND session-only: each tab keeps its
+		// own, and a fresh session starts centered/unflipped — the old prefs
+		// seeding made offsets "inexplicably saved" across client restarts
+		// (playtest), so pairing state deliberately does not persist.
 		pairWith:       protocol.UnpairedCharID,
-		pairOffX:       offX,
-		pairOffY:       offY,
-		pairFlip:       a.d.Prefs.PairFlipped(),
 		playerSort:     clampMode(a.d.Prefs.PlayerListSortMode(), playerSortModes), // remembered Players-tab sorts
 		playerAreaSort: clampMode(a.d.Prefs.PlayerListAreaSortMode(), areaSortModes),
 		spriteOv:       map[string][2]int{},

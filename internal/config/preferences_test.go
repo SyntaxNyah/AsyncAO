@@ -48,8 +48,8 @@ func TestSetFormatOrderCompletes(t *testing.T) {
 		p.SetGlobalFallbacks(true)
 		p.SetTypeFallbacks(TypeSFX, true)
 		p.RecordLearned("example.com", TypeCharSprite, ExtWebP)
-		p.SetPairOffsets(25, -10)
-		p.SetPairFlipped(true)
+		p.SetMasterVolume(80)
+		p.SetMusicVolMode(true)
 		p.SetAnimationsEnabled(false)
 		close(finished)
 	}()
@@ -90,7 +90,7 @@ func TestDebounceCoalescesBurst(t *testing.T) {
 
 	const burst = 50
 	for i := 0; i < burst; i++ {
-		p.SetPairOffsets(i%(PairOffsetMax+1), 0)
+		p.SetMasterVolume(i % 100)
 	}
 	waitForFile(t, path)
 	// Allow any straggler flush to settle, then verify final state on disk.
@@ -100,9 +100,9 @@ func TestDebounceCoalescesBurst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load after burst: %v", err)
 	}
-	wantX := (burst - 1) % (PairOffsetMax + 1)
-	if loaded.PairOffsetX != wantX {
-		t.Errorf("PairOffsetX on disk = %d, want %d (last write must win)", loaded.PairOffsetX, wantX)
+	wantVol := (burst - 1) % 100
+	if loaded.MasterVolume() != wantVol {
+		t.Errorf("MasterVolume on disk = %d, want %d (last write must win)", loaded.MasterVolume(), wantVol)
 	}
 }
 
@@ -247,8 +247,8 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	p.SetFormatOrder(TypeCharIcon, []string{ExtWebP, ExtPNG})
 	p.SetTypeFallbacks(TypeBlip, true)
 	p.RecordLearned("assets.example.com", TypeCharSprite, ExtWebP)
-	p.SetPairOffsets(15, -20)
-	p.SetPairFlipped(true)
+	p.SetMasterVolume(37)
+	p.SetMusicVolMode(true)
 	p.SetShowname("Nyah")
 	p.SetDebugOverlay(true)
 	if err := p.Close(); err != nil {
@@ -275,12 +275,11 @@ func TestPersistenceRoundTrip(t *testing.T) {
 	if got := learned[LearnedKey("assets.example.com", TypeCharSprite)]; !slices.Equal(got, []string{ExtWebP}) {
 		t.Errorf("learned format lost, snapshot=%v", learned)
 	}
-	x, y := q.PairOffsets()
-	if x != 15 || y != -20 {
-		t.Errorf("PairOffsets = (%d,%d), want (15,-20)", x, y)
+	if got := q.MasterVolume(); got != 37 {
+		t.Errorf("MasterVolume = %d, want 37", got)
 	}
-	if !q.PairFlipped() {
-		t.Error("PairFlip lost")
+	if !q.MusicVolModeOn() {
+		t.Error("MusicVolMode lost")
 	}
 	if got := q.SavedShowname(); got != "Nyah" {
 		t.Errorf("Showname = %q, want %q", got, "Nyah")
@@ -590,7 +589,7 @@ func TestLoadCorruptFileFallsBackToDefaults(t *testing.T) {
 
 func TestSaveNowLeavesNoTempFiles(t *testing.T) {
 	p, path := newTestPrefs(t)
-	p.SetPairOffsets(5, 5)
+	p.SetMasterVolume(5)
 	if err := p.SaveNow(); err != nil {
 		t.Fatalf("SaveNow: %v", err)
 	}
@@ -622,7 +621,7 @@ func TestCloseFlushesPendingChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p.SetPairFlipped(true)
+	p.SetMusicVolMode(true)
 
 	start := time.Now()
 	if err := p.Close(); err != nil {
@@ -636,7 +635,7 @@ func TestCloseFlushesPendingChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if !q.PairFlipped() {
+	if !q.MusicVolModeOn() {
 		t.Error("pending change lost at Close")
 	}
 }
@@ -681,12 +680,15 @@ func TestLearnedInvalidation(t *testing.T) {
 	}
 }
 
-func TestPairOffsetClamping(t *testing.T) {
+func TestMasterVolumeClamping(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	p.SetPairOffsets(PairOffsetMax*3, PairOffsetMin*3)
-	x, y := p.PairOffsets()
-	if x != PairOffsetMax || y != PairOffsetMin {
-		t.Errorf("PairOffsets = (%d,%d), want clamped (%d,%d)", x, y, PairOffsetMax, PairOffsetMin)
+	p.SetMasterVolume(500)
+	if got := p.MasterVolume(); got != 100 {
+		t.Errorf("MasterVolume = %d, want clamped 100", got)
+	}
+	p.SetMasterVolume(-3)
+	if got := p.MasterVolume(); got != 0 {
+		t.Errorf("MasterVolume = %d, want clamped 0", got)
 	}
 }
 
@@ -715,7 +717,7 @@ func TestConcurrentAccess(t *testing.T) {
 				case 3:
 					_ = p.LearnedSnapshot()
 				case 4:
-					p.SetPairOffsets(i%PairOffsetMax, -i%PairOffsetMax)
+					p.SetMasterVolume(i % 100)
 				case 5:
 					p.SetGlobalFallbacks(i%2 == 0)
 				}

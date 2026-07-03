@@ -540,17 +540,16 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 	}
 }
 
-// TestResetSessionStateSeedsPairOffsets pins that a fresh/parked session seeds its
-// (now per-tab) pair placement from the global "last used" pref — so a new tab
-// starts from your saved default, never from zero and never from another tab's
-// live value.
-func TestResetSessionStateSeedsPairOffsets(t *testing.T) {
+// TestResetSessionStatePairIsSessionOnly pins that pair placement neither
+// persists nor leaks: a fresh session always starts centered/unflipped
+// (playtest: offsets were "inexplicably saved" across client restarts), and
+// one tab's live placement never seeds another's.
+func TestResetSessionStatePairIsSessionOnly(t *testing.T) {
 	a := testTabApp(t)
-	a.d.Prefs.SetPairOffsets(15, 25)
-	a.d.Prefs.SetPairFlipped(true)
-	a.resetSessionState()
-	if a.pairOffX != 15 || a.pairOffY != 25 || !a.pairFlip {
-		t.Errorf("pair seed = %d/%d/%v, want 15/25/true", a.pairOffX, a.pairOffY, a.pairFlip)
+	a.pairOffX, a.pairOffY, a.pairFlip = 15, 25, true // a live tab's placement
+	a.resetSessionState()                             // new tab / disconnect / park path
+	if a.pairOffX != 0 || a.pairOffY != 0 || a.pairFlip {
+		t.Errorf("fresh session pair = %d/%d/%v, want 0/0/false (session-only)", a.pairOffX, a.pairOffY, a.pairFlip)
 	}
 }
 

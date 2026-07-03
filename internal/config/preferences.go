@@ -37,11 +37,6 @@ const (
 	// PrefsFileName is the preferences file name inside PrefsDirName.
 	PrefsFileName = "asset_preferences.json"
 
-	// PairOffsetMin and PairOffsetMax bound pair offsets, in percent of the
-	// viewport dimension (mirrors AO2-Client's slider range).
-	PairOffsetMin = -100
-	PairOffsetMax = 100
-
 	// LearnedKeySeparator joins host and asset-type name in learned-format
 	// map keys: "<host>|<type name>".
 	LearnedKeySeparator = "|"
@@ -883,9 +878,6 @@ type AssetPreferences struct {
 	MasterListURL      string                    `json:"masterListUrl"`
 	AssetTypes         map[string]AssetTypePrefs `json:"assetTypes"`
 	LearnedFormats     map[string][]string       `json:"learnedFormats"`
-	PairOffsetX        int                       `json:"pairOffsetX"`
-	PairOffsetY        int                       `json:"pairOffsetY"`
-	PairFlip           bool                      `json:"pairFlip"`
 	Showname           string                    `json:"showname"`
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
@@ -1187,9 +1179,6 @@ type prefsJSON struct {
 	MasterListURL      string                    `json:"masterListUrl"`
 	AssetTypes         map[string]AssetTypePrefs `json:"assetTypes"`
 	LearnedFormats     map[string][]string       `json:"learnedFormats"`
-	PairOffsetX        int                       `json:"pairOffsetX"`
-	PairOffsetY        int                       `json:"pairOffsetY"`
-	PairFlip           bool                      `json:"pairFlip"`
 	Showname           string                    `json:"showname"`
 	ShownamePresets    []string                  `json:"shownamePresets,omitempty"`
 	ShownameKeys       map[string]string         `json:"shownameKeys,omitempty"`
@@ -1996,9 +1985,6 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.LearnedFormats != nil {
 		p.LearnedFormats = onDisk.LearnedFormats
 	}
-	p.PairOffsetX = clampPairOffset(onDisk.PairOffsetX)
-	p.PairOffsetY = clampPairOffset(onDisk.PairOffsetY)
-	p.PairFlip = onDisk.PairFlip
 	p.Showname = onDisk.Showname
 	p.ShownamePresets = onDisk.ShownamePresets
 	p.ShownameKeys = onDisk.ShownameKeys
@@ -7845,48 +7831,6 @@ func (p *AssetPreferences) dropLearnedTypeLocked(typeName string) {
 	}
 }
 
-// --- Pairing ----------------------------------------------------------------
-
-// PairOffsets returns the last-used pair offsets in percent (−100..100).
-func (p *AssetPreferences) PairOffsets() (x, y int) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PairOffsetX, p.PairOffsetY
-}
-
-// SetPairOffsets stores the last-used pair offsets, clamped to
-// [PairOffsetMin, PairOffsetMax].
-func (p *AssetPreferences) SetPairOffsets(x, y int) {
-	x, y = clampPairOffset(x), clampPairOffset(y)
-	p.mu.Lock()
-	if p.PairOffsetX == x && p.PairOffsetY == y {
-		p.mu.Unlock()
-		return
-	}
-	p.PairOffsetX, p.PairOffsetY = x, y
-	p.mu.Unlock()
-	p.markDirty()
-}
-
-// PairFlipped reports the persisted pair flip toggle.
-func (p *AssetPreferences) PairFlipped() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PairFlip
-}
-
-// SetPairFlipped stores the pair flip toggle.
-func (p *AssetPreferences) SetPairFlipped(flip bool) {
-	p.mu.Lock()
-	if p.PairFlip == flip {
-		p.mu.Unlock()
-		return
-	}
-	p.PairFlip = flip
-	p.mu.Unlock()
-	p.markDirty()
-}
-
 // --- Local assets (no-streaming legacy mode) ----------------------------------
 
 // LocalAssets reports the no-streaming mode: read assets from user-chosen
@@ -8714,14 +8658,4 @@ func (p *AssetPreferences) SetViewportExactWidth(px int) {
 	p.ViewportExactW = px
 	p.mu.Unlock()
 	p.markDirty()
-}
-
-func clampPairOffset(v int) int {
-	if v < PairOffsetMin {
-		return PairOffsetMin
-	}
-	if v > PairOffsetMax {
-		return PairOffsetMax
-	}
-	return v
 }
