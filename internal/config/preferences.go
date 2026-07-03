@@ -844,29 +844,38 @@ type AssetPreferences struct {
 	LayoutPresets map[string]map[string][4]float64 `json:"layoutPresets,omitempty"`
 	// LayoutGridPx is the layout editor's snap-grid step in logical px
 	// (playtest, Tifera: "allow us to edit the snap grid"); 0 = the default 8.
-	LayoutGridPx   int    `json:"layoutGridPx,omitempty"`
-	DiskZstd       bool   `json:"diskZstd"`
-	StreamerModeOn bool   `json:"streamerMode"`
-	ThemeName      string `json:"themeName"`
-	ThemeDir       string `json:"themeDir"`
-	OOCName        string `json:"oocName"`
-	ViewportPct    int    `json:"viewportPercent"`
-	ChatScalePct   int    `json:"chatScalePercent"`
-	ChatBoxPct     int    `json:"chatBoxPercent"`
-	LogScalePct    int    `json:"logScalePercent"`
-	InputHeightPct int    `json:"inputHeightPercent"`
-	UIScalePct     int    `json:"uiScalePercent"`
-	WindowW        int    `json:"windowWidth"`  // 0 = default
-	WindowH        int    `json:"windowHeight"` // 0 = default
-	WindowFull     bool   `json:"windowFullscreen"`
-	MusicVol       int    `json:"musicVolume"`
-	SFXVol         int    `json:"sfxVolume"`
-	BlipVol        int    `json:"blipVolume"`
-	AlertVol       int    `json:"alertVolume"`
-	MasterVol      int    `json:"masterVolume"` // scales all three (default 100)
-	HoldClearOn    bool   `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
-	HoldClearKey   string `json:"holdClearKey"` // which key (default "Backspace"), rebindable
-	HoldClearMs    int    `json:"holdClearMs"`  // hold duration to clear (default 1500)
+	LayoutGridPx int `json:"layoutGridPx,omitempty"`
+	// ClassicAnchors pins classic-layout slots to a window corner/edge/centre
+	// (playtest, Tifera: "anchor layout items to corners and center of the
+	// entire screen"). The slot's ClassicLayout FRACTION override stays the
+	// single geometry source; the anchor re-bases it to PIXEL offsets from the
+	// anchored reference at resolve time, using the window size the override
+	// was saved at (WinW/WinH) — so the box stays glued through window
+	// resizes instead of drifting proportionally. Only meaningful alongside a
+	// ClassicLayout override; bounded by classicSlotCap like it.
+	ClassicAnchors map[string]ClassicAnchor `json:"classicAnchors,omitempty"`
+	DiskZstd       bool                     `json:"diskZstd"`
+	StreamerModeOn bool                     `json:"streamerMode"`
+	ThemeName      string                   `json:"themeName"`
+	ThemeDir       string                   `json:"themeDir"`
+	OOCName        string                   `json:"oocName"`
+	ViewportPct    int                      `json:"viewportPercent"`
+	ChatScalePct   int                      `json:"chatScalePercent"`
+	ChatBoxPct     int                      `json:"chatBoxPercent"`
+	LogScalePct    int                      `json:"logScalePercent"`
+	InputHeightPct int                      `json:"inputHeightPercent"`
+	UIScalePct     int                      `json:"uiScalePercent"`
+	WindowW        int                      `json:"windowWidth"`  // 0 = default
+	WindowH        int                      `json:"windowHeight"` // 0 = default
+	WindowFull     bool                     `json:"windowFullscreen"`
+	MusicVol       int                      `json:"musicVolume"`
+	SFXVol         int                      `json:"sfxVolume"`
+	BlipVol        int                      `json:"blipVolume"`
+	AlertVol       int                      `json:"alertVolume"`
+	MasterVol      int                      `json:"masterVolume"` // scales all three (default 100)
+	HoldClearOn    bool                     `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
+	HoldClearKey   string                   `json:"holdClearKey"` // which key (default "Backspace"), rebindable
+	HoldClearMs    int                      `json:"holdClearMs"`  // hold duration to clear (default 1500)
 	// Extras-box theming (all hex like "78aaff"; "" = the stock kit colour).
 	ExtrasBg           string                    `json:"extrasBg"`
 	ExtrasBg2          string                    `json:"extrasBg2"` // gradient bottom colour
@@ -1142,11 +1151,12 @@ type prefsJSON struct {
 	FontPaths          string                           `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                      `json:"macros"`
 	ThemeRectOverrides map[string]map[string][4]int     `json:"themeRectOverrides"`
-	ClassicLayout      map[string][4]float64            `json:"classicLayout"` // default-courtroom slot overrides (window fractions)
-	LayoutPresets      map[string]map[string][4]float64 `json:"layoutPresets"` // named layout snapshots (#34)
-	LayoutGridPx       int                              `json:"layoutGridPx"`  // editor snap-grid step (0 = default 8)
-	DiskZstd           bool                             `json:"diskZstd"`      // default OFF (measured trade)
-	StreamerMode       bool                             `json:"streamerMode"`  // default OFF
+	ClassicLayout      map[string][4]float64            `json:"classicLayout"`  // default-courtroom slot overrides (window fractions)
+	LayoutPresets      map[string]map[string][4]float64 `json:"layoutPresets"`  // named layout snapshots (#34)
+	LayoutGridPx       int                              `json:"layoutGridPx"`   // editor snap-grid step (0 = default 8)
+	ClassicAnchors     map[string]ClassicAnchor         `json:"classicAnchors"` // per-slot window pins (mode + saved window size)
+	DiskZstd           bool                             `json:"diskZstd"`       // default OFF (measured trade)
+	StreamerMode       bool                             `json:"streamerMode"`   // default OFF
 	ThemeName          string                           `json:"themeName"`
 	ThemeDir           string                           `json:"themeDir"`
 	OOCName            string                           `json:"oocName"`
@@ -1887,6 +1897,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.ClassicLayout = sanitizeClassicLayout(onDisk.ClassicLayout)
 	p.LayoutPresets = sanitizeLayoutPresets(onDisk.LayoutPresets)
 	p.LayoutGridPx = clampLayoutGridPx(onDisk.LayoutGridPx)
+	p.ClassicAnchors = sanitizeClassicAnchors(onDisk.ClassicAnchors)
 	p.DiskZstd = onDisk.DiskZstd
 	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
@@ -7571,14 +7582,106 @@ func (p *AssetPreferences) SetClassicSlot(name string, frac [4]float64) {
 }
 
 // ClearClassicSlot drops one slot's override (name "" clears every slot, the
-// editor's "Reset all").
+// editor's "Reset all"). The slot's window anchor goes with it — an anchor
+// without an override is meaningless (it only re-bases the override).
 func (p *AssetPreferences) ClearClassicSlot(name string) {
 	p.mu.Lock()
 	if name == "" {
 		p.ClassicLayout = nil
+		p.ClassicAnchors = nil
 	} else {
 		delete(p.ClassicLayout, name)
+		delete(p.ClassicAnchors, name)
 	}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClassicAnchor pins one classic-layout slot to a window reference: Mode is
+// two letters — horizontal ∈ {f,l,r,c} then vertical ∈ {f,t,b,c} (f = follow
+// the fraction, i.e. unpinned on that axis; l/r/t/b = pixel-glued to that
+// window edge; c = pixel-glued to the window centre). WinW/WinH record the
+// window size the slot's fraction override was last written at, so the
+// resolver can reconstruct the exact pixel rect the user placed.
+type ClassicAnchor struct {
+	Mode string `json:"mode"`
+	WinW int    `json:"winW"`
+	WinH int    `json:"winH"`
+}
+
+// validAnchorMode reports whether m is a well-formed two-letter anchor mode.
+func validAnchorMode(m string) bool {
+	if len(m) != 2 {
+		return false
+	}
+	h, v := m[0], m[1]
+	return (h == 'f' || h == 'l' || h == 'r' || h == 'c') &&
+		(v == 'f' || v == 't' || v == 'b' || v == 'c')
+}
+
+// sanitizeClassicAnchors keeps only well-formed entries (valid mode, positive
+// saved window) within the classicSlotCap bound — a hand-edited or stale pref
+// can't smuggle in junk the resolver would have to defend against per frame.
+func sanitizeClassicAnchors(in map[string]ClassicAnchor) map[string]ClassicAnchor {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]ClassicAnchor, len(in))
+	for k, a := range in {
+		if k == "" || !validAnchorMode(a.Mode) || a.WinW <= 0 || a.WinH <= 0 {
+			continue
+		}
+		if len(out) >= classicSlotCap {
+			break
+		}
+		out[k] = a
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// ClassicAnchorSnapshot returns a copy of the per-slot window pins — the
+// classic editor snapshots it once alongside ClassicLayoutOverrides so the
+// render path resolves anchors lock-free.
+func (p *AssetPreferences) ClassicAnchorSnapshot() map[string]ClassicAnchor {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.ClassicAnchors) == 0 {
+		return nil
+	}
+	out := make(map[string]ClassicAnchor, len(p.ClassicAnchors))
+	for k, v := range p.ClassicAnchors {
+		out[k] = v
+	}
+	return out
+}
+
+// SetClassicAnchor stores one slot's window pin (rejects malformed modes /
+// window sizes; bounded by classicSlotCap alongside the overrides).
+func (p *AssetPreferences) SetClassicAnchor(name string, a ClassicAnchor) {
+	if name == "" || !validAnchorMode(a.Mode) || a.WinW <= 0 || a.WinH <= 0 {
+		return
+	}
+	p.mu.Lock()
+	if p.ClassicAnchors == nil {
+		p.ClassicAnchors = map[string]ClassicAnchor{}
+	}
+	if _, exists := p.ClassicAnchors[name]; !exists && len(p.ClassicAnchors) >= classicSlotCap {
+		p.mu.Unlock()
+		return
+	}
+	p.ClassicAnchors[name] = a
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClearClassicAnchor drops one slot's window pin (the override stays; the
+// slot goes back to plain fraction scaling).
+func (p *AssetPreferences) ClearClassicAnchor(name string) {
+	p.mu.Lock()
+	delete(p.ClassicAnchors, name)
 	p.mu.Unlock()
 	p.markDirty()
 }

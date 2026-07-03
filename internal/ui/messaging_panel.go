@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/veandco/go-sdl2/sdl"
 )
@@ -33,8 +34,8 @@ func (a *App) toggleMessages() { a.showMessages = !a.showMessages }
 // top-left; thereafter the live floatWin geometry (drag / resize) wins.
 func (a *App) msgPanelRect(w, h int32) sdl.Rect {
 	if !a.msgWin.placed {
-		if ov, ok := a.classicOv[slotMessages]; ok { // positioned via Edit Layout → start there
-			r := fracToRect(ov, w, h)
+		if ov, ok := a.classicOv[slotMessages]; ok { // positioned via Edit Layout → start there (pin honoured)
+			r := a.anchoredRect(slotMessages, ov, w, h)
 			a.msgWin.x, a.msgWin.y, a.msgWin.w, a.msgWin.h, a.msgWin.placed = r.X, r.Y, r.W, r.H, true
 			return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
 		}
@@ -63,7 +64,11 @@ func (a *App) persistMsgSlot(w, h int32) {
 		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
 	}
 	a.classicOv[slotMessages] = frac
+	a.syncAnchorWindow(slotMessages, w, h) // a pinned slot's override now describes THIS window
 	a.d.Prefs.SetClassicSlot(slotMessages, frac)
+	if m := a.slotAnchorMode(slotMessages); m != "" {
+		a.d.Prefs.SetClassicAnchor(slotMessages, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
+	}
 }
 
 // drawMessagesSlotGhost draws an inert titled placeholder for the Group Chat panel

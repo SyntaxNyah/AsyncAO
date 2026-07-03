@@ -3825,7 +3825,11 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// lookup, no alloc. controlsBlockOrigin is the pure core (unit-pinned:
 	// TestControlsBlockOrigin).
 	ctrlOv, ctrlEdited := a.classicOv[slotControls]
-	clusterX, y, dy, clusterRight := controlsBlockOrigin(ctrlOv, ctrlEdited, w, h, defY)
+	var ctrlRect sdl.Rect
+	if ctrlEdited {
+		ctrlRect = a.anchoredRect(slotControls, ctrlOv, w, h) // window pin honoured
+	}
+	clusterX, y, dy, clusterRight := controlsBlockOrigin(ctrlRect, ctrlEdited, w, defY)
 
 	// Row 1: shouts, pairing, and the live layout knobs (both hideable).
 	x := clusterX

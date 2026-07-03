@@ -633,7 +633,12 @@ type App struct {
 	classicEdit     bool
 	classicOv       map[string][4]float64
 	classicOvLoaded bool
-	slotReg         map[string]slotInfo
+	// classicAnchor holds per-slot window pins (parsed from
+	// config.ClassicAnchors alongside classicOv): a pinned slot's override
+	// re-bases to pixel offsets from its window corner/centre on resize
+	// instead of scaling with the fractions (classicanchor.go).
+	classicAnchor map[string]anchorRef
+	slotReg       map[string]slotInfo
 	// dockLeftX caches the docked log/tab strip's left edge (rcol.X), refreshed by
 	// drawCourtroom each frame. The floating server-tab strip centres its DEFAULT
 	// position in the space LEFT of it (over the stage) so it no longer overlaps the

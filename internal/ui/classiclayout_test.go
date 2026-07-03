@@ -56,31 +56,32 @@ func TestControlsBlockOrigin(t *testing.T) {
 	const w, h, defY = 1000, 700, 480
 
 	// No override → default origin, zero offset, default wrap edge.
-	if cx, by, dy, cr := controlsBlockOrigin([4]float64{}, false, w, h, defY); cx != pad || by != defY || dy != 0 || cr != w-pad {
+	if cx, by, dy, cr := controlsBlockOrigin(sdl.Rect{}, false, w, defY); cx != pad || by != defY || dy != 0 || cr != w-pad {
 		t.Fatalf("no-override origin = (x=%d y=%d dy=%d right=%d), want (x=%d y=%d dy=0 right=%d)",
 			cx, by, dy, cr, pad, defY, w-pad)
 	}
 
-	// Override at frac (0.1, 0.5, W=0.4, …) → translated origin, wrap edge from the
-	// override width (0.4 × 1000 = 400 px of content).
-	ov := [4]float64{0.1, 0.5, 0.4, 0.2} // x=100 y=350 w=400 (H ignored: content-driven)
+	// Resolved override at (100, 350, W=400) → translated origin, wrap edge from
+	// the resolved width. (The caller resolves fractions — and window pins —
+	// via anchoredRect now, so the pure core takes the pixel rect.)
+	ov := fracToRect([4]float64{0.1, 0.5, 0.4, 0.2}, w, h) // x=100 y=350 w=400 (H ignored: content-driven)
 	wantX, wantY := int32(100), int32(350)
-	if cx, by, dy, cr := controlsBlockOrigin(ov, true, w, h, defY); cx != wantX || by != wantY || dy != wantY-defY || cr != wantX+400 {
+	if cx, by, dy, cr := controlsBlockOrigin(ov, true, w, defY); cx != wantX || by != wantY || dy != wantY-defY || cr != wantX+400 {
 		t.Fatalf("override origin = (x=%d y=%d dy=%d right=%d), want (x=%d y=%d dy=%d right=%d)",
 			cx, by, dy, cr, wantX, wantY, wantY-defY, wantX+400)
 	}
 
 	// A width below the floor clamps UP to ctrlBlockMinW (a too-narrow drag stays a
 	// narrow block; it never jumps back to full width).
-	tiny := [4]float64{0.1, 0.5, 0.02, 0.2} // w=20 px — under the floor
-	if _, _, _, cr := controlsBlockOrigin(tiny, true, w, h, defY); cr != 100+ctrlBlockMinW {
+	tiny := fracToRect([4]float64{0.1, 0.5, 0.02, 0.2}, w, h) // w=20 px — under the floor
+	if _, _, _, cr := controlsBlockOrigin(tiny, true, w, defY); cr != 100+ctrlBlockMinW {
 		t.Fatalf("under-floor width: wrap edge = %d, want %d (clamped to ctrlBlockMinW)", cr, 100+ctrlBlockMinW)
 	}
 
 	// An old move-only override saved the FULL content width — the wrap edge must land
 	// exactly on the default, so nothing shifts on upgrade.
-	legacy := [4]float64{0.1, 0.5, float64(w-2*pad) / w, 0.2}
-	if _, _, _, cr := controlsBlockOrigin(legacy, true, w, h, defY); cr != 100+(w-2*pad) {
+	legacy := fracToRect([4]float64{0.1, 0.5, float64(w-2*pad) / w, 0.2}, w, h)
+	if _, _, _, cr := controlsBlockOrigin(legacy, true, w, defY); cr != 100+(w-2*pad) {
 		t.Fatalf("legacy full-width override: wrap edge = %d, want %d", cr, 100+(w-2*pad))
 	}
 }
@@ -89,9 +90,9 @@ func TestControlsBlockOrigin(t *testing.T) {
 // runs every courtroom frame on the render path.
 func TestControlsBlockOriginNoAlloc(t *testing.T) {
 	const w, h, defY = 800, 600, 400
-	ov := [4]float64{0.2, 0.3, 0.4, 0.1}
+	ov := fracToRect([4]float64{0.2, 0.3, 0.4, 0.1}, w, h)
 	if n := testing.AllocsPerRun(200, func() {
-		_, _, _, _ = controlsBlockOrigin(ov, true, w, h, defY)
+		_, _, _, _ = controlsBlockOrigin(ov, true, w, defY)
 	}); n != 0 {
 		t.Fatalf("controlsBlockOrigin allocates %v/op on the render path; want 0", n)
 	}

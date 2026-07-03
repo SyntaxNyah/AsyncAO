@@ -157,14 +157,15 @@ func (a *App) drawTabContent(id int, inner sdl.Rect) {
 	}
 }
 
-// tornTabRect returns a torn panel's screen rect (override → px), or ok=false when
-// the tab isn't torn. Pure (no slotReg write) so the pointer-fence pass can call it.
+// tornTabRect returns a torn panel's screen rect (override → px, honouring a
+// window pin), or ok=false when the tab isn't torn. No slotReg write, so the
+// pointer-fence pass can call it.
 func (a *App) tornTabRect(key string, w, h int32) (sdl.Rect, bool) {
 	ov, ok := a.classicOv[key]
 	if !ok {
 		return sdl.Rect{}, false
 	}
-	return fracToRect(ov, w, h), true
+	return a.anchoredRect(key, ov, w, h), true
 }
 
 // tornTabDefaultRect is where a tab lands the first time it's popped out: a

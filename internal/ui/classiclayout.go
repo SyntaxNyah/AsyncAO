@@ -20,6 +20,8 @@ import (
 	"strings"
 
 	"github.com/veandco/go-sdl2/sdl"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 )
 
 // Slot names — string literals so the render path never formats a key (which
@@ -99,6 +101,7 @@ func (a *App) ensureClassicOv() {
 		return
 	}
 	a.classicOv = a.d.Prefs.ClassicLayoutOverrides()
+	a.classicAnchor = parseAnchors(a.d.Prefs.ClassicAnchorSnapshot()) // window pins ride alongside
 	a.classicOvLoaded = true
 }
 
@@ -172,7 +175,7 @@ func (a *App) regSlot(name string, cur, def sdl.Rect) {
 func (a *App) slotRect(name string, def sdl.Rect, w, h int32) sdl.Rect {
 	cur := def
 	if ov, ok := a.classicOv[name]; ok {
-		cur = fracToRect(ov, w, h)
+		cur = a.anchoredRect(name, ov, w, h) // fracToRect unless the slot is window-pinned
 	}
 	if a.classicEdit {
 		a.regSlot(name, cur, def)
@@ -431,11 +434,12 @@ func (a *App) classicEditFence() {
 // rows decide it). Old move-only overrides saved W as the full content width,
 // so they land exactly on the default wrap — nothing shifts on upgrade. Pure +
 // alloc-free so the invariant is unit-pinnable.
-func controlsBlockOrigin(ov [4]float64, ok bool, w, h, defY int32) (clusterX, blockY, dy, clusterRight int32) {
+// r is the slot's RESOLVED rect (anchoredRect — window pins included); ok
+// mirrors the override's presence.
+func controlsBlockOrigin(r sdl.Rect, ok bool, w, defY int32) (clusterX, blockY, dy, clusterRight int32) {
 	clusterX, blockY = pad, defY
 	contentW := w - 2*pad
 	if ok {
-		r := fracToRect(ov, w, h)
 		clusterX, blockY = r.X, r.Y
 		contentW = r.W
 		if contentW < ctrlBlockMinW {
@@ -457,11 +461,15 @@ func (a *App) viewportOverridden() bool {
 }
 
 // clearClassicSlot drops one slot's override from both the durable pref and the
-// App-local snapshot so it reverts to the computed default the same frame.
+// App-local snapshot so it reverts to the computed default the same frame. The
+// window pin goes with it (config's ClearClassicSlot already cascades).
 func (a *App) clearClassicSlot(name string) {
 	a.d.Prefs.ClearClassicSlot(name)
 	if a.classicOv != nil {
 		delete(a.classicOv, name)
+	}
+	if a.classicAnchor != nil {
+		delete(a.classicAnchor, name)
 	}
 }
 
@@ -556,9 +564,10 @@ func (a *App) drawClassicEditor(w, h int32) {
 		return
 	}
 	if c.clicked && pointIn(c.mouseX, c.mouseY, resetBtn) {
-		a.pushClassicUndo() // so Reset all is itself undoable
+		a.pushClassicUndo() // so Reset all is itself undoable (pins aren't in history — see below)
 		a.d.Prefs.ClearClassicSlot("")
 		a.classicOv = nil
+		a.classicAnchor = nil // pins die with their overrides
 		a.pushDebug("edit layout: all boxes reset to default")
 		return
 	}
@@ -626,6 +635,16 @@ func (a *App) drawClassicEditor(w, h int32) {
 		} else {
 			a.classicPickSig, a.classicPickIdx = "", 0
 		}
+	}
+
+	// A pins the hovered box to a window corner / the centre (cycles off →
+	// ↖ → ↗ → ↙ → ↘ → ● — Tifera: "anchor layout items to corners and center
+	// of the entire screen"): a pinned box keeps its PIXEL offsets from that
+	// reference when the window resizes, instead of drifting with the
+	// fractions. Consumed so a char keybind on A can't also fire mid-edit.
+	if a.classicEditDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_a {
+		a.cycleSlotAnchor(hoverKey, w, h)
+		c.keyPressed = 0
 	}
 
 	// Begin a drag on press: RESIZE (an edge/corner is gripped) takes priority over
@@ -772,6 +791,9 @@ func (a *App) drawClassicEditor(w, h int32) {
 				a.classicOv = make(map[string][4]float64, classicSlotRegCap)
 			}
 			a.classicOv[a.classicEditKey] = rectToFrac(r, w, h)
+			// A pinned slot's override now describes THIS window size —
+			// re-base the local anchor so resolution round-trips exactly.
+			a.syncAnchorWindow(a.classicEditKey, w, h)
 		}
 	}
 
@@ -793,6 +815,10 @@ func (a *App) drawClassicEditor(w, h int32) {
 		case a.classicEditMoved && a.classicEditKey != "":
 			if ov, ok := a.classicOv[a.classicEditKey]; ok {
 				a.d.Prefs.SetClassicSlot(a.classicEditKey, ov)
+				// Persist the pin's re-based window size with the override.
+				if m := a.slotAnchorMode(a.classicEditKey); m != "" {
+					a.d.Prefs.SetClassicAnchor(a.classicEditKey, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
+				}
 			}
 		default:
 			if n := len(a.classicUndo); n > 0 {
@@ -815,7 +841,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		r := a.slotReg[k].cur
 		if a.classicEditDrag != 0 && k == a.classicEditKey {
 			if ov, ok := a.classicOv[k]; ok {
-				r = fracToRect(ov, w, h)
+				r = a.anchoredRect(k, ov, w, h)
 			}
 		}
 		switch {
@@ -830,6 +856,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		default:
 			c.Border(r, dimEdge) // resting: structure only, no clutter
 		}
+		a.drawAnchorPin(r, k) // pinned boxes show a green dot at their reference
 	}
 	// Alignment guides: full-length hairlines at whatever the dragged box just
 	// snapped flush to — the Inkscape-style "you are aligned" feedback.
@@ -872,7 +899,11 @@ func (a *App) drawClassicEditor(w, h int32) {
 		c.Label(pad, h-22, fmt.Sprintf("%s  ·  %d boxes here — Tab to pick (%d/%d)",
 			classicSlotLabel(hoverKey), len(stack), a.classicPickIdx+1, len(stack)), ColTierYellow)
 	case hoverKey != "":
-		c.Label(pad, h-22, classicSlotLabel(hoverKey)+"  ·  drag to move (Alt = always move) · edge to resize · right-click to reset", ColTierYellow)
+		hint := classicSlotLabel(hoverKey) + "  ·  drag to move (Alt = always move) · edge to resize · right-click to reset · A = pin"
+		if m := a.slotAnchorMode(hoverKey); m != "" {
+			hint = classicSlotLabel(hoverKey) + "  ·  pinned to the " + anchorModeLabel(m) + " (stays glued when the window resizes) · A = next pin · right-click to reset"
+		}
+		c.Label(pad, h-22, hint, ColTierYellow)
 	case len(keys) > 0:
 		c.Label(pad, h-22, "Hover a box to move or resize it  ·  Ctrl+Z undo  ·  changes save automatically", ColTextDim)
 	}

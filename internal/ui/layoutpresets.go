@@ -22,6 +22,17 @@ const (
 // slotRect reads a.classicOv, which this replaces and marks loaded. A nil/empty map
 // is the stock reset (every box back to its computed default).
 func (a *App) applyLayoutPreset(m map[string][4]float64) {
+	// A wholesale swap invalidates the window PIN of every slot whose rect it
+	// changes: the pin's saved-window context described the OLD override (a
+	// preset may have been saved months ago at another resolution — re-basing
+	// its fresh rect against that stale window would misplace it). Untouched
+	// slots keep their pins, so a stage-only premade never unpins the log.
+	for k := range a.classicAnchor {
+		if m[k] != a.classicOv[k] {
+			delete(a.classicAnchor, k)
+			a.d.Prefs.ClearClassicAnchor(k)
+		}
+	}
 	a.d.Prefs.SetClassicLayout(m)
 	a.classicOv = cloneClassicOv(m)
 	a.classicOvLoaded = true
