@@ -631,6 +631,16 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		// Field 2 (showname) and field 1 (charID) name who played it for the IC
 		// log line; both are optional on the wire (short legacy MC packets).
 		track := p.Field(0)
+		// Field 4 is the 2.9+ CHANNEL (AO2-Client courtroom.cpp handle_song:
+		// "Channel 0 is 'master music', other for ambient"; absent = 0). An
+		// ambience MC must never reach the music path: WAP-family servers
+		// stream area ambience on channel 1 — including one on EVERY join —
+		// and playing it as the song stopped/replaced the area's real music
+		// (playtest: rejoining a server stayed silent). We don't render
+		// ambience channels (yet), so a non-zero channel is a no-op.
+		if atoiOr(p.Field(4), 0) != 0 {
+			return nil
+		}
 		// Persist the current REAL song on the session (like Background), so a room
 		// rebuilt later can resume it. Mirror the courtroom's play classification
 		// (courtroom.go EventMusic): a stop clears it; an area-name transfer leaves the
