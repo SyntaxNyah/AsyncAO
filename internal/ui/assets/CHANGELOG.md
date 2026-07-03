@@ -4,6 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.51.2 — 2026-07-03
+
+- **Characters with broken pre-animation entries no longer freeze before
+  speaking.** Some packs list a pre-animation on every emote that doesn't
+  actually exist; each of their messages held a blank stage for a fixed
+  2.5 seconds — even fully cached, however fast the server. The client now
+  notices the file can never arrive and starts the message immediately,
+  matching AO2's behaviour.
+
 ## v1.51.1 — 2026-07-03
 
 - **Losing a send race no longer eats your message.** When two people send
