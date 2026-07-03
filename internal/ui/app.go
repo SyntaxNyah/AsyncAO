@@ -5605,6 +5605,27 @@ func (a *App) drainWarnings() {
 	for {
 		select {
 		case w := <-a.d.Manager.Warnings():
+			// A conclusively-missing char sprite also feeds the message
+			// ceremony: a preanimation that can never arrive must not hold
+			// the stage for the full PreanimTimeout (AO2-Client skips missing
+			// preanims instantly — Courtroom.NotifyAssetMissing). One Manager
+			// serves every room, so this is the single relay point; each room
+			// compares the base against its own current message, so wrong-room
+			// bases are a string-compare no-op.
+			if w.Type == assets.AssetTypeCharSprite {
+				if a.room != nil {
+					a.room.NotifyAssetMissing(w.Base)
+				}
+				if a.splitRoom != nil {
+					a.splitRoom.NotifyAssetMissing(w.Base)
+				}
+				if a.replayRoom != nil {
+					a.replayRoom.NotifyAssetMissing(w.Base)
+				}
+				if a.makerPreviewRoom != nil {
+					a.makerPreviewRoom.NotifyAssetMissing(w.Base)
+				}
+			}
 			line := "Missing asset: " + w.Base
 			if len(w.Tried) > 0 {
 				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"

@@ -15,7 +15,10 @@ const (
 	// reports completion.
 	DefaultShoutDuration = 724 * time.Millisecond
 	// DefaultPreanimTimeout bounds a preanim wait when its real duration is
-	// not yet known (asset still decoding); NotifyPreanimDone cuts it short.
+	// not yet known (asset still decoding); NotifyPreanimDone (the one-shot
+	// finished) or NotifyAssetMissing (it can never start — conclusive 404)
+	// cuts it short, so a live wait only ever runs this long when the asset
+	// is genuinely still downloading.
 	DefaultPreanimTimeout = 2500 * time.Millisecond
 	// DefaultTextStayTime holds a finished message on screen before the
 	// queue advances (AO2-Client text_stay_time flavor).
@@ -268,7 +271,8 @@ type Courtroom struct {
 	// DefaultShoutDuration / DefaultPreanimTimeout, seeded in NewCourtroom):
 	// how long an interjection bubble holds the stage, and how long a preanim
 	// may play before the text starts anyway when its real length is unknown
-	// (asset still decoding — NotifyPreanimDone always cuts it short).
+	// (asset still decoding — NotifyPreanimDone / NotifyAssetMissing cut it
+	// short the moment the animation finishes / proves unresolvable).
 	ShoutDuration  time.Duration
 	PreanimTimeout time.Duration
 
@@ -880,7 +884,12 @@ func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutFallbackBase = ""
 	msg := c.current
 	c.fireMessageEffects(msg)
-	playPre := hasPreanim(msg) &&
+	// !preanimDone: begin() resets the flag, so it can only be true here when
+	// NotifyAssetMissing landed while the shout bubble held the stage — the
+	// preanim conclusively 404'd and hijacking Active with it would draw a
+	// blank speaker. Skip straight to the talk loop, exactly where a played
+	// preanim would have ended up.
+	playPre := hasPreanim(msg) && !c.preanimDone &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom || msg.Immediate)
 	blockOnPre := playPre && !msg.Immediate &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom)
@@ -974,6 +983,40 @@ func (c *Courtroom) enterLinger() {
 // finishes (or by tests). It also flips the speaker to the talk loop.
 func (c *Courtroom) NotifyPreanimDone() {
 	c.preanimDone = true
+}
+
+// NotifyAssetMissing reports that the asset manager conclusively failed to
+// resolve base: every spelling and format 404'd (the §4 warning lane — the
+// App relays char-sprite warnings here; wrong-room and wrong-message bases
+// simply don't match). Only the CURRENT message's preanimation reacts.
+//
+// AO2-Client skips a preanim it cannot find the moment it looks it up
+// (courtroom.cpp play_preanim: a missing file emits done immediately); a
+// streaming client can only learn absence asynchronously, and this is that
+// moment. Without it, a char.ini that fills the preanim field with a dummy
+// name on every emote (live packs ship "-<n>") froze EVERY message from that
+// character for the full PreanimTimeout with a blank speaker — the negative
+// cache made the re-probes free, but nothing told the phase machine, so the
+// stall survived caching entirely.
+func (c *Courtroom) NotifyAssetMissing(base string) {
+	if base == "" || c.current == nil || base != c.Scene.Speaker.PreanimBase {
+		return
+	}
+	// Exactly NotifyPreanimDone: the preanim "finished" (it can never start).
+	// PhasePreanim exits on the next Update; enterAfterShout reads the flag
+	// too, so a miss learned during the shout bubble skips the phase outright.
+	c.preanimDone = true
+	// Immediate mode (playPre without blockOnPre) parks Active on the preanim
+	// with PlayOnce while the text types; a missing one would leave the
+	// speaker invisible for the whole message (no one-shot ever completes, so
+	// OnPreanimDone never fires). Restore the talk loop exactly as
+	// startTalking would have without the hijack.
+	if c.Scene.Speaker.PlayOnce {
+		c.Scene.Speaker.PlayOnce = false
+		if c.phase == PhaseTalking {
+			c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
+		}
+	}
 }
 
 // SkipToIdle fast-forwards the CURRENT message straight to idle: reveal the rest

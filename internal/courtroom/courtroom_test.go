@@ -1172,6 +1172,134 @@ func TestPreanimBlocksUntilDone(t *testing.T) {
 	}
 }
 
+// TestMissingPreanimSkipsInsteadOfTimeout pins the streaming answer to
+// AO2-Client's missing-preanim skip (courtroom.cpp play_preanim: file absent
+// → done immediately): when the manager conclusively 404s the preanim, the
+// App relays the §4 warning as NotifyAssetMissing and the ceremony moves on
+// NOW — not at PreanimTimeout. The live trigger: packs whose char.ini fills
+// the preanim field with a dummy name on every emote ("-<n>"), which froze
+// every Pre-checked/objection message for the full 2.5 s with a blank
+// speaker, cached or not.
+func TestMissingPreanimSkipsInsteadOfTimeout(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	room.NotifyAssetMissing("http://mirror/base/characters/x/(a)y") // no message on stage: must be a no-op
+
+	fields := []string{
+		"1", "-80", "Erika", "80", "Guilty!", "jud", "0",
+		"1", // EMOTE_MOD preanim (the Pre checkbox upgrades an ini 0 on send)
+		"0", "0", "0", "0", "0", "0", "0",
+		"", "-1", "", "", "0", "0", "0",
+		"0", // IMMEDIATE off
+	}
+	msg, err := protocol.ParseMS(fields, sess.Features, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+	if room.Phase() != PhasePreanim {
+		t.Fatalf("phase = %v, want preanim", room.Phase())
+	}
+
+	pre := room.Scene.Speaker.PreanimBase
+	room.NotifyAssetMissing("http://elsewhere/other") // a foreign miss must not end the wait
+	room.Update(time.Millisecond)
+	if room.Phase() != PhasePreanim {
+		t.Fatal("a foreign missing asset ended the preanim wait")
+	}
+
+	room.NotifyAssetMissing(pre)
+	room.Update(time.Millisecond)
+	if room.Phase() != PhaseTalking {
+		t.Errorf("phase after the miss = %v, want talking well before the %v timeout", room.Phase(), room.PreanimTimeout)
+	}
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("one-shot flag must clear when the preanim is skipped")
+	}
+	if !strings.HasSuffix(room.Scene.Speaker.Active, "(b)80") {
+		t.Errorf("active = %q, want the talk loop", room.Scene.Speaker.Active)
+	}
+}
+
+// TestMissingImmediatePreanimRestoresTalkLoop covers the non-blocking flavour:
+// IMMEDIATE plays the preanim ALONGSIDE the text by parking Active on the
+// preanim base with PlayOnce. A conclusively-missing preanim would leave the
+// speaker invisible for the whole message (no one-shot ever completes, so
+// OnPreanimDone never fires) — the miss must restore the talk loop instead.
+func TestMissingImmediatePreanimRestoresTalkLoop(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	fields := []string{
+		"1", "-80", "Erika", "80", "Guilty!", "jud", "0",
+		"0", // EMOTE_MOD idle — immediate alone triggers the side-play
+		"0", "0", "0", "0", "0", "0", "0",
+		"", "-1", "", "", "0", "0", "0",
+		"1", // IMMEDIATE on
+	}
+	msg, err := protocol.ParseMS(fields, sess.Features, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+	if room.Phase() != PhaseTalking {
+		t.Fatalf("phase = %v, want talking (immediate never blocks)", room.Phase())
+	}
+	if !room.Scene.Speaker.PlayOnce || room.Scene.Speaker.Active != room.Scene.Speaker.PreanimBase {
+		t.Fatalf("immediate must park the one-shot preanim as active (got active=%q, once=%v)",
+			room.Scene.Speaker.Active, room.Scene.Speaker.PlayOnce)
+	}
+
+	room.NotifyAssetMissing(room.Scene.Speaker.PreanimBase)
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("one-shot flag must clear when the immediate preanim is missing")
+	}
+	if room.Scene.Speaker.Active != room.Scene.Speaker.TalkBase {
+		t.Errorf("active = %q, want the talk loop %q", room.Scene.Speaker.Active, room.Scene.Speaker.TalkBase)
+	}
+}
+
+// TestMissingPreanimLearnedDuringShoutSkipsPhase: begin() prefetches the
+// preanim while the interjection bubble still holds the stage, so the miss
+// can land mid-shout. enterAfterShout must then skip the preanim hijack
+// entirely — straight to the talk loop when the bubble ends, zero blank
+// frames on a preanim that can never resolve.
+func TestMissingPreanimLearnedDuringShoutSkipsPhase(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	fields := []string{
+		"1", "-80", "Erika", "80", "Objection!", "jud", "0",
+		"2", // legacy EMOTE_MOD 2 (objection+preanim) — normalizes to preanim
+		"0", "0",
+		"2", // OBJECTION_MOD: objection bubble
+		"0", "0", "0", "0",
+		"", "-1", "", "", "0", "0", "0",
+		"0",
+	}
+	msg, err := protocol.ParseMS(fields, sess.Features, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+	if room.Phase() != PhaseShout {
+		t.Fatalf("phase = %v, want shout", room.Phase())
+	}
+
+	room.NotifyAssetMissing(room.Scene.Speaker.PreanimBase) // the 404 lands mid-bubble
+	room.Update(room.ShoutDuration + time.Millisecond)      // bubble ends
+	if room.Phase() != PhaseTalking {
+		t.Errorf("phase after shout = %v, want talking (PhasePreanim skipped)", room.Phase())
+	}
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("skipped preanim must not leave the one-shot flag set")
+	}
+	if !strings.HasSuffix(room.Scene.Speaker.Active, "(b)80") {
+		t.Errorf("active = %q, want the talk loop, never the missing preanim", room.Scene.Speaker.Active)
+	}
+}
+
 func TestUnpairedMessageCentersSingleSprite(t *testing.T) {
 	room, sess, _, _ := newCourtroomRig(t)
 	setupReadySession(t, sess)
