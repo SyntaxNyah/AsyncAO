@@ -1038,6 +1038,7 @@ func (a *App) oocWrapped(width int32) []string {
 	out := a.oocWrap[:0]
 	name := a.oocWrapName[:0] // parallel to out: speaker on each entry's first display line
 	urls := a.oocWrapURL[:0]  // parallel to out: the entry's link on each of its display lines
+	cont := a.oocWrapCont[:0] // parallel to out: wrap continuation rows (hanging indent)
 	for i, entry := range a.oocLog {
 		sp := ""
 		if i < len(a.oocSpeakers) {
@@ -1077,11 +1078,13 @@ func (a *App) oocWrapped(width int32) []string {
 				out = append(out, "") // blank MOTD spacer lines survive
 				name = append(name, "")
 				urls = append(urls, "")
+				cont = append(cont, false)
 				continue
 			}
-			for _, ln := range lines {
+			for row, ln := range lines {
 				out = append(out, ln)
 				urls = append(urls, paraURL) // every wrapped row of THIS line opens its link
+				cont = append(cont, row > 0) // rows the WRAP made are continuations (hanging indent); the paragraph's own newline isn't
 				if entryFirst {
 					name = append(name, sp)
 					entryFirst = false
@@ -1094,7 +1097,7 @@ func (a *App) oocWrapped(width int32) []string {
 	if out == nil {
 		out = []string{}
 	}
-	a.oocWrap, a.oocWrapName, a.oocWrapURL = out, name, urls
+	a.oocWrap, a.oocWrapName, a.oocWrapURL, a.oocWrapCont = out, name, urls, cont
 	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.oocPct, streamer
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out
@@ -1105,6 +1108,33 @@ func (a *App) oocWrapped(width int32) []string {
 type icWrapLine struct {
 	text  string
 	entry int // index into icLog
+}
+
+// logWrapIndentPx is the hanging indent for a message's wrapped continuation
+// rows (IC and OOC): rows two and up of one message start slightly right of
+// its first, so a wrapped message reads as ONE message instead of a run of
+// new paragraphs (playtest). The drawers wrap text against
+// width−logWrapIndentPx, so an indented row can never overflow the column.
+const logWrapIndentPx = 14
+
+// logRowIndent is display row li's draw indent in log `which`: a wrap
+// continuation row indents by logWrapIndentPx, a message's first row (and any
+// row without wrap data) sits at the column start. The selection hit-math and
+// highlight use the same offset, so clicks land exactly on what's drawn.
+func (a *App) logRowIndent(which, li int) int32 {
+	if which == logSelIC {
+		// IC entries are single paragraphs: a row is a continuation exactly
+		// when it shares its entry with the row above (the filtered wrap keeps
+		// an entry's rows adjacent).
+		if li > 0 && li < len(a.icWrap) && a.icWrap[li].entry == a.icWrap[li-1].entry {
+			return logWrapIndentPx
+		}
+		return 0
+	}
+	if li >= 0 && li < len(a.oocWrapCont) && a.oocWrapCont[li] {
+		return logWrapIndentPx
+	}
+	return 0
 }
 
 // icWrapMaxLinesPerEntry bounds one entry's wrapped rows. IC messages cap

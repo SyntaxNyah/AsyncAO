@@ -2264,7 +2264,9 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	rows := a.icWrapped(wrapW, a.d.Prefs.ICTimestampsOn()) // per-frame pref read, like the IC counter
+	// Wrap against the indented width so a continuation row (drawn at
+	// +logWrapIndentPx) can never overflow the column.
+	rows := a.icWrapped(wrapW-logWrapIndentPx, a.d.Prefs.ICTimestampsOn()) // per-frame pref read, like the IC counter
 	contentH := int32(len(rows)) * lineH
 	track := sdl.Rect{X: list.X + list.W - scrollBarW, Y: list.Y, W: scrollBarW, H: list.H}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) zooms the log text.
@@ -2339,6 +2341,18 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			}
 		}
 	}
+	// Link hover spans the WHOLE message: hovering any wrapped row of a linked
+	// entry tints every one of its rows (playtest: only the hovered row lit up,
+	// so a wrapped link read as one highlighted line among plain ones). O(1):
+	// the hovered row indexes straight into rows; the loop compares entry ids.
+	hoverLinkEntry := -1
+	if c.hovering(list) && c.mouseX < list.X+wrapW {
+		if li := int((c.mouseY - list.Y + visScroll) / lineH); li >= 0 && li < len(rows) {
+			if a.icLog[rows[li].entry].url != "" {
+				hoverLinkEntry = rows[li].entry
+			}
+		}
+	}
 	// Scissor the scrollback to the list rect so the partially scrolled
 	// top/bottom row can't draw past it onto the tab strip above.
 	clipPrev, clipHad := c.pushClip(list)
@@ -2374,9 +2388,10 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if ri == firstUnreadRow {
 				c.Fill(sdl.Rect{X: list.X, Y: y, W: wrapW, H: unreadDividerH}, ColAccent)
 			}
-			// A line carrying a link reads as a link on hover (accent) and
-			// opens it on click — the whole message line is the hit target.
-			if a.icLog[row.entry].url != "" && c.hovering(rowRect) {
+			// A message carrying a link reads as a link on hover (accent, every
+			// wrapped row of it) and opens on click — the whole message is the
+			// hit target.
+			if row.entry == hoverLinkEntry {
 				col = ColAccent
 			}
 			// Per-speaker name colour: tint the name prefix on an entry's FIRST
@@ -2386,7 +2401,8 @@ func (a *App) drawICLogList(list sdl.Rect) {
 			if nameColorsOn && (ri == 0 || rows[ri-1].entry != row.entry) {
 				lineSpeaker = a.icLog[row.entry].speaker
 			}
-			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X, y, wrapW, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
+			indent := a.logRowIndent(logSelIC, ri) // continuation rows hang right of their first row
+			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
 			if u := a.icLog[row.entry].url; u != "" {
 				if c.hovering(rowRect) {
 					c.Tooltip(rowRect, "Open "+u)
@@ -2457,9 +2473,11 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	font := c.LogFont(a.oocPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.NameColorsOn() // per-speaker OOC name colours (read once)
-	boldNames := a.d.Prefs.BoldNamesOn()     // read once per frame, passed per line
+	// Wrap against the indented width so a continuation row (drawn at
+	// +logWrapIndentPx) can never overflow the column.
+	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
+	nameColorsOn := a.d.Prefs.NameColorsOn()       // per-speaker OOC name colours (read once)
+	boldNames := a.d.Prefs.BoldNamesOn()           // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -2489,6 +2507,8 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	}
 	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
 	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
+	// Hovering any wrapped row of a linked message tints the whole run of it.
+	linkLo, linkHi := a.oocHoverLinkRun(list, a.oocScroll, lineH, wrapW, len(lines))
 	clipPrev, clipHad := c.pushClip(list) // top/bottom row clipped to the rect, not the tabs
 	y := list.Y - a.oocScroll
 	for li, line := range lines {
@@ -2504,19 +2524,50 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			// matching the IC log. The link is the entry's, resolved at wrap
 			// time (oocWrapURL), so a URL the wrap hard-split still opens whole.
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
-			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
+			if li >= linkLo && li <= linkHi {
 				col = ColAccent
+			}
+			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
 				a.oocLinkActions(rowRect, a.oocWrapURL[li])
 			}
 			sp := ""
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
-			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal, boldNames)
+			indent := a.logRowIndent(logSelOOC, li) // continuation rows hang right of their first row
+			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X+indent, y, wrapW-indent, line, sp, col, nameColorsOn, nameSat, nameVal, boldNames)
 		}
 		y += lineH
 	}
 	c.popClip(clipPrev, clipHad)
+}
+
+// oocHoverLinkRun resolves the OOC row under the cursor to the contiguous run
+// of rows sharing its link — the wrapped rows of one linked paragraph — so the
+// hover tint covers the WHOLE message (playtest: only the hovered row lit up,
+// so a wrapped link read as one highlighted line among plain ones). Returns
+// lo=0, hi=-1 (an empty range) when the cursor isn't on a linked row. The
+// outward walks are bounded by the per-entry wrap cap: a same-URL run longer
+// than that is several paragraphs, and one paragraph is the unit we tint.
+func (a *App) oocHoverLinkRun(list sdl.Rect, scroll, lineH, wrapW int32, n int) (lo, hi int) {
+	c := a.ctx
+	lo, hi = 0, -1
+	if lineH <= 0 || !c.hovering(list) || c.mouseX >= list.X+wrapW {
+		return
+	}
+	li := int((c.mouseY - list.Y + scroll) / lineH)
+	if li < 0 || li >= n || li >= len(a.oocWrapURL) || a.oocWrapURL[li] == "" {
+		return
+	}
+	url := a.oocWrapURL[li]
+	lo, hi = li, li
+	for steps := 0; lo > 0 && a.oocWrapURL[lo-1] == url && steps < oocWrapMaxLinesPerEntry; steps++ {
+		lo--
+	}
+	for steps := 0; hi+1 < len(a.oocWrapURL) && a.oocWrapURL[hi+1] == url && steps < oocWrapMaxLinesPerEntry; steps++ {
+		hi++
+	}
+	return
 }
 
 // oocLinkActions handles the hover interactions for an OOC log line that holds
@@ -2579,9 +2630,11 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	font := c.LogFont(a.oocPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
-	lines := a.oocWrapped(wrapW)             // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.NameColorsOn() // per-speaker OOC name colours (read once)
-	boldNames := a.d.Prefs.BoldNamesOn()     // read once per frame, passed per line
+	// Wrap against the indented width so a continuation row (drawn at
+	// +logWrapIndentPx) can never overflow the column.
+	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
+	nameColorsOn := a.d.Prefs.NameColorsOn()       // per-speaker OOC name colours (read once)
+	boldNames := a.d.Prefs.BoldNamesOn()           // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -2614,6 +2667,8 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	// Drag-select / Ctrl+C + links — same as the themed OOC log (this is the
 	// classic OOC tab's own scrollback; it must behave identically).
 	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
+	// Hovering any wrapped row of a linked message tints the whole run of it.
+	linkLo, linkHi := a.oocHoverLinkRun(list, a.oocScroll, lineH, wrapW, len(lines))
 	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the fields below
 	y := list.Y - a.oocScroll
 	for li, line := range lines {
@@ -2625,15 +2680,18 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 			font := c.LogFontFor(a.oocPct, line)
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
-			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
+			if li >= linkLo && li <= linkHi {
 				col = ColAccent
+			}
+			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
 				a.oocLinkActions(rowRect, a.oocWrapURL[li])
 			}
 			sp := ""
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
-			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X, y, wrapW, line, sp, col, nameColorsOn, nameSat, nameVal, boldNames)
+			indent := a.logRowIndent(logSelOOC, li) // continuation rows hang right of their first row
+			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X+indent, y, wrapW-indent, line, sp, col, nameColorsOn, nameSat, nameVal, boldNames)
 		}
 		y += lineH
 	}

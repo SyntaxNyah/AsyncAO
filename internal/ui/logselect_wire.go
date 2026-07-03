@@ -144,7 +144,9 @@ func (a *App) logPointAt(which int, listX, listY, scroll, lineH, mx, my int32) s
 	}
 	runes := []rune(a.logLineText(which, li))
 	font := a.ctx.LogFontFor(a.logPct, string(runes))
-	off := hitTestRune(runes, mx-listX, func(r []rune) int32 { return logPrefixWidth(font, r, len(r)) })
+	// A wrap continuation row draws indented (hanging indent), so its rune
+	// hit-test starts at the same offset — clicks land on what's drawn.
+	off := hitTestRune(runes, mx-listX-a.logRowIndent(which, li), func(r []rune) int32 { return logPrefixWidth(font, r, len(r)) })
 	return selPoint{entry: li, off: off}
 }
 
@@ -254,11 +256,13 @@ func (a *App) drawLogSelHighlight(which, li int, listX, y, wrapW, lineH int32, t
 	}
 	x0, x1 := listX, listX+wrapW
 	runes := []rune(text)
+	// The measured endpoints shift by the row's hanging indent (interior rows
+	// keep the full-column band), matching where the text actually draws.
 	if li == lo.entry {
-		x0 = listX + logPrefixWidth(font, runes, lo.off)
+		x0 = listX + a.logRowIndent(which, li) + logPrefixWidth(font, runes, lo.off)
 	}
 	if li == hi.entry {
-		x1 = listX + logPrefixWidth(font, runes, hi.off)
+		x1 = listX + a.logRowIndent(which, li) + logPrefixWidth(font, runes, hi.off)
 	}
 	if x1 > x0 {
 		a.ctx.Fill(sdl.Rect{X: x0, Y: y, W: x1 - x0, H: lineH}, a.logSelFill)
