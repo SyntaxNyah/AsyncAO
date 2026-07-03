@@ -70,4 +70,10 @@ func TestToolboxIDsUnique(t *testing.T) {
 		}
 		seen[b.id] = b.label
 	}
+	for _, b := range hideableRosterButtons {
+		if prev, dup := seen[b.id]; dup {
+			t.Errorf("duplicate hideable id %q (roster button %q and %q)", b.id, b.label, prev)
+		}
+		seen[b.id] = b.label
+	}
 }

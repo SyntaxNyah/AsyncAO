@@ -63,7 +63,27 @@ const (
 	panelTabPlayers = "tab.players"
 	panelTabNotes   = "tab.notes"
 	panelTabFriends = "tab.friends"
+	// Players-list per-row action buttons (playtest: with everything on, the
+	// cluster crowds the name/UID out of a normal-width panel). Each is
+	// individually hideable like the /follow toggle; the cluster compacts and
+	// the name column gets the width back. The Friend button keeps its own
+	// Settings toggle (FriendButtonShown) — no duplicate id here.
+	rosterBtnPair    = "roster.pair"
+	rosterBtnUID     = "roster.uid"
+	rosterBtnIPID    = "roster.ipid"
+	rosterBtnIgnore  = "roster.ignore"
+	rosterBtnProfile = "roster.profile"
 )
+
+// hideableRosterButtons drives the "Players-list row buttons" grid in the UI
+// popup (tick to hide — same semantics as the control-button grid).
+var hideableRosterButtons = []struct{ id, label string }{
+	{rosterBtnPair, "Pair"},
+	{rosterBtnUID, "UID copy"},
+	{rosterBtnIPID, "IPID copy (mods)"},
+	{rosterBtnIgnore, "Ignore"},
+	{rosterBtnProfile, "Profile"},
+}
 
 // hideablePanels drives the UI popup AND the editor toolbox (#27): id + human label
 // (the dialog's checkbox text) + a SHORT chip label (the toolbox), draw order.
@@ -998,8 +1018,10 @@ func (a *App) drawUICfgPanel(w, h int32) {
 		btnRows := (int32(len(hideableButtons)) + btnCols - 1) / btnCols
 		gridBlock = 30 + btnRows*cfgRow // 30 = sub-heading
 	}
-	// pad+34 heading · chrome list · [grid block] · btnH+18 bottom row
-	panelH := pad + 34 + int32(len(hideablePanels))*cfgRow + gridBlock + btnH + 18
+	rosterRows := (int32(len(hideableRosterButtons)) + btnCols - 1) / btnCols
+	rosterBlock := 30 + rosterRows*cfgRow // Players-list row buttons (always shown)
+	// pad+34 heading · chrome list · [grid block] · roster block · btnH+18 bottom row
+	panelH := pad + 34 + int32(len(hideablePanels))*cfgRow + gridBlock + rosterBlock + btnH + 18
 	panel := sdl.Rect{X: w/2 - 280, Y: h/2 - panelH/2, W: 560, H: panelH}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -1026,6 +1048,20 @@ func (a *App) drawUICfgPanel(w, h int32) {
 			if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
 				a.setPanelHidden(b.id, next)
 			}
+		}
+		y += (int32(len(hideableButtons)) + btnCols - 1) / btnCols * cfgRow
+	}
+	// Players-list row buttons (playtest: the cluster crowded the name out).
+	// Same tick-to-hide grid; hidden buttons free their width on every row.
+	c.Label(panel.X+pad, y+4, "Players-list row buttons (tick to hide):", ColTextDim)
+	y += 30
+	rColW := (panel.W - 2*pad) / btnCols
+	for i, b := range hideableRosterButtons {
+		cx := panel.X + pad + int32(i)%btnCols*rColW
+		cy := y + int32(i)/btnCols*cfgRow
+		hidden := a.panelHidden(b.id)
+		if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
+			a.setPanelHidden(b.id, next)
 		}
 	}
 	// Theater: the logical extreme of hiding chrome — stage only,
