@@ -4162,16 +4162,29 @@ const uiScaleSliderID = "UI scale %"
 func (a *App) drawManualUIScale(y int32) int32 {
 	c := a.ctx
 	pad := a.formX
-	next := a.sliderRow(y, uiScaleSliderID, a.uiScalePct, config.UIScaleStepPercent,
+	// While a drag is armed, feed the PENDING value back in: on the release
+	// frame the Slider no longer tracks the mouse and echoes whatever it was
+	// passed, so passing uiScalePct made the thumb (and worse, `next`) revert.
+	shown := a.uiScalePct
+	if a.uiScaleDragging {
+		shown = a.uiScalePending
+	}
+	next := a.sliderRow(y, uiScaleSliderID, shown, config.UIScaleStepPercent,
 		config.MinUIScalePercent, config.MaxUIScalePercent,
 		"Zooms the WHOLE interface. Drag to preview, release to apply (applying mid-drag would rescale this slider under your cursor); or click a preset below.")
 	switch {
-	case c.dragID == uiScaleSliderID:
+	// The mouseDown guard is load-bearing: BeginFrame clears dragID only on a
+	// frame that STARTS with the button up, so on the release frame itself
+	// dragID still names this slider while mouseDown is already false. Without
+	// the guard this case fired one extra frame and clobbered uiScalePending
+	// with the un-applied base value — the release then committed a no-op and
+	// the slider "snapped back to 100%" (the playtest report).
+	case c.dragID == uiScaleSliderID && c.mouseDown:
 		// Dragging: remember the value but DON'T rescale yet (that's the feedback loop).
 		a.uiScaleDragging = true
 		a.uiScalePending = next
 	case a.uiScaleDragging:
-		// Released → apply once.
+		// Released → apply once, on the release frame.
 		a.uiScaleDragging = false
 		a.applyManualUIScale(a.uiScalePending)
 	case next != a.uiScalePct:
