@@ -234,10 +234,10 @@ const (
 func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh := extrasTitleH + styleBoxPad // title + top pad
 	bh += 50                         // 3-line "what it does / who sees it" note
-	bh += 26                         // Tint row
+	bh += 26                         // Tint + Hue-paint row
 	if a.d.Prefs.SpriteStyle().Tint {
 		rows := int32((len(spriteStylePresets) + styleSwatchCols - 1) / styleSwatchCols)
-		bh += rows*(styleSwatchSz+styleSwatchGap) + 4 + 62 // preset swatches + R/G/B sliders
+		bh += rows*(styleSwatchSz+styleSwatchGap) + 4 + 82 // preset swatches + Hue + R/G/B sliders
 	}
 	bh += 30                    // opacity (Fade)
 	bh += 26                    // Rainbow / Mirror row
@@ -321,11 +321,30 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	c.LabelClipped(x, y, noteW, "AO2 / webAO see a normal character.", ColTextDim)
 	y += 19
 
-	// Recolour toggle.
+	// Recolour toggle + the hue-paint mode (playtest: the multiply tint DARKENS
+	// a colourful sprite — the ask was a recolour that only affects hue). Hue
+	// paint = the tint applied over the sprite's GRAYSCALE variant: every pixel
+	// takes the chosen hue while keeping its own light and shadow (luma × hue).
+	// It's a composition of two EXISTING wire fields (Tint + Grayscale), so any
+	// AsyncAO build — old or new — renders it identically; no wire change.
 	if next := c.Checkbox(x, y, "Recolour (tint)", p.Tint); next != p.Tint {
 		p.Tint = next
 		a.d.Prefs.SetSpriteStyle(p)
 	}
+	huePaint := p.Tint && p.Grayscale
+	hpRect := sdl.Rect{X: x + 132, Y: y, W: 22 + c.TextWidth("Hue paint"), H: 16}
+	if next := c.Checkbox(x+132, y, "Hue paint", huePaint); next != huePaint {
+		if next {
+			p.Tint, p.Grayscale = true, true
+			if p.R == p.G && p.G == p.B { // a hueless (gray/white) tint paints nothing — seed a visible hue
+				p.R, p.G, p.B = 255, 0, 0
+			}
+		} else {
+			p.Grayscale = false // back to the plain multiply tint
+		}
+		a.d.Prefs.SetSpriteStyle(p)
+	}
+	c.Tooltip(hpRect, "Paint the whole sprite ONE hue while keeping its own light and shadow — set the hue below. (The plain tint multiplies colours, which darkens; this recolours only the hue. Rainbow cycles the paint.)")
 	y += 26
 
 	if p.Tint {
@@ -355,6 +374,19 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 			y += styleSwatchSz + styleSwatchGap
 		}
 		y += 4
+		// Hue: one slider that drives R/G/B together (a full-vividness hue).
+		// With Hue paint on this IS the painted hue ("set all the colors to the
+		// same hue, then edit that hue"); as a plain tint it's a pure-hue tint.
+		// Derived from the stored RGB, so the swatches and RGB sliders move it.
+		// The wheel helpers work in h ∈ [0,1]; the slider shows degrees.
+		hue, _, _ := rgbToHSV(p.R, p.G, p.B)
+		huePos := clampI32(int32(hue*360+0.5), 0, 359)
+		c.Label(x, y, "Hue", ColTextDim)
+		if n := c.Slider("styleHue", sdl.Rect{X: x + 44, Y: y, W: r.W - 44 - styleBoxPad*2, H: 14}, huePos, 359); n != huePos {
+			p.R, p.G, p.B = hsvToRGB(float64(n)/360, 1, 1)
+			a.d.Prefs.SetSpriteStyle(p)
+		}
+		y += 20
 		// Fine RGB control.
 		swW := r.W - 24 - styleBoxPad*2
 		nr := c.Slider("styleR", sdl.Rect{X: x + 22, Y: y, W: swW, H: 14}, int32(p.R), 255)
