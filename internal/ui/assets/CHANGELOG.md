@@ -4,6 +4,60 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.53.0 — 2026-07-03
+
+A playtest round — thanks to Nightingale and Tifera for the reports and
+ideas.
+
+- **Pair placement no longer haunts you across restarts.** Offsets and flip
+  were quietly saved and came back on the next launch. Pairing is
+  session-only now: each tab keeps its own placement while you play, and a
+  fresh session always starts centered.
+- **The pair menu's offset boxes update live.** Nudging with the −/+
+  buttons or the mousewheel changed the value, but the number in the box
+  froze until you clicked somewhere else. It follows every edit now —
+  dragging the sprite on the little stage updates the boxes too.
+- **The pair menu shows your actual sprite again.** The preview always
+  looked for a sprite named "normal", which plenty of packs simply don't
+  have — so the stage sat empty. It now previews the emote you have
+  selected, and your partner appears as they last stood on stage.
+- **Your OOC name stays in its tab.** A name typed in one server's OOC box
+  showed up in every other tab — and overwrote your saved default on top.
+  It's per-tab now; the permanent default lives in Settings → Identity and
+  seeds new tabs.
+- **The volume sliders stay shown.** The log panel's Vol strip and the
+  Music tab's slider view forgot they were on the moment you connected
+  anywhere. If you show them, they stay shown — across servers and
+  restarts — until you hide them yourself.
+- **The Players list keeps names readable.** With everything enabled a row
+  carried up to seven buttons that squeezed the name and UID out of view
+  unless the panel was very wide. The buttons now drop to their own line
+  whenever they'd crowd the name, and each one (Pair, UID, IPID, Ignore,
+  Profile) can be hidden individually in the UI… popup — like Follow
+  always could.
+- **Settings got reorganised.** Streamer mode is the first thing in
+  General → Display & behaviour. The message-send extras (auto-random
+  emote, random / rainbow message colours) moved to Chat → Text & typing.
+  And every stage look — CRT / retro TV, vignette, scanlines, film grain,
+  the stage frame, spotlight, idle breathing, reflection, weather and
+  friends — now lives on the Theme tab under "Stage & viewport effects".
+- **The layout editor aligns like a real editor.** While dragging, a box's
+  edges and centre now snap to every other box and to the window's edges
+  and centre, with green guide lines showing what you lined up with —
+  flush placement just happens instead of fighting the grid. The snap grid
+  itself is adjustable too (a Grid chip cycles 4 / 8 / 16 / 32 px), and
+  Shift still bypasses everything for pixel-precise moves.
+- **Pin layout boxes to the window.** Hover a box in Edit Layout and press
+  A to pin it to a corner or the centre. A pinned box keeps its size and
+  stays glued to that spot when the window resizes, instead of drifting
+  and stretching with everything else. Press A again to cycle corners or
+  unpin; pinned boxes show a small green dot.
+- **The log's search bar and the log no longer overlap.** With a large
+  custom UI font, the search box's text spilled out of its fixed-height
+  row onto the first log line. The row now grows with your font — and on
+  a very narrow log panel the search field takes the full row instead of
+  vanishing behind the export buttons.
+
 ## v1.52.0 — 2026-07-03
 
 A feature round built from playtest feedback — thanks to Tifera for
