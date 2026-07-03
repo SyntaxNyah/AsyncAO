@@ -3811,15 +3811,16 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 
 	// Control-button slot ("controls"): the two button rows — shouts / pair / layout
 	// knobs (row 1) and the utility buttons (row 2, which wraps) — move together as one
-	// block. Translate-only with a CONSTANT content width (w-2*pad), so the wrap
-	// structure — and therefore the block's row count and height — is invariant to the
-	// move. That makes the un-moved bottom recoverable as (y2 - dy), which keeps the
-	// downstream judge / IC bar / emote DEFAULTS anchored where they were and an
-	// un-edited courtroom pixel-identical (clusterX == pad, y == defY, dy == 0 ⇒ every
-	// rect, every wrap edge identical). Width/height resize is ignored (the block stays
-	// full width; its height is content-driven). The override is read lock-free; off the
-	// edit path this is one map lookup, no alloc. controlsBlockOrigin is the pure core
-	// (unit-pinned: TestControlsBlockOrigin).
+	// block. Un-edited, the content width is w-2*pad, so the wrap structure — and
+	// therefore the block's row count and height — matches the classic layout exactly
+	// (clusterX == pad, y == defY, dy == 0 ⇒ every rect, every wrap edge identical:
+	// the un-edited courtroom stays pixel-identical). An override translates the block
+	// and, since v1.52.0 (Tifera), its WIDTH drives the wrap edge — narrowing re-wraps
+	// the buttons into a taller stack, and the judge strip / emote grid below anchor to
+	// the re-wrapped bottom (y2 - dy) so they keep clear of it. Height is always
+	// content-driven. The override is read lock-free; off the edit path this is one map
+	// lookup, no alloc. controlsBlockOrigin is the pure core (unit-pinned:
+	// TestControlsBlockOrigin).
 	ctrlOv, ctrlEdited := a.classicOv[slotControls]
 	clusterX, y, dy, clusterRight := controlsBlockOrigin(ctrlOv, ctrlEdited, w, h, defY)
 
@@ -4218,14 +4219,15 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	}
 
 	// The control-button block ends here. Register it for the editor (its height is
-	// content-driven, so measure it now); the grab box is full content width, which the
-	// editor's on-screen clamp turns into a mostly-vertical move (the block stays full
-	// width by design). cur vs def heights are equal because the row count is invariant.
+	// content-driven, so measure it now). The grab box spans the LIVE content width —
+	// the wrap edge the rows actually used — so the side handles sit where the
+	// buttons end after a width resize. def keeps the default full width; its height
+	// reflects the live row count (recomputing the default wrap would mean laying the
+	// rows out twice — reset just recomputes for real next frame).
 	if a.classicEdit {
-		blockW := w - 2*pad
 		a.regSlot(slotControls,
-			sdl.Rect{X: clusterX, Y: y, W: blockW, H: y2 + btnH - y},
-			sdl.Rect{X: pad, Y: defY, W: blockW, H: y2 - dy + btnH - defY})
+			sdl.Rect{X: clusterX, Y: y, W: clusterRight - clusterX, H: y2 + btnH - y},
+			sdl.Rect{X: pad, Y: defY, W: w - 2*pad, H: y2 - dy + btnH - defY})
 	}
 
 	// Judge strip (JD grant, or the judge stand when pos-dependent) + the emote grid now

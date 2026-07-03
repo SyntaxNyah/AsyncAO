@@ -76,6 +76,10 @@ const (
 	classicMinPx = 20
 	// classicBannerH is the editor's top banner height (drags stay below it).
 	classicBannerH = 26
+	// ctrlBlockMinW floors a width-resized control-button block: wide enough
+	// for the widest single button (Disconnect, 110 px) plus its spacing, so
+	// no button can be wrapped into an unreachable zero-width column.
+	ctrlBlockMinW = 140
 )
 
 // slotInfo records, per registered slot this frame, the rect it actually drew at
@@ -230,7 +234,7 @@ func classicSlotLabel(k string) string {
 	case slotOOCBar:
 		return "OOC bar"
 	case slotControls:
-		return "Control buttons (move only)"
+		return "Control buttons (drag the sides to re-wrap)"
 	case slotTabBar:
 		return "Server tabs (move only)"
 	case slotICColor:
@@ -296,18 +300,33 @@ func classicEdgeAt(mx, my int32, r sdl.Rect, margin int32) uint8 {
 	return e
 }
 
-// slotResizable reports whether a slot honours width/height edits. The control-button
-// block is MOVE-ONLY: its width is held constant so the button wrap (and the IC bar /
-// emote grid anchored below it) stays put, so resizing it would do nothing. Move-only
-// slots paint no resize handles and are skipped by the resize hit-test — critically so
-// they can't STEAL a neighbour's edge grip (smallest-area-wins would otherwise let the
-// little control block swallow the resize of a box it merely touches, then do nothing —
-// the "boxes in the middle won't resize" bug).
-func slotResizable(name string) bool {
-	// The server-tab strip sizes itself from its chips (like the control block), so
-	// resizing it would do nothing — move-only, same as slotControls.
-	return name != slotControls && name != slotTabBar
+// slotResizeEdges reports which edges of a slot honour a resize drag; 0 means
+// move-only. Restricted slots paint only their live handles and the resize
+// hit-test masks the rest — critically so an inert edge can't STEAL a
+// neighbour's grip (smallest-area-wins would otherwise let a slot swallow the
+// resize of a box it merely touches, then do nothing — the "boxes in the
+// middle won't resize" bug).
+func slotResizeEdges(name string) uint8 {
+	switch name {
+	case slotControls:
+		// v1.52.0 (Tifera): the control-button block is WIDTH-resizable — the
+		// override width drives the row-wrap edge (controlsBlockOrigin), so
+		// narrowing it re-wraps the buttons into a taller stack. Height stays
+		// content-driven (the rows decide it), so the horizontal edges stay
+		// inert rather than pretending to work.
+		return edgeL | edgeR
+	case slotTabBar:
+		// The server-tab strip sizes itself from its chips, so resizing it
+		// would do nothing — move-only.
+		return 0
+	default:
+		return edgeL | edgeR | edgeT | edgeB
+	}
 }
+
+// slotResizable reports whether a slot honours ANY resize edge (label + handle
+// gating; the per-edge mask above does the precise work).
+func slotResizable(name string) bool { return slotResizeEdges(name) != 0 }
 
 // pickResizeSlot chooses which slot a resize grip at (mx,my) targets. It RESPECTS the
 // hovered box — the same box move would act on (the highlighted, Tab-selectable one) —
@@ -320,21 +339,16 @@ func slotResizable(name string) bool {
 // RESIZABLE box. Move-only slots are always skipped. Pure + testable.
 func pickResizeSlot(reg map[string]slotInfo, keys []string, hoverKey string, mx, my, margin int32) (string, uint8) {
 	if hoverKey != "" { // pointing at a box → only that box may resize (matches move)
-		if slotResizable(hoverKey) {
-			if e := classicEdgeAt(mx, my, reg[hoverKey].cur, margin); e != 0 {
-				return hoverKey, e
-			}
+		if e := classicEdgeAt(mx, my, reg[hoverKey].cur, margin) & slotResizeEdges(hoverKey); e != 0 {
+			return hoverKey, e
 		}
 		return "", 0
 	}
 	best := int64(-1) // cursor outside every box: smallest gripped resizable wins
 	bestKey, bestEdges := "", uint8(0)
 	for _, k := range keys {
-		if !slotResizable(k) {
-			continue
-		}
 		r := reg[k].cur
-		if e := classicEdgeAt(mx, my, r, margin); e != 0 {
+		if e := classicEdgeAt(mx, my, r, margin) & slotResizeEdges(k); e != 0 {
 			if area := int64(r.W) * int64(r.H); best < 0 || area < best {
 				bestKey, bestEdges, best = k, e, area
 			}
@@ -404,21 +418,29 @@ func (a *App) classicEditFence() {
 
 // controlsBlockOrigin computes the control-button block's draw origin (clusterX,
 // blockY), its vertical offset from the default top (dy), and the row-wrap edge
-// (clusterRight) from the block's slot override, if present. The content width is
-// held CONSTANT at w-2*pad, so the wrap structure — and therefore the block's row
-// count and height — is invariant to the move; that is what lets drawICControls
-// recover the un-moved bottom as (y2 - dy) and stay byte-identical when un-edited
-// (no override ⇒ clusterX==pad, dy==0, clusterRight==w-pad). Width/height of the
-// override are ignored by design (the block stays full width). Pure + alloc-free so
-// the invariant is unit-pinnable; the drawICControls call site reads classicOv first.
+// (clusterRight) from the block's slot override, if present. Un-edited, the
+// content width is w-2*pad — clusterX==pad, dy==0, clusterRight==w-pad, so the
+// un-edited courtroom stays byte-identical (the safety invariant). An override
+// translates the block AND, since v1.52.0 (Tifera), its WIDTH drives the wrap
+// edge: narrowing re-wraps the rows into a taller stack (widgets below anchor
+// to the re-wrapped bottom, keeping clear of it). ctrlBlockMinW floors the
+// width so every button stays reachable; an override height is ignored (the
+// rows decide it). Old move-only overrides saved W as the full content width,
+// so they land exactly on the default wrap — nothing shifts on upgrade. Pure +
+// alloc-free so the invariant is unit-pinnable.
 func controlsBlockOrigin(ov [4]float64, ok bool, w, h, defY int32) (clusterX, blockY, dy, clusterRight int32) {
 	clusterX, blockY = pad, defY
+	contentW := w - 2*pad
 	if ok {
 		r := fracToRect(ov, w, h)
 		clusterX, blockY = r.X, r.Y
+		contentW = r.W
+		if contentW < ctrlBlockMinW {
+			contentW = ctrlBlockMinW // clamp UP: a too-narrow drag stays a narrow block, never a full-width jump
+		}
 	}
 	dy = blockY - defY
-	clusterRight = clusterX + (w - 2*pad)
+	clusterRight = clusterX + contentW
 	return
 }
 
@@ -813,14 +835,27 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 }
 
-// drawSlotHandles paints the 8 resize grips on a slot (none for move-only slots),
-// each with a dark outline so the bright squares read on any background underneath.
+// handleEdgeMask maps each classicHandles index to the edges it grips (same
+// order: 4 corners, then top/bottom/left/right midpoints).
+var handleEdgeMask = [8]uint8{
+	edgeL | edgeT, edgeR | edgeT, edgeL | edgeB, edgeR | edgeB,
+	edgeT, edgeB, edgeL, edgeR,
+}
+
+// drawSlotHandles paints a slot's resize grips — only the handles whose every
+// edge the slot honours (a width-only slot shows just its side midpoints, so
+// the affordance never lies), each with a dark outline so the bright squares
+// read on any background underneath. Move-only slots paint none.
 func (a *App) drawSlotHandles(r sdl.Rect, key string, col sdl.Color) {
-	if !slotResizable(key) {
+	allowed := slotResizeEdges(key)
+	if allowed == 0 {
 		return
 	}
 	c := a.ctx
-	for _, hnd := range classicHandles(r) {
+	for i, hnd := range classicHandles(r) {
+		if handleEdgeMask[i]&^allowed != 0 {
+			continue // the handle grips an edge this slot doesn't honour
+		}
 		c.Fill(hnd, col)
 		c.Border(hnd, sdl.Color{R: 0, G: 0, B: 0, A: 170})
 	}

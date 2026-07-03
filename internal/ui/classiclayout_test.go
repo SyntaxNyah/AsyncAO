@@ -49,8 +49,9 @@ func TestSlotNoAlloc(t *testing.T) {
 // TestControlsBlockOrigin pins the control-button block's safety invariant: with no
 // override the block draws exactly where it always did (clusterX==pad, dy==0,
 // clusterRight==w-pad), so icY = y2 - dy + btnH + 6 reduces to y2 + btnH + 6 and the
-// un-edited courtroom is byte-identical. An override translates X/Y only; the constant
-// content width keeps the wrap edge at clusterX + (w-2*pad).
+// un-edited courtroom is byte-identical. An override translates X/Y AND its width
+// drives the wrap edge (v1.52.0: width-resizable — narrowing re-wraps the rows),
+// floored at ctrlBlockMinW so every button stays reachable.
 func TestControlsBlockOrigin(t *testing.T) {
 	const w, h, defY = 1000, 700, 480
 
@@ -60,12 +61,27 @@ func TestControlsBlockOrigin(t *testing.T) {
 			cx, by, dy, cr, pad, defY, w-pad)
 	}
 
-	// Override at frac (0.1, 0.5, …) → translated origin; width/height ignored.
-	ov := [4]float64{0.1, 0.5, 0.4, 0.2} // x=100 y=350 (W/H ignored by design)
+	// Override at frac (0.1, 0.5, W=0.4, …) → translated origin, wrap edge from the
+	// override width (0.4 × 1000 = 400 px of content).
+	ov := [4]float64{0.1, 0.5, 0.4, 0.2} // x=100 y=350 w=400 (H ignored: content-driven)
 	wantX, wantY := int32(100), int32(350)
-	if cx, by, dy, cr := controlsBlockOrigin(ov, true, w, h, defY); cx != wantX || by != wantY || dy != wantY-defY || cr != wantX+(w-2*pad) {
+	if cx, by, dy, cr := controlsBlockOrigin(ov, true, w, h, defY); cx != wantX || by != wantY || dy != wantY-defY || cr != wantX+400 {
 		t.Fatalf("override origin = (x=%d y=%d dy=%d right=%d), want (x=%d y=%d dy=%d right=%d)",
-			cx, by, dy, cr, wantX, wantY, wantY-defY, wantX+(w-2*pad))
+			cx, by, dy, cr, wantX, wantY, wantY-defY, wantX+400)
+	}
+
+	// A width below the floor clamps UP to ctrlBlockMinW (a too-narrow drag stays a
+	// narrow block; it never jumps back to full width).
+	tiny := [4]float64{0.1, 0.5, 0.02, 0.2} // w=20 px — under the floor
+	if _, _, _, cr := controlsBlockOrigin(tiny, true, w, h, defY); cr != 100+ctrlBlockMinW {
+		t.Fatalf("under-floor width: wrap edge = %d, want %d (clamped to ctrlBlockMinW)", cr, 100+ctrlBlockMinW)
+	}
+
+	// An old move-only override saved the FULL content width — the wrap edge must land
+	// exactly on the default, so nothing shifts on upgrade.
+	legacy := [4]float64{0.1, 0.5, float64(w-2*pad) / w, 0.2}
+	if _, _, _, cr := controlsBlockOrigin(legacy, true, w, h, defY); cr != 100+(w-2*pad) {
+		t.Fatalf("legacy full-width override: wrap edge = %d, want %d", cr, 100+(w-2*pad))
 	}
 }
 
@@ -106,26 +122,37 @@ func TestClassicEdgeAt(t *testing.T) {
 }
 
 // TestPickResizeSlot pins the resize-targeting fix: resize follows the HOVERED box
-// (so "if you can move it, you can resize it"), the move-only control block never grabs
-// a resize (it would do nothing and steal it from a neighbour — the "middle boxes won't
-// resize" bug), and an outer-margin grip falls back to the smallest resizable box.
+// (so "if you can move it, you can resize it"), a slot's inert edges never grab a
+// resize (they would do nothing and steal it from a neighbour — the "middle boxes
+// won't resize" bug), and an outer-margin grip falls back to the smallest resizable
+// box. The control block honours its SIDE edges only (v1.52.0 width re-wrap); the
+// server-tab strip stays fully move-only.
 func TestPickResizeSlot(t *testing.T) {
 	const m = 12
 	reg := map[string]slotInfo{
 		slotOOC:      {cur: sdl.Rect{X: 100, Y: 100, W: 200, H: 100}}, // resizable
-		slotControls: {cur: sdl.Rect{X: 280, Y: 100, W: 60, H: 40}},   // MOVE-ONLY, overlaps ooc's right edge
+		slotTabBar:   {cur: sdl.Rect{X: 280, Y: 100, W: 60, H: 40}},   // MOVE-ONLY, overlaps ooc's right edge
+		slotControls: {cur: sdl.Rect{X: 500, Y: 100, W: 200, H: 60}},  // width-only
 		slotViewport: {cur: sdl.Rect{X: 0, Y: 0, W: 400, H: 400}},     // big, behind everything
 	}
-	keys := []string{slotControls, slotOOC, slotViewport}
+	keys := []string{slotControls, slotTabBar, slotOOC, slotViewport}
 
-	// Hovering OOC, gripping its right edge → resize OOC (not the move-only controls
+	// Hovering OOC, gripping its right edge → resize OOC (not the move-only tab strip
 	// touching the same spot, not the big viewport behind it).
 	if k, e := pickResizeSlot(reg, keys, slotOOC, 296, 150, m); k != slotOOC || e&edgeR == 0 {
 		t.Fatalf("hovering ooc at its right edge must resize ooc/edgeR, got %q/%04b", k, e)
 	}
-	// Hovering the move-only control block → no resize (the caller moves it instead).
-	if k, _ := pickResizeSlot(reg, keys, slotControls, 282, 102, m); k != "" {
-		t.Fatalf("the move-only control block must never resize, got %q", k)
+	// Hovering the move-only tab strip → no resize (the caller moves it instead).
+	if k, _ := pickResizeSlot(reg, keys, slotTabBar, 282, 102, m); k != "" {
+		t.Fatalf("the move-only tab strip must never resize, got %q", k)
+	}
+	// The control block: a SIDE grip resizes its width…
+	if k, e := pickResizeSlot(reg, keys, slotControls, 500, 130, m); k != slotControls || e != edgeL {
+		t.Fatalf("controls left-edge grip must resize width, got %q/%04b", k, e)
+	}
+	// …but a pure top/bottom grip is inert (height is content-driven) → move instead.
+	if k, _ := pickResizeSlot(reg, keys, slotControls, 600, 102, m); k != "" {
+		t.Fatalf("controls top edge must not resize (content-driven height), got %q", k)
 	}
 	// Cursor over no box, in OOC's outer-edge margin → smallest resizable (ooc).
 	if k, _ := pickResizeSlot(reg, keys, "", 100, 150, m); k != slotOOC {
