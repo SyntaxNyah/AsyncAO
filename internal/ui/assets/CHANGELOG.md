@@ -4,6 +4,33 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.52.0 — 2026-07-03
+
+A feature round built from playtest feedback — thanks to Tifera for
+calling all of this out.
+
+- **Chat in ANY colour.** The IC colour dropdown gains "Custom…": a colour
+  wheel with a hex code box. Other AsyncAO players see your exact colour;
+  everyone else automatically sees the closest standard AO colour, so
+  nothing breaks for them. Click the colour swatch to adjust it any time.
+- **Colour individual parts of the layout.** Settings → AsyncAO appearance
+  → "Layout part colours": the IC log column, the OOC box, the emote grid
+  and the chatbox each take their own background colour, picked on the
+  same colour wheel as the custom UI scheme.
+- **The control-button block is resizable now.** Drag its side edges in
+  Edit Layout and the buttons re-wrap to fit — stack them into a side
+  column or a compact corner cluster. It was move-only before.
+- **Ctrl+Z / Ctrl+Y work in the layout editor.** The shortcut system was
+  swallowing the keys before the editor ever saw them — undo did nothing
+  and Ctrl+Y even fired its normal shortcut mid-edit.
+- **The layout editor's top strip no longer piles up.** Box name tags, the
+  server-tab strip and panels stopped drawing over the editor's own banner
+  and buttons.
+- **Ctrl+Z brings back chat text the client removed.** If your typed line
+  disappears after Enter — the send clearing it, a /command, a palette
+  insert — press Ctrl+Z in that box to restore it; press again to swap
+  back to what you were typing.
+
 ## v1.51.2 — 2026-07-03
 
 - **Characters with broken pre-animation entries no longer freeze before
