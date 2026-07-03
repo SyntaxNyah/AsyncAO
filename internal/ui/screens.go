@@ -2128,21 +2128,62 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		return
 	}
 	// IC log tab: search box + Copy/TXT/HTML row, then the colored
-	// scrollback (AO text colors preserved per entry).
+	// scrollback (AO text colors preserved per entry). The row is sized to
+	// the CHROME font: textField vertically centres its text, so a custom
+	// whole-UI font taller than the old fixed 24px box spilled its glyphs
+	// BELOW the field, straight onto the first log line 4px under it
+	// (playtest, Tifera: "the logs overlap with the search bar"). With the
+	// stock font the max() keeps the row at exactly 24px — byte-identical.
 	rowY := inner.Y
-	searchW := inner.W - 3*52 - 12
-	a.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: inner.X, Y: rowY, W: searchW, H: 24}, a.logSearch, "Search log...")
-	bx := inner.X + searchW + 4
-	if c.Button(sdl.Rect{X: bx, Y: rowY, W: 50, H: 24}, "Copy") {
-		a.copyICLog()
+	rowH := logSearchRowH(int32(c.font.Height()))
+	searchW := inner.W - 3*logExportBtnPitch - 12
+	// A layout-edited slot can be too narrow for the export buttons: give the
+	// search field the whole row instead of drawing it at a degenerate width
+	// (the placeholder text has no box to live in at W <= 0).
+	showExports := searchW >= logSearchMinW
+	if !showExports {
+		searchW = inner.W
 	}
-	if c.Button(sdl.Rect{X: bx + 52, Y: rowY, W: 50, H: 24}, "TXT") {
-		a.exportICLog(false)
+	a.logSearch, _ = c.TextField("logsearch", sdl.Rect{X: inner.X, Y: rowY, W: searchW, H: rowH}, a.logSearch, "Search log...")
+	if showExports {
+		bx := inner.X + searchW + 4
+		if c.Button(sdl.Rect{X: bx, Y: rowY, W: logExportBtnW, H: rowH}, "Copy") {
+			a.copyICLog()
+		}
+		if c.Button(sdl.Rect{X: bx + logExportBtnPitch, Y: rowY, W: logExportBtnW, H: rowH}, "TXT") {
+			a.exportICLog(false)
+		}
+		if c.Button(sdl.Rect{X: bx + 2*logExportBtnPitch, Y: rowY, W: logExportBtnW, H: rowH}, "HTML") {
+			a.exportICLog(true)
+		}
 	}
-	if c.Button(sdl.Rect{X: bx + 104, Y: rowY, W: 50, H: 24}, "HTML") {
-		a.exportICLog(true)
+	a.drawICLogList(sdl.Rect{X: inner.X, Y: rowY + rowH + logSearchRowGap, W: inner.W, H: inner.H - rowH - logSearchRowGap})
+}
+
+const (
+	// logSearchRowMinH is the search/export row's historical height — the
+	// floor, so the stock chrome font keeps the exact old geometry.
+	logSearchRowMinH = int32(24)
+	// logSearchRowPadV is the vertical breathing room around the chrome
+	// font inside the search field (glyphs must never leave the box).
+	logSearchRowPadV = int32(8)
+	// logSearchRowGap separates the row from the log list below it.
+	logSearchRowGap = int32(4)
+	// logSearchMinW is the narrowest useful search field; below it the
+	// export buttons yield the row (a layout-edited skinny log slot).
+	logSearchMinW = int32(60)
+	// logExportBtnW/Pitch are the Copy/TXT/HTML button width and spacing.
+	logExportBtnW     = int32(50)
+	logExportBtnPitch = int32(52)
+)
+
+// logSearchRowH sizes the log panel's search/export row to the chrome font,
+// floored at the historical 24px so the stock font is byte-identical.
+func logSearchRowH(fontH int32) int32 {
+	if h := fontH + logSearchRowPadV; h > logSearchRowMinH {
+		return h
 	}
-	a.drawICLogList(sdl.Rect{X: inner.X, Y: rowY + 28, W: inner.W, H: inner.H - 28})
+	return logSearchRowMinH
 }
 
 // unreadDividerH is the thickness of the accent line drawn at the first
