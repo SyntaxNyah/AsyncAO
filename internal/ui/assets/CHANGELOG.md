@@ -4,6 +4,48 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.53.5 — 2026-07-03
+
+A same-day patch round — thanks to Tifera for the report list, DagDag and
+Dag4 for catching the silent rejoin, and Groceries for the recolour idea.
+
+- **The Music tab's volume sliders actually change the volume.** They
+  read and wrote the global levels, which a connected server's own audio
+  profile overrides — so once you'd touched volume anywhere else, these
+  four sliders moved numbers nothing was listening to. They now drive the
+  same per-server levels as every other volume control.
+- **The Players tab follows people between rooms.** A player moving areas
+  arrives as an update that changes nothing but their area — and the list's
+  change detector didn't compare areas, so the room grouping froze until
+  someone joined or left. Moves re-sort the list the moment they happen.
+- **The wardrobe's Iniswaps section stops listing backgrounds.** Some
+  servers publish one combined list of everything streamable; on one
+  playtest server half its iniswap entries were background folders, which
+  wear like a broken character. Known backgrounds are filtered out now
+  (a character that genuinely shares a background's name can still be
+  worn by typing it).
+- **Wrapped messages read as one message.** Continuation lines now hang
+  slightly right of the first line instead of looking like brand-new
+  paragraphs — and hovering a link highlights the whole message block,
+  not just the one line under the cursor (a wrapped link used to light
+  up a single row and look like a separate message).
+- **The UI scale slider sticks.** Dragging it and letting go snapped
+  straight back to the old value: the release frame overwrote the
+  pending scale with the un-applied one, so the commit was a no-op. The
+  drag now commits exactly what you previewed, on release.
+- **Ambience can't silence the music anymore.** Servers stream area
+  ambience as a music packet on its own channel — including one on every
+  join — and the client played it as the room's song, stopping or
+  replacing the real track. Ambience channels are recognised now, so
+  rejoining a server that replays its current song picks the music
+  straight back up.
+- **New: Hue paint.** A recolour that only changes the hue: the plain
+  tint multiplies colours (a colourful sprite just gets darker), while
+  Hue paint sets every pixel to one hue and keeps the sprite's own light
+  and shadow. Tick "Hue paint" in the Sprite Style box and drag the new
+  Hue slider — the Rainbow toggle cycles the paint too, and other
+  AsyncAO players see it exactly as you do (older builds included).
+
 ## v1.53.0 — 2026-07-03
 
 A playtest round — thanks to Nightingale and Tifera for the reports and
