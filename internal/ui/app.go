@@ -1120,7 +1120,14 @@ type sessionState struct {
 	// area-wide delay window (area.can_send_message), so clearing at send
 	// time threw the whole typed line away whenever two people sent at once.
 	icPendingSent string
-	oocInput      string
+	// icUndoText / oocUndoText hold the last line the CLIENT removed from the
+	// IC / OOC input (own-echo clear, a chat command, the OOC send clear, a
+	// palette command insert) — Ctrl+Z with that field focused swaps it back,
+	// and a second press swaps forward again (a free one-slot redo). The
+	// "text disappears after Enter" recovery; per-tab like the drafts.
+	icUndoText  string
+	oocUndoText string
+	oocInput    string
 	// IC message recall (#8): Up/Down in the IC field walk your recently-sent messages,
 	// shell-style. icRecallIdx == -1 = editing the live draft; icRecallDraft stashes that
 	// draft while you browse history. Per-tab (lives in sessionState).

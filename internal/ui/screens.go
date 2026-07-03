@@ -2514,6 +2514,7 @@ func (a *App) submitOOC() {
 	}
 	a.sess.SendOOC(a.oocNameOrDefault(), a.oocInput)
 	a.recordSentOOC(a.oocInput) // remember the raw line for Up-arrow recall (mirrors IC #8)
+	a.stashOOCUndo()            // OOC clears at send (no echo protocol) — recoverable via Ctrl+Z
 	a.oocInput = ""
 }
 
@@ -5177,6 +5178,7 @@ func funColor(text string, color, ext int, rainbow, random bool, randIdx int) (s
 func (a *App) sendIC(shout int) {
 	text := strings.TrimSpace(a.icInput)
 	if cmdHandled := a.handleChatCommand(text); cmdHandled {
+		a.stashICUndo() // commands clear instantly — recoverable via Ctrl+Z
 		a.icInput = ""
 		return
 	}
@@ -5341,10 +5343,27 @@ func (a *App) sendIC(shout int) {
 // re-Enter.
 func (s *sessionState) noteOwnICEcho() {
 	if s.icInput == s.icPendingSent {
+		s.stashICUndo() // the echo consumes the line — keep it for Ctrl+Z
 		s.icInput = ""
 	}
 	s.icPendingSent = ""
 	s.evidPresent = false // presenting is one-shot: consumed by the message that displayed
+}
+
+// stashICUndo / stashOOCUndo remember a non-empty line the CLIENT is about to
+// remove from an input (own-echo clear, chat command, OOC send, palette
+// insert) so inputUndoChord (Ctrl+Z in the field) can swap it back — the
+// "sometimes the text just disappears after Enter" recovery.
+func (s *sessionState) stashICUndo() {
+	if s.icInput != "" {
+		s.icUndoText = s.icInput
+	}
+}
+
+func (s *sessionState) stashOOCUndo() {
+	if s.oocInput != "" {
+		s.oocUndoText = s.oocInput
+	}
 }
 
 // sentHistCap bounds a per-tab message recall ring (#8: IC, and the OOC ring that mirrors it).
