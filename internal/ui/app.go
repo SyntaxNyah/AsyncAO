@@ -968,7 +968,13 @@ type sessionState struct {
 	debugPktBuf    []packetRec // reused recent()-into buffer (alloc-free draw)
 	// Text FX picker (#M5): the FX button opens a floating effect list instead of cycling 13 effects.
 	showFxPicker bool
-	fxBtnRect    sdl.Rect // last-drawn FX button rect (the picker anchors above it + the fence finds it)
+	// showICColorWheel floats the free-hex colour wheel (v1.52.0) anchored to
+	// the IC colour swatch; icSwatchRect remembers where that swatch drew this
+	// frame (either layout), icColorHexBuf is the wheel's hex-field edit buffer.
+	showICColorWheel bool
+	icSwatchRect     sdl.Rect
+	icColorHexBuf    string
+	fxBtnRect        sdl.Rect // last-drawn FX button rect (the picker anchors above it + the fence finds it)
 	// showPowerUser reveals the advanced/power-user Settings options (TLS, Asset Origin, asset
 	// casing) — hidden by default so they're not changed by accident. Session-only.
 	showPowerUser bool
@@ -1178,7 +1184,13 @@ type sessionState struct {
 	// icExtColor selects an extended AsyncAO colour (#98), 1-based into
 	// render.ExtColorAt (icExtColor-1); 0 = none, so the &App{} zero value stays
 	// idle. Mutually exclusive with the wire palette / Rainbow / Random.
-	icExtColor  int
+	icExtColor int
+	// icCustomOn/icCustomRGB: the free hex chat colour (v1.52.0, Tifera). The
+	// exact colour ships as inline `\c#RRGGBB` markup with a nearest-standard
+	// wire fallback (funColor); per-tab like every other colour pick. The last
+	// pick also persists globally (Prefs.ICCustomColorRGB seeds a fresh tab).
+	icCustomOn  bool
+	icCustomRGB int
 	icImmediate bool  // MS Immediate: preanim plays without holding the text (session toggle)
 	icEffect    uint8 // #M5 sticky Text FX (courtroom.TextEffect*); 0 = off. Wraps every message you send.
 	// pair placement (session-scoped: each tab keeps its own, seeded from prefs in

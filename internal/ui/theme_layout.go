@@ -395,6 +395,10 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		swatch := sdl.Rect{X: colorR.X, Y: colorR.Y, W: 12, H: colorR.H}
 		c.Fill(swatch, sw)
 		c.Border(swatch, ColPanelHi)
+		a.icSwatchRect = swatch // the free-hex wheel anchors here (v1.52.0)
+		if a.icCustomOn && c.clicked && c.hovering(swatch) {
+			a.showICColorWheel = !a.showICColorWheel // re-open to adjust (same as the classic row)
+		}
 		if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorR.X + 14, Y: colorR.Y, W: themedColorW, H: colorR.H}, icColorChoices, icSel); changed {
 			a.applyICColorChoice(next)
 		}

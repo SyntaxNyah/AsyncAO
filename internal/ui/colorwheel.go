@@ -208,6 +208,114 @@ func (a *App) ensureColorWheel() *sdl.Texture {
 	return tex
 }
 
+// --- free-hex IC chat colour (v1.52.0, Tifera: "any hex while chatting") ---
+
+// icColorWheelRect is the free-hex picker's floating rect, anchored just above
+// the IC colour swatch (the IC bar sits near the bottom), clamped on-screen —
+// derived from the remembered swatch rect so the draw and the pointer fence
+// agree (the fxPickerRect pattern).
+func (a *App) icColorWheelRect(w, h int32) sdl.Rect {
+	const (
+		pw = 12 + colorWheelDiam + 18 + 26 + 20 + 110 + 12 // wheel · brightness bar · swatch/hex column
+		ph = colorWheelDiam + 40                           // + heading row and padding
+	)
+	x := a.icSwatchRect.X
+	if x+pw > w-4 {
+		x = w - 4 - pw
+	}
+	if x < 4 {
+		x = 4
+	}
+	y := a.icSwatchRect.Y - ph - 6 // above the swatch
+	if y < 4 {
+		y = 4 // tiny window: clamp to the top rather than run off-screen
+	}
+	return sdl.Rect{X: x, Y: y, W: pw, H: ph}
+}
+
+// setICCustomRGB applies a wheel/slider/hex pick: the session colour updates
+// live (the swatch + the next send use it) and the pick persists as the
+// default a fresh tab seeds from.
+func (a *App) setICCustomRGB(rgb int) {
+	a.icCustomRGB = rgb & 0xFFFFFF
+	a.d.Prefs.SetICCustomColor(a.icCustomRGB)
+}
+
+// drawICColorWheel paints the free-hex chat-colour picker: the shared hue/sat
+// disc, a brightness slider, a live swatch and a hex field. A non-blocking
+// floating panel like the FX picker — chat stays live behind it; Esc, the
+// Done chip, or clicking the swatch again closes it.
+func (a *App) drawICColorWheel(w, h int32) {
+	c := a.ctx
+	r := a.icColorWheelRect(w, h)
+	c.Fill(r, ColPanel)
+	c.Border(r, ColAccent)
+	c.Label(r.X+8, r.Y+5, "Chat colour — exact for AsyncAO players, closest AO colour for everyone else", ColTextDim)
+
+	cur := a.icCustomRGB
+	r8, g8, b8 := uint8(cur>>16), uint8(cur>>8), uint8(cur)
+	hh, ss, vv := rgbToHSV(r8, g8, b8)
+
+	const diam = colorWheelDiam
+	rad := float64(diam) / 2
+	wheel := sdl.Rect{X: r.X + 12, Y: r.Y + 26, W: diam, H: diam}
+	if tex := a.ensureColorWheel(); tex != nil {
+		_ = c.Ren.Copy(tex, nil, &wheel)
+	}
+	ang := hh * 2 * math.Pi
+	dotX := wheel.X + int32(rad+math.Cos(ang)*ss*rad)
+	dotY := wheel.Y + int32(rad+math.Sin(ang)*ss*rad)
+	c.Border(sdl.Rect{X: dotX - 5, Y: dotY - 5, W: 10, H: 10}, ColText)
+	c.Border(sdl.Rect{X: dotX - 4, Y: dotY - 4, W: 8, H: 8}, ColBackground)
+	// The popup is drawn over a fenced pointer (hovering() is false under a
+	// modal), so it hit-tests raw like the editor chips do.
+	if c.mouseDown && pointIn(c.mouseX, c.mouseY, wheel) {
+		dx := float64(c.mouseX-wheel.X) - rad
+		dy := float64(c.mouseY-wheel.Y) - rad
+		if dist := math.Hypot(dx, dy); dist <= rad {
+			nh := math.Atan2(dy, dx) / (2 * math.Pi)
+			nr, ng, nb := hsvToRGB(nh, dist/rad, math.Max(vv, 0.05)) // keep brightness (floor so a black pick still shows hue)
+			a.setICCustomRGB(int(nr)<<16 | int(ng)<<8 | int(nb))
+		}
+	}
+
+	// Brightness slider (full at top → black at bottom) of the current hue/sat.
+	sl := sdl.Rect{X: wheel.X + diam + 18, Y: wheel.Y, W: 26, H: diam}
+	for i := int32(0); i < sl.H; i++ {
+		br := 1 - float64(i)/float64(sl.H)
+		rr, gg, bb := hsvToRGB(hh, ss, br)
+		c.Fill(sdl.Rect{X: sl.X, Y: sl.Y + i, W: sl.W, H: 1}, sdl.Color{R: rr, G: gg, B: bb, A: 255})
+	}
+	c.Border(sl, ColPanelHi)
+	knobY := sl.Y + int32((1-vv)*float64(sl.H-4))
+	c.Border(sdl.Rect{X: sl.X - 2, Y: knobY, W: sl.W + 4, H: 4}, ColText)
+	if c.mouseDown && pointIn(c.mouseX, c.mouseY, sl) {
+		nv := clampF64(1-float64(c.mouseY-sl.Y)/float64(sl.H), 0, 1)
+		nr, ng, nb := hsvToRGB(hh, ss, nv)
+		a.setICCustomRGB(int(nr)<<16 | int(ng)<<8 | int(nb))
+	}
+
+	// Swatch + hex field + Done.
+	hx := sl.X + sl.W + 20
+	c.Fill(sdl.Rect{X: hx, Y: wheel.Y, W: 90, H: 34}, sdl.Color{R: r8, G: g8, B: b8, A: 255})
+	c.Border(sdl.Rect{X: hx, Y: wheel.Y, W: 90, H: 34}, ColPanelHi)
+	if c.focusID != "iccustomhex" {
+		a.icColorHexBuf = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
+	}
+	if next, _ := c.TextField("iccustomhex", sdl.Rect{X: hx, Y: wheel.Y + 42, W: 100, H: fieldH}, a.icColorHexBuf, "RRGGBB"); next != a.icColorHexBuf {
+		a.icColorHexBuf = next
+		if rgb, ok := parseHex6(next); ok {
+			a.setICCustomRGB(rgb)
+		}
+	}
+	c.Label(hx, wheel.Y+42+fieldH+4, "hex code", ColTextDim)
+	done := sdl.Rect{X: hx, Y: wheel.Y + diam - btnH, W: 90, H: btnH}
+	a.rawChip(done, "Done")
+	if c.clicked && pointIn(c.mouseX, c.mouseY, done) {
+		a.showICColorWheel = false
+	}
+}
+
 // drawHighlightPicker draws the colour-wheel picker for the selection highlight
 // and returns the next y. Reads/writes the packed pref; the wheel sets hue+sat
 // (keeping the current brightness), the slider sets brightness, the hex field

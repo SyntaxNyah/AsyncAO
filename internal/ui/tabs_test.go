@@ -76,30 +76,38 @@ func TestToggleServerFriend(t *testing.T) {
 	}
 }
 
-// TestFunColor pins the M61 message-colour modes + the extended colours (#98):
-// neither leaves text+colour alone, random swaps the colour, rainbow prefixes
-// \cr and wins over random, an extended colour prepends \c<code> and reports the
-// nearest-standard wire colour, and a blank/space send is never decorated.
+// TestFunColor pins the M61 message-colour modes + the extended colours (#98)
+// + the free hex pick (v1.52.0): neither leaves text+colour alone, random
+// swaps the colour, rainbow prefixes \cr and wins over random, an extended
+// colour prepends \c<code> and reports the nearest-standard wire colour, a
+// custom hex prepends \c#RRGGBB with the nearest wire index and beats ext,
+// and a blank/space send is never decorated.
 func TestFunColor(t *testing.T) {
-	if txt, col := funColor("hi", 4, -1, false, false, 7); txt != "hi" || col != 4 {
+	if txt, col := funColor("hi", 4, -1, -1, false, false, 7); txt != "hi" || col != 4 {
 		t.Errorf("neither: got (%q,%d), want (hi,4)", txt, col)
 	}
-	if txt, col := funColor("hi", 4, -1, false, true, 7); txt != "hi" || col != 7 {
+	if txt, col := funColor("hi", 4, -1, -1, false, true, 7); txt != "hi" || col != 7 {
 		t.Errorf("random: got (%q,%d), want (hi,7)", txt, col)
 	}
-	if txt, col := funColor("hi", 4, -1, true, true, 7); txt != "\\crhi" || col != 4 {
+	if txt, col := funColor("hi", 4, -1, -1, true, true, 7); txt != "\\crhi" || col != 4 {
 		t.Errorf("rainbow wins: got (%q,%d), want (\\crhi,4)", txt, col)
 	}
 	// Extended colour: exact colour rides as inline \c<code>; wire = nearest standard.
 	e := render.ExtColorAt(0)
-	if txt, col := funColor("hi", 2, 0, false, false, 7); txt != "\\c"+string(e.Code)+"hi" || col != e.Wire {
+	if txt, col := funColor("hi", 2, 0, -1, false, false, 7); txt != "\\c"+string(e.Code)+"hi" || col != e.Wire {
 		t.Errorf("ext: got (%q,%d), want (\\c%shi,%d)", txt, col, string(e.Code), e.Wire)
 	}
 	// ext = -1 is "none" even with a non-default base colour.
-	if txt, col := funColor("hi", 2, -1, false, false, 7); txt != "hi" || col != 2 {
+	if txt, col := funColor("hi", 2, -1, -1, false, false, 7); txt != "hi" || col != 2 {
 		t.Errorf("ext none: got (%q,%d), want (hi,2)", txt, col)
 	}
-	if txt, _ := funColor(" ", 4, -1, true, true, 7); txt != " " {
+	// Custom hex: exact colour rides as \c#RRGGBB; the wire falls back to the
+	// nearest standard palette index (pure green → Green, index 1) — and the
+	// custom pick beats a set ext colour.
+	if txt, col := funColor("hi", 4, 0, 0x00ff00, false, false, 7); txt != "\\c#00ff00hi" || col != render.NearestTextColorIndex(0, 255, 0) {
+		t.Errorf("custom hex: got (%q,%d), want (\\c#00ff00hi,%d)", txt, col, render.NearestTextColorIndex(0, 255, 0))
+	}
+	if txt, _ := funColor(" ", 4, -1, 0x00ff00, true, true, 7); txt != " " {
 		t.Error("a blank/space send must be left undecorated")
 	}
 }

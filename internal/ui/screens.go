@@ -4270,6 +4270,10 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	icSel, sw := a.icColorSelected()
 	c.Fill(swatch, sw)
 	c.Border(swatch, ColPanelHi)
+	a.icSwatchRect = swatch // the free-hex wheel anchors here (v1.52.0)
+	if a.icCustomOn && c.clicked && c.hovering(swatch) {
+		a.showICColorWheel = !a.showICColorWheel // re-open to adjust (re-picking "Custom…" in the dropdown doesn't fire changed)
+	}
 	colorDDW := colorBox.W - 32
 	if colorDDW < 60 {
 		colorDDW = 60 // floor: the dropdown stays clickable however small the slot is dragged
@@ -5156,10 +5160,12 @@ func (a *App) pairLabel() string {
 // first: /pair, /unpair, /offset — AO2-Client parity).
 // funColor applies the optional outgoing message-colour modes (M61, both off by
 // default): rainbow wraps the text in the \cr inline-colour markup (per-rune
-// palette cycle), else random swaps the message's palette colour. Pure (the
-// random index is supplied) so the rule is testable; blank/space sends are left
-// alone, and rainbow wins if both are set.
-func funColor(text string, color, ext int, rainbow, random bool, randIdx int) (string, int) {
+// palette cycle), else random swaps the message's palette colour. customRGB ≥ 0
+// is the free hex pick (v1.52.0, Tifera): the exact colour rides as `\c#RRGGBB`
+// markup for AsyncAO clients, the wire text_color falls back to the nearest
+// standard index. Pure (the random index is supplied) so the rule is testable;
+// blank/space sends are left alone, and rainbow wins if several are set.
+func funColor(text string, color, ext, customRGB int, rainbow, random bool, randIdx int) (string, int) {
 	if text == "" || text == " " {
 		return text, color
 	}
@@ -5168,6 +5174,9 @@ func funColor(text string, color, ext int, rainbow, random bool, randIdx int) (s
 		return "\\cr" + text, color
 	case random:
 		return text, randIdx
+	case customRGB >= 0:
+		return fmt.Sprintf("\\c#%06x%s", customRGB&0xFFFFFF, text),
+			render.NearestTextColorIndex(uint8(customRGB>>16), uint8(customRGB>>8), uint8(customRGB))
 	case ext >= 0 && ext < render.ExtColorCount():
 		// Extended AsyncAO colour (#98): the exact colour rides as inline markup
 		// (AsyncAO renders it); the wire text_color is the nearest standard index
@@ -5243,7 +5252,11 @@ func (a *App) sendIC(shout int) {
 	a.applyAutoStatus(text)
 	// M61 fun colour: rainbow (\cr prefix), an extended AsyncAO colour (\c<letter>
 	// + nearest-standard wire fallback, #98), or a random palette colour per message.
-	text, msgColor := funColor(text, a.icColor, a.icExtColor-1, a.d.Prefs.RainbowMessagesOn(), a.d.Prefs.RandomMessageColorOn(), rand.IntN(render.TextColorCount))
+	customRGB := -1
+	if a.icCustomOn {
+		customRGB = a.icCustomRGB
+	}
+	text, msgColor := funColor(text, a.icColor, a.icExtColor-1, customRGB, a.d.Prefs.RainbowMessagesOn(), a.d.Prefs.RandomMessageColorOn(), rand.IntN(render.TextColorCount))
 	// Transmitted sprite style (#103): append the invisible zero-width marker at
 	// the END of the text — other AsyncAO clients decode + render it on this
 	// character; AO2/webAO see nothing. End placement keeps the visible text intact
@@ -5669,17 +5682,18 @@ var (
 	extColorFirst     = len(render.TextColorNames())
 	icColorRainbowIdx = extColorFirst + render.ExtColorCount()
 	icColorRandomIdx  = icColorRainbowIdx + 1
+	icColorCustomIdx  = icColorRandomIdx + 1
 	icColorChoices    = buildICColorChoices()
 )
 
 // buildICColorChoices assembles the dropdown label list once at init: standard
-// palette names, extended colour names, then Rainbow/Random.
+// palette names, extended colour names, then Rainbow/Random/Custom.
 func buildICColorChoices() []string {
 	out := append([]string{}, render.TextColorNames()...)
 	for i := 0; i < render.ExtColorCount(); i++ {
 		out = append(out, render.ExtColorAt(i).Name)
 	}
-	return append(out, "Rainbow", "Random")
+	return append(out, "Rainbow", "Random", "Custom…")
 }
 
 // applyICColorChoice routes an IC colour-dropdown selection (shared by the
@@ -5689,7 +5703,17 @@ func buildICColorChoices() []string {
 // a.icExtColor and ship as inline markup with a nearest-standard wire fallback,
 // so the wire field never leaves 0..8 (#98).
 func (a *App) applyICColorChoice(next int) {
+	a.icCustomOn = false // every non-Custom pick turns the free hex off (mutual exclusion)
 	switch {
+	case next == icColorCustomIdx:
+		// Free hex pick (v1.52.0, Tifera): seed from the last persisted custom
+		// colour and open the wheel. Selecting Custom… again just reopens it.
+		a.icCustomOn = true
+		a.icCustomRGB = a.d.Prefs.ICCustomColorRGB()
+		a.showICColorWheel = true
+		a.d.Prefs.SetRainbowMessages(false)
+		a.d.Prefs.SetRandomMessageColor(false)
+		a.icExtColor = 0
 	case next == icColorRainbowIdx:
 		a.d.Prefs.SetRainbowMessages(true)
 		a.d.Prefs.SetRandomMessageColor(false)
@@ -5719,6 +5743,8 @@ func (a *App) icColorSelected() (sel int, swatch sdl.Color) {
 		return icColorRainbowIdx, chatRainbow[0]
 	case a.d.Prefs.RandomMessageColorOn():
 		return icColorRandomIdx, ColTextDim
+	case a.icCustomOn:
+		return icColorCustomIdx, sdl.Color{R: uint8(a.icCustomRGB >> 16), G: uint8(a.icCustomRGB >> 8), B: uint8(a.icCustomRGB), A: 255}
 	case a.icExtColor > 0 && a.icExtColor <= render.ExtColorCount():
 		return extColorFirst + a.icExtColor - 1, render.ExtColorAt(a.icExtColor - 1).Color
 	default:
@@ -5751,6 +5777,10 @@ func buildColorSpans(styles []courtroom.StyleRun, def sdl.Color) []render.ColorS
 			}
 		case s.Color == courtroom.ColorDefault:
 			out = append(out, render.ColorSpan{Len: s.Len, Color: def, Bold: s.Bold, Italic: s.Italic})
+		case s.Color >= courtroom.ColorHexBase: // exact transmitted hex (v1.52.0): unpack 0xRRGGBB
+			rgb := s.Color - courtroom.ColorHexBase
+			col := sdl.Color{R: uint8(rgb >> 16), G: uint8(rgb >> 8), B: uint8(rgb), A: 255}
+			out = append(out, render.ColorSpan{Len: s.Len, Color: col, Bold: s.Bold, Italic: s.Italic})
 		case s.Color >= courtroom.ColorExtBase: // extended AsyncAO color (#98): resolve by inline letter
 			col, ok := render.ExtColorByCode(byte(s.Color - courtroom.ColorExtBase))
 			if !ok {

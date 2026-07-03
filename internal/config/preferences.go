@@ -253,6 +253,11 @@ const defaultClipSpritesToStage = true
 // someone /played. Toggleable off in Settings.
 const defaultMusicHistory = true
 
+// defaultICCustomColor seeds the free IC hex colour picker (v1.52.0) before
+// the user's first pick: a readable sky-blue on the dark chatbox, packed
+// 0xRRGGBB like the highlight colour below.
+const defaultICCustomColor = 0x7ADCF0
+
 // defaultHighlightColor is the IC/OOC log text-selection highlight, packed
 // 0xRRGGBB — defaults to the accent (120,170,255) so the look is unchanged
 // until the user customizes it in Settings.
@@ -680,6 +685,7 @@ type AssetPreferences struct {
 	SmoothScaling          bool                         `json:"smoothScaling"`
 	UpdateCheck            bool                         `json:"updateCheck"`
 	HighlightColor         int                          `json:"highlightColor"`
+	ICCustomColor          int                          `json:"icCustomColor"` // last free IC hex pick (packed 0xRRGGBB; v1.52.0)
 	NameColors             bool                         `json:"nameColors"`
 	NameSat                int                          `json:"nameColorSat"`
 	NameVal                int                          `json:"nameColorVal"`
@@ -986,6 +992,7 @@ type prefsJSON struct {
 	SmoothScaling          *bool            `json:"smoothScaling"`
 	UpdateCheck            *bool            `json:"updateCheck"`    // absent = default ON
 	HighlightColor         *int             `json:"highlightColor"` // absent = default accent
+	ICCustomColor          *int             `json:"icCustomColor"`  // absent = defaultICCustomColor
 	BgSlideshow            bool             `json:"bgSlideshow"`    // default OFF (zero value)
 	BgSlideshowSecs        int              `json:"bgSlideshowSecs"`
 	DownloadKBps           int              `json:"downloadKBps"`         // 0 = unlimited (default)
@@ -1489,6 +1496,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		MusicHistory:           defaultMusicHistory,
 		MusicHosts:             defaultMusicHostList(),
 		HighlightColor:         defaultHighlightColor,
+		ICCustomColor:          defaultICCustomColor,
 		NameSat:                defaultNameColorSat,
 		NameVal:                defaultNameColorVal,
 		BgSlideshowSecs:        defaultBgSlideshowSecs,
@@ -1562,6 +1570,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.HighlightColor != nil {
 		p.HighlightColor = *onDisk.HighlightColor & 0xFFFFFF
+	}
+	if onDisk.ICCustomColor != nil {
+		p.ICCustomColor = *onDisk.ICCustomColor & 0xFFFFFF
 	}
 	p.BgSlideshow = onDisk.BgSlideshow
 	if onDisk.BgSlideshowSecs > 0 { // 0 (absent) keeps the New() default
@@ -2715,6 +2726,27 @@ func (p *AssetPreferences) SetHighlightColor(rgb int) {
 		return
 	}
 	p.HighlightColor = rgb
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ICCustomColorRGB returns the last free IC hex pick, packed 0xRRGGBB
+// (v1.52.0 — seeds the colour wheel; defaultICCustomColor until first use).
+func (p *AssetPreferences) ICCustomColorRGB() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ICCustomColor & 0xFFFFFF
+}
+
+// SetICCustomColor persists the free IC hex pick (packed 0xRRGGBB).
+func (p *AssetPreferences) SetICCustomColor(rgb int) {
+	rgb &= 0xFFFFFF
+	p.mu.Lock()
+	if p.ICCustomColor == rgb {
+		p.mu.Unlock()
+		return
+	}
+	p.ICCustomColor = rgb
 	p.mu.Unlock()
 	p.markDirty()
 }

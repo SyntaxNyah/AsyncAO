@@ -269,6 +269,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showModDash = false
 	case a.showDebugPanel:
 		a.showDebugPanel = false
+	case a.showICColorWheel:
+		a.showICColorWheel = false
 	case a.showFxPicker:
 		a.showFxPicker = false
 	case a.showCMPanel:
@@ -430,6 +432,9 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return true
 	}
 	if a.showFxPicker && pointIn(mx, my, a.fxPickerRect(w, h)) { // the Text FX picker fences too
+		return true
+	}
+	if a.showICColorWheel && pointIn(mx, my, a.icColorWheelRect(w, h)) { // the free-hex colour wheel fences too (v1.52.0)
 		return true
 	}
 	if a.banBoxKind != 0 && pointIn(mx, my, a.banBoxRect(w, h)) { // the ban/kick box fences too
@@ -604,6 +609,9 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	}
 	if a.showFxPicker {
 		a.drawFxPicker(w, h)
+	}
+	if a.showICColorWheel {
+		a.drawICColorWheel(w, h)
 	}
 	if a.showCMPanel {
 		a.drawCMPanel(w, h, &pressed)

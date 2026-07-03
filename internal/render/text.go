@@ -84,6 +84,24 @@ func ExtColorByCode(code byte) (sdl.Color, bool) {
 	return textColors[0], false
 }
 
+// NearestTextColorIndex maps an arbitrary RGB to the closest standard AO
+// palette index (0..8) by squared RGB distance — the wire text_color fallback
+// for a custom hex pick (v1.52.0), same contract as ExtColor.Wire: the MS
+// field must stay 0..8 or strict servers (LemmyAO-style) drop the message,
+// while non-AsyncAO clients still see a sensible colour.
+func NearestTextColorIndex(r, g, b uint8) int {
+	best, bestD := 0, 1<<62
+	for i := range textColors {
+		dr := int(textColors[i].R) - int(r)
+		dg := int(textColors[i].G) - int(g)
+		db := int(textColors[i].B) - int(b)
+		if d := dr*dr + dg*dg + db*db; d < bestD {
+			best, bestD = i, d
+		}
+	}
+	return best
+}
+
 // rasterLine is one wrapped line: a texture plus per-rune prefix advances so
 // the reveal is a pure src-rect width (spec §12: no per-character
 // layout, no texture churn).

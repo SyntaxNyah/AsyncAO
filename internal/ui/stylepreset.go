@@ -22,6 +22,7 @@ func (a *App) applyStylePreset(p config.StylePreset) {
 	a.d.Prefs.SetSpriteStyle(p.Style)
 	a.icColor = p.Color
 	a.icExtColor = 0
+	a.icCustomOn = false // a preset picks a palette colour — the free hex turns off
 	if p.Emote != "" {
 		for i := range a.emotes {
 			if strings.EqualFold(a.emotes[i].Anim, p.Emote) {

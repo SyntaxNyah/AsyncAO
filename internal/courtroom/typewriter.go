@@ -38,6 +38,12 @@ const (
 	// above the palette/sentinels so the buildColorSpans switch can branch on
 	// `Color >= ColorExtBase`.
 	ColorExtBase = 0x1000
+	// ColorHexBase tags an EXACT transmitted colour (v1.52.0, Tifera's "any
+	// hex while chatting"): StyleRun.Color is ColorHexBase + 0xRRGGBB, parsed
+	// from the inline `\c#RRGGBB` code. Sits above ColorExtBase + any letter
+	// (≈0x107A) so the render switch can branch `>= ColorHexBase` first; the
+	// packed range spans exactly 24 bits, so the two can never collide.
+	ColorHexBase = 0x2000
 )
 
 // ExtColorCodes gates which `\c<letter>` codes the parser consumes as extended
@@ -53,16 +59,42 @@ func isExtColorCode(r rune) bool {
 	return r >= 'a' && r <= 'z' && strings.IndexByte(ExtColorCodes, byte(r)) >= 0
 }
 
+// parseInlineHex reads the six hex digits of a `\c#RRGGBB` code; at indexes
+// the '#'. A short or malformed code returns ok=false and the caller keeps
+// the text literal (the standing rule for any unrecognised `\X`). Shared by
+// Start and StripChatMarkup so the two can't drift.
+func parseInlineHex(rs []rune, at int) (rgb int, ok bool) {
+	if at+6 >= len(rs) {
+		return 0, false
+	}
+	for k := at + 1; k <= at+6; k++ {
+		var d int
+		switch r := rs[k]; {
+		case r >= '0' && r <= '9':
+			d = int(r - '0')
+		case r >= 'a' && r <= 'f':
+			d = int(r-'a') + 10
+		case r >= 'A' && r <= 'F':
+			d = int(r-'A') + 10
+		default:
+			return 0, false
+		}
+		rgb = rgb<<4 | d
+	}
+	return rgb, true
+}
+
 // StyleRun styles a contiguous span of the CLEAN (markup-stripped) rune
 // sequence. Runs are produced in order and partition the whole message, so
 // they index into the typewriter's runes by simple accumulation — the reveal
 // and the styling can never drift (one parse, one rune sequence). Inline markup
 // is AsyncAO-native and render-only: `\cN` (N = 0..8) starts a palette color,
-// `\cr` rainbow, `\c<letter>` an extended AsyncAO color (#98), `\b` toggles
-// bold, `\i` toggles italic, `\\` is a literal backslash. Incoming AO messages
-// (which don't use these) are unaffected; markup you send won't render on stock
-// AO clients (they drop the escape — extended colors carry a nearest-standard
-// wire fallback so those clients still see a sensible colour).
+// `\cr` rainbow, `\c<letter>` an extended AsyncAO color (#98), `\c#RRGGBB` an
+// EXACT hex color (v1.52.0), `\b` toggles bold, `\i` toggles italic, `\\` is a
+// literal backslash. Incoming AO messages (which don't use these) are
+// unaffected; markup you send won't render on stock AO clients (they drop the
+// escape — extended and hex colors carry a nearest-standard wire fallback so
+// those clients still see a sensible colour).
 type StyleRun struct {
 	Len    int  // clean runes covered
 	Color  int  // palette index, ColorDefault / ColorRainbow, or ColorExtBase+code
@@ -168,6 +200,17 @@ func (t *Typewriter) Start(message string) {
 				}
 				i += 2
 				continue
+			case n == 'c' && i+2 < len(rs) && rs[i+2] == '#':
+				// Exact hex colour `\c#RRGGBB` (v1.52.0). Malformed hex exits
+				// the switch → the backslash (and the rest) stays literal.
+				if rgb, hok := parseInlineHex(rs, i+2); hok {
+					if hc := ColorHexBase + rgb; hc != color {
+						flush()
+						color = hc
+					}
+					i += 8 // past \c#RRGGBB
+					continue
+				}
 			case n == 'b': // toggle bold
 				flush()
 				bold = !bold
@@ -207,6 +250,11 @@ func StripChatMarkup(message string) string {
 			case n == 'c' && i+2 < len(rs) && ((rs[i+2] >= '0' && rs[i+2] <= '8') || rs[i+2] == 'r' || isExtColorCode(rs[i+2])):
 				i += 2
 				continue
+			case n == 'c' && i+2 < len(rs) && rs[i+2] == '#':
+				if _, hok := parseInlineHex(rs, i+2); hok { // exact hex (v1.52.0); malformed stays literal
+					i += 8
+					continue
+				}
 			case n == 'b' || n == 'i': // bold / italic toggles
 				i++
 				continue

@@ -1459,6 +1459,11 @@ func TestStripMatchesTypewriter(t *testing.T) {
 		"\\bbold\\b and \\iitalic\\i text",
 		"\\b\\c2 bold red \\inested\\i\\b plain",
 		"\\cppurple\\c0 then white and \\cz kept",
+		"\\c#ff8800exact hex\\c0 back",
+		"\\c#ABCDEFupper hex too",
+		"\\c#12345 too short stays literal",
+		"\\c#zzzzzz not hex stays literal",
+		"tail cut \\c#ff",
 		"",
 	}
 	for _, m := range cases {
@@ -1466,6 +1471,29 @@ func TestStripMatchesTypewriter(t *testing.T) {
 		if got, want := StripChatMarkup(m), tw.Text(); got != want {
 			t.Errorf("StripChatMarkup(%q) = %q, typewriter = %q", m, got, want)
 		}
+	}
+}
+
+// TestHexColorRun pins the free-hex inline code (v1.52.0): `\c#RRGGBB` tags a
+// run with ColorHexBase + the packed RGB (case-insensitive digits), a malformed
+// code stays literal (the standing `\X` rule), and the code letters after a
+// consumed hex run stay plain text.
+func TestHexColorRun(t *testing.T) {
+	tw := NewTypewriter()
+	tw.Start("\\c#ff8800hi")
+	if got := tw.Styles(); len(got) != 1 || got[0] != (StyleRun{Len: 2, Color: ColorHexBase + 0xff8800}) {
+		t.Fatalf("hex styles = %v, want one run of 2 @ ColorHexBase+0xff8800", got)
+	}
+	if tw.Text() != "hi" {
+		t.Fatalf("hex code must be consumed, text = %q", tw.Text())
+	}
+	tw.Start("\\c#AbCdEfhi")
+	if got := tw.Styles(); len(got) != 1 || got[0].Color != ColorHexBase+0xabcdef {
+		t.Fatalf("mixed-case hex = %v, want ColorHexBase+0xabcdef", got)
+	}
+	tw.Start("\\c#12g456hi") // 'g' is not hex → the whole thing stays literal
+	if tw.Text() != "\\c#12g456hi" {
+		t.Fatalf("malformed hex must stay literal, text = %q", tw.Text())
 	}
 }
 
