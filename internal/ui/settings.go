@@ -749,6 +749,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 
 	y = a.settingsSection(y, w, "AsyncAO appearance")
 	y = a.drawChromeSettings(y, w)
+	y = a.drawPartColorSettings(y) // per-part layout tints (v1.52.0, Tifera)
 	y += 8
 
 	y = a.settingsSection(y, w, "Display & behaviour")

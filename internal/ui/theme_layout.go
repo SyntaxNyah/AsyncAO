@@ -619,6 +619,9 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	}
 	if !skinned {
 		bg := sdl.Color{R: 16, G: 16, B: 24, A: 215}
+		if col, ok := a.partPanel(partChatbox); ok { // per-part tint (v1.52.0): custom base, opacity kept
+			bg = sdl.Color{R: col.R, G: col.G, B: col.B, A: bg.A}
+		}
 		if a.d.Prefs.ChatboxTintOn() && sc.ShownameText != "" { // #14 per-character tint
 			bg = chatboxTintFor(sc.ShownameText, bg)
 		}

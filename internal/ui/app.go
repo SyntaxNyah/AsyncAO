@@ -975,6 +975,12 @@ type sessionState struct {
 	icSwatchRect     sdl.Rect
 	icColorHexBuf    string
 	fxBtnRect        sdl.Rect // last-drawn FX button rect (the picker anchors above it + the fence finds it)
+	// Per-part layout colours (v1.52.0): the parsed draw cache (refreshPartColors),
+	// the Settings wheel's selected part, and its hex-field edit buffer.
+	partColors   [config.LayoutPartColorCount]sdl.Color
+	partColorOn  [config.LayoutPartColorCount]bool
+	partEditSlot int
+	partHexBuf   string
 	// showPowerUser reveals the advanced/power-user Settings options (TLS, Asset Origin, asset
 	// casing) — hidden by default so they're not changed by accident. Session-only.
 	showPowerUser bool
@@ -1981,6 +1987,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		}
 	}
 	a.applyChromePreset(d.Prefs.ChromeTheme()) // #M3: apply the saved client chrome theme at launch
+	a.refreshPartColors()                      // per-part layout tints (v1.52.0): parse the saved hexes once
 	return a
 }
 

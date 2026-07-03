@@ -903,6 +903,7 @@ type AssetPreferences struct {
 	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	CustomChromeHex    [7]string                 `json:"customChrome"`          // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
+	LayoutPartHex      [4]string                 `json:"layoutPartColors"`      // per-layout-part panel tints (v1.52.0): hex rrggbb for log/OOC/emotes/chatbox, blank = chrome default (count pinned by LayoutPartColorCount)
 	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
 	BlipRate           int                       `json:"blipRate"`              // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
 	BlipOnSpaces       bool                      `json:"blipOnSpaces"`          // also blip on spaces (default OFF = skip whitespace)
@@ -1206,6 +1207,7 @@ type prefsJSON struct {
 	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
 	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
 	CustomChromeHex    [7]string                 `json:"customChrome"`          // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
+	LayoutPartHex      [4]string                 `json:"layoutPartColors"`      // per-layout-part panel tints (v1.52.0): hex rrggbb for log/OOC/emotes/chatbox, blank = chrome default (count pinned by LayoutPartColorCount)
 	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
 	BlipRate           int                       `json:"blipRate"`              // play one chat blip per N revealed letters (default 2 = Ace Attorney style; 1 = every letter)
 	BlipOnSpaces       bool                      `json:"blipOnSpaces"`          // also blip on spaces (default OFF = skip whitespace)
@@ -1919,6 +1921,7 @@ func load(path string) (*AssetPreferences, error) {
 		p.OOCScalePct = p.LogScalePct
 	}
 	p.CustomChromeHex = onDisk.CustomChromeHex // hex strings; validated (parsed/ignored) at apply time
+	p.LayoutPartHex = onDisk.LayoutPartHex     // same contract: parsed/ignored at apply time, blank = default
 	p.BoldNamesOff = onDisk.BoldNamesOff       // inverted: absent (false) = bold names ON
 	if onDisk.InputHeightPct != 0 {
 		p.InputHeightPct = clampPercent(onDisk.InputHeightPct, MinInputPercent, MaxInputPercent)
@@ -5395,6 +5398,35 @@ func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
 		return
 	}
 	p.CustomChromeHex = hex
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// LayoutPartColorCount is the number of individually-tintable layout parts
+// (v1.52.0, Tifera: "color individual parts of the layout"). The ui package
+// owns the index meanings (log / OOC / emote grid / chatbox); this package
+// just stores the hex slots, blank = use the chrome default.
+const LayoutPartColorCount = 4
+
+// LayoutPartColors returns the per-part hex overrides (rrggbb; "" = default).
+func (p *AssetPreferences) LayoutPartColors() [LayoutPartColorCount]string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.LayoutPartHex
+}
+
+// SetLayoutPartColor stores one part's hex override ("" clears it back to the
+// chrome default). Out-of-range indices are ignored.
+func (p *AssetPreferences) SetLayoutPartColor(i int, hex string) {
+	if i < 0 || i >= LayoutPartColorCount {
+		return
+	}
+	p.mu.Lock()
+	if p.LayoutPartHex[i] == hex {
+		p.mu.Unlock()
+		return
+	}
+	p.LayoutPartHex[i] = hex
 	p.mu.Unlock()
 	p.markDirty()
 }

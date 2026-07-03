@@ -1341,7 +1341,7 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 			}
 		}
 	}
-	c.Fill(box, ColPanel)
+	c.Fill(box, a.partPanelOr(partOOC, ColPanel)) // per-part tint (v1.52.0)
 	c.Border(box, ColAccent)
 	// Titled header bar so it reads as a clean, distinct box (brighter label = legible at a glance).
 	hdr := sdl.Rect{X: box.X + 1, Y: box.Y + 1, W: box.W - 2, H: cleanHeaderH}
@@ -1752,6 +1752,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// render gate (that's render.Viewport; this UI overlay already reads prefs).
 		alpha := uint8(255 * a.d.Prefs.ChatboxOpacityPct() / 100)
 		bg := sdl.Color{R: 16, G: 16, B: 24, A: alpha}
+		if col, ok := a.partPanel(partChatbox); ok { // per-part tint (v1.52.0): custom base, opacity kept
+			bg = sdl.Color{R: col.R, G: col.G, B: col.B, A: alpha}
+		}
 		if a.d.Prefs.ChatboxTintOn() && sc.ShownameText != "" { // #14 per-character tint
 			bg = chatboxTintFor(sc.ShownameText, bg)
 		}
@@ -2046,8 +2049,8 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 
 func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
-	c.Fill(r, ColPanel)
-	c.Border(r, ColAccent) // match the rest of the UI (buttons/OOC box/panels all border in the accent) — playtest: the log panel was the lone grey outline
+	c.Fill(r, a.partPanelOr(partLog, ColPanel)) // per-part tint (v1.52.0): the log column can carry its own colour
+	c.Border(r, ColAccent)                      // match the rest of the UI (buttons/OOC box/panels all border in the accent) — playtest: the log panel was the lone grey outline
 	// A "🔊" toggle at the right end drops a compact volume strip above the panel
 	// content — adjust volume while the log stays on screen and you keep chatting
 	// (the IC box below is untouched). The tabs share the rest of the row.
@@ -4477,6 +4480,11 @@ func (a *App) previewEmote(char string, e *courtroom.Emote) {
 
 func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
+	// Per-part tint (v1.52.0): the grid has NO backing panel by default, so a
+	// set colour ADDS one — un-set stays exactly as before (no fill at all).
+	if col, ok := a.partPanel(partEmotes); ok {
+		c.Fill(r, col)
+	}
 	if a.charINIBusy {
 		c.Label(r.X, r.Y, "Loading emotes...", ColTextDim)
 		return
