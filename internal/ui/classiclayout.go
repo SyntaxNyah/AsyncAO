@@ -530,31 +530,15 @@ func (a *App) drawClassicEditor(w, h int32) {
 		return
 	}
 
-	// Banner: a short title + ONE concise hint + the toolbar chips (raw-hit — the
-	// fence blocks kit buttons). The full per-box context lives on the bottom line, so
-	// the top stays calm instead of a wall of instructions.
-	// Translucent so widgets parked in the top strip stay visible through it while
-	// editing (you can now drag boxes up there — playtest: "make use of that space").
-	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 150})
-	c.Label(pad, 6, "Edit Layout", ColTierYellow)
+	// Banner GEOMETRY first — the click handlers below read these rects. The
+	// paint happens at the very END of this function, so the editor's own
+	// chrome always sits above slot outlines, name tags and the tab strip: a
+	// box parked in the top strip used to plaster its tag straight over the
+	// Snap/Done buttons (the "layering mess" playtest shot).
 	doneBtn := sdl.Rect{X: w - 62 - pad, Y: 2, W: 62, H: classicBannerH - 4}
 	resetBtn := sdl.Rect{X: doneBtn.X - 90 - 6, Y: 2, W: 90, H: classicBannerH - 4}
-	snapLabel := "Snap: off"
-	if a.layoutSnap {
-		snapLabel = "Snap: on"
-	}
 	snapBtn := sdl.Rect{X: resetBtn.X - 92 - 6, Y: 2, W: 92, H: classicBannerH - 4}
-	aspectLabel := "4:3: off"
-	if a.layoutAspect {
-		aspectLabel = "4:3: on"
-	}
 	aspectBtn := sdl.Rect{X: snapBtn.X - 80 - 6, Y: 2, W: 80, H: classicBannerH - 4}
-	hintX := pad + c.TextWidth("Edit Layout") + 18
-	c.LabelClipped(hintX, 6, aspectBtn.X-hintX-10, "Drag to move · edge to resize · Alt = move · Shift = precise · the top strip is free to use", ColTextDim)
-	a.rawChip(aspectBtn, aspectLabel)
-	a.rawChip(snapBtn, snapLabel)
-	a.rawChip(resetBtn, "Reset all")
-	a.rawChip(doneBtn, "Done")
 
 	pressed := c.mouseDown && !a.classicEditPrev
 	a.classicEditPrev = c.mouseDown
@@ -822,6 +806,28 @@ func (a *App) drawClassicEditor(w, h int32) {
 			c.Border(r, dimEdge) // resting: structure only, no clutter
 		}
 	}
+	// Editor chrome LAST — topmost over every outline, tag and strip. It stays
+	// translucent so widgets parked in the top strip remain visible through it
+	// (you can drag boxes up there — playtest: "make use of that space"). A
+	// side effect of painting after the click handlers: the Snap/4:3 labels
+	// show the state a click just set, not last frame's.
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: classicBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 150})
+	c.Label(pad, 6, "Edit Layout", ColTierYellow)
+	snapLabel := "Snap: off"
+	if a.layoutSnap {
+		snapLabel = "Snap: on"
+	}
+	aspectLabel := "4:3: off"
+	if a.layoutAspect {
+		aspectLabel = "4:3: on"
+	}
+	hintX := pad + c.TextWidth("Edit Layout") + 18
+	c.LabelClipped(hintX, 6, aspectBtn.X-hintX-10, "Drag to move · edge to resize · Alt = move · Shift = precise · the top strip is free to use", ColTextDim)
+	a.rawChip(aspectBtn, aspectLabel)
+	a.rawChip(snapBtn, snapLabel)
+	a.rawChip(resetBtn, "Reset all")
+	a.rawChip(doneBtn, "Done")
+
 	switch { // bottom line: the per-box context (kept off the busy top banner)
 	case a.classicEditKey != "":
 		c.Label(pad, h-22, "Moving "+classicSlotLabel(a.classicEditKey)+"  ·  release to save", ColText)
@@ -864,7 +870,10 @@ func (a *App) drawSlotHandles(r sdl.Rect, key string, col sdl.Color) {
 // drawSlotTag floats a slot's name on a small dark pill just ABOVE the box (so it
 // never covers the box's own content), tucking it just inside the top edge only when
 // there's no room above. Drawn only for the hovered / active slot, so at most one tag
-// shows at a time — no labels plastered across every box.
+// shows at a time — no labels plastered across every box. Tags never enter the
+// editor's stacked top chrome (banner + tray + toolbox, bottom recorded by
+// drawClassicToolbox): a box parked in the top strip gets its tag just BELOW the
+// chrome instead of over the hint text and buttons.
 func (a *App) drawSlotTag(r sdl.Rect, key string, col sdl.Color) {
 	c := a.ctx
 	label := classicSlotLabel(key)
@@ -873,9 +882,16 @@ func (a *App) drawSlotTag(r sdl.Rect, key string, col sdl.Color) {
 	if tw > r.W && r.W > 0 {
 		tw = r.W
 	}
+	chromeBot := a.classicChromeBot
+	if chromeBot < classicBannerH { // toolbox not drawn this frame (shouldn't happen mid-edit): at least clear the banner
+		chromeBot = classicBannerH
+	}
 	tagY := r.Y - th - 2
-	if tagY < classicBannerH+2 { // top boxes: no room above → tuck inside the top edge
+	if tagY < chromeBot+2 { // top boxes: no room above → tuck inside the top edge…
 		tagY = r.Y + 2
+		if tagY < chromeBot+2 { // …unless the box top itself is under the chrome
+			tagY = chromeBot + 2
+		}
 	}
 	tag := sdl.Rect{X: r.X, Y: tagY, W: tw, H: th}
 	c.Fill(tag, sdl.Color{R: 12, G: 14, B: 20, A: 235})

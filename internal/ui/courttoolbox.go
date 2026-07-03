@@ -103,6 +103,7 @@ func (a *App) drawClassicToolbox(w, h int32, pressed bool) bool {
 	}
 	stripH := 18 + rows*toolboxRowPitch + 4
 	strip := sdl.Rect{X: 0, Y: toolboxTop - 4, W: w, H: stripH}
+	a.classicChromeBot = strip.Y + strip.H // the lowest editor chrome strip: slot tags clamp below it
 	over := pointIn(c.mouseX, c.mouseY, strip)
 	// "Drop here to hide" affordance: while dragging a slotted piece, the strip arms
 	// (greenish) and the heading invites the release (slice 2a drag-to-hide).

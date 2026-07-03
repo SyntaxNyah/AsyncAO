@@ -1294,6 +1294,7 @@ func (a *App) drawCourtroom(w, h int32) {
 	if a.classicEdit {
 		a.drawTornTabs(w, h)
 		a.drawMessagesSlotGhost(w, h) // Group Chat panel: inert placeholder so the editor gives it handles
+		a.drawTabBar(w, h)            // the server-tab strip paints UNDER the editor while editing (app.go skips its usual over-everything paint)
 		a.drawClassicEditor(w, h)
 	}
 }

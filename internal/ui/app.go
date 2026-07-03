@@ -654,6 +654,11 @@ type App struct {
 	classicRedo    []map[string][4]float64
 	classicPickIdx int
 	classicPickSig string
+	// classicChromeBot is the bottom Y of the editor's stacked top chrome
+	// (banner + tray + toolbox), recorded by drawClassicToolbox each edit
+	// frame — slot name tags clamp below it so a box parked in the top strip
+	// can't plaster its tag over the editor's own controls.
+	classicChromeBot int32
 	// layoutPresetName is the Settings name field for saving the current layout as a
 	// named preset (#34, internal/ui/layoutpresets.go + the Theme settings section).
 	layoutPresetName string
@@ -5182,8 +5187,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		}
 	}
 	// The tab strip floats over every screen (input was consumed at the
-	// top of the frame; this is just paint).
-	a.drawTabBar(winW, winH)
+	// top of the frame; this is just paint) — EXCEPT while the classic layout
+	// editor is armed: there it paints inside drawCourtroom, under the editor
+	// overlay, so its chips can't cover the editor's banner and controls (the
+	// "layering mess" playtest shot: a server chip parked top-right sat on the
+	// Snap/Done buttons).
+	if !a.classicEdit {
+		a.drawTabBar(winW, winH)
+	}
 	// Download progress chip floats under the strip while a grab runs.
 	a.drawDownloadIndicator(winW)
 	a.drawPingChip(8, winH-16) // #128 connection-quality chip (bottom-left; off by default)
