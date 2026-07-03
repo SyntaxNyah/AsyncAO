@@ -259,10 +259,42 @@ func (a *App) handleEmoteKeys() {
 	}
 }
 
+// editorUndoChord routes Ctrl+Z / Ctrl+Y to the ARMED layout editor (classic
+// or themed) ahead of every other chord consumer. The editors' own in-draw
+// checks read c.keyPressed — which a Ctrl chord never reaches: HandleEvent
+// puts non-clipboard chords in c.hotkey and returns (#96 configurable
+// hotkeys), so editor undo was silently dead AND Ctrl+Y fell through to its
+// default bind ("Reshow hidden sprites") mid-edit. Consumes the chord whether
+// or not history exists, so a bound action can never fire while editing.
+func (a *App) editorUndoChord() bool {
+	c := a.ctx
+	if !a.classicEdit && !a.layoutEdit {
+		return false
+	}
+	if c.hotkey != sdl.K_z && c.hotkey != sdl.K_y {
+		return false
+	}
+	switch {
+	case a.classicEdit && c.hotkey == sdl.K_z:
+		a.classicEditUndo()
+	case a.classicEdit:
+		a.classicEditRedo()
+	case c.hotkey == sdl.K_z:
+		a.layoutEditUndo()
+	default:
+		a.layoutEditRedo()
+	}
+	c.hotkey = 0
+	return true
+}
+
 // handleHotkeys consumes this frame's Ctrl chord on the courtroom screen
 // (and dispatches macro keybinds, then character keybinds — macros win
 // a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
+	if a.editorUndoChord() {
+		return // Ctrl+Z / Ctrl+Y belong to the armed layout editor
+	}
 	if !a.handleMacroKeys() && !a.handleJukeboxKeys() && !a.handleShownameKeys() && !a.handleICPhraseKeys() && !a.handleStylePresetKeys() {
 		a.handleCharKeys()
 		a.handleEmoteKeys()

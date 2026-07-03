@@ -61,6 +61,32 @@ func (a *App) pushLayoutUndo() {
 	a.editRedo = a.editRedo[:0]
 }
 
+// layoutEditUndo / layoutEditRedo swap the live rect map with a history
+// snapshot (and re-sync the persisted overrides via restoreLayout). Driven by
+// editorUndoChord — Ctrl chords arrive on the hotkey channel, never on
+// keyPressed, so the draw loop can't see them.
+func (a *App) layoutEditUndo() {
+	themeName, _ := a.d.Prefs.Theme()
+	if len(a.editUndo) == 0 || themeName == "" {
+		return
+	}
+	a.editRedo = append(a.editRedo, cloneRects(a.themeRects))
+	snap := a.editUndo[len(a.editUndo)-1]
+	a.editUndo = a.editUndo[:len(a.editUndo)-1]
+	a.restoreLayout(themeName, snap)
+}
+
+func (a *App) layoutEditRedo() {
+	themeName, _ := a.d.Prefs.Theme()
+	if len(a.editRedo) == 0 || themeName == "" {
+		return
+	}
+	a.editUndo = append(a.editUndo, cloneRects(a.themeRects))
+	snap := a.editRedo[len(a.editRedo)-1]
+	a.editRedo = a.editRedo[:len(a.editRedo)-1]
+	a.restoreLayout(themeName, snap)
+}
+
 // restoreLayout applies a snapshot to the live rects AND re-syncs the persisted
 // overrides, so undo survives a theme reload (a key back at its original rect
 // clears its override; otherwise it's re-written).
@@ -167,20 +193,9 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	pressed := c.mouseDown && !a.editPrev
 	a.editPrev = c.mouseDown
 
-	// Undo / redo (Ctrl+Z / Ctrl+Y): swap the whole rect map with a snapshot.
-	if c.ctrlHeld && c.keyPressed == sdl.K_z && len(a.editUndo) > 0 {
-		a.editRedo = append(a.editRedo, cloneRects(a.themeRects))
-		snap := a.editUndo[len(a.editUndo)-1]
-		a.editUndo = a.editUndo[:len(a.editUndo)-1]
-		a.restoreLayout(themeName, snap)
-		c.keyPressed = 0
-	} else if c.ctrlHeld && c.keyPressed == sdl.K_y && len(a.editRedo) > 0 {
-		a.editUndo = append(a.editUndo, cloneRects(a.themeRects))
-		snap := a.editRedo[len(a.editRedo)-1]
-		a.editRedo = a.editRedo[:len(a.editRedo)-1]
-		a.restoreLayout(themeName, snap)
-		c.keyPressed = 0
-	}
+	// Undo / redo (Ctrl+Z / Ctrl+Y) fire from editorUndoChord (handleHotkeys):
+	// Ctrl chords ride c.hotkey, never c.keyPressed, so an in-draw keyPressed
+	// check here was dead code — the chord had already been routed away.
 
 	if c.escPressed || (c.clicked && pointIn(c.mouseX, c.mouseY, doneBtn)) {
 		a.stopLayoutEdit()

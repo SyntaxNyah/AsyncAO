@@ -473,6 +473,31 @@ func (a *App) restoreClassicOv(snap map[string][4]float64) {
 	a.d.Prefs.SetClassicLayout(a.classicOv)
 }
 
+// classicEditUndo / classicEditRedo swap the live override map with a history
+// snapshot and re-sync the durable pref, so a misdrag is one keystroke away —
+// and the result persists. (Right-click only resets a box to DEFAULT; undo gets
+// a previous CUSTOM spot back.) Driven by editorUndoChord — Ctrl chords arrive
+// on the hotkey channel, so the editor's draw loop never sees them.
+func (a *App) classicEditUndo() {
+	if len(a.classicUndo) == 0 {
+		return
+	}
+	a.classicRedo = append(a.classicRedo, cloneClassicOv(a.classicOv))
+	snap := a.classicUndo[len(a.classicUndo)-1]
+	a.classicUndo = a.classicUndo[:len(a.classicUndo)-1]
+	a.restoreClassicOv(snap)
+}
+
+func (a *App) classicEditRedo() {
+	if len(a.classicRedo) == 0 {
+		return
+	}
+	a.classicUndo = append(a.classicUndo, cloneClassicOv(a.classicOv))
+	snap := a.classicRedo[len(a.classicRedo)-1]
+	a.classicRedo = a.classicRedo[:len(a.classicRedo)-1]
+	a.restoreClassicOv(snap)
+}
+
 // drawClassicEditor paints the slot-editor overlay and owns every interaction.
 // Called LAST from drawCourtroom (default layout only), after every widget has
 // registered its rect via slotRect this frame.
@@ -512,22 +537,9 @@ func (a *App) drawClassicEditor(w, h int32) {
 	pressed := c.mouseDown && !a.classicEditPrev
 	a.classicEditPrev = c.mouseDown
 
-	// Undo / redo (Ctrl+Z / Ctrl+Y): swap the whole override map with a snapshot and
-	// re-sync the durable pref, so a misdrag is one keystroke away — and the result
-	// persists. (Right-click only resets to DEFAULT; undo gets a previous CUSTOM spot back.)
-	if c.ctrlHeld && c.keyPressed == sdl.K_z && len(a.classicUndo) > 0 {
-		a.classicRedo = append(a.classicRedo, cloneClassicOv(a.classicOv))
-		snap := a.classicUndo[len(a.classicUndo)-1]
-		a.classicUndo = a.classicUndo[:len(a.classicUndo)-1]
-		a.restoreClassicOv(snap)
-		c.keyPressed = 0
-	} else if c.ctrlHeld && c.keyPressed == sdl.K_y && len(a.classicRedo) > 0 {
-		a.classicUndo = append(a.classicUndo, cloneClassicOv(a.classicOv))
-		snap := a.classicRedo[len(a.classicRedo)-1]
-		a.classicRedo = a.classicRedo[:len(a.classicRedo)-1]
-		a.restoreClassicOv(snap)
-		c.keyPressed = 0
-	}
+	// Undo / redo (Ctrl+Z / Ctrl+Y) fire from editorUndoChord (handleHotkeys):
+	// Ctrl chords ride c.hotkey, never c.keyPressed, so an in-draw keyPressed
+	// check here was dead code — the chord had already been routed away.
 
 	if c.escPressed || (c.clicked && pointIn(c.mouseX, c.mouseY, doneBtn)) {
 		a.stopClassicEdit()
