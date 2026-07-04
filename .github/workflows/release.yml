@@ -311,9 +311,20 @@ jobs:
         run: |
           # Idempotent: drop any existing Release for this tag (the tag itself is kept) so
           # a re-pushed tag re-publishes cleanly with the current notes + assets.
+          #
+          # Experimental channel automation: a HYPHENATED tag (v1.55.0-test.1 —
+          # cut from the MayAO-Test branch; tag pushes build whatever commit the
+          # tag points at, on any branch) publishes as a PRERELEASE. Stable
+          # clients never see it (/releases/latest excludes prereleases); the
+          # in-app experimental channel (Settings → Power user) follows it.
+          PRE=""
+          case "${{ github.ref_name }}" in
+            *-*) PRE="--prerelease" ;;
+          esac
           gh release delete "${{ github.ref_name }}" --yes 2>/dev/null || true
           gh release create "${{ github.ref_name }}" \
             --title "AsyncAO ${{ github.ref_name }}" \
             --notes-file notes.md \
             --verify-tag \
+            $PRE \
             dist/*

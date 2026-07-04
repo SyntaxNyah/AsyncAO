@@ -697,6 +697,7 @@ type AssetPreferences struct {
 	EmoteButtonImages      bool                         `json:"emoteButtonImages"`
 	SmoothScaling          bool                         `json:"smoothScaling"`
 	UpdateCheck            bool                         `json:"updateCheck"`
+	UpdateExperimental     bool                         `json:"updateExperimental"` // follow the prerelease/test-branch feed (Power user; default false = stable)
 	HighlightColor         int                          `json:"highlightColor"`
 	ICCustomColor          int                          `json:"icCustomColor"` // last free IC hex pick (packed 0xRRGGBB; v1.52.0)
 	NameColors             bool                         `json:"nameColors"`
@@ -2465,6 +2466,28 @@ func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
 		return
 	}
 	p.UpdateCheck = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// UpdateChannelExperimentalOn reports whether the launch check follows the
+// experimental channel — the full releases feed INCLUDING prereleases (test-
+// branch builds) — instead of stable-only. OFF by default; a Power-user
+// toggle for people who want riskier builds for extensive debugging.
+func (p *AssetPreferences) UpdateChannelExperimentalOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.UpdateExperimental
+}
+
+// SetUpdateChannelExperimental swaps the update channel (true = experimental).
+func (p *AssetPreferences) SetUpdateChannelExperimental(on bool) {
+	p.mu.Lock()
+	if p.UpdateExperimental == on {
+		p.mu.Unlock()
+		return
+	}
+	p.UpdateExperimental = on
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -6423,6 +6446,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.ValidateTLSCerts = false
 	p.AssetOrigin = ""
 	p.WSOrigin = ""
+	p.UpdateExperimental = false // back to the stable update channel
 	p.AssetCharCase = 0
 	p.SpriteLoadModeVal = SpriteLoadBlank
 	p.SpriteWaitMsVal = 0

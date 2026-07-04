@@ -47,6 +47,74 @@ const ghJSON = `{
   ]
 }`
 
+// ghListJSON is a minimal releases-list payload, newest first: a draft (must
+// be skipped), then a test-branch prerelease, then the stable it previews.
+const ghListJSON = `[
+  {"tag_name": "v9.9.9", "draft": true, "prerelease": true, "body": "wip", "html_url": "https://example/draft", "assets": []},
+  {"tag_name": "v1.55.0-test.2", "prerelease": true, "body": "test notes", "html_url": "https://example/test",
+   "assets": [{"name": "asyncao-windows-x86_64.exe", "browser_download_url": "https://example/test.exe"}]},
+  {"tag_name": "v1.54.5", "prerelease": false, "body": "stable notes", "html_url": "https://example/stable",
+   "assets": [{"name": "asyncao-windows-x86_64.exe", "browser_download_url": "https://example/stable.exe"}]}
+]`
+
+// TestCheckExperimental pins the experimental channel: drafts never offer,
+// the newest published entry wins on ANY tag difference (sideways/downgrade
+// included — that's how you hop on AND off the test branch), and running the
+// channel's newest build reports nothing.
+func TestCheckExperimental(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(ghListJSON))
+	}))
+	defer srv.Close()
+
+	// A stable build hops ONTO the test branch (the prerelease tag ranks
+	// BELOW no one — it differs, so it offers).
+	rel, err := CheckExperimental(context.Background(), srv.URL, "v1.54.5", "windows-x86_64.exe")
+	if err != nil {
+		t.Fatalf("CheckExperimental: %v", err)
+	}
+	if rel == nil || rel.Tag != "v1.55.0-test.2" {
+		t.Fatalf("must offer the newest published build, got %+v", rel)
+	}
+	if !rel.Prerelease {
+		t.Error("a prerelease offer must be flagged (the UI says 'test build')")
+	}
+	if rel.AssetURL != "https://example/test.exe" {
+		t.Errorf("asset match picked %q", rel.AssetURL)
+	}
+
+	// Running the channel's newest build → nothing to do (the draft above it
+	// never counts).
+	if rel, err = CheckExperimental(context.Background(), srv.URL, "v1.55.0-test.2", "windows"); err != nil || rel != nil {
+		t.Fatalf("current test build must report no update, got %+v err=%v", rel, err)
+	}
+
+	// A dev build never self-updates on any channel.
+	if rel, err = CheckExperimental(context.Background(), srv.URL, "dev", ""); err != nil || rel != nil {
+		t.Fatalf("dev build must never update, got %+v err=%v", rel, err)
+	}
+}
+
+// TestCheckExperimentalOffersStableReturn pins the way back OFF the test
+// branch: when the newest published entry is a STABLE release and we run a
+// prerelease, it offers even though the semver may not rank higher.
+func TestCheckExperimentalOffersStableReturn(t *testing.T) {
+	const listStableFirst = `[
+	  {"tag_name": "v1.54.5", "prerelease": false, "body": "n", "html_url": "https://example/s", "assets": []}
+	]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(listStableFirst))
+	}))
+	defer srv.Close()
+	rel, err := CheckExperimental(context.Background(), srv.URL, "v1.54.5-test.9", "")
+	if err != nil {
+		t.Fatalf("CheckExperimental: %v", err)
+	}
+	if rel == nil || rel.Tag != "v1.54.5" || rel.Prerelease {
+		t.Fatalf("a test build must be offered the newest stable, got %+v", rel)
+	}
+}
+
 func TestCheckNewer(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") == "" {

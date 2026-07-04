@@ -41,13 +41,20 @@ func IsDev() bool { return Version == "" || Version == devVersion }
 
 const (
 	// DefaultReleasesURL is the GitHub Releases API for this repo's latest
-	// published (non-draft, non-prerelease) release.
+	// published (non-draft, non-prerelease) release — the STABLE channel.
 	DefaultReleasesURL = "https://api.github.com/repos/SyntaxNyah/AsyncAO/releases/latest"
+	// DefaultReleaseListURL is the full releases list, newest first,
+	// PRERELEASES INCLUDED — the experimental channel's feed. Builds cut from
+	// the test branch (MayAO-Test) publish as prerelease tags, so following
+	// this list IS following that branch. per_page bounds the page (rule
+	// §17.4); ten releases is far more history than the pick needs (it only
+	// wants the newest published entry).
+	DefaultReleaseListURL = "https://api.github.com/repos/SyntaxNyah/AsyncAO/releases?per_page=10"
 	// checkTimeout bounds the one-shot probe so a hung endpoint can't stall the
 	// caller's goroutine forever.
 	checkTimeout = 10 * time.Second
 	// maxBodyBytes caps the response read (rule §17.4: nothing unbounded). A
-	// single release's JSON — even with long notes and many assets — fits well
+	// release-list page — even with long notes and many assets — fits well
 	// under this; a hostile/huge body is truncated, not slurped.
 	maxBodyBytes = 2 << 20
 )
@@ -57,19 +64,22 @@ const (
 // "view online" fallback), and the direct asset download URL for the
 // self-replace step ("" when the release shipped no matching asset).
 type Release struct {
-	Version  string // tag with any leading v stripped (e.g. "1.2.3")
-	Tag      string // raw tag_name as published
-	Notes    string // release body — the patch notes
-	PageURL  string // html_url — the release page
-	AssetURL string // browser_download_url of the matched asset
+	Version    string // tag with any leading v stripped (e.g. "1.2.3")
+	Tag        string // raw tag_name as published
+	Notes      string // release body — the patch notes
+	PageURL    string // html_url — the release page
+	AssetURL   string // browser_download_url of the matched asset
+	Prerelease bool   // published as a prerelease (a test-branch build) — the UI says "test build"
 }
 
 // ghRelease mirrors the subset of the GitHub Releases JSON we read.
 type ghRelease struct {
-	TagName string `json:"tag_name"`
-	Body    string `json:"body"`
-	HTMLURL string `json:"html_url"`
-	Assets  []struct {
+	TagName    string `json:"tag_name"`
+	Body       string `json:"body"`
+	HTMLURL    string `json:"html_url"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
+	Assets     []struct {
 		Name        string `json:"name"`
 		DownloadURL string `json:"browser_download_url"`
 	} `json:"assets"`
@@ -90,9 +100,65 @@ func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Relea
 	if releasesURL == "" {
 		releasesURL = DefaultReleasesURL
 	}
+	body, err := fetchJSON(ctx, releasesURL)
+	if err != nil {
+		return nil, err
+	}
+	var gh ghRelease
+	if err := json.Unmarshal(body, &gh); err != nil {
+		return nil, fmt.Errorf("update: decoding release: %w", err)
+	}
+	if gh.TagName == "" || compareSemver(gh.TagName, current) <= 0 {
+		return nil, nil // no published tag, or not newer than us
+	}
+	return newRelease(&gh, assetMatch), nil
+}
+
+// CheckExperimental is the experimental-channel probe (Settings → Power
+// user): ONE GET against the full releases list (prereleases included —
+// listURL defaults to DefaultReleaseListURL) and the NEWEST published build
+// wins whenever its tag differs from the running one. Unlike the stable
+// channel it deliberately allows sideways and DOWNGRADE offers: hopping onto
+// the test branch (whose prerelease tags rank below the stable they preview)
+// and hopping back off it are both "updates" here, so semver-forward gating
+// would strand people. The never-regress publishing rule still protects the
+// STABLE feed; this is the opt-in exception, and the same strict per-platform
+// assetMatch keeps the self-replace un-brickable.
+func CheckExperimental(ctx context.Context, listURL, current, assetMatch string) (*Release, error) {
+	if current == "" || current == devVersion {
+		return nil, nil // unstamped/dev build never self-updates
+	}
+	if listURL == "" {
+		listURL = DefaultReleaseListURL
+	}
+	body, err := fetchJSON(ctx, listURL)
+	if err != nil {
+		return nil, err
+	}
+	var list []ghRelease
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil, fmt.Errorf("update: decoding release list: %w", err)
+	}
+	// GitHub returns the list newest-first: the first published (non-draft),
+	// tagged entry is the channel's current build.
+	for i := range list {
+		gh := &list[i]
+		if gh.Draft || gh.TagName == "" {
+			continue
+		}
+		if trimVPrefix(gh.TagName) == trimVPrefix(current) {
+			return nil, nil // the newest published build IS the one running
+		}
+		return newRelease(gh, assetMatch), nil
+	}
+	return nil, nil
+}
+
+// fetchJSON performs the one bounded, UA-tagged GET both channels share.
+func fetchJSON(ctx context.Context, url string) ([]byte, error) {
 	cctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(cctx, http.MethodGet, releasesURL, nil)
+	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -106,22 +172,19 @@ func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Relea
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("update: releases endpoint returned %s", resp.Status)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
-	if err != nil {
-		return nil, err
-	}
-	var gh ghRelease
-	if err := json.Unmarshal(body, &gh); err != nil {
-		return nil, fmt.Errorf("update: decoding release: %w", err)
-	}
-	if gh.TagName == "" || compareSemver(gh.TagName, current) <= 0 {
-		return nil, nil // no published tag, or not newer than us
-	}
+	return io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+}
+
+// newRelease converts a decoded GitHub release into the user-facing Release,
+// resolving the platform asset by assetMatch (first name containing it wins;
+// "" takes the first asset; no match leaves AssetURL empty).
+func newRelease(gh *ghRelease, assetMatch string) *Release {
 	rel := &Release{
-		Version: trimVPrefix(gh.TagName),
-		Tag:     gh.TagName,
-		Notes:   strings.TrimSpace(gh.Body),
-		PageURL: gh.HTMLURL,
+		Version:    trimVPrefix(gh.TagName),
+		Tag:        gh.TagName,
+		Notes:      strings.TrimSpace(gh.Body),
+		PageURL:    gh.HTMLURL,
+		Prerelease: gh.Prerelease,
 	}
 	want := strings.ToLower(assetMatch)
 	for _, a := range gh.Assets {
@@ -130,7 +193,7 @@ func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Relea
 			break
 		}
 	}
-	return rel, nil
+	return rel
 }
 
 // SelfUpdateAssetMatch returns the release-asset name substring that UNIQUELY

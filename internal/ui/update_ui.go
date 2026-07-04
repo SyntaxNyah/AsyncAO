@@ -59,12 +59,21 @@ func (a *App) maybeKickUpdateCheck() {
 		return
 	}
 	res := a.updateRes
+	experimental := a.d.Prefs.UpdateChannelExperimentalOn() // read on the render thread; the goroutine only captures the bool
 	go func() {
 		// assetMatch identifies THIS platform's ONE swappable default binary
 		// (see update.SelfUpdateAssetMatch — a bare GOOS match could grab a
 		// .zip bundle and brick the self-replace). A failed or already-current
-		// check is silent — the updater never nags.
-		rel, err := update.Check(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(runtime.GOOS))
+		// check is silent — the updater never nags. The experimental channel
+		// (Power user) follows the prerelease/test-branch feed instead, and
+		// may offer sideways/downgrade builds — that's how you hop back off.
+		var rel *update.Release
+		var err error
+		if experimental {
+			rel, err = update.CheckExperimental(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(runtime.GOOS))
+		} else {
+			rel, err = update.Check(context.Background(), "", update.Version, update.SelfUpdateAssetMatch(runtime.GOOS))
+		}
 		if err != nil || rel == nil {
 			return
 		}
@@ -83,6 +92,9 @@ func (a *App) pollUpdate() {
 		}
 		a.updateRel = rel
 		a.updateChipLabel = "Update " + rel.Version + " available"
+		if rel.Prerelease {
+			a.updateChipLabel = "Test build " + rel.Version + " available" // experimental channel: say what it is
+		}
 		a.updateShow = true
 	default:
 	}
@@ -274,7 +286,11 @@ func (a *App) drawUpdateAvailable(w, h int32) {
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{A: 150}) // scrim
 	c.Fill(panel, sdl.Color{R: 12, G: 12, B: 18, A: 245})
 	c.Border(panel, ColAccent)
-	c.Heading(panel.X+pad, panel.Y+10, "Update "+a.updateRel.Version+" available", ColText)
+	kind := "Update "
+	if a.updateRel.Prerelease {
+		kind = "Test build " // experimental channel — never dress a prerelease up as a stable update
+	}
+	c.Heading(panel.X+pad, panel.Y+10, kind+a.updateRel.Version+" available", ColText)
 	c.Label(panel.X+pad, panel.Y+38, "What's new:", ColAccent)
 
 	// Patch notes: split on newlines FIRST (WrapText collapses whitespace and
