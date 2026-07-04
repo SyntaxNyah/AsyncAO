@@ -438,14 +438,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			continue
 		}
 
-		// DIAGNOSTIC no-limit mode (default ON on the test channel): bypass the
-		// static skip and every pacing tier below — render each loop pass and
-		// let vsync pace the presents, like a plain game loop. The playtest
-		// finding behind it: the single-frame window flicker tracks SPARSE
-		// presents (low idle rates flicker, uncapped doesn't), so continuous
-		// presenting is the baseline until the from-scratch redraw design.
-		noLimit := prefs.NoFrameLimitOn()
-
 		// Static skip (the deepest pacing tier): the courtroom is a genuinely
 		// static image right now — no input this pass, nothing animating, nobody
 		// talking, no toast/caret/timer — so the last presented frame is still
@@ -454,7 +446,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// picked up as fast as an idle-rendered frame would have. App.SkipFrame
 		// heartbeats a real frame every paceHeartbeat to heal anything missed.
 		focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
-		if !noLimit && app.SkipFrame(focused, sawEvent) {
+		if app.SkipFrame(focused, sawEvent) {
 			app.Background(dt)
 			if prefs.EventDrivenLoopOn() {
 				// EXPERIMENTAL event-driven wait. The Background pumps above may
@@ -511,9 +503,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// subsumes the old fixed frameCap sleep (FramePace's foreground cap
 		// defaults to the same 60).
 		pace := app.FramePace(focused)
-		if noLimit {
-			pace = 0 // no-limit mode: render every pass, vsync paces the presents
-		}
 		if !vsync && (pace == 0 || pace > frameCap) {
 			pace = frameCap // -vsync=false keeps at least its old 60 fps ceiling
 		}
