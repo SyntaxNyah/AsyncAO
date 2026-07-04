@@ -4,6 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test7 — 2026-07-04 (test build)
+
+One change, as promised: the slow-animation GPU fix.
+
+- **A slowly-animating character no longer holds the idle frame rate
+  around the clock.** The pacer clamped "next sprite frame in 4
+  seconds" up to the idle rate, so one blinking character meant
+  full-window repaints at 30 fps forever — the main remaining GPU cost
+  on this branch. Slow loops now wait in the event wait (which input
+  interrupts instantly — none of test4's freeze risk, blocking sleeps
+  stay capped at 100 ms) and render exactly when their frame flips.
+  An idle character that blinks every few seconds now costs about two
+  drawn frames a second; fast lip-flap loops keep their exact cadence.
+  Check F8's drawnFps to see it live. Classic mode (the kill switch)
+  is untouched.
+
 ## v1.55.0-test6 — 2026-07-04 (test build)
 
 A reset to the good state, plus one targeted fix.

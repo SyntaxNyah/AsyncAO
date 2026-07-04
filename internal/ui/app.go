@@ -4287,12 +4287,34 @@ func (a *App) FramePace(focused bool) time.Duration {
 		return talk
 	}
 	if due, ok := nextAnimDue(); ok {
-		if idle == 0 {
-			return clampDur(due, full, due) // unlimited idle: the content cadence itself (never above the cap)
-		}
-		return clampDur(due, full, idle) // 0 (a running ramp) → full rate
+		return a.animPace(due, full, idle)
 	}
 	return idle
+}
+
+// animPaceCap bounds a live stage animation's frame budget from BOTH sides of
+// wrong: it is the largest BLOCKING sleep the render path may take (a slow
+// flip's real waiting happens in the experimental loop's interruptible park —
+// NextWakeDelay schedules it; pacing a blind sleep to a seconds-long blink
+// froze the whole client in an earlier test round), and under the
+// experimental loop it REPLACES the idle rate as the clamp ceiling — the old
+// clampDur(due, full, idle) inflated a blink-every-4-seconds loop to 30 fps
+// of full-window repaints around the clock, the "GPU high with an animated
+// sprite on screen" report.
+const animPaceCap = 100 * time.Millisecond
+
+// animPace paces a pass while a stage animation is live: content-exact for
+// fast flips, never blocking past animPaceCap for slow ones. The experimental
+// loop renders slow flips off the park's scheduled deadline instead; the
+// classic loop keeps its historical [full, state-rate] ceiling (its blind
+// sleeps are its only pacing) — except an UNLIMITED state rate, which would
+// otherwise put the flip's whole delay into a blocking sleep, takes the cap
+// in both modes.
+func (a *App) animPace(due, full, state time.Duration) time.Duration {
+	if state == 0 || (a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn()) {
+		return clampDur(due, full, animPaceCap)
+	}
+	return clampDur(due, full, state)
 }
 
 // SkipFrame reports that the last drawn frame is still exactly right, so the
@@ -4355,7 +4377,14 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			return false // countdown readouts change every second
 		}
 	}
-	if a.d.Viewport != nil && a.room != nil {
+	if !exp && a.d.Viewport != nil && a.room != nil {
+		// Classic: a scheduled stage animation keeps the render path running
+		// (its blind sleeps can't park-and-wake on the flip). Experimental:
+		// SKIP — the flip renders off NextWakeDelay's scheduled deadline, so
+		// a slow loop (a blink every few seconds) costs exactly its own
+		// frames instead of holding the idle rate around the clock (the "GPU
+		// high with an animated sprite on screen" report), and the wait stays
+		// input-interruptible.
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
 			return false
 		}
@@ -4458,6 +4487,26 @@ func (a *App) NextWakeDelay() time.Duration {
 	if a.timerRunning() {
 		if rem := a.timerRemaining(); rem > 0 {
 			consider(rem%time.Second + timerTickSlack)
+		}
+	}
+	// The stage's next animation flip renders off THIS deadline (SkipFrame
+	// no longer holds the render path open for it): a slow loop costs
+	// exactly its own frames, right on the flip. Two adjustments make the
+	// schedule honest: the viewport's anim clocks only advance on DRAWN
+	// frames, so the reported due is as of the last frame — subtract the
+	// real time parked since; and a continuous ramp (due 0: crossfade,
+	// shout punch, entrance slide) floors at the full-rate budget or it
+	// would spin on the wake floor.
+	if a.d.Viewport != nil && a.room != nil {
+		if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
+			rem := due - now.Sub(a.lastFrameDrawn)
+			if fb := paceBudget(a.d.Prefs.FPSCap()); rem < fb {
+				rem = fb
+			}
+			if rem < 0 {
+				rem = 0 // unlimited cap (fb 0) with an overdue flip: fire now
+			}
+			consider(rem)
 		}
 	}
 	if d < minWakeDelay {
