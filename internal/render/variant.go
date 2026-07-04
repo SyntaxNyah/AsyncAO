@@ -41,14 +41,21 @@ const variantPaint uint8 = 255
 // is keyed by its (quantised) colour, and a hue-slider drag walks through many of those.
 const maxVariantPages = 10
 
-// PaintPage returns `base` colorized to (r,g,b) — the hue-paint look: every pixel takes
-// the colour while keeping its own light and shadow (see applyPaint). The colour is
-// quantised (paintQuantize) before keying AND building, so a slider drag lands on a
-// bounded set of cached pages and the key always matches the pixels.
-func (s *TextureStore) PaintPage(base string, r, g, b uint8) (*TexturePage, bool) {
+// PaintPage returns `base` colorized with the hue-paint look: every pixel takes the
+// paint colour while keeping its own light and shadow (see applyPaint). splitPct != 0
+// selects the TWO-TONE paint: rows above the split (a percent of sprite height) take
+// (r,g,b), rows below take (r2,g2,b2), feathered across the boundary. Colours and the
+// split are quantised before keying AND building, so a slider drag lands on a bounded
+// set of cached pages and the key always matches the pixels. splitPct == 0 ignores the
+// second colour entirely (one cache entry per colour A, however B wiggles).
+func (s *TextureStore) PaintPage(base string, r, g, b, r2, g2, b2, splitPct uint8) (*TexturePage, bool) {
 	key := variantKey{
 		effect: variantPaint,
 		paintA: packPaint(paintQuantize(r), paintQuantize(g), paintQuantize(b)),
+	}
+	if splitPct != 0 {
+		key.split = paintSplitQuantize(splitPct)
+		key.paintB = packPaint(paintQuantize(r2), paintQuantize(g2), paintQuantize(b2))
 	}
 	return s.variantFor(base, key)
 }
@@ -116,7 +123,8 @@ func (s *TextureStore) buildVariant(base *TexturePage, key variantKey) (*Texture
 		}
 		if key.effect == variantPaint {
 			ar, ag, ab := unpackPaint(key.paintA)
-			applyPaint(pix, ar, ag, ab)
+			br, bg, bb := unpackPaint(key.paintB)
+			applyPaint(pix, int(base.W), int(base.H), ar, ag, ab, br, bg, bb, key.split)
 		} else {
 			applyVariant(pix, int(base.W), int(base.H), key.effect)
 		}
@@ -370,14 +378,71 @@ const (
 // carry the hue. The WIRE is unchanged (still Tint+Grayscale): an older client
 // simply renders the old, darker composition of the same fields.
 
-// applyPaint colorizes an ABGR8888 buffer IN PLACE to the single colour (r,g,b),
-// keeping each pixel's alpha and mapping its Rec.601 luma through the ramp above.
-// Pure (no SDL), integer, alloc-free.
-func applyPaint(pix []byte, r, g, b uint8) {
-	for i := 0; i+3 < len(pix); i += 4 {
-		y := luma601(pix[i], pix[i+1], pix[i+2])
-		pix[i], pix[i+1], pix[i+2] = paintChannel(r, y), paintChannel(g, y), paintChannel(b, y)
+// applyPaint colorizes an ABGR8888 buffer IN PLACE, keeping each pixel's alpha and
+// mapping its Rec.601 luma through the ramp above. splitPct == 0 paints everything
+// (ar,ag,ab); otherwise rows above the split row (splitPct% of h from the top) take
+// colour A and rows below take colour B — "head red, rest blue" — with the colour
+// LERPED across a thin feather band so the boundary doesn't read as a hard cut
+// through the body. Pure (no SDL), integer, alloc-free.
+func applyPaint(pix []byte, w, h int, ar, ag, ab, br, bg, bb uint8, splitPct uint8) {
+	if splitPct == 0 || w <= 0 || h <= 0 || len(pix) < w*h*4 {
+		for i := 0; i+3 < len(pix); i += 4 {
+			y := luma601(pix[i], pix[i+1], pix[i+2])
+			pix[i], pix[i+1], pix[i+2] = paintChannel(ar, y), paintChannel(ag, y), paintChannel(ab, y)
+		}
+		return
 	}
+	splitRow := h * int(splitPct) / 100
+	feather := h / paintFeatherDivisor
+	if feather < paintFeatherMin {
+		feather = paintFeatherMin
+	}
+	for row := 0; row < h; row++ {
+		// Row colour: A above the feather band, B below, lerped inside it.
+		cr, cg, cb := ar, ag, ab
+		switch d := row - splitRow; {
+		case d >= feather:
+			cr, cg, cb = br, bg, bb
+		case d > -feather:
+			t, span := d+feather, 2*feather // 0..span across the band
+			cr, cg, cb = lerp8(ar, br, t, span), lerp8(ag, bg, t, span), lerp8(ab, bb, t, span)
+		}
+		base := row * w * 4
+		for x := 0; x < w; x++ {
+			i := base + x*4
+			y := luma601(pix[i], pix[i+1], pix[i+2])
+			pix[i], pix[i+1], pix[i+2] = paintChannel(cr, y), paintChannel(cg, y), paintChannel(cb, y)
+		}
+	}
+}
+
+// Two-tone feather tuning: the boundary blend spans ±(h/paintFeatherDivisor) rows
+// (floored at paintFeatherMin) so it scales with sprite resolution.
+const (
+	paintFeatherDivisor = 32
+	paintFeatherMin     = 2
+)
+
+// lerp8 linearly interpolates a..b at t/span (integer, span > 0).
+func lerp8(a, b uint8, t, span int) uint8 {
+	return uint8((int(a)*(span-t) + int(b)*t) / span)
+}
+
+// paintSplitQuant is the split-row key granularity (percent): a split-slider drag
+// mints a page only every paintSplitQuant percent instead of one per pixel of drag.
+const paintSplitQuant = 2
+
+// paintSplitQuantize snaps a 1..99 split to paintSplitQuant steps, clamped so the
+// result stays a real split (never 0 = single-colour, never 100 = empty band).
+func paintSplitQuantize(s uint8) uint8 {
+	q := s - s%paintSplitQuant
+	if q < paintSplitQuant {
+		q = paintSplitQuant
+	}
+	if q > 100-paintSplitQuant {
+		q = 100 - paintSplitQuant
+	}
+	return q
 }
 
 // paintChannel maps one output channel of the colorize ramp at luma y: 0..127

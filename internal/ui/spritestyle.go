@@ -32,6 +32,13 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 	if p.PathLen >= 2 && int(p.PathLen) <= len(s.Path) {
 		s.PathLen = p.PathLen
 	}
+	// Two-tone hue paint: carried only while the hue-paint composition itself is on
+	// (Tint+Grayscale) AND a split is set. Normalized to all-zero otherwise so a stale
+	// pref can't fatten the wire frame or fire a change marker that renders the same.
+	if p.Tint && p.Grayscale && p.PaintSplit != 0 {
+		s.PaintSplit = p.PaintSplit
+		s.Paint2R, s.Paint2G, s.Paint2B = p.Paint2R, p.Paint2G, p.Paint2B
+	}
 	return s
 }
 

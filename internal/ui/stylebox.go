@@ -209,6 +209,10 @@ func nextRestyle(r uint8) uint8 {
 // because config/courtroom consts aren't exported.
 const minVisibleStyleOpacity = 25
 
+// defaultPaintSplit seeds the two-tone split when it's first enabled: ~30% from the
+// top lands near the head/body line on a typical AO sprite; the Split slider tunes it.
+const defaultPaintSplit = 30
+
 // The floating Sprite Style box (#104): the non-intrusive, draggable cousin of
 // the Extras box for the transmitted Sprite Style (#103). It floats ON TOP of the
 // live courtroom so you can recolour / glow / fade your character ON THE FLY
@@ -232,12 +236,19 @@ const (
 // the tint controls are showing, clamped fully on-screen at its dragged position
 // (else a default tucked under the top-right, clear of the stage centre).
 func (a *App) styleBoxRect(w, h int32) sdl.Rect {
+	p := a.d.Prefs.SpriteStyle()
 	bh := extrasTitleH + styleBoxPad // title + top pad
 	bh += 50                         // 3-line "what it does / who sees it" note
 	bh += 26                         // Tint + Hue-paint row
-	if a.d.Prefs.SpriteStyle().Tint {
+	if p.Tint {
 		rows := int32((len(spriteStylePresets) + styleSwatchCols - 1) / styleSwatchCols)
 		bh += rows*(styleSwatchSz+styleSwatchGap) + 4 + 82 // preset swatches + Hue + R/G/B sliders
+		if p.Grayscale {                                   // hue paint: the Two-tone row (+ its sliders when on)
+			bh += 20
+			if p.PaintSplit != 0 {
+				bh += 40 // Split + Hue B sliders
+			}
+		}
 	}
 	bh += 30                    // opacity (Fade)
 	bh += 26                    // Rainbow / Mirror row
@@ -248,7 +259,7 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 30                    // extra-restyle cycle (#M5+)
 	bh += 30                    // movement-path cycle (#34)
 	bh += 18 + stylePathBox + 8 // draw-your-own path editor (#34 B2)
-	if a.d.Prefs.SpriteStyle().Outline {
+	if p.Outline {
 		bh += 82 // outline-colour swatch + R/G/B sliders (only while Outline is on)
 	}
 	bh += 30 // clear button
@@ -407,6 +418,48 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		if nr != int32(p.R) || ng != int32(p.G) || nb != int32(p.B) {
 			p.R, p.G, p.B = uint8(nr), uint8(ng), uint8(nb)
 			a.d.Prefs.SetSpriteStyle(p)
+		}
+		// Two-tone paint ("head red, rest blue") — hue paint only: the split row +
+		// second colour ride the wire tail and paint the sprite in two bands (upper =
+		// the colour above, lower = Hue B). An older AsyncAO client shows the single
+		// upper colour; AO2/webAO still see a normal sprite.
+		if p.Grayscale {
+			twoTone := p.PaintSplit != 0
+			ttRect := sdl.Rect{X: x, Y: y, W: 22 + c.TextWidth("Two-tone"), H: 16}
+			if next := c.Checkbox(x, y, "Two-tone", twoTone); next != twoTone {
+				if next {
+					p.PaintSplit = defaultPaintSplit
+					if p.Paint2R == 0 && p.Paint2G == 0 && p.Paint2B == 0 { // seed the complement of colour A
+						hb, _, _ := rgbToHSV(p.R, p.G, p.B)
+						p.Paint2R, p.Paint2G, p.Paint2B = hsvToRGB(hb+0.5, 1, 1)
+					}
+				} else {
+					p.PaintSplit = 0 // colour B stays in the pref for a re-toggle
+				}
+				a.d.Prefs.SetSpriteStyle(p)
+			}
+			c.Tooltip(ttRect, "Paint the sprite in TWO hues: everything above the split line takes the colour above (the head end), everything below takes Hue B. Drag Split to line it up with the body.")
+			y += 20
+			if twoTone {
+				sp := int32(p.PaintSplit)
+				c.Label(x, y, "Split", ColTextDim)
+				if n := c.Slider("paintSplit", sdl.Rect{X: x + 44, Y: y, W: r.W - 44 - styleBoxPad*2, H: 14}, sp, 99); n != sp {
+					if n < 1 {
+						n = 1 // 0 would mean "no split" on the wire
+					}
+					p.PaintSplit = uint8(n)
+					a.d.Prefs.SetSpriteStyle(p)
+				}
+				y += 20
+				hueB, _, _ := rgbToHSV(p.Paint2R, p.Paint2G, p.Paint2B)
+				hbPos := clampI32(int32(hueB*360+0.5), 0, 359)
+				c.Label(x, y, "Hue B", ColTextDim)
+				if n := c.Slider("paintHueB", sdl.Rect{X: x + 44, Y: y, W: r.W - 44 - styleBoxPad*2, H: 14}, hbPos, 359); n != hbPos {
+					p.Paint2R, p.Paint2G, p.Paint2B = hsvToRGB(float64(n)/360, 1, 1)
+					a.d.Prefs.SetSpriteStyle(p)
+				}
+				y += 20
+			}
 		}
 	}
 

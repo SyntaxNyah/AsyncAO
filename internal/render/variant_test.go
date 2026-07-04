@@ -126,7 +126,7 @@ func TestApplyPaint(t *testing.T) {
 		127, 127, 127, 255, // mid luma 127 → the paint colour itself
 		40, 80, 160, 96, // arbitrary colour, alpha 96 → alpha kept
 	}
-	applyPaint(pix, 255, 0, 0)
+	applyPaint(pix, 4, 1, 255, 0, 0, 0, 0, 0, 0)
 	if want := []byte{255, 255, 255, 255}; !equalBytes(pix[0:4], want) {
 		t.Errorf("white painted = %v, want %v (highlights must stay bright)", pix[0:4], want)
 	}
@@ -145,12 +145,54 @@ func TestApplyPaint(t *testing.T) {
 	for y := 0; y <= 255; y += 5 {
 		g := byte(y)
 		p := []byte{g, g, g, 255}
-		applyPaint(p, 60, 220, 90)
+		applyPaint(p, 1, 1, 60, 220, 90, 0, 0, 0, 0)
 		l := luma601(p[0], p[1], p[2])
 		if l < prev {
 			t.Fatalf("luma order broken at source %d: painted luma %d < previous %d", y, l, prev)
 		}
 		prev = l
+	}
+}
+
+// TestApplyPaintTwoTone pins the two-band paint ("head red, rest blue"): on an 8-row
+// mid-gray column split at 50%, the top rows carry colour A, the bottom rows colour B,
+// and the feather band lerps between them row by row (mid-gray luma 127 makes each
+// output pixel exactly the row's colour, so the geometry is byte-checkable).
+func TestApplyPaintTwoTone(t *testing.T) {
+	const h = 8
+	pix := make([]byte, h*4)
+	for i := 0; i < h*4; i += 4 {
+		pix[i], pix[i+1], pix[i+2], pix[i+3] = 127, 127, 127, 255
+	}
+	applyPaint(pix, 1, h, 255, 0, 0, 0, 0, 255, 50) // split at 50% → row 4; feather = paintFeatherMin = 2
+	want := [h][3]byte{
+		{255, 0, 0}, {255, 0, 0}, {255, 0, 0}, // rows 0..2: pure A
+		{191, 0, 63},             // row 3: 1/4 into the feather band
+		{127, 0, 127},            // row 4: the split row, half-way
+		{63, 0, 191},             // row 5: 3/4
+		{0, 0, 255}, {0, 0, 255}, // rows 6..7: pure B
+	}
+	for row := 0; row < h; row++ {
+		i := row * 4
+		if pix[i] != want[row][0] || pix[i+1] != want[row][1] || pix[i+2] != want[row][2] {
+			t.Errorf("row %d = %d,%d,%d, want %d,%d,%d", row,
+				pix[i], pix[i+1], pix[i+2], want[row][0], want[row][1], want[row][2])
+		}
+		if pix[i+3] != 255 {
+			t.Errorf("row %d alpha changed: %d", row, pix[i+3])
+		}
+	}
+}
+
+// TestPaintSplitQuantize pins the split-key granularity: snapped to paintSplitQuant
+// steps and clamped so a split can never quantise into "no split" or an empty band.
+func TestPaintSplitQuantize(t *testing.T) {
+	for _, tc := range []struct{ in, want uint8 }{
+		{1, paintSplitQuant}, {2, 2}, {3, 2}, {50, 50}, {51, 50}, {99, 100 - paintSplitQuant},
+	} {
+		if got := paintSplitQuantize(tc.in); got != tc.want {
+			t.Errorf("paintSplitQuantize(%d) = %d, want %d", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -225,7 +267,7 @@ func TestPaintPageBuildsAndCaches(t *testing.T) {
 		t.Fatalf("upload: %v", err)
 	}
 
-	v, ok := store.PaintPage("base/paint", 255, 0, 0)
+	v, ok := store.PaintPage("base/paint", 255, 0, 0, 0, 0, 0, 0)
 	if !ok {
 		t.Skip("render targets unavailable on this headless renderer")
 	}
@@ -236,8 +278,12 @@ func TestPaintPageBuildsAndCaches(t *testing.T) {
 	if want := []byte{255, 255, 255, 255, 255, 0, 0, 255}; !equalBytes(got, want) {
 		t.Errorf("painted pixels = %v, want %v (white kept, midtone = paint colour)", got, want)
 	}
-	if v2, _ := store.PaintPage("base/paint", 254, 1, 1); v2 != v { // same after quantising
+	if v2, _ := store.PaintPage("base/paint", 254, 1, 1, 0, 0, 0, 0); v2 != v { // same after quantising
 		t.Error("paint page must be cached across quantiser-equal colours")
+	}
+	// With NO split the second colour must not affect the key (one entry per colour A).
+	if v3, _ := store.PaintPage("base/paint", 255, 0, 0, 9, 9, 9, 0); v3 != v {
+		t.Error("splitless paint page must ignore the second colour in its key")
 	}
 }
 

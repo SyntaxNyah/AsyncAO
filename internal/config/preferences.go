@@ -386,6 +386,14 @@ type SpriteStylePref struct {
 	Brightness uint8 `json:"brightness,omitempty"`
 	Scale      uint8 `json:"scale,omitempty"`
 	Rotation   uint8 `json:"rotation,omitempty"`
+	// Two-tone hue paint: split row (percent of sprite height from the top; 0 = one
+	// colour) + the lower band's colour ("head red, rest blue"). Only meaningful while
+	// hue paint (Tint+Grayscale) is on — styleFromPref (ui) keeps it off the wire
+	// otherwise, so a stale value can't fatten the frame.
+	PaintSplit uint8 `json:"paintSplit,omitempty"`
+	Paint2R    uint8 `json:"paint2R,omitempty"`
+	Paint2G    uint8 `json:"paint2G,omitempty"`
+	Paint2B    uint8 `json:"paint2B,omitempty"`
 }
 
 // clampOpacity bounds a persisted/edited opacity to [0,100] (0 = unset/opaque).

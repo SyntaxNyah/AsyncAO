@@ -1,6 +1,10 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+)
 
 // TestHuePaintSliderRoundTrip pins the Hue slider's unit contract: the wheel
 // helpers work in h ∈ [0,1] while the slider shows degrees, so a chosen degree
@@ -40,5 +44,27 @@ func TestHuePaintIsExistingWire(t *testing.T) {
 	}
 	if s.Restyle != 0 || s.Outline || s.Sepia || s.Posterize {
 		t.Error("hue paint must not touch any v2/extension field")
+	}
+}
+
+// TestTwoTonePrefGating pins styleFromPref's two-tone normalization: the split +
+// second colour reach the courtroom style ONLY while the hue-paint composition is on
+// and a split is set — a stale pref (paint turned off, or split cleared with a colour
+// left behind) must not fatten the wire frame or fire a change marker that renders
+// identically.
+func TestTwoTonePrefGating(t *testing.T) {
+	on := config.SpriteStylePref{Tint: true, Grayscale: true, R: 255, PaintSplit: 40, Paint2B: 200}
+	if s := styleFromPref(on); s.PaintSplit != 40 || s.Paint2B != 200 {
+		t.Errorf("two-tone lost on the active path: %+v", s)
+	}
+	for name, p := range map[string]config.SpriteStylePref{
+		"paint off":     {Tint: true, R: 255, PaintSplit: 40, Paint2B: 200},          // no Grayscale → no hue paint
+		"no split":      {Tint: true, Grayscale: true, R: 255, Paint2B: 200},         // colour B without a split
+		"gray only":     {Grayscale: true, PaintSplit: 40, Paint2B: 200},             // no tint → no hue paint
+		"restyle owner": {Tint: true, Grayscale: false, PaintSplit: 40, Paint2R: 10}, // paint exited by a restyle pick
+	} {
+		if s := styleFromPref(p); s.PaintSplit != 0 || s.Paint2R != 0 || s.Paint2B != 0 {
+			t.Errorf("%s: two-tone leaked onto the wire style: %+v", name, s)
+		}
 	}
 }

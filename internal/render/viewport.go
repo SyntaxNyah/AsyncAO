@@ -914,7 +914,8 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	huePainted := false
 	if st := layer.Style; st.Tint && st.Grayscale && !st.HueCycle &&
 		st.Variant() == courtroom.VariantGrayscale {
-		if pp, ok := v.store.PaintPage(layer.Active, st.R, st.G, st.B); ok && frame < len(pp.Frames) {
+		if pp, ok := v.store.PaintPage(layer.Active, st.R, st.G, st.B,
+			st.Paint2R, st.Paint2G, st.Paint2B, st.PaintSplit); ok && frame < len(pp.Frames) {
 			tex = pp.Frames[frame]
 			huePainted = true
 		}
