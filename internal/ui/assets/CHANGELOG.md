@@ -4,6 +4,28 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test10 — 2026-07-05 (test build)
+
+Frame limiting off by default — the restored no-limit build, back by
+request under a fresh tag (re-publishing a deleted tag name would
+strand anyone who installed it the first time).
+
+- **The flicker tracks sparse frames — so frames aren't sparse anymore.**
+  Live testing pinned it down: with a low idle rate the single-frame
+  window flicker appears; with the framerate uncapped it doesn't. On
+  some driver setups, presenting frames infrequently is itself what
+  glitches. So this build ships with ALL frame limiting bypassed by
+  default — no static skip, no idle/background/active rates — the
+  client just renders continuously at your monitor's rhythm, like any
+  game. GPU use goes up compared to the limited builds; that trade is
+  deliberate while the flicker is the enemy.
+- **The limiters became a toggle.** Settings → Power user → Frame rate
+  & GPU → "Frame limiting OFF" — untick it to re-enable the whole
+  pacing stack and compare. Applies live, no restart.
+- The longer-term plan stays as discussed: rebuild the renderer around
+  redrawing only what changes, at a steady frame rhythm — cheap frames
+  rather than absent frames.
+
 ## v1.55.0-test6 — 2026-07-04 (test build)
 
 A reset to the good state, plus one targeted fix.

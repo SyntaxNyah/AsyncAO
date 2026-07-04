@@ -3071,7 +3071,14 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
-	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly. Each rate takes a typed exact number, and ∞ removes the limit — for Active that means vsync paces the frames; for Idle/Background it means never slowing down in that state.", ColTextDim)
+	nfl := a.d.Prefs.NoFrameLimitOn()
+	if next := c.Checkbox(pad, y, "Frame limiting OFF (default on this test build): render every frame, vsync paces", nfl); next != nfl {
+		a.d.Prefs.SetNoFrameLimit(next)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "While this is ticked, ALL the pacing below — the static skip, the idle/background/active rates, the event-driven renderer — is bypassed and the client renders like a plain game at your monitor's rhythm. The single-frame window flicker tracks sparse frames on some driver setups, so continuous rendering is the current baseline; untick to re-enable the limiters and compare. Applies live.", ColTextDim)
+	y += 6
+	y = a.settingsDesc(pad, y, "With limiting ON, AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly. Each rate takes a typed exact number, and ∞ removes the limit — for Active that means vsync paces the frames; for Idle/Background it means never slowing down in that state.", ColTextDim)
 	y += 6
 	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
 		config.FPSCapMin, config.FPSCapMax, config.FPSCapDefault,

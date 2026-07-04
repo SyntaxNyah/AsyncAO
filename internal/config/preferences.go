@@ -254,6 +254,13 @@ const defaultAutoReconnect = true
 // Default ON (a power-user Settings toggle turns it off for freeform placement).
 const defaultClipSpritesToStage = true
 
+// defaultNoFrameLimit ships the DIAGNOSTIC no-limit render mode ON for the
+// test channel (playtest call: frame limiting off by default until the
+// flicker hunt settles) — every loop pass renders and vsync paces the
+// presents, like a plain game loop. The Settings toggle turns the limiters
+// back on; flip this to false before any stable merge.
+const defaultNoFrameLimit = true
+
 // defaultEventDrivenLoop enables the EXPERIMENTAL event-driven render loop
 // (test-branch trial): static screens stop rendering entirely between real
 // signals — input wakes the loop instantly (an OS-level event wait instead of
@@ -857,6 +864,7 @@ type AssetPreferences struct {
 	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30; -1 = unlimited)
 	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10; -1 = unlimited)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
+	NoFrameLimit           bool                         `json:"noFrameLimit"`                   // DIAGNOSTIC: bypass ALL frame limiting — render every pass, vsync paces (default ON on the test channel)
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
@@ -1180,6 +1188,7 @@ type prefsJSON struct {
 	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30; -1 = unlimited)
 	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10; -1 = unlimited)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
+	NoFrameLimit           *bool            `json:"noFrameLimit"`         // diagnostic no-limit render (default ON; pointer: absent != off)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
@@ -1522,6 +1531,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		ShowFriendButton:     defaultShowFriendButton,
 		ClipSpritesToStage:   defaultClipSpritesToStage,
 		EventDrivenLoop:      defaultEventDrivenLoop,
+		NoFrameLimit:         defaultNoFrameLimit,
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
 		CharChatbox:          defaultCharChatbox,
@@ -1911,6 +1921,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax)
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
+	}
+	if onDisk.NoFrameLimit != nil { // pointer: absent keeps the default-ON
+		p.NoFrameLimit = *onDisk.NoFrameLimit
 	}
 	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
 	if p.TexBudgetMiBVal != 0 {
@@ -6433,6 +6446,29 @@ func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
 	p.markDirty()
 }
 
+// NoFrameLimitOn reports the DIAGNOSTIC no-limit toggle (default ON on the
+// test channel): bypass every frame limiter and the static skip — render
+// every loop pass, with vsync pacing the presents like a plain game loop.
+// The playtest escape hatch for isolating whether a glitch comes from the
+// pacing machinery (sparse presents) or from the frames themselves.
+func (p *AssetPreferences) NoFrameLimitOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.NoFrameLimit
+}
+
+// SetNoFrameLimit flips the diagnostic no-limit render mode (applies live).
+func (p *AssetPreferences) SetNoFrameLimit(on bool) {
+	p.mu.Lock()
+	if p.NoFrameLimit == on {
+		p.mu.Unlock()
+		return
+	}
+	p.NoFrameLimit = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
 // idle rate, and the another-window-has-focus rate.
@@ -6560,6 +6596,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.IdleFPSVal = 0
 	p.UnfocusedFPSVal = 0
 	p.EventDrivenLoop = defaultEventDrivenLoop
+	p.NoFrameLimit = defaultNoFrameLimit
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()
