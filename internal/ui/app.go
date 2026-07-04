@@ -1291,6 +1291,14 @@ type sessionState struct {
 	// hold in-progress typing and mirror the pref's effective colour when unfocused.
 	glitchHexA string
 	glitchHexB string
+	// Style-box live preview: collapse state, the background page cache (the
+	// pair-ghost pattern; keys are full URLs so per-server separation is
+	// structural), and the sprite prefetch dedupe (one warm per emote base).
+	stylePrevOff     bool
+	stylePrevBgPages []*render.TexturePage
+	stylePrevBgGen   uint64
+	stylePrevBgKey   string
+	stylePrevWarm    string
 	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their
 	// displayed second changes, into a reused scratch slice — so a visible (esp.
 	// paused) clock costs nothing on the always-on courtroom draw.

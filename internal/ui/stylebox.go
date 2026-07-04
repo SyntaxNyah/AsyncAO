@@ -5,8 +5,10 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
 // stylePathBox is the side of the draw-a-path square (#34).
@@ -272,6 +274,7 @@ const (
 	styleSwatchSz   = int32(26)
 	styleSwatchGap  = int32(6)
 	styleSwatchCols = 5
+	stylePrevH      = int32(104) // live-preview strip height (the sprite renders at this stage height)
 )
 
 // styleBoxRect is the box's screen rect: a fixed width, a height that grows when
@@ -281,7 +284,11 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	p := a.d.Prefs.SpriteStyle()
 	bh := extrasTitleH + styleBoxPad // title + top pad
 	bh += 50                         // 3-line "what it does / who sees it" note
-	bh += 26                         // Tint + Hue-paint row
+	bh += 20                         // preview header row
+	if !a.stylePrevOff {
+		bh += stylePrevH + 8 // the live preview strip
+	}
+	bh += 26 // Tint + Hue-paint row
 	if p.Tint {
 		rows := int32((len(spriteStylePresets) + styleSwatchCols - 1) / styleSwatchCols)
 		bh += rows*(styleSwatchSz+styleSwatchGap) + 4 + 82 // preset swatches + Hue + R/G/B sliders
@@ -378,6 +385,53 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	y += 15
 	c.LabelClipped(x, y, noteW, "AO2 / webAO see a normal character.", ColTextDim)
 	y += 19
+
+	// Live preview (the ask: preview the restyles like the Pair tab): your selected
+	// emote's idle over your position's background, rendered through the REAL stage
+	// path with the current style applied — paint, restyle, glitch, motion and all.
+	c.Label(x, y+1, "Preview", ColTextDim)
+	tgl := "Hide"
+	if a.stylePrevOff {
+		tgl = "Show"
+	}
+	if c.Button(sdl.Rect{X: x + noteW - 44, Y: y - 1, W: 44, H: 18}, tgl) {
+		a.stylePrevOff = !a.stylePrevOff
+	}
+	y += 20
+	if !a.stylePrevOff {
+		pv := sdl.Rect{X: x, Y: y, W: noteW, H: stylePrevH}
+		// The real stage background behind the sprite (the pair-ghost pattern): a
+		// flat fill stands in until it streams.
+		bgPart, _ := courtroom.PositionScene(a.mySide())
+		bgBase := a.urls.Background(a.sess.Background, bgPart)
+		if bgBase != a.stylePrevBgKey {
+			a.stylePrevBgPages, a.stylePrevBgKey = nil, bgBase
+		}
+		if page, ok := a.cachedPage(&a.stylePrevBgPages, &a.stylePrevBgGen, 1, 0, bgBase); ok && len(page.Frames) > 0 {
+			_ = c.Ren.Copy(page.Frames[0], nil, &pv)
+		} else {
+			c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
+			if a.sess.Background != "" {
+				a.d.Manager.Prefetch(bgBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (style preview)
+			}
+		}
+		if me := a.activeCharName(); me != "" && a.d.Viewport != nil {
+			anim := ghostFallbackEmote
+			if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
+				anim = a.emotes[a.emoteIdx].Anim
+			}
+			sbase := a.urls.Emote(me, anim, courtroom.EmoteIdle)
+			if a.stylePrevWarm != sbase { // warm once per emote base, not per frame
+				a.stylePrevWarm = sbase
+				a.d.Manager.PrefetchChain(sbase, a.urls.EmoteAlts(me, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (style preview)
+			}
+			a.d.Viewport.RenderStylePreview(c.Ren, sbase, styleFromPref(p), pv)
+		} else {
+			c.Label(pv.X+8, pv.Y+pv.H/2-7, "Pick a character to preview", ColTextDim)
+		}
+		c.Border(pv, ColPanelHi)
+		y += stylePrevH + 8
+	}
 
 	// Recolour toggle + the hue-paint mode (playtest: the multiply tint DARKENS
 	// a colourful sprite — the ask was a recolour that only affects hue). Hue

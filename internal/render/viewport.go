@@ -293,6 +293,48 @@ type Viewport struct {
 
 	// #124 particle weather: a bounded pool + one cached dot texture (snow/rain/sakura/embers).
 	particles particleField
+
+	// Sprite Style box live preview (RenderStylePreview): its own animState (so the
+	// preview loops independently of the stage), a scratch layer + clip rects (a stack
+	// value's address escaping into a cgo call would allocate per frame), and the
+	// fxClock mark that turns the free-running clock into this path's dt.
+	prevAnim      animState
+	prevLayer     courtroom.SpriteLayer
+	prevClockMark time.Duration
+	prevVPClip    sdl.Rect
+	prevClipSave  sdl.Rect
+}
+
+// previewMaxStep caps the style preview's animation step: the box may not have drawn
+// for a while (closed, another screen), and fast-forwarding that gap through advance()
+// would spin its frame loop for nothing — a fresh open just resumes the loop instead.
+const previewMaxStep = 250 * time.Millisecond
+
+// RenderStylePreview draws one character sprite styled by st into vp through the SAME
+// drawSprite path the live stage uses — paint/restyle variants, outline, glitch,
+// motion and all — so the Sprite Style box's preview can never drift from what a
+// message actually renders. Render thread only; clipped to vp regardless of the
+// clip-sprites pref (a wide sprite or a glitch jolt must not spill over the box).
+func (v *Viewport) RenderStylePreview(ren *sdl.Renderer, base string, st courtroom.SpriteStyle, vp sdl.Rect) {
+	dt := v.fxClock - v.prevClockMark
+	v.prevClockMark = v.fxClock
+	if dt < 0 || dt > previewMaxStep {
+		dt = 0
+	}
+	v.syncAnim(&v.prevAnim, base)
+	if page, ok := v.prevAnim.resolve(v.store); ok {
+		v.prevAnim.advance(page, dt, false)
+	}
+	v.prevClipSave = ren.GetClipRect()
+	v.prevVPClip = vp
+	_ = ren.SetClipRect(&v.prevVPClip)
+	v.prevLayer = courtroom.SpriteLayer{Visible: true, Active: base, Style: st}
+	v.drawSprite(ren, &v.prevLayer, &v.prevAnim, vp, 0, 100 /* dimPct 100 = no spotlight dim */)
+	if v.prevClipSave.W > 0 || v.prevClipSave.H > 0 {
+		_ = ren.SetClipRect(&v.prevClipSave)
+	} else {
+		_ = ren.SetClipRect(nil)
+	}
 }
 
 // Sprite outline / drop-shadow tuning (#8). The outline is drawn as 8 offset silhouette
