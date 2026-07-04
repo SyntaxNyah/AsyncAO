@@ -316,25 +316,21 @@ func (a *App) drawICColorWheel(w, h int32) {
 	}
 }
 
-// drawHighlightPicker draws the colour-wheel picker for the selection highlight
-// and returns the next y. Reads/writes the packed pref; the wheel sets hue+sat
-// (keeping the current brightness), the slider sets brightness, the hex field
-// sets all three.
-func (a *App) drawHighlightPicker(y, w int32) int32 {
+// drawWheelPicker draws the settings pickers' shared inline core — the hue/sat
+// disc, the vertical brightness bar, and a live swatch — reading cur (packed
+// 0xRRGGBB) and writing every wheel/bar edit through set. The wheel sets hue+sat
+// (keeping the current brightness, floored so a black pick still shows its hue);
+// the bar sets brightness. Returns the next y and the swatch column's x (callers
+// hang their own hex field / buttons there — each binds its own pref format).
+func (a *App) drawWheelPicker(x, y int32, cur int, set func(rgb int)) (nextY, hexX int32) {
 	c := a.ctx
-	pad := a.formX // rebase into the settings content card
-	_ = w
-	cur := a.d.Prefs.HighlightColorRGB()
 	r8, g8, b8 := uint8(cur>>16), uint8(cur>>8), uint8(cur)
 	h, s, v := rgbToHSV(r8, g8, b8)
-
-	c.Label(pad, y, "Log selection highlight colour (drag the wheel, slide brightness, or type a hex code):", ColText)
-	wy := y + 22
 
 	// --- hue/saturation wheel ---
 	const diam = colorWheelDiam
 	rad := float64(diam) / 2
-	wheel := sdl.Rect{X: pad, Y: wy, W: diam, H: diam}
+	wheel := sdl.Rect{X: x, Y: y, W: diam, H: diam}
 	if tex := a.ensureColorWheel(); tex != nil {
 		_ = c.Ren.Copy(tex, nil, &wheel)
 	}
@@ -350,12 +346,12 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 		if dist := math.Hypot(dx, dy); dist <= rad {
 			nh := math.Atan2(dy, dx) / (2 * math.Pi)
 			nr, ng, nb := hsvToRGB(nh, dist/rad, math.Max(v, 0.05)) // keep brightness (floor so a black pick still shows hue)
-			a.d.Prefs.SetHighlightColor(int(nr)<<16 | int(ng)<<8 | int(nb))
+			set(int(nr)<<16 | int(ng)<<8 | int(nb))
 		}
 	}
 
 	// --- brightness slider (vertical: full at top, black at bottom) ---
-	sl := sdl.Rect{X: wheel.X + diam + 18, Y: wy, W: 26, H: diam}
+	sl := sdl.Rect{X: wheel.X + diam + 18, Y: y, W: 26, H: diam}
 	for i := int32(0); i < sl.H; i++ { // gradient of the current hue/sat
 		br := 1 - float64(i)/float64(sl.H)
 		rr, gg, bb := hsvToRGB(h, s, br)
@@ -368,13 +364,31 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 		nv := 1 - float64(c.mouseY-sl.Y)/float64(sl.H)
 		nv = clampF64(nv, 0, 1)
 		nr, ng, nb := hsvToRGB(h, s, nv)
-		a.d.Prefs.SetHighlightColor(int(nr)<<16 | int(ng)<<8 | int(nb))
+		set(int(nr)<<16 | int(ng)<<8 | int(nb))
 	}
 
-	// --- swatch + hex field ---
-	hx := sl.X + sl.W + 20
-	c.Fill(sdl.Rect{X: hx, Y: wy, W: 80, H: 34}, sdl.Color{R: r8, G: g8, B: b8, A: 255})
-	c.Border(sdl.Rect{X: hx, Y: wy, W: 80, H: 34}, ColPanelHi)
+	// --- live swatch (the caller's hex/buttons column starts at hexX) ---
+	hexX = sl.X + sl.W + 20
+	c.Fill(sdl.Rect{X: hexX, Y: y, W: 80, H: 34}, sdl.Color{R: r8, G: g8, B: b8, A: 255})
+	c.Border(sdl.Rect{X: hexX, Y: y, W: 80, H: 34}, ColPanelHi)
+	return y + diam + 12, hexX
+}
+
+// drawHighlightPicker draws the colour-wheel picker for the selection highlight
+// and returns the next y. Reads/writes the packed pref; the wheel sets hue+sat
+// (keeping the current brightness), the slider sets brightness, the hex field
+// sets all three.
+func (a *App) drawHighlightPicker(y, w int32) int32 {
+	c := a.ctx
+	pad := a.formX // rebase into the settings content card
+	_ = w
+	cur := a.d.Prefs.HighlightColorRGB()
+
+	c.Label(pad, y, "Log selection highlight colour (drag the wheel, slide brightness, or type a hex code):", ColText)
+	wy := y + 22
+	nextY, hx := a.drawWheelPicker(pad, wy, cur, func(rgb int) {
+		a.d.Prefs.SetHighlightColor(rgb)
+	})
 	if c.focusID != "highlighthex" {
 		a.colorHex = fmt.Sprintf("%06x", cur) // reflect wheel/slider edits when not typing
 	}
@@ -385,6 +399,5 @@ func (a *App) drawHighlightPicker(y, w int32) int32 {
 		}
 	}
 	c.Label(hx, wy+42+fieldH+4, "hex code", ColTextDim)
-
-	return wy + diam + 12
+	return nextY
 }
