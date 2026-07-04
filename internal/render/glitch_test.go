@@ -64,12 +64,16 @@ func TestGlitchFlickerPct(t *testing.T) {
 	}
 }
 
-// TestGlitchHashSpreads sanity-checks the offset scrambler: deterministic, and
-// consecutive inputs don't collapse to one value (the torn bands would all shove
-// the same way).
+// TestGlitchHashSpreads sanity-checks the offset scrambler: stateless (repeat
+// calls agree — guards against someone later threading a seed/accumulator
+// through it), and consecutive inputs don't collapse to one value (the torn
+// bands would all shove the same way).
 func TestGlitchHashSpreads(t *testing.T) {
-	if glitchHash(42) != glitchHash(42) {
-		t.Fatal("glitchHash must be deterministic")
+	h0 := glitchHash(42)
+	for i := 0; i < 3; i++ {
+		if h := glitchHash(42); h != h0 {
+			t.Fatalf("glitchHash must be stateless: call %d gave %d, first gave %d", i, h, h0)
+		}
 	}
 	seen := map[uint32]bool{}
 	for i := uint32(0); i < 16; i++ {
