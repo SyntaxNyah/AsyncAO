@@ -231,6 +231,10 @@ func (a *App) activateTab(i int) {
 	t.unread = 0
 	a.activeTab = i
 	a.warnLine = "" // warnings are per-session context
+	// Field undo histories are keyed by field ID, not by tab — wipe them on a
+	// switch so one session's drafts can't resurface (or read as "external
+	// changes") in another (the multi-tab isolation rule).
+	a.ctx.ClearFieldHistories()
 	if t.dead || a.sess == nil {
 		// The connection died in the background: tear the tab down fully
 		// (notebook flush, slot removed) and say why on the lobby.
@@ -791,4 +795,9 @@ func (a *App) resetSessionState() {
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change
 	// (park/disconnect/connect) would highlight stale lines in a different tab's log.
 	a.logSelActive, a.logSelDragging = false, false
+	// Same for the field undo histories (Ctx, keyed by field ID): a fresh
+	// session must not inherit — or Ctrl+Z back into — another session's drafts.
+	if a.ctx != nil {
+		a.ctx.ClearFieldHistories()
+	}
 }

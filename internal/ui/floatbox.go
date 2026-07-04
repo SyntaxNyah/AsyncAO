@@ -240,6 +240,8 @@ func (a *App) closeTopOverlay() bool {
 		a.updateShow = false
 	case a.showLogin:
 		a.showLogin = false
+	case a.rosterMenuOpen:
+		a.rosterMenuOpen = false // the player-row … menu (anchored popup, like the pickers)
 	case a.showEmojiPicker:
 		a.showEmojiPicker = false
 	case a.showReactPicker:

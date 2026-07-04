@@ -315,10 +315,13 @@ type Ctx struct {
 	downX, downY   int32     // left-press origin (logical px); ClickedIn gates on it
 	clicked        bool      // left released this frame
 	dblClick       bool      // a double-click landed this frame (doubleClickWindow)
+	tripleClick    bool      // a third click in the same spot/window (cycles 1→2→3→1)
+	clickStreak    int       // consecutive same-spot clicks (double/triple detection)
 	lastClickAt    time.Time // double-click detection state (persists across frames)
 	lastClickX     int32
 	lastClickY     int32
 	ctrlHeld       bool // live modifier state (Ctrl+wheel font sizing)
+	shiftHeld      bool // live modifier state (shift-extend text selection)
 	rightClicked   bool
 	wheelY         int32
 	typed          string
@@ -329,9 +332,20 @@ type Ctx struct {
 	fullscreenReq  bool        // F11: toggle fullscreen this frame (consumed in app.Frame)
 	keyPressed     sdl.Keycode // plain (non-ctrl) keydown this frame (0 = none)
 	pasted         string      // Ctrl+V clipboard text (flattened to one line)
-	copyReq        bool        // Ctrl+C: focused field copies its value
-	cutReq         bool        // Ctrl+X: focused field copies, then clears
-	selectAll      bool        // Ctrl+A armed: next edit replaces the whole value
+	copyReq        bool        // Ctrl+C: focused field copies its selection (else value)
+	cutReq         bool        // Ctrl+X: focused field cuts its selection (else clears)
+	selectAll      bool        // Ctrl+A armed: the focused field converts it to a real all-selection
+	undoReq        bool        // Ctrl+Z routed to the focused field (App consumes the chord pre-screen)
+	redoReq        bool        // Ctrl+Y / Ctrl+Shift+Z, same routing
+	// Text-field selection: the anchor end (rune index) in the FOCUSED field;
+	// -1 = no selection. The caret is the moving end. Like c.caret it belongs
+	// to caretField, and resets on focus change. prevMouseDown feeds the
+	// press edge that starts a drag-selection.
+	selAnchor     int
+	prevMouseDown bool
+	// Per-field undo/redo histories (fieldhistory.go): bounded map + LRU order.
+	fieldHists   map[string]*fieldHistory
+	fieldHistUse []string
 	// wheelTaken marks this frame's wheel as consumed by a hovered widget
 	// (spinbox rows, WheelIn lists) so page-level scrolls don't double-act.
 	wheelTaken bool
@@ -1025,8 +1039,13 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	}
 	c.ddDraws = c.ddDraws[:0]
 
+	// prevMouseDown snapshots LAST frame's held state before this frame's
+	// events arrive — the press edge (mouseDown && !prevMouseDown) that starts
+	// a text-field drag-selection.
+	c.prevMouseDown = c.mouseDown
 	c.clicked = false
 	c.dblClick = false
+	c.tripleClick = false
 	c.rightClicked = false
 	c.wheelY = 0
 	c.wheelTaken = false
@@ -1040,12 +1059,16 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.pasted = ""
 	c.copyReq = false
 	c.cutReq = false
+	c.undoReq = false
+	c.redoReq = false
 	c.dropped = ""
 	c.hotkey = 0
 	c.tipText = ""
 	x, y, _ := sdl.GetMouseState()
 	c.mouseX, c.mouseY = c.toLogical(x), c.toLogical(y)
-	c.ctrlHeld = sdl.GetModState()&sdl.KMOD_CTRL != 0
+	mods := sdl.GetModState()
+	c.ctrlHeld = mods&sdl.KMOD_CTRL != 0
+	c.shiftHeld = mods&sdl.KMOD_SHIFT != 0
 	if !c.mouseDown {
 		c.dragID = "" // drags end with the button release
 	}
@@ -1095,9 +1118,16 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 				if dy < 0 {
 					dy = -dy
 				}
+				// Click streak: same-spot clicks inside the window cycle
+				// 1→2→3→1 (single/double/triple, native-editor style —
+				// fields use double for word-select, triple for all).
 				if now.Sub(c.lastClickAt) < doubleClickWindow && dx < doubleClickSlop && dy < doubleClickSlop {
-					c.dblClick = true
+					c.clickStreak = c.clickStreak%3 + 1
+				} else {
+					c.clickStreak = 1
 				}
+				c.dblClick = c.clickStreak == 2
+				c.tripleClick = c.clickStreak == 3
 				c.lastClickAt, c.lastClickX, c.lastClickY = now, c.mouseX, c.mouseY
 			case sdl.BUTTON_RIGHT:
 				c.rightClicked = true
@@ -1141,9 +1171,9 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 					c.hotkey = e.Keysym.Sym
 				}
 			case sdl.K_a:
-				// Arm select-all on the focused field: the next typed or
-				// pasted text replaces the whole value, backspace clears
-				// it, Ctrl+C/X already act on the full value. (Kept
+				// Arm select-all: the focused field converts it into a REAL
+				// whole-value selection (visible highlight; typing replaces,
+				// backspace clears, Ctrl+C/X act on it — textField). (Kept
 				// unconditional — select-all matters more than the Ctrl+A
 				// Fav-emotes hotkey, which stays on the Extras button.)
 				c.selectAll = true
@@ -1549,16 +1579,22 @@ func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 // after an emote pick — AO2-Client's focus_ic_input parity).
 func (c *Ctx) FocusField(id string) { c.focusNext = id }
 
-// WheelIn returns this frame's wheel ticks when the cursor is inside r,
-// else 0 — scrollables only react under the pointer (playtest: the music
-// list scrolled on wheel from anywhere on screen). A hit marks the wheel
-// taken, fencing page-level scroll handlers.
+// WheelIn returns this frame's wheel ticks when the cursor is inside r and no
+// earlier widget consumed them, else 0 — scrollables only react under the
+// pointer (playtest: the music list scrolled on wheel from anywhere on screen),
+// and only ONE scrollable reacts per frame. A hit marks the wheel taken, which
+// now fences every LATER WheelIn too, not just the page-level handlers that
+// check wheelTaken — two stacked surfaces could otherwise both scroll (the
+// What's New modal scrolled AND the lobby list behind it scrolled). Priority
+// follows processing order: pre-screen overlay handlers run first and win;
+// anything drawn later that should win instead blinds the passes beneath it
+// via the pointer fence (fencePointer / boxFencesPointer / modalOn).
 func (c *Ctx) WheelIn(r sdl.Rect) int32 {
-	if c.wheelY != 0 && c.hovering(r) {
-		c.wheelTaken = true
-		return c.wheelY
+	if c.wheelTaken || c.wheelY == 0 || !c.hovering(r) {
+		return 0
 	}
-	return 0
+	c.wheelTaken = true
+	return c.wheelY
 }
 
 // cycleField picks the next focus target for Tab / Shift+Tab: the field
@@ -1617,18 +1653,25 @@ const (
 	editDelete
 )
 
-// editInput is one frame of edits to a focused text field.
+// editInput is one frame of edits to a focused text field. selStart/selEnd
+// carry the active selection as a rune range [selStart, selEnd) — selEnd <=
+// selStart means none. Ctrl+A / double-click resolve to a real range before
+// this runs, so editStep has exactly one selection representation.
 type editInput struct {
-	typed  string // inserted text (typed + pasted)
-	back   bool   // backspace (delete the rune before the caret)
-	op     editOp // caret move or forward delete
-	selAll bool   // a pending select-all: an insert/delete replaces the whole value
+	typed            string // inserted text (typed + pasted)
+	back             bool   // backspace (delete the rune before the caret)
+	op               editOp // caret move or forward delete
+	selStart, selEnd int    // active selection (rune range); selEnd <= selStart = none
 }
 
 // editStep applies one frame of edits to value at caret (a RUNE index), returning
 // the new value and caret. Pure and rune-aware (multibyte shownames — Häschen,
 // fünfzehn, 🍅 — so the caret is by rune, never by byte), so it carries all the
 // edit logic that the draw path (which needs a renderer) can't unit-test.
+// Native selection semantics: insert/backspace/delete replace the range;
+// plain Left/Right collapse to the range's edge; Home/End collapse to the
+// text's ends. (Shift-extension keeps the anchor OUT of the input — the
+// caller moves only the caret.)
 func editStep(value string, caret int, in editInput) (string, int) {
 	runes := []rune(value)
 	if caret < 0 {
@@ -1637,13 +1680,33 @@ func editStep(value string, caret int, in editInput) (string, int) {
 	if caret > len(runes) {
 		caret = len(runes)
 	}
-	// A pending select-all: the next insert/delete replaces everything.
-	if in.selAll && (in.typed != "" || in.back || in.op == editDelete) {
-		if in.typed != "" {
+	selA, selB := in.selStart, in.selEnd
+	if selA < 0 {
+		selA = 0
+	}
+	if selB > len(runes) {
+		selB = len(runes)
+	}
+	if sel := selB > selA; sel {
+		if in.typed != "" || in.back || in.op == editDelete {
 			t := []rune(in.typed)
-			return string(t), len(t)
+			out := make([]rune, 0, len(runes)-(selB-selA)+len(t))
+			out = append(out, runes[:selA]...)
+			out = append(out, t...)
+			out = append(out, runes[selB:]...)
+			return string(out), selA + len(t)
 		}
-		return "", 0
+		switch in.op {
+		case editLeft:
+			return value, selA // collapse to the selection's left edge
+		case editRight:
+			return value, selB // …or its right edge
+		case editHome:
+			return value, 0
+		case editEnd:
+			return value, len(runes)
+		}
+		return value, caret
 	}
 	switch {
 	case in.typed != "":
@@ -1678,17 +1741,26 @@ func editStep(value string, caret int, in editInput) (string, int) {
 func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string, mask bool, fb fieldFonts) (string, bool) {
 	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
 	hover := c.hovering(r)
-	if c.clicked {
+	// Out-of-band change detection + this field's undo history
+	// (fieldhistory.go): a macro fill, a palette command template, or the
+	// own-echo IC clear lands in the history HERE — whatever changed since
+	// this field's last draw, focused or not — so Ctrl+Z brings it back.
+	hist := c.fieldTrack(id, value)
+	press := c.mouseDown && !c.prevMouseDown
+	if press && hover && c.dragID == "" {
+		// Focus moves on the PRESS (native), so a drag-selection starts
+		// immediately; the release block below still covers click-away
+		// unfocus and synthetic clicks.
+		c.selectAll = false
+		c.focusID = id
+	}
+	if c.clicked && c.dragID != id { // our drag-select's release is not a click: never unfocus/refocus on it
 		c.selectAll = false // any single click drops a pending select-all
 		if hover {
 			c.focusID = id
 		} else if c.focusID == id {
 			c.focusID = ""
 		}
-	}
-	if c.dblClick && hover { // double-click selects all the text (quick replace/clear)
-		c.focusID = id
-		c.selectAll = true
 	}
 	focused := c.focusID == id
 
@@ -1723,6 +1795,7 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		if c.caretField != id {
 			c.caret = rc
 			c.caretField = id
+			c.selAnchor = -1 // fresh focus: no selection
 		}
 		if c.caret > rc {
 			c.caret = rc
@@ -1730,33 +1803,99 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		if c.caret < 0 {
 			c.caret = 0
 		}
-		// A click positions the caret (measured on the display, so masked maps
-		// 1:1) — through the SAME raster the field draws with (fieldRaster), so
-		// non-Latin text maps clicks to the right rune (the Cyrillic caret bug).
-		if c.clicked && hover {
+		if c.selAnchor > rc {
+			c.selAnchor = rc // value shrank under a live selection
+		}
+		// Ctrl+A becomes a REAL whole-value selection (highlight + native
+		// replace/copy/cut semantics), not just an armed flag.
+		if c.selectAll {
+			c.selAnchor, c.caret = 0, rc
+			c.selectAll = false
+		}
+		// Mouse: the press places the caret AND anchors a selection; holding
+		// drags the caret end (auto-scrolls via the keep-caret-visible
+		// scroll); shift+press extends from the current caret. Measured on
+		// the display through the SAME raster the field draws with
+		// (fieldRaster), so non-Latin text maps clicks to the right rune
+		// (the Cyrillic caret bug).
+		if (press && hover && c.dragID == "") || (c.dragID == id && c.mouseDown) {
 			pre := maskOf(value)
 			preRaster := c.fieldRaster(fb, mask, pre)
 			preRC := utf8.RuneCountInString(pre)
 			preScroll := scrollFor(c.fieldPrefixW(pre, preRaster, preRC), c.fieldPrefixW(pre, preRaster, c.caret), avail)
-			c.caret = c.fieldIndexAtX(pre, preRaster, c.mouseX-(r.X+padX)+preScroll)
+			idx := c.fieldIndexAtX(pre, preRaster, c.mouseX-(r.X+padX)+preScroll)
+			if press && hover && c.dragID == "" {
+				if c.shiftHeld {
+					if c.selAnchor < 0 {
+						c.selAnchor = c.caret // shift+click: extend from the old caret
+					}
+				} else {
+					c.selAnchor = idx
+				}
+				c.dragID = id // own the drag: selecting keeps working past the box edge
+			}
+			c.caret = idx
 		}
-		if c.copyReq && value != "" && !mask {
-			_ = sdl.SetClipboardText(value)
+		// Double-click selects the word under the caret, triple-click the
+		// whole value (native). A masked field has no words — both select all.
+		if c.dblClick && hover {
+			if mask {
+				c.selAnchor, c.caret = 0, rc
+			} else {
+				lo, hi := wordBoundsAt([]rune(value), c.caret)
+				c.selAnchor, c.caret = lo, hi
+			}
 		}
+		if c.tripleClick && hover {
+			c.selAnchor, c.caret = 0, rc
+		}
+		// Ctrl+Z / Ctrl+Y (routed into undoReq/redoReq pre-screen): step this
+		// field's history. Consumed even when the stack is empty — the chord
+		// was aimed at the focused field, never at a z/y-bound hotkey.
+		if c.undoReq || c.redoReq {
+			if snap, ok := hist.step(value, c.caret, c.redoReq); ok {
+				value = snap.value
+				rc = utf8.RuneCountInString(value)
+				c.caret = snap.caret
+				if c.caret > rc {
+					c.caret = rc
+				}
+				c.selAnchor = -1
+			}
+			c.undoReq, c.redoReq = false, false
+		}
+		selLo, selHi := c.fieldSel(rc)
+		if c.copyReq && !mask {
+			if selLo < selHi { // copy the selection when one exists, else the whole value
+				_ = sdl.SetClipboardText(string([]rune(value)[selLo:selHi]))
+			} else if value != "" {
+				_ = sdl.SetClipboardText(value)
+			}
+		}
+		prevVal, prevCaret := value, c.caret // undo snapshot base for this frame's edits
 		switch {
 		case c.holdOn && c.holdAcc >= c.holdThreshold && !c.holdFired && value != "":
 			// Hold-to-clear: the bound key (default Backspace) held past the
 			// threshold wipes the whole field at once — no slow char-by-char.
 			c.holdFired = true
 			value, c.caret = "", 0
+			c.selAnchor = -1
 		case c.cutReq:
-			if value != "" && !mask {
-				_ = sdl.SetClipboardText(value)
+			if selLo < selHi { // native cut: copy + remove the SELECTION when one exists
+				if !mask {
+					_ = sdl.SetClipboardText(string([]rune(value)[selLo:selHi]))
+				}
+				value, c.caret = editStep(value, c.caret, editInput{op: editDelete, selStart: selLo, selEnd: selHi})
+			} else {
+				if value != "" && !mask {
+					_ = sdl.SetClipboardText(value)
+				}
+				value, c.caret = "", 0
 			}
-			value, c.caret = "", 0
+			c.selAnchor = -1
 			c.selectAll = false
 		default:
-			in := editInput{typed: c.typed + c.pasted, back: c.backspace, selAll: c.selectAll}
+			in := editInput{typed: c.typed + c.pasted, back: c.backspace}
 			switch c.keyPressed {
 			case sdl.K_LEFT:
 				in.op = editLeft
@@ -1770,17 +1909,40 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 				in.op = editDelete
 			}
 			if in.typed != "" || in.back || in.op != editNone {
+				nav := in.op == editLeft || in.op == editRight || in.op == editHome || in.op == editEnd
+				extend := nav && in.typed == "" && !in.back && c.shiftHeld
+				if extend {
+					// Shift+arrow/Home/End extends: fix the anchor, move only
+					// the caret (the selection is anchor..caret).
+					if c.selAnchor < 0 {
+						c.selAnchor = c.caret
+					}
+				} else {
+					in.selStart, in.selEnd = selLo, selHi // edits replace / plain nav collapses
+				}
 				value, c.caret = editStep(value, c.caret, in)
-				c.selectAll = false   // any edit/nav drops the pending select-all
+				if !extend {
+					c.selAnchor = -1
+				}
 				switch c.keyPressed { // consume nav keys so char keybinds don't also fire
 				case sdl.K_LEFT, sdl.K_RIGHT, sdl.K_HOME, sdl.K_END, sdl.K_DELETE:
 					c.keyPressed = 0
 				}
 			}
 		}
+		if value != prevVal {
+			hist.record(prevVal, prevCaret, value, time.Now()) // the field's own edits feed the history too
+		}
 		if c.enter {
 			enter = true
 		}
+	}
+	// Track the drawn value for the out-of-band detector (both branches: an
+	// unfocused field must notice a rewrite too). lastCaret only matters as a
+	// restore position, so it follows the live caret while focused.
+	hist.lastKnown = value
+	if focused {
+		hist.lastCaret = c.caret
 	}
 
 	display := maskOf(value)
@@ -1806,14 +1968,24 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		caretX = c.fieldPrefixW(display, fbRaster, c.caret)
 		scroll = scrollFor(fullW, caretX, avail)
 	}
-	if focused && c.selectAll && value != "" {
-		selW := fullW - scroll // select-all highlight behind the visible text
-		if selW > avail {
-			selW = avail
-		}
-		if selW > 0 {
-			c.Fill(sdl.Rect{X: r.X + padX, Y: r.Y + 3, W: selW, H: r.H - 6},
-				sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
+	// Selection highlight, UNDER the text: the ordered anchor..caret range,
+	// measured through the same raster the glyphs draw with. A focused field
+	// already pays per-frame measurement for the caret; the selection adds
+	// two prefix widths only WHILE one exists.
+	if focused {
+		if selLo, selHi := c.fieldSel(utf8.RuneCountInString(display)); selLo < selHi {
+			x0 := c.fieldPrefixW(display, fbRaster, selLo) - scroll
+			x1 := c.fieldPrefixW(display, fbRaster, selHi) - scroll
+			if x0 < 0 {
+				x0 = 0
+			}
+			if x1 > avail {
+				x1 = avail
+			}
+			if x1 > x0 {
+				c.Fill(sdl.Rect{X: r.X + padX + x0, Y: r.Y + 3, W: x1 - x0, H: r.H - 6},
+					sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
+			}
 		}
 	}
 	// #M5 emoji/unicode input: when the field opted in (IC/OOC) and the text has any
@@ -2430,10 +2602,12 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 
 // HoverPreview tracks dwell time on a widget id; returns true when the
 // full-size preview should show: the configured hover dwell, or right-click
-// toggles instantly. Returns false outright when previews are disabled
-// (Settings → General), so callers light up nothing.
+// instantly. The Settings previews toggle gates ONLY the dwell path — it
+// exists to stop popups you didn't ask for, and an explicit right-click IS
+// asking (playtest: turning hover-previews off silently killed the
+// right-click preview too — "the feature doesn't work").
 func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
-	if !c.hoverPreviewOn || !c.hovering(r) {
+	if !c.hovering(r) {
 		if c.hoverID == id {
 			c.hoverID = ""
 		}
@@ -2443,6 +2617,13 @@ func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
 	if c.rightClicked {
 		c.hoverID = id // pin it so close-on-leave keeps the box up after an instant open
 		return true
+	}
+	if !c.hoverPreviewOn {
+		// Dwell disabled: never START a preview from hover. hoverID is left
+		// alone so a right-click-opened box keeps its active trigger (the
+		// close-on-leave contract); each trigger clears its own id above the
+		// moment the cursor leaves it.
+		return false
 	}
 	if c.hoverID != id {
 		c.hoverID = id

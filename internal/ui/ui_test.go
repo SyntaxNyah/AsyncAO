@@ -262,10 +262,25 @@ func TestEditStep(t *testing.T) {
 	if c != 3 {
 		t.Errorf("end = %d want 3", c)
 	}
-	v, c = editStep("hello", 5, editInput{typed: "x", selAll: true})
+	// Selection semantics (native): typing/backspace/delete replace the range,
+	// plain Left/Right collapse to its edges. selStart/selEnd is the ordered
+	// rune range ([0,len) = select-all, the Ctrl+A shape).
+	v, c = editStep("hello", 5, editInput{typed: "x", selStart: 0, selEnd: 5})
 	chk("select-all + type replaces", v, c, "x", 1)
-	v, c = editStep("hello", 5, editInput{back: true, selAll: true})
+	v, c = editStep("hello", 5, editInput{back: true, selStart: 0, selEnd: 5})
 	chk("select-all + backspace clears", v, c, "", 0)
+	v, c = editStep("hello", 4, editInput{typed: "APP", selStart: 1, selEnd: 4})
+	chk("mid-range replace", v, c, "hAPPo", 4)
+	v, c = editStep("hello", 4, editInput{op: editDelete, selStart: 1, selEnd: 4})
+	chk("delete removes the range", v, c, "ho", 1)
+	v, c = editStep("hello", 4, editInput{op: editLeft, selStart: 1, selEnd: 4})
+	chk("left collapses to range start", v, c, "hello", 1)
+	v, c = editStep("hello", 1, editInput{op: editRight, selStart: 1, selEnd: 4})
+	chk("right collapses to range end", v, c, "hello", 4)
+	v, c = editStep("Häschen", 2, editInput{typed: "!", selStart: 1, selEnd: 3})
+	chk("multibyte range replace", v, c, "H!chen", 2)
+	v, c = editStep("abc", 1, editInput{selStart: 1, selEnd: 2})
+	chk("selection alone is a no-op", v, c, "abc", 1)
 	// Multibyte: "Häschen" = H ä s c h e n (7 runes). Insert at rune 2, backspace
 	// at rune 2, and an emoji forward-delete — all by RUNE, never by byte.
 	v, c = editStep("Häschen", 2, editInput{typed: "!"})

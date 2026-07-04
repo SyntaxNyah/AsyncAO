@@ -414,6 +414,7 @@ type App struct {
 	updateChecked   bool
 	updateRel       *update.Release
 	updateShow      bool
+	updateFenceOn   bool // WE hold the modal fence for the open What's New modal (released on close — see updateModalFence)
 	updateScroll    int32
 	updateChipLabel string
 	// Self-update apply flow (the "Get the update" button → async download,
@@ -439,14 +440,19 @@ type App struct {
 	logSelPressed  bool
 	logSelPrevDown bool
 	logSelFill     sdl.Color // configured highlight colour, cached per frame
-	// Chatbox (in-viewport IC message) selection: drag the message to highlight it,
-	// then Ctrl+C / right-click copies the whole message. Whole-message (not per-rune)
-	// — the chatbox is one short message and the raster doesn't expose glyph metrics.
+	// Chatbox (in-viewport IC message) selection: drag across the message to
+	// highlight the RANGE you want (the raster exposes per-line rune geometry
+	// now — RuneAt/LineSpanX), double-click a word, triple-click the whole
+	// message; Ctrl+C / right-click copies just the selection. chatSelA/B are
+	// source-rune boundaries (anchor/head). Only the animated-text path
+	// (msAnim, per-glyph motion) keeps the old whole-message behavior.
 	chatSelActive   bool
 	chatSelDragging bool
 	chatSelPrevDown bool
 	chatSelDownX    int32
 	chatSelDownY    int32
+	chatSelA        int
+	chatSelB        int
 	// Highlight-colour picker (Settings): the hue/sat wheel texture (built once)
 	// and the in-progress hex field text.
 	colorWheel     *sdl.Texture
@@ -1147,14 +1153,10 @@ type sessionState struct {
 	// area-wide delay window (area.can_send_message), so clearing at send
 	// time threw the whole typed line away whenever two people sent at once.
 	icPendingSent string
-	// icUndoText / oocUndoText hold the last line the CLIENT removed from the
-	// IC / OOC input (own-echo clear, a chat command, the OOC send clear, a
-	// palette command insert) — Ctrl+Z with that field focused swaps it back,
-	// and a second press swaps forward again (a free one-slot redo). The
-	// "text disappears after Enter" recovery; per-tab like the drafts.
-	icUndoText  string
-	oocUndoText string
-	oocInput    string
+	// (The old one-slot icUndoText/oocUndoText Ctrl+Z stash is gone: every
+	// text field now has a real undo history — fieldhistory.go — whose
+	// out-of-band detector catches the same clears, with redo.)
+	oocInput string
 	// oocName is THIS TAB's OOC chat name, seeded from the saved default in
 	// resetSessionState — it lived on App and a name typed in one tab showed
 	// up in every other (playtest). Only the Settings field writes the saved
@@ -1569,13 +1571,23 @@ type sessionState struct {
 	// player's CURRENT pair as of their latest line. Per-tab; bounded by pairPartnersCap.
 	pairPartners map[string]string
 	// Player-list profile card popover (#101): which profile to show + its title.
-	profileCardShow       bool
-	profileCardPr         config.ProfilePref
-	profileCardName       string
-	liveDetailsArea       string    // area of the last auto /getarea pull; re-pull on area change
-	lastRosterFetch       time.Time // debounce for the join/leave re-pull (rosterRefetchDebounce)
-	suppressAreaEchoUntil time.Time // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
-	rosterCmdUnsupported  bool      // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
+	profileCardShow bool
+	profileCardPr   config.ProfilePref
+	profileCardName string
+	// Player-row action menu (rostermenu.go): the "…" / right-click popup that
+	// replaced the per-row button cluster. Holds an identity SNAPSHOT (the
+	// roster can refresh under an open menu) and the modal-fence latch.
+	rosterMenuOpen        bool
+	rosterMenuFenceOn     bool             // WE hold modalOn for the open menu (released on close)
+	rosterMenuMe          bool             // the snapshot row is our own client
+	rosterMenuAt          sdl.Point        // preferred top-left (clamped at draw)
+	rosterMenuTab         int              // tab the menu opened on — auto-close on switch
+	rosterMenuP           areaPlayer       // identity snapshot (uid/name/showname/ooc/ipid)
+	rosterMenuItems       []rosterMenuItem // built at open; bounded by the action-kind count
+	liveDetailsArea       string           // area of the last auto /getarea pull; re-pull on area change
+	lastRosterFetch       time.Time        // debounce for the join/leave re-pull (rosterRefetchDebounce)
+	suppressAreaEchoUntil time.Time        // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
+	rosterCmdUnsupported  bool             // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
 	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
@@ -3892,45 +3904,50 @@ func (a *App) renderFullClientTexture(w, h int32) {
 // small value copy is fine.
 type ctxInput struct {
 	mouseX, mouseY, downX, downY, wheelY     int32
-	clicked, dblClick, rightClicked          bool
+	clicked, dblClick, tripleClick           bool
+	rightClicked                             bool
 	mouseDown, middleHeld                    bool
 	backspace, enter, tabPressed, escPressed bool
 	keyPressed, hotkey                       sdl.Keycode
 	typed, pasted, dropped, dragID           string
 	copyReq, cutReq, selectAll, wheelTaken   bool
+	undoReq, redoReq                         bool
 }
 
 func (a *App) snapshotInput() ctxInput {
 	c := a.ctx
 	in := ctxInput{
 		mouseX: c.mouseX, mouseY: c.mouseY, downX: c.downX, downY: c.downY, wheelY: c.wheelY,
-		clicked: c.clicked, dblClick: c.dblClick, rightClicked: c.rightClicked,
+		clicked: c.clicked, dblClick: c.dblClick, tripleClick: c.tripleClick, rightClicked: c.rightClicked,
 		mouseDown: c.mouseDown, middleHeld: c.middleHeld,
 		backspace: c.backspace, enter: c.enter, tabPressed: c.tabPressed, escPressed: c.escPressed,
 		keyPressed: c.keyPressed, hotkey: c.hotkey,
 		typed: c.typed, pasted: c.pasted, dropped: c.dropped, dragID: c.dragID,
 		copyReq: c.copyReq, cutReq: c.cutReq, selectAll: c.selectAll, wheelTaken: c.wheelTaken,
+		undoReq: c.undoReq, redoReq: c.redoReq,
 	}
 	c.mouseX, c.mouseY = -30000, -30000 // park off-screen: every hovering()/pointIn is false
 	c.downX, c.downY, c.wheelY = -30000, -30000, 0
-	c.clicked, c.dblClick, c.rightClicked = false, false, false
+	c.clicked, c.dblClick, c.tripleClick, c.rightClicked = false, false, false, false
 	c.mouseDown, c.middleHeld = false, false
 	c.backspace, c.enter, c.tabPressed, c.escPressed = false, false, false, false
 	c.keyPressed, c.hotkey = 0, 0
 	c.typed, c.pasted, c.dropped, c.dragID = "", "", "", ""
 	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = false, false, false, false
+	c.undoReq, c.redoReq = false, false
 	return in
 }
 
 func (a *App) restoreInput(in ctxInput) {
 	c := a.ctx
 	c.mouseX, c.mouseY, c.downX, c.downY, c.wheelY = in.mouseX, in.mouseY, in.downX, in.downY, in.wheelY
-	c.clicked, c.dblClick, c.rightClicked = in.clicked, in.dblClick, in.rightClicked
+	c.clicked, c.dblClick, c.tripleClick, c.rightClicked = in.clicked, in.dblClick, in.tripleClick, in.rightClicked
 	c.mouseDown, c.middleHeld = in.mouseDown, in.middleHeld
 	c.backspace, c.enter, c.tabPressed, c.escPressed = in.backspace, in.enter, in.tabPressed, in.escPressed
 	c.keyPressed, c.hotkey = in.keyPressed, in.hotkey
 	c.typed, c.pasted, c.dropped, c.dragID = in.typed, in.pasted, in.dropped, in.dragID
 	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = in.copyReq, in.cutReq, in.selectAll, in.wheelTaken
+	c.undoReq, c.redoReq = in.undoReq, in.redoReq
 }
 
 // drawSplitInput draws the pinned pane's IC field. It edits the PINNED tab's own
@@ -5103,6 +5120,23 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// on screen) read the same value — whichever draws first can't steal it.
 	a.logSelPressed = a.ctx.mouseDown && !a.logSelPrevDown
 	a.logSelPrevDown = a.ctx.mouseDown
+	// Ctrl+Z / Ctrl+Y with a text field focused become the FIELD's undo/redo
+	// (fieldhistory.go): consumed here, pre-screen, so no later chord consumer
+	// — the courtroom dispatcher, quick-connect, a user hotkey bound to z/y —
+	// can double-fire while typing. Ctrl+Shift+Z is redo too. The armed layout
+	// editors keep their own Ctrl+Z (editorUndoChord); they never run with a
+	// focused field, but the gate makes that explicit.
+	if a.ctx.focusID != "" && !a.classicEdit && !a.layoutEdit {
+		switch a.ctx.hotkey {
+		case sdl.K_z:
+			a.ctx.undoReq = !a.ctx.shiftHeld
+			a.ctx.redoReq = a.ctx.shiftHeld
+			a.ctx.hotkey = 0
+		case sdl.K_y:
+			a.ctx.redoReq = true
+			a.ctx.hotkey = 0
+		}
+	}
 	a.pumpTabRestore()  // restore-on-launch: one reconnect/frame, then idle
 	a.fireAutoConnect() // one-shot: auto-connect to the last server on launch (opt-in)
 	// Quick-connect key: the courtroom hotkey handler is sess-gated and never runs
@@ -5226,6 +5260,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// fat-finger underneath). Restored just before the modal draws, below.
 	if a.confirmDisconnect || a.hidePrompt != "" || a.showQuitConfirm {
 		a.ctx.fencePointer()
+	} else if a.hkSheetFencesPointer(winW, winH) {
+		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
+		// while the cursor sits on it (or its drag/resize is in flight), the
+		// screens draw pointer-blind and the sheet unfences for its own pass
+		// below — without this, scrolling the sheet also scrolled the lobby /
+		// settings list underneath it (the kit has no z-aware input; the fence
+		// IS the layering). The courtroom pass already applies the same rule
+		// via boxFencesPointer, so this only changes the other screens.
+		a.ctx.fencePointer()
 	}
 
 	// #M2 S1: set/RELEASE the emoji-picker modal fence before any screen draws. modalOn
@@ -5233,6 +5276,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// open-then-close bug).
 	a.emojiPickerFence(a.ctx)
 	a.reactPickerFence(a.ctx) // #2: same modal-fence discipline as the emoji picker
+	a.rosterMenuFence(a.ctx)  // player-row … menu: same discipline (rostermenu.go)
+	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
 
 	if a.gifExporting {
 		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a
@@ -5267,6 +5312,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawPalette(winW, winH)          // #39: command palette (Ctrl+Space), above panels, below pickers
 			a.drawEmojiPicker(winW, winH)      // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
 			a.drawReactPalette(winW, winH)     // #2: reaction palette overlay (modal-fenced)
+			a.drawRosterMenu(winW, winH)       // player-row … menu (modal-fenced; docked AND torn-off players tabs)
 			a.drawGroupInviteToast(winW, winH) // group invite Accept/Decline banner (only when one is pending)
 			a.typingMaybeSend()                // #3: emit a throttled "typing…" pulse if the opt-in is on (a.icInput is current)
 		case ScreenSettings:
@@ -5304,6 +5350,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.drawDebugOverlay(winW, winH)
 	}
 	if a.showHotkeys {
+		// Restore the pointer for the sheet's own pass — it was fenced above
+		// while hovered/dragged so the screens beneath drew pointer-blind.
+		// Skipped while a confirm modal is up: that fence belongs to the modal
+		// (drawn after), and the sheet must stay inert under it.
+		if !a.confirmDisconnect && a.hidePrompt == "" && !a.showQuitConfirm {
+			a.ctx.unfencePointer()
+		}
 		a.drawHotkeyCheatSheet(winW, winH)
 	}
 	// M13: a found update shows a persistent chip (reopen) and, the first time,

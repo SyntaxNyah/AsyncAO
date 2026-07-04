@@ -839,8 +839,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
+	// Gates ONLY the hover dwell — right-click previews always work.
 	prev := a.d.Prefs.SpritePreviewsOn()
-	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite", prev); next != prev {
+	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite. Off only disables the hover pop-up — right-click still previews", prev); next != prev {
 		a.d.Prefs.SetSpritePreviews(next)
 	}
 	y += 26
@@ -852,6 +853,31 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.Label(pad+340, y+4, "how long to hover before the preview pops (default 5 s)", ColTextDim)
 		y += 30
 	}
+	// Preview box default height: the pop-up's size before any corner-drag
+	// (playtest: the old 192 px default read tiny and re-dragging it every
+	// session got old). Applies to hover AND right-click previews, so it
+	// shows regardless of the toggle above.
+	ph := a.d.Prefs.PreviewHeightPx()
+	c.Label(pad, y+4, "Preview box height:", ColText)
+	phTrack := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
+	nph := config.MinPreviewHeightPx + int(c.Slider("previewheight", phTrack,
+		int32(ph-config.MinPreviewHeightPx), int32(config.MaxPreviewHeightPx-config.MinPreviewHeightPx)))
+	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
+		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
+		nph += int(c.wheelY) * 16
+	}
+	if nph < config.MinPreviewHeightPx {
+		nph = config.MinPreviewHeightPx
+	}
+	if nph > config.MaxPreviewHeightPx {
+		nph = config.MaxPreviewHeightPx
+	}
+	c.Label(pad+298, y+4, strconv.Itoa(nph)+" px", ColTextDim)
+	c.Label(pad+360, y+4, "default size of the sprite preview pop-up (384 px default; the corner grip still resizes per session)", ColTextDim)
+	if nph != ph {
+		a.d.Prefs.SetPreviewHeightPx(nph)
+	}
+	y += 30
 	// Sprite repositioning: drag a character in the viewport to move them (the
 	// override sticks per character until reset). OFF by default so a stray click
 	// can't nudge a sprite; right-clicking a sprite resets just that one.
@@ -2856,6 +2882,25 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	y += btnH + 6
 	y = a.settingsDesc(pad, y, "Puts every option on this tab back to its default. Image-format probing keeps its own controls below; saved presets and mod chips are untouched.", ColTextDim)
+	y += 10
+
+	// Update channel: stable releases vs the experimental test-branch feed.
+	// Power-user by design — test builds exist for extensive debugging and may
+	// move sideways or DOWN in version; the strict per-platform asset match
+	// still applies, and flipping back rejoins stable on its next release.
+	y = a.settingsSection(y, w, "Update channel")
+	expCh := a.d.Prefs.UpdateChannelExperimentalOn()
+	if next := c.Checkbox(pad, y, "Get experimental test builds (the MayAO-Test branch) instead of stable releases", expCh); next != expCh {
+		a.d.Prefs.SetUpdateChannelExperimental(next)
+		// Re-arm the one-shot launch check so the swap takes effect NOW (next
+		// frame), not on the next restart — and drop a stale offer from the
+		// other channel so its modal can't push the wrong build.
+		a.updateChecked = false
+		a.updateRel = nil
+		a.updateShow = false
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "OFF (default): the launch check follows stable releases and only ever moves forward. ON: it follows the newest published build INCLUDING prereleases cut from the test branch — riskier, less tested, and it may offer a lower version than you run (that's also how you get back: turn this off and take the next stable offer). Toggling re-checks immediately.", ColTextDim)
 	y += 10
 
 	// Renderer — what a character layer shows while a NEW, uncached sprite is still

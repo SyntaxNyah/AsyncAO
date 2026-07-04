@@ -194,13 +194,20 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 		}
 		c.copyReq = false
 	}
-	// Double-click selects the whole line under the cursor (the standard text
-	// gesture) — highlight start→end so Ctrl+C / right-click copies the full line.
-	// Replaces the old IC double-click-to-pair (pairing now lives on the player
-	// list's Pair button). Event-gated: a normal frame never enters here.
-	if c.dblClick && n > 0 && c.hovering(list) && inText {
+	// Double-click selects the WORD under the cursor, triple-click the whole
+	// wrapped line (native text gestures — the playtest ask was copying one
+	// word without taking the line; dragging still selects any range). The
+	// old IC double-click-to-pair is long gone (pairing lives on the player
+	// list). Event-gated: a normal frame never enters here.
+	if c.tripleClick && n > 0 && c.hovering(list) && inText {
 		a.selectLogLine(which, list, scroll, lineH)
-		c.clicked = false  // the line is selected — don't also open a link under it
+		c.clicked = false     // the line is selected — don't also open a link under it
+		c.focusID = ""        // unfocus so Ctrl+C / right-click copies the selection
+		c.tripleClick = false // consume: this triple-click was the log's
+	}
+	if c.dblClick && n > 0 && c.hovering(list) && inText {
+		a.selectLogWord(which, list, scroll, lineH)
+		c.clicked = false  // the word is selected — don't also open a link under it
 		c.focusID = ""     // unfocus so Ctrl+C / right-click copies the selection
 		c.dblClick = false // consume: this double-click was the log's
 	}
@@ -231,7 +238,7 @@ func (a *App) handleLogSelect(which int, list sdl.Rect, scroll, lineH, wrapW int
 }
 
 // selectLogLine selects the whole wrapped line under the cursor in log `which`
-// (the double-click gesture). Anchors at the line's start and head at its end so
+// (the triple-click gesture). Anchors at the line's start and head at its end so
 // the existing highlight + copy paths treat it like any drag selection.
 func (a *App) selectLogLine(which int, list sdl.Rect, scroll, lineH int32) {
 	c := a.ctx
@@ -239,6 +246,26 @@ func (a *App) selectLogLine(which int, list sdl.Rect, scroll, lineH int32) {
 	a.logSelWhich = which
 	a.logSelAnchor = selPoint{entry: li, off: 0}
 	a.logSelHead = selPoint{entry: li, off: len([]rune(a.logLineText(which, li)))}
+	a.logSelActive = true
+	a.logSelDragging = false
+}
+
+// selectLogWord selects the word under the cursor (the double-click gesture):
+// the maximal non-space run around the hit boundary, within the one wrapped
+// display line (a word split by the wrap selects its visible half — clicks
+// land on what's drawn). Shares wordBoundsAt with the text fields and the
+// chatbox so the three gestures can never disagree.
+func (a *App) selectLogWord(which int, list sdl.Rect, scroll, lineH int32) {
+	c := a.ctx
+	p := a.logPointAt(which, list.X, list.Y, scroll, lineH, c.mouseX, c.mouseY)
+	runes := []rune(a.logLineText(which, p.entry))
+	lo, hi := wordBoundsAt(runes, p.off)
+	if hi <= lo {
+		return // empty line — nothing to select
+	}
+	a.logSelWhich = which
+	a.logSelAnchor = selPoint{entry: p.entry, off: lo}
+	a.logSelHead = selPoint{entry: p.entry, off: hi}
 	a.logSelActive = true
 	a.logSelDragging = false
 }

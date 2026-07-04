@@ -214,6 +214,17 @@ const (
 	maxPreviewHoverMs     = 15000
 )
 
+// Sprite-preview box height (px). The old fixed default was AO's native
+// 192 px stage height, which read "really tiny" and made people corner-drag
+// it every time (playtest) — the default is now double that, and Settings
+// exposes it so the per-session grip resize is a tweak, not a ritual. Bounds
+// match the grip clamp in the UI.
+const (
+	DefaultPreviewHeightPx = 384
+	MinPreviewHeightPx     = 96
+	MaxPreviewHeightPx     = 720
+)
+
 // defaultAutoLoginToast ships ON: when a saved auto-login fires on join, a
 // toast + desktop notification confirms it ("am I logged in rn?") so a mod
 // knows their session is authenticated. Toggleable off in Settings.
@@ -697,6 +708,7 @@ type AssetPreferences struct {
 	EmoteButtonImages      bool                         `json:"emoteButtonImages"`
 	SmoothScaling          bool                         `json:"smoothScaling"`
 	UpdateCheck            bool                         `json:"updateCheck"`
+	UpdateExperimental     bool                         `json:"updateExperimental"` // follow the prerelease/test-branch feed (Power user; default false = stable)
 	HighlightColor         int                          `json:"highlightColor"`
 	ICCustomColor          int                          `json:"icCustomColor"` // last free IC hex pick (packed 0xRRGGBB; v1.52.0)
 	NameColors             bool                         `json:"nameColors"`
@@ -959,6 +971,10 @@ type AssetPreferences struct {
 	SpritePreviewOn bool `json:"spritePreview"`
 	// PreviewHoverMs is the hover dwell before the preview shows (ms).
 	PreviewHoverMs int `json:"previewHoverMs"`
+	// PreviewHeightPxVal is the preview box's DEFAULT height in px (0 = the
+	// shipped DefaultPreviewHeightPx); the corner grip still resizes per
+	// session on top of it.
+	PreviewHeightPxVal int `json:"previewHeightPx"`
 	// AutoLoginToast notifies (in-app toast + desktop notification) when a
 	// saved auto-login fires on join (ON by default).
 	AutoLoginToast bool `json:"autoLoginToast"`
@@ -1013,10 +1029,11 @@ type prefsJSON struct {
 	PreferAnimated         *bool            `json:"preferAnimated"`
 	EmoteButtonImages      *bool            `json:"emoteButtonImages"`
 	SmoothScaling          *bool            `json:"smoothScaling"`
-	UpdateCheck            *bool            `json:"updateCheck"`    // absent = default ON
-	HighlightColor         *int             `json:"highlightColor"` // absent = default accent
-	ICCustomColor          *int             `json:"icCustomColor"`  // absent = defaultICCustomColor
-	BgSlideshow            bool             `json:"bgSlideshow"`    // default OFF (zero value)
+	UpdateCheck            *bool            `json:"updateCheck"`        // absent = default ON
+	UpdateExperimental     bool             `json:"updateExperimental"` // default OFF (opt-in test channel)
+	HighlightColor         *int             `json:"highlightColor"`     // absent = default accent
+	ICCustomColor          *int             `json:"icCustomColor"`      // absent = defaultICCustomColor
+	BgSlideshow            bool             `json:"bgSlideshow"`        // default OFF (zero value)
 	BgSlideshowSecs        int              `json:"bgSlideshowSecs"`
 	DownloadKBps           int              `json:"downloadKBps"`         // 0 = unlimited (default)
 	ForceCharNames         bool             `json:"forceCharNames"`       // default OFF
@@ -1253,6 +1270,7 @@ type prefsJSON struct {
 	DeskFollowManifest bool     `json:"deskFollowManifest"`   // default OFF (zero value)
 	SpritePreview      *bool    `json:"spritePreview"`        // absent = default ON
 	PreviewHoverMs     *int     `json:"previewHoverMs"`       // absent = default 5 s
+	PreviewHeightPx    int      `json:"previewHeightPx"`      // 0/absent = shipped default (384)
 	AutoLoginToast     *bool    `json:"autoLoginToast"`       // absent = default ON
 	CallwordToast      *bool    `json:"callwordToast"`        // absent = default ON
 	MessageCounter     *bool    `json:"messageCounter"`       // absent = default ON
@@ -1591,6 +1609,7 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.UpdateCheck != nil {
 		p.UpdateCheck = *onDisk.UpdateCheck
 	}
+	p.UpdateExperimental = onDisk.UpdateExperimental
 	if onDisk.HighlightColor != nil {
 		p.HighlightColor = *onDisk.HighlightColor & 0xFFFFFF
 	}
@@ -1752,6 +1771,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.PreviewHoverMs != nil {
 		p.PreviewHoverMs = clampPercent(*onDisk.PreviewHoverMs, minPreviewHoverMs, maxPreviewHoverMs)
+	}
+	if onDisk.PreviewHeightPx > 0 { // 0 (absent) keeps the shipped default
+		p.PreviewHeightPxVal = clampPercent(onDisk.PreviewHeightPx, MinPreviewHeightPx, MaxPreviewHeightPx)
 	}
 	if onDisk.AutoLoginToast != nil {
 		p.AutoLoginToast = *onDisk.AutoLoginToast
@@ -2469,6 +2491,28 @@ func (p *AssetPreferences) SetUpdateCheck(enabled bool) {
 	p.markDirty()
 }
 
+// UpdateChannelExperimentalOn reports whether the launch check follows the
+// experimental channel — the full releases feed INCLUDING prereleases (test-
+// branch builds) — instead of stable-only. OFF by default; a Power-user
+// toggle for people who want riskier builds for extensive debugging.
+func (p *AssetPreferences) UpdateChannelExperimentalOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.UpdateExperimental
+}
+
+// SetUpdateChannelExperimental swaps the update channel (true = experimental).
+func (p *AssetPreferences) SetUpdateChannelExperimental(on bool) {
+	p.mu.Lock()
+	if p.UpdateExperimental == on {
+		p.mu.Unlock()
+		return
+	}
+	p.UpdateExperimental = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // --- Missing-asset warning banner -------------------------------------------
 
 // AssetWarningsOn reports whether the red on-screen "Missing asset" banner
@@ -2570,6 +2614,30 @@ func (p *AssetPreferences) PreviewHoverMillis() int {
 // PreviewHoverDelay returns the hover dwell as a duration for the UI.
 func (p *AssetPreferences) PreviewHoverDelay() time.Duration {
 	return time.Duration(p.PreviewHoverMillis()) * time.Millisecond
+}
+
+// PreviewHeightPx returns the preview box's default height in px (the
+// shipped default when unset; clamped to the grip's own bounds).
+func (p *AssetPreferences) PreviewHeightPx() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.PreviewHeightPxVal <= 0 {
+		return DefaultPreviewHeightPx
+	}
+	return clampPercent(p.PreviewHeightPxVal, MinPreviewHeightPx, MaxPreviewHeightPx)
+}
+
+// SetPreviewHeightPx clamps and persists the preview box's default height.
+func (p *AssetPreferences) SetPreviewHeightPx(n int) {
+	n = clampPercent(n, MinPreviewHeightPx, MaxPreviewHeightPx)
+	p.mu.Lock()
+	if p.PreviewHeightPxVal == n {
+		p.mu.Unlock()
+		return
+	}
+	p.PreviewHeightPxVal = n
+	p.mu.Unlock()
+	p.markDirty()
 }
 
 // SetPreviewHoverMs clamps and persists the hover dwell (milliseconds).
@@ -2957,8 +3025,8 @@ func (p *AssetPreferences) SetFriendHighlight(on bool) {
 	p.markDirty()
 }
 
-// FriendButtonShown reports whether the player-list rows draw the per-row
-// "+ Friend" / "Unfriend" button (ON by default; Settings can hide it).
+// FriendButtonShown reports whether the player-list row menu offers the
+// "+ Friend" / "Unfriend" action (ON by default; Settings can hide it).
 func (p *AssetPreferences) FriendButtonShown() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -6423,6 +6491,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.ValidateTLSCerts = false
 	p.AssetOrigin = ""
 	p.WSOrigin = ""
+	p.UpdateExperimental = false // back to the stable update channel
 	p.AssetCharCase = 0
 	p.SpriteLoadModeVal = SpriteLoadBlank
 	p.SpriteWaitMsVal = 0

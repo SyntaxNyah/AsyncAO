@@ -654,8 +654,16 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), nameX, nameY, nameW, sc.ShownameText, nameCol)
 
 	a.ensureChatRaster(wrapW, skinned)
+	// Text selection works on the themed chatbox too (drag a range / dbl-click
+	// a word / triple-click all; Ctrl+C / right-click copies) — same handler
+	// as the classic overlay, fed this layout's message rect.
+	textRect := sdl.Rect{X: msgX, Y: msgY, W: wrapW, H: box.Y + box.H - msgY}
+	a.handleChatSelect(textRect, sc)
 	if a.msAnim != nil || a.msRaster != nil {
 		_ = c.Ren.SetClipRect(&box)
+		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
+			a.drawChatSelHighlight(msgX, msgY, wrapW, sc)
+		}
 		if a.msAnim != nil { // #M5 animated message
 			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, msgX, msgY, a.d.Prefs.ReduceMotion())
 		} else {

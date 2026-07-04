@@ -29,15 +29,17 @@ const (
 	iconGap  int32 = 8
 	// previewZoomMax caps the preview magnifier (× the fit scale).
 	previewZoomMax = 8
-	// Playtest sizing (consistent previews): every character previews at
-	// previewBaseH — AO's native 192 px stage height — regardless of source
-	// resolution; the corner grip resizes within [previewMinH, previewMaxH];
-	// previewMaxW / previewMinW keep extreme aspects on screen; the
-	// previewCaptionH strip reports "source × shown-scale" AO2-style.
-	previewBaseH    int32 = 192
-	previewMinH     int32 = 96
-	previewMaxH     int32 = 480
-	previewMaxW     int32 = 560
+	// Playtest sizing (consistent previews): every character previews at the
+	// SAME height — the Settings default (config.PreviewHeightPx; shipped at
+	// 384 px, double AO's native 192 stage: "it's really tiny" + re-dragging
+	// it each session "is stinky") — regardless of source resolution. The
+	// corner grip still resizes per session within [previewMinH, previewMaxH]
+	// (bounds shared with the Settings slider via config); previewMaxW /
+	// previewMinW keep extreme aspects on screen; the previewCaptionH strip
+	// reports "source × shown-scale" AO2-style.
+	previewMinH     int32 = config.MinPreviewHeightPx
+	previewMaxH     int32 = config.MaxPreviewHeightPx
+	previewMaxW     int32 = 960 // fits 4:3 art at the 720 px height cap (was 560; the window clamp still applies)
 	previewMinW     int32 = 48
 	previewCaptionH int32 = 20
 	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
@@ -820,13 +822,14 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		a.previewFrameRect = sdl.Rect{} // no box this frame — no phantom wheel/drag target
 		return
 	}
-	// Playtest sizing: every character previews at the SAME height — the AO-native
-	// 192 px (or the user's grip-resized height) — with width following the art's
-	// aspect, instead of a per-character size driven by source resolution. The
-	// caption strip below reports that source resolution + the shown scale.
+	// Playtest sizing: every character previews at the SAME height — the
+	// Settings default (shipped at 384 px; the old fixed 192 read tiny), or
+	// the user's grip-resized height this session — with width following the
+	// art's aspect, instead of a per-character size driven by source
+	// resolution. The caption strip below reports source resolution + scale.
 	boxH := a.previewUserH
 	if boxH == 0 {
-		boxH = previewBaseH
+		boxH = int32(a.d.Prefs.PreviewHeightPx())
 	}
 	pw, ph := boxH, boxH // placeholder box while the next sprite streams in
 	if ready {
@@ -848,6 +851,10 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		pw = srcW * ph / srcH
 		if pw > previewMaxW { // ultra-wide art: cap the width, let the height follow
 			pw = previewMaxW
+			ph = srcH * pw / srcW
+		}
+		if maxW := w - 4*pad; maxW > previewMinW && pw > maxW {
+			pw = maxW // a big default (up to 720 tall now) must still fit a small window
 			ph = srcH * pw / srcW
 		}
 		if pw < previewMinW {
@@ -1026,7 +1033,7 @@ func (a *App) handlePreviewInput() {
 		a.previewResizeFrom = c.mouseY
 		a.previewResizeBase = a.previewUserH
 		if a.previewResizeBase == 0 {
-			a.previewResizeBase = previewBaseH
+			a.previewResizeBase = int32(a.d.Prefs.PreviewHeightPx()) // grip starts from the Settings default
 		}
 	}
 	if a.previewResize {
@@ -1789,8 +1796,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// Clip to the box: oversized Text settings stay INSIDE it.
 		_ = c.Ren.SetClipRect(&box)
 		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
-			lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
-			c.Fill(sdl.Rect{X: textRect.X, Y: textRect.Y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
+			a.drawChatSelHighlight(textRect.X, textRect.Y, wrapW, sc)
 		}
 		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
 			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, a.d.Prefs.ReduceMotion())
@@ -1803,11 +1809,15 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	a.chatZoomWheel(box)
 }
 
-// handleChatSelect runs whole-message drag-select + Ctrl+C / right-click copy for the
-// in-viewport chatbox: a drag in the text highlights the message, a plain click clears
-// it, and Ctrl+C (no field focused) or right-click copies the message text. Its own
-// press edge so it's independent of the log selection's; activating it clears any log
-// selection so the two never fight over a Ctrl+C.
+// handleChatSelect runs the chatbox's text selection + Ctrl+C / right-click
+// copy: drag across the message to select a RANGE of it (per-rune, snapped
+// to boundaries via the raster's own glyph advances — "so people can copy one
+// word instead of the whole line"), double-click selects the word under the
+// cursor, triple-click the whole message; a plain click clears. The animated
+// path (msAnim — per-glyph motion, no static raster) keeps the old
+// whole-message selection. Its own press edge so it's independent of the log
+// selection's; activating either clears the other so they never fight over a
+// Ctrl+C. Shared by the classic overlay and the themed chatbox.
 func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 	c := a.ctx
 	pressed := c.mouseDown && !a.chatSelPrevDown
@@ -1817,12 +1827,19 @@ func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 		if inText {
 			a.chatSelDragging = true
 			a.chatSelDownX, a.chatSelDownY = c.mouseX, c.mouseY
+			if a.msRaster != nil { // anchor the range at the pressed boundary
+				a.chatSelA = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+				a.chatSelB = a.chatSelA
+			}
 		} else {
 			a.chatSelActive = false // a press elsewhere clears the highlight
 		}
 	}
 	if a.chatSelDragging {
 		if c.mouseDown {
+			if a.msRaster != nil { // the held drag moves the range's head
+				a.chatSelB = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+			}
 			if absInt(int(c.mouseX-a.chatSelDownX))+absInt(int(c.mouseY-a.chatSelDownY)) > 3 {
 				if !a.chatSelActive {
 					a.chatSelActive = true // moved enough → a selection, not a click
@@ -1831,21 +1848,96 @@ func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 			}
 		} else {
 			a.chatSelDragging = false
-			if a.chatSelActive {
+			switch {
+			case a.chatSelActive && a.msRaster != nil && a.chatSelA == a.chatSelB:
+				a.chatSelActive = false // wobbled past the slop but landed on one boundary — not a selection
+			case a.chatSelActive:
 				c.clicked = false // a real drag isn't a click on whatever's under it
-				c.focusID = ""    // unfocus so Ctrl+C copies the message, not a still-focused field
+				c.focusID = ""    // unfocus so Ctrl+C copies the selection, not a still-focused field
 			}
+		}
+	}
+	// Double-click: the word under the cursor; triple-click: the whole
+	// message (native text gestures — mirrors the fields and the logs).
+	if a.msRaster != nil && inText && (c.dblClick || c.tripleClick) && sc.MessageText != "" {
+		runes := []rune(sc.MessageText)
+		if c.tripleClick {
+			a.chatSelA, a.chatSelB = 0, len(runes)
+			c.tripleClick = false
+		} else {
+			idx := a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+			a.chatSelA, a.chatSelB = wordBoundsAt(runes, idx)
+			c.dblClick = false
+		}
+		if a.chatSelB > a.chatSelA {
+			a.chatSelActive = true
+			a.logSelActive = false
+			c.clicked = false
+			c.focusID = ""
 		}
 	}
 	if a.chatSelActive && sc.MessageText != "" {
 		if (c.copyReq && c.focusID == "") || (c.rightClicked && inText) {
-			_ = sdl.SetClipboardText(sc.MessageText)
-			a.warnLine = "Copied message to clipboard"
+			_ = sdl.SetClipboardText(a.chatSelText(sc))
+			a.warnLine = "Copied selection to clipboard"
 			a.warnAt = time.Now()
 			c.copyReq = false
 			if inText {
 				c.rightClicked = false
 			}
+		}
+	}
+}
+
+// chatSelText is the text the chatbox selection copies: the selected rune
+// range, or the whole message on the animated path / a degenerate range.
+func (a *App) chatSelText(sc *courtroom.Scene) string {
+	if a.msRaster == nil {
+		return sc.MessageText
+	}
+	runes := []rune(sc.MessageText)
+	lo, hi := a.chatSelA, a.chatSelB
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	if lo < 0 {
+		lo = 0
+	}
+	if hi > len(runes) {
+		hi = len(runes)
+	}
+	if lo >= hi {
+		return sc.MessageText
+	}
+	return string(runes[lo:hi])
+}
+
+// drawChatSelHighlight fills the selected range behind the message, one band
+// per wrapped line: partial first/last lines measure their end runes through
+// the raster's own advances, interior lines span their drawn text, and the
+// typewriter clamp keeps the band off glyphs that haven't revealed yet. The
+// animated path has no per-rune raster — the whole visible block highlights,
+// exactly the old behavior. Measurement only (no allocations): fine per frame
+// while a selection is up.
+func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
+	c := a.ctx
+	m := a.msRaster
+	if m == nil { // animated message (msAnim): whole-block highlight
+		lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
+		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
+		return
+	}
+	lo, hi := a.chatSelA, a.chatSelB
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	if hi > sc.VisibleRunes {
+		hi = sc.VisibleRunes // typewriter: never highlight unrevealed glyphs
+	}
+	fill := a.highlightFill()
+	for i := 0; i < m.Lines(); i++ {
+		if x0, x1, ok := m.LineSpanX(i, lo, hi); ok && x1 > x0 {
+			c.Fill(sdl.Rect{X: x + x0, Y: y + int32(i)*m.LineH(), W: x1 - x0, H: m.LineH()}, fill)
 		}
 	}
 }
@@ -2610,8 +2702,7 @@ func (a *App) submitOOC() {
 	}
 	a.sess.SendOOC(a.oocNameOrDefault(), a.oocInput)
 	a.recordSentOOC(a.oocInput) // remember the raw line for Up-arrow recall (mirrors IC #8)
-	a.stashOOCUndo()            // OOC clears at send (no echo protocol) — recoverable via Ctrl+Z
-	a.oocInput = ""
+	a.oocInput = ""             // clears at send (no echo protocol) — the field's undo history catches it (Ctrl+Z)
 }
 
 // drawOOCPanel is the actual OOC box: full scrollable history plus the
@@ -5328,8 +5419,7 @@ func funColor(text string, color, ext, customRGB int, rainbow, random bool, rand
 func (a *App) sendIC(shout int) {
 	text := strings.TrimSpace(a.icInput)
 	if cmdHandled := a.handleChatCommand(text); cmdHandled {
-		a.stashICUndo() // commands clear instantly — recoverable via Ctrl+Z
-		a.icInput = ""
+		a.icInput = "" // commands clear instantly — the field's undo history catches it (Ctrl+Z)
 		return
 	}
 	// Blankpost: Enter on an empty input sends the AO single-space
@@ -5497,27 +5587,13 @@ func (a *App) sendIC(shout int) {
 // re-Enter.
 func (s *sessionState) noteOwnICEcho() {
 	if s.icInput == s.icPendingSent {
-		s.stashICUndo() // the echo consumes the line — keep it for Ctrl+Z
+		// The echo consumes the line. The IC field's undo history records the
+		// clear at its next draw (fieldhistory.go's out-of-band detector), so
+		// Ctrl+Z still brings the sent line back — with real redo on top.
 		s.icInput = ""
 	}
 	s.icPendingSent = ""
 	s.evidPresent = false // presenting is one-shot: consumed by the message that displayed
-}
-
-// stashICUndo / stashOOCUndo remember a non-empty line the CLIENT is about to
-// remove from an input (own-echo clear, chat command, OOC send, palette
-// insert) so inputUndoChord (Ctrl+Z in the field) can swap it back — the
-// "sometimes the text just disappears after Enter" recovery.
-func (s *sessionState) stashICUndo() {
-	if s.icInput != "" {
-		s.icUndoText = s.icInput
-	}
-}
-
-func (s *sessionState) stashOOCUndo() {
-	if s.oocInput != "" {
-		s.oocUndoText = s.oocInput
-	}
 }
 
 // sentHistCap bounds a per-tab message recall ring (#8: IC, and the OOC ring that mirrors it).

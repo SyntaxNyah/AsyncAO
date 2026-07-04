@@ -112,7 +112,8 @@ func (a *App) runPaletteMatch(m paletteMatch) {
 		return
 	}
 	if m.cmd != "" {
-		a.stashOOCUndo()         // a command template overwrites the OOC draft — Ctrl+Z recovers it
+		// Overwriting the OOC draft is recoverable: the field's undo history
+		// records the rewrite at its next draw (fieldhistory.go) — Ctrl+Z.
 		a.oocInput = m.cmd       // both layouts' OOC fields read this
 		a.ctx.focusID = "oocmsg" // caret into the default layout's OOC box
 	}

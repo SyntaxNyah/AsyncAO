@@ -63,11 +63,11 @@ const (
 	panelTabPlayers = "tab.players"
 	panelTabNotes   = "tab.notes"
 	panelTabFriends = "tab.friends"
-	// Players-list per-row action buttons (playtest: with everything on, the
-	// cluster crowds the name/UID out of a normal-width panel). Each is
-	// individually hideable like the /follow toggle; the cluster compacts and
-	// the name column gets the width back. The Friend button keeps its own
-	// Settings toggle (FriendButtonShown) — no duplicate id here.
+	// Players-list per-row actions. These once gated inline row BUTTONS; the
+	// actions now live in the per-row "…" / right-click menu (rostermenu.go)
+	// and each id hides its menu ENTRY instead — same prefs, same popup grid.
+	// The Friend action keeps its own Settings toggle (FriendButtonShown) —
+	// no duplicate id here.
 	rosterBtnPair    = "roster.pair"
 	rosterBtnUID     = "roster.uid"
 	rosterBtnIPID    = "roster.ipid"
@@ -1051,9 +1051,9 @@ func (a *App) drawUICfgPanel(w, h int32) {
 		}
 		y += (int32(len(hideableButtons)) + btnCols - 1) / btnCols * cfgRow
 	}
-	// Players-list row buttons (playtest: the cluster crowded the name out).
-	// Same tick-to-hide grid; hidden buttons free their width on every row.
-	c.Label(panel.X+pad, y+4, "Players-list row buttons (tick to hide):", ColTextDim)
+	// Players-list row actions — these now live in the per-row "…" /
+	// right-click menu (rostermenu.go); ticking one removes that menu entry.
+	c.Label(panel.X+pad, y+4, "Players-list row menu actions (tick to hide):", ColTextDim)
 	y += 30
 	rColW := (panel.W - 2*pad) / btnCols
 	for i, b := range hideableRosterButtons {

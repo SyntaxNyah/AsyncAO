@@ -87,3 +87,49 @@ func TestSpritePreviewTravelCorridor(t *testing.T) {
 		t.Fatal("a click must dismiss the preview")
 	}
 }
+
+// TestHoverPreviewToggleGatesOnlyDwell pins the playtest regression: turning
+// hover-previews OFF must disable ONLY the dwell pop-up — an explicit
+// right-click on a trigger still opens the preview.
+func TestHoverPreviewToggleGatesOnlyDwell(t *testing.T) {
+	trigger := sdl.Rect{X: 10, Y: 10, W: 50, H: 50}
+	c := &Ctx{mouseX: 20, mouseY: 20}
+	c.SetHoverPreview(false, 0) // previews toggle OFF
+
+	if c.HoverPreview("emote:a", trigger) {
+		t.Fatal("hover with the toggle off must never open a preview")
+	}
+	c.rightClicked = true
+	if !c.HoverPreview("emote:a", trigger) {
+		t.Fatal("right-click must open the preview even with the toggle off")
+	}
+	if c.hoverID != "emote:a" {
+		t.Fatal("the right-click open must register the trigger (close-on-leave contract)")
+	}
+	// Subsequent frames (no right-click) keep the trigger alive while hovered…
+	c.rightClicked = false
+	if c.HoverPreview("emote:a", trigger) {
+		t.Fatal("no dwell may start while the toggle is off")
+	}
+	if c.hoverID != "emote:a" {
+		t.Fatal("an open right-click preview's trigger must stay registered while hovered")
+	}
+	// …and clear the moment the cursor leaves the trigger.
+	c.mouseX, c.mouseY = 500, 500
+	if c.HoverPreview("emote:a", trigger) {
+		t.Fatal("off-trigger must not preview")
+	}
+	if c.hoverID != "" {
+		t.Fatal("leaving the trigger must clear its id")
+	}
+
+	// Toggle ON: the dwell path arms (first frame registers, no instant open).
+	c.SetHoverPreview(true, 0)
+	c.mouseX, c.mouseY = 20, 20
+	if c.HoverPreview("emote:a", trigger) {
+		t.Fatal("the first hovered frame only arms the dwell")
+	}
+	if !c.HoverPreview("emote:a", trigger) {
+		t.Fatal("with a zero dwell, the second frame must open")
+	}
+}

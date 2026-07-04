@@ -162,6 +162,7 @@ func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font
 			return nil, err
 		}
 		m.styled = append(m.styled, line)
+		m.lineRanges = append(m.lineRanges, lr)
 	}
 	return m, nil
 }

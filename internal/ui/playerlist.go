@@ -23,23 +23,9 @@ import (
 )
 
 const (
-	playerRowH    = int32(44) // a char icon flanked by two text rows (IC identity, OOC)
+	playerRowH    = int32(44) // a char icon flanked by two text rows (IC identity, OOC) — actions live in the … menu, so rows never grow past the icon
 	playerIconSz  = int32(38)
 	playerHeaderH = int32(26) // a /gas area-group header row (name + count, click to jump)
-	// playerStackWidth: below this row width (a narrow / windowed player panel) the action
-	// buttons can't share the name's line without squeezing the showname to nothing — the
-	// "player list scales wrong unless fullscreen" report. Under it, the buttons drop to
-	// their own line below the name, which gets the full width. playerStackBtnH is the
-	// extra height that second line needs.
-	playerStackWidth = int32(360)
-	playerStackBtnH  = int32(26)
-	// playerMinNameW: the name column (chips + "[uid] showname · character") the
-	// action cluster must always leave readable. When the widest enabled cluster
-	// would squeeze it below this, the buttons stack onto their own line — the
-	// fixed playerStackWidth alone let a full cluster (Pair/UID/Follow/IPID/
-	// Friend/Ignore/Profile) hide the name "unless the chat is REALLY wide"
-	// (playtest). Buttons are also individually hideable (UI… popup).
-	playerMinNameW = int32(210)
 )
 
 // Roster sort modes, cycled by the Sort button (orders PLAYERS, flat or within
@@ -305,46 +291,24 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 		a.playerScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	rowW := r.W - scrollBarW - 6
-	// Stack each row's action buttons below the name when tight: either the
-	// panel is plain narrow, or the WIDEST enabled cluster would leave the
-	// name column under playerMinNameW (widths mirror the drawPlayerRow
-	// buttons; hidden/toggled-off buttons don't count, so hiding some in the
-	// UI… popup genuinely buys the name room back).
-	clusterW := int32(0)
-	if !a.panelHidden(rosterBtnPair) {
-		clusterW += c.TextWidth("Pair…") + 14 + 4
-	}
-	if !a.panelHidden(rosterBtnUID) {
-		clusterW += c.TextWidth("UID") + 12 + 4
-	}
-	if a.followShow {
-		clusterW += c.TextWidth("Following") + 14 + 4
-	}
-	if !a.panelHidden(rosterBtnIPID) {
-		clusterW += c.TextWidth("IPID") + 12 + 4
-	}
-	if a.d.Prefs.FriendButtonShown() {
-		clusterW += c.TextWidth("Unfriend") + 12 + 4
-	}
-	if !a.panelHidden(rosterBtnIgnore) {
-		clusterW += c.TextWidth("Unignore") + 12 + 4
-	}
-	if !a.panelHidden(rosterBtnProfile) {
-		clusterW += c.TextWidth("Profile") + 12 + 4
-	}
-	iconSz := playerIconSz * int32(a.playerPct) / 100
-	narrow := rowW < playerStackWidth || rowW-(6+iconSz+8)-clusterW < playerMinNameW
 	contentH := int32(0)
 	for i := range rows {
-		contentH += a.rowHeight(rows[i], narrow)
+		contentH += a.rowHeight(rows[i])
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.playerScroll = c.VScrollbar("playerlist", track, a.playerScroll, contentH, r.H)
+	// While the profile popover is up and hovered, the rows underneath run
+	// pointer-blind (the kit's fence = its z-order): a click on the card must
+	// not also press the "…" trigger or jump an area header behind it.
+	cardFenced := false
+	if a.profileCardShow && pointIn(c.mouseX, c.mouseY, profileCardRect(r)) {
+		c.fencePointer()
+		cardFenced = true
+	}
 	clipPrev, clipHad := c.pushClip(r)
-	defer c.popClip(clipPrev, clipHad)
 	y := r.Y - a.playerScroll
 	for i := range rows {
-		rh := a.rowHeight(rows[i], narrow)
+		rh := a.rowHeight(rows[i])
 		if y > r.Y+r.H {
 			break
 		}
@@ -352,25 +316,25 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 			if rows[i].header {
 				a.drawAreaHeaderRow(rows[i], sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 2})
 			} else {
-				a.drawPlayerRow(rows[i].idx, sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 4}, myUID, speaker, cmSet, narrow)
+				a.drawPlayerRow(rows[i].idx, sdl.Rect{X: r.X, Y: y, W: rowW, H: rh - 4}, myUID, speaker, cmSet)
 			}
 		}
 		y += rh
+	}
+	c.popClip(clipPrev, clipHad)
+	if cardFenced {
+		c.unfencePointer() // the card's own pass (Close button) gets the real pointer
 	}
 	a.drawProfileCardOverlay(r) // #101: the profile popover sits on top of the list
 }
 
 // rowHeight is the display height of one roster row (area headers are shorter);
 // player rows scale with the Players-tab text zoom (Ctrl+wheel).
-func (a *App) rowHeight(row rosterRow, narrow bool) int32 {
+func (a *App) rowHeight(row rosterRow) int32 {
 	if row.header {
 		return playerHeaderH
 	}
-	h := playerRowH * int32(a.playerPct) / 100
-	if narrow {
-		h += playerStackBtnH // room for the action buttons on their own line
-	}
-	return h
+	return playerRowH * int32(a.playerPct) / 100
 }
 
 // drawPlayerRow is one player: char icon + "[uid] showname · character" with the
@@ -380,7 +344,7 @@ func (a *App) rowHeight(row rosterRow, narrow bool) int32 {
 // joinFlashColor is the amber "just joined" row tint, faded out over joinFlashWindow.
 var joinFlashColor = sdl.Color{R: 240, G: 200, B: 90, A: 255}
 
-func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet map[string]bool, narrow bool) {
+func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet map[string]bool) {
 	c := a.ctx
 	p := &a.rosterView()[idx]
 	isSpec := strings.EqualFold(p.name, "Spectator")
@@ -441,126 +405,29 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 	iconR := sdl.Rect{X: row.X + 6, Y: row.Y + (row.H-iconSz)/2, W: iconSz, H: iconSz}
 	a.drawPlayerIcon(p, idx, iconR, isSpec)
 
-	// Right cluster: Pair + compact Copy buttons (mod also gets Copy-IPID). On a narrow
-	// panel the cluster drops to its OWN line at the bottom of the row, so the name above
-	// gets the full width instead of being squeezed to one letter (the windowed-mode bug).
-	btnY := row.Y + (row.H-22)/2
-	if narrow {
-		btnY = row.Y + row.H - 24
-	}
+	// Right edge: ONE "…" trigger — every single-player action (Message/Pair/
+	// Follow/Copy/Friend/Ignore/Profile) lives in its popup menu (rostermenu.go).
+	// The playtest verdict on the old inline cluster: it crowded the name column
+	// and, zoomed, landed on the OOC/IPID line. Right-clicking anywhere on the
+	// row is the shortcut; the visible button keeps the menu discoverable.
 	bx := row.X + row.W - 4
-	// Pair / Copy-UID need a UID. The PR/PU live roster now carries it, so these
-	// show on live rows too; the CharsCheck-only fallback has none (hence the gate).
-	// Pair sends the server's "/pair <uid>" command — no popup, no char-slot guess.
-	if p.uid != "" {
-		if !a.panelHidden(rosterBtnPair) {
-			pw := c.TextWidth("Pair") + 14
-			bx -= pw
-			if c.Button(sdl.Rect{X: bx, Y: btnY, W: pw, H: 22}, "Pair") {
-				a.queueOOCLines([]string{"/pair " + p.uid}) // we have the UID — no popup needed
-				a.warnLine = clampLine("Sent /pair " + p.uid + " — " + display)
-				a.warnAt = a.now()
-			}
+	if hasRosterMenu(p) {
+		bx -= rosterMenuBtnW
+		mb := sdl.Rect{X: bx, Y: row.Y + (row.H-22)/2, W: rosterMenuBtnW, H: 22}
+		if c.Button(mb, "…") {
+			a.openRosterMenu(p, isMe, isSpec, sdl.Point{X: mb.X + mb.W, Y: mb.Y + mb.H + 2})
+			c.clicked = false // the opening click is the menu's, not a later widget's
 		}
-		if !a.panelHidden(rosterBtnUID) {
-			uw := c.TextWidth("UID") + 12
-			bx -= uw + 4
-			if c.Button(sdl.Rect{X: bx, Y: btnY, W: uw, H: 22}, "UID") {
-				_ = sdl.SetClipboardText(p.uid)
-				a.warnLine = clampLine("Copied UID " + p.uid)
-				a.warnAt = a.now()
-			}
+		c.Tooltip(mb, "Actions for this player (Message, Pair, Copy, Friend, Ignore…) — right-clicking the row works too")
+		if c.rightClicked && c.hovering(row) {
+			a.openRosterMenu(p, isMe, isSpec, sdl.Point{X: c.mouseX, Y: c.mouseY})
+			c.rightClicked = false
 		}
-		// Follow (M3, opt-in): trail this player across areas — auto-jump when they
-		// move. Only shown when the player-list "Follow" toggle is on (OFF default);
-		// a.followShow is read once per frame in drawPlayerList (no per-row lock).
-		if a.followShow {
-			fl := "Follow"
-			if a.followUID == p.uid {
-				fl = "Following"
-			}
-			fw := c.TextWidth(fl) + 14
-			bx -= fw + 4
-			fr := sdl.Rect{X: bx, Y: btnY, W: fw, H: 22}
-			if c.Button(fr, fl) {
-				a.toggleFollow(p.uid)
-			}
-			c.Tooltip(fr, "Follow this player: auto-jump to their area whenever they move. Click again to stop.")
-		}
-	} else if !isSpec && p.name != "" && !a.panelHidden(rosterBtnPair) {
-		// No live UID (CharsCheck-only roster, or a server without PR/PU UIDs): can't
-		// direct-/pair, so offer the manual-UID popup instead (pre-filled from
-		// /getarea when it confidently matched the character). Keeps a home for
-		// click-to-pair now that the IC log's double-click selects text.
-		pw := c.TextWidth("Pair…") + 14
-		bx -= pw
-		pr := sdl.Rect{X: bx, Y: btnY, W: pw, H: 22}
-		if c.Button(pr, "Pair…") {
-			a.openPairPopup(p.name)
-		}
-		c.Tooltip(pr, "Pair via the manual /pair UID box — this row has no live UID")
-	}
-	if p.ipid != "" && !a.panelHidden(rosterBtnIPID) { // IPID is mod-only server data — its presence IS the authorization (don't gate on local mod-detection)
-		iw := c.TextWidth("IPID") + 12
-		bx -= iw + 4
-		if c.Button(sdl.Rect{X: bx, Y: btnY, W: iw, H: 22}, "IPID") {
-			_ = sdl.SetClipboardText(p.ipid)
-			a.warnLine = clampLine("Copied IPID for " + display)
-			a.warnAt = a.now()
-		}
-	}
-	// Add/remove friend (matches by showname, else character — the IC-log
-	// highlight key, no UID needed). Shown for any named player; reuses isFriend
-	// from the single lookup above, so the row isn't scanned twice.
-	if fk != "" && a.serverKey != "" && a.d.Prefs.FriendButtonShown() {
-		fl := "+ Friend"
-		if isFriend {
-			fl = "Unfriend" // friended state reads as the un-action (one click removes)
-		}
-		fw := c.TextWidth(fl) + 12
-		bx -= fw + 4
-		fr := sdl.Rect{X: bx, Y: btnY, W: fw, H: 22}
-		if c.Button(fr, fl) {
-			a.toggleServerFriend(fk)
-		}
-		c.Tooltip(fr, "Add this player to your friends — highlights their messages in the IC log. Click again to remove. Matches their showname, so it can be spoofed.")
-	}
-	// Ignore / Unignore (#81): block a player's IC + OOC. Same showname-else-char
-	// key as friends (all the MS wire carries). Always shown for a named player —
-	// it's a moderation-of-your-own-view tool, independent of the friend button.
-	if fk != "" && a.serverKey != "" && !a.panelHidden(rosterBtnIgnore) {
-		ignored := a.d.Prefs.ServerIgnoreMatch(a.serverKey, fk)
-		il := "Ignore"
-		if ignored {
-			il = "Unignore"
-		}
-		iw := c.TextWidth(il) + 12
-		bx -= iw + 4
-		ir := sdl.Rect{X: bx, Y: btnY, W: iw, H: 22}
-		if c.Button(ir, il) {
-			a.toggleServerIgnore(fk)
-		}
-		c.Tooltip(ir, "Ignore this player — drops their IC and OOC messages (no log line, no sprite, no blip). Click again to unignore; you can also manage the list in Settings.")
-	}
-	// Profile (#101): a card other AsyncAO players can set. Only rows we HAVE a
-	// profile for show this (slice 1: your own; slice 2 adds remote players).
-	if prof, ok := a.profileFor(p, isMe); ok && !a.panelHidden(rosterBtnProfile) {
-		pw := c.TextWidth("Profile") + 12
-		bx -= pw + 4
-		pb := sdl.Rect{X: bx, Y: btnY, W: pw, H: 22}
-		if c.Button(pb, "Profile") {
-			a.openProfileCard(prof, display)
-		}
-		c.Tooltip(pb, "View this player's AsyncAO profile card")
 	}
 
-	// Text column between the icon and the button cluster (the FULL width to the panel
-	// edge when the buttons dropped to their own line below — see narrow above).
+	// Text column between the icon and the "…" trigger.
 	textX := row.X + 6 + iconSz + 8
 	textW := bx - textX - 8
-	if narrow {
-		textW = row.X + row.W - 4 - textX
-	}
 	if textW < 40 {
 		textW = 40
 	}
