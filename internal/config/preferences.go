@@ -394,6 +394,16 @@ type SpriteStylePref struct {
 	Paint2R    uint8 `json:"paint2R,omitempty"`
 	Paint2G    uint8 `json:"paint2G,omitempty"`
 	Paint2B    uint8 `json:"paint2B,omitempty"`
+	// Glitch options: the look (a courtroom.Glitch* mode byte) and the two fringe
+	// ghost colours (all-zero = the classic red/blue). Only meaningful while Glitch
+	// is on — styleFromPref (ui) keeps them off the wire otherwise.
+	GlitchMode uint8 `json:"glitchMode,omitempty"`
+	GlitchAR   uint8 `json:"glitchAR,omitempty"`
+	GlitchAG   uint8 `json:"glitchAG,omitempty"`
+	GlitchAB   uint8 `json:"glitchAB,omitempty"`
+	GlitchBR   uint8 `json:"glitchBR,omitempty"`
+	GlitchBG   uint8 `json:"glitchBG,omitempty"`
+	GlitchBB   uint8 `json:"glitchBB,omitempty"`
 }
 
 // clampOpacity bounds a persisted/edited opacity to [0,100] (0 = unset/opaque).

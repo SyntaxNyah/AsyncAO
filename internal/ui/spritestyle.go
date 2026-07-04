@@ -39,6 +39,15 @@ func styleFromPref(p config.SpriteStylePref) courtroom.SpriteStyle {
 		s.PaintSplit = p.PaintSplit
 		s.Paint2R, s.Paint2G, s.Paint2B = p.Paint2R, p.Paint2G, p.Paint2B
 	}
+	// Glitch options: same gating — the mode + fringe colours ride only while Glitch
+	// itself is on (an out-of-range stored mode falls back to Classic, like decode).
+	if p.Glitch {
+		if p.GlitchMode < courtroom.GlitchModeCount {
+			s.GlitchMode = p.GlitchMode
+		}
+		s.GlitchAR, s.GlitchAG, s.GlitchAB = p.GlitchAR, p.GlitchAG, p.GlitchAB
+		s.GlitchBR, s.GlitchBG, s.GlitchBB = p.GlitchBR, p.GlitchBG, p.GlitchBB
+	}
 	return s
 }
 

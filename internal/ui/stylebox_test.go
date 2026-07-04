@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 // TestHuePaintSliderRoundTrip pins the Hue slider's unit contract: the wheel
@@ -66,5 +67,23 @@ func TestTwoTonePrefGating(t *testing.T) {
 		if s := styleFromPref(p); s.PaintSplit != 0 || s.Paint2R != 0 || s.Paint2B != 0 {
 			t.Errorf("%s: two-tone leaked onto the wire style: %+v", name, s)
 		}
+	}
+}
+
+// TestGlitchPrefGating pins styleFromPref's glitch normalization: the mode + fringe
+// colour pair reach the courtroom style only while Glitch itself is on, and an
+// out-of-range stored mode falls back to Classic (matching the wire decoder).
+func TestGlitchPrefGating(t *testing.T) {
+	on := config.SpriteStylePref{Glitch: true, GlitchMode: courtroom.GlitchTorn, GlitchAR: 9, GlitchBB: 8}
+	if s := styleFromPref(on); !s.Glitch || s.GlitchMode != courtroom.GlitchTorn || s.GlitchAR != 9 || s.GlitchBB != 8 {
+		t.Errorf("glitch options lost on the active path: %+v", s)
+	}
+	off := config.SpriteStylePref{GlitchMode: courtroom.GlitchTorn, GlitchAR: 9, GlitchBB: 8}
+	if s := styleFromPref(off); s.GlitchMode != 0 || s.GlitchAR != 0 || s.GlitchBB != 0 {
+		t.Errorf("glitch options leaked with Glitch off: %+v", s)
+	}
+	bad := config.SpriteStylePref{Glitch: true, GlitchMode: 200, GlitchAR: 9}
+	if s := styleFromPref(bad); s.GlitchMode != 0 || s.GlitchAR != 9 {
+		t.Errorf("out-of-range mode: got mode=%d AR=%d, want 0/9", s.GlitchMode, s.GlitchAR)
 	}
 }

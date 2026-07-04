@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -204,6 +206,46 @@ func nextRestyle(r uint8) uint8 {
 	}
 }
 
+// glitchModeName labels the transmitted glitch look for its cycle button.
+func glitchModeName(m uint8) string {
+	switch m {
+	case courtroom.GlitchHeavy:
+		return "Glitch: Heavy"
+	case courtroom.GlitchTorn:
+		return "Glitch: Torn"
+	case courtroom.GlitchStatic:
+		return "Glitch: Static"
+	case courtroom.GlitchEcho:
+		return "Glitch: Echo"
+	default:
+		return "Glitch: Classic"
+	}
+}
+
+// glitchPairPresets are the quick fringe colour PAIRS (the ask: not only red and
+// blue). "Classic" stores all-zero — the wire default — so picking it sends the lean
+// frame and every build, old or new, renders the same red/blue.
+var glitchPairPresets = []struct {
+	name                   string
+	ar, ag, ab, br, bg, bb uint8
+}{
+	{"Classic (red / blue)", 0, 0, 0, 0, 0, 0},
+	{"Acid (green / magenta)", 60, 255, 60, 255, 40, 220},
+	{"Vapor (cyan / orange)", 60, 230, 255, 255, 140, 40},
+	{"Royal (purple / gold)", 170, 60, 255, 255, 215, 60},
+	{"Ghost (white / gray)", 245, 245, 245, 120, 120, 120},
+	{"Ember (red / dark red)", 255, 60, 40, 120, 10, 10},
+}
+
+// glitchEffective resolves a stored fringe pair to the colours that actually draw:
+// the all-zero pair is the classic red/blue default (mirrors the render's rule).
+func glitchEffective(ar, ag, ab, br, bg, bb uint8) (sdl.Color, sdl.Color) {
+	if ar == 0 && ag == 0 && ab == 0 && br == 0 && bg == 0 && bb == 0 {
+		return sdl.Color{R: 255, A: 255}, sdl.Color{B: 255, A: 255}
+	}
+	return sdl.Color{R: ar, G: ag, B: ab, A: 255}, sdl.Color{R: br, G: bg, B: bb, A: 255}
+}
+
 // minVisibleStyleOpacity floors the Fade slider so a style can't go invisible. It
 // mirrors courtroom.minVisibleOpacity (the render side floors it too); kept here
 // because config/courtroom consts aren't exported.
@@ -259,8 +301,13 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 30                    // extra-restyle cycle (#M5+)
 	bh += 30                    // movement-path cycle (#34)
 	bh += 18 + stylePathBox + 8 // draw-your-own path editor (#34 B2)
+	bh += 26                    // Outline / Shadow row (was uncounted — the bottom rows sat in the pad)
 	if p.Outline {
 		bh += 82 // outline-colour swatch + R/G/B sliders (only while Outline is on)
+	}
+	bh += 26 // Glitch row (was uncounted, same fix)
+	if p.Glitch {
+		bh += 30 + 26 + 30 // glitch-look cycle + preset pairs + custom hex row
 	}
 	bh += 30 // clear button
 	// #126 presets: a header, a Save row, and one row per saved mood.
@@ -636,6 +683,67 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26
+	if p.Glitch { // glitch options: the look + the fringe colour pair
+		gb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
+		if c.Button(gb, glitchModeName(p.GlitchMode)) {
+			p.GlitchMode = (p.GlitchMode + 1) % courtroom.GlitchModeCount
+			a.d.Prefs.SetSpriteStyle(p)
+		}
+		c.Tooltip(gb, "The glitch look — Classic (fringe + jolt), Heavy (wider, harder, oftener), Torn (VHS band tearing), Static (jitter + signal-loss flicker), Echo (far trailing ghosts). Transmitted; an older AsyncAO build shows Classic.")
+		y += 30
+		// Preset colour pairs: each swatch is the two ghost colours side by side.
+		c.Label(x, y+5, "Pair", ColTextDim)
+		px := x + 34
+		for _, pr := range glitchPairPresets {
+			sq := sdl.Rect{X: px, Y: y, W: 24, H: 22}
+			ea, eb := glitchEffective(pr.ar, pr.ag, pr.ab, pr.br, pr.bg, pr.bb)
+			c.Fill(sdl.Rect{X: sq.X, Y: sq.Y, W: 12, H: sq.H}, ea)
+			c.Fill(sdl.Rect{X: sq.X + 12, Y: sq.Y, W: 12, H: sq.H}, eb)
+			active := p.GlitchAR == pr.ar && p.GlitchAG == pr.ag && p.GlitchAB == pr.ab &&
+				p.GlitchBR == pr.br && p.GlitchBG == pr.bg && p.GlitchBB == pr.bb
+			if active {
+				c.Border(sq, ColText)
+			} else {
+				c.Border(sq, ColBackground)
+			}
+			if c.clicked && c.hovering(sq) {
+				p.GlitchAR, p.GlitchAG, p.GlitchAB = pr.ar, pr.ag, pr.ab
+				p.GlitchBR, p.GlitchBG, p.GlitchBB = pr.br, pr.bg, pr.bb
+				a.d.Prefs.SetSpriteStyle(p)
+			}
+			c.Tooltip(sq, pr.name)
+			px += 28
+		}
+		y += 26
+		// Custom pair: one hex colour per ghost (A = left, B = right), with a live
+		// swatch each. The field mirrors the effective colour when not being typed in.
+		effA, effB := glitchEffective(p.GlitchAR, p.GlitchAG, p.GlitchAB, p.GlitchBR, p.GlitchBG, p.GlitchBB)
+		half := (r.W - styleBoxPad*2 - 8) / 2
+		hexW := half - 30
+		drawHex := func(hx int32, label, id string, buf *string, eff sdl.Color, set func(col sdl.Color)) {
+			c.Label(hx, y+4, label, ColTextDim)
+			swR := sdl.Rect{X: hx + 10, Y: y + 2, W: 14, H: 14}
+			c.Fill(swR, eff)
+			c.Border(swR, ColBackground)
+			if c.focusID != id {
+				*buf = fmt.Sprintf("%02x%02x%02x", eff.R, eff.G, eff.B)
+			}
+			if next, _ := c.TextField(id, sdl.Rect{X: hx + 30, Y: y, W: hexW, H: fieldH}, *buf, "RRGGBB"); next != *buf {
+				*buf = next
+				if col, ok := parseHexColor(next); ok {
+					set(col)
+					a.d.Prefs.SetSpriteStyle(p)
+				}
+			}
+		}
+		drawHex(x, "A", "glitchHexA", &a.glitchHexA, effA, func(col sdl.Color) {
+			p.GlitchAR, p.GlitchAG, p.GlitchAB = col.R, col.G, col.B
+		})
+		drawHex(x+half+8, "B", "glitchHexB", &a.glitchHexB, effB, func(col sdl.Color) {
+			p.GlitchBR, p.GlitchBG, p.GlitchBB = col.R, col.G, col.B
+		})
+		y += 30
+	}
 
 	if c.Button(sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}, "Clear style") {
 		a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})

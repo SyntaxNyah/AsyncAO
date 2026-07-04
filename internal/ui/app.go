@@ -1287,6 +1287,10 @@ type sessionState struct {
 	styleBoxUserW    int32 // user-set width (0 = the default styleBoxW); height stays content-driven
 	styleBoxGrabDX   int32
 	styleBoxGrabDY   int32
+	// Custom glitch fringe-colour hex buffers (the style box's A/B fields): they
+	// hold in-progress typing and mirror the pref's effective colour when unfocused.
+	glitchHexA string
+	glitchHexB string
 	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their
 	// displayed second changes, into a reused scratch slice — so a visible (esp.
 	// paused) clock costs nothing on the always-on courtroom draw.

@@ -273,6 +273,7 @@ type Viewport struct {
 	dstRect  sdl.Rect
 	fillRect sdl.Rect
 	fxRect   sdl.Rect // #8 outline/shadow offset-blit destination (kept off dstRect)
+	srcRect  sdl.Rect // torn-glitch band source (texture coords; kept off the dst scratches)
 	reflRect sdl.Rect // #123 reflection blit destination
 	reflClip sdl.Rect // #123 reflection clip rect (confine to the stage when not already clipped)
 	maskClip sdl.Rect // viewport sprite mask: clip character sprites to the stage so an offset can't spill out
@@ -946,6 +947,8 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		pathPts                             [16]uint8 // #34 custom-path waypoints (size MUST match courtroom maxPathPoints)
 		scalePct                            = 100
 		rotDeg                              float64
+		glitchMode                          uint8 // transmitted glitch look (courtroom.Glitch*; 0 = classic)
+		gAR, gAG, gAB, gBR, gBG, gBB        uint8 // fringe ghost colour pair (all-zero = classic red/blue)
 	)
 	if st := layer.Style; st.Active() {
 		// Colour: a transmitted hue-cycle rainbow, else the tint colour, then
@@ -974,6 +977,9 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		motion = st.Motion
 		pathPts, pathLen = st.Path, st.PathLen // #34 custom path (a cheap fixed-size array copy)
 		glitch = st.Glitch
+		glitchMode = st.GlitchMode
+		gAR, gAG, gAB = st.GlitchAR, st.GlitchAG, st.GlitchAB
+		gBR, gBG, gBB = st.GlitchBR, st.GlitchBG, st.GlitchBB
 		scalePct = st.ScalePct()
 		rotDeg = st.RotationDeg()
 		if st.FlipH { // transmitted mirror toggles the layer's own flip
@@ -1044,6 +1050,13 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		}
 	}
 
+	// Static glitch: fold the signal-loss flicker into the alpha BEFORE the mods are
+	// applied (the jolt/fringe below runs after them). Pure hash math per time bucket;
+	// the other modes leave alphaMod untouched.
+	if glitch && glitchMode == courtroom.GlitchStatic {
+		alphaMod = uint8(int(alphaMod) * glitchFlickerPct(v.fxClock) / 100)
+	}
+
 	// Apply each modulation, then restore EACH to neutral after the blit so it
 	// never bleeds onto the next user of this SHARED T1 page (next frame, emote
 	// preview, wardrobe grid). ColorMod leaves alpha alone so the transparent
@@ -1096,11 +1109,12 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		v.dstRect.Y += breathBobY
 	}
 	// #13 glitch: an occasional horizontal jolt moves the WHOLE sprite (solid + outline +
-	// the chromatic fringe below) together; glitchSplit is the chromatic offset for the fringe.
+	// the chromatic fringe below) together; glitchSplit is the chromatic offset for the
+	// fringe. The mode picks its own split/jolt tuning (glitchParamsMode).
 	var glitchSplit int32
 	if glitch {
 		var jolt int32
-		glitchSplit, jolt = glitchParams(v.fxClock, vp.H)
+		glitchSplit, jolt = glitchParamsMode(glitchMode, v.fxClock, vp.H)
 		v.dstRect.X += jolt
 	}
 	angle := rotDeg // transmitted fixed tilt (spin adds to it)
@@ -1130,7 +1144,16 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			}
 		}
 	}
-	_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
+	// Torn glitch: during its tear windows the sprite draws as horizontal bands, some
+	// shoved sideways (VHS tracking-error style). Angle-rotated sprites keep the plain
+	// blit — CopyEx rotates each band around its own centre, which shreds the art
+	// rather than tearing it. Everything else (mods, fringe) composes unchanged.
+	if glitch && glitchMode == courtroom.GlitchTorn && angle == 0 &&
+		v.fxClock%glitchTornPeriod < glitchTornWindow {
+		v.drawTornSprite(ren, tex, page, flip, glitchSplit)
+	} else {
+		_ = ren.CopyEx(tex, nil, &v.dstRect, angle, nil, flip)
+	}
 	if doColorMod {
 		_ = tex.SetColorMod(255, 255, 255)
 	}
@@ -1140,27 +1163,74 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	if glow {
 		_ = tex.SetBlendMode(sdl.BLENDMODE_BLEND)
 	}
-	// #13 chromatic fringe: a red ghost left + blue ghost right over the solid sprite (the
-	// mods above are already restored, so these set + restore their own). 0-alloc.
+	// #13 chromatic fringe: a ghost pair over the solid sprite — classic red/blue, or
+	// the style's own colour pair (the mods above are already restored, so these set +
+	// restore their own). 0-alloc.
 	if glitch {
-		v.drawGlitchFringe(ren, tex, angle, flip, glitchSplit)
+		v.drawGlitchFringe(ren, tex, angle, flip, glitchSplit, glitchMode, gAR, gAG, gAB, gBR, gBG, gBB)
 	}
 }
 
-// drawGlitchFringe overlays a red and a blue offset ghost of the sprite (chromatic
-// aberration). Shared tex: set→blit→RESTORE ColorMod + AlphaMod so nothing bleeds. 0-alloc.
-func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle float64, flip sdl.RendererFlip, split int32) {
+// drawGlitchFringe overlays the two offset ghosts of the sprite (chromatic aberration):
+// colour A left, colour B right — all-zero = the classic red/blue pair. Static jitters
+// the ghosts on both axes per time bucket; Echo draws a second, fainter pair further
+// out first. Shared tex: set→blit→RESTORE ColorMod + AlphaMod so nothing bleeds. 0-alloc.
+func (v *Viewport) drawGlitchFringe(ren *sdl.Renderer, tex *sdl.Texture, angle float64, flip sdl.RendererFlip, split int32, mode uint8, aR, aG, aB, bR, bG, bB uint8) {
+	if aR == 0 && aG == 0 && aB == 0 && bR == 0 && bG == 0 && bB == 0 {
+		aR, bB = 255, 255 // the classic pair: red left, blue right
+	}
+	adx, ady := -split, int32(0)
+	bdx, bdy := split, int32(0)
+	if mode == courtroom.GlitchStatic { // signal loss: the ghosts jitter around the sprite
+		h := glitchHash(uint32(v.fxClock / glitchStaticBucket))
+		amp := split * glitchStaticAmpMul
+		adx -= int32(h&0xF) * amp / 15
+		ady = int32((h>>4)&0xF)*amp/15 - amp/2
+		bdx += int32((h>>8)&0xF) * amp / 15
+		bdy = int32((h>>12)&0xF)*amp/15 - amp/2
+	}
+	if mode == courtroom.GlitchEcho { // a far, faint echo pair behind the main fringe
+		_ = tex.SetAlphaMod(glitchFringeAlpha / glitchEchoFadeDiv)
+		v.blitFringeGhost(ren, tex, angle, flip, adx*glitchEchoFarMul, 0, aR, aG, aB)
+		v.blitFringeGhost(ren, tex, angle, flip, bdx*glitchEchoFarMul, 0, bR, bG, bB)
+	}
 	_ = tex.SetAlphaMod(glitchFringeAlpha)
-	_ = tex.SetColorMod(255, 0, 0) // red ghost, offset left
-	v.fxRect = v.dstRect
-	v.fxRect.X -= split
-	_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
-	_ = tex.SetColorMod(0, 0, 255) // blue ghost, offset right
-	v.fxRect = v.dstRect
-	v.fxRect.X += split
-	_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
+	v.blitFringeGhost(ren, tex, angle, flip, adx, ady, aR, aG, aB)
+	v.blitFringeGhost(ren, tex, angle, flip, bdx, bdy, bR, bG, bB)
 	_ = tex.SetColorMod(255, 255, 255)
 	_ = tex.SetAlphaMod(255)
+}
+
+// blitFringeGhost draws one tinted ghost copy at an offset from the sprite's rect.
+// Caller owns the alpha bracket + the final restore.
+func (v *Viewport) blitFringeGhost(ren *sdl.Renderer, tex *sdl.Texture, angle float64, flip sdl.RendererFlip, dx, dy int32, r, g, b uint8) {
+	_ = tex.SetColorMod(r, g, b)
+	v.fxRect = v.dstRect
+	v.fxRect.X += dx
+	v.fxRect.Y += dy
+	_ = ren.CopyEx(tex, nil, &v.fxRect, angle, nil, flip)
+}
+
+// drawTornSprite draws the sprite as glitchTornBands horizontal bands, ~two thirds of
+// them shoved sideways by a per-(band, bucket) hash — deterministic, re-rolled every
+// glitchTornBucket so the tear crawls while its window lasts. Bands map 1:1 between
+// texture rows and dstRect rows, so flip (horizontal) stays correct per band. 0-alloc.
+func (v *Viewport) drawTornSprite(ren *sdl.Renderer, tex *sdl.Texture, page *TexturePage, flip sdl.RendererFlip, split int32) {
+	bucket := glitchHash(uint32(v.fxClock / glitchTornBucket))
+	maxOff := split * glitchTornOffMul
+	for i := int32(0); i < glitchTornBands; i++ {
+		sy0 := page.H * i / glitchTornBands
+		sy1 := page.H * (i + 1) / glitchTornBands
+		dy0 := v.dstRect.H * i / glitchTornBands
+		dy1 := v.dstRect.H * (i + 1) / glitchTornBands
+		var off int32
+		if h := glitchHash(bucket + uint32(i)*glitchTornBandSalt); h%3 != 0 { // ~2/3 of the bands tear
+			off = int32(h%uint32(2*maxOff+1)) - maxOff
+		}
+		v.srcRect = sdl.Rect{X: 0, Y: sy0, W: page.W, H: sy1 - sy0}
+		v.fxRect = sdl.Rect{X: v.dstRect.X + off, Y: v.dstRect.Y + dy0, W: v.dstRect.W, H: dy1 - dy0}
+		_ = ren.CopyEx(tex, &v.srcRect, &v.fxRect, 0, nil, flip)
+	}
 }
 
 // Entrance tuning (#9): a quick slide-in for a newly-arrived speaker.
@@ -1206,6 +1276,72 @@ func glitchParams(clock time.Duration, vpH int32) (split, jolt int32) {
 		}
 	}
 	return split, jolt
+}
+
+// Per-mode glitch tuning (the v1.54.0 glitch options). All pure math off the
+// free-running clock, like the classic parameters above.
+const (
+	glitchHeavySplitMul   = 2                      // Heavy: fringe distance × this
+	glitchHeavyJoltPeriod = 700 * time.Millisecond // Heavy: jolts come almost twice as often
+	glitchHeavyJoltWindow = 150 * time.Millisecond // …and hold longer
+	glitchHeavyJoltMul    = 4                      // …and shove harder
+	glitchEchoSplitMul    = 2                      // Echo: main fringe distance × this
+	glitchEchoFarMul      = 3                      // Echo: the faint pair sits this × further out
+	glitchEchoFadeDiv     = 3                      // Echo: the far pair's alpha = fringe / this
+	glitchStaticBucket    = 50 * time.Millisecond  // Static: jitter/flicker re-roll cadence
+	glitchStaticAmpMul    = 2                      // Static: ghost jitter amplitude = split × this
+	glitchStaticFloorPct  = 70                     // Static: normal flicker floor (percent alpha)
+	glitchStaticDropPct   = 35                     // Static: the hard dropout's alpha
+	glitchStaticDropMod   = 24                     // Static: ~1 bucket in this many dips hard
+	glitchTornBands       = int32(8)               // Torn: horizontal band count
+	glitchTornPeriod      = 900 * time.Millisecond // Torn: a tear every period
+	glitchTornWindow      = 140 * time.Millisecond // …lasting this long
+	glitchTornBucket      = 45 * time.Millisecond  // …re-rolling the band offsets this often
+	glitchTornOffMul      = 3                      // Torn: max band shove = split × this
+	glitchTornBandSalt    = 0x9E3779B9             // decorrelates per-band hashes within a bucket
+)
+
+// glitchParamsMode is glitchParams specialised by the transmitted glitch look:
+// Heavy widens the fringe and jolts harder/oftener on its own cadence, Echo only
+// widens (its motion is the extra ghost pair), Torn/Static keep the classic split
+// (their character lives in the band tearing / jitter+flicker). Pure, 0-alloc.
+func glitchParamsMode(mode uint8, clock time.Duration, vpH int32) (split, jolt int32) {
+	split, jolt = glitchParams(clock, vpH)
+	switch mode {
+	case courtroom.GlitchHeavy:
+		split *= glitchHeavySplitMul
+		jolt = 0
+		if clock%glitchHeavyJoltPeriod < glitchHeavyJoltWindow {
+			jolt = split * glitchHeavyJoltMul
+			if int64(clock/glitchHeavyJoltPeriod)%2 == 0 {
+				jolt = -jolt
+			}
+		}
+	case courtroom.GlitchEcho:
+		split *= glitchEchoSplitMul
+	}
+	return split, jolt
+}
+
+// glitchFlickerPct is Static's signal-loss alpha percentage for the current time
+// bucket: usually glitchStaticFloorPct..99, with an occasional hard dropout. Pure.
+func glitchFlickerPct(clock time.Duration) int {
+	h := glitchHash(uint32(clock / glitchStaticBucket))
+	if h%glitchStaticDropMod == 0 {
+		return glitchStaticDropPct
+	}
+	return glitchStaticFloorPct + int(h>>8)%(100-glitchStaticFloorPct)
+}
+
+// glitchHash is a tiny integer scrambler (xorshift-multiply) behind the glitch modes'
+// pseudo-random offsets — deterministic per (band, time bucket), stateless, 0-alloc.
+func glitchHash(n uint32) uint32 {
+	n ^= n >> 16
+	n *= 0x7feb352d
+	n ^= n >> 15
+	n *= 0x846ca68b
+	n ^= n >> 16
+	return n
 }
 
 // drawSilhouette blits the (shared, cached) silhouette texture at each dir offset (scaled by
