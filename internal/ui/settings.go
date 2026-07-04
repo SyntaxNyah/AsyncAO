@@ -653,15 +653,12 @@ func (a *App) settingsSection(y, w int32, title string) int32 {
 func (a *App) formW2() int32 { return a.formX + a.formW + scrollBarW }
 
 // fpsSettingRow draws one frame-rate row: the slider (bottom = default), an
-// exact-number entry (Enter applies), and the ∞ no-limit toggle. get/set wrap
-// the pref — the setters are sentinel-aware (config.FPSUnlimited / FPSZero)
-// and clamp typed values to [min, max]. allowZero rows (idle/background)
-// treat a typed 0 as the FROZEN state — decoration stops rendering entirely
-// in that state; on the active row 0 just restores the default (interaction
-// can't freeze itself). buf backs the number field (settingsState), reseeded
-// from the pref while unfocused so live typing never fights the stored value.
-// Returns the y past the row.
-func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, allowZero bool, get func() int, set func(int), buf *string, tip string) int32 {
+// exact-number entry (Enter applies; 0 or less = back to the default), and the
+// ∞ no-limit toggle. get/set wrap the pref — the setters are sentinel-aware
+// (config.FPSUnlimited) and clamp typed values to [min, max]. buf backs the
+// number field (settingsState), reseeded from the pref while unfocused so live
+// typing never fights the stored value. Returns the y past the row.
+func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, get func() int, set func(int), buf *string, tip string) int32 {
 	c := a.ctx
 	pad := a.formX // settings helpers must shadow the form origin (drawSettings rebase)
 	c.Label(pad, y+4, label, ColText)
@@ -686,15 +683,12 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, allowZ
 	// Exact-number entry (the power-user ask): type any value, Enter applies.
 	fieldID := id + "-num"
 	fr := sdl.Rect{X: track.X + track.W + 8, Y: y, W: 52, H: btnH}
-	// The getter maps the 0-stored sentinel to the shipped default, so cur is
-	// either a negative sentinel or a concrete rate here.
+	// The getter maps the 0 sentinel to the shipped default, so cur is either
+	// FPSUnlimited or a concrete rate here.
 	if c.focusID != fieldID {
-		switch cur {
-		case config.FPSUnlimited:
+		if cur == config.FPSUnlimited {
 			*buf = ""
-		case config.FPSZero:
-			*buf = "0"
-		default:
+		} else {
 			*buf = strconv.Itoa(cur)
 		}
 	}
@@ -702,12 +696,9 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, allowZ
 	*buf, entered = c.TextField(fieldID, fr, *buf, "fps")
 	if entered {
 		if n, err := strconv.Atoi(strings.TrimSpace(*buf)); err == nil {
-			switch {
-			case n == 0 && allowZero:
-				set(config.FPSZero) // 0 fps: freeze decoration in this state
-			case n <= 0:
-				set(0) // back to the default (the active row can't freeze)
-			default:
+			if n <= 0 {
+				set(0) // typed 0/negative = back to the default
+			} else {
 				set(n) // the setter clamps to [min, max]
 			}
 			cur = get()
@@ -732,8 +723,6 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, allowZ
 	switch {
 	case cur == config.FPSUnlimited:
 		lbl = "unlimited"
-	case cur == config.FPSZero:
-		lbl = "0 fps (frozen)"
 	case cur == def:
 		lbl = "default (" + strconv.Itoa(def) + " fps)"
 	default:
@@ -3082,20 +3071,20 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
-	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly. Each rate takes a typed exact number; ∞ removes the limit (Active: vsync paces the frames; Idle/Background: never slow down in that state); typing 0 on Idle/Background FREEZES decoration in that state — idle animations, blinking carets and ticking readouts stop repainting while chat, messages and sounds continue.", ColTextDim)
+	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly. Each rate takes a typed exact number, and ∞ removes the limit — for Active that means vsync paces the frames; for Idle/Background it means never slowing down in that state.", ColTextDim)
 	y += 6
 	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
-		config.FPSCapMin, config.FPSCapMax, config.FPSCapDefault, false,
+		config.FPSCapMin, config.FPSCapMax, config.FPSCapDefault,
 		a.d.Prefs.FPSCap, a.d.Prefs.SetFPSCap, &settings.fpsBufs[0],
-		"The ceiling while interacting or animating (30–240, type an exact number, or ∞ = uncapped/vsync). 60 is plenty for AO. Can't be 0 — interaction can't freeze itself.")
+		"The ceiling while interacting or animating (30–240, type an exact number, or ∞ = uncapped/vsync). 60 is plenty for AO.")
 	y = a.fpsSettingRow(y, "idlefps", "Idle frame rate:",
-		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault, true,
+		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault,
 		a.d.Prefs.IdleFPS, a.d.Prefs.SetIdleFPS, &settings.fpsBufs[1],
-		"The rate when nothing is animating and there's been no input for a second (10–120, ∞ = never slow down when idle, 0 = freeze decoration while idle). Input returns to the active rate instantly.")
+		"The rate when nothing is animating and there's been no input for a second (10–120, or ∞ = never slow down when idle). Input returns to the active rate instantly.")
 	y = a.fpsSettingRow(y, "unfocusedfps", "Background frame rate:",
-		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault, true,
+		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault,
 		a.d.Prefs.UnfocusedFPS, a.d.Prefs.SetUnfocusedFPS, &settings.fpsBufs[2],
-		"The rate while another window has focus (5–60, ∞ = never slow down unfocused, 0 = freeze decoration while unfocused). Minimized draws nothing.")
+		"The rate while another window has focus (5–60, or ∞ = never slow down unfocused). Minimized draws nothing.")
 	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, voice, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
 	y += 10
 	edl := a.d.Prefs.EventDrivenLoopOn()

@@ -100,10 +100,13 @@ func TestTalkBudget(t *testing.T) {
 	}
 }
 
-// TestFramePaceUnfocusedFollowsAnim pins BOTH focus states onto a LIVE stage
-// animation's exact schedule — the viewport is its own surface: its fps is
-// the sprite's fps (one frame per flip), never the idle/background trickle in
-// either direction. A stage with nothing animating stays on the flat rate.
+// TestFramePaceUnfocusedFollowsAnim pins the unfocused tier onto a LIVE stage
+// animation's schedule — an unfocused window is still visible (second-monitor
+// play), and the flat trickle rate there was the "idle animations go choppy
+// the moment I click into another window" report. With a resident 2×80 ms
+// speaker loop: unfocused paces at the 80 ms flip cadence (not the flat
+// 100 ms trickle), focused idle keeps its existing [full, idle] clamp, and a
+// stage with nothing animating stays on the flat rate.
 func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -137,10 +140,9 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	if got := a.FramePace(false); got != 80*time.Millisecond {
 		t.Errorf("unfocused pace with a live 80ms loop = %v, want the 80ms flip cadence", got)
 	}
-	// Focused idle follows the same content-exact schedule (the idle knob no
-	// longer inflates a 12.5 fps loop to 30 fps renders).
-	if got := a.FramePace(true); got != 80*time.Millisecond {
-		t.Errorf("focused idle pace with the same loop = %v, want the 80ms flip cadence", got)
+	// Focused idle is unchanged: the same loop clamps at the 30 fps idle budget.
+	if got := a.FramePace(true); got != budget(30) {
+		t.Errorf("focused idle pace with the same loop = %v, want the idle cap %v", got, budget(30))
 	}
 }
 
@@ -178,14 +180,14 @@ func TestFramePaceCeremonyBeatsSlowAnim(t *testing.T) {
 	a := testTabApp(t)
 	a.room = newRoomForTest(t) // a real room: enqueue runs the full begin() path
 	a.d.Viewport = render.NewViewport(store)
-	a.d.Prefs.SetIdleFPS(10) // the reported setting — must inflate nothing below
+	a.d.Prefs.SetIdleFPS(10) // the reported setting: idle floor at 10 fps
+	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
 
-	// Idle (no message) with a SLOW loop (2×200 ms): the BLOCKING sleep caps
-	// at animPaceCap (the exact flip renders off the park's deadline — a
-	// sleep paced to a slow flip froze the whole client; see animPace).
+	// Idle (no message) with a SLOW loop (2×200 ms): the content cadence,
+	// clamped to the idle rate.
 	animSpeaker(t, store, a, "anim://slowtalk", 200*time.Millisecond)
-	if got := a.FramePace(true); got != animPaceCap {
-		t.Fatalf("idle pace over a slow loop = %v, want the %v blocking-sleep cap", got, animPaceCap)
+	if got := a.FramePace(true); got != budget(10) {
+		t.Fatalf("idle pace over a slow loop = %v, want the 10 fps idle budget %v", got, budget(10))
 	}
 
 	// A message starts. Pin the typewriter to a plain 30 fps-ish crawl (the
@@ -236,26 +238,19 @@ func TestFramePaceUnlimited(t *testing.T) {
 	}
 }
 
-// TestMotionGrace pins the pointer-motion split (experimental loop): motion
-// paces the frames its OWN events cause at the full budget (motionHot →
-// FramePace), but never causes frames by itself — wantsFullRate ignores it,
-// so SkipFrame parks the instant the pointer stops ("moving the mouse takes
-// one frame per move, then it's 0 again"). The classic loop keeps treating
-// motion as plain input.
+// TestMotionGrace pins the pointer-motion split (experimental loop): bare
+// motion holds full rate only through the short motion grace, while the
+// classic loop keeps treating motion as plain input.
 func TestMotionGrace(t *testing.T) {
 	a := testTabApp(t)
-	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
 
 	a.NoteMotion()
-	if a.wantsFullRate() {
-		t.Error("bare motion must NOT hold frames on its own (SkipFrame parks between moves)")
-	}
-	if got := a.FramePace(true); got != budget(60) {
-		t.Errorf("frames during live motion must pace at the full budget, got %v", got)
+	if !a.wantsFullRate() {
+		t.Error("a moving pointer must render at full rate")
 	}
 	a.lastMotionAt = time.Now().Add(-2 * motionInputGrace)
-	if got := a.FramePace(true); got != budget(30) {
-		t.Errorf("a stopped pointer must pace back at the idle budget, got %v", got)
+	if a.wantsFullRate() {
+		t.Error("a stopped pointer must release full rate after the short motion grace")
 	}
 
 	// Classic loop: motion is plain input (byte-identical pacing to before).
@@ -263,53 +258,6 @@ func TestMotionGrace(t *testing.T) {
 	a.NoteMotion()
 	if time.Since(a.lastInputAt) > time.Second {
 		t.Error("classic mode: NoteMotion must stamp the full input grace")
-	}
-}
-
-// TestFramePaceFrozen pins the 0 fps sentinel's pacing: the frames a frozen
-// state still renders (damage, ceremonies) pace at the slow safety budget, a
-// live ceremony keeps the talk tier (sound never freezes), and the active cap
-// refuses the sentinel outright.
-func TestFramePaceFrozen(t *testing.T) {
-	a := testTabApp(t)
-
-	a.d.Prefs.SetFPSCap(config.FPSZero) // refused: interaction can't freeze itself
-	if got := a.d.Prefs.FPSCap(); got != config.FPSCapDefault {
-		t.Errorf("SetFPSCap(FPSZero) must fall back to the default, got %d", got)
-	}
-
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-	if got := a.FramePace(true); got != fpsZeroBudget {
-		t.Errorf("frozen idle pace = %v, want the %v safety budget", got, fpsZeroBudget)
-	}
-	a.room = newRoomForTest(t)
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "still audible")})
-	a.room.Typewriter.Interval = 50 * time.Millisecond
-	if got, want := a.FramePace(true), paceBudget(staticTalkFPS); got != want {
-		t.Errorf("frozen idle must not slow a live ceremony: pace = %v, want the talk tier %v", got, want)
-	}
-
-	b := testTabApp(t)
-	b.d.Prefs.SetUnfocusedFPS(config.FPSZero)
-	if got := b.FramePace(false); got != fpsZeroBudget {
-		t.Errorf("frozen background pace = %v, want the %v safety budget", got, fpsZeroBudget)
-	}
-}
-
-// TestBackgroundPace pins the minimized-pass cadence: idle sessions nap at the
-// caller's default, but a running ceremony ticks at the talk cadence so the
-// blips its per-pass Update fires never bunch into bursts.
-func TestBackgroundPace(t *testing.T) {
-	a := testTabApp(t)
-	def := 50 * time.Millisecond
-	if got := a.BackgroundPace(def); got != def {
-		t.Errorf("idle background pace = %v, want the %v default", got, def)
-	}
-	a.room = newRoomForTest(t)
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "blips must not bunch")})
-	a.room.Typewriter.Interval = 50 * time.Millisecond
-	if got, want := a.BackgroundPace(def), a.talkBudget(paceBudget(60)); got != want {
-		t.Errorf("busy background pace = %v, want the talk cadence %v", got, want)
 	}
 }
 

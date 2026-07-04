@@ -4,11 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
-	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // expApp is testTabApp inside the heartbeat window, so SkipFrame decisions
@@ -135,214 +131,49 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 			t.Errorf("exp=%v: animated chrome on screen (theme art, splash, badge) must keep frames coming", exp)
 		}
 		a.drawnAnimChrome = false
-		// Staleness: the classic loop heartbeats a real frame; the experimental
-		// loop is damage-driven — a static screen stays at literally zero
-		// renders no matter how long ago the last frame drew.
 		a.lastFrameDrawn = time.Now().Add(-2 * paceHeartbeat)
-		if exp {
-			if !a.SkipFrame(true, false) {
-				t.Error("exp: a static screen must render NOTHING regardless of staleness")
-			}
-		} else if a.SkipFrame(true, false) {
-			t.Error("classic: past the heartbeat a real frame must draw")
+		if a.SkipFrame(true, false) {
+			t.Errorf("exp=%v: past the heartbeat a real frame must draw", exp)
 		}
 	}
 }
 
-// TestSkipFrameFrozenStates pins the 0 fps knob positions: Idle 0 freezes
-// decoration while focused (animated chrome, scheduled anims — skipped), and
-// Background 0 does the same while unfocused; real damage still renders in
-// both, and the frozen caret stops counting as damage.
-func TestSkipFrameFrozenStates(t *testing.T) {
-	a := expApp(t)
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-
-	a.drawnAnimChrome = true // would refuse the skip normally
-	if !a.SkipFrame(true, false) {
-		t.Error("idle 0: animated chrome must FREEZE (skip), not keep rendering")
-	}
-	a.uiDirty = true
-	if a.SkipFrame(true, false) {
-		t.Error("idle 0: real damage (chat landing) must still render")
-	}
-	a.uiDirty = false
-	// The frozen caret is not damage: a flip mismatch must not force frames.
-	a.ctx.focusID = "field"
-	a.ctx.caretOn = true
-	a.drawnCaretOn = false
-	if a.RenderNeeded() {
-		t.Error("idle 0: a caret flip must not count as damage (the caret is frozen)")
-	}
-	if !a.SkipFrame(true, false) {
-		t.Error("idle 0: a focused field must freeze with everything else")
-	}
-
-	// Background 0 freezes the unfocused window the same way.
-	b := expApp(t)
-	b.d.Prefs.SetUnfocusedFPS(config.FPSZero)
-	b.drawnAnimChrome = true
-	if !b.SkipFrame(false, false) {
-		t.Error("background 0: an unfocused window must freeze decoration")
-	}
-	if b.SkipFrame(true, false) {
-		t.Error("background 0 must not affect the FOCUSED window (chrome still renders)")
-	}
-}
-
-// TestStageFlipsRideTheParkDeadline pins the viewport's scheduling home: a
-// live stage animation never blocks the loop and never refuses the skip under
-// the experimental loop — the pass PARKS (input-interruptible) with the flip
-// as its scheduled deadline and renders exactly on it, frozen states included
-// (0 fps freezes UI decoration, never the scene). Pacing a blind sleep to a
-// slow flip instead froze the whole client for seconds at a time.
-func TestStageFlipsRideTheParkDeadline(t *testing.T) {
-	ren, cleanup := newCaptureHarness(t)
-	defer cleanup()
-	store, err := render.NewTextureStore(ren)
-	if err != nil {
-		t.Skipf("texture store unavailable: %v", err)
-	}
-	a := expApp(t)
-	a.room = newRoomForTest(t)
-	a.d.Viewport = render.NewViewport(store)
-	a.screen = ScreenLobby // any skippable screen; the stage check is screen-independent
-
-	animSpeaker(t, store, a, "anim://idleloop", 120*time.Millisecond)
-	if !a.SkipFrame(true, false) {
-		t.Fatal("exp: a live stage animation must SKIP (the flip parks, it doesn't render-loop)")
-	}
-	if d, sched := a.NextWakeDelay(); !sched || d > 120*time.Millisecond || d < 50*time.Millisecond {
-		t.Errorf("flip deadline = (%v, %v), want ≈ the 120ms flip, scheduled", d, sched)
-	}
-	// The blocking sleep for the frames that DO render stays bounded.
-	if got := a.FramePace(true); got > animPaceCap {
-		t.Errorf("anim pace = %v, must never exceed the %v blocking-sleep cap", got, animPaceCap)
-	}
-
-	// Frozen idle: identical — the stage is exempt from the freeze.
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-	if !a.SkipFrame(true, false) {
-		t.Error("idle 0 + live loop must still skip (the flip parks)")
-	}
-	if _, sched := a.NextWakeDelay(); !sched {
-		t.Error("idle 0 must NOT freeze the stage: the flip deadline stays scheduled")
-	}
-
-	// Classic: no park exists — a live animation must keep the render path on.
-	a.d.Prefs.SetIdleFPS(0) // clear the frozen knob (in classic, frozen wins over the stage)
-	a.d.Prefs.SetEventDrivenLoop(false)
-	a.sess = &courtroom.Session{} // classic gate needs the courtroom pair
-	if a.SkipFrame(true, false) {
-		t.Error("classic: a live stage animation must refuse the skip (its sleeps can't park)")
-	}
-}
-
-// TestHoverDamage pins the dead-space motion rule: pointer movement redraws
-// ONLY when it changes something — crossing a hover-reactive rect's boundary,
-// dragging, or dragging a shown tooltip along. Motion over nothing renders
-// nothing.
-func TestHoverDamage(t *testing.T) {
-	a := expApp(t)
-	c := a.ctx
-	c.BeginDraw()
-	c.mouseX, c.mouseY = 10, 10
-	_ = c.hovering(sdl.Rect{X: 100, Y: 100, W: 40, H: 20}) // the census records one button
-	a.drawnMouseX, a.drawnMouseY = 10, 10
-
-	if a.hoverDamage() {
-		t.Error("a stationary pointer is never damage")
-	}
-	c.mouseX, c.mouseY = 30, 30
-	if a.hoverDamage() {
-		t.Error("dead-space motion must not redraw")
-	}
-	if !a.SkipFrame(true, false) {
-		t.Error("a dead-space motion pass must still skip")
-	}
-	c.mouseX, c.mouseY = 110, 110
-	if !a.hoverDamage() {
-		t.Error("crossing INTO a hover-reactive rect must redraw (the highlight appears)")
-	}
-	if a.SkipFrame(true, false) {
-		t.Error("a hover crossing must render")
-	}
-	a.drawnMouseX, a.drawnMouseY = 110, 110
-	c.mouseX, c.mouseY = 125, 105
-	if a.hoverDamage() {
-		t.Error("moving WITHIN one hover state changes nothing — no redraw")
-	}
-	c.mouseX, c.mouseY = 300, 300
-	if !a.hoverDamage() {
-		t.Error("crossing OUT of a hover-reactive rect must redraw (the highlight clears)")
-	}
-
-	// A drag tracks the pointer wherever it is.
-	a.drawnMouseX, a.drawnMouseY = 300, 300
-	c.mouseX, c.mouseY = 301, 300
-	c.mouseDown = true
-	if !a.hoverDamage() {
-		t.Error("a drag must redraw per move")
-	}
-	c.mouseDown = false
-	// A shown tooltip is glued to the cursor.
-	a.drawnTipShowing = true
-	if !a.hoverDamage() {
-		t.Error("a visible tooltip must follow the pointer")
-	}
-	a.drawnTipShowing = false
-
-	// Census overflow: conservative — any move redraws.
-	c.hoverRectsFull = true
-	if !a.hoverDamage() {
-		t.Error("a full census must fall back to redraw-on-motion")
-	}
-}
-
-// TestNextWakeDelay pins the scheduled-wake math: the pump cadence bounds an
-// empty schedule WITHOUT implying a render (scheduled=false — the literal-0
-// idle), a focused caret and a RUNNING server clock pull the wake to their due
-// (scheduled=true → one frame), a PAUSED clock schedules nothing, a frozen
-// idle silences the caret, and the floor prevents a busy-spin on an overdue
-// deadline.
+// TestNextWakeDelay pins the scheduled-wake math: the heartbeat bounds an
+// empty schedule, a focused caret and a RUNNING server clock pull the wake to
+// their next due, a PAUSED clock schedules nothing, and the floor prevents a
+// busy-spin on an overdue deadline.
 func TestNextWakeDelay(t *testing.T) {
 	a := expApp(t)
 
-	// Empty schedule: the pump cadence cap, NOT a render.
-	if d, sched := a.NextWakeDelay(); d != paceHeartbeat || sched {
-		t.Errorf("empty schedule: wake = (%v, %v), want (%v, false — no render on expiry)", d, sched, paceHeartbeat)
+	// Empty schedule: the heartbeat remainder (fresh frame → ≈ paceHeartbeat).
+	if d := a.NextWakeDelay(); d < paceHeartbeat-100*time.Millisecond || d > paceHeartbeat {
+		t.Errorf("empty schedule: wake = %v, want ≈ the %v heartbeat", d, paceHeartbeat)
 	}
 
-	// A focused caret 300 ms into its blink: the flip is ~200 ms out, and its
-	// expiry renders the flip.
+	// A focused caret 300 ms into its blink: the flip is ~200 ms out.
 	a.ctx.focusID = "field"
 	a.ctx.caretAcc = 300 * time.Millisecond
-	if d, sched := a.NextWakeDelay(); !sched || d > 200*time.Millisecond || d < 100*time.Millisecond {
-		t.Errorf("caret at 300ms: wake = (%v, %v), want ≈ 200ms scheduled", d, sched)
+	if d := a.NextWakeDelay(); d > 200*time.Millisecond || d < 100*time.Millisecond {
+		t.Errorf("caret at 300ms: wake = %v, want ≈ 200ms", d)
 	}
-	// A frozen idle rate silences the caret schedule (it stops blinking).
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-	if d, sched := a.NextWakeDelay(); sched || d != paceHeartbeat {
-		t.Errorf("frozen idle: caret wake must vanish, got (%v, %v)", d, sched)
-	}
-	a.d.Prefs.SetIdleFPS(0)
 	a.ctx.focusID = ""
 
 	// A running server clock with 2.4 s left: wake just past the 0.4 s boundary.
 	a.sess = &courtroom.Session{}
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Running: true, Deadline: time.Now().Add(2400 * time.Millisecond)}
-	if d, sched := a.NextWakeDelay(); !sched || d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack {
-		t.Errorf("running clock at x.4s: wake = (%v, %v), want ≈ 400ms+slack scheduled", d, sched)
+	if d := a.NextWakeDelay(); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack {
+		t.Errorf("running clock at x.4s: wake = %v, want ≈ 400ms+slack", d)
 	}
-	// Paused: frozen readout, nothing scheduled — back to the pump cadence.
+	// Paused: frozen readout, nothing scheduled — back to the heartbeat bound.
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second}
-	if d, sched := a.NextWakeDelay(); sched || d != paceHeartbeat {
-		t.Errorf("paused clock: wake = (%v, %v), want the unscheduled pump bound", d, sched)
+	if d := a.NextWakeDelay(); d < paceHeartbeat-100*time.Millisecond {
+		t.Errorf("paused clock: wake = %v, want the heartbeat bound", d)
 	}
 
-	// A pending auto-reconnect is a real deadline; overdue floors (never spins).
-	a.autoReconnectAt = time.Now().Add(-time.Second)
-	if d, sched := a.NextWakeDelay(); !sched || d != minWakeDelay {
-		t.Errorf("overdue reconnect: wake = (%v, %v), want the %v floor, scheduled", d, sched, minWakeDelay)
+	// Overdue heartbeat: floored, never zero/negative (busy-spin guard).
+	a.lastFrameDrawn = time.Now().Add(-time.Hour)
+	if d := a.NextWakeDelay(); d != minWakeDelay {
+		t.Errorf("overdue: wake = %v, want the %v floor", d, minWakeDelay)
 	}
 }
 

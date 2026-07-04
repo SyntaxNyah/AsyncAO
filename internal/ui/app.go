@@ -949,42 +949,6 @@ type App struct {
 	// the ONLY state shared with the worker goroutine; everything else the
 	// worker touches is snapshotted at launch, so the two never race.
 	dlPaused atomic.Bool
-
-	// Damage bookkeeping for the experimental event-driven loop — App-global
-	// (the SCREEN is one surface regardless of which tab is active) and
-	// outside sessionState (copied per tab; wakeDamage is an atomic).
-	//
-	// uiDirty marks work that changed UI-visible state since the last drawn
-	// frame — the connection pumps set it per drained packet — so the loop
-	// renders exactly one frame in response instead of waiting out an idle
-	// tick. Render thread only; Frame clears it.
-	uiDirty bool
-	// wakeDamage is uiDirty's CROSS-THREAD sibling (FlagUIWork): async
-	// producers set it when a result lands on an App channel whose poll is
-	// Frame-driven; RenderNeeded consumes it. Atomic — written off-thread.
-	wakeDamage atomic.Bool
-	// drawnGen is the texture-store generation as of the last drawn frame: a
-	// mismatch means textures uploaded/evicted since the screen was painted
-	// (streamed-in icons, healed pages) — redraw-worthy damage.
-	drawnGen uint64
-	// drawnCaretOn is the caret blink state as of the last drawn frame; a flip
-	// since then is the scheduled damage that redraws a focused text field at
-	// 2 Hz instead of holding the whole idle frame rate.
-	drawnCaretOn bool
-	// frameAnimChrome is set during a draw pass whenever it renders
-	// TIME-STEPPED art that lives outside the viewport's anim scheduler — an
-	// animated theme page (themeFrame), the looping testimony badge, a WT/CE
-	// splash, the layout editor's animated ghost. drawnAnimChrome is the last
-	// completed frame's value: while true, SkipFrame keeps frames coming at
-	// the idle rate or that art would freeze between heartbeats.
-	frameAnimChrome bool
-	drawnAnimChrome bool
-	// drawnMouseX/Y is where the pointer was when the last frame drew, and
-	// drawnTipShowing whether that frame painted a cursor-following tooltip:
-	// together with the Ctx hover census they decide whether a pointer move
-	// changes ANY pixels (hoverDamage) — dead-space motion renders nothing.
-	drawnMouseX, drawnMouseY int32
-	drawnTipShowing          bool
 }
 
 // sessionState is EVERYTHING scoped to one server session. The active
@@ -1055,6 +1019,28 @@ type sessionState struct {
 	// heartbeat: a statically-skipped screen still gets one real frame per
 	// paceHeartbeat, bounding how stale any missed signal can leave it.
 	lastFrameDrawn time.Time
+	// uiDirty marks work that changed UI-visible state since the last drawn
+	// frame — the connection pumps set it per drained packet — so the
+	// experimental event-driven loop renders exactly one frame in response
+	// instead of waiting out its idle tick. Render thread only; Frame clears it.
+	uiDirty bool
+	// drawnGen is the texture-store generation as of the last drawn frame: a
+	// mismatch means textures uploaded/evicted since the screen was painted
+	// (streamed-in icons, healed pages), which is redraw-worthy damage under
+	// the experimental loop.
+	drawnGen uint64
+	// drawnCaretOn is the caret blink state as of the last drawn frame; a flip
+	// since then is the scheduled damage that redraws a focused text field at
+	// 2 Hz instead of holding the whole idle frame rate (experimental loop).
+	drawnCaretOn bool
+	// frameAnimChrome is set during a draw pass whenever it renders
+	// TIME-STEPPED art that lives outside the viewport's anim scheduler — an
+	// animated theme page (themeFrame), the looping testimony badge, a WT/CE
+	// splash, the layout editor's animated ghost. drawnAnimChrome is the last
+	// completed frame's value: while true, SkipFrame keeps frames coming at
+	// the idle rate or that art would freeze between heartbeats.
+	frameAnimChrome bool
+	drawnAnimChrome bool
 	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
 	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
 	sceneWarmLastDemand time.Time
@@ -4116,18 +4102,16 @@ const fullRateInputGrace = 1 * time.Second
 // an SDL event arrives, and wantsFullRate holds full rate through the grace.
 func (a *App) NoteInput() { a.lastInputAt = time.Now() }
 
-// motionInputGrace is how long pointer motion keeps the RENDERED frames at the
-// full-rate budget under the experimental loop. It deliberately does NOT keep
-// frames coming (SkipFrame never consults it): each motion event renders
-// exactly the one frame that shows its hover/drag state, the pass after a
-// stopped pointer parks straight back to zero, and this grace only makes the
-// frames that DO happen pace crisply while movement is continuous (drags,
-// hover sweeps) instead of at the idle budget's latency.
+// motionInputGrace holds full rate briefly after BARE pointer motion under the
+// experimental loop: long enough that continuous movement (hover sweeps, drags
+// — their motion stream keeps re-arming it) renders at full rate throughout,
+// short enough that waving the mouse over dead space stops costing frames
+// almost as soon as it stops. Clicks/keys/wheel keep fullRateInputGrace.
 const motionInputGrace = 200 * time.Millisecond
 
 // NoteMotion marks a pointer-motion-only pass. Under the experimental loop it
-// heats motionHot (pacing only — one frame per move, no render tail); under
-// the classic loop motion is plain input (byte-identical pacing to before).
+// arms the short motion grace; under the classic loop motion is plain input
+// (byte-identical pacing to before).
 func (a *App) NoteMotion() {
 	if a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn() {
 		a.lastMotionAt = time.Now()
@@ -4135,10 +4119,6 @@ func (a *App) NoteMotion() {
 	}
 	a.lastInputAt = time.Now()
 }
-
-// motionHot reports live pointer movement — FramePace's budget floor for the
-// frames motion events cause. Never a reason to render by itself.
-func (a *App) motionHot() bool { return time.Since(a.lastMotionAt) < motionInputGrace }
 
 // staticTalkFPS paces a message whose stage is ALL STATIC art (single-frame
 // sprites, no effects): the only motion is the typewriter's text crawl, which
@@ -4223,9 +4203,8 @@ func (a *App) talkBudget(full time.Duration) time.Duration {
 //     typewriter or its blips down to the sprite's rate (the "text renders at
 //     idle fps over animated sprites" report)
 //   - content cadence: only stage animations are moving → wake exactly for the
-//     next frame flip, one frame per flip (the viewport is its own surface:
-//     the idle/background knobs never slow it OR speed it — its fps IS the
-//     sprite's fps, bounded only by the active cap)
+//     next frame flip (smooth at ANY idle setting — the pace can never be
+//     slower than the content — and never above the cap)
 //   - idle rate: a static screen (the deeper SkipFrame tier then usually skips
 //     the render entirely)
 //
@@ -4243,14 +4222,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		return a.d.Viewport.NextAnimDue(a.renderScene())
 	}
 	if !focused {
-		unfRate := a.d.Prefs.UnfocusedFPS()
-		unf := paceBudget(unfRate) // 0 = unlimited: never slower when unfocused
-		if unfRate == config.FPSZero {
-			// Frozen background: the frames that still happen (ceremonies,
-			// damage) pace at the loop's stall bound — decoration never
-			// renders at all (SkipFrame's frozen gate).
-			unf = fpsZeroBudget
-		}
+		unf := paceBudget(a.d.Prefs.UnfocusedFPS()) // 0 = unlimited: never slower when unfocused
 		// A message playing while tabbed out is still AUDIBLE: hold the blip
 		// cadence so the background window's low rate doesn't thin the blips.
 		// (An unlimited unfocused rate already outpaces the blips.)
@@ -4260,31 +4232,23 @@ func (a *App) FramePace(focused bool) time.Duration {
 			}
 		}
 		// An unfocused window is still VISIBLE (second monitor, side-by-side
-		// chat): a live stage animation keeps its OWN schedule — fast flips
-		// render on their cadence, slow flips ride the park's scheduled
-		// deadline (animPace bounds the BLOCKING sleep here). Never slower
-		// than a ceremony's cadence set above.
+		// chat): a live stage animation keeps its OWN schedule, exactly like
+		// the focused branch below — the flat trickle rate here was the
+		// "idle animations go choppy the moment I click into another window"
+		// playtest report. Costs nothing on a static stage (ok=false), and
+		// only ever TIGHTENS the budget (an anim due can't slow the talk
+		// cadence set above).
 		if unf > 0 {
-			if due, ok := nextAnimDue(); ok {
-				if p := a.animPace(due, full, unf); p < unf || !a.roomBusy() {
-					unf = p
-				}
+			if due, ok := nextAnimDue(); ok && due < unf {
+				unf = clampDur(due, full, unf)
 			}
 		}
 		return unf
 	}
-	if a.wantsFullRate() || a.motionHot() {
-		// motionHot paces the frames MOTION EVENTS cause at the full budget
-		// (crisp drags/hover sweeps); it never causes frames by itself —
-		// SkipFrame parks the instant the pointer stops.
+	if a.wantsFullRate() {
 		return full
 	}
-	idleRate := a.d.Prefs.IdleFPS()
-	idle := paceBudget(idleRate) // 0 = unlimited: never slower when idle
-	idleFrozen := idleRate == config.FPSZero
-	if idleFrozen {
-		idle = fpsZeroBudget // pacing for the damage frames that still happen
-	}
+	idle := paceBudget(a.d.Prefs.IdleFPS()) // 0 = unlimited: never slower when idle
 	if a.roomBusy() {
 		// The talk tier paces the ceremony; the earliest OTHER deadline may
 		// only tighten it. Order matters: consulting the stage anim FIRST
@@ -4292,8 +4256,6 @@ func (a *App) FramePace(focused bool) time.Duration {
 		// whole frame budget, crawling the text and coalescing the blips.
 		talk := a.talkBudget(full)
 		switch {
-		case idleFrozen:
-			// keep the talk tier — a frozen idle never slows a live ceremony
 		case idle == 0:
 			talk = full // unlimited idle smoothness: ceremonies pace at the cap
 		case idle < talk:
@@ -4305,36 +4267,12 @@ func (a *App) FramePace(focused bool) time.Duration {
 		return talk
 	}
 	if due, ok := nextAnimDue(); ok {
-		return a.animPace(due, full, idle)
+		if idle == 0 {
+			return clampDur(due, full, due) // unlimited idle: the content cadence itself (never above the cap)
+		}
+		return clampDur(due, full, idle) // 0 (a running ramp) → full rate
 	}
 	return idle
-}
-
-// fpsZeroBudget paces the frames a FROZEN state still renders (message
-// ceremonies, real damage like chat landing): a slow safety cadence — the
-// decoration freeze itself is enforced by SkipFrame, not by this budget.
-const fpsZeroBudget = 100 * time.Millisecond
-
-// animPaceCap bounds the BLOCKING post-render sleep while a stage animation
-// is live. The stage keeps its exact schedule — one frame per flip, right on
-// the flip — but the long waiting between SLOW flips must happen in the
-// experimental loop's interruptible park (NextWakeDelay schedules the flip),
-// never in time.Sleep: pacing the render path at a 4-second blink's cadence
-// slept the whole loop for seconds and froze input (the "client freezes every
-// few seconds with animated sprites" report).
-const animPaceCap = 100 * time.Millisecond
-
-// animPace paces a pass while a stage animation is live. Experimental loop:
-// content-exact for fast flips, capped at animPaceCap for slow ones — the
-// park (which input interrupts) does the long waiting and renders the flip
-// off its scheduled deadline. Classic loop: the old [full, state-rate] clamp,
-// because its blind sleeps are its only pacing; an unlimited state rate takes
-// the cap too (nothing else bounds it).
-func (a *App) animPace(due, full, state time.Duration) time.Duration {
-	if state == 0 || (a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn()) {
-		return clampDur(due, full, animPaceCap)
-	}
-	return clampDur(due, full, state)
 }
 
 // SkipFrame reports that the last drawn frame is still exactly right, so the
@@ -4362,13 +4300,8 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	} else if a.room == nil || a.sess == nil {
 		return false // classic: only the courtroom skips (the lobby keeps its idle render)
 	}
-	if !exp && time.Since(a.lastFrameDrawn) >= paceHeartbeat {
-		// Classic keeps the polling heartbeat. The experimental loop is fully
-		// damage-driven instead — a genuinely static screen renders NOTHING
-		// (the "it should literally be 0" ask); its ≤paceHeartbeat pump wakes
-		// still run Background and re-check damage, so anything missed shows
-		// within the same bound without painting a frame for it.
-		return false
+	if time.Since(a.lastFrameDrawn) >= paceHeartbeat {
+		return false // heartbeat: one real frame heals anything the signal missed
 	}
 	if a.wantsFullRate() || a.roomBusy() || a.warnActive() {
 		return false
@@ -4383,32 +4316,6 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	if a.previewBase != "" {
 		return false // the sprite preview box animates at draw time (pageFrameLoop)
 	}
-	if exp {
-		if a.dl.active {
-			return false // the download chip's progress has no other heartbeat now
-		}
-		if a.RenderNeeded() {
-			return false // pending damage: packets landed / textures moved / a caret flip is showing
-		}
-		if a.hoverDamage() {
-			return false // the pointer moved somewhere that visibly reacts
-		}
-	}
-	// User-frozen states (the 0 fps knob positions, idle/background only):
-	// UI decoration stops entirely — animated chrome, blinking carets and
-	// ticking readouts hold their last frame. The STAGE stays exempt without
-	// any special case here: under the experimental loop every stage flip
-	// renders off the park's scheduled deadline (NextWakeDelay), frozen or
-	// not — the viewport is its own surface, the knobs never touch it. And
-	// everything above still renders (input, ceremonies, toasts, voice,
-	// damage), so chat keeps landing and sounds keep playing. Deliberately
-	// below RenderNeeded/hoverDamage and above the decoration refusals.
-	if a.d.Prefs != nil {
-		if (focused && a.d.Prefs.IdleFPS() == config.FPSZero) ||
-			(!focused && a.d.Prefs.UnfocusedFPS() == config.FPSZero) {
-			return true
-		}
-	}
 	if a.drawnAnimChrome {
 		// The last frame drew time-stepped art outside the viewport scheduler
 		// (animated theme chrome, the testimony badge, a WT/CE splash, the
@@ -4416,7 +4323,11 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 		// hole (usually masked by the focused IC field). Both modes render on.
 		return false
 	}
-	if !exp {
+	if exp {
+		if a.RenderNeeded() {
+			return false // pending damage: packets landed / textures moved / a caret flip is showing
+		}
+	} else {
 		if a.ctx != nil && a.ctx.focusID != "" {
 			return false // a focused text field blinks its caret
 		}
@@ -4424,17 +4335,12 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			return false // countdown readouts change every second
 		}
 	}
-	if !exp && a.d.Viewport != nil && a.room != nil {
-		// Classic: a scheduled stage animation keeps the render path running
-		// (its blind sleeps can't park-and-wake on the flip). Experimental:
-		// SKIP — the flip renders off NextWakeDelay's scheduled deadline,
-		// exactly on time, with the wait interruptible by input; refusing
-		// here pushed slow flips into the blocking sleep instead (the
-		// "freezes every few seconds" report).
+	if a.d.Viewport != nil && a.room != nil {
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
 			return false
 		}
 	}
+	_ = focused // both focused and unfocused static screens skip identically
 	return true
 }
 
@@ -4458,23 +4364,17 @@ func (a *App) expScreenSkippable() bool {
 }
 
 // RenderNeeded reports redraw-worthy damage accumulated since the last drawn
-// frame (experimental loop): a drained packet touched UI state, an async
-// result flagged itself from another goroutine (FlagUIWork), the texture
+// frame (experimental loop): a drained packet touched UI state, the texture
 // store's generation moved (something streamed in / evicted), or the focused
-// caret's blink state no longer matches what's on screen (suppressed when the
-// idle rate is frozen at 0 — the caret stops blinking there). Render thread
-// only; a true return always leads to a render, which resets every source.
+// caret's blink state no longer matches what's on screen. Render thread only.
 func (a *App) RenderNeeded() bool {
 	if a.uiDirty {
-		return true
-	}
-	if a.wakeDamage.Swap(false) {
 		return true
 	}
 	if a.d.Store != nil && a.d.Store.Generation() != a.drawnGen {
 		return true
 	}
-	if a.ctx != nil && (a.d.Prefs == nil || a.d.Prefs.IdleFPS() != config.FPSZero) {
+	if a.ctx != nil {
 		if on, focused := a.ctx.CaretVisible(); focused && on != a.drawnCaretOn {
 			return true
 		}
@@ -4482,60 +4382,11 @@ func (a *App) RenderNeeded() bool {
 	return false
 }
 
-// FlagUIWork marks redraw-worthy work produced OFF the render thread — an
-// async result landing on an App channel whose poll is Frame-driven (the
-// update check is the load-bearing case: it can complete while the loop is
-// parked with no other damage in sight, and the experimental loop has no
-// polling heartbeat to find it). Rings the wake doorbell too. Safe from any
-// goroutine.
-func (a *App) FlagUIWork() {
-	a.wakeDamage.Store(true)
-	PushWake()
-}
-
-// BackgroundPace is the nap for a draw-nothing pass (the minimized window):
-// idle sessions nap at def, but while a message ceremony runs the pass must
-// tick at the TALK cadence — blips fire from the per-pass room Update, and a
-// flat 50 ms nap audibly coalesced them into bursts ("the blips sound laggy
-// when the window is minimized/behind another"). Sounds never wait for pixels.
-func (a *App) BackgroundPace(def time.Duration) time.Duration {
-	if a.roomBusy() {
-		if tb := a.talkBudget(paceBudget(a.d.Prefs.FPSCap())); tb < def {
-			return tb
-		}
-	}
-	return def
-}
-
 // NoteDeadline marks a scheduled wake that just fired (the main loop's event
 // wait timed out at a deadline NextWakeDelay chose): the next pass renders one
 // frame to show whatever was due — a caret flip, a clock second, a hover
 // reveal, or the plain staleness heartbeat.
 func (a *App) NoteDeadline() { a.uiDirty = true }
-
-// hoverDamage reports that the pointer moved somewhere that visibly reacts:
-// a drag is following it, a shown tooltip must move or hide with it, or the
-// move crosses a hover-reactive rect the last frame recorded. Dead-space
-// motion — the pointer circling over nothing — reports false and renders
-// NOTHING (the "moving the mouse shouldn't redraw when no UI element updates"
-// ask). BeginFrame reseeds the live pointer from SDL every pass, so this
-// works whether the move arrived as an event or happened while parked.
-func (a *App) hoverDamage() bool {
-	c := a.ctx
-	if c == nil {
-		return false
-	}
-	if c.mouseX == a.drawnMouseX && c.mouseY == a.drawnMouseY {
-		return false
-	}
-	if c.mouseDown {
-		return true // a drag (slider, selection, window move) tracks the pointer
-	}
-	if a.drawnTipShowing {
-		return true // the tooltip is glued to the cursor
-	}
-	return c.HoverStateChanged(a.drawnMouseX, a.drawnMouseY, c.mouseX, c.mouseY)
-}
 
 const (
 	// minWakeDelay floors the event wait so a just-passed deadline can never
@@ -4546,28 +4397,22 @@ const (
 	timerTickSlack = 20 * time.Millisecond
 )
 
-// NextWakeDelay is how long the experimental loop may park on its event wait,
-// plus whether a REAL scheduled deadline chose that delay. scheduled=true —
-// a caret flip, a RUNNING clock's next displayed second, a pending
-// tooltip/preview dwell, a due auto-reconnect — means the wake should render
-// one frame (NoteDeadline); scheduled=false means the wait merely hit the
-// pump cadence cap: Background runs and damage is re-checked, but a genuinely
-// static screen paints NOTHING — zero renders while parked (the "it should
-// literally be 0" ask). Input and wake events interrupt the wait regardless.
-func (a *App) NextWakeDelay() (time.Duration, bool) {
-	d, scheduled := paceHeartbeat, false // the cap is the session pump cadence, not a render
+// NextWakeDelay is how long the experimental loop may park on its event wait:
+// the time to the nearest scheduled deadline — caret flip, a RUNNING clock's
+// next displayed second, a pending tooltip/preview dwell — capped by the
+// staleness heartbeat and floored against busy-spin. Input and wake events
+// interrupt the wait regardless; this only bounds how long "nothing happens"
+// may last.
+func (a *App) NextWakeDelay() time.Duration {
+	d := paceHeartbeat - time.Since(a.lastFrameDrawn)
 	consider := func(due time.Duration) {
 		if due < d {
-			d, scheduled = due, true
+			d = due
 		}
 	}
-	idleFrozen := a.d.Prefs != nil && a.d.Prefs.IdleFPS() == config.FPSZero
 	if a.ctx != nil {
-		// A frozen idle stops the caret blinking — don't schedule its flips.
-		if !idleFrozen {
-			if due, ok := a.ctx.NextCaretFlip(); ok {
-				consider(due)
-			}
+		if due, ok := a.ctx.NextCaretFlip(); ok {
+			consider(due)
 		}
 		if due, ok := a.ctx.NextHoverDue(); ok {
 			consider(due)
@@ -4595,38 +4440,10 @@ func (a *App) NextWakeDelay() (time.Duration, bool) {
 			consider(rem%time.Second + timerTickSlack)
 		}
 	}
-	// A pending auto-reconnect must fire on time (pollAutoReconnect is
-	// Frame-driven and the experimental loop has no polling heartbeat).
-	if !a.autoReconnectAt.IsZero() {
-		if due := time.Until(a.autoReconnectAt) + timerTickSlack; due > 0 {
-			consider(due)
-		} else {
-			consider(0) // overdue: floor below fires it immediately
-		}
-	}
-	// The stage's next animation flip renders off THIS deadline (the viewport
-	// is its own surface: exact cadence, frozen states included, and a slow
-	// flip parks interruptibly instead of blocking a sleep). The viewport's
-	// anim clocks only advance on DRAWN frames, so the reported due is as of
-	// the last frame — subtract the real time parked since. A continuous ramp
-	// (due 0) floors at the full-rate budget or it would spin on the wake
-	// floor.
-	if a.d.Viewport != nil && a.room != nil {
-		if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
-			rem := due - now.Sub(a.lastFrameDrawn)
-			if fb := paceBudget(a.d.Prefs.FPSCap()); rem < fb {
-				rem = fb
-			}
-			if rem < 0 {
-				rem = 0
-			}
-			consider(rem)
-		}
-	}
 	if d < minWakeDelay {
 		d = minWakeDelay
 	}
-	return d, scheduled
+	return d
 }
 
 // wantsFullRate reports whether something on screen genuinely needs the full
@@ -4641,6 +4458,9 @@ func (a *App) NextWakeDelay() (time.Duration, bool) {
 func (a *App) wantsFullRate() bool {
 	if time.Since(a.lastInputAt) < fullRateInputGrace {
 		return true
+	}
+	if time.Since(a.lastMotionAt) < motionInputGrace {
+		return true // a moving pointer renders live; the short grace ends with it
 	}
 	if a.room != nil {
 		sc := &a.room.Scene
@@ -5419,14 +5239,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawnCaretOn = a.ctx.caretOn
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.
-	// The pointer/tooltip snapshot rides the same promotion: hoverDamage
-	// compares future pointer positions against what THIS frame showed.
 	a.frameAnimChrome = false
-	defer func() {
-		a.drawnAnimChrome = a.frameAnimChrome
-		a.drawnMouseX, a.drawnMouseY = a.ctx.mouseX, a.ctx.mouseY
-		a.drawnTipShowing = a.ctx.tipText != ""
-	}()
+	defer func() { a.drawnAnimChrome = a.frameAnimChrome }()
 	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
 	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
 	a.frameDtMs = float32(dt.Seconds() * 1000)

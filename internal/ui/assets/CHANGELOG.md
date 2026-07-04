@@ -4,64 +4,6 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.55.0-test5 — 2026-07-04 (test build)
-
-Hotfix for test4.
-
-- **Animated sprites froze the whole client — fixed.** test4 paced the
-  render loop's sleep to the sprite's next animation frame, and slow
-  loops (characters that blink every few seconds) put the entire client
-  into a blocking multi-second sleep: frozen input, and the compositor
-  blanking the unresponsive window (the one-frame black flash). Slow
-  flips now wait in the event wait instead — input interrupts it
-  instantly, the window keeps pumping, and the flip still renders
-  exactly on schedule. Sprites keep their exact own-rate cadence; the
-  freeze and the black flash go.
-
-## v1.55.0-test4 — 2026-07-04 (test build)
-
-The viewport-is-sacred round.
-
-- **The stage is exempt from every limiter — its fps IS the sprite's
-  fps.** Idle sprites now render exactly one frame per animation flip,
-  right on the flip: a 12 fps loop no longer gets inflated to your idle
-  rate, a fast loop is no longer squeezed down by it, and setting Idle
-  or Background to 0 freezes the UI around the stage while the scene
-  itself keeps animating normally. The frame-rate knobs govern UI
-  decoration only; the viewport schedules itself.
-- **Mouse movement over dead space renders nothing at all.** Every
-  hover-reactive spot on screen is remembered from the last frame, and
-  a pointer move only redraws when it actually crosses into or out of
-  one (or drags something, or carries a tooltip). Circling the mouse
-  over empty space now costs zero frames — previously each move drew
-  one.
-
-## v1.55.0-test3 — 2026-07-04 (test build)
-
-The literal-zero round.
-
-- **A static screen now renders literally nothing.** The event-driven
-  renderer kept a two-frames-per-second safety heartbeat; it's gone.
-  When nothing on screen changes, zero frames are drawn — the session
-  still pumps in the background, and anything that really happens (a
-  message, a finished load, a clock tick, a caret blink) wakes exactly
-  the frames it needs. The classic loop (the kill switch) keeps its old
-  heartbeat.
-- **Mouse movement costs one frame per move.** Moving the pointer used
-  to hold a full second of max-fps rendering; now each movement draws
-  exactly the one frame that shows its hover state, paced crisply while
-  the pointer is actually moving, and rendering stops the instant it
-  does. Clicks, typing and scrolling keep their full-rate burst.
-- **0 is a real value for Idle and Background.** Type 0 into the rate
-  box: that state freezes decoration outright — idle animations, the
-  blinking caret, ticking readouts — while chat, message ceremonies and
-  every sound carry on. Active can't be 0 (interaction can't freeze
-  itself).
-- **Blips stop bunching when the window is minimized.** The
-  draw-nothing loop ticked five times a second flat, so several blips
-  fired as one burst; while a message plays it now ticks at the text
-  cadence. Sounds never wait for pixels.
-
 ## v1.55.0-test2 — 2026-07-04 (test build)
 
 Fast follow-ups from the first test round — thanks to Nightingale for
