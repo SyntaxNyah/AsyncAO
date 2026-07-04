@@ -27,9 +27,13 @@ type settingsState struct {
 	mountInput string
 	loaded     bool
 	statusLine string
-	tab        int                    // active settings tab (index into settingsTabNames)
-	tabScroll  [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
-	search     string                 // settings search query (jumps to the matching tab)
+	// fpsBufs backs the three frame-rate rows' exact-number entries (active,
+	// idle, unfocused) — reseeded from the pref while unfocused, applied on
+	// Enter (fpsSettingRow).
+	fpsBufs   [3]string
+	tab       int                    // active settings tab (index into settingsTabNames)
+	tabScroll [numSettingsTabs]int32 // per-tab page scroll (each tab remembers its position)
+	search    string                 // settings search query (jumps to the matching tab)
 	// scrollToSection holds a lowercased query for one frame after a search jump: the
 	// first section card whose title contains it scrolls itself to the top, so search
 	// lands on the SECTION (e.g. "scene maker"), not just the tab. Cleared each frame.
@@ -647,6 +651,86 @@ func (a *App) settingsSection(y, w int32, title string) int32 {
 // resolve inside the content card. Paired with `pad := a.formX` at the top of
 // every settings draw helper. (See drawSettingsGeneral for the pattern.)
 func (a *App) formW2() int32 { return a.formX + a.formW + scrollBarW }
+
+// fpsSettingRow draws one frame-rate row: the slider (bottom = default), an
+// exact-number entry (Enter applies; 0 or less = back to the default), and the
+// ∞ no-limit toggle. get/set wrap the pref — the setters are sentinel-aware
+// (config.FPSUnlimited) and clamp typed values to [min, max]. buf backs the
+// number field (settingsState), reseeded from the pref while unfocused so live
+// typing never fights the stored value. Returns the y past the row.
+func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, get func() int, set func(int), buf *string, tip string) int32 {
+	c := a.ctx
+	pad := a.formX // settings helpers must shadow the form origin (drawSettings rebase)
+	c.Label(pad, y+4, label, ColText)
+	cur := get()
+	// Slider: compare against the value we PASSED (unlimited shows as the
+	// bottom position), so merely displaying an unlimited pref can't write a
+	// concrete value back — only a real drag/wheel move does.
+	passed := 0
+	if cur > 0 {
+		passed = cur
+	}
+	track := sdl.Rect{X: pad + 210, Y: y + 2, W: 170, H: 16}
+	nv := int(clampI32(c.Slider(id, track, int32(passed), int32(max)), 0, int32(max)))
+	if nv != 0 && nv < min {
+		nv = 0 // bottom of the track = the default
+	}
+	c.Tooltip(track, tip)
+	if nv != passed {
+		set(nv)
+		cur = get()
+	}
+	// Exact-number entry (the power-user ask): type any value, Enter applies.
+	fieldID := id + "-num"
+	fr := sdl.Rect{X: track.X + track.W + 8, Y: y, W: 52, H: btnH}
+	// The getter maps the 0 sentinel to the shipped default, so cur is either
+	// FPSUnlimited or a concrete rate here.
+	if c.focusID != fieldID {
+		if cur == config.FPSUnlimited {
+			*buf = ""
+		} else {
+			*buf = strconv.Itoa(cur)
+		}
+	}
+	var entered bool
+	*buf, entered = c.TextField(fieldID, fr, *buf, "fps")
+	if entered {
+		if n, err := strconv.Atoi(strings.TrimSpace(*buf)); err == nil {
+			if n <= 0 {
+				set(0) // typed 0/negative = back to the default
+			} else {
+				set(n) // the setter clamps to [min, max]
+			}
+			cur = get()
+		}
+		c.focusID = "" // commit releases the field so it reseeds from the pref
+	}
+	// ∞ toggle: no limit on / off (off returns to the default).
+	ub := sdl.Rect{X: fr.X + fr.W + 6, Y: y, W: 28, H: btnH}
+	if cur == config.FPSUnlimited {
+		c.Fill(sdl.Rect{X: ub.X - 2, Y: ub.Y - 2, W: ub.W + 4, H: ub.H + 4}, ColAccent)
+	}
+	if c.Button(ub, "∞") {
+		if cur == config.FPSUnlimited {
+			set(0)
+		} else {
+			set(config.FPSUnlimited)
+		}
+		cur = get()
+	}
+	c.Tooltip(ub, "No limit. Active: uncapped (vsync paces the frames). Idle/Background: never slow down in that state.")
+	var lbl string
+	switch {
+	case cur == config.FPSUnlimited:
+		lbl = "unlimited"
+	case cur == def:
+		lbl = "default (" + strconv.Itoa(def) + " fps)"
+	default:
+		lbl = strconv.Itoa(cur) + " fps"
+	}
+	c.Label(ub.X+ub.W+10, y+4, lbl, ColTextDim)
+	return y + 26
+}
 
 // settingsDesc draws a WORD-WRAPPED description block at (pad, y) inside the settings card and
 // returns the y past it. Plain c.Label doesn't wrap, so long help text ran off the card; route it
@@ -2987,59 +3071,20 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
-	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly.", ColTextDim)
+	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly. Each rate takes a typed exact number, and ∞ removes the limit — for Active that means vsync paces the frames; for Idle/Background it means never slowing down in that state.", ColTextDim)
 	y += 6
-	c.Label(pad, y+4, "Active frame rate:", ColText)
-	fcap := a.d.Prefs.FPSCap()
-	fctrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nfc := int(clampI32(c.Slider("fpscap", fctrack, int32(fcap), config.FPSCapMax), 0, config.FPSCapMax))
-	if nfc != 0 && nfc < config.FPSCapMin {
-		nfc = 0 // bottom of the track = the default (60)
-	}
-	c.Tooltip(fctrack, "The ceiling while interacting or animating (30–240). 60 is plenty for AO.")
-	fcLabel := "default (60 fps)"
-	if nfc != 0 {
-		fcLabel = strconv.Itoa(nfc) + " fps"
-	}
-	c.Label(pad+210+226, y+4, fcLabel, ColTextDim)
-	if nfc != fcap {
-		a.d.Prefs.SetFPSCap(nfc)
-	}
-	y += 26
-	c.Label(pad, y+4, "Idle frame rate:", ColText)
-	ifps := a.d.Prefs.IdleFPS()
-	iftrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nif := int(clampI32(c.Slider("idlefps", iftrack, int32(ifps), config.IdleFPSMax), 0, config.IdleFPSMax))
-	if nif != 0 && nif < config.IdleFPSMin {
-		nif = 0 // bottom of the track = the default (30)
-	}
-	c.Tooltip(iftrack, "The rate when nothing is animating and there's been no input for a second (10–120). Input returns to the active rate instantly.")
-	ifLabel := "default (30 fps)"
-	if nif != 0 {
-		ifLabel = strconv.Itoa(nif) + " fps"
-	}
-	c.Label(pad+210+226, y+4, ifLabel, ColTextDim)
-	if nif != ifps {
-		a.d.Prefs.SetIdleFPS(nif)
-	}
-	y += 26
-	c.Label(pad, y+4, "Background frame rate:", ColText)
-	ufps := a.d.Prefs.UnfocusedFPS()
-	uftrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nuf := int(clampI32(c.Slider("unfocusedfps", uftrack, int32(ufps), config.UnfocusedFPSMax), 0, config.UnfocusedFPSMax))
-	if nuf != 0 && nuf < config.UnfocusedFPSMin {
-		nuf = 0 // bottom of the track = the default (10)
-	}
-	c.Tooltip(uftrack, "The rate while another window has focus (5–60). Minimized draws nothing.")
-	ufLabel := "default (10 fps)"
-	if nuf != 0 {
-		ufLabel = strconv.Itoa(nuf) + " fps"
-	}
-	c.Label(pad+210+226, y+4, ufLabel, ColTextDim)
-	if nuf != ufps {
-		a.d.Prefs.SetUnfocusedFPS(nuf)
-	}
-	y += 26
+	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
+		config.FPSCapMin, config.FPSCapMax, config.FPSCapDefault,
+		a.d.Prefs.FPSCap, a.d.Prefs.SetFPSCap, &settings.fpsBufs[0],
+		"The ceiling while interacting or animating (30–240, type an exact number, or ∞ = uncapped/vsync). 60 is plenty for AO.")
+	y = a.fpsSettingRow(y, "idlefps", "Idle frame rate:",
+		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault,
+		a.d.Prefs.IdleFPS, a.d.Prefs.SetIdleFPS, &settings.fpsBufs[1],
+		"The rate when nothing is animating and there's been no input for a second (10–120, or ∞ = never slow down when idle). Input returns to the active rate instantly.")
+	y = a.fpsSettingRow(y, "unfocusedfps", "Background frame rate:",
+		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault,
+		a.d.Prefs.UnfocusedFPS, a.d.Prefs.SetUnfocusedFPS, &settings.fpsBufs[2],
+		"The rate while another window has focus (5–60, or ∞ = never slow down unfocused). Minimized draws nothing.")
 	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, voice, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
 	y += 10
 	edl := a.d.Prefs.EventDrivenLoopOn()

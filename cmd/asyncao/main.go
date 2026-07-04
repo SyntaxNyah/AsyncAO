@@ -386,6 +386,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// (Inverting these erased every click before the UI saw it.)
 		uiCtx.BeginFrame(dt)
 		sawEvent := false
+		sawInput := false // any non-motion event (click, key, wheel, window)
 		handleEv := func(ev sdl.Event) {
 			if ui.IsWakeEvent(ev) {
 				return // a background doorbell (packet/decode), never user input
@@ -402,6 +403,9 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			}
 			uiCtx.HandleEvent(ev)
 			sawEvent = true
+			if _, motion := ev.(*sdl.MouseMotionEvent); !motion {
+				sawInput = true
+			}
 		}
 		if pendingEv != nil {
 			handleEv(pendingEv)
@@ -410,8 +414,13 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
 			handleEv(ev)
 		}
-		if sawEvent {
-			app.NoteInput() // frame pacing: interaction snaps back to full rate
+		// Frame pacing: real interaction snaps back to full rate; bare pointer
+		// motion gets the short motion grace instead (experimental loop), so
+		// waving the cursor over nothing stops costing frames when it stops.
+		if sawInput {
+			app.NoteInput()
+		} else if sawEvent {
+			app.NoteMotion()
 		}
 
 		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {

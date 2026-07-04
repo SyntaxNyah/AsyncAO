@@ -762,6 +762,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
 	p.SetDragLayout(false)       // default-ON *bool — explicit false must survive
 	p.SetEventDrivenLoop(false)  // default-ON *bool — the experimental-loop kill switch must stick
+	p.SetIdleFPS(FPSUnlimited)   // the ∞ sentinel must survive save→load un-clamped
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
@@ -823,6 +824,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.EventDrivenLoopOn() {
 		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
+	}
+	if got := q.IdleFPS(); got != FPSUnlimited {
+		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
 	}
 	if got := q.PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)

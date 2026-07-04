@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
@@ -142,6 +143,121 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	// Focused idle is unchanged: the same loop clamps at the 30 fps idle budget.
 	if got := a.FramePace(true); got != budget(30) {
 		t.Errorf("focused idle pace with the same loop = %v, want the idle cap %v", got, budget(30))
+	}
+}
+
+// animSpeaker uploads a looping frames×delay speaker under base and binds it
+// as the visible speaker (shared by the ceremony-ordering tests).
+func animSpeaker(t *testing.T, store *render.TextureStore, a *App, base string, delay time.Duration) {
+	t.Helper()
+	dec := &assets.Decoded{
+		Frames:   []*image.RGBA{image.NewRGBA(image.Rect(0, 0, 4, 4)), image.NewRGBA(image.Rect(0, 0, 4, 4))},
+		Delays:   []time.Duration{delay, delay},
+		Animated: true,
+		Width:    4, Height: 4,
+	}
+	if err := store.Upload(base, dec); err != nil {
+		t.Fatalf("upload %s: %v", base, err)
+	}
+	a.room.Scene.Speaker.Visible = true
+	a.room.Scene.Speaker.Active = base
+	a.d.Viewport.Update(&a.room.Scene, 0) // bind the page (fresh frame: full delay due)
+}
+
+// TestFramePaceCeremonyBeatsSlowAnim is the regression test for the "text
+// renders at idle fps over animated sprites" report: a message ceremony must
+// pace at the TALK tier even when the speaker's animation flips slower — every
+// mover schedules independently and the earliest deadline wins, so a slow
+// lipflap can never drag the typewriter (and the blips it fires) down to the
+// idle rate. A FASTER flip may still tighten the budget (it needs its frames).
+func TestFramePaceCeremonyBeatsSlowAnim(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	store, err := render.NewTextureStore(ren)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	a := testTabApp(t)
+	a.room = newRoomForTest(t) // a real room: enqueue runs the full begin() path
+	a.d.Viewport = render.NewViewport(store)
+	a.d.Prefs.SetIdleFPS(10) // the reported setting: idle floor at 10 fps
+	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
+
+	// Idle (no message) with a SLOW loop (2×200 ms): the content cadence,
+	// clamped to the idle rate.
+	animSpeaker(t, store, a, "anim://slowtalk", 200*time.Millisecond)
+	if got := a.FramePace(true); got != budget(10) {
+		t.Fatalf("idle pace over a slow loop = %v, want the 10 fps idle budget %v", got, budget(10))
+	}
+
+	// A message starts. Pin the typewriter to a plain 30 fps-ish crawl (the
+	// default 18 ms interval would tighten the tier below the point) and
+	// re-bind the slow speaker loop (begin() re-drives the scene).
+	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "the text must keep crawling")})
+	if !a.roomBusy() {
+		t.Fatal("test setup: the message never started a ceremony")
+	}
+	a.room.Typewriter.Interval = 50 * time.Millisecond
+	animSpeaker(t, store, a, "anim://slowtalk", 200*time.Millisecond)
+	if got, want := a.FramePace(true), paceBudget(staticTalkFPS); got != want {
+		t.Errorf("ceremony over a slow animated speaker paces at %v, want the talk tier %v (the text-at-idle-fps bug)", got, want)
+	}
+
+	// A FAST lipflap (2×20 ms) tightens the ceremony below the talk tier.
+	animSpeaker(t, store, a, "anim://fasttalk", 20*time.Millisecond)
+	if got := a.FramePace(true); got != 20*time.Millisecond {
+		t.Errorf("ceremony over a fast lipflap paces at %v, want its 20ms flip", got)
+	}
+}
+
+// TestFramePaceUnlimited pins the ∞ knob semantics: an unlimited active cap
+// uncaps interaction (vsync paces presents), an unlimited idle rate never
+// throttles a static-but-rendering screen, and an unlimited background rate
+// never throttles an unfocused window.
+func TestFramePaceUnlimited(t *testing.T) {
+	a := testTabApp(t)
+	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
+
+	a.d.Prefs.SetFPSCap(config.FPSUnlimited)
+	if got := a.FramePace(true); got != budget(30) {
+		t.Errorf("unlimited cap while idle = %v, want the untouched 30 fps idle budget", got)
+	}
+	a.NoteInput()
+	if got := a.FramePace(true); got != 0 {
+		t.Errorf("unlimited cap while interacting = %v, want 0 (uncapped)", got)
+	}
+	a.lastInputAt = time.Time{}
+
+	a.d.Prefs.SetIdleFPS(config.FPSUnlimited)
+	if got := a.FramePace(true); got != 0 {
+		t.Errorf("unlimited idle rate = %v, want 0 (never throttle when idle)", got)
+	}
+	a.d.Prefs.SetUnfocusedFPS(config.FPSUnlimited)
+	if got := a.FramePace(false); got != 0 {
+		t.Errorf("unlimited background rate = %v, want 0 (never throttle unfocused)", got)
+	}
+}
+
+// TestMotionGrace pins the pointer-motion split (experimental loop): bare
+// motion holds full rate only through the short motion grace, while the
+// classic loop keeps treating motion as plain input.
+func TestMotionGrace(t *testing.T) {
+	a := testTabApp(t)
+
+	a.NoteMotion()
+	if !a.wantsFullRate() {
+		t.Error("a moving pointer must render at full rate")
+	}
+	a.lastMotionAt = time.Now().Add(-2 * motionInputGrace)
+	if a.wantsFullRate() {
+		t.Error("a stopped pointer must release full rate after the short motion grace")
+	}
+
+	// Classic loop: motion is plain input (byte-identical pacing to before).
+	a.d.Prefs.SetEventDrivenLoop(false)
+	a.NoteMotion()
+	if time.Since(a.lastInputAt) > time.Second {
+		t.Error("classic mode: NoteMotion must stamp the full input grace")
 	}
 }
 

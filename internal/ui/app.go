@@ -1010,6 +1010,11 @@ type sessionState struct {
 	// lastInputAt is the most recent SDL input event (frame pacing: full rate
 	// through fullRateInputGrace after any interaction).
 	lastInputAt time.Time
+	// lastMotionAt is the most recent BARE pointer motion (experimental loop):
+	// it holds full rate only through motionInputGrace, so circling the mouse
+	// over dead space stops costing frames the moment it stops — clicks, keys
+	// and the wheel still get the full input grace via lastInputAt.
+	lastMotionAt time.Time
 	// lastFrameDrawn is when Frame last actually rendered — SkipFrame's
 	// heartbeat: a statically-skipped screen still gets one real frame per
 	// paceHeartbeat, bounding how stale any missed signal can leave it.
@@ -4097,6 +4102,24 @@ const fullRateInputGrace = 1 * time.Second
 // an SDL event arrives, and wantsFullRate holds full rate through the grace.
 func (a *App) NoteInput() { a.lastInputAt = time.Now() }
 
+// motionInputGrace holds full rate briefly after BARE pointer motion under the
+// experimental loop: long enough that continuous movement (hover sweeps, drags
+// — their motion stream keeps re-arming it) renders at full rate throughout,
+// short enough that waving the mouse over dead space stops costing frames
+// almost as soon as it stops. Clicks/keys/wheel keep fullRateInputGrace.
+const motionInputGrace = 200 * time.Millisecond
+
+// NoteMotion marks a pointer-motion-only pass. Under the experimental loop it
+// arms the short motion grace; under the classic loop motion is plain input
+// (byte-identical pacing to before).
+func (a *App) NoteMotion() {
+	if a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn() {
+		a.lastMotionAt = time.Now()
+		return
+	}
+	a.lastInputAt = time.Now()
+}
+
 // staticTalkFPS paces a message whose stage is ALL STATIC art (single-frame
 // sprites, no effects): the only motion is the typewriter's text crawl, which
 // reveals runes at ≥ ~40 ms — 30 fps samples it cleanly, so full rate is pure
@@ -4173,21 +4196,38 @@ func (a *App) talkBudget(full time.Duration) time.Duration {
 // FramePace returns the frame budget the main loop should pace to (0 = no cap).
 // focused is the window's input-focus state. Four tiers:
 //   - full rate: interaction, effects in flight, or an always-animating surface
+//   - talk rate: a message is playing → the text crawl's cadence (talkBudget);
+//     an animated speaker's frame flip may TIGHTEN it (a fast lipflap gets its
+//     frames) but never loosen it — every mover schedules independently and
+//     the earliest deadline wins, so a slow sprite loop can never drag the
+//     typewriter or its blips down to the sprite's rate (the "text renders at
+//     idle fps over animated sprites" report)
 //   - content cadence: only stage animations are moving → wake exactly for the
 //     next frame flip (smooth at ANY idle setting — the pace can never be
 //     slower than the content — and never above the cap)
-//   - talk rate: a message is playing over all-static art → the text crawl's
-//     cadence (talkBudget), not full rate
 //   - idle rate: a static screen (the deeper SkipFrame tier then usually skips
 //     the render entirely)
+//
+// A rate knob set to Unlimited reports a 0 budget from paceBudget: the active
+// cap 0 means "no cap" (vsync paces the presents), and an unlimited idle /
+// unfocused rate means "never throttle that state below the active pacing".
 func (a *App) FramePace(focused bool) time.Duration {
 	full := paceBudget(a.d.Prefs.FPSCap())
+	// nextAnimDue is the stage's earliest scheduled frame flip (ok=false on a
+	// static stage / no room) — consulted by both focus branches.
+	nextAnimDue := func() (time.Duration, bool) {
+		if a.room == nil || a.d.Viewport == nil {
+			return 0, false
+		}
+		return a.d.Viewport.NextAnimDue(a.renderScene())
+	}
 	if !focused {
-		unf := paceBudget(a.d.Prefs.UnfocusedFPS())
+		unf := paceBudget(a.d.Prefs.UnfocusedFPS()) // 0 = unlimited: never slower when unfocused
 		// A message playing while tabbed out is still AUDIBLE: hold the blip
 		// cadence so the background window's low rate doesn't thin the blips.
-		if a.roomBusy() {
-			if tb := a.talkBudget(full); unf == 0 || tb < unf {
+		// (An unlimited unfocused rate already outpaces the blips.)
+		if unf > 0 && a.roomBusy() {
+			if tb := a.talkBudget(full); tb < unf {
 				unf = tb
 			}
 		}
@@ -4195,12 +4235,11 @@ func (a *App) FramePace(focused bool) time.Duration {
 		// chat): a live stage animation keeps its OWN schedule, exactly like
 		// the focused branch below — the flat trickle rate here was the
 		// "idle animations go choppy the moment I click into another window"
-		// playtest report. Costs nothing on a static stage (ok=false), wakes
-		// no more often than the tier budget already did for fast loops
-		// (clamped at full), and for slow loops it redraws LESS than the flat
-		// rate — one frame per flip, right on the flip.
-		if unf > 0 && a.room != nil && a.d.Viewport != nil {
-			if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
+		// playtest report. Costs nothing on a static stage (ok=false), and
+		// only ever TIGHTENS the budget (an anim due can't slow the talk
+		// cadence set above).
+		if unf > 0 {
+			if due, ok := nextAnimDue(); ok && due < unf {
 				unf = clampDur(due, full, unf)
 			}
 		}
@@ -4209,18 +4248,29 @@ func (a *App) FramePace(focused bool) time.Duration {
 	if a.wantsFullRate() {
 		return full
 	}
-	idle := paceBudget(a.d.Prefs.IdleFPS())
-	if a.room != nil && a.d.Viewport != nil {
-		if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
-			return clampDur(due, full, idle) // 0 (a running ramp) → full rate
-		}
-	}
+	idle := paceBudget(a.d.Prefs.IdleFPS()) // 0 = unlimited: never slower when idle
 	if a.roomBusy() {
+		// The talk tier paces the ceremony; the earliest OTHER deadline may
+		// only tighten it. Order matters: consulting the stage anim FIRST
+		// returned a slow lipflap's flip (clamped to the idle rate) as the
+		// whole frame budget, crawling the text and coalescing the blips.
 		talk := a.talkBudget(full)
-		if idle > 0 && idle < talk {
+		switch {
+		case idle == 0:
+			talk = full // unlimited idle smoothness: ceremonies pace at the cap
+		case idle < talk:
 			talk = idle // never below the user's idle smoothness
 		}
+		if due, ok := nextAnimDue(); ok && due < talk {
+			talk = clampDur(due, full, talk) // a fast speaker anim gets its frames
+		}
 		return talk
+	}
+	if due, ok := nextAnimDue(); ok {
+		if idle == 0 {
+			return clampDur(due, full, due) // unlimited idle: the content cadence itself (never above the cap)
+		}
+		return clampDur(due, full, idle) // 0 (a running ramp) → full rate
 	}
 	return idle
 }
@@ -4408,6 +4458,9 @@ func (a *App) NextWakeDelay() time.Duration {
 func (a *App) wantsFullRate() bool {
 	if time.Since(a.lastInputAt) < fullRateInputGrace {
 		return true
+	}
+	if time.Since(a.lastMotionAt) < motionInputGrace {
+		return true // a moving pointer renders live; the short grace ends with it
 	}
 	if a.room != nil {
 		sc := &a.room.Scene

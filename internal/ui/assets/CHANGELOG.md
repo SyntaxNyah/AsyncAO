@@ -4,6 +4,30 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test2 — 2026-07-04 (test build)
+
+Fast follow-ups from the first test round — thanks to Nightingale for
+the frame-pacing reports.
+
+- **Text no longer crawls at the idle rate over animated characters.**
+  With a character whose sprite animates (lip flaps and the like), the
+  whole message — the typewriter text AND its blips — ran at the idle
+  frame rate; static characters were fine. The scheduler was letting the
+  sprite's animation clock own the frame budget. Every moving part now
+  schedules independently and the earliest deadline wins: the text crawl
+  keeps its own pace, a slow sprite loop just flips whenever its time
+  comes, and a fast lip flap can still pull extra frames when IT needs
+  them. This also un-chunks the blips, which fire on the same clock.
+- **The frame-rate sliders take exact numbers and "unlimited".** Each of
+  the three rates (Active / Idle / Background) now has a type-a-number
+  box next to the slider and an ∞ toggle: ∞ on Active removes the cap
+  entirely (vsync paces the frames), ∞ on Idle or Background means
+  "never slow down in that state".
+- **Waving the mouse no longer holds a full second of max fps.** Bare
+  pointer motion now renders live only while the pointer actually moves
+  (a fifth of a second of grace); clicks, keys and scrolling keep the
+  full one-second burst. Only with the event-driven renderer on.
+
 ## v1.55.0-test1 — 2026-07-04 (test build)
 
 A renderer round, on the experimental channel first because it reaches deep
