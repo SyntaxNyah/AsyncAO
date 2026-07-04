@@ -390,6 +390,12 @@ type Ctx struct {
 	// BeginFrame moves focus along it. Bounded by fields drawn per frame.
 	fieldSeq []string
 	tabShift bool // shift held at the Tab press → cycle backwards
+	// Hover census (experimental loop): every hover-reactive rect the last
+	// draw pass consulted, so a pointer move over dead space is provably
+	// changeless and renders nothing (noteHoverRect / HoverStateChanged).
+	// Cleared in BeginDraw; bounded by hoverRectCap (full = conservative).
+	hoverRects     []sdl.Rect
+	hoverRectsFull bool
 	// focusNext is a queued FocusField request, applied at the next
 	// BeginFrame so it survives this frame's click-away unfocus no matter
 	// where the requesting widget sits in draw order.
@@ -1096,10 +1102,62 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 
 // BeginDraw opens a real draw pass (App.Frame calls it before any screen
 // draws): the visible-field order rebuilds from scratch as this frame's
-// TextFields register. Split from BeginFrame so input-only skipped passes
-// keep the last drawn frame's field order for Tab cycling (see BeginFrame).
+// TextFields register, and the hover census restarts. Split from BeginFrame so
+// input-only skipped passes keep the last drawn frame's field order for Tab
+// cycling (see BeginFrame) and its hover map for motion damage.
 func (c *Ctx) BeginDraw() {
 	c.fieldSeq = c.fieldSeq[:0]
+	c.hoverRects = c.hoverRects[:0]
+	c.hoverRectsFull = false
+}
+
+// hoverRectCap bounds the per-draw hover census (rule §17.4). Past it the
+// census marks itself full and every pointer move counts as damage —
+// conservative: extra frames, never a missed hover reaction.
+const hoverRectCap = 512
+
+// noteHoverRect records one hover-reactive rect for the motion-damage test:
+// the experimental loop redraws on pointer motion ONLY when the pointer
+// crosses into or out of something that reacts (playtest: dead-space motion
+// must render nothing). Clipped widgets record their visible intersection;
+// while a modal owns the pointer nothing records (everything under it is
+// inert). Append-only into a reused backing array — zero allocations steady
+// state.
+func (c *Ctx) noteHoverRect(r sdl.Rect) {
+	if c.hoverRectsFull {
+		return
+	}
+	if c.clipOn {
+		clipped, ok := r.Intersect(&c.clipRect)
+		if !ok {
+			return
+		}
+		r = clipped
+	}
+	if len(c.hoverRects) >= hoverRectCap {
+		c.hoverRectsFull = true
+		return
+	}
+	c.hoverRects = append(c.hoverRects, r)
+}
+
+// HoverStateChanged reports whether moving the pointer from (ox,oy) to
+// (nx,ny) crosses the boundary of any hover-reactive rect the last draw
+// recorded — the "does this motion change any pixels?" test. A full census
+// answers true (conservative).
+func (c *Ctx) HoverStateChanged(ox, oy, nx, ny int32) bool {
+	if c.hoverRectsFull {
+		return true
+	}
+	for i := range c.hoverRects {
+		r := &c.hoverRects[i]
+		inOld := ox >= r.X && ox < r.X+r.W && oy >= r.Y && oy < r.Y+r.H
+		inNew := nx >= r.X && nx < r.X+r.W && ny >= r.Y && ny < r.Y+r.H
+		if inOld != inNew {
+			return true
+		}
+	}
+	return false
 }
 
 // NextCaretFlip reports the time until the focused caret next toggles
@@ -1297,6 +1355,10 @@ func (c *Ctx) hovering(r sdl.Rect) bool {
 	if c.modalOn {
 		return false
 	}
+	// Motion-damage census: this rect reacts to the pointer, so crossing its
+	// boundary is a reason to redraw (the experimental loop's dead-space
+	// motion renders nothing otherwise).
+	c.noteHoverRect(r)
 	// A widget drawn under a pushClip only EXISTS inside that clip: the pointer
 	// past the clip edge must not hover it. Clipping used to be draw-only, so a
 	// list's half-culled bottom row still hit-tested BELOW its panel — hovering

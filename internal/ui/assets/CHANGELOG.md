@@ -4,6 +4,24 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test4 — 2026-07-04 (test build)
+
+The viewport-is-sacred round.
+
+- **The stage is exempt from every limiter — its fps IS the sprite's
+  fps.** Idle sprites now render exactly one frame per animation flip,
+  right on the flip: a 12 fps loop no longer gets inflated to your idle
+  rate, a fast loop is no longer squeezed down by it, and setting Idle
+  or Background to 0 freezes the UI around the stage while the scene
+  itself keeps animating normally. The frame-rate knobs govern UI
+  decoration only; the viewport schedules itself.
+- **Mouse movement over dead space renders nothing at all.** Every
+  hover-reactive spot on screen is remembered from the last frame, and
+  a pointer move only redraws when it actually crosses into or out of
+  one (or drags something, or carries a tooltip). Circling the mouse
+  over empty space now costs zero frames — previously each move drew
+  one.
+
 ## v1.55.0-test3 — 2026-07-04 (test build)
 
 The literal-zero round.

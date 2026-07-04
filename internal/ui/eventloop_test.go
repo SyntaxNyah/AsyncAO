@@ -4,8 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/veandco/go-sdl2/sdl"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
 // expApp is testTabApp inside the heartbeat window, so SkipFrame decisions
@@ -183,6 +186,95 @@ func TestSkipFrameFrozenStates(t *testing.T) {
 	}
 	if b.SkipFrame(true, false) {
 		t.Error("background 0 must not affect the FOCUSED window (chrome still renders)")
+	}
+}
+
+// TestSkipFrameFrozenStageExempt pins the viewport exemption: 0 fps freezes
+// UI decoration, never the scene — a scheduled sprite flip still renders,
+// exactly on its own cadence.
+func TestSkipFrameFrozenStageExempt(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	store, err := render.NewTextureStore(ren)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	a := expApp(t)
+	a.room = newRoomForTest(t)
+	a.d.Viewport = render.NewViewport(store)
+	a.d.Prefs.SetIdleFPS(config.FPSZero)
+	a.screen = ScreenLobby // any skippable screen; the stage check is screen-independent
+
+	if !a.SkipFrame(true, false) {
+		t.Fatal("precondition: a STATIC stage under idle 0 must skip")
+	}
+	animSpeaker(t, store, a, "anim://frozenidle", 120*time.Millisecond)
+	if a.SkipFrame(true, false) {
+		t.Error("idle 0 must NOT freeze the stage: a scheduled sprite flip renders")
+	}
+	if got := a.FramePace(true); got != 120*time.Millisecond {
+		t.Errorf("frozen idle + live loop paces at %v, want the exact 120ms flip", got)
+	}
+}
+
+// TestHoverDamage pins the dead-space motion rule: pointer movement redraws
+// ONLY when it changes something — crossing a hover-reactive rect's boundary,
+// dragging, or dragging a shown tooltip along. Motion over nothing renders
+// nothing.
+func TestHoverDamage(t *testing.T) {
+	a := expApp(t)
+	c := a.ctx
+	c.BeginDraw()
+	c.mouseX, c.mouseY = 10, 10
+	_ = c.hovering(sdl.Rect{X: 100, Y: 100, W: 40, H: 20}) // the census records one button
+	a.drawnMouseX, a.drawnMouseY = 10, 10
+
+	if a.hoverDamage() {
+		t.Error("a stationary pointer is never damage")
+	}
+	c.mouseX, c.mouseY = 30, 30
+	if a.hoverDamage() {
+		t.Error("dead-space motion must not redraw")
+	}
+	if !a.SkipFrame(true, false) {
+		t.Error("a dead-space motion pass must still skip")
+	}
+	c.mouseX, c.mouseY = 110, 110
+	if !a.hoverDamage() {
+		t.Error("crossing INTO a hover-reactive rect must redraw (the highlight appears)")
+	}
+	if a.SkipFrame(true, false) {
+		t.Error("a hover crossing must render")
+	}
+	a.drawnMouseX, a.drawnMouseY = 110, 110
+	c.mouseX, c.mouseY = 125, 105
+	if a.hoverDamage() {
+		t.Error("moving WITHIN one hover state changes nothing — no redraw")
+	}
+	c.mouseX, c.mouseY = 300, 300
+	if !a.hoverDamage() {
+		t.Error("crossing OUT of a hover-reactive rect must redraw (the highlight clears)")
+	}
+
+	// A drag tracks the pointer wherever it is.
+	a.drawnMouseX, a.drawnMouseY = 300, 300
+	c.mouseX, c.mouseY = 301, 300
+	c.mouseDown = true
+	if !a.hoverDamage() {
+		t.Error("a drag must redraw per move")
+	}
+	c.mouseDown = false
+	// A shown tooltip is glued to the cursor.
+	a.drawnTipShowing = true
+	if !a.hoverDamage() {
+		t.Error("a visible tooltip must follow the pointer")
+	}
+	a.drawnTipShowing = false
+
+	// Census overflow: conservative — any move redraws.
+	c.hoverRectsFull = true
+	if !a.hoverDamage() {
+		t.Error("a full census must fall back to redraw-on-motion")
 	}
 }
 

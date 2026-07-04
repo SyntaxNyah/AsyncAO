@@ -979,6 +979,12 @@ type App struct {
 	// the idle rate or that art would freeze between heartbeats.
 	frameAnimChrome bool
 	drawnAnimChrome bool
+	// drawnMouseX/Y is where the pointer was when the last frame drew, and
+	// drawnTipShowing whether that frame painted a cursor-following tooltip:
+	// together with the Ctx hover census they decide whether a pointer move
+	// changes ANY pixels (hoverDamage) — dead-space motion renders nothing.
+	drawnMouseX, drawnMouseY int32
+	drawnTipShowing          bool
 }
 
 // sessionState is EVERYTHING scoped to one server session. The active
@@ -4217,8 +4223,9 @@ func (a *App) talkBudget(full time.Duration) time.Duration {
 //     typewriter or its blips down to the sprite's rate (the "text renders at
 //     idle fps over animated sprites" report)
 //   - content cadence: only stage animations are moving → wake exactly for the
-//     next frame flip (smooth at ANY idle setting — the pace can never be
-//     slower than the content — and never above the cap)
+//     next frame flip, one frame per flip (the viewport is its own surface:
+//     the idle/background knobs never slow it OR speed it — its fps IS the
+//     sprite's fps, bounded only by the active cap)
 //   - idle rate: a static screen (the deeper SkipFrame tier then usually skips
 //     the render entirely)
 //
@@ -4253,15 +4260,17 @@ func (a *App) FramePace(focused bool) time.Duration {
 			}
 		}
 		// An unfocused window is still VISIBLE (second monitor, side-by-side
-		// chat): a live stage animation keeps its OWN schedule, exactly like
-		// the focused branch below — the flat trickle rate here was the
-		// "idle animations go choppy the moment I click into another window"
-		// playtest report. Costs nothing on a static stage (ok=false), and
-		// only ever TIGHTENS the budget (an anim due can't slow the talk
-		// cadence set above).
+		// chat): a live stage animation keeps its OWN schedule — content-exact,
+		// one frame per flip, right on the flip — whatever the background knob
+		// says (the flat trickle was the "idle animations go choppy the moment
+		// I click into another window" report; rendering MORE often than the
+		// flips is pure waste the other way). Never slower than a ceremony's
+		// cadence set above.
 		if unf > 0 {
-			if due, ok := nextAnimDue(); ok && due < unf {
-				unf = clampDur(due, full, unf)
+			if due, ok := nextAnimDue(); ok {
+				if content := clampDur(due, full, due); content < unf || !a.roomBusy() {
+					unf = content
+				}
 			}
 		}
 		return unf
@@ -4297,11 +4306,14 @@ func (a *App) FramePace(focused bool) time.Duration {
 		}
 		return talk
 	}
-	if due, ok := nextAnimDue(); ok && !idleFrozen {
-		if idle == 0 {
-			return clampDur(due, full, due) // unlimited idle: the content cadence itself (never above the cap)
-		}
-		return clampDur(due, full, idle) // 0 (a running ramp) → full rate
+	if due, ok := nextAnimDue(); ok {
+		// The stage keeps ITS schedule — one frame per flip, exactly on the
+		// flip — whatever the idle knob says, 0 included: the viewport is a
+		// separate surface, the knobs freeze UI decoration, never the scene
+		// (playtest: "idle sprites should cap the frame rate to the sprite's
+		// own rate, and still animate at 0"). A running ramp (due 0) rides
+		// the full cap.
+		return clampDur(due, full, due)
 	}
 	return idle
 }
@@ -4364,19 +4376,27 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 		if a.RenderNeeded() {
 			return false // pending damage: packets landed / textures moved / a caret flip is showing
 		}
+		if a.hoverDamage() {
+			return false // the pointer moved somewhere that visibly reacts
+		}
 	}
 	// User-frozen states (the 0 fps knob positions, idle/background only):
-	// decoration stops entirely — idle animations, animated chrome, blinking
-	// carets and ticking readouts all hold their last frame. Everything above
-	// still renders (input, ceremonies, toasts, voice, damage), so chat keeps
-	// landing and sounds keep playing; the pixels just stop moving for
-	// movement's sake. Deliberately below RenderNeeded and above the
-	// animation refusals.
+	// UI decoration stops entirely — animated chrome, blinking carets and
+	// ticking readouts hold their last frame. The STAGE is exempt: the
+	// viewport is its own surface and keeps its content-rate schedule even at
+	// 0 (playtest: "even at zero the sprites should still animate"), and
+	// everything above still renders (input, ceremonies, toasts, voice,
+	// damage), so chat keeps landing and sounds keep playing. Deliberately
+	// below RenderNeeded/hoverDamage and above the decoration refusals.
 	if a.d.Prefs != nil {
-		if focused && a.d.Prefs.IdleFPS() == config.FPSZero {
-			return true
-		}
-		if !focused && a.d.Prefs.UnfocusedFPS() == config.FPSZero {
+		frozen := (focused && a.d.Prefs.IdleFPS() == config.FPSZero) ||
+			(!focused && a.d.Prefs.UnfocusedFPS() == config.FPSZero)
+		if frozen {
+			if a.d.Viewport != nil && a.room != nil {
+				if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
+					return false // the stage animates on its own schedule regardless
+				}
+			}
 			return true
 		}
 	}
@@ -4477,6 +4497,30 @@ func (a *App) BackgroundPace(def time.Duration) time.Duration {
 // frame to show whatever was due — a caret flip, a clock second, a hover
 // reveal, or the plain staleness heartbeat.
 func (a *App) NoteDeadline() { a.uiDirty = true }
+
+// hoverDamage reports that the pointer moved somewhere that visibly reacts:
+// a drag is following it, a shown tooltip must move or hide with it, or the
+// move crosses a hover-reactive rect the last frame recorded. Dead-space
+// motion — the pointer circling over nothing — reports false and renders
+// NOTHING (the "moving the mouse shouldn't redraw when no UI element updates"
+// ask). BeginFrame reseeds the live pointer from SDL every pass, so this
+// works whether the move arrived as an event or happened while parked.
+func (a *App) hoverDamage() bool {
+	c := a.ctx
+	if c == nil {
+		return false
+	}
+	if c.mouseX == a.drawnMouseX && c.mouseY == a.drawnMouseY {
+		return false
+	}
+	if c.mouseDown {
+		return true // a drag (slider, selection, window move) tracks the pointer
+	}
+	if a.drawnTipShowing {
+		return true // the tooltip is glued to the cursor
+	}
+	return c.HoverStateChanged(a.drawnMouseX, a.drawnMouseY, c.mouseX, c.mouseY)
+}
 
 const (
 	// minWakeDelay floors the event wait so a just-passed deadline can never
@@ -5341,8 +5385,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawnCaretOn = a.ctx.caretOn
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.
+	// The pointer/tooltip snapshot rides the same promotion: hoverDamage
+	// compares future pointer positions against what THIS frame showed.
 	a.frameAnimChrome = false
-	defer func() { a.drawnAnimChrome = a.frameAnimChrome }()
+	defer func() {
+		a.drawnAnimChrome = a.frameAnimChrome
+		a.drawnMouseX, a.drawnMouseY = a.ctx.mouseX, a.ctx.mouseY
+		a.drawnTipShowing = a.ctx.tipText != ""
+	}()
 	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
 	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
 	a.frameDtMs = float32(dt.Seconds() * 1000)

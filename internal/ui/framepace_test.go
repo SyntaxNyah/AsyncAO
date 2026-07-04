@@ -100,13 +100,10 @@ func TestTalkBudget(t *testing.T) {
 	}
 }
 
-// TestFramePaceUnfocusedFollowsAnim pins the unfocused tier onto a LIVE stage
-// animation's schedule — an unfocused window is still visible (second-monitor
-// play), and the flat trickle rate there was the "idle animations go choppy
-// the moment I click into another window" report. With a resident 2×80 ms
-// speaker loop: unfocused paces at the 80 ms flip cadence (not the flat
-// 100 ms trickle), focused idle keeps its existing [full, idle] clamp, and a
-// stage with nothing animating stays on the flat rate.
+// TestFramePaceUnfocusedFollowsAnim pins BOTH focus states onto a LIVE stage
+// animation's exact schedule — the viewport is its own surface: its fps is
+// the sprite's fps (one frame per flip), never the idle/background trickle in
+// either direction. A stage with nothing animating stays on the flat rate.
 func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
@@ -140,9 +137,10 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	if got := a.FramePace(false); got != 80*time.Millisecond {
 		t.Errorf("unfocused pace with a live 80ms loop = %v, want the 80ms flip cadence", got)
 	}
-	// Focused idle is unchanged: the same loop clamps at the 30 fps idle budget.
-	if got := a.FramePace(true); got != budget(30) {
-		t.Errorf("focused idle pace with the same loop = %v, want the idle cap %v", got, budget(30))
+	// Focused idle follows the same content-exact schedule (the idle knob no
+	// longer inflates a 12.5 fps loop to 30 fps renders).
+	if got := a.FramePace(true); got != 80*time.Millisecond {
+		t.Errorf("focused idle pace with the same loop = %v, want the 80ms flip cadence", got)
 	}
 }
 
@@ -180,14 +178,13 @@ func TestFramePaceCeremonyBeatsSlowAnim(t *testing.T) {
 	a := testTabApp(t)
 	a.room = newRoomForTest(t) // a real room: enqueue runs the full begin() path
 	a.d.Viewport = render.NewViewport(store)
-	a.d.Prefs.SetIdleFPS(10) // the reported setting: idle floor at 10 fps
-	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
+	a.d.Prefs.SetIdleFPS(10) // the reported setting — must inflate nothing below
 
-	// Idle (no message) with a SLOW loop (2×200 ms): the content cadence,
-	// clamped to the idle rate.
+	// Idle (no message) with a SLOW loop (2×200 ms): content-exact — one
+	// frame per flip, NOT inflated to the idle rate.
 	animSpeaker(t, store, a, "anim://slowtalk", 200*time.Millisecond)
-	if got := a.FramePace(true); got != budget(10) {
-		t.Fatalf("idle pace over a slow loop = %v, want the 10 fps idle budget %v", got, budget(10))
+	if got := a.FramePace(true); got != 200*time.Millisecond {
+		t.Fatalf("idle pace over a slow loop = %v, want its exact 200ms flip cadence", got)
 	}
 
 	// A message starts. Pin the typewriter to a plain 30 fps-ish crawl (the
