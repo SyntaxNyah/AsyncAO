@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/veandco/go-sdl2/sdl"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
@@ -204,6 +206,33 @@ func TestNextHoverDue(t *testing.T) {
 	c.hoverPreviewOn = true
 	if due, ok := c.NextHoverDue(); !ok || due <= 0 || due > 3*time.Second {
 		t.Errorf("pending preview dwell: due = %v ok=%v", due, ok)
+	}
+}
+
+// TestIsRealInput pins the input-grace classification: only genuine user
+// input arms the full-rate grace. Window/driver housekeeping still renders a
+// frame (sawEvent) but must not hold max fps — with a big animated sprite on
+// stage, its texture traffic fired such events every few seconds and the
+// client burst to full rate for the grace second (playtest, test2).
+func TestIsRealInput(t *testing.T) {
+	real := []sdl.Event{
+		&sdl.MouseMotionEvent{}, &sdl.MouseButtonEvent{}, &sdl.MouseWheelEvent{},
+		&sdl.KeyboardEvent{}, &sdl.TextInputEvent{}, &sdl.TextEditingEvent{},
+		&sdl.DropEvent{}, &sdl.TouchFingerEvent{},
+	}
+	for _, ev := range real {
+		if !IsRealInput(ev) {
+			t.Errorf("%T must count as real input", ev)
+		}
+	}
+	housekeeping := []sdl.Event{
+		&sdl.WindowEvent{}, &sdl.RenderEvent{}, &sdl.QuitEvent{},
+		&sdl.UserEvent{}, &sdl.ClipboardEvent{}, &sdl.AudioDeviceEvent{},
+	}
+	for _, ev := range housekeeping {
+		if IsRealInput(ev) {
+			t.Errorf("%T must NOT arm the input grace", ev)
+		}
 	}
 }
 

@@ -1044,6 +1044,12 @@ type sessionState struct {
 	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
 	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
 	sceneWarmLastDemand time.Time
+	// sceneReloads counts LIVE on-stage bases that had to be re-demanded after
+	// eviction (keepSceneAssetsWarm's heal path) — the F8 diag line shows it.
+	// A climbing count while a big animated sprite idles = the stage's working
+	// set doesn't fit T1 and is eviction-cycling (sprites visibly blink out
+	// while they re-decode); a stable count = the cache is healthy.
+	sceneReloads int
 	// winW/winH cache the logical window size Frame was last given, for draw
 	// helpers deep in a call chain that need window bounds (e.g. the sprite
 	// preview's on-screen clamp) without threading params through every layer.
@@ -2267,6 +2273,11 @@ func (a *App) keepSceneAssetsWarm() {
 			a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 			demanded = true
 			a.sceneWarmLastDemand = now
+			// Churn signature (F8 diag): a LIVE on-stage base needed a reload.
+			// A steadily climbing count while a big animated sprite idles means
+			// the stage's working set doesn't fit T1 and is eviction-cycling —
+			// the visible symptom is the sprite blinking out while it re-decodes.
+			a.sceneReloads++
 		}
 	}
 	warm(sc.BackgroundBase, assets.AssetTypeBackground)

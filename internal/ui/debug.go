@@ -82,8 +82,8 @@ func (a *App) debugDiagLine() string {
 	if a.room != nil {
 		queue = a.room.QueueLen()
 	}
-	return fmt.Sprintf("diag · tabs %d · area %s · queue %d · ic %d · ooc %d · goroutines %d",
-		len(a.tabs), area, queue, len(a.icLog), len(a.oocLog), runtime.NumGoroutine())
+	return fmt.Sprintf("diag · tabs %d · area %s · queue %d · ic %d · ooc %d · goroutines %d · sceneReloads %d",
+		len(a.tabs), area, queue, len(a.icLog), len(a.oocLog), runtime.NumGoroutine(), a.sceneReloads)
 }
 
 // debugColdLoadLine is the cold-load profiling readout (the playtest "profile

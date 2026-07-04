@@ -4,6 +4,32 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test6 — 2026-07-04 (test build)
+
+A reset to the good state, plus one targeted fix.
+
+- **Rolled back to test2.** The test3–test5 rounds (the literal-zero
+  heartbeat removal, the hover census, the 0 fps knobs, the
+  park-deadline pacing) stacked too much change at once and made
+  things worse — test4 could freeze the client outright. This build is
+  exactly test2 plus the fixes below; those ideas will return one at a
+  time, each proven on its own.
+- **Random max-fps bursts with animated sprites — fixed.** With a big
+  animated sprite on stage, the client periodically jumped to max fps
+  for about a second, exactly as if you'd touched something. Cause:
+  window and driver housekeeping events (repaint requests, render
+  resets after heavy texture traffic) were treated as user input and
+  armed the one-second full-rate burst. They now repaint one frame and
+  nothing more; only real input (mouse, keyboard, wheel, typing,
+  drag-and-drop) holds full rate.
+- **New churn readout in the F8 debug panel.** The diag line gains
+  "sceneReloads": how many times an on-stage sprite/background had to
+  be re-loaded after being evicted. If this climbs while a big animated
+  character just idles, the stage's working set doesn't fit the texture
+  budget and is cycling — the visible symptom is the sprite blinking
+  out for a moment. That readout tells us whether the remaining "bad
+  redraws" are this, and guides the next fix.
+
 ## v1.55.0-test2 — 2026-07-04 (test build)
 
 Fast follow-ups from the first test round — thanks to Nightingale for

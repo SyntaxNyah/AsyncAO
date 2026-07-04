@@ -386,7 +386,8 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// (Inverting these erased every click before the UI saw it.)
 		uiCtx.BeginFrame(dt)
 		sawEvent := false
-		sawInput := false // any non-motion event (click, key, wheel, window)
+		sawInput := false  // REAL input minus bare motion (click, key, wheel, text, drop)
+		sawMotion := false // bare pointer motion (the short motion grace)
 		handleEv := func(ev sdl.Event) {
 			if ui.IsWakeEvent(ev) {
 				return // a background doorbell (packet/decode), never user input
@@ -403,7 +404,14 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			}
 			uiCtx.HandleEvent(ev)
 			sawEvent = true
-			if _, motion := ev.(*sdl.MouseMotionEvent); !motion {
+			// Window/driver housekeeping (EXPOSED repaints, render-reset after
+			// heavy texture traffic, focus/move) renders this pass like any
+			// event but arms NO grace: with a big animated sprite on stage its
+			// texture churn fired such events every few seconds and held max
+			// fps for the full input-grace second (playtest, test2).
+			if _, motion := ev.(*sdl.MouseMotionEvent); motion {
+				sawMotion = true
+			} else if ui.IsRealInput(ev) {
 				sawInput = true
 			}
 		}
@@ -419,7 +427,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// waving the cursor over nothing stops costing frames when it stops.
 		if sawInput {
 			app.NoteInput()
-		} else if sawEvent {
+		} else if sawMotion {
 			app.NoteMotion()
 		}
 
