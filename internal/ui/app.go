@@ -1050,6 +1050,15 @@ type sessionState struct {
 	// set doesn't fit T1 and is eviction-cycling (sprites visibly blink out
 	// while they re-decode); a stable count = the cache is healthy.
 	sceneReloads int
+	// Rendered-frames-per-second, measured over a rolling one-second window
+	// (F8 diag: "drawnFps"). This is the OBSERVER-SAFE pacing readout: the F3
+	// perf HUD forces full rate while open, so it can never show what the
+	// pacing tiers actually do — this counter just counts Frame() calls and
+	// costs one compare per frame. THE number for GPU-usage reports: it says
+	// directly how many full-window repaints per second the client is doing.
+	fpsWindowStart time.Time
+	fpsWindowCount int
+	drawnFPS       int
 	// winW/winH cache the logical window size Frame was last given, for draw
 	// helpers deep in a call chain that need window bounds (e.g. the sprite
 	// preview's on-screen clamp) without threading params through every layer.
@@ -5239,6 +5248,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
 	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
+	// Rolling rendered-fps window (F8 "drawnFps" — see the field comment).
+	a.fpsWindowCount++
+	if a.fpsWindowStart.IsZero() || a.frameNow.Sub(a.fpsWindowStart) >= time.Second {
+		a.drawnFPS = a.fpsWindowCount
+		a.fpsWindowCount = 0
+		a.fpsWindowStart = a.frameNow
+	}
 	// Damage bookkeeping (experimental loop): this frame absorbs everything
 	// pending. Snapshot the store generation at frame START — uploads during
 	// THIS frame (the pump below) bump it and earn at most one follow-up
