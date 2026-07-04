@@ -180,11 +180,12 @@ func TestFramePaceCeremonyBeatsSlowAnim(t *testing.T) {
 	a.d.Viewport = render.NewViewport(store)
 	a.d.Prefs.SetIdleFPS(10) // the reported setting — must inflate nothing below
 
-	// Idle (no message) with a SLOW loop (2×200 ms): content-exact — one
-	// frame per flip, NOT inflated to the idle rate.
+	// Idle (no message) with a SLOW loop (2×200 ms): the BLOCKING sleep caps
+	// at animPaceCap (the exact flip renders off the park's deadline — a
+	// sleep paced to a slow flip froze the whole client; see animPace).
 	animSpeaker(t, store, a, "anim://slowtalk", 200*time.Millisecond)
-	if got := a.FramePace(true); got != 200*time.Millisecond {
-		t.Fatalf("idle pace over a slow loop = %v, want its exact 200ms flip cadence", got)
+	if got := a.FramePace(true); got != animPaceCap {
+		t.Fatalf("idle pace over a slow loop = %v, want the %v blocking-sleep cap", got, animPaceCap)
 	}
 
 	// A message starts. Pin the typewriter to a plain 30 fps-ish crawl (the

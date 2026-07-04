@@ -4,6 +4,20 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test5 — 2026-07-04 (test build)
+
+Hotfix for test4.
+
+- **Animated sprites froze the whole client — fixed.** test4 paced the
+  render loop's sleep to the sprite's next animation frame, and slow
+  loops (characters that blink every few seconds) put the entire client
+  into a blocking multi-second sleep: frozen input, and the compositor
+  blanking the unresponsive window (the one-frame black flash). Slow
+  flips now wait in the event wait instead — input interrupts it
+  instantly, the window keeps pumping, and the flip still renders
+  exactly on schedule. Sprites keep their exact own-rate cadence; the
+  freeze and the black flash go.
+
 ## v1.55.0-test4 — 2026-07-04 (test build)
 
 The viewport-is-sacred round.

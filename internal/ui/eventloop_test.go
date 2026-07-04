@@ -189,10 +189,13 @@ func TestSkipFrameFrozenStates(t *testing.T) {
 	}
 }
 
-// TestSkipFrameFrozenStageExempt pins the viewport exemption: 0 fps freezes
-// UI decoration, never the scene — a scheduled sprite flip still renders,
-// exactly on its own cadence.
-func TestSkipFrameFrozenStageExempt(t *testing.T) {
+// TestStageFlipsRideTheParkDeadline pins the viewport's scheduling home: a
+// live stage animation never blocks the loop and never refuses the skip under
+// the experimental loop — the pass PARKS (input-interruptible) with the flip
+// as its scheduled deadline and renders exactly on it, frozen states included
+// (0 fps freezes UI decoration, never the scene). Pacing a blind sleep to a
+// slow flip instead froze the whole client for seconds at a time.
+func TestStageFlipsRideTheParkDeadline(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()
 	store, err := render.NewTextureStore(ren)
@@ -202,18 +205,35 @@ func TestSkipFrameFrozenStageExempt(t *testing.T) {
 	a := expApp(t)
 	a.room = newRoomForTest(t)
 	a.d.Viewport = render.NewViewport(store)
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
 	a.screen = ScreenLobby // any skippable screen; the stage check is screen-independent
 
+	animSpeaker(t, store, a, "anim://idleloop", 120*time.Millisecond)
 	if !a.SkipFrame(true, false) {
-		t.Fatal("precondition: a STATIC stage under idle 0 must skip")
+		t.Fatal("exp: a live stage animation must SKIP (the flip parks, it doesn't render-loop)")
 	}
-	animSpeaker(t, store, a, "anim://frozenidle", 120*time.Millisecond)
+	if d, sched := a.NextWakeDelay(); !sched || d > 120*time.Millisecond || d < 50*time.Millisecond {
+		t.Errorf("flip deadline = (%v, %v), want ≈ the 120ms flip, scheduled", d, sched)
+	}
+	// The blocking sleep for the frames that DO render stays bounded.
+	if got := a.FramePace(true); got > animPaceCap {
+		t.Errorf("anim pace = %v, must never exceed the %v blocking-sleep cap", got, animPaceCap)
+	}
+
+	// Frozen idle: identical — the stage is exempt from the freeze.
+	a.d.Prefs.SetIdleFPS(config.FPSZero)
+	if !a.SkipFrame(true, false) {
+		t.Error("idle 0 + live loop must still skip (the flip parks)")
+	}
+	if _, sched := a.NextWakeDelay(); !sched {
+		t.Error("idle 0 must NOT freeze the stage: the flip deadline stays scheduled")
+	}
+
+	// Classic: no park exists — a live animation must keep the render path on.
+	a.d.Prefs.SetIdleFPS(0) // clear the frozen knob (in classic, frozen wins over the stage)
+	a.d.Prefs.SetEventDrivenLoop(false)
+	a.sess = &courtroom.Session{} // classic gate needs the courtroom pair
 	if a.SkipFrame(true, false) {
-		t.Error("idle 0 must NOT freeze the stage: a scheduled sprite flip renders")
-	}
-	if got := a.FramePace(true); got != 120*time.Millisecond {
-		t.Errorf("frozen idle + live loop paces at %v, want the exact 120ms flip", got)
+		t.Error("classic: a live stage animation must refuse the skip (its sleeps can't park)")
 	}
 }
 

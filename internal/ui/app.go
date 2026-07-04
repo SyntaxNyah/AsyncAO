@@ -4260,16 +4260,14 @@ func (a *App) FramePace(focused bool) time.Duration {
 			}
 		}
 		// An unfocused window is still VISIBLE (second monitor, side-by-side
-		// chat): a live stage animation keeps its OWN schedule — content-exact,
-		// one frame per flip, right on the flip — whatever the background knob
-		// says (the flat trickle was the "idle animations go choppy the moment
-		// I click into another window" report; rendering MORE often than the
-		// flips is pure waste the other way). Never slower than a ceremony's
-		// cadence set above.
+		// chat): a live stage animation keeps its OWN schedule — fast flips
+		// render on their cadence, slow flips ride the park's scheduled
+		// deadline (animPace bounds the BLOCKING sleep here). Never slower
+		// than a ceremony's cadence set above.
 		if unf > 0 {
 			if due, ok := nextAnimDue(); ok {
-				if content := clampDur(due, full, due); content < unf || !a.roomBusy() {
-					unf = content
+				if p := a.animPace(due, full, unf); p < unf || !a.roomBusy() {
+					unf = p
 				}
 			}
 		}
@@ -4307,13 +4305,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		return talk
 	}
 	if due, ok := nextAnimDue(); ok {
-		// The stage keeps ITS schedule — one frame per flip, exactly on the
-		// flip — whatever the idle knob says, 0 included: the viewport is a
-		// separate surface, the knobs freeze UI decoration, never the scene
-		// (playtest: "idle sprites should cap the frame rate to the sprite's
-		// own rate, and still animate at 0"). A running ramp (due 0) rides
-		// the full cap.
-		return clampDur(due, full, due)
+		return a.animPace(due, full, idle)
 	}
 	return idle
 }
@@ -4322,6 +4314,28 @@ func (a *App) FramePace(focused bool) time.Duration {
 // ceremonies, real damage like chat landing): a slow safety cadence — the
 // decoration freeze itself is enforced by SkipFrame, not by this budget.
 const fpsZeroBudget = 100 * time.Millisecond
+
+// animPaceCap bounds the BLOCKING post-render sleep while a stage animation
+// is live. The stage keeps its exact schedule — one frame per flip, right on
+// the flip — but the long waiting between SLOW flips must happen in the
+// experimental loop's interruptible park (NextWakeDelay schedules the flip),
+// never in time.Sleep: pacing the render path at a 4-second blink's cadence
+// slept the whole loop for seconds and froze input (the "client freezes every
+// few seconds with animated sprites" report).
+const animPaceCap = 100 * time.Millisecond
+
+// animPace paces a pass while a stage animation is live. Experimental loop:
+// content-exact for fast flips, capped at animPaceCap for slow ones — the
+// park (which input interrupts) does the long waiting and renders the flip
+// off its scheduled deadline. Classic loop: the old [full, state-rate] clamp,
+// because its blind sleeps are its only pacing; an unlimited state rate takes
+// the cap too (nothing else bounds it).
+func (a *App) animPace(due, full, state time.Duration) time.Duration {
+	if state == 0 || (a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn()) {
+		return clampDur(due, full, animPaceCap)
+	}
+	return clampDur(due, full, state)
+}
 
 // SkipFrame reports that the last drawn frame is still exactly right, so the
 // main loop may skip render+present entirely this pass (GPU cost → zero) and
@@ -4382,21 +4396,16 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	}
 	// User-frozen states (the 0 fps knob positions, idle/background only):
 	// UI decoration stops entirely — animated chrome, blinking carets and
-	// ticking readouts hold their last frame. The STAGE is exempt: the
-	// viewport is its own surface and keeps its content-rate schedule even at
-	// 0 (playtest: "even at zero the sprites should still animate"), and
+	// ticking readouts hold their last frame. The STAGE stays exempt without
+	// any special case here: under the experimental loop every stage flip
+	// renders off the park's scheduled deadline (NextWakeDelay), frozen or
+	// not — the viewport is its own surface, the knobs never touch it. And
 	// everything above still renders (input, ceremonies, toasts, voice,
 	// damage), so chat keeps landing and sounds keep playing. Deliberately
 	// below RenderNeeded/hoverDamage and above the decoration refusals.
 	if a.d.Prefs != nil {
-		frozen := (focused && a.d.Prefs.IdleFPS() == config.FPSZero) ||
-			(!focused && a.d.Prefs.UnfocusedFPS() == config.FPSZero)
-		if frozen {
-			if a.d.Viewport != nil && a.room != nil {
-				if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
-					return false // the stage animates on its own schedule regardless
-				}
-			}
+		if (focused && a.d.Prefs.IdleFPS() == config.FPSZero) ||
+			(!focused && a.d.Prefs.UnfocusedFPS() == config.FPSZero) {
 			return true
 		}
 	}
@@ -4415,7 +4424,13 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			return false // countdown readouts change every second
 		}
 	}
-	if a.d.Viewport != nil && a.room != nil {
+	if !exp && a.d.Viewport != nil && a.room != nil {
+		// Classic: a scheduled stage animation keeps the render path running
+		// (its blind sleeps can't park-and-wake on the flip). Experimental:
+		// SKIP — the flip renders off NextWakeDelay's scheduled deadline,
+		// exactly on time, with the wait interruptible by input; refusing
+		// here pushed slow flips into the blocking sleep instead (the
+		// "freezes every few seconds" report).
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
 			return false
 		}
@@ -4587,6 +4602,25 @@ func (a *App) NextWakeDelay() (time.Duration, bool) {
 			consider(due)
 		} else {
 			consider(0) // overdue: floor below fires it immediately
+		}
+	}
+	// The stage's next animation flip renders off THIS deadline (the viewport
+	// is its own surface: exact cadence, frozen states included, and a slow
+	// flip parks interruptibly instead of blocking a sleep). The viewport's
+	// anim clocks only advance on DRAWN frames, so the reported due is as of
+	// the last frame — subtract the real time parked since. A continuous ramp
+	// (due 0) floors at the full-rate budget or it would spin on the wake
+	// floor.
+	if a.d.Viewport != nil && a.room != nil {
+		if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
+			rem := due - now.Sub(a.lastFrameDrawn)
+			if fb := paceBudget(a.d.Prefs.FPSCap()); rem < fb {
+				rem = fb
+			}
+			if rem < 0 {
+				rem = 0
+			}
+			consider(rem)
 		}
 	}
 	if d < minWakeDelay {
