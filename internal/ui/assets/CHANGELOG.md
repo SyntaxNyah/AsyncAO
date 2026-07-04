@@ -4,6 +4,46 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.54.0 — 2026-07-04
+
+A style round — thanks to Groceries for catching the hue-paint bug and
+Tifera for the style wishlist.
+
+- **Hue paint actually keeps the sprite bright now.** Turning it on used
+  to look like the plain dark recolour switching itself on: the paint was
+  built by multiplying the colour over a grayscale copy, and a multiply
+  can only remove light — every strong hue crushed the highlights. The
+  paint is now a true colorize: shadows stay dark, highlights stay bright,
+  the midtones carry your hue. Same wire as before, so every build sees
+  your paint (older ones just render it the old, darker way). Also fixed:
+  with Invert or a Restyle active, hue paint silently degraded to the bare
+  dark tint — the modes now cleanly hand off to each other instead.
+- **Two-tone paint.** Hue paint can split the sprite at an adjustable
+  line: one colour above, another below — head red, rest blue. The split
+  is feathered so it doesn't cut a hard edge through the body, and it
+  travels like the rest of your style (older AsyncAO builds show the
+  single upper colour).
+- **The glitch got options.** Five looks, cycled like the Restyle button:
+  Classic, Heavy (wider, harder, more often), Torn (VHS band tearing),
+  Static (jitter plus signal-loss flicker), Echo (far trailing ghosts).
+  And the fringe is no longer locked to red and blue — pick a preset
+  pair or type a hex colour per ghost. Transmitted; older builds show
+  the classic red/blue.
+- **The Sprite Style box previews you live.** The top of the box now
+  shows your own character — current emote, your position's real
+  background — with the style applied through the exact same code the
+  stage uses, so paint, restyles, glitch and motion all show before you
+  send anything. Hide it with one click if you want the compact box.
+- **A colour wheel for your area colour.** The area-list highlight colour
+  in Settings gains a Wheel button next to the hex field — drag the disc
+  and brightness bar instead of typing codes, or snap back to the stock
+  green.
+- **Video exports can't die with a phantom "disk full" anymore.** The
+  export mux padded its audio with an unbounded silence stream and let
+  ffmpeg trim it, which could overflow an internal queue on a busy
+  machine and abort the export claiming the disk was full. The padding
+  is now measured to the video's exact length up front.
+
 ## v1.53.5 — 2026-07-03
 
 A same-day patch round — thanks to Tifera for the report list, DagDag and
