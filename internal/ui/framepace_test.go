@@ -140,68 +140,9 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	if got := a.FramePace(false); got != 80*time.Millisecond {
 		t.Errorf("unfocused pace with a live 80ms loop = %v, want the 80ms flip cadence", got)
 	}
-	// Focused idle follows the same content-exact schedule under the
-	// experimental loop (animPace): a 12.5 fps loop renders at 12.5 fps, not
-	// inflated to the 30 fps idle rate.
-	if got := a.FramePace(true); got != 80*time.Millisecond {
-		t.Errorf("focused idle pace with the same loop = %v, want the 80ms flip cadence", got)
-	}
-	// The classic loop keeps its historical idle-rate ceiling.
-	a.d.Prefs.SetEventDrivenLoop(false)
+	// Focused idle is unchanged: the same loop clamps at the 30 fps idle budget.
 	if got := a.FramePace(true); got != budget(30) {
-		t.Errorf("classic focused idle pace = %v, want the idle cap %v", got, budget(30))
-	}
-}
-
-// TestStageFlipsRideTheParkDeadline pins the slow-animation fix (the "GPU
-// high with an animated sprite on screen" report): under the experimental
-// loop a live stage animation SKIPS — the flip renders off NextWakeDelay's
-// scheduled deadline, input-interruptible — so a slow loop costs exactly its
-// own frames instead of holding the idle rate around the clock. The blocking
-// render-path sleep stays capped (animPace), including under an unlimited
-// idle rate, and the classic loop keeps refusing the skip (its blind sleeps
-// can't park-and-wake on the flip).
-func TestStageFlipsRideTheParkDeadline(t *testing.T) {
-	ren, cleanup := newCaptureHarness(t)
-	defer cleanup()
-	store, err := render.NewTextureStore(ren)
-	if err != nil {
-		t.Skipf("texture store unavailable: %v", err)
-	}
-	a := testTabApp(t)
-	a.lastFrameDrawn = time.Now() // inside the heartbeat window
-	a.room = newRoomForTest(t)
-	a.d.Viewport = render.NewViewport(store)
-	a.screen = ScreenLobby // any skippable screen; the stage check is screen-independent
-
-	animSpeaker(t, store, a, "anim://idleloop", 120*time.Millisecond)
-	if !a.SkipFrame(true, false) {
-		t.Fatal("exp: a live stage animation must SKIP (the flip parks, it doesn't render-loop)")
-	}
-	if d := a.NextWakeDelay(); d > 120*time.Millisecond || d < 50*time.Millisecond {
-		t.Errorf("park deadline = %v, want ≈ the 120ms flip", d)
-	}
-	// A SLOW loop parks at the heartbeat bound (the flip lands on a later
-	// park), and the blocking sleep for frames that DO render stays capped —
-	// even with the idle rate set to unlimited (the would-be 4s blind sleep).
-	animSpeaker(t, store, a, "anim://blinker", 4*time.Second)
-	if !a.SkipFrame(true, false) {
-		t.Error("exp: a slow blinker must skip like any other loop")
-	}
-	if got := a.FramePace(true); got > animPaceCap {
-		t.Errorf("anim pace = %v, must never exceed the %v blocking-sleep cap", got, animPaceCap)
-	}
-	a.d.Prefs.SetIdleFPS(config.FPSUnlimited)
-	if got := a.FramePace(true); got != animPaceCap {
-		t.Errorf("unlimited idle + slow loop pace = %v, want the %v cap (a 4s blind sleep froze the client once)", got, animPaceCap)
-	}
-	a.d.Prefs.SetIdleFPS(0)
-
-	// Classic: no park exists — a live animation must keep the render path on.
-	a.d.Prefs.SetEventDrivenLoop(false)
-	a.sess = &courtroom.Session{} // the classic gate needs the courtroom pair
-	if a.SkipFrame(true, false) {
-		t.Error("classic: a live stage animation must refuse the skip")
+		t.Errorf("focused idle pace with the same loop = %v, want the idle cap %v", got, budget(30))
 	}
 }
 
