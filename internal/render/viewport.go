@@ -901,12 +901,31 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		flip = sdl.FLIP_HORIZONTAL
 	}
 	tex := page.Frames[frame]
+	// Hue paint (Tint+Grayscale, the v1.53.5 composition) draws from a dedicated
+	// luma-preserving colorize variant instead of multiplying the tint over the
+	// grayscale variant — a multiply can only remove light, so the old composition
+	// darkened every saturated hue (playtest: turning hue paint on still looked
+	// like the plain dark recolour). The tint colormod is SKIPPED for this layer
+	// (huePainted below) — the colour is baked into the variant's pixels.
+	// Conditions mirror what the old path composed: HueCycle keeps the rainbow-
+	// over-grayscale look (rebuilding a paint page per rainbow step would churn
+	// readback+upload every frame), and Variant() == Grayscale means no Invert /
+	// Restyle override is active (those still win, exactly as before).
+	huePainted := false
+	if st := layer.Style; st.Tint && st.Grayscale && !st.HueCycle &&
+		st.Variant() == courtroom.VariantGrayscale {
+		if pp, ok := v.store.PaintPage(layer.Active, st.R, st.G, st.B); ok && frame < len(pp.Frames) {
+			tex = pp.Frames[frame]
+			huePainted = true
+		}
+	}
 	// A transmitted PER-PIXEL effect (invert / grayscale) swaps in a cached variant
 	// texture built from the base's transformed pixels — SetColorMod can't do either.
 	// The colour-mod bracket below still applies ON TOP (so invert + glow composes).
 	// Built once per (base, effect) and cached on the page; this is a 0-alloc map hit
-	// every frame after the first.
-	if eff := layer.Style.Variant(); eff != courtroom.VariantNone {
+	// every frame after the first. (Also the hue-paint fallback: if the paint page
+	// couldn't build, the old grayscale×tint composition still renders.)
+	if eff := layer.Style.Variant(); eff != courtroom.VariantNone && !huePainted {
 		if vpg, ok := v.store.VariantPage(layer.Active, eff); ok && frame < len(vpg.Frames) {
 			tex = vpg.Frames[frame]
 		}
@@ -937,7 +956,10 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 			}
 			modR, modG, modB = rainbowMod(phase, v.curCycle, floorForVividness(styleHueVividness))
 			doColorMod = true
-		} else if st.Tint {
+		} else if st.Tint && !huePainted {
+			// Plain multiply tint. Skipped when the hue-paint variant is on stage:
+			// its pixels already carry the colour, and multiplying it in again
+			// would re-darken exactly what the paint variant exists to fix.
 			modR, modG, modB, doColorMod = st.R, st.G, st.B, true
 		}
 		if b := st.BrightnessPct(); b != 100 {

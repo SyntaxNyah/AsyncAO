@@ -58,11 +58,22 @@ type TexturePage struct {
 	W, H     int32
 	bytes    int64
 	// variants holds lazily-built per-pixel transforms of this page (invert /
-	// grayscale, keyed by the effect's uint8) — a transmitted sprite style needs a
+	// grayscale / the hue-paint colorize) — a transmitted sprite style needs a
 	// genuinely transformed texture (SetColorMod can't invert/desaturate). They live
 	// HERE so they're destroyed with the base page (eviction frees them too), keeping
-	// the cache from leaking or going stale. Bounded: at most one per VariantEffect.
-	variants map[uint8]*TexturePage
+	// the cache from leaking or going stale. Bounded by maxVariantPages (variant.go).
+	variants map[variantKey]*TexturePage
+}
+
+// variantKey identifies one cached per-pixel transform of a page: the effect id plus
+// the paint parameters when the effect is parameterised. The classic effects (invert,
+// grayscale, the restyles, the silhouette) leave the paint fields zero — their key is
+// the effect alone, exactly as before; the hue-paint colorize (variantPaint) keys by
+// its pre-quantised colour(s) + split so each painted look is its own cached page.
+type variantKey struct {
+	effect         uint8
+	paintA, paintB uint32 // packed 0xRRGGBB, pre-quantised (variantPaint only)
+	split          uint8  // two-tone split row percent (variantPaint only; 0 = one colour)
 }
 
 // destroy releases every frame texture and any built variants. Render thread only.

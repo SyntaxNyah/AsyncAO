@@ -113,6 +113,134 @@ func TestVariantPageInverts(t *testing.T) {
 	}
 }
 
+// TestApplyPaint pins the hue-paint colorize ramp (the v1.53.5 darkening fix): white
+// stays white, black stays black, a mid-luma pixel takes the paint colour exactly,
+// alpha is untouched, and brightness ORDER is preserved (a lighter source pixel is
+// never darker after the paint) — the old grayscale×tint multiply failed the white
+// case for every saturated hue, which was the "it gets darkened anyway" report.
+func TestApplyPaint(t *testing.T) {
+	// White / black / mid-gray / a semi-transparent colour pixel, painted red.
+	pix := []byte{
+		255, 255, 255, 255, // white → white (highlights survive)
+		0, 0, 0, 255, // black → black (shadows survive)
+		127, 127, 127, 255, // mid luma 127 → the paint colour itself
+		40, 80, 160, 96, // arbitrary colour, alpha 96 → alpha kept
+	}
+	applyPaint(pix, 255, 0, 0)
+	if want := []byte{255, 255, 255, 255}; !equalBytes(pix[0:4], want) {
+		t.Errorf("white painted = %v, want %v (highlights must stay bright)", pix[0:4], want)
+	}
+	if want := []byte{0, 0, 0, 255}; !equalBytes(pix[4:8], want) {
+		t.Errorf("black painted = %v, want %v", pix[4:8], want)
+	}
+	if want := []byte{255, 0, 0, 255}; !equalBytes(pix[8:12], want) {
+		t.Errorf("mid-gray painted = %v, want %v (midtone = the paint colour)", pix[8:12], want)
+	}
+	if pix[15] != 96 {
+		t.Errorf("alpha changed: %d, want 96", pix[15])
+	}
+
+	// Monotonic: painting must preserve the light/shadow ORDER of the sprite.
+	prev := -1
+	for y := 0; y <= 255; y += 5 {
+		g := byte(y)
+		p := []byte{g, g, g, 255}
+		applyPaint(p, 60, 220, 90)
+		l := luma601(p[0], p[1], p[2])
+		if l < prev {
+			t.Fatalf("luma order broken at source %d: painted luma %d < previous %d", y, l, prev)
+		}
+		prev = l
+	}
+}
+
+// TestPaintQuantize pins the variant-key quantiser: endpoints exact (0→0, 255→255 —
+// a pure hue must not round to an off-hue), and only paintQuantizeLevels distinct
+// outputs across the whole channel range (the page-count bound).
+func TestPaintQuantize(t *testing.T) {
+	if q := paintQuantize(0); q != 0 {
+		t.Errorf("paintQuantize(0) = %d, want 0", q)
+	}
+	if q := paintQuantize(255); q != 255 {
+		t.Errorf("paintQuantize(255) = %d, want 255", q)
+	}
+	seen := map[uint8]bool{}
+	for c := 0; c <= 255; c++ {
+		seen[paintQuantize(uint8(c))] = true
+	}
+	if len(seen) != paintQuantizeLevels {
+		t.Errorf("distinct quantised values = %d, want %d", len(seen), paintQuantizeLevels)
+	}
+	r, g, b := unpackPaint(packPaint(12, 200, 255))
+	if r != 12 || g != 200 || b != 255 {
+		t.Errorf("pack/unpack round-trip = %d,%d,%d", r, g, b)
+	}
+}
+
+// TestEvictVariantPrefersPaint pins the variant-cache bound's policy: past the cap,
+// a hue-paint entry is evicted before a classic effect (the silhouette/invert pages
+// are hot every frame while in use; paint pages pile up only during colour tuning).
+func TestEvictVariantPrefersPaint(t *testing.T) {
+	bp := &TexturePage{variants: map[variantKey]*TexturePage{
+		{effect: uint8(courtroom.VariantInvert)}:     {},
+		{effect: variantPaint, paintA: 0xFF0000}:     {},
+		{effect: uint8(courtroom.VariantSilhouette)}: {},
+	}}
+	evictVariant(bp)
+	if len(bp.variants) != 2 {
+		t.Fatalf("variants after evict = %d, want 2", len(bp.variants))
+	}
+	if _, still := bp.variants[variantKey{effect: variantPaint, paintA: 0xFF0000}]; still {
+		t.Error("paint entry must be the preferred eviction victim")
+	}
+	// With no paint entry left, eviction still frees SOMETHING (the bound holds).
+	evictVariant(bp)
+	if len(bp.variants) != 1 {
+		t.Errorf("variants after second evict = %d, want 1", len(bp.variants))
+	}
+}
+
+// TestPaintPageBuildsAndCaches is the hue-paint end-to-end proof (mirrors
+// TestVariantPageInverts): a known base colorized red — white pixel stays white,
+// the readback confirms the paint pixels, and a repeat call with a slightly
+// different colour that QUANTISES the same returns the cached page.
+func TestPaintPageBuildsAndCaches(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+
+	base := &assets.Decoded{
+		Width: 2, Height: 1,
+		Frames: []*image.RGBA{{
+			Pix:    []byte{255, 255, 255, 255, 127, 127, 127, 255}, // white + mid-gray
+			Stride: 8,
+			Rect:   image.Rect(0, 0, 2, 1),
+		}},
+	}
+	if err := store.Upload("base/paint", base); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+
+	v, ok := store.PaintPage("base/paint", 255, 0, 0)
+	if !ok {
+		t.Skip("render targets unavailable on this headless renderer")
+	}
+	got, err := store.readbackFrame(v.Frames[0], 2, 1)
+	if err != nil {
+		t.Fatalf("readback: %v", err)
+	}
+	if want := []byte{255, 255, 255, 255, 255, 0, 0, 255}; !equalBytes(got, want) {
+		t.Errorf("painted pixels = %v, want %v (white kept, midtone = paint colour)", got, want)
+	}
+	if v2, _ := store.PaintPage("base/paint", 254, 1, 1); v2 != v { // same after quantising
+		t.Error("paint page must be cached across quantiser-equal colours")
+	}
+}
+
 func equalBytes(a, b []byte) bool {
 	if len(a) != len(b) {
 		return false

@@ -336,6 +336,12 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if next := c.Checkbox(x+132, y, "Hue paint", huePaint); next != huePaint {
 		if next {
 			p.Tint, p.Grayscale = true, true
+			// Invert and the Restyle picker OVERRIDE the grayscale half of the
+			// composition (courtroom.Variant() priority), which reduced "hue paint
+			// on" to the plain multiply tint over that other look — the playtest
+			// bug ("turning it on turns on the old recolour"). Turning hue paint
+			// on now claims the per-pixel slot outright.
+			p.Invert, p.Restyle = false, 0
 			if p.R == p.G && p.G == p.B { // a hueless (gray/white) tint paints nothing — seed a visible hue
 				p.R, p.G, p.B = 255, 0, 0
 			}
@@ -344,7 +350,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		}
 		a.d.Prefs.SetSpriteStyle(p)
 	}
-	c.Tooltip(hpRect, "Paint the whole sprite ONE hue while keeping its own light and shadow — set the hue below. (The plain tint multiplies colours, which darkens; this recolours only the hue. Rainbow cycles the paint.)")
+	c.Tooltip(hpRect, "Paint the whole sprite ONE hue while keeping its own light and shadow — set the hue below. Highlights stay bright (the plain tint multiplies colours, which darkens). Rainbow cycles the paint.")
 	y += 26
 
 	if p.Tint {
@@ -486,13 +492,21 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	y += 26
 
 	// Invert / Grayscale — per-pixel effects (the renderer builds a cached variant
-	// texture; the recolour/glow above still compose on top).
+	// texture; the recolour/glow above still compose on top). Both interact with
+	// hue paint (= Tint+Grayscale): leaving or overriding it must never strand the
+	// bare multiply tint — that IS the darkening the hue-paint mode exists to avoid.
 	if next := c.Checkbox(x, y, "Invert", p.Invert); next != p.Invert {
 		p.Invert = next
+		if next && p.Tint && p.Grayscale {
+			p.Tint, p.Grayscale = false, false // Invert overrides hue paint's grayscale half — exit hue paint cleanly
+		}
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	if next := c.Checkbox(x+86, y, "Grayscale", p.Grayscale); next != p.Grayscale {
 		p.Grayscale = next
+		if !next && p.Tint {
+			p.Tint = false // unchecking hue paint's grayscale half turns the whole paint off, not back to the dark tint
+		}
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	if next := c.Checkbox(x+186, y, "Sepia", p.Sepia); next != p.Sepia { // #34 warm brown tone
@@ -509,6 +523,9 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	rsb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
 	if c.Button(rsb, restyleName(p.Restyle)) {
 		p.Restyle = nextRestyle(p.Restyle)
+		if p.Restyle != 0 && p.Tint && p.Grayscale {
+			p.Tint, p.Grayscale = false, false // a Restyle overrides hue paint's grayscale half — exit hue paint cleanly
+		}
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	c.Tooltip(rsb, "An extra per-pixel restyle for your sprite — redscale, greenscale, bluescale, solarize, threshold, duotone, warm, cool, neon, infrared, pixel art. Overrides Invert/Grayscale/Sepia/Posterize; other AsyncAO players see it.")
