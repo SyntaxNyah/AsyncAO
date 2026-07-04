@@ -4,6 +4,54 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.54.5 — 2026-07-04
+
+An input round — thanks to Nightingale for the layering report, the
+player-menu design and both preview catches, and to Tifera for the
+text-selection report.
+
+- **Overlays own the mouse now.** Scrolling the patch-notes pop-up also
+  scrolled the server list behind it — and more generally, panels layered
+  over other panels let the wheel, hover glows and drags leak through.
+  One frame's scroll now goes to exactly one surface, the What's New
+  pop-up blocks everything under its dimmed backdrop on every screen,
+  and the floating hotkey sheet catches the mouse wherever it's parked.
+- **Player rows grew a "…" menu.** The row of Pair / UID / IPID / Friend /
+  Ignore buttons crowded the names out — zoomed, it sat right on top of
+  the IPID line. Rows are back to clean two-line height; every action for
+  a single player now lives in one menu, opened from the row's "…" button
+  or by right-clicking the row. New there: **Message (PM)** — DM anyone
+  straight from the list, no friending needed. The UI… popup's ticks now
+  hide individual menu entries, and future per-player tools (mod/CM
+  commands) will slot into the same menu.
+- **Text boxes behave like real text boxes.** Drag to select part of what
+  you typed (shift-click and shift-arrows extend, double-click grabs a
+  word, triple-click everything), copy/cut/paste exactly the selection —
+  and Ctrl+Z / Ctrl+Y are a real undo/redo in every field. Undo also
+  recovers lines the client takes from you: the sent line the server's
+  echo clears, a draft a palette command template overwrote, text a
+  macro key ate.
+- **Select exactly the words you mean.** Dragging across the chatbox
+  used to light the entire message; now it selects character by
+  character, double-click picks the word under the cursor, triple-click
+  the whole message — and copying takes just the highlighted part. The
+  themed chatbox gains selection too (it had none), and in the IC/OOC
+  logs double-click now selects a word, triple-click the line.
+- **A test-build update channel.** Settings → Power user can switch the
+  updater from stable releases to experimental builds published off the
+  test branch — clearly labelled "Test build" everywhere, riskier by
+  nature, and the way back is one toggle plus the next stable release.
+  Flipping the switch re-checks immediately.
+- **Right-click previews work with hover previews off.** Turning off the
+  on-hover sprite pop-ups silently killed the right-click preview too;
+  the toggle now disables only the hover part, and an explicit
+  right-click always previews.
+- **The sprite preview opens big enough to see.** The pop-up defaulted
+  to a tiny 192 px and had to be corner-dragged bigger every session; it
+  now opens at 384 px and Settings → General has a "Preview box height"
+  slider (96–720 px) for the default — the corner grip still fine-tunes
+  per session.
+
 ## v1.54.0 — 2026-07-04
 
 A style round — thanks to Groceries for catching the hue-paint bug and
