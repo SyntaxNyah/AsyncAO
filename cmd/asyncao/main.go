@@ -425,8 +425,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 
 		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
 			app.Background(dt) // keep the session alive, draw nothing
-			scheduledNap = minimizedNap
-			time.Sleep(minimizedNap)
+			// While a message plays, tick at the blip cadence: blips fire from
+			// the per-pass room Update, and the flat nap audibly bunched them.
+			nap := app.BackgroundPace(minimizedNap)
+			scheduledNap = nap
+			time.Sleep(nap)
 			continue
 		}
 
@@ -453,11 +456,16 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				if app.RenderNeeded() {
 					continue
 				}
-				wait := app.NextWakeDelay()
+				// scheduled=true means a real deadline (caret flip, clock tick,
+				// hover reveal, auto-reconnect) picked the delay — its expiry
+				// renders one frame. scheduled=false is just the pump cadence:
+				// Background runs, damage is re-checked, nothing paints — a
+				// static screen renders literally zero frames while parked.
+				wait, scheduled := app.NextWakeDelay()
 				scheduledNap = wait
 				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
 					pendingEv = ev
-				} else {
+				} else if scheduled {
 					app.NoteDeadline()
 				}
 				continue

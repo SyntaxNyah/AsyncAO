@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
@@ -131,49 +132,105 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 			t.Errorf("exp=%v: animated chrome on screen (theme art, splash, badge) must keep frames coming", exp)
 		}
 		a.drawnAnimChrome = false
+		// Staleness: the classic loop heartbeats a real frame; the experimental
+		// loop is damage-driven — a static screen stays at literally zero
+		// renders no matter how long ago the last frame drew.
 		a.lastFrameDrawn = time.Now().Add(-2 * paceHeartbeat)
-		if a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: past the heartbeat a real frame must draw", exp)
+		if exp {
+			if !a.SkipFrame(true, false) {
+				t.Error("exp: a static screen must render NOTHING regardless of staleness")
+			}
+		} else if a.SkipFrame(true, false) {
+			t.Error("classic: past the heartbeat a real frame must draw")
 		}
 	}
 }
 
-// TestNextWakeDelay pins the scheduled-wake math: the heartbeat bounds an
-// empty schedule, a focused caret and a RUNNING server clock pull the wake to
-// their next due, a PAUSED clock schedules nothing, and the floor prevents a
-// busy-spin on an overdue deadline.
+// TestSkipFrameFrozenStates pins the 0 fps knob positions: Idle 0 freezes
+// decoration while focused (animated chrome, scheduled anims — skipped), and
+// Background 0 does the same while unfocused; real damage still renders in
+// both, and the frozen caret stops counting as damage.
+func TestSkipFrameFrozenStates(t *testing.T) {
+	a := expApp(t)
+	a.d.Prefs.SetIdleFPS(config.FPSZero)
+
+	a.drawnAnimChrome = true // would refuse the skip normally
+	if !a.SkipFrame(true, false) {
+		t.Error("idle 0: animated chrome must FREEZE (skip), not keep rendering")
+	}
+	a.uiDirty = true
+	if a.SkipFrame(true, false) {
+		t.Error("idle 0: real damage (chat landing) must still render")
+	}
+	a.uiDirty = false
+	// The frozen caret is not damage: a flip mismatch must not force frames.
+	a.ctx.focusID = "field"
+	a.ctx.caretOn = true
+	a.drawnCaretOn = false
+	if a.RenderNeeded() {
+		t.Error("idle 0: a caret flip must not count as damage (the caret is frozen)")
+	}
+	if !a.SkipFrame(true, false) {
+		t.Error("idle 0: a focused field must freeze with everything else")
+	}
+
+	// Background 0 freezes the unfocused window the same way.
+	b := expApp(t)
+	b.d.Prefs.SetUnfocusedFPS(config.FPSZero)
+	b.drawnAnimChrome = true
+	if !b.SkipFrame(false, false) {
+		t.Error("background 0: an unfocused window must freeze decoration")
+	}
+	if b.SkipFrame(true, false) {
+		t.Error("background 0 must not affect the FOCUSED window (chrome still renders)")
+	}
+}
+
+// TestNextWakeDelay pins the scheduled-wake math: the pump cadence bounds an
+// empty schedule WITHOUT implying a render (scheduled=false — the literal-0
+// idle), a focused caret and a RUNNING server clock pull the wake to their due
+// (scheduled=true → one frame), a PAUSED clock schedules nothing, a frozen
+// idle silences the caret, and the floor prevents a busy-spin on an overdue
+// deadline.
 func TestNextWakeDelay(t *testing.T) {
 	a := expApp(t)
 
-	// Empty schedule: the heartbeat remainder (fresh frame → ≈ paceHeartbeat).
-	if d := a.NextWakeDelay(); d < paceHeartbeat-100*time.Millisecond || d > paceHeartbeat {
-		t.Errorf("empty schedule: wake = %v, want ≈ the %v heartbeat", d, paceHeartbeat)
+	// Empty schedule: the pump cadence cap, NOT a render.
+	if d, sched := a.NextWakeDelay(); d != paceHeartbeat || sched {
+		t.Errorf("empty schedule: wake = (%v, %v), want (%v, false — no render on expiry)", d, sched, paceHeartbeat)
 	}
 
-	// A focused caret 300 ms into its blink: the flip is ~200 ms out.
+	// A focused caret 300 ms into its blink: the flip is ~200 ms out, and its
+	// expiry renders the flip.
 	a.ctx.focusID = "field"
 	a.ctx.caretAcc = 300 * time.Millisecond
-	if d := a.NextWakeDelay(); d > 200*time.Millisecond || d < 100*time.Millisecond {
-		t.Errorf("caret at 300ms: wake = %v, want ≈ 200ms", d)
+	if d, sched := a.NextWakeDelay(); !sched || d > 200*time.Millisecond || d < 100*time.Millisecond {
+		t.Errorf("caret at 300ms: wake = (%v, %v), want ≈ 200ms scheduled", d, sched)
 	}
+	// A frozen idle rate silences the caret schedule (it stops blinking).
+	a.d.Prefs.SetIdleFPS(config.FPSZero)
+	if d, sched := a.NextWakeDelay(); sched || d != paceHeartbeat {
+		t.Errorf("frozen idle: caret wake must vanish, got (%v, %v)", d, sched)
+	}
+	a.d.Prefs.SetIdleFPS(0)
 	a.ctx.focusID = ""
 
 	// A running server clock with 2.4 s left: wake just past the 0.4 s boundary.
 	a.sess = &courtroom.Session{}
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Running: true, Deadline: time.Now().Add(2400 * time.Millisecond)}
-	if d := a.NextWakeDelay(); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack {
-		t.Errorf("running clock at x.4s: wake = %v, want ≈ 400ms+slack", d)
+	if d, sched := a.NextWakeDelay(); !sched || d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack {
+		t.Errorf("running clock at x.4s: wake = (%v, %v), want ≈ 400ms+slack scheduled", d, sched)
 	}
-	// Paused: frozen readout, nothing scheduled — back to the heartbeat bound.
+	// Paused: frozen readout, nothing scheduled — back to the pump cadence.
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second}
-	if d := a.NextWakeDelay(); d < paceHeartbeat-100*time.Millisecond {
-		t.Errorf("paused clock: wake = %v, want the heartbeat bound", d)
+	if d, sched := a.NextWakeDelay(); sched || d != paceHeartbeat {
+		t.Errorf("paused clock: wake = (%v, %v), want the unscheduled pump bound", d, sched)
 	}
 
-	// Overdue heartbeat: floored, never zero/negative (busy-spin guard).
-	a.lastFrameDrawn = time.Now().Add(-time.Hour)
-	if d := a.NextWakeDelay(); d != minWakeDelay {
-		t.Errorf("overdue: wake = %v, want the %v floor", d, minWakeDelay)
+	// A pending auto-reconnect is a real deadline; overdue floors (never spins).
+	a.autoReconnectAt = time.Now().Add(-time.Second)
+	if d, sched := a.NextWakeDelay(); !sched || d != minWakeDelay {
+		t.Errorf("overdue reconnect: wake = (%v, %v), want the %v floor, scheduled", d, sched, minWakeDelay)
 	}
 }
 

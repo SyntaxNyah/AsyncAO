@@ -78,6 +78,10 @@ func (a *App) maybeKickUpdateCheck() {
 			return
 		}
 		res <- rel
+		// The result poll is Frame-driven and the experimental loop renders
+		// nothing while parked: flag the work so the chip/modal shows now,
+		// not on the next unrelated redraw.
+		a.FlagUIWork()
 	}()
 }
 

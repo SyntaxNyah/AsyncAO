@@ -763,6 +763,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetDragLayout(false)       // default-ON *bool — explicit false must survive
 	p.SetEventDrivenLoop(false)  // default-ON *bool — the experimental-loop kill switch must stick
 	p.SetIdleFPS(FPSUnlimited)   // the ∞ sentinel must survive save→load un-clamped
+	p.SetUnfocusedFPS(FPSZero)   // the 0 fps (frozen) sentinel must survive too
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
@@ -827,6 +828,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if got := q.IdleFPS(); got != FPSUnlimited {
 		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
+	}
+	if got := q.UnfocusedFPS(); got != FPSZero {
+		t.Errorf("UnfocusedFPS frozen sentinel lost across reload: %d, want %d", got, FPSZero)
 	}
 	if got := q.PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)

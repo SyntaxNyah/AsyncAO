@@ -1906,9 +1906,9 @@ func load(path string) (*AssetPreferences, error) {
 	if p.SpriteDownscalePctVal != 0 {
 		p.SpriteDownscalePctVal = clampPercent(p.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
 	}
-	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, FPSCapMin, FPSCapMax)
-	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, IdleFPSMin, IdleFPSMax)
-	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax)
+	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, FPSCapMin, FPSCapMax, false)
+	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, IdleFPSMin, IdleFPSMax, true)
+	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax, true)
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
@@ -6032,15 +6032,30 @@ const (
 	// the presents), and an unlimited idle/unfocused rate means that state is
 	// never throttled below the active pacing. Distinct from 0 = "the default".
 	FPSUnlimited = -1
+	// FPSZero is the "0 fps" sentinel the Idle and Background knobs may hold
+	// (typed 0 in their Settings number box): that state stops rendering for
+	// decoration entirely — idle animations, blinking carets and flat idle
+	// refreshes freeze — while real changes (chat landing, loads finishing,
+	// message ceremonies) still draw. The ACTIVE cap never takes it (a frozen
+	// foreground would freeze interaction itself). Stored as its own negative
+	// sentinel because 0 already means "the default".
+	FPSZero = -2
 )
 
 // normalizeFPSPref maps a stored rate knob onto its valid domain: 0 keeps the
-// default, FPSUnlimited passes through, anything else clamps to [min, max].
-// Shared by the setters and the disk-load overlay so a hand-edited file obeys
-// the same rules as the sliders.
-func normalizeFPSPref(fps, min, max int) int {
+// default, FPSUnlimited passes through, FPSZero passes only where allowZero
+// (the idle/background knobs), anything else clamps to [min, max]. Shared by
+// the setters and the disk-load overlay so a hand-edited file obeys the same
+// rules as the sliders.
+func normalizeFPSPref(fps, min, max int, allowZero bool) int {
 	if fps == 0 || fps == FPSUnlimited {
 		return fps
+	}
+	if fps == FPSZero {
+		if allowZero {
+			return fps
+		}
+		return 0 // the active cap can't freeze: fall back to the default
 	}
 	return clampPercent(fps, min, max)
 }
@@ -6446,9 +6461,9 @@ func (p *AssetPreferences) FPSCap() int {
 }
 
 // SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited = no
-// cap; else clamped).
+// cap; else clamped — FPSZero is refused: interaction can't freeze itself).
 func (p *AssetPreferences) SetFPSCap(fps int) {
-	fps = normalizeFPSPref(fps, FPSCapMin, FPSCapMax)
+	fps = normalizeFPSPref(fps, FPSCapMin, FPSCapMax, false)
 	p.mu.Lock()
 	if p.FPSCapVal == fps {
 		p.mu.Unlock()
@@ -6470,9 +6485,9 @@ func (p *AssetPreferences) IdleFPS() int {
 }
 
 // SetIdleFPS persists the idle frame rate (0 = default, FPSUnlimited = never
-// throttle when idle; else clamped).
+// throttle when idle, FPSZero = freeze decoration while idle; else clamped).
 func (p *AssetPreferences) SetIdleFPS(fps int) {
-	fps = normalizeFPSPref(fps, IdleFPSMin, IdleFPSMax)
+	fps = normalizeFPSPref(fps, IdleFPSMin, IdleFPSMax, true)
 	p.mu.Lock()
 	if p.IdleFPSVal == fps {
 		p.mu.Unlock()
@@ -6494,9 +6509,10 @@ func (p *AssetPreferences) UnfocusedFPS() int {
 }
 
 // SetUnfocusedFPS persists the unfocused frame rate (0 = default,
-// FPSUnlimited = never throttle when unfocused; else clamped).
+// FPSUnlimited = never throttle when unfocused, FPSZero = freeze decoration
+// while unfocused; else clamped).
 func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
-	fps = normalizeFPSPref(fps, UnfocusedFPSMin, UnfocusedFPSMax)
+	fps = normalizeFPSPref(fps, UnfocusedFPSMin, UnfocusedFPSMax, true)
 	p.mu.Lock()
 	if p.UnfocusedFPSVal == fps {
 		p.mu.Unlock()
