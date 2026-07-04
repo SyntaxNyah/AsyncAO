@@ -159,16 +159,21 @@ func TestUndoChordRouting(t *testing.T) {
 	}
 }
 
-// TestWordBoundsAt pins the double-click word rule: a maximal non-space run,
-// or the space run when the click lands on one; clamped at the ends.
+// TestWordBoundsAt pins the double-click word rule: a maximal non-space run;
+// a boundary landing just past a word steps back onto it (clicking the right
+// half of its last letter); only a click INSIDE a space run selects the run;
+// clamped at the ends.
 func TestWordBoundsAt(t *testing.T) {
-	runes := []rune("fix the broken english")
+	runes := []rune("fix  the broken english") // note the DOUBLE space after "fix"
+	// f0 i1 x2 ␣3 ␣4 t5 h6 e7 ␣8 b9..n14 ␣15 e16..h22
 	cases := []struct{ idx, lo, hi int }{
 		{0, 0, 3},    // "fix"
-		{5, 4, 7},    // "the"
-		{3, 3, 4},    // the space between
-		{21, 15, 22}, // "english", from its last rune
-		{99, 15, 22}, // past the end clamps into the last word
+		{6, 5, 8},    // "the"
+		{3, 0, 3},    // boundary right after "fix" → the word, not the gap
+		{4, 3, 5},    // inside the double-space run → the run
+		{8, 5, 8},    // single space after "the" → "the"
+		{22, 16, 23}, // "english", from its last rune
+		{99, 16, 23}, // past the end clamps into the last word
 	}
 	for _, tc := range cases {
 		if lo, hi := wordBoundsAt(runes, tc.idx); lo != tc.lo || hi != tc.hi {

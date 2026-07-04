@@ -133,6 +133,11 @@ type MessageRaster struct {
 	styled [][]rasterSpan // nil unless this is a multi-color message
 	lineH  int32
 	text   string
+	// lineRanges[i] is display line i's [start,end) SOURCE-rune range in the
+	// original text (wrap-dropped separators sit between ranges). Built by
+	// every rasterize path; it's what lets the chatbox selection map pixels →
+	// text runes and back (RuneAt / LineSpanX) without re-deriving the wrap.
+	lineRanges []lineRange
 	// centerOff[i] horizontally centers line i within the chatbox width (webAO's
 	// "~~" prefix). nil = left-aligned (the default / common case). Set once by
 	// Center after rasterizing — never on the per-frame Draw path.
@@ -177,19 +182,26 @@ func (m *MessageRaster) lineOffset(i int) int32 {
 }
 
 // Rasterize renders text wrapped to wrapW pixels in the given font/color.
-// Call once per message (render thread).
+// Call once per message (render thread). Wrapping goes through wrapStyled's
+// position-preserving ranges (not the old strings.Fields wrapText, which
+// collapsed whitespace runs and lost rune positions): identical visuals for
+// normal text, faithful spacing for the rest, and — the point — every line
+// knows its source-rune range, so the chatbox selection can map pixels to
+// text (RuneAt / LineSpanX / LineRange).
 func Rasterize(ren *sdl.Renderer, font *ttf.Font, text string, wrapW int32, color sdl.Color) (*MessageRaster, error) {
 	m := &MessageRaster{text: text, lineH: int32(font.Height())}
 	if strings.TrimSpace(text) == "" {
 		return m, nil
 	}
-	for _, line := range wrapText(font, text, wrapW) {
-		rl, err := rasterizeLine(ren, font, line, color)
+	runes := []rune(text)
+	for _, lr := range wrapStyled(font, runes, wrapW) {
+		rl, err := rasterizeLine(ren, font, string(runes[lr.start:lr.end]), color)
 		if err != nil {
 			m.Destroy()
 			return nil, err
 		}
 		m.lines = append(m.lines, rl)
+		m.lineRanges = append(m.lineRanges, lr)
 	}
 	return m, nil
 }
@@ -259,6 +271,7 @@ func RasterizeStyled(ren *sdl.Renderer, font *ttf.Font, text string, spans []Col
 			return nil, err
 		}
 		m.styled = append(m.styled, line)
+		m.lineRanges = append(m.lineRanges, lr)
 	}
 	return m, nil
 }
@@ -543,6 +556,124 @@ func (m *MessageRaster) Height() int32 {
 
 // Text returns the rasterized source text.
 func (m *MessageRaster) Text() string { return m.text }
+
+// --- selection geometry (chatbox partial-copy) -------------------------------
+// All coordinates are relative to the Draw origin and use the SAME per-line
+// advances / span offsets / centering the blits use, so a highlight can never
+// drift from the pixels. Everything here is measurement over prebuilt slices:
+// zero allocations, safe in the per-frame highlight loop.
+
+// LineH is the wrapped-line pitch Draw advances by.
+func (m *MessageRaster) LineH() int32 { return m.lineH }
+
+// LineRange returns display line i's [start,end) source-rune range. A wrap
+// point's dropped separator sits BETWEEN ranges, so a selection dragged
+// across lines naturally includes it in the copied text.
+func (m *MessageRaster) LineRange(i int) (int, int) {
+	if i < 0 || i >= len(m.lineRanges) {
+		return 0, 0
+	}
+	lr := m.lineRanges[i]
+	return lr.start, lr.end
+}
+
+// linePrefixW is the pixel width of line li's first off drawn runes — the
+// per-line sibling of PrefixWidth, covering both raster shapes.
+func (m *MessageRaster) linePrefixW(li, off int) int32 {
+	if off <= 0 {
+		return 0
+	}
+	if m.styled != nil {
+		if li < 0 || li >= len(m.styled) {
+			return 0
+		}
+		w := int32(0)
+		remaining := off
+		for i := range m.styled[li] {
+			sp := &m.styled[li][i]
+			show := sp.runes
+			if remaining < show {
+				show = remaining
+			}
+			if show > 0 && show < len(sp.advances) {
+				w = sp.xOffset + sp.advances[show] // same x math as drawStyled's dst
+			}
+			remaining -= sp.runes
+			if remaining <= 0 {
+				break
+			}
+		}
+		return w
+	}
+	if li < 0 || li >= len(m.lines) {
+		return 0
+	}
+	line := &m.lines[li]
+	if off > line.runes {
+		off = line.runes
+	}
+	if off >= len(line.advances) { // defensive: advances is runes+1 entries
+		if l := len(line.advances); l > 0 {
+			return line.advances[l-1]
+		}
+		return 0
+	}
+	return line.advances[off]
+}
+
+// RuneAt maps a point (relative to the Draw origin) to the nearest source-
+// rune BOUNDARY — the text-field caret rule, so a drag-selection snaps the
+// way native editors do. Clamps outside the block (above → 0-ish, below →
+// the last line, past a line's end → its end boundary).
+func (m *MessageRaster) RuneAt(relX, relY int32) int {
+	n := len(m.lineRanges)
+	if n == 0 || m.lineH <= 0 {
+		return 0
+	}
+	li := int(relY / m.lineH)
+	if relY < 0 {
+		li = 0
+	}
+	if li >= n {
+		li = n - 1
+	}
+	start, end := m.lineRanges[li].start, m.lineRanges[li].end
+	drawn := end - start
+	x := relX - m.lineOffset(li)
+	if x <= 0 {
+		return start
+	}
+	prevW := int32(0)
+	for i := 1; i <= drawn; i++ {
+		w := m.linePrefixW(li, i)
+		if x < (prevW+w)/2 {
+			return start + i - 1
+		}
+		prevW = w
+	}
+	return end
+}
+
+// LineSpanX returns the pixel x-range on display line i covered by the
+// source-rune selection [lo,hi), centering included; ok=false when the
+// selection doesn't touch this line's drawn runes.
+func (m *MessageRaster) LineSpanX(i, lo, hi int) (int32, int32, bool) {
+	if i < 0 || i >= len(m.lineRanges) || hi <= lo {
+		return 0, 0, false
+	}
+	start, end := m.lineRanges[i].start, m.lineRanges[i].end
+	if lo < start {
+		lo = start
+	}
+	if hi > end {
+		hi = end
+	}
+	if hi <= lo {
+		return 0, 0, false
+	}
+	off := m.lineOffset(i)
+	return off + m.linePrefixW(i, lo-start), off + m.linePrefixW(i, hi-start), true
+}
 
 // Destroy frees all line/span textures. Render thread only.
 func (m *MessageRaster) Destroy() {

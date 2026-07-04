@@ -164,8 +164,13 @@ func (c *Ctx) fieldSel(rc int) (int, int) {
 }
 
 // wordBoundsAt returns the [lo,hi) rune range of the "word" containing idx —
-// a maximal run of non-space runes (or of spaces, when idx sits on one),
-// which is the native double-click rule. idx clamps into the text.
+// a maximal run of non-space runes (or of spaces, only when idx sits inside a
+// RUN of them) — the native double-click rule. idx is a rune index OR the
+// caret-style boundary the hit tests produce: a boundary landing right after
+// a word (on the single space that follows it, or past the end) steps back
+// onto that word, so double-clicking the right half of a word's last letter
+// selects the word, never the gap. Shared by the text fields, the IC/OOC
+// logs, and the chatbox. idx clamps into the text.
 func wordBoundsAt(runes []rune, idx int) (int, int) {
 	n := len(runes)
 	if n == 0 {
@@ -178,6 +183,9 @@ func wordBoundsAt(runes []rune, idx int) (int, int) {
 		idx = 0
 	}
 	isSpace := func(r rune) bool { return r == ' ' || r == '\t' }
+	if idx > 0 && isSpace(runes[idx]) && !isSpace(runes[idx-1]) {
+		idx-- // a boundary just past a word belongs to the word
+	}
 	class := isSpace(runes[idx])
 	lo, hi := idx, idx+1
 	for lo > 0 && isSpace(runes[lo-1]) == class {

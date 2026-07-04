@@ -440,14 +440,19 @@ type App struct {
 	logSelPressed  bool
 	logSelPrevDown bool
 	logSelFill     sdl.Color // configured highlight colour, cached per frame
-	// Chatbox (in-viewport IC message) selection: drag the message to highlight it,
-	// then Ctrl+C / right-click copies the whole message. Whole-message (not per-rune)
-	// — the chatbox is one short message and the raster doesn't expose glyph metrics.
+	// Chatbox (in-viewport IC message) selection: drag across the message to
+	// highlight the RANGE you want (the raster exposes per-line rune geometry
+	// now — RuneAt/LineSpanX), double-click a word, triple-click the whole
+	// message; Ctrl+C / right-click copies just the selection. chatSelA/B are
+	// source-rune boundaries (anchor/head). Only the animated-text path
+	// (msAnim, per-glyph motion) keeps the old whole-message behavior.
 	chatSelActive   bool
 	chatSelDragging bool
 	chatSelPrevDown bool
 	chatSelDownX    int32
 	chatSelDownY    int32
+	chatSelA        int
+	chatSelB        int
 	// Highlight-colour picker (Settings): the hue/sat wheel texture (built once)
 	// and the in-progress hex field text.
 	colorWheel     *sdl.Texture

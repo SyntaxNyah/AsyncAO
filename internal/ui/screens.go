@@ -1789,8 +1789,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		// Clip to the box: oversized Text settings stay INSIDE it.
 		_ = c.Ren.SetClipRect(&box)
 		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
-			lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
-			c.Fill(sdl.Rect{X: textRect.X, Y: textRect.Y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
+			a.drawChatSelHighlight(textRect.X, textRect.Y, wrapW, sc)
 		}
 		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
 			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, a.d.Prefs.ReduceMotion())
@@ -1803,11 +1802,15 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	a.chatZoomWheel(box)
 }
 
-// handleChatSelect runs whole-message drag-select + Ctrl+C / right-click copy for the
-// in-viewport chatbox: a drag in the text highlights the message, a plain click clears
-// it, and Ctrl+C (no field focused) or right-click copies the message text. Its own
-// press edge so it's independent of the log selection's; activating it clears any log
-// selection so the two never fight over a Ctrl+C.
+// handleChatSelect runs the chatbox's text selection + Ctrl+C / right-click
+// copy: drag across the message to select a RANGE of it (per-rune, snapped
+// to boundaries via the raster's own glyph advances — "so people can copy one
+// word instead of the whole line"), double-click selects the word under the
+// cursor, triple-click the whole message; a plain click clears. The animated
+// path (msAnim — per-glyph motion, no static raster) keeps the old
+// whole-message selection. Its own press edge so it's independent of the log
+// selection's; activating either clears the other so they never fight over a
+// Ctrl+C. Shared by the classic overlay and the themed chatbox.
 func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 	c := a.ctx
 	pressed := c.mouseDown && !a.chatSelPrevDown
@@ -1817,12 +1820,19 @@ func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 		if inText {
 			a.chatSelDragging = true
 			a.chatSelDownX, a.chatSelDownY = c.mouseX, c.mouseY
+			if a.msRaster != nil { // anchor the range at the pressed boundary
+				a.chatSelA = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+				a.chatSelB = a.chatSelA
+			}
 		} else {
 			a.chatSelActive = false // a press elsewhere clears the highlight
 		}
 	}
 	if a.chatSelDragging {
 		if c.mouseDown {
+			if a.msRaster != nil { // the held drag moves the range's head
+				a.chatSelB = a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+			}
 			if absInt(int(c.mouseX-a.chatSelDownX))+absInt(int(c.mouseY-a.chatSelDownY)) > 3 {
 				if !a.chatSelActive {
 					a.chatSelActive = true // moved enough → a selection, not a click
@@ -1831,21 +1841,96 @@ func (a *App) handleChatSelect(textRect sdl.Rect, sc *courtroom.Scene) {
 			}
 		} else {
 			a.chatSelDragging = false
-			if a.chatSelActive {
+			switch {
+			case a.chatSelActive && a.msRaster != nil && a.chatSelA == a.chatSelB:
+				a.chatSelActive = false // wobbled past the slop but landed on one boundary — not a selection
+			case a.chatSelActive:
 				c.clicked = false // a real drag isn't a click on whatever's under it
-				c.focusID = ""    // unfocus so Ctrl+C copies the message, not a still-focused field
+				c.focusID = ""    // unfocus so Ctrl+C copies the selection, not a still-focused field
 			}
+		}
+	}
+	// Double-click: the word under the cursor; triple-click: the whole
+	// message (native text gestures — mirrors the fields and the logs).
+	if a.msRaster != nil && inText && (c.dblClick || c.tripleClick) && sc.MessageText != "" {
+		runes := []rune(sc.MessageText)
+		if c.tripleClick {
+			a.chatSelA, a.chatSelB = 0, len(runes)
+			c.tripleClick = false
+		} else {
+			idx := a.msRaster.RuneAt(c.mouseX-textRect.X, c.mouseY-textRect.Y)
+			a.chatSelA, a.chatSelB = wordBoundsAt(runes, idx)
+			c.dblClick = false
+		}
+		if a.chatSelB > a.chatSelA {
+			a.chatSelActive = true
+			a.logSelActive = false
+			c.clicked = false
+			c.focusID = ""
 		}
 	}
 	if a.chatSelActive && sc.MessageText != "" {
 		if (c.copyReq && c.focusID == "") || (c.rightClicked && inText) {
-			_ = sdl.SetClipboardText(sc.MessageText)
-			a.warnLine = "Copied message to clipboard"
+			_ = sdl.SetClipboardText(a.chatSelText(sc))
+			a.warnLine = "Copied selection to clipboard"
 			a.warnAt = time.Now()
 			c.copyReq = false
 			if inText {
 				c.rightClicked = false
 			}
+		}
+	}
+}
+
+// chatSelText is the text the chatbox selection copies: the selected rune
+// range, or the whole message on the animated path / a degenerate range.
+func (a *App) chatSelText(sc *courtroom.Scene) string {
+	if a.msRaster == nil {
+		return sc.MessageText
+	}
+	runes := []rune(sc.MessageText)
+	lo, hi := a.chatSelA, a.chatSelB
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	if lo < 0 {
+		lo = 0
+	}
+	if hi > len(runes) {
+		hi = len(runes)
+	}
+	if lo >= hi {
+		return sc.MessageText
+	}
+	return string(runes[lo:hi])
+}
+
+// drawChatSelHighlight fills the selected range behind the message, one band
+// per wrapped line: partial first/last lines measure their end runes through
+// the raster's own advances, interior lines span their drawn text, and the
+// typewriter clamp keeps the band off glyphs that haven't revealed yet. The
+// animated path has no per-rune raster — the whole visible block highlights,
+// exactly the old behavior. Measurement only (no allocations): fine per frame
+// while a selection is up.
+func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
+	c := a.ctx
+	m := a.msRaster
+	if m == nil { // animated message (msAnim): whole-block highlight
+		lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
+		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
+		return
+	}
+	lo, hi := a.chatSelA, a.chatSelB
+	if lo > hi {
+		lo, hi = hi, lo
+	}
+	if hi > sc.VisibleRunes {
+		hi = sc.VisibleRunes // typewriter: never highlight unrevealed glyphs
+	}
+	fill := a.highlightFill()
+	for i := 0; i < m.Lines(); i++ {
+		if x0, x1, ok := m.LineSpanX(i, lo, hi); ok && x1 > x0 {
+			c.Fill(sdl.Rect{X: x + x0, Y: y + int32(i)*m.LineH(), W: x1 - x0, H: m.LineH()}, fill)
 		}
 	}
 }
