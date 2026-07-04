@@ -2360,8 +2360,29 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	if next, _ := c.TextField("areahicol", sdl.Rect{X: pad + 186, Y: y, W: 110, H: fieldH}, areaHex, "rrggbb"); next != areaHex {
 		a.d.Prefs.SetAreaHighlightColorHex(next)
 	}
-	c.LabelClipped(pad+306, y+4, w-pad-306-scrollBarW, "hex like 4ac96c — blank = the stock green; marks the area you're in", ColTextDim)
+	wheelLbl := "Wheel…"
+	if a.showAreaWheel {
+		wheelLbl = "Close"
+	}
+	if c.Button(sdl.Rect{X: pad + 306, Y: y - 1, W: 64, H: 22}, wheelLbl) {
+		a.showAreaWheel = !a.showAreaWheel
+	}
+	c.LabelClipped(pad+378, y+4, w-pad-378-scrollBarW, "hex like 4ac96c — blank = the stock green; marks the area you're in", ColTextDim)
 	y += 32
+	if a.showAreaWheel {
+		// The shared inline colour wheel (drawWheelPicker), writing back as hex —
+		// the same value the field above edits. The extra button restores the
+		// stock green (the blank-pref default).
+		hi := a.areaHighlightCol()
+		wheelY := y
+		ny, hx := a.drawWheelPicker(pad, wheelY, int(hi.R)<<16|int(hi.G)<<8|int(hi.B), func(rgb int) {
+			a.d.Prefs.SetAreaHighlightColorHex(fmt.Sprintf("%06x", rgb))
+		})
+		if c.Button(sdl.Rect{X: hx, Y: wheelY + 42, W: 100, H: btnH}, "Stock green") {
+			a.d.Prefs.SetAreaHighlightColorHex("")
+		}
+		y = ny
+	}
 
 	y = a.settingsSection(y, w, "Case alerts")
 	// Case announcements (CASEA, tsuserver-family): subscribe by role.

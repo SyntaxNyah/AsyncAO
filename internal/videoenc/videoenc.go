@@ -207,7 +207,8 @@ func ffmpegArgs(outPath string, w, h, fps, quality int, format Format) []string 
 // audio decoding (spec §8); ffmpeg is an external process. MUST run off the render
 // thread (it blocks until ffmpeg exits). Guard with Available() first.
 func MuxAudioBed(videoPath, audioPath, outPath string, delayMs int, format Format) error {
-	return runMux(muxArgs(videoPath, audioPath, outPath, delayMs, format))
+	dur, _ := probeDurationSec(videoPath) // 0 on failure → the unbounded-apad fallback
+	return runMux(muxArgs(videoPath, audioPath, outPath, delayMs, format, dur))
 }
 
 // AudioClip is one timed audio file for the multi-input mux: the local file ffmpeg
@@ -232,13 +233,14 @@ func MuxAudioMix(videoPath string, clips []AudioClip, outPath string, format For
 	if len(clips) == 0 {
 		return fmt.Errorf("videoenc: no audio clips")
 	}
-	return runMux(muxMixArgs(videoPath, clips, outPath, format))
+	dur, _ := probeDurationSec(videoPath) // 0 on failure → the unbounded-apad fallback
+	return runMux(muxMixArgs(videoPath, clips, outPath, format, dur))
 }
 
 // muxMixArgs builds the multi-input mux command. Each clip is input i+1 (input 0 is
-// the video), delayed to its start; the delayed streams are summed and THEN padded.
-// Pure so the filter graph is unit-tested.
-func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Format) []string {
+// the video), delayed to its start; the delayed streams are summed and THEN padded
+// (bounded to padDurSec — see padFilter). Pure so the filter graph is unit-tested.
+func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Format, padDurSec float64) []string {
 	args := []string{"-y", "-loglevel", "error", "-i", videoPath}
 	var fc, labels strings.Builder
 	for i, c := range clips {
@@ -255,7 +257,7 @@ func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Form
 	// Sum the clips at full volume, THEN pad to the video's length. apad MUST come
 	// after amix, never per-input: a SFX-only mix (no infinite music bed) would
 	// otherwise end at the last SFX and -shortest would truncate the VIDEO.
-	fmt.Fprintf(&fc, "%samix=inputs=%d:normalize=0,apad[aout]", labels.String(), len(clips))
+	fmt.Fprintf(&fc, "%samix=inputs=%d:normalize=0,%s[aout]", labels.String(), len(clips), padFilter(padDurSec))
 	acodec := "aac"
 	if format == FormatWebM {
 		acodec = "libopus"
@@ -272,7 +274,7 @@ func muxMixArgs(videoPath string, clips []AudioClip, outPath string, format Form
 // secs renders milliseconds as an ffmpeg seconds timestamp (S.mmm) for atrim.
 func secs(ms int) string { return fmt.Sprintf("%d.%03d", ms/1000, ms%1000) }
 
-// runMux runs an ffmpeg mux command and surfaces the last stderr line on failure.
+// runMux runs an ffmpeg mux command and surfaces the stderr tail on failure.
 func runMux(args []string) error {
 	bin := FFmpegPath()
 	if bin == "" {
@@ -283,14 +285,7 @@ func runMux(args []string) error {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		s := strings.TrimSpace(stderr.String())
-		if len(s) > stderrTailBytes {
-			s = s[len(s)-stderrTailBytes:]
-		}
-		if i := strings.LastIndexByte(s, '\n'); i >= 0 { // the cause is the last line
-			s = strings.TrimSpace(s[i+1:])
-		}
-		if s != "" {
+		if s := lastStderrLines(stderr.String()); s != "" {
 			return fmt.Errorf("ffmpeg mux: %s", s)
 		}
 		return fmt.Errorf("videoenc: mux failed: %w", err)
@@ -298,16 +293,87 @@ func runMux(args []string) error {
 	return nil
 }
 
+// lastStderrLines condenses an ffmpeg stderr dump to its last TWO non-empty lines
+// (joined with " | "). ffmpeg often prints the real cause one line ABOVE a generic
+// final line — a mux-queue overflow reads "Terminating thread with return code -28
+// (No space left on device)" last, which alone looks like a disk problem and hid
+// the actual error during a playtest gate.
+func lastStderrLines(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) > stderrTailBytes {
+		s = s[len(s)-stderrTailBytes:]
+	}
+	var kept []string
+	for i := len(s); i > 0 && len(kept) < 2; {
+		j := strings.LastIndexByte(s[:i], '\n')
+		if l := strings.TrimSpace(s[j+1 : i]); l != "" {
+			kept = append([]string{l}, kept...)
+		}
+		i = j
+		if j < 0 {
+			break
+		}
+	}
+	return strings.Join(kept, " | ")
+}
+
+// probeDurationSec asks ffmpeg for path's container duration by parsing the
+// "Duration: HH:MM:SS.ss" header of `ffmpeg -i` output (which exits non-zero with
+// no output requested — expected, and cheap: headers only, nothing decodes).
+// ok=false when ffmpeg is missing or the header doesn't parse (e.g. "N/A").
+func probeDurationSec(path string) (secs float64, ok bool) {
+	bin := FFmpegPath()
+	if bin == "" {
+		return 0, false
+	}
+	cmd := exec.Command(bin, "-i", path)
+	winexec.Hide(cmd)
+	var st bytes.Buffer
+	cmd.Stderr = &st
+	_ = cmd.Run() // non-zero exit expected
+	info := st.String()
+	i := strings.Index(info, "Duration: ")
+	if i < 0 {
+		return 0, false
+	}
+	ts := info[i+len("Duration: "):]
+	if j := strings.IndexByte(ts, ','); j >= 0 {
+		ts = ts[:j] // "00:00:01.00"
+	}
+	var hh, mm int
+	var ss float64
+	if _, err := fmt.Sscanf(strings.TrimSpace(ts), "%d:%d:%f", &hh, &mm, &ss); err != nil {
+		return 0, false
+	}
+	return float64(hh*3600+mm*60) + ss, true
+}
+
+// padFilter returns the audio padding filter, bounded to the video's duration when
+// known: apad=whole_dur=D emits a FINITE stream. An unbounded apad + -shortest races
+// ffmpeg's mux sync queue: the infinite silence buffers while the muxer waits for the
+// video stream to drain, and on a loaded machine the queue cap wins — the mux thread
+// dies with AVERROR(ENOSPC) ("No space left on device" with plenty of disk; it flaked
+// this package's own e2e tests and would kill a real export the same way). The plain
+// apad remains only as the probe-failure fallback, and -shortest stays as the final
+// trim either way (whole_dur never pads past the video, and a mix already longer than
+// the video is passed through untouched for -shortest to cut).
+func padFilter(padDurSec float64) string {
+	if padDurSec > 0 {
+		return fmt.Sprintf("apad=whole_dur=%.3f", padDurSec)
+	}
+	return "apad"
+}
+
 // muxArgs builds the audio-mux command line: copy the video stream, encode the
 // audio (AAC for MP4, Opus for WebM — both standard for their container), optionally
-// delay the audio to its scene start, pad it to the video length, and stop at the
-// video's end. Pure so the argument shape is unit-tested.
-func muxArgs(videoPath, audioPath, outPath string, delayMs int, format Format) []string {
-	af := "apad" // pad the audio with trailing silence; -shortest trims to the video
+// delay the audio to its scene start, pad it to the video length (bounded — see
+// padFilter), and stop at the video's end. Pure so the argument shape is unit-tested.
+func muxArgs(videoPath, audioPath, outPath string, delayMs int, format Format, padDurSec float64) []string {
+	af := padFilter(padDurSec) // pad the audio with trailing silence; -shortest trims to the video
 	if delayMs > 0 {
 		// adelay's all=1 delays every channel by delayMs regardless of channel count
 		// (mono or stereo source), so the song lands where it started in the scene.
-		af = "adelay=delays=" + strconv.Itoa(delayMs) + ":all=1,apad"
+		af = "adelay=delays=" + strconv.Itoa(delayMs) + ":all=1," + af
 	}
 	acodec := "aac"
 	if format == FormatWebM {

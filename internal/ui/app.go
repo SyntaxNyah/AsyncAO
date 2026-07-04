@@ -1287,6 +1287,21 @@ type sessionState struct {
 	styleBoxUserW    int32 // user-set width (0 = the default styleBoxW); height stays content-driven
 	styleBoxGrabDX   int32
 	styleBoxGrabDY   int32
+	// Custom glitch fringe-colour hex buffers (the style box's A/B fields): they
+	// hold in-progress typing and mirror the pref's effective colour when unfocused.
+	glitchHexA string
+	glitchHexB string
+	// Style-box live preview: collapse state, the background page cache (the
+	// pair-ghost pattern; keys are full URLs so per-server separation is
+	// structural), and the sprite prefetch dedupe (one warm per emote base).
+	stylePrevOff     bool
+	stylePrevBgPages []*render.TexturePage
+	stylePrevBgGen   uint64
+	stylePrevBgKey   string
+	stylePrevWarm    string
+	// showAreaWheel expands the area-colour row's inline colour wheel (Settings →
+	// Area list) — session-only chrome, like the other settings expanders.
+	showAreaWheel bool
 	// Server-clock chip memo: the "Tn mm:ss" labels are rebuilt only when their
 	// displayed second changes, into a reused scratch slice — so a visible (esp.
 	// paused) clock costs nothing on the always-on courtroom draw.

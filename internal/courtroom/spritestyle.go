@@ -67,7 +67,39 @@ type SpriteStyle struct {
 	// Sent as three extra bytes only when Outline is on AND a colour is set; a client that doesn't
 	// read them just draws the white outline (graceful).
 	OutlineR, OutlineG, OutlineB uint8
+	// Two-tone hue paint: PaintSplit (0 = off, else 1..maxPaintSplit = the split row as a
+	// percent of sprite height from the top) paints the sprite in two bands — the upper
+	// band keeps the R/G/B paint colour, the lower band takes Paint2R/G/B ("head red,
+	// rest blue"). Meaningful only with hue paint (Tint+Grayscale). Rides the
+	// presence-flagged tail (see payloadBytes); an older client renders the whole
+	// sprite in the single upper colour — graceful.
+	PaintSplit                uint8
+	Paint2R, Paint2G, Paint2B uint8
+	// Glitch options: GlitchMode picks the look (GlitchClassic..GlitchModeCount-1; the
+	// render maps each to its own fringe/jolt/tear parameters) and GlitchA/B recolour
+	// the two chromatic-fringe ghosts (all-zero = the classic red/blue, so pure black
+	// isn't a choice — the outline-colour convention). Tail fields like the paint
+	// above; an older client draws the classic red/blue glitch — graceful.
+	GlitchMode                   uint8
+	GlitchAR, GlitchAG, GlitchAB uint8
+	GlitchBR, GlitchBG, GlitchBB uint8
 }
+
+// Glitch looks (a byte enum so more can ship without new flag bits): the render maps
+// each to its own fringe / jolt / tear behaviour. An unknown value from a NEWER client
+// decodes as Classic (benign).
+const (
+	GlitchClassic   uint8 = iota // chromatic fringe + an occasional horizontal jolt (#13's original)
+	GlitchHeavy                  // wider fringe, faster shimmer, harder + more frequent jolts
+	GlitchTorn                   // horizontal slice tearing during the jolt windows
+	GlitchStatic                 // signal loss: fringe jitters on both axes + the sprite flickers
+	GlitchEcho                   // trailing ghosts: doubled fringe distance + a faint far echo
+	GlitchModeCount              // MUST stay last (UI cycle + decode bound)
+)
+
+// maxPaintSplit bounds the two-tone split row (a percent of sprite height): 1..99 keeps
+// both bands non-empty; 0 = no split. Decoded values past it are dropped (no split).
+const maxPaintSplit = 99
 
 // Sprite-motion paths (#34): a 3-bit enum (0..7), so up to 8 named movements with room
 // to grow. The render maps each to a clamped parametric offset; the UI cycles them.
@@ -255,6 +287,17 @@ const (
 	spriteStyleVersion = 1
 	spriteStyleBytes   = 9  // version, flags, R, G, B, opacity, brightness, scale, rotation
 	spriteStyleBytesV2 = 10 // …+ flags2 (only present when an outline/shadow is set)
+
+	// The presence-flagged TAIL is the extension region after the outline-colour
+	// bytes: one flags byte, then each flagged field group in bit order. New field
+	// groups get the next bit and append AFTER the existing groups, so every
+	// decoder — old or new — finds the groups it knows at deterministic offsets
+	// and ignores the rest. (v1.53.x clients read whatever follows the restyle
+	// byte as an outline colour; that is harmless with Outline off, and when
+	// Outline is ON the encoder now always writes the real colour bytes first —
+	// see payloadBytes — so those clients still colour the outline correctly.)
+	tailFlagPaint2  = 1 << 0 // 4 bytes: split, Paint2R, Paint2G, Paint2B
+	tailFlagGlitchX = 1 << 1 // 7 bytes: mode, GlitchA RGB, GlitchB RGB
 )
 
 // octalSyms maps an octal digit (3 bits) to one invisible code point. All eight are
@@ -337,9 +380,19 @@ func (s SpriteStyle) payloadBytes() []byte {
 	// Append flags2 when it carries anything OR a custom path follows it: the path region sits
 	// right after flags2, so flags2 must be present to keep byte positions deterministic.
 	hasPath := s.PathLen >= 2 && s.PathLen <= maxPathPoints
-	hasRestyle := s.Restyle != 0                                                          // the "10 more restyles" picker
-	hasOutlineCol := s.Outline && (s.OutlineR != 0 || s.OutlineG != 0 || s.OutlineB != 0) // a coloured #8 outline
-	hasExt := hasRestyle || hasOutlineCol                                                 // fields after the path share the restyle-byte slot for a deterministic offset
+	hasRestyle := s.Restyle != 0 // the "10 more restyles" picker
+	hasPaint2 := s.PaintSplit >= 1 && s.PaintSplit <= maxPaintSplit
+	hasGlitchX := s.Glitch && (s.GlitchMode != 0 ||
+		s.GlitchAR != 0 || s.GlitchAG != 0 || s.GlitchAB != 0 ||
+		s.GlitchBR != 0 || s.GlitchBG != 0 || s.GlitchBB != 0)
+	hasTail := hasPaint2 || hasGlitchX
+	// A coloured #8 outline writes its 3 bytes when set — and whenever a TAIL follows
+	// with Outline on, the colour region is written even at the default 0,0,0: both
+	// this decoder and a v1.53.x one locate the bytes after the restyle by position,
+	// so the region must exist for the tail to land past it (0,0,0 decodes to the
+	// default white either way).
+	hasOutlineCol := s.Outline && (s.OutlineR != 0 || s.OutlineG != 0 || s.OutlineB != 0 || hasTail)
+	hasExt := hasRestyle || hasOutlineCol || hasTail // fields after the path share the restyle-byte slot for a deterministic offset
 	if flags2 != 0 || hasPath || hasExt {
 		b = append(b, flags2)
 		switch {
@@ -350,9 +403,25 @@ func (s SpriteStyle) payloadBytes() []byte {
 			b = append(b, 0) // pathLen 0 (no path) so the extension bytes land at a deterministic offset
 		}
 		if hasExt {
-			b = append(b, s.Restyle) // 0 when only an outline colour follows
+			b = append(b, s.Restyle) // 0 when only an outline colour / tail follows
 			if hasOutlineCol {
 				b = append(b, s.OutlineR, s.OutlineG, s.OutlineB)
+			}
+			if hasTail { // presence-flagged tail: [tailFlags][groups in bit order]
+				var tf byte
+				if hasPaint2 {
+					tf |= tailFlagPaint2
+				}
+				if hasGlitchX {
+					tf |= tailFlagGlitchX
+				}
+				b = append(b, tf)
+				if hasPaint2 {
+					b = append(b, s.PaintSplit, s.Paint2R, s.Paint2G, s.Paint2B)
+				}
+				if hasGlitchX {
+					b = append(b, s.GlitchMode, s.GlitchAR, s.GlitchAG, s.GlitchAB, s.GlitchBR, s.GlitchBG, s.GlitchBB)
+				}
 			}
 		}
 	}
@@ -405,15 +474,45 @@ func styleFromBytes(b []byte) SpriteStyle {
 				restyleOff = spriteStyleBytesV2 + 1 + int(pl) // past the path bytes
 			}
 		}
-		// Extension region after the path: the restyle byte, then (optionally) a 3-byte outline
-		// colour. An out-of-range restyle (an older enum, or a newer client's look) is ignored →
-		// the plain sprite, never a wrong variant. A shorter frame simply carries fewer fields.
+		// Extension region after the path: the restyle byte, then (with Outline on) a
+		// 3-byte outline colour, then the presence-flagged tail. An out-of-range restyle
+		// (an older enum, or a newer client's look) is ignored → the plain sprite, never
+		// a wrong variant. A shorter frame simply carries fewer fields.
 		if len(b) > restyleOff {
 			if r := b[restyleOff]; r >= uint8(firstRestyle) && r < uint8(VariantCount) {
 				s.Restyle = r
 			}
-			if colOff := restyleOff + 1; len(b) >= colOff+3 { // coloured #8 outline
-				s.OutlineR, s.OutlineG, s.OutlineB = b[colOff], b[colOff+1], b[colOff+2]
+			off := restyleOff + 1
+			// Coloured #8 outline: present IFF the Outline flag is set and the bytes
+			// exist — which matches every encoder (old ones wrote the colour only with
+			// Outline on; new ones also write it, even as 0,0,0 = default white, when a
+			// tail follows). Gating on the flag (v1.53.x read unconditionally) is what
+			// gives the tail below a knowable start.
+			if s.Outline && len(b) >= off+3 {
+				s.OutlineR, s.OutlineG, s.OutlineB = b[off], b[off+1], b[off+2]
+				off += 3
+			}
+			// Presence-flagged tail: [tailFlags][flagged groups in bit order]. Unknown
+			// flag bits mean a NEWER client's groups follow the ones we know — they sit
+			// after ours (append-only order), so everything we parse here stays right.
+			if len(b) > off {
+				tf := b[off]
+				off++
+				if tf&tailFlagPaint2 != 0 && len(b) >= off+4 {
+					if sp := b[off]; sp >= 1 && sp <= maxPaintSplit { // out-of-range split → no split, style kept
+						s.PaintSplit = sp
+						s.Paint2R, s.Paint2G, s.Paint2B = b[off+1], b[off+2], b[off+3]
+					}
+					off += 4
+				}
+				if tf&tailFlagGlitchX != 0 && len(b) >= off+7 {
+					if m := b[off]; m < GlitchModeCount { // a newer client's mode → Classic (benign)
+						s.GlitchMode = m
+					}
+					s.GlitchAR, s.GlitchAG, s.GlitchAB = b[off+1], b[off+2], b[off+3]
+					s.GlitchBR, s.GlitchBG, s.GlitchBB = b[off+4], b[off+5], b[off+6]
+					// future groups parse from off+7
+				}
 			}
 		}
 	}

@@ -1,10 +1,14 @@
 package ui
 
 import (
+	"fmt"
+
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
 // stylePathBox is the side of the draw-a-path square (#34).
@@ -204,10 +208,54 @@ func nextRestyle(r uint8) uint8 {
 	}
 }
 
+// glitchModeName labels the transmitted glitch look for its cycle button.
+func glitchModeName(m uint8) string {
+	switch m {
+	case courtroom.GlitchHeavy:
+		return "Glitch: Heavy"
+	case courtroom.GlitchTorn:
+		return "Glitch: Torn"
+	case courtroom.GlitchStatic:
+		return "Glitch: Static"
+	case courtroom.GlitchEcho:
+		return "Glitch: Echo"
+	default:
+		return "Glitch: Classic"
+	}
+}
+
+// glitchPairPresets are the quick fringe colour PAIRS (the ask: not only red and
+// blue). "Classic" stores all-zero — the wire default — so picking it sends the lean
+// frame and every build, old or new, renders the same red/blue.
+var glitchPairPresets = []struct {
+	name                   string
+	ar, ag, ab, br, bg, bb uint8
+}{
+	{"Classic (red / blue)", 0, 0, 0, 0, 0, 0},
+	{"Acid (green / magenta)", 60, 255, 60, 255, 40, 220},
+	{"Vapor (cyan / orange)", 60, 230, 255, 255, 140, 40},
+	{"Royal (purple / gold)", 170, 60, 255, 255, 215, 60},
+	{"Ghost (white / gray)", 245, 245, 245, 120, 120, 120},
+	{"Ember (red / dark red)", 255, 60, 40, 120, 10, 10},
+}
+
+// glitchEffective resolves a stored fringe pair to the colours that actually draw:
+// the all-zero pair is the classic red/blue default (mirrors the render's rule).
+func glitchEffective(ar, ag, ab, br, bg, bb uint8) (sdl.Color, sdl.Color) {
+	if ar == 0 && ag == 0 && ab == 0 && br == 0 && bg == 0 && bb == 0 {
+		return sdl.Color{R: 255, A: 255}, sdl.Color{B: 255, A: 255}
+	}
+	return sdl.Color{R: ar, G: ag, B: ab, A: 255}, sdl.Color{R: br, G: bg, B: bb, A: 255}
+}
+
 // minVisibleStyleOpacity floors the Fade slider so a style can't go invisible. It
 // mirrors courtroom.minVisibleOpacity (the render side floors it too); kept here
 // because config/courtroom consts aren't exported.
 const minVisibleStyleOpacity = 25
+
+// defaultPaintSplit seeds the two-tone split when it's first enabled: ~30% from the
+// top lands near the head/body line on a typical AO sprite; the Split slider tunes it.
+const defaultPaintSplit = 30
 
 // The floating Sprite Style box (#104): the non-intrusive, draggable cousin of
 // the Extras box for the transmitted Sprite Style (#103). It floats ON TOP of the
@@ -226,18 +274,30 @@ const (
 	styleSwatchSz   = int32(26)
 	styleSwatchGap  = int32(6)
 	styleSwatchCols = 5
+	stylePrevH      = int32(104) // live-preview strip height (the sprite renders at this stage height)
 )
 
 // styleBoxRect is the box's screen rect: a fixed width, a height that grows when
 // the tint controls are showing, clamped fully on-screen at its dragged position
 // (else a default tucked under the top-right, clear of the stage centre).
 func (a *App) styleBoxRect(w, h int32) sdl.Rect {
+	p := a.d.Prefs.SpriteStyle()
 	bh := extrasTitleH + styleBoxPad // title + top pad
 	bh += 50                         // 3-line "what it does / who sees it" note
-	bh += 26                         // Tint + Hue-paint row
-	if a.d.Prefs.SpriteStyle().Tint {
+	bh += 20                         // preview header row
+	if !a.stylePrevOff {
+		bh += stylePrevH + 8 // the live preview strip
+	}
+	bh += 26 // Tint + Hue-paint row
+	if p.Tint {
 		rows := int32((len(spriteStylePresets) + styleSwatchCols - 1) / styleSwatchCols)
 		bh += rows*(styleSwatchSz+styleSwatchGap) + 4 + 82 // preset swatches + Hue + R/G/B sliders
+		if p.Grayscale {                                   // hue paint: the Two-tone row (+ its sliders when on)
+			bh += 20
+			if p.PaintSplit != 0 {
+				bh += 40 // Split + Hue B sliders
+			}
+		}
 	}
 	bh += 30                    // opacity (Fade)
 	bh += 26                    // Rainbow / Mirror row
@@ -248,8 +308,13 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	bh += 30                    // extra-restyle cycle (#M5+)
 	bh += 30                    // movement-path cycle (#34)
 	bh += 18 + stylePathBox + 8 // draw-your-own path editor (#34 B2)
-	if a.d.Prefs.SpriteStyle().Outline {
+	bh += 26                    // Outline / Shadow row (was uncounted — the bottom rows sat in the pad)
+	if p.Outline {
 		bh += 82 // outline-colour swatch + R/G/B sliders (only while Outline is on)
+	}
+	bh += 26 // Glitch row (was uncounted, same fix)
+	if p.Glitch {
+		bh += 30 + 26 + 30 // glitch-look cycle + preset pairs + custom hex row
 	}
 	bh += 30 // clear button
 	// #126 presets: a header, a Save row, and one row per saved mood.
@@ -321,6 +386,53 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	c.LabelClipped(x, y, noteW, "AO2 / webAO see a normal character.", ColTextDim)
 	y += 19
 
+	// Live preview (the ask: preview the restyles like the Pair tab): your selected
+	// emote's idle over your position's background, rendered through the REAL stage
+	// path with the current style applied — paint, restyle, glitch, motion and all.
+	c.Label(x, y+1, "Preview", ColTextDim)
+	tgl := "Hide"
+	if a.stylePrevOff {
+		tgl = "Show"
+	}
+	if c.Button(sdl.Rect{X: x + noteW - 44, Y: y - 1, W: 44, H: 18}, tgl) {
+		a.stylePrevOff = !a.stylePrevOff
+	}
+	y += 20
+	if !a.stylePrevOff {
+		pv := sdl.Rect{X: x, Y: y, W: noteW, H: stylePrevH}
+		// The real stage background behind the sprite (the pair-ghost pattern): a
+		// flat fill stands in until it streams.
+		bgPart, _ := courtroom.PositionScene(a.mySide())
+		bgBase := a.urls.Background(a.sess.Background, bgPart)
+		if bgBase != a.stylePrevBgKey {
+			a.stylePrevBgPages, a.stylePrevBgKey = nil, bgBase
+		}
+		if page, ok := a.cachedPage(&a.stylePrevBgPages, &a.stylePrevBgGen, 1, 0, bgBase); ok && len(page.Frames) > 0 {
+			_ = c.Ren.Copy(page.Frames[0], nil, &pv)
+		} else {
+			c.Fill(pv, sdl.Color{R: 12, G: 12, B: 16, A: 255})
+			if a.sess.Background != "" {
+				a.d.Manager.Prefetch(bgBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background (style preview)
+			}
+		}
+		if me := a.activeCharName(); me != "" && a.d.Viewport != nil {
+			anim := ghostFallbackEmote
+			if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
+				anim = a.emotes[a.emoteIdx].Anim
+			}
+			sbase := a.urls.Emote(me, anim, courtroom.EmoteIdle)
+			if a.stylePrevWarm != sbase { // warm once per emote base, not per frame
+				a.stylePrevWarm = sbase
+				a.d.Manager.PrefetchChain(sbase, a.urls.EmoteAlts(me, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (style preview)
+			}
+			a.d.Viewport.RenderStylePreview(c.Ren, sbase, styleFromPref(p), pv)
+		} else {
+			c.Label(pv.X+8, pv.Y+pv.H/2-7, "Pick a character to preview", ColTextDim)
+		}
+		c.Border(pv, ColPanelHi)
+		y += stylePrevH + 8
+	}
+
 	// Recolour toggle + the hue-paint mode (playtest: the multiply tint DARKENS
 	// a colourful sprite — the ask was a recolour that only affects hue). Hue
 	// paint = the tint applied over the sprite's GRAYSCALE variant: every pixel
@@ -336,6 +448,12 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if next := c.Checkbox(x+132, y, "Hue paint", huePaint); next != huePaint {
 		if next {
 			p.Tint, p.Grayscale = true, true
+			// Invert and the Restyle picker OVERRIDE the grayscale half of the
+			// composition (courtroom.Variant() priority), which reduced "hue paint
+			// on" to the plain multiply tint over that other look — the playtest
+			// bug ("turning it on turns on the old recolour"). Turning hue paint
+			// on now claims the per-pixel slot outright.
+			p.Invert, p.Restyle = false, 0
 			if p.R == p.G && p.G == p.B { // a hueless (gray/white) tint paints nothing — seed a visible hue
 				p.R, p.G, p.B = 255, 0, 0
 			}
@@ -344,7 +462,7 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		}
 		a.d.Prefs.SetSpriteStyle(p)
 	}
-	c.Tooltip(hpRect, "Paint the whole sprite ONE hue while keeping its own light and shadow — set the hue below. (The plain tint multiplies colours, which darkens; this recolours only the hue. Rainbow cycles the paint.)")
+	c.Tooltip(hpRect, "Paint the whole sprite ONE hue while keeping its own light and shadow — set the hue below. Highlights stay bright (the plain tint multiplies colours, which darkens). Rainbow cycles the paint.")
 	y += 26
 
 	if p.Tint {
@@ -401,6 +519,48 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		if nr != int32(p.R) || ng != int32(p.G) || nb != int32(p.B) {
 			p.R, p.G, p.B = uint8(nr), uint8(ng), uint8(nb)
 			a.d.Prefs.SetSpriteStyle(p)
+		}
+		// Two-tone paint ("head red, rest blue") — hue paint only: the split row +
+		// second colour ride the wire tail and paint the sprite in two bands (upper =
+		// the colour above, lower = Hue B). An older AsyncAO client shows the single
+		// upper colour; AO2/webAO still see a normal sprite.
+		if p.Grayscale {
+			twoTone := p.PaintSplit != 0
+			ttRect := sdl.Rect{X: x, Y: y, W: 22 + c.TextWidth("Two-tone"), H: 16}
+			if next := c.Checkbox(x, y, "Two-tone", twoTone); next != twoTone {
+				if next {
+					p.PaintSplit = defaultPaintSplit
+					if p.Paint2R == 0 && p.Paint2G == 0 && p.Paint2B == 0 { // seed the complement of colour A
+						hb, _, _ := rgbToHSV(p.R, p.G, p.B)
+						p.Paint2R, p.Paint2G, p.Paint2B = hsvToRGB(hb+0.5, 1, 1)
+					}
+				} else {
+					p.PaintSplit = 0 // colour B stays in the pref for a re-toggle
+				}
+				a.d.Prefs.SetSpriteStyle(p)
+			}
+			c.Tooltip(ttRect, "Paint the sprite in TWO hues: everything above the split line takes the colour above (the head end), everything below takes Hue B. Drag Split to line it up with the body.")
+			y += 20
+			if twoTone {
+				sp := int32(p.PaintSplit)
+				c.Label(x, y, "Split", ColTextDim)
+				if n := c.Slider("paintSplit", sdl.Rect{X: x + 44, Y: y, W: r.W - 44 - styleBoxPad*2, H: 14}, sp, 99); n != sp {
+					if n < 1 {
+						n = 1 // 0 would mean "no split" on the wire
+					}
+					p.PaintSplit = uint8(n)
+					a.d.Prefs.SetSpriteStyle(p)
+				}
+				y += 20
+				hueB, _, _ := rgbToHSV(p.Paint2R, p.Paint2G, p.Paint2B)
+				hbPos := clampI32(int32(hueB*360+0.5), 0, 359)
+				c.Label(x, y, "Hue B", ColTextDim)
+				if n := c.Slider("paintHueB", sdl.Rect{X: x + 44, Y: y, W: r.W - 44 - styleBoxPad*2, H: 14}, hbPos, 359); n != hbPos {
+					p.Paint2R, p.Paint2G, p.Paint2B = hsvToRGB(float64(n)/360, 1, 1)
+					a.d.Prefs.SetSpriteStyle(p)
+				}
+				y += 20
+			}
 		}
 	}
 
@@ -486,13 +646,21 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	y += 26
 
 	// Invert / Grayscale — per-pixel effects (the renderer builds a cached variant
-	// texture; the recolour/glow above still compose on top).
+	// texture; the recolour/glow above still compose on top). Both interact with
+	// hue paint (= Tint+Grayscale): leaving or overriding it must never strand the
+	// bare multiply tint — that IS the darkening the hue-paint mode exists to avoid.
 	if next := c.Checkbox(x, y, "Invert", p.Invert); next != p.Invert {
 		p.Invert = next
+		if next && p.Tint && p.Grayscale {
+			p.Tint, p.Grayscale = false, false // Invert overrides hue paint's grayscale half — exit hue paint cleanly
+		}
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	if next := c.Checkbox(x+86, y, "Grayscale", p.Grayscale); next != p.Grayscale {
 		p.Grayscale = next
+		if !next && p.Tint {
+			p.Tint = false // unchecking hue paint's grayscale half turns the whole paint off, not back to the dark tint
+		}
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	if next := c.Checkbox(x+186, y, "Sepia", p.Sepia); next != p.Sepia { // #34 warm brown tone
@@ -509,6 +677,9 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	rsb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
 	if c.Button(rsb, restyleName(p.Restyle)) {
 		p.Restyle = nextRestyle(p.Restyle)
+		if p.Restyle != 0 && p.Tint && p.Grayscale {
+			p.Tint, p.Grayscale = false, false // a Restyle overrides hue paint's grayscale half — exit hue paint cleanly
+		}
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	c.Tooltip(rsb, "An extra per-pixel restyle for your sprite — redscale, greenscale, bluescale, solarize, threshold, duotone, warm, cool, neon, infrared, pixel art. Overrides Invert/Grayscale/Sepia/Posterize; other AsyncAO players see it.")
@@ -566,6 +737,67 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		a.d.Prefs.SetSpriteStyle(p)
 	}
 	y += 26
+	if p.Glitch { // glitch options: the look + the fringe colour pair
+		gb := sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}
+		if c.Button(gb, glitchModeName(p.GlitchMode)) {
+			p.GlitchMode = (p.GlitchMode + 1) % courtroom.GlitchModeCount
+			a.d.Prefs.SetSpriteStyle(p)
+		}
+		c.Tooltip(gb, "The glitch look — Classic (fringe + jolt), Heavy (wider, harder, oftener), Torn (VHS band tearing), Static (jitter + signal-loss flicker), Echo (far trailing ghosts). Transmitted; an older AsyncAO build shows Classic.")
+		y += 30
+		// Preset colour pairs: each swatch is the two ghost colours side by side.
+		c.Label(x, y+5, "Pair", ColTextDim)
+		px := x + 34
+		for _, pr := range glitchPairPresets {
+			sq := sdl.Rect{X: px, Y: y, W: 24, H: 22}
+			ea, eb := glitchEffective(pr.ar, pr.ag, pr.ab, pr.br, pr.bg, pr.bb)
+			c.Fill(sdl.Rect{X: sq.X, Y: sq.Y, W: 12, H: sq.H}, ea)
+			c.Fill(sdl.Rect{X: sq.X + 12, Y: sq.Y, W: 12, H: sq.H}, eb)
+			active := p.GlitchAR == pr.ar && p.GlitchAG == pr.ag && p.GlitchAB == pr.ab &&
+				p.GlitchBR == pr.br && p.GlitchBG == pr.bg && p.GlitchBB == pr.bb
+			if active {
+				c.Border(sq, ColText)
+			} else {
+				c.Border(sq, ColBackground)
+			}
+			if c.clicked && c.hovering(sq) {
+				p.GlitchAR, p.GlitchAG, p.GlitchAB = pr.ar, pr.ag, pr.ab
+				p.GlitchBR, p.GlitchBG, p.GlitchBB = pr.br, pr.bg, pr.bb
+				a.d.Prefs.SetSpriteStyle(p)
+			}
+			c.Tooltip(sq, pr.name)
+			px += 28
+		}
+		y += 26
+		// Custom pair: one hex colour per ghost (A = left, B = right), with a live
+		// swatch each. The field mirrors the effective colour when not being typed in.
+		effA, effB := glitchEffective(p.GlitchAR, p.GlitchAG, p.GlitchAB, p.GlitchBR, p.GlitchBG, p.GlitchBB)
+		half := (r.W - styleBoxPad*2 - 8) / 2
+		hexW := half - 30
+		drawHex := func(hx int32, label, id string, buf *string, eff sdl.Color, set func(col sdl.Color)) {
+			c.Label(hx, y+4, label, ColTextDim)
+			swR := sdl.Rect{X: hx + 10, Y: y + 2, W: 14, H: 14}
+			c.Fill(swR, eff)
+			c.Border(swR, ColBackground)
+			if c.focusID != id {
+				*buf = fmt.Sprintf("%02x%02x%02x", eff.R, eff.G, eff.B)
+			}
+			if next, _ := c.TextField(id, sdl.Rect{X: hx + 30, Y: y, W: hexW, H: fieldH}, *buf, "RRGGBB"); next != *buf {
+				*buf = next
+				if col, ok := parseHexColor(next); ok {
+					set(col)
+					a.d.Prefs.SetSpriteStyle(p)
+				}
+			}
+		}
+		drawHex(x, "A", "glitchHexA", &a.glitchHexA, effA, func(col sdl.Color) {
+			p.GlitchAR, p.GlitchAG, p.GlitchAB = col.R, col.G, col.B
+		})
+		drawHex(x+half+8, "B", "glitchHexB", &a.glitchHexB, effB, func(col sdl.Color) {
+			p.GlitchBR, p.GlitchBG, p.GlitchBB = col.R, col.G, col.B
+		})
+		y += 30
+	}
 
 	if c.Button(sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}, "Clear style") {
 		a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})

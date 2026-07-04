@@ -27,11 +27,48 @@ func (s *TextureStore) VariantPage(base string, effect courtroom.VariantEffect) 
 	if effect == courtroom.VariantNone {
 		return nil, false
 	}
+	return s.variantFor(base, variantKey{effect: uint8(effect)})
+}
+
+// variantPaint keys the hue-paint colorize in a page's variant cache. It is a render-
+// PRIVATE pseudo-effect deliberately OUTSIDE courtroom's VariantEffect enum: adding it
+// there would widen VariantCount — the wire's accepted Restyle bound — and let a crafted
+// frame request a paint variant that carries no colour. 255 leaves the enum room to grow.
+const variantPaint uint8 = 255
+
+// maxVariantPages caps how many transformed pages one base page may cache (rule §17.4:
+// no unbounded caches). The classic effects are one key each, but the hue-paint colorize
+// is keyed by its (quantised) colour, and a hue-slider drag walks through many of those.
+const maxVariantPages = 10
+
+// PaintPage returns `base` colorized with the hue-paint look: every pixel takes the
+// paint colour while keeping its own light and shadow (see applyPaint). splitPct != 0
+// selects the TWO-TONE paint: rows above the split (a percent of sprite height) take
+// (r,g,b), rows below take (r2,g2,b2), feathered across the boundary. Colours and the
+// split are quantised before keying AND building, so a slider drag lands on a bounded
+// set of cached pages and the key always matches the pixels. splitPct == 0 ignores the
+// second colour entirely (one cache entry per colour A, however B wiggles).
+func (s *TextureStore) PaintPage(base string, r, g, b, r2, g2, b2, splitPct uint8) (*TexturePage, bool) {
+	key := variantKey{
+		effect: variantPaint,
+		paintA: packPaint(paintQuantize(r), paintQuantize(g), paintQuantize(b)),
+	}
+	if splitPct != 0 {
+		key.split = paintSplitQuantize(splitPct)
+		key.paintB = packPaint(paintQuantize(r2), paintQuantize(g2), paintQuantize(b2))
+	}
+	return s.variantFor(base, key)
+}
+
+// variantFor is the shared lookup/build/insert path for every variant page. Inserting
+// past maxVariantPages evicts one cached entry first — preferring a PAINT entry (the
+// classic effects + the silhouette are hot every frame when in use; paint entries are
+// cheap to rebuild and pile up only on the one sprite being colour-tuned).
+func (s *TextureStore) variantFor(base string, key variantKey) (*TexturePage, bool) {
 	bp, ok := s.Get(base)
 	if !ok || len(bp.Frames) == 0 || bp.W <= 0 || bp.H <= 0 {
 		return nil, false
 	}
-	key := uint8(effect)
 	if v, ok := bp.variants[key]; ok {
 		return v, true
 	}
@@ -40,14 +77,38 @@ func (s *TextureStore) VariantPage(base string, effect courtroom.VariantEffect) 
 		return nil, false
 	}
 	if bp.variants == nil {
-		bp.variants = make(map[uint8]*TexturePage, 1)
+		bp.variants = make(map[variantKey]*TexturePage, 1)
+	}
+	if len(bp.variants) >= maxVariantPages {
+		evictVariant(bp)
 	}
 	bp.variants[key] = v
 	return v, true
 }
 
+// evictVariant frees one cached variant page to admit a new one (see variantFor for
+// the paint-first policy). Destroying is safe mid-frame: SDL flushes any queued render
+// commands that still reference a texture before destroying it.
+func evictVariant(bp *TexturePage) {
+	var victim variantKey
+	found := false
+	for k := range bp.variants {
+		if k.effect == variantPaint {
+			victim, found = k, true
+			break
+		}
+		if !found {
+			victim, found = k, true
+		}
+	}
+	if found {
+		bp.variants[victim].destroy()
+		delete(bp.variants, victim)
+	}
+}
+
 // buildVariant transforms every frame of base into a new page (render thread).
-func (s *TextureStore) buildVariant(base *TexturePage, effect uint8) (*TexturePage, error) {
+func (s *TextureStore) buildVariant(base *TexturePage, key variantKey) (*TexturePage, error) {
 	v := &TexturePage{
 		Animated: base.Animated,
 		W:        base.W,
@@ -60,7 +121,13 @@ func (s *TextureStore) buildVariant(base *TexturePage, effect uint8) (*TexturePa
 			v.destroy()
 			return nil, err
 		}
-		applyVariant(pix, int(base.W), int(base.H), effect)
+		if key.effect == variantPaint {
+			ar, ag, ab := unpackPaint(key.paintA)
+			br, bg, bb := unpackPaint(key.paintB)
+			applyPaint(pix, int(base.W), int(base.H), ar, ag, ab, br, bg, bb, key.split)
+		} else {
+			applyVariant(pix, int(base.W), int(base.H), key.effect)
+		}
 		tex, err := uploadPixels(s.ren, pix, base.W, base.H)
 		if err != nil {
 			v.destroy()
@@ -299,6 +366,113 @@ const (
 	duoShadowR, duoShadowG, duoShadowB = 40, 30, 80
 	duoHiR, duoHiG, duoHiB             = 255, 210, 120
 )
+
+// --- hue paint (colorize) ----------------------------------------------------
+//
+// The v1.53.5 hue paint rendered as "grayscale variant × multiply tint": value-
+// preserving on paper, but a multiply can only remove light, so every saturated
+// hue crushed the highlights and the sprite read as the plain dark recolour
+// (the playtest bug report). The paint is now its own per-pixel variant: a
+// classic colorize ramp — shadows lerp black→colour, highlights lerp
+// colour→white — so white stays white, black stays black, and the midtones
+// carry the hue. The WIRE is unchanged (still Tint+Grayscale): an older client
+// simply renders the old, darker composition of the same fields.
+
+// applyPaint colorizes an ABGR8888 buffer IN PLACE, keeping each pixel's alpha and
+// mapping its Rec.601 luma through the ramp above. splitPct == 0 paints everything
+// (ar,ag,ab); otherwise rows above the split row (splitPct% of h from the top) take
+// colour A and rows below take colour B — "head red, rest blue" — with the colour
+// LERPED across a thin feather band so the boundary doesn't read as a hard cut
+// through the body. Pure (no SDL), integer, alloc-free.
+func applyPaint(pix []byte, w, h int, ar, ag, ab, br, bg, bb uint8, splitPct uint8) {
+	if splitPct == 0 || w <= 0 || h <= 0 || len(pix) < w*h*4 {
+		for i := 0; i+3 < len(pix); i += 4 {
+			y := luma601(pix[i], pix[i+1], pix[i+2])
+			pix[i], pix[i+1], pix[i+2] = paintChannel(ar, y), paintChannel(ag, y), paintChannel(ab, y)
+		}
+		return
+	}
+	splitRow := h * int(splitPct) / 100
+	feather := h / paintFeatherDivisor
+	if feather < paintFeatherMin {
+		feather = paintFeatherMin
+	}
+	for row := 0; row < h; row++ {
+		// Row colour: A above the feather band, B below, lerped inside it.
+		cr, cg, cb := ar, ag, ab
+		switch d := row - splitRow; {
+		case d >= feather:
+			cr, cg, cb = br, bg, bb
+		case d > -feather:
+			t, span := d+feather, 2*feather // 0..span across the band
+			cr, cg, cb = lerp8(ar, br, t, span), lerp8(ag, bg, t, span), lerp8(ab, bb, t, span)
+		}
+		base := row * w * 4
+		for x := 0; x < w; x++ {
+			i := base + x*4
+			y := luma601(pix[i], pix[i+1], pix[i+2])
+			pix[i], pix[i+1], pix[i+2] = paintChannel(cr, y), paintChannel(cg, y), paintChannel(cb, y)
+		}
+	}
+}
+
+// Two-tone feather tuning: the boundary blend spans ±(h/paintFeatherDivisor) rows
+// (floored at paintFeatherMin) so it scales with sprite resolution.
+const (
+	paintFeatherDivisor = 32
+	paintFeatherMin     = 2
+)
+
+// lerp8 linearly interpolates a..b at t/span (integer, span > 0).
+func lerp8(a, b uint8, t, span int) uint8 {
+	return uint8((int(a)*(span-t) + int(b)*t) / span)
+}
+
+// paintSplitQuant is the split-row key granularity (percent): a split-slider drag
+// mints a page only every paintSplitQuant percent instead of one per pixel of drag.
+const paintSplitQuant = 2
+
+// paintSplitQuantize snaps a 1..99 split to paintSplitQuant steps, clamped so the
+// result stays a real split (never 0 = single-colour, never 100 = empty band).
+func paintSplitQuantize(s uint8) uint8 {
+	q := s - s%paintSplitQuant
+	if q < paintSplitQuant {
+		q = paintSplitQuant
+	}
+	if q > 100-paintSplitQuant {
+		q = 100 - paintSplitQuant
+	}
+	return q
+}
+
+// paintChannel maps one output channel of the colorize ramp at luma y: 0..127
+// lerps 0→c (shadows), 128..255 lerps c→255 (highlights). Continuous at the
+// midpoint (both halves yield c) and exact at the endpoints (0→0, 255→255).
+func paintChannel(c uint8, y int) byte {
+	if y < 128 {
+		return byte(int(c) * y / 127)
+	}
+	return byte(int(c) + (255-int(c))*(y-128)/127)
+}
+
+// paintQuantizeLevels is how many levels each paint channel snaps to before
+// keying a variant page: 32 steps (8 apart) are invisible for a flat paint
+// colour, and they bound how many distinct pages a full slider sweep can mint.
+const paintQuantizeLevels = 32
+
+// paintQuantize snaps a paint channel to paintQuantizeLevels evenly-spaced
+// values with the endpoints exact (0→0, 255→255).
+func paintQuantize(c uint8) uint8 {
+	return uint8((int(c) >> 3) * 255 / (paintQuantizeLevels - 1))
+}
+
+// packPaint / unpackPaint pack an RGB triple into a variantKey's uint32 (0xRRGGBB).
+func packPaint(r, g, b uint8) uint32 {
+	return uint32(r)<<16 | uint32(g)<<8 | uint32(b)
+}
+func unpackPaint(p uint32) (r, g, b uint8) {
+	return uint8(p >> 16), uint8(p >> 8), uint8(p)
+}
 
 // luma601 is the Rec.601 luma of an RGB triple (integer, 0..255).
 func luma601(r, g, b byte) int { return (299*int(r) + 587*int(g) + 114*int(b)) / 1000 }

@@ -386,6 +386,24 @@ type SpriteStylePref struct {
 	Brightness uint8 `json:"brightness,omitempty"`
 	Scale      uint8 `json:"scale,omitempty"`
 	Rotation   uint8 `json:"rotation,omitempty"`
+	// Two-tone hue paint: split row (percent of sprite height from the top; 0 = one
+	// colour) + the lower band's colour ("head red, rest blue"). Only meaningful while
+	// hue paint (Tint+Grayscale) is on — styleFromPref (ui) keeps it off the wire
+	// otherwise, so a stale value can't fatten the frame.
+	PaintSplit uint8 `json:"paintSplit,omitempty"`
+	Paint2R    uint8 `json:"paint2R,omitempty"`
+	Paint2G    uint8 `json:"paint2G,omitempty"`
+	Paint2B    uint8 `json:"paint2B,omitempty"`
+	// Glitch options: the look (a courtroom.Glitch* mode byte) and the two fringe
+	// ghost colours (all-zero = the classic red/blue). Only meaningful while Glitch
+	// is on — styleFromPref (ui) keeps them off the wire otherwise.
+	GlitchMode uint8 `json:"glitchMode,omitempty"`
+	GlitchAR   uint8 `json:"glitchAR,omitempty"`
+	GlitchAG   uint8 `json:"glitchAG,omitempty"`
+	GlitchAB   uint8 `json:"glitchAB,omitempty"`
+	GlitchBR   uint8 `json:"glitchBR,omitempty"`
+	GlitchBG   uint8 `json:"glitchBG,omitempty"`
+	GlitchBB   uint8 `json:"glitchBB,omitempty"`
 }
 
 // clampOpacity bounds a persisted/edited opacity to [0,100] (0 = unset/opaque).
