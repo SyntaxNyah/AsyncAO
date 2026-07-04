@@ -762,6 +762,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
 	p.SetDragLayout(false)       // default-ON *bool — explicit false must survive
 	p.SetEventDrivenLoop(false)  // default-ON *bool — the experimental-loop kill switch must stick
+	p.SetNoFrameLimit(false)     // default-ON *bool — turning the limiters back ON must stick
 	p.SetIdleFPS(FPSUnlimited)   // the ∞ sentinel must survive save→load un-clamped
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
@@ -824,6 +825,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.EventDrivenLoopOn() {
 		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
+	}
+	if q.NoFrameLimitOn() {
+		t.Error("NoFrameLimit=false lost (absent-default ON must not clobber the explicit limiters-on choice)")
 	}
 	if got := q.IdleFPS(); got != FPSUnlimited {
 		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
@@ -1084,6 +1088,7 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetIdleFPS(60)
 	p.SetUnfocusedFPS(30)
 	p.SetEventDrivenLoop(false)
+	p.SetNoFrameLimit(false)
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1122,6 +1127,9 @@ func TestResetPowerUser(t *testing.T) {
 	}
 	if !p.EventDrivenLoopOn() {
 		t.Error("nuke must restore the experimental event-driven loop to its default ON")
+	}
+	if !p.NoFrameLimitOn() {
+		t.Error("nuke must restore the diagnostic no-limit mode to its test-channel default ON")
 	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)
