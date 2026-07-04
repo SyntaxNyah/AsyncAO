@@ -2957,8 +2957,8 @@ func (p *AssetPreferences) SetFriendHighlight(on bool) {
 	p.markDirty()
 }
 
-// FriendButtonShown reports whether the player-list rows draw the per-row
-// "+ Friend" / "Unfriend" button (ON by default; Settings can hide it).
+// FriendButtonShown reports whether the player-list row menu offers the
+// "+ Friend" / "Unfriend" action (ON by default; Settings can hide it).
 func (p *AssetPreferences) FriendButtonShown() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

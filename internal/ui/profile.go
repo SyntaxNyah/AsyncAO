@@ -106,16 +106,26 @@ func (a *App) openProfileCard(pr config.ProfilePref, name string) {
 	a.profileCardName = name
 }
 
+// profileCardTitleH is the popover's title band above the card body.
+const profileCardTitleH = int32(30)
+
+// profileCardRect is the popover's panel, centred in area (the player list).
+// Shared by the draw and drawPlayerList's pointer fence, so the fenced region
+// can never drift from the pixels.
+func profileCardRect(area sdl.Rect) sdl.Rect {
+	cw, ch := profileCardW+20, profileCardH+profileCardTitleH+18
+	return sdl.Rect{X: area.X + (area.W-cw)/2, Y: area.Y + (area.H-ch)/2, W: cw, H: ch}
+}
+
 // drawProfileCardOverlay paints the profile popover centred in area (the player
-// list), if open. Closed by its X. Called last in drawPlayerList so it sits on top.
+// list), if open. Closed by its X. Called last in drawPlayerList so it sits on
+// top — the rows beneath it are pointer-fenced while it's hovered.
 func (a *App) drawProfileCardOverlay(area sdl.Rect) {
 	if !a.profileCardShow {
 		return
 	}
 	c := a.ctx
-	const titleH = int32(30)
-	cw, ch := profileCardW+20, profileCardH+titleH+18
-	panel := sdl.Rect{X: area.X + (area.W-cw)/2, Y: area.Y + (area.H-ch)/2, W: cw, H: ch}
+	panel := profileCardRect(area)
 	c.Fill(panel, ColBackground)
 	c.Border(panel, ColAccent)
 	c.Label(panel.X+10, panel.Y+8, a.profileCardName+" — profile", ColText)
@@ -123,7 +133,7 @@ func (a *App) drawProfileCardOverlay(area sdl.Rect) {
 		a.profileCardShow = false
 		return
 	}
-	a.drawProfileCard(panel.X+10, panel.Y+titleH+4, a.profileCardPr, a.profileCardName)
+	a.drawProfileCard(panel.X+10, panel.Y+profileCardTitleH+4, a.profileCardPr, a.profileCardName)
 }
 
 // profileCardW / profileCardH size the profile card; the bio clips inside it.

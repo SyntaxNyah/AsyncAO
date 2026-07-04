@@ -1570,13 +1570,23 @@ type sessionState struct {
 	// player's CURRENT pair as of their latest line. Per-tab; bounded by pairPartnersCap.
 	pairPartners map[string]string
 	// Player-list profile card popover (#101): which profile to show + its title.
-	profileCardShow       bool
-	profileCardPr         config.ProfilePref
-	profileCardName       string
-	liveDetailsArea       string    // area of the last auto /getarea pull; re-pull on area change
-	lastRosterFetch       time.Time // debounce for the join/leave re-pull (rosterRefetchDebounce)
-	suppressAreaEchoUntil time.Time // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
-	rosterCmdUnsupported  bool      // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
+	profileCardShow bool
+	profileCardPr   config.ProfilePref
+	profileCardName string
+	// Player-row action menu (rostermenu.go): the "…" / right-click popup that
+	// replaced the per-row button cluster. Holds an identity SNAPSHOT (the
+	// roster can refresh under an open menu) and the modal-fence latch.
+	rosterMenuOpen        bool
+	rosterMenuFenceOn     bool             // WE hold modalOn for the open menu (released on close)
+	rosterMenuMe          bool             // the snapshot row is our own client
+	rosterMenuAt          sdl.Point        // preferred top-left (clamped at draw)
+	rosterMenuTab         int              // tab the menu opened on — auto-close on switch
+	rosterMenuP           areaPlayer       // identity snapshot (uid/name/showname/ooc/ipid)
+	rosterMenuItems       []rosterMenuItem // built at open; bounded by the action-kind count
+	liveDetailsArea       string           // area of the last auto /getarea pull; re-pull on area change
+	lastRosterFetch       time.Time        // debounce for the join/leave re-pull (rosterRefetchDebounce)
+	suppressAreaEchoUntil time.Time        // keep /gas/getarea reply lines out of OOC until this time — the WHOLE reply burst (a multi-area /gas spans several messages), not just the first
+	rosterCmdUnsupported  bool             // this server rejected /gas ("unknown command") — stop sending it (the live PR/PU roster still works without it)
 	// Follow-a-player (M3): followUID is the player we trail across areas ("" =
 	// off); we auto-jump to their area on each PR/PU update, debounced.
 	followUID      string
@@ -5243,6 +5253,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// open-then-close bug).
 	a.emojiPickerFence(a.ctx)
 	a.reactPickerFence(a.ctx) // #2: same modal-fence discipline as the emoji picker
+	a.rosterMenuFence(a.ctx)  // player-row … menu: same discipline (rostermenu.go)
 	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
 
 	if a.gifExporting {
@@ -5278,6 +5289,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawPalette(winW, winH)          // #39: command palette (Ctrl+Space), above panels, below pickers
 			a.drawEmojiPicker(winW, winH)      // #M2 S1: emoji picker overlay (modal-fenced in drawCourtroom)
 			a.drawReactPalette(winW, winH)     // #2: reaction palette overlay (modal-fenced)
+			a.drawRosterMenu(winW, winH)       // player-row … menu (modal-fenced; docked AND torn-off players tabs)
 			a.drawGroupInviteToast(winW, winH) // group invite Accept/Decline banner (only when one is pending)
 			a.typingMaybeSend()                // #3: emit a throttled "typing…" pulse if the opt-in is on (a.icInput is current)
 		case ScreenSettings:
