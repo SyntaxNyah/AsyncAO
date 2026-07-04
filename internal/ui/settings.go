@@ -839,8 +839,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	y += 26
 	// Sprite hover-previews: rest the cursor on a character/emote button to pop a
 	// full-size preview. ON by default; the dwell before it shows is tunable.
+	// Gates ONLY the hover dwell — right-click previews always work.
 	prev := a.d.Prefs.SpritePreviewsOn()
-	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite", prev); next != prev {
+	if next := c.Checkbox(pad, y, "Sprite hover-previews (ON by default): hovering a character or emote button shows the full-size sprite. Off only disables the hover pop-up — right-click still previews", prev); next != prev {
 		a.d.Prefs.SetSpritePreviews(next)
 	}
 	y += 26

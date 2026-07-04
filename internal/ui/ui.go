@@ -2602,10 +2602,12 @@ func (c *Ctx) Slider(id string, track sdl.Rect, value, maxVal int32) int32 {
 
 // HoverPreview tracks dwell time on a widget id; returns true when the
 // full-size preview should show: the configured hover dwell, or right-click
-// toggles instantly. Returns false outright when previews are disabled
-// (Settings → General), so callers light up nothing.
+// instantly. The Settings previews toggle gates ONLY the dwell path — it
+// exists to stop popups you didn't ask for, and an explicit right-click IS
+// asking (playtest: turning hover-previews off silently killed the
+// right-click preview too — "the feature doesn't work").
 func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
-	if !c.hoverPreviewOn || !c.hovering(r) {
+	if !c.hovering(r) {
 		if c.hoverID == id {
 			c.hoverID = ""
 		}
@@ -2615,6 +2617,13 @@ func (c *Ctx) HoverPreview(id string, r sdl.Rect) bool {
 	if c.rightClicked {
 		c.hoverID = id // pin it so close-on-leave keeps the box up after an instant open
 		return true
+	}
+	if !c.hoverPreviewOn {
+		// Dwell disabled: never START a preview from hover. hoverID is left
+		// alone so a right-click-opened box keeps its active trigger (the
+		// close-on-leave contract); each trigger clears its own id above the
+		// moment the cursor leaves it.
+		return false
 	}
 	if c.hoverID != id {
 		c.hoverID = id
