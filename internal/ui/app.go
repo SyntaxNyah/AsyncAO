@@ -1148,14 +1148,10 @@ type sessionState struct {
 	// area-wide delay window (area.can_send_message), so clearing at send
 	// time threw the whole typed line away whenever two people sent at once.
 	icPendingSent string
-	// icUndoText / oocUndoText hold the last line the CLIENT removed from the
-	// IC / OOC input (own-echo clear, a chat command, the OOC send clear, a
-	// palette command insert) — Ctrl+Z with that field focused swaps it back,
-	// and a second press swaps forward again (a free one-slot redo). The
-	// "text disappears after Enter" recovery; per-tab like the drafts.
-	icUndoText  string
-	oocUndoText string
-	oocInput    string
+	// (The old one-slot icUndoText/oocUndoText Ctrl+Z stash is gone: every
+	// text field now has a real undo history — fieldhistory.go — whose
+	// out-of-band detector catches the same clears, with redo.)
+	oocInput string
 	// oocName is THIS TAB's OOC chat name, seeded from the saved default in
 	// resetSessionState — it lived on App and a name typed in one tab showed
 	// up in every other (playtest). Only the Settings field writes the saved
@@ -3903,45 +3899,50 @@ func (a *App) renderFullClientTexture(w, h int32) {
 // small value copy is fine.
 type ctxInput struct {
 	mouseX, mouseY, downX, downY, wheelY     int32
-	clicked, dblClick, rightClicked          bool
+	clicked, dblClick, tripleClick           bool
+	rightClicked                             bool
 	mouseDown, middleHeld                    bool
 	backspace, enter, tabPressed, escPressed bool
 	keyPressed, hotkey                       sdl.Keycode
 	typed, pasted, dropped, dragID           string
 	copyReq, cutReq, selectAll, wheelTaken   bool
+	undoReq, redoReq                         bool
 }
 
 func (a *App) snapshotInput() ctxInput {
 	c := a.ctx
 	in := ctxInput{
 		mouseX: c.mouseX, mouseY: c.mouseY, downX: c.downX, downY: c.downY, wheelY: c.wheelY,
-		clicked: c.clicked, dblClick: c.dblClick, rightClicked: c.rightClicked,
+		clicked: c.clicked, dblClick: c.dblClick, tripleClick: c.tripleClick, rightClicked: c.rightClicked,
 		mouseDown: c.mouseDown, middleHeld: c.middleHeld,
 		backspace: c.backspace, enter: c.enter, tabPressed: c.tabPressed, escPressed: c.escPressed,
 		keyPressed: c.keyPressed, hotkey: c.hotkey,
 		typed: c.typed, pasted: c.pasted, dropped: c.dropped, dragID: c.dragID,
 		copyReq: c.copyReq, cutReq: c.cutReq, selectAll: c.selectAll, wheelTaken: c.wheelTaken,
+		undoReq: c.undoReq, redoReq: c.redoReq,
 	}
 	c.mouseX, c.mouseY = -30000, -30000 // park off-screen: every hovering()/pointIn is false
 	c.downX, c.downY, c.wheelY = -30000, -30000, 0
-	c.clicked, c.dblClick, c.rightClicked = false, false, false
+	c.clicked, c.dblClick, c.tripleClick, c.rightClicked = false, false, false, false
 	c.mouseDown, c.middleHeld = false, false
 	c.backspace, c.enter, c.tabPressed, c.escPressed = false, false, false, false
 	c.keyPressed, c.hotkey = 0, 0
 	c.typed, c.pasted, c.dropped, c.dragID = "", "", "", ""
 	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = false, false, false, false
+	c.undoReq, c.redoReq = false, false
 	return in
 }
 
 func (a *App) restoreInput(in ctxInput) {
 	c := a.ctx
 	c.mouseX, c.mouseY, c.downX, c.downY, c.wheelY = in.mouseX, in.mouseY, in.downX, in.downY, in.wheelY
-	c.clicked, c.dblClick, c.rightClicked = in.clicked, in.dblClick, in.rightClicked
+	c.clicked, c.dblClick, c.tripleClick, c.rightClicked = in.clicked, in.dblClick, in.tripleClick, in.rightClicked
 	c.mouseDown, c.middleHeld = in.mouseDown, in.middleHeld
 	c.backspace, c.enter, c.tabPressed, c.escPressed = in.backspace, in.enter, in.tabPressed, in.escPressed
 	c.keyPressed, c.hotkey = in.keyPressed, in.hotkey
 	c.typed, c.pasted, c.dropped, c.dragID = in.typed, in.pasted, in.dropped, in.dragID
 	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = in.copyReq, in.cutReq, in.selectAll, in.wheelTaken
+	c.undoReq, c.redoReq = in.undoReq, in.redoReq
 }
 
 // drawSplitInput draws the pinned pane's IC field. It edits the PINNED tab's own
@@ -5114,6 +5115,23 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// on screen) read the same value — whichever draws first can't steal it.
 	a.logSelPressed = a.ctx.mouseDown && !a.logSelPrevDown
 	a.logSelPrevDown = a.ctx.mouseDown
+	// Ctrl+Z / Ctrl+Y with a text field focused become the FIELD's undo/redo
+	// (fieldhistory.go): consumed here, pre-screen, so no later chord consumer
+	// — the courtroom dispatcher, quick-connect, a user hotkey bound to z/y —
+	// can double-fire while typing. Ctrl+Shift+Z is redo too. The armed layout
+	// editors keep their own Ctrl+Z (editorUndoChord); they never run with a
+	// focused field, but the gate makes that explicit.
+	if a.ctx.focusID != "" && !a.classicEdit && !a.layoutEdit {
+		switch a.ctx.hotkey {
+		case sdl.K_z:
+			a.ctx.undoReq = !a.ctx.shiftHeld
+			a.ctx.redoReq = a.ctx.shiftHeld
+			a.ctx.hotkey = 0
+		case sdl.K_y:
+			a.ctx.redoReq = true
+			a.ctx.hotkey = 0
+		}
+	}
 	a.pumpTabRestore()  // restore-on-launch: one reconnect/frame, then idle
 	a.fireAutoConnect() // one-shot: auto-connect to the last server on launch (opt-in)
 	// Quick-connect key: the courtroom hotkey handler is sess-gated and never runs

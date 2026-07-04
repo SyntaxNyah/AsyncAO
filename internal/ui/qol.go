@@ -288,35 +288,10 @@ func (a *App) editorUndoChord() bool {
 	return true
 }
 
-// inputUndoChord: Ctrl+Z with an IC / OOC input focused SWAPS the field with
-// the last line the client removed from it (stashICUndo/stashOOCUndo — the
-// own-echo clear, a chat command, the OOC send, a palette insert). Swapping
-// rather than restoring makes a second press put things back — a free
-// one-slot redo — and a half-typed draft is never lost, it just trades
-// places with the recovered line. Focused-field only and only when a stash
-// exists, so the chord still reaches a user hotkey bound to Z otherwise.
-func (a *App) inputUndoChord() bool {
-	c := a.ctx
-	if c.hotkey != sdl.K_z {
-		return false
-	}
-	switch c.focusID {
-	case "ic":
-		if a.icUndoText == "" {
-			return false // nothing was eaten — leave the chord to the dispatcher
-		}
-		a.icInput, a.icUndoText = a.icUndoText, a.icInput
-	case "ooc", "oocmsg":
-		if a.oocUndoText == "" {
-			return false
-		}
-		a.oocInput, a.oocUndoText = a.oocUndoText, a.oocInput
-	default:
-		return false
-	}
-	c.hotkey = 0
-	return true
-}
+// (The old inputUndoChord one-slot IC/OOC swap is gone: text fields carry a
+// real undo history now — fieldhistory.go — fed by the same clears through
+// the out-of-band detector, and the Ctrl+Z/Y chords are consumed pre-screen
+// in App.Frame while any field is focused.)
 
 // handleHotkeys consumes this frame's Ctrl chord on the courtroom screen
 // (and dispatches macro keybinds, then character keybinds — macros win
@@ -324,9 +299,6 @@ func (a *App) inputUndoChord() bool {
 func (a *App) handleHotkeys() {
 	if a.editorUndoChord() {
 		return // Ctrl+Z / Ctrl+Y belong to the armed layout editor
-	}
-	if a.inputUndoChord() {
-		return // Ctrl+Z restored an eaten IC/OOC line
 	}
 	if !a.handleMacroKeys() && !a.handleJukeboxKeys() && !a.handleShownameKeys() && !a.handleICPhraseKeys() && !a.handleStylePresetKeys() {
 		a.handleCharKeys()

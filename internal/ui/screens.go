@@ -2610,8 +2610,7 @@ func (a *App) submitOOC() {
 	}
 	a.sess.SendOOC(a.oocNameOrDefault(), a.oocInput)
 	a.recordSentOOC(a.oocInput) // remember the raw line for Up-arrow recall (mirrors IC #8)
-	a.stashOOCUndo()            // OOC clears at send (no echo protocol) — recoverable via Ctrl+Z
-	a.oocInput = ""
+	a.oocInput = ""             // clears at send (no echo protocol) — the field's undo history catches it (Ctrl+Z)
 }
 
 // drawOOCPanel is the actual OOC box: full scrollable history plus the
@@ -5328,8 +5327,7 @@ func funColor(text string, color, ext, customRGB int, rainbow, random bool, rand
 func (a *App) sendIC(shout int) {
 	text := strings.TrimSpace(a.icInput)
 	if cmdHandled := a.handleChatCommand(text); cmdHandled {
-		a.stashICUndo() // commands clear instantly — recoverable via Ctrl+Z
-		a.icInput = ""
+		a.icInput = "" // commands clear instantly — the field's undo history catches it (Ctrl+Z)
 		return
 	}
 	// Blankpost: Enter on an empty input sends the AO single-space
@@ -5497,27 +5495,13 @@ func (a *App) sendIC(shout int) {
 // re-Enter.
 func (s *sessionState) noteOwnICEcho() {
 	if s.icInput == s.icPendingSent {
-		s.stashICUndo() // the echo consumes the line — keep it for Ctrl+Z
+		// The echo consumes the line. The IC field's undo history records the
+		// clear at its next draw (fieldhistory.go's out-of-band detector), so
+		// Ctrl+Z still brings the sent line back — with real redo on top.
 		s.icInput = ""
 	}
 	s.icPendingSent = ""
 	s.evidPresent = false // presenting is one-shot: consumed by the message that displayed
-}
-
-// stashICUndo / stashOOCUndo remember a non-empty line the CLIENT is about to
-// remove from an input (own-echo clear, chat command, OOC send, palette
-// insert) so inputUndoChord (Ctrl+Z in the field) can swap it back — the
-// "sometimes the text just disappears after Enter" recovery.
-func (s *sessionState) stashICUndo() {
-	if s.icInput != "" {
-		s.icUndoText = s.icInput
-	}
-}
-
-func (s *sessionState) stashOOCUndo() {
-	if s.oocInput != "" {
-		s.oocUndoText = s.oocInput
-	}
 }
 
 // sentHistCap bounds a per-tab message recall ring (#8: IC, and the OOC ring that mirrors it).
