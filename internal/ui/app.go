@@ -1059,15 +1059,6 @@ type sessionState struct {
 	fpsWindowStart time.Time
 	fpsWindowCount int
 	drawnFPS       int
-	// renderResets counts SDL render device/target reset events (F8 diag:
-	// "devResets"), and rendererName says which backend produced them — the
-	// instrumentation for the "window redraws for a single frame / taskbar
-	// flashes" report: legacy D3D9 resets under texture pressure recreate the
-	// swapchain, which is exactly that symptom. A climbing count that lines
-	// up with the flashes = confirmed; d3d11 in the name plus zero resets and
-	// no flashes = fixed.
-	renderResets int
-	rendererName string
 	// winW/winH cache the logical window size Frame was last given, for draw
 	// helpers deep in a call chain that need window bounds (e.g. the sprite
 	// preview's on-screen clamp) without threading params through every layer.
@@ -2329,14 +2320,6 @@ func (a *App) frameCrashLog() {
 
 // SetPump injects the upload pump (built after App for the liveness probe).
 func (a *App) SetPump(p *render.Pump) { a.d.Pump = p }
-
-// SetRendererName records the active SDL render backend for the F8 diag
-// ("direct3d11" wanted on Windows; "direct3d" = the legacy D3D9 fallback).
-func (a *App) SetRendererName(name string) { a.rendererName = name }
-
-// NoteRenderReset counts an SDL render device/targets reset (see the
-// renderResets field) — called from the main loop's event switch.
-func (a *App) NoteRenderReset() { a.renderResets++ }
 
 // Screen returns the active screen.
 func (a *App) Screen() Screen { return a.screen }

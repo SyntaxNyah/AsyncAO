@@ -4,30 +4,6 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.55.0-test8 — 2026-07-04 (test build)
-
-One change: the single-frame window flash.
-
-- **The "window redraws for one frame" flash — probable cause found.**
-  The taskbar showing through fullscreen for a frame, and the AsyncAO
-  taskbar icon blinking in windowed mode, point at the graphics device
-  resetting underneath the client — not at anything the client draws.
-  On Windows, SDL picks the legacy Direct3D 9 backend by default, and
-  D3D9 performs device resets under texture pressure (exactly what big
-  animated sprites produce), briefly rebuilding the swapchain: the
-  desktop shows through, Explorer blinks the window's taskbar button,
-  and texture contents drop for a beat. This build asks for the
-  Direct3D 11 backend instead, which has no such resets (machines
-  without it fall back safely).
-- **Proof gauges in F8.** The diag line now names the active GPU
-  backend ("gpu direct3d11" is the goal; "direct3d" means the old
-  D3D9) and counts device resets ("devResets"). If the flash still
-  happens with d3d11 active and devResets at 0, the theory is wrong
-  and the hunt continues from there — please report all three
-  together: the flash, the backend name, and the count. Worth a quick
-  sanity pass on screenshots, instant replay and GIF export too (the
-  backend swap touches how those capture pixels).
-
 ## v1.55.0-test6 — 2026-07-04 (test build)
 
 A reset to the good state, plus one targeted fix.

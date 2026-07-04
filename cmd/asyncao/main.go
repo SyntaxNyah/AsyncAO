@@ -157,18 +157,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// us at NATIVE resolution instead of bitmap-upscaling the whole window at
 	// 125%/150% system scaling (the blurry-UI report). No-op off Windows.
 	sdl.SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2")
-	// Prefer the D3D11 backend on Windows: SDL's default there is legacy
-	// D3D9, whose DEVICE RESETS under texture pressure (exactly what big
-	// animated-sprite churn produces) recreate the swapchain — the desktop
-	// flashes through a fullscreen window for a frame, Explorer blinks the
-	// taskbar button, and texture contents drop for a beat (the "window
-	// redraws for a single frame" report). D3D11 has no legacy device-loss.
-	// The hint only steers selection: where d3d11 is unavailable SDL falls
-	// back down its driver list, and the F8 diag names the backend actually
-	// in use so reports are unambiguous.
-	if runtime.GOOS == "windows" {
-		sdl.SetHint(sdl.HINT_RENDER_DRIVER, "direct3d11")
-	}
 	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_AUDIO | sdl.INIT_EVENTS); err != nil {
 		return err
 	}
@@ -348,12 +336,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	pump := render.NewPump(store, manager, app.IsLiveBase)
 	app.SetPump(pump)
 	app.SetSpriteCapBase(spriteCapBase) // the Settings downscale sliders re-derive the cap from this live
-	// Name the render backend in the F8 diag, so device-reset reports say
-	// unambiguously which driver produced them (d3d11 wanted; "direct3d" =
-	// the legacy D3D9 fallback that resets under texture pressure).
-	if info, err := ren.GetInfo(); err == nil {
-		app.SetRendererName(info.Name)
-	}
 
 	// Auto UI scale has two inputs, combined per frame in SetAutoScaleFromWindow:
 	// the display DPI (HiDPI laptops) and the WINDOW SIZE (a maximized window on a
@@ -419,12 +401,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				if e.Type == sdl.DROPFILE {
 					app.HandleFileDrop(e.File)
 				}
-			case *sdl.RenderEvent:
-				// A device/targets reset means the GPU side was rebuilt under
-				// us — the prime suspect for the "window redraws for a single
-				// frame / taskbar flashes" report. Counted into the F8 diag so
-				// the theory is provable on an affected machine.
-				app.NoteRenderReset()
 			}
 			uiCtx.HandleEvent(ev)
 			sawEvent = true
