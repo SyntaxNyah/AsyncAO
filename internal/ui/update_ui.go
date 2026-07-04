@@ -192,6 +192,10 @@ func updateModalRects(w, h int32) (panel, notes, getBtn, laterBtn sdl.Rect) {
 
 // handleUpdateInput consumes the chip / modal interaction before the screens
 // see this frame's click. No-op until the one-shot check found a release.
+// While the modal is up it hit-tests with raw pointIn, NOT hovering():
+// updateModalFence holds the kit's modal fence (modalOn) so everything
+// underneath is pointer-blind on every screen — hovering() is false for the
+// modal itself too, by design (the same discipline as the emoji picker).
 func (a *App) handleUpdateInput(w, h int32) {
 	if a.updateRel == nil {
 		return
@@ -205,33 +209,51 @@ func (a *App) handleUpdateInput(w, h int32) {
 		return
 	}
 	panel, notes, getBtn, laterBtn := updateModalRects(w, h)
-	if d := c.WheelIn(notes); d != 0 {
-		a.updateScroll -= d * scrollStepPx
+	// Raw wheel consume: scroll the notes AND zero the frame's wheel, so the
+	// list behind the scrim can't also scroll ("scrolling the changelog
+	// scrolled the server list") — WheelIn is hovering()-based and modal-fenced.
+	if c.wheelY != 0 && pointIn(c.mouseX, c.mouseY, notes) {
+		a.updateScroll -= c.wheelY * scrollStepPx
 		if a.updateScroll < 0 {
 			a.updateScroll = 0
 		}
+		c.wheelY = 0
 		c.wheelTaken = true
 	}
-	if c.keyPressed == sdl.K_ESCAPE {
-		a.updateShow = false
-		c.keyPressed = 0
-	}
+	// (Esc closes via closeTopOverlay — the app-level escPressed handler.)
 	if !c.clicked {
 		return
 	}
 	switch {
-	case c.hovering(getBtn):
+	case pointIn(c.mouseX, c.mouseY, getBtn):
 		if a.updateStaged {
 			a.requestRelaunch() // "Restart to apply": relaunch into the new binary
 		} else if !a.updateBusy {
 			a.startSelfUpdate() // download, verify, staged swap (or degrade)
 		}
-	case c.hovering(laterBtn):
+	case pointIn(c.mouseX, c.mouseY, laterBtn):
 		a.updateShow = false
-	case !c.hovering(panel):
+	case !pointIn(c.mouseX, c.mouseY, panel):
 		a.updateShow = false // click off the panel dismisses
 	}
 	c.clicked = false // the modal owns this frame's click
+}
+
+// updateModalFence holds the kit's modal fence while the What's New modal is
+// up: hovering() reads false for EVERY widget on every screen, so nothing
+// under the scrim reacts — no wheel scroll (WheelIn), no hover highlights, no
+// scrollbar/slider drags. Released the frame after the modal closes, exactly
+// like emojiPickerFence (an un-released modalOn would freeze the whole UI).
+// The modal's own interaction runs on raw pointIn (handleUpdateInput /
+// drawUpdateButton), so the fence never blinds it.
+func (a *App) updateModalFence(c *Ctx) {
+	if a.updateRel != nil && a.updateShow {
+		c.modalOn = true
+		a.updateFenceOn = true
+	} else if a.updateFenceOn {
+		c.modalOn = false // modal just closed → release the persistent fence
+		a.updateFenceOn = false
+	}
 }
 
 // drawUpdateAvailable paints the M13 affordances over every screen: the
@@ -320,11 +342,12 @@ func (a *App) updateNotesLines(wrapW int32) []string {
 }
 
 // drawUpdateButton paints one modal button (visual only — the click is handled
-// pre-screen in handleUpdateInput).
+// pre-screen in handleUpdateInput). Raw pointIn for the hover tint: the modal
+// holds the modalOn fence, under which hovering() is false everywhere.
 func (a *App) drawUpdateButton(r sdl.Rect, label string) {
 	c := a.ctx
 	bg := ColPanelHi
-	if c.hovering(r) {
+	if pointIn(c.mouseX, c.mouseY, r) {
 		bg = ColAccent
 	}
 	c.Fill(r, bg)

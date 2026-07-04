@@ -1549,16 +1549,22 @@ func (c *Ctx) Checkbox(x, y int32, label string, value bool) bool {
 // after an emote pick — AO2-Client's focus_ic_input parity).
 func (c *Ctx) FocusField(id string) { c.focusNext = id }
 
-// WheelIn returns this frame's wheel ticks when the cursor is inside r,
-// else 0 — scrollables only react under the pointer (playtest: the music
-// list scrolled on wheel from anywhere on screen). A hit marks the wheel
-// taken, fencing page-level scroll handlers.
+// WheelIn returns this frame's wheel ticks when the cursor is inside r and no
+// earlier widget consumed them, else 0 — scrollables only react under the
+// pointer (playtest: the music list scrolled on wheel from anywhere on screen),
+// and only ONE scrollable reacts per frame. A hit marks the wheel taken, which
+// now fences every LATER WheelIn too, not just the page-level handlers that
+// check wheelTaken — two stacked surfaces could otherwise both scroll (the
+// What's New modal scrolled AND the lobby list behind it scrolled). Priority
+// follows processing order: pre-screen overlay handlers run first and win;
+// anything drawn later that should win instead blinds the passes beneath it
+// via the pointer fence (fencePointer / boxFencesPointer / modalOn).
 func (c *Ctx) WheelIn(r sdl.Rect) int32 {
-	if c.wheelY != 0 && c.hovering(r) {
-		c.wheelTaken = true
-		return c.wheelY
+	if c.wheelTaken || c.wheelY == 0 || !c.hovering(r) {
+		return 0
 	}
-	return 0
+	c.wheelTaken = true
+	return c.wheelY
 }
 
 // cycleField picks the next focus target for Tab / Shift+Tab: the field

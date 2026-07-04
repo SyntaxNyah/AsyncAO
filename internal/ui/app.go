@@ -414,6 +414,7 @@ type App struct {
 	updateChecked   bool
 	updateRel       *update.Release
 	updateShow      bool
+	updateFenceOn   bool // WE hold the modal fence for the open What's New modal (released on close — see updateModalFence)
 	updateScroll    int32
 	updateChipLabel string
 	// Self-update apply flow (the "Get the update" button → async download,
@@ -5226,6 +5227,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// fat-finger underneath). Restored just before the modal draws, below.
 	if a.confirmDisconnect || a.hidePrompt != "" || a.showQuitConfirm {
 		a.ctx.fencePointer()
+	} else if a.hkSheetFencesPointer(winW, winH) {
+		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
+		// while the cursor sits on it (or its drag/resize is in flight), the
+		// screens draw pointer-blind and the sheet unfences for its own pass
+		// below — without this, scrolling the sheet also scrolled the lobby /
+		// settings list underneath it (the kit has no z-aware input; the fence
+		// IS the layering). The courtroom pass already applies the same rule
+		// via boxFencesPointer, so this only changes the other screens.
+		a.ctx.fencePointer()
 	}
 
 	// #M2 S1: set/RELEASE the emoji-picker modal fence before any screen draws. modalOn
@@ -5233,6 +5243,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// open-then-close bug).
 	a.emojiPickerFence(a.ctx)
 	a.reactPickerFence(a.ctx) // #2: same modal-fence discipline as the emoji picker
+	a.updateModalFence(a.ctx) // What's New modal: modal fence on ANY screen (raw pointIn hit tests inside)
 
 	if a.gifExporting {
 		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a
@@ -5304,6 +5315,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.drawDebugOverlay(winW, winH)
 	}
 	if a.showHotkeys {
+		// Restore the pointer for the sheet's own pass — it was fenced above
+		// while hovered/dragged so the screens beneath drew pointer-blind.
+		// Skipped while a confirm modal is up: that fence belongs to the modal
+		// (drawn after), and the sheet must stay inert under it.
+		if !a.confirmDisconnect && a.hidePrompt == "" && !a.showQuitConfirm {
+			a.ctx.unfencePointer()
+		}
 		a.drawHotkeyCheatSheet(winW, winH)
 	}
 	// M13: a found update shows a persistent chip (reopen) and, the first time,

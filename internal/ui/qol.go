@@ -625,6 +625,21 @@ func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 	return a.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
 }
 
+// hkSheetFencesPointer reports whether the SCREEN pass should run pointer-blind
+// because the floating hotkey sheet owns the cursor: open and hovered, or its
+// drag/resize is in flight (a fast drag must not leak presses underneath —
+// the boxFencesPointer rule). The courtroom pass already fences the sheet via
+// boxFencesPointer; this extends the same discipline to every OTHER screen
+// (lobby / settings / char-select / menus), where the sheet previously let
+// the wheel, hover and drags fall straight through to the list below it.
+func (a *App) hkSheetFencesPointer(w, h int32) bool {
+	if !a.showHotkeys {
+		return false
+	}
+	return a.hkWin.dragging || a.hkWin.resizing ||
+		pointIn(a.ctx.mouseX, a.ctx.mouseY, a.hkSheetRect(w, h))
+}
+
 // drawHotkeyCheatSheet is now a movable/resizable, non-blocking floating box —
 // drag the title to park it out of the way and keep it open while you play.
 func (a *App) drawHotkeyCheatSheet(w, h int32) {
