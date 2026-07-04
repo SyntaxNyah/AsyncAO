@@ -96,6 +96,13 @@ type Manager struct {
 	audioCh   chan AudioAsset
 	warningCh chan Warning
 
+	// deliveryNotify, when set, fires after each decodedCh/audioCh send — the
+	// experimental event-driven render loop's wake hook, so a finished decode
+	// uploads (and an audio payload plays) on the next pass instead of waiting
+	// out an idle tick. Called from pool workers: must be cheap, non-blocking,
+	// and SDL-free here (the UI injects an SDL wake-event push).
+	deliveryNotify atomic.Pointer[func()]
+
 	inflight sync.Map // base|type → struct{}: one pipeline pass per asset
 
 	// offline gates every network egress (rehearsal mode: a server's
@@ -214,6 +221,23 @@ func NewManager(deps ManagerDeps) *Manager {
 		decodedCh:  make(chan DecodedAsset, decodedChanCap),
 		audioCh:    make(chan AudioAsset, audioChanCap),
 		warningCh:  make(chan Warning, warningChanCap),
+	}
+}
+
+// SetDeliveryNotify installs (or clears, with nil) the callback fired after
+// each Decoded/Audio channel delivery. Safe at any time from any goroutine.
+func (m *Manager) SetDeliveryNotify(f func()) {
+	if f == nil {
+		m.deliveryNotify.Store(nil)
+		return
+	}
+	m.deliveryNotify.Store(&f)
+}
+
+// notifyDelivery invokes the delivery wake callback if one is installed.
+func (m *Manager) notifyDelivery() {
+	if f := m.deliveryNotify.Load(); f != nil {
+		(*f)()
 	}
 }
 
@@ -336,6 +360,7 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 		m.reportMissing(url, t, nil)
 	default:
 		m.decodedCh <- DecodedAsset{URL: url, Base: url, Type: t, Err: err, Transient: true}
+		m.notifyDelivery()
 	}
 }
 
@@ -583,6 +608,7 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 			// Transport trouble: the render side hears the error — tagged
 			// transient, so it never enters the decode negative cache.
 			m.decodedCh <- DecodedAsset{URL: url, Base: deliverBase, Type: t, Err: err, Transient: true}
+			m.notifyDelivery()
 			return true, tried404
 		}
 	}
@@ -594,6 +620,7 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 func (m *Manager) deliver(url, base string, t AssetType, data []byte) {
 	if t.IsAudio() {
 		m.audioCh <- AudioAsset{URL: url, Base: base, Type: t, Data: data}
+		m.notifyDelivery()
 		return
 	}
 	m.decoder.Submit(DecodeRequest{
@@ -609,6 +636,7 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte) {
 				m.thumbs.Store(base, d)
 			}
 			m.decodedCh <- DecodedAsset{URL: doneURL, Base: base, Type: t, Asset: d, Err: err}
+			m.notifyDelivery()
 		},
 	})
 }

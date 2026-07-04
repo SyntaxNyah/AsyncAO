@@ -42,8 +42,33 @@ type Conn struct {
 	closed   chan struct{}
 	once     sync.Once
 
+	// notify, when set, is called from the read loop after each packet is
+	// queued on Incoming (and once when Incoming closes) — the experimental
+	// event-driven render loop's wake hook, so a packet landing mid-idle is
+	// processed immediately instead of on the next poll tick. The callback
+	// must be cheap and non-blocking; protocol stays SDL-free (the UI injects
+	// an SDL wake-event push).
+	notify atomic.Pointer[func()]
+
 	sent     atomic.Int64
 	received atomic.Int64
+}
+
+// SetNotify installs (or clears, with nil) the packet-arrival wake callback.
+// Safe to call at any time from any goroutine.
+func (c *Conn) SetNotify(f func()) {
+	if f == nil {
+		c.notify.Store(nil)
+		return
+	}
+	c.notify.Store(&f)
+}
+
+// wake invokes the notify callback if one is installed.
+func (c *Conn) wake() {
+	if f := c.notify.Load(); f != nil {
+		(*f)()
+	}
 }
 
 // DialOptions tunes a Dial. The zero value is the secure default: wss:// TLS
@@ -140,7 +165,12 @@ func (c *Conn) Close() {
 }
 
 func (c *Conn) readLoop() {
-	defer close(c.incoming)
+	// The close wake matters too: a dropped connection must surface (the
+	// "connection closed" toast + tab teardown) as fast as a packet would.
+	defer func() {
+		close(c.incoming)
+		c.wake()
+	}()
 	for {
 		msgType, data, err := c.ws.Read(context.Background())
 		if err != nil {
@@ -162,6 +192,7 @@ func (c *Conn) readLoop() {
 		c.received.Add(1)
 		select {
 		case c.incoming <- packet:
+			c.wake()
 		case <-c.closed:
 			return
 		}

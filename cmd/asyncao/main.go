@@ -161,6 +161,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer sdl.Quit()
+	// The cross-thread render-loop doorbell (experimental event-driven loop):
+	// packet arrivals and finished decodes push this user event so a loop
+	// parked on WaitEventTimeout reacts instantly. Registered once, up front.
+	ui.EnsureWakeEvent()
 	if err := ttf.Init(); err != nil {
 		return err
 	}
@@ -357,6 +361,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// motion (dt loss ate real time — the "anims crawl at 5 fps unfocused"
 	// class of bug).
 	scheduledNap := time.Duration(0)
+	// pendingEv carries the one event a WaitEventTimeout park dequeued (the
+	// experimental loop's wake): it feeds the NEXT pass's input phase first,
+	// so nothing is lost or reordered against the regular poll drain.
+	var pendingEv sdl.Event
 	running := true
 	for running {
 		now := time.Now()
@@ -378,7 +386,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// (Inverting these erased every click before the UI saw it.)
 		uiCtx.BeginFrame(dt)
 		sawEvent := false
-		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
+		handleEv := func(ev sdl.Event) {
+			if ui.IsWakeEvent(ev) {
+				return // a background doorbell (packet/decode), never user input
+			}
 			switch e := ev.(type) {
 			case *sdl.QuitEvent:
 				running = false
@@ -391,6 +402,13 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			}
 			uiCtx.HandleEvent(ev)
 			sawEvent = true
+		}
+		if pendingEv != nil {
+			handleEv(pendingEv)
+			pendingEv = nil
+		}
+		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
+			handleEv(ev)
 		}
 		if sawEvent {
 			app.NoteInput() // frame pacing: interaction snaps back to full rate
@@ -413,6 +431,28 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
 		if app.SkipFrame(focused, sawEvent) {
 			app.Background(dt)
+			if prefs.EventDrivenLoopOn() {
+				// EXPERIMENTAL event-driven wait. The Background pumps above may
+				// have produced redraw-worthy work (packets, texture uploads):
+				// loop straight around and render it — the next pass's SkipFrame
+				// refuses on RenderNeeded. Otherwise park on the OS event wait
+				// until input, a wake doorbell, or the nearest scheduled deadline
+				// (caret flip, clock second, hover reveal, staleness heartbeat).
+				// Instant input response at zero render + zero CPU cost; a
+				// timed-out wait means the deadline is due, so the next pass
+				// renders exactly one frame for it (NoteDeadline).
+				if app.RenderNeeded() {
+					continue
+				}
+				wait := app.NextWakeDelay()
+				scheduledNap = wait
+				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
+					pendingEv = ev
+				} else {
+					app.NoteDeadline()
+				}
+				continue
+			}
 			nap := app.FramePace(focused)
 			if nap <= 0 || nap > maxFrameDelta {
 				nap = maxFrameDelta

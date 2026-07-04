@@ -254,6 +254,15 @@ const defaultAutoReconnect = true
 // Default ON (a power-user Settings toggle turns it off for freeform placement).
 const defaultClipSpritesToStage = true
 
+// defaultEventDrivenLoop enables the EXPERIMENTAL event-driven render loop
+// (test-branch trial): static screens stop rendering entirely between real
+// signals — input wakes the loop instantly (an OS-level event wait instead of
+// a blind sleep), network packets / finished decodes push a wake event, and
+// blinking carets / ticking clocks redraw on their own schedule instead of
+// holding the idle frame rate. Default ON so testers exercise it; the Settings
+// toggle is the kill switch back to the classic pacing loop.
+const defaultEventDrivenLoop = true
+
 // defaultMusicHistory ships ON: AsyncAO keeps a session list of the songs played
 // in the room (the Jukebox "Recently played" view) so you can grab a link
 // someone /played. Toggleable off in Settings.
@@ -847,6 +856,7 @@ type AssetPreferences struct {
 	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60)
 	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30)
 	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10)
+	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
@@ -1169,6 +1179,7 @@ type prefsJSON struct {
 	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60)
 	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30)
 	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10)
+	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
@@ -1510,6 +1521,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		EmoteButtonImages:    defaultEmoteButtonImages,
 		ShowFriendButton:     defaultShowFriendButton,
 		ClipSpritesToStage:   defaultClipSpritesToStage,
+		EventDrivenLoop:      defaultEventDrivenLoop,
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
 		CharChatbox:          defaultCharChatbox,
@@ -1905,6 +1917,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.UnfocusedFPSVal = onDisk.UnfocusedFPS
 	if p.UnfocusedFPSVal != 0 {
 		p.UnfocusedFPSVal = clampPercent(p.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
+	}
+	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
+		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
 	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
 	if p.TexBudgetMiBVal != 0 {
@@ -6387,6 +6402,29 @@ func (p *AssetPreferences) SetCrossfadeMs(ms int) {
 	p.markDirty()
 }
 
+// EventDrivenLoopOn reports the EXPERIMENTAL event-driven render loop toggle
+// (default ON on the test channel): static screens stop rendering between real
+// signals, input wakes the loop instantly, and packets/decodes push wake
+// events. OFF = the classic sleep-paced loop, byte-identical to before.
+func (p *AssetPreferences) EventDrivenLoopOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.EventDrivenLoop
+}
+
+// SetEventDrivenLoop flips the experimental loop (applies live — the main loop
+// re-reads it every pass).
+func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
+	p.mu.Lock()
+	if p.EventDrivenLoop == on {
+		p.mu.Unlock()
+		return
+	}
+	p.EventDrivenLoop = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
 // idle rate, and the another-window-has-focus rate.
@@ -6516,6 +6554,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.FPSCapVal = 0
 	p.IdleFPSVal = 0
 	p.UnfocusedFPSVal = 0
+	p.EventDrivenLoop = defaultEventDrivenLoop
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()

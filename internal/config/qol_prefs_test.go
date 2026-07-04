@@ -761,6 +761,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetShowRecordButton(true)  // default-OFF plain bool
 	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
 	p.SetDragLayout(false)       // default-ON *bool — explicit false must survive
+	p.SetEventDrivenLoop(false)  // default-ON *bool — the experimental-loop kill switch must stick
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
@@ -819,6 +820,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.FriendButtonShown() {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if q.EventDrivenLoopOn() {
+		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
 	}
 	if got := q.PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
@@ -1075,6 +1079,7 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetFPSCap(144)
 	p.SetIdleFPS(60)
 	p.SetUnfocusedFPS(30)
+	p.SetEventDrivenLoop(false)
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1110,6 +1115,9 @@ func TestResetPowerUser(t *testing.T) {
 	}
 	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
 		t.Error("nuke must reset the frame-pacing rates to their defaults")
+	}
+	if !p.EventDrivenLoopOn() {
+		t.Error("nuke must restore the experimental event-driven loop to its default ON")
 	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)

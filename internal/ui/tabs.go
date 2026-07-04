@@ -336,6 +336,7 @@ func (a *App) pumpBackgroundTabs() {
 		for drained := 0; drained < tabPumpBudget; drained++ {
 			select {
 			case p, ok := <-s.conn.Incoming():
+				a.uiDirty = true // unread badges / tab chips / the pinned pane change with parked-tab traffic
 				if !ok {
 					t.dead = true
 					s.conn = nil

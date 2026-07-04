@@ -1014,6 +1014,28 @@ type sessionState struct {
 	// heartbeat: a statically-skipped screen still gets one real frame per
 	// paceHeartbeat, bounding how stale any missed signal can leave it.
 	lastFrameDrawn time.Time
+	// uiDirty marks work that changed UI-visible state since the last drawn
+	// frame — the connection pumps set it per drained packet — so the
+	// experimental event-driven loop renders exactly one frame in response
+	// instead of waiting out its idle tick. Render thread only; Frame clears it.
+	uiDirty bool
+	// drawnGen is the texture-store generation as of the last drawn frame: a
+	// mismatch means textures uploaded/evicted since the screen was painted
+	// (streamed-in icons, healed pages), which is redraw-worthy damage under
+	// the experimental loop.
+	drawnGen uint64
+	// drawnCaretOn is the caret blink state as of the last drawn frame; a flip
+	// since then is the scheduled damage that redraws a focused text field at
+	// 2 Hz instead of holding the whole idle frame rate (experimental loop).
+	drawnCaretOn bool
+	// frameAnimChrome is set during a draw pass whenever it renders
+	// TIME-STEPPED art that lives outside the viewport's anim scheduler — an
+	// animated theme page (themeFrame), the looping testimony badge, a WT/CE
+	// splash, the layout editor's animated ghost. drawnAnimChrome is the last
+	// completed frame's value: while true, SkipFrame keeps frames coming at
+	// the idle rate or that art would freeze between heartbeats.
+	frameAnimChrome bool
+	drawnAnimChrome bool
 	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
 	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
 	sceneWarmLastDemand time.Time
@@ -1988,6 +2010,12 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		hidden:          map[string]bool{},
 	}
 	a.resetSessionState()
+	// Wake the render loop when a decode/audio payload delivers (experimental
+	// event-driven loop): the pump uploads it on the very next pass instead of
+	// waiting out an idle tick. A queued no-op event when the loop pref is off.
+	if d.Manager != nil {
+		d.Manager.SetDeliveryNotify(PushWake)
+	}
 	for _, id := range d.Prefs.HiddenPanels() {
 		a.hidden[id] = true
 	}
@@ -2379,6 +2407,10 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		return
 	}
 	a.conn = conn
+	// Wake the render loop the instant a packet lands (experimental
+	// event-driven loop; a queued no-op event otherwise — the wake is never
+	// treated as user input in either mode).
+	conn.SetNotify(PushWake)
 	a.lastPing = time.Now()
 	a.pkts.reset() // a fresh connection starts a clean packet history
 	a.pktConn = conn
@@ -2661,6 +2693,7 @@ func (a *App) pumpConnection() {
 		}
 		select {
 		case p, ok := <-a.conn.Incoming():
+			a.uiDirty = true // packets (or the drop below) change UI-visible state — redraw-worthy damage
 			if !ok {
 				reason := "connection closed"
 				if err := a.conn.Err(); err != nil {
@@ -4198,9 +4231,24 @@ func (a *App) FramePace(focused bool) time.Duration {
 // any scheduled animation, a live toast, a blinking caret, a ticking timer, or
 // the heartbeat forces a real frame. Conservative by construction: a wrongly
 // SKIPPED signal shows at worst paceHeartbeat-stale pixels, never a hang.
+//
+// Under the EXPERIMENTAL event-driven loop the gate widens two ways: static
+// menu screens skip too (not just the courtroom), and the caret/clock refusals
+// become scheduled wakes (NextWakeDelay) — the loop parks on an OS event wait
+// and renders exactly when the blink/tick is due instead of idle-rendering a
+// static screen to animate a cursor. Damage that arrived since the last drawn
+// frame (packets, texture uploads/evictions — RenderNeeded) still refuses.
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
-	if sawEvent || a.room == nil || a.sess == nil {
-		return false // input this pass, or not on a courtroom surface (lobby keeps its idle render)
+	if sawEvent {
+		return false // input this pass
+	}
+	exp := a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn()
+	if exp {
+		if !a.expScreenSkippable() {
+			return false
+		}
+	} else if a.room == nil || a.sess == nil {
+		return false // classic: only the courtroom skips (the lobby keeps its idle render)
 	}
 	if time.Since(a.lastFrameDrawn) >= paceHeartbeat {
 		return false // heartbeat: one real frame heals anything the signal missed
@@ -4208,19 +4256,144 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	if a.wantsFullRate() || a.roomBusy() || a.warnActive() {
 		return false
 	}
-	if a.ctx != nil && a.ctx.focusID != "" {
-		return false // a focused text field blinks its caret
+	// voicePump (mic capture, mixer, the Settings mic test) is driven from
+	// Frame: while a voice session or mic test is live, frames must keep
+	// coming at the idle rate or the audio engine starves. (Latent in the old
+	// courtroom-only skip too — the usually-focused IC field masked it.)
+	if a.voiceJoined || a.micTest != nil {
+		return false
 	}
-	if a.timerActive() || a.serverTimersLive() {
-		return false // countdown readouts change every second
+	if a.previewBase != "" {
+		return false // the sprite preview box animates at draw time (pageFrameLoop)
 	}
-	if a.d.Viewport != nil {
+	if a.drawnAnimChrome {
+		// The last frame drew time-stepped art outside the viewport scheduler
+		// (animated theme chrome, the testimony badge, a WT/CE splash, the
+		// editor ghost): freezing it between heartbeats was a latent classic
+		// hole (usually masked by the focused IC field). Both modes render on.
+		return false
+	}
+	if exp {
+		if a.RenderNeeded() {
+			return false // pending damage: packets landed / textures moved / a caret flip is showing
+		}
+	} else {
+		if a.ctx != nil && a.ctx.focusID != "" {
+			return false // a focused text field blinks its caret
+		}
+		if a.timerActive() || a.serverTimersLive() {
+			return false // countdown readouts change every second
+		}
+	}
+	if a.d.Viewport != nil && a.room != nil {
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
 			return false
 		}
 	}
 	_ = focused // both focused and unfocused static screens skip identically
 	return true
+}
+
+// expScreenSkippable reports whether the CURRENT screen is safe for the
+// experimental static skip. Court surfaces skip exactly like the classic
+// path; the static menu screens join them; the lobby joins while no async
+// sweep is repainting rows; Settings never skips (live style preview, mic
+// meter, and a dozen immediate readouts — its idle render is transient and
+// cheap). Anything unlisted defaults to classic always-render.
+func (a *App) expScreenSkippable() bool {
+	switch a.screen {
+	case ScreenCourtroom, ScreenCharSelect:
+		return a.sess != nil
+	case ScreenLobby:
+		return !a.lobbyFetching && !a.pinging
+	case ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenHelp, ScreenLogs:
+		return true
+	default:
+		return false
+	}
+}
+
+// RenderNeeded reports redraw-worthy damage accumulated since the last drawn
+// frame (experimental loop): a drained packet touched UI state, the texture
+// store's generation moved (something streamed in / evicted), or the focused
+// caret's blink state no longer matches what's on screen. Render thread only.
+func (a *App) RenderNeeded() bool {
+	if a.uiDirty {
+		return true
+	}
+	if a.d.Store != nil && a.d.Store.Generation() != a.drawnGen {
+		return true
+	}
+	if a.ctx != nil {
+		if on, focused := a.ctx.CaretVisible(); focused && on != a.drawnCaretOn {
+			return true
+		}
+	}
+	return false
+}
+
+// NoteDeadline marks a scheduled wake that just fired (the main loop's event
+// wait timed out at a deadline NextWakeDelay chose): the next pass renders one
+// frame to show whatever was due — a caret flip, a clock second, a hover
+// reveal, or the plain staleness heartbeat.
+func (a *App) NoteDeadline() { a.uiDirty = true }
+
+const (
+	// minWakeDelay floors the event wait so a just-passed deadline can never
+	// busy-spin the loop.
+	minWakeDelay = 5 * time.Millisecond
+	// timerTickSlack lands a clock wake just PAST the second boundary, so the
+	// frame it triggers draws the new second (not a re-render of the old one).
+	timerTickSlack = 20 * time.Millisecond
+)
+
+// NextWakeDelay is how long the experimental loop may park on its event wait:
+// the time to the nearest scheduled deadline — caret flip, a RUNNING clock's
+// next displayed second, a pending tooltip/preview dwell — capped by the
+// staleness heartbeat and floored against busy-spin. Input and wake events
+// interrupt the wait regardless; this only bounds how long "nothing happens"
+// may last.
+func (a *App) NextWakeDelay() time.Duration {
+	d := paceHeartbeat - time.Since(a.lastFrameDrawn)
+	consider := func(due time.Duration) {
+		if due < d {
+			d = due
+		}
+	}
+	if a.ctx != nil {
+		if due, ok := a.ctx.NextCaretFlip(); ok {
+			consider(due)
+		}
+		if due, ok := a.ctx.NextHoverDue(); ok {
+			consider(due)
+		}
+	}
+	now := time.Now()
+	// Server clocks (TI): wake right after each RUNNING timer's next whole
+	// second so the mm:ss chip ticks on the second at one frame per second.
+	// Paused clocks display a frozen remainder — nothing scheduled.
+	if a.sess != nil {
+		for i := range a.sess.Timers {
+			t := &a.sess.Timers[i]
+			if t.Visible && t.Running {
+				if rem := t.Remaining(now); rem > 0 {
+					consider(rem%time.Second + timerTickSlack)
+				}
+			}
+		}
+	}
+	// The local alarm chip ticks the same way — and its due-fire (pollTimer,
+	// Frame-driven) rides these wakes, so the alarm lands within a second
+	// even while everything else is static.
+	if a.timerRunning() {
+		if rem := a.timerRemaining(); rem > 0 {
+			consider(rem%time.Second + timerTickSlack)
+		}
+	}
+	if d < minWakeDelay {
+		d = minWakeDelay
+	}
+	return d
 }
 
 // wantsFullRate reports whether something on screen genuinely needs the full
@@ -5002,7 +5175,21 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
 	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
-	a.winW, a.winH = winW, winH   // cached for deep draw helpers (preview clamp)
+	// Damage bookkeeping (experimental loop): this frame absorbs everything
+	// pending. Snapshot the store generation at frame START — uploads during
+	// THIS frame (the pump below) bump it and earn at most one follow-up
+	// frame, whose own snapshot then matches (self-limiting, never misses).
+	a.uiDirty = false
+	if a.d.Store != nil {
+		a.drawnGen = a.d.Store.Generation()
+	}
+	a.drawnCaretOn = a.ctx.caretOn
+	// Animated-chrome census: the draw sites below mark the flag; promote it
+	// at frame end so SkipFrame reads what THIS frame actually put on screen.
+	a.frameAnimChrome = false
+	defer func() { a.drawnAnimChrome = a.frameAnimChrome }()
+	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
+	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
 	a.frameDtMs = float32(dt.Seconds() * 1000)
 	a.recordFrameDt(a.frameDtMs)
 	// One-time: push the initial Discord presence once the app is up, so "Playing
@@ -5691,11 +5878,13 @@ func (a *App) themeElapsed() time.Duration {
 }
 
 // themeFrame picks the current animation frame for a theme page — static
-// pages cost one len check, animated ones loop on the theme clock.
+// pages cost one len check, animated ones loop on the theme clock (and mark
+// the frame's animated-chrome census so the static skip keeps stepping them).
 func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
 	if len(page.Frames) == 1 {
 		return page.Frames[0]
 	}
+	a.frameAnimChrome = true
 	return page.Frames[pageFrameLoop(page, a.themeElapsed())]
 }
 

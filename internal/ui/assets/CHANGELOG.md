@@ -4,6 +4,33 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test1 — 2026-07-04 (test build)
+
+A renderer round, on the experimental channel first because it reaches deep
+into how every frame is produced. Thanks to Nightingale for the redraw
+reports.
+
+- **The emote grid stops flickering.** Every so often the whole button row
+  blanked and streamed back in cell by cell — same for player-list and
+  char-select icons. Cause: buttons and icons shared one texture budget with
+  the big sprites, and any heavy sprite burst swept them all out at once.
+  They now live in their own protected slice of the same budget; sprite
+  streaming can't touch them anymore (and a 4000-icon character scroll can
+  no longer wipe the sprites on stage, either).
+- **Event-driven renderer (EXPERIMENTAL, on by default in this build).**
+  Like a proper desktop app, AsyncAO now stops redrawing entirely when
+  nothing changes: a static screen renders zero frames between real
+  signals. Moving the mouse or typing wakes the renderer instantly (a
+  real OS event wait, not a timed nap), an incoming message or finished
+  download rings its own doorbell, and a blinking caret or ticking clock
+  redraws exactly one frame right when it's due — instead of the old
+  30 fps idle loop doing all of that by brute force. Sounds, the
+  connection and message pacing are fully decoupled: they never wait for
+  the renderer, so a message that arrives mid-idle starts playing
+  immediately. Settings → Power user → "Event-driven renderer" is the
+  kill switch back to the classic pacing loop — if anything looks frozen
+  or choppy, flip it off and report what it was.
+
 ## v1.54.5 — 2026-07-04
 
 An input round — thanks to Nightingale for the layering report, the
