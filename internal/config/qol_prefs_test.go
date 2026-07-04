@@ -746,6 +746,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	p.SetSpritePreviews(false)
 	p.SetPreviewHoverMs(8000)
+	p.SetPreviewHeightPx(512)            // default-when-0 int — must survive
+	p.SetUpdateChannelExperimental(true) // default-OFF plain bool — must survive (the test-branch channel)
 	p.SetAssetWarnings(true)
 	p.SetSpriteMove(true)
 	p.SetDeskFollowManifest(true)
@@ -817,6 +819,12 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.FriendButtonShown() {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if got := q.PreviewHeightPx(); got != 512 {
+		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
+	}
+	if !q.UpdateChannelExperimentalOn() {
+		t.Error("UpdateExperimental=true lost across reload (the channel swap must stick)")
 	}
 	if q.RainbowSpeed() != 30 || q.RainbowVividness() != 95 {
 		t.Errorf("rainbow speed/vividness lost: %d/%d, want 30/95", q.RainbowSpeed(), q.RainbowVividness())

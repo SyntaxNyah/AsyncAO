@@ -29,15 +29,17 @@ const (
 	iconGap  int32 = 8
 	// previewZoomMax caps the preview magnifier (× the fit scale).
 	previewZoomMax = 8
-	// Playtest sizing (consistent previews): every character previews at
-	// previewBaseH — AO's native 192 px stage height — regardless of source
-	// resolution; the corner grip resizes within [previewMinH, previewMaxH];
-	// previewMaxW / previewMinW keep extreme aspects on screen; the
-	// previewCaptionH strip reports "source × shown-scale" AO2-style.
-	previewBaseH    int32 = 192
-	previewMinH     int32 = 96
-	previewMaxH     int32 = 480
-	previewMaxW     int32 = 560
+	// Playtest sizing (consistent previews): every character previews at the
+	// SAME height — the Settings default (config.PreviewHeightPx; shipped at
+	// 384 px, double AO's native 192 stage: "it's really tiny" + re-dragging
+	// it each session "is stinky") — regardless of source resolution. The
+	// corner grip still resizes per session within [previewMinH, previewMaxH]
+	// (bounds shared with the Settings slider via config); previewMaxW /
+	// previewMinW keep extreme aspects on screen; the previewCaptionH strip
+	// reports "source × shown-scale" AO2-style.
+	previewMinH     int32 = config.MinPreviewHeightPx
+	previewMaxH     int32 = config.MaxPreviewHeightPx
+	previewMaxW     int32 = 960 // fits 4:3 art at the 720 px height cap (was 560; the window clamp still applies)
 	previewMinW     int32 = 48
 	previewCaptionH int32 = 20
 	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
@@ -820,13 +822,14 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		a.previewFrameRect = sdl.Rect{} // no box this frame — no phantom wheel/drag target
 		return
 	}
-	// Playtest sizing: every character previews at the SAME height — the AO-native
-	// 192 px (or the user's grip-resized height) — with width following the art's
-	// aspect, instead of a per-character size driven by source resolution. The
-	// caption strip below reports that source resolution + the shown scale.
+	// Playtest sizing: every character previews at the SAME height — the
+	// Settings default (shipped at 384 px; the old fixed 192 read tiny), or
+	// the user's grip-resized height this session — with width following the
+	// art's aspect, instead of a per-character size driven by source
+	// resolution. The caption strip below reports source resolution + scale.
 	boxH := a.previewUserH
 	if boxH == 0 {
-		boxH = previewBaseH
+		boxH = int32(a.d.Prefs.PreviewHeightPx())
 	}
 	pw, ph := boxH, boxH // placeholder box while the next sprite streams in
 	if ready {
@@ -848,6 +851,10 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		pw = srcW * ph / srcH
 		if pw > previewMaxW { // ultra-wide art: cap the width, let the height follow
 			pw = previewMaxW
+			ph = srcH * pw / srcW
+		}
+		if maxW := w - 4*pad; maxW > previewMinW && pw > maxW {
+			pw = maxW // a big default (up to 720 tall now) must still fit a small window
 			ph = srcH * pw / srcW
 		}
 		if pw < previewMinW {
@@ -1026,7 +1033,7 @@ func (a *App) handlePreviewInput() {
 		a.previewResizeFrom = c.mouseY
 		a.previewResizeBase = a.previewUserH
 		if a.previewResizeBase == 0 {
-			a.previewResizeBase = previewBaseH
+			a.previewResizeBase = int32(a.d.Prefs.PreviewHeightPx()) // grip starts from the Settings default
 		}
 	}
 	if a.previewResize {
