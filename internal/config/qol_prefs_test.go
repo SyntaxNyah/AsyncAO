@@ -763,6 +763,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetDragLayout(false)       // default-ON *bool — explicit false must survive
 	p.SetEventDrivenLoop(false)  // default-ON *bool — the experimental-loop kill switch must stick
 	p.SetNoFrameLimit(false)     // default-ON *bool — turning the limiters back ON must stick
+	p.SetSelectiveRender(false)  // default-ON *bool — the compositor kill switch must stick
 	p.SetIdleFPS(FPSUnlimited)   // the ∞ sentinel must survive save→load un-clamped
 	p.SetUnfocusedFPS(FPSZero)   // the typed-0 FROZEN sentinel must survive save→load
 	p.SetFPSCap(999)             // any positive value is UNCLAMPED (0-to-infinity ask) and must survive
@@ -831,6 +832,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.NoFrameLimitOn() {
 		t.Error("NoFrameLimit=false lost (absent-default ON must not clobber the explicit limiters-on choice)")
+	}
+	if q.SelectiveRenderOn() {
+		t.Error("SelectiveRender=false lost (absent-default ON must not clobber the explicit kill switch)")
 	}
 	if got := q.IdleFPS(); got != FPSUnlimited {
 		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
@@ -1101,6 +1105,7 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetUnfocusedFPS(30)
 	p.SetEventDrivenLoop(false)
 	p.SetNoFrameLimit(false)
+	p.SetSelectiveRender(false)
 	p.SetPaceHeartbeat(true)
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
@@ -1143,6 +1148,9 @@ func TestResetPowerUser(t *testing.T) {
 	}
 	if !p.NoFrameLimitOn() {
 		t.Error("nuke must restore the diagnostic no-limit mode to its test-channel default ON")
+	}
+	if !p.SelectiveRenderOn() {
+		t.Error("nuke must restore the compositor to its test-channel default ON")
 	}
 	if p.PaceHeartbeatOn() {
 		t.Error("nuke must reset the safety heartbeat to its default OFF")

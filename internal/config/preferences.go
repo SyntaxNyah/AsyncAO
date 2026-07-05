@@ -261,6 +261,16 @@ const defaultClipSpritesToStage = true
 // back on; flip this to false before any stable merge.
 const defaultNoFrameLimit = true
 
+// defaultSelectiveRender ships the compositor — selective rendering — ON for
+// the test channel. The UI renders into a cached render-target texture only
+// when something actually changed, and only the changed regions of it; the
+// cache is blitted to the backbuffer at a steady per-vsync cadence (one
+// textured quad, near-free), so presents are never sparse (the playtest
+// evidence: sparse presents themselves glitch some driver setups) while draw
+// cost tracks actual damage. Takes precedence over the no-limit and
+// event-driven modes while on; flip to false before any stable merge.
+const defaultSelectiveRender = true
+
 // defaultEventDrivenLoop enables the EXPERIMENTAL event-driven render loop
 // (test-branch trial): static screens stop rendering entirely between real
 // signals — input wakes the loop instantly (an OS-level event wait instead of
@@ -865,6 +875,7 @@ type AssetPreferences struct {
 	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10; -1 = unlimited; -2 = frozen; positives unclamped)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
 	NoFrameLimit           bool                         `json:"noFrameLimit"`                   // DIAGNOSTIC: bypass ALL frame limiting — render every pass, vsync paces (default ON on the test channel)
+	SelectiveRender        bool                         `json:"selectiveRender"`                // the compositor: damage-gated region redraws into a cached frame, steady blit-presents (default ON on the test channel)
 	PaceHeartbeat          bool                         `json:"paceHeartbeat"`                  // the 2 fps static-skip safety heartbeat (default OFF: a skipped screen renders only on real changes)
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
@@ -1190,6 +1201,7 @@ type prefsJSON struct {
 	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10; -1 = unlimited; -2 = frozen; positives unclamped)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	NoFrameLimit           *bool            `json:"noFrameLimit"`         // diagnostic no-limit render (default ON; pointer: absent != off)
+	SelectiveRender        *bool            `json:"selectiveRender"`      // the compositor (default ON; pointer: absent != off)
 	PaceHeartbeat          bool             `json:"paceHeartbeat"`        // 2 fps skip heartbeat (default OFF, zero value)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
@@ -1534,6 +1546,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		ClipSpritesToStage:   defaultClipSpritesToStage,
 		EventDrivenLoop:      defaultEventDrivenLoop,
 		NoFrameLimit:         defaultNoFrameLimit,
+		SelectiveRender:      defaultSelectiveRender,
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
 		CharChatbox:          defaultCharChatbox,
@@ -1926,6 +1939,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.NoFrameLimit != nil { // pointer: absent keeps the default-ON
 		p.NoFrameLimit = *onDisk.NoFrameLimit
+	}
+	if onDisk.SelectiveRender != nil { // pointer: absent keeps the default-ON
+		p.SelectiveRender = *onDisk.SelectiveRender
 	}
 	p.PaceHeartbeat = onDisk.PaceHeartbeat
 	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
@@ -6492,6 +6508,30 @@ func (p *AssetPreferences) SetNoFrameLimit(on bool) {
 	p.markDirty()
 }
 
+// SelectiveRenderOn reports the compositor toggle (default ON on the test
+// channel): the UI renders into a cached render-target texture only when
+// something changed — and only the changed regions — while the cache blits to
+// the backbuffer every pass at a steady cadence, so presents are never sparse
+// (the driver-glitch trigger) and draw cost tracks actual damage. Takes
+// precedence over the no-limit and event-driven modes while on.
+func (p *AssetPreferences) SelectiveRenderOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.SelectiveRender
+}
+
+// SetSelectiveRender flips the compositor (applies live).
+func (p *AssetPreferences) SetSelectiveRender(on bool) {
+	p.mu.Lock()
+	if p.SelectiveRender == on {
+		p.mu.Unlock()
+		return
+	}
+	p.SelectiveRender = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // PaceHeartbeatOn reports the static-skip safety heartbeat toggle (default
 // OFF): when on, a statically-skipped screen still renders one real frame
 // every half second to heal anything the damage signals missed; when off, a
@@ -6645,6 +6685,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.UnfocusedFPSVal = 0
 	p.EventDrivenLoop = defaultEventDrivenLoop
 	p.NoFrameLimit = defaultNoFrameLimit
+	p.SelectiveRender = defaultSelectiveRender
 	p.PaceHeartbeat = false
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()

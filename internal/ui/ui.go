@@ -390,6 +390,26 @@ type Ctx struct {
 	// BeginFrame moves focus along it. Bounded by fields drawn per frame.
 	fieldSeq []string
 	tabShift bool // shift held at the Tab press → cycle backwards
+	// Hover census (compositor): every hover-reactive rect the last draw
+	// pass consulted, so a pointer move over dead space is provably
+	// changeless and renders nothing — and a move that DOES cross a rect
+	// damages exactly that rect (noteHoverRect / HoverCrossings). Cleared in
+	// BeginDraw; bounded by hoverRectCap (full = conservative).
+	hoverRects     []sdl.Rect
+	hoverRectsFull bool
+	// frameClip is the compositor's damage clip for the current draw pass:
+	// the SDL scissor becomes every layout clip INTERSECTED with it
+	// (applyClip), while the clipOn/clipRect mirror keeps pure layout
+	// semantics — a widget outside the damage region is still on screen and
+	// still hit-tests; only its pixels are skipped this pass.
+	frameClipOn bool
+	frameClip   sdl.Rect
+	// focusRect is the focused TextField's rect as last drawn — the caret
+	// damage region (a blink flip repaints just the field).
+	focusRect sdl.Rect
+	// lastTipBox is where the last drawn tooltip painted, so hiding or
+	// moving it damages the pixels it covered.
+	lastTipBox sdl.Rect
 	// focusNext is a queued FocusField request, applied at the next
 	// BeginFrame so it survives this frame's click-away unfocus no matter
 	// where the requesting widget sits in draw order.
@@ -1096,11 +1116,94 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 
 // BeginDraw opens a real draw pass (App.Frame calls it before any screen
 // draws): the visible-field order rebuilds from scratch as this frame's
-// TextFields register. Split from BeginFrame so input-only skipped passes
-// keep the last drawn frame's field order for Tab cycling (see BeginFrame).
+// TextFields register, and the hover census restarts. Split from BeginFrame
+// so input-only skipped passes keep the last drawn frame's field order for
+// Tab cycling (see BeginFrame) and its hover map for motion damage.
 func (c *Ctx) BeginDraw() {
 	c.fieldSeq = c.fieldSeq[:0]
+	c.hoverRects = c.hoverRects[:0]
+	c.hoverRectsFull = false
 }
+
+// hoverRectCap bounds the per-draw hover census (rule §17.4). Past it the
+// census marks itself full and every pointer move counts as full-frame
+// damage — conservative: extra redraws, never a missed hover reaction.
+const hoverRectCap = 512
+
+// noteHoverRect records one hover-reactive rect for the motion-damage test:
+// the compositor redraws on pointer motion ONLY the rects whose hover state
+// the move actually flipped (dead-space motion renders nothing at all).
+// Clipped widgets record their visible intersection; while a modal owns the
+// pointer nothing records (everything under it is inert). Append-only into a
+// reused backing array — zero allocations steady state.
+func (c *Ctx) noteHoverRect(r sdl.Rect) {
+	if c.hoverRectsFull {
+		return
+	}
+	if c.clipOn {
+		clipped, ok := r.Intersect(&c.clipRect)
+		if !ok {
+			return
+		}
+		r = clipped
+	}
+	if len(c.hoverRects) >= hoverRectCap {
+		c.hoverRectsFull = true
+		return
+	}
+	c.hoverRects = append(c.hoverRects, r)
+}
+
+// HoverCrossings walks the last draw's hover census for rects whose
+// containment of the pointer CHANGED between (ox,oy) and (nx,ny) — each such
+// rect visibly reacts (highlight on/off) and is a damage region. The first
+// len(out) hits are written into out (a caller-owned scratch — no closures,
+// no allocations); n is how many landed. complete=false means the caller
+// must treat the whole frame as damaged: the census overflowed its cap, or
+// more rects flipped than out could hold.
+func (c *Ctx) HoverCrossings(ox, oy, nx, ny int32, out []sdl.Rect) (n int, crossed, complete bool) {
+	if c.hoverRectsFull {
+		return 0, true, false
+	}
+	complete = true
+	for i := range c.hoverRects {
+		r := &c.hoverRects[i]
+		inOld := ox >= r.X && ox < r.X+r.W && oy >= r.Y && oy < r.Y+r.H
+		inNew := nx >= r.X && nx < r.X+r.W && ny >= r.Y && ny < r.Y+r.H
+		if inOld != inNew {
+			crossed = true
+			if n < len(out) {
+				out[n] = *r
+				n++
+			} else {
+				complete = false
+			}
+		}
+	}
+	return n, crossed, complete
+}
+
+// TooltipRevealDue reports a tooltip dwell that has fully elapsed — the tip
+// is due to appear even though the resting pointer generates no events. The
+// compositor walks one frame to draw the reveal; the App's drawn-tooltip
+// snapshot then stops the trigger.
+func (c *Ctx) TooltipRevealDue() bool {
+	return c.tipHoverID != "" && time.Since(c.tipHoverSince) >= tooltipDwell
+}
+
+// PreviewRevealDue is TooltipRevealDue for the sprite hover-preview dwell.
+func (c *Ctx) PreviewRevealDue() bool {
+	return c.hoverPreviewOn && c.hoverID != "" && time.Since(c.hoverSince) >= c.hoverPreviewDelay
+}
+
+// FocusFieldRect reports the focused TextField's rect as last drawn (ok=false
+// when nothing is focused) — the caret's damage region.
+func (c *Ctx) FocusFieldRect() (sdl.Rect, bool) {
+	return c.focusRect, c.focusID != ""
+}
+
+// TipBoxRect reports where the last drawn tooltip painted.
+func (c *Ctx) TipBoxRect() sdl.Rect { return c.lastTipBox }
 
 // NextCaretFlip reports the time until the focused caret next toggles
 // visibility (ok=false when no field is focused). The experimental loop
@@ -1297,6 +1400,10 @@ func (c *Ctx) hovering(r sdl.Rect) bool {
 	if c.modalOn {
 		return false
 	}
+	// Motion-damage census: this rect reacts to the pointer, so crossing its
+	// boundary is a reason to redraw it (the compositor's dead-space motion
+	// renders nothing otherwise).
+	c.noteHoverRect(r)
 	// A widget drawn under a pushClip only EXISTS inside that clip: the pointer
 	// past the clip edge must not hover it. Clipping used to be draw-only, so a
 	// list's half-culled bottom row still hit-tested BELOW its panel — hovering
@@ -1398,24 +1505,57 @@ func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 // at the rect edge instead of spilling over neighbouring widgets — that
 // overspill is what struck the tab strip through the first OOC line.
 //
+// The saved/restored state is the LAYOUT clip mirror (clipOn/clipRect), not
+// the renderer's: under the compositor the SDL scissor is every layout clip
+// intersected with the frame's damage clip (applyClip), and capturing THAT
+// would leak the damage region into layout semantics — hovering() and the
+// hover census must see pure widget geometry.
+//
 // Returns by value (no closure) so the per-frame log/list draws stay
 // allocation-free — the render loop must not heap-allocate.
 func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
-	had = c.Ren.IsClipEnabled()
-	prev = c.Ren.GetClipRect()
-	_ = c.Ren.SetClipRect(&r)
-	// Mirror the clip in plain fields so hovering() can honour it without a cgo
-	// query per hit test (input clipping — see hovering).
+	prev, had = c.clipRect, c.clipOn
 	c.clipOn, c.clipRect = true, r
+	c.applyClip()
 	return prev, had
 }
 
 // popClip restores the clip captured by pushClip.
 func (c *Ctx) popClip(prev sdl.Rect, had bool) {
 	c.clipOn, c.clipRect = had, prev
-	if had {
-		_ = c.Ren.SetClipRect(&prev)
+	c.applyClip()
+}
+
+// SetFrameClip installs (or, with nil, clears) the compositor's damage clip
+// for this draw pass: everything the pass draws is bounded to it, whatever
+// layout clips push and pop inside. Called by the main loop with the target
+// and scale already set — the scissor lands on the frame cache in logical
+// coordinates, exactly like every other clip in the pass.
+func (c *Ctx) SetFrameClip(r *sdl.Rect) {
+	if r == nil {
+		c.frameClipOn, c.frameClip = false, sdl.Rect{}
 	} else {
+		c.frameClipOn, c.frameClip = true, *r
+	}
+	c.applyClip()
+}
+
+// applyClip pushes the effective SDL scissor: the layout clip intersected
+// with the frame's damage clip. Disjoint layout/damage rects clip to nothing
+// (a zero rect) — the widget is simply outside this pass's repaint region.
+func (c *Ctx) applyClip() {
+	switch {
+	case c.clipOn && c.frameClipOn:
+		eff, ok := c.clipRect.Intersect(&c.frameClip)
+		if !ok {
+			eff = sdl.Rect{}
+		}
+		_ = c.Ren.SetClipRect(&eff)
+	case c.clipOn:
+		_ = c.Ren.SetClipRect(&c.clipRect)
+	case c.frameClipOn:
+		_ = c.Ren.SetClipRect(&c.frameClip)
+	default:
 		_ = c.Ren.SetClipRect(nil)
 	}
 }
@@ -1797,6 +1937,9 @@ func editStep(value string, caret int, in editInput) (string, int) {
 
 func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string, mask bool, fb fieldFonts) (string, bool) {
 	c.fieldSeq = append(c.fieldSeq, id) // Tab-cycle order = draw order
+	if id == c.focusID {
+		c.focusRect = r // caret damage region (compositor): a blink repaints just this field
+	}
 	hover := c.hovering(r)
 	// Out-of-band change detection + this field's undo history
 	// (fieldhistory.go): a macro fill, a palette command template, or the
@@ -2460,6 +2603,7 @@ func (c *Ctx) drawTooltip(w, h int32) {
 	boxW += 2 * tooltipPad
 	boxH := int32(len(lines))*tooltipLineH + 2*tooltipPad
 	box := tipBox(c.mouseX, c.mouseY, boxW, boxH, w, h)
+	c.lastTipBox = box // compositor: hiding/moving the tip must damage what it covered
 	c.Fill(box, sdl.Color{R: 0, G: 0, B: 0, A: 235})
 	c.Border(box, ColAccent)
 	ty := box.Y + tooltipPad

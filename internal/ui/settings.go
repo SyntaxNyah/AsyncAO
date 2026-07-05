@@ -3089,12 +3089,19 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
+	sel := a.d.Prefs.SelectiveRenderOn()
+	if next := c.Checkbox(pad, y, "Selective rendering (default ON on this test build): redraw only what changed", sel); next != sel {
+		a.d.Prefs.SetSelectiveRender(next)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "The whole UI lives in a cached frame. Moving the mouse over dead space redraws nothing; a button lighting up redraws that button; a typing message redraws the stage, chatbox and log at the text's own pace; a sprite loop redraws the stage exactly when its frames flip. The cached frame is still PRESENTED to the screen at your monitor's rhythm every pass — a near-free copy — so frames are never sparse (the flicker some driver setups show with low frame rates can't come back). While this is ticked it takes precedence over every row below. Applies live; untick to fall back to the previous behaviour and compare.", ColTextDim)
+	y += 10
 	nfl := a.d.Prefs.NoFrameLimitOn()
 	if next := c.Checkbox(pad, y, "Frame limiting OFF (default on this test build): render every frame, vsync paces", nfl); next != nfl {
 		a.d.Prefs.SetNoFrameLimit(next)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "While this is ticked, ALL the pacing below — the static skip, the idle/background/active rates, the event-driven renderer — is bypassed and the client renders like a plain game at your monitor's rhythm. The single-frame window flicker tracks sparse frames on some driver setups, so continuous rendering is the current baseline; untick to re-enable the limiters and compare. Applies live.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Applies only while selective rendering above is off. While this is ticked, ALL the pacing below — the static skip, the idle/background/active rates, the event-driven renderer — is bypassed and the client renders like a plain game at your monitor's rhythm. The single-frame window flicker tracks sparse frames on some driver setups, so continuous rendering is the current baseline; untick to re-enable the limiters and compare. Applies live.", ColTextDim)
 	y += 6
 	y = a.settingsDesc(pad, y, "With limiting ON, AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly. Each rate takes ANY typed number — the slider covers the everyday band, but the number box applies unclamped — and ∞ removes the limit: for Active that means vsync paces the frames; for Idle/Background it means never slowing down in that state. Typing 0 on Idle or Background FREEZES that state: nothing redraws until something real changes (the caret stops blinking, clock readouts hold; messages, animations and alarms still draw).", ColTextDim)
 	y += 6

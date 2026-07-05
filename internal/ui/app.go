@@ -949,6 +949,39 @@ type App struct {
 	// the ONLY state shared with the worker goroutine; everything else the
 	// worker touches is snapshotted at launch, so the two never race.
 	dlPaused atomic.Bool
+
+	// --- compositor (selective rendering) state — see compositor.go -------
+	// Window-scoped, deliberately OUTSIDE sessionState: these describe the
+	// shared frame-cache texture, which survives tab switches (a switch is
+	// input → full damage → the first walk resyncs every snapshot).
+	dmgFull  bool
+	dmgCount int
+	dmgRects [dmgRectCap]sdl.Rect
+	// What the last walk left on the canvas — the base every damage
+	// comparison runs against. Mouse/tooltip pair with the hover census;
+	// the anim generation and room trio catch stage/ceremony changes that
+	// land on passes the walk skipped; the three rects are where those
+	// regions last drew (their damage clips).
+	drawnMouseX, drawnMouseY int32
+	drawnTipShowing          bool
+	drawnAnimGen             uint64
+	drawnRoomPhase           courtroom.MessagePhase
+	drawnRoomQueue           int
+	drawnRoomShown           int
+	drawnVPRect              sdl.Rect
+	drawnChatRect            sdl.Rect
+	drawnLogRect             sdl.Rect
+	// drawnContinuous is compositorContinuous() as of the last walk: a
+	// surface that ends on its own (a replay finishing, a toast expiring)
+	// gets exactly one more full walk — the one that erases it from the
+	// canvas — before the walks stop.
+	drawnContinuous bool
+	// Presented-frames gauge (F8 "presFps"): counts Present calls the way
+	// drawnFPS counts walks. Steady presents at the panel rate over a LOW
+	// drawnFps is the compositor working as designed.
+	presWindowStart time.Time
+	presWindowCount int
+	presFPS         int
 }
 
 // sessionState is EVERYTHING scoped to one server session. The active
@@ -4582,6 +4615,15 @@ func (a *App) wantsFullRate() bool {
 	if time.Since(a.lastMotionAt) < motionInputGrace {
 		return true // a moving pointer renders live; the short grace ends with it
 	}
+	return a.animatedSurfaces()
+}
+
+// animatedSurfaces is wantsFullRate minus the input graces: the surfaces
+// that genuinely animate on their own. Split out because the compositor
+// wants exactly this list (its walks are damage-driven — recent input with
+// nothing changing must NOT hold a walk rate, that's the whole point), while
+// the classic pacing tiers keep the graces.
+func (a *App) animatedSurfaces() bool {
 	if a.room != nil {
 		sc := &a.room.Scene
 		if sc.ShakeLeft > 0 || sc.FlashLeft > 0 {
@@ -5364,10 +5406,33 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.drawnGen = a.d.Store.Generation()
 	}
 	a.drawnCaretOn = a.ctx.caretOn
+	// The log-region record accumulates across THIS frame's draws (several
+	// log surfaces can be on screen); restart it so closed panels stop
+	// inflating the ceremony damage.
+	a.drawnLogRect = sdl.Rect{}
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.
+	// The compositor snapshots ride the same promotion — they must reflect
+	// what THIS frame put on the canvas, AFTER the room/viewport updates
+	// below ran (a start-of-frame snapshot would lag the draw by one frame
+	// and re-walk an identical scene after every flip): the pointer and
+	// tooltip pair the hover census reads, the stage generation, and the
+	// ceremony trio that catches room changes landing on skipped passes.
 	a.frameAnimChrome = false
-	defer func() { a.drawnAnimChrome = a.frameAnimChrome }()
+	defer func() {
+		a.drawnAnimChrome = a.frameAnimChrome
+		a.drawnMouseX, a.drawnMouseY = a.ctx.mouseX, a.ctx.mouseY
+		a.drawnTipShowing = a.ctx.tipText != ""
+		if a.d.Viewport != nil {
+			a.drawnAnimGen = a.d.Viewport.AnimGen()
+		}
+		if a.room != nil {
+			a.drawnRoomPhase = a.room.Phase()
+			a.drawnRoomQueue = a.room.QueueLen()
+			a.drawnRoomShown = a.room.Scene.VisibleRunes
+		}
+		a.drawnContinuous = a.compositorContinuous()
+	}()
 	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
 	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
 	a.frameDtMs = float32(dt.Seconds() * 1000)
