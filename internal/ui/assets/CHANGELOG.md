@@ -4,6 +4,27 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test15 — 2026-07-05 (test build)
+
+Follow-ups to the frame-limiter round, plus preanimation fixes (which are
+separate from the frame limiter).
+
+- **Input stays instant at a low idle rate.** With the idle rate low — 0
+  especially — another player's on-screen animation could make your input box
+  feel sluggish: the loop paced each frame with a plain sleep, so a click or
+  keystroke landing mid-frame waited it out. It now paces with an interruptible
+  wait, so input redraws immediately at any idle rate.
+- **Immediate-mode preanimations finish correctly.** With "immediate" checked
+  (the preanim plays while the text types): if the preanim finished before the
+  text it used to freeze on its last frame — it now switches to the talking
+  sprite; if the text finished first it used to snap straight to idle
+  mid-preanim — it now holds until the preanim ends. The wait is bounded, so a
+  missing or slow-loading preanim can't stall the message.
+- **Longer character animations can play in full.** Animations were truncated
+  past a per-asset memory cap (they "skipped to the end" around ~5 s, depending
+  on size). That cap now scales with the Texture cache budget (Settings →
+  power user): raise it and restart to let longer animations decode fully.
+
 ## v1.55.0-test14 — 2026-07-05 (test build)
 
 The frame limiter, rebuilt on the test2 base. The selective-rendering
