@@ -430,13 +430,12 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			continue
 		}
 
-		// Static skip (the deepest pacing tier): the courtroom is a genuinely
-		// static image right now — no input this pass, nothing animating, nobody
-		// talking, no toast/caret/timer — so the last presented frame is still
-		// exactly right. Skip render+present entirely (GPU cost → zero), keep
-		// the session pumping, and nap at the idle cadence so the next event is
-		// picked up as fast as an idle-rendered frame would have. App.SkipFrame
-		// heartbeats a real frame every paceHeartbeat to heal anything missed.
+		// Static skip (the deepest pacing tier): nothing new to show — no input
+		// this pass, nothing animating, nobody talking, no toast/caret/timer — so
+		// the last presented frame is still exactly right. Skip render+present
+		// entirely (GPU cost → zero) and keep the session pumping. The event-
+		// driven loop then parks until something actually happens; the classic
+		// loop naps at the idle cadence and re-polls.
 		focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
 		// #5 bypass: with the frame limiter disabled the loop renders every pass
 		// (no static skip, no adaptive pacing) — vsync alone paces it. The
@@ -449,20 +448,22 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				// have produced redraw-worthy work (packets, texture uploads):
 				// loop straight around and render it — the next pass's SkipFrame
 				// refuses on RenderNeeded. Otherwise park on the OS event wait
-				// until input, a wake doorbell, or the nearest scheduled deadline
-				// (caret flip, clock second, hover reveal, staleness heartbeat).
-				// Instant input response at zero render + zero CPU cost; a
-				// timed-out wait means the deadline is due, so the next pass
-				// renders exactly one frame for it (NoteDeadline).
+				// until input, a wake doorbell, or the nearest scheduled deadline.
+				// NextWakeDelay reports both HOW LONG to park and whether a plain
+				// timeout is a real redraw deadline (idle-rate tick, caret flip,
+				// clock second) or just the Background-only housekeeping floor —
+				// the floor pumps the session and re-parks WITHOUT drawing, which
+				// is how idle=off reaches genuinely zero redraws. Input/wake events
+				// interrupt the wait regardless, for instant response at zero cost.
 				if app.RenderNeeded() {
 					continue
 				}
-				wait := app.NextWakeDelay()
+				wait, renderDue := app.NextWakeDelay()
 				scheduledNap = wait
 				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
 					pendingEv = ev
-				} else {
-					app.NoteDeadline()
+				} else if renderDue {
+					app.NoteDeadline() // a real deadline is due — draw one frame for it
 				}
 				continue
 			}

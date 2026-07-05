@@ -6023,7 +6023,7 @@ const (
 	FPSCapDefault       = 60
 	FPSCapMin           = 1
 	FPSCapMax           = 240
-	IdleFPSDefault      = 30
+	IdleFPSDefault      = 2 // low idle backstop (~ the retired 500 ms heartbeat); slider goes to 0 = off
 	IdleFPSMin          = 1
 	IdleFPSMax          = 120
 	UnfocusedFPSDefault = 10

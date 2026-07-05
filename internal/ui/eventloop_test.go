@@ -4,12 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
-// expApp is testTabApp inside the heartbeat window, so SkipFrame decisions
-// reflect the tested condition and not staleness. The experimental loop pref
-// defaults ON.
+// expApp is testTabApp with a fresh lastFrameDrawn, so SkipFrame decisions
+// reflect the tested condition and not the idle-rate re-render. The experimental
+// event-driven loop pref defaults ON.
 func expApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
@@ -101,8 +102,8 @@ func TestSkipFrameDamageRefuses(t *testing.T) {
 }
 
 // TestSkipFrameSharedRefusals pins the refusals shared by BOTH modes: input
-// this pass, the staleness heartbeat, a live voice session (voicePump is
-// Frame-driven), and an open animated sprite preview.
+// this pass, a live voice session (voicePump is Frame-driven), an open animated
+// sprite preview, and on-screen animated chrome.
 func TestSkipFrameSharedRefusals(t *testing.T) {
 	for _, exp := range []bool{true, false} {
 		a := expApp(t)
@@ -131,49 +132,89 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 			t.Errorf("exp=%v: animated chrome on screen (theme art, splash, badge) must keep frames coming", exp)
 		}
 		a.drawnAnimChrome = false
-		a.lastFrameDrawn = time.Now().Add(-2 * paceHeartbeat)
-		if a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: past the heartbeat a real frame must draw", exp)
-		}
 	}
 }
 
-// TestNextWakeDelay pins the scheduled-wake math: the heartbeat bounds an
-// empty schedule, a focused caret and a RUNNING server clock pull the wake to
-// their next due, a PAUSED clock schedules nothing, and the floor prevents a
+// TestSkipFrameIdleCadence pins the heartbeat rework: the fixed 500 ms heartbeat
+// is gone. Under the event-driven loop a static courtroom SKIPS however stale it
+// gets — NextWakeDelay's idle-rate wake redraws it (or nothing does at idle=off);
+// the park owns the cadence, not SkipFrame. The classic loop re-renders once per
+// idle budget instead, and idle=off makes it skip indefinitely too.
+func TestSkipFrameIdleCadence(t *testing.T) {
+	a := expApp(t)
+	a.room = &courtroom.Courtroom{}
+	a.sess = &courtroom.Session{}
+
+	// Event-driven: however stale, a static courtroom keeps skipping.
+	a.lastFrameDrawn = time.Now().Add(-time.Hour)
+	if !a.SkipFrame(true, false) {
+		t.Error("exp: a stale static courtroom still skips (NextWakeDelay owns the idle re-render, not a heartbeat)")
+	}
+
+	// Classic, idle rate on: past one idle budget it re-renders.
+	a.d.Prefs.SetEventDrivenLoop(false)
+	a.d.Prefs.SetIdleFPS(4) // 250 ms budget
+	a.lastFrameDrawn = time.Now()
+	if !a.SkipFrame(true, false) {
+		t.Error("classic: a just-drawn static courtroom skips within the idle budget")
+	}
+	a.lastFrameDrawn = time.Now().Add(-time.Second) // well past 250 ms
+	if a.SkipFrame(true, false) {
+		t.Error("classic: past the idle budget the static courtroom re-renders")
+	}
+
+	// Classic, idle=off: it skips indefinitely (leans on caret/timer/input).
+	a.d.Prefs.SetIdleFPS(config.FPSOff)
+	a.lastFrameDrawn = time.Now().Add(-time.Hour)
+	if !a.SkipFrame(true, false) {
+		t.Error("classic idle=off: no heartbeat — a static courtroom skips indefinitely")
+	}
+}
+
+// TestNextWakeDelay pins the park math and the render-vs-housekeeping flag: the
+// idle-rate tick bounds an empty schedule and marks render, a focused caret and
+// a RUNNING server clock pull the wake in (render — the clock tick MUST draw, the
+// timer-freeze guard), idle=off falls back to the Background-only housekeeping
+// floor with NO render (how idle=0 reaches zero redraws), and the floor guards a
 // busy-spin on an overdue deadline.
 func TestNextWakeDelay(t *testing.T) {
 	a := expApp(t)
 
-	// Empty schedule: the heartbeat remainder (fresh frame → ≈ paceHeartbeat).
-	if d := a.NextWakeDelay(); d < paceHeartbeat-100*time.Millisecond || d > paceHeartbeat {
-		t.Errorf("empty schedule: wake = %v, want ≈ the %v heartbeat", d, paceHeartbeat)
+	// Idle-rate tick bounds an empty schedule and marks render.
+	a.d.Prefs.SetIdleFPS(4) // 250 ms idle budget
+	if d, render := a.NextWakeDelay(); d > 250*time.Millisecond || d < 150*time.Millisecond || !render {
+		t.Errorf("idle schedule: wake = %v render=%v, want ≈ 250ms + render", d, render)
 	}
 
-	// A focused caret 300 ms into its blink: the flip is ~200 ms out.
+	// Isolate each scheduled deadline with the idle tick OFF.
+	a.d.Prefs.SetIdleFPS(config.FPSOff)
+
+	// A focused caret mid-blink: the flip pulls the wake in (render).
 	a.ctx.focusID = "field"
 	a.ctx.caretAcc = 300 * time.Millisecond
-	if d := a.NextWakeDelay(); d > 200*time.Millisecond || d < 100*time.Millisecond {
-		t.Errorf("caret at 300ms: wake = %v, want ≈ 200ms", d)
+	if d, render := a.NextWakeDelay(); d <= 0 || d >= caretBlink || !render {
+		t.Errorf("caret flip: wake = %v render=%v, want a pending flip + render", d, render)
 	}
 	a.ctx.focusID = ""
 
-	// A running server clock with 2.4 s left: wake just past the 0.4 s boundary.
+	// A running server clock with 2.4 s left: wake just past the 0.4 s boundary (render).
 	a.sess = &courtroom.Session{}
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Running: true, Deadline: time.Now().Add(2400 * time.Millisecond)}
-	if d := a.NextWakeDelay(); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack {
-		t.Errorf("running clock at x.4s: wake = %v, want ≈ 400ms+slack", d)
+	if d, render := a.NextWakeDelay(); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack || !render {
+		t.Errorf("running clock at x.4s: wake = %v render=%v, want ≈ 400ms+slack + render", d, render)
 	}
-	// Paused: frozen readout, nothing scheduled — back to the heartbeat bound.
+	// Paused: frozen readout, nothing scheduled — the housekeeping floor, no render.
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second}
-	if d := a.NextWakeDelay(); d < paceHeartbeat-100*time.Millisecond {
-		t.Errorf("paused clock: wake = %v, want the heartbeat bound", d)
+	if d, render := a.NextWakeDelay(); d != maxHousekeepingGap || render {
+		t.Errorf("paused clock (idle=off): wake = %v render=%v, want the %v floor + no render", d, maxHousekeepingGap, render)
 	}
+	a.sess = nil
 
-	// Overdue heartbeat: floored, never zero/negative (busy-spin guard).
+	// Overdue idle tick: floored, never zero/negative (busy-spin guard), render.
+	a.d.Prefs.SetIdleFPS(4)
 	a.lastFrameDrawn = time.Now().Add(-time.Hour)
-	if d := a.NextWakeDelay(); d != minWakeDelay {
-		t.Errorf("overdue: wake = %v, want the %v floor", d, minWakeDelay)
+	if d, render := a.NextWakeDelay(); d != minWakeDelay || !render {
+		t.Errorf("overdue: wake = %v render=%v, want the %v floor + render", d, minWakeDelay, render)
 	}
 }
 
