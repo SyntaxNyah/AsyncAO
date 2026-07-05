@@ -1,11 +1,48 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+// TestMigrationRetiresBakedNoFrameLimit pins the rev-1 one-time overwrite:
+// test10/11 shipped defaultNoFrameLimit=true and the plain bool baked
+// `"noFrameLimit": true` into every saved file, so flipping the default
+// alone could never reach them. A pre-stamp file (no migrationRev) loads
+// with the diagnostic forced OFF; after any save the stamp makes an
+// explicit re-opt-in permanent — a stamped file is never re-forced.
+func TestMigrationRetiresBakedNoFrameLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	baked := `{"noFrameLimit": true}` // a test10/11-era file: no migrationRev
+	if err := os.WriteFile(path, []byte(baked), 0o600); err != nil {
+		t.Fatalf("seeding the legacy file: %v", err)
+	}
+
+	p, err := load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if p.NoFrameLimitOn() {
+		t.Fatal("rev-1 migration must force the baked no-limit diagnostic OFF")
+	}
+
+	// The user re-opts in AFTER the migration: the save carries the stamp,
+	// so the choice must survive every later load un-forced.
+	p.SetNoFrameLimit(true)
+	if err := p.SaveNow(); err != nil {
+		t.Fatalf("SaveNow: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !q.NoFrameLimitOn() {
+		t.Fatal("a stamped file's explicit opt-in must never be re-forced")
+	}
+}
 
 // TestTypingIndicatorDefaultOff pins #3: the typing indicator ships OFF (so the client
 // sends zero typing traffic out of the box), and toggles on persistently.

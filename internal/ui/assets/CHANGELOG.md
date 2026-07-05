@@ -36,13 +36,16 @@ themselves, not the damage model.
 - **The ping chip ticks again.** Its bars read the transport ping
   directly (no packet involved), so under the compositor they could
   hold a stale quality tier. Tier changes now repaint the chip.
-- **The test10 "no frame limit" default is retired.** It only governs
-  the classic loop (selective rendering off), where it disabled every
-  limiter — on some windowed driver setups that spun unlimited
-  full-frame renders even when idle. New installs get the limiters
-  back. If your Settings still show "No frame limit" ON, that is your
-  saved file from test10/11 — untick it once. While selective rendering
-  is on it changes nothing either way.
+- **The test10 "no frame limit" default is retired — and cleaned out of
+  your saved settings for you.** It only governs the classic loop
+  (selective rendering off), where it disabled every limiter — on some
+  windowed driver setups that spun unlimited full-frame renders even
+  when idle. test10/11 wrote that default into every saved file, so
+  this build switches it off once on first launch; if you re-tick it in
+  Settings afterwards, your choice sticks (your settings file now
+  carries a migration stamp, and a stamped file is never touched
+  again). While selective rendering is on it changes nothing either
+  way.
 
 ## v1.55.0-test11 — 2026-07-05 (test build)
 

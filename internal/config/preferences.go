@@ -261,9 +261,23 @@ const defaultClipSpritesToStage = true
 // and there it bypasses EVERY limiter and the static skip, so a
 // non-blocking windowed present path spins the loop at unlimited full-frame
 // renders (the idle GPU burn). The Settings toggle (Power user → Frame rate
-// & GPU) still enables it live for A/B runs. Note prefs files written by
-// test10/11 carry the old ON — the default only steers fresh configs.
+// & GPU) still enables it live for A/B runs. Prefs files written by
+// test10/11 carried the old ON baked in — the rev-1 migration below pulls
+// it back out of them, once.
 const defaultNoFrameLimit = false
+
+// prefsMigrationRev versions the ONE-TIME forced overwrites load applies to
+// older files (each step runs only on files stamped below it, then the
+// fresh stamp rides the next flush — every clean exit SaveNow()s). Bump it
+// when a shipped default must be pulled back out of everyone's saved file:
+// a plain bool serializes on every save, so flipping a default alone never
+// reaches a file that baked the old one. The stamp is what makes the user's
+// LATER explicit choice permanent — a stamped file is never re-forced.
+//
+//	rev 1 (test12): noFrameLimit forced OFF once — test10/11 shipped the
+//	diagnostic default-ON, baking `"noFrameLimit": true` into every
+//	tester's file.
+const prefsMigrationRev = 1
 
 // defaultSelectiveRender ships the compositor — selective rendering — ON for
 // the test channel. The UI renders into a cached render-target texture only
@@ -881,6 +895,7 @@ type AssetPreferences struct {
 	NoFrameLimit           bool                         `json:"noFrameLimit"`                   // DIAGNOSTIC: bypass ALL frame limiting — render every pass, vsync paces (default OFF since test12; opt-in A/B toggle)
 	SelectiveRender        bool                         `json:"selectiveRender"`                // the compositor: damage-gated region redraws into a cached frame, steady blit-presents (default ON on the test channel)
 	PaceHeartbeat          bool                         `json:"paceHeartbeat"`                  // the 2 fps static-skip safety heartbeat (default OFF: a skipped screen renders only on real changes)
+	MigrationRev           int                          `json:"migrationRev,omitempty"`         // one-time-overwrite stamp (prefsMigrationRev): which forced migrations this file already received
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
@@ -1206,6 +1221,7 @@ type prefsJSON struct {
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	NoFrameLimit           *bool            `json:"noFrameLimit"`         // diagnostic no-limit render (default OFF since test12; pointer kept so test10/11 files apply their explicit value)
 	SelectiveRender        *bool            `json:"selectiveRender"`      // the compositor (default ON; pointer: absent != off)
+	MigrationRev           int              `json:"migrationRev"`         // one-time-overwrite stamp (absent/0 = pre-test12 file: rev-1 migration due)
 	PaceHeartbeat          bool             `json:"paceHeartbeat"`        // 2 fps skip heartbeat (default OFF, zero value)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
@@ -1551,6 +1567,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		EventDrivenLoop:      defaultEventDrivenLoop,
 		NoFrameLimit:         defaultNoFrameLimit,
 		SelectiveRender:      defaultSelectiveRender,
+		MigrationRev:         prefsMigrationRev, // fresh configs are born current — migrations touch only older files
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
 		CharChatbox:          defaultCharChatbox,
@@ -1941,7 +1958,7 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
-	if onDisk.NoFrameLimit != nil { // pointer: absent keeps the default; explicit test10/11 values apply
+	if onDisk.NoFrameLimit != nil { // pointer: absent keeps the default; the rev-1 migration below overrides baked pre-stamp values
 		p.NoFrameLimit = *onDisk.NoFrameLimit
 	}
 	if onDisk.SelectiveRender != nil { // pointer: absent keeps the default-ON
@@ -2122,6 +2139,20 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.ChromeTheme != nil {
 		p.ChromeThemeKey = *onDisk.ChromeTheme
+	}
+
+	// One-time forced overwrites (prefsMigrationRev): pull retired defaults
+	// back OUT of files that baked them while they shipped ON. Runs AFTER
+	// the whole overlay so it wins over the file's stored value; each step
+	// fires only for files stamped below it. p.MigrationRev is already
+	// current (defaultPrefs seeds it), so the stamp persists with the next
+	// flush — SaveNow on every clean exit at the latest — after which any
+	// explicit re-opt-in in Settings is the user's to keep. Until that
+	// first save the force simply re-runs, idempotent.
+	if onDisk.MigrationRev < 1 {
+		// rev 1 (test12): retire the baked no-limit render diagnostic — it
+		// bypassed every limiter on the classic paths (the idle GPU burn).
+		p.NoFrameLimit = false
 	}
 	return p, nil
 }
