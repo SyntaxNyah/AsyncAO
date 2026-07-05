@@ -4,6 +4,36 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test14 — 2026-07-05 (test build)
+
+The frame limiter, rebuilt on the test2 base. The selective-rendering
+experiments (test3–test13) are gone; this round makes the Idle rate do exactly
+what it says and cuts idle GPU to near nothing.
+
+- **The Idle frame rate is now the ONLY thing that runs when nothing's
+  happening.** There was a hidden 2 fps "heartbeat" redrawing the screen
+  underneath your Idle setting, so a static courtroom burned frames no matter
+  what you picked. It's gone: when there's nothing to redraw, the client
+  redraws at your Idle rate and nothing else. Set Idle to 0 and a truly static
+  screen redraws ZERO times (0% GPU) until something actually changes — a
+  message, an animation, your mouse. Input still wakes it instantly.
+- **The frame-rate sliders go all the way down now.** Active / Idle /
+  Background used to floor at 30 / 10 / 5 fps; they reach 1 fps now (drag or
+  type an exact number), and Idle / Background reach 0 = "never redraw in that
+  state". The Idle default is a gentle 2 fps — a safety net for anything that
+  changes without telling the renderer; drop it to 0 for the absolute minimum.
+- **Anything that animates on its own stays smooth.** Whenever the client
+  redraws for its OWN reasons — an animated sprite, a message playing, the
+  player list updating, a screen switching, animated theme art — it paces at
+  your Active rate for the duration, then falls back to Idle. Built to cover
+  every redraw, including parts of the UI added later.
+- **New: "Disable the frame limiter entirely" (Settings → Frame rate & GPU,
+  OFF by default).** Renders every frame with no pacing at all (vsync only) —
+  maximum responsiveness, high GPU. There if you ever want it.
+- **Long character animations no longer cut off early.** A preanimation (or a
+  long one-shot animation) longer than ~2.5 seconds used to play for a moment
+  and then snap to its end. It plays in full now.
+
 ## v1.55.0-test2 — 2026-07-04 (test build)
 
 Fast follow-ups from the first test round — thanks to Nightingale for
