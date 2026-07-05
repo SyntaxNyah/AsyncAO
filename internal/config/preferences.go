@@ -857,6 +857,7 @@ type AssetPreferences struct {
 	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle frame rate (0/absent = 30 default; -1 = uncapped; -2 = never redraw when idle)
 	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10 default; -1 = uncapped; -2 = never redraw when unfocused)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
+	DisableFrameLimiter    bool                         `json:"disableFrameLimiter,omitempty"`  // #5 bypass: render every frame, NO pacing/skip (vsync only). Default OFF, high GPU. Fresh key.
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
@@ -1180,6 +1181,7 @@ type prefsJSON struct {
 	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30 default; -1 = uncapped; -2 = off)
 	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10 default; -1 = uncapped; -2 = off)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
+	DisableFrameLimiter    bool             `json:"disableFrameLimiter"`  // #5 bypass: no pacing/skip at all (default OFF)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
@@ -1912,6 +1914,7 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
+	p.DisableFrameLimiter = onDisk.DisableFrameLimiter // default-OFF plain bool (absent = off)
 	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
 	if p.TexBudgetMiBVal != 0 {
 		p.TexBudgetMiBVal = clampPercent(p.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
@@ -6448,6 +6451,31 @@ func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
 	p.markDirty()
 }
 
+// FrameLimiterDisabled reports the #5 bypass: when ON the main loop renders
+// every pass with no adaptive pacing and no static skip — vsync alone paces the
+// presents (and -vsync=false keeps a 60 fps floor so it can't busy-spin). Default
+// OFF: it's the deliberate high-GPU escape hatch for anyone who wants maximum
+// responsiveness regardless of cost. A fresh json key (not the retired test-build
+// "no limit" default) so a stale saved value can't silently leak the bypass on.
+func (p *AssetPreferences) FrameLimiterDisabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DisableFrameLimiter
+}
+
+// SetFrameLimiterDisabled flips the bypass (applies live — the main loop
+// re-reads it every pass).
+func (p *AssetPreferences) SetFrameLimiterDisabled(on bool) {
+	p.mu.Lock()
+	if p.DisableFrameLimiter == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DisableFrameLimiter = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
 // idle rate, and the another-window-has-focus rate.
@@ -6575,6 +6603,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.IdleFPSVal = 0
 	p.UnfocusedFPSVal = 0
 	p.EventDrivenLoop = defaultEventDrivenLoop
+	p.DisableFrameLimiter = false // #5 bypass resets OFF
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()

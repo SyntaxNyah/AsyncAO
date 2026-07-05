@@ -3103,6 +3103,13 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 26
 	y = a.settingsDesc(pad, y, "Static screens stop redrawing entirely: input wakes the renderer instantly, incoming messages and finished loads push their own wake, and a blinking caret or ticking clock redraws one frame exactly when it's due. Sounds and the connection never slow down — only wasted redraws go. Applies live. If anything looks frozen or choppy, turn this off (the classic pacing loop) and report what it was.", ColTextDim)
 	y += 10
+	nolimit := a.d.Prefs.FrameLimiterDisabled()
+	if next := c.Checkbox(pad, y, "Disable the frame limiter entirely (render every frame — vsync only, HIGH GPU)", nolimit); next != nolimit {
+		a.d.Prefs.SetFrameLimiterDisabled(next)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "Off by default. On = no idle skipping and no pacing at all: the client redraws continuously, paced only by vsync (or a 60 fps floor with -vsync=false). The opposite of everything above — it trades GPU for the last drop of responsiveness. Leave it off unless you have a specific reason.", ColTextDim)
+	y += 10
 
 	// Sprite thumbnail cache — the persistent low-q stand-in store.
 	y = a.settingsSection(y, w, "Sprite thumbnail cache")

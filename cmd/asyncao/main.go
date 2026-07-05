@@ -438,7 +438,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// picked up as fast as an idle-rendered frame would have. App.SkipFrame
 		// heartbeats a real frame every paceHeartbeat to heal anything missed.
 		focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
-		if app.SkipFrame(focused, sawEvent) {
+		// #5 bypass: with the frame limiter disabled the loop renders every pass
+		// (no static skip, no adaptive pacing) — vsync alone paces it. The
+		// deliberate high-GPU escape hatch; default OFF.
+		limiterOff := prefs.FrameLimiterDisabled()
+		if !limiterOff && app.SkipFrame(focused, sawEvent) {
 			app.Background(dt)
 			if prefs.EventDrivenLoopOn() {
 				// EXPERIMENTAL event-driven wait. The Background pumps above may
@@ -495,8 +499,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// subsumes the old fixed frameCap sleep (FramePace's foreground cap
 		// defaults to the same 60).
 		pace := app.FramePace(focused)
+		if limiterOff {
+			pace = 0 // #5 bypass: no adaptive cap — vsync paces the presents
+		}
 		if !vsync && (pace == 0 || pace > frameCap) {
-			pace = frameCap // -vsync=false keeps at least its old 60 fps ceiling
+			pace = frameCap // -vsync=false keeps at least its old 60 fps ceiling (bypass included)
 		}
 		if pace > 0 {
 			if sleep := pace - time.Since(now); sleep > 0 {
