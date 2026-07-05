@@ -1,48 +1,11 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
-
-// TestMigrationRetiresBakedNoFrameLimit pins the rev-1 one-time overwrite:
-// test10/11 shipped defaultNoFrameLimit=true and the plain bool baked
-// `"noFrameLimit": true` into every saved file, so flipping the default
-// alone could never reach them. A pre-stamp file (no migrationRev) loads
-// with the diagnostic forced OFF; after any save the stamp makes an
-// explicit re-opt-in permanent — a stamped file is never re-forced.
-func TestMigrationRetiresBakedNoFrameLimit(t *testing.T) {
-	path := filepath.Join(t.TempDir(), PrefsFileName)
-	baked := `{"noFrameLimit": true}` // a test10/11-era file: no migrationRev
-	if err := os.WriteFile(path, []byte(baked), 0o600); err != nil {
-		t.Fatalf("seeding the legacy file: %v", err)
-	}
-
-	p, err := load(path)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	if p.NoFrameLimitOn() {
-		t.Fatal("rev-1 migration must force the baked no-limit diagnostic OFF")
-	}
-
-	// The user re-opts in AFTER the migration: the save carries the stamp,
-	// so the choice must survive every later load un-forced.
-	p.SetNoFrameLimit(true)
-	if err := p.SaveNow(); err != nil {
-		t.Fatalf("SaveNow: %v", err)
-	}
-	q, err := load(path)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	if !q.NoFrameLimitOn() {
-		t.Fatal("a stamped file's explicit opt-in must never be re-forced")
-	}
-}
 
 // TestTypingIndicatorDefaultOff pins #3: the typing indicator ships OFF (so the client
 // sends zero typing traffic out of the box), and toggles on persistently.
@@ -799,12 +762,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
 	p.SetDragLayout(false)       // default-ON *bool — explicit false must survive
 	p.SetEventDrivenLoop(false)  // default-ON *bool — the experimental-loop kill switch must stick
-	p.SetNoFrameLimit(true)      // default-OFF since test12 (*bool) — the explicit diagnostic opt-in must stick
-	p.SetSelectiveRender(false)  // default-ON *bool — the compositor kill switch must stick
 	p.SetIdleFPS(FPSUnlimited)   // the ∞ sentinel must survive save→load un-clamped
-	p.SetUnfocusedFPS(FPSZero)   // the typed-0 FROZEN sentinel must survive save→load
-	p.SetFPSCap(999)             // any positive value is UNCLAMPED (0-to-infinity ask) and must survive
-	p.SetPaceHeartbeat(true)     // default-OFF plain bool — opting back into the 2 fps floor must stick
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
@@ -867,23 +825,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.EventDrivenLoopOn() {
 		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
 	}
-	if !q.NoFrameLimitOn() {
-		t.Error("NoFrameLimit=true lost (the explicit diagnostic opt-in must survive reload)")
-	}
-	if q.SelectiveRenderOn() {
-		t.Error("SelectiveRender=false lost (absent-default ON must not clobber the explicit kill switch)")
-	}
 	if got := q.IdleFPS(); got != FPSUnlimited {
 		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
-	}
-	if got := q.UnfocusedFPS(); got != FPSZero {
-		t.Errorf("UnfocusedFPS frozen sentinel lost across reload: %d, want %d", got, FPSZero)
-	}
-	if got := q.FPSCap(); got != 999 {
-		t.Errorf("FPSCap over-track value clamped across reload: %d, want the unclamped 999", got)
-	}
-	if !q.PaceHeartbeatOn() {
-		t.Error("PaceHeartbeat=true lost across reload (the opt-in floor must stick)")
 	}
 	if got := q.PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
@@ -1141,9 +1084,6 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetIdleFPS(60)
 	p.SetUnfocusedFPS(30)
 	p.SetEventDrivenLoop(false)
-	p.SetNoFrameLimit(true) // default OFF since test12 — the nuke must switch it back off
-	p.SetSelectiveRender(false)
-	p.SetPaceHeartbeat(true)
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1183,65 +1123,8 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.EventDrivenLoopOn() {
 		t.Error("nuke must restore the experimental event-driven loop to its default ON")
 	}
-	if p.NoFrameLimitOn() {
-		t.Error("nuke must reset the diagnostic no-limit mode to its default OFF (retired with the compositor — test12)")
-	}
-	if !p.SelectiveRenderOn() {
-		t.Error("nuke must restore the compositor to its test-channel default ON")
-	}
-	if p.PaceHeartbeatOn() {
-		t.Error("nuke must reset the safety heartbeat to its default OFF")
-	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)
-	}
-}
-
-// TestNormalizeFPSPref pins the rate knobs' typed-value domain (the "0 to
-// infinity" ask): any positive value passes UNCLAMPED (the min/max constants
-// only bound the slider track), the sentinels pass where they're legal, and
-// garbage negatives fall back to the 0 = default sentinel. FPSZero is legal
-// only on the idle/background knobs — a frozen ACTIVE cap would freeze
-// interaction itself.
-func TestNormalizeFPSPref(t *testing.T) {
-	p, _ := newTestPrefs(t)
-
-	p.SetFPSCap(999) // over the 240 slider top: sticks anyway
-	if got := p.FPSCap(); got != 999 {
-		t.Errorf("SetFPSCap(999) clamped to %d — typed values must pass unclamped", got)
-	}
-	p.SetFPSCap(1) // under the 30 slider bottom: sticks anyway
-	if got := p.FPSCap(); got != 1 {
-		t.Errorf("SetFPSCap(1) rejected: got %d", got)
-	}
-	p.SetFPSCap(FPSZero) // frozen is illegal on the active cap → the default
-	if got := p.FPSCap(); got != FPSCapDefault {
-		t.Errorf("SetFPSCap(FPSZero) = %d, want the %d default (active never freezes)", got, FPSCapDefault)
-	}
-	p.SetFPSCap(-7) // hand-edited garbage → the default
-	if got := p.FPSCap(); got != FPSCapDefault {
-		t.Errorf("SetFPSCap(-7) = %d, want the %d default", got, FPSCapDefault)
-	}
-
-	p.SetIdleFPS(FPSZero) // frozen is legal on idle
-	if got := p.IdleFPS(); got != FPSZero {
-		t.Errorf("SetIdleFPS(FPSZero) = %d, want the frozen sentinel", got)
-	}
-	p.SetIdleFPS(240) // over the 120 slider top: sticks
-	if got := p.IdleFPS(); got != 240 {
-		t.Errorf("SetIdleFPS(240) clamped to %d", got)
-	}
-	p.SetUnfocusedFPS(FPSZero) // frozen is legal on background
-	if got := p.UnfocusedFPS(); got != FPSZero {
-		t.Errorf("SetUnfocusedFPS(FPSZero) = %d, want the frozen sentinel", got)
-	}
-	p.SetUnfocusedFPS(FPSUnlimited)
-	if got := p.UnfocusedFPS(); got != FPSUnlimited {
-		t.Errorf("SetUnfocusedFPS(∞) = %d, want the unlimited sentinel", got)
-	}
-	p.SetUnfocusedFPS(0) // 0 = back to the default
-	if got := p.UnfocusedFPS(); got != UnfocusedFPSDefault {
-		t.Errorf("SetUnfocusedFPS(0) = %d, want the %d default", got, UnfocusedFPSDefault)
 	}
 }
 

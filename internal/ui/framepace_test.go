@@ -144,17 +144,6 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	if got := a.FramePace(true); got != budget(30) {
 		t.Errorf("focused idle pace with the same loop = %v, want the idle cap %v", got, budget(30))
 	}
-	// FROZEN rates don't freeze the stage: the same live loop keeps its OWN
-	// cadence in both states (typed 0 stops decoration and static renders,
-	// never a playing animation).
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-	if got := a.FramePace(true); got != 80*time.Millisecond {
-		t.Errorf("frozen idle with a live 80ms loop = %v, want the content cadence", got)
-	}
-	a.d.Prefs.SetUnfocusedFPS(config.FPSZero)
-	if got := a.FramePace(false); got != 80*time.Millisecond {
-		t.Errorf("frozen background with a live 80ms loop = %v, want the content cadence", got)
-	}
 }
 
 // animSpeaker uploads a looping frames×delay speaker under base and binds it
@@ -246,41 +235,6 @@ func TestFramePaceUnlimited(t *testing.T) {
 	a.d.Prefs.SetUnfocusedFPS(config.FPSUnlimited)
 	if got := a.FramePace(false); got != 0 {
 		t.Errorf("unlimited background rate = %v, want 0 (never throttle unfocused)", got)
-	}
-}
-
-// TestFramePaceFrozen pins the typed-0 sentinel's pacing: a frozen idle or
-// background rate parks the loop at the slow fpsZeroBudget pump (SkipFrame
-// holds the actual renders at zero — the budget only paces the skipped
-// passes), and a ceremony under a frozen idle rate still paces at the talk
-// tier — frozen ≠ unlimited, so the idle==0 cap boost must not swallow the
-// sentinel, and frozen never mutes a playing message either.
-func TestFramePaceFrozen(t *testing.T) {
-	a := testTabApp(t)
-
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-	if got := a.FramePace(true); got != fpsZeroBudget {
-		t.Errorf("frozen idle flat pace = %v, want the %v pump", got, fpsZeroBudget)
-	}
-	a.d.Prefs.SetUnfocusedFPS(config.FPSZero)
-	if got := a.FramePace(false); got != fpsZeroBudget {
-		t.Errorf("frozen background flat pace = %v, want the %v pump", got, fpsZeroBudget)
-	}
-
-	// A ceremony under the frozen idle rate: the talk tier, NOT the full cap.
-	a.room = newRoomForTest(t)
-	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "frozen but talking")})
-	if !a.roomBusy() {
-		t.Fatal("test setup: the message never started a ceremony")
-	}
-	a.room.Typewriter.Interval = 50 * time.Millisecond // slower than the talk base: the base cadence holds
-	if got, want := a.FramePace(true), paceBudget(staticTalkFPS); got != want {
-		t.Errorf("frozen ceremony paces at %v, want the talk tier %v (not the cap, not the pump)", got, want)
-	}
-	// The same ceremony unfocused-frozen holds the talk cadence too (audible
-	// blips while tabbed out — freezing never thins them).
-	if got, want := a.FramePace(false), paceBudget(staticTalkFPS); got != want {
-		t.Errorf("frozen-background ceremony paces at %v, want the talk tier %v", got, want)
 	}
 }
 

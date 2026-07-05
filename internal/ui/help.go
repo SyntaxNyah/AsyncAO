@@ -213,8 +213,9 @@ func (a *App) drawHelp(w, h int32) {
 	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
 	a.helpDocScroll = c.VScrollbar("helpdocbar", track, a.helpDocScroll, contentH, viewH)
 
-	prevClip, hadClip := c.pushClip(sdl.Rect{X: 0, Y: top, W: w, H: viewH})
-	defer c.popClip(prevClip, hadClip)
+	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
+	_ = c.Ren.SetClipRect(&clip)
+	defer func() { _ = c.Ren.SetClipRect(nil) }()
 	y := top - a.helpDocScroll
 	for _, fl := range a.helpFlat {
 		y += fl.gap

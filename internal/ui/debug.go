@@ -33,9 +33,6 @@ func (a *App) drawDebugOverlay(w, h int32) {
 	// column (logs/music) readable underneath.
 	panelH := int32(len(lines)+3)*lineH + 2*panelPad // 3 header lines (health + diag + cold-load)
 	panel := sdl.Rect{X: 0, Y: h - panelH, W: w * 55 / 100, H: panelH}
-	// Compositor census: the overlay's "last pkt Ns" readout ages in real
-	// time — record where it drew so the diagTickBudget tick can clip to it.
-	a.drawnDebugOvRect = panel
 	c.Fill(panel, sdl.Color{R: 0, G: 0, B: 0, A: 200})
 	y := panel.Y + panelPad
 	c.LabelClipped(panel.X+6, y, panel.W-12, a.debugHealthLine(), ColAccent)
@@ -85,8 +82,8 @@ func (a *App) debugDiagLine() string {
 	if a.room != nil {
 		queue = a.room.QueueLen()
 	}
-	return fmt.Sprintf("diag · tabs %d · area %s · queue %d · ic %d · ooc %d · goroutines %d · sceneReloads %d · drawnFps %d · presFps %d",
-		len(a.tabs), area, queue, len(a.icLog), len(a.oocLog), runtime.NumGoroutine(), a.sceneReloads, a.drawnFPS, a.presFPS)
+	return fmt.Sprintf("diag · tabs %d · area %s · queue %d · ic %d · ooc %d · goroutines %d",
+		len(a.tabs), area, queue, len(a.icLog), len(a.oocLog), runtime.NumGoroutine())
 }
 
 // debugColdLoadLine is the cold-load profiling readout (the playtest "profile

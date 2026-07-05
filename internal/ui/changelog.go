@@ -194,8 +194,9 @@ func (a *App) drawChangelog(w, h int32) {
 	track := sdl.Rect{X: w - scrollBarW - pad, Y: top, W: scrollBarW, H: viewH}
 	a.changelogScroll = c.VScrollbar("changelogbar", track, a.changelogScroll, contentH, viewH)
 
-	prevClip, hadClip := c.pushClip(sdl.Rect{X: 0, Y: top, W: w, H: viewH})
-	defer c.popClip(prevClip, hadClip)
+	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
+	_ = c.Ren.SetClipRect(&clip)
+	defer func() { _ = c.Ren.SetClipRect(nil) }()
 
 	y := top - a.changelogScroll
 	for _, fl := range a.changelogFlat {

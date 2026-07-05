@@ -4,9 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/veandco/go-sdl2/sdl"
-
-	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
@@ -74,7 +71,7 @@ func TestSkipFrameCaretScheduled(t *testing.T) {
 	if a.SkipFrame(true, false) {
 		t.Error("exp: a pending caret flip must render")
 	}
-	if !a.RenderNeeded(true) {
+	if !a.RenderNeeded() {
 		t.Error("a caret flip is redraw-worthy damage")
 	}
 
@@ -88,9 +85,7 @@ func TestSkipFrameCaretScheduled(t *testing.T) {
 }
 
 // TestSkipFrameDamageRefuses pins the damage sources: drained packets
-// (uiDirty) refuse the skip until a real frame absorbs them — in BOTH modes,
-// since the heartbeat became opt-in (a static classic screen has no periodic
-// frame left to absorb a missed signal).
+// (uiDirty) refuse the skip until a real frame absorbs them.
 func TestSkipFrameDamageRefuses(t *testing.T) {
 	a := expApp(t)
 	if !a.SkipFrame(true, false) {
@@ -100,30 +95,14 @@ func TestSkipFrameDamageRefuses(t *testing.T) {
 	if a.SkipFrame(true, false) {
 		t.Error("exp: pending packet damage must render")
 	}
-	if !a.RenderNeeded(true) {
+	if !a.RenderNeeded() {
 		t.Error("uiDirty is redraw-worthy damage")
-	}
-
-	// Classic: the same damage check stands in for the retired always-on
-	// heartbeat (an OOC line on a static courtroom must not wait forever).
-	b := expApp(t)
-	b.d.Prefs.SetEventDrivenLoop(false)
-	b.room = &courtroom.Courtroom{}
-	b.sess = &courtroom.Session{}
-	if !b.SkipFrame(true, false) {
-		t.Fatal("precondition: the static classic courtroom should skip")
-	}
-	b.uiDirty = true
-	if b.SkipFrame(true, false) {
-		t.Error("classic: pending packet damage must render (no heartbeat to absorb it)")
 	}
 }
 
 // TestSkipFrameSharedRefusals pins the refusals shared by BOTH modes: input
-// this pass, a live voice session (voicePump is Frame-driven), an open
-// animated sprite preview — and the staleness heartbeat, which is a TOGGLE
-// now (default OFF after the playtest verdict on the hardcoded 2 fps floor):
-// stale alone must not force a frame until the user opts back in.
+// this pass, the staleness heartbeat, a live voice session (voicePump is
+// Frame-driven), and an open animated sprite preview.
 func TestSkipFrameSharedRefusals(t *testing.T) {
 	for _, exp := range []bool{true, false} {
 		a := expApp(t)
@@ -153,157 +132,48 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 		}
 		a.drawnAnimChrome = false
 		a.lastFrameDrawn = time.Now().Add(-2 * paceHeartbeat)
-		if !a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: heartbeat OFF (default): a stale static screen must keep skipping", exp)
-		}
-		a.d.Prefs.SetPaceHeartbeat(true)
 		if a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: heartbeat ON: past the heartbeat a real frame must draw", exp)
+			t.Errorf("exp=%v: past the heartbeat a real frame must draw", exp)
 		}
 	}
 }
 
-// TestNextWakeDelay pins the scheduled-wake math: with the safety heartbeat
-// OFF (the default) an empty schedule parks at the flat housekeeping cadence
-// no matter how stale the screen is (the busy-spin guard); heartbeat ON keeps
-// the classic time-to-stale remainder with its overdue floor; a focused caret
-// and a RUNNING server clock pull the wake to their next due as REAL
-// deadlines (scheduled=true — the expiry renders); a PAUSED clock schedules
-// nothing; and the FROZEN sentinel silences the caret/clock wakes while the
-// local alarm still lands its due-fire.
+// TestNextWakeDelay pins the scheduled-wake math: the heartbeat bounds an
+// empty schedule, a focused caret and a RUNNING server clock pull the wake to
+// their next due, a PAUSED clock schedules nothing, and the floor prevents a
+// busy-spin on an overdue deadline.
 func TestNextWakeDelay(t *testing.T) {
 	a := expApp(t)
 
-	// Heartbeat OFF (default): the flat housekeeping cadence, unscheduled.
-	if d, sched := a.NextWakeDelay(true); d != paceHeartbeat || sched {
-		t.Errorf("empty schedule (heartbeat off): wake = %v sched=%v, want the flat %v cadence, unscheduled", d, sched, paceHeartbeat)
-	}
-	// …and a screen stale for an HOUR parks exactly the same. The remainder
-	// math would pin at the minWakeDelay floor and busy-spin the park two
-	// hundred times a second — the regression this base must never grow back.
-	a.lastFrameDrawn = time.Now().Add(-time.Hour)
-	if d, sched := a.NextWakeDelay(true); d != paceHeartbeat || sched {
-		t.Errorf("stale + heartbeat off: wake = %v sched=%v, want the flat cadence (busy-spin guard)", d, sched)
+	// Empty schedule: the heartbeat remainder (fresh frame → ≈ paceHeartbeat).
+	if d := a.NextWakeDelay(); d < paceHeartbeat-100*time.Millisecond || d > paceHeartbeat {
+		t.Errorf("empty schedule: wake = %v, want ≈ the %v heartbeat", d, paceHeartbeat)
 	}
 
-	// Heartbeat ON: the time-to-stale remainder — floored when overdue,
-	// ≈ the full window right after a frame.
-	a.d.Prefs.SetPaceHeartbeat(true)
-	if d, _ := a.NextWakeDelay(true); d != minWakeDelay {
-		t.Errorf("overdue heartbeat: wake = %v, want the %v floor", d, minWakeDelay)
-	}
-	a.lastFrameDrawn = time.Now()
-	if d, _ := a.NextWakeDelay(true); d < paceHeartbeat-100*time.Millisecond || d > paceHeartbeat {
-		t.Errorf("fresh frame + heartbeat on: wake = %v, want ≈ the %v remainder", d, paceHeartbeat)
-	}
-	a.d.Prefs.SetPaceHeartbeat(false)
-
-	// A focused caret 300 ms into its blink: the flip is ~200 ms out, and it
-	// is a REAL deadline (the expiry renders the flip).
+	// A focused caret 300 ms into its blink: the flip is ~200 ms out.
 	a.ctx.focusID = "field"
 	a.ctx.caretAcc = 300 * time.Millisecond
-	if d, sched := a.NextWakeDelay(true); d > 200*time.Millisecond || d < 100*time.Millisecond || !sched {
-		t.Errorf("caret at 300ms: wake = %v sched=%v, want ≈ 200ms, scheduled", d, sched)
+	if d := a.NextWakeDelay(); d > 200*time.Millisecond || d < 100*time.Millisecond {
+		t.Errorf("caret at 300ms: wake = %v, want ≈ 200ms", d)
 	}
-	// FROZEN idle (typed 0): the caret stops blinking — no flip wake.
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-	if d, sched := a.NextWakeDelay(true); d != paceHeartbeat || sched {
-		t.Errorf("frozen idle: caret wake = %v sched=%v, want none", d, sched)
-	}
-	// The sentinel is per focus state: only the IDLE knob is frozen, so the
-	// UNFOCUSED schedule keeps its caret flip.
-	if d, sched := a.NextWakeDelay(false); d > 200*time.Millisecond || !sched {
-		t.Errorf("unfocused with only idle frozen: caret wake = %v sched=%v, want the flip", d, sched)
-	}
-	a.d.Prefs.SetIdleFPS(0)
 	a.ctx.focusID = ""
 
-	// A running server clock with 2.4 s left: wake just past the 0.4 s
-	// boundary (the readout ticks on the second).
+	// A running server clock with 2.4 s left: wake just past the 0.4 s boundary.
 	a.sess = &courtroom.Session{}
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Running: true, Deadline: time.Now().Add(2400 * time.Millisecond)}
-	if d, sched := a.NextWakeDelay(true); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack || !sched {
-		t.Errorf("running clock at x.4s: wake = %v sched=%v, want ≈ 400ms+slack, scheduled", d, sched)
+	if d := a.NextWakeDelay(); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack {
+		t.Errorf("running clock at x.4s: wake = %v, want ≈ 400ms+slack", d)
 	}
-	// Frozen holds the chip's readout: no per-second wake.
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-	if d, sched := a.NextWakeDelay(true); d != paceHeartbeat || sched {
-		t.Errorf("frozen idle: clock wake = %v sched=%v, want none", d, sched)
-	}
-	// …but the LOCAL alarm still fires. Far out (90.2 s): frozen schedules NO
-	// per-second tick where unfrozen would (the readout is decoration)…
-	a.timerEndAt = time.Now().Add(90*time.Second + 200*time.Millisecond)
-	if d, sched := a.NextWakeDelay(true); d != paceHeartbeat || sched {
-		t.Errorf("frozen + far alarm: wake = %v sched=%v, want no per-second tick", d, sched)
-	}
-	// …while CLOSE to due, frozen wakes exactly once, at the fire moment.
-	a.timerEndAt = time.Now().Add(250 * time.Millisecond)
-	if d, sched := a.NextWakeDelay(true); !sched || d < 150*time.Millisecond || d > 250*time.Millisecond+2*timerTickSlack {
-		t.Errorf("frozen + due alarm: wake = %v sched=%v, want ≈ its due-fire", d, sched)
-	}
-	a.timerEndAt = time.Time{}
-	a.d.Prefs.SetIdleFPS(0)
-
-	// Paused server clock: frozen readout, nothing scheduled — back to the
-	// flat cadence.
+	// Paused: frozen readout, nothing scheduled — back to the heartbeat bound.
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second}
-	if d, sched := a.NextWakeDelay(true); d != paceHeartbeat || sched {
-		t.Errorf("paused clock: wake = %v sched=%v, want the flat cadence", d, sched)
-	}
-}
-
-// TestSkipFrameFrozen pins the typed-0 FROZEN sentinel across both loop
-// modes: the decoration refusals (caret blink, clock readouts) gate off in
-// the state whose knob froze — and ONLY that state — while a RUNNING local
-// alarm still keeps classic frames coming (its due-fire is Frame-driven).
-func TestSkipFrameFrozen(t *testing.T) {
-	// Experimental: a pending caret flip is normally damage; frozen it isn't.
-	a := expApp(t)
-	a.ctx.focusID = "field"
-	a.ctx.caretOn = true
-	a.drawnCaretOn = false // a flip is showable
-	if !a.RenderNeeded(true) {
-		t.Fatal("precondition: a pending caret flip is damage while unfrozen")
-	}
-	a.d.Prefs.SetIdleFPS(config.FPSZero)
-	if a.RenderNeeded(true) {
-		t.Error("frozen idle: the caret flip must not count as damage")
-	}
-	if !a.SkipFrame(true, false) {
-		t.Error("frozen idle: the static screen must skip despite the caret")
-	}
-	if !a.RenderNeeded(false) {
-		t.Error("only the IDLE knob is frozen: the unfocused state still draws its caret flip")
+	if d := a.NextWakeDelay(); d < paceHeartbeat-100*time.Millisecond {
+		t.Errorf("paused clock: wake = %v, want the heartbeat bound", d)
 	}
 
-	// Classic: the caret and clock refusals gate off under frozen…
-	a.d.Prefs.SetEventDrivenLoop(false)
-	a.room = &courtroom.Courtroom{}
-	a.sess = &courtroom.Session{}
-	if !a.SkipFrame(true, false) {
-		t.Error("classic frozen: a focused field must not force the idle render")
-	}
-	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Running: true, Deadline: time.Now().Add(time.Minute)}
-	if !a.SkipFrame(true, false) {
-		t.Error("classic frozen: a ticking server-clock readout holds — still skips")
-	}
-	// …but a RUNNING local alarm is an EVENT, not decoration: it must keep
-	// frames coming or it would only ring when unrelated damage landed.
-	a.timerEndAt = time.Now().Add(time.Minute)
-	if a.SkipFrame(true, false) {
-		t.Error("classic frozen: a running local alarm must keep frames coming (pollTimer is Frame-driven)")
-	}
-	a.timerEndAt = time.Time{}
-
-	// The background knob freezes the unfocused state the same way — and only
-	// that state.
-	a.d.Prefs.SetIdleFPS(0)
-	a.d.Prefs.SetUnfocusedFPS(config.FPSZero)
-	if !a.SkipFrame(false, false) {
-		t.Error("classic frozen background: the focused field must not force the render")
-	}
-	if a.SkipFrame(true, false) {
-		t.Error("focused with only the BACKGROUND knob frozen: the caret refusal stands")
+	// Overdue heartbeat: floored, never zero/negative (busy-spin guard).
+	a.lastFrameDrawn = time.Now().Add(-time.Hour)
+	if d := a.NextWakeDelay(); d != minWakeDelay {
+		t.Errorf("overdue: wake = %v, want the %v floor", d, minWakeDelay)
 	}
 }
 
@@ -334,33 +204,6 @@ func TestNextHoverDue(t *testing.T) {
 	c.hoverPreviewOn = true
 	if due, ok := c.NextHoverDue(); !ok || due <= 0 || due > 3*time.Second {
 		t.Errorf("pending preview dwell: due = %v ok=%v", due, ok)
-	}
-}
-
-// TestIsRealInput pins the input-grace classification: only genuine user
-// input arms the full-rate grace. Window/driver housekeeping still renders a
-// frame (sawEvent) but must not hold max fps — with a big animated sprite on
-// stage, its texture traffic fired such events every few seconds and the
-// client burst to full rate for the grace second (playtest, test2).
-func TestIsRealInput(t *testing.T) {
-	real := []sdl.Event{
-		&sdl.MouseMotionEvent{}, &sdl.MouseButtonEvent{}, &sdl.MouseWheelEvent{},
-		&sdl.KeyboardEvent{}, &sdl.TextInputEvent{}, &sdl.TextEditingEvent{},
-		&sdl.DropEvent{}, &sdl.TouchFingerEvent{},
-	}
-	for _, ev := range real {
-		if !IsRealInput(ev) {
-			t.Errorf("%T must count as real input", ev)
-		}
-	}
-	housekeeping := []sdl.Event{
-		&sdl.WindowEvent{}, &sdl.RenderEvent{}, &sdl.QuitEvent{},
-		&sdl.UserEvent{}, &sdl.ClipboardEvent{}, &sdl.AudioDeviceEvent{},
-	}
-	for _, ev := range housekeeping {
-		if IsRealInput(ev) {
-			t.Errorf("%T must NOT arm the input grace", ev)
-		}
 	}
 }
 

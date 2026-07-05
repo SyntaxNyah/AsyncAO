@@ -254,41 +254,6 @@ const defaultAutoReconnect = true
 // Default ON (a power-user Settings toggle turns it off for freeform placement).
 const defaultClipSpritesToStage = true
 
-// defaultNoFrameLimit shipped the DIAGNOSTIC no-limit render mode ON while
-// the flicker hunt ran (test10). The hunt settled on the compositor — dense
-// presents at damage-only draw cost — so the diagnostic retires to opt-in:
-// it only governs the classic paths (selective rendering off/unavailable),
-// and there it bypasses EVERY limiter and the static skip, so a
-// non-blocking windowed present path spins the loop at unlimited full-frame
-// renders (the idle GPU burn). The Settings toggle (Power user → Frame rate
-// & GPU) still enables it live for A/B runs. Prefs files written by
-// test10/11 carried the old ON baked in — the rev-1 migration below pulls
-// it back out of them, once.
-const defaultNoFrameLimit = false
-
-// prefsMigrationRev versions the ONE-TIME forced overwrites load applies to
-// older files (each step runs only on files stamped below it, then the
-// fresh stamp rides the next flush — every clean exit SaveNow()s). Bump it
-// when a shipped default must be pulled back out of everyone's saved file:
-// a plain bool serializes on every save, so flipping a default alone never
-// reaches a file that baked the old one. The stamp is what makes the user's
-// LATER explicit choice permanent — a stamped file is never re-forced.
-//
-//	rev 1 (test12): noFrameLimit forced OFF once — test10/11 shipped the
-//	diagnostic default-ON, baking `"noFrameLimit": true` into every
-//	tester's file.
-const prefsMigrationRev = 1
-
-// defaultSelectiveRender ships the compositor — selective rendering — ON for
-// the test channel. The UI renders into a cached render-target texture only
-// when something actually changed, and only the changed regions of it; the
-// cache is blitted to the backbuffer at a steady per-vsync cadence (one
-// textured quad, near-free), so presents are never sparse (the playtest
-// evidence: sparse presents themselves glitch some driver setups) while draw
-// cost tracks actual damage. Takes precedence over the no-limit and
-// event-driven modes while on; flip to false before any stable merge.
-const defaultSelectiveRender = true
-
 // defaultEventDrivenLoop enables the EXPERIMENTAL event-driven render loop
 // (test-branch trial): static screens stop rendering entirely between real
 // signals — input wakes the loop instantly (an OS-level event wait instead of
@@ -888,14 +853,10 @@ type AssetPreferences struct {
 	NotFoundTTLSecVal      int                          `json:"notFoundTTLSec,omitempty"`       // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
 	AdaptiveLatMultipleVal int                          `json:"adaptiveLatMultiple,omitempty"`  // per-host deadline = N × TTFB EWMA (0/absent = 8)
 	SpriteDownscaleOff     bool                         `json:"spriteDownscaleOff,omitempty"`   // disable the automatic decode downscale entirely (default OFF = downscale on)
-	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60; -1 = unlimited; positives unclamped)
-	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30; -1 = unlimited; -2 = frozen; positives unclamped)
-	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10; -1 = unlimited; -2 = frozen; positives unclamped)
+	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60; -1 = unlimited)
+	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30; -1 = unlimited)
+	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10; -1 = unlimited)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
-	NoFrameLimit           bool                         `json:"noFrameLimit"`                   // DIAGNOSTIC: bypass ALL frame limiting — render every pass, vsync paces (default OFF since test12; opt-in A/B toggle)
-	SelectiveRender        bool                         `json:"selectiveRender"`                // the compositor: damage-gated region redraws into a cached frame, steady blit-presents (default ON on the test channel)
-	PaceHeartbeat          bool                         `json:"paceHeartbeat"`                  // the 2 fps static-skip safety heartbeat (default OFF: a skipped screen renders only on real changes)
-	MigrationRev           int                          `json:"migrationRev,omitempty"`         // one-time-overwrite stamp (prefsMigrationRev): which forced migrations this file already received
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
@@ -1215,14 +1176,10 @@ type prefsJSON struct {
 	NotFoundTTLSec         int              `json:"notFoundTTLSec"`       // 404 TTL seconds (0 = default; restart)
 	AdaptiveLatMultiple    int              `json:"adaptiveLatMultiple"`  // deadline multiple (0 = 8)
 	SpriteDownscaleOff     bool             `json:"spriteDownscaleOff"`   // disable decode downscale (default OFF)
-	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60; -1 = unlimited; positives unclamped)
-	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30; -1 = unlimited; -2 = frozen; positives unclamped)
-	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10; -1 = unlimited; -2 = frozen; positives unclamped)
+	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60; -1 = unlimited)
+	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30; -1 = unlimited)
+	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10; -1 = unlimited)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
-	NoFrameLimit           *bool            `json:"noFrameLimit"`         // diagnostic no-limit render (default OFF since test12; pointer kept so test10/11 files apply their explicit value)
-	SelectiveRender        *bool            `json:"selectiveRender"`      // the compositor (default ON; pointer: absent != off)
-	MigrationRev           int              `json:"migrationRev"`         // one-time-overwrite stamp (absent/0 = pre-test12 file: rev-1 migration due)
-	PaceHeartbeat          bool             `json:"paceHeartbeat"`        // 2 fps skip heartbeat (default OFF, zero value)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
@@ -1565,9 +1522,6 @@ func defaultPrefs(path string) *AssetPreferences {
 		ShowFriendButton:     defaultShowFriendButton,
 		ClipSpritesToStage:   defaultClipSpritesToStage,
 		EventDrivenLoop:      defaultEventDrivenLoop,
-		NoFrameLimit:         defaultNoFrameLimit,
-		SelectiveRender:      defaultSelectiveRender,
-		MigrationRev:         prefsMigrationRev, // fresh configs are born current — migrations touch only older files
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
 		CharChatbox:          defaultCharChatbox,
@@ -1952,19 +1906,12 @@ func load(path string) (*AssetPreferences, error) {
 	if p.SpriteDownscalePctVal != 0 {
 		p.SpriteDownscalePctVal = clampPercent(p.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
 	}
-	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, false)
-	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, true)
-	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, true)
+	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, FPSCapMin, FPSCapMax)
+	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, IdleFPSMin, IdleFPSMax)
+	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax)
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
-	if onDisk.NoFrameLimit != nil { // pointer: absent keeps the default; the rev-1 migration below overrides baked pre-stamp values
-		p.NoFrameLimit = *onDisk.NoFrameLimit
-	}
-	if onDisk.SelectiveRender != nil { // pointer: absent keeps the default-ON
-		p.SelectiveRender = *onDisk.SelectiveRender
-	}
-	p.PaceHeartbeat = onDisk.PaceHeartbeat
 	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
 	if p.TexBudgetMiBVal != 0 {
 		p.TexBudgetMiBVal = clampPercent(p.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
@@ -2139,20 +2086,6 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.ChromeTheme != nil {
 		p.ChromeThemeKey = *onDisk.ChromeTheme
-	}
-
-	// One-time forced overwrites (prefsMigrationRev): pull retired defaults
-	// back OUT of files that baked them while they shipped ON. Runs AFTER
-	// the whole overlay so it wins over the file's stored value; each step
-	// fires only for files stamped below it. p.MigrationRev is already
-	// current (defaultPrefs seeds it), so the stamp persists with the next
-	// flush — SaveNow on every clean exit at the latest — after which any
-	// explicit re-opt-in in Settings is the user's to keep. Until that
-	// first save the force simply re-runs, idempotent.
-	if onDisk.MigrationRev < 1 {
-		// rev 1 (test12): retire the baked no-limit render diagnostic — it
-		// bypassed every limiter on the classic paths (the idle GPU burn).
-		p.NoFrameLimit = false
 	}
 	return p, nil
 }
@@ -6099,37 +6032,17 @@ const (
 	// the presents), and an unlimited idle/unfocused rate means that state is
 	// never throttled below the active pacing. Distinct from 0 = "the default".
 	FPSUnlimited = -1
-	// FPSZero is the "0 fps" sentinel the Idle and Background knobs may hold
-	// (typed 0 in their Settings number box): that state stops rendering for
-	// decoration — the blinking caret and ticking readouts freeze; ceremonies,
-	// stage animations and real changes still draw. The ACTIVE cap never
-	// takes it (a frozen foreground would freeze interaction itself; a typed
-	// 0 there falls back to the default). Stored as its own negative sentinel
-	// because 0 = "the default".
-	FPSZero = -2
 )
 
-// normalizeFPSPref maps a stored rate knob onto its valid domain. The knobs
-// accept ANY custom value (playtest ask: "from 0 to infinity"): 0 keeps the
-// shipped default, FPSUnlimited passes, FPSZero passes only where allowZero
-// (idle/background), and any positive integer passes UNCLAMPED — the min/max
-// constants only bound the slider track, not the typed value. Other negatives
-// (hand-edited garbage) fall back to the default. Shared by the setters and
-// the disk-load overlay.
-func normalizeFPSPref(fps int, allowZero bool) int {
-	switch {
-	case fps == 0 || fps == FPSUnlimited:
-		return fps
-	case fps == FPSZero:
-		if allowZero {
-			return fps
-		}
-		return 0
-	case fps < 0:
-		return 0
-	default:
+// normalizeFPSPref maps a stored rate knob onto its valid domain: 0 keeps the
+// default, FPSUnlimited passes through, anything else clamps to [min, max].
+// Shared by the setters and the disk-load overlay so a hand-edited file obeys
+// the same rules as the sliders.
+func normalizeFPSPref(fps, min, max int) int {
+	if fps == 0 || fps == FPSUnlimited {
 		return fps
 	}
+	return clampPercent(fps, min, max)
 }
 
 // SpriteWaitPairOn / SpriteWaitPreanimOn report the wait-mode strictness knobs
@@ -6520,78 +6433,6 @@ func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
 	p.markDirty()
 }
 
-// NoFrameLimitOn reports the DIAGNOSTIC no-limit toggle (default OFF since
-// test12 — the compositor is the shipping answer): bypass every frame
-// limiter and the static skip — render every loop pass, with vsync pacing
-// the presents like a plain game loop. The playtest escape hatch for
-// isolating whether a glitch comes from the pacing machinery (sparse
-// presents) or from the frames themselves. Only consulted on the classic
-// paths (selective rendering off/unavailable).
-func (p *AssetPreferences) NoFrameLimitOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.NoFrameLimit
-}
-
-// SetNoFrameLimit flips the diagnostic no-limit render mode (applies live).
-func (p *AssetPreferences) SetNoFrameLimit(on bool) {
-	p.mu.Lock()
-	if p.NoFrameLimit == on {
-		p.mu.Unlock()
-		return
-	}
-	p.NoFrameLimit = on
-	p.mu.Unlock()
-	p.markDirty()
-}
-
-// SelectiveRenderOn reports the compositor toggle (default ON on the test
-// channel): the UI renders into a cached render-target texture only when
-// something changed — and only the changed regions — while the cache blits to
-// the backbuffer every pass at a steady cadence, so presents are never sparse
-// (the driver-glitch trigger) and draw cost tracks actual damage. Takes
-// precedence over the no-limit and event-driven modes while on.
-func (p *AssetPreferences) SelectiveRenderOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.SelectiveRender
-}
-
-// SetSelectiveRender flips the compositor (applies live).
-func (p *AssetPreferences) SetSelectiveRender(on bool) {
-	p.mu.Lock()
-	if p.SelectiveRender == on {
-		p.mu.Unlock()
-		return
-	}
-	p.SelectiveRender = on
-	p.mu.Unlock()
-	p.markDirty()
-}
-
-// PaceHeartbeatOn reports the static-skip safety heartbeat toggle (default
-// OFF): when on, a statically-skipped screen still renders one real frame
-// every half second to heal anything the damage signals missed; when off, a
-// skipped screen renders only on real changes. Only matters while frame
-// limiting itself is enabled.
-func (p *AssetPreferences) PaceHeartbeatOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.PaceHeartbeat
-}
-
-// SetPaceHeartbeat flips the skip heartbeat (applies live).
-func (p *AssetPreferences) SetPaceHeartbeat(on bool) {
-	p.mu.Lock()
-	if p.PaceHeartbeat == on {
-		p.mu.Unlock()
-		return
-	}
-	p.PaceHeartbeat = on
-	p.mu.Unlock()
-	p.markDirty()
-}
-
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
 // idle rate, and the another-window-has-focus rate.
@@ -6604,10 +6445,10 @@ func (p *AssetPreferences) FPSCap() int {
 	return p.FPSCapVal
 }
 
-// SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited =
-// no cap; any positive value accepted unclamped).
+// SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited = no
+// cap; else clamped).
 func (p *AssetPreferences) SetFPSCap(fps int) {
-	fps = normalizeFPSPref(fps, false)
+	fps = normalizeFPSPref(fps, FPSCapMin, FPSCapMax)
 	p.mu.Lock()
 	if p.FPSCapVal == fps {
 		p.mu.Unlock()
@@ -6629,10 +6470,9 @@ func (p *AssetPreferences) IdleFPS() int {
 }
 
 // SetIdleFPS persists the idle frame rate (0 = default, FPSUnlimited = never
-// throttle when idle, FPSZero = freeze decoration while idle; any positive
-// value accepted unclamped).
+// throttle when idle; else clamped).
 func (p *AssetPreferences) SetIdleFPS(fps int) {
-	fps = normalizeFPSPref(fps, true)
+	fps = normalizeFPSPref(fps, IdleFPSMin, IdleFPSMax)
 	p.mu.Lock()
 	if p.IdleFPSVal == fps {
 		p.mu.Unlock()
@@ -6654,10 +6494,9 @@ func (p *AssetPreferences) UnfocusedFPS() int {
 }
 
 // SetUnfocusedFPS persists the unfocused frame rate (0 = default,
-// FPSUnlimited = never throttle when unfocused, FPSZero = freeze decoration
-// while unfocused; any positive value accepted unclamped).
+// FPSUnlimited = never throttle when unfocused; else clamped).
 func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
-	fps = normalizeFPSPref(fps, true)
+	fps = normalizeFPSPref(fps, UnfocusedFPSMin, UnfocusedFPSMax)
 	p.mu.Lock()
 	if p.UnfocusedFPSVal == fps {
 		p.mu.Unlock()
@@ -6721,9 +6560,6 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.IdleFPSVal = 0
 	p.UnfocusedFPSVal = 0
 	p.EventDrivenLoop = defaultEventDrivenLoop
-	p.NoFrameLimit = defaultNoFrameLimit
-	p.SelectiveRender = defaultSelectiveRender
-	p.PaceHeartbeat = false
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()

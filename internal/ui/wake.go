@@ -62,20 +62,3 @@ func IsWakeEvent(ev sdl.Event) bool {
 	}
 	return false
 }
-
-// IsRealInput reports whether ev is REAL user input — the only kind that arms
-// the full-rate input grace. Window/driver housekeeping (EXPOSED repaints,
-// RENDER_TARGETS_RESET after heavy texture traffic, focus/move events) still
-// renders a frame like any event, but must never hold max fps for the grace
-// window: with a big animated sprite on stage its texture traffic fired such
-// events every few seconds and the client burst to full rate for exactly the
-// grace second "as if it detected an input" (playtest, v1.55.0-test2).
-func IsRealInput(ev sdl.Event) bool {
-	switch ev.(type) {
-	case *sdl.MouseMotionEvent, *sdl.MouseButtonEvent, *sdl.MouseWheelEvent,
-		*sdl.KeyboardEvent, *sdl.TextInputEvent, *sdl.TextEditingEvent,
-		*sdl.DropEvent, *sdl.TouchFingerEvent:
-		return true
-	}
-	return false
-}

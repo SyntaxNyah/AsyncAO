@@ -247,8 +247,8 @@ func (a *App) drawAbout(w, h int32) {
 	}
 
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
-	prevClip, hadClip := c.pushClip(clip)
-	defer c.popClip(prevClip, hadClip)
+	_ = c.Ren.SetClipRect(&clip)
+	defer func() { _ = c.Ren.SetClipRect(nil) }()
 
 	y := top - a.aboutScroll
 	for _, fl := range a.aboutFlat {

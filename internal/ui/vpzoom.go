@@ -40,16 +40,15 @@ func (a *App) zoomDst(vp sdl.Rect) sdl.Rect {
 // only while zoomed) and the 1× reset chip.
 func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	c := a.ctx
-	a.noteVPRect(vp)      // compositor: the stage's damage region for anim-flip redraws
 	sc := a.renderScene() // real scene, or the slideshow's background override
 	if a.vpZoom <= 1 {
 		a.d.Viewport.Render(c.Ren, sc, vp)
 		a.drawStageFrame(vp) // #56 decorative frame (Off by default → no-op)
 		return
 	}
-	prevClip, hadClip := c.pushClip(vp)
+	_ = c.Ren.SetClipRect(&vp)
 	a.d.Viewport.Render(c.Ren, sc, a.zoomDst(vp))
-	c.popClip(prevClip, hadClip)
+	_ = c.Ren.SetClipRect(nil)
 	a.drawStageFrame(vp) // frame is chrome — it stays fixed while the camera zooms
 	// Reset chip, top-right of the stage.
 	chip := sdl.Rect{X: vp.X + vp.W - 40, Y: vp.Y + 4, W: 36, H: 20}

@@ -245,8 +245,8 @@ func (a *App) drawServerHelp(w, h int32) {
 	}
 	lineH := int32(c.font.Height()) + 4
 
-	prevClip, hadClip := c.pushClip(view) // keep scrolled content out of the header band
-	defer c.popClip(prevClip, hadClip)
+	_ = c.Ren.SetClipRect(&view) // keep scrolled content out of the header band
+	defer func() { _ = c.Ren.SetClipRect(nil) }()
 
 	// Two passes: measure (for the scrollbar), then draw. WrapText is width-memoized,
 	// so the doubled calls are cheap; the catalog is a dozen entries.

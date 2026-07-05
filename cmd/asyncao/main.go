@@ -353,30 +353,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		app.Connect(serverURL, serverURL)
 	}
 
-	// The compositor's frame cache (selective rendering): sized lazily in the
-	// loop (the window size isn't final until the clamp above ran). Unusable
-	// backends (no target textures) degrade to the classic paths silently.
-	canvas := render.NewCanvas(ren)
-	defer canvas.Destroy()
-	// canvasLost marks a RENDER_TARGETS_RESET / RENDER_DEVICE_RESET since the
-	// last pass: target textures lose their contents on a device reset, so the
-	// cache must rebuild and repaint even though its size didn't change.
-	canvasLost := false
-	// presentPeriod paces the compositor's steady presents when the driver's
-	// present path doesn't block (the "54% GPU in a tiny window" class): the
-	// display's own refresh period, so a non-blocking present composes at
-	// exactly the cadence a blocking vsync would. Re-queried on resize/display
-	// moves (the canvas recreation points). Falls back to the 60 fps frameCap.
-	presentPeriod := frameCap
-	queryRefresh := func() {
-		if di, err := window.GetDisplayIndex(); err == nil {
-			if dm, err := sdl.GetCurrentDisplayMode(di); err == nil && dm.RefreshRate > 0 {
-				presentPeriod = time.Second / time.Duration(dm.RefreshRate)
-			}
-		}
-	}
-	queryRefresh()
-
 	// --- main loop: fixed-cadence update + single render pass ---
 	last := time.Now()
 	// scheduledNap is the sleep WE chose last pass (pacing tier / skip nap /
@@ -410,8 +386,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// (Inverting these erased every click before the UI saw it.)
 		uiCtx.BeginFrame(dt)
 		sawEvent := false
-		sawInput := false  // REAL input minus bare motion (click, key, wheel, text, drop)
-		sawMotion := false // bare pointer motion (the short motion grace)
+		sawInput := false // any non-motion event (click, key, wheel, window)
 		handleEv := func(ev sdl.Event) {
 			if ui.IsWakeEvent(ev) {
 				return // a background doorbell (packet/decode), never user input
@@ -425,25 +400,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				if e.Type == sdl.DROPFILE {
 					app.HandleFileDrop(e.File)
 				}
-			case *sdl.RenderEvent:
-				// Target textures lose their contents on a driver device
-				// reset — the compositor's frame cache must rebuild and
-				// repaint, or the window would show garbage forever (it only
-				// ever presents the cache).
-				if e.Type == sdl.RENDER_TARGETS_RESET || e.Type == sdl.RENDER_DEVICE_RESET {
-					canvasLost = true
-				}
 			}
 			uiCtx.HandleEvent(ev)
 			sawEvent = true
-			// Window/driver housekeeping (EXPOSED repaints, render-reset after
-			// heavy texture traffic, focus/move) renders this pass like any
-			// event but arms NO grace: with a big animated sprite on stage its
-			// texture churn fired such events every few seconds and held max
-			// fps for the full input-grace second (playtest, test2).
-			if _, motion := ev.(*sdl.MouseMotionEvent); motion {
-				sawMotion = true
-			} else if ui.IsRealInput(ev) {
+			if _, motion := ev.(*sdl.MouseMotionEvent); !motion {
 				sawInput = true
 			}
 		}
@@ -459,7 +419,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// waving the cursor over nothing stops costing frames when it stops.
 		if sawInput {
 			app.NoteInput()
-		} else if sawMotion {
+		} else if sawEvent {
 			app.NoteMotion()
 		}
 
@@ -470,95 +430,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			continue
 		}
 
-		// SELECTIVE RENDERING (the compositor — default ON on the test
-		// channel; Settings → Power user → Frame rate & GPU). The whole UI
-		// lives in a cached render-target texture: a pass draws into it ONLY
-		// when App.WalkNeeded reports damage, clipped to exactly the damaged
-		// region (a hovered button repaints one rect; a typing message
-		// repaints stage+chatbox+log at the talk cadence; a static screen
-		// repaints NOTHING) — then the cache is blitted and presented every
-		// pass, paced to the panel. Both playtest findings hold at once:
-		// presents are never sparse (the single-frame window flicker tracks
-		// sparse presents on this driver class), and draw cost tracks actual
-		// change instead of the monitor (test10's no-limit GPU burn).
-		if prefs.SelectiveRenderOn() && canvas.OK() {
-			focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
-			w, h := window.GetSize()
-			if canvasLost {
-				canvas.Invalidate()
-				canvasLost = false
-			}
-			if canvas.Ensure(ren, w, h) {
-				app.DamageAll() // fresh texture: undefined pixels until a full walk
-				queryRefresh()  // a resize often means a display/refresh change too
-			}
-			if !canvas.OK() {
-				continue // creation failed mid-session: next pass takes the classic paths
-			}
-			// Global UI scale, same derivation as the classic path below — a
-			// scale CHANGE moves every widget, so it repaints everything.
-			prevScale := app.UIScale()
-			app.SetAutoScaleFromWindow(w, h)
-			if app.UIScale() != prevScale {
-				app.DamageAll()
-			}
-			scale := float32(app.UIScale()) / 100
-			lw := int32(float32(w) / scale)
-			lh := int32(float32(h) / scale)
-
-			if app.WalkNeeded(focused, sawInput) {
-				if err := canvas.Begin(ren); err == nil {
-					_ = ren.SetScale(scale, scale)
-					_ = ren.SetDrawColor(0, 0, 0, 255)
-					if clip, clipped := app.TakeDamage(lw, lh); clipped {
-						app.SetFrameClip(&clip)
-						_ = ren.FillRect(&clip) // Clear ignores the clip rect: repaint the base of exactly the damage
-					} else {
-						app.SetFrameClip(nil)
-						_ = ren.Clear()
-					}
-					app.Frame(dt, lw, lh)
-					app.SetFrameClip(nil)
-					canvas.End(ren)
-				}
-				// A Begin failure leaves the damage accumulated — the next
-				// pass retries; the blit below still presents the old cache.
-			} else {
-				// No damage: no walk. Keep the session pumping and the stage
-				// clocks real-time-true (flips detected next pass).
-				app.Background(dt)
-				app.AdvanceStage(dt)
-			}
-			// Steady presents, every pass: one full-cache blit (a single
-			// textured quad) + present, paced to the display so a
-			// non-blocking present path can't spin the loop.
-			canvas.Blit(ren)
-			if app.DamageOverlayOn() {
-				// The damage X-ray (F8 → Perf): drawn on the BACKBUFFER after
-				// the blit, so it can never enter the cached frame or the
-				// census — the compositor is watched without being changed.
-				app.DrawDamageOverlay(ren, scale, lw, lh)
-			}
-			ren.Present()
-			app.NotePresent()
-			if sleep := presentPeriod - time.Since(now); sleep > 0 {
-				scheduledNap = sleep
-				time.Sleep(sleep)
-			}
-			continue
-		}
-
-		// DIAGNOSTIC no-limit mode (opt-in since test12 — the compositor above
-		// is the shipping answer to the flicker hunt): bypass the static skip
-		// and every pacing tier below — render each loop pass and let vsync
-		// pace the presents, like a plain game loop. Left as an A/B escape
-		// hatch because the finding it encoded still matters: the
-		// single-frame window flicker tracks SPARSE presents (low idle rates
-		// flicker, uncapped doesn't). Beware what shipping it ON did: on
-		// non-blocking windowed present paths pace=0 spins this loop at
-		// unlimited full-frame renders (the test11 "idle GPU crush" report).
-		noLimit := prefs.NoFrameLimitOn()
-
 		// Static skip (the deepest pacing tier): the courtroom is a genuinely
 		// static image right now — no input this pass, nothing animating, nobody
 		// talking, no toast/caret/timer — so the last presented frame is still
@@ -567,7 +438,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// picked up as fast as an idle-rendered frame would have. App.SkipFrame
 		// heartbeats a real frame every paceHeartbeat to heal anything missed.
 		focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
-		if !noLimit && app.SkipFrame(focused, sawEvent) {
+		if app.SkipFrame(focused, sawEvent) {
 			app.Background(dt)
 			if prefs.EventDrivenLoopOn() {
 				// EXPERIMENTAL event-driven wait. The Background pumps above may
@@ -575,20 +446,18 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				// loop straight around and render it — the next pass's SkipFrame
 				// refuses on RenderNeeded. Otherwise park on the OS event wait
 				// until input, a wake doorbell, or the nearest scheduled deadline
-				// (caret flip, clock second, hover reveal). Instant input
-				// response at zero render + zero CPU cost. A timed-out wait
-				// renders one frame only when a REAL deadline chose the delay or
-				// the safety-heartbeat toggle is on — a bare housekeeping expiry
-				// just pumps Background and re-checks damage, so a static screen
-				// renders NOTHING (the hardcoded-2fps playtest complaint).
-				if app.RenderNeeded(focused) {
+				// (caret flip, clock second, hover reveal, staleness heartbeat).
+				// Instant input response at zero render + zero CPU cost; a
+				// timed-out wait means the deadline is due, so the next pass
+				// renders exactly one frame for it (NoteDeadline).
+				if app.RenderNeeded() {
 					continue
 				}
-				wait, sched := app.NextWakeDelay(focused)
+				wait := app.NextWakeDelay()
 				scheduledNap = wait
 				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
 					pendingEv = ev
-				} else if sched || prefs.PaceHeartbeatOn() {
+				} else {
 					app.NoteDeadline()
 				}
 				continue
@@ -615,7 +484,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		_ = ren.Clear()
 		app.Frame(dt, lw, lh)
 		ren.Present()
-		app.NotePresent() // F8 "presFps" gauge counts presents in every mode
 
 		// Frame pacing (the GPU-burn fix): sleep the frame's remaining budget.
 		// vsync stays on for tear-free presents, but it CANNOT be the throttle —
@@ -627,9 +495,6 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// subsumes the old fixed frameCap sleep (FramePace's foreground cap
 		// defaults to the same 60).
 		pace := app.FramePace(focused)
-		if noLimit {
-			pace = 0 // no-limit mode: render every pass, vsync paces the presents
-		}
 		if !vsync && (pace == 0 || pace > frameCap) {
 			pace = frameCap // -vsync=false keeps at least its old 60 fps ceiling
 		}

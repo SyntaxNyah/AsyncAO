@@ -116,9 +116,6 @@ func pingQuality(ms int, unknown bool) (bars int32, col sdl.Color) {
 // atomic RTT; the bars are Fill rects and the tooltip text is cached (rebuilt only when the ms
 // changes), so steady-state draw is 0-alloc.
 func (a *App) drawPingChip(x, y int32) {
-	// Compositor census: zero the record first so an off/disconnected chip
-	// stops the WalkNeeded tier check at one compare (rect W == 0).
-	a.drawnPingRect = sdl.Rect{}
 	if !a.d.Prefs.PingChipOn() || a.conn == nil {
 		return
 	}
@@ -131,11 +128,6 @@ func (a *App) drawPingChip(x, y int32) {
 	const barW, gap, baseH, step, nBars = int32(3), int32(2), int32(4), int32(3), int32(4)
 	chipW := nBars*(barW+gap) - gap
 	chipH := baseH + (nBars-1)*step
-	// Compositor census: the bars read a transport-level atomic no packet
-	// census sees — record the drawn rect + tier so WalkNeeded can repaint
-	// the chip when the tier moves (stale-tier fix, test12).
-	a.drawnPingRect = sdl.Rect{X: x, Y: y, W: chipW, H: chipH}
-	a.drawnPingBars = bars
 	for i := int32(0); i < nBars; i++ {
 		bh := baseH + i*step
 		bc := ColTextDim

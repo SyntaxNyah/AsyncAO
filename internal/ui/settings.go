@@ -652,33 +652,23 @@ func (a *App) settingsSection(y, w int32, title string) int32 {
 // every settings draw helper. (See drawSettingsGeneral for the pattern.)
 func (a *App) formW2() int32 { return a.formX + a.formW + scrollBarW }
 
-// fpsSettingRow draws one frame-rate row: the slider (bottom = default,
-// covering the everyday [min, max] band), an exact-number entry (Enter
-// applies ANY value, unclamped — the playtest ask: 0 to infinity), and the
-// ∞ no-limit toggle. Typed 0 means the FROZEN sentinel where allowZero
-// (idle/background: render nothing in that state); the active cap never
-// freezes, so there a 0 falls back to the default. get/set wrap the pref —
-// the setters are sentinel-aware (config.FPSUnlimited / config.FPSZero) and
-// pass positives through unclamped. buf backs the number field
-// (settingsState), reseeded from the pref while unfocused so live typing
-// never fights the stored value. Returns the y past the row.
-func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, allowZero bool, get func() int, set func(int), buf *string, tip string) int32 {
+// fpsSettingRow draws one frame-rate row: the slider (bottom = default), an
+// exact-number entry (Enter applies; 0 or less = back to the default), and the
+// ∞ no-limit toggle. get/set wrap the pref — the setters are sentinel-aware
+// (config.FPSUnlimited) and clamp typed values to [min, max]. buf backs the
+// number field (settingsState), reseeded from the pref while unfocused so live
+// typing never fights the stored value. Returns the y past the row.
+func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, get func() int, set func(int), buf *string, tip string) int32 {
 	c := a.ctx
 	pad := a.formX // settings helpers must shadow the form origin (drawSettings rebase)
 	c.Label(pad, y+4, label, ColText)
 	cur := get()
-	// Slider: compare against the value we PASSED (the sentinels show as the
-	// bottom position, an over-track typed value pins the knob at the top),
-	// so merely DISPLAYING such a pref can't write a different value back —
-	// only a real drag/wheel move does. (Slider clamps its input to the
-	// track: without the pre-clamp here, showing a typed 999 would return
-	// max ≠ passed and silently store the clamp.)
+	// Slider: compare against the value we PASSED (unlimited shows as the
+	// bottom position), so merely displaying an unlimited pref can't write a
+	// concrete value back — only a real drag/wheel move does.
 	passed := 0
 	if cur > 0 {
 		passed = cur
-	}
-	if passed > max {
-		passed = max
 	}
 	track := sdl.Rect{X: pad + 210, Y: y + 2, W: 170, H: 16}
 	nv := int(clampI32(c.Slider(id, track, int32(passed), int32(max)), 0, int32(max)))
@@ -693,15 +683,12 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, allowZ
 	// Exact-number entry (the power-user ask): type any value, Enter applies.
 	fieldID := id + "-num"
 	fr := sdl.Rect{X: track.X + track.W + 8, Y: y, W: 52, H: btnH}
-	// The getter maps the 0 sentinel to the shipped default, so cur is a
-	// concrete rate or one of the negative sentinels here.
+	// The getter maps the 0 sentinel to the shipped default, so cur is either
+	// FPSUnlimited or a concrete rate here.
 	if c.focusID != fieldID {
-		switch cur {
-		case config.FPSUnlimited:
+		if cur == config.FPSUnlimited {
 			*buf = ""
-		case config.FPSZero:
-			*buf = "0"
-		default:
+		} else {
 			*buf = strconv.Itoa(cur)
 		}
 	}
@@ -709,13 +696,10 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, allowZ
 	*buf, entered = c.TextField(fieldID, fr, *buf, "fps")
 	if entered {
 		if n, err := strconv.Atoi(strings.TrimSpace(*buf)); err == nil {
-			switch {
-			case n == 0 && allowZero:
-				set(config.FPSZero) // typed 0 = frozen: render nothing in this state
-			case n <= 0:
-				set(0) // negative (or 0 where frozen isn't offered) = back to the default
-			default:
-				set(n) // any positive value applies UNCLAMPED — the slider band is just the track
+			if n <= 0 {
+				set(0) // typed 0/negative = back to the default
+			} else {
+				set(n) // the setter clamps to [min, max]
 			}
 			cur = get()
 		}
@@ -739,8 +723,6 @@ func (a *App) fpsSettingRow(y int32, id, label string, min, max, def int, allowZ
 	switch {
 	case cur == config.FPSUnlimited:
 		lbl = "unlimited"
-	case cur == config.FPSZero:
-		lbl = "0 fps (frozen)"
 	case cur == def:
 		lbl = "default (" + strconv.Itoa(def) + " fps)"
 	default:
@@ -3089,42 +3071,21 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
-	sel := a.d.Prefs.SelectiveRenderOn()
-	if next := c.Checkbox(pad, y, "Selective rendering (default ON on this test build): redraw only what changed", sel); next != sel {
-		a.d.Prefs.SetSelectiveRender(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "The whole UI lives in a cached frame. Moving the mouse over dead space redraws nothing; a button lighting up redraws that button; a typing message redraws the stage, chatbox and log at the text's own pace; a sprite loop redraws the stage exactly when its frames flip. The cached frame is still PRESENTED to the screen at your monitor's rhythm every pass — a near-free copy — so frames are never sparse (the flicker some driver setups show with low frame rates can't come back). While this is ticked it takes precedence over every row below. Applies live; untick to fall back to the previous behaviour and compare.", ColTextDim)
-	y += 10
-	nfl := a.d.Prefs.NoFrameLimitOn()
-	if next := c.Checkbox(pad, y, "Frame limiting OFF (default on this test build): render every frame, vsync paces", nfl); next != nfl {
-		a.d.Prefs.SetNoFrameLimit(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "Applies only while selective rendering above is off. While this is ticked, ALL the pacing below — the static skip, the idle/background/active rates, the event-driven renderer — is bypassed and the client renders like a plain game at your monitor's rhythm. The single-frame window flicker tracks sparse frames on some driver setups, so continuous rendering is the current baseline; untick to re-enable the limiters and compare. Applies live.", ColTextDim)
-	y += 6
-	y = a.settingsDesc(pad, y, "With limiting ON, AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly. Each rate takes ANY typed number — the slider covers the everyday band, but the number box applies unclamped — and ∞ removes the limit: for Active that means vsync paces the frames; for Idle/Background it means never slowing down in that state. Typing 0 on Idle or Background FREEZES that state: nothing redraws until something real changes (the caret stops blinking, clock readouts hold; messages, animations and alarms still draw).", ColTextDim)
+	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: full rate while you interact or anything animates, the idle rate when the screen is static, the background rate when another window has focus (minimized draws nothing). Any input returns to full rate instantly. Each rate takes a typed exact number, and ∞ removes the limit — for Active that means vsync paces the frames; for Idle/Background it means never slowing down in that state.", ColTextDim)
 	y += 6
 	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
-		config.FPSCapMin, config.FPSCapMax, config.FPSCapDefault, false,
+		config.FPSCapMin, config.FPSCapMax, config.FPSCapDefault,
 		a.d.Prefs.FPSCap, a.d.Prefs.SetFPSCap, &settings.fpsBufs[0],
-		"The ceiling while interacting or animating. Type ANY exact number (the slider covers 30–240), or ∞ = uncapped/vsync. 60 is plenty for AO.")
+		"The ceiling while interacting or animating (30–240, type an exact number, or ∞ = uncapped/vsync). 60 is plenty for AO.")
 	y = a.fpsSettingRow(y, "idlefps", "Idle frame rate:",
-		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault, true,
+		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault,
 		a.d.Prefs.IdleFPS, a.d.Prefs.SetIdleFPS, &settings.fpsBufs[1],
-		"The rate when nothing is animating and there's been no input for a second. Type ANY number (slider: 10–120), 0 = frozen (render only real changes), ∞ = never slow down when idle. Input returns to the active rate instantly.")
+		"The rate when nothing is animating and there's been no input for a second (10–120, or ∞ = never slow down when idle). Input returns to the active rate instantly.")
 	y = a.fpsSettingRow(y, "unfocusedfps", "Background frame rate:",
-		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault, true,
+		config.UnfocusedFPSMin, config.UnfocusedFPSMax, config.UnfocusedFPSDefault,
 		a.d.Prefs.UnfocusedFPS, a.d.Prefs.SetUnfocusedFPS, &settings.fpsBufs[2],
-		"The rate while another window has focus. Type ANY number (slider: 5–60), 0 = frozen (render only real changes), ∞ = never slow down unfocused. Minimized draws nothing.")
+		"The rate while another window has focus (5–60, or ∞ = never slow down unfocused). Minimized draws nothing.")
 	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, voice, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
-	y += 10
-	hb := a.d.Prefs.PaceHeartbeatOn()
-	if next := c.Checkbox(pad, y, "Static-screen safety heartbeat (2 fps floor, default OFF)", hb); next != hb {
-		a.d.Prefs.SetPaceHeartbeat(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "With limiting on, a static screen normally redraws only when something actually changes. This adds a fixed two-frames-a-second floor on top as insurance: it heals any redraw the change signals might miss, at a small constant cost. Leave it off unless something visibly sticks stale. Applies live.", ColTextDim)
 	y += 10
 	edl := a.d.Prefs.EventDrivenLoopOn()
 	if next := c.Checkbox(pad, y, "Event-driven renderer (EXPERIMENTAL, default ON on this test build)", edl); next != edl {

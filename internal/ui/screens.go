@@ -504,7 +504,8 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 	// Clip to the grid viewport so scrolled cells slide under the fixed top bar
 	// (search + tabs + buttons) instead of covering it — same fix as the
 	// Characters tab.
-	prevClip, hadClip := c.pushClip(sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH})
+	gridClip := sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH}
+	_ = c.Ren.SetClipRect(&gridClip)
 	for i := range a.iniList {
 		if query != "" && !strings.Contains(a.iniLower[i], query) {
 			continue
@@ -522,7 +523,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 			row++
 		}
 	}
-	c.popClip(prevClip, hadClip)
+	_ = c.Ren.SetClipRect(nil)
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false)
 		a.closeSpritePreviewOnLeave()
@@ -684,7 +685,8 @@ func (a *App) drawCharSelect(w, h int32) {
 	// slide UNDER the fixed search/tabs/buttons instead of painting over them: the
 	// bar is drawn first, so without this the later cell draws covered it as you
 	// scrolled down, and search became unreachable. Keeps the bar always usable.
-	prevClip, hadClip := c.pushClip(sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH})
+	gridClip := sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH}
+	_ = c.Ren.SetClipRect(&gridClip)
 	for i := range a.sess.Chars {
 		slot := &a.sess.Chars[i]
 		if query != "" && !strings.Contains(a.charLower[i], query) {
@@ -706,7 +708,7 @@ func (a *App) drawCharSelect(w, h int32) {
 			row++
 		}
 	}
-	c.popClip(prevClip, hadClip)
+	_ = c.Ren.SetClipRect(nil)
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false)
 		a.closeSpritePreviewOnLeave()
@@ -1309,7 +1311,6 @@ func (a *App) drawCourtroom(w, h int32) {
 // roughly a third of the height with a sane floor so its input never gets crushed on short windows.
 func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	c := a.ctx
-	a.noteLogRect(rcol) // compositor: the live IC/OOC mirror is ceremony damage
 	oocH := rcol.H * 32 / 100
 	if oocH < cleanOOCMinH {
 		oocH = cleanOOCMinH
@@ -1738,13 +1739,6 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			box.Y -= g - box.H
 			box.H = g
 		}
-		// Compositor: the ceremony's chatbox damage region, recorded one
-		// line TALLER than drawn — the flat panel grows a line upward as
-		// the crawl wraps, and the next walk's clip (built from THIS
-		// record) must already cover where that growth step paints.
-		a.drawnChatRect = sdl.Rect{X: box.X, Y: box.Y - lineH, W: box.W, H: box.H + lineH}
-	} else {
-		a.drawnChatRect = box // authored skin art keeps its box — no growth to pad for
 	}
 	// Skin priority: the speaker's own art, else the theme's, else the flat
 	// translucent panel (themePage self-heals T1 eviction).
@@ -1800,7 +1794,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	a.handleChatSelect(textRect, sc)
 	if a.msAnim != nil || a.msRaster != nil {
 		// Clip to the box: oversized Text settings stay INSIDE it.
-		prevClip, hadClip := c.pushClip(box)
+		_ = c.Ren.SetClipRect(&box)
 		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
 			a.drawChatSelHighlight(textRect.X, textRect.Y, wrapW, sc)
 		}
@@ -1809,7 +1803,7 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		} else {
 			a.msRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
 		}
-		c.popClip(prevClip, hadClip)
+		_ = c.Ren.SetClipRect(nil)
 	}
 
 	a.chatZoomWheel(box)
@@ -2147,7 +2141,6 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 
 func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c := a.ctx
-	a.noteLogRect(r)                            // compositor: the live IC/OOC mirror is ceremony damage
 	c.Fill(r, a.partPanelOr(partLog, ColPanel)) // per-part tint (v1.52.0): the log column can carry its own colour
 	c.Border(r, ColAccent)                      // match the rest of the UI (buttons/OOC box/panels all border in the accent) — playtest: the log panel was the lone grey outline
 	// A "🔊" toggle at the right end drops a compact volume strip above the panel
