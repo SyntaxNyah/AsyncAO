@@ -38,16 +38,34 @@ const (
 
 	// rgbaBytesPerPixel is the decoded pixel size (image.RGBA).
 	rgbaBytesPerPixel = 4
-
-	// maxDecodedAssetBytes caps ONE asset's decoded payload (Σ w×h×4 across
-	// frames) at half the T1 texture budget. Pages above the whole budget
-	// can never become resident (ByteBudgetLRU rejects them) and one page
-	// near it would evict everything else — long community animations
-	// (hundreds of full-canvas frames) hit exactly that and rendered as
-	// invisible characters. Decoders truncate to the frames that fit: a
-	// shorter loop beats a sprite that never shows up.
-	maxDecodedAssetBytes = cache.DefaultT1BudgetBytes / 2
 )
+
+// defaultMaxDecodedAssetBytes caps ONE asset's decoded payload (Σ w×h×4 across
+// frames) at half the T1 texture budget. Pages above the whole budget can never
+// become resident (ByteBudgetLRU rejects them) and one page near it would evict
+// everything else — long community animations (hundreds of full-canvas frames)
+// hit exactly that and rendered as invisible characters. Decoders truncate to
+// the frames that fit: a shorter loop beats a sprite that never shows up.
+const defaultMaxDecodedAssetBytes = cache.DefaultT1BudgetBytes / 2
+
+// maxDecodedAssetBytes is the LIVE per-asset decode cap. It defaults to
+// defaultMaxDecodedAssetBytes; SetMaxDecodedAssetBytes scales it off the user's
+// actual texture budget (TexBudgetMiB) at startup — the SAME half-the-budget
+// ratio, so a bigger budget lets a longer animation decode in full (the "long
+// animations skip to the end past ~5 s" report) without moving the shipped
+// default or the eviction safety margin. Atomic: decode workers read it live.
+var maxDecodedAssetBytes atomic.Int64
+
+func init() { maxDecodedAssetBytes.Store(int64(defaultMaxDecodedAssetBytes)) }
+
+// SetMaxDecodedAssetBytes sets the per-asset decode cap in bytes (<= 0 restores
+// the default). Called once at startup from the texture budget.
+func SetMaxDecodedAssetBytes(n int64) {
+	if n <= 0 {
+		n = int64(defaultMaxDecodedAssetBytes)
+	}
+	maxDecodedAssetBytes.Store(n)
+}
 
 const (
 	// charIconDecodePx / emoteButtonDecodePx are the post-decode thumbnail
@@ -145,7 +163,7 @@ func boundedFrameCount(width, height, frames int) int {
 	if canvasBytes <= 0 {
 		return frames
 	}
-	maxFrames := maxDecodedAssetBytes / canvasBytes
+	maxFrames := int(maxDecodedAssetBytes.Load()) / canvasBytes
 	if maxFrames < 1 {
 		maxFrames = 1
 	}

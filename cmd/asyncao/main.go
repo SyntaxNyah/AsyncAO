@@ -253,6 +253,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer store.Purge()
+	// Scale the per-asset decode cap off the SAME (live) texture budget — half of
+	// it, the eviction-safe ratio — so raising the texture budget lets a longer
+	// animation decode in full instead of truncating past ~5 s (the decoder
+	// otherwise used a fixed cap off the DEFAULT budget, ignoring this setting).
+	assets.SetMaxDecodedAssetBytes((int64(prefs.TexBudgetMiB()) << 20) / 2)
 
 	// --- asset pipeline ---
 	var localMode bool
