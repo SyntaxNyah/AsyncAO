@@ -509,7 +509,19 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		if pace > 0 {
 			if sleep := pace - time.Since(now); sleep > 0 {
 				scheduledNap = sleep
-				time.Sleep(sleep)
+				// Event-driven loop: pace the frame with an INTERRUPTIBLE wait, not
+				// a plain sleep — input (or a background wake) arriving mid-budget
+				// must render NOW, not wait the whole budget out. A slow animation's
+				// long inter-frame budget otherwise froze the input box, worse the
+				// lower the idle rate (the "someone else's sprite animating at idle=0
+				// lags my input" report). The classic loop keeps its plain sleep.
+				if prefs.EventDrivenLoopOn() {
+					if ev := sdl.WaitEventTimeout(int(sleep / time.Millisecond)); ev != nil {
+						pendingEv = ev
+					}
+				} else {
+					time.Sleep(sleep)
+				}
 			}
 		}
 	}
