@@ -206,6 +206,14 @@ type Viewport struct {
 	bgAnim      animState
 	deskAnim    animState
 
+	// animGen counts visible stage changes (the census at the end of Update):
+	// frame flips, pages streaming in, base swaps, visibility flips, ramp
+	// steps. lastSig is the previous Update's signature the census diffs
+	// against. The compositor reads the gen via AnimGen to damage the
+	// viewport region exactly when the scene moved. Render thread only.
+	animGen uint64
+	lastSig stageSig
+
 	// OnPreanimDone forwards one-shot completion to the courtroom state
 	// machine.
 	OnPreanimDone func()
@@ -236,6 +244,16 @@ type Viewport struct {
 	// fill the stage), and only when no clip is already active, so screenshake and
 	// the reflection's own clip are untouched. The App mirrors the pref here.
 	clipSprites bool
+
+	// frameClip mirrors the compositor's damage clip for the current draw
+	// pass (App sets it alongside the other per-frame mirrors). The stage's
+	// own masks gate on "no clip already active" to avoid stomping the zoom
+	// path's clip — but the frame clip is a PIXEL bound, not layout, so it
+	// must read as "no clip": canOwnClip treats an SDL clip equal to it as
+	// free, ownClip intersects with it, and releaseClip restores it (never
+	// nil, which would un-bound the rest of the pass).
+	frameClipOn   bool
+	frameClipRect sdl.Rect
 
 	// holdMaxAge caps how long SpriteLoadHoldPrev may keep showing the previous
 	// sprite (0 = forever, the default): past it the layer goes blank rather than
@@ -442,6 +460,83 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 			v.pairAnim.advance(page, dt, false)
 		}
 	}
+
+	// Stage change census (the compositor's damage source for the viewport):
+	// bump the generation when the stage visibly changed since the LAST
+	// Update — a layer's frame index or resolved page moved (flips, a sprite
+	// streaming in, a base swap resetting to frame 0), a scene visibility
+	// flag flipped, a hold-previous stand-in aged out — or while a
+	// continuous ramp runs (those change sub-frame, every update). Compared
+	// across calls (not before/after within one) because the room mutates
+	// the scene BETWEEN viewport updates — a within-call diff would miss
+	// every scene-side flip. The free-running clocks above (rainbowPhase,
+	// fxClock, particles) deliberately do NOT bump: they're only read when
+	// their FX pref is on, and those prefs hold the app at continuous
+	// full-rate walks through wantsFullRate anyway.
+	if sig := v.stageSig(scene); v.RampActive() || sig != v.lastSig {
+		v.animGen++
+		v.lastSig = sig
+	}
+}
+
+// AnimGen is the stage-change generation: it moves exactly when an Update
+// visibly changed the stage (see the census in Update). The compositor
+// compares it against the last drawn value to redraw the viewport region
+// only when the scene actually moved. Render thread only.
+func (v *Viewport) AnimGen() uint64 { return v.animGen }
+
+// RampActive reports a continuous sub-frame motion in flight — shout punch,
+// entrance slide, speaker-swap crossfade — mirroring NextAnimDue's ramp gates
+// (each counts only while its enabling knob is on). The punch matters beyond
+// smoothness: it INFLATES the stage rect, so a viewport-rect damage clip
+// would strand its overhang — ramps must damage the whole frame.
+func (v *Viewport) RampActive() bool {
+	if v.fx.ShoutPunch && v.punchLeft > 0 {
+		return true
+	}
+	if v.fx.Entrance && v.entranceLeft > 0 {
+		return true
+	}
+	return v.crossfade > 0 && (v.speakerAnim.fadeLeft > 0 || v.pairAnim.fadeLeft > 0)
+}
+
+// vpLayerSig is one layer's slice of the stage signature: the cached page
+// pointer (a texture landing/replacing = a visible change), the frame index,
+// and whether the hold-previous stand-in has aged out (the draw threshold in
+// drawSprite — crossing it blanks the layer without touching page/frame).
+type vpLayerSig struct {
+	page  *TexturePage
+	frame int
+	aged  bool
+}
+
+// stageSig snapshots everything that decides the stage's pixels frame to
+// frame, cheaply and comparably (pointer + int + bool fields only — no store
+// queries, no allocations). Ramp PROGRESS is deliberately excluded: while a
+// ramp runs the census bumps unconditionally (RampActive), and its start/end
+// show up here anyway via the countdown-driven flags of the layers involved.
+type stageSig struct {
+	bg, desk, shout, speaker, pair vpLayerSig
+	speakerVisible, pairActive     bool
+}
+
+func (v *Viewport) stageSig(scene *courtroom.Scene) stageSig {
+	layer := func(a *animState) vpLayerSig {
+		return vpLayerSig{
+			page:  a.page,
+			frame: a.frame,
+			aged:  v.holdMaxAge > 0 && a.coldFor > v.holdMaxAge,
+		}
+	}
+	return stageSig{
+		bg:             layer(&v.bgAnim),
+		desk:           layer(&v.deskAnim),
+		shout:          layer(&v.shoutAnim),
+		speaker:        layer(&v.speakerAnim),
+		pair:           layer(&v.pairAnim),
+		speakerVisible: scene.Speaker.Visible,
+		pairActive:     scene.PairActive,
+	}
 }
 
 // NextAnimDue reports the stage's next scheduled animation deadline: 0 while a
@@ -590,10 +685,10 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 	// stage), and only when nothing else already owns a clip — so we restore to
 	// exactly the prior state and never fight the reflection's own clip (which runs
 	// just after this). Off → no SetClipRect at all → byte-identical to before.
-	spriteClip := v.clipSprites && !ren.IsClipEnabled()
+	spriteClip := v.clipSprites && v.canOwnClip(ren)
 	if spriteClip {
 		v.maskClip = stage
-		_ = ren.SetClipRect(&v.maskClip)
+		v.ownClip(ren, &v.maskClip)
 	}
 	if scene.PairActive && !scene.SpeakerInFront {
 		// Speaker behind: draw speaker first, pair over it.
@@ -606,7 +701,7 @@ func (v *Viewport) Render(ren *sdl.Renderer, scene *courtroom.Scene, vp sdl.Rect
 		v.drawSprite(ren, &scene.Speaker, &v.speakerAnim, spkVP, 0, noDim)
 	}
 	if spriteClip {
-		_ = ren.SetClipRect(nil)
+		v.releaseClip(ren)
 	}
 
 	// #123 glass-floor reflection: a flipped, faded mirror of the sprites below the floor line,
@@ -695,17 +790,17 @@ func (v *Viewport) drawReflections(ren *sdl.Renderer, scene *courtroom.Scene, vp
 	// Confine the reflection to the stage so it can't bleed past the viewport bottom — but
 	// only when a clip isn't already active (the zoom path clips to the stage itself), so we
 	// never stomp the camera-zoom clip.
-	needClip := !ren.IsClipEnabled()
+	needClip := v.canOwnClip(ren)
 	if needClip {
 		v.reflClip = vp
-		_ = ren.SetClipRect(&v.reflClip)
+		v.ownClip(ren, &v.reflClip)
 	}
 	v.drawReflection(ren, &scene.Speaker, &v.speakerAnim, spkVP, floorY, alpha)
 	if scene.PairActive {
 		v.drawReflection(ren, &scene.Pair, &v.pairAnim, vp, floorY, alpha)
 	}
 	if needClip {
-		_ = ren.SetClipRect(nil)
+		v.releaseClip(ren)
 	}
 }
 
@@ -807,6 +902,52 @@ func (v *Viewport) SetSpriteLoadMode(mode int) { v.spriteLoadMode = mode }
 // character sprites to the stage so an offset can't spill them out. The App
 // mirrors the user pref here once per frame.
 func (v *Viewport) SetClipSprites(on bool) { v.clipSprites = on }
+
+// SetFrameClip mirrors the compositor's damage clip for this draw pass (nil =
+// none). See the frameClip field comment: the stage's own masks must treat it
+// as a pixel bound, not a layout clip.
+func (v *Viewport) SetFrameClip(r *sdl.Rect) {
+	if r == nil {
+		v.frameClipOn, v.frameClipRect = false, sdl.Rect{}
+		return
+	}
+	v.frameClipOn, v.frameClipRect = true, *r
+}
+
+// canOwnClip reports that no LAYOUT clip is active — either nothing clips, or
+// the only active clip is the compositor's frame-damage clip. A real layout
+// clip (the camera-zoom path, a widget's scissor) wins and the stage masks
+// stand down, exactly as before the compositor existed.
+func (v *Viewport) canOwnClip(ren *sdl.Renderer) bool {
+	if !ren.IsClipEnabled() {
+		return true
+	}
+	return v.frameClipOn && ren.GetClipRect() == v.frameClipRect
+}
+
+// ownClip installs one of the stage's own masks (r points at the Viewport's
+// scratch rect), intersected with the frame clip so a damage-limited pass
+// stays damage-limited. A disjoint intersection clips to nothing.
+func (v *Viewport) ownClip(ren *sdl.Renderer, r *sdl.Rect) {
+	if v.frameClipOn {
+		if eff, ok := r.Intersect(&v.frameClipRect); ok {
+			*r = eff
+		} else {
+			*r = sdl.Rect{}
+		}
+	}
+	_ = ren.SetClipRect(r)
+}
+
+// releaseClip undoes ownClip: back to the frame clip when one is set, else
+// unclipped — never a blind nil while a damage pass is bounding pixels.
+func (v *Viewport) releaseClip(ren *sdl.Renderer) {
+	if v.frameClipOn {
+		_ = ren.SetClipRect(&v.frameClipRect)
+		return
+	}
+	_ = ren.SetClipRect(nil)
+}
 
 // SetHoldMaxAge caps how long hold-previous may bridge a cold sprite (0 = forever).
 func (v *Viewport) SetHoldMaxAge(d time.Duration) { v.holdMaxAge = d }

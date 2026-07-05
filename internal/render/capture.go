@@ -40,10 +40,15 @@ func (c *CaptureTarget) Size() (int32, int32) { return c.w, c.h }
 // target. Returns a FRESH *image.RGBA each call (its own Pix), so the caller can
 // quantize it and drop the RGBA immediately — the readback scratch is reused.
 func (c *CaptureTarget) Capture(ren *sdl.Renderer, draw func(dst sdl.Rect)) (*image.RGBA, error) {
+	// Restore whatever target was bound on entry, NOT nil: under the
+	// compositor the whole UI pass renders inside the frame-cache texture, so
+	// a blind nil restore would dump the rest of that pass onto the
+	// backbuffer (which is never presented directly in that mode).
+	prev := ren.GetRenderTarget()
 	if err := ren.SetRenderTarget(c.tex); err != nil {
 		return nil, err
 	}
-	defer func() { _ = ren.SetRenderTarget(nil) }()
+	defer func() { _ = ren.SetRenderTarget(prev) }()
 	_ = ren.SetDrawColor(0, 0, 0, 255)
 	_ = ren.Clear()
 	draw(sdl.Rect{X: 0, Y: 0, W: c.w, H: c.h})
