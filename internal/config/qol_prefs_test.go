@@ -1444,3 +1444,59 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 		t.Errorf("pan clamp = (%d,%d), want (%d,%d)", x, y, MaxThemePan, -MaxThemePan)
 	}
 }
+
+// TestFPSKnobDomain pins the widened frame-rate domain: values below the old
+// floors (30/10/5) are now honored (the "can't go below 10" report), 0 maps to
+// the FPSOff sentinel for Idle/Background and survives save→load un-clamped (0 =
+// never redraw must persist, not silently reset to the default), ∞ still round-
+// trips, out-of-range positives still clamp, and an ABSENT key still resolves to
+// the shipped default rather than off.
+func TestFPSKnobDomain(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	// A fresh (absent-key) prefs resolves to the defaults, never 0/off.
+	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
+		t.Fatalf("fresh defaults = %d/%d/%d, want %d/%d/%d",
+			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS(), FPSCapDefault, IdleFPSDefault, UnfocusedFPSDefault)
+	}
+	// Below the old floors is now allowed, not clamped up.
+	p.SetFPSCap(5)
+	p.SetIdleFPS(2)
+	p.SetUnfocusedFPS(1)
+	if p.FPSCap() != 5 || p.IdleFPS() != 2 || p.UnfocusedFPS() != 1 {
+		t.Errorf("low rates clamped: cap=%d idle=%d unfocused=%d, want 5/2/1",
+			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS())
+	}
+	// Out-of-range positives still clamp to the max.
+	p.SetIdleFPS(99999)
+	if got := p.IdleFPS(); got != IdleFPSMax {
+		t.Errorf("idle over-max = %d, want clamp to %d", got, IdleFPSMax)
+	}
+	// The Settings "0"/off maps to FPSOff; ∞ to FPSUnlimited. Both are held live
+	// and must survive the disk round-trip un-normalized.
+	p.SetIdleFPS(FPSOff)
+	p.SetUnfocusedFPS(FPSOff)
+	p.SetFPSCap(FPSUnlimited)
+	if p.IdleFPS() != FPSOff || p.UnfocusedFPS() != FPSOff || p.FPSCap() != FPSUnlimited {
+		t.Fatalf("sentinels not held live: idle=%d unfocused=%d cap=%d", p.IdleFPS(), p.UnfocusedFPS(), p.FPSCap())
+	}
+	if err := p.Close(); err != nil { // flush + release before reload
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path) // load() alone starts no saver goroutine, so there's nothing to Close
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if q.IdleFPS() != FPSOff {
+		t.Errorf("idle off (FPSOff) lost across reload: %d, want %d (0 = off must persist)", q.IdleFPS(), FPSOff)
+	}
+	if q.UnfocusedFPS() != FPSOff {
+		t.Errorf("unfocused off (FPSOff) lost across reload: %d, want %d", q.UnfocusedFPS(), FPSOff)
+	}
+	if q.FPSCap() != FPSUnlimited {
+		t.Errorf("active ∞ lost across reload: %d, want %d", q.FPSCap(), FPSUnlimited)
+	}
+}

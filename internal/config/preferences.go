@@ -853,9 +853,9 @@ type AssetPreferences struct {
 	NotFoundTTLSecVal      int                          `json:"notFoundTTLSec,omitempty"`       // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
 	AdaptiveLatMultipleVal int                          `json:"adaptiveLatMultiple,omitempty"`  // per-host deadline = N × TTFB EWMA (0/absent = 8)
 	SpriteDownscaleOff     bool                         `json:"spriteDownscaleOff,omitempty"`   // disable the automatic decode downscale entirely (default OFF = downscale on)
-	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60; -1 = unlimited)
-	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30; -1 = unlimited)
-	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10; -1 = unlimited)
+	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60 default; -1 = uncapped)
+	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle frame rate (0/absent = 30 default; -1 = uncapped; -2 = never redraw when idle)
+	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10 default; -1 = uncapped; -2 = never redraw when unfocused)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
@@ -1176,9 +1176,9 @@ type prefsJSON struct {
 	NotFoundTTLSec         int              `json:"notFoundTTLSec"`       // 404 TTL seconds (0 = default; restart)
 	AdaptiveLatMultiple    int              `json:"adaptiveLatMultiple"`  // deadline multiple (0 = 8)
 	SpriteDownscaleOff     bool             `json:"spriteDownscaleOff"`   // disable decode downscale (default OFF)
-	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60; -1 = unlimited)
-	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30; -1 = unlimited)
-	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10; -1 = unlimited)
+	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60 default; -1 = uncapped)
+	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30 default; -1 = uncapped; -2 = off)
+	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10 default; -1 = uncapped; -2 = off)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
@@ -6018,13 +6018,13 @@ const (
 	// foreground (the ceiling), idle (nothing animating), unfocused (another
 	// window has focus; minimized already naps).
 	FPSCapDefault       = 60
-	FPSCapMin           = 30
+	FPSCapMin           = 1
 	FPSCapMax           = 240
 	IdleFPSDefault      = 30
-	IdleFPSMin          = 10
+	IdleFPSMin          = 1
 	IdleFPSMax          = 120
 	UnfocusedFPSDefault = 10
-	UnfocusedFPSMin     = 5
+	UnfocusedFPSMin     = 1
 	UnfocusedFPSMax     = 60
 
 	// FPSUnlimited is the "no limit" sentinel any of the three rate knobs may
@@ -6032,15 +6032,30 @@ const (
 	// the presents), and an unlimited idle/unfocused rate means that state is
 	// never throttled below the active pacing. Distinct from 0 = "the default".
 	FPSUnlimited = -1
+
+	// FPSOff is the "never redraw in this state" sentinel for the Idle and
+	// Background knobs (the Settings 0 / bottom-of-slider position). The loop
+	// stops issuing periodic idle redraws in that state and waits purely on real
+	// damage + scheduled deadlines (caret flip, clock tick, animation frame).
+	// Distinct from FPSUnlimited (uncapped) and from 0, which stays "the shipped
+	// default" on the wire — so an ABSENT key loads as the default, not off, and
+	// only an explicit choice writes FPSOff. The Active cap has no "off" (0 fps
+	// while interacting is meaningless), so the Active row never emits it.
+	FPSOff = -2
 )
 
 // normalizeFPSPref maps a stored rate knob onto its valid domain: 0 keeps the
-// default, FPSUnlimited passes through, anything else clamps to [min, max].
-// Shared by the setters and the disk-load overlay so a hand-edited file obeys
-// the same rules as the sliders.
+// default (the getter resolves it), FPSUnlimited (∞) and FPSOff (never redraw)
+// pass through as-is, anything else clamps to [min, max]. Any other negative is
+// treated as ∞ defensively. Shared by the setters and the disk-load overlay so
+// a hand-edited file obeys the same rules as the sliders.
 func normalizeFPSPref(fps, min, max int) int {
-	if fps == 0 || fps == FPSUnlimited {
+	switch fps {
+	case 0, FPSUnlimited, FPSOff:
 		return fps
+	}
+	if fps < 0 {
+		return FPSUnlimited
 	}
 	return clampPercent(fps, min, max)
 }
