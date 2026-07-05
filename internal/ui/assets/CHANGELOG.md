@@ -4,6 +4,46 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test12 — 2026-07-05 (test build)
+
+Compositor round two, straight from the test11 reports: "resource usage
+is exactly the same" and "some things only redraw when the mouse passes
+over them". Both were real — and both traced to the diagnostics
+themselves, not the damage model.
+
+- **The F8 Debug panel updates itself again.** Its readouts (packet
+  ages, ping, heap, the frame graph) had no damage source of their own,
+  so on a still screen they froze and only repainted where a passing
+  pointer happened to cross a button. The panel — and the Settings
+  debug overlay — now repaint exactly their own rectangle, four times a
+  second.
+- **Watching no longer changes the result.** The Settings debug overlay
+  used to hold the compositor at full-rate, FULL-frame redraws the
+  whole time it was visible — so measuring "did selective rendering
+  help?" with diagnostics open always answered "no". It now costs its
+  own rectangle at 4 Hz like the F8 panel. Only the F3 perf HUD still
+  forces full rate (it graphs every frame; that is its job) — F8 is the
+  honest view.
+- **New: the damage X-ray.** F8 → Perf → "Show damage regions" paints
+  what the compositor repaints, as it happens: red wash = a full-frame
+  redraw, blue = stage, green = chatbox, cyan = log, yellow = text
+  field, violet = a diagnostics tick, amber = hover — white outline =
+  the exact clip that was repainted — plus a live corner readout
+  (walks/s vs presents/s, and how long ago the last redraw was). A
+  still screen shows rects fading away and walks at zero. A screen
+  washing red every pass means something promotes to full-frame every
+  pass: that is a bug — screenshot it and say what was on screen.
+- **The ping chip ticks again.** Its bars read the transport ping
+  directly (no packet involved), so under the compositor they could
+  hold a stale quality tier. Tier changes now repaint the chip.
+- **The test10 "no frame limit" default is retired.** It only governs
+  the classic loop (selective rendering off), where it disabled every
+  limiter — on some windowed driver setups that spun unlimited
+  full-frame renders even when idle. New installs get the limiters
+  back. If your Settings still show "No frame limit" ON, that is your
+  saved file from test10/11 — untick it once. While selective rendering
+  is on it changes nothing either way.
+
 ## v1.55.0-test11 — 2026-07-05 (test build)
 
 Selective rendering — the compositor. The whole UI now lives in a cached

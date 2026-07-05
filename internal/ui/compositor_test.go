@@ -286,7 +286,10 @@ func TestWalkNeededContinuousSurfaces(t *testing.T) {
 		{"voice session", func(a *App) { a.voiceJoined = true }},
 		{"sprite preview", func(a *App) { a.previewBase = "srv/characters/witch/(a)normal" }},
 		{"animated chrome", func(a *App) { a.drawnAnimChrome = true }},
-		{"debug overlay", func(a *App) { a.d.Prefs.SetDebugOverlay(true) }},
+		// The Settings debug overlay is deliberately NOT here anymore: since
+		// test12 it ticks its own rect (TestWalkNeededDiagnosticsTick) — in
+		// this tier it pinned full-frame walks at the cap while up, the
+		// observer effect behind test11's "same resource usage" reports.
 	}
 	for _, st := range states {
 		a := compApp(t)
@@ -458,3 +461,111 @@ func TestHoverCrossingsOutParam(t *testing.T) {
 // testViewport builds a bare render.Viewport for gen-compare tests (no SDL
 // needed — AnimGen/RampActive read plain fields).
 func testViewport() *render.Viewport { return render.NewViewport(nil) }
+
+// TestWalkNeededDiagnosticsTick pins the diagnostics tier (the test12 fix for
+// "readouts only update under the pointer"): the F8 Debug panel and the
+// Settings debug overlay walk their OWN drawn rects at diagTickBudget — and
+// must never hold the continuous full-frame tier (the observer effect that
+// made every test11 measurement read "same as before").
+func TestWalkNeededDiagnosticsTick(t *testing.T) {
+	a := compApp(t)
+	a.showDebugPanel = true
+	a.drawnDebugPanelRect = sdl.Rect{X: 40, Y: 30, W: 300, H: 200}
+	a.diagTickAt = time.Now()
+	if a.WalkNeeded(true, false) {
+		t.Fatal("inside the diag budget: no walk")
+	}
+	a.diagTickAt = time.Now().Add(-2 * diagTickBudget)
+	if !a.WalkNeeded(true, false) {
+		t.Fatal("past the diag budget: the panel must tick")
+	}
+	clip, clipped := a.TakeDamage(1000, 1000)
+	if !clipped || clip != a.drawnDebugPanelRect {
+		t.Fatalf("the tick must clip to the panel rect, got %+v clipped=%v", clip, clipped)
+	}
+
+	// The Settings overlay rides the same tick with its own rect.
+	a.d.Prefs.SetDebugOverlay(true)
+	a.drawnDebugOvRect = sdl.Rect{X: 0, Y: 500, W: 400, H: 80}
+	a.diagTickAt = time.Now().Add(-2 * diagTickBudget)
+	if !a.WalkNeeded(true, false) {
+		t.Fatal("past the diag budget: the overlay must tick")
+	}
+	clip, clipped = a.TakeDamage(1000, 1000)
+	want := unionRect(a.drawnDebugPanelRect, a.drawnDebugOvRect)
+	if !clipped || clip != want {
+		t.Fatalf("panel+overlay tick clip = %+v, want %+v", clip, want)
+	}
+
+	// Neither surface may force the continuous full-frame tier.
+	if a.compositorContinuous() {
+		t.Fatal("diagnostics surfaces must not force continuous full-frame walks")
+	}
+}
+
+// TestWalkNeededPingChip pins the chip census (test12): a drawn chip
+// re-damages exactly its rect when the RTT atomic's quality tier moves
+// (transport-level pings never pass the packet census), and an undrawn chip
+// (zero rect) costs one compare.
+func TestWalkNeededPingChip(t *testing.T) {
+	a := compApp(t)
+	a.pingRTT.Store(int64(40 * time.Millisecond))
+	if a.WalkNeeded(true, false) {
+		t.Fatal("an undrawn chip must not walk")
+	}
+
+	a.drawnPingRect = sdl.Rect{X: 8, Y: 700, W: 18, H: 13}
+	bars, _ := pingQuality(40, false)
+	a.drawnPingBars = bars
+	if a.WalkNeeded(true, false) {
+		t.Fatal("matching tier: no walk")
+	}
+	a.pingRTT.Store(int64(400 * time.Millisecond)) // good → bad tier
+	if !a.WalkNeeded(true, false) {
+		t.Fatal("a tier change must walk")
+	}
+	clip, clipped := a.TakeDamage(1000, 1000)
+	if !clipped || clip != a.drawnPingRect {
+		t.Fatalf("chip damage = %+v clipped=%v, want exactly the chip rect", clip, clipped)
+	}
+}
+
+// TestDamageOverlaySnapshot pins the X-ray recording (test12): TakeDamage
+// snapshots the pre-union rect list with kind classification and the union
+// clip — but only while the F8 toggle is on, and full walks record as full.
+func TestDamageOverlaySnapshot(t *testing.T) {
+	a := compApp(t)
+	a.dmgOvOn = true
+	a.drawnVPRect = sdl.Rect{X: 10, Y: 10, W: 100, H: 80}
+	a.damageRect(a.drawnVPRect)
+	a.damageRect(sdl.Rect{X: 200, Y: 5, W: 40, H: 20}) // a hover-ish rect
+	clip, clipped := a.TakeDamage(500, 500)
+	if !clipped {
+		t.Fatal("two rects must clip")
+	}
+	if a.dmgOvFull || a.dmgOvN != 2 {
+		t.Fatalf("snapshot full=%v n=%d, want a 2-rect clipped record", a.dmgOvFull, a.dmgOvN)
+	}
+	if a.dmgOvKinds[0] != dmgKindViewport || a.dmgOvKinds[1] != dmgKindOther {
+		t.Errorf("kinds = %d/%d, want viewport/other", a.dmgOvKinds[0], a.dmgOvKinds[1])
+	}
+	if a.dmgOvClip != clip {
+		t.Errorf("recorded clip %+v != returned clip %+v", a.dmgOvClip, clip)
+	}
+
+	a.damageAll()
+	if _, clipped := a.TakeDamage(500, 500); clipped {
+		t.Fatal("damageAll must be a full walk")
+	}
+	if !a.dmgOvFull || a.dmgOvClip != (sdl.Rect{}) {
+		t.Error("a full walk must record full with no union clip")
+	}
+
+	a.dmgOvOn = false
+	a.dmgOvFull = false
+	a.damageAll()
+	_, _ = a.TakeDamage(500, 500)
+	if a.dmgOvFull {
+		t.Error("toggle off: TakeDamage must record nothing")
+	}
+}

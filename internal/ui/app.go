@@ -982,6 +982,37 @@ type App struct {
 	presWindowStart time.Time
 	presWindowCount int
 	presFPS         int
+	// Diagnostics-surface census (compositor): the F8 Debug panel and the
+	// Settings debug overlay are floating LIVE readouts (packet ages, ping,
+	// "last pkt Ns", heap) with no damage source of their own — without a
+	// census entry they freeze on a static screen and repaint only under
+	// hover crossings (the test11 playtest report). Each records where it
+	// last drew; WalkNeeded re-damages exactly that rect every
+	// diagTickBudget (deliberately NOT the continuous full-frame tier: a
+	// diagnostics view must not pin the walk rate it exists to measure).
+	drawnDebugPanelRect sdl.Rect
+	drawnDebugOvRect    sdl.Rect
+	diagTickAt          time.Time
+	// Ping-chip census (compositor): the chip's bars read a transport-level
+	// RTT atomic that no packet/poll census ever sees. drawnPingRect is
+	// nonzero only while the chip actually drew (drawPingChip resets it
+	// first thing), so an off/undrawn chip costs one compare per pass;
+	// drawnPingBars is the quality tier it showed.
+	drawnPingRect sdl.Rect
+	drawnPingBars int32
+	// Damage-region overlay (F8 → Perf → "Show damage regions"): session
+	// toggle + the last walk's damage snapshot, recorded by TakeDamage and
+	// drawn POST-BLIT on the backbuffer (damageoverlay.go) — it can never
+	// dirty the cache or the census, so watching the compositor does not
+	// change what it does. Fixed arrays, render thread only, session-only
+	// by design (a diagnostic, like showDebugPanel — no prefs plumbing).
+	dmgOvOn    bool
+	dmgOvFull  bool
+	dmgOvN     int
+	dmgOvRects [dmgRectCap]sdl.Rect
+	dmgOvKinds [dmgRectCap]uint8
+	dmgOvClip  sdl.Rect
+	dmgOvAt    time.Time
 }
 
 // sessionState is EVERYTHING scoped to one server session. The active

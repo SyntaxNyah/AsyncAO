@@ -50,6 +50,10 @@ func (a *App) drawDebugPanel(w, h int32, pressed *bool) {
 		return
 	}
 	panel := a.debugPanelRect(w, h)
+	// Compositor census: the panel's live readouts (packet ages, ping, the
+	// frame graph) repaint via an own-rect tick at diagTickBudget — this
+	// records where that tick must clip (WalkNeeded reads it).
+	a.drawnDebugPanelRect = panel
 	pw, ph := panel.W, panel.H
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
@@ -213,6 +217,19 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 		}
 	}
 	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Goroutines: %d", runtime.NumGoroutine()), ColTextDim)
+	y += 19
+	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Walks (drawnFps): %d · presents (presFps): %d — low over steady = compositor working", a.drawnFPS, a.presFPS), ColText)
+	y += 22
+
+	// The damage X-ray (damageoverlay.go): session-only toggle, like the
+	// panel itself — a diagnostic, so deliberately no prefs plumbing.
+	if c.Checkbox(r.X, y, "Show damage regions (selective rendering X-ray)", a.dmgOvOn) {
+		a.dmgOvOn = !a.dmgOvOn
+	}
+	y += 22
+	if a.dmgOvOn {
+		c.LabelClipped(r.X, y, r.W, "red = full frame · blue stage · green chatbox · cyan log · yellow field · violet diag · amber hover · white = clip", ColTextDim)
+	}
 }
 
 // drawDebugCache renders the three-tier asset cache inspector (#164): where

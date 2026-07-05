@@ -39,6 +39,16 @@ const dmgRectCap = 8
 // second (the classic loop's per-second wake, expressed as a walk budget).
 const timerTickBudget = time.Second
 
+// diagTickBudget paces the diagnostics surfaces' own-rect refresh (the F8
+// Debug panel, the Settings debug overlay): 4 Hz keeps their tenth-of-a-
+// second readouts (packet ages, "last pkt Ns") visibly live at the cost of
+// one panel-sized clipped repaint per tick. Deliberately NOT the continuous
+// full-frame tier the first compositor build used — holding full-rate walks
+// while a diagnostics view is up is the observer effect that made every
+// test11 measurement read "same as before" (and the F8 panel, which had NO
+// census at all, froze until a hover crossing repainted it).
+const diagTickBudget = 250 * time.Millisecond
+
 // damageAll marks the whole frame stale — the next walk repaints everything.
 func (a *App) damageAll() { a.dmgFull = true }
 
@@ -78,6 +88,11 @@ func (a *App) damageCeremony() {
 func (a *App) TakeDamage(lw, lh int32) (clip sdl.Rect, clipped bool) {
 	full, n := a.dmgFull, a.dmgCount
 	a.dmgFull, a.dmgCount = false, 0
+	if a.dmgOvOn {
+		// The damage X-ray records the PRE-union list (per-rect colors) —
+		// off, this whole feature is one bool compare on the walk path.
+		a.recordDamageOverlay(full, n)
+	}
 	if full || n == 0 {
 		// n == 0 on a walk means a source forgot its region — repaint
 		// everything rather than nothing.
@@ -89,10 +104,16 @@ func (a *App) TakeDamage(lw, lh int32) (clip sdl.Rect, clipped bool) {
 	}
 	frame := sdl.Rect{X: 0, Y: 0, W: lw, H: lh}
 	if eff, ok := u.Intersect(&frame); ok {
+		if a.dmgOvOn {
+			a.dmgOvClip = eff
+		}
 		return eff, true
 	}
 	// Damage entirely off the logical frame (a shrink mid-accumulation):
 	// the walk still runs its logic, paints nothing.
+	if a.dmgOvOn {
+		a.dmgOvClip = sdl.Rect{}
+	}
 	return sdl.Rect{}, true
 }
 
@@ -253,6 +274,39 @@ func (a *App) WalkNeeded(focused, sawInput bool) bool {
 		walk = true
 	}
 
+	// Diagnostics surfaces with live readouts but no damage source of their
+	// own: the F8 Debug panel and the Settings debug overlay tick exactly
+	// the rect they last drew, on their own clock (walkBudgetDue would reset
+	// on every unrelated walk and starve the tick during ceremonies).
+	// Open/close/drag/toggle all arrive as input or a Settings click (full
+	// damage), so appear/erase/move walks are already covered. The F3 perf
+	// HUD deliberately stays in the continuous tier instead
+	// (animatedSurfaces): it graphs per-frame dt, so it must hold the walk
+	// rate to have anything to show — F8 is the observer-safe view.
+	if dbgOv := a.d.Prefs.DebugOverlayEnabled(); (a.showDebugPanel || dbgOv) && time.Since(a.diagTickAt) >= diagTickBudget {
+		a.diagTickAt = time.Now()
+		if a.showDebugPanel {
+			a.damageRect(a.drawnDebugPanelRect)
+		}
+		if dbgOv {
+			a.damageRect(a.drawnDebugOvRect)
+		}
+		walk = true
+	}
+
+	// The ping chip's bars read a transport-level RTT atomic (no packet, no
+	// poll channel — invisible to every census above, so under the first
+	// compositor build the chip held a stale tier): repaint the chip when
+	// the tier it drew no longer matches. drawnPingRect is zero unless the
+	// chip drew last walk, so the off/undrawn case is one compare.
+	if a.drawnPingRect.W > 0 {
+		rtt := a.pingRTT.Load()
+		if bars, _ := pingQuality(int(rtt/int64(time.Millisecond)), rtt == 0); bars != a.drawnPingBars {
+			a.damageRect(a.drawnPingRect)
+			walk = true
+		}
+	}
+
 	// A due auto-reconnect (lobby): pollAutoReconnect is Frame-driven, so
 	// the retry needs a walk to fire at its scheduled moment.
 	if !a.autoReconnectAt.IsZero() && a.screen == ScreenLobby && !a.now().Before(a.autoReconnectAt) {
@@ -301,7 +355,12 @@ func (a *App) compositorContinuous() bool {
 	if a.dl.active {
 		return true // download progress chip + the Frame-driven queue advance
 	}
-	return a.d.Prefs.DebugOverlayEnabled() // live readouts when the F8 overlay is up
+	// The F8 Debug panel and the Settings debug overlay are NOT here: they
+	// tick their own drawn rects in WalkNeeded (diagTickBudget). Keeping
+	// them in this tier held full-frame walks at the cap whenever
+	// diagnostics were up — so every "did selective rendering help?"
+	// measurement answered "no" by construction (test11's report).
+	return false
 }
 
 // pendingPollResults reports async results already buffered on a channel

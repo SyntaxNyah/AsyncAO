@@ -533,6 +533,12 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			// textured quad) + present, paced to the display so a
 			// non-blocking present path can't spin the loop.
 			canvas.Blit(ren)
+			if app.DamageOverlayOn() {
+				// The damage X-ray (F8 → Perf): drawn on the BACKBUFFER after
+				// the blit, so it can never enter the cached frame or the
+				// census — the compositor is watched without being changed.
+				app.DrawDamageOverlay(ren, scale, lw, lh)
+			}
 			ren.Present()
 			app.NotePresent()
 			if sleep := presentPeriod - time.Since(now); sleep > 0 {
@@ -542,12 +548,15 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			continue
 		}
 
-		// DIAGNOSTIC no-limit mode (default ON on the test channel): bypass the
-		// static skip and every pacing tier below — render each loop pass and
-		// let vsync pace the presents, like a plain game loop. The playtest
-		// finding behind it: the single-frame window flicker tracks SPARSE
-		// presents (low idle rates flicker, uncapped doesn't), so continuous
-		// presenting is the baseline until the from-scratch redraw design.
+		// DIAGNOSTIC no-limit mode (opt-in since test12 — the compositor above
+		// is the shipping answer to the flicker hunt): bypass the static skip
+		// and every pacing tier below — render each loop pass and let vsync
+		// pace the presents, like a plain game loop. Left as an A/B escape
+		// hatch because the finding it encoded still matters: the
+		// single-frame window flicker tracks SPARSE presents (low idle rates
+		// flicker, uncapped doesn't). Beware what shipping it ON did: on
+		// non-blocking windowed present paths pace=0 spins this loop at
+		// unlimited full-frame renders (the test11 "idle GPU crush" report).
 		noLimit := prefs.NoFrameLimitOn()
 
 		// Static skip (the deepest pacing tier): the courtroom is a genuinely

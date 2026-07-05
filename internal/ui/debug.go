@@ -33,6 +33,9 @@ func (a *App) drawDebugOverlay(w, h int32) {
 	// column (logs/music) readable underneath.
 	panelH := int32(len(lines)+3)*lineH + 2*panelPad // 3 header lines (health + diag + cold-load)
 	panel := sdl.Rect{X: 0, Y: h - panelH, W: w * 55 / 100, H: panelH}
+	// Compositor census: the overlay's "last pkt Ns" readout ages in real
+	// time — record where it drew so the diagTickBudget tick can clip to it.
+	a.drawnDebugOvRect = panel
 	c.Fill(panel, sdl.Color{R: 0, G: 0, B: 0, A: 200})
 	y := panel.Y + panelPad
 	c.LabelClipped(panel.X+6, y, panel.W-12, a.debugHealthLine(), ColAccent)
