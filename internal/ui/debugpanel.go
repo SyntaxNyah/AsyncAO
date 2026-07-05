@@ -223,9 +223,10 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 
 	// The damage X-ray (damageoverlay.go): session-only toggle, like the
 	// panel itself — a diagnostic, so deliberately no prefs plumbing.
-	if c.Checkbox(r.X, y, "Show damage regions (selective rendering X-ray)", a.dmgOvOn) {
-		a.dmgOvOn = !a.dmgOvOn
-	}
+	// Checkbox returns the NEW value (not "was clicked") — assign, never
+	// `if Checkbox { flip }`: that re-flips on every un-clicked walk and
+	// self-cancels the toggle within one diag tick (the test12 hotfix).
+	a.dmgOvOn = c.Checkbox(r.X, y, "Show damage regions (selective rendering X-ray)", a.dmgOvOn)
 	y += 22
 	if a.dmgOvOn {
 		c.LabelClipped(r.X, y, r.W, "red = full frame · blue stage · green chatbox · cyan log · yellow field · violet diag · amber hover · white = clip", ColTextDim)

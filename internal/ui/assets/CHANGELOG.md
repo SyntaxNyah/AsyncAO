@@ -4,6 +4,13 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test13 — 2026-07-05 (test build)
+
+Hotfix: the test12 "Show damage regions" checkbox could be ticked but
+silently un-ticked itself a quarter-second later (a wrong widget-return
+handling — the X-ray flashed on and vanished). It now stays on until
+you turn it off. Nothing else changed.
+
 ## v1.55.0-test12 — 2026-07-05 (test build)
 
 Compositor round two, straight from the test11 reports: "resource usage
