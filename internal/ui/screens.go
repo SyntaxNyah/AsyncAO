@@ -5300,7 +5300,7 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 	dst.X = pv.X + (pv.W-dst.W)/2 + int32(offX)*pv.W/100
 	dst.Y = pv.Y + int32(offY)*pv.H/100
 	if len(page.Frames) > 1 {
-		a.frameAnimChrome = true // the editor ghost loops: keep frames coming through the static skip
+		a.NoteAnimating() // the editor ghost loops: keep frames coming through the static skip
 	}
 	tex := page.Frames[pageFrameLoop(page, a.themeElapsed())]
 	_ = tex.SetAlphaMod(alpha)

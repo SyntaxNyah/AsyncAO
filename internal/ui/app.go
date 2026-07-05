@@ -1034,12 +1034,14 @@ type sessionState struct {
 	// since then is the scheduled damage that redraws a focused text field at
 	// 2 Hz instead of holding the whole idle frame rate (experimental loop).
 	drawnCaretOn bool
-	// frameAnimChrome is set during a draw pass whenever it renders
-	// TIME-STEPPED art that lives outside the viewport's anim scheduler — an
-	// animated theme page (themeFrame), the looping testimony badge, a WT/CE
-	// splash, the layout editor's animated ghost. drawnAnimChrome is the last
-	// completed frame's value: while true, SkipFrame keeps frames coming at
-	// the idle rate or that art would freeze between heartbeats.
+	// frameAnimChrome is set (via NoteAnimating) during a draw pass whenever it
+	// renders a self-driven, TIME-STEPPED UI animation outside the viewport's
+	// anim scheduler — an animated theme page (themeFrame), the looping testimony
+	// badge, a WT/CE splash, the layout editor's ghost, or any future widget that
+	// tweens on its own clock. drawnAnimChrome is the last completed frame's
+	// value: while true, SkipFrame keeps frames coming AND FramePace paces at the
+	// active cap, so the motion stays smooth (the general "self-driven animation →
+	// uncap" mechanism); it falls back to idle the frame the draw stops marking it.
 	frameAnimChrome bool
 	drawnAnimChrome bool
 	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
@@ -4103,6 +4105,18 @@ const fullRateInputGrace = 1 * time.Second
 // an SDL event arrives, and wantsFullRate holds full rate through the grace.
 func (a *App) NoteInput() { a.lastInputAt = time.Now() }
 
+// NoteAnimating marks that THIS draw pass rendered a self-driven, time-stepped
+// UI animation — theme chrome, a splash, a looping badge, the layout editor's
+// ghost, or any FUTURE widget that tweens on its own clock. It is the general
+// hook for "uncap for the duration of any self-driven UI animation": while a
+// draw keeps calling it, SkipFrame won't skip AND FramePace paces at the ACTIVE
+// cap (both loop modes), so the motion stays smooth; the frame the draw stops
+// calling it, the screen falls back to idle. Retrospective and self-sustaining
+// (each animating frame re-arms the next). For an INSTANT off-frame change (a
+// packet updated a list, a screen switched) set a.uiDirty instead — that earns
+// exactly one follow-up frame. Alloc-free; call it from the draw pass.
+func (a *App) NoteAnimating() { a.frameAnimChrome = true }
+
 // motionInputGrace holds full rate briefly after BARE pointer motion under the
 // experimental loop: long enough that continuous movement (hover sweeps, drags
 // — their motion stream keeps re-arming it) renders at full rate throughout,
@@ -4275,8 +4289,8 @@ func (a *App) FramePace(focused bool) time.Duration {
 		}
 		return unf
 	}
-	if a.wantsFullRate() {
-		return full
+	if a.wantsFullRate() || a.drawnAnimChrome {
+		return full // recent input/effects, OR a self-driven UI animation (NoteAnimating)
 	}
 	idle, idleOff := rateBudget(a.d.Prefs.IdleFPS())
 	idleUnlimited := !idleOff && idle == 0 // ∞ idle
@@ -5999,7 +6013,7 @@ func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
 	if len(page.Frames) == 1 {
 		return page.Frames[0]
 	}
-	a.frameAnimChrome = true
+	a.NoteAnimating()
 	return page.Frames[pageFrameLoop(page, a.themeElapsed())]
 }
 

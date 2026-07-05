@@ -272,6 +272,25 @@ func TestFramePaceIdleOff(t *testing.T) {
 	}
 }
 
+// TestFramePaceAnimatedChrome pins requirement #2's mechanism: a self-driven UI
+// animation (NoteAnimating → drawnAnimChrome) paces at the ACTIVE cap in BOTH
+// loop modes, so the motion stays smooth even with a low idle rate — it is not
+// throttled to the idle tier the way a truly static screen is.
+func TestFramePaceAnimatedChrome(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetFPSCap(60)
+	a.d.Prefs.SetIdleFPS(2) // a low idle rate that must NOT throttle the animation
+	a.drawnAnimChrome = true
+
+	if got := a.FramePace(true); got != paceBudget(60) {
+		t.Errorf("event-driven animated chrome = %v, want the active cap (not the idle rate)", got)
+	}
+	a.d.Prefs.SetEventDrivenLoop(false)
+	if got := a.FramePace(true); got != paceBudget(60) {
+		t.Errorf("classic animated chrome = %v, want the active cap (not the idle rate)", got)
+	}
+}
+
 // TestMotionGrace pins the pointer-motion split (experimental loop): bare
 // motion holds full rate only through the short motion grace, while the
 // classic loop keeps treating motion as plain input.

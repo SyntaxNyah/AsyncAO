@@ -355,7 +355,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 		by := vp.Y + 6 + barH + 4
 		if page, ok := a.themePage("testimony"); ok {
 			if len(page.Frames) > 1 {
-				a.frameAnimChrome = true // the badge loops: keep frames coming through the static skip
+				a.NoteAnimating() // the badge loops: keep frames coming through the static skip
 			}
 			w := vp.W * badgeWidthPct / 100
 			h := w * page.H / page.W
@@ -386,7 +386,7 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 	if a.wtceName != "" {
 		// Splash in flight (animated page OR the timed fallback banner): both
 		// step/expire on the draw clock, so the static skip must stand down.
-		a.frameAnimChrome = true
+		a.NoteAnimating()
 		elapsed := time.Since(a.wtceAt)
 		if page, ok := a.themePage(a.wtceName); ok {
 			idx, done := pageFrameAt(page, elapsed)
