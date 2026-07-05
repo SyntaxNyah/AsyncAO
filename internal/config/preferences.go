@@ -860,11 +860,12 @@ type AssetPreferences struct {
 	NotFoundTTLSecVal      int                          `json:"notFoundTTLSec,omitempty"`       // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
 	AdaptiveLatMultipleVal int                          `json:"adaptiveLatMultiple,omitempty"`  // per-host deadline = N × TTFB EWMA (0/absent = 8)
 	SpriteDownscaleOff     bool                         `json:"spriteDownscaleOff,omitempty"`   // disable the automatic decode downscale entirely (default OFF = downscale on)
-	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60; -1 = unlimited)
-	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30; -1 = unlimited)
-	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10; -1 = unlimited)
+	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60; -1 = unlimited; positives unclamped)
+	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30; -1 = unlimited; -2 = frozen; positives unclamped)
+	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10; -1 = unlimited; -2 = frozen; positives unclamped)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
 	NoFrameLimit           bool                         `json:"noFrameLimit"`                   // DIAGNOSTIC: bypass ALL frame limiting — render every pass, vsync paces (default ON on the test channel)
+	PaceHeartbeat          bool                         `json:"paceHeartbeat"`                  // the 2 fps static-skip safety heartbeat (default OFF: a skipped screen renders only on real changes)
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
@@ -1184,11 +1185,12 @@ type prefsJSON struct {
 	NotFoundTTLSec         int              `json:"notFoundTTLSec"`       // 404 TTL seconds (0 = default; restart)
 	AdaptiveLatMultiple    int              `json:"adaptiveLatMultiple"`  // deadline multiple (0 = 8)
 	SpriteDownscaleOff     bool             `json:"spriteDownscaleOff"`   // disable decode downscale (default OFF)
-	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60; -1 = unlimited)
-	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30; -1 = unlimited)
-	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10; -1 = unlimited)
+	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60; -1 = unlimited; positives unclamped)
+	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30; -1 = unlimited; -2 = frozen; positives unclamped)
+	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10; -1 = unlimited; -2 = frozen; positives unclamped)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	NoFrameLimit           *bool            `json:"noFrameLimit"`         // diagnostic no-limit render (default ON; pointer: absent != off)
+	PaceHeartbeat          bool             `json:"paceHeartbeat"`        // 2 fps skip heartbeat (default OFF, zero value)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
@@ -1916,15 +1918,16 @@ func load(path string) (*AssetPreferences, error) {
 	if p.SpriteDownscalePctVal != 0 {
 		p.SpriteDownscalePctVal = clampPercent(p.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
 	}
-	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, FPSCapMin, FPSCapMax)
-	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, IdleFPSMin, IdleFPSMax)
-	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax)
+	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, false)
+	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, true)
+	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, true)
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
 	if onDisk.NoFrameLimit != nil { // pointer: absent keeps the default-ON
 		p.NoFrameLimit = *onDisk.NoFrameLimit
 	}
+	p.PaceHeartbeat = onDisk.PaceHeartbeat
 	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
 	if p.TexBudgetMiBVal != 0 {
 		p.TexBudgetMiBVal = clampPercent(p.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
@@ -6045,17 +6048,37 @@ const (
 	// the presents), and an unlimited idle/unfocused rate means that state is
 	// never throttled below the active pacing. Distinct from 0 = "the default".
 	FPSUnlimited = -1
+	// FPSZero is the "0 fps" sentinel the Idle and Background knobs may hold
+	// (typed 0 in their Settings number box): that state stops rendering for
+	// decoration — the blinking caret and ticking readouts freeze; ceremonies,
+	// stage animations and real changes still draw. The ACTIVE cap never
+	// takes it (a frozen foreground would freeze interaction itself; a typed
+	// 0 there falls back to the default). Stored as its own negative sentinel
+	// because 0 = "the default".
+	FPSZero = -2
 )
 
-// normalizeFPSPref maps a stored rate knob onto its valid domain: 0 keeps the
-// default, FPSUnlimited passes through, anything else clamps to [min, max].
-// Shared by the setters and the disk-load overlay so a hand-edited file obeys
-// the same rules as the sliders.
-func normalizeFPSPref(fps, min, max int) int {
-	if fps == 0 || fps == FPSUnlimited {
+// normalizeFPSPref maps a stored rate knob onto its valid domain. The knobs
+// accept ANY custom value (playtest ask: "from 0 to infinity"): 0 keeps the
+// shipped default, FPSUnlimited passes, FPSZero passes only where allowZero
+// (idle/background), and any positive integer passes UNCLAMPED — the min/max
+// constants only bound the slider track, not the typed value. Other negatives
+// (hand-edited garbage) fall back to the default. Shared by the setters and
+// the disk-load overlay.
+func normalizeFPSPref(fps int, allowZero bool) int {
+	switch {
+	case fps == 0 || fps == FPSUnlimited:
+		return fps
+	case fps == FPSZero:
+		if allowZero {
+			return fps
+		}
+		return 0
+	case fps < 0:
+		return 0
+	default:
 		return fps
 	}
-	return clampPercent(fps, min, max)
 }
 
 // SpriteWaitPairOn / SpriteWaitPreanimOn report the wait-mode strictness knobs
@@ -6469,6 +6492,29 @@ func (p *AssetPreferences) SetNoFrameLimit(on bool) {
 	p.markDirty()
 }
 
+// PaceHeartbeatOn reports the static-skip safety heartbeat toggle (default
+// OFF): when on, a statically-skipped screen still renders one real frame
+// every half second to heal anything the damage signals missed; when off, a
+// skipped screen renders only on real changes. Only matters while frame
+// limiting itself is enabled.
+func (p *AssetPreferences) PaceHeartbeatOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.PaceHeartbeat
+}
+
+// SetPaceHeartbeat flips the skip heartbeat (applies live).
+func (p *AssetPreferences) SetPaceHeartbeat(on bool) {
+	p.mu.Lock()
+	if p.PaceHeartbeat == on {
+		p.mu.Unlock()
+		return
+	}
+	p.PaceHeartbeat = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
 // idle rate, and the another-window-has-focus rate.
@@ -6481,10 +6527,10 @@ func (p *AssetPreferences) FPSCap() int {
 	return p.FPSCapVal
 }
 
-// SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited = no
-// cap; else clamped).
+// SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited =
+// no cap; any positive value accepted unclamped).
 func (p *AssetPreferences) SetFPSCap(fps int) {
-	fps = normalizeFPSPref(fps, FPSCapMin, FPSCapMax)
+	fps = normalizeFPSPref(fps, false)
 	p.mu.Lock()
 	if p.FPSCapVal == fps {
 		p.mu.Unlock()
@@ -6506,9 +6552,10 @@ func (p *AssetPreferences) IdleFPS() int {
 }
 
 // SetIdleFPS persists the idle frame rate (0 = default, FPSUnlimited = never
-// throttle when idle; else clamped).
+// throttle when idle, FPSZero = freeze decoration while idle; any positive
+// value accepted unclamped).
 func (p *AssetPreferences) SetIdleFPS(fps int) {
-	fps = normalizeFPSPref(fps, IdleFPSMin, IdleFPSMax)
+	fps = normalizeFPSPref(fps, true)
 	p.mu.Lock()
 	if p.IdleFPSVal == fps {
 		p.mu.Unlock()
@@ -6530,9 +6577,10 @@ func (p *AssetPreferences) UnfocusedFPS() int {
 }
 
 // SetUnfocusedFPS persists the unfocused frame rate (0 = default,
-// FPSUnlimited = never throttle when unfocused; else clamped).
+// FPSUnlimited = never throttle when unfocused, FPSZero = freeze decoration
+// while unfocused; any positive value accepted unclamped).
 func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
-	fps = normalizeFPSPref(fps, UnfocusedFPSMin, UnfocusedFPSMax)
+	fps = normalizeFPSPref(fps, true)
 	p.mu.Lock()
 	if p.UnfocusedFPSVal == fps {
 		p.mu.Unlock()
@@ -6597,6 +6645,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.UnfocusedFPSVal = 0
 	p.EventDrivenLoop = defaultEventDrivenLoop
 	p.NoFrameLimit = defaultNoFrameLimit
+	p.PaceHeartbeat = false
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()

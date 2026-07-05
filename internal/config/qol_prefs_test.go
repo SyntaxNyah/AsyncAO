@@ -764,6 +764,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetEventDrivenLoop(false)  // default-ON *bool — the experimental-loop kill switch must stick
 	p.SetNoFrameLimit(false)     // default-ON *bool — turning the limiters back ON must stick
 	p.SetIdleFPS(FPSUnlimited)   // the ∞ sentinel must survive save→load un-clamped
+	p.SetUnfocusedFPS(FPSZero)   // the typed-0 FROZEN sentinel must survive save→load
+	p.SetFPSCap(999)             // any positive value is UNCLAMPED (0-to-infinity ask) and must survive
+	p.SetPaceHeartbeat(true)     // default-OFF plain bool — opting back into the 2 fps floor must stick
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
@@ -831,6 +834,15 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if got := q.IdleFPS(); got != FPSUnlimited {
 		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
+	}
+	if got := q.UnfocusedFPS(); got != FPSZero {
+		t.Errorf("UnfocusedFPS frozen sentinel lost across reload: %d, want %d", got, FPSZero)
+	}
+	if got := q.FPSCap(); got != 999 {
+		t.Errorf("FPSCap over-track value clamped across reload: %d, want the unclamped 999", got)
+	}
+	if !q.PaceHeartbeatOn() {
+		t.Error("PaceHeartbeat=true lost across reload (the opt-in floor must stick)")
 	}
 	if got := q.PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
@@ -1089,6 +1101,7 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetUnfocusedFPS(30)
 	p.SetEventDrivenLoop(false)
 	p.SetNoFrameLimit(false)
+	p.SetPaceHeartbeat(true)
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1131,8 +1144,59 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.NoFrameLimitOn() {
 		t.Error("nuke must restore the diagnostic no-limit mode to its test-channel default ON")
 	}
+	if p.PaceHeartbeatOn() {
+		t.Error("nuke must reset the safety heartbeat to its default OFF")
+	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)
+	}
+}
+
+// TestNormalizeFPSPref pins the rate knobs' typed-value domain (the "0 to
+// infinity" ask): any positive value passes UNCLAMPED (the min/max constants
+// only bound the slider track), the sentinels pass where they're legal, and
+// garbage negatives fall back to the 0 = default sentinel. FPSZero is legal
+// only on the idle/background knobs — a frozen ACTIVE cap would freeze
+// interaction itself.
+func TestNormalizeFPSPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+
+	p.SetFPSCap(999) // over the 240 slider top: sticks anyway
+	if got := p.FPSCap(); got != 999 {
+		t.Errorf("SetFPSCap(999) clamped to %d — typed values must pass unclamped", got)
+	}
+	p.SetFPSCap(1) // under the 30 slider bottom: sticks anyway
+	if got := p.FPSCap(); got != 1 {
+		t.Errorf("SetFPSCap(1) rejected: got %d", got)
+	}
+	p.SetFPSCap(FPSZero) // frozen is illegal on the active cap → the default
+	if got := p.FPSCap(); got != FPSCapDefault {
+		t.Errorf("SetFPSCap(FPSZero) = %d, want the %d default (active never freezes)", got, FPSCapDefault)
+	}
+	p.SetFPSCap(-7) // hand-edited garbage → the default
+	if got := p.FPSCap(); got != FPSCapDefault {
+		t.Errorf("SetFPSCap(-7) = %d, want the %d default", got, FPSCapDefault)
+	}
+
+	p.SetIdleFPS(FPSZero) // frozen is legal on idle
+	if got := p.IdleFPS(); got != FPSZero {
+		t.Errorf("SetIdleFPS(FPSZero) = %d, want the frozen sentinel", got)
+	}
+	p.SetIdleFPS(240) // over the 120 slider top: sticks
+	if got := p.IdleFPS(); got != 240 {
+		t.Errorf("SetIdleFPS(240) clamped to %d", got)
+	}
+	p.SetUnfocusedFPS(FPSZero) // frozen is legal on background
+	if got := p.UnfocusedFPS(); got != FPSZero {
+		t.Errorf("SetUnfocusedFPS(FPSZero) = %d, want the frozen sentinel", got)
+	}
+	p.SetUnfocusedFPS(FPSUnlimited)
+	if got := p.UnfocusedFPS(); got != FPSUnlimited {
+		t.Errorf("SetUnfocusedFPS(∞) = %d, want the unlimited sentinel", got)
+	}
+	p.SetUnfocusedFPS(0) // 0 = back to the default
+	if got := p.UnfocusedFPS(); got != UnfocusedFPSDefault {
+		t.Errorf("SetUnfocusedFPS(0) = %d, want the %d default", got, UnfocusedFPSDefault)
 	}
 }
 

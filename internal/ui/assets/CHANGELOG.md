@@ -22,6 +22,22 @@ strand anyone who installed it the first time).
 - **The limiters became a toggle.** Settings → Power user → Frame rate
   & GPU → "Frame limiting OFF" — untick it to re-enable the whole
   pacing stack and compare. Applies live, no restart.
+- **The hardcoded 2 fps floor is gone — now it's a toggle, off by
+  default.** With limiting on, a skipped static screen used to force a
+  "safety" frame twice a second no matter what you set the rates to —
+  it could kick in over your own numbers minutes into a session. That
+  floor is now the "Static-screen safety heartbeat" checkbox (default
+  OFF): off, a static screen redraws only when something actually
+  changes; on, you get the old insurance frames back.
+- **Every rate knob takes ANY value now, 0 to infinity.** The sliders
+  still cover the everyday band, but the number box applies whatever
+  you type, unclamped — 1 fps, 999 fps, anything. Typing 0 on the Idle
+  or Background rate FREEZES that state: the caret stops blinking,
+  clock readouts hold, and nothing redraws until something real
+  happens (messages, animations and your alarm still draw — a frozen
+  screen never mutes a ceremony or misses an alarm ring). On the
+  Active rate a typed 0 just returns it to the default — the
+  foreground can't freeze itself.
 - The longer-term plan stays as discussed: rebuild the renderer around
   redrawing only what changes, at a steady frame rhythm — cheap frames
   rather than absent frames.

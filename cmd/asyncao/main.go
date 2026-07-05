@@ -462,18 +462,20 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				// loop straight around and render it — the next pass's SkipFrame
 				// refuses on RenderNeeded. Otherwise park on the OS event wait
 				// until input, a wake doorbell, or the nearest scheduled deadline
-				// (caret flip, clock second, hover reveal, staleness heartbeat).
-				// Instant input response at zero render + zero CPU cost; a
-				// timed-out wait means the deadline is due, so the next pass
-				// renders exactly one frame for it (NoteDeadline).
-				if app.RenderNeeded() {
+				// (caret flip, clock second, hover reveal). Instant input
+				// response at zero render + zero CPU cost. A timed-out wait
+				// renders one frame only when a REAL deadline chose the delay or
+				// the safety-heartbeat toggle is on — a bare housekeeping expiry
+				// just pumps Background and re-checks damage, so a static screen
+				// renders NOTHING (the hardcoded-2fps playtest complaint).
+				if app.RenderNeeded(focused) {
 					continue
 				}
-				wait := app.NextWakeDelay()
+				wait, sched := app.NextWakeDelay(focused)
 				scheduledNap = wait
 				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
 					pendingEv = ev
-				} else {
+				} else if sched || prefs.PaceHeartbeatOn() {
 					app.NoteDeadline()
 				}
 				continue
