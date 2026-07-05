@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test16 — 2026-07-06 (test build)
+
+- **The texture memory budget can go higher — as an experimental opt-in.** For
+  very long animations that the memory cap still truncates: the Texture memory
+  budget (Settings → power user) now reaches 256 MiB. It stays OFF by default
+  (64), and anything up to 128 fits the memory budget; above 128 is flagged
+  experimental and deliberately exceeds it — more RAM / GPU memory, and it may
+  stutter or crash on low-spec machines. Raise it, restart, and longer
+  animations decode in full. (The real fix, a smaller texture footprint, is
+  still to come.)
+
 ## v1.55.0-test15 — 2026-07-05 (test build)
 
 Follow-ups to the frame-limiter round, plus preanimation fixes (which are
