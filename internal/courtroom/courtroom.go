@@ -970,8 +970,15 @@ func (c *Courtroom) startTalking() {
 	c.Scene.VisibleRunes = 0
 	if !c.Scene.Speaker.PlayOnce {
 		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
+	} else {
+		// Immediate mode: the preanim keeps playing over the text (Active stays on
+		// PreanimBase). Bound how long PhaseTalking waits for it after the text is
+		// done so a slow-decoding / missing preanim can't freeze the message —
+		// NotifyPreanimStarted extends this to the real duration once the decoded
+		// preanim plays, exactly like the blocking PhasePreanim path.
+		c.timer = c.PreanimTimeout
 	}
-	if c.Typewriter.Done() { // blank post
+	if c.Typewriter.Done() && !c.Scene.Speaker.PlayOnce { // blank post, no pending preanim
 		c.enterLinger()
 		return
 	}
@@ -1002,7 +1009,10 @@ func (c *Courtroom) NotifyPreanimDone() {
 // phase-guarded, so a stale callback from another room while a replay/maker
 // preview drives the same shared viewport is a safe no-op.
 func (c *Courtroom) NotifyPreanimStarted(total time.Duration) {
-	if c.phase != PhasePreanim {
+	// PhasePreanim = a blocking preanim wait; PhaseTalking + PlayOnce = an
+	// IMMEDIATE-mode preanim playing over the text. Both bound the wait on
+	// c.timer, and both must let a long DECODED preanim play in full.
+	if c.phase != PhasePreanim && !(c.phase == PhaseTalking && c.Scene.Speaker.PlayOnce) {
 		return
 	}
 	if want := total + preanimPlaybackSlack; want > c.timer {
@@ -1095,7 +1105,25 @@ func (c *Courtroom) Update(dt time.Duration) {
 		for i := 0; i < blips; i++ {
 			c.audio.PlayBlip(c.blipBase) // AssetType: Blip
 		}
-		if c.Typewriter.Done() {
+		textDone := c.Typewriter.Done()
+		// Immediate mode: a preanim (PlayOnce) is playing over the text crawl.
+		if c.Scene.Speaker.PlayOnce {
+			if textDone {
+				c.timer -= dt // bound the post-text wait (armed in startTalking, extended by NotifyPreanimStarted)
+			}
+			if c.preanimDone || (textDone && c.timer <= 0) {
+				c.Scene.Speaker.PlayOnce = false
+				if !textDone {
+					// Preanim finished while the text is still crawling: flap the
+					// talk sprite for the rest (it used to freeze on the last
+					// preanim frame).
+					c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
+				}
+			}
+		}
+		// Linger only once the text AND any immediate preanim are done — finishing
+		// the text alone used to snap straight to idle mid-preanim.
+		if textDone && !c.Scene.Speaker.PlayOnce {
 			c.enterLinger()
 		}
 
