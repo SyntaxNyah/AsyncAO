@@ -3486,6 +3486,7 @@ func (a *App) buildRoom() {
 	})
 	a.room.Predictor.SetAggressiveness(a.d.Prefs.PrefetchAggressiveness()) // #100 predictive-prefetch level
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+	a.d.Viewport.OnPreanimStart = a.room.NotifyPreanimStarted // extend the fallback for long decoded preanims (phase-guarded — safe if a preview later shares this viewport)
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
 	}
@@ -3624,6 +3625,7 @@ func (a *App) pinToSplit(t *courtTab) {
 	a.splitTab = t
 	a.splitRoom = courtroom.NewCourtroom(t.state.urls, a.d.Manager, t.state.sess, courtroom.NopAudio{})
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
+	a.splitVP.OnPreanimStart = a.splitRoom.NotifyPreanimStarted
 	a.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5 // fresh pin starts at fit
 	if t.state.sess.Background != "" {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})

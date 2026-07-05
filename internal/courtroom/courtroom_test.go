@@ -1222,6 +1222,72 @@ func TestMissingPreanimSkipsInsteadOfTimeout(t *testing.T) {
 	}
 }
 
+// preanimMsg builds a Pre-checked (EMOTE_MOD 1) IC message for the preanim
+// timing tests.
+func preanimMsg(t *testing.T, sess *Session, text string) *protocol.ChatMessage {
+	t.Helper()
+	fields := []string{
+		"1", "-80", "Erika", "80", text, "jud", "0",
+		"1", // EMOTE_MOD preanim
+		"0", "0", "0", "0", "0", "0", "0",
+		"", "-1", "", "", "0", "0", "0",
+		"0", // IMMEDIATE off
+	}
+	msg, err := protocol.ParseMS(fields, sess.Features, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return msg
+}
+
+// TestLongPreanimNotCutByTimeout pins the fix for "long preanims play a second
+// or two then skip to the end": once the render reports a decoded preanim's real
+// duration (NotifyPreanimStarted), the fallback PreanimTimeout is EXTENDED to
+// cover it, so a preanim longer than the 2.5 s default plays to its natural
+// NotifyPreanimDone instead of being cut at the timeout. A report outside
+// PhasePreanim (a stale callback from a shared viewport) is a safe no-op.
+func TestLongPreanimNotCutByTimeout(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	room.NotifyPreanimStarted(9 * time.Second) // no preanim on stage yet: phase-guarded no-op
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: preanimMsg(t, sess, "Long one")})
+	if room.Phase() != PhasePreanim {
+		t.Fatalf("phase = %v, want preanim", room.Phase())
+	}
+
+	room.NotifyPreanimStarted(5 * time.Second) // the render is playing a 5 s decoded preanim
+	room.Update(DefaultPreanimTimeout + 500*time.Millisecond)
+	if room.Phase() != PhasePreanim {
+		t.Fatalf("preanim cut at the %v default timeout despite a 5 s reported duration (phase = %v)", DefaultPreanimTimeout, room.Phase())
+	}
+
+	room.NotifyPreanimDone()
+	room.Update(time.Millisecond)
+	if room.Phase() != PhaseTalking {
+		t.Errorf("phase after the natural finish = %v, want talking", room.Phase())
+	}
+}
+
+// TestPreanimTimeoutFallback pins that WITHOUT a duration report (the asset is
+// still decoding, so the render can't say how long it is) the fallback timeout
+// still ends the wait — the extension is opt-in, it doesn't disable the guard.
+func TestPreanimTimeoutFallback(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: preanimMsg(t, sess, "Still decoding")})
+	if room.Phase() != PhasePreanim {
+		t.Fatalf("phase = %v, want preanim", room.Phase())
+	}
+
+	room.Update(DefaultPreanimTimeout + time.Millisecond) // no report, no done: the fallback fires
+	if room.Phase() != PhaseTalking {
+		t.Errorf("phase after the fallback timeout = %v, want talking", room.Phase())
+	}
+}
+
 // TestMissingImmediatePreanimRestoresTalkLoop covers the non-blocking flavour:
 // IMMEDIATE plays the preanim ALONGSIDE the text by parking Active on the
 // preanim base with PlayOnce. A conclusively-missing preanim would leave the

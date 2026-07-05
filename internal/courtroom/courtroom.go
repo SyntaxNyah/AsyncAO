@@ -17,9 +17,15 @@ const (
 	// DefaultPreanimTimeout bounds a preanim wait when its real duration is
 	// not yet known (asset still decoding); NotifyPreanimDone (the one-shot
 	// finished) or NotifyAssetMissing (it can never start — conclusive 404)
-	// cuts it short, so a live wait only ever runs this long when the asset
-	// is genuinely still downloading.
+	// cuts it short, and once the decoded preanim plays NotifyPreanimStarted
+	// EXTENDS it to the real duration — so a live wait only ever runs this long
+	// while the asset is genuinely still downloading, never as a cap on a long
+	// but decoded preanimation (the "long preanims skip to the end" report).
 	DefaultPreanimTimeout = 2500 * time.Millisecond
+	// preanimPlaybackSlack pads the extended timeout past a decoded preanim's
+	// real duration (last-frame delay + the one-shot done report's latency), so
+	// the natural NotifyPreanimDone always wins the race, not the fallback.
+	preanimPlaybackSlack = 250 * time.Millisecond
 	// DefaultTextStayTime holds a finished message on screen before the
 	// queue advances (AO2-Client text_stay_time flavor).
 	DefaultTextStayTime = 200 * time.Millisecond
@@ -983,6 +989,25 @@ func (c *Courtroom) enterLinger() {
 // finishes (or by tests). It also flips the speaker to the talk loop.
 func (c *Courtroom) NotifyPreanimDone() {
 	c.preanimDone = true
+}
+
+// NotifyPreanimStarted is called by the render side the first frame a decoded,
+// multi-frame preanimation actually plays, reporting its real total duration.
+// PreanimTimeout is only a fallback for a preanim whose length isn't known yet
+// (still decoding); once we're playing it we know the truth, so extend the
+// phase timer to cover the full playback. Without this a preanim longer than
+// PreanimTimeout was cut short AT the timeout ("plays a second or two, then
+// skips to the end"). NotifyPreanimDone still ends the phase exactly at the
+// natural finish — this only stops the fallback pre-empting it. Extend-only and
+// phase-guarded, so a stale callback from another room while a replay/maker
+// preview drives the same shared viewport is a safe no-op.
+func (c *Courtroom) NotifyPreanimStarted(total time.Duration) {
+	if c.phase != PhasePreanim {
+		return
+	}
+	if want := total + preanimPlaybackSlack; want > c.timer {
+		c.timer = want
+	}
 }
 
 // NotifyAssetMissing reports that the asset manager conclusively failed to
