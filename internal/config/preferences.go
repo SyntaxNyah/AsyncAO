@@ -254,12 +254,16 @@ const defaultAutoReconnect = true
 // Default ON (a power-user Settings toggle turns it off for freeform placement).
 const defaultClipSpritesToStage = true
 
-// defaultNoFrameLimit ships the DIAGNOSTIC no-limit render mode ON for the
-// test channel (playtest call: frame limiting off by default until the
-// flicker hunt settles) — every loop pass renders and vsync paces the
-// presents, like a plain game loop. The Settings toggle turns the limiters
-// back on; flip this to false before any stable merge.
-const defaultNoFrameLimit = true
+// defaultNoFrameLimit shipped the DIAGNOSTIC no-limit render mode ON while
+// the flicker hunt ran (test10). The hunt settled on the compositor — dense
+// presents at damage-only draw cost — so the diagnostic retires to opt-in:
+// it only governs the classic paths (selective rendering off/unavailable),
+// and there it bypasses EVERY limiter and the static skip, so a
+// non-blocking windowed present path spins the loop at unlimited full-frame
+// renders (the idle GPU burn). The Settings toggle (Power user → Frame rate
+// & GPU) still enables it live for A/B runs. Note prefs files written by
+// test10/11 carry the old ON — the default only steers fresh configs.
+const defaultNoFrameLimit = false
 
 // defaultSelectiveRender ships the compositor — selective rendering — ON for
 // the test channel. The UI renders into a cached render-target texture only
@@ -874,7 +878,7 @@ type AssetPreferences struct {
 	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30; -1 = unlimited; -2 = frozen; positives unclamped)
 	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10; -1 = unlimited; -2 = frozen; positives unclamped)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
-	NoFrameLimit           bool                         `json:"noFrameLimit"`                   // DIAGNOSTIC: bypass ALL frame limiting — render every pass, vsync paces (default ON on the test channel)
+	NoFrameLimit           bool                         `json:"noFrameLimit"`                   // DIAGNOSTIC: bypass ALL frame limiting — render every pass, vsync paces (default OFF since test12; opt-in A/B toggle)
 	SelectiveRender        bool                         `json:"selectiveRender"`                // the compositor: damage-gated region redraws into a cached frame, steady blit-presents (default ON on the test channel)
 	PaceHeartbeat          bool                         `json:"paceHeartbeat"`                  // the 2 fps static-skip safety heartbeat (default OFF: a skipped screen renders only on real changes)
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
@@ -1200,7 +1204,7 @@ type prefsJSON struct {
 	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30; -1 = unlimited; -2 = frozen; positives unclamped)
 	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10; -1 = unlimited; -2 = frozen; positives unclamped)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
-	NoFrameLimit           *bool            `json:"noFrameLimit"`         // diagnostic no-limit render (default ON; pointer: absent != off)
+	NoFrameLimit           *bool            `json:"noFrameLimit"`         // diagnostic no-limit render (default OFF since test12; pointer kept so test10/11 files apply their explicit value)
 	SelectiveRender        *bool            `json:"selectiveRender"`      // the compositor (default ON; pointer: absent != off)
 	PaceHeartbeat          bool             `json:"paceHeartbeat"`        // 2 fps skip heartbeat (default OFF, zero value)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
@@ -1937,7 +1941,7 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
-	if onDisk.NoFrameLimit != nil { // pointer: absent keeps the default-ON
+	if onDisk.NoFrameLimit != nil { // pointer: absent keeps the default; explicit test10/11 values apply
 		p.NoFrameLimit = *onDisk.NoFrameLimit
 	}
 	if onDisk.SelectiveRender != nil { // pointer: absent keeps the default-ON
@@ -6485,11 +6489,13 @@ func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
 	p.markDirty()
 }
 
-// NoFrameLimitOn reports the DIAGNOSTIC no-limit toggle (default ON on the
-// test channel): bypass every frame limiter and the static skip — render
-// every loop pass, with vsync pacing the presents like a plain game loop.
-// The playtest escape hatch for isolating whether a glitch comes from the
-// pacing machinery (sparse presents) or from the frames themselves.
+// NoFrameLimitOn reports the DIAGNOSTIC no-limit toggle (default OFF since
+// test12 — the compositor is the shipping answer): bypass every frame
+// limiter and the static skip — render every loop pass, with vsync pacing
+// the presents like a plain game loop. The playtest escape hatch for
+// isolating whether a glitch comes from the pacing machinery (sparse
+// presents) or from the frames themselves. Only consulted on the classic
+// paths (selective rendering off/unavailable).
 func (p *AssetPreferences) NoFrameLimitOn() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()

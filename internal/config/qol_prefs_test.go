@@ -762,7 +762,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
 	p.SetDragLayout(false)       // default-ON *bool — explicit false must survive
 	p.SetEventDrivenLoop(false)  // default-ON *bool — the experimental-loop kill switch must stick
-	p.SetNoFrameLimit(false)     // default-ON *bool — turning the limiters back ON must stick
+	p.SetNoFrameLimit(true)      // default-OFF since test12 (*bool) — the explicit diagnostic opt-in must stick
 	p.SetSelectiveRender(false)  // default-ON *bool — the compositor kill switch must stick
 	p.SetIdleFPS(FPSUnlimited)   // the ∞ sentinel must survive save→load un-clamped
 	p.SetUnfocusedFPS(FPSZero)   // the typed-0 FROZEN sentinel must survive save→load
@@ -830,8 +830,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.EventDrivenLoopOn() {
 		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
 	}
-	if q.NoFrameLimitOn() {
-		t.Error("NoFrameLimit=false lost (absent-default ON must not clobber the explicit limiters-on choice)")
+	if !q.NoFrameLimitOn() {
+		t.Error("NoFrameLimit=true lost (the explicit diagnostic opt-in must survive reload)")
 	}
 	if q.SelectiveRenderOn() {
 		t.Error("SelectiveRender=false lost (absent-default ON must not clobber the explicit kill switch)")
@@ -1104,7 +1104,7 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetIdleFPS(60)
 	p.SetUnfocusedFPS(30)
 	p.SetEventDrivenLoop(false)
-	p.SetNoFrameLimit(false)
+	p.SetNoFrameLimit(true) // default OFF since test12 — the nuke must switch it back off
 	p.SetSelectiveRender(false)
 	p.SetPaceHeartbeat(true)
 	p.SetClipSpritesToStage(false)
@@ -1146,8 +1146,8 @@ func TestResetPowerUser(t *testing.T) {
 	if !p.EventDrivenLoopOn() {
 		t.Error("nuke must restore the experimental event-driven loop to its default ON")
 	}
-	if !p.NoFrameLimitOn() {
-		t.Error("nuke must restore the diagnostic no-limit mode to its test-channel default ON")
+	if p.NoFrameLimitOn() {
+		t.Error("nuke must reset the diagnostic no-limit mode to its default OFF (retired with the compositor — test12)")
 	}
 	if !p.SelectiveRenderOn() {
 		t.Error("nuke must restore the compositor to its test-channel default ON")
