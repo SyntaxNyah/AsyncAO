@@ -6003,11 +6003,18 @@ const (
 	SpriteDownscaleMaxPct = 200
 
 	// T1 texture byte budget, MiB. RESTART-applied. ⚠ T1 + T2 (128 MiB) live
-	// inside the 256 MiB memory budget — the max leaves headroom for the rest
-	// of the client; raising it trades eviction churn for peak memory.
+	// inside the 256 MiB memory budget. The default (64) and everything up to
+	// TexBudgetSafeMaxMiB keep the WHOLE client under budget; the max is raised
+	// to 256 only as an EXPERIMENTAL, default-off, warned opt-in so a long
+	// animation can decode past the ~5 s truncation — above the safe max it
+	// deliberately exceeds the budget (trades peak memory, may stutter/crash on
+	// low-RAM machines). The default is unchanged: normal users never leave 64.
 	TexBudgetDefaultMiB = 64
 	TexBudgetMinMiB     = 32
-	TexBudgetMaxMiB     = 128
+	TexBudgetMaxMiB     = 256
+	// TexBudgetSafeMaxMiB is the largest budget that still fits the 256 MiB
+	// memory target; the Settings row marks everything above it experimental.
+	TexBudgetSafeMaxMiB = 128
 
 	// Speaker-swap crossfade: the new sprite fades in over N ms (0 = off, the
 	// default hard swap). Suppressed by Reduce motion.

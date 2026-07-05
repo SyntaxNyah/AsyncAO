@@ -3385,17 +3385,22 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	if ntx != 0 && ntx < config.TexBudgetMinMiB {
 		ntx = 0 // bottom of the track = the default (64 MiB)
 	}
-	c.Tooltip(xtrack, "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32–128 MiB). Applies on RESTART.")
+	c.Tooltip(xtrack, "How much GPU-texture memory decoded art may occupy before the least-recently-used is evicted (32–256 MiB). Above 128 is EXPERIMENTAL — it exceeds the 256 MiB memory budget and may stutter or crash on low-RAM machines. Applies on RESTART.")
 	txLabel := "default (64 MiB)"
+	txCol := ColTextDim
 	if ntx != 0 {
 		txLabel = strconv.Itoa(ntx) + " MiB"
+		if ntx > config.TexBudgetSafeMaxMiB {
+			txLabel += "  ⚠ experimental — over budget"
+			txCol = ColAccent
+		}
 	}
-	c.Label(pad+210+226, y+4, txLabel, ColTextDim)
+	c.Label(pad+210+226, y+4, txLabel, txCol)
 	if ntx != txb {
 		a.d.Prefs.SetTexBudgetMiB(ntx)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms; smaller = lighter footprint. Capped to fit the 256 MiB memory budget. Applies on restart.", ColTextDim)
+	y = a.settingsDesc(pad, y, "GPU memory for decoded art; past it the least-recently-used is evicted (and re-fetched if needed again). Bigger = fewer evictions in packed rooms AND longer animations decode before they truncate; smaller = lighter footprint. The default (64) and anything up to 128 fit the 256 MiB memory budget — above 128 is EXPERIMENTAL and deliberately exceeds it, so only raise it there if long animations are cut and you have RAM to spare. Applies on restart.", ColTextDim)
 	y += 10
 
 	// Character-folder casing.
