@@ -4,6 +4,47 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test11 — 2026-07-05 (test build)
+
+Selective rendering — the compositor. The whole UI now lives in a cached
+frame that is redrawn only when something changes, and only WHERE it
+changed; the cache itself is still presented to the screen at your
+monitor's rhythm every pass. That resolves the test branch's standing
+conflict head-on: presenting sparsely glitches some driver setups
+(test6's finding), while redrawing everything continuously burns GPU
+(test10's cost) — so presents stay continuous and near-free, and the
+expensive part, actually drawing the UI, happens only on demand.
+
+- **Nothing changed → nothing redraws.** A static screen costs one
+  cached-frame copy per refresh and zero draw work — the F8 diag line
+  now shows both numbers ("drawnFps" = real redraws, "presFps" =
+  presents; a low first number under a steady second one is the mode
+  working).
+- **Mouse motion redraws only what it touches.** Moving over dead space
+  redraws nothing at all; crossing onto a button redraws that button's
+  rectangle once. Drags, text selection and cursor-following tooltips
+  keep redrawing while they track the pointer.
+- **Self-updating content redraws itself, at its own pace.** A sprite
+  loop repaints just the stage exactly when its frames flip; a typing
+  message repaints the stage, chatbox and log at the text's own cadence
+  (blips and timing untouched — game state advances every pass, only
+  pixels wait); the caret blinks by repainting its input field; clock
+  chips repaint once per displayed second. Full-screen work remains for
+  genuinely full-screen things: input, incoming packets, screen/theme
+  changes, replays, exports, shakes and always-on effects.
+- **Settings → Power user → Frame rate & GPU → "Selective rendering"**
+  (default ON on this test build) is the kill switch: untick to fall
+  back to the previous no-limit behaviour and compare. While it's on,
+  the no-limit toggle and the rate knobs below it are bypassed.
+- Under the hood, for the curious: a window-sized render-target texture
+  holds the frame; damage sources (a hover census of interactive
+  rectangles, a stage-change generation on the viewport, room-state
+  snapshots, packet/texture flags) accumulate clip regions; window
+  resizes and driver device resets rebuild the cache and repaint in
+  full. Screenshots, the GIF export and the floating client window all
+  render through nested targets and were taught to restore the cache
+  instead of the raw backbuffer.
+
 ## v1.55.0-test10 — 2026-07-05 (test build)
 
 Frame limiting off by default — the restored no-limit build, back by
