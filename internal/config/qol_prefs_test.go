@@ -1491,6 +1491,15 @@ func TestFPSKnobDomain(t *testing.T) {
 	if p.IdleFPS() != FPSOff || p.UnfocusedFPS() != FPSOff || p.FPSCap() != FPSUnlimited {
 		t.Fatalf("sentinels not held live: idle=%d unfocused=%d cap=%d", p.IdleFPS(), p.UnfocusedFPS(), p.FPSCap())
 	}
+	// Input-grace frames: default 1, clamps into range, survives the round-trip.
+	if got := p.InputGraceFrames(); got != InputGraceFramesDefault {
+		t.Errorf("input-grace default = %d, want %d", got, InputGraceFramesDefault)
+	}
+	p.SetInputGraceFrames(99999)
+	if got := p.InputGraceFrames(); got != InputGraceFramesMax {
+		t.Errorf("input-grace over-max = %d, want clamp to %d", got, InputGraceFramesMax)
+	}
+	p.SetInputGraceFrames(30)
 	if err := p.Close(); err != nil { // flush + release before reload
 		t.Fatalf("Close: %v", err)
 	}
@@ -1506,5 +1515,8 @@ func TestFPSKnobDomain(t *testing.T) {
 	}
 	if q.FPSCap() != FPSUnlimited {
 		t.Errorf("active ∞ lost across reload: %d, want %d", q.FPSCap(), FPSUnlimited)
+	}
+	if q.InputGraceFrames() != 30 {
+		t.Errorf("input-grace frames lost across reload: %d, want 30", q.InputGraceFrames())
 	}
 }

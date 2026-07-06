@@ -856,6 +856,7 @@ type AssetPreferences struct {
 	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60 default; -1 = uncapped)
 	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle frame rate (0/absent = 30 default; -1 = uncapped; -2 = never redraw when idle)
 	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10 default; -1 = uncapped; -2 = never redraw when unfocused)
+	InputGraceFramesVal    int                          `json:"inputGraceFrames,omitempty"`     // full-rate hold after a click/key, in frames (0/absent = default 1)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
 	DisableFrameLimiter    bool                         `json:"disableFrameLimiter,omitempty"`  // #5 bypass: render every frame, NO pacing/skip (vsync only). Default OFF, high GPU. Fresh key.
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
@@ -1180,6 +1181,7 @@ type prefsJSON struct {
 	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60 default; -1 = uncapped)
 	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30 default; -1 = uncapped; -2 = off)
 	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10 default; -1 = uncapped; -2 = off)
+	InputGraceFrames       int              `json:"inputGraceFrames"`     // full-rate hold after input, in frames (0 = default 1)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	DisableFrameLimiter    bool             `json:"disableFrameLimiter"`  // #5 bypass: no pacing/skip at all (default OFF)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
@@ -1911,6 +1913,10 @@ func load(path string) (*AssetPreferences, error) {
 	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, FPSCapMin, FPSCapMax)
 	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, IdleFPSMin, IdleFPSMax)
 	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax)
+	p.InputGraceFramesVal = onDisk.InputGraceFrames
+	if p.InputGraceFramesVal != 0 { // 0 = "use the default"; a set value clamps into range
+		p.InputGraceFramesVal = clampPercent(p.InputGraceFramesVal, InputGraceFramesMin, InputGraceFramesMax)
+	}
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
@@ -6037,6 +6043,14 @@ const (
 	UnfocusedFPSMin     = 1
 	UnfocusedFPSMax     = 60
 
+	// InputGraceFrames: how long full rate is held after a click / keypress, in
+	// frames (at a 60 fps reference). 1 (the default) = snappiest — the input's
+	// own frame shows, then the rate falls straight back to idle; the max restores
+	// the old ~1 s hold. Mouse MOTION is unaffected (it has its own short grace).
+	InputGraceFramesDefault = 1
+	InputGraceFramesMin     = 1
+	InputGraceFramesMax     = 60
+
 	// FPSUnlimited is the "no limit" sentinel any of the three rate knobs may
 	// hold (the Settings ∞ toggle): the active cap stops capping (vsync paces
 	// the presents), and an unlimited idle/unfocused rate means that state is
@@ -6557,6 +6571,30 @@ func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
 	p.markDirty()
 }
 
+// InputGraceFrames reports the post-input full-rate hold in frames
+// (InputGraceFramesDefault when unset).
+func (p *AssetPreferences) InputGraceFrames() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.InputGraceFramesVal == 0 {
+		return InputGraceFramesDefault
+	}
+	return p.InputGraceFramesVal
+}
+
+// SetInputGraceFrames persists the post-input full-rate hold (clamped to range).
+func (p *AssetPreferences) SetInputGraceFrames(n int) {
+	n = clampPercent(n, InputGraceFramesMin, InputGraceFramesMax)
+	p.mu.Lock()
+	if p.InputGraceFramesVal == n {
+		p.mu.Unlock()
+		return
+	}
+	p.InputGraceFramesVal = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // EffectiveSpriteCap derives the decode-downscale height cap from the
 // display-derived base and the two power-user knobs: off → 0 (no cap, exact
 // source art), else base × pct/100 (pct 0 = the default 100 %). Pure — shared
@@ -6609,6 +6647,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.FPSCapVal = 0
 	p.IdleFPSVal = 0
 	p.UnfocusedFPSVal = 0
+	p.InputGraceFramesVal = 0
 	p.EventDrivenLoop = defaultEventDrivenLoop
 	p.DisableFrameLimiter = false // #5 bypass resets OFF
 	p.ClipSpritesToStage = defaultClipSpritesToStage

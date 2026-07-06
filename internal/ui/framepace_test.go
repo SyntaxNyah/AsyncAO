@@ -43,7 +43,7 @@ func TestFramePace(t *testing.T) {
 	if got := a.FramePace(true); got != budget(60) {
 		t.Errorf("post-input pace = %v, want the 60 fps active budget", got)
 	}
-	a.lastInputAt = time.Now().Add(-2 * fullRateInputGrace) // grace expired
+	a.lastInputAt = time.Now().Add(-2 * time.Second) // grace expired (max hold is ~1s)
 
 	// A live animation surface forces the full cap even with no input (the
 	// replay transport here; the same branch covers maker/export/voice/toasts).

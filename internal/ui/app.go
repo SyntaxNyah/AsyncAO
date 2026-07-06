@@ -1008,7 +1008,7 @@ type sessionState struct {
 	// from cmd/asyncao); the downscale knobs scale it (config.EffectiveSpriteCap).
 	spriteCapBase int
 	// lastInputAt is the most recent SDL input event (frame pacing: full rate
-	// through fullRateInputGrace after any interaction).
+	// through the InputGraceFrames hold after any interaction).
 	lastInputAt time.Time
 	// lastMotionAt is the most recent BARE pointer motion (experimental loop):
 	// it holds full rate only through motionInputGrace, so circling the mouse
@@ -4110,9 +4110,13 @@ func (a *App) crossfadeDur() time.Duration {
 // back to full instantly (NoteInput + a grace window), so responsiveness is
 // untouched — a flat low cap would be a band-aid; only wasted redraws go.
 
-// fullRateInputGrace keeps full rate this long after the last input event, so
-// interaction (typing, dragging, scrolling) never feels the idle cap.
-const fullRateInputGrace = 1 * time.Second
+// inputGraceFrameDuration is one "frame" of the post-input full-rate hold — the
+// InputGraceFrames pref counts these. A fixed 60 fps reference, so the frame
+// count means the same thing regardless of the active cap. After a click/key the
+// rate holds full for InputGraceFrames of them, then drops straight back to idle
+// (the playtest ask was "1 frame, not a whole second"). Mouse MOTION is separate
+// — it keeps its own short motionInputGrace.
+const inputGraceFrameDuration = time.Second / 60
 
 // NoteInput marks "the user just interacted" — the main loop calls it whenever
 // an SDL event arrives, and wantsFullRate holds full rate through the grace.
@@ -4134,7 +4138,7 @@ func (a *App) NoteAnimating() { a.frameAnimChrome = true }
 // experimental loop: long enough that continuous movement (hover sweeps, drags
 // — their motion stream keeps re-arming it) renders at full rate throughout,
 // short enough that waving the mouse over dead space stops costing frames
-// almost as soon as it stops. Clicks/keys/wheel keep fullRateInputGrace.
+// almost as soon as it stops. Clicks/keys/wheel keep the InputGraceFrames hold.
 const motionInputGrace = 200 * time.Millisecond
 
 // NoteMotion marks a pointer-motion-only pass. Under the experimental loop it
@@ -4614,8 +4618,8 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 // old knob-not-state checks held full rate forever and were the "redraws for
 // no reason" playtest report.
 func (a *App) wantsFullRate() bool {
-	if time.Since(a.lastInputAt) < fullRateInputGrace {
-		return true
+	if time.Since(a.lastInputAt) < time.Duration(a.d.Prefs.InputGraceFrames())*inputGraceFrameDuration {
+		return true // configurable post-input hold (default 1 frame); 0 would be the input's own frame only
 	}
 	if time.Since(a.lastMotionAt) < motionInputGrace {
 		return true // a moving pointer renders live; the short grace ends with it
