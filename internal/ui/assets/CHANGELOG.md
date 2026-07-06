@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.54.6 — 2026-07-06
+
+- **Long character animations play all the way through again.** Preanimations
+  with lots of frames — some sprite packs ship 100+ frames per emote — were cut
+  off about a quarter of the way in and snapped straight to the talking pose,
+  looking like the animation broke or flickered. The per-character memory cap
+  now keeps frames spread evenly across the WHOLE animation instead of only the
+  start, so it plays from the first frame through to the final pose (a touch
+  lower frame rate on the very longest ones) within the same memory budget and
+  with the correct timing. Because the animation runs for its real length, the
+  next sprite also gets more time to load, trimming the brief blank at the
+  hand-off from the preanimation into talking.
+
 ## v1.54.5 — 2026-07-04
 
 An input round — thanks to Nightingale for the layering report, the
