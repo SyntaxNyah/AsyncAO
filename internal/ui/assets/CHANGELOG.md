@@ -4,6 +4,16 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test20 — 2026-07-06 (test build)
+
+- **New setting: Input responsiveness (Settings → Power user → frame limiter).**
+  A slider, in frames, for how long the frame rate stays at the Active cap after
+  a click or keypress. It used to be a fixed 1 second, which felt like the rate
+  "stuck" at full after you'd finished; the default is now 1 frame — the input
+  still shows instantly, the rate just drops back to the idle rate right after.
+  Raise it if you want a smoother tail. Mouse movement has its own brief hold and
+  isn't affected by this.
+
 ## v1.55.0-test19 — 2026-07-06 (test build)
 
 - **The Background (unfocused) frame limiter is a true cap now.** Setting it to
