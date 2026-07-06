@@ -4,6 +4,32 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test18 — 2026-07-06 (test build)
+
+More frame-limiter work: the caps are strict now, and more of the client
+redraws only when it actually needs to.
+
+- **Your FPS caps are always obeyed now.** Moving the mouse (or any burst of
+  input) could previously push the frame rate past the Active cap — it can't any
+  more; the cap is a hard ceiling. The Background (unfocused) cap behaves the
+  same way: while the window isn't focused, the rate holds at your Background cap
+  even when the stage is animating. Trade-off: unfocused animations now run at
+  your Background cap rather than their own faster rate — raise the Background
+  cap if you want them smoother while tabbed out. Typing and input still stay
+  responsive at low idle rates.
+
+- **The Settings screen now uses the idle frame limit.** Nothing really moves
+  there, so it stops rendering at full speed while you sit in it and redraws when
+  you interact instead. (The mic test, sprite previews and streaming art still
+  update while they're doing something; F8 is still the place to watch live
+  performance numbers.)
+
+- **More things redraw on their own at idle rate 0.** With the idle rate at 0, a
+  few spots used to freeze until you moved the mouse. Now the chat log glides to
+  a new message, the player list's "just joined" highlight fades out, the emote
+  grid fills its buttons in, and a couple of small touches (the About mascot
+  wiggle, the friend-glow pulse) play out on their own.
+
 ## v1.55.0-test17 — 2026-07-06 (test build)
 
 - **Long character animations play all the way through again.** Preanimations
