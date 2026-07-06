@@ -4,6 +4,20 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test23 — 2026-07-06 (test build)
+
+More "force a redraw when something changes" coverage, so a low/0 idle rate feels
+right everywhere:
+
+- **Clicking a screen button always switches instantly.** Settings, Logs, About,
+  Help, char select — and any button that changes what's on screen — now force
+  the follow-up frame themselves, so the new screen appears immediately instead
+  of sometimes waiting for you to move the mouse.
+- **The emote list shows up the moment it loads.** Switching tabs no longer
+  leaves "Loading emotes…" on screen until something else redraws — the list now
+  forces its own redraw when the character's data arrives, the same way the
+  character list does.
+
 ## v1.55.0-test22 — 2026-07-06 (test build)
 
 - **New default frame-limiter settings.** Fresh installs (and anyone who hasn't
