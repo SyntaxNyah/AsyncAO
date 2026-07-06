@@ -2189,6 +2189,7 @@ func (a *App) Background(dt time.Duration) {
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.drainWarnings()
+	a.pollCharINI() // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
 	if a.room != nil {
 		a.room.Update(dt)
 	}
@@ -4513,6 +4514,16 @@ func (a *App) RenderNeeded() bool {
 // reveal, or the plain staleness heartbeat.
 func (a *App) NoteDeadline() { a.uiDirty = true }
 
+// NoteInteraction forces exactly one follow-up render after a real (non-motion)
+// input event. A click or keypress almost always changes UI-visible state DURING
+// its own frame's draw — a screen switch, a menu open, a toggle — and that change
+// only appears on the NEXT frame. The main loop calls this after a rendered input
+// frame so that frame is guaranteed regardless of the input-grace timing, instead
+// of leaving the new state stranded until cursor motion or the idle tick reveals
+// it (the "click Settings and the screen doesn't change until I wiggle the mouse"
+// report). Idle-safe: no input, no follow-up.
+func (a *App) NoteInteraction() { a.uiDirty = true }
+
 const (
 	// minWakeDelay floors the event wait so a just-passed deadline can never
 	// busy-spin the loop.
@@ -5237,10 +5248,12 @@ func (a *App) loadCharINI() {
 		data, err := a.d.Manager.FetchRaw(context.Background(), url)
 		if err != nil {
 			a.charINIres <- charINIFetch{key: key, err: err}
+			PushWake() // wake the event-driven loop so Background drains this at idle=0
 			return
 		}
 		ini, err := courtroom.ParseCharINI(data)
 		a.charINIres <- charINIFetch{key: key, ini: ini, err: err}
+		PushWake() // wake the event-driven loop so Background drains this at idle=0
 	}()
 }
 
@@ -5254,6 +5267,7 @@ func (a *App) pollCharINI() {
 			return // landed after a tab switch: another server's char.ini
 		}
 		a.charINIBusy = false
+		a.uiDirty = true // the emote list just changed (and "Loading emotes…" must clear): force one redraw, like the character list does on its packet
 		// New emote list = new button art; the gen-keyed page caches key
 		// by INDEX, so a same-length iniswap would show the old char's
 		// buttons without this.

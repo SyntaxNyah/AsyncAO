@@ -494,6 +494,14 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		_ = ren.Clear()
 		app.Frame(dt, lw, lh)
 		ren.Present()
+		// A real interaction (click / key / wheel) almost always changed UI-visible
+		// state DURING the draw above — a screen switch, a menu open, a toggle — which
+		// only appears on the NEXT frame. Force that one frame so it's never stranded
+		// until cursor motion or the idle tick reveals it. Motion is excluded (it has
+		// its own live grace); idle-safe (no input, no follow-up).
+		if sawInput {
+			app.NoteInteraction()
+		}
 
 		// Frame pacing (the GPU-burn fix): sleep the frame's remaining budget.
 		// vsync stays on for tear-free presents, but it CANNOT be the throttle —

@@ -275,6 +275,29 @@ func TestNextWakeDelay(t *testing.T) {
 	}
 }
 
+// TestPollCharINIForcesRedraw pins the emote-load redraw: draining the async
+// char.ini result clears the "Loading emotes…" state AND marks uiDirty, so the
+// event-driven loop renders the freshly-loaded emote list at idle=0 instead of
+// leaving it stranded until cursor motion. A nil-ini result takes the default
+// (empty char.ini) branch — enough to exercise the clear + the dirty flag
+// without firing the success path's network prefetch.
+func TestPollCharINIForcesRedraw(t *testing.T) {
+	a := testTabApp(t)
+	if a.charINIres == nil {
+		a.charINIres = make(chan charINIFetch, 1)
+	}
+	a.charINIBusy = true
+	a.uiDirty = false
+	a.charINIres <- charINIFetch{key: a.serverKey}
+	a.pollCharINI()
+	if a.charINIBusy {
+		t.Error("pollCharINI must clear charINIBusy on a matching result")
+	}
+	if !a.uiDirty {
+		t.Error("pollCharINI must mark uiDirty so the loaded emote list forces a redraw at idle=0")
+	}
+}
+
 // TestNextHoverDue pins the Ctx hover deadlines: a pending TooltipAfter dwell
 // reports its remainder, an already-shown one reports nothing (the reveal
 // frame already drew), and the hover-preview dwell honours its enable flag.
