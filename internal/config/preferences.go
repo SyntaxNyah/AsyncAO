@@ -853,9 +853,9 @@ type AssetPreferences struct {
 	NotFoundTTLSecVal      int                          `json:"notFoundTTLSec,omitempty"`       // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
 	AdaptiveLatMultipleVal int                          `json:"adaptiveLatMultiple,omitempty"`  // per-host deadline = N × TTFB EWMA (0/absent = 8)
 	SpriteDownscaleOff     bool                         `json:"spriteDownscaleOff,omitempty"`   // disable the automatic decode downscale entirely (default OFF = downscale on)
-	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60 default; -1 = uncapped)
-	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle frame rate (0/absent = 30 default; -1 = uncapped; -2 = never redraw when idle)
-	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10 default; -1 = uncapped; -2 = never redraw when unfocused)
+	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = ∞/vsync default; -1 = uncapped; positive = a cap)
+	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle frame rate (0/absent = off default; -1 = uncapped; -2 = never redraw when idle)
+	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 5 default; -1 = uncapped; -2 = never redraw when unfocused)
 	InputGraceFramesVal    int                          `json:"inputGraceFrames,omitempty"`     // full-rate hold after a click/key, in frames (0/absent = default 1)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
 	DisableFrameLimiter    bool                         `json:"disableFrameLimiter,omitempty"`  // #5 bypass: render every frame, NO pacing/skip (vsync only). Default OFF, high GPU. Fresh key.
@@ -1178,9 +1178,9 @@ type prefsJSON struct {
 	NotFoundTTLSec         int              `json:"notFoundTTLSec"`       // 404 TTL seconds (0 = default; restart)
 	AdaptiveLatMultiple    int              `json:"adaptiveLatMultiple"`  // deadline multiple (0 = 8)
 	SpriteDownscaleOff     bool             `json:"spriteDownscaleOff"`   // disable decode downscale (default OFF)
-	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60 default; -1 = uncapped)
-	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30 default; -1 = uncapped; -2 = off)
-	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10 default; -1 = uncapped; -2 = off)
+	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = ∞/vsync default; -1 = uncapped)
+	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = off default; -1 = uncapped; -2 = off)
+	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 5 default; -1 = uncapped; -2 = off)
 	InputGraceFrames       int              `json:"inputGraceFrames"`     // full-rate hold after input, in frames (0 = default 1)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	DisableFrameLimiter    bool             `json:"disableFrameLimiter"`  // #5 bypass: no pacing/skip at all (default OFF)
@@ -6035,13 +6035,17 @@ const (
 	// Three caps, all sleep-based (vsync stays on for tear-free presents):
 	// foreground (the ceiling), idle (nothing animating), unfocused (another
 	// window has focus; minimized already naps).
-	FPSCapDefault       = 60
-	FPSCapMin           = 1
-	FPSCapMax           = 240
-	IdleFPSDefault      = 2 // low idle backstop (~ the retired 500 ms heartbeat); slider goes to 0 = off
+	FPSCapDefault = FPSUnlimited // Active default = ∞ / vsync-paced (the playtesters' hard default; the ceiling only bites if you type a number or drag off ∞)
+	FPSCapMin     = 1
+	FPSCapMax     = 240
+	// FPSCapUnlimitedOff is the concrete Active cap the Settings "∞" toggle drops
+	// to — now that the default IS ∞, using the default there would just re-pick
+	// unlimited and the toggle would do nothing.
+	FPSCapUnlimitedOff  = 60
+	IdleFPSDefault      = FPSOff // idle rendering OFF by default: a static screen redraws zero times (0 GPU) and leans on real events + scheduled deadlines
 	IdleFPSMin          = 1
 	IdleFPSMax          = 120
-	UnfocusedFPSDefault = 10
+	UnfocusedFPSDefault = 5 // low unfocused ceiling: a tabbed-out window renders at most this (the background cap is a hard ceiling now)
 	UnfocusedFPSMin     = 1
 	UnfocusedFPSMax     = 60
 

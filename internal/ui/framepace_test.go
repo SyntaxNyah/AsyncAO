@@ -23,14 +23,20 @@ func TestFramePace(t *testing.T) {
 
 	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
 
+	// Pin the caps this test asserts against, independent of the shipped defaults
+	// (which are now ∞ active / off idle / 5 unfocused).
+	a.d.Prefs.SetFPSCap(60)
+	a.d.Prefs.SetIdleFPS(2)
+	a.d.Prefs.SetUnfocusedFPS(10)
+
 	// Event-driven idle (the default loop): the active cap, not the idle rate.
 	if got := a.FramePace(true); got != budget(60) {
 		t.Fatalf("event-driven idle pace = %v, want the active cap %v (parking owns idle)", got, budget(60))
 	}
 	// Classic loop: the idle tier naps at the idle rate.
 	a.d.Prefs.SetEventDrivenLoop(false)
-	if got := a.FramePace(true); got != budget(config.IdleFPSDefault) {
-		t.Fatalf("classic idle pace = %v, want the idle default %v", got, budget(config.IdleFPSDefault))
+	if got := a.FramePace(true); got != budget(2) {
+		t.Fatalf("classic idle pace = %v, want the idle rate %v", got, budget(2))
 	}
 	a.d.Prefs.SetEventDrivenLoop(true)
 
@@ -83,9 +89,9 @@ func TestHardCapBudget(t *testing.T) {
 	a := testTabApp(t)
 	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
 
-	// Defaults: focused → the 60 fps active cap, unfocused → the 10 fps cap.
-	if got := a.HardCapBudget(true); got != budget(config.FPSCapDefault) {
-		t.Fatalf("focused hard cap = %v, want the active default %v", got, budget(config.FPSCapDefault))
+	// Defaults: focused → ∞ / uncapped (0 budget — vsync paces), unfocused → 5 fps.
+	if got := a.HardCapBudget(true); got != 0 {
+		t.Fatalf("focused hard cap = %v, want 0 (∞ / vsync is the shipped active default)", got)
 	}
 	if got := a.HardCapBudget(false); got != budget(config.UnfocusedFPSDefault) {
 		t.Fatalf("unfocused hard cap = %v, want the unfocused default %v", got, budget(config.UnfocusedFPSDefault))
@@ -212,6 +218,7 @@ func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	a := testTabApp(t)
 	a.room = &courtroom.Courtroom{}
 	a.d.Viewport = render.NewViewport(store)
+	a.d.Prefs.SetUnfocusedFPS(10) // pin the unfocused cap (shipped default is now 5)
 	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
 
 	// Nothing animating: the flat unfocused trickle (regression guard).

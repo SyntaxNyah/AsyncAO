@@ -3083,9 +3083,9 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "AsyncAO renders adaptively: the active rate while you interact or anything animates, the idle rate when nothing needs redrawing, the background rate when another window has focus (minimized draws nothing). Any change returns to the active rate instantly. Each rate takes a typed exact number; 0 on Idle/Background means never redraw in that state (0 GPU when nothing moves), and ∞ removes the cap — for Active that means vsync paces the frames.", ColTextDim)
 	y += 6
 	y = a.fpsSettingRow(y, "fpscap", "Active frame rate:",
-		config.FPSCapMin, config.FPSCapMax, config.FPSCapDefault, config.FPSCapMin,
+		config.FPSCapMin, config.FPSCapMax, config.FPSCapUnlimitedOff, config.FPSCapMin,
 		a.d.Prefs.FPSCap, a.d.Prefs.SetFPSCap, &settings.fpsBufs[0],
-		"The ceiling while interacting or animating (1–240, type an exact number, or ∞ = uncapped/vsync). 60 is plenty for AO.")
+		"The ceiling while interacting or animating (1–240, type an exact number, or ∞ = uncapped/vsync). Default is ∞ (vsync); turning ∞ off drops to 60, plenty for AO.")
 	y = a.fpsSettingRow(y, "idlefps", "Idle frame rate:",
 		config.IdleFPSMin, config.IdleFPSMax, config.IdleFPSDefault, config.FPSOff,
 		a.d.Prefs.IdleFPS, a.d.Prefs.SetIdleFPS, &settings.fpsBufs[1],
