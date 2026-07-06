@@ -431,7 +431,12 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
 			app.Background(dt) // keep the session alive, draw nothing
 			scheduledNap = minimizedNap
-			time.Sleep(minimizedNap)
+			// Interruptible nap: a restore / focus-gain / alt-tab-in event returns
+			// immediately so the window wakes and redraws on the spot, instead of
+			// finishing out the nap first (a felt delay coming back to the window).
+			if ev := sdl.WaitEventTimeout(int(minimizedNap / time.Millisecond)); ev != nil {
+				pendingEv = ev
+			}
 			continue
 		}
 

@@ -139,6 +139,7 @@ func (a *App) kickLogScope() {
 		case a.logBrowserRes <- out:
 		default:
 		}
+		PushWake() // wake the event-driven loop so Background drains this at idle=0
 	}()
 }
 
@@ -151,6 +152,7 @@ func (a *App) pollLogBrowser() {
 			return // a newer request superseded this one
 		}
 		lb.loading = false
+		a.uiDirty = true // the log scope just loaded: force a redraw so the session list + log area appear at idle=0 (not just the chrome)
 		lb.servers = out.servers
 		lb.sessions = out.sessions
 		lb.lines = out.lines

@@ -469,6 +469,7 @@ func (a *App) updateAndDrawRoamers(c *Ctx, tex *sdl.Texture, box sdl.Rect) {
 		a.mayoRoamAt = a.now()
 		return
 	}
+	a.NoteAnimating() // the loose Mayos bounce + spin on the wall clock: keep frames coming so they fly at idle=0
 	now := a.now()
 	dt := now.Sub(a.mayoRoamAt)
 	a.mayoRoamAt = now
