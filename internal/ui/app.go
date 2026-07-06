@@ -4380,7 +4380,20 @@ func (a *App) FramePace(focused bool) time.Duration {
 // idle=off makes both lean on caret/timer/input for a static courtroom.
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	if sawEvent {
-		return false // input this pass
+		return false // input this pass (incl. a focus-regain window event)
+	}
+	// Background cap OFF + window unfocused: render NOTHING while tabbed out. The
+	// background cap is a hard ceiling exactly like the active cap, and its "off"
+	// position means a 0-fps ceiling — so a stage animation must NOT keep driving
+	// frames (the "bg=0 but still 60 fps in another window" report). Highest
+	// priority after a live event: this overrides animation, damage, and the
+	// full-rate input grace. Voice / mic capture is the sole exception — its audio
+	// engine is frame-driven — and a focus-regain event (sawEvent above) resumes
+	// normal rendering; the park keeps the session pumping meanwhile.
+	if !focused && !a.voiceJoined && a.micTest == nil {
+		if _, off := rateBudget(a.d.Prefs.UnfocusedFPS()); off {
+			return true
+		}
 	}
 	exp := a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn()
 	if exp {
@@ -4518,8 +4531,17 @@ const (
 // staleness heartbeat and floored against busy-spin. Input and wake events
 // interrupt the wait regardless; this only bounds how long "nothing happens"
 // may last.
-func (a *App) NextWakeDelay() (wait time.Duration, render bool) {
+func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 	wait = maxHousekeepingGap // Background-only floor (no frame) — see the const
+	// Background cap OFF + unfocused: schedule NO render wakes — the window is
+	// asleep while tabbed out (SkipFrame parks it), so even the idle tick and the
+	// caret/clock deadlines stay silent until focus returns. This is what makes a
+	// 0-fps background cap actually reach 0 fps instead of the idle rate.
+	if !focused {
+		if _, off := rateBudget(a.d.Prefs.UnfocusedFPS()); off {
+			return wait, false
+		}
+	}
 	considerRender := func(due time.Duration) {
 		if due < wait {
 			wait = due

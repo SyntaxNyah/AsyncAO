@@ -463,7 +463,7 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				if app.RenderNeeded() {
 					continue
 				}
-				wait, renderDue := app.NextWakeDelay()
+				wait, renderDue := app.NextWakeDelay(focused)
 				scheduledNap = wait
 				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
 					pendingEv = ev

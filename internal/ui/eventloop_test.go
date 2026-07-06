@@ -179,6 +179,32 @@ func TestSkipFrameIdleCadence(t *testing.T) {
 	}
 }
 
+// TestSkipFrameBackgroundOff pins the 0-fps background cap: an UNFOCUSED window
+// with UnfocusedFPS=off skips everything — even a full-rate input grace that
+// would normally force a frame — so a stage animation can't drive frames while
+// tabbed out. A FOCUSED window is unaffected, a live event always renders, and
+// a voice/mic session still renders (its audio engine is frame-driven).
+func TestSkipFrameBackgroundOff(t *testing.T) {
+	a := expApp(t)
+	a.d.Prefs.SetUnfocusedFPS(config.FPSOff)
+	a.NoteInput() // full-rate input grace active: would normally force a render
+
+	if !a.SkipFrame(false, false) {
+		t.Error("bg-off + unfocused must skip even during the input grace (0-fps ceiling)")
+	}
+	if a.SkipFrame(true, false) {
+		t.Error("bg-off must not make a FOCUSED window skip (it ignores the unfocused cap)")
+	}
+	if a.SkipFrame(false, true) {
+		t.Error("a live event must render even when unfocused + bg-off")
+	}
+	a.voiceJoined = true
+	if a.SkipFrame(false, false) {
+		t.Error("a live voice session must keep rendering when unfocused + bg-off")
+	}
+	a.voiceJoined = false
+}
+
 // TestNextWakeDelay pins the park math and the render-vs-housekeeping flag: the
 // idle-rate tick bounds an empty schedule and marks render, a focused caret and
 // a RUNNING server clock pull the wake in (render — the clock tick MUST draw, the
@@ -190,7 +216,7 @@ func TestNextWakeDelay(t *testing.T) {
 
 	// Idle-rate tick bounds an empty schedule and marks render.
 	a.d.Prefs.SetIdleFPS(4) // 250 ms idle budget
-	if d, render := a.NextWakeDelay(); d > 250*time.Millisecond || d < 150*time.Millisecond || !render {
+	if d, render := a.NextWakeDelay(true); d > 250*time.Millisecond || d < 150*time.Millisecond || !render {
 		t.Errorf("idle schedule: wake = %v render=%v, want ≈ 250ms + render", d, render)
 	}
 
@@ -200,7 +226,7 @@ func TestNextWakeDelay(t *testing.T) {
 	// A focused caret mid-blink: the flip pulls the wake in (render).
 	a.ctx.focusID = "field"
 	a.ctx.caretAcc = 300 * time.Millisecond
-	if d, render := a.NextWakeDelay(); d <= 0 || d >= caretBlink || !render {
+	if d, render := a.NextWakeDelay(true); d <= 0 || d >= caretBlink || !render {
 		t.Errorf("caret flip: wake = %v render=%v, want a pending flip + render", d, render)
 	}
 	a.ctx.focusID = ""
@@ -208,12 +234,12 @@ func TestNextWakeDelay(t *testing.T) {
 	// A running server clock with 2.4 s left: wake just past the 0.4 s boundary (render).
 	a.sess = &courtroom.Session{}
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Running: true, Deadline: time.Now().Add(2400 * time.Millisecond)}
-	if d, render := a.NextWakeDelay(); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack || !render {
+	if d, render := a.NextWakeDelay(true); d < 300*time.Millisecond || d > 400*time.Millisecond+2*timerTickSlack || !render {
 		t.Errorf("running clock at x.4s: wake = %v render=%v, want ≈ 400ms+slack + render", d, render)
 	}
 	// Paused: frozen readout, nothing scheduled — the housekeeping floor, no render.
 	a.sess.Timers[0] = courtroom.TimerState{Visible: true, Left: 90 * time.Second}
-	if d, render := a.NextWakeDelay(); d != maxHousekeepingGap || render {
+	if d, render := a.NextWakeDelay(true); d != maxHousekeepingGap || render {
 		t.Errorf("paused clock (idle=off): wake = %v render=%v, want the %v floor + no render", d, maxHousekeepingGap, render)
 	}
 	a.sess = nil
@@ -222,19 +248,30 @@ func TestNextWakeDelay(t *testing.T) {
 	// wake at the demand cadence and MARK render (so the re-run draw re-demands).
 	// The interval must beat the housekeeping floor or considerRender won't draw.
 	a.drawnDemandPending = true
-	if d, render := a.NextWakeDelay(); d != assetDemandWakeInterval || !render {
+	if d, render := a.NextWakeDelay(true); d != assetDemandWakeInterval || !render {
 		t.Errorf("demand pending (idle=off): wake = %v render=%v, want %v + render", d, render, assetDemandWakeInterval)
 	}
 	a.drawnDemandPending = false
-	if d, render := a.NextWakeDelay(); d != maxHousekeepingGap || render {
+	if d, render := a.NextWakeDelay(true); d != maxHousekeepingGap || render {
 		t.Errorf("demand cleared (idle=off): wake = %v render=%v, want the %v floor + no render", d, render, maxHousekeepingGap)
 	}
 
 	// Overdue idle tick: floored, never zero/negative (busy-spin guard), render.
 	a.d.Prefs.SetIdleFPS(4)
 	a.lastFrameDrawn = time.Now().Add(-time.Hour)
-	if d, render := a.NextWakeDelay(); d != minWakeDelay || !render {
+	if d, render := a.NextWakeDelay(true); d != minWakeDelay || !render {
 		t.Errorf("overdue: wake = %v render=%v, want the %v floor + render", d, minWakeDelay, render)
+	}
+
+	// Background OFF + unfocused: NO render wakes at all — even with an idle rate
+	// set and a long-overdue idle tick, the window is asleep while tabbed out (a
+	// 0-fps background cap reaches a true 0 fps). A FOCUSED window ignores it.
+	a.d.Prefs.SetUnfocusedFPS(config.FPSOff)
+	if d, render := a.NextWakeDelay(false); d != maxHousekeepingGap || render {
+		t.Errorf("bg-off unfocused: wake = %v render=%v, want the %v floor + no render", d, render, maxHousekeepingGap)
+	}
+	if _, render := a.NextWakeDelay(true); !render {
+		t.Error("bg-off must not silence a FOCUSED window's idle tick")
 	}
 }
 
