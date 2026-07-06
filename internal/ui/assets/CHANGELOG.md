@@ -4,6 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test17 — 2026-07-06 (test build)
+
+- **Long character animations play all the way through again.** Preanimations
+  with lots of frames (some sprite packs ship 100+ frames per emote) were cut
+  off about a quarter of the way in and snapped straight to the talking pose —
+  looking like the animation broke. The memory cap now keeps frames spread
+  evenly across the WHOLE clip instead of just the start, so it plays from first
+  frame to final pose (a touch lower frame rate on the very longest ones) within
+  the same memory budget, with the correct timing. Because the animation now
+  runs for its real length, the next sprite has more time to load, which should
+  also reduce the brief blank at the hand-off from the preanimation to talking.
+  This is the "real fix" the test16 note promised — you no longer need to raise
+  the texture budget just to see long animations through. (If you still see a
+  black flash on very heavy characters, that's a separate cache issue being
+  looked at next.)
+
 ## v1.55.0-test16 — 2026-07-06 (test build)
 
 - **The texture memory budget can go higher — as an experimental opt-in.** For
