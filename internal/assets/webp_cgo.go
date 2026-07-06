@@ -105,22 +105,24 @@ func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
 		return nil, fmt.Errorf("assets: webp anim reports zero frames")
 	}
 
-	frameCount := boundedFrameCount(width, height, frameTotal)
+	keep := boundedFrameCount(width, height, frameTotal)
+	walk := frameTotal // GetNext must run per frame (each composes onto the last)
 	if !playAnimations {
-		frameCount = 1
+		walk, keep = 1, 1
 	}
+	fdec := newFrameDecimator(walk, keep)
 
 	d := &Decoded{
 		Animated: frameTotal > 1,
 		Width:    width,
 		Height:   height,
-		Frames:   make([]*image.RGBA, 0, frameCount),
-		Delays:   make([]time.Duration, 0, frameCount),
+		Frames:   make([]*image.RGBA, 0, keep),
+		Delays:   make([]time.Duration, 0, keep),
 	}
 
 	canvasBytes := width * height * webpBytesPerPixel
 	prevTimestamp := 0
-	for i := 0; i < frameCount; i++ {
+	for i := 0; i < walk; i++ {
 		if C.WebPAnimDecoderHasMoreFrames(dec) == 0 {
 			break
 		}
@@ -131,6 +133,18 @@ func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
 			return nil, fmt.Errorf("assets: webp anim frame %d decode failed", i)
 		}
 
+		delay := time.Duration(int(timestamp)-prevTimestamp) * time.Millisecond
+		if delay <= 0 {
+			delay = defaultZeroFrameDelay
+		}
+		prevTimestamp = int(timestamp)
+
+		// Every GetNext ran (compositing the running canvas); copy out only the
+		// decimated subset, with skipped frames' delays folded into the kept one.
+		folded, keepIt := fdec.step(i, delay)
+		if !keepIt {
+			continue
+		}
 		rgba, token := newPooledRGBA(width, height)
 		src := unsafe.Slice((*byte)(unsafe.Pointer(frameRGBA)), canvasBytes)
 		copy(rgba.Pix, src)
@@ -138,13 +152,7 @@ func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
 		if token != nil {
 			d.pooledPix = append(d.pooledPix, token)
 		}
-
-		delay := time.Duration(int(timestamp)-prevTimestamp) * time.Millisecond
-		if delay <= 0 {
-			delay = defaultZeroFrameDelay
-		}
-		d.Delays = append(d.Delays, delay)
-		prevTimestamp = int(timestamp)
+		d.Delays = append(d.Delays, folded)
 	}
 
 	if len(d.Frames) == 0 {

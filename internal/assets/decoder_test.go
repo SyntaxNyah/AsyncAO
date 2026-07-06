@@ -350,10 +350,13 @@ func TestBoundedFrameCount(t *testing.T) {
 	}
 }
 
-// TestDecodeGIFTruncatesOversizedAnimation runs a real decode through the
+// TestDecodeGIFDecimatesOversizedAnimation runs a real decode through the
 // budget: a GIF whose frame count exceeds the cap decodes to exactly the
-// bounded frame count, still flagged Animated.
-func TestDecodeGIFTruncatesOversizedAnimation(t *testing.T) {
+// bounded frame count, still flagged Animated — and, crucially, DECIMATED not
+// TRUNCATED: the kept frames span the whole clip and the total playback time is
+// preserved (a truncation would drop the tail and run short, snapping a long
+// preanim to its talking pose a quarter of the way through — the bug this fixes).
+func TestDecodeGIFDecimatesOversizedAnimation(t *testing.T) {
 	const w, h = 500, 500
 	fits := int(maxDecodedAssetBytes.Load()) / (w * h * rgbaBytesPerPixel)
 	frames := fits + 3
@@ -363,7 +366,7 @@ func TestDecodeGIFTruncatesOversizedAnimation(t *testing.T) {
 	for i := 0; i < frames; i++ {
 		img := image.NewPaletted(image.Rect(0, 0, w, h), pal)
 		g.Image = append(g.Image, img)
-		g.Delay = append(g.Delay, 5)
+		g.Delay = append(g.Delay, 5) // 5 centiseconds/frame
 		g.Disposal = append(g.Disposal, gif.DisposalNone)
 	}
 	var buf bytes.Buffer
@@ -377,10 +380,70 @@ func TestDecodeGIFTruncatesOversizedAnimation(t *testing.T) {
 	}
 	defer d.Release()
 	if len(d.Frames) != fits {
-		t.Errorf("decoded %d frames, want truncation to %d", len(d.Frames), fits)
+		t.Errorf("decoded %d frames, want decimation to %d", len(d.Frames), fits)
 	}
 	if !d.Animated {
-		t.Error("truncated animation must stay flagged Animated")
+		t.Error("decimated animation must stay flagged Animated")
+	}
+	// Decimation preserves total duration; truncation to `fits` frames would
+	// lose the last 3 frames' delays and run 3×50 ms short.
+	var got time.Duration
+	for _, dl := range d.Delays {
+		got += dl
+	}
+	want := time.Duration(frames) * gifFrameDelay(g, 0)
+	if got != want {
+		t.Errorf("decimated total duration = %v, want %v (whole clip, delays folded)", got, want)
+	}
+}
+
+// TestFrameDecimator pins the decimation primitive: exactly `keep` frames are
+// materialised, spanning both endpoints (0 and total-1), with skipped frames'
+// delays folded forward so the total is preserved.
+func TestFrameDecimator(t *testing.T) {
+	const total, keep = 100, 34
+	fd := newFrameDecimator(total, keep)
+	const per = 33 * time.Millisecond
+
+	var kept []int
+	var sum time.Duration
+	for i := 0; i < total; i++ {
+		if dur, ok := fd.step(i, per); ok {
+			kept = append(kept, i)
+			sum += dur
+		}
+	}
+	if len(kept) != keep {
+		t.Fatalf("kept %d frames, want %d", len(kept), keep)
+	}
+	if kept[0] != 0 {
+		t.Errorf("first kept frame = %d, want 0 (start pose)", kept[0])
+	}
+	if kept[len(kept)-1] != total-1 {
+		t.Errorf("last kept frame = %d, want %d (final pose)", kept[len(kept)-1], total-1)
+	}
+	for i := 1; i < len(kept); i++ {
+		if kept[i] <= kept[i-1] {
+			t.Fatalf("kept indices not strictly increasing at %d: %v", i, kept)
+		}
+	}
+	if want := time.Duration(total) * per; sum != want {
+		t.Errorf("folded total = %v, want %v (no time lost to decimation)", sum, want)
+	}
+
+	// keep ≥ total is the identity: every frame kept, delays unchanged.
+	id := newFrameDecimator(5, 9)
+	var n int
+	for i := 0; i < 5; i++ {
+		if dur, ok := id.step(i, per); ok {
+			n++
+			if dur != per {
+				t.Errorf("identity frame %d folded delay = %v, want %v", i, dur, per)
+			}
+		}
+	}
+	if n != 5 {
+		t.Errorf("identity kept %d frames, want 5 (no decimation below budget)", n)
 	}
 }
 

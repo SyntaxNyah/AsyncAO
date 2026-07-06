@@ -155,9 +155,12 @@ func downscaleDecodedAspect(d *Decoded, maxH int) *Decoded {
 	return out
 }
 
-// boundedFrameCount truncates an animation to the frames whose decoded
-// bytes fit maxDecodedAssetBytes — never below one frame (a single canvas
-// larger than the budget fails at upload with a clear error instead).
+// boundedFrameCount reports how many frames of an animation may stay resident:
+// the count whose decoded bytes fit maxDecodedAssetBytes — never below one
+// frame (a single canvas larger than the budget fails at upload with a clear
+// error instead). The decoders honour this budget by DECIMATION, not
+// truncation (see frameDecimator): the returned count is how many evenly-spaced
+// frames to keep across the whole clip, not a prefix length.
 func boundedFrameCount(width, height, frames int) int {
 	canvasBytes := width * height * rgbaBytesPerPixel
 	if canvasBytes <= 0 {
@@ -171,6 +174,78 @@ func boundedFrameCount(width, height, frames int) int {
 		return maxFrames
 	}
 	return frames
+}
+
+// --- animation decimation -----------------------------------------------------
+//
+// boundedFrameCount caps how many frames of one animation may stay resident (the
+// T1 memory budget). The decoders used to honour it by TRUNCATION — materialise
+// the first N frames, drop the rest — but a long one-shot preanimation (Great-
+// Ace-Attorney-style sprites ship 60–150 full-canvas frames) then played only
+// its first quarter and SNAPPED to the talking pose: the "animations break / cut
+// off / flash" report. Decimation instead keeps N frames EVENLY SPACED across
+// the whole clip and folds every skipped frame's delay into the next kept one,
+// so the clip plays start→end (final pose intact) at a lower frame rate inside
+// the same byte budget — and, because it now plays for its real duration, the
+// courtroom's preanim timeout matches and the next sprite has the full window to
+// stream in. Compositing decoders must still walk EVERY source frame (each frame
+// composes onto the running canvas); only the kept frames are copied out, so the
+// resident cost stays bounded while decode CPU scales with the source length —
+// an acceptable trade for a one-shot preanim decoded off the render thread.
+// Short animations (frames ≤ budget) decimate to themselves: idles and talk
+// loops are never touched.
+
+// frameKeepIndex maps kept-frame ordinal j∈[0,keep) to its SOURCE frame index
+// when sampling `keep` frames out of `total` (1 ≤ keep ≤ total), spanning both
+// endpoints: j=0→0, j=keep-1→total-1, evenly spaced (round-to-nearest). The
+// indices are strictly increasing for total ≥ keep, so exactly `keep` distinct
+// frames are kept.
+func frameKeepIndex(j, total, keep int) int {
+	if keep <= 1 {
+		return 0
+	}
+	return (j*(total-1) + (keep-1)/2) / (keep - 1) // round(j*(total-1)/(keep-1))
+}
+
+// frameDecimator walks an animation's source frames in order and decides which
+// to materialise, folding skipped-frame delays into the kept frames (see the
+// block comment above). The zero value is unusable; build with newFrameDecimator
+// and call step once per source frame, in index order.
+type frameDecimator struct {
+	total, keep, next, kept int
+	pending                 time.Duration
+}
+
+// newFrameDecimator prepares to keep `keep` frames (clamped to [1,total]) out of
+// `total`, starting with frame 0.
+func newFrameDecimator(total, keep int) frameDecimator {
+	if keep < 1 {
+		keep = 1
+	}
+	if keep > total {
+		keep = total
+	}
+	return frameDecimator{total: total, keep: keep} // next == 0 keeps frame 0
+}
+
+// step records source frame i's display delay and reports whether that frame
+// should be materialised. When keep is true, dur is the kept frame's folded
+// delay (every skipped frame since the previous kept one, plus this one), so the
+// kept sequence's total playback time equals the original.
+func (fd *frameDecimator) step(i int, delay time.Duration) (dur time.Duration, keep bool) {
+	fd.pending += delay
+	if i != fd.next {
+		return 0, false
+	}
+	dur = fd.pending
+	fd.pending = 0
+	fd.kept++
+	if fd.kept < fd.keep {
+		fd.next = frameKeepIndex(fd.kept, fd.total, fd.keep)
+	} else {
+		fd.next = fd.total // sentinel past the final index: nothing more is kept
+	}
+	return dur, true
 }
 
 // DecodeWorkers returns the §8 worker-count formula.
@@ -501,18 +576,21 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 		width, height = b.Max.X, b.Max.Y
 	}
 
-	animated := len(g.Image) > 1
-	frameCount := boundedFrameCount(width, height, len(g.Image))
+	total := len(g.Image)
+	animated := total > 1
+	keep := boundedFrameCount(width, height, total)
+	walk := total // frames to composite: the whole clip (decimation keeps a subset)
 	if !playAnimations {
-		frameCount = 1
+		walk, keep = 1, 1
 	}
+	dec := newFrameDecimator(walk, keep)
 
 	d := &Decoded{
 		Animated: animated,
 		Width:    width,
 		Height:   height,
-		Frames:   make([]*image.RGBA, 0, frameCount),
-		Delays:   make([]time.Duration, 0, frameCount),
+		Frames:   make([]*image.RGBA, 0, keep),
+		Delays:   make([]time.Duration, 0, keep),
 	}
 
 	// canvas accumulates composition; the backdrop snapshot supports
@@ -524,7 +602,9 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 	var snapTok *[]byte
 	defer func() { putPixBuf(snapTok) }()
 
-	for i := 0; i < frameCount; i++ {
+	// Compose EVERY source frame onto the canvas (a kept frame's pixels depend
+	// on the disposal of the ones before it); copy out only the decimated subset.
+	for i := 0; i < walk; i++ {
 		frame := g.Image[i]
 		disposal := byte(0)
 		if i < len(g.Disposal) {
@@ -540,13 +620,15 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 
 		draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
 
-		out, token := newPooledRGBA(width, height)
-		copy(out.Pix, canvas.Pix)
-		d.Frames = append(d.Frames, out)
-		if token != nil {
-			d.pooledPix = append(d.pooledPix, token)
+		if folded, keepIt := dec.step(i, gifFrameDelay(g, i)); keepIt {
+			out, token := newPooledRGBA(width, height)
+			copy(out.Pix, canvas.Pix)
+			d.Frames = append(d.Frames, out)
+			if token != nil {
+				d.pooledPix = append(d.pooledPix, token)
+			}
+			d.Delays = append(d.Delays, folded)
 		}
-		d.Delays = append(d.Delays, gifFrameDelay(g, i))
 
 		switch disposal {
 		case gif.DisposalBackground:
@@ -612,18 +694,21 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 		animFrames = a.Frames
 	}
 
-	animated := len(animFrames) > 1
-	frameCount := boundedFrameCount(width, height, len(animFrames))
+	total := len(animFrames)
+	animated := total > 1
+	keep := boundedFrameCount(width, height, total)
+	walk := total // compose the whole clip; decimation keeps an evenly-spaced subset
 	if !playAnimations {
-		frameCount = 1
+		walk, keep = 1, 1
 	}
+	dec := newFrameDecimator(walk, keep)
 
 	d := &Decoded{
 		Animated: animated,
 		Width:    width,
 		Height:   height,
-		Frames:   make([]*image.RGBA, 0, frameCount),
-		Delays:   make([]time.Duration, 0, frameCount),
+		Frames:   make([]*image.RGBA, 0, keep),
+		Delays:   make([]time.Duration, 0, keep),
 	}
 
 	canvas, canvasTok := newPooledRGBA(width, height)
@@ -632,7 +717,9 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 	var snapTok *[]byte
 	defer func() { putPixBuf(snapTok) }()
 
-	for i := 0; i < frameCount; i++ {
+	// Compose every source frame; copy out only the decimated subset (a kept
+	// frame depends on the dispose/blend of all frames before it).
+	for i := 0; i < walk; i++ {
 		frame := animFrames[i]
 		target := image.Rect(
 			frame.XOffset,
@@ -654,13 +741,15 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 		}
 		draw.Draw(canvas, target, frame.Image, frame.Image.Bounds().Min, op)
 
-		out, token := newPooledRGBA(width, height)
-		copy(out.Pix, canvas.Pix)
-		d.Frames = append(d.Frames, out)
-		if token != nil {
-			d.pooledPix = append(d.pooledPix, token)
+		if folded, keepIt := dec.step(i, apngFrameDelay(frame)); keepIt {
+			out, token := newPooledRGBA(width, height)
+			copy(out.Pix, canvas.Pix)
+			d.Frames = append(d.Frames, out)
+			if token != nil {
+				d.pooledPix = append(d.pooledPix, token)
+			}
+			d.Delays = append(d.Delays, folded)
 		}
-		d.Delays = append(d.Delays, apngFrameDelay(frame))
 
 		switch frame.DisposeOp {
 		case apng.DISPOSE_OP_BACKGROUND:
