@@ -4,6 +4,13 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test21 — 2026-07-06 (test build)
+
+- **The Input responsiveness slider can now be set to 0 (off).** 0 means no
+  post-input hold at all — after a click or keypress the input shows on its own
+  frame and the rate returns to idle immediately, with nothing extra. (Leaving it
+  unset still defaults to 1 frame.)
+
 ## v1.55.0-test20 — 2026-07-06 (test build)
 
 - **New setting: Input responsiveness (Settings → Power user → frame limiter).**
