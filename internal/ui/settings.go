@@ -3099,18 +3099,21 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	c.Label(pad, y+4, "Input responsiveness:", ColText)
 	ig := a.d.Prefs.InputGraceFrames()
 	igtrack := sdl.Rect{X: pad + 210, Y: y + 2, W: 220, H: 16}
-	nig := int(clampI32(c.Slider("inputgrace", igtrack, int32(ig), config.InputGraceFramesMax), config.InputGraceFramesMin, config.InputGraceFramesMax))
-	c.Tooltip(igtrack, "How long the frame rate stays at the active cap after a click or keypress, in frames (1–60). 1 = snappiest: the input shows instantly, then the rate drops straight back to idle. Mouse movement isn't affected.")
+	nig := int(clampI32(c.Slider("inputgrace", igtrack, int32(ig), config.InputGraceFramesMax), 0, config.InputGraceFramesMax))
+	c.Tooltip(igtrack, "How long the frame rate stays at the active cap after a click or keypress, in frames (0–60). 0 = off (just the input's own frame), 1 = snappiest, higher = a smoother tail. Mouse movement isn't affected.")
 	igLabel := strconv.Itoa(nig) + " frame"
 	if nig != 1 {
 		igLabel += "s"
+	}
+	if nig == 0 {
+		igLabel = "off"
 	}
 	c.Label(pad+210+226, y+4, igLabel, ColTextDim)
 	if nig != ig {
 		a.d.Prefs.SetInputGraceFrames(nig)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "After a click or keypress the client holds the active rate for this many frames, then falls back to the idle rate. 1 (the default) is the snappiest — the input still shows instantly, it just doesn't keep the frame rate up afterward. Mouse movement has its own brief hold and isn't affected.", ColTextDim)
+	y = a.settingsDesc(pad, y, "After a click or keypress the client holds the active rate for this many frames, then falls back to the idle rate. 0 turns the hold off entirely; 1 (the default) is nearly as snappy — the input still shows instantly either way, it just doesn't keep the frame rate up afterward. Mouse movement has its own brief hold and isn't affected.", ColTextDim)
 	y += 6
 	y = a.settingsDesc(pad, y, "\"Animating\" = messages typing or queued, shouts/preanims, shakes/flashes, replays, the Scene Maker, exports, voice, reactions, toasts, the pinned second courtroom, the F3 graph, and any always-moving effect you enable. Sprite loops and theme art run at their own ≤15 fps timings, so the idle default never visibly slows them; raise it if something looks choppy while idle.", ColTextDim)
 	y += 10

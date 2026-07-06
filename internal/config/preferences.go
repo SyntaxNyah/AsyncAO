@@ -1914,8 +1914,10 @@ func load(path string) (*AssetPreferences, error) {
 	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, IdleFPSMin, IdleFPSMax)
 	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax)
 	p.InputGraceFramesVal = onDisk.InputGraceFrames
-	if p.InputGraceFramesVal != 0 { // 0 = "use the default"; a set value clamps into range
+	if p.InputGraceFramesVal > 0 { // 0 = the default, <0 = the off sentinel; a positive value clamps
 		p.InputGraceFramesVal = clampPercent(p.InputGraceFramesVal, InputGraceFramesMin, InputGraceFramesMax)
+	} else if p.InputGraceFramesVal < 0 {
+		p.InputGraceFramesVal = InputGraceOff // normalize any stored negative to the canonical off
 	}
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
@@ -6046,10 +6048,14 @@ const (
 	// InputGraceFrames: how long full rate is held after a click / keypress, in
 	// frames (at a 60 fps reference). 1 (the default) = snappiest — the input's
 	// own frame shows, then the rate falls straight back to idle; the max restores
-	// the old ~1 s hold. Mouse MOTION is unaffected (it has its own short grace).
+	// the old ~1 s hold; 0 (InputGraceOff) turns the hold OFF entirely (just the
+	// input's own frame). Mouse MOTION is unaffected (its own short grace).
 	InputGraceFramesDefault = 1
 	InputGraceFramesMin     = 1
 	InputGraceFramesMax     = 60
+	// InputGraceOff is the STORED sentinel for a 0-frame hold — kept distinct from
+	// 0, which stays "absent → the default" so an unset pref loads as 1, not off.
+	InputGraceOff = -1
 
 	// FPSUnlimited is the "no limit" sentinel any of the three rate knobs may
 	// hold (the Settings ∞ toggle): the active cap stops capping (vsync paces
@@ -6577,14 +6583,22 @@ func (p *AssetPreferences) InputGraceFrames() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	if p.InputGraceFramesVal == 0 {
-		return InputGraceFramesDefault
+		return InputGraceFramesDefault // absent = the default hold
+	}
+	if p.InputGraceFramesVal < 0 {
+		return 0 // InputGraceOff → no hold
 	}
 	return p.InputGraceFramesVal
 }
 
-// SetInputGraceFrames persists the post-input full-rate hold (clamped to range).
+// SetInputGraceFrames persists the post-input full-rate hold. 0 (or below) is
+// the OFF sentinel (no hold — distinct from unset); a positive value clamps.
 func (p *AssetPreferences) SetInputGraceFrames(n int) {
-	n = clampPercent(n, InputGraceFramesMin, InputGraceFramesMax)
+	if n <= 0 {
+		n = InputGraceOff
+	} else {
+		n = clampPercent(n, InputGraceFramesMin, InputGraceFramesMax)
+	}
 	p.mu.Lock()
 	if p.InputGraceFramesVal == n {
 		p.mu.Unlock()

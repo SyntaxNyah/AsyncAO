@@ -1499,7 +1499,10 @@ func TestFPSKnobDomain(t *testing.T) {
 	if got := p.InputGraceFrames(); got != InputGraceFramesMax {
 		t.Errorf("input-grace over-max = %d, want clamp to %d", got, InputGraceFramesMax)
 	}
-	p.SetInputGraceFrames(30)
+	p.SetInputGraceFrames(0) // 0 = OFF — must read back as 0 and survive as 0 (NOT snap to the default)
+	if got := p.InputGraceFrames(); got != 0 {
+		t.Errorf("input-grace off = %d, want 0", got)
+	}
 	if err := p.Close(); err != nil { // flush + release before reload
 		t.Fatalf("Close: %v", err)
 	}
@@ -1516,7 +1519,7 @@ func TestFPSKnobDomain(t *testing.T) {
 	if q.FPSCap() != FPSUnlimited {
 		t.Errorf("active ∞ lost across reload: %d, want %d", q.FPSCap(), FPSUnlimited)
 	}
-	if q.InputGraceFrames() != 30 {
-		t.Errorf("input-grace frames lost across reload: %d, want 30", q.InputGraceFrames())
+	if q.InputGraceFrames() != 0 {
+		t.Errorf("input-grace OFF lost across reload: %d, want 0 (off must persist, not snap to the default)", q.InputGraceFrames())
 	}
 }
