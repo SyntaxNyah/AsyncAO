@@ -4,6 +4,16 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test19 — 2026-07-06 (test build)
+
+- **The Background (unfocused) frame limiter is a true cap now.** Setting it to
+  0 / off makes the client render nothing while the window is in the background —
+  a looping character animation used to keep it running at full speed even when
+  you'd tabbed away. A numeric background cap (say 5 fps) is likewise a hard
+  ceiling: while unfocused the client never goes above it, matching how the
+  Active cap works when the window is focused. (Voice calls keep rendering so
+  their audio doesn't drop, and clicking back into the window resumes instantly.)
+
 ## v1.55.0-test18 — 2026-07-06 (test build)
 
 More frame-limiter work: the caps are strict now, and more of the client
