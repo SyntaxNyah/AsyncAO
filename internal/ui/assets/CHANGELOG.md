@@ -4,6 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test22 — 2026-07-06 (test build)
+
+- **New default frame-limiter settings.** Fresh installs (and anyone who hasn't
+  changed these) now start with: **Active = ∞ (vsync)** instead of 60, **Idle =
+  off** (a static screen renders nothing — 0 GPU), and **Background = 5 fps**.
+  The frame limiter stays on by default with its disable toggle. If you've
+  already set your own Active/Idle/Background rates, those are kept as-is. Turning
+  the Active "∞" off now drops to 60.
+
 ## v1.55.0-test21 — 2026-07-06 (test build)
 
 - **The Input responsiveness slider can now be set to 0 (off).** 0 means no
