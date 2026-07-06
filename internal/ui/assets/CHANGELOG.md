@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test24 — 2026-07-06 (test build)
+
+- **The Logs browser fills in as soon as it loads.** Opening Logs no longer
+  leaves the session list and the log area blank until you move the mouse — they
+  now redraw themselves the moment the data lands, like the rest of the UI.
+- **The roaming Mayos fly properly at a 0 idle rate.** The little Mayos you fling
+  by clicking the mascot now bounce all the way around instead of freezing after
+  the first frame.
+- **Coming back to a minimized window is instant.** Restoring / alt-tabbing into
+  a minimized window redraws immediately instead of after a short nap.
+
 ## v1.55.0-test23 — 2026-07-06 (test build)
 
 More "force a redraw when something changes" coverage, so a low/0 idle rate feels
