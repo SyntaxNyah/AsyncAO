@@ -390,6 +390,7 @@ func (a *App) drawPlayerRow(idx int, row sdl.Rect, myUID, speaker string, cmSet 
 			if el := a.now().Sub(t); el >= 0 && el < joinFlashWindow {
 				fa := uint8(70 * int64(joinFlashWindow-el) / int64(joinFlashWindow))
 				c.Fill(row, sdl.Color{R: joinFlashColor.R, G: joinFlashColor.G, B: joinFlashColor.B, A: fa})
+				a.NoteAnimating() // the tint fades on the wall clock: keep frames coming so it eases out instead of freezing at idle=0
 			}
 		}
 	}

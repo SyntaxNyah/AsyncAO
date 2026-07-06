@@ -1044,6 +1044,17 @@ type sessionState struct {
 	// uncap" mechanism); it falls back to idle the frame the draw stops marking it.
 	frameAnimChrome bool
 	drawnAnimChrome bool
+	// frameDemandPending is set during a draw pass whenever it leaves a
+	// DEMAND-STREAMED cell (an emote-grid button with neither its art nor its
+	// fallback icon resident yet) truly blank. drawnDemandPending is the last
+	// completed frame's value: while true, NextWakeDelay schedules a re-render at
+	// the demand cadence so demandAsset keeps issuing asks. Without it the pump
+	// stalls at idle=0 — a batch of asks that all 404 uploads nothing, so nothing
+	// bumps the store generation and no self-wake fires, and the grid can sit
+	// half-filled until unrelated damage or input. Clears the moment every cell
+	// shows something (art or the shared icon), so it costs nothing at rest.
+	frameDemandPending bool
+	drawnDemandPending bool
 	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
 	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
 	sceneWarmLastDemand time.Time
@@ -4186,6 +4197,32 @@ func rateBudget(fps int) (budget time.Duration, off bool) {
 	return time.Second / time.Duration(fps), false
 }
 
+// HardCapBudget is the INVIOLABLE minimum time between two rendered frames for
+// the current focus state: the active FPS cap when focused, the unfocused cap
+// when not. Unlike FramePace's adaptive tiers (idle/talk/anim, which only ever
+// SLOW rendering down toward a floor), this is the hard ceiling the user set —
+// the main loop sleeps it UNINTERRUPTIBLY, so an input flood (above all mouse
+// motion, which streams an event every few ms) can never interrupt the pace and
+// drive the loop past the cap. The "caps are ALWAYS obeyed" contract lives here;
+// it also enforces the unfocused cap even when FramePace lifts an unfocused
+// animation toward the active rate. 0 = uncapped (the ∞ sentinel — no floor).
+func (a *App) HardCapBudget(focused bool) time.Duration {
+	if focused {
+		// The active cap has no "off" (0 fps while interacting is meaningless);
+		// ∞ → 0 (uncapped), N → 1s/N.
+		return paceBudget(a.d.Prefs.FPSCap())
+	}
+	unf, off := rateBudget(a.d.Prefs.UnfocusedFPS())
+	if off {
+		// Unfocused "off" means "don't redraw while tabbed out" — the static skip
+		// handles the idle case. A frame that renders anyway (an audible ceremony)
+		// still obeys SOMETHING: fall back to the active cap as the backstop
+		// ceiling, mirroring FramePace's unfocused-off branch (unf = full).
+		return paceBudget(a.d.Prefs.FPSCap())
+	}
+	return unf // ∞ → 0 (uncapped); N → 1s/N
+}
+
 // clampDur bounds d to [lo, hi] (lo = the fastest allowed budget).
 func clampDur(d, lo, hi time.Duration) time.Duration {
 	if d < lo {
@@ -4411,16 +4448,23 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 // expScreenSkippable reports whether the CURRENT screen is safe for the
 // experimental static skip. Court surfaces skip exactly like the classic
 // path; the static menu screens join them; the lobby joins while no async
-// sweep is repainting rows; Settings never skips (live style preview, mic
-// meter, and a dozen immediate readouts — its idle render is transient and
-// cheap). Anything unlisted defaults to classic always-render.
+// sweep is repainting rows. Anything unlisted defaults to classic
+// always-render.
+//
+// Settings skips too (the user's ask: "the one place where virtually nothing
+// moves"). Its self-driven surfaces still force frames through SkipFrame's own
+// later gates — the mic-test meter (micTest), any sprite preview (previewBase),
+// input + the caret, and store-generation damage as art streams in. The lone
+// passive live readout is the T2 cache-stat line; it now refreshes at the idle
+// rate / on the next interaction rather than every frame (the perf HUD stays
+// the always-full-rate live-metrics surface for anyone watching numbers move).
 func (a *App) expScreenSkippable() bool {
 	switch a.screen {
 	case ScreenCourtroom, ScreenCharSelect:
 		return a.sess != nil
 	case ScreenLobby:
 		return !a.lobbyFetching && !a.pinging
-	case ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenHelp, ScreenLogs:
+	case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenHelp, ScreenLogs:
 		return true
 	default:
 		return false
@@ -4459,6 +4503,13 @@ const (
 	// timerTickSlack lands a clock wake just PAST the second boundary, so the
 	// frame it triggers draws the new second (not a re-render of the old one).
 	timerTickSlack = 20 * time.Millisecond
+	// assetDemandWakeInterval re-renders while a demand-streamed grid still shows
+	// blank cells (drawnDemandPending), so demandAsset keeps issuing asks until
+	// they fill. ~4 fps — brisk enough that a grid fills smoothly, cheap enough to
+	// ignore, and it stops the instant no cell is blank. MUST stay strictly below
+	// maxHousekeepingGap: considerRender only marks a render when the due time is
+	// nearer than that Background-only floor, so an equal value would never draw.
+	assetDemandWakeInterval = 250 * time.Millisecond
 )
 
 // NextWakeDelay is how long the experimental loop may park on its event wait:
@@ -4517,6 +4568,13 @@ func (a *App) NextWakeDelay() (wait time.Duration, render bool) {
 		if rem := a.timerRemaining(); rem > 0 {
 			considerRender(rem%time.Second + timerTickSlack)
 		}
+	}
+	// Demand-pump keepalive: while a streaming grid still shows blank cells,
+	// re-render at the demand cadence so demandAsset keeps issuing asks. A batch
+	// that all 404s uploads nothing (no generation bump, no self-wake), so without
+	// this the pump stalls at idle=off until unrelated damage or input arrives.
+	if a.drawnDemandPending {
+		considerRender(assetDemandWakeInterval)
 	}
 	if wait < minWakeDelay {
 		wait = minWakeDelay
@@ -5318,7 +5376,15 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.
 	a.frameAnimChrome = false
-	defer func() { a.drawnAnimChrome = a.frameAnimChrome }()
+	// Demand-pump census (experimental loop): a draw that leaves a streaming grid
+	// cell blank marks frameDemandPending so NextWakeDelay keeps re-rendering at
+	// the demand cadence until the cell fills. Promoted at frame end beside the
+	// anim-chrome flag.
+	a.frameDemandPending = false
+	defer func() {
+		a.drawnAnimChrome = a.frameAnimChrome
+		a.drawnDemandPending = a.frameDemandPending
+	}()
 	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
 	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
 	a.frameDtMs = float32(dt.Seconds() * 1000)

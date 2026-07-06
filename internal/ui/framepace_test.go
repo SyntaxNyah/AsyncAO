@@ -75,6 +75,84 @@ func TestFramePace(t *testing.T) {
 	}
 }
 
+// TestHardCapBudget pins the INVIOLABLE ceiling the main loop sleeps
+// uninterruptibly (so no input flood can exceed it): the active cap when
+// focused, the unfocused cap when not, the ∞ sentinel as uncapped (0), and
+// unfocused-off backstopped by the active cap.
+func TestHardCapBudget(t *testing.T) {
+	a := testTabApp(t)
+	budget := func(fps int) time.Duration { return time.Second / time.Duration(fps) }
+
+	// Defaults: focused → the 60 fps active cap, unfocused → the 10 fps cap.
+	if got := a.HardCapBudget(true); got != budget(config.FPSCapDefault) {
+		t.Fatalf("focused hard cap = %v, want the active default %v", got, budget(config.FPSCapDefault))
+	}
+	if got := a.HardCapBudget(false); got != budget(config.UnfocusedFPSDefault) {
+		t.Fatalf("unfocused hard cap = %v, want the unfocused default %v", got, budget(config.UnfocusedFPSDefault))
+	}
+
+	// Custom caps flow through both states.
+	a.d.Prefs.SetFPSCap(30)
+	a.d.Prefs.SetUnfocusedFPS(5)
+	if got := a.HardCapBudget(true); got != budget(30) {
+		t.Errorf("focused hard cap = %v, want 30 fps", got)
+	}
+	if got := a.HardCapBudget(false); got != budget(5) {
+		t.Errorf("unfocused hard cap = %v, want 5 fps", got)
+	}
+
+	// ∞ (FPSUnlimited) is uncapped — 0 = no floor — in either state.
+	a.d.Prefs.SetFPSCap(config.FPSUnlimited)
+	a.d.Prefs.SetUnfocusedFPS(config.FPSUnlimited)
+	if got := a.HardCapBudget(true); got != 0 {
+		t.Errorf("focused ∞ hard cap = %v, want 0 (uncapped)", got)
+	}
+	if got := a.HardCapBudget(false); got != 0 {
+		t.Errorf("unfocused ∞ hard cap = %v, want 0 (uncapped)", got)
+	}
+
+	// Unfocused OFF backstops at the active cap (a forced ceremony frame while
+	// tabbed out still obeys something).
+	a.d.Prefs.SetFPSCap(60)
+	a.d.Prefs.SetUnfocusedFPS(config.FPSOff)
+	if got := a.HardCapBudget(false); got != budget(60) {
+		t.Errorf("unfocused-off hard cap = %v, want the active-cap backstop %v", got, budget(60))
+	}
+}
+
+// TestEaseICScrollAnimates pins the IC-log smooth scroll onto the anim-chrome
+// hook: mid-glide it marks frameAnimChrome, so at idle=0 the loop keeps
+// rendering until the ease settles instead of freezing a message half-scrolled
+// (the "the chat log jumps then stops" report). A settled offset or a 1:1
+// scrollbar-drag snap marks nothing.
+func TestEaseICScrollAnimates(t *testing.T) {
+	a := &App{}
+	a.frameDtMs = 16 // frame-rate-independent ease constant (promoted from sessionState)
+
+	// Target far from the visual offset → still easing → animates, advancing partway.
+	a.icScroll, a.icScrollVis, a.frameAnimChrome = 500, 0, false
+	if got := a.easeICScroll(1000, false); got <= 0 || a.icScrollVis >= 500 {
+		t.Errorf("ease should advance partway toward the target, got %v (vis=%v)", got, a.icScrollVis)
+	}
+	if !a.frameAnimChrome {
+		t.Error("mid-ease must mark frameAnimChrome so the glide keeps rendering at idle=0")
+	}
+
+	// Settled within the deadband → no animation.
+	a.icScroll, a.icScrollVis, a.frameAnimChrome = 500, 500, false
+	a.easeICScroll(1000, false)
+	if a.frameAnimChrome {
+		t.Error("a settled scroll must not keep rendering")
+	}
+
+	// A scrollbar drag snaps 1:1 (no ease) → no animation even when far from target.
+	a.icScroll, a.icScrollVis, a.frameAnimChrome = 0, 500, false
+	a.easeICScroll(1000, true)
+	if a.frameAnimChrome || a.icScrollVis != 0 {
+		t.Errorf("a 1:1 drag snap must pin vis to target and not animate (vis=%v anim=%v)", a.icScrollVis, a.frameAnimChrome)
+	}
+}
+
 // TestTalkBudget pins the blip-cadence floor (playtest: "at a lower framerate
 // the blips are ALSO at a lower framerate"): while a message plays, the frame
 // budget must never be slower than the typewriter's rune interval — one rune
@@ -117,6 +195,13 @@ func TestTalkBudget(t *testing.T) {
 // speaker loop: unfocused paces at the 80 ms flip cadence (not the flat
 // 100 ms trickle), focused idle keeps its existing [full, idle] clamp, and a
 // stage with nothing animating stays on the flat rate.
+//
+// NOTE: this pins FramePace's RETURN value only. The main loop now floors the
+// actual inter-frame time at HardCapBudget (the unfocused cap), so when this
+// 80 ms cadence is faster than the unfocused cap the RENDERED rate is the cap,
+// not the cadence (the "caps are always obeyed" contract — the user's explicit
+// ask). FramePace still returns the cadence as a tier hint; the loop clamps it.
+// Don't "restore" a faster unfocused animation here thinking it regressed.
 func TestFramePaceUnfocusedFollowsAnim(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

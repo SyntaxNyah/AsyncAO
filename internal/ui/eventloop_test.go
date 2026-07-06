@@ -19,8 +19,8 @@ func expApp(t *testing.T) *App {
 }
 
 // TestSkipFrameExpExtendsToMenus pins the experimental loop's widened gate:
-// static menu screens skip; async lobby sweeps, the Settings screen, and the
-// classic mode keep rendering.
+// static menu screens (Settings included) skip; async lobby sweeps, a live
+// Settings surface, and the classic mode keep rendering.
 func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	a := expApp(t)
 
@@ -38,10 +38,18 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	}
 	a.pinging = false
 
+	// Settings now skips when static (the user's ask — "virtually nothing moves").
 	a.screen = ScreenSettings
-	if a.SkipFrame(true, false) {
-		t.Error("exp: Settings never skips (live style preview, mic meter)")
+	if !a.SkipFrame(true, false) {
+		t.Error("exp: a static Settings screen must skip")
 	}
+	// …but a live surface on Settings still forces frames through the later gates
+	// (here a sprite preview; the mic-test meter and streaming damage likewise).
+	a.previewBase = "srv/characters/witch/(a)normal"
+	if a.SkipFrame(true, false) {
+		t.Error("exp: a live Settings preview must keep rendering")
+	}
+	a.previewBase = ""
 	a.screen = ScreenAbout
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a static About screen must skip")
@@ -209,6 +217,18 @@ func TestNextWakeDelay(t *testing.T) {
 		t.Errorf("paused clock (idle=off): wake = %v render=%v, want the %v floor + no render", d, maxHousekeepingGap, render)
 	}
 	a.sess = nil
+
+	// A demand-streamed grid with blank cells keeps the pump alive at idle=off:
+	// wake at the demand cadence and MARK render (so the re-run draw re-demands).
+	// The interval must beat the housekeeping floor or considerRender won't draw.
+	a.drawnDemandPending = true
+	if d, render := a.NextWakeDelay(); d != assetDemandWakeInterval || !render {
+		t.Errorf("demand pending (idle=off): wake = %v render=%v, want %v + render", d, render, assetDemandWakeInterval)
+	}
+	a.drawnDemandPending = false
+	if d, render := a.NextWakeDelay(); d != maxHousekeepingGap || render {
+		t.Errorf("demand cleared (idle=off): wake = %v render=%v, want the %v floor + no render", d, render, maxHousekeepingGap)
+	}
 
 	// Overdue idle tick: floored, never zero/negative (busy-spin guard), render.
 	a.d.Prefs.SetIdleFPS(4)

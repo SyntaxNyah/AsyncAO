@@ -499,27 +499,52 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// vsync stays on for tear-free presents, but it CANNOT be the throttle —
 		// it ties the loop to the panel (165 Hz laptops burned GPU while idle)
 		// and some windowed present paths don't block at all (the "54% GPU in a
-		// tiny window" report). The budget adapts: full cap while interacting /
-		// animating, the idle rate when the client is a static image, the
-		// unfocused rate when another window has focus. With vsync off this
-		// subsumes the old fixed frameCap sleep (FramePace's foreground cap
-		// defaults to the same 60).
+		// tiny window" report). Two nested budgets:
+		//
+		//   hardCap — the user's active (focused) or unfocused FPS ceiling. It is
+		//     INVIOLABLE: slept UNINTERRUPTIBLY, so an input flood — above all
+		//     mouse motion, which streams an event every few ms — can never
+		//     interrupt the pace and drive the loop past the cap. This is the
+		//     "caps are ALWAYS obeyed" contract, and it also enforces the
+		//     unfocused cap even when FramePace lifts an unfocused animation
+		//     toward the active rate.
+		//   pace   — FramePace's adaptive tier (full while interacting/animating,
+		//     the idle rate on a static screen). Always ≥ hardCap when focused;
+		//     the SURPLUS beyond the ceiling is slept INTERRUPTIBLY so input during
+		//     a slow idle/animation frame still responds within one ceiling instead
+		//     of waiting the whole slow budget out (the low-idle input-lag fix).
+		//
+		// With vsync off both fall back to the old fixed ~60 fps sleep.
 		pace := app.FramePace(focused)
+		hardCap := app.HardCapBudget(focused)
 		if limiterOff {
-			pace = 0 // #5 bypass: no adaptive cap — vsync paces the presents
+			pace, hardCap = 0, 0 // #5 bypass: no adaptive cap AND no ceiling — vsync paces the presents
 		}
-		if !vsync && (pace == 0 || pace > frameCap) {
-			pace = frameCap // -vsync=false keeps at least its old 60 fps ceiling (bypass included)
+		if !vsync {
+			if pace == 0 || pace > frameCap {
+				pace = frameCap // -vsync=false keeps at least its old 60 fps sleep (bypass included)
+			}
+			if hardCap == 0 || hardCap > frameCap {
+				hardCap = frameCap
+			}
 		}
-		if pace > 0 {
+		elapsed := time.Since(now)
+		budget := pace
+		if hardCap > budget {
+			budget = hardCap // unfocused: the ceiling can be slower than the tier
+		}
+		if nap := budget - elapsed; nap > 0 {
+			scheduledNap = nap // total intended sleep — the stall guard must allow it in full
+		}
+		// The ceiling, uninterruptibly: nothing renders faster than the cap.
+		if s := hardCap - elapsed; s > 0 {
+			time.Sleep(s)
+		}
+		// The surplus beyond the ceiling, interruptibly (slower idle/anim tiers only):
+		// input or a background wake arriving here renders NOW rather than waiting the
+		// whole slow budget out. The classic loop keeps a plain sleep.
+		if pace > hardCap {
 			if sleep := pace - time.Since(now); sleep > 0 {
-				scheduledNap = sleep
-				// Event-driven loop: pace the frame with an INTERRUPTIBLE wait, not
-				// a plain sleep — input (or a background wake) arriving mid-budget
-				// must render NOW, not wait the whole budget out. A slow animation's
-				// long inter-frame budget otherwise froze the input box, worse the
-				// lower the idle rate (the "someone else's sprite animating at idle=0
-				// lags my input" report). The classic loop keeps its plain sleep.
 				if prefs.EventDrivenLoopOn() {
 					if ev := sdl.WaitEventTimeout(int(sleep / time.Millisecond)); ev != nil {
 						pendingEv = ev

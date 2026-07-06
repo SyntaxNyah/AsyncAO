@@ -328,6 +328,7 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect, top, view
 		if el := a.now().Sub(a.mayoPetAt); el >= 0 && el < mayoWiggleDur {
 			p := float64(el) / float64(mayoWiggleDur)
 			angle = mayoWiggleDeg * (1 - p) * math.Sin(p*2*math.Pi*1.5)
+			a.NoteAnimating() // the wiggle decays on the wall clock: keep frames coming so it plays out at idle=0
 		}
 	}
 	if angle != 0 {
@@ -352,6 +353,7 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect, top, view
 	// Floating caption drifting up above the portrait for a moment after each pet.
 	if !a.mayoPetAt.IsZero() {
 		if el := a.now().Sub(a.mayoPetAt); el >= 0 && el < mayoCaptionDur {
+			a.NoteAnimating()                             // the caption drifts + fades on the wall clock: keep frames coming at idle=0
 			frac := float64(el) / float64(mayoCaptionDur) // 0 → 1
 			msg := mayoPetFlavor(a.mayoPets)
 			cx := dst.X + (dst.W-c.TextWidth(msg))/2
