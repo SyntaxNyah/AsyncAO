@@ -53,26 +53,42 @@ func decodeAVIF(data []byte, playAnimations bool) (*Decoded, error) {
 	if frameTotal <= 0 {
 		return nil, fmt.Errorf("assets: avif reports no frames")
 	}
-	frameCount := boundedFrameCount(width, height, frameTotal)
+	keep := boundedFrameCount(width, height, frameTotal)
+	walk := frameTotal // NextImage must advance per frame (each composes onto the last)
 	if !playAnimations {
-		frameCount = 1
+		walk, keep = 1, 1
 	}
+	fdec := newFrameDecimator(walk, keep)
 
 	d := &Decoded{
 		Animated: frameTotal > 1,
 		Width:    width,
 		Height:   height,
-		Frames:   make([]*image.RGBA, 0, frameCount),
-		Delays:   make([]time.Duration, 0, frameCount),
+		Frames:   make([]*image.RGBA, 0, keep),
+		Delays:   make([]time.Duration, 0, keep),
 	}
 
-	for i := 0; i < frameCount; i++ {
+	for i := 0; i < walk; i++ {
 		if res := C.avifDecoderNextImage(dec); res != C.AVIF_RESULT_OK {
 			if i == 0 {
 				d.Release()
 				return nil, avifError("first frame", res)
 			}
 			break // truncated sequence: keep what decoded
+		}
+
+		// imageTiming.duration is this frame's display time in seconds.
+		delay := time.Duration(float64(dec.imageTiming.duration) * float64(time.Second))
+		if delay <= 0 {
+			delay = defaultZeroFrameDelay
+		}
+
+		// The decoder is now advanced onto frame i; copy out only the decimated
+		// subset (skipped frames still advanced, so kept frames compose right),
+		// folding skipped delays into the kept one.
+		folded, keepIt := fdec.step(i, delay)
+		if !keepIt {
+			continue
 		}
 
 		var rgb C.avifRGBImage
@@ -96,13 +112,7 @@ func decodeAVIF(data []byte, playAnimations bool) (*Decoded, error) {
 		if token != nil {
 			d.pooledPix = append(d.pooledPix, token)
 		}
-
-		// imageTiming.duration is this frame's display time in seconds.
-		delay := time.Duration(float64(dec.imageTiming.duration) * float64(time.Second))
-		if delay <= 0 {
-			delay = defaultZeroFrameDelay
-		}
-		d.Delays = append(d.Delays, delay)
+		d.Delays = append(d.Delays, folded)
 	}
 
 	if len(d.Frames) == 0 {

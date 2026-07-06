@@ -47,9 +47,11 @@ Prefetch(base, type, prio)            PrefetchWithFallback(base, altBase, ...)
        still nothing → Warning{base, formats tried} → UI banner (12 s, courtroom
                                                       + char select)
   decode pool: sniff magic bytes (never extensions) → RGBA frames (pooled px),
-               animations truncated to maxDecodedAssetBytes (T1 budget / 2 —
-               a shorter loop beats an invisible sprite and a 250 MB RGBA
-               spike inside the 256 MiB process budget); fixed-cell types
+               animations DECIMATED to maxDecodedAssetBytes (T1 budget / 2 —
+               keep evenly-spaced frames spanning the whole clip, fold skipped
+               delays forward: a lower-fps full loop beats a truncated one that
+               snaps mid-preanim, and both dodge a 250 MB RGBA spike inside the
+               256 MiB process budget); fixed-cell types
                (char icons → 64 px, emote buttons → 40 px) thumbnail at
                decode, so a 500×500 pack icon costs ~16 KB of T1 instead of
                ~1 MB and a 4000-char roster fits the texture budget whole
