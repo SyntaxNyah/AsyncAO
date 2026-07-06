@@ -2191,6 +2191,7 @@ func (a *App) Background(dt time.Duration) {
 	a.drainWarnings()
 	a.pollCharINI()    // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
 	a.pollLogBrowser() // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
+	a.pollUpdate()     // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
 	if a.room != nil {
 		a.room.Update(dt)
 	}

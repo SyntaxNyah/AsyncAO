@@ -298,6 +298,28 @@ func TestPollCharINIForcesRedraw(t *testing.T) {
 	}
 }
 
+// TestPollUpdateForcesRedraw pins the self-update redraw: when the download +
+// stage finishes, pollUpdate clears busy, marks the binary staged, AND marks
+// uiDirty — so the modal's button flips "Downloading…" → "Restart to apply" at
+// idle=0 instead of waiting for cursor motion.
+func TestPollUpdateForcesRedraw(t *testing.T) {
+	a := testTabApp(t)
+	if a.updateApplyRes == nil {
+		a.updateApplyRes = make(chan error, 1)
+	}
+	a.updateBusy = true
+	a.updateStaged = false
+	a.uiDirty = false
+	a.updateApplyRes <- nil // download + stage succeeded
+	a.pollUpdate()
+	if a.updateBusy || !a.updateStaged {
+		t.Errorf("pollUpdate must clear busy and stage on success: busy=%v staged=%v", a.updateBusy, a.updateStaged)
+	}
+	if !a.uiDirty {
+		t.Error("pollUpdate must mark uiDirty so the modal flips to Restart-to-apply at idle=0")
+	}
+}
+
 // TestNextHoverDue pins the Ctx hover deadlines: a pending TooltipAfter dwell
 // reports its remainder, an already-shown one reports nothing (the reveal
 // frame already drew), and the hover-preview dwell honours its enable flag.
