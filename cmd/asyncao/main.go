@@ -549,51 +549,65 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		if nap := budget - elapsed; nap > 0 {
 			scheduledNap = nap // total intended sleep — the stall guard must allow it in full
 		}
-		// Audio-paced sub-stepping (audio independent of the frame rate): while a
-		// message types at a low present rate, a single pacing sleep would advance
-		// the courtroom once with a big dt and machine-gun a whole present-period of
-		// blips at one instant ("blips only every screen refresh at a 1 fps cap").
-		// Instead spend the pacing budget advancing the room — and playing its blips
-		// — at the fine audio cadence: Background advances room + drains audio without
-		// drawing, and the NEXT Frame draws the already-current room (MarkRoomPreAdvanced
-		// makes it skip its own room.Update). Interruptible, so input still renders the
-		// next frame early; bounded by the budget deadline (rule §17.4). Only while the
-		// live courtroom is actually streaming blips, so a static screen still idles.
-		if !limiterOff && app.AudioPaceActive(budget) {
-			fine := app.AudioFineTick()
-			deadline := now.Add(budget)
+		// Audio independent of the frame rate: while a message types (AudioPaceActive),
+		// a single pacing sleep would advance the courtroom once with a big dt and
+		// machine-gun a whole present-period of blips at one instant ("blips only every
+		// screen refresh at a 1 fps cap"). Instead advance the room — and play its blips
+		// — at the fine audio cadence THREADED THROUGH the same two-tier sleep below, so
+		// the inviolable hardCap floor stays uninterruptible (the cap is obeyed even
+		// under a mouse-motion flood while talking, exactly as before) and only the
+		// idle-tier surplus yields to input. Background advances room + drains audio
+		// without drawing; the next Frame draws the already-current room
+		// (MarkRoomPreAdvanced skips its own room.Update). Only while the LIVE courtroom
+		// streams blips, so a static screen still idles at zero cost.
+		audioPace := !limiterOff && app.AudioPaceActive(budget)
+		// fineAdvance sleeps total in ~audio-cadence steps, advancing the room + audio
+		// each step (no draw). interruptible = the surplus tier: an event returns early
+		// to render now; uninterruptible = the hardCap floor (the cap must hold).
+		fineAdvance := func(total time.Duration, interruptible bool) {
+			end := time.Now().Add(total)
 			for {
-				rem := time.Until(deadline)
+				rem := time.Until(end)
 				if rem <= 0 {
-					break
+					return
 				}
-				step := fine
+				step := app.AudioFineTick()
 				if step > rem {
 					step = rem
 				}
 				app.Background(step)      // advance room + audio at the fine cadence, no draw
 				app.MarkRoomPreAdvanced() // the next Frame draws the advanced room without re-advancing it
-				if ev := sdl.WaitEventTimeout(int(step / time.Millisecond)); ev != nil {
-					pendingEv = ev // input / background wake: render the next frame now
-					break
+				if interruptible {
+					if ev := sdl.WaitEventTimeout(int(step / time.Millisecond)); ev != nil {
+						pendingEv = ev // input / background wake: render the next frame now
+						return
+					}
+				} else {
+					time.Sleep(step)
 				}
 			}
-			continue
 		}
 		// The ceiling, uninterruptibly: nothing renders faster than the cap.
 		if s := hardCap - elapsed; s > 0 {
-			time.Sleep(s)
+			if audioPace {
+				fineAdvance(s, false) // cap floor preserved; audio still advances finely
+			} else {
+				time.Sleep(s)
+			}
 		}
 		// The surplus beyond the ceiling, interruptibly (slower idle/anim tiers only):
 		// input or a background wake arriving here renders NOW rather than waiting the
 		// whole slow budget out. The classic loop keeps a plain sleep.
 		if pace > hardCap {
 			if sleep := pace - time.Since(now); sleep > 0 {
-				if prefs.EventDrivenLoopOn() {
+				switch {
+				case audioPace:
+					fineAdvance(sleep, prefs.EventDrivenLoopOn())
+				case prefs.EventDrivenLoopOn():
 					if ev := sdl.WaitEventTimeout(int(sleep / time.Millisecond)); ev != nil {
 						pendingEv = ev
 					}
-				} else {
+				default:
 					time.Sleep(sleep)
 				}
 			}
