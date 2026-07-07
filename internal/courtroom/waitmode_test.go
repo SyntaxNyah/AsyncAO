@@ -117,6 +117,32 @@ func TestSpriteWaitGate(t *testing.T) {
 		}
 	})
 
+	t.Run("confirmed-missing preanim releases on the miss signal, not the timeout", func(t *testing.T) {
+		room, ready := newRig(t)
+		room.SpriteWaitPreanim = true
+		m := waitMsg("Phoenix", "normal", "hi")
+		// A dummy preanim name (live packs ship "-<n>" on every emote); idle emote-mod
+		// upgrades to preanim on the wire when a preanim name is present, so the gate
+		// arms on a preanim sprite that will never resolve.
+		m.PreEmote, m.EmoteMod = "-1", protocol.EmoteModPreanim
+		ready[room.urls.Emote("Phoenix", "normal", EmoteIdle)] = true // idle ready; the preanim never will be
+		room.HandleEvent(Event{Kind: EventMessage, Message: m})
+		if room.QueueLen() != 1 {
+			t.Fatal("setup: a cold preanim must hold the message")
+		}
+		room.Update(50 * time.Millisecond) // far under the 500 ms cap, no miss learned yet → still held
+		if room.QueueLen() != 1 {
+			t.Fatal("without the miss signal the hold must persist (nothing has said the preanim is gone)")
+		}
+		// The manager conclusively 404s the dummy preanim — the App's warning relay
+		// calls exactly this on the game thread.
+		room.NotifyAssetMissing(room.urls.Emote("Phoenix", "-1", EmotePreanim))
+		room.Update(16 * time.Millisecond)
+		if room.QueueLen() != 0 || !room.Scene.Speaker.Visible {
+			t.Fatal("a conclusively-missing preanim must release the hold on the miss signal, not burn the full timeout")
+		}
+	})
+
 	t.Run("gate off is unchanged", func(t *testing.T) {
 		room, _, _, _ := newCourtroomRig(t)
 		room.HandleEvent(Event{Kind: EventMessage, Message: waitMsg("Phoenix", "normal", "hi")})

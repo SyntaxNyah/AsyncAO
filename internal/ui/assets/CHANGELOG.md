@@ -4,6 +4,18 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test27 — 2026-07-07 (test build)
+
+- **"Hold the message until it loads" no longer stalls on characters with a dummy
+  pre-animation.** Some packs fill every emote's pre-animation slot with a
+  placeholder name that has no matching file. With the "hold the message until it
+  loads" sprite mode and "also wait for the pre-animation" both turned on, those
+  characters made *every* message sit for the full "Max hold per message" duration,
+  waiting on a pre-animation that can never arrive. The wait now ends the instant
+  the client confirms the pre-animation is missing — the same way normal playback
+  already skips a missing pre-animation — so only real, still-loading sprites ever
+  hold a message.
+
 ## v1.55.0-test26 — 2026-07-07 (test build)
 
 - **Talking characters don't flash any more.** By default the client now keeps

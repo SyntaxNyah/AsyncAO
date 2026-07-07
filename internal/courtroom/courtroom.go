@@ -35,6 +35,11 @@ const (
 	// what QueueCap seeds to, and what the App restores when the power-user pref
 	// is back at its 0 = default sentinel.
 	DefaultQueueCap = messageQueueCap
+	// missingSpritesCap bounds the conclusively-404'd base set the wait gate
+	// consults (spec §17.4 — no unbounded caches). A session sees only a handful
+	// of genuinely-missing sprites; past the cap we stop recording and the
+	// SpriteWaitTimeout still bounds any un-recorded miss.
+	missingSpritesCap = 512
 	// blipVolumeFull is the unattenuated per-character blip scale (M11): 100%,
 	// used when no BlipVolumeFor callback is wired (tests/embedders).
 	blipVolumeFull = 100
@@ -298,6 +303,14 @@ type Courtroom struct {
 	// re-arms fresh and begin() clears it.
 	waitLeft time.Duration
 	waitFor  *protocol.ChatMessage
+	// missingSprites remembers bases the asset manager conclusively 404'd,
+	// recorded from the SAME NotifyAssetMissing warning relay the play path uses.
+	// The wait gate consults it so a declared-but-absent preanim — live packs
+	// fill the char.ini preanim field with a dummy "-<n>" on every emote — releases
+	// the hold on the miss signal instead of burning the full SpriteWaitTimeout
+	// (the play path already skips such a preanim via NotifyAssetMissing; the gate
+	// now matches it). Bounded (missingSpritesCap); lazily allocated; game-thread only.
+	missingSprites map[string]struct{}
 
 	queue []*protocol.ChatMessage
 	phase MessagePhase
@@ -491,7 +504,15 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		ready = c.SpriteReady(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle))
 	}
 	if ready && c.SpriteWaitPreanim && hasPreanim(msg) { // strictness knob: the preanimation too
-		ready = c.SpriteReady(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim))
+		pre := c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim)
+		// A preanim that has CONCLUSIVELY 404'd is nothing to wait for — release on
+		// the miss signal instead of burning the full timeout. Live packs fill the
+		// char.ini preanim field with a dummy "-<n>" on every emote (and idle
+		// emote-mod upgrades to preanim on the wire when a preanim name is present,
+		// so the gate would otherwise wait for a sprite that never exists — the
+		// "flower sprites always wait the whole delay" report). Mirrors the play
+		// path's NotifyAssetMissing skip.
+		ready = c.SpriteReady(pre) || c.spriteConfirmedMissing(pre)
 	}
 	if ready {
 		c.waitFor = nil
@@ -1034,7 +1055,15 @@ func (c *Courtroom) NotifyPreanimStarted(total time.Duration) {
 // cache made the re-probes free, but nothing told the phase machine, so the
 // stall survived caching entirely.
 func (c *Courtroom) NotifyAssetMissing(base string) {
-	if base == "" || c.current == nil || base != c.Scene.Speaker.PreanimBase {
+	if base == "" {
+		return
+	}
+	// Remember every conclusively-missing base FIRST: the wait gate (waitHolds)
+	// holds a message BEFORE it is current, so a dummy preanim's 404 lands here
+	// while c.current is still the previous message and would be dropped by the
+	// guard below. Recording it lets the gate release on the miss signal.
+	c.recordMissing(base)
+	if c.current == nil || base != c.Scene.Speaker.PreanimBase {
 		return
 	}
 	// Exactly NotifyPreanimDone: the preanim "finished" (it can never start).
@@ -1052,6 +1081,31 @@ func (c *Courtroom) NotifyAssetMissing(base string) {
 			c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
 		}
 	}
+}
+
+// recordMissing remembers a conclusively-404'd base so the wait gate can treat a
+// declared-but-absent sprite as "nothing to wait for". Bounded (missingSpritesCap)
+// and game-thread only (called from the App's warning drain, like the rest of
+// NotifyAssetMissing).
+func (c *Courtroom) recordMissing(base string) {
+	if c.missingSprites == nil {
+		c.missingSprites = make(map[string]struct{})
+	}
+	if _, ok := c.missingSprites[base]; ok {
+		return
+	}
+	if len(c.missingSprites) >= missingSpritesCap {
+		return // full: the SpriteWaitTimeout still bounds any un-recorded miss
+	}
+	c.missingSprites[base] = struct{}{}
+}
+
+// spriteConfirmedMissing reports whether base has been conclusively 404'd this
+// session. The wait gate reads it so a never-arriving preanim releases the hold
+// on the miss signal instead of the full timeout.
+func (c *Courtroom) spriteConfirmedMissing(base string) bool {
+	_, ok := c.missingSprites[base]
+	return ok
 }
 
 // SkipToIdle fast-forwards the CURRENT message straight to idle: reveal the rest
