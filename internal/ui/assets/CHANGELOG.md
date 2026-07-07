@@ -4,6 +4,14 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test25 — 2026-07-07 (test build)
+
+- **The in-client update popup finishes on its own.** When you install an update
+  from inside the client, the progress dialog now flips to "Restart to apply" (or
+  shows the error) the moment the download completes, instead of sitting on
+  "Downloading…" until you move the mouse. The "update available" chip likewise
+  appears on its own at a 0 idle rate.
+
 ## v1.55.0-test24 — 2026-07-06 (test build)
 
 - **The Logs browser fills in as soon as it loads.** Opening Logs no longer
