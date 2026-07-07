@@ -751,16 +751,20 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetAssetWarnings(true)
 	p.SetSpriteMove(true)
 	p.SetDeskFollowManifest(true)
-	p.SetAutoLoginToast(false)   // explicit false must survive the absent-default-ON pointer
-	p.SetCallwordToast(false)    // same absent-default-ON pointer
-	p.SetMessageCounter(false)   // same absent-default-ON pointer
-	p.SetICTimestamps(true)      // explicit non-default true must survive the absent-default-OFF pointer
-	p.SetAutoReconnect(false)    // same absent-default-ON pointer
-	p.SetMusicHistory(false)     // same absent-default-ON pointer
-	p.SetRainbowSprites(true)    // default-OFF plain bool — must survive as true
-	p.SetShowRecordButton(true)  // default-OFF plain bool
-	p.SetShowFriendButton(false) // default-ON *bool — explicit false must survive
-	p.SetDragLayout(false)       // default-ON *bool — explicit false must survive
+	p.SetAutoLoginToast(false)      // explicit false must survive the absent-default-ON pointer
+	p.SetCallwordToast(false)       // same absent-default-ON pointer
+	p.SetMessageCounter(false)      // same absent-default-ON pointer
+	p.SetICTimestamps(true)         // explicit non-default true must survive the absent-default-OFF pointer
+	p.SetAutoReconnect(false)       // same absent-default-ON pointer
+	p.SetMusicHistory(false)        // same absent-default-ON pointer
+	p.SetRainbowSprites(true)       // default-OFF plain bool — must survive as true
+	p.SetShowRecordButton(true)     // default-OFF plain bool
+	p.SetShowFriendButton(false)    // default-ON *bool — explicit false must survive
+	p.SetDragLayout(false)          // default-ON *bool — explicit false must survive
+	p.SetEventDrivenLoop(false)     // default-ON *bool — the experimental-loop kill switch must stick
+	p.SetFrameLimiterDisabled(true) // #5 bypass — default-OFF plain bool must survive as true
+	p.SetMotionRedrawPerEvent(true) // per-event motion redraw — default-OFF plain bool must survive as true
+	p.SetIdleFPS(FPSUnlimited)      // the ∞ sentinel must survive save→load un-clamped
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
@@ -819,6 +823,18 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.FriendButtonShown() {
 		t.Error("ShowFriendButton=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if q.EventDrivenLoopOn() {
+		t.Error("EventDrivenLoop=false lost (absent-default ON must not clobber the explicit kill switch)")
+	}
+	if !q.FrameLimiterDisabled() {
+		t.Error("DisableFrameLimiter=true lost across reload")
+	}
+	if !q.MotionRedrawPerEventOn() {
+		t.Error("MotionRedrawPerEvent=true lost across reload")
+	}
+	if got := q.IdleFPS(); got != FPSUnlimited {
+		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
 	}
 	if got := q.PreviewHeightPx(); got != 512 {
 		t.Errorf("PreviewHeightPx lost: %d, want 512", got)
@@ -1075,6 +1091,9 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetFPSCap(144)
 	p.SetIdleFPS(60)
 	p.SetUnfocusedFPS(30)
+	p.SetEventDrivenLoop(false)
+	p.SetFrameLimiterDisabled(true) // #5 bypass — must revert to OFF on nuke
+	p.SetMotionRedrawPerEvent(true) // per-event motion redraw — must revert to OFF on nuke
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1083,9 +1102,9 @@ func TestResetPowerUser(t *testing.T) {
 	if p.ValidateTLSCertsOn() || p.AssetOriginHeader() != "" || p.WSOriginHeader() != "" {
 		t.Error("nuke must clear TLS + both Origin overrides")
 	}
-	if p.SpriteLoadMode() != SpriteLoadBlank || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
+	if p.SpriteLoadMode() != SpriteLoadHoldPrev || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
 		p.SpriteWaitPairOn() || p.SpriteWaitPreanimOn() {
-		t.Error("nuke must reset the cold-load mode + wait knobs")
+		t.Error("nuke must reset the cold-load mode to its default (hold-previous) + the wait knobs")
 	}
 	if p.HoldPrevMaxAgeMs() != 0 || p.HoldDebugTintOn() {
 		t.Error("nuke must reset the hold-previous knobs")
@@ -1110,6 +1129,15 @@ func TestResetPowerUser(t *testing.T) {
 	}
 	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
 		t.Error("nuke must reset the frame-pacing rates to their defaults")
+	}
+	if !p.EventDrivenLoopOn() {
+		t.Error("nuke must restore the experimental event-driven loop to its default ON")
+	}
+	if p.FrameLimiterDisabled() {
+		t.Error("nuke must restore the frame-limiter bypass to its default OFF")
+	}
+	if p.MotionRedrawPerEventOn() {
+		t.Error("nuke must restore per-event motion redraw to its default OFF")
 	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)
@@ -1430,5 +1458,76 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	p.SetThemeFitPan(999, -999)
 	if x, y := p.ThemePan(); x != MaxThemePan || y != -MaxThemePan {
 		t.Errorf("pan clamp = (%d,%d), want (%d,%d)", x, y, MaxThemePan, -MaxThemePan)
+	}
+}
+
+// TestFPSKnobDomain pins the widened frame-rate domain: values below the old
+// floors (30/10/5) are now honored (the "can't go below 10" report), 0 maps to
+// the FPSOff sentinel for Idle/Background and survives save→load un-clamped (0 =
+// never redraw must persist, not silently reset to the default), ∞ still round-
+// trips, out-of-range positives still clamp, and an ABSENT key still resolves to
+// the shipped default rather than off.
+func TestFPSKnobDomain(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	// A fresh (absent-key) prefs resolves to the defaults, never 0/off.
+	if p.FPSCap() != FPSCapDefault || p.IdleFPS() != IdleFPSDefault || p.UnfocusedFPS() != UnfocusedFPSDefault {
+		t.Fatalf("fresh defaults = %d/%d/%d, want %d/%d/%d",
+			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS(), FPSCapDefault, IdleFPSDefault, UnfocusedFPSDefault)
+	}
+	// Below the old floors is now allowed, not clamped up.
+	p.SetFPSCap(5)
+	p.SetIdleFPS(2)
+	p.SetUnfocusedFPS(1)
+	if p.FPSCap() != 5 || p.IdleFPS() != 2 || p.UnfocusedFPS() != 1 {
+		t.Errorf("low rates clamped: cap=%d idle=%d unfocused=%d, want 5/2/1",
+			p.FPSCap(), p.IdleFPS(), p.UnfocusedFPS())
+	}
+	// Out-of-range positives still clamp to the max.
+	p.SetIdleFPS(99999)
+	if got := p.IdleFPS(); got != IdleFPSMax {
+		t.Errorf("idle over-max = %d, want clamp to %d", got, IdleFPSMax)
+	}
+	// The Settings "0"/off maps to FPSOff; ∞ to FPSUnlimited. Both are held live
+	// and must survive the disk round-trip un-normalized.
+	p.SetIdleFPS(FPSOff)
+	p.SetUnfocusedFPS(FPSOff)
+	p.SetFPSCap(FPSUnlimited)
+	if p.IdleFPS() != FPSOff || p.UnfocusedFPS() != FPSOff || p.FPSCap() != FPSUnlimited {
+		t.Fatalf("sentinels not held live: idle=%d unfocused=%d cap=%d", p.IdleFPS(), p.UnfocusedFPS(), p.FPSCap())
+	}
+	// Input-grace frames: default 1, clamps into range, survives the round-trip.
+	if got := p.InputGraceFrames(); got != InputGraceFramesDefault {
+		t.Errorf("input-grace default = %d, want %d", got, InputGraceFramesDefault)
+	}
+	p.SetInputGraceFrames(99999)
+	if got := p.InputGraceFrames(); got != InputGraceFramesMax {
+		t.Errorf("input-grace over-max = %d, want clamp to %d", got, InputGraceFramesMax)
+	}
+	p.SetInputGraceFrames(0) // 0 = OFF — must read back as 0 and survive as 0 (NOT snap to the default)
+	if got := p.InputGraceFrames(); got != 0 {
+		t.Errorf("input-grace off = %d, want 0", got)
+	}
+	if err := p.Close(); err != nil { // flush + release before reload
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path) // load() alone starts no saver goroutine, so there's nothing to Close
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if q.IdleFPS() != FPSOff {
+		t.Errorf("idle off (FPSOff) lost across reload: %d, want %d (0 = off must persist)", q.IdleFPS(), FPSOff)
+	}
+	if q.UnfocusedFPS() != FPSOff {
+		t.Errorf("unfocused off (FPSOff) lost across reload: %d, want %d", q.UnfocusedFPS(), FPSOff)
+	}
+	if q.FPSCap() != FPSUnlimited {
+		t.Errorf("active ∞ lost across reload: %d, want %d", q.FPSCap(), FPSUnlimited)
+	}
+	if q.InputGraceFrames() != 0 {
+		t.Errorf("input-grace OFF lost across reload: %d, want 0 (off must persist, not snap to the default)", q.InputGraceFrames())
 	}
 }

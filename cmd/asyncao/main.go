@@ -161,6 +161,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer sdl.Quit()
+	// The cross-thread render-loop doorbell (experimental event-driven loop):
+	// packet arrivals and finished decodes push this user event so a loop
+	// parked on WaitEventTimeout reacts instantly. Registered once, up front.
+	ui.EnsureWakeEvent()
 	if err := ttf.Init(); err != nil {
 		return err
 	}
@@ -249,6 +253,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		return err
 	}
 	defer store.Purge()
+	// Scale the per-asset decode cap off the SAME (live) texture budget — half of
+	// it, the eviction-safe ratio — so raising the texture budget lets a longer
+	// animation decode in full instead of truncating past ~5 s (the decoder
+	// otherwise used a fixed cap off the DEFAULT budget, ignoring this setting).
+	assets.SetMaxDecodedAssetBytes((int64(prefs.TexBudgetMiB()) << 20) / 2)
 
 	// --- asset pipeline ---
 	var localMode bool
@@ -357,6 +366,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// motion (dt loss ate real time — the "anims crawl at 5 fps unfocused"
 	// class of bug).
 	scheduledNap := time.Duration(0)
+	// pendingEv carries the one event a WaitEventTimeout park dequeued (the
+	// experimental loop's wake): it feeds the NEXT pass's input phase first,
+	// so nothing is lost or reordered against the regular poll drain.
+	var pendingEv sdl.Event
 	running := true
 	for running {
 		now := time.Now()
@@ -378,7 +391,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		// (Inverting these erased every click before the UI saw it.)
 		uiCtx.BeginFrame(dt)
 		sawEvent := false
-		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
+		sawInput := false // any non-motion event (click, key, wheel, window)
+		handleEv := func(ev sdl.Event) {
+			if ui.IsWakeEvent(ev) {
+				return // a background doorbell (packet/decode), never user input
+			}
 			switch e := ev.(type) {
 			case *sdl.QuitEvent:
 				running = false
@@ -391,28 +408,75 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 			}
 			uiCtx.HandleEvent(ev)
 			sawEvent = true
+			if _, motion := ev.(*sdl.MouseMotionEvent); !motion {
+				sawInput = true
+			}
 		}
-		if sawEvent {
-			app.NoteInput() // frame pacing: interaction snaps back to full rate
+		if pendingEv != nil {
+			handleEv(pendingEv)
+			pendingEv = nil
+		}
+		for ev := sdl.PollEvent(); ev != nil; ev = sdl.PollEvent() {
+			handleEv(ev)
+		}
+		// Frame pacing: real interaction snaps back to full rate; bare pointer
+		// motion gets the short motion grace instead (experimental loop), so
+		// waving the cursor over nothing stops costing frames when it stops.
+		if sawInput {
+			app.NoteInput()
+		} else if sawEvent {
+			app.NoteMotion()
 		}
 
 		if window.GetFlags()&sdl.WINDOW_MINIMIZED != 0 {
 			app.Background(dt) // keep the session alive, draw nothing
 			scheduledNap = minimizedNap
-			time.Sleep(minimizedNap)
+			// Interruptible nap: a restore / focus-gain / alt-tab-in event returns
+			// immediately so the window wakes and redraws on the spot, instead of
+			// finishing out the nap first (a felt delay coming back to the window).
+			if ev := sdl.WaitEventTimeout(int(minimizedNap / time.Millisecond)); ev != nil {
+				pendingEv = ev
+			}
 			continue
 		}
 
-		// Static skip (the deepest pacing tier): the courtroom is a genuinely
-		// static image right now — no input this pass, nothing animating, nobody
-		// talking, no toast/caret/timer — so the last presented frame is still
-		// exactly right. Skip render+present entirely (GPU cost → zero), keep
-		// the session pumping, and nap at the idle cadence so the next event is
-		// picked up as fast as an idle-rendered frame would have. App.SkipFrame
-		// heartbeats a real frame every paceHeartbeat to heal anything missed.
+		// Static skip (the deepest pacing tier): nothing new to show — no input
+		// this pass, nothing animating, nobody talking, no toast/caret/timer — so
+		// the last presented frame is still exactly right. Skip render+present
+		// entirely (GPU cost → zero) and keep the session pumping. The event-
+		// driven loop then parks until something actually happens; the classic
+		// loop naps at the idle cadence and re-polls.
 		focused := window.GetFlags()&sdl.WINDOW_INPUT_FOCUS != 0
-		if app.SkipFrame(focused, sawEvent) {
+		// #5 bypass: with the frame limiter disabled the loop renders every pass
+		// (no static skip, no adaptive pacing) — vsync alone paces it. The
+		// deliberate high-GPU escape hatch; default OFF.
+		limiterOff := prefs.FrameLimiterDisabled()
+		if !limiterOff && app.SkipFrame(focused, sawEvent) {
 			app.Background(dt)
+			if prefs.EventDrivenLoopOn() {
+				// EXPERIMENTAL event-driven wait. The Background pumps above may
+				// have produced redraw-worthy work (packets, texture uploads):
+				// loop straight around and render it — the next pass's SkipFrame
+				// refuses on RenderNeeded. Otherwise park on the OS event wait
+				// until input, a wake doorbell, or the nearest scheduled deadline.
+				// NextWakeDelay reports both HOW LONG to park and whether a plain
+				// timeout is a real redraw deadline (idle-rate tick, caret flip,
+				// clock second) or just the Background-only housekeeping floor —
+				// the floor pumps the session and re-parks WITHOUT drawing, which
+				// is how idle=off reaches genuinely zero redraws. Input/wake events
+				// interrupt the wait regardless, for instant response at zero cost.
+				if app.RenderNeeded() {
+					continue
+				}
+				wait, renderDue := app.NextWakeDelay(focused)
+				scheduledNap = wait
+				if ev := sdl.WaitEventTimeout(int(wait / time.Millisecond)); ev != nil {
+					pendingEv = ev
+				} else if renderDue {
+					app.NoteDeadline() // a real deadline is due — draw one frame for it
+				}
+				continue
+			}
 			nap := app.FramePace(focused)
 			if nap <= 0 || nap > maxFrameDelta {
 				nap = maxFrameDelta
@@ -435,24 +499,117 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		_ = ren.Clear()
 		app.Frame(dt, lw, lh)
 		ren.Present()
+		// A real interaction (click / key / wheel) almost always changed UI-visible
+		// state DURING the draw above — a screen switch, a menu open, a toggle — which
+		// only appears on the NEXT frame. Force that one frame so it's never stranded
+		// until cursor motion or the idle tick reveals it. Motion is excluded (it has
+		// its own live grace); idle-safe (no input, no follow-up).
+		if sawInput {
+			app.NoteInteraction()
+		}
 
 		// Frame pacing (the GPU-burn fix): sleep the frame's remaining budget.
 		// vsync stays on for tear-free presents, but it CANNOT be the throttle —
 		// it ties the loop to the panel (165 Hz laptops burned GPU while idle)
 		// and some windowed present paths don't block at all (the "54% GPU in a
-		// tiny window" report). The budget adapts: full cap while interacting /
-		// animating, the idle rate when the client is a static image, the
-		// unfocused rate when another window has focus. With vsync off this
-		// subsumes the old fixed frameCap sleep (FramePace's foreground cap
-		// defaults to the same 60).
+		// tiny window" report). Two nested budgets:
+		//
+		//   hardCap — the user's active (focused) or unfocused FPS ceiling. It is
+		//     INVIOLABLE: slept UNINTERRUPTIBLY, so an input flood — above all
+		//     mouse motion, which streams an event every few ms — can never
+		//     interrupt the pace and drive the loop past the cap. This is the
+		//     "caps are ALWAYS obeyed" contract, and it also enforces the
+		//     unfocused cap even when FramePace lifts an unfocused animation
+		//     toward the active rate.
+		//   pace   — FramePace's adaptive tier (full while interacting/animating,
+		//     the idle rate on a static screen). Always ≥ hardCap when focused;
+		//     the SURPLUS beyond the ceiling is slept INTERRUPTIBLY so input during
+		//     a slow idle/animation frame still responds within one ceiling instead
+		//     of waiting the whole slow budget out (the low-idle input-lag fix).
+		//
+		// With vsync off both fall back to the old fixed ~60 fps sleep.
 		pace := app.FramePace(focused)
-		if !vsync && (pace == 0 || pace > frameCap) {
-			pace = frameCap // -vsync=false keeps at least its old 60 fps ceiling
+		hardCap := app.HardCapBudget(focused)
+		if limiterOff {
+			pace, hardCap = 0, 0 // #5 bypass: no adaptive cap AND no ceiling — vsync paces the presents
 		}
-		if pace > 0 {
+		if !vsync {
+			if pace == 0 || pace > frameCap {
+				pace = frameCap // -vsync=false keeps at least its old 60 fps sleep (bypass included)
+			}
+			if hardCap == 0 || hardCap > frameCap {
+				hardCap = frameCap
+			}
+		}
+		elapsed := time.Since(now)
+		budget := pace
+		if hardCap > budget {
+			budget = hardCap // unfocused: the ceiling can be slower than the tier
+		}
+		if nap := budget - elapsed; nap > 0 {
+			scheduledNap = nap // total intended sleep — the stall guard must allow it in full
+		}
+		// Audio independent of the frame rate: while a message types (AudioPaceActive),
+		// a single pacing sleep would advance the courtroom once with a big dt and
+		// machine-gun a whole present-period of blips at one instant ("blips only every
+		// screen refresh at a 1 fps cap"). Instead advance the room — and play its blips
+		// — at the fine audio cadence THREADED THROUGH the same two-tier sleep below, so
+		// the inviolable hardCap floor stays uninterruptible (the cap is obeyed even
+		// under a mouse-motion flood while talking, exactly as before) and only the
+		// idle-tier surplus yields to input. Background advances room + drains audio
+		// without drawing; the next Frame draws the already-current room
+		// (MarkRoomPreAdvanced skips its own room.Update). Only while the LIVE courtroom
+		// streams blips, so a static screen still idles at zero cost.
+		audioPace := !limiterOff && app.AudioPaceActive(budget)
+		// fineAdvance sleeps total in ~audio-cadence steps, advancing the room + audio
+		// each step (no draw). interruptible = the surplus tier: an event returns early
+		// to render now; uninterruptible = the hardCap floor (the cap must hold).
+		fineAdvance := func(total time.Duration, interruptible bool) {
+			end := time.Now().Add(total)
+			for {
+				rem := time.Until(end)
+				if rem <= 0 {
+					return
+				}
+				step := app.AudioFineTick()
+				if step > rem {
+					step = rem
+				}
+				app.Background(step)      // advance room + audio at the fine cadence, no draw
+				app.MarkRoomPreAdvanced() // the next Frame draws the advanced room without re-advancing it
+				if interruptible {
+					if ev := sdl.WaitEventTimeout(int(step / time.Millisecond)); ev != nil {
+						pendingEv = ev // input / background wake: render the next frame now
+						return
+					}
+				} else {
+					time.Sleep(step)
+				}
+			}
+		}
+		// The ceiling, uninterruptibly: nothing renders faster than the cap.
+		if s := hardCap - elapsed; s > 0 {
+			if audioPace {
+				fineAdvance(s, false) // cap floor preserved; audio still advances finely
+			} else {
+				time.Sleep(s)
+			}
+		}
+		// The surplus beyond the ceiling, interruptibly (slower idle/anim tiers only):
+		// input or a background wake arriving here renders NOW rather than waiting the
+		// whole slow budget out. The classic loop keeps a plain sleep.
+		if pace > hardCap {
 			if sleep := pace - time.Since(now); sleep > 0 {
-				scheduledNap = sleep
-				time.Sleep(sleep)
+				switch {
+				case audioPace:
+					fineAdvance(sleep, prefs.EventDrivenLoopOn())
+				case prefs.EventDrivenLoopOn():
+					if ev := sdl.WaitEventTimeout(int(sleep / time.Millisecond)); ev != nil {
+						pendingEv = ev
+					}
+				default:
+					time.Sleep(sleep)
+				}
 			}
 		}
 	}

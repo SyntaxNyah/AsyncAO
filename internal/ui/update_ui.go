@@ -78,6 +78,7 @@ func (a *App) maybeKickUpdateCheck() {
 			return
 		}
 		res <- rel
+		PushWake() // wake the loop so pollUpdate surfaces the update chip at idle=0
 	}()
 }
 
@@ -96,11 +97,13 @@ func (a *App) pollUpdate() {
 			a.updateChipLabel = "Test build " + rel.Version + " available" // experimental channel: say what it is
 		}
 		a.updateShow = true
+		a.uiDirty = true // the update chip/modal just appeared: force a redraw at idle=0
 	default:
 	}
 	select {
 	case err := <-a.updateApplyRes:
 		a.updateBusy = false
+		a.uiDirty = true // download/stage finished ("Restart to apply" or an error): force a redraw so the button updates at idle=0 instead of staying "Downloading…"
 		if err != nil {
 			a.updateErr = "Update failed: " + err.Error()
 		} else {
@@ -139,6 +142,7 @@ func (a *App) startSelfUpdate() {
 	url := a.updateRel.AssetURL
 	res := a.updateApplyRes
 	go func() {
+		defer PushWake() // wake the event-driven loop so pollUpdate surfaces the result (Restart-to-apply / error) at idle=0
 		staged := update.StagedPath(exe)
 		if _, err := update.Download(context.Background(), url, staged); err != nil {
 			res <- err

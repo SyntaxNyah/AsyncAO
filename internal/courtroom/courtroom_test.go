@@ -1222,6 +1222,158 @@ func TestMissingPreanimSkipsInsteadOfTimeout(t *testing.T) {
 	}
 }
 
+// preanimMsg builds a Pre-checked (EMOTE_MOD 1) IC message for the preanim
+// timing tests.
+func preanimMsg(t *testing.T, sess *Session, text string) *protocol.ChatMessage {
+	t.Helper()
+	fields := []string{
+		"1", "-80", "Erika", "80", text, "jud", "0",
+		"1", // EMOTE_MOD preanim
+		"0", "0", "0", "0", "0", "0", "0",
+		"", "-1", "", "", "0", "0", "0",
+		"0", // IMMEDIATE off
+	}
+	msg, err := protocol.ParseMS(fields, sess.Features, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return msg
+}
+
+// TestLongPreanimNotCutByTimeout pins the fix for "long preanims play a second
+// or two then skip to the end": once the render reports a decoded preanim's real
+// duration (NotifyPreanimStarted), the fallback PreanimTimeout is EXTENDED to
+// cover it, so a preanim longer than the 2.5 s default plays to its natural
+// NotifyPreanimDone instead of being cut at the timeout. A report outside
+// PhasePreanim (a stale callback from a shared viewport) is a safe no-op.
+func TestLongPreanimNotCutByTimeout(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	room.NotifyPreanimStarted(9 * time.Second) // no preanim on stage yet: phase-guarded no-op
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: preanimMsg(t, sess, "Long one")})
+	if room.Phase() != PhasePreanim {
+		t.Fatalf("phase = %v, want preanim", room.Phase())
+	}
+
+	room.NotifyPreanimStarted(5 * time.Second) // the render is playing a 5 s decoded preanim
+	room.Update(DefaultPreanimTimeout + 500*time.Millisecond)
+	if room.Phase() != PhasePreanim {
+		t.Fatalf("preanim cut at the %v default timeout despite a 5 s reported duration (phase = %v)", DefaultPreanimTimeout, room.Phase())
+	}
+
+	room.NotifyPreanimDone()
+	room.Update(time.Millisecond)
+	if room.Phase() != PhaseTalking {
+		t.Errorf("phase after the natural finish = %v, want talking", room.Phase())
+	}
+}
+
+// TestPreanimTimeoutFallback pins that WITHOUT a duration report (the asset is
+// still decoding, so the render can't say how long it is) the fallback timeout
+// still ends the wait — the extension is opt-in, it doesn't disable the guard.
+func TestPreanimTimeoutFallback(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: preanimMsg(t, sess, "Still decoding")})
+	if room.Phase() != PhasePreanim {
+		t.Fatalf("phase = %v, want preanim", room.Phase())
+	}
+
+	room.Update(DefaultPreanimTimeout + time.Millisecond) // no report, no done: the fallback fires
+	if room.Phase() != PhaseTalking {
+		t.Errorf("phase after the fallback timeout = %v, want talking", room.Phase())
+	}
+}
+
+// immediatePreanimMsg is an "immediate" IC message with a preanim: the preanim
+// plays OVER the text crawl instead of blocking before it.
+func immediatePreanimMsg(text string) *protocol.ChatMessage {
+	return &protocol.ChatMessage{
+		CharName: "Phoenix", Emote: "normal", PreEmote: "intro", Side: "wit",
+		Message: text, Immediate: true,
+	}
+}
+
+// TestImmediatePreanimTransitions pins immediate-mode preanim handling. The
+// preanim plays over the text crawl (Active parked on the preanim). When it
+// finishes WHILE text still crawls it must swap to the talk sprite (it used to
+// freeze on the last preanim frame); when the TEXT finishes first it must hold
+// the preanim to its end instead of snapping straight to idle.
+func TestImmediatePreanimTransitions(t *testing.T) {
+	// Preanim finishes mid-text → talk sprite.
+	room, _, _, _ := newCourtroomRig(t)
+	room.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg(strings.Repeat("long enough that the text keeps crawling ", 5))})
+	if room.Phase() != PhaseTalking {
+		t.Fatalf("immediate message phase = %v, want talking (preanim plays over the text)", room.Phase())
+	}
+	if room.Scene.Speaker.Active != room.Scene.Speaker.PreanimBase || !room.Scene.Speaker.PlayOnce {
+		t.Fatalf("immediate speaker not on the preanim: active=%q playOnce=%v", room.Scene.Speaker.Active, room.Scene.Speaker.PlayOnce)
+	}
+	room.Update(10 * time.Millisecond) // still crawling
+	room.NotifyPreanimDone()
+	room.Update(time.Millisecond)
+	if room.Scene.Speaker.PlayOnce || room.Scene.Speaker.Active != room.Scene.Speaker.TalkBase {
+		t.Errorf("preanim finishing mid-text must swap to the talk sprite: active=%q playOnce=%v", room.Scene.Speaker.Active, room.Scene.Speaker.PlayOnce)
+	}
+	if room.Phase() != PhaseTalking {
+		t.Errorf("text still crawling: phase = %v, want talking", room.Phase())
+	}
+
+	// Text finishes first → hold the preanim, don't snap to idle.
+	room2, _, _, _ := newCourtroomRig(t)
+	room2.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("hi")})
+	room2.Typewriter.SkipToEnd()
+	room2.Update(time.Millisecond)
+	if room2.Phase() != PhaseTalking || room2.Scene.Speaker.Active != room2.Scene.Speaker.PreanimBase {
+		t.Fatalf("text done but preanim playing must hold: phase=%v active=%q (want talking + preanim)", room2.Phase(), room2.Scene.Speaker.Active)
+	}
+	room2.NotifyPreanimDone()
+	room2.Update(time.Millisecond)
+	if room2.Phase() == PhaseTalking {
+		t.Error("preanim done + text done must leave PhaseTalking")
+	}
+	if room2.Scene.Speaker.Active != room2.Scene.Speaker.IdleBase {
+		t.Errorf("after both done, active=%q, want the idle sprite", room2.Scene.Speaker.Active)
+	}
+}
+
+// TestImmediatePreanimBounded pins the safety bound: an immediate preanim that
+// never reports done (still decoding / missing) must NOT freeze the message —
+// the post-text wait is bounded by PreanimTimeout — while a decoded long preanim
+// that DOES report its duration (NotifyPreanimStarted) still plays in full.
+func TestImmediatePreanimBounded(t *testing.T) {
+	// Never reports done: bounded, no hang.
+	room, _, _, _ := newCourtroomRig(t)
+	room.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("hi")})
+	room.Typewriter.SkipToEnd()
+	room.Update(time.Millisecond)
+	if room.Phase() != PhaseTalking {
+		t.Fatalf("precondition: waiting for the preanim, phase = %v", room.Phase())
+	}
+	room.Update(DefaultPreanimTimeout + 100*time.Millisecond) // no done report ever
+	if room.Phase() == PhaseTalking {
+		t.Error("an immediate preanim that never reports done must be bounded, not hang the message")
+	}
+
+	// A long DECODED preanim (reports its duration) plays past the plain timeout.
+	room2, _, _, _ := newCourtroomRig(t)
+	room2.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("hi")})
+	room2.NotifyPreanimStarted(5 * time.Second) // render reports a 5 s decoded preanim
+	room2.Typewriter.SkipToEnd()
+	room2.Update(DefaultPreanimTimeout + 500*time.Millisecond) // past the plain bound
+	if room2.Phase() != PhaseTalking {
+		t.Errorf("a 5 s decoded immediate preanim was cut at the plain timeout (phase = %v)", room2.Phase())
+	}
+	room2.NotifyPreanimDone()
+	room2.Update(time.Millisecond)
+	if room2.Phase() == PhaseTalking {
+		t.Error("the reported preanim finishing must leave PhaseTalking")
+	}
+}
+
 // TestMissingImmediatePreanimRestoresTalkLoop covers the non-blocking flavour:
 // IMMEDIATE plays the preanim ALONGSIDE the text by parking Active on the
 // preanim base with PlayOnce. A conclusively-missing preanim would leave the

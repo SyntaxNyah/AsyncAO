@@ -78,7 +78,16 @@ func (p *Pump) Frame() {
 			}
 		}
 		bytes := d.Asset.PixelBytes()
-		if err := p.store.Upload(d.Base, d.Asset); err != nil {
+		// Small-UI art (emote buttons, char icons) uploads into the shield
+		// tier so sprite streaming can never evict the visible grids (the
+		// "emote buttons visibly refresh" churn — textures.go).
+		var err error
+		if smallTexTier(d.Type) {
+			err = p.store.UploadSmall(d.Base, d.Asset)
+		} else {
+			err = p.store.Upload(d.Base, d.Asset)
+		}
+		if err != nil {
 			p.uploadErrs++
 			log.Printf("render: texture upload %s failed: %v", d.Base, err)
 			return

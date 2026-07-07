@@ -4,6 +4,309 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0 — 2026-07-07
+
+The headline this release is **a lot less GPU and power usage**, plus a batch of
+courtroom fixes. It's all on by default and adjustable under Settings → Power user.
+Big thanks to **Nightingale** for the extensive testing and debugging behind this
+release.
+
+- **Much lower GPU usage.** The client now has a real frame limiter instead of
+  leaning on vsync (which tied it to your monitor — a 165 Hz screen burned GPU even
+  when nothing on screen moved). New defaults: uncapped while you interact, a
+  **static screen renders nothing at all** (idle = off → near-zero GPU), and a
+  background / unfocused window trickles at 5 fps. On a quiet courtroom that's a big
+  drop in GPU load and fan noise. Every rate is a slider if you want it different.
+- **The renderer only redraws when something changes** — typing, switching screens,
+  a finished download, an animation each wake a single frame exactly when it's due,
+  then the client goes back to drawing nothing. (Experimental "event-driven
+  renderer," on by default; switch it off for the classic pacing loop.)
+- **Sound is now independent of the frame rate.** With the frame rate capped low, a
+  character's blips play at their natural cadence instead of bunching up once per
+  screen refresh, and incoming sound effects and pings play the instant they arrive.
+- **Talking characters don't flash** — the last sprite stays on screen while the
+  next one loads (webAO-style) instead of a brief empty flash when a character's
+  idle and talking art are the same picture.
+- **"Hold the message until it loads" no longer stalls** on characters whose emotes
+  list a pre-animation that has no file — the wait ends the instant it's confirmed
+  missing instead of running out the full timeout.
+- **New setting: "Redraw once per mouse-move event"** (off by default) — stops a
+  moving cursor from holding the full frame rate, for even less power on hover.
+- Smaller fixes: an input-responsiveness control (default 1 frame), strict frame
+  caps, and lots of "redraw the moment something changes" polish so a low or zero
+  idle rate feels right everywhere — screen switches, the emote list, the log
+  browser, and the self-update popup all appear immediately.
+
+## v1.55.0-test29 — 2026-07-07 (test build)
+
+- **Sound no longer bunches up at low frame rates.** When you cap the frame rate
+  low (say 1–2 fps), a character's blips used to come out only once per screen
+  refresh — a whole second of typing blips fired at the same instant. Audio now
+  runs independently of the frame limiter: while a message is typing, the client
+  keeps the blips playing at their natural cadence even though the screen only
+  redraws at your cap. Incoming sound effects and pings already play the moment
+  they arrive, even on a static screen. Nothing changes at normal frame rates, and
+  a truly idle screen still costs nothing.
+
+## v1.55.0-test28 — 2026-07-07 (test build)
+
+- **New setting: "Redraw once per mouse-move event."** (Settings → Power user →
+  the frame-limiter block, under the event-driven renderer.) Off by default, so
+  nothing changes unless you turn it on. Normally, moving the mouse briefly holds
+  the full frame rate, so sweeping the cursor renders at your active cap. With
+  this on, each mouse-move event draws a single frame and the renderer parks again
+  — the cursor still tracks, but waving it over a static screen stops burning
+  frames and power. Clicks, keys and the scroll wheel keep their normal full-rate
+  response.
+
+## v1.55.0-test27 — 2026-07-07 (test build)
+
+- **"Hold the message until it loads" no longer stalls on characters with a dummy
+  pre-animation.** Some packs fill every emote's pre-animation slot with a
+  placeholder name that has no matching file. With the "hold the message until it
+  loads" sprite mode and "also wait for the pre-animation" both turned on, those
+  characters made *every* message sit for the full "Max hold per message" duration,
+  waiting on a pre-animation that can never arrive. The wait now ends the instant
+  the client confirms the pre-animation is missing — the same way normal playback
+  already skips a missing pre-animation — so only real, still-loading sprites ever
+  hold a message.
+
+## v1.55.0-test26 — 2026-07-07 (test build)
+
+- **Talking characters don't flash any more.** By default the client now keeps
+  the last sprite on screen while the next one is still loading (webAO-style),
+  instead of drawing nothing for a fraction of a second. That empty gap was most
+  obvious on characters whose idle and talking art is the *same* single image:
+  every time you spoke, the sprite would blink even though the picture wasn't
+  changing, because the idle and talking versions load separately. The control is
+  Settings → Power user → Renderer → "Uncached sprite loading" — it now defaults
+  to **keep the previous one**. Set it back to "show nothing until it loads" for
+  the old behaviour; if you'd already picked a mode yourself, your choice is kept.
+
+## v1.55.0-test25 — 2026-07-07 (test build)
+
+- **The in-client update popup finishes on its own.** When you install an update
+  from inside the client, the progress dialog now flips to "Restart to apply" (or
+  shows the error) the moment the download completes, instead of sitting on
+  "Downloading…" until you move the mouse. The "update available" chip likewise
+  appears on its own at a 0 idle rate.
+
+## v1.55.0-test24 — 2026-07-06 (test build)
+
+- **The Logs browser fills in as soon as it loads.** Opening Logs no longer
+  leaves the session list and the log area blank until you move the mouse — they
+  now redraw themselves the moment the data lands, like the rest of the UI.
+- **The roaming Mayos fly properly at a 0 idle rate.** The little Mayos you fling
+  by clicking the mascot now bounce all the way around instead of freezing after
+  the first frame.
+- **Coming back to a minimized window is instant.** Restoring / alt-tabbing into
+  a minimized window redraws immediately instead of after a short nap.
+
+## v1.55.0-test23 — 2026-07-06 (test build)
+
+More "force a redraw when something changes" coverage, so a low/0 idle rate feels
+right everywhere:
+
+- **Clicking a screen button always switches instantly.** Settings, Logs, About,
+  Help, char select — and any button that changes what's on screen — now force
+  the follow-up frame themselves, so the new screen appears immediately instead
+  of sometimes waiting for you to move the mouse.
+- **The emote list shows up the moment it loads.** Switching tabs no longer
+  leaves "Loading emotes…" on screen until something else redraws — the list now
+  forces its own redraw when the character's data arrives, the same way the
+  character list does.
+
+## v1.55.0-test22 — 2026-07-06 (test build)
+
+- **New default frame-limiter settings.** Fresh installs (and anyone who hasn't
+  changed these) now start with: **Active = ∞ (vsync)** instead of 60, **Idle =
+  off** (a static screen renders nothing — 0 GPU), and **Background = 5 fps**.
+  The frame limiter stays on by default with its disable toggle. If you've
+  already set your own Active/Idle/Background rates, those are kept as-is. Turning
+  the Active "∞" off now drops to 60.
+
+## v1.55.0-test21 — 2026-07-06 (test build)
+
+- **The Input responsiveness slider can now be set to 0 (off).** 0 means no
+  post-input hold at all — after a click or keypress the input shows on its own
+  frame and the rate returns to idle immediately, with nothing extra. (Leaving it
+  unset still defaults to 1 frame.)
+
+## v1.55.0-test20 — 2026-07-06 (test build)
+
+- **New setting: Input responsiveness (Settings → Power user → frame limiter).**
+  A slider, in frames, for how long the frame rate stays at the Active cap after
+  a click or keypress. It used to be a fixed 1 second, which felt like the rate
+  "stuck" at full after you'd finished; the default is now 1 frame — the input
+  still shows instantly, the rate just drops back to the idle rate right after.
+  Raise it if you want a smoother tail. Mouse movement has its own brief hold and
+  isn't affected by this.
+
+## v1.55.0-test19 — 2026-07-06 (test build)
+
+- **The Background (unfocused) frame limiter is a true cap now.** Setting it to
+  0 / off makes the client render nothing while the window is in the background —
+  a looping character animation used to keep it running at full speed even when
+  you'd tabbed away. A numeric background cap (say 5 fps) is likewise a hard
+  ceiling: while unfocused the client never goes above it, matching how the
+  Active cap works when the window is focused. (Voice calls keep rendering so
+  their audio doesn't drop, and clicking back into the window resumes instantly.)
+
+## v1.55.0-test18 — 2026-07-06 (test build)
+
+More frame-limiter work: the caps are strict now, and more of the client
+redraws only when it actually needs to.
+
+- **Your FPS caps are always obeyed now.** Moving the mouse (or any burst of
+  input) could previously push the frame rate past the Active cap — it can't any
+  more; the cap is a hard ceiling. The Background (unfocused) cap behaves the
+  same way: while the window isn't focused, the rate holds at your Background cap
+  even when the stage is animating. Trade-off: unfocused animations now run at
+  your Background cap rather than their own faster rate — raise the Background
+  cap if you want them smoother while tabbed out. Typing and input still stay
+  responsive at low idle rates.
+
+- **The Settings screen now uses the idle frame limit.** Nothing really moves
+  there, so it stops rendering at full speed while you sit in it and redraws when
+  you interact instead. (The mic test, sprite previews and streaming art still
+  update while they're doing something; F8 is still the place to watch live
+  performance numbers.)
+
+- **More things redraw on their own at idle rate 0.** With the idle rate at 0, a
+  few spots used to freeze until you moved the mouse. Now the chat log glides to
+  a new message, the player list's "just joined" highlight fades out, the emote
+  grid fills its buttons in, and a couple of small touches (the About mascot
+  wiggle, the friend-glow pulse) play out on their own.
+
+## v1.55.0-test17 — 2026-07-06 (test build)
+
+- **Long character animations play all the way through again.** Preanimations
+  with lots of frames (some sprite packs ship 100+ frames per emote) were cut
+  off about a quarter of the way in and snapped straight to the talking pose —
+  looking like the animation broke. The memory cap now keeps frames spread
+  evenly across the WHOLE clip instead of just the start, so it plays from first
+  frame to final pose (a touch lower frame rate on the very longest ones) within
+  the same memory budget, with the correct timing. Because the animation now
+  runs for its real length, the next sprite has more time to load, which should
+  also reduce the brief blank at the hand-off from the preanimation to talking.
+  This is the "real fix" the test16 note promised — you no longer need to raise
+  the texture budget just to see long animations through. (If you still see a
+  black flash on very heavy characters, that's a separate cache issue being
+  looked at next.)
+
+## v1.55.0-test16 — 2026-07-06 (test build)
+
+- **The texture memory budget can go higher — as an experimental opt-in.** For
+  very long animations that the memory cap still truncates: the Texture memory
+  budget (Settings → power user) now reaches 256 MiB. It stays OFF by default
+  (64), and anything up to 128 fits the memory budget; above 128 is flagged
+  experimental and deliberately exceeds it — more RAM / GPU memory, and it may
+  stutter or crash on low-spec machines. Raise it, restart, and longer
+  animations decode in full. (The real fix, a smaller texture footprint, is
+  still to come.)
+
+## v1.55.0-test15 — 2026-07-05 (test build)
+
+Follow-ups to the frame-limiter round, plus preanimation fixes (which are
+separate from the frame limiter).
+
+- **Input stays instant at a low idle rate.** With the idle rate low — 0
+  especially — another player's on-screen animation could make your input box
+  feel sluggish: the loop paced each frame with a plain sleep, so a click or
+  keystroke landing mid-frame waited it out. It now paces with an interruptible
+  wait, so input redraws immediately at any idle rate.
+- **Immediate-mode preanimations finish correctly.** With "immediate" checked
+  (the preanim plays while the text types): if the preanim finished before the
+  text it used to freeze on its last frame — it now switches to the talking
+  sprite; if the text finished first it used to snap straight to idle
+  mid-preanim — it now holds until the preanim ends. The wait is bounded, so a
+  missing or slow-loading preanim can't stall the message.
+- **Longer character animations can play in full.** Animations were truncated
+  past a per-asset memory cap (they "skipped to the end" around ~5 s, depending
+  on size). That cap now scales with the Texture cache budget (Settings →
+  power user): raise it and restart to let longer animations decode fully.
+
+## v1.55.0-test14 — 2026-07-05 (test build)
+
+The frame limiter, rebuilt on the test2 base. The selective-rendering
+experiments (test3–test13) are gone; this round makes the Idle rate do exactly
+what it says and cuts idle GPU to near nothing.
+
+- **The Idle frame rate is now the ONLY thing that runs when nothing's
+  happening.** There was a hidden 2 fps "heartbeat" redrawing the screen
+  underneath your Idle setting, so a static courtroom burned frames no matter
+  what you picked. It's gone: when there's nothing to redraw, the client
+  redraws at your Idle rate and nothing else. Set Idle to 0 and a truly static
+  screen redraws ZERO times (0% GPU) until something actually changes — a
+  message, an animation, your mouse. Input still wakes it instantly.
+- **The frame-rate sliders go all the way down now.** Active / Idle /
+  Background used to floor at 30 / 10 / 5 fps; they reach 1 fps now (drag or
+  type an exact number), and Idle / Background reach 0 = "never redraw in that
+  state". The Idle default is a gentle 2 fps — a safety net for anything that
+  changes without telling the renderer; drop it to 0 for the absolute minimum.
+- **Anything that animates on its own stays smooth.** Whenever the client
+  redraws for its OWN reasons — an animated sprite, a message playing, the
+  player list updating, a screen switching, animated theme art — it paces at
+  your Active rate for the duration, then falls back to Idle. Built to cover
+  every redraw, including parts of the UI added later.
+- **New: "Disable the frame limiter entirely" (Settings → Frame rate & GPU,
+  OFF by default).** Renders every frame with no pacing at all (vsync only) —
+  maximum responsiveness, high GPU. There if you ever want it.
+- **Long character animations no longer cut off early.** A preanimation (or a
+  long one-shot animation) longer than ~2.5 seconds used to play for a moment
+  and then snap to its end. It plays in full now.
+
+## v1.55.0-test2 — 2026-07-04 (test build)
+
+Fast follow-ups from the first test round — thanks to Nightingale for
+the frame-pacing reports.
+
+- **Text no longer crawls at the idle rate over animated characters.**
+  With a character whose sprite animates (lip flaps and the like), the
+  whole message — the typewriter text AND its blips — ran at the idle
+  frame rate; static characters were fine. The scheduler was letting the
+  sprite's animation clock own the frame budget. Every moving part now
+  schedules independently and the earliest deadline wins: the text crawl
+  keeps its own pace, a slow sprite loop just flips whenever its time
+  comes, and a fast lip flap can still pull extra frames when IT needs
+  them. This also un-chunks the blips, which fire on the same clock.
+- **The frame-rate sliders take exact numbers and "unlimited".** Each of
+  the three rates (Active / Idle / Background) now has a type-a-number
+  box next to the slider and an ∞ toggle: ∞ on Active removes the cap
+  entirely (vsync paces the frames), ∞ on Idle or Background means
+  "never slow down in that state".
+- **Waving the mouse no longer holds a full second of max fps.** Bare
+  pointer motion now renders live only while the pointer actually moves
+  (a fifth of a second of grace); clicks, keys and scrolling keep the
+  full one-second burst. Only with the event-driven renderer on.
+
+## v1.55.0-test1 — 2026-07-04 (test build)
+
+A renderer round, on the experimental channel first because it reaches deep
+into how every frame is produced. Thanks to Nightingale for the redraw
+reports.
+
+- **The emote grid stops flickering.** Every so often the whole button row
+  blanked and streamed back in cell by cell — same for player-list and
+  char-select icons. Cause: buttons and icons shared one texture budget with
+  the big sprites, and any heavy sprite burst swept them all out at once.
+  They now live in their own protected slice of the same budget; sprite
+  streaming can't touch them anymore (and a 4000-icon character scroll can
+  no longer wipe the sprites on stage, either).
+- **Event-driven renderer (EXPERIMENTAL, on by default in this build).**
+  Like a proper desktop app, AsyncAO now stops redrawing entirely when
+  nothing changes: a static screen renders zero frames between real
+  signals. Moving the mouse or typing wakes the renderer instantly (a
+  real OS event wait, not a timed nap), an incoming message or finished
+  download rings its own doorbell, and a blinking caret or ticking clock
+  redraws exactly one frame right when it's due — instead of the old
+  30 fps idle loop doing all of that by brute force. Sounds, the
+  connection and message pacing are fully decoupled: they never wait for
+  the renderer, so a message that arrives mid-idle starts playing
+  immediately. Settings → Power user → "Event-driven renderer" is the
+  kill switch back to the classic pacing loop — if anything looks frozen
+  or choppy, flip it off and report what it was.
+
 ## v1.54.6 — 2026-07-06
 
 - **Long character animations play all the way through again.** Preanimations

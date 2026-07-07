@@ -2338,6 +2338,7 @@ func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
 			dt = 16
 		}
 		a.icScrollVis += (target - a.icScrollVis) * (1 - math.Exp(-dt/logScrollEaseTauMs))
+		a.NoteAnimating() // still gliding toward the target: keep frames coming so the ease doesn't freeze mid-scroll at idle=0
 	}
 	if a.icScrollVis < 0 {
 		a.icScrollVis = 0
@@ -2414,7 +2415,8 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	// keeps the no-friend default path to a single pref read — no trig, no extra
 	// locks. Modulo-into-period keeps the sine argument small for precision.
 	friendAlpha := friendTintColor.A
-	if friendsOn && a.d.Prefs.FriendGlowPulseOn() && !a.d.Prefs.ReduceMotion() {
+	pulseOn := friendsOn && a.d.Prefs.FriendGlowPulseOn() && !a.d.Prefs.ReduceMotion()
+	if pulseOn {
 		period := int64(friendGlowPulsePeriod)
 		phase := math.Sin(float64(a.now().UnixNano()%period) / float64(period) * 2 * math.Pi)
 		lo, hi := float64(friendGlowMinAlpha), float64(friendTintColor.A)
@@ -2472,6 +2474,9 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				}
 				tint.A = friendAlpha
 				c.Fill(rowRect, tint)
+				if pulseOn {
+					a.NoteAnimating() // a visible friend glow is breathing: keep frames coming so the pulse animates at idle=0
+				}
 			}
 			// Selection highlight sits under the text (and the divider).
 			a.drawLogSelHighlight(logSelIC, ri, list.X, y, wrapW, lineH, row.text, font)
@@ -5029,6 +5034,7 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 			a.demandAsset(&a.emoteIconAsk, 1, 0, iconBase, assets.AssetTypeCharIcon) // AssetType: CharIcon
 			c.Fill(btn, ColPanel)
 			c.Border(btn, ColPanelHi)
+			a.frameDemandPending = true // blank cell (no art, no icon yet): keep the demand pump alive at idle
 		}
 		// Emote-name caption: opt-in (default OFF). Off ⇒ the fallback shows a clean
 		// icon with no text overlay, which is what most players want; on ⇒ the name
@@ -5299,6 +5305,9 @@ func (a *App) drawGhostSprite(pv sdl.Rect, name, base string, alts []string, off
 	dst := sdl.Rect{H: pv.H, W: pv.H * page.W / page.H}
 	dst.X = pv.X + (pv.W-dst.W)/2 + int32(offX)*pv.W/100
 	dst.Y = pv.Y + int32(offY)*pv.H/100
+	if len(page.Frames) > 1 {
+		a.NoteAnimating() // the editor ghost loops: keep frames coming through the static skip
+	}
 	tex := page.Frames[pageFrameLoop(page, a.themeElapsed())]
 	_ = tex.SetAlphaMod(alpha)
 	if flip {

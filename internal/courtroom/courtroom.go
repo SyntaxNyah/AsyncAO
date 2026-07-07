@@ -17,9 +17,15 @@ const (
 	// DefaultPreanimTimeout bounds a preanim wait when its real duration is
 	// not yet known (asset still decoding); NotifyPreanimDone (the one-shot
 	// finished) or NotifyAssetMissing (it can never start — conclusive 404)
-	// cuts it short, so a live wait only ever runs this long when the asset
-	// is genuinely still downloading.
+	// cuts it short, and once the decoded preanim plays NotifyPreanimStarted
+	// EXTENDS it to the real duration — so a live wait only ever runs this long
+	// while the asset is genuinely still downloading, never as a cap on a long
+	// but decoded preanimation (the "long preanims skip to the end" report).
 	DefaultPreanimTimeout = 2500 * time.Millisecond
+	// preanimPlaybackSlack pads the extended timeout past a decoded preanim's
+	// real duration (last-frame delay + the one-shot done report's latency), so
+	// the natural NotifyPreanimDone always wins the race, not the fallback.
+	preanimPlaybackSlack = 250 * time.Millisecond
 	// DefaultTextStayTime holds a finished message on screen before the
 	// queue advances (AO2-Client text_stay_time flavor).
 	DefaultTextStayTime = 200 * time.Millisecond
@@ -29,6 +35,11 @@ const (
 	// what QueueCap seeds to, and what the App restores when the power-user pref
 	// is back at its 0 = default sentinel.
 	DefaultQueueCap = messageQueueCap
+	// missingSpritesCap bounds the conclusively-404'd base set the wait gate
+	// consults (spec §17.4 — no unbounded caches). A session sees only a handful
+	// of genuinely-missing sprites; past the cap we stop recording and the
+	// SpriteWaitTimeout still bounds any un-recorded miss.
+	missingSpritesCap = 512
 	// blipVolumeFull is the unattenuated per-character blip scale (M11): 100%,
 	// used when no BlipVolumeFor callback is wired (tests/embedders).
 	blipVolumeFull = 100
@@ -292,6 +303,14 @@ type Courtroom struct {
 	// re-arms fresh and begin() clears it.
 	waitLeft time.Duration
 	waitFor  *protocol.ChatMessage
+	// missingSprites remembers bases the asset manager conclusively 404'd,
+	// recorded from the SAME NotifyAssetMissing warning relay the play path uses.
+	// The wait gate consults it so a declared-but-absent preanim — live packs
+	// fill the char.ini preanim field with a dummy "-<n>" on every emote — releases
+	// the hold on the miss signal instead of burning the full SpriteWaitTimeout
+	// (the play path already skips such a preanim via NotifyAssetMissing; the gate
+	// now matches it). Bounded (missingSpritesCap); lazily allocated; game-thread only.
+	missingSprites map[string]struct{}
 
 	queue []*protocol.ChatMessage
 	phase MessagePhase
@@ -381,6 +400,17 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 
 // Phase exposes the current message phase.
 func (c *Courtroom) Phase() MessagePhase { return c.phase }
+
+// AudioActive reports whether the live message is actively streaming audio-timed
+// events — the typewriter is still revealing text, so blips fire as it advances.
+// The main loop reads it to advance the courtroom (and play its blips) at a fine
+// cadence even while the PRESENT rate is capped low, so audio never batches to the
+// frame rate ("blips only every screen refresh at a 1 fps cap"). One-shot sounds
+// (shout cries, emote SFX) fire on their own arrival and don't need this; only the
+// continuous blip stream does. False the instant the text finishes (PhaseLinger).
+func (c *Courtroom) AudioActive() bool {
+	return c.phase == PhaseTalking && !c.Typewriter.Done()
+}
 
 // QueueLen exposes the pending message count.
 func (c *Courtroom) QueueLen() int { return len(c.queue) }
@@ -485,7 +515,15 @@ func (c *Courtroom) waitHolds(msg *protocol.ChatMessage, behind int, dt time.Dur
 		ready = c.SpriteReady(c.urls.Emote(msg.Pair.Name, msg.Pair.Emote, EmoteIdle))
 	}
 	if ready && c.SpriteWaitPreanim && hasPreanim(msg) { // strictness knob: the preanimation too
-		ready = c.SpriteReady(c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim))
+		pre := c.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim)
+		// A preanim that has CONCLUSIVELY 404'd is nothing to wait for — release on
+		// the miss signal instead of burning the full timeout. Live packs fill the
+		// char.ini preanim field with a dummy "-<n>" on every emote (and idle
+		// emote-mod upgrades to preanim on the wire when a preanim name is present,
+		// so the gate would otherwise wait for a sprite that never exists — the
+		// "flower sprites always wait the whole delay" report). Mirrors the play
+		// path's NotifyAssetMissing skip.
+		ready = c.SpriteReady(pre) || c.spriteConfirmedMissing(pre)
 	}
 	if ready {
 		c.waitFor = nil
@@ -964,8 +1002,15 @@ func (c *Courtroom) startTalking() {
 	c.Scene.VisibleRunes = 0
 	if !c.Scene.Speaker.PlayOnce {
 		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
+	} else {
+		// Immediate mode: the preanim keeps playing over the text (Active stays on
+		// PreanimBase). Bound how long PhaseTalking waits for it after the text is
+		// done so a slow-decoding / missing preanim can't freeze the message —
+		// NotifyPreanimStarted extends this to the real duration once the decoded
+		// preanim plays, exactly like the blocking PhasePreanim path.
+		c.timer = c.PreanimTimeout
 	}
-	if c.Typewriter.Done() { // blank post
+	if c.Typewriter.Done() && !c.Scene.Speaker.PlayOnce { // blank post, no pending preanim
 		c.enterLinger()
 		return
 	}
@@ -985,6 +1030,28 @@ func (c *Courtroom) NotifyPreanimDone() {
 	c.preanimDone = true
 }
 
+// NotifyPreanimStarted is called by the render side the first frame a decoded,
+// multi-frame preanimation actually plays, reporting its real total duration.
+// PreanimTimeout is only a fallback for a preanim whose length isn't known yet
+// (still decoding); once we're playing it we know the truth, so extend the
+// phase timer to cover the full playback. Without this a preanim longer than
+// PreanimTimeout was cut short AT the timeout ("plays a second or two, then
+// skips to the end"). NotifyPreanimDone still ends the phase exactly at the
+// natural finish — this only stops the fallback pre-empting it. Extend-only and
+// phase-guarded, so a stale callback from another room while a replay/maker
+// preview drives the same shared viewport is a safe no-op.
+func (c *Courtroom) NotifyPreanimStarted(total time.Duration) {
+	// PhasePreanim = a blocking preanim wait; PhaseTalking + PlayOnce = an
+	// IMMEDIATE-mode preanim playing over the text. Both bound the wait on
+	// c.timer, and both must let a long DECODED preanim play in full.
+	if c.phase != PhasePreanim && !(c.phase == PhaseTalking && c.Scene.Speaker.PlayOnce) {
+		return
+	}
+	if want := total + preanimPlaybackSlack; want > c.timer {
+		c.timer = want
+	}
+}
+
 // NotifyAssetMissing reports that the asset manager conclusively failed to
 // resolve base: every spelling and format 404'd (the §4 warning lane — the
 // App relays char-sprite warnings here; wrong-room and wrong-message bases
@@ -999,7 +1066,15 @@ func (c *Courtroom) NotifyPreanimDone() {
 // cache made the re-probes free, but nothing told the phase machine, so the
 // stall survived caching entirely.
 func (c *Courtroom) NotifyAssetMissing(base string) {
-	if base == "" || c.current == nil || base != c.Scene.Speaker.PreanimBase {
+	if base == "" {
+		return
+	}
+	// Remember every conclusively-missing base FIRST: the wait gate (waitHolds)
+	// holds a message BEFORE it is current, so a dummy preanim's 404 lands here
+	// while c.current is still the previous message and would be dropped by the
+	// guard below. Recording it lets the gate release on the miss signal.
+	c.recordMissing(base)
+	if c.current == nil || base != c.Scene.Speaker.PreanimBase {
 		return
 	}
 	// Exactly NotifyPreanimDone: the preanim "finished" (it can never start).
@@ -1017,6 +1092,31 @@ func (c *Courtroom) NotifyAssetMissing(base string) {
 			c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
 		}
 	}
+}
+
+// recordMissing remembers a conclusively-404'd base so the wait gate can treat a
+// declared-but-absent sprite as "nothing to wait for". Bounded (missingSpritesCap)
+// and game-thread only (called from the App's warning drain, like the rest of
+// NotifyAssetMissing).
+func (c *Courtroom) recordMissing(base string) {
+	if c.missingSprites == nil {
+		c.missingSprites = make(map[string]struct{})
+	}
+	if _, ok := c.missingSprites[base]; ok {
+		return
+	}
+	if len(c.missingSprites) >= missingSpritesCap {
+		return // full: the SpriteWaitTimeout still bounds any un-recorded miss
+	}
+	c.missingSprites[base] = struct{}{}
+}
+
+// spriteConfirmedMissing reports whether base has been conclusively 404'd this
+// session. The wait gate reads it so a never-arriving preanim releases the hold
+// on the miss signal instead of the full timeout.
+func (c *Courtroom) spriteConfirmedMissing(base string) bool {
+	_, ok := c.missingSprites[base]
+	return ok
 }
 
 // SkipToIdle fast-forwards the CURRENT message straight to idle: reveal the rest
@@ -1070,7 +1170,25 @@ func (c *Courtroom) Update(dt time.Duration) {
 		for i := 0; i < blips; i++ {
 			c.audio.PlayBlip(c.blipBase) // AssetType: Blip
 		}
-		if c.Typewriter.Done() {
+		textDone := c.Typewriter.Done()
+		// Immediate mode: a preanim (PlayOnce) is playing over the text crawl.
+		if c.Scene.Speaker.PlayOnce {
+			if textDone {
+				c.timer -= dt // bound the post-text wait (armed in startTalking, extended by NotifyPreanimStarted)
+			}
+			if c.preanimDone || (textDone && c.timer <= 0) {
+				c.Scene.Speaker.PlayOnce = false
+				if !textDone {
+					// Preanim finished while the text is still crawling: flap the
+					// talk sprite for the rest (it used to freeze on the last
+					// preanim frame).
+					c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
+				}
+			}
+		}
+		// Linger only once the text AND any immediate preanim are done — finishing
+		// the text alone used to snap straight to idle mid-preanim.
+		if textDone && !c.Scene.Speaker.PlayOnce {
 			c.enterLinger()
 		}
 

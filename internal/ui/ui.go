@@ -1023,7 +1023,12 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 		c.caretOn = true // land visible: the caret shows where focus went
 		c.caretAcc = 0
 	}
-	c.fieldSeq = c.fieldSeq[:0]
+	// fieldSeq deliberately does NOT clear here: it clears in BeginDraw, at
+	// the top of a real draw pass. BeginFrame also runs on frames the loop
+	// SKIPS (static-screen passes draw nothing), and clearing it there left
+	// the tab-cycle above reading an empty list — a Tab pressed after a
+	// skipped stretch cycled nowhere. Keeping the last DRAWN frame's field
+	// order across skips is exactly right: it's what's on screen.
 	if c.focusNext != "" {
 		c.focusID = c.focusNext
 		c.focusNext = ""
@@ -1087,6 +1092,58 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 		c.holdAcc = 0
 		c.holdFired = false
 	}
+}
+
+// BeginDraw opens a real draw pass (App.Frame calls it before any screen
+// draws): the visible-field order rebuilds from scratch as this frame's
+// TextFields register. Split from BeginFrame so input-only skipped passes
+// keep the last drawn frame's field order for Tab cycling (see BeginFrame).
+func (c *Ctx) BeginDraw() {
+	c.fieldSeq = c.fieldSeq[:0]
+}
+
+// NextCaretFlip reports the time until the focused caret next toggles
+// visibility (ok=false when no field is focused). The experimental loop
+// schedules a wake exactly at the flip instead of idle-rendering a static
+// screen just to blink a cursor.
+func (c *Ctx) NextCaretFlip() (time.Duration, bool) {
+	if c.focusID == "" {
+		return 0, false
+	}
+	d := caretBlink - c.caretAcc
+	if d < 0 {
+		d = 0
+	}
+	return d, true
+}
+
+// CaretVisible reports the current caret blink state (with whether any field
+// is focused) — the experimental loop's skip check compares it against the
+// state last drawn, so a flip that already happened forces the redraw that
+// shows it.
+func (c *Ctx) CaretVisible() (on, focused bool) {
+	return c.caretOn, c.focusID != ""
+}
+
+// NextHoverDue reports the nearest PENDING hover deadline — a tooltip dwell
+// (TooltipAfter) or a sprite hover-preview — so the experimental loop can wake
+// and render the reveal even though a resting pointer generates no events.
+// Deadlines already reached report ok=false: the reveal drew on the frame the
+// dwell crossed, and a shown tooltip/preview needs no further wakes from here.
+func (c *Ctx) NextHoverDue() (time.Duration, bool) {
+	due, ok := time.Duration(0), false
+	consider := func(d time.Duration) {
+		if d > 0 && (!ok || d < due) {
+			due, ok = d, true
+		}
+	}
+	if c.tipHoverID != "" {
+		consider(tooltipDwell - time.Since(c.tipHoverSince))
+	}
+	if c.hoverPreviewOn && c.hoverID != "" {
+		consider(c.hoverPreviewDelay - time.Since(c.hoverSince))
+	}
+	return due, ok
 }
 
 // HandleEvent feeds one SDL event into the frame's input snapshot.

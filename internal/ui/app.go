@@ -1008,12 +1008,60 @@ type sessionState struct {
 	// from cmd/asyncao); the downscale knobs scale it (config.EffectiveSpriteCap).
 	spriteCapBase int
 	// lastInputAt is the most recent SDL input event (frame pacing: full rate
-	// through fullRateInputGrace after any interaction).
+	// through the InputGraceFrames hold after any interaction).
 	lastInputAt time.Time
-	// lastFrameDrawn is when Frame last actually rendered — SkipFrame's
-	// heartbeat: a statically-skipped screen still gets one real frame per
-	// paceHeartbeat, bounding how stale any missed signal can leave it.
+	// lastMotionAt is the most recent BARE pointer motion (experimental loop):
+	// it holds full rate only through motionInputGrace, so circling the mouse
+	// over dead space stops costing frames the moment it stops — clicks, keys
+	// and the wheel still get the full input grace via lastInputAt.
+	lastMotionAt time.Time
+	// lastFrameDrawn is when Frame last actually rendered — the idle-cadence
+	// anchor both loops measure from: the classic loop re-renders a static
+	// courtroom once per idle-budget, and the event-driven loop schedules its
+	// idle-rate wake from it (NextWakeDelay). idle=off → neither fires.
 	lastFrameDrawn time.Time
+	// uiDirty marks work that changed UI-visible state since the last drawn
+	// frame — the connection pumps set it per drained packet — so the
+	// experimental event-driven loop renders exactly one frame in response
+	// instead of waiting out its idle tick. Render thread only; Frame clears it.
+	uiDirty bool
+	// drawnGen is the texture-store generation as of the last drawn frame: a
+	// mismatch means textures uploaded/evicted since the screen was painted
+	// (streamed-in icons, healed pages), which is redraw-worthy damage under
+	// the experimental loop.
+	drawnGen uint64
+	// drawnCaretOn is the caret blink state as of the last drawn frame; a flip
+	// since then is the scheduled damage that redraws a focused text field at
+	// 2 Hz instead of holding the whole idle frame rate (experimental loop).
+	drawnCaretOn bool
+	// frameAnimChrome is set (via NoteAnimating) during a draw pass whenever it
+	// renders a self-driven, TIME-STEPPED UI animation outside the viewport's
+	// anim scheduler — an animated theme page (themeFrame), the looping testimony
+	// badge, a WT/CE splash, the layout editor's ghost, or any future widget that
+	// tweens on its own clock. drawnAnimChrome is the last completed frame's
+	// value: while true, SkipFrame keeps frames coming AND FramePace paces at the
+	// active cap, so the motion stays smooth (the general "self-driven animation →
+	// uncap" mechanism); it falls back to idle the frame the draw stops marking it.
+	frameAnimChrome bool
+	drawnAnimChrome bool
+	// roomPreAdvanced is set by the main loop's audio-paced sub-stepping: while a
+	// message types at a low PRESENT rate, the loop advances the courtroom (and
+	// plays its blips) at the fine audio cadence via Background between presents, so
+	// audio never batches to the frame rate. When set, the next Frame skips its own
+	// room.Update (the room is already current) but still advances the UI + draws.
+	// Consumed (cleared) by that Frame. See AudioPaceActive / MarkRoomPreAdvanced.
+	roomPreAdvanced bool
+	// frameDemandPending is set during a draw pass whenever it leaves a
+	// DEMAND-STREAMED cell (an emote-grid button with neither its art nor its
+	// fallback icon resident yet) truly blank. drawnDemandPending is the last
+	// completed frame's value: while true, NextWakeDelay schedules a re-render at
+	// the demand cadence so demandAsset keeps issuing asks. Without it the pump
+	// stalls at idle=0 — a batch of asks that all 404 uploads nothing, so nothing
+	// bumps the store generation and no self-wake fires, and the grid can sit
+	// half-filled until unrelated damage or input. Clears the moment every cell
+	// shows something (art or the shared icon), so it costs nothing at rest.
+	frameDemandPending bool
+	drawnDemandPending bool
 	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
 	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
 	sceneWarmLastDemand time.Time
@@ -1988,6 +2036,12 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		hidden:          map[string]bool{},
 	}
 	a.resetSessionState()
+	// Wake the render loop when a decode/audio payload delivers (experimental
+	// event-driven loop): the pump uploads it on the very next pass instead of
+	// waiting out an idle tick. A queued no-op event when the loop pref is off.
+	if d.Manager != nil {
+		d.Manager.SetDeliveryNotify(PushWake)
+	}
 	for _, id := range d.Prefs.HiddenPanels() {
 		a.hidden[id] = true
 	}
@@ -2142,6 +2196,9 @@ func (a *App) Background(dt time.Duration) {
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.drainWarnings()
+	a.pollCharINI()    // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
+	a.pollLogBrowser() // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
+	a.pollUpdate()     // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
 	if a.room != nil {
 		a.room.Update(dt)
 	}
@@ -2379,6 +2436,10 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		return
 	}
 	a.conn = conn
+	// Wake the render loop the instant a packet lands (experimental
+	// event-driven loop; a queued no-op event otherwise — the wake is never
+	// treated as user input in either mode).
+	conn.SetNotify(PushWake)
 	a.lastPing = time.Now()
 	a.pkts.reset() // a fresh connection starts a clean packet history
 	a.pktConn = conn
@@ -2661,6 +2722,7 @@ func (a *App) pumpConnection() {
 		}
 		select {
 		case p, ok := <-a.conn.Incoming():
+			a.uiDirty = true // packets (or the drop below) change UI-visible state — redraw-worthy damage
 			if !ok {
 				reason := "connection closed"
 				if err := a.conn.Err(); err != nil {
@@ -3445,6 +3507,7 @@ func (a *App) buildRoom() {
 	})
 	a.room.Predictor.SetAggressiveness(a.d.Prefs.PrefetchAggressiveness()) // #100 predictive-prefetch level
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+	a.d.Viewport.OnPreanimStart = a.room.NotifyPreanimStarted // extend the fallback for long decoded preanims (phase-guarded — safe if a preview later shares this viewport)
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
 	}
@@ -3583,6 +3646,7 @@ func (a *App) pinToSplit(t *courtTab) {
 	a.splitTab = t
 	a.splitRoom = courtroom.NewCourtroom(t.state.urls, a.d.Manager, t.state.sess, courtroom.NopAudio{})
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
+	a.splitVP.OnPreanimStart = a.splitRoom.NotifyPreanimStarted
 	a.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5 // fresh pin starts at fit
 	if t.state.sess.Background != "" {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})
@@ -4056,13 +4120,93 @@ func (a *App) crossfadeDur() time.Duration {
 // back to full instantly (NoteInput + a grace window), so responsiveness is
 // untouched — a flat low cap would be a band-aid; only wasted redraws go.
 
-// fullRateInputGrace keeps full rate this long after the last input event, so
-// interaction (typing, dragging, scrolling) never feels the idle cap.
-const fullRateInputGrace = 1 * time.Second
+// inputGraceFrameDuration is one "frame" of the post-input full-rate hold — the
+// InputGraceFrames pref counts these. A fixed 60 fps reference, so the frame
+// count means the same thing regardless of the active cap. After a click/key the
+// rate holds full for InputGraceFrames of them, then drops straight back to idle
+// (the playtest ask was "1 frame, not a whole second"). Mouse MOTION is separate
+// — it keeps its own short motionInputGrace.
+const inputGraceFrameDuration = time.Second / 60
 
 // NoteInput marks "the user just interacted" — the main loop calls it whenever
 // an SDL event arrives, and wantsFullRate holds full rate through the grace.
 func (a *App) NoteInput() { a.lastInputAt = time.Now() }
+
+// NoteAnimating marks that THIS draw pass rendered a self-driven, time-stepped
+// UI animation — theme chrome, a splash, a looping badge, the layout editor's
+// ghost, or any FUTURE widget that tweens on its own clock. It is the general
+// hook for "uncap for the duration of any self-driven UI animation": while a
+// draw keeps calling it, SkipFrame won't skip AND FramePace paces at the ACTIVE
+// cap (both loop modes), so the motion stays smooth; the frame the draw stops
+// calling it, the screen falls back to idle. Retrospective and self-sustaining
+// (each animating frame re-arms the next). For an INSTANT off-frame change (a
+// packet updated a list, a screen switched) set a.uiDirty instead — that earns
+// exactly one follow-up frame. Alloc-free; call it from the draw pass.
+func (a *App) NoteAnimating() { a.frameAnimChrome = true }
+
+// audioFineTick is the cadence the courtroom is advanced — and its blips played —
+// at while a message types, independent of the (possibly much slower) PRESENT rate.
+// ~60 Hz: fine enough that a fast blip stream never audibly quantizes, cheap because
+// it's logic + audio only (no GPU). The playtest ask: blips should sound as if the
+// UI were at 60 fps even with the frame rate capped low (down to 1 fps).
+const audioFineTick = time.Second / 60
+
+// AudioActive reports whether the LIVE courtroom is streaming audio-timed events
+// (a message typing → blips firing). Replay, the scene maker and GIF export drive
+// their own rooms at their own pacing, so they're excluded — only the live blip
+// stream needs the fine audio cadence. A static-but-open courtroom is NOT active,
+// so it still parks at true idle.
+func (a *App) AudioActive() bool {
+	if a.replaying || a.makerOpen || a.gifExporting || a.room == nil {
+		return false
+	}
+	return a.room.AudioActive()
+}
+
+// AudioPaceActive reports whether this pass's pacing sleep should be spent advancing
+// the courtroom at the fine audio cadence (Background sub-steps) instead of one long
+// sleep: a message is streaming blips AND the present budget is slower than the fine
+// tick, so a single sleep would batch a whole present-period of blips into one
+// instant (the "blips only on every screen refresh at a 1 fps cap" report). budget
+// is the pass's total intended sleep. Render thread; alloc-free.
+func (a *App) AudioPaceActive(budget time.Duration) bool {
+	return budget > audioFineTick && a.AudioActive()
+}
+
+// AudioFineTick is the fine audio-advance cadence, exported for the main loop's
+// sub-step sleep.
+func (a *App) AudioFineTick() time.Duration { return audioFineTick }
+
+// MarkRoomPreAdvanced records that the loop already advanced the courtroom this
+// present cycle (audio-paced sub-stepping), so the next Frame draws without
+// re-advancing the room (it's current) while still advancing the UI. Render thread.
+func (a *App) MarkRoomPreAdvanced() { a.roomPreAdvanced = true }
+
+// motionInputGrace holds full rate briefly after BARE pointer motion under the
+// experimental loop: long enough that continuous movement (hover sweeps, drags
+// — their motion stream keeps re-arming it) renders at full rate throughout,
+// short enough that waving the mouse over dead space stops costing frames
+// almost as soon as it stops. Clicks/keys/wheel keep the InputGraceFrames hold.
+const motionInputGrace = 200 * time.Millisecond
+
+// NoteMotion marks a pointer-motion-only pass. Under the experimental loop it
+// arms the short motion grace; under the classic loop motion is plain input
+// (byte-identical pacing to before).
+func (a *App) NoteMotion() {
+	if a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn() {
+		// Per-event motion redraw (opt-in): don't arm the full-rate grace. The
+		// motion event already earns its single wake-frame (SkipFrame refuses on
+		// sawEvent), then the loop re-parks — so a moving cursor redraws once per
+		// motion event instead of holding full rate through a 200 ms tail. Saves
+		// power on hover sweeps that would otherwise pin the rate to the cap.
+		if a.d.Prefs.MotionRedrawPerEventOn() {
+			return
+		}
+		a.lastMotionAt = time.Now()
+		return
+	}
+	a.lastInputAt = time.Now()
+}
 
 // staticTalkFPS paces a message whose stage is ALL STATIC art (single-frame
 // sprites, no effects): the only motion is the typewriter's text crawl, which
@@ -4072,18 +4216,71 @@ func (a *App) NoteInput() { a.lastInputAt = time.Now() }
 // never exceeds their cap.
 const staticTalkFPS = 30
 
-// paceHeartbeat bounds how stale a statically-skipped screen may go: one real
-// frame at least this often heals anything the busy signal missed (an OOC line
-// landing while idle, an unread badge, a finished background download) and
-// keeps 1-second readouts honest. Two redraws a second is ~1% of a 165 Hz burn.
-const paceHeartbeat = 500 * time.Millisecond
+// maxHousekeepingGap bounds how long the event-driven loop may park doing
+// NOTHING: even with the idle redraw rate off (config.FPSOff), Background must
+// keep pumping this often (keepalive pacing at 45 s, queue drains), but a wait
+// that times out at this floor pumps Background ONLY — it does not render a
+// frame. This replaces the old fixed 2 fps "heartbeat" that forced a real frame
+// every 500 ms regardless of the idle-rate setting (the two "fought", per the
+// report): the idle rate is the single idle cadence now, so 0/off means a
+// genuinely static screen redraws zero times until real damage or a deadline.
+const maxHousekeepingGap = 500 * time.Millisecond
 
-// paceBudget converts an fps knob to a per-frame budget (0 = uncapped).
+// paceBudget converts an fps knob to a per-frame budget (0 = uncapped). Used for
+// the ACTIVE cap, which is never "off" (0 fps while interacting is meaningless).
 func paceBudget(fps int) time.Duration {
 	if fps <= 0 {
 		return 0
 	}
 	return time.Second / time.Duration(fps)
+}
+
+// rateBudget converts a rate knob to a per-frame budget WITH the widened
+// domain's trichotomy — paceBudget alone can't express it. A 0 budget means
+// "uncapped", but a knob set to config.FPSOff means "off / never redraw in this
+// state", the exact opposite — so every idle/unfocused consumer asks here and
+// branches on off BEFORE treating a 0 as uncapped:
+//
+//	FPSUnlimited (∞) → (0, false)   // uncapped, same as paceBudget's 0
+//	FPSOff           → (0, true)    // off — the caller decides (park, or the cap)
+//	N                → (1s/N, false)
+func rateBudget(fps int) (budget time.Duration, off bool) {
+	switch fps {
+	case config.FPSOff:
+		return 0, true
+	case config.FPSUnlimited:
+		return 0, false
+	}
+	if fps <= 0 {
+		return 0, false // stray non-positive (never a sentinel) → uncapped, never off
+	}
+	return time.Second / time.Duration(fps), false
+}
+
+// HardCapBudget is the INVIOLABLE minimum time between two rendered frames for
+// the current focus state: the active FPS cap when focused, the unfocused cap
+// when not. Unlike FramePace's adaptive tiers (idle/talk/anim, which only ever
+// SLOW rendering down toward a floor), this is the hard ceiling the user set —
+// the main loop sleeps it UNINTERRUPTIBLY, so an input flood (above all mouse
+// motion, which streams an event every few ms) can never interrupt the pace and
+// drive the loop past the cap. The "caps are ALWAYS obeyed" contract lives here;
+// it also enforces the unfocused cap even when FramePace lifts an unfocused
+// animation toward the active rate. 0 = uncapped (the ∞ sentinel — no floor).
+func (a *App) HardCapBudget(focused bool) time.Duration {
+	if focused {
+		// The active cap has no "off" (0 fps while interacting is meaningless);
+		// ∞ → 0 (uncapped), N → 1s/N.
+		return paceBudget(a.d.Prefs.FPSCap())
+	}
+	unf, off := rateBudget(a.d.Prefs.UnfocusedFPS())
+	if off {
+		// Unfocused "off" means "don't redraw while tabbed out" — the static skip
+		// handles the idle case. A frame that renders anyway (an audible ceremony)
+		// still obeys SOMETHING: fall back to the active cap as the backstop
+		// ceiling, mirroring FramePace's unfocused-off branch (unf = full).
+		return paceBudget(a.d.Prefs.FPSCap())
+	}
+	return unf // ∞ → 0 (uncapped); N → 1s/N
 }
 
 // clampDur bounds d to [lo, hi] (lo = the fastest allowed budget).
@@ -4137,90 +4334,344 @@ func (a *App) talkBudget(full time.Duration) time.Duration {
 	return talk
 }
 
-// FramePace returns the frame budget the main loop should pace to (0 = no cap).
-// focused is the window's input-focus state. Four tiers:
+// FramePace returns the frame budget the main loop should pace to (0 = no cap):
+// the sleep between CONSECUTIVE rendered frames. focused is the window's input-
+// focus state. Tiers, fastest first:
 //   - full rate: interaction, effects in flight, or an always-animating surface
-//   - content cadence: only stage animations are moving → wake exactly for the
-//     next frame flip (smooth at ANY idle setting — the pace can never be
-//     slower than the content — and never above the cap)
-//   - talk rate: a message is playing over all-static art → the text crawl's
-//     cadence (talkBudget), not full rate
-//   - idle rate: a static screen (the deeper SkipFrame tier then usually skips
-//     the render entirely)
+//   - talk rate: a message is playing → the text crawl's cadence (talkBudget),
+//     which a fast speaker's frame flip may only TIGHTEN (earliest deadline
+//     wins, so a slow sprite loop never drags the typewriter/blips down — the
+//     "text renders at idle fps over animated sprites" report)
+//   - content cadence: only stage animations move → the next frame flip
+//   - active cap: a rendered-but-idle frame. Under the event-driven loop a
+//     genuinely idle screen SKIPS and parks (NextWakeDelay honours the idle
+//     rate there), so reaching this tier means a lone damage frame or a screen
+//     that declares itself non-skippable — pacing it at the active cap keeps the
+//     post-render sleep from injecting a whole idle period of input latency. The
+//     classic loop idle-renders here, so it keeps the idle rate.
+//
+// Rate knobs carry the widened trichotomy (rateBudget): ∞ → 0 (uncapped), off
+// (FPSOff) → the active cap in THIS render path (the "no idle render" behaviour
+// lives in the skip/park path, not here), N → 1s/N.
 func (a *App) FramePace(focused bool) time.Duration {
-	full := paceBudget(a.d.Prefs.FPSCap())
+	full := paceBudget(a.d.Prefs.FPSCap()) // active cap: ∞/off → 0 (uncapped); N → 1s/N
+	// nextAnimDue is the stage's earliest scheduled frame flip (ok=false on a
+	// static stage / no room) — consulted by both focus branches.
+	nextAnimDue := func() (time.Duration, bool) {
+		if a.room == nil || a.d.Viewport == nil {
+			return 0, false
+		}
+		return a.d.Viewport.NextAnimDue(a.renderScene())
+	}
 	if !focused {
-		unf := paceBudget(a.d.Prefs.UnfocusedFPS())
-		// A message playing while tabbed out is still AUDIBLE: hold the blip
-		// cadence so the background window's low rate doesn't thin the blips.
+		unf, unfOff := rateBudget(a.d.Prefs.UnfocusedFPS())
+		if unf == 0 && !unfOff {
+			return 0 // ∞ unfocused: never throttle
+		}
+		if unfOff {
+			// off: an idle unfocused window SKIPS + parks, so a rendered frame
+			// here is content (an audible ceremony / a visible stage anim) — pace
+			// it at the cap and let talk/anim tighten below.
+			unf = full
+		}
+		// A message playing while tabbed out is still AUDIBLE: hold the blip cadence.
 		if a.roomBusy() {
-			if tb := a.talkBudget(full); unf == 0 || tb < unf {
+			if tb := a.talkBudget(full); tb < unf {
 				unf = tb
 			}
 		}
-		// An unfocused window is still VISIBLE (second monitor, side-by-side
-		// chat): a live stage animation keeps its OWN schedule, exactly like
-		// the focused branch below — the flat trickle rate here was the
-		// "idle animations go choppy the moment I click into another window"
-		// playtest report. Costs nothing on a static stage (ok=false), wakes
-		// no more often than the tier budget already did for fast loops
-		// (clamped at full), and for slow loops it redraws LESS than the flat
-		// rate — one frame per flip, right on the flip.
-		if unf > 0 && a.room != nil && a.d.Viewport != nil {
-			if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
-				unf = clampDur(due, full, unf)
-			}
+		// An unfocused window is still VISIBLE (second monitor): a live stage
+		// animation keeps its OWN schedule — the flat trickle rate here was the
+		// "idle animations go choppy the moment I click into another window" report.
+		if due, ok := nextAnimDue(); ok && due < unf {
+			unf = clampDur(due, full, unf)
 		}
 		return unf
 	}
-	if a.wantsFullRate() {
-		return full
+	if a.wantsFullRate() || a.drawnAnimChrome {
+		return full // recent input/effects, OR a self-driven UI animation (NoteAnimating)
 	}
-	idle := paceBudget(a.d.Prefs.IdleFPS())
-	if a.room != nil && a.d.Viewport != nil {
-		if due, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
-			return clampDur(due, full, idle) // 0 (a running ramp) → full rate
-		}
-	}
+	idle, idleOff := rateBudget(a.d.Prefs.IdleFPS())
+	idleUnlimited := !idleOff && idle == 0 // ∞ idle
 	if a.roomBusy() {
+		// The talk tier paces the ceremony; the earliest OTHER deadline may only
+		// tighten it. Order matters: consulting the stage anim FIRST returned a
+		// slow lipflap's flip (clamped to the idle rate) as the whole frame
+		// budget, crawling the text and coalescing the blips.
 		talk := a.talkBudget(full)
-		if idle > 0 && idle < talk {
-			talk = idle // never below the user's idle smoothness
+		switch {
+		case idleOff || idleUnlimited:
+			talk = full // off/∞ idle → ceremonies pace at the active cap
+		case idle < talk:
+			talk = idle // a high idle rate lifts the ceremony to match its smoothness
+		}
+		if due, ok := nextAnimDue(); ok && due < talk {
+			talk = clampDur(due, full, talk) // a fast speaker anim gets its frames
 		}
 		return talk
 	}
-	return idle
+	if due, ok := nextAnimDue(); ok {
+		if idleOff || idleUnlimited {
+			return clampDur(due, full, due) // the content's own cadence (never above the cap)
+		}
+		return clampDur(due, full, idle) // content cadence, never slower than the idle rate
+	}
+	// Rendered but nothing is animating — see the "active cap" tier note above.
+	if a.d.Prefs.EventDrivenLoopOn() || idleOff {
+		return full
+	}
+	return idle // classic idle nap (∞ → 0 uncapped; N → 1s/N)
 }
 
 // SkipFrame reports that the last drawn frame is still exactly right, so the
 // main loop may skip render+present entirely this pass (GPU cost → zero) and
 // just keep the session pumping via Background. Any SDL event, any ceremony,
-// any scheduled animation, a live toast, a blinking caret, a ticking timer, or
-// the heartbeat forces a real frame. Conservative by construction: a wrongly
-// SKIPPED signal shows at worst paceHeartbeat-stale pixels, never a hang.
+// any scheduled animation, a live toast, a blinking caret, or a ticking timer
+// forces a real frame. Conservative by construction: a wrongly SKIPPED signal
+// heals on the next damage/deadline, never a hang.
+//
+// Under the EXPERIMENTAL event-driven loop the gate widens two ways: static
+// menu screens skip too (not just the courtroom), and the caret/clock refusals
+// become scheduled wakes (NextWakeDelay) — the loop parks on an OS event wait
+// and renders exactly when the blink/tick is due instead of idle-rendering a
+// static screen to animate a cursor. Damage that arrived since the last drawn
+// frame (packets, texture uploads/evictions — RenderNeeded) still refuses. The
+// classic loop instead re-renders at the idle rate (it doesn't track damage);
+// idle=off makes both lean on caret/timer/input for a static courtroom.
 func (a *App) SkipFrame(focused, sawEvent bool) bool {
-	if sawEvent || a.room == nil || a.sess == nil {
-		return false // input this pass, or not on a courtroom surface (lobby keeps its idle render)
+	if sawEvent {
+		return false // input this pass (incl. a focus-regain window event)
 	}
-	if time.Since(a.lastFrameDrawn) >= paceHeartbeat {
-		return false // heartbeat: one real frame heals anything the signal missed
+	// Background cap OFF + window unfocused: render NOTHING while tabbed out. The
+	// background cap is a hard ceiling exactly like the active cap, and its "off"
+	// position means a 0-fps ceiling — so a stage animation must NOT keep driving
+	// frames (the "bg=0 but still 60 fps in another window" report). Highest
+	// priority after a live event: this overrides animation, damage, and the
+	// full-rate input grace. Voice / mic capture is the sole exception — its audio
+	// engine is frame-driven — and a focus-regain event (sawEvent above) resumes
+	// normal rendering; the park keeps the session pumping meanwhile.
+	if !focused && !a.voiceJoined && a.micTest == nil {
+		if _, off := rateBudget(a.d.Prefs.UnfocusedFPS()); off {
+			return true
+		}
+	}
+	exp := a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn()
+	if exp {
+		if !a.expScreenSkippable() {
+			return false
+		}
+		// No heartbeat here: the event-driven loop parks on NextWakeDelay, whose
+		// idle-rate tick IS the periodic idle render (idle=off → genuinely none).
+	} else {
+		if a.room == nil || a.sess == nil {
+			return false // classic: only the courtroom skips (the lobby keeps its idle render)
+		}
+		// Classic idle heartbeat: the classic loop naps and re-polls rather than
+		// waking on damage, so a static courtroom re-renders at the idle rate to
+		// surface async changes it doesn't otherwise track. The idle rate is the
+		// single cadence now (no separate fixed 500 ms); idle=off opts out and
+		// leans on caret/timer/input, exactly like the event-driven loop's 0.
+		if idleB, idleOff := rateBudget(a.d.Prefs.IdleFPS()); !idleOff && idleB > 0 {
+			if time.Since(a.lastFrameDrawn) >= idleB {
+				return false
+			}
+		}
 	}
 	if a.wantsFullRate() || a.roomBusy() || a.warnActive() {
 		return false
 	}
-	if a.ctx != nil && a.ctx.focusID != "" {
-		return false // a focused text field blinks its caret
+	// voicePump (mic capture, mixer, the Settings mic test) is driven from
+	// Frame: while a voice session or mic test is live, frames must keep
+	// coming at the idle rate or the audio engine starves. (Latent in the old
+	// courtroom-only skip too — the usually-focused IC field masked it.)
+	if a.voiceJoined || a.micTest != nil {
+		return false
 	}
-	if a.timerActive() || a.serverTimersLive() {
-		return false // countdown readouts change every second
+	if a.previewBase != "" {
+		return false // the sprite preview box animates at draw time (pageFrameLoop)
 	}
-	if a.d.Viewport != nil {
+	if a.drawnAnimChrome {
+		// The last frame drew time-stepped art outside the viewport scheduler
+		// (animated theme chrome, the testimony badge, a WT/CE splash, the
+		// editor ghost): freezing it between heartbeats was a latent classic
+		// hole (usually masked by the focused IC field). Both modes render on.
+		return false
+	}
+	if exp {
+		if a.RenderNeeded() {
+			return false // pending damage: packets landed / textures moved / a caret flip is showing
+		}
+	} else {
+		if a.ctx != nil && a.ctx.focusID != "" {
+			return false // a focused text field blinks its caret
+		}
+		if a.timerActive() || a.serverTimersLive() {
+			return false // countdown readouts change every second
+		}
+	}
+	if a.d.Viewport != nil && a.room != nil {
 		if _, ok := a.d.Viewport.NextAnimDue(a.renderScene()); ok {
 			return false
 		}
 	}
 	_ = focused // both focused and unfocused static screens skip identically
 	return true
+}
+
+// expScreenSkippable reports whether the CURRENT screen is safe for the
+// experimental static skip. Court surfaces skip exactly like the classic
+// path; the static menu screens join them; the lobby joins while no async
+// sweep is repainting rows. Anything unlisted defaults to classic
+// always-render.
+//
+// Settings skips too (the user's ask: "the one place where virtually nothing
+// moves"). Its self-driven surfaces still force frames through SkipFrame's own
+// later gates — the mic-test meter (micTest), any sprite preview (previewBase),
+// input + the caret, and store-generation damage as art streams in. The lone
+// passive live readout is the T2 cache-stat line; it now refreshes at the idle
+// rate / on the next interaction rather than every frame (the perf HUD stays
+// the always-full-rate live-metrics surface for anyone watching numbers move).
+func (a *App) expScreenSkippable() bool {
+	switch a.screen {
+	case ScreenCourtroom, ScreenCharSelect:
+		return a.sess != nil
+	case ScreenLobby:
+		return !a.lobbyFetching && !a.pinging
+	case ScreenSettings, ScreenAbout, ScreenChangelog, ScreenServerHelp, ScreenHelp, ScreenLogs:
+		return true
+	default:
+		return false
+	}
+}
+
+// RenderNeeded reports redraw-worthy damage accumulated since the last drawn
+// frame (experimental loop): a drained packet touched UI state, the texture
+// store's generation moved (something streamed in / evicted), or the focused
+// caret's blink state no longer matches what's on screen. Render thread only.
+func (a *App) RenderNeeded() bool {
+	if a.uiDirty {
+		return true
+	}
+	if a.d.Store != nil && a.d.Store.Generation() != a.drawnGen {
+		return true
+	}
+	if a.ctx != nil {
+		if on, focused := a.ctx.CaretVisible(); focused && on != a.drawnCaretOn {
+			return true
+		}
+	}
+	return false
+}
+
+// NoteDeadline marks a scheduled wake that just fired (the main loop's event
+// wait timed out at a deadline NextWakeDelay chose): the next pass renders one
+// frame to show whatever was due — a caret flip, a clock second, a hover
+// reveal, or the plain staleness heartbeat.
+func (a *App) NoteDeadline() { a.uiDirty = true }
+
+// NoteInteraction forces exactly one follow-up render after a real (non-motion)
+// input event. A click or keypress almost always changes UI-visible state DURING
+// its own frame's draw — a screen switch, a menu open, a toggle — and that change
+// only appears on the NEXT frame. The main loop calls this after a rendered input
+// frame so that frame is guaranteed regardless of the input-grace timing, instead
+// of leaving the new state stranded until cursor motion or the idle tick reveals
+// it (the "click Settings and the screen doesn't change until I wiggle the mouse"
+// report). Idle-safe: no input, no follow-up.
+func (a *App) NoteInteraction() { a.uiDirty = true }
+
+const (
+	// minWakeDelay floors the event wait so a just-passed deadline can never
+	// busy-spin the loop.
+	minWakeDelay = 5 * time.Millisecond
+	// timerTickSlack lands a clock wake just PAST the second boundary, so the
+	// frame it triggers draws the new second (not a re-render of the old one).
+	timerTickSlack = 20 * time.Millisecond
+	// assetDemandWakeInterval re-renders while a demand-streamed grid still shows
+	// blank cells (drawnDemandPending), so demandAsset keeps issuing asks until
+	// they fill. ~4 fps — brisk enough that a grid fills smoothly, cheap enough to
+	// ignore, and it stops the instant no cell is blank. MUST stay strictly below
+	// maxHousekeepingGap: considerRender only marks a render when the due time is
+	// nearer than that Background-only floor, so an equal value would never draw.
+	assetDemandWakeInterval = 250 * time.Millisecond
+)
+
+// NextWakeDelay is how long the experimental loop may park on its event wait:
+// the time to the nearest scheduled deadline — caret flip, a RUNNING clock's
+// next displayed second, a pending tooltip/preview dwell — capped by the
+// staleness heartbeat and floored against busy-spin. Input and wake events
+// interrupt the wait regardless; this only bounds how long "nothing happens"
+// may last.
+func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
+	wait = maxHousekeepingGap // Background-only floor (no frame) — see the const
+	// Background cap OFF + unfocused: schedule NO render wakes — the window is
+	// asleep while tabbed out (SkipFrame parks it), so even the idle tick and the
+	// caret/clock deadlines stay silent until focus returns. This is what makes a
+	// 0-fps background cap actually reach 0 fps instead of the idle rate.
+	if !focused {
+		if _, off := rateBudget(a.d.Prefs.UnfocusedFPS()); off {
+			return wait, false
+		}
+	}
+	considerRender := func(due time.Duration) {
+		if due < wait {
+			wait = due
+			render = true // the nearest wake is a real redraw deadline, not the floor
+		}
+	}
+	// Idle redraw cadence: the missed-damage backstop and the "redraw at the idle
+	// fps when nothing's happening" rate. off → no periodic idle render (0 GPU on
+	// a static screen); ∞ → due immediately (render as fast as the loop allows).
+	switch idleB, idleOff := rateBudget(a.d.Prefs.IdleFPS()); {
+	case idleOff:
+		// no periodic idle render — only the real deadlines below wake a frame
+	case idleB == 0:
+		considerRender(0) // ∞ idle
+	default:
+		considerRender(idleB - time.Since(a.lastFrameDrawn))
+	}
+	if a.ctx != nil {
+		if due, ok := a.ctx.NextCaretFlip(); ok {
+			considerRender(due)
+		}
+		if due, ok := a.ctx.NextHoverDue(); ok {
+			considerRender(due)
+		}
+	}
+	now := time.Now()
+	// Server clocks (TI): wake right after each RUNNING timer's next whole second
+	// so the mm:ss chip ticks on the second. (Paused clocks display a frozen
+	// remainder — nothing scheduled.) These MUST mark render: with the old fixed
+	// heartbeat gone, a clock tick is the only thing that redraws it, so at
+	// idle=off it would otherwise freeze (the timer-freeze trap).
+	if a.sess != nil {
+		for i := range a.sess.Timers {
+			t := &a.sess.Timers[i]
+			if t.Visible && t.Running {
+				if rem := t.Remaining(now); rem > 0 {
+					considerRender(rem%time.Second + timerTickSlack)
+				}
+			}
+		}
+	}
+	// The local alarm chip ticks the same way — and its due-fire (pollTimer,
+	// Frame-driven) rides these wakes, so the alarm lands within a second
+	// even while everything else is static.
+	if a.timerRunning() {
+		if rem := a.timerRemaining(); rem > 0 {
+			considerRender(rem%time.Second + timerTickSlack)
+		}
+	}
+	// Demand-pump keepalive: while a streaming grid still shows blank cells,
+	// re-render at the demand cadence so demandAsset keeps issuing asks. A batch
+	// that all 404s uploads nothing (no generation bump, no self-wake), so without
+	// this the pump stalls at idle=off until unrelated damage or input arrives.
+	if a.drawnDemandPending {
+		considerRender(assetDemandWakeInterval)
+	}
+	if wait < minWakeDelay {
+		wait = minWakeDelay
+	}
+	return wait, render
 }
 
 // wantsFullRate reports whether something on screen genuinely needs the full
@@ -4233,8 +4684,11 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 // old knob-not-state checks held full rate forever and were the "redraws for
 // no reason" playtest report.
 func (a *App) wantsFullRate() bool {
-	if time.Since(a.lastInputAt) < fullRateInputGrace {
-		return true
+	if time.Since(a.lastInputAt) < time.Duration(a.d.Prefs.InputGraceFrames())*inputGraceFrameDuration {
+		return true // configurable post-input hold (default 1 frame); 0 would be the input's own frame only
+	}
+	if time.Since(a.lastMotionAt) < motionInputGrace {
+		return true // a moving pointer renders live; the short grace ends with it
 	}
 	if a.room != nil {
 		sc := &a.room.Scene
@@ -4849,10 +5303,12 @@ func (a *App) loadCharINI() {
 		data, err := a.d.Manager.FetchRaw(context.Background(), url)
 		if err != nil {
 			a.charINIres <- charINIFetch{key: key, err: err}
+			PushWake() // wake the event-driven loop so Background drains this at idle=0
 			return
 		}
 		ini, err := courtroom.ParseCharINI(data)
 		a.charINIres <- charINIFetch{key: key, ini: ini, err: err}
+		PushWake() // wake the event-driven loop so Background drains this at idle=0
 	}()
 }
 
@@ -4866,6 +5322,7 @@ func (a *App) pollCharINI() {
 			return // landed after a tab switch: another server's char.ini
 		}
 		a.charINIBusy = false
+		a.uiDirty = true // the emote list just changed (and "Loading emotes…" must clear): force one redraw, like the character list does on its packet
 		// New emote list = new button art; the gen-keyed page caches key
 		// by INDEX, so a same-length iniswap would show the old char's
 		// buttons without this.
@@ -5002,7 +5459,29 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	defer a.frameCrashLog() // last-resort: capture the stack of any unrecovered panic before it kills the app
 	a.frameNow = time.Now()
 	a.lastFrameDrawn = a.frameNow // SkipFrame's heartbeat: a real frame was drawn
-	a.winW, a.winH = winW, winH   // cached for deep draw helpers (preview clamp)
+	// Damage bookkeeping (experimental loop): this frame absorbs everything
+	// pending. Snapshot the store generation at frame START — uploads during
+	// THIS frame (the pump below) bump it and earn at most one follow-up
+	// frame, whose own snapshot then matches (self-limiting, never misses).
+	a.uiDirty = false
+	if a.d.Store != nil {
+		a.drawnGen = a.d.Store.Generation()
+	}
+	a.drawnCaretOn = a.ctx.caretOn
+	// Animated-chrome census: the draw sites below mark the flag; promote it
+	// at frame end so SkipFrame reads what THIS frame actually put on screen.
+	a.frameAnimChrome = false
+	// Demand-pump census (experimental loop): a draw that leaves a streaming grid
+	// cell blank marks frameDemandPending so NextWakeDelay keeps re-rendering at
+	// the demand cadence until the cell fills. Promoted at frame end beside the
+	// anim-chrome flag.
+	a.frameDemandPending = false
+	defer func() {
+		a.drawnAnimChrome = a.frameAnimChrome
+		a.drawnDemandPending = a.frameDemandPending
+	}()
+	a.ctx.BeginDraw()           // the visible-field order rebuilds as this frame's TextFields register
+	a.winW, a.winH = winW, winH // cached for deep draw helpers (preview clamp)
 	a.frameDtMs = float32(dt.Seconds() * 1000)
 	a.recordFrameDt(a.frameDtMs)
 	// One-time: push the initial Discord presence once the app is up, so "Playing
@@ -5208,10 +5687,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.driveMakerPreview(dt)
 	case a.room != nil:
 		a.healScenery()
-		a.room.Update(dt)
+		if a.roomPreAdvanced {
+			a.roomPreAdvanced = false // the audio-paced loop already advanced the room this present cycle; just draw it
+		} else {
+			a.room.Update(dt)
+		}
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
-		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (power user; default Blank = byte-identical)
+		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (default hold-previous = webAO-style bridge; Blank = the original byte-identical gap)
 		a.d.Viewport.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())                                  // viewport sprite mask (default ON): offsets can't spill past the stage
 		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)
@@ -5691,11 +6174,13 @@ func (a *App) themeElapsed() time.Duration {
 }
 
 // themeFrame picks the current animation frame for a theme page — static
-// pages cost one len check, animated ones loop on the theme clock.
+// pages cost one len check, animated ones loop on the theme clock (and mark
+// the frame's animated-chrome census so the static skip keeps stepping them).
 func (a *App) themeFrame(page *render.TexturePage) *sdl.Texture {
 	if len(page.Frames) == 1 {
 		return page.Frames[0]
 	}
+	a.NoteAnimating()
 	return page.Frames[pageFrameLoop(page, a.themeElapsed())]
 }
 

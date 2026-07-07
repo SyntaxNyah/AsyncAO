@@ -44,6 +44,9 @@ type animState struct {
 	frame    int
 	elapsed  time.Duration
 	finished bool
+	// startReported guards the one-shot OnPreanimStart duration report: set once
+	// the decoded preanim page first plays, cleared by reset on a base change.
+	startReported bool
 
 	page    *TexturePage
 	pageGen uint64
@@ -78,6 +81,7 @@ func (a *animState) reset(base string) {
 	a.frame = 0
 	a.elapsed = 0
 	a.finished = false
+	a.startReported = false
 	a.page = nil
 	a.pageGen = 0
 	a.thumbKey = ""
@@ -138,6 +142,16 @@ func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) 
 			a.frame++
 		}
 	}
+}
+
+// pageDuration is a one-shot animation's total playback time (the sum of every
+// frame's delay). Zero for a static / single-frame page.
+func pageDuration(page *TexturePage) time.Duration {
+	var total time.Duration
+	for _, d := range page.Delays {
+		total += d
+	}
+	return total
 }
 
 // SpriteFX is the optional colour wash applied to character layers (all OFF /
@@ -210,6 +224,13 @@ type Viewport struct {
 	// machine.
 	OnPreanimDone func()
 
+	// OnPreanimStart forwards a decoded, multi-frame preanim's REAL total
+	// duration to the courtroom the first frame it plays, so the courtroom can
+	// extend its fallback timeout to cover a preanim longer than the default
+	// (else it's cut short — the "long preanims skip to the end" report). Fires
+	// once per bound preanim (startReported); nil = not wired (no extension).
+	OnPreanimStart func(time.Duration)
+
 	// fx is the colour wash (App mirrors the user prefs here once per frame via
 	// SetSpriteFX). rainbowPhase is the accumulated, cycle-bounded hue clock and
 	// curCycle is the period derived from fx.Speed this frame (kept > 0 so the
@@ -223,9 +244,10 @@ type Viewport struct {
 	// own period and stay continuous without a shared wrap glitch.
 	fxClock time.Duration
 
-	// spriteLoadMode (SpriteLoadBlank default) chooses what a character layer draws
-	// while its NEW sprite is still streaming + decoding — the cold-load flash
-	// mitigation. The App mirrors the user pref here once per frame
+	// spriteLoadMode chooses what a character layer draws while its NEW sprite is
+	// still streaming + decoding — the cold-load flash mitigation. The zero value is
+	// SpriteLoadBlank, but the App ships hold-previous (webAO-style) and mirrors the
+	// user pref here once per frame
 	// (SetSpriteLoadMode), exactly like SetSpriteFX. It only ever affects the miss
 	// path in drawSprite, so a cached scene is byte-identical whatever it's set to.
 	spriteLoadMode int
@@ -430,6 +452,13 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 	}
 	if scene.Speaker.Visible {
 		if page, ok := v.speakerAnim.resolve(v.store); ok {
+			// First frame of a decoded, multi-frame preanim: report its real total
+			// duration so the courtroom's fallback timeout can't cut a long one
+			// short. Single-frame "preanims" finish instantly below — no report.
+			if scene.Speaker.PlayOnce && !v.speakerAnim.startReported && v.OnPreanimStart != nil && len(page.Frames) > 1 {
+				v.speakerAnim.startReported = true
+				v.OnPreanimStart(pageDuration(page))
+			}
 			if v.speakerAnim.advance(page, dt, scene.Speaker.PlayOnce) && scene.Speaker.PlayOnce {
 				if v.OnPreanimDone != nil {
 					v.OnPreanimDone()
@@ -799,8 +828,9 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animS
 }
 
 // SetSpriteLoadMode picks what a character layer draws while its new sprite is
-// still streaming + decoding (SpriteLoadBlank default = original behaviour). The
-// App mirrors the user pref here once per frame, like SetSpriteFX.
+// still streaming + decoding (the App ships SpriteLoadHoldPrev; SpriteLoadBlank is
+// the original byte-identical gap). The App mirrors the user pref here once per
+// frame, like SetSpriteFX.
 func (v *Viewport) SetSpriteLoadMode(mode int) { v.spriteLoadMode = mode }
 
 // SetClipSprites toggles the viewport sprite mask (ON by default): confine the

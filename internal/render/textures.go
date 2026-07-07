@@ -38,6 +38,48 @@ const (
 	// destroyBudgetPerFrame caps destroys per frame to keep 16 ms.
 	destroyBudgetPerFrame = 16
 
+	// The small-UI texture shield: emote buttons and char icons live in their
+	// own byte-budgeted LRU CARVED OUT of the configured T1 budget, so a burst
+	// of multi-MiB sprite uploads can never evict them. They are decode-capped
+	// tiny (40/64 px — KBs each), they back ALWAYS-VISIBLE grids, and their
+	// recency in the LRU is structurally stale (the UI's generation-keyed page
+	// caches skip Get() on steady frames — the whole point of that cache), so
+	// under the old single tier every big streaming burst swept them out and
+	// the next drawn frame flashed the grid back to fallbacks while they
+	// re-streamed: the "emote buttons visibly refresh/redraw" playtest report.
+	// The same churn in the other direction is also gone: a 4000-icon
+	// char-select scroll now competes only with other small textures, never
+	// evicting the sprites on stage. (The stage layers and theme chrome grew
+	// their own protections earlier — keepSceneAssetsWarm, the pinned tier;
+	// this closes the gap for the button/icon grids.)
+	smallTexBudgetDiv = 8       // shield budget = T1 budget / 8 (8 MiB at the 64 MiB default ≈ >1000 buttons)
+	smallTexMinBudget = 4 << 20 // floor so tiny power-user T1 budgets keep a useful shield
+)
+
+// smallTexTier reports whether an asset type belongs in the small-UI shield.
+// Exactly the decode-thumbnailed types (decoder.go decodeTargetPx): both are
+// guaranteed small per frame, so the shield can never be flooded by full-size
+// art wearing the wrong label.
+func smallTexTier(t assets.AssetType) bool {
+	return t == assets.AssetTypeCharIcon || t == assets.AssetTypeEmoteButton
+}
+
+// splitT1Budget carves the small-texture shield out of the configured T1
+// budget (total residency stays exactly the configured budget). The floor
+// keeps a useful shield under tiny power-user budgets; the half-cap keeps the
+// floor from starving the main tier in the same situation.
+func splitT1Budget(budget int64) (main, small int64) {
+	small = budget / smallTexBudgetDiv
+	if small < smallTexMinBudget {
+		small = smallTexMinBudget
+	}
+	if small > budget/2 {
+		small = budget / 2
+	}
+	return budget - small, small
+}
+
+const (
 	// decodeFailTTL backs off a base whose bytes downloaded but failed to
 	// DECODE (a corrupt/truncated payload — distinct from a 404, which the
 	// network tier already caches). Without it a single bad asset is re-fetched
@@ -92,16 +134,25 @@ func (p *TexturePage) destroy() {
 
 // TextureStore is T1: a byte-budgeted texture cache keyed by asset BASE
 // (extension-less URL base — unique per asset). Evicted pages drain through
-// a bounded destroy queue on the render thread.
+// a bounded destroy queue on the render thread. Three tiers share the one
+// configured budget: the main LRU (sprites, backgrounds, everything big),
+// the small-UI shield LRU (emote buttons + char icons, immune to sprite
+// churn — see smallTexBudgetDiv), and the pinned map (theme chrome). A base
+// lives in exactly one tier: the pump routes uploads by asset type, and
+// theme keys use their own scheme.
 //
-// generation increments on every mutation (upload, eviction, purge). The
-// viewport caches *TexturePage pointers against it, so steady-state frames
-// reuse pages with zero LRU lookups; any mutation forces a re-lookup before
-// a cached pointer can dangle (destroys only happen later in the same frame,
-// in DrainDestroyQueue, after rendering consulted the generation).
+// generation increments on every mutation (upload, eviction, purge — either
+// LRU). The viewport caches *TexturePage pointers against it, so steady-state
+// frames reuse pages with zero LRU lookups; any mutation forces a re-lookup
+// before a cached pointer can dangle (destroys only happen later in the same
+// frame, in DrainDestroyQueue, after rendering consulted the generation).
 type TextureStore struct {
 	ren *sdl.Renderer
 	t1  *cache.ByteBudgetLRU[string, *TexturePage]
+	// small is the UI shield tier (emote buttons, char icons): its own byte
+	// budget carved from the T1 total, so streaming sprites can never evict
+	// the button/icon grids (and icon floods never evict sprites).
+	small *cache.ByteBudgetLRU[string, *TexturePage]
 	// pinned holds pages exempt from LRU eviction: the active theme's
 	// chrome (skin, splashes, bars, buttons, full-screen backdrops).
 	// Bounded by the theme stem tables (≈40 pages), render-thread only.
@@ -214,8 +265,11 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 		destroy: make(chan *TexturePage, destroyQueueCap),
 		budget:  budgetBytes,
 	}
-	t1, err := cache.NewByteBudgetLRU(t1MaxEntries, budgetBytes, func(_ string, page *TexturePage, _ int64) {
-		s.generation.Add(1) // cached page pointers must re-resolve
+	// Both LRU tiers share one eviction path: bump the generation (cached
+	// page pointers must re-resolve) and route the page through the bounded
+	// destroy queue.
+	onEvict := func(_ string, page *TexturePage, _ int64) {
+		s.generation.Add(1)
 		select {
 		case s.destroy <- page:
 		default:
@@ -223,25 +277,36 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 			// happens here), destroying inline is legal and bounded.
 			page.destroy()
 		}
-	})
+	}
+	mainBudget, smallBudget := splitT1Budget(budgetBytes)
+	t1, err := cache.NewByteBudgetLRU(t1MaxEntries, mainBudget, onEvict)
+	if err != nil {
+		return nil, err
+	}
+	small, err := cache.NewByteBudgetLRU(t1MaxEntries, smallBudget, onEvict)
 	if err != nil {
 		return nil, err
 	}
 	s.t1 = t1
+	s.small = small
 	return s, nil
 }
 
-// Contains reports whether a texture page exists for the asset base. Safe
-// to call from any goroutine (the inner LRU is thread-safe) — wired as the
-// manager's T1 probe.
+// Contains reports whether a texture page exists for the asset base in
+// either LRU tier. Safe to call from any goroutine (the inner LRUs are
+// thread-safe) — wired as the manager's T1 probe.
 func (s *TextureStore) Contains(base string) bool {
-	return s.t1.Contains(base)
+	return s.small.Contains(base) || s.t1.Contains(base)
 }
 
-// Get returns the page for base (pinned pages first), bumping recency for
-// LRU-resident ones. Render thread only.
+// Get returns the page for base (pinned pages first, then the small-UI
+// shield, then the main tier), bumping recency for LRU-resident ones.
+// Render thread only.
 func (s *TextureStore) Get(base string) (*TexturePage, bool) {
 	if page, ok := s.pinned[base]; ok {
+		return page, true
+	}
+	if page, ok := s.small.Get(base); ok {
 		return page, true
 	}
 	return s.t1.Get(base)
@@ -281,6 +346,28 @@ func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 // Upload turns a decoded asset into textures under the asset's base key.
 // Render thread only. The Decoded is released here.
 func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
+	return s.uploadTier(base, d, s.t1)
+}
+
+// UploadSmall is Upload into the small-UI shield tier (emote buttons, char
+// icons — see smallTexBudgetDiv). The pump routes by asset type. A page too
+// big for the shield's whole budget (a pathological many-frame animated
+// icon) falls through to the MAIN tier instead of being refused: it still
+// shows, it just doesn't get churn immunity. Render thread only.
+func (s *TextureStore) UploadSmall(base string, d *assets.Decoded) error {
+	if d.PixelBytes() > s.small.Budget() {
+		return s.uploadTier(base, d, s.t1)
+	}
+	// The tiers are alternatives for a key, never both: drop a stale main-tier
+	// page from before this asset's type routed here (belt-and-braces — a
+	// base's type never actually changes at runtime).
+	s.t1.Remove(base)
+	return s.uploadTier(base, d, s.small)
+}
+
+// uploadTier builds and registers a page in the given LRU tier (shared by
+// Upload and UploadSmall). The Decoded is released here.
+func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.ByteBudgetLRU[string, *TexturePage]) error {
 	defer d.Release()
 	start := time.Now()
 	page, err := s.buildPage(d)
@@ -288,14 +375,14 @@ func (s *TextureStore) Upload(base string, d *assets.Decoded) error {
 		return err
 	}
 	foldUploadEWMA(&s.uploadNsEWMA, time.Since(start)) // cold-load profiling: GPU-upload stage
-	if !s.t1.Add(base, page, page.bytes) {
-		// Bigger than the entire T1 budget: the LRU refuses it, and before
+	if !tier.Add(base, page, page.bytes) {
+		// Bigger than the entire tier budget: the LRU refuses it, and before
 		// this check the freshly created textures leaked silently — sprites
 		// of that size simply never appeared. The decode-side cap
 		// (assets.maxDecodedAssetBytes) keeps this branch unreachable for
 		// well-formed assets; pathological ones get a loud error instead.
 		page.destroy()
-		return fmt.Errorf("render: %s decoded to %d bytes, above the %d-byte T1 budget", base, page.bytes, s.budget)
+		return fmt.Errorf("render: %s decoded to %d bytes, above the tier's %d-byte share of the T1 budget", base, page.bytes, tier.Budget())
 	}
 	s.generation.Add(1)
 	s.clearFailed(base) // it decoded fine — drop any stale negative-cache entry
@@ -332,6 +419,8 @@ func (s *TextureStore) Remove(base string) {
 		s.generation.Add(1)
 		return
 	}
+	// A key lives in at most one LRU tier; Remove on the other is a no-op.
+	s.small.Remove(base)
 	s.t1.Remove(base)
 }
 
@@ -363,9 +452,18 @@ func (s *TextureStore) Generation() uint64 {
 	return s.generation.Load()
 }
 
-// Stats exposes T1 counters for the HUD.
+// Stats exposes T1 counters for the HUD: both LRU tiers aggregated, so the
+// readout keeps describing "decoded textures vs the configured budget".
 func (s *TextureStore) Stats() cache.MemoryStats {
-	return s.t1.Stats()
+	main, small := s.t1.Stats(), s.small.Stats()
+	return cache.MemoryStats{
+		Hits:      main.Hits + small.Hits,
+		Misses:    main.Misses + small.Misses,
+		Evictions: main.Evictions + small.Evictions,
+		Entries:   main.Entries + small.Entries,
+		Bytes:     main.Bytes + small.Bytes,
+		Budget:    main.Budget + small.Budget, // = the configured T1 budget (splitT1Budget carves, never adds)
+	}
 }
 
 // Purge destroys everything — pinned pages included (server switch /
@@ -378,6 +476,7 @@ func (s *TextureStore) Purge() {
 		delete(s.pinned, base)
 	}
 	s.pinnedBytes = 0
+	s.small.Purge()
 	s.t1.Purge()
 	for {
 		select {

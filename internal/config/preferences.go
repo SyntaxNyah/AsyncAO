@@ -254,6 +254,15 @@ const defaultAutoReconnect = true
 // Default ON (a power-user Settings toggle turns it off for freeform placement).
 const defaultClipSpritesToStage = true
 
+// defaultEventDrivenLoop enables the EXPERIMENTAL event-driven render loop
+// (test-branch trial): static screens stop rendering entirely between real
+// signals — input wakes the loop instantly (an OS-level event wait instead of
+// a blind sleep), network packets / finished decodes push a wake event, and
+// blinking carets / ticking clocks redraw on their own schedule instead of
+// holding the idle frame rate. Default ON so testers exercise it; the Settings
+// toggle is the kill switch back to the classic pacing loop.
+const defaultEventDrivenLoop = true
+
 // defaultMusicHistory ships ON: AsyncAO keeps a session list of the songs played
 // in the room (the Jukebox "Recently played" view) so you can grab a link
 // someone /played. Toggleable off in Settings.
@@ -827,7 +836,7 @@ type AssetPreferences struct {
 	RestoreTabs            bool                         `json:"restoreTabs"`
 	VolStripOn             bool                         `json:"volStripOn"`                     // on-screen volume strip toggle (default OFF)
 	ChangelogSeen          string                       `json:"changelogSeenVersion,omitempty"` // last What's New version opened (#23 unread dot)
-	SpriteLoadModeVal      int                          `json:"spriteLoadMode,omitempty"`       // power-user cold-load sprite behaviour: 0 blank/default, 1 hold-previous, 2 wait (see SpriteLoad*)
+	SpriteLoadModeVal      int                          `json:"spriteLoadMode"`                 // cold-load sprite behaviour: 0 blank, 1 hold-previous (default), 2 wait (see SpriteLoad*). NOT omitempty: an explicit Blank(0) must persist, not read back as "absent → default".
 	SpriteWaitMsVal        int                          `json:"spriteWaitMs,omitempty"`         // wait-mode hold cap in ms (0/absent = SpriteWaitDefaultMs)
 	SpriteWaitPair         bool                         `json:"spriteWaitPair,omitempty"`       // wait mode also gates on the PAIR partner's idle sprite (default OFF)
 	SpriteWaitPreanim      bool                         `json:"spriteWaitPreanim,omitempty"`    // wait mode also gates on the message's PREANIM (default OFF)
@@ -844,9 +853,13 @@ type AssetPreferences struct {
 	NotFoundTTLSecVal      int                          `json:"notFoundTTLSec,omitempty"`       // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
 	AdaptiveLatMultipleVal int                          `json:"adaptiveLatMultiple,omitempty"`  // per-host deadline = N × TTFB EWMA (0/absent = 8)
 	SpriteDownscaleOff     bool                         `json:"spriteDownscaleOff,omitempty"`   // disable the automatic decode downscale entirely (default OFF = downscale on)
-	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = 60)
-	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle (nothing-animating) frame rate (0/absent = 30)
-	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 10)
+	FPSCapVal              int                          `json:"fpsCap,omitempty"`               // foreground frame cap (0/absent = ∞/vsync default; -1 = uncapped; positive = a cap)
+	IdleFPSVal             int                          `json:"idleFps,omitempty"`              // idle frame rate (0/absent = off default; -1 = uncapped; -2 = never redraw when idle)
+	UnfocusedFPSVal        int                          `json:"unfocusedFps,omitempty"`         // unfocused-window frame rate (0/absent = 5 default; -1 = uncapped; -2 = never redraw when unfocused)
+	InputGraceFramesVal    int                          `json:"inputGraceFrames,omitempty"`     // full-rate hold after a click/key, in frames (0/absent = default 1)
+	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
+	DisableFrameLimiter    bool                         `json:"disableFrameLimiter,omitempty"`  // #5 bypass: render every frame, NO pacing/skip (vsync only). Default OFF, high GPU. Fresh key.
+	MotionRedrawPerEvent   bool                         `json:"motionRedrawPerEvent,omitempty"` // event-driven loop: pointer motion renders ONE frame per motion event instead of holding full rate. Default OFF.
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
@@ -1149,7 +1162,7 @@ type prefsJSON struct {
 	RestoreTabs            bool             `json:"restoreTabs"`          // default OFF (zero value)
 	VolStripOn             bool             `json:"volStripOn"`           // on-screen volume strip toggle (default OFF)
 	ChangelogSeen          string           `json:"changelogSeenVersion"` // last What's New version opened (#23)
-	SpriteLoadMode         int              `json:"spriteLoadMode"`       // power-user cold-load sprite behaviour (0 blank/default, 1 hold-previous, 2 wait)
+	SpriteLoadMode         *int             `json:"spriteLoadMode"`       // cold-load sprite behaviour (0 blank, 1 hold-previous, 2 wait); absent = default hold-previous (pointer distinguishes "unset" from an explicit Blank(0))
 	SpriteWaitMs           int              `json:"spriteWaitMs"`         // wait-mode hold cap in ms (0 = default)
 	SpriteWaitPair         bool             `json:"spriteWaitPair"`       // wait mode gates on the pair too (default OFF)
 	SpriteWaitPreanim      bool             `json:"spriteWaitPreanim"`    // wait mode gates on the preanim too (default OFF)
@@ -1166,9 +1179,13 @@ type prefsJSON struct {
 	NotFoundTTLSec         int              `json:"notFoundTTLSec"`       // 404 TTL seconds (0 = default; restart)
 	AdaptiveLatMultiple    int              `json:"adaptiveLatMultiple"`  // deadline multiple (0 = 8)
 	SpriteDownscaleOff     bool             `json:"spriteDownscaleOff"`   // disable decode downscale (default OFF)
-	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = 60)
-	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = 30)
-	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 10)
+	FPSCap                 int              `json:"fpsCap"`               // foreground frame cap (0 = ∞/vsync default; -1 = uncapped)
+	IdleFPS                int              `json:"idleFps"`              // idle frame rate (0 = off default; -1 = uncapped; -2 = off)
+	UnfocusedFPS           int              `json:"unfocusedFps"`         // unfocused frame rate (0 = 5 default; -1 = uncapped; -2 = off)
+	InputGraceFrames       int              `json:"inputGraceFrames"`     // full-rate hold after input, in frames (0 = default 1)
+	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
+	DisableFrameLimiter    bool             `json:"disableFrameLimiter"`  // #5 bypass: no pacing/skip at all (default OFF)
+	MotionRedrawPerEvent   bool             `json:"motionRedrawPerEvent"` // per-event motion redraw (default OFF; plain bool: absent = off)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
@@ -1510,6 +1527,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		EmoteButtonImages:    defaultEmoteButtonImages,
 		ShowFriendButton:     defaultShowFriendButton,
 		ClipSpritesToStage:   defaultClipSpritesToStage,
+		EventDrivenLoop:      defaultEventDrivenLoop,
 		AutoClipModcall:      defaultAutoClipModcall,
 		GroupChatButton:      defaultGroupChatButton,
 		CharChatbox:          defaultCharChatbox,
@@ -1551,6 +1569,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		CatchUpOn:              defaultCatchUpWhenBehind,
 		CatchUpThreshold:       DefaultCatchUpThreshold,
 		MultiTabCap:            DefaultMultiTabCap,
+		SpriteLoadModeVal:      defaultSpriteLoadMode, // webAO-style hold-previous by default (kills the cold-load flash)
 		DiscordRPC:             defaultDiscordPrefs(),
 		MyAutoStatus:           defaultAutoStatusPref(),
 		ChromeThemeKey:         "dark",
@@ -1840,9 +1859,11 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.RestoreTabs = onDisk.RestoreTabs
 	p.VolStripOn = onDisk.VolStripOn
-	p.SpriteLoadModeVal = onDisk.SpriteLoadMode
-	if p.SpriteLoadModeVal < SpriteLoadBlank || p.SpriteLoadModeVal >= SpriteLoadModeCount {
-		p.SpriteLoadModeVal = SpriteLoadBlank // clamp to a known mode (a garbage / newer value falls back to default)
+	if onDisk.SpriteLoadMode != nil { // absent = the defaultPrefs default (hold-previous); a present value is the user's explicit pick (incl. Blank)
+		p.SpriteLoadModeVal = *onDisk.SpriteLoadMode
+		if p.SpriteLoadModeVal < SpriteLoadBlank || p.SpriteLoadModeVal >= SpriteLoadModeCount {
+			p.SpriteLoadModeVal = defaultSpriteLoadMode // a garbage / newer value falls back to the current default
+		}
 	}
 	p.SpriteWaitMsVal = onDisk.SpriteWaitMs
 	if p.SpriteWaitMsVal != 0 { // 0 = "use the default"; a set value clamps into range
@@ -1894,18 +1915,20 @@ func load(path string) (*AssetPreferences, error) {
 	if p.SpriteDownscalePctVal != 0 {
 		p.SpriteDownscalePctVal = clampPercent(p.SpriteDownscalePctVal, SpriteDownscaleMinPct, SpriteDownscaleMaxPct)
 	}
-	p.FPSCapVal = onDisk.FPSCap
-	if p.FPSCapVal != 0 {
-		p.FPSCapVal = clampPercent(p.FPSCapVal, FPSCapMin, FPSCapMax)
+	p.FPSCapVal = normalizeFPSPref(onDisk.FPSCap, FPSCapMin, FPSCapMax)
+	p.IdleFPSVal = normalizeFPSPref(onDisk.IdleFPS, IdleFPSMin, IdleFPSMax)
+	p.UnfocusedFPSVal = normalizeFPSPref(onDisk.UnfocusedFPS, UnfocusedFPSMin, UnfocusedFPSMax)
+	p.InputGraceFramesVal = onDisk.InputGraceFrames
+	if p.InputGraceFramesVal > 0 { // 0 = the default, <0 = the off sentinel; a positive value clamps
+		p.InputGraceFramesVal = clampPercent(p.InputGraceFramesVal, InputGraceFramesMin, InputGraceFramesMax)
+	} else if p.InputGraceFramesVal < 0 {
+		p.InputGraceFramesVal = InputGraceOff // normalize any stored negative to the canonical off
 	}
-	p.IdleFPSVal = onDisk.IdleFPS
-	if p.IdleFPSVal != 0 {
-		p.IdleFPSVal = clampPercent(p.IdleFPSVal, IdleFPSMin, IdleFPSMax)
+	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
+		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
-	p.UnfocusedFPSVal = onDisk.UnfocusedFPS
-	if p.UnfocusedFPSVal != 0 {
-		p.UnfocusedFPSVal = clampPercent(p.UnfocusedFPSVal, UnfocusedFPSMin, UnfocusedFPSMax)
-	}
+	p.DisableFrameLimiter = onDisk.DisableFrameLimiter   // default-OFF plain bool (absent = off)
+	p.MotionRedrawPerEvent = onDisk.MotionRedrawPerEvent // default-OFF plain bool (absent = off)
 	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
 	if p.TexBudgetMiBVal != 0 {
 		p.TexBudgetMiBVal = clampPercent(p.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
@@ -5878,10 +5901,17 @@ func (p *AssetPreferences) SetVolStripShown(on bool) {
 // render.SpriteLoad* (the UI mirrors the pref straight into the viewport); kept as
 // plain ints here to avoid a config→render import.
 const (
-	SpriteLoadBlank     = 0 // draw nothing until the sprite lands (default; the cold-load flash)
-	SpriteLoadHoldPrev  = 1 // keep the previous sprite until the new one lands (webAO-style)
+	SpriteLoadBlank     = 0 // draw nothing until the sprite lands (the original behaviour; the cold-load flash)
+	SpriteLoadHoldPrev  = 1 // keep the previous sprite until the new one lands (webAO-style; the default)
 	SpriteLoadWait      = 2 // hold the MESSAGE off-stage until its sprite decodes (client-AO-style; courtroom wait gate, timeout-capped)
 	SpriteLoadModeCount = 3 // number of valid modes (for the Settings cycle button + load clamp)
+
+	// defaultSpriteLoadMode is what a fresh install (and a power-user reset) uses:
+	// hold-previous, so a cold idle↔talk sprite swap bridges with the last good frame
+	// instead of the ~¼-second empty flash SpriteLoadBlank leaves (the playtest report,
+	// worst on packs whose idle and talk are one bare sprite — the swap should be a
+	// no-op but each spelling is a separate T1 key, so the gap reads as a pure blink).
+	defaultSpriteLoadMode = SpriteLoadHoldPrev
 )
 
 // Wait-mode timeout bounds (SpriteLoadWait): how long one message may be held for
@@ -5994,11 +6024,18 @@ const (
 	SpriteDownscaleMaxPct = 200
 
 	// T1 texture byte budget, MiB. RESTART-applied. ⚠ T1 + T2 (128 MiB) live
-	// inside the 256 MiB memory budget — the max leaves headroom for the rest
-	// of the client; raising it trades eviction churn for peak memory.
+	// inside the 256 MiB memory budget. The default (64) and everything up to
+	// TexBudgetSafeMaxMiB keep the WHOLE client under budget; the max is raised
+	// to 256 only as an EXPERIMENTAL, default-off, warned opt-in so a long
+	// animation can decode past the ~5 s truncation — above the safe max it
+	// deliberately exceeds the budget (trades peak memory, may stutter/crash on
+	// low-RAM machines). The default is unchanged: normal users never leave 64.
 	TexBudgetDefaultMiB = 64
 	TexBudgetMinMiB     = 32
-	TexBudgetMaxMiB     = 128
+	TexBudgetMaxMiB     = 256
+	// TexBudgetSafeMaxMiB is the largest budget that still fits the 256 MiB
+	// memory target; the Settings row marks everything above it experimental.
+	TexBudgetSafeMaxMiB = 128
 
 	// Speaker-swap crossfade: the new sprite fades in over N ms (0 = off, the
 	// default hard swap). Suppressed by Reduce motion.
@@ -6011,16 +6048,64 @@ const (
 	// Three caps, all sleep-based (vsync stays on for tear-free presents):
 	// foreground (the ceiling), idle (nothing animating), unfocused (another
 	// window has focus; minimized already naps).
-	FPSCapDefault       = 60
-	FPSCapMin           = 30
-	FPSCapMax           = 240
-	IdleFPSDefault      = 30
-	IdleFPSMin          = 10
+	FPSCapDefault = FPSUnlimited // Active default = ∞ / vsync-paced (the playtesters' hard default; the ceiling only bites if you type a number or drag off ∞)
+	FPSCapMin     = 1
+	FPSCapMax     = 240
+	// FPSCapUnlimitedOff is the concrete Active cap the Settings "∞" toggle drops
+	// to — now that the default IS ∞, using the default there would just re-pick
+	// unlimited and the toggle would do nothing.
+	FPSCapUnlimitedOff  = 60
+	IdleFPSDefault      = FPSOff // idle rendering OFF by default: a static screen redraws zero times (0 GPU) and leans on real events + scheduled deadlines
+	IdleFPSMin          = 1
 	IdleFPSMax          = 120
-	UnfocusedFPSDefault = 10
-	UnfocusedFPSMin     = 5
+	UnfocusedFPSDefault = 5 // low unfocused ceiling: a tabbed-out window renders at most this (the background cap is a hard ceiling now)
+	UnfocusedFPSMin     = 1
 	UnfocusedFPSMax     = 60
+
+	// InputGraceFrames: how long full rate is held after a click / keypress, in
+	// frames (at a 60 fps reference). 1 (the default) = snappiest — the input's
+	// own frame shows, then the rate falls straight back to idle; the max restores
+	// the old ~1 s hold; 0 (InputGraceOff) turns the hold OFF entirely (just the
+	// input's own frame). Mouse MOTION is unaffected (its own short grace).
+	InputGraceFramesDefault = 1
+	InputGraceFramesMin     = 1
+	InputGraceFramesMax     = 60
+	// InputGraceOff is the STORED sentinel for a 0-frame hold — kept distinct from
+	// 0, which stays "absent → the default" so an unset pref loads as 1, not off.
+	InputGraceOff = -1
+
+	// FPSUnlimited is the "no limit" sentinel any of the three rate knobs may
+	// hold (the Settings ∞ toggle): the active cap stops capping (vsync paces
+	// the presents), and an unlimited idle/unfocused rate means that state is
+	// never throttled below the active pacing. Distinct from 0 = "the default".
+	FPSUnlimited = -1
+
+	// FPSOff is the "never redraw in this state" sentinel for the Idle and
+	// Background knobs (the Settings 0 / bottom-of-slider position). The loop
+	// stops issuing periodic idle redraws in that state and waits purely on real
+	// damage + scheduled deadlines (caret flip, clock tick, animation frame).
+	// Distinct from FPSUnlimited (uncapped) and from 0, which stays "the shipped
+	// default" on the wire — so an ABSENT key loads as the default, not off, and
+	// only an explicit choice writes FPSOff. The Active cap has no "off" (0 fps
+	// while interacting is meaningless), so the Active row never emits it.
+	FPSOff = -2
 )
+
+// normalizeFPSPref maps a stored rate knob onto its valid domain: 0 keeps the
+// default (the getter resolves it), FPSUnlimited (∞) and FPSOff (never redraw)
+// pass through as-is, anything else clamps to [min, max]. Any other negative is
+// treated as ∞ defensively. Shared by the setters and the disk-load overlay so
+// a hand-edited file obeys the same rules as the sliders.
+func normalizeFPSPref(fps, min, max int) int {
+	switch fps {
+	case 0, FPSUnlimited, FPSOff:
+		return fps
+	}
+	if fps < 0 {
+		return FPSUnlimited
+	}
+	return clampPercent(fps, min, max)
+}
 
 // SpriteWaitPairOn / SpriteWaitPreanimOn report the wait-mode strictness knobs
 // (both OFF by default): also hold a message for the pair partner's idle sprite /
@@ -6387,6 +6472,79 @@ func (p *AssetPreferences) SetCrossfadeMs(ms int) {
 	p.markDirty()
 }
 
+// EventDrivenLoopOn reports the EXPERIMENTAL event-driven render loop toggle
+// (default ON on the test channel): static screens stop rendering between real
+// signals, input wakes the loop instantly, and packets/decodes push wake
+// events. OFF = the classic sleep-paced loop, byte-identical to before.
+func (p *AssetPreferences) EventDrivenLoopOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.EventDrivenLoop
+}
+
+// SetEventDrivenLoop flips the experimental loop (applies live — the main loop
+// re-reads it every pass).
+func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
+	p.mu.Lock()
+	if p.EventDrivenLoop == on {
+		p.mu.Unlock()
+		return
+	}
+	p.EventDrivenLoop = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MotionRedrawPerEventOn reports the opt-in "redraw once per mouse-move event"
+// pacing (event-driven loop only, default OFF): with it ON, bare pointer motion
+// renders exactly the one frame its event earns and then re-parks, instead of
+// arming the short full-rate motion grace — so hovering/sweeping the cursor over
+// nothing stops pinning the frame rate to the cap. Real input (click/key/wheel)
+// keeps its normal full-rate hold.
+func (p *AssetPreferences) MotionRedrawPerEventOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MotionRedrawPerEvent
+}
+
+// SetMotionRedrawPerEvent flips the per-event motion pacing (applies live — the
+// main loop re-reads it every pass).
+func (p *AssetPreferences) SetMotionRedrawPerEvent(on bool) {
+	p.mu.Lock()
+	if p.MotionRedrawPerEvent == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MotionRedrawPerEvent = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// FrameLimiterDisabled reports the #5 bypass: when ON the main loop renders
+// every pass with no adaptive pacing and no static skip — vsync alone paces the
+// presents (and -vsync=false keeps a 60 fps floor so it can't busy-spin). Default
+// OFF: it's the deliberate high-GPU escape hatch for anyone who wants maximum
+// responsiveness regardless of cost. A fresh json key (not the retired test-build
+// "no limit" default) so a stale saved value can't silently leak the bypass on.
+func (p *AssetPreferences) FrameLimiterDisabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DisableFrameLimiter
+}
+
+// SetFrameLimiterDisabled flips the bypass (applies live — the main loop
+// re-reads it every pass).
+func (p *AssetPreferences) SetFrameLimiterDisabled(on bool) {
+	p.mu.Lock()
+	if p.DisableFrameLimiter == on {
+		p.mu.Unlock()
+		return
+	}
+	p.DisableFrameLimiter = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // FPSCap / IdleFPS / UnfocusedFPS report the three frame-pacing rates
 // (defaults when unset): the foreground ceiling, the nothing-is-animating
 // idle rate, and the another-window-has-focus rate.
@@ -6399,11 +6557,10 @@ func (p *AssetPreferences) FPSCap() int {
 	return p.FPSCapVal
 }
 
-// SetFPSCap persists the foreground frame cap (0 = default; else clamped).
+// SetFPSCap persists the foreground frame cap (0 = default, FPSUnlimited = no
+// cap; else clamped).
 func (p *AssetPreferences) SetFPSCap(fps int) {
-	if fps != 0 {
-		fps = clampPercent(fps, FPSCapMin, FPSCapMax)
-	}
+	fps = normalizeFPSPref(fps, FPSCapMin, FPSCapMax)
 	p.mu.Lock()
 	if p.FPSCapVal == fps {
 		p.mu.Unlock()
@@ -6424,11 +6581,10 @@ func (p *AssetPreferences) IdleFPS() int {
 	return p.IdleFPSVal
 }
 
-// SetIdleFPS persists the idle frame rate (0 = default; else clamped).
+// SetIdleFPS persists the idle frame rate (0 = default, FPSUnlimited = never
+// throttle when idle; else clamped).
 func (p *AssetPreferences) SetIdleFPS(fps int) {
-	if fps != 0 {
-		fps = clampPercent(fps, IdleFPSMin, IdleFPSMax)
-	}
+	fps = normalizeFPSPref(fps, IdleFPSMin, IdleFPSMax)
 	p.mu.Lock()
 	if p.IdleFPSVal == fps {
 		p.mu.Unlock()
@@ -6449,17 +6605,48 @@ func (p *AssetPreferences) UnfocusedFPS() int {
 	return p.UnfocusedFPSVal
 }
 
-// SetUnfocusedFPS persists the unfocused frame rate (0 = default; else clamped).
+// SetUnfocusedFPS persists the unfocused frame rate (0 = default,
+// FPSUnlimited = never throttle when unfocused; else clamped).
 func (p *AssetPreferences) SetUnfocusedFPS(fps int) {
-	if fps != 0 {
-		fps = clampPercent(fps, UnfocusedFPSMin, UnfocusedFPSMax)
-	}
+	fps = normalizeFPSPref(fps, UnfocusedFPSMin, UnfocusedFPSMax)
 	p.mu.Lock()
 	if p.UnfocusedFPSVal == fps {
 		p.mu.Unlock()
 		return
 	}
 	p.UnfocusedFPSVal = fps
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// InputGraceFrames reports the post-input full-rate hold in frames
+// (InputGraceFramesDefault when unset).
+func (p *AssetPreferences) InputGraceFrames() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.InputGraceFramesVal == 0 {
+		return InputGraceFramesDefault // absent = the default hold
+	}
+	if p.InputGraceFramesVal < 0 {
+		return 0 // InputGraceOff → no hold
+	}
+	return p.InputGraceFramesVal
+}
+
+// SetInputGraceFrames persists the post-input full-rate hold. 0 (or below) is
+// the OFF sentinel (no hold — distinct from unset); a positive value clamps.
+func (p *AssetPreferences) SetInputGraceFrames(n int) {
+	if n <= 0 {
+		n = InputGraceOff
+	} else {
+		n = clampPercent(n, InputGraceFramesMin, InputGraceFramesMax)
+	}
+	p.mu.Lock()
+	if p.InputGraceFramesVal == n {
+		p.mu.Unlock()
+		return
+	}
+	p.InputGraceFramesVal = n
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -6493,7 +6680,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.WSOrigin = ""
 	p.UpdateExperimental = false // back to the stable update channel
 	p.AssetCharCase = 0
-	p.SpriteLoadModeVal = SpriteLoadBlank
+	p.SpriteLoadModeVal = defaultSpriteLoadMode
 	p.SpriteWaitMsVal = 0
 	p.SpriteWaitPair = false
 	p.SpriteWaitPreanim = false
@@ -6516,6 +6703,10 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.FPSCapVal = 0
 	p.IdleFPSVal = 0
 	p.UnfocusedFPSVal = 0
+	p.InputGraceFramesVal = 0
+	p.EventDrivenLoop = defaultEventDrivenLoop
+	p.DisableFrameLimiter = false  // #5 bypass resets OFF
+	p.MotionRedrawPerEvent = false // per-event motion redraw resets OFF
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()

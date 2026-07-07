@@ -328,7 +328,7 @@ func TestPixPoolOversizeUnpooled(t *testing.T) {
 // when its owner talked). The clamp never drops below one frame.
 func TestBoundedFrameCount(t *testing.T) {
 	const w, h = 1000, 1000 // 4 MB per decoded frame
-	fits := maxDecodedAssetBytes / (w * h * rgbaBytesPerPixel)
+	fits := int(maxDecodedAssetBytes.Load()) / (w * h * rgbaBytesPerPixel)
 	if fits < 2 {
 		t.Fatalf("test geometry no longer fits the budget (fits=%d)", fits)
 	}
@@ -358,7 +358,7 @@ func TestBoundedFrameCount(t *testing.T) {
 // preanim to its talking pose a quarter of the way through — the bug this fixes).
 func TestDecodeGIFDecimatesOversizedAnimation(t *testing.T) {
 	const w, h = 500, 500
-	fits := maxDecodedAssetBytes / (w * h * rgbaBytesPerPixel)
+	fits := int(maxDecodedAssetBytes.Load()) / (w * h * rgbaBytesPerPixel)
 	frames := fits + 3
 
 	g := &gif.GIF{Config: image.Config{Width: w, Height: h}}
