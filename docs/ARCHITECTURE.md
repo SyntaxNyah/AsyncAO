@@ -28,6 +28,35 @@ and only on this thread. The decode pool outputs plain `image.RGBA`; texture
 creation, destruction (via the bounded destroy queue) and font rasterization
 all happen here.
 
+## Frame pacing & the event-driven loop
+
+The main loop is not vsync-bound. Each pass computes a pacing budget from
+`App.FramePace(focused)` (the adaptive tier — full while interacting/animating, the
+idle rate on a static screen) and `App.HardCapBudget(focused)` (the INVIOLABLE
+active/background ceiling). The budget is slept in two tiers: the hard-cap floor
+UNINTERRUPTIBLY (so an input flood — mouse motion streams an event every few ms —
+can never bust the cap), then any surplus INTERRUPTIBLY (input during a slow idle
+tier renders within one ceiling instead of waiting the whole budget out).
+
+With the **event-driven loop** (`EventDrivenLoopOn`, default ON) a static screen
+(`SkipFrame` true: no input, nothing animating, nobody talking) renders nothing and
+parks on `sdl.WaitEventTimeout`. It wakes on real input, on the cross-thread
+`PushWake` doorbell (a user event pushed by the WS read loop / decode delivery — the
+one sanctioned cross-thread SDL touch, `wake.go`), or when `NextWakeDelay` reports a
+real redraw deadline (idle-rate tick, caret flip, the next animation flip via
+`Viewport.NextAnimDue`). idle=off then means genuinely zero redraws until something
+changes; `NoteDeadline` / `uiDirty` / `NoteAnimating` are the "redraw one frame"
+hooks producers use so an off-thread change still appears at idle=0.
+
+**Audio is decoupled from the present rate.** While the live courtroom is typing
+(`App.AudioActive`), the loop spends its pacing budget advancing the room — and
+playing its blips — at a fine ~60 Hz cadence via `Background` (room `Update` + audio
+drain, no draw), threaded through the SAME two-tier split-sleep; the next `Frame`
+draws the already-current room (`roomPreAdvanced` makes it skip its own
+`room.Update`). So blips play at their natural cadence even at a 1 fps cap, with the
+hard-cap floor still uninterruptible. SDL_mixer stays on this thread (rule zero) —
+there is no separate audio thread.
+
 ## Asset pipeline (spec §8)
 
 ```

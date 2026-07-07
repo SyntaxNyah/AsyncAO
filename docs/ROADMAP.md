@@ -39,12 +39,15 @@ gamepad track below._
 
 - ~~**More power-user knobs — the menu**~~ — **all shipped in v1.40.0** (404 TTL,
   deadline multiple, downscale override, texture budget, crossfade — see FEATURES),
-  along with the **adaptive frame pacing** that fixed the idle GPU burn. Still open
-  from that conversation: **true damage/dirty-rect rendering** (skip the re-render
-  entirely when nothing changed, not just pace it — SDL2's renderer makes this
-  awkward; realistically part of the SDL3 track below) and a **wake-on-input frame
-  loop** (SDL_WaitEventTimeout instead of poll+sleep, so idle input latency is 0 ms
-  instead of ≤ one idle frame).
+  along with the **adaptive frame pacing** that fixed the idle GPU burn. Both
+  follow-ups from that conversation **shipped in v1.55.0**: the **wake-on-input /
+  event-driven loop** (`SDL_WaitEventTimeout` instead of poll+sleep, so idle input
+  latency is ~0) and **skip-when-nothing-changed rendering** (a static screen skips
+  render+present entirely — `SkipFrame` — so idle=off is genuinely zero GPU, not
+  just paced), together with a real frame limiter (inviolable active/idle/background
+  caps) and audio decoupled from the frame rate. A finer per-tile damage/dirty-rect
+  pass (only re-composite the changed region of a *rendered* frame) remains the SDL3
+  track below.
 - ~~**Low-quality persistent sprite cache**~~ — **shipped in v1.40.0** (Settings →
   Power user → "Sprite thumbnail cache", default OFF; see FEATURES), including the
   byte-budget auto-prune (oldest-first past the cap).

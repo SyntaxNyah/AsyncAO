@@ -56,6 +56,25 @@ gates it at a simulated 144 Hz: every rune must reveal within one frame
 of its schedule and the whole message within one frame of its ideal
 duration.
 
+### Frame limiter + event-driven renderer + fps-independent audio — main loop (v1.55)
+The GPU-burn fix. The loop paces to `App.FramePace` / `App.HardCapBudget` instead
+of vsync (which tied it to the panel — a 165 Hz screen burned GPU while idle, and
+some windowed present paths never blocked at all). Shipped defaults: active =
+∞ / vsync while you interact or anything animates, **idle = off** (a static screen
+renders nothing — near-zero GPU), background/unfocused = 5 fps; each a slider. The
+active and background caps are inviolable ceilings, slept UNINTERRUPTIBLY, so an
+input flood (mouse motion streams an event every few ms) can never bust them. The
+**event-driven renderer** (default ON) parks a static screen on an OS event wait
+between real signals — input, `PushWake` from packets/decodes, or a caret / clock /
+due-animation deadline (`NextWakeDelay` / `NoteDeadline`) — so idle=off is genuinely
+zero redraws. **Audio stays independent of the frame rate** (v1.55.1): a typing
+message advances the courtroom and plays its blips at a fine ~60 Hz cadence,
+threaded through the same two-tier split-sleep (hard-cap floor uninterruptible), so
+blips never batch to a low present rate; incoming SFX/pings wake the parked loop.
+SDL_mixer stays on the render thread — no separate audio thread. Pinned by
+`TestFramePace`, `TestHardCapBudget`, the `TestSkipFrame*` set, `TestAudioPaceActive`
+and `TestAudioActive`.
+
 ### Steady-state lookup caches — `ui`
 Two per-frame costs removed after the layout engine landed: theme
 overlay textures now resolve through a store-generation-keyed page cache

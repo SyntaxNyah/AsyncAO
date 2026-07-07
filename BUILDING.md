@@ -8,6 +8,8 @@ AsyncAO is Go ≥ 1.24 with CGO. The C dependencies are:
 | SDL2_ttf | font rasterization |
 | SDL2_mixer (≥ 2.6, with opusfile) | Opus/OGG/MP3/WAV decoding in C |
 | libwebp + libwebpdemux | static & animated WebP decode (SIMD) |
+| libavif (+ dav1d/aom) | AVIF image decode |
+| opus | Opus (voice chat + Opus music via SDL2_mixer) |
 
 Everything else is pure Go and fetched by `go build` automatically.
 
@@ -28,7 +30,8 @@ Everything else is pure Go and fetched by `go build` automatically.
    ```bash
    pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-pkgconf \
              mingw-w64-ucrt-x86_64-SDL2 mingw-w64-ucrt-x86_64-SDL2_ttf \
-             mingw-w64-ucrt-x86_64-SDL2_mixer mingw-w64-ucrt-x86_64-libwebp
+             mingw-w64-ucrt-x86_64-SDL2_mixer mingw-w64-ucrt-x86_64-libwebp \
+             mingw-w64-ucrt-x86_64-libavif mingw-w64-ucrt-x86_64-opus
    ```
 
 3. **Build** (sets all the CGO env vars for you, stages runtime DLLs):
@@ -81,9 +84,9 @@ go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 
 Package names if you'd rather install manually:
 
-- **Debian/Ubuntu:** `libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev`
-- **Fedora:** `SDL2-devel SDL2_ttf-devel SDL2_mixer-devel libwebp-devel`
-- **Arch:** `sdl2 sdl2_ttf sdl2_mixer libwebp`
+- **Debian/Ubuntu:** `libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev libopus-dev`
+- **Fedora:** `SDL2-devel SDL2_ttf-devel SDL2_mixer-devel libwebp-devel libavif-devel opus-devel`
+- **Arch:** `sdl2 sdl2_ttf sdl2_mixer libwebp libavif opus`
 
 ### Linux AppImage (self-contained download)
 
@@ -110,7 +113,7 @@ chat compiled out, `-tags "nodiscord novoice"`). To build the lean one locally:
 ## macOS
 
 ```bash
-brew install sdl2 sdl2_ttf sdl2_mixer webp pkg-config
+brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus pkg-config
 go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 ./asyncao
 ```
