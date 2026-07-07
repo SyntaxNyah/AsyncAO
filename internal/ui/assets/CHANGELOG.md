@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test28 — 2026-07-07 (test build)
+
+- **New setting: "Redraw once per mouse-move event."** (Settings → Power user →
+  the frame-limiter block, under the event-driven renderer.) Off by default, so
+  nothing changes unless you turn it on. Normally, moving the mouse briefly holds
+  the full frame rate, so sweeping the cursor renders at your active cap. With
+  this on, each mouse-move event draws a single frame and the renderer parks again
+  — the cursor still tracks, but waving it over a static screen stops burning
+  frames and power. Clicks, keys and the scroll wheel keep their normal full-rate
+  response.
+
 ## v1.55.0-test27 — 2026-07-07 (test build)
 
 - **"Hold the message until it loads" no longer stalls on characters with a dummy

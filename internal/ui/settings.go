@@ -3124,6 +3124,13 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y += 26
 	y = a.settingsDesc(pad, y, "Static screens stop redrawing entirely: input wakes the renderer instantly, incoming messages and finished loads push their own wake, and a blinking caret or ticking clock redraws one frame exactly when it's due. Sounds and the connection never slow down — only wasted redraws go. Applies live. If anything looks frozen or choppy, turn this off (the classic pacing loop) and report what it was.", ColTextDim)
 	y += 10
+	mrp := a.d.Prefs.MotionRedrawPerEventOn()
+	if next := c.Checkbox(pad, y, "Redraw once per mouse-move event (less power on cursor motion)", mrp); next != mrp {
+		a.d.Prefs.SetMotionRedrawPerEvent(next)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "Event-driven renderer only. Off (default): moving the mouse holds the full frame rate for a moment, so a hover sweep renders at your active cap. On: each mouse-move event draws a single frame and the renderer parks again — the cursor still tracks, but sweeping it over static UI stops burning frames. Clicks, keys and the scroll wheel keep their normal full-rate response.", ColTextDim)
+	y += 10
 	nolimit := a.d.Prefs.FrameLimiterDisabled()
 	if next := c.Checkbox(pad, y, "Disable the frame limiter entirely (render every frame — vsync only, HIGH GPU)", nolimit); next != nolimit {
 		a.d.Prefs.SetFrameLimiterDisabled(next)

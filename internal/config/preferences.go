@@ -859,6 +859,7 @@ type AssetPreferences struct {
 	InputGraceFramesVal    int                          `json:"inputGraceFrames,omitempty"`     // full-rate hold after a click/key, in frames (0/absent = default 1)
 	EventDrivenLoop        bool                         `json:"eventDrivenLoop"`                // EXPERIMENTAL event-driven render loop (default ON; the kill switch back to classic pacing)
 	DisableFrameLimiter    bool                         `json:"disableFrameLimiter,omitempty"`  // #5 bypass: render every frame, NO pacing/skip (vsync only). Default OFF, high GPU. Fresh key.
+	MotionRedrawPerEvent   bool                         `json:"motionRedrawPerEvent,omitempty"` // event-driven loop: pointer motion renders ONE frame per motion event instead of holding full rate. Default OFF.
 	SpriteDownscalePctVal  int                          `json:"spriteDownscalePct,omitempty"`   // decode downscale target as % of display height (0/absent = 100)
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
@@ -1184,6 +1185,7 @@ type prefsJSON struct {
 	InputGraceFrames       int              `json:"inputGraceFrames"`     // full-rate hold after input, in frames (0 = default 1)
 	EventDrivenLoop        *bool            `json:"eventDrivenLoop"`      // experimental event-driven loop (default ON; pointer: absent != off)
 	DisableFrameLimiter    bool             `json:"disableFrameLimiter"`  // #5 bypass: no pacing/skip at all (default OFF)
+	MotionRedrawPerEvent   bool             `json:"motionRedrawPerEvent"` // per-event motion redraw (default OFF; plain bool: absent = off)
 	SpriteDownscalePct     int              `json:"spriteDownscalePct"`   // downscale % of display height (0 = 100)
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
@@ -1925,7 +1927,8 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.EventDrivenLoop != nil { // pointer: absent keeps the default-ON
 		p.EventDrivenLoop = *onDisk.EventDrivenLoop
 	}
-	p.DisableFrameLimiter = onDisk.DisableFrameLimiter // default-OFF plain bool (absent = off)
+	p.DisableFrameLimiter = onDisk.DisableFrameLimiter   // default-OFF plain bool (absent = off)
+	p.MotionRedrawPerEvent = onDisk.MotionRedrawPerEvent // default-OFF plain bool (absent = off)
 	p.TexBudgetMiBVal = onDisk.TexBudgetMiB
 	if p.TexBudgetMiBVal != 0 {
 		p.TexBudgetMiBVal = clampPercent(p.TexBudgetMiBVal, TexBudgetMinMiB, TexBudgetMaxMiB)
@@ -6492,6 +6495,31 @@ func (p *AssetPreferences) SetEventDrivenLoop(on bool) {
 	p.markDirty()
 }
 
+// MotionRedrawPerEventOn reports the opt-in "redraw once per mouse-move event"
+// pacing (event-driven loop only, default OFF): with it ON, bare pointer motion
+// renders exactly the one frame its event earns and then re-parks, instead of
+// arming the short full-rate motion grace — so hovering/sweeping the cursor over
+// nothing stops pinning the frame rate to the cap. Real input (click/key/wheel)
+// keeps its normal full-rate hold.
+func (p *AssetPreferences) MotionRedrawPerEventOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MotionRedrawPerEvent
+}
+
+// SetMotionRedrawPerEvent flips the per-event motion pacing (applies live — the
+// main loop re-reads it every pass).
+func (p *AssetPreferences) SetMotionRedrawPerEvent(on bool) {
+	p.mu.Lock()
+	if p.MotionRedrawPerEvent == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MotionRedrawPerEvent = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
 // FrameLimiterDisabled reports the #5 bypass: when ON the main loop renders
 // every pass with no adaptive pacing and no static skip — vsync alone paces the
 // presents (and -vsync=false keeps a 60 fps floor so it can't busy-spin). Default
@@ -6677,7 +6705,8 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.UnfocusedFPSVal = 0
 	p.InputGraceFramesVal = 0
 	p.EventDrivenLoop = defaultEventDrivenLoop
-	p.DisableFrameLimiter = false // #5 bypass resets OFF
+	p.DisableFrameLimiter = false  // #5 bypass resets OFF
+	p.MotionRedrawPerEvent = false // per-event motion redraw resets OFF
 	p.ClipSpritesToStage = defaultClipSpritesToStage
 	p.mu.Unlock()
 	p.markDirty()

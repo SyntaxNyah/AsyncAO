@@ -4149,6 +4149,14 @@ const motionInputGrace = 200 * time.Millisecond
 // (byte-identical pacing to before).
 func (a *App) NoteMotion() {
 	if a.d.Prefs != nil && a.d.Prefs.EventDrivenLoopOn() {
+		// Per-event motion redraw (opt-in): don't arm the full-rate grace. The
+		// motion event already earns its single wake-frame (SkipFrame refuses on
+		// sawEvent), then the loop re-parks — so a moving cursor redraws once per
+		// motion event instead of holding full rate through a 200 ms tail. Saves
+		// power on hover sweeps that would otherwise pin the rate to the cap.
+		if a.d.Prefs.MotionRedrawPerEventOn() {
+			return
+		}
 		a.lastMotionAt = time.Now()
 		return
 	}
