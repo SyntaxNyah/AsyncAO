@@ -41,9 +41,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   paced window instead of vanishing to black.
 - **Cold-load sprite modes** (Settings → Power user → Renderer): what happens while
   a NEW, uncached sprite is still streaming + decoding (the cold-load gap — worse on
-  huge art / high ping). **"Show nothing"** (default = original behaviour, the blank
-  flash), **"Keep the previous one"** (webAO-style: the layer's last drawn sprite
-  stays on screen until the new one lands), or **"Hold the message"** (client-AO
+  huge art / high ping). **"Keep the previous one"** (default as of v1.55.0,
+  webAO-style: the layer's last drawn sprite stays on screen until the new one
+  lands), **"Show nothing"** (the original behaviour, the blank flash), or **"Hold
+  the message"** (client-AO
   -style: the message stays **off-stage** until its speaker's idle sprite has
   decoded). Hold-previous is pure render path (`render.SpriteLoadMode`): the held
   sprite is resolved by BASE string through the store each frame (never a stashed
@@ -56,8 +57,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   default 1.5 s) releases it regardless — so a 404/decode failure can only ever
   *delay* a message, never hang the room; **shouts play instantly** (AO2 parity) and
   **packed-room catch-up always wins** (a backlog never waits). Two strictness ticks
-  extend the gate to the **pair partner's idle** and the **preanimation**; on a
-  timeout the renderer falls back to hold-previous so the stage still never flashes.
+  extend the gate to the **pair partner's idle** and the **preanimation** — and a
+  preanim that is *conclusively missing* (packs that fill the field with a dummy
+  `-<n>` on every emote) releases the gate on the 404 signal (`NotifyAssetMissing`)
+  instead of running out the full timeout (v1.55.0); on a plain timeout the renderer
+  falls back to hold-previous so the stage still never flashes.
   Hold-previous has its own knobs: a **max-age** cap on the stand-in (0 = forever)
   and a **diagnostic amber tint** so you can SEE it bridging. A cached scene is
   **byte-identical** whatever the mode, and holding is **0-alloc**
@@ -88,24 +92,42 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   but keeps the stored thumbs (Clear is deliberate). Pinned by
   `TestThumbCacheRoundTrip`, `TestThumbStandIn` (draw order + 0-alloc) and
   `TestThumbDefaultsPinned` (config↔assets constants).
-- **Adaptive frame pacing** (the GPU-burn fix; Settings → Power user → "Frame
-  rate & GPU"): the main loop paces to `App.FramePace(focused)` instead of the
-  monitor — **full cap** (default 60) while the user interacts (`NoteInput` +
-  a 1 s grace) or anything animates (`wantsFullRate`: message ceremony/queue,
-  shake/flash, transmitted sprite motion, replay/maker/export/voice, reaction
-  floats, toasts, the pinned second courtroom, the perf HUD, and the
-  always-animating FX prefs), **idle rate** (default 30) when the screen is
-  static, **unfocused rate** (default 10) when another window has focus;
-  minimized still draws nothing. vsync stays on for tear-free presents but is
-  no longer the throttle (165 Hz panels burned GPU idle; some windowed present
-  paths never blocked at all). A LIVE stage animation always keeps its own
-  frame schedule (`Viewport.NextAnimDue`): the pacer wakes exactly at the
-  next flip, focused (clamped [full, idle]) **and unfocused** (clamped
-  [full, unfocused] — the flat unfocused trickle made idle loops visibly
-  choppy on a second monitor, v1.50.8). The main loop's anti-stall dt clamp
-  exempts its own scheduled naps so sleepy tiers can't slow-motion animation
-  clocks. Three sliders, nuke-scoped; `TestFramePace` +
-  `TestFramePaceUnfocusedFollowsAnim` pin the transitions.
+- **Frame limiter + event-driven renderer** (the GPU-burn fix; Settings → Power
+  user → "Frame rate & GPU"): the main loop paces to `App.FramePace(focused)` /
+  `App.HardCapBudget(focused)` instead of the monitor. **Shipped defaults
+  (v1.55.0): active = ∞ / vsync** while you interact (`NoteInput`, an
+  input-responsiveness hold measured in FRAMES, `NoteMotion`) or anything animates
+  (`wantsFullRate` / `NoteAnimating`: message ceremony/queue, shake/flash,
+  transmitted sprite motion, replay/maker/export/voice, reaction floats, toasts,
+  the pinned second courtroom, the perf HUD, always-animating FX), **idle = off** —
+  a static screen renders *nothing at all* (near-zero GPU) — and
+  **background/unfocused = 5 fps**; minimized draws nothing. Each is a slider (the
+  ∞ / off sentinels included), nuke-scoped. The active and background caps are
+  INVIOLABLE ceilings, slept uninterruptibly, so an input flood — above all mouse
+  motion, which streams an event every few ms — can never bust them
+  (`HardCapBudget`). vsync stays on for tear-free presents but is no longer the
+  throttle (165 Hz panels burned GPU idle; some windowed present paths never
+  blocked at all). A LIVE stage animation keeps its own frame schedule
+  (`Viewport.NextAnimDue`): the pacer wakes exactly at the next flip.
+  With the **event-driven renderer** (default ON; the kill switch reverts to the
+  classic sleep-paced loop), a static screen stops redrawing *entirely* between
+  real signals — input wakes an OS-level event wait instantly, network packets and
+  finished decodes push a wake event (`PushWake`), and a blinking caret / ticking
+  clock / due animation redraws exactly one frame when it's scheduled
+  (`NextWakeDelay`, `NoteDeadline`). idle = off then means *genuinely zero* redraws
+  until something changes. A **per-event mouse redraw** (default ON as of v1.55.1)
+  renders one frame per motion event instead of holding full rate while the cursor
+  moves. `TestFramePace`, `TestHardCapBudget`, `TestMotionGrace` and the
+  `TestSkipFrame*` set pin the transitions.
+- **Audio independent of the frame rate** (v1.55.1): while a message types, the
+  courtroom advances — and plays its blips — at a fine ~60 Hz cadence even when the
+  present rate is capped low, so audio never batches to the frame rate ("blips only
+  once per screen refresh at a 1 fps cap"). It's threaded through the same two-tier
+  split-sleep as the caps, so the inviolable hard-cap floor stays uninterruptible;
+  incoming SFX and pings wake the parked loop and play the instant they arrive.
+  `App.AudioActive` / `AudioPaceActive`, `Courtroom.AudioActive`. SDL_mixer stays
+  on the render thread — no separate audio thread (rule §17.1). Pinned by
+  `TestAudioPaceActive` + `TestAudioActive`.
 - **Network / decode / texture / pacing knob suite** (Settings → Power user,
   each with an in-depth WHAT-IT-DOES): 404 negative-cache TTL
   (`NewClientNotFoundTTL`, restart-applied), per-host adaptive-deadline

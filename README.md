@@ -23,6 +23,11 @@ everything in memory and on disk, and renders without allocating.
   (64 MiB GPU textures / 128 MiB raw bytes / on-disk by full URL), and a
   **zero-allocation render loop** under a 256 MiB budget. Cold-loading a
   200-character server costs ~285 probes, not thousands.
+- **Easy on your GPU and battery** — a real frame limiter, not vsync: a static
+  courtroom renders *nothing at all* (near-zero GPU), and the client only redraws
+  the moment something actually changes — typing, an animation, a packet, input.
+  Every rate is a slider (active / idle / background), and sound stays smooth even
+  at a 1 fps cap, so a 165 Hz laptop stops burning its GPU and fan on a quiet room.
 - **Two servers at once** — every connection is a tab, and any background tab can
   be **popped out into a floating, movable, resizable second client** you watch
   or play alongside the main one (click it to take control; full-theme view with
