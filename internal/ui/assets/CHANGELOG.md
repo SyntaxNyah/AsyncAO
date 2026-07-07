@@ -4,6 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.1 — 2026-07-07
+
+- **"Redraw once per mouse-move event" is now on by default.** Moving the mouse
+  draws a single frame per motion event and lets the renderer park again, instead
+  of holding the full frame rate the whole time the cursor moves — less GPU and
+  power when you're just moving the pointer around. Same setting introduced in
+  v1.55.0, now on out of the box; turn it off under Settings → Power user if you
+  prefer the cursor to hold the full frame rate.
+
 ## v1.55.0 — 2026-07-07
 
 The headline this release is **a lot less GPU and power usage**, plus a batch of

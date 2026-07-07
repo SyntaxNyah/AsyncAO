@@ -278,6 +278,49 @@ func TestSpriteLoadModeDefaultAndMigration(t *testing.T) {
 	}
 }
 
+// TestMotionRedrawDefaultAndMigration pins the v1.55.1 default-ON flip: a fresh
+// install defaults to ON; a v1.55.0 prefs file that predates the flip (the old
+// default-OFF was dropped by omitempty, so the key is absent) loads as the new
+// default ON; and an explicit OFF round-trips (the reason the save field is no
+// longer omitempty and the load DTO is a *bool — else OFF reads back as "absent →
+// ON", silently re-enabling it).
+func TestMotionRedrawDefaultAndMigration(t *testing.T) {
+	// 1) Fresh install (no file) → ON.
+	fresh, path := newTestPrefs(t)
+	if !fresh.MotionRedrawPerEventOn() {
+		t.Fatalf("fresh default MotionRedrawPerEvent = false, want ON")
+	}
+
+	// 2) Legacy v1.55.0 file with the key ABSENT → the new default ON, not OFF.
+	legacy := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(legacy, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write legacy prefs: %v", err)
+	}
+	lp, err := newWithDebounce(legacy, testDebounce)
+	if err != nil {
+		t.Fatalf("load legacy: %v", err)
+	}
+	defer lp.Close()
+	if !lp.MotionRedrawPerEventOn() {
+		t.Error("legacy (absent key) MotionRedrawPerEvent = false, want the new default ON")
+	}
+
+	// 3) An explicit OFF must persist across a save/reload (omitempty removed).
+	fresh.SetMotionRedrawPerEvent(false)
+	if err := fresh.SaveNow(); err != nil {
+		t.Fatalf("save explicit OFF: %v", err)
+	}
+	_ = fresh.Close()
+	re, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	defer re.Close()
+	if re.MotionRedrawPerEventOn() {
+		t.Error("explicit OFF did not persist: reloaded MotionRedrawPerEvent = ON, want OFF")
+	}
+}
+
 func TestPersistenceRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := newWithDebounce(path, testDebounce)

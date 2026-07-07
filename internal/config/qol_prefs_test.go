@@ -751,20 +751,20 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetAssetWarnings(true)
 	p.SetSpriteMove(true)
 	p.SetDeskFollowManifest(true)
-	p.SetAutoLoginToast(false)      // explicit false must survive the absent-default-ON pointer
-	p.SetCallwordToast(false)       // same absent-default-ON pointer
-	p.SetMessageCounter(false)      // same absent-default-ON pointer
-	p.SetICTimestamps(true)         // explicit non-default true must survive the absent-default-OFF pointer
-	p.SetAutoReconnect(false)       // same absent-default-ON pointer
-	p.SetMusicHistory(false)        // same absent-default-ON pointer
-	p.SetRainbowSprites(true)       // default-OFF plain bool — must survive as true
-	p.SetShowRecordButton(true)     // default-OFF plain bool
-	p.SetShowFriendButton(false)    // default-ON *bool — explicit false must survive
-	p.SetDragLayout(false)          // default-ON *bool — explicit false must survive
-	p.SetEventDrivenLoop(false)     // default-ON *bool — the experimental-loop kill switch must stick
-	p.SetFrameLimiterDisabled(true) // #5 bypass — default-OFF plain bool must survive as true
-	p.SetMotionRedrawPerEvent(true) // per-event motion redraw — default-OFF plain bool must survive as true
-	p.SetIdleFPS(FPSUnlimited)      // the ∞ sentinel must survive save→load un-clamped
+	p.SetAutoLoginToast(false)       // explicit false must survive the absent-default-ON pointer
+	p.SetCallwordToast(false)        // same absent-default-ON pointer
+	p.SetMessageCounter(false)       // same absent-default-ON pointer
+	p.SetICTimestamps(true)          // explicit non-default true must survive the absent-default-OFF pointer
+	p.SetAutoReconnect(false)        // same absent-default-ON pointer
+	p.SetMusicHistory(false)         // same absent-default-ON pointer
+	p.SetRainbowSprites(true)        // default-OFF plain bool — must survive as true
+	p.SetShowRecordButton(true)      // default-OFF plain bool
+	p.SetShowFriendButton(false)     // default-ON *bool — explicit false must survive
+	p.SetDragLayout(false)           // default-ON *bool — explicit false must survive
+	p.SetEventDrivenLoop(false)      // default-ON *bool — the experimental-loop kill switch must stick
+	p.SetFrameLimiterDisabled(true)  // #5 bypass — default-OFF plain bool must survive as true
+	p.SetMotionRedrawPerEvent(false) // per-event motion redraw — default-ON *bool, so an explicit OFF must survive
+	p.SetIdleFPS(FPSUnlimited)       // the ∞ sentinel must survive save→load un-clamped
 	p.SetRainbowSpriteSpeed(30)
 	p.SetRainbowSpriteVividness(95)
 	p.SetRainbowSpriteGlow(true)
@@ -830,8 +830,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if !q.FrameLimiterDisabled() {
 		t.Error("DisableFrameLimiter=true lost across reload")
 	}
-	if !q.MotionRedrawPerEventOn() {
-		t.Error("MotionRedrawPerEvent=true lost across reload")
+	if q.MotionRedrawPerEventOn() {
+		t.Error("MotionRedrawPerEvent=false lost across reload (default-ON *bool must persist an explicit OFF)")
 	}
 	if got := q.IdleFPS(); got != FPSUnlimited {
 		t.Errorf("IdleFPS unlimited sentinel lost across reload: %d, want %d", got, FPSUnlimited)
@@ -1092,8 +1092,8 @@ func TestResetPowerUser(t *testing.T) {
 	p.SetIdleFPS(60)
 	p.SetUnfocusedFPS(30)
 	p.SetEventDrivenLoop(false)
-	p.SetFrameLimiterDisabled(true) // #5 bypass — must revert to OFF on nuke
-	p.SetMotionRedrawPerEvent(true) // per-event motion redraw — must revert to OFF on nuke
+	p.SetFrameLimiterDisabled(true)  // #5 bypass — must revert to OFF on nuke
+	p.SetMotionRedrawPerEvent(false) // per-event motion redraw — must revert to its default (ON) on nuke
 	p.SetClipSpritesToStage(false)
 	p.AddModDuration("45m") // user data — must SURVIVE the nuke
 
@@ -1136,8 +1136,8 @@ func TestResetPowerUser(t *testing.T) {
 	if p.FrameLimiterDisabled() {
 		t.Error("nuke must restore the frame-limiter bypass to its default OFF")
 	}
-	if p.MotionRedrawPerEventOn() {
-		t.Error("nuke must restore per-event motion redraw to its default OFF")
+	if !p.MotionRedrawPerEventOn() {
+		t.Error("nuke must restore per-event motion redraw to its default ON")
 	}
 	if got := p.ModDurationsList(); len(got) != 1 || got[0] != "45m" {
 		t.Errorf("custom mod durations are user data and must survive the nuke, got %v", got)

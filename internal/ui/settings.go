@@ -3129,7 +3129,7 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 		a.d.Prefs.SetMotionRedrawPerEvent(next)
 	}
 	y += 26
-	y = a.settingsDesc(pad, y, "Event-driven renderer only. Off (default): moving the mouse holds the full frame rate for a moment, so a hover sweep renders at your active cap. On: each mouse-move event draws a single frame and the renderer parks again — the cursor still tracks, but sweeping it over static UI stops burning frames. Clicks, keys and the scroll wheel keep their normal full-rate response.", ColTextDim)
+	y = a.settingsDesc(pad, y, "Event-driven renderer only. On (default): each mouse-move event draws a single frame and the renderer parks again — the cursor still tracks, but sweeping it over static UI stops burning frames and power. Off: moving the mouse holds the full frame rate for a moment, so a hover sweep renders at your active cap. Clicks, keys and the scroll wheel keep their normal full-rate response.", ColTextDim)
 	y += 10
 	nolimit := a.d.Prefs.FrameLimiterDisabled()
 	if next := c.Checkbox(pad, y, "Disable the frame limiter entirely (render every frame — vsync only, HIGH GPU)", nolimit); next != nolimit {

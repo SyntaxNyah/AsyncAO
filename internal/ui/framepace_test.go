@@ -429,9 +429,18 @@ func TestFramePaceAnimatedChrome(t *testing.T) {
 func TestMotionGrace(t *testing.T) {
 	a := testTabApp(t)
 
+	// Default (v1.55.1): per-event motion redraw is ON, so bare motion does NOT arm
+	// the full-rate grace — the motion event's own frame renders and the loop re-parks.
+	a.NoteMotion()
+	if a.wantsFullRate() {
+		t.Error("default (per-event motion redraw ON): bare motion must NOT hold full rate")
+	}
+
+	// Off: motion arms the short full-rate grace (the pre-v1.55.1 behaviour).
+	a.d.Prefs.SetMotionRedrawPerEvent(false)
 	a.NoteMotion()
 	if !a.wantsFullRate() {
-		t.Error("a moving pointer must render at full rate")
+		t.Error("per-event redraw off: a moving pointer must render at full rate")
 	}
 	a.lastMotionAt = time.Now().Add(-2 * motionInputGrace)
 	if a.wantsFullRate() {
