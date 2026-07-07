@@ -549,6 +549,37 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		if nap := budget - elapsed; nap > 0 {
 			scheduledNap = nap // total intended sleep — the stall guard must allow it in full
 		}
+		// Audio-paced sub-stepping (audio independent of the frame rate): while a
+		// message types at a low present rate, a single pacing sleep would advance
+		// the courtroom once with a big dt and machine-gun a whole present-period of
+		// blips at one instant ("blips only every screen refresh at a 1 fps cap").
+		// Instead spend the pacing budget advancing the room — and playing its blips
+		// — at the fine audio cadence: Background advances room + drains audio without
+		// drawing, and the NEXT Frame draws the already-current room (MarkRoomPreAdvanced
+		// makes it skip its own room.Update). Interruptible, so input still renders the
+		// next frame early; bounded by the budget deadline (rule §17.4). Only while the
+		// live courtroom is actually streaming blips, so a static screen still idles.
+		if !limiterOff && app.AudioPaceActive(budget) {
+			fine := app.AudioFineTick()
+			deadline := now.Add(budget)
+			for {
+				rem := time.Until(deadline)
+				if rem <= 0 {
+					break
+				}
+				step := fine
+				if step > rem {
+					step = rem
+				}
+				app.Background(step)      // advance room + audio at the fine cadence, no draw
+				app.MarkRoomPreAdvanced() // the next Frame draws the advanced room without re-advancing it
+				if ev := sdl.WaitEventTimeout(int(step / time.Millisecond)); ev != nil {
+					pendingEv = ev // input / background wake: render the next frame now
+					break
+				}
+			}
+			continue
+		}
 		// The ceiling, uninterruptibly: nothing renders faster than the cap.
 		if s := hardCap - elapsed; s > 0 {
 			time.Sleep(s)

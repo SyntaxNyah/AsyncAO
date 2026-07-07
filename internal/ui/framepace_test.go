@@ -81,6 +81,46 @@ func TestFramePace(t *testing.T) {
 	}
 }
 
+// TestAudioPaceActive pins the gate the main loop reads to keep audio smooth under
+// a low present cap: advance the courtroom (and play its blips) at the fine audio
+// cadence only when the LIVE room is typing AND the pacing budget is slower than the
+// fine tick (else a single sleep would batch a whole present-period of blips). Replay
+// / maker / export drive their own rooms, and a static room stays idle.
+func TestAudioPaceActive(t *testing.T) {
+	a := testTabApp(t)
+	a.room = newRoomForTest(t) // a real room: HandleEvent runs the full begin() path
+
+	if a.AudioActive() {
+		t.Fatal("an idle room (no message) must not be audio-active")
+	}
+	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(3, "Phoenix", "hello there")})
+	if !a.AudioActive() {
+		t.Fatalf("a typing room must be audio-active (phase %v)", a.room.Phase())
+	}
+
+	// Budget at/under the fine tick: nothing to spread → don't audio-pace.
+	if a.AudioPaceActive(a.AudioFineTick()) {
+		t.Error("a budget at the fine tick must not audio-pace")
+	}
+	// A slower budget with a typing room → audio-pace.
+	if !a.AudioPaceActive(4 * a.AudioFineTick()) {
+		t.Error("a budget slower than the fine tick with a typing room must audio-pace")
+	}
+
+	// Replay drives its own room: the live room is excluded from audio pacing.
+	a.replaying = true
+	if a.AudioActive() || a.AudioPaceActive(time.Second) {
+		t.Error("replay must exclude the live room from audio pacing")
+	}
+	a.replaying = false
+
+	// A nil room is never audio-active (lobby).
+	a.room = nil
+	if a.AudioActive() || a.AudioPaceActive(time.Second) {
+		t.Error("a nil room (lobby) must not audio-pace")
+	}
+}
+
 // TestHardCapBudget pins the INVIOLABLE ceiling the main loop sleeps
 // uninterruptibly (so no input flood can exceed it): the active cap when
 // focused, the unfocused cap when not, the ∞ sentinel as uncapped (0), and

@@ -1044,6 +1044,13 @@ type sessionState struct {
 	// uncap" mechanism); it falls back to idle the frame the draw stops marking it.
 	frameAnimChrome bool
 	drawnAnimChrome bool
+	// roomPreAdvanced is set by the main loop's audio-paced sub-stepping: while a
+	// message types at a low PRESENT rate, the loop advances the courtroom (and
+	// plays its blips) at the fine audio cadence via Background between presents, so
+	// audio never batches to the frame rate. When set, the next Frame skips its own
+	// room.Update (the room is already current) but still advances the UI + draws.
+	// Consumed (cleared) by that Frame. See AudioPaceActive / MarkRoomPreAdvanced.
+	roomPreAdvanced bool
 	// frameDemandPending is set during a draw pass whenever it leaves a
 	// DEMAND-STREAMED cell (an emote-grid button with neither its art nor its
 	// fallback icon resident yet) truly blank. drawnDemandPending is the last
@@ -4137,6 +4144,44 @@ func (a *App) NoteInput() { a.lastInputAt = time.Now() }
 // exactly one follow-up frame. Alloc-free; call it from the draw pass.
 func (a *App) NoteAnimating() { a.frameAnimChrome = true }
 
+// audioFineTick is the cadence the courtroom is advanced — and its blips played —
+// at while a message types, independent of the (possibly much slower) PRESENT rate.
+// ~60 Hz: fine enough that a fast blip stream never audibly quantizes, cheap because
+// it's logic + audio only (no GPU). The playtest ask: blips should sound as if the
+// UI were at 60 fps even with the frame rate capped low (down to 1 fps).
+const audioFineTick = time.Second / 60
+
+// AudioActive reports whether the LIVE courtroom is streaming audio-timed events
+// (a message typing → blips firing). Replay, the scene maker and GIF export drive
+// their own rooms at their own pacing, so they're excluded — only the live blip
+// stream needs the fine audio cadence. A static-but-open courtroom is NOT active,
+// so it still parks at true idle.
+func (a *App) AudioActive() bool {
+	if a.replaying || a.makerOpen || a.gifExporting || a.room == nil {
+		return false
+	}
+	return a.room.AudioActive()
+}
+
+// AudioPaceActive reports whether this pass's pacing sleep should be spent advancing
+// the courtroom at the fine audio cadence (Background sub-steps) instead of one long
+// sleep: a message is streaming blips AND the present budget is slower than the fine
+// tick, so a single sleep would batch a whole present-period of blips into one
+// instant (the "blips only on every screen refresh at a 1 fps cap" report). budget
+// is the pass's total intended sleep. Render thread; alloc-free.
+func (a *App) AudioPaceActive(budget time.Duration) bool {
+	return budget > audioFineTick && a.AudioActive()
+}
+
+// AudioFineTick is the fine audio-advance cadence, exported for the main loop's
+// sub-step sleep.
+func (a *App) AudioFineTick() time.Duration { return audioFineTick }
+
+// MarkRoomPreAdvanced records that the loop already advanced the courtroom this
+// present cycle (audio-paced sub-stepping), so the next Frame draws without
+// re-advancing the room (it's current) while still advancing the UI. Render thread.
+func (a *App) MarkRoomPreAdvanced() { a.roomPreAdvanced = true }
+
 // motionInputGrace holds full rate briefly after BARE pointer motion under the
 // experimental loop: long enough that continuous movement (hover sweeps, drags
 // — their motion stream keeps re-arming it) renders at full rate throughout,
@@ -5642,7 +5687,11 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.driveMakerPreview(dt)
 	case a.room != nil:
 		a.healScenery()
-		a.room.Update(dt)
+		if a.roomPreAdvanced {
+			a.roomPreAdvanced = false // the audio-paced loop already advanced the room this present cycle; just draw it
+		} else {
+			a.room.Update(dt)
+		}
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (default hold-previous = webAO-style bridge; Blank = the original byte-identical gap)

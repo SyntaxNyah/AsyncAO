@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test29 — 2026-07-07 (test build)
+
+- **Sound no longer bunches up at low frame rates.** When you cap the frame rate
+  low (say 1–2 fps), a character's blips used to come out only once per screen
+  refresh — a whole second of typing blips fired at the same instant. Audio now
+  runs independently of the frame limiter: while a message is typing, the client
+  keeps the blips playing at their natural cadence even though the screen only
+  redraws at your cap. Incoming sound effects and pings already play the moment
+  they arrive, even on a static screen. Nothing changes at normal frame rates, and
+  a truly idle screen still costs nothing.
+
 ## v1.55.0-test28 — 2026-07-07 (test build)
 
 - **New setting: "Redraw once per mouse-move event."** (Settings → Power user →

@@ -401,6 +401,17 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 // Phase exposes the current message phase.
 func (c *Courtroom) Phase() MessagePhase { return c.phase }
 
+// AudioActive reports whether the live message is actively streaming audio-timed
+// events — the typewriter is still revealing text, so blips fire as it advances.
+// The main loop reads it to advance the courtroom (and play its blips) at a fine
+// cadence even while the PRESENT rate is capped low, so audio never batches to the
+// frame rate ("blips only every screen refresh at a 1 fps cap"). One-shot sounds
+// (shout cries, emote SFX) fire on their own arrival and don't need this; only the
+// continuous blip stream does. False the instant the text finishes (PhaseLinger).
+func (c *Courtroom) AudioActive() bool {
+	return c.phase == PhaseTalking && !c.Typewriter.Done()
+}
+
 // QueueLen exposes the pending message count.
 func (c *Courtroom) QueueLen() int { return len(c.queue) }
 
