@@ -2886,11 +2886,11 @@ func formatWaitMs(ms int) string {
 func spriteLoadModeLabel(mode int) string {
 	switch mode {
 	case config.SpriteLoadHoldPrev:
-		return "Uncached sprite: keep the previous one (webAO-style)"
+		return "Uncached sprite: keep the previous one (webAO-style, default)"
 	case config.SpriteLoadWait:
 		return "Uncached sprite: hold the message until it loads (client-AO-style)"
 	}
-	return "Uncached sprite: show nothing until it loads (default)"
+	return "Uncached sprite: show nothing until it loads"
 }
 
 // powerUserToggleLabel is the reveal-button label for the advanced (power-user) settings.

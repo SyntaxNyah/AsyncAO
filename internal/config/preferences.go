@@ -836,7 +836,7 @@ type AssetPreferences struct {
 	RestoreTabs            bool                         `json:"restoreTabs"`
 	VolStripOn             bool                         `json:"volStripOn"`                     // on-screen volume strip toggle (default OFF)
 	ChangelogSeen          string                       `json:"changelogSeenVersion,omitempty"` // last What's New version opened (#23 unread dot)
-	SpriteLoadModeVal      int                          `json:"spriteLoadMode,omitempty"`       // power-user cold-load sprite behaviour: 0 blank/default, 1 hold-previous, 2 wait (see SpriteLoad*)
+	SpriteLoadModeVal      int                          `json:"spriteLoadMode"`                 // cold-load sprite behaviour: 0 blank, 1 hold-previous (default), 2 wait (see SpriteLoad*). NOT omitempty: an explicit Blank(0) must persist, not read back as "absent → default".
 	SpriteWaitMsVal        int                          `json:"spriteWaitMs,omitempty"`         // wait-mode hold cap in ms (0/absent = SpriteWaitDefaultMs)
 	SpriteWaitPair         bool                         `json:"spriteWaitPair,omitempty"`       // wait mode also gates on the PAIR partner's idle sprite (default OFF)
 	SpriteWaitPreanim      bool                         `json:"spriteWaitPreanim,omitempty"`    // wait mode also gates on the message's PREANIM (default OFF)
@@ -1161,7 +1161,7 @@ type prefsJSON struct {
 	RestoreTabs            bool             `json:"restoreTabs"`          // default OFF (zero value)
 	VolStripOn             bool             `json:"volStripOn"`           // on-screen volume strip toggle (default OFF)
 	ChangelogSeen          string           `json:"changelogSeenVersion"` // last What's New version opened (#23)
-	SpriteLoadMode         int              `json:"spriteLoadMode"`       // power-user cold-load sprite behaviour (0 blank/default, 1 hold-previous, 2 wait)
+	SpriteLoadMode         *int             `json:"spriteLoadMode"`       // cold-load sprite behaviour (0 blank, 1 hold-previous, 2 wait); absent = default hold-previous (pointer distinguishes "unset" from an explicit Blank(0))
 	SpriteWaitMs           int              `json:"spriteWaitMs"`         // wait-mode hold cap in ms (0 = default)
 	SpriteWaitPair         bool             `json:"spriteWaitPair"`       // wait mode gates on the pair too (default OFF)
 	SpriteWaitPreanim      bool             `json:"spriteWaitPreanim"`    // wait mode gates on the preanim too (default OFF)
@@ -1567,6 +1567,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		CatchUpOn:              defaultCatchUpWhenBehind,
 		CatchUpThreshold:       DefaultCatchUpThreshold,
 		MultiTabCap:            DefaultMultiTabCap,
+		SpriteLoadModeVal:      defaultSpriteLoadMode, // webAO-style hold-previous by default (kills the cold-load flash)
 		DiscordRPC:             defaultDiscordPrefs(),
 		MyAutoStatus:           defaultAutoStatusPref(),
 		ChromeThemeKey:         "dark",
@@ -1856,9 +1857,11 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.RestoreTabs = onDisk.RestoreTabs
 	p.VolStripOn = onDisk.VolStripOn
-	p.SpriteLoadModeVal = onDisk.SpriteLoadMode
-	if p.SpriteLoadModeVal < SpriteLoadBlank || p.SpriteLoadModeVal >= SpriteLoadModeCount {
-		p.SpriteLoadModeVal = SpriteLoadBlank // clamp to a known mode (a garbage / newer value falls back to default)
+	if onDisk.SpriteLoadMode != nil { // absent = the defaultPrefs default (hold-previous); a present value is the user's explicit pick (incl. Blank)
+		p.SpriteLoadModeVal = *onDisk.SpriteLoadMode
+		if p.SpriteLoadModeVal < SpriteLoadBlank || p.SpriteLoadModeVal >= SpriteLoadModeCount {
+			p.SpriteLoadModeVal = defaultSpriteLoadMode // a garbage / newer value falls back to the current default
+		}
 	}
 	p.SpriteWaitMsVal = onDisk.SpriteWaitMs
 	if p.SpriteWaitMsVal != 0 { // 0 = "use the default"; a set value clamps into range
@@ -5895,10 +5898,17 @@ func (p *AssetPreferences) SetVolStripShown(on bool) {
 // render.SpriteLoad* (the UI mirrors the pref straight into the viewport); kept as
 // plain ints here to avoid a config→render import.
 const (
-	SpriteLoadBlank     = 0 // draw nothing until the sprite lands (default; the cold-load flash)
-	SpriteLoadHoldPrev  = 1 // keep the previous sprite until the new one lands (webAO-style)
+	SpriteLoadBlank     = 0 // draw nothing until the sprite lands (the original behaviour; the cold-load flash)
+	SpriteLoadHoldPrev  = 1 // keep the previous sprite until the new one lands (webAO-style; the default)
 	SpriteLoadWait      = 2 // hold the MESSAGE off-stage until its sprite decodes (client-AO-style; courtroom wait gate, timeout-capped)
 	SpriteLoadModeCount = 3 // number of valid modes (for the Settings cycle button + load clamp)
+
+	// defaultSpriteLoadMode is what a fresh install (and a power-user reset) uses:
+	// hold-previous, so a cold idle↔talk sprite swap bridges with the last good frame
+	// instead of the ~¼-second empty flash SpriteLoadBlank leaves (the playtest report,
+	// worst on packs whose idle and talk are one bare sprite — the swap should be a
+	// no-op but each spelling is a separate T1 key, so the gap reads as a pure blink).
+	defaultSpriteLoadMode = SpriteLoadHoldPrev
 )
 
 // Wait-mode timeout bounds (SpriteLoadWait): how long one message may be held for
@@ -6642,7 +6652,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.WSOrigin = ""
 	p.UpdateExperimental = false // back to the stable update channel
 	p.AssetCharCase = 0
-	p.SpriteLoadModeVal = SpriteLoadBlank
+	p.SpriteLoadModeVal = defaultSpriteLoadMode
 	p.SpriteWaitMsVal = 0
 	p.SpriteWaitPair = false
 	p.SpriteWaitPreanim = false

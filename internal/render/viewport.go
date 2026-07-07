@@ -244,9 +244,10 @@ type Viewport struct {
 	// own period and stay continuous without a shared wrap glitch.
 	fxClock time.Duration
 
-	// spriteLoadMode (SpriteLoadBlank default) chooses what a character layer draws
-	// while its NEW sprite is still streaming + decoding — the cold-load flash
-	// mitigation. The App mirrors the user pref here once per frame
+	// spriteLoadMode chooses what a character layer draws while its NEW sprite is
+	// still streaming + decoding — the cold-load flash mitigation. The zero value is
+	// SpriteLoadBlank, but the App ships hold-previous (webAO-style) and mirrors the
+	// user pref here once per frame
 	// (SetSpriteLoadMode), exactly like SetSpriteFX. It only ever affects the miss
 	// path in drawSprite, so a cached scene is byte-identical whatever it's set to.
 	spriteLoadMode int
@@ -827,8 +828,9 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animS
 }
 
 // SetSpriteLoadMode picks what a character layer draws while its new sprite is
-// still streaming + decoding (SpriteLoadBlank default = original behaviour). The
-// App mirrors the user pref here once per frame, like SetSpriteFX.
+// still streaming + decoding (the App ships SpriteLoadHoldPrev; SpriteLoadBlank is
+// the original byte-identical gap). The App mirrors the user pref here once per
+// frame, like SetSpriteFX.
 func (v *Viewport) SetSpriteLoadMode(mode int) { v.spriteLoadMode = mode }
 
 // SetClipSprites toggles the viewport sprite mask (ON by default): confine the

@@ -4,6 +4,18 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.0-test26 — 2026-07-07 (test build)
+
+- **Talking characters don't flash any more.** By default the client now keeps
+  the last sprite on screen while the next one is still loading (webAO-style),
+  instead of drawing nothing for a fraction of a second. That empty gap was most
+  obvious on characters whose idle and talking art is the *same* single image:
+  every time you spoke, the sprite would blink even though the picture wasn't
+  changing, because the idle and talking versions load separately. The control is
+  Settings → Power user → Renderer → "Uncached sprite loading" — it now defaults
+  to **keep the previous one**. Set it back to "show nothing until it loads" for
+  the old behaviour; if you'd already picked a mode yourself, your choice is kept.
+
 ## v1.55.0-test25 — 2026-07-07 (test build)
 
 - **The in-client update popup finishes on its own.** When you install an update

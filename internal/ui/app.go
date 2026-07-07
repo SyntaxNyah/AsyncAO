@@ -5637,7 +5637,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.room.Update(dt)
 		a.applySpriteOverrides()
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
-		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (power user; default Blank = byte-identical)
+		a.d.Viewport.SetSpriteLoadMode(a.vpSpriteLoadMode())                                           // cold-load flash mitigation (default hold-previous = webAO-style bridge; Blank = the original byte-identical gap)
 		a.d.Viewport.SetClipSprites(a.d.Prefs.ClipSpritesToStageOn())                                  // viewport sprite mask (default ON): offsets can't spill past the stage
 		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)

@@ -1097,9 +1097,9 @@ func TestResetPowerUser(t *testing.T) {
 	if p.ValidateTLSCertsOn() || p.AssetOriginHeader() != "" || p.WSOriginHeader() != "" {
 		t.Error("nuke must clear TLS + both Origin overrides")
 	}
-	if p.SpriteLoadMode() != SpriteLoadBlank || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
+	if p.SpriteLoadMode() != SpriteLoadHoldPrev || p.SpriteWaitMs() != SpriteWaitDefaultMs ||
 		p.SpriteWaitPairOn() || p.SpriteWaitPreanimOn() {
-		t.Error("nuke must reset the cold-load mode + wait knobs")
+		t.Error("nuke must reset the cold-load mode to its default (hold-previous) + the wait knobs")
 	}
 	if p.HoldPrevMaxAgeMs() != 0 || p.HoldDebugTintOn() {
 		t.Error("nuke must reset the hold-previous knobs")
