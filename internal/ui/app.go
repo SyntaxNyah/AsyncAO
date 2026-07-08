@@ -1034,6 +1034,11 @@ type sessionState struct {
 	// since then is the scheduled damage that redraws a focused text field at
 	// 2 Hz instead of holding the whole idle frame rate (experimental loop).
 	drawnCaretOn bool
+	// drawnScreen is the screen as of the last Frame — noteScreenTransition
+	// compares against it to tear down hover-preview state that would otherwise
+	// ride across a screen switch with no draw site left to close it (the
+	// orphaned-preview cap latch; distinct from prevScreen, the back-nav memory).
+	drawnScreen Screen
 	// frameAnimChrome is set (via NoteAnimating) during a draw pass whenever it
 	// renders a self-driven, TIME-STEPPED UI animation outside the viewport's
 	// anim scheduler — an animated theme page (themeFrame), the looping testimony
@@ -4487,14 +4492,20 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 	if a.voiceJoined || a.micTest != nil {
 		return false
 	}
-	if a.previewBase != "" {
-		return false // the sprite preview box animates at draw time (pageFrameLoop)
-	}
 	if a.drawnAnimChrome {
 		// The last frame drew time-stepped art outside the viewport scheduler
 		// (animated theme chrome, the testimony badge, a WT/CE splash, the
-		// editor ghost): freezing it between heartbeats was a latent classic
-		// hole (usually masked by the focused IC field). Both modes render on.
+		// editor ghost, an ANIMATED sprite-preview box): freezing it between
+		// heartbeats was a latent classic hole (usually masked by the focused
+		// IC field). Both modes render on. The sprite preview reports through
+		// this census from its DRAW site (drawSpritePreview) — deliberately NOT
+		// via a bare previewBase check here: every preview close path is a
+		// per-screen draw tail, so a preview orphaned by a screen switch (char
+		// pick → PV, a pointer-fenced confirm click, a hotkey jump) had no
+		// owner left to clear it, and the old state check held the event-driven
+		// loop at the ACTIVE cap until restart (the stuck-at-active-cap
+		// report). A static or undrawn box needs no frames: its pop-in rides
+		// store-generation damage, zoom/drag ride input events.
 		return false
 	}
 	if exp {
@@ -4526,8 +4537,9 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 //
 // Settings skips too (the user's ask: "the one place where virtually nothing
 // moves"). Its self-driven surfaces still force frames through SkipFrame's own
-// later gates — the mic-test meter (micTest), any sprite preview (previewBase),
-// input + the caret, and store-generation damage as art streams in. The lone
+// later gates — the mic-test meter (micTest), a DRAWN animated sprite preview
+// (the anim-chrome census via drawSpritePreview), input + the caret, and
+// store-generation damage as art streams in. The lone
 // passive live readout is the T2 cache-stat line; it now refreshes at the idle
 // rate / on the next interaction rather than every frame (the perf HUD stays
 // the always-full-rate live-metrics surface for anyone watching numbers move).
@@ -5734,6 +5746,14 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.keepSceneAssetsWarm()
 	a.d.Store.DrainDestroyQueue()
 
+	// Screen switch: tear down any hover-preview riding across it. Every close
+	// path is a per-screen draw tail, so a preview still open when the screen
+	// changes under it (char pick → PV lands, a pointer-fenced confirm-modal
+	// click, a hotkey / server-driven jump) has NO surviving owner: invisible on
+	// the new screen, its stale box rect still claimed wheel/press below, and
+	// its stale trigger id pinned close-on-leave open forever. Must run before
+	// handlePreviewInput so the ghost box never eats the new screen's input.
+	a.noteScreenTransition()
 	// Sprite-preview wheel zoom + drag, claimed before any screen draws so it
 	// wins the wheel/press over the grid scroll and icon clicks under the box.
 	a.handlePreviewInput()

@@ -88,6 +88,72 @@ func TestSpritePreviewTravelCorridor(t *testing.T) {
 	}
 }
 
+// TestSpritePreviewStaleTriggerCloses pins the orphaned-trigger half of the
+// frame-pacer cap-latch report: hoverID is cleared only by its own trigger's
+// HoverPreview call, so once that trigger stops being drawn (drawer closed,
+// emote page flipped, screen switched) the id lingers. Trusting the bare id
+// pinned "over trigger" true forever and the box could never leave-close —
+// close-on-leave must demand the pointer actually be ON the remembered rect.
+func TestSpritePreviewStaleTriggerCloses(t *testing.T) {
+	a := testTabApp(t)
+	c := a.ctx
+	trigger := sdl.Rect{X: 100, Y: 100, W: 80, H: 80}
+	box := sdl.Rect{X: 600, Y: 500, W: 200, H: 200}
+	a.previewBase, a.previewEntered = "x", false
+	a.previewFrameRect, a.previewTriggerRect = box, trigger
+	c.hoverID, c.hoverRect = "char:x", trigger // stale: the trigger's screen is gone
+	c.mouseX, c.mouseY = 900, 40               // off the trigger, the box, and the corridor
+	a.closeSpritePreviewOnLeave()
+	if a.previewBase != "" {
+		t.Fatal("a stale trigger id must not pin the preview open (the cap-latch bug)")
+	}
+}
+
+// TestCloseSpritePreviewDisarmsDwell pins the click-commit half: a close while
+// the pointer still rests on the trigger must clear the trigger id, or the
+// already-elapsed dwell re-opens the box on the very next frame — the silent
+// re-arm that carried a "closed" preview across a char pick into the courtroom.
+func TestCloseSpritePreviewDisarmsDwell(t *testing.T) {
+	a := testTabApp(t)
+	a.previewBase = "x"
+	a.ctx.hoverID = "char:x"
+	a.closeSpritePreview()
+	if a.previewBase != "" || a.ctx.hoverID != "" {
+		t.Fatal("closeSpritePreview must clear the trigger id (no instant dwell re-open)")
+	}
+}
+
+// TestScreenSwitchDropsOrphanPreview pins noteScreenTransition: a screen switch
+// with a preview still up (pinned or not) must drop the preview, its trigger id,
+// and both cached rects — with every close path living in per-screen draw tails,
+// a switched-away preview has no owner: it held the event-driven loop at the
+// ACTIVE cap and its ghost rect kept claiming wheel/press on the new screen.
+func TestScreenSwitchDropsOrphanPreview(t *testing.T) {
+	a := testTabApp(t)
+	a.screen = ScreenCharSelect
+	a.noteScreenTransition() // absorb the initial lobby→charselect flip
+	a.previewBase, a.previewPinned = "x", true
+	a.ctx.hoverID, a.ctx.hoverRect = "char:x", sdl.Rect{X: 1, Y: 1, W: 10, H: 10}
+	a.previewFrameRect = sdl.Rect{X: 5, Y: 5, W: 50, H: 50}
+	a.previewTriggerRect = sdl.Rect{X: 1, Y: 1, W: 10, H: 10}
+
+	a.screen = ScreenCourtroom
+	a.noteScreenTransition()
+	if a.previewBase != "" || a.previewPinned || a.ctx.hoverID != "" {
+		t.Fatal("a screen switch must drop the orphaned preview + pin + trigger id")
+	}
+	if a.previewFrameRect.W != 0 || a.previewTriggerRect.W != 0 {
+		t.Fatal("a screen switch must zero the cached box/trigger rects (ghost input claim)")
+	}
+
+	// Same screen: a live preview stays untouched.
+	a.previewBase = "y"
+	a.noteScreenTransition()
+	if a.previewBase == "" {
+		t.Fatal("no switch → the live preview must stay")
+	}
+}
+
 // TestHoverPreviewToggleGatesOnlyDwell pins the playtest regression: turning
 // hover-previews OFF must disable ONLY the dwell pop-up — an explicit
 // right-click on a trigger still opens the preview.

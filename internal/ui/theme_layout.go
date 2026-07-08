@@ -665,7 +665,11 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 			a.drawChatSelHighlight(msgX, msgY, wrapW, sc)
 		}
 		if a.msAnim != nil { // #M5 animated message
-			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, msgX, msgY, a.d.Prefs.ReduceMotion())
+			reduce := a.d.Prefs.ReduceMotion()
+			if a.msAnim.Animates(reduce) {
+				a.NoteAnimating() // clock-driven text FX must not freeze at idle=0 — same census as the classic chatbox (screens.go)
+			}
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, msgX, msgY, reduce)
 		} else {
 			a.msRaster.Draw(c.Ren, sc.VisibleRunes, msgX, msgY)
 		}

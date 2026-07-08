@@ -822,6 +822,15 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 		a.previewFrameRect = sdl.Rect{} // no box this frame — no phantom wheel/drag target
 		return
 	}
+	if ready && len(page.Frames) > 1 {
+		// The box loops on the wall clock (pageFrameLoop below): report through
+		// the animated-chrome census so both loop modes keep frames coming WHILE
+		// the box is actually drawn. SkipFrame deliberately has no previewBase
+		// state check — an orphaned preview (its screen switched away) must never
+		// hold the pace (the active-cap latch report). A single-frame box is
+		// static: its pop-in rides store-generation damage, zoom/drag ride input.
+		a.NoteAnimating()
+	}
 	// Playtest sizing: every character previews at the SAME height — the
 	// Settings default (shipped at 384 px; the old fixed 192 read tiny), or
 	// the user's grip-resized height this session — with width following the
@@ -948,7 +957,13 @@ func (a *App) closeSpritePreviewOnLeave() {
 		return
 	}
 	overBox := c.hovering(a.previewFrameRect)
-	overTrigger := c.hoverID != ""
+	// A trigger counts only while the pointer is genuinely ON it. hoverID is
+	// cleared by the trigger's own HoverPreview call, so when the trigger stops
+	// being drawn (drawer closed, emote page flipped, panel hidden, screen
+	// switched) the id goes stale — trusting it bare pinned "over trigger" true
+	// forever, and the box could never leave-close again (only a click on a
+	// frame that runs this very check could, part of the cap-latch report).
+	overTrigger := c.hoverID != "" && c.hovering(c.hoverRect)
 	if overTrigger && !overBox {
 		a.previewEntered = false           // back on a cell → (re)enter the travel phase
 		a.previewTriggerRect = c.hoverRect // remember it so the corridor spans cell→box
@@ -973,6 +988,34 @@ func (a *App) closeSpritePreview() {
 	a.previewBase = ""
 	a.previewEntered = false
 	a.previewPinned = false
+	// Disarm the dwell too: closing with the pointer still resting on the
+	// trigger (a click-commit) otherwise re-opens NEXT frame — the elapsed
+	// hoverSince satisfies the dwell instantly. That silent re-arm is how a
+	// char pick carried a "closed" preview into the courtroom (PV lands a few
+	// frames after the click) and latched the frame pacer at the active cap.
+	// A fresh hover restarts the full dwell, which is also the right feel:
+	// a selection commits, the pop-up shouldn't bounce straight back.
+	a.ctx.hoverID = ""
+}
+
+// noteScreenTransition runs once per Frame, before handlePreviewInput: on a
+// screen switch it drops every piece of hover-preview state tied to the old
+// screen. The preview's draw + close-on-leave + pinned-× all live in per-screen
+// draw tails, so a preview (pinned or not) that survives a switch — the owning
+// click was pointer-fenced by a confirm modal, the switch came from a hotkey /
+// the server (PV, disconnect), or the old screen's tail simply never ran
+// (charINIBusy) — is unreachable: an invisible box whose stale rect eats
+// wheel/press and whose stale trigger id pins close-on-leave open. SkipFrame no
+// longer keys on previewBase (the draw-site census owns pacing), so this is
+// input/lifecycle hygiene rather than the pacing fix itself.
+func (a *App) noteScreenTransition() {
+	if a.screen == a.drawnScreen {
+		return
+	}
+	a.drawnScreen = a.screen
+	a.closeSpritePreview() // also clears the trigger id — no cross-screen dwell carry-over
+	a.previewFrameRect = sdl.Rect{}
+	a.previewTriggerRect = sdl.Rect{}
 }
 
 // unionRect is the smallest rect covering both a and b — the hover-preview "travel
@@ -1799,7 +1842,18 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			a.drawChatSelHighlight(textRect.X, textRect.Y, wrapW, sc)
 		}
 		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
-			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, a.d.Prefs.ReduceMotion())
+			reduce := a.d.Prefs.ReduceMotion()
+			if a.msAnim.Animates(reduce) {
+				// Clock-driven text FX on screen: keep frames coming through the
+				// static skip (idle=0 froze/stuttered them — the FX-at-idle
+				// report). Draw-site census, so it self-clears the moment the
+				// message leaves the box; gradient-only / reduce-motion render
+				// static and deliberately don't hold frames. Minimized still
+				// draws nothing (no Frame at all), and unfocused with the
+				// background cap off still parks (that gate outranks this).
+				a.NoteAnimating()
+			}
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, reduce)
 		} else {
 			a.msRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
 		}
