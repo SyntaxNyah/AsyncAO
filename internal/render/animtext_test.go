@@ -82,6 +82,50 @@ func BenchmarkAnimatedTextDraw(b *testing.B) {
 	}
 }
 
+// TestAnimatedTextAnimates pins the frame-pacing census contract (the FX-text-freezes-at-
+// idle fix): clock-driven effects report Animates so the chatbox draw keeps frames coming,
+// while gradient-only / effect-free layouts and reduce-motion report static (a parked
+// chatbox stays free). EffectAnimates is the single source of truth and must agree with
+// Draw's switch — the per-id sweep below catches a new effect missing a classification.
+func TestAnimatedTextAnimates(t *testing.T) {
+	font, fcleanup := newAnimTestFont(t, 18)
+	defer fcleanup()
+	white := []sdl.Color{{R: 255, G: 255, B: 255, A: 255}}
+
+	rainbow := RasterizeAnimated(font, "abcdef", []EffectSpan{{0, 6, EffectRainbow}}, white, 1000)
+	if !rainbow.Animates(false) {
+		t.Error("rainbow must animate (it froze between idle=0 redraws)")
+	}
+	if rainbow.Animates(true) {
+		t.Error("reduce-motion renders rainbow static — it must not hold frames")
+	}
+	if shake := RasterizeAnimated(font, "abcdef", []EffectSpan{{2, 2, EffectShake}}, white, 1000); !shake.Animates(false) {
+		t.Error("a partial shake span must animate")
+	}
+	if gradient := RasterizeAnimated(font, "abcdef", []EffectSpan{{0, 6, EffectGradient}}, white, 1000); gradient.Animates(false) {
+		t.Error("gradient is a static band — it must not hold frames")
+	}
+	if plain := RasterizeAnimated(font, "abcdef", nil, white, 1000); plain.Animates(false) {
+		t.Error("an effect-free layout must not hold frames")
+	}
+	// A span entirely past the visible text tags no rune → static (rune-accurate census).
+	if past := RasterizeAnimated(font, "ab", []EffectSpan{{10, 3, EffectShake}}, white, 1000); past.Animates(false) {
+		t.Error("a span past the text must not hold frames")
+	}
+	for e := EffectShake; e <= EffectSparkle; e++ {
+		want := e != EffectGradient
+		if got := EffectAnimates(e, false); got != want {
+			t.Errorf("EffectAnimates(%d) = %v, want %v", e, got, want)
+		}
+		if EffectAnimates(e, true) {
+			t.Errorf("EffectAnimates(%d, reduceMotion) = true, want false (everything renders static)", e)
+		}
+	}
+	if EffectAnimates(EffectNone, false) {
+		t.Error("EffectNone must be static")
+	}
+}
+
 // TestRasterizeAnimatedLayout pins the layout: rune count, per-span effect assignment, and
 // left-to-right x positions.
 func TestRasterizeAnimatedLayout(t *testing.T) {

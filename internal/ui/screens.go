@@ -1842,7 +1842,18 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 			a.drawChatSelHighlight(textRect.X, textRect.Y, wrapW, sc)
 		}
 		if a.msAnim != nil { // #M5 animated message (shake/wave/rainbow spans)
-			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, a.d.Prefs.ReduceMotion())
+			reduce := a.d.Prefs.ReduceMotion()
+			if a.msAnim.Animates(reduce) {
+				// Clock-driven text FX on screen: keep frames coming through the
+				// static skip (idle=0 froze/stuttered them — the FX-at-idle
+				// report). Draw-site census, so it self-clears the moment the
+				// message leaves the box; gradient-only / reduce-motion render
+				// static and deliberately don't hold frames. Minimized still
+				// draws nothing (no Frame at all), and unfocused with the
+				// background cap off still parks (that gate outranks this).
+				a.NoteAnimating()
+			}
+			a.msAnim.Draw(c.Ren, a.glyphCache, a.msAnimFont, a.d.Viewport.AnimClock(), sc.VisibleRunes, box.X+8, box.Y+26, reduce)
 		} else {
 			a.msRaster.Draw(c.Ren, sc.VisibleRunes, box.X+8, box.Y+26)
 		}

@@ -43,6 +43,19 @@ type EffectSpan struct {
 	Effect uint8
 }
 
+// EffectAnimates reports whether effect e moves/shimmers ON THE CLOCK — i.e. a message
+// showing it needs frames to keep coming while it's on screen, or the motion freezes
+// between redraws (the FX-text-stutters-at-idle report). Gradient is a STATIC per-rune
+// band (identical every frame, see Draw) and None is plain text, so neither needs
+// animation frames; under reduce-motion Draw renders EVERY effect static (rainbow pins
+// to its static band), so nothing does. Must stay in agreement with Draw's switch.
+func EffectAnimates(e uint8, reduceMotion bool) bool {
+	if reduceMotion {
+		return false
+	}
+	return e != EffectNone && e != EffectGradient
+}
+
 // animRune is one laid-out glyph: its rune, base position (relative to the message
 // origin), its effect, and its base colour (rainbow overrides the colour per frame).
 type animRune struct {
@@ -59,7 +72,19 @@ type AnimatedText struct {
 	runes []animRune
 	lineH int32
 	total int
-	dst   sdl.Rect // per-glyph scratch, reused so Draw never allocates
+	// timeAnimated: at least one laid-out rune carries a CLOCK-driven effect
+	// (EffectAnimates) — precomputed so Animates is a field read per frame.
+	timeAnimated bool
+	dst          sdl.Rect // per-glyph scratch, reused so Draw never allocates
+}
+
+// Animates reports whether drawing this message again with a later clock produces a
+// DIFFERENT picture — the UI's frame-pacing census hook: while an animating message is on
+// screen the draw must keep marking frames (NoteAnimating), or the FX freeze at idle=0.
+// False for gradient-only / effect-free layouts and under reduce-motion (Draw renders
+// those identical every frame), so a static chatbox still parks at zero redraws.
+func (at *AnimatedText) Animates(reduceMotion bool) bool {
+	return !reduceMotion && at.timeAnimated
 }
 
 // Effect tuning — small + gentle so the text stays readable.
@@ -121,11 +146,15 @@ func RasterizeAnimated(font *ttf.Font, text string, spans []EffectSpan, colors [
 					x = int32(w)
 				}
 			}
+			eff := effectAt(gi, spans)
+			if EffectAnimates(eff, false) {
+				at.timeAnimated = true // rune-accurate: a span past the visible text can't hold frames
+			}
 			at.runes = append(at.runes, animRune{
 				r:      runes[i],
 				x:      x,
 				y:      baseY,
-				effect: effectAt(gi, spans),
+				effect: eff,
 				color:  colorAt(gi, colors),
 			})
 			gi++

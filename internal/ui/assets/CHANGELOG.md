@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.2-test31 — 2026-07-08 (test build)
+
+- **Text FX no longer freeze or stutter on a quiet screen.** Rainbow, shake, wave and
+  the other animated text effects run on their own clock, but the idle frame rate
+  (which defaults to "no redraws when nothing changes") didn't count them as motion —
+  so once a message finished typing, its effects only advanced when something else
+  redrew the screen (moving the mouse, another message arriving). Animated text in
+  the chatbox now counts as motion and renders smoothly the whole time it's on
+  screen, on both the classic and themed chatboxes. Static looks (the gradient band,
+  or everything under Reduce motion) deliberately don't hold extra frames, a
+  minimized window still draws nothing, and the background cap still applies when
+  you're tabbed out.
+
 ## v1.55.2-test30 — 2026-07-08 (test build)
 
 - **Fixed the frame limiter sometimes "switching off" until a restart.** Picking a
