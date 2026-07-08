@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.2-test30 — 2026-07-08 (test build)
+
+- **Fixed the frame limiter sometimes "switching off" until a restart.** Picking a
+  character — and a handful of other spots — could leave the renderer stuck at the
+  full active frame cap even though nothing on screen was moving, and no setting
+  brought the pacing back. The cause was the hover sprite preview: if the screen
+  changed while a preview was up (or about to open), the invisible leftover
+  preview kept demanding frames forever, and near where the box used to be it
+  could also swallow clicks and mouse-wheel scrolling. Leftover previews are now
+  torn down the moment the screen changes, a preview whose button is gone can
+  close itself again, and a visible animated preview still renders smoothly.
+  Thanks to **Nightingale** for catching it.
+
 ## v1.55.1 — 2026-07-07
 
 - **"Redraw once per mouse-move event" is now on by default.** Moving the mouse

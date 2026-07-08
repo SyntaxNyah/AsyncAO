@@ -43,12 +43,21 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a static Settings screen must skip")
 	}
-	// …but a live surface on Settings still forces frames through the later gates
-	// (here a sprite preview; the mic-test meter and streaming damage likewise).
+	// …but a live surface on Settings still forces frames through the later
+	// gates (the mic-test meter, streaming damage, or a DRAWN animated preview
+	// via the anim-chrome census). A bare previewBase must NOT refuse anymore:
+	// previews orphaned by a screen switch have no draw tail left to close
+	// them, and the old state check held the event-driven loop at the ACTIVE
+	// cap until restart (the stuck-at-active-cap report).
 	a.previewBase = "srv/characters/witch/(a)normal"
-	if a.SkipFrame(true, false) {
-		t.Error("exp: a live Settings preview must keep rendering")
+	if !a.SkipFrame(true, false) {
+		t.Error("exp: a bare previewBase (no drawn box) must skip — the orphan cap latch")
 	}
+	a.drawnAnimChrome = true // what an actually-DRAWN animated preview reports
+	if a.SkipFrame(true, false) {
+		t.Error("exp: a drawn animated preview must keep rendering (census)")
+	}
+	a.drawnAnimChrome = false
 	a.previewBase = ""
 	a.screen = ScreenAbout
 	if !a.SkipFrame(true, false) {
@@ -110,8 +119,9 @@ func TestSkipFrameDamageRefuses(t *testing.T) {
 }
 
 // TestSkipFrameSharedRefusals pins the refusals shared by BOTH modes: input
-// this pass, a live voice session (voicePump is Frame-driven), an open animated
-// sprite preview, and on-screen animated chrome.
+// this pass, a live voice session (voicePump is Frame-driven), and on-screen
+// animated chrome — which is also how a DRAWN animated sprite preview holds
+// frames now; the bare previewBase state must not (the orphan cap latch).
 func TestSkipFrameSharedRefusals(t *testing.T) {
 	for _, exp := range []bool{true, false} {
 		a := expApp(t)
@@ -130,14 +140,17 @@ func TestSkipFrameSharedRefusals(t *testing.T) {
 			t.Errorf("exp=%v: a live voice session must keep frames coming (voicePump)", exp)
 		}
 		a.voiceJoined = false
+		// A bare previewBase must NOT hold frames in either mode: an orphaned
+		// preview (screen switched under it) has no draw tail left to close it,
+		// and keying the skip on the state latched the pace at the active cap.
 		a.previewBase = "srv/characters/witch/(a)normal"
-		if a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: an open sprite preview animates at draw time — no skip", exp)
+		if !a.SkipFrame(true, false) {
+			t.Errorf("exp=%v: a bare previewBase (no drawn box) must skip — the orphan cap latch", exp)
 		}
 		a.previewBase = ""
 		a.drawnAnimChrome = true
 		if a.SkipFrame(true, false) {
-			t.Errorf("exp=%v: animated chrome on screen (theme art, splash, badge) must keep frames coming", exp)
+			t.Errorf("exp=%v: animated chrome on screen (theme art, splash, badge, a DRAWN animated preview) must keep frames coming", exp)
 		}
 		a.drawnAnimChrome = false
 	}
