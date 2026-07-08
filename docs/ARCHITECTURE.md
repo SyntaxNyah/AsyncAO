@@ -46,7 +46,14 @@ one sanctioned cross-thread SDL touch, `wake.go`), or when `NextWakeDelay` repor
 real redraw deadline (idle-rate tick, caret flip, the next animation flip via
 `Viewport.NextAnimDue`). idle=off then means genuinely zero redraws until something
 changes; `NoteDeadline` / `uiDirty` / `NoteAnimating` are the "redraw one frame"
-hooks producers use so an off-thread change still appears at idle=0.
+hooks producers use so an off-thread change still appears at idle=0. `NoteAnimating`
+is a **retrospective, self-clearing census**: a clock-driven on-screen surface
+(animated theme chrome, a looping sprite preview, animated chatbox Text FX) marks it
+from its DRAW site every frame it moves, and `SkipFrame` / `FramePace` read the last
+frame's tally — never a bare state flag that can outlive its draw. Keying the skip on
+such a flag broke both ways (fixed v1.55.2): a sprite preview orphaned across a screen
+switch latched the pace ON with no draw left to clear it, and idle Text FX animated
+but reported nothing so the loop parked and froze it.
 
 **Audio is decoupled from the present rate.** While the live courtroom is typing
 (`App.AudioActive`), the loop spends its pacing budget advancing the room — and

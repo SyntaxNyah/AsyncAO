@@ -4,6 +4,30 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.2 — 2026-07-08
+
+A pacing patch on top of v1.55.1: two spots where the frame limiter mis-judged
+whether the screen was actually moving.
+
+- **The frame limiter no longer gets stuck "switched off" until a restart.** After
+  picking a character — and in a few other places — the renderer could stay pinned
+  at the full frame rate even with nothing moving on screen, fans spinning, with no
+  setting to bring the pacing back. A leftover hover sprite preview was the cause: if
+  the screen changed while a preview was open (or about to open), the invisible
+  leftover kept demanding frames, and near where the box used to be it could also
+  eat clicks and mouse-wheel scrolling. Leftover previews are now torn down the
+  moment the screen changes, a preview whose button is gone can close itself again,
+  and a visible animated preview still renders smoothly. Thanks to **Nightingale**
+  for catching it.
+- **Animated text effects no longer freeze on a quiet screen.** Rainbow, shake, wave
+  and the rest run on their own clock, but the idle frame rate (which defaults to "no
+  redraws when nothing changes") wasn't counting them as motion — so once a message
+  finished typing, its effect only advanced when something else redrew the screen.
+  Animated chatbox text now counts as motion and plays smoothly the whole time it's
+  on screen, on both the classic and themed chatboxes. Static looks (the gradient
+  band, or everything under Reduce motion) still cost nothing extra, a minimized
+  window still draws nothing, and the background cap still applies when tabbed out.
+
 ## v1.55.2-test31 — 2026-07-08 (test build)
 
 - **Text FX no longer freeze or stutter on a quiet screen.** Rainbow, shake, wave and

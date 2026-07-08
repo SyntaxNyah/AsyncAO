@@ -117,8 +117,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (`NextWakeDelay`, `NoteDeadline`). idle = off then means *genuinely zero* redraws
   until something changes. A **per-event mouse redraw** (default ON as of v1.55.1)
   renders one frame per motion event instead of holding full rate while the cursor
-  moves. `TestFramePace`, `TestHardCapBudget`, `TestMotionGrace` and the
-  `TestSkipFrame*` set pin the transitions.
+  moves. **v1.55.2** hardened the census that decides "is anything moving": a
+  clock-driven on-screen surface — animated theme chrome, a looping hover sprite
+  preview, animated chatbox Text FX — reports through `NoteAnimating` from its DRAW
+  site, a self-clearing per-frame census, never a bare state flag that can outlive
+  its draw. That fixed a sprite preview left open across a screen switch, which
+  latched the pace at the active cap until restart, and idle Text FX that animated
+  without keeping frames coming. `TestFramePace`, `TestHardCapBudget`,
+  `TestMotionGrace`, `TestAnimatedTextAnimates` and the `TestSkipFrame*` set pin the
+  transitions.
 - **Audio independent of the frame rate** (v1.55.1): while a message types, the
   courtroom advances — and plays its blips — at a fine ~60 Hz cadence even when the
   present rate is capped low, so audio never batches to the frame rate ("blips only
@@ -412,7 +419,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   carries effects takes the per-glyph path, which renders each glyph to a **white
   texture once** and then **displaces + tints it per frame** with cheap scalar
   math (no re-rasterise), pinned **0-alloc** by `BenchmarkAnimatedTextDraw` /
-  `TestAnimatedTextDrawZeroAllocs`. **Viewer control:** Reduce-motion pins rainbow
+  `TestAnimatedTextDrawZeroAllocs`. The chatbox marks the frame-pacing census
+  (`AnimatedText.Animates` → `NoteAnimating`) while a moving effect is on screen,
+  so the motion keeps playing at a low or zero idle frame rate instead of freezing
+  between redraws (v1.55.2); a gradient-only band and Reduce-motion render static
+  and hold no extra frames. **Viewer control:** Reduce-motion pins rainbow
   to a static hue and stops all displacement (the photosensitivity floor).
   **Colour composes:** an inline `\cN` colour (or the wire `text_color`) rides
   *with* the motion, so you can send a **red shaking** word (the rainbow effect
@@ -502,7 +513,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   backdrops, HP bars, and the settings preview step their frames on a
   per-apply animation clock (`pageFrameLoop`) instead of freezing on
   frame 0 — splashes/badge already animated. The hover sprite preview
-  loops its idle too.
+  loops its idle too, keeping frames coming through the same `NoteAnimating`
+  census while it's drawn; it's torn down on any screen switch so a box left
+  open across one can't latch the pace or eat clicks/scroll underneath (v1.55.2).
 - **courtroom_stylesheets.css works** ("the css stuff"): a QSS-subset
   parser extracts the palette (QWidget/QPushButton/QLineEdit/etc colors;
   `#rgb`/`#rrggbb`/Qt `#aarrggbb`/`rgb()`/named) and recolors the whole

@@ -71,9 +71,13 @@ zero redraws. **Audio stays independent of the frame rate** (v1.55.1): a typing
 message advances the courtroom and plays its blips at a fine ~60 Hz cadence,
 threaded through the same two-tier split-sleep (hard-cap floor uninterruptible), so
 blips never batch to a low present rate; incoming SFX/pings wake the parked loop.
-SDL_mixer stays on the render thread — no separate audio thread. Pinned by
-`TestFramePace`, `TestHardCapBudget`, the `TestSkipFrame*` set, `TestAudioPaceActive`
-and `TestAudioActive`.
+SDL_mixer stays on the render thread — no separate audio thread. **v1.55.2**
+hardened the skip's motion census: a clock-driven surface reports via `NoteAnimating`
+from its DRAW site (a self-clearing per-frame tally), never a state flag that can
+outlive its draw — restoring correctness where a sprite preview orphaned across a
+screen switch latched the pace ON and idle Text FX animated without reporting. Pinned
+by `TestFramePace`, `TestHardCapBudget`, the `TestSkipFrame*` set, `TestAudioPaceActive`,
+`TestAudioActive` and `TestAnimatedTextAnimates`.
 
 ### Steady-state lookup caches — `ui`
 Two per-frame costs removed after the layout engine landed: theme
