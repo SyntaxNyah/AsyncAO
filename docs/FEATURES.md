@@ -1486,7 +1486,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Settings → Auto-login configures ANY known server ahead of time via
   a server picker (lobby + phone-book entries, the connected server
   first) — no connection needed; the flow preview names exactly what
-  will be sent.
+  will be sent. **v1.55.3: the automatic on-join fire is disabled on
+  Akashi** (its two-step flow is under investigation) — a manual login
+  (the courtroom Login... button / Ctrl+G) still runs it; every other
+  server family auto-logs in as before.
 - **OOC identity**: a default OOC name in Settings applies on every
   join (like the showname); when blank, commands and macros send as a
   sticky random `AsyncAO<1-200>` minted once per run — OOC commands

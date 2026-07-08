@@ -4,6 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.3 — 2026-07-08
+
+- **Auto-login is temporarily disabled on Akashi servers.** Akashi uses a two-step
+  login (a bare `/login`, then your username and password on the next line), and
+  its automatic on-join sign-in is being switched off for now while the flow is
+  looked into. Nothing else changes: auto-login still works on every other server
+  family, and on Akashi you can still sign in by hand any time with the courtroom
+  **Login...** button or the login hotkey (Ctrl+G).
+
 ## v1.55.2 — 2026-07-08
 
 A pacing patch on top of v1.55.1: two spots where the frame limiter mis-judged

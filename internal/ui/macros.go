@@ -28,6 +28,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 const (
@@ -199,6 +200,15 @@ func (a *App) loginFlowPreview() string {
 func (a *App) autoLoginOnReady() {
 	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
 	if !info.AutoLogin || info.LoginUser == "" {
+		return
+	}
+	// v1.55.3 hotfix: auto-login is disabled on Akashi pending investigation of
+	// its two-step flow ("/login" ⏎ then the credential line). Only the automatic
+	// on-join fire is suppressed — a manual login (the courtroom Login… button /
+	// Ctrl+L → loginNow) still runs the flow. Scoped + reversible: drop this guard
+	// once the Akashi flow is understood.
+	if a.detectedSoftware() == courtroom.SoftwareAkashi {
+		a.pushDebug("auto-login: skipped on Akashi (v1.55.3 hotfix — use Login… manually)")
 		return
 	}
 	a.loginNow()

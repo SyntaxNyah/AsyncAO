@@ -119,6 +119,32 @@ func TestLoginLines(t *testing.T) {
 	}
 }
 
+// TestAutoLoginSkipsAkashi pins the v1.55.3 hotfix: the automatic on-join login
+// is suppressed on Akashi (its two-step "/login" ⏎ credential flow is under
+// investigation) yet still fires for other server software. Only the auto path
+// gates — a manual loginNow is unaffected (covered by TestLoginLines).
+func TestAutoLoginSkipsAkashi(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.frameNow = time.Now()
+	a.serverKey = "ws://login.test"
+	a.d.Prefs.SetServerLogin(a.serverKey, "admin", "hunter2", true) // AutoLogin ON
+	a.d.Prefs.SetAutoLoginToast(false)                              // no OS toast side effect in the test
+
+	a.sess.Software = "Akashi 1.8"
+	a.autoLoginOnReady()
+	if len(a.oocQueue) != 0 {
+		t.Fatalf("Akashi auto-login must queue nothing (hotfix), got %d: %v", len(a.oocQueue), a.oocQueue)
+	}
+
+	// The guard is Akashi-specific: other software still auto-logs in.
+	a.sess.Software = "Athena"
+	a.autoLoginOnReady()
+	if len(a.oocQueue) == 0 {
+		t.Fatal("non-Akashi auto-login must still queue the login flow")
+	}
+}
+
 // TestMacroSanitize pins the config caps: counts, line counts, line
 // length, key normalization, empty drops.
 func TestMacroSanitize(t *testing.T) {
