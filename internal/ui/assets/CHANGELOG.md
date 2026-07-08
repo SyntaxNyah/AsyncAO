@@ -4,6 +4,18 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.4 — 2026-07-08
+
+- **Auto-login now signs you in once per join instead of repeating.** On some
+  servers the "ready" signal arrives more than once (the WAP/Akashi fork and area
+  changes re-send it), and the saved auto-login was firing again on each one —
+  spamming OOC with repeated login attempts. It now fires a single time per
+  connection and stops; a fresh reconnect logs in once again.
+- **Auto-login works on Akashi / WAP servers again.** It was switched off there in
+  v1.55.3 while the repeated-firing was diagnosed; now that the real cause is fixed,
+  Akashi and the WAP / witches-akashi-party fork sign in once on join like every
+  other server.
+
 ## v1.55.3 — 2026-07-08
 
 - **Auto-login is temporarily disabled on Akashi servers.** Akashi uses a two-step

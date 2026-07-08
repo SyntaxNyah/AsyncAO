@@ -119,29 +119,37 @@ func TestLoginLines(t *testing.T) {
 	}
 }
 
-// TestAutoLoginSkipsAkashi pins the v1.55.3 hotfix: the automatic on-join login
-// is suppressed on Akashi (its two-step "/login" ⏎ credential flow is under
-// investigation) yet still fires for other server software. Only the auto path
-// gates — a manual loginNow is unaffected (covered by TestLoginLines).
-func TestAutoLoginSkipsAkashi(t *testing.T) {
-	a := testTabApp(t)
-	a.sess = courtroom.NewRehearsalSession("", nil)
-	a.frameNow = time.Now()
-	a.serverKey = "ws://login.test"
-	a.d.Prefs.SetServerLogin(a.serverKey, "admin", "hunter2", true) // AutoLogin ON
-	a.d.Prefs.SetAutoLoginToast(false)                              // no OS toast side effect in the test
-
-	a.sess.Software = "Akashi 1.8"
-	a.autoLoginOnReady()
-	if len(a.oocQueue) != 0 {
-		t.Fatalf("Akashi auto-login must queue nothing (hotfix), got %d: %v", len(a.oocQueue), a.oocQueue)
+// TestAutoLoginFiresOnce pins the auto-login hotfix: EventReady rides the DONE
+// packet, which some servers re-send mid-session (the WAP/Akashi fork, area
+// changes) — the saved login used to re-queue on every one and spam OOC. A
+// per-session latch caps it at ONE attempt ("try once and stop"), on EVERY
+// server family including Akashi/WAP (which sign in with the two-step flow, once).
+func TestAutoLoginFiresOnce(t *testing.T) {
+	newApp := func(software string) *App {
+		a := testTabApp(t)
+		a.sess = courtroom.NewRehearsalSession("", nil)
+		a.sess.Software = software
+		a.frameNow = time.Now()
+		a.serverKey = "ws://login.test"
+		a.d.Prefs.SetServerLogin(a.serverKey, "admin", "hunter2", true) // AutoLogin ON
+		a.d.Prefs.SetAutoLoginToast(false)                              // no OS toast side effect in the test
+		return a
 	}
 
-	// The guard is Akashi-specific: other software still auto-logs in.
-	a.sess.Software = "Athena"
-	a.autoLoginOnReady()
-	if len(a.oocQueue) == 0 {
-		t.Fatal("non-Akashi auto-login must still queue the login flow")
+	// Every family auto-logs in — Akashi and the WAP/witches fork included — and
+	// exactly ONCE, however many times EventReady (DONE) re-fires.
+	for _, sw := range []string{"Athena", "Akashi 1.8", "WAP-Akashi", "KFO-Server"} {
+		a := newApp(sw)
+		a.autoLoginOnReady()
+		n := len(a.oocQueue)
+		if n == 0 {
+			t.Fatalf("%s: auto-login must queue the login flow once, got 0", sw)
+		}
+		a.autoLoginOnReady() // a re-sent DONE
+		a.autoLoginOnReady() // …and another
+		if len(a.oocQueue) != n {
+			t.Fatalf("%s: auto-login must fire once: queue grew %d → %d on repeat DONE", sw, n, len(a.oocQueue))
+		}
 	}
 }
 

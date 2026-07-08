@@ -28,7 +28,6 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 const (
@@ -198,17 +197,17 @@ func (a *App) loginFlowPreview() string {
 // logged in rn?"). The login lines themselves send paced — one at a time — via
 // queueOOCLines, so a two-step flow (Akashi) still answers its prompt in order.
 func (a *App) autoLoginOnReady() {
-	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
-	if !info.AutoLogin || info.LoginUser == "" {
+	// Fire at most once per session ("try once and stop"). EventReady rides the
+	// DONE packet, which some servers re-send mid-session (the WAP/Akashi fork,
+	// area changes) — each one re-ran this and re-queued the login, spamming OOC.
+	// The latch clears on a fresh connection (resetSessionState), so a real
+	// reconnect logs in again; a manual loginNow is unaffected (it's not gated).
+	if a.autoLoginTried {
 		return
 	}
-	// v1.55.3 hotfix: auto-login is disabled on Akashi pending investigation of
-	// its two-step flow ("/login" ⏎ then the credential line). Only the automatic
-	// on-join fire is suppressed — a manual login (the courtroom Login… button /
-	// Ctrl+L → loginNow) still runs the flow. Scoped + reversible: drop this guard
-	// once the Akashi flow is understood.
-	if a.detectedSoftware() == courtroom.SoftwareAkashi {
-		a.pushDebug("auto-login: skipped on Akashi (v1.55.3 hotfix — use Login… manually)")
+	a.autoLoginTried = true
+	info := a.d.Prefs.ServerWarmInfoFor(a.serverKey)
+	if !info.AutoLogin || info.LoginUser == "" {
 		return
 	}
 	a.loginNow()

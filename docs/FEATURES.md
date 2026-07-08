@@ -1486,10 +1486,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   Settings → Auto-login configures ANY known server ahead of time via
   a server picker (lobby + phone-book entries, the connected server
   first) — no connection needed; the flow preview names exactly what
-  will be sent. **v1.55.3: the automatic on-join fire is disabled on
-  Akashi** (its two-step flow is under investigation) — a manual login
-  (the courtroom Login... button / Ctrl+G) still runs it; every other
-  server family auto-logs in as before.
+  will be sent. Auto-login fires **at most once per join** — the "ready"
+  (`DONE`) signal can arrive more than once (the WAP/Akashi fork and area
+  changes re-send it), which used to re-fire the saved login and spam OOC;
+  a per-session latch (`autoLoginTried`, cleared on reconnect) caps it at
+  one attempt (v1.55.4). Every server family logs in once, the Akashi / WAP
+  two-step prompt flow included — its brief v1.55.3 auto-login block was
+  removed once the repeat-firing was the identified cause (v1.55.4).
 - **OOC identity**: a default OOC name in Settings applies on every
   join (like the showname); when blank, commands and macros send as a
   sticky random `AsyncAO<1-200>` minted once per run — OOC commands
