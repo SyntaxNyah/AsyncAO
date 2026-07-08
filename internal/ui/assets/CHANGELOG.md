@@ -4,6 +4,13 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.5 — 2026-07-08
+
+- **Auto-login is turned off for WAP / witches-akashi-party servers.** On WAP-Akashi,
+  the automatic on-join sign-in no longer runs — you can still log in by hand with
+  the courtroom **Login...** button or the login hotkey (Ctrl+G). Auto-login keeps
+  working (once per join) on stock Akashi and every other server.
+
 ## v1.55.4 — 2026-07-08
 
 - **Auto-login now signs you in once per join instead of repeating.** On some

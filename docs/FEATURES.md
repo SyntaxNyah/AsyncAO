@@ -1490,9 +1490,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (`DONE`) signal can arrive more than once (the WAP/Akashi fork and area
   changes re-send it), which used to re-fire the saved login and spam OOC;
   a per-session latch (`autoLoginTried`, cleared on reconnect) caps it at
-  one attempt (v1.55.4). Every server family logs in once, the Akashi / WAP
-  two-step prompt flow included — its brief v1.55.3 auto-login block was
-  removed once the repeat-firing was the identified cause (v1.55.4).
+  one attempt (v1.55.4). Stock Akashi and every other family auto-log in
+  once with their own flow; **WAP / witches-akashi-party (`SoftwareWitches`,
+  announced "WAP-Akashi") has auto-login disabled by request** (v1.55.5) —
+  a manual login (courtroom Login... button / Ctrl+G) still runs it there.
 - **OOC identity**: a default OOC name in Settings applies on every
   join (like the showname); when blank, commands and macros send as a
   sticky random `AsyncAO<1-200>` minted once per run — OOC commands
