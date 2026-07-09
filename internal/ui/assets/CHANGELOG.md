@@ -4,6 +4,20 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.7 — 2026-07-09
+
+- **Type screen effects straight into your messages (AO2 codes).** Drop any of
+  these into an IC line and it plays as the text types out, exactly like the AO2
+  client — and other AO2/webAO players see it too:
+  - `\s` — shake the screen
+  - `\f` — flash (realization)
+  - `\n` — a line break
+  - `\p` — pause the text (`\p500` waits 500 ms; a bare `\p` waits a second)
+- **New "Enable screen effects" setting (Settings → Stage & viewport effects, on
+  by default).** Turn it off to keep the screen still — the shake and flash from
+  these codes and from authored messages stop, while the effect sounds still play.
+  The accessibility "Reduce motion" setting also suppresses them.
+
 ## v1.55.6 — 2026-07-09
 
 - **Removed the "X is typing…" setting.** It was an underused, experimental

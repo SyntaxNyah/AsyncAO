@@ -297,6 +297,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   markup you send won't color on stock AO clients (they'd see the `\c2`).
   The IC *log* shows the clean text (codes stripped, same as the chatbox);
   coloring the log itself is a later step.
+- **Inline screen-effect codes** (v1.55.7, type them in your message): **`\s`**
+  shakes the screen, **`\f`** flashes (realization), **`\n`** is a line break, and
+  **`\p`** pauses the text crawl (`\p500` for 500 ms; a bare `\p` waits a second) —
+  AO2-Client parity, fired the instant the reveal reaches the code as the line
+  types out. The codes ride the wire untouched, so **other AO2/webAO players see
+  the effects too**; a skip/recall drops any the crawl didn't reach (no burst of
+  shakes), and the codes never show as text (the IC log and chatbox both strip
+  them). Turn the shake/flash off with **Settings → Stage & viewport effects →
+  "Enable screen effects"** (on by default; the accessibility "Reduce motion" also
+  suppresses them, and the effect sound still plays either way). Custom
+  `effects.ini` overlay effects are the next step (see `docs/ROADMAP.md`).
 - **Random / rainbow message colour** (M61, Settings → General, both OFF):
   **Random colour** picks a fresh palette colour for each IC message you send
   (the standard TextColor field — every client sees it); **Rainbow** prefixes

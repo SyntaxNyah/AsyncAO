@@ -15,6 +15,27 @@ items move to `docs/FEATURES.md` as they ship.
 
 ## Planned
 
+- **Custom screen effects — AO2 `effects.ini` system (v1.55.7 follow-up).** The
+  inline codes `\s`/`\f`/`\n`/`\p` and a dedicated "Enable screen effects" toggle
+  **shipped in v1.55.7**; the remaining half is AO2's named custom-effect system so
+  people can make their own beyond the built-in shake/flash. Plan (mirrors
+  AO2-Client `AOApplication::get_effect` + `effects.ini`):
+  - **Assets:** add `AssetTypeEffect` (`internal/assets/types.go` + `typeNames`) and
+    `URLBuilder.Effect(name)` → `effects/<name>` (webAO/AO2 convention); stream the
+    overlay sprite like the shout bubble (one probe, `PrefetchWithFallback`).
+  - **Manifest:** parse `effects.ini` (theme + char/misc) via `internal/theme/ini.go`
+    (`ParseINI` / `SectionKeys`) into named effects with properties (sprite, sound,
+    loop / sticky).
+  - **Render:** `Scene.EffectBase` + a `drawFill`-style animated overlay in
+    `internal/render/viewport.go` — **must join the NoteAnimating census and
+    self-clear when the clip ends** (the recurring frame-pacing trap); reduce-motion
+    + the ScreenEffects toggle gate it.
+  - **Trigger + UI:** the 2.8 `EFFECTS` field is already parsed (`courtroom.go`
+    `fireMessageEffects` — today it plays only the named effect's *sound*); hook it to
+    play the `effects.ini` art, and add an effect picker to the IC bar (AO2 effect-
+    dropdown parity) so custom effects are selectable and sendable.
+  Zero hot-path cost (cached-texture overlay blits, free when idle). The inline-code
+  half is done and revert-clean, so this lands cleanly as a follow-up (v1.55.8).
 - **Screenshot annotator (#72)** — quick arrows/boxes/text on a captured
   screenshot before sharing. Deferred from the v1.50.0 batch (the studio +
   playtest-fix stream ate the session); the natural entry point is an
