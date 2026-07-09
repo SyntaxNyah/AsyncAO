@@ -4,6 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.8 — 2026-07-09
+
+- **Character select: clicking the search bar or tabs no longer picks a hidden
+  character.** When the grid was scrolled so a character icon sat partly behind
+  the fixed search / tab bar, clicking that bar — where the rest of the icon
+  *would* be — could select the character underneath. The grid now ignores clicks
+  (and hover-previews) above its own viewport, so the search box and tabs behave
+  normally again.
+
 ## v1.55.7 — 2026-07-09
 
 - **Type screen effects straight into your messages (AO2 codes).** Drop any of
