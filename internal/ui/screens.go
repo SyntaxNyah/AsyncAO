@@ -503,9 +503,11 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 	col, row := int32(0), int32(0)
 	// Clip to the grid viewport so scrolled cells slide under the fixed top bar
 	// (search + tabs + buttons) instead of covering it — same fix as the
-	// Characters tab.
+	// Characters tab. pushClip (not raw SetClipRect) also sets the INPUT clip, so a
+	// cell scrolled half under the bar isn't clickable up there (hovering() honours
+	// clipRect) — else clicking the search/tabs picks the hidden character.
 	gridClip := sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH}
-	_ = c.Ren.SetClipRect(&gridClip)
+	prev, had := c.pushClip(gridClip)
 	for i := range a.iniList {
 		if query != "" && !strings.Contains(a.iniLower[i], query) {
 			continue
@@ -523,7 +525,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 			row++
 		}
 	}
-	_ = c.Ren.SetClipRect(nil)
+	c.popClip(prev, had)
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false)
 		a.closeSpritePreviewOnLeave()
@@ -685,8 +687,12 @@ func (a *App) drawCharSelect(w, h int32) {
 	// slide UNDER the fixed search/tabs/buttons instead of painting over them: the
 	// bar is drawn first, so without this the later cell draws covered it as you
 	// scrolled down, and search became unreachable. Keeps the bar always usable.
+	// pushClip (not raw SetClipRect) also sets the INPUT clip, so a cell scrolled
+	// half under the bar can't be clicked/hovered up there — hovering() honours
+	// clipRect, so the pick (drawCharCell), the ★ star, and the hover-preview all
+	// stop at the viewport edge instead of firing under the search/tabs bar.
 	gridClip := sdl.Rect{X: 0, Y: gridTop, W: w, H: visibleH}
-	_ = c.Ren.SetClipRect(&gridClip)
+	prev, had := c.pushClip(gridClip)
 	for i := range a.sess.Chars {
 		slot := &a.sess.Chars[i]
 		if query != "" && !strings.Contains(a.charLower[i], query) {
@@ -708,7 +714,7 @@ func (a *App) drawCharSelect(w, h int32) {
 			row++
 		}
 	}
-	_ = c.Ren.SetClipRect(nil)
+	c.popClip(prev, had)
 	if a.previewBase != "" {
 		a.drawSpritePreview(w, h, false)
 		a.closeSpritePreviewOnLeave()
