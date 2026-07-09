@@ -28,7 +28,6 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
-	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 const (
@@ -211,15 +210,10 @@ func (a *App) autoLoginOnReady() {
 	if !info.AutoLogin || info.LoginUser == "" {
 		return
 	}
-	// WAP / witches-akashi-party (SoftwareWitches, announced "WAP-Akashi") has its
-	// automatic on-join sign-in disabled by request — a manual login (courtroom
-	// Login… button / Ctrl+G → loginNow) still runs it. Stock Akashi and every
-	// other family auto-log in once, as normal. detectedSoftware so a CM override
-	// applies; the fire-once latch above already ran, so this evaluates once.
-	if a.detectedSoftware() == courtroom.SoftwareWitches {
-		a.pushDebug("auto-login: skipped on WAP-Akashi (use Login… manually)")
-		return
-	}
+	// Every family — stock Akashi and the WAP / witches-akashi-party fork
+	// (SoftwareWitches) included — auto-logs in once on join. The fire-once
+	// latch above already ran, so a re-sent DONE (the WAP/Akashi fork, area
+	// changes) won't re-queue the login; a manual loginNow stays available.
 	a.loginNow()
 	if !a.d.Prefs.AutoLoginToastOn() {
 		return // the mod opted out of the notification (Settings → General)

@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.6 — 2026-07-09
+
+- **Removed the "X is typing…" setting.** It was an underused, experimental
+  option — mostly added to help test other features, then left in and forgotten.
+  Behind the scenes it sent a hidden marker over the out-of-character channel,
+  which could clutter OOC on some servers, so it has been taken out entirely.
+- **Auto-login works on Akashi and WAP / witches-akashi-party servers again.**
+  Both sign you in once on join, the same as every other server. Auto-login had
+  been switched off on WAP-Akashi in v1.55.5 while the cause of the trouble there
+  was tracked down — the hidden "X is typing…" signal above — and with that gone
+  it is back on. It still fires at most once per join, and a manual login (the
+  courtroom **Login...** button or Ctrl+G) always works.
+
 ## v1.55.5 — 2026-07-08
 
 - **Auto-login is turned off for WAP / witches-akashi-party servers.** On WAP-Akashi,

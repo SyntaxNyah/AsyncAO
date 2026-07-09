@@ -122,9 +122,9 @@ func TestLoginLines(t *testing.T) {
 // TestAutoLoginFiresOnce pins the auto-login hotfix: EventReady rides the DONE
 // packet, which some servers re-send mid-session (the WAP/Akashi fork, area
 // changes) — the saved login used to re-queue on every one and spam OOC. A
-// per-session latch caps it at ONE attempt ("try once and stop"). WAP /
-// witches-akashi-party (SoftwareWitches) is disabled by request; stock Akashi and
-// every other family still auto-log in once.
+// per-session latch caps it at ONE attempt ("try once and stop"). Every family,
+// including stock Akashi and the WAP / witches-akashi-party fork, auto-logs in
+// once on join.
 func TestAutoLoginFiresOnce(t *testing.T) {
 	newApp := func(software string) *App {
 		a := testTabApp(t)
@@ -137,9 +137,10 @@ func TestAutoLoginFiresOnce(t *testing.T) {
 		return a
 	}
 
-	// Stock Akashi and the non-Akashi families auto-log in — exactly ONCE, however
-	// many times EventReady (DONE) re-fires.
-	for _, sw := range []string{"Athena", "Akashi 1.8", "KFO-Server"} {
+	// Every family — stock Akashi and the WAP fork ("WAP-Akashi" / the canonical
+	// "witches-akashi-party") included — auto-logs in exactly ONCE, however many
+	// times EventReady (DONE) re-fires.
+	for _, sw := range []string{"Athena", "Akashi 1.8", "KFO-Server", "WAP-Akashi", "witches-akashi-party"} {
 		a := newApp(sw)
 		a.autoLoginOnReady()
 		n := len(a.oocQueue)
@@ -150,16 +151,6 @@ func TestAutoLoginFiresOnce(t *testing.T) {
 		a.autoLoginOnReady() // …and another
 		if len(a.oocQueue) != n {
 			t.Fatalf("%s: auto-login must fire once: queue grew %d → %d on repeat DONE", sw, n, len(a.oocQueue))
-		}
-	}
-
-	// WAP / witches-akashi-party is disabled: it announces "WAP-Akashi" (and the
-	// canonical "witches-akashi-party"), both → SoftwareWitches → no auto-login.
-	for _, sw := range []string{"WAP-Akashi", "witches-akashi-party"} {
-		a := newApp(sw)
-		a.autoLoginOnReady()
-		if len(a.oocQueue) != 0 {
-			t.Fatalf("%s: WAP auto-login must be disabled, got %v", sw, a.oocQueue)
 		}
 	}
 }
