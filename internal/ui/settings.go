@@ -1651,6 +1651,17 @@ func (a *App) drawSettingsStageFX(y int32) int32 {
 	pad := a.formX // rebase every pad-relative box into the content card
 	w := a.formW2()
 	y = a.settingsSection(y, w, "Stage & viewport effects")
+	// Screen effects (AO2 parity, ON by default): the \s screenshake and \f flash
+	// codes you can type into a message, plus the field-based shake / realization.
+	// Off keeps your screen still; "Reduce motion" (accessibility) also suppresses.
+	seff := a.d.Prefs.ScreenEffectsOn()
+	if next := c.Checkbox(pad, y, "Enable screen effects (ON by default): screenshake (\\s) and flash (\\f) typed into messages, plus authored shake / realization. Turn off to keep your screen still.", seff); next != seff {
+		a.d.Prefs.SetScreenEffects(next)
+		if a.room != nil {
+			a.room.ScreenEffects = next // apply to the live room immediately
+		}
+	}
+	y += 26
 	// Sprite colour FX (all OFF by default): a render-side wash over the
 	// on-stage characters. Local eye-candy only — nothing on the wire, nobody
 	// else sees it, and zero render cost when everything's off.
@@ -2266,6 +2277,7 @@ func (a *App) applyPrefsToState() {
 		a.applyTimingToRoom()
 		a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 		a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
+		a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn()
 	}
 }
 

@@ -230,6 +230,12 @@ const (
 // knows their session is authenticated. Toggleable off in Settings.
 const defaultAutoLoginToast = true
 
+// defaultScreenEffects ships ON: the AO2 screenshake (\s) and realization flash
+// (\f) — both the codes typed into a message and the field-based shake/realization
+// — render by default like the AO2 client. A dedicated Settings toggle turns them
+// off (separate from the accessibility "Reduce motion", which also suppresses them).
+const defaultScreenEffects = true
+
 // defaultCallwordToast ships ON: when a callword is heard, an in-app toast
 // names it (alongside the flash + ping), like the modcall/friend toasts.
 // Toggleable off in Settings (streamer mode suppresses it regardless).
@@ -872,6 +878,7 @@ type AssetPreferences struct {
 	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
+	ScreenEffects          bool                         `json:"screenEffects"` // AO2 \s/\f + field shake/flash; default ON
 	MusicDuckingOn         bool                         `json:"musicDucking"`
 	PerAreaScroll          bool                         `json:"perAreaScrollback"`
 	DetailedLog            bool                         `json:"detailedLog"`
@@ -1197,6 +1204,7 @@ type prefsJSON struct {
 	MusicVolMode           bool             `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
 	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
 	ReduceMotion           bool             `json:"reduceMotion"`         // default OFF (zero value)
+	ScreenEffects          *bool            `json:"screenEffects"`        // absent = default ON
 	MusicDucking           bool             `json:"musicDucking"`         // default OFF (zero value)
 	PerAreaScrollback      bool             `json:"perAreaScrollback"`    // default OFF (zero value)
 	DetailedLog            bool             `json:"detailedLog"`          // default OFF (zero value)
@@ -1552,6 +1560,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		SpritePreviewOn:        defaultSpritePreview,
 		PreviewHoverMs:         DefaultPreviewHoverMs,
 		AutoLoginToast:         defaultAutoLoginToast,
+		ScreenEffects:          defaultScreenEffects,
 		CallwordToast:          defaultCallwordToast,
 		MessageCounter:         defaultMessageCounter,
 		ICTimestamps:           defaultICTimestamps,
@@ -1801,6 +1810,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.AutoLoginToast != nil {
 		p.AutoLoginToast = *onDisk.AutoLoginToast
+	}
+	if onDisk.ScreenEffects != nil {
+		p.ScreenEffects = *onDisk.ScreenEffects
 	}
 	if onDisk.CallwordToast != nil {
 		p.CallwordToast = *onDisk.CallwordToast
@@ -6804,6 +6816,27 @@ func (p *AssetPreferences) SetReduceMotion(on bool) {
 		return
 	}
 	p.ReduceMotionOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ScreenEffectsOn reports the AO2 screen-effects toggle (ON by default): the \s
+// screenshake / \f flash codes typed into a message and the field-based
+// shake/realization render when on. "Reduce motion" also suppresses them.
+func (p *AssetPreferences) ScreenEffectsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ScreenEffects
+}
+
+// SetScreenEffects toggles the AO2 screen effects.
+func (p *AssetPreferences) SetScreenEffects(on bool) {
+	p.mu.Lock()
+	if p.ScreenEffects == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ScreenEffects = on
 	p.mu.Unlock()
 	p.markDirty()
 }

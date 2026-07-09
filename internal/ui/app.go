@@ -4777,6 +4777,7 @@ func (a *App) applyTimingToRoom() {
 	}
 	a.room.CatchUpLinger = time.Duration(a.d.Prefs.CatchUpLingerMs()) * time.Millisecond
 	a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
+	a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() // AO2 \s/\f + field shake/flash (default ON)
 	a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() // #103: viewer opt-out of others' styles
 }

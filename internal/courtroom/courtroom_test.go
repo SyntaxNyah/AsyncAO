@@ -187,6 +187,48 @@ func TestReduceMotionGatesEffects(t *testing.T) {
 	}
 }
 
+// TestScreenEffectsGatesEffects pins the dedicated ScreenEffects toggle (v1.55.7,
+// ON by default): with it OFF, both the field-based shake/flash and the inline
+// \s/\f codes are suppressed even when reduce-motion is off, while the effect
+// SOUND still plays; with it on, they fire.
+func TestScreenEffectsGatesEffects(t *testing.T) {
+	room, _, _, audio := newCourtroomRig(t)
+	room.ReduceMotion = false // isolate the ScreenEffects gate from accessibility
+
+	// ScreenEffects OFF: field-based visual gated, the audio cue still plays.
+	room.ScreenEffects = false
+	room.Scene.ShakeLeft, room.Scene.FlashLeft = 0, 0
+	room.fireMessageEffects(&protocol.ChatMessage{Effects: "screenshake|boom"})
+	if room.Scene.ShakeLeft != 0 {
+		t.Errorf("ScreenEffects off must suppress the screenshake, ShakeLeft=%v", room.Scene.ShakeLeft)
+	}
+	if len(audio.sfx) == 0 {
+		t.Error("ScreenEffects off must KEEP the effect sound — only the visual is gated")
+	}
+	room.fireMessageEffects(&protocol.ChatMessage{Realization: true})
+	if room.Scene.FlashLeft != 0 {
+		t.Errorf("ScreenEffects off must suppress the realization flash, FlashLeft=%v", room.Scene.FlashLeft)
+	}
+	// Inline \s/\f share the same gate (effectsVisible), so they're suppressed too.
+	room.fireInlineEffect(EffectMark{Kind: EffectShake})
+	room.fireInlineEffect(EffectMark{Kind: EffectFlash})
+	if room.Scene.ShakeLeft != 0 || room.Scene.FlashLeft != 0 {
+		t.Errorf("ScreenEffects off must suppress inline \\s/\\f, shake=%v flash=%v", room.Scene.ShakeLeft, room.Scene.FlashLeft)
+	}
+
+	// ScreenEffects ON: the field path and the inline codes fire.
+	room.ScreenEffects = true
+	room.Scene.ShakeLeft, room.Scene.FlashLeft = 0, 0
+	room.fireMessageEffects(&protocol.ChatMessage{Effects: "flash"})
+	if room.Scene.FlashLeft != RealizationFlashDuration {
+		t.Errorf("flash must fire with ScreenEffects on, FlashLeft=%v", room.Scene.FlashLeft)
+	}
+	room.fireInlineEffect(EffectMark{Kind: EffectShake})
+	if room.Scene.ShakeLeft != ScreenshakeDuration {
+		t.Errorf("inline \\s must fire with ScreenEffects on, ShakeLeft=%v", room.Scene.ShakeLeft)
+	}
+}
+
 // --- URL builder ----------------------------------------------------------------
 
 func TestURLBuilderConventions(t *testing.T) {
@@ -1616,6 +1658,10 @@ func TestStripMatchesTypewriter(t *testing.T) {
 		"\\c#12345 too short stays literal",
 		"\\c#zzzzzz not hex stays literal",
 		"tail cut \\c#ff",
+		"shake \\s and \\f flash codes",
+		"a line\\nbreak here",
+		"pause \\p500 then \\p bare",
+		"trailing effect code \\s",
 		"",
 	}
 	for _, m := range cases {
@@ -1668,6 +1714,71 @@ func TestTypewriterSkipToEnd(t *testing.T) {
 	tw.SkipToEnd()
 	if !tw.Done() {
 		t.Error("SkipToEnd did not finish the reveal")
+	}
+}
+
+// TestTypewriterInlineEffectCodes pins the AO2 inline screen-effect codes: \s/\f
+// record a mark at their reveal position and leave no glyph, \p (bare = 1 s;
+// \p<n> = n ms) folds into the next rune's interval as a pause, \n becomes a real
+// newline rune, and a skip drops any unreached marks (no catch-up burst).
+func TestTypewriterInlineEffectCodes(t *testing.T) {
+	tw := NewTypewriter()
+
+	// \s (after "ab", At=2) and \f (after "abcd", At=4) leave no glyph; the marks
+	// fire in order, each only once its position is revealed.
+	tw.Start("ab\\scd\\f")
+	if got := tw.Text(); got != "abcd" {
+		t.Fatalf("effect-code Text = %q, want \"abcd\"", got)
+	}
+	if _, ok := tw.NextEffect(); ok {
+		t.Fatal("no effect should be due before any reveal")
+	}
+	tw.Update(2 * DefaultCharInterval) // reveal "ab" → the shake (At=2) is due
+	if m, ok := tw.NextEffect(); !ok || m.Kind != EffectShake || m.At != 2 {
+		t.Fatalf("first mark = %+v ok=%v, want {At:2 Shake}", m, ok)
+	}
+	if _, ok := tw.NextEffect(); ok {
+		t.Fatal("flash must wait until its position is revealed")
+	}
+	tw.Update(10 * DefaultCharInterval) // reveal the rest → flash (At=4) is due
+	if m, ok := tw.NextEffect(); !ok || m.Kind != EffectFlash || m.At != 4 {
+		t.Fatalf("second mark = %+v ok=%v, want {At:4 Flash}", m, ok)
+	}
+	if _, ok := tw.NextEffect(); ok {
+		t.Fatal("only two marks expected")
+	}
+
+	// \n is a real newline rune in the clean text (wrapText breaks on it).
+	tw.Start("a\\nb")
+	if got := tw.Text(); got != "a\nb" {
+		t.Fatalf("newline Text = %q, want \"a\\nb\"", got)
+	}
+
+	// Bare \p folds a one-second pause onto the next rune's interval.
+	tw.Start("a\\pb")
+	if got := tw.Text(); got != "ab" {
+		t.Fatalf("pause Text = %q, want \"ab\"", got)
+	}
+	tw.Update(3 * DefaultCharInterval) // reveals 'a' but not past the 1 s pause on 'b'
+	if tw.Visible() != 1 {
+		t.Errorf("bare \\p visible = %d, want 1 ('b' behind the pause)", tw.Visible())
+	}
+	tw.Update(pauseDefaultMs * time.Millisecond)
+	if !tw.Done() {
+		t.Error("not done after the pause elapses")
+	}
+
+	// \p<n> consumes its digits (no stray "250" shows).
+	tw.Start("x\\p250y")
+	if got := tw.Text(); got != "xy" {
+		t.Fatalf("\\p<n> Text = %q, want \"xy\" (digits consumed)", got)
+	}
+
+	// A skip drops every unreached mark — catch-up must not burst the shakes.
+	tw.Start("\\sab\\scd\\f")
+	tw.SkipToEnd()
+	if _, ok := tw.NextEffect(); ok {
+		t.Error("SkipToEnd must drop all pending effect marks")
 	}
 }
 

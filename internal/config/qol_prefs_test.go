@@ -81,6 +81,9 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.AutoReconnectOn() {
 		t.Error("AutoReconnectOn default must be true")
 	}
+	if !p.ScreenEffectsOn() {
+		t.Error("ScreenEffectsOn default must be true (AO2 screen effects ship ON)")
+	}
 	if !p.MusicHistoryOn() {
 		t.Error("MusicHistoryOn default must be true")
 	}
@@ -743,6 +746,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetMessageCounter(false)       // same absent-default-ON pointer
 	p.SetICTimestamps(true)          // explicit non-default true must survive the absent-default-OFF pointer
 	p.SetAutoReconnect(false)        // same absent-default-ON pointer
+	p.SetScreenEffects(false)        // default-ON *bool — explicit false must survive
 	p.SetMusicHistory(false)         // same absent-default-ON pointer
 	p.SetRainbowSprites(true)        // default-OFF plain bool — must survive as true
 	p.SetShowRecordButton(true)      // default-OFF plain bool
@@ -786,6 +790,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.AutoLoginToastOn() {
 		t.Error("AutoLoginToast=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if q.ScreenEffectsOn() {
+		t.Error("ScreenEffects=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.CallwordToastOn() {
 		t.Error("CallwordToast=false lost (absent-default ON must not clobber explicit false)")

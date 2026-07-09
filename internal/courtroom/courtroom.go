@@ -219,6 +219,14 @@ type Courtroom struct {
 	// suppresses a RECEIVED sprite style's wobble/spin (transmitted motion).
 	ReduceMotion bool
 
+	// ScreenEffects gates the AO2 inline \s/\f codes and the field-based
+	// screenshake / realization flash — ON by default, a dedicated off-switch
+	// distinct from the accessibility ReduceMotion. Effects render only when
+	// ScreenEffects && !ReduceMotion (see effectsVisible). Defaults ON in
+	// NewCourtroom so authored/export contexts show effects; the App pushes the
+	// user's pref onto the live room.
+	ScreenEffects bool
+
 	// HideSpriteStyles ignores other speakers' transmitted SpriteStyle entirely
 	// (every character renders normally) — a viewer off-switch. Set by the App
 	// from prefs; default off (zero value) = show received styles.
@@ -383,7 +391,11 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 		sess:       sess,
 		audio:      audio,
 		Typewriter: NewTypewriter(),
-		TextStay:   DefaultTextStayTime,
+		// AO2 screen effects (\s/\f + field shake/flash) default ON; the App
+		// pushes the user's pref onto the live room, and authored/export/replay
+		// contexts keep them on.
+		ScreenEffects: true,
+		TextStay:      DefaultTextStayTime,
 		// Catch-up defaults OFF so direct callers (tests/embedders) keep the
 		// full lifecycle; the App enables it from prefs (default ON there).
 		CatchUpThreshold: catchUpDefaultThreshold,
@@ -956,7 +968,7 @@ func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
 	// play (accessibility: kill the shake/flash, keep the audio cue).
 	if msg.Effects != "" {
 		fx, sound := parseEffectsField(msg.Effects)
-		if !c.ReduceMotion {
+		if c.effectsVisible() {
 			switch strings.ToLower(fx) {
 			case "screenshake":
 				c.Scene.ShakeLeft = ScreenshakeDuration
@@ -968,15 +980,36 @@ func (c *Courtroom) fireMessageEffects(msg *protocol.ChatMessage) {
 			c.audio.PlaySFX(c.urls.SFX(sound), 0) // AssetType: SFX (2.8 effect sound)
 		}
 	} else if msg.Realization {
-		if !c.ReduceMotion {
+		if c.effectsVisible() {
 			c.Scene.FlashLeft = RealizationFlashDuration
 		}
 		if c.RealizationSFX != "" {
 			c.audio.PlaySFX(c.RealizationSFX, 0) // AssetType: SFX (realization)
 		}
 	}
-	if !c.ReduceMotion && msg.Screenshake && (msg.EmoteMod == protocol.EmoteModIdle || msg.EmoteMod == protocol.EmoteModZoom) {
+	if c.effectsVisible() && msg.Screenshake && (msg.EmoteMod == protocol.EmoteModIdle || msg.EmoteMod == protocol.EmoteModZoom) {
 		c.Scene.ShakeLeft = ScreenshakeDuration
+	}
+}
+
+// effectsVisible reports whether authored screen effects (shake/flash) should
+// render: the user's ScreenEffects toggle is on AND accessibility ReduceMotion
+// isn't suppressing motion. Effect SOUNDS ignore this — they always play.
+func (c *Courtroom) effectsVisible() bool { return c.ScreenEffects && !c.ReduceMotion }
+
+// fireInlineEffect fires a \s/\f screen effect the typewriter reached during the
+// crawl. Kept courtroom-side (Scene mutation) so the pure typewriter stays
+// SDL-free; the ScreenEffects toggle and reduce-motion both gate the visual,
+// matching fireMessageEffects' field-based path (purely visual, no sound to keep).
+func (c *Courtroom) fireInlineEffect(m EffectMark) {
+	if !c.effectsVisible() {
+		return
+	}
+	switch m.Kind {
+	case EffectShake:
+		c.Scene.ShakeLeft = ScreenshakeDuration
+	case EffectFlash:
+		c.Scene.FlashLeft = RealizationFlashDuration
 	}
 }
 
@@ -1167,6 +1200,15 @@ func (c *Courtroom) Update(dt time.Duration) {
 	case PhaseTalking:
 		_, blips := c.Typewriter.Update(dt)
 		c.Scene.VisibleRunes = c.Typewriter.Visible()
+		// Inline \s/\f codes fire the instant the crawl reaches them (AO2-Client
+		// chat_tick parity); a skip drops any it hasn't reached (SkipToEnd).
+		for {
+			m, ok := c.Typewriter.NextEffect()
+			if !ok {
+				break
+			}
+			c.fireInlineEffect(m)
+		}
 		for i := 0; i < blips; i++ {
 			c.audio.PlayBlip(c.blipBase) // AssetType: Blip
 		}

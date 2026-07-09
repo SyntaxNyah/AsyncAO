@@ -17,6 +17,12 @@ const (
 	// AO2-Client's message_display_speed table, expressed as multipliers of
 	// the base interval.
 	speedStepDefault = 3
+
+	// \p pause parity with AO2-Client parse_pause_duration (courtroom.cpp:3515):
+	// a bare \p pauses one second; \p<n> pauses n milliseconds, capped so a
+	// hostile message can't freeze the crawl.
+	pauseDefaultMs = 1000
+	pauseMaxMs     = 10000
 )
 
 // speedMultipliers scales the base interval per AO speed step. Index 3 is
@@ -84,6 +90,50 @@ func parseInlineHex(rs []rune, at int) (rgb int, ok bool) {
 	return rgb, true
 }
 
+// EffectKind identifies an inline screen-effect code the parser records at its
+// reveal position. Only \s and \f are effects; \p is a timing modifier (folded
+// into the rune intervals) and \n is a real newline rune — neither is a mark.
+type EffectKind uint8
+
+const (
+	EffectShake EffectKind = iota // \s — screenshake (AO2-Client do_screenshake parity)
+	EffectFlash                   // \f — realization flash (AO2-Client do_flash parity)
+)
+
+// EffectMark is one inline \s/\f effect to fire when the reveal reaches it. At is
+// the VISIBLE-rune index (the codes aren't emitted, so it lines up with
+// Typewriter.Visible()); the courtroom drains marks in order via NextEffect and
+// mutates the Scene — the typewriter itself never touches SDL.
+type EffectMark struct {
+	At   int
+	Kind EffectKind
+}
+
+// parsePauseDuration reads the optional digit run of a \p code beginning at index
+// `at` (the char after 'p'). Bare \p is a 1000 ms pause; \p<n> is n ms clamped to
+// pauseMaxMs (AO2-Client parse_pause_duration parity). Returns the pause in
+// milliseconds and how many digit runes it consumed. Shared by Start and
+// StripChatMarkup so the two can't drift.
+func parsePauseDuration(rs []rune, at int) (ms, digits int) {
+	pos := at
+	for pos < len(rs) && rs[pos] >= '0' && rs[pos] <= '9' {
+		pos++
+	}
+	if pos == at {
+		return pauseDefaultMs, 0
+	}
+	n := 0
+	for k := at; k < pos; k++ {
+		if n < pauseMaxMs { // clamp early so a long digit run can't overflow
+			n = n*10 + int(rs[k]-'0')
+		}
+	}
+	if n > pauseMaxMs {
+		n = pauseMaxMs
+	}
+	return n, pos - at
+}
+
 // StyleRun styles a contiguous span of the CLEAN (markup-stripped) rune
 // sequence. Runs are produced in order and partition the whole message, so
 // they index into the typewriter's runes by simple accumulation — the reveal
@@ -108,10 +158,12 @@ type Typewriter struct {
 	runes     []rune
 	intervals []time.Duration // per-rune delay (speed codes pre-applied)
 	styles    []StyleRun      // inline-color runs over runes (partition, in order)
+	effects   []EffectMark    // inline \s/\f screen-effect marks, in reveal order
 
-	visible     int
-	accumulator time.Duration
-	blipCounter int
+	visible      int
+	accumulator  time.Duration
+	blipCounter  int
+	effectCursor int // next unfired effect (advanced by NextEffect; dropped by SkipToEnd)
 
 	// Interval is the base per-character delay.
 	Interval time.Duration
@@ -136,17 +188,24 @@ func (t *Typewriter) Start(message string) {
 	t.runes = t.runes[:0]
 	t.intervals = t.intervals[:0]
 	t.styles = t.styles[:0]
+	t.effects = t.effects[:0]
 	t.visible = 0
 	t.accumulator = 0
 	t.blipCounter = 0
+	t.effectCursor = 0
 
 	speed := speedStepDefault
 	color := ColorDefault
 	bold, italic := false, false
 	runLen := 0
+	// pendingPause holds a \p code's delay until the next rune is emitted; it
+	// rides that rune's interval (a timing modifier like the '{'/'}' speed steps,
+	// NOT a fired effect).
+	pendingPause := time.Duration(0)
 	emit := func(r rune) {
 		t.runes = append(t.runes, r)
-		t.intervals = append(t.intervals, time.Duration(float64(t.Interval)*speedMultipliers[speed]))
+		t.intervals = append(t.intervals, time.Duration(float64(t.Interval)*speedMultipliers[speed])+pendingPause)
+		pendingPause = 0
 		runLen++
 	}
 	// flush closes the current run; a style change opens a new one, so each run
@@ -221,6 +280,23 @@ func (t *Typewriter) Start(message string) {
 				italic = !italic
 				i++
 				continue
+			case n == 'n': // \n → a real line break (wrapText splits on '\n')
+				emit('\n')
+				i++
+				continue
+			case n == 's': // \s → screenshake when the reveal reaches here (AO2 parity)
+				t.effects = append(t.effects, EffectMark{At: len(t.runes), Kind: EffectShake})
+				i++
+				continue
+			case n == 'f': // \f → realization flash when the reveal reaches here
+				t.effects = append(t.effects, EffectMark{At: len(t.runes), Kind: EffectFlash})
+				i++
+				continue
+			case n == 'p': // \p / \p<n> → pause before the next rune (timing modifier)
+				ms, digits := parsePauseDuration(rs, i+2)
+				pendingPause += time.Duration(ms) * time.Millisecond
+				i += 1 + digits
+				continue
 			}
 			// any other `\X`: fall through and emit the backslash literally
 		}
@@ -258,6 +334,17 @@ func StripChatMarkup(message string) string {
 			case n == 'b' || n == 'i': // bold / italic toggles
 				i++
 				continue
+			case n == 'n': // \n → newline (chatbox breaks on it; the IC log flattens it)
+				out = append(out, '\n')
+				i++
+				continue
+			case n == 's' || n == 'f': // screen-effect codes leave no glyph
+				i++
+				continue
+			case n == 'p': // pause code: drop 'p' and any digits
+				_, digits := parsePauseDuration(rs, i+2)
+				i += 1 + digits
+				continue
 			}
 		}
 		out = append(out, r)
@@ -278,9 +365,25 @@ func (t *Typewriter) Visible() int { return t.visible }
 // Done reports whether the full message is revealed.
 func (t *Typewriter) Done() bool { return t.visible >= len(t.runes) }
 
-// SkipToEnd reveals everything (queue skip / user interrupt).
+// SkipToEnd reveals everything (queue skip / user interrupt). Interior \s/\f
+// marks are DROPPED, not fired — a skip/recall must not burst every screenshake
+// the message would have crawled through.
 func (t *Typewriter) SkipToEnd() {
 	t.visible = len(t.runes)
+	t.effectCursor = len(t.effects)
+}
+
+// NextEffect returns the next inline \s/\f mark whose position has been revealed
+// since the last call, advancing an internal cursor; ok=false when none are
+// pending. The courtroom drains these each tick and mutates the Scene, so the
+// pure typewriter never touches SDL. 0-alloc (value return, no slice).
+func (t *Typewriter) NextEffect() (EffectMark, bool) {
+	if t.effectCursor < len(t.effects) && t.effects[t.effectCursor].At <= t.visible {
+		m := t.effects[t.effectCursor]
+		t.effectCursor++
+		return m, true
+	}
+	return EffectMark{}, false
 }
 
 // Update advances the reveal by dt. It returns how many new runes became
@@ -301,7 +404,7 @@ func (t *Typewriter) Update(dt time.Duration) (revealed, blips int) {
 		t.visible++
 		revealed++
 
-		if r != ' ' || t.BlipOnSpaces {
+		if (r != ' ' && r != '\n') || t.BlipOnSpaces {
 			t.blipCounter++
 			rate := t.BlipRate
 			if rate < 1 {
