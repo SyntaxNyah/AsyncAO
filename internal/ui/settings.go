@@ -2615,12 +2615,6 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	}
 	y += 26
 
-	ti := a.d.Prefs.TypingIndicatorOn()
-	if next := c.Checkbox(pad, y, "Show \"X is typing…\" between AsyncAO users (OFF by default): a live caption when other AsyncAO players are composing. Uses a hidden, throttled OOC signal only AsyncAO reads; off = your client sends nothing.", ti); next != ti {
-		a.d.Prefs.SetTypingIndicator(next)
-	}
-	y += 26
-
 	ar := a.d.Prefs.AutoReconnectOn()
 	if next := c.Checkbox(pad, y, "Auto-reconnect after a dropped connection (ON by default): retries the last server with backoff. A deliberate Disconnect never reconnects; the manual Reconnect button always works.", ar); next != ar {
 		a.d.Prefs.SetAutoReconnect(next)

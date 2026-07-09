@@ -870,7 +870,6 @@ type AssetPreferences struct {
 	TexBudgetMiBVal        int                          `json:"texBudgetMiB,omitempty"`         // T1 texture byte budget, MiB (0/absent = 64); applies on RESTART
 	CrossfadeMsVal         int                          `json:"crossfadeMs,omitempty"`          // speaker-swap crossfade duration ms (0/absent = off)
 	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
-	TypingIndicator        bool                         `json:"typingIndicator"`                // opt-in cross-client "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	MusicDuckingOn         bool                         `json:"musicDucking"`
@@ -1196,7 +1195,6 @@ type prefsJSON struct {
 	TexBudgetMiB           int              `json:"texBudgetMiB"`         // T1 budget MiB (0 = 64; restart)
 	CrossfadeMs            int              `json:"crossfadeMs"`          // speaker-swap crossfade ms (0 = off)
 	MusicVolMode           bool             `json:"musicVolMode"`         // Music menu volume-sliders view (persisted)
-	TypingIndicator        bool             `json:"typingIndicator"`      // opt-in "X is typing…" (#3, default OFF)
 	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
 	ReduceMotion           bool             `json:"reduceMotion"`         // default OFF (zero value)
 	MusicDucking           bool             `json:"musicDucking"`         // default OFF (zero value)
@@ -1948,7 +1946,6 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.MusicVolMode = onDisk.MusicVolMode
 	p.ChangelogSeen = onDisk.ChangelogSeen
-	p.TypingIndicator = onDisk.TypingIndicator
 	p.OpenTabs = onDisk.OpenTabs
 	p.ReduceMotionOn = onDisk.ReduceMotion
 	p.MusicDuckingOn = onDisk.MusicDucking
@@ -6760,26 +6757,6 @@ func (p *AssetPreferences) SetChangelogSeen(v string) {
 		return
 	}
 	p.ChangelogSeen = v
-	p.mu.Unlock()
-	p.markDirty()
-}
-
-// TypingIndicatorOn reports the opt-in cross-client "X is typing…" toggle (#3). OFF by
-// default — when off the client sends NO typing pulses and shows no indicator.
-func (p *AssetPreferences) TypingIndicatorOn() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.TypingIndicator
-}
-
-// SetTypingIndicator toggles the typing indicator.
-func (p *AssetPreferences) SetTypingIndicator(on bool) {
-	p.mu.Lock()
-	if p.TypingIndicator == on {
-		p.mu.Unlock()
-		return
-	}
-	p.TypingIndicator = on
 	p.mu.Unlock()
 	p.markDirty()
 }

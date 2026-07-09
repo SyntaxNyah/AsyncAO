@@ -394,9 +394,6 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 			a.checkCallwords(ev.Message.Message, names, isSelfName(ev.Message.CharName, names))
 		}
 	case courtroom.EventOOC:
-		if courtroom.IsTypingMarker(ev.Text) {
-			return // #3: a typing pulse is never real OOC — drop it from a parked tab's log
-		}
 		line := ev.Name + ": " + ev.Text
 		if len(line) > oocLineCap {
 			line = line[:oocLineCap] + "…"

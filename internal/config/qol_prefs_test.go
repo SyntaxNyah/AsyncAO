@@ -7,19 +7,6 @@ import (
 	"testing"
 )
 
-// TestTypingIndicatorDefaultOff pins #3: the typing indicator ships OFF (so the client
-// sends zero typing traffic out of the box), and toggles on persistently.
-func TestTypingIndicatorDefaultOff(t *testing.T) {
-	p := &AssetPreferences{}
-	if p.TypingIndicatorOn() {
-		t.Error("TypingIndicatorOn default must be false (opt-in)")
-	}
-	p.SetTypingIndicator(true)
-	if !p.TypingIndicatorOn() {
-		t.Error("SetTypingIndicator(true) did not stick")
-	}
-}
-
 // TestFontEverywhereRoundTrip pins the whole-UI font toggle: OFF by default
 // (the chrome's fixed metrics are tuned for the embedded face, so extending an
 // override to every menu/button is an explicit opt-in), and an explicit ON

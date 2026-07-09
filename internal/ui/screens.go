@@ -4638,7 +4638,6 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	a.icInput, send = c.TextFieldEmoji("ic", icBox, a.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
 	a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 	a.drawMsgCounter(icBox, icCounterOn)
-	a.drawTypingCaption(icBox) // #3: "X is typing…" pill above the input (opt-in; no-op when nobody is)
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
 	}

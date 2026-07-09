@@ -463,7 +463,6 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		a.icInput, send = c.TextFieldEmoji("ic", field, a.icInput, "Talk in-character here…", icPrimary, icEmoji)
 		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 		a.drawMsgCounter(field, icCounterOn)
-		a.drawTypingCaption(field) // #3: "X is typing…" pill above the input (opt-in)
 		if send {
 			a.sendIC(0)
 		}
