@@ -64,3 +64,109 @@ func TestKeepSceneAssetsWarm(t *testing.T) {
 		t.Fatalf("keepSceneAssetsWarm allocates %.1f/op resident, want 0", n)
 	}
 }
+
+// TestSceneWarmFutilityLatch pins the churn breaker (the idle/minimized
+// CPU-burn report): once a base has been re-demanded warmMaxDemandsPerBase
+// times without sticking, the warm keeper stops re-demanding it — the nil
+// Manager is the tripwire; a demand would panic — until the warm SET changes
+// (a new message / room rebuild), which resets the counters. Without the
+// latch, a settled scene whose decoded working set exceeds the T1 main tier
+// churned decode→upload→evict→re-demand forever, whole cores at "idle".
+func TestSceneWarmFutilityLatch(t *testing.T) {
+	a := testTabApp(t)
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	store, err := render.NewTextureStore(ren)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	a.d.Store = store
+	a.room = &courtroom.Courtroom{}
+	a.room.Scene.BackgroundBase = "warm://never-lands"
+
+	// Latched at the cap: throttle open + missing base → no demand submitted.
+	a.sceneWarmSet = [6]string{"warm://never-lands", "", "", "", "", ""}
+	a.sceneWarmDemands = map[string]int{"warm://never-lands": warmMaxDemandsPerBase}
+	a.keepSceneAssetsWarm()
+
+	// A warm-set change (the next message swaps the stage) resets the latch.
+	// The new base is resident so the pass is touch-only; the counters clear.
+	dec := &assets.Decoded{
+		Frames: []*image.RGBA{image.NewRGBA(image.Rect(0, 0, 2, 2))},
+		Delays: []time.Duration{0},
+		Width:  2, Height: 2,
+	}
+	if err := store.Upload("warm://next-message", dec); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	a.room.Scene.BackgroundBase = "warm://next-message"
+	a.keepSceneAssetsWarm()
+	if len(a.sceneWarmDemands) != 0 {
+		t.Fatalf("a warm-set change must reset the futility counters, still holds %v", a.sceneWarmDemands)
+	}
+}
+
+// TestHealSceneryFutilityLatch pins the drawn-path half of the churn breaker:
+// healScenery shares the per-scene futility budget (sceneHealAllowed), so an
+// over-tier or permanently-404 base stops being re-demanded from the
+// live-scene heal too — the nil Manager is the tripwire; a demand would panic.
+func TestHealSceneryFutilityLatch(t *testing.T) {
+	a := testTabApp(t)
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	store, err := render.NewTextureStore(ren)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	a.d.Store = store
+	a.room = &courtroom.Courtroom{}
+	a.room.Scene.BackgroundBase = "warm://never-lands"
+	a.sceneWarmDemands = map[string]int{"warm://never-lands": warmMaxDemandsPerBase}
+	a.healScenery() // latched: no demand submitted
+}
+
+// TestActiveWarmThrottleAndLatch pins keepActiveAssetsWarm's re-demand
+// discipline (the old path submitted a pool job per 50 ms Background tick,
+// forever, for a conclusively-404'd emote button): inside the throttle window
+// no demand fires, at the futility cap none ever does — the nil Manager is
+// the tripwire for both — and a char/emote change resets the counters.
+func TestActiveWarmThrottleAndLatch(t *testing.T) {
+	a := testTabApp(t)
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	store, err := render.NewTextureStore(ren)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	a.d.Store = store
+
+	// Throttle window closed: no demand for a missing base.
+	a.activeWarmLastDemand = time.Now()
+	a.warmBase("warm://missing-button", assets.AssetTypeEmoteButton)
+
+	// Throttle open but the futility cap reached: still no demand.
+	a.activeWarmLastDemand = time.Time{}
+	a.activeWarmDemands = map[string]int{"warm://missing-button": warmMaxDemandsPerBase}
+	a.warmBase("warm://missing-button", assets.AssetTypeEmoteButton)
+
+	// A char/emote change resets the counters (keepActiveAssetsWarm's gate).
+	// The warmed icon is resident so the pass is touch-only.
+	a.room = &courtroom.Courtroom{}
+	a.sess = &courtroom.Session{}
+	a.iniChar = "TestChar" // activeCharName() override — no picked char needed
+	a.urls = courtroom.NewURLBuilder("http://warmtest/")
+	a.emoteIdx = -1 // out of range: only the char icon warms
+	dec := &assets.Decoded{
+		Frames: []*image.RGBA{image.NewRGBA(image.Rect(0, 0, 2, 2))},
+		Delays: []time.Duration{0},
+		Width:  2, Height: 2,
+	}
+	if err := store.Upload(a.urls.CharIcon("TestChar"), dec); err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	a.activeWarmChar, a.activeWarmIdx = "SomeoneElse", 2
+	a.keepActiveAssetsWarm()
+	if len(a.activeWarmDemands) != 0 {
+		t.Fatalf("a char/emote change must reset the futility counters, still holds %v", a.activeWarmDemands)
+	}
+}

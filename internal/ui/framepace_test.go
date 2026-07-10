@@ -369,15 +369,25 @@ func TestFramePaceUnlimited(t *testing.T) {
 	}
 	a.lastInputAt = time.Time{}
 
-	// ∞ idle rate never throttles a static-but-rendering screen. Tested on the
-	// classic loop, where the idle tier is observable; a finite active cap proves
-	// the 0 comes from the idle knob, not the cap.
+	// ∞ idle rate = "as fast as the active cap" (the Settings tooltip's own
+	// words): the tier resolves THROUGH the cap, so a finite cap keeps ruling —
+	// the old raw-0 return was indistinguishable from uncapped and, with the ∞
+	// default cap, left an idle render loop with a zero-sleep budget (the
+	// idle-CPU-burn class). Tested on the classic loop, where the tier is
+	// observable.
 	a.d.Prefs.SetFPSCap(60)
 	a.d.Prefs.SetIdleFPS(config.FPSUnlimited)
 	a.d.Prefs.SetEventDrivenLoop(false)
-	if got := a.FramePace(true); got != 0 {
-		t.Errorf("unlimited idle rate = %v, want 0 (never throttle when idle)", got)
+	if got := a.FramePace(true); got != paceBudget(60) {
+		t.Errorf("unlimited idle rate = %v, want the active cap's budget %v", got, paceBudget(60))
 	}
+	// ∞ idle + ∞ cap: the finite backstop — never a zero budget for a frame
+	// nothing demanded.
+	a.d.Prefs.SetFPSCap(config.FPSUnlimited)
+	if got := a.FramePace(true); got != paceBudget(config.FPSCapUnlimitedOff) {
+		t.Errorf("∞ idle + ∞ cap = %v, want the %d fps backstop", got, config.FPSCapUnlimitedOff)
+	}
+	a.d.Prefs.SetFPSCap(60)
 	a.d.Prefs.SetEventDrivenLoop(true)
 
 	// ∞ background rate never throttles an unfocused window.
@@ -420,6 +430,69 @@ func TestFramePaceAnimatedChrome(t *testing.T) {
 	a.d.Prefs.SetEventDrivenLoop(false)
 	if got := a.FramePace(true); got != paceBudget(60) {
 		t.Errorf("classic animated chrome = %v, want the active cap (not the idle rate)", got)
+	}
+
+	// ∞ active cap: chrome animation gets the finite backstop, never 0 — a
+	// perpetual census (FX chat text on a settled message, an animated theme
+	// page, the viewport's ambient-FX census) re-arms indefinitely, and a zero
+	// budget would disable pacing entirely (vsync is not a reliable throttle —
+	// the idle-CPU-burn class). Input still returns the true uncapped full rate
+	// through wantsFullRate, so responsiveness is untouched.
+	a.d.Prefs.SetEventDrivenLoop(true)
+	a.d.Prefs.SetFPSCap(config.FPSUnlimited)
+	if got := a.FramePace(true); got != paceBudget(config.FPSCapUnlimitedOff) {
+		t.Errorf("animated chrome under the ∞ cap = %v, want the %d fps backstop", got, config.FPSCapUnlimitedOff)
+	}
+}
+
+// TestWantsFullRateStateGated pins the knob-not-state fix (the idle-CPU-burn
+// report): the ambient-FX prefs alone must never hold full rate — they count
+// only through the viewport draw-site census (Viewport.AmbientAnimating →
+// NoteAnimating), which cannot fire on the lobby/Settings or an empty stage.
+// The voice panel's OPEN flag no longer pins the rate either — only a live
+// call (voiceJoined) does; a merely-open panel rides damage and input.
+func TestWantsFullRateStateGated(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetRainbowSprites(true)
+	a.d.Prefs.SetSpriteWobble(true)
+	a.d.Prefs.SetSpriteSpin(true)
+	a.d.Prefs.SetIdleBreath(true)
+	a.d.Prefs.SetWeatherType(1)
+	if a.wantsFullRate() {
+		t.Fatal("FX pref knobs alone must not hold full rate (knob-not-state)")
+	}
+	a.showVoice = true
+	if a.wantsFullRate() {
+		t.Fatal("an open-but-idle voice panel must not hold full rate")
+	}
+	a.voiceJoined = true
+	if !a.wantsFullRate() {
+		t.Fatal("a live voice call needs full rate")
+	}
+}
+
+// TestSkipFrameClassicCaret pins the classic loop's caret refusal as
+// state-gated: a merely-FOCUSED field must not force a render every pass —
+// the IC input is habitually focused in the courtroom, and the blanket focus
+// refusal kept the classic loop rendering every pass forever (with the ∞
+// default cap, a zero-sleep spin). Only a blink phase that actually FLIPPED
+// since the last drawn frame refuses the skip.
+func TestSkipFrameClassicCaret(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetEventDrivenLoop(false)
+	a.d.Prefs.SetIdleFPS(config.FPSOff) // no classic idle heartbeat in this test
+	a.room = &courtroom.Courtroom{}
+	a.sess = &courtroom.Session{}
+	a.lastInputAt, a.lastMotionAt = time.Time{}, time.Time{}
+	a.ctx.focusID = "ic-input"
+	a.ctx.caretOn = true
+	a.drawnCaretOn = true // the blink state already on screen
+	if !a.SkipFrame(true, false) {
+		t.Fatal("a focused-but-unflipped caret must skip (the blanket focus refusal was the classic render spin)")
+	}
+	a.ctx.caretOn = false // the blink flipped since the last drawn frame
+	if a.SkipFrame(true, false) {
+		t.Fatal("a stale caret flip must refuse the skip and draw")
 	}
 }
 

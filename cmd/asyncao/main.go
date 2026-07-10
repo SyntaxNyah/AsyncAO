@@ -465,7 +465,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				// the floor pumps the session and re-parks WITHOUT drawing, which
 				// is how idle=off reaches genuinely zero redraws. Input/wake events
 				// interrupt the wait regardless, for instant response at zero cost.
-				if app.RenderNeeded() {
+				// Damage loops straight around to render — unless SkipFrame will
+				// keep refusing (unfocused + background cap OFF): there the damage
+				// can't draw until focus returns, and looping on it was a zero-
+				// sleep spin (packets re-dirty faster than anything clears).
+				if app.RenderNeeded() && !app.RenderSuppressed(focused) {
 					continue
 				}
 				wait, renderDue := app.NextWakeDelay(focused)

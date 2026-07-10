@@ -41,6 +41,17 @@ func (a *App) zoomDst(vp sdl.Rect) sdl.Rect {
 func (a *App) renderViewportZoomed(vp sdl.Rect) {
 	c := a.ctx
 	sc := a.renderScene() // real scene, or the slideshow's background override
+	// Ambient-FX census: while the DRAWN stage animates on the free-running
+	// clock — the rainbow/wobble/spin/breath washes, a transmitted sprite
+	// style's motion, live weather — report it from the draw site, exactly like
+	// drawSpritePreview. State-gated and self-clearing: it fires only while a
+	// stage showing the effect actually renders, so the lobby/Settings (and an
+	// empty stage) park like any static screen. Replaces wantsFullRate's old
+	// pref-knob checks — the "knob not state" anti-pattern — and is paced by
+	// FramePace's anim-chrome tier (finite even under the ∞ cap).
+	if a.d.Viewport != nil && a.d.Viewport.AmbientAnimating(sc) {
+		a.NoteAnimating()
+	}
 	if a.vpZoom <= 1 {
 		a.d.Viewport.Render(c.Ren, sc, vp)
 		a.drawStageFrame(vp) // #56 decorative frame (Off by default → no-op)

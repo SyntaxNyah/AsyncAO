@@ -1069,6 +1069,17 @@ type sessionState struct {
 	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
 	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
 	sceneWarmLastDemand time.Time
+	// Warm-keeper futility latches (warmMaxDemandsPerBase): per-base re-demand
+	// counts, reset when the respective warm set changes. Bounded by the sets
+	// themselves (≤6 scene bases / ≤3 active-emote bases); lazily allocated.
+	sceneWarmDemands  map[string]int
+	sceneWarmSet      [6]string // the warm set sceneWarmDemands counts against
+	activeWarmDemands map[string]int
+	activeWarmChar    string // active-warm identity: character folder…
+	activeWarmIdx     int    // …and selected emote index
+	// activeWarmLastDemand throttles keepActiveAssetsWarm's re-demands to the
+	// scene keeper's cadence (the old path submitted a pool job per 50 ms tick).
+	activeWarmLastDemand time.Time
 	// winW/winH cache the logical window size Frame was last given, for draw
 	// helpers deep in a call chain that need window bounds (e.g. the sprite
 	// preview's on-screen clamp) without threading params through every layer.
@@ -2231,6 +2242,12 @@ func (a *App) keepActiveAssetsWarm() {
 	if me == "" {
 		return
 	}
+	// Futility latch reset: a new character/emote pick warms different bases, so
+	// the per-base demand counters start over (see warmMaxDemandsPerBase).
+	if me != a.activeWarmChar || a.emoteIdx != a.activeWarmIdx {
+		a.activeWarmChar, a.activeWarmIdx = me, a.emoteIdx
+		clear(a.activeWarmDemands)
+	}
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
 		a.warmBase(a.urls.EmoteButton(me, a.emoteIdx+1, true), assets.AssetTypeEmoteButton)  // selected "on" image
 		a.warmBase(a.urls.EmoteButton(me, a.emoteIdx+1, false), assets.AssetTypeEmoteButton) // "off" fallback
@@ -2238,10 +2255,45 @@ func (a *App) keepActiveAssetsWarm() {
 	a.warmBase(a.urls.CharIcon(me), assets.AssetTypeCharIcon)
 }
 
+// warmMaxDemandsPerBase caps how many times the scene-heal machinery
+// (keepSceneAssetsWarm, healScenery, keepActiveAssetsWarm) re-demands the SAME
+// base while its warm set stays unchanged. The first demand heals the
+// transient the healers exist for (an upload burst evicted stage art); the
+// extras cover a mid-flight collision. A base STILL missing after that is a
+// steady state no re-demand can fix — either the settled working set exceeds
+// the T1 main tier (each demand then fully re-decodes a large animated asset,
+// re-uploads it, and evicts ANOTHER warm page: a perpetual decode→upload→
+// evict→re-demand churn burning whole cores while the app sits "idle" or
+// minimized) or a permanent 404 (the old unthrottled active-warm path
+// submitted a pool job per 50 ms tick, forever). Latched bases stay quiet
+// until their warm set changes — a new message / emote pick resets the
+// counters, and the message's own HIGH-priority prefetch remains the real
+// loader (accepted jobs are never dropped, so a genuinely-streaming base
+// can't be stranded by the latch).
+const warmMaxDemandsPerBase = 3
+
+// sceneHealAllowed gates one live-scene re-demand against the shared per-scene
+// futility budget (warmMaxDemandsPerBase) and counts it. healScenery and
+// keepSceneAssetsWarm share the budget: they heal the same bases, and either
+// one alone could sustain the over-budget eviction churn. The counters reset
+// when the warm set changes (keepSceneAssetsWarm, which runs on both the
+// drawn and the skipped/minimized paths).
+func (a *App) sceneHealAllowed(base string) bool {
+	if a.sceneWarmDemands[base] >= warmMaxDemandsPerBase {
+		return false
+	}
+	if a.sceneWarmDemands == nil {
+		a.sceneWarmDemands = make(map[string]int) // bounded: scene bases only, reset per scene
+	}
+	a.sceneWarmDemands[base]++
+	return true
+}
+
 // warmBase keeps base resident across a minimized upload burst: touch it (→
 // most-recent, the LAST to evict) if it's in T1, else re-demand it — once it has
 // evicted, a Get alone can't bring it back, so the asset would stay gone until
-// the post-restore render heals it.
+// the post-restore render heals it. Re-demands are throttled to the scene
+// keeper's cadence and futility-latched per base (warmMaxDemandsPerBase).
 func (a *App) warmBase(base string, t assets.AssetType) {
 	if base == "" {
 		return
@@ -2250,6 +2302,15 @@ func (a *App) warmBase(base string, t assets.AssetType) {
 		a.d.Store.Get(base)
 		return
 	}
+	if time.Since(a.activeWarmLastDemand) < sceneWarmRedemandEvery ||
+		a.activeWarmDemands[base] >= warmMaxDemandsPerBase {
+		return
+	}
+	if a.activeWarmDemands == nil {
+		a.activeWarmDemands = make(map[string]int) // ≤3 keys: the two button spellings + the icon
+	}
+	a.activeWarmDemands[base]++
+	a.activeWarmLastDemand = time.Now()
 	a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 }
 
@@ -2276,6 +2337,15 @@ func (a *App) keepSceneAssetsWarm() {
 		return // no stage on screen (lobby) — nothing to pin
 	}
 	sc := a.renderScene()
+	// Futility latch reset: a new message / room rebuild swaps the warm set, so
+	// the per-base demand counters start over (warmMaxDemandsPerBase). A fixed
+	// array compare — no allocation on the settled steady state.
+	warmSet := [6]string{sc.BackgroundBase, sc.DeskBase,
+		sc.Speaker.Active, sc.Speaker.IdleBase, sc.Pair.Active, sc.ChatSkinBase}
+	if warmSet != a.sceneWarmSet {
+		a.sceneWarmSet = warmSet
+		clear(a.sceneWarmDemands)
+	}
 	now := time.Now()
 	throttleOpen := now.Sub(a.sceneWarmLastDemand) >= sceneWarmRedemandEvery
 	demanded := false
@@ -2287,11 +2357,18 @@ func (a *App) keepSceneAssetsWarm() {
 			a.d.Store.Get(base) // touch → most-recent, the last to evict
 			return
 		}
-		// Evicted (or never landed): re-demand, throttled scene-wide. A bare-
+		// Evicted (or never landed): re-demand, throttled scene-wide AND
+		// futility-latched per base (sceneHealAllowed). Without the latch, a
+		// settled scene whose decoded working set exceeds the T1 main tier
+		// churned forever: each re-demand fully re-decoded a large animated
+		// asset, re-uploaded up to a cap-sized page, and evicted ANOTHER warm
+		// base — which the next tick re-demanded, at ~4 whole-core-burning
+		// cycles/sec while the app sat idle or minimized (the CPU-burn report;
+		// the "stage blinks" report is the same churn's visible face). A bare-
 		// spelling sprite may 404 here where the message's fallback chain
-		// succeeded — harmless: the 404 cache absorbs it and the next message
-		// re-runs the full chain.
-		if throttleOpen && !demanded {
+		// succeeded — harmless: the 404 cache absorbs it, the latch stops the
+		// repeats, and the next message re-runs the full chain.
+		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
 			a.d.Manager.Prefetch(base, t, network.PriorityHigh)
 			demanded = true
 			a.sceneWarmLastDemand = now
@@ -4375,7 +4452,10 @@ func (a *App) talkBudget(full time.Duration) time.Duration {
 // FramePace returns the frame budget the main loop should pace to (0 = no cap):
 // the sleep between CONSECUTIVE rendered frames. focused is the window's input-
 // focus state. Tiers, fastest first:
-//   - full rate: interaction, effects in flight, or an always-animating surface
+//   - full rate: interaction or effects genuinely in flight (wantsFullRate)
+//   - anim-chrome rate: a self-driven UI animation (NoteAnimating census) —
+//     the cap, backstopped to a finite ~60 fps when the cap is ∞ (perpetual
+//     censuses must never zero the budget — see backstopBudget)
 //   - talk rate: a message is playing → the text crawl's cadence (talkBudget),
 //     which a fast speaker's frame flip may only TIGHTEN (earliest deadline
 //     wins, so a slow sprite loop never drags the typewriter/blips down — the
@@ -4426,8 +4506,17 @@ func (a *App) FramePace(focused bool) time.Duration {
 		}
 		return unf
 	}
-	if a.wantsFullRate() || a.drawnAnimChrome {
-		return full // recent input/effects, OR a self-driven UI animation (NoteAnimating)
+	if a.wantsFullRate() {
+		return full // recent input / effects genuinely in flight
+	}
+	if a.drawnAnimChrome {
+		// A self-driven UI animation (NoteAnimating census) re-arms every frame
+		// it draws — some indefinitely (FX chat text on a settled message, an
+		// animated theme page, the viewport's ambient-FX census). Smooth frames,
+		// but never a ZERO budget: with the ∞ default cap, pace=hardCap=0 skips
+		// every pacing sleep and vsync is the only brake — which main.go's own
+		// GPU-burn note records as non-blocking on some windowed present paths.
+		return backstopBudget(full)
 	}
 	idle, idleOff := rateBudget(a.d.Prefs.IdleFPS())
 	idleUnlimited := !idleOff && idle == 0 // ∞ idle
@@ -4455,10 +4544,30 @@ func (a *App) FramePace(focused bool) time.Duration {
 		return clampDur(due, full, idle) // content cadence, never slower than the idle rate
 	}
 	// Rendered but nothing is animating — see the "active cap" tier note above.
-	if a.d.Prefs.EventDrivenLoopOn() || idleOff {
-		return full
+	// Backstopped: a frame NOTHING demanded (no input, no transition, no anim)
+	// must never leave the pacer with a zero budget — under the ∞ default cap
+	// the classic loop's lobby/caret renders became a zero-sleep spin here, and
+	// ∞ idle ("as fast as the active cap", the Settings tooltip's own words)
+	// resolves through the cap so a finite cap still rules.
+	if a.d.Prefs.EventDrivenLoopOn() || idleOff || idleUnlimited {
+		return backstopBudget(full)
 	}
-	return idle // classic idle nap (∞ → 0 uncapped; N → 1s/N)
+	return idle // classic idle nap (N → 1s/N)
+}
+
+// backstopBudget resolves a rendered-but-undemanded frame's budget: the given
+// cap when finite, else a concrete ~60 fps floor (the Settings ∞-toggle's own
+// FPSCapUnlimitedOff). Frames that reach it were NOT demanded by input or a
+// running transition — wantsFullRate returns the true uncapped `full` before
+// any caller — so flooring here costs active use nothing, while a perpetual
+// census or an idle re-render can no longer disable pacing entirely (with
+// pace=hardCap=0 the main loop sleeps zero and vsync is the only brake, which
+// its own GPU-burn comment records as unreliable for windowed presents).
+func backstopBudget(b time.Duration) time.Duration {
+	if b > 0 {
+		return b
+	}
+	return paceBudget(config.FPSCapUnlimitedOff)
 }
 
 // SkipFrame reports that the last drawn frame is still exactly right, so the
@@ -4546,8 +4655,16 @@ func (a *App) SkipFrame(focused, sawEvent bool) bool {
 			return false // pending damage: packets landed / textures moved / a caret flip is showing
 		}
 	} else {
-		if a.ctx != nil && a.ctx.focusID != "" {
-			return false // a focused text field blinks its caret
+		if a.ctx != nil {
+			// State-gated on the blink actually being STALE (the comparison
+			// RenderNeeded uses), not on "a field is focused" — the IC input is
+			// habitually focused in the courtroom, and the blanket refusal made
+			// the classic loop render every pass forever (with the ∞ default
+			// cap, a zero-sleep spin). The skip nap re-polls well inside a
+			// blink period, so the caret still flips on time.
+			if on, focused := a.ctx.CaretVisible(); focused && on != a.drawnCaretOn {
+				return false // the focused caret's blink phase flipped — draw it
+			}
 		}
 		if a.timerActive() || a.serverTimersLive() {
 			return false // countdown readouts change every second
@@ -4606,6 +4723,22 @@ func (a *App) RenderNeeded() bool {
 		}
 	}
 	return false
+}
+
+// RenderSuppressed reports that SkipFrame will keep refusing to render
+// REGARDLESS of pending damage: the unfocused window with the background cap
+// OFF (its 0-fps ceiling deliberately overrides damage; the state re-syncs on
+// the focus-regain render). The main loop's "RenderNeeded → loop around and
+// draw it" shortcut must park instead in that state — Background's own pumps
+// set uiDirty on every packet and only a drawn frame clears it, so the
+// shortcut otherwise spins with zero sleep until a real window event. Voice /
+// mic capture never suppress, mirroring SkipFrame's own exception.
+func (a *App) RenderSuppressed(focused bool) bool {
+	if focused || a.voiceJoined || a.micTest != nil {
+		return false
+	}
+	_, off := rateBudget(a.d.Prefs.UnfocusedFPS())
+	return off
 }
 
 // NoteDeadline marks a scheduled wake that just fired (the main loop's event
@@ -4720,14 +4853,17 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 }
 
 // wantsFullRate reports whether something on screen genuinely needs the full
-// frame rate: recent input, stage effects in flight (shake/flash), transmitted
-// sprite motion, an open replay/maker/export/voice surface, floating reactions,
-// the pinned second courtroom, the perf HUD's scrolling graph, or an
-// always-animating FX pref (rainbow wash, wobble/spin, idle breathing,
-// weather). Message ceremony moved to FramePace's talk/content tiers, and a
-// crossfade counts only while one actually RUNS (Viewport.NextAnimDue) — the
-// old knob-not-state checks held full rate forever and were the "redraws for
-// no reason" playtest report.
+// frame rate: recent input, stage effects in flight (shake/flash), an open
+// replay/maker/export surface, a live voice call, floating reactions, the
+// pinned second courtroom, or the perf HUD's scrolling graph. Message ceremony
+// moved to FramePace's talk/content tiers; a crossfade counts only while one
+// actually RUNS (Viewport.NextAnimDue); and the perpetual ambient motions —
+// the rainbow/wobble/spin/breath washes, weather, transmitted sprite styles —
+// count only while a stage that shows them actually DRAWS (the viewport
+// census, Viewport.AmbientAnimating → NoteAnimating, paced by FramePace's
+// anim-chrome tier). The old knob-not-state checks here held full rate forever
+// on every screen — lobby and Settings included — and were the "redraws for no
+// reason" playtest report, back for a second round as the idle-CPU-burn one.
 func (a *App) wantsFullRate() bool {
 	if time.Since(a.lastInputAt) < time.Duration(a.d.Prefs.InputGraceFrames())*inputGraceFrameDuration {
 		return true // configurable post-input hold (default 1 frame); 0 would be the input's own frame only
@@ -4738,27 +4874,17 @@ func (a *App) wantsFullRate() bool {
 	if a.room != nil {
 		sc := &a.room.Scene
 		if sc.ShakeLeft > 0 || sc.FlashLeft > 0 {
-			return true
-		}
-		// Transmitted per-sprite motion animates while the room is otherwise idle.
-		for _, st := range [2]courtroom.SpriteStyle{sc.Speaker.Style, sc.Pair.Style} {
-			if st.Active() && (st.Wobble || st.Spin || st.HueCycle || st.Glitch || st.Motion != 0) {
-				return true
-			}
+			return true // sub-second effect countdowns — self-terminating
 		}
 	}
-	if a.replaying || a.makerOpen || a.gifExporting || a.showVoice || a.perfHUD {
+	// voiceJoined, not the panel's open flag: a merely-open panel rides damage
+	// and input like any other chrome; only a live call's audio engine needs
+	// steady frames (SkipFrame's voice exception keeps them coming regardless —
+	// this keeps their PACE at the full rate the engine was tuned for).
+	if a.replaying || a.makerOpen || a.gifExporting || a.voiceJoined || a.perfHUD {
 		return true
 	}
-	if len(a.reactionFloats) > 0 || a.splitActive() {
-		return true
-	}
-	// Local always-animating FX prefs (each opt-in; on = the user chose motion).
-	fx := a.spriteFX()
-	if fx.Rainbow || fx.Wobble || fx.Spin || fx.IdleBreath {
-		return true
-	}
-	return a.d.Prefs.WeatherType() != 0
+	return len(a.reactionFloats) > 0 || a.splitActive()
 }
 
 // SetSpriteCapBase hands the App the display-derived decode-downscale base
@@ -6452,11 +6578,15 @@ func (a *App) applySpriteOverrides() {
 func (a *App) healScenery() {
 	sc := &a.room.Scene
 	now := time.Now()
-	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) {
+	// Each heal consults the shared per-scene futility budget (sceneHealAllowed):
+	// when the settled working set exceeds the T1 main tier, every heal evicts
+	// another live base and this loop — paced or not — churned decode→upload→
+	// evict→re-demand forever (the focused half of the idle-CPU-burn report).
+	if sc.BackgroundBase != "" && !(sc.BackgroundBase == a.bgAskBase && now.Sub(a.bgAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.BackgroundBase) && a.sceneHealAllowed(sc.BackgroundBase) {
 		a.bgAskBase, a.bgAskAt = sc.BackgroundBase, now
 		a.d.Manager.Prefetch(sc.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 	}
-	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) {
+	if sc.DeskBase != "" && !(sc.DeskBase == a.deskAskBase && now.Sub(a.deskAskAt) < charIconRetryInterval) && !a.d.Store.Contains(sc.DeskBase) && a.sceneHealAllowed(sc.DeskBase) {
 		a.deskAskBase, a.deskAskAt = sc.DeskBase, now
 		a.d.Manager.Prefetch(sc.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh) // AssetType: DeskOverlay
 	}
@@ -6477,6 +6607,9 @@ func (a *App) healSpriteLayer(layer *courtroom.SpriteLayer, askBase *string, ask
 	}
 	if a.d.Store.Contains(layer.Active) {
 		return // resident — nothing to heal
+	}
+	if !a.sceneHealAllowed(layer.Active) {
+		return // per-scene futility budget spent (over-tier churn / permanent 404) — quiet until the scene changes
 	}
 	*askBase, *askAt = layer.Active, now
 	a.d.Manager.PrefetchWithFallback(layer.Active, bareSpriteBase(layer.Active), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (heal evicted live sprite)

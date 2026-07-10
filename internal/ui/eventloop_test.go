@@ -72,10 +72,13 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	}
 }
 
-// TestSkipFrameCaretScheduled pins the caret conversion: under the
-// experimental loop a focused field SKIPS while its blink state matches the
-// drawn frame (the wake is scheduled via NextWakeDelay instead), and refuses
-// the moment a flip is showable. Classic keeps the old always-render refusal.
+// TestSkipFrameCaretScheduled pins the caret conversion: in BOTH loop modes a
+// focused field SKIPS while its blink state matches the drawn frame, and
+// refuses the moment a flip is showable. (Classic's old blanket "a field is
+// focused" refusal made the habitually-focused IC input render the courtroom
+// every pass forever — with the ∞ default cap, a zero-sleep spin: the
+// idle-CPU-burn report. The classic skip nap re-polls well inside a blink
+// period, so the caret still flips on time.)
 func TestSkipFrameCaretScheduled(t *testing.T) {
 	a := expApp(t)
 	a.ctx.focusID = "field"
@@ -97,8 +100,12 @@ func TestSkipFrameCaretScheduled(t *testing.T) {
 	a.d.Prefs.SetEventDrivenLoop(false)
 	a.room = &courtroom.Courtroom{}
 	a.sess = &courtroom.Session{}
+	if !a.SkipFrame(true, false) {
+		t.Error("classic: a focused field with an un-flipped caret must skip (the blanket refusal was the render spin)")
+	}
+	a.ctx.caretOn = false // the blink flipped since the drawn frame
 	if a.SkipFrame(true, false) {
-		t.Error("classic: a focused field must keep the idle render (caret blinks per frame)")
+		t.Error("classic: a stale caret flip must render")
 	}
 }
 

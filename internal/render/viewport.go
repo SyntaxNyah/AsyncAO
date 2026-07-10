@@ -493,7 +493,7 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 	if v.fx.Entrance && v.entranceLeft > 0 {
 		return 0, true
 	}
-	if v.crossfade > 0 && (v.speakerAnim.fadeLeft > 0 || v.pairAnim.fadeLeft > 0) {
+	if v.crossfade > 0 && (fadeRunning(&v.speakerAnim) || fadeRunning(&v.pairAnim)) {
 		return 0, true
 	}
 	due := time.Duration(-1)
@@ -521,7 +521,76 @@ func (v *Viewport) NextAnimDue(scene *courtroom.Scene) (time.Duration, bool) {
 	if due < 0 {
 		return 0, false
 	}
+	// Schedule floor: decoders honor any positive authored delay verbatim (only
+	// <=0 is replaced), so a wild asset authored at 1-10 ms/frame would schedule
+	// redraws faster than a frame costs — with the ∞ default cap the pacing
+	// sleep then never fires and the loop free-runs (the idle-CPU-burn class).
+	// Flooring the SCHEDULE (not the playback: advance() folds every elapsed
+	// frame per step, so speed is unchanged — the viewer sees every Nth frame,
+	// exactly what a 60 Hz panel shows anyway) bounds any asset to ~60 redraws/s.
+	// Normal ≥60 ms assets pace byte-identically; a mid-cycle wake's remainder
+	// lands at most one floor late, sub-frame and self-correcting.
+	if due < minAnimFrameDelay {
+		due = minAnimFrameDelay
+	}
 	return due, true
+}
+
+// minAnimFrameDelay floors NextAnimDue's scheduled deadline — the fastest
+// cadence an animated ASSET may demand of the render loop (~60 fps, matching
+// cmd/asyncao's frameCap fallback). Transitions (shout punch / entrance /
+// crossfade) keep their unfloored full-rate path above.
+const minAnimFrameDelay = 16667 * time.Microsecond
+
+// fadeRunning reports a speaker-swap crossfade that is actually ADVANCING:
+// fadeLeft only ticks down while the incoming sprite is resident (tickCold —
+// a cold load deliberately doesn't consume the blend), so a fade armed toward
+// a permanently-404 sprite is frozen, not running. Gating the full-rate ramp
+// on this (state, not the armed countdown) stops that frozen fade from
+// holding uncapped redraws forever — the blend still plays, at full rate,
+// from the frame the sprite first lands (coldFor resets on residency).
+func fadeRunning(a *animState) bool {
+	return a.fadeLeft > 0 && a.coldFor == 0
+}
+
+// AmbientAnimating reports whether the DRAWN stage animates on the free-running
+// FX clock this frame: the viewer's local always-on washes (rainbow / wobble /
+// spin / idle-breathing), a transmitted per-sprite style with motion (hue-cycle
+// / wobble / spin / glitch / motion / path), or live weather particles. These
+// are pure per-frame math with no scheduled deadline — NextAnimDue can't see
+// them — so the courtroom stage draw site feeds this into the NoteAnimating
+// census instead. State-gated by construction: it is consulted only where the
+// stage actually draws, and reports true only while a sprite layer (or weather)
+// is genuinely on screen — replacing wantsFullRate's old pref-knob checks,
+// which held full rate forever on every screen, lobby and Settings included
+// (the "knob not state" anti-pattern its own doc comment condemns).
+func (v *Viewport) AmbientAnimating(scene *courtroom.Scene) bool {
+	if scene == nil {
+		return false
+	}
+	if v.particles.weather != WeatherNone && v.particles.n > 0 {
+		return true // live weather rides the clock across the whole stage
+	}
+	breath := v.fx.IdleBreath && (v.fx.BreathBob || v.fx.BreathScale)
+	layerAnimates := func(layer *courtroom.SpriteLayer) bool {
+		if breath {
+			return true // breathing applies to every drawn sprite, styled or not
+		}
+		if st := layer.Style; st.Active() {
+			// A transmitted style wins over the local wash (drawSprite's own
+			// precedence); path motion (#34) animates on the clock too.
+			return st.HueCycle || st.Wobble || st.Spin || st.Glitch ||
+				st.Motion != 0 || st.PathLen >= 2
+		}
+		return v.fx.Rainbow || v.fx.Wobble || v.fx.Spin
+	}
+	if scene.Speaker.Visible && layerAnimates(&scene.Speaker) {
+		return true
+	}
+	if scene.PairActive && layerAnimates(&scene.Pair) {
+		return true
+	}
+	return false
 }
 
 func (v *Viewport) syncAnim(a *animState, base string) {
