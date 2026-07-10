@@ -165,6 +165,22 @@ type TextureStore struct {
 	destroy     chan *TexturePage
 	generation  atomic.Uint64
 
+	// Held-frame bridge (the black-flash fix): when the LRU must evict the
+	// ON-SCREEN background/desk — a cap-sized incoming sprite page can force it,
+	// since one page may be half the budget while the main tier is 7/8 of it —
+	// onEvict STEALS the page's first frame into the pinned map under a
+	// HeldKeyPrefix key instead of letting the stage draw the black clear color
+	// until the heal re-decodes. liveScenery is the injected "is this base the
+	// drawn bg/desk" probe (nil = bridge off; render thread only, like every
+	// mutation here). heldKeys is a fixed ring bounding the bridge to
+	// heldSceneryMax stolen frames; purging suppresses the steal during Purge
+	// (the tier purges fire onEvict per entry AFTER the pinned map was cleared —
+	// stealing there would leak held pages past the purge).
+	liveScenery func(base string) bool
+	heldKeys    [heldSceneryMax]string
+	heldNext    int
+	purging     bool
+
 	// failed is the decode-failure negative cache: base → last failure time.
 	// Written on the render thread (the upload pump) but read off-thread by the
 	// manager's prefetch gate, so it carries its own lock.
@@ -267,9 +283,14 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 	}
 	// Both LRU tiers share one eviction path: bump the generation (cached
 	// page pointers must re-resolve) and route the page through the bounded
-	// destroy queue.
-	onEvict := func(_ string, page *TexturePage, _ int64) {
+	// destroy queue. The held-frame bridge intercepts live scenery first —
+	// mutating s.pinned here is legal (it is store-owned, not the inner LRU,
+	// so the "no call back into the cache" contract holds).
+	onEvict := func(base string, page *TexturePage, _ int64) {
 		s.generation.Add(1)
+		if !s.purging && s.liveScenery != nil && s.liveScenery(base) {
+			s.holdSceneryFrame(base, page)
+		}
 		select {
 		case s.destroy <- page:
 		default:
@@ -290,6 +311,86 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 	s.t1 = t1
 	s.small = small
 	return s, nil
+}
+
+// HeldKeyPrefix namespaces held-frame bridge pages in the pinned map (like
+// theme:// and thumb:// — a scheme prefix can never collide with an asset URL
+// base). The viewport's scenery miss path probes HeldKeyPrefix+base.
+const HeldKeyPrefix = "held://"
+
+// heldSceneryMax bounds the held-frame bridge: at most this many stolen
+// scenery frames (the on-screen background + desk) live in the pinned map at
+// once — a fixed ring, oldest slot reused.
+const heldSceneryMax = 2
+
+// texBytesPerPixel is the byte cost of one ABGR8888 texel (the only texture
+// format the store creates) — sizes the held single-frame page.
+const texBytesPerPixel = 4
+
+// SetLiveScenery injects the "is this base the on-screen background/desk"
+// probe backing the held-frame bridge (nil = bridge off). Render thread only,
+// set once at boot.
+func (s *TextureStore) SetLiveScenery(f func(base string) bool) { s.liveScenery = f }
+
+// holdSceneryFrame steals an evicted live-scenery page's FIRST frame into the
+// eviction-exempt pinned map under HeldKeyPrefix+base, so the stage draws a
+// frozen background instead of the black clear color while the heal
+// re-decodes (or forever, if the scene is genuinely over budget and the heal
+// latch has gone quiet). Zero decode, zero copy, zero upload — the texture
+// already exists; destroy() skips the nil'd slot. Render thread only (called
+// from onEvict). Bounded by the heldSceneryMax ring; released by releaseHeld
+// the moment the real page re-uploads.
+func (s *TextureStore) holdSceneryFrame(base string, page *TexturePage) {
+	if len(page.Frames) == 0 || page.Frames[0] == nil {
+		return
+	}
+	held := &TexturePage{
+		Frames: []*sdl.Texture{page.Frames[0]},
+		Delays: []time.Duration{0}, // a single frozen frame — never scheduled
+		W:      page.W,
+		H:      page.H,
+		bytes:  int64(page.W) * int64(page.H) * texBytesPerPixel,
+	}
+	page.Frames[0] = nil // stolen: the page's destroy() skips nil frames
+	key := HeldKeyPrefix + base
+	if old, ok := s.pinned[key]; ok {
+		// Re-steal for the same base: replace in place (ring slot already ours).
+		s.pinnedBytes -= old.bytes
+		s.queueDestroy(old)
+	} else {
+		// Claim the next ring slot, releasing its previous occupant.
+		if prev := s.heldKeys[s.heldNext]; prev != "" {
+			if op, ok := s.pinned[prev]; ok {
+				s.pinnedBytes -= op.bytes
+				s.queueDestroy(op)
+				delete(s.pinned, prev)
+			}
+		}
+		s.heldKeys[s.heldNext] = key
+		s.heldNext = (s.heldNext + 1) % heldSceneryMax
+	}
+	s.pinned[key] = held
+	s.pinnedBytes += held.bytes
+}
+
+// releaseHeld drops the held-frame bridge page for base once its real page is
+// resident again (called from uploadTier after a successful Add — the Add
+// already bumped the generation, so cached pointers re-resolve to the real
+// page). Ring slot cleared so a stale key can't evict an unrelated hold.
+func (s *TextureStore) releaseHeld(base string) {
+	key := HeldKeyPrefix + base
+	page, ok := s.pinned[key]
+	if !ok {
+		return
+	}
+	delete(s.pinned, key)
+	s.pinnedBytes -= page.bytes
+	s.queueDestroy(page)
+	for i := range s.heldKeys {
+		if s.heldKeys[i] == key {
+			s.heldKeys[i] = ""
+		}
+	}
 }
 
 // Contains reports whether a texture page exists for the asset base in
@@ -386,6 +487,7 @@ func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.By
 	}
 	s.generation.Add(1)
 	s.clearFailed(base) // it decoded fine — drop any stale negative-cache entry
+	s.releaseHeld(base) // the real page is back: drop the held-frame bridge
 	return nil
 }
 
@@ -470,12 +572,19 @@ func (s *TextureStore) Stats() cache.MemoryStats {
 // shutdown / filtering swap; the theme re-applies after). Render thread
 // only.
 func (s *TextureStore) Purge() {
+	// The tier purges below fire onEvict per entry AFTER the pinned map is
+	// cleared — the held-frame steal must stay out of the way or held pages
+	// would be re-created mid-purge and leak past it.
+	s.purging = true
+	defer func() { s.purging = false }()
 	s.generation.Add(1)
 	for base, page := range s.pinned {
 		page.destroy()
 		delete(s.pinned, base)
 	}
 	s.pinnedBytes = 0
+	s.heldKeys = [heldSceneryMax]string{}
+	s.heldNext = 0
 	s.small.Purge()
 	s.t1.Purge()
 	for {

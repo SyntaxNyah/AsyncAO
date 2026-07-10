@@ -4,6 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.56.1 — 2026-07-10
+
+- **The stage no longer flashes black when someone with a big animated sprite
+  starts talking.** Loading a very large sprite could momentarily push the
+  on-screen background out of texture memory; the viewport now keeps the
+  background's last frame on screen (a zero-cost texture hand-off) until the
+  real one reloads — worst case you briefly see a frozen background instead of
+  a black stage. Rooms whose art genuinely exceeds the texture budget keep a
+  frozen background instead of going dark; raising the texture budget in
+  Settings still lets them show everything in motion.
+- **Smarter reload budgeting** for the v1.56.0 "stop reloading what can never
+  fit" logic: a slow-loading asset no longer uses up its reload budget while
+  its first load is still in flight, a successful load re-arms the budget, and
+  every new message resets it — closing two corner cases where a background
+  could have stayed hidden longer than intended.
+
 ## v1.56.0 — 2026-07-10
 
 A deep pass on idle CPU usage: AsyncAO now sits near zero in Task Manager

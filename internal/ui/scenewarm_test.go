@@ -84,9 +84,9 @@ func TestSceneWarmFutilityLatch(t *testing.T) {
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.BackgroundBase = "warm://never-lands"
 
-	// Latched at the cap: throttle open + missing base → no demand submitted.
+	// Latched past the churn cap: throttle open + missing base → no demand.
 	a.sceneWarmSet = [6]string{"warm://never-lands", "", "", "", "", ""}
-	a.sceneWarmDemands = map[string]int{"warm://never-lands": warmMaxDemandsPerBase}
+	a.sceneWarmDemands = map[string]sceneHealState{"warm://never-lands": {churns: warmMaxHealChurns + 1}}
 	a.keepSceneAssetsWarm()
 
 	// A warm-set change (the next message swaps the stage) resets the latch.
@@ -121,8 +121,77 @@ func TestHealSceneryFutilityLatch(t *testing.T) {
 	a.d.Store = store
 	a.room = &courtroom.Courtroom{}
 	a.room.Scene.BackgroundBase = "warm://never-lands"
-	a.sceneWarmDemands = map[string]int{"warm://never-lands": warmMaxDemandsPerBase}
+	a.sceneWarmDemands = map[string]sceneHealState{"warm://never-lands": {churns: warmMaxHealChurns + 1}}
 	a.healScenery() // latched: no demand submitted
+}
+
+// TestSceneHealBudget pins the hardened futility budget's two bounds and its
+// resets (the v1.56.0 latch conflated them: a merely-SLOW load burned the
+// whole budget against one in-flight fetch, and a blankpost repeating the
+// same emote never reset it):
+//   - asks WITHOUT a landing bound at warmMaxHealAsks (slow origin / 404);
+//   - a LANDING resets the asks (markSceneResident) and arms the churn edge;
+//   - landed-then-evicted-again cycles bound at warmMaxHealChurns;
+//   - an idle→ceremony phase transition resets everything, warm set unchanged.
+func TestSceneHealBudget(t *testing.T) {
+	a := testTabApp(t)
+
+	// Slow-load shape: repeated asks with no landing stay allowed up to the
+	// asks bound, then latch.
+	for i := 0; i < warmMaxHealAsks; i++ {
+		if !a.sceneHealAllowed("warm://slow") {
+			t.Fatalf("ask %d of %d must be allowed (no landing yet ≠ futile)", i+1, warmMaxHealAsks)
+		}
+	}
+	if a.sceneHealAllowed("warm://slow") {
+		t.Fatal("asks past the bound with no landing must latch")
+	}
+
+	// The landing re-arms the budget — a slow load can never strand a base.
+	a.markSceneResident("warm://slow")
+	if !a.sceneHealAllowed("warm://slow") {
+		t.Fatal("a landing must reset the asks bound")
+	}
+
+	// Churn shape: land → demand (churn 1) … until the churn bound latches,
+	// regardless of landings in between.
+	for i := 1; i < warmMaxHealChurns; i++ { // one churn already counted above
+		a.markSceneResident("warm://slow")
+		if !a.sceneHealAllowed("warm://slow") {
+			t.Fatalf("churn %d of %d must still be allowed", i+1, warmMaxHealChurns)
+		}
+	}
+	a.markSceneResident("warm://slow")
+	if a.sceneHealAllowed("warm://slow") {
+		t.Fatal("landed-then-evicted cycles past the churn bound must latch")
+	}
+
+	// A new ceremony resets the budget even when the warm SET is unchanged —
+	// the blankpost-same-emote corner. Two passes: the first syncs the warm
+	// set (consuming its own clear), the second sees ONLY the idle→ceremony
+	// phase edge. The throttle is held shut so scene misses never demand
+	// (the nil Manager is the tripwire).
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	store, err := render.NewTextureStore(ren)
+	if err != nil {
+		t.Skipf("texture store unavailable: %v", err)
+	}
+	a.d.Store = store
+	a.sceneWarmLastDemand = time.Now()
+	a.room = newRoomForTest(t)
+	a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMessage, Message: msgFor(1, "Witch", "a new message begins")})
+	if a.room.Phase() == courtroom.PhaseIdle {
+		t.Fatal("test setup: the message never started a ceremony")
+	}
+	a.sceneWarmPhase = a.room.Phase() // no phase edge on the sync pass
+	a.keepSceneAssetsWarm()           // syncs sceneWarmSet (its clear consumed here)
+	a.sceneWarmDemands = map[string]sceneHealState{"warm://latched": {churns: warmMaxHealChurns + 1}}
+	a.sceneWarmPhase = courtroom.PhaseIdle // as if the previous epoch ended idle
+	a.keepSceneAssetsWarm()                // warm set unchanged: only the idle→ceremony edge can clear
+	if len(a.sceneWarmDemands) != 0 {
+		t.Fatalf("a new ceremony must reset the heal budget, still holds %v", a.sceneWarmDemands)
+	}
 }
 
 // TestActiveWarmThrottleAndLatch pins keepActiveAssetsWarm's re-demand
@@ -144,9 +213,9 @@ func TestActiveWarmThrottleAndLatch(t *testing.T) {
 	a.activeWarmLastDemand = time.Now()
 	a.warmBase("warm://missing-button", assets.AssetTypeEmoteButton)
 
-	// Throttle open but the futility cap reached: still no demand.
+	// Throttle open but the ask budget spent: still no demand.
 	a.activeWarmLastDemand = time.Time{}
-	a.activeWarmDemands = map[string]int{"warm://missing-button": warmMaxDemandsPerBase}
+	a.activeWarmDemands = map[string]int{"warm://missing-button": warmMaxHealAsks}
 	a.warmBase("warm://missing-button", assets.AssetTypeEmoteButton)
 
 	// A char/emote change resets the counters (keepActiveAssetsWarm's gate).

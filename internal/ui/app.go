@@ -1069,11 +1069,16 @@ type sessionState struct {
 	// sceneWarmLastDemand throttles keepSceneAssetsWarm's evicted-base heal
 	// (one pool job per sceneWarmRedemandEvery scene-wide, never per frame).
 	sceneWarmLastDemand time.Time
-	// Warm-keeper futility latches (warmMaxDemandsPerBase): per-base re-demand
-	// counts, reset when the respective warm set changes. Bounded by the sets
-	// themselves (≤6 scene bases / ≤3 active-emote bases); lazily allocated.
-	sceneWarmDemands  map[string]int
-	sceneWarmSet      [6]string // the warm set sceneWarmDemands counts against
+	// Warm-keeper futility latches (warmMaxHealChurns/warmMaxHealAsks):
+	// per-base heal history, reset when the respective warm set changes or a
+	// new ceremony begins. Bounded by the sets themselves (≤6 scene bases /
+	// ≤3 active-emote bases); lazily allocated.
+	sceneWarmDemands map[string]sceneHealState
+	sceneWarmSet     [6]string // the warm set sceneWarmDemands counts against
+	// sceneWarmPhase tracks the room's message phase so an idle→ceremony
+	// transition resets the heal budget even when the warm set is unchanged
+	// (the blankpost-same-emote case).
+	sceneWarmPhase    courtroom.MessagePhase
 	activeWarmDemands map[string]int
 	activeWarmChar    string // active-warm identity: character folder…
 	activeWarmIdx     int    // …and selected emote index
@@ -2057,6 +2062,13 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	if d.Manager != nil {
 		d.Manager.SetDeliveryNotify(PushWake)
 	}
+	// Held-frame bridge (the black-flash fix): when the LRU must evict the
+	// ON-SCREEN background/desk to fit a cap-sized incoming sprite page, the
+	// store steals one frame into its pinned tier and the viewport draws that
+	// instead of exposing the black stage fill (render/textures.go).
+	if d.Store != nil {
+		d.Store.SetLiveScenery(a.IsLiveScenery)
+	}
 	for _, id := range d.Prefs.HiddenPanels() {
 		a.hidden[id] = true
 	}
@@ -2255,55 +2267,107 @@ func (a *App) keepActiveAssetsWarm() {
 	a.warmBase(a.urls.CharIcon(me), assets.AssetTypeCharIcon)
 }
 
-// warmMaxDemandsPerBase caps how many times the scene-heal machinery
-// (keepSceneAssetsWarm, healScenery, keepActiveAssetsWarm) re-demands the SAME
-// base while its warm set stays unchanged. The first demand heals the
-// transient the healers exist for (an upload burst evicted stage art); the
-// extras cover a mid-flight collision. A base STILL missing after that is a
-// steady state no re-demand can fix — either the settled working set exceeds
-// the T1 main tier (each demand then fully re-decodes a large animated asset,
-// re-uploads it, and evicts ANOTHER warm page: a perpetual decode→upload→
-// evict→re-demand churn burning whole cores while the app sits "idle" or
-// minimized) or a permanent 404 (the old unthrottled active-warm path
-// submitted a pool job per 50 ms tick, forever). Latched bases stay quiet
-// until their warm set changes — a new message / emote pick resets the
-// counters, and the message's own HIGH-priority prefetch remains the real
-// loader (accepted jobs are never dropped, so a genuinely-streaming base
-// can't be stranded by the latch).
-const warmMaxDemandsPerBase = 3
+// The scene-heal futility budget: how the heal machinery (keepSceneAssetsWarm,
+// healScenery, keepActiveAssetsWarm) distinguishes a heal worth repeating from
+// a futile one. Two independent bounds, because there are two distinct failure
+// shapes and conflating them regressed (v1.56.0 shipped a single demand
+// counter, and a merely-SLOW load burned it against ONE in-flight fetch —
+// three 250 ms keeper ticks — leaving a healthy scene latched for the epoch):
+//
+//   - warmMaxHealChurns bounds LANDED-THEN-EVICTED-AGAIN cycles: the base
+//     demonstrably loaded and got pushed out again, which means the settled
+//     working set exceeds the T1 main tier and every further heal just evicts
+//     another warm page (the whole-core decode→upload→evict→re-demand churn —
+//     the idle/minimized CPU-burn report). Nothing but a scene change fixes
+//     that; stop quickly.
+//   - warmMaxHealAsks bounds demands WITHOUT a landing in between: a slow
+//     origin, a still-decoding page, or a permanent 404. Roomier, because
+//     re-asks here are cheap (in-flight passes collapse; 404s hit the TTL
+//     cache) and the case usually resolves itself — and a LANDING resets it
+//     (the asks were by definition not futile), so a slow load can never
+//     strand a base: its own in-flight fetch still delivers (accepted jobs
+//     are never dropped) and the landing re-arms the budget.
+//
+// Both reset when the warm set changes or a new message ceremony begins.
+const (
+	warmMaxHealChurns = 3
+	warmMaxHealAsks   = 8
+)
+
+// sceneHealState is one warm base's heal history within its warm-set epoch —
+// the futility budget's memory (see the consts above).
+type sceneHealState struct {
+	asks         int  // demands since the base last landed
+	churns       int  // landed-then-evicted-again cycles
+	seenResident bool // the base landed at some point since the last demand
+}
 
 // sceneHealAllowed gates one live-scene re-demand against the shared per-scene
-// futility budget (warmMaxDemandsPerBase) and counts it. healScenery and
-// keepSceneAssetsWarm share the budget: they heal the same bases, and either
-// one alone could sustain the over-budget eviction churn. The counters reset
-// when the warm set changes (keepSceneAssetsWarm, which runs on both the
-// drawn and the skipped/minimized paths).
+// futility budget and counts it. healScenery and keepSceneAssetsWarm share the
+// budget: they heal the same bases, and either one alone could sustain the
+// over-budget eviction churn. Counters reset on a warm-set change or a new
+// ceremony (keepSceneAssetsWarm, which runs on both the drawn and the
+// skipped/minimized paths and marks landings via markSceneResident).
 func (a *App) sceneHealAllowed(base string) bool {
-	if a.sceneWarmDemands[base] >= warmMaxDemandsPerBase {
+	st := a.sceneWarmDemands[base]
+	if st.seenResident {
+		// It landed since the last demand and is missing AGAIN: a genuine
+		// eviction-churn cycle — the thing the hard bound exists for. Persist
+		// the consumed fold (a set seenResident implies a prior write, so the
+		// map exists).
+		st.churns++
+		st.asks = 0
+		st.seenResident = false
+		a.sceneWarmDemands[base] = st
+	}
+	// Exactly warmMaxHealChurns churn cycles get a heal (refused from the
+	// N+1th), and warmMaxHealAsks demands may run without a landing between.
+	if st.churns > warmMaxHealChurns || st.asks >= warmMaxHealAsks {
 		return false
 	}
+	st.asks++
 	if a.sceneWarmDemands == nil {
-		a.sceneWarmDemands = make(map[string]int) // bounded: scene bases only, reset per scene
+		a.sceneWarmDemands = make(map[string]sceneHealState) // bounded: scene bases only, reset per scene
 	}
-	a.sceneWarmDemands[base]++
+	a.sceneWarmDemands[base] = st
 	return true
+}
+
+// markSceneResident records that a demanded base is resident right now — the
+// landing proof sceneHealAllowed's asks bound resets on, and the arming edge
+// for its churn bound. No-op for bases never demanded (no map growth) and for
+// already-marked entries (no map write on the steady state).
+func (a *App) markSceneResident(base string) {
+	st, ok := a.sceneWarmDemands[base]
+	if !ok || (st.seenResident && st.asks == 0) {
+		return
+	}
+	st.seenResident = true
+	st.asks = 0
+	a.sceneWarmDemands[base] = st
 }
 
 // warmBase keeps base resident across a minimized upload burst: touch it (→
 // most-recent, the LAST to evict) if it's in T1, else re-demand it — once it has
 // evicted, a Get alone can't bring it back, so the asset would stay gone until
 // the post-restore render heals it. Re-demands are throttled to the scene
-// keeper's cadence and futility-latched per base (warmMaxDemandsPerBase).
+// keeper's cadence and ask-latched per base (warmMaxHealAsks — a plain asks
+// bound suffices here: buttons/icons live in the small-UI shield tier where
+// eviction ping-pong is structurally impossible, so the only futile shape is a
+// permanent 404). A landing clears the counter: the asks were not futile.
 func (a *App) warmBase(base string, t assets.AssetType) {
 	if base == "" {
 		return
 	}
 	if a.d.Store.Contains(base) {
 		a.d.Store.Get(base)
+		if len(a.activeWarmDemands) != 0 {
+			delete(a.activeWarmDemands, base) // it landed: re-arm the heal budget
+		}
 		return
 	}
 	if time.Since(a.activeWarmLastDemand) < sceneWarmRedemandEvery ||
-		a.activeWarmDemands[base] >= warmMaxDemandsPerBase {
+		a.activeWarmDemands[base] >= warmMaxHealAsks {
 		return
 	}
 	if a.activeWarmDemands == nil {
@@ -2337,14 +2401,26 @@ func (a *App) keepSceneAssetsWarm() {
 		return // no stage on screen (lobby) — nothing to pin
 	}
 	sc := a.renderScene()
-	// Futility latch reset: a new message / room rebuild swaps the warm set, so
-	// the per-base demand counters start over (warmMaxDemandsPerBase). A fixed
-	// array compare — no allocation on the settled steady state.
+	// Futility latch resets. (1) A new message / room rebuild swaps the warm
+	// set — a fixed array compare, no allocation on the settled steady state.
+	// (2) A new ceremony resets even an UNCHANGED set: a blankpost repeating
+	// the same emote stages identical bases, which the compare can't see, and
+	// begin()'s one-shot HIGH prefetch is skipped for bases resident at that
+	// instant — evicted a moment later they'd be loaderless (and latched from
+	// the previous epoch) for the whole message.
 	warmSet := [6]string{sc.BackgroundBase, sc.DeskBase,
 		sc.Speaker.Active, sc.Speaker.IdleBase, sc.Pair.Active, sc.ChatSkinBase}
 	if warmSet != a.sceneWarmSet {
 		a.sceneWarmSet = warmSet
 		clear(a.sceneWarmDemands)
+	}
+	if a.room != nil {
+		if p := a.room.Phase(); p != a.sceneWarmPhase {
+			if a.sceneWarmPhase == courtroom.PhaseIdle {
+				clear(a.sceneWarmDemands) // idle → ceremony: a new message began
+			}
+			a.sceneWarmPhase = p
+		}
 	}
 	now := time.Now()
 	throttleOpen := now.Sub(a.sceneWarmLastDemand) >= sceneWarmRedemandEvery
@@ -2354,7 +2430,10 @@ func (a *App) keepSceneAssetsWarm() {
 			return
 		}
 		if a.d.Store.Contains(base) {
-			a.d.Store.Get(base) // touch → most-recent, the last to evict
+			// Touch → most-recent, the last to evict; a demanded base being
+			// resident is also the landing proof the heal budget re-arms on.
+			a.d.Store.Get(base)
+			a.markSceneResident(base)
 			return
 		}
 		// Evicted (or never landed): re-demand, throttled scene-wide AND
@@ -2425,6 +2504,20 @@ func (a *App) IsLiveBase(base string) bool {
 		return true
 	}
 	return false
+}
+
+// IsLiveScenery reports whether base is the DRAWN stage's background or desk —
+// the held-frame bridge's steal gate (render/textures.go onEvict): scenery has
+// no hold-previous/thumb fallback, so evicting it mid-scene exposed the black
+// stage fill (the black-flash report). Uses the same scene the viewport draws
+// (renderScene covers the replay/slideshow overrides). Render thread only —
+// onEvict runs on every T1 mutation, all render-thread.
+func (a *App) IsLiveScenery(base string) bool {
+	if base == "" || (a.room == nil && !(a.replaying && a.replayRoom != nil)) {
+		return false
+	}
+	sc := a.renderScene()
+	return base == sc.BackgroundBase || (sc.ShowDesk && base == sc.DeskBase)
 }
 
 // --- connection lifecycle -------------------------------------------------------

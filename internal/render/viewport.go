@@ -62,6 +62,11 @@ type animState struct {
 	// thumbKey is this base's precomputed thumb:// T1 key ("" when no base) —
 	// built once in reset so the cold-load miss path stays allocation-free.
 	thumbKey string
+	// heldKey is this base's precomputed held:// pinned key — the held-frame
+	// bridge the store parks a stolen scenery frame under when the LRU must
+	// evict the ON-SCREEN background/desk (the black-flash fix). Precomputed
+	// like thumbKey so the scenery miss path stays allocation-free.
+	heldKey string
 
 	// lastGood is the base of the last sprite this layer actually DREW (set in
 	// drawSprite on a hit). It is deliberately NOT cleared by reset, so when the
@@ -85,8 +90,10 @@ func (a *animState) reset(base string) {
 	a.page = nil
 	a.pageGen = 0
 	a.thumbKey = ""
+	a.heldKey = ""
 	if base != "" {
 		a.thumbKey = ThumbKeyPrefix + base
+		a.heldKey = HeldKeyPrefix + base
 	}
 }
 
@@ -760,11 +767,15 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 	if base == "" {
 		return
 	}
+	frame := 0
 	page, ok := anim.resolve(v.store)
-	if !ok || len(page.Frames) == 0 {
+	if ok && len(page.Frames) > 0 {
+		frame = clampFrame(anim.frame, len(page.Frames))
+	} else if page, ok = v.resolveHeld(anim); !ok {
+		// No page and no held bridge frame: nothing to draw (the pre-filled
+		// black stage shows — the state the bridge exists to avoid).
 		return
 	}
-	frame := clampFrame(anim.frame, len(page.Frames))
 	tex := page.Frames[frame]
 	v.fillRect = vp
 	if dimPct < 100 {
@@ -775,6 +786,22 @@ func (v *Viewport) drawFill(ren *sdl.Renderer, base string, anim *animState, vp 
 	if dimPct < 100 {
 		_ = tex.SetColorMod(255, 255, 255) // restore the shared page
 	}
+}
+
+// resolveHeld probes the held-frame bridge for a scenery layer whose CURRENT
+// base is missing (evicted mid-scene by a cap-sized incoming upload — the
+// black-flash class). Store.Get on a pinned key is a plain map probe, and
+// heldKey is precomputed in reset, so this miss path stays allocation-free.
+// The bridge page is a single stolen frame; callers draw frame 0.
+func (v *Viewport) resolveHeld(a *animState) (*TexturePage, bool) {
+	if a.heldKey == "" {
+		return nil, false
+	}
+	page, ok := v.store.Get(a.heldKey)
+	if !ok || len(page.Frames) == 0 || page.Frames[0] == nil {
+		return nil, false
+	}
+	return page, true
 }
 
 // Reflection tuning (#123): the mirror line and how strong the default reflection is.
@@ -868,11 +895,14 @@ func (v *Viewport) drawBackgroundDoF(ren *sdl.Renderer, base string, anim *animS
 	if base == "" {
 		return
 	}
+	frame := 0
 	page, ok := anim.resolve(v.store)
-	if !ok || len(page.Frames) == 0 {
-		return
+	if ok && len(page.Frames) > 0 {
+		frame = clampFrame(anim.frame, len(page.Frames))
+	} else if page, ok = v.resolveHeld(anim); !ok {
+		return // no page, no held bridge frame — see drawFill
 	}
-	tex := page.Frames[clampFrame(anim.frame, len(page.Frames))]
+	tex := page.Frames[frame]
 	r := vp.H / dofBlurDivisor
 	if r < dofBlurMin {
 		r = dofBlurMin
