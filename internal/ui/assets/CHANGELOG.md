@@ -4,6 +4,34 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.56.0 — 2026-07-10
+
+A deep pass on idle CPU usage: AsyncAO now sits near zero in Task Manager
+while idle or minimized, with active play unchanged.
+
+- **High CPU while idle or minimized — fixed.** Two separate causes:
+  - Turning on certain always-on looks (the rainbow / wobble / spin /
+    breathing washes, weather) — or simply receiving a message with animated
+    text or a styled sprite — made the client redraw the whole window as fast
+    as the monitor allows, forever, on every screen (even menus where nothing
+    moves). These effects now drive redraws only while they are actually
+    visible on the stage, and never faster than a sensible cap.
+  - In rooms with lots of large animated art, texture memory could fill up and
+    the client would endlessly re-decode the same images in a loop — evicting
+    one to fit another, then re-loading the first — even while minimized. It
+    now recognises the futile loop and goes quiet until the scene changes.
+    (Raising the texture budget in Settings still helps such rooms show every
+    layer at once.)
+- **Wild animated assets with extremely fast frame times** (10 ms per frame
+  and below) no longer drive unlimited redraws — they schedule at up to
+  ~60 fps, with playback speed unchanged.
+- **The classic render loop** (the event-driven-renderer kill switch) no
+  longer redraws every pass just because a text field is focused, and idle
+  renders under an unlimited FPS cap now pace at a sane floor instead of
+  running uncapped.
+- **A speaker-swap crossfade toward a missing sprite** no longer holds the
+  frame rate at maximum until the next message.
+
 ## v1.56.0-test1 — 2026-07-10
 
 Test build: a deep pass on idle CPU usage. Task Manager should now sit near
