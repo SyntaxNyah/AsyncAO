@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.55.9 — 2026-07-10
+
+- **Switching back to a tab no longer resets the viewport.** The courtroom now
+  remembers each server's latest in-character message, so when you tab back in
+  (or re-enter court after a wardrobe change, or pin a background tab into the
+  split view) you see the stage as it last stood: the newest speaker's sprite,
+  their pair partner, and the full textbox — even for messages that arrived
+  while the tab was in the background. The restore is silent and settled: no
+  replayed shout, preanimation, typewriter, sounds, or screen shake/flash.
+  Background tabs still render nothing, so this costs no extra resources.
+
 ## v1.55.8 — 2026-07-09
 
 - **Character select: clicking the search bar or tabs no longer picks a hidden
