@@ -374,7 +374,22 @@ type Session struct {
 	// the track lived only on the throwaway Scene, so a song playing when the room is
 	// (re)built fell silent while the background, tracked here, survived.
 	MusicTrack string
-	MyCharID   int
+	// LastIC is the most recent well-formed IC chat message (MS) this session
+	// parsed — persisted like Background/MusicTrack so a room rebuilt LATER (a
+	// tab reactivation, re-entering court, pinning a background tab) can
+	// re-stage it settled (Courtroom.RestoreMessage) instead of coming back to
+	// a blank stage. One replaced pointer, bounded by construction; cleared on
+	// a fresh SI handshake like MusicTrack (no stale stage across a rejoin).
+	//
+	// Two known fidelity gaps, both degrading to the pre-restore status quo
+	// (a blank / plainer stage, never a wrong render): it records EVERY
+	// speaker — the #81 ignore list is active-tab UI state, so an ignored
+	// LAST speaker shadows the previous non-ignored line and the restore
+	// stages nothing; and the send-on-change memories (sprite style, status,
+	// profile) live on the throwaway room, so a restored message that carried
+	// no style marker re-stages its speaker unstyled until they next change.
+	LastIC   *protocol.ChatMessage
+	MyCharID int
 
 	// Live court state (AO2-Client parity; all mutated only by HandlePacket
 	// on the caller's loop — same single-threaded discipline as the rest).
@@ -504,6 +519,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		s.Chars = s.Chars[:0]
 		s.Music = s.Music[:0]
 		s.MusicTrack = "" // fresh handshake: let the server's join MC repopulate (no stale resume)
+		s.LastIC = nil    // ...and don't re-stage another room's message after a rejoin
 		s.Areas = s.Areas[:0]
 		s.reply(protocol.NewPacket("RC"))
 
@@ -625,6 +641,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			// broken MS packets is exactly what the overlay exists for.
 			return []Event{{Kind: EventDebug, Text: "MS dropped: " + err.Error()}}
 		}
+		s.LastIC = msg // the stage-restore seed for rooms rebuilt later (see field doc)
 		return []Event{{Kind: EventMessage, Message: msg}}
 
 	case "MC":

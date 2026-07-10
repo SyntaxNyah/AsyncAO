@@ -368,6 +368,13 @@ type Courtroom struct {
 	// animation completion).
 	preanimDone bool
 
+	// restoring is set for the span of RestoreMessage: begin() then skips the
+	// prefetches for art the settled form can never draw (shout bubbles, the
+	// preanimation) — a restore whose message landed while the tab was
+	// backgrounded would otherwise spend cold HIGH-priority probes on
+	// never-shown assets (the one-probe doctrine, spec §4).
+	restoring bool
+
 	// ShoutUses tracks whether the per-character bubble resolved; the
 	// renderer falls back to the default bubble base if not.
 	ShoutCharBase    string
@@ -723,7 +730,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	pre := ""
 	if hasPreanim(msg) {
 		pre = c.urls.Emote(speakerName, msg.PreEmote, EmotePreanim)
-		c.mgr.Prefetch(pre, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+		if !c.restoring { // settled form never plays the preanim — don't probe for it
+			c.mgr.Prefetch(pre, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+		}
 	}
 
 	pairIdle := ""
@@ -746,10 +755,14 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.ShoutDefaultBase = ""
 		if !custom {
 			c.ShoutDefaultBase = c.urls.DefaultShoutBubble(shout)
-			c.mgr.Prefetch(c.ShoutDefaultBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
+			if !c.restoring { // settled form never shows the bubble — don't probe for it
+				c.mgr.Prefetch(c.ShoutDefaultBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
+			}
 		}
-		c.mgr.Prefetch(c.ShoutCharBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
-		c.audio.PlayShout(shoutSFX)                                                        // AssetType: SFX
+		if !c.restoring {
+			c.mgr.Prefetch(c.ShoutCharBase, assets.AssetTypeShoutBubble, network.PriorityHigh) // AssetType: ShoutBubble
+		}
+		c.audio.PlayShout(shoutSFX) // AssetType: SFX
 	}
 
 	// Predictive prefetch: warm the likely next speaker — and their likely
@@ -1166,6 +1179,37 @@ func (c *Courtroom) SkipToIdle() {
 		c.preanimDone = true
 		c.Update(bigStep)
 	}
+}
+
+// RestoreMessage re-stages a previously-played message in its SETTLED form:
+// idle sprite, full text revealed, phase back at idle — the state a live
+// watcher would have ended on. A rebuilt room (tab reactivation, re-entering
+// court, pinning a background tab) seeds it from Session.LastIC so the stage
+// isn't blank until the next MS. The ceremony is skipped wholesale: audio is
+// diverted to NopAudio for the replay (the shout/SFX/blips already played when
+// the message was live — or landed off screen, where they must stay silent),
+// catch-up is bypassed (beginCaughtUp leaves the sprite as-is, which on a
+// fresh room means no speaker at all), and the message's one-shot screen
+// effects (flash/shake) are cleared rather than re-fired. Prefetches for the
+// art the settled scene DOES show (idle/talk/pair sprites, scenery, chat skin)
+// still fan out at HIGH — they're on screen NOW — while the never-drawn shout
+// bubble and preanimation probes are skipped (c.restoring). Callers push the
+// viewer knobs (ForceCharNames / HideSpriteStyles / ReduceMotion) BEFORE
+// calling: begin() bakes them into the scene. Intended for a freshly built
+// room; on a mid-message room it replaces the current message like any begin.
+func (c *Courtroom) RestoreMessage(msg *protocol.ChatMessage) {
+	if msg == nil {
+		return
+	}
+	savedAudio, savedCatchUp := c.audio, c.CatchUp
+	c.audio, c.CatchUp, c.restoring = NopAudio{}, false, true
+	c.begin(msg)
+	c.SkipToIdle()
+	c.audio, c.CatchUp, c.restoring = savedAudio, savedCatchUp, false
+	// SkipToIdle's hour-sized steps already count any begin-fired flash/shake
+	// down to zero; clear explicitly so the no-replayed-effects invariant
+	// doesn't hinge on Update's countdown-before-phase ordering.
+	c.Scene.FlashLeft, c.Scene.ShakeLeft = 0, 0
 }
 
 // Update advances the message lifecycle by dt.

@@ -11,7 +11,10 @@ package ui
 //     budget into their OWN session reducer and logs (IC/OOC + unread
 //     counter + callword flash). The room (scene, typewriter, raster) is
 //     deliberately NOT kept for background tabs — nothing animates off
-//     screen; activation rebuilds it via enterCourtroom.
+//     screen; activation rebuilds it via buildRoom, which re-seeds the
+//     background, song, and last IC message (settled — Session.LastIC) from
+//     the reducer, so tabbing back shows the stage a live watcher would have
+//     ended on even when messages landed off screen.
 //   - The caches keyed by per-session sequence numbers (IC filter/wrap,
 //     OOC wrap, chat raster) stay App-global: a tab switch changes the
 //     keys, so they self-heal as ordinary misses.

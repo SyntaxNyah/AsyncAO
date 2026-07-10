@@ -203,6 +203,35 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 }
 
+// TestStageRestoreMsg pins buildRoom's viewport-restore gate: the session's
+// LastIC is the seed for the settled re-stage (RestoreMessage), an ignored
+// speaker is dropped exactly like the live #81 filter (which `continue`s past
+// room.HandleEvent), and no session / no message means leave the stage blank.
+func TestStageRestoreMsg(t *testing.T) {
+	a := testTabApp(t)
+	if a.stageRestoreMsg() != nil {
+		t.Fatal("no session: want nil")
+	}
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	if a.stageRestoreMsg() != nil {
+		t.Fatal("no LastIC: want nil")
+	}
+	msg := &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Message: "Hello!"}
+	a.sess.LastIC = msg
+	if a.stageRestoreMsg() != msg {
+		t.Fatal("want the session's LastIC back")
+	}
+	a.serverKey = "wss://test.example/ws"
+	a.d.Prefs.SetServerIgnored(a.serverKey, []string{"Phoenix"})
+	if a.stageRestoreMsg() != nil {
+		t.Fatal("an ignored speaker must not be re-staged")
+	}
+	a.d.Prefs.SetServerIgnored(a.serverKey, nil)
+	if a.stageRestoreMsg() != msg {
+		t.Fatal("clearing the ignore list must restore the seed")
+	}
+}
+
 // TestEnsureSFXChoices pins the IC-bar SFX picker list: "auto" first, then the
 // character's DISTINCT emote sounds (char.ini [SoundN]); the AO silence values
 // ("0"/"1"/empty) and duplicates are dropped, and an out-of-range pick clamps to auto.

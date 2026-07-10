@@ -3521,6 +3521,18 @@ func (a *App) buildRoom() {
 	}
 	a.applyTimingToRoom()
 	a.pushRealizationToRoom()
+	// The third session→room re-seed, beside the background and the song: the
+	// last IC message, re-staged SETTLED (idle sprite, full text, no ceremony).
+	// A rebuilt room used to come back BLANK even though the stage was
+	// mid-conversation when it parked (tab switch) or messages landed while
+	// backgrounded / at char select; now it shows what a live watcher would
+	// have ended on. AFTER applyTimingToRoom on purpose: begin() bakes
+	// ForceCharNames / HideSpriteStyles / ReduceMotion into the scene
+	// (showname vs char name, transmitted styles, motion strip), so the
+	// restore must run under the user's prefs, not NewCourtroom's zero values.
+	if m := a.stageRestoreMsg(); m != nil {
+		a.room.RestoreMessage(m)
+	}
 	a.d.Prefs.RememberServerChar(a.serverKey, a.myCharName())
 	// Court-extras state is per-room: splash/badge clear, penalty-sfx
 	// direction tracking re-arms at the session's current bar values.
@@ -3535,6 +3547,26 @@ func (a *App) buildRoom() {
 	a.updatePresence()         // character (and server) just became known
 	a.liveDetailsArea = "\x00" // force a fresh rich-roster pull for the new session
 	a.rebuildLiveRoster()      // seed the live player list from the handshake's CharsCheck
+}
+
+// stageRestoreMsg is the message buildRoom re-stages into a rebuilt room — the
+// session's last IC message, unless the ACTIVE session's ignore list drops its
+// speaker (parity with handleSessionEvents, which `continue`s past
+// room.HandleEvent for ignored speakers — #81: no log, no sprite). nil = leave
+// the stage blank. Split out so the gate is unit-pinnable without a room.
+// Single-seed caveat: an ignored LAST speaker shadows the previous non-ignored
+// line (the session can't keep "last non-ignored under the active tab's
+// filter" — the list is per-tab UI state), so that corner restores blank: the
+// pre-restore status quo, never a wrong render.
+func (a *App) stageRestoreMsg() *protocol.ChatMessage {
+	if a.sess == nil {
+		return nil
+	}
+	m := a.sess.LastIC
+	if m == nil || a.ignoreSpeaker(m) {
+		return nil
+	}
+	return m
 }
 
 // --- multi-server floating client (passes 2a–2c + the float rework) ---------
@@ -3631,7 +3663,8 @@ func (a *App) clientControlClick(view sdl.Rect) {
 // pinToSplit pins a BACKGROUND tab as the floating client window (toggle:
 // re-pinning the same tab closes it). Builds a throwaway room over the tab's OWN
 // session + URL builder with NopAudio, plus a second viewport over the shared
-// store, and seeds the current background + song so the window isn't blank on pin.
+// store, and seeds the current background + song + last message (settled) so
+// the window isn't blank on pin.
 func (a *App) pinToSplit(t *courtTab) {
 	if t == nil || t.state.sess == nil || t.dead {
 		return
@@ -3654,6 +3687,11 @@ func (a *App) pinToSplit(t *courtTab) {
 	if t.state.sess.MusicTrack != "" {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: t.state.sess.MusicTrack}) // NopAudio: silent
 	}
+	// Last message too, settled — same blank-until-someone-talks fix as the
+	// bg+song seeds. Deliberately UNfiltered: the live background pump routes
+	// this tab's events to splitRoom without the ignore gate (which keys on the
+	// ACTIVE tab's server anyway), so the pin seed matches what the pane shows.
+	a.splitRoom.RestoreMessage(t.state.sess.LastIC)
 }
 
 // placeClientAt positions the floating client window centred under (mx,my) — used
