@@ -305,6 +305,55 @@ func TestBackoffClearsOnSuccess(t *testing.T) {
 	}
 }
 
+// TestBackoffBurstStaysFirstTier pins #41: a concurrent burst of failures on
+// one host (16 workers timing out on a 2s CDN blip) must count as ONE failure,
+// not 16 — otherwise the delay formula saturates at backoffMax instantly and
+// blanks the whole server's assets for 30s. The loop runs well inside the
+// first-tier window (backoffBase = 500ms), so it is deterministic.
+func TestBackoffBurstStaysFirstTier(t *testing.T) {
+	c := NewClient()
+	const host = "cdn.example.com"
+	const burst = 32 // more than the 16 workers, to be sure
+	for i := 0; i < burst; i++ {
+		c.recordFailure(host)
+	}
+	b := c.backoffFor(host)
+	b.mu.Lock()
+	failures := b.failures
+	until := b.until
+	b.mu.Unlock()
+	if failures != 1 {
+		t.Errorf("burst of %d failures counted as %d, want 1 (window not collapsing bursts)", burst, failures)
+	}
+	// The armed window must be the first tier (~backoffBase), nowhere near the
+	// saturated cap.
+	got := time.Until(until)
+	if got > backoffBase+50*time.Millisecond {
+		t.Errorf("first-tier window = %v, want ~%v (delay saturated under the burst)", got, backoffBase)
+	}
+}
+
+// TestBackoffClimbsAcrossWindows checks a genuinely-down host still escalates:
+// a failure AFTER the window has elapsed increments the tier.
+func TestBackoffClimbsAcrossWindows(t *testing.T) {
+	c := NewClient()
+	const host = "down.example.com"
+	c.recordFailure(host) // tier 1
+	b := c.backoffFor(host)
+	// Simulate the first window fully elapsing (as real time would), then fail
+	// again — this must be a NEW window at tier 2, not a same-window extend.
+	b.mu.Lock()
+	b.until = time.Now().Add(-time.Millisecond)
+	b.mu.Unlock()
+	c.recordFailure(host) // tier 2
+	b.mu.Lock()
+	failures := b.failures
+	b.mu.Unlock()
+	if failures != 2 {
+		t.Errorf("failure after window elapsed = tier %d, want 2 (host not escalating)", failures)
+	}
+}
+
 func TestHostOf(t *testing.T) {
 	cases := map[string]string{
 		"http://example.com/a/b.webp": "example.com",

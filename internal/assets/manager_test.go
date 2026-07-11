@@ -703,3 +703,108 @@ func TestManagerPrefetchRawWarmsTiers(t *testing.T) {
 		t.Fatalf("probes after warmed FetchRaw = %d, want still 1 (memory hit)", got)
 	}
 }
+
+// TestPurgeCorruptEvictsTiers pins #2: a torn download that passes the fetch
+// (200 + bytes) but fails to DECODE poisons T2 and T3 with the corrupt blob;
+// PurgeCorrupt must evict both by the FULL fetch URL so the next demand
+// refetches clean bytes instead of re-promoting the same bad blob forever.
+func TestPurgeCorruptEvictsTiers(t *testing.T) {
+	// A 200 response of non-image bytes: fetch succeeds, decode fails
+	// non-transiently (DecodeImage only errors on malformed payloads).
+	cs := newCountingServer(t, map[string][]byte{
+		"/characters/torn/(a)normal.webp": []byte("this is not a valid image payload"),
+	})
+	rig := newRig(t, network.NewClient(), false)
+	base := cs.srv.URL + "/characters/torn/(a)normal"
+	wantURL := base + ".webp" // the format probed first — the T2/T3 key
+
+	rig.manager.Prefetch(base, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+	d := waitDecoded(t, rig.manager)
+	if d.Err == nil {
+		t.Fatal("corrupt payload decoded without error")
+	}
+	if d.Transient {
+		t.Fatal("corrupt-decode failure tagged transient — it would never be purged")
+	}
+	if d.URL != wantURL {
+		t.Fatalf("delivered URL = %q, want the fetched %q (the T2/T3 key)", d.URL, wantURL)
+	}
+
+	// The corrupt bytes are now resident in T2 and on disk (the fetch stored
+	// them before the decode ran). Probe the disk blob by STAT on its shard
+	// path (root/<xx>/<xxhash>) — never disk.Get, whose read handle would race
+	// the async writer's os.Remove and, on Windows, block the delete.
+	if _, ok := rig.t2.Get(wantURL); !ok {
+		t.Fatal("precondition: corrupt bytes not in T2")
+	}
+	key := cache.Key(wantURL)
+	blobPath := filepath.Join(rig.disk.Root(), key[:2], key)
+	deadline := time.Now().Add(managerWait)
+	for {
+		if _, err := os.Stat(blobPath); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("precondition: corrupt bytes never landed on disk")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// The pump calls this on the non-transient decode failure.
+	rig.manager.PurgeCorrupt(d.URL)
+
+	if _, ok := rig.t2.Get(wantURL); ok {
+		t.Error("corrupt bytes survived PurgeCorrupt in T2")
+	}
+	// Disk delete is async (routed through the writer goroutine).
+	deadline = time.Now().Add(managerWait)
+	for {
+		if _, err := os.Stat(blobPath); os.IsNotExist(err) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("corrupt bytes survived PurgeCorrupt on disk")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestPrefetchChainSpeculativeSuppressesWarning pins #42's suppression: a
+// speculative chain that misses in every spelling+format must NOT surface the
+// §4 missing-asset warning (it feeds the debug log, the on-screen banner, and
+// NotifyAssetMissing — false alarms for a sprite no one demanded). The plain
+// chain still warns, so this proves suppression is scoped to the variant.
+func TestPrefetchChainSpeculativeSuppressesWarning(t *testing.T) {
+	cs := newCountingServer(t, map[string][]byte{}) // serves nothing → every probe 404s
+	rig := newRig(t, network.NewClient(), false)
+	base := cs.srv.URL + "/characters/ghost/(a)normal"
+
+	rig.manager.PrefetchChainSpeculative(base, nil, AssetTypeCharSprite, network.PriorityLow)
+	select {
+	case w := <-rig.manager.Warnings():
+		t.Fatalf("speculative miss raised a warning: %+v", w)
+	case <-time.After(300 * time.Millisecond):
+		// No warning — correct.
+	}
+	// The miss is still counted (metrics), just not surfaced.
+	if rig.manager.Stats().Missing == 0 {
+		t.Error("speculative miss not counted in Missing metric")
+	}
+
+	// A NON-speculative chain for the same base still warns (proves the
+	// suppression is variant-scoped, not global). The prior speculative pass
+	// 404-cached the probes, so re-issue until the warning lands (the demand
+	// pipeline retries likewise).
+	deadline := time.Now().Add(managerWait)
+	for {
+		rig.manager.PrefetchChain(base, nil, AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite
+		select {
+		case <-rig.manager.Warnings():
+			return
+		case <-time.After(20 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("non-speculative chain never warned")
+		}
+	}
+}

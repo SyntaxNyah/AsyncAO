@@ -48,10 +48,14 @@ func Key(url string) string {
 	return hex.EncodeToString(buf[:])
 }
 
-// diskWrite is one queued blob write.
+// diskWrite is one queued blob operation. del=true removes the blob at path
+// (a corrupt-payload purge); otherwise it writes data. Ordering is preserved
+// by the single FIFO writer, so a write followed by a delete of the same key
+// lands in that order.
 type diskWrite struct {
 	path string
 	data []byte
+	del  bool
 }
 
 // DiskCache is tier 3: an unbounded (user-clearable) on-disk blob store with
@@ -202,9 +206,22 @@ func (d *DiskCache) Put(url string, data []byte) {
 }
 
 // Delete removes the blob for url (e.g. the decoder found the payload
-// corrupt and the manager wants a clean refetch).
+// corrupt and the manager wants a clean refetch). The removal is routed
+// through the single async writer goroutine — like Put, it never performs
+// disk I/O on the caller's goroutine, so a render/decode-path caller stays
+// off the disk (spec §17.2). A full queue drops the delete (best-effort,
+// like a dropped write); the negative cache still paces the refetch, so the
+// worst case is one extra 30s window before the corrupt blob is retried.
 func (d *DiskCache) Delete(url string) {
-	_ = os.Remove(d.pathFor(url))
+	if d.stopped.Load() {
+		d.dropped.Add(1)
+		return
+	}
+	select {
+	case d.queue <- diskWrite{path: d.pathFor(url), del: true}:
+	default:
+		d.dropped.Add(1)
+	}
 }
 
 // Clear removes every cached blob ("Clear Disk Cache" button). The cache
@@ -255,8 +272,16 @@ func (d *DiskCache) writerLoop() {
 }
 
 // write lands one blob via temp file + rename so readers never observe a
-// partial blob under the final name.
+// partial blob under the final name — or, for a delete op, removes the blob.
 func (d *DiskCache) write(w diskWrite) {
+	if w.del {
+		// A missing file is a no-op success (nothing to purge); other errors
+		// (permissions, locked file) surface through the error hook.
+		if err := os.Remove(w.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			d.reportError(fmt.Errorf("cache: deleting blob %s: %w", w.path, err))
+		}
+		return
+	}
 	if d.compress.Load() {
 		// Compress on the writer goroutine (never the caller's); keep the
 		// zstd frame only when it actually shrank the blob.

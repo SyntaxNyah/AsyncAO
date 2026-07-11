@@ -397,9 +397,16 @@ func TestDiskDelete(t *testing.T) {
 	const url = "http://example.com/corrupt.webp"
 	d.Put(url, []byte("bad-bytes-decoder-rejected"))
 	waitForBlob(t, d, url)
+	blobPath := d.pathFor(url) // test is in-package: read the unexported path
 	d.Delete(url)
-	if _, ok := d.Get(url); ok {
-		t.Error("blob survived Delete")
+	// Delete is routed through the async writer goroutine (it never does disk
+	// I/O on the caller — a render/decode-path caller must stay off the disk),
+	// so the removal lands after the queue drains, not synchronously. Close
+	// drains-and-waits; check the file via Stat (not Get, which would race the
+	// writer's os.Remove and, on Windows, hold a read handle that blocks it).
+	d.Close()
+	if _, err := os.Stat(blobPath); !os.IsNotExist(err) {
+		t.Errorf("blob survived Delete: Stat err = %v (want IsNotExist)", err)
 	}
 }
 

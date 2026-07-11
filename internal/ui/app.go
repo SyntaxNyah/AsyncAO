@@ -3718,11 +3718,21 @@ func (a *App) buildRoom() {
 	// two in-court tabs carries each server's own volumes / muted blips.
 	a.applyAudioVolumes()
 	urls := a.urls
-	a.room.Predictor = assets.NewPrefetcher(a.d.Manager, func(character, emote string) string {
+	mgr := a.d.Manager
+	a.room.Predictor = assets.NewPrefetcher(func(character, emote string) {
 		if emote == "" {
 			emote = "normal" // no chain signal yet: the default loop
 		}
-		return urls.Emote(character, emote, courtroom.EmoteIdle)
+		// Warm BOTH the idle and the (b) talk sprite through the full spelling
+		// chain — bare-named packs only answer the bare/(b) spellings, and the
+		// talking loop is the sprite seen FIRST when the predicted speaker
+		// starts. Speculative variant: a total miss must NOT raise a missing-
+		// asset warning for a sprite no one demanded. PriorityLow so the
+		// speculation sheds under backpressure (§10).
+		idle := urls.Emote(character, emote, courtroom.EmoteIdle)
+		talk := urls.Emote(character, emote, courtroom.EmoteTalk)
+		mgr.PrefetchChainSpeculative(idle, urls.EmoteAlts(character, emote, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker, idle)
+		mgr.PrefetchChainSpeculative(talk, urls.EmoteAlts(character, emote, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker, talk)
 	})
 	a.room.Predictor.SetAggressiveness(a.d.Prefs.PrefetchAggressiveness()) // #100 predictive-prefetch level
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone

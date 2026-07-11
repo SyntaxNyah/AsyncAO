@@ -3,8 +3,6 @@ package assets
 import (
 	"sort"
 	"sync"
-
-	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
 const (
@@ -25,10 +23,15 @@ const (
 	prefetchMaxPredict = 4
 )
 
-// EmoteBaseFunc builds the idle-sprite URL base for a character's emote
-// (injected by the courtroom layer, which owns URL conventions); emote ""
-// means the character's default.
-type EmoteBaseFunc func(character, emote string) string
+// WarmFunc speculatively warms a predicted (character, emote) sprite. The UI
+// layer supplies it, because it alone owns the URL conventions (the (a)/(b)/
+// bare spelling chain) AND the manager: the implementation must warm BOTH the
+// idle and the (b) talk sprite through the full spelling chain at PriorityLow
+// with the missing-asset warning SUPPRESSED (this is pure speculation — a bare-
+// named pack 404s the prefixed spelling in every format, and warning about a
+// sprite no one demanded is a false alarm). emote "" means the character's
+// default loop.
+type WarmFunc func(character, emote string)
 
 // Prefetcher predicts the next speaker with a first-order Markov chain over
 // recent speakers — and, per character, the next EMOTE with a second chain —
@@ -36,8 +39,7 @@ type EmoteBaseFunc func(character, emote string) string
 // are called from the game thread; the lock exists only for the metrics
 // snapshot.
 type Prefetcher struct {
-	mgr       *Manager
-	emoteBase EmoteBaseFunc
+	warm WarmFunc
 
 	mu          sync.Mutex
 	window      []string                  // recent speakers, oldest first
@@ -55,11 +57,12 @@ type Prefetcher struct {
 	maxPredict  int // top-N predicted sprites to warm per message (1 = conservative; #100 slider)
 }
 
-// NewPrefetcher wires the predictor to the manager.
-func NewPrefetcher(mgr *Manager, emoteBase EmoteBaseFunc) *Prefetcher {
+// NewPrefetcher wires the predictor to a warm callback (the UI supplies it —
+// it owns the URL spelling chain and the manager). warm may be nil (tests that
+// exercise prediction only).
+func NewPrefetcher(warm WarmFunc) *Prefetcher {
 	return &Prefetcher{
-		mgr:         mgr,
-		emoteBase:   emoteBase,
+		warm:        warm,
 		transitions: map[string]map[string]int{},
 		emoteChain:  map[string]map[string]int{},
 		lastEmote:   map[string]string{},
@@ -123,9 +126,13 @@ func (p *Prefetcher) OnMessage(speaker, pairPartner, emote string) {
 	}
 	p.mu.Unlock()
 
-	// Warm each predicted next sprite at LOW priority — shed-able speculation (§10).
-	for _, w := range warm {
-		p.mgr.Prefetch(p.emoteBase(w.char, w.emote), AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite (predicted next speaker+emote)
+	// Warm each predicted next sprite — the callback fires the idle AND (b)
+	// talk spelling chain at LOW priority (shed-able speculation, §10) with
+	// the missing-asset warning suppressed. // AssetType: CharSprite (predicted next speaker+emote)
+	if p.warm != nil {
+		for _, w := range warm {
+			p.warm(w.char, w.emote)
+		}
 	}
 }
 

@@ -60,9 +60,19 @@ func (p *Pump) Frame() {
 				p.transientErrs++
 				return
 			}
-			// A DECODE failure (corrupt/truncated bytes) records to the negative
-			// cache so the manager's prefetch gate backs off — and we log it only
-			// once per decodeFailTTL, not on every retry, killing the flood.
+			// A DECODE failure (corrupt/truncated bytes — DecodeImage only ever
+			// errors on malformed payloads; a too-big canvas fails later at
+			// UPLOAD, not here) means the cached bytes are poison. Purge them
+			// from T2/T3 by the FULL fetch URL (d.URL, the T2/T3 key — never
+			// d.Base) so the next demand refetches clean bytes instead of
+			// re-promoting the same corrupt blob from disk forever. The negative
+			// cache below still paces retries to one refetch per decodeFailTTL
+			// window, so this cannot thrash the network.
+			if d.Err != nil {
+				p.mgr.PurgeCorrupt(d.URL)
+			}
+			// Record to the negative cache so the manager's prefetch gate backs
+			// off — and log only once per decodeFailTTL, not on every retry.
 			if d.Err != nil && p.store.MarkFailed(d.Base) {
 				log.Printf("render: asset %s failed: %v", d.Base, d.Err)
 			}

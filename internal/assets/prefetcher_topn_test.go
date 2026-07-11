@@ -22,7 +22,7 @@ func TestPredictTopN(t *testing.T) {
 
 // TestSetAggressivenessClamps pins the 1..prefetchMaxPredict clamp.
 func TestSetAggressivenessClamps(t *testing.T) {
-	p := NewPrefetcher(nil, nil)
+	p := NewPrefetcher(nil)
 	p.SetAggressiveness(0)
 	if p.maxPredict != 1 {
 		t.Errorf("maxPredict=%d, want clamped to 1", p.maxPredict)

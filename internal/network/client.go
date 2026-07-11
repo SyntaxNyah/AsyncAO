@@ -479,12 +479,30 @@ func (c *Client) recordFailure(host string) {
 	b := c.backoffFor(host)
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	now := time.Now()
+	// Count at most ONE failure per backoff window. The 16 fetch workers time
+	// out concurrently on a single origin hiccup, so an unconditional
+	// increment pushed ~16 failures in a burst and the delay formula
+	// (backoffBase << failures-1) saturated at backoffMax instantly — a 2s CDN
+	// blip blanked the whole server's assets for 30s (the "files go missing in
+	// waves" report). While still inside the current window, we EXTEND it
+	// (re-arm from now) without bumping the counter, so a burst stays at the
+	// first-failure tier. A genuinely-down host still climbs across windows:
+	// each window that fully elapses before the next failure increments once.
+	if now.Before(b.until) {
+		delay := backoffBase << (b.failures - 1)
+		if delay > backoffMax || delay <= 0 {
+			delay = backoffMax
+		}
+		b.until = now.Add(delay)
+		return
+	}
 	b.failures++
 	delay := backoffBase << (b.failures - 1)
 	if delay > backoffMax || delay <= 0 {
 		delay = backoffMax
 	}
-	b.until = time.Now().Add(delay)
+	b.until = now.Add(delay)
 }
 
 func (c *Client) recordSuccess(host string) {

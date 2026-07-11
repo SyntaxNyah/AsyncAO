@@ -283,6 +283,22 @@ func (m *Manager) PrefetchWithFallback(base, alt string, t AssetType, prio netwo
 // (rule §17.4) and every miss is 404-cached, so a settled chain costs zero
 // probes inside the TTL.
 func (m *Manager) PrefetchChain(base string, alts []string, t AssetType, prio network.Priority) {
+	m.prefetchChain(base, alts, t, prio, false)
+}
+
+// PrefetchChainSpeculative is PrefetchChain for a PREDICTED (not yet demanded)
+// asset: identical probing, but a total miss does NOT surface the §4
+// missing-asset warning. The Markov prefetcher warms guesses that may 404 in
+// every format on bare-named packs — reporting those would spam the debug log
+// and the on-screen banner with warnings for assets no one asked for, and feed
+// NotifyAssetMissing for a base that isn't on screen. The 404 cache and
+// singleflight are untouched, so rule §17.6 (no re-probe inside the TTL) still
+// holds. Callers pass PriorityLow so the speculation sheds under backpressure.
+func (m *Manager) PrefetchChainSpeculative(base string, alts []string, t AssetType, prio network.Priority) {
+	m.prefetchChain(base, alts, t, prio, true)
+}
+
+func (m *Manager) prefetchChain(base string, alts []string, t AssetType, prio network.Priority, suppressMissing bool) {
 	if base == "" || !t.Valid() {
 		return
 	}
@@ -296,7 +312,7 @@ func (m *Manager) PrefetchChain(base string, alts []string, t AssetType, prio ne
 			if stale {
 				return
 			}
-			m.resolveChain(base, alts, t)
+			m.resolveChain(base, alts, t, suppressMissing)
 		},
 	})
 }
@@ -473,7 +489,7 @@ func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority
 			if stale {
 				return
 			}
-			m.resolveChain(base, nil, t)
+			m.resolveChain(base, nil, t, false)
 		},
 	})
 }
@@ -481,7 +497,9 @@ func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority
 // resolveChain runs the pipeline for primary, then — only while every
 // format of each earlier name is missing — for each alt in order,
 // delivering under primary so the asset's identity never changes.
-func (m *Manager) resolveChain(primary string, alts []string, t AssetType) {
+// suppressMissing skips the final §4 warning for a total miss (speculative
+// prefetches only — see PrefetchChainSpeculative).
+func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppressMissing bool) {
 	key := primary + config.LearnedKeySeparator + t.Name()
 	if _, loaded := m.inflight.LoadOrStore(key, struct{}{}); loaded {
 		return // an identical pass is already in flight
@@ -515,6 +533,12 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType) {
 				tried = append(tried, ext)
 			}
 		}
+	}
+	if suppressMissing {
+		// Speculative pass: count the miss (metrics) but do not surface the
+		// visible §4 warning for an asset no one demanded.
+		m.missing.Add(1)
+		return
 	}
 	m.reportMissing(primary, t, tried)
 }
@@ -644,6 +668,31 @@ func (m *Manager) deliver(url, base string, t AssetType, data []byte) {
 // Thumbs exposes the optional low-q thumbnail store (nil when the app was
 // built/wired without one) — the ui reaches it for loads, knobs and Clear.
 func (m *Manager) Thumbs() *ThumbCache { return m.thumbs }
+
+// PurgeCorrupt evicts a URL's bytes from T2 and (unless local-mode, where the
+// mounts ARE the source) queues its T3 blob for async deletion, so the next
+// demand refetches clean bytes instead of re-promoting the same corrupt blob
+// forever. url is the FULL fetch URL (extension included) that produced the
+// corrupt payload — the exact key T2/T3 store under (never the sprite base).
+//
+// Called from the render thread's decode-error path: T2's onEvict is
+// memory-only (byte accounting, no render callback), and disk.Delete never
+// touches the disk on this goroutine — it enqueues onto the single async
+// writer — so this stays off both the render-thread SDL rule and the no-sync-
+// disk-I/O rule. Only NON-transient (corrupt-payload) failures may call this;
+// a transient network failure never saw the bytes, so there is nothing to
+// purge (see pump.go).
+func (m *Manager) PurgeCorrupt(url string) {
+	if url == "" {
+		return
+	}
+	if m.t2 != nil {
+		m.t2.Remove(url)
+	}
+	if !m.localMode && m.disk != nil {
+		m.disk.Delete(url)
+	}
+}
 
 // ClearDisk wipes the T3 cache (Settings "Clear Disk Cache" button).
 func (m *Manager) ClearDisk() error {
