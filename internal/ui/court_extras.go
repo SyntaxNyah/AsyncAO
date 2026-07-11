@@ -56,6 +56,11 @@ const (
 	panelTestimony = "testimony"
 	panelJudge     = "judge"
 	panelExtras    = "extras"
+	// panelToolbox hides the compact hover toolbox (#27) — the slim bottom-right
+	// grip that reveals Theater / Edit-layout / Hide-UI icon chips on hover. It's
+	// hideable from the very dialog one of its chips opens, so a user who prefers
+	// the plain toolbar buttons can dismiss it.
+	panelToolbox = "toolbox"
 	// Individual right-column tabs — hide ones you never use (e.g. Friends/Notes). A
 	// hidden tab leaves the docked strip AND isn't drawn even if it was torn out.
 	panelTabMusic   = "tab.music"
@@ -103,6 +108,7 @@ var hideablePanels = []struct{ id, label, short string }{
 	{panelTestimony, "Testimony recording badge", "Testimony"},
 	{panelJudge, "Judge controls (even when granted)", "Judge"},
 	{panelExtras, "Extras button (AsyncAO features menu — themed mode; the 'x' hotkey still opens it)", "Extras btn"},
+	{panelToolbox, "Compact toolbox (bottom-right hover chips: Theater / Edit layout / Hide UI)", "Toolbox"},
 }
 
 // hideableButtons drives the "Control buttons" grid in the UI popup — the
@@ -1009,10 +1015,23 @@ func (a *App) drawModcallPanel(w, h int32, pressed *bool) {
 
 // drawUICfgPanel toggles visibility of courtroom chrome regions; the set
 // persists across sessions (Prefs.HiddenPanels).
+//
+// #22: the checkbox lists grow every release, and the panel used to be a fixed
+// ~792 px box centred on h/2 — at a 768p (or MinWindowH=480) laptop height the
+// top rows and/or the footer buttons clipped off-screen, UNREACHABLE. The panel
+// is now clamped to the window, with the checkbox lists in a scroll region
+// (wheel + a draggable scrollbar) between a fixed title header and a fixed
+// footer row, so every control is reachable at MinWindowH. The scrolled region
+// uses pushClip/popClip (NOT raw SetClipRect) because the rows are interactive:
+// raw clip clips drawing only, so a row scrolled half under the header would
+// still take clicks (the v1.55.8 char-select bug class).
 func (a *App) drawUICfgPanel(w, h int32) {
 	c := a.ctx
-	const cfgRow = int32(26) // checkbox row pitch (matches the chrome list)
-	const btnCols = int32(3) // the control-button grid is 3 wide
+	const cfgRow = int32(26)      // checkbox row pitch (matches the chrome list)
+	const btnCols = int32(3)      // the control-button grid is 3 wide
+	const uiCfgMargin = int32(24) // min gap the panel keeps from the window edges
+	headerH := pad + 34           // fixed title strip at the panel top (pad/btnH are vars)
+	footerH := btnH + 20          // fixed button row at the panel bottom
 	// The control-button grid only applies to the new-default toolbar: the
 	// legacy/themed row (drawICControls' LegacyDevThemeOn branch) draws fixed
 	// inline buttons that don't consult the hidden set, so showing the grid
@@ -1026,13 +1045,65 @@ func (a *App) drawUICfgPanel(w, h int32) {
 	}
 	rosterRows := (int32(len(hideableRosterButtons)) + btnCols - 1) / btnCols
 	rosterBlock := 30 + rosterRows*cfgRow // Players-list row buttons (always shown)
-	// pad+34 heading · chrome list · [grid block] · roster block · btnH+18 bottom row
-	panelH := pad + 34 + int32(len(hideablePanels))*cfgRow + gridBlock + rosterBlock + btnH + 18
-	panel := sdl.Rect{X: w/2 - 280, Y: h/2 - panelH/2, W: 560, H: panelH}
+	// contentH is the FULL scroll-region height: chrome list · [grid block] ·
+	// roster block (+ a little bottom breathing room). The panel then clamps to
+	// the window, and this content scrolls inside the clamped body.
+	contentH := int32(len(hideablePanels))*cfgRow + gridBlock + rosterBlock + 10
+
+	// Clamp the panel to the window height (never taller than the window minus a
+	// margin on each side); the body absorbs the difference and scrolls.
+	maxPanelH := h - 2*uiCfgMargin
+	panelH := headerH + contentH + footerH
+	if panelH > maxPanelH {
+		panelH = maxPanelH
+	}
+	// Floor so the scroll body can't collapse to a negative height on a window
+	// pathologically below MinWindowH (the clip rect would misbehave). One row
+	// of body is enough for the scrollbar to remain grabbable.
+	if minH := headerH + footerH + cfgRow; panelH < minH {
+		panelH = minH
+	}
+	panelW := int32(560)
+	if panelW > w-2*uiCfgMargin { // ultra-narrow window: shrink the width too
+		panelW = w - 2*uiCfgMargin
+	}
+	panel := sdl.Rect{X: w/2 - panelW/2, Y: h/2 - panelH/2, W: panelW, H: panelH}
 	c.Fill(panel, ColPanel)
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+pad, "Hide UI pieces", ColText)
-	y := panel.Y + pad + 34
+
+	// Scroll region: everything between the fixed header and the fixed footer.
+	body := sdl.Rect{X: panel.X, Y: panel.Y + headerH, W: panel.W, H: panel.H - headerH - footerH}
+	// A scrollbar appears only when the content overflows the body; when it does,
+	// reserve its lane on the right so no row/grid cell underlaps it.
+	needsBar := contentH > body.H
+	barReserve := int32(0)
+	if needsBar {
+		barReserve = scrollBarW + scrollBarGap
+	}
+	if !c.ctrlHeld {
+		a.uiCfgScroll -= c.WheelIn(body) * scrollStepPx
+	}
+	if needsBar {
+		track := sdl.Rect{X: body.X + body.W - scrollBarW - pad, Y: body.Y, W: scrollBarW, H: body.H}
+		a.uiCfgScroll = c.VScrollbar("uicfgscroll", track, a.uiCfgScroll, contentH, body.H)
+	} else {
+		a.uiCfgScroll = 0 // no overflow → pinned to the top
+	}
+	// Interactive rows are clipped, so use pushClip/popClip (input-aware) — a raw
+	// SetClipRect would clip the draw but leak clicks past the body edge. The clip
+	// EXCLUDES the reserved scrollbar lane: the long single-column chrome labels
+	// (e.g. the Extras one) draw at the far left with an unbounded hit rect, so
+	// without this a label tail overlapping the thumb would both overpaint it and
+	// steal the click (the documented click-leak class). The checkbox BOXES sit at
+	// the far left, so they stay fully clickable; only the label tail is trimmed.
+	clipBody := body
+	if needsBar {
+		clipBody.W -= barReserve
+	}
+	clipPrev, clipHad := c.pushClip(clipBody)
+	rowW := panel.W - 2*pad - barReserve // usable width for grid columns inside the body
+	y := body.Y - a.uiCfgScroll
 	for _, p := range hideablePanels {
 		hidden := a.panelHidden(p.id)
 		if next := c.Checkbox(panel.X+pad, y, "Hide "+p.label, hidden); next != hidden {
@@ -1046,7 +1117,7 @@ func (a *App) drawUICfgPanel(w, h int32) {
 	if showBtnGrid {
 		c.Label(panel.X+pad, y+4, "Control buttons (tick to hide from the toolbar row):", ColTextDim)
 		y += 30
-		colW := (panel.W - 2*pad) / btnCols
+		colW := rowW / btnCols
 		for i, b := range hideableButtons {
 			cx := panel.X + pad + int32(i)%btnCols*colW
 			cy := y + int32(i)/btnCols*cfgRow
@@ -1061,7 +1132,7 @@ func (a *App) drawUICfgPanel(w, h int32) {
 	// right-click menu (rostermenu.go); ticking one removes that menu entry.
 	c.Label(panel.X+pad, y+4, "Players-list row menu actions (tick to hide):", ColTextDim)
 	y += 30
-	rColW := (panel.W - 2*pad) / btnCols
+	rColW := rowW / btnCols
 	for i, b := range hideableRosterButtons {
 		cx := panel.X + pad + int32(i)%btnCols*rColW
 		cy := y + int32(i)/btnCols*cfgRow
@@ -1070,19 +1141,16 @@ func (a *App) drawUICfgPanel(w, h int32) {
 			a.setPanelHidden(b.id, next)
 		}
 	}
-	// Theater: the logical extreme of hiding chrome — stage only,
-	// borderless, Esc (or the hotkey) exits.
-	if c.Button(sdl.Rect{X: panel.X + pad, Y: panel.Y + panel.H - btnH - 10, W: 210, H: btnH}, "Theater mode (Esc exits)") {
-		a.showUICfg = false
-		a.setTheater(true)
-	}
-	// Live layout editor (themed layouts only — classic uses the knobs).
-	if a.themeLay.valid && a.d.Prefs.ThemeLayoutEnabled() {
-		if c.Button(sdl.Rect{X: panel.X + pad + 220, Y: panel.Y + panel.H - btnH - 10, W: 170, H: btnH}, "Edit layout (drag)") {
-			a.startLayoutEdit()
-		}
-	}
-	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: panel.Y + panel.H - btnH - 10, W: 90, H: btnH}, "Done") {
+	c.popClip(clipPrev, clipHad)
+
+	// Fixed footer (outside the scroll region so Done is always reachable, which
+	// was the whole #22 bug). #27: Theater + Edit-layout used to live here as the
+	// dialog's ONLY home; they now sit on the always-available compact hover
+	// toolbox (drawCompactToolbox), so this footer is just Done and a one-line
+	// pointer to where they went.
+	footerY := panel.Y + panel.H - btnH - 10
+	c.Label(panel.X+pad, footerY+4, "Theater & Edit-layout are on the toolbox (bottom-right).", ColTextDim)
+	if c.Button(sdl.Rect{X: panel.X + panel.W - 90 - pad, Y: footerY, W: 90, H: btnH}, "Done") {
 		a.showUICfg = false
 	}
 }

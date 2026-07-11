@@ -715,7 +715,8 @@ type App struct {
 	// only trigger loads when something really changes.
 	themeAppliedName string
 
-	showUICfg bool // hide-chrome popup
+	showUICfg   bool  // hide-chrome popup
+	uiCfgScroll int32 // vertical scroll of the hide-chrome popup's checkbox region (#22)
 	// showWidgets opens the "Extras" box: every AsyncAO feature an AO2 theme has
 	// no button for. The themed Extras button opens it; so does the Extras
 	// hotkey, which works in EITHER mode (in the classic path it's just a quick
@@ -1421,10 +1422,19 @@ type sessionState struct {
 	musicSearch     string
 	musicFiltered   []int
 	musicFilterMemo musicFilterKey
-	areaScroll      int32
-	logTab          int
-	volStripOn      bool // the log panel's toggleable on-screen volume strip
-	musicVolMode    bool // Music tab shows the volume sliders instead of the track list
+	// Areas-list search (#20 — parity with the Music tab beside it). Same
+	// memoized-filter shape: the query + a cheap Areas-list identity so a
+	// hub server's hundreds of areas aren't re-scanned (and re-lowercased —
+	// that allocates) every frame. areaFiltered holds matching indices into
+	// a.sess.Areas (which parallels a.sess.AreaInfo, so the ORIGINAL index
+	// is what indexes both).
+	areaSearch     string
+	areaFiltered   []int
+	areaFilterMemo areaFilterKey
+	areaScroll     int32
+	logTab         int
+	volStripOn     bool // the log panel's toggleable on-screen volume strip
+	musicVolMode   bool // Music tab shows the volume sliders instead of the track list
 	// Stick flags: the logs FOLLOW new lines while true; scrolling up
 	// releases, scrolling back to the bottom re-sticks. (The old "within
 	// one line of the bottom" heuristic broke whenever one wrapped

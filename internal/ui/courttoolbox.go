@@ -202,3 +202,128 @@ func (a *App) resolveToolboxDrag(overToolbox bool) {
 		a.pushDebug("layout: dragged a piece onto the stage → shown")
 	}
 }
+
+// --- compact hover toolbox (#27) ---------------------------------------------------
+//
+// Show/hide config was previously split three ways (the toolbar's UI…/Edit-Layout
+// buttons, the Extras box, and the Hide-UI dialog which ALONE hosted Theater +
+// the themed Edit-layout entry). This consolidates those three entry points into
+// one toolbox, collapsed to small hover-revealed chips so it stays out of the way
+// during normal play.
+//
+// So this is a compact, collapsed-by-default strip pinned to the bottom-right
+// corner, shown in NORMAL play (both the classic and themed courtroom). Collapsed
+// it's a slim, semi-transparent grip (a drawn hamburger primitive — no glyph
+// font dependency) with a visually negligible footprint. On hover it expands
+// LEFT into a row of small icon chips with tooltip labels: Theater, Edit layout,
+// and Hide UI (the last opens the existing checkbox dialog, so the per-piece
+// list stays reachable). Theater + the themed Edit-layout entry now live here
+// too, so the Hide-UI dialog is no longer their only home.
+//
+// Perf (it draws per-frame in normal play, under the ui AllocsPerRun gates): the
+// chip set is a fixed package-level slice with CONSTANT labels, so nothing is
+// allocated per frame and the TextWidth probes hit the width cache after warm-up.
+// The reveal is a pure hover state (no persistent animation, no NoteAnimating
+// keepalive) — the hover transition already forces the redraw via the input path,
+// so it can't wake the render loop at full rate while idle.
+
+const (
+	// compactGripW/H size the collapsed grip (the slim edge tab). Deliberately
+	// small so it barely touches the scene during normal play. Its height matches
+	// a chip so the expanded strip aligns cleanly to the same baseline.
+	compactGripW = int32(18)
+	compactGripH = int32(22)
+	// compactChipH / compactChipPad size an expanded icon chip and its inner text pad.
+	compactChipH   = int32(22)
+	compactChipPad = int32(8)
+	// compactToolboxMargin insets the strip from the window's bottom-right corner.
+	compactToolboxMargin = int32(4)
+	// compactHoverPad grows the collapsed grip's hover target a little so the strip
+	// doesn't collapse the instant the cursor grazes a chip's edge.
+	compactHoverPad = int32(6)
+)
+
+// compactChip is one hover-revealed icon chip: its label, an accessibility
+// tooltip, and the action it runs. run is a method value — the slice is built
+// once (compactToolboxChips), so no closure is allocated per frame.
+type compactChip struct {
+	label, tip string
+	run        func(a *App)
+}
+
+// compactToolboxChips is the fixed chip set, right-to-left from the grip. Kept
+// tiny on purpose (#27): Theater, Edit layout, Hide-UI. Constant labels ⇒ the
+// per-frame TextWidth probes are cache hits and the slice never re-allocates.
+// Labels are plain ASCII short words (no decorative glyphs) so they render on
+// any chrome font — the "icon" feel comes from the compact chip form + the drawn
+// hamburger grip, not a font glyph that could tofu.
+var compactToolboxChips = []compactChip{
+	{"Theater", "Theater mode — stage only, Esc exits", (*App).compactTheater},
+	{"Edit", "Edit layout — drag & resize every box", (*App).compactEditLayout},
+	{"Hide UI", "Hide UI pieces — per-piece show/hide list", (*App).compactHideUI},
+}
+
+func (a *App) compactTheater()    { a.setTheater(!a.theaterOn) }
+func (a *App) compactEditLayout() { a.openLayoutEditor() }
+func (a *App) compactHideUI()     { a.showUICfg = true }
+
+// drawCompactToolbox paints the collapsed grip and, while hovered, the expanded
+// icon-chip row. Called from the normal-play courtroom (classic + themed); NOT
+// drawn in theater mode, while editing a layout, or when hidden via panelToolbox.
+func (a *App) drawCompactToolbox(w, h int32) {
+	if a.panelHidden(panelToolbox) {
+		return
+	}
+	c := a.ctx
+	// The collapsed grip: bottom-right corner, slim + semi-transparent.
+	grip := sdl.Rect{
+		X: w - compactGripW - compactToolboxMargin,
+		Y: h - compactGripH - compactToolboxMargin,
+		W: compactGripW, H: compactGripH,
+	}
+	// Expanded footprint (grip + chips to its left) so the strip stays open while
+	// the cursor is anywhere over a chip, not just the grip. Measured first so the
+	// hover test covers the whole strip.
+	stripW := compactGripW
+	for _, ch := range compactToolboxChips {
+		stripW += c.TextWidth(ch.label) + 2*compactChipPad + 4
+	}
+	strip := sdl.Rect{X: w - stripW - compactToolboxMargin, Y: grip.Y, W: stripW, H: compactGripH}
+	hoverArea := sdl.Rect{X: grip.X - compactHoverPad, Y: grip.Y - compactHoverPad,
+		W: grip.W + compactHoverPad, H: grip.H + 2*compactHoverPad}
+	expanded := c.hovering(hoverArea) || c.hovering(strip)
+
+	if !expanded {
+		// Collapsed: a slim translucent tab with a hamburger primitive (drawn, not
+		// a glyph) so it renders on any font and stays unobtrusive.
+		c.Fill(grip, sdl.Color{R: 0, G: 0, B: 0, A: 120})
+		barW := grip.W - 8
+		for i := int32(0); i < 3; i++ {
+			bar := sdl.Rect{X: grip.X + 4, Y: grip.Y + 5 + i*5, W: barW, H: 2}
+			c.Fill(bar, sdl.Color{R: 200, G: 200, B: 210, A: 180})
+		}
+		c.Tooltip(hoverArea, "Toolbox — hover for Theater, Edit layout & Hide UI")
+		return
+	}
+
+	// Expanded: chips laid out right-to-left from the grip, each with a tooltip.
+	c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
+	c.Border(strip, ColAccent)
+	x := w - compactGripW - compactToolboxMargin
+	// The grip stays as the right-hand anchor (a filled accent nub) so it's clear
+	// where the strip folds back to.
+	c.Fill(grip, ColPanelHi)
+	for i := int32(0); i < 3; i++ {
+		bar := sdl.Rect{X: grip.X + 4, Y: grip.Y + 5 + i*5, W: grip.W - 8, H: 2}
+		c.Fill(bar, ColText)
+	}
+	for _, ch := range compactToolboxChips {
+		cw := c.TextWidth(ch.label) + 2*compactChipPad
+		x -= cw + 4
+		chip := sdl.Rect{X: x, Y: grip.Y + (compactGripH-compactChipH)/2, W: cw, H: compactChipH}
+		if c.Button(chip, ch.label) {
+			ch.run(a)
+		}
+		c.Tooltip(chip, ch.tip)
+	}
+}

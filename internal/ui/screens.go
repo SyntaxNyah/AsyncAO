@@ -1349,6 +1349,12 @@ func (a *App) drawCourtroom(w, h int32) {
 	// viewport doesn't drag them (they become their own slots in a later slice).
 	a.drawICControls(w, h, vpDef)
 
+	// Compact hover toolbox (#27): slim bottom-right grip → Theater / Edit / Hide-UI
+	// chips on hover. Normal play only — the editor shows its own full chip strip.
+	if !a.classicEdit {
+		a.drawCompactToolbox(w, h)
+	}
+
 	// Live slot editor overlay (default layout only) — drawn LAST so it sits over every widget.
 	// Torn-off tab panels draw HERE while editing (before the editor) so slotRect registers them
 	// and the editor hands them drag/resize handles this same frame; their content shows (inert)
@@ -2912,18 +2918,42 @@ func (a *App) drawAreaList(r sdl.Rect) {
 		r.Y += 28
 		r.H -= 28
 	}
+	// Search filter (#20 — parity with the Music tab beside it): type to narrow
+	// a hub server's hundreds of areas. Memoized so the O(N) scan runs only when
+	// the query or the Areas list changes (refreshAreaFilter).
+	a.areaSearch, _ = c.TextField("areasearch", sdl.Rect{X: r.X, Y: r.Y, W: r.W - 150, H: fieldH}, a.areaSearch, "Search areas…")
+	query := strings.ToLower(strings.TrimSpace(a.areaSearch))
+	total := len(a.sess.Areas)
+	shown := total
+	if query != "" {
+		a.refreshAreaFilter(query)
+		shown = len(a.areaFiltered)
+	}
+	c.Label(r.X+r.W-142, r.Y+5, fmt.Sprintf("%d / %d", shown, total), ColTextDim)
+	r.Y += fieldH + 6
+	r.H -= fieldH + 6
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height())*2 + 11 // two-row entries: name + an indented detail line
-	contentH := int32(len(a.sess.Areas)) * lineH
+	contentH := int32(shown) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r) // partial top/bottom row stays inside the panel
 	defer c.popClip(clipPrev, clipHad)
 	y := r.Y - a.areaScroll
-	for i, area := range a.sess.Areas {
+	for vi := 0; vi < shown; vi++ {
+		// i is the ORIGINAL index into a.sess.Areas (and the parallel AreaInfo);
+		// with a query active it comes from the filtered index list.
+		i := vi
+		if query != "" {
+			i = a.areaFiltered[vi]
+		}
+		if i < 0 || i >= len(a.sess.Areas) {
+			continue
+		}
+		area := a.sess.Areas[i]
 		if y > r.Y+r.H {
 			break
 		}
@@ -2991,6 +3021,9 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			}
 		}
 		y += lineH
+	}
+	if shown == 0 && query != "" {
+		c.Label(r.X+4, r.Y+6, "No areas match your search.", ColTextDim)
 	}
 }
 
@@ -3867,6 +3900,41 @@ func (a *App) refreshMusicFilter(query string) {
 	for i, track := range a.sess.Music {
 		if strings.Contains(strings.ToLower(track), query) {
 			a.musicFiltered = append(a.musicFiltered, i)
+		}
+	}
+}
+
+// areaFilterKey memoizes the areas-list filter (#20), mirroring musicFilterKey.
+// Keyed by the query plus a cheap identity of the Areas list (len +
+// first/last name), which changes whenever the server resends the area list.
+// It deliberately does NOT key on AreaInfo (player counts / status / lock):
+// those change on every area packet, and the name filter doesn't depend on
+// them, so including them would defeat the memo and re-scan constantly.
+type areaFilterKey struct {
+	q           string
+	n           int
+	first, last string
+}
+
+// refreshAreaFilter recomputes the matching area indices for a non-empty query,
+// memoized against the query + the list identity — same O(1)-per-frame guard as
+// refreshMusicFilter. The stored indices are ORIGINAL indices into a.sess.Areas,
+// which parallels a.sess.AreaInfo, so a caller uses ti (not the visible index)
+// to look up either.
+func (a *App) refreshAreaFilter(query string) {
+	n := len(a.sess.Areas)
+	key := areaFilterKey{q: query, n: n}
+	if n > 0 {
+		key.first, key.last = a.sess.Areas[0], a.sess.Areas[n-1]
+	}
+	if key == a.areaFilterMemo {
+		return
+	}
+	a.areaFilterMemo = key
+	a.areaFiltered = a.areaFiltered[:0]
+	for i, area := range a.sess.Areas {
+		if strings.Contains(strings.ToLower(area), query) {
+			a.areaFiltered = append(a.areaFiltered, i)
 		}
 	}
 }

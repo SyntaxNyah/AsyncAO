@@ -593,6 +593,12 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// feature this AO2 theme has no slot for. Hideable; the hotkey opens it too.
 	a.drawThemedExtrasButton(w, h)
 
+	// Compact hover toolbox (#27): slim bottom-right grip → Theater / Edit / Hide-UI
+	// chips on hover. Normal play only — skipped while the themed editor is armed.
+	if !a.layoutEdit {
+		a.drawCompactToolbox(w, h)
+	}
+
 	if a.warnActive() {
 		c.LabelClipped(pad, h-44, w-2*pad, a.warnLine, ColDanger)
 	}
