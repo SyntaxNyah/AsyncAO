@@ -447,6 +447,53 @@ func TestFrameDecimator(t *testing.T) {
 	}
 }
 
+// TestFrameKeepIndexMapping pins the exported forward map (#17): a kept-frame
+// ordinal maps back to the SOURCE frame index the sender authored networked frame
+// effects against. It must round-trip endpoints, stay identity when nothing was
+// decimated, and clamp/guard hostile args without panicking.
+func TestFrameKeepIndexMapping(t *testing.T) {
+	// Decimated 100→34: endpoints span the whole clip, monotonically increasing.
+	const total, keep = 100, 34
+	prev := -1
+	for j := 0; j < keep; j++ {
+		src := FrameKeepIndex(j, total, keep)
+		if src <= prev {
+			t.Fatalf("ordinal %d → src %d not strictly increasing (prev %d)", j, src, prev)
+		}
+		if src < 0 || src >= total {
+			t.Fatalf("ordinal %d → src %d out of [0,%d)", j, src, total)
+		}
+		prev = src
+	}
+	if got := FrameKeepIndex(0, total, keep); got != 0 {
+		t.Errorf("first kept ordinal → src %d, want 0", got)
+	}
+	if got := FrameKeepIndex(keep-1, total, keep); got != total-1 {
+		t.Errorf("last kept ordinal → src %d, want %d (final pose reachable)", got, total-1)
+	}
+
+	// No decimation (keep >= total, or keep == total): identity map.
+	for _, keptCount := range []int{total, total + 5} {
+		for j := 0; j < total; j++ {
+			if got := FrameKeepIndex(j, total, keptCount); got != j {
+				t.Fatalf("identity keptCount=%d ordinal %d → %d, want %d", keptCount, j, got, j)
+			}
+		}
+	}
+
+	// Guards: non-positive args and out-of-range ordinals never panic and stay
+	// in a sane range.
+	if got := FrameKeepIndex(3, 0, 0); got != 3 {
+		t.Errorf("zero total/keep → %d, want identity 3", got)
+	}
+	if got := FrameKeepIndex(-1, 100, 34); got != 0 {
+		t.Errorf("negative ordinal → %d, want clamped 0", got)
+	}
+	if got := FrameKeepIndex(999, total, keep); got != total-1 {
+		t.Errorf("over-range ordinal → %d, want clamped to last src %d", got, total-1)
+	}
+}
+
 // TestDecoderThumbnailsFixedCellTypes pins decode-time thumbnailing: types
 // drawn at fixed small cells (char icons, emote buttons) rescale to their
 // cell size inside the decode pool, so a 500×500 pack icon costs ~16 KB of

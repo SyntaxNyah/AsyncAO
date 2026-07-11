@@ -113,11 +113,12 @@ func decodeWebPAnim(data []byte, playAnimations bool) (*Decoded, error) {
 	fdec := newFrameDecimator(walk, keep)
 
 	d := &Decoded{
-		Animated: frameTotal > 1,
-		Width:    width,
-		Height:   height,
-		Frames:   make([]*image.RGBA, 0, keep),
-		Delays:   make([]time.Duration, 0, keep),
+		Animated:     frameTotal > 1,
+		Width:        width,
+		Height:       height,
+		SourceFrames: walk, // frame space the sender's networked frame effects index into (#17)
+		Frames:       make([]*image.RGBA, 0, keep),
+		Delays:       make([]time.Duration, 0, keep),
 	}
 
 	canvasBytes := width * height * webpBytesPerPixel

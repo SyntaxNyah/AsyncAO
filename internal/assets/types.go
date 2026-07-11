@@ -89,6 +89,13 @@ type Decoded struct {
 	// flag, APNG acTL, multi-frame GIF) — independent of whether all frames
 	// were decoded (PreferAnimated=false decodes only the first).
 	Animated bool
+	// SourceFrames is the animation's pre-decimation frame count — the frame
+	// space the FILE was authored in (and, since AO2 never decimates, the space
+	// remote clients transmit networked frame-synced effect indices in; #17).
+	// len(Frames) may be smaller after frameDecimator dropped frames to fit the
+	// T1 byte budget. 0 for a static image / a decoder that didn't set it
+	// (treated as len(Frames), the safe identity).
+	SourceFrames int
 	// Partial marks a progressive first-frame delivery: the full frame set
 	// for the same URL follows from the same decode job and replaces this
 	// page on upload (§perf: giant preanims start in one frame-decode).

@@ -2759,7 +2759,8 @@ func (a *App) Disconnect() {
 	}
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
-		a.d.Viewport.PurgePostFX() // #10: free the cached retro-overlay textures
+		a.d.Viewport.OnFrameShown = nil // #17: no live room owns the viewport now
+		a.d.Viewport.PurgePostFX()      // #10: free the cached retro-overlay textures
 	}
 	// Remember which server this was so the lobby's Reconnect button and
 	// auto-reconnect target the session that actually dropped — correct even
@@ -3787,6 +3788,13 @@ func (a *App) buildRoom() {
 	a.room.Predictor.SetAggressiveness(a.d.Prefs.PrefetchAggressiveness()) // #100 predictive-prefetch level
 	a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
 	a.d.Viewport.OnPreanimStart = a.room.NotifyPreanimStarted // extend the fallback for long decoded preanims (phase-guarded — safe if a preview later shares this viewport)
+	// #17 frame-synced effects: OnFrameShown reports the CURRENTLY-PLAYING sprite's
+	// frame, so it must track the room that OWNS the on-screen sprite — the same
+	// convention as OnPreanimDone (swapped by replay/maker/gifexport), NOT the
+	// phase-guarded OnPreanimStart. NotifyFrameShown has no stale-safe guard, so a
+	// mis-pointed callback would feed a replay sprite's frames into the live room's
+	// trigger table and fire its SFX.
+	a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
 	}
@@ -3962,6 +3970,7 @@ func (a *App) pinToSplit(t *courtTab) {
 	a.splitRoom = courtroom.NewCourtroom(t.state.urls, a.d.Manager, t.state.sess, courtroom.NopAudio{})
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
 	a.splitVP.OnPreanimStart = a.splitRoom.NotifyPreanimStarted
+	a.splitVP.OnFrameShown = a.splitRoom.NotifyFrameShown              // #17 (NopAudio here → shake/flash only; sfx is silent for the pinned view)
 	a.clientZoom, a.clientPanX, a.clientPanY = clientZoomMin, 0.5, 0.5 // fresh pin starts at fit
 	if t.state.sess.Background != "" {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})

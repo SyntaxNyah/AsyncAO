@@ -6,6 +6,7 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
@@ -47,6 +48,12 @@ type animState struct {
 	// startReported guards the one-shot OnPreanimStart duration report: set once
 	// the decoded preanim page first plays, cleared by reset on a base change.
 	startReported bool
+	// shownSrc is the SOURCE (un-decimated) frame index last reported through
+	// OnFrameShown for this base — the #17 frame-effect trigger uses it to fire
+	// only when the drawn frame moves to a new source frame. -1 = nothing
+	// reported yet for this base (reset on a base change); frame 0 IS a valid
+	// trigger point, so the sentinel can't be 0.
+	shownSrc int
 
 	page    *TexturePage
 	pageGen uint64
@@ -87,6 +94,7 @@ func (a *animState) reset(base string) {
 	a.elapsed = 0
 	a.finished = false
 	a.startReported = false
+	a.shownSrc = -1 // nothing reported for the new base yet (frame 0 is a valid trigger)
 	a.page = nil
 	a.pageGen = 0
 	a.thumbKey = ""
@@ -149,6 +157,26 @@ func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) 
 			a.frame++
 		}
 	}
+}
+
+// reportSpeakerFrame fires OnFrameShown with the speaker layer's currently-drawn
+// frame in the SENDER's raw frame space (#17). The playback cursor (a.frame) is a
+// KEPT-frame ordinal after decimation; FrameKeepIndex maps it back to the source
+// index the sender authored networked frame effects against. Fires only when that
+// source index changes since the last report for this base (a.shownSrc), so a
+// static sprite or a paused frame costs nothing, and a nil callback short-circuits
+// before any work. Called once per Update from the speaker-advance site.
+func (v *Viewport) reportSpeakerFrame(page *TexturePage) {
+	if v.OnFrameShown == nil || page == nil || len(page.Frames) == 0 {
+		return
+	}
+	a := &v.speakerAnim
+	src := assets.FrameKeepIndex(a.frame, page.SourceFrames, len(page.Frames))
+	if src == a.shownSrc {
+		return // same source frame still on screen — nothing new to fire
+	}
+	a.shownSrc = src
+	v.OnFrameShown(src)
 }
 
 // pageDuration is a one-shot animation's total playback time (the sum of every
@@ -237,6 +265,15 @@ type Viewport struct {
 	// (else it's cut short — the "long preanims skip to the end" report). Fires
 	// once per bound preanim (startReported); nil = not wired (no extension).
 	OnPreanimStart func(time.Duration)
+
+	// OnFrameShown forwards the SPEAKER layer's newly-displayed frame index —
+	// mapped back through the decimation to the sender's raw frame space
+	// (assets.FrameKeepIndex) — so the courtroom can fire networked frame-synced
+	// SFX / realization / screenshake (#17: AO2-Client FRAME_* fields) as the
+	// sprite reaches an authored trigger frame. Fires only when the drawn kept
+	// frame actually changes (not every render), so a nil callback and a static
+	// sprite both cost nothing. Wired to Courtroom.NotifyFrameShown by the App.
+	OnFrameShown func(src int)
 
 	// fx is the colour wash (App mirrors the user prefs here once per frame via
 	// SetSpriteFX). rainbowPhase is the accumulated, cycle-bounded hue clock and
@@ -471,6 +508,12 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 					v.OnPreanimDone()
 				}
 			}
+			// #17 networked frame effects: report the drawn frame's SOURCE index
+			// (mapped back through decimation) whenever it moves, so the courtroom
+			// can fire an authored trigger. After advance so the report reflects
+			// this step's landing frame; guarded on a wired callback so a plain
+			// render allocates nothing.
+			v.reportSpeakerFrame(page)
 		}
 	}
 	if scene.PairActive {

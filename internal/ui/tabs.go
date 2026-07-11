@@ -212,6 +212,7 @@ func (a *App) parkActive() {
 	}
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
+		a.d.Viewport.OnFrameShown = nil // #17: parked tab's room no longer owns the viewport
 	}
 	a.tabs[a.activeTab].state = a.sessionState
 	a.resetSessionState()

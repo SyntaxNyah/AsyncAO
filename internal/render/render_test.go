@@ -229,6 +229,40 @@ func TestRenderFrameZeroAllocs(t *testing.T) {
 	}
 }
 
+// TestFrameShownZeroAllocs enforces the #17 frame-effect trap: the per-frame
+// OnFrameShown reporting path (decimation map + change check + callback) must
+// allocate nothing even with a callback wired and the speaker sprite advancing.
+func TestFrameShownZeroAllocs(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	for _, base := range []string{"bg", "desk", "spk", "pair"} {
+		if err := store.Upload(base, decodedFixture()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vp := NewViewport(store)
+	var shown int
+	vp.OnFrameShown = func(src int) { shown += src } // non-nil: exercises the report path
+	scene := benchScene(store)
+	rect := sdl.Rect{X: 0, Y: 0, W: 512, H: 384}
+
+	// A larger dt makes the 2-frame speaker fixture flip frames every step, so the
+	// change-detection branch and the callback actually run.
+	allocs := testing.AllocsPerRun(200, func() {
+		vp.Update(scene, 60*time.Millisecond)
+		vp.Render(ren, scene, rect)
+	})
+	if allocs != 0 {
+		t.Errorf("frame-shown path allocates %.1f objects/op, want 0 (#17)", allocs)
+	}
+	_ = shown
+}
+
 // TestRenderFrameRainbowZeroAllocs enforces the alloc gate on the sprite-FX ON
 // path: the default frame test runs with every wash OFF, so it can't catch a
 // regression in the SetColorMod / SetBlendMode / hue code. It drives the most

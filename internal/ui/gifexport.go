@@ -462,6 +462,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = room.NotifyFrameShown // #17: frame effects follow the export room's sprite
 	}
 	if scene.StartBg != "" {
 		room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: scene.StartBg})
@@ -940,10 +941,13 @@ func (a *App) restoreViewportPreanim() {
 	switch {
 	case a.makerOpen && a.makerPreviewRoom != nil:
 		a.d.Viewport.OnPreanimDone = a.makerPreviewRoom.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.makerPreviewRoom.NotifyFrameShown // #17: frame effects follow the same room
 	case a.room != nil:
 		a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown
 	default:
 		a.d.Viewport.OnPreanimDone = nil
+		a.d.Viewport.OnFrameShown = nil
 	}
 }
 

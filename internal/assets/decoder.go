@@ -212,6 +212,28 @@ func frameKeepIndex(j, total, keep int) int {
 	return (j*(total-1) + (keep-1)/2) / (keep - 1) // round(j*(total-1)/(keep-1))
 }
 
+// FrameKeepIndex is the exported forward map kept-frame ordinal → SOURCE frame
+// index for the same (total, keep) decimation the decoders applied. The render
+// side needs it to convert a decimated (kept) frame ordinal back into the
+// sender's raw frame space when firing networked frame-synced effects (#17):
+// wire frame indices are authored against the un-decimated file, so a trigger
+// must be tested against the SOURCE index a kept frame stands in for. Guards
+// keep>total / non-positive args to a safe identity so a malformed page never
+// panics. Reuses the private helper so the rounding formula lives in one place
+// (a duplicated ratio was a shipped bug — see decoder.go's page-cap history).
+func FrameKeepIndex(keptOrdinal, sourceTotal, keptCount int) int {
+	if keptCount <= 0 || sourceTotal <= 0 || keptCount >= sourceTotal {
+		return keptOrdinal // identity: no decimation happened (or bad args)
+	}
+	if keptOrdinal < 0 {
+		return 0
+	}
+	if keptOrdinal >= keptCount {
+		keptOrdinal = keptCount - 1
+	}
+	return frameKeepIndex(keptOrdinal, sourceTotal, keptCount)
+}
+
 // frameDecimator walks an animation's source frames in order and decides which
 // to materialise, folding skipped-frame delays into the kept frames (see the
 // block comment above). The zero value is unusable; build with newFrameDecimator
@@ -591,11 +613,12 @@ func decodeGIF(data []byte, playAnimations bool) (*Decoded, error) {
 	dec := newFrameDecimator(walk, keep)
 
 	d := &Decoded{
-		Animated: animated,
-		Width:    width,
-		Height:   height,
-		Frames:   make([]*image.RGBA, 0, keep),
-		Delays:   make([]time.Duration, 0, keep),
+		Animated:     animated,
+		Width:        width,
+		Height:       height,
+		SourceFrames: walk, // frame space the sender's networked frame effects index into (#17)
+		Frames:       make([]*image.RGBA, 0, keep),
+		Delays:       make([]time.Duration, 0, keep),
 	}
 
 	// canvas accumulates composition; the backdrop snapshot supports
@@ -709,11 +732,12 @@ func decodeAPNG(data []byte, playAnimations bool) (*Decoded, error) {
 	dec := newFrameDecimator(walk, keep)
 
 	d := &Decoded{
-		Animated: animated,
-		Width:    width,
-		Height:   height,
-		Frames:   make([]*image.RGBA, 0, keep),
-		Delays:   make([]time.Duration, 0, keep),
+		Animated:     animated,
+		Width:        width,
+		Height:       height,
+		SourceFrames: walk, // frame space the sender's networked frame effects index into (#17)
+		Frames:       make([]*image.RGBA, 0, keep),
+		Delays:       make([]time.Duration, 0, keep),
 	}
 
 	canvas, canvasTok := newPooledRGBA(width, height)

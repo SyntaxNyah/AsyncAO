@@ -108,3 +108,51 @@ func TestBlipAndSkinFallbacks(t *testing.T) {
 		t.Errorf("unknown speaker with no wire blip must use the AO default: %q", room.blipBase)
 	}
 }
+
+// TestCharINIFrameEffects pins the outgoing FRAME_* assembly (#17): an emote with
+// [<emote>_Frame*] sections builds AO2's exact "<pre>[|k=v]^(b)<anim>[|k=v]^(a)<anim>[|k=v]^"
+// wire form (frame keys sorted); an emote with none stays "" so the wire is
+// unchanged for the (vast majority of) char.inis without frame data.
+func TestCharINIFrameEffects(t *testing.T) {
+	ini, err := ParseCharINI([]byte(`
+[Emotions]
+number = 2
+1 = normal#leap#normal#1
+2 = plain#-#plain#0
+
+[leap_FrameScreenshake]
+3 = 1
+
+[(b)normal_FrameSFX]
+5 = whip
+2 = slap
+
+[(a)normal_FrameRealization]
+1 = 1
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ini.Emotes) != 2 {
+		t.Fatalf("want 2 emotes, got %d", len(ini.Emotes))
+	}
+	e := ini.Emotes[0]
+	// Screenshake: only the preanim (leap) section has a tag; talk/idle are bare.
+	if e.FrameShake != "leap|3=1^(b)normal^(a)normal^" {
+		t.Errorf("FrameShake = %q, want the leap preanim tag with bare talk/idle", e.FrameShake)
+	}
+	// SFX: only the talk "(b)normal" section, frame-sorted (2 before 5).
+	if e.FrameSFX != "leap^(b)normal|2=slap|5=whip^(a)normal^" {
+		t.Errorf("FrameSFX = %q, want the (b)normal tags sorted by frame", e.FrameSFX)
+	}
+	// Realization: only the idle "(a)normal" section.
+	if e.FrameRealize != "leap^(b)normal^(a)normal|1=1^" {
+		t.Errorf("FrameRealize = %q, want the (a)normal tag", e.FrameRealize)
+	}
+	// The second emote authors no frame sections at all → all three empty (wire
+	// unchanged; KFOCompat still fills its template downstream).
+	p := ini.Emotes[1]
+	if p.FrameShake != "" || p.FrameSFX != "" || p.FrameRealize != "" {
+		t.Errorf("emote with no frame sections must leave FRAME_* empty, got shake=%q sfx=%q realize=%q", p.FrameShake, p.FrameSFX, p.FrameRealize)
+	}
+}

@@ -3,6 +3,8 @@ package courtroom
 import (
 	"bytes"
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -26,6 +28,16 @@ type Emote struct {
 	SFXDelay int
 	SFXLoop  bool
 	Blip     string
+
+	// Networked frame-synced effects (#17): the three FRAME_* wire fields for
+	// THIS emote, pre-assembled at parse in AO2's exact format
+	// "<pre>[|<f>=<v>…]^(b)<anim>[|…]^(a)<anim>[|…]^" (courtroom.cpp:2266-2287).
+	// Empty when the char.ini authors no [<emote>_FrameScreenshake] /
+	// [<emote>_FrameRealization] / [<emote>_FrameSFX] sections — the send path
+	// then ships "" (unchanged wire) and KFOCompat still fills its template.
+	FrameShake   string
+	FrameRealize string
+	FrameSFX     string
 }
 
 // CustomShout is one 2.10 custom interjection: Name is the menu label,
@@ -65,6 +77,20 @@ const (
 	charINIBlipsSection    = "blips"
 	charINIShoutsSection   = "shouts"
 	emoteFieldCount        = 4
+
+	// Networked frame-effect section suffixes (#17): AO2-Client reads
+	// [<emote>_FrameScreenshake] / [<emote>_FrameRealization] / [<emote>_FrameSFX]
+	// where <emote> is the pre-emote name, "(b)"+anim, and "(a)"+anim
+	// (courtroom.cpp:2266-2280). Section names are matched case-insensitively by
+	// the INI reader, so the suffixes are lowercase here.
+	frameScreenshakeSuffix = "_framescreenshake"
+	frameRealizationSuffix = "_framerealization"
+	frameSFXSuffix         = "_framesfx"
+	// frameEffectFramesCap bounds how many "<frame>=<value>" pairs one emote's
+	// FRAME_* section may contribute to the outgoing wire, so our OWN char.ini
+	// with a pathological section can't build an unbounded packet (§17.4). Well
+	// above any real preanim's frame count.
+	frameEffectFramesCap = 256
 	// customShoutCap bounds the [Shouts] scan (rule §17.4).
 	customShoutCap = 32
 	// customNameSuffix marks "<stem>_name" keys in [Shouts].
@@ -120,6 +146,14 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 		e.SFXDelay = atoiOr(firstSection(ini, charINISoundTSection, key), 0)
 		e.SFXLoop = firstSection(ini, charINISoundLSection, key) == "1"
 		e.Blip, _ = ini.GetSection(charINIBlipsSection, key)
+		// Networked frame effects (#17): assemble the three FRAME_* wire fields for
+		// this emote from its [<emote>_Frame*] sections, matching AO2's send format
+		// exactly (courtroom.cpp:2266-2287, emotes_to_check = {pre, "(b)"+anim,
+		// "(a)"+anim}). Empty ("") when no such sections exist, so the outgoing wire
+		// is unchanged for the (vast majority of) char.inis without frame data.
+		e.FrameShake = buildFrameField(ini, e.Preanim, e.Anim, frameScreenshakeSuffix)
+		e.FrameRealize = buildFrameField(ini, e.Preanim, e.Anim, frameRealizationSuffix)
+		e.FrameSFX = buildFrameField(ini, e.Preanim, e.Anim, frameSFXSuffix)
 		out.Emotes = append(out.Emotes, e)
 	}
 
@@ -143,4 +177,74 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 func firstSection(ini *theme.INI, section, key string) string {
 	v, _ := ini.GetSection(section, key)
 	return v
+}
+
+// buildFrameField assembles one outgoing FRAME_* wire field (#17) for an emote,
+// mirroring AO2-Client on_chat_return_pressed (courtroom.cpp:2266-2287): three
+// "^"-terminated sections for the pre-emote, the "(b)" talk emote and the "(a)"
+// idle emote, each "<emote>[|<frame>=<value>…]". The frame pairs come from the
+// char.ini [<emote><suffix>] section (read_ini_tags → "<key>=<value>", joined by
+// "|"). Returns "" when NONE of the three sections carry a tag, so a char.ini
+// without frame data leaves the wire byte-identical to before (the send path then
+// ships "" and KFOCompat still fills its template).
+func buildFrameField(ini *theme.INI, pre, anim, suffix string) string {
+	emotes := [...]string{pre, "(b)" + anim, "(a)" + anim}
+	var b strings.Builder
+	any := false
+	remaining := frameEffectFramesCap
+	for _, name := range emotes {
+		b.WriteString(name)
+		if tags := frameSectionTags(ini, name+suffix, &remaining); tags != "" {
+			b.WriteByte('|')
+			b.WriteString(tags)
+			any = true
+		}
+		b.WriteByte('^')
+	}
+	if !any {
+		return "" // no frame data for this emote — keep the current empty wire
+	}
+	return b.String()
+}
+
+// frameSectionTags renders a [<section>]'s "<frame>=<value>" entries as a
+// "|"-joined, frame-number-sorted string (QSettings::allKeys returns keys sorted,
+// so a receiver sees a stable order). *remaining bounds the total pairs across the
+// three sections of one field (§17.4) so our own hostile char.ini can't build an
+// unbounded packet. Only numeric keys are emitted (AO2's frame_data.at(0).toInt).
+func frameSectionTags(ini *theme.INI, section string, remaining *int) string {
+	keys := ini.SectionKeys(section)
+	if len(keys) == 0 {
+		return ""
+	}
+	type pair struct {
+		frame int
+		value string
+	}
+	pairs := make([]pair, 0, len(keys))
+	for k, v := range keys {
+		n, err := strconv.Atoi(strings.TrimSpace(k))
+		if err != nil || n < 0 {
+			continue // non-numeric key: not a frame trigger
+		}
+		pairs = append(pairs, pair{frame: n, value: v})
+	}
+	if len(pairs) == 0 {
+		return ""
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].frame < pairs[j].frame })
+	var b strings.Builder
+	for i, p := range pairs {
+		if *remaining <= 0 {
+			break // cap reached: drop the rest (bounded packet)
+		}
+		if i > 0 && b.Len() > 0 {
+			b.WriteByte('|')
+		}
+		b.WriteString(strconv.Itoa(p.frame))
+		b.WriteByte('=')
+		b.WriteString(p.value)
+		*remaining--
+	}
+	return b.String()
 }

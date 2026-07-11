@@ -358,6 +358,13 @@ type Courtroom struct {
 	sfxBase  string        // resolved SFX URL to play at the deadline ("" = shake only)
 	sfxShake bool          // also fire the screenshake at the deadline (preanim mods)
 
+	// frameTriggers holds THIS message's networked frame-synced effects (#17):
+	// the FRAME_* wire fields parsed once at message-begin into a bounded,
+	// per-phase-group sorted table with forward-only cursors. NotifyFrameShown
+	// (called from the render side as the speaker sprite advances) fires them.
+	// Empty for a message with no FRAME_* data (the common case) — an inert table.
+	frameTriggers frameTriggerTable
+
 	current *protocol.ChatMessage
 	// currentText is current.Message with any transmitted SpriteStyle marker
 	// decoded out — the visible-only text the typewriter/blankpost use. The raw
@@ -922,6 +929,16 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		Style:       style, // transmitted recolour / glow / opacity / motion
 	}
 
+	// #17 networked frame effects: parse this message's FRAME_* fields into the
+	// per-frame trigger table ONCE here (never per render frame — the render loop
+	// is zero-allocation). Built after the Speaker bases above so a later
+	// NotifyFrameShown can bind the active layer to its group. A message with no
+	// FRAME_* data yields an inert (empty) table. A restore/settled replay never
+	// animates a preanim, but a live talk/idle loop still can, so the table is
+	// built the same way; the cursors start at 0 and only NotifyFrameShown moves
+	// them.
+	c.frameTriggers = c.buildFrameTriggers(msg)
+
 	c.Scene.PairActive = msg.Pair.Active()
 	c.Scene.SpeakerInFront = msg.Pair.SpeakerInFront()
 	if c.Scene.PairActive {
@@ -974,6 +991,10 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 // every message's text. Speaker sprite is intentionally left as-is — a
 // one-frame backlog flash is never seen.
 func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
+	// A fast-forwarded backlog message plays no ceremony (no preanim/sfx/effects),
+	// so it must carry no frame triggers either — clear any left from the prior
+	// message so a later NotifyFrameShown can't fire them over this flash (#17).
+	c.frameTriggers = frameTriggerTable{}
 	c.Scene.ShoutBase = ""
 	c.Scene.ShoutFallbackBase = ""
 	c.Scene.ShownameText = c.displayName(msg)
@@ -1355,6 +1376,13 @@ func (c *Courtroom) RestoreMessage(msg *protocol.ChatMessage) {
 	// down to zero; clear explicitly so the no-replayed-effects invariant
 	// doesn't hinge on Update's countdown-before-phase ordering.
 	c.Scene.FlashLeft, c.Scene.ShakeLeft = 0, 0
+	// begin() rebuilt frameTriggers (#17) with cursors at 0, but a restore is a
+	// SETTLED replay: the idle sprite now loops on the real (restored) audio sink,
+	// so any idle-phase FRAME_* trigger would fire its SFX/flash/shake on tab-back /
+	// court re-entry / pin — a replay violating the no-sound/flash-replay restore
+	// invariant. Clear the table like beginCaughtUp does so NotifyFrameShown stays
+	// inert for the restored message.
+	c.frameTriggers = frameTriggerTable{}
 }
 
 // Update advances the message lifecycle by dt.

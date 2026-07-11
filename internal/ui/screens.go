@@ -5649,8 +5649,16 @@ func (a *App) sendIC(shout int) {
 		SFXName:    sfxName,
 		SFXDelay:   emote.SFXDelay,
 		LoopingSFX: emote.SFXLoop,
-		Blipname:   blip,
-		Side:       a.mySide(),
+		// #17 networked frame-synced effects: the char.ini [<emote>_Frame*]
+		// sections, pre-assembled at parse into AO2's wire format. Empty for the
+		// (vast majority of) emotes with no frame data — KFOCompat still fills the
+		// template for KFO-Server. An IC-bar SFX-picker override doesn't rewrite the
+		// per-frame SFX map (it targets the single main SFX), matching AO2.
+		FrameShake:   emote.FrameShake,
+		FrameRealize: emote.FrameRealize,
+		FrameSFX:     emote.FrameSFX,
+		Blipname:     blip,
+		Side:         a.mySide(),
 		// Never ship raw char.ini emote mods: legacy 2/3/4 values make
 		// schema-strict clients drop the whole message.
 		EmoteMod:  protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, false, a.sess.Features),

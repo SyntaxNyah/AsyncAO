@@ -97,8 +97,13 @@ type TexturePage struct {
 	Frames   []*sdl.Texture
 	Delays   []time.Duration
 	Animated bool
-	W, H     int32
-	bytes    int64
+	// SourceFrames is the pre-decimation frame count of the decoded animation
+	// (assets.Decoded.SourceFrames) — the frame space remote clients index
+	// networked frame-synced effects into (#17). 0 for a static / non-decimated
+	// page; the viewport treats 0 as len(Frames) (identity).
+	SourceFrames int
+	W, H         int32
+	bytes        int64
 	// variants holds lazily-built per-pixel transforms of this page (invert /
 	// grayscale / the hue-paint colorize) — a transmitted sprite style needs a
 	// genuinely transformed texture (SetColorMod can't invert/desaturate). They live
@@ -426,10 +431,11 @@ func (s *TextureStore) Get(base string) (*TexturePage, bool) {
 // and pinned upload paths). The Decoded is NOT released here.
 func (s *TextureStore) buildPage(d *assets.Decoded) (*TexturePage, error) {
 	page := &TexturePage{
-		Delays:   append([]time.Duration(nil), d.Delays...),
-		Animated: d.Animated,
-		W:        int32(d.Width),
-		H:        int32(d.Height),
+		Delays:       append([]time.Duration(nil), d.Delays...),
+		Animated:     d.Animated,
+		SourceFrames: d.SourceFrames, // carry the un-decimated frame count for #17 frame-effect mapping
+		W:            int32(d.Width),
+		H:            int32(d.Height),
 	}
 	for _, frame := range d.Frames {
 		tex, err := s.ren.CreateTexture(

@@ -594,6 +594,7 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 
 	if a.d.Viewport != nil { // one-shot preanim completion must notify the REPLAY room now
 		a.d.Viewport.OnPreanimDone = a.replayRoom.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.replayRoom.NotifyFrameShown // #17: frame effects follow the room that owns the on-screen sprite
 	}
 	if rec.StartBg != "" {
 		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: rec.StartBg})
@@ -684,8 +685,10 @@ func (a *App) stopReplay() {
 	if a.d.Viewport != nil { // rebind preanim completion to the live room (or clear it)
 		if a.room != nil {
 			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown // #17: frame effects back to the live room
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
+			a.d.Viewport.OnFrameShown = nil
 		}
 	}
 	a.warnLine = "Replay ended."
@@ -715,8 +718,10 @@ func (a *App) recoverReplay(where string) {
 	if a.d.Viewport != nil {
 		if a.room != nil {
 			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown // #17: frame effects back to the live room
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
+			a.d.Viewport.OnFrameShown = nil
 		}
 	}
 	a.warnLine = "Replay stopped (error) — open the debug overlay for details."

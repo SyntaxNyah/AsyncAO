@@ -293,6 +293,7 @@ func (a *App) ensureMakerPreview() {
 	room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = room.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = room.NotifyFrameShown // #17: frame effects follow the preview room's sprite
 	}
 	if key.bg != "" {
 		room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: key.bg})
@@ -322,6 +323,7 @@ func (a *App) driveMakerPreview(dt time.Duration) {
 		// replay room and stopReplay points it at the live room — neither is right
 		// once we're back in the pane.
 		a.d.Viewport.OnPreanimDone = a.makerPreviewRoom.NotifyPreanimDone
+		a.d.Viewport.OnFrameShown = a.makerPreviewRoom.NotifyFrameShown // #17: same rebind for frame effects
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 	}
 	a.makerPreviewRoom.Update(dt)
@@ -417,8 +419,10 @@ func (a *App) teardownMakerPreview() {
 	if a.d.Viewport != nil {
 		if a.room != nil {
 			a.d.Viewport.OnPreanimDone = a.room.NotifyPreanimDone
+			a.d.Viewport.OnFrameShown = a.room.NotifyFrameShown // #17: frame effects back to the live room
 		} else {
 			a.d.Viewport.OnPreanimDone = nil
+			a.d.Viewport.OnFrameShown = nil
 		}
 	}
 }
