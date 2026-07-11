@@ -248,6 +248,13 @@ const defaultAutoLoginToast = true
 // off (separate from the accessibility "Reduce motion", which also suppresses them).
 const defaultScreenEffects = true
 
+// defaultAdditiveText ships ON: the 2.8 ADDITIVE flag is honored — an ADDITIVE=1
+// line appends to the previous one (narration-style RP; AO2 appends on any additive
+// line with no char-id gate), and the outgoing Additive checkbox shows when the
+// server advertises the feature. OFF falls back to the pre-2.8 replace behavior (no
+// checkbox, incoming additive replaces).
+const defaultAdditiveText = true
+
 // defaultCallwordToast ships ON: when a callword is heard, an in-app toast
 // names it (alongside the flash + ping), like the modcall/friend toasts.
 // Toggleable off in Settings (streamer mode suppresses it regardless).
@@ -891,6 +898,7 @@ type AssetPreferences struct {
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	ScreenEffects          bool                         `json:"screenEffects"` // AO2 \s/\f + field shake/flash; default ON
+	AdditiveText           bool                         `json:"additiveText"`  // 2.8 additive: honor incoming ADDITIVE=1 append + offer the checkbox; default ON
 	MusicDuckingOn         bool                         `json:"musicDucking"`
 	PerAreaScroll          bool                         `json:"perAreaScrollback"`
 	DetailedLog            bool                         `json:"detailedLog"`
@@ -1224,6 +1232,7 @@ type prefsJSON struct {
 	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
 	ReduceMotion           bool             `json:"reduceMotion"`         // default OFF (zero value)
 	ScreenEffects          *bool            `json:"screenEffects"`        // absent = default ON
+	AdditiveText           *bool            `json:"additiveText"`         // absent = default ON (pointer: an explicit OFF must persist)
 	MusicDucking           bool             `json:"musicDucking"`         // default OFF (zero value)
 	PerAreaScrollback      bool             `json:"perAreaScrollback"`    // default OFF (zero value)
 	DetailedLog            bool             `json:"detailedLog"`          // default OFF (zero value)
@@ -1580,6 +1589,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		PreviewHoverMs:         DefaultPreviewHoverMs,
 		AutoLoginToast:         defaultAutoLoginToast,
 		ScreenEffects:          defaultScreenEffects,
+		AdditiveText:           defaultAdditiveText,
 		CallwordToast:          defaultCallwordToast,
 		MessageCounter:         defaultMessageCounter,
 		ICTimestamps:           defaultICTimestamps,
@@ -1868,6 +1878,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.ScreenEffects != nil {
 		p.ScreenEffects = *onDisk.ScreenEffects
+	}
+	if onDisk.AdditiveText != nil {
+		p.AdditiveText = *onDisk.AdditiveText
 	}
 	if onDisk.CallwordToast != nil {
 		p.CallwordToast = *onDisk.CallwordToast
@@ -6892,6 +6905,27 @@ func (p *AssetPreferences) SetScreenEffects(on bool) {
 		return
 	}
 	p.ScreenEffects = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// AdditiveTextOn reports the 2.8 additive-text toggle (ON by default): honor an
+// incoming ADDITIVE=1 append and offer the outgoing Additive checkbox. OFF falls
+// back to the pre-2.8 replace behavior.
+func (p *AssetPreferences) AdditiveTextOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.AdditiveText
+}
+
+// SetAdditiveText toggles 2.8 additive text.
+func (p *AssetPreferences) SetAdditiveText(on bool) {
+	p.mu.Lock()
+	if p.AdditiveText == on {
+		p.mu.Unlock()
+		return
+	}
+	p.AdditiveText = on
 	p.mu.Unlock()
 	p.markDirty()
 }

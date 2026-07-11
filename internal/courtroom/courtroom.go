@@ -237,6 +237,19 @@ type Courtroom struct {
 	// user's pref onto the live room.
 	ScreenEffects bool
 
+	// AdditiveText honors the 2.8 ADDITIVE flag: an incoming message with
+	// ADDITIVE=1 APPENDS to the previous line (the typewriter starts with the prior
+	// text pre-revealed; pacing/blips run only on the appended tail) — narration-style
+	// RP relies on it. Default ON (set by the App from prefs). OFF = every additive
+	// fragment replaces the previous, the old behavior. additivePrevText tracks the
+	// last message's accumulated text, exactly like AO2's single additive_previous
+	// accumulator (courtroom.cpp:4225-4330 append whenever ADDITIVE=1, with NO char-id
+	// gate — a continuation can even come from a different speaker; the reset at
+	// :4229 wipes it only when a line is NOT additive).
+	AdditiveText     bool
+	additivePrevText string
+	additivePrefix   string // this message's pre-revealed additive prefix ("" = replace); set in begin, consumed in startTalking
+
 	// HideSpriteStyles ignores other speakers' transmitted SpriteStyle entirely
 	// (every character renders normally) — a viewer off-switch. Set by the App
 	// from prefs; default off (zero value) = show received styles.
@@ -423,7 +436,11 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 		// pushes the user's pref onto the live room, and authored/export/replay
 		// contexts keep them on.
 		ScreenEffects: true,
-		TextStay:      DefaultTextStayTime,
+		// 2.8 additive text default ON (honor ADDITIVE=1 append); the App pushes the
+		// user's pref. additivePrevText starts empty so the first message appends to
+		// nothing (an empty prefix is a no-op — identical to replace).
+		AdditiveText: true,
+		TextStay:     DefaultTextStayTime,
 		// Catch-up defaults OFF so direct callers (tests/embedders) keep the
 		// full lifecycle; the App enables it from prefs (default ON there).
 		CatchUpThreshold: catchUpDefaultThreshold,
@@ -738,8 +755,43 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if c.HideSpriteStyles {
 		style = SpriteStyle{} // viewer opted out of others' styles
 	} else if c.ReduceMotion {
-		style.Wobble, style.Spin, style.Motion = false, false, 0 // accessibility: drop transmitted motion
+		// Accessibility: drop EVERY continuously-animating transmitted style a
+		// speaker can impose, matching the animated-TEXT doctrine (animtext.go pins
+		// everything static under reduce-motion). Wobble/Spin/Motion are the named
+		// motions; a CUSTOM drawn Path (PathLen>=2) OVERRIDES Motion (spritestyle.go),
+		// so it must be zeroed too or the sprite keeps looping; HueCycle is a continuous
+		// rainbow; Glitch (+GlitchStatic, whose sprite "flickers") is a photosensitivity
+		// hazard another player can impose. The static recolour/opacity/glow/outline stay.
+		style.Wobble, style.Spin, style.Motion = false, false, 0
+		style.PathLen = 0
+		style.Path = [maxPathPoints]uint8{} // clear the residual waypoints too: SpriteStyle is ==-comparable, so stale bytes could split an equality-keyed cache
+		style.HueCycle = false
+		style.Glitch, style.GlitchMode = false, 0
 	}
+
+	// 2.8 additive text (#14): when honored and this line is ADDITIVE=1, the prior
+	// accumulated text becomes a pre-revealed prefix (typewriter crawls only the
+	// tail). This mirrors AO2 exactly: additive_previous appends on ANY ADDITIVE=1
+	// line with NO char-id gate (courtroom.cpp:4225-4330), and resets only when a
+	// line is NOT additive (:4229) — a continuation may even come from a different
+	// speaker. c.currentText is final here (center prefix stripped, inline emotes
+	// expanded), so the accumulation matches what displays. Any per-message effect
+	// spans are indexed over THIS message's text, so shift them past the prefix so
+	// they still align in the concatenated MessageText. On a non-additive line the
+	// prefix is "" and prev resets to this message — the old replace behavior. Off
+	// (pref/restore) → also "" (RestoreMessage settles one message, so it must never
+	// inherit a stale accumulation).
+	c.additivePrefix = ""
+	if c.AdditiveText && !c.restoring && msg.Additive {
+		c.additivePrefix = c.additivePrevText
+		if shift := len([]rune(StripChatMarkup(c.additivePrefix))); shift > 0 {
+			for i := range c.pendingEffects {
+				c.pendingEffects[i].Start += shift // spans ride the appended tail
+			}
+		}
+	}
+	c.additivePrevText = c.additivePrefix + c.currentText
+
 	speakerName := msg.CharName
 
 	// --- prefetch fan-out (all HIGH, all parallel on the pool) ---
@@ -850,7 +902,12 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 		c.mgr.Prefetch(c.Scene.BackgroundBase, assets.AssetTypeBackground, network.PriorityHigh) // AssetType: Background
 		c.mgr.Prefetch(c.Scene.DeskBase, assets.AssetTypeDeskOverlay, network.PriorityHigh)      // AssetType: DeskOverlay
 	}
-	c.Scene.ShowDesk = deskVisible(msg.DeskMod)
+	// Initial desk state = the talk/idle column (a message with no preanim goes
+	// straight to talk; a shout holds the stage without touching the desk). The
+	// phase transitions (enterAfterShout preanim entry, startTalking) call
+	// applyDeskMods to flip it per phase — AO2's set_scene at preanim_start /
+	// start_chat_ticking. Pair/offset are set below from the message.
+	c.Scene.ShowDesk = deskVisible(msg.DeskMod, false)
 
 	c.Scene.Speaker = SpriteLayer{
 		Name:        speakerName,
@@ -891,8 +948,10 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// Blankpost decided up front from the raw text (StripChatMarkup is pinned
 	// to the typewriter by TestStripMatchesTypewriter, so this matches what
 	// would type out) — known from frame 1 so the box never flashes during an
-	// animated blankpost's preanim.
-	c.Scene.IsBlankPost = strings.TrimSpace(StripChatMarkup(c.currentText)) == ""
+	// animated blankpost's preanim. Under additive (#14) the DISPLAYED text is the
+	// accumulated prefix + tail, so a continuation with real prior text is never a
+	// blankpost even when its own tail is whitespace.
+	c.Scene.IsBlankPost = strings.TrimSpace(StripChatMarkup(c.additivePrefix+c.currentText)) == ""
 	c.preanimDone = false
 
 	// --- phase entry ---
@@ -958,6 +1017,10 @@ func (c *Courtroom) beginCaughtUp(msg *protocol.ChatMessage) {
 	// Same blankpost rule as begin(); this path doesn't route through it.
 	c.Scene.IsBlankPost = strings.TrimSpace(c.Scene.MessageText) == ""
 	c.preanimDone = false
+	// A caught-up (fast-forwarded) message breaks the additive chain: treat it as a
+	// replace (empty prefix) and seed the accumulator with its own text so a later
+	// ADDITIVE=1 line continues from THIS message, not pre-catch-up text (#14).
+	c.additivePrefix, c.additivePrevText = "", c.currentText
 	c.phase = PhaseLinger
 	c.timer = c.CatchUpLinger // power-user knob; the canonical default is zero (drain one per frame)
 }
@@ -986,6 +1049,11 @@ func (c *Courtroom) enterAfterShout() {
 		c.Scene.Speaker.PlayOnce = true
 	}
 	if blockOnPre {
+		// A blocking preanim holds the stage — apply the PREANIM desk column
+		// (AO2 set_scene at preanim_start, courtroom.cpp:4075-4091). Immediate-mode
+		// preanims fall through to startTalking, where the talk column wins (AO2
+		// calls preanim_start then start_chat_ticking).
+		c.applyDeskMods(true)
 		c.phase = PhasePreanim
 		c.timer = c.PreanimTimeout // power-user knob; seeded to DefaultPreanimTimeout
 		return
@@ -1105,12 +1173,24 @@ func parseEffectsField(raw string) (fx, sound string) {
 
 // startTalking begins the typewriter reveal.
 func (c *Courtroom) startTalking() {
-	c.Typewriter.Start(c.currentText) // marker-stripped (sprite style decoded out in begin)
+	// Talk/idle desk column (AO2 set_scene at start_chat_ticking,
+	// courtroom.cpp:4134-4152). Restores the pair/offset a preanim's mod-4 hide
+	// may have zeroed, and flips mod-2/3 desk visibility for the talk phase.
+	c.applyDeskMods(false)
+	// 2.8 additive (#14): an ADDITIVE=1 continuation starts with the prior
+	// accumulated text pre-revealed (StartAppend), so only the appended tail crawls
+	// + blips; a plain message starts from empty. MessageRaw is the concatenation so
+	// the raster cache keys on the full displayed text.
+	if c.additivePrefix != "" {
+		c.Typewriter.StartAppend(c.additivePrefix, c.currentText)
+	} else {
+		c.Typewriter.Start(c.currentText) // marker-stripped (sprite style decoded out in begin)
+	}
 	c.Scene.MessageText = c.Typewriter.Text()
-	c.Scene.MessageRaw = c.currentText
+	c.Scene.MessageRaw = c.additivePrefix + c.currentText
 	c.Scene.MessageStyles = append(c.Scene.MessageStyles[:0], c.Typewriter.Styles()...) // copy: Start reuses its slice
-	c.Scene.MessageEffects = append(c.Scene.MessageEffects[:0], c.pendingEffects...)    // #M5 spans, decoded in begin
-	c.Scene.VisibleRunes = 0
+	c.Scene.MessageEffects = append(c.Scene.MessageEffects[:0], c.pendingEffects...)    // #M5 spans (shifted past the additive prefix in begin)
+	c.Scene.VisibleRunes = c.Typewriter.Visible()                                       // additive pre-reveals the prefix; 0 otherwise
 	if !c.Scene.Speaker.PlayOnce {
 		c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
 	} else {
@@ -1398,14 +1478,73 @@ func (c *Courtroom) spriteAlts(character, emote string, kind EmoteKind) []string
 	return c.urls.EmoteAlts(character, emote, kind)
 }
 
-// deskVisible collapses desk mods into "draw the desk" for the active
-// message (EX modes refine per-phase later; AO2-Client semantics).
-func deskVisible(deskMod int) bool {
+// deskVisible reports whether the desk is drawn for a desk mod in a given phase.
+// AO2 flips the EX/pre/emote modes between the preanim and the talk/idle phase
+// (courtroom.cpp:4075-4091 preanim vs :4134-4152 talk); this table is exactly
+// those two switch statements:
+//
+//	mod                         preanim   talk/idle
+//	0 DESK_HIDE                 hidden    hidden
+//	1 DESK_SHOW                 shown     shown
+//	2 DESK_EMOTE_ONLY           hidden    shown    (desk only while talking)
+//	3 DESK_PRE_ONLY             shown     hidden   (desk only during the preanim)
+//	4 DESK_EMOTE_ONLY_EX        hidden    shown
+//	5 DESK_PRE_ONLY_EX          shown     hidden
+//
+// The old collapse (one static bool per message) wrongly showed the desk during a
+// mod-2 preanim and hid it during a mod-3 preanim.
+func deskVisible(deskMod int, preanim bool) bool {
 	switch deskMod {
-	case protocol.DeskHide, protocol.DeskPreOnly, protocol.DeskPreOnlyEx:
+	case protocol.DeskShow:
+		return true
+	case protocol.DeskHide:
 		return false
+	case protocol.DeskPreOnly, protocol.DeskPreOnlyEx:
+		return preanim // desk only during the preanim
+	case protocol.DeskEmoteOnly, protocol.DeskEmoteOnlyEx:
+		return !preanim // desk only during talk/idle
 	default:
 		return true
+	}
+}
+
+// applyDeskMods re-derives the phase-dependent desk state from the CURRENT
+// message for the given phase (preanim vs talk/idle). It always recomputes from
+// c.current — never cumulatively mutating Scene — so a phase that shows the pair
+// or restores an offset does so from the message, not from prior Scene state.
+//
+// Pair-hide and offset-zero are DECOUPLED because AO2 handles them independently
+// (they are NOT symmetric across the two EX modes).
+//
+// Mod 4 (DESK_EMOTE_ONLY_EX): play_preanim hides the sideplayer + move(0,0)
+// (courtroom.cpp:4076-4082); start_chat_ticking then calls set_self_offset ONLY —
+// it restores the speaker offset but never re-shows ui_vp_sideplayer_char
+// (courtroom.cpp:4135-4139). So the pair is hidden through BOTH phases and only the
+// offset comes back in talk.
+//
+// Mod 5 (DESK_PRE_ONLY_EX): the sideplayer/offset stay put through the preanim
+// (set_scene(true) fall-through, courtroom.cpp:4085-4089), and only talk hides the
+// sideplayer + move(0,0) (courtroom.cpp:4145-4146). So the pair is hidden and the
+// offset zeroed in TALK only, both restored in the preanim.
+func (c *Courtroom) applyDeskMods(preanim bool) {
+	if c.current == nil {
+		return
+	}
+	msg := c.current
+	c.Scene.ShowDesk = deskVisible(msg.DeskMod, preanim)
+	// Pair visibility. Mod 4 hides it in both phases (never re-shown by AO2); mod 5
+	// hides it in talk only. Otherwise it comes straight from the message.
+	hidePair := msg.DeskMod == protocol.DeskEmoteOnlyEx ||
+		(!preanim && msg.DeskMod == protocol.DeskPreOnlyEx)
+	c.Scene.PairActive = msg.Pair.Active() && !hidePair
+	// Speaker offset. Zeroed only in the phase AO2 does move(0,0): mod 4 during the
+	// PREANIM (restored to the message offset in talk), mod 5 during TALK/idle.
+	zeroOffset := (preanim && msg.DeskMod == protocol.DeskEmoteOnlyEx) ||
+		(!preanim && msg.DeskMod == protocol.DeskPreOnlyEx)
+	if zeroOffset {
+		c.Scene.Speaker.OffsetX, c.Scene.Speaker.OffsetY = 0, 0
+	} else {
+		c.Scene.Speaker.OffsetX, c.Scene.Speaker.OffsetY = msg.SelfOffsetX, msg.SelfOffsetY
 	}
 }
 

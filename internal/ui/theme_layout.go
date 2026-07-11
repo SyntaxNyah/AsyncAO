@@ -408,6 +408,10 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			themedImmedW    = 96  // space reserved for the "Immediate" checkbox
 			themedImmedKeep = 120 // min field width to still host the checkbox
 		)
+		// The classic theme IC bar doesn't host the #14 Additive toggle, so force it
+		// off here — otherwise a check left on in the default layout could silently
+		// ride a message sent from this layout.
+		a.icAdditive = false
 		if ir, ownImmed := lay.rect("asyncao_ic_immediate"); ownImmed {
 			a.icImmediate = c.Checkbox(ir.X, ir.Y+(ir.H-16)/2, "Immediate", a.icImmediate)
 			c.Tooltip(ir, "Immediate: the preanim plays without holding back the text")

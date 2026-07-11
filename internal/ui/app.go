@@ -1296,6 +1296,7 @@ type sessionState struct {
 	icCustomOn  bool
 	icCustomRGB int
 	icImmediate bool  // MS Immediate: preanim plays without holding the text (session toggle)
+	icAdditive  bool  // #14 2.8 ADDITIVE: this message appends to your last (session toggle; shown only when the server advertises additive + the pref is on)
 	icEffect    uint8 // #M5 sticky Text FX (courtroom.TextEffect*); 0 = off. Wraps every message you send.
 	// pair placement (session-scoped: each tab keeps its own, seeded from prefs in
 	// resetSessionState, so it can't leak across tabs like the App-global version
@@ -3165,6 +3166,16 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			}
 		case courtroom.EventNotice:
 			a.pushOOC("[SERVER] "+ev.Text, "")
+			a.ctx.FlashWindow()
+		case courtroom.EventMuted:
+			// The server (un)muted us. Surface it in the OOC log + flash the window;
+			// the IC input draws a persistent "muted" chip and refuses sends while
+			// Session.Muted is set (AO2 set_mute disables ui_ic_chat_message).
+			if ev.Int == 1 {
+				a.pushOOC("[SERVER] You have been muted — you can't speak in-character.", "")
+			} else {
+				a.pushOOC("[SERVER] You have been unmuted.", "")
+			}
 			a.ctx.FlashWindow()
 		case courtroom.EventEvidence:
 			a.evidAsk = nil // list replaced; thumbnail pacing resets
@@ -5136,6 +5147,7 @@ func (a *App) applyTimingToRoom() {
 	a.room.CatchUpLinger = time.Duration(a.d.Prefs.CatchUpLingerMs()) * time.Millisecond
 	a.room.ReduceMotion = a.d.Prefs.ReduceMotion()
 	a.room.ScreenEffects = a.d.Prefs.ScreenEffectsOn() // AO2 \s/\f + field shake/flash (default ON)
+	a.room.AdditiveText = a.d.Prefs.AdditiveTextOn()   // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
 	a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() // #103: viewer opt-out of others' styles
 }

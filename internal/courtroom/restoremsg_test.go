@@ -137,7 +137,7 @@ func TestRestoreMessageBypassesCatchUp(t *testing.T) {
 // decides showname-vs-charname and the transmitted-style gate at stage time,
 // and nothing recomputes the scene afterwards.
 func TestRestoreMessageHonorsRoomPrefs(t *testing.T) {
-	styled := SpriteStyle{Tint: true, R: 255, Wobble: true}
+	styled := SpriteStyle{Tint: true, R: 255, Wobble: true, HueCycle: true, Glitch: true}
 	mkMsg := func() *protocol.ChatMessage {
 		return &protocol.ChatMessage{
 			CharName: "Phoenix", Emote: "normal", Side: "def", Showname: "Nick",
@@ -159,7 +159,7 @@ func TestRestoreMessageHonorsRoomPrefs(t *testing.T) {
 	room2, _, _, _ := newCourtroomRig(t)
 	room2.ReduceMotion = true
 	room2.RestoreMessage(mkMsg())
-	if st := room2.Scene.Speaker.Style; st.Wobble || st.Spin || st.Motion != 0 {
+	if st := room2.Scene.Speaker.Style; st.Wobble || st.Spin || st.Motion != 0 || st.HueCycle || st.Glitch {
 		t.Errorf("ReduceMotion restore kept transmitted motion: %+v", st)
 	} else if !st.Tint {
 		t.Error("ReduceMotion must strip only motion — the recolour stays")

@@ -285,11 +285,35 @@ func kfoFrameTemplate(pre, emote string) string {
 	return pre + "^(b)" + emote + "^(a)" + emote + "^"
 }
 
+// clampDeskMod collapses the expanded 2.9 desk mods (2–5) down to the legacy
+// hide/show values when the server did NOT advertise expanded_desk_mods, matching
+// AO2-Client's on_chat_return_pressed clamp (courtroom.cpp:2021-2031):
+//
+//	DESK_PRE_ONLY (3), DESK_PRE_ONLY_EX (5)     → DESK_HIDE (0)
+//	DESK_EMOTE_ONLY (2), DESK_EMOTE_ONLY_EX (4) → DESK_SHOW (1)
+//
+// A strict-validator server (same class as the KFO/LemmyAO fixes) rejects the
+// whole MS otherwise; 0/1 pass everywhere. When the feature IS advertised the mod
+// rides raw. Same clamp table as ms.go's other legacy-value normalizations.
+func clampDeskMod(mod int, features FeatureSet) int {
+	if features.Has(FeatureExpandedDeskMods) {
+		return mod
+	}
+	switch mod {
+	case DeskPreOnly, DeskPreOnlyEx:
+		return DeskHide
+	case DeskEmoteOnly, DeskEmoteOnlyEx:
+		return DeskShow
+	default:
+		return mod
+	}
+}
+
 // Fields serializes the outgoing message honoring the server's features.
 func (o OutgoingMS) Fields(features FeatureSet) []string {
 	fields := make([]string, 0, MSMaximum)
 	fields = append(fields,
-		strconv.Itoa(o.DeskMod),
+		strconv.Itoa(clampDeskMod(o.DeskMod, features)),
 		o.PreEmote,
 		o.CharName,
 		o.Emote,

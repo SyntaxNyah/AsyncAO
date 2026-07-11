@@ -199,6 +199,231 @@ func TestReduceMotionGatesEffects(t *testing.T) {
 	}
 }
 
+// TestReduceMotionStripsAllTransmittedMotion pins the #6 accessibility strip: a
+// speaker's transmitted style loses EVERY continuously-animating field under the
+// viewer's ReduceMotion — the named Wobble/Spin/Motion, a CUSTOM drawn Path (which
+// OVERRIDES Motion), the HueCycle rainbow, and Glitch (+GlitchStatic's flicker, a
+// photosensitivity hazard) — while the static recolour survives. Mirrors the
+// animated-text doctrine (everything pinned static under reduce-motion).
+func TestReduceMotionStripsAllTransmittedMotion(t *testing.T) {
+	// A style that exercises every animating field at once, plus a static tint that
+	// must survive. A valid path needs PathLen>=2 real bytes so it round-trips the codec.
+	styled := SpriteStyle{
+		Tint: true, R: 255, G: 128, B: 0, // static recolour — stays
+		Wobble: true, Spin: true, Motion: MotionOrbit,
+		Path: [maxPathPoints]uint8{0x11, 0x88, 0xEE}, PathLen: 3, // custom path OVERRIDES Motion
+		HueCycle: true,
+		Glitch:   true, GlitchMode: GlitchStatic, // the flicker look
+	}
+	msg := &protocol.ChatMessage{
+		CharName: "Phoenix", Emote: "normal", Side: "def", CharID: 0,
+		Message: styled.EncodeChangeMarker(SpriteStyle{}) + "Objection!",
+	}
+
+	room, _, _, _ := newCourtroomRig(t)
+	room.ReduceMotion = true
+	room.begin(msg)
+	st := room.Scene.Speaker.Style
+	if st.Wobble || st.Spin || st.Motion != 0 || st.PathLen != 0 || st.HueCycle || st.Glitch || st.GlitchMode != 0 {
+		t.Errorf("ReduceMotion left a transmitted-motion field set: %+v", st)
+	}
+	if !st.Tint || st.R != 255 || st.G != 128 || st.B != 0 {
+		t.Errorf("ReduceMotion must strip only motion — the static recolour must survive, got %+v", st)
+	}
+
+	// Sanity: with ReduceMotion OFF the same message keeps every field, so the
+	// strip is what removed them above (not a decode failure).
+	room2, _, _, _ := newCourtroomRig(t)
+	room2.ReduceMotion = false
+	room2.begin(msg)
+	if st2 := room2.Scene.Speaker.Style; !st2.Wobble || !st2.Spin || st2.Motion != MotionOrbit ||
+		st2.PathLen != 3 || !st2.HueCycle || !st2.Glitch || st2.GlitchMode != GlitchStatic {
+		t.Errorf("without ReduceMotion the transmitted motion must survive intact, got %+v", st2)
+	}
+}
+
+// TestDeskVisiblePhaseMatrix pins #16: the per-phase desk table against AO2's two
+// switch statements (courtroom.cpp:4075-4091 preanim, :4134-4152 talk/idle). The
+// old collapse showed the desk during a mod-2 preanim and hid it during mod-3.
+func TestDeskVisiblePhaseMatrix(t *testing.T) {
+	// {mod, preanim-visible, talk-visible}
+	cases := []struct {
+		mod           int
+		preanim, talk bool
+	}{
+		{protocol.DeskHide, false, false},
+		{protocol.DeskShow, true, true},
+		{protocol.DeskEmoteOnly, false, true},   // desk only while talking
+		{protocol.DeskPreOnly, true, false},     // desk only during the preanim
+		{protocol.DeskEmoteOnlyEx, false, true}, // EX mirrors its base for desk visibility
+		{protocol.DeskPreOnlyEx, true, false},
+	}
+	for _, tc := range cases {
+		if got := deskVisible(tc.mod, true); got != tc.preanim {
+			t.Errorf("deskVisible(mod=%d, preanim) = %v, want %v", tc.mod, got, tc.preanim)
+		}
+		if got := deskVisible(tc.mod, false); got != tc.talk {
+			t.Errorf("deskVisible(mod=%d, talk) = %v, want %v", tc.mod, got, tc.talk)
+		}
+	}
+}
+
+// TestDeskModExHidesPairPerPhase pins the #16 mods 4/5 behaviour against AO2's two
+// switch statements (play_preanim courtroom.cpp:4076-4082 / start_chat_ticking
+// :4135-4146). Pair-hide and offset-zero are DECOUPLED and asymmetric.
+//
+// Mod 4 (EMOTE_ONLY_EX): preanim hides the sideplayer + move(0,0); talk restores ONLY
+// the offset (set_self_offset) and never re-shows the sideplayer — so the pair stays
+// HIDDEN through both phases, offset zeroed in preanim, restored in talk.
+//
+// Mod 5 (PRE_ONLY_EX): the inverse for the offset — pair+offset shown in the preanim,
+// both hidden/zeroed in talk.
+func TestDeskModExHidesPairPerPhase(t *testing.T) {
+	mk := func(mod int) *protocol.ChatMessage {
+		return &protocol.ChatMessage{
+			CharName: "Phoenix", Emote: "normal", Side: "def", DeskMod: mod,
+			SelfOffsetX: 20, SelfOffsetY: -8,
+			Pair: protocol.ParsePair("4", "Edgeworth", "thinking", "0", "0"),
+		}
+	}
+
+	// Mod 4 (EMOTE_ONLY_EX): pair hidden in BOTH phases; offset zeroed in the preanim,
+	// restored in talk (AO2 start_chat_ticking restores set_self_offset only).
+	room, _, _, _ := newCourtroomRig(t)
+	room.current = mk(protocol.DeskEmoteOnlyEx)
+	room.Scene.Speaker = SpriteLayer{}
+	room.applyDeskMods(true) // preanim
+	if room.Scene.PairActive || room.Scene.Speaker.OffsetX != 0 || room.Scene.Speaker.OffsetY != 0 {
+		t.Errorf("mod4 preanim: want pair hidden + offset zeroed, got PairActive=%v off=(%d,%d)",
+			room.Scene.PairActive, room.Scene.Speaker.OffsetX, room.Scene.Speaker.OffsetY)
+	}
+	room.applyDeskMods(false) // talk restores the offset but keeps the pair hidden
+	if room.Scene.PairActive || room.Scene.Speaker.OffsetX != 20 || room.Scene.Speaker.OffsetY != -8 {
+		t.Errorf("mod4 talk: want pair STILL hidden + offset restored, got PairActive=%v off=(%d,%d)",
+			room.Scene.PairActive, room.Scene.Speaker.OffsetX, room.Scene.Speaker.OffsetY)
+	}
+
+	// Mod 5 (PRE_ONLY_EX): the inverse — solo during TALK, paired during the preanim.
+	room2, _, _, _ := newCourtroomRig(t)
+	room2.current = mk(protocol.DeskPreOnlyEx)
+	room2.Scene.Speaker = SpriteLayer{}
+	room2.applyDeskMods(false) // talk
+	if room2.Scene.PairActive || room2.Scene.Speaker.OffsetX != 0 {
+		t.Errorf("mod5 talk: want pair hidden + offset zeroed, got PairActive=%v offX=%d",
+			room2.Scene.PairActive, room2.Scene.Speaker.OffsetX)
+	}
+	room2.applyDeskMods(true) // preanim restores
+	if !room2.Scene.PairActive || room2.Scene.Speaker.OffsetX != 20 {
+		t.Errorf("mod5 preanim: want pair + offset restored, got PairActive=%v offX=%d",
+			room2.Scene.PairActive, room2.Scene.Speaker.OffsetX)
+	}
+}
+
+// TestAdditiveText pins #14: an ADDITIVE=1 line pre-reveals the prior accumulated
+// text (typewriter starts at the prefix's rune count, so only the tail crawls),
+// matching AO2's additive_previous accumulator — which appends on ANY additive
+// line with NO char-id gate (courtroom.cpp:4225-4330) and resets only on a
+// non-additive line. A non-additive line, or the pref OFF, both fall back to replace.
+func TestAdditiveText(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.AdditiveText = true
+
+	// First line: no additive, plain replace — begins from empty.
+	room.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Message: "Hello"})
+	if room.additivePrefix != "" {
+		t.Fatalf("first line must not append, prefix=%q", room.additivePrefix)
+	}
+	if room.Scene.MessageText != "Hello" || room.Scene.VisibleRunes != 0 {
+		t.Fatalf("first line: text=%q visible=%d, want Hello/0", room.Scene.MessageText, room.Scene.VisibleRunes)
+	}
+
+	// Same speaker, ADDITIVE=1 → appends. The prior "Hello" (5 runes) is pre-revealed.
+	room.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Additive: true, Message: " world"})
+	if room.additivePrefix != "Hello" {
+		t.Fatalf("append prefix=%q, want Hello", room.additivePrefix)
+	}
+	if room.Scene.MessageText != "Hello world" {
+		t.Errorf("appended text=%q, want 'Hello world'", room.Scene.MessageText)
+	}
+	if room.Scene.VisibleRunes != 5 {
+		t.Errorf("pre-revealed runes=%d, want 5 (the prior 'Hello')", room.Scene.VisibleRunes)
+	}
+
+	// A DIFFERENT speaker with ADDITIVE=1 STILL appends — AO2 has no char-id gate on
+	// the accumulator, so "Hello world" (11 runes) pre-reveals ahead of "Objection".
+	room.begin(&protocol.ChatMessage{CharName: "Edgeworth", Emote: "normal", CharID: 4, Additive: true, Message: "Objection"})
+	if room.additivePrefix != "Hello world" {
+		t.Errorf("cross-speaker additive must still append (AO2 has no char gate): prefix=%q, want 'Hello world'", room.additivePrefix)
+	}
+	if room.Scene.MessageText != "Hello worldObjection" || room.Scene.VisibleRunes != 11 {
+		t.Errorf("cross-speaker append: text=%q visible=%d, want 'Hello worldObjection'/11", room.Scene.MessageText, room.Scene.VisibleRunes)
+	}
+
+	// A NON-additive line resets the accumulator (AO2 additive_previous = "" at :4229).
+	room.begin(&protocol.ChatMessage{CharName: "Edgeworth", Emote: "normal", CharID: 4, Message: "Take that!"})
+	if room.additivePrefix != "" || room.Scene.MessageText != "Take that!" || room.Scene.VisibleRunes != 0 {
+		t.Errorf("non-additive line must reset: prefix=%q text=%q visible=%d", room.additivePrefix, room.Scene.MessageText, room.Scene.VisibleRunes)
+	}
+
+	// Pref OFF: additive is ignored entirely (replace behavior), even from the same speaker.
+	room.AdditiveText = false
+	room.begin(&protocol.ChatMessage{CharName: "Edgeworth", Emote: "normal", CharID: 4, Additive: true, Message: "!"})
+	if room.additivePrefix != "" || room.Scene.MessageText != "!" || room.Scene.VisibleRunes != 0 {
+		t.Errorf("pref-off additive still appended: prefix=%q text=%q visible=%d",
+			room.additivePrefix, room.Scene.MessageText, room.Scene.VisibleRunes)
+	}
+}
+
+// TestMuteHandling pins #13: MU/UM set/clear Session.Muted only when the target
+// cid is OURS or -1 (mute-all), emit EventMuted on a real change, and a char
+// change (PV) defensively clears the mute (a mute is keyed to a cid).
+func TestMuteHandling(t *testing.T) {
+	_, sess, _, _ := newCourtroomRig(t)
+	sess.MyCharID = 5
+
+	// A mute for a DIFFERENT cid is ignored.
+	if evs := feed(t, sess, "MU#9#%"); len(evs) != 0 || sess.Muted {
+		t.Fatalf("MU for another cid must not mute us: muted=%v evs=%v", sess.Muted, evs)
+	}
+
+	// A mute for OUR cid mutes + fires EventMuted(1).
+	evs := feed(t, sess, "MU#5#%")
+	if !sess.Muted {
+		t.Fatal("MU for our cid must set Muted")
+	}
+	if len(evs) != 1 || evs[0].Kind != EventMuted || evs[0].Int != 1 {
+		t.Fatalf("MU must emit EventMuted(1), got %v", evs)
+	}
+
+	// A redundant MU is a no-op (no chip spam).
+	if evs := feed(t, sess, "MU#5#%"); len(evs) != 0 {
+		t.Fatalf("redundant MU must emit nothing, got %v", evs)
+	}
+
+	// UM for our cid unmutes + fires EventMuted(0).
+	evs = feed(t, sess, "UM#5#%")
+	if sess.Muted {
+		t.Fatal("UM for our cid must clear Muted")
+	}
+	if len(evs) != 1 || evs[0].Kind != EventMuted || evs[0].Int != 0 {
+		t.Fatalf("UM must emit EventMuted(0), got %v", evs)
+	}
+
+	// Mute-all (cid -1) always applies.
+	if feed(t, sess, "MU#-1#%"); !sess.Muted {
+		t.Fatal("MU#-1 (mute-all) must mute us")
+	}
+
+	// A char change (PV) clears the stale mute.
+	feed(t, sess, "PV#0#CID#7#%")
+	if sess.Muted {
+		t.Fatal("a char change must clear the mute (cid-keyed)")
+	}
+	if sess.MyCharID != 7 {
+		t.Fatalf("PV must set MyCharID, got %d", sess.MyCharID)
+	}
+}
+
 // TestScreenEffectsGatesEffects pins the dedicated ScreenEffects toggle (v1.55.7,
 // ON by default): with it OFF, both the field-based shake/flash and the inline
 // \s/\f codes are suppressed even when reduce-motion is off, while the effect

@@ -176,6 +176,10 @@ const (
 	EventCase
 	// EventNotice is a BB popup notice from the server.
 	EventNotice
+	// EventMuted signals our own mute state changed (MU/UM targeting our cid, or
+	// -1 = all): Int = 1 muted, 0 unmuted. The UI reads Session.Muted to gate the
+	// IC send and show a notice chip.
+	EventMuted
 	// EventEvidence signals the LE list was replaced (read Evidence).
 	EventEvidence
 	// EventTimer signals TI clock Int changed (read Timers).
@@ -410,6 +414,14 @@ type Session struct {
 	LastIC   *protocol.ChatMessage
 	MyCharID int
 
+	// Muted is set by a server MU packet targeting our char id (or -1 = mute-all)
+	// and cleared by UM, mirroring AO2-Client set_mute (courtroom.cpp:4689-4711).
+	// The UI reads it to disable IC sends + show a notice. It resets on a char
+	// change (PV): the mute is keyed to a cid (set_mute compares p_cid to m_cid),
+	// so a mute for the OLD cid is void for the NEW one — AO2 relies on the server
+	// re-sending MU/UM; this reset is the defensive client-side equivalent.
+	Muted bool
+
 	// Live court state (AO2-Client parity; all mutated only by HandlePacket
 	// on the caller's loop — same single-threaded discipline as the rest).
 	HPDef    int                    // defense penalty bar, 0..10
@@ -539,6 +551,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		s.Music = s.Music[:0]
 		s.MusicTrack = "" // fresh handshake: let the server's join MC repopulate (no stale resume)
 		s.LastIC = nil    // ...and don't re-stage another room's message after a rejoin
+		s.Muted = false   // ...and start unmuted on a rejoin (the server re-sends MU if still muted)
 		s.Areas = s.Areas[:0]
 		s.reply(protocol.NewPacket("RC"))
 
@@ -721,6 +734,11 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 
 	case "PV":
 		s.MyCharID = atoiOr(p.Field(2), protocol.UnpairedCharID)
+		// A mute is keyed to a cid (set_mute compares p_cid to m_cid); a new cid
+		// voids the old mute. Clear it on the char change so a stale MU can't keep
+		// the IC input locked after switching characters (AO2 leans on the server
+		// re-sending; this is the defensive client-side reset).
+		s.Muted = false
 		return []Event{{Kind: EventCharPicked, Int: s.MyCharID}}
 
 	case "CT":
@@ -917,6 +935,26 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		}
 		return []Event{{Kind: EventEvidence}}
 
+	case "MU", "UM":
+		// Mute / unmute a character (packet_distribution.cpp:483-497 →
+		// set_mute). MU mutes, UM unmutes; field 0 is the target cid. AO2's
+		// set_mute (courtroom.cpp:4691) only acts when the cid is OURS or -1
+		// (mute-all); a mute for another player is the server's business, not
+		// ours. Ignore an empty/malformed packet like AO2 (guards on !isEmpty).
+		if len(p.Fields) == 0 || p.Field(0) == "" {
+			return nil
+		}
+		cid := atoiOr(p.Field(0), protocol.UnpairedCharID)
+		if cid != s.MyCharID && cid != protocol.UnpairedCharID {
+			return nil // not us and not mute-all
+		}
+		muted := p.Header == "MU"
+		if s.Muted == muted {
+			return nil // no change (redundant packet) — don't spam the chip
+		}
+		s.Muted = muted
+		return []Event{{Kind: EventMuted, Int: boolToInt(muted)}}
+
 	case "BB":
 		// Server popup notice (call_notice) — surfaced like OOC + a flash.
 		if len(p.Fields) == 0 {
@@ -1087,4 +1125,12 @@ func atoiOr(s string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+// boolToInt maps false/true to 0/1 for an Event.Int flag payload.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

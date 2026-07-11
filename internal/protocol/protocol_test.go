@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -440,6 +441,34 @@ func TestOutgoingMSUnpaired(t *testing.T) {
 	fields := o.Fields(allFeatures())
 	if fields[outPairID] != "-1" {
 		t.Errorf("unpaired field = %q, want -1", fields[outPairID])
+	}
+}
+
+// TestOutgoingDeskModClamp pins #16: the expanded desk mods (2–5) collapse to the
+// legacy hide/show values (0/1) when the server lacks expanded_desk_mods, and ride
+// raw when it advertises the feature — AO2-Client's on_chat_return_pressed clamp
+// (courtroom.cpp:2021-2031). A strict MS validator rejects an unknown 2–5 otherwise.
+func TestOutgoingDeskModClamp(t *testing.T) {
+	noExpanded := ParseFeatures([]string{FeatureCCCCIC}) // deliberately without expanded_desk_mods
+	// Clamp table: 0→0, 1→1, 2→1 (SHOW), 3→0 (HIDE), 4→1 (SHOW), 5→0 (HIDE).
+	clampCases := []struct{ in, want int }{
+		{DeskHide, DeskHide},
+		{DeskShow, DeskShow},
+		{DeskEmoteOnly, DeskShow},
+		{DeskPreOnly, DeskHide},
+		{DeskEmoteOnlyEx, DeskShow},
+		{DeskPreOnlyEx, DeskHide},
+	}
+	for _, tc := range clampCases {
+		o := baseOutgoing()
+		o.DeskMod = tc.in
+		if got := o.Fields(noExpanded)[MSDeskMod]; got != strconv.Itoa(tc.want) {
+			t.Errorf("no-feature clamp: DeskMod %d → %q, want %d", tc.in, got, tc.want)
+		}
+		// With the feature advertised the value rides raw.
+		if got := o.Fields(allFeatures())[MSDeskMod]; got != strconv.Itoa(tc.in) {
+			t.Errorf("feature-on: DeskMod %d shipped as %q, want it raw", tc.in, got)
+		}
 	}
 }
 

@@ -2451,6 +2451,18 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		a.d.Prefs.SetRainbowMessages(next)
 	}
 	y += 26
+	// #14 2.8 additive text (ON by default): honor an incoming ADDITIVE=1 line
+	// (it appends to the previous message, mirroring AO2's additive_previous) and
+	// offer the Additive checkbox on servers that advertise it. Off falls back to
+	// the pre-2.8 replace behavior.
+	add := a.d.Prefs.AdditiveTextOn()
+	if next := c.Checkbox(pad, y, "Additive text (ON by default): let a message add to the previous one instead of replacing it (2.8 narration RP) — shows the Additive checkbox on servers that support it", add); next != add {
+		a.d.Prefs.SetAdditiveText(next)
+		if a.room != nil {
+			a.room.AdditiveText = next // apply live
+		}
+	}
+	y += 26
 
 	y = a.settingsSection(y, w, "Chat log")
 	// Per-area IC scrollback (opt-in): each visited area keeps its own log.

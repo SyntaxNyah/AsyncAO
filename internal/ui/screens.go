@@ -4594,6 +4594,19 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	c.Tooltip(immedBox, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
 	var send bool
 	icX := immedX + immedW + 6 // downstream flows from the DEFAULT position, not the override
+	// Additive (#14, 2.8): the next message APPENDS to your last one (narration RP).
+	// Shown only when the server advertises additive AND the master pref is on (AO2
+	// shows ui_additive whenever the server advertises it, courtroom.cpp:1638-1644).
+	// When hidden the toggle is forced off so a stale check can't ride a message.
+	if a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.AdditiveTextOn() {
+		const addW = 84 // fits "Additive"
+		addBox := sdl.Rect{X: icX, Y: rowY, W: addW, H: fH}
+		a.icAdditive = c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.icAdditive)
+		c.Tooltip(addBox, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
+		icX += addW + 6
+	} else {
+		a.icAdditive = false
+	}
 	icCounterOn := a.d.Prefs.MessageCounterOn()
 	// The IC input must always keep at least minICInputW (plus the counter's reserve when it's
 	// on). Each IC-bar button is placed ONLY if it still leaves that room, so a narrow bar
@@ -4653,6 +4666,18 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	a.icInput, send = c.TextFieldEmoji("ic", icBox, a.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
 	a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
 	a.drawMsgCounter(icBox, icCounterOn)
+	// Muted (#13): the server disabled our IC speech (MU). Draw a persistent chip
+	// over the input's right edge so a muted player sees WHY their sends do
+	// nothing; sendIC refuses the send and keeps the typed line intact.
+	if a.sess != nil && a.sess.Muted {
+		const mutedChip = "🔇 muted"
+		chipW := c.TextWidth(mutedChip) + 12
+		if chipW < icBox.W { // only when it fits inside the field
+			chip := sdl.Rect{X: icBox.X + icBox.W - chipW - 2, Y: icBox.Y + 2, W: chipW, H: icBox.H - 4}
+			c.Fill(chip, sdl.Color{R: 120, G: 30, B: 30, A: 210})
+			c.Label(chip.X+6, chip.Y+(chip.H-14)/2, mutedChip, ColDanger)
+		}
+	}
 	if send || pendingShout != 0 {
 		a.sendIC(pendingShout)
 	}
@@ -5508,6 +5533,15 @@ func (a *App) sendIC(shout int) {
 	if a.sess.MyCharID < 0 {
 		return
 	}
+	// Muted (MU): the server disabled our IC speech (AO2 set_mute disables
+	// ui_ic_chat_message; on_chat_return_pressed returns early when is_muted). Refuse
+	// the send but KEEP the typed line — keep-until-echo never clears it (there's no
+	// echo for a swallowed send), so the text stays in the field for when we're
+	// unmuted. Surface it so a muted player isn't left typing into a void.
+	if a.sess.Muted {
+		a.pushOOC("[SERVER] You're muted — that message wasn't sent.", "")
+		return
+	}
 	// AO2-Client chat_ratelimit parity: drop sends inside the window.
 	if _, _, rateMs := a.d.Prefs.Timing(); rateMs > 0 &&
 		time.Since(a.lastICSend) < time.Duration(rateMs)*time.Millisecond {
@@ -5630,6 +5664,7 @@ func (a *App) sendIC(shout int) {
 		OffsetY:   a.pairOffY,
 		Flip:      a.pairFlip,
 		Immediate: a.icImmediate,      // non-interrupting preanim (IC-row toggle)
+		Additive:  a.icAdditive,       // #14 2.8: this message appends to your last (gated to the additive server + pref in the IC row)
 		KFOCompat: a.sess.KFOCompat(), // KFO-Server only: fill empty frame/effect fields (its MS validator rejects them)
 	}
 	// Named custom interjection (2.10): the wire carries "4&<stem>"

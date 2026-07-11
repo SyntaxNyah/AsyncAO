@@ -305,6 +305,33 @@ func (t *Typewriter) Start(message string) {
 	flush()
 }
 
+// StartAppend loads message with prefix ALREADY revealed — the 2.8 additive case
+// (#14): an ADDITIVE=1 line continues the previous one, so the prior text shows
+// instantly and only the appended tail crawls (pacing + blips run on the tail
+// alone). It runs the ordinary single pass over prefix+message — so inline
+// colour/speed state carries across the join exactly like AO2 concatenating the
+// HTML — then reveals up to the prefix's rune count. Interior \s/\f marks inside the
+// prefix are DROPPED (they fired on the original line; a re-reveal must not re-fire
+// them), matching SkipToEnd's rule for skipped marks. prefix "" is identical to
+// Start(message).
+func (t *Typewriter) StartAppend(prefix, message string) {
+	t.Start(prefix + message)
+	// The processed-prefix rune count is what StripChatMarkup yields for the prefix:
+	// TestStripMatchesTypewriter pins StripChatMarkup's rune output equal to Start's
+	// emitted runes, so this lands the boundary exactly at the join.
+	pre := len([]rune(StripChatMarkup(prefix)))
+	if pre > len(t.runes) {
+		pre = len(t.runes)
+	}
+	t.visible = pre
+	// Skip effect marks strictly INSIDE the prefix (they fired on the original
+	// line). A mark AT the boundary (At == pre) belongs to the appended tail — the
+	// reveal reaches it as the tail starts — so it must NOT be skipped.
+	for t.effectCursor < len(t.effects) && t.effects[t.effectCursor].At < pre {
+		t.effectCursor++
+	}
+}
+
 // StripChatMarkup returns the plain display text for a message — the same
 // markup the typewriter removes (speed `{ }`, color `\cN`/`\cr`, bold/italic
 // `\b`/`\i`, and the `\\` escape), so the IC log shows exactly what the chatbox
