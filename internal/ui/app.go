@@ -157,6 +157,10 @@ type Deps struct {
 	Profiler *metrics.Profiler
 	// MasterURL is the server-list endpoint.
 	MasterURL string
+	// ConfigQuarantine, when non-nil, means the preferences file was corrupt
+	// at startup and was renamed aside (defaults are in effect). NewApp raises
+	// a one-time startup notice from it. Nil on a clean/first-run load.
+	ConfigQuarantine *config.Quarantine
 }
 
 // App is the whole client UI state machine. Render thread only.
@@ -2120,6 +2124,21 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	}
 	a.applyChromePreset(d.Prefs.ChromeTheme()) // #M3: apply the saved client chrome theme at launch
 	a.refreshPartColors()                      // per-part layout tints (v1.52.0): parse the saved hexes once
+	// Corrupt-prefs notice (#3): if the settings file failed to parse at
+	// startup, config quarantined it (renamed aside) so the saver couldn't
+	// overwrite the only copy with defaults. Surface a one-time banner via the
+	// existing warnLine machinery — it draws on the lobby (drawLobby), where
+	// the app starts, as well as the courtroom/char-select.
+	if q := d.ConfigQuarantine; q != nil {
+		msg := "Settings file was corrupt — reset to defaults."
+		if q.BackupPath != "" {
+			// Show the backup's basename (the full Windows path would blow
+			// past clampLine's cap and truncate the important part).
+			msg += " Your old file was saved as " + filepath.Base(q.BackupPath) + " (beside it)."
+		}
+		a.warnLine = clampLine(msg)
+		a.warnAt = time.Now()
+	}
 	return a
 }
 

@@ -98,6 +98,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	if err != nil {
 		log.Printf("config: %v", err) // defaults already applied
 	}
+	// If the settings file was corrupt, config renamed it aside before the
+	// saver could overwrite the only copy with defaults (#3). Surface a
+	// startup notice through the UI (release builds are windowed — the log
+	// above is invisible). Nil on a clean/first-run load.
+	configQuarantine := prefs.Quarantine()
 	defer prefs.Close()
 
 	resolver := assets.NewResolver(prefs)
@@ -325,18 +330,19 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	defer pres.Close()
 
 	app := ui.NewApp(uiCtx, ui.Deps{
-		Profiler:  profiler,
-		Prefs:     prefs,
-		Resolver:  resolver,
-		Manager:   manager,
-		Pool:      pool,
-		Client:    client,
-		Store:     store,
-		Viewport:  viewport,
-		Pump:      nil, // set below (needs app for liveness)
-		Audio:     audio,
-		Presence:  pres,
-		MasterURL: masterURL,
+		Profiler:         profiler,
+		Prefs:            prefs,
+		Resolver:         resolver,
+		Manager:          manager,
+		Pool:             pool,
+		Client:           client,
+		Store:            store,
+		Viewport:         viewport,
+		Pump:             nil, // set below (needs app for liveness)
+		Audio:            audio,
+		Presence:         pres,
+		MasterURL:        masterURL,
+		ConfigQuarantine: configQuarantine,
 	})
 	pump := render.NewPump(store, manager, app.IsLiveBase)
 	app.SetPump(pump)

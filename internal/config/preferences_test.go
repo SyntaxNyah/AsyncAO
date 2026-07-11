@@ -1199,3 +1199,78 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 		t.Fatalf("reloaded OpenTabs = %v", got)
 	}
 }
+
+// TestCorruptConfigQuarantined pins item #3: a preferences file that fails to
+// parse is renamed aside (config.json.corrupt-<stamp>) BEFORE load returns, so
+// the saver can never overwrite the only copy with defaults, and load reports
+// the quarantine so the UI can surface a startup notice. A CLEAN file and a
+// MISSING file must NOT quarantine (the missing-file trap made executable).
+func TestCorruptConfigQuarantined(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, PrefsFileName)
+
+	// Write garbage over the preferences path.
+	if err := os.WriteFile(path, []byte("{ this is not valid json"), prefsFilePerm); err != nil {
+		t.Fatalf("seed corrupt file: %v", err)
+	}
+
+	p, err := load(path)
+	if err == nil {
+		t.Fatal("load of a corrupt file must return a (non-nil) parse error")
+	}
+	// Defaults are in effect (PreferAnimated is a default-true field, so it is
+	// a good sentinel that the fresh defaults were applied).
+	if p.PreferAnimated != defaultPreferAnimated {
+		t.Errorf("corrupt load must fall back to defaults; PreferAnimated=%v want %v", p.PreferAnimated, defaultPreferAnimated)
+	}
+	// Quarantine info is surfaced.
+	q := p.Quarantine()
+	if q == nil {
+		t.Fatal("Quarantine() must be non-nil after a corrupt load")
+	}
+	if q.BackupPath == "" {
+		t.Fatal("Quarantine.BackupPath must name the renamed corrupt file")
+	}
+	if q.Err == nil {
+		t.Error("Quarantine.Err must carry the parse error")
+	}
+	// The original path is gone (renamed, not left for the saver to clobber).
+	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
+		t.Errorf("original %s must be gone after quarantine, stat err=%v", path, statErr)
+	}
+	// The backup exists and holds the original garbage bytes.
+	if _, statErr := os.Stat(q.BackupPath); statErr != nil {
+		t.Errorf("quarantine backup %s must exist: %v", q.BackupPath, statErr)
+	}
+	// The backup name uses the documented prefix.
+	if !strings.Contains(filepath.Base(q.BackupPath), corruptSuffixPrefix) {
+		t.Errorf("backup name %q must contain %q", filepath.Base(q.BackupPath), corruptSuffixPrefix)
+	}
+
+	// A CLEAN, valid file must NOT quarantine.
+	cleanDir := t.TempDir()
+	cleanPath := filepath.Join(cleanDir, PrefsFileName)
+	if err := os.WriteFile(cleanPath, []byte("{}"), prefsFilePerm); err != nil {
+		t.Fatalf("seed clean file: %v", err)
+	}
+	cp, err := load(cleanPath)
+	if err != nil {
+		t.Fatalf("load of a clean file: %v", err)
+	}
+	if cp.Quarantine() != nil {
+		t.Error("a clean config must not quarantine")
+	}
+	if _, statErr := os.Stat(cleanPath); statErr != nil {
+		t.Errorf("clean config must be left in place, stat err=%v", statErr)
+	}
+
+	// A MISSING file (first run) must NOT quarantine (explicit trap).
+	missingPath := filepath.Join(t.TempDir(), PrefsFileName)
+	mp, err := load(missingPath)
+	if err != nil {
+		t.Fatalf("load of a missing file must succeed (first run): %v", err)
+	}
+	if mp.Quarantine() != nil {
+		t.Error("a missing config (first run) must not quarantine")
+	}
+}

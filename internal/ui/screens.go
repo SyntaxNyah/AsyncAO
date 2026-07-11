@@ -298,6 +298,13 @@ func (a *App) drawLobby(w, h int32) {
 			}
 		}
 	}
+
+	// Transient warning banner (bottom of the lobby): the app starts here, so
+	// startup notices — e.g. the corrupt-prefs quarantine (#3) — must draw on
+	// the lobby too, not only the courtroom/char-select screens.
+	if a.warnActive() {
+		c.LabelClipped(pad, h-24, w-2*pad, a.warnLine, ColDanger)
+	}
 }
 
 func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {

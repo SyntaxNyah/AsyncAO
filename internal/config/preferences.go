@@ -45,6 +45,18 @@ const (
 	prefsDirPerm    = 0o755
 	prefsTmpPattern = PrefsFileName + ".*.tmp"
 
+	// corruptSuffixPrefix is appended (with a timestamp) to the preferences
+	// file name when an existing file fails to parse, so the unparseable copy
+	// is preserved for recovery instead of being silently overwritten with
+	// defaults by the first debounced save. e.g. asset_preferences.json.corrupt-20260711-150405
+	corruptSuffixPrefix = ".corrupt-"
+	// corruptStampLayout timestamps the quarantine backup name. It is
+	// deliberately colon-free: ':' is illegal in Windows file names, so an
+	// RFC3339-style stamp would make os.Rename fail on this platform. Second
+	// precision suffices — there is exactly one load per launch and the
+	// rename removes the original, so a relaunch never re-collides.
+	corruptStampLayout = "20060102-150405"
+
 	jsonMarshalPrefix = ""
 	jsonMarshalIndent = "  "
 )
@@ -1036,6 +1048,13 @@ type AssetPreferences struct {
 	// file on disk — the live session's saves would clobber the import.
 	frozen atomic.Bool
 
+	// quarantine, when non-nil, records that an EXISTING preferences file
+	// failed to parse at load and was renamed aside (to BackupPath) BEFORE
+	// the saver could overwrite the only copy with defaults. It is never
+	// serialized (unexported) and exists solely so the UI can surface a
+	// one-time startup notice via Quarantine(). See load().
+	quarantine *Quarantine
+
 	// formatGen increments on every mutation that changes any effective
 	// probe list (format orders, fallback toggles). Consumers cache derived
 	// format tables keyed by this generation — see Resolver's miss path.
@@ -1612,6 +1631,24 @@ func defaultPrefs(path string) *AssetPreferences {
 	}
 }
 
+// Quarantine records that an existing preferences file was unparseable at load
+// and was renamed aside (BackupPath) before defaults could overwrite it. Err is
+// the underlying parse error. The caller (cmd/asyncao + UI) surfaces a one-time
+// startup notice from it; internal/config stays UI-free. Nil unless a corrupt
+// file was successfully quarantined.
+type Quarantine struct {
+	// BackupPath is the full path the corrupt file was renamed to, or "" if
+	// the rename itself failed (the app still boots on defaults, but no backup
+	// name can be shown).
+	BackupPath string
+	// Err is the parse error that triggered the quarantine.
+	Err error
+}
+
+// Quarantine returns the corrupt-file quarantine record from load, or nil if the
+// preferences file parsed cleanly (or was absent). Read once at startup.
+func (p *AssetPreferences) Quarantine() *Quarantine { return p.quarantine }
+
 // load reads and normalizes the preferences file without starting the saver.
 func load(path string) (*AssetPreferences, error) {
 	p := defaultPrefs(path)
@@ -1626,7 +1663,25 @@ func load(path string) (*AssetPreferences, error) {
 
 	var onDisk prefsJSON
 	if err := json.Unmarshal(data, &onDisk); err != nil {
-		return p, fmt.Errorf("config: parsing %s (using defaults): %w", path, err)
+		// A malformed EXISTING file: quarantine it (rename aside) BEFORE
+		// returning defaults, so the debounced saver can never clobber the
+		// only copy of the user's favourites/logins/macros/learned formats.
+		// The rename runs on the startup load path (no saver exists yet, no
+		// render/decode path) — cheap synchronous I/O is fine here (spec §2
+		// bars sync I/O on hot paths only). See item #3.
+		perr := fmt.Errorf("config: parsing %s (using defaults): %w", path, err)
+		backup := path + corruptSuffixPrefix + time.Now().Format(corruptStampLayout)
+		if renameErr := os.Rename(path, backup); renameErr == nil {
+			p.quarantine = &Quarantine{BackupPath: backup, Err: perr}
+		} else {
+			// Rename failed (locked/permissions): don't advertise a backup
+			// path that doesn't exist. The app still boots on defaults; the
+			// saver will eventually overwrite, but that is no worse than the
+			// pre-fix behaviour and rare.
+			log.Printf("config: could not quarantine corrupt %s: %v", path, renameErr)
+			p.quarantine = &Quarantine{Err: perr}
+		}
+		return p, perr
 	}
 
 	p.GlobalFallbacksEnabled = onDisk.GlobalFallbacksEnabled
