@@ -191,7 +191,8 @@ func (a *App) parkActive() {
 		return
 	}
 	if a.rehearsal {
-		a.Disconnect() // rehearsal never parks (global offline gate)
+		a.deliberateClose = true // ending rehearsal mode is deliberate — never auto-reconnect (#1)
+		a.Disconnect()           // rehearsal never parks (global offline gate)
 		return
 	}
 	if a.msRaster != nil {
@@ -240,8 +241,11 @@ func (a *App) activateTab(i int) {
 	a.ctx.ClearFieldHistories()
 	if t.dead || a.sess == nil {
 		// The connection died in the background: tear the tab down fully
-		// (notebook flush, slot removed) and say why on the lobby.
+		// (notebook flush, slot removed) and say why on the lobby. This is a
+		// deliberate teardown of an already-dead tab — background-tab drops are
+		// their own concern (#46), so suppress auto-reconnect here (#1).
 		name := a.serverName
+		a.deliberateClose = true
 		a.Disconnect()
 		a.connErr = name + " disconnected while backgrounded"
 		return

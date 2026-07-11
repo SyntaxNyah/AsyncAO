@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -75,9 +76,33 @@ func autoReconnectDelay(tries int) time.Duration {
 	return autoReconnectMax
 }
 
+// shouldAutoReconnect decides whether an ended connection should auto-retry. It
+// is the single source of truth for the "drop vs ban/kick vs user-close"
+// distinction (#1), kept pure so it unit-tests directly:
+//
+//   - deliberate: a user-initiated close (Disconnect button, tab close, quit,
+//     rehearsal end) never reconnects — the user meant to leave.
+//   - a server KICK or BAN never reconnects: reconnecting after a ban reads as
+//     ban evasion, and a kick is the server removing you on purpose — both are
+//     bad optics. Matched by the EventDisconnect reason prefixes ("Banned: " /
+//     "Kicked: ", session.go:697-701).
+//   - anything else is a genuine transport drop (Wi-Fi blip, server restart,
+//     read error, stale-link watchdog) — the exact case auto-reconnect exists
+//     for — so retry.
+func shouldAutoReconnect(reason string, deliberate bool) bool {
+	if deliberate {
+		return false
+	}
+	if strings.HasPrefix(reason, "Banned") || strings.HasPrefix(reason, "Kicked") {
+		return false
+	}
+	return true
+}
+
 // scheduleAutoReconnect arms the first retry after an unexpected drop, when the
 // feature is on and we know which server to redial. Called from the
-// EventDisconnect handler (after Disconnect tore the session down).
+// closed-channel / SendErr drop paths (after Disconnect tore the session down);
+// the caller has already vetted intent via shouldAutoReconnect.
 func (a *App) scheduleAutoReconnect() {
 	if a.lastConnURL == "" || !a.d.Prefs.AutoReconnectOn() {
 		return

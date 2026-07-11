@@ -881,9 +881,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   an **unexpected drop**, AsyncAO also **auto-reconnects** with exponential backoff
   (≈2 s → 30 s, capped, several tries) until the server returns — the lobby shows
   the retry status and a **Stop** button. A **deliberate Disconnect never
-  reconnects**, and a manual Reconnect / fresh Join takes over. Toggle in
-  **Settings → Audio & Chat** ("Auto-reconnect after a dropped connection", ON by
-  default). Idle it costs one time-compare per frame.
+  reconnects**, and a manual Reconnect / fresh Join takes over. A **server kick or
+  ban never auto-reconnects** either (re-joining after a ban reads as ban evasion),
+  though the manual Reconnect button still works. A silently dead link (NAT
+  timeout, no FIN) is detected by a **read-staleness watchdog** that pings on
+  prolonged silence and treats a missing pong as a drop. Toggle in **Settings →
+  Audio & Chat** ("Auto-reconnect after a dropped connection", ON by default). Idle
+  it costs one time-compare per frame.
 - **Auto-connect on launch** (OFF by default): turn this on in **Settings →
   Messages & connection** to open straight onto the **server you last used** — no
   lobby detour — even after you'd disconnected. The checkbox names the remembered

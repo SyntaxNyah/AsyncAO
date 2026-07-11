@@ -184,6 +184,15 @@ type App struct {
 	autoReconnectAt    time.Time
 	autoReconnectTries int
 	autoReconnectMsg   string
+	// deliberateClose marks the CURRENT teardown as user-initiated (Disconnect
+	// button, tab close, quit, rehearsal end) so the closed-channel/SendErr drop
+	// paths suppress auto-reconnect. Today Disconnect() nils a.conn synchronously,
+	// so the socket-close branch is only reached on genuinely unexpected drops —
+	// this flag is defense-in-depth (belt-and-suspenders against a future refactor
+	// that pumps between conn.Close() and the nil-out) and the explicit intent
+	// signal shouldAutoReconnect reads. Set by the deliberate paths, cleared on a
+	// fresh connect.
+	deliberateClose bool
 
 	// --- lobby state ---
 	masterEntries []network.ServerEntry // raw master list (no favorites)
@@ -2565,6 +2574,7 @@ func friendlyConnError(wsURL string, err error) string {
 // short timeout so a dead remembered server can't freeze boot for long.
 func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	a.connErr = ""                              // a fresh attempt clears any stale lobby error/reason
+	a.deliberateClose = false                   // a fresh connection starts with no pending deliberate-close intent
 	a.lastConnName, a.lastConnURL = name, wsURL // remember for one-click Reconnect on a drop/failure
 	a.d.Prefs.SetLastServer(name, wsURL)        // persist for auto-connect / quick-connect on next launch
 	a.pinging = false                           // leaving the lobby: don't let a dropped done-sentinel wedge re-ping
@@ -2742,6 +2752,9 @@ func (a *App) Disconnect() {
 	// A bound theme leaves with its server; the global pick returns.
 	a.ensureThemeForSession()
 	a.screen = ScreenLobby
+	// Consume the deliberate-close intent: it applied only to THIS teardown. A
+	// later unexpected drop on a fresh connection must be treated as unexpected.
+	a.deliberateClose = false
 }
 
 // applyWindowSize resizes the window to a clamped, recentered size and persists
@@ -2884,6 +2897,22 @@ func (a *App) pumpConnection() {
 		a.lastPing = time.Now()
 		a.sess.Ping()
 	}
+	// Half-dead write side (#7a): Session.reply records the FIRST failed outgoing
+	// write into sendErr and then silently swallows every later packet. A non-nil
+	// SendErr means our writes are going into a dead socket (the keepalive above,
+	// or any IC send) — surface it and tear down, then auto-reconnect (a write
+	// failure is a transport drop, never a ban/kick, so it's not deliberate).
+	if err := a.sess.SendErr(); err != nil {
+		reason := "connection lost: " + err.Error()
+		a.connErr = reason
+		a.pushDebug("disconnected: " + reason)
+		deliberate := a.deliberateClose
+		a.Disconnect()
+		if shouldAutoReconnect(reason, deliberate) {
+			a.scheduleAutoReconnect()
+		}
+		return
+	}
 	for {
 		// A handled packet can tear the session down mid-drain: a server
 		// kick/ban (KK/KB/BD → EventDisconnect) calls Disconnect(), whose
@@ -2898,13 +2927,25 @@ func (a *App) pumpConnection() {
 		case p, ok := <-a.conn.Incoming():
 			a.uiDirty = true // packets (or the drop below) change UI-visible state — redraw-worthy damage
 			if !ok {
+				// The Incoming channel closed: a genuine transport drop (Wi-Fi
+				// blip, server restart, read error, or the stale-link watchdog
+				// giving up). This branch is NOT reached on a deliberate
+				// Disconnect (that nils a.conn first, so pumpConnection early-
+				// returns) — so unless deliberateClose was set by a refactor
+				// mid-teardown, this is exactly the case auto-reconnect exists
+				// for (#1: previously this path only Disconnected and never
+				// rearmed a retry).
 				reason := "connection closed"
 				if err := a.conn.Err(); err != nil {
 					reason = err.Error()
 				}
 				a.connErr = reason
 				a.pushDebug("disconnected: " + reason)
+				deliberate := a.deliberateClose
 				a.Disconnect()
+				if shouldAutoReconnect(reason, deliberate) {
+					a.scheduleAutoReconnect() // Disconnect just cancelled any pending retry
+				}
 				return
 			}
 			a.lastPktHdr, a.lastPktAt = p.Header, time.Now()
@@ -3105,7 +3146,15 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				a.playModActionSFX(render.ModBan)
 			}
 			a.Disconnect()
-			a.scheduleAutoReconnect() // M2: unexpected drop → auto-retry this server (Disconnect just cancelled it)
+			// #1: EventDisconnect is ONLY ever a KK/KB/BD kick/ban
+			// (session.go:696-701) — the server removing us on purpose. Do NOT
+			// auto-reconnect: retrying a ban reads as ban evasion, and re-joining
+			// after a kick is bad optics. shouldAutoReconnect returns false for
+			// both prefixes; genuine transport drops rearm via the pumpConnection
+			// closed-channel / SendErr paths instead.
+			if shouldAutoReconnect(ev.Text, a.deliberateClose) {
+				a.scheduleAutoReconnect()
+			}
 			continue
 		case courtroom.EventDebug:
 			// Protocol-level diagnostics (unhandled headers, dropped MS):

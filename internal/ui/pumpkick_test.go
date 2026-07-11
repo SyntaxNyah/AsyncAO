@@ -22,10 +22,13 @@ import (
 //     pumpConnection's drain loop must re-check before it touches
 //     a.conn.Incoming() again — without the guard the next iteration nil-derefs
 //     the freed *Conn (conn.go:73, the reported crash).
-//  2. DISCONNECT STATE SURVIVES. connErr / lastConn* / autoReconnect* live on
-//     App (not sessionState), so the kick reason still shows in the lobby, the
-//     Reconnect button has a target, and auto-reconnect arms — Disconnect's
-//     resetSessionState() no longer wipes them.
+//  2. DISCONNECT STATE SURVIVES + a kick does NOT auto-reconnect (#1). connErr /
+//     lastConn* live on App (not sessionState), so the kick reason still shows in
+//     the lobby and the Reconnect button has a target — Disconnect's
+//     resetSessionState() no longer wipes them. But auto-reconnect must NOT arm:
+//     a kick is the server removing us on purpose (and a ban-retry reads as ban
+//     evasion), so shouldAutoReconnect returns false for the "Kicked: "/"Banned: "
+//     reasons. Only genuine transport drops rearm (covered separately).
 //
 // The trigger is the kick packet, NOT the BB "popup" the user happened to see
 // first (that's EventNotice and never disconnects).
@@ -50,7 +53,7 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	defer conn.Close()
 
 	a := testTabApp(t)
-	a.d.Prefs.SetAutoReconnect(true) // so the kick arms a retry (asserted below)
+	a.d.Prefs.SetAutoReconnect(true) // on, to prove a kick STILL doesn't rearm (asserted below)
 	// Neutralize the async theme reload Disconnect()→ensureThemeForSession would
 	// otherwise kick off: with the applied name already matching the pref, it's a
 	// no-op (themeAppliedName lives on App, so resetSessionState won't clear it).
@@ -86,7 +89,9 @@ func TestPumpConnectionSurvivesServerKick(t *testing.T) {
 	if a.lastConnURL != "ws://test.example" {
 		t.Errorf("lastConnURL = %q, want %q (Reconnect target must survive)", a.lastConnURL, "ws://test.example")
 	}
-	if a.autoReconnectAt.IsZero() {
-		t.Error("auto-reconnect should have armed after the kick (autoReconnectAt is zero)")
+	// #1: a kick must NOT arm auto-reconnect (retrying reads as ban evasion / bad
+	// optics). The manual Reconnect button still works — that's the lastConnURL above.
+	if !a.autoReconnectAt.IsZero() {
+		t.Error("a server kick must NOT arm auto-reconnect (autoReconnectAt should stay zero)")
 	}
 }
