@@ -318,10 +318,19 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 // base). The viewport's scenery miss path probes HeldKeyPrefix+base.
 const HeldKeyPrefix = "held://"
 
-// heldSceneryMax bounds the held-frame bridge: at most this many stolen
-// scenery frames (the on-screen background + desk) live in the pinned map at
-// once — a fixed ring, oldest slot reused.
-const heldSceneryMax = 2
+// heldSceneryMax bounds the held-frame bridge: at most this many stolen stage
+// frames live in the pinned map at once — a fixed ring, oldest slot reused. It
+// is 4 because the bridge now covers every on-screen stage layer that has no
+// other cold-load fallback: background + desk (the original scenery pair) PLUS
+// the current speaker and pair sprites (the character-layer extension — a
+// mid-display eviction of the speaker had no hold-previous/thumb fallback). The
+// ring is PINNED (eviction-exempt) memory: each held page is ONE stolen frame,
+// so the worst case is 4 × the largest single stage frame's bytes
+// (W×H×texBytesPerPixel). At a full-viewport 1920×1080 frame that is
+// ≈8.3 MiB/frame → ≈33 MiB worst case, but stage sprites and desks are almost
+// always far smaller, and each hold releases the instant its real page
+// re-uploads (releaseHeld), so the steady-state cost is a few frames at most.
+const heldSceneryMax = 4
 
 // texBytesPerPixel is the byte cost of one ABGR8888 texel (the only texture
 // format the store creates) — sizes the held single-frame page.

@@ -2075,12 +2075,15 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	if d.Manager != nil {
 		d.Manager.SetDeliveryNotify(PushWake)
 	}
-	// Held-frame bridge (the black-flash fix): when the LRU must evict the
-	// ON-SCREEN background/desk to fit a cap-sized incoming sprite page, the
-	// store steals one frame into its pinned tier and the viewport draws that
-	// instead of exposing the black stage fill (render/textures.go).
+	// Held-frame bridge (the black-flash fix): when the LRU must evict any
+	// ON-SCREEN stage layer (background, desk, or the current speaker/pair
+	// sprite) to fit a cap-sized incoming page, the store steals one frame into
+	// its pinned tier and the viewport draws that instead of exposing the black
+	// stage fill (render/textures.go). IsLiveStageBase widens the old
+	// scenery-only gate to the drawn character bases too (the last black-flash
+	// hole — a mid-display speaker eviction had no other fallback).
 	if d.Store != nil {
-		d.Store.SetLiveScenery(a.IsLiveScenery)
+		d.Store.SetLiveScenery(a.IsLiveStageBase)
 	}
 	for _, id := range d.Prefs.HiddenPanels() {
 		a.hidden[id] = true
@@ -2534,18 +2537,35 @@ func (a *App) IsLiveBase(base string) bool {
 	return false
 }
 
-// IsLiveScenery reports whether base is the DRAWN stage's background or desk —
-// the held-frame bridge's steal gate (render/textures.go onEvict): scenery has
-// no hold-previous/thumb fallback, so evicting it mid-scene exposed the black
-// stage fill (the black-flash report). Uses the same scene the viewport draws
-// (renderScene covers the replay/slideshow overrides). Render thread only —
-// onEvict runs on every T1 mutation, all render-thread.
-func (a *App) IsLiveScenery(base string) bool {
+// IsLiveStageBase reports whether base is any DRAWN stage layer — the
+// background, the desk, or the current speaker/pair sprite — i.e. the held-frame
+// bridge's steal gate (render/textures.go onEvict). Originally scenery-only
+// (bg + desk), it now includes the drawn speaker/pair bases too: when the
+// CURRENT speaker's page is evicted mid-display (a cap-sized incoming upload can
+// force it), drawSprite's hold-previous fallback can't help — lastGood equals
+// the base that was just drawn — and the thumbnail path is opt-in default-OFF,
+// so the character blanked until the futility-latched heal re-decoded (or
+// forever, once the heal churn budget was spent). Stealing the speaker/pair
+// frame here lets drawSprite's miss path draw the frozen sprite instead of the
+// black stage fill (the last black-flash hole). Uses the same scene the
+// viewport draws (renderScene covers the replay/slideshow overrides). Render
+// thread only — onEvict runs on every T1 mutation, all render-thread.
+func (a *App) IsLiveStageBase(base string) bool {
 	if base == "" || (a.room == nil && !(a.replaying && a.replayRoom != nil)) {
 		return false
 	}
 	sc := a.renderScene()
-	return base == sc.BackgroundBase || (sc.ShowDesk && base == sc.DeskBase)
+	switch base {
+	case sc.BackgroundBase:
+		return true
+	case sc.DeskBase:
+		return sc.ShowDesk
+	case sc.Speaker.Active:
+		return sc.Speaker.Visible
+	case sc.Pair.Active:
+		return sc.PairActive
+	}
+	return false
 }
 
 // --- connection lifecycle -------------------------------------------------------

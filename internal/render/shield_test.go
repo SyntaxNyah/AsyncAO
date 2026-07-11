@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/cache"
 )
 
 // sizedFixture builds a decoded page of frames×(edge×edge) RGBA — the knob the
@@ -43,6 +44,34 @@ func TestSplitT1Budget(t *testing.T) {
 		}
 		if main+small != tc.budget {
 			t.Errorf("splitT1Budget(%d): tiers sum to %d, must equal the configured budget", tc.budget, main+small)
+		}
+	}
+}
+
+// TestDecodeCapFitsMainTier is the cross-package invariant for the decode-cap /
+// T1-budget arithmetic (the stage-flash root cause): the per-asset decode cap
+// (cache.MaxDecodedAssetBytes — the single source both the decoder default and
+// main's live override derive from) must never exceed the render MAIN tier for
+// ANY budget, and must stay <= main/2 so one landing page can't evict even half
+// the on-screen working set. The two formulas live in different packages
+// (cache owns the cap, render owns splitT1Budget); this pins that they stay
+// compatible even if one changes.
+func TestDecodeCapFitsMainTier(t *testing.T) {
+	// Default, the two Settings-slider extremes (min 32 MiB, max 256 MiB), plus
+	// pathological small/huge values that exercise the split's floor + half-cap.
+	budgets := []int64{
+		cache.DefaultT1BudgetBytes,
+		32 << 20, 256 << 20, // TexBudgetMinMiB .. TexBudgetMaxMiB
+		4 << 20, 1 << 20, 1024 << 20, // floor / half-cap / huge power-user
+	}
+	for _, b := range budgets {
+		decodeCap := cache.MaxDecodedAssetBytes(b)
+		main, _ := splitT1Budget(b)
+		if decodeCap > main {
+			t.Errorf("budget=%d: decode cap %d exceeds main tier %d — one page could evict the whole working set", b, decodeCap, main)
+		}
+		if decodeCap > main/2 {
+			t.Errorf("budget=%d: decode cap %d exceeds main/2 (%d) — one page could evict half the working set", b, decodeCap, main/2)
 		}
 	}
 }

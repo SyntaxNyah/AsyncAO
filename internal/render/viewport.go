@@ -1028,8 +1028,18 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	page, ok := anim.resolve(v.store)
 	if !ok || len(page.Frames) == 0 {
+		// Held-frame bridge FIRST: if THIS sprite's page was evicted mid-display
+		// (a cap-sized incoming upload forced it out — the last black-flash hole),
+		// the store parked its first frame under held://base. That is the exact
+		// same character at FULL quality, so it beats both the low-res thumbnail
+		// and holding the PREVIOUS (different) character. Zero decode, zero copy;
+		// releases the instant the real page re-uploads (store.releaseHeld).
+		if held, ok2 := v.resolveHeld(anim); ok2 {
+			v.drawHeldSprite(ren, layer, held, vp)
+			return
+		}
 		// Cold-load gap: the incoming sprite hasn't finished streaming + decoding.
-		// The opt-in THUMBNAIL wins first — the right character at low quality
+		// The opt-in THUMBNAIL wins next — the right character at low quality
 		// (uploaded by the ui under the precomputed thumb:// key) beats the
 		// previous character at full quality.
 		if v.thumbSprites && anim.thumbKey != "" {

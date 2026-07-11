@@ -83,7 +83,8 @@ Prefetch(base, type, prio)            PrefetchWithFallback(base, altBase, ...)
        still nothing → Warning{base, formats tried} → UI banner (12 s, courtroom
                                                       + char select)
   decode pool: sniff magic bytes (never extensions) → RGBA frames (pooled px),
-               animations DECIMATED to maxDecodedAssetBytes (T1 budget / 2 —
+               animations DECIMATED to maxDecodedAssetBytes (T1 budget / 4,
+               the cache.MaxDecodedAssetBytes single source of truth —
                keep evenly-spaced frames spanning the whole clip, fold skipped
                delays forward: a lower-fps full loop beats a truncated one that
                snaps mid-preanim, and both dodge a 250 MB RGBA spike inside the
