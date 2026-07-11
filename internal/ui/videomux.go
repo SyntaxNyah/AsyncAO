@@ -45,7 +45,10 @@ type audioCapture struct {
 	sfx      []sfxCue
 }
 
-func (m *audioCapture) PlayMusic(url string) {
+// PlayMusic records the track cue; the 2.9 loop/effects flags (#15) don't affect
+// the captured soundtrack (each cue is a fixed window, mixed by ffmpeg), so they
+// are accepted and ignored here.
+func (m *audioCapture) PlayMusic(url string, _ bool, _ int) {
 	m.music = append(m.music, musicCue{url: url, frame: m.frameRef()})
 }
 func (m *audioCapture) StopMusic() { m.music = append(m.music, musicCue{url: "", frame: m.frameRef()}) }

@@ -3765,7 +3765,10 @@ func (a *App) buildRoom() {
 	// the background came back. A direct HandleEvent (not handleSessionEvents) so it plays
 	// without re-logging "has played a song". (It restarts the song from the top — acceptable.)
 	if a.sess.MusicTrack != "" {
-		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: a.sess.MusicTrack})
+		// Loop: true — a resumed persistent track keeps AsyncAO's client-side loop
+		// (#15; the original MC's loop/effect flags aren't retained on the session,
+		// and a room-rebuild resume has always looped).
+		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: a.sess.MusicTrack, Loop: true})
 	}
 	a.applyTimingToRoom()
 	a.pushRealizationToRoom()
@@ -3933,7 +3936,7 @@ func (a *App) pinToSplit(t *courtTab) {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})
 	}
 	if t.state.sess.MusicTrack != "" {
-		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: t.state.sess.MusicTrack}) // NopAudio: silent
+		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: t.state.sess.MusicTrack, Loop: true}) // NopAudio: silent (#15 loop default)
 	}
 	// Last message too, settled — same blank-until-someone-talks fix as the
 	// bg+song seeds. Deliberately UNfiltered: the live background pump routes

@@ -119,7 +119,8 @@ func (a *App) replayJumpTo(idx int) {
 		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: bg})
 	}
 	if music != "" {
-		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: music})
+		// Loop: true — replay soundtrack loops, same as eventFromRec (#15 default).
+		a.replayRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: music, Loop: true})
 	}
 	if lastMsg >= 0 {
 		a.replayRoom.HandleEvent(eventFromRec(rec.Events[lastMsg]))

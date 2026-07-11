@@ -36,9 +36,33 @@ const (
 
 	// chunkCacheMax bounds decoded SFX/blip chunks held in memory.
 	chunkCacheMax = 64
+	// chunkCacheHardMax is the absolute ceiling the cache may grow to in the
+	// (by-construction impossible) case that every one of the chunkCacheMax
+	// oldest chunks is currently playing when eviction is due. At most
+	// mixChannelCount (16) chunks can play at once and 16 < chunkCacheMax (64),
+	// so evictChunk always finds a non-playing victim — this cap only exists so
+	// the cache stays bounded (hard rule #4) even if that invariant were ever
+	// violated. We grow-and-log rather than free a playing chunk (rule #7-class
+	// safety over the C audio callback).
+	chunkCacheHardMax = chunkCacheMax + mixChannelCount
 
 	// pendingPlayTTL drops play requests whose asset never arrived.
 	pendingPlayTTL = 10 * time.Second
+
+	// musicFadeInMs is the FADE_IN ramp length (#15). AO2's BASS path slides the
+	// new stream's volume up over 1000ms (../AO2-Client/src/aomusicplayer.cpp:160
+	// FADE_IN branch); we match it. The ramp rides SDL_mixer's native fade
+	// (Mix_FadeInMusic), which interpolates on the C audio callback and always
+	// scales toward the current VolumeMusic — so a mid-fade volume-slider drag
+	// just changes the ceiling the ramp climbs to (no fight, no extra state).
+	musicFadeInMs = 1000
+
+	// Music effect bit flags (MUSIC_EFFECT, ../AO2-Client/src/datatypes.h:95-101).
+	// Only FADE_IN is honored here; FADE_OUT and SYNC_POS are documented-skipped
+	// in startMusic (see the comment there). The looping field / NO_REPEAT are
+	// applied by the courtroom before we ever see them (they arrive as the loop
+	// bool), so this file only needs FADE_IN.
+	musicEffectFadeIn = 1
 
 	// mixInitOpus is MIX_INIT_OPUS (0x40). go-sdl2 v0.4.40's mix package
 	// predates the Opus flag and doesn't export it, but the SDL2_mixer.dll we
@@ -61,6 +85,11 @@ const (
 type pendingPlay struct {
 	kind     pendingKind
 	deadline time.Time
+	// loop / effects carry the 2.9 MC play semantics for a pendingMusic entry
+	// (#15): whether to loop, and the MUSIC_EFFECT bit flags (FADE_IN). They are
+	// read in startMusic when the track's bytes arrive — never from stale args.
+	loop    bool
+	effects int
 }
 
 // Audio implements courtroom.AudioSink over SDL_mixer: raw bytes from the
@@ -436,7 +465,7 @@ func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
 	p, wanted := a.pending[asset.Base]
 	if wanted && p.kind == pendingMusic {
 		delete(a.pending, asset.Base)
-		a.startMusic(asset.Base, asset.Data)
+		a.startMusic(asset.Base, asset.Data, p.loop, p.effects) // 2.9 loop/effects from the stored request (#15)
 		return
 	}
 	chunk := a.loadChunk(asset.Base, asset.Data)
@@ -462,17 +491,82 @@ func (a *Audio) loadChunk(base string, data []byte) *mix.Chunk {
 		log.Printf("render: audio decode %s failed: %v", base, err)
 		return nil
 	}
-	if len(a.chunkOrder) >= chunkCacheMax {
-		oldest := a.chunkOrder[0]
-		a.chunkOrder = a.chunkOrder[1:]
-		if old, ok := a.chunks[oldest]; ok {
-			old.Free()
-			delete(a.chunks, oldest)
-		}
-	}
+	a.evictChunk()
 	a.chunks[base] = chunk
 	a.chunkOrder = append(a.chunkOrder, base)
 	return chunk
+}
+
+// evictChunk makes room in the chunk cache before a new insert, freeing at most
+// one victim. It is a use-after-free guard around Mix_FreeChunk (#4): a cached
+// chunk can still be playing on a mixer channel, and freeing a playing chunk
+// corrupts SDL_mixer's C audio callback — a crash that -race can't see (the
+// callback runs on a C thread, invisible to the race detector), so correctness
+// here is argued BY CONSTRUCTION, not by a test.
+//
+// Invariant: at most mixChannelCount (16) chunks can be playing at once, and
+// 16 < chunkCacheMax (64), so a non-playing victim always exists among the 64
+// oldest. We therefore scan the mixer's in-use chunk pointers, then evict the
+// OLDEST chunk that isn't currently playing (index-based middle removal, not a
+// head-only slice — the oldest may be the one still playing). If every one of
+// the chunkCacheMax oldest were somehow playing (impossible under the
+// invariant), we grow-and-log up to chunkCacheHardMax rather than free a
+// playing chunk. Render-thread only: every caller (loadChunk, PlayFile) runs on
+// the render/game thread, the only place SDL_mixer may be touched (rule #1).
+func (a *Audio) evictChunk() {
+	if len(a.chunkOrder) < chunkCacheMax {
+		return
+	}
+	// Build the set of chunk pointers the mixer is currently playing. Scan ALL
+	// allocated channels, including the reserved blip/alert channels (0,1): a
+	// cached blip chunk lives on channel 0 and must not be freed under it.
+	playing := make(map[*mix.Chunk]struct{}, mixChannelCount)
+	for ch := 0; ch < mixChannelCount; ch++ {
+		if mix.Playing(ch) != 0 {
+			if c := mix.GetChunk(ch); c != nil {
+				playing[c] = struct{}{}
+			}
+		}
+	}
+	// Evict the oldest chunk that isn't playing.
+	for i, base := range a.chunkOrder {
+		c, ok := a.chunks[base]
+		if !ok {
+			// Stale order entry (shouldn't happen) — drop it and keep scanning.
+			a.chunkOrder = append(a.chunkOrder[:i:i], a.chunkOrder[i+1:]...)
+			return
+		}
+		if _, busy := playing[c]; busy {
+			continue // still on a mixer channel — skip to the next-oldest
+		}
+		c.Free()
+		delete(a.chunks, base)
+		a.chunkOrder = append(a.chunkOrder[:i:i], a.chunkOrder[i+1:]...)
+		return
+	}
+	// Unreachable under the invariant (at most mixChannelCount play at once, and
+	// mixChannelCount < chunkCacheMax): every one of the oldest chunks is playing.
+	// We keep the cache bounded (rule #4) by growing to chunkCacheHardMax; only
+	// at that ceiling do we HALT the channels playing the oldest chunk and then
+	// free it (halt-before-free is defined behavior — the C callback stops
+	// touching the chunk before Free), so the cache can never exceed the hard cap.
+	if len(a.chunkOrder) < chunkCacheHardMax {
+		return // grow silently; a non-playing victim will free up next insert
+	}
+	oldest := a.chunkOrder[0]
+	c := a.chunks[oldest]
+	log.Printf("render: audio chunk cache at hard cap %d with all oldest chunks playing; halting to free %q",
+		chunkCacheHardMax, oldest)
+	for ch := 0; ch < mixChannelCount; ch++ {
+		if mix.GetChunk(ch) == c {
+			mix.HaltChannel(ch) // stop the C callback before we free the chunk
+		}
+	}
+	if c != nil {
+		c.Free()
+	}
+	delete(a.chunks, oldest)
+	a.chunkOrder = a.chunkOrder[1:]
 }
 
 func (a *Audio) playChunk(chunk *mix.Chunk, kind pendingKind) {
@@ -514,14 +608,7 @@ func (a *Audio) PlayFile(path string) {
 			log.Printf("render: alert sound %s failed: %v", path, err)
 			return
 		}
-		if len(a.chunkOrder) >= chunkCacheMax {
-			oldest := a.chunkOrder[0]
-			a.chunkOrder = a.chunkOrder[1:]
-			if old, ok := a.chunks[oldest]; ok {
-				old.Free()
-				delete(a.chunks, oldest)
-			}
-		}
+		a.evictChunk() // UAF guard: never free a chunk still on a mixer channel (#4)
 		a.chunks[path] = c
 		a.chunkOrder = append(a.chunkOrder, path)
 		chunk = c
@@ -559,25 +646,31 @@ func (a *Audio) expirePending() {
 // PlayShout plays a character's shout cry. // AssetType: SFX
 func (a *Audio) PlayShout(base string) { a.request(base, pendingShout) }
 
-// PlaySFX plays an emote sound effect. Delay is honored by the courtroom
-// phase machine; here it is best-effort immediate. // AssetType: SFX
+// PlaySFX plays an emote sound effect immediately. The SFX_DELAY is applied
+// UPSTREAM by the courtroom's Update tick (armSFXDelay / fireSFXDelay, #12):
+// the courtroom holds the play until the deadline, so by the time this is
+// called the delay has already elapsed — the duration arg is vestigial (the
+// AudioSink signature keeps it) and intentionally ignored here. // AssetType: SFX
 func (a *Audio) PlaySFX(base string, _ time.Duration) { a.request(base, pendingSFX) }
 
 // PlayBlip fires one chat blip. // AssetType: Blip
 func (a *Audio) PlayBlip(base string) { a.request(base, pendingBlip) }
 
-// PlayMusic streams a track from its full URL. Idempotent: if that exact track is already
-// playing, it's a no-op — so a room rebuild (random char, char switch, tab reactivation)
-// re-seeding the current song doesn't restart it from the top. A genuinely new track (or a
-// resume after the song stopped) plays as normal. // AssetType: Music
-func (a *Audio) PlayMusic(url string) {
+// PlayMusic streams a track from its full URL. loop=false plays it once (2.9
+// NO_REPEAT / looping=0, #15); effects carries the MUSIC_EFFECT bit flags
+// (FADE_IN). Idempotent: if that exact track is already playing, it's a no-op —
+// so a room rebuild (random char, char switch, tab reactivation) re-seeding the
+// current song doesn't restart it from the top (a re-seed's loop/effects are
+// intentionally ignored, same reasoning as the no-restart). A genuinely new
+// track (or a resume after the song stopped) plays as normal. // AssetType: Music
+func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 	if !a.enabled {
 		return
 	}
 	if url == a.musicURL && a.music != nil {
 		return // already playing this exact track — don't restart
 	}
-	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL)}
+	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL), loop: loop, effects: effects}
 	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
 }
 
@@ -597,7 +690,25 @@ func (a *Audio) StopMusic() {
 	}
 }
 
-func (a *Audio) startMusic(url string, data []byte) {
+// startMusic decodes and plays a fetched track. loop drives the SDL_mixer loop
+// count (-1 = forever, 0 = play once — 2.9 looping/NO_REPEAT, #15); effects
+// carries the MUSIC_EFFECT bit flags. Render thread only.
+//
+// Effect handling (../AO2-Client/src/aomusicplayer.cpp:24-160):
+//   - FADE_IN: honored via SDL_mixer's native Mix_FadeInMusic, which ramps the
+//     new stream up over musicFadeInMs on the C audio callback (no goroutine —
+//     rule #1) and always scales toward the current VolumeMusic, so a volume
+//     slider drag mid-fade just changes the ceiling (no fight).
+//   - FADE_OUT: SKIPPED. SDL_mixer plays a single music stream, so a track→track
+//     replace can't crossfade (the old is Freed synchronously here); and on the
+//     stop path Mix_FadeOutMusic returns immediately while the C callback keeps
+//     streaming — but stopMusic synchronously Frees the Music/RWops and drops the
+//     pinned byte slice, a use-after-free of the same class as #4. Skipped to
+//     stay correct rather than faked.
+//   - SYNC_POS: SKIPPED. SDL_mixer can't cheaply seek a freshly-loaded stream to
+//     the previous track's position mid-fetch; no honest implementation exists
+//     with this backend, so we don't fake one.
+func (a *Audio) startMusic(url string, data []byte, loop bool, effects int) {
 	a.stopMusic() // clears musicURL; set below only on a successful start
 	rw, err := sdl.RWFromMem(data)
 	if err != nil {
@@ -612,13 +723,32 @@ func (a *Audio) startMusic(url string, data []byte) {
 	a.musicBytes = data // pin the payload while the mixer streams from it
 	a.musicRW = rw
 	a.music = music
-	const loopForever = -1
-	if err := music.Play(loopForever); err != nil {
+	// SDL_mixer Play/FadeIn loop counts: -1 = loop forever; playOnceLoops (1) =
+	// play through exactly once. We use 1, not 0, for play-once: Mix_PlayMusic /
+	// Mix_FadeInMusic document loops as "play the music loop times through", so 1
+	// is unambiguously one play, while 0 reads as zero plays (a silent no-loop
+	// track — the exact bug #15 is fixing).
+	const (
+		loopForeverLoops = -1
+		playOnceLoops    = 1
+	)
+	loops := playOnceLoops
+	if loop {
+		loops = loopForeverLoops
+	}
+	if effects&musicEffectFadeIn != 0 {
+		err = music.FadeIn(loops, musicFadeInMs) // native ramp toward VolumeMusic
+	} else {
+		err = music.Play(loops)
+	}
+	if err != nil {
 		log.Printf("render: music play failed: %v", err)
 		a.stopMusic()
 		return
 	}
 	a.musicURL = url // now this exact track is playing — PlayMusic(url) becomes a no-op
+	// The fade ramps toward this ceiling; set it now so both the faded and the
+	// non-faded path land at the user's chosen volume.
 	mix.VolumeMusic(mixVolume(a.musicVol))
 }
 

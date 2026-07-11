@@ -64,6 +64,14 @@ const (
 	RealizationFlashDuration = 250 * time.Millisecond
 	// ScreenshakeDuration approximates do_screenshake's elastic UI wobble.
 	ScreenshakeDuration = 350 * time.Millisecond
+
+	// sfxDelayUnit is the wire SFX_DELAY time unit (#12). AO2-Client multiplies
+	// the wire value by time_mod = 40ms to start sfx_delay_timer, so a whip-crack
+	// lands mid-preanim rather than at message start (../AO2-Client/src/
+	// courtroom.cpp:4052 `sfx_delay = m_chatmessage[SFX_DELAY].toInt() * time_mod`,
+	// time_mod defined at courtroom.h:428). msg.SFXDelay is the raw wire int, so
+	// the deadline is SFXDelay × sfxDelayUnit.
+	sfxDelayUnit = 40 * time.Millisecond
 )
 
 // MessagePhase is the IC message lifecycle: shout → preanim → talking →
@@ -174,8 +182,10 @@ type AudioSink interface {
 	// SetBlipScale sets the current speaker's per-character blip attenuation
 	// (0–100, 100 = none; M11), applied to subsequent blips.
 	SetBlipScale(pct int)
-	// PlayMusic streams a track from a full URL.
-	PlayMusic(url string)
+	// PlayMusic streams a track from a full URL. loop=false plays it once
+	// (2.9 NO_REPEAT / looping=0); effects carries the MUSIC_EFFECT bit flags
+	// (fade in/out) — see the musicEffect* constants (#15).
+	PlayMusic(url string, loop bool, effects int)
 	// StopMusic halts playback now (the ~stop sentinel; also on disconnect).
 	StopMusic()
 }
@@ -187,7 +197,7 @@ func (NopAudio) PlayShout(string)              {}
 func (NopAudio) PlaySFX(string, time.Duration) {}
 func (NopAudio) PlayBlip(string)               {}
 func (NopAudio) SetBlipScale(int)              {}
-func (NopAudio) PlayMusic(string)              {}
+func (NopAudio) PlayMusic(string, bool, int)   {}
 func (NopAudio) StopMusic()                    {}
 
 // Courtroom drives the courtroom state machine: it consumes session events,
@@ -324,6 +334,17 @@ type Courtroom struct {
 	phase MessagePhase
 	timer time.Duration
 
+	// Pending SFX deadline (#12): AO2 starts sfx_delay_timer at SFX_DELAY × 40ms
+	// after the shout so the emote sound lands mid-preanim, and fires the preanim
+	// screenshake at that same moment (../AO2-Client/src/courtroom.cpp:4052-4054,
+	// play_sfx 4590-4596). armSFXDelay sets these in enterAfterShout; the Update
+	// tick counts sfxLeft down and fires at zero. begin() clears them so a
+	// superseded message's SFX can't fire late.
+	sfxArmed bool          // a delayed SFX/shake is waiting to fire
+	sfxLeft  time.Duration // countdown to the fire moment (SFXDelay × sfxDelayUnit)
+	sfxBase  string        // resolved SFX URL to play at the deadline ("" = shake only)
+	sfxShake bool          // also fire the screenshake at the deadline (preanim mods)
+
 	current *protocol.ChatMessage
 	// currentText is current.Message with any transmitted SpriteStyle marker
 	// decoded out — the visible-only text the typewriter/blankpost use. The raw
@@ -451,7 +472,7 @@ func (c *Courtroom) HandleEvent(ev Event) {
 			c.audio.StopMusic()
 			c.Scene.MusicTrack = "" // clear Now-Playing
 		default:
-			c.audio.PlayMusic(c.urls.MusicURL(ev.Text)) // AssetType: Music
+			c.audio.PlayMusic(c.urls.MusicURL(ev.Text), ev.Loop, ev.MusicEffects) // AssetType: Music
 			c.Scene.MusicTrack = ev.Text
 		}
 	}
@@ -649,6 +670,9 @@ func (c *Courtroom) applyCenterPrefix() {
 func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.current = msg
 	c.waitFor = nil // beginning ends any armed wait-gate hold
+	// Drop any SFX/shake still armed from the previous message so a superseded
+	// one can't fire late over this one (#12). enterAfterShout re-arms below.
+	c.sfxArmed, c.sfxLeft, c.sfxBase, c.sfxShake = false, 0, "", false
 	// Packed-room catch-up: a backlog behind this message means the stage is
 	// behind real-time. Fast-forward this one (no shout/preanim/typewriter/
 	// effects/sfx/prefetch) and linger briefly so the queue drains. The trigger
@@ -809,10 +833,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	}
 	c.audio.SetBlipScale(blipScale)
 
-	if msg.SFXName != "" && msg.SFXName != "0" && msg.SFXName != "1" &&
-		(c.SFXMuted == nil || !c.SFXMuted(msg.SFXName)) { // M11: per-SFX mute
-		c.audio.PlaySFX(c.urls.SFX(msg.SFXName), time.Duration(msg.SFXDelay)*time.Millisecond) // AssetType: SFX
-	}
+	// The emote SFX is NOT played here — it's armed on a deadline in
+	// enterAfterShout so it lands SFX_DELAY × 40ms into the message (mid-preanim),
+	// matching AO2's sfx_delay_timer (#12; ../AO2-Client/src/courtroom.cpp:4052).
 
 	// --- scene state ---
 	c.Scene.Position = msg.Side
@@ -947,6 +970,7 @@ func (c *Courtroom) enterAfterShout() {
 	c.Scene.ShoutFallbackBase = ""
 	msg := c.current
 	c.fireMessageEffects(msg)
+	c.armSFXDelay(msg)
 	// !preanimDone: begin() resets the flag, so it can only be true here when
 	// NotifyAssetMissing landed while the shout bubble held the stage — the
 	// preanim conclusively 404'd and hijacking Active with it would draw a
@@ -967,6 +991,47 @@ func (c *Courtroom) enterAfterShout() {
 		return
 	}
 	c.startTalking()
+}
+
+// armSFXDelay schedules the message's emote SFX and (for preanim mods) its
+// screenshake to fire SFX_DELAY × 40ms into the message, matching AO2's
+// sfx_delay_timer started after the shout (#12; ../AO2-Client/src/courtroom.cpp
+// :4052-4054). AO2's play_sfx does the screenshake for a preanim message BEFORE
+// the sfx_name=="1" early-return (courtroom.cpp:4593-4596 do_screenshake), so
+// the shake fires at the deadline even when there's no audible SFX (name "0"/
+// "1"/empty). Idle/zoom shakes already fire immediately in fireMessageEffects
+// and are a DISJOINT emote-mod set, so there's no double-fire. Nothing is armed
+// when there is neither an SFX to play nor a preanim shake to fire — a zero-
+// delay SFX still routes through the deadline (fires on the first Update tick).
+func (c *Courtroom) armSFXDelay(msg *protocol.ChatMessage) {
+	base := ""
+	if msg.SFXName != "" && msg.SFXName != "0" && msg.SFXName != "1" &&
+		(c.SFXMuted == nil || !c.SFXMuted(msg.SFXName)) { // M11: per-SFX mute
+		base = c.urls.SFX(msg.SFXName)
+	}
+	// The preanim screenshake (AO2 play_sfx) fires for preanim-mod messages when
+	// SCREENSHAKE=1; effectsVisible gates the visual (reduce-motion / toggle).
+	preanimMod := msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom
+	shake := msg.Screenshake && preanimMod && c.effectsVisible()
+	if base == "" && !shake {
+		return // nothing to schedule
+	}
+	c.sfxArmed = true
+	c.sfxLeft = time.Duration(msg.SFXDelay) * sfxDelayUnit
+	c.sfxBase = base
+	c.sfxShake = shake
+}
+
+// fireSFXDelay plays the armed SFX and fires the armed preanim screenshake, then
+// disarms. Called from Update when the deadline elapses.
+func (c *Courtroom) fireSFXDelay() {
+	if c.sfxBase != "" {
+		c.audio.PlaySFX(c.sfxBase, 0) // AssetType: SFX (deadline reached; delay already elapsed)
+	}
+	if c.sfxShake {
+		c.Scene.ShakeLeft = ScreenshakeDuration
+	}
+	c.sfxArmed, c.sfxLeft, c.sfxBase, c.sfxShake = false, 0, "", false
 }
 
 // fireMessageEffects triggers the message-display effects exactly where
@@ -1225,6 +1290,16 @@ func (c *Courtroom) Update(dt time.Duration) {
 		c.Scene.ShakeLeft -= dt
 		if c.Scene.ShakeLeft < 0 {
 			c.Scene.ShakeLeft = 0
+		}
+	}
+	// Delayed emote SFX + preanim screenshake (#12): fire at SFX_DELAY × 40ms.
+	// Runs independent of the phase machine (armed in enterAfterShout, cleared in
+	// begin), so a delay that outlasts the preanim still lands during the talk
+	// loop, exactly as AO2's sfx_delay_timer does.
+	if c.sfxArmed {
+		c.sfxLeft -= dt
+		if c.sfxLeft <= 0 {
+			c.fireSFXDelay()
 		}
 	}
 	switch c.phase {

@@ -37,14 +37,26 @@ type audioRecorder struct {
 	shouts, sfx, blips, music []string
 	stops                     int
 	blipScale                 int
+	// musicLoop/musicEffects record the last PlayMusic call's 2.9 semantics (#15).
+	musicLoop    []bool
+	musicEffects []int
+	// sfxDelays records the delay passed to each PlaySFX (#12 deadline math).
+	sfxDelays []time.Duration
 }
 
-func (a *audioRecorder) PlayShout(base string)             { a.shouts = append(a.shouts, base) }
-func (a *audioRecorder) PlaySFX(b string, _ time.Duration) { a.sfx = append(a.sfx, b) }
-func (a *audioRecorder) PlayBlip(base string)              { a.blips = append(a.blips, base) }
-func (a *audioRecorder) SetBlipScale(pct int)              { a.blipScale = pct }
-func (a *audioRecorder) PlayMusic(url string)              { a.music = append(a.music, url) }
-func (a *audioRecorder) StopMusic()                        { a.stops++ }
+func (a *audioRecorder) PlayShout(base string) { a.shouts = append(a.shouts, base) }
+func (a *audioRecorder) PlaySFX(b string, d time.Duration) {
+	a.sfx = append(a.sfx, b)
+	a.sfxDelays = append(a.sfxDelays, d)
+}
+func (a *audioRecorder) PlayBlip(base string) { a.blips = append(a.blips, base) }
+func (a *audioRecorder) SetBlipScale(pct int) { a.blipScale = pct }
+func (a *audioRecorder) PlayMusic(url string, loop bool, effects int) {
+	a.music = append(a.music, url)
+	a.musicLoop = append(a.musicLoop, loop)
+	a.musicEffects = append(a.musicEffects, effects)
+}
+func (a *audioRecorder) StopMusic() { a.stops++ }
 
 // newCourtroomRig builds a courtroom over a no-network manager (local mounts
 // pointing at an empty dir — prefetches resolve to warnings, which the
@@ -1815,5 +1827,175 @@ func TestTextStayConfigurable(t *testing.T) {
 	room.enterLinger()
 	if room.timer != 123*time.Millisecond {
 		t.Fatalf("linger timer = %v, want the configured 123ms", room.timer)
+	}
+}
+
+// TestSFXDelayDeadline pins #12: a message's emote SFX fires at SFX_DELAY × 40ms
+// (AO2 sfx_delay_timer), not at message start, so a whip-crack lands mid-preanim.
+func TestSFXDelayDeadline(t *testing.T) {
+	room, _, _, audio := newCourtroomRig(t)
+	// Idle-mod message (no preanim block) so it enters PhaseTalking immediately;
+	// the SFX deadline runs independent of the phase.
+	msg := &protocol.ChatMessage{
+		CharName: "Phoenix", Emote: "normal", Message: "Take that!", Side: "wit",
+		EmoteMod: protocol.EmoteModIdle,
+		SFXName:  "whack", SFXDelay: 3, // 3 × 40ms = 120ms
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+	if !room.sfxArmed {
+		t.Fatal("SFX must be armed after begin")
+	}
+	if want := 3 * sfxDelayUnit; room.sfxLeft != want {
+		t.Fatalf("armed sfxLeft = %v, want %v (SFXDelay × 40ms)", room.sfxLeft, want)
+	}
+	// Before the deadline: nothing played.
+	room.Update(100 * time.Millisecond)
+	if len(audio.sfx) != 0 {
+		t.Fatalf("SFX played early at 100ms (deadline 120ms): %v", audio.sfx)
+	}
+	// Cross the deadline: it fires exactly once, resolved to the SFX URL.
+	room.Update(30 * time.Millisecond) // total 130ms > 120ms
+	if len(audio.sfx) != 1 {
+		t.Fatalf("SFX plays = %d, want 1 after the deadline", len(audio.sfx))
+	}
+	if !strings.Contains(strings.ToLower(audio.sfx[0]), "whack") {
+		t.Errorf("played SFX %q, want the whack URL", audio.sfx[0])
+	}
+	if room.sfxArmed {
+		t.Error("SFX must disarm after firing (no repeat)")
+	}
+	// A further tick does not re-fire.
+	room.Update(200 * time.Millisecond)
+	if len(audio.sfx) != 1 {
+		t.Errorf("SFX re-fired: %v", audio.sfx)
+	}
+}
+
+// TestPreanimScreenshakeAtDeadline pins #12: AO2's play_sfx fires the preanim
+// screenshake at the SFX delay moment (courtroom.cpp:4593-4596), and it fires
+// even when the message has no audible SFX ("0"/"1"/empty) — the shake is gated
+// only on SCREENSHAKE=1 + a preanim emote mod.
+func TestPreanimScreenshakeAtDeadline(t *testing.T) {
+	room, _, _, audio := newCourtroomRig(t)
+	room.ReduceMotion, room.ScreenEffects = false, true // visuals enabled
+	msg := &protocol.ChatMessage{
+		CharName: "Phoenix", Emote: "normal", PreEmote: "point", Message: "!!!", Side: "wit",
+		EmoteMod:    protocol.EmoteModPreanim,
+		Screenshake: true,
+		SFXName:     "1", // no audible SFX — shake must still fire
+		SFXDelay:    2,   // 2 × 40ms = 80ms
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+	if !room.sfxArmed || !room.sfxShake {
+		t.Fatalf("preanim shake must be armed (armed=%v shake=%v)", room.sfxArmed, room.sfxShake)
+	}
+	if room.sfxBase != "" {
+		t.Errorf("SFXName '1' must resolve to no audible SFX, got base %q", room.sfxBase)
+	}
+	// Before the deadline: no shake.
+	room.Update(70 * time.Millisecond)
+	if room.Scene.ShakeLeft != 0 {
+		t.Fatalf("shake fired early at 70ms (deadline 80ms)")
+	}
+	// After the deadline: shake fires, no audible SFX.
+	room.Update(20 * time.Millisecond) // total 90ms > 80ms
+	if room.Scene.ShakeLeft != ScreenshakeDuration {
+		t.Errorf("preanim shake must fire at the deadline, ShakeLeft=%v", room.Scene.ShakeLeft)
+	}
+	if len(audio.sfx) != 0 {
+		t.Errorf("SFXName '1' must play no sound, got %v", audio.sfx)
+	}
+}
+
+// TestPreanimShakeGatedByReduceMotion pins that the deadline shake honors the
+// accessibility gate: reduce-motion suppresses it (nothing is armed to shake).
+func TestPreanimShakeGatedByReduceMotion(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	room.ReduceMotion = true
+	msg := &protocol.ChatMessage{
+		CharName: "Phoenix", Emote: "normal", PreEmote: "point", Message: "!!!", Side: "wit",
+		EmoteMod: protocol.EmoteModPreanim, Screenshake: true, SFXName: "1",
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+	if room.sfxShake {
+		t.Error("reduce-motion must suppress the armed preanim shake")
+	}
+	// Armed nothing (no SFX, no shake): stays disarmed.
+	if room.sfxArmed {
+		t.Error("nothing to fire — must not arm")
+	}
+}
+
+// TestMCLoopingAndEffectsParse pins #15: MC field 3 (looping) and field 5
+// (MUSIC_EFFECT flags) parse onto EventMusic, and short/malformed packets
+// degrade to the AsyncAO defaults (loop forever, no effects) — old servers send
+// only fields 0-2.
+func TestMCLoopingAndEffectsParse(t *testing.T) {
+	s := NewSession(func(protocol.Packet) error { return nil }, "h")
+
+	// Full 2.9 MC: track, charID, showname, looping=0, channel=0, effects=FADE_IN.
+	ev := feed(t, s, "MC#Trial.opus#2#DJ#0#0#1#%")
+	if len(ev) != 1 || ev[0].Kind != EventMusic {
+		t.Fatalf("MC events = %+v, want one EventMusic", ev)
+	}
+	if ev[0].Loop {
+		t.Error("looping field '0' must map to Loop=false (play once)")
+	}
+	if ev[0].MusicEffects != musicEffectFadeIn {
+		t.Errorf("effects = %d, want FADE_IN (%d)", ev[0].MusicEffects, musicEffectFadeIn)
+	}
+
+	// NO_REPEAT overrides the looping field: looping=1 + effects=8 → play once
+	// (AO2 isLooping = loopEnabled && !(flags & NO_REPEAT)).
+	ev = feed(t, s, "MC#Cornered.opus#2#DJ#1#0#8#%")
+	if ev[0].Loop {
+		t.Error("NO_REPEAT flag must override looping=1 → Loop=false")
+	}
+	if ev[0].MusicEffects != musicEffectNoRepeat {
+		t.Errorf("effects = %d, want NO_REPEAT (%d)", ev[0].MusicEffects, musicEffectNoRepeat)
+	}
+
+	// looping=1, no effects → loop forever.
+	ev = feed(t, s, "MC#Pursuit.opus#2#DJ#1#0#0#%")
+	if !ev[0].Loop {
+		t.Error("looping=1 with no NO_REPEAT must loop")
+	}
+
+	// Short legacy MC (no looping/effects fields): default is loop-forever, no
+	// effects — DELIBERATELY differs from AO2's looping=false default so legacy
+	// tsuservers that rely on client-side looping keep working.
+	ev = feed(t, s, "MC#Investigation.opus#2#%")
+	if !ev[0].Loop {
+		t.Error("absent looping field must default to Loop=true (AsyncAO client-side loop)")
+	}
+	if ev[0].MusicEffects != 0 {
+		t.Errorf("absent effects field must default to 0, got %d", ev[0].MusicEffects)
+	}
+
+	// Malformed effects field degrades to 0 (atoiOr fallback), doesn't drop the event.
+	ev = feed(t, s, "MC#Reminiscence.opus#2#DJ#1#0#garbage#%")
+	if len(ev) != 1 || ev[0].MusicEffects != 0 {
+		t.Errorf("malformed effects → events=%+v, want one with Effects=0", ev)
+	}
+}
+
+// TestEventMusicPlumbsLoopEffects pins #15: EventMusic's Loop/Effects reach the
+// audio sink's PlayMusic call.
+func TestEventMusicPlumbsLoopEffects(t *testing.T) {
+	room, _, _, audio := newCourtroomRig(t)
+	room.HandleEvent(Event{Kind: EventMusic, Text: "Trial.opus", Loop: false, MusicEffects: musicEffectFadeIn})
+	if len(audio.music) != 1 {
+		t.Fatalf("PlayMusic calls = %d, want 1", len(audio.music))
+	}
+	if audio.musicLoop[0] {
+		t.Error("Loop=false must plumb through to PlayMusic(loop=false)")
+	}
+	if audio.musicEffects[0] != musicEffectFadeIn {
+		t.Errorf("effects plumbed = %d, want FADE_IN (%d)", audio.musicEffects[0], musicEffectFadeIn)
+	}
+
+	room.HandleEvent(Event{Kind: EventMusic, Text: "Cornered.opus", Loop: true, MusicEffects: 0})
+	if !audio.musicLoop[1] || audio.musicEffects[1] != 0 {
+		t.Errorf("second play = {loop:%v effects:%d}, want {true 0}", audio.musicLoop[1], audio.musicEffects[1])
 	}
 }

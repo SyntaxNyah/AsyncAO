@@ -374,13 +374,21 @@ func saveSceneRecording(rec *sceneRecording, stem string) (string, error) {
 
 // eventFromRec reconstructs the courtroom event a recorded entry stands for.
 func eventFromRec(e recEvent) courtroom.Event {
-	return courtroom.Event{
+	ev := courtroom.Event{
 		Kind:    courtroom.EventKind(e.Kind),
 		Message: e.Message,
 		Name:    e.Name,
 		Text:    e.Text,
 		Int:     e.Int,
 	}
+	// .aorec doesn't record the 2.9 MC loop/effect flags (#15), so a replayed
+	// music event would carry the zero-value Loop=false and now PLAY ONCE. Replay
+	// has always looped its soundtrack, so default recorded music to loop-forever
+	// (no format change, no migration for existing recordings).
+	if ev.Kind == courtroom.EventMusic {
+		ev.Loop = true
+	}
+	return ev
 }
 
 // loadRecording reads and parses a .aorec file.

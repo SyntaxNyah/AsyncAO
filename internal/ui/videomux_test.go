@@ -23,7 +23,7 @@ func TestAudioCaptureSongSegments(t *testing.T) {
 	frame := 0
 	one := &audioCapture{frameRef: func() int { return frame }}
 	frame = 10
-	one.PlayMusic("A")
+	one.PlayMusic("A", true, 0)
 	if segs := one.songSegments(frameMs, endFrame); len(segs) != 1 || segs[0] != (songSegment{url: "A", startMs: 500, trimMs: 0}) {
 		t.Errorf("single song: %+v, want one {A 500 0}", segs)
 	}
@@ -32,9 +32,9 @@ func TestAudioCaptureSongSegments(t *testing.T) {
 	frame = 0
 	chg := &audioCapture{frameRef: func() int { return frame }}
 	frame = 10
-	chg.PlayMusic("A")
+	chg.PlayMusic("A", true, 0)
 	frame = 40
-	chg.PlayMusic("B")
+	chg.PlayMusic("B", true, 0)
 	want := []songSegment{{url: "A", startMs: 500, trimMs: 1500}, {url: "B", startMs: 2000, trimMs: 0}}
 	if segs := chg.songSegments(frameMs, endFrame); len(segs) != 2 || segs[0] != want[0] || segs[1] != want[1] {
 		t.Errorf("song change: %+v, want %+v", chg.songSegments(frameMs, endFrame), want)
@@ -46,7 +46,7 @@ func TestAudioCaptureSongSegments(t *testing.T) {
 	frame = 5
 	stop.StopMusic()
 	frame = 10
-	stop.PlayMusic("A")
+	stop.PlayMusic("A", true, 0)
 	frame = 30
 	stop.StopMusic()
 	if segs := stop.songSegments(frameMs, endFrame); len(segs) != 1 || segs[0] != (songSegment{url: "A", startMs: 500, trimMs: 1000}) {

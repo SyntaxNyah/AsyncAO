@@ -206,6 +206,11 @@ type Event struct {
 	Int     int
 	// Int2 is the second integer payload (EventHP's bar value).
 	Int2 int
+	// Loop and MusicEffects carry the 2.9+ MC play semantics (#15): whether the
+	// track should loop (field 3) and the MUSIC_EFFECT bit flags (field 5,
+	// FADE_IN/FADE_OUT/SYNC_POS/NO_REPEAT). Only EventMusic populates them.
+	Loop         bool
+	MusicEffects int
 }
 
 // LivePlayer is one entry of the server-pushed live player list. Akashi and
@@ -232,6 +237,20 @@ type LivePlayer struct {
 // Far above any real area population; a reconnect re-dumps the full roster, so a
 // hit here self-heals rather than corrupting state.
 const livePlayerCap = 1024
+
+// MUSIC_EFFECT bit flags carried in MC field 5 (#15; AO2-Client
+// src/datatypes.h:95-101). Servers OR these into one int: FADE_IN ramps the new
+// track up, FADE_OUT ramps the previous one down, SYNC_POS starts the new track
+// at the previous track's position, NO_REPEAT forces a single play regardless of
+// the looping field. AsyncAO honors FADE_IN, FADE_OUT (stop-path only) and
+// NO_REPEAT; SYNC_POS is skipped (see startMusic — SDL_mixer can't cheaply seek
+// a freshly-loaded stream mid-fetch).
+const (
+	musicEffectFadeIn   = 1
+	musicEffectFadeOut  = 2
+	musicEffectSyncPos  = 4
+	musicEffectNoRepeat = 8
+)
 
 // PR roster-change types — PR#<id>#<type>#% (akashi PacketPR::UPDATE_TYPE).
 const (
@@ -658,6 +677,29 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		if atoiOr(p.Field(4), 0) != 0 {
 			return nil
 		}
+		// Field 3 = looping, field 5 = MUSIC_EFFECT bit flags (AO2-Client
+		// handle_song, courtroom.cpp:4764-4787). Both are optional on the wire —
+		// old servers send only fields 0-2, so a short packet degrades to the
+		// AsyncAO default (loop forever, no effects). Field(i) returns "" past the
+		// end, and atoiOr falls back, so no bounds check is needed here.
+		//
+		// Loop default DELIBERATELY DIFFERS from AO2: AO2 sets looping=false when
+		// field 3 is absent (relying on outdated servers to loop server-side),
+		// but AsyncAO has always looped client-side, and every legacy tsuserver
+		// depends on that — so absent field 3 keeps loop-forever. An explicit
+		// field 3 = "0" (or the NO_REPEAT flag) means play once.
+		looping := true
+		if v := p.Field(3); v != "" {
+			looping = v == "1"
+		}
+		effects := atoiOr(p.Field(5), 0)
+		// NO_REPEAT overrides the looping field (AO2-Client aomusicplayer.cpp:31
+		// `isLooping = loopEnabled && !(effectFlags & NO_REPEAT)`), so the loop
+		// bool the audio sink receives is already authoritative — the render side
+		// needs no separate NO_REPEAT check.
+		if effects&musicEffectNoRepeat != 0 {
+			looping = false
+		}
 		// Persist the current REAL song on the session (like Background), so a room
 		// rebuilt later can resume it. Mirror the courtroom's play classification
 		// (courtroom.go EventMusic): a stop clears it; an area-name transfer leaves the
@@ -670,7 +712,8 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 		default:
 			s.MusicTrack = track
 		}
-		return []Event{{Kind: EventMusic, Text: track, Int: atoiOr(p.Field(1), protocol.UnpairedCharID), Name: p.Field(2)}}
+		return []Event{{Kind: EventMusic, Text: track, Int: atoiOr(p.Field(1), protocol.UnpairedCharID), Name: p.Field(2),
+			Loop: looping, MusicEffects: effects}}
 
 	case "BN":
 		s.Background = p.Field(0)
