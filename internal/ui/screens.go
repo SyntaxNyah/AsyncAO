@@ -4165,8 +4165,167 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	clusterX, y, dy, clusterRight := controlsBlockOrigin(ctrlRect, ctrlEdited, w, defY)
 
 	// Row 1: shouts, pairing, and the live layout knobs (both hideable).
+	// Extracted to drawICShoutRow (rects by value, no closures — the row stays
+	// alloc-free) so the send decision below reads pendingShout as before.
+	pendingShout := a.drawICShoutRow(clusterX, y, w, h)
+
+	// Row 2: utility buttons (their own row so nothing overlaps at any
+	// viewport scale or window width). Split into the legacy-dev-theme and the
+	// grouped-default variants; each returns the (wrapped) row bottom y2 and a
+	// `done` flag set when a Disconnect click already fired requestDisconnect —
+	// in which case the frame short-circuits exactly as the inline `return` did.
+	y2 := y + btnH + 4
+	var done bool
+	if a.d.Prefs.LegacyDevThemeOn() {
+		y2, done = a.drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h)
+	} else {
+		y2, done = a.drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h)
+	}
+	if done {
+		return // Disconnect requested — skip the rest of this frame (was an inline return)
+	}
+
+	// The control-button block ends here. Register it for the editor (its height is
+	// content-driven, so measure it now). The grab box spans the LIVE content width —
+	// the wrap edge the rows actually used — so the side handles sit where the
+	// buttons end after a width resize. def keeps the default full width; its height
+	// reflects the live row count (recomputing the default wrap would mean laying the
+	// rows out twice — reset just recomputes for real next frame).
+	if a.classicEdit {
+		a.regSlot(slotControls,
+			sdl.Rect{X: clusterX, Y: y, W: clusterRight - clusterX, H: y2 + btnH - y},
+			sdl.Rect{X: pad, Y: defY, W: w - 2*pad, H: y2 - dy + btnH - defY})
+	}
+
+	// Judge strip (JD grant, or the judge stand when pos-dependent) + the emote grid now
+	// follow the control block, which sits BELOW the IC bar (#8). They anchor to the
+	// block's UN-MOVED bottom (y2 - dy). The IC bar itself anchors to icBarTop (under the
+	// stage), independent of this chain, so the judge strip never pushes the input around.
+	postY := y2 - dy + btnH + 6
+	if a.judgeVisible() {
+		postY += a.drawJudgeRow(pad, postY)
+	}
+
+	// IC input row (height follows the Box knob), led by the AO2 text
+	// color selector: a swatch previews the active wire color (MS
+	// text_color 0–9), the dropdown names it (AO2's color dropdown). The
+	// showname box OVERRIDES the Settings showname for the session.
+	// The whole IC bar is a movable + resizable slot ("icbar"). Its default now spans the
+	// stage width (vp.W) DIRECTLY under the stage (icBarTop, #8) — the first thing below
+	// the viewport. Everything inside lays out relative to the slot (icBar.X / .W) and the
+	// fH-tall row is centred within the slot height, so a drag moves the bar and a width
+	// resize widens / narrows the text input (still floored at minICInputW). The emoji /
+	// FX / React buttons store their live rects as they draw, so their pop-ups follow the
+	// bar wherever it lands. slotRect is alloc-free off the edit path. (fH is computed at
+	// the top now, to place the control block below this bar.)
+	// v1.50.5 (Nightingale): the whole-bar "IC input bar" PANEL slot is gone —
+	// every element below is its own independent movable+resizable slot, so the
+	// bar is just the DEFAULT row geometry they lay out from. (An old "icbar"
+	// override in prefs is simply ignored; Reset all clears it.)
+	icBar := sdl.Rect{X: pad, Y: icBarTop, W: vp.W, H: fH}
+	rowY := icBar.Y
+	// Colour swatch + dropdown — an individually movable slot (#4a). The selector also
+	// offers the extended AsyncAO colours (#98) and the two "fun colour" modes (#79): they
+	// sit after the palette so they're picked like any colour instead of being buried in
+	// Settings. icColorSelected drives the active row + swatch; applyICColorChoice routes
+	// the pick — both shared with the themed row so the two layouts can't drift.
+	colorBox := a.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
+	a.drawICColorStrip(colorBox) // swatch + colour dropdown (rect by value — alloc-free)
+	// The rest of the IC bar (showname → Immediate → Additive → SFX → emoji → FX →
+	// text input → muted chip) is one sequential cursor chain, kept together in
+	// drawICInputRow. It returns whether Enter was pressed so the send decision
+	// stays visible here alongside the shout row's pendingShout. icBar is passed by
+	// value (alloc-free); the chain flows from the DEFAULT positions, never an
+	// override, so freeing one slot never cascades the rest (unchanged behaviour).
+	send := a.drawICInputRow(icBar, rowY, w, h, fH)
+	if send || pendingShout != 0 {
+		a.sendIC(pendingShout)
+	}
+
+	// Emote row — a movable/resizable slot (the grid pages within whatever rect it
+	// gets, so drag/resize is free). slotRect stays INSIDE the hidden guard so the
+	// editor never registers a handle for a grid that isn't drawn. The default is
+	// byte-identical to before, so an un-edited courtroom is pixel-identical.
+	emoteY := postY // #8: the emote grid follows the control block + judge strip, below the IC bar
+	if !a.panelHidden(panelEmotes) {
+		emoteDef := sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}
+		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
+	}
+
+	// OOC row at the very bottom: a FULL-width OOC chat INPUT (no name box — the OOC name
+	// lives in the OOC box/tab now; it used to be duplicated here, which is the redundancy
+	// a tester flagged). Shown whenever OOC is a tab (Legacy theme, or the opt-in "OOC in the
+	// log tab" toggle), as a SECOND always-visible input alongside the tab's own — the hybrid.
+	// In the new-default OOC BOX the input lives inside the box, so this bar is dropped.
+	oocY := h - fH - 4
+	if !a.panelHidden(panelOOC) && (a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn()) {
+		// The bottom OOC bar is its own movable + resizable slot ("oocbar"): its default spans
+		// the bottom row, the row centred within the slot height. Registered only while it
+		// actually draws, so the editor offers a handle for it only when OOC is a tab.
+		oocBarDef := sdl.Rect{X: pad, Y: oocY, W: w - 3*pad, H: fH}
+		oocBar := a.slotRect(slotOOCBar, oocBarDef, w, h)
+		oocRowY := oocBar.Y
+		if oocBar.H > fH {
+			oocRowY = oocBar.Y + (oocBar.H-fH)/2
+		}
+		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput) // #M5: emoji/unicode in the OOC bar too
+		var sendOOC bool
+		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}, a.oocInput, "OOC chat…  (set your OOC name in the OOC tab)", oocPrimary, oocEmoji)
+		if sendOOC {
+			a.submitOOC() // shared OOC send: uses your OOC name (or the server default) + clears
+		}
+		a.recallOOC() // Up/Down recall recently-sent OOC lines when the bar is focused
+		// Ctrl+wheel over the OOC row resizes the OOC text (independent of the IC log).
+		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}) {
+			a.oocPct = clampInt(a.oocPct+int(c.wheelY)*config.ScaleStepPercent,
+				config.MinLogScalePercent, config.MaxLogScalePercent)
+			a.saveLayout()
+		}
+	}
+	// Missing-asset warning (spec §4: visible in-client, names what was
+	// tried so "enable fallbacks" is an informed fix, not a guess).
+	// Missing-asset warning + the DND badge share this row. When DND is on, clip
+	// the (left-aligned) toast so it can't run under the right-aligned badge —
+	// both stay readable. DND off (the default) draws byte-identical to before.
+	toastW := w - 2*pad
+	dndMsg := ""
+	var dndW int32
+	if a.dndOn {
+		dndMsg = "● Do Not Disturb — alerts muted (click to undo)"
+		dndW = c.TextWidth(dndMsg)
+		if gap := dndW + 16; gap < toastW {
+			toastW -= gap
+		} else {
+			toastW = 0
+		}
+	}
+	if a.warnActive() {
+		c.LabelClipped(pad, oocY-20, toastW, a.warnLine, ColDanger)
+	}
+	// Do Not Disturb badge: a persistent reminder while alerts are muted, so a
+	// silenced callword never reads as "callwords broken". Click it to turn DND
+	// off without opening Settings.
+	if a.dndOn {
+		bx := w - pad - dndW
+		c.Label(bx, oocY-20, dndMsg, ColTierYellow)
+		if c.clicked && c.hovering(sdl.Rect{X: bx, Y: oocY - 22, W: dndW, H: 18}) {
+			a.setDND(false)
+			a.warnLine = "Do Not Disturb off."
+			a.warnAt = time.Now()
+		}
+	}
+
+}
+
+// drawICShoutRow draws control-block Row 1 — the shout buttons (Hold It / Objection
+// / Take That + the 2.10 custom interjection), the Pair toggle and the live layout
+// knobs — from the block origin (clusterX, y). It returns the shout modifier the
+// user clicked (0 = none), which the caller folds into its send decision. clusterX
+// / y arrive by value and the local x cursor never escapes, so the row stays
+// allocation-free (moved verbatim from drawICControls).
+func (a *App) drawICShoutRow(clusterX, y, w, h int32) (pendingShout int) {
+	c := a.ctx
 	x := clusterX
-	var pendingShout int
 	if !a.panelHidden(panelShouts) {
 		shoutW := int32(96)
 		// Each shout is individually movable in the layout editor (literal slot keys
@@ -4226,383 +4385,361 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 		x = a.scaleControl(x, y, "Log", &a.logPct, config.ScaleStepPercent, config.MinLogScalePercent, config.MaxLogScalePercent)
 		_ = a.scaleControl(x, y, "Input", &a.inputPct, config.ScaleStepPercent, config.MinInputPercent, config.MaxInputPercent)
 	}
+	return pendingShout
+}
 
-	// Row 2: utility buttons (their own row so nothing overlaps at any
-	// viewport scale or window width).
-	y2 := y + btnH + 4
-	x = clusterX
-	if a.d.Prefs.LegacyDevThemeOn() {
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character") {
-			// Back to char select; the session stays, the server re-picks via
-			// CC → PV and EventCharPicked rebuilds the courtroom.
+// drawICUtilityRowLegacy draws control-block Row 2 in the legacy-dev-theme layout
+// (the flat, ungrouped button run). It threads the row cursor y2 (which wraps to a
+// fresh row when the trailing buttons wouldn't fit) in and out by value, and returns
+// done=true when a Disconnect click already fired requestDisconnect so the caller
+// short-circuits the frame exactly as the old inline `return` did (moved verbatim).
+func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (int32, bool) {
+	c := a.ctx
+	x := clusterX
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Character") {
+		// Back to char select; the session stays, the server re-picks via
+		// CC → PV and EventCharPicked rebuilds the courtroom.
+		a.screen = ScreenCharSelect
+	}
+	x += 106
+	// Wardrobe (iniswap): accent + tooltip so it's easy to spot.
+	wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
+	if c.Button(wr, "Wardrobe") {
+		a.openIniswap()
+	}
+	c.Border(wr, ColAccent)
+	c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
+	x += 96
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
+		a.openBgPicker()
+	}
+	x += 106
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
+		a.prevScreen = ScreenCourtroom
+		a.screen = ScreenSettings
+	}
+	x += 96
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About") {
+		a.prevScreen = ScreenCourtroom
+		a.screen = ScreenAbout
+	}
+	x += 86
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
+		a.requestDisconnect() // confirm first unless instant-disconnect is set
+		return y2, true
+	}
+	x += 116
+	evLabel := "Evidence"
+	if a.evidPresent {
+		evLabel = "Evidence ●" // armed: next IC message presents it
+	}
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
+		a.showEvid = true
+	}
+	x += 106
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
+		a.showModcall = true
+	}
+	x += 86
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
+		a.openLoginDialog()
+	}
+	x += 76
+	if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
+		a.showUICfg = true
+	}
+	x += 56
+	x = a.drawPosSelect(x, y2, btnH)
+	// "Hotkeys" (#96) + "Restyle" (#103/#104) are the trailing convenience buttons,
+	// appended after Pos so no existing button shifts. At a narrow window width the
+	// long Row 2 would push the PAIR off the right edge, so wrap them down to a
+	// fresh row when they wouldn't fit. Everything below keys off y2 (icY = y2 +
+	// btnH + …), so bumping it in place drops the IC area and judge strip with it.
+	// Constant widths keep this alloc-free.
+	const keysW, styleW, btnGap int32 = 90, 84, 6
+	if x+keysW+btnGap+styleW > clusterRight {
+		y2 += btnH + 4
+		x = clusterX
+	}
+	keysR := sdl.Rect{X: x, Y: y2, W: keysW, H: btnH}
+	if c.Button(keysR, "Hotkeys") {
+		a.openHotkeyCheatSheet()
+	}
+	c.Tooltip(keysR, "Show all your hotkeys & custom binds (also F1)")
+	x += keysW + btnGap
+	styleR := sdl.Rect{X: x, Y: y2, W: styleW, H: btnH}
+	if c.Button(styleR, "Restyle") {
+		a.openSpriteStyle()
+	}
+	c.Tooltip(styleR, "Recolour / glow your character on the fly — other AsyncAO players see it")
+	x += styleW + btnGap
+
+	// Edit Layout (front door to the live layout editor) + Mod / CM launchers, in the button row so
+	// they never float over the emote grid. Wrap to a fresh row as a group if they wouldn't fit.
+	editW := int32(94)
+	modW, cmW := int32(0), int32(0)
+	if a.amIMod() {
+		modW = 54
+	}
+	if a.amICMNow {
+		cmW = 46
+	}
+	if x+editW+modW+cmW+btnGap*2 > clusterRight {
+		y2 += btnH + 4
+		x = clusterX
+	}
+	edR := sdl.Rect{X: x, Y: y2, W: editW, H: btnH}
+	if c.Button(edR, "Edit Layout") {
+		a.openLayoutEditor()
+	}
+	c.Tooltip(edR, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
+	x += editW + btnGap
+	if modW > 0 {
+		mR := sdl.Rect{X: x, Y: y2, W: modW, H: btnH}
+		if c.Button(mR, "Mod") {
+			a.toggleModDash()
+		}
+		c.Border(mR, ColDanger)
+		c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
+		x += modW + btnGap
+	}
+	if cmW > 0 {
+		cR := sdl.Rect{X: x, Y: y2, W: cmW, H: btnH}
+		if c.Button(cR, "CM") {
+			a.toggleCMPanel()
+		}
+		c.Border(cR, chipCMColor)
+		c.Tooltip(cR, "CM area controls — lock / kick-from-area")
+		x += cmW + btnGap
+	}
+	// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
+	// Appended last so it can't shift the buttons before it; skipped (no x advance) off.
+	if a.d.Prefs.GroupChatButtonOn() && !a.panelHidden("ctrl.groupchat") {
+		const gcW = int32(96)
+		if x+gcW > clusterRight {
+			y2 += btnH + 4
+			x = clusterX
+		}
+		gcR := sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}
+		if c.Button(gcR, "Group Chat") {
+			a.toggleMessages()
+		}
+		c.Border(gcR, ColAccent)
+		c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
+		x += gcW + btnGap
+	}
+	// Voice button — only in a voice-enabled area (VS_CAPS / Nyathena); appears
+	// when you enter a VC room, hidden otherwise. Appended; no x advance when off.
+	if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
+		const vcW = int32(80)
+		if x+vcW > clusterRight {
+			y2 += btnH + 4
+			x = clusterX
+		}
+		vcLabel, vcBord := a.voiceButtonState()
+		vcR := sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}
+		if c.Button(vcR, vcLabel) {
+			a.toggleVoice()
+		}
+		c.Border(vcR, vcBord)
+		c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
+		x += vcW + btnGap
+	}
+	return y2, false
+}
+
+// drawICUtilityRowGrouped draws control-block Row 2 in the grouped-default layout
+// (buttons clustered by purpose — Character · Scene · Moderation · System — with a
+// wider gap between groups and Disconnect set apart at the end). Like the legacy
+// variant it threads the wrapping row cursor y2 by value and returns done=true when
+// a Disconnect click already fired requestDisconnect (moved verbatim).
+func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (int32, bool) {
+	c := a.ctx
+	x := clusterX
+	// New default: the same buttons grouped by purpose (Character · Scene · Moderation · System),
+	// a wider gap between groups, the leave button set apart at the end. Inline (no closures) so
+	// the row stays alloc-free.
+	const gGap = int32(16) // gap between groups
+	evLabel := "Evidence"
+	if a.evidPresent {
+		evLabel = "Evidence ●"
+	}
+	// — Character — (each button hideable via UI… → Buttons; hidden ones compact away)
+	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.character"); ok {
+		if c.Button(r, "Character") {
 			a.screen = ScreenCharSelect
 		}
-		x += 106
-		// Wardrobe (iniswap): accent + tooltip so it's easy to spot.
-		wr := sdl.Rect{X: x, Y: y2, W: 90, H: btnH}
-		if c.Button(wr, "Wardrobe") {
+	}
+	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
+		if c.Button(r, "Wardrobe") {
 			a.openIniswap()
 		}
-		c.Border(wr, ColAccent)
-		c.Tooltip(wr, "Wardrobe / iniswap — swap your character's sprites & emotes")
-		x += 96
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, "Background") {
+		c.Border(r, ColAccent)
+		c.Tooltip(r, "Wardrobe / iniswap — swap your character's sprites & emotes")
+	}
+	if r, ok := a.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
+		if c.Button(r, "Restyle") {
+			a.openSpriteStyle()
+		}
+		c.Tooltip(r, "Recolour / glow your character on the fly — other AsyncAO players see it")
+	}
+	// — Scene —
+	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.background"); ok {
+		if c.Button(r, "Background") {
 			a.openBgPicker()
 		}
-		x += 106
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 90, H: btnH}, "Settings") {
+	}
+	if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.evidence"); ok {
+		if c.Button(r, evLabel) {
+			a.showEvid = true
+		}
+	}
+	x = a.drawPosSelect(x, y2, btnH)
+	x += gGap
+	// — Moderation —
+	if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.mods"); ok {
+		if c.Button(r, "Mods...") {
+			a.showModcall = true
+		}
+	}
+	if a.amIMod() {
+		mR := a.slotRect("ctrl.mod", sdl.Rect{X: x, Y: y2, W: 54, H: btnH}, w, h)
+		if c.Button(mR, "Mod") {
+			a.toggleModDash()
+		}
+		c.Border(mR, ColDanger)
+		c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
+		x += 60
+	}
+	if a.amICMNow {
+		cR := a.slotRect("ctrl.cm", sdl.Rect{X: x, Y: y2, W: 46, H: btnH}, w, h)
+		if c.Button(cR, "CM") {
+			a.toggleCMPanel()
+		}
+		c.Border(cR, chipCMColor)
+		c.Tooltip(cR, "CM area controls — lock / kick-from-area")
+		x += 52
+	}
+	x += gGap
+	// — System — wrap to a fresh row as a block if it would run off the right edge.
+	if x+90+56+100+96+86+76 > clusterRight {
+		y2 += btnH + 4
+		x = clusterX
+	}
+	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.settings"); ok {
+		if c.Button(r, "Settings") {
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenSettings
 		}
-		x += 96
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "About") {
+	}
+	// UI… is the access point to the button-customise list, so it's never hidden.
+	if a.movableButton("ctrl.ui", sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...", w, h) {
+		a.showUICfg = true
+	}
+	x += 56
+	if r, ok := a.ctrlSlot(&x, y2, 94, 100, w, h, "ctrl.editlayout"); ok {
+		if c.Button(r, "Edit Layout") {
+			a.openLayoutEditor()
+		}
+		c.Tooltip(r, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
+	}
+	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.hotkeys"); ok {
+		if c.Button(r, "Hotkeys") {
+			a.openHotkeyCheatSheet()
+		}
+		c.Tooltip(r, "Show all your hotkeys & custom binds (also F1)")
+	}
+	if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.about"); ok {
+		if c.Button(r, "About") {
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenAbout
 		}
-		x += 86
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect") {
-			a.requestDisconnect() // confirm first unless instant-disconnect is set
-			return
+	}
+	// Login / account button: once you've saved an account for this server it shows
+	// your username (left-click views your profile via /account); otherwise it's the
+	// plain "Login..." that opens the dialog. Right-click always opens the dialog (log
+	// in / switch / re-login). Account name is per-server (a.serverKey), so it's
+	// correct across multi-server tabs.
+	acct := strings.TrimSpace(a.d.Prefs.ServerWarmInfoFor(a.serverKey).LoginUser)
+	loginLabel, loginW := "Login...", int32(70)
+	if acct != "" {
+		loginLabel, loginW = acct, c.TextWidth(acct)+18
+	}
+	if loginR, ok := a.ctrlSlot(&x, y2, loginW, loginW+6, w, h, "ctrl.login"); ok {
+		if c.Button(loginR, loginLabel) {
+			if acct != "" {
+				a.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
+			} else {
+				a.openLoginDialog()
+			}
+		}
+		if acct != "" {
+			if c.rightClicked && c.hovering(loginR) {
+				a.openLoginDialog() // re-login / switch account
+			} else if c.hovering(loginR) { // build the hint string only on hover (0-alloc otherwise)
+				c.Tooltip(loginR, "Logged in as "+acct+" — click: view profile (/account) · right-click: log in / switch")
+			}
+		}
+	}
+	// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
+	// APPENDED at the end of the functional buttons so it can never shift the ones
+	// before it; when off it's skipped entirely (no x advance), so the row is
+	// byte-identical to before. A movable slot, so Edit Layout can reposition it.
+	if a.d.Prefs.GroupChatButtonOn() && !a.panelHidden("ctrl.groupchat") {
+		const gcW = int32(96)
+		if x+gcW > clusterRight {
+			y2 += btnH + 4
+			x = clusterX
+		}
+		gcR := a.slotRect("ctrl.groupchat", sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}, w, h)
+		if c.Button(gcR, "Group Chat") {
+			a.toggleMessages()
+		}
+		c.Border(gcR, ColAccent)
+		c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
+		x += gcW + 6
+	}
+	// Voice button — appears ONLY in an area that advertises voice (VS_CAPS, i.e.
+	// Nyathena), so it shows up when you move into a VC-supported room and hides
+	// elsewhere. Appended like the others; skipped (no x advance) when unavailable.
+	if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
+		const vcW = int32(80)
+		if x+vcW > clusterRight {
+			y2 += btnH + 4
+			x = clusterX
+		}
+		vcLabel, vcBord := a.voiceButtonState()
+		vcR := a.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
+		if c.Button(vcR, vcLabel) {
+			a.toggleVoice()
+		}
+		c.Border(vcR, vcBord)
+		c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
+		x += vcW + 6
+	}
+	// — Leave — set apart at the end.
+	x += gGap
+	if x+110 > clusterRight {
+		y2 += btnH + 4
+		x = clusterX
+	}
+	if !a.panelHidden("ctrl.disconnect") { // hideable (v1.50.5): Esc still leaves the server
+		if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
+			a.requestDisconnect()
+			return y2, true
 		}
 		x += 116
-		evLabel := "Evidence"
-		if a.evidPresent {
-			evLabel = "Evidence ●" // armed: next IC message presents it
-		}
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 100, H: btnH}, evLabel) {
-			a.showEvid = true
-		}
-		x += 106
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 80, H: btnH}, "Mods...") {
-			a.showModcall = true
-		}
-		x += 86
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 70, H: btnH}, "Login...") {
-			a.openLoginDialog()
-		}
-		x += 76
-		if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
-			a.showUICfg = true
-		}
-		x += 56
-		x = a.drawPosSelect(x, y2, btnH)
-		// "Hotkeys" (#96) + "Restyle" (#103/#104) are the trailing convenience buttons,
-		// appended after Pos so no existing button shifts. At a narrow window width the
-		// long Row 2 would push the PAIR off the right edge, so wrap them down to a
-		// fresh row when they wouldn't fit. Everything below keys off y2 (icY = y2 +
-		// btnH + …), so bumping it in place drops the IC area and judge strip with it.
-		// Constant widths keep this alloc-free.
-		const keysW, styleW, btnGap int32 = 90, 84, 6
-		if x+keysW+btnGap+styleW > clusterRight {
-			y2 += btnH + 4
-			x = clusterX
-		}
-		keysR := sdl.Rect{X: x, Y: y2, W: keysW, H: btnH}
-		if c.Button(keysR, "Hotkeys") {
-			a.openHotkeyCheatSheet()
-		}
-		c.Tooltip(keysR, "Show all your hotkeys & custom binds (also F1)")
-		x += keysW + btnGap
-		styleR := sdl.Rect{X: x, Y: y2, W: styleW, H: btnH}
-		if c.Button(styleR, "Restyle") {
-			a.openSpriteStyle()
-		}
-		c.Tooltip(styleR, "Recolour / glow your character on the fly — other AsyncAO players see it")
-		x += styleW + btnGap
-
-		// Edit Layout (front door to the live layout editor) + Mod / CM launchers, in the button row so
-		// they never float over the emote grid. Wrap to a fresh row as a group if they wouldn't fit.
-		editW := int32(94)
-		modW, cmW := int32(0), int32(0)
-		if a.amIMod() {
-			modW = 54
-		}
-		if a.amICMNow {
-			cmW = 46
-		}
-		if x+editW+modW+cmW+btnGap*2 > clusterRight {
-			y2 += btnH + 4
-			x = clusterX
-		}
-		edR := sdl.Rect{X: x, Y: y2, W: editW, H: btnH}
-		if c.Button(edR, "Edit Layout") {
-			a.openLayoutEditor()
-		}
-		c.Tooltip(edR, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
-		x += editW + btnGap
-		if modW > 0 {
-			mR := sdl.Rect{X: x, Y: y2, W: modW, H: btnH}
-			if c.Button(mR, "Mod") {
-				a.toggleModDash()
-			}
-			c.Border(mR, ColDanger)
-			c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
-			x += modW + btnGap
-		}
-		if cmW > 0 {
-			cR := sdl.Rect{X: x, Y: y2, W: cmW, H: btnH}
-			if c.Button(cR, "CM") {
-				a.toggleCMPanel()
-			}
-			c.Border(cR, chipCMColor)
-			c.Tooltip(cR, "CM area controls — lock / kick-from-area")
-			x += cmW + btnGap
-		}
-		// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
-		// Appended last so it can't shift the buttons before it; skipped (no x advance) off.
-		if a.d.Prefs.GroupChatButtonOn() && !a.panelHidden("ctrl.groupchat") {
-			const gcW = int32(96)
-			if x+gcW > clusterRight {
-				y2 += btnH + 4
-				x = clusterX
-			}
-			gcR := sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}
-			if c.Button(gcR, "Group Chat") {
-				a.toggleMessages()
-			}
-			c.Border(gcR, ColAccent)
-			c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
-			x += gcW + btnGap
-		}
-		// Voice button — only in a voice-enabled area (VS_CAPS / Nyathena); appears
-		// when you enter a VC room, hidden otherwise. Appended; no x advance when off.
-		if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
-			const vcW = int32(80)
-			if x+vcW > clusterRight {
-				y2 += btnH + 4
-				x = clusterX
-			}
-			vcLabel, vcBord := a.voiceButtonState()
-			vcR := sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}
-			if c.Button(vcR, vcLabel) {
-				a.toggleVoice()
-			}
-			c.Border(vcR, vcBord)
-			c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
-			x += vcW + btnGap
-		}
-	} else {
-		// New default: the same buttons grouped by purpose (Character · Scene · Moderation · System),
-		// a wider gap between groups, the leave button set apart at the end. Inline (no closures) so
-		// the row stays alloc-free.
-		const gGap = int32(16) // gap between groups
-		evLabel := "Evidence"
-		if a.evidPresent {
-			evLabel = "Evidence ●"
-		}
-		// — Character — (each button hideable via UI… → Buttons; hidden ones compact away)
-		if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.character"); ok {
-			if c.Button(r, "Character") {
-				a.screen = ScreenCharSelect
-			}
-		}
-		if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.wardrobe"); ok {
-			if c.Button(r, "Wardrobe") {
-				a.openIniswap()
-			}
-			c.Border(r, ColAccent)
-			c.Tooltip(r, "Wardrobe / iniswap — swap your character's sprites & emotes")
-		}
-		if r, ok := a.ctrlSlot(&x, y2, 84, 84+gGap, w, h, "ctrl.restyle"); ok {
-			if c.Button(r, "Restyle") {
-				a.openSpriteStyle()
-			}
-			c.Tooltip(r, "Recolour / glow your character on the fly — other AsyncAO players see it")
-		}
-		// — Scene —
-		if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.background"); ok {
-			if c.Button(r, "Background") {
-				a.openBgPicker()
-			}
-		}
-		if r, ok := a.ctrlSlot(&x, y2, 100, 106, w, h, "ctrl.evidence"); ok {
-			if c.Button(r, evLabel) {
-				a.showEvid = true
-			}
-		}
-		x = a.drawPosSelect(x, y2, btnH)
-		x += gGap
-		// — Moderation —
-		if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.mods"); ok {
-			if c.Button(r, "Mods...") {
-				a.showModcall = true
-			}
-		}
-		if a.amIMod() {
-			mR := a.slotRect("ctrl.mod", sdl.Rect{X: x, Y: y2, W: 54, H: btnH}, w, h)
-			if c.Button(mR, "Mod") {
-				a.toggleModDash()
-			}
-			c.Border(mR, ColDanger)
-			c.Tooltip(mR, "Moderation tools — server-aware ban / kick")
-			x += 60
-		}
-		if a.amICMNow {
-			cR := a.slotRect("ctrl.cm", sdl.Rect{X: x, Y: y2, W: 46, H: btnH}, w, h)
-			if c.Button(cR, "CM") {
-				a.toggleCMPanel()
-			}
-			c.Border(cR, chipCMColor)
-			c.Tooltip(cR, "CM area controls — lock / kick-from-area")
-			x += 52
-		}
-		x += gGap
-		// — System — wrap to a fresh row as a block if it would run off the right edge.
-		if x+90+56+100+96+86+76 > clusterRight {
-			y2 += btnH + 4
-			x = clusterX
-		}
-		if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.settings"); ok {
-			if c.Button(r, "Settings") {
-				a.prevScreen = ScreenCourtroom
-				a.screen = ScreenSettings
-			}
-		}
-		// UI… is the access point to the button-customise list, so it's never hidden.
-		if a.movableButton("ctrl.ui", sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...", w, h) {
-			a.showUICfg = true
-		}
-		x += 56
-		if r, ok := a.ctrlSlot(&x, y2, 94, 100, w, h, "ctrl.editlayout"); ok {
-			if c.Button(r, "Edit Layout") {
-				a.openLayoutEditor()
-			}
-			c.Tooltip(r, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
-		}
-		if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.hotkeys"); ok {
-			if c.Button(r, "Hotkeys") {
-				a.openHotkeyCheatSheet()
-			}
-			c.Tooltip(r, "Show all your hotkeys & custom binds (also F1)")
-		}
-		if r, ok := a.ctrlSlot(&x, y2, 80, 86, w, h, "ctrl.about"); ok {
-			if c.Button(r, "About") {
-				a.prevScreen = ScreenCourtroom
-				a.screen = ScreenAbout
-			}
-		}
-		// Login / account button: once you've saved an account for this server it shows
-		// your username (left-click views your profile via /account); otherwise it's the
-		// plain "Login..." that opens the dialog. Right-click always opens the dialog (log
-		// in / switch / re-login). Account name is per-server (a.serverKey), so it's
-		// correct across multi-server tabs.
-		acct := strings.TrimSpace(a.d.Prefs.ServerWarmInfoFor(a.serverKey).LoginUser)
-		loginLabel, loginW := "Login...", int32(70)
-		if acct != "" {
-			loginLabel, loginW = acct, c.TextWidth(acct)+18
-		}
-		if loginR, ok := a.ctrlSlot(&x, y2, loginW, loginW+6, w, h, "ctrl.login"); ok {
-			if c.Button(loginR, loginLabel) {
-				if acct != "" {
-					a.sess.SendOOC(a.oocNameOrDefault(), "/account") // view your profile
-				} else {
-					a.openLoginDialog()
-				}
-			}
-			if acct != "" {
-				if c.rightClicked && c.hovering(loginR) {
-					a.openLoginDialog() // re-login / switch account
-				} else if c.hovering(loginR) { // build the hint string only on hover (0-alloc otherwise)
-					c.Tooltip(loginR, "Logged in as "+acct+" — click: view profile (/account) · right-click: log in / switch")
-				}
-			}
-		}
-		// Group Chat / DMs launcher — a MAIN button (default ON; Settings → Chat to hide).
-		// APPENDED at the end of the functional buttons so it can never shift the ones
-		// before it; when off it's skipped entirely (no x advance), so the row is
-		// byte-identical to before. A movable slot, so Edit Layout can reposition it.
-		if a.d.Prefs.GroupChatButtonOn() && !a.panelHidden("ctrl.groupchat") {
-			const gcW = int32(96)
-			if x+gcW > clusterRight {
-				y2 += btnH + 4
-				x = clusterX
-			}
-			gcR := a.slotRect("ctrl.groupchat", sdl.Rect{X: x, Y: y2, W: gcW, H: btnH}, w, h)
-			if c.Button(gcR, "Group Chat") {
-				a.toggleMessages()
-			}
-			c.Border(gcR, ColAccent)
-			c.Tooltip(gcR, "Private DMs & group chats with other AsyncAO players (also Extras → Group Chat)")
-			x += gcW + 6
-		}
-		// Voice button — appears ONLY in an area that advertises voice (VS_CAPS, i.e.
-		// Nyathena), so it shows up when you move into a VC-supported room and hides
-		// elsewhere. Appended like the others; skipped (no x advance) when unavailable.
-		if a.voiceOfferable() && !a.panelHidden("ctrl.voice") {
-			const vcW = int32(80)
-			if x+vcW > clusterRight {
-				y2 += btnH + 4
-				x = clusterX
-			}
-			vcLabel, vcBord := a.voiceButtonState()
-			vcR := a.slotRect("ctrl.voice", sdl.Rect{X: x, Y: y2, W: vcW, H: btnH}, w, h)
-			if c.Button(vcR, vcLabel) {
-				a.toggleVoice()
-			}
-			c.Border(vcR, vcBord)
-			c.Tooltip(vcR, "Voice chat — this area supports it. Join to talk (Nyathena). Red dot = your mic is live.")
-			x += vcW + 6
-		}
-		// — Leave — set apart at the end.
-		x += gGap
-		if x+110 > clusterRight {
-			y2 += btnH + 4
-			x = clusterX
-		}
-		if !a.panelHidden("ctrl.disconnect") { // hideable (v1.50.5): Esc still leaves the server
-			if a.movableButton("ctrl.disconnect", sdl.Rect{X: x, Y: y2, W: 110, H: btnH}, "Disconnect", w, h) {
-				a.requestDisconnect()
-				return
-			}
-			x += 116
-		}
 	}
+	return y2, false
+}
 
-	// The control-button block ends here. Register it for the editor (its height is
-	// content-driven, so measure it now). The grab box spans the LIVE content width —
-	// the wrap edge the rows actually used — so the side handles sit where the
-	// buttons end after a width resize. def keeps the default full width; its height
-	// reflects the live row count (recomputing the default wrap would mean laying the
-	// rows out twice — reset just recomputes for real next frame).
-	if a.classicEdit {
-		a.regSlot(slotControls,
-			sdl.Rect{X: clusterX, Y: y, W: clusterRight - clusterX, H: y2 + btnH - y},
-			sdl.Rect{X: pad, Y: defY, W: w - 2*pad, H: y2 - dy + btnH - defY})
-	}
-
-	// Judge strip (JD grant, or the judge stand when pos-dependent) + the emote grid now
-	// follow the control block, which sits BELOW the IC bar (#8). They anchor to the
-	// block's UN-MOVED bottom (y2 - dy). The IC bar itself anchors to icBarTop (under the
-	// stage), independent of this chain, so the judge strip never pushes the input around.
-	postY := y2 - dy + btnH + 6
-	if a.judgeVisible() {
-		postY += a.drawJudgeRow(pad, postY)
-	}
-
-	// IC input row (height follows the Box knob), led by the AO2 text
-	// color selector: a swatch previews the active wire color (MS
-	// text_color 0–9), the dropdown names it (AO2's color dropdown). The
-	// showname box OVERRIDES the Settings showname for the session.
-	// The whole IC bar is a movable + resizable slot ("icbar"). Its default now spans the
-	// stage width (vp.W) DIRECTLY under the stage (icBarTop, #8) — the first thing below
-	// the viewport. Everything inside lays out relative to the slot (icBar.X / .W) and the
-	// fH-tall row is centred within the slot height, so a drag moves the bar and a width
-	// resize widens / narrows the text input (still floored at minICInputW). The emoji /
-	// FX / React buttons store their live rects as they draw, so their pop-ups follow the
-	// bar wherever it lands. slotRect is alloc-free off the edit path. (fH is computed at
-	// the top now, to place the control block below this bar.)
-	// v1.50.5 (Nightingale): the whole-bar "IC input bar" PANEL slot is gone —
-	// every element below is its own independent movable+resizable slot, so the
-	// bar is just the DEFAULT row geometry they lay out from. (An old "icbar"
-	// override in prefs is simply ignored; Reset all clears it.)
-	icBar := sdl.Rect{X: pad, Y: icBarTop, W: vp.W, H: fH}
-	rowY := icBar.Y
-	// Colour swatch + dropdown — an individually movable slot (#4a). The selector also
-	// offers the extended AsyncAO colours (#98) and the two "fun colour" modes (#79): they
-	// sit after the palette so they're picked like any colour instead of being buried in
-	// Settings. icColorSelected drives the active row + swatch; applyICColorChoice routes
-	// the pick — both shared with the themed row so the two layouts can't drift.
-	colorBox := a.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
+// drawICColorStrip draws the IC text-colour selector (the swatch previewing the
+// active wire colour + the naming dropdown) inside its resolved slot rect. colorBox
+// arrives by value; icColorSelected drives the active row + swatch and
+// applyICColorChoice routes the pick — both shared with the themed row so the two
+// layouts can't drift (moved verbatim from drawICControls).
+func (a *App) drawICColorStrip(colorBox sdl.Rect) {
+	c := a.ctx
 	// The pieces fill the SLOT rect (v1.50.5): a resize genuinely widens the
 	// dropdown / grows the row height instead of being silently ignored.
 	swatch := sdl.Rect{X: colorBox.X, Y: colorBox.Y, W: 26, H: colorBox.H}
@@ -4620,6 +4757,16 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorBox.X + 32, Y: colorBox.Y, W: colorDDW, H: colorBox.H}, icColorChoices, icSel); changed {
 		a.applyICColorChoice(next)
 	}
+}
+
+// drawICInputRow draws the IC bar's input chain — showname box (+ saved-name picker),
+// the Immediate and Additive toggles, the SFX picker, the emoji and Text-FX buttons,
+// the IC text field itself and the muted chip — flowing left-to-right from the DEFAULT
+// positions so freeing one slot in the editor never cascades the rest. icBar arrives
+// by value; it returns whether Enter was pressed so the caller keeps the send decision
+// visible (moved verbatim from drawICControls).
+func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
+	c := a.ctx
 	const shownameBoxW = 140
 	nameX := icBar.X + 32 + colorSelectW + 6 // DEFAULT spot; downstream (immedX) flows from here
 	namePlaceholder := a.d.Prefs.SavedShowname()
@@ -4660,7 +4807,6 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	immedBox := a.slotRect(slotICImmediate, immedDef, w, h)
 	a.icImmediate = c.Checkbox(immedBox.X, immedBox.Y+(immedBox.H-16)/2, "Immediate", a.icImmediate)
 	c.Tooltip(immedBox, "Immediate: the preanim plays without holding back the text (non-interrupting preanim)")
-	var send bool
 	icX := immedX + immedW + 6 // downstream flows from the DEFAULT position, not the override
 	// Additive (#14, 2.8): the next message APPENDS to your last one (narration RP).
 	// Shown only when the server advertises additive AND the master pref is on (AO2
@@ -4746,83 +4892,7 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 			c.Label(chip.X+6, chip.Y+(chip.H-14)/2, mutedChip, ColDanger)
 		}
 	}
-	if send || pendingShout != 0 {
-		a.sendIC(pendingShout)
-	}
-
-	// Emote row — a movable/resizable slot (the grid pages within whatever rect it
-	// gets, so drag/resize is free). slotRect stays INSIDE the hidden guard so the
-	// editor never registers a handle for a grid that isn't drawn. The default is
-	// byte-identical to before, so an un-edited courtroom is pixel-identical.
-	emoteY := postY // #8: the emote grid follows the control block + judge strip, below the IC bar
-	if !a.panelHidden(panelEmotes) {
-		emoteDef := sdl.Rect{X: pad, Y: emoteY, W: w - 2*pad, H: h - emoteY - 30}
-		a.drawEmoteRow(a.slotRect(slotEmotes, emoteDef, w, h), vp)
-	}
-
-	// OOC row at the very bottom: a FULL-width OOC chat INPUT (no name box — the OOC name
-	// lives in the OOC box/tab now; it used to be duplicated here, which is the redundancy
-	// a tester flagged). Shown whenever OOC is a tab (Legacy theme, or the opt-in "OOC in the
-	// log tab" toggle), as a SECOND always-visible input alongside the tab's own — the hybrid.
-	// In the new-default OOC BOX the input lives inside the box, so this bar is dropped.
-	oocY := h - fH - 4
-	if !a.panelHidden(panelOOC) && (a.d.Prefs.LegacyDevThemeOn() || a.d.Prefs.OOCInLogTabOn()) {
-		// The bottom OOC bar is its own movable + resizable slot ("oocbar"): its default spans
-		// the bottom row, the row centred within the slot height. Registered only while it
-		// actually draws, so the editor offers a handle for it only when OOC is a tab.
-		oocBarDef := sdl.Rect{X: pad, Y: oocY, W: w - 3*pad, H: fH}
-		oocBar := a.slotRect(slotOOCBar, oocBarDef, w, h)
-		oocRowY := oocBar.Y
-		if oocBar.H > fH {
-			oocRowY = oocBar.Y + (oocBar.H-fH)/2
-		}
-		oocPrimary, oocEmoji := a.icFieldFonts(a.oocInput) // #M5: emoji/unicode in the OOC bar too
-		var sendOOC bool
-		a.oocInput, sendOOC = c.TextFieldEmoji("ooc", sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}, a.oocInput, "OOC chat…  (set your OOC name in the OOC tab)", oocPrimary, oocEmoji)
-		if sendOOC {
-			a.submitOOC() // shared OOC send: uses your OOC name (or the server default) + clears
-		}
-		a.recallOOC() // Up/Down recall recently-sent OOC lines when the bar is focused
-		// Ctrl+wheel over the OOC row resizes the OOC text (independent of the IC log).
-		if c.ctrlHeld && c.wheelY != 0 && c.hovering(sdl.Rect{X: oocBar.X, Y: oocRowY, W: oocBar.W, H: fH}) {
-			a.oocPct = clampInt(a.oocPct+int(c.wheelY)*config.ScaleStepPercent,
-				config.MinLogScalePercent, config.MaxLogScalePercent)
-			a.saveLayout()
-		}
-	}
-	// Missing-asset warning (spec §4: visible in-client, names what was
-	// tried so "enable fallbacks" is an informed fix, not a guess).
-	// Missing-asset warning + the DND badge share this row. When DND is on, clip
-	// the (left-aligned) toast so it can't run under the right-aligned badge —
-	// both stay readable. DND off (the default) draws byte-identical to before.
-	toastW := w - 2*pad
-	dndMsg := ""
-	var dndW int32
-	if a.dndOn {
-		dndMsg = "● Do Not Disturb — alerts muted (click to undo)"
-		dndW = c.TextWidth(dndMsg)
-		if gap := dndW + 16; gap < toastW {
-			toastW -= gap
-		} else {
-			toastW = 0
-		}
-	}
-	if a.warnActive() {
-		c.LabelClipped(pad, oocY-20, toastW, a.warnLine, ColDanger)
-	}
-	// Do Not Disturb badge: a persistent reminder while alerts are muted, so a
-	// silenced callword never reads as "callwords broken". Click it to turn DND
-	// off without opening Settings.
-	if a.dndOn {
-		bx := w - pad - dndW
-		c.Label(bx, oocY-20, dndMsg, ColTierYellow)
-		if c.clicked && c.hovering(sdl.Rect{X: bx, Y: oocY - 22, W: dndW, H: 18}) {
-			a.setDND(false)
-			a.warnLine = "Do Not Disturb off."
-			a.warnAt = time.Now()
-		}
-	}
-
+	return send
 }
 
 // previewEmote points the hover preview at an emote: its pre-animation when it
