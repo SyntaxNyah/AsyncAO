@@ -145,11 +145,15 @@ func TestParseFrameFieldMalformed(t *testing.T) {
 func TestNotifyFrameShownFires(t *testing.T) {
 	room, _, _, audio := newCourtroomRig(t)
 	// Stage a message with a preanim so PreanimBase is non-empty and Active.
+	// PlayOnce mirrors begin() (courtroom.go:1070 sets Active=PreanimBase and
+	// PlayOnce=true together) — activeFrameGroup derives the preanim group from
+	// PlayOnce, so the fixture must carry the state real playback produces.
 	room.Scene.Speaker = SpriteLayer{
 		PreanimBase: "leap-base",
 		TalkBase:    "talk-base",
 		IdleBase:    "idle-base",
 		Active:      "leap-base",
+		PlayOnce:    true,
 		Visible:     true,
 	}
 	room.frameTriggers = room.buildFrameTriggers(&protocol.ChatMessage{
@@ -190,7 +194,8 @@ func TestNotifyFrameShownFires(t *testing.T) {
 // in-range trigger must still fire (the cursor sweeps [cursor, src]).
 func TestNotifyFrameShownDecimationSweep(t *testing.T) {
 	room, _, _, audio := newCourtroomRig(t)
-	room.Scene.Speaker = SpriteLayer{PreanimBase: "leap-base", Active: "leap-base", Visible: true}
+	// PlayOnce marks the preanim playing (see begin(), courtroom.go:1070).
+	room.Scene.Speaker = SpriteLayer{PreanimBase: "leap-base", Active: "leap-base", PlayOnce: true, Visible: true}
 	room.frameTriggers = room.buildFrameTriggers(&protocol.ChatMessage{
 		FrameSFX: "leap|2=a|5=b|8=c^(b)normal^(a)normal",
 	})
@@ -212,6 +217,7 @@ func TestNotifyFrameShownBindsActiveLayer(t *testing.T) {
 		TalkBase:    "talk-base",
 		IdleBase:    "idle-base",
 		Active:      "leap-base", // preanim playing
+		PlayOnce:    true,        // one-shot preanim (see begin(), courtroom.go:1070)
 		Visible:     true,
 	}
 	room.frameTriggers = room.buildFrameTriggers(&protocol.ChatMessage{
@@ -221,8 +227,12 @@ func TestNotifyFrameShownBindsActiveLayer(t *testing.T) {
 	if len(audio.sfx) != 0 {
 		t.Fatalf("talk-group trigger fired while preanim active: %v", audio.sfx)
 	}
-	room.Scene.Speaker.Active = "talk-base" // swap to talk loop
-	room.NotifyFrameShown(3)                // crosses the talk trigger at frame 2
+	// Swap to the talk loop: the preanim finished (PlayOnce cleared) and the phase
+	// advanced to talking — the same transition startTalking makes in real playback.
+	room.Scene.Speaker.Active = "talk-base"
+	room.Scene.Speaker.PlayOnce = false
+	room.phase = PhaseTalking
+	room.NotifyFrameShown(3) // crosses the talk trigger at frame 2
 	if len(audio.sfx) != 1 {
 		t.Fatalf("talk trigger did not fire after the layer swap: %v", audio.sfx)
 	}
@@ -233,7 +243,8 @@ func TestNotifyFrameShownBindsActiveLayer(t *testing.T) {
 func TestReduceMotionGatesFrameEffects(t *testing.T) {
 	room, _, _, audio := newCourtroomRig(t)
 	room.ReduceMotion = true // effectsVisible() → false
-	room.Scene.Speaker = SpriteLayer{PreanimBase: "leap-base", Active: "leap-base", Visible: true}
+	// PlayOnce marks the preanim playing (see begin(), courtroom.go:1070).
+	room.Scene.Speaker = SpriteLayer{PreanimBase: "leap-base", Active: "leap-base", PlayOnce: true, Visible: true}
 	room.frameTriggers = room.buildFrameTriggers(&protocol.ChatMessage{
 		FrameShake:   "leap|1=1^(b)normal^(a)normal",
 		FrameRealize: "leap|1=1^(b)normal^(a)normal",
@@ -316,6 +327,73 @@ func TestActiveFrameGroupSharedTalkIdleBase(t *testing.T) {
 	if g := room.activeFrameGroup(); g != frameGroupIdle {
 		t.Errorf("shared base + PhaseIdle = group %d, want idle group %d", g, frameGroupIdle)
 	}
+}
+
+// TestActiveFrameGroupSharedPreanimBase pins the OTHER base collisions: a char
+// whose preanim file resolves to the SAME sprite as its talk or idle emote. A
+// switch on Active alone would match the preanim case first and mis-bind the talk/
+// idle phase to the preanim group (talk triggers never fire, preanim triggers fire
+// over talk). Deriving the group from PlayOnce/phase then confirming Active fixes
+// it: PlayOnce → preanim; PhaseTalking → talk; settled → idle, regardless of which
+// bases share a string.
+func TestActiveFrameGroupSharedPreanimBase(t *testing.T) {
+	t.Run("preanim==talk", func(t *testing.T) {
+		room, _, _, _ := newCourtroomRig(t)
+		room.Scene.Speaker = SpriteLayer{
+			PreanimBase: "shared-base", // preanim and (b)talk resolve to the same file
+			TalkBase:    "shared-base",
+			IdleBase:    "idle-base",
+			Active:      "shared-base",
+		}
+		// Preanim playing (PlayOnce) → preanim group even though Active==TalkBase.
+		room.Scene.Speaker.PlayOnce = true
+		room.phase = PhasePreanim
+		if g := room.activeFrameGroup(); g != frameGroupPreanim {
+			t.Errorf("preanim==talk while PlayOnce = group %d, want preanim %d", g, frameGroupPreanim)
+		}
+		// Talk loop (PlayOnce cleared, PhaseTalking) → talk group, not preanim.
+		room.Scene.Speaker.PlayOnce = false
+		room.phase = PhaseTalking
+		if g := room.activeFrameGroup(); g != frameGroupTalk {
+			t.Errorf("preanim==talk while talking = group %d, want talk %d", g, frameGroupTalk)
+		}
+	})
+	t.Run("preanim==idle", func(t *testing.T) {
+		room, _, _, _ := newCourtroomRig(t)
+		room.Scene.Speaker = SpriteLayer{
+			PreanimBase: "shared-base", // preanim and (a)idle resolve to the same file
+			TalkBase:    "talk-base",
+			IdleBase:    "shared-base",
+			Active:      "shared-base",
+		}
+		room.Scene.Speaker.PlayOnce = true
+		room.phase = PhasePreanim
+		if g := room.activeFrameGroup(); g != frameGroupPreanim {
+			t.Errorf("preanim==idle while PlayOnce = group %d, want preanim %d", g, frameGroupPreanim)
+		}
+		// Settled idle (no PlayOnce, non-talk phase) → idle group, not preanim.
+		room.Scene.Speaker.PlayOnce = false
+		room.phase = PhaseIdle
+		if g := room.activeFrameGroup(); g != frameGroupIdle {
+			t.Errorf("preanim==idle while settled = group %d, want idle %d", g, frameGroupIdle)
+		}
+	})
+	t.Run("distinct preanim still binds", func(t *testing.T) {
+		// The common case must not regress: a distinct PreanimBase parked on Active
+		// during the preanim still resolves to the preanim group.
+		room, _, _, _ := newCourtroomRig(t)
+		room.Scene.Speaker = SpriteLayer{
+			PreanimBase: "leap-base",
+			TalkBase:    "talk-base",
+			IdleBase:    "idle-base",
+			Active:      "leap-base",
+			PlayOnce:    true,
+		}
+		room.phase = PhasePreanim
+		if g := room.activeFrameGroup(); g != frameGroupPreanim {
+			t.Errorf("distinct preanim base = group %d, want preanim %d", g, frameGroupPreanim)
+		}
+	})
 }
 
 // itoa is a tiny local int→string for the hostile-input builder (avoids importing

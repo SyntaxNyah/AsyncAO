@@ -164,31 +164,39 @@ func (c *Courtroom) resolveFrameSFX(name string) string {
 // belongs to (preanim / talk / idle), or -1 when it matches none (a shout bubble,
 // a blank layer). Pure comparison against the bases begin() set — no allocation.
 //
-// A char whose (b)talk and (a)idle emotes resolve to the SAME file (common — many
-// chars reuse one sprite for both) has TalkBase == IdleBase, so a bare Active
-// match is ambiguous. The phase machine is the only thing that distinguishes them:
-// PhaseTalking means the talk loop is playing, anything else that reaches an idle
-// sprite is settled idle. So when the two bases coincide, key the tie-break on
-// c.phase rather than letting the switch's case order silently pick talk.
+// The three sprite bases can COLLIDE: a char that reuses one file for talk+idle
+// has TalkBase == IdleBase, and one whose preanim resolves to the same file as its
+// talk/idle sprite has PreanimBase == TalkBase or PreanimBase == IdleBase. A switch
+// on Active alone would silently pick whichever case lists first, mis-binding the
+// group (AO2 avoids this by matching effect.emote_name against the layer's resolved
+// file, animationlayer.cpp:558). So we DERIVE the group from the phase machine —
+// the authoritative record of which sprite phase is playing — and only then confirm
+// Active actually holds that group's base (a shout/blank layer confirms none → -1):
+//   - PlayOnce marks the one-shot preanim, spanning BOTH the blocking PhasePreanim
+//     wait and an IMMEDIATE-mode preanim that plays over the text during
+//     PhaseTalking (courtroom.go:1259 pins that exact state) — so PlayOnce, not
+//     c.phase == PhasePreanim, is the correct preanim discriminator.
+//   - Otherwise PhaseTalking means the talk loop; any settled non-talk phase that
+//     still shows a sprite is idle.
 func (c *Courtroom) activeFrameGroup() int {
 	sp := &c.Scene.Speaker
-	switch sp.Active {
-	case sp.PreanimBase:
-		// PreanimBase can be "" (no preanim); an empty Active never resolves a
-		// real layer, so treat an empty match as "no group".
-		if sp.PreanimBase == "" {
-			return -1
+	switch {
+	case sp.PlayOnce:
+		// One-shot preanim playing. Confirm Active is the (non-empty) preanim base;
+		// an empty PreanimBase never resolves a real layer.
+		if sp.PreanimBase != "" && sp.Active == sp.PreanimBase {
+			return frameGroupPreanim
 		}
-		return frameGroupPreanim
-	case sp.TalkBase:
-		// TalkBase == IdleBase: the sprite is shared; the phase decides the group.
-		if sp.TalkBase == sp.IdleBase && c.phase != PhaseTalking {
+		return -1
+	case c.phase == PhaseTalking:
+		if sp.Active == sp.TalkBase {
+			return frameGroupTalk
+		}
+		return -1
+	default:
+		if sp.Active == sp.IdleBase {
 			return frameGroupIdle
 		}
-		return frameGroupTalk
-	case sp.IdleBase:
-		return frameGroupIdle
-	default:
 		return -1
 	}
 }
