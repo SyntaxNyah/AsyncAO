@@ -21,6 +21,8 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 | UI HP-bar key, 0 allocs | **0 allocs/op** — `defensebar<N>`/`prosecutionbar<N>` keys are a precomputed table, not a per-frame string concat (ran ≤ 4×/frame) | `TestHPBarStemNoAlloc` |
 | UI tab-chip label, 0 allocs | **0 allocs/op** steady state — the "name (N)" strip label is memoized per tab; the strip asks ~3×/tab/frame and now hits the cache until name/state/unread change | `TestTabChipLabelMemoized` |
 | UI server-clock chips, 0 allocs | **0 allocs/op** for a stable/paused clock — labels memoized per displayed second into a reused scratch slice (was a slice + `fmt.Sprintf`/visible-timer every frame); a running clock rebuilds ≤ 1×/sec | `TestTimerChipLabelsMemoized` |
+| UI whole-screen courtroom draw, 0 allocs | **0 allocs/op** steady state — a settled headless courtroom scene (real font-loaded Ctx over a software renderer, every stage base resident, room settled) exercises `drawICControls`, the hover toolbox, and the pushClip conversions; guards the whole-screen composite instead of one widget | `TestDrawCourtroomZeroAlloc` |
+| UI whole-screen lobby draw, 0 allocs | **0 allocs/op** steady state — the lobby composite (`screens.go` `drawLobby`) held to the same whole-screen gate | `TestDrawLobbyZeroAlloc` |
 | Cold probes ≤ 1/asset, ≤ 450 total | **285 probes / 285 assets** (200-char session) | `TestProbeBudget200CharServer` |
 | Paired cold ≈ single (±20%) | **parallel: 0.17 s with 150 ms/request latency** (serial would be ≥ 0.30 s) | `TestPairedPrefetchResolvesConcurrently` |
 | Steady-state probes (learned warm start) | **N probes for N assets, all first-try** | `TestManagerLearnedWarmStart` |

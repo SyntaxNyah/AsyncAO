@@ -19,8 +19,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 | Position list | `SD`, `SP` | session PosList, drawPosCycler | `SD` splits on `*`; `SP` forces our side |
 | Evidence | `LE`/`PE`/`DE`/`EE` + MS field | session, drawEvidencePanel | grid + inspector + editor; present arms the NEXT message (wire id +1, 0 = none, courtroom.cpp:2160); incoming presented evidence pops the image + IC log line; images stream as exact URLs (`evidence/<file.ext>` — extension ships in the name, zero probing) |
 | Effects | MS Realization/Screenshake/Effects | courtroom fireMessageEffects + viewport | realization flash (white fade), screenshake (decaying sinusoid over the whole stage), 2.8 `fx|folder|sound` field (sound always plays; flash/shake built-ins render; named overlay art needs the theme-effects engine — staged) |
+| Frame-synced effects | MS `FrameSFX`/`FrameRealize`/`FrameShake` | buildFrameTriggers + viewport frame report | per-frame sound / realization flash / screenshake fire as the speaker's sprite reaches authored animation frames (bounded `maxFrameTriggers`; kept→source frame map survives decimation; forward-only cursors fire once per playback); outgoing fills from char.ini `[<emote>_Frame*]`; shake/flash still gated by Reduce-motion + the ScreenEffects toggle |
 | Custom shouts (2.10) | MS `4&<stem>` | charini [Shouts], shout row | streaming clients can't list `custom_objections/` — the char.ini `<stem>_name` keys are the discoverable source; ▾ cycles picks; receive resolves `custom_objections/<stem>` art+sfx |
-| Per-emote audio | MS SFXName/Delay/Looping/Blipname | charini SoundN/T/L + Blips | emotes now send their char.ini sounds; 2.9.1 per-emote blips |
+| Per-emote audio | MS SFXName/Delay/Looping/Blipname | charini SoundN/T/L + Blips | emotes now send their char.ini sounds; 2.9.1 per-emote blips; **`SFX_DELAY` honored** — the sound fires at wire-value × 40 ms into the preanimation (AO2 `time_mod`), and a preanim message's screenshake fires at that same moment |
+| Mute | `MU`/`UM` | session reducer, IC input | server mute of your cid (or `-1` mute-all) sets a persistent "muted" chip and refuses the IC send with a notice (keep-until-echo leaves your line intact); clears on rejoin (SI) / char change (PV), mirroring AO2 `set_mute` |
+| Additive text (2.8) | MS `additive` field, `FeatureAdditive` | typewriter accumulator, IC checkbox | an incoming `ADDITIVE=1` line appends to the previous message (the typewriter pre-reveals the prior text, crawls only the appended tail); an **Additive** checkbox shows when the server advertises it; a default-ON **Additive text** setting can disable it entirely (falls back to replace) |
+| Desk mods | MS deskmod field, `FeatureExpandedDeskMods` | `deskVisible` phase machine | phase-aware desk visibility (preanim vs talk/idle) for mods 0–3; mods 4/5 hide the pair + zero the speaker offset (decoupled per AO2); outgoing 2–5 clamps down to legacy hide/show when the server lacks the expanded feature so a strict validator can't reject the line |
 
 ## Streaming & performance
 
@@ -38,7 +42,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Live-scene self-heal**: if the background, desk, **or a character sprite**
   is evicted from the texture cache mid-message (memory pressure in a packed
   room, or a hover-preview fetch), it is re-demanded at high priority within a
-  paced window instead of vanishing to black.
+  paced window instead of vanishing to black. The held-frame safeguard (which
+  keeps an evicted layer's last frame on screen while it reloads, rather than
+  showing black) now covers the **current speaker and their pair partner**, not
+  only scenery — so a mid-scene eviction of the on-stage character briefly shows
+  its frozen frame instead of the last remaining black-flash case. The rule that
+  a single decoded asset may use only a bounded share of the texture budget now
+  lives in **one place** (a page can no longer evict the majority of the
+  on-screen working set).
 - **Cold-load sprite modes** (Settings → Power user → Renderer): what happens while
   a NEW, uncached sprite is still streaming + decoding (the cold-load gap — worse on
   huge art / high ping). **"Keep the previous one"** (default as of v1.55.0,
@@ -224,12 +235,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   red on-screen warning naming an asset that failed every format is off by
   default (it was noisy on sparse-pack servers); the failures still stream to
   the **debug overlay** (the dedicated failure log) regardless.
-- **Decode-failure backoff**: a payload that downloads but won't *decode*
-  (a corrupt/truncated file — e.g. an AV mangling the TLS stream — distinct
+- **Decode-failure backoff + corrupt-cache purge**: a payload that downloads but
+  won't *decode* (a corrupt/truncated file — e.g. a mangled TLS stream — distinct
   from a 404, which the network tier already caches) goes into a short-lived
   negative cache, so one bad asset isn't re-fetched + re-decoded every retry
   interval (it can't render regardless). The failure logs **once** per window
-  instead of flooding, and a transient failure still recovers after it.
+  instead of flooding, and a transient failure still recovers after it. On a
+  **non-transient** decode failure the poisoned bytes are now **purged from the
+  memory (T2) and disk (T3) caches** by their full fetch URL (the disk delete
+  routes through the single async writer, no synchronous I/O on the render path),
+  so the next demand refetches clean bytes instead of re-promoting the same bad
+  blob from disk on every retry — across sessions — until the whole cache was
+  cleared by hand.
 - **Learned-format export/import**: `learned-formats.json` beside the exe;
   one player's warm state seeds another's.
 - **AVIF**: `.avif` probe format; `ftyp avif/avis` sniffing, libavif CGO
@@ -237,7 +254,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Typing-driven speculation**: picking an emote prefetches its idle/talk/
   preanim/SFX at LOW priority; the Markov predictor now also learns
   per-character **emote chains** and warms the predicted next speaker's
-  predicted next emote.
+  predicted next emote. The predictor now warms **both the idle and talk sprite
+  through the full spelling chain** (`(a)`/`(b)`/bare), so a bare-named pack no
+  longer 404s every prediction in all formats — and a speculative miss no longer
+  fires a missing-asset warning (real demand warnings are unchanged; the 404
+  cache and singleflight are untouched, so nothing re-probes).
 - **Per-server pre-warm**: last-used character + last-seen background are
   remembered per server (ws URL key, capped) and prefetched on Ready.
 - **Master-list ETag**: lobby Refresh sends `If-None-Match`; unchanged
@@ -248,6 +269,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   GIF shows after one frame-decode; the full set replaces it when ready.
 - **Adaptive per-host deadlines**: a host's TTFB EWMA caps its request
   deadlines (8×, clamped) so a dying mirror can't pin the fetch lane.
+- **Backoff counts once per window**: a brief origin blip no longer freezes a
+  host's assets for the full 30 s. The 16 fetch workers timing out concurrently
+  used to push ~16 failures in one burst and saturate the backoff formula at the
+  cap instantly; failures now count **at most once per backoff window** (inside
+  the current window the delay extends without incrementing), so a 2-second CDN
+  hiccup stays at the first-failure tier while a genuinely-down host still climbs
+  across windows.
 - **Zstd disk cache** (Settings, default off): self-describing zstd
   blobs, kept only when smaller — sprites stay raw, INIs shrink 2–4×.
 - **Label texture atlas**: UI labels pack into ≤4 shared pages — the 4K
@@ -386,7 +414,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   same surface as the Extras / Favourite-Emotes boxes, so you recolour **on the
   fly while still chatting** (presets + a live swatch, a Fade/opacity slider, and
   glow / wobble / spin), not a modal that takes over the screen. **Viewer
-  controls:** Reduce-motion drops a received style's wobble/spin, and **Settings →
+  controls:** Reduce-motion strips a received style's animation entirely — wobble,
+  spin, custom motion paths, the hue-cycle rainbow, and glitch — and **Settings →
   General** has a "**Hide other players' sprite styles**" off-switch. *(Per-pixel
   effects — invert / grayscale — are a planned follow-up that builds cached
   variant textures.)* **Style presets (#126):** the box's bottom section saves the
@@ -586,6 +615,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   button is **hideable** via **UI… → chrome** for a pure-theme look (Ctrl+X still
   reopens it). All of this stays on the zero-allocation render path — the
   box-closed courtroom frame is byte-identical.
+- **Hover toolbox**: a slim, semi-transparent grip (a drawn hamburger, no glyph
+  dependency) in the bottom-right corner of normal play (classic and themed).
+  Hovering expands it left into small labelled chips — **Theater**, **Edit
+  layout**, **Hide UI** — so those actions no longer live only inside the Hide-UI
+  dialog (whose footer is now just **Done**). The toolbox is itself hideable (its
+  own entry in the hide list) and is a pure hover reveal, so it stays on the
+  zero-allocation render path and can't wake the render loop at idle.
+- **The "Hide UI pieces" panel scrolls.** On short windows (768p laptops,
+  minimum window height) its growing checkbox lists and footer buttons could clip
+  off-screen and become unreachable; the lists now scroll (input-aware clipping,
+  so clicks don't leak past the edge) between a fixed title header and a fixed
+  Done footer, keeping every control reachable.
 
 ## Diagnostics
 
@@ -599,7 +640,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   scrollback sizes · **goroutine count** — so a leak (goroutines climbing) or a
   stuck queue is obvious at a glance. Computed only while the overlay is open.
 - Settings cache browser: live T2 stats (entries/bytes/budget/hit rate),
-  on-demand T3 size measurement, open-in-Explorer, clear buttons.
+  on-demand T3 size measurement, open-in-Explorer, clear buttons. A **disk-cache
+  size limit** slider sits next to Measure / Clear: set a cap and the oldest
+  cached assets are pruned (by modification time) to fit — the sweep runs on the
+  existing async disk-writer goroutine, at launch and periodically, so it never
+  adds synchronous I/O. The **default is 0 = unlimited**, which never deletes
+  anything (T3's unboundedness is a deliberate design choice — no update silently
+  wipes a cache).
 - **Reset to defaults** (Settings, with a confirmation pop-up): two scopes —
   **Reset settings** reverts the whole settings page (scales, volumes, theme,
   hotkeys, colours, toggles) to defaults but KEEPS your favourites, wardrobes,
@@ -611,6 +658,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   copies a fresh-defaults struct over every setting via reflection, so a
   newly-added option resets automatically (a guard test pins the preserved-data
   field names). Applies live (no restart) and re-pulls the derived UI state.
+- **Corrupt-preferences protection**: if `config.json` fails to parse, the client
+  used to boot silently on defaults and then let the first debounced save
+  overwrite the only copy — destroying favourites, wardrobes, server logins,
+  macros and learned formats with no recovery. Now a corrupt existing file is
+  **renamed aside to a timestamped `config.json.corrupt-<timestamp>` backup**
+  before the saver can touch it, and a **one-time startup banner** names the
+  backup. A missing file (first run) and an unreadable file are left untouched.
 
 ## Quality of life
 
@@ -847,7 +901,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   — a mod tailing a suspect or catching up to a friend, riding the same live PR/PU
   area data. The
   **Areas tab** also keeps a **Recent:** strip — one-click chips to jump straight
-  back to areas you've just passed through (newest first, current area excluded).
+  back to areas you've just passed through (newest first, current area excluded) —
+  and a **search box** (with a shown/total counter, matching the Music tab beside
+  it) so a hub server with hundreds of areas is filterable, not scroll-only.
   **IPID** is the only field the stream omits: a mod's **"Refresh
   details"** (and an auto-pull on mod-login + as joiners arrive) runs **`/gas`** —
   the all-areas roster, since the live list spans every area — and merges the IPID
@@ -922,7 +978,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the log shows "*&lt;name&gt; has played a song: &lt;song&gt;*" (and "*has
   stopped the music*" on stop), named by the MC showname or the character. The
   **`~stop` sentinel halts playback immediately** instead of fetching a track
-  that 404s, and **disconnecting from a server stops the music** too.
+  that 404s, and **disconnecting from a server stops the music** too. The MC
+  **looping** flag (field 3) and **MUSIC_EFFECT** flags (field 5) are honored: a
+  no-repeat / play-once track plays once instead of looping forever, and a
+  fade-in track ramps up (via SDL_mixer's native fade, toward your volume so a
+  slider drag never fights the ramp) instead of hard-cutting. Fade-out and
+  sync-position are documented-skipped (single stream / no cheap mid-fetch seek);
+  a short or malformed MC packet degrades to the AsyncAO default (loop forever).
 - **OOC links survive word-wrap**: a long shared link (e.g. a Discord CDN URL
   with a `&`-laden query string) that wraps across rows still opens / copies /
   saves whole — resolved from the source entry, not the visible fragment.
@@ -1607,7 +1669,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   or the music/blip channels.
 - **Reduce motion** (Settings → General, accessibility): suppresses the
   screen shake and realization flash (the effect *sounds* still play);
-  also governs the text effects added later.
+  also governs the text effects added later. It now strips **every**
+  continuously-animating style a speaker can transmit — not only wobble / spin /
+  the named motion enum but also a **custom drawn motion path**, the **hue-cycle
+  rainbow**, and **glitch** (including the glitch-static flicker, a
+  photosensitivity hazard) — so nothing another player sends can keep the stage
+  moving while Reduce motion is on.
 - **Viewport camera zoom (hyperfocus)**: Ctrl+wheel over the stage zooms
   toward the cursor (up to 6×) — sprites, preanims, and effects magnify
   together; Ctrl+drag pans while zoomed; the 1× chip (or zooming out)
@@ -1693,7 +1760,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   screen while a grab runs, and the cell is marked. Bounded (file / byte /
   depth caps), off-thread, cancelable, and path-traversal-guarded. Point
   "Read assets from local folders" at the downloads folder to use the grabs
-  offline / in rehearsal.
+  offline / in rehearsal. **Local mounts now resolve names with spaces and
+  parentheses**: a mounted pack folder like "Phoenix Wright" was requested as
+  `phoenix%20wright` and missed on disk — the local reader now also tries the
+  percent-decoded path (the `..` traversal guard runs on the decoded form too, so
+  an encoded `%2e%2e` can't escape the mount).
   **v2:** grabs **queue** instead of refusing while one runs (the chip shows
   "+N queued"); **right-click** a background cell to queue it; **Pause / Resume**
   the active grab and the whole queue (Settings); and an optional **bandwidth

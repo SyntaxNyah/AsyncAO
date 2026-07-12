@@ -4,6 +4,115 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.57.0-test1 — 2026-07-12
+
+Test build: a broad reliability and AO2-parity pass from the 2026-07-11 audit.
+Please report anything that misbehaves, and on which screen / server.
+
+**Connection reliability**
+
+- **Auto-reconnect now fires on real drops.** It was wired backwards: a genuine
+  transport drop (Wi-Fi blip, server restart, read error) never retried, while a
+  server ban would retry several times (which reads as ban evasion). Now only a
+  genuine drop auto-reconnects — a deliberate Disconnect and a server kick or ban
+  never do.
+- **Half-dead connections are detected.** Once an outgoing message fails, the
+  client used to keep silently swallowing everything you typed; it now surfaces
+  the failure and reconnects. A silently dead link (NAT timeout, no FIN) is caught
+  by a read-staleness watchdog that pings on prolonged silence and treats a missing
+  reply as a drop.
+
+**Your data is safer**
+
+- **A corrupt preferences file no longer destroys your settings.** If config.json
+  failed to parse, the client quietly booted on defaults and then overwrote your
+  only copy — losing favorites, wardrobes, server logins, and macros. It now moves
+  the corrupt file aside to a timestamped backup before it can be overwritten, and
+  shows a startup notice pointing at the backup.
+- **Corrupt cached assets no longer poison themselves forever.** A torn download
+  that passed its length check but failed to decode used to re-fail on every retry,
+  across sessions, until you cleared the whole disk cache. The bad bytes are now
+  purged from the caches so the next attempt refetches clean data.
+- **New disk-cache size limit** (Settings, next to Measure / Clear). Set a cap and
+  the oldest cached assets are pruned to fit; the default is 0 = unlimited, so no
+  cache is ever silently deleted.
+
+**Assets & networking**
+
+- **Local asset folders now load names with spaces or parentheses.** A mounted
+  pack folder like "Phoenix Wright" was requested with the space escaped and missed
+  on disk; it now resolves.
+- **A brief server or CDN hiccup no longer blanks a room's assets for ~30 seconds.**
+  Several downloads timing out at once used to balloon the retry backoff instantly;
+  the backoff now counts a burst as a single failure, while a genuinely-down host
+  still climbs.
+- **Fewer spurious "missing asset" warnings while browsing.** The prefetcher now
+  tries the same name variants the live loader does (and warms the talking sprite),
+  so speculative guesses on bare-named packs no longer 404 in every format or warn.
+
+**Audio**
+
+- **Emote sound delays are honored.** A sound authored to land partway through a
+  preanimation (a whip-crack, a door slam) now fires at the right moment instead of
+  immediately, and a preanimation screenshake fires with it.
+- **Music fade and looping flags work.** A track told to fade in now ramps up
+  instead of hard-cutting, and a track told to play once no longer loops forever.
+- **Fixed a rare audio glitch/crash** where a sound effect still playing could be
+  freed out from under the mixer during a burst of many distinct effects.
+
+**In the courtroom**
+
+- **Reduce Motion now strips every animated style a speaker can impose** — not just
+  wobble/spin, but custom motion paths, the rainbow hue-cycle, and the glitch
+  flicker (a photosensitivity hazard). Nothing another player sends can keep the
+  stage moving while Reduce Motion is on.
+- **Frame-synced effects.** A speaker's message can now trigger a sound, a
+  realization flash, and a screenshake as their sprite reaches authored animation
+  frames, matching the AO2 client — and other AO2/webAO players see the ones you
+  send.
+- **Server mutes are handled.** When a server mutes you, the IC input shows a
+  "muted" chip and holds your typed line instead of silently eating your sends; it
+  clears when the mute lifts (or on rejoin / character change).
+- **2.8 additive text.** On servers that support it, an "Additive" checkbox lets a
+  follow-up line append to the previous message (the typewriter only crawls the new
+  tail). Incoming additive lines append the same way. A new "Additive text" setting
+  (on by default) can turn it off entirely.
+- **More accurate desk visibility.** The extended desk modifiers now hide or show
+  the desk correctly across the preanimation and talking phases (and hide the pair /
+  zero the offset for the emote-only and pre-only modes), matching AO2. Outgoing
+  messages clamp these down to the legacy values on servers that don't support them,
+  so a strict server can't reject the line.
+
+**Interface**
+
+- **Redesigned toolbox.** A slim hover grip in the bottom-right corner expands into
+  Theater, Edit layout, and Hide UI chips — so those actions no longer live only
+  inside the Hide-UI dialog.
+- **Areas tab search.** The Areas list now has the same search box as the Music tab
+  beside it (with a shown/total counter), for hub servers with hundreds of areas.
+- **The Hide-UI panel scrolls.** On short windows its top rows and footer buttons
+  could clip off-screen and become unreachable; the checkbox lists now scroll
+  between a fixed header and footer.
+- **Volume sliders join settings search** and now respond to the mouse wheel over
+  the row like every other slider.
+- **Fixed a click-through bug** where widgets scrolled behind a fixed header on the
+  About and server-owner panels could still be clicked in their hidden half (the
+  same class as the earlier character-select fix).
+
+**Under the hood**
+
+- The stage's black-flash safeguard now also covers the current speaker and their
+  pair partner: if a character's sprite is evicted mid-scene, you briefly see its
+  last frame instead of a black stage — the last remaining case of that flash.
+- Hardened the parsers that read untrusted server data (wire framing, message
+  packets, char.ini, theme files, format manifests) with fuzz testing; one
+  hostile-input hang (a char.ini claiming billions of emotes) is fixed.
+- The F8 debug panel gained upload-error, held-frame, and frame-pacer readouts to
+  make future performance reports easier to diagnose.
+- Internal cleanups with no behavior change: the texture-budget arithmetic now has
+  a single source of truth, the largest per-frame draw function was split up, and a
+  whole-screen zero-allocation test now guards the live courtroom and lobby draws.
+
 ## v1.56.1 — 2026-07-10
 
 - **The stage no longer flashes black when someone with a big animated sprite
