@@ -32,11 +32,11 @@ func TestSelectSFXOverride(t *testing.T) {
 // (a sound that's BOTH is shown once, as a favourite), and the query filters case-insensitively.
 func TestSfxBrowserRows(t *testing.T) {
 	a := testTabApp(t)
-	a.iniChar = "tester"                                  // activeCharName() -> "tester" (no session needed)
-	a.sfxChoices = []string{sfxAutoLabel, "stab", "boom"} // idx 0 is auto; "stab"/"boom" are char sounds
-	a.sfxChoicesFor = "tester:0"                          // matches ensureSFXChoices' key (0 emotes) -> no rebuild
-	a.d.Prefs.ToggleSfxFavorite("boom")                   // also a char sound -> dedup to one (fav) row
-	a.d.Prefs.ToggleSfxFavorite("zap")                    // favourite only
+	a.iniChar = "tester"                                    // activeCharName() -> "tester" (no session needed)
+	a.sfxChoices = []string{sfxAutoLabel, "stab", "boom"}   // idx 0 is auto; "stab"/"boom" are char sounds
+	a.sfxChoicesForName, a.sfxChoicesForCount = "tester", 0 // matches ensureSFXChoices' guard (0 emotes) -> no rebuild
+	a.d.Prefs.ToggleSfxFavorite("boom")                     // also a char sound -> dedup to one (fav) row
+	a.d.Prefs.ToggleSfxFavorite("zap")                      // favourite only
 
 	rows := a.sfxBrowserRows()
 	if len(rows) != 3 {

@@ -194,7 +194,10 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 		return
 	}
 	if page, ok := a.themePage(stem); ok {
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &dst)
+		// &dst into cgo would heap-allocate dst every frame — even on the
+		// plain-fill paths above/below (escape analysis is static).
+		c.cgoRect = dst
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 		return
 	}
 	c.Fill(dst, ColBackground)
@@ -205,7 +208,10 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 	c := a.ctx
 	if page, ok := a.themePage(themeBtnPrefix + key); ok {
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &r)
+		// &r into cgo would heap-allocate the parameter on every call (same
+		// escape class as drawScreenBackdrop above).
+		c.cgoRect = r
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 		hov := c.hovering(r)
 		if hov {
 			c.Border(r, ColAccent)

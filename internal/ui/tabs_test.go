@@ -256,7 +256,7 @@ func TestEnsureSFXChoices(t *testing.T) {
 			t.Errorf("choice %d = %q, want %q", i, a.sfxChoices[i], w)
 		}
 	}
-	a.sfxChoiceIdx, a.sfxChoicesFor = 5, "" // out-of-range pick + force a rebuild
+	a.sfxChoiceIdx, a.sfxChoicesForName = 5, "\x00stale" // out-of-range pick + a never-matching name forces a rebuild
 	a.ensureSFXChoices()
 	if a.sfxChoiceIdx != 0 {
 		t.Errorf("out-of-range pick must clamp to auto (0), got %d", a.sfxChoiceIdx)

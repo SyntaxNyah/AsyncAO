@@ -57,7 +57,11 @@ func (a *App) renderViewportZoomed(vp sdl.Rect) {
 		a.drawStageFrame(vp) // #56 decorative frame (Off by default → no-op)
 		return
 	}
-	_ = c.Ren.SetClipRect(&vp)
+	// &vp into cgo would heap-allocate the parameter on EVERY call — even at
+	// 1× zoom where this branch never runs (escape analysis is static). The
+	// Ctx scratch rect keeps the per-frame stage draw off the heap.
+	c.cgoRect = vp
+	_ = c.Ren.SetClipRect(&c.cgoRect)
 	a.d.Viewport.Render(c.Ren, sc, a.zoomDst(vp))
 	_ = c.Ren.SetClipRect(nil)
 	a.drawStageFrame(vp) // frame is chrome — it stays fixed while the camera zooms

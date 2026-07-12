@@ -1805,15 +1805,19 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		}
 	}
 	// Skin priority: the speaker's own art, else the theme's, else the flat
-	// translucent panel (themePage self-heals T1 eviction).
+	// translucent panel (themePage self-heals T1 eviction). Skin blits go via
+	// the Ctx scratch rect: &box into cgo would heap-allocate box at its
+	// CREATION above, every frame, even when neither skin branch runs.
 	skinned, themeSkinned := false, false
 	if charSkin != nil {
-		_ = c.Ren.Copy(charSkin, nil, &box)
+		c.cgoRect = box
+		_ = c.Ren.Copy(charSkin, nil, &c.cgoRect)
 		skinned = true
 	}
 	if !skinned {
 		if page, ok := a.themePage(themeStemChatbox); ok {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &box)
+			c.cgoRect = box
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 			skinned, themeSkinned = true, true
 		}
 	}
@@ -1857,8 +1861,11 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	textRect := sdl.Rect{X: box.X + 8, Y: box.Y + 26, W: wrapW, H: box.Y + box.H - (box.Y + 26)}
 	a.handleChatSelect(textRect, sc)
 	if a.msAnim != nil || a.msRaster != nil {
-		// Clip to the box: oversized Text settings stay INSIDE it.
-		_ = c.Ren.SetClipRect(&box)
+		// Clip to the box: oversized Text settings stay INSIDE it. Via the Ctx
+		// scratch rect — &box into cgo would heap-allocate box at its creation
+		// every frame (SDL copies the rect, so later scratch reuse is safe).
+		c.cgoRect = box
+		_ = c.Ren.SetClipRect(&c.cgoRect)
 		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
 			a.drawChatSelHighlight(textRect.X, textRect.Y, wrapW, sc)
 		}
@@ -2027,11 +2034,13 @@ const sfxAutoLabel = "SFX: auto"
 // overrides the emote's on every send until set back to auto. Off the per-frame path
 // (rebuild only on a char/emote-count change) so the IC bar stays alloc-free.
 func (a *App) ensureSFXChoices() {
-	key := a.activeCharName() + ":" + strconv.Itoa(len(a.emotes))
-	if a.sfxChoicesFor == key {
+	// Plain-field guard, not a concatenated key: this runs every frame, and
+	// building a "<char>:<n>" string just to compare it allocated per frame.
+	name := a.activeCharName()
+	if a.sfxChoicesForName == name && a.sfxChoicesForCount == len(a.emotes) {
 		return
 	}
-	a.sfxChoicesFor = key
+	a.sfxChoicesForName, a.sfxChoicesForCount = name, len(a.emotes)
 	a.sfxChoices = append(a.sfxChoices[:0], sfxAutoLabel)
 	for i := range a.emotes {
 		s := a.emotes[i].SFXName

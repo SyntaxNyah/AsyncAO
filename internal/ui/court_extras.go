@@ -470,7 +470,11 @@ func (a *App) hpBarStem(def bool, val int) string {
 func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int) {
 	c := a.ctx
 	if page, ok := a.themePage(a.hpBarStem(def, val)); ok {
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &bar)
+		// &bar into cgo would heap-allocate the PARAMETER on every call — even
+		// when this branch doesn't run (escape analysis is static). The Ctx
+		// scratch rect keeps the always-drawn HP bars off the heap.
+		c.cgoRect = bar
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 		return
 	}
 	// Procedural fallback: pip strip, blue defense / red prosecution.

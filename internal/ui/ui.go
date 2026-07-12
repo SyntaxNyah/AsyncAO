@@ -363,7 +363,16 @@ type Ctx struct {
 	// widget only exists inside its clip — input must agree with the pixels).
 	clipOn   bool
 	clipRect sdl.Rect
-	tipText  string // hover hint to paint at end-of-frame ("" = none)
+	// cgoRect is the persistent scratch rect for SDL calls that take *sdl.Rect
+	// (FillRect/DrawRect/SetClipRect): a pointer argument escapes through cgo,
+	// so passing &local heap-allocates on EVERY call — ~95 allocations per
+	// courtroom frame, invisible until the whole-screen gate measured it.
+	// Pointing SDL at this long-lived field instead costs nothing
+	// (internal/render's idiom). Safe to share across call kinds: SDL copies
+	// the rect during the call and never retains the pointer, and Ctx is
+	// render-thread-only.
+	cgoRect sdl.Rect
+	tipText string // hover hint to paint at end-of-frame ("" = none)
 	// Cached word-wrap of the current tooltip, rebuilt only when the text or the wrap
 	// width changes (drawTooltip) — so a hovered tooltip doesn't re-wrap (and re-allocate)
 	// every frame. See WrapText's "callers cache the result" note.
@@ -1356,7 +1365,8 @@ func (c *Ctx) unfencePointer() {
 // Fill draws a solid rect.
 func (c *Ctx) Fill(r sdl.Rect, col sdl.Color) {
 	_ = c.Ren.SetDrawColor(col.R, col.G, col.B, col.A)
-	_ = c.Ren.FillRect(&r)
+	c.cgoRect = r // &local would escape through cgo and heap-allocate per call
+	_ = c.Ren.FillRect(&c.cgoRect)
 }
 
 // gradientSteps bounds the horizontal strips a vertical gradient draws — smooth
@@ -1388,7 +1398,8 @@ func (c *Ctx) FillGradient(r sdl.Rect, top, bottom sdl.Color) {
 // Border outlines a rect.
 func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 	_ = c.Ren.SetDrawColor(col.R, col.G, col.B, col.A)
-	_ = c.Ren.DrawRect(&r)
+	c.cgoRect = r // &local would escape through cgo and heap-allocate per call
+	_ = c.Ren.DrawRect(&c.cgoRect)
 }
 
 // pushClip scissors rendering to r and returns the clip state to restore
@@ -1401,9 +1412,15 @@ func (c *Ctx) Border(r sdl.Rect, col sdl.Color) {
 // Returns by value (no closure) so the per-frame log/list draws stay
 // allocation-free — the render loop must not heap-allocate.
 func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
-	had = c.Ren.IsClipEnabled()
-	prev = c.Ren.GetClipRect()
-	_ = c.Ren.SetClipRect(&r)
+	// The previous clip comes from the mirror fields, NOT an SDL query:
+	// GetClipRect's named-return pointer escapes through cgo and heap-allocates
+	// per call. The mirror is authoritative because all NESTED clipping flows
+	// through pushClip/popClip — the remaining raw Ren.SetClipRect sites are
+	// leaf draw-only regions (the #31 audit) that never pushClip inside their
+	// clip window.
+	prev, had = c.clipRect, c.clipOn
+	c.cgoRect = r // &local would escape through cgo and heap-allocate per call
+	_ = c.Ren.SetClipRect(&c.cgoRect)
 	// Mirror the clip in plain fields so hovering() can honour it without a cgo
 	// query per hit test (input clipping — see hovering).
 	c.clipOn, c.clipRect = true, r
@@ -1414,7 +1431,8 @@ func (c *Ctx) pushClip(r sdl.Rect) (prev sdl.Rect, had bool) {
 func (c *Ctx) popClip(prev sdl.Rect, had bool) {
 	c.clipOn, c.clipRect = had, prev
 	if had {
-		_ = c.Ren.SetClipRect(&prev)
+		c.cgoRect = prev // &prev would escape through cgo and heap-allocate per call
+		_ = c.Ren.SetClipRect(&c.cgoRect)
 	} else {
 		_ = c.Ren.SetClipRect(nil)
 	}
@@ -2540,6 +2558,15 @@ func (c *Ctx) WrapText(s string, maxW int32, maxLines int) []string {
 // the result is clamped to [0, content-visible] (use it to clamp wheel
 // scrolling too). Draws nothing when everything fits.
 func (c *Ctx) VScrollbar(id string, track sdl.Rect, scroll, content, visible int32) int32 {
+	// A degenerate panel (a layout-edited or fixed-geometry slot laid out to a
+	// non-positive height) hands us visible <= 0. With an empty list content is
+	// 0 too, so maxScroll = content - visible is POSITIVE and slips past the
+	// guard below, then thumbH = track.H*visible/content divides by content=0.
+	// Guard both: nothing scrolls (and nothing draws) when there's no content or
+	// no visible viewport — the same "everything fits" outcome as maxScroll<=0.
+	if content <= 0 || visible <= 0 {
+		return 0
+	}
 	maxScroll := content - visible
 	if maxScroll <= 0 {
 		return 0

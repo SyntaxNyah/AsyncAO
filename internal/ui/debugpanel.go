@@ -218,6 +218,9 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 	// Pacer (#50): the last FramePace tier + WHY it's there — the census pattern
 	// has regressed repeatedly with no readout of the deciding branch. Read-only:
 	// lastPacerTier is stamped by FramePace, never consulted by any pacing gate.
+	// focusSuffix reads focus at panel-draw time while the tier was stamped at the
+	// previous FramePace call, so a focus flip between them can momentarily show a
+	// mismatched pair; diagnostic-only, self-corrects next frame.
 	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
 	y += 19
 

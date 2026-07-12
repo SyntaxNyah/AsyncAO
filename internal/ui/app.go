@@ -1329,10 +1329,14 @@ type sessionState struct {
 	// SFX picker (IC-bar dropdown): the chosen sound that OVERRIDES this character's
 	// emote sound on every send until set back to "auto". sfxChoices[0]="SFX: auto"
 	// (the emote's own sound), then the character's distinct emote sounds; idx 0 = auto.
-	// Rebuilt by ensureSFXChoices when the character (sfxChoicesFor) changes.
-	sfxChoiceIdx  int
-	sfxChoices    []string
-	sfxChoicesFor string
+	// Rebuilt by ensureSFXChoices when the character (or its emote count)
+	// changes — tracked as two plain fields, NOT a concatenated key string:
+	// the guard runs every frame in drawICInputRow, and building a key just to
+	// compare it allocated on the settled path (whole-screen gate catch).
+	sfxChoiceIdx       int
+	sfxChoices         []string
+	sfxChoicesForName  string
+	sfxChoicesForCount int
 	// #12 SFX Browser: an opt-in modal that expands the dropdown with persisted favourites,
 	// per-row preview, and a free-text "use any sound name" entry. It picks into the SAME
 	// sfxChoiceIdx override (find-or-append), so the dropdown reflects whatever it chose.
@@ -4688,13 +4692,13 @@ func (a *App) talkBudget(full time.Duration) time.Duration {
 type pacerTier uint8
 
 const (
-	pacerUnfocused    pacerTier = iota // window not focused (its own trickle tier)
-	pacerFullInput                     // recent input / effects in flight (full cap)
-	pacerAnimChrome                    // self-driven UI animation census (backstopped cap)
-	pacerTalk                          // a message is playing (typewriter/blip cadence)
-	pacerContentAnim                   // only stage animations move (next frame flip)
-	pacerIdleActiveCap                 // rendered-but-idle, active cap (event-driven/∞ idle)
-	pacerIdleNap                       // classic idle nap at the idle rate
+	pacerUnfocused     pacerTier = iota // window not focused (its own trickle tier)
+	pacerFullInput                      // recent input / effects in flight (full cap)
+	pacerAnimChrome                     // self-driven UI animation census (backstopped cap)
+	pacerTalk                           // a message is playing (typewriter/blip cadence)
+	pacerContentAnim                    // only stage animations move (next frame flip)
+	pacerIdleActiveCap                  // rendered-but-idle, active cap (event-driven/∞ idle)
+	pacerIdleNap                        // classic idle nap at the idle rate
 )
 
 // pacerTierLabel renders a pacerTier for the F8 panel. Panel-only formatting
@@ -4765,9 +4769,14 @@ func (a *App) FramePace(focused bool) time.Duration {
 			unf = full
 		}
 		// A message playing while tabbed out is still AUDIBLE: hold the blip cadence.
+		// Stamp the tightening tier as each deadline actually wins (the focus state
+		// shows separately via the F8 focusSuffix), so the readout names WHY the
+		// budget moved off trickle — a bare pacerUnfocused hid an audible ceremony
+		// / live stage anim while claiming "trickle" (#50 diagnostic precision).
 		if a.roomBusy() {
 			if tb := a.talkBudget(full); tb < unf {
 				unf = tb
+				a.lastPacerTier = pacerTalk
 			}
 		}
 		// An unfocused window is still VISIBLE (second monitor): a live stage
@@ -4775,6 +4784,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		// "idle animations go choppy the moment I click into another window" report.
 		if due, ok := nextAnimDue(); ok && due < unf {
 			unf = clampDur(due, full, unf)
+			a.lastPacerTier = pacerContentAnim // the stage-anim deadline set the budget
 		}
 		return unf
 	}
