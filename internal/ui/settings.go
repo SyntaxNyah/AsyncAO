@@ -296,6 +296,20 @@ type settingsIndexRow struct {
 // several times the real settings count; past it the collector just stops.
 const settingsIndexCap = 600
 
+// diskCacheBudgetStepMiB snaps the #34 disk-cache-limit slider to a round grid
+// (128 MiB): the cap covers 128 MiB … 64 GiB, where exact bytes don't matter,
+// so a coarse grid keeps the displayed value clean.
+const diskCacheBudgetStepMiB = 128
+
+// diskCacheBudgetLabel formats a positive T3 cap in MiB as "N MiB" below 1 GiB
+// and "N.N GiB" at or above it (0 = unlimited is handled by the caller).
+func diskCacheBudgetLabel(mib int) string {
+	if mib >= 1024 {
+		return fmt.Sprintf("%.1f GiB", float64(mib)/1024)
+	}
+	return strconv.Itoa(mib) + " MiB"
+}
+
 // imageTypes get the per-format toggle treatment.
 var imageTypeNames = []string{
 	config.TypeCharIcon,
@@ -2106,6 +2120,31 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 		a.d.Manager.SetDiskCompression(next)
 	}
 	y += 26
+	// #34: opt-in T3 byte-budget auto-prune. DEFAULT 0 = unlimited (far-left of
+	// the track) — T3's unboundedness is a deliberate spec exception, so an
+	// update never silently deletes a cache. Past a positive cap the writer
+	// goroutine sweeps the OLDEST blobs. The slider step keeps values round.
+	c.Label(pad, y+4, "Disk cache size limit:", ColText)
+	dcb := a.d.Prefs.DiskCacheBudgetMiB()
+	dcbTrack := sdl.Rect{X: pad + 200, Y: y + 2, W: 230, H: 16}
+	ndcb := int(clampI32(c.Slider("diskcachebudget", dcbTrack, int32(dcb), config.DiskCacheBudgetMaxMiB), 0, config.DiskCacheBudgetMaxMiB))
+	if ndcb != 0 { // snap positive values to a coarse grid and pull sub-minimum up to the floor
+		ndcb = (ndcb / diskCacheBudgetStepMiB) * diskCacheBudgetStepMiB
+		if ndcb < config.DiskCacheBudgetMinMiB {
+			ndcb = config.DiskCacheBudgetMinMiB
+		}
+	}
+	c.Tooltip(dcbTrack, "Cap the on-disk asset cache (T3). Far LEFT = unlimited (default — nothing is ever auto-deleted). Set a limit and the OLDEST assets auto-delete once the cache grows past it.")
+	dcbLabel := "unlimited (default)"
+	if ndcb != 0 {
+		dcbLabel = diskCacheBudgetLabel(ndcb)
+	}
+	c.Label(pad+200+236, y+4, dcbLabel, ColTextDim)
+	if ndcb != dcb {
+		a.d.Prefs.SetDiskCacheBudgetMiB(ndcb)
+		a.d.Manager.SetDiskBudget(int64(a.d.Prefs.DiskCacheBudgetMiB()) << 20) // live; writer prunes on next sweep
+	}
+	y += 28
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Measure disk cache") {
 		measureDiskCacheAsync(a.d.Manager.DiskRoot())
 	}
@@ -4251,15 +4290,39 @@ func normalizeThemeRoot(path string) (root, pickName string) {
 	return path, ""
 }
 
+// volumeWheelStep is how many percent one wheel tick nudges a volume row (#52):
+// fine enough for precise tuning, coarse enough that a flick crosses the 0–100
+// range in a handful of ticks. It's the volume analog of sliderRow's per-call
+// step; a value row without an explicit step needs a named one here.
+const volumeWheelStep = 2
+
 // volumeRow draws one "<name>  [====slider====] NN%" control and returns the
 // value. A draggable slider (click/drag anywhere on the track) instead of
 // +/- buttons — far nicer to set than stepping a button. Continuous 0–100.
+// Mousewheel over the row steps by volumeWheelStep (numberRow/sliderRow parity,
+// #52) and the row joins the settings gather-search index like every other row.
 func (a *App) volumeRow(y int32, name string, value int) int {
 	c := a.ctx
 	pad := a.formX
+	if c.onRow != nil {
+		c.onRow(name, y) // gather-search: "master volume" & friends are now findable/flash-jumpable (#52)
+	}
 	c.Label(pad, y+4, name+":", ColText)
 	track := sdl.Rect{X: pad + 130, Y: y + 5, W: 170, H: 16}
 	value = int(c.Slider(name, track, int32(value), 100))
+	// Wheel-over-row stepping (#52): the whole label+track band owns the wheel so
+	// a hover-scroll fine-tunes instead of paging the settings list.
+	row := sdl.Rect{X: pad, Y: y, W: track.X + track.W - pad, H: 26}
+	if c.hovering(row) && c.wheelY != 0 {
+		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
+		value += int(c.wheelY) * volumeWheelStep
+		if value < 0 {
+			value = 0
+		}
+		if value > 100 {
+			value = 100
+		}
+	}
 	c.Label(track.X+track.W+12, y+4, fmt.Sprintf("%3d%%", value), ColAccent)
 	return value
 }
@@ -4269,6 +4332,9 @@ func (a *App) volumeRow(y int32, name string, value int) int {
 func (a *App) numberRow(y int32, label string, value, step, min, max int, tip ...string) int {
 	c := a.ctx
 	pad := a.formX
+	if c.onRow != nil {
+		c.onRow(label, y) // gather-search: number rows are findable like sliders/checkboxes (#52)
+	}
 	c.Label(pad, y+4, label+":", ColText)
 	if c.Button(sdl.Rect{X: pad + 130, Y: y, W: 24, H: 24}, "-") && value-step >= min {
 		value -= step

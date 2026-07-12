@@ -714,6 +714,15 @@ func (m *Manager) SetDiskCompression(on bool) {
 	}
 }
 
+// SetDiskBudget sets the T3 auto-prune byte cap (#34; Settings slider,
+// live-safe). 0 = unlimited (the default: T3 is a deliberate spec exception,
+// so no cache is silently deleted). The writer goroutine sweeps oldest past it.
+func (m *Manager) SetDiskBudget(bytes int64) {
+	if m.disk != nil {
+		m.disk.SetBudget(bytes)
+	}
+}
+
 // T2Stats snapshots the byte-tier counters (Settings cache browser).
 func (m *Manager) T2Stats() cache.MemoryStats {
 	if m.t2 == nil {

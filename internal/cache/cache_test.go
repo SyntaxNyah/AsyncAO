@@ -290,6 +290,70 @@ func TestDiskZstdRoundTrip(t *testing.T) {
 	}
 }
 
+// TestDiskBudgetPrune pins the #34 byte-budget auto-prune: past the cap the
+// OLDEST (mtime) blobs are swept while the newest survive and the total lands
+// under budget — and a zero budget (the default) never deletes anything, since
+// T3's unboundedness is a deliberate spec exception.
+func TestDiskBudgetPrune(t *testing.T) {
+	d := newTestDisk(t)
+
+	// Five ~1 KiB blobs, staged oldest→newest by mtime so the sweep order is
+	// deterministic. Written straight through the writer, then re-stamped.
+	const blobSize = 1024
+	urls := []string{
+		"http://example.com/a.webp",
+		"http://example.com/b.webp",
+		"http://example.com/c.webp",
+		"http://example.com/d.webp",
+		"http://example.com/e.webp",
+	}
+	base := time.Now().Add(-time.Hour)
+	for i, u := range urls {
+		payload := bytes.Repeat([]byte{byte('A' + i)}, blobSize)
+		d.Put(u, payload)
+		waitForBlob(t, d, u)
+		// urls[0] is the OLDEST, urls[len-1] the NEWEST (one minute apart).
+		mt := base.Add(time.Duration(i) * time.Minute)
+		if err := os.Chtimes(d.pathFor(u), mt, mt); err != nil {
+			t.Fatalf("chtimes %s: %v", u, err)
+		}
+	}
+
+	// A default (zero) budget must NEVER delete — the deliberate spec exception.
+	d.SetBudget(0)
+	d.prune()
+	for _, u := range urls {
+		if _, ok := d.Get(u); !ok {
+			t.Fatalf("budget 0 (unlimited) deleted %s — it must never prune", u)
+		}
+	}
+
+	// Cap at 3 KiB: only the three newest (c,d,e) may survive; a,b are oldest.
+	const budget = 3 * blobSize
+	d.SetBudget(budget)
+	d.prune()
+
+	total, err := d.SizeOnDisk()
+	if err != nil {
+		t.Fatalf("SizeOnDisk: %v", err)
+	}
+	if total > budget {
+		t.Errorf("total %d bytes still over budget %d after prune", total, budget)
+	}
+	// Oldest evicted.
+	for _, u := range urls[:2] {
+		if _, ok := d.Get(u); ok {
+			t.Errorf("oldest blob %s survived the prune", u)
+		}
+	}
+	// Newest kept.
+	for _, u := range urls[2:] {
+		if _, ok := d.Get(u); !ok {
+			t.Errorf("newest blob %s was wrongly evicted", u)
+		}
+	}
+}
+
 // BenchmarkDiskZstd quantifies the CPU-vs-disk trade the setting buys:
 // encode+decode cost per blob for INI-like text (the win case) vs
 // pseudo-random bytes (the skip case).

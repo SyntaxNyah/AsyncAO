@@ -287,6 +287,9 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		T1Failed:   store.FailedRecently,
 	})
 	manager.SetDiskCompression(prefs.DiskZstdEnabled())
+	// #34: apply the T3 auto-prune cap (0 = unlimited, the default). The writer
+	// goroutine sweeps oldest-past-budget at open and every N stores.
+	manager.SetDiskBudget(int64(prefs.DiskCacheBudgetMiB()) << 20)
 
 	viewport := render.NewViewport(store)
 	audio := render.NewAudio(manager)

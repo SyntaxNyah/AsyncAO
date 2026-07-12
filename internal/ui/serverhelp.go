@@ -245,8 +245,13 @@ func (a *App) drawServerHelp(w, h int32) {
 	}
 	lineH := int32(c.font.Height()) + 4
 
-	_ = c.Ren.SetClipRect(&view) // keep scrolled content out of the header band
-	defer func() { _ = c.Ren.SetClipRect(nil) }()
+	// #31: pushClip (not raw SetClipRect) keeps scrolled content out of the
+	// header band AND makes hovering() honour the clip — a catalog link
+	// scrolled behind the header must not hit-test in its hidden half (a raw
+	// clip is draw-only, so the click leaked past the edge). One push spans
+	// both the measure and draw passes, exactly like the raw clip did.
+	clipPrev, clipHad := c.pushClip(view)
+	defer c.popClip(clipPrev, clipHad)
 
 	// Two passes: measure (for the scrollbar), then draw. WrapText is width-memoized,
 	// so the doubled calls are cheap; the catalog is a dozen entries.
@@ -317,9 +322,12 @@ func (a *App) drawServerHelp(w, h int32) {
 				if len(p.links) > 0 {
 					cy += 6
 					for _, link := range p.links {
-						if cy+lineH > top && cy < top+view.H { // per-link viewport guard (hit-test isn't clipped)
-							a.linkLabel(ix, cy, innerW, link)
-						}
+						// #31: the per-link on-screen guard is gone — pushClip now
+						// gates linkLabel's hit-test through hovering(), so a link
+						// scrolled behind the header no longer clicks in its hidden
+						// half. The card cull above still skips off-screen cards
+						// entirely (a pure draw optimization).
+						a.linkLabel(ix, cy, innerW, link)
 						cy += lineH
 					}
 				}

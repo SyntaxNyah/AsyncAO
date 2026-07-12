@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -34,6 +35,13 @@ const (
 	diskDirPerm    = 0o755
 	diskTmpPattern = "w-*.tmp"
 	hashHexLen     = 16 // xxhash64 → 8 bytes → 16 hex chars
+
+	// diskPruneEvery is how many stored blobs pass between byte-budget sweeps
+	// (the sweep also runs once at open). A directory walk of a multi-GB shard
+	// tree is an occasional background scan on the single writer goroutine —
+	// off every hot path — never a per-write cost. Mirrors the ThumbCache's
+	// thumbPruneEvery idiom (internal/assets/thumbcache.go).
+	diskPruneEvery = 64
 )
 
 // Key hashes a full asset URL to its on-disk name. Hashing the complete URL
@@ -82,6 +90,13 @@ type DiskCache struct {
 	// at any time — work forever without migration.
 	compress atomic.Bool
 
+	// budget is the auto-prune byte cap (Settings slider). 0 = UNLIMITED,
+	// the DEFAULT — T3's unboundedness is a deliberate spec exception
+	// (docs/FEATURES.md), so no user's cache is silently deleted by an
+	// update. A positive value makes the writer goroutine sweep the OLDEST
+	// (mtime) blobs past the cap. Read on the writer goroutine only.
+	budget atomic.Int64
+
 	onError atomic.Pointer[func(error)]
 }
 
@@ -109,6 +124,13 @@ func isZstdBlob(data []byte) bool {
 
 // SetCompression toggles zstd for new writes (live-safe: reads sniff).
 func (d *DiskCache) SetCompression(on bool) { d.compress.Store(on) }
+
+// SetBudget sets the auto-prune byte cap. 0 = UNLIMITED (the default: T3 is a
+// deliberate spec exception, so no cache is silently deleted). A positive cap
+// makes the writer goroutine sweep the OLDEST blobs past it — at open (next
+// writer wake) and every diskPruneEvery stores. Live-safe: the writer reads
+// the value each sweep.
+func (d *DiskCache) SetBudget(bytes int64) { d.budget.Store(bytes) }
 
 // DefaultDiskRoot returns <os.UserCacheDir>/AsyncAO/assets.
 func DefaultDiskRoot() (string, error) {
@@ -250,13 +272,23 @@ func (d *DiskCache) Close() {
 	})
 }
 
-// writerLoop is the single goroutine allowed to write blobs.
+// writerLoop is the single goroutine allowed to write blobs. It also owns the
+// byte-budget prune (#34): a sweep at open, then every diskPruneEvery stores —
+// on THIS goroutine, so no new sync I/O path is introduced (spec §17.2).
 func (d *DiskCache) writerLoop() {
 	defer close(d.done)
+	d.prune() // enforce the budget on whatever a previous session left
+	sincePrune := 0
 	for {
 		select {
 		case w := <-d.queue:
-			d.write(w)
+			if d.write(w) && !w.del { // count only completed stores toward the next sweep
+				sincePrune++
+				if sincePrune >= diskPruneEvery {
+					sincePrune = 0
+					d.prune()
+				}
+			}
 		case <-d.stop:
 			// Drain whatever was queued before Close, then exit.
 			for {
@@ -273,14 +305,16 @@ func (d *DiskCache) writerLoop() {
 
 // write lands one blob via temp file + rename so readers never observe a
 // partial blob under the final name — or, for a delete op, removes the blob.
-func (d *DiskCache) write(w diskWrite) {
+// It returns true when a blob was actually stored (a completed non-delete
+// write), which writerLoop counts toward the next byte-budget sweep.
+func (d *DiskCache) write(w diskWrite) bool {
 	if w.del {
 		// A missing file is a no-op success (nothing to purge); other errors
 		// (permissions, locked file) surface through the error hook.
 		if err := os.Remove(w.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			d.reportError(fmt.Errorf("cache: deleting blob %s: %w", w.path, err))
 		}
-		return
+		return false
 	}
 	if d.compress.Load() {
 		// Compress on the writer goroutine (never the caller's); keep the
@@ -292,31 +326,90 @@ func (d *DiskCache) write(w diskWrite) {
 	dir := filepath.Dir(w.path)
 	if err := os.MkdirAll(dir, diskDirPerm); err != nil {
 		d.reportError(fmt.Errorf("cache: creating shard dir %s: %w", dir, err))
-		return
+		return false
 	}
 	tmp, err := os.CreateTemp(dir, diskTmpPattern)
 	if err != nil {
 		d.reportError(fmt.Errorf("cache: creating temp blob in %s: %w", dir, err))
-		return
+		return false
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(w.data); err != nil {
 		tmp.Close()
 		os.Remove(tmpName)
 		d.reportError(fmt.Errorf("cache: writing blob %s: %w", tmpName, err))
-		return
+		return false
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmpName)
 		d.reportError(fmt.Errorf("cache: closing blob %s: %w", tmpName, err))
-		return
+		return false
 	}
 	if err := os.Rename(tmpName, w.path); err != nil {
 		os.Remove(tmpName)
 		d.reportError(fmt.Errorf("cache: publishing blob %s: %w", w.path, err))
-		return
+		return false
 	}
 	d.writes.Add(1)
+	return true
+}
+
+// diskFileAge is one blob's path, size, and mtime — the prune sweep's working
+// record.
+type diskFileAge struct {
+	path string
+	size int64
+	mod  int64 // ModTime UnixNano; oldest sweeps out first
+}
+
+// prune enforces the byte budget (#34): when stored blobs sum past it, the
+// OLDEST (mtime) are deleted until back under. budget <= 0 = UNLIMITED (the
+// default), so the common case returns immediately with no walk. Runs ONLY on
+// the writer goroutine (at open + every diskPruneEvery stores) so it never
+// races another deleter and never touches disk on a hot-path caller. Errors
+// are ignored per-file (a locked/racing file just survives to the next sweep);
+// in-flight temp files are skipped so a partial write is never counted or
+// deleted. Mirrors ThumbCache.prune, adapted to T3's sharded <xx>/<hash> tree.
+func (d *DiskCache) prune() {
+	budget := d.budget.Load()
+	if budget <= 0 {
+		return // 0 = unlimited: the deliberate T3 default, never deletes
+	}
+	var total int64
+	files := make([]diskFileAge, 0, 256)
+	_ = filepath.WalkDir(d.root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil // racing a concurrent Clear is fine
+			}
+			return nil // an unreadable shard dir just isn't counted this sweep
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		if filepath.Ext(path) == ".tmp" {
+			return nil // an in-flight write (w-*.tmp): never count or evict it
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return nil
+		}
+		total += info.Size()
+		files = append(files, diskFileAge{path: path, size: info.Size(), mod: info.ModTime().UnixNano()})
+		return nil
+	})
+	if total <= budget {
+		return
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mod < files[j].mod }) // oldest first
+	for _, f := range files {
+		if total <= budget {
+			break
+		}
+		if os.Remove(f.path) == nil {
+			total -= f.size
+		}
+	}
 }
 
 // DiskStats is a point-in-time counter snapshot.

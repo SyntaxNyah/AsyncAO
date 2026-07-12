@@ -419,7 +419,14 @@ func TestServerAudioPref(t *testing.T) {
 	// an EXPLICIT 0 (set above for sfx) mutes.
 	p.SetAudioVolumes(90, 85, 80) // global music=90 sfx=85 blip=80
 	mv := 50
+	// The setters can't build a PARTIAL ServerWarm entry (only AudioMaster set),
+	// so write the map directly — but under p.mu, exactly as SaveNow's marshal
+	// takes p.mu.RLock(): the debounced saver goroutine may be flushing the
+	// SetAudioVolumes dirty-mark concurrently, and an unlocked map write here
+	// races that marshal (a -race flake, pre-existing).
+	p.mu.Lock()
 	p.ServerWarm["wss://partial/ws"] = ServerWarmInfo{AudioOn: true, AudioMaster: &mv} // music/sfx/blip unset
+	p.mu.Unlock()
 	if on, m, mu, s, b := p.ServerAudio("wss://partial/ws"); !on || m != 50 || mu != 90 || s != 85 || b != 80 {
 		t.Errorf("unset channels must fall back to global: got %v/%d/%d/%d/%d, want true/50/90/85/80", on, m, mu, s, b)
 	}

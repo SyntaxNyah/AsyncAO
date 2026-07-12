@@ -246,9 +246,13 @@ func (a *App) drawAbout(w, h int32) {
 		a.aboutScroll = maxScroll
 	}
 
+	// #31: pushClip (not a raw SetClipRect) so hovering() honours the clip —
+	// a link Button or the Mayo portrait scrolled behind the header must not
+	// hit-test in its hidden half (raw clips draw-only, so the click leaked
+	// past the edge — the class that shipped the v1.55.8 char-select bug).
 	clip := sdl.Rect{X: 0, Y: top, W: w, H: viewH}
-	_ = c.Ren.SetClipRect(&clip)
-	defer func() { _ = c.Ren.SetClipRect(nil) }()
+	clipPrev, clipHad := c.pushClip(clip)
+	defer c.popClip(clipPrev, clipHad)
 
 	y := top - a.aboutScroll
 	for _, fl := range a.aboutFlat {
@@ -284,13 +288,13 @@ func (a *App) drawAbout(w, h int32) {
 				if bw > colW-2*aboutCardPad {
 					bw = colW - 2*aboutCardPad
 				}
-				// Per-button viewport guard: the kit hit-tests by cursor position,
-				// not the clip rect, so a button scrolled behind the header must
-				// not draw OR hit-test (else a header click opens a hidden link).
-				if ry+btnH > top && ry < top+viewH {
-					if c.Button(sdl.Rect{X: x0 + aboutCardPad, Y: ry, W: bw, H: btnH}, it.label) {
-						openBrowser(it.url)
-					}
+				// #31: the per-button on-screen guard is gone — pushClip now
+				// gates the hit-test through hovering(), so a link scrolled
+				// behind the header no longer clicks in its hidden half. The
+				// outer card cull still skips fully off-screen cards (a pure
+				// draw optimization).
+				if c.Button(sdl.Rect{X: x0 + aboutCardPad, Y: ry, W: bw, H: btnH}, it.label) {
+					openBrowser(it.url)
 				}
 				ry += btnH + aboutLinkGap
 			}

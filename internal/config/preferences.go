@@ -881,6 +881,7 @@ type AssetPreferences struct {
 	ThumbHeightPxVal       int                          `json:"thumbHeightPx,omitempty"`        // thumbnail height px (0/absent = 64)
 	ThumbQualityVal        int                          `json:"thumbQuality,omitempty"`         // thumbnail webp quality (0/absent = 20)
 	ThumbBudgetMiBVal      int                          `json:"thumbBudgetMiB,omitempty"`       // thumbnail store byte budget, MiB (0/absent = 64; auto-prunes oldest)
+	DiskCacheBudgetMiBVal  int                          `json:"diskCacheBudgetMiB,omitempty"`   // T3 disk-cache auto-prune cap, MiB (0/absent = UNLIMITED, the default — never silently deletes)
 	NotFoundTTLSecVal      int                          `json:"notFoundTTLSec,omitempty"`       // negative-cache (404) TTL in seconds (0/absent = 5 min); applies on RESTART
 	AdaptiveLatMultipleVal int                          `json:"adaptiveLatMultiple,omitempty"`  // per-host deadline = N × TTFB EWMA (0/absent = 8)
 	SpriteDownscaleOff     bool                         `json:"spriteDownscaleOff,omitempty"`   // disable the automatic decode downscale entirely (default OFF = downscale on)
@@ -1215,6 +1216,7 @@ type prefsJSON struct {
 	ThumbHeightPx          int              `json:"thumbHeightPx"`        // thumb height px (0 = 64)
 	ThumbQuality           int              `json:"thumbQuality"`         // thumb webp quality (0 = 20)
 	ThumbBudgetMiB         int              `json:"thumbBudgetMiB"`       // thumb store budget MiB (0 = 64)
+	DiskCacheBudgetMiB     int              `json:"diskCacheBudgetMiB"`   // T3 disk-cache prune cap MiB (0 = unlimited, default)
 	NotFoundTTLSec         int              `json:"notFoundTTLSec"`       // 404 TTL seconds (0 = default; restart)
 	AdaptiveLatMultiple    int              `json:"adaptiveLatMultiple"`  // deadline multiple (0 = 8)
 	SpriteDownscaleOff     bool             `json:"spriteDownscaleOff"`   // disable decode downscale (default OFF)
@@ -1986,6 +1988,10 @@ func load(path string) (*AssetPreferences, error) {
 	p.ThumbBudgetMiBVal = onDisk.ThumbBudgetMiB
 	if p.ThumbBudgetMiBVal != 0 {
 		p.ThumbBudgetMiBVal = clampPercent(p.ThumbBudgetMiBVal, ThumbBudgetMinMiB, ThumbBudgetMaxMiB)
+	}
+	p.DiskCacheBudgetMiBVal = onDisk.DiskCacheBudgetMiB
+	if p.DiskCacheBudgetMiBVal != 0 { // 0 = unlimited (the default); only a positive cap is clamped
+		p.DiskCacheBudgetMiBVal = clampPercent(p.DiskCacheBudgetMiBVal, DiskCacheBudgetMinMiB, DiskCacheBudgetMaxMiB)
 	}
 	p.NotFoundTTLSecVal = onDisk.NotFoundTTLSec
 	if p.NotFoundTTLSecVal != 0 {
@@ -6089,6 +6095,14 @@ const (
 	ThumbBudgetMinMiB     = 8
 	ThumbBudgetMaxMiB     = 512
 
+	// T3 disk-cache auto-prune cap (#34). 0 = UNLIMITED, the DEFAULT — T3's
+	// unboundedness is a deliberate spec exception, so an update never silently
+	// deletes a user's cache. A positive cap makes the writer goroutine sweep
+	// the oldest blobs past it. A single character on a 4000-char server runs
+	// tens of MiB, so the floor is generous; the ceiling covers a whole disk.
+	DiskCacheBudgetMinMiB = 128   // smallest meaningful cap
+	DiskCacheBudgetMaxMiB = 65536 // 64 GiB — a very large asset library
+
 	// Negative-cache (404) TTL knob: how long a missing asset stays "missing"
 	// before a re-probe is allowed. RESTART-applied (the LRU takes its TTL at
 	// construction). Shorter = a server admin uploading a missing sprite shows
@@ -6424,6 +6438,33 @@ func (p *AssetPreferences) SetThumbBudgetMiB(mib int) {
 		return
 	}
 	p.ThumbBudgetMiBVal = mib
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// DiskCacheBudgetMiB reports the T3 disk-cache auto-prune cap in MiB (#34).
+// 0 = UNLIMITED, the default — T3's unboundedness is a deliberate spec
+// exception, so an update never silently deletes a user's cache.
+func (p *AssetPreferences) DiskCacheBudgetMiB() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.DiskCacheBudgetMiBVal
+}
+
+// SetDiskCacheBudgetMiB persists the T3 prune cap (0 = unlimited; else clamped
+// to [DiskCacheBudgetMinMiB, DiskCacheBudgetMaxMiB]). The debounced saver
+// flushes the change; the caller applies it to the live cache via
+// Manager.SetDiskBudget.
+func (p *AssetPreferences) SetDiskCacheBudgetMiB(mib int) {
+	if mib != 0 {
+		mib = clampPercent(mib, DiskCacheBudgetMinMiB, DiskCacheBudgetMaxMiB)
+	}
+	p.mu.Lock()
+	if p.DiskCacheBudgetMiBVal == mib {
+		p.mu.Unlock()
+		return
+	}
+	p.DiskCacheBudgetMiBVal = mib
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -6780,6 +6821,7 @@ func (p *AssetPreferences) ResetPowerUser() {
 	p.ThumbHeightPxVal = 0
 	p.ThumbQualityVal = 0
 	p.ThumbBudgetMiBVal = 0
+	p.DiskCacheBudgetMiBVal = 0 // back to unlimited (the default)
 	p.NotFoundTTLSecVal = 0
 	p.AdaptiveLatMultipleVal = 0
 	p.SpriteDownscaleOff = false
