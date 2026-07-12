@@ -1062,6 +1062,10 @@ type sessionState struct {
 	// uncap" mechanism); it falls back to idle the frame the draw stops marking it.
 	frameAnimChrome bool
 	drawnAnimChrome bool
+	// lastPacerTier records which FramePace branch set the last budget — a
+	// write-only DIAGNOSTIC for the F8 panel (#50), never read by any pacing
+	// decision (see pacerTier's own doc).
+	lastPacerTier pacerTier
 	// roomPreAdvanced is set by the main loop's audio-paced sub-stepping: while a
 	// message types at a low PRESENT rate, the loop advances the courtroom (and
 	// plays its blips) at the fine audio cadence via Background between presents, so
@@ -4673,6 +4677,49 @@ func (a *App) talkBudget(full time.Duration) time.Duration {
 	return talk
 }
 
+// pacerTier is a DIAGNOSTIC label of which FramePace branch decided the current
+// budget — recorded at each return in FramePace, read only by the F8 panel (#50).
+// It is write-only from FramePace and never feeds wantsFullRate / SkipFrame /
+// NextWakeDelay: the pacer's census has regressed repeatedly and had no readout
+// of WHY it sat at a tier, so this names the branch WITHOUT becoming a new latch
+// (a re-derivation in the panel would drift with the very logic it's meant to
+// diagnose, so the actual return sites stamp it instead). Bounded by design —
+// one value per branch, no unbounded set.
+type pacerTier uint8
+
+const (
+	pacerUnfocused    pacerTier = iota // window not focused (its own trickle tier)
+	pacerFullInput                     // recent input / effects in flight (full cap)
+	pacerAnimChrome                    // self-driven UI animation census (backstopped cap)
+	pacerTalk                          // a message is playing (typewriter/blip cadence)
+	pacerContentAnim                   // only stage animations move (next frame flip)
+	pacerIdleActiveCap                 // rendered-but-idle, active cap (event-driven/∞ idle)
+	pacerIdleNap                       // classic idle nap at the idle rate
+)
+
+// pacerTierLabel renders a pacerTier for the F8 panel. Panel-only formatting
+// (never on the hot path), so it can't add a per-frame allocation.
+func pacerTierLabel(t pacerTier) string {
+	switch t {
+	case pacerUnfocused:
+		return "unfocused (trickle)"
+	case pacerFullInput:
+		return "full — input/effects in flight"
+	case pacerAnimChrome:
+		return "anim-chrome census (backstopped cap)"
+	case pacerTalk:
+		return "talk — message playing"
+	case pacerContentAnim:
+		return "content — stage animation cadence"
+	case pacerIdleActiveCap:
+		return "idle → active cap (event-driven/∞ idle)"
+	case pacerIdleNap:
+		return "idle nap (classic idle rate)"
+	default:
+		return "?"
+	}
+}
+
 // FramePace returns the frame budget the main loop should pace to (0 = no cap):
 // the sleep between CONSECUTIVE rendered frames. focused is the window's input-
 // focus state. Tiers, fastest first:
@@ -4706,6 +4753,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		return a.d.Viewport.NextAnimDue(a.renderScene())
 	}
 	if !focused {
+		a.lastPacerTier = pacerUnfocused
 		unf, unfOff := rateBudget(a.d.Prefs.UnfocusedFPS())
 		if unf == 0 && !unfOff {
 			return 0 // ∞ unfocused: never throttle
@@ -4731,6 +4779,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		return unf
 	}
 	if a.wantsFullRate() {
+		a.lastPacerTier = pacerFullInput
 		return full // recent input / effects genuinely in flight
 	}
 	if a.drawnAnimChrome {
@@ -4740,6 +4789,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		// but never a ZERO budget: with the ∞ default cap, pace=hardCap=0 skips
 		// every pacing sleep and vsync is the only brake — which main.go's own
 		// GPU-burn note records as non-blocking on some windowed present paths.
+		a.lastPacerTier = pacerAnimChrome
 		return backstopBudget(full)
 	}
 	idle, idleOff := rateBudget(a.d.Prefs.IdleFPS())
@@ -4759,9 +4809,11 @@ func (a *App) FramePace(focused bool) time.Duration {
 		if due, ok := nextAnimDue(); ok && due < talk {
 			talk = clampDur(due, full, talk) // a fast speaker anim gets its frames
 		}
+		a.lastPacerTier = pacerTalk
 		return talk
 	}
 	if due, ok := nextAnimDue(); ok {
+		a.lastPacerTier = pacerContentAnim
 		if idleOff || idleUnlimited {
 			return clampDur(due, full, due) // the content's own cadence (never above the cap)
 		}
@@ -4774,8 +4826,10 @@ func (a *App) FramePace(focused bool) time.Duration {
 	// ∞ idle ("as fast as the active cap", the Settings tooltip's own words)
 	// resolves through the cap so a finite cap still rules.
 	if a.d.Prefs.EventDrivenLoopOn() || idleOff || idleUnlimited {
+		a.lastPacerTier = pacerIdleActiveCap
 		return backstopBudget(full)
 	}
+	a.lastPacerTier = pacerIdleNap
 	return idle // classic idle nap (N → 1s/N)
 }
 

@@ -185,6 +185,12 @@ type TextureStore struct {
 	heldKeys    [heldSceneryMax]string
 	heldNext    int
 	purging     bool
+	// heldSteals / heldReleases are debug-visibility counters for the F8 panel
+	// (#50): how many times the bridge stole an evicted live-scenery frame vs
+	// released one when its real page came back. atomic so the panel read is
+	// race-proof against these render-thread adds; they never gate behaviour.
+	heldSteals   atomic.Int64
+	heldReleases atomic.Int64
 
 	// failed is the decode-failure negative cache: base → last failure time.
 	// Written on the render thread (the upload pump) but read off-thread by the
@@ -385,6 +391,7 @@ func (s *TextureStore) holdSceneryFrame(base string, page *TexturePage) {
 	}
 	s.pinned[key] = held
 	s.pinnedBytes += held.bytes
+	s.heldSteals.Add(1)
 }
 
 // releaseHeld drops the held-frame bridge page for base once its real page is
@@ -404,6 +411,32 @@ func (s *TextureStore) releaseHeld(base string) {
 		if s.heldKeys[i] == key {
 			s.heldKeys[i] = ""
 		}
+	}
+	s.heldReleases.Add(1)
+}
+
+// HeldStats is a lazy snapshot of the held-frame bridge counters for the F8
+// panel (#50). Current is how many stolen frames are pinned right now.
+type HeldStats struct {
+	Steals   int64 // stage frames stolen into the pinned bridge on eviction
+	Releases int64 // holds released when the real page re-uploaded
+	Current  int64 // held frames pinned right now (≤ heldSceneryMax)
+}
+
+// HeldStats snapshots the bridge counters. Render thread only (it reads the
+// heldKeys ring, which every bridge mutation also touches on this thread); the
+// steal/release totals are atomic loads so they can't tear against the adds.
+func (s *TextureStore) HeldStats() HeldStats {
+	current := int64(0)
+	for i := range s.heldKeys {
+		if s.heldKeys[i] != "" {
+			current++
+		}
+	}
+	return HeldStats{
+		Steals:   s.heldSteals.Load(),
+		Releases: s.heldReleases.Load(),
+		Current:  current,
 	}
 }
 

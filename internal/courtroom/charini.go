@@ -91,6 +91,18 @@ const (
 	// with a pathological section can't build an unbounded packet (§17.4). Well
 	// above any real preanim's frame count.
 	frameEffectFramesCap = 256
+	// charEmoteScanCap bounds the [Emotions] "number=" scan (rule §17.4). The
+	// count is attacker-controlled server bytes — a hostile "number=2000000000"
+	// otherwise loops ~2e9 times, each allocating an fmt.Sprintf key: a hang +
+	// GC storm from one malformed char.ini (caught by FuzzParseCharINI). Chosen
+	// well clear of any REAL char.ini: single characters carry at most a few
+	// hundred emotes, and even a merged "ensemble"/megachar sheet stacking many
+	// casts stays comfortably under this — 8192 is an order of magnitude past the
+	// largest shipped set while still bounding the scan to a trivial cost (a
+	// claimed count above it simply stops reading extra rows, which would have to
+	// exist as [Emotions] keys anyway). If a genuine char legitimately needs more,
+	// raise this named constant; do not remove the clamp.
+	charEmoteScanCap = 8192
 	// customShoutCap bounds the [Shouts] scan (rule §17.4).
 	customShoutCap = 32
 	// customNameSuffix marks "<stem>_name" keys in [Shouts].
@@ -116,6 +128,9 @@ func ParseCharINI(data []byte) (*CharINI, error) {
 
 	countRaw, _ := ini.GetSection(charINIEmotionsSection, "number")
 	count := atoiOr(countRaw, 0)
+	if count > charEmoteScanCap {
+		count = charEmoteScanCap // hostile/garbage "number=" can't drive an unbounded scan (§17.4)
+	}
 	for i := 1; i <= count; i++ {
 		key := fmt.Sprintf("%d", i)
 		raw, ok := ini.GetSection(charINIEmotionsSection, key)

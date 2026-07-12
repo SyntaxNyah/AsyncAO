@@ -149,11 +149,11 @@ func TestPumpTransientErrorsDontPin(t *testing.T) {
 	sick := srvSick.URL + "/characters/witch/(a)sick"
 	mgr.Prefetch(sick, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (test)
 	deadline := time.Now().Add(5 * time.Second)
-	for pump.transientErrs == 0 && time.Now().Before(deadline) {
+	for pump.Stats().TransientErrs == 0 && time.Now().Before(deadline) {
 		pump.Frame()
 		time.Sleep(5 * time.Millisecond)
 	}
-	if pump.transientErrs == 0 {
+	if pump.Stats().TransientErrs == 0 {
 		t.Fatal("the network failure never reached the pump as transient")
 	}
 	if store.FailedRecently(sick) {

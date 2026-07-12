@@ -213,6 +213,44 @@ func (a *App) drawDebugPerf(r sdl.Rect) {
 		}
 	}
 	c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Goroutines: %d", runtime.NumGoroutine()), ColTextDim)
+	y += 19
+
+	// Pacer (#50): the last FramePace tier + WHY it's there — the census pattern
+	// has regressed repeatedly with no readout of the deciding branch. Read-only:
+	// lastPacerTier is stamped by FramePace, never consulted by any pacing gate.
+	c.LabelClipped(r.X, y, r.W, "Pacer: "+pacerTierLabel(a.lastPacerTier)+focusSuffix(a.ctx.WindowFocused()), ColTextDim)
+	y += 19
+
+	// Pump (#50): GPU upload + transient network errors that reached the upload
+	// pump (previously test-only visibility). A rising uploads count means the
+	// texture budget is over-subscribed; transients spike during an origin
+	// backoff wave.
+	if a.d.Pump != nil {
+		ps := a.d.Pump.Stats()
+		col := ColTextDim
+		if ps.UploadErrs > 0 {
+			col = ColTierYellow
+		}
+		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Pump: %d upload errors · %d transient (network) errors", ps.UploadErrs, ps.TransientErrs), col)
+		y += 19
+	}
+
+	// Held-frame bridge (#50): steals/releases + how many stolen stage frames are
+	// pinned right now (the black-flash fix — live verify used to rely on eyeballs).
+	// A Current stuck at the cap means the heal isn't landing the real pages.
+	if a.d.Store != nil {
+		hs := a.d.Store.HeldStats()
+		c.LabelClipped(r.X, y, r.W, fmt.Sprintf("Held-frame bridge: %d steals · %d releases · %d held now", hs.Steals, hs.Releases, hs.Current), ColTextDim)
+	}
+}
+
+// focusSuffix annotates the pacer line with the window's focus state (the
+// unfocused tier is only reachable when the window is tabbed away).
+func focusSuffix(focused bool) string {
+	if focused {
+		return "   [focused]"
+	}
+	return "   [unfocused]"
 }
 
 // drawDebugCache renders the three-tier asset cache inspector (#164): where

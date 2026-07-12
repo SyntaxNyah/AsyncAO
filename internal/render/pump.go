@@ -2,6 +2,7 @@ package render
 
 import (
 	"log"
+	"sync/atomic"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 )
@@ -20,11 +21,27 @@ type Pump struct {
 	// (bypasses the speculative budget).
 	IsLive func(base string) bool
 
-	uploadErrs int64
-	// transientErrs counts network-stage failures that reached the pump
-	// (debug visibility; they are deliberately neither logged nor
-	// negative-cached — see the upload closure).
-	transientErrs int64
+	// uploadErrs / transientErrs are debug-visibility counters surfaced in the
+	// F8 panel (#50). atomic so the panel read (also render thread today, but
+	// cheap and race-proof) never trips the detector against these hot-path
+	// adds; they are add-only from Frame and never gate any behaviour.
+	uploadErrs    atomic.Int64
+	transientErrs atomic.Int64
+}
+
+// PumpStats is a lazy snapshot of the pump's debug counters for the F8 panel.
+type PumpStats struct {
+	UploadErrs    int64 // GPU texture-upload failures (over-budget canvas, OOM)
+	TransientErrs int64 // network-stage failures that reached the pump (not cached)
+}
+
+// Stats snapshots the pump's error counters. Read on the render thread by the
+// F8 diagnostics; the values are atomic loads, so it never blocks Frame.
+func (p *Pump) Stats() PumpStats {
+	return PumpStats{
+		UploadErrs:    p.uploadErrs.Load(),
+		TransientErrs: p.transientErrs.Load(),
+	}
 }
 
 // NewPump wires the upload pump.
@@ -57,7 +74,7 @@ func (p *Pump) Frame() {
 			// server's files go missing in waves" report. They're counted,
 			// not logged (a backoff burst would flood the log).
 			if d.Err != nil && d.Transient {
-				p.transientErrs++
+				p.transientErrs.Add(1)
 				return
 			}
 			// A DECODE failure (corrupt/truncated bytes — DecodeImage only ever
@@ -98,7 +115,7 @@ func (p *Pump) Frame() {
 			err = p.store.Upload(d.Base, d.Asset)
 		}
 		if err != nil {
-			p.uploadErrs++
+			p.uploadErrs.Add(1)
 			log.Printf("render: texture upload %s failed: %v", d.Base, err)
 			return
 		}
