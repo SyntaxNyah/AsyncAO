@@ -178,7 +178,7 @@ func cmdPrune(args []string) error {
 		return err
 	}
 	if *all {
-		d, err := cache.NewDiskCache(root)
+		d, err := cache.NewDiskCache(root, 0) // CLI tool: no auto-prune (0 = unlimited)
 		if err != nil {
 			return err
 		}
@@ -275,7 +275,7 @@ func cmdWarm(args []string) error {
 	if err != nil {
 		return err
 	}
-	d, err := cache.NewDiskCache(root)
+	d, err := cache.NewDiskCache(root, 0) // CLI tool: no auto-prune (0 = unlimited)
 	if err != nil {
 		return err
 	}

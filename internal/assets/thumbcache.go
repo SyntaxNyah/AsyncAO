@@ -95,7 +95,10 @@ const (
 // NewThumbCache opens (creating if needed) the thumbnail store rooted at root
 // and starts its two workers. Call Close to drain and stop.
 func NewThumbCache(root string) (*ThumbCache, error) {
-	disk, err := cache.NewDiskCache(root)
+	// 0 = no DiskCache-level auto-prune: the ThumbCache runs its OWN byte-budget
+	// prune (SetBudget/prune below) over this store, so the tier's sweep must
+	// stay out of its way.
+	disk, err := cache.NewDiskCache(root, 0)
 	if err != nil {
 		return nil, err
 	}

@@ -35,7 +35,7 @@ func buildPumpManager(t *testing.T, source assets.Fetcher, localMode bool) (*ass
 	if err != nil {
 		t.Fatal(err)
 	}
-	disk, err := cache.NewDiskCache(filepath.Join(t.TempDir(), "assets"))
+	disk, err := cache.NewDiskCache(filepath.Join(t.TempDir(), "assets"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

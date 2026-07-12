@@ -214,7 +214,7 @@ func BenchmarkCacheHit_T1(b *testing.B) {
 
 func newTestDisk(t *testing.T) *DiskCache {
 	t.Helper()
-	d, err := NewDiskCache(filepath.Join(t.TempDir(), AssetsSubdir))
+	d, err := NewDiskCache(filepath.Join(t.TempDir(), AssetsSubdir), 0) // 0 = no auto-prune
 	if err != nil {
 		t.Fatalf("NewDiskCache: %v", err)
 	}
@@ -319,8 +319,15 @@ func TestDiskBudgetPrune(t *testing.T) {
 		}
 	}
 
+	// This test pins the sweep LOGIC via synchronous direct d.prune() calls, so
+	// it stores the budget directly instead of SetBudget: the setter's writer
+	// wake would run a SECOND, concurrent sweep whose stale listing keeps
+	// deleting past the direct call's evictions (prune is writer-goroutine-only
+	// by design). The TRIGGER paths have their own tests below
+	// (TestDiskAtOpenPruneEnforcesInitialBudget, TestDiskSetBudgetWakesWriter).
+
 	// A default (zero) budget must NEVER delete — the deliberate spec exception.
-	d.SetBudget(0)
+	d.budget.Store(0)
 	d.prune()
 	for _, u := range urls {
 		if _, ok := d.Get(u); !ok {
@@ -330,7 +337,7 @@ func TestDiskBudgetPrune(t *testing.T) {
 
 	// Cap at 3 KiB: only the three newest (c,d,e) may survive; a,b are oldest.
 	const budget = 3 * blobSize
-	d.SetBudget(budget)
+	d.budget.Store(budget)
 	d.prune()
 
 	total, err := d.SizeOnDisk()
@@ -348,6 +355,128 @@ func TestDiskBudgetPrune(t *testing.T) {
 	}
 	// Newest kept.
 	for _, u := range urls[2:] {
+		if _, ok := d.Get(u); !ok {
+			t.Errorf("newest blob %s was wrongly evicted", u)
+		}
+	}
+}
+
+// pollUnderBudget waits (up to diskSettleWait) for the on-disk total to fall to
+// or below want, polling SizeOnDisk. It never calls d.prune() directly, so it
+// pins the actual prune TRIGGER (the writer goroutine) rather than the sweep
+// logic. Returns the final total.
+func pollUnderBudget(t *testing.T, d *DiskCache, want int64) int64 {
+	t.Helper()
+	deadline := time.Now().Add(diskSettleWait)
+	for {
+		total, err := d.SizeOnDisk()
+		if err != nil {
+			t.Fatalf("SizeOnDisk: %v", err)
+		}
+		if total <= want {
+			return total
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("total %d bytes never fell to budget %d", total, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestDiskAtOpenPruneEnforcesInitialBudget pins the #34 "at open" TRIGGER: a
+// new cache opened over a previous session's over-budget dir with a positive
+// initialBudget must sweep it down on the writer's first prune — WITHOUT anyone
+// calling d.prune(). This is the exact wiring the earlier review found dead
+// (the constructor now stores the budget before the writer starts).
+func TestDiskAtOpenPruneEnforcesInitialBudget(t *testing.T) {
+	root := filepath.Join(t.TempDir(), AssetsSubdir)
+
+	// Session 1: fill the dir with five 1 KiB blobs (unlimited, no prune).
+	const blobSize = 1024
+	urls := []string{
+		"http://example.com/a.webp",
+		"http://example.com/b.webp",
+		"http://example.com/c.webp",
+		"http://example.com/d.webp",
+		"http://example.com/e.webp",
+	}
+	d1, err := NewDiskCache(root, 0)
+	if err != nil {
+		t.Fatalf("NewDiskCache (session 1): %v", err)
+	}
+	base := time.Now().Add(-time.Hour)
+	for i, u := range urls {
+		d1.Put(u, bytes.Repeat([]byte{byte('A' + i)}, blobSize))
+		waitForBlob(t, d1, u)
+		mt := base.Add(time.Duration(i) * time.Minute) // urls[0] oldest
+		if err := os.Chtimes(d1.pathFor(u), mt, mt); err != nil {
+			t.Fatalf("chtimes %s: %v", u, err)
+		}
+	}
+	d1.Close()
+
+	// Session 2: reopen the SAME dir with a 3 KiB cap. The at-open sweep must
+	// fire on its own — the test never calls prune().
+	const budget = 3 * blobSize
+	d2, err := NewDiskCache(root, budget)
+	if err != nil {
+		t.Fatalf("NewDiskCache (session 2): %v", err)
+	}
+	t.Cleanup(d2.Close)
+
+	if total := pollUnderBudget(t, d2, budget); total > budget {
+		t.Errorf("at-open prune left %d bytes over budget %d", total, budget)
+	}
+	for _, u := range urls[:2] { // oldest evicted
+		if _, ok := d2.Get(u); ok {
+			t.Errorf("oldest blob %s survived the at-open prune", u)
+		}
+	}
+	for _, u := range urls[2:] { // newest kept
+		if _, ok := d2.Get(u); !ok {
+			t.Errorf("newest blob %s was wrongly evicted at open", u)
+		}
+	}
+}
+
+// TestDiskSetBudgetWakesWriter pins the live-change TRIGGER: lowering the budget
+// via SetBudget must enforce it NOW — not after diskPruneEvery more stores, and
+// not never on a read-only session (writer parked on the empty queue). The test
+// never calls d.prune(); the wake alone must shrink the cache.
+func TestDiskSetBudgetWakesWriter(t *testing.T) {
+	d := newTestDisk(t) // opens with budget 0 (unlimited)
+
+	const blobSize = 1024
+	urls := []string{
+		"http://example.com/a.webp",
+		"http://example.com/b.webp",
+		"http://example.com/c.webp",
+		"http://example.com/d.webp",
+	}
+	base := time.Now().Add(-time.Hour)
+	for i, u := range urls {
+		d.Put(u, bytes.Repeat([]byte{byte('A' + i)}, blobSize))
+		waitForBlob(t, d, u)
+		mt := base.Add(time.Duration(i) * time.Minute)
+		if err := os.Chtimes(d.pathFor(u), mt, mt); err != nil {
+			t.Fatalf("chtimes %s: %v", u, err)
+		}
+	}
+
+	// No further stores land after this — a real read-only session. The wake
+	// (not a diskPruneEvery rollover) is the only thing that can prune.
+	const budget = 2 * blobSize
+	d.SetBudget(budget)
+
+	if total := pollUnderBudget(t, d, budget); total > budget {
+		t.Errorf("SetBudget wake left %d bytes over budget %d", total, budget)
+	}
+	for _, u := range urls[:2] { // oldest evicted
+		if _, ok := d.Get(u); ok {
+			t.Errorf("oldest blob %s survived the SetBudget-triggered prune", u)
+		}
+	}
+	for _, u := range urls[2:] { // newest kept
 		if _, ok := d.Get(u); !ok {
 			t.Errorf("newest blob %s was wrongly evicted", u)
 		}

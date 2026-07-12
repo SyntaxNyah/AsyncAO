@@ -32,6 +32,18 @@ const (
 	// block on disk — spec §17.2, §17.4).
 	writeQueueCap = 256
 
+	// pruneReqCap bounds the coalescing budget-change wake channel. Buffered
+	// cap 1 is load-bearing: a wake sent by SetBudget before the writer reaches
+	// its select must be RETAINED (not dropped) so the request survives the
+	// race — a non-blocking send into a cap-1 buffer keeps at most one pending
+	// prune and coalesces the rest. A larger cap would be pointless (extra
+	// wakes ask for the same sweep); an unbuffered channel would drop wakes
+	// whenever the writer is mid-write. #34: this is what lets a live Settings
+	// budget change — or a change on a read-only session whose writer is parked
+	// on an empty queue — actually enforce the cap instead of waiting for
+	// diskPruneEvery more stores.
+	pruneReqCap = 1
+
 	diskDirPerm    = 0o755
 	diskTmpPattern = "w-*.tmp"
 	hashHexLen     = 16 // xxhash64 → 8 bytes → 16 hex chars
@@ -74,6 +86,7 @@ type DiskCache struct {
 	root string
 
 	queue     chan diskWrite
+	pruneReq  chan struct{} // coalescing wake: SetBudget signals the writer to sweep now
 	stop      chan struct{}
 	done      chan struct{}
 	closeOnce sync.Once
@@ -127,10 +140,21 @@ func (d *DiskCache) SetCompression(on bool) { d.compress.Store(on) }
 
 // SetBudget sets the auto-prune byte cap. 0 = UNLIMITED (the default: T3 is a
 // deliberate spec exception, so no cache is silently deleted). A positive cap
-// makes the writer goroutine sweep the OLDEST blobs past it — at open (next
-// writer wake) and every diskPruneEvery stores. Live-safe: the writer reads
-// the value each sweep.
-func (d *DiskCache) SetBudget(bytes int64) { d.budget.Store(bytes) }
+// makes the writer goroutine sweep the OLDEST blobs past it. Live-safe: the
+// writer reads the value each sweep.
+//
+// The store is followed by a coalescing wake so the change is enforced NOW —
+// not only after diskPruneEvery more stores land (and not never, on a
+// read-only session whose writer is parked on the empty queue). The
+// non-blocking send into the cap-1 buffer means SetBudget never blocks and
+// duplicate wakes collapse to one pending sweep.
+func (d *DiskCache) SetBudget(bytes int64) {
+	d.budget.Store(bytes)
+	select {
+	case d.pruneReq <- struct{}{}:
+	default: // a sweep is already pending; it will read the just-stored value
+	}
+}
 
 // DefaultDiskRoot returns <os.UserCacheDir>/AsyncAO/assets.
 func DefaultDiskRoot() (string, error) {
@@ -143,16 +167,25 @@ func DefaultDiskRoot() (string, error) {
 
 // NewDiskCache opens (creating if needed) the disk tier rooted at root and
 // starts its writer goroutine. Call Close to drain pending writes.
-func NewDiskCache(root string) (*DiskCache, error) {
+//
+// initialBudget is the auto-prune byte cap the at-open sweep enforces (#34):
+// it is stored BEFORE the writer starts, so writerLoop's first d.prune() reads
+// the real value instead of the atomic's default 0 — this is what makes the
+// "at open" enforcement required by the spec actually fire on whatever a
+// previous session left. 0 = unlimited (the deliberate T3 default). Pass 0
+// from callers that will only ever set the budget live via SetBudget.
+func NewDiskCache(root string, initialBudget int64) (*DiskCache, error) {
 	if err := os.MkdirAll(root, diskDirPerm); err != nil {
 		return nil, fmt.Errorf("cache: creating disk cache root %s: %w", root, err)
 	}
 	d := &DiskCache{
-		root:  root,
-		queue: make(chan diskWrite, writeQueueCap),
-		stop:  make(chan struct{}),
-		done:  make(chan struct{}),
+		root:     root,
+		queue:    make(chan diskWrite, writeQueueCap),
+		pruneReq: make(chan struct{}, pruneReqCap),
+		stop:     make(chan struct{}),
+		done:     make(chan struct{}),
 	}
+	d.budget.Store(initialBudget) // read by the at-open prune below, before any race
 	go d.writerLoop()
 	return d, nil
 }
@@ -273,16 +306,22 @@ func (d *DiskCache) Close() {
 }
 
 // writerLoop is the single goroutine allowed to write blobs. It also owns the
-// byte-budget prune (#34): a sweep at open, then every diskPruneEvery stores —
-// on THIS goroutine, so no new sync I/O path is introduced (spec §17.2).
+// byte-budget prune (#34): a sweep at open, then every diskPruneEvery stores
+// and on every SetBudget wake — all on THIS goroutine, so no new sync I/O path
+// is introduced (spec §17.2).
 func (d *DiskCache) writerLoop() {
 	defer close(d.done)
-	d.prune() // enforce the budget on whatever a previous session left
+	d.prune() // enforce the initial budget on whatever a previous session left
 	sincePrune := 0
 	for {
 		select {
+		case <-d.pruneReq:
+			// A live budget change (SetBudget): enforce it now instead of
+			// waiting for diskPruneEvery more stores — or forever, if this
+			// session only reads. The store counter is unaffected.
+			d.prune()
 		case w := <-d.queue:
-			if d.write(w) && !w.del { // count only completed stores toward the next sweep
+			if d.write(w) { // write() returns true only for a completed store (never a delete)
 				sincePrune++
 				if sincePrune >= diskPruneEvery {
 					sincePrune = 0

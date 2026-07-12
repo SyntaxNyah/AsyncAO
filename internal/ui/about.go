@@ -259,7 +259,7 @@ func (a *App) drawAbout(w, h int32) {
 		y += fl.gap
 		if fl.mayo && hasMayo {
 			dst := sdl.Rect{X: x0 + (colW-mayoLogW)/2, Y: y, W: mayoLogW, H: mayoLogH}
-			a.drawMayoPortrait(c, mayoTex, dst, top, viewH)
+			a.drawMayoPortrait(c, mayoTex, dst)
 			y += mayoBlock
 		}
 		if y+lineH > top && y < top+viewH { // skip lines scrolled out of view
@@ -322,7 +322,7 @@ const (
 // in the scroll viewport (the same guard the About link buttons use), so a click
 // where she WOULD be while scrolled off never pets invisibly. About is off the
 // hot path, so the fmt/label allocations here are fine.
-func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect, top, viewH int32) {
+func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect) {
 	if tex == nil {
 		return
 	}
@@ -341,8 +341,9 @@ func (a *App) drawMayoPortrait(c *Ctx, tex *sdl.Texture, dst sdl.Rect, top, view
 		_ = c.Ren.Copy(tex, nil, &dst)
 	}
 
-	onScreen := dst.Y+dst.H > top && dst.Y < top+viewH
-	if onScreen && c.hovering(dst) {
+	// #31: no on-screen guard — the enclosing pushClip makes hovering() ignore
+	// hits in the portrait's scrolled-out half, so a raw hit-test is correct.
+	if c.hovering(dst) {
 		tip := "Pet Mayo!"
 		if a.mayoPets > 0 {
 			tip = fmt.Sprintf("Pet Mayo!  (petted %d)", a.mayoPets)

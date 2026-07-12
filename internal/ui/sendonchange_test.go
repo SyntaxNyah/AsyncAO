@@ -25,7 +25,7 @@ func newRoomForTest(t *testing.T) *courtroom.Courtroom {
 	if err != nil {
 		t.Fatal(err)
 	}
-	disk, err := cache.NewDiskCache(filepath.Join(t.TempDir(), "assets"))
+	disk, err := cache.NewDiskCache(filepath.Join(t.TempDir(), "assets"), 0)
 	if err != nil {
 		t.Fatal(err)
 	}

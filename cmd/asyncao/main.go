@@ -115,7 +115,10 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	if err != nil {
 		return err
 	}
-	disk, err := cache.NewDiskCache(diskRoot)
+	// #34: pass the T3 auto-prune cap up front so the writer's at-open sweep
+	// enforces it on whatever a previous session left (0 = unlimited, the
+	// default). The live SetDiskBudget below re-applies it for Settings changes.
+	disk, err := cache.NewDiskCache(diskRoot, int64(prefs.DiskCacheBudgetMiB())<<20)
 	if err != nil {
 		return err
 	}
