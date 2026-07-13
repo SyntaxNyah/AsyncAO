@@ -65,6 +65,169 @@ func isExtColorCode(r rune) bool {
 	return r >= 'a' && r <= 'z' && strings.IndexByte(ExtColorCodes, byte(r)) >= 0
 }
 
+// ao2Markup is one AO2 inline chat-colour delimiter (§3.8 interop). AO2 keeps
+// these characters IN the transmitted text — unlike AsyncAO's render-only `\c`
+// codes — which is what lets a real AO2/webAO client render the same colour, so
+// we interpret them at render time on both incoming and outgoing text and let
+// them survive to the wire untouched (packet.go escapes only `#%$&`, never
+// these). Semantics + the stock character table are transcribed from AO2-Client:
+// the parse loop is Courtroom::filter_ic_text (src/courtroom.cpp:3532-3817) and
+// the default characters are its stock theme's chat_config.ini
+// (bin/base/themes/default/chat_config.ini). The mapping to AsyncAO is exact:
+// AO2 colour index c0..c8 == render.TextColor index 0..8 == StyleRun.Color 0..8.
+//
+//	Palette: `Start` opens colour `Palette`; `End` closes it. When Start==End the
+//	delimiter TOGGLES (a second one closes) — chat_config.ini c1/c2/c3/c5/c6/c7,
+//	all `_remove = 1` (the delimiter is consumed, not shown). When Start != End
+//	the pair BRACKETS a span — c4 `(`…`)` and c8 `[`…`]`, both `_remove = 0`
+//	(the brackets stay visible). `Remove` mirrors that `_remove` flag.
+type ao2Markup struct {
+	Start   rune // opening delimiter (chat_config.ini cN_start)
+	End     rune // closing delimiter (cN_end; == Start for the toggle colours)
+	Palette int  // AO colour index 0..8 (== render.TextColor index)
+	Remove  bool // cN_remove: true → the delimiter is consumed, false → kept visible
+}
+
+// ao2Markups is the STOCK default-theme table, in AO2 colour order c1..c8
+// (c0 is the uncoloured default — no delimiter). Values verbatim from
+// AO2-Client/bin/base/themes/default/chat_config.ini:
+//
+//	c1 Green   ` ` `  toggle remove=1   c5 Yellow  º º    toggle remove=1
+//	c2 Red     ~ ~    toggle remove=1   c6 Magenta № №    toggle remove=1
+//	c3 Orange  | |    toggle remove=1   c7 Cyan    √ √    toggle remove=1
+//	c4 Blue    ( )    pair   remove=0   c8 Gray    [ ]    pair   remove=0
+//
+// AsyncAO's theme system is asset-driven and does not (yet) expose per-theme
+// remappable chat markup, so we hard-code the stock table: it is what every
+// AO2/webAO peer sends by default, which is exactly the interop target. Every
+// character is a named constant here (no magic literals) — hard rule §9.
+var ao2Markups = [...]ao2Markup{
+	{Start: '`', End: '`', Palette: 1, Remove: true},  // c1 green
+	{Start: '~', End: '~', Palette: 2, Remove: true},  // c2 red
+	{Start: '|', End: '|', Palette: 3, Remove: true},  // c3 orange
+	{Start: '(', End: ')', Palette: 4, Remove: false}, // c4 blue (brackets kept)
+	{Start: 'º', End: 'º', Palette: 5, Remove: true},  // c5 yellow
+	{Start: '№', End: '№', Palette: 6, Remove: true},  // c6 magenta
+	{Start: '√', End: '√', Palette: 7, Remove: true},  // c7 cyan
+	{Start: '[', End: ']', Palette: 8, Remove: false}, // c8 gray (brackets kept)
+}
+
+// AO2MarkupFor returns the AO2 start/end delimiters for palette colour p (0..8),
+// so the IC "select-and-colour" UI can wrap a selection exactly as AO2 does
+// (courtroom.cpp:6381-6388 on_text_color_changed brackets the selection with
+// cN_start … cN_end). ok is false for palette 0 (the default colour has no
+// delimiter) or an out-of-range index. Both returned runes are the STOCK
+// default-theme characters, so the wrapped span renders on any AO2/webAO peer.
+func AO2MarkupFor(p int) (start, end rune, ok bool) {
+	for i := range ao2Markups {
+		if ao2Markups[i].Palette == p {
+			return ao2Markups[i].Start, ao2Markups[i].End, true
+		}
+	}
+	return 0, 0, false
+}
+
+// AO2ColorCount is how many AO palette colours (1..8) carry an inline delimiter;
+// the swatch row draws one cube per colour. Colour 0 (default) has no markup.
+const AO2ColorCount = len(ao2Markups)
+
+// AO2ColorPalette returns the palette index (1..8) of the i-th swatch (0-based),
+// so the UI can draw the cubes in AO2 colour order and resolve each to its
+// render colour via render.TextColor without hard-coding the mapping.
+func AO2ColorPalette(i int) int { return ao2Markups[i].Palette }
+
+// ao2ColorStack is the parse-time nesting stack for AO2 markup, mirroring
+// std::stack<int> ic_color_stack in filter_ic_text (courtroom.cpp:3539). It
+// holds AO palette indices of the OPEN colours; the innermost (top) is the
+// colour that renders. It is a fixed-size value type so the parser stays
+// allocation-free on the message-raster hot path (a message can't nest deeper
+// than it has characters, but ao2StackMax bounds a hostile input cheaply).
+const ao2StackMax = 64
+
+type ao2ColorStack struct {
+	buf [ao2StackMax]int
+	n   int
+}
+
+func (s *ao2ColorStack) empty() bool { return s.n == 0 }
+func (s *ao2ColorStack) top() int {
+	if s.n == 0 {
+		return ColorDefault
+	}
+	// Clamp the read index: push lets n advance PAST ao2StackMax (so a later close
+	// still balances a dropped open), but buf only has ao2StackMax slots — an
+	// unguarded buf[n-1] would panic on a hostile deeply-nested incoming message
+	// (e.g. `~`~`~… drives n past the cap). Reading the last real slot instead is
+	// harmless: over-deep colours simply share the deepest stored colour.
+	idx := s.n - 1
+	if idx >= ao2StackMax {
+		idx = ao2StackMax - 1
+	}
+	return s.buf[idx]
+}
+func (s *ao2ColorStack) push(c int) {
+	if s.n < ao2StackMax { // silently cap the STORE: over-deep nesting stops storing new colours
+		s.buf[s.n] = c
+	}
+	s.n++ // count still advances so a matching close still balances the (dropped) open
+}
+func (s *ao2ColorStack) pop() {
+	if s.n > 0 {
+		s.n--
+	}
+}
+
+// ao2Match interprets rune r as an AO2 markup delimiter against the current
+// colour stack, mirroring the delimiter branch of filter_ic_text exactly
+// (courtroom.cpp:3646-3703). It reports whether r was a delimiter (handled),
+// whether the delimiter character is consumed (skip = its Remove flag), and the
+// new innermost colour (stack top). It MUST be called identically from Start and
+// StripChatMarkup — the pair is kept equal by TestStripMatchesTypewriter, and a
+// delimiter recognised in one but not the other silently desyncs the chatbox
+// from the IC log. Toggle colours (Start==End) close when they are the innermost
+// open colour, else open (nest); paired colours open on Start and close on End
+// only when they are innermost, else the stray delimiter is an ordinary glyph.
+func ao2Match(r rune, stack *ao2ColorStack) (handled, skip bool) {
+	for i := range ao2Markups {
+		m := &ao2Markups[i]
+		if m.Start == m.End { // toggle colour (courtroom.cpp:3664-3683)
+			if r == m.Start {
+				if stack.top() == m.Palette { // innermost is us → close (courtroom.cpp:3670-3674)
+					stack.pop()
+				} else { // else open/nest (courtroom.cpp:3676)
+					stack.push(m.Palette)
+				}
+				return true, m.Remove
+			}
+			continue
+		}
+		// paired colour (courtroom.cpp:3685-3702)
+		if r == m.Start {
+			stack.push(m.Palette)
+			return true, m.Remove
+		}
+		if r == m.End && stack.top() == m.Palette { // close only when innermost, else literal
+			stack.pop()
+			return true, m.Remove
+		}
+	}
+	return false, false
+}
+
+// isAO2Delim reports whether r is any AO2 markup delimiter (start OR end). Used
+// only by the `\`-escape path so `\`+delimiter emits the delimiter LITERALLY —
+// AO2's parse_escape_seq suppresses markup on the next character
+// (courtroom.cpp:3633-3639, 3729-3759: an escaped non-code char just falls
+// through to the literal insert). Shared by Start and StripChatMarkup.
+func isAO2Delim(r rune) bool {
+	for i := range ao2Markups {
+		if r == ao2Markups[i].Start || r == ao2Markups[i].End {
+			return true
+		}
+	}
+	return false
+}
+
 // parseInlineHex reads the six hex digits of a `\c#RRGGBB` code; at indexes
 // the '#'. A short or malformed code returns ok=false and the caller keeps
 // the text literal (the standing rule for any unrecognised `\X`). Shared by
@@ -137,14 +300,28 @@ func parsePauseDuration(rs []rune, at int) (ms, digits int) {
 // StyleRun styles a contiguous span of the CLEAN (markup-stripped) rune
 // sequence. Runs are produced in order and partition the whole message, so
 // they index into the typewriter's runes by simple accumulation — the reveal
-// and the styling can never drift (one parse, one rune sequence). Inline markup
-// is AsyncAO-native and render-only: `\cN` (N = 0..8) starts a palette color,
-// `\cr` rainbow, `\c<letter>` an extended AsyncAO color (#98), `\c#RRGGBB` an
-// EXACT hex color (v1.52.0), `\b` toggles bold, `\i` toggles italic, `\\` is a
-// literal backslash. Incoming AO messages (which don't use these) are
-// unaffected; markup you send won't render on stock AO clients (they drop the
-// escape — extended and hex colors carry a nearest-standard wire fallback so
-// those clients still see a sensible colour).
+// and the styling can never drift (one parse, one rune sequence). Two inline
+// colour schemes are honoured:
+//
+//   - AsyncAO-native, render-ONLY `\c` codes: `\cN` (N = 0..8) starts a palette
+//     colour, `\cr` rainbow, `\c<letter>` an extended AsyncAO colour (#98),
+//     `\c#RRGGBB` an EXACT hex colour (v1.52.0), `\b`/`\i` toggle bold/italic,
+//     `\\` a literal backslash. These are stripped from the wire text, so they
+//     colour only on another AsyncAO client (extended/hex carry a nearest-
+//     standard wire text_color fallback so stock clients still see a sensible
+//     colour).
+//   - AO2 inline markup (§3.8, ao2Markups): the bare delimiters “ ` ~ | º № √ “
+//     (toggles) and `( )` / `[ ]` (pairs) that AO2/webAO keep IN the transmitted
+//     text. They map to palette indices 0..8 and are interpreted at render time
+//     on BOTH incoming and outgoing messages, and they SURVIVE to the wire — so a
+//     real AO2/webAO peer renders the same colour. `\` before a delimiter escapes
+//     it to a literal (AO2's own convention). The two schemes compose in one
+//     message: an AO2 span nests OVER the current `\c` colour and returns to it
+//     when it closes.
+//
+// A literal backtick, tilde, pipe, º, №, √, or a matched bracket pair therefore
+// now colours chat instead of showing verbatim — escape with a leading `\` to
+// type one literally.
 type StyleRun struct {
 	Len    int  // clean runes covered
 	Color  int  // palette index, ColorDefault / ColorRainbow, or ColorExtBase+code
@@ -181,9 +358,13 @@ func NewTypewriter() Typewriter {
 // Start loads a message in a SINGLE pass that produces the clean rune
 // sequence, the per-rune delays (AO speed codes '{' slower / '}' faster
 // pre-applied), and the inline-color style runs — all indexed off the same
-// runes, so the reveal and the colors stay in lockstep. Inline markup: `\cN`
-// (palette color 0..8), `\cr` (rainbow), `\\` (literal backslash); a lone `\`
-// (or any other `\X`) is kept literally so ordinary text isn't eaten.
+// runes, so the reveal and the colors stay in lockstep. Inline markup: the
+// AsyncAO-native `\c` codes (`\cN` palette, `\cr` rainbow, `\c<letter>`/`\c#hex`,
+// `\b`/`\i`) plus AO2's bare colour delimiters (§3.8, ao2Markups) which nest OVER
+// the current `\c` colour; `\\` is a literal backslash and `\`+delimiter escapes
+// an AO2 delimiter. A lone `\` (or any other `\X`) is kept literally so ordinary
+// text isn't eaten. Every consumption rule here is mirrored in StripChatMarkup
+// (pinned equal by TestStripMatchesTypewriter).
 func (t *Typewriter) Start(message string) {
 	t.runes = t.runes[:0]
 	t.intervals = t.intervals[:0]
@@ -195,7 +376,21 @@ func (t *Typewriter) Start(message string) {
 	t.effectCursor = 0
 
 	speed := speedStepDefault
-	color := ColorDefault
+	// base is the AsyncAO-native `\c` colour (ColorDefault until a `\cN` code).
+	// ao2 is the AO2 inline-markup nesting stack (§3.8): while it is non-empty its
+	// innermost colour WINS over base, so an AO2 span colours text even mid-message
+	// and returns to base when it closes — the "return to default" that the render-
+	// only `\c` scheme lacks. curColor folds the two into the run colour, so the
+	// two schemes compose in one message without confusing each other.
+	base := ColorDefault
+	var ao2 ao2ColorStack
+	curColor := func() int {
+		if !ao2.empty() {
+			return ao2.top()
+		}
+		return base
+	}
+	color := curColor() // the colour of the run currently being built
 	bold, italic := false, false
 	runLen := 0
 	// pendingPause holds a \p code's delay until the next rune is emitted; it
@@ -214,6 +409,14 @@ func (t *Typewriter) Start(message string) {
 		if runLen > 0 {
 			t.styles = append(t.styles, StyleRun{Len: runLen, Color: color, Bold: bold, Italic: italic})
 			runLen = 0
+		}
+	}
+	// setColor re-derives the effective run colour after a base or AO2-stack change
+	// and starts a fresh run if it moved. Called after every colour-affecting code.
+	setColor := func() {
+		if c := curColor(); c != color {
+			flush()
+			color = c
 		}
 	}
 
@@ -239,34 +442,26 @@ func (t *Typewriter) Start(message string) {
 				i++
 				continue
 			case n == 'c' && i+2 < len(rs) && rs[i+2] >= '0' && rs[i+2] <= '8':
-				if c := int(rs[i+2] - '0'); c != color {
-					flush()
-					color = c
-				}
+				base = int(rs[i+2] - '0')
+				setColor() // only takes effect when no AO2 span is nested on top
 				i += 2
 				continue
 			case n == 'c' && i+2 < len(rs) && rs[i+2] == 'r':
-				if color != ColorRainbow {
-					flush()
-					color = ColorRainbow
-				}
+				base = ColorRainbow
+				setColor()
 				i += 2
 				continue
 			case n == 'c' && i+2 < len(rs) && isExtColorCode(rs[i+2]):
-				if ec := ColorExtBase + int(rs[i+2]); ec != color {
-					flush()
-					color = ec
-				}
+				base = ColorExtBase + int(rs[i+2])
+				setColor()
 				i += 2
 				continue
 			case n == 'c' && i+2 < len(rs) && rs[i+2] == '#':
 				// Exact hex colour `\c#RRGGBB` (v1.52.0). Malformed hex exits
 				// the switch → the backslash (and the rest) stays literal.
 				if rgb, hok := parseInlineHex(rs, i+2); hok {
-					if hc := ColorHexBase + rgb; hc != color {
-						flush()
-						color = hc
-					}
+					base = ColorHexBase + rgb
+					setColor()
 					i += 8 // past \c#RRGGBB
 					continue
 				}
@@ -297,8 +492,42 @@ func (t *Typewriter) Start(message string) {
 				pendingPause += time.Duration(ms) * time.Millisecond
 				i += 1 + digits
 				continue
+			case isAO2Delim(n):
+				// AO2 escape (§3.8): a backslash before an AO2 markup delimiter
+				// makes it a LITERAL character, not a colour toggle — AO2's
+				// parse_escape_seq (courtroom.cpp:3633-3639). The backslash is
+				// dropped, the delimiter emitted as an ordinary glyph.
+				emit(n)
+				i++
+				continue
 			}
 			// any other `\X`: fall through and emit the backslash literally
+		}
+		// AO2 inline colour markup (§3.8): interpret bare delimiters against the
+		// nesting stack. A handled delimiter updates the effective colour; its
+		// glyph is dropped for toggle colours (Remove) and kept for the bracket
+		// pairs. Runs BEFORE the plain emit so a stray/unmatched delimiter still
+		// emits as a normal character (ao2Match returned handled=false).
+		depthBefore := ao2.n
+		if handled, skip := ao2Match(r, &ao2); handled {
+			if ao2.n > depthBefore {
+				// An OPEN delimiter: AO2 colours an opening bracket with the NEW
+				// span colour (courtroom.cpp:3723 emits the font switch before the
+				// char), so recompute the colour, then emit any kept glyph.
+				setColor()
+				if !skip {
+					emit(r)
+				}
+			} else {
+				// A CLOSE delimiter: AO2 keeps the closing bracket in the span
+				// colour it closes (courtroom.cpp:3716-3722 inserts the char, then
+				// closes the font), so emit any kept glyph before recomputing.
+				if !skip {
+					emit(r)
+				}
+				setColor()
+			}
+			continue
 		}
 		emit(r)
 	}
@@ -334,11 +563,16 @@ func (t *Typewriter) StartAppend(prefix, message string) {
 
 // StripChatMarkup returns the plain display text for a message — the same
 // markup the typewriter removes (speed `{ }`, color `\cN`/`\cr`, bold/italic
-// `\b`/`\i`, and the `\\` escape), so the IC log shows exactly what the chatbox
-// renders. Kept in lock-step with Start by TestStripMatchesTypewriter.
+// `\b`/`\i`, the `\\` escape, and AO2 inline colour delimiters §3.8), so the IC
+// log shows exactly what the chatbox renders. Kept in lock-step with Start by
+// TestStripMatchesTypewriter — every consumption rule here MUST mirror Start.
 func StripChatMarkup(message string) string {
 	rs := []rune(message)
 	out := make([]rune, 0, len(rs))
+	// AO2 markup stack, run IDENTICALLY to Start so the two can't drift: toggle
+	// delimiters (Remove) are dropped, bracket pairs are kept — the stack drives
+	// exactly the same skip decision ao2Match makes in Start.
+	var ao2 ao2ColorStack
 	for i := 0; i < len(rs); i++ {
 		r := rs[i]
 		if r == '{' || r == '}' {
@@ -372,7 +606,17 @@ func StripChatMarkup(message string) string {
 				_, digits := parsePauseDuration(rs, i+2)
 				i += 1 + digits
 				continue
+			case isAO2Delim(n): // \+delimiter → literal delimiter (AO2 escape), backslash dropped
+				out = append(out, n)
+				i++
+				continue
 			}
+		}
+		if handled, skip := ao2Match(r, &ao2); handled {
+			if !skip { // paired brackets stay visible; toggle delimiters are consumed
+				out = append(out, r)
+			}
+			continue
 		}
 		out = append(out, r)
 	}

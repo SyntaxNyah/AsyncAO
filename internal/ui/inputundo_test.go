@@ -45,6 +45,51 @@ func TestEchoClearRecoverableViaHistory(t *testing.T) {
 	}
 }
 
+// TestAO2ColorSpliceAndUndo pins §3.8 select-and-colour: with a selection in the
+// IC field, a colour cube wraps exactly the selected runes in that colour's AO2
+// delimiters, and the splice is Ctrl+Z-able via the out-of-band history.
+func TestAO2ColorSpliceAndUndo(t *testing.T) {
+	a := testTabApp(t)
+	c := a.ctx
+
+	a.icInput = "hello world"
+	c.fieldTrack("ic", a.icInput) // first sight seeds the detector
+
+	// Focus the IC field and select "world" ([6,11)).
+	c.focusID = "ic"
+	c.caretField = "ic"
+	c.selAnchor, c.caret = 6, 11
+
+	// Green (palette 1) → wraps the selection in the AO2 backtick pair.
+	a.applyAO2ColorClick(1)
+	if a.icInput != "hello `world`" {
+		t.Fatalf("splice = %q, want \"hello `world`\" (selection wrapped)", a.icInput)
+	}
+
+	// The next fieldTrack sees the out-of-band change and records the prior value,
+	// so Ctrl+Z restores the un-wrapped line.
+	h := c.fieldTrack("ic", a.icInput)
+	if n := len(h.undo); n != 1 {
+		t.Fatalf("the splice must land one undo step, got %d", n)
+	}
+	snap, ok := h.step(a.icInput, 0, false) // Ctrl+Z
+	if !ok || snap.value != "hello world" {
+		t.Fatalf("undo must restore the pre-splice line, got %q ok=%v", snap.value, ok)
+	}
+
+	// No selection → the cube falls back to the whole-message colour (dropdown
+	// parity), leaving the text itself untouched.
+	c.selAnchor = -1
+	a.icInput = "plain"
+	a.applyAO2ColorClick(2) // red
+	if a.icInput != "plain" {
+		t.Fatalf("no-selection click must not alter the text, got %q", a.icInput)
+	}
+	if a.icColor != 2 {
+		t.Fatalf("no-selection click must set the whole-message colour, icColor=%d want 2", a.icColor)
+	}
+}
+
 // TestFieldHistoryCoalesceAndCap pins the burst rule (±1-rune edits inside
 // the window collapse into one step; bigger jumps never do) and the bounded
 // depth (hard rule 4).

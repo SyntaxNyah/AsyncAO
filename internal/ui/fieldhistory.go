@@ -163,6 +163,19 @@ func (c *Ctx) fieldSel(rc int) (int, int) {
 	return lo, hi
 }
 
+// selectionFor returns the [lo,hi) rune selection of field id over value, but
+// ONLY when id is the currently focused field (selection state lives on the Ctx
+// and is meaningful only there, like the caret). ok is false when id isn't
+// focused or the selection is empty. Used by the IC select-and-colour swatches
+// so a colour cube wraps exactly the runes highlighted in the IC field.
+func (c *Ctx) selectionFor(id, value string) (lo, hi int, ok bool) {
+	if c.focusID != id {
+		return 0, 0, false
+	}
+	lo, hi = c.fieldSel(utf8.RuneCountInString(value))
+	return lo, hi, hi > lo
+}
+
 // wordBoundsAt returns the [lo,hi) rune range of the "word" containing idx —
 // a maximal run of non-space runes (or of spaces, only when idx sits inside a
 // RUN of them) — the native double-click rule. idx is a rune index OR the

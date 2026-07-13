@@ -1941,6 +1941,154 @@ func TestTypewriterInlineColors(t *testing.T) {
 	}
 }
 
+// TestAO2InlineColors pins the AO2 inline markup (§3.8): toggle delimiters
+// (“ ` ~ | º № √ “) colour+consume a span, bracket pairs (`( )`, `[ ]`) colour
+// but KEEP the brackets visible, `\`+delimiter escapes to a literal, an
+// unterminated span runs to end, nesting follows AO2's stack, and AO2 markup
+// composes with the `\c` scheme (an AO2 span nests over the base colour and
+// returns to it). Character table + semantics verified against AO2-Client
+// filter_ic_text (courtroom.cpp:3532) + the stock default chat_config.ini.
+func TestAO2InlineColors(t *testing.T) {
+	tw := NewTypewriter()
+
+	// Toggle colour: the delimiter is consumed, the span coloured (c1 green = 1).
+	tw.Start("`green`")
+	if got := tw.Text(); got != "green" {
+		t.Fatalf("toggle Text = %q, want \"green\" (backticks consumed)", got)
+	}
+	if got := tw.Styles(); len(got) != 1 || got[0] != (StyleRun{Len: 5, Color: 1}) {
+		t.Fatalf("toggle styles = %v, want one run of 5 @ colour 1", got)
+	}
+
+	// Red (~) and orange (|) toggles, each colouring a distinct middle span.
+	tw.Start("a~red~b|or|c")
+	if got := tw.Text(); got != "aredborc" {
+		t.Fatalf("multi-toggle Text = %q, want \"aredborc\"", got)
+	}
+	wantMT := []StyleRun{
+		{Len: 1, Color: ColorDefault}, {Len: 3, Color: 2}, {Len: 1, Color: ColorDefault},
+		{Len: 2, Color: 3}, {Len: 1, Color: ColorDefault},
+	}
+	if got := tw.Styles(); !equalStyleRuns(got, wantMT) {
+		t.Fatalf("multi-toggle styles = %v, want %v", got, wantMT)
+	}
+
+	// Bracket pair (c4 blue = 4): the brackets STAY visible and are coloured too.
+	tw.Start("x(blue)y")
+	if got := tw.Text(); got != "x(blue)y" {
+		t.Fatalf("pair Text = %q, want \"x(blue)y\" (brackets kept)", got)
+	}
+	wantPair := []StyleRun{
+		{Len: 1, Color: ColorDefault}, {Len: 6, Color: 4}, {Len: 1, Color: ColorDefault},
+	}
+	if got := tw.Styles(); !equalStyleRuns(got, wantPair) {
+		t.Fatalf("pair styles = %v, want %v (brackets in the span)", got, wantPair)
+	}
+
+	// Escape: `\`+delimiter yields the literal delimiter, uncoloured.
+	tw.Start("a\\`b\\~c")
+	if got := tw.Text(); got != "a`b~c" {
+		t.Fatalf("escape Text = %q, want \"a`b~c\" (delimiters literal)", got)
+	}
+	if got := tw.Styles(); len(got) != 1 || got[0].Color != ColorDefault {
+		t.Fatalf("escaped delimiters must stay default colour, styles = %v", got)
+	}
+
+	// Unterminated toggle: colours to end of message (AO2 appends the closing font).
+	tw.Start("hi ~unclosed")
+	if got := tw.Text(); got != "hi unclosed" {
+		t.Fatalf("unterminated Text = %q, want \"hi unclosed\"", got)
+	}
+	wantUnc := []StyleRun{{Len: 3, Color: ColorDefault}, {Len: 8, Color: 2}}
+	if got := tw.Styles(); !equalStyleRuns(got, wantUnc) {
+		t.Fatalf("unterminated styles = %v, want %v (runs to end)", got, wantUnc)
+	}
+
+	// Nesting: an inner toggle nests over an outer one and pops back to it.
+	tw.Start("`a~b~c`")
+	if got := tw.Text(); got != "abc" {
+		t.Fatalf("nested Text = %q, want \"abc\"", got)
+	}
+	wantNest := []StyleRun{{Len: 1, Color: 1}, {Len: 1, Color: 2}, {Len: 1, Color: 1}}
+	if got := tw.Styles(); !equalStyleRuns(got, wantNest) {
+		t.Fatalf("nested styles = %v, want %v (green→red→green)", got, wantNest)
+	}
+
+	// A stray closing bracket with no open is an ordinary character.
+	tw.Start("plain) text")
+	if got := tw.Text(); got != "plain) text" {
+		t.Fatalf("stray close Text = %q, want it kept literally", got)
+	}
+	if got := tw.Styles(); len(got) != 1 || got[0].Color != ColorDefault {
+		t.Fatalf("stray close must not colour, styles = %v", got)
+	}
+
+	// Composition with the `\c` scheme: an AO2 span nests over the \c base colour
+	// and returns to it when it closes.
+	tw.Start("\\c2red`green`red")
+	if got := tw.Text(); got != "redgreenred" {
+		t.Fatalf("compose Text = %q, want \"redgreenred\"", got)
+	}
+	wantComp := []StyleRun{{Len: 3, Color: 2}, {Len: 5, Color: 1}, {Len: 3, Color: 2}}
+	if got := tw.Styles(); !equalStyleRuns(got, wantComp) {
+		t.Fatalf("compose styles = %v, want %v (red base, green span, back to red)", got, wantComp)
+	}
+
+	// Hostile deep nesting must NOT panic (the stack over-fills past ao2StackMax):
+	// alternating distinct toggles each open a new colour. A peer can send this, so
+	// Start/StripChatMarkup must survive it (bounds are clamped, not indexed raw).
+	deep := strings.Repeat("`~", 300) + "x"
+	tw.Start(deep) // would panic on an unguarded stack read
+	if got := StripChatMarkup(deep); got != tw.Text() {
+		t.Fatalf("deep-nest strip/typewriter diverged: %q vs %q", got, tw.Text())
+	}
+
+	// Leading "~~" AO2 alignment prefix (centre, courtroom.cpp:3543): we don't
+	// implement alignment, so it parses as an empty red toggle — no spurious run,
+	// text intact. Pinned so the benign result is documented.
+	tw.Start("~~hello")
+	if got := tw.Text(); got != "hello" {
+		t.Fatalf("leading ~~ Text = %q, want \"hello\" (empty toggle, no crash)", got)
+	}
+	if got := tw.Styles(); len(got) != 1 || got[0] != (StyleRun{Len: 5, Color: ColorDefault}) {
+		t.Fatalf("leading ~~ styles = %v, want one default run of 5 (no spurious red span)", got)
+	}
+}
+
+// TestAO2ParseNoExtraAlloc pins that the AO2 markup state machine adds NO
+// allocation over the baseline parse: a plain message and an equal-length
+// AO2-marked-up message must have the same allocs/op on a reused typewriter (both
+// dominated by the []rune conversion Start already did pre-§3.8). The fixed-size
+// ao2ColorStack must stay on the stack — no per-message heap object (hard rule
+// §4 / the zero-alloc render path; the message-raster feeds off Start).
+func TestAO2ParseNoExtraAlloc(t *testing.T) {
+	tw := NewTypewriter()
+	plain := "the quick brown fox jumps over it"
+	marked := "the `quick` ~brown~ (fox) jumps over it"
+	tw.Start(plain) // warm the reused output slices so re-growth doesn't skew the count
+	tw.Start(marked)
+
+	plainAllocs := testing.AllocsPerRun(200, func() { tw.Start(plain) })
+	markedAllocs := testing.AllocsPerRun(200, func() { tw.Start(marked) })
+	if markedAllocs > plainAllocs {
+		t.Errorf("AO2 markup added %.0f alloc(s)/op over plain (%.0f vs %.0f) — the stack escaped or a code path allocates",
+			markedAllocs-plainAllocs, markedAllocs, plainAllocs)
+	}
+}
+
+// equalStyleRuns compares two StyleRun slices element-wise (test helper).
+func equalStyleRuns(a, b []StyleRun) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // TestStripMatchesTypewriter pins StripChatMarkup to produce exactly the clean
 // text the typewriter reveals, so the IC log and the chatbox can never drift.
 func TestStripMatchesTypewriter(t *testing.T) {
@@ -1965,6 +2113,17 @@ func TestStripMatchesTypewriter(t *testing.T) {
 		"a line\\nbreak here",
 		"pause \\p500 then \\p bare",
 		"trailing effect code \\s",
+		// AO2 inline markup (§3.8): toggles consumed, brackets kept, escape,
+		// nesting, unterminated span, stray close, and \c composition.
+		"`green` and ~red~ and |orange|",
+		"kept (blue) and [gray] brackets",
+		"escaped \\` and \\~ and \\( stay literal",
+		"nested `a~b~c` markup",
+		"unterminated ~span to end",
+		"stray ) and ] closes stay",
+		"º yellow º and № magenta № and √ cyan √",
+		"compose \\c2red`green`red tail",
+		"mix {slow}`\\c4both`\\\\end",
 		"",
 	}
 	for _, m := range cases {

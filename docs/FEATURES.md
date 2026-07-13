@@ -313,18 +313,39 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   ink with no contrast against its own skin (real themes ship dark ink
   on dark skins) is dropped for the client default, with a debug-log
   verdict. Choosing White in the IC color dropdown always reads.
-- **Inline text colors + bold/italic** (type them in your message): `\c1`…`\c8`
-  switch the text color mid-sentence (1 green, 2 red, 3 orange, 4 blue, 5 yellow,
-  6 pink, 7 cyan, 8 gray), **`\cr` is rainbow** (each letter a different color,
-  flowing across the line), and **`\b` / `\i` toggle bold / italic** (they nest
-  and combine with colors). Write `\\` for a literal backslash; any other `\x`
-  is left as-is, so ordinary text and file paths aren't eaten. The colored
-  message types out normally — each color is its own span, revealed letter by
-  letter with the usual zero-cost reveal. This is **AsyncAO-native and
-  render-only**: incoming messages from other clients are unaffected, and the
-  markup you send won't color on stock AO clients (they'd see the `\c2`).
-  The IC *log* shows the clean text (codes stripped, same as the chatbox);
-  coloring the log itself is a later step.
+- **AO2 inline colors** (the real thing — interoperable): the same bare
+  delimiters AO2/webAO use now color your text, so a colored message you send
+  renders in color on **every** AO2 client, and colored messages from them
+  render here too. The stock character table (from AO2-Client's default theme)
+  is: **`` `text` `` green**, **`~text~` red**, **`|text| orange`**,
+  **`(text)` blue**, **`ºtextº` yellow**, **`№text№` magenta**, **`√text√`
+  cyan**, **`[text]` gray**. The toggle pairs (`` ` ~ | º № √ ``) are *consumed*
+  (they don't show); the bracket pairs `( )` and `[ ]` **stay visible** and take
+  the color, exactly as in AO2. Spans nest (an inner color returns to the outer
+  one when it closes), and an unterminated span runs to the end of the line.
+  Because these characters ride the wire untouched, this is genuinely
+  cross-client — unlike the render-only scheme below. **This changes how a
+  literal backtick, tilde, pipe, `º`, `№`, `√`, or a matched `( )` / `[ ]` pair
+  renders in chat: they now color text. Type `\` before one to keep it literal**
+  (`` \` `` → a literal backtick), the same escape AO2 uses.
+- **Select-and-color cubes**: a row of colored cubes sits next to the IC color
+  dropdown. Highlight some words in the message box and click a cube to wrap just
+  that selection in the matching AO2 color (Ctrl+Z undoes the wrap); with nothing
+  selected, a cube sets the whole-message color like the dropdown.
+- **AsyncAO-native inline codes + bold/italic** (type them in your message):
+  `\c1`…`\c8` switch the text color mid-sentence (1 green, 2 red, 3 orange,
+  4 blue, 5 yellow, 6 pink, 7 cyan, 8 gray), **`\cr` is rainbow** (each letter a
+  different color, flowing across the line), **`\c<letter>` / `\c#RRGGBB`** are
+  the extended and free-hex colors, and **`\b` / `\i` toggle bold / italic** (they
+  nest and combine with colors, and with the AO2 markup above — both can appear in
+  one message). Write `\\` for a literal backslash; any other `\x` is left as-is,
+  so ordinary text and file paths aren't eaten. Unlike the AO2 markup, this scheme
+  is **AsyncAO-native and render-only**: the codes are stripped from the wire, so
+  they color only on another AsyncAO client (extended/hex colors carry a
+  nearest-standard fallback so stock clients still see a sensible color). Colored
+  messages type out normally — each color is its own span, revealed letter by
+  letter with the usual zero-cost reveal. The IC *log* and blankpost/callword
+  matching all see the clean text (every code stripped, identical to the chatbox).
 - **Inline screen-effect codes** (v1.55.7, type them in your message): **`\s`**
   shakes the screen, **`\f`** flashes (realization), **`\n`** is a line break, and
   **`\p`** pauses the text crawl (`\p500` for 500 ms; a bare `\p` waits a second) —
