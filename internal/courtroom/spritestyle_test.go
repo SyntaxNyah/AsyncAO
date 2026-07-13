@@ -337,6 +337,30 @@ func TestSpriteStyleRememberedAcrossMessages(t *testing.T) {
 	}
 }
 
+// TestPairStyleRecalledByPartnerCharID pins that begin() sources a paired partner's
+// restyle from RecalledStyle(msg.Pair.CharID) — recall-by-char-id, the only correct
+// source since the wire (protocol.PairInfo) carries no partner style. Remember a style
+// for the pair partner's char id (1 in pairedMS: MSOtherCharID field 16 = "1^1"), leave
+// the speaker (char id 0) unstyled, and confirm the pair layer picks up exactly the
+// remembered style while the speaker stays clean — no cross-wiring between the two ids.
+func TestPairStyleRecalledByPartnerCharID(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+	room.HandleEvent(Event{Kind: EventBackground, Text: sess.Background})
+
+	pairStyle := SpriteStyle{Opacity: 50, Glow: true} // partner-only, distinctive
+	room.rememberStyle(1, pairStyle)                  // the pair partner's char id
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "Objection!")})
+
+	if got := room.Scene.Pair.Style; got != pairStyle {
+		t.Errorf("pair style = %+v, want RecalledStyle(1) = %+v", got, pairStyle)
+	}
+	if room.Scene.Speaker.Style.Active() {
+		t.Errorf("unstyled speaker inherited a style %+v", room.Scene.Speaker.Style)
+	}
+}
+
 // TestAlphaModFloorAndDefault pins the opacity clamp: 0/100 are opaque, and an
 // explicit low value can't drop below the visible floor (no invisible sprites).
 func TestAlphaModFloorAndDefault(t *testing.T) {

@@ -759,22 +759,10 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	if c.InlineEmote != nil && len(c.pendingEffects) == 0 {
 		c.currentText = ExpandInlineEmotes(c.currentText, c.InlineEmote)
 	}
-	if c.HideSpriteStyles {
-		style = SpriteStyle{} // viewer opted out of others' styles
-	} else if c.ReduceMotion {
-		// Accessibility: drop EVERY continuously-animating transmitted style a
-		// speaker can impose, matching the animated-TEXT doctrine (animtext.go pins
-		// everything static under reduce-motion). Wobble/Spin/Motion are the named
-		// motions; a CUSTOM drawn Path (PathLen>=2) OVERRIDES Motion (spritestyle.go),
-		// so it must be zeroed too or the sprite keeps looping; HueCycle is a continuous
-		// rainbow; Glitch (+GlitchStatic, whose sprite "flickers") is a photosensitivity
-		// hazard another player can impose. The static recolour/opacity/glow/outline stay.
-		style.Wobble, style.Spin, style.Motion = false, false, 0
-		style.PathLen = 0
-		style.Path = [maxPathPoints]uint8{} // clear the residual waypoints too: SpriteStyle is ==-comparable, so stale bytes could split an equality-keyed cache
-		style.HueCycle = false
-		style.Glitch, style.GlitchMode = false, 0
-	}
+	// Filter the speaker's style through the viewer's accessibility opt-outs. The
+	// SAME helper filters the pair partner's recalled style below, so a paired player
+	// can never impose motion/glitch a viewer opted out of on either sprite.
+	style = c.filterStyleForViewer(style)
 
 	// 2.8 additive text (#14): when honored and this line is ADDITIVE=1, the prior
 	// accumulated text becomes a pre-revealed prefix (typewriter crawls only the
@@ -950,6 +938,14 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 			OffsetX:  msg.Pair.OffsetX,
 			OffsetY:  msg.Pair.OffsetY,
 			Visible:  true,
+			// The wire never carries the partner's style (protocol.PairInfo has no
+			// style field — pairing.go), so recall it by the partner's char id, the
+			// SAME send-on-change memory the speaker path uses. Without this only the
+			// current speaker showed a style, flipping between the two as the turn
+			// passed. RecalledStyle returns the zero (inactive) style for a negative
+			// char id, and filterStyleForViewer honours the viewer's opt-outs for the
+			// pair sprite too.
+			Style: c.filterStyleForViewer(c.RecalledStyle(msg.Pair.CharID)),
 		}
 	} else {
 		c.Scene.Pair = SpriteLayer{}

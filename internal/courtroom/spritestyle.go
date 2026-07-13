@@ -727,3 +727,30 @@ func (c *Courtroom) RecalledStyle(charID int) SpriteStyle {
 	}
 	return c.styleByChar[charID]
 }
+
+// filterStyleForViewer applies the viewer's accessibility opt-outs to a transmitted
+// style before it is stamped onto a sprite layer. It MUST be applied to every layer
+// that can carry another player's style (the speaker AND a paired partner): the source
+// is another client, so a viewer's HideSpriteStyles / ReduceMotion choice has to win on
+// both paths, or a pair partner could impose motion/glitch a viewer explicitly opted out
+// of. Shared by the speaker path and the pair path in begin() so the two can't drift.
+func (c *Courtroom) filterStyleForViewer(style SpriteStyle) SpriteStyle {
+	if c.HideSpriteStyles {
+		return SpriteStyle{} // viewer opted out of others' styles entirely
+	}
+	if c.ReduceMotion {
+		// Accessibility: drop EVERY continuously-animating transmitted style a
+		// speaker can impose, matching the animated-TEXT doctrine (animtext.go pins
+		// everything static under reduce-motion). Wobble/Spin/Motion are the named
+		// motions; a CUSTOM drawn Path (PathLen>=2) OVERRIDES Motion (spritestyle.go),
+		// so it must be zeroed too or the sprite keeps looping; HueCycle is a continuous
+		// rainbow; Glitch (+GlitchStatic, whose sprite "flickers") is a photosensitivity
+		// hazard another player can impose. The static recolour/opacity/glow/outline stay.
+		style.Wobble, style.Spin, style.Motion = false, false, 0
+		style.PathLen = 0
+		style.Path = [maxPathPoints]uint8{} // clear the residual waypoints too: SpriteStyle is ==-comparable, so stale bytes could split an equality-keyed cache
+		style.HueCycle = false
+		style.Glitch, style.GlitchMode = false, 0
+	}
+	return style
+}

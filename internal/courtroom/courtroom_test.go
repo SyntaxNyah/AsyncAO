@@ -1207,6 +1207,72 @@ func TestPairedMessageSceneState(t *testing.T) {
 	}
 }
 
+// TestPairedPartnerKeepsOwnStyle pins §3.7: a paired partner renders with ITS OWN
+// remembered restyle, not the speaker's, and not nothing. The wire never carries a
+// partner's style (protocol.PairInfo has no style field), so begin() recalls it by the
+// partner's char id — the same send-on-change memory the speaker path uses. Before the
+// fix Scene.Pair.Style stayed the zero value, so only whoever currently spoke showed a
+// style and it flipped between the two as the turn passed (the reported symptom). Seed
+// the two recalls directly (the speak→remember path is already pinned by
+// spritestyle_test.go) and feed one no-marker paired message so each style comes purely
+// from recall. In pairedMS the SPEAKER is char id 0 (MSCharID field 8) and the PAIR
+// partner is char id 1 (MSOtherCharID field 16 = "1^1").
+func TestPairedPartnerKeepsOwnStyle(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+	room.HandleEvent(Event{Kind: EventBackground, Text: sess.Background})
+
+	// Distinct non-zero styles (A blue, B red) so a speaker/pair swap can't pass
+	// vacuously (SpriteStyle is ==-comparable). A is the speaker (char id 0), B the
+	// pair partner (char id 1); the fed message carries no marker, so both styles come
+	// purely from recall.
+	speakerStyle := SpriteStyle{Tint: true, R: 20, G: 40, B: 255}
+	pairStyle := SpriteStyle{Tint: true, R: 255, G: 40, B: 20}
+	room.rememberStyle(0, speakerStyle)
+	room.rememberStyle(1, pairStyle)
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "Take that!")})
+
+	sc := &room.Scene
+	if !sc.PairActive {
+		t.Fatal("pair not active")
+	}
+	if sc.Speaker.Style != speakerStyle {
+		t.Errorf("speaker style = %+v, want its own %+v", sc.Speaker.Style, speakerStyle)
+	}
+	if sc.Pair.Style != pairStyle {
+		t.Errorf("pair style = %+v, want the partner's remembered %+v", sc.Pair.Style, pairStyle)
+	}
+}
+
+// TestPairedPartnerStyleHonorsHideSpriteStyles pins the accessibility half of §3.7: the
+// viewer's HideSpriteStyles opt-out must suppress the PAIR partner's style too, not just
+// the speaker's — the same filterStyleForViewer helper runs on both paths. Without the
+// shared filter the fix could silently reintroduce an accessibility regression for the
+// pair partner specifically (a paired player imposing a style a viewer opted out of).
+func TestPairedPartnerStyleHonorsHideSpriteStyles(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+	room.HandleEvent(Event{Kind: EventBackground, Text: sess.Background})
+	room.HideSpriteStyles = true // viewer opted out of others' styles
+
+	room.rememberStyle(0, SpriteStyle{Tint: true, R: 20, G: 40, B: 255}) // speaker
+	room.rememberStyle(1, SpriteStyle{Tint: true, R: 255, G: 40, B: 20}) // pair partner
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: pairedMS(t, sess, "Take that!")})
+
+	sc := &room.Scene
+	if !sc.PairActive {
+		t.Fatal("pair not active")
+	}
+	if sc.Speaker.Style.Active() {
+		t.Errorf("HideSpriteStyles left the speaker style active: %+v", sc.Speaker.Style)
+	}
+	if sc.Pair.Style.Active() {
+		t.Errorf("HideSpriteStyles left the PAIR style active: %+v", sc.Pair.Style)
+	}
+}
+
 // TestBlankPostDetection pins Scene.IsBlankPost: a whitespace-only or
 // markup-only message is a blankpost (the UI hides the whole chatbox so only
 // the sprite shows), real text is not. Decided in begin() before the phase
