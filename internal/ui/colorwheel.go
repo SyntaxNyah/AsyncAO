@@ -19,6 +19,15 @@ import (
 // colorWheelDiam is the picker disc diameter (a "giant" wheel per the request).
 const colorWheelDiam = 150
 
+// icColorWheelCaption is the free-hex picker's heading. It MUST fit the
+// picker's fixed 348px width (see icColorWheelRect, minus the 8px side
+// margins the label draws at) — the draw clips it as a hard guard, and
+// icColorWheel_test.go pins that it fits at the default chrome font so a
+// future wording edit can't silently reopen the overflow bug (§3.4). It
+// still conveys both halves: exact colour for AsyncAO players, nearest AO
+// colour for everyone else.
+const icColorWheelCaption = "Chat colour — exact for AsyncAO, nearest AO for others"
+
 // nameColor maps a speaker name to a stable, smooth colour: an FNV-1a hash of
 // the name picks the hue, the caller's saturation/value (0..1) fill it out.
 // Deterministic (same name → same colour every launch, unlike a map-seeded
@@ -250,7 +259,12 @@ func (a *App) drawICColorWheel(w, h int32) {
 	r := a.icColorWheelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
-	c.Label(r.X+8, r.Y+5, "Chat colour — exact for AsyncAO players, closest AO colour for everyone else", ColTextDim)
+	// Clip to the panel interior (8px margin each side): the panel is sized
+	// to the wheel/bar/swatch controls, not the caption, so an unclipped
+	// c.Label would paint past the border onto the live scene behind this
+	// floating popup (§3.4). LabelClipped shares the same text cache — no
+	// allocation change.
+	c.LabelClipped(r.X+8, r.Y+5, r.W-16, icColorWheelCaption, ColTextDim)
 
 	cur := a.icCustomRGB
 	r8, g8, b8 := uint8(cur>>16), uint8(cur>>8), uint8(cur)
