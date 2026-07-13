@@ -149,6 +149,32 @@ func (r *Resolver) BuildCandidates(base string, t AssetType, host string) *Candi
 	return c
 }
 
+// BuildFullListCandidates returns the type's full configured probe list for
+// base WITHOUT reading or writing the shared learned table. It exists to close
+// the learned-format empty-window race: the manager's stale-learned re-probe
+// (a learned-first candidate 404'd) used to blank the shared per-(host, type)
+// slot with Invalidate before restoring it, so a DIFFERENT concurrent asset of
+// the same type could read the empty slot, fall back to the type default, and
+// spuriously report a file that exists in the learned format as missing (the
+// "every emote button renders the same icon" report). By probing the remaining
+// formats through this table-free path, the re-probe never touches the slot:
+// the only table write left is walkCandidates' RecordSuccess CAS, so a
+// concurrent reader always sees one valid value or another, never nothing.
+//
+// It does NOT bump learnedMisses: that counter tracks learned-TABLE lookups
+// that missed, and this method performs no table lookup — counting it would
+// double-count the same asset (BuildCandidates already recorded the miss that
+// sent the manager here) and skew the hit-rate metric.
+func (r *Resolver) BuildFullListCandidates(base string, t AssetType) *Candidates {
+	c := r.pool.Get().(*Candidates)
+	c.URLs = c.URLs[:0]
+	c.Learned = false
+	for _, ext := range r.formatList(t) {
+		c.URLs = append(c.URLs, base+ext)
+	}
+	return c
+}
+
 // formatList returns the cached probe list for t, rebuilding the snapshot
 // only when the preferences' format generation moved. The cached slices are
 // read-only by contract. A racing rebuild publishes an identical snapshot —

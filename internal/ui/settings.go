@@ -2186,11 +2186,16 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad, y, "in mind if a character or background looks stale right after a server update.", ColTextDim)
 	y += 30
 
-	// One-click "fix stuck images" (#36, Dag): when a character's emote-button art (or any
-	// asset) gets stuck on a wrong-format / cached 404, the emote grid falls back to the
-	// SAME character icon for every cell ("all the images are the same"). Neither clear
-	// button alone fixes it — you need the learned format AND the cached 404 gone together —
-	// so this does both in one click; the next probe re-derives the right format from scratch.
+	// One-click "fix stuck images" (#36, Dag): a manual recovery for genuine
+	// server-side repacks / CDN staleness, where the learned format AND a cached
+	// 404 both have to be cleared together for the emote grid to re-derive the
+	// right format (either clear button alone leaves the other stuck). The
+	// learned-format RACE that once produced the same "every emote cell shows the
+	// character icon" symptom on its own is fixed at the root: manager.go tryBase
+	// never blanks the shared per-host learned slot during a stale re-probe, so a
+	// concurrent asset can no longer see an empty slot and fall back to the wrong
+	// default. This button remains for the CDN/repack case that no code path can
+	// pre-empt.
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, "Fix stuck / repeated images") {
 		a.d.Prefs.ClearLearned()
 		a.d.Resolver.InvalidateAll()

@@ -551,21 +551,27 @@ func (m *Manager) resolveChain(primary string, alts []string, t AssetType, suppr
 func (m *Manager) tryBase(base, deliverBase string, t AssetType, host string) (done bool, tried404 []string) {
 	cands := m.resolver.BuildCandidates(base, t, host)
 	usedLearned := cands.Learned
-	var learnedExt string
-	if usedLearned && len(cands.URLs) > 0 {
-		learnedExt = cands.URLs[0][len(base):] // learned-first ordering; kept for the absence-restore below
-	}
 	done, tried404 = m.walkCandidates(cands.URLs, base, deliverBase, t, host, make([]string, 0, len(cands.URLs)))
 	m.resolver.PutCandidates(cands)
 	if done || !usedLearned {
 		return done, tried404
 	}
 
-	// Every learned-first candidate 404'd on a learned format: the server
-	// may have repacked. Invalidate and probe the full list once, skipping
-	// extensions already tried.
-	m.resolver.Invalidate(host, t)
-	cands = m.resolver.BuildCandidates(base, t, host)
+	// Every learned-first candidate 404'd on a learned format: the server may
+	// have repacked. Re-probe the full configured format list once, skipping
+	// extensions already tried. We must NOT blank the shared learned slot to do
+	// this: it is one slot per (host, AssetType) shared by every asset of that
+	// type on the host, and clearing it opens a window in which a DIFFERENT
+	// concurrent asset (resolved on another pool worker, unserialized) reads the
+	// empty slot, falls back to the type default, and spuriously reports a file
+	// that exists in the learned format as missing (the "every emote button
+	// renders the same icon" report on a non-default-format host). Instead
+	// BuildFullListCandidates returns the format list WITHOUT touching the table.
+	// If a fallback format answers, walkCandidates' RecordSuccess re-learns it
+	// via a single old-valid -> new-valid CAS (a genuine repack heals here). If
+	// nothing answers, the asset is simply absent — and absence says nothing
+	// about the host's formats, so the learned entry is left exactly as it was.
+	cands = m.resolver.BuildFullListCandidates(base, t)
 	rest := make([]string, 0, len(cands.URLs))
 	for _, url := range cands.URLs {
 		if !containsString(tried404, url[len(base):]) {
@@ -574,18 +580,6 @@ func (m *Manager) tryBase(base, deliverBase string, t AssetType, host string) (d
 	}
 	done, tried404 = m.walkCandidates(rest, base, deliverBase, t, host, tried404)
 	m.resolver.PutCandidates(cands)
-	if !done && learnedExt != "" {
-		// NOTHING answered in any format: the ASSET is absent, and absence
-		// says nothing about the host's formats — the learned entry must
-		// survive. Leaving the slot invalidated let one missing OPTIONAL
-		// file (emotions/buttonN_on ships rarely) wipe a manifest-seeded
-		// format for the whole session: every later probe of that class
-		// fell back to the type default and missed art that exists (live
-		// log: buttons "tried .webp" on a png-buttons server). A genuine
-		// repack still re-learns — its assets DO answer above, and the hit
-		// records the new format.
-		m.resolver.RecordSuccess(host, t, learnedExt)
-	}
 	return done, tried404
 }
 
