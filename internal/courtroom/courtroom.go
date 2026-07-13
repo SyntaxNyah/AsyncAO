@@ -103,9 +103,11 @@ type SpriteLayer struct {
 	// OffsetX/Y are percent of viewport dimensions (−100..100).
 	OffsetX, OffsetY int
 	Visible          bool
-	// Style is the speaker's transmitted sprite customization (recolour / glow /
-	// opacity / motion), decoded from this message's text. Zero value = none; the
-	// renderer leaves the blit byte-identical when it's inactive.
+	// Style is this layer's transmitted sprite customization (recolour / glow /
+	// opacity / motion): the speaker's is decoded from this message's text, a
+	// pair partner's is recalled by char id (the wire carries no partner style —
+	// see begin()). Zero value = none; the renderer leaves the blit
+	// byte-identical when it's inactive.
 	Style SpriteStyle
 }
 
