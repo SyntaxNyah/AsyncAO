@@ -45,6 +45,9 @@ func TestLogHangingIndent(t *testing.T) {
 	if len(a.oocWrapCont) != len(lines) {
 		t.Fatalf("cont flags = %d, rows = %d — must stay parallel", len(a.oocWrapCont), len(lines))
 	}
+	if len(a.oocWrapSrc) != len(lines) {
+		t.Fatalf("src indices = %d, rows = %d — must stay parallel (both append sites)", len(a.oocWrapSrc), len(lines))
+	}
 	if a.oocWrapCont[0] {
 		t.Error("a paragraph's first row must not be a continuation")
 	}
@@ -61,11 +64,16 @@ func TestLogHangingIndent(t *testing.T) {
 
 // TestOOCHoverLinkRun pins the block link highlight (playtest: a wrapped link
 // highlighted only the hovered row): hovering any row of a linked paragraph
-// returns the whole contiguous same-URL run; unlinked rows and the scrollbar
-// gutter return an empty range (lo > hi).
+// returns the whole contiguous same-URL run WITHIN one source entry; unlinked
+// rows and the scrollbar gutter return an empty range (lo > hi). The run is now
+// keyed by source-entry index (oocWrapSrc) as well as URL — mirroring IC's
+// icWrapLine.entry keying — so two adjacent distinct messages carrying the same
+// URL never merge into one tinted run.
 func TestOOCHoverLinkRun(t *testing.T) {
 	a := testTabApp(t)
+	// Entry 0 wraps into rows 1..3 (row 0 is a "" spacer); entry 1 is row 5.
 	a.oocWrapURL = []string{"", "u1", "u1", "u1", "", "u2"}
+	a.oocWrapSrc = []int{0, 0, 0, 0, 1, 1}
 	list := sdl.Rect{X: 0, Y: 0, W: 200, H: 120}
 	const lineH, wrapW = 20, 190
 	c := a.ctx
@@ -90,6 +98,21 @@ func TestOOCHoverLinkRun(t *testing.T) {
 	c.mouseX, c.mouseY = 10, 5 // top row on screen…
 	if lo, hi = a.oocHoverLinkRun(list, 5*lineH, lineH, wrapW, 6); lo != 5 || hi != 5 {
 		t.Fatalf("scrolled run = [%d,%d], want [5,5] (u2)", lo, hi)
+	}
+
+	// REGRESSION: two ADJACENT DISTINCT entries share the SAME URL. Keying by
+	// URL string alone merged them into one tinted run (the bug); keying also
+	// by source entry keeps each message's highlight to itself. Entry 0 is rows
+	// 0..1, entry 1 is rows 2..3 — all four carry "same".
+	a.oocWrapURL = []string{"same", "same", "same", "same"}
+	a.oocWrapSrc = []int{0, 0, 1, 1}
+	c.mouseX, c.mouseY = 10, 0*lineH+5 // row 0, entry 0
+	if lo, hi = a.oocHoverLinkRun(list, 0, lineH, wrapW, 4); lo != 0 || hi != 1 {
+		t.Fatalf("entry-0 run = [%d,%d], want [0,1] (must not merge into entry 1's same-URL rows)", lo, hi)
+	}
+	c.mouseX, c.mouseY = 10, 2*lineH+5 // row 2, entry 1
+	if lo, hi = a.oocHoverLinkRun(list, 0, lineH, wrapW, 4); lo != 2 || hi != 3 {
+		t.Fatalf("entry-1 run = [%d,%d], want [2,3] (must not merge into entry 0's same-URL rows)", lo, hi)
 	}
 }
 

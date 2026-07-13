@@ -1452,13 +1452,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   or hit "Pin to notebook" on evidence; free-form notes + copy-all; one
   JSON per server, async writes, capped.
 - **Clickable links in the IC log**: when a message contains an `http(s)://`
-  link, hovering its line in the log highlights it (and shows the URL); a
-  **left-click opens it in your browser**. The whole message line is the hit
-  target. Right-click still pins the line to the notebook.
-- **Links in the OOC log too**: hovering an OOC line with an `http(s)://` link
-  highlights it; **left-click opens it**, **right-click copies the URL** to the
-  clipboard (the IC log pins on right-click, so OOC takes copy). The URL is
-  detected only on the hovered line, so it costs nothing per frame.
+  or bare `www.` link, hovering its line in the log highlights it (and shows
+  the URL); a **left-click opens it in your browser** (a bare `www.` link is
+  opened as `https://…`). The whole message line is the hit target. Right-click
+  still pins the line to the notebook.
+- **Links in the OOC log too**: hovering an OOC line with an `http(s)://` or
+  bare `www.` link highlights it; **left-click opens it**, **right-click copies
+  the URL** to the clipboard (the IC log pins on right-click, so OOC takes
+  copy). A wrapped/linked message highlights as one block, keyed by its source
+  entry — two adjacent messages sharing the same URL stay independent. The URL
+  is detected only on the hovered line, so it costs nothing per frame.
 - **Select & copy log text** (IC and OOC): **drag to highlight** any span of
   characters across lines, **Ctrl+C** copies it. The selection is anchored to
   content (not screen rows), so scrolling or new lines never corrupt it, and

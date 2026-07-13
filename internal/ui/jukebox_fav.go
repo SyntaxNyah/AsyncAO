@@ -102,7 +102,7 @@ func (a *App) drawFavSongRow(ref favRef, r sdl.Rect) {
 		}
 		bx -= 56
 		if c.Button(sdl.Rect{X: bx, Y: r.Y, W: 52, H: r.H}, "Open") {
-			openBrowser(e.URL)
+			openBrowser(schemeForOpen(e.URL)) // a bare "www." link saved from a log opens with https://
 		}
 	}
 	// ★ unstar (leftmost control, next to the title).

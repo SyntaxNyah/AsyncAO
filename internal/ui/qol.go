@@ -1074,6 +1074,7 @@ func (a *App) oocWrapped(width int32) []string {
 	name := a.oocWrapName[:0] // parallel to out: speaker on each entry's first display line
 	urls := a.oocWrapURL[:0]  // parallel to out: the entry's link on each of its display lines
 	cont := a.oocWrapCont[:0] // parallel to out: wrap continuation rows (hanging indent)
+	src := a.oocWrapSrc[:0]   // parallel to out: source oocLog entry index (link-hover boundary)
 	for i, entry := range a.oocLog {
 		sp := ""
 		if i < len(a.oocSpeakers) {
@@ -1114,12 +1115,14 @@ func (a *App) oocWrapped(width int32) []string {
 				name = append(name, "")
 				urls = append(urls, "")
 				cont = append(cont, false)
+				src = append(src, i)
 				continue
 			}
 			for row, ln := range lines {
 				out = append(out, ln)
 				urls = append(urls, paraURL) // every wrapped row of THIS line opens its link
 				cont = append(cont, row > 0) // rows the WRAP made are continuations (hanging indent); the paragraph's own newline isn't
+				src = append(src, i)         // all rows of this entry carry its oocLog index
 				if entryFirst {
 					name = append(name, sp)
 					entryFirst = false
@@ -1132,7 +1135,7 @@ func (a *App) oocWrapped(width int32) []string {
 	if out == nil {
 		out = []string{}
 	}
-	a.oocWrap, a.oocWrapName, a.oocWrapURL, a.oocWrapCont = out, name, urls, cont
+	a.oocWrap, a.oocWrapName, a.oocWrapURL, a.oocWrapCont, a.oocWrapSrc = out, name, urls, cont, src
 	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.oocPct, streamer
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out

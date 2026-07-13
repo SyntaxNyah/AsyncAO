@@ -602,6 +602,65 @@ func TestOOCWrapURLPerParagraph(t *testing.T) {
 	}
 }
 
+// TestExtractURLs pins link detection for the lobby descriptions, OOC/IC
+// scrollback and the desc-link cap that all feed off it: scheme-prefixed and
+// bare "www." links are recognised, trailing punctuation and wrapper chars are
+// trimmed, and the token-boundary rule rejects "www." mid-word / no-dot cases
+// (no false positives in a server description).
+func TestExtractURLs(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{"https", "see https://example.com now", []string{"https://example.com"}},
+		{"http", "see http://example.com", []string{"http://example.com"}},
+		{"bare www hit", "visit www.example.com today", []string{"www.example.com"}},
+		{"www trailing punct trimmed", "(www.example.com).", []string{"www.example.com"}},
+		{"https trailing punct trimmed", "at https://example.com,", []string{"https://example.com"}},
+		{"www mid-word non-hit", "the foo.www.bar host", nil},
+		{"wwwill non-hit (no dot)", "wwwill never match", nil},
+		{"bare www. alone non-hit", "just www. here", nil},
+		{"plain text non-hit", "no links in this line", nil},
+		{"cap respected", "www.a.com www.b.com www.c.com", []string{"www.a.com", "www.b.com"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			max := 4
+			if tc.name == "cap respected" {
+				max = 2
+			}
+			got := extractURLs(tc.in, max)
+			if len(got) != len(tc.want) {
+				t.Fatalf("extractURLs(%q) = %v, want %v", tc.in, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("extractURLs(%q)[%d] = %q, want %q", tc.in, i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestSchemeForOpen pins the open-time scheme promotion: a bare "www." link
+// (kept bare for display/highlight by extractURLs) becomes https:// when handed
+// to the browser, while an already-schemed link passes through untouched.
+func TestSchemeForOpen(t *testing.T) {
+	cases := map[string]string{
+		"www.example.com":              "https://www.example.com",
+		"https://example.com":          "https://example.com",
+		"http://example.com":           "http://example.com",
+		"ws://server.example:2095/ws":  "ws://server.example:2095/ws",
+		"www.example.com/path?a=b&c=d": "https://www.example.com/path?a=b&c=d",
+	}
+	for in, want := range cases {
+		if got := schemeForOpen(in); got != want {
+			t.Errorf("schemeForOpen(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 // TestCapLogLine pins the IC-entry guard that replaced the 120-char truncation
 // ("text cuts off if it's too long"): a real max-length IC message (256 on the
 // wire) survives whole to be word-wrapped at draw time, and only a hostile huge

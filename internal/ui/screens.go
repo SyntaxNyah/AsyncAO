@@ -2632,7 +2632,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				if c.hovering(rowRect) {
 					c.Tooltip(rowRect, "Open "+u)
 					if c.clicked {
-						openBrowser(u)
+						openBrowser(schemeForOpen(u)) // bare "www." link → https:// at open time
 					}
 				}
 			}
@@ -2774,6 +2774,14 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 // lo=0, hi=-1 (an empty range) when the cursor isn't on a linked row. The
 // outward walks are bounded by the per-entry wrap cap: a same-URL run longer
 // than that is several paragraphs, and one paragraph is the unit we tint.
+//
+// The walk requires the SAME url AND the same source oocLog entry
+// (oocWrapSrc) — this keys OOC the way IC keys off icWrapLine.entry, so two
+// ADJACENT DISTINCT messages that happen to carry the same URL no longer merge
+// into one tinted run (the URL boundary alone used to). The url boundary is
+// kept too: within ONE multi-paragraph entry, a per-paragraph link (each line
+// its own URL — TestOOCWrapURLPerParagraph) still tints only its own
+// paragraph, not the whole entry.
 func (a *App) oocHoverLinkRun(list sdl.Rect, scroll, lineH, wrapW int32, n int) (lo, hi int) {
 	c := a.ctx
 	lo, hi = 0, -1
@@ -2785,11 +2793,24 @@ func (a *App) oocHoverLinkRun(list sdl.Rect, scroll, lineH, wrapW int32, n int) 
 		return
 	}
 	url := a.oocWrapURL[li]
+	// A run row must match the hovered row's URL AND its source oocLog entry. The
+	// source parallel is always present in-app; a bare unit test may set only
+	// oocWrapURL, so a missing/short oocWrapSrc degrades to url-only equality (the
+	// old behavior) rather than misbehaving. The check is inlined into both walks
+	// (no closure) so this stays allocation-free on the per-frame draw path.
+	src, hasSrc := -1, li < len(a.oocWrapSrc)
+	if hasSrc {
+		src = a.oocWrapSrc[li]
+	}
 	lo, hi = li, li
-	for steps := 0; lo > 0 && a.oocWrapURL[lo-1] == url && steps < oocWrapMaxLinesPerEntry; steps++ {
+	for steps := 0; lo > 0 && a.oocWrapURL[lo-1] == url &&
+		(!hasSrc || (lo-1 < len(a.oocWrapSrc) && a.oocWrapSrc[lo-1] == src)) &&
+		steps < oocWrapMaxLinesPerEntry; steps++ {
 		lo--
 	}
-	for steps := 0; hi+1 < len(a.oocWrapURL) && a.oocWrapURL[hi+1] == url && steps < oocWrapMaxLinesPerEntry; steps++ {
+	for steps := 0; hi+1 < len(a.oocWrapURL) && a.oocWrapURL[hi+1] == url &&
+		(!hasSrc || (hi+1 < len(a.oocWrapSrc) && a.oocWrapSrc[hi+1] == src)) &&
+		steps < oocWrapMaxLinesPerEntry; steps++ {
 		hi++
 	}
 	return
@@ -2818,7 +2839,7 @@ func (a *App) oocLinkActions(rowRect sdl.Rect, url string) {
 	}
 	c.Tooltip(rowRect, "Click to open · right-click to copy · or + Jukebox to save: "+url)
 	if c.clicked {
-		openBrowser(url)
+		openBrowser(schemeForOpen(url)) // bare "www." link → https:// at open time (copy stays bare, as displayed)
 	} else if c.rightClicked {
 		_ = sdl.SetClipboardText(url)
 		a.warnLine = "Link copied to clipboard"

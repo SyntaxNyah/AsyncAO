@@ -313,6 +313,7 @@ type App struct {
 	oocWrapName []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
 	oocWrapURL  []string // parallel to oocWrap: the entry's first link on each of its display lines ("" = none) — so a URL the wrap hard-split still opens whole (mirrors icEntry.url)
 	oocWrapCont []bool   // parallel to oocWrap: true = a wrap continuation row (hanging indent); a paragraph's own newline starts a fresh row, not a continuation
+	oocWrapSrc  []int    // parallel to oocWrap: the source oocLog entry index of each display line — link-hover expands within one entry (mirrors icWrapLine.entry), so two ADJACENT distinct messages sharing a URL never merge into one tinted run
 	oocWrapSeq  uint64
 	oocWrapW    int32
 	oocWrapPct  int

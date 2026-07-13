@@ -462,19 +462,39 @@ func (a *App) linkLabel(x, y, maxW int32, url string) {
 	if c.hovering(hit) {
 		c.Fill(sdl.Rect{X: x, Y: y + 15, W: tw, H: 1}, ColAccent) // underline
 		if c.clicked {
-			openBrowser(url)
+			openBrowser(schemeForOpen(url)) // bare "www." link → https:// at open time
 		}
 	}
 }
 
-// extractURLs pulls http(s):// links out of free text (lobby descriptions),
-// trimming trailing punctuation; capped so a hostile description can't
-// flood the box.
+// extractURLs pulls links out of free text (lobby descriptions, OOC/IC
+// scrollback), trimming trailing punctuation; capped so a hostile description
+// can't flood the box. Both scheme-prefixed (http/https) and bare "www." links
+// are recognised — a bare "www.x" keeps its bare display text everywhere and is
+// promoted to https:// only at OPEN time (schemeForOpen).
+//
+// Detection is token-based: strings.Fields splits on whitespace, so a candidate
+// must be a WHOLE token that starts with the prefix after the wrapper/trailing
+// trim. That gives the boundary rule for free: "foo.www.bar" is one token that
+// doesn't START with "www." (no match), "wwwill" has no dot so it isn't the
+// "www." prefix (no match), and a bare "www." trims its trailing "." to "www"
+// (also no match) — only a real "www.<host>…" token matches.
 func extractURLs(s string, max int) []string {
 	var out []string
 	for _, tok := range strings.Fields(s) {
-		tok = strings.TrimRight(strings.Trim(tok, "()[]<>\"'"), ".,;!?")
-		if !strings.HasPrefix(tok, "http://") && !strings.HasPrefix(tok, "https://") {
+		// Wrapper and punctuation tails can alternate — "(www.example.com)."
+		// needs a wrapper pass, a punct pass, then the wrapper pass AGAIN for
+		// the ')' the '.' was shielding, so loop the two trims to a fixpoint
+		// (each pass returns a subslice of the token — no allocation).
+		for {
+			trimmed := strings.TrimRight(strings.Trim(tok, "()[]<>\"'"), ".,;!?")
+			if trimmed == tok {
+				break
+			}
+			tok = trimmed
+		}
+		if !strings.HasPrefix(tok, "http://") && !strings.HasPrefix(tok, "https://") &&
+			!strings.HasPrefix(tok, "www.") {
 			continue
 		}
 		out = append(out, tok)
@@ -483,4 +503,16 @@ func extractURLs(s string, max int) []string {
 		}
 	}
 	return out
+}
+
+// schemeForOpen returns url ready to hand to the OS browser: a bare "www." link
+// (which extractURLs keeps bare for display/highlight) gets an "https://"
+// prefix, since the shellout handler needs a real scheme. A link that already
+// carries a scheme ("://") passes through untouched. Pure — the display/wrap
+// text is never rewritten, only the value passed to openBrowser at click time.
+func schemeForOpen(url string) string {
+	if strings.Contains(url, "://") {
+		return url
+	}
+	return "https://" + url
 }
