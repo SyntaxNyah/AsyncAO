@@ -4908,10 +4908,15 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// When hidden the toggle is forced off so a stale check can't ride a message.
 	if a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.AdditiveTextOn() {
 		const addW = 84 // fits "Additive"
-		addBox := sdl.Rect{X: icX, Y: rowY, W: addW, H: fH}
+		// Movable slot (#4a), same wrap-not-extract rule as Immediate above: draws through
+		// slotRect so the editor can pull it out into its own spot, but the row cursor still
+		// advances by the DEFAULT width below — so an un-edited bar is pixel-identical and
+		// moving Additive never cascades the rest. slotRect is alloc-free off the edit path.
+		addDef := sdl.Rect{X: icX, Y: rowY, W: addW, H: fH}
+		addBox := a.slotRect(slotICAdditive, addDef, w, h)
 		a.icAdditive = c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.icAdditive)
 		c.Tooltip(addBox, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
-		icX += addW + 6
+		icX += addW + 6 // downstream flows from the DEFAULT position, not the override
 	} else {
 		a.icAdditive = false
 	}

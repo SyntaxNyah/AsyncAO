@@ -1646,8 +1646,9 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   it; while un-edited the View knob still owns its 4:3 size, and resetting the
   box hands size back to the knob); the **log / right column** (both themes),
   the **OOC box** (new default), the **emote grid** (it pages within whatever
-  rect it gets), the **IC input bar** (colour · showname · Immed · emoji/FX/
-  React · text — widen it for a longer input, the text field never collapses),
+  rect it gets), the **IC input bar** (colour · showname · Immed · Additive · emoji/FX/
+  React · text — widen it for a longer input, the text field never collapses;
+  Additive only shows on 2.8 servers that advertise it),
   the **Legacy bottom OOC bar**, and the **control-button block** (both button
   rows + the scale knobs, dragged as one unit — mostly vertically, since it
   stays full width) all move independently. Right-click a

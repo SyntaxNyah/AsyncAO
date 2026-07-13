@@ -38,6 +38,7 @@ const (
 	// layout" work). Each defaults to its spot in the bar — so an un-edited or
 	// whole-bar-moved layout is pixel-identical — and only goes free once dragged.
 	slotICImmediate = "icbar.immediate" // the Immediate (non-interrupting preanim) toggle
+	slotICAdditive  = "icbar.additive"  // the Additive (2.8 append-to-last) toggle — shown only on additive servers, same wrap-not-extract rule as Immediate
 	// More IC-bar pieces pulled out individually (#4a, Crystalwarrior — "split it up so
 	// colours, checkboxes, etc. are located elsewhere"). Same wrap-not-extract rule as
 	// Immediate: each draws through slotRect but the row cursor advances by the DEFAULT
@@ -235,6 +236,8 @@ func classicSlotLabel(k string) string {
 		return "Emote grid"
 	case slotICImmediate:
 		return "Immediate toggle"
+	case slotICAdditive:
+		return "Additive toggle"
 	case slotChatbox:
 		return "Chatbox (message)"
 	case slotOOCBar:
