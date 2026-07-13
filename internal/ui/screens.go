@@ -2930,7 +2930,13 @@ func (a *App) drawAreaList(r sdl.Rect) {
 	// Search filter (#20 — parity with the Music tab beside it): type to narrow
 	// a hub server's hundreds of areas. Memoized so the O(N) scan runs only when
 	// the query or the Areas list changes (refreshAreaFilter).
-	a.areaSearch, _ = c.TextField("areasearch", sdl.Rect{X: r.X, Y: r.Y, W: r.W - 150, H: fieldH}, a.areaSearch, "Search areas…")
+	// Inset the search field 2px to match the area cards' left edge below (the
+	// cards draw at X: r.X+2). The bordered-card look insets the rows, but the
+	// search box was ported verbatim from drawMusicList (whose rows start at
+	// r.X, no inset), so it sat 2px left of its column and clipped out. Shrinking
+	// width by 2 keeps the right edge exactly where it was (r.X+r.W-150),
+	// preserving the "shown / total" counter-label clearance drawn just past it.
+	a.areaSearch, _ = c.TextField("areasearch", sdl.Rect{X: r.X + 2, Y: r.Y, W: r.W - 152, H: fieldH}, a.areaSearch, "Search areas…")
 	query := strings.ToLower(strings.TrimSpace(a.areaSearch))
 	total := len(a.sess.Areas)
 	shown := total
