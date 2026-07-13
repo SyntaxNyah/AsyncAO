@@ -1312,6 +1312,14 @@ type sessionState struct {
 	// pick also persists globally (Prefs.ICCustomColorRGB seeds a fresh tab).
 	icCustomOn  bool
 	icCustomRGB int
+	// icColorSel freezes the IC field's selection so the colour dropdown can wrap
+	// it (§3.8 select-and-colour, folded into the dropdown to match AO2's
+	// on_text_color_changed). captureICColorSel snapshots it every frame BEFORE the
+	// dropdown draws — while the field is still focused — because the dropdown's
+	// open-click unfocuses the field (clearing the live Ctx selection) before the
+	// pick lands a frame later. applyICColorPick consumes it. Session-scoped; the
+	// zero value (active:false) is idle.
+	icColorSel  icColorSel
 	icImmediate bool  // MS Immediate: preanim plays without holding the text (session toggle)
 	icAdditive  bool  // #14 2.8 ADDITIVE: this message appends to your last (session toggle; shown only when the server advertises additive + the pref is on)
 	icEffect    uint8 // #M5 sticky Text FX (courtroom.TextEffect*); 0 = off. Wraps every message you send.

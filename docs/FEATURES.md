@@ -328,10 +328,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   literal backtick, tilde, pipe, `º`, `№`, `√`, or a matched `( )` / `[ ]` pair
   renders in chat: they now color text. Type `\` before one to keep it literal**
   (`` \` `` → a literal backtick), the same escape AO2 uses.
-- **Select-and-color cubes**: a row of colored cubes sits next to the IC color
-  dropdown. Highlight some words in the message box and click a cube to wrap just
-  that selection in the matching AO2 color (Ctrl+Z undoes the wrap); with nothing
-  selected, a cube sets the whole-message color like the dropdown.
+- **Select-and-color from the dropdown** (AO2 parity): highlight some words in the
+  message box, then pick a color from the IC color dropdown — it wraps just that
+  selection in the matching AO2 color (Ctrl+Z undoes the wrap), exactly like AO2's
+  own color dropdown does with a selection. With nothing selected, the dropdown
+  sets the whole-message color as before. (Colors with no AO2 markup — the default
+  white — and the AsyncAO-only extras — extended, rainbow, random, custom hex —
+  don't wrap: they only ever set the whole-message color.)
 - **AsyncAO-native inline codes + bold/italic** (type them in your message):
   `\c1`…`\c8` switch the text color mid-sentence (1 green, 2 red, 3 orange,
   4 blue, 5 yellow, 6 pink, 7 cyan, 8 gray), **`\cr` is rainbow** (each letter a

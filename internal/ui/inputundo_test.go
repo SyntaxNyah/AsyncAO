@@ -45,9 +45,13 @@ func TestEchoClearRecoverableViaHistory(t *testing.T) {
 	}
 }
 
-// TestAO2ColorSpliceAndUndo pins §3.8 select-and-colour: with a selection in the
-// IC field, a colour cube wraps exactly the selected runes in that colour's AO2
-// delimiters, and the splice is Ctrl+Z-able via the out-of-band history.
+// TestAO2ColorSpliceAndUndo pins §3.8 select-and-colour, now folded into the IC
+// colour dropdown to match AO2's on_text_color_changed (courtroom.cpp:6364-6390):
+// captureICColorSel freezes the field's selection while it's still focused, and a
+// palette pick from the dropdown wraps exactly those runes in that colour's AO2
+// delimiters — surviving the open-click that unfocuses the field. The splice is
+// Ctrl+Z-able via the out-of-band history, and a no-selection pick sets the
+// whole-message colour like before.
 func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	a := testTabApp(t)
 	c := a.ctx
@@ -56,14 +60,28 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	c.fieldTrack("ic", a.icInput) // first sight seeds the detector
 
 	// Focus the IC field and select "world" ([6,11)).
-	c.focusID = "ic"
-	c.caretField = "ic"
+	c.focusID = icFieldID
+	c.caretField = icFieldID
 	c.selAnchor, c.caret = 6, 11
 
-	// Green (palette 1) → wraps the selection in the AO2 backtick pair.
-	a.applyAO2ColorClick(1)
+	// The colour strip captures the live selection BEFORE the dropdown draws.
+	a.captureICColorSel()
+	if !a.icColorSel.active || a.icColorSel.lo != 6 || a.icColorSel.hi != 11 {
+		t.Fatalf("capture = %+v, want {lo:6 hi:11 active:true}", a.icColorSel)
+	}
+	// The dropdown's open-click unfocuses the field a frame later — the live
+	// selection is gone, but the frozen snapshot must still drive the wrap.
+	c.focusID = ""
+
+	// Green (palette index 1 in the dropdown) → wraps the selection in the AO2
+	// backtick pair. Routed through applyICColorPick (the dropdown-pick path).
+	a.applyICColorPick(1)
 	if a.icInput != "hello `world`" {
 		t.Fatalf("splice = %q, want \"hello `world`\" (selection wrapped)", a.icInput)
+	}
+	// A wrap must NOT change the whole-message colour (AO2 leaves text_color).
+	if a.icColor != 0 {
+		t.Fatalf("wrap must leave the whole-message colour at default, icColor=%d", a.icColor)
 	}
 
 	// The next fieldTrack sees the out-of-band change and records the prior value,
@@ -77,16 +95,35 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 		t.Fatalf("undo must restore the pre-splice line, got %q ok=%v", snap.value, ok)
 	}
 
-	// No selection → the cube falls back to the whole-message colour (dropdown
-	// parity), leaving the text itself untouched.
+	// No selection → the pick falls back to the whole-message colour (unchanged
+	// dropdown behaviour), leaving the text itself untouched.
+	c.focusID = icFieldID
+	c.caretField = icFieldID
 	c.selAnchor = -1
 	a.icInput = "plain"
-	a.applyAO2ColorClick(2) // red
+	a.captureICColorSel() // focused but no selection → the snapshot clears
+	if a.icColorSel.active {
+		t.Fatalf("no selection must clear the frozen snapshot, got %+v", a.icColorSel)
+	}
+	a.applyICColorPick(2) // red
 	if a.icInput != "plain" {
-		t.Fatalf("no-selection click must not alter the text, got %q", a.icInput)
+		t.Fatalf("no-selection pick must not alter the text, got %q", a.icInput)
 	}
 	if a.icColor != 2 {
-		t.Fatalf("no-selection click must set the whole-message colour, icColor=%d want 2", a.icColor)
+		t.Fatalf("no-selection pick must set the whole-message colour, icColor=%d want 2", a.icColor)
+	}
+
+	// Palette 0 (Default/white — no AO2 markup) WITH a selection: AO2 warns and
+	// does nothing (courtroom.cpp:6370-6375); the text and colour stay untouched.
+	a.icInput = "keep me"
+	c.selAnchor, c.caret = 0, 4
+	a.captureICColorSel()
+	a.applyICColorPick(0)
+	if a.icInput != "keep me" {
+		t.Fatalf("palette-0 wrap must be a no-op on the text, got %q", a.icInput)
+	}
+	if a.icColor != 2 {
+		t.Fatalf("palette-0 pick with a selection must not touch the whole-message colour, icColor=%d", a.icColor)
 	}
 }
 

@@ -4309,12 +4309,10 @@ func (a *App) drawICControls(w, h int32, vp sdl.Rect) {
 	// Colour swatch + dropdown — an individually movable slot (#4a). The selector also
 	// offers the extended AsyncAO colours (#98) and the two "fun colour" modes (#79): they
 	// sit after the palette so they're picked like any colour instead of being buried in
-	// Settings. icColorSelected drives the active row + swatch; applyICColorChoice routes
+	// Settings. icColorSelected drives the active row + swatch; applyICColorPick routes
 	// the pick — both shared with the themed row so the two layouts can't drift.
-	// The colour slot now also hosts the AO2 select-and-colour cube row (§3.8) to
-	// the right of the dropdown, so its default width reserves ao2CubeRowW for it.
-	colorBox := a.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW + ao2CubeGap + ao2CubeRowW, H: fH}, w, h)
-	a.drawICColorStrip(colorBox) // swatch + colour dropdown + AO2 cubes (rect by value — alloc-free)
+	colorBox := a.slotRect(slotICColor, sdl.Rect{X: icBar.X, Y: rowY, W: 32 + colorSelectW, H: fH}, w, h)
+	a.drawICColorStrip(colorBox) // swatch + colour dropdown (rect by value — alloc-free)
 	// The rest of the IC bar (showname → Immediate → Additive → SFX → emoji → FX →
 	// text input → muted chip) is one sequential cursor chain, kept together in
 	// drawICInputRow. It returns whether Enter was pressed so the send decision
@@ -4820,7 +4818,7 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 // drawICColorStrip draws the IC text-colour selector (the swatch previewing the
 // active wire colour + the naming dropdown) inside its resolved slot rect. colorBox
 // arrives by value; icColorSelected drives the active row + swatch and
-// applyICColorChoice routes the pick — both shared with the themed row so the two
+// applyICColorPick routes the pick — both shared with the themed row so the two
 // layouts can't drift (moved verbatim from drawICControls).
 func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 	c := a.ctx
@@ -4834,21 +4832,19 @@ func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 	if a.icCustomOn && c.clicked && c.hovering(swatch) {
 		a.showICColorWheel = !a.showICColorWheel // re-open to adjust (re-picking "Custom…" in the dropdown doesn't fire changed)
 	}
-	// The dropdown fills the slot MINUS the swatch (32) and the trailing AO2 cube
-	// row; the cubes sit at the slot's right edge. When the slot is dragged narrow
-	// the dropdown floors at 60px and the cubes ride just past it.
-	ddX := colorBox.X + 32
-	colorDDW := colorBox.W - 32 - ao2CubeGap - ao2CubeRowW
+	colorDDW := colorBox.W - 32
 	if colorDDW < 60 {
 		colorDDW = 60 // floor: the dropdown stays clickable however small the slot is dragged
 	}
-	if next, changed := c.Dropdown("colordd", sdl.Rect{X: ddX, Y: colorBox.Y, W: colorDDW, H: colorBox.H}, icColorChoices, icSel); changed {
-		a.applyICColorChoice(next)
+	// Freeze the IC field's selection BEFORE the dropdown so a picked colour can
+	// wrap it (§3.8 select-and-colour, folded into the dropdown to match AO2's own
+	// on_text_color_changed). The open-click unfocuses the field later this frame
+	// (the strip draws before the field), so by the pick frame the live selection
+	// is gone — captureICColorSel snapshots it while it still exists.
+	a.captureICColorSel()
+	if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorBox.X + 32, Y: colorBox.Y, W: colorDDW, H: colorBox.H}, icColorChoices, icSel); changed {
+		a.applyICColorPick(next)
 	}
-	// AO2 select-and-colour cubes (§3.8): highlight text in the IC field and click
-	// a cube to wrap it in that colour (interop with AO2/webAO); no selection sets
-	// the whole-message colour like the dropdown.
-	a.drawAO2ColorCubes(sdl.Rect{X: ddX + colorDDW + ao2CubeGap, Y: colorBox.Y, W: ao2CubeRowW, H: colorBox.H})
 }
 
 // drawICInputRow draws the IC bar's input chain — showname box (+ saved-name picker),
@@ -4860,9 +4856,7 @@ func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	c := a.ctx
 	const shownameBoxW = 140
-	// DEFAULT spot; downstream (immedX) flows from here. The +ao2CubeRowW keeps the
-	// showname box clear of the AO2 cube row that now trails the colour dropdown.
-	nameX := icBar.X + 32 + colorSelectW + ao2CubeGap + ao2CubeRowW + 6
+	nameX := icBar.X + 32 + colorSelectW + 6 // DEFAULT spot; downstream (immedX) flows from here
 	namePlaceholder := a.d.Prefs.SavedShowname()
 	if namePlaceholder == "" {
 		namePlaceholder = "Showname"
@@ -6337,97 +6331,94 @@ func (a *App) icColorSelected() (sel int, swatch sdl.Color) {
 }
 
 // icFieldID is the immediate-mode id of the main IC text field (both the classic
-// and themed rows draw it under this id). The AO2 cube row reads the field's
+// and themed rows draw it under this id). captureICColorSel reads the field's
 // selection by this id (only the focused field's selection is meaningful).
 const icFieldID = "ic"
 
-// AO2 select-and-colour cube row (§3.8). One cube per AO2 markup colour (1..8);
-// clicking one wraps the IC field's selection in that colour's AO2 delimiters
-// (interop: a real AO2/webAO peer renders it), or — with no selection — sets the
-// whole-message colour like the dropdown. The cube colours + tooltips are
-// precomputed once at init so the per-frame draw allocates nothing (alloc gate).
-const (
-	ao2CubeSize = 14 // cube side in px
-	ao2CubeGap  = 2  // gap between cubes
-	// ao2CubeRowW is the total width the cube row occupies (used to reserve space
-	// so the row never overlaps the dropdown/field).
-	ao2CubeRowW = int32(courtroom.AO2ColorCount)*(ao2CubeSize+ao2CubeGap) - ao2CubeGap
-)
-
-var (
-	// ao2CubeColors[i] is the render colour of the i-th swatch (AO2 order 1..8),
-	// resolved from the palette index so it can't drift from the parser table.
-	ao2CubeColors [courtroom.AO2ColorCount]sdl.Color
-	// ao2CubeTips[i] is the i-th cube's hover hint — built ONCE (no per-frame fmt).
-	ao2CubeTips [courtroom.AO2ColorCount]string
-)
-
-func init() {
-	for i := 0; i < courtroom.AO2ColorCount; i++ {
-		p := courtroom.AO2ColorPalette(i)
-		ao2CubeColors[i] = render.TextColor(p)
-		name := "colour"
-		if names := render.TextColorNames(); p >= 0 && p < len(names) {
-			name = names[p]
-		}
-		start, end, _ := courtroom.AO2MarkupFor(p)
-		// e.g. "Green — wraps the selection in `…` (AO2 colour)".
-		ao2CubeTips[i] = name + " — wraps the selection in " + string(start) + "…" + string(end) + " (AO2 colour)"
-	}
+// icColorSel is a frozen snapshot of the IC field's [lo,hi) RUNE selection, taken
+// while the field is still focused so the colour dropdown can wrap it even though
+// the open-click has since unfocused the field. active is false when there was no
+// selection to wrap. A plain value (no pointer) — the App holds one directly.
+type icColorSel struct {
+	lo, hi int
+	active bool
 }
 
-// drawAO2ColorCubes draws the AO2 select-and-colour cube strip inside row and
-// handles clicks. Shared by the classic and themed IC bars so the two can't
-// drift. Pure draw-time + click routing; no per-frame allocation (rects come off
-// the escape-safe Fill idiom, colours/tooltips are precomputed).
-func (a *App) drawAO2ColorCubes(row sdl.Rect) {
+// captureICColorSel freezes the IC field's live selection into a.icColorSel so a
+// colour picked from the dropdown can wrap it (§3.8 select-and-colour, folded into
+// the colour dropdown to match AO2's own on_text_color_changed). It MUST be called
+// every frame right before c.Dropdown("colordd", …) in BOTH the classic and themed
+// rows: the colour strip draws BEFORE the IC field, so at this point the field is
+// still focused and its selAnchor/caret are intact — but the dropdown's open-click
+// (dropdownEx doesn't consume it) reaches the later-drawn IC field and click-away
+// unfocuses it, dropping the live selection before the pick lands next frame. So we
+// snapshot here while it exists; once the dropdown is open the field is unfocused,
+// selectionFor returns ok=false, and we leave the frozen snapshot untouched.
+//
+// Alloc-free: selectionFor → fieldSel(utf8.RuneCountInString) is int-only, so the
+// per-frame IC-row alloc gate stays green (the splice runs only on the pick).
+func (a *App) captureICColorSel() {
 	c := a.ctx
-	x := row.X
-	y := row.Y + (row.H-ao2CubeSize)/2
-	for i := 0; i < courtroom.AO2ColorCount; i++ {
-		cube := sdl.Rect{X: x, Y: y, W: ao2CubeSize, H: ao2CubeSize}
-		c.Fill(cube, ao2CubeColors[i])
-		hi := ColPanelHi
-		if c.hovering(cube) {
-			hi = ColAccent // hover highlight so the tiny target reads as clickable
-		}
-		c.Border(cube, hi)
-		c.Tooltip(cube, ao2CubeTips[i])
-		if c.clicked && c.hovering(cube) {
-			a.applyAO2ColorClick(courtroom.AO2ColorPalette(i))
-		}
-		x += ao2CubeSize + ao2CubeGap
+	if lo, hi, ok := c.selectionFor(icFieldID, a.icInput); ok {
+		a.icColorSel = icColorSel{lo: lo, hi: hi, active: true} // focused + non-empty: track live
+	} else if c.focusID == icFieldID {
+		a.icColorSel.active = false // focused but no selection: drop any stale snapshot
 	}
+	// Not focused (dropdown open): leave the frozen pre-open selection in place.
 }
 
-// applyAO2ColorClick handles a cube click for AO palette colour p (1..8). With a
-// non-empty selection in the IC field it wraps exactly the selected runes in
-// p's AO2 delimiters (AO2-Client on_text_color_changed, courtroom.cpp:6364-6390);
-// the splice lands in a.icInput directly, so the field's out-of-band change
-// detector records the prior value on the next draw and Ctrl+Z undoes it
-// (fieldhistory.go). With no selection it falls back to the whole-message colour,
-// exactly like picking that palette entry in the dropdown.
-func (a *App) applyAO2ColorClick(p int) {
-	start, end, ok := courtroom.AO2MarkupFor(p)
-	if !ok {
+// applyICColorPick routes an IC colour-dropdown selection, wrapping a frozen
+// selection when the pick is a standard palette colour that carries AO2 markup —
+// exactly what AO2's Courtroom::on_text_color_changed does when the IC field has a
+// selection (src/courtroom.cpp:6364-6390): it inserts the colour's markdown_start
+// before the selection and markdown_end after it (leaving the whole-message
+// text_color untouched), and does NOTHING for a colour with no markup characters
+// (c0/default; :6370-6375 qWarning+return). With no selection it sets the
+// whole-message colour (:6391-6401), which is the existing applyICColorChoice.
+//
+// Only standard palette entries (dropdown index 0..extColorFirst) map to an AO2
+// colour; the AsyncAO-native extras (extended/rainbow/random/custom hex) have no
+// AO2 wire markup, so they always fall through to applyICColorChoice — the
+// no-selection behaviour — rather than inventing new wire markup.
+func (a *App) applyICColorPick(next int) {
+	sel := a.icColorSel
+	a.icColorSel.active = false // consume the snapshot: the next open re-captures
+	if sel.active && next >= 0 && next < extColorFirst {
+		// A standard palette pick with a live selection. AO2's on_text_color_changed
+		// wraps the selection in the colour's markdown chars — EXCEPT for a colour
+		// with none (the stock c0/Default has empty _start; :6370-6375 qWarning +
+		// return, doing nothing). AO2MarkupFor mirrors that: ok is true only for the
+		// eight colours (1..8) that carry delimiters, false for palette 0 — so both
+		// the wrap and the "no-markup → do nothing" case fall out of this one branch.
+		if start, end, ok := courtroom.AO2MarkupFor(next); ok {
+			a.wrapICSelection(sel.lo, sel.hi, start, end)
+		}
+		return // AO2 leaves the whole-message text_color untouched on a selection.
+	}
+	// No frozen selection (or an AsyncAO-only extra: extended/rainbow/random/custom
+	// hex, which have no AO2 wire markup): set the whole-message colour instead.
+	a.applyICColorChoice(next)
+}
+
+// wrapICSelection splices the AO2 delimiters start/end around the [lo,hi) RUNE
+// range of a.icInput, so a real AO2/webAO peer renders the wrapped span in colour
+// (the characters survive to the wire). Rune-indexed (emoji/CJK selections splice
+// on rune boundaries, never mid-codepoint). The splice lands in a.icInput directly,
+// so the field's out-of-band change detector records the prior value on the next
+// draw and Ctrl+Z undoes the wrap (fieldhistory.go). The build runs only on a pick
+// (a rare event), so a plain slice build is fine — it is off the per-frame path.
+func (a *App) wrapICSelection(lo, hi int, start, end rune) {
+	rs := []rune(a.icInput)
+	if lo < 0 || hi > len(rs) || lo > hi { // stale snapshot vs a value edited since: ignore
 		return
 	}
-	if lo, hi, has := a.ctx.selectionFor(icFieldID, a.icInput); has {
-		rs := []rune(a.icInput)
-		// Rune-indexed splice: start … selection … end. Build once (the click is
-		// a rare event, not a per-frame path), so a plain slice build is fine.
-		out := make([]rune, 0, len(rs)+2)
-		out = append(out, rs[:lo]...)
-		out = append(out, start)
-		out = append(out, rs[lo:hi]...)
-		out = append(out, end)
-		out = append(out, rs[hi:]...)
-		a.icInput = string(out)
-		return
-	}
-	// No selection → whole-message colour (dropdown parity): p is a standard
-	// palette index, so route it through the shared colour picker.
-	a.applyICColorChoice(p)
+	out := make([]rune, 0, len(rs)+2)
+	out = append(out, rs[:lo]...)
+	out = append(out, start)
+	out = append(out, rs[lo:hi]...)
+	out = append(out, end)
+	out = append(out, rs[hi:]...)
+	a.icInput = string(out)
 }
 
 // chatRainbow is the palette inline rainbow (\cr) cycles through, per rune.

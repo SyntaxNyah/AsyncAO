@@ -394,9 +394,8 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		colorR, ownColor := lay.rect("asyncao_ic_color")
 		lead := int32(0)
 		if !ownColor {
-			// crammed: reserve the swatch + dropdown + the AO2 cube row (§3.8) before the field.
-			colorR = sdl.Rect{X: in.X, Y: in.Y, W: 14 + themedColorW + ao2CubeGap + ao2CubeRowW, H: in.H}
-			lead = 14 + themedColorW + ao2CubeGap + ao2CubeRowW + 4 // the field starts after the colour + cubes
+			colorR = sdl.Rect{X: in.X, Y: in.Y, W: 14 + themedColorW, H: in.H}
+			lead = 14 + themedColorW + 4 // crammed: the field starts after the colour
 		}
 		swatch := sdl.Rect{X: colorR.X, Y: colorR.Y, W: 12, H: colorR.H}
 		c.Fill(swatch, sw)
@@ -405,12 +404,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if a.icCustomOn && c.clicked && c.hovering(swatch) {
 			a.showICColorWheel = !a.showICColorWheel // re-open to adjust (same as the classic row)
 		}
+		// Freeze the IC field's selection so a picked colour can wrap it (§3.8,
+		// folded into the dropdown to match AO2's on_text_color_changed); shared
+		// with the classic row so the two can't drift. See captureICColorSel.
+		a.captureICColorSel()
 		if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorR.X + 14, Y: colorR.Y, W: themedColorW, H: colorR.H}, icColorChoices, icSel); changed {
-			a.applyICColorChoice(next)
+			a.applyICColorPick(next)
 		}
-		// AO2 select-and-colour cubes (§3.8), shared with the classic row: right of
-		// the dropdown so a highlighted selection can be wrapped in an AO2 colour.
-		a.drawAO2ColorCubes(sdl.Rect{X: colorR.X + 14 + themedColorW + ao2CubeGap, Y: colorR.Y, W: ao2CubeRowW, H: colorR.H})
 		fieldX, fieldW := in.X+lead, in.W-lead
 		// Immediate toggle: at its OWN theme rect (asyncao_ic_immediate, #4b) if placed,
 		// else crammed into the field (only when the message rect is wide enough after it).
