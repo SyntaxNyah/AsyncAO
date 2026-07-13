@@ -2593,7 +2593,11 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 			settings.statusLine = "Nothing added (blank, already listed, or at the 32-word cap)."
 		}
 	}
-	y += 30
+	y += 26
+	// §3.5 rule reminder: whole-word match by default, trailing '*' for the loose
+	// prefix shorthand. Kept to one dim line so the manager layout is unchanged.
+	c.Label(pad+130, y, "Matched as whole words — add a trailing * for a loose prefix (e.g. obj* catches \"objection\").", ColTextDim)
+	y += 22
 	if words := a.d.Prefs.CallWords(); len(words) > 0 {
 		for _, w := range words {
 			if c.Button(sdl.Rect{X: pad + 28, Y: y, W: 20, H: 18}, "×") {

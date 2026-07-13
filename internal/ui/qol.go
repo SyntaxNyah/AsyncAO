@@ -791,10 +791,16 @@ func (a *App) checkCallwords(text string, selfNames []string, mine bool) {
 		return
 	}
 	lower := strings.ToLower(text)
-	// Configured highlight words: substring match (AO2-Client get_court_sfx
-	// "word_call" parity — deliberately loose so "obj" catches "objection").
+	// Configured highlight words match as WHOLE WORDS by default (reusing the
+	// #203 containsWord matcher), so "tif" fires on "hi tif" but not on "motif"
+	// / "artifact" — the old raw-substring match self-pinged on any three-letter
+	// coincidence. A trailing '*' is an opt-in loose escape hatch: "obj*" matches
+	// at a WORD START without a word-end boundary, so it still catches
+	// "objection" / "objecting" (the deliberately-loose shorthand the raw match
+	// used to give for free) while "tif*" still won't hit "motif" — "tif" isn't a
+	// word start there. See callwordHit / containsWordPrefix below.
 	for _, w := range a.d.Prefs.CallWords() {
-		if strings.Contains(lower, w) {
+		if callwordHit(lower, w) {
 			a.callwordAlert("AsyncAO — callword", "Heard your callword: "+w)
 			return
 		}
@@ -883,6 +889,48 @@ func wordBoundary(s string, i int) bool {
 // isWordRune classifies letters and digits as "inside a word" for the mention
 // boundary test (Unicode-aware, so accented / non-Latin names work).
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// callwordHit reports whether a single configured callword fires in lower (which
+// must already be lowercased). A bare word matches as a WHOLE word (containsWord)
+// so it can't self-ping on a coincidental substring. A trailing '*' opts into a
+// looser prefix match (containsWordPrefix): the stem must begin a word but need
+// not end one, so "obj*" catches "objection". A lone "*" (empty stem) never
+// matches — it would otherwise fire on every message, defeating the whole point.
+// Extracted from checkCallwords so the pure matching logic is unit-testable
+// without the SDL/audio side effects of callwordAlert.
+func callwordHit(lower, word string) bool {
+	if stem, ok := strings.CutSuffix(word, "*"); ok {
+		return stem != "" && containsWordPrefix(lower, stem)
+	}
+	return containsWord(lower, word)
+}
+
+// containsWordPrefix reports whether needle occurs in haystack at a WORD START —
+// bounded by a non-word rune (or the string start) on its left, with NO
+// constraint on its right. So "obj" matches "objection" and "obj!" but not
+// "an obj-ish thing" spelled "kobj" (interior) — the classic prefix/shorthand
+// rule. Both args must already be lowercased. Like containsWord it's alloc-free
+// and Unicode-safe (scans with strings.Index, checks the rune to the left) and
+// keeps scanning past a rejected interior hit so a later true word-start match
+// still lands (e.g. "tif" in "motif tiffany" rejects at "motif", accepts at
+// "tiffany").
+func containsWordPrefix(haystack, needle string) bool {
+	if needle == "" {
+		return false
+	}
+	for from := 0; from <= len(haystack)-len(needle); {
+		i := strings.Index(haystack[from:], needle)
+		if i < 0 {
+			return false
+		}
+		i += from
+		if wordBoundary(haystack, i) { // left edge only — right edge is free
+			return true
+		}
+		from = i + 1 // overlap-safe: step one byte past this (rejected) hit
+	}
+	return false
+}
 
 // mentionNames returns the names that count as "you" in the ACTIVE session for
 // #203 mention alerts: your effective showname (override or saved) and your

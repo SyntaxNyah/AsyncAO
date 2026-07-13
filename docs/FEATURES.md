@@ -1031,7 +1031,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Callwords** (M15 **manager**): a managed highlight-word list — type a word
   (or paste `a, b, c` to add several at once) + **Add**, and each shows below
   with a **×** to remove (replaces the old single comma field; lowercased,
-  deduped, capped at 32). An IC/OOC match = taskbar
+  deduped, capped at 32). Words match as **whole words**: `tif` fires on
+  `hi tif` but **not** on `motif` or `artifact`, so a short callword can't
+  self-ping on a coincidental substring. For the old loose shorthand — one
+  callword that catches a whole word family — append a **trailing `*`**: `obj*`
+  matches at a **word start** without needing a word end, so it still catches
+  `objection` / `objecting`, while `tif*` still won't fire on `motif` (`tif`
+  isn't a word start there). A lone `*` matches nothing. An IC/OOC match = taskbar
   flash + a sound — a **custom sound file** you point at in Settings
   (`.wav`/`.ogg`/`.mp3`/**`.opus`**), else a **built-in ping**. The ping is the
   reliable default: we deliberately do **not** route through the theme's

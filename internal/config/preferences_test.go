@@ -1071,6 +1071,42 @@ func TestCallWordAddRemove(t *testing.T) {
 	}
 }
 
+// TestCallWordWildcardRoundTrip pins that a trailing '*' wildcard (the §3.5 loose
+// escape hatch: "obj*" matches "objection" at a word start) survives the whole
+// storage pipeline intact — lowercasing/trimming must NOT strip the '*' (it's not
+// a letter, so strings.ToLower leaves it), and it must round-trip through disk.
+// The UI matcher relies on the '*' still being there after load.
+func TestCallWordWildcardRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	// Add via the manager helper with mixed case + surrounding space: lowercased
+	// and trimmed, but the trailing '*' preserved.
+	if n := p.AddCallWord("  Obj*  "); n != 1 {
+		t.Fatalf("AddCallWord = %d, want 1", n)
+	}
+	if got := p.CallWords(); len(got) != 1 || got[0] != "obj*" {
+		t.Fatalf("in-memory CallWords = %v, want [obj*] (lowercased, '*' kept)", got)
+	}
+	// SetCallWords (the bulk replace path) must keep it too.
+	p.SetCallWords([]string{"OBJ*", "tif"})
+	if got := p.CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
+		t.Fatalf("SetCallWords result = %v, want [obj* tif]", got)
+	}
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := q.CallWords(); len(got) != 2 || got[0] != "obj*" || got[1] != "tif" {
+		t.Errorf("wildcard lost across reload: got %v, want [obj* tif]", got)
+	}
+}
+
 // TestDNDPersistRoundTrip pins the OPTIONAL Do Not Disturb persistence: both
 // flags default OFF (DND is session-only, clears each launch), and when the user
 // opts in the saved state survives save→load.
