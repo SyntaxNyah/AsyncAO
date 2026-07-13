@@ -553,6 +553,12 @@ func (a *App) tickGifExport() {
 	j := a.gif
 	if j == nil || a.d.Viewport == nil {
 		a.gifExporting = false
+		// Unreachable today (a.gif is set before the bracket begins and Viewport
+		// is never nilled), but this abort path must restore the live text scale
+		// like every other export exit or a future refactor that makes it
+		// reachable strands the UI on 100% device fonts. end is a no-op when the
+		// bracket isn't active, so calling it here is always safe.
+		a.endExportScaleBracket()
 		return
 	}
 	if j.warming {
