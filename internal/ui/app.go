@@ -588,8 +588,14 @@ type App struct {
 	// frames across several frame-loop ticks, then encodes off-thread. Allocated
 	// only while exporting; zero cost on the live path otherwise.
 	gifExporting bool
-	gif          *gifExportJob
-	gifResultCh  chan exportResult // off-thread encode → UI (result line + artifact path)
+	// exportSavedDevScale remembers the live text device scale (#77) while an
+	// export session brackets ctx.textDevPct to 100 (native offscreen resolution —
+	// the live UI scale must never leak into export pixels). 0 = not exporting;
+	// set at export start, restored (and zeroed) at every finisher. gif/webp/video/
+	// comic all render offscreen and share this bracket.
+	exportSavedDevScale int
+	gif                 *gifExportJob
+	gifResultCh         chan exportResult // off-thread encode → UI (result line + artifact path)
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
@@ -1751,7 +1757,8 @@ type sessionState struct {
 	// chat raster invalidation extras (text/color tracked separately)
 	rasterScale   int
 	rasterW       int32
-	rasterSkinned bool // theme skin gates theme text colors (readability)
+	rasterSkinned bool  // theme skin gates theme text colors (readability)
+	rasterDevPct  int32 // #77: the device font scale the raster was built at — a UI-scale change must rebuild it
 
 	// pairing panel
 	pairSearch string
@@ -4265,6 +4272,13 @@ func (a *App) renderFullClientTexture(w, h int32) {
 	if c.Ren.SetRenderTarget(a.clientTex) != nil {
 		return
 	}
+	// #77: the pinned pass INHERITS the ambient text device scale (it does NOT
+	// bracket it — toggling textDevPct here would purge/rebuild the font caches
+	// every frame a tab is pinned, a real perf regression). It composes correctly:
+	// clientTex is LOGICAL-sized and SetScale(1,1) draws 1:1, while blitLabel/Draw
+	// divide the device glyphs back to logical — so text lands at its logical size
+	// (filling the logical clientTex), just rasterized at the device size (crisper,
+	// never larger). The SetScale save/restore below is unchanged.
 	defer func() {
 		_ = c.Ren.SetRenderTarget(prevTarget)
 		s := float32(a.UIScale()) / 100 // restore main's per-frame render scale

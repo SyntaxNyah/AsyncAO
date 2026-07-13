@@ -40,7 +40,7 @@ func TestRasterizeFallbackBuildsSpans(t *testing.T) {
 		textFonts[i] = textFont
 	}
 
-	raster, err := render.RasterizeFallback(ren, textFonts, emojiFace, msg, spans, 400)
+	raster, err := render.RasterizeFallback(ren, textFonts, emojiFace, msg, spans, 400, render.DefaultDevScale)
 	if err != nil {
 		t.Fatalf("RasterizeFallback: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestRasterizeFallbackBuildsSpans(t *testing.T) {
 	}
 
 	// A nil emoji face (not yet loaded) must not crash — it degrades to the text font.
-	r2, err := render.RasterizeFallback(ren, textFonts, nil, msg, spans, 400)
+	r2, err := render.RasterizeFallback(ren, textFonts, nil, msg, spans, 400, render.DefaultDevScale)
 	if err != nil {
 		t.Fatalf("RasterizeFallback(nil emoji): %v", err)
 	}

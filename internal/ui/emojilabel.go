@@ -106,15 +106,39 @@ func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) 
 		return m
 	}
 	runes := []rune(text)
-	textFonts := c.coverRunes(primary, runes) // per-rune covering face (mixed-script)
+	// #77: cache by the LOGICAL primary/emoji (what callers pass), but rasterize
+	// with the DEVICE siblings so the emoji label is crisp at UI scale. Draw
+	// divides the device dst back to logical via the raster's stored devScale, so
+	// pushClip (logical maxW/Height) still fences it correctly. A textDevPct
+	// change purges this cache (SetTextDevScale), so a stale-size entry can't leak.
+	dev := c.textDevPct
+	textFonts := c.coverRunes(primary, runes) // per-rune covering face (mixed-script) — logical set
 	// No emoji face AND every rune covered by primary → nothing this raster can add;
 	// degrade to the single-font path (the caller tofus the emoji until the face lands),
 	// exactly as before. A mixed-script run (textFonts differ) still builds.
 	if emoji == nil && allSameFont(textFonts, primary) {
 		return nil
 	}
+	// Swap the per-rune faces + the emoji face to their device siblings. The
+	// emoji device size follows the primary's per-element pct (the emoji face was
+	// opened at EmojiFont(pct) alongside primary), resolved from primary's set.
+	devFonts := textFonts
+	devEmoji := emoji
+	if dev != DefaultScalePct && dev != 0 {
+		devFonts = make([]*ttf.Font, len(textFonts))
+		for i, f := range textFonts {
+			devFonts[i] = c.deviceFontForAnyPct(f)
+		}
+		if emoji != nil {
+			pct := DefaultScalePct
+			if log, _, idx := c.setIndexOf(primary); log != nil && idx >= 0 {
+				pct = log.pct
+			}
+			devEmoji = c.emojiDeviceFont(pct)
+		}
+	}
 	spans := []render.ColorSpan{{Len: len(runes), Color: col}}
-	m, err := render.RasterizeFallback(c.Ren, textFonts, emoji, text, spans, emojiNoWrap)
+	m, err := render.RasterizeFallback(c.Ren, devFonts, devEmoji, text, spans, emojiNoWrap, dev)
 	if err != nil || m == nil {
 		return nil
 	}

@@ -516,8 +516,33 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		warmLastGain: now,
 	}
 	a.gifExporting = true
+	a.beginExportScaleBracket() // #77: exports render at native (100%) scale, not the live UI scale
 	a.warnLine = "Loading scene assets…"
 	a.warnAt = now
+}
+
+// beginExportScaleBracket pins the text device scale (#77) to 100 for the export
+// session and remembers the live value; endExportScaleBracket restores it. Set
+// ONCE per session (not per frame): the modal export doesn't redraw the live
+// chrome underneath, and no scale-change event fires while it runs, so a single
+// bracket holds. Idempotent (a second begin keeps the first saved value).
+func (a *App) beginExportScaleBracket() {
+	if a.exportSavedDevScale != 0 {
+		return // already bracketed
+	}
+	a.exportSavedDevScale = int(a.ctx.textDevPct)
+	a.ctx.SetTextDevScale(DefaultScalePct)
+}
+
+// endExportScaleBracket restores the live text device scale saved by
+// beginExportScaleBracket. No-op when not bracketed, so finishers can call it
+// unconditionally.
+func (a *App) endExportScaleBracket() {
+	if a.exportSavedDevScale == 0 {
+		return
+	}
+	a.ctx.SetTextDevScale(a.exportSavedDevScale)
+	a.exportSavedDevScale = 0
 }
 
 // tickGifExport captures a bounded batch of frames (render thread). Feeds the
@@ -773,6 +798,7 @@ func (a *App) finishGifExport() {
 	j := a.gif
 	a.gif = nil
 	a.gifExporting = false
+	a.endExportScaleBracket() // #77: restore the live UI scale for the message raster
 	if j == nil {
 		return
 	}

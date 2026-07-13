@@ -185,10 +185,15 @@ type textKey struct {
 type cachedText struct {
 	tex  *sdl.Texture
 	src  sdl.Rect // sub-rect inside tex (the atlas page or a dedicated texture)
-	w, h int32
+	w, h int32    // DEVICE px of the rasterized texture
 	// owned marks a dedicated (non-atlas) texture the purge must destroy
 	// individually — labels too big for a shelf.
 	owned bool
+	// devPct (#77) is the device font scale the texture was rasterized at (100 =
+	// 1:1). blitLabel divides w/h back to logical by this, so a label rasterized
+	// at a device face draws at its logical size (the renderer's SetScale then
+	// maps it 1:1 onto device pixels — crisp). Stamped in textTexture.
+	devPct int32
 }
 
 // Label atlas (§perf texture atlas): labels pack into shared pages so a
@@ -250,6 +255,15 @@ type Ctx struct {
 
 	font    *ttf.Font
 	fontBig *ttf.Font
+	// Device-scaled chrome faces (#77 crisp scaling): font/fontBig opened at
+	// UIFontSize×(textDevPct/100) so their glyph textures rasterize at final
+	// DEVICE size and blit 1:1 (no ren.SetScale bilinear blur). c.font stays the
+	// LOGICAL layout reference (every c.font.Height()/SizeUTF8 site keeps reading
+	// it); ONLY textTexture rasterizes with the device face and blitLabel divides
+	// the device dst back to logical (uiLogicalFromDevice). At textDevPct==100 these
+	// SHARE font/fontBig (no duplicate raster). Rebuilt only on a real scale
+	// change (SetTextDevScale), never per frame.
+	fontDev, fontBigDev *ttf.Font
 
 	// User-scaled font sets (chat box, log/OOC lists): the user's
 	// override chain (CJK fallback) plus the embedded last resort,
@@ -257,6 +271,18 @@ type Ctx struct {
 	// actions, never per frame.
 	chatSet fontSet
 	logSet  fontSet
+	// Device-scaled siblings of chatSet/logSet (#77): built at pct×(textDevPct/100)
+	// so the message-raster/emoji paths rasterize crisp at final device size.
+	// The LOGICAL sets above stay the wrap/measure baseline (unchanged callers);
+	// deviceFontFor maps a logical set face to its device sibling by set+index.
+	chatSetDev fontSet
+	logSetDev  fontSet
+	// textDevPct is the DEVICE font scale for text rasterization (#77): device px
+	// = logical px × textDevPct/100. Normally == the global UI scale (uiPct); the
+	// export/offscreen paths BRACKET it to DefaultScalePct (100) so the live UI
+	// scale can't leak into export resolution. SetTextDevScale mutates it (no-op
+	// when unchanged — the per-frame-safe entry). DefaultScalePct until set.
+	textDevPct int32
 	// fontChain holds the override TTF/TTC bytes in chain order
 	// (≤ fontChainCap). Bytes are read OFF-thread (App pipeline); fonts
 	// build here from memory. The slices must outlive their fonts —
@@ -467,9 +493,14 @@ func NewCtx(ren *sdl.Renderer) (*Ctx, error) {
 		return nil, err
 	}
 	return &Ctx{
-		Ren:        ren,
-		font:       font,
-		fontBig:    fontBig,
+		Ren:     ren,
+		font:    font,
+		fontBig: fontBig,
+		// #77: at 100% the device faces SHARE the logical ones (no duplicate
+		// raster). SetTextDevScale rebuilds them when the UI scale changes.
+		fontDev:    font,
+		fontBigDev: fontBig,
+		textDevPct: DefaultScalePct,
 		textCache:  map[textKey]cachedText{},
 		widthCache: map[string]int32{},
 	}, nil
@@ -571,6 +602,10 @@ type fontSet struct {
 	cover []*sfnt.Font
 	pct   int
 	gen   int
+	// devPct (#77) is the DEVICE scale a device set was built at (the logical
+	// sets leave it 0). fontsForDev keys on it so a UI-scale change rebuilds the
+	// device set even though the caller's pct arg is unchanged.
+	devPct int
 }
 
 // fontChainCap bounds the override chain (a primary plus a few CJK
@@ -720,6 +755,73 @@ func (c *Ctx) coverRunes(primary *ttf.Font, runes []rune) []*ttf.Font {
 	return out
 }
 
+// setIndexOf resolves a picked LOGICAL face to its set, that set's DEVICE sibling
+// set, and its index within the set — so the #77 raster path can swap a logical
+// face for the device-scaled one at the same chain position. (nil, nil, -1) when
+// the face isn't in a scaled set (chrome-only / headless).
+func (c *Ctx) setIndexOf(primary *ttf.Font) (logical, device *fontSet, idx int) {
+	pairs := []struct{ log, dev *fontSet }{
+		{&c.chatSet, &c.chatSetDev},
+		{&c.logSet, &c.logSetDev},
+	}
+	for _, p := range pairs {
+		for i, f := range p.log.fonts {
+			if f == primary {
+				return p.log, p.dev, i
+			}
+		}
+	}
+	return nil, nil, -1
+}
+
+// deviceFontFor returns the DEVICE-scaled sibling (#77) of a picked LOGICAL face
+// so the message-raster/emoji paths rasterize crisp at final device size. pct is
+// the per-element scale the logical face was picked at; the device set is built
+// at the same pct (folding textDevPct on top). At textDevPct==100 the device set
+// mirrors the logical one, so this returns the same face. Falls back to primary
+// when the set can't be resolved (headless / chrome-only). Render thread.
+func (c *Ctx) deviceFontFor(primary *ttf.Font, pct int) *ttf.Font {
+	if c.textDevPct == DefaultScalePct || c.textDevPct == 0 {
+		return primary // 1:1 — device set mirrors logical
+	}
+	log, dev, idx := c.setIndexOf(primary)
+	if log == nil || idx < 0 {
+		return primary
+	}
+	df := c.fontsForDev(dev, log.pct) // build the sibling at the SAME per-element pct
+	if idx < len(df) {
+		return df[idx]
+	}
+	return primary
+}
+
+// deviceCoverRunes is coverRunes over the DEVICE set (#77): each rune's covering
+// face resolved from the device-scaled sibling set, so a mixed-script fallback
+// raster is crisp too. Built once per raster (cache miss), never per frame.
+func (c *Ctx) deviceCoverRunes(logicalPrimary *ttf.Font, pct int, runes []rune) []*ttf.Font {
+	out := make([]*ttf.Font, len(runes))
+	log, dev, _ := c.setIndexOf(logicalPrimary)
+	if log == nil || c.textDevPct == DefaultScalePct || c.textDevPct == 0 {
+		// 1:1 or unresolved: device faces == logical faces.
+		return c.coverRunes(logicalPrimary, runes)
+	}
+	df := c.fontsForDev(dev, log.pct)
+	devPrimary := logicalPrimary
+	if _, _, idx := c.setIndexOf(logicalPrimary); idx >= 0 && idx < len(df) {
+		devPrimary = df[idx]
+	}
+	for i, r := range runes {
+		out[i] = devPrimary
+		for j, cov := range log.cover { // cover is size-independent → shared with the device set
+			if j < len(df) && coverHasRune(cov, &c.sfntBuf, r) {
+				out[i] = df[j]
+				break
+			}
+		}
+	}
+	return out
+}
+
 // allSameFont reports whether every entry is f — i.e. the per-rune assignment found no
 // script fallback and the line is single-face after all.
 func allSameFont(fonts []*ttf.Font, f *ttf.Font) bool {
@@ -787,7 +889,8 @@ func (c *Ctx) SetChromeFont(data []byte) bool {
 	// Drop the chat/log sets BEFORE swapping: they may share c.font (the
 	// pct==100 fast path in fontsFor), and the close-guards everywhere compare
 	// against the CURRENT c.font — swap first and the shared face would be
-	// closed twice.
+	// closed twice. The DEVICE sets (#77) share c.fontDev on the same rule, so
+	// drop them here too (their close-guard is c.fontDev, about to change).
 	for _, s := range []*fontSet{&c.chatSet, &c.logSet} {
 		for _, f := range s.fonts {
 			if f != c.font && f != nil {
@@ -796,6 +899,23 @@ func (c *Ctx) SetChromeFont(data []byte) bool {
 		}
 		s.fonts, s.cover = nil, nil
 	}
+	for _, s := range []*fontSet{&c.chatSetDev, &c.logSetDev} {
+		for _, f := range s.fonts {
+			if f != c.fontDev && f != nil {
+				f.Close()
+			}
+		}
+		s.fonts, s.cover = nil, nil
+	}
+	// Drop the device chrome faces too (they share or derive from the old chrome
+	// pair); rebuildDeviceChrome below rebuilds them against the new c.font.
+	if c.fontDev != nil && c.fontDev != c.font {
+		c.fontDev.Close()
+	}
+	if c.fontBigDev != nil && c.fontBigDev != c.fontBig {
+		c.fontBigDev.Close()
+	}
+	c.fontDev, c.fontBigDev = nil, nil
 	old, oldBig := c.font, c.fontBig
 	c.font, c.fontBig = nf, nfBig
 	c.chromeData = data
@@ -805,6 +925,9 @@ func (c *Ctx) SetChromeFont(data []byte) bool {
 	if oldBig != nil {
 		oldBig.Close()
 	}
+	// Rebuild the device chrome pair against the new chrome bytes at the current
+	// text device scale (#77): at 100% this just re-shares the new logical faces.
+	c.rebuildDeviceChrome()
 	// Every cached label texture, memoized width and line pick carries the old
 	// faces' identity (pointer keys) — purge wholesale. A chrome swap is a
 	// settings action, never per frame.
@@ -814,26 +937,55 @@ func (c *Ctx) SetChromeFont(data []byte) bool {
 	return true
 }
 
-// fontsFor returns the set's fonts, rebuilding when the scale or the
-// chain moved (settings actions — never per frame).
+// fontsFor returns the LOGICAL set's fonts (the wrap/measure baseline), rebuilding
+// when the scale or the chain moved (settings actions — never per frame).
 func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
-	if len(s.fonts) > 0 && s.pct == pct && s.gen == c.fontChainGen {
+	return c.buildSet(s, pct, DefaultScalePct, c.font, false)
+}
+
+// fontsForDev returns the DEVICE-scaled sibling set (#77): the same chain opened
+// at pct×(textDevPct/100) so the message-raster/emoji paths rasterize crisp. It
+// keys on textDevPct via s.devPct so a UI-scale change rebuilds it even though
+// pct is unchanged. Shares the device chrome face as the embedded last resort.
+func (c *Ctx) fontsForDev(s *fontSet, pct int) []*ttf.Font {
+	return c.buildSet(s, pct, int(c.textDevPct), c.fontDev, true)
+}
+
+// buildSet is the shared body: opens the chain at size = UIFontSize×pct×devPct/100²,
+// sharing chromeShare (c.font at 1:1, c.fontDev for a device set) as the embedded
+// last resort at 1:1. The close-guard and the last-resort share both key off
+// chromeShare so a device set never double-closes/leaks the device chrome face.
+// isDevice=true builds a device sibling set, whose faces the label/pick caches
+// DON'T reference (those key on the LOGICAL font) — so a device rebuild must NOT
+// purge them (doing so mid-frame could nil the pickMemo a logical pick just
+// populated, one-frame-mis-routing a mixed-script message).
+func (c *Ctx) buildSet(s *fontSet, pct, devPct int, chromeShare *ttf.Font, isDevice bool) []*ttf.Font {
+	if devPct <= 0 {
+		devPct = DefaultScalePct
+	}
+	if len(s.fonts) > 0 && s.pct == pct && s.devPct == devPct && s.gen == c.fontChainGen {
 		return s.fonts
 	}
 	for _, f := range s.fonts {
-		if f != c.font {
+		if f != chromeShare {
 			f.Close()
 		}
 	}
-	// Stale-font cache entries would never be hit again (keys carry the
-	// font pointer); purge wholesale — rebuilds are user actions. The
-	// pick memo holds those same dead pointers, so it resets too.
-	c.purgeTextCache()
-	c.pickMemo = nil
+	if !isDevice {
+		// Stale-font cache entries would never be hit again (keys carry the
+		// font pointer); purge wholesale — rebuilds are user actions. The
+		// pick memo holds those same dead pointers, so it resets too. A DEVICE
+		// rebuild skips this: those caches key on the logical face, unaffected.
+		c.purgeTextCache()
+		c.pickMemo = nil
+	}
 	s.fonts = s.fonts[:0]
 	s.cover = s.cover[:0]
-	s.pct, s.gen = pct, c.fontChainGen
-	size := UIFontSize * pct / DefaultScalePct
+	s.pct, s.devPct, s.gen = pct, devPct, c.fontChainGen
+	// Fold the device scale into the point size (#77): the per-element pct AND the
+	// global device scale both multiply UIFontSize, so a device set rasterizes at
+	// the final device pixel size. devPct==100 reproduces the logical size exactly.
+	size := UIFontSize * pct * devPct / (DefaultScalePct * DefaultScalePct)
 	if size < 1 {
 		size = 1
 	}
@@ -845,17 +997,18 @@ func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
 			s.cover = append(s.cover, coverAt(c.chainCover, i))
 		}
 	}
-	// Embedded last resort; share the chrome font at 1:1 (no duplicate
+	// Embedded last resort; share the chrome face at 1:1 (no duplicate
 	// rasters for the common case) — but ONLY while the chrome IS the
 	// embedded face: a custom chrome font ("font everywhere") must not stand
 	// in for the true last resort, since its coverage isn't goregular's and
-	// the cover entry appended below is the embedded cmap.
-	if c.font == nil || (pct == DefaultScalePct && c.chromeData == nil) {
-		s.fonts = append(s.fonts, c.font)
+	// the cover entry appended below is the embedded cmap. "At 1:1" means the
+	// requested size equals the chrome face's size: pct==100 AND devPct==100.
+	if chromeShare == nil || (pct == DefaultScalePct && devPct == DefaultScalePct && c.chromeData == nil) {
+		s.fonts = append(s.fonts, chromeShare)
 	} else if f, err := loadEmbeddedFont(size); err == nil {
 		s.fonts = append(s.fonts, f)
 	} else {
-		s.fonts = append(s.fonts, c.font)
+		s.fonts = append(s.fonts, chromeShare)
 	}
 	if c.embeddedCover == nil {
 		c.embeddedCover = parseCover(goregular.TTF) // goregular's cmap; parsed once
@@ -960,6 +1113,36 @@ func (c *Ctx) EmojiFont(pct int) *ttf.Font {
 	f, err := memFont(c.emojiData, size)
 	if err != nil {
 		c.emojiFonts[size] = nil // remember the failure; don't retry per message
+		return nil
+	}
+	c.emojiFonts[size] = f
+	return f
+}
+
+// emojiDeviceFont is EmojiFont at the DEVICE scale (#77): the emoji face folded
+// with textDevPct so a fallback raster's emoji glyphs are crisp too. Shares the
+// per-size emojiFonts map (device sizes coexist with logical ones). At 100% it
+// is EmojiFont(pct) exactly. Render thread.
+func (c *Ctx) emojiDeviceFont(pct int) *ttf.Font {
+	if c.textDevPct == DefaultScalePct || c.textDevPct == 0 {
+		return c.EmojiFont(pct)
+	}
+	if c.emojiData == nil {
+		return nil
+	}
+	size := UIFontSize * pct * int(c.textDevPct) / (DefaultScalePct * DefaultScalePct)
+	if size < 1 {
+		size = 1
+	}
+	if f, ok := c.emojiFonts[size]; ok {
+		return f
+	}
+	if c.emojiFonts == nil {
+		c.emojiFonts = make(map[int]*ttf.Font, 4)
+	}
+	f, err := memFont(c.emojiData, size)
+	if err != nil {
+		c.emojiFonts[size] = nil
 		return nil
 	}
 	c.emojiFonts[size] = f
@@ -1280,15 +1463,78 @@ func flattenClipboard(s string) string {
 }
 
 // SetUIScale stores the global render scale percent for mouse
-// unprojection (main sets the matching renderer scale each frame).
+// unprojection (main sets the matching renderer scale each frame). It also
+// drives the #77 text DEVICE scale so chrome/log/chat glyphs rasterize at the
+// final device size (crisp) instead of being bilinearly stretched by SetScale.
 func (c *Ctx) SetUIScale(pct int) {
 	if pct <= 0 {
 		pct = DefaultScalePct
 	}
 	c.uiPct = int32(pct)
+	c.SetTextDevScale(pct) // fold the global scale into font point size (#77 Part A)
 }
 
-// toLogical converts window pixels to logical (pre-scale) coordinates.
+// SetTextDevScale sets the DEVICE font scale (#77) used to rasterize text, and
+// rebuilds the device chrome faces + bumps the set generation so device sets
+// rebuild lazily. NO-OP when unchanged: this is the per-frame-safe entry (the
+// export/split brackets call it every frame; only a real user scale change pays
+// the rebuild/purge). Render thread.
+func (c *Ctx) SetTextDevScale(pct int) {
+	if pct <= 0 {
+		pct = DefaultScalePct
+	}
+	if int32(pct) == c.textDevPct {
+		return
+	}
+	c.textDevPct = int32(pct)
+	c.rebuildDeviceChrome()
+	// The device SETS key on textDevPct via fontSet.devPct, so a change makes
+	// fontsForDev rebuild them; the label/emoji caches carry device-face pointers
+	// that just changed identity — purge them (a scale change is a user action).
+	c.purgeTextCache()
+	clear(c.widthCache)
+}
+
+// rebuildDeviceChrome (re)opens the device-scaled chrome pair at
+// UIFontSize×(textDevPct/100). At 100% (or when a face can't open) it SHARES the
+// logical faces — no duplicate raster for the common case. Closes any prior
+// non-shared device faces first. Render thread; called only on a scale change.
+func (c *Ctx) rebuildDeviceChrome() {
+	// Close previously-built (non-shared) device faces.
+	if c.fontDev != nil && c.fontDev != c.font {
+		c.fontDev.Close()
+	}
+	if c.fontBigDev != nil && c.fontBigDev != c.fontBig {
+		c.fontBigDev.Close()
+	}
+	c.fontDev, c.fontBigDev = c.font, c.fontBig
+	if c.textDevPct == DefaultScalePct || c.textDevPct == 0 {
+		return // 1:1 — share the logical faces
+	}
+	size := UIFontSize * int(c.textDevPct) / DefaultScalePct
+	bigSize := UIFontSizeBig * int(c.textDevPct) / DefaultScalePct
+	// Build from the same source the logical chrome faces used: the custom
+	// "font everywhere" bytes if set, else the embedded face.
+	if c.chromeData != nil {
+		if f, err := memFont(c.chromeData, size); err == nil {
+			c.fontDev = f
+		}
+		if f, err := memFont(c.chromeData, bigSize); err == nil {
+			c.fontBigDev = f
+		}
+		return
+	}
+	if f, err := loadEmbeddedFont(size); err == nil {
+		c.fontDev = f
+	}
+	if f, err := loadEmbeddedFont(bigSize); err == nil {
+		c.fontBigDev = f
+	}
+}
+
+// toLogical converts window pixels to logical (pre-scale) coordinates. Unchanged
+// by #77 Part A: ren.SetScale stays active, so mouse unprojection still divides
+// by the same global scale.
 func (c *Ctx) toLogical(v int32) int32 {
 	if c.uiPct == 0 || c.uiPct == DefaultScalePct {
 		return v
@@ -1445,11 +1691,16 @@ func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedTex
 	if text == "" || font == nil {
 		return cachedText{}, false
 	}
+	// Cache by the LOGICAL font (what callers pass) but RASTERIZE with its device
+	// sibling (#77): the texture is device-sized, and cachedText.devPct records
+	// the scale so blitLabel divides it back to logical. A textDevPct change
+	// purges this whole cache (SetTextDevScale), so a stale-size entry can't leak.
 	key := textKey{text: text, color: col, font: font}
 	if t, ok := c.textCache[key]; ok {
 		return t, true
 	}
-	surf, err := font.RenderUTF8Blended(text, col)
+	dev := c.deviceTextFont(font) // chrome/set logical face → device-scaled face
+	surf, err := dev.RenderUTF8Blended(text, col)
 	if err != nil {
 		return cachedText{}, false
 	}
@@ -1459,7 +1710,7 @@ func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedTex
 	}
 
 	if tex, slot, ok := c.atlasPlace(surf); ok {
-		entry := cachedText{tex: tex, src: slot, w: surf.W, h: surf.H}
+		entry := cachedText{tex: tex, src: slot, w: surf.W, h: surf.H, devPct: c.textDevPct}
 		c.textCache[key] = entry
 		return entry, true
 	}
@@ -1469,9 +1720,42 @@ func (c *Ctx) textTexture(text string, col sdl.Color, font *ttf.Font) (cachedTex
 	if err != nil {
 		return cachedText{}, false
 	}
-	entry := cachedText{tex: tex, src: sdl.Rect{W: surf.W, H: surf.H}, w: surf.W, h: surf.H, owned: true}
+	entry := cachedText{tex: tex, src: sdl.Rect{W: surf.W, H: surf.H}, w: surf.W, h: surf.H, owned: true, devPct: c.textDevPct}
 	c.textCache[key] = entry
 	return entry, true
+}
+
+// deviceTextFont maps a LOGICAL rasterization face to its DEVICE-scaled sibling
+// (#77). Chrome (c.font/c.fontBig) map to c.fontDev/c.fontBigDev; a scaled-set
+// face routes through deviceFontFor. At textDevPct==100 every mapping is the
+// identity (the device faces SHARE the logical ones). Render thread.
+func (c *Ctx) deviceTextFont(font *ttf.Font) *ttf.Font {
+	if c.textDevPct == DefaultScalePct || c.textDevPct == 0 {
+		return font
+	}
+	switch font {
+	case c.font:
+		return c.fontDev
+	case c.fontBig:
+		return c.fontBigDev
+	}
+	// A picked chat/log set face: find its device sibling at the same per-element
+	// pct. deviceFontFor returns font unchanged when the set can't be resolved.
+	return c.deviceFontForAnyPct(font)
+}
+
+// deviceFontForAnyPct resolves a set face's device sibling without the caller
+// knowing its per-element pct (the face carries its set, whose .pct is authoritative).
+func (c *Ctx) deviceFontForAnyPct(font *ttf.Font) *ttf.Font {
+	log, dev, idx := c.setIndexOf(font)
+	if log == nil || idx < 0 {
+		return font
+	}
+	df := c.fontsForDev(dev, log.pct)
+	if idx < len(df) {
+		return df[idx]
+	}
+	return font
 }
 
 // atlasPlace uploads a label surface into a shared page, opening pages up
@@ -1531,22 +1815,50 @@ func (c *Ctx) purgeTextCache() {
 	c.purgeEmojiCache() // emoji rasters carry the same now-dead primary-font pointers
 }
 
-// blitLabel copies a cached label (atlas sub-rect aware) through the
-// scratch rects — zero heap escapes on the per-frame draw path.
-func (c *Ctx) blitLabel(t cachedText, x, y, w int32) {
-	c.drawSrc = sdl.Rect{X: t.src.X, Y: t.src.Y, W: w, H: t.h}
-	c.drawDst = sdl.Rect{X: x, Y: y, W: w, H: t.h}
+// logicalW is the label's LOGICAL width (#77): the device texture width divided
+// back down by the scale it was rasterized at. Callers lay out / clamp in this.
+func (t cachedText) logicalW() int32 { return uiLogicalFromDevice(t.w, t.devPct) }
+
+// uiLogicalFromDevice is the ui-package twin of render.logicalFromDevice — it
+// MUST use the identical "round half up" rule (add half the divisor before
+// dividing) so a kit label and a message raster of the same string agree to the
+// pixel (the roadmap's flagged off-by-one at odd scales). Pinned equal by
+// TestUILogicalFromDeviceMatchesRender.
+func uiLogicalFromDevice(device, devPct int32) int32 {
+	if devPct <= 0 || devPct == DefaultScalePct {
+		return device
+	}
+	return (device*DefaultScalePct + devPct/2) / devPct
+}
+
+// blitLabel copies a cached label (atlas sub-rect aware) through the scratch
+// rects — zero heap escapes on the per-frame draw path. wLog is the LOGICAL
+// destination width (a full label passes t.logicalW(); a clipped one a smaller
+// logical maxW). #77: the SRC sub-rect stays in DEVICE px (the texture is
+// device-sized), the DST in LOGICAL px (the renderer's SetScale maps it 1:1 onto
+// device pixels — crisp). devPct==100 reproduces the pre-#77 1:1 blit.
+func (c *Ctx) blitLabel(t cachedText, x, y, wLog int32) {
+	srcW := wLog
+	if t.devPct > 0 && t.devPct != DefaultScalePct {
+		srcW = wLog * t.devPct / DefaultScalePct // logical width → device sample width
+	}
+	if srcW > t.w {
+		srcW = t.w
+	}
+	c.drawSrc = sdl.Rect{X: t.src.X, Y: t.src.Y, W: srcW, H: t.h}
+	c.drawDst = sdl.Rect{X: x, Y: y, W: wLog, H: uiLogicalFromDevice(t.h, t.devPct)}
 	_ = c.Ren.Copy(t.tex, &c.drawSrc, &c.drawDst)
 }
 
-// Label draws text at (x, y) and returns its pixel width.
+// Label draws text at (x, y) and returns its LOGICAL pixel width.
 func (c *Ctx) Label(x, y int32, text string, col sdl.Color) int32 {
 	t, ok := c.textTexture(text, col, c.font)
 	if !ok {
 		return 0
 	}
-	c.blitLabel(t, x, y, t.w)
-	return t.w
+	lw := t.logicalW()
+	c.blitLabel(t, x, y, lw)
+	return lw
 }
 
 // Heading draws large text.
@@ -1555,7 +1867,7 @@ func (c *Ctx) Heading(x, y int32, text string, col sdl.Color) {
 	if !ok {
 		return
 	}
-	c.blitLabel(t, x, y, t.w)
+	c.blitLabel(t, x, y, t.logicalW())
 }
 
 // LabelClipped draws text clipped to maxW.
@@ -1565,13 +1877,13 @@ func (c *Ctx) LabelClipped(x, y, maxW int32, text string, col sdl.Color) {
 
 // LabelClippedFont is LabelClipped with an explicit font (scaled log/OOC
 // text). Cached like every label; the cache keys by font identity. The
-// clip composes with the label's atlas sub-rect.
+// clip composes with the label's atlas sub-rect. maxW is LOGICAL px.
 func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, col sdl.Color) {
 	t, ok := c.textTexture(text, col, font)
 	if !ok {
 		return
 	}
-	w := t.w
+	w := t.logicalW()
 	if w > maxW {
 		w = maxW
 	}
@@ -1581,6 +1893,11 @@ func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, co
 // TextWidth measures a label in the chrome font, memoized — screens call
 // it per frame for fixed labels and each miss is a CGO TTF measure. The
 // memo shares the text cache's lifecycle (purged together, same bound).
+//
+// #77: measures the LOGICAL chrome face (c.font), NOT the device sibling — so
+// the width is already in logical layout units (no ÷scale rounding needed here;
+// the rounding rule lives only in the blit dst). The device face has the same
+// glyph advances scaled by textDevPct, so measuring the logical face is exact.
 func (c *Ctx) TextWidth(text string) int32 {
 	if c.font == nil {
 		return 0 // headless tests; real Ctx always has the chrome font
@@ -1619,12 +1936,13 @@ func (c *Ctx) ButtonCol(r sdl.Rect, label string, bg, hoverBg, border, text sdl.
 	c.Border(r, border)
 	if t, ok := c.textTexture(label, text, c.font); ok {
 		// Clip to the button: tiny themed rects must never leak their
-		// label over the neighbors (Qt elided these).
-		w, x := t.w, r.X+(r.W-t.w)/2
+		// label over the neighbors (Qt elided these). All #77-LOGICAL px.
+		lw, lh := t.logicalW(), uiLogicalFromDevice(t.h, t.devPct)
+		w, x := lw, r.X+(r.W-lw)/2
 		if maxW := r.W - 8; w > maxW && maxW > 0 {
 			w, x = maxW, r.X+4
 		}
-		c.blitLabel(t, x, r.Y+(r.H-t.h)/2, w)
+		c.blitLabel(t, x, r.Y+(r.H-lh)/2, w)
 	}
 	return hover && c.clicked
 }
@@ -2269,11 +2587,11 @@ func (c *Ctx) dropdownEx(id string, r sdl.Rect, options []string, cur int, rowHW
 		labelX = r.X + 2 + tw + 4
 	}
 	if t, ok := c.textTexture(options[cur], ColText, c.font); ok {
-		w := t.w
+		w := t.logicalW() // #77-LOGICAL px
 		if maxW := r.X + r.W - 16 - labelX; w > maxW && maxW > 0 {
 			w = maxW
 		}
-		c.blitLabel(t, labelX, r.Y+(r.H-t.h)/2, w)
+		c.blitLabel(t, labelX, r.Y+(r.H-uiLogicalFromDevice(t.h, t.devPct))/2, w)
 	}
 	c.Label(r.X+r.W-14, r.Y+(r.H-int32(c.font.Height()))/2, "▾", ColTextDim)
 
@@ -2511,11 +2829,11 @@ func (c *Ctx) FinishFrame() {
 				labelX = row.X + d.thumbW + 8
 			}
 			if t, ok := c.textTexture(opt, ColText, c.font); ok {
-				w := t.w
+				w := t.logicalW() // #77-LOGICAL px
 				if maxW := row.X + row.W - labelX - 6; w > maxW && maxW > 0 {
 					w = maxW
 				}
-				c.blitLabel(t, labelX, row.Y+(d.rowH-t.h)/2, w)
+				c.blitLabel(t, labelX, row.Y+(d.rowH-uiLogicalFromDevice(t.h, t.devPct))/2, w)
 			}
 		}
 	}
@@ -2734,6 +3052,23 @@ func (c *Ctx) Destroy() {
 			}
 		}
 		s.fonts = nil
+	}
+	// Device-scaled sets (#77): their non-shared faces share c.fontDev.
+	for _, s := range []*fontSet{&c.chatSetDev, &c.logSetDev} {
+		for _, f := range s.fonts {
+			if f != c.fontDev && f != nil {
+				f.Close()
+			}
+		}
+		s.fonts = nil
+	}
+	// Device chrome faces: close only when NOT sharing the logical faces (the
+	// 100% case shares them, so the logical closes below cover it).
+	if c.fontDev != nil && c.fontDev != c.font {
+		c.fontDev.Close()
+	}
+	if c.fontBigDev != nil && c.fontBigDev != c.fontBig {
+		c.fontBigDev.Close()
 	}
 	if c.font != nil {
 		c.font.Close()

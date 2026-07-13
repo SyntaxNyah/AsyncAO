@@ -24,6 +24,35 @@ var textColors = []sdl.Color{
 // the IC color cycler wraps at this (MS text_color wire values 0..N-1).
 var TextColorCount = len(textColors)
 
+// DefaultDevScale is the "no device upscaling" font scale (100 = 1:1). A
+// MessageRaster built at this scale draws its device-px textures 1:1 into
+// logical space — the pre-#77 behavior, and what every export/offscreen path
+// pins to so the live UI scale can't leak into export resolution.
+const DefaultDevScale int32 = 100
+
+// logicalFromDevice converts a device-pixel measurement back to LOGICAL pixels
+// for the #77 crisp-scaling model: fonts are opened at pt×(devScale/100) so
+// glyphs rasterize at final device size, and this divides the resulting device
+// metric down to the logical rect the kit lays out in (the renderer's own
+// SetScale then multiplies it back up 1:1 onto device pixels — no blur).
+//
+// ROUNDING RULE — "round half up" (add half the divisor before dividing). This
+// is the roadmap's flagged off-by-one failure mode at odd/non-integer scales;
+// it MUST match ui.devToLogical exactly (see internal/ui/ui.go), or a label and
+// a message raster of the same string would disagree by a pixel. devScale<=0 or
+// ==100 is the identity fast path.
+func logicalFromDevice(device, devScale int32) int32 {
+	if devScale <= 0 || devScale == DefaultDevScale {
+		return device
+	}
+	return (device*DefaultDevScale + devScale/2) / devScale
+}
+
+// LogicalFromDevice exposes the #77 rounding rule so the ui package's
+// cross-package test can assert its own uiLogicalFromDevice agrees exactly. Not
+// used on any draw path — the internal logicalFromDevice is.
+func LogicalFromDevice(device, devScale int32) int32 { return logicalFromDevice(device, devScale) }
+
 // TextColor maps an AO color index to RGBA (out of range → white).
 func TextColor(index int) sdl.Color {
 	if index < 0 || index >= len(textColors) {
@@ -142,8 +171,15 @@ type MessageRaster struct {
 	// "~~" prefix). nil = left-aligned (the default / common case). Set once by
 	// Center after rasterizing — never on the per-frame Draw path.
 	centerOff []int32
-	srcGet    sdl.Rect // scratch
-	dstGet    sdl.Rect // scratch
+	// devScale is the device font scale (#77): the textures were rasterized at
+	// font pt×(devScale/100), so Draw divides every device-px dst dimension back
+	// to logical px (logicalFromDevice). 100 = 1:1 (the pre-#77 path / exports).
+	// The selection metrics also map through devScale — PrefixWidth / LineSpanX /
+	// Height / LineH return LOGICAL px, and RuneAt scales an incoming LOGICAL
+	// point up to device — so caret/highlight geometry stays aligned at any scale.
+	devScale int32
+	srcGet   sdl.Rect // scratch
+	dstGet   sdl.Rect // scratch
 }
 
 // Center aligns every wrapped line to the centre of alignW px — the webAO "~~"
@@ -151,6 +187,12 @@ type MessageRaster struct {
 // already at or past alignW stay flush left. Off the per-frame path, so the small
 // per-line slice is fine.
 func (m *MessageRaster) Center(alignW int32) {
+	// #77: line widths are DEVICE px (measured from the device glyphs), so the
+	// centering column must be device px too — scale the LOGICAL alignW up to
+	// match. Draw divides the resulting device offset back to logical.
+	if m.devScale > 0 && m.devScale != DefaultDevScale {
+		alignW = alignW * m.devScale / DefaultDevScale
+	}
 	off := func(lineW int32) int32 {
 		if d := (alignW - lineW) / 2; d > 0 {
 			return d
@@ -188,8 +230,16 @@ func (m *MessageRaster) lineOffset(i int) int32 {
 // normal text, faithful spacing for the rest, and — the point — every line
 // knows its source-rune range, so the chatbox selection can map pixels to
 // text (RuneAt / LineSpanX / LineRange).
-func Rasterize(ren *sdl.Renderer, font *ttf.Font, text string, wrapW int32, color sdl.Color) (*MessageRaster, error) {
-	m := &MessageRaster{text: text, lineH: int32(font.Height())}
+// wrapW is LOGICAL px and devScale (#77) the device font scale the caller
+// opened font at (100 = 1:1); the wrap column is measured against the DEVICE
+// glyphs, so wrapW scales up here, and Draw divides the device dst back to
+// logical. Callers pass render.DefaultDevScale (100) for the pre-#77 behavior.
+func Rasterize(ren *sdl.Renderer, font *ttf.Font, text string, wrapW int32, color sdl.Color, devScale int32) (*MessageRaster, error) {
+	if devScale <= 0 {
+		devScale = DefaultDevScale
+	}
+	wrapW = wrapW * devScale / DefaultDevScale // measure the wrap against the DEVICE glyphs
+	m := &MessageRaster{text: text, lineH: int32(font.Height()), devScale: devScale}
 	if strings.TrimSpace(text) == "" {
 		return m, nil
 	}
@@ -257,8 +307,12 @@ type spanStyle struct {
 // into same-color spans (one texture each), laid out left to right. Reveal
 // stays a rune-count walk with zero per-frame allocations. Render thread, once
 // per message.
-func RasterizeStyled(ren *sdl.Renderer, font *ttf.Font, text string, spans []ColorSpan, wrapW int32) (*MessageRaster, error) {
-	m := &MessageRaster{text: text, lineH: int32(font.Height()), styled: [][]rasterSpan{}}
+func RasterizeStyled(ren *sdl.Renderer, font *ttf.Font, text string, spans []ColorSpan, wrapW int32, devScale int32) (*MessageRaster, error) {
+	if devScale <= 0 {
+		devScale = DefaultDevScale
+	}
+	wrapW = wrapW * devScale / DefaultDevScale // measure the wrap against the DEVICE glyphs (see Rasterize)
+	m := &MessageRaster{text: text, lineH: int32(font.Height()), styled: [][]rasterSpan{}, devScale: devScale}
 	runes := []rune(text)
 	if len(runes) == 0 {
 		return m, nil
@@ -414,6 +468,7 @@ func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 	}
 	remaining := visibleRunes
 	lineY := y
+	logLineH := logicalFromDevice(m.lineH, m.devScale) // #77: step lines in LOGICAL px
 	for i := range m.lines {
 		line := &m.lines[i]
 		if remaining <= 0 {
@@ -424,13 +479,17 @@ func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 			show = remaining
 		}
 		if line.tex != nil && show > 0 {
+			// src stays in DEVICE px (the atlas/texture is device-sized); dst is the
+			// LOGICAL rect (÷devScale) — the renderer's SetScale multiplies it back up
+			// 1:1 onto device pixels, so the glyphs stay crisp (no bilinear stretch).
 			width := line.advances[show]
 			m.srcGet = sdl.Rect{X: 0, Y: 0, W: width, H: line.h}
-			m.dstGet = sdl.Rect{X: x + m.lineOffset(i), Y: lineY, W: width, H: line.h}
+			m.dstGet = sdl.Rect{X: x + logicalFromDevice(m.lineOffset(i), m.devScale), Y: lineY,
+				W: logicalFromDevice(width, m.devScale), H: logicalFromDevice(line.h, m.devScale)}
 			_ = ren.Copy(line.tex, &m.srcGet, &m.dstGet)
 		}
 		remaining -= line.runes
-		lineY += m.lineH
+		lineY += logLineH
 	}
 }
 
@@ -439,12 +498,13 @@ func (m *MessageRaster) Draw(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int32) {
 	remaining := visibleRunes
 	lineY := y
+	logLineH := logicalFromDevice(m.lineH, m.devScale) // #77: step lines in LOGICAL px
 	for li := range m.styled {
 		spans := m.styled[li]
 		if remaining <= 0 {
 			return
 		}
-		lineX := x + m.lineOffset(li)
+		lineX := x + logicalFromDevice(m.lineOffset(li), m.devScale)
 		for i := range spans {
 			sp := &spans[i]
 			if remaining <= 0 {
@@ -455,14 +515,18 @@ func (m *MessageRaster) drawStyled(ren *sdl.Renderer, visibleRunes int, x, y int
 				show = remaining
 			}
 			if sp.tex != nil && show > 0 {
+				// src device-px, dst the LOGICAL rect (÷devScale) — see Draw. xOffset/yOff
+				// are device-px layout offsets so they divide too (yOff baseline-aligns the
+				// emoji fallback; 0 for plain color spans).
 				width := sp.advances[show]
 				m.srcGet = sdl.Rect{X: 0, Y: 0, W: width, H: sp.h}
-				m.dstGet = sdl.Rect{X: lineX + sp.xOffset, Y: lineY + sp.yOff, W: width, H: sp.h} // yOff baseline-aligns the emoji fallback (0 for plain color spans)
+				m.dstGet = sdl.Rect{X: lineX + logicalFromDevice(sp.xOffset, m.devScale), Y: lineY + logicalFromDevice(sp.yOff, m.devScale),
+					W: logicalFromDevice(width, m.devScale), H: logicalFromDevice(sp.h, m.devScale)}
 				_ = ren.Copy(sp.tex, &m.srcGet, &m.dstGet)
 			}
 			remaining -= sp.runes
 		}
-		lineY += m.lineH
+		lineY += logLineH
 	}
 }
 
@@ -502,6 +566,11 @@ func (m *MessageRaster) TotalRunes() int {
 // non-Latin/emoji) builds the styled shape, and reading only `lines` returned
 // 0 for it, pinning the drawn caret to the field's left edge. Clamped.
 func (m *MessageRaster) PrefixWidth(n int) int32 {
+	return logicalFromDevice(m.prefixWidthDev(n), m.devScale) // #77: device advances → logical caret metric
+}
+
+// prefixWidthDev is PrefixWidth in DEVICE px (the raw stored advances).
+func (m *MessageRaster) prefixWidthDev(n int) int32 {
 	if n <= 0 {
 		return 0
 	}
@@ -543,15 +612,16 @@ func (m *MessageRaster) PrefixWidth(n int) int32 {
 	return line.advances[n]
 }
 
-// Height returns the rasterized message's full pixel height (all wrapped lines
-// stacked at lineH), so a caller can size a box to fit it. Zero for an empty
-// message.
+// Height returns the rasterized message's full LOGICAL pixel height (all wrapped
+// lines stacked at the logical line height), so a caller can size a box to fit
+// it. It MUST match Draw's per-line logical step (logicalFromDevice(lineH)) — a
+// box sized in device px would be devScale× too tall at >100%. Zero for empty.
 func (m *MessageRaster) Height() int32 {
 	n := len(m.lines)
 	if m.styled != nil {
 		n = len(m.styled)
 	}
-	return int32(n) * m.lineH
+	return int32(n) * logicalFromDevice(m.lineH, m.devScale)
 }
 
 // Text returns the rasterized source text.
@@ -563,8 +633,9 @@ func (m *MessageRaster) Text() string { return m.text }
 // drift from the pixels. Everything here is measurement over prebuilt slices:
 // zero allocations, safe in the per-frame highlight loop.
 
-// LineH is the wrapped-line pitch Draw advances by.
-func (m *MessageRaster) LineH() int32 { return m.lineH }
+// LineH is the wrapped-line pitch Draw advances by — LOGICAL px (#77), matching
+// Draw's per-line logical step so a selection highlight lines up with the glyphs.
+func (m *MessageRaster) LineH() int32 { return logicalFromDevice(m.lineH, m.devScale) }
 
 // LineRange returns display line i's [start,end) source-rune range. A wrap
 // point's dropped separator sits BETWEEN ranges, so a selection dragged
@@ -630,6 +701,10 @@ func (m *MessageRaster) RuneAt(relX, relY int32) int {
 	if n == 0 || m.lineH <= 0 {
 		return 0
 	}
+	// The caller works in LOGICAL px; linePrefixW / lineOffset / lineH are DEVICE
+	// px (#77), so scale the incoming point UP to device once, here, and the whole
+	// walk below stays in the raster's native units.
+	relX, relY = m.deviceFromLogical(relX), m.deviceFromLogical(relY)
 	li := int(relY / m.lineH)
 	if relY < 0 {
 		li = 0
@@ -654,6 +729,15 @@ func (m *MessageRaster) RuneAt(relX, relY int32) int {
 	return end
 }
 
+// deviceFromLogical scales a LOGICAL coordinate up to the raster's DEVICE space
+// (#77) — the inverse of logicalFromDevice, for mapping incoming mouse points.
+func (m *MessageRaster) deviceFromLogical(v int32) int32 {
+	if m.devScale <= 0 || m.devScale == DefaultDevScale {
+		return v
+	}
+	return v * m.devScale / DefaultDevScale
+}
+
 // LineSpanX returns the pixel x-range on display line i covered by the
 // source-rune selection [lo,hi), centering included; ok=false when the
 // selection doesn't touch this line's drawn runes.
@@ -672,7 +756,11 @@ func (m *MessageRaster) LineSpanX(i, lo, hi int) (int32, int32, bool) {
 		return 0, 0, false
 	}
 	off := m.lineOffset(i)
-	return off + m.linePrefixW(i, lo-start), off + m.linePrefixW(i, hi-start), true
+	// #77: offsets/advances are DEVICE px; the caller draws the highlight in
+	// LOGICAL space, so divide both edges down (matching Draw's dst division).
+	x0 := logicalFromDevice(off+m.linePrefixW(i, lo-start), m.devScale)
+	x1 := logicalFromDevice(off+m.linePrefixW(i, hi-start), m.devScale)
+	return x0, x1, true
 }
 
 // Destroy frees all line/span textures. Render thread only.

@@ -49,10 +49,27 @@ items move to `docs/FEATURES.md` as they ship.
   already per-monitor-v2 aware (`SDL_WINDOWS_DPI_AWARENESS` in main.go) and
   nearest/linear is already a Settings pref — the residual blur is OUR OWN
   `ren.SetScale` linearly stretching text that was rasterized at 96 dpi.
-  Deliberately not half-shipped at the tail of the batch; it's the next
-  dedicated milestone. Interim answer for players: 200% + Smooth scaling OFF
-  is pixel-exact (chunky but sharp); non-integer scales with smoothing stay
-  soft until this lands.
+  **PART A LANDED (the blur fix):** the global UI scale now folds into font
+  POINT size — chrome (`c.font`/`c.fontBig` → device siblings `fontDev`/
+  `fontBigDev`), the chat/log sets (device siblings `chatSetDev`/`logSetDev`,
+  built via `fontsForDev`), and the message raster (`render.Rasterize*` take a
+  `devScale`, store it on `MessageRaster`, and `Draw` divides the device dst back
+  to logical). `ren.SetScale` STAYS active (geometry + mouse unprojection
+  unchanged), so glyphs rasterize at final device size and blit 1:1 — crisp at
+  any scale. Measurement (`TextWidth`) stays LOGICAL; the round-half-up rule
+  lives in `render.logicalFromDevice` == `ui.uiLogicalFromDevice`. Exports and
+  the pinned-tab pass are handled (exports BRACKET `textDevPct` to 100 for native
+  resolution; the split pass inherits ambient and composes at 1:1). Sprites /
+  backgrounds / viewport art are untouched (they keep GPU linear scaling — they
+  are photographic, not vector text). **Known Part-A follow-ups (deferred, not
+  blocking):** the ANIMATED text path (`AnimatedText`/`GlyphCache`, `msAnim`)
+  stays on the logical face — an effects message is correctly-sized but still soft
+  at >100% (clean seam: `msAnim` XOR `msRaster`, one per message). **PART B still
+  pending:** DPI-seeding reliability so a HiDPI monitor's *default* physical size
+  is correct without the user raising the slider (re-query DPI on display/window
+  moves and/or seed the initial scale from OS DPI; keep the never-below-100
+  floor). Interim answer for players on pre-Part-A builds: 200% + Smooth OFF is
+  pixel-exact; non-integer scales stay soft until Part A ships.
 
 _Playtest backlog cleared (2026-06-21) — every Discord/playtest request shipped
 (see `docs/FEATURES.md`). New asks land here. The only milestone left is the

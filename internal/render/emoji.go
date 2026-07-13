@@ -120,9 +120,17 @@ func assignEmoji(runes []rune) []bool {
 // needsEmojiFallback so plain messages never reach here. emoji may be nil (face
 // not loaded / unavailable): every run then uses the primary font, degrading to
 // today's behaviour rather than failing.
-func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font, text string, spans []ColorSpan, wrapW int32) (*MessageRaster, error) {
+// devScale (#77) is the device font scale the caller opened the faces at (100 =
+// 1:1); wrapW is LOGICAL px and scales up to measure the wrap against the device
+// glyphs, and Draw divides the device dst back to logical. Pass
+// render.DefaultDevScale (100) for the pre-#77 behavior / exports.
+func RasterizeFallback(ren *sdl.Renderer, textFonts []*ttf.Font, emoji *ttf.Font, text string, spans []ColorSpan, wrapW int32, devScale int32) (*MessageRaster, error) {
+	if devScale <= 0 {
+		devScale = DefaultDevScale
+	}
+	wrapW = wrapW * devScale / DefaultDevScale // measure the wrap against the DEVICE glyphs (see text.Rasterize)
 	runes := []rune(text)
-	m := &MessageRaster{text: text, styled: [][]rasterSpan{}}
+	m := &MessageRaster{text: text, styled: [][]rasterSpan{}, devScale: devScale}
 	if len(runes) == 0 {
 		return m, nil
 	}

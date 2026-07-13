@@ -2128,7 +2128,8 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
 	effSig := effectsSig(sc.MessageEffects)
 	if (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
-		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered {
+		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered &&
+		a.rasterDevPct == a.ctx.textDevPct { // #77: a UI-scale change re-rasterizes at the new device size
 		return
 	}
 	if a.rasterRaw != sc.MessageRaw {
@@ -2168,6 +2169,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	a.rasterSkinned = skinned
 	a.rasterEffSig = effSig
 	a.rasterCentered = sc.Centered
+	a.rasterDevPct = a.ctx.textDevPct // #77
 }
 
 // chatZoomWheel: Ctrl+wheel over the chatbox zooms the chat text
@@ -6097,7 +6099,14 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 	// Per-message font pick at the given scale (pct): the override chain's first
 	// covering font (CJK fallback), the embedded font otherwise. The live chatbox
 	// passes a.chatPct; the export passes a size fitted to the capture frame.
-	font := a.ctx.ChatFontFor(pct, sc.MessageText)
+	logFont := a.ctx.ChatFontFor(pct, sc.MessageText)
+	// #77: rasterize with the DEVICE-scaled sibling at the ambient device scale so
+	// the LIVE chatbox is crisp at UI scale. Exports run with textDevPct BRACKETED
+	// to 100 for the whole session (see beginExportScaleBracket), so this ambient
+	// read is already 100 there — native offscreen resolution, the live UI scale
+	// can never leak into export pixels.
+	dev := a.ctx.textDevPct
+	font := a.ctx.deviceFontFor(logFont, pct)
 	// Per-glyph fallback raster when the message has emoji OR mixes scripts no single
 	// face covers (covers() reads the pick just made above — no rescan): each rune
 	// routes to the color-emoji face or its covering text face, baseline-aligned.
@@ -6114,17 +6123,17 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 		} else {
 			spans = []render.ColorSpan{{Len: len([]rune(sc.MessageText)), Color: col}}
 		}
-		textFonts := a.ctx.coverRunes(font, []rune(sc.MessageText))
-		m, err := render.RasterizeFallback(a.ctx.Ren, textFonts, a.ctx.EmojiFont(pct), sc.MessageText, spans, wrapW)
+		textFonts := a.ctx.deviceCoverRunes(logFont, pct, []rune(sc.MessageText))
+		m, err := render.RasterizeFallback(a.ctx.Ren, textFonts, a.ctx.emojiDeviceFont(pct), sc.MessageText, spans, wrapW, dev)
 		return centerRaster(m, err, sc, wrapW)
 	}
 	// Inline \cN colors → the multi-color span raster; plain messages keep the
 	// untouched single-color path (col is their whole-message color).
 	if sceneNeedsStyled(sc.MessageStyles) {
-		m, err := render.RasterizeStyled(a.ctx.Ren, font, sc.MessageText, buildColorSpans(sc.MessageStyles, col), wrapW)
+		m, err := render.RasterizeStyled(a.ctx.Ren, font, sc.MessageText, buildColorSpans(sc.MessageStyles, col), wrapW, dev)
 		return centerRaster(m, err, sc, wrapW)
 	}
-	m, err := render.Rasterize(a.ctx.Ren, font, sc.MessageText, wrapW, col)
+	m, err := render.Rasterize(a.ctx.Ren, font, sc.MessageText, wrapW, col, dev)
 	return centerRaster(m, err, sc, wrapW)
 }
 
@@ -6168,6 +6177,12 @@ const glyphCacheCap = 512
 // layout and the face it used (the glyph cache keys on it).
 func renderAnimated(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int) (*render.AnimatedText, *ttf.Font) {
 	col := chatBaseColor(a, sc, skinned, false)
+	// #77 Part A PUNT: the animated per-glyph path (AnimatedText.Draw + GlyphCache)
+	// stays on the LOGICAL face — its per-glyph pen positions and pixel-amplitude
+	// effect offsets aren't scale-folded yet, so it keeps drawing 1:1 and the
+	// renderer's SetScale bilinearly stretches it (correctly-sized, still soft at
+	// >100%). Static / emoji / plain messages ARE crisp; an EFFECTS message stays
+	// soft until the follow-up. Clean seam: msAnim XOR msRaster, one per message.
 	font := a.ctx.ChatFontFor(pct, sc.MessageText)
 	return render.RasterizeAnimated(font, sc.MessageText, toRenderEffectSpans(sc.MessageEffects), animColors(sc, col), wrapW), font
 }

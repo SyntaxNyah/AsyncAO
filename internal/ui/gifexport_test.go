@@ -67,7 +67,7 @@ func TestGifChatboxCompositesAndReveals(t *testing.T) {
 	}
 	defer ct.Close()
 
-	raster, err := render.Rasterize(ren, font, "The witness saw everything that night.", 224, sdl.Color{R: 240, G: 240, B: 240, A: 255})
+	raster, err := render.Rasterize(ren, font, "The witness saw everything that night.", 224, sdl.Color{R: 240, G: 240, B: 240, A: 255}, render.DefaultDevScale)
 	if err != nil {
 		t.Fatalf("rasterize: %v", err)
 	}
