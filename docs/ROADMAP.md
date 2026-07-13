@@ -64,12 +64,31 @@ items move to `docs/FEATURES.md` as they ship.
   are photographic, not vector text). **Known Part-A follow-ups (deferred, not
   blocking):** the ANIMATED text path (`AnimatedText`/`GlyphCache`, `msAnim`)
   stays on the logical face — an effects message is correctly-sized but still soft
-  at >100% (clean seam: `msAnim` XOR `msRaster`, one per message). **PART B still
-  pending:** DPI-seeding reliability so a HiDPI monitor's *default* physical size
-  is correct without the user raising the slider (re-query DPI on display/window
-  moves and/or seed the initial scale from OS DPI; keep the never-below-100
-  floor). Interim answer for players on pre-Part-A builds: 200% + Smooth OFF is
-  pixel-exact; non-integer scales stay soft until Part A ships.
+  at >100% (clean seam: `msAnim` XOR `msRaster`, one per message). **PART B LANDED
+  (DPI seeding):** a HiDPI monitor's *default* physical size is now correct without
+  the user finding the slider. The auto-scale path already combined a DPI component
+  (`dpiScalePct`) with the window-size factor; the gap was that `sdl.GetDisplayDPI`
+  reports a flat 96 under per-monitor-v2 awareness, so detection stayed at 100. The
+  fix makes the DPI *input* reliable: `App.SeedDisplayDPIScale` queries Windows
+  `user32!GetDpiForWindow` for the window's monitor (via the SDL `SysWMInfo` HWND;
+  plain Win32 syscall through `syscall.NewLazyDLL`, no new dependency), falling back
+  to `sdl.GetDisplayDPI` off Windows (`internal/ui/dpiseed_{windows,other}.go`).
+  The pure `config.DPIScalePercent` (96 dpi → 100%, 144 → 150%, round-half-up,
+  floored at `MinAutoUIScalePercent` = 100) is the seam; the boot query replaces the
+  old `main.go` block and a `WINDOWEVENT_DISPLAY_CHANGED`/`MOVED` handler re-seeds
+  when the window changes monitor (gated on `lastDPIDisplayIndex` so a same-monitor
+  move is free). **The seed is RUNTIME-ONLY** — it never writes the UI-scale pref, so
+  an explicitly saved scale always wins (the manual slider requires `UIScaleAuto`
+  off, and `UIScale()` then ignores the detected value; `UIScaleAuto` *is* the
+  "user chose it" marker — no new pref). The never-below-100 floor (#6) is kept.
+  100% still means 96dpi-logical (slider semantics unchanged). **Consequence (by
+  design, not a bug):** turning Auto OFF on a HiDPI monitor snaps to the manual
+  `uiScalePct` default (100%), because copying the seed into the saved scale would
+  persist it as a user choice — the decision forbids that. **Issue #77 is now
+  closable pending live verification** on a real scaled monitor (this dev box is at
+  100%; a fresh profile there must still start at 100%). Interim answer for players
+  on pre-Part-A builds: 200% + Smooth OFF is pixel-exact; non-integer scales stay
+  soft until Part A ships.
 
 _Playtest backlog cleared (2026-06-21) — every Discord/playtest request shipped
 (see `docs/FEATURES.md`). New asks land here. The only milestone left is the
@@ -190,8 +209,11 @@ it's a stale build (`scripts\build.ps1 -Release`).
   cross-cutting port (every `internal/render` call site, the texture tiers, the
   SDL_mixer audio back-end) and stays parked until the FX / perf win clearly
   justifies the churn.
-- **Crisp resolution-independent UI text (#77).** The global UI scale is applied
-  with `ren.SetScale`, which bitmap-upscales already-rasterized text — correct
+- **Crisp resolution-independent UI text (#77).** _Status: Part A (blur) + Part B
+  (DPI seeding) both LANDED — see the tracked #77 entry near the top of this file;
+  only the ANIMATED-text follow-up remains. This is the original design sketch, kept
+  for context._ The global UI scale WAS applied
+  with `ren.SetScale`, which bitmap-upscaled already-rasterized text — correct
   size but soft above 100% (see `SetAutoScaleFromWindow` and the v1.2.0 #6 fix).
   Re-scoped 2026-07-03 (the v1.53.5 DPI dig): the proper fix rasterizes text at
   the *native device* pixel size — fonts opened at `pt × scale`, the resulting

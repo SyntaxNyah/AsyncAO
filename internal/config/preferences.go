@@ -645,6 +645,17 @@ const (
 	MaxUIScalePercent  = 200
 	UIScaleStepPercent = 5
 
+	// DPI seeding (#77 Part B). BaselineDPI is the "100%" logical DPI Windows
+	// and SDL report at standard (unscaled) desktop scaling; the queried DPI
+	// divided by it gives the OS scale factor (144 dpi → 150%). The auto UI
+	// scale is floored at MinAutoUIScalePercent so an unreliable / low DPI
+	// reading can never auto-SHRINK the UI below native — the never-below-100
+	// floor from #6 (kept in force for Part B). This is DELIBERATELY above
+	// MinUIScalePercent (75, the MANUAL slider floor): a user may pick 75%
+	// explicitly, but auto-detection never shrinks.
+	BaselineDPI           = 96.0
+	MinAutoUIScalePercent = 100
+
 	// Window sizing (Settings → Window): the default windowed size, and the
 	// floor a request can't go below. A saved size of 0 means "use the default".
 	DefaultWindowW = 1152
@@ -729,6 +740,26 @@ func clampPercent(v, min, max int) int {
 		return max
 	}
 	return v
+}
+
+// DPIScalePercent maps a display DPI to the auto UI-scale percent (#77 Part B):
+// dpi / BaselineDPI, as a percent, rounded half-up, floored at
+// MinAutoUIScalePercent. 96 dpi → 100%, 144 dpi → 150%, 168 dpi → 175%. It is
+// the pure seam the DPI-seeding path funnels through so a HiDPI monitor's
+// DEFAULT size is correct without the user finding the slider; the floor keeps
+// the never-auto-shrink rule (#6). A non-positive or sub-baseline dpi returns
+// the floor (an unreliable reading must not shrink us). It does NOT snap to the
+// UI-scale step — SetAutoScaleFromWindow does that once after combining this
+// with the window-size factor, so snapping here would double-round.
+func DPIScalePercent(dpi float64) int {
+	if dpi <= 0 {
+		return MinAutoUIScalePercent
+	}
+	pct := int(dpi/BaselineDPI*100 + 0.5) // round half up
+	if pct < MinAutoUIScalePercent {
+		return MinAutoUIScalePercent
+	}
+	return pct
 }
 
 // AssetTypePrefs holds the per-asset-type format preferences.

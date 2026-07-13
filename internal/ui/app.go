@@ -901,6 +901,11 @@ type App struct {
 	// 100); SetAutoScaleFromWindow combines it with a window-size factor each
 	// frame so a maximized window fills out, and a resize recomputes cleanly.
 	dpiScalePct int
+	// lastDPIDisplayIndex is the display the DPI was last queried for (#77
+	// Part B). NoteDisplayChanged re-seeds the DPI only when the window has
+	// actually moved to a DIFFERENT display, so a window-move within one
+	// monitor costs no syscall and no font rebuild. -1 = never queried.
+	lastDPIDisplayIndex int
 	// theaterOn is the borderless viewport-only mode (Esc exits).
 	// Deliberately session-only: it can never persist someone into a
 	// chrome-less client across runs.
@@ -2066,35 +2071,36 @@ var themePenaltyKeys = []string{"hp_increased_sfx", "hp_decreased_sfx"}
 // NewApp builds the UI over deps.
 func NewApp(ctx *Ctx, d Deps) *App {
 	a := &App{
-		ctx:             ctx,
-		d:               d,
-		screen:          ScreenLobby,
-		lobbyResult:     make(chan lobbyFetch, 1),
-		pingRes:         make(chan pingResult, pingResBuf),
-		charINIres:      make(chan charINIFetch, 1),
-		previewEmoteRes: make(chan previewEmoteFetch, 1),
-		updateRes:       make(chan *update.Release, 1),
-		updateApplyRes:  make(chan error, 1),
-		iniRes:          make(chan iniswapFetch, 1),
-		manifestRes:     make(chan manifestFetch, 1),
-		casingRes:       make(chan casingProbeResult, 1),
-		fontRes:         make(chan fontLoad, 1),
-		logBrowserRes:   make(chan logBrowserLoad, 1),
-		emojiFontRes:    make(chan []byte, 1),
-		fallbackFontRes: make(chan [][]byte, 1),
-		cjkFontRes:      make(chan [][]byte, 1),
-		notebookRes:     make(chan notebookLoad, 1),
-		jukeRes:         make(chan *config.Jukebox, 1),
-		jukeIORes:       make(chan string, 4),
-		jukeOpen:        -1,
-		jukeDelPlaylist: -1,
-		selServer:       -1,
-		activeTab:       -1,
-		tabDragFrom:     -1,
-		macroBind:       -1,
-		themeTex:        map[string]bool{},
-		themePages:      map[string]*render.TexturePage{},
-		hidden:          map[string]bool{},
+		ctx:                 ctx,
+		d:                   d,
+		screen:              ScreenLobby,
+		lastDPIDisplayIndex: -1, // #77 Part B: no DPI query yet (SeedDisplayDPIScale sets it)
+		lobbyResult:         make(chan lobbyFetch, 1),
+		pingRes:             make(chan pingResult, pingResBuf),
+		charINIres:          make(chan charINIFetch, 1),
+		previewEmoteRes:     make(chan previewEmoteFetch, 1),
+		updateRes:           make(chan *update.Release, 1),
+		updateApplyRes:      make(chan error, 1),
+		iniRes:              make(chan iniswapFetch, 1),
+		manifestRes:         make(chan manifestFetch, 1),
+		casingRes:           make(chan casingProbeResult, 1),
+		fontRes:             make(chan fontLoad, 1),
+		logBrowserRes:       make(chan logBrowserLoad, 1),
+		emojiFontRes:        make(chan []byte, 1),
+		fallbackFontRes:     make(chan [][]byte, 1),
+		cjkFontRes:          make(chan [][]byte, 1),
+		notebookRes:         make(chan notebookLoad, 1),
+		jukeRes:             make(chan *config.Jukebox, 1),
+		jukeIORes:           make(chan string, 4),
+		jukeOpen:            -1,
+		jukeDelPlaylist:     -1,
+		selServer:           -1,
+		activeTab:           -1,
+		tabDragFrom:         -1,
+		macroBind:           -1,
+		themeTex:            map[string]bool{},
+		themePages:          map[string]*render.TexturePage{},
+		hidden:              map[string]bool{},
 	}
 	a.resetSessionState()
 	// Wake the render loop when a decode/audio payload delivers (experimental
@@ -2200,7 +2206,70 @@ const (
 // SHRINK the UI (#6). Combined with the window-size factor each frame in
 // SetAutoScaleFromWindow.
 func (a *App) SetDisplayDPIScale(pct int) {
-	a.dpiScalePct = max(100, pct)
+	a.dpiScalePct = max(config.MinAutoUIScalePercent, pct)
+}
+
+// SeedDisplayDPIScale queries the OS DPI for the monitor the window is on and
+// records the DPI-derived auto scale (#77 Part B), so a HiDPI monitor's DEFAULT
+// physical size is right without the user finding the slider. It prefers the
+// reliable platform query (Windows GetDpiForWindow — sdl.GetDisplayDPI reports a
+// flat 96 under per-monitor-v2 awareness and left detection stuck at 100), and
+// falls back to sdl.GetDisplayDPI for the window's display where the native path
+// is unavailable. The result flows through SetDisplayDPIScale, so the never-
+// below-100 floor and the window-size combination are unchanged.
+//
+// This only affects the auto path: an explicitly saved scale wins because the
+// manual slider requires UIScaleAuto off, and UIScale() then ignores the DPI-
+// derived value entirely (nothing here writes a preference — the seed is
+// runtime-only, so moving to a new monitor keeps re-seeding). Render thread
+// (touches the SDL window handle); call at boot and on a display change.
+func (a *App) SeedDisplayDPIScale() {
+	win := a.ctx.win
+	if win == nil {
+		return
+	}
+	// Remember the display we sampled so NoteDisplayChanged can skip a
+	// same-monitor window move (it isn't a DPI change).
+	if idx, err := win.GetDisplayIndex(); err == nil {
+		a.lastDPIDisplayIndex = idx
+	}
+	dpi, ok := queryWindowDPI(win)
+	if !ok {
+		// Cross-platform fallback: sdl.GetDisplayDPI for this window's display.
+		idx, err := win.GetDisplayIndex()
+		if err != nil {
+			return
+		}
+		ddpi, _, _, derr := sdl.GetDisplayDPI(idx)
+		if derr != nil || ddpi <= 0 {
+			return
+		}
+		dpi = float64(ddpi)
+	}
+	a.SetDisplayDPIScale(config.DPIScalePercent(dpi))
+}
+
+// NoteDisplayChanged re-seeds the DPI-derived auto scale after the window has
+// moved to a DIFFERENT monitor (#77 Part B): dragging a window from a 100% to a
+// 150% monitor should re-detect. Gated on the display index actually changing so
+// a same-monitor move (WINDOWEVENT_MOVED fires per drag) costs no syscall and no
+// font rebuild; SetAutoScaleFromWindow only re-applies when the effective value
+// differs, and Part A's SetTextDevScale is a no-op on an unchanged scale, so a
+// same-DPI move never repays a raster rebuild. Render thread; call from the
+// WINDOWEVENT_MOVED / DISPLAY_CHANGED handler.
+func (a *App) NoteDisplayChanged() {
+	win := a.ctx.win
+	if win == nil {
+		return
+	}
+	idx, err := win.GetDisplayIndex()
+	if err != nil {
+		return
+	}
+	if idx == a.lastDPIDisplayIndex {
+		return // same monitor — not a DPI change
+	}
+	a.SeedDisplayDPIScale() // updates lastDPIDisplayIndex + re-detects DPI
 }
 
 // SetAutoScaleFromWindow updates the auto UI scale from the current PHYSICAL

@@ -1310,3 +1310,41 @@ func TestCorruptConfigQuarantined(t *testing.T) {
 		t.Error("a missing config (first run) must not quarantine")
 	}
 }
+
+// TestDPIScalePercent pins the #77 Part-B DPI→scale seam: the pure mapping a
+// HiDPI monitor's default size funnels through. 96 dpi → 100%, common Windows
+// scalings map to their expected percents (round-half-up), and any reading below
+// baseline (or a non-positive / unreliable one) is floored at 100 so detection
+// never auto-SHRINKS the UI (#6). It must NOT snap to the UI-scale step — the
+// window-size combination in SetAutoScaleFromWindow does that once.
+func TestDPIScalePercent(t *testing.T) {
+	cases := []struct {
+		dpi  float64
+		want int
+	}{
+		{96, 100},    // standard desktop = 100%
+		{120, 125},   // Windows 125%
+		{144, 150},   // Windows 150% — the headline "100% too small" case
+		{168, 175},   // Windows 175%
+		{192, 200},   // Windows 200%
+		{240, 250},   // Windows 250% (above the manual cap; the step/cap clamp later)
+		{72, 100},    // sub-baseline (75% monitor) → floored, never shrink
+		{0, 100},     // unreliable reading (SDL flat-96 failure surfaces as 0 upstream)
+		{-1, 100},    // defensive: negative can't shrink
+		{143, 149},   // round-half-up: 143/96 = 148.95… → 149 (NOT step-snapped to 150)
+		{144.5, 151}, // just over 150 rounds up, proving no step-snap here
+	}
+	for _, c := range cases {
+		if got := DPIScalePercent(c.dpi); got != c.want {
+			t.Errorf("DPIScalePercent(%g) = %d, want %d", c.dpi, got, c.want)
+		}
+	}
+	// The floor is the auto floor (100), deliberately above the manual slider
+	// floor (75): auto-detection never shrinks even though a user may pick 75%.
+	if MinAutoUIScalePercent <= MinUIScalePercent && MinUIScalePercent != 75 {
+		t.Fatalf("sanity: MinUIScalePercent moved (%d); revisit the DPI floor rationale", MinUIScalePercent)
+	}
+	if got := DPIScalePercent(1); got != MinAutoUIScalePercent {
+		t.Errorf("a tiny DPI must floor at MinAutoUIScalePercent (%d), got %d", MinAutoUIScalePercent, got)
+	}
+}

@@ -43,9 +43,8 @@ const (
 	// state (typewriter, blips, effect countdowns) resumes smoothly
 	// instead of bursting the backlog (§perf frame pacing).
 	maxFrameDelta = 100 * time.Millisecond
-	// baselineDPI is the desktop "100%" DPI Windows and SDL report at
-	// standard scaling — the divisor for the HiDPI auto UI scale.
-	baselineDPI = 96.0
+	// The DPI→scale divisor moved to config.BaselineDPI with the reliable
+	// per-monitor seed (#77 Part B, App.SeedDisplayDPIScale).
 )
 
 func main() {
@@ -360,13 +359,15 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	// the display DPI (HiDPI laptops) and the WINDOW SIZE (a maximized window on a
 	// big display would otherwise show a tiny island of fixed-pixel widgets — the
 	// "text is too small" reports; it's also why shrinking the window already
-	// looked right). Both are floored at 100% so we never auto-SHRINK: SDL's
-	// GetDisplayDPI is unreliable and once reported low, shrinking the whole UI
-	// below 100% (#6). Record the DPI component here; the per-frame call in the
-	// loop adds the window factor, snaps to the step, and caps at MaxUIScalePercent.
-	if ddpi, _, _, err := sdl.GetDisplayDPI(0); err == nil && ddpi > 0 {
-		app.SetDisplayDPIScale(int(ddpi/baselineDPI*100 + 0.5))
-	}
+	// looked right). Both are floored at 100% so we never auto-SHRINK: an
+	// unreliable / low DPI reading must not shrink the whole UI below native (#6).
+	// SeedDisplayDPIScale (#77 Part B) records the DPI component using the reliable
+	// per-monitor query (Windows GetDpiForWindow; sdl.GetDisplayDPI reports a flat
+	// 96 under per-monitor-v2 awareness, leaving detection stuck at 100 — the
+	// "100% is too small on a HiDPI monitor" report). The per-frame call in the
+	// loop adds the window factor, snaps to the step, and caps at MaxUIScalePercent;
+	// the loop's display-change handler re-seeds when the window changes monitor.
+	app.SeedDisplayDPIScale()
 
 	if serverURL != "" {
 		app.Connect(serverURL, serverURL)
@@ -418,6 +419,15 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 				// window imports into recordings\ and starts playing.
 				if e.Type == sdl.DROPFILE {
 					app.HandleFileDrop(e.File)
+				}
+			case *sdl.WindowEvent:
+				// The window moved to a different monitor (#77 Part B): re-query the
+				// DPI so a HiDPI display re-detects. NoteDisplayChanged gates on the
+				// display index actually changing, so a same-monitor move is a no-op.
+				// DISPLAY_CHANGED is the exact signal; MOVED is the fallback for SDL
+				// builds that don't surface it (both are cheap after the index gate).
+				if e.Event == sdl.WINDOWEVENT_DISPLAY_CHANGED || e.Event == sdl.WINDOWEVENT_MOVED {
+					app.NoteDisplayChanged()
 				}
 			}
 			uiCtx.HandleEvent(ev)
