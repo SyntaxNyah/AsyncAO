@@ -4,6 +4,21 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.60.1 — 2026-07-13
+
+A hotfix round on the v1.60.0 select-and-colour feature, from playtest
+feedback (Nightingale).
+
+- **Select-and-colour now lives in the standard colour dropdown**, exactly
+  like AO2: highlight text in the IC input and pick a colour from the
+  dropdown to wrap just the selection in that colour's markup (Ctrl+Z undoes
+  it). With nothing selected, the dropdown sets the whole-message colour as
+  it always has, and the Default entry leaves a selection untouched — AO2's
+  behavior on both counts.
+- **The separate colour-cube row is removed** (it was redundant with the
+  dropdown and couldn't be moved in the layout editor); the IC bar's
+  colour/showname spacing returns to its pre-v1.60.0 layout.
+
 ## v1.60.0 — 2026-07-13
 
 The stable release of the v1.60.0-test1 round below: crisp UI scaling at any
