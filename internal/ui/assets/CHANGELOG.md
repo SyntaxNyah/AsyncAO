@@ -4,6 +4,21 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.61.0 — 2026-07-13
+
+One deep concurrency fix for a long-standing asset bug.
+
+- **Emote buttons no longer all turn into the same image.** On servers whose
+  button art is PNG, opening or scrolling the emote grid could intermittently
+  make every button show the character's icon instead of its own art — and a
+  cache clear (or "Fix stuck / repeated images") only helped until it came
+  back. Root cause: while the client double-checked one genuinely missing
+  optional file, it briefly forgot the server's learned image format, so any
+  buttons loading in that same instant guessed the wrong format and gave up.
+  The client no longer forgets the format while double-checking, so the grid
+  can't be stranded like this again; the Settings "Fix stuck / repeated
+  images" button is now only needed after genuine server-side art repacks.
+
 ## v1.60.1 — 2026-07-13
 
 A hotfix round on the v1.60.0 select-and-colour feature, from playtest
