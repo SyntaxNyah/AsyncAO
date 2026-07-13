@@ -230,6 +230,14 @@ func (a *App) closeTopOverlay() bool {
 			c.focusID = ""
 		}
 	// Blocking / confirm modals (highest priority).
+	case a.pendingCloseTab != nil:
+		// The tab-close confirm CAN be open on the lobby (park a server via "+",
+		// then click a background chip's ✕): without this, Esc falls through
+		// closeTopOverlay to ScreenLobby's requestQuit(), stacking a Quit modal over
+		// this one. The pointer fence doesn't cover Esc (keyboard, handled before the
+		// fence) — the modal must answer Esc itself (floatbox.go doctrine: Esc can't
+		// fall through while a popup is open). Cancel == drop the pending target.
+		a.pendingCloseTab = nil
 	case a.showQuitConfirm:
 		a.showQuitConfirm = false
 	case a.banBoxKind != 0:

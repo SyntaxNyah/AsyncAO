@@ -1626,6 +1626,7 @@ type sessionState struct {
 	showHotkeys        bool
 	hkCache            []hkEntry           // hotkey cheat-sheet rows, rebuilt once per open (not per frame)
 	confirmDisconnect  bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
+	pendingCloseTab    *courtTab           // a "close this tab?" confirm is open for this background tab (nil = none). A POINTER, not an index: tabs reorder/reap/tear-off between the ✕-click and the confirm, so the index would go stale — revalidate the pointer is still in a.tabs before acting (see confirmPendingCloseTab). Doubles as the open flag, like hidePrompt.
 	hidePrompt         string              // a "hide this sprite?" confirm is open for this char name ("" = none)
 	hiddenSprites      map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
 	autoConnectPending bool                // fire auto-connect-to-last-server once, on the first frame
@@ -6210,7 +6211,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// While a confirm modal (Disconnect / hide-sprite) is up, the modal OWNS the
 	// pointer: fence it so the screen + overlays behind draw click-proof (no
 	// fat-finger underneath). Restored just before the modal draws, below.
-	if a.confirmDisconnect || a.hidePrompt != "" || a.showQuitConfirm {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -6305,7 +6306,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.confirmDisconnect && a.hidePrompt == "" && !a.showQuitConfirm {
+		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -6315,13 +6316,17 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.drawUpdateAvailable(winW, winH)
 	// Confirm modals: restore the pointer (fenced above) for the modal's own
 	// buttons, then paint it over everything. One at a time.
-	if a.confirmDisconnect || a.hidePrompt != "" || a.showQuitConfirm {
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm {
 		a.ctx.unfencePointer()
 		switch {
 		case a.showQuitConfirm:
 			a.drawQuitConfirm(winW, winH)
 		case a.confirmDisconnect:
 			a.drawDisconnectConfirm(winW, winH)
+		case a.pendingCloseTab != nil:
+			// Explicit case BEFORE default: a lone pending close must not fall into
+			// the hide-sprite branch below (it would draw the wrong modal).
+			a.drawCloseTabConfirm(winW, winH)
 		default:
 			a.drawHideSpriteConfirm(winW, winH)
 		}

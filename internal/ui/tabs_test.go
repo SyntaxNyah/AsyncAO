@@ -785,6 +785,159 @@ func TestLoweredCacheMemo(t *testing.T) {
 	}
 }
 
+// TestRequestCloseTabConfirms pins the §3.2 tab-close gate: a manual ✕ on a LIVE
+// background tab with Instant-disconnect OFF opens the confirm and closes NOTHING
+// until "Yes" (confirmPendingCloseTab); with it ON it closes at once; a DEAD tab
+// always closes at once (nothing live to lose). The active tab has no ✕, so the
+// gate guards against being asked to close it anyway.
+func TestRequestCloseTabConfirms(t *testing.T) {
+	// Instant OFF, a live background tab: the ✕ opens the confirm, tab survives.
+	a := testTabApp(t)
+	a.tabs = []*courtTab{
+		{},                                      // index 0: the active (left) tab — live session in a.sessionState
+		{state: sessionState{serverName: "Bg"}}, // index 1: live background tab (dead == false)
+	}
+	a.activeTab = 0
+	a.requestCloseTab(1)
+	if a.pendingCloseTab != a.tabs[1] {
+		t.Fatalf("Instant OFF must stash the pending target, got %v", a.pendingCloseTab)
+	}
+	if len(a.tabs) != 2 {
+		t.Fatalf("the tab must NOT close before confirm, have %d tabs", len(a.tabs))
+	}
+	// "Yes" closes it and clears the pending state.
+	a.confirmPendingCloseTab()
+	if a.pendingCloseTab != nil {
+		t.Error("confirm must clear the pending target")
+	}
+	if len(a.tabs) != 1 {
+		t.Fatalf("confirm must close the tab, have %d tabs", len(a.tabs))
+	}
+	// A manually-closed BACKGROUND tab must never arm the ACTIVE session's
+	// auto-reconnect (that logic is App-level, scoped to pumpConnection; closing a
+	// parked tab closes its own conn directly and touches neither field).
+	if !a.autoReconnectAt.IsZero() {
+		t.Error("closing a background tab must not arm auto-reconnect (that's active-session logic)")
+	}
+	if a.deliberateClose {
+		t.Error("closing a background tab must not flip the active session's deliberateClose flag")
+	}
+
+	// Instant ON: the ✕ closes immediately, no modal.
+	b := testTabApp(t)
+	b.tabs = []*courtTab{{}, {state: sessionState{serverName: "Bg"}}}
+	b.activeTab = 0
+	b.d.Prefs.SetInstantDisconnect(true)
+	b.requestCloseTab(1)
+	if b.pendingCloseTab != nil {
+		t.Error("Instant ON must not open a confirm")
+	}
+	if len(b.tabs) != 1 {
+		t.Fatalf("Instant ON must close immediately, have %d tabs", len(b.tabs))
+	}
+
+	// A DEAD tab always closes immediately, even with Instant OFF.
+	d := testTabApp(t)
+	d.tabs = []*courtTab{{}, {state: sessionState{serverName: "Bg"}, dead: true}}
+	d.activeTab = 0
+	d.requestCloseTab(1)
+	if d.pendingCloseTab != nil {
+		t.Error("a dead tab must not open a confirm (nothing live to lose)")
+	}
+	if len(d.tabs) != 1 {
+		t.Fatalf("a dead tab must close immediately, have %d tabs", len(d.tabs))
+	}
+}
+
+// TestConfirmPendingCloseTabByPointer pins the pointer-target invariant (the
+// reason the pending close is a *courtTab, not an index): if tabs reorder between
+// the ✕-click and the confirm, "Yes" must still close the SAME tab it was opened
+// for, not whatever now sits at the old index. Close another tab in between, then
+// confirm, and assert the right tab died and activeTab bookkeeping stayed correct.
+func TestConfirmPendingCloseTabByPointer(t *testing.T) {
+	a := testTabApp(t)
+	keep := &courtTab{state: sessionState{serverName: "Keep"}}
+	target := &courtTab{state: sessionState{serverName: "Target"}}
+	other := &courtTab{state: sessionState{serverName: "Other"}}
+	a.tabs = []*courtTab{{}, keep, target, other} // index 0 active
+	a.activeTab = 0
+
+	a.requestCloseTab(2) // arm a close on `target` (index 2 at click time)
+	if a.pendingCloseTab != target {
+		t.Fatalf("pending target must be the pointer at index 2, got %v", a.pendingCloseTab)
+	}
+	// The strip reorders under the open modal: `keep` moves to the end. `target`
+	// is now at a DIFFERENT index than when the ✕ was clicked.
+	a.moveTab(1, 3)
+	if a.tabs[2] == target {
+		t.Fatal("setup: the reorder must move target off index 2 for this test to mean anything")
+	}
+	a.confirmPendingCloseTab()
+	// The right tab (target) is gone; keep and other survive.
+	for _, tab := range a.tabs {
+		if tab == target {
+			t.Fatal("confirm must close the ORIGINAL target tab, not whatever's at the stale index")
+		}
+	}
+	if !slices.Contains(a.tabs, keep) || !slices.Contains(a.tabs, other) {
+		t.Error("confirm must not close the wrong (reordered) tabs")
+	}
+	if a.activeTab != 0 || a.tabs[0].state.serverName != "" {
+		t.Errorf("the active tab bookkeeping must survive the reorder+close, activeTab=%d", a.activeTab)
+	}
+}
+
+// TestConfirmPendingCloseTabDropsStale pins the stale-pointer guard: if the target
+// tab is already GONE from a.tabs (reaped / torn-off / closed another way) by the
+// time the user hits "Yes", the confirm silently drops the close instead of acting
+// on a dangling pointer — no panic, no wrong tab closed.
+func TestConfirmPendingCloseTabDropsStale(t *testing.T) {
+	a := testTabApp(t)
+	gone := &courtTab{state: sessionState{serverName: "Gone"}}
+	survivor := &courtTab{state: sessionState{serverName: "Survivor"}}
+	a.tabs = []*courtTab{{}, survivor}
+	a.activeTab = 0
+	a.pendingCloseTab = gone // a pointer no longer in a.tabs
+
+	a.confirmPendingCloseTab()
+	if a.pendingCloseTab != nil {
+		t.Error("confirm must clear the pending target even when it's stale")
+	}
+	if len(a.tabs) != 2 || !slices.Contains(a.tabs, survivor) {
+		t.Fatalf("a stale target must drop the close, not touch live tabs, have %d tabs", len(a.tabs))
+	}
+}
+
+// TestConfirmPendingCloseTabRunsClearSplit pins the torntabs concern: a
+// confirm-deferred close of the PINNED split tab still runs clearSplit (closeParkedTab
+// tears the split down before closing) — the pointer target survives the pin, and
+// the split is gone afterward with the right tab removed.
+func TestConfirmPendingCloseTabRunsClearSplit(t *testing.T) {
+	a := testTabApp(t)
+	pinned := &courtTab{state: sessionState{
+		serverName: "Pinned",
+		sess:       courtroom.NewRehearsalSession("", []string{"X"}),
+	}}
+	a.tabs = []*courtTab{{}, pinned}
+	a.activeTab = 0
+	a.pinToSplit(pinned)
+	if a.splitTab != pinned || !a.splitActive() {
+		t.Fatal("setup: the pinned tab must be the active split")
+	}
+
+	a.requestCloseTab(1) // Instant OFF (default) → deferred confirm
+	if a.pendingCloseTab != pinned {
+		t.Fatalf("pending target must be the pinned tab, got %v", a.pendingCloseTab)
+	}
+	a.confirmPendingCloseTab()
+	if a.splitTab != nil || a.splitActive() {
+		t.Error("closing the pinned tab must clearSplit (splitTab left set)")
+	}
+	if slices.Contains(a.tabs, pinned) {
+		t.Fatal("the pinned tab must be closed after confirm")
+	}
+}
+
 // TestMoveTab pins the drag-reorder slice math: tabs land in the right order
 // and activeTab keeps pointing at whatever session was active across the move
 // (the two-step remove-then-insert index shift). Slots are identified by

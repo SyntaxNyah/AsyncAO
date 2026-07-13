@@ -957,10 +957,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   disconnect you, you'll return to the lobby") with **Yes / Cancel** before it
   acts; the modal **fences the pointer** so a click can't fall through to the
   courtroom underneath. A **Settings → General "Instant disconnect"** toggle (OFF
-  by default) skips the prompt for those who want one-click. Only the *user-facing*
-  Disconnect buttons confirm — an automatic disconnect (closed tab, dropped
-  connection, auto-reconnect teardown) is unaffected. Drawn only while open: zero
-  cost on the render loop otherwise.
+  by default) skips the prompt for those who want one-click. Clicking a background
+  **tab's ✕** confirms the same way (its own "Close this tab?" modal names the
+  server — it's easy to hit by accident), and the same *Instant disconnect* toggle
+  is its escape hatch too; an already-dead tab closes at once (nothing live to
+  lose). Only the *user-facing* Disconnect buttons and the manual tab-✕ confirm —
+  an automatic disconnect (a dropped connection, auto-reconnect teardown, an
+  already-dead tab reaped on the next connect) is unaffected. Drawn only while
+  open: zero cost on the render loop otherwise.
 - **Showname presets**: a global, persisted list of shownames managed in
   **Settings → General** (add, *Save current*, **Use** to apply one — the active
   preset is marked — remove with ×; cleared only by a factory reset). **Ctrl+H**

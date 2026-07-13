@@ -323,6 +323,51 @@ func (a *App) closeParkedTab(i int) {
 	}
 }
 
+// requestCloseTab gates a MANUAL chip-✕ click (tabs.go handleTabBar) behind the
+// same confirm as requestDisconnect: closing a tab drops that server's live
+// connection, and the ✕ hit-zone abuts the switch zone on the same chip, so it's
+// easy to fat-finger (the reported bug). Instant when there's nothing to confirm
+// — the escape-hatch pref is set, or the tab is already dead (its socket ended in
+// the background, so there's no live session to lose) — otherwise it stashes the
+// tab POINTER and opens the confirm modal. Only the manual click routes through
+// here; every INTERNAL teardown (dead-tab reaping in activateTab/allocateTab, the
+// split-drop in pumpBackgroundTabs, clearSplit ordering) keeps calling
+// closeParkedTab directly, so those stay instant — this splits the manual case
+// out of the "internal disconnects keep calling Disconnect() direct" doctrine.
+func (a *App) requestCloseTab(i int) {
+	if i < 0 || i >= len(a.tabs) || i == a.activeTab {
+		return // the active chip has no ✕; guard anyway
+	}
+	t := a.tabs[i]
+	if a.d.Prefs.InstantDisconnectOn() || t.dead {
+		a.closeParkedTab(i) // nothing to confirm — close now (unchanged behavior)
+		return
+	}
+	a.pendingCloseTab = t // stash the pointer; the modal revalidates it before acting
+}
+
+// confirmPendingCloseTab is the "Yes" action of the tab-close confirm: it
+// re-finds the pending tab's CURRENT index (it may have reordered/reaped/torn-off
+// while the modal was up, since the target is a pointer, not the click-time
+// index), closes it via the unchanged closeParkedTab, and clears the pending
+// state. Silently drops the close if the tab is already gone from a.tabs — the
+// pointer is stale, so there's nothing left to close. Split out from the modal
+// draw so it's unit-testable without the CGO/SDL button (the draw path can't run
+// headlessly).
+func (a *App) confirmPendingCloseTab() {
+	t := a.pendingCloseTab
+	a.pendingCloseTab = nil
+	if t == nil {
+		return
+	}
+	for i := range a.tabs {
+		if a.tabs[i] == t {
+			a.closeParkedTab(i)
+			return
+		}
+	}
+}
+
 // pumpBackgroundTabs drains every parked tab's connection on a budget:
 // the session reducer keeps its court state current, chat lands in the
 // tab's own logs (unread counter, callword flash), and a closed
@@ -543,6 +588,18 @@ func (a *App) handleTabBar(w, h int32) {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return
 	}
+	// The tab-close confirm modal OVERLAYS this very strip, and handleTabBar runs
+	// BEFORE the frame-level pointer fence is applied (it consumes clicks pre-screen
+	// at Frame's top) — so the fence alone can't stop a click from leaking through to
+	// the strip that spawned the modal (re-arming a new pending close, or "+"-parking
+	// the modal away). Guard the strip inert here while our own modal is up. (The
+	// Disconnect/Quit/hide-sprite confirms don't originate from the strip, so they
+	// keep the strip's pre-existing pass-through — this fixes only the modal born on
+	// it.) Keep drag state cleared so a release later doesn't act on a stale grab.
+	if a.pendingCloseTab != nil {
+		a.tabDragFrom, a.tabDragging = -1, false
+		return
+	}
 	pressed := c.mouseDown && !a.tabPrevDown
 	a.tabPrevDown = c.mouseDown
 	if rects == nil {
@@ -593,7 +650,7 @@ func (a *App) handleTabBar(w, h int32) {
 		}
 		// Right third of a chip = close; rest = switch.
 		if c.mouseX > r.X+r.W-16 && i != a.activeTab {
-			a.closeParkedTab(i)
+			a.requestCloseTab(i) // manual click confirms first (easy to fat-finger) — internal teardowns still call closeParkedTab direct
 		} else if i == a.activeTab {
 			// Clicking the active chip parks it and shows the lobby —
 			// the "browse while connected" affordance.

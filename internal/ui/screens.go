@@ -1628,6 +1628,50 @@ func (a *App) drawDisconnectConfirm(w, h int32) {
 	}
 }
 
+// drawCloseTabConfirm paints the "close this tab?" overlay: the sibling of
+// drawDisconnectConfirm for a manual background-tab ✕ (requestCloseTab). Same
+// layout, fence discipline (drawn top-level, pointer restored just before it, one
+// modal at a time), and "Don't ask again" → Instant-disconnect pref — but its own
+// copy naming the server, and Yes closes just THIS tab (confirmPendingCloseTab)
+// instead of the live session. You stay on whatever screen you're on, so the copy
+// deliberately does NOT say "return to the lobby" (unlike the disconnect modal).
+// Off the render hot path (only while a close is pending).
+func (a *App) drawCloseTabConfirm(w, h int32) {
+	c := a.ctx
+	t := a.pendingCloseTab
+	if t == nil {
+		return // defensive: the outer guard only draws this while pending
+	}
+	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
+	const mw, mh = 480, 176
+	m := sdl.Rect{X: (w - mw) / 2, Y: (h - mh) / 2, W: mw, H: mh}
+	c.Fill(m, ColPanel)
+	c.Border(m, ColAccent)
+	// The server name is variable-length and drawn on a fixed-width panel, so clip
+	// it (LabelClipped) — an over-long name must not spill past the border onto the
+	// scene behind (the §3.4 class of bug that just landed one commit upstream).
+	name := t.state.serverName
+	if name == "" {
+		name = "this server"
+	}
+	c.Heading(m.X+pad, m.Y+pad, "Close this tab?", ColText)
+	c.LabelClipped(m.X+pad, m.Y+50, mw-2*pad, "Close and disconnect from "+name+"? You'll stay where you are.", ColText)
+	// "Don't ask again" reuses the disconnect modal's pattern: it ticks the same
+	// Instant-disconnect pref, so future tab-✕ clicks (AND the Disconnect button /
+	// Esc) skip straight through. Untickable here too.
+	inst := a.d.Prefs.InstantDisconnectOn()
+	if next := c.Checkbox(m.X+pad, m.Y+78, "Don't ask again (close/disconnect instantly from now on)", inst); next != inst {
+		a.d.Prefs.SetInstantDisconnect(next)
+	}
+	if c.Button(sdl.Rect{X: m.X + pad, Y: m.Y + mh - btnH - pad, W: 170, H: btnH}, "Yes, close tab") {
+		a.confirmPendingCloseTab() // revalidates the pointer's current index, then closeParkedTab
+		return
+	}
+	if c.Button(sdl.Rect{X: m.X + mw - pad - 110, Y: m.Y + mh - btnH - pad, W: 110, H: btnH}, "Cancel") {
+		a.pendingCloseTab = nil
+	}
+}
+
 // requestQuit asks to close AsyncAO: straight to quit if the user ticked "don't
 // ask again", otherwise the confirm dialog. The Esc-in-lobby escape hatch (you
 // can't always reach the window's X in fullscreen) routes through here.
