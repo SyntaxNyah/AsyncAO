@@ -91,12 +91,16 @@ var effectTags = map[string]uint8{
 }
 
 // ParseTextEffects splits a raw IC input into the WIRE text (effect tags removed; all other
-// markup — \cN colour, { } speed, \b \i — left for the normal pipeline) and the
-// display-indexed effect spans. The spans index the FINAL visible text the receiver shows:
-// because the effect tags ([..]) and chat markup (\cN { } \b \i) use DISJOINT trigger
-// characters, stripping one never shifts the other's matches, so spans measured against
-// StripChatMarkup(raw) align exactly with the receiver's MessageText (= StripChatMarkup of
-// the wire text). Pinned by TestParseTextEffectsAlignment.
+// markup — \cN colour, { } speed, \b \i, AO2 delimiters — left for the normal pipeline) and
+// the display-indexed effect spans. The spans index the FINAL visible text the receiver
+// shows. The alignment argument: \cN { } \b \i use trigger characters disjoint from [..],
+// and although AO2's c8 gray markup (typewriter.go ao2Markups) DOES share [ ] with effect
+// tags, StripChatMarkup keeps ALL brackets (c8 is Remove:false; unmatched brackets emit as
+// literals), so no bracket position ever shifts and spans measured against
+// StripChatMarkup(raw) still align exactly with the receiver's MessageText (= StripChatMarkup
+// of the wire text). The one hole: chat markup INSIDE a bracket tag (e.g. "[sh~ake]") is
+// stripped and can misalign or re-form a tag — adversarial input only, accepted. Pinned by
+// TestParseTextEffectsAlignment.
 func ParseTextEffects(raw string) (wire string, spans []TextEffectSpan) {
 	if !strings.ContainsRune(raw, '[') {
 		return raw, nil // no possible tag → nothing to strip or index (0-alloc common case)
