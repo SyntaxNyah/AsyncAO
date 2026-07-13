@@ -1627,7 +1627,7 @@ type sessionState struct {
 	showHotkeys        bool
 	hkCache            []hkEntry           // hotkey cheat-sheet rows, rebuilt once per open (not per frame)
 	confirmDisconnect  bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
-	pendingCloseTab    *courtTab           // a "close this tab?" confirm is open for this background tab (nil = none). A POINTER, not an index: tabs reorder/reap/tear-off between the ✕-click and the confirm, so the index would go stale — revalidate the pointer is still in a.tabs before acting (see confirmPendingCloseTab). Doubles as the open flag, like hidePrompt.
+	pendingCloseTab    *courtTab           // a "close this tab?" confirm is open for this background tab (nil = none). A POINTER, not an index: tabs reorder/reap/tear-off between the ✕-click and the confirm, so the index would go stale — revalidate the pointer is still in a.tabs before acting (see confirmPendingCloseTab). Doubles as the open flag, like hidePrompt. ⚠ Lives on sessionState (parked/copied per tab), safe ONLY because every live park/swap path is strip-guarded, pointer-fenced, or resets session state — a NEW park/swap path must keep one of those protections or this field moves to App (the conn-error-state precedent), else a parked slot could resurface a stale modal.
 	hidePrompt         string              // a "hide this sprite?" confirm is open for this char name ("" = none)
 	hiddenSprites      map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
 	autoConnectPending bool                // fire auto-connect-to-last-server once, on the first frame
