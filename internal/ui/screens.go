@@ -4842,7 +4842,7 @@ func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 	// (the strip draws before the field), so by the pick frame the live selection
 	// is gone — captureICColorSel snapshots it while it still exists.
 	a.captureICColorSel()
-	if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorBox.X + 32, Y: colorBox.Y, W: colorDDW, H: colorBox.H}, icColorChoices, icSel); changed {
+	if next, changed := c.Dropdown(icColorDDID, sdl.Rect{X: colorBox.X + 32, Y: colorBox.Y, W: colorDDW, H: colorBox.H}, icColorChoices, icSel); changed {
 		a.applyICColorPick(next)
 	}
 }
@@ -6335,6 +6335,12 @@ func (a *App) icColorSelected() (sel int, swatch sdl.Color) {
 // selection by this id (only the focused field's selection is meaningful).
 const icFieldID = "ic"
 
+// icColorDDID is the immediate-mode id of the IC colour dropdown (shared by the
+// classic and themed rows). captureICColorSel keeps its frozen selection alive
+// ONLY while this dropdown is the open one — any other unfocus means the
+// snapshot is stale and must not wrap on a later pick.
+const icColorDDID = "colordd"
+
 // icColorSel is a frozen snapshot of the IC field's [lo,hi) RUNE selection, taken
 // while the field is still focused so the colour dropdown can wrap it even though
 // the open-click has since unfocused the field. active is false when there was no
@@ -6361,10 +6367,21 @@ func (a *App) captureICColorSel() {
 	c := a.ctx
 	if lo, hi, ok := c.selectionFor(icFieldID, a.icInput); ok {
 		a.icColorSel = icColorSel{lo: lo, hi: hi, active: true} // focused + non-empty: track live
-	} else if c.focusID == icFieldID {
-		a.icColorSel.active = false // focused but no selection: drop any stale snapshot
+		return
 	}
-	// Not focused (dropdown open): leave the frozen pre-open selection in place.
+	if c.focusID == icFieldID || c.ddOpen != icColorDDID {
+		// Focused with no selection, OR unfocused without the colour dropdown
+		// being the open one: any snapshot is stale. The second case is the
+		// review-caught hazard — a click on some OTHER widget also arms the
+		// snapshot on its way to unfocusing the field, and a much-later
+		// dropdown pick must not wrap that long-gone selection (possibly at
+		// stale rune indices into edited text). The frozen snapshot is only
+		// meaningful inside the open colour dropdown's own focus-stealing
+		// window, so that is the only unfocused state that preserves it.
+		a.icColorSel.active = false
+		return
+	}
+	// Unfocused while the colour dropdown is open: keep the frozen pre-open selection.
 }
 
 // applyICColorPick routes an IC colour-dropdown selection, wrapping a frozen

@@ -125,6 +125,39 @@ func TestAO2ColorSpliceAndUndo(t *testing.T) {
 	if a.icColor != 2 {
 		t.Fatalf("palette-0 pick with a selection must not touch the whole-message colour, icColor=%d", a.icColor)
 	}
+
+	// Review-caught hazard: a snapshot armed on the way to clicking some OTHER
+	// widget must NOT survive to wrap on a much-later dropdown pick. Unfocused
+	// while the colour dropdown is NOT the open widget = stale → the very next
+	// capture clears it, and the pick falls back to whole-message behaviour.
+	a.icInput = "stale text"
+	c.focusID = icFieldID
+	c.caretField = icFieldID
+	c.selAnchor, c.caret = 0, 5
+	a.captureICColorSel() // armed on the other widget's click frame (field still focused)
+	c.focusID = ""        // that click unfocused the field...
+	c.ddOpen = ""         // ...and the colour dropdown is not open
+	a.captureICColorSel() // the next frame's capture must invalidate
+	if a.icColorSel.active {
+		t.Fatalf("stale snapshot must clear when unfocused without the colour dropdown open, got %+v", a.icColorSel)
+	}
+	a.applyICColorPick(1)
+	if a.icInput != "stale text" {
+		t.Fatalf("stale-snapshot pick must not splice, got %q", a.icInput)
+	}
+
+	// And the intended survival window: unfocused BECAUSE the colour dropdown is
+	// the open one (its open-click stole the focus) → the frozen snapshot stays.
+	c.focusID = icFieldID
+	c.selAnchor, c.caret = 0, 5
+	a.captureICColorSel()
+	c.focusID = ""
+	c.ddOpen = icColorDDID
+	a.captureICColorSel() // the pick-frame capture runs with the dropdown open → keep
+	if !a.icColorSel.active {
+		t.Fatal("the frozen snapshot must survive while the colour dropdown is open")
+	}
+	c.ddOpen = ""
 }
 
 // TestFieldHistoryCoalesceAndCap pins the burst rule (±1-rune edits inside

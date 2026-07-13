@@ -408,7 +408,7 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// folded into the dropdown to match AO2's on_text_color_changed); shared
 		// with the classic row so the two can't drift. See captureICColorSel.
 		a.captureICColorSel()
-		if next, changed := c.Dropdown("colordd", sdl.Rect{X: colorR.X + 14, Y: colorR.Y, W: themedColorW, H: colorR.H}, icColorChoices, icSel); changed {
+		if next, changed := c.Dropdown(icColorDDID, sdl.Rect{X: colorR.X + 14, Y: colorR.Y, W: themedColorW, H: colorR.H}, icColorChoices, icSel); changed {
 			a.applyICColorPick(next)
 		}
 		fieldX, fieldW := in.X+lead, in.W-lead
