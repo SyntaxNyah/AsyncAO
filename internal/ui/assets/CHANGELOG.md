@@ -4,6 +4,68 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.60.0-test1 — 2026-07-13
+
+A playtest-driven fix round plus two headline features: crisp UI scaling at
+any zoom (the long-standing display-blur issue), and real two-way AO2 inline
+chat colours.
+
+**Crisp display**
+
+- **UI text is now crisp at any zoom level.** The UI-scale slider used to
+  stretch already-rendered text, which went blurry above 100%; text is now
+  re-rendered at the target size, so it stays sharp at 125%, 150%, 175% and
+  beyond — no more "200% + Smooth OFF" workaround. (Messages using animated
+  text effects are still slightly soft above 100% — a follow-up.)
+- **HiDPI displays start at the right size.** On a monitor with Windows
+  display scaling above 100%, AsyncAO now detects that reliably and starts at
+  a matching, crisp scale instead of the too-small default. A UI scale you set
+  yourself always wins; turn off "Auto UI scale" to control it manually.
+
+**AO2 chat colours, both ways**
+
+- **AO2-style inline colour markup now works.** Colours sent by AO2/webAO
+  players render here, and markup you type renders on their clients too:
+  `` `text` `` green, `~text~` red, `|text|` orange, `º № √` toggles, and
+  `(text)` blue / `[text]` gray pairs (the brackets stay visible, exactly as
+  on AO2). Type `\` before a markup character to keep it literal. Heads-up:
+  literal backticks, tildes, pipes, and matched `( )` / `[ ]` pairs in chat
+  now colour text instead of showing as plain punctuation — a bracketed
+  `[tag]` renders gray just like it does on AO2.
+- **Highlight words, then colour them.** Select part of your IC message and
+  click a colour cube beside the colour dropdown to colour just the selection
+  (Ctrl+Z undoes it). With nothing selected, a cube sets the whole-message
+  colour like the dropdown always has.
+
+**Chat & alerts**
+
+- **Callwords now match whole words.** A callword like `tif` fires on
+  "hi tif" but no longer on "motif" or "artifact". To keep the old loose
+  behavior for a word family, re-save it with a trailing asterisk — `obj*`
+  still catches "objection" and "objecting". Existing saved callwords keep
+  working, but as exact whole words.
+- **Link highlighting is consistent.** Each OOC message's hover highlight is
+  keyed to its own message, so two adjacent messages sharing the same URL no
+  longer light up together (matching IC). Bare `www.` links are now
+  highlighted and clickable in the logs and lobby descriptions (they open as
+  `https://`).
+
+**Interface**
+
+- **Closing a server tab asks first.** The tab's ✕ sits right beside the
+  switch zone and was easy to hit by accident; it now confirms, naming the
+  server. "Instant disconnect" (the same toggle the Disconnect button uses)
+  or the dialog's "Don't ask again" skips the prompt, and a tab whose
+  connection already ended still closes instantly.
+- **Paired characters both show their restyles.** Only the character
+  currently speaking used to render a restyle, flipping between the pair as
+  they took turns.
+- **The Additive toggle is movable in the layout editor**, like every other
+  IC-bar piece.
+- **The Areas tab's search box lines up with the area cards** instead of
+  sitting a couple of pixels off the column.
+- **The custom chat-colour picker's caption no longer spills past its panel.**
+
 ## v1.57.0 — 2026-07-12
 
 A broad reliability and AO2-parity release: connections that heal themselves,
