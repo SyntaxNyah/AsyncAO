@@ -4,6 +4,40 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.62.0 — 2026-07-14
+
+Two reported fixes: area jumping now behaves like you'd expect end to end,
+and typing at a scaled UI no longer distorts the input bar.
+
+**Area jumping**
+
+- **Jumping to an area updates your selection immediately.** Clicking
+  "click to jump →" on a Players-tab area header, a Recent chip, or an
+  Areas-tab card now moves the highlighted/current area right away instead
+  of leaving the old area selected until the server caught up — every jump
+  path behaves the same now (previously only the Areas-tab card did all the
+  bookkeeping, which is why the highlight looked stuck from the other ones).
+- **The joined area stays in view.** When the player list reorders to float
+  your new area to the top a moment after the jump, the list now scrolls
+  along so the area you clicked ends up clearly visible — no more being
+  stranded somewhere in the middle of the list. Scrolling the wheel or
+  dragging the scrollbar yourself immediately takes back control.
+- Per-area IC scrollback (when enabled) and Discord presence now update on
+  every jump path too, not just Areas-tab card clicks.
+
+**Typing at 125%/150% UI scale** (playtest reports, incl. Tifera)
+
+- **The IC/OOC input no longer shimmers while you type.** With a long
+  message at a fractional UI scale, the text used to soften and wobble on
+  every keystroke once the field started scrolling — it's now drawn
+  pixel-exact, so it holds its shape and is actually crisper than before.
+- **The text cursor no longer stretches or flickers.** The caret kept
+  changing width at 125% and drifted away from the text the longer the
+  message got; it now stays a constant width and sits exactly where the
+  next character will appear. Clicks in the field land on the right
+  character too. (At 100% scale nothing changes — these were
+  scaled-display artifacts.)
+
 ## v1.61.0 — 2026-07-13
 
 One deep concurrency fix for a long-standing asset bug.
