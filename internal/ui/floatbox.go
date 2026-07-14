@@ -54,32 +54,40 @@ type detachedWidget struct {
 }
 
 // panelSlot is one row of panelSlotTable: a persistable floatWin panel's canonical
-// slot key, an accessor to its per-App floatWin geometry, and its nominal default /
-// minimum size. The fw accessor is a plain function (NOT a *floatWin) because the
-// floatWin lives on the *App instance, not the package — the table itself must stay
-// package-level (zero-alloc rule) so it cannot hold instance pointers. This mirrors
-// the compactChip.run method-value idiom. defW/defH/minW/minH are the nominal sizes
-// (a few panels compute a dynamic default at draw time; the table carries the
-// canonical value for the magnetism census).
+// slot key, an accessor to its per-App floatWin geometry, its nominal default /
+// minimum size, and an OPEN predicate. The fw / open accessors are plain functions
+// (NOT a *floatWin / bool) because the floatWin + open flag live on the *App
+// instance, not the package — the table itself must stay package-level (zero-alloc
+// rule) so it cannot hold instance pointers. This mirrors the compactChip.run
+// method-value idiom. defW/defH/minW/minH are the nominal sizes (a few panels
+// compute a dynamic default at draw time; the table carries the canonical value for
+// the magnetism census). open reports whether the panel is currently shown — a
+// closed floatWin keeps .placed and a real rect(), so the magnet census MUST gate
+// on open or it would snap to invisible panels.
 type panelSlot struct {
 	slot                   string
 	fw                     func(*App) *floatWin
 	defW, defH, minW, minH int32
+	open                   func(*App) bool
 }
 
 // panelSlotTable is the CANONICAL enumeration of the persistable floatWin panels
 // (every floatWin except msgWin, which keeps its historical slotMessages key and
 // its own seed/persist wrappers). It is the single source of truth for:
 //   - applyProfile's .placed reset (so open panels re-seed from an applied profile),
-//   - a later magnetism milestone's panel census (it derives its candidate set here).
+//   - the live-magnetism panel census (rebuildPanelMagnetRects derives its candidate
+//     set here — the "future magnetism" this comment used to name).
 //
-// It is iterated ONLY on cold paths (applyProfile; future magnetism) — never in a
-// draw fn. Each panel's draw path calls seedPanelFromSlot / persistPanelSlot
-// directly with &a.<panel>Win, so no table iteration and no App-capturing closure
-// ever touches a settled frame. Adding a floatWin panel? Add its slot const
-// (classiclayout.go), a row here, and the two-line seed/persist wiring in its
-// draw/rect fns. NOTE: this is a 4th independent panel list — do NOT try to unify
-// it with floatbox.go's three deliberately-non-identical fence/suppression lists.
+// It is iterated ONLY on cold paths (applyProfile) and while a live drag is active
+// (the magnet census, which is drag-gated so it never runs on a settled frame).
+// Each panel's draw path calls seedPanelFromSlot / persistPanelSlot directly with
+// &a.<panel>Win, so no table iteration and no App-capturing closure ever touches a
+// settled frame; the census fn's accessors are non-capturing package-level funcs,
+// so iterating it during a drag is also alloc-free. Adding a floatWin panel? Add
+// its slot const (classiclayout.go), a row here (with its OPEN predicate), and the
+// two-line seed/persist wiring in its draw/rect fns. NOTE: this is a 4th independent
+// panel list — do NOT try to unify it with floatbox.go's three deliberately-non-
+// identical fence/suppression lists.
 //
 // Nominal heights for the panels whose real default height is computed at draw
 // time (ban box: by kind; hotkey sheet + pairing: window-height responsive). Only
@@ -93,16 +101,19 @@ const (
 )
 
 var panelSlotTable = []panelSlot{
-	{slotPanelPair, func(a *App) *floatWin { return &a.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH},
-	{slotPanelMod, func(a *App) *floatWin { return &a.modWin }, modDashW, modDashH, modDashMinW, modDashMinH},
-	{slotPanelCM, func(a *App) *floatWin { return &a.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH},
-	{slotPanelHK, func(a *App) *floatWin { return &a.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH},
-	{slotPanelEvid, func(a *App) *floatWin { return &a.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH},
-	{slotPanelModcall, func(a *App) *floatWin { return &a.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH},
-	{slotPanelVoice, func(a *App) *floatWin { return &a.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH},
-	{slotPanelBan, func(a *App) *floatWin { return &a.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH},
-	{slotPanelDebug, func(a *App) *floatWin { return &a.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH},
-	{slotPanelClient, func(a *App) *floatWin { return &a.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH},
+	{slotPanelPair, func(a *App) *floatWin { return &a.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH, func(a *App) bool { return a.showPair }},
+	// The mod dashboard hides while its own ban box is open (they share the modWin
+	// draw slot in drawFloatingPanels) — match that so the census never carries a
+	// panel that isn't on screen.
+	{slotPanelMod, func(a *App) *floatWin { return &a.modWin }, modDashW, modDashH, modDashMinW, modDashMinH, func(a *App) bool { return a.showModDash && a.banBoxKind == 0 }},
+	{slotPanelCM, func(a *App) *floatWin { return &a.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH, func(a *App) bool { return a.showCMPanel }},
+	{slotPanelHK, func(a *App) *floatWin { return &a.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH, func(a *App) bool { return a.showHotkeys }},
+	{slotPanelEvid, func(a *App) *floatWin { return &a.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH, func(a *App) bool { return a.showEvid }},
+	{slotPanelModcall, func(a *App) *floatWin { return &a.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH, func(a *App) bool { return a.showModcall }},
+	{slotPanelVoice, func(a *App) *floatWin { return &a.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, func(a *App) bool { return a.showVoice }},
+	{slotPanelBan, func(a *App) *floatWin { return &a.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH, func(a *App) bool { return a.banBoxKind != 0 }},
+	{slotPanelDebug, func(a *App) *floatWin { return &a.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH, func(a *App) bool { return a.showDebugPanel }},
+	{slotPanelClient, func(a *App) *floatWin { return &a.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, func(a *App) bool { return a.splitActive() }},
 }
 
 // extrasWidgets returns the canonical widget table, built once and cached. The
@@ -608,6 +619,12 @@ func (a *App) handleExtrasDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	if a.extrasDragging {
 		a.extrasBoxX, a.extrasBoxY = c.mouseX-a.extrasGrabDX, c.mouseY-a.extrasGrabDY
 		a.extrasPlaced = true
+		// M3: piece-to-piece magnet (before the persist below, so the snapped spot
+		// is what survives a relaunch). extrasBoxRect re-clamps the snapped X/Y.
+		if !magnetBypassed() && len(a.panelMagnetRects) > 0 {
+			r := a.extrasBoxRect(w, h)
+			a.extrasBoxX, a.extrasBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
+		}
 	}
 	if wasDragging && !a.extrasDragging { // drag just ended → remember where (slot:panel:extras)
 		a.persistExtrasSlot(w, h)
@@ -633,6 +650,13 @@ func (a *App) handleDetachedDrag(i int, handle sdl.Rect, w, h int32, pressed *bo
 		} else {
 			a.extrasDetached[i].x = c.mouseX - a.extrasGrabDX
 			a.extrasDetached[i].y = c.mouseY - a.extrasGrabDY
+			// M3: piece-to-piece magnet (before the drag-end persist below).
+			// detachedBoxRect reads the raw x/y just set; snap the clamped rect
+			// and write the snapped top-left back to the raw fields.
+			if !magnetBypassed() && len(a.panelMagnetRects) > 0 {
+				r := a.detachedBoxRect(i, w, h)
+				a.extrasDetached[i].x, a.extrasDetached[i].y, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
+			}
 		}
 	}
 	if wasDragging && !a.extrasDetachDragging { // drag just ended → remember where (torn:widget:<id>)
@@ -772,6 +796,13 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	c := a.ctx
 	pressed := c.mouseDown && !a.extrasPrevDown
 	a.extrasPrevDown = c.mouseDown
+	// Live piece-to-piece magnet (M3 / A2): rebuild the sibling-candidate census
+	// from every OTHER open floating surface and clear last frame's guides BEFORE
+	// any drag handler runs (each panel's floatWinDrag / bespoke drag reads
+	// a.panelMagnetRects and appends its match into a.alignGuides). Both are
+	// drag-gated no-ops on a settled frame — the reslice is the only cost.
+	a.rebuildPanelMagnetRects(w, h)
+	a.alignGuides = a.alignGuides[:0]
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||
@@ -827,6 +858,10 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	if a.banBoxKind != 0 {
 		a.drawModDashBanBox(w, h, &pressed)
 	}
+	// Live-magnet alignment guides LAST — the full-length green hairlines drawn
+	// over every panel while a drag is engaged and a sibling snap matched (#21
+	// piece-to-piece extension). Drag-gated: a no-op on a settled frame.
+	a.drawPanelAlignGuides(w, h)
 }
 
 // drawFloatingExtras draws the Extras boxes (main + torn-off + favourite-emotes +

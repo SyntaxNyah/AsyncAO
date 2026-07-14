@@ -62,6 +62,42 @@ func TestAlignRectResizeMovesOnlyGrippedEdge(t *testing.T) {
 	}
 }
 
+// TestSnapRectToSiblings pins the live piece-to-piece magnet primitive (M3):
+// a move whose left edge is within alignSnapPx of a sibling's left edge returns
+// a translated top-left flush to it (W/H unchanged — this is move-mode), and it
+// reports a vertical guide there. It is a thin move-mode wrapper over alignRect,
+// so this covers both the window-space (live panels) and design-space (themed
+// editor) callers, which differ only in the extent/coordinates they pass.
+func TestSnapRectToSiblings(t *testing.T) {
+	other := sdl.Rect{X: 200, Y: 300, W: 160, H: 90}
+	r := sdl.Rect{X: 196, Y: 40, W: 80, H: 60} // 4 px off other's left edge
+	nx, ny, guides := snapRectToSiblings(r, []sdl.Rect{other}, 1280, 720, nil)
+	if nx != 200 {
+		t.Errorf("left edge must snap to the sibling's (200), got %d", nx)
+	}
+	if ny != r.Y {
+		t.Errorf("no Y target in tolerance → Y must pass through (%d), got %d", r.Y, ny)
+	}
+	if len(guides) == 0 || !guides[0].vertical || guides[0].pos != 200 {
+		t.Errorf("want a vertical guide at 200, got %+v", guides)
+	}
+}
+
+// TestSnapRectToSiblingsNoSnapPastThreshold pins that a sibling clearly farther
+// than alignSnapPx (and no window target in range) leaves the top-left untouched
+// and reports no guide.
+func TestSnapRectToSiblingsNoSnapPastThreshold(t *testing.T) {
+	other := sdl.Rect{X: 200, Y: 300, W: 160, H: 90}
+	r := sdl.Rect{X: 187, Y: 44, W: 80, H: 60} // 13 px off other's left edge (> alignSnapPx=6)
+	nx, ny, guides := snapRectToSiblings(r, []sdl.Rect{other}, 1280, 720, nil)
+	if nx != r.X || ny != r.Y {
+		t.Errorf("out-of-tolerance move must pass through, got (%d,%d) want (%d,%d)", nx, ny, r.X, r.Y)
+	}
+	if len(guides) != 0 {
+		t.Errorf("no snap → no guide, got %+v", guides)
+	}
+}
+
 // TestNextLayoutGridSize pins the Grid chip cycle, including recovery from a
 // legacy/hand-edited value that isn't in the cycle.
 func TestNextLayoutGridSize(t *testing.T) {

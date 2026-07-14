@@ -693,8 +693,23 @@ type App struct {
 	// alignGuides/alignScratch are the editor's per-drag-frame alignment
 	// results and its reusable other-slots buffer (classicalign.go). Editor
 	// path only; reused so a long drag allocates nothing after warm-up.
+	// alignGuides is ALSO reused by the live piece-to-piece magnet (magnet.go)
+	// and the themed editor's magnet: safe because (a) the CLASSIC editor's guides
+	// and the live magnet never share a frame — drawFloatingPanels early-returns
+	// while classicEdit is on (blockingCourtPopup); and (b) the THEMED editor both
+	// populates AND renders its guides inside drawLayoutEditor before the later
+	// drawFloatingPanels harmlessly re-slices the (already-drawn) buffer to empty
+	// (no live panel drags under the editor fence, so the live guide draw no-ops).
 	alignGuides  []alignGuide
 	alignScratch []sdl.Rect
+	// panelMagnetRects is the live-magnet candidate buffer (magnet.go): every
+	// OTHER open floating surface's rect, rebuilt once per frame at the top of
+	// drawFloatingPanels ONLY while a drag is active (empty on settled frames).
+	// Reused so a long drag allocates nothing; bounded by panelMagnetCap.
+	// themeAlignScratch is the themed layout editor's design-space candidate buffer
+	// (the classic editor already has alignScratch).
+	panelMagnetRects  []sdl.Rect
+	themeAlignScratch []sdl.Rect
 	// layoutPresetName is the Settings name field for saving the current layout as a
 	// named preset (#34, internal/ui/layoutpresets.go + the Theme settings section).
 	layoutPresetName string

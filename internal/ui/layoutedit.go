@@ -310,7 +310,10 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 				r.H = layoutMinDesignPx
 			}
 		}
-		if a.layoutSnap { // round to the grid so widgets line up cleanly
+		a.alignGuides = a.alignGuides[:0] // reset this drag frame's guides (mirror classiclayout.go)
+		// Shift = fully pixel-precise: it bypasses the grid AND the magnet together,
+		// exactly like the classic editor (classiclayout.go gates both on one check).
+		if a.layoutSnap && !magnetBypassed() { // round to the grid so widgets line up cleanly
 			if a.editDrag == 1 {
 				r.X = snapDesign(r.X)
 				r.Y = snapDesign(r.Y)
@@ -323,6 +326,31 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 				if r.H < layoutMinDesignPx {
 					r.H = layoutMinDesignPx
 				}
+			}
+			// Piece-to-piece magnet in DESIGN space (M3): grid first (above), then
+			// snap the dragged rect's edges/centre flush to the OTHER themed keys'
+			// design rects and the design courtroom's edges/centre. Shift already
+			// bypassed the whole snap block above. Extent is the DESIGN courtroom
+			// dims (not screen w/h) — the rects here are design-space, like the
+			// clamp below.
+			// NOTE: alignRect floors a snapped resize at classicMinPx=20 rather than
+			// layoutMinDesignPx=16; a themed resize thus bottoms out at 20 design px
+			// when it snaps — cosmetic, and only on the snapped axis.
+			if court, ok := a.themeRectsOrig["courtroom"]; ok {
+				a.themeAlignScratch = a.themeAlignScratch[:0]
+				for k, tr := range a.themeRects {
+					if k == a.editKey || layoutEditSkip[k] {
+						continue
+					}
+					a.themeAlignScratch = append(a.themeAlignScratch, sdl.Rect{X: int32(tr.X), Y: int32(tr.Y), W: int32(tr.W), H: int32(tr.H)})
+				}
+				dr := sdl.Rect{X: int32(r.X), Y: int32(r.Y), W: int32(r.W), H: int32(r.H)}
+				var edges uint8
+				if a.editDrag != 1 { // themed resize is bottom-right only (W/H grow from the grip)
+					edges = edgeR | edgeB
+				}
+				dr, a.alignGuides = alignRect(dr, a.themeAlignScratch, int32(court.W), int32(court.H), a.editDrag == 1, edges, a.alignGuides)
+				r.X, r.Y, r.W, r.H = int(dr.X), int(dr.Y), int(dr.W), int(dr.H)
 			}
 		}
 		// Keep it on the stage (the engine's clamp would rescue it, but
@@ -371,6 +399,18 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		c.Border(r, col)
 		c.Fill(sdl.Rect{X: r.X + r.W - layoutHandlePx, Y: r.Y + r.H - layoutHandlePx, W: layoutHandlePx, H: layoutHandlePx}, col)
 		c.LabelClipped(r.X+3, r.Y+2, r.W-6, k, col)
+	}
+	// Piece-to-piece magnet guides (M3): the design-space positions the drag just
+	// snapped flush to, mapped through the layout scale to screen px (the classic
+	// editor draws raw px; the themed path MUST scale or the hairlines land wrong).
+	if a.editDrag != 0 {
+		for _, g := range a.alignGuides {
+			if g.vertical {
+				c.Fill(sdl.Rect{X: lay.offX + int32(float64(g.pos)*lay.scaleX), Y: 0, W: 1, H: h}, ColTierGreen)
+			} else {
+				c.Fill(sdl.Rect{X: 0, Y: lay.offY + int32(float64(g.pos)*lay.scaleY), W: w, H: 1}, ColTierGreen)
+			}
+		}
 	}
 	if a.editKey != "" {
 		r := a.themeRects[a.editKey]

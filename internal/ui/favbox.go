@@ -142,5 +142,9 @@ func (a *App) handleFavBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	if a.favBoxDragging {
 		a.favBoxX, a.favBoxY = c.mouseX-a.favBoxGrabDX, c.mouseY-a.favBoxGrabDY
 		a.favBoxPlaced = true
+		if !magnetBypassed() && len(a.panelMagnetRects) > 0 { // M3: piece-to-piece magnet
+			r := a.favBoxRect(w, h)
+			a.favBoxX, a.favBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
+		}
 	}
 }

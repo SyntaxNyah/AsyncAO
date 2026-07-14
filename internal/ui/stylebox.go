@@ -832,6 +832,10 @@ func (a *App) handleStyleBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	if a.styleBoxDragging {
 		a.styleBoxX, a.styleBoxY = c.mouseX-a.styleBoxGrabDX, c.mouseY-a.styleBoxGrabDY
 		a.styleBoxPlaced = true
+		if !magnetBypassed() && len(a.panelMagnetRects) > 0 { // M3: piece-to-piece magnet
+			r := a.styleBoxRect(w, h)
+			a.styleBoxX, a.styleBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
+		}
 	}
 }
 
