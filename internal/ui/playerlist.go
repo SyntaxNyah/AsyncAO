@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
@@ -27,6 +28,13 @@ const (
 	playerIconSz  = int32(38)
 	playerHeaderH = int32(26) // a /gas area-group header row (name + count, click to jump)
 )
+
+// areaJumpFollowWindow is how long a "click to jump →" keeps re-nudging the
+// target area header into view. It must outlive the server round-trip that
+// reorders the grouped list — that PR/PU (or /gas) reply is when the row
+// actually moves to the top — yet stay bounded so a lost or server-rejected
+// transfer can never pin the scroll indefinitely (the latch just expires).
+const areaJumpFollowWindow = 3 * time.Second
 
 // Roster sort modes, cycled by the Sort button (orders PLAYERS, flat or within
 // each /gas area group).
@@ -288,7 +296,15 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 
 	a.zoomWheel(r, &a.playerPct, config.MinLogScalePercent, config.MaxLogScalePercent) // Ctrl+wheel zooms text
 	if !c.ctrlHeld {
-		a.playerScroll -= c.WheelIn(r) * scrollStepPx
+		// Capture the wheel delta ONCE (WheelIn consumes the event — a second call
+		// returns 0). A non-zero plain-wheel scroll is the user taking the wheel, so
+		// it disarms the area-jump follow immediately. Ctrl+wheel is text zoom, not
+		// scrolling: it changes row heights, and the latch usefully re-nudges through
+		// it, so it deliberately does NOT disarm.
+		if dy := c.WheelIn(r); dy != 0 {
+			a.playerScroll -= dy * scrollStepPx
+			a.areaJumpFollow = "" // user scrolled — stop pinning
+		}
 	}
 	rowW := r.W - scrollBarW - 6
 	contentH := int32(0)
@@ -297,6 +313,21 @@ func (a *App) drawPlayerList(r sdl.Rect) {
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.playerScroll = c.VScrollbar("playerlist", track, a.playerScroll, contentH, r.H)
+	// Disarm on an actual thumb DRAG, not any value change: c.dragID is set only
+	// while the user holds this scrollbar (ui.go, cleared on release), so a real
+	// drag stops the follow. VScrollbar also clamps its input to [0, content-visible]
+	// with no drag — and a same-frame roster shrink (a floated-to-top area + a
+	// player leaving) or a ctrl+wheel zoom-out shrinks contentH and would trip a
+	// bare "value changed" test, wrongly killing the follow on the very reorder
+	// frame scope-2 must track. Keying on the drag id ignores that clamp.
+	if c.dragID == "playerlist" {
+		a.areaJumpFollow = "" // the user is dragging the scrollbar — user scroll wins over the follow
+	}
+	// Re-nudge the jumped-to area header into view (armed by jumpToArea). Placed
+	// AFTER the wheel/scrollbar disarms so a same-frame user scroll beats it, and
+	// AFTER VScrollbar so the nudge — not the clamp — sets the final scroll for this
+	// frame, all BEFORE the draw loop reads playerScroll. Disarmed it's ~free.
+	a.applyAreaJumpFollow(rows, r.H)
 	// While the profile popover is up and hovered, the rows underneath run
 	// pointer-blind (the kit's fence = its z-order): a click on the card must
 	// not also press the "…" trigger or jump an area header behind it.
@@ -335,6 +366,58 @@ func (a *App) rowHeight(row rosterRow) int32 {
 		return playerHeaderH
 	}
 	return playerRowH * int32(a.playerPct) / 100
+}
+
+// scrollAreaIntoView nudges playerScroll just enough to make the header row for
+// `area` fully visible, mirroring scrollServerIntoView: it walks the rows to find
+// the header's content-space top, then scrolls only if the row sits off an edge —
+// up to reveal a row above, down to reveal one below — and never negative. viewH
+// is the already-computed visible height (the caller passes r.H, the content
+// region left after the header rows are subtracted), so no extra offset is applied.
+// A missing header (a flat /ga roster, or the area vanished from the snapshot) is a
+// clean no-op. Bounded O(rows) — the same walk class the draw already does to sum
+// contentH — and allocation-free.
+func (a *App) scrollAreaIntoView(area string, rows []rosterRow, viewH int32) {
+	if area == "" {
+		return
+	}
+	top := int32(0) // content-space offset (pre-scroll) of the target header's top
+	for i := range rows {
+		if rows[i].header && rows[i].area == area {
+			headerH := a.rowHeight(rows[i])
+			if top < a.playerScroll {
+				a.playerScroll = top // header is above the viewport — pull up to its top
+			} else if top+headerH > a.playerScroll+viewH {
+				a.playerScroll = top + headerH - viewH // below — pull down just enough to reveal it
+			}
+			if a.playerScroll < 0 {
+				a.playerScroll = 0
+			}
+			return
+		}
+		top += a.rowHeight(rows[i])
+	}
+	// area not present as a header (flat roster or gone) → leave the scroll alone
+}
+
+// applyAreaJumpFollow is the per-frame lifecycle for the "click to jump →" scroll
+// follow: while the latch is armed (and unexpired) it re-nudges the target area
+// header into view every frame. Re-nudging (rather than a one-shot at click time)
+// is what makes the POST-reorder position win — the frame after the roster memo
+// rebuilds floats the jumped-to area to the top, and the next nudge follows the
+// row there. Disarmed (empty target) it costs one string compare; past its
+// deadline it disarms and leaves playerScroll untouched. Kept off the draw path
+// and SDL-free so it's unit-testable.
+func (a *App) applyAreaJumpFollow(rows []rosterRow, viewH int32) {
+	if a.areaJumpFollow == "" {
+		return
+	}
+	if !a.now().Before(a.areaJumpFollowUntil) { // window elapsed (or a lost/rejected transfer) → stop pinning
+		a.areaJumpFollow = ""
+		a.areaJumpFollowUntil = time.Time{}
+		return
+	}
+	a.scrollAreaIntoView(a.areaJumpFollow, rows, viewH)
 }
 
 // drawPlayerRow is one player: char icon + "[uid] showname · character" with the
@@ -787,10 +870,26 @@ func (a *App) drawAreaHeaderRow(hr rosterRow, r sdl.Rect) {
 // jumpToArea transfers us to area by name (AO switches areas through the music
 // list: MC#<area name>#<char id>). The name comes from the same server, so it
 // matches the area list.
+//
+// The optimistic local updates (per-area scrollback swap, curArea, presence)
+// live here, not at the call sites, because every jump entry point — the
+// Players-tab header click, the Areas-tab cards, the Recent chips and the M3
+// auto-follow — must move the local selection identically. When they didn't,
+// the current-area highlight, per-area scrollback and Rich Presence only
+// worked from the one entry point that inlined them (the Areas-tab card),
+// which was the reported "click to jump doesn't update the selection" bug.
 func (a *App) jumpToArea(area string) {
 	if a.sess == nil || area == "" {
 		return
 	}
+	// Arm the scroll-follow latch: keep the jumped-to area header in view until it
+	// expires, so once the server round-trip reorders the grouped roster the Players
+	// tab scrolls to the row wherever it lands (complaints 2 + 3, "click to jump").
+	a.areaJumpFollow = area
+	a.areaJumpFollowUntil = a.now().Add(areaJumpFollowWindow)
+	a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves (it keys the outgoing log on the OLD curArea)
+	a.curArea = area             // optimistic local selection (Rich Presence, best-effort — myAreaName still prefers the server echo)
+	a.updatePresence()
 	a.sess.RequestMusic(area)
 	a.warnLine = clampLine("Jumping to " + area + "…")
 	a.warnAt = a.now()

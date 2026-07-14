@@ -1725,11 +1725,22 @@ type sessionState struct {
 	icCountN       int    // M5 IC char counter: cached count + its string, reformatted
 	icCountStr     string // only when the length changes so the frame stays 0-alloc
 	pairListScroll int32
-	playerScroll   int32  // Players-tab roster scroll
-	playerSort     int    // roster sort (players): 0=UID, 1=name, 2=speakers-first
-	playerAreaSort int    // /gas area-group order: 0=/gas, 1=A→Z, 2=most-populated
-	playerPct      int    // Players-tab text zoom (Ctrl+wheel); starts at the log scale
-	shownameAdd    string // M6: Settings "save a showname preset" input
+	playerScroll   int32 // Players-tab roster scroll
+	// Area-jump scroll follow (the "click to jump →" fix): the grouped roster
+	// floats the just-jumped area to the top only on the next memo REBUILD (a
+	// server round-trip — a PR/PU roster bump or /gas refresh reorders the list),
+	// so a one-shot scroll at click time would target the pre-reorder position and
+	// the row would then slide out from under it. Instead we latch the target and
+	// re-nudge it into view every frame until it expires: the frame after the
+	// rebuild reorders the list, the nudge follows the row to its new spot.
+	// Lives in sessionState so it parks per tab (never leaks across servers); the
+	// zero value is inert (empty target), so resetSessionState needs no seeding.
+	areaJumpFollow      string    // target area name to keep scrolled into view ("" = disarmed)
+	areaJumpFollowUntil time.Time // hard expiry: a lost/rejected transfer can never pin the scroll past this
+	playerSort          int       // roster sort (players): 0=UID, 1=name, 2=speakers-first
+	playerAreaSort      int       // /gas area-group order: 0=/gas, 1=A→Z, 2=most-populated
+	playerPct           int       // Players-tab text zoom (Ctrl+wheel); starts at the log scale
+	shownameAdd         string    // M6: Settings "save a showname preset" input
 	// playerOrder is the memoized display order (indices into areaPlayers); it
 	// recomputes only when the roster, sort mode, or current speaker change, so
 	// the Players tab never sorts per-frame.

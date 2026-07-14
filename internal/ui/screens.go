@@ -3096,10 +3096,7 @@ func (a *App) drawAreaList(r sdl.Rect) {
 				c.LabelClippedFont(font, card.X+18, card.Y+5+subH, card.W-24, detail, ColTextDim)
 			}
 			if c.ClickedIn(card) { // press+release in-card: a drag-in release must not transfer areas
-				a.switchAreaScrollback(area) // per-area IC log (opt-in) — before curArea moves
-				a.sess.RequestMusic(area)    // area transfer rides MC
-				a.curArea = area             // Rich Presence (best-effort)
-				a.updatePresence()
+				a.jumpToArea(area) // consolidated: scrollback swap + curArea + presence + MC + warn line
 			}
 		}
 		y += lineH
