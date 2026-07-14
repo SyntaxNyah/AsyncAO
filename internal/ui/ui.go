@@ -45,6 +45,12 @@ const (
 	// DefaultScalePct is the 1:1 text/layout scale (percent).
 	DefaultScalePct = 100
 
+	// fieldCaretWLog is the text-field caret's LOGICAL width. At 100% it draws
+	// 1:1; on the fractional device-exact path it is projected to a CONSTANT
+	// integer device width (uiDeviceFromLogical), so the caret can't flicker
+	// 2↔3 device px as its sub-pixel phase drifts with each keystroke (#77 S1a).
+	fieldCaretWLog = 2
+
 	// scrollThumbMinPx keeps the scrollbar thumb grabbable on long lists.
 	scrollThumbMinPx = 24
 	// scrollGrabSlopPx widens the scrollbar's hit zone beyond its drawn
@@ -468,6 +474,21 @@ type Ctx struct {
 	textCache  map[textKey]cachedText
 	atlas      []*atlasPage     // shared label pages (≤ textAtlasMaxPages)
 	widthCache map[string]int32 // chrome-font TextWidth memo
+	// devWidthCache memoizes the DEVICE-face prefix width (raw device px) of a
+	// text-field prefix — the metric the drawn field texture actually uses at a
+	// fractional UI scale. widthCache measures the LOGICAL chrome face (correct
+	// for scale-invariant layout, TestTextWidthScaleInvariant); a field caret must
+	// instead land on the DEVICE glyph seam of its device-rasterized texture, and
+	// SDL_ttf quantizes per-glyph advances independently per point size, so the two
+	// faces diverge over a long prefix (the length-growing caret drift, #77 S1b).
+	// Stores DEVICE px (fold to logical on read via uiLogicalFromDevice); the raw
+	// device value feeds the device-exact caret draw with no round-trip loss.
+	// Only populated at a fractional scale (deviceExactText); at 100% the field
+	// uses widthCache unchanged (the device face is the identity). Purged wherever
+	// widthCache is (SetTextDevScale, SetChromeFont) so a stale-size entry after a
+	// scale change is impossible. Lazily created (like emojiCache) so test-built
+	// Ctx literals without this field stay valid — nil READ / clear(nil) are safe.
+	devWidthCache map[string]int32
 	// emojiCache holds multi-font rasters for the rare labels (shownames, IC/OOC
 	// log lines) that mix text with colour emoji the chat font can't draw. Keyed
 	// like textCache (text + colour + primary-font ptr); each entry owns dedicated
@@ -933,6 +954,7 @@ func (c *Ctx) SetChromeFont(data []byte) bool {
 	// settings action, never per frame.
 	c.purgeTextCache()
 	clear(c.widthCache)
+	clear(c.devWidthCache) // device-face field memo carries the OLD chrome metrics
 	c.pickMemo = nil
 	return true
 }
@@ -1493,6 +1515,7 @@ func (c *Ctx) SetTextDevScale(pct int) {
 	// that just changed identity — purge them (a scale change is a user action).
 	c.purgeTextCache()
 	clear(c.widthCache)
+	clear(c.devWidthCache) // device-face field memo carries the OLD device point size
 }
 
 // rebuildDeviceChrome (re)opens the device-scaled chrome pair at
@@ -1831,6 +1854,36 @@ func uiLogicalFromDevice(device, devPct int32) int32 {
 	return (device*DefaultScalePct + devPct/2) / devPct
 }
 
+// uiDeviceFromLogical is the exact inverse of uiLogicalFromDevice: it maps a
+// LOGICAL coordinate to the device pixel the renderer's SetScale(devPct/100)
+// lands it on, using the SAME "round half up" rule (add half the divisor before
+// dividing). #77 draws whole-string label textures into logical dst rects and
+// lets SetScale resample them; the focused text field instead projects its own
+// moving parts here and draws them under SetScale(1,1) so a fractional scale can
+// never phase-shift or stretch them (strategy B — see textField's device path).
+// At devPct==100 (or unset) it is the identity, matching uiLogicalFromDevice's
+// twin at ui.go's documented rule. Pinned by TestUIDeviceFromLogical.
+func uiDeviceFromLogical(logical, devPct int32) int32 {
+	if devPct <= 0 || devPct == DefaultScalePct {
+		return logical
+	}
+	return (logical*devPct + DefaultScalePct/2) / DefaultScalePct
+}
+
+// deviceExactText reports whether the focused text field should draw its moving
+// parts (value texture, selection, caret) on the device-exact path (#77 S1/S2).
+// Pure predicate over c.textDevPct so a test can pin the gate without a renderer:
+// only a FRACTIONAL user scale needs it. At 100% (or unset) it is false and the
+// field keeps every line of its pre-#77-fix scaled behavior byte-identical — no
+// SetScale flip, no projection. c.textDevPct tracks the same UIScale main.go
+// feeds ren.SetScale (SetUIScale → SetTextDevScale, ui.go:1469/1482), and the
+// only path that brackets textDevPct away from that scale — the gif export —
+// never draws a live textField (tickGifExport renders the scene + drawGifChatbox
+// only), so the two can't diverge while this path runs.
+func deviceExactText(devPct int32) bool {
+	return devPct != DefaultScalePct && devPct != 0
+}
+
 // blitLabel copies a cached label (atlas sub-rect aware) through the scratch
 // rects — zero heap escapes on the per-frame draw path. wLog is the LOGICAL
 // destination width (a full label passes t.logicalW(); a clipped one a smaller
@@ -1896,8 +1949,15 @@ func (c *Ctx) LabelClippedFont(font *ttf.Font, x, y, maxW int32, text string, co
 //
 // #77: measures the LOGICAL chrome face (c.font), NOT the device sibling — so
 // the width is already in logical layout units (no ÷scale rounding needed here;
-// the rounding rule lives only in the blit dst). The device face has the same
-// glyph advances scaled by textDevPct, so measuring the logical face is exact.
+// the rounding rule lives only in the blit dst). This is exact for LAYOUT: the
+// width is scale-invariant, which every chrome layout site (and
+// TestTextWidthScaleInvariant) requires. It is NOT the device glyph seam: the
+// device face carries the SAME advances scaled up, but SDL_ttf re-quantizes each
+// glyph independently at the larger point size, so the folded logical width can
+// drift from a device measurement over a long prefix. Text-field caret /
+// selection / click metrics therefore measure the DEVICE face instead (see
+// devTextWidth + fieldPrefixW; sibling contract render/text.go:568-570). Callers
+// that lay out chrome stay on this logical face untouched.
 func (c *Ctx) TextWidth(text string) int32 {
 	if c.font == nil {
 		return 0 // headless tests; real Ctx always has the chrome font
@@ -1913,6 +1973,41 @@ func (c *Ctx) TextWidth(text string) int32 {
 		c.widthCache = make(map[string]int32, textCacheMax)
 	}
 	c.widthCache[text] = int32(w)
+	return int32(w)
+}
+
+// devTextWidth measures text on the DEVICE chrome face — the metric the drawn
+// field texture uses at a fractional UI scale — returning DEVICE px. It is the
+// field-metric twin of TextWidth (which measures the logical face for
+// scale-invariant layout): the value texture is rasterized on deviceTextFont, and
+// SDL_ttf quantizes each glyph's advance independently per point size, so only a
+// device measure lands the caret on the actual glyph seam (kills the
+// length-growing caret-to-glyph drift, #77 S1b). Mirrors render/text.go:568-570,
+// where the non-ASCII field path already measures device advances and folds back.
+//
+// Memoized in its own map (raw device px), CAPPED by textCacheMax like widthCache
+// and PURGED wherever widthCache is (SetTextDevScale, SetChromeFont) — so a
+// stale-size entry after a scale change is impossible. Callers at 100% must NOT
+// reach here: deviceTextFont is the identity there, so the widthCache path is
+// used unchanged (see fieldPrefixW). One map probe per prefix; the map is
+// lazily created (a nil-map write would panic on test-built Ctx literals).
+func (c *Ctx) devTextWidth(text string) int32 {
+	if c.font == nil {
+		return 0 // headless tests; real Ctx always has the chrome font
+	}
+	if w, ok := c.devWidthCache[text]; ok {
+		return w
+	}
+	w, _, err := c.deviceTextFont(c.font).SizeUTF8(text)
+	if err != nil {
+		return 0
+	}
+	if c.devWidthCache == nil {
+		c.devWidthCache = make(map[string]int32, textCacheMax)
+	} else if len(c.devWidthCache) >= textCacheMax {
+		c.devWidthCache = make(map[string]int32, textCacheMax)
+	}
+	c.devWidthCache[text] = int32(w)
 	return int32(w)
 }
 
@@ -2361,10 +2456,22 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		caretX = c.fieldPrefixW(display, fbRaster, c.caret)
 		scroll = scrollFor(fullW, caretX, avail)
 	}
+	// The focused ASCII field draws its moving parts (selection, value texture,
+	// caret) DEVICE-EXACT at a fractional UI scale (#77 S1/S2): under a fractional
+	// ren.SetScale, the whole-string label texture would resample at a NEW
+	// sub-pixel phase every keystroke as the scroll advances (the "shimmer"), and
+	// the 2px caret's device column count would flip 2↔3 with that phase (the
+	// "stretch"). devFieldValue brackets SetScale(1,1) and projects each rect to
+	// device pixels itself, so nothing phase-shifts. The gate is fractional-scale
+	// only; at 100% and on the fallback-raster / placeholder / unfocused paths this
+	// is false and the pre-fix scaled draws below run byte-identically.
+	devExact := focused && fbRaster == nil && show == display && deviceExactText(c.textDevPct)
+
 	// Selection highlight, UNDER the text: the ordered anchor..caret range,
 	// measured through the same raster the glyphs draw with. A focused field
 	// already pays per-frame measurement for the caret; the selection adds
 	// two prefix widths only WHILE one exists.
+	selX0, selX1, hasSel := int32(0), int32(0), false
 	if focused {
 		if selLo, selHi := c.fieldSel(utf8.RuneCountInString(display)); selLo < selHi {
 			x0 := c.fieldPrefixW(display, fbRaster, selLo) - scroll
@@ -2376,10 +2483,26 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 				x1 = avail
 			}
 			if x1 > x0 {
-				c.Fill(sdl.Rect{X: r.X + padX + x0, Y: r.Y + 3, W: x1 - x0, H: r.H - 6},
-					sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
+				hasSel, selX0, selX1 = true, x0, x1
+				if !devExact {
+					c.Fill(sdl.Rect{X: r.X + padX + x0, Y: r.Y + 3, W: x1 - x0, H: r.H - 6},
+						sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
+				}
 			}
 		}
+	}
+	if devExact {
+		// One SetScale(1,1) bracket for all three moving parts (selection under,
+		// value texture, caret over) — the label blits 1:1 from its device-sized
+		// texture (zero resample) and the caret gets a constant integer device
+		// width. Skips the scaled selection Fill above and the scaled value/caret
+		// draws below. The caret consumes the RAW DEVICE prefix width (caretXDev,
+		// same device face as the drawn texture) so it lands on the exact device
+		// glyph seam — folding to logical and re-projecting would lose up to 1
+		// device px of the per-glyph quantization the texture preserves (#77 S1b).
+		caretXDev := c.caretPixelXDev(show, c.caret)
+		c.devFieldValue(r, padX, avail, scroll, caretXDev, textY, show, col, selX0, selX1, hasSel && focused, focused && c.caretOn)
+		return value, enter
 	}
 	// #M5 emoji/unicode input: when the field opted in (IC/OOC) and the text has any
 	// non-ASCII rune, draw it through the per-glyph fallback raster so emoji + non-Latin
@@ -2404,9 +2527,103 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		}
 	}
 	if focused && c.caretOn {
-		c.Fill(sdl.Rect{X: r.X + padX + caretX - scroll, Y: r.Y + 4, W: 2, H: r.H - 8}, ColText)
+		c.Fill(sdl.Rect{X: r.X + padX + caretX - scroll, Y: r.Y + 4, W: fieldCaretWLog, H: r.H - 8}, ColText)
 	}
 	return value, enter
+}
+
+// devFieldValue draws a focused ASCII text field's moving parts DEVICE-EXACT at a
+// fractional UI scale (#77 S1/S2). It follows the split-log precedent
+// (app.go:4366-4378): read the renderer's live scale, flip SetScale(1,1), draw
+// with rects projected to device pixels by uiDeviceFromLogical (round half up —
+// the twin of the label blit's rounding), then restore the scale and the prior
+// clip. Under SetScale(1,1) the value texture blits src→dst 1:1 (no resample, so
+// strictly crisper than the ambient fractional-scale blit) and the caret gets a
+// constant integer device width (no 2↔3 flicker). Render thread; allocation-free
+// (sdl.Rect VALUES + the Ctx scratch rects — a &stackRect into a Ren call would
+// heap-escape through cgo every frame, the cgoRect lesson).
+//
+// selX0/selX1 are the selection's interior-relative logical offsets (0..avail,
+// already clamped); the caller passes hasSel/caretOn already ANDed with focus.
+// caretXDev is the caret's prefix width in RAW DEVICE px (measured on the same
+// device face as the value texture) — NOT logical: the caret adds it to the value
+// texture's device origin so it lands on the exact device glyph seam (#77 S1b).
+func (c *Ctx) devFieldValue(r sdl.Rect, padX, avail, scroll, caretXDev, textY int32, show string, col sdl.Color, selX0, selX1 int32, hasSel, caretOn bool) {
+	dev := c.textDevPct
+	// The device clip = the field interior projected to device px, so the
+	// scrolled-off head still can't spill left. Set the SDL clip DIRECTLY (not
+	// pushClip, which mirrors a LOGICAL rect for hovering()): device draws never
+	// hit-test, so the mirror must keep reflecting the ambient logical clip. Save
+	// the prior clip from the mirror and restore it after the scale is back.
+	prevClip, prevOn := c.clipRect, c.clipOn
+	clipX := uiDeviceFromLogical(r.X+padX, dev)
+	clipY := uiDeviceFromLogical(r.Y, dev)
+	clipRt := uiDeviceFromLogical(r.X+padX+avail, dev)
+	clipBt := uiDeviceFromLogical(r.Y+r.H, dev)
+
+	// Read the renderer's ACTUAL scale to restore it (ground truth, matching
+	// app.go's pinned-pass restore); flip to 1:1 for the device-projected draws.
+	sx, sy := c.Ren.GetScale()
+	c.cgoRect = sdl.Rect{X: clipX, Y: clipY, W: clipRt - clipX, H: clipBt - clipY}
+	_ = c.Ren.SetScale(1, 1)
+	_ = c.Ren.SetClipRect(&c.cgoRect)
+
+	// Selection highlight, UNDER the text. Project both edges independently so the
+	// fill spans exactly the projected glyph gap (consistent with the value
+	// texture, which starts at the same projected origin).
+	if hasSel && selX1 > selX0 {
+		sx0 := uiDeviceFromLogical(r.X+padX+selX0, dev)
+		sx1 := uiDeviceFromLogical(r.X+padX+selX1, dev)
+		sTop := uiDeviceFromLogical(r.Y+3, dev)     // +3/-6: the selection inset used by the scaled path
+		sBot := uiDeviceFromLogical(r.Y+r.H-3, dev) // (r.H-6 tall, 3px from each edge)
+		c.Fill(sdl.Rect{X: sx0, Y: sTop, W: sx1 - sx0, H: sBot - sTop},
+			sdl.Color{R: ColAccent.R, G: ColAccent.G, B: ColAccent.B, A: 90})
+	}
+
+	// ox is the value texture's DEVICE origin (the projected left edge of the text
+	// after scroll). The caret shares this exact anchor below: the value texture and
+	// the caret metric are both measured on the device face, so caretXDev device px
+	// into the texture IS the glyph seam. Hoisted so that shared anchor is visible.
+	//
+	// UNIT SPLIT (deliberate, #77 S1b): the caret consumes RAW DEVICE caretXDev
+	// (ox+caretXDev) with no logical round-trip, so it lands on the true device
+	// seam. scroll and the selection edges stay on folded-LOGICAL widths — a
+	// sub-pixel error there only shifts which texture column the 1:1 blit starts
+	// at (it cannot resample), so the cheaper folded path is exact enough for them.
+	ox := uiDeviceFromLogical(r.X+padX-scroll, dev)
+
+	// Value texture, blitted 1:1 from its DEVICE-sized cache entry at the projected
+	// text origin — zero resampling, so the string can't shimmer as the scroll
+	// (hence the origin's sub-pixel phase) advances per keystroke.
+	if t, ok := c.textTexture(show, col, c.font); ok {
+		oy := uiDeviceFromLogical(textY, dev)
+		c.drawSrc = sdl.Rect{X: t.src.X, Y: t.src.Y, W: t.w, H: t.h}
+		c.drawDst = sdl.Rect{X: ox, Y: oy, W: t.w, H: t.h} // device→device 1:1
+		_ = c.Ren.Copy(t.tex, &c.drawSrc, &c.drawDst)
+	}
+
+	// Caret, OVER the text, at ox + caretXDev (the device glyph seam — same anchor
+	// and same device face as the value texture, so it can't drift as the prefix
+	// grows). Its width is fieldCaretWLog projected with the round-half-up rule: a
+	// CONSTANT integer per scale (125%→3, 150%→3 device px), so it can't flip 2↔3
+	// as its phase drifts. Y/H project the same +4/-8 inset.
+	if caretOn {
+		cx := ox + caretXDev
+		cTop := uiDeviceFromLogical(r.Y+4, dev)
+		cBot := uiDeviceFromLogical(r.Y+r.H-4, dev) // r.H-8 tall, 4px from each edge
+		cw := uiDeviceFromLogical(fieldCaretWLog, dev)
+		c.Fill(sdl.Rect{X: cx, Y: cTop, W: cw, H: cBot - cTop}, ColText)
+	}
+
+	// Restore the ambient render scale FIRST (SDL clip rects are in scaled
+	// coordinates), then the prior clip exactly as popClip would.
+	_ = c.Ren.SetScale(sx, sy)
+	if prevOn {
+		c.cgoRect = prevClip
+		_ = c.Ren.SetClipRect(&c.cgoRect)
+	} else {
+		_ = c.Ren.SetClipRect(nil)
+	}
 }
 
 // isASCII reports whether s is all 7-bit ASCII — the cheap gate that keeps a plain text
@@ -2431,11 +2648,19 @@ func (c *Ctx) fieldRaster(fb fieldFonts, mask bool, display string) *render.Mess
 	return c.emojiRaster(display, ColText, fb.primary, fb.emoji)
 }
 
-// fieldPrefixW is the width of display's first n runes as the field will draw
-// them: the raster's own advances when one is in play, else the chrome font.
+// fieldPrefixW is the LOGICAL width of display's first n runes as the field
+// will draw them: the raster's own advances when one is in play, else the chrome
+// font. On the ASCII path at a fractional scale it measures the DEVICE chrome
+// face (what the drawn texture uses) and folds back to logical — so caretX,
+// scroll and the selection all agree with the device-exact glyph seam, not the
+// logical-face approximation (#77 S1b). At 100% the device face is the identity,
+// so it stays on the logical widthCache path unchanged.
 func (c *Ctx) fieldPrefixW(display string, m *render.MessageRaster, n int) int32 {
 	if m != nil {
 		return m.PrefixWidth(n)
+	}
+	if deviceExactText(c.textDevPct) {
+		return uiLogicalFromDevice(c.caretPixelXDev(display, n), c.textDevPct)
 	}
 	return c.caretPixelX(display, n)
 }
@@ -2444,6 +2669,11 @@ func (c *Ctx) fieldPrefixW(display string, m *render.MessageRaster, n int) int32
 // nearest rune boundary under the same metrics the field draws with.
 func (c *Ctx) fieldIndexAtX(display string, m *render.MessageRaster, relX int32) int {
 	if m == nil {
+		if deviceExactText(c.textDevPct) {
+			// Hit-test on the SAME device-face metric the caret/selection use, or a
+			// click lands off by exactly the drift this fix removes (#77 point 4).
+			return c.caretIndexAtXDev(display, relX)
+		}
 		return c.caretIndexAtX(display, relX)
 	}
 	if relX <= 0 {
@@ -2501,6 +2731,43 @@ func (c *Ctx) caretIndexAtX(display string, relX int32) int {
 	prevW := int32(0)
 	for i := 1; i <= len(runes); i++ {
 		w := c.TextWidth(string(runes[:i]))
+		if relX < (prevW+w)/2 {
+			return i - 1
+		}
+		prevW = w
+	}
+	return len(runes)
+}
+
+// caretPixelXDev is caretPixelX measured on the DEVICE chrome face, returning
+// raw DEVICE px — the exact seam of the field's device-rasterized texture. The
+// caret draw consumes this directly (no logical round-trip); fieldPrefixW folds
+// it to logical for the scroll/selection consumers. Only reached at a fractional
+// scale (the ASCII device-exact field path). Early return before any []rune/probe
+// so an empty focused field stays zero-alloc.
+func (c *Ctx) caretPixelXDev(display string, caret int) int32 {
+	if caret <= 0 || display == "" {
+		return 0
+	}
+	runes := []rune(display)
+	if caret > len(runes) {
+		caret = len(runes)
+	}
+	return c.devTextWidth(string(runes[:caret]))
+}
+
+// caretIndexAtXDev is caretIndexAtX on the DEVICE-face metric folded back to
+// logical: relX is a LOGICAL click offset (mouse coords are logical), and the
+// caret/selection sit on the folded-logical device widths, so hit-testing against
+// those same folded widths lands the click on the drawn glyph seam (#77 point 4).
+func (c *Ctx) caretIndexAtXDev(display string, relX int32) int {
+	if relX <= 0 || display == "" {
+		return 0
+	}
+	runes := []rune(display)
+	prevW := int32(0)
+	for i := 1; i <= len(runes); i++ {
+		w := uiLogicalFromDevice(c.devTextWidth(string(runes[:i])), c.textDevPct)
 		if relX < (prevW+w)/2 {
 			return i - 1
 		}
