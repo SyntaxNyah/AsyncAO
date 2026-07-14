@@ -1563,8 +1563,8 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// Layout presets (#34): save the whole default-courtroom arrangement under a name
 	// and flip between setups. Presets are window fractions, so they travel across sizes.
 	// applyLayoutPreset/applyStagePreset (layoutpresets.go) take effect the same frame.
-	y = a.settingsSection(y, w, "Layout presets")
-	for _, ln := range c.WrapText("Save the default-courtroom layout (Extras → Edit Layout lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. Stored as window fractions, so a preset looks right at any window size.", a.formW-8, 0) {
+	y = a.settingsSection(y, w, "Layout profiles")
+	for _, ln := range c.WrapText("Save the WHOLE courtroom layout (Extras → Edit Layout lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. A profile captures the box positions, their corner anchors, which chrome you hid, and the snap-grid step, so loading one restores everything at once. Stored as window fractions, so it looks right at any window size.", a.formW-8, 0) {
 		c.Label(pad, y, ln, ColTextDim)
 		y += 16
 	}
@@ -1605,28 +1605,33 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	if fieldW < 80 {
 		fieldW = 80
 	}
-	a.layoutPresetName, _ = c.TextField("layoutpreset", sdl.Rect{X: nameX, Y: y, W: fieldW, H: fieldH}, a.layoutPresetName, "preset name")
+	a.layoutPresetName, _ = c.TextField("layoutpreset", sdl.Rect{X: nameX, Y: y, W: fieldW, H: fieldH}, a.layoutPresetName, "profile name")
 	if c.Button(sdl.Rect{X: nameX + fieldW + 8, Y: y, W: saveW, H: fieldH}, "Save") {
 		if name := strings.TrimSpace(a.layoutPresetName); name != "" {
-			a.d.Prefs.SaveLayoutPreset(name, a.d.Prefs.ClassicLayoutOverrides())
+			a.d.Prefs.SaveLayoutProfile(name, config.LayoutProfile{
+				Classic: a.d.Prefs.ClassicLayoutOverrides(),
+				Anchors: a.d.Prefs.ClassicAnchorSnapshot(),
+				Hidden:  a.d.Prefs.HiddenPanels(),
+				GridPx:  a.d.Prefs.LayoutGridSize(),
+			})
 			a.layoutPresetName = ""
 		}
 	}
 	y += fieldH + 10
 
-	// Saved presets: load / delete each.
-	if names := a.d.Prefs.LayoutPresetNames(); len(names) == 0 {
-		c.Label(pad, y, "No saved presets yet — arrange your layout, then Save it above.", ColTextDim)
+	// Saved profiles: load / delete each.
+	if names := a.d.Prefs.LayoutProfileNames(); len(names) == 0 {
+		c.Label(pad, y, "No saved profiles yet — arrange your layout, then Save it above.", ColTextDim)
 		y += 20
 	} else {
 		sort.Strings(names)
 		for _, name := range names {
 			if c.Button(sdl.Rect{X: pad, Y: y, W: 60, H: btnH}, "Load") {
-				a.applyLayoutPreset(a.d.Prefs.LayoutPreset(name))
-				a.pushDebug("layout: preset loaded")
+				a.applyProfile(a.d.Prefs.LayoutProfile(name))
+				a.pushDebug("layout: profile loaded")
 			}
 			if c.Button(sdl.Rect{X: pad + 66, Y: y, W: 64, H: btnH}, "Delete") {
-				a.d.Prefs.DeleteLayoutPreset(name)
+				a.d.Prefs.DeleteLayoutProfile(name)
 			}
 			c.LabelClipped(pad+140, y+4, w-(pad+140)-8, name, ColText)
 			y += btnH + 6

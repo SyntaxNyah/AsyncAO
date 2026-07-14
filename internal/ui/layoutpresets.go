@@ -1,12 +1,16 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
+	"github.com/veandco/go-sdl2/sdl"
+)
 
-// Layout presets (#34): save the whole default-courtroom slot arrangement under a
-// name and flip between setups (a big stage for watching, a wide log for moderating,
-// …). A preset is just a ClassicLayout override map (window fractions), so it travels
-// across window sizes. The Settings → Theme "Layout presets" section owns the UI;
-// these helpers apply the presets and define the built-in premades.
+// Layout premades + full-state profiles (#34 → A6): flip the whole courtroom
+// between named setups (a big stage for watching, a wide log for moderating, …).
+// applyLayoutPreset swaps just the ClassicLayout override map (used by the anchorless
+// theater premades); applyProfile (A6) restores a full LayoutProfile — classic slots,
+// anchors, hidden set, grid — at once. The Settings → Theme "Layout profiles" section
+// owns the save/load UI; these helpers apply them and define the built-in premades.
 
 const (
 	// Theater premade geometry (#34) — the stage's share of the window. One big 4:3
@@ -36,6 +40,54 @@ func (a *App) applyLayoutPreset(m map[string][4]float64) {
 	a.d.Prefs.SetClassicLayout(m)
 	a.classicOv = cloneClassicOv(m)
 	a.classicOvLoaded = true
+}
+
+// applyProfile makes a full-state LayoutProfile (A6) the live layout AND the
+// durable prefs, restoring all four axes at once: classic slots, their window
+// anchors, the hidden-chrome set, and the editor snap-grid step. Unlike
+// applyLayoutPreset it does NOT selectively unpin — a profile carries its Anchors
+// map explicitly (with each anchor's saved window), so the whole snapshot is
+// applied wholesale. Live and durable copies are fed from the SAME profile map so
+// they can't diverge (SetClassicAnchors sanitize-drops, but parseAnchors reads p
+// directly). applyLayoutPreset / applyStagePreset stay for the anchorless theater
+// premades.
+func (a *App) applyProfile(p config.LayoutProfile) {
+	// Classic slots.
+	a.d.Prefs.SetClassicLayout(p.Classic)
+	a.classicOv = cloneClassicOv(p.Classic)
+	a.classicOvLoaded = true
+	// Window anchors (wholesale; the profile carries WinW/WinH per anchor).
+	a.d.Prefs.SetClassicAnchors(p.Anchors)
+	a.classicAnchor = parseAnchors(p.Anchors)
+	// Hidden-chrome set — durable + the live map (mirror applyPrefsToState). Rebuild
+	// the live map from HiddenPanels() (NOT the raw p.Hidden slice) so live and
+	// durable read the SAME sanitized source — SetHiddenPanels dedups/caps, and
+	// seeding a.hidden from the unsanitized slice would diverge from what persisted.
+	a.d.Prefs.SetHiddenPanels(p.Hidden)
+	a.hidden = map[string]bool{}
+	for _, id := range a.d.Prefs.HiddenPanels() {
+		a.hidden[id] = true
+	}
+	// Editor snap grid.
+	a.d.Prefs.SetLayoutGridSize(p.GridPx)
+	// THE CATCH (architect ruling 6): reset .placed on every persistable floatWin
+	// so an already-OPEN panel re-seeds from the applied profile's slots next frame
+	// (classic slots update immediately; floatWins otherwise cache x/y/placed). The
+	// panelSlotTable covers the 10 non-msgWin panels; msgWin + the Extras box are
+	// handled explicitly — 11 floatWins + extrasPlaced.
+	for i := range panelSlotTable {
+		panelSlotTable[i].fw(a).placed = false // cold-path table use (never a draw path)
+	}
+	a.msgWin.placed = false
+	a.extrasPlaced = false
+	// Torn-off Extras widgets: a profile may carry its own torn:widget:* slots, so
+	// rebuild the set from the newly-applied classicOv. SetClassicLayout above already
+	// replaced the WHOLE override map, so torn slots the profile lacks are gone — we
+	// need only drop the live boxes and re-arm the one-shot latch; the next courtroom
+	// frame reconstructs from the profile's slots (with a real w/h, which applyProfile
+	// doesn't have — hence the deferred rebuild rather than an inline one here).
+	a.extrasDetached = a.extrasDetached[:0]
+	a.extrasTornRebuilt = false
 }
 
 // applyStagePreset overlays a premade stage rect onto the CURRENT layout, leaving every

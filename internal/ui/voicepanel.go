@@ -64,6 +64,9 @@ func (a *App) voiceButtonState() (label string, border sdl.Color) {
 }
 
 func (a *App) voicePanelRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.voiceWin, slotPanelVoice, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH, w, h); ok {
+		return r
+	}
 	if !a.voiceWin.placed {
 		dw := clampI32(voicePanelDefW, voicePanelMinW, w-2*floatWinMargin)
 		dh := clampI32(voicePanelDefH, voicePanelMinH, h-2*floatWinMargin)
@@ -198,6 +201,7 @@ func (a *App) voicePeerChar(uid int) string {
 // press edge from drawFloatingPanels.
 func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	c := a.ctx
+	wasActive := a.voiceWin.dragging || a.voiceWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.voicePanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
@@ -215,6 +219,9 @@ func (a *App) drawVoicePanel(w, h int32, pressed *bool) {
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.voiceWin, grip, r, voicePanelMinW, voicePanelMinH, pressed)
 	a.drawResizeGrip(grip)
+	if wasActive && !a.voiceWin.dragging && !a.voiceWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelVoice, r, w, h)
+	}
 
 	x := r.X + pad
 	y := r.Y + floatTitleH + 8

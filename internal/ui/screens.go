@@ -1219,6 +1219,14 @@ func (a *App) drawCourtroom(w, h int32) {
 	if a.classicEdit {
 		clear(a.slotReg)
 	}
+	// Load the slot overrides and re-tear last session's torn-off Extras widgets
+	// BEFORE the fence below reads them: boxFencesPointer walks a.classicOv (torn
+	// tabs) and a.extrasDetached (torn widgets), so both must be populated first or
+	// frame one fences a stale/empty set (the same statelessness torn tabs already
+	// enjoy). Neither call needs room/sess; both are latched, so this stays
+	// alloc-free after the first courtroom frame.
+	a.ensureClassicOv()
+	a.reconstructTornWidgets(w, h)
 	// Fence the courtroom under the non-blocking Extras box: while the pointer is
 	// over the box, this whole pass runs pointer-blind so a click in the box can't
 	// also land on the scene/log. The deferred unfence is a direct method (no
@@ -1236,7 +1244,6 @@ func (a *App) drawCourtroom(w, h int32) {
 		a.screen = ScreenLobby
 		return
 	}
-	a.ensureClassicOv() // load persisted default-layout slot overrides once (then just a bool check)
 
 	// Theater mode preempts BOTH layouts: stage only, Esc exits.
 	if a.theaterOn {
@@ -5374,6 +5381,7 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 // flip and z-order live in the right column.
 func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	c := a.ctx
+	wasActive := a.pairWin.dragging || a.pairWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.pairPanelRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
@@ -5390,6 +5398,9 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.pairWin, grip, r, pairPanelMinW, pairPanelMinH, pressed)
 	a.drawResizeGrip(grip)
+	if wasActive && !a.pairWin.dragging && !a.pairWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelPair, r, w, h)
+	}
 
 	contentTop := r.Y + floatTitleH + 10
 
@@ -5487,6 +5498,9 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 // resizable, clamped on-screen, with a window-height-responsive default size.
 func (a *App) pairPanelRect(w, h int32) sdl.Rect {
 	defH := clampI32(h-120, pairPanelMinH, 560)
+	if r, ok := a.seedPanelFromSlot(&a.pairWin, slotPanelPair, pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h); ok {
+		return r
+	}
 	return a.pairWin.rect(pairPanelDefW, defH, pairPanelMinW, pairPanelMinH, w, h)
 }
 

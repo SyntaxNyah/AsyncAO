@@ -53,6 +53,58 @@ type detachedWidget struct {
 	w, h int32
 }
 
+// panelSlot is one row of panelSlotTable: a persistable floatWin panel's canonical
+// slot key, an accessor to its per-App floatWin geometry, and its nominal default /
+// minimum size. The fw accessor is a plain function (NOT a *floatWin) because the
+// floatWin lives on the *App instance, not the package — the table itself must stay
+// package-level (zero-alloc rule) so it cannot hold instance pointers. This mirrors
+// the compactChip.run method-value idiom. defW/defH/minW/minH are the nominal sizes
+// (a few panels compute a dynamic default at draw time; the table carries the
+// canonical value for the magnetism census).
+type panelSlot struct {
+	slot                   string
+	fw                     func(*App) *floatWin
+	defW, defH, minW, minH int32
+}
+
+// panelSlotTable is the CANONICAL enumeration of the persistable floatWin panels
+// (every floatWin except msgWin, which keeps its historical slotMessages key and
+// its own seed/persist wrappers). It is the single source of truth for:
+//   - applyProfile's .placed reset (so open panels re-seed from an applied profile),
+//   - a later magnetism milestone's panel census (it derives its candidate set here).
+//
+// It is iterated ONLY on cold paths (applyProfile; future magnetism) — never in a
+// draw fn. Each panel's draw path calls seedPanelFromSlot / persistPanelSlot
+// directly with &a.<panel>Win, so no table iteration and no App-capturing closure
+// ever touches a settled frame. Adding a floatWin panel? Add its slot const
+// (classiclayout.go), a row here, and the two-line seed/persist wiring in its
+// draw/rect fns. NOTE: this is a 4th independent panel list — do NOT try to unify
+// it with floatbox.go's three deliberately-non-identical fence/suppression lists.
+//
+// Nominal heights for the panels whose real default height is computed at draw
+// time (ban box: by kind; hotkey sheet + pairing: window-height responsive). Only
+// the census below uses these — the live seed still passes each panel's own
+// dynamic default — so they need only be representative, not exact.
+const (
+	panelNomBanH    = int32(600) // banBoxDims default (ban kind) height
+	panelNomBanMinH = int32(556) // banBoxDims default (ban kind) minimum height
+	panelNomHKH     = int32(520) // hotkey sheet's usual opened height
+	panelNomPairH   = int32(560) // pairPanelRect's default-height clamp ceiling
+)
+
+var panelSlotTable = []panelSlot{
+	{slotPanelPair, func(a *App) *floatWin { return &a.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH},
+	{slotPanelMod, func(a *App) *floatWin { return &a.modWin }, modDashW, modDashH, modDashMinW, modDashMinH},
+	{slotPanelCM, func(a *App) *floatWin { return &a.cmWin }, cmPanelDefW, cmPanelDefH, cmPanelMinW, cmPanelMinH},
+	{slotPanelHK, func(a *App) *floatWin { return &a.hkWin }, hkSheetDefW, panelNomHKH, hkSheetMinW, hkSheetMinH},
+	{slotPanelEvid, func(a *App) *floatWin { return &a.evidWin }, evidPanelDefW, evidPanelDefH, evidPanelMinW, evidPanelMinH},
+	{slotPanelModcall, func(a *App) *floatWin { return &a.modcallWin }, modcallPanelDefW, modcallPanelDefH, modcallPanelMinW, modcallPanelMinH},
+	{slotPanelVoice, func(a *App) *floatWin { return &a.voiceWin }, voicePanelDefW, voicePanelDefH, voicePanelMinW, voicePanelMinH},
+	{slotPanelBan, func(a *App) *floatWin { return &a.banWin }, banBoxDefW, panelNomBanH, banBoxMinW, panelNomBanMinH},
+	{slotPanelDebug, func(a *App) *floatWin { return &a.debugWin }, debugPanelW, debugPanelH, debugPanelMinW, debugPanelMinH},
+	{slotPanelClient, func(a *App) *floatWin { return &a.clientWin }, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH},
+}
+
 // extrasWidgets returns the canonical widget table, built once and cached. The
 // closures capture the stable *App receiver, so caching them is safe and drops
 // the per-frame slice/closure allocations the inline build used to cost.
@@ -330,6 +382,13 @@ func (a *App) extrasBoxVisible() bool {
 // Size clamps to [min, window] and the position clamps fully on-screen, so a
 // resize or a moved-then-shrunk window can't strand it off-edge or oversize it.
 func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
+	// Seed from the persisted slot HERE (not in drawExtrasMainBox) so boxFencesPointer
+	// — which calls this rect fn — and the draw agree on frame one: the fence used to
+	// read the un-seeded (centred) rect the frame before the draw adopted the saved
+	// spot, leaking a click through the box's real footprint. seedExtrasFromSlot is
+	// self-guarded (!extrasPlaced) and sets extrasPlaced, so this never double-seeds.
+	// Mirrors the floatWin panels' seed-in-rect-fn idiom (seedPanelFromSlot).
+	a.seedExtrasFromSlot(w, h)
 	bw, bh := extrasBoxW, extrasBoxH
 	if a.extrasUserW > 0 {
 		bw = a.extrasUserW
@@ -357,6 +416,35 @@ func (a *App) extrasBoxRect(w, h int32) sdl.Rect {
 		maxY = 8
 	}
 	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}
+}
+
+// seedExtrasFromSlot places the Extras box from its persisted classic slot on the
+// first frame it's shown this session (before any drag): if the layout editor /
+// last session saved a position, adopt it (position + size), marking it placed so
+// extrasBoxRect stops re-centring. Called at the top of extrasBoxRect (so the
+// fence and the draw see the same seeded rect on frame one). The Extras box is NOT
+// a floatWin, so this is bespoke, mirroring seedPanelFromSlot.
+func (a *App) seedExtrasFromSlot(w, h int32) {
+	if a.extrasPlaced {
+		return
+	}
+	ov, ok := a.classicOv[slotExtras]
+	if !ok {
+		return
+	}
+	r := a.anchoredRect(slotExtras, ov, w, h)
+	a.extrasBoxX, a.extrasBoxY = r.X, r.Y
+	if r.W > 0 && r.H > 0 {
+		a.extrasUserW, a.extrasUserH = clampI32(r.W, extrasMinW, w), clampI32(r.H, extrasMinH, h)
+	}
+	a.extrasPlaced = true
+}
+
+// persistExtrasSlot writes the Extras box's current rect back to its classic slot
+// on a drag/resize-END frame (never per-frame) so its position + size survive a
+// relaunch. Mirrors persistPanelSlot for the non-floatWin Extras box.
+func (a *App) persistExtrasSlot(w, h int32) {
+	a.persistPanelSlot(slotExtras, a.extrasBoxRect(w, h), w, h)
 }
 
 // detachedBoxRect is the i-th torn-off widget's screen rect: its (possibly
@@ -496,6 +584,7 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 // press moves one box. Runs in the box's own pass (real pointer).
 func (a *App) handleExtrasDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	c := a.ctx
+	wasDragging := a.extrasDragging
 	if *pressed && pointIn(c.mouseX, c.mouseY, handle) {
 		*pressed = false
 		r := a.extrasBoxRect(w, h)
@@ -509,12 +598,18 @@ func (a *App) handleExtrasDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 		a.extrasBoxX, a.extrasBoxY = c.mouseX-a.extrasGrabDX, c.mouseY-a.extrasGrabDY
 		a.extrasPlaced = true
 	}
+	if wasDragging && !a.extrasDragging { // drag just ended → remember where (slot:panel:extras)
+		a.persistExtrasSlot(w, h)
+	}
 }
 
 // handleDetachedDrag moves the i-th torn-off box by its title bar, sharing the
-// per-frame press edge and the (single, one-at-a-time) grab offset.
-func (a *App) handleDetachedDrag(i int, handle sdl.Rect, pressed *bool) {
+// per-frame press edge and the (single, one-at-a-time) grab offset. w/h size the
+// window so the gesture-END frame can persist the box's rect (torn widgets survive
+// relaunch — same wasActive bare-bool pattern the floatWin panels use).
+func (a *App) handleDetachedDrag(i int, handle sdl.Rect, w, h int32, pressed *bool) {
 	c := a.ctx
+	wasDragging := a.extrasDetachDragging && a.extrasDetachIdx == i // detect this box's drag-end frame
 	if *pressed && pointIn(c.mouseX, c.mouseY, handle) {
 		*pressed = false
 		a.extrasDetachDragging = true
@@ -528,6 +623,9 @@ func (a *App) handleDetachedDrag(i int, handle sdl.Rect, pressed *bool) {
 			a.extrasDetached[i].x = c.mouseX - a.extrasGrabDX
 			a.extrasDetached[i].y = c.mouseY - a.extrasGrabDY
 		}
+	}
+	if wasDragging && !a.extrasDetachDragging { // drag just ended → remember where (torn:widget:<id>)
+		a.persistTornWidgetSlot(i, w, h)
 	}
 }
 
@@ -544,10 +642,84 @@ func (a *App) detachWidget(id int, mx, my int32) {
 	a.extrasGrabDX, a.extrasGrabDY = mx-x, my-y
 }
 
+// tornWidgetSlotKey is the persisted classic-slot key for widget id's torn-off box
+// ("torn:widget:<id>"). Formatted off the hot path only (gesture-end / reattach /
+// cold reconstruction), never on a settled draw frame.
+func tornWidgetSlotKey(id int) string {
+	return tornWidgetSlotPrefix + strconv.Itoa(id)
+}
+
+// persistTornWidgetSlot writes the i-th torn-off box's current rect back to its
+// classic slot on a drag/resize-END frame (never per-frame) so it survives a
+// relaunch. Torn widgets are never window-pinned, so this is a plain frac write
+// (no anchor bookkeeping) — the thin sibling of persistPanelSlot for the bespoke
+// detached boxes.
+func (a *App) persistTornWidgetSlot(i int, w, h int32) {
+	if i < 0 || i >= len(a.extrasDetached) {
+		return
+	}
+	key := tornWidgetSlotKey(a.extrasDetached[i].id)
+	frac := rectToFrac(a.detachedBoxRect(i, w, h), w, h)
+	if a.classicOv == nil {
+		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	}
+	a.classicOv[key] = frac
+	a.d.Prefs.SetClassicSlot(key, frac)
+}
+
 // reattachWidget closes the i-th torn-off box, returning its widget to the grid.
+// The widget's persisted torn slot is cleared (pref + live classicOv) so a
+// re-grid'd widget doesn't re-tear on the next launch and stale keys don't pile up.
 func (a *App) reattachWidget(i int) {
+	if i < 0 || i >= len(a.extrasDetached) {
+		return
+	}
+	a.clearClassicSlot(tornWidgetSlotKey(a.extrasDetached[i].id)) // capture id BEFORE the splice
 	a.extrasDetached = append(a.extrasDetached[:i], a.extrasDetached[i+1:]...)
 	a.extrasDetachDragging = false
+}
+
+// reconstructTornWidgets re-tears the Extras widgets a prior session left torn off,
+// by scanning the loaded classic overrides for tornWidgetSlotPrefix keys and
+// appending a detachedWidget at each saved (frac→px) spot. COLD PATH ONLY: latched
+// by extrasTornRebuilt so it runs once per SESSION (the latch is reset only by
+// applyProfile). Called from drawCourtroom right after ensureClassicOv and BEFORE
+// boxFencesPointer, so the fence sees the reconstructed boxes on frame one — never
+// adds per-frame work.
+//
+// Why here (not App init): a detachedWidget stores PIXELS, so reconstruction needs
+// the live window size; App init has none. drawCourtroom is the first spot that has
+// both the loaded classicOv AND a real w/h, and ensureClassicOv has just run above
+// it — so this is the natural one-shot home (ensureClassicOv itself takes no w/h).
+//
+// Unknown ids (from a newer build) are IGNORED, not deleted — their slots stay
+// persisted so a downgrade/upgrade round-trips. The result is structurally bounded:
+// ids must match an extrasWidgets() entry and are deduped, so at most one box per
+// widget.
+func (a *App) reconstructTornWidgets(w, h int32) {
+	if a.extrasTornRebuilt {
+		return
+	}
+	a.extrasTornRebuilt = true
+	if len(a.classicOv) == 0 {
+		return
+	}
+	widgets := a.extrasWidgets()
+	for key, frac := range a.classicOv {
+		rest, ok := strings.CutPrefix(key, tornWidgetSlotPrefix)
+		if !ok {
+			continue
+		}
+		id, err := strconv.Atoi(rest)
+		if err != nil || id < 0 || id >= len(widgets) {
+			continue // unknown / malformed id: leave the slot persisted, don't re-tear it
+		}
+		if a.widgetDetached(id) {
+			continue // dedup: already torn (e.g. re-entry after a mid-session detach)
+		}
+		r := fracToRect(frac, w, h) // torn widgets are unanchored → plain frac→px
+		a.extrasDetached = append(a.extrasDetached, detachedWidget{id: id, x: r.X, y: r.Y, w: r.W, h: r.H})
+	}
 }
 
 // extrasTearDetect starts a tear-off when grid cell id is press-dragged past the
@@ -669,8 +841,8 @@ func (a *App) drawFloatingExtras(w, h int32, pressed *bool) {
 // widgets, with tear-off detection per cell.
 func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	c := a.ctx
-	r := a.extrasBoxRect(w, h)
-	pal := a.extrasPalette() // stock colours unless the user themed the box
+	r := a.extrasBoxRect(w, h) // seeds from the persisted slot on first open (see extrasBoxRect)
+	pal := a.extrasPalette()   // stock colours unless the user themed the box
 	if pal.gradient {
 		c.FillGradient(r, pal.bg, pal.bg2)
 	} else {
@@ -695,7 +867,7 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 	// rather than arming a tear on the cell beneath; it sits below the grid, so
 	// drawing it here doesn't overlap any cell.
 	grip := sdl.Rect{X: r.X + r.W - extrasGripSz, Y: r.Y + r.H - extrasGripSz, W: extrasGripSz, H: extrasGripSz}
-	a.handleExtrasResize(grip, r, pressed)
+	a.handleExtrasResize(grip, r, w, h, pressed)
 	a.drawResizeGrip(grip)
 
 	// Sound sliders at the top — Master + the three channels (players' top ask:
@@ -762,8 +934,9 @@ func (a *App) drawExtrasMainBox(w, h int32, pressed *bool) {
 // handleExtrasResize resizes the main box from its bottom-right grip, pinning the
 // top-left so only width/height grow. Shares the per-frame press edge and the
 // (one-at-a-time) grab offset; extrasBoxRect clamps the result to [min, window].
-func (a *App) handleExtrasResize(grip, r sdl.Rect, pressed *bool) {
+func (a *App) handleExtrasResize(grip, r sdl.Rect, w, h int32, pressed *bool) {
 	c := a.ctx
+	wasResizing := a.extrasResizing
 	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {
 		*pressed = false
 		a.extrasResizing = true
@@ -787,6 +960,9 @@ func (a *App) handleExtrasResize(grip, r sdl.Rect, pressed *bool) {
 		}
 		a.extrasUserW, a.extrasUserH = nw, nh
 	}
+	if wasResizing && !a.extrasResizing { // resize just ended → remember the size (slot:panel:extras)
+		a.persistExtrasSlot(w, h)
+	}
 }
 
 // drawResizeGrip paints a bottom-right resize handle — a small plate with accent
@@ -803,9 +979,11 @@ func (a *App) drawResizeGrip(grip sdl.Rect) {
 
 // handleDetachedResize resizes the i-th torn-off box from its bottom-right grip,
 // pinning the top-left. Shares the per-frame press edge and the (one-at-a-time)
-// grab offset; detachedBoxRect clamps the result to [min, window].
-func (a *App) handleDetachedResize(i int, grip, r sdl.Rect, pressed *bool) {
+// grab offset; detachedBoxRect clamps the result to [min, window]. w/h let the
+// resize-END frame persist the new rect (torn widgets survive relaunch).
+func (a *App) handleDetachedResize(i int, grip, r sdl.Rect, w, h int32, pressed *bool) {
 	c := a.ctx
+	wasResizing := a.extrasDetachResizing && a.extrasDetachIdx == i // detect this box's resize-end frame
 	if *pressed && pointIn(c.mouseX, c.mouseY, grip) {
 		*pressed = false
 		a.extrasDetachResizing = true
@@ -826,6 +1004,9 @@ func (a *App) handleDetachedResize(i int, grip, r sdl.Rect, pressed *bool) {
 			}
 			a.extrasDetached[i].w, a.extrasDetached[i].h = nw, nh
 		}
+	}
+	if wasResizing && !a.extrasDetachResizing { // resize just ended → remember the size (torn:widget:<id>)
+		a.persistTornWidgetSlot(i, w, h)
 	}
 }
 
@@ -858,11 +1039,11 @@ func (a *App) drawExtrasDetached(w, h int32, pressed *bool) {
 			a.reattachWidget(i)
 			return // slice mutated — stop drawing this frame
 		}
-		a.handleDetachedDrag(i, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 28, H: extrasTitleH}, pressed)
+		a.handleDetachedDrag(i, sdl.Rect{X: r.X, Y: r.Y, W: r.W - 28, H: extrasTitleH}, w, h, pressed)
 		// Bottom-right resize grip — handled before the body button so a corner
 		// press resizes the box instead of running the widget.
 		grip := sdl.Rect{X: r.X + r.W - detachedGripSz, Y: r.Y + r.H - detachedGripSz, W: detachedGripSz, H: detachedGripSz}
-		a.handleDetachedResize(i, grip, r, pressed)
+		a.handleDetachedResize(i, grip, r, w, h, pressed)
 		body := sdl.Rect{X: r.X + 8, Y: r.Y + extrasTitleH + 6, W: r.W - 16, H: r.H - extrasTitleH - 12}
 		if c.ButtonCol(body, wd.label, pal.bg, pal.title, pal.border, pal.text) {
 			wd.run()

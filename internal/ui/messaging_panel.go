@@ -29,16 +29,57 @@ const (
 
 func (a *App) toggleMessages() { a.showMessages = !a.showMessages }
 
+// seedPanelFromSlot is the generic first-open seed shared by every persistable
+// floatWin panel (extracted from msgPanelRect). If the layout editor positioned
+// the panel (classicOv[slot] exists) and it hasn't been dragged this session
+// (!fw.placed), it adopts that persisted rect via anchoredRect (pin honoured),
+// marks the floatWin placed, and returns (rect, true). Otherwise it returns
+// (zero, false) and the caller keeps its OWN default first-open position (each
+// panel's historical tuck / centre) — this helper only owns the slot-seed path,
+// never a panel's default, so wiring it in can't move an un-persisted panel.
+// panelSlotTable is the canonical enumeration of the panels this drives.
+func (a *App) seedPanelFromSlot(fw *floatWin, slot string, defW, defH, minW, minH, w, h int32) (sdl.Rect, bool) {
+	if fw.placed {
+		return sdl.Rect{}, false
+	}
+	ov, ok := a.classicOv[slot]
+	if !ok {
+		return sdl.Rect{}, false
+	}
+	r := a.anchoredRect(slot, ov, w, h) // positioned via Edit Layout → start there
+	fw.x, fw.y, fw.w, fw.h, fw.placed = r.X, r.Y, r.W, r.H, true
+	return fw.rect(defW, defH, minW, minH, w, h), true
+}
+
+// persistPanelSlot is the generic slot writer shared by every persistable
+// floatWin panel (extracted from persistMsgSlot). It writes the panel's CURRENT
+// drawn rect (r — the caller already computed it this frame) back to its classic
+// slot (in-memory classicOv + the durable pref via the debounced saver) so a
+// drag/resize survives a relaunch. Taking the rect directly (rather than
+// re-deriving it from def/min sizes) keeps panels with a dynamic default height in
+// sync automatically. Callers must invoke it only on the drag/resize-END frame
+// (the wasActive guard) — never per-frame.
+func (a *App) persistPanelSlot(slot string, r sdl.Rect, w, h int32) {
+	frac := rectToFrac(r, w, h)
+	if a.classicOv == nil {
+		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
+	}
+	a.classicOv[slot] = frac
+	a.syncAnchorWindow(slot, w, h) // a pinned slot's override now describes THIS window
+	a.d.Prefs.SetClassicSlot(slot, frac)
+	if m := a.slotAnchorMode(slot); m != "" {
+		a.d.Prefs.SetClassicAnchor(slot, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
+	}
+}
+
 // msgPanelRect is the panel's screen rect. First open this session seeds from the
 // persisted layout slot (if you positioned it in Edit Layout), else tucks it
 // top-left; thereafter the live floatWin geometry (drag / resize) wins.
 func (a *App) msgPanelRect(w, h int32) sdl.Rect {
-	if !a.msgWin.placed {
-		if ov, ok := a.classicOv[slotMessages]; ok { // positioned via Edit Layout → start there (pin honoured)
-			r := a.anchoredRect(slotMessages, ov, w, h)
-			a.msgWin.x, a.msgWin.y, a.msgWin.w, a.msgWin.h, a.msgWin.placed = r.X, r.Y, r.W, r.H, true
-			return a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h)
-		}
+	if r, ok := a.seedPanelFromSlot(&a.msgWin, slotMessages, msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h); ok {
+		return r
+	}
+	if !a.msgWin.placed { // historical default: tuck top-left (not centred)
 		dw := clampI32(msgPanelDefW, msgPanelMinW, w-2*floatWinMargin)
 		dh := clampI32(msgPanelDefH, msgPanelMinH, h-2*floatWinMargin)
 		return sdl.Rect{X: floatWinMargin, Y: floatTitleH, W: dw, H: dh}
@@ -54,21 +95,11 @@ func (a *App) msgSlotDefaultRect(w, h int32) sdl.Rect {
 	return sdl.Rect{X: (w - dw) / 2, Y: (h - dh) / 2, W: dw, H: dh}
 }
 
-// persistMsgSlot writes the live panel's current rect back to the layout slot, so
-// a drag/resize survives a relaunch. Called only on the drag/resize-END frame, so
-// it never writes per-frame; the in-memory classicOv write is cheap and the disk
-// flush is the debounced saver (SetClassicSlot marks dirty).
+// persistMsgSlot writes the Group Chat panel's rect back to its layout slot on the
+// drag/resize-END frame (never per-frame). Thin wrapper over the generic
+// persistPanelSlot now that every panel shares that path.
 func (a *App) persistMsgSlot(w, h int32) {
-	frac := rectToFrac(a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
-	if a.classicOv == nil {
-		a.classicOv = make(map[string][4]float64, classicSlotRegCap)
-	}
-	a.classicOv[slotMessages] = frac
-	a.syncAnchorWindow(slotMessages, w, h) // a pinned slot's override now describes THIS window
-	a.d.Prefs.SetClassicSlot(slotMessages, frac)
-	if m := a.slotAnchorMode(slotMessages); m != "" {
-		a.d.Prefs.SetClassicAnchor(slotMessages, config.ClassicAnchor{Mode: m, WinW: int(w), WinH: int(h)})
-	}
+	a.persistPanelSlot(slotMessages, a.msgWin.rect(msgPanelDefW, msgPanelDefH, msgPanelMinW, msgPanelMinH, w, h), w, h)
 }
 
 // drawMessagesSlotGhost draws an inert titled placeholder for the Group Chat panel

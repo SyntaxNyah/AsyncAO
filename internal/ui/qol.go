@@ -594,6 +594,9 @@ func (a *App) hkSheetRect(w, h int32) sdl.Rect {
 	if defH > 540 {
 		defH = 540
 	}
+	if r, ok := a.seedPanelFromSlot(&a.hkWin, slotPanelHK, hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h); ok {
+		return r
+	}
 	return a.hkWin.rect(hkSheetDefW, defH, hkSheetMinW, hkSheetMinH, w, h)
 }
 
@@ -638,6 +641,9 @@ func (a *App) drawHotkeyCheatSheet(w, h int32) {
 	hgrip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.hkWin, hgrip, r, hkSheetMinW, hkSheetMinH, &pressed)
 	a.drawResizeGrip(hgrip)
+	if wasManip && !a.hkWin.dragging && !a.hkWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelHK, r, w, h)
+	}
 	if !c.mouseDown && wasManip {
 		c.clicked = false // a finished drag/resize isn't a click underneath
 	}

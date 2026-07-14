@@ -59,6 +59,34 @@ const (
 	// showMessages toggle (Extras → Group Chat). The live floatWin (msgWin) seeds
 	// from this slot on open and writes back on drag/resize end (messaging_panel.go).
 	slotMessages = "panel:messages"
+	// The remaining floatWin panels persist their geometry through the SAME
+	// classic-slot mechanism as slotMessages (seedPanelFromSlot / persistPanelSlot,
+	// driven by panelSlotTable). Like slotMessages, slot presence is geometry only —
+	// each panel's OPEN state stays its own orthogonal flag. msgWin keeps its
+	// historical slotMessages key (not slotPanelMsg) for backward compat.
+	slotPanelPair    = "panel:pair"    // pairWin (Pairing)
+	slotPanelMod     = "panel:mod"     // modWin (Mod dashboard)
+	slotPanelCM      = "panel:cm"      // cmWin (CM room controls)
+	slotPanelHK      = "panel:hk"      // hkWin (Hotkey sheet)
+	slotPanelEvid    = "panel:evid"    // evidWin (Evidence)
+	slotPanelModcall = "panel:modcall" // modcallWin (Call Mod)
+	slotPanelVoice   = "panel:voice"   // voiceWin (Voice chat)
+	slotPanelBan     = "panel:ban"     // banWin (ban / kick box)
+	slotPanelDebug   = "panel:debug"   // debugWin (Debug panel)
+	slotPanelClient  = "panel:client"  // clientWin (second-client / pinned server)
+	// slotExtras is the Extras box's persisted home. The Extras box keeps its
+	// bespoke drag/resize handlers (it is NOT a floatWin) but rides the classic-slot
+	// mechanism for cross-session position persistence.
+	slotExtras = "panel:extras"
+	// tornWidgetSlotPrefix keys a torn-off Extras widget's persisted box rect:
+	// "torn:widget:<id>" where <id> indexes extrasWidgets(). Torn widgets survive
+	// relaunch by riding the same classic-slot mechanism as slotExtras — the frac
+	// rect persists on gesture-end and re-tears at that spot on the next courtroom
+	// entry (floatbox.go: persistTornWidgetSlot / reconstructTornWidgets). Unlike
+	// the panel/extras slots these keys are FORMATTED (id appended) — but only on
+	// the cold gesture-end / reconstruction paths, never on a settled draw frame, so
+	// the no-per-frame-alloc rule holds.
+	tornWidgetSlotPrefix = "torn:widget:"
 )
 
 // Resize-edge bitmask: which sides of a box a drag moves.

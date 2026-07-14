@@ -133,14 +133,14 @@ func TestExtrasWidgetTearOff(t *testing.T) {
 
 	// The new box tracks the cursor by the grab offset captured at tear time.
 	a.ctx.mouseX, a.ctx.mouseY = 500, 400
-	a.handleDetachedDrag(0, sdl.Rect{}, &pressed) // continue-drag path (not on the handle)
+	a.handleDetachedDrag(0, sdl.Rect{}, w, h, &pressed) // continue-drag path (not on the handle)
 	r := a.detachedBoxRect(0, w, h)
 	if wantX, wantY := int32(500)-detachedBoxW/2, int32(400)-extrasTitleH/2; r.X != wantX || r.Y != wantY {
 		t.Errorf("torn box at (%d,%d), want (%d,%d)", r.X, r.Y, wantX, wantY)
 	}
 
 	a.ctx.mouseDown = false
-	a.handleDetachedDrag(0, sdl.Rect{}, &pressed)
+	a.handleDetachedDrag(0, sdl.Rect{}, w, h, &pressed)
 	if a.extrasDetachDragging {
 		t.Error("release must end the detached drag")
 	}
@@ -236,7 +236,7 @@ func TestExtrasResize(t *testing.T) {
 	a.ctx.mouseDown = true
 	a.ctx.mouseX, a.ctx.mouseY = grip.X+4, grip.Y+4
 	pressed := true
-	a.handleExtrasResize(grip, r, &pressed)
+	a.handleExtrasResize(grip, r, w, h, &pressed)
 	if !a.extrasResizing || pressed {
 		t.Fatal("a press on the grip must start a resize and consume the edge")
 	}
@@ -244,19 +244,19 @@ func TestExtrasResize(t *testing.T) {
 	a.ctx.mouseX += 120 // drag the corner out by +120,+90
 	a.ctx.mouseY += 90
 	pressed = false
-	a.handleExtrasResize(grip, r, &pressed)
+	a.handleExtrasResize(grip, r, w, h, &pressed)
 	if got := a.extrasBoxRect(w, h); got.W != r.W+120 || got.H != r.H+90 {
 		t.Errorf("resized to %dx%d, want %dx%d", got.W, got.H, r.W+120, r.H+90)
 	}
 
 	a.ctx.mouseX, a.ctx.mouseY = r.X-500, r.Y-500 // far inward → floor
-	a.handleExtrasResize(grip, r, &pressed)
+	a.handleExtrasResize(grip, r, w, h, &pressed)
 	if min := a.extrasBoxRect(w, h); min.W != extrasMinW || min.H != extrasMinH {
 		t.Errorf("over-shrunk to %dx%d, want the floor %dx%d", min.W, min.H, extrasMinW, extrasMinH)
 	}
 
 	a.ctx.mouseDown = false
-	a.handleExtrasResize(grip, r, &pressed)
+	a.handleExtrasResize(grip, r, w, h, &pressed)
 	if a.extrasResizing {
 		t.Error("release must end the resize")
 	}
@@ -277,7 +277,7 @@ func TestDetachedResize(t *testing.T) {
 	a.ctx.mouseDown = true
 	a.ctx.mouseX, a.ctx.mouseY = grip.X+3, grip.Y+3
 	pressed := true
-	a.handleDetachedResize(0, grip, r, &pressed)
+	a.handleDetachedResize(0, grip, r, w, h, &pressed)
 	if !a.extrasDetachResizing || pressed {
 		t.Fatal("a press on the grip must start a resize and consume the edge")
 	}
@@ -285,19 +285,19 @@ func TestDetachedResize(t *testing.T) {
 	a.ctx.mouseX += 60 // drag the corner out by +60,+40
 	a.ctx.mouseY += 40
 	pressed = false
-	a.handleDetachedResize(0, grip, r, &pressed)
+	a.handleDetachedResize(0, grip, r, w, h, &pressed)
 	if got := a.detachedBoxRect(0, w, h); got.W != r.W+60 || got.H != r.H+40 {
 		t.Errorf("resized to %dx%d, want %dx%d", got.W, got.H, r.W+60, r.H+40)
 	}
 
 	a.ctx.mouseX, a.ctx.mouseY = r.X-500, r.Y-500 // far inward → floor
-	a.handleDetachedResize(0, grip, r, &pressed)
+	a.handleDetachedResize(0, grip, r, w, h, &pressed)
 	if got := a.detachedBoxRect(0, w, h); got.W != detachedMinW || got.H != detachedMinH {
 		t.Errorf("over-shrunk to %dx%d, want the floor %dx%d", got.W, got.H, detachedMinW, detachedMinH)
 	}
 
 	a.ctx.mouseDown = false
-	a.handleDetachedResize(0, grip, r, &pressed)
+	a.handleDetachedResize(0, grip, r, w, h, &pressed)
 	if a.extrasDetachResizing {
 		t.Error("release must end the resize")
 	}
@@ -320,5 +320,75 @@ func TestPointerFence(t *testing.T) {
 	c.unfencePointer() // no-op when not fenced
 	if c.mouseX != 100 {
 		t.Fatal("double unfence must be a no-op")
+	}
+}
+
+// TestTornWidgetPersistence pins the torn-off-widget survival cycle (FIX 1): a
+// persisted torn slot re-tears the widget at its saved rect on the next courtroom
+// entry, reattaching clears the slot, and reconstruction ignores unknown / already-
+// torn ids without unbounding the set.
+func TestTornWidgetPersistence(t *testing.T) {
+	a := testTabApp(t)
+	const w, h = int32(1280), int32(720)
+	id := 3 // a stable, in-range extrasWidgets() index
+	if id >= len(a.extrasWidgets()) {
+		t.Fatalf("test id %d out of range (%d widgets)", id, len(a.extrasWidgets()))
+	}
+
+	// Tear it out and persist on the gesture end.
+	a.extrasDetached = []detachedWidget{{id: id, x: 600, y: 400}}
+	want := a.detachedBoxRect(0, w, h)
+	a.persistTornWidgetSlot(0, w, h)
+	if _, ok := a.classicOv[tornWidgetSlotKey(id)]; !ok {
+		t.Fatalf("persist did not write the torn slot into classicOv")
+	}
+	if _, ok := a.d.Prefs.ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; !ok {
+		t.Fatalf("persist did not write the torn slot to prefs")
+	}
+
+	// Simulate a relaunch: drop the live boxes, re-arm the latch, reconstruct from
+	// the persisted overrides. The widget must re-tear at (approximately) its saved
+	// rect (the frac→px round-trip is lossy to the pixel — asserted with tolerance).
+	a.extrasDetached = nil
+	a.extrasTornRebuilt = false
+	a.reconstructTornWidgets(w, h)
+	if len(a.extrasDetached) != 1 || a.extrasDetached[0].id != id {
+		t.Fatalf("reconstruct = %v, want one box for id %d", a.extrasDetached, id)
+	}
+	// The frac→px round-trip is resolution-independent but lossy to the pixel (like
+	// every classic slot), so allow ±1px rather than demanding an exact rect.
+	if got := a.detachedBoxRect(0, w, h); abs32(got.X-want.X) > 1 || abs32(got.Y-want.Y) > 1 ||
+		abs32(got.W-want.W) > 1 || abs32(got.H-want.H) > 1 {
+		t.Errorf("re-torn box = %+v, want ≈ %+v", got, want)
+	}
+
+	// The latch is one-shot: a second call must not double-append.
+	a.reconstructTornWidgets(w, h)
+	if len(a.extrasDetached) != 1 {
+		t.Fatalf("second reconstruct double-appended: %v", a.extrasDetached)
+	}
+
+	// Reattach clears the slot everywhere (pref + live map) so it won't re-tear.
+	a.reattachWidget(0)
+	if _, ok := a.classicOv[tornWidgetSlotKey(id)]; ok {
+		t.Fatalf("reattach left the slot in classicOv")
+	}
+	if _, ok := a.d.Prefs.ClassicLayoutOverrides()[tornWidgetSlotKey(id)]; ok {
+		t.Fatalf("reattach left the slot in prefs")
+	}
+	a.extrasTornRebuilt = false
+	a.reconstructTornWidgets(w, h)
+	if len(a.extrasDetached) != 0 {
+		t.Fatalf("a cleared slot must not re-tear, got %v", a.extrasDetached)
+	}
+
+	// Unknown / malformed ids are IGNORED (a newer build's widget), not re-torn and
+	// not deleted — the set stays bounded to known widgets.
+	a.classicOv[tornWidgetSlotKey(9999)] = [4]float64{0.1, 0.1, 0.1, 0.1}
+	a.classicOv[tornWidgetSlotPrefix+"junk"] = [4]float64{0.1, 0.1, 0.1, 0.1}
+	a.extrasTornRebuilt = false
+	a.reconstructTornWidgets(w, h)
+	if len(a.extrasDetached) != 0 {
+		t.Fatalf("unknown/malformed torn ids must be ignored, got %v", a.extrasDetached)
 	}
 }

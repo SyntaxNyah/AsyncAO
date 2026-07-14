@@ -733,8 +733,9 @@ type App struct {
 	showWidgets     bool
 	themedHintShown bool
 	// Floating Extras box (floatbox.go): movable geometry. extrasPlaced=false
-	// means "centered default until first dragged"; the rest tracks a title-bar
-	// drag. (Position persistence lands in a later slice.)
+	// means "centered default until first dragged/seeded"; the rest tracks a
+	// title-bar drag. Position + size persist via the classic slot slotExtras
+	// (seedExtrasFromSlot on first open, persistExtrasSlot on gesture end).
 	extrasBoxX, extrasBoxY     int32
 	extrasPlaced               bool
 	extrasDragging             bool
@@ -744,6 +745,7 @@ type App struct {
 	// of the main grid, move freely, and close (which returns it to the grid).
 	// Flags use bool+index so the &App{} zero value is "idle" (no ctor needed).
 	extrasDetached       []detachedWidget // bounded: one box per widget at most
+	extrasTornRebuilt    bool             // one-shot latch: torn widgets reconstructed from persisted slots this session (reset by applyProfile)
 	extrasDetachDragging bool             // a detached box is being moved
 	extrasDetachResizing bool             // a detached box is being resized
 	extrasDetachIdx      int              // which extrasDetached index, while dragging/resizing
@@ -4115,6 +4117,9 @@ func (a *App) placeClientAt(mx, my int32) {
 
 // clientWinRect is the floating client window's clamped screen rect.
 func (a *App) clientWinRect(w, h int32) sdl.Rect {
+	if r, ok := a.seedPanelFromSlot(&a.clientWin, slotPanelClient, clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h); ok {
+		return r
+	}
 	return a.clientWin.rect(clientWinDefW, clientWinDefH, clientWinMinW, clientWinMinH, w, h)
 }
 
@@ -4129,6 +4134,7 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 		return
 	}
 	c := a.ctx
+	wasActive := a.clientWin.dragging || a.clientWin.resizing // detect the drag/resize-end frame for slot persistence
 	r := a.clientWinRect(w, h)
 	c.Fill(r, ColBackground)
 	c.Border(r, ColAccent)
@@ -4158,6 +4164,9 @@ func (a *App) drawFloatClient(w, h int32, pressed *bool) {
 	// rather than landing in the log / input beneath it.
 	grip := sdl.Rect{X: r.X + r.W - floatGripSz, Y: r.Y + r.H - floatGripSz, W: floatGripSz, H: floatGripSz}
 	a.floatWinResize(&a.clientWin, grip, r, clientWinMinW, clientWinMinH, pressed)
+	if wasActive && !a.clientWin.dragging && !a.clientWin.resizing { // drag/resize just ended → remember where
+		a.persistPanelSlot(slotPanelClient, r, w, h)
+	}
 	body := sdl.Rect{X: r.X, Y: r.Y + floatTitleH, W: r.W, H: r.H - floatTitleH}
 	if a.clientFull && a.canRenderFullClient() {
 		a.drawClientFull(w, h, body, pressed)

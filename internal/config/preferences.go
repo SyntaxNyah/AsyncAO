@@ -945,10 +945,15 @@ type AssetPreferences struct {
 	// classic-layout editor writes them, slotRect reads them. Fractions keep the
 	// drag resolution-independent (unlike the themed editor's design-space ints).
 	ClassicLayout map[string][4]float64 `json:"classicLayout,omitempty"`
-	// LayoutPresets are named snapshots of ClassicLayout the user can save and
-	// reload from the layout editor (#34). Each value is a full slot-override map
-	// (same [x,y,w,h] window-fraction shape); bounded by layoutPresetCap.
-	LayoutPresets map[string]map[string][4]float64 `json:"layoutPresets,omitempty"`
+	// LayoutProfiles are named FULL-STATE snapshots of the courtroom layout the
+	// user can save and flip between (A6 — superseded the old LayoutPresets,
+	// which only carried the classic slots). Each profile bundles the classic
+	// slot overrides, their window anchors, the hidden-chrome set, and the
+	// editor snap-grid step, so switching profiles restores the whole
+	// arrangement at once. Bounded by layoutProfileCap. Legacy LayoutPresets are
+	// migrated in on load (one-way) and never re-saved — a downgrade loses
+	// profiles, which is acceptable for this superset.
+	LayoutProfiles map[string]LayoutProfile `json:"layoutProfiles,omitempty"`
 	// LayoutGridPx is the layout editor's snap-grid step in logical px
 	// (playtest, Tifera: "allow us to edit the snap grid"); 0 = the default 8.
 	LayoutGridPx int `json:"layoutGridPx,omitempty"`
@@ -1277,7 +1282,8 @@ type prefsJSON struct {
 	Macros             []MacroSpec                      `json:"macros"`
 	ThemeRectOverrides map[string]map[string][4]int     `json:"themeRectOverrides"`
 	ClassicLayout      map[string][4]float64            `json:"classicLayout"`  // default-courtroom slot overrides (window fractions)
-	LayoutPresets      map[string]map[string][4]float64 `json:"layoutPresets"`  // named layout snapshots (#34)
+	LayoutPresets      map[string]map[string][4]float64 `json:"layoutPresets"`  // LEGACY named layout snapshots (#34) — read-only migration source into LayoutProfiles; never written back
+	LayoutProfiles     map[string]LayoutProfile         `json:"layoutProfiles"` // full-state named layout profiles (A6)
 	LayoutGridPx       int                              `json:"layoutGridPx"`   // editor snap-grid step (0 = default 8)
 	ClassicAnchors     map[string]ClassicAnchor         `json:"classicAnchors"` // per-slot window pins (mode + saved window size)
 	DiskZstd           bool                             `json:"diskZstd"`       // default OFF (measured trade)
@@ -2081,7 +2087,28 @@ func load(path string) (*AssetPreferences, error) {
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
 	p.ThemeRectOv = onDisk.ThemeRectOverrides
 	p.ClassicLayout = sanitizeClassicLayout(onDisk.ClassicLayout)
-	p.LayoutPresets = sanitizeLayoutPresets(onDisk.LayoutPresets)
+	p.LayoutProfiles = sanitizeLayoutProfiles(onDisk.LayoutProfiles)
+	// One-way migration: a file written by an older build carries the legacy
+	// LayoutPresets (classic slots only) but no LayoutProfiles. Wrap each
+	// sanitized preset into a Classic-only profile so nothing is lost. Skipped
+	// once any profile exists (a newer file already migrated / the user saved
+	// one) — profiles are never written back to the presets key.
+	if len(p.LayoutProfiles) == 0 && len(onDisk.LayoutPresets) > 0 {
+		if legacy := sanitizeLayoutPresets(onDisk.LayoutPresets); len(legacy) > 0 {
+			p.LayoutProfiles = make(map[string]LayoutProfile, len(legacy))
+			for name, m := range legacy {
+				// Trim the legacy key so the migrated profile is keyed
+				// consistently with SaveLayoutProfile (which trims too); a
+				// preset whose name was only whitespace is dropped rather than
+				// creating an un-nameable, un-deletable profile.
+				name = strings.TrimSpace(name)
+				if name == "" {
+					continue
+				}
+				p.LayoutProfiles[name] = LayoutProfile{Classic: m}
+			}
+		}
+	}
 	p.LayoutGridPx = clampLayoutGridPx(onDisk.LayoutGridPx)
 	p.ClassicAnchors = sanitizeClassicAnchors(onDisk.ClassicAnchors)
 	p.DiskZstd = onDisk.DiskZstd
@@ -2210,7 +2237,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.Wardrobe = onDisk.Wardrobe
 	p.CasingEnabled = onDisk.CasingEnabled
 	p.CasingRoles = onDisk.CasingRoles
-	p.HiddenPanelIDs = onDisk.HiddenPanels
+	p.HiddenPanelIDs = sanitizeHiddenPanels(onDisk.HiddenPanels)
 	if onDisk.ServerWarm != nil {
 		p.ServerWarm = onDisk.ServerWarm
 	}
@@ -2296,6 +2323,7 @@ var resetContentFields = map[string]bool{
 	"CallWordList":       true,
 	"LearnedFormats":     true, // learned per-host formats (cache-adjacent)
 	"ThemeRectOv":        true, // layout-editor overrides
+	"LayoutProfiles":     true, // saved full-state layout profiles (A6) — user content, survives a settings reset like ThemeRectOv
 	"OpenTabs":           true,
 	"LocalAssetsPaths":   true, // local mount config
 	"LocalAssetsEnabled": true,
@@ -5536,10 +5564,12 @@ func (p *AssetPreferences) HiddenPanels() []string {
 	return out
 }
 
-// SetHiddenPanels replaces the hidden-chrome set.
+// SetHiddenPanels replaces the hidden-chrome set. Dedups blank/duplicate ids and
+// bounds the slice at maxHiddenPanels (rule §17.4 — it was previously uncapped).
 func (p *AssetPreferences) SetHiddenPanels(ids []string) {
+	clean := sanitizeHiddenPanels(ids)
 	p.mu.Lock()
-	p.HiddenPanelIDs = append([]string(nil), ids...)
+	p.HiddenPanelIDs = clean
 	p.mu.Unlock()
 	p.markDirty()
 }
@@ -7808,10 +7838,26 @@ const (
 	// layout engine even defines).
 	themeOvRectsCap = 64
 	// classicSlotCap bounds named slots in the default-courtroom layout
-	// (rule §17.4) — comfortably above every widget we ever register.
-	classicSlotCap = 48
+	// (rule §17.4). Raised 48→128 for full-state LayoutProfiles: a profile's
+	// Classic map now carries not just the 18 classic slots but every
+	// persistable floating surface routed through the classic-slot mechanism —
+	// budget: 18 classic + 11 floatWin panels + 1 extras box + ~26 torn Extras
+	// widgets + ~24 ctrl.* control-button slots + torn-tab headroom ≈ 90; 128
+	// rounds up with comfortable margin.
+	classicSlotCap = 128
 	// layoutPresetCap bounds how many named layout snapshots a user can save (#34).
+	// LayoutProfiles (which superseded presets) reuse it via layoutProfileCap.
 	layoutPresetCap = 24
+	// layoutProfileCap bounds how many named full-state layout profiles a user
+	// can save (mirrors the retired layoutPresetCap). A profile snapshots the
+	// classic slots, anchors, hidden set, and grid step together.
+	layoutProfileCap = 24
+	// maxHiddenPanels bounds the hidden-chrome slice (rule §17.4). Comfortably
+	// above the ~45 registry ids (hideablePanels + hideableButtons +
+	// hideableRosterButtons) so a legitimate all-hidden set is never truncated,
+	// while a stale/hand-edited pref can't grow it unboundedly. Enforced in
+	// SetHiddenPanels (dedup + cap) and sanitizeHiddenPanels on load.
+	maxHiddenPanels = 64
 )
 
 // ThemeRectOverrides returns a copy of one theme's user-dragged widget
@@ -7936,69 +7982,156 @@ func sanitizeLayoutPresets(in map[string]map[string][4]float64) map[string]map[s
 	return out
 }
 
-// LayoutPresetNames returns the saved layout-preset names (#34). Order is
-// unspecified — the UI sorts for display.
-func (p *AssetPreferences) LayoutPresetNames() []string {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	if len(p.LayoutPresets) == 0 {
+// sanitizeHiddenPanels dedups and bounds a hidden-chrome id slice on load (rule
+// §17.4). Blank ids and duplicates are dropped; the result is capped at
+// maxHiddenPanels. Order is preserved for the survivors. Nil-safe (empty → nil).
+func sanitizeHiddenPanels(in []string) []string {
+	if len(in) == 0 {
 		return nil
 	}
-	names := make([]string, 0, len(p.LayoutPresets))
-	for k := range p.LayoutPresets {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, id := range in {
+		if id == "" || seen[id] {
+			continue
+		}
+		if len(out) >= maxHiddenPanels {
+			break
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// sanitizeLayoutProfile cleans one profile's four axes through the same helpers
+// the live axes use: classic slots, anchors, and hidden set are validated/capped
+// and the grid step is clamped. A profile with nothing left in any axis is
+// dropped by the caller (its Classic/Anchors/Hidden are all nil and GridPx 0).
+func sanitizeLayoutProfile(in LayoutProfile) LayoutProfile {
+	return LayoutProfile{
+		Classic: sanitizeClassicLayout(in.Classic),
+		Anchors: sanitizeClassicAnchors(in.Anchors),
+		Hidden:  sanitizeHiddenPanels(in.Hidden),
+		GridPx:  clampLayoutGridPx(in.GridPx),
+	}
+}
+
+// layoutProfileEmpty reports whether a sanitized profile carries no state at all
+// (nothing worth persisting).
+func layoutProfileEmpty(p LayoutProfile) bool {
+	return len(p.Classic) == 0 && len(p.Anchors) == 0 && len(p.Hidden) == 0 && p.GridPx == 0
+}
+
+// sanitizeLayoutProfiles validates persisted full-state profiles on load (A6):
+// blank names and empty profiles are dropped, each surviving profile's axes pass
+// through their own sanitizers, and the set is bounded by layoutProfileCap.
+func sanitizeLayoutProfiles(in map[string]LayoutProfile) map[string]LayoutProfile {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]LayoutProfile, len(in))
+	for name, prof := range in {
+		if strings.TrimSpace(name) == "" || len(out) >= layoutProfileCap {
+			continue
+		}
+		clean := sanitizeLayoutProfile(prof)
+		if layoutProfileEmpty(clean) {
+			continue
+		}
+		out[name] = clean
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// LayoutProfileNames returns the saved full-state profile names (A6). Order is
+// unspecified — the UI sorts for display.
+func (p *AssetPreferences) LayoutProfileNames() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.LayoutProfiles) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(p.LayoutProfiles))
+	for k := range p.LayoutProfiles {
 		names = append(names, k)
 	}
 	return names
 }
 
-// LayoutPreset returns a copy of one saved preset's slot overrides (nil if the
-// name is unknown) (#34). The copy keeps the live map un-aliased.
-func (p *AssetPreferences) LayoutPreset(name string) map[string][4]float64 {
+// LayoutProfile returns a deep copy of one saved profile (zero value if the name
+// is unknown) (A6). Every axis is copied so the caller can't alias the live map.
+func (p *AssetPreferences) LayoutProfile(name string) LayoutProfile {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	m := p.LayoutPresets[name]
-	if len(m) == 0 {
-		return nil
+	prof, ok := p.LayoutProfiles[name]
+	if !ok {
+		return LayoutProfile{}
 	}
-	out := make(map[string][4]float64, len(m))
-	for k, v := range m {
-		out[k] = v
+	return cloneLayoutProfile(prof)
+}
+
+// cloneLayoutProfile returns a deep copy (all three maps/slices duplicated) so
+// the live profile and any returned/stored copy never alias.
+func cloneLayoutProfile(in LayoutProfile) LayoutProfile {
+	out := LayoutProfile{GridPx: in.GridPx}
+	if len(in.Classic) > 0 {
+		out.Classic = make(map[string][4]float64, len(in.Classic))
+		for k, v := range in.Classic {
+			out.Classic[k] = v
+		}
+	}
+	if len(in.Anchors) > 0 {
+		out.Anchors = make(map[string]ClassicAnchor, len(in.Anchors))
+		for k, v := range in.Anchors {
+			out.Anchors[k] = v
+		}
+	}
+	if len(in.Hidden) > 0 {
+		out.Hidden = append([]string(nil), in.Hidden...)
 	}
 	return out
 }
 
-// SaveLayoutPreset stores a slot-override map under name, replacing any existing
-// preset of that name (#34). A blank name or empty/all-default map is ignored; the
-// map is sanitized + copied (never aliased) and the set is bounded by layoutPresetCap.
-func (p *AssetPreferences) SaveLayoutPreset(name string, m map[string][4]float64) {
+// SaveLayoutProfile stores a full-state profile under name, replacing any
+// existing profile of that name (A6). A blank name or all-empty profile is
+// ignored; the profile is sanitized + deep-copied (never aliased) and the set is
+// bounded by layoutProfileCap.
+func (p *AssetPreferences) SaveLayoutProfile(name string, prof LayoutProfile) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return
 	}
-	clean := sanitizeClassicLayout(m)
-	if len(clean) == 0 {
+	clean := sanitizeLayoutProfile(prof)
+	if layoutProfileEmpty(clean) {
 		return
 	}
 	p.mu.Lock()
-	if p.LayoutPresets == nil {
-		p.LayoutPresets = map[string]map[string][4]float64{}
+	if p.LayoutProfiles == nil {
+		p.LayoutProfiles = map[string]LayoutProfile{}
 	}
-	if _, exists := p.LayoutPresets[name]; !exists && len(p.LayoutPresets) >= layoutPresetCap {
+	if _, exists := p.LayoutProfiles[name]; !exists && len(p.LayoutProfiles) >= layoutProfileCap {
 		p.mu.Unlock()
 		return
 	}
-	p.LayoutPresets[name] = clean
+	p.LayoutProfiles[name] = clean
 	p.mu.Unlock()
 	p.markDirty()
 }
 
-// DeleteLayoutPreset removes a saved preset by name (#34).
-func (p *AssetPreferences) DeleteLayoutPreset(name string) {
+// DeleteLayoutProfile removes a saved profile by name (A6).
+func (p *AssetPreferences) DeleteLayoutProfile(name string) {
 	p.mu.Lock()
-	if p.LayoutPresets != nil {
-		delete(p.LayoutPresets, name)
-		if len(p.LayoutPresets) == 0 {
-			p.LayoutPresets = nil
+	if p.LayoutProfiles != nil {
+		delete(p.LayoutProfiles, name)
+		if len(p.LayoutProfiles) == 0 {
+			p.LayoutProfiles = nil
 		}
 	}
 	p.mu.Unlock()
@@ -8066,6 +8199,21 @@ type ClassicAnchor struct {
 	Mode string `json:"mode"`
 	WinW int    `json:"winW"`
 	WinH int    `json:"winH"`
+}
+
+// LayoutProfile is a named, full-state snapshot of the courtroom layout (A6):
+// the classic slot overrides (window fractions), their window anchors, the
+// hidden-chrome set, and the editor snap-grid step. Applying a profile restores
+// all four axes at once. It is a strict superset of the retired LayoutPresets
+// (which carried only Classic) — legacy presets migrate in as Classic-only
+// profiles. Each axis is sanitized on load through the same helpers the live
+// axes use, so a profile can never smuggle in geometry the resolver would have
+// to defend against.
+type LayoutProfile struct {
+	Classic map[string][4]float64    `json:"classic,omitempty"`
+	Anchors map[string]ClassicAnchor `json:"anchors,omitempty"`
+	Hidden  []string                 `json:"hidden,omitempty"`
+	GridPx  int                      `json:"gridPx,omitempty"`
 }
 
 // validAnchorMode reports whether m is a well-formed two-letter anchor mode.
@@ -8212,6 +8360,20 @@ func (p *AssetPreferences) SetClassicLayout(m map[string][4]float64) {
 		}
 		p.ClassicLayout = cp
 	}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SetClassicAnchors REPLACES every slot's window pin at once (symmetric to
+// SetClassicLayout) — applyProfile restores a whole anchor snapshot, so it can't
+// go slot-by-slot. The map is sanitized (bad mode / non-positive window dropped)
+// and copied (never aliased); a nil/empty map clears all pins. Unlike
+// ClearClassicSlot this does NOT touch ClassicLayout — a profile carries both
+// axes independently, and the caller sets them together.
+func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
+	clean := sanitizeClassicAnchors(m) // drops junk + bounds at classicSlotCap
+	p.mu.Lock()
+	p.ClassicAnchors = clean
 	p.mu.Unlock()
 	p.markDirty()
 }
