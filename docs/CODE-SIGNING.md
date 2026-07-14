@@ -9,6 +9,11 @@ publisher" prompt and macOS users a Gatekeeper warning, but nothing breaks. Add
 the secrets below (repo → Settings → Secrets and variables → Actions) to turn
 signing on; nothing else changes.
 
+> Signing an unsigned Windows binary is also the durable fix for the
+> `Trojan:Win32/Bearfoos.A!ml` Defender false positive — see
+> `docs/DEFENDER-FALSE-POSITIVE.md` for the full maintainer checklist and the
+> OV-vs-EV tradeoff in context.
+
 > These steps were authored without certificates to test against. The macOS step
 > is **best-effort** (a hiccup logs a warning but never fails the release, like
 > the Flatpak job). Treat the first signed release as a shakedown and read the CI

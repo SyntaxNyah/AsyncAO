@@ -69,6 +69,42 @@ jobs:
       - name: Expose GOROOT to the MSYS2 shell
         shell: pwsh
         run: '"GOROOT=$(go env GOROOT)" | Out-File -FilePath $env:GITHUB_ENV -Append'
+      # Regenerate the Windows VERSIONINFO syso with THIS tag's version so the
+      # .exe's Properties → Details shows the real release version, not the
+      # committed 1.62.0.0 baseline. BEST-EFFORT: continue-on-error + a guarded
+      # script, so any failure (network, tool, a non-semver dispatch ref) falls
+      # back silently to the committed cmd/asyncao/versioninfo_windows.syso — the
+      # build never depends on this succeeding. goversioninfo is PINNED (never
+      # @latest) and run via `go run` so it never enters go.mod. -64 emits an
+      # amd64 COFF the amd64 link can consume (a 32-bit syso would fail to link).
+      - name: Regenerate VERSIONINFO with the tag version (best-effort)
+        continue-on-error: true
+        run: |
+          export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
+          ver="${{ github.ref_name }}"
+          ver="${ver#v}"                 # strip a leading v
+          ver="${ver%%-*}"               # drop any prerelease suffix (-test.N)
+          IFS='.' read -r MA MI PA _ <<< "$ver"
+          # Only proceed when the tag parsed into numeric major.minor.patch;
+          # otherwise leave the committed syso in place.
+          if [[ "$MA" =~ ^[0-9]+$ && "$MI" =~ ^[0-9]+$ && "$PA" =~ ^[0-9]+$ ]]; then
+            j=cmd/asyncao/versioninfo.json
+            gen=cmd/asyncao/_versioninfo.tag.json
+            # Rewrite the four numeric FixedFileInfo fields and both dotted
+            # StringFileInfo version strings to this tag; leave every other field.
+            sed -e "s/\"Major\": [0-9]*/\"Major\": $MA/g" \
+                -e "s/\"Minor\": [0-9]*/\"Minor\": $MI/g" \
+                -e "s/\"Patch\": [0-9]*/\"Patch\": $PA/g" \
+                -e "s/\"FileVersion\": \"[0-9.]*\"/\"FileVersion\": \"$MA.$MI.$PA.0\"/g" \
+                -e "s/\"ProductVersion\": \"[0-9.]*\"/\"ProductVersion\": \"$MA.$MI.$PA.0\"/g" \
+                "$j" > "$gen"
+            go run github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0 \
+              -64 -o cmd/asyncao/versioninfo_windows.syso "$gen"
+            rm -f "$gen"
+            echo "Regenerated VERSIONINFO for $MA.$MI.$PA.0"
+          else
+            echo "::notice::Non-numeric ref ${{ github.ref_name }} - keeping the committed VERSIONINFO syso."
+          fi
       - name: Build + bundle DLLs
         run: |
           export PATH="$(cygpath -u "$GOROOT")/bin:$PATH"
@@ -287,6 +323,25 @@ jobs:
           path: dist
           pattern: release-*
           merge-multiple: true
+      - name: Compute SHA256SUMS over the assembled (already-signed) assets
+        run: |
+          # Hash the FINAL artifacts here, at release-assembly time, so the
+          # published digest matches whatever shipped — including the Windows
+          # signature (signing happens inside build-windows on dist\asyncao.exe
+          # BEFORE it's named/zipped, so every downloaded artifact is already
+          # signed by now) and the macOS codesign. The in-app self-updater
+          # (internal/update.FetchSums) fetches this asset and verifies the
+          # download before the swap; releases cut before this step existed carry
+          # no SHA256SUMS.txt and the updater proceeds unverified (integrity-only).
+          #
+          # Globbed, never a hardcoded asset list, so a missing asset (e.g. the
+          # continue-on-error Flatpak) simply isn't hashed. Computed while the
+          # file does NOT yet live in dist/, so the manifest can't hash itself;
+          # then moved in so `gh release create dist/*` attaches it. Coreutils
+          # two-space "<hex>  <name>" format — parseSums reads exactly this.
+          ( cd dist && sha256sum * ) > SHA256SUMS.txt
+          mv SHA256SUMS.txt dist/
+          echo "----- SHA256SUMS.txt -----"; cat dist/SHA256SUMS.txt
       - name: Build release notes from the CHANGELOG (fall back to the tag annotation)
         run: |
           # The Release notes are the version's CHANGELOG section — the SAME text the

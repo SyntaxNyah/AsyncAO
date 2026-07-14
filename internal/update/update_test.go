@@ -234,3 +234,128 @@ func TestCheckServerError(t *testing.T) {
 		t.Fatal("a non-200 response must surface an error")
 	}
 }
+
+// ghSumsJSON is a release carrying the platform binary AND the SHA256SUMS asset,
+// with sums listed FIRST (before the binary) to prove newRelease's single-pass
+// scan captures both regardless of order (an early break on the binary match
+// would have dropped the sums URL if it came first, or the binary if the sums
+// did — this pins that it doesn't).
+const ghSumsJSON = `{
+  "tag_name": "v3.0.0",
+  "body": "notes",
+  "html_url": "https://example/rel",
+  "assets": [
+    {"name": "SHA256SUMS.txt",             "browser_download_url": "https://example/SHA256SUMS.txt"},
+    {"name": "asyncao-windows-x86_64.exe", "browser_download_url": "https://example/win.exe"}
+  ]
+}`
+
+// TestCheckCapturesSumsAssetAndName pins that a release which publishes a
+// SHA256SUMS asset yields both the sums URL and the matched asset's file name
+// (the key into the manifest) — the two the verification step needs.
+func TestCheckCapturesSumsAssetAndName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(ghSumsJSON))
+	}))
+	defer srv.Close()
+
+	rel, err := Check(context.Background(), srv.URL, "v1.0.0", SelfUpdateAssetMatch("windows"))
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if rel == nil {
+		t.Fatal("a higher tag must report an update")
+	}
+	if rel.AssetURL != "https://example/win.exe" || rel.AssetName != "asyncao-windows-x86_64.exe" {
+		t.Errorf("asset URL/name = %q / %q", rel.AssetURL, rel.AssetName)
+	}
+	if rel.SumsURL != "https://example/SHA256SUMS.txt" {
+		t.Errorf("sums URL = %q, want the SHA256SUMS asset captured despite listing first", rel.SumsURL)
+	}
+}
+
+// TestCheckNoSumsAssetLeavesSumsURLEmpty pins the fallback: a release with no
+// SHA256SUMS asset (every release cut before checksums shipped) leaves SumsURL
+// empty, which the caller reads as "skip verification, proceed as before".
+func TestCheckNoSumsAssetLeavesSumsURLEmpty(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(ghJSON)) // ghJSON has no SHA256SUMS asset
+	}))
+	defer srv.Close()
+
+	rel, err := Check(context.Background(), srv.URL, "v1.2.0", "windows")
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if rel == nil {
+		t.Fatal("a higher tag must report an update")
+	}
+	if rel.SumsURL != "" {
+		t.Errorf("SumsURL = %q, want empty when the release ships no manifest", rel.SumsURL)
+	}
+}
+
+func TestParseSums(t *testing.T) {
+	// Coreutils format: two spaces, optional "*" binary marker, and (to prove
+	// pathBase) a directory-prefixed name. A blank line and a malformed short
+	// line must be skipped, not panic.
+	const manifest = "" +
+		"11111111  asyncao-windows-x86_64.exe\n" +
+		"22222222 *AsyncAO-linux-x86_64.AppImage\n" +
+		"\n" +
+		"short-line-no-hash\n" +
+		"33333333  dist/asyncao-macos-arm64\n"
+	cases := []struct {
+		name    string
+		wantHex string
+		wantOK  bool
+	}{
+		{"asyncao-windows-x86_64.exe", "11111111", true},
+		{"AsyncAO-linux-x86_64.AppImage", "22222222", true}, // "*" binary marker stripped
+		{"asyncao-macos-arm64", "33333333", true},           // dir prefix ignored (pathBase)
+		{"not-in-the-manifest.exe", "", false},
+	}
+	for _, tc := range cases {
+		gotHex, gotOK := parseSums(manifest, tc.name)
+		if gotOK != tc.wantOK || gotHex != tc.wantHex {
+			t.Errorf("parseSums(%q) = (%q,%v), want (%q,%v)", tc.name, gotHex, gotOK, tc.wantHex, tc.wantOK)
+		}
+	}
+}
+
+func TestFetchSums(t *testing.T) {
+	const wantHex = "abcdef0123456789"
+	manifest := wantHex + "  asyncao-windows-x86_64.exe\n" +
+		"0000  asyncao-windows-x86_64-bundle.zip\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "" {
+			t.Error("FetchSums must send a User-Agent (same discipline as the JSON fetch)")
+		}
+		_, _ = w.Write([]byte(manifest))
+	}))
+	defer srv.Close()
+
+	got, err := FetchSums(context.Background(), srv.URL, "asyncao-windows-x86_64.exe")
+	if err != nil {
+		t.Fatalf("FetchSums: %v", err)
+	}
+	if got != wantHex {
+		t.Errorf("FetchSums = %q, want %q", got, wantHex)
+	}
+	// A matched asset that is missing from a published manifest is an error (a
+	// release with sums lists every shipped binary — a gap means abort, not
+	// proceed-unverified).
+	if _, err := FetchSums(context.Background(), srv.URL, "asyncao-macos-arm64"); err == nil {
+		t.Fatal("an asset missing from the manifest must error")
+	}
+}
+
+func TestFetchSumsServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "gone", http.StatusNotFound)
+	}))
+	defer srv.Close()
+	if _, err := FetchSums(context.Background(), srv.URL, "x.exe"); err == nil {
+		t.Fatal("a non-200 SHA256SUMS fetch must surface an error")
+	}
+}

@@ -157,3 +157,74 @@ func TestTargetWritable(t *testing.T) {
 		t.Error("a fresh temp dir must be writable")
 	}
 }
+
+// TestVerifiedDownloadFlow exercises the Download → FetchSums → VerifyChecksum
+// sequence the self-updater runs between the download and the swap, over the
+// three release shapes that matter: a matching manifest (verification passes and
+// the swap would proceed), a mismatching one (verification fails so the binary
+// is never installed), and no manifest at all (SumsURL == "", verification is
+// skipped and the flow proceeds as on every pre-checksums release).
+func TestVerifiedDownloadFlow(t *testing.T) {
+	const assetName = "asyncao-windows-x86_64.exe"
+	const payload = "the-new-binary-bytes"
+	good := sha256.Sum256([]byte(payload))
+	goodHex := hex.EncodeToString(good[:])
+
+	assetSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer assetSrv.Close()
+
+	// matching-sums server: verification passes.
+	matchSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(goodHex + "  " + assetName + "\n"))
+	}))
+	defer matchSrv.Close()
+
+	// mismatching-sums server: a wrong digest for the same asset name.
+	badSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("00000000000000000000000000000000  " + assetName + "\n"))
+	}))
+	defer badSrv.Close()
+
+	download := func(t *testing.T) string {
+		t.Helper()
+		staged := filepath.Join(t.TempDir(), "app.exe.new")
+		if _, err := Download(context.Background(), assetSrv.URL, staged); err != nil {
+			t.Fatalf("Download: %v", err)
+		}
+		return staged
+	}
+
+	t.Run("matching sums verifies", func(t *testing.T) {
+		staged := download(t)
+		wantHex, err := FetchSums(context.Background(), matchSrv.URL, assetName)
+		if err != nil {
+			t.Fatalf("FetchSums: %v", err)
+		}
+		if err := VerifyChecksum(staged, wantHex); err != nil {
+			t.Fatalf("matching download must verify: %v", err)
+		}
+	})
+
+	t.Run("mismatching sums fails before the swap", func(t *testing.T) {
+		staged := download(t)
+		wantHex, err := FetchSums(context.Background(), badSrv.URL, assetName)
+		if err != nil {
+			t.Fatalf("FetchSums: %v", err)
+		}
+		if err := VerifyChecksum(staged, wantHex); err == nil {
+			t.Fatal("a checksum mismatch must fail so the binary is never installed")
+		}
+	})
+
+	t.Run("absent sums skips verification and proceeds", func(t *testing.T) {
+		staged := download(t)
+		// SumsURL == "" is the pre-checksums release: the caller skips FetchSums
+		// entirely and passes an empty want, which VerifyChecksum treats as
+		// "no sum published, proceed".
+		if err := VerifyChecksum(staged, ""); err != nil {
+			t.Fatalf("an absent manifest must proceed unverified: %v", err)
+		}
+	})
+}

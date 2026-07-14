@@ -1,9 +1,14 @@
 package ui
 
 // M13 self-update, UI side: the one-shot launch check, the persistent
-// "update available" chip, and the What's New patch-notes modal. The actual
-// download + self-replace is a separate, isolated step (see internal/update);
-// until it lands, "Get the update" opens the release page in the browser.
+// "update available" chip, and the What's New patch-notes modal. "Get the
+// update" runs the full self-replace in-app (startSelfUpdate, wired to the
+// modal button): download the platform asset next to the running exe → verify
+// it against the release's SHA256SUMS manifest when published → stage-replace
+// the binary (rename-with-rollback) → relaunch into the new build on the next
+// quit (requestRelaunch → MaybeRelaunch). It degrades to opening the release
+// page in the browser only when the release has no matching asset or the
+// install dir is read-only (the low-level pieces live in internal/update).
 //
 // Input is handled in handleUpdateInput BEFORE the screens draw (the kit has
 // one per-frame click bool, so a modal must consume it first — same pattern as
@@ -114,10 +119,14 @@ func (a *App) pollUpdate() {
 }
 
 // startSelfUpdate downloads the release asset next to the running exe, verifies
-// it, and stages the swap — all off-thread, reporting on updateApplyRes. It
-// degrades to the release page when there's no downloadable asset or the
-// install dir is read-only (Program Files without elevation). No-op while a
-// previous run is in flight or already staged.
+// it against the release's SHA256SUMS manifest WHEN one was published (releases
+// cut before checksums shipped have none and proceed unverified but
+// integrity-capped), and stages the swap — all off-thread, reporting on
+// updateApplyRes. A checksum mismatch (or a failure to fetch/find the entry on a
+// release that ships sums) aborts the update and surfaces an error rather than
+// installing an unverified binary. It degrades to the release page when there's
+// no downloadable asset or the install dir is read-only (Program Files without
+// elevation). No-op while a previous run is in flight or already staged.
 func (a *App) startSelfUpdate() {
 	if a.updateBusy || a.updateStaged || a.updateRel == nil {
 		return
@@ -140,6 +149,8 @@ func (a *App) startSelfUpdate() {
 	a.updateBusy = true
 	a.updateErr = ""
 	url := a.updateRel.AssetURL
+	sumsURL := a.updateRel.SumsURL
+	assetName := a.updateRel.AssetName
 	res := a.updateApplyRes
 	go func() {
 		defer PushWake() // wake the event-driven loop so pollUpdate surfaces the result (Restart-to-apply / error) at idle=0
@@ -148,8 +159,27 @@ func (a *App) startSelfUpdate() {
 			res <- err
 			return
 		}
-		// Integrity check is plumbed (update.VerifyChecksum); no published
-		// checksum source yet, so it's skipped until releases ship one.
+		// Verify the download against the release's SHA256SUMS manifest when one
+		// was published. Releases cut before checksums shipped carry no manifest
+		// (SumsURL == ""): we skip verification and proceed exactly as before —
+		// the download is still integrity-capped, just not sum-checked. A release
+		// that DOES ship sums gets enforced: any fetch/lookup/mismatch failure
+		// aborts, deletes the partial download, and surfaces the error in the
+		// modal (pollUpdate → a.updateErr) rather than installing an unverified
+		// binary over the running one.
+		if sumsURL != "" {
+			wantHex, err := update.FetchSums(context.Background(), sumsURL, assetName)
+			if err != nil {
+				_ = os.Remove(staged)
+				res <- err
+				return
+			}
+			if err := update.VerifyChecksum(staged, wantHex); err != nil {
+				_ = os.Remove(staged)
+				res <- err
+				return
+			}
+		}
 		if err := update.StageReplace(staged, exe, update.BackupPath(exe)); err != nil {
 			_ = os.Remove(staged)
 			res <- err

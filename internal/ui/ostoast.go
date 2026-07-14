@@ -76,6 +76,25 @@ func showOSToast(title, body string) {
 	}
 	enc := base64.StdEncoding.EncodeToString(raw)
 	go func() {
+		// -EncodedCommand (base64 UTF-16LE) is a KNOWN high-signal AV heuristic —
+		// "hidden PowerShell running an encoded command" is exactly what a dropper
+		// looks like — but here it is a deliberate, benign necessity, not
+		// obfuscation:
+		//
+		//  1. Unicode transport. title/body are user shownames, routinely
+		//     non-ASCII in the AO community (CJK, emoji, accents). Passed via a
+		//     plain -Command string they would be mangled through the console
+		//     codepage (the exact hazard class CLAUDE.md documents for PowerShell
+		//     pipes); -EncodedCommand carries the full UTF-16 losslessly.
+		//  2. The payload is a FIXED const (windowsToastScript). The only
+		//     interpolations are the two shownames, each xmlEscape'd above
+		//     (XML specials + the ' string delimiter escaped, control chars/
+		//     newlines dropped), so command injection is already impossible —
+		//     the encoding is transport, not a sandbox.
+		//  3. This whole path is best-effort and opt-in; a failure is silent and
+		//     the always-available in-app toast/flash is the fallback.
+		//
+		// Do NOT "simplify" this to -Command: it would break non-ASCII shownames.
 		cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", enc)
 		winexec.Hide(cmd)
 		_ = cmd.Start()

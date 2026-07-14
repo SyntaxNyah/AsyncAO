@@ -69,8 +69,23 @@ type Release struct {
 	Notes      string // release body — the patch notes
 	PageURL    string // html_url — the release page
 	AssetURL   string // browser_download_url of the matched asset
+	AssetName  string // file name of the matched asset — the key into the SHA256SUMS list
+	SumsURL    string // browser_download_url of the SHA256SUMS asset ("" on releases cut before checksums shipped)
 	Prerelease bool   // published as a prerelease (a test-branch build) — the UI says "test build"
 }
+
+const (
+	// sumsAssetName is the release asset the workflow publishes with one
+	// "<sha256>  <filename>" line per binary (see .github/workflows/release.yml).
+	// Its presence turns on authenticity-adjacent verification of the download;
+	// its absence (every release cut before this shipped) leaves the update flow
+	// exactly as it was — an unverified but integrity-capped download.
+	sumsAssetName = "SHA256SUMS.txt"
+	// maxSumsBytes caps the SHA256SUMS download (rule §17.4). A sums manifest is
+	// a handful of 64-hex-plus-filename lines — kilobytes at most — so this is
+	// generous while still finite against a hostile/mislinked asset.
+	maxSumsBytes = 64 << 10
+)
 
 // ghRelease mirrors the subset of the GitHub Releases JSON we read.
 type ghRelease struct {
@@ -154,8 +169,15 @@ func CheckExperimental(ctx context.Context, listURL, current, assetMatch string)
 	return nil, nil
 }
 
-// fetchJSON performs the one bounded, UA-tagged GET both channels share.
+// fetchJSON performs the one bounded, UA-tagged GET both release channels share.
 func fetchJSON(ctx context.Context, url string) ([]byte, error) {
+	return fetchBounded(ctx, url, maxBodyBytes)
+}
+
+// fetchBounded is the one bounded, UA-tagged, timeout-capped GET the whole
+// package shares (the release-list JSON and the SHA256SUMS manifest), with a
+// per-call read cap so a tiny manifest doesn't inherit the JSON budget.
+func fetchBounded(ctx context.Context, url string, maxBytes int64) ([]byte, error) {
 	cctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, http.MethodGet, url, nil)
@@ -170,14 +192,18 @@ func fetchJSON(ctx context.Context, url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("update: releases endpoint returned %s", resp.Status)
+		return nil, fmt.Errorf("update: endpoint %s returned %s", url, resp.Status)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes))
+	return io.ReadAll(io.LimitReader(resp.Body, maxBytes))
 }
 
 // newRelease converts a decoded GitHub release into the user-facing Release,
 // resolving the platform asset by assetMatch (first name containing it wins;
-// "" takes the first asset; no match leaves AssetURL empty).
+// "" takes the first asset; no match leaves AssetURL empty) AND the SHA256SUMS
+// asset for later verification. It scans every asset in ONE pass and does NOT
+// early-break on the platform match, because the sums asset can appear either
+// before or after the binary in the (server-ordered) list — an early break
+// would drop it and silently disable verification.
 func newRelease(gh *ghRelease, assetMatch string) *Release {
 	rel := &Release{
 		Version:    trimVPrefix(gh.TagName),
@@ -188,12 +214,65 @@ func newRelease(gh *ghRelease, assetMatch string) *Release {
 	}
 	want := strings.ToLower(assetMatch)
 	for _, a := range gh.Assets {
-		if want == "" || strings.Contains(strings.ToLower(a.Name), want) {
+		if a.Name == sumsAssetName {
+			rel.SumsURL = a.DownloadURL
+			continue
+		}
+		if rel.AssetURL == "" && (want == "" || strings.Contains(strings.ToLower(a.Name), want)) {
 			rel.AssetURL = a.DownloadURL
-			break
+			rel.AssetName = a.Name
 		}
 	}
 	return rel
+}
+
+// FetchSums downloads and parses the SHA256SUMS manifest at sumsURL, returning
+// the hex digest published for assetName (matched exactly on the file name). It
+// shares fetchJSON's bounded/UA-tagged/timeout discipline (a small maxSumsBytes
+// cap — the manifest is tiny). A missing entry is an error: when a release
+// publishes sums at all, EVERY shipped binary is listed, so a matched asset with
+// no line means the manifest is wrong and the update must abort, not proceed
+// unverified. Callers pass "" sumsURL for releases that shipped no manifest and
+// skip verification entirely — they must not call this.
+func FetchSums(ctx context.Context, sumsURL, assetName string) (string, error) {
+	body, err := fetchBounded(ctx, sumsURL, maxSumsBytes)
+	if err != nil {
+		return "", err
+	}
+	hex, ok := parseSums(string(body), assetName)
+	if !ok {
+		return "", fmt.Errorf("update: %q missing from %s", assetName, sumsAssetName)
+	}
+	return hex, nil
+}
+
+// parseSums scans a SHA256SUMS manifest ("<hex>  <name>" per line, the
+// sha256sum coreutils format; a leading "*" on the name marks binary mode) and
+// returns the hex digest whose file name matches assetName. The name is
+// compared on its base only, so a "dist/foo.exe" path in the manifest still
+// matches "foo.exe".
+func parseSums(manifest, assetName string) (string, bool) {
+	for _, line := range strings.Split(manifest, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		name := strings.TrimPrefix(fields[len(fields)-1], "*")
+		if pathBase(name) == assetName {
+			return fields[0], true
+		}
+	}
+	return "", false
+}
+
+// pathBase returns the final path element of a slash- or backslash-separated
+// name (the sums manifest may carry a directory prefix). Kept local so the
+// update package stays free of filepath's OS-specific separator behaviour.
+func pathBase(name string) string {
+	if i := strings.LastIndexAny(name, `/\`); i >= 0 {
+		return name[i+1:]
+	}
+	return name
 }
 
 // SelfUpdateAssetMatch returns the release-asset name substring that UNIQUELY
