@@ -940,6 +940,17 @@ type AssetPreferences struct {
 	FontOverridePaths      string                       `json:"fontPaths"`
 	UserMacros             []MacroSpec                  `json:"macros,omitempty"`
 	ThemeRectOv            map[string]map[string][4]int `json:"themeRectOverrides,omitempty"`
+	// ThemeRectRotations holds per-theme, per-widget ROTATION angles for
+	// texture-backed themed chrome (A4 — the cheap-tier rotation revamp). Keyed
+	// theme → widget key → angle byte (the 360/256 encoding shared with
+	// SpriteStyle.Rotation: 0=0°, 64=90°, 128=180°, 192=270°). It mirrors
+	// ThemeRectOv's lifecycle exactly (per-theme outer map, bounded by the same
+	// caps, dropped alongside the override in ClearThemeRectOverride) — but,
+	// unlike ThemeRectOv, its load path IS sanitized (a hand-edited pref can't
+	// smuggle in a junk theme/key past the caps). An absent entry means angle 0,
+	// which routes through the plain Copy path (byte-identical to the unrotated
+	// draw), so this is purely additive.
+	ThemeRectRotations map[string]map[string]uint8 `json:"themeRectRotations,omitempty"`
 	// ClassicLayout holds per-slot position/size overrides for the DEFAULT
 	// (non-themed) courtroom, as window fractions [x,y,w,h] in 0..1 — the live
 	// classic-layout editor writes them, slotRect reads them. Fractions keep the
@@ -966,28 +977,35 @@ type AssetPreferences struct {
 	// resizes instead of drifting proportionally. Only meaningful alongside a
 	// ClassicLayout override; bounded by classicSlotCap like it.
 	ClassicAnchors map[string]ClassicAnchor `json:"classicAnchors,omitempty"`
-	DiskZstd       bool                     `json:"diskZstd"`
-	StreamerModeOn bool                     `json:"streamerMode"`
-	ThemeName      string                   `json:"themeName"`
-	ThemeDir       string                   `json:"themeDir"`
-	OOCName        string                   `json:"oocName"`
-	ViewportPct    int                      `json:"viewportPercent"`
-	ChatScalePct   int                      `json:"chatScalePercent"`
-	ChatBoxPct     int                      `json:"chatBoxPercent"`
-	LogScalePct    int                      `json:"logScalePercent"`
-	InputHeightPct int                      `json:"inputHeightPercent"`
-	UIScalePct     int                      `json:"uiScalePercent"`
-	WindowW        int                      `json:"windowWidth"`  // 0 = default
-	WindowH        int                      `json:"windowHeight"` // 0 = default
-	WindowFull     bool                     `json:"windowFullscreen"`
-	MusicVol       int                      `json:"musicVolume"`
-	SFXVol         int                      `json:"sfxVolume"`
-	BlipVol        int                      `json:"blipVolume"`
-	AlertVol       int                      `json:"alertVolume"`
-	MasterVol      int                      `json:"masterVolume"` // scales all three (default 100)
-	HoldClearOn    bool                     `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
-	HoldClearKey   string                   `json:"holdClearKey"` // which key (default "Backspace"), rebindable
-	HoldClearMs    int                      `json:"holdClearMs"`  // hold duration to clear (default 1500)
+	// ClassicRotations holds per-slot ROTATION angles for texture-backed classic
+	// chrome (A4). Keyed slot name → angle byte (the 360/256 encoding shared with
+	// SpriteStyle.Rotation). Like ClassicAnchors it is only meaningful alongside a
+	// ClassicLayout override for the same slot, so ClearClassicSlot drops it with
+	// the override; bounded by classicSlotCap. Absent = angle 0 = the plain,
+	// byte-identical Copy path. It also travels inside LayoutProfiles.
+	ClassicRotations map[string]uint8 `json:"classicRotations,omitempty"`
+	DiskZstd         bool             `json:"diskZstd"`
+	StreamerModeOn   bool             `json:"streamerMode"`
+	ThemeName        string           `json:"themeName"`
+	ThemeDir         string           `json:"themeDir"`
+	OOCName          string           `json:"oocName"`
+	ViewportPct      int              `json:"viewportPercent"`
+	ChatScalePct     int              `json:"chatScalePercent"`
+	ChatBoxPct       int              `json:"chatBoxPercent"`
+	LogScalePct      int              `json:"logScalePercent"`
+	InputHeightPct   int              `json:"inputHeightPercent"`
+	UIScalePct       int              `json:"uiScalePercent"`
+	WindowW          int              `json:"windowWidth"`  // 0 = default
+	WindowH          int              `json:"windowHeight"` // 0 = default
+	WindowFull       bool             `json:"windowFullscreen"`
+	MusicVol         int              `json:"musicVolume"`
+	SFXVol           int              `json:"sfxVolume"`
+	BlipVol          int              `json:"blipVolume"`
+	AlertVol         int              `json:"alertVolume"`
+	MasterVol        int              `json:"masterVolume"` // scales all three (default 100)
+	HoldClearOn      bool             `json:"holdClearOn"`  // hold a key to wipe a text field (default on)
+	HoldClearKey     string           `json:"holdClearKey"` // which key (default "Backspace"), rebindable
+	HoldClearMs      int              `json:"holdClearMs"`  // hold duration to clear (default 1500)
 	// Extras-box theming (all hex like "78aaff"; "" = the stock kit colour).
 	ExtrasBg           string                    `json:"extrasBg"`
 	ExtrasBg2          string                    `json:"extrasBg2"` // gradient bottom colour
@@ -1290,13 +1308,15 @@ type prefsJSON struct {
 	FontPaths          string                           `json:"fontPaths"` // ""=embedded font
 	Macros             []MacroSpec                      `json:"macros"`
 	ThemeRectOverrides map[string]map[string][4]int     `json:"themeRectOverrides"`
-	ClassicLayout      map[string][4]float64            `json:"classicLayout"`  // default-courtroom slot overrides (window fractions)
-	LayoutPresets      map[string]map[string][4]float64 `json:"layoutPresets"`  // LEGACY named layout snapshots (#34) — read-only migration source into LayoutProfiles; never written back
-	LayoutProfiles     map[string]LayoutProfile         `json:"layoutProfiles"` // full-state named layout profiles (A6)
-	LayoutGridPx       int                              `json:"layoutGridPx"`   // editor snap-grid step (0 = default 8)
-	ClassicAnchors     map[string]ClassicAnchor         `json:"classicAnchors"` // per-slot window pins (mode + saved window size)
-	DiskZstd           bool                             `json:"diskZstd"`       // default OFF (measured trade)
-	StreamerMode       bool                             `json:"streamerMode"`   // default OFF
+	ThemeRectRotations map[string]map[string]uint8      `json:"themeRectRotations"` // per-theme, per-widget rotation angles (A4) — sanitized on load
+	ClassicLayout      map[string][4]float64            `json:"classicLayout"`      // default-courtroom slot overrides (window fractions)
+	LayoutPresets      map[string]map[string][4]float64 `json:"layoutPresets"`      // LEGACY named layout snapshots (#34) — read-only migration source into LayoutProfiles; never written back
+	LayoutProfiles     map[string]LayoutProfile         `json:"layoutProfiles"`     // full-state named layout profiles (A6)
+	LayoutGridPx       int                              `json:"layoutGridPx"`       // editor snap-grid step (0 = default 8)
+	ClassicAnchors     map[string]ClassicAnchor         `json:"classicAnchors"`     // per-slot window pins (mode + saved window size)
+	ClassicRotations   map[string]uint8                 `json:"classicRotations"`   // per-slot rotation angles (A4)
+	DiskZstd           bool                             `json:"diskZstd"`           // default OFF (measured trade)
+	StreamerMode       bool                             `json:"streamerMode"`       // default OFF
 	ThemeName          string                           `json:"themeName"`
 	ThemeDir           string                           `json:"themeDir"`
 	OOCName            string                           `json:"oocName"`
@@ -2097,6 +2117,10 @@ func load(path string) (*AssetPreferences, error) {
 	p.FontOverridePaths = onDisk.FontPaths
 	p.UserMacros = sanitizeMacros(onDisk.Macros)
 	p.ThemeRectOv = onDisk.ThemeRectOverrides
+	// Unlike ThemeRectOv (the one historically-unsanitized layout axis), the
+	// rotation side-map IS sanitized on load (A4) so a hand-edited pref can't
+	// smuggle in an over-cap theme/key.
+	p.ThemeRectRotations = sanitizeThemeRectRotations(onDisk.ThemeRectRotations)
 	p.ClassicLayout = sanitizeClassicLayout(onDisk.ClassicLayout)
 	p.LayoutProfiles = sanitizeLayoutProfiles(onDisk.LayoutProfiles)
 	// One-way migration: a file written by an older build carries the legacy
@@ -2122,6 +2146,7 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	p.LayoutGridPx = clampLayoutGridPx(onDisk.LayoutGridPx)
 	p.ClassicAnchors = sanitizeClassicAnchors(onDisk.ClassicAnchors)
+	p.ClassicRotations = sanitizeClassicRotations(onDisk.ClassicRotations)
 	p.DiskZstd = onDisk.DiskZstd
 	p.StreamerModeOn = onDisk.StreamerMode
 	p.ThemeName = onDisk.ThemeName
@@ -2334,6 +2359,7 @@ var resetContentFields = map[string]bool{
 	"CallWordList":       true,
 	"LearnedFormats":     true, // learned per-host formats (cache-adjacent)
 	"ThemeRectOv":        true, // layout-editor overrides
+	"ThemeRectRotations": true, // layout-editor rotation overrides (A4) — user content, survives a settings reset like ThemeRectOv (ClassicRotations is NOT preserved, mirroring ClassicLayout/ClassicAnchors)
 	"LayoutProfiles":     true, // saved full-state layout profiles (A6) — user content, survives a settings reset like ThemeRectOv
 	"OpenTabs":           true,
 	"LocalAssetsPaths":   true, // local mount config
@@ -7894,6 +7920,56 @@ const (
 	maxHiddenPanels = 64
 )
 
+// Layout-element rotation (A4). Angles are stored as a single byte in the
+// 360/256 encoding shared with courtroom.SpriteStyle.Rotation — any of the 256
+// values is valid, so there is nothing to clamp per value, only the map size to
+// bound.
+const (
+	// RotStepFineDeg is the Shift+R fine-tilt step in degrees. The byte encoding
+	// quantizes to 360/256 ≈ 1.406°/step, so a 15° request rounds to the nearest
+	// byte; the visible step is ~15° ± 1° and a full 24-press circle doesn't land
+	// exactly back on 0 (accepted — matches SpriteStyle's own tilt slider).
+	RotStepFineDeg = 15
+)
+
+// RotCoarseCycle is the R-key coarse cycle: 0 / 90 / 180 / 270 degrees in the
+// 360/256 byte encoding (90*256/360=64, 180→128, 270→192). Exact — these four
+// angles land on whole bytes with no rounding.
+var RotCoarseCycle = [4]uint8{0, 64, 128, 192}
+
+// RotationByteToDeg converts a stored rotation byte to degrees (the same map
+// courtroom.SpriteStyle.RotationDeg uses). Pure — the draw-path resolver and
+// the editors share it, and the angle==0 fast path in the draw sites compares
+// the byte directly (0 → the plain Copy path) so this is only called when a
+// rotation is actually set.
+func RotationByteToDeg(b uint8) float64 {
+	return float64(int(b)) * 360.0 / 256.0
+}
+
+// RotationDegToByte is the inverse (rounded to the nearest byte, wrapping at
+// 360°) — used when the Shift+R fine step advances by RotStepFineDeg.
+func RotationDegToByte(deg int) uint8 {
+	deg %= 360
+	if deg < 0 {
+		deg += 360
+	}
+	// Round to nearest byte: +180 before the integer divide by 360.
+	return uint8((deg*256 + 180) / 360 % 256)
+}
+
+// NextCoarseRotation advances a rotation byte through RotCoarseCycle. A byte
+// that isn't exactly one of the four coarse angles (a prior Shift+R fine tilt)
+// snaps up to the next coarse angle at or above it, so the coarse key always
+// makes visible progress.
+func NextCoarseRotation(cur uint8) uint8 {
+	for _, b := range RotCoarseCycle {
+		if b > cur {
+			return b
+		}
+	}
+	return RotCoarseCycle[0]
+}
+
 // ThemeRectOverrides returns a copy of one theme's user-dragged widget
 // geometry (design-space [x,y,w,h], from the live layout editor).
 func (p *AssetPreferences) ThemeRectOverrides(theme string) map[string][4]int {
@@ -7948,6 +8024,85 @@ func (p *AssetPreferences) ClearThemeRectOverride(theme, key string) {
 			delete(m, key)
 			if len(m) == 0 {
 				delete(p.ThemeRectOv, theme)
+			}
+		}
+	}
+	// The rotation dies with its override (A4), mirroring the anchor coupling on
+	// the classic side.
+	if rm, ok := p.ThemeRectRotations[theme]; ok {
+		if key == "" {
+			delete(p.ThemeRectRotations, theme)
+		} else {
+			delete(rm, key)
+			if len(rm) == 0 {
+				delete(p.ThemeRectRotations, theme)
+			}
+		}
+	}
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ThemeRectRotationSnapshot returns a copy of one theme's per-widget rotation
+// angles (A4). The themed editor bakes this into themeLayoutCache.ang at cache
+// rebuild time so the draw path resolves angles lock-free (a plain map probe on
+// the pre-baked cache, never a prefs read per frame).
+func (p *AssetPreferences) ThemeRectRotationSnapshot(theme string) map[string]uint8 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	src := p.ThemeRectRotations[theme]
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]uint8, len(src))
+	for k, v := range src {
+		out[k] = v
+	}
+	return out
+}
+
+// SetThemeRectRotation stores one widget's rotation angle byte for a theme
+// (bounded by the same themeOvThemesCap/themeOvRectsCap as the overrides). A
+// zero angle is stored like any other so it round-trips; the draw path treats an
+// ABSENT entry as angle 0, so a caller that wants "no rotation" should
+// ClearThemeRectRotation rather than set 0 (keeps the map minimal).
+func (p *AssetPreferences) SetThemeRectRotation(theme, key string, deg uint8) {
+	if theme == "" || key == "" {
+		return
+	}
+	p.mu.Lock()
+	if p.ThemeRectRotations == nil {
+		p.ThemeRectRotations = map[string]map[string]uint8{}
+	}
+	m, ok := p.ThemeRectRotations[theme]
+	if !ok {
+		if len(p.ThemeRectRotations) >= themeOvThemesCap {
+			p.mu.Unlock()
+			return
+		}
+		m = map[string]uint8{}
+		p.ThemeRectRotations[theme] = m
+	}
+	if _, exists := m[key]; !exists && len(m) >= themeOvRectsCap {
+		p.mu.Unlock()
+		return
+	}
+	m[key] = deg
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClearThemeRectRotation drops one widget's rotation (key "" = the whole theme's
+// rotations).
+func (p *AssetPreferences) ClearThemeRectRotation(theme, key string) {
+	p.mu.Lock()
+	if m, ok := p.ThemeRectRotations[theme]; ok {
+		if key == "" {
+			delete(p.ThemeRectRotations, theme)
+		} else {
+			delete(m, key)
+			if len(m) == 0 {
+				delete(p.ThemeRectRotations, theme)
 			}
 		}
 	}
@@ -8041,23 +8196,80 @@ func sanitizeHiddenPanels(in []string) []string {
 	return out
 }
 
+// sanitizeClassicRotations validates persisted per-slot rotation bytes on load
+// (A4): blank slot names are dropped and the map is bounded by classicSlotCap
+// (mirroring the ClassicLayout/ClassicAnchors axes it rides alongside). Any byte
+// value is a valid angle, so there is nothing to clamp per entry. Nil-safe.
+func sanitizeClassicRotations(in map[string]uint8) map[string]uint8 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]uint8, len(in))
+	for k, v := range in {
+		if k == "" || len(out) >= classicSlotCap {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// sanitizeThemeRectRotations validates persisted per-theme rotation maps on load
+// (A4). Unlike the sibling ThemeRectOv (which loads raw), this axis is sanitized:
+// blank theme/key names are dropped and the same themeOvThemesCap (outer) /
+// themeOvRectsCap (inner) bounds apply, so a hand-edited pref can't smuggle in an
+// unbounded set. Any byte is a valid angle. Nil-safe.
+func sanitizeThemeRectRotations(in map[string]map[string]uint8) map[string]map[string]uint8 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]map[string]uint8, len(in))
+	for theme, m := range in {
+		if theme == "" || len(out) >= themeOvThemesCap {
+			continue
+		}
+		if len(m) == 0 {
+			continue
+		}
+		clean := make(map[string]uint8, len(m))
+		for k, v := range m {
+			if k == "" || len(clean) >= themeOvRectsCap {
+				continue
+			}
+			clean[k] = v
+		}
+		if len(clean) == 0 {
+			continue
+		}
+		out[theme] = clean
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // sanitizeLayoutProfile cleans one profile's four axes through the same helpers
 // the live axes use: classic slots, anchors, and hidden set are validated/capped
 // and the grid step is clamped. A profile with nothing left in any axis is
 // dropped by the caller (its Classic/Anchors/Hidden are all nil and GridPx 0).
 func sanitizeLayoutProfile(in LayoutProfile) LayoutProfile {
 	return LayoutProfile{
-		Classic: sanitizeClassicLayout(in.Classic),
-		Anchors: sanitizeClassicAnchors(in.Anchors),
-		Hidden:  sanitizeHiddenPanels(in.Hidden),
-		GridPx:  clampLayoutGridPx(in.GridPx),
+		Classic:   sanitizeClassicLayout(in.Classic),
+		Anchors:   sanitizeClassicAnchors(in.Anchors),
+		Hidden:    sanitizeHiddenPanels(in.Hidden),
+		GridPx:    clampLayoutGridPx(in.GridPx),
+		Rotations: sanitizeClassicRotations(in.Rotations),
 	}
 }
 
 // layoutProfileEmpty reports whether a sanitized profile carries no state at all
 // (nothing worth persisting).
 func layoutProfileEmpty(p LayoutProfile) bool {
-	return len(p.Classic) == 0 && len(p.Anchors) == 0 && len(p.Hidden) == 0 && p.GridPx == 0
+	return len(p.Classic) == 0 && len(p.Anchors) == 0 && len(p.Hidden) == 0 && p.GridPx == 0 && len(p.Rotations) == 0
 }
 
 // sanitizeLayoutProfiles validates persisted full-state profiles on load (A6):
@@ -8129,6 +8341,12 @@ func cloneLayoutProfile(in LayoutProfile) LayoutProfile {
 	}
 	if len(in.Hidden) > 0 {
 		out.Hidden = append([]string(nil), in.Hidden...)
+	}
+	if len(in.Rotations) > 0 {
+		out.Rotations = make(map[string]uint8, len(in.Rotations))
+		for k, v := range in.Rotations {
+			out.Rotations[k] = v
+		}
 	}
 	return out
 }
@@ -8215,9 +8433,11 @@ func (p *AssetPreferences) ClearClassicSlot(name string) {
 	if name == "" {
 		p.ClassicLayout = nil
 		p.ClassicAnchors = nil
+		p.ClassicRotations = nil // rotation is meaningless without an override (like the anchor)
 	} else {
 		delete(p.ClassicLayout, name)
 		delete(p.ClassicAnchors, name)
+		delete(p.ClassicRotations, name)
 	}
 	p.mu.Unlock()
 	p.markDirty()
@@ -8248,6 +8468,11 @@ type LayoutProfile struct {
 	Anchors map[string]ClassicAnchor `json:"anchors,omitempty"`
 	Hidden  []string                 `json:"hidden,omitempty"`
 	GridPx  int                      `json:"gridPx,omitempty"`
+	// Rotations carries the classic slots' rotation angles (A4). Additive: a
+	// profile saved by an older build has this nil and loads fine. Theme rotations
+	// stay OUT of profiles (like the theme rects — a theme-X angle applied on
+	// theme-Y would be incoherent).
+	Rotations map[string]uint8 `json:"rotations,omitempty"`
 }
 
 // validAnchorMode reports whether m is a well-formed two-letter anchor mode.
@@ -8408,6 +8633,64 @@ func (p *AssetPreferences) SetClassicAnchors(m map[string]ClassicAnchor) {
 	clean := sanitizeClassicAnchors(m) // drops junk + bounds at classicSlotCap
 	p.mu.Lock()
 	p.ClassicAnchors = clean
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClassicRotationSnapshot returns a copy of the per-slot rotation angles (A4) —
+// the classic editor snapshots it once into an App-local map (beside the anchor
+// snapshot) so the render path resolves angles lock-free.
+func (p *AssetPreferences) ClassicRotationSnapshot() map[string]uint8 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if len(p.ClassicRotations) == 0 {
+		return nil
+	}
+	out := make(map[string]uint8, len(p.ClassicRotations))
+	for k, v := range p.ClassicRotations {
+		out[k] = v
+	}
+	return out
+}
+
+// SetClassicRotation stores one slot's rotation angle byte (bounded by
+// classicSlotCap alongside the overrides). A zero angle is stored like any
+// other; the draw path treats an ABSENT entry as angle 0, so a caller that wants
+// "no rotation" should ClearClassicRotation rather than set 0.
+func (p *AssetPreferences) SetClassicRotation(name string, deg uint8) {
+	if name == "" {
+		return
+	}
+	p.mu.Lock()
+	if p.ClassicRotations == nil {
+		p.ClassicRotations = map[string]uint8{}
+	}
+	if _, exists := p.ClassicRotations[name]; !exists && len(p.ClassicRotations) >= classicSlotCap {
+		p.mu.Unlock()
+		return
+	}
+	p.ClassicRotations[name] = deg
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ClearClassicRotation drops one slot's rotation (the override stays; the slot
+// draws unrotated).
+func (p *AssetPreferences) ClearClassicRotation(name string) {
+	p.mu.Lock()
+	delete(p.ClassicRotations, name)
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// SetClassicRotations REPLACES every slot's rotation at once (symmetric to
+// SetClassicAnchors) — applyProfile restores a whole rotation snapshot. The map
+// is sanitized (blank keys dropped, bounded by classicSlotCap) and copied (never
+// aliased); a nil/empty map clears all rotations.
+func (p *AssetPreferences) SetClassicRotations(m map[string]uint8) {
+	clean := sanitizeClassicRotations(m) // drops blanks + bounds at classicSlotCap
+	p.mu.Lock()
+	p.ClassicRotations = clean
 	p.mu.Unlock()
 	p.markDirty()
 }

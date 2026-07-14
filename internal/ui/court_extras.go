@@ -323,12 +323,14 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			proR, okPro = lay.rect("prosecution_bar")
 		}
 		if okDef {
-			a.drawHPBarRect(defR, true, a.sess.HPDef)
+			// A4: themed HP bars resolve their angle from the baked layout cache
+			// (lay!=nil here — okDef came from lay.rect); an unrotated bar reads 0.
+			a.drawHPBarRect(defR, true, a.sess.HPDef, lay.angle("defense_bar"))
 		} else {
 			barH = a.drawHPBar(vp, true, a.sess.HPDef)
 		}
 		if okPro {
-			a.drawHPBarRect(proR, false, a.sess.HPPro)
+			a.drawHPBarRect(proR, false, a.sess.HPPro, lay.angle("prosecution_bar"))
 		} else if h2 := a.drawHPBar(vp, false, a.sess.HPPro); h2 > barH {
 			barH = h2
 		}
@@ -365,7 +367,17 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			w := vp.W * badgeWidthPct / 100
 			h := w * page.H / page.W
 			dst := sdl.Rect{X: vp.X + 6, Y: by, W: w, H: h}
-			_ = c.Ren.Copy(page.Frames[pageFrameLoop(page, time.Since(a.wtceAt))], nil, &dst)
+			// A4: structured angle==0 → Copy / else CopyEx (ruling 1). This site is
+			// PLUMBING-ONLY — the badge isn't an editor-hoverable key, so no cheap-tier
+			// control sets its angle and it resolves 0 today; the branch keeps it
+			// bolt-on-ready. The local &dst stays (this branch is false on the settled
+			// gate, so no per-frame alloc); do NOT promote it to a shared scratch.
+			frame := page.Frames[pageFrameLoop(page, time.Since(a.wtceAt))]
+			if ang := badgeAngle(lay, "testimony"); ang == 0 {
+				_ = c.Ren.Copy(frame, nil, &dst)
+			} else {
+				_ = c.Ren.CopyEx(frame, nil, &dst, ang, nil, sdl.FLIP_NONE)
+			}
 		} else {
 			r := sdl.Rect{X: vp.X + 6, Y: by, W: c.TextWidth("● Testimony") + 12, H: 20}
 			c.Fill(r, sdl.Color{R: 120, G: 0, B: 0, A: 200})
@@ -382,7 +394,13 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 			w := vp.W * evidPopupWidthPct / 100
 			h := w * page.H / page.W
 			dst := sdl.Rect{X: vp.X + vp.W - w - 8, Y: vp.Y + vp.H/4, W: w, H: h}
-			_ = c.Ren.Copy(page.Frames[0], nil, &dst)
+			// A4 plumbing-only (see the testimony badge above): angle resolves 0
+			// today; local &dst kept (branch false on the settled gate).
+			if ang := badgeAngle(lay, "evidence_display"); ang == 0 {
+				_ = c.Ren.Copy(page.Frames[0], nil, &dst)
+			} else {
+				_ = c.Ren.CopyEx(page.Frames[0], nil, &dst, ang, nil, sdl.FLIP_NONE)
+			}
 			c.Border(dst, ColAccent)
 		}
 	}
@@ -401,7 +419,13 @@ func (a *App) drawCourtOverlays(vp sdl.Rect, lay *themeLayoutCache) {
 				w := vp.W * splashWidthPct / 100
 				h := w * page.H / page.W
 				dst := sdl.Rect{X: vp.X + (vp.W-w)/2, Y: vp.Y + (vp.H-h)/2, W: w, H: h}
-				_ = c.Ren.Copy(page.Frames[idx], nil, &dst)
+				// A4 plumbing-only (see the testimony badge above): angle resolves 0
+				// today; local &dst kept (branch false on the settled gate).
+				if ang := badgeAngle(lay, "wtce_splash"); ang == 0 {
+					_ = c.Ren.Copy(page.Frames[idx], nil, &dst)
+				} else {
+					_ = c.Ren.CopyEx(page.Frames[idx], nil, &dst, ang, nil, sdl.FLIP_NONE)
+				}
 			}
 		} else if elapsed >= splashStaticDuration {
 			a.wtceName = ""
@@ -429,7 +453,14 @@ func (a *App) drawHPBar(vp sdl.Rect, def bool, val int) int32 {
 	if page, ok := a.themePage(a.hpBarStem(def, val)); ok {
 		h = w * page.H / page.W
 	}
-	a.drawHPBarRect(sdl.Rect{X: x, Y: vp.Y + 6, W: w, H: h}, def, val)
+	// A4: the classic HP bar isn't a draggable slot (no slotHP; it's panelHP), so
+	// this angle is only ever nonzero via an applied LayoutProfile that carries a
+	// classic HP-bar rotation — a settled/unedited frame resolves 0 (plain Copy).
+	rotKey := classicRotHPBarPro
+	if def {
+		rotKey = classicRotHPBarDef
+	}
+	a.drawHPBarRect(sdl.Rect{X: x, Y: vp.Y + 6, W: w, H: h}, def, val, a.classicSlotRotation(rotKey))
 	return h
 }
 
@@ -466,14 +497,24 @@ func (a *App) hpBarStem(def bool, val int) string {
 // drawHPBarRect draws one penalty bar into an exact rect: theme art
 // (defensebar<N>/prosecutionbar<N>, the images set_hp_bar swaps) stretched
 // like AO2 stretches them, or a procedural pip strip.
-func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int) {
+func (a *App) drawHPBarRect(bar sdl.Rect, def bool, val int, angleDeg float64) {
 	c := a.ctx
 	if page, ok := a.themePage(a.hpBarStem(def, val)); ok {
 		// &bar into cgo would heap-allocate the PARAMETER on every call — even
 		// when this branch doesn't run (escape analysis is static). The Ctx
 		// scratch rect keeps the always-drawn HP bars off the heap.
 		c.cgoRect = bar
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+		// A4: angle 0 keeps the original Copy path (byte-identical, alloc-free on
+		// the settled gate); only a persisted nonzero angle rotates via CopyEx
+		// (center=nil rotates about the dst-rect centre — no scratch Point). SDL's
+		// rotated blit of rect chrome is nearest-neighbour, so a non-90° tilt shows
+		// jagged edges; accepted for chrome (the coarse 0/90/180/270 cycle avoids it
+		// by default).
+		if angleDeg == 0 {
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+		} else {
+			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, angleDeg, nil, sdl.FLIP_NONE)
+		}
 		return
 	}
 	// Procedural fallback: pip strip, blue defense / red prosecution.

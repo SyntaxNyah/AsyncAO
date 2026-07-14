@@ -92,6 +92,11 @@ type themeLayoutCache struct {
 	offX, offY     int32
 	fit            int                 // ThemeFit mode it was built for (rebuild on change)
 	r              map[string]sdl.Rect // scaled; absolute except showname/message (chatbox-relative)
+	// ang holds each rotatable key's persisted rotation angle byte (A4), baked in
+	// alongside r at rebuild time from the active theme's ThemeRectRotations so the
+	// draw path resolves angles lock-free (a plain map probe, never a prefs read).
+	// nil / an absent key means angle 0 = the plain, byte-identical Copy path.
+	ang map[string]uint8
 }
 
 // themeLayout returns the cache for the current window, rebuilding on
@@ -166,8 +171,28 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 		}
 		lay.r[key] = sr
 	}
+	// Bake the per-key rotation angles for the active theme (A4). Read once here
+	// on the cold rebuild path (win/theme/fit change) — the R-key sets
+	// a.themeLay.valid=false so a fresh rotation reaches the draw path via this
+	// rebuild, never a per-frame prefs read. nil when the theme carries none.
+	if themeName, _ := a.d.Prefs.Theme(); themeName != "" {
+		lay.ang = a.d.Prefs.ThemeRectRotationSnapshot(themeName)
+	}
 	lay.valid = true
 	return lay
+}
+
+// angle returns a key's baked rotation angle in degrees (0 = unrotated → the
+// plain Copy path). A plain map probe on the pre-built cache.
+func (l *themeLayoutCache) angle(key string) float64 {
+	if l.ang == nil {
+		return 0
+	}
+	b, ok := l.ang[key]
+	if !ok || b == 0 {
+		return 0
+	}
+	return config.RotationByteToDeg(b)
 }
 
 // rect fetches a usable scaled rect (absent when the theme hides or omits
@@ -197,7 +222,15 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 		// &dst into cgo would heap-allocate dst every frame — even on the
 		// plain-fill paths above/below (escape analysis is static).
 		c.cgoRect = dst
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+		// A4: structured angle==0 → Copy / else CopyEx. The lobby/charselect
+		// backdrops aren't editor-hoverable keys, so this resolves 0 (plain Copy)
+		// today — the branch keeps the backdrop bolt-on-ready. themedRotationDeg
+		// reads the baked cache map, never prefs.
+		if ang := a.themedRotationDeg(stem); ang == 0 {
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+		} else {
+			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
+		}
 		return
 	}
 	c.Fill(dst, ColBackground)
@@ -211,7 +244,15 @@ func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 		// &r into cgo would heap-allocate the parameter on every call (same
 		// escape class as drawScreenBackdrop above).
 		c.cgoRect = r
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+		// A4: angle 0 keeps the original Copy path (byte-identical); a persisted
+		// nonzero angle rotates the button art via CopyEx (center=nil, no scratch
+		// Point). The hover border and hit-test stay the un-rotated rect — only the
+		// art tilts (the click surface is unchanged, per the cheap-tier scope).
+		if ang := a.themedRotationDeg(key); ang == 0 {
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+		} else {
+			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
+		}
 		hov := c.hovering(r)
 		if hov {
 			c.Border(r, ColAccent)
@@ -252,7 +293,18 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		W: w - 2*lay.offX, H: h - 2*lay.offY,
 	}
 	if page, ok := a.themePage("courtroombackground"); ok {
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &court)
+		// A4: structured angle==0 → Copy / else CopyEx. courtroombackground is the
+		// stage frame (in layoutEditSkip), so it's not editor-hoverable and resolves
+		// 0 every frame — themedRotationDeg reads the baked cache map (NOT prefs), so
+		// this stays alloc-free on the always-drawn themed path. The local &court is
+		// kept (drawCourtroomThemed isn't the settled-gate path — that's the classic
+		// drawCourtroom — but keep it local regardless; a themed courtroom is never
+		// on the 0-alloc gate).
+		if ang := a.themedRotationDeg("courtroombackground"); ang == 0 {
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &court)
+		} else {
+			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &court, ang, nil, sdl.FLIP_NONE)
+		}
 	} else {
 		c.Fill(court, ColPanel)
 	}
@@ -635,7 +687,15 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	}
 	skinned := false
 	if page, ok := a.themePage(themeStemChatbox); ok {
-		_ = c.Ren.Copy(a.themeFrame(page), nil, &box)
+		// A4: angle 0 keeps the original Copy path; a persisted nonzero angle tilts
+		// the SKIN art via CopyEx. Only the skin rotates — the showname/message text
+		// drawn below stays axis-aligned (opt-in cosmetic mismatch, accepted for the
+		// cheap tier, same as any rotated themed chrome). box is a local, kept.
+		if ang := lay.angle(themeChatboxKey); ang == 0 {
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &box)
+		} else {
+			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &box, ang, nil, sdl.FLIP_NONE)
+		}
 		skinned = true
 	}
 	if !skinned {

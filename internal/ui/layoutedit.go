@@ -175,7 +175,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	}
 
 	// Banner + chrome (raw-hit buttons — the fence blocks kit ones).
-	banner := "LAYOUT EDIT — drag = move, corner grip = resize, Tab = cycle overlapping boxes, right-click = reset, Ctrl+Z/Y = undo, Esc = exit"
+	banner := "LAYOUT EDIT — drag = move, corner grip = resize, Tab = cycle, R = rotate, right-click = reset, Ctrl+Z/Y = undo, Esc = exit"
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: 26}, sdl.Color{R: 0, G: 0, B: 0, A: 210})
 	c.Label(pad, 5, banner, ColTierYellow)
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
@@ -252,6 +252,15 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		hoverKey = stack[a.editPickIdx]
 	default:
 		a.editPickSig, a.editPickIdx = "", 0
+	}
+
+	// R rotates the hovered widget's texture-backed art (A4): coarse 0/90/180/270,
+	// Shift+R a fine 15° step, offered only on keys that actually rotate
+	// (themedKeyRotatable — a flat-drawn widget reports "n/a"). Non-undoable like
+	// the classic anchor/rotation. Consumed so a char keybind on R can't fire.
+	if a.editDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_r {
+		a.cycleThemeRotation(themeName, hoverKey, sdl.GetModState()&sdl.KMOD_SHIFT != 0)
+		c.keyPressed = 0
 	}
 
 	// Begin a drag on press. RESIZE takes priority and reaches the LARGEST box whose corner grip is
@@ -419,6 +428,19 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	// Stacked-boxes hint: when several boxes overlap under the cursor, surface that Tab cycles them.
 	if a.editDrag == 0 && len(stack) > 1 {
 		c.Label(pad, h-40, fmt.Sprintf("%s — %d boxes stacked here, Tab to cycle (%d/%d)", hoverKey, len(stack), a.editPickIdx+1, len(stack)), ColTierYellow)
+	}
+	// Rot readout (A4): a passive chip beside the banner's Snap chip, shown only
+	// when the hovered/selected widget carries a nonzero angle. Painted at the end
+	// (after hoverKey resolves) so it reflects the piece under the cursor; the
+	// banner geometry (snapBtn) is still in scope. R rotates, Shift+R fine-steps.
+	rotKey := hoverKey
+	if a.editKey != "" {
+		rotKey = a.editKey
+	}
+	if rotKey != "" && a.themeLay.ang != nil {
+		if label := rotationChipLabel(a.themeLay.ang[rotKey]); label != "" {
+			a.rawChip(sdl.Rect{X: snapBtn.X - 84, Y: 2, W: 78, H: 22}, label)
+		}
 	}
 }
 

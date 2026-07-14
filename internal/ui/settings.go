@@ -1609,10 +1609,11 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	if c.Button(sdl.Rect{X: nameX + fieldW + 8, Y: y, W: saveW, H: fieldH}, "Save") {
 		if name := strings.TrimSpace(a.layoutPresetName); name != "" {
 			a.d.Prefs.SaveLayoutProfile(name, config.LayoutProfile{
-				Classic: a.d.Prefs.ClassicLayoutOverrides(),
-				Anchors: a.d.Prefs.ClassicAnchorSnapshot(),
-				Hidden:  a.d.Prefs.HiddenPanels(),
-				GridPx:  a.d.Prefs.LayoutGridSize(),
+				Classic:   a.d.Prefs.ClassicLayoutOverrides(),
+				Anchors:   a.d.Prefs.ClassicAnchorSnapshot(),
+				Hidden:    a.d.Prefs.HiddenPanels(),
+				GridPx:    a.d.Prefs.LayoutGridSize(),
+				Rotations: a.d.Prefs.ClassicRotationSnapshot(), // A4: classic rotations travel with the profile
 			})
 			a.layoutPresetName = ""
 		}

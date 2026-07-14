@@ -131,6 +131,7 @@ func (a *App) ensureClassicOv() {
 	}
 	a.classicOv = a.d.Prefs.ClassicLayoutOverrides()
 	a.classicAnchor = parseAnchors(a.d.Prefs.ClassicAnchorSnapshot()) // window pins ride alongside
+	a.classicRot = a.d.Prefs.ClassicRotationSnapshot()                // rotations ride alongside too (A4)
 	a.classicOvLoaded = true
 }
 
@@ -502,6 +503,9 @@ func (a *App) clearClassicSlot(name string) {
 	if a.classicAnchor != nil {
 		delete(a.classicAnchor, name)
 	}
+	if a.classicRot != nil {
+		delete(a.classicRot, name) // rotation dies with the override (A4), like the pin
+	}
 }
 
 // cloneClassicOv copies the override map for the undo history — the map is a reference,
@@ -599,6 +603,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		a.d.Prefs.ClearClassicSlot("")
 		a.classicOv = nil
 		a.classicAnchor = nil // pins die with their overrides
+		a.classicRot = nil    // rotations too (A4)
 		a.pushDebug("edit layout: all boxes reset to default")
 		return
 	}
@@ -675,6 +680,15 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// fractions. Consumed so a char keybind on A can't also fire mid-edit.
 	if a.classicEditDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_a {
 		a.cycleSlotAnchor(hoverKey, w, h)
+		c.keyPressed = 0
+	}
+
+	// R rotates the hovered box's texture-backed chrome (A4): coarse 0/90/180/270,
+	// Shift+R a fine 15° step. Non-undoable like the anchor pin. Consumed so a char
+	// keybind on R can't also fire mid-edit. No classic slot is texture-backed
+	// today, so cycleSlotRotation reports an "n/a" hint (honest, not silent).
+	if a.classicEditDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_r {
+		a.cycleSlotRotation(hoverKey, sdl.GetModState()&sdl.KMOD_SHIFT != 0)
 		c.keyPressed = 0
 	}
 
@@ -922,6 +936,15 @@ func (a *App) drawClassicEditor(w, h int32) {
 	a.rawChip(snapBtn, snapLabel)
 	a.rawChip(resetBtn, "Reset all")
 	a.rawChip(doneBtn, "Done")
+	// Rot readout (A4): a passive chip beside the Grid/Aspect chips, shown only when
+	// the hovered box carries a nonzero angle. Classic slots don't rotate today, so
+	// this stays hidden in practice — kept for symmetry with the themed editor.
+	if hoverKey != "" {
+		if label := rotationChipLabel(a.classicRot[hoverKey]); label != "" {
+			rotBtn := sdl.Rect{X: aspectBtn.X - 74 - 6, Y: 2, W: 74, H: classicBannerH - 4}
+			a.rawChip(rotBtn, label)
+		}
+	}
 
 	switch { // bottom line: the per-box context (kept off the busy top banner)
 	case a.classicEditKey != "":
@@ -930,7 +953,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		c.Label(pad, h-22, fmt.Sprintf("%s  ·  %d boxes here — Tab to pick (%d/%d)",
 			classicSlotLabel(hoverKey), len(stack), a.classicPickIdx+1, len(stack)), ColTierYellow)
 	case hoverKey != "":
-		hint := classicSlotLabel(hoverKey) + "  ·  drag to move (Alt = always move) · edge to resize · right-click to reset · A = pin"
+		hint := classicSlotLabel(hoverKey) + "  ·  drag to move (Alt = always move) · edge to resize · right-click to reset · A = pin · R = rotate"
 		if m := a.slotAnchorMode(hoverKey); m != "" {
 			hint = classicSlotLabel(hoverKey) + "  ·  pinned to the " + anchorModeLabel(m) + " (stays glued when the window resizes) · A = next pin · right-click to reset"
 		}

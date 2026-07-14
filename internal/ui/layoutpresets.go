@@ -59,6 +59,10 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	// Window anchors (wholesale; the profile carries WinW/WinH per anchor).
 	a.d.Prefs.SetClassicAnchors(p.Anchors)
 	a.classicAnchor = parseAnchors(p.Anchors)
+	// Rotations (A4, wholesale like the anchors). Seed the live App map from the
+	// durable snapshot so live and persisted read the same sanitized source.
+	a.d.Prefs.SetClassicRotations(p.Rotations)
+	a.classicRot = a.d.Prefs.ClassicRotationSnapshot()
 	// Hidden-chrome set — durable + the live map (mirror applyPrefsToState). Rebuild
 	// the live map from HiddenPanels() (NOT the raw p.Hidden slice) so live and
 	// durable read the SAME sanitized source — SetHiddenPanels dedups/caps, and

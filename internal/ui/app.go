@@ -665,7 +665,13 @@ type App struct {
 	// re-bases to pixel offsets from its window corner/centre on resize
 	// instead of scaling with the fractions (classicanchor.go).
 	classicAnchor map[string]anchorRef
-	slotReg       map[string]slotInfo
+	// classicRot holds per-slot ROTATION angle bytes (A4), snapshotted from
+	// config.ClassicRotations alongside classicOv/classicAnchor. Read by the draw
+	// path when resolving a texture-backed classic element's angle (the HP bar);
+	// an absent entry means angle 0 → the plain Copy path (byte-identical to the
+	// unrotated draw). The editor is the sole writer thereafter.
+	classicRot map[string]uint8
+	slotReg    map[string]slotInfo
 	// dockLeftX caches the docked log/tab strip's left edge (rcol.X), refreshed by
 	// drawCourtroom each frame. The floating server-tab strip centres its DEFAULT
 	// position in the space LEFT of it (over the stage) so it no longer overlaps the

@@ -280,6 +280,243 @@ func TestSetClassicAnchorsWholesale(t *testing.T) {
 	}
 }
 
+// TestClassicRotationRoundTrip pins the A4 classic rotation side-map: a slot's
+// angle survives Set→Snapshot→reload, the snapshot is a copy (no aliasing), and
+// ClearClassicSlot (both the whole-reset ” branch and the named branch) drops
+// the rotation alongside the override.
+func TestClassicRotationRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	p.SetClassicRotation("viewport", 64) // 90°
+	p.SetClassicRotation("ooc", 128)     // 180°
+	if got := p.ClassicRotationSnapshot(); got["viewport"] != 64 || got["ooc"] != 128 {
+		t.Fatalf("round-trip = %+v, want viewport=64 ooc=128", got)
+	}
+	// Snapshot is a copy — mutating it can't touch storage.
+	snap := p.ClassicRotationSnapshot()
+	snap["viewport"] = 0
+	if p.ClassicRotationSnapshot()["viewport"] != 64 {
+		t.Fatalf("ClassicRotationSnapshot leaked the internal map")
+	}
+	// Named ClearClassicSlot drops the rotation with the override.
+	p.SetClassicSlot("viewport", [4]float64{0, 0, 0.5, 0.5})
+	p.ClearClassicSlot("viewport")
+	if _, ok := p.ClassicRotationSnapshot()["viewport"]; ok {
+		t.Fatalf("named ClearClassicSlot left the rotation behind")
+	}
+	// Whole-reset '' branch drops every rotation.
+	p.ClearClassicSlot("")
+	if n := len(p.ClassicRotationSnapshot()); n != 0 {
+		t.Fatalf("ClearClassicSlot('') left %d rotations", n)
+	}
+	// Reload from disk.
+	p.SetClassicRotation("emotes", 192)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if q.ClassicRotationSnapshot()["emotes"] != 192 {
+		t.Fatalf("rotation did not survive disk round-trip: %+v", q.ClassicRotationSnapshot())
+	}
+}
+
+// TestSanitizeClassicRotations pins the load sanitizer: blank keys dropped, the
+// map bounded by classicSlotCap, empty → nil. Any byte value is a valid angle.
+func TestSanitizeClassicRotations(t *testing.T) {
+	if got := sanitizeClassicRotations(nil); got != nil {
+		t.Fatalf("sanitize(nil) = %v, want nil", got)
+	}
+	in := map[string]uint8{"viewport": 64, "": 128} // blank key dropped
+	out := sanitizeClassicRotations(in)
+	if len(out) != 1 || out["viewport"] != 64 {
+		t.Fatalf("sanitize = %+v, want only viewport=64", out)
+	}
+	// Cap.
+	big := make(map[string]uint8, classicSlotCap+10)
+	for i := 0; i < classicSlotCap+10; i++ {
+		big[string(rune('a'+i%26))+string(rune('0'+i/26))] = 64
+	}
+	if n := len(sanitizeClassicRotations(big)); n > classicSlotCap {
+		t.Fatalf("sanitize kept %d rotations, exceeds cap %d", n, classicSlotCap)
+	}
+}
+
+// TestSetClassicRotationsWholesale pins the wholesale setter applyProfile uses:
+// copy-never-alias, sanitize junk, respect classicSlotCap, nil clears.
+func TestSetClassicRotationsWholesale(t *testing.T) {
+	p := &AssetPreferences{}
+	in := map[string]uint8{"viewport": 64, "": 128} // blank dropped by sanitize
+	p.SetClassicRotations(in)
+	if got := p.ClassicRotationSnapshot(); len(got) != 1 || got["viewport"] != 64 {
+		t.Fatalf("wholesale set = %+v, want only viewport=64", got)
+	}
+	in["viewport"] = 0 // mutate caller's input
+	if p.ClassicRotationSnapshot()["viewport"] != 64 {
+		t.Fatalf("SetClassicRotations aliased the caller's map")
+	}
+	p.SetClassicRotations(nil)
+	if n := len(p.ClassicRotationSnapshot()); n != 0 {
+		t.Fatalf("SetClassicRotations(nil) left %d entries", n)
+	}
+}
+
+// TestThemeRectRotationRoundTrip pins the A4 themed rotation side-map: a
+// per-theme, per-key angle survives Set→Snapshot→reload (SANITIZED on load,
+// unlike ThemeRectOv), and ClearThemeRectOverride drops the matching rotation
+// (whole-theme ” and named-key branches).
+func TestThemeRectRotationRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	p.SetThemeRectRotation("default", "defense_bar", 64)
+	p.SetThemeRectRotation("default", "ao2_chatbox", 128)
+	if got := p.ThemeRectRotationSnapshot("default"); got["defense_bar"] != 64 || got["ao2_chatbox"] != 128 {
+		t.Fatalf("round-trip = %+v", got)
+	}
+	// Snapshot is a copy.
+	snap := p.ThemeRectRotationSnapshot("default")
+	snap["defense_bar"] = 0
+	if p.ThemeRectRotationSnapshot("default")["defense_bar"] != 64 {
+		t.Fatalf("ThemeRectRotationSnapshot leaked the internal map")
+	}
+	// Named ClearThemeRectOverride drops the matching rotation.
+	p.SetThemeRectOverride("default", "defense_bar", [4]int{0, 0, 10, 10})
+	p.ClearThemeRectOverride("default", "defense_bar")
+	if _, ok := p.ThemeRectRotationSnapshot("default")["defense_bar"]; ok {
+		t.Fatalf("named ClearThemeRectOverride left the rotation behind")
+	}
+	// Whole-theme '' branch drops the rest.
+	p.ClearThemeRectOverride("default", "")
+	if n := len(p.ThemeRectRotationSnapshot("default")); n != 0 {
+		t.Fatalf("ClearThemeRectOverride('') left %d rotations", n)
+	}
+	// Reload from disk (sanitized load path).
+	p.SetThemeRectRotation("default", "call_mod", 192)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if q.ThemeRectRotationSnapshot("default")["call_mod"] != 192 {
+		t.Fatalf("themed rotation did not survive disk round-trip: %+v", q.ThemeRectRotationSnapshot("default"))
+	}
+}
+
+// TestSanitizeThemeRectRotations pins the themed sanitizer's outer/inner caps and
+// blank-key drops (the sibling ThemeRectOv loads raw; this axis must not).
+func TestSanitizeThemeRectRotations(t *testing.T) {
+	if got := sanitizeThemeRectRotations(nil); got != nil {
+		t.Fatalf("sanitize(nil) = %v, want nil", got)
+	}
+	// Blank theme + blank key dropped; a theme whose only key is blank vanishes.
+	in := map[string]map[string]uint8{
+		"":        {"k": 64},             // blank theme dropped
+		"default": {"good": 64, "": 128}, // blank key dropped
+		"empty":   {},                    // no keys → theme dropped
+	}
+	out := sanitizeThemeRectRotations(in)
+	if len(out) != 1 || out["default"]["good"] != 64 || len(out["default"]) != 1 {
+		t.Fatalf("sanitize = %+v, want only default{good:64}", out)
+	}
+	// Inner cap.
+	big := map[string]uint8{}
+	for i := 0; i < themeOvRectsCap+10; i++ {
+		big[string(rune('a'+i%26))+string(rune('0'+i/26))] = 64
+	}
+	capped := sanitizeThemeRectRotations(map[string]map[string]uint8{"t": big})
+	if n := len(capped["t"]); n > themeOvRectsCap {
+		t.Fatalf("inner rects = %d, exceeds cap %d", n, themeOvRectsCap)
+	}
+	// Outer cap.
+	many := map[string]map[string]uint8{}
+	for i := 0; i < themeOvThemesCap+10; i++ {
+		many[string(rune('a'+i%26))+string(rune('0'+i/26))] = map[string]uint8{"k": 64}
+	}
+	if n := len(sanitizeThemeRectRotations(many)); n > themeOvThemesCap {
+		t.Fatalf("outer themes = %d, exceeds cap %d", n, themeOvThemesCap)
+	}
+}
+
+// TestLayoutProfileRotationsRoundTrip pins that the profile's Rotations axis is
+// carried through save→reload, sanitized, deep-copied, and counted by
+// layoutProfileEmpty (a rotation-only profile is NOT empty).
+func TestLayoutProfileRotationsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	prof := LayoutProfile{
+		Classic:   map[string][4]float64{"viewport": {0, 0, 0.5, 0.5}},
+		Rotations: map[string]uint8{"viewport": 64, "": 128}, // blank sanitized out
+	}
+	p.SaveLayoutProfile("rot", prof)
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	got := q.LayoutProfile("rot")
+	if len(got.Rotations) != 1 || got.Rotations["viewport"] != 64 {
+		t.Fatalf("profile Rotations lost/unsanitized: %+v", got.Rotations)
+	}
+	// Deep copy — mutating the returned profile can't touch storage.
+	got.Rotations["viewport"] = 0
+	if q.LayoutProfile("rot").Rotations["viewport"] != 64 {
+		t.Fatalf("LayoutProfile leaked the Rotations map")
+	}
+	// A rotation-only profile is not empty (it must persist).
+	if layoutProfileEmpty(LayoutProfile{Rotations: map[string]uint8{"v": 64}}) {
+		t.Fatalf("layoutProfileEmpty ignored the Rotations axis")
+	}
+}
+
+// TestRotationByteDegConversions pins the byte↔degree math: the coarse cycle
+// bytes map to exact angles, RotationDegToByte rounds + wraps, and NextCoarseRotation
+// advances / wraps (including from an off-cycle fine-tilt byte).
+func TestRotationByteDegConversions(t *testing.T) {
+	// Coarse cycle is exact.
+	wantDeg := []float64{0, 90, 180, 270}
+	for i, b := range RotCoarseCycle {
+		if got := RotationByteToDeg(b); got != wantDeg[i] {
+			t.Fatalf("RotationByteToDeg(%d) = %g, want %g", b, got, wantDeg[i])
+		}
+	}
+	// Degree→byte rounds to nearest and wraps at 360.
+	if got := RotationDegToByte(90); got != 64 {
+		t.Fatalf("RotationDegToByte(90) = %d, want 64", got)
+	}
+	if got := RotationDegToByte(360); got != 0 {
+		t.Fatalf("RotationDegToByte(360) = %d, want 0 (wrap)", got)
+	}
+	if got := RotationDegToByte(-90); got != 192 {
+		t.Fatalf("RotationDegToByte(-90) = %d, want 192 (wrap to 270°)", got)
+	}
+	// NextCoarseRotation advances then wraps.
+	if got := NextCoarseRotation(0); got != 64 {
+		t.Fatalf("NextCoarseRotation(0) = %d, want 64", got)
+	}
+	if got := NextCoarseRotation(192); got != 0 {
+		t.Fatalf("NextCoarseRotation(192) = %d, want 0 (wrap)", got)
+	}
+	// From an off-cycle fine byte (say 30 → between 0 and 90): snaps up to 64.
+	if got := NextCoarseRotation(30); got != 64 {
+		t.Fatalf("NextCoarseRotation(30) = %d, want 64 (snap up)", got)
+	}
+}
+
 // TestHiddenPanelsRoundTripDedupCap pins the hidden-panel axis (previously
 // untested AND uncapped): SetHiddenPanels dedups blanks/duplicates, bounds at
 // maxHiddenPanels, and round-trips.
