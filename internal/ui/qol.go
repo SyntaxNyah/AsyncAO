@@ -55,6 +55,7 @@ const (
 	hotkeyPairMenu      = "pair_menu"
 	hotkeyModcall       = "modcall"
 	hotkeyUIChrome      = "ui_chrome"
+	hotkeyEditLayout    = "edit_layout"
 	hotkeySettings      = "settings_menu"
 	hotkeyRandomChar    = "random_char"
 	hotkeyVolDown       = "vol_down" // master volume −/+ a step (quick volume from the keyboard)
@@ -114,6 +115,15 @@ var hotkeyDefs = []struct {
 	{hotkeyPairMenu, "Menu: Pairing", "0"},
 	{hotkeyModcall, "Menu: Call mod", "o"},
 	{hotkeyUIChrome, "Menu: UI chrome", "f"},
+	// Edit Layout (FIX 2b): defaults to Ctrl+F2. Collision sweep — every Ctrl+letter
+	// (a–z), Ctrl+digit (0–9) and Ctrl+symbol (- = , . [ ] ; ' \ ` /) default is
+	// already taken by a row above; the clipboard/select-all chords (Ctrl+C/V/X/A,
+	// ui.go) and the editor undo/redo chords (Ctrl+Z/Y, qol.go editorUndoChord) claim
+	// the rest of the printable space. The function-key band is entirely unused as a
+	// Ctrl chord, so Ctrl+F2 is the only conflict-free default left. (Plain F2 is a
+	// user style-preset bind, but that reads c.keyPressed and is gated on !ctrlHeld —
+	// a different namespace from this Ctrl chord, so no clash.)
+	{hotkeyEditLayout, "Edit layout (open the live editor)", "f2"},
 	{hotkeySettings, "Menu: Settings", ","}, // Ctrl+, (prefs convention); NOT z — that's the layout-editor undo
 	{hotkeyRandomChar, "Random character", "r"},
 	{hotkeyVolDown, "Master volume down", "-"},                             // Ctrl+-  (quieter)
@@ -374,7 +384,16 @@ func (a *App) handleHotkeys() {
 	case a.hotkeyFor(hotkeyModcall):
 		a.showModcall = true
 	case a.hotkeyFor(hotkeyUIChrome):
-		a.showUICfg = true
+		// A1: open the pinned per-piece hide/show panel directly. This works even
+		// when panelHidden(panelToolbox) hides the grip — drawToolboxPieces gates
+		// ONLY on toolboxPinned && toolboxPieces, so the hotkey is the un-strand
+		// path for a user who hid the toolbox itself.
+		a.toolboxPinned, a.toolboxPieces = true, true
+	case a.hotkeyFor(hotkeyEditLayout):
+		// FIX 2b: keyboard un-strand path for the layout editor. openLayoutEditor
+		// picks classic vs themed itself — the same entry the toolbox Edit chip and
+		// the palette "Edit Layout" action use (openLayoutEditor / compactEditLayout).
+		a.openLayoutEditor()
 	case a.hotkeyFor(hotkeySettings):
 		a.prevScreen = ScreenCourtroom
 		a.screen = ScreenSettings

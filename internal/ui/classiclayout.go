@@ -418,7 +418,7 @@ func classicHandles(r sdl.Rect) [8]sdl.Rect {
 func (a *App) startClassicEdit() {
 	a.ensureClassicOv()
 	a.classicEdit = true
-	a.showUICfg = false
+	a.toolboxPinned, a.toolboxPieces = false, false // A1: the editor owns the screen; close the pinned toolbox panel
 	a.showIni, a.showEvid, a.showModcall, a.showLogin, a.showPair = false, false, false, false, false
 	a.showModDash, a.banBoxKind, a.showCMPanel = false, 0, false
 	a.showDebugPanel, a.showFxPicker = false, false

@@ -1236,6 +1236,33 @@ func TestRestoreTabsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestToolboxSeenRoundTrip pins the A1 discoverability latch against the
+// documented save-but-not-load trap: a fresh config reads false (show the ring),
+// SetToolboxSeen(true) persists, and a reload reads true (ring off). Without the
+// prefsJSON DTO field + overlay line this would save but never load back.
+func TestToolboxSeenRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if p.ToolboxSeenOn() {
+		t.Fatal("a fresh config must report ToolboxSeen=false (show the ring)")
+	}
+	p.SetToolboxSeen(true)
+	if err := p.SaveNow(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	re, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !re.ToolboxSeenOn() {
+		t.Fatal("ToolboxSeen must survive a save/reload — the DTO/overlay wiring is missing (save-but-not-load trap)")
+	}
+}
+
 // TestCorruptConfigQuarantined pins item #3: a preferences file that fails to
 // parse is renamed aside (config.json.corrupt-<stamp>) BEFORE load returns, so
 // the saver can never overwrite the only copy with defaults, and load reports

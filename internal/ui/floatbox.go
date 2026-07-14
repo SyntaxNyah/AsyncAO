@@ -116,7 +116,6 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Wardrobe", "Iniswap — borrow another character's look", hotkeyWardrobe, func() { a.openIniswap() }},
 			{"Jukebox", "Your saved music playlists", hotkeyJukebox, func() { a.openIniswap(); a.wardSection = wardSectionJukebox }},
 			{"Background", "Change the courtroom background", hotkeyBackground, func() { a.openBgPicker() }},
-			{"Edit Layout", "Drag & resize EVERY box live — move the log / OOC / stage, and pop tabs (Music, Players…) out into their own panels; saved across sessions", "", func() { a.openLayoutEditor() }},
 			{"Evidence", "Add / view case evidence", hotkeyEvidence, func() { a.showEvid = true }},
 			{"Call Mod", "Call a moderator to this room", hotkeyModcall, func() { a.showModcall = true }},
 			{"Mod / CM", "Server-aware moderation + room (CM) controls — ban/kick with a live command preview", hotkeyModDash, func() { a.toggleModDash() }},
@@ -133,8 +132,9 @@ func (a *App) extrasWidgets() []extrasWidget {
 			{"Help", "Glossary of AO terms + a privacy explainer — what IC / OOC / CM / WTCE / HDID mean, and what a server can see", "", func() { a.prevScreen = ScreenCourtroom; a.openHelp(0) }},
 			{"Group Chat", "Private DMs & group chats with other AsyncAO players — over the server's /pm, never the room", "", func() { a.toggleMessages() }},
 			{voiceExtraLabel, "Voice chat (Nyathena): join the voice channel, see who's talking. Live mic audio is coming; for now it shares presence + speaking state", "", func() { a.toggleVoice() }},
-			{"Hide chrome", "Hide/show AsyncAO's on-screen widgets", hotkeyUIChrome, func() { a.showUICfg = true }},
-			{"Theater", "Theater mode — stage only, Esc exits", hotkeyTheater, func() { a.setTheater(!a.theaterOn) }},
+			// "Hide chrome" + "Theater" retired here (A1): both live on the
+			// bottom-right toolbox now (Hide-UI chip / Theater chip), plus their
+			// hotkeys (hotkeyUIChrome / hotkeyTheater) still fire.
 			{"Settings", "Open settings", hotkeySettings, func() { a.prevScreen = ScreenCourtroom; a.screen = ScreenSettings }},
 			{"Disconnect", "Leave this server", "", func() { a.requestDisconnect() }},
 		}
@@ -213,8 +213,12 @@ func (a *App) blockingCourtPopup() bool {
 	// stays live behind them (you can keep chatting / follow the log while one is open). The
 	// ban/kick box used to be a blocking modal; it's a draggable floating box now too, with
 	// the live preview + the explicit Send button keeping the destructive-action safety.
+	// The pinned toolbox pieces panel is deliberately NOT here: it's a non-blocking
+	// floating surface that fences via boxFencesPointer (which early-returns on
+	// !extrasSurfaceLive == a blocking popup). Adding it to a blocking predicate
+	// would make extrasSurfaceLive false while it's open, disabling its own fence.
 	return a.showIni || a.bgPick.show ||
-		a.showTimer || a.showUICfg || a.showLogin || a.pairPopupOpen ||
+		a.showTimer || a.showLogin || a.pairPopupOpen ||
 		a.classicEdit
 }
 
@@ -312,8 +316,8 @@ func (a *App) closeTopOverlay() bool {
 		a.showIni = false
 	case a.showTimer:
 		a.showTimer = false
-	case a.showUICfg:
-		a.showUICfg = false
+	case a.toolboxPinned && a.toolboxPieces:
+		a.toolboxPieces = false // A1: Esc closes the pinned per-piece panel first
 	case a.pairPopupOpen:
 		a.pairPopupOpen = false
 	case a.showHotkeys:
@@ -554,6 +558,13 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 		return true
 	}
 	if a.showHotkeys && pointIn(mx, my, a.hkSheetRect(w, h)) { // the floating hotkey sheet fences too
+		return true
+	}
+	// The pinned per-piece toolbox panel (A1) fences too — its checkboxes must not
+	// leak a click to the scene behind. Not draggable, so no in-flight-block entry;
+	// toolboxPiecesRect is the SAME geometry the draw uses, so the fence and draw
+	// agree on frame one (the click-leak class).
+	if a.toolboxPinned && a.toolboxPieces && pointIn(mx, my, a.toolboxPiecesRect(w, h)) {
 		return true
 	}
 	for i := range a.extrasDetached {

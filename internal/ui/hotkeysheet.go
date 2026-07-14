@@ -43,7 +43,8 @@ func (a *App) hotkeyCheatEntries() []hkEntry {
 		out = append(out, hkEntry{key: fx.key, label: fx.label})
 	}
 
-	// Layout editor gestures (UI… → Edit Layout, or the classic knobs-off editor).
+	// Layout editor gestures (opened from the bottom-right toolbox's Edit chip,
+	// Ctrl+Space → Edit Layout, or the Edit-layout hotkey — Ctrl+F2 by default).
 	out = append(out, hkEntry{label: "Layout editor", header: true})
 	for _, e := range [...]struct{ key, label string }{
 		{"drag", "move a box · grab an edge to resize"},

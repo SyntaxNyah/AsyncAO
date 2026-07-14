@@ -603,8 +603,11 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// feature this AO2 theme has no slot for. Hideable; the hotkey opens it too.
 	a.drawThemedExtrasButton(w, h)
 
-	// Compact hover toolbox (#27): slim bottom-right grip → Theater / Edit / Hide-UI
-	// chips on hover. Normal play only — skipped while the themed editor is armed.
+	// Compact hover toolbox (#27/A1): slim bottom-right grip → Theater / Edit /
+	// Hide-UI icon chips on hover or pin. Normal play only — skipped while the
+	// themed editor is armed. The pinned per-piece panel is NOT drawn here (it
+	// needs real input this fenced pass can't give it — see the classic path in
+	// screens.go); it draws post-courtroom in app.go alongside drawFloatingPanels.
 	if !a.layoutEdit {
 		a.drawCompactToolbox(w, h)
 	}
@@ -865,20 +868,13 @@ func (a *App) drawThemedExtrasButton(w, h int32) {
 	c.Border(st, ColAccent)
 	c.Tooltip(st, "Recolour / glow your character on the fly — other AsyncAO players see it")
 
-	// Sibling "Edit Layout" button: the live layout editor was buried in Hide chrome and nobody
-	// found it. Surface it right next to Extras — AO2 themes are exactly where it works. Drag and
-	// resize every box live; saves per theme.
-	elLabel := "Edit Layout"
-	el := sdl.Rect{X: st.X + st.W + 4, Y: r.Y, W: c.TextWidth(elLabel) + 14, H: bh}
-	if c.Button(el, elLabel) {
-		a.openLayoutEditor()
-	}
-	c.Border(el, ColAccent)
-	c.Tooltip(el, "Live layout editor — drag & resize every box (log, OOC, stage, buttons). Tab cycles overlapping; saves per theme.")
+	// "Edit Layout" sibling retired (A1): the live layout editor is the Edit chip
+	// on the bottom-right toolbox now (drawCompactToolbox), so both themed entries
+	// no longer duplicate it here.
 
-	// Mod / CM launchers (only while you hold the role), chained after Edit Layout — in the row, so
+	// Mod / CM launchers (only while you hold the role), chained after Restyle — in the row, so
 	// they never float over the emote sprites.
-	prev := el
+	prev := st
 	if a.amIMod() {
 		m := sdl.Rect{X: prev.X + prev.W + 4, Y: r.Y, W: c.TextWidth("Mod") + 14, H: bh}
 		if c.Button(m, "Mod") {

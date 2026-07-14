@@ -704,6 +704,15 @@ type App struct {
 	toolboxDragID    string
 	toolboxDragStart [2]int32
 	toolboxDragMoved bool
+	// A1 — the compact bottom-right toolbox is the single show/hide + editor
+	// surface. toolboxPinned latches the flyout open (press the grip / pin chip);
+	// while pinned, toolboxPieces reveals the in-flyout per-piece hide/show panel
+	// (the retired drawUICfgPanel's replacement). toolboxPiecesScroll is that
+	// panel's vertical scroll. All three are session state (the &App{} zero value
+	// is "collapsed, no pieces"), so no ctor wiring is needed.
+	toolboxPinned       bool
+	toolboxPieces       bool
+	toolboxPiecesScroll int32
 	// pathStroke is the in-progress freehand stroke for the Sprite Style "draw a path" box
 	// (#34 B2): raw box-relative points captured while dragging, sampled to <=6 waypoints on
 	// release. pathDrawing = mid-stroke; pathPrevDown is its press-edge latch. Bounded.
@@ -722,8 +731,6 @@ type App struct {
 	// only trigger loads when something really changes.
 	themeAppliedName string
 
-	showUICfg   bool  // hide-chrome popup
-	uiCfgScroll int32 // vertical scroll of the hide-chrome popup's checkbox region (#22)
 	// showWidgets opens the "Extras" box: every AsyncAO feature an AO2 theme has
 	// no button for. The themed Extras button opens it; so does the Extras
 	// hotkey, which works in EITHER mode (in the classic path it's just a quick
@@ -2325,6 +2332,13 @@ func (a *App) SetAutoScaleFromWindow(winW, winH int32) {
 // call is legal here — every caller is on the render thread.
 func (a *App) setTheater(on bool) {
 	a.theaterOn = on
+	if on {
+		// Theater is stage-only: no toolbox draws there. Clear the pinned pieces
+		// panel + the pin latch so an invisible-but-armed panel can't swallow a
+		// click in theater — drawToolboxPieces self-gates on these, and its fence
+		// (boxFencesPointer) reads the same flags, so both go silent together.
+		a.toolboxPieces, a.toolboxPinned = false, false
+	}
 	if a.ctx.win != nil {
 		a.ctx.win.SetBordered(!on)
 	}
@@ -6371,7 +6385,19 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		case ScreenCourtroom:
 			a.drawCourtroom(winW, winH)      // primary always full-screen; the pinned server floats on top
 			a.drawFloatingPanels(winW, winH) // non-blocking Extras + Pair + the floating client window, on top of the live courtroom (input already restored)
-			if a.extrasSurfaceLive() {       // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
+			// The pinned per-piece toolbox panel draws HERE (not inside drawCourtroom):
+			// its checkboxes/scrollbar/Close need real input, but boxFencesPointer runs
+			// the whole courtroom pass pointer-blind while the cursor is over the panel,
+			// so drawing it inside that pass left it dead (the recon BLOCKER). Post-court
+			// the fence is already lifted (drawCourtroom's deferred unfencePointer ran on
+			// return). Drawn AFTER drawFloatingPanels = above the other floating panels:
+			// it's a small utility popover the user just opened, so it should sit on top.
+			// It draws in BOTH layouts (this site is layout-agnostic) and self-gates on
+			// toolboxPinned && toolboxPieces (+ extrasSurfaceLive, matching its fence), so
+			// theater — which clears both flags in setTheater — and blocking modals both
+			// suppress it without a special case here.
+			a.drawToolboxPieces(winW, winH)
+			if a.extrasSurfaceLive() { // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
 				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)
 			}
 			a.drawPalette(winW, winH)          // #39: command palette (Ctrl+Space), above panels, below pickers

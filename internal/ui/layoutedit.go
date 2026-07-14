@@ -119,7 +119,7 @@ var layoutEditSkip = map[string]bool{
 // draws when the themed path runs to its end.
 func (a *App) startLayoutEdit() {
 	a.layoutEdit = true
-	a.showUICfg = false
+	a.toolboxPinned, a.toolboxPieces = false, false // A1: the editor owns the screen; close the pinned toolbox panel
 	a.showIni, a.showEvid, a.showModcall, a.showLogin, a.showPair = false, false, false, false, false
 	a.showModDash, a.banBoxKind, a.showCMPanel = false, 0, false
 	a.showDebugPanel, a.showFxPicker = false, false
@@ -143,12 +143,11 @@ func (a *App) stopLayoutEdit() {
 // it edits the theme's design rects; on the default/Legacy layout it arms the classic SLOT editor,
 // so the stage, log column and OOC box are draggable there too.
 func (a *App) openLayoutEditor() {
+	// start{Layout,Classic}Edit close the pinned toolbox panel themselves (A1).
 	if a.themeLay.valid && a.d.Prefs.ThemeLayoutEnabled() {
-		a.showUICfg = false
 		a.startLayoutEdit()
 		return
 	}
-	a.showUICfg = false
 	a.startClassicEdit()
 }
 

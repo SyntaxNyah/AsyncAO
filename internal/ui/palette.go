@@ -23,12 +23,42 @@ const (
 	paletteInputID = "palette_q"
 )
 
-// paletteMatch is one filtered row: an Extras action (widget >= 0) or a slash
-// command reference line (cmd != "").
+// paletteMatch is one filtered row: an Extras action (widget >= 0), a slash
+// command reference line (cmd != ""), or a palette-only extra action (run != nil).
 type paletteMatch struct {
 	label, hint string
-	widget      int    // index into extrasWidgets(), -1 for command rows
-	cmd         string // the command form to insert ("" for actions)
+	// widget indexes extrasWidgets() (-1 for command / extra-action rows); cmd is
+	// the command form to insert ("" for actions); run is set ONLY for
+	// paletteExtraActions rows (a method value, so no per-call closure alloc).
+	widget int
+	cmd    string
+	run    func(a *App)
+}
+
+// paletteExtra is one palette-only action row: the actions that used to live on
+// the retired Extras "Hide chrome"/"Theater"/"Edit Layout" widgets, plus the
+// toolbox's own entries. These have NO extrasWidgets() slot (the toolbox owns
+// them now), so the palette would otherwise have lost them — this restores them
+// as first-class palette results. run is a METHOD VALUE bound at table-build
+// time (below), never a closure capturing an *App, so the table is package-level
+// and the palette's iteration over it stays allocation-free (the same idiom as
+// compactToolboxChips).
+type paletteExtra struct {
+	label, desc string
+	run         func(a *App)
+}
+
+// paletteExtraActions is the fixed set of palette-only actions, merged into the
+// palette candidates ahead of the server commands. Edit Layout opens the live
+// layout editor (classic or themed — openLayoutEditor picks); Theater runs the
+// exact same toggle as the Theater hotkey; Hide UI pieces opens the pinned
+// per-piece panel (identical to the Hide-UI hotkey / toolbox chip). Reusing the
+// compact* method values keeps the three entry points (palette, hotkey, toolbox
+// chip) behaviourally identical — no drift.
+var paletteExtraActions = []paletteExtra{
+	{"Edit Layout", "Rearrange the courtroom — drag & resize every box", (*App).compactEditLayout},
+	{"Theater", "Theater mode — stage only, Esc exits", (*App).compactTheater},
+	{"Hide UI pieces", "Per-piece show/hide list for the courtroom chrome", (*App).compactHideUI},
 }
 
 // fuzzyMatch reports whether every rune of query appears in s in order
@@ -67,6 +97,18 @@ func (a *App) paletteMatches(query string) []paletteMatch {
 		}
 		if fuzzyMatch(w.label+" "+w.desc, query) {
 			out = append(out, paletteMatch{label: w.label, hint: w.desc, widget: i})
+		}
+	}
+	// Palette-only actions (Edit Layout / Theater / Hide UI pieces): these have no
+	// extrasWidgets() slot — the bottom-right toolbox owns them — so they'd be
+	// unreachable from the palette otherwise. widget: -1 marks a non-widget row.
+	for i := range paletteExtraActions {
+		if len(out) >= paletteMaxN {
+			return out
+		}
+		e := &paletteExtraActions[i]
+		if fuzzyMatch(e.label+" "+e.desc, query) {
+			out = append(out, paletteMatch{label: e.label, hint: e.desc, widget: -1, run: e.run})
 		}
 	}
 	if a.sess != nil {
@@ -109,6 +151,10 @@ func (a *App) runPaletteMatch(m paletteMatch) {
 		if m.widget < len(ws) {
 			ws[m.widget].run()
 		}
+		return
+	}
+	if m.run != nil { // a palette-only extra action (Edit Layout / Theater / Hide UI pieces)
+		m.run(a)
 		return
 	}
 	if m.cmd != "" {

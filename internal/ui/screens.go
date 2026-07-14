@@ -1356,8 +1356,13 @@ func (a *App) drawCourtroom(w, h int32) {
 	// viewport doesn't drag them (they become their own slots in a later slice).
 	a.drawICControls(w, h, vpDef)
 
-	// Compact hover toolbox (#27): slim bottom-right grip → Theater / Edit / Hide-UI
-	// chips on hover. Normal play only — the editor shows its own full chip strip.
+	// Compact hover toolbox (#27/A1): slim bottom-right grip → Theater / Edit /
+	// Hide-UI icon chips on hover or pin. Normal play only — the editor shows its
+	// own full chip strip. The pinned per-piece panel is NOT drawn here: it must
+	// draw with real input, which this pass can't give it — boxFencesPointer runs
+	// the whole courtroom pointer-blind while the cursor is over the panel, so its
+	// checkboxes/scrollbar/Close would be dead here. It draws post-courtroom in
+	// app.go (alongside drawFloatingPanels, where input is restored) instead.
 	if !a.classicEdit {
 		a.drawCompactToolbox(w, h)
 	}
@@ -1442,8 +1447,6 @@ func (a *App) drawCourtroomModals(w, h int32) bool {
 		a.drawBgPanel(w, h)
 	case a.showTimer:
 		a.drawTimerPanel(w, h)
-	case a.showUICfg:
-		a.drawUICfgPanel(w, h)
 	case a.showLogin:
 		a.drawLoginDialog(w, h)
 	case a.pairPopupOpen:
@@ -4531,10 +4534,8 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 		a.openLoginDialog()
 	}
 	x += 76
-	if c.Button(sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...") {
-		a.showUICfg = true
-	}
-	x += 56
+	// "UI..." retired (A1): show/hide now lives on the bottom-right toolbox
+	// (Hide-UI chip → pinned per-piece panel) and hotkeyUIChrome.
 	x = a.drawPosSelect(x, y2, btnH)
 	// "Hotkeys" (#96) + "Restyle" (#103/#104) are the trailing convenience buttons,
 	// appended after Pos so no existing button shifts. At a narrow window width the
@@ -4560,9 +4561,9 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	c.Tooltip(styleR, "Recolour / glow your character on the fly — other AsyncAO players see it")
 	x += styleW + btnGap
 
-	// Edit Layout (front door to the live layout editor) + Mod / CM launchers, in the button row so
-	// they never float over the emote grid. Wrap to a fresh row as a group if they wouldn't fit.
-	editW := int32(94)
+	// Mod / CM launchers, in the button row so they never float over the emote
+	// grid. Wrap to a fresh row as a group if they wouldn't fit. ("Edit Layout"
+	// retired here (A1): it's the Edit chip on the bottom-right toolbox now.)
 	modW, cmW := int32(0), int32(0)
 	if a.amIMod() {
 		modW = 54
@@ -4570,16 +4571,12 @@ func (a *App) drawICUtilityRowLegacy(clusterX, y2, clusterRight, w, h int32) (in
 	if a.amICMNow {
 		cmW = 46
 	}
-	if x+editW+modW+cmW+btnGap*2 > clusterRight {
+	// Only wrap when the group actually draws something (else an empty Mod/CM row
+	// would push the IC area down for a plain user with no role).
+	if modW+cmW > 0 && x+modW+cmW+btnGap > clusterRight {
 		y2 += btnH + 4
 		x = clusterX
 	}
-	edR := sdl.Rect{X: x, Y: y2, W: editW, H: btnH}
-	if c.Button(edR, "Edit Layout") {
-		a.openLayoutEditor()
-	}
-	c.Tooltip(edR, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
-	x += editW + btnGap
 	if modW > 0 {
 		mR := sdl.Rect{X: x, Y: y2, W: modW, H: btnH}
 		if c.Button(mR, "Mod") {
@@ -4708,7 +4705,9 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 	}
 	x += gGap
 	// — System — wrap to a fresh row as a block if it would run off the right edge.
-	if x+90+56+100+96+86+76 > clusterRight {
+	// ("UI..." + "Edit Layout" retired (A1): show/hide + the editor live on the
+	// bottom-right toolbox now, so the System block is Settings/Hotkeys/About/Login.)
+	if x+90+96+86+76 > clusterRight {
 		y2 += btnH + 4
 		x = clusterX
 	}
@@ -4717,17 +4716,6 @@ func (a *App) drawICUtilityRowGrouped(clusterX, y2, clusterRight, w, h int32) (i
 			a.prevScreen = ScreenCourtroom
 			a.screen = ScreenSettings
 		}
-	}
-	// UI… is the access point to the button-customise list, so it's never hidden.
-	if a.movableButton("ctrl.ui", sdl.Rect{X: x, Y: y2, W: 50, H: btnH}, "UI...", w, h) {
-		a.showUICfg = true
-	}
-	x += 56
-	if r, ok := a.ctrlSlot(&x, y2, 94, 100, w, h, "ctrl.editlayout"); ok {
-		if c.Button(r, "Edit Layout") {
-			a.openLayoutEditor()
-		}
-		c.Tooltip(r, "Live layout editor — drag & resize every box: the stage, log & OOC. Works on any theme; saved across sessions.")
 	}
 	if r, ok := a.ctrlSlot(&x, y2, 90, 96, w, h, "ctrl.hotkeys"); ok {
 		if c.Button(r, "Hotkeys") {

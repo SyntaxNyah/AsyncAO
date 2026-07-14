@@ -1041,6 +1041,15 @@ type AssetPreferences struct {
 	// downloader (off by default — it writes files to disk on demand).
 	CharDownloaderOn bool `json:"charDownloader"`
 
+	// ToolboxSeen latches once the user first expands the compact bottom-right
+	// toolbox (A1). While false, the collapsed grip wears a faint accent
+	// discoverability ring; the first expand sets it true and the ring stops.
+	// Default false (zero value) = "not seen yet", so a brand-new config shows
+	// the ring exactly once. NOT in resetContentFields, so ResetSettings clears it
+	// back to false — the ring simply re-shows once after a settings reset, which
+	// is fine (a settings reset is a "fresh start", so re-teaching the toolbox fits).
+	ToolboxSeen bool `json:"toolboxSeen"`
+
 	// ShowAssetWarnings governs the red on-screen "Missing asset" banner
 	// (OFF by default — the failures still reach the debug overlay).
 	ShowAssetWarnings bool `json:"showAssetWarnings"`
@@ -1360,6 +1369,7 @@ type prefsJSON struct {
 	AutoStatus         *AutoStatusPref           `json:"autoStatus,omitempty"`
 	ChromeTheme        *string                   `json:"chromeTheme,omitempty"`
 	CharDownloader     bool                      `json:"charDownloader"`
+	ToolboxSeen        bool                      `json:"toolboxSeen"` // A1: default OFF (zero value) = show the toolbox discoverability ring until first expand
 
 	ShowAssetWarnings  bool     `json:"showAssetWarnings"`    // default OFF (zero value)
 	SpriteMove         bool     `json:"spriteMove"`           // default OFF (zero value)
@@ -1900,6 +1910,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.CallwordSoundFile = onDisk.CallwordSoundFile
 	p.DebugOverlay = onDisk.DebugOverlay
 	p.CharDownloaderOn = onDisk.CharDownloader
+	p.ToolboxSeen = onDisk.ToolboxSeen // A1 discoverability latch; absent (old config) = false = show the ring once
 	p.ShowAssetWarnings = onDisk.ShowAssetWarnings
 	p.SpriteMoveOn = onDisk.SpriteMove
 	p.DeskFollowManifest = onDisk.DeskFollowManifest
@@ -5084,6 +5095,29 @@ func (p *AssetPreferences) SetCharDownloader(enabled bool) {
 		return
 	}
 	p.CharDownloaderOn = enabled
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ToolboxSeenOn reports whether the user has already expanded the compact
+// bottom-right toolbox at least once (A1). While false the collapsed grip
+// wears a faint accent discoverability ring; the first expand latches it true.
+func (p *AssetPreferences) ToolboxSeenOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ToolboxSeen
+}
+
+// SetToolboxSeen latches the toolbox-discoverability flag (A1). Idempotent: a
+// no-op write skips markDirty so a settled draw that re-asserts "seen" never
+// spins the debounced saver.
+func (p *AssetPreferences) SetToolboxSeen(seen bool) {
+	p.mu.Lock()
+	if p.ToolboxSeen == seen {
+		p.mu.Unlock()
+		return
+	}
+	p.ToolboxSeen = seen
 	p.mu.Unlock()
 	p.markDirty()
 }

@@ -1564,7 +1564,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// and flip between setups. Presets are window fractions, so they travel across sizes.
 	// applyLayoutPreset/applyStagePreset (layoutpresets.go) take effect the same frame.
 	y = a.settingsSection(y, w, "Layout profiles")
-	for _, ln := range c.WrapText("Save the WHOLE courtroom layout (Extras → Edit Layout lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. A profile captures the box positions, their corner anchors, which chrome you hid, and the snap-grid step, so loading one restores everything at once. Stored as window fractions, so it looks right at any window size.", a.formW-8, 0) {
+	for _, ln := range c.WrapText("Save the WHOLE courtroom layout (the bottom-right toolbox's Edit chip — or Ctrl+Space → Edit Layout — lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. A profile captures the box positions, their corner anchors, which chrome you hid, and the snap-grid step, so loading one restores everything at once. Stored as window fractions, so it looks right at any window size.", a.formW-8, 0) {
 		c.Label(pad, y, ln, ColTextDim)
 		y += 16
 	}
