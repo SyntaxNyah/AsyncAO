@@ -100,6 +100,18 @@ const (
 	panelNomPairH   = int32(560) // pairPanelRect's default-height clamp ceiling
 )
 
+// Voice panel geometry. These live HERE, not in voicepanel.go, because that
+// file is compiled out under -tags novoice while this table is always built —
+// the lean release build otherwise fails with "undefined: voicePanelDefW"
+// (v1.63.0's first CI run). Under novoice the row is permanently inert: the
+// stub toggleVoice is a no-op, so showVoice never turns true.
+const (
+	voicePanelDefW = 320
+	voicePanelDefH = 300
+	voicePanelMinW = 240
+	voicePanelMinH = 180
+)
+
 var panelSlotTable = []panelSlot{
 	{slotPanelPair, func(a *App) *floatWin { return &a.pairWin }, pairPanelDefW, panelNomPairH, pairPanelMinW, pairPanelMinH, func(a *App) bool { return a.showPair }},
 	// The mod dashboard hides while its own ban box is open (they share the modWin

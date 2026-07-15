@@ -34,12 +34,10 @@ const voiceExtraLabel = "Voice (Nyathena)"
 // carries zero added cost.
 const voiceBuilt = true
 
-const (
-	voicePanelDefW = 320
-	voicePanelDefH = 300
-	voicePanelMinW = 240
-	voicePanelMinH = 180
-)
+// The voice panel's geometry consts (voicePanelDefW/DefH/MinW/MinH) live in
+// floatbox.go, NOT here: panelSlotTable references them from the always-built
+// side, and this file is compiled out under -tags novoice (the v1.63.0 lean
+// release build broke on exactly that).
 
 // voiceOfferable reports whether to show any voice surface: a live session whose
 // server advertised voice (VS_CAPS.enabled). This single check is the gate.
