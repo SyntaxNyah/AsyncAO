@@ -248,6 +248,7 @@ func (a *App) refreshShapeMasks() {
 	if shape == shapeSharp {
 		c.shapeMaskReady = false
 		c.shapeFillTex, c.shapeStrokeTex = nil, nil
+		a.shapeResolvedShape = "" // drop the memo; a later non-sharp pick re-resolves
 		return
 	}
 	// A shape changed since we built, or the store generation moved past what we
@@ -278,6 +279,18 @@ func (a *App) refreshShapeMasks() {
 	if tier < 0 || tier >= shapeRadiusTiers {
 		tier = 0
 	}
+	// Steady-state fast path: the same shape+tier already resolved against the
+	// SAME store generation — the pointers must still be valid, because every
+	// store mutation that could free them (eviction, our own build/sweep,
+	// UploadPinned replacing a key, Purge) bumps the generation. Skipping the
+	// shapeTexKey concat + map Gets keeps this always-on frame hook zero-alloc
+	// on settled frames (pinned by TestRefreshShapeMasksZeroAlloc). The gen is
+	// read AFTER the (possible) rebuild above so a fresh build re-resolves
+	// against its own post-upload generation.
+	gen := a.shapeStoreGen()
+	if c.shapeMaskReady && shape == a.shapeResolvedShape && tier == a.shapeResolvedTier && gen == a.shapeResolvedGen {
+		return
+	}
 	radius := shapeTierRadii[tier]
 	fillPage, fok := a.shapePage(shape, shapeRoleFill, tier)
 	strokePage, sok := a.shapePage(shape, shapeRoleStroke, tier)
@@ -286,6 +299,7 @@ func (a *App) refreshShapeMasks() {
 		// sharp this frame — no flash, and the next frame retries.
 		c.shapeMaskReady = false
 		c.shapeFillTex, c.shapeStrokeTex = nil, nil
+		a.shapeResolvedShape = "" // no memo — retry the resolve next frame
 		return
 	}
 	c.shapeFillTex = fillPage.Frames[0]
@@ -293,6 +307,7 @@ func (a *App) refreshShapeMasks() {
 	c.shapeMaskDim = 2*radius + shapeMaskCenter
 	c.shapeMaskR = radius
 	c.shapeMaskReady = true
+	a.shapeResolvedShape, a.shapeResolvedTier, a.shapeResolvedGen = shape, tier, gen
 }
 
 // invalidateShapeMasks drops the frame-resolved mask pointers (Ctx) and the
@@ -306,6 +321,7 @@ func (a *App) refreshShapeMasks() {
 // future mid-frame Store.Purge()/invalidation site must make this same call.
 func (a *App) invalidateShapeMasks() {
 	a.shapeMasksBuilt = false
+	a.shapeResolvedShape = "" // drop the resolve memo with the pointers
 	c := a.ctx
 	c.shapeMaskReady = false
 	c.shapeFillTex, c.shapeStrokeTex = nil, nil

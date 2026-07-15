@@ -1568,7 +1568,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// and flip between setups. Presets are window fractions, so they travel across sizes.
 	// applyLayoutPreset/applyStagePreset (layoutpresets.go) take effect the same frame.
 	y = a.settingsSection(y, w, "Layout profiles")
-	for _, ln := range c.WrapText("Save the WHOLE courtroom layout (the bottom-right toolbox's Edit chip — or Ctrl+Space → Edit Layout — lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. A profile captures the box positions, their corner anchors, which chrome you hid, and the snap-grid step, so loading one restores everything at once. Stored as window fractions, so it looks right at any window size.", a.formW-8, 0) {
+	for _, ln := range c.WrapText("Save the WHOLE courtroom layout (the bottom-right toolbox's Edit chip — or Ctrl+Space → Edit Layout — lets you drag every box) under a name and switch between arrangements — a big stage for watching, a wide log for moderating. A profile captures the box positions, their corner anchors, their rotations, which chrome you hid, and the snap-grid step, so loading one restores everything at once. Stored as window fractions, so it looks right at any window size. Profiles cover the default courtroom layout; an AO2 theme's own layout, tilts and the chrome shape are saved separately (per-theme overrides / the chrome shape picker).", a.formW-8, 0) {
 		c.Label(pad, y, ln, ColTextDim)
 		y += 16
 	}
@@ -1595,6 +1595,18 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "Reset to stock") {
 		a.applyLayoutPreset(nil)
 		a.pushDebug("layout: reset to stock")
+	}
+	// Mouse-reachable chrome recovery (A6 no-strand): un-hides every piece at
+	// once. The pieces panel refuses to hide BOTH the toolbox and the Settings
+	// button precisely so this button stays reachable by mouse. Drawn only
+	// while something is actually hidden.
+	if len(a.hidden) > 0 {
+		lbl := "Show all hidden UI pieces"
+		if c.Button(sdl.Rect{X: pad + 158, Y: y, W: c.TextWidth(lbl) + 16, H: btnH}, lbl) {
+			a.hidden = map[string]bool{}
+			a.d.Prefs.SetHiddenPanels(nil)
+			a.pushDebug("layout: all hidden UI pieces restored")
+		}
 	}
 	y += btnH + 12
 
@@ -2315,10 +2327,7 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 // the subset NewApp seeds — so a reset (or import) takes effect without a
 // restart. Not a hot path.
 func (a *App) applyPrefsToState() {
-	a.hidden = map[string]bool{}
-	for _, id := range a.d.Prefs.HiddenPanels() {
-		a.hidden[id] = true
-	}
+	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
 	a.oocPct = a.d.Prefs.OOCScale()
 	a.uiScalePct = a.d.Prefs.UIScale()

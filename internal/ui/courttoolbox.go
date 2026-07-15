@@ -1,6 +1,10 @@
 package ui
 
-import "github.com/veandco/go-sdl2/sdl"
+import (
+	"time"
+
+	"github.com/veandco/go-sdl2/sdl"
+)
 
 // Editor toolbox (#27): a single strip in the layout editor listing EVERY hideable UI
 // element as a chip — chrome panels (shouts, knobs, emotes, the tabs, penalty bars,
@@ -568,6 +572,32 @@ func (a *App) toolboxPiecesContentH() int32 {
 	return rows*toolboxPiecesRowPitch + 8
 }
 
+// setPanelHiddenGuarded is drawToolboxPieces' setPanelHidden with the
+// no-strand guard (A6): hiding the SECOND of the two mouse lifelines — the
+// toolbox grip (panelToolbox) and the toolbar Settings button
+// (ctrlSettingsSlot), each a mouse route back to chrome recovery — is refused
+// with a toast explaining why, instead of applied-then-silently-undone. Every
+// other toggle passes straight through. Wholesale hidden-set writes (profile
+// apply, prefs import/reset) normalize the same invariant in
+// seedHiddenFromPrefs instead.
+func (a *App) setPanelHiddenGuarded(id string, hide bool) {
+	if hide {
+		other := ""
+		switch id {
+		case panelToolbox:
+			other = ctrlSettingsSlot
+		case ctrlSettingsSlot:
+			other = panelToolbox
+		}
+		if other != "" && a.panelHidden(other) {
+			a.warnLine = "Kept: hiding both the toolbox and the Settings button would leave no mouse way back. (Ctrl+F reopens this panel.)"
+			a.warnAt = time.Now()
+			return
+		}
+	}
+	a.setPanelHidden(id, hide)
+}
+
 // drawToolboxPieces paints the pinned per-piece hide/show panel (A1) — the
 // replacement for the retired drawUICfgPanel dialog. It reuses the exact same
 // registries (hideablePanels / hideableButtons / hideableRosterButtons) and
@@ -585,6 +615,15 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	// click-leak class). This also hides the panel behind a blocking court popup and
 	// lets it reappear when that closes — the same yield the Extras box does.
 	if !a.extrasSurfaceLive() {
+		return
+	}
+	// The palette (Ctrl+Space) draws ON TOP of this panel (app.go draw order)
+	// but neither is modal — on a narrow window the two overlap, and this
+	// panel, drawn (and input-polled) FIRST, would eat clicks under the
+	// palette's rows: a Z/input inversion. Stand down while the palette is up
+	// (its fence in boxFencesPointer reads the same flag, so draw and fence
+	// stay in lockstep — the ddOpen dropdown precedent).
+	if a.paletteOpen {
 		return
 	}
 	c := a.ctx
@@ -628,7 +667,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	for _, p := range hideablePanels {
 		hidden := a.panelHidden(p.id)
 		if next := c.Checkbox(panel.X+pad, y, "Hide "+p.short, hidden); next != hidden {
-			a.setPanelHidden(p.id, next)
+			a.setPanelHiddenGuarded(p.id, next)
 		}
 		y += toolboxPiecesRowPitch
 	}
@@ -640,7 +679,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 			cy := y + int32(i)/toolboxPiecesCols*toolboxPiecesRowPitch
 			hidden := a.panelHidden(b.id)
 			if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
-				a.setPanelHidden(b.id, next)
+				a.setPanelHiddenGuarded(b.id, next)
 			}
 		}
 		y += (int32(len(hideableButtons)) + toolboxPiecesCols - 1) / toolboxPiecesCols * toolboxPiecesRowPitch
@@ -652,7 +691,7 @@ func (a *App) drawToolboxPieces(w, h int32) {
 		cy := y + int32(i)/toolboxPiecesCols*toolboxPiecesRowPitch
 		hidden := a.panelHidden(b.id)
 		if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
-			a.setPanelHidden(b.id, next)
+			a.setPanelHiddenGuarded(b.id, next)
 		}
 	}
 	c.popClip(clipPrev, clipHad)

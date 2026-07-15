@@ -111,6 +111,11 @@ var hideablePanels = []struct{ id, label, short string }{
 	{panelToolbox, "Compact toolbox (bottom-right hover chips: Theater / Edit layout / Hide UI)", "Toolbox"},
 }
 
+// ctrlSettingsSlot is the toolbar Settings button's ctrl.* slot key, named
+// because the no-strand guard pairs it with panelToolbox as the two mouse
+// "lifelines" (setPanelHiddenGuarded / seedHiddenFromPrefs).
+const ctrlSettingsSlot = "ctrl.settings"
+
 // hideableButtons drives the "Control buttons" grid in the UI popup — the
 // customizable courtroom toolbar (screens.go ctrlSlot). Each id is a ctrl.*
 // slot key; ticking one hides that button and the row compacts with no gap.
@@ -124,7 +129,7 @@ var hideableButtons = []struct{ id, label string }{
 	{"ctrl.background", "Background"},
 	{"ctrl.evidence", "Evidence"},
 	{"ctrl.mods", "Mods"},
-	{"ctrl.settings", "Settings"},
+	{ctrlSettingsSlot, "Settings"},
 	{"ctrl.hotkeys", "Hotkeys"},
 	{"ctrl.about", "About"},
 	{"ctrl.login", "Login"},
@@ -163,6 +168,25 @@ func (a *App) setPanelHidden(id string, hide bool) {
 	}
 	sort.Strings(ids) // stable JSON, stable diffs
 	a.d.Prefs.SetHiddenPanels(ids)
+}
+
+// seedHiddenFromPrefs rebuilds the live hidden-chrome map from the persisted
+// set, then enforces the no-strand invariant (A6): a set hiding BOTH mouse
+// lifelines — the toolbox grip (panelToolbox) and the toolbar Settings button
+// (ctrlSettingsSlot) — leaves a pure-mouse user only hotkeys or a destructive
+// full reset to get any chrome back, so the toolbox is un-hidden and the
+// correction persisted. Interactive toggles refuse the second hide up front
+// (setPanelHiddenGuarded); this catches the WHOLESALE writes — startup load,
+// prefs reset/import, layout-profile apply — whose saved Hidden slice may
+// predate the guard or carry a stranded pair.
+func (a *App) seedHiddenFromPrefs() {
+	a.hidden = map[string]bool{}
+	for _, id := range a.d.Prefs.HiddenPanels() {
+		a.hidden[id] = true
+	}
+	if a.hidden[panelToolbox] && a.hidden[ctrlSettingsSlot] {
+		a.setPanelHidden(panelToolbox, false)
+	}
 }
 
 // --- sounds -----------------------------------------------------------------

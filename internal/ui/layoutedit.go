@@ -144,6 +144,13 @@ func (a *App) stopLayoutEdit() {
 // so the stage, log column and OOC box are draggable there too.
 func (a *App) openLayoutEditor() {
 	// start{Layout,Classic}Edit close the pinned toolbox panel themselves (A1).
+	// Editors are full-chrome surfaces: leave stage-only theater first (Ctrl+F2
+	// and the palette action fire there too), or the editor arms behind a view
+	// that never draws it — the same class as the hotkey-resummoned toolbox
+	// panel, surfaces setTheater's stage-only invariant must suppress.
+	if a.theaterOn {
+		a.setTheater(false)
+	}
 	if a.themeLay.valid && a.d.Prefs.ThemeLayoutEnabled() {
 		a.startLayoutEdit()
 		return
@@ -203,6 +210,11 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	if c.clicked && pointIn(c.mouseX, c.mouseY, resetBtn) {
 		a.pushLayoutUndo()
 		a.d.Prefs.ClearThemeRectOverride(themeName, "")
+		// A4: "Reset all" wipes the tilt overrides too — the classic editor's
+		// Reset-all clears classicRot the same way, and a piece that snapped
+		// home but stayed rotated would contradict the reset message below.
+		// themeLay.valid=false re-bakes lay.ang empty on the next rebuild.
+		a.d.Prefs.ClearThemeRectRotation(themeName, "")
 		for k, r := range a.themeRectsOrig {
 			a.themeRects[k] = r
 		}
@@ -296,6 +308,9 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 			a.pushLayoutUndo()
 			a.themeRects[hoverKey] = orig
 			a.d.Prefs.ClearThemeRectOverride(themeName, hoverKey)
+			// A4: a per-piece reset clears the piece's tilt with its rect,
+			// mirroring clearClassicSlot's classicRot delete.
+			a.d.Prefs.ClearThemeRectRotation(themeName, hoverKey)
 			a.themeLay.valid = false
 		}
 	}

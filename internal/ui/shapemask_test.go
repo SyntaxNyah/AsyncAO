@@ -180,3 +180,36 @@ func TestButtonColPillZeroAlloc(t *testing.T) {
 		t.Fatalf("shaped ButtonCol/FillShaped allocates %.1f/op, want 0 — the 9-slice hot path shipped a per-frame alloc", n)
 	}
 }
+
+// TestRefreshShapeMasksZeroAlloc pins the PER-FRAME hook itself, which the
+// per-widget gate above never exercises: with a non-sharp preset active and a
+// quiescent store, the once-per-frame refreshShapeMasks must be pure field
+// reads + comparisons — the resolve memo (shapeResolved*) skips the
+// shapeTexKey concat + store Gets until the shape, tier or store generation
+// moves. Without the memo the always-on render loop pays two key-concat map
+// lookups every frame of a shaped config.
+func TestRefreshShapeMasksZeroAlloc(t *testing.T) {
+	a, done := newShapeTestApp(t)
+	defer done()
+
+	a.d.Prefs.SetChromeShape(shapePillKey)
+	a.buildShapeMasks()
+	a.refreshShapeMasks() // prime the resolve memo
+	if !a.ctx.shapeMaskReady {
+		t.Skipf("shape masks not resident headlessly; skipping the alloc gate")
+	}
+	if n := testing.AllocsPerRun(200, a.refreshShapeMasks); n != 0 {
+		t.Fatalf("settled refreshShapeMasks allocates %.1f/op, want 0 — the per-frame resolve must ride the memo", n)
+	}
+	// The memo must not go stale: a store mutation (generation bump) has to
+	// re-resolve rather than early-return on the old pointers.
+	a.buildShapeMasks() // re-upload = same keys, new pages, new generation
+	a.refreshShapeMasks()
+	if !a.ctx.shapeMaskReady || a.ctx.shapeFillTex == nil {
+		t.Fatalf("post-rebuild refresh must re-resolve the fresh mask pointers")
+	}
+	if a.shapeResolvedGen != a.shapeStoreGen() {
+		t.Fatalf("resolve memo generation = %d, want the store's %d — a stale memo would pin freed pointers",
+			a.shapeResolvedGen, a.shapeStoreGen())
+	}
+}

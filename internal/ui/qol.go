@@ -367,7 +367,15 @@ func (a *App) handleHotkeys() {
 		}
 		a.warnAt = time.Now()
 	case a.hotkeyFor(hotkeyExtras):
-		a.showWidgets = !a.showWidgets
+		if a.theaterOn {
+			// Theater is stage-only (setTheater's invariant): summoning the
+			// Extras box from there means "give me the UI back" — exit theater
+			// and show the box, never draw floating chrome over the bare stage.
+			a.setTheater(false)
+			a.showWidgets = true
+		} else {
+			a.showWidgets = !a.showWidgets
+		}
 	case a.hotkeyFor(hotkeyCharMenu):
 		a.screen = ScreenCharSelect
 	case a.hotkeyFor(hotkeyWardrobe):
@@ -387,7 +395,12 @@ func (a *App) handleHotkeys() {
 		// A1: open the pinned per-piece hide/show panel directly. This works even
 		// when panelHidden(panelToolbox) hides the grip — drawToolboxPieces gates
 		// ONLY on toolboxPinned && toolboxPieces, so the hotkey is the un-strand
-		// path for a user who hid the toolbox itself.
+		// path for a user who hid the toolbox itself. From stage-only theater the
+		// hotkey exits it first (setTheater cleared these very flags on entry;
+		// re-arming them under theater would float the panel over the bare stage).
+		if a.theaterOn {
+			a.setTheater(false)
+		}
 		a.toolboxPinned, a.toolboxPieces = true, true
 	case a.hotkeyFor(hotkeyEditLayout):
 		// FIX 2b: keyboard un-strand path for the layout editor. openLayoutEditor

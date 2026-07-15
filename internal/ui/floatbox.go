@@ -574,8 +574,10 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	// The pinned per-piece toolbox panel (A1) fences too — its checkboxes must not
 	// leak a click to the scene behind. Not draggable, so no in-flight-block entry;
 	// toolboxPiecesRect is the SAME geometry the draw uses, so the fence and draw
-	// agree on frame one (the click-leak class).
-	if a.toolboxPinned && a.toolboxPieces && pointIn(mx, my, a.toolboxPiecesRect(w, h)) {
+	// agree on frame one (the click-leak class). !paletteOpen matches the draw's
+	// stand-down while the palette overlays it (drawToolboxPieces) — a fence with
+	// no visible panel would be a dead pointer zone.
+	if a.toolboxPinned && a.toolboxPieces && !a.paletteOpen && pointIn(mx, my, a.toolboxPiecesRect(w, h)) {
 		return true
 	}
 	for i := range a.extrasDetached {

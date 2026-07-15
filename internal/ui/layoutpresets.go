@@ -67,11 +67,10 @@ func (a *App) applyProfile(p config.LayoutProfile) {
 	// the live map from HiddenPanels() (NOT the raw p.Hidden slice) so live and
 	// durable read the SAME sanitized source — SetHiddenPanels dedups/caps, and
 	// seeding a.hidden from the unsanitized slice would diverge from what persisted.
+	// seedHiddenFromPrefs also normalizes a profile that hides BOTH mouse
+	// lifelines (toolbox grip + Settings button) — the A6 no-strand invariant.
 	a.d.Prefs.SetHiddenPanels(p.Hidden)
-	a.hidden = map[string]bool{}
-	for _, id := range a.d.Prefs.HiddenPanels() {
-		a.hidden[id] = true
-	}
+	a.seedHiddenFromPrefs()
 	// Editor snap grid.
 	a.d.Prefs.SetLayoutGridSize(p.GridPx)
 	// THE CATCH (architect ruling 6): reset .placed on every persistable floatWin

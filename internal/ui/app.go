@@ -756,6 +756,16 @@ type App struct {
 	shapeMasksGen   uint64
 	shapeMaskShape  string
 	shapeMaskAt     time.Time // last (re)build for eviction-heal pacing
+	// shapeResolved* memoize the last successful per-frame mask resolve
+	// (shape, ADJUSTED tier, store generation): when none of the three moved
+	// and the shaped path is still enabled, refreshShapeMasks skips the
+	// key-concat store Gets entirely, so the always-on frame hook is 0-alloc
+	// on settled frames. Safe because EVERY store mutation that could
+	// invalidate the pointers (eviction, our build/sweep, UploadPinned
+	// replacing a key, Purge) bumps the generation.
+	shapeResolvedShape string
+	shapeResolvedTier  int
+	shapeResolvedGen   uint64
 	// themeAt anchors the looping animation clock for animated theme art
 	// (chatbox/buttons/backdrops shipped as animated webp/gif/apng).
 	themeAt time.Time
@@ -2180,9 +2190,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	if d.Store != nil {
 		d.Store.SetLiveScenery(a.IsLiveStageBase)
 	}
-	for _, id := range d.Prefs.HiddenPanels() {
-		a.hidden[id] = true
-	}
+	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
 	// Global jukebox library loads off-thread (it can be large); it lands via
 	// pollJukebox so the keybinds and wardrobe tab have it ready.
 	go func() {
