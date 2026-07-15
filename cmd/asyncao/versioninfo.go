@@ -17,11 +17,11 @@ package main
 // docs/DEFENDER-FALSE-POSITIVE.md). Real provenance metadata lowers that
 // surface at zero runtime cost.
 //
-// The version numbers are baked into versioninfo.json STATICALLY (1.62.0.0),
+// The version numbers are baked into versioninfo.json STATICALLY (1.63.0.0),
 // NOT sourced from the link-time -X update.Version stamp — the two live in
 // different build phases (the syso is compiled before the Go link step). The
 // release workflow regenerates the syso with the real tag version before build
-// (best-effort; it falls back to this committed 1.62.0.0 syso on any failure).
+// (best-effort; it falls back to this committed 1.63.0.0 syso on any failure).
 //
 // To regenerate after a version bump or a field change (needs Go; the tool is
 // build-time only, NOT a linked dependency — it never enters go.mod):

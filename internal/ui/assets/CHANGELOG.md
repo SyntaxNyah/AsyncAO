@@ -4,6 +4,63 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.63.0 — 2026-07-15
+
+The courtroom customization overhaul: the layout tools are rebuilt around
+one toolbox, pieces snap together like magnets, and the client's own chrome
+can now be rearranged, rotated and reshaped.
+
+**One toolbox for all of it**
+
+- **The bottom-right toolbox is now THE place for arranging your UI.**
+  Hover it to peek, click the grip to pin it open: Theater mode, the layout
+  editor and the per-piece Hide UI list all live on its icon chips. The
+  per-piece list opens as a proper panel right there — the old separate
+  checkbox dialog is gone, along with the duplicate "UI…"/"Edit Layout"
+  toolbar buttons and Extras rows that used to overlap it. A subtle accent
+  ring marks the toolbox until your first visit.
+- **Edit Layout has a real hotkey now (Ctrl+F2)**, and Edit Layout /
+  Theater / Hide UI all live in the Ctrl+Space palette too, so nothing is
+  more than a keystroke away even with the toolbox hidden.
+- **You can't strand yourself anymore.** Hiding both the toolbox and the
+  Settings button (the two mouse routes back) is refused with an
+  explanation, Settings gains a "Show all hidden UI pieces" button, and a
+  saved profile that would hide both un-hides the toolbox on load. Ctrl+F
+  still summons the Hide UI panel from anywhere — including Theater mode,
+  which it now exits cleanly instead of floating a panel over the bare
+  stage.
+
+**Pieces stick together like magnets**
+
+- **Dragging any floating panel snaps it flush to its neighbours' edges
+  and centres** — the pair/mod/CM/evidence/group-chat/voice panels, the
+  Extras box and its torn-off widgets, the favourite-emotes and Sprite
+  Style boxes — with green guide lines showing what you're aligned to,
+  exactly like the layout editor's snapping. Hold Shift to place freely.
+  The snapped position is what gets remembered.
+- The themed layout editor gains the same magnet the classic editor always
+  had, and Shift now means "fully precise" in both editors.
+
+**Layout profiles remember everything**
+
+- **Save the whole arrangement under a name and switch between setups** —
+  a big stage for watching, a wide log for moderating. A profile captures
+  box positions, corner anchors, rotations, hidden chrome and the snap
+  grid; loading one restores all of it at once, torn-off widgets included.
+- Every floating panel and torn-off widget now remembers its place across
+  sessions, and old saved layout presets migrate to profiles automatically.
+
+**Rotate and reshape the chrome**
+
+- **Press R in the layout editors to rotate a piece** (90° steps, Shift+R
+  for fine 15° steps): themed HP bars, theme button art, the screen
+  backdrop, the courtroom background and the themed chatbox skin all tilt,
+  persist, travel with profiles, and reset together with the piece.
+- **New shape presets for AsyncAO's own buttons and chips — Sharp, Rounded
+  and Pill** (in Settings next to the colour themes), with a corner-radius
+  slider for Rounded. Click targets are unchanged — only the look rounds
+  off — and the default Sharp look is pixel-identical to before.
+
 ## v1.62.0 — 2026-07-14
 
 Two reported fixes: area jumping now behaves like you'd expect end to end,
