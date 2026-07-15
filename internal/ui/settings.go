@@ -859,6 +859,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 
 	y = a.settingsSection(y, w, "AsyncAO appearance")
 	y = a.drawChromeSettings(y, w)
+	y = a.drawShapeSettings(y)     // A5 chrome SHAPE presets (sharp/rounded/pill)
 	y = a.drawPartColorSettings(y) // per-part layout tints (v1.52.0, Tifera)
 	y += 8
 
@@ -1087,6 +1088,9 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		// re-streams (demand pipeline + scenery heal repopulate live).
 		sdl.SetHint(sdl.HINT_RENDER_SCALE_QUALITY, hint)
 		a.d.Store.Purge()
+		// Purge destroyed the pinned shape masks SYNCHRONOUSLY — drop the
+		// frame-resolved Ctx pointers before anything shaped draws this frame.
+		a.invalidateShapeMasks()
 		c.purgeTextCache()
 		a.themeChatbox = false
 		a.applyThemeAsync()

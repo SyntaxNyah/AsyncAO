@@ -404,7 +404,27 @@ type Ctx struct {
 	// the rect during the call and never retains the pointer, and Ctx is
 	// render-thread-only.
 	cgoRect sdl.Rect
-	tipText string // hover hint to paint at end-of-frame ("" = none)
+	// Chrome SHAPE (A5): the App resolves the active shape + its fill/stroke
+	// mask textures into these fields ONCE per frame (refreshShapeMasks) so the
+	// hot per-widget FillShaped / ButtonCol path is a plain field read — no
+	// store lookup (which would clear every streaming generation bump) and no
+	// alloc. activeShape=="" or shapeSharp means the shaped path is disabled and
+	// every draw site falls through to the byte-identical Fill+Border body.
+	// shapeMaskReady gates on both a non-sharp preset AND resident masks, so a
+	// not-yet-built frame also renders sharp (no first-frame flash). The masks
+	// are WHITE-RGB straight-alpha silhouettes tinted per draw via SetColorMod +
+	// SetAlphaMod (the glyphcache idiom); the two scratch rects are the cgoRect
+	// twins for the 9-slice src/dst Copies (a &local would escape through cgo).
+	activeShape     string
+	shapeMaskReady  bool
+	shapeFillTex    *sdl.Texture // fill silhouette mask (nil ⇒ sharp fall-through)
+	shapeStrokeTex  *sdl.Texture // 1px stroke-ring mask (nil ⇒ no border pass)
+	shapeMaskDim    int32        // source mask side length in px (square)
+	shapeMaskR      int32        // source corner-quadrant radius in px
+	shapePill       bool         // pill preset: corner = min(w,h)/2 at draw time
+	shapeSrcScratch sdl.Rect     // 9-slice source-rect scratch (never &local)
+	shapeDstScratch sdl.Rect     // 9-slice dest-rect scratch (never &local)
+	tipText         string       // hover hint to paint at end-of-frame ("" = none)
 	// Cached word-wrap of the current tooltip, rebuilt only when the text or the wrap
 	// width changes (drawTooltip) — so a hovered tooltip doesn't re-wrap (and re-allocate)
 	// every frame. See WrapText's "callers cache the result" note.
@@ -2027,15 +2047,35 @@ func (c *Ctx) ButtonCol(r sdl.Rect, label string, bg, hoverBg, border, text sdl.
 	if hover {
 		col = hoverBg
 	}
-	c.Fill(r, col)
-	c.Border(r, border)
+	// Chrome SHAPE (A5): a non-sharp preset reshapes the button silhouette via
+	// 9-sliced alpha masks; the label then insets by shapeLabelInset so a glyph
+	// never tucks under a corner curve. The hit-test rect (hovering above) is
+	// unchanged. On "sharp" (or before masks are resident) shaped==false and the
+	// body below is the LITERAL pre-A5 Fill+Border+label — byte-identical, so the
+	// settled-frame 0-alloc gate (default sharp) is untouched by construction.
+	shaped := c.activeShape != shapeSharp && c.activeShape != "" && c.shapeMaskReady
+	if shaped {
+		c.FillShaped(r, col)
+		c.borderShaped(r, border)
+	} else {
+		c.Fill(r, col)
+		c.Border(r, border)
+	}
 	if t, ok := c.textTexture(label, text, c.font); ok {
 		// Clip to the button: tiny themed rects must never leak their
 		// label over the neighbors (Qt elided these). All #77-LOGICAL px.
 		lw, lh := t.logicalW(), uiLogicalFromDevice(t.h, t.devPct)
 		w, x := lw, r.X+(r.W-lw)/2
-		if maxW := r.W - 8; w > maxW && maxW > 0 {
-			w, x = maxW, r.X+4
+		// A shaped button reserves shapeLabelInset extra px each side (the sharp
+		// path keeps its original r.W-8 clamp exactly — no change on the default).
+		clampMargin := int32(8)
+		edge := int32(4)
+		if shaped {
+			clampMargin = 8 + 2*shapeLabelInset
+			edge = 4 + shapeLabelInset
+		}
+		if maxW := r.W - clampMargin; w > maxW && maxW > 0 {
+			w, x = maxW, r.X+edge
 		}
 		c.blitLabel(t, x, r.Y+(r.H-lh)/2, w)
 	}

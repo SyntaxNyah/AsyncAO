@@ -744,6 +744,18 @@ type App struct {
 	// (zero store locks while the generation is unchanged).
 	themePages    map[string]*render.TexturePage
 	themePagesGen uint64
+	// Chrome SHAPE masks (A5): procedural alpha silhouettes for the kit chrome,
+	// resolved into these fields ONCE per frame by refreshShapeMasks so the
+	// per-widget FillShaped/ButtonCol draws read pointers (never a store Get,
+	// which would clear on every streaming generation bump). shapeMasksBuilt
+	// latches after the pinned masks upload; shapeMasksGen mirrors the store
+	// generation so an eviction that dropped the pinned pages re-triggers a
+	// (paced) rebuild. shapeMaskShape records which preset the resident masks
+	// were built for so a Settings change re-rasters. See shapemask.go.
+	shapeMasksBuilt bool
+	shapeMasksGen   uint64
+	shapeMaskShape  string
+	shapeMaskAt     time.Time // last (re)build for eviction-heal pacing
 	// themeAt anchors the looping animation clock for animated theme art
 	// (chatbox/buttons/backdrops shipped as animated webp/gif/apng).
 	themeAt time.Time
@@ -6076,6 +6088,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	if a.d.Store != nil {
 		a.drawnGen = a.d.Store.Generation()
 	}
+	// Chrome SHAPE (A5): resolve the active shape + its mask textures into the
+	// Ctx once per frame so every shaped widget draw is a plain field read. On
+	// the default "sharp" preset this is a cheap early exit and every draw site
+	// stays byte-identical; a non-sharp preset (lazily) builds/heals the pinned
+	// masks here. Runs before the screen draws below consume the resolved state.
+	a.refreshShapeMasks()
 	a.drawnCaretOn = a.ctx.caretOn
 	// Animated-chrome census: the draw sites below mark the flag; promote it
 	// at frame end so SkipFrame reads what THIS frame actually put on screen.

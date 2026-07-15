@@ -1055,6 +1055,16 @@ type AssetPreferences struct {
 	DiscordRPC         DiscordPrefs              `json:"discord"`
 	MyAutoStatus       AutoStatusPref            `json:"autoStatus"`            // #M1 auto-status from typed words
 	ChromeThemeKey     string                    `json:"chromeTheme,omitempty"` // #M3 AsyncAO chrome theme preset
+	// ChromeShapeKey selects the CHROME SHAPE preset (A5 — parallel to
+	// ChromeThemeKey's colour presets, orthogonal to it): "sharp" (default =
+	// today's flat Fill+Border silhouette, byte-identical), "rounded", "pill".
+	// It reshapes AsyncAO's own kit chrome (buttons/chips/panels) via
+	// procedural alpha masks drawn 9-slice; hit-testing stays the same rect. An
+	// unknown key sanitises to "sharp", so an absent/garbage value renders
+	// exactly like today. ChromeShapeTierIdx picks the corner-radius size class
+	// (0..shapeRadiusTiers-1) for the "rounded" preset; "pill"/"sharp" ignore it.
+	ChromeShapeKey     string `json:"chromeShape,omitempty"`
+	ChromeShapeTierIdx int    `json:"chromeShapeTier,omitempty"`
 	// CharDownloaderOn enables the opt-in single-character/background
 	// downloader (off by default — it writes files to disk on demand).
 	CharDownloaderOn bool `json:"charDownloader"`
@@ -1388,6 +1398,8 @@ type prefsJSON struct {
 	Discord            *DiscordPrefs             `json:"discord"`
 	AutoStatus         *AutoStatusPref           `json:"autoStatus,omitempty"`
 	ChromeTheme        *string                   `json:"chromeTheme,omitempty"`
+	ChromeShape        *string                   `json:"chromeShape,omitempty"`     // A5: nil = absent (defaults to "sharp"); non-nil sanitised on load
+	ChromeShapeTier    *int                      `json:"chromeShapeTier,omitempty"` // A5: nil = absent (defaults to tier 0); clamped [0,shapeRadiusTiers-1] on load
 	CharDownloader     bool                      `json:"charDownloader"`
 	ToolboxSeen        bool                      `json:"toolboxSeen"` // A1: default OFF (zero value) = show the toolbox discoverability ring until first expand
 
@@ -1685,6 +1697,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		DiscordRPC:             defaultDiscordPrefs(),
 		MyAutoStatus:           defaultAutoStatusPref(),
 		ChromeThemeKey:         "dark",
+		ChromeShapeKey:         defaultChromeShape, // A5: "sharp" — byte-identical to today's flat chrome
 		ViewportPct:            DefaultViewportPercent,
 		ChatScalePct:           DefaultScalePercent,
 		ChatBoxPct:             DefaultScalePercent,
@@ -2289,6 +2302,15 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.ChromeTheme != nil {
 		p.ChromeThemeKey = *onDisk.ChromeTheme
+	}
+	// A5 chrome shape: an unknown/garbage key sanitises to "sharp" and the tier
+	// clamps to a valid size class, so a hand-edited or downgraded pref always
+	// resolves to a coherent (worst case: the byte-identical default) shape.
+	if onDisk.ChromeShape != nil {
+		p.ChromeShapeKey = sanitizeChromeShape(*onDisk.ChromeShape)
+	}
+	if onDisk.ChromeShapeTier != nil {
+		p.ChromeShapeTierIdx = clampChromeShapeTier(*onDisk.ChromeShapeTier)
 	}
 	return p, nil
 }
@@ -5230,6 +5252,92 @@ func (p *AssetPreferences) SetChromeTheme(key string) {
 		return
 	}
 	p.ChromeThemeKey = key
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// Chrome SHAPE presets (A5): the valid keys for ChromeShapeKey. "sharp" is the
+// default and renders byte-identical to today's flat Fill+Border chrome; the
+// others reshape kit chrome silhouettes via procedural 9-sliced alpha masks in
+// the UI layer. Kept as named constants (not magic strings) and mirrored by the
+// UI package's shape* keys — this is the persisted vocabulary, so sanitisation
+// happens here and the UI trusts the value it reads back.
+const (
+	defaultChromeShape = "sharp"   // flat rectangle — the byte-identical default
+	chromeShapeRounded = "rounded" // rounded-rectangle corners (radius by tier)
+	chromeShapePill    = "pill"    // full-radius pill (corner = min(w,h)/2)
+)
+
+// shapeRadiusTiers bounds the corner-radius size classes for the "rounded"
+// preset (0..shapeRadiusTiers-1) — a named cap so the derived-mask cache in the
+// UI stays bounded (hard rule §17.4) and so ChromeShapeTier can be clamped on
+// load. Must equal the UI's shapeRadiusTiers; a mismatch would only ever clamp
+// tighter here, never smuggle an out-of-range tier through.
+const shapeRadiusTiers = 4
+
+// sanitizeChromeShape maps any stored chrome-shape key onto a known preset,
+// collapsing unknown/blank values to the byte-identical default so a corrupt or
+// downgraded pref can never leave the chrome in an undrawable state.
+func sanitizeChromeShape(key string) string {
+	switch key {
+	case chromeShapeRounded, chromeShapePill, defaultChromeShape:
+		return key
+	default:
+		return defaultChromeShape
+	}
+}
+
+// clampChromeShapeTier bounds a stored radius tier into the valid size-class
+// range (out-of-range values snap to the nearest end).
+func clampChromeShapeTier(tier int) int {
+	if tier < 0 {
+		return 0
+	}
+	if tier >= shapeRadiusTiers {
+		return shapeRadiusTiers - 1
+	}
+	return tier
+}
+
+// ChromeShape reports the AsyncAO chrome SHAPE preset key (A5; "sharp" default).
+// Always returns a sanitised, drawable key.
+func (p *AssetPreferences) ChromeShape() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return sanitizeChromeShape(p.ChromeShapeKey)
+}
+
+// SetChromeShape stores the chrome shape preset key (sanitised: an unknown key
+// is stored as "sharp"). Debounced saver; never writes synchronously.
+func (p *AssetPreferences) SetChromeShape(key string) {
+	key = sanitizeChromeShape(key)
+	p.mu.Lock()
+	if p.ChromeShapeKey == key {
+		p.mu.Unlock()
+		return
+	}
+	p.ChromeShapeKey = key
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ChromeShapeTier reports the corner-radius size class for the "rounded" preset
+// (0..shapeRadiusTiers-1), always clamped in range.
+func (p *AssetPreferences) ChromeShapeTier() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return clampChromeShapeTier(p.ChromeShapeTierIdx)
+}
+
+// SetChromeShapeTier stores the corner-radius size class (clamped in range).
+func (p *AssetPreferences) SetChromeShapeTier(tier int) {
+	tier = clampChromeShapeTier(tier)
+	p.mu.Lock()
+	if p.ChromeShapeTierIdx == tier {
+		p.mu.Unlock()
+		return
+	}
+	p.ChromeShapeTierIdx = tier
 	p.mu.Unlock()
 	p.markDirty()
 }

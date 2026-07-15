@@ -176,6 +176,83 @@ func (a *App) drawChromeSettings(y, _ int32) int32 {
 	return y + 10
 }
 
+// shapePickerEntry is one selectable chrome-shape preset in the Settings picker
+// (A5): the persisted key + its human label. Sharp is first (the default).
+type shapePickerEntry struct {
+	key  string
+	name string
+}
+
+// shapePickerEntries are the built-in chrome SHAPE presets, mirroring
+// chromePresets. Sharp leads as the byte-identical default.
+var shapePickerEntries = []shapePickerEntry{
+	{shapeSharp, "Sharp"},
+	{shapeRounded, "Rounded"},
+	{shapePillKey, "Pill"},
+}
+
+// drawShapeSettings draws the AsyncAO chrome-SHAPE picker (A5): a button per
+// shape preset with the active one ringed (the drawChromeSettings grammar), plus
+// a corner-radius tier slider shown only for the "rounded" preset (the user
+// prefers sliders over steppers). Picking a shape applies it live — build +
+// immediate Ctx re-resolve, so the rest of this very frame draws the new shape
+// — and sharp restores the byte-identical flat chrome. Settings-only, never a
+// hot path.
+func (a *App) drawShapeSettings(y int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	w := a.formW2()
+	cur := a.d.Prefs.ChromeShape()
+	c.Label(pad, y, "Client UI shape — rounds AsyncAO's own buttons & panels; hit areas are unchanged.", ColTextDim)
+	y += 24
+	x := pad
+	for i := range shapePickerEntries {
+		e := &shapePickerEntries[i]
+		bw := c.TextWidth(e.name) + 22
+		btn := sdl.Rect{X: x, Y: y, W: bw, H: btnH}
+		clicked := c.Button(btn, e.name)
+		if e.key == cur {
+			c.Border(btn, ColAccent) // ring the active preset
+		}
+		if clicked && e.key != cur {
+			a.d.Prefs.SetChromeShape(e.key)
+			// Apply live (mirrors applyChromePreset), then re-resolve the Ctx
+			// mask pointers NOW: the build sweeps the departing shape's pages
+			// and replaces same-key uploads, either of which can destroy the
+			// pages the frame-start resolve still points at — the rest of this
+			// frame must draw from the fresh pages, never the stale handles.
+			a.buildShapeMasks()
+			a.refreshShapeMasks()
+		}
+		x += bw + 12
+		if x > w-120 { // wrap on a narrow window
+			x = pad
+			y += btnH + 8
+		}
+	}
+	y += btnH + 12
+	// Corner-radius tier — only meaningful for the rounded preset (pill is always
+	// a full half-radius, sharp has no corners). A slider (0..tiers-1) so the
+	// user drags the roundness rather than clicking a stepper.
+	if cur == shapeRounded {
+		c.Label(pad, y, "Corner radius", ColTextDim)
+		y += 20
+		tier := int32(a.d.Prefs.ChromeShapeTier())
+		// Slider yields a value in [0, shapeRadiusTiers-1]; apply + rebuild on change.
+		if nv := c.Slider("shapeTier", sdl.Rect{X: pad, Y: y, W: 220, H: fieldH}, tier, shapeRadiusTiers-1); nv != tier {
+			a.d.Prefs.SetChromeShapeTier(int(nv))
+			// Every tier's masks are already resident (buildShapeMasks rasters
+			// them all), so a tier change only needs the per-frame resolve to
+			// re-point Ctx at the new tier — no re-upload, and no same-key
+			// replace that could strand this frame's pointers.
+			a.refreshShapeMasks()
+		}
+		c.Label(pad+230, y+2, "smaller … larger", ColTextDim)
+		y += fieldH + 10
+	}
+	return y + 6
+}
+
 // drawCustomChromeEditor edits the 7 kit colours with a colour WHEEL (playtest:
 // "improve custom colours to like a wheel"): a row of swatches picks which kit
 // colour to edit, then a hue/saturation disc + a brightness slider + a hex field

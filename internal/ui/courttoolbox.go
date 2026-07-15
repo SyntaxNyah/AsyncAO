@@ -458,7 +458,9 @@ func (a *App) drawCompactToolbox(w, h int32) {
 	}
 
 	// Expanded: chips laid out right-to-left from the grip, each an icon with a
-	// tooltip carrying the full word.
+	// tooltip carrying the full word. The strip stays a sharp frame (the grip
+	// square overlaps its right end, so a rounded strip would show corner nubs);
+	// the individual chips below are self-contained and DO follow the shape.
 	c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
 	c.Border(strip, ColAccent)
 	x := w - compactGripW - compactToolboxMargin
@@ -494,8 +496,10 @@ func (a *App) drawCompactToolbox(w, h int32) {
 		if (ch.icon == iconPin && a.toolboxPinned) || (ch.icon == iconEyeOff && a.toolboxPieces) {
 			bg = ColAccent
 		}
-		c.Fill(chip, bg)
-		c.Border(chip, ColAccent)
+		// Chip background follows the chrome SHAPE (A5); the vector icon glyph
+		// inside stays sharp (same principle as a shaped button keeping its text).
+		c.FillShaped(chip, bg)
+		c.borderShaped(chip, ColAccent)
 		iconCol := ColText
 		if !hover {
 			iconCol = ColTextDim
