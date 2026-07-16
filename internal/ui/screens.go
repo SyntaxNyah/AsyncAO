@@ -2416,6 +2416,8 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	switch a.logTab {
 	case logTabMusic:
 		scale = &a.musicPct // the Music tab tunes its own scale
+	case logTabAreas:
+		scale = &a.areaPct // the Areas tab tunes its own scale (the inner drawAreaList zoomWheel then no-ops via wheelTaken — no double-step)
 	case logTabOOC:
 		scale = &a.oocPct // the OOC tab resizes OOC text, independent of the IC log
 	}
@@ -3063,12 +3065,37 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	a.oocName, _ = c.TextFieldEmoji("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "OOC name (this tab)", onPrimary, onEmoji)
 }
 
+// areaRowHeaderPad is the fixed slack added on top of the two text rows of an
+// area card (the top inset + the gap between the name and detail line + the
+// bottom margin). Named so the row-height math is a single, testable formula
+// that stays in lock-step with the label offsets inside drawAreaList.
+const areaRowHeaderPad = int32(11)
+
+// areaRowLineH is the on-screen height of one two-row area card at a given font
+// height (name line + indented detail line + areaRowHeaderPad slack). Pure so
+// the row/scroll geometry can be pinned without an SDL font: at areaPct=100 it
+// matches the historical `font.Height()*2 + 11`, and it scales monotonically
+// with the zoomed font so the click hitboxes and the scrollbar content-height
+// track the text (the fixed-height-rows + big-fonts bug class).
+func areaRowLineH(fontH int32) int32 {
+	return fontH*2 + areaRowHeaderPad
+}
+
 // drawAreaList lists the server's areas; clicking one requests the room
 // swap. AO area transfers ride the MC packet with the area name in place
 // of a track (AO2-Client sends areas from the same list — the courtroom's
 // isAreaTransfer filter keeps them out of the audio path client-side).
 func (a *App) drawAreaList(r sdl.Rect) {
 	c := a.ctx
+	if a.areaPct < config.MinLogScalePercent { // uninit / stale → match the log
+		a.areaPct = a.logPct
+	}
+	// Ctrl+wheel (or wheel-button) resizes the area text (areaPct). Lives HERE
+	// — not just the classic log panel — so it also works on the TORN tab and the
+	// THEMED courtroom, both of which draw drawAreaList directly. In the classic
+	// panel the outer zoomWheel already took the wheel (wheelTaken), so this
+	// no-ops there; no double-step.
+	a.zoomWheel(r, &a.areaPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if len(a.sess.Areas) == 0 {
 		c.Label(r.X+4, r.Y+4, "Server reported no areas.", ColTextDim)
 		return
@@ -3114,8 +3141,8 @@ func (a *App) drawAreaList(r sdl.Rect) {
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	font := c.LogFont(a.logPct)
-	lineH := int32(font.Height())*2 + 11 // two-row entries: name + an indented detail line
+	font := c.LogFont(a.areaPct) // area-list zoom, independent of the IC log
+	lineH := areaRowLineH(int32(font.Height()))
 	contentH := int32(shown) * lineH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)

@@ -7,25 +7,32 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
 // modRosterRowH is the height of a rich (two-line) roster row in the mod / CM panels.
 const modRosterRowH = int32(40)
 
-// drawModRosterIdentity paints the rich two-line identity for one roster row, shared by the mod
-// dashboard and the CM panel: line 1 "[uid] showname · character", line 2 "OOC: … · IPID: …"
-// (dimmer). nameCol recolours line 1 (e.g. a selected row); textW caps the width so a caller can
-// leave room for a per-row button. Off the hot path (opt-in panels), so the string building is fine.
-func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol sdl.Color) {
-	c := a.ctx
+// modRosterIconInset is the icon's vertical inset within a roster row (the icon is rowH minus this);
+// modRosterSubLineUp is the second identity line's baseline offset up from the row bottom at 100%
+// zoom. Both scale with the mod-dash row height / modDashPct so the icon and OOC/IPID line track a
+// zoomed row exactly like drawPlayerRow (fixed-height-rows + big-fonts bug class).
+const (
+	modRosterIconInset = int32(10) // icon = rrow.H - 10 (28px at 100%, where rrow.H = rh-2 = 38 — preserves the historical modRosterRowH-12 icon); grows with the zoomed row
+	modRosterSubLineUp = int32(16) // second line sits 16px above the row bottom at 100% (mirrors drawPlayerRow)
+)
+
+// rosterIdentityLines composes the rich two-line identity for one roster row (pure, no draw):
+// line 1 "[uid] showname · character", line 2 "OOC: … · IPID: …" (dimmer, may be ""). Shared by
+// the chrome-font CM/mod path (drawModRosterIdentity) and the zoom-scaled mod-dash row
+// (drawModRosterRow), so the two can never drift on what the strings say.
+func rosterIdentityLines(p areaPlayer) (ic, sub string) {
 	display := rosterDisplayName(p)
-	ic := "[" + p.uid + "] " + display
+	ic = "[" + p.uid + "] " + display
 	if p.name != "" && !strings.EqualFold(display, p.name) {
 		ic = "[" + p.uid + "] " + display + " · " + p.name // showname (IC name) then the character
 	}
-	c.LabelClipped(x, rowY+3, textW, ic, nameCol)
-	sub := ""
 	if p.ooc != "" && p.showname != "" { // skip OOC when it was promoted to the identity line above
 		sub = "OOC: " + p.ooc
 	}
@@ -35,6 +42,19 @@ func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol 
 		}
 		sub += "IPID: " + p.ipid
 	}
+	return ic, sub
+}
+
+// drawModRosterIdentity paints the rich two-line identity for one roster row, shared by the mod
+// dashboard and the CM panel: line 1 "[uid] showname · character", line 2 "OOC: … · IPID: …"
+// (dimmer). nameCol recolours line 1 (e.g. a selected row); textW caps the width so a caller can
+// leave room for a per-row button. Off the hot path (opt-in panels), so the string building is fine.
+// Chrome font at fixed offsets — the CM panel keeps this stable-target look; the mod-dash row draws
+// its own zoom-scaled variant inline (drawModRosterRow) so ctrl+wheel resizes it.
+func (a *App) drawModRosterIdentity(p areaPlayer, x, rowY, textW int32, nameCol sdl.Color) {
+	c := a.ctx
+	ic, sub := rosterIdentityLines(p)
+	c.LabelClipped(x, rowY+3, textW, ic, nameCol)
 	if sub != "" {
 		c.LabelClipped(x, rowY+21, textW, sub, ColTextDim)
 	}
@@ -681,6 +701,9 @@ func (a *App) drawModDashActions(x, y, w int32) {
 func (a *App) drawModDashRoster(r sdl.Rect) {
 	c := a.ctx
 	c.Border(r, ColPanelHi)
+	if a.modDashPct < config.MinLogScalePercent { // uninit / stale → match the log
+		a.modDashPct = a.logPct
+	}
 	if len(a.rosterView()) == 0 {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No players yet (or no live list on this server).", ColTextDim)
 		return
@@ -690,12 +713,14 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 	// are open (a per-frame allocation). currentSpeakerName is what drawPlayerList feeds it too.
 	speaker := a.currentSpeakerName()
 	rows := a.playerRosterRows(speaker) // flat for a /ga, area-grouped (with headers) for a /gas
+	// Ctrl+wheel (or wheel-button) resizes the dashboard list text (modDashPct); plain wheel scrolls.
+	a.zoomWheel(r, &a.modDashPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if !c.ctrlHeld {
 		a.modDashScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	contentH := int32(0)
 	for i := range rows {
-		contentH += modRowHeight(rows[i])
+		contentH += modRowHeight(rows[i], a.modDashPct)
 	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.modDashScroll = c.VScrollbar("moddashroster", track, a.modDashScroll, contentH, r.H)
@@ -704,7 +729,7 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 	rowW := r.W - scrollBarW - 4
 	rowY := r.Y - a.modDashScroll
 	for i := range rows {
-		rh := modRowHeight(rows[i])
+		rh := modRowHeight(rows[i], a.modDashPct)
 		if rowY > r.Y+r.H {
 			break
 		}
@@ -719,15 +744,16 @@ func (a *App) drawModDashRoster(r sdl.Rect) {
 	}
 }
 
-// modRowHeight is the display height of one mod-dashboard roster row. Area-group headers are short
-// (playerHeaderH, shared with the player list); player rows keep the full two-line identity height
-// (modRosterRowH). Unlike the player list it does NOT scale with the Players-tab zoom — the
-// dashboard wants a stable target row a mod can reliably click.
-func modRowHeight(row rosterRow) int32 {
+// modRowHeight is the display height of one mod-dashboard roster row at zoom pct. Area-group headers
+// are short (playerHeaderH, fixed — mirrors the player list's rowHeight, which never scales headers);
+// player rows are the full two-line identity height (modRosterRowH) scaled by the dashboard zoom
+// (modDashPct) so ctrl+wheel resizes the row, its click hitbox and the scrollbar content-height in
+// lock-step (the fixed-height-rows + big-fonts bug class). The CM panel keeps the fixed const.
+func modRowHeight(row rosterRow, pct int) int32 {
 	if row.header {
 		return playerHeaderH
 	}
-	return modRosterRowH
+	return modRosterRowH * int32(pct) / 100
 }
 
 // drawModRosterRow is one mod-dashboard player row: a character icon (shared player-list cache),
@@ -769,7 +795,9 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 	}
 
 	isSpec := strings.EqualFold(p.name, "Spectator")
-	iconSz := modRosterRowH - 12
+	// Icon derives from the SCALED row height (rrow.H), not the modRosterRowH const, so it grows
+	// with the zoom and stays centred — mirrors drawPlayerRow's iconSz = playerIconSz*pct/100.
+	iconSz := rrow.H - modRosterIconInset
 	iconR := sdl.Rect{X: rrow.X + 6, Y: rrow.Y + (rrow.H-iconSz)/2, W: iconSz, H: iconSz}
 	a.drawPlayerIcon(p, idx, iconR, isSpec)
 	nameCol := ColText
@@ -777,7 +805,16 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 		nameCol = ColBackground
 	}
 	textX := rrow.X + 6 + iconSz + 8
-	a.drawModRosterIdentity(*p, textX, rrow.Y, cb.X-8-textX, nameCol) // stop the text short of the tick-box
+	textW := cb.X - 8 - textX // stop the text short of the tick-box
+	// Zoom-scaled two-line identity (mirrors drawPlayerRow): the log font at modDashPct and a
+	// pct-scaled second-line baseline, so ctrl+wheel resizes the row text. Shared string logic
+	// with the chrome-font CM path via rosterIdentityLines.
+	ic, sub := rosterIdentityLines(*p)
+	c.LabelClippedFont(c.LogFontFor(a.modDashPct, ic), textX, rrow.Y+5, textW, ic, nameCol)
+	if sub != "" {
+		subUp := modRosterSubLineUp * int32(a.modDashPct) / 100 // scale the second-line baseline with the zoom
+		c.LabelClippedFont(c.LogFontFor(a.modDashPct, sub), textX, rrow.Y+rrow.H-subUp, textW, sub, ColTextDim)
+	}
 }
 
 // drawModDashAudit renders the session audit log (newest first): a bounded, scrollable list of the
@@ -787,20 +824,27 @@ func (a *App) drawModRosterRow(idx int, rrow sdl.Rect) {
 func (a *App) drawModDashAudit(r sdl.Rect) {
 	c := a.ctx
 	c.Border(r, ColPanelHi)
+	if a.modDashPct < config.MinLogScalePercent { // uninit / stale → match the log
+		a.modDashPct = a.logPct
+	}
 	if len(a.modAudit) == 0 {
 		c.LabelClipped(r.X+6, r.Y+6, r.W-12, "No ban / kick actions sent yet this session.", ColTextDim)
 		return
 	}
+	// Ctrl+wheel (or wheel-button) resizes the audit text (modDashPct); plain wheel scrolls.
+	a.zoomWheel(r, &a.modDashPct, config.MinLogScalePercent, config.MaxLogScalePercent)
 	if !c.ctrlHeld {
 		a.modAuditScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	const auditRowH = int32(38)
+	font := c.LogFont(a.modDashPct)
+	auditRowH := auditRowHeight(int32(font.Height())) // two-line row, scales with the zoom
 	contentH := int32(len(a.modAudit)) * auditRowH
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.modAuditScroll = c.VScrollbar("moddashaudit", track, a.modAuditScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r)
 	defer c.popClip(clipPrev, clipHad)
 	rowW := r.W - scrollBarW - 8
+	subLineY := int32(font.Height()) + modAuditSubLinePad // second line sits one scaled line + slack below the first
 	rowY := r.Y - a.modAuditScroll
 	for i := len(a.modAudit) - 1; i >= 0; i-- { // newest first
 		if rowY > r.Y+r.H {
@@ -808,12 +852,27 @@ func (a *App) drawModDashAudit(r sdl.Rect) {
 		}
 		if rowY >= r.Y-auditRowH {
 			e := a.modAudit[i]
-			c.LabelClipped(r.X+6, rowY+3, rowW, e.at.Format("15:04:05")+"   ·   "+e.action+"   ·   "+e.target, ColText)
-			c.LabelClipped(r.X+6, rowY+20, rowW, e.cmd, ColTextDim)
+			c.LabelClippedFont(font, r.X+6, rowY+3, rowW, e.at.Format("15:04:05")+"   ·   "+e.action+"   ·   "+e.target, ColText)
+			c.LabelClippedFont(font, r.X+6, rowY+subLineY, rowW, e.cmd, ColTextDim)
 		}
 		rowY += auditRowH
 	}
 }
+
+// modAuditSubLinePad is the vertical slack between an audit row's two lines on top of the font
+// height; auditRowHeight adds the top/bottom margins. Both named so the row-height math is one
+// testable formula that stays in lock-step with the label offsets and scales with modDashPct.
+const modAuditSubLinePad = int32(4)
+
+// auditRowHeight is the on-screen height of one two-line audit row at a given font height (two text
+// lines + the inter-line pad + a bottom margin). Pure and testable, matching areaRowLineH's shape;
+// at 100% zoom (chrome-height ≈ 17) it lands near the historical fixed 38.
+func auditRowHeight(fontH int32) int32 {
+	return fontH*2 + modAuditSubLinePad + modAuditRowBottomPad
+}
+
+// modAuditRowBottomPad is the bottom margin below an audit row's second line.
+const modAuditRowBottomPad = int32(4)
 
 // banBoxDurLabel is the friendly label of the CURRENTLY chosen duration — the custom
 // chip's when one is active, else the enum preset's.

@@ -1005,6 +1005,8 @@ type App struct {
 	vpPct, chatPct, boxPct, logPct, inputPct int
 	oocPct                                   int // OOC log text size, independent of logPct (IC log)
 	musicPct                                 int // music-list font scale, independent of the log so long titles can shrink without shrinking IC
+	areaPct                                  int // areas-list font scale (Ctrl+wheel); mirrors musicPct — on App (global, survives tab switch), NOT sessionState, so it never resets on a session swap
+	modDashPct                               int // mod/CM dashboard list font scale (Ctrl+wheel); mirrors musicPct — on App (global), independent of the log
 	uiScalePct                               int // global renderer scale (manual)
 	// Manual UI-scale slider COMMITS ON RELEASE: applying live rescales the slider
 	// under the cursor (feedback loop → "super hard to use"). These hold the in-drag
@@ -2284,6 +2286,8 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	a.oocPct = d.Prefs.OOCScale()                                               // OOC log text size, independent of the IC log
 	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
 	a.playerPct = a.logPct                                                      // same for the Players tab + pair popup
+	a.areaPct = a.logPct                                                        // same for the Areas list (all three hosts: docked tab, torn, themed)
+	a.modDashPct = a.logPct                                                     // same for the Mod/CM dashboard lists
 	a.uiScalePct = d.Prefs.UIScale()
 	ctx.SetUIScale(a.uiScalePct)
 	a.applyFontConfig()                                      // dyslexia toggle or manual font path, resolved once
