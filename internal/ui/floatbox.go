@@ -600,8 +600,10 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	if a.d.Prefs.FavEmoteBoxOn() && pointIn(mx, my, a.favBoxRect(w, h)) {
 		return true
 	}
-	if a.showStyleBox && pointIn(mx, my, a.styleBoxRect(w, h)) {
-		return true
+	if a.showStyleBox {
+		if sr, _ := a.styleBoxRect(w, h); pointIn(mx, my, sr) {
+			return true
+		}
 	}
 	// Torn-off tab panels (torntabs.go) fence the scene too — their list content is
 	// clickable, so a click in one must not also land on the stage behind it.

@@ -55,10 +55,13 @@ func (a *App) saveStylePreset(name string) {
 	})
 }
 
-// drawStylePresets paints the #126 presets section at the bottom of the Sprite Style box: a
-// Save row (name + button) and one row per saved mood — Apply (the wide button) · bind a key ·
-// delete. The box height already reserved room for these rows (styleBoxRect).
-func (a *App) drawStylePresets(c *Ctx, x, y, w int32) {
+// drawStylePresets paints the #126 presets section near the TOP of the Sprite Style box
+// (moved up from the bottom so it's always reachable — #C): a Save row (name + button) and
+// one row per saved mood — Apply (the wide button) · bind a key · delete. Returns the y just
+// below the last row so the effect sections that follow continue from there. The box height
+// already reserves room for these rows (styleBoxRect counts them into its content sum), and
+// the whole body scrolls, so a long preset list never strands the effect controls.
+func (a *App) drawStylePresets(c *Ctx, x, y, w int32) int32 {
 	c.LabelClipped(x, y, w, "Saved styles — Save current, click to apply, bind a key:", ColTextDim)
 	y += 20
 	const saveBtnW = int32(70)
@@ -89,6 +92,7 @@ func (a *App) drawStylePresets(c *Ctx, x, y, w int32) {
 		}
 		y += 26
 	}
+	return y
 }
 
 // pollStylePresetBind completes an armed key-capture: the next plain keypress binds it to the

@@ -7,6 +7,60 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 )
 
+// TestStyleBoxScrollableWhenOverflowing pins the #C fix: with many saved presets and
+// every content-growing effect toggled on, the DRAWN box height stays clamped inside the
+// window (it never grows off the bottom of the screen), and the unclamped content height
+// exceeds it — so a scroll range exists and the tail controls (including saved styles) are
+// reachable by scrolling rather than stranded off-panel. styleBoxRect is pure arithmetic
+// over prefs, so it runs headlessly (no renderer) — the full draw can't, per the harness.
+func TestStyleBoxScrollableWhenOverflowing(t *testing.T) {
+	a := presetTestApp(t)
+	const w, h = int32(800), int32(300) // a short window, so a fat box must clamp + scroll
+
+	// Turn on every effect that adds a content section, and stack up saved presets.
+	p := config.SpriteStylePref{Tint: true, Grayscale: true, PaintSplit: 40, Outline: true, Glitch: true}
+	a.d.Prefs.SetSpriteStyle(p)
+	for i := 0; i < 20; i++ {
+		a.d.Prefs.AddStylePreset(config.StylePreset{Name: string(rune('A' + i))})
+	}
+
+	r, fullH := a.styleBoxRect(w, h)
+	if r.H > h-styleBoxWinMargin {
+		t.Errorf("box drew off the window: r.H=%d, want <= %d", r.H, h-styleBoxWinMargin)
+	}
+	if fullH <= r.H {
+		t.Errorf("overflowing box has no scroll range: fullH=%d, r.H=%d (content would be clamped away)", fullH, r.H)
+	}
+}
+
+// TestStyleBoxHeightTracksContent pins that both a saved preset and a toggled effect feed
+// the SAME content-height sum styleBoxRect returns — the identity the scroll range depends
+// on. A preset or effect that drew but wasn't summed would strand content off the bottom.
+func TestStyleBoxHeightTracksContent(t *testing.T) {
+	a := presetTestApp(t)
+	const w, h = int32(1200), int32(2000) // tall enough that nothing clamps, so fullH == r.H
+
+	base := heightOf(a, w, h)
+
+	a.d.Prefs.AddStylePreset(config.StylePreset{Name: "mood"})
+	if withPreset := heightOf(a, w, h); withPreset <= base {
+		t.Errorf("adding a saved preset didn't grow the box: %d -> %d", base, withPreset)
+	}
+
+	a2 := presetTestApp(t)
+	before := heightOf(a2, w, h)
+	a2.d.Prefs.SetSpriteStyle(config.SpriteStylePref{Outline: true}) // Outline adds its colour rows
+	if after := heightOf(a2, w, h); after <= before {
+		t.Errorf("toggling Outline didn't grow the box: %d -> %d", before, after)
+	}
+}
+
+// heightOf returns the unclamped content height styleBoxRect computes for the current prefs.
+func heightOf(a *App, w, h int32) int32 {
+	_, fullH := a.styleBoxRect(w, h)
+	return fullH
+}
+
 // TestHuePaintSliderRoundTrip pins the Hue slider's unit contract: the wheel
 // helpers work in h ∈ [0,1] while the slider shows degrees, so a chosen degree
 // must survive RGB storage and come back to (about) the same slider position —

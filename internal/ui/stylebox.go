@@ -36,7 +36,11 @@ func (a *App) drawStylePathEditor(x, y int32, p config.SpriteStylePref) int32 {
 	c.Fill(sdl.Rect{X: box.X + box.W/2 - 1, Y: box.Y + 4, W: 2, H: box.H - 8}, ColPanelHi) // crosshair = rest
 	c.Fill(sdl.Rect{X: box.X + 4, Y: box.Y + box.H/2 - 1, W: box.W - 8, H: 2}, ColPanelHi)
 
-	inBox := pointIn(c.mouseX, c.mouseY, box)
+	// c.hovering (not raw pointIn) so the clip mirror is honoured: when the box body
+	// is scrolled, a path box scrolled behind the title/notes band must NOT catch a
+	// drag-to-sketch press or a tap-to-add-point (the clipped-grids-need-pushClip
+	// class — raw pointIn would leak the interaction past the clip edge, #C).
+	inBox := c.hovering(box)
 	press := c.mouseDown && !a.pathPrevDown
 	a.pathPrevDown = c.mouseDown
 	if press && inBox { // begin a stroke
@@ -275,12 +279,19 @@ const (
 	styleSwatchGap  = int32(6)
 	styleSwatchCols = 5
 	stylePrevH      = int32(104) // live-preview strip height (the sprite renders at this stage height)
+	// styleBoxWinMargin is the window-edge gap the box keeps top+bottom / left+right.
+	// The drawn box height is clamped to h-styleBoxWinMargin; anything taller scrolls
+	// inside the body (#C — the box grew off the bottom of the screen before).
+	styleBoxWinMargin = int32(16)
 )
 
 // styleBoxRect is the box's screen rect: a fixed width, a height that grows when
 // the tint controls are showing, clamped fully on-screen at its dragged position
-// (else a default tucked under the top-right, clear of the stage centre).
-func (a *App) styleBoxRect(w, h int32) sdl.Rect {
+// (else a default tucked under the top-right, clear of the stage centre). It also
+// returns fullH, the UNCLAMPED content height — the caller derives the scroll range
+// from it (maxScroll = fullH - r.H) so the drawn height and the scroll range come
+// from the exact same section sum and can never disagree (#C).
+func (a *App) styleBoxRect(w, h int32) (sdl.Rect, int32) {
 	p := a.d.Prefs.SpriteStyle()
 	bh := extrasTitleH + styleBoxPad // title + top pad
 	bh += 50                         // 3-line "what it does / who sees it" note
@@ -327,11 +338,12 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	if bw < styleBoxMinW {
 		bw = styleBoxMinW
 	}
-	if bw > w-16 {
-		bw = w - 16
+	if bw > w-styleBoxWinMargin {
+		bw = w - styleBoxWinMargin
 	}
-	if bh > h-16 {
-		bh = h - 16
+	fullH := bh // the unclamped content height, before the window clamp (drives the scroll range)
+	if bh > h-styleBoxWinMargin {
+		bh = h - styleBoxWinMargin
 	}
 	x, y := a.styleBoxX, a.styleBoxY
 	if !a.styleBoxPlaced {
@@ -344,7 +356,7 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 	if maxY < 8 {
 		maxY = 8
 	}
-	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}
+	return sdl.Rect{X: clampI32(x, 8, maxX), Y: clampI32(y, 8, maxY), W: bw, H: bh}, fullH
 }
 
 // drawSpriteStyleBox paints the floating Sprite Style panel and handles its input.
@@ -353,11 +365,13 @@ func (a *App) styleBoxRect(w, h int32) sdl.Rect {
 func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	c := a.ctx
 	p := a.d.Prefs.SpriteStyle()
-	r := a.styleBoxRect(w, h)
+	r, fullH := a.styleBoxRect(w, h)
 	c.Fill(r, ColPanel)
 	c.Border(r, ColAccent)
 
-	// Title bar / drag handle + close.
+	// Title bar / drag handle + close. Drawn (and hit-tested) OUTSIDE the scrolled
+	// body clip below, so the drag handle and close button always see the clamped
+	// rect and never scroll away (#C).
 	c.Fill(sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: extrasTitleH}, ColPanelHi)
 	c.Label(r.X+8, r.Y+6, "Sprite Style", ColText)
 	// Live swatch in the title bar (white = no tint).
@@ -374,8 +388,33 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	}
 	a.handleStyleBoxDrag(sdl.Rect{X: r.X, Y: r.Y, W: r.W - 56, H: extrasTitleH}, w, h, pressed)
 
+	// Scrollable body (#C): the content is a pure top-to-bottom y-cursor whose total
+	// height (fullH) can exceed the window-clamped box. The body scrolls inside the
+	// area below the title bar; maxScroll is derived from the SAME section sum as the
+	// drawn height so the two can never disagree. styleBoxScroll is clamped every
+	// frame (rule §17.4) — toggling an effect off shrinks maxScroll, and a stale
+	// offset would otherwise strand the view in blank space.
+	bodyRect := sdl.Rect{X: r.X, Y: r.Y + extrasTitleH, W: r.W, H: r.H - extrasTitleH}
+	maxScroll := fullH - r.H
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	a.styleBoxScroll -= c.WheelIn(bodyRect) * scrollStepPx
+	if a.styleBoxScroll < 0 {
+		a.styleBoxScroll = 0
+	}
+	if a.styleBoxScroll > maxScroll {
+		a.styleBoxScroll = maxScroll
+	}
+	// pushClip (not a raw SetClipRect) so hovering() honours the clip: a slider,
+	// swatch or checkbox scrolled behind the title bar / off the bottom must not
+	// hit-test in its hidden half (raw clips draw-only — the click leaks past the
+	// edge). NOT deferred: the width-resize grip draws AFTER the body and must stay
+	// unclipped (it spans the full height), so popClip is called explicitly below.
+	clipPrev, clipHad := c.pushClip(bodyRect)
+
 	x := r.X + styleBoxPad
-	y := r.Y + extrasTitleH + 6
+	y := r.Y + extrasTitleH + 6 - a.styleBoxScroll
 
 	// What it does + how others see it (the user asked for this in the box).
 	noteW := r.W - styleBoxPad*2
@@ -432,6 +471,13 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 		c.Border(pv, ColPanelHi)
 		y += stylePrevH + 8
 	}
+
+	// Saved styles pinned to the TOP, right under the preview (the user's ask —
+	// they were stranded off the bottom before). drawStylePresets returns its final
+	// y so the effect sections below continue from there; the whole body scrolls, so
+	// every effect control is still reachable no matter how many presets exist (#C).
+	y = a.drawStylePresets(c, x, y, r.W-styleBoxPad*2) // #126 saved moods + keybinds
+	y += 8
 
 	// Recolour toggle + the hue-paint mode (playtest: the multiply tint DARKENS
 	// a colourful sprite — the ask was a recolour that only affects hue). Hue
@@ -802,8 +848,12 @@ func (a *App) drawSpriteStyleBox(w, h int32, pressed *bool) {
 	if c.Button(sdl.Rect{X: x, Y: y, W: r.W - styleBoxPad*2, H: btnH}, "Clear style") {
 		a.d.Prefs.SetSpriteStyle(config.SpriteStylePref{})
 	}
-	y += btnH + 8
-	a.drawStylePresets(c, x, y, r.W-styleBoxPad*2) // #126 saved moods + keybinds
+	// The Clear button is the last body control (saved styles moved to the top, #C).
+
+	// End of the scrolled body. popClip explicitly (not deferred) BEFORE the grip so
+	// the full-height resize grip below draws + hit-tests against the clamped rect,
+	// never the clipped/scrolled region (#C).
+	c.popClip(clipPrev, clipHad)
 
 	// Right-edge width grip: drag to widen the box (the notes / sliders / buttons
 	// all follow r.W). Height stays content-driven. The hit strip sits in the right
@@ -822,7 +872,7 @@ func (a *App) handleStyleBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 	c := a.ctx
 	if *pressed && pointIn(c.mouseX, c.mouseY, handle) {
 		*pressed = false
-		r := a.styleBoxRect(w, h)
+		r, _ := a.styleBoxRect(w, h)
 		a.styleBoxDragging = true
 		a.styleBoxGrabDX, a.styleBoxGrabDY = c.mouseX-r.X, c.mouseY-r.Y
 	}
@@ -833,7 +883,7 @@ func (a *App) handleStyleBoxDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 		a.styleBoxX, a.styleBoxY = c.mouseX-a.styleBoxGrabDX, c.mouseY-a.styleBoxGrabDY
 		a.styleBoxPlaced = true
 		if !magnetBypassed() && len(a.panelMagnetRects) > 0 { // M3: piece-to-piece magnet
-			r := a.styleBoxRect(w, h)
+			r, _ := a.styleBoxRect(w, h)
 			a.styleBoxX, a.styleBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
 		}
 	}

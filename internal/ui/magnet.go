@@ -92,7 +92,8 @@ func (a *App) rebuildPanelMagnetRects(w, h int32) {
 		add(a.favBoxRect(w, h))
 	}
 	if a.showStyleBox && !a.styleBoxDragging {
-		add(a.styleBoxRect(w, h))
+		sr, _ := a.styleBoxRect(w, h)
+		add(sr)
 	}
 	// Torn-off TAB panels (torntabs.go) persist via classic slots; include them as
 	// passive magnet targets (they are never the surface dragged here). Mirror

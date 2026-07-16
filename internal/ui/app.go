@@ -1450,6 +1450,7 @@ type sessionState struct {
 	styleBoxDragging bool
 	styleBoxResizing bool  // the right-edge width grip is being dragged
 	styleBoxUserW    int32 // user-set width (0 = the default styleBoxW); height stays content-driven
+	styleBoxScroll   int32 // vertical scroll of the box body (the box clamps to the window; the body scrolls inside — #C); clamped to [0, maxScroll] every frame
 	styleBoxGrabDX   int32
 	styleBoxGrabDY   int32
 	// Custom glitch fringe-colour hex buffers (the style box's A/B fields): they
