@@ -23,6 +23,13 @@ const (
 	// warningChanCap bounds missing-asset warnings to the UI; warnings are
 	// droppable advisories, results are not.
 	warningChanCap = 32
+	// musicFailChanCap bounds the music-fetch-failure advisory lane to the UI.
+	// A transient music failure (timeout / 5xx / host backoff) is otherwise
+	// completely invisible — counted in the pump, never surfaced (§1.1) — so
+	// the jukebox warn line needs a signal. Droppable like warnings (newest
+	// wins on flood); scoped strictly to AssetTypeMusic so sprite backoff
+	// bursts never reach it. Small because at most one track plays at a time.
+	musicFailChanCap = 8
 )
 
 // DecodedAsset is the manager's handoff to the render thread: decoded frames
@@ -60,6 +67,15 @@ type Warning struct {
 	Tried []string
 }
 
+// MusicFailure reports a TRANSIENT music-fetch failure (timeout / 5xx / host
+// backoff — never a 404, which is a definitive miss surfaced elsewhere) so the
+// jukebox can tell the user a track silently didn't load (§1.1). Scoped to
+// AssetTypeMusic only: sprite/icon transient bursts must not surface here.
+type MusicFailure struct {
+	URL string
+	Err error
+}
+
 // Fetcher is the byte source the manager probes: network.Client for asset
 // streaming, LocalFetcher for the no-streaming legacy mode.
 type Fetcher interface {
@@ -92,9 +108,10 @@ type Manager struct {
 	// can't storm the network + log every retry. nil in headless tests.
 	t1Failed func(base string) bool
 
-	decodedCh chan DecodedAsset
-	audioCh   chan AudioAsset
-	warningCh chan Warning
+	decodedCh   chan DecodedAsset
+	audioCh     chan AudioAsset
+	warningCh   chan Warning
+	musicFailCh chan MusicFailure
 
 	// deliveryNotify, when set, fires after each decodedCh/audioCh send — the
 	// experimental event-driven render loop's wake hook, so a finished decode
@@ -207,20 +224,21 @@ type ManagerDeps struct {
 // NewManager builds the pipeline orchestrator.
 func NewManager(deps ManagerDeps) *Manager {
 	return &Manager{
-		resolver:   deps.Resolver,
-		prefs:      deps.Prefs,
-		t2:         deps.T2,
-		disk:       deps.Disk,
-		client:     deps.Source,
-		localMode:  deps.LocalMode,
-		pool:       deps.Pool,
-		decoder:    deps.Decoder,
-		thumbs:     deps.Thumbs,
-		t1Contains: deps.T1Contains,
-		t1Failed:   deps.T1Failed,
-		decodedCh:  make(chan DecodedAsset, decodedChanCap),
-		audioCh:    make(chan AudioAsset, audioChanCap),
-		warningCh:  make(chan Warning, warningChanCap),
+		resolver:    deps.Resolver,
+		prefs:       deps.Prefs,
+		t2:          deps.T2,
+		disk:        deps.Disk,
+		client:      deps.Source,
+		localMode:   deps.LocalMode,
+		pool:        deps.Pool,
+		decoder:     deps.Decoder,
+		thumbs:      deps.Thumbs,
+		t1Contains:  deps.T1Contains,
+		t1Failed:    deps.T1Failed,
+		decodedCh:   make(chan DecodedAsset, decodedChanCap),
+		audioCh:     make(chan AudioAsset, audioChanCap),
+		warningCh:   make(chan Warning, warningChanCap),
+		musicFailCh: make(chan MusicFailure, musicFailChanCap),
 	}
 }
 
@@ -249,6 +267,25 @@ func (m *Manager) Audio() <-chan AudioAsset { return m.audioCh }
 
 // Warnings returns the channel the UI drains for missing-asset banners.
 func (m *Manager) Warnings() <-chan Warning { return m.warningCh }
+
+// MusicFailures returns the channel the UI drains for transient music-fetch
+// failures — the jukebox warn line's source (§1.1). Advisory: drained on the
+// render thread, never blocks a pool worker.
+func (m *Manager) MusicFailures() <-chan MusicFailure { return m.musicFailCh }
+
+// reportMusicFailure surfaces a transient music-fetch failure to the jukebox,
+// scoped strictly to AssetTypeMusic (callers must check). Non-blocking like
+// reportMissing: the lane is a droppable advisory (rule 4), never a result
+// (rule 7 — the fetch's own delivery/error path is unchanged; this is an
+// EXTRA signal). Fires the delivery wake so an idle event-loop redraws the
+// warn line promptly.
+func (m *Manager) reportMusicFailure(url string, err error) {
+	select {
+	case m.musicFailCh <- MusicFailure{URL: url, Err: err}:
+		m.notifyDelivery()
+	default:
+	}
+}
 
 // Prefetch queues a full pipeline pass for base (URL without extension) at
 // the given priority, tagged with the pool's current epoch so room changes
@@ -375,6 +412,14 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 	case errors.Is(err, network.ErrAssetNotFound):
 		m.reportMissing(url, t, nil)
 	default:
+		// Transient failure (timeout / 5xx / host backoff). Music is the one
+		// exact-fetch type whose failure is otherwise silent (audio never
+		// reaches the pump's decode path, so the "counted, not logged" pump
+		// branch doesn't even see it) — surface it to the jukebox. Sprite/icon
+		// exact fetches stay unlogged (scoped by type).
+		if t == AssetTypeMusic {
+			m.reportMusicFailure(url, err)
+		}
 		m.decodedCh <- DecodedAsset{URL: url, Base: url, Type: t, Err: err, Transient: true}
 		m.notifyDelivery()
 	}

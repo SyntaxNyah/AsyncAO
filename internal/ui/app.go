@@ -2428,9 +2428,10 @@ func (a *App) Background(dt time.Duration) {
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.drainWarnings()
-	a.pollCharINI()    // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
-	a.pollLogBrowser() // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
-	a.pollUpdate()     // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
+	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
+	a.pollCharINI()        // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
+	a.pollLogBrowser()     // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
+	a.pollUpdate()         // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
 	if a.room != nil {
 		a.room.Update(dt)
 	}
@@ -6301,7 +6302,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.controlPinnedClient()
 	}
 	a.drainWarnings()
-	a.drainThumbs() // loaded low-q stand-ins → T1 (render thread; bounded per frame)
+	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
+	a.drainThumbs()        // loaded low-q stand-ins → T1 (render thread; bounded per frame)
 	a.pollThemeApply()
 	a.pollManifest()
 	a.maybeProbeCasing() // OFF unless the user picked Auto casing (cheap no-op otherwise)
@@ -6981,6 +6983,35 @@ func (a *App) drainWarnings() {
 			return
 		}
 	}
+}
+
+// drainMusicFailures empties the manager's transient-music-failure lane
+// (bounded) and surfaces the newest to the jukebox warn line (§1.1). Runs on
+// the render thread alongside drainWarnings, so touching a.warnLine here is
+// race-free. A big track that timed out (or a backing-off host) was otherwise
+// completely silent — "it just doesn't play, no error." Always shown (unlike
+// the opt-out asset banner): a music track the user actively /play'd failing
+// is a direct, expected-feedback event, not sparse-pack noise.
+func (a *App) drainMusicFailures() {
+	for {
+		select {
+		case f := <-a.d.Manager.MusicFailures():
+			line := "Music didn't load (network) — " + shortMusicName(f.URL)
+			a.pushDebug(line + ": " + f.Err.Error())
+			a.jukeWarn(line)
+		default:
+			return
+		}
+	}
+}
+
+// shortMusicName trims a music URL to its final path segment for the warn line
+// so a long /play CDN URL doesn't overflow the banner (clampLine also caps it).
+func shortMusicName(url string) string {
+	if i := strings.LastIndexByte(url, '/'); i >= 0 && i+1 < len(url) {
+		return url[i+1:]
+	}
+	return url
 }
 
 // warnActive reports whether the warning banner should still draw.

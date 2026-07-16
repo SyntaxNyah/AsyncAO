@@ -47,8 +47,27 @@ const (
 	defaultResponseHeaderTimeout = 3 * time.Second
 	tlsSessionCacheSize          = 64
 
-	// DefaultRequestTimeout caps every asset request end-to-end.
+	// DefaultRequestTimeout caps the wait for response HEADERS to arrive
+	// (the time-to-first-byte window), NOT the body transfer. The adaptive
+	// per-host deadline (adaptiveTimeout) is derived from the TTFB EWMA and
+	// clamped to this ceiling; once headers land the body read is governed by
+	// bodyTransferBudget instead. It bounds only the header wait so a stalled
+	// server frees its fetch worker fast.
 	DefaultRequestTimeout = 5 * time.Second
+
+	// bodyTransferBudget caps the BODY download once headers have arrived,
+	// separately from the TTFB-derived header deadline. The two must not share
+	// a deadline: the TTFB EWMA is dominated by tiny sprite/icon probes on the
+	// same host, so reusing it for the body collapsed a large music track's
+	// download window toward adaptiveTimeoutFloor (2s) and cut multi-MB files
+	// mid-stream — "big music silently doesn't play" (§1.1). 60s is generous
+	// enough for a ~10-40MB track on a slow-but-flowing link (matching the
+	// videomux.go maxMusicBytes=40<<20 precedent) while still bounding a
+	// genuinely wedged socket so a fetch worker can never be pinned forever
+	// (rule 4). Deliberately fixed, not adaptive: body throughput and header
+	// latency are unrelated, and the largest payloads (music) are exactly the
+	// ones the small-asset EWMA under-serves.
+	bodyTransferBudget = 60 * time.Second
 
 	// NotFoundCacheSize / NotFoundCacheTTL bound the negative cache: a 404
 	// is never re-probed inside the TTL (spec §17.6).
@@ -95,6 +114,11 @@ type Client struct {
 	backoff    sync.Map // host string → *hostBackoff
 	hostLat    sync.Map // host string → *hostLatency (TTFB EWMA)
 	timeout    time.Duration
+	// bodyBudget caps the body read once headers arrive (separate from the
+	// TTFB-derived header deadline — see bodyTransferBudget). A field, not the
+	// const directly, so tests can shrink it to prove the body read no longer
+	// inherits the header deadline without dribbling a 60s stream.
+	bodyBudget time.Duration
 	bufPool    sync.Pool // *bytes.Buffer for unknown-length reads
 
 	requests   atomic.Int64
@@ -200,6 +224,7 @@ func newClient(timeout, notFoundTTL time.Duration) *Client {
 		notFound:   expirable.NewLRU[string, struct{}](NotFoundCacheSize, nil, notFoundTTL),
 		dns:        dns,
 		timeout:    timeout,
+		bodyBudget: bodyTransferBudget,
 		bufPool: sync.Pool{
 			New: func() any {
 				buf := &bytes.Buffer{}
@@ -348,8 +373,18 @@ func (c *Client) fetchOnce(url string) ([]byte, error) {
 func (c *Client) fetchAttempt(url string) ([]byte, error) {
 	c.requests.Add(1)
 	host := hostOf(url)
-	ctx, cancel := context.WithTimeout(context.Background(), c.adaptiveTimeout(host))
+	// One cancelable context governs the whole request, but two DIFFERENT
+	// deadlines drive it in sequence: the TTFB-derived adaptive deadline
+	// bounds only the wait for headers, then — the instant Do returns — we
+	// re-arm the same timer to the (much larger) body-transfer budget. This is
+	// what stops a fast host's small-asset TTFB EWMA from cutting a slow, large
+	// body (e.g. a big music track) mid-stream (§1.1). A time.AfterFunc that we
+	// Stop-and-reset is the smallest shape that swaps deadlines on one ctx
+	// without allocating a second one or racing Do.
+	ctx, cancel := context.WithCancel(context.Background())
+	deadline := time.AfterFunc(c.adaptiveTimeout(host), cancel)
 	defer cancel()
+	defer deadline.Stop()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -368,7 +403,13 @@ func (c *Client) fetchAttempt(url string) ([]byte, error) {
 		c.failures.Add(1)
 		return nil, fmt.Errorf("network: fetching %s: %w", url, err)
 	}
-	// Do returns once headers arrive: this IS the time-to-first-byte.
+	// Do returns once headers arrive: this IS the time-to-first-byte. The TTFB
+	// deadline has done its only job — swap it for the body-transfer budget so
+	// the download below is never bounded by the (small-asset-dominated) header
+	// EWMA. Reset re-arms the SAME timer; a false return means it had already
+	// fired (headers landed right at the deadline), in which case ctx is
+	// canceled and the body read below fails fast, exactly as before.
+	deadline.Reset(c.bodyBudget)
 	c.observeLatency(host, time.Since(start))
 	defer func() {
 		// Drain so the keep-alive connection is reusable.
