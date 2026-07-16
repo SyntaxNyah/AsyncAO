@@ -192,9 +192,11 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"cache", "disk cache", "disk", "zstd", "learned formats", "learned", "clear cache",
 	},
 	tabAudio: {
-		// sections: Volume (master / music / SFX / blip / alert), music ducking.
+		// sections: Volume (master / music / SFX / blip / alert), music ducking,
+		// custom music streaming.
 		"audio", "volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
 		"alert volume", "music ducking", "duck",
+		"stream music", "disable music", "stop fetching music", "custom music",
 	},
 	tabChat: {
 		// sections: Text & typing, Chat log, Case alerts, Callwords, Do Not Disturb,
@@ -2383,6 +2385,14 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	duck := a.d.Prefs.MusicDucking()
 	if next := c.Checkbox(pad, y, "Duck music while someone talks (lower music during a message so dialogue stays clear)", duck); next != duck {
 		a.d.Prefs.SetMusicDucking(next)
+	}
+	y += 28
+	// Custom /play music streaming (ON by default): fetch and play /play tracks.
+	// OFF stops AsyncAO downloading any custom music — including your OWN plays,
+	// which go silent for you (they still play for everyone else).
+	stream := a.d.Prefs.MusicStreamingOn()
+	if next := c.Checkbox(pad, y, "Stream custom /play music (off stops fetching /play tracks — including your own, which go silent for you)", stream); next != stream {
+		a.applyMusicStreaming(next) // persists + re-syncs the room + stops playback on OFF
 	}
 	y += 28
 

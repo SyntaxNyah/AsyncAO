@@ -3986,6 +3986,11 @@ func (a *App) buildRoom() {
 	// the background came back. A direct HandleEvent (not handleSessionEvents) so it plays
 	// without re-logging "has played a song". (It restarts the song from the top — acceptable.)
 	if a.sess.MusicTrack != "" {
+		// Sync the streaming toggle BEFORE the resume: applyTimingToRoom (which
+		// normally pushes it) runs below, but this resume event fires first — with
+		// StreamMusic left at NewCourtroom's default ON, a resumed track would play
+		// even when the user disabled streaming. §1.3.
+		a.room.StreamMusic = a.d.Prefs.MusicStreamingOn()
 		// Loop: true — a resumed persistent track keeps AsyncAO's client-side loop
 		// (#15; the original MC's loop/effect flags aren't retained on the session,
 		// and a room-rebuild resume has always looped).
@@ -5411,6 +5416,22 @@ func (a *App) applyTimingToRoom() {
 	a.room.AdditiveText = a.d.Prefs.AdditiveTextOn()   // #14 2.8 additive: honor incoming ADDITIVE=1 append (default ON)
 	a.room.ForceCharNames = a.d.Prefs.ForceCharNamesOn()
 	a.room.HideSpriteStyles = a.d.Prefs.HideSpriteStylesOn() // #103: viewer opt-out of others' styles
+	a.room.StreamMusic = a.d.Prefs.MusicStreamingOn()        // §1.3: OFF = never fetch a /play track (Now-Playing still tracks it)
+}
+
+// applyMusicStreaming persists the custom-/play-music streaming toggle and pushes
+// it onto the live room, so both settings surfaces (Settings → Audio and the quick
+// volume popover) share one behaviour. On the OFF transition it also stops any
+// currently-streaming track (and cancels a pending fetch) so it goes silent at
+// once instead of on the next song change.
+func (a *App) applyMusicStreaming(on bool) {
+	a.d.Prefs.SetMusicStreaming(on)
+	if a.room != nil {
+		a.room.StreamMusic = on
+	}
+	if !on {
+		a.d.Audio.StopMusic() // halt the current track and cancel any pending fetch
+	}
 }
 
 // activeCharName is the character folder OUTGOING messages use: the

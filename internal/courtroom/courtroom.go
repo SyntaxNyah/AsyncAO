@@ -262,6 +262,13 @@ type Courtroom struct {
 	// the App from prefs (default off); the IC log mirrors it App-side.
 	ForceCharNames bool
 
+	// StreamMusic is set by the App from prefs (default ON). false = never
+	// fetch a /play track; the room still tracks what's "playing" for
+	// Now-Playing display, it just isn't audible on this client. Seeded ON in
+	// NewCourtroom (like ScreenEffects/AdditiveText) so direct callers
+	// (tests/export/replay) keep playing music; the App pushes the user's pref.
+	StreamMusic bool
+
 	// SFXMuted, when set, reports whether an emote SFX name should be silenced
 	// (M11 per-SFX mute). Set by the App to read live prefs; nil = play everything.
 	SFXMuted func(name string) bool
@@ -449,7 +456,11 @@ func NewCourtroom(urls URLBuilder, mgr *assets.Manager, sess *Session, audio Aud
 		// user's pref. additivePrevText starts empty so the first message appends to
 		// nothing (an empty prefix is a no-op — identical to replace).
 		AdditiveText: true,
-		TextStay:     DefaultTextStayTime,
+		// Custom /play music streaming default ON; the App pushes the user's pref.
+		// Seeded here so direct callers (tests/export/replay) keep playing music
+		// (the zero value false would silently swallow every /play track).
+		StreamMusic: true,
+		TextStay:    DefaultTextStayTime,
 		// Catch-up defaults OFF so direct callers (tests/embedders) keep the
 		// full lifecycle; the App enables it from prefs (default ON there).
 		CatchUpThreshold: catchUpDefaultThreshold,
@@ -498,7 +509,12 @@ func (c *Courtroom) HandleEvent(ev Event) {
 			c.audio.StopMusic()
 			c.Scene.MusicTrack = "" // clear Now-Playing
 		default:
-			c.audio.PlayMusic(c.urls.MusicURL(ev.Text), ev.Loop, ev.MusicEffects) // AssetType: Music
+			// Streaming toggle (default ON): when off, never fetch the /play
+			// track — but still record what the room intends to play so
+			// Now-Playing stays accurate to the room, just silent here.
+			if c.StreamMusic {
+				c.audio.PlayMusic(c.urls.MusicURL(ev.Text), ev.Loop, ev.MusicEffects) // AssetType: Music
+			}
 			c.Scene.MusicTrack = ev.Text
 		}
 	}

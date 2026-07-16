@@ -87,6 +87,9 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.MusicHistoryOn() {
 		t.Error("MusicHistoryOn default must be true")
 	}
+	if !p.MusicStreamingOn() {
+		t.Error("MusicStreamingOn default must be true (custom /play streaming ships ON)")
+	}
 	if p.RainbowSpeed() != defaultRainbowSpeed || p.RainbowVividness() != defaultRainbowVivid {
 		t.Errorf("rainbow speed/vividness defaults = %d/%d, want %d/%d",
 			p.RainbowSpeed(), p.RainbowVividness(), defaultRainbowSpeed, defaultRainbowVivid)
@@ -755,6 +758,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetAutoReconnect(false)        // same absent-default-ON pointer
 	p.SetScreenEffects(false)        // default-ON *bool — explicit false must survive
 	p.SetMusicHistory(false)         // same absent-default-ON pointer
+	p.SetMusicStreaming(false)       // same absent-default-ON pointer — explicit OFF must survive
 	p.SetRainbowSprites(true)        // default-OFF plain bool — must survive as true
 	p.SetShowRecordButton(true)      // default-OFF plain bool
 	p.SetShowFriendButton(false)     // default-ON *bool — explicit false must survive
@@ -812,6 +816,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.MusicHistoryOn() {
 		t.Error("MusicHistory=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if q.MusicStreamingOn() {
+		t.Error("MusicStreaming=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if !q.RainbowSpritesOn() {
 		t.Error("RainbowSprites=true lost across reload")

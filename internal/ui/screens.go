@@ -2219,6 +2219,16 @@ func clampF64(v, min, max float64) float64 {
 	return v
 }
 
+// volStripRowsH is the height of the quick volume popover's two slider rows:
+// "label NN%" (click = mute) over a full-width slider. volStripStreamRowH is the
+// extra band below them for the "stream custom music" checkbox drawn under the
+// Music column. Both are named (rule 9) and shared between drawLogPanel (box
+// height) and drawVolumeStrip (checkbox y) so the two can't drift apart.
+const (
+	volStripRowsH      = int32(44)
+	volStripStreamRowH = int32(22)
+)
+
 // drawVolumeStrip draws the toggleable on-screen volume row (Master + the three
 // channels) at the top of the log panel — quick volume without leaving the chat.
 func (a *App) drawVolumeStrip(r sdl.Rect) {
@@ -2277,6 +2287,19 @@ func (a *App) drawVolumeStrip(r sdl.Rect) {
 		a.d.Prefs.SetBlipTyping(int(nv), onSpaces)
 		a.applyTimingToRoom()
 	}
+	// Custom-music streaming toggle, under the Music column (col 1) so it reads as
+	// "music: stream on/off". Same pref/room-sync as Settings → Audio, so the two
+	// surfaces can never drift. Short label (the column is only r.W/5 wide) with the
+	// full "your own /play goes silent too" caveat carried by the tooltip. The row
+	// sits below the two slider rows (volStripRowsH) — the height drawLogPanel
+	// reserved via volStripStreamRowH.
+	streamX, streamY := r.X+colW, r.Y+volStripRowsH
+	stream := a.d.Prefs.MusicStreamingOn()
+	if next := c.Checkbox(streamX, streamY, "Stream", stream); next != stream {
+		a.applyMusicStreaming(next) // persists + re-syncs the room + stops playback on OFF
+	}
+	c.Tooltip(sdl.Rect{X: streamX, Y: streamY, W: 16 + 6 + c.TextWidth("Stream"), H: 16},
+		"Stream custom /play music. Off stops fetching /play tracks — including your own, which go silent for you.")
 }
 
 func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
@@ -2318,7 +2341,10 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	c.Tooltip(volBtn, "Show/hide volume sliders on screen (chat stays usable)")
 	innerY := r.Y + btnH + 4
 	if a.volStripOn {
-		const stripH = int32(44) // two rows: "label NN%" (click = mute) over a full-width slider
+		// stripH = the two slider rows plus one extra row for the "stream custom
+		// music" checkbox under the Music column. Both heights are named and shared
+		// with drawVolumeStrip so the checkbox y and the box height can't drift.
+		const stripH = volStripRowsH + volStripStreamRowH
 		a.drawVolumeStrip(sdl.Rect{X: r.X + 4, Y: innerY, W: r.W - 8, H: stripH})
 		innerY += stripH + 4
 	}

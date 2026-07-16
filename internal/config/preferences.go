@@ -299,6 +299,14 @@ const defaultMotionRedrawPerEvent = true
 // someone /played. Toggleable off in Settings.
 const defaultMusicHistory = true
 
+// defaultMusicStreaming ships ON: AsyncAO fetches and plays custom /play tracks
+// (Discord/catbox links etc.) like any other AO2 client. Turning it off in
+// Settings → Audio (or the quick volume popover) stops AsyncAO from downloading
+// any /play music at all — including the user's own plays, which round-trip
+// through the server, so they go silent locally too. Now-Playing still tracks
+// what the room intends to play; it just isn't audible on this client.
+const defaultMusicStreaming = true
+
 // defaultICCustomColor seeds the free IC hex colour picker (v1.52.0) before
 // the user's first pick: a readable sky-blue on the dark chatbox, packed
 // 0xRRGGBB like the highlight colour below.
@@ -1111,6 +1119,11 @@ type AssetPreferences struct {
 	AutoReconnect bool `json:"autoReconnect"`
 	// MusicHistory keeps the session "recently played" jukebox list (ON by default).
 	MusicHistory bool `json:"musicHistory"`
+	// MusicStreaming fetches and plays custom /play tracks (ON by default). OFF =
+	// AsyncAO never downloads a /play song (the user's own plays go silent locally
+	// too — they round-trip through the server). NOT omitempty: an explicit OFF
+	// must persist, not read back as "absent → default ON".
+	MusicStreaming bool `json:"musicStreaming"`
 	// MusicHosts allowlists the domains whose /play links the music history
 	// records — for "unique" user-hosted song domains (catbox/file.garden/etc.).
 	// Server-hosted music (bare names, the server's own host) still plays but is
@@ -1415,6 +1428,7 @@ type prefsJSON struct {
 	ICTimestamps       *bool    `json:"icTimestamps"`         // absent = default OFF
 	AutoReconnect      *bool    `json:"autoReconnect"`        // absent = default ON
 	MusicHistory       *bool    `json:"musicHistory"`         // absent = default ON
+	MusicStreaming     *bool    `json:"musicStreaming"`       // absent = default ON
 	MusicHosts         []string `json:"musicHosts,omitempty"` // absent = default list
 }
 
@@ -1676,6 +1690,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		ICTimestamps:           defaultICTimestamps,
 		AutoReconnect:          defaultAutoReconnect,
 		MusicHistory:           defaultMusicHistory,
+		MusicStreaming:         defaultMusicStreaming,
 		MusicHosts:             defaultMusicHostList(),
 		HighlightColor:         defaultHighlightColor,
 		ICCustomColor:          defaultICCustomColor,
@@ -1979,6 +1994,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.MusicHistory != nil {
 		p.MusicHistory = *onDisk.MusicHistory
+	}
+	if onDisk.MusicStreaming != nil {
+		p.MusicStreaming = *onDisk.MusicStreaming
 	}
 	if onDisk.MusicHosts != nil {
 		p.MusicHosts = sanitizeMusicHosts(onDisk.MusicHosts)
@@ -3020,6 +3038,26 @@ func (p *AssetPreferences) SetMusicHistory(on bool) {
 		return
 	}
 	p.MusicHistory = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MusicStreamingOn reports whether AsyncAO fetches and plays custom /play tracks
+// (ON by default). OFF = no /play song is ever downloaded on this client.
+func (p *AssetPreferences) MusicStreamingOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MusicStreaming
+}
+
+// SetMusicStreaming toggles custom /play music streaming.
+func (p *AssetPreferences) SetMusicStreaming(on bool) {
+	p.mu.Lock()
+	if p.MusicStreaming == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MusicStreaming = on
 	p.mu.Unlock()
 	p.markDirty()
 }
