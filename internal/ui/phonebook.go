@@ -140,43 +140,63 @@ func (a *App) savePhoneBookEdit(oldURL, desc string) {
 	a.lobbyStatus = "Updated " + name + " in your phone book."
 }
 
-// --- "Phone Fanat" easter egg (phone-book page only) --------------------------
+// --- "Phone Fanat" click-to-quip chip (phone-book page only) ------------------
 
 const (
-	fanatShowDuration = 4 * time.Second  // how long one quip lingers on screen
-	fanatGapMin       = 25 * time.Second // soonest the Fanat can reappear
-	fanatGapMax       = 90 * time.Second // latest; actual gap is random in [min,max]
+	fanatShowDuration = 4 * time.Second // how long one quip lingers after a click
+	fanatChipW        = 96              // "Phone Fanat" chip width (bottom-right corner)
+	fanatChipH        = 22              // chip height
 )
 
 // fanatLines are author-supplied in-jokes shown one at a time. Package-level so
 // no per-frame allocation happens on the draw path (rule 8).
 var fanatLines = []string{"don't forget FantaCrypt!", "SERGEI!!!!"}
 
-// fanatGap returns a random inter-appearance delay in [fanatGapMin, fanatGapMax].
-func fanatGap() time.Duration {
-	return fanatGapMin + time.Duration(rand.IntN(int(fanatGapMax-fanatGapMin)))
+// phoneFanatChipRect is the chip's bottom-right rect. Shared by the early
+// click-claim and the late draw so the geometry lives in exactly one spot.
+func phoneFanatChipRect(w, h int32) sdl.Rect {
+	return sdl.Rect{X: w - pad - fanatChipW, Y: h - pad - fanatChipH, W: fanatChipW, H: fanatChipH}
 }
 
-// advancePhoneFanat schedules and draws the Phone Fanat quip. It is called
-// only from inside the phone-book branch of drawLobby, so the whole mechanism
-// costs nothing anywhere else in the app and can never leak onto the courtroom
-// or the plain all-servers lobby. Time-scheduled (not a per-frame dice roll)
-// so it's frame-rate independent and carries no growing state (rule 4).
-func (a *App) advancePhoneFanat(w, h int32) {
+// claimPhoneFanatClick pops a fresh quip if the chip was clicked and — like
+// classicEditFence — CONSUMES the click so a server row underneath (rows draw
+// first and act on c.clicked immediately) can't also select/connect from the
+// same press. Called BEFORE the row loop; the chip's visual draws later, on top.
+func (a *App) claimPhoneFanatClick(w, h int32) {
 	c := a.ctx
-	now := a.now()
-	switch {
-	case a.phoneFanatNextAt.IsZero():
-		a.phoneFanatNextAt = now.Add(fanatGap()) // first entry to the page
-	case !now.Before(a.phoneFanatNextAt): // due: fire and reschedule
+	if c.hovering(phoneFanatChipRect(w, h)) && c.clicked {
 		a.phoneFanatLine = fanatLines[rand.IntN(len(fanatLines))]
-		a.phoneFanatShownAt = now
-		a.phoneFanatNextAt = now.Add(fanatGap())
+		a.phoneFanatShownAt = a.now()
+		c.clicked = false // top-most element wins; the rows below must not also act
 	}
-	// The zero-value phoneFanatShownAt keeps this false until the first real
-	// fire, so no init flag is needed.
-	if now.Sub(a.phoneFanatShownAt) < fanatShowDuration && a.phoneFanatLine != "" {
-		x := w - pad - c.TextWidth(a.phoneFanatLine)
-		c.Label(x, h-24, a.phoneFanatLine, ColTextDim)
+}
+
+// drawPhoneFanatChip draws the small, dim, always-visible "Phone Fanat" chip in
+// the Phone Book page's bottom-right corner, plus the active quip just above it.
+// The CLICK is already handled (and consumed) by claimPhoneFanatClick before the
+// rows draw, so this pass is visual only — the button's return is discarded and
+// can't double-fire (c.clicked is false by now on a chip click). Called only
+// from inside the phone-book branch of drawLobby, so the whole mechanism costs
+// nothing anywhere else and can never leak onto the courtroom or the plain
+// all-servers lobby. Ephemeral — nothing here persists. Alloc-free: the chip
+// label is a fixed string (text-texture cache hit) and the quip only draws while
+// active; the lobby 0-alloc gate stages ScreenLobby WITHOUT phoneBookPage, so
+// the chip never draws in that gate by construction.
+func (a *App) drawPhoneFanatChip(w, h int32) {
+	c := a.ctx
+	chip := phoneFanatChipRect(w, h)
+	// Dim palette: a low-key chip that doesn't compete with the server rows —
+	// dim ink, panel body (matches ColTextDim quip styling below). The click was
+	// already claimed; discard the return so it can't act a second time.
+	_ = c.ButtonCol(chip, "Phone Fanat", ColPanel, ColPanelHi, ColPanelHi, ColTextDim)
+	// The zero-value phoneFanatShownAt keeps this false until the first click, so
+	// no init flag is needed. The quip draws just ABOVE the chip so it never
+	// overlaps it (right-aligned to the chip's right edge).
+	if a.phoneFanatLine != "" && a.now().Sub(a.phoneFanatShownAt) < fanatShowDuration {
+		x := chip.X + fanatChipW - c.TextWidth(a.phoneFanatLine)
+		if x < pad {
+			x = pad // a longer line can't run off the left edge
+		}
+		c.Label(x, chip.Y-18, a.phoneFanatLine, ColTextDim)
 	}
 }

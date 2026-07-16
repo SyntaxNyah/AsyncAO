@@ -210,6 +210,14 @@ func (a *App) drawLobby(w, h int32) {
 	lineH := int32(c.font.Height()) + 3
 	y := listTop - a.lobbyScroll
 	legacyHeaderDrawn := false
+	// "Phone Fanat" chip (Phone Book page only): claim its click BEFORE the rows
+	// draw — the chip sits over the bottom-right corner where a server row can be,
+	// and rows act on c.clicked immediately, so consuming the click here (like
+	// classicEditFence) stops an accidental select/connect from a chip press. The
+	// chip's visual draws later, on top, in drawPhoneFanatChip.
+	if a.phoneBookPage {
+		a.claimPhoneFanatClick(w, h)
+	}
 	for i := range a.servers {
 		e := &a.servers[i]
 		if a.phoneBookPage && !e.Favorite {
@@ -300,11 +308,11 @@ func (a *App) drawLobby(w, h int32) {
 		}
 	}
 
-	// "Phone Fanat" easter egg: a whimsical bottom-right quip on the Phone Book
-	// page only. Advancing + drawing strictly inside this branch keeps it off
-	// the plain all-servers lobby and out of the rest of the app.
+	// "Phone Fanat" chip: a small, dim, always-visible click-to-quip button in the
+	// bottom-right of the Phone Book page only. Drawing strictly inside this branch
+	// keeps it off the plain all-servers lobby and out of the rest of the app.
 	if a.phoneBookPage {
-		a.advancePhoneFanat(w, h)
+		a.drawPhoneFanatChip(w, h)
 	}
 
 	// Transient warning banner (bottom of the lobby): the app starts here, so
@@ -5007,6 +5015,9 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	if icCounterOn {
 		tailReserve += msgCounterReserve
 	}
+	// SFX picker width — declared up here (not at its draw block below) because the
+	// "Pre" self-sacrifice guard has to price in SFX's demand.
+	const sfxDDW = 92 // SFX dropdown width
 	// "Pre" toggle (AO2-Client ui_pre): send the selected emote's preanimation.
 	// AUTO-FOLLOWS each emote pick (selectEmote), and the user can override until
 	// the next pick. Unchecked forces idle even when the emote defines a preanim
@@ -5018,8 +5029,23 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// wrap-not-extract rule: draws through slotRect, the row cursor advances by the
 	// DEFAULT width so an un-edited bar is pixel-identical and moving it never
 	// cascades the rest. slotRect is alloc-free off the edit path.
-	const preW = 60 // fits the "Pre" checkbox label + box
-	if icBar.W-(icX-icBar.X)-(preW+6) >= tailReserve && !a.panelHidden(slotICPre) {
+	//
+	// Pre sacrifices ITSELF FIRST (v1.63.0+): db5b973 slotted Pre in EARLY (right
+	// after Immediate/Additive), so on bars that previously JUST fit, the later
+	// SFX / emoji / FX buttons dropped to make room for Pre — the FX button
+	// disappeared for users who had it before. Pre now draws only if the row can
+	// still fit EVERYTHING that comes after it: its own preW+6, plus the tail
+	// reserve, plus the demand of each downstream optional that would actually draw
+	// (SFX always attempts; emoji unless hidden; FX always attempts). On a truly
+	// tiny bar Pre drops first here, then the downstream guards (unchanged) still
+	// protect the input by dropping emoji/FX right-to-left. Inlined arithmetic (no
+	// closure) — this row is inside the whole-screen 0-alloc gate.
+	const preW = 60                                            // fits the "Pre" checkbox label + box
+	preTailDemand := tailReserve + (sfxDDW + 4) + (fxBtnW + 4) // SFX + FX always attempt
+	if !a.panelHidden(slotICEmoji) {
+		preTailDemand += fH + 4 // emoji draws too, so Pre must leave its room as well
+	}
+	if icBar.W-(icX-icBar.X)-(preW+6) >= preTailDemand && !a.panelHidden(slotICPre) {
 		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
 		a.icPreanim = c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim)
 		c.Tooltip(preBox, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
@@ -5028,7 +5054,6 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// SFX picker (AO2-style): pick a sound to ride your NEXT message — overrides the
 	// emote's own sound until set back to "auto". Picking one previews it. Placed first
 	// so on a narrow bar it survives longest (the buttons drop right-to-left).
-	const sfxDDW = 92
 	a.ensureSFXChoices()
 	if icBar.W-(icX-icBar.X)-(sfxDDW+4) >= tailReserve {
 		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)

@@ -508,11 +508,31 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if pr, ownPre := lay.rect("asyncao_ic_pre"); ownPre {
 			a.icPreanim = c.Checkbox(pr.X, pr.Y+(pr.H-16)/2, "Pre", a.icPreanim)
 			c.Tooltip(pr, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
-		} else if !a.panelHidden(slotICPre) && fieldW > themedPreW+themedPreKeep {
-			a.icPreanim = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Pre", a.icPreanim)
-			c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedPreW, H: in.H}, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
-			fieldX += themedPreW
-			fieldW -= themedPreW
+		} else if !a.panelHidden(slotICPre) {
+			// Pre sacrifices itself FIRST here too (v1.63.0+): the crammed SFX / emoji /
+			// FX pieces below each eat field width, so an early crammed Pre could starve
+			// the FX button — the same regression as the classic row. Only cram Pre if,
+			// after its themedPreW, the field still leaves room for every downstream
+			// piece that would ALSO cram here (a piece placed at its OWN theme rect
+			// doesn't touch the field, so it costs Pre nothing). Inline (no closure) to
+			// keep this draw path allocation-free. The own-rect Pre branch above is
+			// independent and unchanged.
+			preTailDemand := int32(themedPreKeep) // the field must stay hostable after Pre
+			if _, ownSFX := lay.rect("asyncao_ic_sfx"); !ownSFX {
+				preTailDemand += 92 + 4 // crammed SFX width + gap
+			}
+			if _, ownEmoji := lay.rect("asyncao_ic_emoji"); !ownEmoji && !a.panelHidden(slotICEmoji) {
+				preTailDemand += in.H + 4 // crammed emoji (square, side = field height) + gap
+			}
+			if _, ownFX := lay.rect("asyncao_ic_fx"); !ownFX {
+				preTailDemand += fxBtnW + 4 // crammed FX width + gap
+			}
+			if fieldW-themedPreW >= preTailDemand {
+				a.icPreanim = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Pre", a.icPreanim)
+				c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedPreW, H: in.H}, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
+				fieldX += themedPreW
+				fieldW -= themedPreW
+			}
 		}
 		field := sdl.Rect{X: fieldX, Y: in.Y, W: fieldW, H: in.H}
 		// SFX picker (AO2-style): a sound for your NEXT message, overriding the emote's

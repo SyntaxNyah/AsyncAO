@@ -217,13 +217,12 @@ type App struct {
 	// Favorites URL) of the row currently open for editing — empty = none; the
 	// two working buffers hold the in-progress name/address until Save.
 	pbEditURL, pbEditName, pbEditAddr string
-	// "Phone Fanat" easter egg (phone-book page only): a whimsical quip that
-	// pops bottom-right on a random schedule. phoneFanatNextAt is the next fire
-	// time (zero = not yet scheduled), phoneFanatShownAt stamps the last fire so
-	// the line lingers for fanatShowDuration. Ephemeral — never persisted.
+	// "Phone Fanat" chip (phone-book page only): a dim bottom-right button that
+	// pops a quip when clicked. phoneFanatLine holds the currently-shown line and
+	// phoneFanatShownAt stamps the click so it lingers for fanatShowDuration.
+	// Ephemeral — never persisted.
 	phoneFanatLine    string
 	phoneFanatShownAt time.Time
-	phoneFanatNextAt  time.Time
 	// click-to-expand selection: first click opens the full description
 	// under the row, a second click on the same row joins.
 	selServer  int
