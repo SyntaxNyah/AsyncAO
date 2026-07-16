@@ -1757,6 +1757,72 @@ func TestMissingImmediatePreanimRestoresTalkLoop(t *testing.T) {
 	}
 }
 
+// TestPreanimSettlesOnCollidedBase pins the courtroom half of the preanim-loop
+// fix: even when a character's preanim FILE resolves to the SAME base string as
+// its talk/idle sprite (PreEmote "(b)normal" glues to the talk base "(b)normal" —
+// reachable per frametriggers.go:167-172), the phase machine must still drive the
+// message all the way through: preanim → talk → linger → idle, clearing PlayOnce
+// at each terminator. The render's told-to-loop restart guard (viewport.go) is
+// what keeps that collided base from LOOPING as if it were a live preanim; this
+// test locks in that the state machine itself settles regardless of the collision.
+func TestPreanimSettlesOnCollidedBase(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+
+	// PreEmote "(b)normal" == talk emote "(b)"+"normal" → PreanimBase collides with
+	// TalkBase. A short text so the crawl finishes quickly.
+	msg := &protocol.ChatMessage{
+		CharName: "Phoenix",
+		Emote:    "normal",
+		PreEmote: "(b)normal",
+		Side:     "wit",
+		Message:  "hi",
+		EmoteMod: protocol.EmoteModPreanim, // blocking preanim
+	}
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+
+	// Precondition: the collision actually holds, and we're blocking on the preanim.
+	if room.Scene.Speaker.PreanimBase != room.Scene.Speaker.TalkBase {
+		t.Fatalf("test setup: preanim base %q must collide with talk base %q",
+			room.Scene.Speaker.PreanimBase, room.Scene.Speaker.TalkBase)
+	}
+	if room.Phase() != PhasePreanim || !room.Scene.Speaker.PlayOnce {
+		t.Fatalf("phase = %v playOnce = %v, want blocking preanim", room.Phase(), room.Scene.Speaker.PlayOnce)
+	}
+
+	// The preanim completes → the machine must leave PhasePreanim, clear PlayOnce,
+	// and land the (collided) talk base — never freeze in PhasePreanim.
+	room.NotifyPreanimDone()
+	room.Update(time.Millisecond)
+	if room.Phase() != PhaseTalking {
+		t.Fatalf("phase after preanim done = %v, want talking (must settle despite the collision)", room.Phase())
+	}
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("PlayOnce must clear when the preanim ends, even on a collided base")
+	}
+	if room.Scene.Speaker.Active != room.Scene.Speaker.TalkBase {
+		t.Errorf("active = %q, want the talk base %q", room.Scene.Speaker.Active, room.Scene.Speaker.TalkBase)
+	}
+
+	// The text finishes → linger → idle, still with PlayOnce cleared and the idle
+	// base active. Advance past the text crawl and the text-stay linger.
+	room.Typewriter.SkipToEnd()
+	room.Update(time.Millisecond) // text done → enterLinger
+	if room.Phase() != PhaseLinger {
+		t.Fatalf("phase after text done = %v, want linger", room.Phase())
+	}
+	if room.Scene.Speaker.Active != room.Scene.Speaker.IdleBase || room.Scene.Speaker.PlayOnce {
+		t.Errorf("linger active = %q playOnce = %v, want idle base + PlayOnce false",
+			room.Scene.Speaker.Active, room.Scene.Speaker.PlayOnce)
+	}
+	room.Update(DefaultTextStayTime + time.Millisecond) // linger elapses → idle
+	if room.Phase() != PhaseIdle {
+		t.Errorf("phase after linger = %v, want idle (machine fully settled)", room.Phase())
+	}
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("PlayOnce must remain cleared at idle")
+	}
+}
+
 // TestMissingPreanimLearnedDuringShoutSkipsPhase: begin() prefetches the
 // preanim while the interjection bubble still holds the stage, so the miss
 // can land mid-shout. enterAfterShout must then skip the preanim hijack

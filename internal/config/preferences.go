@@ -1113,6 +1113,13 @@ type AssetPreferences struct {
 	// MentionSelf treats your character name / showname as a callword (#203); OFF
 	// by default. Powers the "alert me when someone says my name" behaviour.
 	MentionSelf bool `json:"mentionSelf"`
+	// LoopPreanim keeps a preanimation WRAPPING while it stays on stage instead of
+	// playing once and settling (OFF by default). This is DELIBERATELY
+	// NON-CANONICAL — AO2-Client plays preanims strictly play-once
+	// (animationlayer.cpp forces setPlayOnce(true) for PreEmote) — so it defaults
+	// OFF and the shipped behaviour matches AO2. Message timing is unchanged either
+	// way (the render fires preanim-done exactly once regardless).
+	LoopPreanim bool `json:"loopPreanim"`
 	// ICTimestamps prefixes each IC log line with its local arrival time (OFF by default).
 	ICTimestamps bool `json:"icTimestamps"`
 	// AutoReconnect auto-retries the last server after an unexpected drop (ON by default).
@@ -1259,6 +1266,7 @@ type prefsJSON struct {
 	FriendOSToast          bool             `json:"friendOSToast"`              // default OFF
 	CallwordOSToast        bool             `json:"callwordOSToast"`            // #M4 default OFF
 	MentionSelf            bool             `json:"mentionSelf"`                // #203 default OFF
+	LoopPreanim            bool             `json:"loopPreanim"`                // default OFF (non-canonical)
 	FriendGlowPulse        bool             `json:"friendGlowPulse"`            // default OFF
 	FriendSound            bool             `json:"friendSound"`                // default OFF
 	FriendSoundFile        string           `json:"friendSoundFile"`
@@ -1945,6 +1953,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.FriendOSToast = onDisk.FriendOSToast
 	p.CallwordOSToast = onDisk.CallwordOSToast
 	p.MentionSelf = onDisk.MentionSelf
+	p.LoopPreanim = onDisk.LoopPreanim
 	p.FriendGlowPulse = onDisk.FriendGlowPulse
 	p.FriendSound = onDisk.FriendSound
 	p.FriendSoundFile = onDisk.FriendSoundFile
@@ -2979,6 +2988,26 @@ func (p *AssetPreferences) SetMentionSelf(on bool) {
 		return
 	}
 	p.MentionSelf = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// LoopPreanimOn reports the "loop preanimations" toggle (OFF by default). ON =
+// preanims wrap while on stage; OFF (canonical, matching AO2) plays them once.
+func (p *AssetPreferences) LoopPreanimOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.LoopPreanim
+}
+
+// SetLoopPreanim toggles the non-canonical looping-preanimation behaviour.
+func (p *AssetPreferences) SetLoopPreanim(on bool) {
+	p.mu.Lock()
+	if p.LoopPreanim == on {
+		p.mu.Unlock()
+		return
+	}
+	p.LoopPreanim = on
 	p.mu.Unlock()
 	p.markDirty()
 }

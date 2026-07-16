@@ -6412,6 +6412,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)
 		a.d.Viewport.SetThumbSprites(a.d.Prefs.ThumbCacheOn())                                         // opt-in low-q thumbnail stand-ins on the cold miss path
 		a.d.Viewport.SetCrossfade(a.crossfadeDur())                                                    // speaker-swap blend (0 = off; zeroed under Reduce motion)
+		a.d.Viewport.SetPreanimLoop(a.d.Prefs.LoopPreanimOn())                                         // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
 		a.d.Viewport.SetWeather(render.Weather(a.d.Prefs.WeatherType()), a.d.Prefs.WeatherIntensity()) // #124 ambient weather
 		a.d.Viewport.Update(&a.room.Scene, dt)
@@ -6424,6 +6425,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.splitVP.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())
 			a.splitVP.SetThumbSprites(a.d.Prefs.ThumbCacheOn())
 			a.splitVP.SetCrossfade(a.crossfadeDur())
+			a.splitVP.SetPreanimLoop(a.d.Prefs.LoopPreanimOn())
 			a.splitVP.Update(&a.splitRoom.Scene, dt)
 		}
 		// Music ducking: dip music while a message is on stage (shout/preanim/

@@ -190,6 +190,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"audio format", "opus", "ogg", "mp3",
 		"local assets", "local", "mount", "downloader", "download",
 		"cache", "disk cache", "disk", "zstd", "learned formats", "learned", "clear cache",
+		"loop preanim", "preanimation", "preanim loop", "loop preanimations",
 	},
 	tabAudio: {
 		// sections: Volume (master / music / SFX / blip / alert), music ducking,
@@ -2080,6 +2081,14 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	showWarn := a.d.Prefs.AssetWarningsOn()
 	if next := c.Checkbox(pad, y, "Show missing-asset warnings (red banner naming assets that failed to load — off by default)", showWarn); next != showWarn {
 		a.d.Prefs.SetAssetWarnings(next)
+	}
+	y += 28
+
+	// Loop preanimations (OFF by default): non-canonical. AO2 plays a preanim once
+	// and settles into talk/idle; ON keeps it wrapping while it's on stage.
+	loopPre := a.d.Prefs.LoopPreanimOn()
+	if next := c.Checkbox(pad, y, "Loop preanimations (OFF by default): keep a preanim wrapping while it's on stage — AO2 plays them once", loopPre); next != loopPre {
+		a.d.Prefs.SetLoopPreanim(next)
 	}
 	y += 28
 

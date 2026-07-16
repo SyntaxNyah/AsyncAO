@@ -48,6 +48,12 @@ type animState struct {
 	// startReported guards the one-shot OnPreanimStart duration report: set once
 	// the decoded preanim page first plays, cleared by reset on a base change.
 	startReported bool
+	// loopReported guards the ONE OnPreanimDone report when the loop-preanim pref
+	// is ON: the clip's first natural completion fires OnPreanimDone once and sets
+	// this, then subsequent wraps (the pref keeps the preanim looping) never
+	// re-fire it — so the courtroom's message lifecycle is byte-identical to
+	// loop-off. Cleared by reset on a base change (a fresh preanim re-arms).
+	loopReported bool
 	// shownSrc is the SOURCE (un-decimated) frame index last reported through
 	// OnFrameShown for this base — the #17 frame-effect trigger uses it to fire
 	// only when the drawn frame moves to a new source frame. -1 = nothing
@@ -94,6 +100,7 @@ func (a *animState) reset(base string) {
 	a.elapsed = 0
 	a.finished = false
 	a.startReported = false
+	a.loopReported = false
 	a.shownSrc = -1 // nothing reported for the new base yet (frame 0 is a valid trigger)
 	a.page = nil
 	a.pageGen = 0
@@ -132,6 +139,10 @@ func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) 
 	if page == nil || len(page.Frames) <= 1 {
 		if playOnce && !a.finished {
 			// Static "animation": a single frame finishes immediately.
+			// INVARIANT: finished is set ONLY under playOnce (here and at the
+			// last-frame case below). The Update speaker block's "told-to-loop
+			// restart" guard depends on this — a finished layer is always a
+			// one-shot that already completed, never a live idle/talk loop.
 			a.finished = true
 			return true
 		}
@@ -149,6 +160,10 @@ func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) 
 		a.elapsed -= delay
 		if a.frame == len(page.Frames)-1 {
 			if playOnce {
+				// INVARIANT: finished is set ONLY under playOnce (here and the
+				// single-frame case above). The Update speaker block's told-to-loop
+				// restart guard relies on this — never latch finished for a layer
+				// that could later be a looping idle/talk sprite.
 				a.finished = true
 				return true
 			}
@@ -157,6 +172,67 @@ func (a *animState) advance(page *TexturePage, dt time.Duration, playOnce bool) 
 			a.frame++
 		}
 	}
+}
+
+// advanceSpeaker steps the SPEAKER layer's frame timing for this Update and
+// reports whether the courtroom's OnPreanimDone should fire (a one-shot preanim
+// just completed). It wraps the raw advance() with two coordinated behaviours:
+//
+//	(1) Told-to-loop restart guard (the preanim-loop BUG fix). A finished one-shot
+//	    (a preanim, finished latched on its last frame) that is now told to LOOP
+//	    (playOnce=false) restarts as a clean loop instead of freezing on that held
+//	    frame. This only ever triggers on a base COLLISION: the courtroom cleared
+//	    PlayOnce but left Active on the SAME string (PreanimBase == TalkBase/
+//	    IdleBase, reachable per courtroom/frametriggers.go:167-172), so syncAnim
+//	    never reset() and finished still held — the resident preanim page would
+//	    otherwise loop (advance :155 wraps) or stay frozen. On a NON-collided base
+//	    the courtroom changes Active, syncAnim resets finished BEFORE this runs, so
+//	    the guard is a no-op. INVARIANT it relies on: finished is set ONLY under
+//	    playOnce (advance :133-135 and :150-153; see the cross-reference comment at
+//	    each setter) — a genuine idle/talk layer never reaches finished, so it is
+//	    never restarted here and keeps looping normally.
+//
+//	(2) preanimLoop (opt-in "loop preanimations", default OFF, non-canonical). When
+//	    ON and a preanim is playing, phase 1 advances as a one-shot (playOnce=true)
+//	    so it completes ONCE — firing OnPreanimDone exactly once (loopReported
+//	    latches it) so the message lifecycle is byte-identical to loop-off — then
+//	    phase 2 advances as a genuine LOOP (playOnce=false) so the SAME clip keeps
+//	    wrapping (finished stays cleared, so NextAnimDue keeps scheduling the wraps
+//	    and OnPreanimDone can never re-fire) for as long as the courtroom keeps the
+//	    preanim active. With preanimLoop OFF this whole branch is skipped and the
+//	    call is byte-identical to the original advance(page, dt, PlayOnce).
+func (v *Viewport) advanceSpeaker(page *TexturePage, dt time.Duration, playOnce bool) (firePreanimDone bool) {
+	a := &v.speakerAnim
+	if !playOnce && a.finished {
+		// (1) collision handoff: a finished one-shot is now a loop — restart clean.
+		a.finished = false
+		a.frame = 0
+		a.elapsed = 0
+	}
+	if playOnce && v.preanimLoop {
+		if a.loopReported {
+			// (2) phase 2: the first completion already fired OnPreanimDone; keep the
+			// same clip wrapping as a plain loop (finished stays cleared, so
+			// NextAnimDue keeps scheduling the wraps and completion never re-fires).
+			a.advance(page, dt, false)
+			return false
+		}
+		// (2) phase 1: run as a one-shot until it completes, then report ONCE. On the
+		// completing frame, immediately clear the finished latch (and wrap to frame 0)
+		// so the layer is already in loop form for the next Update — leaving finished
+		// latched even one frame would make NextAnimDue stop scheduling and stall the
+		// loop. The frame jump to 0 IS the loop wrapping, which is exactly right.
+		if a.advance(page, dt, true) {
+			a.loopReported = true
+			a.finished = false
+			a.frame = 0
+			a.elapsed = 0
+			return true
+		}
+		return false
+	}
+	// Default (loop OFF): plain one-shot / loop advance, unchanged.
+	return a.advance(page, dt, playOnce) && playOnce
 }
 
 // reportSpeakerFrame fires OnFrameShown with the speaker layer's currently-drawn
@@ -317,6 +393,17 @@ type Viewport struct {
 	// spriteLoadMode and checked FIRST — the correct character at low quality
 	// beats the previous character at full quality.
 	thumbSprites bool
+
+	// preanimLoop (opt-in pref, default OFF) keeps a one-shot preanimation
+	// WRAPPING for as long as the courtroom keeps it the active speaker layer,
+	// instead of holding its last frame once. This is DELIBERATELY NON-CANONICAL:
+	// AO2-Client plays preanims strictly play-once (animationlayer.cpp forces
+	// setPlayOnce(true) for PreEmote), which is why it defaults OFF. OnPreanimDone
+	// still fires EXACTLY ONCE at the first natural completion (loopReported
+	// latches it), so the message lifecycle — text start, wait gates, phase
+	// transitions — is byte-identical to loop-off. The App mirrors the pref here
+	// once per frame (SetPreanimLoop), like the other viewport knobs.
+	preanimLoop bool
 
 	// crossfade (0 = off, the default hard swap) blends a sprite swap: the new
 	// sprite alpha-ramps in over this duration while lastGood draws underneath.
@@ -503,7 +590,7 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 				v.speakerAnim.startReported = true
 				v.OnPreanimStart(pageDuration(page))
 			}
-			if v.speakerAnim.advance(page, dt, scene.Speaker.PlayOnce) && scene.Speaker.PlayOnce {
+			if v.advanceSpeaker(page, dt, scene.Speaker.PlayOnce) {
 				if v.OnPreanimDone != nil {
 					v.OnPreanimDone()
 				}
@@ -995,6 +1082,13 @@ func (v *Viewport) SetThumbSprites(on bool) { v.thumbSprites = on }
 // swap). The App mirrors the pref here per frame and zeroes it under Reduce
 // motion (a fade is motion).
 func (v *Viewport) SetCrossfade(d time.Duration) { v.crossfade = d }
+
+// SetPreanimLoop toggles the opt-in "loop preanimations" behaviour (default OFF,
+// deliberately non-canonical — AO2 plays preanims once). ON keeps a one-shot
+// preanim wrapping while it stays the active layer; OnPreanimDone still fires
+// exactly once so the message lifecycle is unchanged. The App mirrors the pref
+// here once per frame.
+func (v *Viewport) SetPreanimLoop(on bool) { v.preanimLoop = on }
 
 // ThumbKeyPrefix namespaces thumbnail uploads in T1 (like theme:// — a scheme
 // prefix can never collide with an asset URL base). The ui uploads loaded

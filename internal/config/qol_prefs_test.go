@@ -100,6 +100,9 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if p.RainbowSpriteGlowOn() || p.RainbowPairDesyncOn() || p.SpriteSolidTintOn() {
 		t.Error("sprite-FX glow/desync/solid must default OFF")
 	}
+	if p.LoopPreanimOn() {
+		t.Error("LoopPreanim must default OFF (canonical AO2 plays preanims once)")
+	}
 }
 
 // TestExportOptionsDefaultsAndPersist pins the scene-export (GIF/WebP) settings:
@@ -760,6 +763,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetMusicHistory(false)         // same absent-default-ON pointer
 	p.SetMusicStreaming(false)       // same absent-default-ON pointer — explicit OFF must survive
 	p.SetRainbowSprites(true)        // default-OFF plain bool — must survive as true
+	p.SetLoopPreanim(true)           // default-OFF plain bool — must survive as true
 	p.SetShowRecordButton(true)      // default-OFF plain bool
 	p.SetShowFriendButton(false)     // default-ON *bool — explicit false must survive
 	p.SetDragLayout(false)           // default-ON *bool — explicit false must survive
@@ -822,6 +826,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if !q.RainbowSpritesOn() {
 		t.Error("RainbowSprites=true lost across reload")
+	}
+	if !q.LoopPreanimOn() {
+		t.Error("LoopPreanim=true lost across reload (default-OFF plain bool must persist an explicit ON)")
 	}
 	if !q.ShowRecordButtonOn() {
 		t.Error("ShowRecordButton=true lost across reload")

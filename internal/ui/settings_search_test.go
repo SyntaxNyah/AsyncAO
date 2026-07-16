@@ -23,6 +23,8 @@ func TestSettingsSearchMatch(t *testing.T) {
 		{"zstd", tabAssets},
 		{"download", tabAssets},
 		{"cache", tabAssets},
+		{"loop preanim", tabAssets},
+		{"preanimation", tabAssets},
 		{"window", tabGeneral},
 		{"dyslexia", tabGeneral},
 		{"sprite style", tabGeneral},
