@@ -1104,7 +1104,8 @@ const oocWrapMaxLinesPerEntry = 24
 // rebuilds happen on new messages or resizes, never per frame.
 func (a *App) oocWrapped(width int32) []string {
 	streamer := a.d.Prefs.StreamerMode()
-	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq && a.oocWrapGen == a.ctx.fontChainGen &&
+	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq && a.oocWrapEpoch == a.logViewEpoch &&
+		a.oocWrapGen == a.ctx.fontChainGen &&
 		a.oocWrapW == width && a.oocWrapPct == a.oocPct && a.oocWrapMask == streamer {
 		return a.oocWrap
 	}
@@ -1175,6 +1176,7 @@ func (a *App) oocWrapped(width int32) []string {
 	}
 	a.oocWrap, a.oocWrapName, a.oocWrapURL, a.oocWrapCont, a.oocWrapSrc = out, name, urls, cont, src
 	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.oocPct, streamer
+	a.oocWrapEpoch = a.logViewEpoch
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out
 }
@@ -1223,7 +1225,8 @@ const icWrapMaxLinesPerEntry = 16
 // (log seq, query, width, font scale) — rebuilds on new messages,
 // searches, and resizes, never per frame.
 func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
-	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapQuery == a.logSearch &&
+	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
+		a.icWrapQuery == a.logSearch &&
 		a.icWrapW == width && a.icWrapPct == a.logPct && a.icWrapGen == a.ctx.fontChainGen &&
 		a.icWrapStamp == showStamps {
 		return a.icWrap
@@ -1257,6 +1260,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	}
 	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen, a.icWrapStamp =
 		out, a.icLogSeq, a.logSearch, width, a.logPct, a.ctx.fontChainGen, showStamps
+	a.icWrapEpoch = a.logViewEpoch
 	return out
 }
 
@@ -1330,7 +1334,8 @@ func wrapToWidth(font *ttf.Font, text string, maxW int32, maxLines int) []string
 // visible the per-frame cost is two comparisons instead of a 1024-line
 // scan plus a slice allocation.
 func (a *App) icLogFiltered() []int {
-	if a.icFilter != nil && a.icFilterSeq == a.icLogSeq && a.icFilterQuery == a.logSearch {
+	if a.icFilter != nil && a.icFilterSeq == a.icLogSeq && a.icFilterEpoch == a.logViewEpoch &&
+		a.icFilterQuery == a.logSearch {
 		return a.icFilter
 	}
 	out := a.icFilter[:0]
@@ -1344,6 +1349,7 @@ func (a *App) icLogFiltered() []int {
 		out = []int{} // non-nil marks the cache as populated
 	}
 	a.icFilter, a.icFilterSeq, a.icFilterQuery = out, a.icLogSeq, a.logSearch
+	a.icFilterEpoch = a.logViewEpoch
 	return out
 }
 

@@ -770,6 +770,29 @@ func (v *Viewport) syncAnimSticky(a *animState, base string) {
 	}
 }
 
+// RebindScenery force-binds the background/desk layers to a new scene's bases,
+// BYPASSING syncAnimSticky's residency gate. The sticky gate exists to hold the
+// last good scenery through a position flip WITHIN one session (the new base is
+// still streaming) — but that same "keep the old base until the new one is
+// resident" behaviour leaks across a TAB SWITCH: the shared viewport would keep
+// painting the previous server's background under the newly-activated tab until
+// its own bg happened to load (the reported "both tabs show the same background"
+// bug). buildRoom calls this on a room rebuild so the swap shows the CORRECT new
+// scenery at once — a brief blank of the right base (the held:// bridge / the
+// HIGH-priority prefetch fill it a frame later) beats the WRONG base persisting.
+// Character layers already reset unconditionally (syncAnim, not sticky), which is
+// why speakers restored correctly while scenery did not. Cheap, allocation-free
+// (reset only precomputes the thumb/held keys); a no-op when the bases already
+// match, so re-entering the same room never thrashes.
+func (v *Viewport) RebindScenery(bgBase, deskBase string) {
+	if v.bgAnim.base != bgBase {
+		v.bgAnim.reset(bgBase)
+	}
+	if v.deskAnim.base != deskBase {
+		v.deskAnim.reset(deskBase)
+	}
+}
+
 // Render draws the scene layers in AO order: background → characters (pair
 // z-order) → desk → shout bubble. Chat box and text render UI-side.
 // Screenshake jitters the whole stage rect; the realization flash paints

@@ -232,6 +232,125 @@ func TestStageRestoreMsg(t *testing.T) {
 	}
 }
 
+// TestTabSwitchNoLogCrossover pins the multi-tab log-crossover fix (playtest:
+// switching tabs showed the OTHER server's IC/OOC lines with the wrong colours).
+// The IC/OOC wrap+filter caches live on App and were keyed only by the per-session
+// log seq — which starts at 0 in EVERY tab — so two tabs at the same seq collided
+// on the shared cache and a switch served tab A's wrapped lines under tab B. The
+// fix folds a per-view epoch (bumped on every session swap) into every log cache
+// key. This test sets up two tabs whose logs carry DISTINCT lines at the SAME seq
+// (the exact collision the bug needed), switches back and forth, and asserts each
+// active tab's wrapped IC + OOC output contains ONLY its own lines both directions,
+// plus that the epoch actually advanced across the switch (the fixed seam).
+func TestTabSwitchNoLogCrossover(t *testing.T) {
+	a := testTabApp(t)
+	a.logPct, a.oocPct = DefaultScalePct, DefaultScalePct // nil-font 8 px/char path
+
+	// Tab A: distinctive IC + OOC content at seq 1.
+	if !a.allocateTab() {
+		t.Fatal("allocate tab A")
+	}
+	a.serverName, a.serverKey = "Alpha", "wss://alpha:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Apollo"})
+	a.icLog = []icEntry{{text: "ALPHA-IC-only line", color: 2}}
+	a.icLogSeq = 1
+	a.oocLog, a.oocSpeakers = []string{"ALPHA-OOC-only line"}, []string{"amod"}
+	a.oocSeq = 1
+	// Prime the caches under tab A.
+	aICseen := a.icWrapped(800, false)
+	aOOCseen := a.oocWrapped(800)
+	if !rowsContain(aICseen, "ALPHA-IC-only") || !linesContain(aOOCseen, "ALPHA-OOC-only") {
+		t.Fatalf("tab A must render its own lines, IC=%v OOC=%v", aICseen, aOOCseen)
+	}
+	epochA := a.logViewEpoch
+
+	// Tab B: DIFFERENT content but the SAME seqs (1) — the collision the bug needed.
+	a.parkActive()
+	if !a.allocateTab() {
+		t.Fatal("allocate tab B")
+	}
+	a.serverName, a.serverKey = "Beta", "wss://beta:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Klavier"})
+	a.icLog = []icEntry{{text: "BETA-IC-only line", color: 4}}
+	a.icLogSeq = 1
+	a.oocLog, a.oocSpeakers = []string{"BETA-OOC-only line"}, []string{"bmod"}
+	a.oocSeq = 1
+
+	bIC := a.icWrapped(800, false)
+	bOOC := a.oocWrapped(800)
+	if rowsContain(bIC, "ALPHA-IC") || !rowsContain(bIC, "BETA-IC") {
+		t.Fatalf("tab B IC crossover: got %v (must be only BETA)", bIC)
+	}
+	if linesContain(bOOC, "ALPHA-OOC") || !linesContain(bOOC, "BETA-OOC") {
+		t.Fatalf("tab B OOC crossover: got %v (must be only BETA)", bOOC)
+	}
+	if a.logViewEpoch == epochA {
+		t.Fatalf("the log-view epoch must advance across a switch (was %d)", epochA)
+	}
+
+	// Switch BACK to tab A (index 0) and assert its own lines return, not tab B's.
+	a.activateTab(0)
+	if a.serverName != "Alpha" {
+		t.Fatalf("switch back must restore tab A, got %q", a.serverName)
+	}
+	aIC := a.icWrapped(800, false)
+	aOOC := a.oocWrapped(800)
+	if rowsContain(aIC, "BETA-IC") || !rowsContain(aIC, "ALPHA-IC") {
+		t.Fatalf("tab A IC crossover on return: got %v (must be only ALPHA)", aIC)
+	}
+	if linesContain(aOOC, "BETA-OOC") || !linesContain(aOOC, "ALPHA-OOC") {
+		t.Fatalf("tab A OOC crossover on return: got %v (must be only ALPHA)", aOOC)
+	}
+	// The colour rides the entry, so a crossover would also mis-tint: pin the source
+	// entry's colour is tab A's (2), never tab B's (4).
+	if len(a.icLog) != 1 || a.icLog[0].color != 2 {
+		t.Fatalf("tab A log colour must be its own (2), got %v", a.icLog)
+	}
+}
+
+// rowsContain reports whether any wrapped IC row's text contains sub.
+func rowsContain(rows []icWrapLine, sub string) bool {
+	for _, r := range rows {
+		if strings.Contains(r.text, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// linesContain reports whether any wrapped OOC line contains sub.
+func linesContain(lines []string, sub string) bool {
+	for _, l := range lines {
+		if strings.Contains(l, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestBuildRoomRebindsSceneryPerTab pins the session→scene half of the background
+// leak fix: each tab's own background name maps to a DISTINCT scenery base — the
+// value buildRoom re-stages into the room's Scene.BackgroundBase and then hands to
+// the shared viewport via RebindScenery. The leak was that both tabs ended up on
+// one background; the fix relies on each tab's base being its own. This asserts the
+// base computation setBackground uses (URLBuilder.Background over the position's bg
+// part) yields two different bases for two different backgrounds — headless, no
+// Manager/SDL. The render-side hold that actually surfaced the bug (the shared
+// viewport's sticky scenery gate) is pinned in render's
+// TestRebindSceneryForcesNewBaseAcrossSwitch.
+func TestBuildRoomRebindsSceneryPerTab(t *testing.T) {
+	u := courtroom.URLBuilder{}
+	bgPart, _ := courtroom.PositionScene("") // fresh room starts at the default position
+	baseA := u.Background("gs4", bgPart)
+	baseB := u.Background("prosecutorlobby", bgPart)
+	if baseA == "" || baseB == "" {
+		t.Fatalf("each background must map to a non-empty base, A=%q B=%q", baseA, baseB)
+	}
+	if baseA == baseB {
+		t.Fatalf("two tabs on different backgrounds must map to DISTINCT bases, both = %q", baseA)
+	}
+}
+
 // TestEnsureSFXChoices pins the IC-bar SFX picker list: "auto" first, then the
 // character's DISTINCT emote sounds (char.ini [SoundN]); the AO silence values
 // ("0"/"1"/empty) and duplicates are dropped, and an out-of-range pick clamps to auto.

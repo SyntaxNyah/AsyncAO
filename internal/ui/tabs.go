@@ -15,9 +15,14 @@ package ui
 //     background, song, and last IC message (settled — Session.LastIC) from
 //     the reducer, so tabbing back shows the stage a live watcher would have
 //     ended on even when messages landed off screen.
-//   - The caches keyed by per-session sequence numbers (IC filter/wrap,
-//     OOC wrap, chat raster) stay App-global: a tab switch changes the
-//     keys, so they self-heal as ordinary misses.
+//   - The log caches (IC filter/wrap, OOC wrap, split wrap) stay App-global,
+//     keyed by the per-session log seq PLUS a per-view epoch (logViewEpoch /
+//     splitPinEpoch, bumped on every session swap). The seq alone was NOT
+//     enough: it starts at 0 in every tab, so two tabs at the same seq
+//     collided on the shared cache and a switch served one tab's wrapped/
+//     coloured lines under another (the log-crossover bug). The epoch makes a
+//     switch a guaranteed miss; the chat-message raster instead parks in
+//     sessionState (msRaster), so it rides the tab move directly.
 //   - Per-server caches (T1/T2/T3) need nothing: keys are full URLs, so
 //     three servers' assets already live in disjoint key space.
 
@@ -235,6 +240,13 @@ func (a *App) activateTab(i int) {
 	t.state = sessionState{}
 	t.unread = 0
 	a.activeTab = i
+	// The restored session promotes its OWN log seqs (which resumed from where the
+	// tab parked) into App; bump the log-view epoch so the shared IC/OOC wrap+filter
+	// caches key on this fresh view and can't serve the just-parked tab's lines under
+	// it. parkActive already bumped once via resetSessionState; this second bump
+	// makes the restored view distinct from its previous incarnation too, so a rapid
+	// A→B→A round-trip never lands on a stale cache. See the logViewEpoch field doc.
+	a.logViewEpoch++
 	a.warnLine = "" // warnings are per-session context
 	// Field undo histories are keyed by field ID, not by tab — wipe them on a
 	// switch so one session's drafts can't resurface (or read as "external
@@ -862,6 +874,14 @@ func (a *App) resetSessionState() {
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change
 	// (park/disconnect/connect) would highlight stale lines in a different tab's log.
 	a.logSelActive, a.logSelDragging = false, false
+	// Bump the log-view epoch so the shared IC/OOC wrap+filter caches can't serve
+	// the outgoing session's wrapped/coloured lines to the incoming one: their keys
+	// carry the per-session log seq, which both start at 0 in every tab, so without
+	// a fresh epoch a matching seq would be a cross-tab false hit (the log-crossover
+	// bug). Bumped on every session swap (park/disconnect/new); activateTab bumps
+	// again when it installs a restored session so its view is distinct from its
+	// previous incarnation too.
+	a.logViewEpoch++
 	// Same for the field undo histories (Ctx, keyed by field ID): a fresh
 	// session must not inherit — or Ctrl+Z back into — another session's drafts.
 	if a.ctx != nil {

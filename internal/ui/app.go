@@ -301,16 +301,29 @@ type App struct {
 	// previewEmoteRes carries a previewed character's parsed emote list for
 	// the try-before-wear cycle (parsed off-thread, key+char guarded).
 	previewEmoteRes chan previewEmoteFetch
+	// logViewEpoch identifies WHICH tab's session is currently promoted into
+	// App, folded into every log-derived cache key below (filter, IC wrap, OOC
+	// wrap, split wrap). The per-session log seqs (icLogSeq/oocSeq) both start at
+	// 0 in every tab, so two tabs at the same seq would COLLIDE on the shared
+	// App-global caches — a switch could serve tab A's wrapped/coloured lines under
+	// tab B (the "logs cross over, colours wrong" bug). The epoch bumps on every
+	// session swap (park/activate/reset), so a switch is always a guaranteed cache
+	// MISS instead of a false hit; within a tab it is stable, so steady-frame draws
+	// stay 0-alloc (the caches keep their per-frame purpose). Never key a log cache
+	// by seq alone.
+	logViewEpoch uint64
 	// icLogFiltered cache: rebuilt only when the log or the query moved
 	// (a 1024-line scan + slice alloc per frame otherwise).
 	icFilter      []int
 	icFilterSeq   uint64
+	icFilterEpoch uint64
 	icFilterQuery string
 	// IC wrapped-rows cache (playtest: "make the log break lines
 	// according to its size"): filtered entries wrap to the list width;
 	// rebuilt only when the log, query, width, or font scale moved.
 	icWrap      []icWrapLine
 	icWrapSeq   uint64
+	icWrapEpoch uint64
 	icWrapQuery string
 	icWrapW     int32
 	icWrapPct   int
@@ -318,18 +331,20 @@ type App struct {
 	icWrapStamp bool // ICTimestamps state baked into the wrap (toggling rewraps)
 	// OOC wrapped-lines cache: long entries (MOTDs) wrap instead of
 	// truncating; rebuilt only when the log, width, or font scale moved.
-	// (Like the IC caches above, these stay App-global: their keys carry
-	// the per-tab seq, so a tab switch is just a cache miss.)
-	oocWrap     []string
-	oocWrapName []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
-	oocWrapURL  []string // parallel to oocWrap: the entry's first link on each of its display lines ("" = none) — so a URL the wrap hard-split still opens whole (mirrors icEntry.url)
-	oocWrapCont []bool   // parallel to oocWrap: true = a wrap continuation row (hanging indent); a paragraph's own newline starts a fresh row, not a continuation
-	oocWrapSrc  []int    // parallel to oocWrap: the source oocLog entry index of each display line — link-hover expands within one entry (mirrors icWrapLine.entry), so two ADJACENT distinct messages sharing a URL never merge into one tinted run
-	oocWrapSeq  uint64
-	oocWrapW    int32
-	oocWrapPct  int
-	oocWrapMask bool // streamer-mode masking baked into the cache
-	oocWrapGen  int  // font chain generation baked into the wrap
+	// (App-global like the IC caches above, but keyed by logViewEpoch too so a
+	// tab switch — where both tabs' oocSeq can be equal — is a guaranteed miss,
+	// never a cross-tab false hit; see the logViewEpoch field doc.)
+	oocWrap      []string
+	oocWrapName  []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
+	oocWrapURL   []string // parallel to oocWrap: the entry's first link on each of its display lines ("" = none) — so a URL the wrap hard-split still opens whole (mirrors icEntry.url)
+	oocWrapCont  []bool   // parallel to oocWrap: true = a wrap continuation row (hanging indent); a paragraph's own newline starts a fresh row, not a continuation
+	oocWrapSrc   []int    // parallel to oocWrap: the source oocLog entry index of each display line — link-hover expands within one entry (mirrors icWrapLine.entry), so two ADJACENT distinct messages sharing a URL never merge into one tinted run
+	oocWrapSeq   uint64
+	oocWrapEpoch uint64
+	oocWrapW     int32
+	oocWrapPct   int
+	oocWrapMask  bool // streamer-mode masking baked into the cache
+	oocWrapGen   int  // font chain generation baked into the wrap
 
 	// last missing-asset warning surfaced to the user (spec §4).
 	warnLine string
@@ -905,12 +920,17 @@ type App struct {
 	splitTab  *courtTab
 	splitRoom *courtroom.Courtroom
 	splitVP   *render.Viewport
-	// Pinned-pane chat log: wrapped rows cached by (width, pinned log seq) so the
-	// steady-state right-pane render is 0-alloc — rebuilt only when a message lands
-	// or the pane resizes (the pinned "slow chat" rarely changes).
-	splitWrapW    int32
-	splitWrapSeq  uint64
-	splitWrapRows []splitLogRow
+	// Pinned-pane chat log: wrapped rows cached by (width, pinned log seq, pin
+	// epoch) so the steady-state right-pane render is 0-alloc — rebuilt only when a
+	// message lands or the pane resizes (the pinned "slow chat" rarely changes). The
+	// splitPinEpoch bumps on every pin change so re-pinning a DIFFERENT tab whose
+	// icLogSeq happens to equal the last pinned tab's can't serve stale rows (the
+	// same seq-collision class as the main log caches — see logViewEpoch).
+	splitPinEpoch  uint64
+	splitWrapW     int32
+	splitWrapSeq   uint64
+	splitWrapEpoch uint64
+	splitWrapRows  []splitLogRow
 	// The pinned server draws in a free-floating, movable/resizable "second client"
 	// window (clientWin geometry; the floatWin pattern) overlaying the primary —
 	// drag it anywhere, not a fixed split. clientHdr caches the title by server name
@@ -4056,6 +4076,16 @@ func (a *App) buildRoom() {
 	if a.sess.Background != "" {
 		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: a.sess.Background})
 	}
+	// Force the SHARED viewport's scenery layers onto THIS room's background/desk now.
+	// buildRoom runs on a tab switch, and the viewport is App-global: without this the
+	// sticky scenery gate (syncAnimSticky keeps the last good bg until the new one is
+	// resident) would keep painting the PREVIOUS tab's background under the newly-
+	// activated tab (the "both tabs show the same background" bug). Characters already
+	// restore correctly because their layers reset unconditionally (syncAnim); scenery
+	// is the sticky exception, so it needs this explicit rebind at the rebuild seam. A
+	// brief blank of the CORRECT base (the HIGH-priority setBackground prefetch above +
+	// the held:// bridge fill it a frame later) beats the WRONG base persisting.
+	a.d.Viewport.RebindScenery(a.room.Scene.BackgroundBase, a.room.Scene.DeskBase)
 	// Resume the area's current song into the fresh room — symmetric with the background
 	// above. The track was announced (MC) before this room existed (the join handshake, or
 	// a tab reactivation), so without this re-seed the music fell silent on (re)entry while
@@ -4230,6 +4260,11 @@ func (a *App) pinToSplit(t *courtTab) {
 		a.splitVP = render.NewViewport(a.d.Store)
 	}
 	a.splitTab = t
+	// A different tab is now the pinned pane: bump the pin epoch so the split-wrap
+	// row cache (keyed by the pinned session's icLogSeq) can't serve the previously
+	// pinned tab's rows when the new tab's seq happens to match (same seq-collision
+	// class as the main log caches — see logViewEpoch / splitPinEpoch).
+	a.splitPinEpoch++
 	a.splitRoom = courtroom.NewCourtroom(t.state.urls, a.d.Manager, t.state.sess, courtroom.NopAudio{})
 	a.splitVP.OnPreanimDone = a.splitRoom.NotifyPreanimDone
 	a.splitVP.OnPreanimStart = a.splitRoom.NotifyPreanimStarted
@@ -4238,6 +4273,11 @@ func (a *App) pinToSplit(t *courtTab) {
 	if t.state.sess.Background != "" {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: t.state.sess.Background})
 	}
+	// The split viewport is REUSED across pins (created once above), so force its
+	// scenery onto THIS pinned room's background/desk — otherwise the sticky gate
+	// keeps the previously pinned tab's background under the new one (same cross-view
+	// scenery-hold bug the primary viewport had in buildRoom).
+	a.splitVP.RebindScenery(a.splitRoom.Scene.BackgroundBase, a.splitRoom.Scene.DeskBase)
 	if t.state.sess.MusicTrack != "" {
 		a.splitRoom.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: t.state.sess.MusicTrack, Loop: true}) // NopAudio: silent (#15 loop default)
 	}
@@ -4679,8 +4719,8 @@ func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := r.W - 8
-	if wrapW != a.splitWrapW || s.icLogSeq != a.splitWrapSeq {
-		a.splitWrapW, a.splitWrapSeq = wrapW, s.icLogSeq
+	if wrapW != a.splitWrapW || s.icLogSeq != a.splitWrapSeq || a.splitPinEpoch != a.splitWrapEpoch {
+		a.splitWrapW, a.splitWrapSeq, a.splitWrapEpoch = wrapW, s.icLogSeq, a.splitPinEpoch
 		a.splitWrapRows = a.splitWrapRows[:0]
 		for i := range s.icLog {
 			e := &s.icLog[i]
