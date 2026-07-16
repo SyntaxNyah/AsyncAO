@@ -226,3 +226,56 @@ func TestToolboxPiecesPanelClickable(t *testing.T) {
 		t.Fatalf("a fenced pass must NOT toggle %q (this is the bug the move fixed)", firstID)
 	}
 }
+
+// TestToolboxPiecesPanelModalFenced pins the A1 Phase 1 edit-mode contract: while a
+// layout editor is armed its fence sets c.modalOn (classicEditFence/layoutEditFence),
+// and modalOn — unlike ptrFenced — is NOT cleared by the deferred unfencePointer, so
+// hovering() reads false and the pieces panel would draw CLICK-DEAD at the
+// post-courtroom site. The post-court block in app.go therefore releases modalOn
+// around the toolbox draw while editing, then restores it. This test proves both
+// halves: modalOn blanks the checkbox, and clearing it (as app.go does) revives it.
+func TestToolboxPiecesPanelModalFenced(t *testing.T) {
+	ren, cleanup := newCaptureHarness(t)
+	defer cleanup()
+	c, err := NewCtx(ren)
+	if err != nil {
+		t.Skipf("Ctx unavailable: %v", err)
+	}
+	a := testTabApp(t)
+	a.ctx = c
+	a.hidden = map[string]bool{}
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	a.room = &courtroom.Courtroom{}
+	a.toolboxPinned, a.toolboxPieces = true, true
+
+	const w, h = int32(1280), int32(720)
+	panel := a.toolboxPiecesRect(w, h)
+	firstID := hideablePanels[0].id
+	rowX := panel.X + pad + 3
+	rowY := panel.Y + toolboxPiecesHeaderH + 3
+	if a.panelHidden(firstID) {
+		t.Fatalf("test setup: %q should start shown", firstID)
+	}
+
+	// Case 1 (the edit-mode fence): modalOn set (as the editor's fence leaves it) —
+	// the checkbox must NOT toggle, because hovering() is blanked. This is exactly
+	// why a naive "just un-suppress the panel in edit" would ship a dead panel.
+	c.mouseX, c.mouseY = rowX, rowY
+	c.clicked = true
+	c.modalOn = true
+	a.drawToolboxPieces(w, h)
+	c.modalOn = false
+	if a.panelHidden(firstID) {
+		t.Fatalf("with modalOn set (editor fence), the panel must be click-dead — got %q hidden", firstID)
+	}
+
+	// Case 2 (app.go's release path): clear modalOn around the draw, as the
+	// post-courtroom edit block does — the same click must now toggle the piece.
+	c.mouseX, c.mouseY = rowX, rowY
+	c.clicked = true
+	c.modalOn = false // app.go saves+clears modalOn while editing, then restores
+	a.drawToolboxPieces(w, h)
+	if !a.panelHidden(firstID) {
+		t.Fatalf("with modalOn released (app.go edit path), a click must hide %q", firstID)
+	}
+}

@@ -119,7 +119,10 @@ var layoutEditSkip = map[string]bool{
 // draws when the themed path runs to its end.
 func (a *App) startLayoutEdit() {
 	a.layoutEdit = true
-	a.toolboxPinned, a.toolboxPieces = false, false // A1: the editor owns the screen; close the pinned toolbox panel
+	// A1 Phase 1: the compact toolbox (grip + per-piece hide/show panel) now SURVIVES
+	// into the themed editor too — previously the themed editor had NO hide/show list
+	// at all. Leave toolboxPinned/toolboxPieces as the user set them; they draw
+	// post-courtroom with the fence released.
 	a.showIni, a.showEvid, a.showModcall, a.showLogin, a.showPair = false, false, false, false, false
 	a.showModDash, a.banBoxKind, a.showCMPanel = false, 0, false
 	a.showDebugPanel, a.showFxPicker = false, false
@@ -275,10 +278,17 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		c.keyPressed = 0
 	}
 
+	// The compact toolbox (bottom-right grip → Theater / Edit / Hide-UI) draws in the
+	// themed editor too now (post-courtroom, app.go), so a press over its strip or the
+	// open pieces panel must suppress a widget move/reset — else the click would also
+	// grab whatever themed box sits under the bottom-right corner (A1 Phase 1). The
+	// classic editor guards the same way via editOverToolbox.
+	overToolbox := a.editOverToolbox(w, h)
+
 	// Begin a drag on press. RESIZE takes priority and reaches the LARGEST box whose corner grip is
 	// under the cursor — so a big box's grip can't be blocked by a small box sitting on its corner.
 	// Otherwise MOVE the armed box (hoverKey, Tab-cyclable).
-	if pressed && a.editDrag == 0 && c.mouseY > 26 {
+	if pressed && a.editDrag == 0 && c.mouseY > 26 && !overToolbox {
 		resizeKey := ""
 		var gripArea int64 = -1
 		for _, k := range keys {
@@ -303,7 +313,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		}
 	}
 	// Right-click resets the hovered widget to the theme's own rect.
-	if c.rightClicked && hoverKey != "" {
+	if c.rightClicked && hoverKey != "" && !overToolbox {
 		if orig, ok := a.themeRectsOrig[hoverKey]; ok {
 			a.pushLayoutUndo()
 			a.themeRects[hoverKey] = orig

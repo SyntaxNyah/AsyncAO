@@ -703,9 +703,9 @@ type App struct {
 	classicPickIdx int
 	classicPickSig string
 	// classicChromeBot is the bottom Y of the editor's stacked top chrome
-	// (banner + tray + toolbox), recorded by drawClassicToolbox each edit
-	// frame — slot name tags clamp below it so a box parked in the top strip
-	// can't plaster its tag over the editor's own controls.
+	// (banner + tab tray), set to classicTabTrayBot each edit frame — slot name
+	// tags clamp below it so a box parked in the top strip can't plaster its tag
+	// over the editor's own controls.
 	classicChromeBot int32
 	// alignGuides/alignScratch are the editor's per-drag-frame alignment
 	// results and its reusable other-slots buffer (classicalign.go). Editor
@@ -730,12 +730,6 @@ type App struct {
 	// layoutPresetName is the Settings name field for saving the current layout as a
 	// named preset (#34, internal/ui/layoutpresets.go + the Theme settings section).
 	layoutPresetName string
-	// toolboxDrag* track a chip dragged out of the editor toolbox (#27 slice 2b): press
-	// a chip and drag it onto the stage to SHOW that piece; a release without moving is a
-	// plain hide/show toggle. toolboxDragID is "" when no chip drag is active.
-	toolboxDragID    string
-	toolboxDragStart [2]int32
-	toolboxDragMoved bool
 	// A1 — the compact bottom-right toolbox is the single show/hide + editor
 	// surface. toolboxPinned latches the flyout open (press the grip / pin chip);
 	// while pinned, toolboxPieces reveals the in-flyout per-piece hide/show panel
@@ -6487,7 +6481,28 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			// toolboxPinned && toolboxPieces (+ extrasSurfaceLive, matching its fence), so
 			// theater — which clears both flags in setTheater — and blocking modals both
 			// suppress it without a special case here.
-			a.drawToolboxPieces(winW, winH)
+			//
+			// A1 Phase 1: the compact toolbox (grip + chips) and the pieces panel now
+			// survive INTO edit mode too — but the classic/themed editor fence sets
+			// c.modalOn for the whole courtroom pass (classicEditFence/layoutEditFence),
+			// and modalOn (unlike ptrFenced) is NOT cleared by the deferred unfence, so
+			// hovering() would read false here and the toolbox/panel would draw click-dead.
+			// The editor itself uses raw pointIn (it doesn't need modalOn), so release
+			// modalOn just for this toolbox draw, then restore it so downstream
+			// fence assumptions (FinishFrame, palette, tooltips) are undisturbed. Draw
+			// the compact grip/chips HERE while editing (its in-pass draw at
+			// screens.go/theme_layout.go is gated off during edit for the same
+			// fence reason).
+			editingLayout := a.classicEdit || a.layoutEdit
+			if editingLayout {
+				savedModal := a.ctx.modalOn
+				a.ctx.modalOn = false
+				a.drawCompactToolbox(winW, winH)
+				a.drawToolboxPieces(winW, winH)
+				a.ctx.modalOn = savedModal
+			} else {
+				a.drawToolboxPieces(winW, winH)
+			}
 			if a.extrasSurfaceLive() { // torn-off tab panels: live court, no modal, not editing (edit-mode draws them inside drawCourtroom)
 				a.drawTornTabs(winW, winH) // interactive content, fenced by boxFencesPointer (torntabs.go)
 			}

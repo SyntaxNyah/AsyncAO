@@ -6,41 +6,19 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-// Editor toolbox (#27): a single strip in the layout editor listing EVERY hideable UI
-// element as a chip — chrome panels (shouts, knobs, emotes, the tabs, penalty bars,
-// timers, judge controls, …) and the customizable control buttons. A bright/accent
-// chip is SHOWN, a dim chip is HIDDEN; clicking toggles it. This pulls the old "Hide
-// UI pieces" checkbox dialog into the editor itself, so arranging and hiding pieces
-// live in one place (the playtest ask: "one toolbox, not a separate scuffed menu").
-//
-// Slicing (advisor): this is Slice 1 — the unified toggle toolbox. Drag-a-chip-onto-
-// the-stage (show + place) and drag-a-piece-off (hide) come next, reusing the editor's
-// existing overTray drag-release seam. The old separate "Hide UI pieces" dialog
-// (drawUICfgPanel) is RETIRED (A1): its per-piece checkbox list now lives in the
-// pinned pieces panel (drawToolboxPieces), and Theater + the themed Edit-layout entry
-// moved onto the compact bottom-right toolbox chips (which both layouts share).
-
-const (
-	// toolboxChipH / toolboxRowPitch size the wrapped chip grid.
-	toolboxChipH    = 22
-	toolboxRowPitch = toolboxChipH + 6
-	// toolboxTop is the strip's top, just under the tear-off tab tray (which sits at
-	// classicBannerH+8 with a 40 px strip).
-	toolboxTop = int32(classicBannerH + 8 + 40 + 4)
-	// toolboxDragThresh is the manhattan pixel distance a press must travel before it's
-	// a chip DRAG (place on the stage) rather than a click (toggle) — #27 slice 2b.
-	toolboxDragThresh = 4
-)
-
-// toolboxItem is one chip: a hideable id and its short label.
-type toolboxItem struct{ id, label string }
+// Editor toolbox (#27 → A1 Phase 1): the ONE show/hide + editor surface is the compact
+// bottom-right toolbox (grip → Theater / Edit / Hide-UI chips) plus its pinned
+// per-piece hide/show panel (drawToolboxPieces). Both draw in normal play AND in the
+// layout editor now — the old full-width top-band chip strip (drawClassicToolbox) that
+// only existed in the classic editor, and the separate "Hide UI pieces" dialog
+// (drawUICfgPanel), are both RETIRED: per-piece hiding lives entirely in the pinned
+// panel, which is cleaner and reachable in and out of the editor, in both layouts.
 
 // hideableSlot maps a hideable element id → the layout slot the editor positions it
-// through. Only elements WITH a slot are drag show/hide targets (#27 slice 2): you can
-// drag them between the stage and the toolbox. The rest (penalty bars, timers,
-// testimony, judge, extras, the shouts/knobs that live inside the controls block, and
-// the tabs — which the tab tray tears) stay click-toggle only. For the control buttons
-// the hideable id IS the slot key.
+// through. The map records which hideable elements own a movable layout slot (vs. the
+// penalty bars, timers, testimony, judge, extras, the shouts/knobs inside the controls
+// block, and the tabs — which the tab tray tears — that have none). For the control
+// buttons the hideable id IS the slot key.
 var hideableSlot = map[string]string{
 	panelEmotes:       slotEmotes,
 	panelOOC:          slotOOC,
@@ -58,8 +36,8 @@ var hideableSlot = map[string]string{
 }
 
 // hideableForSlot returns the hideable element id a slot key positions, or "" when the
-// slot has no hideable mapping (the viewport, the IC bar, the controls block, …). Used
-// on drag-release to turn "dropped a piece on the toolbox" into a hide.
+// slot has no hideable mapping (the viewport, the IC bar, the controls block, …). The
+// inverse lookup over hideableSlot; pinned by TestHideableForSlot.
 func hideableForSlot(slotKey string) string {
 	for id, sk := range hideableSlot {
 		if sk == slotKey {
@@ -67,143 +45,6 @@ func hideableForSlot(slotKey string) string {
 		}
 	}
 	return ""
-}
-
-// classicToolboxItems gathers the chips for this frame: every chrome panel, plus the
-// control buttons when the new-default toolbar is active (the legacy/themed row draws
-// fixed inline buttons that ignore the hidden set, so a chip there would be a dead
-// toggle — mirrors drawUICfgPanel's showBtnGrid guard).
-func (a *App) classicToolboxItems() []toolboxItem {
-	items := make([]toolboxItem, 0, len(hideablePanels)+len(hideableButtons))
-	for _, p := range hideablePanels {
-		items = append(items, toolboxItem{p.id, p.short})
-	}
-	if !a.d.Prefs.LegacyDevThemeOn() {
-		for _, b := range hideableButtons {
-			items = append(items, toolboxItem{b.id, b.label})
-		}
-	}
-	return items
-}
-
-// drawClassicToolbox paints the show/hide chip strip and toggles a piece on click.
-// Returns whether the cursor is over the strip, so the editor suppresses a slot-move
-// under it (like the tab tray's overTray). Edit-only.
-func (a *App) drawClassicToolbox(w, h int32, pressed bool) bool {
-	c := a.ctx
-	items := a.classicToolboxItems()
-
-	// First pass: wrap the chips to count rows, so the backing strip is sized to fit.
-	rows := int32(1)
-	x := int32(pad)
-	for _, it := range items {
-		cw := c.TextWidth(it.label) + 18
-		if x > pad && x+cw > w-pad {
-			x = pad
-			rows++
-		}
-		x += cw + 6
-	}
-	stripH := 18 + rows*toolboxRowPitch + 4
-	strip := sdl.Rect{X: 0, Y: toolboxTop - 4, W: w, H: stripH}
-	a.classicChromeBot = strip.Y + strip.H // the lowest editor chrome strip: slot tags clamp below it
-	over := pointIn(c.mouseX, c.mouseY, strip)
-	// "Drop here to hide" affordance: while dragging a slotted piece, the strip arms
-	// (greenish) and the heading invites the release (slice 2a drag-to-hide).
-	dropArmed := a.classicEditDrag != 0 && hideableForSlot(a.classicEditKey) != ""
-	stripCol := sdl.Color{R: 0, G: 0, B: 0, A: 205}
-	if dropArmed && over {
-		stripCol = sdl.Color{R: 25, G: 70, B: 30, A: 225}
-	}
-	c.Fill(strip, stripCol)
-	heading := "Show / hide UI pieces (click a chip, or drag one onto the stage to place it):"
-	if dropArmed {
-		heading = "Release here to HIDE " + classicSlotLabel(a.classicEditKey)
-	}
-	c.Label(pad, toolboxTop-2, heading, ColTierYellow)
-
-	// Resolve a chip drag that ended this frame, then track an in-progress one (#27
-	// slice 2b): a release without moving toggles the piece (slice 1); dragging a HIDDEN
-	// chip out onto the stage shows it.
-	if a.toolboxDragID != "" && !c.mouseDown {
-		a.resolveToolboxDrag(over)
-		a.toolboxDragID, a.toolboxDragMoved = "", false
-	}
-	if a.toolboxDragID != "" && c.mouseDown {
-		dx, dy := c.mouseX-a.toolboxDragStart[0], c.mouseY-a.toolboxDragStart[1]
-		if dx < 0 {
-			dx = -dx
-		}
-		if dy < 0 {
-			dy = -dy
-		}
-		if dx+dy > toolboxDragThresh {
-			a.toolboxDragMoved = true
-		}
-	}
-
-	// Second pass: draw the chips + arm a drag on press over one.
-	x = int32(pad)
-	y := toolboxTop + 16
-	dragLabel := ""
-	for _, it := range items {
-		cw := c.TextWidth(it.label) + 18
-		if x > pad && x+cw > w-pad {
-			x = pad
-			y += toolboxRowPitch
-		}
-		chip := sdl.Rect{X: x, Y: y, W: cw, H: toolboxChipH}
-		hidden := a.panelHidden(it.id)
-		bg := ColPanel // hidden → dim
-		if !hidden {
-			bg = ColAccent // shown → filled accent
-		}
-		if a.toolboxDragID == it.id || pointIn(c.mouseX, c.mouseY, chip) {
-			bg = ColPanelHi // hover / grabbed
-		}
-		c.Fill(chip, bg)
-		c.Border(chip, ColAccent)
-		txtCol := ColText
-		if hidden {
-			txtCol = ColTextDim
-		}
-		c.LabelClipped(chip.X+6, chip.Y+3, chip.W-12, it.label, txtCol)
-		if pressed && a.toolboxDragID == "" && pointIn(c.mouseX, c.mouseY, chip) {
-			a.toolboxDragID = it.id
-			a.toolboxDragStart = [2]int32{c.mouseX, c.mouseY}
-			a.toolboxDragMoved = false
-		}
-		if it.id == a.toolboxDragID {
-			dragLabel = it.label
-		}
-		x += cw + 6
-	}
-
-	// Ghost chip trailing the cursor while a chip is dragged out, so you can see what
-	// you're placing on the stage.
-	if a.toolboxDragID != "" && a.toolboxDragMoved && dragLabel != "" {
-		gw := c.TextWidth(dragLabel) + 18
-		ghost := sdl.Rect{X: c.mouseX - gw/2, Y: c.mouseY - toolboxChipH/2, W: gw, H: toolboxChipH}
-		c.Fill(ghost, ColAccent)
-		c.Border(ghost, ColTierYellow)
-		c.LabelClipped(ghost.X+6, ghost.Y+3, ghost.W-12, dragLabel, ColText)
-	}
-	return over
-}
-
-// resolveToolboxDrag finishes a chip drag (#27 slice 2b): a click (no move) toggles the
-// piece; dragging a HIDDEN chip out onto the stage (released off the toolbox) shows it.
-// Dragging a shown chip, or dropping back on the toolbox, is a no-op.
-func (a *App) resolveToolboxDrag(overToolbox bool) {
-	id := a.toolboxDragID
-	hidden := a.panelHidden(id)
-	switch {
-	case !a.toolboxDragMoved:
-		a.setPanelHidden(id, !hidden)
-	case hidden && !overToolbox:
-		a.setPanelHidden(id, false)
-		a.pushDebug("layout: dragged a piece onto the stage → shown")
-	}
 }
 
 // --- compact hover toolbox (#27) ---------------------------------------------------
@@ -405,11 +246,13 @@ func (a *App) compactHideUI() {
 }
 
 // drawCompactToolbox paints the collapsed grip and, while hovered OR pinned, the
-// expanded icon-chip row. Called from the normal-play courtroom (classic +
-// themed); NOT drawn in theater mode, while editing a layout, or when hidden via
-// panelToolbox. A1: the grip is now a press-to-pin latch (click toggles
-// toolboxPinned), the chips draw vector icons, and while the user has never
-// expanded it the collapsed grip wears a faint accent discoverability ring.
+// expanded icon-chip row. In normal play it draws in-pass (classic + themed
+// courtroom); while a layout editor is armed it draws POST-courtroom instead
+// (app.go, fence released) and force-expands so the editor's fence can't blank its
+// grip/chips (A1 Phase 1). NOT drawn in theater mode or when hidden via panelToolbox.
+// A1: the grip is a press-to-pin latch (click toggles toolboxPinned), the chips draw
+// vector icons, and while the user has never expanded it the collapsed grip wears a
+// faint accent discoverability ring.
 func (a *App) drawCompactToolbox(w, h int32) {
 	if a.panelHidden(panelToolbox) {
 		return
@@ -422,17 +265,18 @@ func (a *App) drawCompactToolbox(w, h int32) {
 		W: compactGripW, H: compactGripH,
 	}
 	// Expanded footprint (grip + chips to its left) so the strip stays open while
-	// the cursor is anywhere over a chip, not just the grip. Measured first so the
-	// hover test covers the whole strip. Chips are square (icon-only), so each is
-	// as wide as it is tall.
-	stripW := compactGripW
-	for range compactToolboxChips {
-		stripW += compactChipH + 4
-	}
-	strip := sdl.Rect{X: w - stripW - compactToolboxMargin, Y: grip.Y, W: stripW, H: compactGripH}
+	// the cursor is anywhere over a chip, not just the grip. Factored out
+	// (compactToolboxStripRect) so the editor's over-toolbox suppression rect and
+	// this draw agree — the click-leak class a fence rect that disagrees with the
+	// draw rect invites (mirrors toolboxPiecesRect's reason for existing).
+	strip := a.compactToolboxStripRect(w, h)
 	hoverArea := sdl.Rect{X: grip.X - compactHoverPad, Y: grip.Y - compactHoverPad,
 		W: grip.W + compactHoverPad, H: grip.H + 2*compactHoverPad}
-	expanded := a.toolboxPinned || c.hovering(hoverArea) || c.hovering(strip)
+	// While a layout editor is armed the toolbox draws (post-courtroom, fence
+	// released) as a stable target — it force-expands so its grip/chips are always
+	// reachable to reach Edit/Hide-UI/Theater without hunting for the hover sweet
+	// spot over the busy editor overlay (A1 Phase 1).
+	expanded := a.classicEdit || a.layoutEdit || a.toolboxPinned || c.hovering(hoverArea) || c.hovering(strip)
 
 	if expanded && !a.d.Prefs.ToolboxSeenOn() {
 		// First expand (hover or pin) latches the discoverability flag off so the
@@ -518,6 +362,40 @@ func (a *App) drawCompactToolbox(w, h int32) {
 	// app.go (drawToolboxPieces), where the pointer fence is lifted so its widgets
 	// get real input. Drawing it there also keeps it reachable when the grip itself
 	// is hidden via panelHidden(panelToolbox): the hotkey un-strand path.
+}
+
+// compactToolboxStripRect is the expanded strip's footprint (grip + the icon chips
+// to its left), pinned to the bottom-right. Factored out (A1 Phase 1) so the
+// editor's over-toolbox suppression rect matches the drawn strip exactly — the same
+// draw-vs-fence agreement toolboxPiecesRect keeps. Chips are square (icon-only), so
+// each is as wide as it is tall. Pure geometry, alloc-free.
+func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
+	stripW := compactGripW
+	for range compactToolboxChips {
+		stripW += compactChipH + 4
+	}
+	gripY := h - compactGripH - compactToolboxMargin
+	return sdl.Rect{X: w - stripW - compactToolboxMargin, Y: gripY, W: stripW, H: compactGripH}
+}
+
+// editOverToolbox reports whether the cursor sits over the compact toolbox strip
+// (or, while open, the pinned per-piece panel) during a layout edit — so the
+// classic/themed editors suppress a slot-move/right-click there and the toolbox's
+// own grip/chips win the press instead. Replaces drawClassicToolbox's old
+// `overToolbox` return: the top-band strip is gone, the toolbox is the bottom-right
+// grip both editors now show. Pure hit-test, alloc-free.
+func (a *App) editOverToolbox(w, h int32) bool {
+	c := a.ctx
+	if !a.panelHidden(panelToolbox) && pointIn(c.mouseX, c.mouseY, a.compactToolboxStripRect(w, h)) {
+		return true
+	}
+	// The pinned pieces panel is drawn post-courtroom and takes its own input there,
+	// but it overlaps the bottom-right where slots can park — fence a slot-move under
+	// it too so an editor press can't grab a box beneath the open panel.
+	if a.toolboxPinned && a.toolboxPieces && pointIn(c.mouseX, c.mouseY, a.toolboxPiecesRect(w, h)) {
+		return true
+	}
+	return false
 }
 
 // toolboxPiecesRect is the pinned per-piece panel's screen rect — anchored to

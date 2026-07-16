@@ -107,6 +107,11 @@ const (
 	classicMinPx = 20
 	// classicBannerH is the editor's top banner height (drags stay below it).
 	classicBannerH = 26
+	// classicTabTrayBot is the bottom Y of the editor's stacked top chrome — the
+	// tab tray sits at classicBannerH+8 (top-inset 4) with a 40 px strip
+	// (drawClassicTabTray), so its bottom is classicBannerH + 8 - 4 + 40. Slot name
+	// tags clamp below it (classicChromeBot). Kept in sync with drawClassicTabTray.
+	classicTabTrayBot = int32(classicBannerH + 8 - 4 + 40)
 	// ctrlBlockMinW floors a width-resized control-button block: wide enough
 	// for the widest single button (Disconnect, 110 px) plus its spacing, so
 	// no button can be wrapped into an unreachable zero-width column.
@@ -419,7 +424,10 @@ func classicHandles(r sdl.Rect) [8]sdl.Rect {
 func (a *App) startClassicEdit() {
 	a.ensureClassicOv()
 	a.classicEdit = true
-	a.toolboxPinned, a.toolboxPieces = false, false // A1: the editor owns the screen; close the pinned toolbox panel
+	// A1 Phase 1: the compact toolbox (grip + per-piece hide/show panel) now SURVIVES
+	// into edit mode — it's the clean replacement for the retired top-band chip strip,
+	// so toolboxPinned/toolboxPieces are left as the user set them (they draw
+	// post-courtroom with the fence released; the strip is gone).
 	a.showIni, a.showEvid, a.showModcall, a.showLogin, a.showPair = false, false, false, false, false
 	a.showModDash, a.banBoxKind, a.showCMPanel = false, 0, false
 	a.showDebugPanel, a.showFxPicker = false, false
@@ -628,10 +636,16 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// Pop-out tray (bottom): tear a log tab out into its own movable panel, or
 	// redock it. overTray suppresses a slot-move when you press a chip. (torntabs.go)
 	overTray := a.drawClassicTabTray(w, h)
-	// Show/hide toolbox (#27): chips for every hideable piece, click to toggle. Like
-	// the tab tray, being over it suppresses a slot-move so a chip click can't grab a
-	// box parked beneath the strip.
-	overToolbox := a.drawClassicToolbox(w, h, pressed)
+	// The stacked top chrome now ends at the tab-tray bottom (the full-width toolbox
+	// strip that used to sit under it is retired — A1 Phase 1). Slot name tags clamp
+	// below this so a box parked in the top strip can't plaster its tag over the
+	// editor's own controls (drawSlotTag reads classicChromeBot).
+	a.classicChromeBot = classicTabTrayBot
+	// Compact toolbox (bottom-right grip → Theater / Edit / Hide-UI): it now draws in
+	// edit mode too (post-courtroom, app.go), so a press over its strip or open
+	// pieces panel must suppress a slot-move — else the click would grab whatever box
+	// sits under the bottom-right corner. Mirrors overTray for the top tab tray.
+	overToolbox := a.editOverToolbox(w, h)
 
 	// Slot names this frame, stable order.
 	keys := make([]string, 0, len(a.slotReg))
@@ -843,20 +857,12 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 
 	// Release persists the edit (a no-move click changes nothing — and discards the
-	// begin snapshot so a bare click doesn't leave a no-op on the undo stack).
+	// begin snapshot so a bare click doesn't leave a no-op on the undo stack). The old
+	// "drag a slotted piece onto the toolbox to hide it" gesture is retired with the
+	// top-band strip (A1 Phase 1): per-piece hide/show now lives entirely in the
+	// pinned pieces panel (drawToolboxPieces), which is cleaner and reachable in edit.
 	if a.classicEditDrag != 0 && !c.mouseDown {
-		// Drag-to-hide (#27 slice 2): release a slotted piece over the toolbox to hide it,
-		// dropping its position override so re-showing returns it to the default spot.
-		// Only slotted pieces map (hideableForSlot); everything else saves normally.
-		dropHideID := ""
-		if overToolbox && a.classicEditKey != "" {
-			dropHideID = hideableForSlot(a.classicEditKey)
-		}
 		switch {
-		case dropHideID != "":
-			a.setPanelHidden(dropHideID, true)
-			a.clearClassicSlot(a.classicEditKey)
-			a.pushDebug("layout: dragged " + classicSlotLabel(a.classicEditKey) + " to the toolbox → hidden")
 		case a.classicEditMoved && a.classicEditKey != "":
 			if ov, ok := a.classicOv[a.classicEditKey]; ok {
 				a.d.Prefs.SetClassicSlot(a.classicEditKey, ov)
@@ -993,8 +999,8 @@ func (a *App) drawSlotHandles(r sdl.Rect, key string, col sdl.Color) {
 // never covers the box's own content), tucking it just inside the top edge only when
 // there's no room above. Drawn only for the hovered / active slot, so at most one tag
 // shows at a time — no labels plastered across every box. Tags never enter the
-// editor's stacked top chrome (banner + tray + toolbox, bottom recorded by
-// drawClassicToolbox): a box parked in the top strip gets its tag just BELOW the
+// editor's stacked top chrome (banner + tray, bottom recorded in classicChromeBot =
+// classicTabTrayBot): a box parked in the top strip gets its tag just BELOW the
 // chrome instead of over the hint text and buttons.
 func (a *App) drawSlotTag(r sdl.Rect, key string, col sdl.Color) {
 	c := a.ctx
