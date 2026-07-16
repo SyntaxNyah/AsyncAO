@@ -1007,6 +1007,7 @@ type App struct {
 	musicPct                                 int // music-list font scale, independent of the log so long titles can shrink without shrinking IC
 	areaPct                                  int // areas-list font scale (Ctrl+wheel); mirrors musicPct — on App (global, survives tab switch), NOT sessionState, so it never resets on a session swap
 	modDashPct                               int // mod/CM dashboard list font scale (Ctrl+wheel); mirrors musicPct — on App (global), independent of the log
+	playerPct                                int // Players-tab/pair-popup text zoom (Ctrl+wheel); moved OUT of sessionState to mirror musicPct — session-swap resets silently discarded the zoom (playtest: zoom "didn't work"; the docked tab also needed its own case in the panel scale switch, screens.go)
 	uiScalePct                               int // global renderer scale (manual)
 	// Manual UI-scale slider COMMITS ON RELEASE: applying live rescales the slider
 	// under the cursor (feedback loop → "super hard to use"). These hold the in-drag
@@ -1861,7 +1862,6 @@ type sessionState struct {
 	areaJumpFollowUntil time.Time // hard expiry: a lost/rejected transfer can never pin the scroll past this
 	playerSort          int       // roster sort (players): 0=UID, 1=name, 2=speakers-first
 	playerAreaSort      int       // /gas area-group order: 0=/gas, 1=A→Z, 2=most-populated
-	playerPct           int       // Players-tab text zoom (Ctrl+wheel); starts at the log scale
 	shownameAdd         string    // M6: Settings "save a showname preset" input
 	// playerOrder is the memoized display order (indices into areaPlayers); it
 	// recomputes only when the roster, sort mode, or current speaker change, so

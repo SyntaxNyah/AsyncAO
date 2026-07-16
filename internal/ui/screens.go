@@ -2418,6 +2418,8 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		scale = &a.musicPct // the Music tab tunes its own scale
 	case logTabAreas:
 		scale = &a.areaPct // the Areas tab tunes its own scale (the inner drawAreaList zoomWheel then no-ops via wheelTaken — no double-step)
+	case logTabPlayers:
+		scale = &a.playerPct // the Players tab tunes its own scale — without this case the panel handler took Ctrl+wheel into logPct and the inner drawPlayerList zoomWheel never fired (wheelTaken)
 	case logTabOOC:
 		scale = &a.oocPct // the OOC tab resizes OOC text, independent of the IC log
 	}
