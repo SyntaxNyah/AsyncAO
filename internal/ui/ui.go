@@ -1116,6 +1116,10 @@ func (c *Ctx) SetFallbackFonts(data [][]byte) {
 		c.fallbackCover = append(c.fallbackCover, parseCover(d)) // cmap face for the PICK
 	}
 	c.fontChainGen++ // force every fontSet to rebuild with the fallbacks included
+	// Emoji rasters bake per-rune coverRunes picks (and cached-nil "nothing to
+	// add" verdicts) from the OLD chain — purge so a mixed-script label re-routes
+	// through the new faces next frame instead of staying tofu until restart.
+	c.purgeEmojiCache()
 }
 
 // SetCJKFonts installs the CJK tier (Han/Kana + Hangul faces) read off-thread; mirrors
@@ -1131,6 +1135,7 @@ func (c *Ctx) SetCJKFonts(data [][]byte) {
 		c.cjkCover = append(c.cjkCover, parseCover(d))
 	}
 	c.fontChainGen++
+	c.purgeEmojiCache() // same as SetFallbackFonts: baked coverRunes picks are chain-stale
 }
 
 // EmojiFont returns the color-emoji fallback face at pct percent (the chat/log

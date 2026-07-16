@@ -116,8 +116,14 @@ func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) 
 	// No emoji face AND every rune covered by primary → nothing this raster can add;
 	// degrade to the single-font path (the caller tofus the emoji until the face lands),
 	// exactly as before. A mixed-script run (textFonts differ) still builds.
+	// The nil is CACHED: uncached, every visible emoji label re-ran []rune +
+	// coverRunes per frame while the colour-emoji face wasn't loaded — the IC
+	// bar's 🙂 button leaked exactly 1 alloc/frame into the whole-screen gate.
+	// Self-invalidating: the key embeds the emoji-face pointer (nil→face is a
+	// new key) and SetEmojiFont/SetFallbackFonts/SetCJKFonts/purgeTextCache all
+	// purge this cache when the underlying faces change.
 	if emoji == nil && allSameFont(textFonts, primary) {
-		return nil
+		return c.cacheEmojiRaster(key, nil)
 	}
 	// Swap the per-rune faces + the emoji face to their device siblings. The
 	// emoji device size follows the primary's per-element pct (the emoji face was
@@ -140,8 +146,18 @@ func (c *Ctx) emojiRaster(text string, col sdl.Color, primary, emoji *ttf.Font) 
 	spans := []render.ColorSpan{{Len: len(runes), Color: col}}
 	m, err := render.RasterizeFallback(c.Ren, devFonts, devEmoji, text, spans, emojiNoWrap, dev)
 	if err != nil || m == nil {
-		return nil
+		// A failed build is cached as nil too — with these exact faces it fails
+		// deterministically, and retrying every frame is the same per-frame-alloc
+		// trap as the unloaded-face case above. Any face change purges the entry.
+		return c.cacheEmojiRaster(key, nil)
 	}
+	return c.cacheEmojiRaster(key, m)
+}
+
+// cacheEmojiRaster records a build outcome for key — INCLUDING nil (no emoji
+// face yet / build failed), so a degraded label costs a map hit per frame, not
+// a rebuild. purgeEmojiCache nil-guards, so negative entries purge safely.
+func (c *Ctx) cacheEmojiRaster(key emojiKey, m *render.MessageRaster) *render.MessageRaster {
 	if c.emojiCache == nil {
 		c.emojiCache = make(map[emojiKey]*render.MessageRaster, 16)
 	} else if len(c.emojiCache) >= emojiRasterMax {
