@@ -170,7 +170,7 @@ func (a *App) drawReplayChapters(stage sdl.Rect, w int32) {
 		if a.replayIdx > ch.idx {
 			cur = "·" // already passed — a subtle progress tick
 		}
-		c.LabelClipped(r.X+4, r.Y+3, r.W-8, cur+" "+ch.label, ColText)
+		a.labelName(r.X+4, r.Y+3, r.W-8, cur+" "+ch.label, ColText) // CJK-safe (embeds showname / bg / music names)
 		if c.clicked && c.hovering(r) {
 			a.replayJumpTo(ch.idx)
 			a.replayChaptersOpen = false

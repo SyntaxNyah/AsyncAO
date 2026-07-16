@@ -113,7 +113,7 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 		if strings.EqualFold(a.pmTarget, name) {
 			c.Border(pmR, ColAccent) // active-conversation cue
 		}
-		c.LabelClipped(r.X+6, y+5, bx-r.X-12, disp, nameCol)
+		a.labelName(r.X+6, y+5, bx-r.X-12, disp, nameCol) // CJK-safe friend name
 		y += rowH
 	}
 }
@@ -124,7 +124,7 @@ func (a *App) drawFriendRows(r sdl.Rect, listH int32, names []string) {
 func (a *App) drawPMComposer(box sdl.Rect) {
 	c := a.ctx
 	c.Fill(box, ColPanelHi)
-	c.LabelClipped(box.X+4, box.Y+3, box.W-30, "PM "+a.pmTarget+":", ColAccent)
+	a.labelName(box.X+4, box.Y+3, box.W-30, "PM "+a.pmTarget+":", ColAccent) // CJK-safe PM target
 	if c.Button(sdl.Rect{X: box.X + box.W - 22, Y: box.Y + 2, W: 18, H: 16}, "x") {
 		a.pmTarget, a.pmInput = "", ""
 		return
@@ -329,7 +329,7 @@ func (a *App) drawPMThread(box sdl.Rect) {
 		if ln.fromMe {
 			who, col = "You", ColAccent
 		}
-		c.LabelClipped(box.X+6, y, box.W-12, who+": "+ln.text, col)
+		a.labelName(box.X+6, y, box.W-12, who+": "+ln.text, col) // CJK-safe PM name + body
 		y += lh
 	}
 }

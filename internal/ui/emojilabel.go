@@ -72,6 +72,26 @@ func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string
 	c.popClip(cp, ch)
 }
 
+// labelName draws a user-authored NAME (or short user text) at the CHROME scale with full
+// CJK / non-Latin / emoji fallback, clipped to maxW. It is the drop-in replacement for
+// c.LabelClipped on name surfaces (DM/group thread names + bodies, member/invite rows,
+// DM-peer headers) that previously drew through the single chrome face and so tofu'd
+// Japanese. Plain-ASCII text stays byte-identical: LogFontFor returns the single-font set
+// for ASCII (its len==1 fast path) and labelEmoji's covers()/NeedsEmojiFallback gate keeps
+// it on the exact LabelClippedFont path — no per-frame font work (the memory rule). For
+// non-ASCII, LogFontFor latches the broad/CJK load via noteScript, so the name repaints
+// with real glyphs once the face streams in.
+func (a *App) labelName(x, y, maxW int32, text string, col sdl.Color) {
+	c := a.ctx
+	primary := c.LogFontFor(DefaultScalePct, text) // covering face (+ latches the font load)
+	var emoji *ttf.Font
+	if render.NeedsEmojiFallback(text) {
+		a.ensureEmojiFontLoad()
+		emoji = c.EmojiFont(DefaultScalePct)
+	}
+	a.labelEmoji(primary, emoji, x, y, maxW, text, col)
+}
+
 // icFieldFonts returns the fallback faces for an IC / OOC input box, or (nil, nil) for plain
 // ASCII — so a normal message keeps the field's exact single-font fast path with no per-frame
 // font work. For non-ASCII it kicks the colour-emoji load (NeedsEmojiFallback) and returns a

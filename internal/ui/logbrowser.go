@@ -759,7 +759,7 @@ func (a *App) drawLogList(id string, r sdl.Rect, labels []string, sel int, scrol
 			} else if c.hovering(rr) {
 				c.Fill(rr, ColPanelHi)
 			}
-			c.LabelClipped(rr.X+6, rr.Y+(rowH-14)/2, rowW-12, lab, col)
+			a.labelName(rr.X+6, rr.Y+(rowH-14)/2, rowW-12, lab, col) // CJK-safe (chat-list peer/group names)
 			if c.hovering(rr) && c.clicked {
 				clicked = i
 			}
@@ -836,7 +836,7 @@ func (a *App) drawLogResults(r sdl.Rect, idx []int) {
 				c.LabelClipped(tx, rr.Y+(rowH-14)/2, gutter-10, prefix, ColTextDim)
 				tx += gutter
 			}
-			c.LabelClipped(tx, rr.Y+(rowH-14)/2, rr.X+rr.W-tx-4, ln.text, ColText)
+			a.labelName(tx, rr.Y+(rowH-14)/2, rr.X+rr.W-tx-4, ln.text, ColText) // CJK-safe transcript (showname + message)
 		}
 		rowY += rowH
 	}

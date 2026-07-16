@@ -414,7 +414,8 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			// TAB-LOCAL (like the classic OOC box): the saved default is the
 			// Settings → Identity field only, so a name typed here can't
 			// follow you into other tabs.
-			a.oocName, _ = c.TextField("oocname", nameR, a.oocName, "OOC name")
+			onP, onE := a.icFieldFonts(a.oocName) // CJK-safe OOC name (ASCII stays fast path)
+			a.oocName, _ = c.TextFieldEmoji("oocname", nameR, a.oocName, "OOC name", onP, onE)
 			if name := a.pickNameDropdown("oocpick", sdl.Rect{X: nameR.X + nameR.W + 2, Y: nameR.Y, W: dd, H: nameR.H}); name != "" {
 				a.oocName = name
 			}
@@ -576,7 +577,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			dd = 20
 			nameR.W -= dd + 2
 		}
-		a.shownameOverride, _ = c.TextField("icshownameov", nameR, a.shownameOverride, namePlaceholder)
+		// CJK showname renders as real glyphs while typed (same route as the classic
+		// layout's box and the IC input) — plain ASCII keeps the single-font fast path.
+		snPrimary, snEmoji := a.icFieldFonts(a.shownameOverride)
+		if a.shownameOverride == "" {
+			snPrimary, snEmoji = a.icFieldFonts(namePlaceholder) // route a CJK placeholder too
+		}
+		a.shownameOverride, _ = c.TextFieldEmoji("icshownameov", nameR, a.shownameOverride, namePlaceholder, snPrimary, snEmoji)
 		if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameR.X + nameR.W + 2, Y: nameR.Y, W: dd, H: nameR.H}); name != "" {
 			a.shownameOverride = name
 		}

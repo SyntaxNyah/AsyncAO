@@ -785,7 +785,10 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// used to overwrite names typed in the courtroom on Back.
 	c.Label(pad, y+4, "Showname:", ColText)
 	shown := a.d.Prefs.SavedShowname()
-	if next, _ := c.TextField("showname", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, shown, "your saved showname"); next != shown {
+	// CJK / non-Latin shownames must render as real glyphs while typed here too
+	// (a saved Japanese showname); plain ASCII keeps the single-font fast path.
+	snPrimary, snEmoji := a.icFieldFonts(shown)
+	if next, _ := c.TextFieldEmoji("showname", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, shown, "your saved showname", snPrimary, snEmoji); next != shown {
 		a.d.Prefs.SetShowname(next)
 	}
 	// Default OOC name: write-through to prefs like the showname; it seeds
@@ -793,7 +796,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// fields are tab-local and never write this back.
 	c.Label(pad+390, y+4, "OOC name:", ColText)
 	savedOOC := a.d.Prefs.SavedOOCName()
-	if next, _ := c.TextField("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, savedOOC, "blank = AsyncAO<n>"); next != savedOOC {
+	onPrimary, onEmoji := a.icFieldFonts(savedOOC) // CJK-safe OOC name (ASCII stays fast path)
+	if next, _ := c.TextFieldEmoji("oocdefault", sdl.Rect{X: pad + 480, Y: y, W: 200, H: fieldH}, savedOOC, "blank = AsyncAO<n>", onPrimary, onEmoji); next != savedOOC {
 		a.d.Prefs.SetOOCName(next)
 		a.oocName = next // the ACTIVE tab adopts the new default right away
 	}
@@ -803,7 +807,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	// keybinds (random or a specific one). Cleared only by a factory reset.
 	c.Label(pad, y+4, "Presets:", ColText)
 	var addNow bool
-	a.shownameAdd, addNow = c.TextField("shownameadd", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, a.shownameAdd, "type a name to save…")
+	saP, saE := a.icFieldFonts(a.shownameAdd) // CJK-safe preset entry (ASCII stays fast path)
+	a.shownameAdd, addNow = c.TextFieldEmoji("shownameadd", sdl.Rect{X: pad + 130, Y: y, W: 240, H: fieldH}, a.shownameAdd, "type a name to save…", saP, saE)
 	if c.Button(sdl.Rect{X: pad + 378, Y: y, W: 60, H: btnH}, "Save") || addNow {
 		if a.d.Prefs.AddShownamePreset(a.shownameAdd) {
 			a.shownameAdd = ""
@@ -852,7 +857,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			if strings.EqualFold(active, name) {
 				lbl, col = name+"   ← active", ColTierGreen
 			}
-			c.LabelClipped(pad+194, y+1, 280, lbl, col)
+			a.labelName(pad+194, y+1, 280, lbl, col) // CJK-safe saved preset name
 			y += 24
 		}
 	}

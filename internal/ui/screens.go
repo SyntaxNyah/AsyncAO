@@ -3049,7 +3049,10 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	// TAB-LOCAL: this field used to write the saved default too, so a name
 	// typed here followed you into every other tab (playtest). The permanent
 	// default lives in Settings → Identity.
-	a.oocName, _ = c.TextField("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "OOC name (this tab)")
+	// A CJK OOC name must render as real glyphs while typed (same fallback route as
+	// the IC input); plain ASCII keeps the single-font fast path (icFieldFonts is nil).
+	onPrimary, onEmoji := a.icFieldFonts(a.oocName)
+	a.oocName, _ = c.TextFieldEmoji("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "OOC name (this tab)", onPrimary, onEmoji)
 }
 
 // drawAreaList lists the server's areas; clicking one requests the room
@@ -4945,7 +4948,16 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	if snW < 40 {
 		snW = 40 // floor: never collapse the field into an unclickable sliver
 	}
-	a.shownameOverride, _ = c.TextField("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: nameBox.H}, a.shownameOverride, namePlaceholder)
+	// CJK / non-Latin shownames must render as real glyphs while you TYPE them (a
+	// Japanese showname is first-class), not the chrome font's tofu — the same
+	// TextFieldEmoji + icFieldFonts treatment the IC input below uses. Plain-ASCII
+	// names keep the byte-identical single-font fast path (icFieldFonts is nil for
+	// ASCII). The placeholder is a saved showname, which can itself be CJK.
+	snPrimary, snEmoji := a.icFieldFonts(a.shownameOverride)
+	if a.shownameOverride == "" {
+		snPrimary, snEmoji = a.icFieldFonts(namePlaceholder) // route a CJK placeholder too
+	}
+	a.shownameOverride, _ = c.TextFieldEmoji("icshownameov", sdl.Rect{X: nameBox.X, Y: nameBox.Y, W: snW, H: nameBox.H}, a.shownameOverride, namePlaceholder, snPrimary, snEmoji)
 	if name := a.pickNameDropdown("snpick", sdl.Rect{X: nameBox.X + snW + 2, Y: nameBox.Y, W: snDD, H: nameBox.H}); name != "" {
 		a.shownameOverride = name
 	}

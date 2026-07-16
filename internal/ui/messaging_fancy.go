@@ -175,13 +175,13 @@ func (a *App) drawChatBubbles(box sdl.Rect, n int, lineAt func(i int) (string, s
 		if !mine {
 			nameCol = nameColor(from, msgNameSat, msgNameVal)
 		}
-		c.LabelClipped(bubble.X+6, bubble.Y+2, bubble.W-46, from, nameCol)
+		a.labelName(bubble.X+6, bubble.Y+2, bubble.W-46, from, nameCol) // CJK-safe name
 		if st := msgStamp(at); st != "" {
 			c.Label(bubble.X+bubble.W-c.TextWidth(st)-6, bubble.Y+2, st, ColTextDim)
 		}
 		ty := bubble.Y + 18
 		for _, ln := range lines {
-			c.LabelClipped(bubble.X+6, ty, bubble.W-12, ln, ColText)
+			a.labelName(bubble.X+6, ty, bubble.W-12, ln, ColText) // CJK-safe message body
 			ty += msgBubbleLineH
 		}
 	}

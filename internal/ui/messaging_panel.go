@@ -249,7 +249,7 @@ func (a *App) drawDMView(rx, top, rw, bottom int32) {
 	// Partner's character icon (resolved from the live roster) beside the name.
 	partnerChar := a.rosterCharByName(a.msgSel)
 	a.drawMsgCharIcon(partnerChar, a.msgSel, sdl.Rect{X: rx, Y: hy - 2, W: 22, H: 22})
-	c.LabelClipped(rx+28, hy, rw-28, a.msgSel, nameColor(a.msgSel, msgNameSat, msgNameVal))
+	a.labelName(rx+28, hy, rw-28, a.msgSel, nameColor(a.msgSel, msgNameSat, msgNameVal)) // CJK-safe DM peer
 	hy += 22
 	if a.room != nil {
 		if p, ok := a.room.RemoteProfile(a.msgSel); ok {
@@ -334,7 +334,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if m.uid == a.myUID() {
 			label += "  (you)"
 		}
-		c.LabelClipped(box.X+8+rowH, y+2, box.W-98-rowH, label, nameColor(m.name, msgNameSat, msgNameVal))
+		a.labelName(box.X+8+rowH, y+2, box.W-98-rowH, label, nameColor(m.name, msgNameSat, msgNameVal)) // CJK-safe member
 		if owner && m.uid != a.myUID() {
 			if c.Button(sdl.Rect{X: box.X + box.W - 68, Y: y, W: 62, H: rowH - 2}, "Kick") {
 				a.kickMember(g, m.uid)
@@ -385,7 +385,7 @@ func (a *App) drawGroupManage(g *msgGroup, box sdl.Rect) {
 		if oc := strings.TrimSpace(p.ooc); oc != "" && !strings.EqualFold(oc, disp) {
 			disp += "   ·   OOC: " + oc
 		}
-		c.LabelClipped(tx, y+2, box.X+box.W-80-tx, disp, ColText)
+		a.labelName(tx, y+2, box.X+box.W-80-tx, disp, ColText) // CJK-safe invite name
 		if c.Button(sdl.Rect{X: box.X + box.W - 80, Y: y, W: 74, H: rowH - 2}, "Invite") {
 			a.inviteToGroup(g, uid, name)
 		}

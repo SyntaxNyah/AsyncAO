@@ -1211,7 +1211,8 @@ func (a *App) drawMakerEditor(x, y, w int32) {
 		m.Emote, _ = c.TextField("mk_emote", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.Emote, "sprite stem, e.g. normal or (a)normal")
 		y += 32
 		c.Label(x, y+5, "Showname:", ColText)
-		m.Showname, _ = c.TextField("mk_show", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.Showname, "optional display name (blank = character name)")
+		mkSnP, mkSnE := a.icFieldFonts(m.Showname) // CJK-safe scene showname (ASCII stays fast path)
+		m.Showname, _ = c.TextFieldEmoji("mk_show", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.Showname, "optional display name (blank = character name)", mkSnP, mkSnE)
 		y += 32
 		c.Label(x, y+5, "Text:", ColText)
 		m.Message, _ = c.TextField("mk_text", sdl.Rect{X: fx, Y: y, W: fw, H: fieldH}, m.Message, "what the character says")

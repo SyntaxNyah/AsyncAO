@@ -2561,6 +2561,20 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 		c.popClip(cp, ch)
 		drawn = true
 	}
+	// The PLACEHOLDER (shown empty + unfocused) also tofus on the chrome font for
+	// non-ASCII — e.g. a saved Japanese showname greyed in the empty showname box.
+	// Route it through the same per-glyph raster on an opted-in field (fb.primary !=
+	// nil), keyed by the dim colour so the value/placeholder rasters never collide.
+	// Cached + self-invalidating like the value raster (one map hit/frame, no
+	// per-frame alloc); plain-ASCII placeholders stay on the single-font path.
+	if !drawn && show == placeholder && show != "" && fb.primary != nil && !isASCII(show) {
+		if m := c.emojiRaster(show, col, fb.primary, fb.emoji); m != nil {
+			cp, ch := c.pushClip(sdl.Rect{X: r.X + padX, Y: r.Y, W: avail, H: r.H})
+			m.Draw(c.Ren, m.TotalRunes(), r.X+padX, r.Y+(r.H-m.Height())/2)
+			c.popClip(cp, ch)
+			drawn = true
+		}
+	}
 	if !drawn {
 		if scroll > 0 {
 			// Clip to the field interior so the scrolled-off head doesn't spill left.

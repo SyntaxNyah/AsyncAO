@@ -141,28 +141,96 @@ func (a *App) pollFallbackFont() {
 	}
 }
 
-// cjkFontList picks the CJK faces to load: the FIRST present broad-Han (+ Kana) face,
-// plus Korean malgun for Hangul (the Han faces don't include it — proven by
-// TestFontCoverageMatrix). One Han face (not several — they overlap and are 13-35 MB
-// each) keeps the CJK tier near ~30 MB. os.Stat (disk) — called only off-thread.
+// cjkHanCandidates is the ORDERED Han (+ Kana) face preference, Japanese FIRST. AO2 is a
+// Japanese-origin fandom, so a CJK showname is overwhelmingly Japanese — and the picker
+// takes the FIRST face that covers a rune (pickFont / coverRunes walk the chain in order),
+// so whichever Han face loads first wins Han. The old list put Microsoft YaHei (a CHINESE
+// face) first: present on nearly every box, it covers Han + Kana, so Japanese resolved to
+// YaHei's heavier, Simplified-shaped, uniform-width CJK glyphs — the "monospace-looking
+// legacy face" the user reported. A modern proportional Japanese Gothic (Yu Gothic /
+// Meiryo) must win instead.
+//
+// .ttc note: memFont opens face index 0 (OpenFontRW hardwires index 0). Index 0 of
+// YuGothR.ttc is "Yu Gothic Regular" — already a modern proportional Japanese Gothic (the
+// "Yu Gothic UI" faces live at higher indices in the same collection, but the non-UI face
+// at index 0 is the right modern look and needs no index support we don't have). Meiryo's
+// index 0 is "Meiryo" likewise. So the non-UI family at index 0 is deliberately used.
+var cjkHanCandidates = []string{
+	`C:\Windows\Fonts\YuGothM.ttc`,             // Yu Gothic Medium — modern proportional Japanese (best JP)
+	`C:\Windows\Fonts\YuGothR.ttc`,             // Yu Gothic Regular — modern proportional Japanese
+	`C:\Windows\Fonts\meiryo.ttc`,              // Meiryo — modern proportional Japanese (older Windows)
+	`C:\Windows\Fonts\NotoSansJP-Regular.otf`,  // Noto Sans JP — if installed (never stock)
+	`C:\Windows\Fonts\NotoSansCJK-Regular.ttc`, // Noto Sans CJK — pan-CJK, JP-first glyphs
+	`C:\Windows\Fonts\msyh.ttc`,                // Microsoft YaHei — Simplified Chinese Han + Kana (CN fallback)
+	`C:\Windows\Fonts\msjh.ttc`,                // Microsoft JhengHei — Traditional Chinese
+	`C:\Windows\Fonts\simsun.ttc`,              // SimSun — Simplified Chinese (older)
+	`C:\Windows\Fonts\mingliub.ttc`,            // PMingLiU — Traditional Chinese (older)
+	`C:\Windows\Fonts\msgothic.ttc`,            // MS Gothic — legacy Japanese, LAST resort (the monospace look)
+}
+
+// cjkHanChineseBackstop is the ORDERED Chinese Han face preference, loaded AFTER the
+// JP-first pick as a coverage backstop. Yu Gothic's cmap is JIS/Adobe-Japan1 — a SUBSET of
+// the GB18030 Han that YaHei covers — so Simplified-Chinese-only characters (讲/说/边, …)
+// that the old YaHei-first pick rendered would tofu if only Yu Gothic loaded. Appending a
+// Chinese face keeps those covered: coverRunes gives Yu Gothic the win for the shared Han a
+// Japanese showname uses (the pretty proportional glyphs), and this face catches the CN-only
+// runes it lacks. Residual: shared Han in a Chinese sentence shows JP glyph *shapes* — fixing
+// that needs per-run script detection (out of scope); this only kills the tofu.
+var cjkHanChineseBackstop = []string{
+	`C:\Windows\Fonts\msyh.ttc`,     // Microsoft YaHei — Simplified Chinese (GB18030)
+	`C:\Windows\Fonts\msjh.ttc`,     // Microsoft JhengHei — Traditional Chinese
+	`C:\Windows\Fonts\simsun.ttc`,   // SimSun — Simplified Chinese (older)
+	`C:\Windows\Fonts\mingliub.ttc`, // PMingLiU — Traditional Chinese (older)
+}
+
+// cjkHangulCandidates is the ORDERED Korean face preference: modern proportional Malgun
+// Gothic first, the legacy bitmap-era faces last. Loaded IN ADDITION to a Han face (the
+// Han faces don't cover Hangul — proven by TestFontCoverageMatrix).
+var cjkHangulCandidates = []string{
+	`C:\Windows\Fonts\malgun.ttf`, // Malgun Gothic — modern proportional Korean
+	`C:\Windows\Fonts\gulim.ttc`,  // Gulim — legacy Korean
+	`C:\Windows\Fonts\batang.ttc`, // Batang — legacy Korean serif
+}
+
+// firstReadable returns the first path in cands that exists and is a readable file, or ""
+// when none do. Factored out so cjkFontList's ordering is unit-testable with an injected
+// availability predicate (no real font files needed) — see firstReadableFunc.
+func firstReadable(cands []string) string {
+	return firstReadableFunc(cands, fileReadable)
+}
+
+// firstReadableFunc is firstReadable with an injectable existence predicate (the test
+// substitutes a fake availability set to pin the ORDER without touching disk).
+func firstReadableFunc(cands []string, exists func(string) bool) string {
+	for _, p := range cands {
+		if exists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// cjkFontList picks the CJK faces to load: the FIRST present Han (+ Kana) face by the
+// Japanese-first cjkHanCandidates order, then a distinct Chinese Han face as a CN-coverage
+// backstop, then the first present Korean face for Hangul. Two Han faces at most (the JP
+// pick + one CN backstop only when the pick isn't already that CN face) keeps the CJK tier
+// near ~50 MB, lazy and only on a CJK line. os.Stat (disk) — called only off-thread.
 func cjkFontList() []string {
 	if runtime.GOOS != "windows" {
 		return nil
 	}
 	var out []string
-	for _, p := range []string{
-		`C:\Windows\Fonts\msyh.ttc`,     // Microsoft YaHei — Simplified Chinese Han + Kana (most Windows)
-		`C:\Windows\Fonts\YuGothR.ttc`,  // Yu Gothic — Japanese kanji + Kana (Han fallback)
-		`C:\Windows\Fonts\msgothic.ttc`, // MS Gothic — older Japanese fallback
-		`C:\Windows\Fonts\mingliub.ttc`, // PMingLiU — Traditional Chinese (last resort)
-	} {
-		if fileReadable(p) {
-			out = append(out, p)
-			break
-		}
+	han := firstReadable(cjkHanCandidates)
+	if han != "" {
+		out = append(out, han)
 	}
-	if fileReadable(`C:\Windows\Fonts\malgun.ttf`) {
-		out = append(out, `C:\Windows\Fonts\malgun.ttf`) // Korean Hangul — not in the Han faces
+	// Chinese backstop for the Simplified-only Han Yu Gothic's cmap lacks — but only when
+	// the JP pick isn't already a Chinese face (a CN-only box already loaded one above).
+	if cn := firstReadable(cjkHanChineseBackstop); cn != "" && cn != han {
+		out = append(out, cn)
+	}
+	if kr := firstReadable(cjkHangulCandidates); kr != "" {
+		out = append(out, kr) // Korean Hangul — not in the Han faces
 	}
 	return out
 }
