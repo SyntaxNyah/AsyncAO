@@ -495,6 +495,24 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			fieldX += themedImmedW
 			fieldW -= themedImmedW
 		}
+		// "Pre" toggle (AO2-Client ui_pre): its OWN theme rect (asyncao_ic_pre, #4b)
+		// if placed, else crammed into the field after Immediate — only when the
+		// field stays wide enough (same keep-room rule) and the piece isn't hidden.
+		// AUTO-FOLLOWS each emote pick (selectEmote); unchecked forces idle at the
+		// send site so the intro is skipped even when the emote defines one.
+		const (
+			themedPreW    = 60  // space reserved for the "Pre" checkbox
+			themedPreKeep = 120 // min field width to still host it
+		)
+		if pr, ownPre := lay.rect("asyncao_ic_pre"); ownPre {
+			a.icPreanim = c.Checkbox(pr.X, pr.Y+(pr.H-16)/2, "Pre", a.icPreanim)
+			c.Tooltip(pr, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
+		} else if !a.panelHidden(slotICPre) && fieldW > themedPreW+themedPreKeep {
+			a.icPreanim = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Pre", a.icPreanim)
+			c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedPreW, H: in.H}, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
+			fieldX += themedPreW
+			fieldW -= themedPreW
+		}
 		field := sdl.Rect{X: fieldX, Y: in.Y, W: fieldW, H: in.H}
 		// SFX picker (AO2-style): a sound for your NEXT message, overriding the emote's
 		// own until set back to "auto". Picking one previews it. First so it survives a
@@ -844,6 +862,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 			// star toggled — swallow this cell's select for the frame
 		} else if picked {
 			a.emoteIdx = i
+			a.icPreanim = emoteHasPreanim(e) // "Pre" auto-follows the pick (AO2-Client ui_pre)
 			a.speculateEmote(me, e)
 			c.FocusField("ic") // AO2 focus_ic_input: pick emote, keep typing
 		}

@@ -1411,6 +1411,7 @@ type sessionState struct {
 	// zero value (active:false) is idle.
 	icColorSel  icColorSel
 	icImmediate bool  // MS Immediate: preanim plays without holding the text (session toggle)
+	icPreanim   bool  // "Pre" toggle: send the selected emote's preanimation (session toggle; AUTO-FOLLOWS each emote pick — set when the new emote defines a usable preanim, mirroring AO2-Client ui_pre; the user can override until the next pick). Seeded true in resetSessionState so an untouched fresh join reproduces today's always-play-preanim behavior.
 	icAdditive  bool  // #14 2.8 ADDITIVE: this message appends to your last (session toggle; shown only when the server advertises additive + the pref is on)
 	icEffect    uint8 // #M5 sticky Text FX (courtroom.TextEffect*); 0 = off. Wraps every message you send.
 	// pair placement (session-scoped: each tab keeps its own, seeded from prefs in
@@ -2113,7 +2114,7 @@ var themeLayoutKeys = []string{
 	// place these where it likes instead of having AsyncAO cram them into
 	// ao2_ic_chat_message. Absent ⇒ the classic crammed row (every existing theme is
 	// unchanged). x,y,w,h in design space, same as any AO2 element.
-	"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_sfx",
+	"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_pre", "asyncao_ic_sfx",
 	"asyncao_ic_emoji", "asyncao_ic_fx", "asyncao_ic_react",
 	// OPTIONAL: a theme that ships "asyncao_toolbox" positions the compact
 	// bottom-right toolbox grip where it likes and makes it draggable in the themed

@@ -502,31 +502,41 @@ func TestOutgoingWireEscapingSurvives(t *testing.T) {
 
 // TestNormalizeOutgoingEmoteMod pins AO2-Client's on_chat_return_pressed
 // overrides (courtroom.cpp "EMOTE MOD OVERRIDES"): legacy ini values
-// 2/3/4 never reach the wire, and a preanim upgrades idle/zoom. Raw
-// legacy values made schema-strict receivers (LemmyAO) drop our
-// messages entirely.
+// 2/3/4 never reach the wire, and — when the "Pre" toggle wants it — a
+// preanim upgrades idle/zoom. Raw legacy values made schema-strict
+// receivers (LemmyAO) drop our messages entirely. The preanim=false rows
+// pin the new "Pre unchecked" branch (courtroom.cpp:2080-2092): a preanim
+// mod is forced back to idle/zoom so no intro plays.
 func TestNormalizeOutgoingEmoteMod(t *testing.T) {
 	full := ParseFeatures([]string{"prezoom"})
 	none := ParseFeatures(nil)
 	cases := []struct {
 		mod        int
 		hasPreanim bool
+		preanim    bool // the "Pre" toggle
 		features   FeatureSet
 		want       int
 	}{
-		{2, false, none, EmoteModPreanim}, // objection-internal → preanim
-		{3, false, none, EmoteModIdle},    // meaningless → idle
-		{4, false, none, EmoteModZoom},    // legacy zoom alias
-		{0, true, none, EmoteModPreanim},  // preanim upgrades idle
-		{5, true, full, EmoteModPreanimZoom},
-		{5, true, none, EmoteModZoom}, // prezoom feature gates the upgrade
-		{0, false, none, EmoteModIdle},
-		{1, false, none, EmoteModPreanim},
-		{6, false, none, EmoteModPreanimZoom},
+		// Pre ON (checked): historical behavior — the emote's preanim rides.
+		{2, false, true, none, EmoteModPreanim}, // objection-internal → preanim
+		{3, false, true, none, EmoteModIdle},    // meaningless → idle
+		{4, false, true, none, EmoteModZoom},    // legacy zoom alias
+		{0, true, true, none, EmoteModPreanim},  // preanim upgrades idle
+		{5, true, true, full, EmoteModPreanimZoom},
+		{5, true, true, none, EmoteModZoom}, // prezoom feature gates the upgrade
+		{0, false, true, none, EmoteModIdle},
+		{1, false, true, none, EmoteModPreanim},
+		{6, false, true, none, EmoteModPreanimZoom},
+		// Pre OFF (unchecked): suppress the intro — a preanim mod downgrades.
+		{1, true, false, none, EmoteModIdle}, // preanim → idle (intro suppressed)
+		{6, true, false, full, EmoteModZoom}, // preanim-zoom → zoom
+		{0, true, false, none, EmoteModIdle}, // idle stays idle, no upgrade
+		{5, true, false, full, EmoteModZoom}, // zoom stays zoom, no upgrade
+		{2, true, false, none, EmoteModIdle}, // legacy 2→preanim, then downgraded to idle
 	}
 	for _, tc := range cases {
-		if got := NormalizeOutgoingEmoteMod(tc.mod, tc.hasPreanim, false, tc.features); got != tc.want {
-			t.Errorf("NormalizeOutgoingEmoteMod(%d, pre=%v) = %d, want %d", tc.mod, tc.hasPreanim, got, tc.want)
+		if got := NormalizeOutgoingEmoteMod(tc.mod, tc.hasPreanim, tc.preanim, false, tc.features); got != tc.want {
+			t.Errorf("NormalizeOutgoingEmoteMod(%d, hasPre=%v, pre=%v) = %d, want %d", tc.mod, tc.hasPreanim, tc.preanim, got, tc.want)
 		}
 	}
 }

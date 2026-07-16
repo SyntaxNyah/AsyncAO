@@ -27,6 +27,7 @@ func (a *App) applyStylePreset(p config.StylePreset) {
 		for i := range a.emotes {
 			if strings.EqualFold(a.emotes[i].Anim, p.Emote) {
 				a.emoteIdx = i
+				a.icPreanim = emoteHasPreanim(&a.emotes[i]) // "Pre" auto-follows the pick (AO2-Client ui_pre)
 				break
 			}
 		}

@@ -387,13 +387,19 @@ func (o OutgoingMS) Packet(features FeatureSet) Packet {
 // NormalizeOutgoingEmoteMod applies AO2-Client's on_chat_return_pressed
 // emote-mod overrides (courtroom.cpp "EMOTE MOD OVERRIDES", 2.11): char.ini
 // files ship legacy values that must never reach the wire — 2 is
-// objection-internal, 3 is meaningless, 4 aliases zoom — and an emote with
-// a preanimation upgrades idle→preanim and zoom→preanim-zoom (the latter
-// only when the server advertises prezoom). Strict receivers
-// (LemmyAO schema-validates MS broadcasts) DROP messages whose
-// emote_modifier carries a raw legacy value, so sending ini values
+// objection-internal, 3 is meaningless, 4 aliases zoom — and, when the "Pre"
+// toggle wants it, an emote with a preanimation upgrades idle→preanim and
+// zoom→preanim-zoom (the latter only when the server advertises prezoom).
+// Strict receivers (LemmyAO schema-validates MS broadcasts) DROP messages
+// whose emote_modifier carries a raw legacy value, so sending ini values
 // verbatim made us invisible to them.
-func NormalizeOutgoingEmoteMod(mod int, hasPreanim, immediate bool, features FeatureSet) int {
+//
+// preanim mirrors AO2-Client's ui_pre checkbox: true (Pre checked) reproduces
+// the historical behavior — the emote's preanim rides the message. false (Pre
+// UNCHECKED) forces the "pre off" branch (courtroom.cpp:2080-2092): a preanim
+// mod is downgraded to idle (preanim_zoom→zoom) so the intro is suppressed
+// even when the char.ini emote defines one.
+func NormalizeOutgoingEmoteMod(mod int, hasPreanim, preanim, immediate bool, features FeatureSet) int {
 	switch mod {
 	case legacyEmoteModObjection:
 		mod = EmoteModPreanim
@@ -402,12 +408,24 @@ func NormalizeOutgoingEmoteMod(mod int, hasPreanim, immediate bool, features Fea
 	case legacyEmoteModZoomPre:
 		mod = EmoteModZoom
 	}
-	if hasPreanim && !immediate {
+	if preanim && hasPreanim && !immediate {
+		// "Pre" on: upgrade idle→preanim, zoom→preanim-zoom (courtroom.cpp:2065-2079).
 		switch {
 		case mod == EmoteModIdle:
 			mod = EmoteModPreanim
 		case mod == EmoteModZoom && features.Has(FeaturePrezoom):
 			mod = EmoteModPreanimZoom
+		}
+	} else if !preanim {
+		// "Pre" off: downgrade a preanim mod so no intro plays, mirroring
+		// AO2-Client's else branch (courtroom.cpp:2080-2092). immediate keeps
+		// its historical no-op here: when Pre is on, immediate only stops the
+		// mod from upgrading (via the guard above), never forces a downgrade.
+		switch mod {
+		case EmoteModPreanim:
+			mod = EmoteModIdle
+		case EmoteModPreanimZoom:
+			mod = EmoteModZoom
 		}
 	}
 	return mod

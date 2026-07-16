@@ -853,6 +853,10 @@ func (a *App) resetSessionState() {
 		// Logs follow the tail until the user scrolls up.
 		icStick:  true,
 		oocStick: true,
+		// "Pre" defaults ON so a fresh join reproduces the historical
+		// always-play-the-emote's-preanim behavior; selectEmote then
+		// auto-follows each subsequent emote pick (AO2-Client ui_pre).
+		icPreanim: true,
 	}
 	// The IC/OOC log text selection lives on App (not sessionState) but is anchored
 	// into the ACTIVE log's wrapped lines — leaving it set across a session change

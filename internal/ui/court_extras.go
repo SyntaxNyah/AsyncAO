@@ -150,6 +150,7 @@ var hideableButtons = []struct{ id, label string }{
 	{"ctrl.objection", "Objection! shout"},
 	{"ctrl.takethat", "Take That! shout"},
 	{slotICEmoji, "Emoji button (IC bar)"},
+	{slotICPre, "Pre (preanim) toggle (IC bar)"},
 }
 
 // panelHidden reports whether the user hid a chrome region.

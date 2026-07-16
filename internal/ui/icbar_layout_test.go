@@ -27,7 +27,7 @@ func TestICBarUnderStage(t *testing.T) {
 // Immediate, Additive, SFX, emoji, FX, React, input) has a distinct editor label, and an
 // override repositions it through slotRect — so users can drag them apart in Edit Layout.
 func TestICBarSlotsAreEditable(t *testing.T) {
-	slots := []string{slotICColor, slotICShowname, slotICImmediate, slotICAdditive, slotICSFX, slotICEmoji, slotICFx, slotICReact, slotICInput}
+	slots := []string{slotICColor, slotICShowname, slotICImmediate, slotICPre, slotICAdditive, slotICSFX, slotICEmoji, slotICFx, slotICReact, slotICInput}
 	seen := map[string]bool{}
 	for _, s := range slots {
 		label := classicSlotLabel(s)
@@ -67,7 +67,7 @@ func TestICBarSlotsAreEditable(t *testing.T) {
 // of having AsyncAO cram them into ao2_ic_chat_message.
 func TestThemeKeysExposeAsyncICControls(t *testing.T) {
 	want := []string{
-		"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_sfx",
+		"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_pre", "asyncao_ic_sfx",
 		"asyncao_ic_emoji", "asyncao_ic_fx", "asyncao_ic_react",
 	}
 	have := map[string]bool{}

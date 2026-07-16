@@ -4995,6 +4995,24 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	if icCounterOn {
 		tailReserve += msgCounterReserve
 	}
+	// "Pre" toggle (AO2-Client ui_pre): send the selected emote's preanimation.
+	// AUTO-FOLLOWS each emote pick (selectEmote), and the user can override until
+	// the next pick. Unchecked forces idle even when the emote defines a preanim
+	// (NormalizeOutgoingEmoteMod at the send site). Placed right after Immediate/
+	// Additive but INSIDE the narrow-bar drop discipline (the tailReserve guard),
+	// so on a tight bar it drops right-to-left instead of shoving the IC input off
+	// the edge — Immediate/Additive draw unconditionally, so an always-drawn Pre
+	// beside them would have regressed that guard. Movable slot (#4a), same
+	// wrap-not-extract rule: draws through slotRect, the row cursor advances by the
+	// DEFAULT width so an un-edited bar is pixel-identical and moving it never
+	// cascades the rest. slotRect is alloc-free off the edit path.
+	const preW = 60 // fits the "Pre" checkbox label + box
+	if icBar.W-(icX-icBar.X)-(preW+6) >= tailReserve && !a.panelHidden(slotICPre) {
+		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
+		a.icPreanim = c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim)
+		c.Tooltip(preBox, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
+		icX += preW + 6 // downstream flows from the DEFAULT position, not the override
+	}
 	// SFX picker (AO2-style): pick a sound to ride your NEXT message — overrides the
 	// emote's own sound until set back to "auto". Picking one previews it. Placed first
 	// so on a narrow bar it survives longest (the buttons drop right-to-left).
@@ -5212,6 +5230,14 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	}
 }
 
+// emoteHasPreanim reports whether an emote defines a usable pre-animation.
+// "-"/"" is AO's "no preanim" convention. This is the single source of truth
+// for both the "Pre" auto-follow (selectEmote) and the send-path hasPre echo,
+// so the toggle's default can never drift from what actually rides the wire.
+func emoteHasPreanim(e *courtroom.Emote) bool {
+	return e.Preanim != "" && e.Preanim != "-"
+}
+
 // selectEmote picks emote i (shared by click, the Random button, and the
 // number-key shortcut): warms its pressed button art + the sprites the next
 // message will need, and refocuses the IC input (AO2 focus_ic_input).
@@ -5221,6 +5247,7 @@ func (a *App) selectEmote(i int) {
 		return
 	}
 	a.emoteIdx = i
+	a.icPreanim = emoteHasPreanim(&a.emotes[i]) // "Pre" auto-follows the pick (AO2-Client ui_pre, emotes.cpp:211-221)
 	me := a.activeCharName()
 	// Warm BOTH button states at HIGH: the _on (pressed) art the selected
 	// cell wants, AND the _off art it falls back to while _on streams in —
@@ -5865,7 +5892,7 @@ func (a *App) sendIC(shout int) {
 	if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
 		emote = a.emotes[a.emoteIdx]
 	}
-	hasPre := emote.Preanim != "" && emote.Preanim != "-"
+	hasPre := emoteHasPreanim(&emote)
 	// Per-emote audio from char.ini ([SoundN]/[SoundT]/[SoundL]); "1" is
 	// the AO wire value for silence (get_sfx_name's empty default).
 	sfxName := emote.SFXName
@@ -5967,7 +5994,12 @@ func (a *App) sendIC(shout int) {
 		Side:         a.mySide(),
 		// Never ship raw char.ini emote mods: legacy 2/3/4 values make
 		// schema-strict clients drop the whole message.
-		EmoteMod:  protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, false, a.sess.Features),
+		// "Pre" unchecked forces idle even when the emote has a preanim; the
+		// echo re-runs this EmoteMod through scenemaker, so the LOCAL staging
+		// (scenemaker.go's pre := EmoteMod==Preanim…) follows the same decision
+		// — what you see matches what you sent. immediate stays false here:
+		// a.icImmediate rides the separate OutgoingMS.Immediate field.
+		EmoteMod:  protocol.NormalizeOutgoingEmoteMod(emote.Mod, hasPre, a.icPreanim, false, a.sess.Features),
 		CharID:    a.sess.MyCharID,
 		Objection: shout,
 		TextColor: msgColor, // swatch cycler, or M61 random-per-message colour
