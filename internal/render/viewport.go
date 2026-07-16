@@ -394,6 +394,17 @@ type Viewport struct {
 	// beats the previous character at full quality.
 	thumbSprites bool
 
+	// missingnoEnabled (pref-backed, default ON) draws the AO2 "placeholder"
+	// (missingno) for a CONCLUSIVELY-MISSING char sprite — one whose whole
+	// fallback chain 404'd (store.IsMissing). Probed FIRST in the miss branch and
+	// gated on this bool: a confirmed-missing base was never uploaded so it has no
+	// held://P/thumb/lastGood of its own, and hold-previous would otherwise keep a
+	// DIFFERENT character on stage forever. Still-LOADING sprites (not in the
+	// missing set) keep the full unchanged hold-previous/thumb chain — the two
+	// states are disjoint. The App mirrors the pref here once per frame
+	// (SetMissingno), like SetSpriteLoadMode.
+	missingnoEnabled bool
+
 	// preanimLoop (opt-in pref, default OFF) keeps a one-shot preanimation
 	// WRAPPING for as long as the courtroom keeps it the active speaker layer,
 	// instead of holding its last frame once. This is DELIBERATELY NON-CANONICAL:
@@ -1078,6 +1089,12 @@ func (v *Viewport) SetHoldDebugTint(on bool) { v.tintHeld = on }
 // path (opt-in pref, default OFF). The App mirrors the pref here per frame.
 func (v *Viewport) SetThumbSprites(on bool) { v.thumbSprites = on }
 
+// SetMissingno toggles the AO2 "placeholder" (missingno) for a conclusively-
+// missing char sprite (pref ShowMissingPlaceholder, default ON). The App mirrors
+// the pref here once per frame, like SetSpriteLoadMode. A plain bool assign — no
+// per-frame pref read on the hot path.
+func (v *Viewport) SetMissingno(on bool) { v.missingnoEnabled = on }
+
 // SetCrossfade sets the speaker-swap blend duration (0 = off, the default hard
 // swap). The App mirrors the pref here per frame and zeroes it under Reduce
 // motion (a fade is motion).
@@ -1165,6 +1182,31 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 	}
 	page, ok := anim.resolve(v.store)
 	if !ok || len(page.Frames) == 0 {
+		// missingno FIRST (AO2 fidelity): a CONCLUSIVELY-MISSING base (its whole
+		// fallback chain 404'd — store.IsMissing) draws the shared placeholder
+		// instead of holding a DIFFERENT (stale) character. Deliberately ahead of
+		// the held/thumb/hold-previous chain below: a confirmed-missing base
+		// TYPICALLY was never uploaded, so it has no held://P/thumb page of its own,
+		// and lastGood SURVIVES base swaps — so hold-previous would otherwise pin
+		// the previous character on stage forever (holdprev_test.go:75-77). The one
+		// case where a held frame DOES exist: a base displayed → LRU-evicted (the
+		// held-frame steal parks its last frame) → re-demanded → NOW 404s (asset
+		// pulled mid-session). Probing missingno first means the glitch supersedes
+		// that stale held frame — intentional (AO2 shows its placeholder regardless
+		// of the prior frame). This does not disturb the scenery bridge: a base that
+		// was never marked missing still takes the held branch unchanged
+		// (heldscenery_test.go stays green). The probe is a plain const-key map read
+		// (MissingKey is const, anim.base already in hand) + drawHeldSprite (reuses
+		// v.dstRect) — 0-alloc, mirroring resolveHeld/thumb. Only STILL-LOADING
+		// sprites (not in the missing set) keep the full chain below; still-loading
+		// and confirmed-missing are disjoint. Structurally unreachable on the found
+		// path (resolved sprites exit via the ok-path).
+		if v.missingnoEnabled && v.store.IsMissing(anim.base) {
+			if mp, ok2 := v.store.Get(MissingKey); ok2 && len(mp.Frames) > 0 {
+				v.drawHeldSprite(ren, layer, mp, vp)
+				return
+			}
+		}
 		// Held-frame bridge FIRST: if THIS sprite's page was evicted mid-display
 		// (a cap-sized incoming upload forced it out — the last black-flash hole),
 		// the store parked its first frame under held://base. That is the exact

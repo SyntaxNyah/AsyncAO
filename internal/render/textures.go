@@ -198,6 +198,19 @@ type TextureStore struct {
 	failedMu sync.Mutex
 	failed   map[string]time.Time
 
+	// missing is the CONCLUSIVELY-MISSING char-sprite set (the missingno gate):
+	// a base whose whole fallback chain 404'd (every format of every spelling —
+	// the manager's reportMissing Warning, relayed here by the App's render-thread
+	// warning drain). drawSprite's miss branch draws the shared MissingKey
+	// placeholder for a base in this set instead of holding a DIFFERENT (stale)
+	// character. UNLIKE `failed`, this carries NO mutex: both the writer
+	// (MarkMissing, from drainWarnings) and the reader (IsMissing, from drawSprite)
+	// run on the locked render thread, and it is never read off-thread. If any
+	// FUTURE caller touches it from another goroutine this invariant breaks —
+	// keep it render-thread-only. Cleared per base in uploadTier (a healed
+	// re-upload drops the flag), bounding any false flash to ~one message.
+	missing map[string]struct{}
+
 	// budget is the T1 byte budget this store was built with (the default, or
 	// the power-user override); error messages and Settings read it.
 	budget int64
@@ -328,6 +341,62 @@ func NewTextureStoreBudget(ren *sdl.Renderer, budgetBytes int64) (*TextureStore,
 // theme:// and thumb:// — a scheme prefix can never collide with an asset URL
 // base). The viewport's scenery miss path probes HeldKeyPrefix+base.
 const HeldKeyPrefix = "held://"
+
+// MissingKey is the reserved pinned key the ONE shared missingno placeholder
+// page lives under (the AO2 "placeholder" fallback for a conclusively-missing
+// character sprite). A scheme prefix can never collide with an asset URL base
+// (same rationale as held://, thumb://, theme://). ONE shared key, never
+// per-base, so drawSprite's miss-branch probe is a plain const-key map read
+// with zero string building — the 0-alloc miss path.
+const MissingKey = "missingno://"
+
+// missingSetCap bounds the conclusively-missing char-sprite set (rule §17.4),
+// mirroring courtroom.missingSpritesCap — the game-side confirmed-missing set
+// this render-side set shadows. When full, MarkMissing skips the insert (like
+// recordMissing): an un-recorded miss simply falls through to the normal
+// hold-previous/blank path, no worse than before the feature.
+const missingSetCap = 512
+
+// MarkMissing records that base's whole fallback chain 404'd, so drawSprite
+// draws the missingno placeholder for it instead of a stale hold-previous.
+// Render thread ONLY (called from the App's warning drain; see the `missing`
+// field comment for the no-mutex invariant). Bounded + dedup, matching
+// courtroom.recordMissing's stop-inserting-when-full policy.
+func (s *TextureStore) MarkMissing(base string) {
+	if base == "" {
+		return
+	}
+	if s.missing == nil {
+		s.missing = make(map[string]struct{})
+	}
+	if _, ok := s.missing[base]; ok {
+		return
+	}
+	if len(s.missing) >= missingSetCap {
+		return // full: the un-recorded base falls through to hold-previous/blank
+	}
+	s.missing[base] = struct{}{}
+}
+
+// IsMissing reports whether base was conclusively 404'd this session (the
+// missingno gate probed FIRST in drawSprite's miss branch). Plain map read,
+// render thread ONLY.
+func (s *TextureStore) IsMissing(base string) bool {
+	if len(s.missing) == 0 {
+		return false
+	}
+	_, ok := s.missing[base]
+	return ok
+}
+
+// clearMissing drops base from the missing set (its real page just uploaded, so
+// a transient/healed miss recovered). Render thread only; called from
+// uploadTier beside clearFailed/releaseHeld.
+func (s *TextureStore) clearMissing(base string) {
+	if s.missing != nil {
+		delete(s.missing, base)
+	}
+}
 
 // heldSceneryMax bounds the held-frame bridge: at most this many stolen stage
 // frames live in the pinned map at once — a fixed ring, oldest slot reused. It
@@ -534,8 +603,9 @@ func (s *TextureStore) uploadTier(base string, d *assets.Decoded, tier *cache.By
 		return fmt.Errorf("render: %s decoded to %d bytes, above the tier's %d-byte share of the T1 budget", base, page.bytes, tier.Budget())
 	}
 	s.generation.Add(1)
-	s.clearFailed(base) // it decoded fine — drop any stale negative-cache entry
-	s.releaseHeld(base) // the real page is back: drop the held-frame bridge
+	s.clearFailed(base)  // it decoded fine — drop any stale negative-cache entry
+	s.releaseHeld(base)  // the real page is back: drop the held-frame bridge
+	s.clearMissing(base) // it landed after all — drop any conclusively-missing flag
 	return nil
 }
 
@@ -633,6 +703,7 @@ func (s *TextureStore) Purge() {
 	s.pinnedBytes = 0
 	s.heldKeys = [heldSceneryMax]string{}
 	s.heldNext = 0
+	clear(s.missing) // fresh server = fresh misses; the placeholder page (pinned) was destroyed above and re-uploads via the App's post-purge heal
 	s.small.Purge()
 	s.t1.Purge()
 	for {

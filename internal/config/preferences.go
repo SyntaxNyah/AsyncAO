@@ -307,6 +307,14 @@ const defaultMusicHistory = true
 // what the room intends to play; it just isn't audible on this client.
 const defaultMusicStreaming = true
 
+// defaultShowMissingPlaceholder ships ON: like AO2-Client, AsyncAO draws a
+// "placeholder" (the missingno glitch sprite) for a character emote sprite whose
+// whole fallback chain 404'd, instead of holding the previous (different)
+// character on stage. AO2 shows it unconditionally; we make it opt-OUT for players
+// who prefer a blank stage or the last-sprite hold. NOT omitempty (see the *bool
+// load DTO): an explicit OFF must persist, not read back as "absent → default ON".
+const defaultShowMissingPlaceholder = true
+
 // defaultICCustomColor seeds the free IC hex colour picker (v1.52.0) before
 // the user's first pick: a readable sky-blue on the dark chatbox, packed
 // 0xRRGGBB like the highlight colour below.
@@ -1131,6 +1139,16 @@ type AssetPreferences struct {
 	// too — they round-trip through the server). NOT omitempty: an explicit OFF
 	// must persist, not read back as "absent → default ON".
 	MusicStreaming bool `json:"musicStreaming"`
+	// ShowMissingPlaceholder draws the AO2 "placeholder" (missingno) for a
+	// conclusively-missing character sprite (ON by default). NOT omitempty: an
+	// explicit OFF must persist, not read back as "absent → default ON".
+	ShowMissingPlaceholder bool `json:"showMissingPlaceholder"`
+	// ErrorSpriteFile is an optional user-chosen image used INSTEAD of the embedded
+	// missingno placeholder ("" = the embedded default). Loaded off-thread and pinned
+	// over the placeholder key; a bad path falls back to the default with an inline
+	// Settings error. (The accessor is ErrorSpritePath(); the field name differs to
+	// avoid the Go method/field name clash, mirroring FontOverridePaths/FontPaths().)
+	ErrorSpriteFile string `json:"errorSpritePath,omitempty"`
 	// MusicHosts allowlists the domains whose /play links the music history
 	// records — for "unique" user-hosted song domains (catbox/file.garden/etc.).
 	// Server-hosted music (bare names, the server's own host) still plays but is
@@ -1438,6 +1456,9 @@ type prefsJSON struct {
 	MusicHistory       *bool    `json:"musicHistory"`         // absent = default ON
 	MusicStreaming     *bool    `json:"musicStreaming"`       // absent = default ON
 	MusicHosts         []string `json:"musicHosts,omitempty"` // absent = default list
+
+	ShowMissingPlaceholder *bool  `json:"showMissingPlaceholder"`    // absent = default ON
+	ErrorSpritePath        string `json:"errorSpritePath,omitempty"` // "" = embedded default
 }
 
 // DiscordPrefs configures the OPTIONAL Rich Presence integration.
@@ -1699,6 +1720,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		AutoReconnect:          defaultAutoReconnect,
 		MusicHistory:           defaultMusicHistory,
 		MusicStreaming:         defaultMusicStreaming,
+		ShowMissingPlaceholder: defaultShowMissingPlaceholder,
 		MusicHosts:             defaultMusicHostList(),
 		HighlightColor:         defaultHighlightColor,
 		ICCustomColor:          defaultICCustomColor,
@@ -2007,6 +2029,10 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.MusicStreaming != nil {
 		p.MusicStreaming = *onDisk.MusicStreaming
 	}
+	if onDisk.ShowMissingPlaceholder != nil {
+		p.ShowMissingPlaceholder = *onDisk.ShowMissingPlaceholder
+	}
+	p.ErrorSpriteFile = strings.TrimSpace(onDisk.ErrorSpritePath) // "" = embedded default
 	if onDisk.MusicHosts != nil {
 		p.MusicHosts = sanitizeMusicHosts(onDisk.MusicHosts)
 	}
@@ -3087,6 +3113,47 @@ func (p *AssetPreferences) SetMusicStreaming(on bool) {
 		return
 	}
 	p.MusicStreaming = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ShowMissingPlaceholderOn reports whether the AO2 placeholder (missingno) draws
+// for a conclusively-missing character sprite (ON by default).
+func (p *AssetPreferences) ShowMissingPlaceholderOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ShowMissingPlaceholder
+}
+
+// SetShowMissingPlaceholder toggles the missing-sprite placeholder.
+func (p *AssetPreferences) SetShowMissingPlaceholder(on bool) {
+	p.mu.Lock()
+	if p.ShowMissingPlaceholder == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ShowMissingPlaceholder = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ErrorSpritePath reports the user-chosen custom placeholder image path ("" =
+// the embedded default missingno).
+func (p *AssetPreferences) ErrorSpritePath() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ErrorSpriteFile
+}
+
+// SetErrorSpritePath persists a custom placeholder image path ("" clears it back
+// to the embedded default). The App reloads the art off-thread on change.
+func (p *AssetPreferences) SetErrorSpritePath(path string) {
+	p.mu.Lock()
+	if p.ErrorSpriteFile == path {
+		p.mu.Unlock()
+		return
+	}
+	p.ErrorSpriteFile = path
 	p.mu.Unlock()
 	p.markDirty()
 }

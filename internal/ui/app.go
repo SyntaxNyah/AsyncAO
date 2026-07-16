@@ -388,6 +388,15 @@ type App struct {
 	cjkFontRes     chan [][]byte
 	cjkLoadStarted bool
 
+	// Custom missingno placeholder (user-chosen image path, default = the embedded
+	// AO2 glitch). The file read + decode runs OFF-THREAD (rule §17.2 — no
+	// synchronous disk I/O on the render path); the decoded page lands on
+	// errorSpriteRes and pollErrorSprite UploadPinned's it over render.MissingKey
+	// on the render thread. errorSpriteErr carries the inline Settings error label
+	// on a failed load (kept for the Settings row to show). See missingno.go.
+	errorSpriteRes chan errorSpriteLoad
+	errorSpriteErr string
+
 	// --- log browser (ScreenLogs): search saved transcripts across servers ---
 	// Global (not per-session): the loader runs off-thread, lands on logBrowserRes.
 	logBrowser    logBrowserState
@@ -2205,6 +2214,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 		emojiFontRes:        make(chan []byte, 1),
 		fallbackFontRes:     make(chan [][]byte, 1),
 		cjkFontRes:          make(chan [][]byte, 1),
+		errorSpriteRes:      make(chan errorSpriteLoad, 1),
 		notebookRes:         make(chan notebookLoad, 1),
 		jukeRes:             make(chan *config.Jukebox, 1),
 		jukeIORes:           make(chan string, 4),
@@ -2234,6 +2244,13 @@ func NewApp(ctx *Ctx, d Deps) *App {
 	// hole — a mid-display speaker eviction had no other fallback).
 	if d.Store != nil {
 		d.Store.SetLiveScenery(a.IsLiveStageBase)
+	}
+	// missingno: pin the embedded default placeholder ONCE (render thread), then
+	// kick the off-thread custom-image load if the user chose one. Default first so
+	// a failed custom load leaves a valid page in place (missingno.go).
+	a.uploadEmbeddedMissingno()
+	if p := d.Prefs.ErrorSpritePath(); p != "" {
+		a.applyErrorSprite(p)
 	}
 	a.seedHiddenFromPrefs() // hidden-chrome set + the A6 no-strand normalization
 	// Global jukebox library loads off-thread (it can be large); it lands via
@@ -2693,12 +2710,26 @@ func (a *App) keepSceneAssetsWarm() {
 		// asset, re-uploaded up to a cap-sized page, and evicted ANOTHER warm
 		// base — which the next tick re-demanded, at ~4 whole-core-burning
 		// cycles/sec while the app sat idle or minimized (the CPU-burn report;
-		// the "stage blinks" report is the same churn's visible face). A bare-
-		// spelling sprite may 404 here where the message's fallback chain
-		// succeeded — harmless: the 404 cache absorbs it, the latch stops the
-		// repeats, and the next message re-runs the full chain.
+		// the "stage blinks" report is the same churn's visible face).
+		//
+		// Char sprites re-demand through the FULL prefix→bare fallback (like
+		// healSpriteLayer), NOT a single-spelling Prefetch. That is the missingno
+		// no-blip guarantee: a Warning (→ Store.MarkMissing → a missingno flash)
+		// fires ONLY on FULL chain exhaustion, so a mixed-naming pack's bare-only
+		// sprite — which exists under the unprefixed spelling — must have its bare
+		// spelling probed here too, or this warm's single prefixed Prefetch would
+		// 404, report missing, and flash the placeholder over a sprite that DOES
+		// exist. Routing char warms through the fallback makes "a char Warning
+		// fired" mean "both spellings, every format, exhausted" for every
+		// non-speculative source. The 404 cache absorbs the extra probe inside its
+		// TTL and the latch stops the repeats. bg/desk/chatskin have no bare-
+		// spelling twin, so they keep the plain single Prefetch.
 		if throttleOpen && !demanded && a.sceneHealAllowed(base) {
-			a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+			if t == assets.AssetTypeCharSprite {
+				a.d.Manager.PrefetchWithFallback(base, bareSpriteBase(base), t, network.PriorityHigh) // AssetType: CharSprite (prefix→bare so a bare-only sprite never false-flags missing)
+			} else {
+				a.d.Manager.Prefetch(base, t, network.PriorityHigh)
+			}
 			demanded = true
 			a.sceneWarmLastDemand = now
 		}
@@ -6084,7 +6115,12 @@ func (a *App) pollCharINI() {
 				if i >= 8 {
 					break
 				}
-				a.d.Manager.Prefetch(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
+				// Bare-spelling fallback like the bundle path above: a mixed-naming
+				// pack ships this emote only under the unprefixed name, and a single-
+				// spelling prefetch would 404 the prefixed base and (once displayed)
+				// false-flag it missing → a missingno flash over a sprite that exists.
+				// The full chain makes "chain exhausted" mean "truly absent."
+				a.d.Manager.PrefetchChain(a.urls.Emote(me, e.Anim, courtroom.EmoteIdle), a.urls.EmoteAlts(me, e.Anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityLow) // AssetType: CharSprite
 			}
 		}
 	default:
@@ -6364,6 +6400,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.ensureCJKFontLoad()
 	}
 	a.pollCJKFont()
+	a.pollErrorSprite() // land an off-thread custom missingno image → UploadPinned over MissingKey
 	a.pollNotebook()
 	a.pollJukebox()
 	a.pollCharBind()
@@ -6411,6 +6448,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.d.Viewport.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)     // hold-previous stand-in cap (0 = forever)
 		a.d.Viewport.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())                                     // amber-tint stand-ins (diagnostics)
 		a.d.Viewport.SetThumbSprites(a.d.Prefs.ThumbCacheOn())                                         // opt-in low-q thumbnail stand-ins on the cold miss path
+		a.d.Viewport.SetMissingno(a.d.Prefs.ShowMissingPlaceholderOn())                                // AO2 placeholder for conclusively-missing sprites (default ON)
 		a.d.Viewport.SetCrossfade(a.crossfadeDur())                                                    // speaker-swap blend (0 = off; zeroed under Reduce motion)
 		a.d.Viewport.SetPreanimLoop(a.d.Prefs.LoopPreanimOn())                                         // opt-in: keep preanims wrapping (default OFF; AO2 plays them once)
 		a.d.Viewport.SetPostFX(a.postFX())                                                             // #10 retro overlays
@@ -6424,6 +6462,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.splitVP.SetHoldMaxAge(time.Duration(a.d.Prefs.HoldPrevMaxAgeMs()) * time.Millisecond)
 			a.splitVP.SetHoldDebugTint(a.d.Prefs.HoldDebugTintOn())
 			a.splitVP.SetThumbSprites(a.d.Prefs.ThumbCacheOn())
+			a.splitVP.SetMissingno(a.d.Prefs.ShowMissingPlaceholderOn())
 			a.splitVP.SetCrossfade(a.crossfadeDur())
 			a.splitVP.SetPreanimLoop(a.d.Prefs.LoopPreanimOn())
 			a.splitVP.Update(&a.splitRoom.Scene, dt)
@@ -7035,6 +7074,19 @@ func (a *App) drainWarnings() {
 				}
 				if a.makerPreviewRoom != nil {
 					a.makerPreviewRoom.NotifyAssetMissing(w.Base)
+				}
+				// missingno: relay the render-side confirmed-missing signal so the
+				// viewport draws the AO2 placeholder for this base instead of a stale
+				// hold-previous. This is the ONLY new bridge — it reuses the existing
+				// droppable Warning lane (no new channel/goroutine, §17.4). A Warning
+				// fires ONLY on full chain exhaustion (reportMissing: every format of
+				// every spelling 404'd), and speculative Markov prefetches suppress it,
+				// so a predicted-but-absent base is never marked. Both this and the
+				// viewport read run on the render thread — the set carries no mutex.
+				// nil-guarded like the room relays above (Store is always set with
+				// Manager in production; the guard just keeps a Manager-only test safe).
+				if a.d.Store != nil {
+					a.d.Store.MarkMissing(w.Base)
 				}
 			}
 			line := "Missing asset: " + w.Base

@@ -65,6 +65,11 @@ type settingsState struct {
 	fontInput  string
 	fontLoaded bool
 
+	// custom missing-sprite (missingno) image path edit buffer, seeded once from
+	// the pref. errorSpriteLoaded gates the one-time seed like fontLoaded.
+	errorSpriteInput  string
+	errorSpriteLoaded bool
+
 	// custom window-size edit buffers (W, H), seeded from the live size and
 	// re-seeded after a preset/fit so they track the window.
 	winWInput, winHInput string
@@ -251,6 +256,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 		"casing", "capital", "capitalize", "capitalise", "uppercase", "lowercase", "character folder", "folder case",
 		"image format", "format", "fallback", "autodetect", "auto-detect", "extensions.json", "extensions", "webp", "png", "apng", "avif", "desk format",
+		"placeholder", "missing sprite", "missingno", "missing character",
 	},
 }
 
@@ -1097,6 +1103,13 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		c.purgeTextCache()
 		a.themeChatbox = false
 		a.applyThemeAsync()
+		// Purge also destroyed the pinned missingno placeholder — re-pin the
+		// embedded default (render thread) and re-kick a custom image if set, so
+		// the missing-sprite fallback survives a filtering swap (missingno.go).
+		a.uploadEmbeddedMissingno()
+		if p := a.d.Prefs.ErrorSpritePath(); p != "" {
+			a.applyErrorSprite(p)
+		}
 		settings.statusLine = "Re-streaming textures with new filtering."
 	}
 	y += 26
@@ -3180,6 +3193,46 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	}
 	y += 26
 	y = a.settingsDesc(pad, y, "Fades the new sprite in over the old on every character/emote change instead of hard-swapping. Local only; a still-loading sprite starts its fade when it arrives. With a crossfade set, the idle frame-rate cap stands down so fades stay smooth.", ColTextDim)
+	y += 10
+
+	// Missing-sprite placeholder (missingno) — the AO2 "placeholder" for a
+	// character sprite whose whole fallback chain 404'd. Distinct from the
+	// still-loading fallback above: this fires ONLY once there is nothing left to
+	// fetch, so it never flashes over a sprite that's merely streaming.
+	mno := a.d.Prefs.ShowMissingPlaceholderOn()
+	if next := c.Checkbox(pad, y, "Show a placeholder for missing character sprites (like AO2's \"missingno\")", mno); next != mno {
+		a.d.Prefs.SetShowMissingPlaceholder(next)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "On (default): when a character's idle/talk sprite can't be found at all (every spelling and format 404'd), the stage shows a distinct placeholder image instead of holding the previous character. Off: the previous sprite stays (or the stage goes blank), exactly as before. Only fires once nothing is left to fetch — a still-downloading sprite never shows it.", ColTextDim)
+	y += 6
+	// Custom placeholder image path: TextField + Apply, with an inline error label
+	// on a bad path. The load runs OFF-THREAD (rule §17.2); Apply re-triggers it.
+	c.Label(pad, y+4, "Custom image:", ColText)
+	if !settings.errorSpriteLoaded {
+		settings.errorSpriteInput = a.d.Prefs.ErrorSpritePath()
+		settings.errorSpriteLoaded = true
+	}
+	var esCommit bool
+	settings.errorSpriteInput, esCommit = c.TextField("errorsprite", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH},
+		settings.errorSpriteInput, "path to a PNG/WebP/GIF/APNG/JPG (blank = built-in missingno)")
+	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || esCommit {
+		raw := strings.TrimSpace(settings.errorSpriteInput)
+		a.d.Prefs.SetErrorSpritePath(raw)
+		a.errorSpriteErr = ""   // clear a stale error; the load reports fresh via pollErrorSprite
+		a.applyErrorSprite(raw) // "" restores the embedded default synchronously
+		if raw == "" {
+			settings.statusLine = "Custom missing-sprite image cleared — using the built-in placeholder."
+		} else {
+			settings.statusLine = "Loading custom missing-sprite image…"
+		}
+	}
+	y += 30
+	if a.errorSpriteErr != "" {
+		c.LabelClipped(pad+130, y, w-pad-130-scrollBarW, "Couldn't load that image: "+a.errorSpriteErr+" — using the built-in placeholder.", ColDanger)
+		y += 22
+	}
+	y = a.settingsDesc(pad, y, "Optional: replace the built-in glitch placeholder with your own image (a PNG, WebP, GIF, APNG or JPG). Loaded in the background; if the file can't be read or decoded it's ignored and the built-in one stays. Leave blank for the default.", ColTextDim)
 	y += 10
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
