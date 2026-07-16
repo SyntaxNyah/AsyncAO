@@ -9139,6 +9139,50 @@ func (p *AssetPreferences) AddFavorite(name, url, description string) {
 	p.markDirty()
 }
 
+// UpdateFavorite renames and/or re-addresses an existing phone-book entry,
+// preserving its position in the list. Returns false if oldURL isn't found, or
+// if newURL differs from oldURL and already belongs to ANOTHER favorite
+// (rejected to avoid a silent, surprising merge onto that target). A no-op edit
+// (nothing actually changed) returns true — the caller treats false purely as
+// an error signal, so an unchanged Save must not report failure. markDirty()
+// fires only on a real change.
+func (p *AssetPreferences) UpdateFavorite(oldURL, newName, newURL, description string) bool {
+	if oldURL == "" || newURL == "" {
+		return false
+	}
+	p.mu.Lock()
+	idx := -1
+	for i, f := range p.Favorites {
+		if f.URL == oldURL {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		p.mu.Unlock()
+		return false // oldURL not in the phone book
+	}
+	if newURL != oldURL {
+		for i, f := range p.Favorites {
+			if i != idx && f.URL == newURL {
+				p.mu.Unlock()
+				return false // the new address already belongs to another entry — reject
+			}
+		}
+	}
+	cur := p.Favorites[idx]
+	if cur.Name == newName && cur.URL == newURL && cur.Description == description {
+		p.mu.Unlock()
+		return true // no-op: accepted, nothing to persist
+	}
+	p.Favorites[idx].Name = newName
+	p.Favorites[idx].URL = newURL
+	p.Favorites[idx].Description = description
+	p.mu.Unlock()
+	p.markDirty()
+	return true
+}
+
 // RemoveFavorite unstars the server with the given URL.
 func (p *AssetPreferences) RemoveFavorite(url string) {
 	p.mu.Lock()

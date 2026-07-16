@@ -180,6 +180,7 @@ func (a *App) drawLobby(w, h int32) {
 	if c.Button(pbBtn, pbLabel) {
 		a.phoneBookPage = !a.phoneBookPage
 		a.selServer, a.descLines, a.lobbyScroll = -1, nil, 0
+		a.cancelPhoneBookEdit() // drop any half-finished row edit on page change
 	}
 	c.Tooltip(pbBtn, "Your manually-added servers — kept forever (until Wipe everything), exportable")
 
@@ -299,6 +300,13 @@ func (a *App) drawLobby(w, h int32) {
 		}
 	}
 
+	// "Phone Fanat" easter egg: a whimsical bottom-right quip on the Phone Book
+	// page only. Advancing + drawing strictly inside this branch keeps it off
+	// the plain all-servers lobby and out of the rest of the app.
+	if a.phoneBookPage {
+		a.advancePhoneFanat(w, h)
+	}
+
 	// Transient warning banner (bottom of the lobby): the app starts here, so
 	// startup notices — e.g. the corrupt-prefs quarantine (#3) — must draw on
 	// the lobby too, not only the courtroom/char-select screens.
@@ -318,6 +326,27 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 		bg = ColPanelHi
 	}
 	c.Fill(row, bg)
+
+	// Inline edit (phone book only): while this row is being edited, it draws
+	// name/address fields + Save/Cancel INSTEAD of the normal row, and returns
+	// early — that early return is what suppresses star-remove, click-to-connect
+	// and the tooltip for the row under edit. Identity is the stored Favorites
+	// URL (== WebSocketURL()); guarded by phoneBookPage && Favorite so it can
+	// never trigger on a plain master-list row.
+	editing := a.phoneBookPage && e.Favorite && a.pbEditURL != "" && a.pbEditURL == e.WebSocketURL()
+	if editing {
+		fy := y + (rowH-2-fieldH)/2
+		a.pbEditName, _ = c.TextField("pbedit_name", sdl.Rect{X: row.X + 6, Y: fy, W: 150, H: fieldH}, a.pbEditName, "name")
+		a.pbEditAddr, _ = c.TextField("pbedit_url", sdl.Rect{X: row.X + 164, Y: fy, W: 250, H: fieldH}, a.pbEditAddr, "host:port, ws:// or wss://")
+		if c.Button(sdl.Rect{X: row.X + 422, Y: fy, W: 64, H: btnH}, "Save") {
+			a.savePhoneBookEdit(e.WebSocketURL(), e.Description)
+		}
+		if c.Button(sdl.Rect{X: row.X + 492, Y: fy, W: 72, H: btnH}, "Cancel") {
+			a.cancelPhoneBookEdit()
+		}
+		return
+	}
+
 	if hover { // #17: hover shows the URL + description ("MOTD") without clicking to expand
 		a.serverRowTooltip(row, e)
 	}
@@ -337,6 +366,21 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 		return
 	}
 
+	// Phone-book edit affordance: a small "Edit" button beside the star, only on
+	// the user's own saved rows on the Phone Book page (never on plain lobby
+	// rows). It sits between the star and the name, so the name's start-x shifts
+	// right in this branch only — the normal lobby row is byte-for-byte unchanged.
+	nameX := row.X + 52
+	if a.phoneBookPage && e.Favorite {
+		const editBtnW = 40
+		editBtn := sdl.Rect{X: starRect.X + 22, Y: y + 1, W: editBtnW, H: rowH - 4}
+		if c.Button(editBtn, "Edit") {
+			a.beginPhoneBookEdit(e.WebSocketURL(), e.Name, e.WebSocketURL())
+			return
+		}
+		nameX = editBtn.X + editBtnW + 8
+	}
+
 	name := fmt.Sprintf("%s  (%d players)", e.Name, e.Players)
 	if !e.Joinable() {
 		name = e.Name + "  — legacy TCP only"
@@ -345,7 +389,7 @@ func (a *App) drawServerRow(e *network.ServerEntry, idx int, y, w int32) {
 	if !e.Joinable() {
 		textCol = ColTextDim
 	}
-	c.LabelClipped(row.X+52, y+5, row.W-260, name, textCol)
+	c.LabelClipped(nameX, y+5, row.W-260-(nameX-(row.X+52)), name, textCol)
 
 	// Right-side label: normally the security tier; in ping mode the connect
 	// time takes this slot instead (the verbose tier text would run under the

@@ -213,6 +213,17 @@ type App struct {
 	// Reset, cleared by Wipe), with its own export/import.
 	phoneBookPage bool
 	pbName, pbURL string // phone-book "add server" form
+	// Inline row edit (phone book only): pbEditURL is the identity (stored
+	// Favorites URL) of the row currently open for editing — empty = none; the
+	// two working buffers hold the in-progress name/address until Save.
+	pbEditURL, pbEditName, pbEditAddr string
+	// "Phone Fanat" easter egg (phone-book page only): a whimsical quip that
+	// pops bottom-right on a random schedule. phoneFanatNextAt is the next fire
+	// time (zero = not yet scheduled), phoneFanatShownAt stamps the last fire so
+	// the line lingers for fanatShowDuration. Ephemeral — never persisted.
+	phoneFanatLine    string
+	phoneFanatShownAt time.Time
+	phoneFanatNextAt  time.Time
 	// click-to-expand selection: first click opens the full description
 	// under the row, a second click on the same row joins.
 	selServer  int
