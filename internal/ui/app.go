@@ -3563,6 +3563,15 @@ func (a *App) pickCharacter(idx int) {
 		a.enterCourtroom()
 		return
 	}
+	// Warm this character's char.ini the instant we send CC, so the fetch
+	// overlaps the CC→PV round-trip instead of only starting once PV lands
+	// (Cluster E: /randomchar & Ctrl+R never pre-warm on hover the way a
+	// char-select click does, adding one full RTT of visible button-load
+	// delay). warmCharINI's iniWarmed guard makes the hover-then-click path a
+	// no-op. Same bounds guard shape as the pushDebug above.
+	if idx >= 0 && idx < len(a.sess.Chars) {
+		a.warmCharINI(a.sess.Chars[idx].Name)
+	}
 	a.sess.PickCharacter(idx)
 }
 
