@@ -739,6 +739,15 @@ type App struct {
 	toolboxPinned       bool
 	toolboxPieces       bool
 	toolboxPiecesScroll int32
+	// toolboxThemeRect is the compact toolbox's per-frame themed position: a themed
+	// courtroom whose design INI ships the OPTIONAL "asyncao_toolbox" key sets this
+	// (from lay.rect) before drawing the toolbox, so the strip anchors where the
+	// theme/themed-editor placed it — the dual-key twin of the classic slotToolbox
+	// override (mirrors slotICFx's asyncao_ic_fx). Absent key ⇒ ok=false ⇒ the
+	// classic-slot / bottom-right default path. Set + cleared each themed frame; the
+	// value type (rect + bool) allocates nothing.
+	toolboxThemeRect   sdl.Rect
+	toolboxThemeRectOn bool
 	// pathStroke is the in-progress freehand stroke for the Sprite Style "draw a path" box
 	// (#34 B2): raw box-relative points captured while dragging, sampled to <=6 waypoints on
 	// release. pathDrawing = mid-stroke; pathPrevDown is its press-edge latch. Bounded.
@@ -2082,6 +2091,11 @@ var themeLayoutKeys = []string{
 	// unchanged). x,y,w,h in design space, same as any AO2 element.
 	"asyncao_ic_color", "asyncao_ic_immediate", "asyncao_ic_sfx",
 	"asyncao_ic_emoji", "asyncao_ic_fx", "asyncao_ic_react",
+	// OPTIONAL: a theme that ships "asyncao_toolbox" positions the compact
+	// bottom-right toolbox grip where it likes and makes it draggable in the themed
+	// editor (A1 Phase 2). Absent ⇒ the toolbox uses its classic slotToolbox
+	// override / bottom-right default. The twin of asyncao_ic_fx for the toolbox.
+	"asyncao_toolbox",
 	"pos_dropdown", "pair_button",
 	"hold_it", "objection", "take_that", "custom_objection",
 	"witness_testimony", "cross_examination", "not_guilty", "guilty",

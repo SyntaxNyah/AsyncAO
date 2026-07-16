@@ -258,18 +258,17 @@ func (a *App) drawCompactToolbox(w, h int32) {
 		return
 	}
 	c := a.ctx
-	// The collapsed grip: bottom-right corner, slim + semi-transparent.
-	grip := sdl.Rect{
-		X: w - compactGripW - compactToolboxMargin,
-		Y: h - compactGripH - compactToolboxMargin,
-		W: compactGripW, H: compactGripH,
-	}
 	// Expanded footprint (grip + chips to its left) so the strip stays open while
 	// the cursor is anywhere over a chip, not just the grip. Factored out
 	// (compactToolboxStripRect) so the editor's over-toolbox suppression rect and
 	// this draw agree — the click-leak class a fence rect that disagrees with the
-	// draw rect invites (mirrors toolboxPiecesRect's reason for existing).
+	// draw rect invites (mirrors toolboxPiecesRect's reason for existing). The strip
+	// routes through the slotToolbox override (A1 Phase 2), so the grip is DERIVED
+	// from the strip's right end rather than computed independently — a moved toolbox
+	// carries its grip with it and the two can never drift apart.
 	strip := a.compactToolboxStripRect(w, h)
+	// The collapsed grip: the strip's right end, slim + semi-transparent.
+	grip := compactToolboxGripRect(strip)
 	hoverArea := sdl.Rect{X: grip.X - compactHoverPad, Y: grip.Y - compactHoverPad,
 		W: grip.W + compactHoverPad, H: grip.H + 2*compactHoverPad}
 	// While a layout editor is armed the toolbox draws (post-courtroom, fence
@@ -311,7 +310,7 @@ func (a *App) drawCompactToolbox(w, h int32) {
 	// the individual chips below are self-contained and DO follow the shape.
 	c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
 	c.Border(strip, ColAccent)
-	x := w - compactGripW - compactToolboxMargin
+	x := grip.X // chips fan LEFT from the grip's left edge (grip is derived from the strip)
 	// The grip stays as the right-hand anchor — and now a pin toggle. Filled accent
 	// (or a brighter nub while pinned) so it's clear where the strip folds back to
 	// and whether it's latched.
@@ -325,11 +324,19 @@ func (a *App) drawCompactToolbox(w, h int32) {
 		c.Fill(bar, ColText)
 	}
 	// Clicking the grip toggles the pin latch (the un-strand affordance: it also
-	// closes/opens without needing a chip).
-	if c.hovering(grip) && c.clicked {
+	// closes/opens without needing a chip) — EXCEPT while a layout editor is armed,
+	// where the grip is the toolbox's DRAG handle (Phase 2): the same press already
+	// grabbed the toolbox for a move in the editor pass, so a pin toggle here would
+	// double-fire on one click.
+	editing := a.classicEdit || a.layoutEdit
+	if !editing && c.hovering(grip) && c.clicked {
 		a.compactTogglePin()
 	}
-	c.Tooltip(grip, "Toolbox — click to pin/unpin")
+	gripTip := "Toolbox — click to pin/unpin"
+	if editing {
+		gripTip = "Toolbox — drag this grip to move it"
+	}
+	c.Tooltip(grip, gripTip)
 	for _, ch := range compactToolboxChips {
 		cw := compactChipH // square icon chip
 		x -= cw + 4
@@ -364,18 +371,76 @@ func (a *App) drawCompactToolbox(w, h int32) {
 	// is hidden via panelHidden(panelToolbox): the hotkey un-strand path.
 }
 
-// compactToolboxStripRect is the expanded strip's footprint (grip + the icon chips
-// to its left), pinned to the bottom-right. Factored out (A1 Phase 1) so the
-// editor's over-toolbox suppression rect matches the drawn strip exactly — the same
-// draw-vs-fence agreement toolboxPiecesRect keeps. Chips are square (icon-only), so
-// each is as wide as it is tall. Pure geometry, alloc-free.
-func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
+// compactToolboxDefaultWidth is the expanded strip's intrinsic width: the grip plus
+// one square chip (compactChipH wide, +4 px spacing) per toolbox chip. Named so both
+// the default-rect geometry and any width reasoning share the one derivation.
+func compactToolboxDefaultWidth() int32 {
 	stripW := compactGripW
 	for range compactToolboxChips {
 		stripW += compactChipH + 4
 	}
+	return stripW
+}
+
+// compactToolboxDefaultRect is the strip's HISTORICAL position: pinned to the
+// bottom-right corner, inset by compactToolboxMargin. This is the slotToolbox
+// DEFAULT (A1 Phase 2) — an untouched install (no override) draws here, pixel-
+// identical to before movability landed. Pure geometry, alloc-free.
+func (a *App) compactToolboxDefaultRect(w, h int32) sdl.Rect {
+	stripW := compactToolboxDefaultWidth()
 	gripY := h - compactGripH - compactToolboxMargin
 	return sdl.Rect{X: w - stripW - compactToolboxMargin, Y: gripY, W: stripW, H: compactGripH}
+}
+
+// compactToolboxGripRect is the grip sub-rect at the strip's right end — the
+// hamburger handle. It's the toolbox's DRAG handle in the editor (like a floatWin's
+// title bar): pressing it grabs the toolbox to move it, while the chips to its left
+// stay live buttons. Derived from the strip so a moved toolbox carries its grip.
+func compactToolboxGripRect(strip sdl.Rect) sdl.Rect {
+	return sdl.Rect{X: strip.X + strip.W - compactGripW, Y: strip.Y, W: compactGripW, H: compactGripH}
+}
+
+// compactToolboxStripRect is the expanded strip's footprint (grip + the icon chips
+// to its left). Factored out (A1 Phase 1) so the editor's over-toolbox suppression
+// rect matches the drawn strip exactly — the same draw-vs-fence agreement
+// toolboxPiecesRect keeps. Chips are square (icon-only), so each is as wide as it is
+// tall. A1 Phase 2: routed through slotRect(slotToolbox, …) so an Edit-Layout
+// override relocates the whole toolbox; an absent override returns the bottom-right
+// default unchanged. slotRect reads a.classicOv lock-free and only touches the slot
+// registry while editing, so this stays alloc-free on the settled courtroom gate
+// (TestDrawCourtroomZeroAlloc).
+func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
+	def := a.compactToolboxDefaultRect(w, h)
+	// Themed twin: a theme whose design INI ships "asyncao_toolbox" positions the
+	// strip at that (themed-editor-draggable) rect, taking precedence over the
+	// classic slot — exactly as the FX button's asyncao_ic_fx rect wins over its
+	// classic slotICFx. Keep the intrinsic (move-only) W/H; clamp on-window.
+	if a.toolboxThemeRectOn {
+		cur := def
+		cur.X = clampI32(a.toolboxThemeRect.X, compactToolboxMargin, w-def.W-compactToolboxMargin)
+		cur.Y = clampI32(a.toolboxThemeRect.Y, compactToolboxMargin, h-def.H-compactToolboxMargin)
+		return cur
+	}
+	cur := def
+	if ov, ok := a.classicOv[slotToolbox]; ok {
+		cur = a.anchoredRect(slotToolbox, ov, w, h) // fracToRect unless the slot is window-pinned
+		// The strip is MOVE-only (slotResizeEdges): its W/H are chip-count-driven,
+		// not user-resizable. The override persists position as a window FRACTION,
+		// which would scale W/H on a resized window and smear the strip — so keep only
+		// the override's X/Y and always restore the intrinsic size. Clamp X/Y so a
+		// moved toolbox can't sail off a now-smaller window (ungrabbable).
+		cur.W, cur.H = def.W, def.H
+		cur.X = clampI32(cur.X, compactToolboxMargin, w-def.W-compactToolboxMargin)
+		cur.Y = clampI32(cur.Y, compactToolboxMargin, h-def.H-compactToolboxMargin)
+	}
+	// Register with the editor while editing (so it hands the toolbox move handles),
+	// exactly as slotRect does — but with the NORMALIZED rect, so the editor's drag
+	// base and this draw agree on the strip's true W/H. Done inline (not via slotRect)
+	// precisely because slotRect can't apply the move-only W/H normalization above.
+	if a.classicEdit {
+		a.regSlot(slotToolbox, cur, def)
+	}
+	return cur
 }
 
 // editOverToolbox reports whether the cursor sits over the compact toolbox strip
@@ -386,8 +451,21 @@ func (a *App) compactToolboxStripRect(w, h int32) sdl.Rect {
 // grip both editors now show. Pure hit-test, alloc-free.
 func (a *App) editOverToolbox(w, h int32) bool {
 	c := a.ctx
-	if !a.panelHidden(panelToolbox) && pointIn(c.mouseX, c.mouseY, a.compactToolboxStripRect(w, h)) {
-		return true
+	// The CHIPS (strip minus the grip) stay live buttons in the editor (Phase 1:
+	// Theater / Edit / Hide-UI), so suppress a slot-move/right-click over them — the
+	// chip press wins. The GRIP is deliberately EXCLUDED: it's the toolbox's drag
+	// handle (Phase 2), so a press there must reach the editor and grab the toolbox to
+	// move it, exactly like a floatWin title bar. When the themed twin is active the
+	// toolbox IS an editable themed key (asyncao_toolbox) the themed editor drags as a
+	// normal box, so don't suppress the chips region either — let the themed editor own
+	// the whole strip. The classic editor drags via the slotToolbox registration
+	// (compactToolboxStripRect → regSlot) whenever the press lands on the grip.
+	if !a.toolboxThemeRectOn && !a.panelHidden(panelToolbox) {
+		strip := a.compactToolboxStripRect(w, h)
+		grip := compactToolboxGripRect(strip)
+		if pointIn(c.mouseX, c.mouseY, strip) && !pointIn(c.mouseX, c.mouseY, grip) {
+			return true // over a chip, not the grip
+		}
 	}
 	// The pinned pieces panel is drawn post-courtroom and takes its own input there,
 	// but it overlaps the bottom-right where slots can park — fence a slot-move under

@@ -283,6 +283,18 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// Layout edit mode fences every widget below (they draw, but stay
 	// inert); the editor overlay paints and interacts at the very end.
 	a.layoutEditFence()
+	// Toolbox themed twin (A1 Phase 2): if this theme ships the optional
+	// "asyncao_toolbox" design rect, the compact toolbox anchors there and the
+	// themed editor drags it (it's a normal key in lay.r). Set for the whole pass —
+	// the editor's over-toolbox suppression + the post-court draw both read
+	// compactToolboxStripRect, which consults this. Absent ⇒ classic-slot default.
+	// Cleared after the themed pass (drawCompactToolbox for THIS courtroom draws
+	// post-court in app.go, so the flag must outlive this function — cleared there).
+	if tr, ok := lay.rect("asyncao_toolbox"); ok {
+		a.toolboxThemeRect, a.toolboxThemeRectOn = tr, true
+	} else {
+		a.toolboxThemeRectOn = false
+	}
 	a.themedExtrasHint() // one-time-per-session: point players at the Extras box
 
 	// Stage: letterbox fill, then the theme's window art over the design

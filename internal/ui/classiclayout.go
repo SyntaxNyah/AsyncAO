@@ -54,6 +54,15 @@ const (
 	slotOOCBar     = "oocbar"         // the bottom OOC bar (name + full-width input; shown when OOC is a tab)
 	slotControls   = "controls"       // the two control-button rows (shouts/pair/knobs + utility buttons) as one block
 	slotTabBar     = "tabbar"         // the floating server-tab switcher strip (move-only; issue #2 — it used to overlap the dock tabs)
+	// slotToolbox is the compact bottom-right toolbox grip's PERSISTED home (A1
+	// Phase 2). It rides the same classic-slot mechanism as every other movable
+	// piece: an absent override keeps the historical bottom-right default (untouched
+	// installs are pixel-identical), and dragging it in the editor writes an override
+	// via SetClassicSlot on drag-end. Move-only (slotResizeEdges) — the strip sizes
+	// itself from its fixed chip count, so a resize would do nothing. The themed
+	// courtroom has a parallel opt-in key "asyncao_toolbox" (mirrors slotICFx's
+	// asyncao_ic_fx twin).
+	slotToolbox = "toolbox"
 	// slotMessages is the Group Chat / DMs panel's PERSISTED home. Unlike a torn
 	// tab, slot presence is geometry only — visibility stays the orthogonal
 	// showMessages toggle (Extras → Group Chat). The live floatWin (msgWin) seeds
@@ -280,6 +289,8 @@ func classicSlotLabel(k string) string {
 		return "Control buttons (drag the sides to re-wrap)"
 	case slotTabBar:
 		return "Server tabs (move only)"
+	case slotToolbox:
+		return "Toolbox (move only)"
 	case slotICColor:
 		return "IC colour picker"
 	case slotICShowname:
@@ -361,6 +372,11 @@ func slotResizeEdges(name string) uint8 {
 	case slotTabBar:
 		// The server-tab strip sizes itself from its chips, so resizing it
 		// would do nothing — move-only.
+		return 0
+	case slotToolbox:
+		// The compact toolbox strip sizes itself from its fixed chip count
+		// (compactToolboxStripRect), so a resize would do nothing — move-only,
+		// exactly like the server-tab strip.
 		return 0
 	default:
 		return edgeL | edgeR | edgeT | edgeB

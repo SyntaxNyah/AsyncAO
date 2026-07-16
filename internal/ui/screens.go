@@ -1280,6 +1280,12 @@ func (a *App) drawCourtroom(w, h int32) {
 	}
 	defer c.unfencePointer()
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
+	// Clear the toolbox themed-rect flag every frame; only drawCourtroomThemed
+	// re-arms it (when the theme ships "asyncao_toolbox"). Without this reset a
+	// stale true from a prior themed frame would wrongly apply to the classic /
+	// theater toolbox after the theme toggled off (the flag outlives the themed
+	// pass because the toolbox draws post-court in app.go).
+	a.toolboxThemeRectOn = false
 	a.pollCharINI()
 	if a.room == nil || a.sess == nil {
 		if a.classicEdit {

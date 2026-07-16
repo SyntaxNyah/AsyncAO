@@ -59,6 +59,20 @@ func (a *App) rebuildPanelMagnetRects(w, h int32) {
 	if !a.anyPanelDragging() {
 		return
 	}
+	a.collectOpenPanelRects(w, h)
+}
+
+// collectOpenPanelRects populates the shared panelMagnetRects buffer (bounded by
+// panelMagnetCap) with every currently-open floating surface, skipping whichever
+// surface is mid-drag by identity (its own drag flag — a rect-equality filter
+// would fail because the census carries last-frame positions). This is the one
+// enumeration behind BOTH censuses: rebuildPanelMagnetRects gates it behind
+// anyPanelDragging for the live-drag magnet (settled frames stay free, so the
+// alloc gate never sees a populate), and panelDeOverlapCensus calls it directly
+// for the drag-agnostic seed case (A1 Phase 2 de-overlap), so the two can never
+// disagree about which surfaces exist.
+func (a *App) collectOpenPanelRects(w, h int32) {
+	a.panelMagnetRects = a.panelMagnetRects[:0]
 	add := func(r sdl.Rect) {
 		if len(a.panelMagnetRects) < panelMagnetCap {
 			a.panelMagnetRects = append(a.panelMagnetRects, r)
@@ -110,6 +124,117 @@ func (a *App) rebuildPanelMagnetRects(w, h int32) {
 			}
 		}
 	}
+	// The compact toolbox strip is a passive magnet target too (A1 Phase 2 — it was
+	// absent from the census before): panels can now snap flush to it. It's never the
+	// surface dragged in this file, and it's always present in normal play unless the
+	// user hid it (panelToolbox).
+	if !a.panelHidden(panelToolbox) {
+		add(a.compactToolboxStripRect(w, h))
+	}
+}
+
+const (
+	// panelDeOverlapFracNum/Den express the "near-total overlap" threshold as a
+	// fraction: a newly-seeded or just-released panel is nudged only when its
+	// intersection with a sibling covers at least this much of the SMALLER of the
+	// two rects (num/den = 82%). High on purpose — an intentional partial stack is
+	// left alone; only a near-complete occlusion (the two-panels-to-identical-
+	// defaults root cause) cascades. Expressed as an integer ratio so the test is
+	// exact and no float creeps onto the (cold) seed path.
+	panelDeOverlapFracNum = 82
+	panelDeOverlapFracDen = 100
+	// panelDeOverlapStep is the fixed diagonal nudge (screen px) applied per cascade
+	// step when a near-total overlap is found — down-and-right, like a stacked-window
+	// cascade. Matches the floatTitleH-ish visual offset so the moved panel's title
+	// bar clears the one beneath it.
+	panelDeOverlapStep = int32(28)
+	// panelDeOverlapCap bounds the cascade iterations (hard rule §17.4): after this
+	// many nudges the panel is placed wherever it landed rather than looping forever
+	// on a screen crowded with panels. The candidate SET stays bounded by
+	// panelMagnetCap (rebuildPanelMagnetRects).
+	panelDeOverlapCap = 6
+)
+
+// rectsNearlyCover reports whether a and b overlap enough to count as "near-total"
+// (panelDeOverlapFrac of the smaller rect's area). Pure integer math, SDL-free
+// beyond the rect type, so it unit-tests without a renderer.
+func rectsNearlyCover(a, b sdl.Rect) bool {
+	ix := maxI32(a.X, b.X)
+	iy := maxI32(a.Y, b.Y)
+	ix2 := min32(a.X+a.W, b.X+b.W)
+	iy2 := min32(a.Y+a.H, b.Y+b.H)
+	if ix2 <= ix || iy2 <= iy {
+		return false // disjoint
+	}
+	inter := int64(ix2-ix) * int64(iy2-iy)
+	areaA := int64(a.W) * int64(a.H)
+	areaB := int64(b.W) * int64(b.H)
+	smaller := areaA
+	if areaB < smaller {
+		smaller = areaB
+	}
+	if smaller <= 0 {
+		return false
+	}
+	return inter*panelDeOverlapFracDen >= smaller*panelDeOverlapFracNum
+}
+
+// deOverlapRect nudges r diagonally (down-and-right) whenever it near-totally
+// overlaps a sibling in the census, so an independently-opened or just-released
+// panel can't seed/land fully on top of another (root cause 3: no general de-overlap
+// existed). Bounded by panelDeOverlapCap; the census is bounded by panelMagnetCap.
+// It keeps r on-window: a nudge that would push it off the right/bottom wraps back to
+// the top-left inset so the cascade stays reachable. Pure — takes the census slice,
+// so it unit-tests without a renderer and shares the exact rects the live magnet uses.
+func deOverlapRect(r sdl.Rect, census []sdl.Rect, w, h int32) sdl.Rect {
+	for iter := 0; iter < panelDeOverlapCap; iter++ {
+		hit := false
+		for _, s := range census {
+			if rectsNearlyCover(r, s) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			return r
+		}
+		r.X += panelDeOverlapStep
+		r.Y += panelDeOverlapStep
+		// Keep it on-window: if the nudge ran the panel off the right or bottom, wrap
+		// back near the top-left so the cascade stays visible instead of marching off.
+		if r.X+r.W > w-floatWinMargin {
+			r.X = floatWinMargin
+		}
+		if r.Y+r.H > h-floatWinMargin {
+			r.Y = floatTitleH
+		}
+	}
+	return r
+}
+
+// panelDeOverlapCensus builds the sibling census for the de-overlap pass off the
+// live-drag path (seed and release both run when the moving panel's own drag flag is
+// NOT what rebuildPanelMagnetRects keys on). It reuses the same panelMagnetRects
+// buffer + panelMagnetCap bound and the same per-surface enumeration as the live
+// magnet, EXCLUDING the surface at exclude (the panel being seeded/released) by rect
+// identity so a panel never de-overlaps against itself. Returns the shared slice.
+func (a *App) panelDeOverlapCensus(exclude sdl.Rect, w, h int32) []sdl.Rect {
+	a.rebuildPanelMagnetRects(w, h) // populates only while dragging (release case)
+	if len(a.panelMagnetRects) == 0 {
+		// Seed case (no drag active): build the full open-surface census directly into
+		// the same buffer, bounded by panelMagnetCap, via the drag-agnostic collector.
+		a.collectOpenPanelRects(w, h)
+	}
+	// Drop the excluded surface (the one being placed) so it can't match itself.
+	out := a.panelMagnetRects[:0]
+	for _, r := range a.panelMagnetRects {
+		if r == exclude {
+			continue
+		}
+		out = append(out, r)
+	}
+	a.panelMagnetRects = out
+	return a.panelMagnetRects
 }
 
 // anyPanelDragging reports whether any live magnet-participating floating surface

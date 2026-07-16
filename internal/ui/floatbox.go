@@ -819,6 +819,32 @@ func (a *App) drawFloatingPanels(w, h int32) {
 	// drag-gated no-ops on a settled frame — the reslice is the only cost.
 	a.rebuildPanelMagnetRects(w, h)
 	a.alignGuides = a.alignGuides[:0]
+	// A1 Phase 2: de-overlap SEED pass. An open-but-never-placed panel sitting on
+	// its centered default gets cascaded off any sibling it near-totally covers
+	// (two panels opened to identical defaults was root cause 3). Runs ONCE per
+	// panel (deSeeded latches) and only on settled frames; a moved panel becomes
+	// "placed", an already-clear one stays unplaced so window resizes keep
+	// re-centering it exactly as before.
+	if !a.anyPanelDragging() {
+		seeded := false
+		for i := range panelSlotTable {
+			row := &panelSlotTable[i]
+			fw := row.fw(a)
+			if !row.open(a) || fw.placed || fw.deSeeded {
+				continue
+			}
+			r := fw.rect(row.defW, row.defH, row.minW, row.minH, w, h)
+			if nr := deOverlapRect(r, a.panelDeOverlapCensus(r, w, h), w, h); nr != r {
+				fw.x, fw.y, fw.placed = nr.X, nr.Y, true
+			}
+			fw.deSeeded, seeded = true, true
+		}
+		if seeded {
+			// Leave the shared census buffer empty on settled frames, as the live
+			// magnet's contract documents (rebuildPanelMagnetRects).
+			a.panelMagnetRects = a.panelMagnetRects[:0]
+		}
+	}
 	if !c.mouseDown {
 		a.extrasPressing = false // a cell press can't outlive the button
 		if a.extrasDragging || a.extrasDetachDragging || a.extrasResizing || a.extrasDetachResizing ||

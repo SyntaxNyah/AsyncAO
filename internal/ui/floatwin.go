@@ -12,6 +12,7 @@ import "github.com/veandco/go-sdl2/sdl"
 type floatWin struct {
 	x, y, w, h     int32 // current rect; w/h ≤ 0 = use the caller's default size
 	placed         bool  // dragged/resized at least once (else centered default)
+	deSeeded       bool  // de-overlap seed pass ran once for this open (A1 Phase 2)
 	dragging       bool
 	resizing       bool
 	grabDX, grabDY int32
@@ -99,6 +100,15 @@ func (a *App) floatWinDrag(fw *floatWin, handle sdl.Rect, pressed *bool) {
 		fw.grabDX, fw.grabDY = c.mouseX-handle.X, c.mouseY-handle.Y
 	}
 	if !c.mouseDown {
+		if fw.dragging && fw.lastWinW > 0 && fw.lastWinH > 0 {
+			// A1 Phase 2: on drag-RELEASE, cascade this window off any sibling it
+			// was dropped nearly on top of (deOverlapRect no-ops when clear, and
+			// the 82% threshold leaves deliberate partial stacks alone). fw.dragging
+			// is still true here, so the census skips this window by identity.
+			r := sdl.Rect{X: fw.x, Y: fw.y, W: fw.lastW, H: fw.lastH}
+			nr := deOverlapRect(r, a.panelDeOverlapCensus(r, fw.lastWinW, fw.lastWinH), fw.lastWinW, fw.lastWinH)
+			fw.x, fw.y = nr.X, nr.Y
+		}
 		fw.dragging = false
 	}
 	if fw.dragging {
