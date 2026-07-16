@@ -129,7 +129,10 @@ func (a *App) startLayoutEdit() {
 	a.bgPick.show = false
 	a.editKey = ""
 	a.editDrag = 0
-	a.layoutSnap = true // tidy placement by default; toggle off in the editor
+	a.layoutSnap = true        // tidy placement by default; toggle off in the editor
+	a.layoutProfileCursor = -1 // no saved profile applied via the banner chip yet this edit
+	// layoutMagnetOff is NOT reset here (see startClassicEdit): the sibling magnet
+	// applies in normal play too, so its zero value (magnet on) must persist.
 	a.editUndo, a.editRedo = nil, nil
 }
 
@@ -191,13 +194,25 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
 	resetBtn := sdl.Rect{X: doneBtn.X - 96, Y: 2, W: 90, H: 22}
 	snapBtn := sdl.Rect{X: resetBtn.X - 106, Y: 2, W: 100, H: 22}
+	// Phase 3 chips beside Snap: the persistent Magnet toggle and the saved-profile
+	// cycler (applyProfile). Mirror the classic editor banner exactly.
+	magnetBtn := sdl.Rect{X: snapBtn.X - editChipMagnetW - 6, Y: 2, W: editChipMagnetW, H: 22}
+	profileBtn := sdl.Rect{X: magnetBtn.X - editChipProfileW - 6, Y: 2, W: editChipProfileW, H: 22}
 	snapLabel := "Snap: off"
 	if a.layoutSnap {
 		snapLabel = "Snap: on"
 	}
+	magnetLabel := "Magnet: on"
+	if a.layoutMagnetOff {
+		magnetLabel = "Magnet: off"
+	}
 	a.rawChip(doneBtn, "Done")
 	a.rawChip(resetBtn, "Reset all")
 	a.rawChip(snapBtn, snapLabel)
+	a.rawChip(magnetBtn, magnetLabel)
+	if name := a.currentLayoutProfileLabel(); name != "" {
+		a.rawChip(profileBtn, name)
+	}
 
 	pressed := c.mouseDown && !a.editPrev
 	a.editPrev = c.mouseDown
@@ -228,6 +243,12 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 
 	if c.clicked && pointIn(c.mouseX, c.mouseY, snapBtn) {
 		a.layoutSnap = !a.layoutSnap
+	}
+	if c.clicked && pointIn(c.mouseX, c.mouseY, magnetBtn) {
+		a.layoutMagnetOff = !a.layoutMagnetOff // persistent sibling-magnet toggle (session-only, like Snap)
+	}
+	if c.clicked && a.hasLayoutProfiles() && pointIn(c.mouseX, c.mouseY, profileBtn) {
+		a.cycleLayoutProfile() // apply the next saved full-state profile (applyProfile)
 	}
 
 	// Editable keys (skip the design canvas + chatbox children).
@@ -464,7 +485,13 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	}
 	if rotKey != "" && a.themeLay.ang != nil {
 		if label := rotationChipLabel(a.themeLay.ang[rotKey]); label != "" {
-			a.rawChip(sdl.Rect{X: snapBtn.X - 84, Y: 2, W: 78, H: 22}, label)
+			// Sits left of the Phase-3 chips (profile when present, else magnet) so it
+			// never overpaints them.
+			rotRightX := magnetBtn.X
+			if a.hasLayoutProfiles() {
+				rotRightX = profileBtn.X
+			}
+			a.rawChip(sdl.Rect{X: rotRightX - 84, Y: 2, W: 78, H: 22}, label)
 		}
 	}
 }

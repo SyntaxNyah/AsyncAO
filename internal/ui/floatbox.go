@@ -637,7 +637,7 @@ func (a *App) handleExtrasDrag(handle sdl.Rect, w, h int32, pressed *bool) {
 		a.extrasPlaced = true
 		// M3: piece-to-piece magnet (before the persist below, so the snapped spot
 		// is what survives a relaunch). extrasBoxRect re-clamps the snapped X/Y.
-		if !magnetBypassed() && len(a.panelMagnetRects) > 0 {
+		if !a.siblingMagnetOff() && len(a.panelMagnetRects) > 0 {
 			r := a.extrasBoxRect(w, h)
 			a.extrasBoxX, a.extrasBoxY, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
 		}
@@ -669,7 +669,7 @@ func (a *App) handleDetachedDrag(i int, handle sdl.Rect, w, h int32, pressed *bo
 			// M3: piece-to-piece magnet (before the drag-end persist below).
 			// detachedBoxRect reads the raw x/y just set; snap the clamped rect
 			// and write the snapped top-left back to the raw fields.
-			if !magnetBypassed() && len(a.panelMagnetRects) > 0 {
+			if !a.siblingMagnetOff() && len(a.panelMagnetRects) > 0 {
 				r := a.detachedBoxRect(i, w, h)
 				a.extrasDetached[i].x, a.extrasDetached[i].y, a.alignGuides = snapRectToSiblings(r, a.panelMagnetRects, w, h, a.alignGuides)
 			}

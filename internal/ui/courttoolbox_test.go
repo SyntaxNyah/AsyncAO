@@ -279,3 +279,88 @@ func TestToolboxPiecesPanelModalFenced(t *testing.T) {
 		t.Fatalf("with modalOn released (app.go edit path), a click must hide %q", firstID)
 	}
 }
+
+// TestToolboxPieceSearchLowered pins the Phase-3 filter precompute: every hideable
+// id has a LOWERED searchable entry (so per-frame matching never lowers a label),
+// and the lowered text carries the label. Guards against a registry gaining an id
+// the precompute misses.
+func TestToolboxPieceSearchLowered(t *testing.T) {
+	all := make([]struct{ id, label string }, 0)
+	for _, p := range hideablePanels {
+		all = append(all, struct{ id, label string }{p.id, p.label})
+	}
+	for _, b := range hideableButtons {
+		all = append(all, struct{ id, label string }{b.id, b.label})
+	}
+	for _, b := range hideableRosterButtons {
+		all = append(all, struct{ id, label string }{b.id, b.label})
+	}
+	for _, e := range all {
+		s, ok := toolboxPieceSearch[e.id]
+		if !ok {
+			t.Errorf("toolboxPieceSearch missing id %q — precompute out of sync with a registry", e.id)
+			continue
+		}
+		if s != strings.ToLower(s) {
+			t.Errorf("toolboxPieceSearch[%q] = %q is not lowered — per-row match would allocate", e.id, s)
+		}
+		if e.label != "" && !strings.Contains(s, strings.ToLower(e.label)) {
+			t.Errorf("toolboxPieceSearch[%q] = %q does not contain its lowered label %q", e.id, s, e.label)
+		}
+	}
+}
+
+// TestToolboxPieceMatches pins the filter's matching contract: an empty query
+// matches everything (inert), a substring of a piece's label matches, and a
+// non-matching query excludes it.
+func TestToolboxPieceMatches(t *testing.T) {
+	id := hideablePanels[0].id
+	if !toolboxPieceMatches(id, "") {
+		t.Errorf("empty query must match every piece (filter inert), %q excluded", id)
+	}
+	// A guaranteed-present token: the first panel's own lowered short/label text.
+	tok := strings.ToLower(hideablePanels[0].short)
+	if tok != "" && !toolboxPieceMatches(id, tok) {
+		t.Errorf("query %q (from the piece's own label) must match %q", tok, id)
+	}
+	if toolboxPieceMatches(id, "zzzz-no-such-piece-token") {
+		t.Errorf("a non-matching query must exclude %q", id)
+	}
+}
+
+// TestToolboxFilteredContentHShrinks pins that a filter matching nothing collapses
+// the scroll content to a single (empty) region — no dead scroll space — while an
+// empty filter reports the full unfiltered height. Uses the guard-free counts, so
+// no SDL is needed.
+func TestToolboxFilteredContentHShrinks(t *testing.T) {
+	a := testTabApp(t)
+	// Derive showBtnGrid exactly as drawToolboxPieces does, so the empty-filter
+	// height matches toolboxPiecesContentH regardless of the test theme.
+	showBtnGrid := !a.d.Prefs.LegacyDevThemeOn()
+	full := a.toolboxPiecesFilteredContentH("", showBtnGrid)
+	if want := a.toolboxPiecesContentH(); full != want {
+		t.Errorf("empty-filter content height = %d, want the unfiltered %d", full, want)
+	}
+	none := a.toolboxPiecesFilteredContentH("zzzz-no-such-piece-token", showBtnGrid)
+	if none >= full {
+		t.Errorf("a filter matching nothing must shrink the content height: got %d, full %d", none, full)
+	}
+}
+
+// TestToolboxSectionVisibleCounts pins the section visible-count helpers the grid
+// layout and content height rely on: empty query returns every entry, and a
+// no-match query returns zero (so no stranded heading is drawn / counted).
+func TestToolboxSectionVisibleCounts(t *testing.T) {
+	if got, want := toolboxPanelsVisible(""), int32(len(hideablePanels)); got != want {
+		t.Errorf("toolboxPanelsVisible(\"\") = %d, want %d", got, want)
+	}
+	if got := toolboxButtonsVisible("zzzz-no-such-piece-token"); got != 0 {
+		t.Errorf("toolboxButtonsVisible(no-match) = %d, want 0", got)
+	}
+	if toolboxRosterHaveMatch("zzzz-no-such-piece-token") {
+		t.Errorf("toolboxRosterHaveMatch(no-match) must be false so its heading is suppressed")
+	}
+	if !toolboxButtonsHaveMatch("") {
+		t.Errorf("toolboxButtonsHaveMatch(\"\") must be true (filter inert)")
+	}
+}

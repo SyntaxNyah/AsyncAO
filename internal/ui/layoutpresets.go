@@ -1,9 +1,67 @@
 package ui
 
 import (
+	"sort"
+
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/veandco/go-sdl2/sdl"
 )
+
+const (
+	// editChipMagnetW / editChipProfileW size the two Phase-3 editor-banner chips
+	// (the persistent Magnet toggle and the saved-profile cycler). Named per rule 9
+	// and sized to the widest label they carry ("Magnet: off", a profile name +
+	// the "Profile: " prefix) so the text never clips inside the raw chip.
+	editChipMagnetW  = int32(94)
+	editChipProfileW = int32(150)
+)
+
+// sortedLayoutProfileNames returns the saved full-state profile names in a stable
+// (sorted) order — the same order the Settings → Theme list shows — so the banner
+// chip's cycle position is deterministic across draws. Off the hot frame (editor
+// banner only), so the allocation is fine.
+func (a *App) sortedLayoutProfileNames() []string {
+	names := a.d.Prefs.LayoutProfileNames()
+	sort.Strings(names)
+	return names
+}
+
+// hasLayoutProfiles reports whether any saved full-state profile exists — the
+// banner Profile chip only draws (and only accepts a click) when true, so it's
+// never a dead control. Editor path only.
+func (a *App) hasLayoutProfiles() bool {
+	return len(a.d.Prefs.LayoutProfileNames()) > 0
+}
+
+// currentLayoutProfileLabel is the Profile chip's label: "Profile: <name>" once
+// the user has cycled to a saved profile this edit, or "Profile: pick" before
+// they have. Returns "" when no profiles exist (the chip isn't drawn). The cursor
+// is re-clamped to the live name set so a profile deleted mid-edit can't index
+// out of range.
+func (a *App) currentLayoutProfileLabel() string {
+	names := a.sortedLayoutProfileNames()
+	if len(names) == 0 {
+		return ""
+	}
+	if a.layoutProfileCursor < 0 || a.layoutProfileCursor >= len(names) {
+		return "Profile: pick"
+	}
+	return "Profile: " + names[a.layoutProfileCursor]
+}
+
+// cycleLayoutProfile advances the banner Profile chip to the next saved profile
+// (wrapping) and applies it through the EXISTING applyProfile — the banner is a
+// shortcut for the Settings → Theme "Layout profiles" list, not a second system.
+// No-op when no profiles exist. Editor path only (never a per-frame draw).
+func (a *App) cycleLayoutProfile() {
+	names := a.sortedLayoutProfileNames()
+	if len(names) == 0 {
+		return
+	}
+	a.layoutProfileCursor = (a.layoutProfileCursor + 1) % len(names)
+	a.applyProfile(a.d.Prefs.LayoutProfile(names[a.layoutProfileCursor]))
+	a.pushDebug("layout: profile applied from editor banner")
+}
 
 // Layout premades + full-state profiles (#34 → A6): flip the whole courtroom
 // between named setups (a big stage for watching, a wide log for moderating, …).

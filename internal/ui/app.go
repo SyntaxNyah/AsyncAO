@@ -652,6 +652,15 @@ type App struct {
 	editBase     theme.Rect
 	layoutSnap   bool // snap edits to a design-space grid (toggle in the editor)
 	layoutAspect bool // lock the viewport (stage) to 4:3 while resizing it in the editor
+	// layoutMagnetOff backs the persistent "Magnet: on/off" banner chip (Phase 3):
+	// when true it OR's into the sibling-magnet bypass (siblingMagnetOff), disabling
+	// the forced piece-to-piece snap without holding Shift per drag. It gates ONLY
+	// snapToSiblings — screen-edge snapping and the de-overlap pass are separate
+	// concerns and stay on. Session state (not persisted), mirroring layoutSnap's
+	// treatment. Stored as the "off" sense deliberately: the zero value is false =
+	// magnet ON, so float panels snap in normal play (before any editor opens)
+	// exactly as before this chip existed — no init/reset wiring needed.
+	layoutMagnetOff bool
 	// Overlap cycling: Tab steps through the stack of boxes under the cursor (smallest first) so a
 	// big box hidden under a small one is still reachable. editPickSig is the current stack's
 	// fingerprint — the index resets when the stack changes.
@@ -730,6 +739,13 @@ type App struct {
 	// layoutPresetName is the Settings name field for saving the current layout as a
 	// named preset (#34, internal/ui/layoutpresets.go + the Theme settings section).
 	layoutPresetName string
+	// layoutProfileCursor is the editor banner "Profile" chip's cycle position: an
+	// index into the sorted saved-profile names (Phase 3). -1 = none applied yet
+	// this session. Clicking the chip advances it and applies that profile via the
+	// existing applyProfile — the banner is a shortcut for Settings → Theme, not a
+	// parallel mechanism. Session state (the chip re-derives from live names each
+	// draw, so a deleted/renamed profile can't strand it).
+	layoutProfileCursor int
 	// A1 — the compact bottom-right toolbox is the single show/hide + editor
 	// surface. toolboxPinned latches the flyout open (press the grip / pin chip);
 	// while pinned, toolboxPieces reveals the in-flyout per-piece hide/show panel
@@ -739,6 +755,14 @@ type App struct {
 	toolboxPinned       bool
 	toolboxPieces       bool
 	toolboxPiecesScroll int32
+	// toolboxFilter is the pieces-panel text filter (Phase 3 "easier to
+	// navigate"): the raw box text as typed. toolboxFilterLower is its lowered
+	// form, re-derived ONLY when toolboxFilter changes (drawToolboxPieces caches
+	// it), so per-row matching in the (per-frame) panel draw allocates nothing —
+	// it compares two already-lowered strings via strings.Contains. Session state
+	// (zero value = empty filter = every row shown).
+	toolboxFilter      string
+	toolboxFilterLower string
 	// toolboxThemeRect is the compact toolbox's per-frame themed position: a themed
 	// courtroom whose design INI ships the OPTIONAL "asyncao_toolbox" key sets this
 	// (from lay.rect) before drawing the toolbox, so the strip anchors where the

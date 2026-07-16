@@ -262,8 +262,25 @@ func (a *App) anyPanelDragging() bool {
 // this frame: Shift held (the editor's precise-placement modifier). Screen-edge
 // snapping (snapToEdges) is NOT bypassed — that is the pre-existing #21 behaviour
 // and stays independent, so Shift only turns off the new sibling magnet.
+//
+// The layoutedit.go grid gate (`layoutSnap && !magnetBypassed()`) reads THIS
+// (Shift-only) form deliberately: the persistent "Magnet: off" chip must not
+// disable grid snapping, only sibling snapping — so the chip is folded into
+// siblingMagnetOff below, NOT into magnetBypassed.
 func magnetBypassed() bool {
 	return sdl.GetModState()&sdl.KMOD_SHIFT != 0
+}
+
+// siblingMagnetOff reports whether the piece-to-piece (sibling) magnet should be
+// skipped for this drag/seed: either Shift is held for a one-off precise
+// placement (magnetBypassed) OR the persistent editor banner "Magnet: off" chip
+// is set (layoutMagnetOff, Phase 3). This gates ONLY snapToSiblings at the float
+// surfaces' drag sites — screen-edge snapping (snapToEdges) and the bounded
+// de-overlap pass are independent and stay on, per the chip's contract. The zero
+// value (layoutMagnetOff=false) keeps the magnet ON in normal play, so nothing
+// changes for a user who never touches the chip.
+func (a *App) siblingMagnetOff() bool {
+	return magnetBypassed() || a.layoutMagnetOff
 }
 
 // snapToSiblings snaps a dragging floatWin's top-left flush to the sibling

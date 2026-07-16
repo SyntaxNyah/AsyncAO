@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -506,13 +507,54 @@ func (a *App) toolboxPiecesRect(w, h int32) sdl.Rect {
 }
 
 const (
-	// toolboxPiecesHeaderH is the fixed title strip at the pieces panel top.
-	toolboxPiecesHeaderH = int32(30)
+	// toolboxPiecesHeaderH is the fixed title strip at the pieces panel top. It
+	// hosts the title AND the Phase-3 filter box (both outside the scroll body, so
+	// the filter never scrolls away).
+	toolboxPiecesHeaderH = int32(56)
 	// toolboxPiecesFooterH is the fixed footer (Close button) at the bottom.
 	toolboxPiecesFooterH = int32(34)
 	// toolboxPiecesTopGap separates the pieces panel from the toolbox strip.
 	toolboxPiecesTopGap = int32(6)
+	// toolboxFilterH / toolboxFilterY size and place the per-piece filter box within
+	// the header strip (Phase 3 "easier to navigate"). Named per rule 9. The box sits
+	// under the title, inset by pad on each side; its width is derived from the panel
+	// at draw time (panel.W - 2*pad).
+	toolboxFilterH = int32(22)
+	toolboxFilterY = int32(28)
 )
+
+// toolboxPieceSearch maps each hideable id → its LOWERED searchable text, built
+// ONCE at package init from the three registries (panels carry both their long
+// label and short chip text; buttons/roster carry their label). Precomputing here
+// keeps the per-piece filter match in drawToolboxPieces allocation-free — it
+// compares two already-lowered strings via strings.Contains, never lowering a
+// label per row per frame (the panel draws every frame in normal play; rule 8 /
+// the alloc gates). The query itself is lowered once, only when it changes.
+var toolboxPieceSearch = buildToolboxPieceSearch()
+
+func buildToolboxPieceSearch() map[string]string {
+	m := make(map[string]string, len(hideablePanels)+len(hideableButtons)+len(hideableRosterButtons))
+	for _, p := range hideablePanels {
+		m[p.id] = strings.ToLower(p.label + " " + p.short)
+	}
+	for _, b := range hideableButtons {
+		m[b.id] = strings.ToLower(b.label)
+	}
+	for _, b := range hideableRosterButtons {
+		m[b.id] = strings.ToLower(b.label)
+	}
+	return m
+}
+
+// toolboxPieceMatches reports whether the piece id passes the active filter. An
+// empty query matches everything (the filter is inert until typed into). Both
+// operands are pre-lowered, so strings.Contains allocates nothing.
+func toolboxPieceMatches(id, queryLower string) bool {
+	if queryLower == "" {
+		return true
+	}
+	return strings.Contains(toolboxPieceSearch[id], queryLower)
+}
 
 // toolboxPiecesContentH is the full scroll-region height of the per-piece panel:
 // the chrome list, the control-button grid (new-default toolbar only), and the
@@ -588,6 +630,18 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	c.Border(panel, ColAccent)
 	c.Heading(panel.X+pad, panel.Y+6, "Hide UI pieces", ColText)
 
+	// Filter box (Phase 3): narrows the per-piece list across the same three-section
+	// grouping. It lives in the header strip, OUTSIDE the scroll body, so it never
+	// scrolls away and never displaces the Close button (the no-strand lifeline). The
+	// raw text drives the TextField; the lowered form is cached and only re-derived
+	// when the text changes, so per-row matching below stays allocation-free.
+	filterRect := sdl.Rect{X: panel.X + pad, Y: panel.Y + toolboxFilterY, W: panel.W - 2*pad, H: toolboxFilterH}
+	if next, _ := c.TextField("toolboxfilter", filterRect, a.toolboxFilter, "Filter pieces…"); next != a.toolboxFilter {
+		a.toolboxFilter = next
+		a.toolboxFilterLower = strings.ToLower(strings.TrimSpace(next)) // lowered ONCE per edit, not per frame
+	}
+	q := a.toolboxFilterLower
+
 	// The control-button grid only applies to the new-default toolbar; the
 	// legacy/themed row draws fixed inline buttons that ignore the hidden set, so
 	// a chip there would be a dead toggle (mirrors the retired dialog's guard).
@@ -595,7 +649,11 @@ func (a *App) drawToolboxPieces(w, h int32) {
 
 	body := sdl.Rect{X: panel.X, Y: panel.Y + toolboxPiecesHeaderH,
 		W: panel.W, H: panel.H - toolboxPiecesHeaderH - toolboxPiecesFooterH}
-	contentH := a.toolboxPiecesContentH()
+	// Content height reflects the FILTERED rows so the scrollbar tracks what's
+	// actually drawn (an unfiltered height would leave dead scroll space). Panel
+	// SIZE stays on the unfiltered content (toolboxPiecesRect) so the box doesn't
+	// resize as you type.
+	contentH := a.toolboxPiecesFilteredContentH(q, showBtnGrid)
 	needsBar := contentH > body.H
 	barReserve := int32(0)
 	if needsBar {
@@ -621,6 +679,9 @@ func (a *App) drawToolboxPieces(w, h int32) {
 	colW := rowW / toolboxPiecesCols
 	y := body.Y - a.toolboxPiecesScroll
 	for _, p := range hideablePanels {
+		if !toolboxPieceMatches(p.id, q) {
+			continue
+		}
 		hidden := a.panelHidden(p.id)
 		if next := c.Checkbox(panel.X+pad, y, "Hide "+p.short, hidden); next != hidden {
 			a.setPanelHiddenGuarded(p.id, next)
@@ -628,34 +689,148 @@ func (a *App) drawToolboxPieces(w, h int32) {
 		y += toolboxPiecesRowPitch
 	}
 	if showBtnGrid {
-		c.Label(panel.X+pad, y+4, "Control buttons (tick to hide):", ColTextDim)
+		// The section heading only draws when the section has a visible row (so a
+		// filter that excludes the whole section doesn't leave a stranded heading).
+		if toolboxButtonsHaveMatch(q) {
+			c.Label(panel.X+pad, y+4, "Control buttons (tick to hide):", ColTextDim)
+			y += toolboxPiecesRowPitch
+			// vis is the visible-row index so the 2-col grid stays gapless under a
+			// filter (registry index would leave holes for filtered-out rows).
+			vis := int32(0)
+			for _, b := range hideableButtons {
+				if !toolboxPieceMatches(b.id, q) {
+					continue
+				}
+				cx := panel.X + pad + vis%toolboxPiecesCols*colW
+				cy := y + vis/toolboxPiecesCols*toolboxPiecesRowPitch
+				hidden := a.panelHidden(b.id)
+				if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
+					a.setPanelHiddenGuarded(b.id, next)
+				}
+				vis++
+			}
+			y += toolboxGridRows(vis) * toolboxPiecesRowPitch
+		}
+	}
+	if toolboxRosterHaveMatch(q) {
+		c.Label(panel.X+pad, y+4, "Players-list row actions (tick to hide):", ColTextDim)
 		y += toolboxPiecesRowPitch
-		for i, b := range hideableButtons {
-			cx := panel.X + pad + int32(i)%toolboxPiecesCols*colW
-			cy := y + int32(i)/toolboxPiecesCols*toolboxPiecesRowPitch
+		vis := int32(0)
+		for _, b := range hideableRosterButtons {
+			if !toolboxPieceMatches(b.id, q) {
+				continue
+			}
+			cx := panel.X + pad + vis%toolboxPiecesCols*colW
+			cy := y + vis/toolboxPiecesCols*toolboxPiecesRowPitch
 			hidden := a.panelHidden(b.id)
 			if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
 				a.setPanelHiddenGuarded(b.id, next)
 			}
-		}
-		y += (int32(len(hideableButtons)) + toolboxPiecesCols - 1) / toolboxPiecesCols * toolboxPiecesRowPitch
-	}
-	c.Label(panel.X+pad, y+4, "Players-list row actions (tick to hide):", ColTextDim)
-	y += toolboxPiecesRowPitch
-	for i, b := range hideableRosterButtons {
-		cx := panel.X + pad + int32(i)%toolboxPiecesCols*colW
-		cy := y + int32(i)/toolboxPiecesCols*toolboxPiecesRowPitch
-		hidden := a.panelHidden(b.id)
-		if next := c.Checkbox(cx, cy, b.label, hidden); next != hidden {
-			a.setPanelHiddenGuarded(b.id, next)
+			vis++
 		}
 	}
 	c.popClip(clipPrev, clipHad)
 
 	// Fixed footer: a Close button (always reachable even when the grip is hidden,
-	// so a hotkey-opened panel is never stranded — the un-strand path).
+	// so a hotkey-opened panel is never stranded — the un-strand path). Drawn
+	// OUTSIDE the scroll body and OUTSIDE the filter, so no query can strand it.
 	footerY := panel.Y + panel.H - btnH - 8
 	if c.Button(sdl.Rect{X: panel.X + panel.W - 84 - pad, Y: footerY, W: 84, H: btnH}, "Close") {
 		a.toolboxPieces = false
 	}
+}
+
+// toolboxGridRows returns the number of rows a gapless toolboxPiecesCols-wide grid
+// needs for n visible cells (ceil division). Shared by the draw and the filtered
+// content-height math so they can't disagree. Named with the toolbox prefix to
+// avoid colliding with screens.go's emote-grid gridRows(h, cellH).
+func toolboxGridRows(n int32) int32 {
+	return (n + toolboxPiecesCols - 1) / toolboxPiecesCols
+}
+
+// toolboxButtonsHaveMatch / toolboxRosterHaveMatch report whether the control /
+// roster registry has any entry passing the filter — used to suppress a section
+// heading whose whole section is filtered out. The registries are anonymous
+// structs (no methods), so these iterate the concrete slices directly rather than
+// through a generic constraint. Empty query ⇒ always true (filter inert).
+func toolboxButtonsHaveMatch(queryLower string) bool {
+	if queryLower == "" {
+		return true
+	}
+	for _, b := range hideableButtons {
+		if toolboxPieceMatches(b.id, queryLower) {
+			return true
+		}
+	}
+	return false
+}
+
+func toolboxRosterHaveMatch(queryLower string) bool {
+	if queryLower == "" {
+		return true
+	}
+	for _, b := range hideableRosterButtons {
+		if toolboxPieceMatches(b.id, queryLower) {
+			return true
+		}
+	}
+	return false
+}
+
+// toolboxPanelsVisible / toolboxButtonsVisible / toolboxRosterVisible count the
+// rows each section draws under the active filter — the filtered content-height
+// math reuses these so the scrollbar tracks exactly what's drawn.
+func toolboxPanelsVisible(queryLower string) int32 {
+	if queryLower == "" {
+		return int32(len(hideablePanels))
+	}
+	n := int32(0)
+	for _, p := range hideablePanels {
+		if toolboxPieceMatches(p.id, queryLower) {
+			n++
+		}
+	}
+	return n
+}
+
+func toolboxButtonsVisible(queryLower string) int32 {
+	if queryLower == "" {
+		return int32(len(hideableButtons))
+	}
+	n := int32(0)
+	for _, b := range hideableButtons {
+		if toolboxPieceMatches(b.id, queryLower) {
+			n++
+		}
+	}
+	return n
+}
+
+func toolboxRosterVisible(queryLower string) int32 {
+	if queryLower == "" {
+		return int32(len(hideableRosterButtons))
+	}
+	n := int32(0)
+	for _, b := range hideableRosterButtons {
+		if toolboxPieceMatches(b.id, queryLower) {
+			n++
+		}
+	}
+	return n
+}
+
+// toolboxPiecesFilteredContentH is the scroll-region height under the active
+// filter: visible panel rows + (if the section has any match) its heading row +
+// its gapless grid rows, for the control and roster sections. Mirrors
+// toolboxPiecesContentH's arithmetic but over the filtered counts, so the
+// scrollbar range matches the drawn rows exactly.
+func (a *App) toolboxPiecesFilteredContentH(queryLower string, showBtnGrid bool) int32 {
+	rows := toolboxPanelsVisible(queryLower)
+	if showBtnGrid && toolboxButtonsHaveMatch(queryLower) {
+		rows += 1 + toolboxGridRows(toolboxButtonsVisible(queryLower)) // +1 heading row
+	}
+	if toolboxRosterHaveMatch(queryLower) {
+		rows += 1 + toolboxGridRows(toolboxRosterVisible(queryLower)) // +1 heading row
+	}
+	return rows*toolboxPiecesRowPitch + 8
 }

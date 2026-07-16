@@ -114,8 +114,8 @@ func (a *App) floatWinDrag(fw *floatWin, handle sdl.Rect, pressed *bool) {
 	if fw.dragging {
 		fw.x, fw.y = c.mouseX-fw.grabDX, c.mouseY-fw.grabDY
 		fw.snapToEdges() // #21: snap to screen edges / centre while dragging
-		if !magnetBypassed() {
-			a.snapToSiblings(fw) // M3: additive piece-to-piece magnet (Shift bypasses)
+		if !a.siblingMagnetOff() {
+			a.snapToSiblings(fw) // M3: additive piece-to-piece magnet (Shift or the Magnet chip bypasses)
 		}
 		fw.placed = true
 	}

@@ -454,8 +454,12 @@ func (a *App) startClassicEdit() {
 	a.classicEditMoved = false
 	a.classicUndo, a.classicRedo = nil, nil
 	a.classicPickSig, a.classicPickIdx = "", 0
-	a.layoutSnap = true   // tidy placement by default; toggle off in the editor
-	a.layoutAspect = true // keep the stage 4:3 while resizing (toggle off for a free / letterboxed stage)
+	a.layoutSnap = true        // tidy placement by default; toggle off in the editor
+	a.layoutAspect = true      // keep the stage 4:3 while resizing (toggle off for a free / letterboxed stage)
+	a.layoutProfileCursor = -1 // no saved profile applied via the banner chip yet this edit
+	// layoutMagnetOff is NOT reset here: the sibling magnet applies in normal play
+	// too, so its zero value (magnet on) must persist across editor sessions — the
+	// chip is the only thing that flips it.
 	a.pushDebug("edit layout (default courtroom): drag to move, edges/corners to resize, Ctrl+Z to undo, Esc to finish")
 }
 
@@ -610,6 +614,13 @@ func (a *App) drawClassicEditor(w, h int32) {
 	snapBtn := sdl.Rect{X: resetBtn.X - 92 - 6, Y: 2, W: 92, H: classicBannerH - 4}
 	gridBtn := sdl.Rect{X: snapBtn.X - 78 - 6, Y: 2, W: 78, H: classicBannerH - 4}
 	aspectBtn := sdl.Rect{X: gridBtn.X - 80 - 6, Y: 2, W: 80, H: classicBannerH - 4}
+	// Magnet chip (Phase 3): persistent toggle beside Snap for the piece-to-piece
+	// sibling magnet, so it can be loosened without holding Shift on every drag.
+	magnetBtn := sdl.Rect{X: aspectBtn.X - editChipMagnetW - 6, Y: 2, W: editChipMagnetW, H: classicBannerH - 4}
+	// Profile chip (Phase 3): surfaces the existing full-state layout-profile
+	// system (applyProfile) as a banner control — a click cycles to the next saved
+	// profile. Drawn only when at least one profile exists (else it would be dead).
+	profileBtn := sdl.Rect{X: magnetBtn.X - editChipProfileW - 6, Y: 2, W: editChipProfileW, H: classicBannerH - 4}
 
 	pressed := c.mouseDown && !a.classicEditPrev
 	a.classicEditPrev = c.mouseDown
@@ -647,6 +658,16 @@ func (a *App) drawClassicEditor(w, h int32) {
 		if a.layoutAspect {
 			a.snapViewportTo43(w, h)
 		}
+	}
+	if c.clicked && pointIn(c.mouseX, c.mouseY, magnetBtn) {
+		a.layoutMagnetOff = !a.layoutMagnetOff // persistent sibling-magnet toggle (session-only, like Snap)
+	}
+	if c.clicked && a.hasLayoutProfiles() && pointIn(c.mouseX, c.mouseY, profileBtn) {
+		a.cycleLayoutProfile() // apply the next saved full-state profile (applyProfile)
+		// Return like "Reset all" does: applyProfile replaced the whole override map,
+		// so this frame's slotReg (built earlier from the OLD overrides) is stale —
+		// bail and let the next frame rebuild from the applied profile.
+		return
 	}
 
 	// Pop-out tray (bottom): tear a log tab out into its own movable panel, or
@@ -951,9 +972,24 @@ func (a *App) drawClassicEditor(w, h int32) {
 	if a.layoutAspect {
 		aspectLabel = "4:3: on"
 	}
+	magnetLabel := "Magnet: on"
+	if a.layoutMagnetOff {
+		magnetLabel = "Magnet: off"
+	}
+	// The hint clips to end before the LEFTMOST chip actually drawn: the profile
+	// chip when it exists, else the magnet chip (both sit left of aspect). Using
+	// aspectBtn.X would let the hint overdraw the two Phase-3 chips.
+	leftmostChipX := magnetBtn.X
+	if a.hasLayoutProfiles() {
+		leftmostChipX = profileBtn.X
+	}
 	hintX := pad + c.TextWidth("Edit Layout") + 18
-	c.LabelClipped(hintX, 6, aspectBtn.X-hintX-10, "Drag to move · edge to resize · green lines = aligned · Alt = move · Shift = precise", ColTextDim)
+	c.LabelClipped(hintX, 6, leftmostChipX-hintX-10, "Drag to move · edge to resize · green lines = aligned · Alt = move · Shift = precise", ColTextDim)
 	a.rawChip(aspectBtn, aspectLabel)
+	a.rawChip(magnetBtn, magnetLabel)
+	if name := a.currentLayoutProfileLabel(); name != "" {
+		a.rawChip(profileBtn, name)
+	}
 	a.rawChip(gridBtn, fmt.Sprintf("Grid: %d", a.d.Prefs.LayoutGridSize()))
 	a.rawChip(snapBtn, snapLabel)
 	a.rawChip(resetBtn, "Reset all")
@@ -963,7 +999,13 @@ func (a *App) drawClassicEditor(w, h int32) {
 	// this stays hidden in practice — kept for symmetry with the themed editor.
 	if hoverKey != "" {
 		if label := rotationChipLabel(a.classicRot[hoverKey]); label != "" {
-			rotBtn := sdl.Rect{X: aspectBtn.X - 74 - 6, Y: 2, W: 74, H: classicBannerH - 4}
+			// Left of the Phase-3 chips (profile when present, else magnet) so it can't
+			// overpaint them — same as the themed editor's rot chip.
+			rotRightX := magnetBtn.X
+			if a.hasLayoutProfiles() {
+				rotRightX = profileBtn.X
+			}
+			rotBtn := sdl.Rect{X: rotRightX - 74 - 6, Y: 2, W: 74, H: classicBannerH - 4}
 			a.rawChip(rotBtn, label)
 		}
 	}
