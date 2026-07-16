@@ -670,8 +670,30 @@ func (a *Audio) PlayMusic(url string, loop bool, effects int) {
 	if url == a.musicURL && a.music != nil {
 		return // already playing this exact track — don't restart
 	}
+	// Purge any OTHER pendingMusic entry from a prior, still-in-flight PlayMusic
+	// so at most one music track is ever pending at a time (§1.2). Without this,
+	// switching tracks A→B leaves both pending; if A's fetch lands after B was
+	// requested, onAudioBytes matches A and playback reverts to the stale track.
+	// The superseded delivery is IGNORED on arrival (onAudioBytes finds it absent
+	// and falls through to loadChunk) — never dropped from the channel (rule 7).
+	// PlayMusic and onAudioBytes both run on the locked render thread, so this
+	// purge is atomic with respect to deliveries — no generation counter needed.
+	a.purgePendingMusic(url)
 	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL), loop: loop, effects: effects}
 	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
+}
+
+// purgePendingMusic deletes every pendingMusic entry except keep (pass "" to
+// drop all of them). It leaves non-music pending entries untouched. Guarantees
+// at most one pendingMusic key survives so a late delivery for a superseded
+// track is ignored on arrival (§1.2). Render thread only; only touches the
+// local a.pending map, never a pool result (rule 7).
+func (a *Audio) purgePendingMusic(keep string) {
+	for u, p := range a.pending {
+		if p.kind == pendingMusic && u != keep {
+			delete(a.pending, u)
+		}
+	}
 }
 
 // StopMusic halts music playback immediately AND cancels any track still being
@@ -683,11 +705,7 @@ func (a *Audio) StopMusic() {
 		return
 	}
 	a.stopMusic()
-	for url, p := range a.pending { // a pending fetch would otherwise start on arrival
-		if p.kind == pendingMusic {
-			delete(a.pending, url)
-		}
-	}
+	a.purgePendingMusic("") // a pending fetch would otherwise start on arrival
 }
 
 // startMusic decodes and plays a fetched track. loop drives the SDL_mixer loop

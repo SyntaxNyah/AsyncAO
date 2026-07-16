@@ -36,3 +36,61 @@ func TestBuiltinAlertWAV(t *testing.T) {
 		t.Errorf("bits/sample = %d, want 16", bits)
 	}
 }
+
+// TestPurgePendingMusic pins the stale-track-race fix (§1.2): switching to a
+// new music URL must leave at most one pendingMusic entry so a late-arriving
+// delivery for a superseded track can't revert playback. Non-music pending
+// entries (SFX/blip/etc.) are never touched. No SDL/mixer or Manager is needed
+// — the purge only mutates the local a.pending map — so this test runs (not
+// skips) headlessly.
+func TestPurgePendingMusic(t *testing.T) {
+	newAudio := func() *Audio {
+		return &Audio{pending: map[string]pendingPlay{
+			"http://cdn/song.opus":    {kind: pendingMusic},
+			"http://cdn/song2.opus":   {kind: pendingMusic},
+			"sounds/general/sfx.opus": {kind: pendingSFX},
+			"sounds/blips/blip.opus":  {kind: pendingBlip},
+		}}
+	}
+
+	// Switching tracks: keep only the newly requested music URL; every other
+	// pendingMusic entry is dropped, non-music entries survive.
+	a := newAudio()
+	a.purgePendingMusic("http://cdn/song2.opus")
+	if _, ok := a.pending["http://cdn/song2.opus"]; !ok {
+		t.Errorf("kept music URL was purged")
+	}
+	if _, ok := a.pending["http://cdn/song.opus"]; ok {
+		t.Errorf("superseded music URL survived the purge — stale-track race not closed")
+	}
+	if _, ok := a.pending["sounds/general/sfx.opus"]; !ok {
+		t.Errorf("pendingSFX entry was wrongly purged")
+	}
+	if _, ok := a.pending["sounds/blips/blip.opus"]; !ok {
+		t.Errorf("pendingBlip entry was wrongly purged")
+	}
+	musicKeys := 0
+	for _, p := range a.pending {
+		if p.kind == pendingMusic {
+			musicKeys++
+		}
+	}
+	if musicKeys != 1 {
+		t.Errorf("pendingMusic keys after switch = %d, want exactly 1", musicKeys)
+	}
+
+	// Stop (keep=="" ): every pendingMusic entry is dropped, non-music survive.
+	a = newAudio()
+	a.purgePendingMusic("")
+	for u, p := range a.pending {
+		if p.kind == pendingMusic {
+			t.Errorf("pendingMusic entry %q survived purgePendingMusic(\"\")", u)
+		}
+	}
+	if _, ok := a.pending["sounds/general/sfx.opus"]; !ok {
+		t.Errorf("pendingSFX entry was wrongly purged by purgePendingMusic(\"\")")
+	}
+	if _, ok := a.pending["sounds/blips/blip.opus"]; !ok {
+		t.Errorf("pendingBlip entry was wrongly purged by purgePendingMusic(\"\")")
+	}
+}
