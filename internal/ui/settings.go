@@ -196,6 +196,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"local assets", "local", "mount", "downloader", "download",
 		"cache", "disk cache", "disk", "zstd", "learned formats", "learned", "clear cache",
 		"loop preanim", "preanimation", "preanim loop", "loop preanimations",
+		"placeholder", "missing sprite", "missingno", "missing character", "error sprite", "custom error sprite", "404",
 	},
 	tabAudio: {
 		// sections: Volume (master / music / SFX / blip / alert), music ducking,
@@ -257,7 +258,6 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 		"casing", "capital", "capitalize", "capitalise", "uppercase", "lowercase", "character folder", "folder case",
 		"image format", "format", "fallback", "autodetect", "auto-detect", "extensions.json", "extensions", "webp", "png", "apng", "avif", "desk format",
-		"placeholder", "missing sprite", "missingno", "missing character",
 	},
 }
 
@@ -2111,6 +2111,48 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	}
 	y += 28
 
+	// Missing-sprite placeholder (missingno) — the AO2 "placeholder" for a
+	// character sprite whose whole fallback chain 404'd. Lives HERE (moved from
+	// Power User in v1.70.1 — this is where people look for it). Distinct from
+	// the still-loading hold: this fires ONLY once there is nothing left to
+	// fetch, so it never flashes over a sprite that's merely streaming.
+	y = a.settingsSection(y, w, "Missing sprites (missingno)")
+	mno := a.d.Prefs.ShowMissingPlaceholderOn()
+	if next := c.Checkbox(pad, y, "Show a placeholder for missing character sprites (like AO2's \"missingno\")", mno); next != mno {
+		a.d.Prefs.SetShowMissingPlaceholder(next)
+	}
+	y += 26
+	y = a.settingsDesc(pad, y, "On (default): when a character's idle/talk sprite can't be found at all (every spelling and format 404'd), the stage shows a distinct placeholder image instead of holding the previous character. Off: the previous sprite stays (or the stage goes blank), exactly as before. Only fires once nothing is left to fetch — a still-downloading sprite never shows it.", ColTextDim)
+	y += 6
+	// Custom placeholder image path: TextField + Apply, with an inline error label
+	// on a bad path. The load runs OFF-THREAD (rule §17.2); Apply re-triggers it.
+	c.Label(pad, y+4, "Custom image:", ColText)
+	if !settings.errorSpriteLoaded {
+		settings.errorSpriteInput = a.d.Prefs.ErrorSpritePath()
+		settings.errorSpriteLoaded = true
+	}
+	var esCommit bool
+	settings.errorSpriteInput, esCommit = c.TextField("errorsprite", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH},
+		settings.errorSpriteInput, "path to a PNG/WebP/GIF/APNG/JPG (blank = built-in missingno)")
+	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || esCommit {
+		raw := strings.TrimSpace(settings.errorSpriteInput)
+		a.d.Prefs.SetErrorSpritePath(raw)
+		a.errorSpriteErr = ""   // clear a stale error; the load reports fresh via pollErrorSprite
+		a.applyErrorSprite(raw) // "" restores the embedded default synchronously
+		if raw == "" {
+			settings.statusLine = "Custom missing-sprite image cleared — using the built-in placeholder."
+		} else {
+			settings.statusLine = "Loading custom missing-sprite image…"
+		}
+	}
+	y += 30
+	if a.errorSpriteErr != "" {
+		c.LabelClipped(pad+130, y, w-pad-130-scrollBarW, "Couldn't load that image: "+a.errorSpriteErr+" — using the built-in placeholder.", ColDanger)
+		y += 22
+	}
+	y = a.settingsDesc(pad, y, "Optional: replace the built-in glitch placeholder with your own image (a PNG, WebP, GIF, APNG or JPG). Loaded in the background; if the file can't be read or decoded it's ignored and the built-in one stays. Leave blank for the default.", ColTextDim)
+	y += 10
+
 	y = a.settingsSection(y, w, "Audio formats")
 	// Audio fallbacks.
 	for _, typeName := range []string{config.TypeSFX, config.TypeMusic, config.TypeBlip} {
@@ -2434,9 +2476,11 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 		// this ON, un-duck it live so it becomes audible now. The OFF case (re-duck)
 		// takes effect on the next tab switch — never yank audio out from under the
 		// user mid-listen. Only touches a KEPT-ALIVE background stream (musicTabDucked),
-		// never the active tab's own music.
+		// never the active tab's own music. Also drop any pending delivery-time un-duck:
+		// the duck is gone, so there's nothing left for the await to gate (invariant).
 		if next && a.musicTabDucked {
 			a.musicTabDucked = false
+			a.musicAwaitURL = ""
 			a.applyAudioVolumes()
 		}
 	}
@@ -3219,45 +3263,8 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Fades the new sprite in over the old on every character/emote change instead of hard-swapping. Local only; a still-loading sprite starts its fade when it arrives. With a crossfade set, the idle frame-rate cap stands down so fades stay smooth.", ColTextDim)
 	y += 10
 
-	// Missing-sprite placeholder (missingno) — the AO2 "placeholder" for a
-	// character sprite whose whole fallback chain 404'd. Distinct from the
-	// still-loading fallback above: this fires ONLY once there is nothing left to
-	// fetch, so it never flashes over a sprite that's merely streaming.
-	mno := a.d.Prefs.ShowMissingPlaceholderOn()
-	if next := c.Checkbox(pad, y, "Show a placeholder for missing character sprites (like AO2's \"missingno\")", mno); next != mno {
-		a.d.Prefs.SetShowMissingPlaceholder(next)
-	}
-	y += 26
-	y = a.settingsDesc(pad, y, "On (default): when a character's idle/talk sprite can't be found at all (every spelling and format 404'd), the stage shows a distinct placeholder image instead of holding the previous character. Off: the previous sprite stays (or the stage goes blank), exactly as before. Only fires once nothing is left to fetch — a still-downloading sprite never shows it.", ColTextDim)
-	y += 6
-	// Custom placeholder image path: TextField + Apply, with an inline error label
-	// on a bad path. The load runs OFF-THREAD (rule §17.2); Apply re-triggers it.
-	c.Label(pad, y+4, "Custom image:", ColText)
-	if !settings.errorSpriteLoaded {
-		settings.errorSpriteInput = a.d.Prefs.ErrorSpritePath()
-		settings.errorSpriteLoaded = true
-	}
-	var esCommit bool
-	settings.errorSpriteInput, esCommit = c.TextField("errorsprite", sdl.Rect{X: pad + 130, Y: y, W: 400, H: fieldH},
-		settings.errorSpriteInput, "path to a PNG/WebP/GIF/APNG/JPG (blank = built-in missingno)")
-	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 70, H: btnH}, "Apply") || esCommit {
-		raw := strings.TrimSpace(settings.errorSpriteInput)
-		a.d.Prefs.SetErrorSpritePath(raw)
-		a.errorSpriteErr = ""   // clear a stale error; the load reports fresh via pollErrorSprite
-		a.applyErrorSprite(raw) // "" restores the embedded default synchronously
-		if raw == "" {
-			settings.statusLine = "Custom missing-sprite image cleared — using the built-in placeholder."
-		} else {
-			settings.statusLine = "Loading custom missing-sprite image…"
-		}
-	}
-	y += 30
-	if a.errorSpriteErr != "" {
-		c.LabelClipped(pad+130, y, w-pad-130-scrollBarW, "Couldn't load that image: "+a.errorSpriteErr+" — using the built-in placeholder.", ColDanger)
-		y += 22
-	}
-	y = a.settingsDesc(pad, y, "Optional: replace the built-in glitch placeholder with your own image (a PNG, WebP, GIF, APNG or JPG). Loaded in the background; if the file can't be read or decoded it's ignored and the built-in one stays. Leave blank for the default.", ColTextDim)
-	y += 10
+	// (The missing-sprite "missingno" placeholder controls moved to Settings →
+	// Assets in v1.70.1 — playtest: nobody looked for them under Power User.)
 
 	// Frame rate & GPU — the adaptive pacing that fixed the idle GPU burn.
 	y = a.settingsSection(y, w, "Frame rate & GPU")
