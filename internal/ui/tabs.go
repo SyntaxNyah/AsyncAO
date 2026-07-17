@@ -220,6 +220,12 @@ func (a *App) parkActive() {
 	// AUDIBLE (no duck). We never StopMusic here anymore — tab CLOSE / disconnect
 	// still do (closeParkedTab / Disconnect), so an orphaned stream can't leak.
 	a.musicTabDucked = !a.d.Prefs.MusicAcrossTabsOn()
+	// The outgoing tab's stream (whatever it is) is now the backgrounded one, freshly
+	// (re-)ducked; any await the just-parked tab held is void — the INCOMING tab's
+	// activateTab→buildRoom→resumeActiveTabMusic re-derives the correct await (or
+	// none) off ITS own track. Clearing here is the switch-back-mid-await guard: a
+	// stale await can't un-duck the new backgrounded context.
+	a.musicAwaitURL = ""
 	a.applyAudioVolumes() // push the duck (or its absence) to the mixer (no-op if no Audio)
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
@@ -344,6 +350,7 @@ func (a *App) closeParkedTab(i int) {
 	if a.d.Audio != nil && a.musicTabDucked {
 		a.d.Audio.StopMusic()
 		a.musicTabDucked = false
+		a.musicAwaitURL = "" // stream stopped: drop any pending un-duck too (invariant)
 	}
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	if a.activeTab > i {

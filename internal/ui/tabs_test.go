@@ -230,13 +230,19 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	if !a.musicTabDucked {
 		t.Fatal("setup: after re-activating a tab with no music, the duck should still stand")
 	}
-	// A DJ /play on the ACTIVE tab: the real EventMusic handler makes this tab the
-	// audible owner and must clear the tab-duck (else the new track would play at 0).
+	// A DJ /play on the ACTIVE tab while the stream is still ducked-foreign: the
+	// handler must NOT un-duck at request time (that would make the FOREIGN track
+	// audible during the new track's download) — it KEEPS the duck and records the
+	// awaited URL, so the delivery-time settle can lift it once the right track lands.
 	// HandlePacket normally sets MusicTrack; set it directly so the handler's gate sees it.
 	a.sess.MusicTrack = "Trial.opus"
 	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "Trial.opus"}})
-	if a.musicTabDucked {
-		t.Error("a live music change on the active tab must clear the tab-duck (handleSessionEvents)")
+	if !a.musicTabDucked {
+		t.Error("a DJ /play while ducked-foreign must KEEP the duck until the requested track is delivered")
+	}
+	wantAwait := a.urls.MusicURL("Trial.opus")
+	if a.musicAwaitURL != wantAwait {
+		t.Errorf("EventMusic while ducked must record the awaited URL: got %q, want %q", a.musicAwaitURL, wantAwait)
 	}
 
 	// Pref ON: parking keeps the backgrounded stream AUDIBLE (no duck).
@@ -244,6 +250,115 @@ func TestMusicTabDuckOnPark(t *testing.T) {
 	a.parkActive()
 	if a.musicTabDucked {
 		t.Error("with MusicAcrossTabs ON, parking must NOT duck the backgrounded stream")
+	}
+}
+
+// TestMusicAwaitDeliverySettles pins the delivery-time un-duck (the fix for "a
+// /play-ed track plays a DIFFERENT song for a while"): while a track is awaited the
+// duck STAYS, and settleAwaitedDuck only lifts it once the mixer's current URL is
+// EXACTLY the awaited one — never for a foreign track that happens to be playing
+// during the download gap. Pure flag inspection, no SDL (settleAwaitedDuck takes the
+// current URL directly, like mixChannels takes its inputs).
+func TestMusicAwaitDeliverySettles(t *testing.T) {
+	a := testTabApp(t)
+
+	// Ducked, awaiting a specific track.
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/trial.opus"
+
+	// A DIFFERENT track is what's currently playing (the still-loading-away foreign
+	// stream): the duck must HOLD and the await must survive — this is the whole bug.
+	if a.settleAwaitedDuck("http://cdn/foreign.opus") {
+		t.Fatal("settle must NOT un-duck while a foreign track is current")
+	}
+	if !a.musicTabDucked || a.musicAwaitURL == "" {
+		t.Fatal("a foreign current track must leave both the duck and the await intact")
+	}
+
+	// The awaited track becomes current (its bytes landed, startMusic swapped it in):
+	// the duck lifts and the await clears.
+	if !a.settleAwaitedDuck("http://cdn/trial.opus") {
+		t.Fatal("settle must un-duck once the awaited track is current")
+	}
+	if a.musicTabDucked {
+		t.Error("the duck must lift when the awaited track is delivered")
+	}
+	if a.musicAwaitURL != "" {
+		t.Error("the await must clear once satisfied")
+	}
+
+	// Idle (no await): a settle for any URL is a harmless no-op.
+	if a.settleAwaitedDuck("http://cdn/anything.opus") {
+		t.Error("settle with no await must be a no-op")
+	}
+}
+
+// TestMusicResumeDuckDecision pins resumeActiveTabMusic's pure duck decision
+// (applyResumeDuck), split out so it needs no audio device (the branch selection
+// reads CurrentMusicURL, but the FLAG mutation — the part with the bug history — is
+// pure and unit-pinnable like mixChannels):
+//
+//   - sameTrack=true (PRESERVE clause): the stream is already this exact track,
+//     kept rolling across the switch. Un-duck IMMEDIATELY (no delivery is coming)
+//     and clear any stale await.
+//   - sameTrack=false (swap path): a foreign/other-tab track is live. HOLD the duck
+//     (un-ducking now would make the foreign track audible during the fetch) and
+//     AWAIT this tab's url — the same delivery-time guard as the DJ /play path.
+func TestMusicResumeDuckDecision(t *testing.T) {
+	const url = "http://cdn/trial.opus"
+
+	// Same track already live, but ducked with a stale await from an earlier swap.
+	a := testTabApp(t)
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/stale.opus"
+	a.applyResumeDuck(true, url)
+	if a.musicTabDucked {
+		t.Error("same-track resume must un-duck immediately (the right song is already rolling)")
+	}
+	if a.musicAwaitURL != "" {
+		t.Error("same-track resume must clear any stale await (nothing is being awaited)")
+	}
+
+	// Different track live: hold the duck, await this url.
+	b := testTabApp(t)
+	b.musicTabDucked = true
+	b.applyResumeDuck(false, url)
+	if !b.musicTabDucked {
+		t.Error("different-track resume must HOLD the duck until this tab's track is delivered")
+	}
+	if b.musicAwaitURL != url {
+		t.Errorf("different-track resume must await this tab's url: got %q, want %q", b.musicAwaitURL, url)
+	}
+}
+
+// TestMusicAwaitClearedOnParkAndStop pins the invariant "stopped/parked ⇒ no await":
+// a stale await can never survive a park (switch-back-mid-await edge) or a stop, so it
+// can't wrongly un-duck a later foreign track. Nil Audio — pure flag inspection.
+func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
+	// Park clears the await (the just-parked tab's pending un-duck is void; the
+	// INCOMING tab re-derives its own on activation).
+	a := testTabApp(t)
+	if !a.allocateTab() {
+		t.Fatal("allocate")
+	}
+	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.musicAwaitURL = "http://cdn/stale.opus"
+	a.parkActive()
+	if a.musicAwaitURL != "" {
+		t.Error("parkActive must clear a stale await (switch-back-mid-await guard)")
+	}
+
+	// applyMusicStreaming OFF clears both the duck and the await (stream stopped). A
+	// zero-value render.Audio is DISABLED, so StopMusic() returns at its !enabled
+	// guard without touching SDL — the headless stand-in the render tests use too.
+	b := testTabApp(t)
+	b.d.Audio = &render.Audio{}
+	b.musicTabDucked = true
+	b.musicAwaitURL = "http://cdn/stale.opus"
+	b.applyMusicStreaming(false)
+	if b.musicTabDucked || b.musicAwaitURL != "" {
+		t.Error("streaming OFF must clear both the tab-duck and the await (stopped ⇒ not ducked, no await)")
 	}
 }
 

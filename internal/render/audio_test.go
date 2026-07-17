@@ -47,6 +47,41 @@ func TestPlayMusicAtIdempotent(t *testing.T) {
 	}
 }
 
+// TestCurrentMusicURLReflectsLiveStream pins the render contract the cross-tab
+// delivery-time un-duck depends on: CurrentMusicURL reports the URL the mixer is
+// ACTUALLY playing right now (musicURL), which only advances when startMusic swaps
+// in a delivered track — NEVER at request time. The ui side reads it each frame to
+// decide whether the awaited track has landed yet; a still-empty ("") or foreign
+// stream must read as "not yet", so the duck holds. A stopped/fresh device reports
+// "" and MusicPlaying()=false; a device carrying a live stream reports that exact
+// URL. No SDL device needed (both accessors are plain field reads).
+func TestCurrentMusicURLReflectsLiveStream(t *testing.T) {
+	// Fresh/stopped device: nothing playing.
+	fresh := &Audio{enabled: true, pending: map[string]pendingPlay{}}
+	if fresh.CurrentMusicURL() != "" {
+		t.Errorf("a fresh device must report no current music, got %q", fresh.CurrentMusicURL())
+	}
+	if fresh.MusicPlaying() {
+		t.Error("a fresh device (no loaded stream) must report MusicPlaying()=false")
+	}
+
+	// A live stream on a FOREIGN url: CurrentMusicURL is that foreign url — so the ui
+	// await check (want != foreign) correctly reads "awaited track not delivered yet".
+	var dummy byte
+	foreign := &Audio{
+		enabled:  true,
+		pending:  map[string]pendingPlay{},
+		musicURL: "http://cdn/foreign.opus",
+		music:    (*mix.Music)(unsafe.Pointer(&dummy)), // non-nil sentinel; never dereferenced
+	}
+	if foreign.CurrentMusicURL() != "http://cdn/foreign.opus" {
+		t.Errorf("CurrentMusicURL = %q, want the live foreign url", foreign.CurrentMusicURL())
+	}
+	if !foreign.MusicPlaying() {
+		t.Error("a device with a loaded stream must report MusicPlaying()=true")
+	}
+}
+
 // TestBuiltinAlertWAV pins that the synthesized callword/friend fallback ping
 // is a structurally valid, non-empty 16-bit mono PCM WAV. It's the guaranteed
 // default alert sound, so a malformed header — which SDL_mixer would reject,

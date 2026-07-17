@@ -275,6 +275,17 @@ type App struct {
 	// isolated ACOUSTICALLY without killing the stream. Suppressed entirely when
 	// the MusicAcrossTabs pref is ON (then a backgrounded stream stays audible).
 	musicTabDucked bool
+	// musicAwaitURL is the MusicURL the ACTIVE tab has requested while the single
+	// stream is still ducked-foreign (musicTabDucked true): the duck may only lift
+	// once THIS url is the one the mixer is actually playing, else the un-duck would
+	// make a DIFFERENT (still-loading-away) track audible during the download gap —
+	// the cross-tab "wrong song plays for a while" bug. "" = nothing awaited (the
+	// common idle state). settleAwaitedMusic (per frame, after Audio.Frame drains the
+	// delivery) lifts the duck when Audio.CurrentMusicURL() catches up to this. It's
+	// cleared at every duck/stream reset (StopMusic, disconnect, tab close/park,
+	// streaming-off) so a stale await can never un-duck a later foreign track — the
+	// invariant is: stopped ⇒ not ducked, no await.
+	musicAwaitURL string
 	// defaultOOC is the sticky AsyncAO<n> fallback OOC name, minted once
 	// per run on first use (commands/macros need SOME name to send).
 	defaultOOC string
@@ -2538,6 +2549,7 @@ func (a *App) Background(dt time.Duration) {
 		a.room.Update(dt)
 	}
 	a.d.Audio.Frame()
+	a.settleAwaitedMusic() // delivery-time cross-tab un-duck: lift once the awaited track is what's playing
 	a.d.Pump.Frame()
 	// AFTER the upload pump, so the touch wins recency over THIS tick's upload
 	// burst — exactly what a drawn frame does (the emote row touches these after
@@ -3031,6 +3043,7 @@ func (a *App) Disconnect() {
 	if a.d.Audio != nil {
 		a.d.Audio.StopMusic()
 		a.musicTabDucked = false // a fresh session's music must start audible, not ducked
+		a.musicAwaitURL = ""     // stream stopped: drop any pending un-duck (invariant: stopped ⇒ no await)
 	}
 	a.stopVoiceAudio() // free the voice capture/playback devices with the connection
 	a.voiceJoined, a.voiceMicOn = false, false
@@ -3323,14 +3336,19 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// remains). See musicStartedAt.
 			a.musicStartedAt = a.now()
 			// A LIVE music change on the ACTIVE tab (a DJ /play) makes this tab the
-			// audible owner of the single stream. If the stream was ducked because a
-			// BACKGROUNDED tab owned it (this tab had no song), clear the duck and
-			// re-apply volumes NOW — before the room's EventMusic handler (which runs
-			// after this switch) calls PlayMusic→startMusic, which reads a.musicVol as
-			// the new stream's volume. Skip the ~stop sentinel (it clears MusicTrack).
+			// audible owner of the single stream — but only ONCE the requested track is
+			// actually what the mixer is playing. If the stream is still ducked-foreign
+			// (a BACKGROUNDED tab's previously-ducked song), un-ducking NOW — before the
+			// room's EventMusic handler (line ~3527) even issues PlayMusic→PrefetchExact —
+			// would make that FOREIGN track audible for the seconds its replacement takes
+			// to download. So KEEP the duck and record the awaited URL instead;
+			// settleAwaitedMusic lifts it the frame the new track's bytes land (the mixer
+			// swaps in startMusic, CurrentMusicURL catches up, ~16ms, imperceptible).
+			// Skip the ~stop sentinel (it clears MusicTrack). Same URL builder as the
+			// room's PlayMusic (both use a.urls), so the await compares equal to
+			// Audio.CurrentMusicURL once delivered.
 			if a.sess.MusicTrack != "" && a.musicTabDucked {
-				a.musicTabDucked = false
-				a.applyAudioVolumes()
+				a.musicAwaitURL = a.urls.MusicURL(a.sess.MusicTrack)
 			}
 		case courtroom.EventCharsUpdated:
 			a.charLower = nil      // names may have changed; rebuild lazily
@@ -5581,6 +5599,7 @@ func (a *App) applyMusicStreaming(on bool) {
 	if !on {
 		a.d.Audio.StopMusic()    // halt the current track and cancel any pending fetch
 		a.musicTabDucked = false // stream stopped: not ducked (invariant)
+		a.musicAwaitURL = ""     // and no pending un-duck (nothing will be delivered)
 	}
 }
 
@@ -5625,23 +5644,49 @@ func (a *App) resumeActiveTabMusic() {
 	const resumeLoop = true
 	const resumeEffects = 0
 	url := a.urls.MusicURL(track)
-	if a.d.Audio.CurrentMusicURL() == url && a.d.Audio.MusicPlaying() {
+	sameTrack := a.d.Audio.CurrentMusicURL() == url && a.d.Audio.MusicPlaying()
+	if sameTrack {
 		// The stream is already this exact track, still rolling (kept alive, ducked,
-		// across the switch). Just make it audible again — position untouched.
-		a.musicTabDucked = false
-		a.applyAudioVolumes()
+		// across the switch). No delivery is coming — the RIGHT song is already
+		// playing — so the duck decision below un-ducks IMMEDIATELY (PRESERVE clause).
+		a.applyResumeDuck(true, url)
 		return
 	}
 	// The stream isn't this track (it was swapped to another tab's song, or this is a
-	// fresh entry): (re)fetch and best-effort seek to where it would be by now.
+	// fresh entry): (re)fetch and best-effort seek to where it would be by now. The
+	// duck decision is the same bug-class guard as the DJ /play path — it HOLDS the
+	// duck and awaits this url, so settleAwaitedMusic un-ducks only when the new
+	// track's bytes land (never the foreign stream mid-fetch). Set the await + hold
+	// the duck BEFORE issuing the fetch so the guard is in place first.
+	a.applyResumeDuck(false, url)
 	seekSec := 0.0
 	if !a.musicStartedAt.IsZero() {
 		if el := a.now().Sub(a.musicStartedAt).Seconds(); el > 0 && el <= musicResumeMaxSeekSec {
 			seekSec = el
 		}
 	}
-	a.musicTabDucked = false                                       // this tab now owns the audible stream
 	a.d.Audio.PlayMusicAt(url, resumeLoop, resumeEffects, seekSec) // AssetType: Music
+}
+
+// applyResumeDuck is resumeActiveTabMusic's pure duck decision (unit-pinnable like
+// mixChannels), split from the Audio reads so the flag transitions — the part with
+// the "wrong song plays" bug history — are testable headlessly. sameTrack=true means
+// the stream is already the active tab's exact track (kept rolling across the
+// switch): un-duck NOW and drop any stale await (no delivery is coming). sameTrack=
+// false means a foreign/other-tab track is live (or a fresh fetch was just issued):
+// HOLD the duck and AWAIT url — un-ducking now would make the foreign stream audible
+// during the fetch; settleAwaitedMusic lifts the duck when url is delivered. With the
+// MusicAcrossTabs pref ON the duck is already down (no isolation wanted); the await is
+// then harmless (settle just clears it, applyAudioVolumes no-ops). Either way it
+// re-applies volumes so the mixer reflects the decision.
+func (a *App) applyResumeDuck(sameTrack bool, url string) {
+	if sameTrack {
+		// Nothing awaited once we're on our own track; the right song is audible now.
+		a.musicAwaitURL = ""
+		a.musicTabDucked = false
+	} else {
+		a.musicAwaitURL = url // un-duck only once THIS track is the one playing
+	}
 	a.applyAudioVolumes()
 }
 
@@ -6615,6 +6660,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		a.updateSlideshow(p)
 	}
 	a.d.Audio.Frame()
+	a.settleAwaitedMusic() // delivery-time cross-tab un-duck: lift once the awaited track is what's playing
 	a.d.Pump.Frame()
 	// Touch AFTER the pump so the live stage wins recency over this tick's
 	// upload burst — an eviction of the picture on screen was the "window

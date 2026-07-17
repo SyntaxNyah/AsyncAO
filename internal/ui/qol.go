@@ -575,6 +575,39 @@ func mixChannels(master, music, sfx, blip, alert int, masterMute, musicMute, sfx
 	return music, sfx, blip, alert
 }
 
+// settleAwaitedMusic lifts the cross-tab music duck once the track the ACTIVE tab
+// requested is actually the one the single mixer stream is playing — the delivery-
+// time un-duck that fixes "a /play-ed track plays a DIFFERENT (foreign) song until
+// the new bytes arrive". It runs once per frame right AFTER a.d.Audio.Frame() drains
+// delivered audio (so startMusic has already swapped musicURL to any just-landed
+// track), in both the drawn (Frame) and background (Background) loops. Cost when
+// idle is two string reads and one compare, both empty in the common case — no
+// allocation, no lock, safe on the render hot path. nil Audio = nothing to poll.
+func (a *App) settleAwaitedMusic() {
+	// Idle short-circuit: the overwhelmingly common per-frame case is "nothing
+	// awaited" — one field read, no Audio call, no allocation. Only when a track is
+	// actually pending do we poll the mixer's current URL.
+	if a.musicAwaitURL == "" || a.d.Audio == nil {
+		return
+	}
+	a.settleAwaitedDuck(a.d.Audio.CurrentMusicURL())
+}
+
+// settleAwaitedDuck is the pure decision for settleAwaitedMusic (unit-pinnable like
+// mixChannels): if a track is awaited and the mixer is now playing exactly it, clear
+// the tab-duck + the await and re-apply volumes so it becomes audible. Reports
+// whether it un-ducked (the applyAudioVolumes side effect happens here so callers
+// don't have to). A "" await is the idle no-op.
+func (a *App) settleAwaitedDuck(cur string) bool {
+	if a.musicAwaitURL == "" || cur != a.musicAwaitURL {
+		return false // nothing awaited, or the awaited track hasn't landed yet — keep the duck
+	}
+	a.musicAwaitURL = ""
+	a.musicTabDucked = false
+	a.applyAudioVolumes()
+	return true
+}
+
 // effectiveVolumes reads the volumes that apply right now: the active server's own
 // per-server profile if it has one, else the global defaults.
 func (a *App) effectiveVolumes() (master, music, sfx, blip int) {
@@ -782,6 +815,7 @@ func (a *App) cyclePos() {
 func (a *App) stopMusic() {
 	a.d.Audio.StopMusic()
 	a.musicTabDucked = false // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
+	a.musicAwaitURL = ""     // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
 	if a.room != nil {
 		a.room.Scene.MusicTrack = "" // clear the Now-Playing display
 	}
