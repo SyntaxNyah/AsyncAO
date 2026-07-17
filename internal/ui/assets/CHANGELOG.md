@@ -4,6 +4,90 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.70.0 — 2026-07-17
+
+Music that survives everything, server tabs that keep to themselves,
+first-class Japanese shownames, preanims that behave — and an old friend
+for missing sprites.
+
+**Music that just works**
+
+- **Big custom tracks actually play now.** The downloader no longer cuts a
+  large file off mid-stream on a slow connection (the body transfer has its
+  own generous budget instead of borrowing the header deadline) — and when a
+  track genuinely can't load, the jukebox finally says so instead of staying
+  silent.
+- **Switching songs can't snap back to the previous one** — a slow old
+  download arriving late is ignored instead of stealing the speakers.
+- **Music keeps playing across tab switches.** Leave a tab and its song
+  keeps rolling silently, position intact and in sync with the room —
+  switch back and it's right where everyone else is, not restarted. Prefer
+  hearing it while you're away? Settings → Audio → "Keep music playing
+  (audible) across server tabs".
+- **New "stream custom music" toggle** (Settings → Audio, plus the quick
+  volume popover): turn it off and AsyncAO never fetches /play tracks at
+  all — including your own. Now-Playing still shows what the room is
+  playing.
+
+**Every server tab keeps to itself**
+
+- **IC and OOC logs no longer bleed between tabs** (colours included) —
+  each tab's log panels always show that tab's history.
+- **Backgrounds stay with their tab.** Switching away and back can't leave
+  two servers showing the same scene anymore.
+
+**Japanese shownames, done properly**
+
+- **重音テト renders like it should — everywhere.** Shownames and names in
+  Japanese, Chinese and Korean now use modern proportional faces (Yu Gothic
+  first for Japanese instead of a Chinese fallback's wide glyphs), and every
+  name surface — the showname box, the chatbox name plate, IC/OOC logs, the
+  player list, pair panel, DMs and group chats, the log browser, replays —
+  draws them with real glyphs instead of tofu. Typing, saving and sending
+  CJK shownames is fully supported.
+
+**Sprites and preanimations**
+
+- **Preanimations play once and settle** into the talking sprite instead of
+  looping. Want the old cycling look? Settings → Assets → "Loop
+  preanimations".
+- **The classic missingno is back.** When a character's sprite conclusively
+  doesn't exist — not still loading, actually missing — the viewport shows
+  the time-honoured placeholder instead of nothing. Default on (Power User
+  → renderer section to disable), and you can supply your own error-sprite
+  image there too.
+- **/randomchar (Ctrl+R) loads instantly**, same as clicking a character.
+
+**The IC bar earns its space**
+
+- **Pre and Text-FX are default buttons now.** The Pre checkbox mirrors
+  AO2: it follows each emote you pick, and unchecking it skips that emote's
+  intro animation. On narrow bars the SFX picker and emoji button step
+  aside first — and the character counter tucks inside the input box
+  instead of reserving its own slice.
+- **A button you place in the layout editor stays put at any window size**,
+  and buttons the bar had to drop still show up in the editor so you can
+  grab them and put them somewhere with room.
+
+**Editor, panels and lists**
+
+- **The Sprite Style box scrolls** — stacking effects can't push controls
+  off-screen anymore, and Saved styles moved to the top.
+- **The layout editor banner gains a saved-profile switcher and a
+  Magnet on/off chip**, and the Hide UI panel gets a text filter.
+- **The toolbox itself is a movable piece** in both editors, panels nudge
+  apart instead of opening exactly on top of each other, and the toolbox
+  survives into edit mode.
+- **Ctrl+wheel zoom** now works on the areas list, the players tab and the
+  mod dashboard, just like the music list — and the zoom sticks.
+
+**Phone Book**
+
+- **Edit your saved servers in place** — name and address, with a proper
+  rename instead of add-and-orphan. A changed address that collides with
+  another entry is refused rather than silently merged.
+- Something fanatical has moved into the bottom-right corner of the page.
+
 ## v1.63.0 — 2026-07-15
 
 The courtroom customization overhaul: the layout tools are rebuilt around
