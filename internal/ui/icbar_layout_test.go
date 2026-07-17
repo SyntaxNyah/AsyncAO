@@ -61,6 +61,36 @@ func TestICBarSlotsAreEditable(t *testing.T) {
 	}
 }
 
+// TestICOptionalDrawsOverrideWins pins the narrow-bar drop-discipline escape hatch:
+// a width-guarded optional IC-bar button (Pre / SFX / emoji / FX) must still draw when
+// the user saved a slot override or the classic editor is armed — otherwise a dropped
+// button can never be grabbed or forced back (the movable-slot promise). The un-edited
+// narrow bar with no override must still drop it (guard intact = byte-identical play),
+// and a hidden piece never draws whatever else is true.
+func TestICOptionalDrawsOverrideWins(t *testing.T) {
+	// (a) an override forces the button to draw on a narrow bar (guard failed).
+	if !icOptionalDraws(false /*guardOK*/, true /*override*/, false /*editing*/, false /*hidden*/) {
+		t.Error("override should force a width-dropped optional button to draw")
+	}
+	// (b) no override + narrow bar still drops it (the guard stays intact).
+	if icOptionalDraws(false, false, false, false) {
+		t.Error("no override + failed guard + not editing must DROP the button (byte-identical play)")
+	}
+	// (c) the classic editor draws it regardless of width, so its slot registers and the
+	//     user can grab a dropped button and pull it somewhere with room.
+	if !icOptionalDraws(false, false, true, false) {
+		t.Error("classic editor must draw the button regardless of the width guard (grabbability)")
+	}
+	// The width guard passing still draws with no override / not editing (today's behavior).
+	if !icOptionalDraws(true, false, false, false) {
+		t.Error("a passing width guard must draw the button")
+	}
+	// Hidden beats everything — override, editor, and a passing guard all lose to hidden.
+	if icOptionalDraws(true, true, true, true) {
+		t.Error("a hidden optional button must never draw, whatever else is set")
+	}
+}
+
 // TestThemeKeysExposeAsyncICControls pins #4b: the AsyncAO-only IC controls are listed
 // in themeLayoutKeys, so a custom theme that defines asyncao_ic_<x> in its design.ini has
 // those rects loaded — letting theme-makers place colour/SFX/buttons separately instead

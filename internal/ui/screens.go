@@ -4955,6 +4955,20 @@ func (a *App) drawICColorStrip(colorBox sdl.Rect) {
 	}
 }
 
+// icOptionalDraws decides whether one width-guarded optional IC-bar button (Pre,
+// SFX, emoji, FX) draws this frame. A hidden piece never draws (hidden beats
+// everything). Otherwise it draws when the narrow-bar width guard passes OR the
+// user saved a slot override for it OR the classic editor is armed — so a button
+// the crammed row would drop is still reachable: an override forces it in (the
+// movable-slot promise), and edit mode always shows it so a dropped button can be
+// grabbed and pulled out to somewhere with room. With no override and not editing
+// this collapses to exactly the historical `!hidden && guardOK`, so an un-edited
+// narrow bar stays byte-identical. Pure func (value params, no closure) so the
+// drop discipline is unit-testable off the SDL path.
+func icOptionalDraws(guardOK, hasOverride, editing, hidden bool) bool {
+	return !hidden && (guardOK || hasOverride || editing)
+}
+
 // drawICInputRow draws the IC bar's input chain — showname box (+ saved-name picker),
 // the Immediate and Additive toggles, the SFX picker, the emoji and Text-FX buttons,
 // the IC text field itself and the muted chip — flowing left-to-right from the DEFAULT
@@ -5074,7 +5088,17 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	if !a.panelHidden(slotICEmoji) {
 		preTailDemand += fH + 4 // emoji draws too, so Pre must leave its room as well
 	}
-	if icBar.W-(icX-icBar.X)-(preW+6) >= preTailDemand && !a.panelHidden(slotICPre) {
+	// OVERRIDE / EDITOR win over the width drop (v1.63.0+): a dropped button never
+	// reached slotRect, so it never registered a slot and could not be grabbed in the
+	// editor — nor did a saved override force it back. Draw when the width guard passes
+	// OR the user has a saved slot override OR the editor is armed (hidden still hides).
+	// The row cursor still advances by the DEFAULT width (icX += preW+6), exactly as
+	// overridden-Immediate does, so an overridden Pre never cascades the rest and an
+	// un-edited narrow bar stays byte-identical. Comma-ok map read is nil-safe + alloc-
+	// free (the same read slotRect does).
+	_, preOv := a.classicOv[slotICPre]
+	preGuardOK := icBar.W-(icX-icBar.X)-(preW+6) >= preTailDemand
+	if icOptionalDraws(preGuardOK, preOv, a.classicEdit, a.panelHidden(slotICPre)) {
 		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
 		a.icPreanim = c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim)
 		c.Tooltip(preBox, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
@@ -5084,7 +5108,12 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// emote's own sound until set back to "auto". Picking one previews it. Placed first
 	// so on a narrow bar it survives longest (the buttons drop right-to-left).
 	a.ensureSFXChoices()
-	if icBar.W-(icX-icBar.X)-(sfxDDW+4) >= tailReserve {
+	// Override / editor win over the drop (same rule as Pre above). SFX has no
+	// panelHidden gate in the classic row (it never had one) — keep it that way: pass
+	// hidden=false so this stays a pure width/override/edit decision.
+	_, sfxOv := a.classicOv[slotICSFX]
+	sfxGuardOK := icBar.W-(icX-icBar.X)-(sfxDDW+4) >= tailReserve
+	if icOptionalDraws(sfxGuardOK, sfxOv, a.classicEdit, false) {
 		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
 		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
 			a.sfxChoiceIdx = next
@@ -5096,15 +5125,22 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		icX += sfxDDW + 4
 	}
 	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a) and
-	// hideable (playtest: some players don't want it at all).
-	if icBar.W-(icX-icBar.X)-(fH+4) >= tailReserve && !a.panelHidden(slotICEmoji) {
+	// hideable (playtest: some players don't want it at all). Override / editor win
+	// over the drop (same rule as Pre); hidden still hides.
+	_, emojiOv := a.classicOv[slotICEmoji]
+	emojiGuardOK := icBar.W-(icX-icBar.X)-(fH+4) >= tailReserve
+	if icOptionalDraws(emojiGuardOK, emojiOv, a.classicEdit, a.panelHidden(slotICEmoji)) {
 		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
 			a.showEmojiPicker = !a.showEmojiPicker
 		}
 		icX += fH + 4
 	}
 	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow) — movable (#4a).
-	if icBar.W-(icX-icBar.X)-(fxBtnW+4) >= tailReserve {
+	// Override / editor win over the drop (same rule as Pre); FX has no panelHidden gate
+	// in the classic row, so pass hidden=false to keep it a pure width/override/edit call.
+	_, fxOv := a.classicOv[slotICFx]
+	fxGuardOK := icBar.W-(icX-icBar.X)-(fxBtnW+4) >= tailReserve
+	if icOptionalDraws(fxGuardOK, fxOv, a.classicEdit, false) {
 		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
 		icX += fxBtnW + 4
 	}
