@@ -1,6 +1,51 @@
 package render
 
-import "testing"
+import (
+	"testing"
+	"unsafe"
+
+	"github.com/veandco/go-sdl2/mix"
+)
+
+// TestPlayMusicAtIdempotent pins the cross-tab resume guard: PlayMusicAt for the
+// EXACT URL already playing is a no-op — it neither re-fetches nor re-seeks a live
+// stream, so a switch back to a tab whose track was kept rolling (ducked) preserves
+// its true position untouched. A disabled device is also a no-op. Both paths return
+// BEFORE touching the (nil-in-test) Manager, so this runs headlessly like
+// TestPurgePendingMusic. CurrentMusicURL / MusicPlaying accessors are pinned too.
+func TestPlayMusicAtIdempotent(t *testing.T) {
+	// Disabled device: no-op, no Manager access, no pending entry.
+	off := &Audio{pending: map[string]pendingPlay{}}
+	off.PlayMusicAt("http://cdn/song.opus", true, 0, 12)
+	if len(off.pending) != 0 {
+		t.Error("a disabled device must not queue a pending music fetch")
+	}
+	if off.MusicPlaying() {
+		t.Error("a disabled device must report no music playing")
+	}
+
+	// Enabled + this exact URL already the live stream: PlayMusicAt is a no-op.
+	// A non-nil sentinel *mix.Music makes MusicPlaying() true without decoding; the
+	// guard only compares != nil and never dereferences it, so pointing it at a real
+	// dummy byte is safe (mix.Music is an opaque C type — can't be allocated with new).
+	var dummy byte
+	live := &Audio{
+		enabled:  true,
+		pending:  map[string]pendingPlay{},
+		musicURL: "http://cdn/song.opus",
+		music:    (*mix.Music)(unsafe.Pointer(&dummy)), // non-nil sentinel; never dereferenced
+	}
+	if live.CurrentMusicURL() != "http://cdn/song.opus" {
+		t.Fatalf("CurrentMusicURL = %q, want the live URL", live.CurrentMusicURL())
+	}
+	if !live.MusicPlaying() {
+		t.Fatal("MusicPlaying must be true with an enabled device and a loaded stream")
+	}
+	live.PlayMusicAt("http://cdn/song.opus", true, 0, 30) // same URL → idempotent
+	if len(live.pending) != 0 {
+		t.Error("PlayMusicAt for the already-playing URL must NOT queue a fetch (idempotent, position preserved)")
+	}
+}
 
 // TestBuiltinAlertWAV pins that the synthesized callword/friend fallback ping
 // is a structurally valid, non-empty 16-bit mono PCM WAV. It's the guaranteed

@@ -203,6 +203,7 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"audio", "volume", "master volume", "music volume", "sfx volume", "blip volume", "blip",
 		"alert volume", "music ducking", "duck",
 		"stream music", "disable music", "stop fetching music", "custom music",
+		"music across tabs", "tab music", "keep music playing", "music continuity", "keep music",
 	},
 	tabChat: {
 		// sections: Text & typing, Chat log, Case alerts, Callwords, Do Not Disturb,
@@ -2420,6 +2421,24 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	stream := a.d.Prefs.MusicStreamingOn()
 	if next := c.Checkbox(pad, y, "Stream custom /play music (off stops fetching /play tracks — including your own, which go silent for you)", stream); next != stream {
 		a.applyMusicStreaming(next) // persists + re-syncs the room + stops playback on OFF
+	}
+	y += 28
+	// Cross-tab music continuity (default OFF): music never stops on a server-tab
+	// switch — it keeps playing and is ducked to silence by default so tabs stay
+	// acoustically isolated (switching back restores it in sync). ON keeps a
+	// backgrounded tab's music AUDIBLE while you browse another tab that has none.
+	across := a.d.Prefs.MusicAcrossTabsOn()
+	if next := c.Checkbox(pad, y, "Keep music playing (audible) across server tabs (off = keep it playing but silent while backgrounded)", across); next != across {
+		a.d.Prefs.SetMusicAcrossTabs(next)
+		// If a backgrounded tab's stream is currently ducked and the user just turned
+		// this ON, un-duck it live so it becomes audible now. The OFF case (re-duck)
+		// takes effect on the next tab switch — never yank audio out from under the
+		// user mid-listen. Only touches a KEPT-ALIVE background stream (musicTabDucked),
+		// never the active tab's own music.
+		if next && a.musicTabDucked {
+			a.musicTabDucked = false
+			a.applyAudioVolumes()
+		}
 	}
 	y += 28
 

@@ -207,14 +207,20 @@ func (a *App) parkActive() {
 	a.msAnim, a.msAnimFont = nil, nil // #M5: drop the parked tab's animated message too
 	a.tabs[a.activeTab].inCourt = a.room != nil
 	a.room = nil
-	// A parked server falls SILENT. Music is a single looping stream, so without
-	// this the parked tab's song keeps playing under the next tab — and the
-	// activated tab's buildRoom only replays its OWN track (and not at all if its
-	// area has no song), so you'd hear the wrong server. buildRoom re-seeds the
-	// foreground tab's music on activation, so audio follows the active server.
-	if a.d.Audio != nil {
-		a.d.Audio.StopMusic()
-	}
+	// Music CONTINUITY across a tab switch (the agreed exception to ecd6d9e's
+	// log/scenery isolation): DON'T stop the single music stream when a tab goes
+	// to the background. It keeps rolling — so its position is preserved perfectly
+	// — but is DUCKED to volume 0 (musicTabDucked) so tabs stay acoustically
+	// isolated. Switching back finds the same stream still playing this exact URL,
+	// so buildRoom's resume is an idempotent no-op that just un-ducks: the track
+	// picks up right where it was, in sync. If the INCOMING tab has its own song,
+	// buildRoom swaps the stream (audible) and clears the duck there; the parked
+	// tab's musicStartedAt lets a later return seek back near where it would be.
+	// The MusicAcrossTabs pref (default OFF) instead keeps the backgrounded stream
+	// AUDIBLE (no duck). We never StopMusic here anymore — tab CLOSE / disconnect
+	// still do (closeParkedTab / Disconnect), so an orphaned stream can't leak.
+	a.musicTabDucked = !a.d.Prefs.MusicAcrossTabsOn()
+	a.applyAudioVolumes() // push the duck (or its absence) to the mixer (no-op if no Audio)
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
 		a.d.Viewport.OnFrameShown = nil // #17: parked tab's room no longer owns the viewport
@@ -328,6 +334,16 @@ func (a *App) closeParkedTab(i int) {
 	}
 	if t.state.notebook != nil {
 		go func(nb *config.Notebook) { _ = nb.Flush() }(t.state.notebook)
+	}
+	// If the single music stream is currently DUCKED it's owned by a backgrounded
+	// tab (cross-tab continuity kept it rolling silently — see parkActive). Closing
+	// a background tab could be closing that owner, and we can't cheaply tell which
+	// tab owns the stream, so stop it to avoid an orphaned stream leaking (rule §4).
+	// It's inaudible anyway, so this is acoustically invisible; returning to the
+	// real owner re-fetches and resumes it (buildRoom → resumeActiveTabMusic).
+	if a.d.Audio != nil && a.musicTabDucked {
+		a.d.Audio.StopMusic()
+		a.musicTabDucked = false
 	}
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	if a.activeTab > i {

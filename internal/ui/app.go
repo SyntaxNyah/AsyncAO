@@ -263,6 +263,18 @@ type App struct {
 	// (theme art, previews, splashes) read it instead of hitting the OS
 	// clock per draw site.
 	frameNow time.Time
+	// musicTabDucked silences the single music stream because it belongs to a
+	// BACKGROUNDED tab (cross-tab music continuity). It's App-level, not per-tab:
+	// the one music stream is a global resource, and the flag describes whether
+	// the ACTIVE tab owns it. Set true in parkActive when the outgoing tab's
+	// still-rolling stream is handed to the background (so it keeps its position
+	// but goes inaudible — tabs stay acoustically isolated); cleared when the
+	// active tab takes the stream back (its resumed track is what's playing).
+	// The tab-isolation work (ecd6d9e isolated logs/scenery) deliberately did NOT
+	// isolate music — continuity is the agreed exception; this duck is how it stays
+	// isolated ACOUSTICALLY without killing the stream. Suppressed entirely when
+	// the MusicAcrossTabs pref is ON (then a backgrounded stream stays audible).
+	musicTabDucked bool
 	// defaultOOC is the sticky AsyncAO<n> fallback OOC name, minted once
 	// per run on first use (commands/macros need SOME name to send).
 	defaultOOC string
@@ -1774,6 +1786,12 @@ type sessionState struct {
 	hiddenSprites      map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
 	autoConnectPending bool                // fire auto-connect-to-last-server once, on the first frame
 	musicDucked        bool
+	// musicStartedAt stamps when THIS tab's current area track began playing
+	// (frame clock). Parks with the tab, so cross-tab music continuity can seek a
+	// resumed track to now-minus-start when the stream had to be swapped away for
+	// another tab's song (see parkActive / buildRoom's resume). Zero = unknown
+	// (resume from the top). Re-stamped whenever an EventMusic changes the track.
+	musicStartedAt time.Time
 
 	// scenery self-heal stamps (healScenery pacing)
 	bgAskBase   string
@@ -3012,6 +3030,7 @@ func (a *App) Disconnect() {
 	// disconnect, kick, or a dropped socket all land here).
 	if a.d.Audio != nil {
 		a.d.Audio.StopMusic()
+		a.musicTabDucked = false // a fresh session's music must start audible, not ducked
 	}
 	a.stopVoiceAudio() // free the voice capture/playback devices with the connection
 	a.voiceJoined, a.voiceMicOn = false, false
@@ -3298,6 +3317,21 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// AO2-Client (handle_song). The room still plays the track below.
 			a.logMusicChange(ev)
 			a.noteMusicHistory(ev) // M12 slice: session "recently played" history
+			// Stamp when this track began, for a cross-tab resume seek (a later
+			// tab switch computes elapsed = now - start). A ~stop clears MusicTrack,
+			// so the stamp is harmless then (resume only reads it when a track
+			// remains). See musicStartedAt.
+			a.musicStartedAt = a.now()
+			// A LIVE music change on the ACTIVE tab (a DJ /play) makes this tab the
+			// audible owner of the single stream. If the stream was ducked because a
+			// BACKGROUNDED tab owned it (this tab had no song), clear the duck and
+			// re-apply volumes NOW — before the room's EventMusic handler (which runs
+			// after this switch) calls PlayMusic→startMusic, which reads a.musicVol as
+			// the new stream's volume. Skip the ~stop sentinel (it clears MusicTrack).
+			if a.sess.MusicTrack != "" && a.musicTabDucked {
+				a.musicTabDucked = false
+				a.applyAudioVolumes()
+			}
 		case courtroom.EventCharsUpdated:
 			a.charLower = nil      // names may have changed; rebuild lazily
 			a.rebuildLiveRoster()  // pre-snapshot fallback only
@@ -4092,18 +4126,14 @@ func (a *App) buildRoom() {
 	// Resume the area's current song into the fresh room — symmetric with the background
 	// above. The track was announced (MC) before this room existed (the join handshake, or
 	// a tab reactivation), so without this re-seed the music fell silent on (re)entry while
-	// the background came back. A direct HandleEvent (not handleSessionEvents) so it plays
-	// without re-logging "has played a song". (It restarts the song from the top — acceptable.)
+	// the background came back.
 	if a.sess.MusicTrack != "" {
 		// Sync the streaming toggle BEFORE the resume: applyTimingToRoom (which
 		// normally pushes it) runs below, but this resume event fires first — with
 		// StreamMusic left at NewCourtroom's default ON, a resumed track would play
 		// even when the user disabled streaming. §1.3.
 		a.room.StreamMusic = a.d.Prefs.MusicStreamingOn()
-		// Loop: true — a resumed persistent track keeps AsyncAO's client-side loop
-		// (#15; the original MC's loop/effect flags aren't retained on the session,
-		// and a room-rebuild resume has always looped).
-		a.room.HandleEvent(courtroom.Event{Kind: courtroom.EventMusic, Text: a.sess.MusicTrack, Loop: true})
+		a.resumeActiveTabMusic()
 	}
 	a.applyTimingToRoom()
 	a.pushRealizationToRoom()
@@ -5549,8 +5579,70 @@ func (a *App) applyMusicStreaming(on bool) {
 		a.room.StreamMusic = on
 	}
 	if !on {
-		a.d.Audio.StopMusic() // halt the current track and cancel any pending fetch
+		a.d.Audio.StopMusic()    // halt the current track and cancel any pending fetch
+		a.musicTabDucked = false // stream stopped: not ducked (invariant)
 	}
+}
+
+// musicResumeMaxSeekSec caps the cross-tab resume seek. Duration is NOT knowable
+// through this SDL_mixer binding (no Mix_MusicDuration), so a very stale
+// backgrounded track can't be wrapped by length; past a few minutes a seek is as
+// likely to overshoot the end (→ Mix_SetMusicPosition fails → restart) as to help,
+// and even when it lands it's musically meaningless. Beyond this we just restart
+// from the top — the honest degrade the task allows for the unknowable-duration case.
+const musicResumeMaxSeekSec = 600 // 10 minutes
+
+// resumeActiveTabMusic re-seeds the newly-active tab's area song into the single
+// music stream on a room (re)build. It's the cross-tab continuity core:
+//
+//   - Same track already live (the common case: the stream was kept rolling,
+//     DUCKED, while this tab was backgrounded — see parkActive): PlayMusic is
+//     idempotent, so this is a no-op on the stream. We just clear the tab-duck and
+//     re-apply volumes, so the track picks up EXACTLY where it was, in sync.
+//   - A different track is live (another tab's song swapped the stream away, or a
+//     fresh entry): fetch this tab's track and SEEK best-effort to elapsed-since-
+//     start (musicStartedAt), so a persistent area track resumes near where it
+//     would be now. Unsupported formats / an overshoot degrade to playing from the
+//     top (PlayMusicAt handles that).
+//
+// StreamMusic OFF means nothing is fetched or played (§1.3): we only track
+// Now-Playing then, and leave the (nonexistent) stream's duck alone. Render thread
+// only (buildRoom runs there); no new goroutines.
+func (a *App) resumeActiveTabMusic() {
+	track := a.sess.MusicTrack
+	if track == "" {
+		return
+	}
+	// Now-Playing reflects the room's intended track even when streaming is off.
+	a.room.Scene.MusicTrack = track
+	if !a.room.StreamMusic || a.d.Audio == nil {
+		return // §1.3: OFF fetches/plays nothing; no device = nothing to duck or seek
+	}
+	// Loop: true — a resumed persistent area track keeps AsyncAO's client-side loop
+	// (#15; the original MC's loop/effect flags aren't retained on the session, and a
+	// room-rebuild resume has always looped). No fade on a resume (effects = 0): the
+	// track was already "playing" from the listener's view, so it shouldn't ramp in.
+	const resumeLoop = true
+	const resumeEffects = 0
+	url := a.urls.MusicURL(track)
+	if a.d.Audio.CurrentMusicURL() == url && a.d.Audio.MusicPlaying() {
+		// The stream is already this exact track, still rolling (kept alive, ducked,
+		// across the switch). Just make it audible again — position untouched.
+		a.musicTabDucked = false
+		a.applyAudioVolumes()
+		return
+	}
+	// The stream isn't this track (it was swapped to another tab's song, or this is a
+	// fresh entry): (re)fetch and best-effort seek to where it would be by now.
+	seekSec := 0.0
+	if !a.musicStartedAt.IsZero() {
+		if el := a.now().Sub(a.musicStartedAt).Seconds(); el > 0 && el <= musicResumeMaxSeekSec {
+			seekSec = el
+		}
+	}
+	a.musicTabDucked = false                                       // this tab now owns the audible stream
+	a.d.Audio.PlayMusicAt(url, resumeLoop, resumeEffects, seekSec) // AssetType: Music
+	a.applyAudioVolumes()
 }
 
 // activeCharName is the character folder OUTGOING messages use: the

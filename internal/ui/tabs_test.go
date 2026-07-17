@@ -203,6 +203,50 @@ func TestTabParkActivateRoundTrip(t *testing.T) {
 	}
 }
 
+// TestMusicTabDuckOnPark pins the cross-tab music-continuity duck state machine
+// (the core of "music keeps playing across a tab switch"): parking a tab ducks
+// the single stream to silence by DEFAULT (it keeps rolling — position preserved —
+// but goes inaudible so tabs are isolated), while the opt-in MusicAcrossTabs pref
+// keeps it audible (no duck). It also pins that parkActive no longer TEARS the
+// stream down: with a nil Audio device the flag still flips, proving the decision
+// is pure state, not a StopMusic call. Audio is nil here, so no SDL is needed.
+func TestMusicTabDuckOnPark(t *testing.T) {
+	a := testTabApp(t)
+	if !a.allocateTab() {
+		t.Fatal("allocate")
+	}
+	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+
+	// Default (pref OFF): parking ducks the backgrounded stream to silence.
+	a.parkActive()
+	if !a.musicTabDucked {
+		t.Fatal("default: parking a tab must duck the still-rolling stream to silence")
+	}
+
+	// Re-activate the tab (it has no music, so the duck still stands — a backgrounded
+	// tab's stream is being kept alive under it).
+	a.activateTab(0)
+	if !a.musicTabDucked {
+		t.Fatal("setup: after re-activating a tab with no music, the duck should still stand")
+	}
+	// A DJ /play on the ACTIVE tab: the real EventMusic handler makes this tab the
+	// audible owner and must clear the tab-duck (else the new track would play at 0).
+	// HandlePacket normally sets MusicTrack; set it directly so the handler's gate sees it.
+	a.sess.MusicTrack = "Trial.opus"
+	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "Trial.opus"}})
+	if a.musicTabDucked {
+		t.Error("a live music change on the active tab must clear the tab-duck (handleSessionEvents)")
+	}
+
+	// Pref ON: parking keeps the backgrounded stream AUDIBLE (no duck).
+	a.d.Prefs.SetMusicAcrossTabs(true)
+	a.parkActive()
+	if a.musicTabDucked {
+		t.Error("with MusicAcrossTabs ON, parking must NOT duck the backgrounded stream")
+	}
+}
+
 // TestStageRestoreMsg pins buildRoom's viewport-restore gate: the session's
 // LastIC is the seed for the settled re-stage (RestoreMessage), an ignored
 // speaker is dropped exactly like the live #81 filter (which `continue`s past

@@ -513,9 +513,14 @@ func (a *App) toggleSFXMute() {
 const duckMusicPercent = 35
 
 // applyAudioVolumes pushes the saved volumes to the audio system, applying the
-// session SFX mute (SFX → 0) and music ducking (music → duckMusicPercent)
-// when active. Call it wherever those states change so they're always honored.
+// session SFX mute (SFX → 0), message-on-stage music ducking (music →
+// duckMusicPercent), and the cross-tab music duck (music → 0) when active. Call it
+// wherever those states change so they're always honored. A nil Audio (headless
+// tests) is a no-op, so every caller can invoke it unconditionally.
 func (a *App) applyAudioVolumes() {
+	if a.d.Audio == nil {
+		return
+	}
 	music, sfx, blip := a.d.Prefs.AudioVolumes()
 	master := a.d.Prefs.MasterVolume()
 	// Per-server audio (sandboxed tab sound): the ACTIVE server's override, when
@@ -528,16 +533,21 @@ func (a *App) applyAudioVolumes() {
 	}
 	alert := a.d.Prefs.AlertVolume() // callword/friend ping — independent of SFX, always global
 	music, sfx, blip, alert = mixChannels(master, music, sfx, blip, alert,
-		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked)
+		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked, a.musicTabDucked)
 	a.d.Audio.SetVolumes(music, sfx, blip)
 	a.d.Audio.SetAlertVolume(alert)
 }
 
-// mixChannels applies the per-channel mutes (#10), the music duck, and the master scale
-// to the effective levels — pure (no audio engine), so the mute/duck/scale math is
-// unit-pinnable. Master mute zeroes EVERYTHING (it scales all channels + the alert); a
-// per-channel mute zeroes just that channel without touching its stored slider level.
-func mixChannels(master, music, sfx, blip, alert int, masterMute, musicMute, sfxMute, blipMute, ducked bool) (mMusic, mSFX, mBlip, mAlert int) {
+// mixChannels applies the per-channel mutes (#10), the music duck, the cross-tab
+// music duck, and the master scale to the effective levels — pure (no audio engine),
+// so the mute/duck/scale math is unit-pinnable. Master mute zeroes EVERYTHING (it
+// scales all channels + the alert); a per-channel mute zeroes just that channel
+// without touching its stored slider level. tabDuck (cross-tab continuity) silences
+// music entirely — the single stream is kept alive under a BACKGROUNDED tab so its
+// position survives a switch, but stays inaudible so tabs are acoustically isolated;
+// it composes AFTER the mute/message-duck (it's a stronger, to-zero duck) and the
+// master scale of 0 is a harmless no-op.
+func mixChannels(master, music, sfx, blip, alert int, masterMute, musicMute, sfxMute, blipMute, ducked, tabDuck bool) (mMusic, mSFX, mBlip, mAlert int) {
 	if masterMute {
 		master = 0
 	}
@@ -552,6 +562,9 @@ func mixChannels(master, music, sfx, blip, alert int, masterMute, musicMute, sfx
 	}
 	if ducked {
 		music = music * duckMusicPercent / 100
+	}
+	if tabDuck {
+		music = 0 // backgrounded tab's still-rolling stream: silent, but not stopped
 	}
 	// Master multiplier scales everything (composes over mute/duck) — the one
 	// "too loud / too quiet" knob.
@@ -768,6 +781,7 @@ func (a *App) cyclePos() {
 // own client regardless of DJ rights.
 func (a *App) stopMusic() {
 	a.d.Audio.StopMusic()
+	a.musicTabDucked = false // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
 	if a.room != nil {
 		a.room.Scene.MusicTrack = "" // clear the Now-Playing display
 	}

@@ -609,6 +609,33 @@ func TestNotifyOnOOCPref(t *testing.T) {
 	}
 }
 
+// TestMusicAcrossTabsPref pins the cross-tab music-continuity toggle: OFF by
+// default (a backgrounded tab's music ducks to silence), and survives save→reload
+// when enabled (the marshal + load overlay must BOTH carry it — the saves-but-does-
+// not-load trap).
+func TestMusicAcrossTabsPref(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	if p.MusicAcrossTabsOn() {
+		t.Error("MusicAcrossTabs must default OFF (backgrounded tab music ducks to 0)")
+	}
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	q, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	q.SetMusicAcrossTabs(true)
+	if err := q.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.MusicAcrossTabsOn() {
+		t.Error("MusicAcrossTabs=true lost on reload")
+	}
+}
+
 // TestPlayerListSortPref pins that the Players-tab sort choices (player sort +
 // /gas area-group order) default to 0 and survive save→reload.
 func TestPlayerListSortPref(t *testing.T) {

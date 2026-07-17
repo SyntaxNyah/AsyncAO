@@ -1139,6 +1139,13 @@ type AssetPreferences struct {
 	// too — they round-trip through the server). NOT omitempty: an explicit OFF
 	// must persist, not read back as "absent → default ON".
 	MusicStreaming bool `json:"musicStreaming"`
+	// MusicAcrossTabs keeps a backgrounded tab's music AUDIBLE across a server-tab
+	// switch instead of ducking it to silence (default OFF). The single music
+	// stream always follows the active tab; with this OFF a backgrounded tab's
+	// still-rolling stream is ducked to volume 0 (tabs stay acoustically isolated,
+	// position preserved). ON = you keep hearing the previous tab's music while
+	// browsing another that has none. Default OFF (plain bool, no omitempty).
+	MusicAcrossTabs bool `json:"musicAcrossTabs"`
 	// ShowMissingPlaceholder draws the AO2 "placeholder" (missingno) for a
 	// conclusively-missing character sprite (ON by default). NOT omitempty: an
 	// explicit OFF must persist, not read back as "absent → default ON".
@@ -1227,6 +1234,7 @@ type prefsJSON struct {
 	TimerSeconds           int              `json:"timerSeconds"`         // 0 = default (#97)
 	TimerRepeat            bool             `json:"timerRepeat"`          // default OFF (#97)
 	NotifyOnOOC            bool             `json:"notifyOnOOC"`          // default OFF (IC-only badge)
+	MusicAcrossTabs        bool             `json:"musicAcrossTabs"`      // default OFF (background tab music ducks to 0)
 	ShowSongURL            bool             `json:"showSongURL"`          // default OFF (song name only)
 	AutoConnectOnLaunch    bool             `json:"autoConnectOnLaunch"`  // default OFF
 	LastServerName         string           `json:"lastServerName"`
@@ -1881,6 +1889,7 @@ func load(path string) (*AssetPreferences, error) {
 	p.TimerSeconds = onDisk.TimerSeconds
 	p.TimerRepeat = onDisk.TimerRepeat
 	p.NotifyOnOOC = onDisk.NotifyOnOOC
+	p.MusicAcrossTabs = onDisk.MusicAcrossTabs
 	p.ShowSongURL = onDisk.ShowSongURL
 	p.AutoConnectOnLaunch = onDisk.AutoConnectOnLaunch
 	p.LastServerName = onDisk.LastServerName
@@ -3762,6 +3771,29 @@ func (p *AssetPreferences) SetNotifyOnOOC(on bool) {
 		return
 	}
 	p.NotifyOnOOC = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// MusicAcrossTabsOn reports whether a backgrounded tab's music stays audible
+// across a server-tab switch (default OFF). OFF ducks the backgrounded stream to
+// volume 0 so tabs are acoustically isolated (its position is preserved, not
+// stopped); ON keeps it playing at normal volume.
+func (p *AssetPreferences) MusicAcrossTabsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.MusicAcrossTabs
+}
+
+// SetMusicAcrossTabs toggles keeping a backgrounded tab's music audible across a
+// tab switch (default OFF = duck to 0).
+func (p *AssetPreferences) SetMusicAcrossTabs(on bool) {
+	p.mu.Lock()
+	if p.MusicAcrossTabs == on {
+		p.mu.Unlock()
+		return
+	}
+	p.MusicAcrossTabs = on
 	p.mu.Unlock()
 	p.markDirty()
 }

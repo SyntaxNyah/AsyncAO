@@ -90,6 +90,9 @@ type pendingPlay struct {
 	// read in startMusic when the track's bytes arrive — never from stale args.
 	loop    bool
 	effects int
+	// seekSec is a best-effort start position (seconds) for a cross-tab resume:
+	// >0 means seek there once the stream loads (PlayMusicAt); 0 = play from top.
+	seekSec float64
 }
 
 // Audio implements courtroom.AudioSink over SDL_mixer: raw bytes from the
@@ -465,7 +468,7 @@ func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
 	p, wanted := a.pending[asset.Base]
 	if wanted && p.kind == pendingMusic {
 		delete(a.pending, asset.Base)
-		a.startMusic(asset.Base, asset.Data, p.loop, p.effects) // 2.9 loop/effects from the stored request (#15)
+		a.startMusic(asset.Base, asset.Data, p.loop, p.effects, p.seekSec) // 2.9 loop/effects (#15) + cross-tab resume seek
 		return
 	}
 	chunk := a.loadChunk(asset.Base, asset.Data)
@@ -708,6 +711,39 @@ func (a *Audio) StopMusic() {
 	a.purgePendingMusic("") // a pending fetch would otherwise start on arrival
 }
 
+// CurrentMusicURL is the URL of the track the single music stream is currently
+// playing ("" = nothing). Multi-tab music continuity (see internal/ui parkActive)
+// reads it to decide whether the active tab OWNS the live stream: if the tab's
+// resumed track equals this, PlayMusic is a no-op and the stream (and its
+// position) survives the switch untouched; if it differs, the stream must swap.
+// Render thread only.
+func (a *Audio) CurrentMusicURL() string { return a.musicURL }
+
+// MusicPlaying reports whether the single music stream is live (a track is
+// loaded and rolling). Cross-tab continuity uses it to know there's a stream to
+// keep alive (ducked) across a switch rather than one to restart. Render thread
+// only.
+func (a *Audio) MusicPlaying() bool { return a.enabled && a.music != nil }
+
+// PlayMusicAt is PlayMusic with a best-effort SEEK to seekSec seconds into the
+// track, for resuming a backgrounded tab's song near where it would be now
+// (cross-tab music continuity). Same idempotency guard as PlayMusic: if that
+// exact URL is already the live stream this is a no-op (the stream — and its true
+// position — is already preserved, so the virtual seek is neither needed nor
+// wanted). Otherwise it fetches and, on decode, seeks. seekSec<=0 behaves exactly
+// like PlayMusic (play from the top). // AssetType: Music
+func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64) {
+	if !a.enabled {
+		return
+	}
+	if url == a.musicURL && a.music != nil {
+		return // already this exact stream — never restart or re-seek a live track
+	}
+	a.purgePendingMusic(url)
+	a.pending[url] = pendingPlay{kind: pendingMusic, deadline: time.Now().Add(pendingPlayTTL), loop: loop, effects: effects, seekSec: seekSec}
+	a.mgr.PrefetchExact(url, assets.AssetTypeMusic, network.PriorityHigh) // AssetType: Music
+}
+
 // startMusic decodes and plays a fetched track. loop drives the SDL_mixer loop
 // count (-1 = forever, 0 = play once — 2.9 looping/NO_REPEAT, #15); effects
 // carries the MUSIC_EFFECT bit flags. Render thread only.
@@ -723,10 +759,13 @@ func (a *Audio) StopMusic() {
 //     streaming — but stopMusic synchronously Frees the Music/RWops and drops the
 //     pinned byte slice, a use-after-free of the same class as #4. Skipped to
 //     stay correct rather than faked.
-//   - SYNC_POS: SKIPPED. SDL_mixer can't cheaply seek a freshly-loaded stream to
-//     the previous track's position mid-fetch; no honest implementation exists
-//     with this backend, so we don't fake one.
-func (a *Audio) startMusic(url string, data []byte, loop bool, effects int) {
+//   - SYNC_POS: SKIPPED as a wire MUSIC_EFFECT (the server-driven mid-fetch
+//     sync). A DIFFERENT, client-local seek DOES exist though: seekSec (cross-tab
+//     music continuity) — see the seek block below. It's best-effort: Mix_Set-
+//     MusicPosition only supports some formats (ogg/mp3/mod, and flac/opus with a
+//     new enough SDL_mixer), returning -1 otherwise, so a failed seek degrades to
+//     playing from the top (today's behavior) rather than faking anything.
+func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seekSec float64) {
 	a.stopMusic() // clears musicURL; set below only on a successful start
 	rw, err := sdl.RWFromMem(data)
 	if err != nil {
@@ -763,6 +802,18 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int) {
 		log.Printf("render: music play failed: %v", err)
 		a.stopMusic()
 		return
+	}
+	// Cross-tab resume seek (best-effort): jump to where the backgrounded tab's
+	// track would be by now. Mix_SetMusicPosition acts on the CURRENTLY playing
+	// stream (so it runs after Play/FadeIn above) and only some formats support
+	// it — a -1 just leaves us at the top (today's restart-from-scratch behavior),
+	// which is the honest graceful degrade. int64 truncation of seconds is fine;
+	// sub-second precision is meaningless for a song resume.
+	if seekSec > 0 {
+		if err := mix.SetMusicPosition(int64(seekSec)); err != nil {
+			// Not fatal — playback continues from the start.
+			log.Printf("render: music seek to %.0fs unsupported for %q (playing from top): %v", seekSec, url, err)
+		}
 	}
 	a.musicURL = url // now this exact track is playing — PlayMusic(url) becomes a no-op
 	// The fade ramps toward this ceiling; set it now so both the faded and the
