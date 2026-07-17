@@ -4969,15 +4969,45 @@ func icOptionalDraws(guardOK, hasOverride, editing, hidden bool) bool {
 	return !hidden && (guardOK || hasOverride || editing)
 }
 
+// icBarButtonFits is the pure narrow-bar width guard for one optional IC-bar button
+// drawn left-to-right: given the bar's total width, the width already consumed by
+// everything to this button's left, this button's full demand (its own width PLUS the
+// gap that follows it), and the tail reserve the input floor needs, it reports whether
+// the button still leaves room. Because the row draws in PRIORITY order (Pre, FX, then
+// the SFX dropdown, then emoji) and each button advances the cursor only when it fits,
+// the LATER buttons (SFX, emoji) are the first to fail this guard on a narrow bar —
+// which is exactly the intended sacrifice order. Factored out (value params, no closure)
+// so the survival math is unit-testable off the SDL path, like icOptionalDraws.
+func icBarButtonFits(barW, used, demand, tailReserve int32) bool {
+	return barW-used-demand >= tailReserve
+}
+
+// IC-bar optional-button widths (package-level so the row and its layout tests share
+// one source of truth — rule 9). preW was trimmed from 60 (v1.63.0+ redesign) so the
+// default-visible Pre + Text-FX pair fits the 720p classic bar with margin: at the
+// 1280×720 default the bar is 666px and 372px is consumed before the optionals, leaving
+// 666-372-minICInputW(150) = 144px; Pre(preW+6=58) + FX(fxBtnW+4=78) = 136 <= 144, an
+// 8px margin. See drawICInputRow's drop-order note and TestICBarPreFXSurvive720p.
+const (
+	minICInputW  = 150 // the IC text input never shrinks below this (the tail reserve / floor)
+	shownameBoxW = 140 // the per-session showname box width
+	immedW       = 96  // "Immediate" toggle width (fits the full label without truncating)
+	icAddW       = 84  // "Additive" toggle width (2.8 servers only; +icAddW+6 to the pre-optional band)
+	// preW fits the "Pre" checkbox (16px box + 6px gap + ~26px "Pre" chrome-font label ≈
+	// 48px visual) with breathing room, and keeps the Pre+FX pair inside the 720p bar.
+	preW   = 52
+	sfxDDW = 92 // SFX dropdown width
+)
+
 // drawICInputRow draws the IC bar's input chain — showname box (+ saved-name picker),
-// the Immediate and Additive toggles, the SFX picker, the emoji and Text-FX buttons,
-// the IC text field itself and the muted chip — flowing left-to-right from the DEFAULT
-// positions so freeing one slot in the editor never cascades the rest. icBar arrives
-// by value; it returns whether Enter was pressed so the caller keeps the send decision
-// visible (moved verbatim from drawICControls).
+// the Immediate and Additive toggles, then the Pre + Text-FX core buttons and the SFX
+// picker + emoji button (drop-order note inside), the IC text field itself and the muted
+// chip — flowing left-to-right from the DEFAULT positions so freeing one slot in the
+// editor never cascades the rest. icBar arrives by value; it returns whether Enter was
+// pressed so the caller keeps the send decision visible (moved verbatim from drawICControls).
 func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	c := a.ctx
-	const shownameBoxW = 140
+	// shownameBoxW / immedW are package-level consts now (shared with the layout tests).
 	nameX := icBar.X + 32 + colorSelectW + 6 // DEFAULT spot; downstream (immedX) flows from here
 	namePlaceholder := a.d.Prefs.SavedShowname()
 	if namePlaceholder == "" {
@@ -5015,7 +5045,7 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Immediate (AO non-interrupting preanim): the preanim plays without
 	// holding back the text. Session toggle; rides the next message via
 	// OutgoingMS.Immediate. Vertically centered against the fH-tall inputs.
-	const immedW = 96 // fits the full "Immediate" label without truncating to "Immed"
+	// (immedW is a package-level const, shared with the layout tests.)
 	immedX := nameX + shownameBoxW + 6
 	// Slice 1 of the movable IC bar: the Immediate toggle can be pulled out into its
 	// own spot in the classic editor. Its default rides the bar (un-edited / whole-bar
@@ -5032,62 +5062,60 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// shows ui_additive whenever the server advertises it, courtroom.cpp:1638-1644).
 	// When hidden the toggle is forced off so a stale check can't ride a message.
 	if a.sess != nil && a.sess.Features.Has(protocol.FeatureAdditive) && a.d.Prefs.AdditiveTextOn() {
-		const addW = 84 // fits "Additive"
+		// icAddW ("Additive") is a package-level const, shared with the layout tests.
 		// Movable slot (#4a), same wrap-not-extract rule as Immediate above: draws through
 		// slotRect so the editor can pull it out into its own spot, but the row cursor still
 		// advances by the DEFAULT width below — so an un-edited bar is pixel-identical and
 		// moving Additive never cascades the rest. slotRect is alloc-free off the edit path.
-		addDef := sdl.Rect{X: icX, Y: rowY, W: addW, H: fH}
+		addDef := sdl.Rect{X: icX, Y: rowY, W: icAddW, H: fH}
 		addBox := a.slotRect(slotICAdditive, addDef, w, h)
 		a.icAdditive = c.Checkbox(addBox.X, addBox.Y+(addBox.H-16)/2, "Additive", a.icAdditive)
 		c.Tooltip(addBox, "Additive: this message adds to your last one instead of replacing it (2.8 narration-style RP).")
-		icX += addW + 6 // downstream flows from the DEFAULT position, not the override
+		icX += icAddW + 6 // downstream flows from the DEFAULT position, not the override
 	} else {
 		a.icAdditive = false
 	}
 	icCounterOn := a.d.Prefs.MessageCounterOn()
-	// The IC input must always keep at least minICInputW (plus the counter's reserve when it's
-	// on). Each IC-bar button is placed ONLY if it still leaves that room, so a narrow bar
-	// drops them right-to-left — React, then FX, then emoji — instead of pushing the text input
-	// off the edge. Regression guard: adding the React button collapsed the input to zero width
-	// for users with a narrower stage ("the IC bar disappeared"). Widths key off the slot
-	// (icBar.W), so the same guard holds after the bar is moved/resized. Inlined (no closure) to
-	// keep this per-frame row allocation-free.
-	const minICInputW = 150
+	// The IC input must always keep at least minICInputW. Each optional IC-bar button is
+	// placed ONLY if it still leaves that room, so a narrow bar drops them in REVERSE draw
+	// order — emoji first, then SFX, then FX, then Pre — instead of pushing the text input
+	// off the edge. Regression guard: an earlier extra button collapsed the input to zero
+	// width for users with a narrower stage ("the IC bar disappeared"). Widths key off the
+	// slot (icBar.W), so the same guard holds after the bar is moved/resized. Inlined (no
+	// closure) to keep this per-frame row allocation-free.
+	//
+	// DRAW / DROP ORDER (v1.63.0+ redesign): Pre, FX, SFX-dropdown, emoji. Pre sits beside
+	// Immediate (AO2-canonical) and FX draws right after it; because row order == survival
+	// order under this drop discipline, drawing Pre and FX EARLY makes them outrank the SFX
+	// dropdown and the emoji button — those two now yield first on a tight bar, so the
+	// default-visible Pre + Text-FX pair survives the 720p bar. On 2.8/additive servers the
+	// +90px Additive toggle can push everything past the bar at 720p (accepted): the sacrifice
+	// order is then emoji → SFX → FX → Pre, and the classic editor override (below) is the
+	// escape hatch to force any dropped button back.
+	//
+	// The message counter no longer reserves any tail width — it draws INSIDE the input's
+	// right edge now (drawMsgCounter), so tailReserve is just the input floor (minICInputW,
+	// a package-level const shared with the layout tests). sfxDDW / preW are package-level too.
 	tailReserve := int32(minICInputW)
-	if icCounterOn {
-		tailReserve += msgCounterReserve
-	}
-	// SFX picker width — declared up here (not at its draw block below) because the
-	// "Pre" self-sacrifice guard has to price in SFX's demand.
-	const sfxDDW = 92 // SFX dropdown width
 	// "Pre" toggle (AO2-Client ui_pre): send the selected emote's preanimation.
 	// AUTO-FOLLOWS each emote pick (selectEmote), and the user can override until
 	// the next pick. Unchecked forces idle even when the emote defines a preanim
 	// (NormalizeOutgoingEmoteMod at the send site). Placed right after Immediate/
 	// Additive but INSIDE the narrow-bar drop discipline (the tailReserve guard),
-	// so on a tight bar it drops right-to-left instead of shoving the IC input off
-	// the edge — Immediate/Additive draw unconditionally, so an always-drawn Pre
-	// beside them would have regressed that guard. Movable slot (#4a), same
-	// wrap-not-extract rule: draws through slotRect, the row cursor advances by the
-	// DEFAULT width so an un-edited bar is pixel-identical and moving it never
-	// cascades the rest. slotRect is alloc-free off the edit path.
+	// so on a tight bar it drops instead of shoving the IC input off the edge —
+	// Immediate/Additive draw unconditionally, so an always-drawn Pre beside them
+	// would have regressed that guard. Movable slot (#4a), same wrap-not-extract
+	// rule: draws through slotRect, the row cursor advances by the DEFAULT width so
+	// an un-edited bar is pixel-identical and moving it never cascades the rest.
+	// slotRect is alloc-free off the edit path.
 	//
-	// Pre sacrifices ITSELF FIRST (v1.63.0+): db5b973 slotted Pre in EARLY (right
-	// after Immediate/Additive), so on bars that previously JUST fit, the later
-	// SFX / emoji / FX buttons dropped to make room for Pre — the FX button
-	// disappeared for users who had it before. Pre now draws only if the row can
-	// still fit EVERYTHING that comes after it: its own preW+6, plus the tail
-	// reserve, plus the demand of each downstream optional that would actually draw
-	// (SFX always attempts; emoji unless hidden; FX always attempts). On a truly
-	// tiny bar Pre drops first here, then the downstream guards (unchanged) still
-	// protect the input by dropping emoji/FX right-to-left. Inlined arithmetic (no
-	// closure) — this row is inside the whole-screen 0-alloc gate.
-	const preW = 60                                            // fits the "Pre" checkbox label + box
-	preTailDemand := tailReserve + (sfxDDW + 4) + (fxBtnW + 4) // SFX + FX always attempt
-	if !a.panelHidden(slotICEmoji) {
-		preTailDemand += fH + 4 // emoji draws too, so Pre must leave its room as well
-	}
+	// Pre is now a CORE button (v1.63.0+ redesign): drawing it FIRST (before SFX/emoji)
+	// makes it outrank them, so its guard prices in only its OWN width + the input floor —
+	// SFX and emoji, drawn later, drop first on a narrow bar. This inverts the old
+	// self-sacrifice lookahead (which made Pre yield to the whole SFX+emoji+FX tail); that
+	// was needed only while Pre drew AFTER them. preW (package-level, trimmed from 60) keeps
+	// the Pre+FX pair inside the 720p default bar with margin — see the width table on the
+	// const. Inlined arithmetic (no closure) — this row is inside the whole-screen 0-alloc gate.
 	// OVERRIDE / EDITOR win over the width drop (v1.63.0+): a dropped button never
 	// reached slotRect, so it never registered a slot and could not be grabbed in the
 	// editor — nor did a saved override force it back. Draw when the width guard passes
@@ -5097,22 +5125,36 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// un-edited narrow bar stays byte-identical. Comma-ok map read is nil-safe + alloc-
 	// free (the same read slotRect does).
 	_, preOv := a.classicOv[slotICPre]
-	preGuardOK := icBar.W-(icX-icBar.X)-(preW+6) >= preTailDemand
+	preGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, preW+6, tailReserve)
 	if icOptionalDraws(preGuardOK, preOv, a.classicEdit, a.panelHidden(slotICPre)) {
 		preBox := a.slotRect(slotICPre, sdl.Rect{X: icX, Y: rowY, W: preW, H: fH}, w, h)
 		a.icPreanim = c.Checkbox(preBox.X, preBox.Y+(preBox.H-16)/2, "Pre", a.icPreanim)
 		c.Tooltip(preBox, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
 		icX += preW + 6 // downstream flows from the DEFAULT position, not the override
 	}
+	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow) — movable (#4a).
+	// A CORE button like Pre (v1.63.0+ redesign): drawn BEFORE the SFX dropdown and the emoji
+	// button so it outranks them under the drop discipline — on a narrow bar SFX/emoji yield
+	// first and FX survives (the reverse of the pre-redesign order, where FX dropped so SFX
+	// could stay). Its guard prices in only its own fxBtnW+4 plus the input floor. Override /
+	// editor win over the drop (same rule as Pre); FX has no panelHidden gate in the classic
+	// row, so pass hidden=false to keep it a pure width/override/edit call.
+	_, fxOv := a.classicOv[slotICFx]
+	fxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fxBtnW+4, tailReserve)
+	if icOptionalDraws(fxGuardOK, fxOv, a.classicEdit, false) {
+		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
+		icX += fxBtnW + 4
+	}
 	// SFX picker (AO2-style): pick a sound to ride your NEXT message — overrides the
-	// emote's own sound until set back to "auto". Picking one previews it. Placed first
-	// so on a narrow bar it survives longest (the buttons drop right-to-left).
+	// emote's own sound until set back to "auto". Picking one previews it. Drawn AFTER
+	// Pre/FX (v1.63.0+ redesign), so on a narrow bar it yields BEFORE them — SFX is no
+	// longer a survives-longest core button; Pre and FX outrank it now.
 	a.ensureSFXChoices()
 	// Override / editor win over the drop (same rule as Pre above). SFX has no
 	// panelHidden gate in the classic row (it never had one) — keep it that way: pass
 	// hidden=false so this stays a pure width/override/edit decision.
 	_, sfxOv := a.classicOv[slotICSFX]
-	sfxGuardOK := icBar.W-(icX-icBar.X)-(sfxDDW+4) >= tailReserve
+	sfxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxDDW+4, tailReserve)
 	if icOptionalDraws(sfxGuardOK, sfxOv, a.classicEdit, false) {
 		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
 		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
@@ -5125,37 +5167,29 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		icX += sfxDDW + 4
 	}
 	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a) and
-	// hideable (playtest: some players don't want it at all). Override / editor win
-	// over the drop (same rule as Pre); hidden still hides.
+	// hideable (playtest: some players don't want it at all). Drawn LAST of the optional
+	// buttons (v1.63.0+ redesign), so it's the FIRST to yield on a narrow bar. Override /
+	// editor win over the drop (same rule as Pre); hidden still hides.
 	_, emojiOv := a.classicOv[slotICEmoji]
-	emojiGuardOK := icBar.W-(icX-icBar.X)-(fH+4) >= tailReserve
+	emojiGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
 	if icOptionalDraws(emojiGuardOK, emojiOv, a.classicEdit, a.panelHidden(slotICEmoji)) {
 		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
 			a.showEmojiPicker = !a.showEmojiPicker
 		}
 		icX += fH + 4
 	}
-	// #M5: dedicated Text FX cycle button (Off → Shake → Wave → Rainbow) — movable (#4a).
-	// Override / editor win over the drop (same rule as Pre); FX has no panelHidden gate
-	// in the classic row, so pass hidden=false to keep it a pure width/override/edit call.
-	_, fxOv := a.classicOv[slotICFx]
-	fxGuardOK := icBar.W-(icX-icBar.X)-(fxBtnW+4) >= tailReserve
-	if icOptionalDraws(fxGuardOK, fxOv, a.classicEdit, false) {
-		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
-		icX += fxBtnW + 4
-	}
 	// The #2 React BUTTON was removed by request (playtest: unused) — incoming
 	// reaction floats still render (and Hide-reactions still hides them), the
-	// IC bar just doesn't spend a slot on sending one.
+	// IC bar just doesn't spend a slot on sending one. (FX moved up above SFX in the
+	// v1.63.0+ redesign so it outranks SFX/emoji on a narrow bar.)
 	icW := icBar.W - (icX - icBar.X)
-	if icCounterOn {
-		icW -= msgCounterReserve
-	}
 	if icW < minICInputW {
 		icW = minICInputW // defensive floor: never collapse the input, even on a tiny stage
 	}
 	// The IC text input itself is a movable + resizable slot (#4a) — default fills the rest
-	// of the bar; an override repositions/resizes it and the message counter rides along.
+	// of the bar; the message counter now draws INSIDE this box's right edge (drawMsgCounter),
+	// so it needs no tail reserve; an override repositions/resizes the field and the counter
+	// rides along inside it.
 	icBox := a.slotRect(slotICInput, sdl.Rect{X: icX, Y: rowY, W: icW, H: fH}, w, h)
 	icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
 	a.icInput, send = c.TextFieldEmoji(icFieldID, icBox, a.icInput, "Talk in-character here…  (/pair <id>, /unpair, /offset <x> [y], /pos <side>)", icPrimary, icEmoji)
@@ -5427,14 +5461,23 @@ func (a *App) randomEmoteForSend() {
 // Unlike Random (which jumps anywhere), this walks the list in order. No-op
 // with no emotes; selectEmote clamps the index and refocuses the IC input.
 const (
-	msgCounterReserve = int32(48) // px reserved right of the IC box for the counter
-	msgCounterCap     = 256       // typical AO server IC cap — past it, warn in red
+	// msgCounterCap is the typical AO server IC length cap — past it the counter
+	// turns red (the line may truncate). The counter now draws INSIDE the input's
+	// right edge (see drawMsgCounter), so it no longer reserves any tail width — the
+	// old msgCounterReserve tail slice was removed so the Pre/FX buttons win room on
+	// a narrow bar instead of the counter's blank gutter.
+	msgCounterCap     = 256
+	msgCounterPad     = int32(6) // px inset of the count from the field's right edge
+	msgCounterChipGap = int32(4) // gap kept between the count and the muted chip when both show
 )
 
-// drawMsgCounter draws the live IC character count in the gap reserved to the
-// right of the input (M5; ON by default, Settings-toggleable). The count string
-// is cached and reformatted only when the length changes, so the courtroom frame
-// stays 0-alloc; past the typical server cap it turns red (the line may truncate).
+// drawMsgCounter draws the live IC character count INSIDE the input box's right
+// edge (M5; ON by default, Settings-toggleable), mirroring the muted-chip idiom:
+// it draws only when the count fits inside the field, is dimmed, and yields to
+// the muted chip — when both would show, the count stacks to the LEFT of the chip
+// instead of overlapping it, and drops entirely if that no longer fits. The count
+// string is cached and reformatted only when the length changes, so the courtroom
+// frame stays 0-alloc; past the typical server cap it turns red.
 func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 	if !on {
 		return
@@ -5448,7 +5491,23 @@ func (a *App) drawMsgCounter(input sdl.Rect, on bool) {
 	if n > msgCounterCap {
 		col = ColDanger
 	}
-	c.Label(input.X+input.W+6, input.Y+(input.H-14)/2, a.icCountStr, col)
+	// The count's own footprint (width-cached, so a stable count is a map hit and
+	// this stays alloc-free) plus a small inset from the field's right edge.
+	countW := c.TextWidth(a.icCountStr) + msgCounterPad
+	// rightEdge is the x the count's right side may reach. When the muted chip is
+	// live it owns the field's right edge (same rect drawMsgCounter's caller draws),
+	// so the count yields — it stacks to the LEFT of the chip.
+	rightEdge := input.X + input.W - msgCounterPad
+	if a.sess != nil && a.sess.Muted {
+		const mutedChip = "🔇 muted"
+		chipW := c.TextWidth(mutedChip) + 12 // must match the caller's chip metric
+		rightEdge = input.X + input.W - chipW - 2 - msgCounterChipGap
+	}
+	countX := rightEdge - countW
+	if countX < input.X+msgCounterPad { // no room left inside the field: drop it (chip/text win)
+		return
+	}
+	c.Label(countX, input.Y+(input.H-14)/2, a.icCountStr, col)
 }
 
 // randomShowname swaps the active showname to a random saved preset (M6, the

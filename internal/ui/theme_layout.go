@@ -508,74 +508,66 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		if pr, ownPre := lay.rect("asyncao_ic_pre"); ownPre {
 			a.icPreanim = c.Checkbox(pr.X, pr.Y+(pr.H-16)/2, "Pre", a.icPreanim)
 			c.Tooltip(pr, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
-		} else if !a.panelHidden(slotICPre) {
-			// Pre sacrifices itself FIRST here too (v1.63.0+): the crammed SFX / emoji /
-			// FX pieces below each eat field width, so an early crammed Pre could starve
-			// the FX button — the same regression as the classic row. Only cram Pre if,
-			// after its themedPreW, the field still leaves room for every downstream
-			// piece that would ALSO cram here (a piece placed at its OWN theme rect
-			// doesn't touch the field, so it costs Pre nothing). Inline (no closure) to
-			// keep this draw path allocation-free. The own-rect Pre branch above is
-			// independent and unchanged.
-			preTailDemand := int32(themedPreKeep) // the field must stay hostable after Pre
-			if _, ownSFX := lay.rect("asyncao_ic_sfx"); !ownSFX {
-				preTailDemand += 92 + 4 // crammed SFX width + gap
-			}
-			if _, ownEmoji := lay.rect("asyncao_ic_emoji"); !ownEmoji && !a.panelHidden(slotICEmoji) {
-				preTailDemand += in.H + 4 // crammed emoji (square, side = field height) + gap
-			}
-			if _, ownFX := lay.rect("asyncao_ic_fx"); !ownFX {
-				preTailDemand += fxBtnW + 4 // crammed FX width + gap
-			}
-			if fieldW-themedPreW >= preTailDemand {
-				a.icPreanim = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Pre", a.icPreanim)
-				c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedPreW, H: in.H}, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
-				fieldX += themedPreW
-				fieldW -= themedPreW
-			}
+		} else if !a.panelHidden(slotICPre) && fieldW-themedPreW >= themedPreKeep {
+			// Pre is a CORE crammed piece (v1.63.0+ redesign): it crams FIRST (right after
+			// Immediate) and only needs the field to stay hostable (>= themedPreKeep) after
+			// its own width — mirroring the classic row, where Pre's guard prices in only its
+			// own width + the input floor. FX crams next, then SFX, then emoji, so those three
+			// yield BEFORE Pre on a narrow field (the reverse of the pre-redesign order, where
+			// Pre self-sacrificed to the whole SFX+emoji+FX tail). The own-rect Pre branch
+			// above is independent and unchanged. Inline (no closure) — 0-alloc draw path.
+			a.icPreanim = c.Checkbox(fieldX, in.Y+(in.H-16)/2, "Pre", a.icPreanim)
+			c.Tooltip(sdl.Rect{X: fieldX, Y: in.Y, W: themedPreW, H: in.H}, "Pre: play this emote's pre-animation before the line. Follows each emote you pick; uncheck to skip an emote's intro.")
+			fieldX += themedPreW
+			fieldW -= themedPreW
 		}
 		field := sdl.Rect{X: fieldX, Y: in.Y, W: fieldW, H: in.H}
+		// FX / SFX / emoji buttons: each at its OWN theme rect (asyncao_ic_fx / _sfx /
+		// _emoji, #4b) if the theme places it there, else crammed into the field
+		// left-to-right (only when there's room — #M5 / #M2 S1). CRAM ORDER mirrors the
+		// classic row (v1.63.0+ redesign): FX first (a core button beside Pre), then the
+		// SFX dropdown, then the emoji button — so on a narrow field emoji yields first,
+		// then SFX, then FX (the reverse of the pre-redesign SFX→emoji→FX cram, which made
+		// FX the first to drop). themedFieldKeep keeps the field hostable after each cram.
+		const themedFieldKeep = 120 // min field width to still host the input after a crammed piece
+		if fr, ownFX := lay.rect("asyncao_ic_fx"); ownFX {
+			a.fxButton(fr)
+		} else if field.W > fxBtnW+themedFieldKeep {
+			a.fxButton(sdl.Rect{X: field.X, Y: field.Y, W: fxBtnW, H: field.H})
+			field.X += fxBtnW + 4
+			field.W -= fxBtnW + 4
+		}
 		// SFX picker (AO2-style): a sound for your NEXT message, overriding the emote's
-		// own until set back to "auto". Picking one previews it. First so it survives a
-		// narrow field longest.
+		// own until set back to "auto". Picking one previews it.
 		a.ensureSFXChoices()
+		const themedSFXW = 92                                 // crammed SFX dropdown width
 		if sr, ownSFX := lay.rect("asyncao_ic_sfx"); ownSFX { // own theme rect (#4b)
 			a.drawThemedSFXPicker(sr)
-		} else if field.W > 92+120 {
-			a.drawThemedSFXPicker(sdl.Rect{X: field.X, Y: field.Y, W: 92, H: field.H})
-			field.X += 92 + 4
-			field.W -= 92 + 4
+		} else if field.W > themedSFXW+themedFieldKeep {
+			a.drawThemedSFXPicker(sdl.Rect{X: field.X, Y: field.Y, W: themedSFXW, H: field.H})
+			field.X += themedSFXW + 4
+			field.W -= themedSFXW + 4
 		}
-		// emoji / FX / React buttons: each at its OWN theme rect (asyncao_ic_emoji / _fx /
-		// _react, #4b) if the theme places it there, else crammed into the field
-		// left-to-right (only when there's room — #M2 S1 / #M5 / #2).
 		if a.panelHidden(slotICEmoji) {
 			// hideable in both layouts (playtest: some players don't want it)
 		} else if er, ownEmoji := lay.rect("asyncao_ic_emoji"); ownEmoji {
 			if a.drawEmojiBarButton(er) {
 				a.showEmojiPicker = !a.showEmojiPicker
 			}
-		} else if field.W > field.H+120 {
+		} else if field.W > field.H+themedFieldKeep {
 			if a.drawEmojiBarButton(sdl.Rect{X: field.X, Y: field.Y, W: field.H, H: field.H}) {
 				a.showEmojiPicker = !a.showEmojiPicker
 			}
 			field.X += field.H + 4
 			field.W -= field.H + 4
 		}
-		if fr, ownFX := lay.rect("asyncao_ic_fx"); ownFX {
-			a.fxButton(fr)
-		} else if field.W > fxBtnW+120 {
-			a.fxButton(sdl.Rect{X: field.X, Y: field.Y, W: fxBtnW, H: field.H})
-			field.X += fxBtnW + 4
-			field.W -= fxBtnW + 4
-		}
 		// The #2 React BUTTON was removed by request (playtest: unused); the
 		// asyncao_ic_react theme key is now a no-op for compatibility.
 		var send bool
 		icCounterOn := a.d.Prefs.MessageCounterOn()
-		if icCounterOn {
-			field.W -= msgCounterReserve
-		}
+		// The counter draws INSIDE the field's right edge now (drawMsgCounter), so the
+		// themed field no longer carves off msgCounterReserve — the input keeps its full
+		// crammed width and the count overlays its right edge, yielding to the muted chip.
 		icPrimary, icEmoji := a.icFieldFonts(a.icInput) // #M5: show typed emoji/unicode, not tofu
 		a.icInput, send = c.TextFieldEmoji(icFieldID, field, a.icInput, "Talk in-character here…", icPrimary, icEmoji)
 		a.recallIC() // #8: Up/Down recall recently-sent lines when the IC field is focused
