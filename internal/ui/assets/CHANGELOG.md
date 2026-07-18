@@ -4,6 +4,40 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.72.0 — 2026-07-18
+
+Turn an AO2 `.demo` session file into a video without knowing where anything
+lives — plus the export fixes the feature shook loose.
+
+**Studio**
+
+- **".demo → video" has its own front door.** Settings → Studio now opens
+  with a call-out for exactly this job: pick a file with the new
+  **📥 Import .demo…** button (Windows), or drag the `.demo` anywhere onto
+  the window while Studio is showing. Either way it's copied into
+  `recordings\`, joins the list with the full Play / Edit / export row, and
+  the video export opens for it immediately. No ffmpeg? The import still
+  lands — GIF and WebP still export.
+- **Huge session archives import safely.** A `.demo` longer than the
+  5,000-event scene cap now imports as a clean opening slice instead of
+  sailing past every editor and export bound. The Debug panel notes how many
+  later events were left out — separately from the usual non-scene packet
+  count, so a long session and a chatty one read differently.
+- **Dropping a .demo on the settings screen no longer hijacks your theme
+  folder.** The same drop used to also re-point the theme directory at the
+  file's parent folder.
+
+**Video export**
+
+- **Subtitle files follow the finished video's name.** When audio is muxed
+  in, the export saves `<name>-audio.mp4` — the `.srt`/`.vtt` sidecars now
+  carry that final name too, instead of pointing at a file that no longer
+  exists.
+
+**Elsewhere**
+
+- **📁 Open folder works on macOS and Linux.** It was silently Windows-only.
+
 ## v1.71.0 — 2026-07-18
 
 Cross-tab music gets exact, the server list stops going stale, macOS builds
