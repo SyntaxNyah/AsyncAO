@@ -497,6 +497,14 @@ func (a *App) drawSettings(w, h int32) {
 	track := sdl.Rect{X: w - scrollBarW - 2, Y: contentTop, W: scrollBarW, H: viewH}
 	*scroll = c.VScrollbar("settscroll", track, *scroll, contentH, viewH)
 	settings.scrollToSection = "" // one-shot: consumed by the matching section this frame, else dropped
+	// Warn banner, mirroring the lobby/char-select/courtroom draw sites: Settings
+	// was the ONE screen without it, so every Studio-picker message (import
+	// confirmation, extension rejection, picker failure) went invisible exactly
+	// where the user stood (v1.72.0 hotfix review find). Fixed position, outside
+	// the scrolled clip, so it can't scroll away.
+	if a.warnActive() {
+		c.LabelClipped(pad, h-24, w-2*pad, a.warnLine, ColDanger)
+	}
 }
 
 // drawSettingsTabBody dispatches one tab's rows starting at y — shared by the
@@ -4812,15 +4820,22 @@ func browseForFolder() {
 	}
 	settings.browseBusy = true
 	go func() {
+		// Same TopMost-owner trick as pickDemoForVideo: without it the dialog
+		// can open BEHIND the app (the child process has no foreground rights).
 		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
 			`$d = New-Object System.Windows.Forms.FolderBrowserDialog; ` +
 			`$d.Description = 'Pick the folder that CONTAINS themes\<name>'; ` +
-			`if ($d.ShowDialog() -eq 'OK') { Write-Output $d.SelectedPath }`
+			`$o = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}; ` +
+			`if ($d.ShowDialog($o) -eq 'OK') { Write-Output $d.SelectedPath }`
 		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
 		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
 		out, err := cmd.Output()
 		path := strings.TrimSpace(string(out))
-		if err != nil || path == "" {
+		if err != nil {
+			settings.folderRes <- pickFailed // failure ≠ cancel — parity with pickDemoForVideo
+			return
+		}
+		if path == "" {
 			settings.folderRes <- ""
 			return
 		}
@@ -4849,6 +4864,10 @@ func (a *App) pollFolderPick() {
 	case path := <-settings.folderRes:
 		settings.browseBusy = false
 		if path == "" {
+			return // user cancelled — silence is correct
+		}
+		if path == pickFailed {
+			settings.statusLine = "Couldn't open the folder picker — drop the folder onto this window instead."
 			return
 		}
 		settings.themeDir = path
@@ -4859,10 +4878,17 @@ func (a *App) pollFolderPick() {
 	}
 }
 
+// pickFailed marks a native-picker shell-out FAILURE on demoPickRes/folderRes,
+// distinct from "" (user cancelled). NUL can never be a real path, so it can't
+// collide. Shared by pickDemoForVideo and browseForFolder — the two pickers
+// must not diverge on failure semantics (hotfix review find).
+const pickFailed = "\x00"
+
 // pickDemoForVideo shells the native Windows Open-File dialog on a goroutine (the
 // SAME shell-out mechanism as browseForFolder — zero new Go dependency), filtered
-// to .demo/.aorec; the chosen file lands on demoPickRes (empty = cancelled). It is
-// the Studio call-out's picker: on a pick, pollDemoPick imports + video-exports it.
+// to .demo/.aorec; the chosen file lands on demoPickRes (empty = cancelled,
+// demoPickFailed = the shell-out itself broke). It is the Studio call-out's
+// picker: on a pick, pollDemoPick imports + video-exports it.
 // Windows-only — elsewhere the drag-and-drop path carries the feature (no button).
 func pickDemoForVideo() {
 	if settings.demoPickBusy {
@@ -4870,16 +4896,28 @@ func pickDemoForVideo() {
 	}
 	settings.demoPickBusy = true
 	go func() {
+		// ShowDialog gets a TopMost owner form: the spawned powershell has no
+		// foreground-activation rights (the click went to OUR window, not it),
+		// so an ownerless dialog opens BEHIND the app — which reads as "the
+		// button does nothing" (live report, v1.72.0). The invisible TopMost
+		// owner forces the dialog above every window, ours included.
 		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
 			`$d = New-Object System.Windows.Forms.OpenFileDialog; ` +
 			`$d.Title = 'Pick an AO2 .demo (or .aorec) to turn into a video'; ` +
 			`$d.Filter = 'AO recordings (*.demo;*.aorec)|*.demo;*.aorec'; ` +
-			`if ($d.ShowDialog() -eq 'OK') { Write-Output $d.FileName }`
+			`$o = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}; ` +
+			`if ($d.ShowDialog($o) -eq 'OK') { Write-Output $d.FileName }`
 		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
 		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
 		out, err := cmd.Output()
 		path := strings.TrimSpace(string(out))
-		if err != nil || path == "" {
+		if err != nil {
+			// Shell-out failure is NOT a cancel — surface it so the user isn't
+			// left clicking a silently dead button (cancel stays silent).
+			settings.demoPickRes <- pickFailed
+			return
+		}
+		if path == "" {
 			settings.demoPickRes <- ""
 			return
 		}
@@ -4897,6 +4935,14 @@ func (a *App) pollDemoPick() {
 	case path := <-settings.demoPickRes:
 		settings.demoPickBusy = false // reset before any early return (never leave it stuck true)
 		if path == "" {
+			return // user cancelled — silence is correct
+		}
+		// Deliberately BEFORE the tab guard: the user triggered this picker, so
+		// its failure is worth reporting even if they've wandered to another
+		// settings tab while the dialog was resolving.
+		if path == pickFailed {
+			a.warnLine = "Couldn't open the file picker — drag the .demo onto this window instead."
+			a.warnAt = time.Now()
 			return
 		}
 		// The dialog window is separate, so the user can navigate away while it's
