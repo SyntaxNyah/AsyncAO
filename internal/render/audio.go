@@ -124,6 +124,16 @@ type Audio struct {
 	//          idempotent so a room rebuild (random char, char switch, tab reactivation)
 	//          re-seeding the SAME track doesn't restart it.
 
+	// swapSnaps records, keyed by an OUTGOING music URL, the true position that
+	// track was at the instant startMusic swapped it out for a new URL (a
+	// "takeover"). The cross-tab resume (internal/ui) reads it to seek a parked
+	// tab's track back to exactly where it was: snapPos + wall time since the
+	// snap, loop-wrapped by snapDur. Capturing at takeover (not at request time)
+	// is the whole point — the old track keeps PLAYING while the new track
+	// downloads, and those seconds must be counted.
+	swapSnaps     map[string]musicSwapSnap
+	swapSnapOrder []string // insertion order, oldest first, for cap eviction
+
 	// Volumes in percent (0–100), applied as mixer volume at play time
 	// (music globally, chunks per returned channel).
 	musicVol, sfxVol, blipVol int
@@ -725,6 +735,65 @@ func (a *Audio) CurrentMusicURL() string { return a.musicURL }
 // only.
 func (a *Audio) MusicPlaying() bool { return a.enabled && a.music != nil }
 
+// musicSwapSnap is one takeover snapshot: the outgoing track's true position and
+// total duration (both seconds, from MusicClock) captured the instant a new URL
+// swapped it out, plus the wall time of the capture. The cross-tab resume adds
+// (now - at) to posSec and loop-wraps by durSec to land exactly where the parked
+// track would be now.
+type musicSwapSnap struct {
+	posSec float64
+	durSec float64
+	at     time.Time
+}
+
+// musicSwapSnapCap bounds the takeover-snapshot map. 16 is comfortably above the
+// tab ceiling (a parked tab is the only thing whose stream gets swapped out and
+// later resumed), so every parked tab's outgoing track keeps a live snapshot; on
+// overflow the OLDEST entry is evicted (insertion order via swapSnapOrder), which
+// can only drop a snapshot older than any resumable tab.
+const musicSwapSnapCap = 16
+
+// recordSwapSnap stores (or refreshes) the takeover snapshot for an outgoing
+// music URL. Callers pass the position/duration read from MusicClock at the swap;
+// only ok reads are recorded (a mod/midi with unknown duration, or unresolved
+// symbols, records NOTHING — its absence makes the resume fall back to the old
+// wall-clock math rather than seek into a track whose length we can't know).
+// Re-parking a URL that's already snapped updates the value in place and keeps
+// its ORIGINAL order slot, so the insertion-order slice never desyncs from the
+// map (a duplicate order entry would evict the wrong key at cap). Render thread
+// only; the map is a plain field, no lock (rule #1 hot path is untouched).
+func (a *Audio) recordSwapSnap(url string, posSec, durSec float64, at time.Time) {
+	if url == "" {
+		return
+	}
+	if a.swapSnaps == nil {
+		a.swapSnaps = make(map[string]musicSwapSnap, musicSwapSnapCap)
+	}
+	if _, exists := a.swapSnaps[url]; !exists {
+		if len(a.swapSnapOrder) >= musicSwapSnapCap {
+			oldest := a.swapSnapOrder[0]
+			a.swapSnapOrder = a.swapSnapOrder[1:]
+			delete(a.swapSnaps, oldest)
+		}
+		a.swapSnapOrder = append(a.swapSnapOrder, url)
+	}
+	a.swapSnaps[url] = musicSwapSnap{posSec: posSec, durSec: durSec, at: at}
+}
+
+// SwappedOutSnap returns the takeover snapshot recorded for url (the position the
+// track was at when it was last swapped out, its duration, and the wall time of
+// that capture), or ok=false when none exists. The cross-tab resume calls this to
+// compute an exact, loop-aware seek; a miss (old build, mod/midi, symbols
+// unresolved, or never parked) means it falls back to the wall-clock estimate.
+// Render thread only.
+func (a *Audio) SwappedOutSnap(url string) (posSec, durSec float64, at time.Time, ok bool) {
+	s, ok := a.swapSnaps[url]
+	if !ok {
+		return 0, 0, time.Time{}, false
+	}
+	return s.posSec, s.durSec, s.at, true
+}
+
 // PlayMusicAt is PlayMusic with a best-effort SEEK to seekSec seconds into the
 // track, for resuming a backgrounded tab's song near where it would be now
 // (cross-tab music continuity). Same idempotency guard as PlayMusic: if that
@@ -766,6 +835,19 @@ func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64)
 //     new enough SDL_mixer), returning -1 otherwise, so a failed seek degrades to
 //     playing from the top (today's behavior) rather than faking anything.
 func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seekSec float64) {
+	// Takeover snapshot (cross-tab resume, wave 13): this call is about to SWAP a
+	// live, different track out for `url`. Capture the OUTGOING track's true
+	// position NOW — before stopMusic() frees it — so a later resume of that
+	// parked track can seek to exactly where it was plus the seconds it keeps
+	// playing while `url` downloads. Only a readable (ok) clock is recorded;
+	// mod/midi (duration -1) or a pre-2.6 SDL_mixer records nothing, and the
+	// resume falls back to the old wall-clock estimate. Read BEFORE stopMusic,
+	// which nils a.music and would make MusicClock report "no stream".
+	if a.music != nil && a.musicURL != "" && a.musicURL != url {
+		if pos, dur, ok := a.MusicClock(); ok {
+			a.recordSwapSnap(a.musicURL, pos, dur, time.Now())
+		}
+	}
 	a.stopMusic() // clears musicURL; set below only on a successful start
 	rw, err := sdl.RWFromMem(data)
 	if err != nil {

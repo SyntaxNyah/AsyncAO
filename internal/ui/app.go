@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -5603,13 +5604,53 @@ func (a *App) applyMusicStreaming(on bool) {
 	}
 }
 
-// musicResumeMaxSeekSec caps the cross-tab resume seek. Duration is NOT knowable
-// through this SDL_mixer binding (no Mix_MusicDuration), so a very stale
-// backgrounded track can't be wrapped by length; past a few minutes a seek is as
-// likely to overshoot the end (→ Mix_SetMusicPosition fails → restart) as to help,
-// and even when it lands it's musically meaningless. Beyond this we just restart
-// from the top — the honest degrade the task allows for the unknowable-duration case.
+// musicResumeMaxSeekSec caps the cross-tab resume seek ON THE FALLBACK PATH ONLY
+// — when no takeover snapshot exists (an old build, a mod/midi with no knowable
+// duration, or the track was never parked). There, duration is unknown, so a very
+// stale backgrounded track can't be wrapped by length; past a few minutes a seek
+// is as likely to overshoot the end (→ Mix_SetMusicPosition fails → restart) as to
+// help, and even when it lands it's musically meaningless. Beyond this we just
+// restart from the top. The exact, loop-aware path (Audio.SwappedOutSnap +
+// resumeSeek) does NOT use this cap: it wraps by the real duration instead.
 const musicResumeMaxSeekSec = 600 // 10 minutes
+
+// resumeSeek is the exact, loop-aware cross-tab resume math (wave 13), split out
+// as a pure func so it's unit-pinnable headlessly like applyResumeDuck /
+// mixChannels. Given a takeover snapshot — the outgoing track's position snapPos
+// and total duration snapDur (seconds) captured at swap-out — plus elapsedSec of
+// wall time since, it returns where to seek the resumed stream and whether to
+// play it at all:
+//
+//   - snapDur <= 0 (duration unknown: mod/midi, or the source refused it): return
+//     seekSec 0, play true — an honest restart-from-top. We must NOT clock-seek
+//     into a track whose length we can't know (it could be past the end).
+//   - loop (persistent area track, the only case today): seekSec = (snapPos +
+//     elapsed) mod snapDur, play true. math.Mod handles multi-wrap (a 3-min loop
+//     parked 7 min lands at 1:00), which is the loop-aware exactness promised.
+//   - not looping, and snapPos+elapsed >= snapDur: the track ENDED while parked —
+//     play false (don't restart a finished one-shot). Future-proofing: resumeLoop
+//     is const true today, so this branch is currently unreachable, but it's the
+//     correct non-loop behaviour and is unit-tested.
+//   - not looping, still within the track: seekSec = snapPos + elapsed, play true.
+//
+// A negative elapsedSec (clock skew) clamps to 0 so base can never go below
+// snapPos — a negative math.Mod would fail the seek and silently restart.
+func resumeSeek(snapPos, snapDur, elapsedSec float64, loop bool) (seekSec float64, play bool) {
+	if elapsedSec < 0 {
+		elapsedSec = 0
+	}
+	if snapDur <= 0 {
+		return 0, true // unknown length: honest restart-from-top
+	}
+	base := snapPos + elapsedSec
+	if loop {
+		return math.Mod(base, snapDur), true // multi-wrap is fine
+	}
+	if base >= snapDur {
+		return 0, false // one-shot finished while parked: don't restart
+	}
+	return base, true
+}
 
 // resumeActiveTabMusic re-seeds the newly-active tab's area song into the single
 // music stream on a room (re)build. It's the cross-tab continuity core:
@@ -5653,18 +5694,41 @@ func (a *App) resumeActiveTabMusic() {
 		return
 	}
 	// The stream isn't this track (it was swapped to another tab's song, or this is a
-	// fresh entry): (re)fetch and best-effort seek to where it would be by now. The
-	// duck decision is the same bug-class guard as the DJ /play path — it HOLDS the
-	// duck and awaits this url, so settleAwaitedMusic un-ducks only when the new
-	// track's bytes land (never the foreign stream mid-fetch). Set the await + hold
-	// the duck BEFORE issuing the fetch so the guard is in place first.
-	a.applyResumeDuck(false, url)
+	// fresh entry): (re)fetch and seek to where it would be by now. Derive seekSec +
+	// whether to play at all FIRST, so the duck/await state below stays coherent (an
+	// ended one-shot must NOT hold a dangling await).
 	seekSec := 0.0
-	if !a.musicStartedAt.IsZero() {
+	play := true
+	if snapPos, snapDur, snapAt, ok := a.d.Audio.SwappedOutSnap(url); ok {
+		// Exact, loop-aware resume (wave 13): the outgoing track's TRUE position at
+		// swap-out plus the wall time it kept playing during the download, wrapped by
+		// its real duration. This is the drift-free path the users were promised.
+		elapsed := a.now().Sub(snapAt).Seconds()
+		seekSec, play = resumeSeek(snapPos, snapDur, elapsed, resumeLoop)
+	} else if !a.musicStartedAt.IsZero() {
+		// No snapshot (old build, resolver miss, mod/midi with unknown length, or a
+		// first play): keep the legacy wall-clock estimate, capped, exactly as before.
 		if el := a.now().Sub(a.musicStartedAt).Seconds(); el > 0 && el <= musicResumeMaxSeekSec {
 			seekSec = el
 		}
 	}
+	if !play {
+		// The parked one-shot ENDED while backgrounded (only reachable when
+		// resumeLoop is false — future-proofing; it's const true today). Don't
+		// restart it: leave whatever the stream is. But we're taking the swap path,
+		// so nothing new will be delivered — clear any await and drop the duck so the
+		// state stays coherent (a held await with no incoming url would silently duck
+		// this stream forever). applyAudioVolumes reflects the un-ducked decision.
+		a.musicAwaitURL = ""
+		a.musicTabDucked = false
+		a.applyAudioVolumes()
+		return
+	}
+	// The duck decision is the same bug-class guard as the DJ /play path — it HOLDS
+	// the duck and awaits this url, so settleAwaitedMusic un-ducks only when the new
+	// track's bytes land (never the foreign stream mid-fetch). Set the await + hold
+	// the duck BEFORE issuing the fetch so the guard is in place first.
+	a.applyResumeDuck(false, url)
 	a.d.Audio.PlayMusicAt(url, resumeLoop, resumeEffects, seekSec) // AssetType: Music
 }
 
