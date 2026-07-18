@@ -868,9 +868,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   bed → silent — so a missing track or an ffmpeg hiccup never breaks the export
   (blips are excluded to keep the mix sane). The sound version is saved as
   `<name>-audio.mp4|webm` (subtitle sidecars, if any, follow that name).
-- **Import an AO2 `.demo`** — **drag it anywhere onto the window** (works on every
-  OS), or use the **📥 Import .demo…** picker in the **`.demo → video`** call-out at
-  the top of **Settings → Studio** (Windows). A dropped/picked `.demo` is **copied
+- **Import an AO2 `.demo`** — **drag it anywhere onto the window**, or use the
+  **📥 Import .demo…** button in the **`.demo → video`** call-out at the top of
+  **Settings → Studio**. The button opens an **in-app file browser** (on **every
+  OS**) — navigate your PC, jump to Home / Downloads / Desktop / `recordings\`
+  (and your drives on Windows), and click any `.demo`/`.aorec` to pick it. (This
+  replaced the old Windows-only native file dialog, which could open behind the
+  app.) A dropped/picked `.demo` is **copied
   into `recordings\`** (with a `-2` / `-3` suffix if the name is taken) so it joins
   the recordings library, where its rows get the **same buttons as a native
   `.aorec`** — **▶ Play**, **✎ Edit** (in the Scene Maker), and **🎞 GIF / 🎬 WebP /
@@ -878,8 +882,8 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the fly — no separate format, so everything downstream just works. (The Scene
   Maker's **⇄ .demo** button does the reverse: it writes a scene back out as a
   `.demo` that AO2's own demo player can watch.)
-- **`.demo → video` in one step**: the **📥 Import .demo…** picker (or a drop onto
-  the Studio tab) both **imports** the file and **kicks off a video export** of it —
+- **`.demo → video` in one step**: the **📥 Import .demo…** in-app browser (or a drop
+  onto the Studio tab) both **imports** the file and **kicks off a video export** of it —
   turn a raw AO2 session recording into a shareable MP4/WebM without opening the
   editor. Import is **bounded** (hard rule — no unbounded buffers): the **50,000-event
   scene cap** is sized to swallow a **whole real session** (the largest real fixture is

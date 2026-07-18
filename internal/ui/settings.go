@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -112,15 +113,11 @@ type settingsState struct {
 	themeBusy bool
 
 	// folder picking: native dialog output / resolved drag-drops land
-	// here from goroutines (never block or stat on the render thread).
+	// here from goroutines (never block or stat on the render thread). Still used
+	// by the THEME folder picker (browseForFolder) — the .demo picker moved fully
+	// in-app (demobrowser.go) after the native dialog failed foreground twice.
 	folderRes  chan string
 	browseBusy bool
-
-	// Studio ".demo → video" native file picker: its own channel (NEVER reuse
-	// folderRes — that sets the theme folder) so a picked recording routes to the
-	// video export, not the theme pref. demoPickBusy debounces the shell-out.
-	demoPickRes  chan string
-	demoPickBusy bool
 
 	// ioRes carries one-line results of off-thread file ops (learned
 	// format export/import) back to the status line.
@@ -138,10 +135,9 @@ type themeScan struct {
 }
 
 var settings = settingsState{
-	themeRes:    make(chan themeScan, 1),
-	folderRes:   make(chan string, 1),
-	demoPickRes: make(chan string, 1),
-	ioRes:       make(chan string, 1),
+	themeRes:  make(chan themeScan, 1),
+	folderRes: make(chan string, 1),
+	ioRes:     make(chan string, 1),
 }
 
 // Settings tabs: the screen is split into these categories so it's
@@ -356,6 +352,18 @@ func (a *App) drawSettings(w, h int32) {
 		a.scanThemes()
 	}
 
+	// In-app .demo browser fence: while it's open the WHOLE settings screen behind
+	// it must go click-dead (header Back/search, tab strip, tab body), so a click on
+	// the modal can't also fire a widget beneath it. Recomputed fresh each frame from
+	// the open flag — no cross-frame persist-and-release bug (unlike emojiPickerFence).
+	// It's set HERE (before the header widgets draw) and RELEASED at the very end,
+	// right before the browser itself draws, so the browser's own c.Button/VScrollbar
+	// (which read hovering()) work while everything behind stays fenced. Mirrors the
+	// app.go toolbox release-and-restore idiom.
+	if demoBrowser.open {
+		c.modalOn = true
+	}
+
 	// These run regardless of the active tab, so async results land and
 	// dropped files are honored from any tab (theme scan, folder pick,
 	// drag-drop, and the off-thread IO status line).
@@ -379,7 +387,6 @@ func (a *App) drawSettings(w, h int32) {
 			resolveDroppedFolder(c.dropped)
 		}
 	}
-	a.pollDemoPick()
 	select {
 	case line := <-settings.ioRes:
 		settings.statusLine = line
@@ -456,7 +463,12 @@ func (a *App) drawSettings(w, h int32) {
 
 	// #26 gather-search: with a query typed, the card region becomes a RESULTS
 	// list of every matching setting across every tab (click → jump + flash).
-	if q := strings.ToLower(strings.TrimSpace(settings.search)); q != "" {
+	// Skipped while the .demo browser is open (!demoBrowser.open): this branch
+	// returns EARLY, which would jump over the end-of-function fence release +
+	// browser draw — stranding c.modalOn=true and freezing the whole UI (the
+	// un-released-fence failure the emoji picker documents). Falling through draws
+	// the fenced (click-dead, covered) tab body instead, so the release always runs.
+	if q := strings.ToLower(strings.TrimSpace(settings.search)); q != "" && !demoBrowser.open {
 		if !settings.indexBuilt {
 			a.buildSettingsIndex(w, contentTop)
 			settings.indexBuilt = true
@@ -491,7 +503,11 @@ func (a *App) drawSettings(w, h int32) {
 	c.popClip(clipPrev, clipHad)
 
 	contentH := (y + *scroll) - contentTop + pad
-	if !c.ctrlHeld && !c.wheelTaken {
+	// !c.modalOn: with the in-app .demo browser open the page must not scroll behind
+	// it (this wheel consume is unconditional — the VScrollbar drag below already
+	// self-gates on hovering(), which reads false under modalOn). The browser reads
+	// the wheel for its own list after the fence is released.
+	if !c.ctrlHeld && !c.wheelTaken && !c.modalOn {
 		*scroll -= c.wheelY * scrollStepPx
 	}
 	track := sdl.Rect{X: w - scrollBarW - 2, Y: contentTop, W: scrollBarW, H: viewH}
@@ -505,6 +521,14 @@ func (a *App) drawSettings(w, h int32) {
 	if a.warnActive() {
 		c.LabelClipped(pad, h-24, w-2*pad, a.warnLine, ColDanger)
 	}
+
+	// The in-app .demo browser draws LAST (topmost) with the page fence RELEASED,
+	// so its own widgets work while everything behind stayed click-dead all frame.
+	// No-op when closed.
+	if demoBrowser.open {
+		c.modalOn = false
+	}
+	a.drawDemoBrowser(w, h)
 }
 
 // drawSettingsTabBody dispatches one tab's rows starting at y — shared by the
@@ -1365,8 +1389,8 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 
 // Call-out copy (precomputed package-level strings — drawn every frame, so no
 // per-frame fmt.Sprintf/concat: sibling settings labels use literals for the same
-// reason). The "drag anywhere" line is the cross-platform mechanism; the button is
-// Windows-only.
+// reason). The Import button opens the in-app file browser on EVERY OS; the
+// "drag anywhere" line is the second, cross-platform mechanism.
 const (
 	demoVideoCalloutLead = "Have an AO2 .demo session file? Turn it into a shareable video."
 	demoVideoCalloutDrag = "…or drag the .demo file anywhere onto this window."
@@ -1377,20 +1401,19 @@ const (
 
 // drawDemoToVideoCallout draws the prominent ".demo → video" entry point at the
 // top of the Studio tab: a highlighted panel (the c.Fill(ColPanel)+c.Border(ColAccent)
-// idiom) with a one-line pitch, a native Import picker (Windows only), the
-// cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
+// idiom) with a one-line pitch, the in-app Import file browser (ALL platforms —
+// v1.72.2 replaced the Windows-only native dialog that failed foreground twice),
+// the cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
 // Shadows pad/w per the mandatory settings idiom.
 func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	y = a.settingsSection(y, w, ".demo → video")
 
-	// Highlighted panel background + accent border spanning the section width.
-	winOnly := runtime.GOOS == "windows"
+	// Highlighted panel background + accent border spanning the section width. The
+	// Import button now shows on every OS (the in-app browser is cross-platform),
+	// so the panel is always the full two-row height.
 	panelH := int32(60)
-	if !winOnly {
-		panelH = 46 // no Import button row off Windows (drag carries the feature)
-	}
 	if !videoenc.Available() {
 		panelH += 18 // room for the ffmpeg fallback line
 	}
@@ -1401,16 +1424,11 @@ func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
 	iy := y + 8
 	c.Label(pad+12, iy, demoVideoCalloutLead, ColText)
 	iy += 22
-	if winOnly {
-		if c.Button(sdl.Rect{X: pad + 12, Y: iy, W: 170, H: btnH}, "📥 Import .demo…") {
-			pickDemoForVideo()
-		}
-		c.Label(pad+192, iy+5, demoVideoCalloutDrag, ColTextDim)
-		iy += btnH + 6
-	} else {
-		c.Label(pad+12, iy, demoVideoCalloutDrag, ColTextDim)
-		iy += 20
+	if c.Button(sdl.Rect{X: pad + 12, Y: iy, W: 170, H: btnH}, "📥 Import .demo…") {
+		a.openDemoBrowser() // in-app file browser — pick any .demo/.aorec from your PC
 	}
+	c.Label(pad+192, iy+5, demoVideoCalloutDrag, ColTextDim)
+	iy += btnH + 6
 	if !videoenc.Available() {
 		c.Label(pad+12, iy, demoVideoCalloutNoFF, ColDanger)
 	}
@@ -1598,7 +1616,9 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	}
 	if runtime.GOOS == "windows" {
 		if c.Button(sdl.Rect{X: pad + 600, Y: y, W: 90, H: btnH}, "Browse...") {
-			browseForFolder()
+			if !browseForFolder() {
+				settings.statusLine = "The folder picker is already open — finish or close it first (Alt-Tab if you don't see it)."
+			}
 		}
 	}
 	y += 36
@@ -4812,27 +4832,42 @@ func (a *App) previewDelayRow(y int32, ms int) int {
 	return ms
 }
 
-// browseForFolder shells the native Windows folder picker on a goroutine;
-// the chosen path lands on folderRes (empty = cancelled, dropped).
-func browseForFolder() {
+// browseForFolder shells the native Windows THEME-folder picker on a goroutine;
+// the chosen path lands on folderRes (empty = cancelled, dropped). Returns
+// false when a dialog is already open (busy) so the caller can say so. This is
+// the last native shell-out picker: it's a FOLDER picker the in-app file browser
+// (demobrowser.go) doesn't replace today. If this one ever fails foreground live
+// the same way the old .demo file dialog did, the in-app browser is the proven
+// escalation path (extend it to pick directories).
+func browseForFolder() bool {
 	if settings.browseBusy {
-		return
+		return false
 	}
 	settings.browseBusy = true
 	go func() {
-		// Same TopMost-owner trick as pickDemoForVideo: without it the dialog
-		// can open BEHIND the app (the child process has no foreground rights).
+		// A shown-and-activated TopMost owner form: a merely-CREATED owner proved
+		// insufficient live, so it's Show()n (invisible: Opacity 0, no taskbar) and
+		// Activate()d first so the modal dialog inherits real foreground z-order.
 		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
 			`$d = New-Object System.Windows.Forms.FolderBrowserDialog; ` +
 			`$d.Description = 'Pick the folder that CONTAINS themes\<name>'; ` +
-			`$o = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}; ` +
+			`$o = New-Object System.Windows.Forms.Form; $o.TopMost = $true; $o.ShowInTaskbar = $false; $o.Opacity = 0; $o.Show(); $o.Activate(); ` +
 			`if ($d.ShowDialog($o) -eq 'OK') { Write-Output $d.SelectedPath }`
 		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
 		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
-		out, err := cmd.Output()
-		path := strings.TrimSpace(string(out))
+		// Start → donate foreground rights → Wait: a CREATE_NO_WINDOW child can't
+		// activate its own dialog, so we hand it OUR foreground-activation rights.
+		var outBuf bytes.Buffer
+		cmd.Stdout = &outBuf
+		if err := cmd.Start(); err != nil {
+			settings.folderRes <- pickFailed
+			return
+		}
+		winexec.AllowSetForeground(cmd.Process.Pid)
+		err := cmd.Wait()
+		path := strings.TrimSpace(outBuf.String())
 		if err != nil {
-			settings.folderRes <- pickFailed // failure ≠ cancel — parity with pickDemoForVideo
+			settings.folderRes <- pickFailed // failure ≠ cancel
 			return
 		}
 		if path == "" {
@@ -4841,6 +4876,7 @@ func browseForFolder() {
 		}
 		settings.folderRes <- path
 	}()
+	return true
 }
 
 // resolveDroppedFolder turns an SDL drop path into a directory off-thread
@@ -4878,93 +4914,12 @@ func (a *App) pollFolderPick() {
 	}
 }
 
-// pickFailed marks a native-picker shell-out FAILURE on demoPickRes/folderRes,
-// distinct from "" (user cancelled). NUL can never be a real path, so it can't
-// collide. Shared by pickDemoForVideo and browseForFolder — the two pickers
-// must not diverge on failure semantics (hotfix review find).
+// pickFailed marks a native-picker shell-out FAILURE on folderRes, distinct from
+// "" (user cancelled). NUL can never be a real path, so it can't collide. Used by
+// browseForFolder (the THEME folder picker); the .demo picker moved fully in-app
+// (demobrowser.go) after the native dialog's foreground fragility failed live, so
+// this is now the theme picker's alone.
 const pickFailed = "\x00"
-
-// pickDemoForVideo shells the native Windows Open-File dialog on a goroutine (the
-// SAME shell-out mechanism as browseForFolder — zero new Go dependency), filtered
-// to .demo/.aorec; the chosen file lands on demoPickRes (empty = cancelled,
-// demoPickFailed = the shell-out itself broke). It is the Studio call-out's
-// picker: on a pick, pollDemoPick imports + video-exports it.
-// Windows-only — elsewhere the drag-and-drop path carries the feature (no button).
-func pickDemoForVideo() {
-	if settings.demoPickBusy {
-		return
-	}
-	settings.demoPickBusy = true
-	go func() {
-		// ShowDialog gets a TopMost owner form: the spawned powershell has no
-		// foreground-activation rights (the click went to OUR window, not it),
-		// so an ownerless dialog opens BEHIND the app — which reads as "the
-		// button does nothing" (live report, v1.72.0). The invisible TopMost
-		// owner forces the dialog above every window, ours included.
-		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
-			`$d = New-Object System.Windows.Forms.OpenFileDialog; ` +
-			`$d.Title = 'Pick an AO2 .demo (or .aorec) to turn into a video'; ` +
-			`$d.Filter = 'AO recordings (*.demo;*.aorec)|*.demo;*.aorec'; ` +
-			`$o = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}; ` +
-			`if ($d.ShowDialog($o) -eq 'OK') { Write-Output $d.FileName }`
-		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
-		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
-		out, err := cmd.Output()
-		path := strings.TrimSpace(string(out))
-		if err != nil {
-			// Shell-out failure is NOT a cancel — surface it so the user isn't
-			// left clicking a silently dead button (cancel stays silent).
-			settings.demoPickRes <- pickFailed
-			return
-		}
-		if path == "" {
-			settings.demoPickRes <- ""
-			return
-		}
-		settings.demoPickRes <- path
-	}()
-}
-
-// pollDemoPick drains the native picker's result on the render thread: a picked
-// .demo/.aorec imports into recordings\ and routes to the video export — the same
-// helper the Studio-tab drop uses (single logic, two entry points). The channel
-// is drained and demoPickBusy cleared FIRST, before any guard-return, so a
-// dropped result can never wedge the Import button on busy=true.
-func (a *App) pollDemoPick() {
-	select {
-	case path := <-settings.demoPickRes:
-		settings.demoPickBusy = false // reset before any early return (never leave it stuck true)
-		if path == "" {
-			return // user cancelled — silence is correct
-		}
-		// Deliberately BEFORE the tab guard: the user triggered this picker, so
-		// its failure is worth reporting even if they've wandered to another
-		// settings tab while the dialog was resolving.
-		if path == pickFailed {
-			a.warnLine = "Couldn't open the file picker — drag the .demo onto this window instead."
-			a.warnAt = time.Now()
-			return
-		}
-		// The dialog window is separate, so the user can navigate away while it's
-		// open. Drop a result that lands off the Studio tab rather than kick off an
-		// unprompted heavy export on some later Settings visit (mirrors the tab-scoped
-		// guards elsewhere, e.g. voicepanel.go's mic-test teardown).
-		if a.Screen() != ScreenSettings || settings.tab != tabStudio {
-			return
-		}
-		// The OpenFileDialog filename box accepts a typed path to any file, so mirror
-		// HandleFileDrop's extension guard before copying anything into recordings\ —
-		// otherwise a non-recording would be copied in and then cleanly-fail export,
-		// leaving junk behind.
-		if ext := strings.ToLower(filepath.Ext(path)); ext != recordingExt && ext != demoExt {
-			a.warnLine = "Picked file isn't a recording (.aorec) or an AO2 demo (.demo) — ignored."
-			a.warnAt = time.Now()
-			return
-		}
-		a.importRecordingToVideo(importDroppedRecording(path))
-	default:
-	}
-}
 
 // scanThemeDirs collects theme names across roots, "default" always first
 // (the built-in fallback theme.Load uses even when no folder exists).

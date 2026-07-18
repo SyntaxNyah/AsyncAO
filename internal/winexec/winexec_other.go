@@ -8,3 +8,6 @@ import "os/exec"
 
 // Hide is a no-op on non-Windows platforms.
 func Hide(cmd *exec.Cmd) {}
+
+// AllowSetForeground is a no-op on non-Windows platforms.
+func AllowSetForeground(pid int) {}

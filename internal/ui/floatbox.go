@@ -308,6 +308,15 @@ func (a *App) closeTopOverlay() bool {
 		if c.focusID == paletteInputID {
 			c.focusID = ""
 		}
+	// The in-app .demo file browser (Settings → Studio): a blocking modal behind
+	// the c.modalOn fence, so like every sibling popup it MUST answer Esc — else
+	// Esc falls through to the ScreenSettings arm (app.go), LEAVES the screen with
+	// demoBrowser.open still true, and the browser silently reappears (fenced) on
+	// the next Settings open. Same close as its ✕ (leave loading/buffered result
+	// as-is; the drain is idempotent). Reachable only from Settings, so it's
+	// mutually exclusive with the courtroom popups below.
+	case demoBrowser.open:
+		demoBrowser.open = false
 	// Blocking / confirm modals (highest priority).
 	case a.pendingCloseTab != nil:
 		// The tab-close confirm CAN be open on the lobby (park a server via "+",

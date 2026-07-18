@@ -228,16 +228,21 @@ so a release hit-tests where it actually happened.
   char.ini fetches, the native folder picker (Browse → PowerShell
   FolderBrowserDialog) and dropped-path resolution (SDL DROPFILE) all
   run on goroutines and land via polled channels, like the lobby fetch.
-- The Studio tab's ".demo → video" **Import** button reuses that exact
-  shell-out mechanism — a PowerShell `System.Windows.Forms.OpenFileDialog`
-  (filtered to `*.demo;*.aorec`) instead of the folder dialog — so it adds
-  **zero new Go dependency**: no CGO file-dialog binding, no extra module.
-  It has its own result channel (`demoPickRes`, polled by `pollDemoPick`),
-  never the theme folder's (`folderRes`), so a picked recording routes to
-  the video export, not the theme pref. Windows-only; on other platforms
-  the button is absent and drag-and-drop onto the Studio tab is the
-  equivalent path (`HandleFileDrop` routes a drop to the same import →
-  `sceneExportFromPath(dest, exportVideo)` helper the picker uses).
+- The Studio tab's ".demo → video" **Import** button opens an **in-app
+  file browser** (`demobrowser.go`) on **every OS** — the demo picker moved
+  in-app after the native dialog's foreground fragility failed live (a
+  GUI-subsystem `CREATE_NO_WINDOW` child couldn't reliably win foreground
+  rights, so the `OpenFileDialog` opened behind the app or not at all). The
+  browser is a modal overlay drawn last in `drawSettings` behind the same
+  `c.modalOn` fence the emoji picker uses; it lists directories + `.demo`/
+  `.aorec` files read by **one bounded loader goroutine per navigation**
+  (never per-frame `ReadDir` on the render thread), and a pick routes into
+  the shared import tail (`importDroppedRecording` →
+  `importRecordingToVideo`) — the same path drag-and-drop uses. The
+  shell-out mechanism itself remains for the **theme folder picker**
+  (`browseForFolder`, a `FolderBrowserDialog` the in-app browser doesn't
+  replace today); the in-app browser is the proven escalation path if that
+  one ever fails foreground the same way.
 
 ## Courtroom knobs (all persisted, all live)
 

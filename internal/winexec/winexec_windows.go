@@ -28,3 +28,20 @@ func Hide(cmd *exec.Cmd) {
 	}
 	cmd.SysProcAttr.CreationFlags |= createNoWindow
 }
+
+var (
+	user32                    = syscall.NewLazyDLL("user32.dll")
+	procAllowSetForegroundWnd = user32.NewProc("AllowSetForegroundWindow")
+)
+
+// AllowSetForeground donates THIS process's foreground-activation rights to the
+// child pid. A CREATE_NO_WINDOW child (our dialog shell-outs) is a background
+// process Windows refuses foreground activation: its TopMost dialog gets
+// z-order but its Activate() calls no-op, so the dialog can appear without
+// focus — or, some shells, not visibly at all. We ARE the foreground process
+// (the user just clicked us), so we may hand the right down. Call after
+// Start(), before the child shows its window. Best-effort: a failed call just
+// leaves today's behavior.
+func AllowSetForeground(pid int) {
+	_, _, _ = procAllowSetForegroundWnd.Call(uintptr(pid))
+}
