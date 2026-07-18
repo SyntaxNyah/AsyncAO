@@ -89,8 +89,14 @@ on Windows grab `asyncao-windows-x86_64-bundle.zip` (unzip, run `asyncao.exe`),
 on Linux the `.AppImage` (`chmod +x`, run), on macOS (Apple Silicon)
 `asyncao-macos-bundle-arm64.tar.gz` (`tar -xzf` unpacks the binary and its
 `lib/` flat into the current folder, then run `./asyncao-macos-arm64` — the
-bundled `lib/` beside it makes it self-contained, no Homebrew required). After
-the first install AsyncAO keeps itself up to date in place. Prefer to build from source? See **[BUILDING.md](BUILDING.md)** for the
+bundled `lib/` beside it makes it self-contained, no Homebrew required). On macOS
+a downloaded build is quarantined, so run `xattr -dr com.apple.quarantine .` in
+the extracted folder once (clears the per-library Gatekeeper prompts), then
+right-click → Open on the first launch; each tarball's `INSTALL.txt` spells this
+out. Prefer Homebrew and a smaller download? Grab
+`asyncao-macos-homebrew-arm64.tar.gz`, run `brew install sdl2 sdl2_ttf sdl2_mixer
+webp libavif opus opusfile`, and it uses those libraries instead of a bundled `lib/`.
+After the first install AsyncAO keeps itself up to date in place. Prefer to build from source? See **[BUILDING.md](BUILDING.md)** for the
 detailed per-OS guide.
 
 ```text

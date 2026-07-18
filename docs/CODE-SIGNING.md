@@ -80,11 +80,16 @@ the nested dylibs. A folder/bare binary can't be *stapled* (stapling needs an
 `.app`/`.dmg`/`.pkg`), so verification happens online on first run. Packaging a
 `.dmg` for offline stapling is a future step.
 
-Two macOS assets ship per variant: the bundle tarball
-(`asyncao-macos-bundle-arm64.tar.gz`) for first install, and the rewritten bare
-binary (`asyncao-macos-arm64`) as the self-update target. See
-`internal/update.SelfUpdateAssetMatch` for why the tarball name deliberately
-dodges the `macos-arm64` self-update token.
+Three macOS assets ship per variant: the bundle tarball
+(`asyncao-macos-bundle-arm64.tar.gz`, binary + bundled `lib/` + `INSTALL.txt`)
+for a no-Homebrew first install, the Homebrew edition tarball
+(`asyncao-macos-homebrew-arm64.tar.gz`, bare binary + `INSTALL.txt`, libraries
+from `brew`), and the rewritten bare binary (`asyncao-macos-arm64`) as the
+self-update target. See `internal/update.SelfUpdateAssetMatch` for why both
+tarball names deliberately dodge the `macos-arm64` self-update token (the
+`-bundle-`/`-homebrew-` run breaks the substring). Both tarballs' `INSTALL.txt`
+carries the `xattr -dr com.apple.quarantine .` relief for the first-launch
+Gatekeeper prompts an unsigned/unnotarized download triggers per bundled Mach-O.
 
 > **Self-update constraint (SONAME skew).** On macOS the self-updater swaps only
 > the bare `asyncao-macos-arm64` binary — it does NOT refresh the sibling `lib/`

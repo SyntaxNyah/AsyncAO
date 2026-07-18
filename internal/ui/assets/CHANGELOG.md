@@ -4,6 +4,24 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.73.0 — 2026-07-18
+
+macOS downloads stop nagging, and there's a smaller Apple-Silicon build for
+Homebrew users. (More lands in this release — section grows at cut time.)
+
+**macOS**
+
+- **Fewer Gatekeeper prompts on a fresh download.** A downloaded, unsigned
+  build has every file quarantined, so macOS asks to allow each bundled library
+  on first launch. Both mac tarballs now carry an `INSTALL.txt` with the
+  one-line fix — `xattr -dr com.apple.quarantine .` in the extracted folder
+  clears all of them at once — plus the first-launch right-click → Open step.
+- **A Homebrew edition (Apple Silicon).** A smaller
+  `asyncao-macos-homebrew-arm64.tar.gz` ships just the binary; run
+  `brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile` and it uses
+  those libraries instead of a bundled `lib/`. The self-contained
+  `asyncao-macos-bundle-arm64.tar.gz` still needs no Homebrew.
+
 ## v1.72.1 — 2026-07-18
 
 The Import button actually opens its dialog, silent demos explain themselves,

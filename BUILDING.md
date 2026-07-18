@@ -137,6 +137,29 @@ self-update target; for a first install, `tar -xzf
 asyncao-macos-bundle-arm64.tar.gz` (the binary and its `lib/` land flat in the
 current folder) and run `./asyncao-macos-arm64`.
 
+A downloaded, unsigned/unnotarized build carries `com.apple.quarantine` on every
+extracted file, so on first launch Gatekeeper asks to allow each bundled library
+individually. Clear it in one shot from the extracted folder:
+
+```bash
+xattr -dr com.apple.quarantine .
+chmod +x ./asyncao-macos-arm64
+```
+
+then right-click → Open once (macOS remembers the choice). Each tarball ships an
+`INSTALL.txt` (`packaging/macos/INSTALL-bundle.txt` /
+`packaging/macos/INSTALL-homebrew.txt`) restating these steps.
+
+For a smaller download the release also publishes a **Homebrew edition**,
+`asyncao-macos-homebrew-arm64.tar.gz` (bare binary + `INSTALL.txt`, no bundled
+`lib/`). Run `brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile` and the
+binary resolves its libraries via its `/opt/homebrew/lib` rpath fallback — the
+same rewrite `bundle-macos.sh` applies to the bare asset. Neither
+`asyncao-macos-bundle-arm64.tar.gz` nor `asyncao-macos-homebrew-arm64.tar.gz`
+contains the `macos-arm64` self-update token, so the in-app updater never renames
+a tarball over the running binary (it always targets the bare
+`asyncao-macos-arm64`).
+
 ## Android / iOS
 
 Out of scope: the SDL2 + CGO toolchain story on mobile is a project of its

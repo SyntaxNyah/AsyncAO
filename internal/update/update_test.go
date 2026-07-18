@@ -144,16 +144,17 @@ func TestCheckNewer(t *testing.T) {
 
 // ghMultiAssetJSON enumerates EVERY asset release.yml publishes (default +
 // Discord-free builds, the first-install bundles — Windows DLL .zip, macOS
-// dylib .tar.gz —, both .flatpak variants, and SHA256SUMS.txt), in SCRAMBLED
-// order. Asset matching is the brick-risk path: a wrong pick gets renamed over
-// the running exe on the next self-update, so Check MUST land on the one
-// swappable default binary per platform regardless of order. The macOS bundle
-// tarballs are placed BEFORE the bare macos-arm64 binary on purpose — an
-// adversarial ordering that proves the darwin token "macos-arm64" does not
-// match "macos-bundle-arm64" — and the .flatpak decoys sit before the AppImage
-// for the same reason. Keep this list in lockstep with release.yml's asset
-// table: it is the enumeration gate that catches a future token loosened
-// toward a non-default asset name.
+// dylib .tar.gz —, the macOS Homebrew-edition .tar.gz, both .flatpak variants,
+// and SHA256SUMS.txt), in SCRAMBLED order. Asset matching is the brick-risk
+// path: a wrong pick gets renamed over the running exe on the next self-update,
+// so Check MUST land on the one swappable default binary per platform regardless
+// of order. The macOS bundle AND Homebrew tarballs are placed BEFORE the bare
+// macos-arm64 binary on purpose — an adversarial ordering that proves the darwin
+// token "macos-arm64" matches neither "macos-bundle-arm64" nor
+// "macos-homebrew-arm64" — and the .flatpak decoys sit before the AppImage for
+// the same reason. Keep this list in lockstep with release.yml's asset table: it
+// is the enumeration gate that catches a future token loosened toward a
+// non-default asset name.
 const ghMultiAssetJSON = `{
   "tag_name": "v2.0.0",
   "body": "notes",
@@ -166,6 +167,8 @@ const ghMultiAssetJSON = `{
     {"name": "AsyncAO-linux-x86_64-nodiscord.AppImage",        "browser_download_url": "https://example/linux-nd.AppImage"},
     {"name": "asyncao-macos-bundle-arm64.tar.gz",              "browser_download_url": "https://example/mac-bundle.tar.gz"},
     {"name": "asyncao-macos-nodiscord-bundle-arm64.tar.gz",    "browser_download_url": "https://example/mac-nd-bundle.tar.gz"},
+    {"name": "asyncao-macos-homebrew-arm64.tar.gz",            "browser_download_url": "https://example/mac-brew.tar.gz"},
+    {"name": "asyncao-macos-homebrew-nodiscord-arm64.tar.gz",  "browser_download_url": "https://example/mac-nd-brew.tar.gz"},
     {"name": "asyncao-macos-nodiscord-arm64",                  "browser_download_url": "https://example/mac-nd"},
     {"name": "asyncao-windows-x86_64.exe",                     "browser_download_url": "https://example/win.exe"},
     {"name": "AsyncAO-linux-x86_64.AppImage",                  "browser_download_url": "https://example/linux.AppImage"},

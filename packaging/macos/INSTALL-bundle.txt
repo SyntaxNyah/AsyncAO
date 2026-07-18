@@ -1,0 +1,30 @@
+AsyncAO — macOS bundle edition (Apple Silicon)
+
+This build is self-contained: the binary and its lib/ folder are everything you
+need, no Homebrew required. Apple Silicon only.
+
+1. Clear the download quarantine so macOS does not prompt to allow each bundled
+   library one at a time:
+
+   xattr -dr com.apple.quarantine .
+
+this can work without the command.
+
+IF YOU'RE A MASOCHIST
+
+2. Make the binary runnable (the extracted file is named asyncao-macos-arm64, or
+   asyncao-macos-nodiscord-arm64 for the Discord-free edition):
+
+   chmod +x ./asyncao-macos-*arm64
+
+3. First launch: right-click the asyncao-macos-*arm64 binary in Finder and choose
+   Open, then confirm. macOS remembers the choice, so later launches are a normal
+   double-click. From then on AsyncAO keeps itself up to date in place.
+
+Prefer Homebrew and a smaller download? The Homebrew edition
+(asyncao-macos-homebrew-arm64.tar.gz) ships only the binary and pulls its
+libraries from brew:
+
+   brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile
+
+It needs the same "xattr -dr com.apple.quarantine ." in its extracted folder.

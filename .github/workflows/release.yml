@@ -14,11 +14,13 @@
 #   AsyncAO-linux-x86_64.AppImage         <- Linux: self-contained, serves install AND self-update
 #   asyncao-macos-arm64                   <- macOS (Apple Silicon) self-update target (rewritten, loads ./lib)
 #   asyncao-macos-bundle-arm64.tar.gz     <- macOS FIRST install (binary + bundled lib/, self-contained)
-# The -nodiscord / -bundle variants are named so they never collide with a token.
-# Token-dodge for the macOS bundle: the darwin self-update token is the substring
-# "macos-arm64"; "macos-bundle-arm64" does NOT contain it (the "-bundle-" breaks
-# the run), so the self-updater never renames the .tar.gz over the running binary
-# — same dodge as the -nodiscord- and Windows -bundle.zip names.
+#   asyncao-macos-homebrew-arm64.tar.gz   <- macOS Homebrew edition (bare binary + INSTALL.txt, brew supplies libs)
+# The -nodiscord / -bundle / -homebrew variants are named so they never collide
+# with a token. Token-dodge for the macOS bundle AND homebrew tarballs: the darwin
+# self-update token is the substring "macos-arm64"; neither "macos-bundle-arm64"
+# nor "macos-homebrew-arm64" contains it (the "-bundle-"/"-homebrew-" breaks the
+# run), so the self-updater never renames a .tar.gz over the running binary —
+# same dodge as the -nodiscord- and Windows -bundle.zip names.
 name: Release
 
 on:
@@ -210,9 +212,17 @@ jobs:
         #            .tar.gz over the running binary and brick the install. The
         #            "-bundle-" between "macos" and "arm64" breaks the substring —
         #            NEVER rename this to "...-macos-arm64-bundle...".
+        #
+        # `homebrew` = the SMALL Homebrew edition (bare binary + INSTALL.txt, NO
+        #            bundled lib/): the user runs `brew install …` and the binary
+        #            resolves its libs via the /opt/homebrew/lib rpath fallback
+        #            bundle-macos.sh added. Its name "...-macos-homebrew-arm64.tar.gz"
+        #            must NOT contain "macos-arm64" for the same token reason as the
+        #            bundle — "-homebrew-" breaks the run. NEVER rename it to put
+        #            "arm64" straight after "macos".
         variant:
-          - { id: default, label: "", tags: "", asset: "asyncao-macos-arm64", bundle: "asyncao-macos-bundle-arm64.tar.gz" }
-          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", asset: "asyncao-macos-nodiscord-arm64", bundle: "asyncao-macos-nodiscord-bundle-arm64.tar.gz" }
+          - { id: default, label: "", tags: "", asset: "asyncao-macos-arm64", bundle: "asyncao-macos-bundle-arm64.tar.gz", homebrew: "asyncao-macos-homebrew-arm64.tar.gz" }
+          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", asset: "asyncao-macos-nodiscord-arm64", bundle: "asyncao-macos-nodiscord-bundle-arm64.tar.gz", homebrew: "asyncao-macos-homebrew-nodiscord-arm64.tar.gz" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -350,15 +360,55 @@ jobs:
             echo "::warning::no staged bundle (bundler failed earlier) — skipping the tarball"
             exit 1
           fi
+          # Drop the bundle-edition install guide INTO the tarball (packed by the
+          # `-C macos-stage .` below). It surfaces the Gatekeeper quarantine relief
+          # (`xattr -dr com.apple.quarantine .`) right where a user extracts, which
+          # is the fix for the per-dylib "allow this library" prompt storm on an
+          # unsigned/unnotarized download. Adding a FILE inside the tarball does not
+          # change the asset NAME, so the self-updater (which matches on name only)
+          # is unaffected; the SHA256SUMS digest is recomputed over final artifacts
+          # at release-assembly time, so it stays consistent.
+          cp packaging/macos/INSTALL-bundle.txt macos-stage/INSTALL.txt
           tar -czf "${{ matrix.variant.bundle }}" -C "macos-stage" .
+      # The Homebrew edition: a SMALL tarball with just the bare (already rewritten
+      # + signed) binary and its install guide, NO bundled lib/. The binary is the
+      # same bytes as the bare self-update asset — it resolves its libs via the
+      # /opt/homebrew/lib rpath fallback bundle-macos.sh added, so a `brew install`
+      # user runs it with a fraction of the download. We build a CLEAN dir (copying
+      # only the single binary, never the whole stage) so the bundle's lib/ and the
+      # bundle INSTALL.txt can't leak in. FAIL-OPEN + the same staged-binary guard
+      # as the Pack step, and it reuses the built binary — never a fresh go build.
+      #
+      # Updater-safe by name: "asyncao-macos-homebrew-arm64.tar.gz" does not contain
+      # the darwin token "macos-arm64" (the "-homebrew-" breaks the run), so the
+      # self-updater never picks it (see update.SelfUpdateAssetMatch + the decoy in
+      # internal/update's TestSelfUpdatePicksSwappableDefault).
+      - name: Pack Homebrew edition tarball
+        continue-on-error: true
+        env:
+          ASSET: ${{ matrix.variant.asset }}
+        run: |
+          if [ ! -f "macos-stage/$ASSET" ]; then
+            echo "::warning::no staged binary (bundler failed earlier) — skipping the Homebrew tarball"
+            exit 1
+          fi
+          rm -rf macos-brew
+          mkdir -p macos-brew
+          cp "macos-stage/$ASSET" "macos-brew/$ASSET"
+          cp packaging/macos/INSTALL-homebrew.txt macos-brew/INSTALL.txt
+          tar -czf "${{ matrix.variant.homebrew }}" -C "macos-brew" .
       - uses: actions/upload-artifact@v4
         with:
-          # Two assets per variant: the bare self-update binary AND the bundle
-          # tarball. download-artifact merge-multiple flattens both into dist/.
+          # Three assets per variant: the bare self-update binary, the bundle
+          # tarball (binary + lib/ + INSTALL.txt), and the Homebrew edition tarball
+          # (binary + INSTALL.txt). download-artifact merge-multiple flattens them
+          # into dist/. A missing file (a failed continue-on-error step) is simply
+          # not uploaded (if-no-files-found default `warn`).
           name: release-macos-${{ matrix.variant.id }}
           path: |
             ${{ matrix.variant.asset }}
             ${{ matrix.variant.bundle }}
+            ${{ matrix.variant.homebrew }}
 
   build-flatpak:
     name: Linux x86_64 Flatpak${{ matrix.variant.label }}
