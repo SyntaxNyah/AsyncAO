@@ -834,6 +834,14 @@ func (a *Audio) PlayMusicAt(url string, loop bool, effects int, seekSec float64)
 //     MusicPosition only supports some formats (ogg/mp3/mod, and flac/opus with a
 //     new enough SDL_mixer), returning -1 otherwise, so a failed seek degrades to
 //     playing from the top (today's behavior) rather than faking anything.
+//     CAUTION reading its failure log: SDL_mixer masks EVERY negative return
+//     from the codec's Seek with the one generic "Position not implemented for
+//     music type" string (release-2.8.x src/music.c Mix_SetMusicPosition — the
+//     same Mix_SetError used when Seek is absent). So that message usually
+//     means an OUT-OF-RANGE target the codec rejected (e.g. opusfile's
+//     op_pcm_seek returns OP_EINVAL for a target past the track's end), NOT a
+//     missing codec; the duration wrap in the seek block below exists so we
+//     never hand SDL_mixer such a target.
 func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seekSec float64) {
 	// Takeover snapshot (cross-tab resume, wave 13): this call is about to SWAP a
 	// live, different track out for `url`. Capture the OUTGOING track's true
@@ -892,9 +900,33 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 	// which is the honest graceful degrade. int64 truncation of seconds is fine;
 	// sub-second precision is meaningless for a song resume.
 	if seekSec > 0 {
-		if err := mix.SetMusicPosition(int64(seekSec)); err != nil {
-			// Not fatal — playback continues from the start.
-			log.Printf("render: music seek to %.0fs unsupported for %q (playing from top): %v", seekSec, url, err)
+		// Wrap the target by the freshly-loaded stream's REAL length first. WHY:
+		// the ui-side wall-clock fallback (no takeover snapshot: an old parked
+		// track, a resolver miss) is NOT duration-wrapped, and AO area loops are
+		// short — so its target routinely lands past the end. A past-the-end
+		// target does not degrade quietly: opusfile's op_pcm_seek returns
+		// OP_EINVAL for any target past total duration, and Mix_SetMusicPosition
+		// masks that as the misleading "Position not implemented for music type"
+		// (see the SYNC_POS caution above) — the seek then fails EVERY time on a
+		// stale resume. The resume is always looping today (ui.resumeSeek), so a
+		// modulo wrap is the correct in-range position for every codec; when the
+		// clock can't report a length (pre-2.6 SDL_mixer runtime, mod/midi) we
+		// keep the raw target and the old degrade-to-top behavior. MusicClock is
+		// readable here: a.music is set and Play/FadeIn succeeded above.
+		durSec := -1.0 // MusicClock's own "unknown length" sentinel; logged below
+		if _, dur, ok := a.MusicClock(); ok && dur > 0 {
+			durSec = dur
+			seekSec = math.Mod(seekSec, dur)
+		}
+		// The wrap can land exactly on 0 (target = a whole number of loops):
+		// the stream is already at the top, so skip the pointless seek call.
+		if seekSec > 0 {
+			if err := mix.SetMusicPosition(int64(seekSec)); err != nil {
+				// Not fatal — playback continues from the start. The error string
+				// is SDL_mixer's generic mask (SYNC_POS caution above), so log the
+				// numbers that actually diagnose a failure: target + known length.
+				log.Printf("render: music seek to %.0fs (track length %.0fs) failed for %q (playing from top): %v", seekSec, durSec, url, err)
+			}
 		}
 	}
 	a.musicURL = url // now this exact track is playing — PlayMusic(url) becomes a no-op
