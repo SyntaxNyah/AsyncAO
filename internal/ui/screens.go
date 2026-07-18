@@ -1948,6 +1948,11 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		c.Fill(box, bg)
 		c.Border(box, ColAccent)
 	}
+	// Creator easter egg: shared with the themed chatbox path (drawChatEgg
+	// documents the once-per-message detection, the accessibility gate, and the
+	// NoteAnimating cadence). Placed AFTER the skin/panel/border so the OUTSET
+	// glow rings ring around the box on top of any skin without covering the art.
+	a.drawChatEgg(box, sc.MessageText)
 	// Theme text colors are designed against the theme's own skin; on the
 	// flat fallback panel (or a per-character skin) they can be unreadable
 	// (black-on-dark was a real report), so they only apply while the THEME

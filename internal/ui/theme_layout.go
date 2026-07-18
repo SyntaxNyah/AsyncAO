@@ -758,6 +758,13 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 		c.Fill(box, bg)
 		c.Border(box, ColAccent)
 	}
+	// Creator easter egg — same helper the classic overlay uses, so a themed
+	// layout (which reaches this path only when the theme defines an ao2_chatbox
+	// rect) lights the exact same glow. Placed after the whole skin-resolution
+	// block (skin OR flat panel), NOT inside the !skinned branch: full AO2 themes
+	// usually ship a chatbox.png and take the skinned branch, so an egg gated on
+	// !skinned would never draw for them.
+	a.drawChatEgg(box, sc.MessageText)
 
 	nameX, nameY := box.X+8, box.Y+4
 	nameW := box.W - 16

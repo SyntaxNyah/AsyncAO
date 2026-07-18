@@ -1965,6 +1965,15 @@ type sessionState struct {
 	// rasterCentered folds the webAO "~~" centre flag into the raster cache key, so a
 	// centred "hi" and a plain "hi" (same stripped text) don't share one raster.
 	rasterCentered bool
+	// Creator easter eggs (drawChatOverlay): when the DISPLAYED IC message's text
+	// mentions a creator name, the chatbox grows an animated glow ring. Detection
+	// runs on the received/displayed text so every AsyncAO client in the room sees
+	// the same effect with ZERO wire changes. The scan is once per message, cached
+	// here — eggMsg is the text it was computed for, eggKind the resolved egg — so
+	// an idle frame costs one string compare, not a rescan. refreshEggKind owns the
+	// compare-and-store; creatorEgg is the pure scan.
+	eggMsg  string
+	eggKind uint8
 }
 
 type lobbyFetch struct {
