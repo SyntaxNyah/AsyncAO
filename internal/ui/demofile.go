@@ -364,8 +364,15 @@ func (a *App) HandleFileDrop(path string) {
 // the video export for it. The warnLine is set BEFORE sceneExportFromPath so
 // that path's own ffmpeg-refusal message (gifexport.go) wins on a box without
 // ffmpeg — the file still imported into the Recordings list either way.
+// "Imported into recordings\" is only claimed when the file really landed
+// there — importDroppedRecording falls back to the original path when the
+// copy fails (or the file already lives there), and the note must not lie.
 func (a *App) importRecordingToVideo(dest string) {
-	a.warnLine = "Imported " + filepath.Base(dest) + " into recordings\\ — exporting video…"
+	if filepath.Dir(dest) == recordingsDir() {
+		a.warnLine = "Imported " + filepath.Base(dest) + " into recordings\\ — exporting video…"
+	} else {
+		a.warnLine = "Exporting video from " + filepath.Base(dest) + "…"
+	}
 	a.warnAt = time.Now()
 	a.sceneExportFromPath(dest, exportVideo)
 }
