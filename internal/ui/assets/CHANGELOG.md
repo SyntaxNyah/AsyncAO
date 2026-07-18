@@ -4,10 +4,23 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
-## v1.73.0 — 2026-07-18
+## v1.73.0 — 2026-07-19
 
-macOS downloads stop nagging, and there's a smaller Apple-Silicon build for
-Homebrew users. (More lands in this release — section grows at cut time.)
+Pick any `.demo` straight from your PC with a real file browser, and macOS
+downloads stop nagging.
+
+**Studio**
+
+- **📥 Import .demo… is now a file browser inside the app.** Browse your
+  drives and folders, jump straight to 🏠 Home / ⬇ Downloads / 🖥 Desktop /
+  📼 recordings\, and click any `.demo` or `.aorec` to import it and start a
+  video export — one flow, every OS. The system file dialog it replaces
+  could open behind the window and read as the button doing nothing; the
+  browser can't. Esc or ✕ closes it; the wheel scrolls the list.
+- **The theme folder Browse… dialog opens in front and focused.** Same
+  behind-the-window disease, cured with proper foreground handling — and if
+  a picker is somehow already open, clicking again now says so instead of
+  doing nothing.
 
 **macOS**
 
