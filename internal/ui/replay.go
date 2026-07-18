@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -401,6 +400,13 @@ func loadRecording(path string) (*sceneRecording, error) {
 	if err := json.Unmarshal(data, &rec); err != nil {
 		return nil, err
 	}
+	// A hand-edited .aorec must not smuggle an over-cap scene past every guard
+	// (hard rule §17.4): the file is the fifth ingestion path, so enforce the
+	// same maxRecordedEvents ceiling the recorder and demo import hold — keep the
+	// coherent leading prefix (OffsetMs is cumulative).
+	if len(rec.Events) > maxRecordedEvents {
+		rec.Events = rec.Events[:maxRecordedEvents]
+	}
 	return &rec, nil
 }
 
@@ -474,7 +480,7 @@ func (a *App) openRecordingsFolder() {
 		a.pushDebug("recordings folder: " + err.Error())
 		return
 	}
-	_ = exec.Command("explorer.exe", dir).Start()
+	openInFileManager(dir) // windows→explorer / darwin→open / else→xdg-open (openpath.go)
 	a.warnLine = "Opened recordings folder: " + dir
 	a.warnAt = time.Now()
 }

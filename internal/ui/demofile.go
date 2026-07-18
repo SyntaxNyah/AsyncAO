@@ -90,17 +90,32 @@ func fixDemoWaitDesync(records []string) []string {
 // — the scene model deliberately covers what the stage shows. origin is the
 // asset host to stream from (demos don't store one; AO2 plays them against a
 // local base folder).
-func demoToRecording(data []byte, origin string) (*sceneRecording, int, error) {
+//
+// Two independent counters come back: skipped (packets we recognize but don't
+// model — SC/CT/HP/…, byte-identical to before) and truncated (valid scene
+// packets dropped because the scene already holds maxRecordedEvents). They are
+// reported separately so the user can tell "this demo has non-scene chatter" from
+// "this demo is longer than the editor's scene cap."
+func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, truncated int, err error) {
 	records := fixDemoWaitDesync(parseDemoRecords(data))
 	if len(records) == 0 {
-		return nil, 0, fmt.Errorf("empty demo file")
+		return nil, 0, 0, fmt.Errorf("empty demo file")
 	}
 	// Demos are recorded by 2.8+ clients from servers with the full feature set
 	// (the demo server itself advertises everything), so extended fields parse.
 	features := protocol.ParseFeatures([]string{protocol.FeatureCCCCIC})
-	rec := &sceneRecording{Version: recordingVersion, Origin: origin}
-	skipped := 0
+	rec = &sceneRecording{Version: recordingVersion, Origin: origin}
 	cum := 0
+	// capReached: the scene already holds maxRecordedEvents. We keep a coherent
+	// PREFIX (stop-at-cap, exactly recordEvent's replay.go:155 / makerInsert's
+	// scenemaker.go:436 semantics — NOT the instant-replay ring's oldest-eviction:
+	// OffsetMs is cumulative, so only a leading run stays timeline-consistent).
+	// 5000 (maxRecordedEvents) is deliberately reused for import: every downstream
+	// consumer — the scene maker's own insert guard, replay, cloneScene — already
+	// assumes it, and exported length is separately bounded by maxVideoFrames
+	// (=18000 frames) regardless, so a larger import-only cap would let a scene
+	// exceed the editor's guard while adding no exportable length.
+	capReached := func() bool { return len(rec.Events) >= maxRecordedEvents }
 	for _, raw := range records {
 		pkt, err := protocol.ParsePacket(strings.TrimSuffix(raw, "\n"))
 		if err != nil {
@@ -117,11 +132,19 @@ func demoToRecording(data []byte, origin string) (*sceneRecording, int, error) {
 				skipped++
 				continue
 			}
+			if capReached() {
+				truncated++
+				continue
+			}
 			rec.Events = append(rec.Events, recEvent{OffsetMs: cum, Kind: int(courtroom.EventMessage), Message: msg})
 		case "BN":
 			bg := pkt.Field(0)
 			if bg == "" {
 				skipped++
+				continue
+			}
+			if capReached() {
+				truncated++
 				continue
 			}
 			if rec.StartBg == "" && len(rec.Events) == 0 {
@@ -130,6 +153,10 @@ func demoToRecording(data []byte, origin string) (*sceneRecording, int, error) {
 			rec.Events = append(rec.Events, recEvent{OffsetMs: cum, Kind: int(courtroom.EventBackground), Text: bg})
 		case "MC":
 			if song := pkt.Field(0); song != "" {
+				if capReached() {
+					truncated++
+					continue
+				}
 				rec.Events = append(rec.Events, recEvent{OffsetMs: cum, Kind: int(courtroom.EventMusic), Text: song})
 			} else {
 				skipped++
@@ -138,11 +165,14 @@ func demoToRecording(data []byte, origin string) (*sceneRecording, int, error) {
 			skipped++
 		}
 	}
+	// Zero-events error rides the post-loop reality: truncation only fires once
+	// the scene already holds maxRecordedEvents (>0), so it can never make this
+	// spuriously trip — it still means "nothing playable in the whole file."
 	if len(rec.Events) == 0 {
-		return nil, skipped, fmt.Errorf("no playable events (MS/BN/MC) in the demo")
+		return nil, skipped, truncated, fmt.Errorf("no playable events (MS/BN/MC) in the demo")
 	}
 	rec.RecordedAt = time.Now().Format(time.RFC3339)
-	return rec, skipped, nil
+	return rec, skipped, truncated, nil
 }
 
 // atoiClamped parses n with AO tolerance (garbage = lo) and clamps to [lo, hi].
@@ -248,22 +278,72 @@ func (a *App) loadRecordingAny(path string) (*sceneRecording, error) {
 	if err != nil {
 		return nil, err
 	}
-	rec, skipped, err := demoToRecording(data, a.demoDefaultOrigin())
+	rec, skipped, truncated, err := demoToRecording(data, a.demoDefaultOrigin())
 	if err != nil {
 		return nil, err
 	}
-	if skipped > 0 {
-		a.pushDebug(fmt.Sprintf("demo import: %s — %d non-scene packets skipped (SC/CT/HP/…)", filepath.Base(path), skipped))
+	// Two independent clauses (a demo can trip either, both, or neither): the
+	// skipped wording stays byte-identical to before, and truncation is its own
+	// distinct note. Kept short/factual, no exclamation — the settings-text style.
+	base := filepath.Base(path)
+	switch {
+	case skipped > 0 && truncated > 0:
+		a.pushDebug(fmt.Sprintf("demo import: %s — %d non-scene packets skipped (SC/CT/HP/…); stopped at the %d-event scene cap (%d later events not imported)", base, skipped, maxRecordedEvents, truncated))
+	case skipped > 0:
+		a.pushDebug(fmt.Sprintf("demo import: %s — %d non-scene packets skipped (SC/CT/HP/…)", base, skipped))
+	case truncated > 0:
+		a.pushDebug(fmt.Sprintf("demo import: %s — stopped at the %d-event scene cap (%d later events not imported)", base, maxRecordedEvents, truncated))
 	}
 	return rec, nil
 }
 
+// nextRecordingDest returns a non-colliding destination path under dir for a
+// file named base+ext: base+ext if free, else base-2+ext, base-3+ext, … (the
+// exact "-2"/"-3" collision walk HandleFileDrop has always used). Pure over the
+// filesystem's current state so it unit-tests directly.
+func nextRecordingDest(dir, base, ext string) string {
+	cand := filepath.Join(dir, base+ext)
+	for n := 2; ; n++ {
+		if _, err := os.Stat(cand); os.IsNotExist(err) {
+			return cand
+		}
+		cand = filepath.Join(dir, fmt.Sprintf("%s-%d%s", base, n, ext))
+	}
+}
+
+// importDroppedRecording copies a dropped .aorec/.demo into recordings\ (keeping
+// the name; "-2", "-3", … on collision — nextRecordingDest) so it joins the
+// Studio list, and returns the path to feed downstream (Play or Export). A file
+// already inside recordings\ is used in place. One-off user action on the event
+// loop (like the Studio picker's reads), not a render-path I/O.
+func importDroppedRecording(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	dir := recordingsDir()
+	if dir == "" || filepath.Dir(path) == dir {
+		return path // no recordings\ dir, or it's already there — use in place
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return path
+	}
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	cand := nextRecordingDest(dir, base, ext)
+	if data, err := os.ReadFile(path); err == nil && os.WriteFile(cand, data, 0o644) == nil {
+		return cand // imported: it now lives in the Studio list too
+	}
+	return path
+}
+
 // HandleFileDrop imports a file dropped onto the window (#73): a .aorec or an
-// AO2 .demo is copied into recordings\ (keeping the name; "-2", "-3", … on
-// collision) and starts playing immediately — share a recording by literally
-// dragging the file onto someone's AsyncAO. Anything else is politely ignored.
-// One-off user action on the event loop (like the Studio picker's reads), not
-// a render-path I/O.
+// AO2 .demo is copied into recordings\ (importDroppedRecording) and then, by
+// default, starts playing immediately — share a recording by literally dragging
+// the file onto someone's AsyncAO. Anything else is politely ignored.
+//
+// Screen-aware routing: when the Settings screen's Studio tab is showing, the
+// drop is treated as a ".demo → video" request (the dedicated call-out lives
+// there) and routes to the video-export flow instead of playback — so a user who
+// opened Studio to make a video gets one from a drop, with a confirming warnLine.
+// Everywhere else the behavior is unchanged (import + play). This is the SINGLE
+// owner of dropped recordings: the Settings-screen c.dropped consumer skips them.
 func (a *App) HandleFileDrop(path string) {
 	ext := strings.ToLower(filepath.Ext(path))
 	if ext != recordingExt && ext != demoExt {
@@ -271,23 +351,23 @@ func (a *App) HandleFileDrop(path string) {
 		a.warnAt = time.Now()
 		return
 	}
-	dest := path
-	if dir := recordingsDir(); dir != "" && filepath.Dir(path) != dir {
-		if err := os.MkdirAll(dir, 0o755); err == nil {
-			base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-			cand := filepath.Join(dir, base+ext)
-			for n := 2; ; n++ {
-				if _, err := os.Stat(cand); os.IsNotExist(err) {
-					break
-				}
-				cand = filepath.Join(dir, fmt.Sprintf("%s-%d%s", base, n, ext))
-			}
-			if data, err := os.ReadFile(path); err == nil && os.WriteFile(cand, data, 0o644) == nil {
-				dest = cand // imported: it now lives in the Studio list too
-			}
-		}
+	dest := importDroppedRecording(path)
+	if a.Screen() == ScreenSettings && settings.tab == tabStudio {
+		a.importRecordingToVideo(dest) // Studio's dedicated .demo → video entry point
+		return
 	}
 	a.replayFromPath(dest)
+}
+
+// importRecordingToVideo is the shared tail of both Studio entry points (the
+// native picker and a drop onto the Studio tab): confirm the import, then start
+// the video export for it. The warnLine is set BEFORE sceneExportFromPath so
+// that path's own ffmpeg-refusal message (gifexport.go) wins on a box without
+// ffmpeg — the file still imported into the Recordings list either way.
+func (a *App) importRecordingToVideo(dest string) {
+	a.warnLine = "Imported " + filepath.Base(dest) + " into recordings\\ — exporting video…"
+	a.warnAt = time.Now()
+	a.sceneExportFromPath(dest, exportVideo)
 }
 
 // makerExportDemo writes the maker's scene as recordings\<stem>.demo — the AO2

@@ -228,6 +228,16 @@ so a release hit-tests where it actually happened.
   char.ini fetches, the native folder picker (Browse → PowerShell
   FolderBrowserDialog) and dropped-path resolution (SDL DROPFILE) all
   run on goroutines and land via polled channels, like the lobby fetch.
+- The Studio tab's ".demo → video" **Import** button reuses that exact
+  shell-out mechanism — a PowerShell `System.Windows.Forms.OpenFileDialog`
+  (filtered to `*.demo;*.aorec`) instead of the folder dialog — so it adds
+  **zero new Go dependency**: no CGO file-dialog binding, no extra module.
+  It has its own result channel (`demoPickRes`, polled by `pollDemoPick`),
+  never the theme folder's (`folderRes`), so a picked recording routes to
+  the video export, not the theme pref. Windows-only; on other platforms
+  the button is absent and drag-and-drop onto the Studio tab is the
+  equivalent path (`HandleFileDrop` routes a drop to the same import →
+  `sceneExportFromPath(dest, exportVideo)` helper the picker uses).
 
 ## Courtroom knobs (all persisted, all live)
 

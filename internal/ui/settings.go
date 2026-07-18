@@ -19,6 +19,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 	"github.com/SyntaxNyah/AsyncAO/internal/theme"
+	"github.com/SyntaxNyah/AsyncAO/internal/videoenc"
 	"github.com/SyntaxNyah/AsyncAO/internal/winexec"
 )
 
@@ -115,6 +116,12 @@ type settingsState struct {
 	folderRes  chan string
 	browseBusy bool
 
+	// Studio ".demo → video" native file picker: its own channel (NEVER reuse
+	// folderRes — that sets the theme folder) so a picked recording routes to the
+	// video export, not the theme pref. demoPickBusy debounces the shell-out.
+	demoPickRes  chan string
+	demoPickBusy bool
+
 	// ioRes carries one-line results of off-thread file ops (learned
 	// format export/import) back to the status line.
 	ioRes chan string
@@ -131,9 +138,10 @@ type themeScan struct {
 }
 
 var settings = settingsState{
-	themeRes:  make(chan themeScan, 1),
-	folderRes: make(chan string, 1),
-	ioRes:     make(chan string, 1),
+	themeRes:    make(chan themeScan, 1),
+	folderRes:   make(chan string, 1),
+	demoPickRes: make(chan string, 1),
+	ioRes:       make(chan string, 1),
 }
 
 // Settings tabs: the screen is split into these categories so it's
@@ -355,14 +363,23 @@ func (a *App) drawSettings(w, h int32) {
 	a.pollFolderPick()
 	if c.dropped != "" {
 		// Drag-and-drop anywhere on this screen: a .json points an armed
-		// settings import; anything else points the theme folder.
-		if settings.importArmed && strings.EqualFold(filepath.Ext(c.dropped), ".json") {
+		// settings import; a recording (.aorec/.demo) is owned entirely by
+		// HandleFileDrop (import + play, or the Studio → video route) — it must
+		// NOT fall through here, or the same drop would ALSO mis-set the theme
+		// folder to the file's parent (the double-consume bug). Anything else
+		// points the theme folder.
+		droppedExt := strings.ToLower(filepath.Ext(c.dropped))
+		switch {
+		case settings.importArmed && droppedExt == ".json":
 			settings.importArmed = false
 			importSettingsAsync(a, c.dropped)
-		} else {
+		case droppedExt == recordingExt || droppedExt == demoExt:
+			// no-op: HandleFileDrop is the single owner of dropped recordings.
+		default:
 			resolveDroppedFolder(c.dropped)
 		}
 	}
+	a.pollDemoPick()
 	select {
 	case line := <-settings.ioRes:
 		settings.statusLine = line
@@ -1338,12 +1355,68 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 	return y
 }
 
-// drawSettingsStudio: the "Studio" tab — scene recording, the recordings
-// library/replay picker, and (soon) GIF/video export. See replay.go.
+// Call-out copy (precomputed package-level strings — drawn every frame, so no
+// per-frame fmt.Sprintf/concat: sibling settings labels use literals for the same
+// reason). The "drag anywhere" line is the cross-platform mechanism; the button is
+// Windows-only.
+const (
+	demoVideoCalloutLead = "Have an AO2 .demo session file? Turn it into a shareable video."
+	demoVideoCalloutDrag = "…or drag the .demo file anywhere onto this window."
+	// Reuses the ffmpeg wording from drawExportOptions/startSceneExport so the MP4
+	// promise doesn't dead-end: GIF/WebP still work, and the import still lands.
+	demoVideoCalloutNoFF = "🎥 Video needs ffmpeg on PATH — GIF/WebP work without it, and the import still lands in Recordings."
+)
+
+// drawDemoToVideoCallout draws the prominent ".demo → video" entry point at the
+// top of the Studio tab: a highlighted panel (the c.Fill(ColPanel)+c.Border(ColAccent)
+// idiom) with a one-line pitch, a native Import picker (Windows only), the
+// cross-platform drag hint, and — without ffmpeg — the ColDanger fallback note.
+// Shadows pad/w per the mandatory settings idiom.
+func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	y = a.settingsSection(y, w, ".demo → video")
+
+	// Highlighted panel background + accent border spanning the section width.
+	winOnly := runtime.GOOS == "windows"
+	panelH := int32(60)
+	if !winOnly {
+		panelH = 46 // no Import button row off Windows (drag carries the feature)
+	}
+	if !videoenc.Available() {
+		panelH += 18 // room for the ffmpeg fallback line
+	}
+	panel := sdl.Rect{X: pad, Y: y, W: w - pad - scrollBarW, H: panelH}
+	c.Fill(panel, ColPanel)
+	c.Border(panel, ColAccent)
+
+	iy := y + 8
+	c.Label(pad+12, iy, demoVideoCalloutLead, ColText)
+	iy += 22
+	if winOnly {
+		if c.Button(sdl.Rect{X: pad + 12, Y: iy, W: 170, H: btnH}, "📥 Import .demo…") {
+			pickDemoForVideo()
+		}
+		c.Label(pad+192, iy+5, demoVideoCalloutDrag, ColTextDim)
+		iy += btnH + 6
+	} else {
+		c.Label(pad+12, iy, demoVideoCalloutDrag, ColTextDim)
+		iy += 20
+	}
+	if !videoenc.Available() {
+		c.Label(pad+12, iy, demoVideoCalloutNoFF, ColDanger)
+	}
+	return y + panelH + 12
+}
+
+// drawSettingsStudio: the "Studio" tab — a ".demo → video" call-out, scene
+// recording, the recordings library/replay picker, and GIF/WebP/Video export.
+// See replay.go.
 func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
 	w := a.formW2()
+	y = a.drawDemoToVideoCallout(y, w)
 	y = a.settingsSection(y, w, "Scene recording")
 	c.Label(pad, y, "Record the courtroom to a tiny .aorec replay file — it stores the scene EVENTS (who spoke,", ColTextDim)
 	y += 18
@@ -1390,9 +1463,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	y += 18
 	c.Label(pad, y, ".aorec files are plain text (JSON) — you can also open one in any text editor to tweak it by hand.", ColTextDim)
 	y += 18
-	c.Label(pad, y, "AO2 .demo files work here too: drop them in recordings\\ to Play / Edit / export them, and the", ColTextDim)
-	y += 18
-	c.Label(pad, y, "Scene Maker's ⇄ .demo button writes scenes AO2's own demo player can watch.", ColTextDim)
+	c.Label(pad, y, "The Scene Maker's ⇄ .demo button writes scenes AO2's own demo player can watch (import a .demo above).", ColTextDim)
 	y += 26
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 150, H: btnH}, "🎬 New scene") {
 		a.newScene()
@@ -1463,7 +1534,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	}
 	y += 32
 
-	y = a.settingsSection(y, w, "Export to GIF / WebP")
+	y = a.settingsSection(y, w, "Export to GIF / WebP / Video")
 	c.Label(pad, y, "Turn a recording into a shareable animation. Use 🎞 GIF (works everywhere) or 🎬 WebP (true-colour, smaller)", ColTextDim)
 	y += 18
 	c.Label(pad, y, "on a recording above, or build one in the Scene Maker. These settings apply to every export:", ColTextDim)
@@ -4784,6 +4855,67 @@ func (a *App) pollFolderPick() {
 		a.d.Prefs.SetTheme(settings.themeName, path)
 		a.scanThemes()
 		settings.statusLine = "Theme folder set: " + path
+	default:
+	}
+}
+
+// pickDemoForVideo shells the native Windows Open-File dialog on a goroutine (the
+// SAME shell-out mechanism as browseForFolder — zero new Go dependency), filtered
+// to .demo/.aorec; the chosen file lands on demoPickRes (empty = cancelled). It is
+// the Studio call-out's picker: on a pick, pollDemoPick imports + video-exports it.
+// Windows-only — elsewhere the drag-and-drop path carries the feature (no button).
+func pickDemoForVideo() {
+	if settings.demoPickBusy {
+		return
+	}
+	settings.demoPickBusy = true
+	go func() {
+		const dialog = `Add-Type -AssemblyName System.Windows.Forms; ` +
+			`$d = New-Object System.Windows.Forms.OpenFileDialog; ` +
+			`$d.Title = 'Pick an AO2 .demo (or .aorec) to turn into a video'; ` +
+			`$d.Filter = 'AO recordings (*.demo;*.aorec)|*.demo;*.aorec'; ` +
+			`if ($d.ShowDialog() -eq 'OK') { Write-Output $d.FileName }`
+		cmd := exec.Command("powershell", "-NoProfile", "-STA", "-Command", dialog)
+		winexec.Hide(cmd) // GUI-subsystem build: no empty PowerShell window (the dialog still shows)
+		out, err := cmd.Output()
+		path := strings.TrimSpace(string(out))
+		if err != nil || path == "" {
+			settings.demoPickRes <- ""
+			return
+		}
+		settings.demoPickRes <- path
+	}()
+}
+
+// pollDemoPick drains the native picker's result on the render thread: a picked
+// .demo/.aorec imports into recordings\ and routes to the video export — the same
+// helper the Studio-tab drop uses (single logic, two entry points). The channel
+// is drained and demoPickBusy cleared FIRST, before any guard-return, so a
+// dropped result can never wedge the Import button on busy=true.
+func (a *App) pollDemoPick() {
+	select {
+	case path := <-settings.demoPickRes:
+		settings.demoPickBusy = false // reset before any early return (never leave it stuck true)
+		if path == "" {
+			return
+		}
+		// The dialog window is separate, so the user can navigate away while it's
+		// open. Drop a result that lands off the Studio tab rather than kick off an
+		// unprompted heavy export on some later Settings visit (mirrors the tab-scoped
+		// guards elsewhere, e.g. voicepanel.go's mic-test teardown).
+		if a.Screen() != ScreenSettings || settings.tab != tabStudio {
+			return
+		}
+		// The OpenFileDialog filename box accepts a typed path to any file, so mirror
+		// HandleFileDrop's extension guard before copying anything into recordings\ —
+		// otherwise a non-recording would be copied in and then cleanly-fail export,
+		// leaving junk behind.
+		if ext := strings.ToLower(filepath.Ext(path)); ext != recordingExt && ext != demoExt {
+			a.warnLine = "Picked file isn't a recording (.aorec) or an AO2 demo (.demo) — ignored."
+			a.warnAt = time.Now()
+			return
+		}
+		a.importRecordingToVideo(importDroppedRecording(path))
 	default:
 	}
 }
