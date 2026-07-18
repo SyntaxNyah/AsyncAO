@@ -124,6 +124,13 @@ const (
 // at 20 fps (12.5 min at 24 fps) — far longer than anyone exports in one go.
 const maxVideoFrames = 18000
 
+// gifResultBuf is the buffer of the off-thread export → UI result channel (hard
+// rule §17.4: every channel has a named cap). One slot is enough: at most one
+// export runs at a time and pollGifResult drains it every frame, so the finish
+// goroutine blocks ≤1 frame on the handoff. (comicexport.go writes it too, but
+// only ever for the single in-flight export.)
+const gifResultBuf = 1
+
 // Export size / frame-rate dropdown presets (4:3). Bounds mirror the config
 // clamp — SetExportOpts is authoritative — so a pick is always in range.
 var (
@@ -468,7 +475,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		room.HandleEvent(courtroom.Event{Kind: courtroom.EventBackground, Text: scene.StartBg})
 	}
 	if a.gifResultCh == nil {
-		a.gifResultCh = make(chan exportResult, 1)
+		a.gifResultCh = make(chan exportResult, gifResultBuf)
 	}
 
 	// Pre-warm: enumerate every sprite / background / desk the scene needs and
@@ -924,19 +931,24 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 			a.gifResultCh <- exportResult{msg: "Video export failed: " + err.Error()}
 			return
 		}
+		// Mux FIRST so we know the final on-disk name: on a successful mux the video is
+		// renamed to <stem>-audio.<ext> and the silent original deleted (videomux.go).
+		// Subtitles must land beside the FINAL file, so write the .srt/.vtt sidecars
+		// against finalPath afterwards — on the silent-fallback path finalPath stays the
+		// original, so the sidecars are named exactly as before (#69).
+		finalPath, soundNote := path, ""
+		if len(songs) > 0 || len(sfx) > 0 {
+			if muxed, ok := muxSceneAudio(mgr, path, songs, sfx, format); ok {
+				finalPath, soundNote = muxed, "  ♪ with sound"
+			} else {
+				soundNote = "  (couldn't add the sound — saved silent)"
+			}
+		}
 		subNote := ""
-		if writeSubtitleFiles(path, subs, subFrameMs) {
+		if writeSubtitleFiles(finalPath, subs, subFrameMs) {
 			subNote = "  + subtitles (.srt/.vtt)"
 		}
-		if len(songs) > 0 || len(sfx) > 0 {
-			if finalPath, ok := muxSceneAudio(mgr, path, songs, sfx, format); ok {
-				a.gifResultCh <- exportResult{msg: videoSavedMsg(finalPath) + "  ♪ with sound" + subNote, path: finalPath}
-				return
-			}
-			a.gifResultCh <- exportResult{msg: videoSavedMsg(path) + "  (couldn't add the sound — saved silent)" + subNote, path: path}
-			return
-		}
-		a.gifResultCh <- exportResult{msg: videoSavedMsg(path) + subNote, path: path}
+		a.gifResultCh <- exportResult{msg: videoSavedMsg(finalPath) + soundNote + subNote, path: finalPath}
 	}()
 }
 

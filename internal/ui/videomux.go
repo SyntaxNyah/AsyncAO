@@ -45,17 +45,38 @@ type audioCapture struct {
 	sfx      []sfxCue
 }
 
+// The capture lists (music/sfx) are each bounded by maxAudioClips at append time
+// (hard rule §17.4 — no unbounded slice). It's a coarse per-list guard, not the
+// exact mux budget: muxSceneAudio applies the authoritative COMBINED keep-first
+// cap (music then SFX, break at maxAudioClips), so cues past the per-list bound
+// are dead weight the mux would trim anyway — dropping them here just stops the
+// slices growing on a runaway scene.
+
 // PlayMusic records the track cue; the 2.9 loop/effects flags (#15) don't affect
 // the captured soundtrack (each cue is a fixed window, mixed by ffmpeg), so they
 // are accepted and ignored here.
 func (m *audioCapture) PlayMusic(url string, _ bool, _ int) {
+	if len(m.music) >= maxAudioClips {
+		return
+	}
 	m.music = append(m.music, musicCue{url: url, frame: m.frameRef()})
 }
-func (m *audioCapture) StopMusic() { m.music = append(m.music, musicCue{url: "", frame: m.frameRef()}) }
+func (m *audioCapture) StopMusic() {
+	if len(m.music) >= maxAudioClips {
+		return
+	}
+	m.music = append(m.music, musicCue{url: "", frame: m.frameRef()})
+}
 func (m *audioCapture) PlayShout(base string) {
+	if len(m.sfx) >= maxAudioClips {
+		return
+	}
 	m.sfx = append(m.sfx, sfxCue{base: base, frame: m.frameRef()})
 }
 func (m *audioCapture) PlaySFX(base string, _ time.Duration) {
+	if len(m.sfx) >= maxAudioClips {
+		return
+	}
 	m.sfx = append(m.sfx, sfxCue{base: base, frame: m.frameRef()})
 }
 func (m *audioCapture) PlayBlip(string)  {}

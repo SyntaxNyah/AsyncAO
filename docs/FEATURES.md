@@ -858,7 +858,35 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   %** slider drives the codec CRF and the **size / frame-rate** apply as usual.
   Like WebP it never holds frames (memory stays flat), so video can run **much
   longer** than the memory-budgeted GIF. Saved to `recordings\<name>.mp4|webm`.
-  *(Audio bake-in — music + SFX — is a planned follow-up; this pass is silent.)*
+  **Audio is baked in** (#99): the scene's **music bed** and each **SFX / shout
+  cry** are captured during the (silent, faster-than-realtime) render and, after
+  the encode, mixed into the video's audio track by a second ffmpeg pass — so the
+  saved file plays **with sound**. It **degrades cleanly** — full mix → music-only
+  bed → silent — so a missing track or an ffmpeg hiccup never breaks the export
+  (blips are excluded to keep the mix sane). The sound version is saved as
+  `<name>-audio.mp4|webm` (subtitle sidecars, if any, follow that name).
+- **Import an AO2 `.demo`** — **drag it anywhere onto the window** (works on every
+  OS), or use the **📥 Import .demo…** picker in the **`.demo → video`** call-out at
+  the top of **Settings → Studio** (Windows). A dropped/picked `.demo` is **copied
+  into `recordings\`** (with a `-2` / `-3` suffix if the name is taken) so it joins
+  the recordings library, where its rows get the **same buttons as a native
+  `.aorec`** — **▶ Play**, **✎ Edit** (in the Scene Maker), and **🎞 GIF / 🎬 WebP /
+  🎥 Video / 🖼 Comic** export. The `.demo` is converted to AsyncAO's scene model on
+  the fly — no separate format, so everything downstream just works. (The Scene
+  Maker's **⇄ .demo** button does the reverse: it writes a scene back out as a
+  `.demo` that AO2's own demo player can watch.)
+- **`.demo → video` in one step**: the **📥 Import .demo…** picker (or a drop onto
+  the Studio tab) both **imports** the file and **kicks off a video export** of it —
+  turn a raw AO2 session recording into a shareable MP4/WebM without opening the
+  editor. Because a `.demo` can be far longer than the editor's scene cap, import is
+  **bounded**: scene events past the **5000-event cap** are dropped (a coherent
+  leading prefix is kept — the timeline stays consistent), and the **Debug panel**
+  notes it, e.g. *"stopped at the 5000-event scene cap (N later events not
+  imported)"*. Non-scene packets the model doesn't cover (SC/CT/HP/…) are
+  **skipped** with their own separate count in that same note, so you can tell
+  "this demo has chatter" from "this demo is longer than the cap." If ffmpeg isn't
+  on PATH the import **still lands in Recordings** (GIF/WebP export it there); only
+  the video step needs ffmpeg.
 - **Export options** (**⚙ Export** in the maker, and **Settings → Studio**): set
   the **size** (Small 384×288 → XL 720×540), **frame rate** (8–24 fps), **WebP
   quality**, **chat text size**, **loop on/off**, and **playback speed** — all

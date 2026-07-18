@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -93,6 +95,46 @@ func TestFormatSubtitles(t *testing.T) {
 	}
 	if !strings.Contains(vtt, "00:00:00.000 --> 00:00:00.984") {
 		t.Errorf("VTT timing wrong:\n%q", vtt)
+	}
+}
+
+// TestWriteSubtitleFilesNaming pins the premise the #69 sidecar-ordering fix
+// relies on: writeSubtitleFiles derives the .srt/.vtt stem from the video path it
+// is HANDED, so finishVideoExport can call it with the post-mux "<stem>-audio.mp4"
+// and the sidecars follow that name (not the deleted silent original). It also
+// pins the silent-path case (no "-audio"), and that no cues writes nothing.
+func TestWriteSubtitleFilesNaming(t *testing.T) {
+	dir := t.TempDir()
+	cues := []subCue{{startFrame: 0, endFrame: 24, speaker: "Nick", text: "Hold it!"}}
+
+	// Muxed path: the video was renamed to <stem>-audio.mp4 — sidecars must match.
+	muxed := filepath.Join(dir, "scene-20260101-audio.mp4")
+	if !writeSubtitleFiles(muxed, cues, 1000/24) {
+		t.Fatal("writeSubtitleFiles reported failure on a writable temp dir")
+	}
+	for _, ext := range []string{".srt", ".vtt"} {
+		want := filepath.Join(dir, "scene-20260101-audio"+ext)
+		if _, err := os.Stat(want); err != nil {
+			t.Errorf("expected sidecar %s beside the muxed video, got %v", filepath.Base(want), err)
+		}
+	}
+
+	// Silent-fallback path: the plain video name (no "-audio") — sidecars match it.
+	silent := filepath.Join(dir, "scene-20260102.webm")
+	if !writeSubtitleFiles(silent, cues, 1000/24) {
+		t.Fatal("writeSubtitleFiles failed on the silent path")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "scene-20260102.srt")); err != nil {
+		t.Errorf("silent path sidecar missing: %v", err)
+	}
+
+	// No cues → nothing written, no sidecar files.
+	empty := filepath.Join(dir, "blank.mp4")
+	if writeSubtitleFiles(empty, nil, 1000/24) {
+		t.Error("no cues must report false (nothing to write)")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "blank.srt")); !os.IsNotExist(err) {
+		t.Error("no cues must not create a .srt sidecar")
 	}
 }
 

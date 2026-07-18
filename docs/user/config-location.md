@@ -59,7 +59,7 @@ copy), **not** in the config folder:
 ```
 logs\           per-server chat transcripts (detailed logging)
 logs\exports\   saved log-browser searches
-recordings\     .aorec scene recordings / replays
+recordings\     .aorec scene recordings / replays (imported AO2 .demo files land here too)
 screenshots\    Ctrl+S / Extras → Screenshot PNGs
 ```
 
