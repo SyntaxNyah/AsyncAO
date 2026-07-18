@@ -171,7 +171,12 @@ func TestDrawLobbyZeroAlloc(t *testing.T) {
 	a.lobbyStatus = "Servers loaded."
 
 	const w, h = 1280, 720
-	draw := func() { a.drawLobby(w, h) }
+	// noteScreenTransition rides inside the gated closure: its settled-frame
+	// early-return (screen == drawnScreen, both ScreenLobby here) is the guard
+	// the lobby-entry auto-refresh leans on, so hoisting per-frame work above
+	// that early-return — a clock read, the due-check — would trip this gate
+	// instead of shipping unmeasured.
+	draw := func() { a.noteScreenTransition(); a.drawLobby(w, h) }
 	settle(draw)
 
 	if n := testing.AllocsPerRun(200, draw); n != 0 {

@@ -55,8 +55,17 @@ const (
 
 const (
 	lobbyRefreshTimeout = 15 * time.Second
-	logLines            = 8
-	logLineMax          = 120 // single-line UI (toasts/warnings) — NOT the IC log
+	// lobbyAutoRefreshMinInterval caps the on-open lobby auto-refresh: entering
+	// the lobby screen refetches the master list only if this long has passed
+	// since the last fetch STARTED (every start — boot, manual Refresh, master-URL
+	// change, auto — arms the stamp inside RefreshServers). One minute keeps the
+	// list from going stale over a play session while bounding master-server load
+	// from rapid menu/tab bouncing to at most one request a minute; past the cap
+	// the refresh fires immediately on entry (edge-triggered, no polling timer).
+	// The manual Refresh button deliberately bypasses this — explicit user intent.
+	lobbyAutoRefreshMinInterval = time.Minute
+	logLines                    = 8
+	logLineMax                  = 120 // single-line UI (toasts/warnings) — NOT the IC log
 	// icLineCap bounds ONE stored IC entry (hostile-server guard). Long lines
 	// word-WRAP at draw time (icWrapped, up to 16 rows) instead of the old
 	// 120-char "…" truncation — real IC messages (≤256 on the wire) never cut.
@@ -205,10 +214,15 @@ type App struct {
 	lobbyStatus   string
 	lobbyFetching bool
 	lobbyResult   chan lobbyFetch
-	directInput   string
-	directSecure  bool
-	directSave    bool
-	lobbyScroll   int32
+	// lastLobbyRefreshAt is when the last master-list fetch STARTED (stamped in
+	// RefreshServers, past its dedup gate, so every path arms it). App-global,
+	// not sessionState: the lobby is a cross-tab surface. It feeds the on-open
+	// auto-refresh cap — see lobbyAutoRefreshDue / noteScreenTransition.
+	lastLobbyRefreshAt time.Time
+	directInput        string
+	directSecure       bool
+	directSave         bool
+	lobbyScroll        int32
 	// AsyncAO Server Phone Book: a dedicated lobby page over the user's saved
 	// (favorite) servers — manual add + connect, persisted in Favorites (survives
 	// Reset, cleared by Wipe), with its own export/import.
@@ -1208,6 +1222,7 @@ type sessionState struct {
 	// compares against it to tear down hover-preview state that would otherwise
 	// ride across a screen switch with no draw site left to close it (the
 	// orphaned-preview cap latch; distinct from prevScreen, the back-nav memory).
+	// The same edge detects lobby entry for the capped master-list auto-refresh.
 	drawnScreen Screen
 	// frameAnimChrome is set (via NoteAnimating) during a draw pass whenever it
 	// renders a self-driven, TIME-STEPPED UI animation outside the viewport's
@@ -6395,11 +6410,23 @@ func (a *App) RefreshServers() {
 		return
 	}
 	a.lobbyFetching = true
+	// Arm the on-open auto-refresh cap. Stamped here — not at the auto-trigger —
+	// so EVERY fetch start (boot, the manual Refresh button, a master-URL change,
+	// the on-open auto) pushes the cap out: entering the lobby right after a
+	// manual refresh must not fire a second request. Below the dedup gate above
+	// because a coalesced call started nothing and must not extend the cap.
+	a.lastLobbyRefreshAt = a.now()
 	a.lobbyStatus = "Fetching server list..."
-	// Fresh list = stale connect-times: back to player sort, drop the cache
-	// (keeps a.pings bounded, rule §17.4), and abandon any in-flight sweep.
-	a.pings, a.pingMode, a.pinging = nil, false, false
-	a.pingGen++
+	// Ping state deliberately survives a refresh: the on-open auto-refresh
+	// funnels through here too, and the old wipe (pings/pingMode/pinging reset
+	// at fetch START) snapped a ping-sorted lobby back to player order the
+	// instant the user re-entered — before any new data even existed. a.pings
+	// is keyed by URL (not row index), so it stays valid across a list swap
+	// structurally; pollLobbyFetch prunes entries for servers that left the
+	// list when a fresh list lands, which is the boundedness (rule §17.4) the
+	// wipe used to provide. Ping mode itself only exits via its toggle button
+	// (explicit user intent), and an in-flight sweep's URL-keyed results stay
+	// correct for whichever list is showing, so neither needs abandoning.
 	// The Settings override wins over the built-in default, but an
 	// explicit --master flag (anything non-default in Deps) wins over both.
 	url := a.d.MasterURL
@@ -6414,21 +6441,85 @@ func (a *App) RefreshServers() {
 	}()
 }
 
+// lobbyAutoRefreshDue reports whether an on-open lobby auto-refresh should
+// fire: the last master-list fetch started at least lobbyAutoRefreshMinInterval
+// ago (a zero last — no fetch ever started — is due immediately). Pure so the
+// cap decision is headlessly unit-testable, this package's established idiom
+// (applyResumeDuck / resumeSeek).
+func lobbyAutoRefreshDue(last, now time.Time) bool {
+	return last.IsZero() || now.Sub(last) >= lobbyAutoRefreshMinInterval
+}
+
 func (a *App) pollLobbyFetch() {
 	select {
 	case res := <-a.lobbyResult:
 		a.lobbyFetching = false
-		a.selServer, a.descLines = -1, nil // indices change with the list
+		// The selection carries over by IDENTITY (WebSocketURL), never by raw
+		// index: mergedFavorites re-sorts, so an index into the new list could
+		// silently point Enter-to-join at a DIFFERENT server (the wrong-join
+		// hazard the old blanket -1 reset guarded against). Capture the URL
+		// before the swap, re-match after — so a background auto-refresh landing
+		// mid-glance no longer deselects the row the user is about to join.
+		prevSel := ""
+		if a.selServer >= 0 && a.selServer < len(a.servers) {
+			prevSel = a.servers[a.selServer].WebSocketURL()
+		}
 		if res.err != nil {
 			a.lobbyStatus = "Master list error: " + res.err.Error()
 			a.masterEntries = nil
-			a.servers = a.mergedFavorites()
+		} else {
+			a.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
+			a.masterEntries = res.entries
+		}
+		a.servers = a.mergedFavorites()
+		if res.err == nil {
+			// Prune only on a SUCCESSFUL land: an error degrades the list to
+			// favorites-only, and pruning against that would throw away every
+			// master-server connect time over a transient master hiccup. The
+			// map stays bounded either way — it was sized by the last good
+			// list, and each successful land re-prunes to the current one.
+			a.pruneStalePings()
+		}
+		a.reselectServer(prevSel)
+	default:
+	}
+}
+
+// reselectServer restores the lobby selection onto the row whose WebSocketURL
+// matches url in the freshly rebuilt a.servers, clearing it when the server
+// vanished from the list (or url is empty). Re-running selectServerRow
+// rebuilds the cached description lines/links against the NEW entry — the
+// master list may have changed the description text the cache was built from.
+func (a *App) reselectServer(url string) {
+	a.selServer, a.descLines, a.descLinks = -1, nil, nil
+	if url == "" {
+		return
+	}
+	for i := range a.servers {
+		if a.servers[i].WebSocketURL() == url {
+			a.selectServerRow(i, a.winW)
 			return
 		}
-		a.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
-		a.masterEntries = res.entries
-		a.servers = a.mergedFavorites()
-	default:
+	}
+}
+
+// pruneStalePings drops connect-time entries for servers no longer in the
+// merged list. This is the boundedness (rule §17.4) the old wipe-at-fetch-start
+// in RefreshServers provided, moved to the result landing so a refresh no
+// longer stomps the user's ping sort with zero user action. Off the hot path:
+// runs once per fetch landing, never per frame.
+func (a *App) pruneStalePings() {
+	if len(a.pings) == 0 {
+		return
+	}
+	live := make(map[string]struct{}, len(a.servers))
+	for i := range a.servers {
+		live[a.servers[i].WebSocketURL()] = struct{}{}
+	}
+	for url := range a.pings {
+		if _, ok := live[url]; !ok {
+			delete(a.pings, url)
+		}
 	}
 }
 

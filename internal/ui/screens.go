@@ -1072,15 +1072,41 @@ func (a *App) closeSpritePreview() {
 // (charINIBusy) — is unreachable: an invisible box whose stale rect eats
 // wheel/press and whose stale trigger id pins close-on-leave open. SkipFrame no
 // longer keys on previewBase (the draw-site census owns pacing), so this is
-// input/lifecycle hygiene rather than the pacing fix itself.
+// input/lifecycle hygiene rather than the pacing fix itself. It also owns the
+// lobby-entry master-list auto-refresh: this is the one place every screen
+// switch funnels through, so the edge fires below.
 func (a *App) noteScreenTransition() {
 	if a.screen == a.drawnScreen {
-		return
+		return // settled frame: one int compare, nothing below runs (the lobby draw is 0-alloc-gated)
 	}
 	a.drawnScreen = a.screen
 	a.closeSpritePreview() // also clears the trigger id — no cross-screen dwell carry-over
 	a.previewFrameRect = sdl.Rect{}
 	a.previewTriggerRect = sdl.Rect{}
+	// Lobby-entry auto-refresh: past the early-return we KNOW this frame is a
+	// screen switch, so landing on ScreenLobby is the entry edge. Detecting it
+	// here — not at the half-dozen `a.screen = ScreenLobby` sites (disconnect,
+	// tab close, settings/about/serverhelp back-nav, …) — catches every current
+	// AND future entry path with one hook. Purely edge-triggered: no request
+	// off-lobby, no polling while sitting on it, and the min-interval cap keeps
+	// menu bouncing from hammering the master server (RefreshServers itself
+	// dedups an in-flight fetch and re-arms the cap stamp). Boot is not an edge
+	// (drawnScreen's zero value IS ScreenLobby): the constructor's
+	// RefreshServers covers launch and arms the cap.
+	if a.screen == ScreenLobby {
+		// Drain any parked fetch result BEFORE the due-check: drawLobby is the
+		// only steady-state drain, so leaving the lobby mid-fetch (joining a
+		// server, opening Settings) parks the result in the 1-buffer channel
+		// with lobbyFetching latched true. Un-drained, a due entry edge would
+		// hit RefreshServers' in-flight dedup gate and silently no-op — the
+		// whole visit then shows the stale parked list, breaking the cap
+		// comment's "past the cap the refresh fires immediately on entry"
+		// promise. One empty-channel select when nothing is parked.
+		a.pollLobbyFetch()
+		if lobbyAutoRefreshDue(a.lastLobbyRefreshAt, a.now()) {
+			a.RefreshServers()
+		}
+	}
 }
 
 // unionRect is the smallest rect covering both a and b — the hover-preview "travel
