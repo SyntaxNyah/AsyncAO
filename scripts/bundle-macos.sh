@@ -81,7 +81,11 @@ dylibbundler -od -b \
 # otool -l prints each rpath as: "         path <val> (offset N)".
 add_rpath() {
   local rp="$1" f="$2"
-  otool -l "$f" | grep -q "path $rp " || install_name_tool -add_rpath "$rp" "$f"
+  # No `grep -q` here: -q exits at first match, and if otool still has output
+  # buffered past the pipe it dies of SIGPIPE — under pipefail that nonzero
+  # would run -add_rpath on an rpath that IS present, which aborts, and set -e
+  # kills the build. Plain grep reads to EOF, so the probe can't self-defeat.
+  otool -l "$f" | grep "path $rp " >/dev/null || install_name_tool -add_rpath "$rp" "$f"
 }
 add_rpath "@executable_path/lib" "$STAGE/$BIN_NAME"
 add_rpath "/opt/homebrew/lib"    "$STAGE/$BIN_NAME"
@@ -168,7 +172,12 @@ check_present() {
   return 1
 }
 
-# The mixer itself plus the music-codec closure playback/seek depends on.
+# The mixer itself plus the music-codec closure playback/seek depends on —
+# exactly the formats the client Init's (audio.go mix.Init: OGG/MP3/OPUS/FLAC).
+# Tracker (libxmp) and MIDI (fluid-synth) music are DELIBERATELY outside this
+# guarantee: the client never passes INIT_MOD/INIT_MID, so those decoders are
+# unreachable at runtime, and MIDI would additionally need a shipped soundfont
+# — asserting their dylibs would pin bytes no code path can use.
 check_present "libSDL2_mixer*.dylib" "SDL2_mixer — all music + SFX"
 check_present "libopusfile*.dylib"   "Ogg-Opus demux/decode/seek — .opus music"
 check_present "libvorbisfile*.dylib" "Ogg-Vorbis — .ogg music"

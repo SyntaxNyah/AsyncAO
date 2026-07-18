@@ -6454,6 +6454,21 @@ func (a *App) pollLobbyFetch() {
 	select {
 	case res := <-a.lobbyResult:
 		a.lobbyFetching = false
+		if res.err != nil {
+			// A failed fetch KEEPS the list on screen. Refreshes now fire with
+			// zero user action (the on-open auto-refresh), so a transient master
+			// hiccup must not erase a stale-but-fully-joinable list — including
+			// the row the user is mid-click on. The status line reports the
+			// failure; the next entry edge (or the manual button) retries. Pings
+			// stay un-pruned too: pruning against a degraded list would throw
+			// away every connect time over a hiccup. Only a boot-time failure
+			// (nothing merged yet) rebuilds, so phone-book favorites still show.
+			a.lobbyStatus = "Master list error: " + res.err.Error()
+			if len(a.servers) == 0 {
+				a.servers = a.mergedFavorites()
+			}
+			return
+		}
 		// The selection carries over by IDENTITY (WebSocketURL), never by raw
 		// index: mergedFavorites re-sorts, so an index into the new list could
 		// silently point Enter-to-join at a DIFFERENT server (the wrong-join
@@ -6464,22 +6479,12 @@ func (a *App) pollLobbyFetch() {
 		if a.selServer >= 0 && a.selServer < len(a.servers) {
 			prevSel = a.servers[a.selServer].WebSocketURL()
 		}
-		if res.err != nil {
-			a.lobbyStatus = "Master list error: " + res.err.Error()
-			a.masterEntries = nil
-		} else {
-			a.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
-			a.masterEntries = res.entries
-		}
+		a.lobbyStatus = fmt.Sprintf("%d servers", len(res.entries))
+		a.masterEntries = res.entries
 		a.servers = a.mergedFavorites()
-		if res.err == nil {
-			// Prune only on a SUCCESSFUL land: an error degrades the list to
-			// favorites-only, and pruning against that would throw away every
-			// master-server connect time over a transient master hiccup. The
-			// map stays bounded either way — it was sized by the last good
-			// list, and each successful land re-prunes to the current one.
-			a.pruneStalePings()
-		}
+		// Prune on the successful land: the map was sized by the last good list
+		// and each land re-prunes to the current one (boundedness, rule §17.4).
+		a.pruneStalePings()
 		a.reselectServer(prevSel)
 	default:
 	}

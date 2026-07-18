@@ -229,3 +229,45 @@ func TestRefreshKeepsPingSortAndPrunes(t *testing.T) {
 		t.Error("a vanished server's connect time must be pruned on a successful landing (boundedness, rule §17.4)")
 	}
 }
+
+// TestErrorLandingKeepsList pins that a FAILED fetch landing leaves the visible
+// list untouched: the on-open auto-refresh fires with zero user action, so a
+// transient master hiccup must not erase a stale-but-fully-joinable list (or
+// the selection on it) mid-glance. Only the status line changes.
+func TestErrorLandingKeepsList(t *testing.T) {
+	a := testTabApp(t)
+	a.lobbyResult = make(chan lobbyFetch, 1)
+	alpha := network.ServerEntry{IP: "a.example", WSPort: 1001, Name: "Alpha", Players: 1}
+	a.masterEntries = []network.ServerEntry{alpha}
+	a.servers = []network.ServerEntry{alpha}
+	a.selServer = 0
+
+	a.lobbyResult <- lobbyFetch{err: errors.New("master down")}
+	a.pollLobbyFetch()
+	if len(a.servers) != 1 || len(a.masterEntries) != 1 {
+		t.Errorf("an error landing must keep the visible list, got servers=%d master=%d", len(a.servers), len(a.masterEntries))
+	}
+	if a.selServer != 0 {
+		t.Errorf("an error landing must not touch the selection, got selServer=%d", a.selServer)
+	}
+}
+
+// TestLeaveLobbyClearsPingLatch pins the leave-edge heal for a wedged sweep:
+// the done sentinel is sent non-blocking (a full pingRes drops it) and pollPing
+// stops running off-lobby, so leaving with a.pinging latched must clear it AND
+// supersede the sweep (gen bump) — or the Ping button and the idle-skip census
+// stay dead for the session, and a late done sentinel could re-sort the list
+// out of nowhere on re-entry.
+func TestLeaveLobbyClearsPingLatch(t *testing.T) {
+	a := testTabApp(t)
+	a.pinging = true
+	gen := a.pingGen
+	a.screen, a.drawnScreen = ScreenSettings, ScreenLobby // leaving the lobby this frame
+	a.noteScreenTransition()
+	if a.pinging {
+		t.Error("leaving the lobby must clear the pinging latch (dropped-sentinel wedge)")
+	}
+	if a.pingGen == gen {
+		t.Error("leaving the lobby must supersede the in-flight sweep (gen bump)")
+	}
+}

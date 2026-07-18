@@ -281,6 +281,14 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
           ASSET: ${{ matrix.variant.asset }}
         run: |
+          # A failed bundle step deleted the asset + stage: skip deliberately
+          # (quiet, accurate log) instead of dying mid-keychain-setup on a
+          # missing path — and never print the "shipping" notice for a variant
+          # that ships nothing.
+          if [ ! -f "macos-stage/$ASSET" ]; then
+            echo "::warning::no staged bundle (bundler failed earlier) — skipping codesign"
+            exit 1
+          fi
           if [ -z "$APPLE_P12_BASE64" ]; then
             # No cert: bundle-macos.sh already ad-hoc signed the binary AND every
             # lib/*.dylib, so the staged folder runs on a clean Mac (Gatekeeper

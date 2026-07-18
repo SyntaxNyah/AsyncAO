@@ -2390,7 +2390,13 @@ func (a *App) applyFactoryReset(wipeAll bool) {
 		a.warnLine = "Settings reset to defaults."
 	}
 	a.applyPrefsToState()
-	a.RefreshServers() // favourites/master re-merge (also clears ping state)
+	// RefreshServers deliberately PRESERVES ping state now (the on-open
+	// auto-refresh funnels through it), so a factory reset clears it here
+	// explicitly — an ephemeral sort mode + RTT cache must not outlive
+	// "fresh-install state". The gen bump discards an in-flight sweep.
+	a.pings, a.pingMode, a.pinging = nil, false, false
+	a.pingGen++
+	a.RefreshServers() // favourites/master re-merge
 	a.showReset = false
 	a.warnAt = time.Now()
 }

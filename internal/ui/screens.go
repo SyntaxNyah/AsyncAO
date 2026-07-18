@@ -179,7 +179,7 @@ func (a *App) drawLobby(w, h int32) {
 	}
 	if c.Button(pbBtn, pbLabel) {
 		a.phoneBookPage = !a.phoneBookPage
-		a.selServer, a.descLines, a.lobbyScroll = -1, nil, 0
+		a.selServer, a.descLines, a.descLinks, a.lobbyScroll = -1, nil, nil, 0
 		a.cancelPhoneBookEdit() // drop any half-finished row edit on page change
 	}
 	c.Tooltip(pbBtn, "Your manually-added servers — kept forever (until Wipe everything), exportable")
@@ -1079,10 +1079,23 @@ func (a *App) noteScreenTransition() {
 	if a.screen == a.drawnScreen {
 		return // settled frame: one int compare, nothing below runs (the lobby draw is 0-alloc-gated)
 	}
+	prev := a.drawnScreen
 	a.drawnScreen = a.screen
 	a.closeSpritePreview() // also clears the trigger id — no cross-screen dwell carry-over
 	a.previewFrameRect = sdl.Rect{}
 	a.previewTriggerRect = sdl.Rect{}
+	// Leaving the lobby mid-sweep: the done sentinel is sent non-blocking (a
+	// full pingRes drops it) and pollPing only runs from drawLobby — so an
+	// undrained sweep would leave a.pinging latched true for the session (dead
+	// Ping button, expScreenSkippable stuck false = idle lobby at full rate).
+	// Clear the latch on the one funnel every exit passes through, and bump the
+	// generation so the moot sweep's stragglers — including a late done
+	// sentinel's surprise re-sort — are discarded. Same idiom as the join path
+	// (connectWith).
+	if prev == ScreenLobby && a.pinging {
+		a.pinging = false
+		a.pingGen++
+	}
 	// Lobby-entry auto-refresh: past the early-return we KNOW this frame is a
 	// screen switch, so landing on ScreenLobby is the entry edge. Detecting it
 	// here — not at the half-dozen `a.screen = ScreenLobby` sites (disconnect,

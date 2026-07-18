@@ -122,7 +122,9 @@ func (a *App) pollPing() {
 // the index-based selection — mirroring the refresh / favourite re-sorts.
 func (a *App) applyServerSort() {
 	a.servers = a.mergedFavorites()
-	a.selServer, a.descLines = -1, nil // row indices changed with the sort
+	// Clear all three selection caches together (descLinks included — a stale
+	// link slice is a latent trap for any draw path that consults it alone).
+	a.selServer, a.descLines, a.descLinks = -1, nil, nil // row indices changed with the sort
 }
 
 // sortByPing orders joinable servers by connect RTT — favorites pinned, probed

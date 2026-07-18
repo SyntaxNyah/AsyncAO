@@ -6,7 +6,7 @@ AsyncAO is Go ≥ 1.24 with CGO. The C dependencies are:
 |---|---|
 | SDL2 | window, renderer, input |
 | SDL2_ttf | font rasterization |
-| SDL2_mixer (≥ 2.6, with opusfile) | Opus/OGG/MP3/WAV decoding in C |
+| SDL2_mixer (≥ 2.6, with opusfile) | Opus/OGG/MP3/FLAC/WAV decoding in C |
 | libwebp + libwebpdemux | static & animated WebP decode (SIMD) |
 | libavif (+ dav1d/aom) | AVIF image decode |
 | opus | Opus (voice chat + Opus music via SDL2_mixer) |

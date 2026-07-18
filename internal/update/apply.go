@@ -246,8 +246,11 @@ func preflightDarwinSwap(newPath, targetPath string) error {
 	// outright; it is not fail-open erosion because the case is affirmatively
 	// inspectable and never legitimate.
 	if hb := homebrewImports(imported); len(hb) > 0 {
+		// "or any newer release": besides a mis-bundled asset, this fires on an
+		// experimental-channel DOWNGRADE onto a pre-bundling release, which
+		// published no tarball — don't send that user chasing one.
 		return fmt.Errorf("update: the new macOS build links %s directly from Homebrew instead of its bundled lib/ "+
-			"(a mis-bundled release asset) — re-download the bundle tarball from the release page to update", hb[0])
+			"(a mis-bundled release asset) — install from the release page's bundle tarball, or any newer release", hb[0])
 	}
 	missing := missingBundledDylibs(imported, libDir)
 	if len(missing) == 0 {

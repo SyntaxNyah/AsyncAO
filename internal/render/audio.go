@@ -192,12 +192,16 @@ func NewAudio(mgr *assets.Manager) *Audio {
 		alertVol:  fullVolumePercent,
 		blipScale: fullVolumePercent,
 	}
-	// Load the dynamic decoder libraries we ship: opus/ogg/mp3 are pulled in on
-	// demand (only WAV is built into SDL_mixer), so without this they never
-	// decode. Best-effort — Init reports an error if any one codec's DLL is
-	// missing, but the codecs that DID load stay usable, so we log and continue.
-	if err := mix.Init(mix.INIT_OGG | mix.INIT_MP3 | mixInitOpus); err != nil {
-		log.Printf("render: some audio codecs unavailable (opus/ogg/mp3): %v", err)
+	// Load the dynamic decoder libraries we ship: opus/ogg/mp3/flac are pulled
+	// in on demand (only WAV is built into SDL_mixer), so without this they
+	// never decode. FLAC is enabled because .flac sits in the custom-music
+	// allowlist (config.musicFileExts) and the macOS bundle asserts libFLAC is
+	// staged (bundle-macos.sh check_present) — without the Init flag those two
+	// promises pointed at a codec that could never load. Best-effort — Init
+	// reports an error if any one codec's DLL is missing, but the codecs that
+	// DID load stay usable, so we log and continue.
+	if err := mix.Init(mix.INIT_OGG | mix.INIT_MP3 | mixInitOpus | mix.INIT_FLAC); err != nil {
+		log.Printf("render: some audio codecs unavailable (opus/ogg/mp3/flac): %v", err)
 	}
 	if err := mix.OpenAudio(audioFrequency, mix.DEFAULT_FORMAT, audioChannels, audioChunkSize); err != nil {
 		log.Printf("render: audio disabled: %v", err)
