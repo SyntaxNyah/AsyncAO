@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -26,6 +27,77 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(b)
+}
+
+// TestMissingBundledDylibs pins the pure name-set logic behind the macOS
+// SONAME-skew preflight (preflightDarwinSwap): given a binary's imported dylib
+// names and a sibling lib/, which @rpath imports are absent. It is OS-agnostic
+// (no macho parsing, just os.Stat over a temp dir) so it runs on the Windows dev
+// box too, where the darwin preflight branch itself is skipped.
+func TestMissingBundledDylibs(t *testing.T) {
+	libDir := t.TempDir()
+	// The bundled lib/ holds the OLD soname (libavif.16) — the skew case.
+	writeFile(t, filepath.Join(libDir, "libavif.16.dylib"), "")
+	writeFile(t, filepath.Join(libDir, "libSDL2-2.0.0.dylib"), "")
+
+	imported := []string{
+		"@rpath/libSDL2-2.0.0.dylib",             // present in lib/ → fine
+		"@rpath/libavif.17.dylib",                // SONAME bumped: NOT in lib/ → must be flagged
+		"/usr/lib/libSystem.B.dylib",             // absolute system lib → never bundled, ignore
+		"@executable_path/../Frameworks/x.dylib", // not @rpath → ignore
+	}
+	missing := missingBundledDylibs(imported, libDir)
+	if len(missing) != 1 || missing[0] != "libavif.17.dylib" {
+		t.Fatalf("missingBundledDylibs = %v, want exactly [libavif.17.dylib]", missing)
+	}
+
+	// All @rpath deps present → nothing missing (the no-skew common case).
+	writeFile(t, filepath.Join(libDir, "libavif.17.dylib"), "")
+	if got := missingBundledDylibs(imported, libDir); len(got) != 0 {
+		t.Errorf("with every dylib present, missing = %v, want none", got)
+	}
+}
+
+// TestHomebrewImports pins the mis-bundled-asset detector: a release binary
+// whose imports point straight into a Homebrew prefix (the artifact of a failed
+// release-side bundle step) must be flagged, while @rpath, system, and
+// @executable_path imports pass. This is the pure half of the preflight's
+// second refusal case — a correctly built release binary never carries such an
+// import (bundle-macos.sh check_clean), so flagging is never a false positive.
+func TestHomebrewImports(t *testing.T) {
+	clean := []string{
+		"@rpath/libSDL2-2.0.0.dylib",
+		"/usr/lib/libSystem.B.dylib",
+		"/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa",
+		"@executable_path/../Frameworks/x.dylib",
+	}
+	if got := homebrewImports(clean); len(got) != 0 {
+		t.Errorf("clean import set flagged: %v", got)
+	}
+	dirty := append([]string{
+		"/opt/homebrew/opt/sdl2/lib/libSDL2-2.0.0.dylib", // Apple Silicon prefix
+		"/usr/local/opt/webp/lib/libwebp.7.dylib",        // Intel / Rosetta prefix
+	}, clean...)
+	got := homebrewImports(dirty)
+	if len(got) != 2 || got[0] != dirty[0] || got[1] != dirty[1] {
+		t.Errorf("homebrewImports = %v, want exactly the two Homebrew-prefixed paths", got)
+	}
+}
+
+// TestPreflightDarwinSwapNonDarwin proves the guard is inert off macOS: on the
+// Windows/Linux dev + CI boxes it must return nil unconditionally (there is no
+// bundled sibling lib/ convention there), so StageReplace behaves exactly as
+// before. On darwin this test is a tautology (still returns nil for a temp dir
+// with no lib/), which is also the correct brew-install behaviour.
+func TestPreflightDarwinSwapNonDarwin(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "app")
+	newBin := filepath.Join(dir, "app.new")
+	writeFile(t, target, "OLD")
+	writeFile(t, newBin, "NEW")
+	if err := preflightDarwinSwap(newBin, target); err != nil {
+		t.Fatalf("preflightDarwinSwap must be a no-op with no sibling lib/: %v", err)
+	}
 }
 
 func TestStageReplaceSuccess(t *testing.T) {
@@ -116,6 +188,34 @@ func TestDownload(t *testing.T) {
 	}
 	if int(n) != len(payload) || readFile(t, dest) != payload {
 		t.Errorf("download wrote %d bytes / %q", n, readFile(t, dest))
+	}
+}
+
+// TestDownloadStagedExecutable pins the unix exec bit on the staged binary:
+// os.Create alone yields 0644 (0666 & umask) and StageReplace's renames
+// preserve mode, so without Download's explicit chmod every macOS / Linux
+// self-update would install a binary the OS refuses to launch — and the .old
+// backup is unlinked right after the stage, leaving nothing runnable. Windows
+// has no exec bit (Download deliberately skips the chmod there), so the test
+// skips too.
+func TestDownloadStagedExecutable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no exec bit on Windows; Download skips the chmod there")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("bin"))
+	}))
+	defer srv.Close()
+	dest := filepath.Join(t.TempDir(), "app.new")
+	if _, err := Download(context.Background(), srv.URL, dest); err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("stat staged binary: %v", err)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		t.Errorf("staged binary mode = %v, want the exec bit set (stagedBinaryMode)", info.Mode())
 	}
 }
 

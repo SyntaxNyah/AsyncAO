@@ -17,11 +17,15 @@ package update
 import (
 	"context"
 	"crypto/sha256"
+	"debug/macho"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -90,8 +94,23 @@ func Download(ctx context.Context, url, destPath string) (int64, error) {
 		_ = os.Remove(destPath)
 		return n, fmt.Errorf("update: asset exceeds the %d-byte cap", int64(downloadMaxBytes))
 	}
+	// The staged file must be EXECUTABLE before the swap: os.Create made it
+	// 0644 (0666 & umask) and StageReplace's renames preserve mode, so without
+	// this every macOS/Linux self-update would install a binary the OS refuses
+	// to launch — and CleanupOldVersion unlinks the .old backup right after the
+	// stage, so there'd be nothing runnable left. Windows ignores the exec bit.
+	// Best-effort (the swap is the critical path; a chmod error surfaces at
+	// launch anyway, and only exotic filesystems fail chmod on a file we own).
+	if runtime.GOOS != "windows" {
+		_ = os.Chmod(destPath, stagedBinaryMode)
+	}
 	return n, nil
 }
+
+// stagedBinaryMode is the file mode for a freshly staged self-update binary:
+// rwxr-xr-x, the conventional mode for an installed executable (matches what
+// a tar -xzf of the release tarball or a chmod +x by the user would yield).
+const stagedBinaryMode = 0o755
 
 // VerifyChecksum reports whether the file at path has the given hex SHA-256.
 // This is INTEGRITY (corruption/truncation), not authenticity: a compromised
@@ -129,6 +148,15 @@ func StageReplace(newPath, targetPath, backupPath string) error {
 	if _, err := os.Stat(newPath); err != nil {
 		return fmt.Errorf("update: staged binary missing: %w", err)
 	}
+	// macOS SONAME-skew preflight, BEFORE any mutation (§ finding: the bare-binary
+	// self-update swaps only the executable, never the sibling ./lib the tarball
+	// shipped — see docs/CODE-SIGNING.md). If the new binary needs an @rpath dylib
+	// the installed lib/ doesn't have, refuse HERE, while the install is still
+	// pristine (no backup rename yet), so the caller degrades to "re-download the
+	// tarball" and nothing is left broken. Fail-open by construction (see the fn).
+	if err := preflightDarwinSwap(newPath, targetPath); err != nil {
+		return err
+	}
 	_ = os.Remove(backupPath) // clear a stale backup so the rename can't collide
 	if err := renameFn(targetPath, backupPath); err != nil {
 		return fmt.Errorf("update: backing up current binary: %w", err)
@@ -159,4 +187,109 @@ func TargetWritable(targetPath string) bool {
 	_ = f.Close()
 	_ = os.Remove(name)
 	return true
+}
+
+// bundledLibDirName is the sibling folder the macOS first-install tarball ships
+// its dylib closure in (scripts/bundle-macos.sh stages the binary + this dir;
+// the binary's rpath list is @executable_path/lib first). Its presence beside
+// the running binary is how preflightDarwinSwap tells the no-Homebrew tarball
+// install (which CAN skew) from a bare brew install (which falls through to
+// /opt/homebrew/lib and can't).
+const bundledLibDirName = "lib"
+
+// preflightDarwinSwap refuses a macOS self-update that would leave the new
+// binary unable to load one of its @rpath dylibs from the STALE sibling lib/
+// the tarball shipped. This is the SONAME-skew brick documented in
+// docs/CODE-SIGNING.md: the self-updater swaps only the bare binary, not lib/,
+// so a Homebrew dependency crossing a SONAME bump (e.g. libavif.16 → libavif.17)
+// makes the new binary reference a dylib the stale lib/ lacks; @executable_path/lib
+// misses and — for the no-Homebrew tarball audience the bundle exists to serve —
+// there is no /opt/homebrew/lib fallback, so dyld fails to launch it.
+//
+// It is a NO-OP on every non-darwin platform (Windows/Linux never bundle a
+// sibling lib/ this way) and — critically — FAIL-OPEN: any inability to inspect
+// the binary or the lib/ (parse error, no macho, unreadable dir) returns nil so
+// a real update is never blocked by the guard itself. It refuses only the two
+// provable cases when a sibling lib/ EXISTS: the new binary imports a dylib
+// straight from a Homebrew prefix (mis-bundled asset — a correct release build
+// never does, see bundle-macos.sh check_clean), or it imports an @rpath dylib
+// the installed lib/ lacks (SONAME skew). No sibling lib/ (a brew install, or a
+// bare download beside no lib/) → nil, because the rpath fallback to
+// /opt/homebrew/lib covers those.
+//
+// Called as the FIRST thing in StageReplace, before any rename, so a refusal
+// leaves the install completely untouched — a false positive costs the user a
+// manual tarball re-download, never a broken install.
+func preflightDarwinSwap(newPath, targetPath string) error {
+	if runtime.GOOS != "darwin" {
+		return nil
+	}
+	libDir := filepath.Join(filepath.Dir(targetPath), bundledLibDirName)
+	if info, err := os.Stat(libDir); err != nil || !info.IsDir() {
+		return nil // no bundled lib/ → brew/rpath-fallback install, can't skew
+	}
+	f, err := macho.Open(newPath)
+	if err != nil {
+		return nil // not inspectable as Mach-O → fail open, let the swap proceed
+	}
+	defer f.Close()
+	imported, err := f.ImportedLibraries()
+	if err != nil {
+		return nil // fail open
+	}
+	// A tarball install updating to a binary that imports straight from a
+	// Homebrew prefix is PROVABLY mis-bundled: bundle-macos.sh's check_clean
+	// gate guarantees a correctly built release binary never carries such an
+	// import (everything is rewritten to @rpath), and the tarball audience by
+	// definition may have no Homebrew — dyld would fail at launch. This is the
+	// one shape a failed release-side bundle step could emit, so refuse it
+	// outright; it is not fail-open erosion because the case is affirmatively
+	// inspectable and never legitimate.
+	if hb := homebrewImports(imported); len(hb) > 0 {
+		return fmt.Errorf("update: the new macOS build links %s directly from Homebrew instead of its bundled lib/ "+
+			"(a mis-bundled release asset) — re-download the bundle tarball from the release page to update", hb[0])
+	}
+	missing := missingBundledDylibs(imported, libDir)
+	if len(missing) == 0 {
+		return nil
+	}
+	// Name the first missing dylib so the log/modal is actionable; the recovery
+	// is the tarball, which carries a matching lib/ (docs/CODE-SIGNING.md).
+	return fmt.Errorf("update: the new macOS build needs %s, which the installed lib/ doesn't have "+
+		"(a dependency changed its version) — re-download the bundle tarball from the release page to update", missing[0])
+}
+
+// homebrewImports returns the imported dylib paths that resolve inside a
+// Homebrew prefix (/opt/homebrew on Apple Silicon, /usr/local on Intel).
+// System locations (/usr/lib, /System/…) and @-relative names pass through.
+// Pure (no I/O) and split out so it is unit-testable off macOS, like
+// missingBundledDylibs below.
+func homebrewImports(imported []string) []string {
+	var bad []string
+	for _, name := range imported {
+		if strings.HasPrefix(name, "/opt/homebrew/") || strings.HasPrefix(name, "/usr/local/") {
+			bad = append(bad, name)
+		}
+	}
+	return bad
+}
+
+// missingBundledDylibs returns the base names of the binary's @rpath-resolved
+// dylib dependencies that are absent from libDir. Only @rpath/ imports are
+// considered: absolute (/usr/lib/…, /System/…) and @executable_path/…-relative
+// names resolve elsewhere and are never bundled. Split out from
+// preflightDarwinSwap so this pure name-set logic is unit-testable off macOS.
+func missingBundledDylibs(imported []string, libDir string) []string {
+	const rpathPrefix = "@rpath/"
+	var missing []string
+	for _, name := range imported {
+		if !strings.HasPrefix(name, rpathPrefix) {
+			continue // absolute or @executable_path/@loader_path: not bundled here
+		}
+		base := path.Base(name[len(rpathPrefix):]) // dylib SONAMEs use / — use path, not filepath
+		if _, err := os.Stat(filepath.Join(libDir, base)); err != nil {
+			missing = append(missing, base)
+		}
+	}
+	return missing
 }

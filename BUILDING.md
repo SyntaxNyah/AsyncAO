@@ -113,12 +113,29 @@ chat compiled out, `-tags "nodiscord novoice"`). To build the lean one locally:
 ## macOS
 
 ```bash
-brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus pkg-config
+brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile pkg-config
 go build -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
 ./asyncao
 ```
 
-Works on Apple Silicon and Intel.
+Works on Apple Silicon and Intel. Homebrew is a **build-time** dependency here:
+a from-source build links against the brew dylibs and needs them present to run.
+(`opusfile` — not the bare `opus` codec, which serves voice chat — is what gives
+SDL2_mixer Ogg-Opus **music** decode and seeking; the formula hard-links it, so
+brew pulls it in anyway, but it's named explicitly to pin the requirement.)
+
+The **prebuilt release** (`asyncao-macos-bundle-arm64.tar.gz`) needs **no
+Homebrew** — the release pipeline runs `scripts/bundle-macos.sh` to collect the
+dylib closure into a `lib/` folder beside the binary (rewriting install names to
+`@rpath/`, the macOS analogue of the Windows DLL staging), so it runs on a clean
+Mac. The script asserts both directions: no Homebrew path survives in the
+binary, **and** the music-codec dylibs (opusfile/vorbisfile/mpg123/FLAC) made it
+into `lib/` — the bundler only follows hard links, so a Homebrew formula switch
+to SDL_mixer's dlopen codec shims would otherwise silently ship a tarball whose
+music can't play on a brew-less Mac. The bare `asyncao-macos-arm64` asset is the
+self-update target; for a first install, `tar -xzf
+asyncao-macos-bundle-arm64.tar.gz` (the binary and its `lib/` land flat in the
+current folder) and run `./asyncao-macos-arm64`.
 
 ## Android / iOS
 

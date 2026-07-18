@@ -142,24 +142,36 @@ func TestCheckNewer(t *testing.T) {
 	}
 }
 
-// ghMultiAssetJSON is a realistic release carrying, for every platform, the
-// default build + the Discord-free build + (Windows) a DLL bundle .zip, in
-// SCRAMBLED order. Asset matching is the brick-risk path: a wrong pick gets
-// renamed over the running exe on the next self-update, so Check MUST land on
-// the one swappable default binary per platform regardless of order.
+// ghMultiAssetJSON enumerates EVERY asset release.yml publishes (default +
+// Discord-free builds, the first-install bundles — Windows DLL .zip, macOS
+// dylib .tar.gz —, both .flatpak variants, and SHA256SUMS.txt), in SCRAMBLED
+// order. Asset matching is the brick-risk path: a wrong pick gets renamed over
+// the running exe on the next self-update, so Check MUST land on the one
+// swappable default binary per platform regardless of order. The macOS bundle
+// tarballs are placed BEFORE the bare macos-arm64 binary on purpose — an
+// adversarial ordering that proves the darwin token "macos-arm64" does not
+// match "macos-bundle-arm64" — and the .flatpak decoys sit before the AppImage
+// for the same reason. Keep this list in lockstep with release.yml's asset
+// table: it is the enumeration gate that catches a future token loosened
+// toward a non-default asset name.
 const ghMultiAssetJSON = `{
   "tag_name": "v2.0.0",
   "body": "notes",
   "html_url": "https://example/rel",
   "assets": [
-    {"name": "asyncao-windows-x86_64-bundle.zip",          "browser_download_url": "https://example/win-bundle.zip"},
-    {"name": "AsyncAO-linux-x86_64-nodiscord.AppImage",    "browser_download_url": "https://example/linux-nd.AppImage"},
-    {"name": "asyncao-macos-nodiscord-arm64",              "browser_download_url": "https://example/mac-nd"},
-    {"name": "asyncao-windows-x86_64.exe",                 "browser_download_url": "https://example/win.exe"},
-    {"name": "AsyncAO-linux-x86_64.AppImage",              "browser_download_url": "https://example/linux.AppImage"},
-    {"name": "asyncao-windows-x86_64-nodiscord.exe",       "browser_download_url": "https://example/win-nd.exe"},
-    {"name": "asyncao-macos-arm64",                        "browser_download_url": "https://example/mac"},
-    {"name": "asyncao-windows-x86_64-nodiscord-bundle.zip","browser_download_url": "https://example/win-nd-bundle.zip"}
+    {"name": "SHA256SUMS.txt",                                 "browser_download_url": "https://example/sums.txt"},
+    {"name": "asyncao-windows-x86_64-bundle.zip",              "browser_download_url": "https://example/win-bundle.zip"},
+    {"name": "AsyncAO-linux-x86_64.flatpak",                   "browser_download_url": "https://example/linux.flatpak"},
+    {"name": "AsyncAO-linux-x86_64-nodiscord.flatpak",         "browser_download_url": "https://example/linux-nd.flatpak"},
+    {"name": "AsyncAO-linux-x86_64-nodiscord.AppImage",        "browser_download_url": "https://example/linux-nd.AppImage"},
+    {"name": "asyncao-macos-bundle-arm64.tar.gz",              "browser_download_url": "https://example/mac-bundle.tar.gz"},
+    {"name": "asyncao-macos-nodiscord-bundle-arm64.tar.gz",    "browser_download_url": "https://example/mac-nd-bundle.tar.gz"},
+    {"name": "asyncao-macos-nodiscord-arm64",                  "browser_download_url": "https://example/mac-nd"},
+    {"name": "asyncao-windows-x86_64.exe",                     "browser_download_url": "https://example/win.exe"},
+    {"name": "AsyncAO-linux-x86_64.AppImage",                  "browser_download_url": "https://example/linux.AppImage"},
+    {"name": "asyncao-windows-x86_64-nodiscord.exe",           "browser_download_url": "https://example/win-nd.exe"},
+    {"name": "asyncao-macos-arm64",                            "browser_download_url": "https://example/mac"},
+    {"name": "asyncao-windows-x86_64-nodiscord-bundle.zip",    "browser_download_url": "https://example/win-nd-bundle.zip"}
   ]
 }`
 

@@ -138,7 +138,12 @@ func Check(ctx context.Context, releasesURL, current, assetMatch string) (*Relea
 // and hopping back off it are both "updates" here, so semver-forward gating
 // would strand people. The never-regress publishing rule still protects the
 // STABLE feed; this is the opt-in exception, and the same strict per-platform
-// assetMatch keeps the self-replace un-brickable.
+// assetMatch keeps the self-replace from ever renaming the WRONG asset (a .zip
+// or .tar.gz) over the running binary. One residual macOS-only skew it does NOT
+// cover — the bare-binary swap leaving a stale sibling lib/ behind across a
+// dependency SONAME bump — is caught at swap time by StageReplace's
+// preflightDarwinSwap (apply.go), which refuses before touching the install and
+// points the user at the bundle tarball. See docs/CODE-SIGNING.md.
 func CheckExperimental(ctx context.Context, listURL, current, assetMatch string) (*Release, error) {
 	if current == "" || current == devVersion {
 		return nil, nil // unstamped/dev build never self-updates
@@ -288,11 +293,17 @@ func pathBase(name string) string {
 //
 //	windows -> asyncao-windows-x86_64.exe     (bare exe; the runtime DLLs already sit beside it)
 //	linux   -> AsyncAO-linux-x86_64.AppImage  (self-contained single file)
-//	darwin  -> asyncao-macos-arm64            (bare arm64 binary)
+//	darwin  -> asyncao-macos-arm64            (arm64 binary, rewritten to load a sibling ./lib)
 //
-// Every non-default variant (…-nodiscord.*, …-bundle.zip) is named so it does
-// NOT contain the platform's token. An unknown GOOS falls back to the bare OS
-// name (old behaviour: best-effort first match). Match is case-insensitive
+// Every non-default variant is named so it does NOT contain the platform's
+// token: the Discord-free builds carry …-nodiscord…, the Windows DLL bundle is
+// …-bundle.zip, and the macOS first-install tarballs are
+// asyncao-macos-bundle-arm64.tar.gz / asyncao-macos-nodiscord-bundle-arm64.tar.gz.
+// That last pair is the subtle one: the darwin token is the substring
+// "macos-arm64", and "macos-bundle-arm64" does NOT contain it (the "-bundle-"
+// breaks the run), so the self-updater picks the bare binary and never renames
+// a .tar.gz over the running executable. An unknown GOOS falls back to the bare
+// OS name (old behaviour: best-effort first match). Match is case-insensitive
 // (Check lowercases both sides), so the .AppImage capitalisation is fine.
 func SelfUpdateAssetMatch(goos string) string {
 	switch goos {

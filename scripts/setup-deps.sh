@@ -4,7 +4,10 @@
 set -euo pipefail
 
 if [[ "$(uname)" == "Darwin" ]]; then
-    brew install sdl2 sdl2_ttf sdl2_mixer webp libavif pkg-config
+    # opus = the voice-chat codec; opusfile = SDL2_mixer's Ogg-Opus MUSIC
+    # decode/seek dependency (hard-linked by the formula — brew pulls it anyway,
+    # but pin it). Same list as ci.yml / release.yml — keep them consistent.
+    brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile pkg-config
 elif command -v apt-get >/dev/null; then
     sudo apt-get update
     sudo apt-get install -y libsdl2-dev libsdl2-ttf-dev libsdl2-mixer-dev libwebp-dev libavif-dev pkg-config

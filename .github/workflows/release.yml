@@ -9,11 +9,16 @@
 # Asset names are deliberate — the self-updater downloads ONE asset and renames
 # it straight over the running executable, so the swappable default MUST be a bare
 # binary whose name carries this platform's token (see update.SelfUpdateAssetMatch):
-#   asyncao-windows-x86_64.exe        <- Windows self-update target (DLLs already beside it)
-#   asyncao-windows-x86_64-bundle.zip <- Windows FIRST install (exe + runtime DLLs)
-#   AsyncAO-linux-x86_64.AppImage     <- Linux: self-contained, serves install AND self-update
-#   asyncao-macos-arm64               <- macOS (Apple Silicon) bare binary
+#   asyncao-windows-x86_64.exe            <- Windows self-update target (DLLs already beside it)
+#   asyncao-windows-x86_64-bundle.zip     <- Windows FIRST install (exe + runtime DLLs)
+#   AsyncAO-linux-x86_64.AppImage         <- Linux: self-contained, serves install AND self-update
+#   asyncao-macos-arm64                   <- macOS (Apple Silicon) self-update target (rewritten, loads ./lib)
+#   asyncao-macos-bundle-arm64.tar.gz     <- macOS FIRST install (binary + bundled lib/, self-contained)
 # The -nodiscord / -bundle variants are named so they never collide with a token.
+# Token-dodge for the macOS bundle: the darwin self-update token is the substring
+# "macos-arm64"; "macos-bundle-arm64" does NOT contain it (the "-bundle-" breaks
+# the run), so the self-updater never renames the .tar.gz over the running binary
+# — same dodge as the -nodiscord- and Windows -bundle.zip names.
 name: Release
 
 on:
@@ -197,22 +202,69 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
+        # `asset`  = the bare, self-contained self-update binary (its name carries
+        #            the darwin "macos-arm64" token; the self-updater matches it).
+        # `bundle` = the FIRST-install tarball (binary + bundled lib/). Its name is
+        #            "...-macos-bundle-arm64.tar.gz": it must NOT contain the
+        #            "macos-arm64" substring, or the self-updater would rename the
+        #            .tar.gz over the running binary and brick the install. The
+        #            "-bundle-" between "macos" and "arm64" breaks the substring —
+        #            NEVER rename this to "...-macos-arm64-bundle...".
         variant:
-          - { id: default, label: "", tags: "", asset: "asyncao-macos-arm64" }
-          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", asset: "asyncao-macos-nodiscord-arm64" }
+          - { id: default, label: "", tags: "", asset: "asyncao-macos-arm64", bundle: "asyncao-macos-bundle-arm64.tar.gz" }
+          - { id: nodiscord, label: " (Discord-free, no voice)", tags: "nodiscord novoice", asset: "asyncao-macos-nodiscord-arm64", bundle: "asyncao-macos-nodiscord-bundle-arm64.tar.gz" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      # dylibbundler collects the non-system dylib closure beside the binary — the
+      # macOS analogue of build.ps1's DLL staging (see scripts/bundle-macos.sh).
+      # opusfile (not the bare `opus` codec, which is voice-chat-only) is what
+      # gives SDL2_mixer Ogg-Opus music decode/seek; brew pulls it anyway as an
+      # sdl2_mixer dependency, but pin it explicitly (ci.yml installs the same
+      # list — keep them consistent).
       - name: Install SDL2 + libwebp + libavif
-        run: brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus pkg-config
+        run: brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile pkg-config dylibbundler
       - name: Build (version-stamped)
         run: |
           export CGO_ENABLED=1
           go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath \
             -ldflags "-s -w -X github.com/SyntaxNyah/AsyncAO/internal/update.Version=${{ github.ref_name }}" \
             -o "${{ matrix.variant.asset }}" ./cmd/asyncao
+      # Make the binary self-contained: bundle its dylib closure into a staging
+      # folder with @rpath install names, and rewrite the bare `asset` in place so
+      # it too loads ./lib. This runs BEFORE codesign so the proper Developer-ID
+      # signature (when secrets exist) is the LAST thing applied. The script also
+      # ad-hoc signs, so the no-secret path still ships runnable arm64 code.
+      #
+      # FAIL-OPEN, like every other fragile mac step (codesign below, Flatpak, the
+      # Windows VERSIONINFO regen): a bundler/otool-guard hiccup on macOS must NOT
+      # strand the Windows + Linux release (continue-on-error keeps the job green,
+      # so the release job's needs.build-macos success gate still passes). But
+      # fail-open must not become fail-DIRTY: the bare asset already exists from
+      # the build step still Homebrew-linked, and bundle-macos.sh creates the
+      # staging dir before its fallible steps — so on ANY bundler/guard failure we
+      # DELETE both. Shipping that bare asset would hand every tarball-install
+      # self-updater a binary dyld can't launch without Homebrew (the updater's
+      # preflight now refuses Homebrew-linked binaries, but the asset must not
+      # exist in the first place), and tar would happily pack the partial stage.
+      # With both gone, upload-artifact finds nothing (if-no-files-found default
+      # `warn`), the release ships without this variant's mac assets, and the
+      # in-app updater falls back to opening the release page. The same blocking
+      # assertion runs in ci.yml (identical brew set + script) on every branch
+      # push; this cleanup covers formula drift between that CI run and tag time.
+      - name: Bundle dylibs (self-contained)
+        continue-on-error: true
+        env:
+          ASSET: ${{ matrix.variant.asset }}
+        run: |
+          if ! bash scripts/bundle-macos.sh "$ASSET" "macos-stage"; then
+            echo "::warning::bundle-macos.sh failed — deleting the $ASSET assets so nothing Homebrew-linked can ship"
+            rm -f "$ASSET"
+            rm -rf macos-stage
+            exit 1
+          fi
       # Developer ID codesign + notarize. GATED on the Apple secrets and entirely
       # BEST-EFFORT: with no cert it skips cleanly, and a signing/notary hiccup logs a
       # warning but never fails the job (an unsigned-but-built binary still ships) — the
@@ -230,7 +282,10 @@ jobs:
           ASSET: ${{ matrix.variant.asset }}
         run: |
           if [ -z "$APPLE_P12_BASE64" ]; then
-            echo "::notice::No APPLE_CODESIGN_P12_BASE64 secret - shipping an UNSIGNED macOS build (Gatekeeper will warn). See docs/CODE-SIGNING.md."
+            # No cert: bundle-macos.sh already ad-hoc signed the binary AND every
+            # lib/*.dylib, so the staged folder runs on a clean Mac (Gatekeeper
+            # warns, nothing breaks). Nothing to re-sign here.
+            echo "::notice::No APPLE_CODESIGN_P12_BASE64 secret - shipping an ad-hoc-signed (unnotarized) macOS build (Gatekeeper will warn). See docs/CODE-SIGNING.md."
             exit 0
           fi
           set -x
@@ -243,21 +298,59 @@ jobs:
           security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$APPLE_P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PW" "$KEYCHAIN"
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          # Sign INSIDE-OUT: notarization requires every nested Mach-O (the bundled
+          # dylibs) to be signed before the code that loads them. --force replaces
+          # the ad-hoc signature bundle-macos.sh applied. The bare self-update
+          # `$ASSET` and the staged copy are the same file content but separate
+          # paths, so sign both.
+          STAGED="macos-stage/$ASSET"
+          for dylib in macos-stage/lib/*.dylib; do
+            [ -e "$dylib" ] || continue
+            codesign --force --options runtime --timestamp --sign "$APPLE_IDENTITY" "$dylib"
+          done
+          codesign --force --options runtime --timestamp --sign "$APPLE_IDENTITY" "$STAGED"
+          codesign --verify --strict --verbose=2 "$STAGED"
+          # The bare self-update asset ships without lib/, so sign it standalone too.
           codesign --force --options runtime --timestamp --sign "$APPLE_IDENTITY" "$ASSET"
           codesign --verify --strict --verbose=2 "$ASSET"
-          # Notarize the zipped binary (a bare binary can't be stapled; Gatekeeper checks online).
+          # Notarize the WHOLE staged folder (binary + lib/), not just the bare
+          # binary: Gatekeeper checks the nested dylibs too. A folder/binary can't
+          # be stapled (needs an .app/.dmg/.pkg), so verification is online on
+          # first run — zip the staged dir with its lib/ intact.
           if [ -n "$APPLE_ID" ] && [ -n "$APPLE_ID_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
-            ditto -c -k --keepParent "$ASSET" "$RUNNER_TEMP/notarize.zip"
+            ditto -c -k --keepParent "macos-stage" "$RUNNER_TEMP/notarize.zip"
             xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
               --apple-id "$APPLE_ID" --password "$APPLE_ID_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
           else
             echo "::notice::Codesigned but NOT notarized (no APPLE_NOTARY_* secrets)."
           fi
           security delete-keychain "$KEYCHAIN"
+      # Pack the first-install tarball: the staged folder (binary + lib/) that
+      # runs on a clean Mac. --keepParent isn't used; we cd into the stage so the
+      # archive holds the binary + lib/ at the top level (unzip-and-run).
+      # FAIL-OPEN for the same reason as the bundle step above: a mac packaging
+      # hiccup omits the mac assets (upload-artifact warns on the absent file) but
+      # never blocks the Windows + Linux release. The explicit stage-dir guard
+      # (not just letting tar error) makes the skip-on-failed-bundle deliberate:
+      # the bundle step deleted the stage, so there is nothing safe to pack.
+      - name: Pack first-install tarball
+        continue-on-error: true
+        env:
+          ASSET: ${{ matrix.variant.asset }}
+        run: |
+          if [ ! -f "macos-stage/$ASSET" ]; then
+            echo "::warning::no staged bundle (bundler failed earlier) — skipping the tarball"
+            exit 1
+          fi
+          tar -czf "${{ matrix.variant.bundle }}" -C "macos-stage" .
       - uses: actions/upload-artifact@v4
         with:
+          # Two assets per variant: the bare self-update binary AND the bundle
+          # tarball. download-artifact merge-multiple flattens both into dist/.
           name: release-macos-${{ matrix.variant.id }}
-          path: ${{ matrix.variant.asset }}
+          path: |
+            ${{ matrix.variant.asset }}
+            ${{ matrix.variant.bundle }}
 
   build-flatpak:
     name: Linux x86_64 Flatpak${{ matrix.variant.label }}

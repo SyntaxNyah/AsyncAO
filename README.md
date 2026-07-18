@@ -86,9 +86,12 @@ everything in memory and on disk, and renders without allocating.
 
 **Download the latest [release](https://github.com/SyntaxNyah/AsyncAO/releases)** —
 on Windows grab `asyncao-windows-x86_64-bundle.zip` (unzip, run `asyncao.exe`),
-on Linux the `.AppImage` (`chmod +x`, run). After the first install AsyncAO keeps
-itself up to date in place. Prefer to build from source? See
-**[BUILDING.md](BUILDING.md)** for the detailed per-OS guide.
+on Linux the `.AppImage` (`chmod +x`, run), on macOS (Apple Silicon)
+`asyncao-macos-bundle-arm64.tar.gz` (`tar -xzf` unpacks the binary and its
+`lib/` flat into the current folder, then run `./asyncao-macos-arm64` — the
+bundled `lib/` beside it makes it self-contained, no Homebrew required). After
+the first install AsyncAO keeps itself up to date in place. Prefer to build from source? See **[BUILDING.md](BUILDING.md)** for the
+detailed per-OS guide.
 
 ```text
 asyncao                 # open the lobby

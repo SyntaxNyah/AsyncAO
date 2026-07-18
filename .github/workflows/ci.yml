@@ -156,12 +156,26 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      # dylibbundler is needed by scripts/bundle-macos.sh. Ogg-Opus MUSIC
+      # decode/seek comes from the opusfile FORMULA, hard-linked into
+      # libSDL2_mixer by its formula (--enable-music-opus with the shared/dlopen
+      # path disabled); the bare `opus` formula is only the codec (voice chat)
+      # and provides no Ogg demuxing/seeking. brew already pulls opusfile as an
+      # sdl2_mixer dependency — naming it here pins that requirement explicitly
+      # (release.yml installs the same list — keep them consistent).
       - name: Install SDL2 + libwebp + libavif
-        run: brew install sdl2 sdl2_ttf sdl2_mixer webp libavif pkg-config
+        run: brew install sdl2 sdl2_ttf sdl2_mixer webp libavif opus opusfile pkg-config dylibbundler
       - name: Build
         run: |
           export CGO_ENABLED=1
           go build -tags "${{ matrix.variant.tags }}" -pgo=auto -trimpath -ldflags "-s -w" -o asyncao ./cmd/asyncao
+      # Run the release-time dylib bundler here too, BLOCKING, purely for its
+      # built-in otool assertion: if a new dependency ever links against a
+      # Homebrew path that the bundler can't rewrite, this fails the build and
+      # catches the "Library not loaded on a clean Mac" regression before release.
+      - name: Bundle dylibs + assert no Homebrew paths remain
+        run: |
+          bash scripts/bundle-macos.sh asyncao macos-stage
       - uses: actions/upload-artifact@v4
         with:
           name: asyncao-macos-arm64${{ matrix.variant.suffix }}
