@@ -110,11 +110,12 @@ func demoToRecording(data []byte, origin string) (rec *sceneRecording, skipped, 
 	// PREFIX (stop-at-cap, exactly recordEvent's replay.go:155 / makerInsert's
 	// scenemaker.go:436 semantics — NOT the instant-replay ring's oldest-eviction:
 	// OffsetMs is cumulative, so only a leading run stays timeline-consistent).
-	// 5000 (maxRecordedEvents) is deliberately reused for import: every downstream
-	// consumer — the scene maker's own insert guard, replay, cloneScene — already
-	// assumes it, and exported length is separately bounded by maxVideoFrames
-	// (=18000 frames) regardless, so a larger import-only cap would let a scene
-	// exceed the editor's guard while adding no exportable length.
+	// maxRecordedEvents is deliberately the SAME ceiling every ingestion path uses
+	// (the scene maker's insert guard, live recording, replay, cloneScene), and it is
+	// now sized (50000) to admit a whole real session — the largest real fixture is
+	// 8943 scene events — so a full demo imports intact. Video export length is bounded
+	// separately by maxVideoHours (video streams to ffmpeg, holding nothing), so a big
+	// import stays fully exportable.
 	capReached := func() bool { return len(rec.Events) >= maxRecordedEvents }
 	for _, raw := range records {
 		pkt, err := protocol.ParsePacket(strings.TrimSuffix(raw, "\n"))
@@ -293,6 +294,16 @@ func (a *App) loadRecordingAny(path string) (*sceneRecording, error) {
 		a.pushDebug(fmt.Sprintf("demo import: %s — %d non-scene packets skipped (SC/CT/HP/…)", base, skipped))
 	case truncated > 0:
 		a.pushDebug(fmt.Sprintf("demo import: %s — stopped at the %d-event scene cap (%d later events not imported)", base, maxRecordedEvents, truncated))
+	}
+	// A .demo records only bare asset names — never WHERE the server's assets live.
+	// rec.Origin was just filled from the current session (demoDefaultOrigin), so an
+	// import with no session gets "" and every music/SFX/sprite URL is unfetchable:
+	// the demo plays SILENT with a blank stage and nothing says why (live report,
+	// v1.72.0). Warn honestly, with the two real remedies. warnLine is visible on
+	// Settings since the picker-hotfix banner fix.
+	if strings.TrimSpace(rec.Origin) == "" {
+		a.warnLine = "Imported " + base + " without a server — music and sprites won't stream. Connect to the demo's server first, or set Origin/CDN in the Scene Maker."
+		a.warnAt = time.Now()
 	}
 	return rec, nil
 }

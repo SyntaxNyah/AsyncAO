@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,7 +27,8 @@ import (
 // never breaks.
 
 // musicCue / sfxCue are captured audio events: what fired and the export frame it
-// fired on (× frameMs = its time in the video). A music url of "" marks a stop.
+// fired on (frameToMs(frame, fps) = its time in the video). A music url of ""
+// marks a stop.
 type musicCue struct {
 	url   string
 	frame int
@@ -39,10 +41,16 @@ type sfxCue struct {
 // audioCapture is the video export's courtroom.AudioSink: it plays nothing and just
 // records music + SFX/shout cues for the post-capture mux. Driven by the export room
 // on the render thread only, so the slice appends need no lock.
+//
+// droppedAtCapture counts cues turned away by the per-list maxAudioClips guard below
+// (the FIRST of the two cap sites). It feeds the honesty note in finishVideoExport so
+// an hours-long scene that fired hundreds of SFX/songs isn't silently truncated with
+// no word to the user — the mux's own combined-cap drop is counted separately there.
 type audioCapture struct {
-	frameRef func() int // current export frame (captured count) at call time
-	music    []musicCue
-	sfx      []sfxCue
+	frameRef         func() int // current export frame (captured count) at call time
+	music            []musicCue
+	sfx              []sfxCue
+	droppedAtCapture int
 }
 
 // The capture lists (music/sfx) are each bounded by maxAudioClips at append time
@@ -57,30 +65,51 @@ type audioCapture struct {
 // are accepted and ignored here.
 func (m *audioCapture) PlayMusic(url string, _ bool, _ int) {
 	if len(m.music) >= maxAudioClips {
+		m.droppedAtCapture++
 		return
 	}
 	m.music = append(m.music, musicCue{url: url, frame: m.frameRef()})
 }
 func (m *audioCapture) StopMusic() {
 	if len(m.music) >= maxAudioClips {
+		m.droppedAtCapture++
 		return
 	}
 	m.music = append(m.music, musicCue{url: "", frame: m.frameRef()})
 }
 func (m *audioCapture) PlayShout(base string) {
 	if len(m.sfx) >= maxAudioClips {
+		m.droppedAtCapture++
 		return
 	}
 	m.sfx = append(m.sfx, sfxCue{base: base, frame: m.frameRef()})
 }
 func (m *audioCapture) PlaySFX(base string, _ time.Duration) {
 	if len(m.sfx) >= maxAudioClips {
+		m.droppedAtCapture++
 		return
 	}
 	m.sfx = append(m.sfx, sfxCue{base: base, frame: m.frameRef()})
 }
 func (m *audioCapture) PlayBlip(string)  {}
 func (m *audioCapture) SetBlipScale(int) {}
+
+// frameToMs converts a captured export frame to its millisecond offset in the
+// finished video. It MULTIPLIES BEFORE DIVIDING (frame*1000/fps) rather than
+// pre-computing a per-frame millisecond constant: the video plays at ffmpeg's exact
+// `-r fps` cadence, but a truncated `frame*(1000/fps)` cue offset drifts every frame
+// (0.667 ms/frame at 24 fps), and that error is LINEAR in frame count — ≈23 minutes
+// of audio/subtitle desync by the end of a 24 h @ 24 fps export. Multiply-first keeps
+// the offset exact to the millisecond regardless of length. int is 64-bit on our
+// targets and frame*1000 peaks ~2.6e9 (24 h at the config clamp's 30 fps ceiling) —
+// well under int64 though past int32, so a 32-bit build would need int64 here; we
+// ship 64-bit only.
+func frameToMs(frame, fps int) int {
+	if fps < 1 {
+		fps = 1
+	}
+	return frame * 1000 / fps
+}
 
 // songSegment is one music window resolved to video time: the track URL, when it
 // starts (ms), and an optional trim (ms; 0 = play to the end, apad fills the tail).
@@ -93,9 +122,12 @@ type songSegment struct {
 // songSegments turns the captured music cues into ordered, non-overlapping windows:
 // each track plays from its cue until the NEXT cue (a song change OR a stop), or — for
 // the last track — to the video's end (endFrame). A stop cue bounds the previous
-// window and contributes none of its own. frameMs converts frames to ms. A single
-// song collapses to one untrimmed segment (the slice-1 bed); changes become several.
-func (m *audioCapture) songSegments(frameMs, endFrame int) []songSegment {
+// window and contributes none of its own. fps converts frames to ms via frameToMs
+// (multiply-first, so a long export doesn't drift). A single song collapses to one
+// untrimmed segment (the slice-1 bed); changes become several. The trim is computed as
+// the DIFFERENCE of two frameToMs offsets, not (Δframes)*constant, so the window
+// boundary stays exact too.
+func (m *audioCapture) songSegments(fps, endFrame int) []songSegment {
 	var segs []songSegment
 	for i, c := range m.music {
 		if c.url == "" {
@@ -108,11 +140,11 @@ func (m *audioCapture) songSegments(frameMs, endFrame int) []songSegment {
 		if end <= c.frame {
 			continue // zero/negative window (back-to-back cues) — skip
 		}
-		trim := (end - c.frame) * frameMs
+		trim := frameToMs(end, fps) - frameToMs(c.frame, fps)
 		if end == endFrame {
 			trim = 0 // runs to the video end → no trim; apad fills any tail
 		}
-		segs = append(segs, songSegment{url: c.url, startMs: c.frame * frameMs, trimMs: trim})
+		segs = append(segs, songSegment{url: c.url, startMs: frameToMs(c.frame, fps), trimMs: trim})
 	}
 	return segs
 }
@@ -125,10 +157,11 @@ type sfxPlacement struct {
 
 // sfxPlacements snapshots the captured SFX cues as (base, delayMs) — called on the
 // render thread before the off-thread mux, so the goroutine never touches the sink.
-func (m *audioCapture) sfxPlacements(frameMs int) []sfxPlacement {
+// fps places each cue via frameToMs (multiply-first, drift-free over long exports).
+func (m *audioCapture) sfxPlacements(fps int) []sfxPlacement {
 	out := make([]sfxPlacement, 0, len(m.sfx))
 	for _, c := range m.sfx {
-		out = append(out, sfxPlacement{base: c.base, delayMs: c.frame * frameMs})
+		out = append(out, sfxPlacement{base: c.base, delayMs: frameToMs(c.frame, fps)})
 	}
 	return out
 }
@@ -173,6 +206,29 @@ func downloadTempAudio(url string) (string, error) {
 		return "", closeErr
 	}
 	return f.Name(), nil
+}
+
+// fetchTempAudio lands a music track in a temp file for the mux. http(s) URLs keep
+// the bounded direct download (size + timeout caps, and no T2 cache churn from
+// ~40 MB payloads); any other scheme — the local:// origin a mounted folder or
+// bundled archive yields — goes through Manager.FetchRaw, which routes to the
+// LocalFetcher. Before this dispatch, export music used ONLY the raw http.Client,
+// which cannot speak local:// — so local-mount exports were silent by construction
+// (no-sound root-cause pass). The maxMusicBytes bound applies on both paths (§17.4).
+func fetchTempAudio(mgr *assets.Manager, url string) (string, error) {
+	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		return downloadTempAudio(url)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), musicHTTPTimeout)
+	defer cancel()
+	data, err := mgr.FetchRaw(ctx, url)
+	if err != nil {
+		return "", err
+	}
+	if len(data) > maxMusicBytes {
+		return "", fmt.Errorf("track exceeds the music size cap (%d bytes)", maxMusicBytes)
+	}
+	return writeTempBytes(data)
 }
 
 // writeTempBytes writes already-fetched bytes (a resolved SFX) to a temp file and
@@ -222,7 +278,7 @@ func muxSceneAudio(mgr *assets.Manager, silentPath string, songs []songSegment, 
 		}
 		path, seen := dl[s.url]
 		if !seen {
-			if p, err := downloadTempAudio(s.url); err == nil {
+			if p, err := fetchTempAudio(mgr, s.url); err == nil {
 				path = p
 				temps = append(temps, p)
 			}

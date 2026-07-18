@@ -11,11 +11,14 @@ import (
 // its cue to the next cue (change OR stop) or the video end; a stop bounds the
 // previous window and adds none of its own; a single song is one untrimmed segment.
 func TestAudioCaptureSongSegments(t *testing.T) {
-	const frameMs, endFrame = 50, 100
+	// fps=20 → frameToMs(frame,20)=frame*50, an EXACT divisor so the expected ms below
+	// (500/1500/2000/1000) are identical under the new multiply-first math — this test
+	// pins the windowing logic, not the rounding; TestFrameToMs covers the drift fix.
+	const fps, endFrame = 20, 100
 
 	// No music → no segments.
 	empty := &audioCapture{frameRef: func() int { return 0 }}
-	if segs := empty.songSegments(frameMs, endFrame); len(segs) != 0 {
+	if segs := empty.songSegments(fps, endFrame); len(segs) != 0 {
 		t.Errorf("no music: got %d segments, want 0", len(segs))
 	}
 
@@ -24,7 +27,7 @@ func TestAudioCaptureSongSegments(t *testing.T) {
 	one := &audioCapture{frameRef: func() int { return frame }}
 	frame = 10
 	one.PlayMusic("A", true, 0)
-	if segs := one.songSegments(frameMs, endFrame); len(segs) != 1 || segs[0] != (songSegment{url: "A", startMs: 500, trimMs: 0}) {
+	if segs := one.songSegments(fps, endFrame); len(segs) != 1 || segs[0] != (songSegment{url: "A", startMs: 500, trimMs: 0}) {
 		t.Errorf("single song: %+v, want one {A 500 0}", segs)
 	}
 
@@ -36,8 +39,8 @@ func TestAudioCaptureSongSegments(t *testing.T) {
 	frame = 40
 	chg.PlayMusic("B", true, 0)
 	want := []songSegment{{url: "A", startMs: 500, trimMs: 1500}, {url: "B", startMs: 2000, trimMs: 0}}
-	if segs := chg.songSegments(frameMs, endFrame); len(segs) != 2 || segs[0] != want[0] || segs[1] != want[1] {
-		t.Errorf("song change: %+v, want %+v", chg.songSegments(frameMs, endFrame), want)
+	if segs := chg.songSegments(fps, endFrame); len(segs) != 2 || segs[0] != want[0] || segs[1] != want[1] {
+		t.Errorf("song change: %+v, want %+v", chg.songSegments(fps, endFrame), want)
 	}
 
 	// (leading stop, ignored) A → (frame 30) stop: A trimmed to the stop; stop adds none.
@@ -49,13 +52,13 @@ func TestAudioCaptureSongSegments(t *testing.T) {
 	stop.PlayMusic("A", true, 0)
 	frame = 30
 	stop.StopMusic()
-	if segs := stop.songSegments(frameMs, endFrame); len(segs) != 1 || segs[0] != (songSegment{url: "A", startMs: 500, trimMs: 1000}) {
-		t.Errorf("song then stop: %+v, want one {A 500 1000}", stop.songSegments(frameMs, endFrame))
+	if segs := stop.songSegments(fps, endFrame); len(segs) != 1 || segs[0] != (songSegment{url: "A", startMs: 500, trimMs: 1000}) {
+		t.Errorf("song then stop: %+v, want one {A 500 1000}", stop.songSegments(fps, endFrame))
 	}
 }
 
 // TestAudioCaptureSFXPlacements pins SFX/shout capture: every PlaySFX + PlayShout
-// becomes a placement at its frame × frameMs, in fire order.
+// becomes a placement at frameToMs(frame, fps), in fire order.
 func TestAudioCaptureSFXPlacements(t *testing.T) {
 	frame := 0
 	m := &audioCapture{frameRef: func() int { return frame }}
@@ -63,7 +66,7 @@ func TestAudioCaptureSFXPlacements(t *testing.T) {
 	m.PlaySFX("base/sounds/general/sfx-stab", 0)
 	frame = 9
 	m.PlayShout("base/sounds/general/objection")
-	got := m.sfxPlacements(50)
+	got := m.sfxPlacements(20) // fps=20 → frameToMs(frame,20)=frame*50: 4→200, 9→450
 	want := []sfxPlacement{
 		{base: "base/sounds/general/sfx-stab", delayMs: 200},
 		{base: "base/sounds/general/objection", delayMs: 450},

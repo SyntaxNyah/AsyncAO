@@ -93,12 +93,10 @@ func subTimestamp(ms int, comma bool) string {
 	return fmt.Sprintf("%02d:%02d:%02d%s%03d", ms/3600000, ms/60000%60, ms/1000%60, sep, ms%1000)
 }
 
-// formatSubtitles renders the cues as one SRT or VTT document. frameMs converts
-// a cue's frame window to milliseconds (the video's real cadence).
-func formatSubtitles(cues []subCue, frameMs int, vtt bool) string {
-	if frameMs < 1 {
-		frameMs = 1
-	}
+// formatSubtitles renders the cues as one SRT or VTT document. fps converts a cue's
+// frame window to milliseconds via frameToMs (the video's real cadence) — multiply-
+// first, so an hours-long export's cues don't drift out of sync with the picture.
+func formatSubtitles(cues []subCue, fps int, vtt bool) string {
 	var b strings.Builder
 	if vtt {
 		b.WriteString("WEBVTT\n\n")
@@ -107,7 +105,7 @@ func formatSubtitles(cues []subCue, frameMs int, vtt bool) string {
 		if !vtt {
 			fmt.Fprintf(&b, "%d\n", i+1)
 		}
-		fmt.Fprintf(&b, "%s --> %s\n", subTimestamp(cu.startFrame*frameMs, !vtt), subTimestamp(cu.endFrame*frameMs, !vtt))
+		fmt.Fprintf(&b, "%s --> %s\n", subTimestamp(frameToMs(cu.startFrame, fps), !vtt), subTimestamp(frameToMs(cu.endFrame, fps), !vtt))
 		if cu.speaker != "" {
 			fmt.Fprintf(&b, "%s: %s\n\n", cu.speaker, cu.text)
 		} else {
@@ -118,14 +116,15 @@ func formatSubtitles(cues []subCue, frameMs int, vtt bool) string {
 }
 
 // writeSubtitleFiles writes <video stem>.srt + .vtt beside the video (called
-// off-thread by finishVideoExport). Returns whether both writes succeeded.
-func writeSubtitleFiles(vidPath string, cues []subCue, frameMs int) bool {
+// off-thread by finishVideoExport). Returns whether both writes succeeded. fps drives
+// the cue timing via formatSubtitles (multiply-first, drift-free over long exports).
+func writeSubtitleFiles(vidPath string, cues []subCue, fps int) bool {
 	if len(cues) == 0 {
 		return false
 	}
 	stem := strings.TrimSuffix(vidPath, "."+extOf(vidPath))
-	okSRT := os.WriteFile(stem+".srt", []byte(formatSubtitles(cues, frameMs, false)), 0o644) == nil
-	okVTT := os.WriteFile(stem+".vtt", []byte(formatSubtitles(cues, frameMs, true)), 0o644) == nil
+	okSRT := os.WriteFile(stem+".srt", []byte(formatSubtitles(cues, fps, false)), 0o644) == nil
+	okVTT := os.WriteFile(stem+".vtt", []byte(formatSubtitles(cues, fps, true)), 0o644) == nil
 	return okSRT && okVTT
 }
 

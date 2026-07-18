@@ -84,16 +84,20 @@ func TestFormatSubtitles(t *testing.T) {
 		{startFrame: 0, endFrame: 24, speaker: "Nick", text: "Hold it!"},
 		{startFrame: 24, endFrame: 72, speaker: "", text: "…"},
 	}
-	srt := formatSubtitles(cues, 1000/24, false)
-	wantSRT := "1\n00:00:00,000 --> 00:00:00,984\nNick: Hold it!\n\n2\n00:00:00,984 --> 00:00:02,952\n…\n\n"
+	// Cue timing is multiply-first (frameToMs = frame*1000/fps), so at 24 fps
+	// frame 24 = 1000 ms EXACTLY and frame 72 = 3000 ms — no truncation drift (the
+	// old frame*(1000/24)=frame*41 math gave 984/2952, off by ~16/48 ms and growing
+	// linearly with the frame index; that is the desync this fix removes).
+	srt := formatSubtitles(cues, 24, false)
+	wantSRT := "1\n00:00:00,000 --> 00:00:01,000\nNick: Hold it!\n\n2\n00:00:01,000 --> 00:00:03,000\n…\n\n"
 	if srt != wantSRT {
 		t.Errorf("SRT:\n%q\nwant:\n%q", srt, wantSRT)
 	}
-	vtt := formatSubtitles(cues, 1000/24, true)
+	vtt := formatSubtitles(cues, 24, true)
 	if !strings.HasPrefix(vtt, "WEBVTT\n\n") || strings.Contains(vtt, ",") {
 		t.Errorf("VTT must carry the header and dot decimals:\n%q", vtt)
 	}
-	if !strings.Contains(vtt, "00:00:00.000 --> 00:00:00.984") {
+	if !strings.Contains(vtt, "00:00:00.000 --> 00:00:01.000") {
 		t.Errorf("VTT timing wrong:\n%q", vtt)
 	}
 }
@@ -109,7 +113,7 @@ func TestWriteSubtitleFilesNaming(t *testing.T) {
 
 	// Muxed path: the video was renamed to <stem>-audio.mp4 — sidecars must match.
 	muxed := filepath.Join(dir, "scene-20260101-audio.mp4")
-	if !writeSubtitleFiles(muxed, cues, 1000/24) {
+	if !writeSubtitleFiles(muxed, cues, 24) {
 		t.Fatal("writeSubtitleFiles reported failure on a writable temp dir")
 	}
 	for _, ext := range []string{".srt", ".vtt"} {
@@ -121,7 +125,7 @@ func TestWriteSubtitleFilesNaming(t *testing.T) {
 
 	// Silent-fallback path: the plain video name (no "-audio") — sidecars match it.
 	silent := filepath.Join(dir, "scene-20260102.webm")
-	if !writeSubtitleFiles(silent, cues, 1000/24) {
+	if !writeSubtitleFiles(silent, cues, 24) {
 		t.Fatal("writeSubtitleFiles failed on the silent path")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "scene-20260102.srt")); err != nil {
@@ -130,7 +134,7 @@ func TestWriteSubtitleFilesNaming(t *testing.T) {
 
 	// No cues → nothing written, no sidecar files.
 	empty := filepath.Join(dir, "blank.mp4")
-	if writeSubtitleFiles(empty, nil, 1000/24) {
+	if writeSubtitleFiles(empty, nil, 24) {
 		t.Error("no cues must report false (nothing to write)")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "blank.srt")); !os.IsNotExist(err) {

@@ -117,12 +117,28 @@ const (
 	exportComic                   // a single PNG storyboard: one still panel per IC line (pure Go)
 )
 
-// maxVideoFrames caps a single video export. Unlike the GIF cap (bounded by the
-// HELD paletted-frame memory budget), video frames are streamed straight to
-// ffmpeg and never retained, so this isn't a memory bound — it's a runaway /
-// file-size guard so a stuck scene can't encode forever. 18000 frames is 15 min
-// at 20 fps (12.5 min at 24 fps) — far longer than anyone exports in one go.
-const maxVideoFrames = 18000
+// maxVideoHours is the wedge-brake for a single video export. Unlike the GIF cap
+// (bounded by the HELD paletted-frame memory budget), video frames stream straight to
+// ffmpeg and are never retained (V1's streaming verdict — memory stays flat regardless
+// of length), so this is NOT a memory bound and must not bound the user's film: hours
+// of footage cost nothing but disk. The brake exists solely to stop a WEDGED exporter
+// (a scene stuck feeding frames forever) from encoding without end. 24 h is generous
+// headroom over any real export while keeping the cap a named, finite §17.4 ceiling.
+const maxVideoHours = 24
+
+// videoMaxFrames derives the per-export video frame cap from the export's CHOSEN fps,
+// so the brake scales with cadence (a 24 h film is 24 h whether it's 8 or 30 fps). At
+// the config clamp's true ceiling (maxExportFPS=30 in internal/config — the UI presets
+// top out at 24, but the stored value may be anything in [6,30]) that is
+// 24*3600*30 = 2,592,000 frames; the frame counter and every cue offset are computed
+// multiply-first (frameToMs) and stay well within int64, so millions of frames carry
+// no overflow or drift. Pure + headless-testable.
+func videoMaxFrames(fps int) int {
+	if fps < 1 {
+		fps = 1
+	}
+	return maxVideoHours * 3600 * fps
+}
 
 // gifResultBuf is the buffer of the off-thread export → UI result channel (hard
 // rule §17.4: every channel has a named cap). One slot is enough: at most one
@@ -331,6 +347,7 @@ type gifExportJob struct {
 
 	// Per-export output settings (from config ExportOptions, resolved once).
 	w, h      int32         // capture/output size (4:3)
+	fps       int           // chosen frame rate; drives frameToMs cue offsets (multiply-first)
 	frameDt   time.Duration // room Update step per captured frame (= 1/fps)
 	delayCs   int           // GIF per-frame delay, centiseconds
 	loop      bool          // loop the animation forever vs play once
@@ -395,15 +412,21 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	if delayCs < 1 {
 		delayCs = 1
 	}
-	frameMs := 1000 / fps
+	// WebP stores ONE integer per-frame duration in the container, so a rounded
+	// constant is the best the format can do (unlike video/subtitle cue OFFSETS,
+	// which we compute multiply-first via frameToMs to stay drift-free). Round to
+	// nearest rather than truncate so 24 fps → 42 ms (≈41.67), not 41. WebP is
+	// short-capped and has no audio track to desync against, so this is cosmetic.
+	frameMs := (1000 + fps/2) / fps
 	if frameMs < 1 {
 		frameMs = 1
 	}
 	// Video streams to ffmpeg and never holds frames, so it isn't bound by the GIF
-	// paletted-frame budget — let scene length drive it (capped against runaway).
+	// paletted-frame budget — let scene length drive it up to the duration wedge-brake
+	// (24 h at the chosen fps), not the tiny memory cap GIF/WebP/Comic keep.
 	maxFrames := exportMaxFrames(w, h)
 	if kind == exportVideo {
-		maxFrames = maxVideoFrames
+		maxFrames = videoMaxFrames(fps)
 	}
 	if kind == exportComic {
 		maxFrames = maxComicPanels // one page's worth of panels (the cap bounds the held RGBA)
@@ -510,6 +533,7 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		audioCap:     audioCap,
 		w:            w,
 		h:            h,
+		fps:          fps,
 		frameDt:      frameDt,
 		delayCs:      delayCs,
 		loop:         opts.Loop,
@@ -903,18 +927,26 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 		return
 	}
 	// Resolve the soundtrack NOW, on the render thread — the capture sink's cues are
-	// complete and a.gif is about to be cleared. frameMs converts a cue's start frame
-	// to ms. The mux itself (download + ResolveRaw + 2nd ffmpeg) runs off-thread below
-	// and degrades to the silent video on ANY failure (#99).
+	// complete and a.gif is about to be cleared. The cue functions place each cue via
+	// frameToMs(frame, fps) (multiply-first, so an hours-long export doesn't drift; V1's
+	// HEADLINE risk). The mux itself (download + ResolveRaw + 2nd ffmpeg) runs off-thread
+	// below and degrades to the silent video on ANY failure (#99).
 	var songs []songSegment
 	var sfx []sfxPlacement
+	audioDropped := 0
 	if j.audioCap != nil {
-		frameMs := int(j.frameDt / time.Millisecond)
-		if frameMs < 1 {
-			frameMs = 1
+		songs = j.audioCap.songSegments(j.fps, j.captured) // windows to the final frame count
+		sfx = j.audioCap.sfxPlacements(j.fps)
+		// Honesty note: cues are turned away at TWO cap sites — the per-list guard in
+		// audioCapture (droppedAtCapture) and the combined maxAudioClips cap the mux
+		// applies (music first, then SFX). Report both so a busy scene's silently-
+		// trimmed soundtrack isn't a surprise (V1 found no user-visible signal here).
+		offered := len(songs) + len(sfx)
+		admitted := offered
+		if admitted > maxAudioClips {
+			admitted = maxAudioClips
 		}
-		songs = j.audioCap.songSegments(frameMs, j.captured) // windows to the final frame count
-		sfx = j.audioCap.sfxPlacements(frameMs)
+		audioDropped = j.audioCap.droppedAtCapture + (offered - admitted)
 	}
 	format := j.vidFormat
 	mgr := a.d.Manager
@@ -922,7 +954,7 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 	// the finisher goroutine (j is dead after this — the handoff owns the slice).
 	j.subClose(j.captured)
 	subs := j.subs
-	subFrameMs := int(j.frameDt / time.Millisecond)
+	subFps := j.fps
 	a.warnLine = fmt.Sprintf("Finishing video (%d frames)…", j.captured)
 	a.warnAt = time.Now()
 	go func() {
@@ -940,12 +972,23 @@ func (a *App) finishVideoExport(j *gifExportJob) {
 		if len(songs) > 0 || len(sfx) > 0 {
 			if muxed, ok := muxSceneAudio(mgr, path, songs, sfx, format); ok {
 				finalPath, soundNote = muxed, "  ♪ with sound"
+				// Factual note when the 64-clip cap trimmed the soundtrack (short, no
+				// exclamation — settings-text style): so an hours-long, SFX-heavy scene
+				// isn't silently missing most of its sound with no word to the user. Only
+				// on the success branch — the silent-fallback message below already says
+				// there's no sound, so a "N cues left out" tail there would just confuse.
+				// "left out", not "past the cap": failed downloads don't consume cap
+				// slots, so this count can include resolve failures — keep the wording
+				// directional rather than claiming a precise cause (review nit).
+				if audioDropped > 0 {
+					soundNote += fmt.Sprintf(" (%d sound cue(s) left out)", audioDropped)
+				}
 			} else {
 				soundNote = "  (couldn't add the sound — saved silent)"
 			}
 		}
 		subNote := ""
-		if writeSubtitleFiles(finalPath, subs, subFrameMs) {
+		if writeSubtitleFiles(finalPath, subs, subFps) {
 			subNote = "  + subtitles (.srt/.vtt)"
 		}
 		a.gifResultCh <- exportResult{msg: videoSavedMsg(finalPath) + soundNote + subNote, path: finalPath}
