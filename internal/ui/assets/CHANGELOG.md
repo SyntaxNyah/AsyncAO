@@ -4,6 +4,42 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.72.1 — 2026-07-18
+
+The Import button actually opens its dialog, silent demos explain themselves,
+and a video can now run for hours.
+
+**Studio**
+
+- **📥 Import .demo… opens its file dialog on top of the app.** The dialog was
+  opening *behind* the window, which read as the button doing nothing. The
+  theme folder browser had the same problem; both fixed, and a picker that
+  fails now says so instead of imitating a cancel.
+- **The settings screen shows its messages now.** Import confirmations,
+  rejected files, and picker errors were invisible on the very screen they
+  happen on.
+- **A demo imported without a server says why it would be silent.** A `.demo`
+  records only asset *names*, never the server they live on — importing while
+  connected captures that server's assets; importing from the lobby now warns
+  and points at the remedies (join the demo's server first, or set Origin/CDN
+  in the Scene Maker).
+
+**Video export**
+
+- **Videos can be hours long.** The old brake stopped every export at 15
+  minutes; it is now 24 hours at your chosen frame rate. Normal exports are
+  unaffected — long ones stream straight to ffmpeg, so length costs disk, not
+  memory, and ■ Stop & save still keeps what's rendered.
+- **Sound stays in sync over long videos.** A rounding error placed audio and
+  subtitles ~0.7 ms later every frame — about 23 minutes late by the end of a
+  24-hour export. Cue offsets are now exact at any length.
+- **Whole sessions import intact.** The scene cap rises from 5,000 to 50,000
+  events, so a full evening's `.demo` converts without losing its tail.
+- **Local assets reach exported audio.** With Settings → Assets → Local assets
+  mounted, a recording's music now lands in the exported video too.
+- **The toast says when sound cues were left out** past the 64-clip mix cap,
+  instead of silently trimming a busy soundtrack.
+
 ## v1.72.0 — 2026-07-18
 
 Turn an AO2 `.demo` session file into a video without knowing where anything
