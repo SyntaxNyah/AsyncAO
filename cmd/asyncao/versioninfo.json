@@ -2,13 +2,13 @@
   "FixedFileInfo": {
     "FileVersion": {
       "Major": 1,
-      "Minor": 70,
+      "Minor": 71,
       "Patch": 0,
       "Build": 0
     },
     "ProductVersion": {
       "Major": 1,
-      "Minor": 70,
+      "Minor": 71,
       "Patch": 0,
       "Build": 0
     },
@@ -21,12 +21,12 @@
   "StringFileInfo": {
     "CompanyName": "AsyncAO contributors",
     "FileDescription": "AsyncAO — Attorney Online 2 client",
-    "FileVersion": "1.70.0.0",
+    "FileVersion": "1.71.0.0",
     "InternalName": "asyncao",
     "LegalCopyright": "Copyright (c) 2026 SyntaxNyah and the AsyncAO contributors. AGPL-3.0.",
     "OriginalFilename": "asyncao.exe",
     "ProductName": "AsyncAO",
-    "ProductVersion": "1.70.0.0"
+    "ProductVersion": "1.71.0.0"
   },
   "VarFileInfo": {
     "Translation": {

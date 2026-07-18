@@ -4,6 +4,61 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.71.0 — 2026-07-18
+
+Cross-tab music gets exact, the server list stops going stale, macOS builds
+run on a clean Mac — and a few names now carry weight in the courtroom.
+
+**Music**
+
+- **Switching tabs can't leak the other server's song.** Requesting a track
+  that's still downloading keeps the previous tab's music silenced until
+  *your* track actually starts — no foreign song playing over the download.
+- **Coming back to a tab resumes its music at the exact spot.** The resume
+  now reads the true player position and the track's real length, so even a
+  short loop that wrapped several times while you were away lands precisely
+  where the room is — not a best guess from the wall clock. This also fixes
+  resume-jumps failing outright (music restarting from the top every switch)
+  — most visible on macOS — caused by asking the player to seek past the end
+  of a short loop.
+- **FLAC music plays now.** `.flac` links were accepted but the decoder was
+  never switched on.
+
+**Server list**
+
+- **The server screen refreshes itself when you open it.** No more stale
+  list from app launch: opening the server select fetches a fresh master
+  list immediately, capped at one request a minute — and it never fetches
+  in the background while you're playing.
+
+**macOS**
+
+- **The macOS build now runs on a clean Mac.** New download: the
+  `asyncao-macos-bundle-arm64.tar.gz` tarball ships the binary with every
+  library it needs — no Homebrew, no `Library not loaded` on first launch.
+  Existing Homebrew installs keep working; the bare binary remains the
+  self-update target.
+- **Self-updates on macOS (and Linux) stay launchable.** The updater now
+  marks the swapped-in binary executable and refuses a swap that would leave
+  it unable to find its bundled libraries — re-pointing you at the tarball
+  instead of breaking the install.
+
+**Interface**
+
+- **The quick volume popover is just volume again.** The "stream custom
+  music" checkbox looked out of place there and the popover was getting
+  crowded — the toggle now lives only in Settings → Audio.
+- **The missingno controls moved to Settings → Assets**, where you'd
+  actually look for them: the placeholder on/off toggle and the custom
+  error-sprite image box (point it at any PNG/WebP/GIF/APNG/JPG to replace
+  the built-in glitch art) now sit right under the preanimation option
+  instead of hiding in Power User.
+
+**And…**
+
+- **A few easter eggs.** Some names echo in the courtroom — speak them in
+  IC chat and watch the chatbox.
+
 ## v1.70.0 — 2026-07-17
 
 Music that survives everything, server tabs that keep to themselves,
