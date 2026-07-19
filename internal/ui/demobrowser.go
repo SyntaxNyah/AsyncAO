@@ -47,6 +47,19 @@ const (
 	browseIconColW = 30
 )
 
+// browsePurpose is what a picked recording is used FOR — the same in-app browser
+// serves three Studio flows now (v1.74). The video flow (the original, and the
+// drag-onto-Studio default) stays byte-identical: purposeVideo is the zero value,
+// so an un-set browser behaves exactly as before. check/package route to the
+// content-report engine (contentjob.go) instead of the video exporter.
+type browsePurpose int
+
+const (
+	purposeVideo   browsePurpose = iota // pick → importRecordingToVideo (the original flow)
+	purposeCheck                        // pick → StartContentReport + open the report panel
+	purposePackage                      // pick → StartContentReport, then package once it's ready
+)
+
 // browseEntry is one row in the file browser: a directory to descend into or a
 // recording (.demo/.aorec) to pick. Built once per navigation by the loader.
 type browseEntry struct {
@@ -62,6 +75,10 @@ type browseEntry struct {
 // warrant that surface. First open seeds dir from UserHomeDir (openDemoBrowser).
 type demoBrowserState struct {
 	open bool
+	// purpose is what the picked recording feeds (video export / content check /
+	// package). Set once at open (openDemoBrowserFor); the pick action branches on
+	// it. Defaults to purposeVideo so the historic Import-.demo button is unchanged.
+	purpose browsePurpose
 	// dir is the directory being listed. "" is the Windows DRIVES view (a row per
 	// existing volume); off Windows there is no drives view and ".." stops at "/".
 	dir string
@@ -98,11 +115,20 @@ var demoBrowser = demoBrowserState{res: make(chan browseResult, browseResCap)}
 // Windows this is never entered (openDemoBrowser/parentBrowseDir never yield "").
 func (s *demoBrowserState) isDrivesView() bool { return s.dir == "" }
 
-// openDemoBrowser opens the browser, resolving the quick-jump paths once, and
-// navigates to the session-remembered dir (first open → the user's home). Called
-// by the Studio call-out's Import button on every OS.
-func (a *App) openDemoBrowser() {
+// openDemoBrowser opens the browser for the ORIGINAL .demo → video flow (the
+// Studio call-out's Import button on every OS). Thin wrapper over the
+// purpose-taking variant so existing callers stay one-liners and the video flow
+// is unmistakably the default.
+func (a *App) openDemoBrowser() { a.openDemoBrowserFor(purposeVideo) }
+
+// openDemoBrowserFor opens the browser bound to a pick PURPOSE (video / content
+// check / package), resolving the quick-jump paths once, and navigates to the
+// session-remembered dir (first open → the user's home). The purpose steers what
+// picking a recording does (pickBrowsedRecording); the rest of the browser is
+// identical across purposes so there's one file-navigation surface, not three.
+func (a *App) openDemoBrowserFor(purpose browsePurpose) {
 	s := &demoBrowser
+	s.purpose = purpose
 	home, _ := os.UserHomeDir() // "" is tolerated: the quick-jump button just no-ops
 	s.homeDir = home
 	if home != "" {
@@ -272,8 +298,19 @@ func childBrowseDir(dir, name string) string {
 	return filepath.Join(dir, name)
 }
 
-// browseTitle is the modal title (a package const so it's built once).
-const browseTitle = "Pick a .demo to turn into a video"
+// browseTitle names the modal for its current purpose. Each string is a package
+// const built once (no per-frame alloc — the switch returns a constant); the
+// video wording is unchanged from the original single-purpose browser.
+func browseTitle(p browsePurpose) string {
+	switch p {
+	case purposeCheck:
+		return "Pick a .demo/.aorec to check for missing content"
+	case purposePackage:
+		return "Pick a .demo/.aorec to package into a self-contained folder"
+	default:
+		return "Pick a .demo to turn into a video"
+	}
+}
 
 // drawDemoBrowser draws the modal file browser LAST in drawSettings (topmost),
 // with the page's modal fence already released by the caller so its
@@ -320,7 +357,7 @@ func (a *App) drawDemoBrowser(w, h int32) {
 	y := py + 10
 
 	// Title + ✕ close (top-right).
-	c.Label(inX, y, browseTitle, ColText)
+	c.Label(inX, y, browseTitle(s.purpose), ColText)
 	closeR := sdl.Rect{X: px + pw - 30, Y: py + 8, W: 22, H: 22}
 	if c.Button(closeR, "✕") {
 		s.open = false
@@ -488,10 +525,25 @@ func browseMoreLabel(more int) string {
 	return fmt.Sprintf("… and %d more (open a subfolder to narrow it down)", more)
 }
 
-// pickBrowsedRecording is the browser's PICK action: close the browser, then run
-// the SHARED Studio import tail (importDroppedRecording → importRecordingToVideo)
-// — byte-identical to the drag-onto-Studio path. Single logic, N entry points.
+// pickBrowsedRecording is the browser's PICK action, routed by the browser's
+// purpose. Close the browser first (every branch does), then:
+//   - purposeVideo: run the SHARED Studio import tail (importDroppedRecording →
+//     importRecordingToVideo) — byte-identical to the drag-onto-Studio path.
+//   - purposeCheck / purposePackage: hand off to the content-report engine
+//     (openContentReportFor), which loads the recording, starts the probe, and
+//     opens the report panel.
+//
+// The video branch is deliberately untouched from the original single-purpose
+// browser so that flow can't regress (pinned by a test).
 func (a *App) pickBrowsedRecording(path string) {
+	purpose := demoBrowser.purpose
 	demoBrowser.open = false
-	a.importRecordingToVideo(importDroppedRecording(path))
+	switch purpose {
+	case purposeCheck:
+		a.openContentReportFor(path, false)
+	case purposePackage:
+		a.openContentReportFor(path, true)
+	default:
+		a.importRecordingToVideo(importDroppedRecording(path))
+	}
 }

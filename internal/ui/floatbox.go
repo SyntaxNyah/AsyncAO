@@ -317,6 +317,14 @@ func (a *App) closeTopOverlay() bool {
 	// mutually exclusive with the courtroom popups below.
 	case demoBrowser.open:
 		demoBrowser.open = false
+	// The Studio content-report panel (contentpanel.go): another Settings-only
+	// blocking modal behind the c.modalOn fence, so it MUST answer Esc for the same
+	// reason as the browser above (else it silently reappears, fenced, on the next
+	// Settings open). closeContentPanel also CANCELS the running probe/package job —
+	// leaving contentBusy set would refuse the next report and strand the probe
+	// goroutines (idempotent when no job runs). Mutually exclusive with the browser.
+	case contentPanel.open:
+		a.closeContentPanel()
 	// Blocking / confirm modals (highest priority).
 	case a.pendingCloseTab != nil:
 		// The tab-close confirm CAN be open on the lobby (park a server via "+",

@@ -359,8 +359,11 @@ func (a *App) drawSettings(w, h int32) {
 	// It's set HERE (before the header widgets draw) and RELEASED at the very end,
 	// right before the browser itself draws, so the browser's own c.Button/VScrollbar
 	// (which read hovering()) work while everything behind stays fenced. Mirrors the
-	// app.go toolbox release-and-restore idiom.
-	if demoBrowser.open {
+	// app.go toolbox release-and-restore idiom. The Studio content-report panel
+	// (contentpanel.go) is the SAME kind of blocking modal and rides the same fence —
+	// the two are mutually exclusive (picking in the browser closes it and opens the
+	// panel), so one flag OR the other is set, never contended.
+	if demoBrowser.open || contentPanel.open {
 		c.modalOn = true
 	}
 
@@ -522,13 +525,17 @@ func (a *App) drawSettings(w, h int32) {
 		c.LabelClipped(pad, h-24, w-2*pad, a.warnLine, ColDanger)
 	}
 
-	// The in-app .demo browser draws LAST (topmost) with the page fence RELEASED,
-	// so its own widgets work while everything behind stayed click-dead all frame.
-	// No-op when closed.
-	if demoBrowser.open {
+	// The in-app .demo browser and the Studio content-report panel draw LAST
+	// (topmost) with the page fence RELEASED, so their own widgets work while
+	// everything behind stayed click-dead all frame. Both no-op when closed; they're
+	// mutually exclusive, so releasing once for either is correct. The content panel
+	// draws after the browser (a pick closes the browser and opens the panel in the
+	// same click — the panel must own this frame's release).
+	if demoBrowser.open || contentPanel.open {
 		c.modalOn = false
 	}
 	a.drawDemoBrowser(w, h)
+	a.drawContentPanel(w, h)
 }
 
 // drawSettingsTabBody dispatches one tab's rows starting at y — shared by the
@@ -1435,6 +1442,46 @@ func (a *App) drawDemoToVideoCallout(y, w int32) int32 {
 	return y + panelH + 12
 }
 
+// Content-tools call-out copy (package-level literals — drawn every frame, no
+// per-frame concat, matching the demo-video call-out).
+const (
+	contentToolsLead = "Check what a recording needs — or bundle it so it plays anywhere."
+	contentToolsBody = "Enumerates every sprite/background/music/SFX/blip a .demo/.aorec references, probes the origin, and lists what's missing."
+	contentToolsPkg  = "Package writes the found assets + a self-contained .aorec into recordings\\<name>-bundle\\ — it replays offline forever."
+)
+
+// drawContentToolsCallout draws the "Check demo content" / "Package this RP"
+// entry points right under the .demo → video call-out (same highlighted-panel
+// idiom). Both reuse the in-app demo browser (openDemoBrowserFor) with a pick
+// PURPOSE, so the file-navigation surface is shared with the video flow — the
+// pick then routes to the content-report engine (openContentReportFor) and opens
+// the report panel. Shadows pad/w per the mandatory settings idiom.
+func (a *App) drawContentToolsCallout(y, w int32) int32 {
+	c := a.ctx
+	pad := a.formX
+	y = a.settingsSection(y, w, "Content report & packaging")
+
+	panelH := int32(96)
+	panel := sdl.Rect{X: pad, Y: y, W: w - pad - scrollBarW, H: panelH}
+	c.Fill(panel, ColPanel)
+	c.Border(panel, ColAccent)
+
+	iy := y + 8
+	c.Label(pad+12, iy, contentToolsLead, ColText)
+	iy += 20
+	c.LabelClipped(pad+12, iy, panel.W-24, contentToolsBody, ColTextDim)
+	iy += 18
+	c.LabelClipped(pad+12, iy, panel.W-24, contentToolsPkg, ColTextDim)
+	iy += 22
+	if c.Button(sdl.Rect{X: pad + 12, Y: iy, W: 184, H: btnH}, "🔍 Check demo content") {
+		a.openDemoBrowserFor(purposeCheck) // pick a recording → probe → report panel
+	}
+	if c.Button(sdl.Rect{X: pad + 204, Y: iy, W: 168, H: btnH}, "📦 Package this RP") {
+		a.openDemoBrowserFor(purposePackage) // pick → probe → package once ready
+	}
+	return y + panelH + 12
+}
+
 // drawSettingsStudio: the "Studio" tab — a ".demo → video" call-out, scene
 // recording, the recordings library/replay picker, and GIF/WebP/Video export.
 // See replay.go.
@@ -1443,6 +1490,7 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	pad := a.formX
 	w := a.formW2()
 	y = a.drawDemoToVideoCallout(y, w)
+	y = a.drawContentToolsCallout(y, w)
 	y = a.settingsSection(y, w, "Scene recording")
 	c.Label(pad, y, "Record the courtroom to a tiny .aorec replay file — it stores the scene EVENTS (who spoke,", ColTextDim)
 	y += 18

@@ -679,6 +679,15 @@ type App struct {
 	exportSavedDevScale int
 	gif                 *gifExportJob
 	gifResultCh         chan exportResult // off-thread encode → UI (result line + artifact path)
+	// Content report / "Package this RP" (contentjob.go): enumerate a recording's
+	// assets, probe found/missing at the origin (bounded off-thread workers,
+	// render-thread polled), then optionally package the found bytes into a
+	// self-contained bundle folder. Single-flight (contentBusy); contentGen
+	// invalidates a cancelled job's late goroutine sends. Allocated only while a
+	// job runs — nil, zero-cost, otherwise.
+	content     *contentJob
+	contentBusy bool
+	contentGen  int
 
 	// --- M5 background slideshow (idle ambiance, off by default) ---
 	// While enabled AND the courtroom is idle, slideBG holds the current
@@ -5526,6 +5535,15 @@ func (a *App) NextWakeDelay(focused bool) (wait time.Duration, render bool) {
 	if a.drawnDemandPending {
 		considerRender(assetDemandWakeInterval)
 	}
+	// Content report / package keepalive: while a job probes or packages OFF the
+	// render thread (contentjob.go), re-render at the demand cadence so tickContentJob
+	// drains results and the Studio panel's live counts + Cancel stay responsive.
+	// Without it, a job on a dead origin (no input, no other damage) would sit frozen
+	// at idle=off until the 45s hard cap — the "progress looks stuck" trap. Reuses
+	// assetDemandWakeInterval (4 Hz — ample for a progress readout).
+	if a.contentJobRunning() {
+		considerRender(assetDemandWakeInterval)
+	}
 	if wait < minWakeDelay {
 		wait = minWakeDelay
 	}
@@ -6814,6 +6832,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.pollTimer()           // #97 local alarm: one compare while running, zero cost when idle
 	a.pollDownload()
 	a.pollMakerExport() // M16: deliver the self-contained archive export result
+	a.tickContentJob()  // content report / package: drain probe results + poll the package goroutine (no-op when idle)
 	a.pollGifExport()   // M16: deliver the off-thread GIF encode result
 	a.pollCharMeta()    // land remote char.ini fetches (per-character blips + chatbox skins)
 	a.pollBgList()      // drain bg discovery even when the picker is closed (slideshow)

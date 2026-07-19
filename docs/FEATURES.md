@@ -815,6 +815,23 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   temporarily pointed at the archive (an atomic source override), so textures
   still upload through the normal pipeline. *(Tip: export while connected to the
   origin so the assets are reachable to download.)*
+- **Content report & "Package this RP"** (**Settings → Studio**): point either
+  button at any recording — including an imported `.demo` of a live session —
+  and AsyncAO **enumerates everything it references** (character sprites,
+  backgrounds + desks, music, SFX, chat blips) and **probes what actually
+  exists** at the recorded origin (bounded workers, **one probe per asset**
+  through the normal 404-cache/singleflight layers, and a hard wall-clock
+  ceiling so a dead server still yields a report). **🔍 Check demo content**
+  opens the report: **found / missing / unreachable** per category,
+  filterable, copyable to the clipboard. **📦 Package this RP** then drains
+  every found asset's bytes and writes `recordings\<name>-bundle\` in the
+  same self-contained layout as the archive export — a **bundled `.aorec`**
+  plus the art and music, with the gap list saved inside as
+  `MISSING-CONTENT.txt` — so the whole session **replays offline forever**
+  and shares as a plain folder. A recording with **no origin** (a demo
+  imported while disconnected) says so up front instead of pretending
+  everything is missing. *(Evidence images aren't enumerable — a recording
+  stores only the wire index, never the image list.)*
 - **Scene → GIF export** (M16, **🎞 Export GIF** in the maker, **🎞 GIF** per
   recording in **Settings → Studio**): render a recorded courtroom — *people
   talking* — to a **shareable animated GIF**. It renders the scene through a
