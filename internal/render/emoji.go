@@ -112,6 +112,13 @@ func assignEmoji(runes []rune) []bool {
 	return out
 }
 
+// AssignEmoji marks which runes render from the colour-emoji face (true) vs the
+// text font (false). Exported wrapper over assignEmoji so the animated (#M5
+// effects) path in package ui resolves its per-rune emoji mask through the SAME
+// routing as the plain RasterizeFallback path — keeping an effects line's emoji
+// runs byte-identical to a plain line's. Build/layout time only.
+func AssignEmoji(runes []rune) []bool { return assignEmoji(runes) }
+
 // RasterizeFallback renders a message mixing text and emoji: each rune routes to
 // the primary font or the emoji face (assignEmoji), maximal same-font same-style
 // runs become spans laid out left to right, and runs are baseline-aligned (the two

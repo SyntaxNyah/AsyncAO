@@ -782,31 +782,3 @@ func (m *MessageRaster) Destroy() {
 	}
 	m.styled = nil
 }
-
-// wrapText greedily word-wraps text to maxW pixels using real glyph metrics.
-func wrapText(font *ttf.Font, text string, maxW int32) []string {
-	if maxW <= 0 {
-		return []string{text}
-	}
-	var lines []string
-	for _, paragraph := range strings.Split(text, "\n") {
-		words := strings.Fields(paragraph)
-		if len(words) == 0 {
-			lines = append(lines, "")
-			continue
-		}
-		current := words[0]
-		for _, word := range words[1:] {
-			candidate := current + " " + word
-			w, _, err := font.SizeUTF8(candidate)
-			if err == nil && int32(w) <= maxW {
-				current = candidate
-				continue
-			}
-			lines = append(lines, current)
-			current = word
-		}
-		lines = append(lines, current)
-	}
-	return lines
-}

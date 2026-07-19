@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/ttf"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
@@ -163,6 +164,55 @@ func TestApplyStickyEffect(t *testing.T) {
 	a.icEffect = courtroom.TextEffectNone
 	if got := a.applyStickyEffect("plain"); got != "plain" { // off → untouched
 		t.Errorf("off wrap = %q, want \"plain\"", got)
+	}
+}
+
+// TestAnimFontResolverEmoji is the Task-E chain-construction proof on the UI side: the
+// resolver the chatbox hands RasterizeAnimated routes an EMOJI rune to the colour-emoji face
+// (flagged no-tint) and a plain ASCII rune to the base chat face — so an effects line resolves
+// fonts exactly like a plain message. A plain-ASCII message needs NO per-rune resolution, so
+// the resolver is nil (RasterizeAnimated then keeps its single-font path — the perf guarantee).
+func TestAnimFontResolverEmoji(t *testing.T) {
+	if err := ttf.Init(); err != nil {
+		t.Skipf("ttf init: %v", err)
+	}
+	defer ttf.Quit()
+	const sz = 18
+	base, err := loadEmbeddedFont(sz)
+	if err != nil {
+		t.Fatalf("embedded: %v", err)
+	}
+	defer base.Close()
+
+	c := &Ctx{}
+	// A single-font chat set (len==1) → pickSet/covers take the fast path and report covered,
+	// so the resolver gate is decided purely by the emoji signal — which is what we're testing.
+	c.chatSet.fonts = []*ttf.Font{base}
+	a := &App{ctx: c}
+	c.SetEmojiFont(twemojiTTF) // real embedded colour-emoji face, headless-safe
+	emojiFace := c.EmojiFont(DefaultScalePct)
+	if emojiFace == nil {
+		t.Skip("emoji face unavailable headlessly")
+	}
+	a.emojiLoadStarted = true // skip the off-thread kick; the face is already installed
+
+	// "A😀" — ASCII 'A' then a supplementary-plane emoji (2 runes).
+	text := "A\U0001F600"
+	resolve := a.animFontResolver(base, DefaultScalePct, text)
+	if resolve == nil {
+		t.Fatal("emoji text got a nil resolver — the emoji rune would lay out as base-font tofu")
+	}
+	runes := []rune(text)
+	if f, em := resolve(0, runes[0]); f != base || em {
+		t.Errorf("rune 0 (ASCII) resolved to %p emoji=%v, want base face, no emoji flag", f, em)
+	}
+	if f, em := resolve(1, runes[1]); f != emojiFace || !em {
+		t.Errorf("rune 1 (emoji) resolved to %p emoji=%v, want the colour-emoji face flagged", f, em)
+	}
+
+	// Plain ASCII → no resolver (single-font fast path preserved).
+	if r := a.animFontResolver(base, DefaultScalePct, "plain ascii"); r != nil {
+		t.Error("plain ASCII got a resolver, want nil (single-font fast path)")
 	}
 }
 

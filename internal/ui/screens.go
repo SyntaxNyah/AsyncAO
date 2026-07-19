@@ -2249,7 +2249,12 @@ func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
 func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
 	effSig := effectsSig(sc.MessageEffects)
-	if (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
+	// staleAnimChain: an effects line built BEFORE a lazily-loaded CJK/emoji tier landed
+	// carries the old font-chain generation; its glyphs are still tofu/uniform-advance until
+	// it re-rasters against the new chain. Keyed on fontChainGen the same way the log wrap
+	// caches are (qol.go) — Task E. Cheap field compare; only the effects path builds msAnim.
+	staleAnimChain := a.msAnim != nil && a.msAnim.ChainGen() != a.ctx.fontChainGen
+	if !staleAnimChain && (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
 		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered &&
 		a.rasterDevPct == a.ctx.textDevPct { // #77: a UI-scale change re-rasterizes at the new device size
 		return
@@ -6488,7 +6493,13 @@ func renderAnimated(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct 
 	// >100%). Static / emoji / plain messages ARE crisp; an EFFECTS message stays
 	// soft until the follow-up. Clean seam: msAnim XOR msRaster, one per message.
 	font := a.ctx.ChatFontFor(pct, sc.MessageText)
-	return render.RasterizeAnimated(font, sc.MessageText, toRenderEffectSpans(sc.MessageEffects), animColors(sc, col), wrapW), font
+	// Per-rune fallback resolver (Task E): an effects line resolves each rune's face the
+	// SAME way a plain message does — the covering CJK/broad face for scripts the chat font
+	// lacks, the colour-emoji face for emoji — so emoji stop rendering as tofu and CJK stops
+	// getting uniform .notdef advances. Built ONCE per message (layout time); Draw reads the
+	// stored per-rune face, so the per-frame path keeps its zero-alloc guarantee.
+	resolve := a.animFontResolver(font, pct, sc.MessageText)
+	return render.RasterizeAnimated(font, sc.MessageText, toRenderEffectSpans(sc.MessageEffects), animColors(sc, col), wrapW, resolve, a.ctx.fontChainGen), font
 }
 
 // animColors flattens the message's inline-colour runs into a per-rune colour slice so #M5
