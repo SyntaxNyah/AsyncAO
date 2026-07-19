@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
@@ -275,6 +276,172 @@ func TestContentPanelReportRetainedAfterClear(t *testing.T) {
 	// And the shared formatter still renders it (the Copy-list path).
 	if lines := FormatReport(contentPanel.report); len(lines) == 0 {
 		t.Error("retained report must still format for the Copy button")
+	}
+}
+
+// mountedProbeApp builds a headless probe App whose Manager streams from a
+// LocalFetcher over `mount` (localMode) AND whose prefs declare `mount` as the
+// configured local-asset mount — so demoDefaultOrigin resolves a .demo against
+// the local base and the probe path can actually read the seeded files. Returns
+// the App plus the mount's local:// origin.
+func mountedProbeApp(t *testing.T, mount string) (*App, string) {
+	t.Helper()
+	local := assets.NewLocalFetcher([]string{mount})
+	a := headlessProbeApp(t, local, true)
+	a.d.Prefs.SetLocalAssets(true, []string{mount})
+	return a, local.BaseURL()
+}
+
+// writeDemoFile writes a minimal .demo (SC + one MS) under a temp dir and returns
+// its path, so openContentReportFor exercises the .demo → local default policy.
+func writeDemoFile(t *testing.T, stem string) string {
+	t.Helper()
+	demo := "SC#Phoenix#%\n" + demoMS("Phoenix", "hold it", 0)
+	path := filepath.Join(t.TempDir(), stem+demoExt)
+	if err := os.WriteFile(path, []byte(demo), 0o644); err != nil {
+		t.Fatalf("write demo: %v", err)
+	}
+	return path
+}
+
+// TestContentPickerDefaultDemoLocal pins the default policy end-to-end through the
+// panel: a .demo opened while mounts are configured resolves against the local
+// base (a local:// origin), the picker reads useLocal, and the seeded sprite is
+// FOUND — no session, no empty-origin warning.
+func TestContentPickerDefaultDemoLocal(t *testing.T) {
+	resetContentPanel(t)
+	mount := t.TempDir()
+	seedMount(t, mount, "characters/phoenix/(a)normal.png", pngBytes())
+	a, mountOrigin := mountedProbeApp(t, mount)
+
+	a.openContentReportFor(writeDemoFile(t, "scene"), false)
+	if !contentPanel.open {
+		t.Fatal("panel must open")
+	}
+	if !contentPanel.useLocal {
+		t.Error("a .demo under mounts must default to the local base (useLocal)")
+	}
+	if contentPanel.rec.Origin != mountOrigin {
+		t.Errorf("rec.Origin = %q, want the mount origin %q", contentPanel.rec.Origin, mountOrigin)
+	}
+	drainContentJob(t, a)
+	rep := a.ContentJobReport()
+	if rep == nil || rep.Origin != mountOrigin {
+		t.Fatalf("report origin = %v, want the local mount", rep)
+	}
+	if st, ok := findCharStatus(rep, "phoenix"); !ok || st != StatusFound {
+		t.Errorf("mounted .png sprite status = %v ok=%v, want found via the local base", st, ok)
+	}
+}
+
+// TestContentPickerAorecDefaultsToStamped pins the OTHER half of the matrix (the
+// bug the scheme-based default guards): a .aorec opened while mounts ARE
+// configured still defaults to its RECORDED server origin, NOT the mount — an
+// .aorec stamps its origin at record time, and mounts must not hijack it.
+func TestContentPickerAorecDefaultsToStamped(t *testing.T) {
+	resetContentPanel(t)
+	mount := t.TempDir()
+	a, _ := mountedProbeApp(t, mount)
+
+	// A .aorec stamped with an origin-missing (empty) server origin: loadRecording
+	// reads the stamped value verbatim, ignoring demoDefaultOrigin. With the correct
+	// default the panel stays on the server source (useLocal=false), so the report is
+	// OriginMissing — proving mounts did NOT override the .aorec's stamped origin.
+	path := writeTestRecording(t, "stamped") // stamped Origin == "" (server, empty)
+	a.openContentReportFor(path, false)
+	if !contentPanel.open {
+		t.Fatal("panel must open")
+	}
+	if contentPanel.useLocal {
+		t.Error("a .aorec must default to its stamped server origin, NOT the local mount")
+	}
+	if contentPanel.rec.Origin != "" {
+		t.Errorf("rec.Origin = %q, want the stamped (empty) server origin unchanged", contentPanel.rec.Origin)
+	}
+}
+
+// TestContentPickerSwitchRestarts pins the picker's re-run: switching source
+// cancels the current job (bumps the generation) and starts a fresh report against
+// the OTHER origin, and the retained rec's Origin follows so enumeration and
+// packaging read one string. Default (mounts) = local base → the seeded sprite is
+// found; switching to "This server" (no session → empty) re-runs origin-missing;
+// switching back returns to the found local report.
+func TestContentPickerSwitchRestarts(t *testing.T) {
+	resetContentPanel(t)
+	mount := t.TempDir()
+	seedMount(t, mount, "characters/phoenix/(a)normal.png", pngBytes())
+	a, mountOrigin := mountedProbeApp(t, mount)
+
+	a.openContentReportFor(writeDemoFile(t, "scene"), false)
+	drainContentJob(t, a)
+	if !contentPanel.useLocal || contentPanel.rec.Origin != mountOrigin {
+		t.Fatalf("precondition: default should be the local base; useLocal=%v origin=%q", contentPanel.useLocal, contentPanel.rec.Origin)
+	}
+	genBefore := a.contentGen
+
+	// Switch to "This server" (no session → empty server origin). The job restarts
+	// against the empty origin, which short-circuits to an OriginMissing report.
+	if !a.switchContentSource(false) {
+		t.Fatal("switch to server must restart the report")
+	}
+	if contentPanel.useLocal {
+		t.Error("after switching to server, useLocal must be false")
+	}
+	if !contentPanel.pickerChosen {
+		t.Error("an explicit switch must latch pickerChosen (sticky per session)")
+	}
+	if a.contentGen <= genBefore {
+		t.Errorf("a switch must bump the generation (cancel + restart): %d → %d", genBefore, a.contentGen)
+	}
+	if contentPanel.rec.Origin != "" {
+		t.Errorf("rec.Origin after switching to the empty server = %q, want empty", contentPanel.rec.Origin)
+	}
+	drainContentJob(t, a)
+	rep := a.ContentJobReport()
+	if rep == nil || !rep.OriginMissing {
+		t.Fatalf("server (empty) re-run should be OriginMissing, got %v", rep)
+	}
+
+	// Switch back to the local base: the seeded sprite is found again.
+	if !a.switchContentSource(true) {
+		t.Fatal("switch back to local must restart the report")
+	}
+	if contentPanel.rec.Origin != mountOrigin {
+		t.Errorf("rec.Origin after switching back = %q, want the mount origin", contentPanel.rec.Origin)
+	}
+	drainContentJob(t, a)
+	rep = a.ContentJobReport()
+	if rep == nil || rep.Origin != mountOrigin {
+		t.Fatalf("local re-run report origin = %v, want the mount", rep)
+	}
+	if st, _ := findCharStatus(rep, "phoenix"); st != StatusFound {
+		t.Errorf("after switching back the mounted sprite must be found again, got %v", st)
+	}
+}
+
+// TestContentPickerSwitchNoMountsNoOp pins that "Local base" cannot be selected
+// when no mounts are configured: switchContentSource(true) is a no-op (no restart,
+// no generation bump), so the control never offers an unresolvable pick.
+func TestContentPickerSwitchNoMountsNoOp(t *testing.T) {
+	resetContentPanel(t)
+	a := headlessProbeApp(t, nil, false)
+	rec := synthRecording("") // origin-missing; no mounts configured
+	if !a.StartContentReport(rec, "scene") {
+		t.Fatal("start refused")
+	}
+	contentPanel.open = true
+	contentPanel.rec = rec
+	contentPanel.originServer = ""
+	contentPanel.originLocal = "" // no mounts
+	genBefore := a.contentGen
+	if a.switchContentSource(true) {
+		t.Error("switch to local with no mounts must be a no-op")
+	}
+	if a.contentGen != genBefore {
+		t.Error("a no-op switch must NOT bump the generation")
+	}
+	if contentPanel.useLocal {
+		t.Error("useLocal must stay false when there is no mount to switch to")
 	}
 }
 

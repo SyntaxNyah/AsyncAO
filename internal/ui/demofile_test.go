@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -371,6 +372,117 @@ func TestNextRecordingDest(t *testing.T) {
 	}
 	if got, want := nextRecordingDest(dir, base, ext), filepath.Join(dir, base+"-3"+ext); got != want {
 		t.Fatalf("second collision = %q, want %q", got, want)
+	}
+}
+
+// TestDemoDefaultOriginPolicy pins the source-selection default matrix: a .demo
+// import resolves against the LOCAL BASE when local-asset mounts are configured
+// (AO2 parity), and otherwise against the current URL builder's origin (the live
+// session when connected, "" offline). The full 2×2 (mounts present/absent ×
+// connected/not) is walked.
+func TestDemoDefaultOriginPolicy(t *testing.T) {
+	const sessionOrigin = "https://cdn.example/base/"
+	mount := t.TempDir()
+	// The mount origin is deterministic from the mount set — compute the expected
+	// value the SAME way demoDefaultOrigin does.
+	wantMount := assets.NewLocalFetcher([]string{mount}).BaseURL()
+
+	cases := []struct {
+		name      string
+		mounts    bool
+		connected bool
+		want      string
+	}{
+		{"mounts + connected → local base wins", true, true, wantMount},
+		{"mounts + offline → local base", true, false, wantMount},
+		{"no mounts + connected → session origin", false, true, sessionOrigin},
+		{"no mounts + offline → empty (warn path)", false, false, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := testTabApp(t)
+			if tc.mounts {
+				a.d.Prefs.SetLocalAssets(true, []string{mount})
+			}
+			if tc.connected {
+				a.urls = courtroom.NewURLBuilder(sessionOrigin)
+			}
+			got := a.demoDefaultOrigin()
+			// The connected non-local case normalizes the trailing slash via NewURLBuilder;
+			// compare on the host-bearing prefix so the trailing-slash rule doesn't flake.
+			if tc.want == "" {
+				if got != "" {
+					t.Errorf("demoDefaultOrigin = %q, want empty (offline, no mounts → warn path)", got)
+				}
+				return
+			}
+			if got != tc.want {
+				t.Errorf("demoDefaultOrigin = %q, want %q", got, tc.want)
+			}
+			if tc.mounts && !strings.HasPrefix(got, assets.LocalScheme) {
+				t.Errorf("with mounts configured the origin must be a local:// origin, got %q", got)
+			}
+		})
+	}
+}
+
+// TestDemoImportUnderMountsWarnsPositively pins that importing a .demo when mounts
+// are configured (a) resolves against the local base (a local:// origin) and (b)
+// does NOT fire the empty-origin "won't stream" warning — instead it gets the
+// positive "resolving from your local assets" note. This is the end-to-end proof
+// that the empty-origin warning is suppressed when mounts cover the demo.
+func TestDemoImportUnderMountsWarnsPositively(t *testing.T) {
+	a := testTabApp(t)
+	mount := t.TempDir()
+	a.d.Prefs.SetLocalAssets(true, []string{mount})
+
+	demo := strings.Join([]string{
+		"SC#Phoenix#%",
+		demoMS("Phoenix", "hold it", 0),
+	}, "\n")
+	path := filepath.Join(t.TempDir(), "scene.demo")
+	if err := os.WriteFile(path, []byte(demo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec, err := a.loadRecordingAny(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(rec.Origin, assets.LocalScheme) {
+		t.Errorf("a .demo under mounts must resolve against the local base, got Origin=%q", rec.Origin)
+	}
+	// The positive note, not the empty-origin warning.
+	if strings.Contains(a.warnLine, "won't stream") {
+		t.Errorf("the empty-origin warning must be SUPPRESSED when mounts cover the demo; got %q", a.warnLine)
+	}
+	if !strings.Contains(a.warnLine, "local assets") {
+		t.Errorf("expected the positive local-assets note, got %q", a.warnLine)
+	}
+}
+
+// TestDemoImportNoMountsNoSessionWarns pins the unchanged offline path: a .demo
+// imported with no mounts AND no session gets an empty origin and the honest
+// empty-origin warning (the v1.72.0 behavior — not regressed by the policy).
+func TestDemoImportNoMountsNoSessionWarns(t *testing.T) {
+	a := testTabApp(t)
+	demo := strings.Join([]string{
+		"SC#Phoenix#%",
+		demoMS("Phoenix", "hold it", 0),
+	}, "\n")
+	path := filepath.Join(t.TempDir(), "scene.demo")
+	if err := os.WriteFile(path, []byte(demo), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := a.loadRecordingAny(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Origin != "" {
+		t.Errorf("offline import with no mounts must have empty Origin, got %q", rec.Origin)
+	}
+	if !strings.Contains(a.warnLine, "won't stream") {
+		t.Errorf("offline no-mount import must fire the empty-origin warning; got %q", a.warnLine)
 	}
 }
 

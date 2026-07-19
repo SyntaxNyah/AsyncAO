@@ -699,14 +699,31 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   self-contained layout as **📦 Package this RP**, gap list included). The
   replay **survives its server** with zero effort; offline recordings and
   busy moments skip quietly, and the flat file always lands regardless.
-- **Imported recordings resolve their server's real formats.** A `.demo`'s
-  origin is never the live session, so its host never learned which formats
-  the server serves — probes and exports walked the single zero-fallback
-  default and found nothing on `.gif`/`.png` servers. The content report and
-  the video export now **seed the origin's `extensions.json` first**, and the
-  report's diagnostic probe **walks the full format chain** on manifest-less
-  hosts (learning the winner, so the export right after is single-probe). The
-  live rendering path keeps its zero-fallback discipline untouched.
+- **Imported recordings resolve their server's real formats.** A remote
+  origin's host may never have learned which formats it serves — probes and
+  exports walked the single zero-fallback default and found nothing on
+  `.gif`/`.png` servers. The content report and the video export now **seed
+  the origin's `extensions.json` first**, and the report's diagnostic probe
+  **walks the full format chain** on manifest-less hosts (learning the
+  winner, so the export right after is single-probe). The live rendering
+  path keeps its zero-fallback discipline untouched.
+- **A `.demo` defaults to your local assets** when local mounts are
+  configured (Settings → Assets) — the same way AO2 plays demos against its
+  own base folder — and the content report grew a **"Resolve from: This
+  server / Local base"** switch so either source can be checked or packaged
+  per run (one source per run; segments the client can't serve in its
+  current mode draw disabled). An `.aorec` keeps defaulting to the server
+  it was recorded on.
+- **Exports always finish.** A recording whose assets can't be fetched at
+  all — a dead CDN, a long-gone server — still renders a **complete video**:
+  assets that conclusively don't exist settle the pre-warm promptly and the
+  stage shows placeholders, and even a wholly unreachable origin is bounded
+  by the warm ceiling instead of freezing the progress bar.
+- **Streamed replays pre-load before playing.** Opening a flat (non-bundled)
+  `.aorec` now runs a brief **"Loading scene…"** pass — sprites through the
+  bounded warm window, music prefetched so sound starts on time — with a
+  **Skip** button. Bundled recordings skip it entirely (their assets are
+  already local).
 - **Scene recording & replay** (M16, its own **Settings → Studio** tab, **off by
   default**):
   record a courtroom scene to a tiny **`.aorec`** replay file and play it back

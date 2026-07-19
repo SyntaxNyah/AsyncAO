@@ -171,6 +171,16 @@ func (m *Manager) SetArchiveSource(f Fetcher) { m.archiveSrc.Store(&f) }
 // ClearArchiveSource removes the bundled-archive source override.
 func (m *Manager) ClearArchiveSource() { m.archiveSrc.Store(nil) }
 
+// LocalMode reports whether this Manager was built to read assets from local
+// mounts (a single LocalFetcher source) rather than stream from the network.
+// It is FIXED at construction (NewManager reads deps.LocalMode) — toggling the
+// local-assets pref mid-session only rebuilds the URL builder, never the
+// Manager's source — so callers that must know which URL scheme the single
+// source can actually serve (e.g. the content picker deciding whether an
+// https:// vs local:// origin is reachable at all) MUST key off this, NOT the
+// live pref: the pref can invert while the source stays put.
+func (m *Manager) LocalMode() bool { return m.localMode }
+
 // SetAssetOrigin forwards a power-user Origin / CORS header override to the network
 // source. No-op in local / no-streaming mode (the source isn't a network client).
 func (m *Manager) SetAssetOrigin(origin string) {

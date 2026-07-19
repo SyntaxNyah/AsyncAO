@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
@@ -262,10 +263,40 @@ func recordingToDemo(rec *sceneRecording) ([]byte, error) {
 	return []byte(b.String()), nil
 }
 
-// demoDefaultOrigin picks the asset host an imported demo streams from: the
-// current URL builder's origin (the live session's when connected; "" offline
-// is fine — set one in the Scene Maker afterwards, like a new scene).
+// mountOrigin returns the local:// origin the configured local-asset mounts
+// resolve against, or "" when local-asset mode is off / no mounts are set. The
+// gate is the SAME one main.go:274 and rebuildAssetOrigin use to wire the
+// Manager's Source (enabled AND at least one mount) — the only state where a
+// local:// origin actually resolves, since in that mode the Manager's Source IS
+// the LocalFetcher over exactly this mount set. The origin string is the
+// LocalFetcher's BaseURL (a deterministic hash of the ordered mount set), so it
+// equals the origin the wired production fetcher serves — byte-for-byte the same
+// keyspace, no drift.
+func (a *App) mountOrigin() string {
+	if enabled, mounts := a.d.Prefs.LocalAssets(); enabled && len(mounts) > 0 {
+		return assets.NewLocalFetcher(mounts).BaseURL()
+	}
+	return ""
+}
+
+// demoDefaultOrigin picks the asset host an imported .demo streams from — the
+// user-set source-selection default:
+//   - Local-asset mounts configured (Settings → Assets) → the mount's local://
+//     origin, so an imported .demo resolves against the local base folder. This
+//     is AO2 parity: AO2 plays a .demo against its local base, and it also
+//     sidesteps a dead recorded server entirely (there is none stored in a .demo).
+//   - No mounts → today's behavior: the current URL builder's origin (the live
+//     session's when connected; "" offline is fine — the empty-origin warning
+//     fires and the user can set one in the Scene Maker afterwards, like a new
+//     scene).
+//
+// Only .demo import is steered here: loadRecordingForExport ignores this origin
+// for a .aorec (an .aorec carries its own recorded Origin, stamped at record
+// time — the .aorec-defaults-to-its-recorded-server half of the matrix).
 func (a *App) demoDefaultOrigin() string {
+	if m := a.mountOrigin(); m != "" {
+		return m // mounts configured: resolve the demo against the local base (AO2 parity)
+	}
 	return a.urls.Origin()
 }
 
@@ -317,13 +348,22 @@ func loadRecordingForExport(path, origin string) gifLoadResult {
 	case truncated > 0:
 		res.debug = append(res.debug, fmt.Sprintf("demo import: %s — stopped at the %d-event scene cap (%d later events not imported)", base, maxRecordedEvents, truncated))
 	}
-	// A .demo records only bare asset names — never WHERE the server's assets live.
-	// rec.Origin was just filled from the current session (demoDefaultOrigin), so an
-	// import with no session gets "" and every music/SFX/sprite URL is unfetchable:
-	// the demo plays SILENT with a blank stage and nothing says why (live report,
-	// v1.72.0). Warn honestly, with the two real remedies. warnLine is visible on
-	// Settings since the picker-hotfix banner fix.
-	if strings.TrimSpace(rec.Origin) == "" {
+	// This branch is .demo-only (the .aorec load returned above). A .demo records
+	// only bare asset names — never WHERE the server's assets live. rec.Origin was
+	// just filled by demoDefaultOrigin, so the note reflects WHICH source it will
+	// stream from, keyed on the resolved origin's SCHEME:
+	//   - a local:// origin: the configured local mounts (AO2 parity) — a positive
+	//     note, no warning; a missing local asset simply shows in the content report.
+	//   - "" (no mounts, no session): every music/SFX/sprite URL is unfetchable, so
+	//     the demo plays SILENT with a blank stage and nothing says why (v1.72.0).
+	//     Warn honestly, with the two real remedies. The local:// case can NEVER
+	//     reach the empty-origin clause (a local:// origin is non-empty), so the
+	//     empty-origin warning is automatically suppressed when mounts cover the demo.
+	// warnLine is visible on Settings since the picker-hotfix banner fix.
+	switch {
+	case strings.HasPrefix(rec.Origin, assets.LocalScheme):
+		res.warnMsg = "Imported " + base + " — resolving from your local assets. Anything not in your mounts shows in the content report."
+	case strings.TrimSpace(rec.Origin) == "":
 		res.warnMsg = "Imported " + base + " without a server — music and sprites won't stream. Connect to the demo's server first, or set Origin/CDN in the Scene Maker."
 	}
 	return res

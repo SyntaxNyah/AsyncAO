@@ -29,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/veandco/go-sdl2/sdl"
 )
 
@@ -44,6 +45,17 @@ const (
 	// cpModalMargin is the inset of the centered modal from the window edges (the
 	// demo browser's browseModalMargin sibling).
 	cpModalMargin = 40
+	// cpSourceLabelW is the fixed column the "Resolve from:" label occupies before
+	// the two source-segment buttons begin, so the segments align regardless of the
+	// label texture width.
+	cpSourceLabelW = 96
+	// cpSourceBtnW is the width of one source segment button ("This server" /
+	// "Local base") — wide enough for either cached label.
+	cpSourceBtnW = 96
+	// cpBtnLabelInset is the top inset of a hand-drawn (disabled) button's label,
+	// matching the +4 the panel's item/header rows use so a dimmed segment's text
+	// sits at the same baseline as an enabled c.Button's centered label (btnH=22).
+	cpBtnLabelInset = 4
 )
 
 // cpRowKind tags a visible row: a category header or one asset item.
@@ -97,6 +109,30 @@ type contentPanelState struct {
 	// (missing/unreachable — what a recipient needs to fetch); true lists every
 	// enumerated asset. The header counts always reflect the full category.
 	showAll bool
+
+	// Source picker ("Resolve from: This server / Local base"). A recording can be
+	// probed/packaged/exported against EITHER its server origin or the configured
+	// local mounts, and the panel lets the user switch and re-run — the task's
+	// design matrix. Both candidate origins are captured when the panel opens; the
+	// live choice mutates the retained rec's Origin and restarts the job, so the
+	// SAME string drives enumeration AND packaging (writeContentBundle's per-asset
+	// CutPrefix(url, rec.Origin) must match the origin the probe resolved against —
+	// a mismatch would count every asset "external" and write an empty bundle).
+	//   originServer: the recording's server origin (a .aorec's stamped Origin, or a
+	//     .demo's live session AssetURL) — "" when offline / none recorded.
+	//   originLocal:  the configured mounts' local:// origin — "" when local-asset
+	//     mode is off / no mounts.
+	// useLocal is the current choice; it is NOT cleared on a fresh open, so the last
+	// pick sticks for the session (a per-session preference, no saved pref needed —
+	// the panel singleton holds it like showAll's transient state).
+	originServer string
+	originLocal  string
+	useLocal     bool
+	// pickerChosen latches once the user has EXPLICITLY toggled the source. Until
+	// then each open follows the default policy (demoDefaultOrigin: local when mounts
+	// are configured, else the server); after an explicit pick, useLocal sticks for
+	// the rest of the session across opens — "persist the last choice per session."
+	pickerChosen bool
 
 	scroll int32
 	// rows is the cached visible-row model (headers + filtered items). Rebuilt only
@@ -152,14 +188,50 @@ func (a *App) openContentReportFor(path string, pkg bool) {
 		return
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+
+	s := &contentPanel
+	// Capture BOTH source candidates for the picker before the probe starts:
+	//   - originServer: the recording's server origin. loadRecordingAny already set
+	//     rec.Origin via demoDefaultOrigin, which is the local:// mount when mounts
+	//     are configured — so we recover the SERVER candidate as the non-local
+	//     origin (a .aorec's stamped Origin is already the server one; a .demo's
+	//     server candidate is the live session AssetURL). contentServerOrigin picks
+	//     it out.
+	//   - originLocal: the configured mounts' local:// origin ("" when off).
+	s.originServer = a.contentServerOrigin(rec)
+	s.originLocal = a.mountOrigin()
+	// Choice: an explicit prior pick sticks for the session; otherwise follow the
+	// default policy — which the loaded rec.Origin's SCHEME already encodes, since
+	// loadRecordingAny ran demoDefaultOrigin for a .demo (→ local:// under mounts)
+	// and used the stamped Origin for a .aorec (→ its recorded server origin,
+	// unchanged even under mounts). Reading the scheme keeps the policy in ONE place
+	// (demoDefaultOrigin) instead of re-deciding it by extension here — an .aorec
+	// therefore correctly defaults to its stamped server origin, not the mount.
+	if !s.pickerChosen {
+		s.useLocal = strings.HasPrefix(rec.Origin, assets.LocalScheme)
+	}
+	// Apply the chosen origin to the rec the probe/package/export all read. In every
+	// default (un-chosen) case this is a NO-OP that reproduces exactly what
+	// loadRecordingAny set — the overwrite only bites on an explicit sticky pick.
+	rec.Origin = s.chosenOrigin()
+
 	if !a.StartContentReport(rec, stem) {
 		return // StartContentReport set warnLine (busy / empty) and returned false
 	}
 	// Fresh run: reset the cached report + rows so a prior panel's data can't flash.
-	s := &contentPanel
 	s.open = true
 	s.rec = rec
 	s.stem = stem
+	a.resetContentPanelRun(pkg)
+}
+
+// resetContentPanelRun clears the per-run cached report/rows/summary/scroll state
+// so a fresh probe (a first open OR a source-switch restart) can't flash a prior
+// run's data. Shared by openContentReportFor and the picker restart — the SAME
+// reset both paths need, minus the rec/stem/origin fields the caller owns. pkg
+// re-arms the package-when-ready latch (the browser's purposePackage flow).
+func (a *App) resetContentPanelRun(pkg bool) {
+	s := &contentPanel
 	s.report = nil
 	s.rows = s.rows[:0]
 	s.rowsReport = nil
@@ -171,6 +243,79 @@ func (a *App) openContentReportFor(path string, pkg bool) {
 	s.packageWhenReady = pkg
 	s.sawJob = false // a fresh run: forget the prior job's done-summary
 	s.doneMsg = ""
+}
+
+// contentServerOrigin recovers a recording's SERVER-side origin candidate for the
+// source picker (the non-local origin). rec.Origin was just set by
+// demoDefaultOrigin, which returns the local:// mount when mounts are configured,
+// so a local:// value means the server candidate lives elsewhere: for a .demo the
+// live session's AssetURL (a .demo stores none), "" offline. A non-local rec.Origin
+// (an .aorec's stamped Origin, or a .demo imported with no mounts) IS the server
+// candidate — use it verbatim. Render thread only (reads a.sess).
+func (a *App) contentServerOrigin(rec *sceneRecording) string {
+	if rec != nil && !strings.HasPrefix(rec.Origin, assets.LocalScheme) {
+		return rec.Origin // already the server origin (stamped .aorec, or mounts-off .demo)
+	}
+	if a.sess != nil {
+		return a.sess.AssetURL // a .demo under local mounts: the live session is the server candidate
+	}
+	return ""
+}
+
+// chosenOrigin resolves the picker's current selection to a concrete origin: the
+// local mount when useLocal AND a mount exists, else the server origin. Falling
+// back to the server when useLocal but originLocal=="" keeps the toggle honest if
+// mounts were cleared between opens.
+func (s *contentPanelState) chosenOrigin() string {
+	if s.useLocal && s.originLocal != "" {
+		return s.originLocal
+	}
+	return s.originServer
+}
+
+// switchContentSource flips the resolve-from choice and RE-RUNS the report against
+// the other origin — the panel picker's action. It is a no-op when the requested
+// state already holds (a repeat click, or a switch to local with no mounts), so a
+// running probe isn't needlessly torn down. Otherwise it latches the explicit
+// choice (sticks for the session), CANCELS the in-flight job (idempotent —
+// CancelContentJob frees the single-flight slot + reaps the probe goroutines),
+// re-stamps the retained rec's Origin to the chosen source so enumeration AND
+// packaging read the SAME string (the writeContentBundle CutPrefix invariant), and
+// starts a fresh probe from that retained rec (no disk re-read, no re-emitted
+// import notes — the rec is already in hand). The package-when-ready latch RIDES
+// the switch (re-armed via resetContentPanelRun): a purposePackage flow that
+// switched source before the probe settled still packages the CHOSEN source once
+// ready — the task's "the choice carries into a subsequent package launched from
+// that panel." Render thread only. Returns whether it actually restarted (tests).
+func (a *App) switchContentSource(useLocal bool) bool {
+	s := &contentPanel
+	if s.rec == nil {
+		return false // nothing loaded to re-run
+	}
+	if useLocal && s.originLocal == "" {
+		return false // no mounts to switch to — leave the current run alone
+	}
+	if useLocal == s.useLocal && s.pickerChosen {
+		return false // already on this source by explicit choice: nothing to do
+	}
+	s.useLocal = useLocal
+	s.pickerChosen = true
+	origin := s.chosenOrigin()
+	if s.rec.Origin == origin && s.report != nil {
+		// The retained rec already carries this origin and a report exists for it
+		// (e.g. the default run already used this source): don't tear down a good run.
+		return false
+	}
+	a.CancelContentJob()  // free the single-flight slot + reap the current probe
+	s.rec.Origin = origin // the ONE origin enumeration + packaging both read
+	pkg := s.packageWhenReady
+	if !a.StartContentReport(s.rec, s.stem) {
+		// Refused (should not happen — the slot was just freed). Leave the panel open
+		// with its warnLine; the prior report/rows caches were not yet cleared.
+		return false
+	}
+	a.resetContentPanelRun(pkg)
+	return true
 }
 
 // closeContentPanel closes the panel AND cancels the running job (idempotent —
@@ -296,6 +441,75 @@ func cpStatusTag(st AssetStatus) string {
 	}
 }
 
+// drawContentSourcePicker draws the "Resolve from: [This server] [Local base]"
+// segmented control and returns the y past it. The active source is accent-filled;
+// clicking the inactive source calls switchContentSource (cancel + re-run against
+// the other origin).
+//
+// A segment is enabled only when the Manager's SINGLE source can actually serve
+// that origin's URL scheme — because the production Manager is mode-locked at
+// construction (Manager.LocalMode): in streaming mode it holds a network client
+// that transport-errors on a local:// URL, and in local mode it holds a
+// LocalFetcher that errors on an https:// URL. probeRef reports such a
+// transport-error base as [missing] (ResolveRawFull swallows the error), so an
+// ENABLED-but-unservable segment would yield a whole report of false [missing]
+// rows — "absent at that source" when the truth is "this client can't query that
+// source at all." So:
+//   - "Local base" enables only when mounts are configured (originLocal!="") AND
+//     the Manager is in local mode.
+//   - "This server" enables only when the Manager is NOT in local mode (streaming);
+//     in local mode the network origin is structurally unreachable.
+//
+// The disabled segment stays visible (the design matrix / mode indicator) but
+// draws dim and no-ops. Two labels + two buttons per frame, all cached
+// strings/consts — the panel's alloc-free budget.
+func (a *App) drawContentSourcePicker(s *contentPanelState, inX, y int32) int32 {
+	c := a.ctx
+	// The Manager's fixed source: local mode serves ONLY local:// (LocalFetcher),
+	// streaming mode ONLY the network client. Key the enable off the Manager's
+	// actual mode, never the live pref — the pref can be toggled mid-session
+	// without rebuilding the source, which would invert the disable. Nil-guarded
+	// for the headless draw smoke test (no Manager wired): default to streaming.
+	localModeMgr := a.d.Manager != nil && a.d.Manager.LocalMode()
+	c.Label(inX, y+4, "Resolve from:", ColTextDim)
+	bx := inX + cpSourceLabelW
+	// One segment button. active = accent-filled (the current source); a disabled
+	// segment (no mounts for Local) draws dim and never fires.
+	seg := func(label string, active, enabled bool) bool {
+		r := sdl.Rect{X: bx, Y: y, W: cpSourceBtnW, H: btnH}
+		bx += cpSourceBtnW + 6
+		if active {
+			// Accent fill marks the live source (ButtonCol's bg=hover=accent so it reads
+			// selected, not hoverable). It still reports clicks, but re-selecting the
+			// active source is a no-op in switchContentSource — harmless.
+			return c.ButtonCol(r, label, ColAccent, ColAccent, ColAccent, ColBackground)
+		}
+		if !enabled {
+			// Disabled: dim body + dim label, swallow the click (draw only). The label
+			// insets by cpBtnLabelInset — the same top inset the panel's other in-button
+			// labels use — so it never re-derives a bespoke centering constant.
+			c.Fill(r, ColPanel)
+			c.Border(r, ColPanelHi)
+			c.LabelClipped(r.X+8, r.Y+cpBtnLabelInset, r.W-12, label, ColTextDim)
+			return false
+		}
+		return c.Button(r, label)
+	}
+	useLocal := s.useLocal && s.originLocal != ""
+	// A source is servable only if the Manager's fixed mode matches its scheme:
+	// "This server" (https://) needs streaming mode; "Local base" (local://) needs
+	// local mode AND a configured mount. A dead pick draws disabled and no-ops.
+	serverServable := !localModeMgr
+	localServable := localModeMgr && s.originLocal != ""
+	if seg("This server", !useLocal, serverServable) {
+		a.switchContentSource(false)
+	}
+	if seg("Local base", useLocal, localServable) {
+		a.switchContentSource(true)
+	}
+	return y + btnH + 6
+}
+
 // drawContentPanel draws the modal content-report panel LAST in drawSettings
 // (topmost), with the page's modal fence already released by the caller so its
 // c.Button / c.VScrollbar / c.hovering widgets work normally. No-op when closed.
@@ -353,6 +567,14 @@ func (a *App) drawContentPanel(w, h int32) {
 		return
 	}
 	y += 26
+
+	// Source picker: "Resolve from: [This server] [Local base]". The active source
+	// is accent-filled (ButtonCol), the other is a plain button; clicking the
+	// inactive one switches source and re-runs the report against the other origin
+	// (switchContentSource). "Local base" only enables when mounts are configured
+	// (originLocal != ""); otherwise it draws disabled-dim and no-ops, so the
+	// control is always present (the matrix) without offering an unresolvable pick.
+	y = a.drawContentSourcePicker(s, inX, y)
 
 	rep := s.report
 
