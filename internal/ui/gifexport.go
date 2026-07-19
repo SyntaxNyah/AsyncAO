@@ -43,22 +43,70 @@ func exportChatPct(vpH int32, textScale int) int {
 	return pct
 }
 
-// sceneExportFromPath loads a recording and exports it straight to a GIF (the
-// Studio "🎞 GIF" button), an animated WebP ("🎬 WebP"), or an MP4/WebM video
-// ("🎥 Video") — no trip through the maker. A bundled archive renders from its
-// own folder (the archive source is dropped when the export finishes).
+// sceneExportFromPath begins exporting a recording straight to a GIF (the Studio
+// "🎞 GIF" button), an animated WebP ("🎬 WebP"), or an MP4/WebM video ("🎥
+// Video") — no trip through the maker. A bundled archive renders from its own
+// folder (the archive source is dropped when the export finishes).
+//
+// The disk read + parse (ReadFile + demoToRecording / JSON unmarshal) is
+// deferred to ONE goroutine off the render thread — a 30–60 MB .aorec or an
+// all-day .demo froze the whole window otherwise. This function only VALIDATES,
+// creates the job shell in its "loading" phase, sets a.gifExporting=true (so the
+// progress overlay draws a "Reading demo…" screen immediately), and spawns that
+// loader. tickGifExport's loading branch polls the result and finishes the
+// export on the render thread. Single-flight: the a.gifExporting guard refuses a
+// second attempt exactly as before.
 func (a *App) sceneExportFromPath(path string, kind exportKind) {
 	if a.gifExporting || a.replaying || a.recActive {
 		a.warnLine = "Finish the current replay / recording first."
 		a.warnAt = time.Now()
 		return
 	}
-	rec, err := a.loadRecordingAny(path) // .aorec, or an AO2 .demo converted on the fly
-	if err != nil {
-		a.warnLine = "Couldn't load recording: " + err.Error()
-		a.warnAt = time.Now()
-		return
+	// Resolve the origin an imported .demo streams from NOW, on the render thread
+	// (a.urls is a render-thread field): the loader goroutine must not touch App.
+	origin := a.demoDefaultOrigin()
+	base := filepath.Base(path)
+	loadCh := make(chan gifLoadResult, gifLoadBuf)
+	a.gif = &gifExportJob{
+		loading:  true,
+		loadCh:   loadCh,
+		loadName: base,
+		loadPath: path,
+		loadKind: kind,
 	}
+	a.gifExporting = true
+	// The overlay draws while the disk work runs; without a bracket the loading
+	// screen renders at the live UI scale, which is fine — the export scale bracket
+	// is set later, when capture is set up (startSceneExport, after the load lands).
+	a.warnLine = "Reading " + base + "…"
+	a.warnAt = time.Now()
+	go func() {
+		// ONE bounded goroutine (§17.4). It does only pure disk work and sends once
+		// on the per-job channel; the buffer (cap 1) always accepts, so a Cancel that
+		// drops this job can't leave the goroutine blocked on send — it finishes and
+		// dies, its result landing in a buffer nobody polls.
+		loadCh <- loadRecordingForExport(path, origin)
+	}()
+}
+
+// finishLoadedExport runs the render-thread tail of an async export once the
+// loader delivers a parsed recording: replay the import notes, route a bundled
+// archive to its own folder, and hand off to startSceneExport (which builds the
+// capture target, spawns the encoder/ffmpeg, enumerates the scene's assets, and
+// begins the incremental warm). Render thread only.
+func (a *App) finishLoadedExport(res gifLoadResult) {
+	kind := a.gif.loadKind
+	path := a.gif.loadPath
+	// The shell job is replaced wholesale by startSceneExport's real job; clear the
+	// flags first so startSceneExport's `if a.gifExporting { return }` guard reads a
+	// clean slate. This all runs inside ONE tickGifExport call before this frame's
+	// draw, so the brief a.gifExporting=false window is never observed — and if
+	// startSceneExport refuses (empty scene / no ffmpeg), the flags correctly stay
+	// cleared and its warnLine shows on the normal screen.
+	a.gif = nil
+	a.gifExporting = false
+	a.emitLoadNotes(res)
+	rec := res.rec
 	if rec.Bundled {
 		a.beginBundledReplay(rec, filepath.Dir(path)) // archive source + repoint Origin
 	}
@@ -95,6 +143,44 @@ const (
 	// gifWarmMax is the hard cap so a scene with 404-ing assets still exports.
 	gifWarmQuiet = 600 * time.Millisecond
 	gifWarmMax   = 6 * time.Second
+
+	// gifWarmHardCap is the ABSOLUTE wall-clock ceiling on the whole warm phase,
+	// measured from job creation (not from warmSubmitDone like gifWarmMax). It is
+	// the backstop the incremental submitter needs: outstanding = len(warmInFlight)
+	// = submitted bases not yet resident, and a submitted ref that 404s (or resolves
+	// to a base other than r.Base) NEVER becomes T1-resident, so it never leaves the
+	// in-flight set. If ≥warmInFlightWindow such refs pile up, room stays 0,
+	// pendingWarm never drains, warmSubmitDone never latches, and the gifWarmMax
+	// clock (which only starts at warmSubmitDone) would never run — the phase would
+	// hang forever on a missing-origin imported .demo (exactly the 404-heavy scene
+	// this async path exists to serve). This anchor guarantees the phase ends and
+	// the export proceeds regardless of pending/submit state. Generous headroom
+	// over gifWarmMax so a large, still-progressing warm isn't guillotined early.
+	gifWarmHardCap = 20 * time.Second
+
+	// Incremental warm submission (the freeze fix). startSceneExport MUST NOT loop
+	// PrefetchChain(PriorityHigh) over every scene ref: the high lane holds only
+	// highLaneCap(64) jobs and Submit BLOCKS the producer when it's full (live
+	// work is never shed — network/pool.go). An all-day imported .demo yields
+	// thousands of refs, so that loop saturates the lane and blocks the render
+	// thread — for the whole storm — BEFORE the progress overlay ever draws (the
+	// reported "whole window freezes with no loading screen"). Instead the refs
+	// are stored on the job and submitted a bounded batch per warm tick.
+	//
+	// warmInFlightWindow is the OUTSTANDING (submitted-but-not-yet-resident) bound:
+	// kept well under highLaneCap so a Submit can never find a full high lane and
+	// block. warmPrefetchPerTick is the per-tick burst cap (= the pool's worker
+	// count, DefaultWorkers), a small batch that drains within a frame. The two
+	// together mean one warm tick's submissions cost microseconds, never a stall.
+	warmInFlightWindow  = 32 // < highLaneCap(64): outstanding high-lane jobs stay below the cap
+	warmPrefetchPerTick = 16 // = network.DefaultWorkers: a frame's-worth of submissions
+
+	// gifLoadBuf is the buffer of the disk-load → render-thread result channel
+	// (hard rule §17.4: every channel has a named cap). One slot is enough — a
+	// single loader goroutine sends exactly once and tickGifExport drains it every
+	// frame, so the goroutine blocks ≤1 frame on the handoff and then dies (it
+	// never leaks blocked on send, even after a Cancel: the buffer always accepts).
+	gifLoadBuf = 1
 )
 
 // exportResult is one finished export delivered back to the UI thread: the
@@ -363,11 +449,54 @@ type gifExportJob struct {
 	// Asset pre-warm phase: prefetch the scene's sprites/backgrounds and wait for
 	// T1 residency before the first capture, so characters are on stage.
 	warming      bool
-	warmRefs     []courtroom.AssetRef
+	warmRefs     []courtroom.AssetRef // the FULL set (M in the overlay + residency counting)
+	warmCreated  time.Time            // job-creation wall clock: anchors gifWarmHardCap (never-resident-ref backstop)
 	warmStarted  time.Time
 	warmLastGain time.Time
 	warmBest     int // most assets seen resident so far (quiescence detector)
 	warmResident int // resident count from the last warm tick (for the overlay)
+
+	// Incremental warm submission (freeze fix): pendingWarm holds refs not yet
+	// handed to the pool; tickGifWarm drains a bounded batch per tick so the
+	// producer never blocks on a full high lane. warmInFlight is the set of
+	// SUBMITTED bases that are not yet T1-resident — the true high-lane occupancy
+	// this phase contributes; len(warmInFlight) is the outstanding window (kept <
+	// the lane cap) and each tick prunes bases that have become resident so room
+	// reopens as fetches land. It self-bounds: once it reaches warmInFlightWindow,
+	// room is 0 and submission stops, so the set never exceeds that named cap. It
+	// counts ONLY real submits (a pre-resident, never-submitted ref is never in it),
+	// which is why pre-resident refs can't deflate the window and re-open the block.
+	// warmSubmitted is a cumulative count of real submits (observability + the
+	// overlay). warmSubmitDone latches once every ref has been submitted — only then
+	// does the quiescence/timeout clock start (a huge ref list mustn't be
+	// guillotined by gifWarmMax while it's still being fed to the pool).
+	pendingWarm    []courtroom.AssetRef
+	warmInFlight   map[string]struct{}
+	warmSubmitted  int
+	warmSubmitDone bool
+
+	// Async load phase: the disk read + parse runs on ONE goroutine off the render
+	// thread (a 30–60 MB .aorec or an all-day .demo froze the window otherwise).
+	// loadCh (gifLoadBuf-buffered) delivers the parsed recording; the render thread
+	// finishes the export on delivery. loadName is the file base for the overlay;
+	// loadKind is the requested format. The channel is per-job identity: on Cancel
+	// the job (and its channel) is dropped, so a late goroutine send lands in a
+	// buffer nobody polls (never blocks — the goroutine finishes and dies).
+	loading  bool
+	loadCh   chan gifLoadResult
+	loadName string
+	loadPath string
+	loadKind exportKind
+}
+
+// gifLoadResult is the disk-load goroutine's handoff to the render thread: the
+// parsed recording plus the user-facing notes to emit ON the render thread
+// (pushDebug / warnLine can't be touched off it). Populated purely off-thread.
+type gifLoadResult struct {
+	rec     *sceneRecording
+	err     error
+	debug   []string // skipped/truncated import notes (emitted via pushDebug)
+	warnMsg string   // empty-origin honesty warning ("" = none), emitted via warnLine
 }
 
 // startSceneExport spins up the offscreen render of scene into an animated GIF
@@ -501,10 +630,13 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		a.gifResultCh = make(chan exportResult, gifResultBuf)
 	}
 
-	// Pre-warm: enumerate every sprite / background / desk the scene needs and
-	// prefetch them at high priority, then (in tickGifWarm) wait for them to
-	// decode into T1 before capturing — otherwise the fast export outruns the
-	// async fetch and renders an empty stage. Music refs (Exact) aren't textures.
+	// Pre-warm: enumerate every sprite / background / desk the scene needs; the
+	// refs are SUBMITTED incrementally (tickGifWarm, a bounded batch per tick) so a
+	// thousands-of-refs import can't fill the bounded high lane and block the render
+	// thread — the freeze fix. tickGifWarm waits for them to decode into T1 before
+	// capturing, otherwise the fast export outruns the async fetch and renders an
+	// empty stage. Music refs (Exact) aren't textures. No PrefetchChain call fires
+	// here — pendingWarm holds the whole list for the incremental submitter.
 	urls := courtroom.NewURLBuilder(scene.Origin)
 	evs := make([]courtroom.Event, 0, len(scene.Events))
 	for _, re := range scene.Events {
@@ -515,36 +647,40 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 		if r.Exact {
 			continue
 		}
-		warmRefs = append(warmRefs, r)
-		a.d.Manager.PrefetchChain(r.Base, r.Alts, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
+		warmRefs = append(warmRefs, r) // AssetType: from SceneAssets — submitted in tickGifWarm
 	}
 
 	now := time.Now()
 	a.gif = &gifExportJob{
-		room:         room,
-		ct:           ct,
-		events:       append([]recEvent(nil), scene.Events...),
-		name:         sanitizeStem(name),
-		kind:         kind,
-		webp:         enc,
-		vid:          vid,
-		vidPath:      vidPath,
-		vidFormat:    vidFormat,
-		audioCap:     audioCap,
-		w:            w,
-		h:            h,
-		fps:          fps,
-		frameDt:      frameDt,
-		delayCs:      delayCs,
-		loop:         opts.Loop,
-		maxFrames:    maxFrames,
-		stamp:        exportStamp(opts, scene),
-		subsOn:       kind == exportVideo && opts.Subtitles, // #69 frame-timed .srt/.vtt beside the video
-		chatPct:      exportChatPct(h, opts.TextScale),      // font fitted to the capture, not the live zoom
-		warming:      true,
-		warmRefs:     warmRefs,
-		warmStarted:  now,
-		warmLastGain: now,
+		room:        room,
+		ct:          ct,
+		events:      append([]recEvent(nil), scene.Events...),
+		name:        sanitizeStem(name),
+		kind:        kind,
+		webp:        enc,
+		vid:         vid,
+		vidPath:     vidPath,
+		vidFormat:   vidFormat,
+		audioCap:    audioCap,
+		w:           w,
+		h:           h,
+		fps:         fps,
+		frameDt:     frameDt,
+		delayCs:     delayCs,
+		loop:        opts.Loop,
+		maxFrames:   maxFrames,
+		stamp:       exportStamp(opts, scene),
+		subsOn:      kind == exportVideo && opts.Subtitles, // #69 frame-timed .srt/.vtt beside the video
+		chatPct:     exportChatPct(h, opts.TextScale),      // font fitted to the capture, not the live zoom
+		warming:     true,
+		warmRefs:    warmRefs, // full set (M in the overlay + residency counting)
+		warmCreated: now,      // anchors gifWarmHardCap so never-resident refs can't hang the phase
+		// pendingWarm is the not-yet-submitted subset; tickGifWarm drains a bounded
+		// batch per tick. The quiescence/timeout clock (warmStarted/warmLastGain) is
+		// deliberately left ZERO here — it starts only when submission finishes
+		// (warmSubmitDone), so a huge ref list isn't guillotined by gifWarmMax while
+		// it is still being fed to the pool.
+		pendingWarm: warmRefs,
 	}
 	a.gifExporting = true
 	a.beginExportScaleBracket() // #77: exports render at native (100%) scale, not the live UI scale
@@ -582,13 +718,29 @@ func (a *App) endExportScaleBracket() {
 // quantizes — dropping the RGBA at once so only paletted frames are retained.
 func (a *App) tickGifExport() {
 	j := a.gif
-	if j == nil || a.d.Viewport == nil {
+	if j == nil {
 		a.gifExporting = false
-		// Unreachable today (a.gif is set before the bracket begins and Viewport
-		// is never nilled), but this abort path must restore the live text scale
-		// like every other export exit or a future refactor that makes it
-		// reachable strands the UI on 100% device fonts. end is a no-op when the
-		// bracket isn't active, so calling it here is always safe.
+		// Unreachable today (a.gif is set before a.gifExporting), but this abort path
+		// must restore the live text scale like every other export exit or a future
+		// refactor that makes it reachable strands the UI on 100% device fonts. end
+		// is a no-op when the bracket isn't active, so calling it here is always safe.
+		a.endExportScaleBracket()
+		return
+	}
+	// Loading phase: the disk read + parse runs off-thread; poll its result without
+	// blocking. This runs BEFORE the Viewport guard because loading needs neither
+	// the viewport nor a capture target — only the goroutine + channel. On delivery,
+	// finishLoadedExport runs the render-thread export tail (which DOES need them).
+	if j.loading {
+		a.tickGifLoad(j)
+		return
+	}
+	if a.d.Viewport == nil {
+		// No viewport to render into: end the (already past-loading) export cleanly,
+		// restoring the text scale like every other exit. startSceneExport set the
+		// bracket when it built this job, so it must be released here.
+		a.gif = nil
+		a.gifExporting = false
 		a.endExportScaleBracket()
 		return
 	}
@@ -656,12 +808,83 @@ func (a *App) tickGifExport() {
 	}
 }
 
-// tickGifWarm runs during the pre-warm phase: it counts how many of the scene's
-// assets are resident in T1 (the upload Pump fills it each frame) and ends the
-// wait once they're all ready, OR no new asset has landed for gifWarmQuiet (the
-// rest are 404-ing or evicted), OR gifWarmMax elapses. Then capture begins.
+// tickGifLoad polls the off-thread disk-load result without blocking (render
+// thread). Nothing to do until the loader sends; on an error the export exits
+// cleanly, and on success finishLoadedExport runs the render-thread export tail.
+// The loading shell job holds no capture target or encoder yet, so an error
+// teardown here can't leak either — it just clears the export flags (no
+// endExportScaleBracket needed: loading never set the bracket).
+func (a *App) tickGifLoad(j *gifExportJob) {
+	select {
+	case res := <-j.loadCh:
+		if res.err != nil {
+			a.gif = nil
+			a.gifExporting = false
+			a.warnLine = "Couldn't load recording: " + res.err.Error()
+			a.warnAt = time.Now()
+			return
+		}
+		a.finishLoadedExport(res)
+	default:
+		// Still loading — the overlay's "Reading …" branch keeps drawing.
+	}
+}
+
+// nextWarmBatch pulls up to `batch` refs off the FRONT of pending that still need
+// submitting, skipping any already resident (resident(base) == true — those are
+// in T1, so re-submitting them would waste a lane slot). It returns the refs to
+// submit now and the remaining pending tail. Pure (resident is injected) so the
+// per-tick submission cadence unit-tests without a live Store. A non-positive
+// batch submits nothing (the caller's in-flight window has no room this tick).
+func nextWarmBatch(pending []courtroom.AssetRef, batch int, resident func(base string) bool) (submit, rest []courtroom.AssetRef) {
+	if batch <= 0 || len(pending) == 0 {
+		return nil, pending
+	}
+	for i, r := range pending {
+		if len(submit) >= batch {
+			return submit, pending[i:]
+		}
+		if resident != nil && resident(r.Base) {
+			continue // already in T1 — don't spend a lane slot on it
+		}
+		submit = append(submit, r)
+	}
+	return submit, nil // drained the whole pending list
+}
+
+// warmRoom is how many more refs the pre-warm phase may submit THIS tick without
+// risking a full high lane, given the current OUTSTANDING count (submitted bases
+// not yet resident — see warmInFlight). The key invariant is that `outstanding`
+// counts only refs THIS phase actually submitted: a ref can be resident without
+// ever having been submitted (a warm cache — re-export, export-after-view, or
+// assets already in T1 from the live session), and such refs must NOT deflate the
+// window, or room re-opens and true in-flight ratchets past highLaneCap until the
+// next Submit blocks the render thread (the freeze this whole path removes).
+// Because warmInFlight only ever holds real submits, len(warmInFlight) is exactly
+// that count and warmRoom is a plain clamp: window − outstanding, capped at the
+// per-tick burst and floored at 0. Pure so it unit-tests without a Store.
+func warmRoom(outstanding int) int {
+	room := warmInFlightWindow - outstanding
+	if room > warmPrefetchPerTick {
+		room = warmPrefetchPerTick
+	}
+	if room < 0 {
+		room = 0
+	}
+	return room
+}
+
+// tickGifWarm runs during the pre-warm phase. It (1) SUBMITS a bounded batch of
+// pending refs to the pool this tick — never the whole list at once, so the
+// bounded high lane can't fill and block the render thread (the freeze fix) — and
+// (2) counts how many of the scene's assets are resident in T1 (the upload Pump
+// fills it each frame), ending the wait once they're all ready, OR no new asset
+// has landed for gifWarmQuiet, OR gifWarmMax elapses. The quiescence/timeout
+// clock only STARTS once every ref has been submitted (warmSubmitDone), so a huge
+// ref list isn't guillotined by the 6 s cap while it is still being fed in.
 func (a *App) tickGifWarm(j *gifExportJob) {
 	now := time.Now()
+
 	resident := 0
 	for _, r := range j.warmRefs {
 		if a.d.Store.Contains(r.Base) {
@@ -669,9 +892,68 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 		}
 	}
 	j.warmResident = resident
+
+	// Prune the in-flight set: a submitted base that has become T1-resident has left
+	// the high lane, so it frees a window slot for a new submission. Counting only
+	// SUBMITTED bases (never a pre-resident, never-submitted one) is what keeps the
+	// warm-cache case from deflating the window and re-opening the block.
+	for base := range j.warmInFlight {
+		if a.d.Store.Contains(base) {
+			delete(j.warmInFlight, base)
+		}
+	}
+
+	// Incremental submission: bound the OUTSTANDING (= len(warmInFlight)) high-lane
+	// occupancy to warmInFlightWindow so a Submit can never find a full lane and
+	// block, and cap the per-tick burst at warmPrefetchPerTick. The set self-bounds:
+	// room hits 0 at the window, so len(warmInFlight) never exceeds that named cap.
+	if len(j.pendingWarm) > 0 {
+		room := warmRoom(len(j.warmInFlight))
+		submit, rest := nextWarmBatch(j.pendingWarm, room, a.d.Store.Contains)
+		for _, r := range submit {
+			if r.Base == "" {
+				continue // prefetchChain drops an empty base — don't count a no-op submit
+			}
+			a.d.Manager.PrefetchChain(r.Base, r.Alts, r.Type, network.PriorityHigh) // AssetType: from SceneAssets
+			if j.warmInFlight == nil {
+				j.warmInFlight = make(map[string]struct{})
+			}
+			j.warmInFlight[r.Base] = struct{}{} // occupies a window slot until it lands (or the hard cap ends the phase)
+			j.warmSubmitted++
+		}
+		j.pendingWarm = rest
+	}
+	if len(j.pendingWarm) == 0 && !j.warmSubmitDone {
+		// Submission just finished: START the quiescence/timeout clock now (not at job
+		// creation), so the phase can't time out while refs were still being fed in.
+		j.warmSubmitDone = true
+		j.warmStarted = now
+		j.warmLastGain = now
+		j.warmBest = resident
+	}
+
 	if resident > j.warmBest {
 		j.warmBest = resident
 		j.warmLastGain = now
+	}
+	// Absolute backstop (measured from job creation, so it holds even before
+	// warmSubmitDone latches): if a scene's assets never become T1-resident — a
+	// missing-origin imported .demo 404s every ref — outstanding pins at
+	// warmInFlightWindow, room stays ≤0, pendingWarm never drains, warmSubmitDone
+	// never latches, and the gifWarmMax clock (which only starts at warmSubmitDone)
+	// never runs. Without this anchor the phase would hang forever on exactly the
+	// 404-heavy scene this async path serves. Force the phase to end and capture
+	// whatever loaded (may be nothing — an empty stage, same as gifWarmMax's cap).
+	if !j.warmCreated.IsZero() && now.Sub(j.warmCreated) > gifWarmHardCap {
+		j.warming = false
+		a.warnLine = "Rendering…" // kind-neutral; the progress overlay names the format
+		a.warnAt = now
+		return
+	}
+	// The end conditions only apply once every ref has been submitted — otherwise a
+	// warm-cache scene could quiesce before its later refs are even in the lane.
+	if !j.warmSubmitDone {
+		return
 	}
 	allReady := len(j.warmRefs) > 0 && resident >= len(j.warmRefs)
 	quiesced := resident > 0 && now.Sub(j.warmLastGain) > gifWarmQuiet
@@ -1104,6 +1386,25 @@ func (a *App) drawGifProgress(winW, winH int32) {
 	j := a.gif
 	cx := winW / 2
 	cy := winH / 2
+
+	// Loading phase: the disk read + parse runs off-thread. An always-alive overlay
+	// (this is the whole point of the fix — no more frozen window with no screen)
+	// with a Cancel that abandons the pending result. Cancelling drops the job: the
+	// loader goroutine's send lands in a buffer nobody polls, so it finishes and
+	// dies (never leaks blocked on send — gifLoadBuf guarantees the buffer accepts).
+	if j != nil && j.loading {
+		verb := "demo"
+		if strings.EqualFold(filepath.Ext(j.loadPath), recordingExt) {
+			verb = "recording"
+		}
+		c.Label(cx-120, cy-30, "📖  Reading "+verb+"…", ColText)
+		c.LabelClipped(cx-160, cy, 320, j.loadName, ColTextDim)
+		if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "✕ Cancel") {
+			a.gif = nil // abandon the pending result; the goroutine finishes and dies
+			a.gifExporting = false
+		}
+		return
+	}
 
 	// Pre-warm phase: loading the scene's sprites before the first capture.
 	if j != nil && j.warming {

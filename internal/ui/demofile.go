@@ -270,30 +270,52 @@ func (a *App) demoDefaultOrigin() string {
 }
 
 // loadRecordingAny opens a recording by extension: our .aorec JSON, or an AO2
-// .demo (converted on the fly — same model, so Play/Edit/Export all work).
+// .demo (converted on the fly — same model, so Play/Edit/Export all work). It
+// emits the import notes (skipped/truncated debug line, empty-origin warning) as
+// side effects on the CALLER's thread — so it must run on the render thread.
+// The async export path (loadRecordingForExport) uses the pure core instead and
+// replays those notes when the result lands back on the render thread.
 func (a *App) loadRecordingAny(path string) (*sceneRecording, error) {
+	res := loadRecordingForExport(path, a.demoDefaultOrigin())
+	if res.err != nil {
+		return nil, res.err
+	}
+	a.emitLoadNotes(res)
+	return res.rec, nil
+}
+
+// loadRecordingForExport is the PURE disk-load + parse for a recording path: our
+// .aorec JSON, or an AO2 .demo converted on the fly. It does NO SDL / App
+// mutation — only ReadFile + demoToRecording / loadRecording + composing the
+// user-facing notes — so it is safe to run OFF the render thread (the async
+// export loader goroutine). origin is the asset host an imported .demo streams
+// from (a .demo stores none); it is resolved on the render thread and passed in.
+// The render thread replays res.debug / res.warnMsg via emitLoadNotes.
+func loadRecordingForExport(path, origin string) gifLoadResult {
 	if !strings.EqualFold(filepath.Ext(path), demoExt) {
-		return loadRecording(path)
+		rec, err := loadRecording(path)
+		return gifLoadResult{rec: rec, err: err}
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return gifLoadResult{err: err}
 	}
-	rec, skipped, truncated, err := demoToRecording(data, a.demoDefaultOrigin())
+	rec, skipped, truncated, err := demoToRecording(data, origin)
 	if err != nil {
-		return nil, err
+		return gifLoadResult{err: err}
 	}
+	res := gifLoadResult{rec: rec}
 	// Two independent clauses (a demo can trip either, both, or neither): the
 	// skipped wording stays byte-identical to before, and truncation is its own
 	// distinct note. Kept short/factual, no exclamation — the settings-text style.
 	base := filepath.Base(path)
 	switch {
 	case skipped > 0 && truncated > 0:
-		a.pushDebug(fmt.Sprintf("demo import: %s — %d non-scene packets skipped (SC/CT/HP/…); stopped at the %d-event scene cap (%d later events not imported)", base, skipped, maxRecordedEvents, truncated))
+		res.debug = append(res.debug, fmt.Sprintf("demo import: %s — %d non-scene packets skipped (SC/CT/HP/…); stopped at the %d-event scene cap (%d later events not imported)", base, skipped, maxRecordedEvents, truncated))
 	case skipped > 0:
-		a.pushDebug(fmt.Sprintf("demo import: %s — %d non-scene packets skipped (SC/CT/HP/…)", base, skipped))
+		res.debug = append(res.debug, fmt.Sprintf("demo import: %s — %d non-scene packets skipped (SC/CT/HP/…)", base, skipped))
 	case truncated > 0:
-		a.pushDebug(fmt.Sprintf("demo import: %s — stopped at the %d-event scene cap (%d later events not imported)", base, maxRecordedEvents, truncated))
+		res.debug = append(res.debug, fmt.Sprintf("demo import: %s — stopped at the %d-event scene cap (%d later events not imported)", base, maxRecordedEvents, truncated))
 	}
 	// A .demo records only bare asset names — never WHERE the server's assets live.
 	// rec.Origin was just filled from the current session (demoDefaultOrigin), so an
@@ -302,10 +324,22 @@ func (a *App) loadRecordingAny(path string) (*sceneRecording, error) {
 	// v1.72.0). Warn honestly, with the two real remedies. warnLine is visible on
 	// Settings since the picker-hotfix banner fix.
 	if strings.TrimSpace(rec.Origin) == "" {
-		a.warnLine = "Imported " + base + " without a server — music and sprites won't stream. Connect to the demo's server first, or set Origin/CDN in the Scene Maker."
+		res.warnMsg = "Imported " + base + " without a server — music and sprites won't stream. Connect to the demo's server first, or set Origin/CDN in the Scene Maker."
+	}
+	return res
+}
+
+// emitLoadNotes replays a loader's user-facing notes on the render thread:
+// pushDebug for the skipped/truncated import lines, warnLine for the empty-origin
+// warning. Render thread only (touches the debug ring + warnLine).
+func (a *App) emitLoadNotes(res gifLoadResult) {
+	for _, line := range res.debug {
+		a.pushDebug(line)
+	}
+	if res.warnMsg != "" {
+		a.warnLine = res.warnMsg
 		a.warnAt = time.Now()
 	}
-	return rec, nil
 }
 
 // nextRecordingDest returns a non-colliding destination path under dir for a
@@ -352,9 +386,10 @@ func importDroppedRecording(path string) string {
 // Screen-aware routing: when the Settings screen's Studio tab is showing, the
 // drop is treated as a ".demo → video" request (the dedicated call-out lives
 // there) and routes to the video-export flow instead of playback — so a user who
-// opened Studio to make a video gets one from a drop, with a confirming warnLine.
-// Everywhere else the behavior is unchanged (import + play). This is the SINGLE
-// owner of dropped recordings: the Settings-screen c.dropped consumer skips them.
+// opened Studio to make a video gets one from a drop (importRecordingToVideo,
+// which then shows the export's "Reading …" banner). Everywhere else the behavior
+// is unchanged (import + play). This is the SINGLE owner of dropped recordings:
+// the Settings-screen c.dropped consumer skips them.
 func (a *App) HandleFileDrop(path string) {
 	ext := strings.ToLower(filepath.Ext(path))
 	if ext != recordingExt && ext != demoExt {
@@ -371,20 +406,16 @@ func (a *App) HandleFileDrop(path string) {
 }
 
 // importRecordingToVideo is the shared tail of both Studio entry points (the
-// native picker and a drop onto the Studio tab): confirm the import, then start
-// the video export for it. The warnLine is set BEFORE sceneExportFromPath so
-// that path's own ffmpeg-refusal message (gifexport.go) wins on a box without
-// ffmpeg — the file still imported into the Recordings list either way.
-// "Imported into recordings\" is only claimed when the file really landed
-// there — importDroppedRecording falls back to the original path when the
-// copy fails (or the file already lives there), and the note must not lie.
+// native picker and a drop onto the Studio tab): start the video export for the
+// imported file. sceneExportFromPath owns the on-screen banner from here on — it
+// synchronously posts "Reading …" (then the async load tail, startSceneExport,
+// posts its own ffmpeg-refusal message on a box without ffmpeg, which still wins).
+// No warnLine is set here: the export path overwrites it within this same
+// synchronous call, before any frame draws, so an "Imported into recordings\ —
+// exporting video…" note could never be seen — it was dead. The import itself
+// already happened upstream (importDroppedRecording), which truthfully falls back
+// to the original path when the copy fails or the file already lives there.
 func (a *App) importRecordingToVideo(dest string) {
-	if filepath.Dir(dest) == recordingsDir() {
-		a.warnLine = "Imported " + filepath.Base(dest) + " into recordings\\ — exporting video…"
-	} else {
-		a.warnLine = "Exporting video from " + filepath.Base(dest) + "…"
-	}
-	a.warnAt = time.Now()
 	a.sceneExportFromPath(dest, exportVideo)
 }
 
