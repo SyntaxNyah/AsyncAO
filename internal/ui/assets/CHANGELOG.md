@@ -4,6 +4,65 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.74.0 — 2026-07-19
+
+A day of field reports: the exporter shows a loading screen instead of
+freezing, text effects stop mangling emoji and Japanese, long `/help` texts
+arrive whole — and the Studio can package an entire RP session into a folder
+that replays offline forever.
+
+**Studio**
+
+- **🔍 Check demo content.** Point it at any recording — including an
+  imported `.demo` of a live session — and AsyncAO lists everything it uses
+  (character sprites, backgrounds, music, sound effects, blips) and which of
+  those the server actually has: **found / missing / unreachable** per
+  category, filterable, copyable to the clipboard. A demo imported without a
+  server says so up front instead of pretending everything is missing.
+- **📦 Package this RP.** One click after the check: every found asset is
+  downloaded and written to `recordings\<name>-bundle\` beside a bundled
+  `.aorec` and a `MISSING-CONTENT.txt` gap list — a folder that **replays
+  offline forever** and can be shared as-is, even after the server's CDN
+  dies. Idea by Crystalwarrior.
+- **Converting a `.demo` shows a loading screen instead of freezing the
+  window.** Two culprits: the file was read + parsed on the drawing thread,
+  and the asset pre-warm fired thousands of high-priority fetches at once,
+  jamming the same queue the window waits on. Both are paced now — a
+  "Reading…" screen with Cancel appears immediately, prefetches go out in
+  small batches behind the progress bar, and a scene full of dead links
+  still exports (a hard ceiling ends the warm-up).
+
+**Chat & logs**
+
+- **Text effects no longer break emoji or Japanese.** A message with any
+  effect (wobble, wave, rainbow…) drew every character with the base font —
+  emoji became boxes and CJK text spread out uniformly like a typewriter.
+  Effect lines now pick the right font per character, exactly like plain
+  lines do, and colour emoji keep their own colours under colour effects.
+- **Long OOC messages arrive whole.** A big server `/help` (or MOTD) was cut
+  twice — once at 4,096 characters in storage, once at 24 wrapped rows per
+  paragraph, silently. The stored cap is now 16 KiB and the wrap shows every
+  row of a real message; only pathological input is ever trimmed, and it
+  marks itself with "…" instead of losing text quietly.
+
+**Input & lobby**
+
+- **Ctrl+Backspace deletes the previous word** in any text box — undoable
+  with Ctrl+Z, respects selections, and key-repeat keeps deleting word by
+  word. Off-switch in Settings, next to hold-to-clear.
+- **Removing a saved server no longer closes the app.** Un-starring a server
+  that lived only in your phone book crashed mid-draw; it now just removes
+  the row.
+
+**Music**
+
+- **"Keep music playing (audible) across server tabs" applies the moment you
+  toggle it**, not only in one narrow state.
+- **A backgrounded tab's music can't stay silent forever.** If the track a
+  tab was waiting on never arrives (failed download, song changed while you
+  were away), the silence now lifts on its own within ten seconds instead of
+  wedging until restart.
+
 ## v1.73.0 — 2026-07-19
 
 Pick any `.demo` straight from your PC with a real file browser, and macOS
