@@ -84,6 +84,9 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if !p.ScreenEffectsOn() {
 		t.Error("ScreenEffectsOn default must be true (AO2 screen effects ship ON)")
 	}
+	if !p.WordDeleteOn() {
+		t.Error("WordDeleteOn default must be true (Ctrl+Backspace word delete ships ON)")
+	}
 	if !p.MusicHistoryOn() {
 		t.Error("MusicHistoryOn default must be true")
 	}
@@ -787,6 +790,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetICTimestamps(true)          // explicit non-default true must survive the absent-default-OFF pointer
 	p.SetAutoReconnect(false)        // same absent-default-ON pointer
 	p.SetScreenEffects(false)        // default-ON *bool — explicit false must survive
+	p.SetWordDelete(false)           // default-ON *bool — explicit false must survive
 	p.SetMusicHistory(false)         // same absent-default-ON pointer
 	p.SetMusicStreaming(false)       // same absent-default-ON pointer — explicit OFF must survive
 	p.SetRainbowSprites(true)        // default-OFF plain bool — must survive as true
@@ -835,6 +839,9 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	}
 	if q.ScreenEffectsOn() {
 		t.Error("ScreenEffects=false lost (absent-default ON must not clobber explicit false)")
+	}
+	if q.WordDeleteOn() {
+		t.Error("WordDelete=false lost (absent-default ON must not clobber explicit false)")
 	}
 	if q.CallwordToastOn() {
 		t.Error("CallwordToast=false lost (absent-default ON must not clobber explicit false)")

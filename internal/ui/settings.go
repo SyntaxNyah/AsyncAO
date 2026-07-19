@@ -2654,6 +2654,17 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		y += 30
 	}
 
+	// Word delete (ON by default): Ctrl+Backspace removes the whole preceding
+	// word instead of one letter — the standard editor chord. Off restores
+	// plain-key behavior (Ctrl+Backspace does nothing inside a field).
+	wdOn := a.d.Prefs.WordDeleteOn()
+	if next := c.Checkbox(pad, y, "Ctrl+Backspace deletes a word", wdOn); next != wdOn {
+		a.d.Prefs.SetWordDelete(next)
+	}
+	y += 24
+	c.Label(pad+16, y, "In any text box. Off restores plain-key behavior.", ColTextDim)
+	y += 22
+
 	// Message timing (AO2-Client options.ini parity); applies live. Plain
 	// descriptions beside each knob so they're self-explanatory.
 	c.Label(pad, y, "Text speed — how the IC chatbox plays messages:", ColTextDim)

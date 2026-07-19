@@ -4698,6 +4698,7 @@ type ctxInput struct {
 	typed, pasted, dropped, dragID           string
 	copyReq, cutReq, selectAll, wheelTaken   bool
 	undoReq, redoReq                         bool
+	wordBack                                 bool
 }
 
 func (a *App) snapshotInput() ctxInput {
@@ -4711,6 +4712,7 @@ func (a *App) snapshotInput() ctxInput {
 		typed: c.typed, pasted: c.pasted, dropped: c.dropped, dragID: c.dragID,
 		copyReq: c.copyReq, cutReq: c.cutReq, selectAll: c.selectAll, wheelTaken: c.wheelTaken,
 		undoReq: c.undoReq, redoReq: c.redoReq,
+		wordBack: c.wordBack,
 	}
 	c.mouseX, c.mouseY = -30000, -30000 // park off-screen: every hovering()/pointIn is false
 	c.downX, c.downY, c.wheelY = -30000, -30000, 0
@@ -4721,6 +4723,7 @@ func (a *App) snapshotInput() ctxInput {
 	c.typed, c.pasted, c.dropped, c.dragID = "", "", "", ""
 	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = false, false, false, false
 	c.undoReq, c.redoReq = false, false
+	c.wordBack = false
 	return in
 }
 
@@ -4734,6 +4737,7 @@ func (a *App) restoreInput(in ctxInput) {
 	c.typed, c.pasted, c.dropped, c.dragID = in.typed, in.pasted, in.dropped, in.dragID
 	c.copyReq, c.cutReq, c.selectAll, c.wheelTaken = in.copyReq, in.cutReq, in.selectAll, in.wheelTaken
 	c.undoReq, c.redoReq = in.undoReq, in.redoReq
+	c.wordBack = in.wordBack
 }
 
 // drawSplitInput draws the pinned pane's IC field. It edits the PINNED tab's own
@@ -6597,6 +6601,9 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	} else {
 		a.ctx.SetHoldClear(false, sdl.K_UNKNOWN, 0)
 	}
+	// Ctrl+Backspace word-delete: stamp the pref so the kit's text fields can gate
+	// the captured chord at consumption (the flag is set in HandleEvent when focused).
+	a.ctx.SetWordDelete(a.d.Prefs.WordDeleteOn())
 	// F3 toggles the perf HUD on any screen; consumed so plain-key
 	// macro/character binds named "f3" can't double-fire.
 	if a.ctx.keyPressed == sdl.K_F3 {

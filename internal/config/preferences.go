@@ -248,6 +248,13 @@ const defaultAutoLoginToast = true
 // off (separate from the accessibility "Reduce motion", which also suppresses them).
 const defaultScreenEffects = true
 
+// defaultWordDelete ships ON: Ctrl+Backspace in any focused text field deletes
+// the preceding word (trailing whitespace + the run before it) instead of one
+// rune, matching the near-universal editor convention. A dedicated Settings toggle
+// restores plain-key behavior (with the pref off, a focused Ctrl+Backspace is a
+// consumed no-op — it never falls through to a Ctrl+Backspace hotkey mid-typing).
+const defaultWordDelete = true
+
 // defaultAdditiveText ships ON: the 2.8 ADDITIVE flag is honored — an ADDITIVE=1
 // line appends to the previous one (narration-style RP; AO2 appends on any additive
 // line with no char-id gate), and the outgoing Additive checkbox shows when the
@@ -946,6 +953,7 @@ type AssetPreferences struct {
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
 	ScreenEffects          bool                         `json:"screenEffects"` // AO2 \s/\f + field shake/flash; default ON
+	WordDelete             bool                         `json:"wordDelete"`    // Ctrl+Backspace deletes a word in any text field; default ON
 	AdditiveText           bool                         `json:"additiveText"`  // 2.8 additive: honor incoming ADDITIVE=1 append + offer the checkbox; default ON
 	MusicDuckingOn         bool                         `json:"musicDucking"`
 	PerAreaScroll          bool                         `json:"perAreaScrollback"`
@@ -1354,6 +1362,7 @@ type prefsJSON struct {
 	OpenTabs               []OpenTab        `json:"openTabs"`             // remembered tabs for restore-on-launch
 	ReduceMotion           bool             `json:"reduceMotion"`         // default OFF (zero value)
 	ScreenEffects          *bool            `json:"screenEffects"`        // absent = default ON
+	WordDelete             *bool            `json:"wordDelete"`           // absent = default ON (pointer: an explicit OFF must persist)
 	AdditiveText           *bool            `json:"additiveText"`         // absent = default ON (pointer: an explicit OFF must persist)
 	MusicDucking           bool             `json:"musicDucking"`         // default OFF (zero value)
 	PerAreaScrollback      bool             `json:"perAreaScrollback"`    // default OFF (zero value)
@@ -1721,6 +1730,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		PreviewHoverMs:         DefaultPreviewHoverMs,
 		AutoLoginToast:         defaultAutoLoginToast,
 		ScreenEffects:          defaultScreenEffects,
+		WordDelete:             defaultWordDelete,
 		AdditiveText:           defaultAdditiveText,
 		CallwordToast:          defaultCallwordToast,
 		MessageCounter:         defaultMessageCounter,
@@ -2016,6 +2026,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.ScreenEffects != nil {
 		p.ScreenEffects = *onDisk.ScreenEffects
+	}
+	if onDisk.WordDelete != nil {
+		p.WordDelete = *onDisk.WordDelete
 	}
 	if onDisk.AdditiveText != nil {
 		p.AdditiveText = *onDisk.AdditiveText
@@ -7342,6 +7355,27 @@ func (p *AssetPreferences) SetScreenEffects(on bool) {
 		return
 	}
 	p.ScreenEffects = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// WordDeleteOn reports the Ctrl+Backspace word-delete toggle (ON by default):
+// when on, Ctrl+Backspace in any focused text field deletes the preceding word
+// instead of one rune. OFF restores plain-key behavior.
+func (p *AssetPreferences) WordDeleteOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.WordDelete
+}
+
+// SetWordDelete toggles Ctrl+Backspace word deletion.
+func (p *AssetPreferences) SetWordDelete(on bool) {
+	p.mu.Lock()
+	if p.WordDelete == on {
+		p.mu.Unlock()
+		return
+	}
+	p.WordDelete = on
 	p.mu.Unlock()
 	p.markDirty()
 }

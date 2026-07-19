@@ -6,6 +6,7 @@ package ui
 import (
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 	"unsafe"
 
@@ -369,6 +370,7 @@ type Ctx struct {
 	selectAll      bool        // Ctrl+A armed: the focused field converts it to a real all-selection
 	undoReq        bool        // Ctrl+Z routed to the focused field (App consumes the chord pre-screen)
 	redoReq        bool        // Ctrl+Y / Ctrl+Shift+Z, same routing
+	wordBack       bool        // Ctrl+Backspace in a focused field: delete the preceding word (event flag; gated on wordDeleteOn at consumption)
 	// Text-field selection: the anchor end (rune index) in the FOCUSED field;
 	// -1 = no selection. The caret is the moving end. Like c.caret it belongs
 	// to caretField, and resets on focus change. prevMouseDown feeds the
@@ -445,6 +447,12 @@ type Ctx struct {
 	holdThreshold time.Duration
 	holdAcc       time.Duration
 	holdFired     bool
+	// wordDeleteOn mirrors the WordDelete pref (App stamps it per frame, like
+	// holdOn). textField is a Ctx method with no Prefs handle, so the
+	// consumption gate must read a stamped field — a pref that saves/loads but
+	// is never stamped would leave the feature dead despite defaulting ON. Not
+	// parked/reset: it's config state, not per-frame input.
+	wordDeleteOn bool
 
 	// Tab focus cycling (playtest: "focus on ic, press tab, it goes to
 	// ooc"): TextField records draw order here each frame; the next
@@ -1295,6 +1303,7 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	c.wheelTaken = false
 	c.typed = ""
 	c.backspace = false
+	c.wordBack = false
 	c.enter = false
 	c.tabPressed = false
 	c.escPressed = false
@@ -1325,7 +1334,11 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	// Hold-to-clear timer: accumulate while the bound key is physically held,
 	// reset (and re-arm) the moment it's released. holdKey/holdOn were stamped
 	// last frame by App.Frame — one frame stale is fine.
-	if c.holdOn && c.keyHeld(c.holdKey) {
+	// !ctrlHeld: a Ctrl-held "hold" is meaningless for any bound key (Ctrl+key
+	// is a chord, not a hold), and it MUST NOT accumulate when the bound key is
+	// Backspace — else holding Ctrl+Backspace would fire the whole-field wipe
+	// instead of word-deletes. ctrlHeld is fresh (set this BeginFrame at ~1314).
+	if c.holdOn && c.keyHeld(c.holdKey) && !c.ctrlHeld {
 		c.holdAcc += dt
 	} else {
 		c.holdAcc = 0
@@ -1473,6 +1486,18 @@ func (c *Ctx) HandleEvent(ev sdl.Event) {
 				// unconditional — select-all matters more than the Ctrl+A
 				// Fav-emotes hotkey, which stays on the Extras button.)
 				c.selectAll = true
+			case sdl.K_BACKSPACE:
+				// Word-delete only inside a focused field; with nothing focused
+				// let Ctrl+Backspace fall through to the configurable hotkeys (so a
+				// user-bound Ctrl+Backspace still works). Set unconditionally when
+				// focused — the WordDelete pref is checked at CONSUMPTION (textField),
+				// so a focused Ctrl+Backspace is always captured: pref-off is a
+				// consumed no-op that never leaks to a hotkey mid-typing.
+				if c.focusID != "" {
+					c.wordBack = true
+				} else {
+					c.hotkey = e.Keysym.Sym
+				}
 			default:
 				// Everything else is the app's: configurable Ctrl-chord
 				// hotkeys (shouts, pos cycle, screenshot, ...).
@@ -2193,8 +2218,30 @@ const (
 type editInput struct {
 	typed            string // inserted text (typed + pasted)
 	back             bool   // backspace (delete the rune before the caret)
+	wordBack         bool   // Ctrl+Backspace: delete the preceding word (trailing whitespace + the run before it)
 	op               editOp // caret move or forward delete
 	selStart, selEnd int    // active selection (rune range); selEnd <= selStart = none
+}
+
+// wordDeleteBoundary returns the rune index a Ctrl+Backspace at pos should
+// delete back to: it skips any trailing whitespace run immediately before the
+// caret, then the non-whitespace run before that (the "word"). The result is
+// the new caret position; [result, pos) is the range to remove. Pure and
+// rune-aware (never byte-slices mid-rune) so it unit-tests without SDL. pos at
+// or before 0 returns 0 (nothing to delete). This matches the near-universal
+// editor convention (delete the word to the left, plus the spaces glued to it).
+func wordDeleteBoundary(runes []rune, pos int) int {
+	if pos > len(runes) {
+		pos = len(runes)
+	}
+	i := pos
+	for i > 0 && unicode.IsSpace(runes[i-1]) { // eat the whitespace run before the caret
+		i--
+	}
+	for i > 0 && !unicode.IsSpace(runes[i-1]) { // then eat the non-whitespace word
+		i--
+	}
+	return i
 }
 
 // editStep applies one frame of edits to value at caret (a RUNE index), returning
@@ -2221,7 +2268,9 @@ func editStep(value string, caret int, in editInput) (string, int) {
 		selB = len(runes)
 	}
 	if sel := selB > selA; sel {
-		if in.typed != "" || in.back || in.op == editDelete {
+		// A word-delete with an active selection deletes just the selection,
+		// exactly like a plain backspace does (in.wordBack joins in.back here).
+		if in.typed != "" || in.back || in.wordBack || in.op == editDelete {
 			t := []rune(in.typed)
 			out := make([]rune, 0, len(runes)-(selB-selA)+len(t))
 			out = append(out, runes[:selA]...)
@@ -2249,6 +2298,13 @@ func editStep(value string, caret int, in editInput) (string, int) {
 		out = append(out, t...)
 		out = append(out, runes[caret:]...)
 		return string(out), caret + len(t)
+	case in.wordBack && caret > 0:
+		// Ctrl+Backspace: delete the whole preceding word (whitespace + word run).
+		start := wordDeleteBoundary(runes, caret)
+		out := make([]rune, 0, len(runes)-(caret-start))
+		out = append(out, runes[:start]...)
+		out = append(out, runes[caret:]...)
+		return string(out), start
 	case in.back && caret > 0:
 		out := make([]rune, 0, len(runes)-1)
 		out = append(out, runes[:caret-1]...)
@@ -2428,7 +2484,11 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 			c.selAnchor = -1
 			c.selectAll = false
 		default:
-			in := editInput{typed: c.typed + c.pasted, back: c.backspace}
+			// wordBack is gated on the WordDelete pref HERE (at consumption): with
+			// the pref off, a focused Ctrl+Backspace was still captured (wordBack
+			// set, never routed to c.hotkey), so it becomes a consumed no-op — it
+			// can't leak into a Ctrl+Backspace hotkey mid-typing.
+			in := editInput{typed: c.typed + c.pasted, back: c.backspace, wordBack: c.wordBack && c.wordDeleteOn}
 			switch c.keyPressed {
 			case sdl.K_LEFT:
 				in.op = editLeft
@@ -2441,9 +2501,9 @@ func (c *Ctx) textField(id string, r sdl.Rect, value string, placeholder string,
 			case sdl.K_DELETE:
 				in.op = editDelete
 			}
-			if in.typed != "" || in.back || in.op != editNone {
+			if in.typed != "" || in.back || in.wordBack || in.op != editNone {
 				nav := in.op == editLeft || in.op == editRight || in.op == editHome || in.op == editEnd
-				extend := nav && in.typed == "" && !in.back && c.shiftHeld
+				extend := nav && in.typed == "" && !in.back && !in.wordBack && c.shiftHeld
 				if extend {
 					// Shift+arrow/Home/End extends: fix the anchor, move only
 					// the caret (the selection is anchor..caret).
@@ -2839,6 +2899,14 @@ func (c *Ctx) caretIndexAtXDev(display string, relX int32) int {
 // from prefs). The accumulation runs in BeginFrame; the focused field clears.
 func (c *Ctx) SetHoldClear(on bool, key sdl.Keycode, threshold time.Duration) {
 	c.holdOn, c.holdKey, c.holdThreshold = on, key, threshold
+}
+
+// SetWordDelete stamps the Ctrl+Backspace word-delete pref for the frame (App
+// resolves it from prefs). textField reads the stamped field to gate the
+// captured Ctrl+Backspace at consumption — without this stamp the gate would
+// read the zero value and the feature would be dead despite defaulting ON.
+func (c *Ctx) SetWordDelete(on bool) {
+	c.wordDeleteOn = on
 }
 
 // keyHeld reports whether key is physically down right now, via SDL's live

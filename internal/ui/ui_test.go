@@ -295,6 +295,52 @@ func TestEditStep(t *testing.T) {
 	chk("empty insert", v, c, "x", 1)
 	v, c = editStep("", 0, editInput{back: true})
 	chk("empty backspace", v, c, "", 0)
+	// Ctrl+Backspace word delete: no-selection removes the preceding word (and
+	// its trailing whitespace); with a selection it deletes just the selection,
+	// exactly like plain backspace (the range branch).
+	v, c = editStep("foo bar", 7, editInput{wordBack: true})
+	chk("word delete last word", v, c, "foo ", 4)
+	v, c = editStep("foo bar", 4, editInput{wordBack: true})
+	chk("word delete leaves trailing space eaten", v, c, "bar", 0)
+	v, c = editStep("foo   bar", 9, editInput{wordBack: true})
+	chk("word delete keeps left text", v, c, "foo   ", 6)
+	v, c = editStep("abc", 0, editInput{wordBack: true})
+	chk("word delete at start (no-op)", v, c, "abc", 0)
+	v, c = editStep("hello world", 11, editInput{wordBack: true, selStart: 0, selEnd: 11})
+	chk("word delete with selection clears the selection", v, c, "", 0)
+	v, c = editStep("héllo wörld", 11, editInput{wordBack: true})
+	chk("word delete multibyte word", v, c, "héllo ", 6)
+}
+
+// TestWordDeleteBoundary pins the pure boundary math for Ctrl+Backspace: skip a
+// trailing whitespace run, then the non-whitespace run before it, rune-safe.
+func TestWordDeleteBoundary(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		pos  int
+		want int
+	}{
+		{"single word from end", "hello", 5, 0},
+		{"single word mid-caret", "hello", 3, 0},
+		{"two words", "foo bar", 7, 4},
+		{"caret after the space", "foo bar", 4, 0}, // eats " " then "foo"
+		{"multiple spaces", "foo   bar", 9, 6},
+		{"trailing spaces only before caret", "foo   ", 6, 0}, // eats "   " then "foo"
+		{"pos at start", "hello", 0, 0},
+		{"all whitespace", "     ", 5, 0},
+		{"leading spaces kept", "  word", 6, 2}, // eats "word", stops at the leading-space run (they're kept)
+		{"caret past end clamps", "hi", 99, 0},
+		{"cjk word", "日本語 テスト", 7, 4},              // eats "テスト", stops after "日本語 " (space at rune 3)
+		{"emoji run", "hi 🍅🍅🍅", 6, 3},              // eats the emoji run, stops after "hi "
+		{"emoji then word boundary", "🍅 ab", 4, 2}, // eats "ab" then space, stops after 🍅
+	}
+	for _, tc := range cases {
+		got := wordDeleteBoundary([]rune(tc.in), tc.pos)
+		if got != tc.want {
+			t.Errorf("%s: wordDeleteBoundary(%q, %d) = %d, want %d", tc.name, tc.in, tc.pos, got, tc.want)
+		}
+	}
 }
 
 // TestCtrlXFallsThroughToHotkey pins the Extras-keybind fix: Ctrl+X is clipboard
