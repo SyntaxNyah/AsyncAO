@@ -559,3 +559,60 @@ func TestTickGifWarmHardCapDoesNotFireEarly(t *testing.T) {
 		t.Fatal("a fresh warm phase ended too early — the hard cap must be a last resort, not the normal path")
 	}
 }
+
+// TestTickGifWarmConclusiveMissEndsWarmPromptly is the H3 armor: a scene whose
+// every asset conclusively 404s (dead origin, empty origin, imported .demo whose
+// CDN is gone) must end the pre-warm phase PROMPTLY via the conclusive-miss release
+// — NOT by sitting frozen at "0 / N" for the full 20 s gifWarmHardCap (the reported
+// "export that never even converts"). The job is created FRESH (hard cap 20 s away),
+// so the ONLY way the phase can end here is the settled-includes-missing path: each
+// ref is marked conclusively missing (as drainWarnings' Store.MarkMissing relay does
+// live on chain exhaustion), and the warm must then latch warmSubmitDone and fire
+// allReady within a bounded number of ticks — no sleep, no shrunk cap.
+//
+// This FAILS on the unfixed code: with only Store.Contains counting, a never-resident
+// ref never prunes from warmInFlight, room pins at 0, pendingWarm never drains,
+// warmSubmitDone never latches, and warming stays true until the hard cap (which this
+// fresh job hasn't reached) — so the loop below exhausts its ticks with warming still
+// true and the test fails. That is the point: the armor reproduces the stall.
+func TestTickGifWarmConclusiveMissEndsWarmPromptly(t *testing.T) {
+	a, store := newWarmHarness(t)
+
+	// More refs than the window, so the never-resident stall shape applies: without
+	// the conclusive-miss release the first window fills and nothing ever prunes.
+	refs := mkWarmRefs(warmInFlightWindow + 40)
+	a.gif = &gifExportJob{
+		warming:     true,
+		warmRefs:    refs,
+		pendingWarm: append([]courtroom.AssetRef(nil), refs...),
+		warmCreated: time.Now(), // FRESH: the hard cap is 20 s away — only the miss path can end this
+	}
+
+	// Drive the warm, marking each just-submitted base conclusively missing between
+	// ticks — exactly what drainWarnings does live when a base's whole fallback chain
+	// 404s. Bounded tick budget: with the fix the whole ref list settles as
+	// missing well inside this, so warming flips false; without it, it never does.
+	const tickBudget = 60
+	ticks := 0
+	for ; ticks < tickBudget && a.gif.warming; ticks++ {
+		a.tickGifWarm(a.gif)
+		for base := range a.gif.warmInFlight {
+			store.MarkMissing(base) // the conclusive 404 signal (render-thread; no fetch)
+		}
+	}
+
+	if a.gif.warming {
+		t.Fatalf("warm phase never ended for an all-404 scene in %d ticks — it would freeze the progress bar for the full hard cap (the 'never converts' stall)", tickBudget)
+	}
+	if len(a.gif.pendingWarm) != 0 {
+		t.Errorf("pendingWarm not drained (%d left) — the conclusive-miss release never reopened room", len(a.gif.pendingWarm))
+	}
+	if a.warnLine != "Rendering…" {
+		t.Errorf("warnLine = %q, want the render banner once the all-404 warm settles", a.warnLine)
+	}
+	// It must end well before the hard cap would have (this fresh job is 20 s from it),
+	// so the exit was the miss-release path, not the ceiling.
+	if ticks >= tickBudget {
+		t.Errorf("took the full tick budget (%d) — the miss release should end an all-404 warm far sooner", tickBudget)
+	}
+}

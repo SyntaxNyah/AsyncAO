@@ -635,6 +635,14 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 	a.replayChapters = buildReplayChapters(rec.Events) // #70 the jump list (idempotent across restarts/jumps)
 	a.replayPaused = false                             // a fresh replay starts playing
 	a.replaying = true
+	// H5: a FLAT (streamed) recording pre-warms its sprites + music before the first
+	// event so nothing pops in or plays silent. A bundled replay reads local files
+	// (already gap-free — beginBundledReplay ran first and set replayBundled), so it
+	// skips the warm. An empty / non-http origin also skips (startReplayWarm no-ops).
+	a.endReplayWarm() // clear any prior phase (⏮ Restart re-enters here)
+	if !a.replayBundled {
+		a.startReplayWarm(rec)
+	}
 	a.warnLine = "▶ Replaying " + name + " — press the Replay key to stop"
 	a.warnAt = time.Now()
 }
@@ -642,9 +650,15 @@ func (a *App) startReplay(rec *sceneRecording, name string) {
 // --- replay player controls (drawReplayOverlay) ---
 
 // replayNext skips the current message straight to idle and feeds the following
-// event — the "fast-forward to the next line" button. Works while paused.
+// event — the "fast-forward to the next line" button. Works while paused. While the
+// H5 pre-warm is running, ⏭ Next means "start already": end the warm and let the
+// first event feed next frame, rather than fast-forwarding a scene that hasn't begun.
 func (a *App) replayNext() {
 	if a.replayRoom == nil {
+		return
+	}
+	if a.replayWarming() {
+		a.endReplayWarm()
 		return
 	}
 	a.replayRoom.SkipToIdle()
@@ -685,6 +699,9 @@ func (a *App) advanceReplay(dt time.Duration) {
 	if !a.replaying || a.replayRoom == nil {
 		return
 	}
+	if a.replayWarming() {
+		return // H5: hold every event off-stage until the pre-warm finishes / is skipped
+	}
 	if a.replayRoom.Phase() != courtroom.PhaseIdle || a.replayRoom.QueueLen() != 0 {
 		return // a message is still on stage — let it finish
 	}
@@ -702,6 +719,7 @@ func (a *App) stopReplay() {
 		return
 	}
 	a.endBundledReplay() // drop the archive source override if this was a bundled replay
+	a.endReplayWarm()    // H5: drop any in-flight pre-warm phase
 	a.replaying = false
 	a.replayRoom = nil
 	a.replayEvents = nil
@@ -735,6 +753,7 @@ func (a *App) recoverReplay(where string) {
 	}
 	a.pushDebug("replay " + where + " panic: " + fmt.Sprint(r))
 	a.endBundledReplay()
+	a.endReplayWarm() // H5: drop any in-flight pre-warm phase
 	a.replaying = false
 	a.replayRoom = nil
 	a.replayEvents = nil
@@ -762,6 +781,19 @@ func (a *App) recoverReplay(where string) {
 func (a *App) driveReplay(dt time.Duration) {
 	defer a.recoverReplay("update")
 	a.replayRoom.Typewriter.Interval, a.replayRoom.TextStay = a.replayTiming() // live Playback-speed slider
+	// H5 pre-warm: while the FLAT recording's sprites + music load, hold the first
+	// event off-stage (advanceReplay is skipped) so playback starts warm, not popping.
+	// The room + viewport still Update so the stage (StartBg, once resident) draws
+	// under the loading overlay. The phase self-ends (all-ready / quiesce / hard cap)
+	// or the Skip button clears it; either way the next frame feeds the first event.
+	if a.replayWarming() {
+		a.tickReplayWarm()
+		a.replayRoom.Update(dt)
+		a.d.Viewport.SetSpriteFX(a.spriteFX())
+		a.d.Viewport.SetPostFX(a.postFX())
+		a.d.Viewport.Update(&a.replayRoom.Scene, dt)
+		return
+	}
 	if a.replayPaused {
 		return // ⏸ frozen — the overlay keeps drawing the last frame; Next/Restart still act
 	}
@@ -857,12 +889,47 @@ func (a *App) drawReplayOverlay(w, h int32) {
 	a.d.Viewport.Render(c.Ren, &a.replayRoom.Scene, stage)
 	a.drawStageFrame(stage)               // #56: the viewer stage wears the same frame as live
 	a.drawChatOverlay(stage, false, 0, 0) // M16: the spoken text (reads the replay scene via renderScene)
+	a.drawReplayWarmBanner(stage)         // H5: "Loading scene…" + Skip while the FLAT-replay pre-warm runs
 	c.Label(20, 16, "▶ Replaying — "+a.replayName, ColText)
 	if c.Button(sdl.Rect{X: w - 136, Y: 12, W: 120, H: 26}, "■ Stop replay") {
 		a.stopReplay()
 	}
 	a.drawReplayControls(stage, w)
 	a.drawReplayChapters(stage, w) // #70: the jump list, right of the transport strip
+}
+
+// drawReplayWarmBanner draws the H5 pre-warm progress line + a Skip button, centred
+// low on the stage, while a FLAT recording's sprites/music load before the first
+// event. A no-op once the phase ends (all-ready / quiesce / hard cap), so it simply
+// vanishes when playback begins. Skip ends the warm immediately and plays with
+// whatever has loaded (the rest streams in on demand, as before this phase existed).
+func (a *App) drawReplayWarmBanner(stage sdl.Rect) {
+	w := a.replayWarm
+	if w == nil {
+		return
+	}
+	c := a.ctx
+	total := len(w.warmRefs)
+	// A dim strip near the bottom of the stage so it doesn't cover the (loading) scene.
+	strip := sdl.Rect{X: stage.X, Y: stage.Y + stage.H - 64, W: stage.W, H: 64}
+	c.Fill(strip, sdl.Color{R: 10, G: 10, B: 16, A: 200})
+	line := "Loading scene…"
+	if w.seeding {
+		line = "Checking server formats…"
+	} else if total > 0 {
+		line = fmt.Sprintf("Loading scene… %d / %d ready", w.resident, total)
+	}
+	c.Label(strip.X+12, strip.Y+10, line, ColText)
+	// A slim progress bar under the line (settle fraction), mirroring the export overlay.
+	bar := sdl.Rect{X: strip.X + 12, Y: strip.Y + 34, W: strip.W - 120, H: 10}
+	c.Fill(bar, ColPanel)
+	if total > 0 {
+		fillW := int32(w.resident) * bar.W / int32(total)
+		c.Fill(sdl.Rect{X: bar.X, Y: bar.Y, W: fillW, H: bar.H}, ColAccent)
+	}
+	if c.Button(sdl.Rect{X: strip.X + strip.W - 96, Y: strip.Y + 30, W: 84, H: 24}, "▶ Skip") {
+		a.endReplayWarm() // play now with whatever has loaded; the rest streams on demand
+	}
 }
 
 // drawReplayControls draws the player transport strip below the stage: Restart,

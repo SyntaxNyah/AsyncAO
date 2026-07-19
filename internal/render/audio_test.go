@@ -117,6 +117,42 @@ func TestBuiltinAlertWAV(t *testing.T) {
 	}
 }
 
+// TestReapFinishedMusicGuards pins reapFinishedMusic's early-return guards — the
+// branches that decide NOT to reap WITHOUT polling the mixer, so they're testable
+// headlessly (the actual reap-on-natural-end needs a live SDL_mixer and is argued by
+// construction, like evictChunk). The guards are the safety contract: a LOOPING stream
+// (musicLoop=true) is never reaped (a looper never ends on its own, and Mix_PlayingMusic
+// must not even be consulted); a disabled device and a device with no loaded stream are
+// no-ops. This is what keeps the natural-end reaper from ever clobbering a live looping
+// area track.
+func TestReapFinishedMusicGuards(t *testing.T) {
+	var dummy byte
+	live := (*mix.Music)(unsafe.Pointer(&dummy)) // non-nil sentinel; never dereferenced
+
+	// Looping stream: must return before touching the mixer (musicLoop guard). If it
+	// polled Mix_PlayingMusic here on an uninitialised mixer the test would crash — the
+	// clean return IS the assertion.
+	loop := &Audio{enabled: true, music: live, musicURL: "http://cdn/area.opus", musicLoop: true}
+	loop.reapFinishedMusic()
+	if loop.music == nil || loop.musicURL == "" {
+		t.Error("a looping stream must NEVER be reaped (it never ends on its own)")
+	}
+
+	// Disabled device: no-op (never polls the mixer).
+	off := &Audio{enabled: false, music: live, musicURL: "http://cdn/x.opus", musicLoop: false}
+	off.reapFinishedMusic()
+	if off.music == nil {
+		t.Error("a disabled device must not reap (or poll the mixer)")
+	}
+
+	// No loaded stream: no-op.
+	empty := &Audio{enabled: true}
+	empty.reapFinishedMusic()
+	if empty.musicURL != "" {
+		t.Error("an empty device must stay empty")
+	}
+}
+
 // TestPurgePendingMusic pins the stale-track-race fix (§1.2): switching to a
 // new music URL must leave at most one pendingMusic entry so a late-arriving
 // delivery for a superseded track can't revert playback. Non-music pending

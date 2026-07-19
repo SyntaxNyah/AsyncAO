@@ -621,6 +621,12 @@ type App struct {
 	// beats) and whether its panel is open in the overlay player.
 	replayChapters     []replayChapter
 	replayChaptersOpen bool
+	// H5 replay pre-warm: a FLAT (non-bundled) recording streams its sprites +
+	// music from the origin, so a bounded warm phase loads them BEFORE the first
+	// event plays — nothing pops in or plays silent. Non-nil only while that phase
+	// runs (allocated in startReplay, cleared when it ends or the replay stops). All
+	// its state + tick logic lives in replaywarm.go; see replayWarmState.
+	replayWarm *replayWarmState
 
 	// Scene maker (M16 [3/3], see scenemaker.go): an in-app editor over the SAME
 	// .aorec model — build a scene from scratch or edit a recording, preview it
@@ -2597,6 +2603,18 @@ func (a *App) ensureCharLower() {
 // session keeps pumping (keepalives answered, queues drained) at zero
 // render cost.
 func (a *App) Background(dt time.Duration) {
+	// Stamp the frame clock even though we draw nothing this tick. a.now() reads
+	// frameNow, and Frame is the ONLY other place it's stamped — so a minimized
+	// window (which runs Background, never Frame) would otherwise freeze the clock
+	// at the last foreground timestamp. Every a.now()-driven deadline reachable from
+	// here is then wedged: the 10s music-await self-heal (settleAwaitedMusic below)
+	// never trips while minimized, so a silently-failed music fetch stays ducked-
+	// silent forever; auto-reconnect and the resume-seek elapsed math (musicStartedAt,
+	// stamped via pumpConnection→handleSessionEvents) drift the same way. Nothing
+	// reachable here WANTS a stale clock — every consumer is a timer/animation clock
+	// that is strictly more correct with real time — so restamp unconditionally, the
+	// same real-time snapshot Frame takes.
+	a.frameNow = time.Now()
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
 	a.drainWarnings()
@@ -2606,6 +2624,13 @@ func (a *App) Background(dt time.Duration) {
 	a.pollUpdate()         // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
 	if a.room != nil {
 		a.room.Update(dt)
+		// Re-derive the message duck here too. Frame does this inside its own
+		// `case a.room != nil` block; without the same call here, advancing the
+		// message lifecycle while minimized (room.Update above) would finish a
+		// message and return to Idle/Linger but NEVER lift the 35% duck — music
+		// stays quiet the whole time the window is minimized, healing only on
+		// restore. Same missing-in-Background pattern as the frozen clock above.
+		a.rederiveMessageDuck()
 	}
 	a.d.Audio.Frame()
 	a.settleAwaitedMusic() // delivery-time cross-tab un-duck: lift once the awaited track is what's playing
@@ -2616,6 +2641,23 @@ func (a *App) Background(dt time.Duration) {
 	a.keepActiveAssetsWarm()
 	a.keepSceneAssetsWarm() // the un-drawn stage must survive the burst too
 	a.d.Store.DrainDestroyQueue()
+}
+
+// rederiveMessageDuck dips music to duckMusicPercent while a message is on stage
+// (shout/preanim/talking) and restores it at idle/linger. Transition-driven — it
+// touches SetVolumes (applyAudioVolumes) only when the duck state actually flips, and
+// the MusicDucking prefs read is short-circuited so it costs nothing between messages.
+// Callers must hold a.room != nil. Shared by BOTH the drawn (Frame) and minimized
+// (Background) loops so the derivation can't drift between them: if only Frame ran it,
+// a message that finished while minimized would leave the duck stuck at 35% until the
+// window was restored.
+func (a *App) rederiveMessageDuck() {
+	p := a.room.Phase()
+	wantDuck := p != courtroom.PhaseIdle && p != courtroom.PhaseLinger && a.d.Prefs.MusicDucking()
+	if wantDuck != a.musicDucked {
+		a.musicDucked = wantDuck
+		a.applyAudioVolumes()
+	}
 }
 
 // keepActiveAssetsWarm keeps the user's persistently-shown assets resident while
@@ -3407,9 +3449,23 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// Skip the ~stop sentinel (it clears MusicTrack). Same URL builder as the
 			// room's PlayMusic (both use a.urls), so the await compares equal to
 			// Audio.CurrentMusicURL once delivered.
-			if a.sess.MusicTrack != "" && a.musicTabDucked {
-				a.musicAwaitURL = a.urls.MusicURL(a.sess.MusicTrack)
-				a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
+			if a.sess.MusicTrack != "" {
+				if a.musicTabDucked {
+					a.musicAwaitURL = a.urls.MusicURL(a.sess.MusicTrack)
+					a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
+				}
+			} else {
+				// A ~stop (MusicTrack cleared): the room's handler will StopMusic the
+				// render stream below (courtroom ~stop), so any await armed from a prior
+				// resume or /play is now orphaned — the awaited bytes are purged and can
+				// never become current, so settleAwaitedDuck could never match and only
+				// the 10s timeout (frozen while minimized) would release it. Clear it
+				// here so this stop site honors the same "stopped ⇒ no await" invariant
+				// the local stop button, park, close, disconnect and streaming-off sites
+				// already enforce. The tab-duck stays as-is: an incoming ~stop doesn't
+				// change tab ownership of the (now-silent) stream, and the next real
+				// track re-arms the await through the branch above.
+				a.clearMusicAwait()
 			}
 		case courtroom.EventCharsUpdated:
 			a.charLower = nil      // names may have changed; rebuild lazily
@@ -6987,13 +7043,8 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// talking), restore at idle/linger. Transition-driven — SetVolumes is
 		// touched only when the duck state flips, and the prefs read is
 		// short-circuited so it costs nothing between messages.
-		p := a.room.Phase()
-		wantDuck := p != courtroom.PhaseIdle && p != courtroom.PhaseLinger && a.d.Prefs.MusicDucking()
-		if wantDuck != a.musicDucked {
-			a.musicDucked = wantDuck
-			a.applyAudioVolumes()
-		}
-		a.updateSlideshow(p)
+		a.rederiveMessageDuck()
+		a.updateSlideshow(a.room.Phase())
 	}
 	a.d.Audio.Frame()
 	a.settleAwaitedMusic() // delivery-time cross-tab un-duck: lift once the awaited track is what's playing

@@ -459,8 +459,8 @@ type gifExportJob struct {
 	warmCreated  time.Time            // job-creation wall clock: anchors gifWarmHardCap (never-resident-ref backstop)
 	warmStarted  time.Time
 	warmLastGain time.Time
-	warmBest     int // most assets seen resident so far (quiescence detector)
-	warmResident int // resident count from the last warm tick (for the overlay)
+	warmBest     int // most assets seen SETTLED (resident or conclusively 404'd) so far (quiescence detector)
+	warmResident int // settled count from the last warm tick (for the overlay's "N ready")
 
 	// Incremental warm submission (freeze fix): pendingWarm holds refs not yet
 	// handed to the pool; tickGifWarm drains a bounded batch per tick so the
@@ -955,31 +955,76 @@ func warmRoom(outstanding int) int {
 	return room
 }
 
+// warmSettled reports whether a warm ref is DONE loading, in the sense the warm
+// phase cares about: either its texture is T1-resident (Store.Contains — the
+// upload Pump landed it) OR its whole fallback chain conclusively 404'd
+// (Store.IsMissing — drainWarnings relayed the miss and drawSprite will draw the
+// missingno placeholder). A conclusively-missing base is nothing left to wait
+// for: waiting only burns the clock while the stage will show the placeholder
+// either way. Treating "missing" as settled is what wires the conclusive-404
+// signal into the warm's end conditions.
+//
+// SCOPE — this releases only a REACHABLE host that returns clean 404s. IsMissing
+// is set by drainWarnings, which fires only when the Manager's walkCandidates
+// exhausts EVERY candidate with a clean 404 (manager.go reportMissing). A
+// TRANSPORT error — an empty/schemeless origin, an unreachable host (DNS failure /
+// connection refused — a .demo whose CDN is gone), or a 5xx — is NOT a clean 404:
+// walkCandidates returns "done" on the first transport error WITHOUT reportMissing
+// (manager.go delivers a Transient error instead), so the base never becomes
+// IsMissing and warmSettled stays false for it. Such a wholly-dead origin
+// therefore does NOT release here; it exits via the wall-clock ceiling below
+// (gifWarmMax once submission finishes, up to gifWarmHardCap for a large ref list)
+// and captures a BLANK stage (missingno draws only for IsMissing bases). WITHOUT
+// this release even a reachable all-404 scene would pin the settled count at 0
+// (warmInFlight never prunes, warmSubmitDone never latches) and sit frozen at
+// "0 / N" for the full hard cap — the reported "export that never converts"; WITH
+// it a reachable-404 scene ends promptly and still exports a COMPLETE video with
+// placeholder art (H3, covered end-to-end by exportstall_test.go over a 404 server).
+//
+// Note the production exit for a REAL mixed-type scene is quiescence, not all-ready:
+// drainWarnings only MarkMissing's AssetTypeCharSprite bases (app.go), so a 404'd
+// background/desk never reads IsMissing here and can hold the settled count below
+// len(warmRefs). That's fine when at least one sprite settles — the quiesce window
+// (gifWarmQuiet) then closes in well under a second. A scene with NO conclusively-
+// missing sprite (e.g. a background-only all-404 recording, or one whose only 404s
+// are bg/desk) keeps settled at 0, so the settled>0 quiesce guard never fires and
+// it too waits out the wall-clock ceiling — bounded (never the 20 s hard cap for a
+// small ref set), but not sub-second. Render thread only (IsMissing is render-thread).
+func (a *App) warmSettled(base string) bool {
+	return a.d.Store.Contains(base) || a.d.Store.IsMissing(base)
+}
+
 // tickGifWarm runs during the pre-warm phase. It (1) SUBMITS a bounded batch of
 // pending refs to the pool this tick — never the whole list at once, so the
 // bounded high lane can't fill and block the render thread (the freeze fix) — and
-// (2) counts how many of the scene's assets are resident in T1 (the upload Pump
-// fills it each frame), ending the wait once they're all ready, OR no new asset
-// has landed for gifWarmQuiet, OR gifWarmMax elapses. The quiescence/timeout
-// clock only STARTS once every ref has been submitted (warmSubmitDone), so a huge
-// ref list isn't guillotined by the 6 s cap while it is still being fed in.
+// (2) counts how many of the scene's assets are SETTLED — resident in T1 (the
+// upload Pump fills it each frame) OR conclusively 404'd (warmSettled) — ending
+// the wait once they're all settled, OR no new asset has settled for gifWarmQuiet,
+// OR gifWarmMax elapses. Counting a confirmed miss as settled is the conclusive-
+// release path that lets an all-404 scene end promptly instead of freezing the bar
+// for the full hard cap (H3). The quiescence/timeout clock only STARTS once every
+// ref has been submitted (warmSubmitDone), so a huge ref list isn't guillotined by
+// the 6 s cap while it is still being fed in.
 func (a *App) tickGifWarm(j *gifExportJob) {
 	now := time.Now()
 
-	resident := 0
+	settled := 0
 	for _, r := range j.warmRefs {
-		if a.d.Store.Contains(r.Base) {
-			resident++
+		if a.warmSettled(r.Base) {
+			settled++
 		}
 	}
-	j.warmResident = resident
+	j.warmResident = settled
 
-	// Prune the in-flight set: a submitted base that has become T1-resident has left
-	// the high lane, so it frees a window slot for a new submission. Counting only
-	// SUBMITTED bases (never a pre-resident, never-submitted one) is what keeps the
-	// warm-cache case from deflating the window and re-opening the block.
+	// Prune the in-flight set: a submitted base that has SETTLED — become T1-resident
+	// or conclusively 404'd — has left the high lane, so it frees a window slot for a
+	// new submission. Pruning on settled (not bare residency) is what lets a 404-heavy
+	// scene keep submitting past the first window so warmSubmitDone can latch and the
+	// end conditions fire. Counting only SUBMITTED bases (never a pre-resident,
+	// never-submitted one) is what keeps the warm-cache case from deflating the window
+	// and re-opening the block.
 	for base := range j.warmInFlight {
-		if a.d.Store.Contains(base) {
+		if a.warmSettled(base) {
 			delete(j.warmInFlight, base)
 		}
 	}
@@ -990,7 +1035,7 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 	// room hits 0 at the window, so len(warmInFlight) never exceeds that named cap.
 	if len(j.pendingWarm) > 0 {
 		room := warmRoom(len(j.warmInFlight))
-		submit, rest := nextWarmBatch(j.pendingWarm, room, a.d.Store.Contains)
+		submit, rest := nextWarmBatch(j.pendingWarm, room, a.warmSettled)
 		for _, r := range submit {
 			if r.Base == "" {
 				continue // prefetchChain drops an empty base — don't count a no-op submit
@@ -999,7 +1044,7 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 			if j.warmInFlight == nil {
 				j.warmInFlight = make(map[string]struct{})
 			}
-			j.warmInFlight[r.Base] = struct{}{} // occupies a window slot until it lands (or the hard cap ends the phase)
+			j.warmInFlight[r.Base] = struct{}{} // occupies a window slot until it settles (or the hard cap ends the phase)
 			j.warmSubmitted++
 		}
 		j.pendingWarm = rest
@@ -1010,21 +1055,22 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 		j.warmSubmitDone = true
 		j.warmStarted = now
 		j.warmLastGain = now
-		j.warmBest = resident
+		j.warmBest = settled
 	}
 
-	if resident > j.warmBest {
-		j.warmBest = resident
+	if settled > j.warmBest {
+		j.warmBest = settled
 		j.warmLastGain = now
 	}
 	// Absolute backstop (measured from job creation, so it holds even before
-	// warmSubmitDone latches): if a scene's assets never become T1-resident — a
-	// missing-origin imported .demo 404s every ref — outstanding pins at
-	// warmInFlightWindow, room stays ≤0, pendingWarm never drains, warmSubmitDone
-	// never latches, and the gifWarmMax clock (which only starts at warmSubmitDone)
-	// never runs. Without this anchor the phase would hang forever on exactly the
-	// 404-heavy scene this async path serves. Force the phase to end and capture
-	// whatever loaded (may be nothing — an empty stage, same as gifWarmMax's cap).
+	// warmSubmitDone latches): the conclusive-404 settling above ends a REACHABLE
+	// all-404 origin in sub-second, but this anchor is the last-resort ceiling for a
+	// ref that neither resolves NOR reports a conclusive miss — a TRANSPORT-error
+	// origin (empty/schemeless, unreachable host, refused, 5xx) never becomes
+	// IsMissing (see warmSettled), so a wholly-dead origin exits ONLY here and
+	// captures a blank stage. Force the phase to end and render whatever loaded
+	// (missingno placeholders for the confirmed-404 bases; nothing for the
+	// transport-dead ones, same as gifWarmMax's cap).
 	if !j.warmCreated.IsZero() && now.Sub(j.warmCreated) > gifWarmHardCap {
 		j.warming = false
 		a.warnLine = "Rendering…" // kind-neutral; the progress overlay names the format
@@ -1036,8 +1082,8 @@ func (a *App) tickGifWarm(j *gifExportJob) {
 	if !j.warmSubmitDone {
 		return
 	}
-	allReady := len(j.warmRefs) > 0 && resident >= len(j.warmRefs)
-	quiesced := resident > 0 && now.Sub(j.warmLastGain) > gifWarmQuiet
+	allReady := len(j.warmRefs) > 0 && settled >= len(j.warmRefs)
+	quiesced := settled > 0 && now.Sub(j.warmLastGain) > gifWarmQuiet
 	timedOut := now.Sub(j.warmStarted) > gifWarmMax
 	if allReady || quiesced || timedOut || len(j.warmRefs) == 0 {
 		j.warming = false

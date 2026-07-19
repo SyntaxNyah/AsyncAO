@@ -123,6 +123,10 @@ type Audio struct {
 	musicURL   string // the URL of the track currently playing ("" = none); makes PlayMusic
 	//          idempotent so a room rebuild (random char, char switch, tab reactivation)
 	//          re-seeding the SAME track doesn't restart it.
+	musicLoop bool // whether the current stream loops forever; a non-looping (2.9
+	//          NO_REPEAT, #15) stream is reaped by reapFinishedMusic when it ends, so a
+	//          finished one-shot stops lying to the "is music playing" guards. A looping
+	//          track never ends on its own, so it's never reaped.
 
 	// swapSnaps records, keyed by an OUTGOING music URL, the true position that
 	// track was at the instant startMusic swapped it out for a new URL (a
@@ -469,9 +473,36 @@ func (a *Audio) Frame() {
 			a.onAudioBytes(asset)
 		default:
 			a.expirePending()
+			a.reapFinishedMusic() // clear a naturally-ended one-shot so it's not seen as "still playing"
 			return
 		}
 	}
+}
+
+// reapFinishedMusic clears a.music/a.musicURL once a NON-looping track has played to
+// its natural end, so the "is music playing" signal reflects reality. WHY this exists:
+// a play-once track (2.9 NO_REPEAT / looping=0, #15) leaves a.music non-nil after it
+// finishes — there is no natural-end observer otherwise (no HookMusicFinished callback,
+// which would fire on a C thread and can't touch this state under rule #1). Stale
+// a.music != nil then lies to two guards: PlayMusic's idempotency check (audio.go:687)
+// makes a re-click of the finished song a no-op, and MusicPlaying() staying true makes
+// the ui-side cross-tab resume treat a dead stream as live (sameTrack=true → no re-
+// fetch), so switching back to a tab whose one-shot ended finds silence. Polling
+// Mix_PlayingMusic here (render thread, in BOTH the Frame and Background loops that
+// call Audio.Frame) is the portable, render-thread-safe fix — no C-callback needed.
+//
+// Only reaps a loaded, non-looping stream that has stopped: a looping track never
+// stops on its own, and music is never paused in this client (no Mix_PauseMusic path),
+// so !PlayingMusic() with a.music != nil is unambiguously a finished one-shot — never
+// a pause or a load gap (startMusic's Play() begins synchronously before this runs).
+func (a *Audio) reapFinishedMusic() {
+	if !a.enabled || a.music == nil || a.musicLoop {
+		return // nothing loaded, disabled, or a looping track (never ends by itself)
+	}
+	if mix.PlayingMusic() {
+		return // still rolling
+	}
+	a.stopMusic() // natural end: free the finished stream and clear musicURL so it can be re-triggered/re-fetched
 }
 
 func (a *Audio) onAudioBytes(asset assets.AudioAsset) {
@@ -874,6 +905,7 @@ func (a *Audio) startMusic(url string, data []byte, loop bool, effects int, seek
 	a.musicBytes = data // pin the payload while the mixer streams from it
 	a.musicRW = rw
 	a.music = music
+	a.musicLoop = loop // remember loop-ness so reapFinishedMusic only reaps a finished one-shot
 	// SDL_mixer Play/FadeIn loop counts: -1 = loop forever; playOnceLoops (1) =
 	// play through exactly once. We use 1, not 0, for play-once: Mix_PlayMusic /
 	// Mix_FadeInMusic document loops as "play the music loop times through", so 1
@@ -951,4 +983,6 @@ func (a *Audio) stopMusic() {
 	}
 	a.musicBytes = nil
 	a.musicURL = "" // nothing playing now; a later PlayMusic of the same URL plays again
+	// No stream loaded → loop-ness is moot; reset so a stale true can't skip a future reap.
+	a.musicLoop = false
 }

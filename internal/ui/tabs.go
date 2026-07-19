@@ -227,7 +227,19 @@ func (a *App) parkActive() {
 	// stale await can't un-duck the new backgrounded context.
 	a.musicAwaitURL = ""
 	a.musicAwaitSince = time.Time{} // drop the timeout stamp with the void await
-	a.applyAudioVolumes()           // push the duck (or its absence) to the mixer (no-op if no Audio)
+	// Clear the message duck BEFORE composing volumes. musicDucked is the ACTIVE,
+	// drawn room's "a message is on stage → dip music to 35%" flag; a backgrounded
+	// stream has no message on stage from the mixer's view (it's either ducked to 0
+	// for isolation, or — MusicAcrossTabs ON — an audible continuity stream). If we
+	// left musicDucked=true here, applyAudioVolumes below would push the cross-tab
+	// stream to 35% and, because resetSessionState clears the flag WITHOUT re-applying
+	// volumes and a char-select/lobby activate never re-composes them, the mixer would
+	// stay stuck at 35% with nothing on stage until the next volume-affecting action.
+	// On return, buildRoom's rederiveMessageDuck recomputes the flag from the live
+	// phase, so clearing it here loses nothing (the parked slot's value is overwritten
+	// on activate anyway).
+	a.musicDucked = false
+	a.applyAudioVolumes() // push the duck (or its absence) to the mixer (no-op if no Audio)
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
 		a.d.Viewport.OnFrameShown = nil // #17: parked tab's room no longer owns the viewport
@@ -348,11 +360,19 @@ func (a *App) closeParkedTab(i int) {
 	// tab owns the stream, so stop it to avoid an orphaned stream leaking (rule §4).
 	// It's inaudible anyway, so this is acoustically invisible; returning to the
 	// real owner re-fetches and resumes it (buildRoom → resumeActiveTabMusic).
-	if a.d.Audio != nil && a.musicTabDucked {
+	//
+	// EXCEPTION: an armed await (musicAwaitURL != "") means the ACTIVE tab is mid-
+	// cross-tab-resume and OWNS the in-flight fetch — parkActive ducked, then
+	// resumeActiveTabMusic armed the await and issued PlayMusicAt for THIS tab's own
+	// track, which hasn't landed yet. StopMusic here would purgePendingMusic("") and
+	// cancel the active tab's own pending fetch, leaving it permanently silent (no
+	// re-fetch follows a background-chip close). The ducked-but-awaited stream isn't
+	// an orphan — it belongs to the visible tab — so skip the stop and let the fetch
+	// settle. A genuinely orphaned background stream never has an await armed against
+	// it (parkActive clears the await when it re-ducks), so the leak guard still holds.
+	if a.d.Audio != nil && a.musicTabDucked && a.musicAwaitURL == "" {
 		a.d.Audio.StopMusic()
 		a.musicTabDucked = false
-		a.musicAwaitURL = ""            // stream stopped: drop any pending un-duck too (invariant)
-		a.musicAwaitSince = time.Time{} // and its timeout stamp
 	}
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	if a.activeTab > i {

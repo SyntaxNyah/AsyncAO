@@ -1341,3 +1341,163 @@ func TestMoveTab(t *testing.T) {
 		})
 	}
 }
+
+// TestSettleAwaitTimeoutDecision pins settleAwaitTimeout, the pure never-arrives
+// release decision (split out like settleAwaitedDuck / mixChannels so it needs no
+// Audio device). It encodes two fixes at once:
+//
+//   - the FROZEN-CLOCK fix: the decision is a function of the clock passed in, so a
+//     live clock (advanced past the deadline) releases while a frozen one (Background
+//     never restamping frameNow, the minimized wedge) returns None and holds. The bug
+//     was that the ONLY clock feeding this was a.now(), frozen while minimized.
+//   - the FOREIGN-STREAM fix: past the deadline the action depends on what's loaded —
+//     a foreign track still rolling under the duck (cur != "") heals to SILENCE
+//     (awaitTimeoutStop), never un-ducks onto the wrong song; an empty stream
+//     (cur == "") just lifts the duck (awaitTimeoutUnduck).
+func TestSettleAwaitTimeoutDecision(t *testing.T) {
+	a := testTabApp(t)
+	base := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	a.musicAwaitURL = "http://cdn/awaited.opus"
+	a.musicAwaitSince = base
+
+	// Frozen clock (minimized: frameNow never advanced) — the deadline can't pass,
+	// so the decision is None and the duck would hold. This is the wedge.
+	if got := a.settleAwaitTimeout("http://cdn/foreign.opus", base); got != awaitTimeoutNone {
+		t.Errorf("a frozen clock at the arm instant must not release, got %v", got)
+	}
+	// Just before the deadline: still None (a slow-but-real download may arrive).
+	if got := a.settleAwaitTimeout("", base.Add(musicAwaitTimeout-time.Millisecond)); got != awaitTimeoutNone {
+		t.Errorf("before the deadline must hold, got %v", got)
+	}
+	// Past the deadline with a FOREIGN stream loaded: heal to silence, never reveal it.
+	if got := a.settleAwaitTimeout("http://cdn/foreign.opus", base.Add(musicAwaitTimeout)); got != awaitTimeoutStop {
+		t.Errorf("past the deadline with a foreign stream must STOP (heal to silence), got %v", got)
+	}
+	// Past the deadline with nothing loaded: just lift the duck (already silent).
+	if got := a.settleAwaitTimeout("", base.Add(musicAwaitTimeout)); got != awaitTimeoutUnduck {
+		t.Errorf("past the deadline with an empty stream must UNDUCK, got %v", got)
+	}
+	// No stamp (await armed without a since) never times out — can't wedge on a
+	// missing deadline.
+	a.musicAwaitSince = time.Time{}
+	if got := a.settleAwaitTimeout("http://cdn/foreign.opus", base.Add(time.Hour)); got != awaitTimeoutNone {
+		t.Errorf("a zero since must never time out, got %v", got)
+	}
+}
+
+// TestCloseParkedTabPreservesActiveAwait pins the fix for "closing a background chip
+// silences the CURRENT tab's still-loading music": while the active tab is mid-cross-
+// tab-resume it holds musicTabDucked=true AND an armed musicAwaitURL for its OWN
+// in-flight fetch. closeParkedTab used to StopMusic() unconditionally when ducked,
+// purging the active tab's pending fetch with nothing to re-issue it. The fix skips the
+// stop while an await is armed (the ducked stream belongs to the visible tab, not an
+// orphan). Nil-safe: a disabled render.Audio's StopMusic is a no-op, so this asserts on
+// the UI flags — the await must SURVIVE the close.
+func TestCloseParkedTabPreservesActiveAwait(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Audio = &render.Audio{} // disabled stand-in; StopMusic is a guarded no-op
+	// Two tabs: index 0 a background chip, index 1 the active tab mid-resume.
+	a.tabs = []*courtTab{
+		{state: sessionState{serverName: "Background", serverKey: "wss://bg:2096"}},
+		{},
+	}
+	a.activeTab = 1
+	// The active tab is mid-cross-tab-resume: ducked, awaiting its OWN track's bytes.
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/active-tab.opus"
+	a.musicAwaitSince = a.now()
+
+	a.closeParkedTab(0) // ✕ on the background chip
+
+	if a.musicAwaitURL != "http://cdn/active-tab.opus" {
+		t.Error("closing a background chip must NOT cancel the active tab's in-flight fetch (await must survive)")
+	}
+	if !a.musicTabDucked {
+		t.Error("the active tab's resume duck must survive the background-chip close (settle will lift it on delivery)")
+	}
+	if len(a.tabs) != 1 || a.tabs[0].state.serverName != "" {
+		t.Fatalf("the background tab must be removed and the active tab (index 0 now) kept, tabs=%d", len(a.tabs))
+	}
+}
+
+// TestCloseParkedTabStopsOrphanStream pins the OTHER half of closeParkedTab: with NO
+// await armed, a ducked stream is a genuinely orphaned background stream (the active
+// tab already owns its own audible track, or none), so closing a chip still stops it to
+// avoid a leak (rule §4). Only the await-armed case is exempt.
+func TestCloseParkedTabStopsOrphanStream(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Audio = &render.Audio{}
+	a.tabs = []*courtTab{
+		{state: sessionState{serverName: "Background", serverKey: "wss://bg:2096"}},
+		{},
+	}
+	a.activeTab = 1
+	a.musicTabDucked = true // ducked orphan, but NO await armed
+	a.musicAwaitURL = ""
+
+	a.closeParkedTab(0)
+
+	if a.musicTabDucked {
+		t.Error("with no await armed, closing a chip must stop the orphaned ducked stream (leak guard)")
+	}
+}
+
+// TestRederiveMessageDuckClearsStale pins the message-duck re-derivation shared by
+// Frame and Background (the fix for "minimized music stays quiet after the message
+// clears"): with the phase back at Idle, a stale musicDucked=true (left over from a
+// message that finished while minimized) must flip to false so music returns to full
+// volume — the derivation is the ONLY thing that lifts it, and before the fix it ran
+// only in Frame, so a minimized tab stayed ducked until restore.
+func TestRederiveMessageDuckClearsStale(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetMusicDucking(true) // ducking enabled, so the phase is what decides
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, nil, courtroom.NopAudio{})
+	// A message finished (phase is Idle) but the duck flag is stale-true.
+	a.musicDucked = true
+	a.rederiveMessageDuck()
+	if a.musicDucked {
+		t.Error("an Idle phase must lift the message duck (music back to full), even with ducking enabled")
+	}
+}
+
+// TestEventMusicStopClearsAwait pins the ~stop await-clear (the missing release seam):
+// a ~stop clears sess.MusicTrack, and the UI EventMusic handler must clear any armed
+// cross-tab await so the "stopped ⇒ no await" invariant holds at this site too — before
+// the fix only the 10s timeout (frozen while minimized) released it, orphaning the duck.
+func TestEventMusicStopClearsAwait(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	// Mid-resume: an await is armed for a prior track.
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/prior.opus"
+	a.musicAwaitSince = a.now()
+	// A ~stop lands: HandlePacket would clear MusicTrack; set it empty directly so the
+	// handler's gate sees the ~stop shape (like TestMusicTabDuckOnPark sets it).
+	a.sess.MusicTrack = ""
+	a.handleSessionEvents([]courtroom.Event{{Kind: courtroom.EventMusic, Text: "~stop.mp3"}})
+	if a.musicAwaitURL != "" || !a.musicAwaitSince.IsZero() {
+		t.Errorf("a ~stop must clear the orphaned await, got url=%q since=%v", a.musicAwaitURL, a.musicAwaitSince)
+	}
+}
+
+// TestParkClearsMessageDuckBeforeVolumes pins the fix for "parked 35% into a room-less
+// tab": parkActive must clear the ACTIVE room's message duck BEFORE it composes volumes,
+// or (with MusicAcrossTabs ON, keeping the cross-tab stream audible) the mixer is left
+// stuck at 35% with nothing on stage. The flag must be false after park regardless of
+// whether a message was mid-flight when the switch happened.
+func TestParkClearsMessageDuckBeforeVolumes(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Prefs.SetMusicAcrossTabs(true) // the precondition: cross-tab stream stays audible
+	if !a.allocateTab() {
+		t.Fatal("allocate")
+	}
+	a.serverName, a.serverKey = "Srv", "wss://srv:2096"
+	a.sess = courtroom.NewRehearsalSession("", []string{"Phoenix"})
+	a.musicDucked = true // a message was on stage when the user switched away
+
+	a.parkActive()
+
+	if a.musicDucked {
+		t.Error("parkActive must clear the message duck before composing volumes (else the mixer sticks at 35%)")
+	}
+}

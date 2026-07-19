@@ -590,7 +590,8 @@ func (a *App) settleAwaitedMusic() {
 	if a.musicAwaitURL == "" || a.d.Audio == nil {
 		return
 	}
-	if a.settleAwaitedDuck(a.d.Audio.CurrentMusicURL()) {
+	cur := a.d.Audio.CurrentMusicURL()
+	if a.settleAwaitedDuck(cur) {
 		return // the awaited track landed — normal delivery-time un-duck
 	}
 	// The awaited track still isn't current. Every event-driven release (park,
@@ -600,15 +601,76 @@ func (a *App) settleAwaitedMusic() {
 	// never equal, or simply stalled. None of those fire an event, so without a
 	// deadline the duck would hold the backgrounded stream silent forever with no way
 	// out (the "toggle does nothing / music never comes back" wedge). Past the
-	// timeout, release the await and lift the duck so the stream becomes audible again
-	// — a late-arriving track is preferable to permanent silence, and the common fast
-	// path (bytes land in ~16 ms) settles long before this ever trips.
-	if !a.musicAwaitSince.IsZero() && a.now().Sub(a.musicAwaitSince) >= musicAwaitTimeout {
-		a.musicAwaitURL = ""
-		a.musicAwaitSince = time.Time{}
+	// timeout, release the await so we stop waiting — but HOW we release depends on
+	// what's actually loaded (settleAwaitTimeout decides): if a foreign stream is
+	// still rolling under the duck (the outgoing tab/server's track, which parkActive
+	// keeps alive and never stopped — per-server full-URL keys mean it can never equal
+	// the awaited URL), un-ducking would reveal the WRONG song. So heal to SILENCE
+	// (StopMusic) in that case, never onto the foreign track; only when nothing foreign
+	// is loaded (cur == "") do we simply lift the duck. The common fast path (bytes land
+	// in ~16 ms) settles via settleAwaitedDuck long before this ever trips.
+	switch a.settleAwaitTimeout(cur, a.now()) {
+	case awaitTimeoutStop:
+		a.d.Audio.StopMusic() // foreign stream loaded: silence it rather than reveal the wrong song
+		a.clearMusicAwait()
+		a.musicTabDucked = false
+		a.applyAudioVolumes()
+	case awaitTimeoutUnduck:
+		a.clearMusicAwait()
 		a.musicTabDucked = false
 		a.applyAudioVolumes()
 	}
+}
+
+// awaitTimeoutAction is settleAwaitTimeout's pure decision (see settleAwaitedMusic).
+type awaitTimeoutAction int
+
+const (
+	// awaitTimeoutNone: the deadline hasn't been reached yet — keep waiting (a
+	// slow-but-real download may still arrive).
+	awaitTimeoutNone awaitTimeoutAction = iota
+	// awaitTimeoutUnduck: deadline reached, nothing foreign loaded — just lift the duck.
+	awaitTimeoutUnduck
+	// awaitTimeoutStop: deadline reached, a foreign stream is loaded — heal to silence
+	// rather than reveal the wrong song.
+	awaitTimeoutStop
+)
+
+// settleAwaitTimeout is the pure, unit-pinnable decision for settleAwaitedMusic's
+// never-arrives branch (split from the Audio calls like settleAwaitedDuck / mixChannels
+// / resumeSeek). Given the mixer's current URL and the clock, it decides how to release
+// a wedged await once the deadline passes:
+//
+//   - deadline not yet reached (or no stamp): awaitTimeoutNone — a slow-but-real
+//     download may still arrive, keep the duck.
+//   - past the deadline, cur == "": awaitTimeoutUnduck — nothing foreign is loaded
+//     (the awaited fetch delivered nothing, or delivered bytes that failed to decode,
+//     which startMusic already stopped to silence). Just lift the duck; the stream is
+//     already quiet, so this can't reveal a wrong track.
+//   - past the deadline, cur != "" (and, by construction here, cur != musicAwaitURL —
+//     settleAwaitedDuck already returned for a match): awaitTimeoutStop. A FOREIGN
+//     stream (the previous tab/server's still-rolling, ducked track) is loaded. Lifting
+//     the duck would make that wrong song audible — the cross-server "wrong music after
+//     switching" bug — so heal to SILENCE instead (the caller's StopMusic also purges the
+//     still-pending fetch, so it won't land late over the silence). A WRONG audible track
+//     is worse than silence; that's the sanctioned tradeoff here.
+func (a *App) settleAwaitTimeout(cur string, now time.Time) awaitTimeoutAction {
+	if a.musicAwaitSince.IsZero() || now.Sub(a.musicAwaitSince) < musicAwaitTimeout {
+		return awaitTimeoutNone
+	}
+	if cur == "" {
+		return awaitTimeoutUnduck
+	}
+	return awaitTimeoutStop
+}
+
+// clearMusicAwait drops the cross-tab await latch and its timeout stamp together
+// (they're always cleared as a pair — an await with no stamp can never time out, a
+// stamp with no await is dead weight). The duck flag is cleared separately by callers
+// because some (streaming-off, disconnect) also stop the stream in the same breath.
+func (a *App) clearMusicAwait() {
+	a.musicAwaitURL = ""
+	a.musicAwaitSince = time.Time{}
 }
 
 // musicAwaitTimeout bounds how long the cross-tab music duck may wait for an
