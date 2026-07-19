@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/veandco/go-sdl2/sdl"
@@ -8,6 +9,20 @@ import (
 
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
+
+// stripSpaces removes ALL whitespace so a wrapped-then-reassembled text can be
+// compared against its original regardless of where word-wrap inserted breaks
+// (at spaces) or hard-split cut mid-word: both sides collapse to the same
+// non-whitespace character sequence. Only sound for single-spaced ASCII input.
+func stripSpaces(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\t', '\r', '\n':
+			return -1
+		}
+		return r
+	}, s)
+}
 
 // TestLogHangingIndent pins the wrap-continuation presentation (playtest: a
 // wrapped message read as a run of new paragraphs): rows the WRAP created
@@ -157,5 +172,123 @@ func TestWrapEmojiAwareBreaksEmojiNames(t *testing.T) {
 	// maxLines caps the output.
 	if got := render.WrapEmojiAware(primary, emoji, text, width, 2); len(got) > 2 {
 		t.Errorf("maxLines=2 produced %d lines", len(got))
+	}
+}
+
+// TestOOCWrapLongHelpNoLoss pins the /help fix: a long single-paragraph entry
+// (a server's /help dump) at a narrow column wraps to well past the old 24-row
+// per-paragraph clamp WITHOUT losing text — the pre-fix code silently dropped
+// everything past 24 display rows. Reassembling the wrapped rows and comparing
+// whitespace-stripped proves nothing was cut. Nil fonts take the 8 px/char
+// fallback, so a 160 px column holds ~20 chars; ~3000 chars → ~150 rows.
+func TestOOCWrapLongHelpNoLoss(t *testing.T) {
+	a := testTabApp(t)
+	a.oocPct = DefaultScalePct
+
+	// A single paragraph (no '\n'): short single-spaced ASCII words so the wrap
+	// breaks at spaces, never mid-word, and no word exceeds the column.
+	var b strings.Builder
+	for b.Len() < 3000 {
+		b.WriteString("alpha bravo charlie ") // 20 chars/group, all fit a 160 px column
+	}
+	help := strings.TrimSpace(b.String())
+	a.oocLog = append(a.oocLog, help)
+	a.oocSpeakers = append(a.oocSpeakers, "Server")
+	a.oocSeq++
+
+	rows := a.oocWrapped(160)
+	if len(rows) <= oocWrapMaxLinesPerEntryOld {
+		t.Fatalf("fixture must exceed the old %d-row clamp, got %d rows",
+			oocWrapMaxLinesPerEntryOld, len(rows))
+	}
+	// Parallel slices stay in lockstep at the new budget.
+	if len(a.oocWrapName) != len(rows) || len(a.oocWrapURL) != len(rows) ||
+		len(a.oocWrapCont) != len(rows) || len(a.oocWrapSrc) != len(rows) {
+		t.Fatalf("parallel slices desynced: out=%d name=%d url=%d cont=%d src=%d",
+			len(rows), len(a.oocWrapName), len(a.oocWrapURL), len(a.oocWrapCont), len(a.oocWrapSrc))
+	}
+	if got, want := stripSpaces(strings.Join(rows, "")), stripSpaces(help); got != want {
+		t.Fatalf("text lost in wrap: reassembled %d chars, original %d", len(got), len(want))
+	}
+	// A no-loss legitimate wrap must NOT emit the "…" marker row.
+	for _, ln := range rows {
+		if ln == "…" {
+			t.Fatal("legitimate long /help must not trip the truncation marker")
+		}
+	}
+}
+
+// oocWrapMaxLinesPerEntryOld is the pre-fix per-paragraph clamp; the fix must
+// wrap well past it without loss (guards against a silent regression back to it).
+const oocWrapMaxLinesPerEntryOld = 24
+
+// TestPushOOCStoreCapIntact pins the store-time guard: an entry longer than
+// oocLineCap is still "…"-capped at pushOOC (a hostile server can't store an
+// unbounded line), now at the larger 16 KiB bound. ASCII fixture so the byte
+// slice can't split a multibyte rune, and plain prose so it isn't mistaken for
+// an area list (which the /getarea paths would swallow before storing).
+func TestPushOOCStoreCapIntact(t *testing.T) {
+	a := testTabApp(t)
+	huge := strings.Repeat("x", oocLineCap+500) // comfortably over the cap
+	a.pushOOC(huge, "")
+	if len(a.oocLog) != 1 {
+		t.Fatalf("expected one stored entry, got %d", len(a.oocLog))
+	}
+	stored := a.oocLog[0]
+	if !strings.HasSuffix(stored, "…") {
+		t.Fatal("over-cap entry must be marked with a trailing …")
+	}
+	if len(stored) > oocLineCap+len("…") {
+		t.Fatalf("stored entry %d bytes exceeds oocLineCap+… (%d)", len(stored), oocLineCap+len("…"))
+	}
+	// A legitimately long /help UNDER the cap is stored whole (not clipped).
+	a2 := testTabApp(t)
+	fits := strings.Repeat("y", oocLineCap-1)
+	a2.pushOOC(fits, "")
+	if len(a2.oocLog) != 1 || a2.oocLog[0] != fits {
+		t.Fatal("an under-cap entry must be stored verbatim")
+	}
+}
+
+// TestOOCWrapPathologicalMarker pins the marker path: only an ABSURD synthetic
+// width — one so narrow it forces fewer than oocWrapMinCharsPerRow chars per row
+// — can exhaust an entry's whole row budget, and when it does the wrap appends a
+// visible "…" row instead of silently dropping text. A single space-free word
+// longer than the budget hard-splits into more rows than the budget at width 8
+// px (≈ 1 char/row under the fallback metric).
+func TestOOCWrapPathologicalMarker(t *testing.T) {
+	a := testTabApp(t)
+	a.oocPct = DefaultScalePct
+
+	// No spaces → the wrap hard-splits it; longer than the budget so it overflows.
+	pathological := strings.Repeat("Z", oocWrapMaxLinesPerEntry+50)
+	a.oocLog = append(a.oocLog, pathological)
+	a.oocSpeakers = append(a.oocSpeakers, "")
+	a.oocSeq++
+
+	rows := a.oocWrapped(8) // 8 px ≈ 1 char/row, well under oocWrapMinCharsPerRow
+	if len(rows) == 0 {
+		t.Fatal("pathological entry produced no rows")
+	}
+	if rows[len(rows)-1] != "…" {
+		t.Fatalf("budget exhaustion must append a … marker, last row = %q", rows[len(rows)-1])
+	}
+	// The budget bounds the row count (marker included) — it never balloons.
+	if len(rows) > oocWrapMaxLinesPerEntry+1 {
+		t.Fatalf("row count %d exceeds budget+marker (%d)", len(rows), oocWrapMaxLinesPerEntry+1)
+	}
+	// Parallel slices include the marker row.
+	if len(a.oocWrapName) != len(rows) || len(a.oocWrapURL) != len(rows) ||
+		len(a.oocWrapCont) != len(rows) || len(a.oocWrapSrc) != len(rows) {
+		t.Fatalf("marker desynced parallel slices: out=%d name=%d url=%d cont=%d src=%d",
+			len(rows), len(a.oocWrapName), len(a.oocWrapURL), len(a.oocWrapCont), len(a.oocWrapSrc))
+	}
+	// A NORMAL width never trips the marker for the same content.
+	a.oocSeq++ // force a cache rebuild at the new width
+	wide := a.oocWrapped(4000)
+	for _, ln := range wide {
+		if ln == "…" {
+			t.Fatal("a normal width must not trip the marker")
+		}
 	}
 }

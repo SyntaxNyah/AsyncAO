@@ -2576,18 +2576,13 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	// backgrounded tab's music AUDIBLE while you browse another tab that has none.
 	across := a.d.Prefs.MusicAcrossTabsOn()
 	if next := c.Checkbox(pad, y, "Keep music playing (audible) across server tabs (off = keep it playing but silent while backgrounded)", across); next != across {
-		a.d.Prefs.SetMusicAcrossTabs(next)
-		// If a backgrounded tab's stream is currently ducked and the user just turned
-		// this ON, un-duck it live so it becomes audible now. The OFF case (re-duck)
-		// takes effect on the next tab switch — never yank audio out from under the
-		// user mid-listen. Only touches a KEPT-ALIVE background stream (musicTabDucked),
-		// never the active tab's own music. Also drop any pending delivery-time un-duck:
-		// the duck is gone, so there's nothing left for the await to gate (invariant).
-		if next && a.musicTabDucked {
-			a.musicTabDucked = false
-			a.musicAwaitURL = ""
-			a.applyAudioVolumes()
-		}
+		// Turning this ON un-wedges a backgrounded stream immediately: it clears BOTH
+		// silencers (the duck AND the delivery-await latch) and re-applies volumes, so
+		// it works even when the stream is stuck behind a never-arriving await — not
+		// just the plain-ducked case. The OFF case (re-duck) takes effect on the next
+		// tab switch — never yank audio out from under the user mid-listen. See
+		// applyMusicAcrossTabs.
+		a.applyMusicAcrossTabs(next)
 	}
 	y += 28
 

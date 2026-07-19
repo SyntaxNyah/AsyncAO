@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/veandco/go-sdl2/sdl"
 
@@ -359,6 +360,93 @@ func TestMusicAwaitClearedOnParkAndStop(t *testing.T) {
 	b.applyMusicStreaming(false)
 	if b.musicTabDucked || b.musicAwaitURL != "" {
 		t.Error("streaming OFF must clear both the tab-duck and the await (stopped ⇒ not ducked, no await)")
+	}
+}
+
+// TestMusicAcrossTabsToggleUnwedges pins the "Keep music playing across tabs" toggle
+// fix. Turning it ON must un-wedge a silenced background stream UNCONDITIONALLY —
+// dropping BOTH silencers (the duck AND the delivery-await latch) — not just the
+// plain-ducked case the old inline `if next && a.musicTabDucked` handled. The wedge
+// the old code missed: a stream stuck behind an await that never became current
+// (a fetch that 404'd/failed silently), where the toggle appeared to "do nothing".
+// nil Audio — pure flag inspection (applyAudioVolumes no-ops without a device).
+func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
+	// The discriminating wedge: duck HELD and the await latch ARMED (a track that
+	// never arrived). The old gated code cleared the duck but NOT the latch here; the
+	// unconditional action must clear both so the stream is truly un-wedged.
+	a := testTabApp(t)
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/never-arrives.opus"
+	a.musicAwaitSince = a.now()
+	a.applyMusicAcrossTabs(true)
+	if a.musicTabDucked {
+		t.Error("toggle ON must lift the duck on a wedged background stream")
+	}
+	if a.musicAwaitURL != "" {
+		t.Error("toggle ON must clear the never-arriving await latch (the second silencer)")
+	}
+	if !a.d.Prefs.MusicAcrossTabsOn() {
+		t.Error("toggle ON must persist the pref")
+	}
+
+	// Toggle ON with NOTHING ducked is a harmless no-op: no state to change, and it
+	// must not manufacture a duck or an await out of a clean stream.
+	b := testTabApp(t)
+	b.applyMusicAcrossTabs(true)
+	if b.musicTabDucked || b.musicAwaitURL != "" {
+		t.Error("toggle ON with nothing ducked must stay clean (no-op)")
+	}
+
+	// Turning it OFF must NOT re-duck a currently-audible background stream — the
+	// re-duck is deferred to the next tab switch (never yank audio mid-listen). A
+	// stream that happens to be audible (duck already down) stays audible.
+	d := testTabApp(t)
+	d.musicTabDucked = false
+	d.applyMusicAcrossTabs(false)
+	if d.musicTabDucked {
+		t.Error("toggle OFF must NOT re-duck live audio — re-duck waits for the next tab switch")
+	}
+	if d.d.Prefs.MusicAcrossTabsOn() {
+		t.Error("toggle OFF must persist the pref")
+	}
+}
+
+// TestMusicAwaitTimeoutReleases pins the never-arrives release: an awaited track
+// that never becomes current (a silently-failed fetch — 404, unsupported format,
+// stalled download) must not wedge the stream silent forever. Before the timeout the
+// duck HOLDS (a slow-but-real download is still coming); at/after musicAwaitTimeout
+// settleAwaitedMusic releases the await and lifts the duck so the stream self-heals.
+// Uses a real (disabled) render.Audio so CurrentMusicURL is a safe empty string, and
+// drives a.now() via frameNow (the reconnect.go fake-clock idiom).
+func TestMusicAwaitTimeoutReleases(t *testing.T) {
+	a := testTabApp(t)
+	a.d.Audio = &render.Audio{} // disabled: Frame/CurrentMusicURL are safe no-ops
+	base := time.Date(2026, 7, 19, 12, 0, 0, 0, time.UTC)
+	a.frameNow = base
+	a.musicTabDucked = true
+	a.musicAwaitURL = "http://cdn/never-arrives.opus" // CurrentMusicURL ("") never equals this
+	a.musicAwaitSince = base
+
+	// Just before the deadline: the awaited track still hasn't landed, but a real
+	// download could still be in flight — the duck must HOLD.
+	a.frameNow = base.Add(musicAwaitTimeout - time.Millisecond)
+	a.settleAwaitedMusic()
+	if !a.musicTabDucked || a.musicAwaitURL == "" {
+		t.Fatal("before the timeout the duck and await must hold (a slow download may still arrive)")
+	}
+
+	// At/after the deadline: nothing will ever arrive on this await, so release it and
+	// lift the duck — permanent silence is the worse outcome.
+	a.frameNow = base.Add(musicAwaitTimeout)
+	a.settleAwaitedMusic()
+	if a.musicTabDucked {
+		t.Error("past musicAwaitTimeout the duck must release (never-arrives self-heal)")
+	}
+	if a.musicAwaitURL != "" {
+		t.Error("past musicAwaitTimeout the await latch must clear")
+	}
+	if !a.musicAwaitSince.IsZero() {
+		t.Error("releasing the await must drop its timeout stamp")
 	}
 }
 

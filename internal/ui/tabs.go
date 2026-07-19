@@ -226,7 +226,8 @@ func (a *App) parkActive() {
 	// none) off ITS own track. Clearing here is the switch-back-mid-await guard: a
 	// stale await can't un-duck the new backgrounded context.
 	a.musicAwaitURL = ""
-	a.applyAudioVolumes() // push the duck (or its absence) to the mixer (no-op if no Audio)
+	a.musicAwaitSince = time.Time{} // drop the timeout stamp with the void await
+	a.applyAudioVolumes()           // push the duck (or its absence) to the mixer (no-op if no Audio)
 	if a.d.Viewport != nil {
 		a.d.Viewport.OnPreanimDone = nil
 		a.d.Viewport.OnFrameShown = nil // #17: parked tab's room no longer owns the viewport
@@ -350,7 +351,8 @@ func (a *App) closeParkedTab(i int) {
 	if a.d.Audio != nil && a.musicTabDucked {
 		a.d.Audio.StopMusic()
 		a.musicTabDucked = false
-		a.musicAwaitURL = "" // stream stopped: drop any pending un-duck too (invariant)
+		a.musicAwaitURL = ""            // stream stopped: drop any pending un-duck too (invariant)
+		a.musicAwaitSince = time.Time{} // and its timeout stamp
 	}
 	a.tabs = append(a.tabs[:i], a.tabs[i+1:]...)
 	if a.activeTab > i {

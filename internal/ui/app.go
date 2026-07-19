@@ -301,6 +301,17 @@ type App struct {
 	// streaming-off) so a stale await can never un-duck a later foreign track — the
 	// invariant is: stopped ⇒ not ducked, no await.
 	musicAwaitURL string
+	// musicAwaitSince stamps when musicAwaitURL was armed, so a never-arriving track
+	// can't wedge the stream silent forever. Every OTHER release is event-driven
+	// (settle-on-match, park, close, disconnect, stop, streaming-off) — but a fetch
+	// that SILENTLY fails (a 404, an unsupported format, a URL the resolver builds
+	// that CurrentMusicURL never equals, or a stalled download) fires no event, so
+	// the awaited URL simply never becomes current and settleAwaitedMusic never
+	// lifts the duck. settleAwaitedMusic uses this stamp as the last-resort release:
+	// past musicAwaitTimeout it un-ducks anyway so a backgrounded stream can't stay
+	// inaudible with no way out. Stamped at BOTH arm sites (the DJ /play handler and
+	// resumeActiveTabMusic); the zero value is "nothing armed" (await == "" too).
+	musicAwaitSince time.Time
 	// defaultOOC is the sticky AsyncAO<n> fallback OOC name, minted once
 	// per run on first use (commands/macros need SOME name to send).
 	defaultOOC string
@@ -3067,8 +3078,9 @@ func (a *App) Disconnect() {
 	// disconnect, kick, or a dropped socket all land here).
 	if a.d.Audio != nil {
 		a.d.Audio.StopMusic()
-		a.musicTabDucked = false // a fresh session's music must start audible, not ducked
-		a.musicAwaitURL = ""     // stream stopped: drop any pending un-duck (invariant: stopped ⇒ no await)
+		a.musicTabDucked = false        // a fresh session's music must start audible, not ducked
+		a.musicAwaitURL = ""            // stream stopped: drop any pending un-duck (invariant: stopped ⇒ no await)
+		a.musicAwaitSince = time.Time{} // and its timeout stamp
 	}
 	a.stopVoiceAudio() // free the voice capture/playback devices with the connection
 	a.voiceJoined, a.voiceMicOn = false, false
@@ -3374,6 +3386,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// Audio.CurrentMusicURL once delivered.
 			if a.sess.MusicTrack != "" && a.musicTabDucked {
 				a.musicAwaitURL = a.urls.MusicURL(a.sess.MusicTrack)
+				a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
 			}
 		case courtroom.EventCharsUpdated:
 			a.charLower = nil      // names may have changed; rebuild lazily
@@ -5626,9 +5639,37 @@ func (a *App) applyMusicStreaming(on bool) {
 		a.room.StreamMusic = on
 	}
 	if !on {
-		a.d.Audio.StopMusic()    // halt the current track and cancel any pending fetch
-		a.musicTabDucked = false // stream stopped: not ducked (invariant)
-		a.musicAwaitURL = ""     // and no pending un-duck (nothing will be delivered)
+		a.d.Audio.StopMusic()           // halt the current track and cancel any pending fetch
+		a.musicTabDucked = false        // stream stopped: not ducked (invariant)
+		a.musicAwaitURL = ""            // and no pending un-duck (nothing will be delivered)
+		a.musicAwaitSince = time.Time{} // clear the timeout stamp with the await it belongs to
+	}
+}
+
+// applyMusicAcrossTabs persists the cross-tab music-continuity toggle and, on the
+// ON transition, un-wedges a backgrounded stream that's currently silenced. It's a
+// method (not inline in the settings row) so a headless test can drive exactly what
+// the checkbox does — the same shape as applyMusicStreaming.
+//
+// ON acts UNCONDITIONALLY: it drops BOTH silencers — the duck (musicTabDucked) and
+// the delivery-await latch (musicAwaitURL) — and re-applies volumes. It's harmless
+// when nothing was ducked (all three are already cleared / no-ops). This is the fix
+// for "the toggle does nothing": the old inline code only un-ducked under
+// `next && a.musicTabDucked`, so a stream stuck behind a never-arriving await (duck
+// held, latch armed) — the wedge the deadline in settleAwaitedMusic also guards —
+// stayed silent when the user flipped this ON. Clearing the latch here means the
+// toggle is a reliable manual escape hatch regardless of how the stream got stuck.
+//
+// OFF is deliberately deferred: it does NOT re-duck a currently-audible background
+// stream. Re-ducking waits for the next tab switch (parkActive re-reads the pref) so
+// we never yank audio out from under the user mid-listen — the standing design.
+func (a *App) applyMusicAcrossTabs(on bool) {
+	a.d.Prefs.SetMusicAcrossTabs(on)
+	if on {
+		a.musicTabDucked = false
+		a.musicAwaitURL = ""
+		a.musicAwaitSince = time.Time{}
+		a.applyAudioVolumes()
 	}
 }
 
@@ -5748,6 +5789,7 @@ func (a *App) resumeActiveTabMusic() {
 		// state stays coherent (a held await with no incoming url would silently duck
 		// this stream forever). applyAudioVolumes reflects the un-ducked decision.
 		a.musicAwaitURL = ""
+		a.musicAwaitSince = time.Time{}
 		a.musicTabDucked = false
 		a.applyAudioVolumes()
 		return
@@ -5775,9 +5817,11 @@ func (a *App) applyResumeDuck(sameTrack bool, url string) {
 	if sameTrack {
 		// Nothing awaited once we're on our own track; the right song is audible now.
 		a.musicAwaitURL = ""
+		a.musicAwaitSince = time.Time{}
 		a.musicTabDucked = false
 	} else {
-		a.musicAwaitURL = url // un-duck only once THIS track is the one playing
+		a.musicAwaitURL = url       // un-duck only once THIS track is the one playing
+		a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
 	}
 	a.applyAudioVolumes()
 }
@@ -7873,10 +7917,15 @@ func (a *App) pushIC(line string, color int, friend bool, friendColor int32, spe
 	a.icLogSeq++ // invalidate the filter cache (len alone lies at the cap)
 }
 
-// oocLineCap bounds ONE OOC entry (hostile-server guard). MOTDs are long
-// multi-line texts — the old clampLine cut them at 120 chars, which is
-// why MOTDs arrived truncated; they now wrap at draw time instead.
-const oocLineCap = 4096
+// oocLineCap bounds ONE OOC entry (hostile-server guard). MOTDs and server
+// /help output are long multi-line texts — the old clampLine cut them at 120
+// chars, which is why they arrived truncated; they now wrap at draw time
+// instead. 4096 still cut real /help dumps (a single-paragraph /help runs well
+// past 4 KiB), so it's 16 KiB: the OOC log holds at most icLogCap (1024)
+// entries (appendCapped caps it), so even a hostile server that fills every
+// slot to the brim stores 1024 × 16384 B = 16 MiB — bounded and comfortably
+// inside the 256 MiB envelope, while real /help and MOTD texts sit far below.
+const oocLineCap = 16384
 
 // pushOOC appends an OOC log line. speaker is the sender's name for a real OOC
 // message (used by name colours), "" for system/[MOD CALL]/CLIENT lines. The

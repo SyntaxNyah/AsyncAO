@@ -590,8 +590,37 @@ func (a *App) settleAwaitedMusic() {
 	if a.musicAwaitURL == "" || a.d.Audio == nil {
 		return
 	}
-	a.settleAwaitedDuck(a.d.Audio.CurrentMusicURL())
+	if a.settleAwaitedDuck(a.d.Audio.CurrentMusicURL()) {
+		return // the awaited track landed — normal delivery-time un-duck
+	}
+	// The awaited track still isn't current. Every event-driven release (park,
+	// close, disconnect, stop, streaming-off, settle-on-match above) has already had
+	// its chance; the only way we're STILL here is the silent-failure case — a fetch
+	// that 404'd, decoded to an unsupported format, built a URL CurrentMusicURL will
+	// never equal, or simply stalled. None of those fire an event, so without a
+	// deadline the duck would hold the backgrounded stream silent forever with no way
+	// out (the "toggle does nothing / music never comes back" wedge). Past the
+	// timeout, release the await and lift the duck so the stream becomes audible again
+	// — a late-arriving track is preferable to permanent silence, and the common fast
+	// path (bytes land in ~16 ms) settles long before this ever trips.
+	if !a.musicAwaitSince.IsZero() && a.now().Sub(a.musicAwaitSince) >= musicAwaitTimeout {
+		a.musicAwaitURL = ""
+		a.musicAwaitSince = time.Time{}
+		a.musicTabDucked = false
+		a.applyAudioVolumes()
+	}
 }
+
+// musicAwaitTimeout bounds how long the cross-tab music duck may wait for an
+// awaited track to become current before releasing anyway. A normal delivery
+// settles in well under a second (the bytes land, startMusic swaps the mixer's
+// current URL, settleAwaitedMusic un-ducks the next frame). This deadline exists
+// ONLY for the silent-failure paths that fire no event — a 404, an unsupported
+// format, a resolver URL that never equals CurrentMusicURL, or a stalled fetch —
+// where the awaited track would otherwise never arrive and the stream would stay
+// inaudible forever. Ten seconds is generous enough to never clip a slow-but-real
+// download yet short enough that a wedged stream self-heals promptly.
+const musicAwaitTimeout = 10 * time.Second
 
 // settleAwaitedDuck is the pure decision for settleAwaitedMusic (unit-pinnable like
 // mixChannels): if a track is awaited and the mixer is now playing exactly it, clear
@@ -603,6 +632,7 @@ func (a *App) settleAwaitedDuck(cur string) bool {
 		return false // nothing awaited, or the awaited track hasn't landed yet — keep the duck
 	}
 	a.musicAwaitURL = ""
+	a.musicAwaitSince = time.Time{} // await satisfied: drop the timeout stamp with it
 	a.musicTabDucked = false
 	a.applyAudioVolumes()
 	return true
@@ -814,8 +844,9 @@ func (a *App) cyclePos() {
 // own client regardless of DJ rights.
 func (a *App) stopMusic() {
 	a.d.Audio.StopMusic()
-	a.musicTabDucked = false // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
-	a.musicAwaitURL = ""     // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
+	a.musicTabDucked = false        // stream stopped: a later track must start audible (invariant: stopped ⇒ not ducked)
+	a.musicAwaitURL = ""            // and no pending un-duck can survive the stop (invariant: stopped ⇒ no await)
+	a.musicAwaitSince = time.Time{} // and no dangling timeout stamp
 	if a.room != nil {
 		a.room.Scene.MusicTrack = "" // clear the Now-Playing display
 	}
@@ -1141,9 +1172,24 @@ const streamerNameMax = 32
 
 // --- OOC wrapping ----------------------------------------------------------------------
 
-// oocWrapMaxLinesPerEntry bounds one entry's wrapped output (a hostile
-// MOTD cannot balloon the list).
-const oocWrapMaxLinesPerEntry = 24
+// oocWrapMinCharsPerRow is the CONSERVATIVE floor for how many characters a
+// wrapped display row can hold at any real column width (≥100 px ≈ 11+ chars
+// even in a large font). It only exists to derive the per-entry row budget
+// below; the true chars/row is always far higher, so the budget can never cut
+// legitimate content.
+const oocWrapMinCharsPerRow = 4
+
+// oocWrapMaxLinesPerEntry bounds ONE oocLog entry's total wrapped display rows
+// (across all its \n paragraphs) — a hostile MOTD cannot balloon the list, and
+// it backstops the same-URL run walk in oocHoverLinkRun. It's DERIVED from the
+// stored cap so a legitimate entry can never be clipped: an entry is at most
+// oocLineCap (16384) bytes, and at the conservative floor of oocWrapMinCharsPerRow
+// chars/row that is 16384/4 = 4096 rows — well past the ~1500 rows a full 16 KiB
+// entry actually needs at any real width, so real /help and MOTD texts wrap
+// whole. The budget's marker (a trailing "…" row) is therefore only reachable
+// under a synthetic width that forces fewer than oocWrapMinCharsPerRow per row;
+// today's silent loss past 24 rows was the bug being fixed.
+const oocWrapMaxLinesPerEntry = oocLineCap / oocWrapMinCharsPerRow
 
 // oocWrapped returns the OOC log as display lines: long entries (MOTDs)
 // word-wrap to the list width and embedded newlines split, instead of the
@@ -1168,7 +1214,19 @@ func (a *App) oocWrapped(width int32) []string {
 			sp = a.oocSpeakers[i]
 		}
 		entryFirst := true // the speaker tints only the entry's FIRST display line
+		// The row budget is PER ENTRY (across all its \n paragraphs), not per
+		// paragraph: a single-paragraph /help must be allowed all oocWrapMaxLinesPerEntry
+		// rows, and a multi-paragraph MOTD shares that same finite budget so the whole
+		// entry stays bounded. Only if the budget genuinely runs out (a synthetic
+		// width forcing < oocWrapMinCharsPerRow chars/row) do we append a visible "…"
+		// marker — the pre-fix code silently dropped everything past 24 rows/paragraph.
+		remaining := oocWrapMaxLinesPerEntry
+		truncated := false
 		for _, rawPara := range strings.Split(entry, "\n") {
+			if remaining <= 0 {
+				truncated = true // out of budget with paragraphs still unrendered
+				break
+			}
 			// Link PER PARAGRAPH, from the UNMASKED line: a multi-line entry with a
 			// URL on each line (a server's fork/upstream description) makes each line
 			// open its OWN link, not the entry's first one. A long URL the wrap
@@ -1191,11 +1249,23 @@ func (a *App) oocWrapped(width int32) []string {
 			// Emoji-aware wrap for emoji lines (the plain font sizes colour emoji as
 			// narrow tofu, so an emoji-laden line overflowed instead of wrapping); plain
 			// lines keep the cheap word-wrap.
+			//
+			// Ask for remaining+1 rows (the "+1 probe"): the wrap functions cap
+			// SILENTLY (they don't report truncation), so an extra row lets us tell a
+			// paragraph that exactly filled the budget from one that overflowed it. We
+			// only ever pass ≥ 2 here (remaining ≥ 1 is guaranteed above), which also
+			// dodges the two wrappers' disagreement on maxLines ≤ 0 (wrapToWidth cuts
+			// to nothing, WrapEmojiAware treats it as unbounded).
+			probe := remaining + 1
 			var lines []string
 			if ef := a.ctx.EmojiFont(a.oocPct); ef != nil && render.NeedsEmojiFallback(trimmed) {
-				lines = render.WrapEmojiAware(font, ef, trimmed, width, oocWrapMaxLinesPerEntry)
+				lines = render.WrapEmojiAware(font, ef, trimmed, width, probe)
 			} else {
-				lines = wrapToWidth(font, trimmed, width, oocWrapMaxLinesPerEntry)
+				lines = wrapToWidth(font, trimmed, width, probe)
+			}
+			if len(lines) > remaining {
+				lines = lines[:remaining] // overflowed the budget — clip and flag the marker
+				truncated = true
 			}
 			if len(lines) == 0 {
 				out = append(out, "") // blank MOTD spacer lines survive
@@ -1203,6 +1273,7 @@ func (a *App) oocWrapped(width int32) []string {
 				urls = append(urls, "")
 				cont = append(cont, false)
 				src = append(src, i)
+				remaining-- // a spacer row spends budget too, so the count stays bounded
 				continue
 			}
 			for row, ln := range lines {
@@ -1217,6 +1288,19 @@ func (a *App) oocWrapped(width int32) []string {
 					name = append(name, "")
 				}
 			}
+			remaining -= len(lines)
+			if truncated {
+				break // clipped this paragraph — no point wrapping later ones
+			}
+		}
+		if truncated {
+			// One visible marker row for the whole entry (parallel slices in lockstep):
+			// cont=true so it hangs under the entry as a tail, not a fresh paragraph.
+			out = append(out, "…")
+			name = append(name, "")
+			urls = append(urls, "")
+			cont = append(cont, true)
+			src = append(src, i)
 		}
 	}
 	if out == nil {
