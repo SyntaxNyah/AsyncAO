@@ -692,6 +692,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 
 ## Quality of life
 
+- **Recordings keep their assets** (default **ON**, toggle in **Settings →
+  Studio**): the moment a recording stops, the scene's assets are still warm
+  in the cache — so AsyncAO automatically packages them into
+  `recordings\<name>-bundle\` beside the flat `.aorec` (the same
+  self-contained layout as **📦 Package this RP**, gap list included). The
+  replay **survives its server** with zero effort; offline recordings and
+  busy moments skip quietly, and the flat file always lands regardless.
+- **Imported recordings resolve their server's real formats.** A `.demo`'s
+  origin is never the live session, so its host never learned which formats
+  the server serves — probes and exports walked the single zero-fallback
+  default and found nothing on `.gif`/`.png` servers. The content report and
+  the video export now **seed the origin's `extensions.json` first**, and the
+  report's diagnostic probe **walks the full format chain** on manifest-less
+  hosts (learning the winner, so the export right after is single-probe). The
+  live rendering path keeps its zero-fallback discipline untouched.
 - **Scene recording & replay** (M16, its own **Settings → Studio** tab, **off by
   default**):
   record a courtroom scene to a tiny **`.aorec`** replay file and play it back

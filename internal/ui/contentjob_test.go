@@ -233,6 +233,14 @@ func TestContentProbeWindowBounded(t *testing.T) {
 		return cur
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The pre-probe format-seed fetches extensions.json first; answer it
+		// immediately (404 = no manifest) and UNGATED so the seed completes and the
+		// probe phase — the thing under test — actually starts. Only the asset
+		// probes are held on the gate so their concurrency is observable.
+		if r.URL.Path == "/"+assets.ManifestFileName {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		bump(1)
 		<-gate // hold every request open so concurrency is observable
 		bump(-1)
@@ -280,11 +288,11 @@ func TestContentProbeWindowBounded(t *testing.T) {
 func TestContentProbeFoundMissing(t *testing.T) {
 	sprite := pngBytes()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// .webp, NOT .png: an unlearned host probes ONLY the default format list,
-		// and CharSprite's default is exactly [.webp] (the zero-fallback pillar —
-		// TestFormatListZeroFallbackIsExactConfiguredList). Serving .png here
-		// would test a fallback walk the client refuses by design. The payload
-		// bytes are opaque to probe+package (no decode), so pngBytes() is fine.
+		// Serve the sprite as .webp — the FIRST candidate in the diagnostic full
+		// probe chain (CharSprite: .webp→.apng→.gif→.png). No extensions.json is
+		// served (404 → seedAbsent), so probeRef full-chain-walks this unlearned
+		// host and finds .webp on the first probe. The payload bytes are opaque to
+		// probe+package (no decode), so pngBytes() is fine.
 		if r.URL.Path == "/characters/phoenix/(a)normal.webp" {
 			_, _ = w.Write(sprite)
 			return
@@ -340,11 +348,11 @@ func TestContentProbeFoundMissing(t *testing.T) {
 func TestPackageBundleLayout(t *testing.T) {
 	sprite := pngBytes()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// .webp, NOT .png: an unlearned host probes ONLY the default format list,
-		// and CharSprite's default is exactly [.webp] (the zero-fallback pillar —
-		// TestFormatListZeroFallbackIsExactConfiguredList). Serving .png here
-		// would test a fallback walk the client refuses by design. The payload
-		// bytes are opaque to probe+package (no decode), so pngBytes() is fine.
+		// Serve the sprite as .webp — the FIRST candidate in the diagnostic full
+		// probe chain (CharSprite: .webp→.apng→.gif→.png). No extensions.json is
+		// served (404 → seedAbsent), so probeRef full-chain-walks this unlearned
+		// host and finds .webp on the first probe. The payload bytes are opaque to
+		// probe+package (no decode), so pngBytes() is fine.
 		if r.URL.Path == "/characters/phoenix/(a)normal.webp" {
 			_, _ = w.Write(sprite)
 			return
@@ -506,6 +514,13 @@ func TestPackageCountsAndTotals(t *testing.T) {
 func TestCancelMidProbeLeakFree(t *testing.T) {
 	gate := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Answer the pre-probe format-seed's extensions.json UNGATED (404 = no
+		// manifest) so the seed completes and the PROBE phase — the phase this test
+		// cancels mid-flight — actually starts and its workers get held on the gate.
+		if r.URL.Path == "/"+assets.ManifestFileName {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		<-gate
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -518,6 +533,13 @@ func TestCancelMidProbeLeakFree(t *testing.T) {
 	}
 	if !a.StartContentReport(rec, "scene") {
 		t.Fatal("report refused")
+	}
+	// Drive the render-thread tick until the job leaves the seed phase and the
+	// probe workers spin up (StartContentReport returns during phaseSeeding).
+	seedDeadline := time.Now().Add(5 * time.Second)
+	for a.content != nil && a.content.phase == phaseSeeding && time.Now().Before(seedDeadline) {
+		a.tickContentJob()
+		time.Sleep(2 * time.Millisecond)
 	}
 	// The STRUCTURAL leak observable: the job's own live-goroutine counter.
 	// Global runtime.NumGoroutine deltas flaked the full gate twice — HTTP
@@ -617,6 +639,296 @@ func TestSecondJobRefused(t *testing.T) {
 	if !strings.Contains(a.warnLine, "already running") {
 		t.Errorf("refusal should warn; got %q", a.warnLine)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Auto-bundle on stopRecording (H2) — "recordings keep their assets".
+// ---------------------------------------------------------------------------
+
+// autoBundleServer serves ONE character sprite as .webp (the first diagnostic
+// chain candidate) and 404s everything else, including extensions.json (so the
+// unlearned host full-chain-walks and finds the sprite). Returned with its origin.
+func autoBundleServer(t *testing.T) (*httptest.Server, string) {
+	t.Helper()
+	sprite := pngBytes()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/characters/phoenix/(a)normal.webp" {
+			_, _ = w.Write(sprite)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound) // extensions.json + everything else absent
+	}))
+	t.Cleanup(srv.Close)
+	return srv, srv.URL + "/"
+}
+
+// armRecording puts the app into an active recording with the given origin +
+// events, ready for stopRecording (bypassing startRecording's a.urls dependency).
+func armRecording(a *App, origin string, events []recEvent) {
+	a.rec = &sceneRecording{
+		Version:    recordingVersion,
+		Origin:     origin,
+		StartBg:    "courtroom",
+		RecordedAt: time.Now().Format(time.RFC3339),
+		Events:     events,
+	}
+	a.recActive = true
+}
+
+// newestAorec returns the newest .aorec filename under recordingsDir() whose stem
+// isn't in the `before` set — the file stopRecording just wrote. "" if none.
+func newestAorec(t *testing.T, before map[string]bool) string {
+	t.Helper()
+	dir := recordingsDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, en := range entries {
+		if en.IsDir() || !strings.HasSuffix(en.Name(), recordingExt) {
+			continue
+		}
+		if !before[en.Name()] {
+			return en.Name()
+		}
+	}
+	return ""
+}
+
+// waitForNewAorec polls until a new .aorec (not in `before`) appears under
+// recordingsDir(), returning its filename or "" on timeout — the write is async
+// (saveSceneRecording defers the WriteFile to a goroutine).
+func waitForNewAorec(t *testing.T, before map[string]bool, d time.Duration) string {
+	t.Helper()
+	deadline := time.Now().Add(d)
+	for time.Now().Before(deadline) {
+		if name := newestAorec(t, before); name != "" {
+			return name
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return newestAorec(t, before)
+}
+
+// driveAutoBundleToDone pumps tickContentJob until the auto-build clears the job
+// (a.content == nil), bounded so a bug can't hang the test.
+func driveAutoBundleToDone(t *testing.T, a *App) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		a.tickContentJob()
+		if a.content == nil {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("auto-bundle job did not clear within the deadline")
+}
+
+// TestStopRecordingAutoBundlesWithAssets pins the H2 happy path: with the pref ON
+// (default) and the recorded scene's assets warm/fetchable, stopRecording writes
+// the flat .aorec AND, beside it, a self-contained <stem>-bundle\ folder with the
+// found asset at its origin-relative path + the bundled .aorec + the gap list.
+func TestStopRecordingAutoBundlesWithAssets(t *testing.T) {
+	dir := recordingsDir()
+	if dir == "" {
+		t.Skip("no recordings dir resolvable in this environment")
+	}
+	_, origin := autoBundleServer(t)
+
+	a := headlessProbeApp(t, network.NewClient(), false)
+	if !a.d.Prefs.RecordingsKeepAssetsOn() {
+		t.Fatal("pref must default ON for this test")
+	}
+
+	before := existingAorecs(t)
+	armRecording(a, origin, []recEvent{
+		msgEvent("Phoenix", "normal", "", "", ""),
+		msgEvent("Ghost", "normal", "", "", ""), // 404s — proves partial bundles still land
+	})
+	a.stopRecording()
+
+	// The .aorec write is async (saveSceneRecording defers the WriteFile); poll
+	// for the newly-written file to appear so its stem is known.
+	name := waitForNewAorec(t, before, 5*time.Second)
+	if name == "" {
+		t.Fatal("stopRecording wrote no .aorec")
+	}
+	stem := strings.TrimSuffix(name, recordingExt)
+	bundle := filepath.Join(dir, stem+contentBundleSuffix)
+	// A stale bundle from a prior same-second run would push nextBundleDir to -2;
+	// remove it so the deterministic <stem>-bundle path is the one packaging picks.
+	_ = os.RemoveAll(bundle)
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(dir, name))
+		_ = os.RemoveAll(bundle)
+	})
+
+	driveAutoBundleToDone(t, a)
+
+	if _, err := os.Stat(bundle); err != nil {
+		t.Fatalf("auto-bundle folder %q not created: %v", bundle, err)
+	}
+	// The found sprite at its origin-relative path.
+	if _, err := os.Stat(filepath.Join(bundle, "characters", "phoenix", "(a)normal.webp")); err != nil {
+		t.Errorf("found sprite not bundled: %v", err)
+	}
+	// The bundled .aorec, marked Bundled.
+	aorecData, err := os.ReadFile(filepath.Join(bundle, stem+recordingExt))
+	if err != nil {
+		t.Fatalf("bundled .aorec missing: %v", err)
+	}
+	var out sceneRecording
+	if err := json.Unmarshal(aorecData, &out); err != nil {
+		t.Fatalf("bundled .aorec unparseable: %v", err)
+	}
+	if !out.Bundled {
+		t.Error("bundled .aorec must set Bundled=true")
+	}
+	// The gap list.
+	if _, err := os.Stat(filepath.Join(bundle, contentReportFileName)); err != nil {
+		t.Errorf("gap list not written into the bundle: %v", err)
+	}
+	// The single completion toast names the bundle folder.
+	if !strings.Contains(a.warnLine, "packaged with its assets") {
+		t.Errorf("expected the auto-bundle completion toast; got %q", a.warnLine)
+	}
+}
+
+// TestStopRecordingPrefOffNoBundle pins that with the pref OFF the flat .aorec
+// still lands EXACTLY as before and NO bundle folder is created, and no content
+// job is started (zero behavior change for anyone who turns it off).
+func TestStopRecordingPrefOffNoBundle(t *testing.T) {
+	dir := recordingsDir()
+	if dir == "" {
+		t.Skip("no recordings dir resolvable in this environment")
+	}
+	_, origin := autoBundleServer(t)
+
+	a := headlessProbeApp(t, network.NewClient(), false)
+	a.d.Prefs.SetRecordingsKeepAssets(false)
+
+	before := existingAorecs(t)
+	armRecording(a, origin, []recEvent{msgEvent("Phoenix", "normal", "", "", "")})
+	a.stopRecording()
+
+	if a.content != nil {
+		t.Fatal("pref OFF must start NO content job")
+	}
+	name := waitForNewAorec(t, before, 5*time.Second)
+	if name == "" {
+		t.Fatal("the flat .aorec must still be written with the pref off")
+	}
+	stem := strings.TrimSuffix(name, recordingExt)
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(dir, name))
+		_ = os.RemoveAll(filepath.Join(dir, stem+contentBundleSuffix))
+	})
+	// Give any (erroneous) async build a chance to run, then assert no bundle.
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(filepath.Join(dir, stem+contentBundleSuffix)); err == nil {
+		t.Error("pref OFF must not create a bundle folder")
+	}
+}
+
+// TestStopRecordingEmptyOriginNoBundle pins that an OFFLINE recording (empty
+// origin — nothing to package) auto-builds nothing and errors nothing: the flat
+// .aorec lands, no job starts, no toast is stomped.
+func TestStopRecordingEmptyOriginNoBundle(t *testing.T) {
+	dir := recordingsDir()
+	if dir == "" {
+		t.Skip("no recordings dir resolvable in this environment")
+	}
+	a := headlessProbeApp(t, network.NewClient(), false) // pref default ON
+	before := existingAorecs(t)
+	armRecording(a, "", []recEvent{msgEvent("Phoenix", "normal", "", "", "")}) // no origin
+	a.stopRecording()
+
+	if a.content != nil {
+		t.Fatal("empty-origin recording must start NO content job")
+	}
+	name := waitForNewAorec(t, before, 5*time.Second)
+	if name == "" {
+		t.Fatal("flat .aorec must still be written for an offline recording")
+	}
+	stem := strings.TrimSuffix(name, recordingExt)
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(dir, name))
+		_ = os.RemoveAll(filepath.Join(dir, stem+contentBundleSuffix))
+	})
+	if !strings.Contains(a.warnLine, "Recording saved") {
+		t.Errorf("the Recording-saved toast must survive (no origin, no stomp); got %q", a.warnLine)
+	}
+}
+
+// TestStopRecordingSkipsWhenJobBusy pins single-flight: if a content job is
+// already running when a recording stops, the auto-build is skipped cleanly (no
+// second job, no queue) and the busy job is untouched.
+func TestStopRecordingSkipsWhenJobBusy(t *testing.T) {
+	dir := recordingsDir()
+	if dir == "" {
+		t.Skip("no recordings dir resolvable in this environment")
+	}
+	_, origin := autoBundleServer(t)
+	a := headlessProbeApp(t, network.NewClient(), false)
+
+	// Occupy the single content slot with an origin-missing report (it parks in
+	// phaseReport with contentBusy set — the simplest way to hold the slot).
+	if !a.StartContentReport(synthRecording(""), "busyholder") {
+		t.Fatal("holder report refused")
+	}
+	held := a.content
+	if held == nil || !a.contentBusy {
+		t.Fatal("holder job should be busy")
+	}
+
+	before := existingAorecs(t)
+	armRecording(a, origin, []recEvent{msgEvent("Phoenix", "normal", "", "", "")})
+	a.stopRecording()
+
+	// The busy holder is untouched: no new job replaced it, contentBusy still set.
+	if a.content != held {
+		t.Error("auto-build must NOT replace the running content job")
+	}
+	if a.content != nil && a.content.auto {
+		t.Error("the running job should still be the manual holder, not an auto-build")
+	}
+	// The flat .aorec still lands (auto-build skip is silent, recording save intact).
+	name := waitForNewAorec(t, before, 5*time.Second)
+	if name == "" {
+		t.Fatal("flat .aorec must still be written even when the auto-build is skipped")
+	}
+	stem := strings.TrimSuffix(name, recordingExt)
+	t.Cleanup(func() {
+		_ = os.Remove(filepath.Join(dir, name))
+		_ = os.RemoveAll(filepath.Join(dir, stem+contentBundleSuffix))
+	})
+	// No bundle for the skipped recording.
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(filepath.Join(dir, stem+contentBundleSuffix)); err == nil {
+		t.Error("a skipped auto-build must not create a bundle folder")
+	}
+}
+
+// existingAorecs snapshots the .aorec filenames already under recordingsDir() so a
+// test can tell which file stopRecording newly wrote.
+func existingAorecs(t *testing.T) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	dir := recordingsDir()
+	if dir == "" {
+		return out
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return out
+	}
+	for _, en := range entries {
+		if !en.IsDir() && strings.HasSuffix(en.Name(), recordingExt) {
+			out[en.Name()] = true
+		}
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------

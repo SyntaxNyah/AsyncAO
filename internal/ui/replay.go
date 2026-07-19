@@ -344,13 +344,27 @@ func (a *App) stopRecording() {
 		return
 	}
 	stamp := time.Now().Format("20060102-150405")
-	name, err := saveSceneRecording(rec, "asyncao-"+stamp)
+	stem := "asyncao-" + stamp
+	name, err := saveSceneRecording(rec, stem)
 	if err != nil {
 		a.pushDebug("recording: " + err.Error())
 		return
 	}
 	a.warnLine = "Recording saved (" + strconv.Itoa(len(rec.Events)) + " events): recordings\\" + name
 	a.warnAt = time.Now()
+
+	// "Recordings keep their assets" (default ON): the scene we just recorded was
+	// rendered live, so all its assets are already warm in the cache — package them
+	// into a self-contained bundle folder beside the flat .aorec so the recording
+	// survives its CDN going dark, at zero user effort. This hooks AFTER the async
+	// .aorec write and is render-thread-cheap (it only STARTS the same single-flight
+	// content job the Studio buttons run; the fetch/probe/write all happen off-thread
+	// and never block or slow the stop). Skips silently on an offline recording (no
+	// origin → nothing to package) or when a content job is already running. The
+	// single "Recording packaged…" toast lands when the build finishes (tickContentJob).
+	if a.d.Prefs.RecordingsKeepAssetsOn() {
+		a.startAutoBundle(rec, stem)
+	}
 }
 
 // saveSceneRecording marshals a scene to pretty-printed (hand-editable) JSON and

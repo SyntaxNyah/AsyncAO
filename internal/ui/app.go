@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"log"
@@ -1339,7 +1340,20 @@ type sessionState struct {
 	areaLogOrder []string
 	lastPing     time.Time // CH keepalive pacing (active + background)
 	lastICSend   time.Time // chat_ratelimit window
-	manifestFor  string    // origin already fetched this session (dedupe)
+	// manifestFor is a RE-SEED SIGNAL for the CURRENT session origin: Settings
+	// writes "" to it to force fetchManifestAsync to re-fetch the connected
+	// server's extensions.json right after a profile / auto-detect toggle change.
+	// (It no longer serves as the dedupe key — manifestSeeded does — but keeping
+	// the field lets the Settings re-seed hooks stay a plain field write.)
+	manifestFor string
+	// manifestSeeded records every origin whose extensions.json has already been
+	// fetched + seeded this session, so the session connect path AND the two
+	// diagnostic paths (content report, export loader) each seed a given origin
+	// at most once. Bounded by the number of DISTINCT asset origins visited in a
+	// session — a handful in practice (§17.4). Replaces the old single-string
+	// dedupe, which could only remember the ONE session origin and so never
+	// deduped a recording's (different) origin.
+	manifestSeeded map[string]struct{}
 	// themeBound is this server's bound theme ("" = the global pick);
 	// loaded from ServerWarmInfo.Theme on connect, wins in
 	// applyThemeAsync while the session lives.
@@ -3914,10 +3928,17 @@ func charCaseName(c uint8) string {
 
 func (a *App) fetchManifestAsync() {
 	origin := a.urls.Origin()
-	if a.manifestFor == origin || !strings.HasPrefix(origin, "http") {
-		return
+	// Settings' re-seed hooks blank manifestFor to force a fresh fetch of the
+	// current server after a profile / auto-detect change; honor that by dropping
+	// the current origin from the dedupe set so the guard below re-runs it.
+	if a.manifestFor == "" {
+		delete(a.manifestSeeded, origin)
 	}
 	a.manifestFor = origin
+	if a.originSeeded(origin) || !strings.HasPrefix(origin, "http") {
+		return
+	}
+	a.markOriginSeeded(origin)
 	host := hostOfURL(origin)
 	// A per-host format profile (user-set, or the built-in official-vanilla example)
 	// applies even when auto-detect is OFF — it's an explicit per-server override, not
@@ -3936,29 +3957,105 @@ func (a *App) fetchManifestAsync() {
 	if !a.d.Prefs.FormatAutoDetect() {
 		return
 	}
-	url := origin + assets.ManifestFileName
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
-		defer cancel()
-		res := manifestFetch{host: host}
-		data, err := a.d.Manager.FetchRaw(ctx, url)
-		switch {
-		case err != nil:
-			res.err = err
-		default:
-			m, perr := assets.ParseManifest(data)
-			if perr != nil {
-				res.err = perr
-			} else {
-				res.seeded = m.SeedLearned(a.d.Prefs, host)
-			}
+		res := seedOriginFormats(a.d.Manager, a.d.Prefs, origin)
+		mf := manifestFetch{host: host, seeded: res.seeded, err: res.err}
+		// Preserve the session path's prior semantics: pollManifest treats a nil
+		// err as "seeded, republish + log N classes". A host with no manifest
+		// (seedAbsent) or an unreadable one (seedFailed with no wrapped err) is NOT
+		// a seed, so surface it as an error so pollManifest logs "learn per probe
+		// instead" rather than republishing a no-op and claiming 0 classes seeded.
+		if res.status != seedApplied && mf.err == nil {
+			mf.err = network.ErrAssetNotFound
 		}
 		select {
 		case <-a.manifestRes:
 		default:
 		}
-		a.manifestRes <- res
+		a.manifestRes <- mf
 	}()
+}
+
+// originSeeded reports whether origin's extensions.json has already been fetched
+// + seeded this session (shared dedupe for the session connect path and the two
+// diagnostic paths). The empty origin is never "seeded" so callers still gate on
+// their own http(s) check.
+func (a *App) originSeeded(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	_, ok := a.manifestSeeded[origin]
+	return ok
+}
+
+// markOriginSeeded records origin as seeded this session. Render thread only
+// (the map is not synchronized — every caller marks on the render thread before
+// spawning its off-thread fetch).
+func (a *App) markOriginSeeded(origin string) {
+	if origin == "" {
+		return
+	}
+	if a.manifestSeeded == nil {
+		a.manifestSeeded = map[string]struct{}{}
+	}
+	a.manifestSeeded[origin] = struct{}{}
+}
+
+// seedStatus is the outcome of a diagnostic origin-seeding pass, noted on a
+// content report so the panel/bundle text can say WHY a host's formats were (or
+// weren't) learned before probing.
+type seedStatus int
+
+const (
+	seedSkipped seedStatus = iota // not attempted (non-http origin, or autodetect off)
+	seedApplied                   // extensions.json fetched + parsed; N classes seeded
+	seedAbsent                    // no reachable extensions.json (host publishes none)
+	seedFailed                    // reachable but unparseable / transport fault
+)
+
+// seedResult carries a shared seed core's outcome back to its caller. seeded is
+// the number of format classes written to the learned table (0 unless status is
+// seedApplied). It is COSMETIC for probing correctness — probeRef reads the
+// learned table directly after WarmFromPrefs, not this value — and feeds only
+// the report's status line.
+type seedResult struct {
+	status seedStatus
+	seeded int
+	err    error
+}
+
+// seedOriginFormats is the shared, blocking core both the session connect path
+// (fetchManifestAsync, fire-and-forget) and the diagnostic paths (content
+// report, export loader) use to seed a host's learned formats from its
+// <origin>/extensions.json. It runs OFF the render thread (network fetch +
+// prefs writes, both goroutine-safe: FetchRaw is a blocking network call,
+// RecordLearned/SeedLearned take the prefs mutex). The CALLER republishes the
+// resolver table (WarmFromPrefs) on the render thread once this returns, so a
+// candidate built after that sees the seeds. absent (a clean 404) is DISTINCT
+// from failed (transport/parse fault) so the panel can say "server publishes no
+// format manifest" honestly rather than "couldn't reach it".
+func seedOriginFormats(mgr *assets.Manager, prefs *config.AssetPreferences, origin string) seedResult {
+	if mgr == nil || prefs == nil || !strings.HasPrefix(origin, "http") {
+		return seedResult{status: seedSkipped}
+	}
+	host := hostOfURL(origin)
+	if host == "" {
+		return seedResult{status: seedSkipped}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), iniswapFetchTimeout)
+	defer cancel()
+	data, err := mgr.FetchRaw(ctx, origin+assets.ManifestFileName)
+	if err != nil {
+		if errors.Is(err, network.ErrAssetNotFound) {
+			return seedResult{status: seedAbsent} // host ships no extensions.json
+		}
+		return seedResult{status: seedFailed, err: err}
+	}
+	m, perr := assets.ParseManifest(data)
+	if perr != nil {
+		return seedResult{status: seedFailed, err: perr}
+	}
+	return seedResult{status: seedApplied, seeded: m.SeedLearned(prefs, host)}
 }
 
 // pollManifest lands autodetect results: republish the resolver snapshot

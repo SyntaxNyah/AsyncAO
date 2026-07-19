@@ -33,6 +33,54 @@ func TestFontEverywhereRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRecordingsKeepAssetsRoundTrip pins the H2 "recordings keep their assets"
+// pref: ON by default (an in-app recording auto-packages its warm assets on stop)
+// and — because it's a default-ON *bool — an explicit OFF must survive save→load
+// (the WordDelete/ScreenEffects absent-vs-explicit-false shape). Both directions.
+func TestRecordingsKeepAssetsRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("newWithDebounce: %v", err)
+	}
+	if !p.RecordingsKeepAssetsOn() {
+		t.Fatal("RecordingsKeepAssetsOn must default true (in-app recordings keep their assets)")
+	}
+	p.SetRecordingsKeepAssets(false) // default-ON *bool — explicit false must survive
+	if err := p.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	q, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if q.RecordingsKeepAssetsOn() {
+		t.Error("RecordingsKeepAssets=false lost (absent-default ON must not clobber explicit false)")
+	}
+	// And the other direction: an explicit ON on a file that had it OFF survives
+	// too. NOTE: load() builds a bare reader with NO saver goroutine — Close on
+	// it panics on the nil stop channel (the sibling round-trips never Close a
+	// load() result) — so the write leg reopens a REAL saver-backed instance.
+	p2, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if p2.RecordingsKeepAssetsOn() {
+		t.Fatal("reopened file must still carry the explicit OFF")
+	}
+	p2.SetRecordingsKeepAssets(true)
+	if err := p2.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	r, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !r.RecordingsKeepAssetsOn() {
+		t.Error("RecordingsKeepAssets=true lost across save→load")
+	}
+}
+
 // TestChangelogSeenRoundTrip pins the What's New unread-dot pref (#23): empty by
 // default, then it persists the version the user last opened.
 func TestChangelogSeenRoundTrip(t *testing.T) {

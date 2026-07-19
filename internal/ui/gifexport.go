@@ -181,6 +181,12 @@ const (
 	// frame, so the goroutine blocks ≤1 frame on the handoff and then dies (it
 	// never leaks blocked on send, even after a Cancel: the buffer always accepts).
 	gifLoadBuf = 1
+
+	// gifSeedBuf is the buffer of the format-seed → render-thread result channel
+	// (§17.4). Same 1-slot leak-free contract as gifLoadBuf: the seed goroutine
+	// sends exactly once, tickGifSeed drains it every frame, and a Cancel that nils
+	// a.gif leaves the send in a buffer nobody polls (the goroutine dies).
+	gifSeedBuf = 1
 )
 
 // exportResult is one finished export delivered back to the UI thread: the
@@ -475,6 +481,24 @@ type gifExportJob struct {
 	warmSubmitted  int
 	warmSubmitDone bool
 
+	// Format-seed phase: BEFORE the warm, fetch <origin>/extensions.json and seed
+	// the host's learned formats — exactly the session connect path — so the warm
+	// (which feeds the RENDER path and therefore stays zero-fallback per the
+	// pillar) probes the manifest-declared format instead of the wrong default. A
+	// .demo's recorded origin is never the session origin, so without this the warm
+	// walks [.webp] against a .gif/.png server and captures an empty stage. Gated
+	// on the SAME http(s) + auto-detect + per-origin dedupe as the session path;
+	// seedDone (1-buffered) delivers the outcome, drained by tickGifSeed. Where the
+	// manifest didn't answer (no extensions.json, or it lacks a type), the warm
+	// keeps its existing behavior — the demand pipeline + missingno handle the
+	// stragglers — because full-chain-walking the warm would violate the pillar on
+	// the render path. A prior content report / package of the SAME demo already
+	// RecordSuccess-learned those formats (probeRef → ResolveRawFull), so a warm
+	// right after a report is learned-first even for a no-manifest server.
+	seeding      bool
+	seedDone     chan seedResult
+	seedOriginTo string // the origin being seeded (for WarmFromPrefs gating + the overlay)
+
 	// Async load phase: the disk read + parse runs on ONE goroutine off the render
 	// thread (a 30–60 MB .aorec or an all-day .demo froze the window otherwise).
 	// loadCh (gifLoadBuf-buffered) delivers the parsed recording; the render thread
@@ -684,8 +708,58 @@ func (a *App) startSceneExport(scene *sceneRecording, name string, kind exportKi
 	}
 	a.gifExporting = true
 	a.beginExportScaleBracket() // #77: exports render at native (100%) scale, not the live UI scale
-	a.warnLine = "Loading scene assets…"
+
+	// Seed the recording's origin formats BEFORE the warm, so the warm probes the
+	// manifest-declared format (see the seeding-phase field doc). Same http(s) +
+	// auto-detect + per-origin dedupe as the session connect path; a non-http
+	// origin (local:// mount) or auto-detect-off skips straight to warming, where
+	// the demand pipeline + missingno still stage what resolves. tickGifSeed gates
+	// the first warm tick on the result.
+	if strings.HasPrefix(scene.Origin, "http") && a.d.Prefs.FormatAutoDetect() && !a.originSeeded(scene.Origin) {
+		a.markOriginSeeded(scene.Origin)
+		a.startExportSeed(a.gif, scene.Origin)
+		a.warnLine = "Checking the server's format manifest…"
+	} else {
+		a.warnLine = "Loading scene assets…"
+	}
 	a.warnAt = now
+}
+
+// startExportSeed spawns the ONE bounded format-seed goroutine for an export job
+// and flips it into the seeding phase (which tickGifExport gates ahead of the
+// warm). Off-thread fetch + prefs seed; the render thread republishes the
+// resolver table on delivery (tickGifSeed). Same leak-free 1-buffer contract as
+// the loader. Render thread only.
+func (a *App) startExportSeed(j *gifExportJob, origin string) {
+	j.seeding = true
+	j.seedOriginTo = origin
+	j.seedDone = make(chan seedResult, gifSeedBuf)
+	done := j.seedDone
+	mgr := a.d.Manager
+	prefs := a.d.Prefs
+	go func() {
+		done <- seedOriginFormats(mgr, prefs, origin) // 1-buffered: always accepts
+	}()
+}
+
+// tickGifSeed polls the format-seed goroutine without blocking (render thread).
+// On delivery it republishes the resolver table (so the warm's first candidate
+// sees the seeded formats — WarmFromPrefs on the render thread, matching
+// pollManifest discipline) and drops into the warm phase. Nothing to do until the
+// goroutine sends. A Cancel that nils a.gif never reaches here (tickGifExport's
+// j==nil guard fires and the buffered send is GC'd with the job).
+func (a *App) tickGifSeed(j *gifExportJob) {
+	select {
+	case res := <-j.seedDone:
+		if res.status == seedApplied {
+			a.d.Resolver.WarmFromPrefs()
+		}
+		j.seeding = false
+		a.warnLine = "Loading scene assets…"
+		a.warnAt = time.Now()
+	default:
+		// Still seeding — the overlay's "Checking … manifest" branch keeps drawing.
+	}
 }
 
 // beginExportScaleBracket pins the text device scale (#77) to 100 for the export
@@ -733,6 +807,13 @@ func (a *App) tickGifExport() {
 	// finishLoadedExport runs the render-thread export tail (which DOES need them).
 	if j.loading {
 		a.tickGifLoad(j)
+		return
+	}
+	if j.seeding {
+		// Format-seed phase: an off-thread fetch + prefs seed, gated AHEAD of the
+		// warm. Like loading it needs neither the viewport nor a capture target —
+		// only the goroutine + channel — so it runs BEFORE the Viewport guard.
+		a.tickGifSeed(j)
 		return
 	}
 	if a.d.Viewport == nil {
@@ -1402,6 +1483,20 @@ func (a *App) drawGifProgress(winW, winH int32) {
 		if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "✕ Cancel") {
 			a.gif = nil // abandon the pending result; the goroutine finishes and dies
 			a.gifExporting = false
+		}
+		return
+	}
+
+	// Format-seed phase: fetching the server's extensions.json before the warm.
+	// A brief, network-bounded step; a plain spinner-less note with a Cancel that
+	// abandons the pending seed result (the goroutine finishes into a dead buffer).
+	if j != nil && j.seeding {
+		c.Label(cx-120, cy-30, "🔎  Checking server formats…", ColText)
+		c.LabelClipped(cx-160, cy, 320, j.seedOriginTo, ColTextDim)
+		if c.Button(sdl.Rect{X: cx - 60, Y: cy + 54, W: 120, H: btnH}, "✕ Cancel") {
+			a.gif = nil // abandon the pending seed; the goroutine finishes and dies
+			a.gifExporting = false
+			a.endExportScaleBracket() // startSceneExport set the bracket before seeding
 		}
 		return
 	}

@@ -87,6 +87,13 @@ const (
 	// nobody polls — never a leak).
 	contentDoneBuf = 1
 
+	// contentSeedBuf is the 1-slot buffer of the seed goroutine's → render thread
+	// result channel: the seed pass runs once (fetch <origin>/extensions.json,
+	// seed the learned table) and sends exactly once, drained every frame. Same
+	// leak-free contract as contentDoneBuf — a Cancel that nils the job leaves the
+	// send in a buffer nobody polls, so the goroutine finishes and dies.
+	contentSeedBuf = 1
+
 	// contentProbeHardCap is the ABSOLUTE wall-clock ceiling on the whole probe
 	// phase, measured from job creation. It is the backstop a dead/slow origin
 	// needs: without it a scene whose every asset times out (a missing-origin
@@ -230,6 +237,13 @@ type ContentReport struct {
 	// host, so NOTHING can be probed and the report says so up front rather than
 	// listing 100% "missing" as if it had checked (the silent-demo case).
 	OriginMissing bool
+	// Seed records how the pre-probe format-manifest seed went for this origin —
+	// applied (extensions.json seeded N classes), absent (the host publishes
+	// none, so unlearned types fall back to the full diagnostic probe chain), or
+	// failed/skipped. Cosmetic only: probing reads the learned table directly, not
+	// this value. Surfaced by FormatReport so the panel + bundle text can explain
+	// why a host with no manifest still resolved (or didn't).
+	Seed seedStatus
 	// Categories is the per-category rollup, in ContentCategory order.
 	Categories []CategoryReport
 }
@@ -360,6 +374,23 @@ func spriteFriendlyName(ref courtroom.AssetRef, origin string) string {
 // Formatter (pure — shared by the UI and the bundle's text file).
 // ---------------------------------------------------------------------------
 
+// seedStatusLine returns the one-line note on how asset formats were resolved,
+// or "" when the note would be noise (manifest applied = the normal path;
+// skipped = a local mount / auto-detect off, which the full-chain walk already
+// covers silently). Only seedAbsent gets a line — it's the case the field report
+// is about: a server with no extensions.json whose assets still resolved via the
+// full diagnostic probe chain.
+func seedStatusLine(s seedStatus) string {
+	switch s {
+	case seedAbsent:
+		return "Note: this server publishes no format manifest (extensions.json) — every format was probed to find each asset."
+	case seedFailed:
+		return "Note: the server's format manifest couldn't be read — every format was probed to find each asset."
+	default:
+		return ""
+	}
+}
+
 // FormatReport renders a ContentReport to plain lines: a header (origin +
 // totals, or the honest "no origin" line), then a per-category summary with
 // each item's status. Shared by the Studio UI panel and the bundle's
@@ -381,7 +412,15 @@ func FormatReport(r *ContentReport) []string {
 		if unreachable > 0 {
 			line += fmt.Sprintf(", %d unreachable", unreachable)
 		}
-		out = append(out, line, "")
+		out = append(out, line)
+		// One honest word on how formats were resolved: an absent manifest means
+		// unlearned types were probed with the FULL format chain, so a .png/.gif
+		// server still resolved. Silent when the manifest applied (the normal case)
+		// or wasn't attempted (skipped) — no noise for the common path.
+		if note := seedStatusLine(r.Seed); note != "" {
+			out = append(out, note)
+		}
+		out = append(out, "")
 	}
 	for i := range r.Categories {
 		c := &r.Categories[i]
@@ -412,7 +451,8 @@ func FormatReport(r *ContentReport) []string {
 type contentPhase int
 
 const (
-	phaseProbing   contentPhase = iota // workers resolving refs; render thread polling results
+	phaseSeeding   contentPhase = iota // one goroutine fetching <origin>/extensions.json → seeding learned formats
+	phaseProbing                       // workers resolving refs; render thread polling results
 	phaseReport                        // probe done — report ready; may package next
 	phasePackaging                     // package goroutine draining bytes → writing the folder
 	phaseDone                          // package finished (or report-only end); result delivered
@@ -455,8 +495,29 @@ type contentJob struct {
 	// goroutines the cancel contract promises to reap.
 	probeLive atomic.Int32
 
+	// Seed phase (one goroutine → render thread). seedItems + seedMgr are snapshot
+	// on the render thread so startProbePhase can run either after the seed lands
+	// or immediately (seeding skipped), from the same stored inputs.
+	seedDone  chan seedResult
+	seedItems []contentProbeItem
+	seedMgr   *assets.Manager
+
 	// Package phase (one goroutine → render thread).
 	pkgDone chan contentPackageResult
+
+	// Auto-bundle (H2): set when this job was started by stopRecording's
+	// "recordings keep their assets" auto-build, NOT by a Studio panel. It changes
+	// two behaviors: (1) tickContentJob's phaseReport case auto-packages autoRec
+	// the instant the probe settles (the panel drives that transition for a manual
+	// job, but an auto-build draws no panel — without this the job would wedge in
+	// phaseReport with contentBusy stuck, blocking every future job); (2) the four
+	// intermediate warnLine writes along the pipeline are suppressed so the single
+	// completion toast in tickContentPackage is the only one the user sees — the
+	// "Recording saved" toast from stopRecording must survive, not be stomped by a
+	// "Checking assets…" line the same frame. autoRec carries the Events/StartBg
+	// the bundled .aorec needs (the report is asset-only).
+	auto    bool
+	autoRec *sceneRecording
 }
 
 // releaseProbe closes the probe stop channel exactly once, unblocking the feeder
@@ -538,24 +599,16 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 		return true
 	}
 
-	// Bounded fan-out: a small feeder plus contentProbeWorkers workers. The
-	// feeder blocks on the bounded workCh (backpressure = the in-flight window),
-	// so outstanding probes never exceed the worker count. Results land on the
-	// bounded resultCh the render thread drains each tick.
-	j.workCh = make(chan contentProbeItem, contentWorkBuf)
-	j.resultCh = make(chan contentProbeResult, contentResultBuf)
-	j.stop = make(chan struct{})
 	for ci := range report.Categories {
 		j.pending += report.Categories[ci].Total()
 	}
-	a.content = j
-	a.contentBusy = true
 
-	// Snapshot the work items HERE (render thread) so neither the feeder nor the
-	// workers ever touch the shared report: the render thread alone reads/writes
-	// report.Categories[*].Items (applyProbeResult), and the goroutines see only
-	// this immutable local slice. AssetRef.Alts is enumeration-owned and never
-	// mutated after this, so sharing the ref value is race-clean.
+	// Snapshot the work items HERE (render thread) so neither the seed goroutine,
+	// the feeder, nor the workers ever touch the shared report: the render thread
+	// alone reads/writes report.Categories[*].Items (applyProbeResult), and the
+	// goroutines see only this immutable local slice. AssetRef.Alts is
+	// enumeration-owned and never mutated after this, so sharing the ref value is
+	// race-clean.
 	items := make([]contentProbeItem, 0, j.pending)
 	for ci := range report.Categories {
 		for ii := range report.Categories[ci].Items {
@@ -566,8 +619,148 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 			})
 		}
 	}
+	j.seedItems = items
+	j.seedMgr = a.d.Manager
+	a.content = j
+	a.contentBusy = true
 
-	mgr := a.d.Manager
+	// SEED FIRST when the origin is a network host and auto-detect is on: fetch
+	// <origin>/extensions.json and seed this host's learned formats BEFORE probing,
+	// exactly as the live session's connect path does — a .demo's recorded origin
+	// is never the session origin, so without this its host is never seeded and the
+	// probe walks the zero-fallback single format against a server whose sprites are
+	// e.g. .gif/.png. A non-http origin (a local:// mount) or auto-detect-off skips
+	// straight to probing; probeRef's full-chain fallback still finds the assets on
+	// an unlearned host (the seed only makes the FIRST format correct — it doesn't
+	// gate correctness). Dedupe per origin per session via the shared marker.
+	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.FormatAutoDetect() && !a.originSeeded(report.Origin) {
+		a.markOriginSeeded(report.Origin)
+		a.startContentSeed(j)
+		a.warnLine = "Checking the server's format manifest…"
+		a.warnAt = time.Now()
+		return true
+	}
+	a.startProbePhase(j)
+	return true
+}
+
+// startAutoBundle begins the automatic "recordings keep their assets" build for
+// a just-saved in-app recording: enumerate → seed → probe → (on probe settle)
+// package, reusing the EXACT Studio content-job machinery — the only differences
+// are the j.auto flag (which silences the pipeline's intermediate toasts and lets
+// tickContentJob's phaseReport case fire the package headlessly) and j.autoRec
+// (the recording's Events/StartBg for the bundled .aorec). Single-flight with the
+// Studio jobs: if one is already running this quietly skips (a debug note only —
+// never a toast, never a queue) so the auto-build can't stomp a manual report or
+// pile up unboundedly. Empty origin (an offline recording) skips silently: there
+// is nothing to package, and the flat .aorec already landed. Render thread only
+// (reads a.d.Manager/Prefs, spawns the seed/probe goroutines) — called AFTER
+// stopRecording's async .aorec write, so it never blocks or slows the stop.
+//
+// rec.Origin is the SESSION origin stamped at startRecording (a.urls.Origin() at
+// record start) — the right host even if the session later disconnected before
+// stop, so we read rec.Origin, not the live a.urls.
+func (a *App) startAutoBundle(rec *sceneRecording, stem string) {
+	if a.contentBusy {
+		// A Studio report/package (or a prior auto-build) is mid-flight: skip quietly.
+		// Queuing would violate the single-flight/no-unbounded rule and stomping a
+		// user's manual report would be worse than silently declining the freebie.
+		a.pushDebug("recording auto-bundle: a content job is already running — skipped")
+		return
+	}
+	if rec == nil || len(rec.Events) == 0 || strings.TrimSpace(rec.Origin) == "" {
+		return // offline recording (no origin) or empty: nothing to package, land the flat .aorec only
+	}
+
+	evs := make([]courtroom.Event, 0, len(rec.Events))
+	for _, re := range rec.Events {
+		evs = append(evs, eventFromRec(re))
+	}
+	report := enumerateContent(rec.Origin, rec.StartBg, evs)
+	if report.OriginMissing {
+		return // defensive: TrimSpace above already guarded this — nothing to probe
+	}
+
+	a.contentGen++
+	j := &contentJob{
+		gen:     a.contentGen,
+		stem:    sanitizeStem(stem),
+		report:  report,
+		created: time.Now(),
+		phase:   phaseProbing,
+		auto:    true,
+		autoRec: rec,
+	}
+	for ci := range report.Categories {
+		j.pending += report.Categories[ci].Total()
+	}
+	// Snapshot the probe work items on the render thread (same discipline as
+	// StartContentReport): the goroutines see only this immutable local slice, never
+	// the shared report the render thread owns.
+	items := make([]contentProbeItem, 0, j.pending)
+	for ci := range report.Categories {
+		for ii := range report.Categories[ci].Items {
+			items = append(items, contentProbeItem{
+				cat: ContentCategory(ci),
+				idx: ii,
+				ref: report.Categories[ci].Items[ii].ref,
+			})
+		}
+	}
+	j.seedItems = items
+	j.seedMgr = a.d.Manager
+	a.content = j
+	a.contentBusy = true
+
+	// Seed the recording's origin first when it's a network host with auto-detect
+	// on and not already seeded this session — an in-app recording's origin IS the
+	// live session origin, so it was usually seeded on connect and this skips
+	// straight to probing (no re-fetch). Same gate as StartContentReport.
+	if strings.HasPrefix(report.Origin, "http") && a.d.Prefs.FormatAutoDetect() && !a.originSeeded(report.Origin) {
+		a.markOriginSeeded(report.Origin)
+		a.startContentSeed(j)
+		return
+	}
+	a.startProbePhase(j)
+}
+
+// startContentSeed spawns the ONE bounded seed goroutine for a content job: it
+// fetches <origin>/extensions.json and seeds the learned table off the render
+// thread, delivering the outcome on the 1-buffered seedDone channel the render
+// thread drains each tick (tickContentSeed). Same leak-free contract as the
+// package goroutine — a Cancel nils a.content, so the send lands in a buffer
+// nobody polls and the goroutine dies. Render thread only (spawns the goroutine).
+func (a *App) startContentSeed(j *contentJob) {
+	j.phase = phaseSeeding
+	j.seedDone = make(chan seedResult, contentSeedBuf)
+	done := j.seedDone
+	mgr := j.seedMgr
+	prefs := a.d.Prefs
+	origin := j.report.Origin
+	j.probeLive.Add(1)
+	go func() {
+		defer j.probeLive.Add(-1)
+		done <- seedOriginFormats(mgr, prefs, origin) // 1-buffered: always accepts
+	}()
+}
+
+// startProbePhase spins up the bounded probe fan-out (a feeder + contentProbeWorkers
+// workers) from the job's snapshotted seedItems, transitioning it into phaseProbing.
+// Called either directly (seeding skipped) or from tickContentSeed once the seed
+// lands and the resolver table is republished — so by the time a worker builds a
+// candidate, a seeded host's learned format is already live. Render thread only.
+func (a *App) startProbePhase(j *contentJob) {
+	j.phase = phaseProbing
+	// Bounded fan-out: a small feeder plus contentProbeWorkers workers. The
+	// feeder blocks on the bounded workCh (backpressure = the in-flight window),
+	// so outstanding probes never exceed the worker count. Results land on the
+	// bounded resultCh the render thread drains each tick.
+	j.workCh = make(chan contentProbeItem, contentWorkBuf)
+	j.resultCh = make(chan contentProbeResult, contentResultBuf)
+	j.stop = make(chan struct{})
+
+	items := j.seedItems
+	mgr := j.seedMgr
 	resultCh := j.resultCh
 	workCh := j.workCh
 	stop := j.stop
@@ -599,9 +792,10 @@ func (a *App) StartContentReport(rec *sceneRecording, stem string) bool {
 		}()
 	}
 
-	a.warnLine = "Checking assets against the server…"
-	a.warnAt = time.Now()
-	return true
+	if !j.auto { // an auto-build stays silent until its single completion toast
+		a.warnLine = "Checking assets against the server…"
+		a.warnAt = time.Now()
+	}
 }
 
 // contentProbeWorker resolves each work item exactly once and sends the finding.
@@ -627,15 +821,26 @@ func contentProbeWorker(mgr *assets.Manager, workCh <-chan contentProbeItem, res
 }
 
 // probeRef resolves one enumerated ref to a status + (on found) the URL it lives
-// at. Exact refs (music) are a direct FetchRaw; bases probe the learned-first
-// candidate list via ResolveRaw, walking the alt spellings (bare X / "(a)/X"
-// for sprites, authored-case for blips) — the SAME resolution archive.ExportAssets
-// uses, so a found asset's URL is exactly the origin-relative path a bundle
-// writes. All of it goes through T2 → T3 → source with the 404-TTL + singleflight
-// below, so this is one network probe per asset; the fetched bytes stay in T2/T3
-// for packaging to re-drain (a cache hit, not a second probe). A transport
-// failure (dead host) is StatusUnreachable, distinct from a real all-formats-404
-// (StatusMissing).
+// at. Exact refs (music) are a direct FetchRaw; bases probe via ResolveRawFull,
+// walking the alt spellings (bare X / "(a)/X" for sprites, authored-case for
+// blips). ResolveRawFull probes a learned host's format FIRST (one probe on a
+// HIT — the seed pass ran first, so a manifest-declared host is single-probed
+// here), and full-chain-walks both a host with NO learned entry AND a learned
+// host whose format MISSED. That learned-miss walk is what keeps the report
+// honest across a no-manifest host with MIXED per-asset formats: the workers run
+// concurrently (contentProbeWorkers), so the format one char's sprite wins via
+// RecordSuccess must NOT lock a sibling char of a different format out — the
+// sibling's learned-miss re-walks the full chain and is found at its own format.
+// A server whose sprites are .gif/.png but publishes no extensions.json is thus
+// found whether its formats are uniform or mixed, which the zero-fallback live
+// path deliberately won't do. It's still one network probe per candidate (404s
+// cached by the 404-TTL layer + collapsed by singleflight through FetchRaw), and
+// the winner is learned (RecordSuccess inside ResolveRawFull) so the export warm
+// right after this — AND any later re-report/re-export of the same demo — resolve
+// learned-first for the common single-format server. A found asset's URL is
+// exactly the origin-relative path a bundle writes. A transport failure (dead
+// host) surfaces as StatusUnreachable via the phase hard cap, distinct from a
+// real all-formats-404 (StatusMissing).
 func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus) {
 	if mgr == nil {
 		return "", StatusUnreachable
@@ -659,22 +864,22 @@ func probeRef(mgr *assets.Manager, ref courtroom.AssetRef) (string, AssetStatus)
 		}
 		return ref.Base, StatusFound
 	}
-	if url, _, ok := mgr.ResolveRaw(ref.Base, ref.Type); ok {
+	if url, _, ok := mgr.ResolveRawFull(ref.Base, ref.Type); ok {
 		return url, StatusFound
 	}
 	for _, alt := range ref.Alts {
 		if alt == "" {
 			continue
 		}
-		if url, _, ok := mgr.ResolveRaw(alt, ref.Type); ok {
+		if url, _, ok := mgr.ResolveRawFull(alt, ref.Type); ok {
 			return url, StatusFound
 		}
 	}
-	// ResolveRaw returns ok=false both for a genuine all-404 and for a transport
-	// failure (it swallows the error). We can't distinguish here, so a base that
-	// didn't resolve is reported Missing — the common, correct case (the asset
-	// isn't on the server). A wholly dead origin surfaces instead via the phase
-	// hard cap, which marks the not-yet-probed tail Unreachable.
+	// ResolveRawFull returns ok=false both for a genuine all-format 404 and for a
+	// transport failure (it swallows the error). We can't distinguish here, so a
+	// base that didn't resolve is reported Missing — the common, correct case (the
+	// asset isn't on the server). A wholly dead origin surfaces instead via the
+	// phase hard cap, which marks the not-yet-probed tail Unreachable.
 	return ref.Base, StatusMissing
 }
 
@@ -696,10 +901,54 @@ func (a *App) tickContentJob() {
 		return
 	}
 	switch j.phase {
+	case phaseSeeding:
+		a.tickContentSeed(j)
 	case phaseProbing:
 		a.tickContentProbe(j)
+	case phaseReport:
+		// An auto-build (H2) has no panel to drive the report→package transition, so
+		// fire it here the first tick the probe settles. A manual Studio job leaves
+		// autoRec nil and stays idle in phaseReport until the panel packages/cancels.
+		if j.auto && j.autoRec != nil {
+			rec := j.autoRec
+			j.autoRec = nil // one-shot: consume so a stalled package can't re-fire it
+			if !a.PackageContentBundle(rec) {
+				// PackageContentBundle refused (the only reachable case here is no
+				// recordings dir — OriginMissing is pre-guarded and the phase is
+				// phaseReport by construction). It set its own honest warnLine; clear the
+				// job so contentBusy can't stick and wedge every future content job. The
+				// flat .aorec already landed, so nothing is lost.
+				a.pushDebug("recording auto-bundle: package could not start — " + a.warnLine)
+				a.content = nil
+				a.contentBusy = false
+			}
+		}
 	case phasePackaging:
 		a.tickContentPackage(j)
+	}
+}
+
+// tickContentSeed polls the seed goroutine without blocking; on delivery it
+// republishes the resolver table (so a probe worker built right after sees the
+// seeded formats), notes the outcome on the report for the status line, and
+// starts the probe phase. Nothing to do until the goroutine sends. Render thread
+// only. A stale generation (a Cancel while seeding) never reaches here: Cancel
+// nils a.content, so tickContentJob's j==nil guard fires and the buffered send is
+// GC'd with the job.
+func (a *App) tickContentSeed(j *contentJob) {
+	select {
+	case res := <-j.seedDone:
+		// WarmFromPrefs on the RENDER thread (matches pollManifest discipline):
+		// SeedLearned wrote prefs off-thread; this publishes them into the resolver's
+		// atomic table before any candidate is built. The channel receive happens-
+		// before this, so the table is fully seeded when probing starts.
+		if res.status == seedApplied {
+			a.d.Resolver.WarmFromPrefs()
+		}
+		j.report.Seed = res.status
+		a.startProbePhase(j)
+	default:
+		// Still seeding — the overlay/warn line keeps its "Checking … manifest" note.
 	}
 }
 
@@ -768,8 +1017,10 @@ func (a *App) applyProbeResult(j *contentJob, res contentProbeResult) {
 func (a *App) finishContentProbe(j *contentJob, msg string) {
 	j.releaseProbe()
 	j.phase = phaseReport
-	a.warnLine = msg
-	a.warnAt = time.Now()
+	if !j.auto { // an auto-build stays silent until its single completion toast
+		a.warnLine = msg
+		a.warnAt = time.Now()
+	}
 }
 
 // ContentReportReady reports whether a probed report is available to display
@@ -857,8 +1108,10 @@ func (a *App) PackageContentBundle(rec *sceneRecording) bool {
 		done <- writeContentBundle(mgr, destDir, stem, &recCopy, urls, reportLines) // 1-buffered: always accepts
 	}()
 
-	a.warnLine = "Packaging the RP… writing found assets to a self-contained folder."
-	a.warnAt = time.Now()
+	if !j.auto { // an auto-build stays silent until its single completion toast
+		a.warnLine = "Packaging the RP… writing found assets to a self-contained folder."
+		a.warnAt = time.Now()
+	}
 	return true
 }
 
@@ -884,9 +1137,25 @@ func snapshotFoundURLs(r *ContentReport) []string {
 func (a *App) tickContentPackage(j *contentJob) {
 	select {
 	case res := <-j.pkgDone:
+		auto := j.auto
 		a.content = nil
 		a.contentBusy = false
-		a.warnLine = res.msg
+		// The SINGLE toast for the whole auto-build (steps 3+4): on a clean success name
+		// the bundle folder in the recordings-relative form the other Studio toasts use.
+		// The size-cap abort returns dir != "" (a PARTIAL write) — don't claim a clean
+		// "packaged with its assets" for it; fall through to the writer's honest
+		// "Package stopped at the … cap" line instead. Any hard failure (dir == "")
+		// surfaces the writer's own message too. A manual Studio job always keeps the
+		// engine's verbose "Packaged N assets…" line as before.
+		if auto {
+			if res.dir != "" && !strings.Contains(res.msg, "size cap") {
+				a.warnLine = "Recording packaged with its assets — recordings\\" + filepath.Base(res.dir)
+			} else {
+				a.warnLine = res.msg
+			}
+		} else {
+			a.warnLine = res.msg
+		}
 		a.warnAt = time.Now()
 	default:
 	}

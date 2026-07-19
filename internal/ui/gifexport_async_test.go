@@ -255,6 +255,12 @@ func TestTickGifLoadTransitionsToWarming(t *testing.T) {
 		Decoder:   decoder,
 	})
 
+	// This test isolates the load→WARM transition; turn OFF format auto-detect so
+	// the new pre-warm format-seed phase doesn't interpose (it's covered by
+	// TestExportSeedBeforeWarm). With autodetect off, startSceneExport skips seeding
+	// and the job enters warming directly, exactly as before this phase existed.
+	a.d.Prefs.SetFormatAutoDetect(false)
+
 	// A one-message scene (no StartBg → no audio touched during the transition):
 	// SceneAssets yields this speaker's bg/desk/sprite refs.
 	rec := &sceneRecording{

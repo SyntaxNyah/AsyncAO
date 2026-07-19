@@ -521,6 +521,121 @@ func (m *Manager) ResolveRaw(base string, t AssetType) (string, []byte, bool) {
 	return "", nil, false
 }
 
+// ResolveRawFull is the DIAGNOSTIC sibling of ResolveRaw for a user-invoked,
+// bounded packaging/report pass (contentjob.go's probe, the export loader's
+// seed) — NOT the live render path. The difference is the miss policy for an
+// UNLEARNED host:
+//
+//   - Learned host: try the learned format FIRST (one probe). A HIT returns
+//     immediately — the fast single-probe path a manifest-seeded or single-format
+//     host takes. A MISS falls through to the full walk rather than being honored
+//     as a terminal miss: the learned entry may have been won opportunistically by
+//     a sibling asset earlier in THIS pass (one shared per-(host,type) slot), and
+//     honoring it would strand a mixed-format sibling at the wrong format (see the
+//     WHY block on the method body). Confirming true absence across every format is
+//     the diagnostic path's job; the extra probes are all 404-TTL-cached.
+//   - Unlearned host (no manifest, or the manifest lacks this type): walk the
+//     FULL configured chain (the type's format order + its legacy fallback
+//     chain, deduped) instead of the zero-fallback single format, and
+//     RecordSuccess the winner so the very next ResolveRaw/warm of the same host
+//     is learned-first (a re-report or an export right after the report probes
+//     once, not the whole chain again).
+//
+// WHY the zero-fallback pillar doesn't apply here: that pillar protects the
+// LIVE render hot path — one network probe per asset, no speculative format
+// storm competing with the session's traffic. This is a user-triggered
+// diagnostic/packaging pass whose whole POINT is truth over probe count: a
+// server that "definitely has" a .gif/.png sprite must be findable even though
+// the client would never stream it that way live. The walk is still exactly one
+// network probe per candidate, and every 404 is cached by the 404-TTL layer +
+// collapsed by singleflight (FetchRaw → the same T2/T3/source pipeline), so a
+// repeat pass over the same scene re-probes nothing. The learned-first branch
+// above means a host whose learned format HITS is single-probed; only an unknown
+// or learned-but-missing asset walks the chain (the latter is how a mixed-format
+// sibling recovers from another sibling's opportunistically-learned format).
+func (m *Manager) ResolveRawFull(base string, t AssetType) (string, []byte, bool) {
+	if base == "" || !t.Valid() {
+		return "", nil, false
+	}
+	host := hostOf(base)
+	// Learned host → try the learned format FIRST (the fast, single-probe path a
+	// manifest-seeded or single-format host takes). A HIT returns immediately.
+	//
+	// A MISS deliberately does NOT stop here — it falls through to the full walk
+	// below. This is the mixed-format-honesty case: the learned entry may have
+	// been won OPPORTUNISTICALLY by a sibling asset earlier in this same pass
+	// (ResolveRaw/ResolveRawFull's RecordSuccess writes one shared per-(host,type)
+	// slot), not authoritatively from a manifest. On a no-manifest host whose
+	// assets carry MIXED per-asset formats — charA only .gif, charB only .png —
+	// whichever probes first learns its format; honoring that as a terminal miss
+	// for the OTHER asset would 404 it at the wrong format and falsely report a
+	// real file Missing, nondeterministically by worker order. The learned table
+	// can't tell manifest-authoritative from walk-opportunistic (both go through
+	// RecordLearned), so the diagnostic path treats a learned MISS as "probe the
+	// rest of the chain to confirm" rather than "it isn't there." Confirming true
+	// absence across every format is exactly the diagnostic path's job; the
+	// zero-fallback pillar (one probe, honor the miss) protects only the LIVE
+	// render path, which never calls this method. Every re-probe here is one
+	// network probe per candidate, cached by the 404-TTL layer + collapsed by
+	// singleflight, so the walk after a learned miss adds no wire traffic once the
+	// first sibling has probed the chain.
+	if ext, ok := m.resolver.Learned(host, t); ok {
+		url := base + ext
+		if data, err := m.FetchRaw(context.Background(), url); err == nil && len(data) > 0 {
+			return url, data, true
+		}
+		// fall through to the full walk (see WHY above)
+	}
+	// Unlearned host (or a learned format that missed) → walk the full configured
+	// chain, learning the winner so the common SINGLE-format no-manifest server
+	// (whole host is .png) is learned-first for the export warm that runs right
+	// after. A subsequent sibling of a DIFFERENT format still full-walks via the
+	// learned-miss fall-through above, so learning the winner never strands a
+	// mixed-format sibling.
+	for _, ext := range fullProbeChain(m.prefs, t) {
+		url := base + ext
+		data, err := m.FetchRaw(context.Background(), url)
+		if err == nil && len(data) > 0 {
+			m.resolver.RecordSuccess(host, t, ext) // learn so a repeat pass is single-probe
+			return url, data, true
+		}
+	}
+	return "", nil, false
+}
+
+// fullProbeChain is the FULL diagnostic probe order for one asset type: the
+// user's configured format order (which defaults to the zero-fallback single
+// format) followed by the type's legacy fallback chain, deduped, order
+// preserved. This is deliberately the type's OWN chain rather than one global
+// image list, so audio types (SFX/Blip) walk .opus→.ogg/.wav/.mp3 while image
+// types walk .webp→.apng/.gif/.png — each covering exactly the formats its
+// decoder/mixer supports. Equivalent to FormatList with fallbacks forced on,
+// which is the table-free FULL candidate set the diagnostic path needs.
+func fullProbeChain(prefs *config.AssetPreferences, t AssetType) []string {
+	name := t.Name()
+	var order []string
+	if prefs != nil {
+		order = prefs.FormatOrder(name) // configured order (defaults to the zero-fallback list)
+	}
+	if len(order) == 0 {
+		order = config.DefaultFormatOrder(name)
+	}
+	out := make([]string, 0, len(order)+len(config.LegacyFallbackChain(name)))
+	seen := map[string]bool{}
+	appendExt := func(exts []string) {
+		for _, e := range exts {
+			if e == "" || seen[e] {
+				continue
+			}
+			seen[e] = true
+			out = append(out, e)
+		}
+	}
+	appendExt(order)
+	appendExt(config.LegacyFallbackChain(name))
+	return out
+}
+
 // PrefetchSticky is Prefetch for assets that survive room changes (UI
 // chrome, theme bits).
 func (m *Manager) PrefetchSticky(base string, t AssetType, prio network.Priority) {

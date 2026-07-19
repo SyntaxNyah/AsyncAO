@@ -1502,6 +1502,15 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	if next := c.Checkbox(pad, y, "Show a small ● Record button on the courtroom stage (OFF by default)", srb); next != srb {
 		a.d.Prefs.SetShowRecordButton(next)
 	}
+	y += 28
+	// Recordings keep their assets (ON by default): on stop, auto-package the just-
+	// recorded scene's already-warm assets into a self-contained bundle beside the
+	// flat .aorec, so the recording survives its server's CDN. Additive — the flat
+	// .aorec still saves either way.
+	rka := a.d.Prefs.RecordingsKeepAssetsOn()
+	if next := c.Checkbox(pad, y, "Recordings keep their assets (ON): on stop, also save a self-contained bundle so the replay survives its server", rka); next != rka {
+		a.d.Prefs.SetRecordingsKeepAssets(next)
+	}
 	y += 32
 
 	y = a.settingsSection(y, w, "Instant replay (clip what just happened)")

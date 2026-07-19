@@ -255,6 +255,15 @@ const defaultScreenEffects = true
 // consumed no-op — it never falls through to a Ctrl+Backspace hotkey mid-typing).
 const defaultWordDelete = true
 
+// defaultRecordingsKeepAssets ships ON: when an in-app scene recording (.aorec)
+// stops, its assets are ALREADY warm in the cache (the user was just connected,
+// rendering them live), so packaging them into a self-contained bundle folder is
+// a near-free cache drain that costs the user nothing — and the recording then
+// survives its CDN going dark, exactly like a hand-triggered "Package this RP"
+// bundle. A dedicated Settings toggle turns the auto-bundle off (the flat .aorec
+// still lands either way; the bundle is purely additive).
+const defaultRecordingsKeepAssets = true
+
 // defaultAdditiveText ships ON: the 2.8 ADDITIVE flag is honored — an ADDITIVE=1
 // line appends to the previous one (narration-style RP; AO2 appends on any additive
 // line with no char-id gate), and the outgoing Additive checkbox shows when the
@@ -952,9 +961,10 @@ type AssetPreferences struct {
 	MusicVolMode           bool                         `json:"musicVolMode,omitempty"`         // Music menu shows the volume sliders instead of the track list (persisted)
 	OpenTabs               []OpenTab                    `json:"openTabs"`
 	ReduceMotionOn         bool                         `json:"reduceMotion"`
-	ScreenEffects          bool                         `json:"screenEffects"` // AO2 \s/\f + field shake/flash; default ON
-	WordDelete             bool                         `json:"wordDelete"`    // Ctrl+Backspace deletes a word in any text field; default ON
-	AdditiveText           bool                         `json:"additiveText"`  // 2.8 additive: honor incoming ADDITIVE=1 append + offer the checkbox; default ON
+	ScreenEffects          bool                         `json:"screenEffects"`        // AO2 \s/\f + field shake/flash; default ON
+	WordDelete             bool                         `json:"wordDelete"`           // Ctrl+Backspace deletes a word in any text field; default ON
+	RecordingsKeepAssets   bool                         `json:"recordingsKeepAssets"` // an in-app .aorec recording auto-packages its warm assets into a self-contained bundle on stop; default ON
+	AdditiveText           bool                         `json:"additiveText"`         // 2.8 additive: honor incoming ADDITIVE=1 append + offer the checkbox; default ON
 	MusicDuckingOn         bool                         `json:"musicDucking"`
 	PerAreaScroll          bool                         `json:"perAreaScrollback"`
 	DetailedLog            bool                         `json:"detailedLog"`
@@ -1363,6 +1373,7 @@ type prefsJSON struct {
 	ReduceMotion           bool             `json:"reduceMotion"`         // default OFF (zero value)
 	ScreenEffects          *bool            `json:"screenEffects"`        // absent = default ON
 	WordDelete             *bool            `json:"wordDelete"`           // absent = default ON (pointer: an explicit OFF must persist)
+	RecordingsKeepAssets   *bool            `json:"recordingsKeepAssets"` // absent = default ON (pointer: an explicit OFF must persist)
 	AdditiveText           *bool            `json:"additiveText"`         // absent = default ON (pointer: an explicit OFF must persist)
 	MusicDucking           bool             `json:"musicDucking"`         // default OFF (zero value)
 	PerAreaScrollback      bool             `json:"perAreaScrollback"`    // default OFF (zero value)
@@ -1731,6 +1742,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		AutoLoginToast:         defaultAutoLoginToast,
 		ScreenEffects:          defaultScreenEffects,
 		WordDelete:             defaultWordDelete,
+		RecordingsKeepAssets:   defaultRecordingsKeepAssets,
 		AdditiveText:           defaultAdditiveText,
 		CallwordToast:          defaultCallwordToast,
 		MessageCounter:         defaultMessageCounter,
@@ -2029,6 +2041,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.WordDelete != nil {
 		p.WordDelete = *onDisk.WordDelete
+	}
+	if onDisk.RecordingsKeepAssets != nil {
+		p.RecordingsKeepAssets = *onDisk.RecordingsKeepAssets
 	}
 	if onDisk.AdditiveText != nil {
 		p.AdditiveText = *onDisk.AdditiveText
@@ -7376,6 +7391,28 @@ func (p *AssetPreferences) SetWordDelete(on bool) {
 		return
 	}
 	p.WordDelete = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// RecordingsKeepAssetsOn reports whether an in-app scene recording auto-packages
+// its (already-warm) assets into a self-contained bundle folder when it stops
+// (ON by default). OFF leaves only the flat .aorec — the bundle is additive, so
+// off changes nothing else about the recording flow.
+func (p *AssetPreferences) RecordingsKeepAssetsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RecordingsKeepAssets
+}
+
+// SetRecordingsKeepAssets toggles the auto-bundle-on-stop-recording behavior.
+func (p *AssetPreferences) SetRecordingsKeepAssets(on bool) {
+	p.mu.Lock()
+	if p.RecordingsKeepAssets == on {
+		p.mu.Unlock()
+		return
+	}
+	p.RecordingsKeepAssets = on
 	p.mu.Unlock()
 	p.markDirty()
 }
