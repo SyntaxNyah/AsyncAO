@@ -218,8 +218,16 @@ func (a *App) drawLobby(w, h int32) {
 	if a.phoneBookPage {
 		a.claimPhoneFanatClick(w, h)
 	}
-	for i := range a.servers {
-		e := &a.servers[i]
+	// Snapshot the slice for the whole loop: a ★-click removal (drawServerRow →
+	// toggleFavorite) or a phone-book Save (savePhoneBookEdit) re-assigns
+	// a.servers = a.mergedFavorites() mid-frame, and a removal SHRINKS it — a
+	// bare a.servers[i] on the next iteration would then index past the new
+	// length and panic. Ranging the snapshot keeps i valid against the old
+	// backing array for the rest of this frame; the stale rows draw once more
+	// (standard immediate-mode) and the next frame ranges the fresh list.
+	servers := a.servers
+	for i := range servers {
+		e := &servers[i]
 		if a.phoneBookPage && !e.Favorite {
 			continue // Phone Book shows only your saved servers
 		}
@@ -266,8 +274,10 @@ func (a *App) drawLobby(w, h int32) {
 				}
 				// Rehearse, spelled out (the row button alone was missed
 				// in playtests): offline browse of this server's cached
-				// roster, or the one-visit explainer.
-				e := &a.servers[i]
+				// roster, or the one-visit explainer. Read the snapshot, not
+				// a.servers — a ★-remove earlier this frame may already have
+				// shrunk the field slice (see the snapshot note at loop top).
+				e := &servers[i]
 				if e.Joinable() {
 					if c.Button(sdl.Rect{X: box.X + 6, Y: ly + 4, W: 320, H: btnH}, "Rehearse offline (browse cached characters)") {
 						if info := a.d.Prefs.ServerWarmInfoFor(e.WebSocketURL()); info.Origin != "" && len(info.Chars) > 0 {
