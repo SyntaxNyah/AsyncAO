@@ -4,6 +4,60 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.74.5 — 2026-07-19
+
+Imported demos find their assets and always convert, recordings keep their
+assets and replay flawlessly, and seven music bugs — the whole "sometimes
+silent, sometimes the wrong song" family — are root-caused and fixed.
+
+**Demos & recordings**
+
+- **Imported demos find their assets.** Checking, packaging, or exporting a
+  `.demo` against servers that serve `.gif`/`.png` sprites found nothing —
+  the client probed only its single default format for hosts it had never
+  learned. The origin's `extensions.json` is now read first, and servers
+  without one get a full format-chain check, so "missing" finally means
+  missing.
+- **Demos read your local assets first.** With local mounts configured
+  (Settings → Assets), an imported `.demo` resolves against them — the way
+  AO2 plays demos from its own base folder. The content report grew a
+  **Resolve from: This server / Local base** switch so either source can be
+  checked or packaged per run.
+- **A demo with no reachable assets still converts.** An export whose every
+  asset fails to fetch used to sit frozen at 0/N; conclusively-absent assets
+  now settle the loading phase promptly and the video renders in full with
+  placeholder art. Even a completely dead origin is bounded by a ceiling
+  instead of freezing.
+- **Recordings keep their assets** (default ON, Settings → Studio): when a
+  recording stops, its assets are still warm in the cache, so a
+  self-contained bundle is written beside the `.aorec` automatically — the
+  replay survives its server forever. Off restores the old behavior exactly.
+- **Streamed recordings pre-load before playing.** Opening a non-bundled
+  `.aorec` shows a brief "Loading scene…" pass (skippable) so playback
+  starts with sprites present and music on time — no pop-in, no silent
+  opening. Bundled recordings play instantly from their folder, as before.
+
+**Music**
+
+- **A minimized window no longer freezes music recovery.** The 10-second
+  self-heal for a track that never arrives ran on a clock that stopped
+  while minimized — wedged silence could survive until the window was
+  restored. Timers now advance regardless.
+- **Closing a background tab can't silence the tab you're on.** Closing
+  another tab's chip while your tab was still fetching its song cancelled
+  *your* fetch, leaving permanent silence until a rejoin.
+- **A failed track fetch heals to silence — never someone else's song.**
+  When a track can't be fetched, the recovery used to un-mute whatever was
+  still loaded, which across servers meant the wrong music entirely.
+- **Music volume recovers after messages even while minimized.** The
+  during-message duck could stick at reduced volume in a minimized window.
+- **A song that ends can be played again.** A finished non-looping track
+  left the player convinced it was still playing, so replaying it (or
+  returning to its tab) did nothing.
+- **Stopping music and switching tabs can't strand the volume or a stale
+  wait state** — two smaller edge cases in the same family, closed with
+  regression tests.
+
 ## v1.74.0 — 2026-07-19
 
 A day of field reports: the exporter shows a loading screen instead of
