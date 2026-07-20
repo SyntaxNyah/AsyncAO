@@ -4,6 +4,15 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.80.1 — 2026-07-20
+
+- The new Flip button actually shows up now. Narrower buttons behind it in the
+  layout order could sneak into widths where Flip itself didn't fit, so the SFX
+  picker and emoji button appeared while Flip vanished — Flip now genuinely
+  outranks them at every width. It also got a little more breathing room so
+  the label isn't squished. On very narrow windows the core buttons still win;
+  the layout editor can always force Flip back.
+
 ## v1.80.0 — 2026-07-20
 
 **Disconnects**
