@@ -1711,7 +1711,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   a cycling button that read as a label, and **sprite flip** also lives on the **IC
   bar** as a **Flip** toggle (shown whenever the server advertises the `flipping`
   feature, AO2's `ui_flip`) — the same setting as the pair panel's flip checkbox, so
-  flipping is reachable without opening the pair panel.
+  flipping is reachable without opening the pair panel. On a tight bar Flip **outranks
+  the SFX picker and the emoji button**: it draws before either of them and never yields
+  to them (its slot is wider, so the priority is enforced by band, not just draw order —
+  a narrower lower-priority control can't slip in where Flip was squeezed out), sitting
+  just behind the core **Pre**/**Text-FX** pair. Only at the 720p floor, or on a 2.8
+  additive server where the extra toggle eats the row, does it drop like the other
+  optionals — and the layout editor can force it back anywhere.
 - **Click-to-pair** (`/pair <UID>` shortcut for servers that sync pairs via the
   OOC command): **double-click a speaker's IC line** to open a pair popup.
   AO's IC packets carry only the character, not the player UID, so the UID is
