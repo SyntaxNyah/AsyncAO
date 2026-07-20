@@ -4,6 +4,14 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.80.2 — 2026-07-20
+
+- Flip is always visible on flipping servers now, at any window size. Previously
+  a narrow bar or a smaller viewport (common with additive servers) could push it
+  off entirely, and "Reset All" couldn't bring it back — only the layout editor
+  workaround helped. The width guard is gone: Flip shows unconditionally whenever
+  the server supports it, matching how AO2-Client works.
+
 ## v1.80.1 — 2026-07-20
 
 - The new Flip button actually shows up now. Narrower buttons behind it in the
