@@ -136,6 +136,17 @@ type Manager struct {
 	// thread sets/clears it while pool workers read it.
 	archiveSrc atomic.Pointer[Fetcher]
 
+	// localOverlay, when set, serves local:// URLs in a STREAMING manager (whose
+	// fixed client is the network client and would transport-error on a local://
+	// URL). It lets the content report / a mid-session source switch resolve a
+	// recording against the user's configured mounts WITHOUT rebuilding the
+	// Manager, which is mode-locked at construction (see LocalMode). Nil = no
+	// mounts configured. Only consulted when NOT localMode: a local-mode Manager's
+	// SOURCE already is the LocalFetcher, so the overlay would double-route — it is
+	// a strict no-op there (netFetch never reaches the overlay branch). atomic: the
+	// render thread swaps it on every mounts/pref change while pool workers read it.
+	localOverlay atomic.Pointer[LocalFetcher]
+
 	t1Hits     atomic.Int64
 	t2Hits     atomic.Int64
 	diskHits   atomic.Int64
@@ -146,21 +157,73 @@ type Manager struct {
 // SetOffline flips rehearsal mode's network gate.
 func (m *Manager) SetOffline(on bool) { m.offline.Store(on) }
 
+// ErrLocalOverlayUnavailable reports that a local:// URL was requested of a
+// STREAMING manager that has no mount overlay configured. It is DELIBERATELY
+// distinct from network.ErrAssetNotFound: a nil overlay means "this client
+// cannot serve local:// at all," not "the file is absent." Reporting it as a
+// 404 would let the diagnostic walk accumulate it into tried404 and mark every
+// asset [missing] (the false-missing bug the overlay fixes); reporting it as a
+// transport error keeps the report honest ("unreachable" / cannot query),
+// exactly like an https:// origin the streaming client can't reach. A genuinely
+// missing mount FILE still returns ErrAssetNotFound from LocalFetcher.Fetch, so
+// real absence stays conclusive and negative-cacheable.
+var ErrLocalOverlayUnavailable = errors.New("assets: no local mount overlay configured")
+
 // netFetch is the manager's ONLY network egress: the offline gate lives
 // here so every pipeline path (probe chains, raw text, sync fetch)
 // respects rehearsal mode structurally.
 func (m *Manager) netFetch(ctx context.Context, url string) ([]byte, error) {
-	if m.offline.Load() {
-		return nil, network.ErrAssetNotFound
-	}
 	// Bundled-archive replay: serve the archive folder first; a miss falls
 	// through so concurrent non-archive fetches (theme/UI) still hit the network.
+	// This sits ABOVE the offline gate on purpose: archive/local reads are disk,
+	// not network egress, so rehearsal (offline) must not block them.
 	if ov := m.archiveSrc.Load(); ov != nil {
 		if data, err := (*ov).Fetch(ctx, url); err == nil && len(data) > 0 {
 			return data, nil
 		}
 	}
+	// Streaming-manager local overlay: a local:// URL cannot go to the network
+	// client (it would transport-error). Route it to the mount overlay. Gated on
+	// !localMode because a local-mode Manager's SOURCE already is the LocalFetcher
+	// (m.client) — intercepting here would double-route (and a nil overlay would
+	// break local mode outright). The overlay branch also rides ABOVE the offline
+	// gate: local mount reads are legal offline (disk, not network). Placed AFTER
+	// archiveSrc so a replay archive's own local:// origin still wins — the mount
+	// overlay's LocalFetcher hard-errors on a URL not under its origin, which would
+	// break replay if it saw the archive's URLs first.
+	if !m.localMode && strings.HasPrefix(url, LocalScheme) {
+		if ov := m.localOverlay.Load(); ov != nil {
+			// A missing mount file returns ErrAssetNotFound here (conclusive miss),
+			// exactly matching a streaming 404 — learned formats and warnings behave
+			// identically. No disk-tier round-trip: the mounts ARE disk (skipDisk).
+			return (*ov).Fetch(ctx, url)
+		}
+		return nil, ErrLocalOverlayUnavailable // cannot serve — NOT a 404 (see above)
+	}
+	if m.offline.Load() {
+		return nil, network.ErrAssetNotFound
+	}
 	return m.client.Fetch(ctx, url)
+}
+
+// SetLocalOverlay installs (or clears, with nil) the mount overlay a STREAMING
+// manager consults for local:// URLs. Safe to call from the render thread
+// mid-session: readers load the atomic pointer, never lock (spec §17.5). Pass
+// the LocalFetcher built from the CURRENT mounts (its BaseURL must equal the
+// origin the UI builds URLs against, so fetch routing matches byte-for-byte); an
+// empty mount set should be passed as nil, not an empty LocalFetcher (an empty
+// LocalFetcher answers every URL with a conclusive 404, which is wrong for
+// "cannot serve"). No-op in effect on a local-mode Manager: netFetch's overlay
+// branch is gated !localMode, so the stored pointer is never read there.
+func (m *Manager) SetLocalOverlay(f *LocalFetcher) { m.localOverlay.Store(f) }
+
+// skipDisk reports whether url's bytes must bypass the T3 disk tier: a local://
+// URL (in any manager) reads from mount folders that ARE disk, so a disk-tier
+// Get/Put would pointlessly duplicate the mounts — the same reason a local-mode
+// Manager skips T3 wholesale. In a streaming manager only the local:// overlay
+// URLs skip; the network origin's URLs still use T3 normally.
+func (m *Manager) skipDisk(url string) bool {
+	return m.localMode || strings.HasPrefix(url, LocalScheme)
 }
 
 // SetArchiveSource routes fetches through f (an archive folder's LocalFetcher)
@@ -402,7 +465,7 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 		m.deliver(url, url, t, data)
 		return
 	}
-	if !m.localMode {
+	if !m.skipDisk(url) {
 		if data, ok := m.disk.Get(url); ok {
 			m.diskHits.Add(1)
 			m.t2.Add(url, data, int64(len(data)))
@@ -415,7 +478,7 @@ func (m *Manager) resolveExact(url string, t AssetType) {
 	case err == nil:
 		m.netFetches.Add(1)
 		m.t2.Add(url, data, int64(len(data)))
-		if !m.localMode {
+		if !m.skipDisk(url) {
 			m.disk.Put(url, data)
 		}
 		m.deliver(url, url, t, data)
@@ -458,7 +521,7 @@ func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
 				m.t2Hits.Add(1)
 				return
 			}
-			if !m.localMode {
+			if !m.skipDisk(url) {
 				if data, ok := m.disk.Get(url); ok {
 					m.diskHits.Add(1)
 					m.t2.Add(url, data, int64(len(data)))
@@ -468,7 +531,7 @@ func (m *Manager) PrefetchRaw(url string, prio network.Priority) {
 			if data, err := m.netFetch(context.Background(), url); err == nil {
 				m.netFetches.Add(1)
 				m.t2.Add(url, data, int64(len(data)))
-				if !m.localMode {
+				if !m.skipDisk(url) {
 					m.disk.Put(url, data)
 				}
 			}
@@ -484,7 +547,7 @@ func (m *Manager) FetchRaw(ctx context.Context, url string) ([]byte, error) {
 		m.t2Hits.Add(1)
 		return data, nil
 	}
-	if !m.localMode {
+	if !m.skipDisk(url) {
 		if data, ok := m.disk.Get(url); ok {
 			m.diskHits.Add(1)
 			m.t2.Add(url, data, int64(len(data)))
@@ -497,7 +560,7 @@ func (m *Manager) FetchRaw(ctx context.Context, url string) ([]byte, error) {
 	}
 	m.netFetches.Add(1)
 	m.t2.Add(url, data, int64(len(data)))
-	if !m.localMode {
+	if !m.skipDisk(url) {
 		m.disk.Put(url, data)
 	}
 	return data, nil
@@ -766,9 +829,10 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 			m.deliver(url, deliverBase, t, data)
 			return true, tried404
 		}
-		// T3: disk — promote to T2, learn, decode (spec §8). Skipped in
-		// local mode: the mounts ARE disk.
-		if !m.localMode {
+		// T3: disk — promote to T2, learn, decode (spec §8). Skipped for a
+		// local:// URL (local mode, or a streaming manager's mount overlay): the
+		// mounts ARE disk, so a disk-tier copy would just duplicate them.
+		if !m.skipDisk(url) {
 			if data, ok := m.disk.Get(url); ok {
 				m.diskHits.Add(1)
 				m.t2.Add(url, data, int64(len(data)))
@@ -777,13 +841,14 @@ func (m *Manager) walkCandidates(urls []string, base, deliverBase string, t Asse
 				return true, tried404
 			}
 		}
-		// Source: network stream or local mounts.
+		// Source: network stream, local mounts (local mode), or the streaming
+		// manager's local:// overlay (netFetch routes by scheme).
 		data, err := m.netFetch(context.Background(), url)
 		switch {
 		case err == nil:
 			m.netFetches.Add(1)
 			m.t2.Add(url, data, int64(len(data)))
-			if !m.localMode {
+			if !m.skipDisk(url) {
 				m.disk.Put(url, data)
 			}
 			m.resolver.RecordSuccess(host, t, ext)
@@ -853,7 +918,7 @@ func (m *Manager) PurgeCorrupt(url string) {
 	if m.t2 != nil {
 		m.t2.Remove(url)
 	}
-	if !m.localMode && m.disk != nil {
+	if !m.skipDisk(url) && m.disk != nil {
 		m.disk.Delete(url)
 	}
 }

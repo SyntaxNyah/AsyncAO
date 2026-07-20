@@ -69,10 +69,17 @@ const (
 // courtTab is one parked server session. While a tab is ACTIVE its state
 // field is zero — the live copy is App.sessionState.
 type courtTab struct {
-	state   sessionState
-	unread  int  // IC+OOC lines landed while backgrounded
-	dead    bool // connection ended while backgrounded
-	inCourt bool // a room existed when parked (activation re-enters it)
+	state  sessionState
+	unread int  // IC+OOC lines landed while backgrounded
+	dead   bool // connection ended while backgrounded
+	// deadReason is the raw close reason recorded at background-death (socket close
+	// or a kick/ban EventDisconnect). It rides the tab so that ACTIVATING a dead tab
+	// can surface the disconnect dialog with the right cause instead of silently
+	// booting to the lobby — a background drop must not pop a modal over the tab the
+	// user is actually looking at, so the reason waits, latched, until they switch to
+	// it. "" only for an already-torn-down slot (belt-and-suspenders).
+	deadReason string
+	inCourt    bool // a room existed when parked (activation re-enters it)
 	// chipLabel memoizes the tab-strip label so the always-on tab bar (which
 	// asks for it ~3×/tab/frame) allocates nothing while the tab's
 	// name/state/unread are stable; rebuilt only when chipKey changes.
@@ -277,11 +284,40 @@ func (a *App) activateTab(i int) {
 	// switch so one session's drafts can't resurface (or read as "external
 	// changes") in another (the multi-tab isolation rule).
 	a.ctx.ClearFieldHistories()
+	if t.dead && a.sess != nil && t.inCourt {
+		// The tab's connection died in the BACKGROUND while it was in court. The
+		// drop couldn't pop a modal then (it would have covered whatever tab the
+		// user was actually looking at — the parked-tab rule), so the reason was
+		// latched on the tab (deadReason). NOW that the user has switched to it,
+		// surface the SAME involuntary-disconnect dialog the active-tab drop shows,
+		// over the tab's own restored courtroom — the logs and last scene are intact
+		// in the promoted session, so it reads as "this tab dropped" rather than a
+		// silent boot to the lobby. The socket is already gone (pumpBackgroundTabs /
+		// routeBackgroundEvent nilled s.conn and marked dead), so there's no network
+		// teardown to do here — just rebuild the room to draw and open the dialog.
+		a.buildRoom() // rebuild WITHOUT fresh-entry resets (parked iniswap/pos survive)
+		// buildRoom re-seeds the area's music (it assumes a live session); a dead tab
+		// must not start playing — stop it and clear any await, mirroring Disconnect's
+		// audio teardown so a frozen tab is silent like an active-tab freeze.
+		if a.d.Audio != nil {
+			a.d.Audio.StopMusic()
+			a.musicTabDucked = false
+			a.musicAwaitURL = ""
+			a.musicAwaitSince = time.Time{}
+		}
+		a.openDisconnectDialog(a.serverName, a.serverKey, t.deadReason)
+		t.dead = false    // consumed: the dialog now owns this drop (Back to lobby / Reconnect finish it)
+		t.deadReason = "" // and the latched reason has been shown
+		a.ensureThemeForSession()
+		a.updatePresence()
+		return
+	}
 	if t.dead || a.sess == nil {
-		// The connection died in the background: tear the tab down fully
-		// (notebook flush, slot removed) and say why on the lobby. This is a
-		// deliberate teardown of an already-dead tab — background-tab drops are
-		// their own concern (#46), so suppress auto-reconnect here (#1).
+		// Died in the background with no court to freeze (char-select, or a session
+		// that never fully connected): tear the tab down fully (notebook flush, slot
+		// removed) and say why on the lobby — today's exact fallback. Deliberate
+		// teardown of an already-dead tab; background-tab drops are their own concern
+		// (#46), so suppress auto-reconnect here (#1).
 		name := a.serverName
 		a.deliberateClose = true
 		a.Disconnect()
@@ -449,10 +485,35 @@ func (a *App) pumpBackgroundTabs() {
 				a.uiDirty = true // unread badges / tab chips / the pinned pane change with parked-tab traffic
 				if !ok {
 					t.dead = true
+					// Record WHY, for the disconnect dialog shown when the user
+					// activates this dead tab. Same shape as pumpConnection's
+					// closed-channel reason (conn.Err() when the transport left one,
+					// else the plain "connection closed").
+					reason := "connection closed"
+					if s.conn != nil {
+						if err := s.conn.Err(); err != nil {
+							reason = err.Error()
+						}
+					}
+					t.deadReason = reason
 					s.conn = nil
 					if t == a.splitTab {
+						// The pinned float pane is about to VANISH (clearSplit tears it
+						// down). Announce it first, or a torn-out server's death is
+						// silent — the reason otherwise reaches only the debug log below,
+						// so the pane just disappears with no user-visible notice. Ride
+						// the existing warn-line surface (jukeWarn, same one background
+						// music/asset failures use); no new UI. The dead tab's chip is
+						// unchanged: it still opens the disconnect dialog on activation.
+						a.jukeWarn("Pinned server " + s.serverName + " disconnected: " + reason)
 						a.clearSplit() // the pinned right-pane server dropped
 					}
+					// SCOPE-OUT (deliberate, deferred): a parked/pinned tab's death is
+					// surfaced but NOT auto-reconnected. Per-tab auto-reconnect is out of
+					// scope for this wave — the App-singular autoReconnect* fields track a
+					// single countdown, and arming them for a parked tab would FIGHT a
+					// live primary's own countdown. The recovery gap is known; recovery
+					// for parked tabs needs per-tab retry state (designed elsewhere).
 					a.pushDebug("tab " + s.serverName + ": connection closed in background")
 					break
 				}
@@ -532,12 +593,59 @@ func (a *App) routeBackgroundEvent(t *courtTab, ev courtroom.Event) {
 		a.autoClipModcall(s.serverName, s.icLog, ev.Text) // freeze IC context even on a backgrounded server
 	case courtroom.EventBackground:
 		a.d.Prefs.RememberServerBackground(s.serverKey, ev.Text)
+	case courtroom.EventMusic:
+		// A DJ /play on a BACKGROUNDED tab. HandlePacket already advanced this tab's
+		// s.sess.MusicTrack (the return-switch reads exactly that on activation, via the
+		// promoted session), so the track identity the resume path needs is bookkept for
+		// free — no extra per-tab stamp is required here (the App-level musicStartedAt is
+		// only a rough seek FALLBACK for the active tab; SwappedOutSnap is the drift-free
+		// primary, and the audible-switch branch below makes the return a same-track no-op
+		// anyway).
+		//
+		// Without this case the tab's audible continuity stream (MusicAcrossTabs ON) would
+		// keep playing the STALE song: the room that issues PlayMusic parks with the tab, so
+		// a backgrounded change never reached the mixer. Under ON, when the single stream
+		// belongs to THIS tab (musicOwnerKey — the honest owner signal set at the play
+		// sites), follow the change: switch the live stream to the new track using the SAME
+		// async start machinery the active-tab path bottoms out in (Audio.PlayMusic —
+		// singleflight-collapsed fetch, no new goroutine). A ~stop / area-name transfer left
+		// s.sess.MusicTrack "" / unchanged; only a real track switches. Under OFF (stream
+		// silent) or when another tab owns the stream, this is bookkeeping only — no audible
+		// change (the isolation the OFF toggle promises).
+		if url, ok := a.backgroundMusicFollow(s); ok {
+			a.d.Audio.PlayMusic(url, ev.Loop, ev.MusicEffects) // AssetType: Music
+		}
 	case courtroom.EventDisconnect:
 		t.dead = true
+		t.deadReason = ev.Text // "Kicked: …" / "Banned: …" — the dialog names it on activation
 		s.oocLog = appendCapped(s.oocLog, "SERVER: disconnected: "+ev.Text, icLogCap)
 		s.oocSpeakers = appendCapped(s.oocSpeakers, "", icLogCap) // system line
 		s.oocSeq++
 	}
+}
+
+// backgroundMusicFollow is the pure decision for the ARM-2 background song-change
+// (unit-pinnable like settleAwaitTimeout / mixChannels): should the single audible
+// stream follow a backgrounded tab's DJ /play, and to which URL? It returns a non-empty
+// url + true ONLY when ALL hold: MusicAcrossTabs is ON (OFF keeps tabs acoustically
+// isolated — bookkeeping only), a device exists, the stream's owner IS this backgrounded
+// tab (musicOwnerKey — so the change follows the tab that is actually audible, never
+// hijacks a DIFFERENT tab's stream), and the tab really has a track (a ~stop / area-name
+// transfer leaves s.sess.MusicTrack ""/unchanged, so it must not switch). The URL is
+// built from the tab's OWN URLBuilder (its server's format/casing), matching how its
+// active-tab room would have played it. Reusing the existing Audio.PlayMusic start
+// machinery (no new goroutine, singleflight-collapsed fetch) is the caller's job.
+func (a *App) backgroundMusicFollow(s *sessionState) (url string, ok bool) {
+	if !a.d.Prefs.MusicAcrossTabsOn() || a.d.Audio == nil {
+		return "", false
+	}
+	if a.musicOwnerKey == "" || a.musicOwnerKey != s.serverKey {
+		return "", false // stream is silent-isolated, or owned by another tab: don't touch it
+	}
+	if s.sess == nil || s.sess.MusicTrack == "" {
+		return "", false // ~stop / no track: nothing to switch to
+	}
+	return s.urls.MusicURL(s.sess.MusicTrack), true
 }
 
 // --- tab bar (floating strip, drawn over every screen) ----------------------
@@ -654,6 +762,24 @@ func (a *App) handleTabBar(w, h int32) {
 	// keep the strip's pre-existing pass-through — this fixes only the modal born on
 	// it.) Keep drag state cleared so a release later doesn't act on a stale grab.
 	if a.pendingCloseTab != nil {
+		a.tabDragFrom, a.tabDragging = -1, false
+		return
+	}
+	// The involuntary-disconnect dialog freezes a tab whose network session is dead
+	// but whose sessionState is STILL LIVE (conn nil, sess/room kept for viewing).
+	// handleTabBar runs in the update phase, BEFORE the frame-tail pointer fence that
+	// covers the dialog — so without this guard a chip click here would activateTab
+	// away, parkActive the frozen (not-dead) session into a slot that pumpBackgroundTabs
+	// never drains (s.conn==nil) — a zombie tab. The dialog itself parks with the tab
+	// (it's on sessionState), so it wouldn't paint over the new tab; the hazard is the
+	// zombie slot plus the wipe-and-resurface-stale-modal race resetSessionState opens.
+	// So the strip is inert while the dialog owns the frame: the user resolves it
+	// (Reconnect / Back to lobby / Esc) first, THEN switches tabs. This is one of TWO
+	// primary-session-switch surfaces gated on disconnectDlg.open; the other is the
+	// pinned-client control-swap consume (app.go). (Unlike pendingCloseTab above, this
+	// modal isn't born on the strip; it's gated for state-safety, not click-leak.) Drag
+	// state cleared so a later release can't act on a stale grab.
+	if a.disconnectDlg.open {
 		a.tabDragFrom, a.tabDragging = -1, false
 		return
 	}

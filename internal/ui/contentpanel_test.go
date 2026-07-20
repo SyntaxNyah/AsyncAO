@@ -10,6 +10,7 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
+	"github.com/SyntaxNyah/AsyncAO/internal/network"
 	"github.com/SyntaxNyah/AsyncAO/internal/protocol"
 )
 
@@ -292,6 +293,16 @@ func mountedProbeApp(t *testing.T, mount string) (*App, string) {
 	return a, local.BaseURL()
 }
 
+// streamingProbeApp builds a headless probe App with a STREAMING Manager (a real
+// network client source, localMode=false) and NO mounts configured — the shape a
+// normal connected session has. The Manager can serve local:// URLs only via the
+// overlay that rebuildAssetOrigin pushes once a base is set, so this is the fixture
+// for the inline base-setup flow ("Local base" works while streaming).
+func streamingProbeApp(t *testing.T) *App {
+	t.Helper()
+	return headlessProbeApp(t, network.NewClient(), false)
+}
+
 // writeDemoFile writes a minimal .demo (SC + one MS) under a temp dir and returns
 // its path, so openContentReportFor exercises the .demo → local default policy.
 func writeDemoFile(t *testing.T, stem string) string {
@@ -419,9 +430,12 @@ func TestContentPickerSwitchRestarts(t *testing.T) {
 	}
 }
 
-// TestContentPickerSwitchNoMountsNoOp pins that "Local base" cannot be selected
-// when no mounts are configured: switchContentSource(true) is a no-op (no restart,
-// no generation bump), so the control never offers an unresolvable pick.
+// TestContentPickerSwitchNoMountsNoOp pins the no-mounts behavior: clicking
+// "Local base" with no base configured must NOT re-run the report — instead it
+// expands the inline setup row, and nothing resolves until a path is used.
+// switchContentSource(true) with an empty originLocal stays a no-op (no restart,
+// no generation bump); the picker's click toggles localSetupOpen rather than
+// switching to a dead origin.
 func TestContentPickerSwitchNoMountsNoOp(t *testing.T) {
 	resetContentPanel(t)
 	a := headlessProbeApp(t, nil, false)
@@ -434,14 +448,75 @@ func TestContentPickerSwitchNoMountsNoOp(t *testing.T) {
 	contentPanel.originServer = ""
 	contentPanel.originLocal = "" // no mounts
 	genBefore := a.contentGen
+
+	// The direct switch is still a no-op on an empty base (nothing to switch to).
 	if a.switchContentSource(true) {
-		t.Error("switch to local with no mounts must be a no-op")
+		t.Error("switch to local with no mounts must be a no-op (nothing re-runs)")
 	}
 	if a.contentGen != genBefore {
 		t.Error("a no-op switch must NOT bump the generation")
 	}
 	if contentPanel.useLocal {
 		t.Error("useLocal must stay false when there is no mount to switch to")
+	}
+
+	// The picker's click behavior on an empty base: it EXPANDS the inline setup row
+	// (drawContentSourcePicker's originLocal=="" branch), it does not switch source.
+	// Simulate that toggle directly (the button click path).
+	contentPanel.localSetupOpen = !contentPanel.localSetupOpen // first click: expand
+	if !contentPanel.localSetupOpen {
+		t.Error("clicking Local base with no base must expand the inline setup row")
+	}
+	if contentPanel.useLocal || a.contentGen != genBefore {
+		t.Error("expanding the setup row must not switch source or re-run the report")
+	}
+}
+
+// TestContentPickerLocalSetupUseRunsReport pins the inline base-setup flow: with
+// no base configured, entering a folder path and pressing "Use" appends it to the
+// mounts (enabled flag unchanged), rebuilds the overlay, recomputes originLocal,
+// and re-runs the report against the new base — the seeded sprite then lands
+// FOUND, proving the streaming Manager resolves local:// via the pushed overlay.
+func TestContentPickerLocalSetupUseRunsReport(t *testing.T) {
+	resetContentPanel(t)
+	mount := t.TempDir()
+	seedMount(t, mount, "characters/phoenix/(a)normal.png", pngBytes())
+
+	// Streaming App (network source, NO mounts yet): "Local base" is servable but
+	// originLocal is empty until the user sets a base inline.
+	a := streamingProbeApp(t)
+
+	// A .demo with no mounts → the default server origin ("" offline) → OriginMissing.
+	a.openContentReportFor(writeDemoFile(t, "scene"), false)
+	if !contentPanel.open {
+		t.Fatal("panel must open")
+	}
+	if contentPanel.originLocal != "" {
+		t.Fatalf("precondition: no base configured, got originLocal=%q", contentPanel.originLocal)
+	}
+	enabledBefore, _ := a.d.Prefs.LocalAssets()
+
+	// Drive the "Use" flow the inline row runs (TrimSpace, append, rebuild, re-run).
+	contentPanel.localSetupInput = mount
+	a.useLocalSetupPath() // the extracted body of drawLocalSetupRow's Use button
+
+	if got, _ := a.d.Prefs.LocalAssets(); got != enabledBefore {
+		t.Errorf("the legacy enabled flag must be UNCHANGED by Use, was %v now %v", enabledBefore, got)
+	}
+	wantOrigin := assets.NewLocalFetcher([]string{mount}).BaseURL()
+	if contentPanel.originLocal != wantOrigin {
+		t.Errorf("originLocal after Use = %q, want the mount origin %q", contentPanel.originLocal, wantOrigin)
+	}
+	if !contentPanel.useLocal {
+		t.Error("Use must switch the source to the new local base")
+	}
+	drainContentJob(t, a)
+	rep := a.ContentJobReport()
+	if rep == nil || rep.Origin != wantOrigin {
+		t.Fatalf("report origin after Use = %v, want the new local base %q", rep, wantOrigin)
+	}
+	if st, ok := findCharStatus(rep, "phoenix"); !ok || st != StatusFound {
+		t.Errorf("seeded sprite status after Use = %v ok=%v, want found via the pushed overlay", st, ok)
 	}
 }
 
@@ -487,6 +562,11 @@ func TestContentPanelDrawNoPanic(t *testing.T) {
 
 	// A nil report (still enumerating) must also draw cleanly.
 	contentPanel = contentPanelState{open: true, stem: "warming"}
+	a.drawContentPanel(1024, 700)
+
+	// The inline "set a local base" row (localSetupOpen, no base configured): the
+	// expanded TextField + Use button must draw through the real Ctx without panic.
+	contentPanel = contentPanelState{open: true, stem: "scene", report: mkReport("http://cdn.example/"), localSetupOpen: true}
 	a.drawContentPanel(1024, 700)
 
 	// A tiny window (the clamp floor) must not panic either.

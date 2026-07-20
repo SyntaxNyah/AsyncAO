@@ -350,7 +350,7 @@ func (a *App) drawBgPanel(w, h int32) {
 	c.popClip(clipPrev, clipHad)
 
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h, false)
+		a.drawSpritePreview(w, h, false, "") // background preview: no emote-name caption
 		if c.clicked {
 			a.previewBase = ""
 		}

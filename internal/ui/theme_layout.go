@@ -537,6 +537,24 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			field.X += fxBtnW + 4
 			field.W -= fxBtnW + 4
 		}
+		// "Flip" toggle (AO2-Client ui_flip, courtroom.cpp:1629-1636): mirror your
+		// character's emotes. Shown only when the server advertises the FLIPPING feature —
+		// AO2 hides ui_flip otherwise. ONE bool, TWO views: it mirrors a.pairFlip (the Pair
+		// panel's checkbox), so an unclicked Checkbox just rewrites the same value and the
+		// two can't drift (single source of truth: a.pairFlip). UNLIKE icAdditive above
+		// (forced off at line 489 because it's ephemeral IC-row state), pairFlip is real
+		// pair state that parks/resets per tab, so the field is left ALONE when the toggle
+		// is hidden — a stale flip simply stops being shown, never silently cleared. Crammed
+		// after FX (a theme-placeable own rect would need "asyncao_ic_flip" added to
+		// themeLayoutKeys in app.go; only the crammed form is provided here). themedFlipW
+		// mirrors the classic icFlipW band.
+		const themedFlipW = 54 // crammed "Flip" checkbox width (matches classic icFlipW)
+		if a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) && field.W > themedFlipW+themedFieldKeep {
+			a.pairFlip = c.Checkbox(field.X, in.Y+(in.H-16)/2, "Flip", a.pairFlip)
+			c.Tooltip(sdl.Rect{X: field.X, Y: in.Y, W: themedFlipW, H: in.H}, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
+			field.X += themedFlipW
+			field.W -= themedFlipW
+		}
 		// SFX picker (AO2-style): a sound for your NEXT message, overriding the emote's
 		// own until set back to "auto". Picking one previews it.
 		a.ensureSFXChoices()
@@ -860,6 +878,9 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 
 	me := a.activeCharName()
 	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
+	// Emote-name hover tooltip config, read ONCE (RLock off the per-cell loop).
+	hoverNamesOn := a.d.Prefs.EmoteHoverNamesEnabled()
+	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	for slot := start; slot < len(vis) && slot < start+perPage; slot++ {
 		i := vis[slot] // real index into a.emotes (favs-only filters which show)
 		e := &a.emotes[i]
@@ -897,6 +918,11 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 		if c.HoverPreview("emote:"+e.Anim, btn) {
 			a.previewEmote(me, e)
 		}
+		// Emote-name tooltip (parity with the classic row): hover dwell shows the
+		// name. Gated on hovering(btn) so the id concat runs only for the hovered cell.
+		if hoverNamesOn && c.hovering(btn) {
+			c.TooltipAfterDelay("emotename:"+e.Anim, btn, label, hoverNamesDelay)
+		}
 	}
 	// Favs-only with nothing starred yet: tell the user how to recover (the
 	// toggle lives in Settings for themed layouts, which are pixel-precise).
@@ -919,7 +945,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	if a.previewBase != "" {
 		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
 		// (playtest: "you can't move the preview out of the viewport, wth").
-		a.drawSpritePreview(a.winW, a.winH, false)
+		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
 		if c.clicked {
 			a.previewBase = ""
 		}

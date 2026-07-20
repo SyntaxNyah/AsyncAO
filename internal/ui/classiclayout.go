@@ -49,6 +49,7 @@ const (
 	slotICSFX      = "icbar.sfx"      // the per-message SFX picker
 	slotICEmoji    = "icbar.emoji"    // the emoji-picker button
 	slotICFx       = "icbar.fx"       // the Text-FX cycle button
+	slotICFlip     = "icbar.flip"     // the "Flip" toggle — mirror your emotes (AO2 ui_flip); shown only on flipping servers, mirrors the Pair panel's flip checkbox
 	slotICReact    = "icbar.react"    // the React button
 	slotICInput    = "icbar.input"    // the IC text input field itself
 	slotChatbox    = "chatbox"        // the in-stage message box (showname + text); move it off the sprites
@@ -304,6 +305,8 @@ func classicSlotLabel(k string) string {
 		return "Emoji button"
 	case slotICFx:
 		return "Text-FX button"
+	case slotICFlip:
+		return "Flip toggle"
 	case slotICReact:
 		return "React button"
 	case slotICInput:

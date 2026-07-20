@@ -288,6 +288,15 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 		T1Contains: store.Contains,
 		T1Failed:   store.FailedRecently,
 	})
+	// Seed the streaming manager's local:// overlay from the configured mounts,
+	// regardless of the legacy "read from local folders" flag: mounts are now also
+	// the recording-resolution base (the content report can resolve a recording
+	// against the local base while connected). A local-mode Manager ignores the
+	// overlay (its source already is the LocalFetcher); no mounts → nil (no
+	// overlay). rebuildAssetOrigin re-pushes this on every mounts/pref change.
+	if _, mounts := prefs.LocalAssets(); len(mounts) > 0 {
+		manager.SetLocalOverlay(assets.NewLocalFetcher(mounts))
+	}
 	manager.SetDiskCompression(prefs.DiskZstdEnabled())
 	// #34: apply the T3 auto-prune cap (0 = unlimited, the default). The writer
 	// goroutine sweeps oldest-past-budget at open and every N stores.

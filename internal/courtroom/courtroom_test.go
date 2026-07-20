@@ -338,9 +338,11 @@ func TestAdditiveText(t *testing.T) {
 	}
 
 	// Same speaker, ADDITIVE=1 → appends. The prior "Hello" (5 runes) is pre-revealed.
+	// The fragment " world" already starts with a space, so the auto-joiner does NOT
+	// fire (no double-space): prefix stays "Hello", not "Hello ".
 	room.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Additive: true, Message: " world"})
 	if room.additivePrefix != "Hello" {
-		t.Fatalf("append prefix=%q, want Hello", room.additivePrefix)
+		t.Fatalf("append prefix=%q, want Hello (fragment already spaced → no joiner)", room.additivePrefix)
 	}
 	if room.Scene.MessageText != "Hello world" {
 		t.Errorf("appended text=%q, want 'Hello world'", room.Scene.MessageText)
@@ -350,13 +352,16 @@ func TestAdditiveText(t *testing.T) {
 	}
 
 	// A DIFFERENT speaker with ADDITIVE=1 STILL appends — AO2 has no char-id gate on
-	// the accumulator, so "Hello world" (11 runes) pre-reveals ahead of "Objection".
+	// the accumulator. Here the accumulated "Hello world" ends with a non-space rune
+	// and "Objection" starts with one, so the auto-joiner inserts a single space:
+	// the prefix becomes "Hello world " (12 runes, pre-revealed) and the display reads
+	// "Hello world Objection", not the glued "Hello worldObjection".
 	room.begin(&protocol.ChatMessage{CharName: "Edgeworth", Emote: "normal", CharID: 4, Additive: true, Message: "Objection"})
-	if room.additivePrefix != "Hello world" {
-		t.Errorf("cross-speaker additive must still append (AO2 has no char gate): prefix=%q, want 'Hello world'", room.additivePrefix)
+	if room.additivePrefix != "Hello world " {
+		t.Errorf("cross-speaker additive must append + auto-join: prefix=%q, want 'Hello world '", room.additivePrefix)
 	}
-	if room.Scene.MessageText != "Hello worldObjection" || room.Scene.VisibleRunes != 11 {
-		t.Errorf("cross-speaker append: text=%q visible=%d, want 'Hello worldObjection'/11", room.Scene.MessageText, room.Scene.VisibleRunes)
+	if room.Scene.MessageText != "Hello world Objection" || room.Scene.VisibleRunes != 12 {
+		t.Errorf("cross-speaker append: text=%q visible=%d, want 'Hello world Objection'/12", room.Scene.MessageText, room.Scene.VisibleRunes)
 	}
 
 	// A NON-additive line resets the accumulator (AO2 additive_previous = "" at :4229).
@@ -371,6 +376,195 @@ func TestAdditiveText(t *testing.T) {
 	if room.additivePrefix != "" || room.Scene.MessageText != "!" || room.Scene.VisibleRunes != 0 {
 		t.Errorf("pref-off additive still appended: prefix=%q text=%q visible=%d",
 			room.additivePrefix, room.Scene.MessageText, room.Scene.VisibleRunes)
+	}
+}
+
+// TestAdditiveJoiner pins the auto-joining space that de-glues additive fragments
+// from ANY sender (real AO senders concatenate with no separator). The joiner is
+// inserted in begin() only when BOTH visual boundary runes lack a space, is
+// computed over the StripChatMarkup'd text (so boundary markup can't hide the real
+// rune), and is suppressed on CJK/no-space scripts (a half-width space after "。"
+// is wrong for JP-heavy RP). It rides the same accumulation as the prefix, so a
+// per-message effect span shifts past prefix + joiner and still aligns.
+func TestAdditiveJoiner(t *testing.T) {
+	// additiveNeedsJoiner is the pure decision; matrix it directly (both args are
+	// already the StripChatMarkup'd text — begin() strips before calling).
+	cases := []struct {
+		name       string
+		prev, frag string
+		want       bool
+	}{
+		{"needs space", "Hello.", "World", true},
+		{"empty prefix (first line)", "", "World", false},
+		{"empty fragment", "Hello.", "", false},
+		{"fragment already spaced", "Hello.", " World", false},
+		{"prefix ends with space", "Hello ", "World", false},
+		{"both bare, needs join", "one", "two", true},
+		// CJK suppression: 。 (U+3002) is CJK Symbols & Punctuation (script=Common,
+		// NOT unicode.Han) — the explicit 0x3000-303F range is what catches it.
+		{"CJK ideographic full stop on prefix", "こんにちは。", "world", false},
+		{"CJK han boundary both sides", "你好", "世界", false},
+		{"fullwidth question mark on prefix", "なに？", "world", false},
+		{"latin next to CJK han fragment", "Hello", "世界", false},
+	}
+	for _, tc := range cases {
+		if got := additiveNeedsJoiner(tc.prev, tc.frag); got != tc.want {
+			t.Errorf("additiveNeedsJoiner(%q,%q)=%v, want %v (%s)", tc.prev, tc.frag, got, tc.want, tc.name)
+		}
+	}
+
+	// Markup-wrapped boundary: the prefix ends with a colour code "\c0" (its visible
+	// last rune is 'o') and the fragment starts with rainbow "\cr" (visible first
+	// rune 'W'). A raw byte check would see '0' and '\'; the stripped check sees
+	// 'o'/'W' and correctly joins. begin() runs the strip before deciding.
+	room, _, _, _ := newCourtroomRig(t)
+	room.AdditiveText = true
+	room.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Message: "Hello\\c0"})
+	if room.Scene.MessageText != "Hello" { // \c0 is markup, stripped from display
+		t.Fatalf("markup base text=%q, want 'Hello'", room.Scene.MessageText)
+	}
+	room.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Additive: true, Message: "\\crWorld"})
+	// The accumulated prefix keeps its RAW markup (only the DISPLAY strips it); the
+	// joiner fired because the STRIPPED boundary was 'o'|'W', so the raw prefix gains
+	// a trailing space after the "\c0" code: "Hello\c0 ".
+	if room.additivePrefix != "Hello\\c0 " {
+		t.Errorf("markup-boundary prefix=%q, want 'Hello\\c0 ' (join decided on stripped runes)", room.additivePrefix)
+	}
+	// The visible display strips both codes and shows the joined text.
+	if room.Scene.MessageText != "Hello World" {
+		t.Errorf("markup-boundary text=%q, want 'Hello World'", room.Scene.MessageText)
+	}
+
+	// Effect-span shift includes the joiner: a fragment carrying a [shake] span on
+	// its first 3 runes must, after the join, land at Start = len("prev ") so the
+	// span still covers the fragment's opening, not part of the prefix.
+	room2, _, _, _ := newCourtroomRig(t)
+	room2.AdditiveText = true
+	room2.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Message: "Prev"})
+	// The wire fragment is "Wow!" plus an invisible effects frame (shake over runes
+	// 0..3). begin() strips the frame from the visible text and shifts the span past
+	// the pre-revealed prefix — including the auto-joiner.
+	frag := "Wow!" + EncodeEffectsMarker([]TextEffectSpan{{Start: 0, Len: 3, Effect: TextEffectShake}})
+	room2.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Additive: true, Message: frag})
+	if room2.additivePrefix != "Prev " {
+		t.Fatalf("span case prefix=%q, want 'Prev '", room2.additivePrefix)
+	}
+	if room2.Scene.MessageText != "Prev Wow!" {
+		t.Errorf("span case text=%q, want 'Prev Wow!'", room2.Scene.MessageText)
+	}
+	wantStart := len([]rune("Prev ")) // 5: prefix + joiner
+	if len(room2.Scene.MessageEffects) != 1 || room2.Scene.MessageEffects[0].Start != wantStart {
+		t.Errorf("span shift=%v, want one span starting at %d (past prefix + joiner)",
+			room2.Scene.MessageEffects, wantStart)
+	}
+
+	// Blankpost of an appended whitespace tail: real prior text means the DISPLAY is
+	// non-blank even though this fragment's own tail is only spaces (no joiner fires
+	// on a leading-space fragment, so IsBlankPost tracks the accumulated text).
+	room3, _, _, _ := newCourtroomRig(t)
+	room3.AdditiveText = true
+	room3.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Message: "Said it."})
+	room3.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Additive: true, Message: "   "})
+	if room3.Scene.IsBlankPost {
+		t.Errorf("appended whitespace over real text must NOT be a blankpost: text=%q", room3.Scene.MessageText)
+	}
+}
+
+// TestAdditiveOutgoingLeadingSpace pins Part 2: the sender-side AO2 parity space.
+// We prepend it at packet build (not in the input field, so a.icInput stays clean)
+// whenever the visible text lacks a leading space; a blankpost (already " ") and a
+// colourised blankpost ("\cr ") are left untouched, and colour markup at the head
+// doesn't fool the check because it runs on StripChatMarkup.
+func TestAdditiveOutgoingLeadingSpace(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{"bare message", "Hello", " Hello"},
+		{"already spaced", " Hello", " Hello"},
+		{"blankpost", " ", " "},
+		// Colour markup at the head → visible 'H', so a space is prepended before it.
+		{"colour markup then text", "\\crHello", " \\crHello"},
+		// Colourised blankpost strips to a leading " " → already separated, untouched.
+		{"colourised blankpost", "\\cr ", "\\cr "},
+		// Nothing visible → untouched.
+		{"empty", "", ""},
+		// No-space scripts: the sender-side prepend mirrors the display joiner's CJK
+		// suppression on the fragment's first rune — a half-width space glued to a
+		// fullwidth glyph is wrong on EVERY receiving client, so ship it unspaced.
+		{"CJK fragment", "世界です", "世界です"},
+		{"CJK punctuation first", "。続き", "。続き"},
+		{"fullwidth punctuation first", "！えっ", "！えっ"},
+		{"colour markup then CJK", "\\cr続き", "\\cr続き"},
+		// Latin-first stays spaced even if CJK follows: only the boundary rune the
+		// sender can see decides (receivers hold the full two-sided rule).
+		{"Latin then CJK", "Hello世界", " Hello世界"},
+	}
+	for _, tc := range cases {
+		if got := AdditiveOutgoingLeadingSpace(tc.in); got != tc.want {
+			t.Errorf("AdditiveOutgoingLeadingSpace(%q)=%q, want %q (%s)", tc.in, got, tc.want, tc.name)
+		}
+	}
+
+	// AdditiveWantsLeadingSpace is the shared predicate: the send path calls it to
+	// decide, in lockstep with the prepend, whether to shift the transmitted effect
+	// spans by +1. It must agree with AdditiveOutgoingLeadingSpace on every input.
+	for _, tc := range cases {
+		want := tc.in != tc.want // a change means a space was prepended
+		if got := AdditiveWantsLeadingSpace(tc.in); got != want {
+			t.Errorf("AdditiveWantsLeadingSpace(%q)=%v, want %v (must agree with the prepend)", tc.in, got, want)
+		}
+	}
+}
+
+// TestAdditiveOutgoingSpanShift pins the sender-side +1 span shift that keeps
+// transmitted [shake]/[wave]/[rainbow] effect spans aligned when the additive box
+// prepends a leading space. The send path (internal/ui/screens.go MS build) indexes
+// spans over the space-LESS visible text, then prepends a space and shifts each
+// span's Start by +1 before encoding the invisible frame; this test simulates that
+// sender output (space-prefixed fragment + already-+1'd spans) and asserts begin()
+// lands the effect over the intended visible runes on an AsyncAO receiver — both for
+// a first fragment (empty accumulator) and a continuation (non-empty prefix, where
+// the receiver's own prefix shift composes on top). The ui send lines themselves are
+// out of this package's compile fence; they're verified by inspection.
+func TestAdditiveOutgoingSpanShift(t *testing.T) {
+	// The sender emits this for a `[shake]Wow[/shake]!` typed with the additive box
+	// on: visible "Wow!" → space-prefixed " Wow!"; the [shake] span over runes 0..3
+	// of "Wow!" is shifted +1 to Start=1 so it points at 'W' inside " Wow!".
+	shifted := EncodeEffectsMarker([]TextEffectSpan{{Start: 1, Len: 3, Effect: TextEffectShake}})
+	frag := " Wow!" + shifted
+
+	// First fragment: empty accumulator. The receiver adds no joiner (the fragment
+	// already starts with a space), so the only shift is the sender's baked +1. The
+	// prefix is "" so the display is exactly " Wow!" and Start=1 lands on 'W'.
+	first, _, _, _ := newCourtroomRig(t)
+	first.AdditiveText = true
+	first.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Additive: true, Message: frag})
+	if first.Scene.MessageText != " Wow!" {
+		t.Fatalf("first-fragment text=%q, want ' Wow!'", first.Scene.MessageText)
+	}
+	if runes := []rune(first.Scene.MessageText); len(first.Scene.MessageEffects) != 1 ||
+		first.Scene.MessageEffects[0].Start != 1 || runes[first.Scene.MessageEffects[0].Start] != 'W' {
+		t.Errorf("first-fragment span=%v, want one span at Start=1 landing on 'W'", first.Scene.MessageEffects)
+	}
+
+	// Continuation: a prior "First." is accumulated. The fragment already starts with
+	// a space, so additiveNeedsJoiner returns false (no receiver joiner); the receiver
+	// shifts spans by len("First.")=6, composing with the sender's +1 → Start=7, which
+	// is 'W' in "First. Wow!".
+	cont, _, _, _ := newCourtroomRig(t)
+	cont.AdditiveText = true
+	cont.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Message: "First."})
+	cont.begin(&protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", CharID: 3, Additive: true, Message: frag})
+	if cont.additivePrefix != "First." { // fragment was space-led → no joiner appended to the prefix
+		t.Fatalf("continuation prefix=%q, want 'First.' (space-led fragment, no joiner)", cont.additivePrefix)
+	}
+	if cont.Scene.MessageText != "First. Wow!" {
+		t.Fatalf("continuation text=%q, want 'First. Wow!'", cont.Scene.MessageText)
+	}
+	wantStart := len([]rune("First. ")) // 7: prefix (6) + the sender's leading space (1)
+	if runes := []rune(cont.Scene.MessageText); len(cont.Scene.MessageEffects) != 1 ||
+		cont.Scene.MessageEffects[0].Start != wantStart || runes[cont.Scene.MessageEffects[0].Start] != 'W' {
+		t.Errorf("continuation span=%v, want one span at Start=%d landing on 'W'", cont.Scene.MessageEffects, wantStart)
 	}
 }
 
@@ -1090,6 +1284,67 @@ gotcha_name = Gotcha!
 	}
 }
 
+// TestSoundNIndexingSlashEmote pins the SFX-mapping contract that a "wrong
+// judge SFX on a slashed emote" field report probed: [SoundN] is keyed by the
+// same 1-based emote NUMBER as [Emotions] (AO2-Client get_sfx_name reads
+// read_char_ini(char, QString::number(p_emote+1), "SoundN") —
+// text_file_functions.cpp:688-697), NEVER by the emote's display name. So a
+// slash inside an emote name (e.g. "Surprised/Flabbergasted", common in this
+// pack's iniswaps) cannot mis-route the sound, and there is no off-by-one
+// between our compacted emote slice and its per-emote sound row. The fixture is
+// hand-written to the shape of the real report — a slashed emote flanked by
+// neighbours carrying judge-ish sounds — so an index drift in EITHER direction
+// (reading the row above or below) would surface as the slashed emote picking a
+// gavel sound. It must map to its OWN row (silence here), not a neighbour's.
+func TestSoundNIndexingSlashEmote(t *testing.T) {
+	// Emote 2 is the slashed emote under test; its neighbours (1 and 3) carry
+	// distinct judge-ish sounds, so an off-by-one would hand emote 2 one of them.
+	ini := []byte(`[Options]
+name = Surprised Char (sh)
+side = wit
+
+[Emotions]
+number = 4
+1 = Objection#-#objection#1#
+2 = Surprised/Flabbergasted#-#Flabbergasted/Surprised#0#
+3 = Verdict#-#verdict#1#
+4 = Shock#-#shock#1#
+
+[SoundN]
+1 = sfx-gavel
+3 = sfx-guilty
+4 = sfx-shock
+`)
+	out, err := ParseCharINI(ini)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Emotes) != 4 {
+		t.Fatalf("emotes = %d, want 4", len(out.Emotes))
+	}
+	// Comment carries the slash verbatim — the parser splits on '#', never '/'.
+	if got := out.Emotes[1].Comment; got != "Surprised/Flabbergasted" {
+		t.Errorf("emote 2 name = %q, want the slashed name intact", got)
+	}
+	// The slashed emote has NO [SoundN] row → silence ("" here; the send path
+	// substitutes AO2's "1" wire silence). It must NOT inherit a neighbour's
+	// judge sound — that is the exact wrong-SFX symptom.
+	if got := out.Emotes[1].SFXName; got != "" {
+		t.Errorf("slashed emote 2 SFXName = %q, want empty (its own row is absent — no neighbour bleed)", got)
+	}
+	// Neighbours keep their own judge-ish sounds, keyed by their 1-based number
+	// (guards the off-by-one in both directions).
+	if got := out.Emotes[0].SFXName; got != "sfx-gavel" {
+		t.Errorf("emote 1 SFXName = %q, want sfx-gavel (SoundN/1)", got)
+	}
+	if got := out.Emotes[2].SFXName; got != "sfx-guilty" {
+		t.Errorf("emote 3 SFXName = %q, want sfx-guilty (SoundN/3)", got)
+	}
+	if got := out.Emotes[3].SFXName; got != "sfx-shock" {
+		t.Errorf("emote 4 SFXName = %q, want sfx-shock (SoundN/4)", got)
+	}
+}
+
 // TestNamedCustomShoutURL pins the 2.10 custom_objections path + the
 // defensive extension strip (older clients send "name.gif").
 func TestNamedCustomShoutURL(t *testing.T) {
@@ -1564,6 +1819,130 @@ func TestMissingPreanimSkipsInsteadOfTimeout(t *testing.T) {
 	}
 	if !strings.HasSuffix(room.Scene.Speaker.Active, "(b)80") {
 		t.Errorf("active = %q, want the talk loop", room.Scene.Speaker.Active)
+	}
+}
+
+// TestKnownMissingPreanimNeverStagesPlaceholder pins the entry-time fix for the
+// "selecting a preanim that doesn't exist flashes the placeholder for one frame"
+// report. A preanim base already conclusively 404'd on an EARLIER play of the
+// same emote is in the session negative cache (spriteConfirmedMissing), and the
+// render side has already MarkMissing'd it — so if enterAfterShout staged Active
+// on that base, the viewport would flash missingno for the frames before the
+// async re-probe's Warning drains. The fix skips the preanim SYNCHRONOUSLY at
+// entry: PhasePreanim is never entered, Active is never the missing preanim base
+// at ANY observable point, and the message goes straight to talking.
+//
+// AO2-Client parity: it stats the preanim locally and skips a missing one before
+// it draws (courtroom.cpp play_preanim) — a base we already know is absent is the
+// same certainty. This is distinct from TestMissingPreanimSkipsInsteadOfTimeout,
+// which covers the 404 landing DURING the wait; here it is known BEFORE entry.
+func TestKnownMissingPreanimNeverStagesPlaceholder(t *testing.T) {
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+
+	// The preanim base the courtroom will build for this Erika/"-80" message (same
+	// helper begin() uses). Record it conclusively missing BEFORE the message — the
+	// exact state after an earlier play of this emote 404'd its preanim.
+	pre := room.urls.Emote("Erika", "-80", EmotePreanim)
+	room.recordMissing(pre)
+	if !room.spriteConfirmedMissing(pre) {
+		t.Fatalf("precondition: %q should be recorded missing", pre)
+	}
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: preanimMsg(t, sess, "Guilty!")})
+
+	// The preanim was skipped synchronously: straight to talking, never PhasePreanim.
+	if room.Phase() != PhaseTalking {
+		t.Fatalf("phase = %v, want talking (a known-missing preanim must be skipped at entry, not waited on)", room.Phase())
+	}
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("one-shot flag must never arm for a known-missing preanim")
+	}
+	// Active must be the talk sprite — NEVER the missing preanim base, at any point
+	// the render side could have drawn (enterAfterShout ran fully before we return).
+	if room.Scene.Speaker.Active == pre {
+		t.Errorf("Active parked on the missing preanim base %q — the placeholder would flash", pre)
+	}
+	if room.Scene.Speaker.Active != room.Scene.Speaker.TalkBase {
+		t.Errorf("Active = %q, want the talk base %q", room.Scene.Speaker.Active, room.Scene.Speaker.TalkBase)
+	}
+}
+
+// TestKnownMissingImmediatePreanimNeverStages is the immediate-mode (non-blocking)
+// equivalent: an immediate message's preanim plays OVER the text crawl, so a
+// known-missing one would park Active on the missing base while the text types —
+// the same placeholder-flash window on the play-once branch. The entry skip must
+// cover it too: Active goes straight to the talk base and PlayOnce never arms.
+func TestKnownMissingImmediatePreanimNeverStages(t *testing.T) {
+	room, _, _, _ := newCourtroomRig(t)
+	msg := immediatePreanimMsg("hi") // Phoenix / preanim "intro"
+	pre := room.urls.Emote(msg.CharName, msg.PreEmote, EmotePreanim)
+	room.recordMissing(pre)
+
+	room.HandleEvent(Event{Kind: EventMessage, Message: msg})
+
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("immediate mode must not arm the one-shot for a known-missing preanim")
+	}
+	if room.Scene.Speaker.Active == pre {
+		t.Errorf("immediate Active parked on the missing preanim base %q — the placeholder would flash", pre)
+	}
+	if room.Scene.Speaker.Active != room.Scene.Speaker.TalkBase {
+		t.Errorf("immediate Active = %q, want the talk base %q", room.Scene.Speaker.Active, room.Scene.Speaker.TalkBase)
+	}
+}
+
+// TestMissingPreanimSwapIsSynchronous pins the mid-phase fix: when the 404 lands
+// DURING PhasePreanim, NotifyAssetMissing must swap Active OFF the missing preanim
+// base in the SAME call — no Update tick required. Relying on "the next Update"
+// left a one-frame placeholder flash on draw drivers that draw without first
+// calling this room's Update (the audio-paced present cycle skips Update but still
+// draws; a minimized→restored frame; a split/replay/maker room on its own cadence).
+// The synchronous swap closes that window; Update still runs startTalking on its
+// own tick with no double-effect.
+func TestMissingPreanimSwapIsSynchronous(t *testing.T) {
+	// Blocking preanim (PhasePreanim).
+	room, sess, _, _ := newCourtroomRig(t)
+	setupReadySession(t, sess)
+	room.HandleEvent(Event{Kind: EventMessage, Message: preanimMsg(t, sess, "Guilty!")})
+	if room.Phase() != PhasePreanim {
+		t.Fatalf("phase = %v, want preanim", room.Phase())
+	}
+	pre := room.Scene.Speaker.PreanimBase
+	if room.Scene.Speaker.Active != pre {
+		t.Fatalf("precondition: Active = %q, want the preanim base %q", room.Scene.Speaker.Active, pre)
+	}
+
+	room.NotifyAssetMissing(pre) // no Update between this and the draw check below
+	if room.Scene.Speaker.Active == pre {
+		t.Errorf("Active still on the missing preanim base after NotifyAssetMissing — a draw before the next Update flashes the placeholder")
+	}
+	if room.Scene.Speaker.Active != room.Scene.Speaker.TalkBase {
+		t.Errorf("Active = %q, want the talk base %q swapped in synchronously", room.Scene.Speaker.Active, room.Scene.Speaker.TalkBase)
+	}
+	if room.Scene.Speaker.PlayOnce {
+		t.Error("PlayOnce must clear synchronously with the miss")
+	}
+	// The deferred Update still lands cleanly in talking (no regression).
+	room.Update(time.Millisecond)
+	if room.Phase() != PhaseTalking {
+		t.Errorf("phase after the deferred Update = %v, want talking", room.Phase())
+	}
+
+	// Immediate preanim (PhaseTalking + PlayOnce): already swapped by the existing
+	// PhaseTalking arm, re-pinned here so the two branches can't drift.
+	room2, _, _, _ := newCourtroomRig(t)
+	room2.HandleEvent(Event{Kind: EventMessage, Message: immediatePreanimMsg("hello there")})
+	if room2.Phase() != PhaseTalking || !room2.Scene.Speaker.PlayOnce {
+		t.Fatalf("precondition: immediate preanim, phase=%v playOnce=%v", room2.Phase(), room2.Scene.Speaker.PlayOnce)
+	}
+	pre2 := room2.Scene.Speaker.PreanimBase
+	room2.NotifyAssetMissing(pre2)
+	if room2.Scene.Speaker.Active == pre2 || room2.Scene.Speaker.PlayOnce {
+		t.Errorf("immediate miss must swap off the preanim synchronously: active=%q playOnce=%v", room2.Scene.Speaker.Active, room2.Scene.Speaker.PlayOnce)
+	}
+	if room2.Scene.Speaker.Active != room2.Scene.Speaker.TalkBase {
+		t.Errorf("immediate Active = %q, want the talk base", room2.Scene.Speaker.Active)
 	}
 }
 

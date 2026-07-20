@@ -291,6 +291,18 @@ type App struct {
 	// isolated ACOUSTICALLY without killing the stream. Suppressed entirely when
 	// the MusicAcrossTabs pref is ON (then a backgrounded stream stays audible).
 	musicTabDucked bool
+	// musicOwnerKey is the serverKey of the tab whose track is in the single music
+	// stream right now — stamped at the play sites (the active-tab EventMusic handler
+	// and applyResumeDuck, both while a.serverKey is the tab starting the track).
+	// Cross-tab continuity (MusicAcrossTabs ON) lets a BACKGROUNDED owner keep the
+	// stream audible while a DIFFERENT tab is active; applyAudioVolumes must then scale
+	// that stream by the OWNER's per-server music volume, not the active tab's — else an
+	// active tab whose per-server music=0 would deterministically silence the owner's
+	// continuity stream (a second "toggle does nothing" path). "" = unset: the volume
+	// read falls back to the active tab's serverKey (the pre-owner behaviour, correct
+	// when the active tab owns its own stream). A stale owner after a stop is harmless
+	// (nothing is playing to mis-scale) and the next play re-stamps it.
+	musicOwnerKey string
 	// musicAwaitURL is the MusicURL the ACTIVE tab has requested while the single
 	// stream is still ducked-foreign (musicTabDucked true): the duck may only lift
 	// once THIS url is the one the mixer is actually playing, else the un-duck would
@@ -332,9 +344,19 @@ type App struct {
 	frameDts    [perfHUDFrames]float32 // milliseconds
 	frameDtIdx  int
 	previewBase string
-	previewFor  string    // base the preview clock was started for
-	previewAt   time.Time // loop anchor — animated previews play, not freeze
-	previewZoom int       // magnifier factor (1 = fit; >1 shows a cursor-panned window)
+	// previewName caches the display name of the emote that produced previewBase,
+	// stamped by previewEmote at SET time (it holds the *Emote right there) so the
+	// preview-box caption never reverse-maps the URL — the old lookup linear-scanned
+	// a.emotes building 1-2 URLs per emote EVERY frame a preview was up (per-frame
+	// alloc churn on 4000+ emote packs). previewNameFor records which base the name
+	// belongs to: consumers return the name only while it equals previewBase, so
+	// every OTHER previewBase setter (bgpicker, wardrobe cycle) auto-invalidates
+	// the caption without having to know these fields exist.
+	previewName    string
+	previewNameFor string
+	previewFor     string    // base the preview clock was started for
+	previewAt      time.Time // loop anchor — animated previews play, not freeze
+	previewZoom    int       // magnifier factor (1 = fit; >1 shows a cursor-panned window)
 	// Try-before-wear: cycle a previewed (non-worn) wardrobe character's
 	// emotes in the preview box. previewChar guards a one-shot char.ini parse;
 	// the capped anim/label slices drive the ‹ › buttons and arrow keys.
@@ -1848,16 +1870,22 @@ type sessionState struct {
 	showHotkeys        bool
 	hkCache            []hkEntry           // hotkey cheat-sheet rows, rebuilt once per open (not per frame)
 	confirmDisconnect  bool                // a Disconnect confirm popup is open (unless instant-disconnect is set)
+	disconnectDlg      disconnectDialog    // involuntary-disconnect modal over the FROZEN courtroom (zero value = closed). Lives on sessionState DELIBERATELY: it is a per-tab session modal (it belongs to the frozen room/logs it draws over), so it parks/restores with its OWN tab rather than bleeding onto whatever tab is active, and resetSessionState clears it for free — no App-level special-casing. Nothing needs it to outlive resetSessionState: closeDisconnectDialogToLobby / reconnectFromDisconnectDialog snapshot name/url into locals and clear the dialog BEFORE the teardown that resets. Because it's per-tab, EVERY park/swap surface must be inert while it's open, or a park would copy the open dialog into a slot and resetSessionState would wipe the live copy — a stale modal resurfacing cross-tab. Two surfaces do a PRIMARY-session switch and both are now guarded: handleTabBar (tabs.go) and the pinned-client control-swap consume (a.pendingControlSwap, above); with both guarded an open dialog can never park at all. Do NOT move this to App even so: an App-level open dialog would paint tab 0's reason + redial target over a DIFFERENT pinned server's live courtroom, and its Reconnect would tear down that healthy session to dial the wrong one — the per-tab placement is what makes it belong to the frozen server, and the guards are a second line, not the reason.
 	pendingCloseTab    *courtTab           // a "close this tab?" confirm is open for this background tab (nil = none). A POINTER, not an index: tabs reorder/reap/tear-off between the ✕-click and the confirm, so the index would go stale — revalidate the pointer is still in a.tabs before acting (see confirmPendingCloseTab). Doubles as the open flag, like hidePrompt. ⚠ Lives on sessionState (parked/copied per tab), safe ONLY because every live park/swap path is strip-guarded, pointer-fenced, or resets session state — a NEW park/swap path must keep one of those protections or this field moves to App (the conn-error-state precedent), else a parked slot could resurface a stale modal.
 	hidePrompt         string              // a "hide this sprite?" confirm is open for this char name ("" = none)
 	hiddenSprites      map[string]struct{} // chars hidden from the viewport this session (lowercased); nil until first hide
 	autoConnectPending bool                // fire auto-connect-to-last-server once, on the first frame
 	musicDucked        bool
-	// musicStartedAt stamps when THIS tab's current area track began playing
-	// (frame clock). Parks with the tab, so cross-tab music continuity can seek a
-	// resumed track to now-minus-start when the stream had to be swapped away for
-	// another tab's song (see parkActive / buildRoom's resume). Zero = unknown
-	// (resume from the top). Re-stamped whenever an EventMusic changes the track.
+	// musicStartedAt stamps when the ACTIVE tab's current area track began playing
+	// (frame clock). It is App-level and single-valued — it does NOT park per tab
+	// (an earlier comment claimed it did; it never has). Re-stamped by the active-tab
+	// EventMusic handler on every track change. Its ONLY reader is resumeActiveTabMusic's
+	// FALLBACK seek estimate (now-minus-start, capped) for the case where no per-URL
+	// SwappedOutSnap exists; SwappedOutSnap is the drift-free primary. Because it tracks
+	// the active tab, the estimate is only rough for a tab whose song changed while
+	// backgrounded — acceptable: that path also lacks a snapshot, and a backgrounded
+	// change that IS followed audibly (MusicAcrossTabs ON, routeBackgroundEvent) makes
+	// the return a same-track no-op that never seeks. Zero = unknown (resume from top).
 	musicStartedAt time.Time
 
 	// scenery self-heal stamps (healScenery pacing)
@@ -2619,9 +2647,24 @@ func (a *App) Background(dt time.Duration) {
 	a.pumpBackgroundTabs()
 	a.drainWarnings()
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
-	a.pollCharINI()        // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
-	a.pollLogBrowser()     // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
-	a.pollUpdate()         // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
+	// M2 auto-reconnect must fire here too, not only from Frame. While popped out
+	// (minimized, or unfocused with background rendering off) ONLY Background runs:
+	// pumpConnection above detects the drop and scheduleAutoReconnect arms the
+	// countdown against a.now() (frameNow, stamped above) — but if the retry could
+	// only fire from Frame, a drop taken while popped out would count down to zero
+	// and just sit there, healing only once the window is refocused. A returning
+	// user expects silent self-recovery, so we DIAL while minimized/unfocused. The
+	// dial blocks this loop briefly, which is acceptable for the same reason the
+	// Frame path accepts it (a blocking connect, no off-thread session setup); this
+	// runs on the locked main thread just like Frame, so it is no new SDL/off-thread
+	// violation. Idempotent against Frame+Background double-polling: the first poll
+	// mutates a.autoReconnectAt (cancelAutoReconnect zeroes it on connect/give-up, a
+	// failed dial pushes it ≥autoReconnectBase into the future), so a second poll in
+	// the same due window early-returns on IsZero()/now().Before — it cannot double-dial.
+	a.pollAutoReconnect()
+	a.pollCharINI()    // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
+	a.pollLogBrowser() // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
+	a.pollUpdate()     // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
 	if a.room != nil {
 		a.room.Update(dt)
 		// Re-derive the message duck here too. Frame does this inside its own
@@ -3135,6 +3178,16 @@ func (a *App) RememberOpenTabs() {
 // Disconnect tears the ACTIVE session down (its tab closes; other tabs
 // keep running) and returns to the lobby.
 func (a *App) Disconnect() {
+	// A full teardown always ends any frozen-courtroom dialog: the dialog only makes
+	// sense while a session is drawn-but-dead, and Disconnect is about to remove it
+	// (→ lobby). The dialog's own Back-to-lobby / Reconnect already clear it before
+	// calling here, but a FUTURE path that reaches Disconnect with the dialog still
+	// up (a quit-while-frozen, say) must not strand a fenced modal over an empty
+	// lobby (the emoji-picker freeze class). Cheap: a struct assignment on a rarely-
+	// set field. Guards the invariant disconnectDlg.open ⇒ screen == Courtroom.
+	if a.disconnectDlg.open {
+		a.disconnectDlg = disconnectDialog{}
+	}
 	a.cancelAutoReconnect() // teardown cancels any pending retry; the EventDisconnect path re-arms after
 	if a.conn != nil {
 		a.conn.Close()
@@ -3353,11 +3406,7 @@ func (a *App) pumpConnection() {
 		reason := "connection lost: " + err.Error()
 		a.connErr = reason
 		a.pushDebug("disconnected: " + reason)
-		deliberate := a.deliberateClose
-		a.Disconnect()
-		if shouldAutoReconnect(reason, deliberate) {
-			a.scheduleAutoReconnect()
-		}
+		a.handleInvoluntaryDrop(reason) // freeze under the dialog (or plain teardown) + arm auto-reconnect
 		return
 	}
 	for {
@@ -3388,11 +3437,7 @@ func (a *App) pumpConnection() {
 				}
 				a.connErr = reason
 				a.pushDebug("disconnected: " + reason)
-				deliberate := a.deliberateClose
-				a.Disconnect()
-				if shouldAutoReconnect(reason, deliberate) {
-					a.scheduleAutoReconnect() // Disconnect just cancelled any pending retry
-				}
+				a.handleInvoluntaryDrop(reason) // freeze under the dialog (or plain teardown) + arm auto-reconnect
 				return
 			}
 			a.lastPktHdr, a.lastPktAt = p.Header, time.Now()
@@ -3450,6 +3495,12 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			// room's PlayMusic (both use a.urls), so the await compares equal to
 			// Audio.CurrentMusicURL once delivered.
 			if a.sess.MusicTrack != "" {
+				// This active tab is now the audible owner of the single stream (its DJ
+				// /play is what the room's handler plays below). Stamp the owner so its
+				// per-server music volume governs the stream — including when the user later
+				// backgrounds THIS tab under MusicAcrossTabs ON and the stream keeps playing
+				// its song under a different active tab. See musicOwnerKey.
+				a.musicOwnerKey = a.serverKey
 				if a.musicTabDucked {
 					a.musicAwaitURL = a.urls.MusicURL(a.sess.MusicTrack)
 					a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
@@ -3466,6 +3517,10 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 				// change tab ownership of the (now-silent) stream, and the next real
 				// track re-arms the await through the branch above.
 				a.clearMusicAwait()
+				// The stream is being stopped (silent): drop the owner stamp so a later
+				// volume compose can't scale a (now-nonexistent) stream by a stale owner's
+				// per-server level. Harmless if already "" ; the next real track re-stamps.
+				a.musicOwnerKey = ""
 			}
 		case courtroom.EventCharsUpdated:
 			a.charLower = nil      // names may have changed; rebuild lazily
@@ -3637,17 +3692,19 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			case strings.HasPrefix(ev.Text, "Banned"):
 				a.playModActionSFX(render.ModBan)
 			}
-			a.Disconnect()
-			// #1: EventDisconnect is ONLY ever a KK/KB/BD kick/ban
-			// (session.go:696-701) — the server removing us on purpose. Do NOT
-			// auto-reconnect: retrying a ban reads as ban evasion, and re-joining
-			// after a kick is bad optics. shouldAutoReconnect returns false for
-			// both prefixes; genuine transport drops rearm via the pumpConnection
-			// closed-channel / SendErr paths instead.
-			if shouldAutoReconnect(ev.Text, a.deliberateClose) {
-				a.scheduleAutoReconnect()
-			}
-			continue
+			// Freeze the courtroom under the dialog (or plain-teardown to the lobby if
+			// there's no room), then arm auto-reconnect. #1: EventDisconnect is ONLY
+			// ever a KK/KB/BD kick/ban (session.go:696-701) — the server removing us on
+			// purpose — so shouldAutoReconnect returns false for both prefixes and no
+			// retry arms; the dialog shows the reason and its buttons still work.
+			// Genuine transport drops rearm via the pumpConnection closed-channel /
+			// SendErr paths instead. RETURN (not continue): the freeze keeps a.sess/
+			// a.room alive, so any further events in THIS batch would otherwise apply to
+			// the frozen room — stop draining the batch the instant the session ends
+			// (mirrors the pump's conn==nil re-check, and today's Disconnect nilled the
+			// room so the tail no-op'd anyway).
+			a.handleInvoluntaryDrop(ev.Text)
+			return
 		case courtroom.EventDebug:
 			// Protocol-level diagnostics (unhandled headers, dropped MS):
 			// the room has no use for these — debug overlay only.
@@ -3754,6 +3811,19 @@ func icLogLineDisplay(m *protocol.ChatMessage, force bool, nick string) (line, s
 // rebuildAssetOrigin wires the URL builder to local mounts or the server's
 // asset URL, in that priority (the no-streaming checkbox wins).
 func (a *App) rebuildAssetOrigin() {
+	// Push the configured mounts into the streaming Manager's local:// overlay on
+	// every mounts/pref change (this is the one funnel settings.go routes through),
+	// regardless of the legacy enabled flag: mounts are the recording-resolution
+	// base even mid-streaming-session (the content report's "Local base" source).
+	// nil when no mounts. A local-mode Manager ignores the overlay (its source
+	// already is the LocalFetcher); pushing is a harmless no-op there.
+	if a.d.Manager != nil {
+		if _, mounts := a.d.Prefs.LocalAssets(); len(mounts) > 0 {
+			a.d.Manager.SetLocalOverlay(assets.NewLocalFetcher(mounts))
+		} else {
+			a.d.Manager.SetLocalOverlay(nil)
+		}
+	}
 	if enabled, mounts := a.d.Prefs.LocalAssets(); enabled && len(mounts) > 0 {
 		local := assets.NewLocalFetcher(mounts)
 		a.urls = courtroom.NewURLBuilder(local.BaseURL()).WithCharCase(a.charCasingFor(local.BaseURL()))
@@ -5831,15 +5901,22 @@ func (a *App) applyMusicStreaming(on bool) {
 // stayed silent when the user flipped this ON. Clearing the latch here means the
 // toggle is a reliable manual escape hatch regardless of how the stream got stuck.
 //
-// OFF is deliberately deferred: it does NOT re-duck a currently-audible background
-// stream. Re-ducking waits for the next tab switch (parkActive re-reads the pref) so
-// we never yank audio out from under the user mid-listen — the standing design.
+// OFF acts immediately too: it re-ducks a currently-audible background stream on
+// the spot, because that is what the checkbox label promises ("off = keep it
+// playing but silent while backgrounded" — silent NOW, not at the next tab
+// switch). The earlier build deferred the re-duck to the next parkActive to avoid
+// yanking audio mid-listen, and users read that as the checkbox being dead — the
+// user flipping the box IS the yank request. The stream keeps playing (position
+// advances); only its volume drops, so flipping back ON restores it in place.
 func (a *App) applyMusicAcrossTabs(on bool) {
 	a.d.Prefs.SetMusicAcrossTabs(on)
 	if on {
 		a.musicTabDucked = false
 		a.musicAwaitURL = ""
 		a.musicAwaitSince = time.Time{}
+		a.applyAudioVolumes()
+	} else {
+		a.musicTabDucked = true
 		a.applyAudioVolumes()
 	}
 }
@@ -5990,10 +6067,27 @@ func (a *App) applyResumeDuck(sameTrack bool, url string) {
 		a.musicAwaitURL = ""
 		a.musicAwaitSince = time.Time{}
 		a.musicTabDucked = false
-	} else {
+	} else if a.musicTabDucked {
+		// Swap path, and there's a real duck to hold: arm the await so the duck lifts
+		// only once THIS track is the one the mixer is playing (never a foreign track
+		// mid-fetch). GATED on the duck deliberately, mirroring the DJ /play arm (which
+		// arms only `if a.musicTabDucked`). Under MusicAcrossTabs ON the duck is already
+		// down (no acoustic isolation wanted) — arming an await then is pure liability:
+		// its ONLY job is to hold a duck until delivery, and with no duck to hold, a
+		// destination track that stalls / 404s / never becomes CurrentMusicURL would trip
+		// settleAwaitedMusic's never-arrives timeout, whose awaitTimeoutStop heals the
+		// deliberately-audible continuity stream to SILENCE — misclassifying the very
+		// input the toggle exists to keep playing. No release-time 404 signal exists
+		// (MusicFailures is transient-only, warningCh is droppable + wrong-granularity),
+		// so the only safe fix is arm-time: don't arm when there's no duck.
 		a.musicAwaitURL = url       // un-duck only once THIS track is the one playing
 		a.musicAwaitSince = a.now() // stamp for the never-arrives timeout release
 	}
+	// The active tab just claimed the single stream with its own track (resume,
+	// either the same track it kept rolling or a freshly-fetched one): it now owns
+	// the stream, so its per-server music volume governs it. a.serverKey is the
+	// active tab's key here — see musicOwnerKey.
+	a.musicOwnerKey = a.serverKey
 	a.applyAudioVolumes()
 }
 
@@ -6950,7 +7044,19 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	a.handleTabBar(winW, winH) // chip clicks resolve BEFORE screens see them
 	if a.pendingControlSwap {  // a click on the floating client last frame → take control now (before any draw)
 		a.pendingControlSwap = false
-		a.controlPinnedClient()
+		// controlPinnedClient → activateTab → parkActive is a PRIMARY-session switch,
+		// the one park surface handleTabBar's guard (tabs.go) doesn't cover. It must be
+		// inert while the involuntary-disconnect dialog owns the frame, for the same
+		// reason the tab strip is: parkActive would copy the open dialog into the frozen
+		// tab and reset the live copy, resurfacing a stale modal cross-tab. The click
+		// lands on the pinned client because it draws AFTER drawCourtroom's fence lifts
+		// (screens.go), so this is the only place to stop it — and we consume the flag
+		// unconditionally (never leave it armed to fire once the dialog closes), gating
+		// only the action. Resolve the dialog (Reconnect / Back to lobby / Esc) first,
+		// THEN the swap works.
+		if !a.disconnectDlg.open {
+			a.controlPinnedClient()
+		}
 	}
 	a.drainWarnings()
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
@@ -7067,10 +7173,12 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// wins the wheel/press over the grid scroll and icon clicks under the box.
 	a.handlePreviewInput()
 
-	// While a confirm modal (Disconnect / hide-sprite) is up, the modal OWNS the
-	// pointer: fence it so the screen + overlays behind draw click-proof (no
-	// fat-finger underneath). Restored just before the modal draws, below.
-	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm {
+	// While a confirm modal (Disconnect / hide-sprite) OR the involuntary-disconnect
+	// dialog is up, the modal OWNS the pointer: fence it so the screen + overlays
+	// behind draw click-proof (no fat-finger underneath — for the disconnect dialog,
+	// no stray IC send can reach the dead socket in the frozen courtroom). Restored
+	// just before the modal draws, below.
+	if a.confirmDisconnect || a.pendingCloseTab != nil || a.hidePrompt != "" || a.showQuitConfirm || a.disconnectDlg.open {
 		a.ctx.fencePointer()
 	} else if a.hkSheetFencesPointer(winW, winH) {
 		// The hotkey sheet floats over EVERY screen and draws at the frame tail:
@@ -7198,7 +7306,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		// while hovered/dragged so the screens beneath drew pointer-blind.
 		// Skipped while a confirm modal is up: that fence belongs to the modal
 		// (drawn after), and the sheet must stay inert under it.
-		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm {
+		if !a.confirmDisconnect && a.pendingCloseTab == nil && a.hidePrompt == "" && !a.showQuitConfirm && !a.disconnectDlg.open {
 			a.ctx.unfencePointer()
 		}
 		a.drawHotkeyCheatSheet(winW, winH)
@@ -7222,6 +7330,18 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 		default:
 			a.drawHideSpriteConfirm(winW, winH)
 		}
+	}
+	// The involuntary-disconnect dialog draws LAST of the blocking modals, over the
+	// already-painted frozen courtroom (its scene + logs stayed drawn under it). Own
+	// block, not folded into the switch above: it's mutually exclusive with the
+	// disconnect-confirm (beginInvoluntaryDisconnect clears confirmDisconnect so a drop
+	// mid-confirm can't stack the two), and drawing it unconditionally-when-open
+	// guarantees the fence set for it (7068) is always released here — never a
+	// fenced-but-invisible dialog (the emoji-picker freeze class). Restore the pointer
+	// for its own buttons first.
+	if a.disconnectDlg.open {
+		a.ctx.unfencePointer()
+		a.drawDisconnectDialog(winW, winH)
 	}
 	// Deferred kit overlays (open dropdown lists) stack above everything.
 	a.ctx.FinishFrame()

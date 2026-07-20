@@ -237,6 +237,22 @@ const (
 	MaxPreviewHeightPx     = 720
 )
 
+// defaultEmoteHoverNames ships ON: resting the cursor on an emote button in the
+// grid shows that emote's name (its char.ini [Emotions] comment) as a tooltip.
+// OFF disables the hint entirely. Distinct from the sprite hover-PREVIEW (which
+// pops the full-size art): this is the lightweight name-only tooltip, so people
+// who keep the heavier preview off can still see which emote a cell is.
+const defaultEmoteHoverNames = true
+
+// Emote-name tooltip hover dwell: how long the cursor must rest on an emote cell
+// before its name shows. Default 5 s (matches the sprite-preview default); bounded
+// so it can't be set to fire instantly-on-graze or effectively never.
+const (
+	DefaultEmoteHoverNamesMs = 5000
+	minEmoteHoverNamesMs     = 500
+	maxEmoteHoverNamesMs     = 10000
+)
+
 // defaultAutoLoginToast ships ON: when a saved auto-login fires on join, a
 // toast + desktop notification confirms it ("am I logged in rn?") so a mod
 // knows their session is authenticated. Toggleable off in Settings.
@@ -1128,6 +1144,12 @@ type AssetPreferences struct {
 	// shipped DefaultPreviewHeightPx); the corner grip still resizes per
 	// session on top of it.
 	PreviewHeightPxVal int `json:"previewHeightPx"`
+	// EmoteHoverNamesOn shows the emote's name as a tooltip when the cursor
+	// rests on its grid button (ON by default). Independent of the sprite
+	// hover-preview above.
+	EmoteHoverNamesOn bool `json:"emoteHoverNames"`
+	// EmoteHoverNamesMs is the hover dwell before the emote-name tooltip shows (ms).
+	EmoteHoverNamesMs int `json:"emoteHoverNamesMs"`
 	// AutoLoginToast notifies (in-app toast + desktop notification) when a
 	// saved auto-login fires on join (ON by default).
 	AutoLoginToast bool `json:"autoLoginToast"`
@@ -1476,6 +1498,8 @@ type prefsJSON struct {
 	SpritePreview      *bool    `json:"spritePreview"`        // absent = default ON
 	PreviewHoverMs     *int     `json:"previewHoverMs"`       // absent = default 5 s
 	PreviewHeightPx    int      `json:"previewHeightPx"`      // 0/absent = shipped default (384)
+	EmoteHoverNames    *bool    `json:"emoteHoverNames"`      // absent = default ON
+	EmoteHoverNamesMs  *int     `json:"emoteHoverNamesMs"`    // absent = default 5 s
 	AutoLoginToast     *bool    `json:"autoLoginToast"`       // absent = default ON
 	CallwordToast      *bool    `json:"callwordToast"`        // absent = default ON
 	MessageCounter     *bool    `json:"messageCounter"`       // absent = default ON
@@ -1739,6 +1763,8 @@ func defaultPrefs(path string) *AssetPreferences {
 		DeskFollowManifest:     defaultDeskFollowManifest,
 		SpritePreviewOn:        defaultSpritePreview,
 		PreviewHoverMs:         DefaultPreviewHoverMs,
+		EmoteHoverNamesOn:      defaultEmoteHoverNames,
+		EmoteHoverNamesMs:      DefaultEmoteHoverNamesMs,
 		AutoLoginToast:         defaultAutoLoginToast,
 		ScreenEffects:          defaultScreenEffects,
 		WordDelete:             defaultWordDelete,
@@ -2032,6 +2058,12 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	if onDisk.PreviewHeightPx > 0 { // 0 (absent) keeps the shipped default
 		p.PreviewHeightPxVal = clampPercent(onDisk.PreviewHeightPx, MinPreviewHeightPx, MaxPreviewHeightPx)
+	}
+	if onDisk.EmoteHoverNames != nil {
+		p.EmoteHoverNamesOn = *onDisk.EmoteHoverNames
+	}
+	if onDisk.EmoteHoverNamesMs != nil {
+		p.EmoteHoverNamesMs = clampPercent(*onDisk.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
 	}
 	if onDisk.AutoLoginToast != nil {
 		p.AutoLoginToast = *onDisk.AutoLoginToast
@@ -2972,6 +3004,56 @@ func (p *AssetPreferences) SetPreviewHoverMs(n int) {
 		return
 	}
 	p.PreviewHoverMs = n
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// EmoteHoverNamesEnabled reports the emote-name tooltip toggle (ON by default):
+// hovering an emote grid button shows that emote's name. (Named -Enabled, not
+// -On, because the struct field already owns the -On name.)
+func (p *AssetPreferences) EmoteHoverNamesEnabled() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.EmoteHoverNamesOn
+}
+
+// SetEmoteHoverNames toggles the emote-name hover tooltip.
+func (p *AssetPreferences) SetEmoteHoverNames(on bool) {
+	p.mu.Lock()
+	if p.EmoteHoverNamesOn == on {
+		p.mu.Unlock()
+		return
+	}
+	p.EmoteHoverNamesOn = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// EmoteHoverNamesMillis returns the configured emote-name hover dwell in
+// milliseconds (clamped), for the Settings readout.
+func (p *AssetPreferences) EmoteHoverNamesMillis() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if p.EmoteHoverNamesMs <= 0 {
+		return DefaultEmoteHoverNamesMs
+	}
+	return clampPercent(p.EmoteHoverNamesMs, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+}
+
+// EmoteHoverNamesDelay returns the emote-name hover dwell as a duration.
+func (p *AssetPreferences) EmoteHoverNamesDelay() time.Duration {
+	return time.Duration(p.EmoteHoverNamesMillis()) * time.Millisecond
+}
+
+// SetEmoteHoverNamesMs clamps and persists the emote-name hover dwell (ms).
+func (p *AssetPreferences) SetEmoteHoverNamesMs(n int) {
+	n = clampPercent(n, minEmoteHoverNamesMs, maxEmoteHoverNamesMs)
+	p.mu.Lock()
+	if p.EmoteHoverNamesMs == n {
+		p.mu.Unlock()
+		return
+	}
+	p.EmoteHoverNamesMs = n
 	p.mu.Unlock()
 	p.markDirty()
 }

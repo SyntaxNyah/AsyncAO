@@ -23,7 +23,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 | Custom shouts (2.10) | MS `4&<stem>` | charini [Shouts], shout row | streaming clients can't list `custom_objections/` — the char.ini `<stem>_name` keys are the discoverable source; ▾ cycles picks; receive resolves `custom_objections/<stem>` art+sfx |
 | Per-emote audio | MS SFXName/Delay/Looping/Blipname | charini SoundN/T/L + Blips | emotes now send their char.ini sounds; 2.9.1 per-emote blips; **`SFX_DELAY` honored** — the sound fires at wire-value × 40 ms into the preanimation (AO2 `time_mod`), and a preanim message's screenshake fires at that same moment |
 | Mute | `MU`/`UM` | session reducer, IC input | server mute of your cid (or `-1` mute-all) sets a persistent "muted" chip and refuses the IC send with a notice (keep-until-echo leaves your line intact); clears on rejoin (SI) / char change (PV), mirroring AO2 `set_mute` |
-| Additive text (2.8) | MS `additive` field, `FeatureAdditive` | typewriter accumulator, IC checkbox | an incoming `ADDITIVE=1` line appends to the previous message (the typewriter pre-reveals the prior text, crawls only the appended tail); an **Additive** checkbox shows when the server advertises it; a default-ON **Additive text** setting can disable it entirely (falls back to replace) |
+| Additive text (2.8) | MS `additive` field, `FeatureAdditive` | typewriter accumulator, IC checkbox | an incoming `ADDITIVE=1` line appends to the previous message (the typewriter pre-reveals the prior text, crawls only the appended tail); a single joining space is auto-inserted at the boundary when both sides lack one, so "First sentence." + "Second" reads "First sentence. Second" instead of glued — suppressed on CJK/fullwidth boundaries (a space after "。" is wrong for JP RP); outgoing, we add AO2's sender-side leading space at packet build (courtroom.cpp:2320-2326) so the field stays clean and AsyncAO↔AsyncAO never double-spaces; an **Additive** checkbox shows when the server advertises it; a default-ON **Additive text** setting can disable it entirely (falls back to replace) |
 | Desk mods | MS deskmod field, `FeatureExpandedDeskMods` | `deskVisible` phase machine | phase-aware desk visibility (preanim vs talk/idle) for mods 0–3; mods 4/5 hide the pair + zero the speaker offset (decoupled per AO2); outgoing 2–5 clamps down to legacy hide/show when the server lacks the expanded feature so a strict validator can't reject the line |
 
 ## Streaming & performance
@@ -72,7 +72,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   preanim that is *conclusively missing* (packs that fill the field with a dummy
   `-<n>` on every emote) releases the gate on the 404 signal (`NotifyAssetMissing`)
   instead of running out the full timeout (v1.55.0); on a plain timeout the renderer
-  falls back to hold-previous so the stage still never flashes.
+  falls back to hold-previous so the stage still never flashes. A **missing preanim
+  never shows the missing-sprite placeholder** — it is skipped straight to the talk
+  sprite (AO2 parity: a preanim it can't find is skipped, never drawn as a
+  placeholder), whether the absence is already known at message start or the 404
+  lands mid-play; the placeholder stays reserved for a missing idle/talk sprite.
   Hold-previous has its own knobs: a **max-age** cap on the stand-in (0 = forever)
   and a **diagnostic amber tint** so you can SEE it bridging. A cached scene is
   **byte-identical** whatever the mode, and holding is **0-alloc**
@@ -711,9 +715,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   configured (Settings → Assets) — the same way AO2 plays demos against its
   own base folder — and the content report grew a **"Resolve from: This
   server / Local base"** switch so either source can be checked or packaged
-  per run (one source per run; segments the client can't serve in its
-  current mode draw disabled). An `.aorec` keeps defaulting to the server
-  it was recorded on.
+  per run (one source per run). **Local base now works while connected:** a
+  scheme-routed local overlay lets the streaming client resolve a recording
+  against your mount folders without disconnecting, and if no base is set the
+  picker expands an inline field to point at one on the spot. An `.aorec` keeps
+  defaulting to the server it was recorded on.
 - **Exports always finish.** A recording whose assets can't be fetched at
   all — a dead CDN, a long-gone server — still renders a **complete video**:
   assets that conclusively don't exist settle the pre-warm promptly and the
@@ -1062,9 +1068,27 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   ban never auto-reconnects** either (re-joining after a ban reads as ban evasion),
   though the manual Reconnect button still works. A silently dead link (NAT
   timeout, no FIN) is detected by a **read-staleness watchdog** that pings on
-  prolonged silence and treats a missing pong as a drop. Toggle in **Settings →
-  Audio & Chat** ("Auto-reconnect after a dropped connection", ON by default). Idle
-  it costs one time-compare per frame.
+  prolonged silence and treats a missing pong as a drop. Retries **fire even while
+  the window is minimized or unfocused** (background rendering off), so a drop taken
+  while you're popped out recovers on its own. Toggle in **Settings → Audio & Chat**
+  ("Auto-reconnect after a dropped connection", ON by default). Idle it costs one
+  time-compare per frame.
+- **Involuntary-disconnect dialog**: when a connection dies on its own (wire
+  error, server-side close, kick/ban), the courtroom **stays on screen** — frozen,
+  the last IC/OOC lines still readable (tail pinned; scrollback is inert while
+  frozen) — under a modal that says **what happened** (a friendly line for the
+  known causes — kicked, banned, server closed, network unreachable, timeout —
+  with the raw close reason always shown underneath) plus a **Reconnect** button
+  (re-dials that same server through the normal join flow) and **Back to lobby**
+  (Esc does the same). A **deliberate** Disconnect/quit/tab-close never shows the
+  dialog. If the armed **auto-reconnect** countdown is running, the dialog shows
+  it live and a due retry fires from the frozen state. A **parked tab** whose
+  connection dies never pops a modal over the tab you're using — the reason is
+  latched and the dialog opens when you switch to that tab; if that tab was the
+  **pinned float pane**, its disappearance is **announced on the warn line** (the
+  server name + reason) so a torn-out server's death is never silent. A failed manual or
+  auto Reconnect lands on the lobby with the retry countdown + Reconnect button
+  (the frozen scene can't survive a redial teardown — by design).
 - **Auto-connect on launch** (OFF by default): turn this on in **Settings →
   Messages & connection** to open straight onto the **server you last used** — no
   lobby detour — even after you'd disconnected. The checkbox names the remembered
@@ -1389,6 +1413,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **IC character counter** (ON by default, Settings → Audio & Chat): a live count
   to the right of the IC box that turns red past ~256 chars, where many servers
   truncate. The count string is cached, so the courtroom frame stays 0-alloc.
+- **IC-bar SFX picker** (`SFX: auto` dropdown): pick the sound your **next**
+  message rides — `auto` uses the selected emote's own char.ini sound, or override
+  it with any of the character's distinct emote sounds (picking one previews it).
+  On a **narrow IC bar** the full dropdown no longer silently disappears: where it
+  won't fit it **collapses to a compact `SFX` button** in the same slot (a `•` dot
+  marks an active override) that opens the **SFX Browser** — the same choice list,
+  plus favourites and any sound by name. Only at a truly tiny bar width, where even
+  the compact button can't fit over the input floor, does it drop entirely — and
+  the **layout-editor override** (drag the SFX slot in Edit Layout) forces the full
+  dropdown back at any width, the escape hatch. The core **Pre / Text-FX** pair
+  still outranks it on a tightening bar (the 720p Pre/FX survival contract is
+  unchanged).
 - **Emote grid pages** (`<` / `>` + a `page x/y · N emotes` counter) when
   a character ships more emotes than fit — both the classic and themed
   layouts. The arrow row only appears when paging is needed; loading a
@@ -1413,6 +1449,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   so it doesn't vanish on the way), where the **mouse-wheel zooms** in/out and a
   **left-drag repositions** it; it closes once the cursor leaves the box (or you
   click).
+- **Emote name tooltips** (Settings → General, **ON by default**): resting the
+  cursor on an emote button shows that emote's **name** after a short dwell — a
+  lightweight, name-only hint separate from the full-size sprite pop-up above, so
+  it stays useful even with hover-previews turned off (the full-size preview
+  already captions the emote name; this adds it to the grid cell). The **delay is
+  a slider** (0.5–10 s, default 5 s). Both layouts and the ★ Fav-Emotes box. The
+  name-string work runs **only for the cell actually under the cursor**, so the
+  settled emote grid stays allocation-free (the whole-screen 0-alloc gate holds).
 - **Emote favourites** (#77/#85): characters ship dozens of emotes but you use a
   handful. Every emote button carries a **★ in its corner** — **dim grey** when
   not yet a favourite, **gold** once it is — so favouriting is always one click
@@ -1662,6 +1706,12 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   miniature stage to set self-offsets; the partner shows as a
   translucent ghost at their last-known placement. **Arrow keys nudge** your
   offset 1% at a time (when no text field is focused) for fine placement.
+  **Pair order** is an explicit two-segment control (**To front** / **To behind**,
+  the active one accent-filled — AO2's `ui_pair_order_dropdown` wording) instead of
+  a cycling button that read as a label, and **sprite flip** also lives on the **IC
+  bar** as a **Flip** toggle (shown whenever the server advertises the `flipping`
+  feature, AO2's `ui_flip`) — the same setting as the pair panel's flip checkbox, so
+  flipping is reachable without opening the pair panel.
 - **Click-to-pair** (`/pair <UID>` shortcut for servers that sync pairs via the
   OOC command): **double-click a speaker's IC line** to open a pair popup.
   AO's IC packets carry only the character, not the player UID, so the UID is
@@ -1746,9 +1796,10 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   it; while un-edited the View knob still owns its 4:3 size, and resetting the
   box hands size back to the knob); the **log / right column** (both themes),
   the **OOC box** (new default), the **emote grid** (it pages within whatever
-  rect it gets), the **IC input bar** (colour · showname · Immed · Additive · emoji/FX/
-  React · text — widen it for a longer input, the text field never collapses;
-  Additive only shows on 2.8 servers that advertise it),
+  rect it gets), the **IC input bar** (colour · showname · Immed · Additive · Pre · FX ·
+  Flip · SFX · emoji · text — widen it for a longer input, the text field never collapses;
+  Additive only shows on 2.8 servers that advertise it, Flip only on servers that
+  advertise `flipping`),
   the **Legacy bottom OOC bar**, and the **control-button block** (both button
   rows + the scale knobs, dragged as one unit — mostly vertically, since it
   stays full width) all move independently. Right-click a
@@ -1847,6 +1898,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   tab's character or pairing into another. Caches need nothing: asset keys
   are full URLs, per-server separation is structural. Rehearsal never
   backgrounds (it owns the offline gate).
+  **Keep music playing across tabs** (Settings → Audio): with it on, the single
+  music stream stays audible while you read another tab — and it's robust: the
+  continuity stream survives a stalled or missing destination track (it is never
+  silenced by a background fetch that never lands), keeps following its OWN tab's
+  track switches (a DJ /play on the backgrounded server it belongs to switches the
+  live stream, not just that tab's now-playing; a ~stop is not followed — the
+  stream keeps rolling until that tab plays a new track), and rides that tab's own
+  per-server volume (an active tab muted to music=0 can't silence someone else's
+  continuity stream). Off, each tab's audio is isolated on switch as before.
   **Drag-reorder**: grab a chip and drag it along the strip to reorder —
   it lifts (accent border) and the other chips slide live as you cross
   them; the active tab keeps its place in the lineup. A small drag is told

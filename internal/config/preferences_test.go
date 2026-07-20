@@ -321,6 +321,61 @@ func TestMotionRedrawDefaultAndMigration(t *testing.T) {
 	}
 }
 
+// TestEmoteHoverNamesRoundTrip pins the emote-name hover pref (ARM 2): a fresh
+// install defaults ON with the 5 s dwell; an explicit OFF and a custom (clamped)
+// delay both survive a save/reload — the six-site contract (struct field, JSON
+// DTO pointer, constructor default, load overlay, getter/setter, this test) that
+// guards the documented save-but-don't-load trap.
+func TestEmoteHoverNamesRoundTrip(t *testing.T) {
+	// 1) Fresh install → ON, default dwell.
+	fresh, path := newTestPrefs(t)
+	if !fresh.EmoteHoverNamesEnabled() {
+		t.Error("fresh default EmoteHoverNames = OFF, want ON")
+	}
+	if got := fresh.EmoteHoverNamesMillis(); got != DefaultEmoteHoverNamesMs {
+		t.Errorf("fresh default dwell = %d, want %d", got, DefaultEmoteHoverNamesMs)
+	}
+
+	// 2) A legacy file with the keys ABSENT loads as the default ON (pointer DTO).
+	legacy := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(legacy, []byte("{}\n"), 0o600); err != nil {
+		t.Fatalf("write legacy prefs: %v", err)
+	}
+	lp, err := newWithDebounce(legacy, testDebounce)
+	if err != nil {
+		t.Fatalf("load legacy: %v", err)
+	}
+	if !lp.EmoteHoverNamesEnabled() {
+		t.Error("legacy (absent key) EmoteHoverNames = OFF, want the default ON")
+	}
+	_ = lp.Close()
+
+	// 3) An explicit OFF + a custom delay must persist across save/reload.
+	fresh.SetEmoteHoverNames(false)
+	fresh.SetEmoteHoverNamesMs(2000)
+	if err := fresh.SaveNow(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	_ = fresh.Close()
+	re, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	defer re.Close()
+	if re.EmoteHoverNamesEnabled() {
+		t.Error("explicit OFF did not persist: reloaded EmoteHoverNames = ON")
+	}
+	if got := re.EmoteHoverNamesMillis(); got != 2000 {
+		t.Errorf("custom dwell did not persist: got %d, want 2000", got)
+	}
+
+	// 4) An out-of-range delay is clamped by the setter, not stored raw.
+	re.SetEmoteHoverNamesMs(999999)
+	if got := re.EmoteHoverNamesMillis(); got != maxEmoteHoverNamesMs {
+		t.Errorf("oversize dwell = %d, want clamp to %d", got, maxEmoteHoverNamesMs)
+	}
+}
+
 func TestPersistenceRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), PrefsFileName)
 	p, err := newWithDebounce(path, testDebounce)

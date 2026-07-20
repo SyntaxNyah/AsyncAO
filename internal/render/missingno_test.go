@@ -192,3 +192,78 @@ func TestMissingnoDisabledHoldsPrevious(t *testing.T) {
 		t.Errorf("with the placeholder pref OFF a missing base must hold the previous sprite (red), got r=%d g=%d", r, g)
 	}
 }
+
+// TestMissingnoNeverFlashesForPreanim pins the draw-side belt-and-braces for the
+// "missing preanim flashes the placeholder for a frame" report: a PLAY-ONCE layer
+// (a preanimation) whose confirmed-missing base is active must draw hold-previous
+// (the red prior sprite), NEVER the missingno placeholder (green). AO2-Client
+// never draws a placeholder for a missing preanim — it stats and skips it. The
+// courtroom already skips a known-missing preanim and swaps Active off it when the
+// 404 lands, so this is the residual-frame guarantee for any draw driver that
+// draws before the courtroom's next Update reaches it (audio-paced present cycle,
+// restore, split/replay/maker room). The SAME base with PlayOnce=false (an idle/
+// talk sprite) still draws the WANTED placeholder — proving the exemption is
+// preanim-specific and does not regress the idle/talk missingno contract.
+func TestMissingnoNeverFlashesForPreanim(t *testing.T) {
+	ren, cleanup := newHeadlessRenderer(t)
+	defer cleanup()
+	store, err := NewTextureStore(ren)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Purge()
+	if err := store.Upload("spk", decodedFixture()); err != nil { // red previous sprite
+		t.Fatal(err)
+	}
+	if err := store.UploadPinned(MissingKey, greenPage()); err != nil { // green placeholder
+		t.Fatal(err)
+	}
+	ct, err := NewCaptureTarget(ren, 512, 384)
+	if err != nil {
+		t.Skipf("capture target unavailable headlessly: %v", err)
+	}
+	defer ct.Close()
+
+	vp := NewViewport(store)
+	vp.SetSpriteLoadMode(SpriteLoadHoldPrev)
+	vp.SetMissingno(true) // ON — the exemption must hold even with the pref enabled
+
+	scene := &courtroom.Scene{}
+	scene.Speaker.Visible = true
+	scene.Speaker.Active = "spk"
+
+	centre := func() (r, g uint8) {
+		img, err := ct.Capture(ren, func(dst sdl.Rect) {
+			vp.Update(scene, 16*time.Millisecond)
+			vp.Render(ren, scene, dst)
+		})
+		if err != nil {
+			t.Skipf("ReadPixels unavailable headlessly: %v", err)
+		}
+		px := img.RGBAAt(256, 192)
+		return px.R, px.G
+	}
+
+	// Setup: the red previous sprite draws and is remembered for hold-previous.
+	if r, _ := centre(); r == 0 {
+		t.Fatal("setup: cached speaker sprite did not draw")
+	}
+
+	// A missing PREANIM base is active as a one-shot (PlayOnce). With the pref ON,
+	// the placeholder must still NOT draw — hold-previous (red) wins.
+	scene.Speaker.Active = "ghostpre"
+	scene.Speaker.PreanimBase = "ghostpre"
+	scene.Speaker.PlayOnce = true
+	vp.Update(scene, 16*time.Millisecond)
+	store.MarkMissing("ghostpre")
+	if r, g := centre(); r == 0 || g != 0 {
+		t.Errorf("a missing PREANIM (PlayOnce) must hold the previous sprite (red), never flash missingno (green); got r=%d g=%d", r, g)
+	}
+
+	// The exact same missing base as an IDLE/TALK sprite (PlayOnce=false) DOES draw
+	// the placeholder — the wanted, unchanged idle/talk behaviour.
+	scene.Speaker.PlayOnce = false
+	if r, g := centre(); g == 0 || r != 0 {
+		t.Errorf("a missing IDLE/TALK sprite must still draw the missingno placeholder (green); got r=%d g=%d", r, g)
+	}
+}

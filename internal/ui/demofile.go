@@ -264,16 +264,18 @@ func recordingToDemo(rec *sceneRecording) ([]byte, error) {
 }
 
 // mountOrigin returns the local:// origin the configured local-asset mounts
-// resolve against, or "" when local-asset mode is off / no mounts are set. The
-// gate is the SAME one main.go:274 and rebuildAssetOrigin use to wire the
-// Manager's Source (enabled AND at least one mount) — the only state where a
-// local:// origin actually resolves, since in that mode the Manager's Source IS
-// the LocalFetcher over exactly this mount set. The origin string is the
+// resolve against, or "" when no mounts are set. It keys off mounts being
+// CONFIGURED (len>0), NOT the legacy "read from local folders" enabled flag:
+// mounts are now the recording-resolution base even in a normal streaming
+// session, because the streaming Manager consults a local:// OVERLAY (built from
+// exactly this mount set) for local:// URLs. The legacy checkbox now means only
+// "the LIVE session reads from local folders instead of streaming"; it no longer
+// gates whether a local:// origin resolves. The origin string is the
 // LocalFetcher's BaseURL (a deterministic hash of the ordered mount set), so it
-// equals the origin the wired production fetcher serves — byte-for-byte the same
-// keyspace, no drift.
+// equals the origin both the wired production overlay AND a local-mode source
+// serve — byte-for-byte the same keyspace, no drift.
 func (a *App) mountOrigin() string {
-	if enabled, mounts := a.d.Prefs.LocalAssets(); enabled && len(mounts) > 0 {
+	if _, mounts := a.d.Prefs.LocalAssets(); len(mounts) > 0 {
 		return assets.NewLocalFetcher(mounts).BaseURL()
 	}
 	return ""
@@ -283,8 +285,11 @@ func (a *App) mountOrigin() string {
 // user-set source-selection default:
 //   - Local-asset mounts configured (Settings → Assets) → the mount's local://
 //     origin, so an imported .demo resolves against the local base folder. This
-//     is AO2 parity: AO2 plays a .demo against its local base, and it also
-//     sidesteps a dead recorded server entirely (there is none stored in a .demo).
+//     works even in a normal STREAMING session now: the Manager's local:// overlay
+//     (seeded from the same mounts) serves those URLs, so the default is no longer
+//     confined to legacy local-asset mode. It is AO2 parity (AO2 plays a .demo
+//     against its local base) and sidesteps a dead recorded server entirely (a
+//     .demo stores none).
 //   - No mounts → today's behavior: the current URL builder's origin (the live
 //     session's when connected; "" offline is fine — the empty-origin warning
 //     fires and the user can set one in the Scene Maker afterwards, like a new

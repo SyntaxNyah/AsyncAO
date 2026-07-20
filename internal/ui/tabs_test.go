@@ -397,14 +397,16 @@ func TestMusicAcrossTabsToggleUnwedges(t *testing.T) {
 		t.Error("toggle ON with nothing ducked must stay clean (no-op)")
 	}
 
-	// Turning it OFF must NOT re-duck a currently-audible background stream — the
-	// re-duck is deferred to the next tab switch (never yank audio mid-listen). A
-	// stream that happens to be audible (duck already down) stays audible.
+	// Turning it OFF re-ducks a currently-audible background stream IMMEDIATELY —
+	// the checkbox label promises "silent while backgrounded" now, and the user
+	// flipping the box is itself the yank request. (This inverts the earlier
+	// defer-to-next-tab-switch design, which read as the checkbox doing nothing.)
+	// The stream is ducked, not stopped: position keeps advancing.
 	d := testTabApp(t)
 	d.musicTabDucked = false
 	d.applyMusicAcrossTabs(false)
-	if d.musicTabDucked {
-		t.Error("toggle OFF must NOT re-duck live audio — re-duck waits for the next tab switch")
+	if !d.musicTabDucked {
+		t.Error("toggle OFF must re-duck live audio immediately — the label promises silent-now")
 	}
 	if d.d.Prefs.MusicAcrossTabsOn() {
 		t.Error("toggle OFF must persist the pref")

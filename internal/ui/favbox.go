@@ -94,6 +94,9 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 
 	me := a.activeCharName()
 	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
+	// Emote-name hover tooltip config, read ONCE (RLock off the per-cell loop).
+	hoverNamesOn := a.d.Prefs.EmoteHoverNamesEnabled()
+	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	cols := int32(len(a.favBoxList))
 	if cols > favBoxCols {
 		cols = favBoxCols
@@ -122,6 +125,11 @@ func (a *App) drawFavEmoteBox(w, h int32, pressed *bool) {
 		}
 		if c.HoverPreview("favemote:"+a.emotes[i].Anim, btn) {
 			a.previewEmote(me, &a.emotes[i])
+		}
+		// Emote-name tooltip (parity with the grid): hover dwell shows the name.
+		// Gated on hovering(btn) so the id concat runs only for the hovered cell.
+		if hoverNamesOn && c.hovering(btn) {
+			c.TooltipAfterDelay("favemotename:"+a.emotes[i].Anim, btn, label, hoverNamesDelay)
 		}
 	}
 }

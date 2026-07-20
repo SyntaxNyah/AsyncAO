@@ -56,6 +56,18 @@ const (
 	// matching the +4 the panel's item/header rows use so a dimmed segment's text
 	// sits at the same baseline as an enabled c.Button's centered label (btnH=22).
 	cpBtnLabelInset = 4
+	// cpLocalSetupFieldW is the width of the inline "set a local base" folder-path
+	// TextField that expands under the picker when no mounts are configured — wide
+	// enough for a typical absolute path, matching the panel's other in-row fields.
+	cpLocalSetupFieldW = 300
+	// cpLocalSetupUseW is the width of the "Use" button beside that field (mirrors
+	// the Settings mounts "Add" button, a touch narrower for the shorter label).
+	cpLocalSetupUseW = 60
+	// cpLocalSetupLabelPad is the extra x-gap past the picker's label column before
+	// the setup field begins: the setup row's "Local base folder:" label is wider
+	// than the picker's "Resolve from:" (which cpSourceLabelW is sized for), so the
+	// field insets a bit further to clear it.
+	cpLocalSetupLabelPad = 40
 )
 
 // cpRowKind tags a visible row: a category header or one asset item.
@@ -133,6 +145,14 @@ type contentPanelState struct {
 	// are configured, else the server); after an explicit pick, useLocal sticks for
 	// the rest of the session across opens — "persist the last choice per session."
 	pickerChosen bool
+
+	// localSetupOpen is the inline "set a local base" row's expand state: when no
+	// mounts are configured (originLocal==""), clicking "Local base" expands one row
+	// under the picker with a folder-path field + "Use" button, so the user can set a
+	// base right there instead of leaving for Settings. localSetupInput holds that
+	// field's text (mirrors settings.mountInput). Both are transient panel state.
+	localSetupOpen  bool
+	localSetupInput string
 
 	scroll int32
 	// rows is the cached visible-row model (headers + filtered items). Rebuilt only
@@ -243,6 +263,8 @@ func (a *App) resetContentPanelRun(pkg bool) {
 	s.packageWhenReady = pkg
 	s.sawJob = false // a fresh run: forget the prior job's done-summary
 	s.doneMsg = ""
+	s.localSetupOpen = false // collapse any stale inline base-setup row
+	s.localSetupInput = ""
 }
 
 // contentServerOrigin recovers a recording's SERVER-side origin candidate for the
@@ -446,35 +468,35 @@ func cpStatusTag(st AssetStatus) string {
 // clicking the inactive source calls switchContentSource (cancel + re-run against
 // the other origin).
 //
-// A segment is enabled only when the Manager's SINGLE source can actually serve
-// that origin's URL scheme — because the production Manager is mode-locked at
-// construction (Manager.LocalMode): in streaming mode it holds a network client
-// that transport-errors on a local:// URL, and in local mode it holds a
-// LocalFetcher that errors on an https:// URL. probeRef reports such a
-// transport-error base as [missing] (ResolveRawFull swallows the error), so an
-// ENABLED-but-unservable segment would yield a whole report of false [missing]
-// rows — "absent at that source" when the truth is "this client can't query that
-// source at all." So:
-//   - "Local base" enables only when mounts are configured (originLocal!="") AND
-//     the Manager is in local mode.
-//   - "This server" enables only when the Manager is NOT in local mode (streaming);
-//     in local mode the network origin is structurally unreachable.
+// Servability follows what the Manager can actually query, in the overlay world:
+//   - "Local base" is servable whenever mounts are configured (originLocal!="").
+//     ANY Manager can now serve local:// URLs: a streaming Manager routes them
+//     through its local:// mount OVERLAY (SetLocalOverlay), and a local-mode
+//     Manager's source already IS the LocalFetcher. So the local half is no longer
+//     tied to the Manager's mode — only to a base being configured.
+//   - "This server" (https://) still needs a streaming Manager: a local-mode
+//     Manager holds a LocalFetcher with NO network source, so an https:// origin is
+//     structurally unreachable there. That half of the matrix is UNCHANGED this
+//     wave. probeRef reports a transport-error base as [missing]/[unreachable], so
+//     leaving "This server" enabled in local mode would yield false rows.
 //
-// The disabled segment stays visible (the design matrix / mode indicator) but
-// draws dim and no-ops. Two labels + two buttons per frame, all cached
-// strings/consts — the panel's alloc-free budget.
+// When "Local base" is servable but NO base is configured (originLocal==""), the
+// segment is still CLICKABLE: clicking expands an inline setup row (a folder-path
+// field + "Use") so the user can set a base right here — see drawLocalSetupRow.
+// The disabled segment stays visible (the mode indicator) but draws dim and
+// no-ops. All labels/buttons are cached strings/consts — the panel's alloc-free
+// budget (the setup row's field draws only while expanded).
 func (a *App) drawContentSourcePicker(s *contentPanelState, inX, y int32) int32 {
 	c := a.ctx
-	// The Manager's fixed source: local mode serves ONLY local:// (LocalFetcher),
-	// streaming mode ONLY the network client. Key the enable off the Manager's
-	// actual mode, never the live pref — the pref can be toggled mid-session
-	// without rebuilding the source, which would invert the disable. Nil-guarded
-	// for the headless draw smoke test (no Manager wired): default to streaming.
+	// The Manager's fixed mode still decides whether the SERVER (https://) source is
+	// reachable: a local-mode Manager has no network client. The LOCAL source no
+	// longer depends on this (the overlay serves it in either mode). Nil-guarded for
+	// the headless draw smoke test (no Manager wired): default to streaming.
 	localModeMgr := a.d.Manager != nil && a.d.Manager.LocalMode()
 	c.Label(inX, y+4, "Resolve from:", ColTextDim)
 	bx := inX + cpSourceLabelW
 	// One segment button. active = accent-filled (the current source); a disabled
-	// segment (no mounts for Local) draws dim and never fires.
+	// segment draws dim and never fires.
 	seg := func(label string, active, enabled bool) bool {
 		r := sdl.Rect{X: bx, Y: y, W: cpSourceBtnW, H: btnH}
 		bx += cpSourceBtnW + 6
@@ -496,18 +518,83 @@ func (a *App) drawContentSourcePicker(s *contentPanelState, inX, y int32) int32 
 		return c.Button(r, label)
 	}
 	useLocal := s.useLocal && s.originLocal != ""
-	// A source is servable only if the Manager's fixed mode matches its scheme:
-	// "This server" (https://) needs streaming mode; "Local base" (local://) needs
-	// local mode AND a configured mount. A dead pick draws disabled and no-ops.
+	// "This server" needs a streaming Manager (see the doc). "Local base" is servable
+	// whenever a base is configured OR can be set inline (mounts absent → the click
+	// opens the setup row), so the segment is enabled in streaming mode regardless of
+	// originLocal; in local mode it needs originLocal (the source can't be swapped).
 	serverServable := !localModeMgr
-	localServable := localModeMgr && s.originLocal != ""
+	localServable := (!localModeMgr) || s.originLocal != ""
 	if seg("This server", !useLocal, serverServable) {
 		a.switchContentSource(false)
 	}
 	if seg("Local base", useLocal, localServable) {
-		a.switchContentSource(true)
+		if s.originLocal == "" {
+			// No base configured: toggle the inline setup row instead of switching to a
+			// dead origin. switchContentSource(true) would no-op on an empty originLocal.
+			s.localSetupOpen = !s.localSetupOpen
+		} else {
+			s.localSetupOpen = false // a real base exists: switch, close any stale setup row
+			a.switchContentSource(true)
+		}
+	}
+	y += btnH + 6
+	// Inline base-setup row (drawn only while expanded): folder-path field + "Use".
+	if s.localSetupOpen && s.originLocal == "" {
+		y = a.drawLocalSetupRow(s, inX, y)
+	}
+	return y
+}
+
+// drawLocalSetupRow draws the inline "set a local base" row under the picker: a
+// folder-path TextField + a "Use" button, so a user with no mounts configured can
+// point the report at a local base without leaving for Settings. It mirrors the
+// Settings mounts field idiom (TrimSpace, no os.Stat validation — an invalid path
+// simply resolves nothing, exactly as in Settings). "Use" appends the path to the
+// local-asset mounts (the enabled flag UNCHANGED — this is only a resolution base,
+// not the legacy live-session mode), rebuilds the asset origin (which pushes the
+// new overlay into the Manager), recomputes originLocal, and re-runs the report
+// against the new base. Empty input = no-op. Drawn only while expanded, so its
+// TextField costs nothing per frame on the common (collapsed) path.
+func (a *App) drawLocalSetupRow(s *contentPanelState, inX, y int32) int32 {
+	c := a.ctx
+	c.Label(inX, y+4, "Local base folder:", ColTextDim)
+	fx := inX + cpSourceLabelW + cpLocalSetupLabelPad // clears the (wider) label before the field begins
+	s.localSetupInput, _ = c.TextField("contentLocalBase",
+		sdl.Rect{X: fx, Y: y, W: cpLocalSetupFieldW, H: fieldH}, s.localSetupInput,
+		`C:\AO2\base or /home/you/ao2/base`)
+	if c.Button(sdl.Rect{X: fx + cpLocalSetupFieldW + 6, Y: y, W: cpLocalSetupUseW, H: btnH}, "Use") {
+		a.useLocalSetupPath()
 	}
 	return y + btnH + 6
+}
+
+// useLocalSetupPath commits the inline base-setup row's input: it appends the
+// trimmed folder path to the local-asset mounts (the legacy enabled flag left
+// UNCHANGED — this is a resolution base, not the live-session mode), rebuilds the
+// asset origin (which pushes the new mount overlay into the Manager), recomputes
+// originLocal, and re-runs the report against the new base. Empty input is a
+// no-op. Extracted from drawLocalSetupRow so the state transition is testable
+// without input injection. Render thread only (SetLocalAssets + rebuildAssetOrigin
+// + switchContentSource all run there).
+func (a *App) useLocalSetupPath() {
+	s := &contentPanel
+	path := strings.TrimSpace(s.localSetupInput)
+	if path == "" {
+		return // empty input: nothing to set
+	}
+	enabled, mounts := a.d.Prefs.LocalAssets()
+	a.d.Prefs.SetLocalAssets(enabled, append(mounts, path)) // enabled UNCHANGED
+	a.rebuildAssetOrigin()                                  // pushes the new overlay into the Manager
+	s.originLocal = a.mountOrigin()                         // recompute against the now-configured base
+	s.localSetupInput = ""
+	s.localSetupOpen = false
+	// Force the switch to actually restart: the setup row only appears when there
+	// was no base, but a stale sticky s.useLocal=true (mounts previously present
+	// then cleared) would trip switchContentSource's "already on this source"
+	// guard and skip the re-run. Clearing it guarantees the report re-runs against
+	// the just-configured base.
+	s.useLocal = false
+	a.switchContentSource(true) // re-run the report against the new base
 }
 
 // drawContentPanel draws the modal content-report panel LAST in drawSettings
@@ -571,9 +658,10 @@ func (a *App) drawContentPanel(w, h int32) {
 	// Source picker: "Resolve from: [This server] [Local base]". The active source
 	// is accent-filled (ButtonCol), the other is a plain button; clicking the
 	// inactive one switches source and re-runs the report against the other origin
-	// (switchContentSource). "Local base" only enables when mounts are configured
-	// (originLocal != ""); otherwise it draws disabled-dim and no-ops, so the
-	// control is always present (the matrix) without offering an unresolvable pick.
+	// (switchContentSource). "Local base" is servable in a streaming session via the
+	// Manager's mount overlay; with no base configured it expands an inline setup row
+	// (folder field + Use) instead of no-opping. Only "This server" in local mode is
+	// disabled (no network source) — it draws disabled-dim and no-ops.
 	y = a.drawContentSourcePicker(s, inX, y)
 
 	rep := s.report
@@ -587,7 +675,7 @@ func (a *App) drawContentPanel(w, h int32) {
 	case rep.OriginMissing:
 		c.LabelClipped(inX, y, inW, "No server recorded for this file — nothing could be checked.", ColDanger)
 		y += 18
-		c.LabelClipped(inX, y, inW, "Connect to the recording's server, or set Origin/CDN in the Scene Maker, then re-run.", ColTextDim)
+		c.LabelClipped(inX, y, inW, "Connect to the recording's server, set Origin/CDN in the Scene Maker, or pick Local base and set a local assets folder, then re-run.", ColTextDim)
 		y += 20
 	default:
 		c.LabelClipped(inX, y, inW, s.contentOriginLine(rep), ColTextDim)

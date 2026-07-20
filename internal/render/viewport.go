@@ -1224,7 +1224,22 @@ func (v *Viewport) drawSprite(ren *sdl.Renderer, layer *courtroom.SpriteLayer, a
 		// sprites (not in the missing set) keep the full chain below; still-loading
 		// and confirmed-missing are disjoint. Structurally unreachable on the found
 		// path (resolved sprites exit via the ok-path).
-		if v.missingnoEnabled && v.store.IsMissing(anim.base) {
+		//
+		// EXCEPTION: a PLAY-ONCE layer (layer.PlayOnce) is a preanimation, and a
+		// missing preanim must NEVER paint the placeholder. AO2-Client stats the
+		// preanim file locally and skips a missing one outright — it never draws a
+		// placeholder for it (courtroom.cpp play_preanim). The courtroom skips a
+		// known-missing preanim at entry and swaps Active off it synchronously when
+		// the 404 lands (Courtroom.enterAfterShout / NotifyAssetMissing), so the
+		// phase machine is ALWAYS about to leave this base — a placeholder here would
+		// be a single-frame flash on the residual window before the courtroom's next
+		// Update reaches a draw driver that skipped it (audio-paced present, restore,
+		// split/replay/maker room). Fall through to hold-previous instead: the idle/
+		// talk sprite (or the prior frame) is the correct "no preanim" picture, and
+		// missingno on a preanim is never useful. IDLE/TALK layers (PlayOnce false)
+		// keep their WANTED placeholder — the disjoint idle/talk missingno contract
+		// (missingno_test.go, missingno_noblip_test.go) is untouched.
+		if v.missingnoEnabled && !layer.PlayOnce && v.store.IsMissing(anim.base) {
 			if mp, ok2 := v.store.Get(MissingKey); ok2 && len(mp.Frames) > 0 {
 				v.drawHeldSprite(ren, layer, mp, vp)
 				return

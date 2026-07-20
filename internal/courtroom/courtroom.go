@@ -3,6 +3,8 @@ package courtroom
 import (
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -97,7 +99,13 @@ type SpriteLayer struct {
 	PreanimBase string
 	// Active selects which base renders right now.
 	Active string
-	// PlayOnce marks the active animation as one-shot (preanim).
+	// PlayOnce marks the active animation as one-shot (preanim). It means EXACTLY
+	// "this is the speaker's preanimation" — set true only for the speaker's own
+	// preanim (enterAfterShout), never on the pair layer or an idle/talk sprite.
+	// The render miss-branch relies on that: viewport.drawSprite exempts any
+	// PlayOnce layer from the missingno placeholder (a missing preanim must never
+	// flash a placeholder). Setting PlayOnce anywhere else would silently suppress
+	// the WANTED idle/talk placeholder for a conclusively-missing base.
 	PlayOnce bool
 	Flip     bool
 	// OffsetX/Y are percent of viewport dimensions (−100..100).
@@ -709,6 +717,106 @@ func (c *Courtroom) applyCenterPrefix() {
 	}
 }
 
+// AdditiveOutgoingLeadingSpace applies AO2's sender-side additive convention to
+// an outgoing IC message: when the additive box is on, AO2-Client keeps a literal
+// leading space in the IC input so each appended fragment lands after a separator
+// (courtroom.cpp:2320-2326 re-inserts " " into ui_ic_chat_message after every
+// send; on_additive_clicked at :6563-6573 prefaces the message with whitespace).
+// We diverge on WHERE: AO2 mutates the visible input field, which is intrusive;
+// we prepend at packet build so the user's typed line stays clean (recordSentIC /
+// icPendingSent still read the untouched a.icInput). The result on the wire is
+// identical, so other clients (and AO2) see the space and don't glue sentences.
+//
+// The check runs on the STRIPPED text because funColor may have prepended colour
+// markup (\cr, \c#RRGGBB) — the raw first byte would then be '\', not the visible
+// rune. A blankpost (" ", or a colourised "\cr ") strips to a leading space and is
+// left untouched. AsyncAO receivers additionally de-glue on display (the joiner in
+// begin()), and that dedup skips a fragment that already starts with a space, so
+// AsyncAO->AsyncAO never double-spaces.
+func AdditiveOutgoingLeadingSpace(text string) string {
+	if !AdditiveWantsLeadingSpace(text) {
+		return text // already separated (real leading space, or a blankpost)
+	}
+	return " " + text
+}
+
+// AdditiveWantsLeadingSpace reports whether AdditiveOutgoingLeadingSpace would
+// actually prepend a space to text: true iff the STRIPPED text is non-empty, its
+// first visible rune is not a space, and that rune is not from a no-space script.
+// The send path needs this as a separate
+// predicate because it must shift the transmitted effect spans by +1 in lockstep
+// with the prepend — and the spans are baked into an invisible frame BEFORE the
+// prepend happens (EncodeEffectsMarker runs first), so a single shared predicate
+// is the only way the shift decision and the prepend can never disagree. Splitting
+// it out (rather than duplicating the test at the call site) keeps that one source
+// of truth. Stripping first matters: funColor may have prepended \cr/\c# markup, so
+// the raw first byte would be '\', not the visible rune.
+//
+// The no-space suppression mirrors additiveNeedsJoiner's CJK decision on the one
+// boundary rune the sender can see (its own fragment's first rune; the previous
+// message's ending is only known to receivers): a half-width space glued to a
+// fullwidth glyph reads wrong in JP/CJK RP on EVERY client, including the AO2
+// ones this space exists to serve — so a CJK-leading fragment ships unspaced,
+// and receivers with mixed boundaries decide with the full two-sided rule.
+func AdditiveWantsLeadingSpace(text string) bool {
+	stripped := StripChatMarkup(text)
+	if stripped == "" {
+		return false
+	}
+	first, _ := utf8.DecodeRuneInString(stripped)
+	return !unicode.IsSpace(first) && !isNoSpaceRune(first)
+}
+
+// additiveNeedsJoiner reports whether a single space should be inserted between
+// the accumulated additive prefix and an incoming fragment. Both arguments are
+// already StripChatMarkup'd (markup at the boundary must not hide the real
+// visible rune). A joiner is wanted iff the prefix is non-empty, the prefix ends
+// with a non-space rune, and the fragment starts with a non-space rune — i.e.
+// neither side already supplies the separator (so an AO2 sender who DID insert
+// the leading space never gets a doubled one).
+//
+// CJK/no-space scripts are suppressed: a space after "。" or "、" is
+// typographically wrong in Japanese/Chinese RP (this client has JP-heavy users),
+// and CJK scripts don't word-separate with spaces at all. If EITHER boundary rune
+// is a no-space rune the joiner is dropped — a single half-width space glued to a
+// fullwidth glyph on either side reads worse than the glue it would fix.
+func additiveNeedsJoiner(prev, frag string) bool {
+	if prev == "" || frag == "" {
+		return false
+	}
+	last, _ := utf8.DecodeLastRuneInString(prev)
+	first, _ := utf8.DecodeRuneInString(frag)
+	// utf8.RuneError guards: DecodeRune on "" returns RuneError, but the ""
+	// checks above already excluded that. A genuine RuneError (invalid UTF-8)
+	// counts as non-space, non-CJK — glue it, matching a raw byte join.
+	if unicode.IsSpace(last) || unicode.IsSpace(first) {
+		return false
+	}
+	if isNoSpaceRune(last) || isNoSpaceRune(first) {
+		return false
+	}
+	return true
+}
+
+// isNoSpaceRune reports whether r belongs to a script or punctuation block that
+// does not use inter-word spaces, so an inserted joiner would be wrong there.
+// Covers the CJK Han/Hiragana/Katakana/Hangul scripts PLUS the two Unicode
+// punctuation blocks AO2's JP users actually hit — CJK Symbols & Punctuation
+// (U+3000-303F: 。、「」…, which are script=Common and so NOT in unicode.Han)
+// and Halfwidth/Fullwidth Forms (U+FF00-FFEF: ！？，．… and fullwidth letters).
+func isNoSpaceRune(r rune) bool {
+	switch {
+	case r >= 0x3000 && r <= 0x303F: // CJK Symbols and Punctuation (。、「」〜…)
+		return true
+	case r >= 0xFF00 && r <= 0xFFEF: // Halfwidth and Fullwidth Forms (！？，．＆)
+		return true
+	}
+	return unicode.Is(unicode.Han, r) ||
+		unicode.Is(unicode.Hiragana, r) ||
+		unicode.Is(unicode.Katakana, r) ||
+		unicode.Is(unicode.Hangul, r)
+}
+
 func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.current = msg
 	c.waitFor = nil // beginning ends any armed wait-gate hold
@@ -797,9 +905,24 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	c.additivePrefix = ""
 	if c.AdditiveText && !c.restoring && msg.Additive {
 		c.additivePrefix = c.additivePrevText
+		// Auto-joiner: real AO senders glue the incoming fragment onto the prior
+		// accumulated text with no separator, so two additive sentences read
+		// "First.Second" instead of "First. Second". AO2's own client works around
+		// this by inserting a leading space into the SENDER's input whenever the
+		// additive box is on (courtroom.cpp:2320-2326, 6563-6573); clients that
+		// don't (older AO2, webAO, ours before this fix) produce the glued form.
+		// Fix it on the DISPLAY side too, for ANY sender: when the boundary visually
+		// lacks a space, insert exactly one. Appending to additivePrefix HERE — before
+		// the shift below — makes the joiner ride into the span shift, additivePrevText
+		// accumulation, IsBlankPost, StartAppend pre-reveal, and MessageRaw with no
+		// further edits. Guard on the STRIPPED text so markup at the boundary
+		// (e.g. a "\c0" colour code) doesn't hide the real last/first visible rune.
+		if additiveNeedsJoiner(StripChatMarkup(c.additivePrefix), StripChatMarkup(c.currentText)) {
+			c.additivePrefix += " "
+		}
 		if shift := len([]rune(StripChatMarkup(c.additivePrefix))); shift > 0 {
 			for i := range c.pendingEffects {
-				c.pendingEffects[i].Start += shift // spans ride the appended tail
+				c.pendingEffects[i].Start += shift // spans ride the appended tail (past prefix + any joiner)
 			}
 		}
 	}
@@ -1074,7 +1197,19 @@ func (c *Courtroom) enterAfterShout() {
 	// preanim conclusively 404'd and hijacking Active with it would draw a
 	// blank speaker. Skip straight to the talk loop, exactly where a played
 	// preanim would have ended up.
-	playPre := hasPreanim(msg) && !c.preanimDone &&
+	//
+	// !spriteConfirmedMissing: preanimDone is per-message (begin() clears it), so
+	// it does NOT catch a preanim that 404'd on an EARLIER play of the same emote —
+	// its base is in the session negative cache, so re-selecting it here would park
+	// Active on a base the render side has already marked missing (store.IsMissing),
+	// and the viewport would FLASH the missingno placeholder for the frames before
+	// the async re-probe's Warning drains and Update advances the phase. AO2-Client
+	// stats the preanim locally and skips a missing one before it ever draws
+	// (courtroom.cpp play_preanim); a streaming client can't stat, but a base we
+	// ALREADY know is absent is the same certainty — skip it synchronously here so
+	// the placeholder never paints for a preanim we're about to skip anyway. IDLE/
+	// TALK bases keep their (wanted) missingno; only the preanim selection is gated.
+	playPre := hasPreanim(msg) && !c.preanimDone && !c.spriteConfirmedMissing(c.Scene.Speaker.PreanimBase) &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom || msg.Immediate)
 	blockOnPre := playPre && !msg.Immediate &&
 		(msg.EmoteMod == protocol.EmoteModPreanim || msg.EmoteMod == protocol.EmoteModPreanimZoom)
@@ -1307,15 +1442,39 @@ func (c *Courtroom) NotifyAssetMissing(base string) {
 	// PhasePreanim exits on the next Update; enterAfterShout reads the flag
 	// too, so a miss learned during the shout bubble skips the phase outright.
 	c.preanimDone = true
-	// Immediate mode (playPre without blockOnPre) parks Active on the preanim
-	// with PlayOnce while the text types; a missing one would leave the
-	// speaker invisible for the whole message (no one-shot ever completes, so
-	// OnPreanimDone never fires). Restore the talk loop exactly as
-	// startTalking would have without the hijack.
+	// Swap Active OFF the missing preanim base SYNCHRONOUSLY, in the same drain in
+	// which the render side marks it missing (store.MarkMissing runs beside this in
+	// drainWarnings). Leaving Active on the preanim base and relying on "the next
+	// Update" opens a one-frame placeholder flash on any draw driver that draws
+	// WITHOUT calling this room's Update first — the audio-paced present cycle
+	// (roomPreAdvanced skips Update but still draws), a minimized→restored frame, or
+	// a split/replay/maker room advanced on its own cadence. Both the blocking
+	// preanim (PhasePreanim, Active parked on the preanim, PlayOnce set) and the
+	// immediate-mode preanim (PhaseTalking, Active on the preanim over the crawl,
+	// PlayOnce set) must drop to the talk sprite here — exactly what their next
+	// Update would do (PhasePreanim → startTalking sets Active=TalkBase since
+	// PlayOnce is now false; PhaseTalking's PlayOnce branch already flaps to
+	// TalkBase). A leftover missingno flash is never useful for a preanim we're
+	// skipping anyway. The draw-side guard (viewport drawSprite) is the belt-and-
+	// braces for the residual frame before ANY Update on paths this can't reach.
 	if c.Scene.Speaker.PlayOnce {
 		c.Scene.Speaker.PlayOnce = false
-		if c.phase == PhaseTalking {
+		if c.phase == PhaseTalking || c.phase == PhasePreanim {
 			c.Scene.Speaker.Active = c.Scene.Speaker.TalkBase
+		}
+		// A blocking preanim also parked the PREANIM desk column at entry
+		// (applyDeskMods(true), :1220). Its deferred exit is PhasePreanim →
+		// startTalking → applyDeskMods(false), which flips ShowDesk/PairActive/
+		// offset back to the talk column. Mirror that flip HERE so the synchronous
+		// frame is identical to the deferred one for ALL desk mods — otherwise mods
+		// 2-5 (DESK/PRE-ONLY[+EX]) render one frame with Active correctly on
+		// TalkBase but the desk/pair-hide/offset still on the preanim column on the
+		// very Update-skipping draw drivers this swap exists for. Idempotent
+		// (recomputes from c.current, non-nil past the :1432 guard). The immediate-
+		// mode (PhaseTalking) arm is already on the talk column — its startTalking
+		// ran applyDeskMods(false) at entry — so only PhasePreanim needs it.
+		if c.phase == PhasePreanim {
+			c.applyDeskMods(false)
 		}
 	}
 }

@@ -426,6 +426,48 @@ func TestDemoDefaultOriginPolicy(t *testing.T) {
 	}
 }
 
+// TestMountOriginIgnoresEnabledFlag pins the load-bearing gate of this change:
+// mountOrigin keys off mounts being CONFIGURED (len>0), NOT the legacy
+// "read from local folders" enabled flag. A user can add a mount folder in
+// Settings without ever ticking the legacy checkbox, and a .demo must still
+// resolve against that local base (the streaming Manager's local:// overlay is
+// seeded from exactly this mount set). This is a REGRESSION GUARD: restoring the
+// old `enabled && len>0` gate would send this case to the session origin instead,
+// so both sub-cases assert a local:// origin specifically — a bare non-empty
+// check would pass under the revert in the connected case (where the session
+// origin is itself non-empty).
+func TestMountOriginIgnoresEnabledFlag(t *testing.T) {
+	const sessionOrigin = "https://cdn.example/base/"
+	mount := t.TempDir()
+	wantMount := assets.NewLocalFetcher([]string{mount}).BaseURL()
+
+	// enabled=FALSE deliberately: the pref state a "configured but legacy checkbox
+	// off" user carries. Both the offline and connected variants must resolve local.
+	for _, connected := range []bool{false, true} {
+		name := "offline"
+		if connected {
+			name = "connected"
+		}
+		t.Run(name, func(t *testing.T) {
+			a := testTabApp(t)
+			a.d.Prefs.SetLocalAssets(false, []string{mount})
+			if connected {
+				a.urls = courtroom.NewURLBuilder(sessionOrigin)
+			}
+			if got := a.mountOrigin(); got != wantMount {
+				t.Errorf("mountOrigin with enabled=false must return the local base %q, got %q", wantMount, got)
+			}
+			got := a.demoDefaultOrigin()
+			if got != wantMount {
+				t.Errorf("demoDefaultOrigin with enabled=false mounts must resolve local, got %q", got)
+			}
+			if !strings.HasPrefix(got, assets.LocalScheme) {
+				t.Errorf("origin must be a local:// origin even with the legacy checkbox off, got %q", got)
+			}
+		})
+	}
+}
+
 // TestDemoImportUnderMountsWarnsPositively pins that importing a .demo when mounts
 // are configured (a) resolves against the local base (a local:// origin) and (b)
 // does NOT fire the empty-origin "won't stream" warning — instead it gets the

@@ -27,7 +27,7 @@ func TestICBarUnderStage(t *testing.T) {
 // Immediate, Additive, SFX, emoji, FX, React, input) has a distinct editor label, and an
 // override repositions it through slotRect — so users can drag them apart in Edit Layout.
 func TestICBarSlotsAreEditable(t *testing.T) {
-	slots := []string{slotICColor, slotICShowname, slotICImmediate, slotICPre, slotICAdditive, slotICSFX, slotICEmoji, slotICFx, slotICReact, slotICInput}
+	slots := []string{slotICColor, slotICShowname, slotICImmediate, slotICPre, slotICAdditive, slotICFlip, slotICSFX, slotICEmoji, slotICFx, slotICReact, slotICInput}
 	seen := map[string]bool{}
 	for _, s := range slots {
 		label := classicSlotLabel(s)
@@ -131,11 +131,15 @@ func icConsumedBeforeOptionals(additive bool) int32 {
 }
 
 // icOptionalSurvival replays drawICInputRow's optional-button drop discipline PURELY
-// (no SDL): it walks Pre, FX, SFX, emoji in the real draw order, advancing the cursor
-// only when icBarButtonFits passes, and returns which drew plus the final input width
-// (floored at minICInputW). This is the same math the row runs, so it pins the survival
-// order without needing a live Ctx. fH is the row height (emoji is an fH-square button).
-func icOptionalSurvival(barW, fH int32, additive bool) (pre, fx, sfx, emoji bool, inputW int32) {
+// (no SDL): it walks Pre, FX, Flip, SFX, emoji in the real draw order, advancing the
+// cursor only when icBarButtonFits passes, and returns which drew plus the final input
+// width (floored at minICInputW). This is the same math the row runs, so it pins the
+// survival order without needing a live Ctx. fH is the row height (emoji is an fH-square
+// button). flipping mirrors the FeatureFlipping gate: Flip only enters the chain on a
+// flipping server (else it's absent, like Additive is absent off 2.8 servers), and it
+// sits AFTER Pre+FX but BEFORE SFX/emoji — so on a narrow bar Flip yields before SFX/emoji
+// but the core Pre+FX pair still outranks it.
+func icOptionalSurvival(barW, fH int32, additive, flipping bool) (pre, fx, flip, sfx, emoji bool, inputW int32) {
 	tail := int32(minICInputW)
 	used := icConsumedBeforeOptionals(additive)
 	if pre = icBarButtonFits(barW, used, preW+6, tail); pre {
@@ -144,8 +148,23 @@ func icOptionalSurvival(barW, fH int32, additive bool) (pre, fx, sfx, emoji bool
 	if fx = icBarButtonFits(barW, used, fxBtnW+4, tail); fx {
 		used += fxBtnW + 4
 	}
-	if sfx = icBarButtonFits(barW, used, sfxDDW+4, tail); sfx {
+	if flipping {
+		if flip = icBarButtonFits(barW, used, icFlipW+6, tail); flip {
+			used += icFlipW + 6
+		}
+	}
+	// SFX now has a TWO-FORM drop discipline: the full sfxDDW dropdown when it fits,
+	// else a COMPACT sfxCompactW button in the SAME slot, and only when even that
+	// can't clear the input floor does SFX vanish entirely. sfx reports "the SFX
+	// control drew (in either form)"; the width consumed shifts accordingly, so the
+	// emoji band drawn AFTER it sees the real remaining room.
+	switch {
+	case icBarButtonFits(barW, used, sfxDDW+4, tail):
+		sfx = true
 		used += sfxDDW + 4
+	case icBarButtonFits(barW, used, sfxCompactW+4, tail):
+		sfx = true
+		used += sfxCompactW + 4
 	}
 	if emoji = icBarButtonFits(barW, used, fH+4, tail); emoji {
 		used += fH + 4
@@ -154,7 +173,7 @@ func icOptionalSurvival(barW, fH int32, additive bool) (pre, fx, sfx, emoji bool
 	if inputW < minICInputW {
 		inputW = minICInputW
 	}
-	return pre, fx, sfx, emoji, inputW
+	return pre, fx, flip, sfx, emoji, inputW
 }
 
 // TestICBarConsumedGeometry pins the wave-7 arithmetic the redesign builds on: at the
@@ -198,7 +217,7 @@ func TestICBarPreFXSurvive720p(t *testing.T) {
 		}
 		// Survival is a pure function of geometry (no counter term), so it stands in for the
 		// row's tailReserve derivation, which reads minICInputW only.
-		pre, fx, _, _, inputW := icOptionalSurvival(barW, fH, false /*additive*/)
+		pre, fx, _, _, _, inputW := icOptionalSurvival(barW, fH, false /*additive*/, false /*flipping*/)
 		if !pre || !fx {
 			t.Errorf("720p bar (%dpx, counter=%v): Pre=%v FX=%v, want BOTH to draw (default-visible)", barW, counterOn, pre, fx)
 		}
@@ -217,6 +236,60 @@ func TestICBarPreFXSurvive720p(t *testing.T) {
 	pair := int32(preW+6) + int32(fxBtnW+4)
 	if margin := free - pair; margin < 6 {
 		t.Errorf("Pre+FX pair (%d) leaves only %dpx of the %dpx free — want >= 6px slack (shrink preW)", pair, margin, free)
+	}
+}
+
+// TestICBarFlipSurvivalOrder pins the IC-bar Flip toggle's placement in the drop
+// discipline. Flip is feature-gated (FeatureFlipping) and rides the same narrow-bar
+// discipline as Pre/FX/SFX/emoji, placed AFTER Pre+FX but BEFORE SFX/emoji. Contract:
+//   - At the 720p floor (666px) Flip DROPS, so Pre+FX are untouched (the mandate) — a
+//     universal Flip in the unconditional band would have forced FX off that bar.
+//   - On a flip server with the feature OFF the wire (flipping=false), Flip never enters
+//     the chain, so the outcome is byte-identical to the pre-Flip layout.
+//   - On a bar wide enough for the whole optional set, Flip shows and yields BEFORE
+//     SFX/emoji when the bar tightens (Pre/FX still outrank it).
+func TestICBarFlipSurvivalOrder(t *testing.T) {
+	const fH = 26
+	// 720p floor: with the feature ON, Flip must drop and Pre+FX must still both survive.
+	pre, fx, flip, _, _, inputW := icOptionalSurvival(666, fH, false /*additive*/, true /*flipping*/)
+	if !pre || !fx {
+		t.Errorf("720p flipping bar: Pre=%v FX=%v, want BOTH (Flip must not push the core pair off)", pre, fx)
+	}
+	if flip {
+		t.Error("720p flipping bar: Flip must DROP at the floor (Pre+FX outrank it, editor override is the escape hatch)")
+	}
+	if inputW < minICInputW {
+		t.Errorf("720p flipping bar: input width %d below floor %d", inputW, int32(minICInputW))
+	}
+	// Feature OFF the wire: Flip is absent, so the layout is identical to the pre-Flip math.
+	p0, f0, flip0, s0, e0, in0 := icOptionalSurvival(666, fH, false, false /*flipping*/)
+	p1, f1, _, s1, e1, in1 := icOptionalSurvival(666, fH, false, false)
+	if flip0 || p0 != p1 || f0 != f1 || s0 != s1 || e0 != e1 || in0 != in1 {
+		t.Error("flipping=false must not change the layout (Flip absent, byte-identical to pre-Flip)")
+	}
+	// Wide bar sized to host the full optional set INCLUDING Flip: everything draws.
+	base := icConsumedBeforeOptionals(false)
+	full := base + int32(minICInputW) + (preW + 6) + (fxBtnW + 4) + (icFlipW + 6) + (sfxDDW + 4) + (fH + 4)
+	pre, fx, flip, sfx, emoji, _ := icOptionalSurvival(full, fH, false, true)
+	if !pre || !fx || !flip || !sfx || !emoji {
+		t.Errorf("wide flipping bar: want all optionals to draw, got pre=%v fx=%v flip=%v sfx=%v emoji=%v", pre, fx, flip, sfx, emoji)
+	}
+	// Tighten so the emoji band no longer fits: emoji yields FIRST, Flip still survives
+	// (Flip outranks SFX/emoji; it's Pre+FX that outrank Flip). Only the two bools
+	// this stage pins are kept — the rest are blanked (SA4006).
+	_, _, flip, _, emoji, _ = icOptionalSurvival(full-(fH+4), fH, false, true)
+	if !flip || emoji {
+		t.Errorf("tighten by emoji band: want Flip to survive and emoji to yield first, got flip=%v emoji=%v", flip, emoji)
+	}
+	// Tighten further so the SFX band drops too: Flip STILL survives, ahead of SFX.
+	_, _, flip, sfx, _, _ = icOptionalSurvival(full-(fH+4)-(sfxDDW+4), fH, false, true)
+	if !flip || sfx {
+		t.Errorf("tighten by emoji+SFX: want Flip to survive and SFX to yield, got flip=%v sfx=%v", flip, sfx)
+	}
+	// Only when Flip's own band no longer fits does Flip drop — and Pre+FX still hold.
+	pre, fx, flip, _, _, _ = icOptionalSurvival(full-(fH+4)-(sfxDDW+4)-(icFlipW+6), fH, false, true)
+	if flip || !pre || !fx {
+		t.Errorf("tighten past Flip's band: want Flip dropped but Pre+FX kept, got pre=%v fx=%v flip=%v", pre, fx, flip)
 	}
 }
 
@@ -241,7 +314,7 @@ func TestICBarDropOrder(t *testing.T) {
 		{"Pre drops last", full - (fH + 4) - (sfxDDW + 4) - (fxBtnW + 4) - (preW + 6), false, false, false, false},
 	}
 	for _, tc := range cases {
-		pre, fx, sfx, emoji, inputW := icOptionalSurvival(tc.barW, fH, false)
+		pre, fx, _, sfx, emoji, inputW := icOptionalSurvival(tc.barW, fH, false, false /*flipping*/)
 		if pre != tc.pre || fx != tc.fx || sfx != tc.sfx || emoji != tc.emoji {
 			t.Errorf("%s (barW=%d): got pre=%v fx=%v sfx=%v emoji=%v, want pre=%v fx=%v sfx=%v emoji=%v",
 				tc.name, tc.barW, pre, fx, sfx, emoji, tc.pre, tc.fx, tc.sfx, tc.emoji)
@@ -254,23 +327,28 @@ func TestICBarDropOrder(t *testing.T) {
 
 // TestICBarAdditiveSacrifice documents the accepted 2.8/additive outcome. The +90px
 // Additive band eats the tail: at the 720p bar (666px) the big pieces — Pre (58),
-// FX (78), SFX (96) — can't fit over the input floor, so all three are sacrificed;
-// only the narrow emoji band (fH+4) still squeezes in, and the input keeps the rest
-// (>= floor). That is ACCEPTED (the editor override is the escape hatch). The drop
-// ORDER is what the redesign fixes, so it's pinned on a WIDER additive bar where the
-// sacrifice is observable: emoji yields before SFX, and SFX before FX/Pre — the same
-// core-last order as non-additive.
+// FX (78) and the FULL SFX dropdown (96) — can't fit over the input floor, so those
+// are sacrificed. Post-compact-SFX, the SFX control no longer VANISHES here: its
+// narrow compact form (sfxCompactW+4 = 44) still clears the floor and draws instead,
+// which in turn leaves no room for the even-narrower emoji band drawn after it — so
+// the surviving optional at this width is the compact SFX picker, not emoji. That is
+// the intended tradeoff (SFX is the more valuable control, and the whole point of the
+// compact form is that SFX never silently disappears). The drop ORDER is pinned on a
+// WIDER additive bar below where the sacrifice is observable.
 func TestICBarAdditiveSacrifice(t *testing.T) {
 	const fH = 26
-	// 720p additive: the sequential discipline drops Pre/FX/SFX (each too wide for
-	// the remaining 204px over the 150px floor) but the ~30px emoji band still fits.
-	// Accepted degradation — better one survivor than none.
-	pre, fx, sfx, emoji, inputW := icOptionalSurvival(666, fH, true)
-	if pre || fx || sfx {
-		t.Errorf("720p additive bar: got pre=%v fx=%v sfx=%v, want the three wide pieces dropped (accepted)", pre, fx, sfx)
+	// 720p additive: Pre/FX and the full SFX dropdown drop (each too wide for the
+	// remaining room over the 150px floor), but the COMPACT SFX button (44) still
+	// fits — so SFX survives in compact form and the emoji band yields to it.
+	pre, fx, _, sfx, emoji, inputW := icOptionalSurvival(666, fH, true, false /*flipping*/)
+	if pre || fx {
+		t.Errorf("720p additive bar: got pre=%v fx=%v, want the two wide core pieces dropped (accepted)", pre, fx)
 	}
-	if !emoji {
-		t.Error("720p additive bar: the narrow emoji band fits the leftover and must survive")
+	if !sfx {
+		t.Error("720p additive bar: the compact SFX button fits the leftover and must survive (SFX never silently vanishes)")
+	}
+	if emoji {
+		t.Error("720p additive bar: the compact SFX button consumes the leftover, so emoji must yield to it")
 	}
 	if inputW < minICInputW {
 		t.Errorf("720p additive bar: input width %d below floor %d", inputW, int32(minICInputW))
@@ -279,7 +357,7 @@ func TestICBarAdditiveSacrifice(t *testing.T) {
 	// and the core Pre/FX pair survives — the sacrifice order still runs emoji → SFX → FX → Pre.
 	base := icConsumedBeforeOptionals(true)
 	justNoEmoji := base + int32(minICInputW) + (preW + 6) + (fxBtnW + 4) + (sfxDDW + 4) // no room for the emoji band
-	pre, fx, sfx, emoji, _ = icOptionalSurvival(justNoEmoji, fH, true)
+	pre, fx, _, sfx, emoji, _ = icOptionalSurvival(justNoEmoji, fH, true, false /*flipping*/)
 	if !pre || !fx || !sfx {
 		t.Errorf("wide additive bar: Pre=%v FX=%v SFX=%v, want all three to survive when only emoji is squeezed out", pre, fx, sfx)
 	}

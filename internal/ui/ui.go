@@ -493,6 +493,12 @@ type Ctx struct {
 	// sprite-preview dwell and tooltip dwell never clobber each other.
 	tipHoverID    string
 	tipHoverSince time.Time
+	// tipHoverDelay is the dwell the ACTIVE delayed tooltip is waiting on — the
+	// fixed tooltipDwell for TooltipAfter, or a caller-chosen value for
+	// TooltipAfterDelay (the emote-name tooltip's slider). NextHoverDue schedules
+	// the event-loop wake off this so a longer custom dwell still fires without an
+	// extra input event. Set alongside tipHoverID; a zero value means tooltipDwell.
+	tipHoverDelay time.Duration
 	// hover-preview config, stamped once per frame from prefs (App.Frame →
 	// SetHoverPreview): whether previews are enabled, and the dwell before one
 	// shows. Keeping them on Ctx keeps HoverPreview a pure read on the hot path.
@@ -1390,7 +1396,11 @@ func (c *Ctx) NextHoverDue() (time.Duration, bool) {
 		}
 	}
 	if c.tipHoverID != "" {
-		consider(tooltipDwell - time.Since(c.tipHoverSince))
+		dwell := c.tipHoverDelay // a custom TooltipAfterDelay dwell; 0 = the fixed default
+		if dwell <= 0 {
+			dwell = tooltipDwell
+		}
+		consider(dwell - time.Since(c.tipHoverSince))
 	}
 	if c.hoverPreviewOn && c.hoverID != "" {
 		consider(c.hoverPreviewDelay - time.Since(c.hoverSince))
@@ -3103,6 +3113,15 @@ const tooltipDwell = 2 * time.Second
 // has rested on it (keyed by id) for tooltipDwell. id distinguishes adjacent
 // targets so moving between them restarts the timer.
 func (c *Ctx) TooltipAfter(id string, r sdl.Rect, text string) {
+	c.TooltipAfterDelay(id, r, text, tooltipDwell)
+}
+
+// TooltipAfterDelay is TooltipAfter with a caller-chosen dwell instead of the
+// fixed tooltipDwell — for hints whose delay is user-configurable (the emote-name
+// hover tooltip's slider). A single shared dwell timer (tipHoverID/tipHoverSince)
+// backs both: moving off r, or to a different id, resets the timer, so two
+// TooltipAfterDelay targets can't fire each other early.
+func (c *Ctx) TooltipAfterDelay(id string, r sdl.Rect, text string, delay time.Duration) {
 	if text == "" || c.modalOn || !c.hovering(r) {
 		if c.tipHoverID == id {
 			c.tipHoverID = ""
@@ -3112,9 +3131,10 @@ func (c *Ctx) TooltipAfter(id string, r sdl.Rect, text string) {
 	if c.tipHoverID != id {
 		c.tipHoverID = id
 		c.tipHoverSince = time.Now()
+		c.tipHoverDelay = delay // NextHoverDue schedules the wake off this
 		return
 	}
-	if time.Since(c.tipHoverSince) >= tooltipDwell {
+	if time.Since(c.tipHoverSince) >= delay {
 		c.tipText = text
 	}
 }

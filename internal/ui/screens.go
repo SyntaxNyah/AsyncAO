@@ -42,6 +42,10 @@ const (
 	previewMaxW     int32 = 960 // fits 4:3 art at the 720 px height cap (was 560; the window clamp still applies)
 	previewMinW     int32 = 48
 	previewCaptionH int32 = 20
+	// previewNameStripH is the top-of-box emote-name caption band (ARM 2): the
+	// emote-grid / fav-box preview reports WHICH emote it's showing, not only the
+	// bottom resolution/scale strip. One text row's height.
+	previewNameStripH int32 = 18
 	// emoteBtnCell matches AO2's 40×40 emotions/button<N> art.
 	emoteBtnCell int32 = 40
 	// emoteTextCellW is the fixed cell width for text-mode emote chips, so
@@ -596,7 +600,7 @@ func (a *App) drawWardrobeGrid(w, h, gridTop int32, cols, cellH, visibleH int32,
 	}
 	c.popClip(prev, had)
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h, false)
+		a.drawSpritePreview(w, h, false, "") // character preview: no emote-name caption
 		a.closeSpritePreviewOnLeave()
 	}
 }
@@ -785,7 +789,7 @@ func (a *App) drawCharSelect(w, h int32) {
 	}
 	c.popClip(prev, had)
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h, false)
+		a.drawSpritePreview(w, h, false, "") // character preview: no emote-name caption
 		a.closeSpritePreviewOnLeave()
 	}
 }
@@ -888,7 +892,7 @@ func (a *App) randomChar() {
 // With cycle set (the wardrobe's try-before-wear), it also draws the ‹ › emote
 // navigator and keeps the box alive while the next emote streams in, so the
 // controls don't blink. Off the hot path — only drawn when a preview is up.
-func (a *App) drawSpritePreview(w, h int32, cycle bool) {
+func (a *App) drawSpritePreview(w, h int32, cycle bool, name string) {
 	c := a.ctx
 	page, ok := a.d.Store.Get(a.previewBase)
 	ready := ok && len(page.Frames) > 0
@@ -963,6 +967,20 @@ func (a *App) drawSpritePreview(w, h int32, cycle bool) {
 	a.previewFrameRect = frame // cached for handlePreviewInput (wheel zoom + drag + resize)
 	c.Fill(frame, ColPanel)
 	c.Border(frame, ColAccent)
+	// Emote-name caption (ARM 2): the emote-grid / fav-box preview box names the
+	// emote it's showing, so the preview surface reports it too — not just the
+	// resolution/scale strip at the bottom. Skipped when cycling (the try-before-wear
+	// nav bar already captions the name) or when no name is supplied (character
+	// previews). A translucent strip across the box top, clipped to the box width.
+	if name != "" && !cycle {
+		strip := sdl.Rect{X: frame.X, Y: frame.Y, W: frame.W, H: previewNameStripH}
+		c.Fill(strip, sdl.Color{R: 0, G: 0, B: 0, A: 205})
+		nameW := frame.W - 8
+		if a.previewPinned {
+			nameW -= 20 // leave room for the pinned close button at the top-right
+		}
+		c.LabelClipped(strip.X+4, strip.Y+3, nameW, name, ColAccent)
+	}
 	if a.previewPinned { // close button for the pinned box (click handled in handlePreviewInput)
 		xb := sdl.Rect{X: frame.X + frame.W - 20, Y: frame.Y + 2, W: 18, H: 18}
 		c.Fill(xb, ColPanelHi)
@@ -3728,7 +3746,7 @@ func (a *App) drawWardrobeCharsBody(panel sdl.Rect, w, h int32) {
 	}
 
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h, true) // wardrobe: try-before-wear emote cycle
+		a.drawSpritePreview(w, h, true, "") // wardrobe: try-before-wear emote cycle (the nav bar captions the name)
 		if c.clicked {
 			a.previewBase = ""
 		}
@@ -3854,7 +3872,7 @@ func (a *App) drawWardrobeIniswapsBody(panel sdl.Rect, w, h int32) {
 	c.popClip(clipPrev, clipHad)
 
 	if a.previewBase != "" {
-		a.drawSpritePreview(w, h, true) // try-before-wear preview, same as Characters
+		a.drawSpritePreview(w, h, true, "") // try-before-wear preview, same as Characters (nav bar captions the name)
 		if c.clicked {
 			a.previewBase = ""
 		}
@@ -5039,6 +5057,25 @@ const (
 	// 48px visual) with breathing room, and keeps the Pre+FX pair inside the 720p bar.
 	preW   = 52
 	sfxDDW = 92 // SFX dropdown width
+	// sfxCompactW is the collapsed SFX picker: a fixed-width button shown where the
+	// full sfxDDW dropdown no longer fits, so the feature never silently VANISHES on
+	// a narrow bar (users concluded it had been removed). It opens the SAME choice
+	// list (the SFX Browser). Labelled "SFX" (the chrome font renders it reliably,
+	// unlike a ♪ glyph). It occupies the same drop-discipline slot as the full
+	// dropdown — after Flip, before emoji — so only WHAT renders changes at the
+	// collapse width, never the survival order.
+	sfxCompactW = 40
+	// icFlipW fits the "Flip" checkbox (16px box + 6px gap + ~28px "Flip" chrome-font
+	// label). AO2-Client puts ui_flip on the IC bar whenever the server advertises the
+	// FLIPPING feature (courtroom.cpp:1629-1636) — flipping is 2.1-era and near-universal,
+	// so the control belongs where users look, not buried in the (rare) Pair panel. It
+	// rides the same movable slot + narrow-bar drop discipline as Pre/FX/SFX below, placed
+	// AFTER Pre+FX but BEFORE SFX/emoji: unlike the rare 2.8 Additive toggle (drawn in the
+	// unconditional band), a universal Flip in that band would force FX off the default 720p
+	// bar and break the Pre+FX survival mandate (TestICBarPreFXSurvive720p). At 1080p+ (the
+	// common case) it always shows; at the 720p floor it degrades like SFX/emoji, with the
+	// editor override as the escape hatch.
+	icFlipW = 54
 )
 
 // drawICInputRow draws the IC bar's input chain — showname box (+ saved-name picker),
@@ -5187,6 +5224,30 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		a.fxButton(a.slotRect(slotICFx, sdl.Rect{X: icX, Y: rowY, W: fxBtnW, H: fH}, w, h))
 		icX += fxBtnW + 4
 	}
+	// "Flip" toggle (AO2-Client ui_flip): mirror your character's emotes for this and
+	// following messages. AO2 shows ui_flip on the IC bar whenever the server advertises
+	// the FLIPPING feature (courtroom.cpp:1629-1636, tooltip courtroom.cpp:1087). This is
+	// ONE bool, TWO views: it mirrors a.pairFlip (the Pair panel's "Flip my sprite"
+	// checkbox), so whichever view draws last just rewrites the same field with the same
+	// value — Checkbox returns the current value when unclicked, so the two can't drift
+	// (single source of truth: a.pairFlip; no new state, no handler). The pair-panel
+	// checkbox stays unconditional; this one is feature-gated because AO2 hides ui_flip on
+	// non-flipping servers. Placed here (after Pre+FX, before SFX/emoji) it rides the same
+	// movable slot (#4a) + narrow-bar drop discipline as those buttons — see icFlipW for the
+	// placement rationale. pairFlip is SESSION state that already parks/resets per tab
+	// (tabs_test.go:162-200), so — unlike icAdditive in the themed row — it needs NO
+	// forced-off reset when the feature vanishes: the field is real pair state, and a stale
+	// flip simply stops being SHOWN, never silently cleared.
+	if a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping) {
+		_, flipOv := a.classicOv[slotICFlip]
+		flipGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, icFlipW+6, tailReserve)
+		if icOptionalDraws(flipGuardOK, flipOv, a.classicEdit, a.panelHidden(slotICFlip)) {
+			flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
+			a.pairFlip = c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairFlip)
+			c.Tooltip(flipBox, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
+			icX += icFlipW + 6 // downstream flows from the DEFAULT position, not the override
+		}
+	}
 	// SFX picker (AO2-style): pick a sound to ride your NEXT message — overrides the
 	// emote's own sound until set back to "auto". Picking one previews it. Drawn AFTER
 	// Pre/FX (v1.63.0+ redesign), so on a narrow bar it yields BEFORE them — SFX is no
@@ -5195,9 +5256,19 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// Override / editor win over the drop (same rule as Pre above). SFX has no
 	// panelHidden gate in the classic row (it never had one) — keep it that way: pass
 	// hidden=false so this stays a pure width/override/edit decision.
+	//
+	// Two-form drop discipline (fixes "the SFX picker vanished, feature removed?"):
+	// the FULL sfxDDW dropdown draws when it fits (or an override/editor forces it);
+	// where it no longer fits, a COMPACT fixed-width "SFX" button draws instead —
+	// same slot, opening the same choice list (the SFX Browser). Only at truly
+	// minuscule widths, where even the compact form can't clear the input floor,
+	// does SFX drop entirely — and the layout-editor override (sfxOv) still forces
+	// it back (the documented escape hatch).
 	_, sfxOv := a.classicOv[slotICSFX]
 	sfxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxDDW+4, tailReserve)
-	if icOptionalDraws(sfxGuardOK, sfxOv, a.classicEdit, false) {
+	sfxCompactGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxCompactW+4, tailReserve)
+	switch {
+	case icOptionalDraws(sfxGuardOK, sfxOv, a.classicEdit, false):
 		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
 		if next, changed := c.Dropdown("sfxdd", sfxRect, a.sfxChoices, a.sfxChoiceIdx); changed {
 			a.sfxChoiceIdx = next
@@ -5207,6 +5278,20 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 		}
 		c.TooltipAfter("sfxdd-tip", sfxRect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Picking previews it. Extras → SFX Browser for favourites & any sound by name.")
 		icX += sfxDDW + 4
+	case sfxCompactGuardOK:
+		// Compact fallback: the full dropdown didn't fit but this narrow button does.
+		// It opens the SFX Browser (the same choice list the dropdown offers). A '•'
+		// dot marks an active override so the collapsed control still signals "not auto".
+		compactRect := sdl.Rect{X: icX, Y: rowY, W: sfxCompactW, H: fH}
+		label := "SFX"
+		if a.sfxChoiceIdx > 0 {
+			label = "SFX•" // an override is active (not the "auto" default)
+		}
+		if c.Button(compactRect, label) {
+			a.toggleSfxBrowser()
+		}
+		c.TooltipAfter("sfxcompact-tip", compactRect, "SFX picker (collapsed to fit the bar): opens the SFX Browser to pick the sound for your next message. Widen the window for the inline dropdown.")
+		icX += sfxCompactW + 4
 	}
 	// #M2 S1: emoji picker button on the IC bar's left edge — movable (#4a) and
 	// hideable (playtest: some players don't want it at all). Drawn LAST of the optional
@@ -5256,13 +5341,39 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 // has one (looped in the preview box — scrub the flourish before sending), else
 // the talking sprite (what actually plays). Shared by both emote rows.
 func (a *App) previewEmote(char string, e *courtroom.Emote) {
+	// Stamp the caption AT SET TIME — we hold the *Emote right here, so the
+	// preview box never has to reverse-map the URL back to a name (the old
+	// lookup linear-scanned a.emotes rebuilding URLs every frame the box was
+	// up — real alloc churn on 4000+ emote packs). previewNameFor ties the
+	// name to THIS base; other previewBase setters auto-invalidate it.
+	name := e.Comment
+	if name == "" {
+		name = e.Anim
+	}
 	if e.Preanim != "" && e.Preanim != "-" { // "-" / "" = no preanim (AO convention)
 		a.previewBase = a.urls.Emote(char, e.Preanim, courtroom.EmotePreanim)
+		a.previewName, a.previewNameFor = name, a.previewBase
 		a.d.Manager.Prefetch(a.previewBase, assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preanim preview)
 		return
 	}
 	a.previewBase = a.urls.Emote(char, e.Anim, courtroom.EmoteTalk)
+	a.previewName, a.previewNameFor = name, a.previewBase
 	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(char, e.Anim, courtroom.EmoteTalk), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+}
+
+// previewedEmoteName returns the display name of whichever emote produced the
+// currently-shown hover-preview box (a.previewBase), or "" if none. The name is
+// CACHED at set time by previewEmote (which holds the *Emote), keyed to the base
+// it was stamped for — two string compares per call, zero allocs. A previewBase
+// set by anyone else (bgpicker, the wardrobe cycle) fails the key check and
+// yields "" without those sites knowing the cache exists. Persisting through
+// previewBase (not a per-cell hover) keeps the caption up while the cursor
+// travels from the grid cell to the box (the preview boxes show the name too).
+func (a *App) previewedEmoteName() string {
+	if a.previewBase == "" || a.previewNameFor != a.previewBase {
+		return ""
+	}
+	return a.previewName
 }
 
 func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
@@ -5278,6 +5389,10 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	}
 	me := a.activeCharName() // iniswap override drives emotes + buttons
 	useImages := a.d.Prefs.EmoteButtonImagesEnabled()
+	// Emote-name hover tooltip config, read ONCE per grid draw (the pref RLock stays
+	// off the per-cell loop). When off, the loop's tooltip branch is skipped entirely.
+	hoverNamesOn := a.d.Prefs.EmoteHoverNamesEnabled()
+	hoverNamesDelay := a.d.Prefs.EmoteHoverNamesDelay()
 	a.refreshEmoteView() // build the favourite set + the visible-index list (#77)
 	vis := a.emoteVisible
 
@@ -5364,6 +5479,15 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 		if c.HoverPreview("emote:"+e.Anim, btn) {
 			a.previewEmote(me, e)
 		}
+		// Emote-name tooltip: after the configured dwell, resting on a cell shows
+		// its name (the [Emotions] comment, already computed as `label`). Independent
+		// of the sprite hover-PREVIEW above — people who keep the heavier preview off
+		// can still identify a cell. Gated on hovering(btn) so the id-string concat
+		// runs ONLY for the single hovered cell, never per-cell on the settled frame
+		// (the whole-screen 0-alloc gate). `label` is never empty (Comment→Anim above).
+		if hoverNamesOn && c.hovering(btn) {
+			c.TooltipAfterDelay("emotename:"+e.Anim, btn, label, hoverNamesDelay)
+		}
 	}
 	// Favs-only with nothing starred yet: explain how to get out / add some.
 	if len(vis) == 0 && a.d.Prefs.EmoteFavOnlyOn() {
@@ -5403,7 +5527,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 	if a.previewBase != "" {
 		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
 		// (playtest: "you can't move the preview out of the viewport, wth").
-		a.drawSpritePreview(a.winW, a.winH, false)
+		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
 		a.closeSpritePreviewOnLeave()
 	}
 }
@@ -5762,18 +5886,40 @@ func (a *App) drawPairPanel(w, h int32, pressed *bool) {
 	ry += 34
 	a.pairFlip = c.Checkbox(rx, ry, "Flip my sprite", a.pairFlip)
 	ry += 28
-	// Explicit two-state order toggle — an unchecked box read as "???";
-	// the button always names the CURRENT state, click to flip.
-	orderLabel := "Order: In front"
-	if a.pairOrder != protocol.PairSpeakerInFront {
-		orderLabel = "Order: Behind"
-	}
-	if c.Button(sdl.Rect{X: rx, Y: ry, W: 170, H: btnH}, orderLabel) {
-		if a.pairOrder == protocol.PairSpeakerInFront {
-			a.pairOrder = protocol.PairSpeakerBehind
-		} else {
-			a.pairOrder = protocol.PairSpeakerInFront
+	// Explicit two-segment order control. The prior single cycling button ("Order: In
+	// front" / "Order: Behind") read as a LABEL rather than a control, so the order was
+	// hard to discover. The active segment is accent-filled and clicking the other
+	// switches; presentation only, same a.pairOrder field + wire behavior. Mirrors the
+	// content panel's source picker idiom (drawContentSourcePicker). Wording follows
+	// AO2-Client's ui_pair_order_dropdown ("To front"/"To behind", courtroom.cpp:400-401).
+	// Sized to fit the pair panel's right column at its minimum width (pairPanelMinW): two
+	// pairOrderSegW segments + a gap stay inside the ~200px column the offset rows use.
+	c.Label(rx, ry+4, "Order:", ColText)
+	const (
+		pairOrderLabelW = 44 // "Order:" label lead before the segments
+		pairOrderSegW   = 72 // one order segment ("To behind" fits in the chrome font)
+		pairOrderSegGap = 4  // gap between the two segments
+	)
+	// The whole control (label + 2 segments + gap) spans pairOrderLabelW + 2*segW + gap =
+	// 192px from rx, inside the ~200px right column the offset rows already use — so it fits
+	// even at the pair panel's minimum width (pairPanelMinW=440, right column ~200px). No
+	// overflow at the fixed floating-panel width.
+	segX := rx + pairOrderLabelW
+	orderSeg := func(label string, active bool) bool {
+		r := sdl.Rect{X: segX, Y: ry, W: pairOrderSegW, H: btnH}
+		segX += pairOrderSegW + pairOrderSegGap
+		if active {
+			// Accent fill marks the live choice (bg=hover=accent so it reads selected, not
+			// hoverable). Re-selecting the active segment is a harmless no-op below.
+			return c.ButtonCol(r, label, ColAccent, ColAccent, ColAccent, ColBackground)
 		}
+		return c.Button(r, label)
+	}
+	if orderSeg("To front", a.pairOrder == protocol.PairSpeakerInFront) {
+		a.pairOrder = protocol.PairSpeakerInFront
+	}
+	if orderSeg("To behind", a.pairOrder != protocol.PairSpeakerInFront) {
+		a.pairOrder = protocol.PairSpeakerBehind
 	}
 	ry += 36
 	c.Label(rx, ry, "Both sides must pair with each other;", ColTextDim)
@@ -6159,6 +6305,24 @@ func (a *App) sendIC(shout int) {
 		text += sm
 	}
 	a.lastSentStatus = a.myStatus
+	// Additive leading-space span shift: when the additive box prepends a leading
+	// space below (line ~6188), every visible rune shifts right by one, but the
+	// effect spans were indexed over the space-LESS visible text. Shift each span's
+	// Start by +1 here — BEFORE EncodeEffectsMarker bakes them into the invisible
+	// frame — so an AsyncAO receiver's begin() aligns the transmitted [shake]/[wave]/
+	// [rainbow] over the right runes (the receiver's own prefix shift then composes
+	// on top). The decision uses the SAME predicate the prepend uses, so the two can
+	// never disagree; it's evaluated here because the first visible rune is invariant
+	// from the blankpost fallback down to the prepend (applyAutoStatus doesn't
+	// reassign text, funColor only prepends strippable \c markup, and every invisible
+	// marker is appended at the end). effectSpans is nil on a blankpost and the
+	// predicate is false on a leading-space message, so this is a no-op unless a
+	// non-blank additive message actually carries effect markup.
+	if a.icAdditive && courtroom.AdditiveWantsLeadingSpace(text) {
+		for i := range effectSpans {
+			effectSpans[i].Start++
+		}
+	}
 	// Animated-text spans (#M5): same invisible channel, appended LAST. Unlike the
 	// send-on-change markers above, the effects frame is per-message CONTENT, so it rides
 	// every message that carries [shake]/[wave]/[rainbow] markup.
@@ -6175,6 +6339,18 @@ func (a *App) sendIC(shout int) {
 			text += marker
 		}
 		a.pendingReactSet = false
+	}
+	// AO2 additive parity (courtroom.cpp:2320-2326, 6563-6573): with the additive
+	// box on, AO2 glues each fragment onto your previous line, so it keeps a literal
+	// leading space in the IC input to separate sentences. We prepend that space at
+	// packet build instead of in the field, so your typed line (a.icInput, read by
+	// recordSentIC/icPendingSent below) stays clean — the wire result is identical.
+	// A blankpost (" ") already starts with a space, so it's untouched; AsyncAO
+	// receivers de-glue on display and skip an already-spaced fragment, so
+	// AsyncAO->AsyncAO never double-spaces. Applied last: the invisible markers ride
+	// the tail, and StripChatMarkup inside the helper sees past any funColor markup.
+	if a.icAdditive {
+		text = courtroom.AdditiveOutgoingLeadingSpace(text)
 	}
 	out := protocol.OutgoingMS{
 		DeskMod:    emote.DeskMod, // the emote's char.ini desk_mod (was hardcoded 1, so no-desk emotes never hid the desk)

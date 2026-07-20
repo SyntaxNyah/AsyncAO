@@ -326,6 +326,17 @@ func (a *App) closeTopOverlay() bool {
 	case contentPanel.open:
 		a.closeContentPanel()
 	// Blocking / confirm modals (highest priority).
+	// The involuntary-disconnect dialog is FIRST: it's the most blocking modal (a
+	// frozen courtroom sits under it, its network session already gone), so Esc must
+	// resolve IT before anything else. Unlike the sibling modals below — which just
+	// flip a bool false — this one CANNOT simply close: the session under it is
+	// dead-but-still-drawn (conn nil, sess/room live, screen Courtroom), so merely
+	// clearing the flag would strand the user in a frozen courtroom with no dialog
+	// and no way out. Esc == Back to lobby, which runs the real teardown → lobby (and
+	// releases the dialog's fence LAST, so it's freed this frame — the emoji-picker
+	// freeze class).
+	case a.disconnectDlg.open:
+		a.closeDisconnectDialogToLobby()
 	case a.pendingCloseTab != nil:
 		// The tab-close confirm CAN be open on the lobby (park a server via "+",
 		// then click a background chip's ✕): without this, Esc falls through

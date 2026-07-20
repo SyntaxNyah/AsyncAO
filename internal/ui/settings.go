@@ -1057,6 +1057,22 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 		a.d.Prefs.SetPreviewHeightPx(nph)
 	}
 	y += 30
+	// Emote-name hover tooltips: rest the cursor on an emote button to see its
+	// name (independent of the sprite pop-up above). ON by default; the dwell is
+	// tunable. Lightweight — a name-only tooltip, not the full-size art.
+	names := a.d.Prefs.EmoteHoverNamesEnabled()
+	if next := c.Checkbox(pad, y, "Emote name tooltips (ON by default): hovering an emote button shows its name after a short delay", names); next != names {
+		a.d.Prefs.SetEmoteHoverNames(next)
+	}
+	y += 26
+	if names {
+		ems := a.d.Prefs.EmoteHoverNamesMillis()
+		if next := a.emoteNameDelayRow(y, ems); next != ems {
+			a.d.Prefs.SetEmoteHoverNamesMs(next)
+		}
+		c.Label(pad+340, y+4, "how long to hover before the name shows (default 5 s)", ColTextDim)
+		y += 30
+	}
 	// Sprite repositioning: drag a character in the viewport to move them (the
 	// override sticks per character until reset). OFF by default so a stray click
 	// can't nudge a sprite; right-clicking a sprite resets just that one.
@@ -2633,11 +2649,12 @@ func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	// backgrounded tab's music AUDIBLE while you browse another tab that has none.
 	across := a.d.Prefs.MusicAcrossTabsOn()
 	if next := c.Checkbox(pad, y, "Keep music playing (audible) across server tabs (off = keep it playing but silent while backgrounded)", across); next != across {
-		// Turning this ON un-wedges a backgrounded stream immediately: it clears BOTH
-		// silencers (the duck AND the delivery-await latch) and re-applies volumes, so
-		// it works even when the stream is stuck behind a never-arriving await — not
-		// just the plain-ducked case. The OFF case (re-duck) takes effect on the next
-		// tab switch — never yank audio out from under the user mid-listen. See
+		// Both directions act immediately. ON un-wedges a backgrounded stream: it
+		// clears BOTH silencers (the duck AND the delivery-await latch) and re-applies
+		// volumes, so it works even when the stream is stuck behind a never-arriving
+		// await. OFF re-ducks an audible background stream on the spot — the label
+		// promises "silent while backgrounded" and the flip is the yank request
+		// (ducked, not stopped: the position keeps advancing). See
 		// applyMusicAcrossTabs.
 		a.applyMusicAcrossTabs(next)
 	}
@@ -4876,6 +4893,41 @@ func (a *App) previewDelayRow(y int32, ms int) int {
 	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
 	if span := maxMs - minMs; span > 0 {
 		ms = minMs + int(c.Slider("previewdelay", track, int32(ms-minMs), int32(span)))
+	}
+	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
+		c.wheelTaken = true // a hovered control owns the wheel — no page scroll
+		ms += int(c.wheelY) * stepMs
+	}
+	if ms < minMs {
+		ms = minMs
+	}
+	if ms > maxMs {
+		ms = maxMs
+	}
+	ms = ((ms-minMs+stepMs/2)/stepMs)*stepMs + minMs // snap to the grid
+	if ms > maxMs {
+		ms = maxMs
+	}
+	c.Label(track.X+track.W+8, y+4, fmt.Sprintf("%.1f s", float64(ms)/1000), ColAccent)
+	return ms
+}
+
+// emoteNameDelayRow draws the emote-name hover dwell as a draggable slider with
+// a seconds readout (mirrors previewDelayRow; the value is stored in ms). Bounds
+// mirror the config clamp — SetEmoteHoverNamesMs is authoritative — and the
+// result snaps to the half-second grid.
+func (a *App) emoteNameDelayRow(y int32, ms int) int {
+	c := a.ctx
+	pad := a.formX
+	const (
+		minMs  = 500   // == config.minEmoteHoverNamesMs (setter is authoritative)
+		maxMs  = 10000 // == config.maxEmoteHoverNamesMs
+		stepMs = 500   // half-second grid
+	)
+	c.Label(pad, y+4, "Name after hovering:", ColText)
+	track := sdl.Rect{X: pad + 170, Y: y + 5, W: 120, H: 16}
+	if span := maxMs - minMs; span > 0 {
+		ms = minMs + int(c.Slider("emotenamedelay", track, int32(ms-minMs), int32(span)))
 	}
 	if c.hovering(sdl.Rect{X: pad, Y: y, W: 300, H: 26}) && c.wheelY != 0 {
 		c.wheelTaken = true // a hovered control owns the wheel — no page scroll

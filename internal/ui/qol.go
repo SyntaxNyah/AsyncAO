@@ -307,6 +307,16 @@ func (a *App) editorUndoChord() bool {
 // (and dispatches macro keybinds, then character keybinds — macros win
 // a key conflict since they were bound deliberately).
 func (a *App) handleHotkeys() {
+	if a.disconnectDlg.open {
+		// The courtroom is FROZEN under the involuntary-disconnect dialog: its
+		// scene still draws (so this runs, called from drawCourtroom), but the
+		// session's socket is gone. The pointer fence stops mouse actions, but
+		// keyboard chords aren't fenced — suppress them here so a shout / pos-cycle
+		// / login hotkey can't fire a send into the dead connection while the modal
+		// is up. Esc is handled earlier (closeTopOverlay → Back to lobby) and never
+		// reaches this dispatcher.
+		return
+	}
 	if a.editorUndoChord() {
 		return // Ctrl+Z / Ctrl+Y belong to the armed layout editor
 	}
@@ -531,11 +541,49 @@ func (a *App) applyAudioVolumes() {
 	if on, m, mu, s, b := a.d.Prefs.ServerAudio(a.serverKey); on {
 		master, music, sfx, blip = m, mu, s, b
 	}
+	// The single music stream may belong to a BACKGROUNDED owner tab (MusicAcrossTabs
+	// ON keeps its continuity song audible under a different active tab). The MUSIC
+	// channel must then be governed by the OWNER's per-server (master, music), not the
+	// active tab's — else an active tab whose per-server music (or master) is 0 would
+	// silence the owner's stream (the ARM-3 "toggle does nothing" path). sfx/blip/alert
+	// stay the active tab's (they belong to the active room). ServerAudio is a lock+read
+	// with no allocation, so the owner read (only taken when a distinct owner is set) is
+	// hot-path safe; ownerMusicInputs is the pure resolution (unit-pinnable like
+	// mixChannels). See musicOwnerKey.
+	musicMaster, musicVol := a.ownerMusicInputs(master, music)
 	alert := a.d.Prefs.AlertVolume() // callword/friend ping — independent of SFX, always global
-	music, sfx, blip, alert = mixChannels(master, music, sfx, blip, alert,
+	// The music channel rides the OWNER's (master, music); sfx/blip/alert ride the ACTIVE
+	// tab's (master, sfx, blip). The per-channel mute/duck flags are App-level (the active
+	// user's) and apply to both. mixChannels is the pure per-channel mute/duck/master math
+	// (unchanged, still TestMixChannels-pinned): call it once per master domain and take
+	// only the channel that belongs to that domain from each result. When owner is unset or
+	// == the active tab, ownerMusicInputs returns the active (master, music) and the two
+	// calls are identical — behaviour is unchanged for the common single-tab case.
+	mMusic, _, _, _ := mixChannels(musicMaster, musicVol, sfx, blip, alert,
 		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked, a.musicTabDucked)
-	a.d.Audio.SetVolumes(music, sfx, blip)
-	a.d.Audio.SetAlertVolume(alert)
+	_, mSFX, mBlip, mAlert := mixChannels(master, music, sfx, blip, alert,
+		a.masterMuted, a.musicMuted, a.sfxMuted, a.blipMuted, a.musicDucked, a.musicTabDucked)
+	a.d.Audio.SetVolumes(mMusic, mSFX, mBlip)
+	a.d.Audio.SetAlertVolume(mAlert)
+}
+
+// ownerMusicInputs resolves the (master, music) pair that governs the single music
+// stream — the pure, unit-pinnable half of the ARM-3 owner-volume rule. When the
+// stream belongs to a DIFFERENT tab than the active one (musicOwnerKey set and not the
+// active serverKey) and that owner has a per-server audio profile enabled, the music
+// channel follows the OWNER's (master, music); otherwise it stays the active tab's
+// (the common single-owner case, and the graceful fallback when the owner has no
+// profile). It reads ServerAudio only for a distinct owner, so the frame-common path
+// makes no extra prefs call. A method with no mixer dependency, so the volume math
+// stays testable without a device (the codebase's settleAwaitTimeout idiom).
+func (a *App) ownerMusicInputs(activeMaster, activeMusic int) (master, music int) {
+	if a.musicOwnerKey == "" || a.musicOwnerKey == a.serverKey {
+		return activeMaster, activeMusic
+	}
+	if on, m, mu, _, _ := a.d.Prefs.ServerAudio(a.musicOwnerKey); on {
+		return m, mu
+	}
+	return activeMaster, activeMusic
 }
 
 // mixChannels applies the per-channel mutes (#10), the music duck, the cross-tab
