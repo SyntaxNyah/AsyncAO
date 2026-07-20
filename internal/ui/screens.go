@@ -5070,18 +5070,11 @@ const (
 	// slack so the label never kisses the slot edge (icAddW=84 for "Additive", immedW=96 for
 	// "Immediate"; per-char those leave ~1–2px past the glyphs). "Flip" is 4 chars ≈ 32px, so
 	// 16+6+32 = 54 was flush to the last pixel and read as squished next to its neighbour; 60
-	// restores the same breathing room the wider labels get. AO2-Client puts ui_flip on the IC
-	// bar whenever the server advertises the FLIPPING feature (courtroom.cpp:1629-1636) —
-	// flipping is 2.1-era and near-universal, so the control belongs where users look, not
-	// buried in the (rare) Pair panel. It rides the same movable slot + narrow-bar drop
-	// discipline as Pre/FX/SFX below, placed AFTER Pre+FX but BEFORE SFX/emoji: unlike the rare
-	// 2.8 Additive toggle (drawn in the unconditional band), a universal Flip in that band would
-	// force FX off the default 720p bar and break the Pre+FX survival mandate
-	// (TestICBarPreFXSurvive720p). Because its band is wider than the compact-SFX and emoji
-	// bands, draw order alone did not enforce its priority — the SFX/emoji WIDTH guards now
-	// price Flip in (drawICInputRow's flipDrewOrAbsent) so it can't be undercut by a narrower
-	// lower-priority item. At 1080p+ (the common case) it always shows; at the 720p floor it
-	// degrades ahead of SFX/emoji, with the editor override as the escape hatch.
+	// restores the same breathing room the wider labels get. Flip draws unconditionally (no width
+	// guard) whenever the server advertises flipping — matching AO2-Client's ui_flip which also
+	// has no width guard (courtroom.cpp:1629-1636). It sits after Pre+FX but before SFX/emoji in
+	// the cursor chain; at very narrow bars SFX/emoji may drop to make room, but Flip itself
+	// never drops. (v1.80.2)
 	icFlipW = 60
 )
 
@@ -5239,40 +5232,24 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// value — Checkbox returns the current value when unclicked, so the two can't drift
 	// (single source of truth: a.pairFlip; no new state, no handler). The pair-panel
 	// checkbox stays unconditional; this one is feature-gated because AO2 hides ui_flip on
-	// non-flipping servers. Placed here (after Pre+FX, before SFX/emoji) it rides the same
-	// movable slot (#4a) + narrow-bar drop discipline as those buttons — see icFlipW for the
-	// placement rationale. pairFlip is SESSION state that already parks/resets per tab
-	// (tabs_test.go:162-200), so — unlike icAdditive in the themed row — it needs NO
-	// forced-off reset when the feature vanishes: the field is real pair state, and a stale
-	// flip simply stops being SHOWN, never silently cleared.
+	// non-flipping servers. Placed here (after Pre+FX, before SFX/emoji) in a movable slot
+	// (#4a). pairFlip is SESSION state that already parks/resets per tab (tabs_test.go:162-200),
+	// so — unlike icAdditive in the themed row — it needs NO forced-off reset when the feature
+	// vanishes: the field is real pair state, and a stale flip simply stops being SHOWN.
 	//
-	// Priority is enforced by BAND, not just draw order (v1.80.1 fix). Draw order alone was
-	// not enough: Flip's band (icFlipW+6) is WIDER than the compact-SFX band (sfxCompactW+4)
-	// and the emoji band (fH+4), so on a tightening bar Flip's width guard failed while those
-	// narrower items still cleared the input floor — SFX/emoji drew with Flip ABSENT, inverting
-	// the shipped "Flip before SFX/emoji" discipline. flipDrewOrAbsent latches "Flip is not
-	// competing for tail width here" (it drew, OR the server has no flipping feature so Flip is
-	// out of the chain entirely, like Additive off 2.8). SFX and emoji then price Flip in: their
-	// WIDTH path is gated on it, so a width-dropped Flip cascades to the narrower items after it,
-	// making the survival order real. Their OWN override/editor escape hatches are untouched
-	// (icOptionalDraws still OR's those in), so a user can still force any single item back.
+	// Flip is UNCONDITIONAL on flipping servers (v1.80.2): no width guard. AO2-Client shows
+	// ui_flip whenever the server feature is present regardless of bar width, and the prior
+	// width-guarded form meant Flip could vanish at any window size, which users found
+	// indistinguishable from the feature being removed. At narrow bars (720p additive) the
+	// IC text input shrinks slightly past the ideal floor; that is the accepted tradeoff for
+	// guaranteed discoverability. SFX/emoji still carry their own width guards; since Flip
+	// now always draws first, the v1.80.1 flipDrewOrAbsent priority-latch is no longer needed.
 	flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
-	// A HIDDEN Flip is also "not competing": icOptionalDraws hard-refuses hidden, so
-	// the body below never runs and icX never advances — Flip takes zero width, and
-	// gating SFX/emoji on it would suppress them for nothing. slotICFlip isn't in the
-	// hideable registry today, but seedHiddenFromPrefs honors any persisted id without
-	// validation, so the seed must price the hide in rather than trust the registry.
-	flipDrewOrAbsent := !flipInChain || a.panelHidden(slotICFlip)
-	if flipInChain {
-		_, flipOv := a.classicOv[slotICFlip]
-		flipGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, icFlipW+6, tailReserve)
-		if icOptionalDraws(flipGuardOK, flipOv, a.classicEdit, a.panelHidden(slotICFlip)) {
-			flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
-			a.pairFlip = c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairFlip)
-			c.Tooltip(flipBox, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
-			icX += icFlipW + 6 // downstream flows from the DEFAULT position, not the override
-			flipDrewOrAbsent = true
-		}
+	if flipInChain && !a.panelHidden(slotICFlip) {
+		flipBox := a.slotRect(slotICFlip, sdl.Rect{X: icX, Y: rowY, W: icFlipW, H: fH}, w, h)
+		a.pairFlip = c.Checkbox(flipBox.X, flipBox.Y+(flipBox.H-16)/2, "Flip", a.pairFlip)
+		c.Tooltip(flipBox, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
+		icX += icFlipW + 6 // downstream flows from the DEFAULT position, not the override
 	}
 	// SFX picker (AO2-style): pick a sound to ride your NEXT message — overrides the
 	// emote's own sound until set back to "auto". Picking one previews it. Drawn AFTER
@@ -5290,13 +5267,9 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// minuscule widths, where even the compact form can't clear the input floor,
 	// does SFX drop entirely — and the layout-editor override (sfxOv) still forces
 	// it back (the documented escape hatch).
-	// flipDrewOrAbsent gates the WIDTH path so a width-dropped Flip suppresses the narrower
-	// SFX bands after it (the band-priority fix above): on a flipping server SFX competes for
-	// tail width BEHIND Flip, so it may only take width Flip declined to when Flip actually fit.
-	// The override/editor hatch (sfxOv / classicEdit) still forces SFX independently.
 	_, sfxOv := a.classicOv[slotICSFX]
-	sfxGuardOK := flipDrewOrAbsent && icBarButtonFits(icBar.W, icX-icBar.X, sfxDDW+4, tailReserve)
-	sfxCompactGuardOK := flipDrewOrAbsent && icBarButtonFits(icBar.W, icX-icBar.X, sfxCompactW+4, tailReserve)
+	sfxGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxDDW+4, tailReserve)
+	sfxCompactGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, sfxCompactW+4, tailReserve)
 	switch {
 	case icOptionalDraws(sfxGuardOK, sfxOv, a.classicEdit, false):
 		sfxRect := a.slotRect(slotICSFX, sdl.Rect{X: icX, Y: rowY, W: sfxDDW, H: fH}, w, h) // movable (#4a)
@@ -5327,10 +5300,8 @@ func (a *App) drawICInputRow(icBar sdl.Rect, rowY, w, h, fH int32) (send bool) {
 	// hideable (playtest: some players don't want it at all). Drawn LAST of the optional
 	// buttons (v1.63.0+ redesign), so it's the FIRST to yield on a narrow bar. Override /
 	// editor win over the drop (same rule as Pre); hidden still hides.
-	// emoji is the LOWEST-priority optional: its width path also prices Flip in (band-priority
-	// fix) so a width-dropped Flip suppresses it too; its own override/editor hatch is untouched.
 	_, emojiOv := a.classicOv[slotICEmoji]
-	emojiGuardOK := flipDrewOrAbsent && icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
+	emojiGuardOK := icBarButtonFits(icBar.W, icX-icBar.X, fH+4, tailReserve)
 	if icOptionalDraws(emojiGuardOK, emojiOv, a.classicEdit, a.panelHidden(slotICEmoji)) {
 		if a.drawEmojiBarButton(a.slotRect(slotICEmoji, sdl.Rect{X: icX, Y: rowY, W: fH, H: fH}, w, h)) {
 			a.showEmojiPicker = !a.showEmojiPicker

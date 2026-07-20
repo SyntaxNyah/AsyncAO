@@ -549,17 +549,13 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		// themeLayoutKeys in app.go; only the crammed form is provided here). themedFlipW
 		// mirrors the classic icFlipW band.
 		const themedFlipW = 60 // crammed "Flip" checkbox width (matches classic icFlipW — box+gap+label with slack)
-		// flipDrewOrAbsent enforces Flip's priority by BAND, not just cram order (v1.80.1): the
-		// crammed SFX/emoji bands are NARROWER than Flip's, so on a tightening themed field their
-		// keep-room guards passed while Flip's failed — SFX/emoji crammed with Flip ABSENT,
-		// inverting the "Flip before SFX/emoji" discipline (the same defect the classic row had).
-		// It latches "Flip is not competing for this field's width" (Flip crammed, OR the server
-		// has no flipping feature / an own theme rect took it out of the cram). The SFX and emoji
-		// CRAM branches below price it in so a squeezed-out Flip cascades to the narrower items
-		// after it. Own-theme-rect placements (asyncao_ic_sfx/_emoji) are independent and untouched.
+		// Flip: unconditional (v1.80.2) — crammed whenever the server advertises flipping,
+		// no field-width guard. Matches classic-layout parity and AO2-Client ui_flip behaviour.
+		// flipDrewOrAbsent is kept only for the SFX/emoji cram branches below, which remain
+		// width-guarded (own-theme-rect placements for SFX/emoji are independent and untouched).
 		flipInChain := a.sess != nil && a.sess.Features.Has(protocol.FeatureFlipping)
 		flipDrewOrAbsent := !flipInChain
-		if flipInChain && field.W > themedFlipW+themedFieldKeep {
+		if flipInChain && !a.panelHidden(slotICFlip) && field.W > themedFlipW {
 			a.pairFlip = c.Checkbox(field.X, in.Y+(in.H-16)/2, "Flip", a.pairFlip)
 			c.Tooltip(sdl.Rect{X: field.X, Y: in.Y, W: themedFlipW, H: in.H}, "Flip: mirror your character's emotes. Same setting as the Pair panel's flip toggle.")
 			field.X += themedFlipW
