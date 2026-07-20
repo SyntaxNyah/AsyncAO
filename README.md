@@ -128,7 +128,7 @@ asyncao -debug          # pprof on localhost:6060
 Planned, not yet built but future expansions:
 
 - **Eventual mobile support** — native Android / iOS binaries.
-- Eventual Legacy AO2 demo file converter to MP4/Video, for Archival.
+- Eventual Legacy AO2 demo file converter to MP4/Video, for Archival. THIS IS MOSTLY DONE. PROBABLY NEEDS SOME IMPROVEMENTS BUT THIS IS A GOOD STATE.
 - Dedicated built in theme builder so people can easily make AsyncAO themes by importing images, fonts, colours and exporting them for later. Encourages people to stop relying on QT based themes, while making the proccess streamlined and easy for anyone.
 
 ## Credits
