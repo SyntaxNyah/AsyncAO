@@ -4,6 +4,42 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.80.0 — 2026-07-20
+
+**Disconnects**
+
+- Losing connection no longer boots you to the lobby. The courtroom stays on
+  screen with a dialog: what happened, the exact reason, and a Reconnect
+  button. A background tab's death waits until you switch to it.
+- Why disconnects felt more common: drops that happened while the window was
+  minimized, unfocused, or on a pinned server never recovered. Fixed —
+  auto-reconnect now works while popped out, and a pinned server's death is
+  announced instead of its pane silently vanishing.
+
+**Chat**
+
+- Additive messages get a space between sentences automatically. Japanese
+  stays flush.
+- Flip is on the IC bar now. It always worked on the wire — the checkbox was
+  just hidden in the Pair panel.
+- Pair order is two clear buttons: To front / To behind.
+- The SFX picker shrinks on narrow windows instead of disappearing.
+- Hover an emote to see its name (5 second delay — adjust or turn off in
+  Settings). The preview box shows the name too.
+
+**Assets**
+
+- The content report can use your local asset folders while connected, and
+  you can set a folder right in the panel. Demos use local folders without
+  the offline mode.
+- A missing preanim no longer flashes the missing-sprite art for a frame.
+
+**Music**
+
+- Cross-tab music works both ways now. On: background music no longer cuts
+  out after a tab switch, follows its server's song changes, and plays at
+  that server's volume. Off: unchecking goes silent immediately.
+
 ## v1.74.5 — 2026-07-19
 
 Imported demos find their assets and always convert, recordings keep their
