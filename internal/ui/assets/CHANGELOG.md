@@ -4,6 +4,16 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.80.3 — 2026-07-21
+
+- Auto-reconnect no longer gives up. A dropped connection used to retry for
+  about two and a half minutes, then stop and wait for a manual click — no
+  help if you weren't at the keyboard. It now keeps retrying on its own
+  indefinitely, so a client left running minimized or away from the desk
+  reconnects no matter how long the interruption lasts.
+- An unexpected disconnect now flashes the taskbar, so it's obvious even when
+  the window isn't in focus.
+
 ## v1.80.2 — 2026-07-20
 
 - Flip is always visible on flipping servers now, at any window size. Previously
