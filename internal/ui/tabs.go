@@ -305,9 +305,9 @@ func (a *App) activateTab(i int) {
 			a.musicAwaitURL = ""
 			a.musicAwaitSince = time.Time{}
 		}
-		a.openDisconnectDialog(a.serverName, a.serverKey, t.deadReason)
-		t.dead = false    // consumed: the dialog now owns this drop (Back to lobby / Reconnect finish it)
-		t.deadReason = "" // and the latched reason has been shown
+		a.openDisconnectDialog(a.serverName, a.serverKey, t.deadReason, time.Time{}) // no grace: it already died a while ago
+		t.dead = false                                                               // consumed: the dialog now owns this drop (Back to lobby / Reconnect finish it)
+		t.deadReason = ""                                                            // and the latched reason has been shown
 		a.ensureThemeForSession()
 		a.updatePresence()
 		return

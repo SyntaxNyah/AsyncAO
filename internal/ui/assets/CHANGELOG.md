@@ -4,6 +4,14 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.80.4 — 2026-07-21
+
+A brief connection blip no longer interrupts you at all — the client waits a
+generous window to see if it recovers on its own before showing anything, so
+only a genuine, lasting outage ever pops the disconnect screen. And when one
+does, it now stays visible through every retry instead of quietly reverting to
+an easy-to-miss message on the lobby.
+
 ## v1.80.3 — 2026-07-21
 
 - Auto-reconnect no longer gives up. A dropped connection used to retry for

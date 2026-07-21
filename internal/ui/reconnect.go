@@ -149,13 +149,22 @@ func (a *App) pollAutoReconnect() {
 		(a.screen != ScreenLobby && !frozen) {
 		return
 	}
+	var frozenName, frozenURL, frozenRaw string
+	var frozenHiddenUntil time.Time
 	if frozen {
 		// Tear the frozen session down (deliberate, so the teardown itself doesn't
 		// re-arm) and clear the dialog, but PRESERVE the backoff counter across it —
 		// Disconnect→cancelAutoReconnect zeroes autoReconnectTries, and this is a
 		// continuation of the same retry sequence, not a fresh one. connErr is left
-		// as the drop set it; connectWith clears it on the redial attempt.
+		// as the drop set it; connectWith clears it on the redial attempt. Snapshot
+		// the dialog's own fields (including its hiddenUntil grace deadline) so a
+		// FAILED redial below can re-surface the SAME dialog instead of silently
+		// stranding the user on a bare lobby (the exact bug the dialog exists to
+		// prevent) — the grace window carries over unchanged, so a drop still
+		// mid-grace stays invisible across many retries, not just the first one.
 		tries := a.autoReconnectTries
+		frozenName, frozenURL, frozenRaw = a.disconnectDlg.name, a.disconnectDlg.url, a.disconnectDlg.reason.raw
+		frozenHiddenUntil = a.disconnectDlg.hiddenUntil
 		a.disconnectDlg = disconnectDialog{}
 		a.deliberateClose = true // the frozen-tab teardown is intentional here
 		a.Disconnect()           // → lobby; nils conn/sess, removes the frozen tab
@@ -170,6 +179,13 @@ func (a *App) pollAutoReconnect() {
 	if a.screen != ScreenLobby { // left the lobby = the dial connected; stop retrying
 		a.cancelAutoReconnect()
 		return
+	}
+	if frozen {
+		// Still down after tearing down the frozen courtroom to try again: re-open
+		// the SAME dialog (same grace deadline) rather than leaving the user on a
+		// bare lobby with the reason buried in connErr — the drop is still exactly
+		// as un-shown/shown as it was a moment ago, just one retry further along.
+		a.openDisconnectDialog(frozenName, frozenURL, frozenRaw, frozenHiddenUntil)
 	}
 	a.autoReconnectAt = a.now().Add(autoReconnectDelay(a.autoReconnectTries)) // failed: back off
 }

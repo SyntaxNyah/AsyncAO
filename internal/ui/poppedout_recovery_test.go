@@ -81,21 +81,22 @@ func TestAutoReconnectFiresFromBackground(t *testing.T) {
 	// path), with a due retry armed. Background stamps frameNow itself, so a.now()
 	// advances even though we never draw a Frame — this is the whole point of Fix 1.
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 	a.autoReconnectTries = 0
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
 	a.Background(16 * time.Millisecond) // the popped-out loop — must fire the poll
 
-	// The redial engaged: the attempt ran (tries advanced), the frozen dialog was
-	// cleared, and — with no reachable server — it collapsed to the lobby. This is
-	// exactly TestAutoReconnectFiresWhileFrozen's observable, proving the Background
+	// The redial engaged: the attempt ran (tries advanced), and — with no reachable
+	// server — it failed and re-surfaced the dialog (not a silent bare lobby; see
+	// TestAutoReconnectFiresWhileFrozen for why a failure must re-open it) while the
+	// screen itself collapsed to the lobby underneath. This proves the Background
 	// call site drives the poll just like Frame does.
 	if a.autoReconnectTries == 0 {
 		t.Error("a due retry must FIRE from a Background pass (tries should have advanced)")
 	}
-	if a.disconnectDlg.open {
-		t.Error("the Background fire must clear the frozen dialog (else the countdown wedges while popped out)")
+	if !a.disconnectDlg.open {
+		t.Error("a failed redial must re-open the dialog, not strand the user on a silent lobby")
 	}
 	if a.screen != ScreenLobby {
 		t.Errorf("a failed background redial stays on the lobby, got %v", a.screen)
@@ -118,7 +119,7 @@ func TestAutoReconnectDoublePollFiresOnce(t *testing.T) {
 	a := froomApp(t)
 	a.d.Prefs.SetAutoReconnect(true)
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 	a.autoReconnectTries = 0
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 

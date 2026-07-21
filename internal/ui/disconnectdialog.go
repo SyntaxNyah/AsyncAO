@@ -61,6 +61,13 @@ type disconnectDialog struct {
 	// lastConn* re-capture rationale.
 	name string
 	url  string
+	// hiddenUntil defers actually DRAWING the modal (open stays true the whole
+	// time — the pointer-fence and pollAutoReconnect's frozen-retry trigger are
+	// both keyed on open, not visibility) until this time; the zero value shows
+	// immediately. A fresh drop gets a grace window here so a blip that heals
+	// itself on the very first retry never interrupts the user at all — only a
+	// drop that survives that attempt earns the modal.
+	hiddenUntil time.Time
 }
 
 // disconnectReason is what the dialog tells the user: an optional friendly line
@@ -133,10 +140,16 @@ func friendlyDisconnectReason(raw string) disconnectReason {
 // The caller has already set a.connErr (the lobby reason line) and pushed the debug
 // line; auto-reconnect is armed here, AFTER the freeze/teardown, exactly as the
 // pre-dialog code did (shouldAutoReconnect suppresses ban/kick and deliberate).
+//
+// willRetry mirrors exactly what scheduleAutoReconnect will decide (computed
+// BEFORE the freeze so beginInvoluntaryDisconnect can grant the grace window —
+// see initialDropGracePeriod): a drop nothing will auto-heal (kick/ban/pref
+// off) has no reason to hide, so it shows immediately.
 func (a *App) handleInvoluntaryDrop(reason string) {
 	deliberate := a.deliberateClose
+	willRetry := !deliberate && shouldAutoReconnect(reason, deliberate) && a.d.Prefs.AutoReconnectOn()
 	if !deliberate {
-		a.beginInvoluntaryDisconnect(reason) // freezes if there's a room, else Disconnect() to the lobby
+		a.beginInvoluntaryDisconnect(reason, willRetry) // freezes if there's a room, else Disconnect() to the lobby
 	} else {
 		a.Disconnect() // a deliberate close raced in mid-pump: today's path, no dialog
 	}
@@ -145,36 +158,53 @@ func (a *App) handleInvoluntaryDrop(reason string) {
 	}
 }
 
+// initialDropGracePeriod is how long a fresh drop stays frozen-but-invisible
+// before the dialog actually draws — deliberately generous: it spans many
+// retry cycles (2s/4s/8s/16s/30s/30s/... backoff), not just the first, so
+// anything short of a real outage self-heals without ever interrupting the
+// user. pollAutoReconnect re-arms the SAME deadline on every failed retry
+// (never resetting it), so the whole window has to elapse — only a drop that
+// outlasts it earns the modal.
+const initialDropGracePeriod = 5 * time.Minute
+
 // openDisconnectDialog is the single place the dialog's open state is set, so the
-// two entry paths (an ACTIVE-tab drop via beginInvoluntaryDisconnect, and
-// ACTIVATING a tab that died in the background via activateTab) can't diverge in
-// what the modal shows. name/url are the redial target captured for Reconnect
-// (see the disconnectDialog field doc for why they're frozen here rather than read
-// from lastConn* at click time).
-func (a *App) openDisconnectDialog(name, url, raw string) {
+// three entry paths (an ACTIVE-tab drop via beginInvoluntaryDisconnect, a failed
+// frozen retry re-surfacing it via pollAutoReconnect, and ACTIVATING a tab that
+// died in the background via activateTab) can't diverge in what the modal shows.
+// name/url are the redial target captured for Reconnect (see the disconnectDialog
+// field doc for why they're frozen here rather than read from lastConn* at click
+// time). hiddenUntil is the zero value for immediate display, or a future time to
+// grant a grace window (see initialDropGracePeriod) — only the fresh-drop path
+// ever passes a non-zero value.
+func (a *App) openDisconnectDialog(name, url, raw string, hiddenUntil time.Time) {
 	a.disconnectDlg = disconnectDialog{
-		open:   true,
-		reason: friendlyDisconnectReason(raw),
-		name:   name,
-		url:    url,
+		open:        true,
+		reason:      friendlyDisconnectReason(raw),
+		name:        name,
+		url:         url,
+		hiddenUntil: hiddenUntil,
 	}
-	// A drop must be impossible to miss even minimized/tabbed-away — the same
-	// FlashWindow idiom modcalls and callwords already use (ui.go FlashWindow).
-	// FLASH_UNTIL_FOCUSED keeps the taskbar icon flashing until the user actually
-	// returns to the window, however long that takes, so an all-day AFK drop
-	// still announces itself on return.
-	a.ctx.FlashWindow()
+	if hiddenUntil.IsZero() {
+		// Only flash for a drop we're actually SHOWING right now — a hidden
+		// grace-period drop that's about to self-heal shouldn't flash the
+		// taskbar for nothing. The exact FlashWindow idiom modcalls and
+		// callwords already use (ui.go FlashWindow); FLASH_UNTIL_FOCUSED keeps
+		// the taskbar icon flashing until the user actually returns to the
+		// window, however long that takes.
+		a.ctx.FlashWindow()
+	}
 }
 
 // beginInvoluntaryDisconnect freezes the ACTIVE tab's courtroom under the
 // disconnect dialog: it performs the NETWORK teardown (close+nil the conn, stop
 // music/voice) but KEEPS a.sess/a.room so the last scene and logs stay drawn,
-// then opens the dialog with a friendly+raw reason. It is the involuntary
+// then opens the dialog (visible immediately, or after willRetry's grace window —
+// see initialDropGracePeriod) with a friendly+raw reason. It is the involuntary
 // counterpart to Disconnect() — the load-bearing voluntary/involuntary switch is
 // which one the drop path calls (deliberateClose gates it; see pumpConnection and
 // handleSessionEvents). Called ONLY when the drop was NOT deliberate and there is
 // a live room to freeze; the caller has already vetted intent.
-func (a *App) beginInvoluntaryDisconnect(raw string) {
+func (a *App) beginInvoluntaryDisconnect(raw string, willRetry bool) {
 	// No room to freeze (char-select, or already torn down): fall back to the
 	// plain teardown so we still land on the lobby with connErr set. Keeps this
 	// safe if a drop lands before a courtroom exists.
@@ -203,7 +233,11 @@ func (a *App) beginInvoluntaryDisconnect(raw string) {
 	// tab's confirm) — those aren't ours to cancel on a drop.
 	a.confirmDisconnect = false
 	a.hidePrompt = ""
-	a.openDisconnectDialog(a.serverName, a.serverKey, raw)
+	var hiddenUntil time.Time
+	if willRetry {
+		hiddenUntil = a.now().Add(initialDropGracePeriod)
+	}
+	a.openDisconnectDialog(a.serverName, a.serverKey, raw, hiddenUntil)
 	// Network teardown — the subset of Disconnect() that must happen the instant
 	// the link dies, mirroring its cleanup, but WITHOUT the session reset /
 	// tab-close / navigation (those wait for Back to lobby / Reconnect so the room
@@ -267,6 +301,9 @@ func (a *App) drawDisconnectDialog(w, h int32) {
 	c := a.ctx
 	if !a.disconnectDlg.open {
 		return // defensive: the outer guard only draws this while open
+	}
+	if a.now().Before(a.disconnectDlg.hiddenUntil) {
+		return // still within the grace window — a quick self-heal must stay invisible
 	}
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, sdl.Color{R: 0, G: 0, B: 0, A: 160})
 	const mw, mh = 520, 220

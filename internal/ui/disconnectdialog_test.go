@@ -113,7 +113,7 @@ func TestBeginInvoluntaryDisconnectFreezesAndKeepsLogs(t *testing.T) {
 	// A readable IC log the user was mid-read of — it must survive the freeze.
 	a.icLog = []icEntry{{text: "Phoenix: Objection!", speaker: "Phoenix"}}
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 
 	if !a.disconnectDlg.open {
 		t.Fatal("an involuntary active-tab drop must open the dialog")
@@ -148,7 +148,7 @@ func TestBeginInvoluntaryDisconnectFallsBackToLobby(t *testing.T) {
 	a := froomApp(t)
 	a.room = nil // no room to freeze (e.g. dropped at char-select)
 	a.screen = ScreenCharSelect
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 	if a.disconnectDlg.open {
 		t.Error("with no room to freeze, the dialog must NOT open")
 	}
@@ -164,7 +164,7 @@ func TestBeginInvoluntaryDisconnectFallsBackToLobby(t *testing.T) {
 func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 	a := froomApp(t)
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 	a.autoReconnectAt = a.now().Add(2 * time.Second) // a countdown was running
 	a.closeDisconnectDialogToLobby()
 
@@ -189,7 +189,7 @@ func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 func TestReconnectFromDialogRedials(t *testing.T) {
 	a := froomApp(t)
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 	// A DIFFERENT server later became the global lastConn* (a second tab): Reconnect
 	// must still target the frozen server captured in the dialog, not this one.
 	a.lastConnName, a.lastConnURL = "Other", "ws://other.example"
@@ -216,7 +216,7 @@ func TestReconnectFromDialogRedials(t *testing.T) {
 func TestEscClosesDisconnectDialogToLobby(t *testing.T) {
 	a := froomApp(t)
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 
 	if !a.closeTopOverlay() {
 		t.Fatal("Esc must be handled by closeTopOverlay while the dialog is up")
@@ -245,7 +245,7 @@ func TestDialogCloseAlwaysReleasesFence(t *testing.T) {
 	for name, close := range closers {
 		a := froomApp(t)
 		a.connErr = "connection closed"
-		a.beginInvoluntaryDisconnect("connection closed")
+		a.beginInvoluntaryDisconnect("connection closed", false)
 		a.ctx.fencePointer() // stand in for the frame-tail fence set while the dialog is up
 		close(a)
 		// With the dialog closed, the frame-tail fence-on condition (disconnectDlg.open)
@@ -313,25 +313,26 @@ func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
 
 // TestAutoReconnectFiresWhileFrozen pins the tie-breaker the whole feature hinges
 // on: an armed countdown must fire even while the courtroom is FROZEN under the
-// dialog (screen != lobby). A successful redial closes the dialog and leaves the
-// lobby; a due retry that connects proves the frozen state doesn't wedge the poll.
+// dialog (screen != lobby). It also pins the re-open-on-failure contract: with no
+// reachable server the redial fails, and rather than stranding the user on a bare
+// lobby (buried connErr — the exact problem the dialog exists to prevent) the SAME
+// dialog re-opens over the lobby so the drop stays visible/informative.
 func TestAutoReconnectFiresWhileFrozen(t *testing.T) {
 	a := froomApp(t)
 	a.d.Prefs.SetAutoReconnect(true)
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false) // no grace: show immediately, as before
 	// Arm a due retry (as scheduleAutoReconnect would, but already past its time).
 	a.autoReconnectTries = 0
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
 	// The poll must fire despite screen==Courtroom+dialog: it tears the frozen
-	// session down, clears the dialog, then attempts the redial. With no reachable
-	// server the dial fails and backs off on the lobby — but the FROZEN wedge is
-	// gone (dialog cleared, screen == lobby), which is the property under test.
+	// session down, attempts the redial, and — with no reachable server — the dial
+	// fails and backs off on the lobby, re-opening the dialog over it.
 	a.pollAutoReconnect()
 
-	if a.disconnectDlg.open {
-		t.Error("a due auto-retry must clear the frozen dialog (else the countdown wedges forever)")
+	if !a.disconnectDlg.open {
+		t.Error("a failed redial must re-open the dialog, not strand the user on a silent lobby")
 	}
 	if a.screen != ScreenLobby {
 		t.Errorf("after the frozen fire the session is torn down to the lobby, got %v", a.screen)
@@ -352,7 +353,7 @@ func TestAutoReconnectNeverGivesUp(t *testing.T) {
 	a := froomApp(t)
 	a.d.Prefs.SetAutoReconnect(true)
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 	a.autoReconnectTries = 0
 	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
 
@@ -397,7 +398,7 @@ func TestTabBarInertUnderDialog(t *testing.T) {
 	a := froomApp(t)
 	a.tabs = append(a.tabs, &courtTab{state: sessionState{serverName: "Other", serverKey: "ws://other"}})
 	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed")
+	a.beginInvoluntaryDisconnect("connection closed", false)
 	before := a.activeTab
 	a.ctx.mouseDown = true // a press this frame, as a chip click would present
 	a.handleTabBar(1000, 40)
