@@ -28,7 +28,7 @@ func TestAutoReconnectDelay(t *testing.T) {
 		}
 	}
 	prev := time.Duration(0)
-	for i := 0; i <= autoReconnectMaxTries; i++ {
+	for i := 0; i <= 20; i++ { // sample well past the point autoReconnectDelay clamps at autoReconnectMax
 		d := autoReconnectDelay(i)
 		if d < prev {
 			t.Errorf("backoff decreased at attempt %d: %v < %v", i, d, prev)

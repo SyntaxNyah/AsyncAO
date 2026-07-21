@@ -44,21 +44,26 @@ func (a *App) quickConnect() {
 }
 
 // Auto-reconnect (M2): after an UNEXPECTED drop (EventDisconnect), retry the last
-// server with exponential backoff until it returns, we connect, or we give up. A
-// deliberate Disconnect (the Extras button) never auto-retries, and a manual
-// Reconnect / fresh Join takes over (Connect cancels any pending retry). The dial
-// happens on the frame loop — the same blocking connect the manual button and
-// restore-on-launch use — so there's no off-thread session setup; idle, this is a
-// single time compare per frame.
+// server with exponential backoff until it returns or we connect. A deliberate
+// Disconnect (the Extras button) never auto-retries, and a manual Reconnect /
+// fresh Join takes over (Connect cancels any pending retry). The dial happens on
+// the frame loop — the same blocking connect the manual button and restore-on-
+// launch use — so there's no off-thread session setup; idle, this is a single
+// time compare per frame.
+//
+// Deliberately NEVER gives up: an AFK/minimized session (the whole point of
+// auto-reconnect) has nobody there to click a manual Reconnect if it stopped, so
+// a transient drop must keep self-healing no matter how long the user is away.
+// Retrying costs nothing extra once backed off to autoReconnectMax — one dial
+// attempt at most every 30s — so there is no resource case for a cutoff.
+// shouldAutoReconnect already excludes the cases that SHOULD stay stopped
+// (a kick, a ban, a deliberate close): those never arm this loop at all.
 
 const (
 	// autoReconnectBase is the first backoff delay; it doubles each failed
 	// attempt up to autoReconnectMax.
 	autoReconnectBase = 2 * time.Second
 	autoReconnectMax  = 30 * time.Second
-	// autoReconnectMaxTries bounds the attempts before giving up (the manual
-	// Reconnect button still works after).
-	autoReconnectMaxTries = 8
 )
 
 // autoReconnectDelay is the backoff before attempt `tries`: base·2^tries, capped
@@ -157,14 +162,8 @@ func (a *App) pollAutoReconnect() {
 		a.autoReconnectTries = tries
 	}
 	a.autoReconnectTries++
-	if a.autoReconnectTries > autoReconnectMaxTries {
-		a.cancelAutoReconnect()
-		a.connErr = "Auto-reconnect gave up after " + strconv.Itoa(autoReconnectMaxTries) +
-			" tries — click Reconnect to keep trying."
-		return
-	}
 	a.autoReconnectMsg = "Auto-reconnecting to " + a.lastConnName + "… (attempt " +
-		strconv.Itoa(a.autoReconnectTries) + "/" + strconv.Itoa(autoReconnectMaxTries) + ")"
+		strconv.Itoa(a.autoReconnectTries) + ")"
 	ctx, cancel := context.WithTimeout(context.Background(), restoreDialTimeout)
 	a.connectWith(a.lastConnName, a.lastConnURL, ctx)
 	cancel()

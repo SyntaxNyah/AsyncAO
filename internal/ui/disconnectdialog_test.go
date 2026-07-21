@@ -342,6 +342,33 @@ func TestAutoReconnectFiresWhileFrozen(t *testing.T) {
 	}
 }
 
+// TestAutoReconnectNeverGivesUp pins the AFK-safety contract auto-reconnect
+// exists for: a genuine transport drop keeps retrying indefinitely — well past
+// the 8-try cutoff a prior version enforced — instead of stranding the session
+// until someone is at the keyboard to click Reconnect. Runs the retry past the
+// old cutoff and asserts it is STILL armed (autoReconnectAt non-zero, no
+// terminal "gave up" state) the whole way through.
+func TestAutoReconnectNeverGivesUp(t *testing.T) {
+	a := froomApp(t)
+	a.d.Prefs.SetAutoReconnect(true)
+	a.connErr = "connection closed"
+	a.beginInvoluntaryDisconnect("connection closed")
+	a.autoReconnectTries = 0
+	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+
+	const pastOldCutoff = 10 // the old autoReconnectMaxTries was 8
+	for i := 1; i <= pastOldCutoff; i++ {
+		a.pollAutoReconnect()
+		if a.autoReconnectAt.IsZero() {
+			t.Fatalf("attempt %d: auto-reconnect stopped retrying — it must never give up on a genuine transport drop", i)
+		}
+		a.autoReconnectAt = a.now().Add(-1 * time.Second) // force the next retry due now
+	}
+	if a.autoReconnectTries != pastOldCutoff {
+		t.Errorf("expected %d attempts to have run, got %d", pastOldCutoff, a.autoReconnectTries)
+	}
+}
+
 // TestVoluntaryDisconnectNeverFreezes pins that the user's own Disconnect never
 // shows the involuntary dialog — a deliberate close is byte-identical to today
 // (plain teardown → lobby). Uses the SendErr drop path with deliberateClose set,

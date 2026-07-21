@@ -158,6 +158,28 @@ func (a *App) openDisconnectDialog(name, url, raw string) {
 		name:   name,
 		url:    url,
 	}
+	// A drop must be impossible to miss even minimized/tabbed-away — the exact
+	// FlashWindow/OS-toast idiom modcalls and callwords already use (ui.go
+	// FlashWindow, ostoast.go showOSToast). FLASH_UNTIL_FOCUSED keeps the taskbar
+	// icon flashing until the user actually returns to the window, however long
+	// that takes, so an all-day AFK drop still announces itself on return; the OS
+	// toast (Windows-only, no-op elsewhere) only fires when nobody's looking, so
+	// it never spams a session the user is actively watching.
+	a.ctx.FlashWindow()
+	// Gate the desktop toast exactly like every other showOSToast site
+	// (qol.go:1070, app.go:8082/8105, macros.go:236, messaging_invite.go:45):
+	// !WindowFocused AND the shared osToastMinInterval throttle, updating
+	// lastOSToast so a connect-then-drop flap can't out-pace the de-storm
+	// constant (early backoff is 2s < the 4s min interval) and so a following
+	// friend/callword/modcall toast still throttles against this one.
+	if !a.ctx.WindowFocused() && time.Since(a.lastOSToast) >= osToastMinInterval {
+		a.lastOSToast = time.Now()
+		body := a.disconnectDlg.reason.friendly
+		if body == "" {
+			body = raw // fall back to the raw line (matches the dialog's own empty-reason display)
+		}
+		showOSToast("AsyncAO — disconnected from "+name, body)
+	}
 }
 
 // beginInvoluntaryDisconnect freezes the ACTIVE tab's courtroom under the
