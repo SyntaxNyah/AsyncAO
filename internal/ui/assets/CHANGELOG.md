@@ -4,6 +4,28 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.81.1 — 2026-07-22
+
+Follow-ups to v1.81.0's Studio/theme fixes, all from Crystalwarrior's testing.
+
+- **Bundles now use clean, readable folder names.** Packaging an RP used to write
+  every asset at its raw URL spelling — `characters/drio%2Fbyakuya%20togami`,
+  `sounds/music/daily%20life/%5Bresign%5D…` — because a URL has to escape spaces and
+  slashes. Bundles now decode those back to real folders (`characters/drio/byakuya
+  togami`, `sounds/music/daily life/[resign]…`), so the folder is browsable and
+  portable. Existing bundles still replay; new ones are just readable.
+- **Backgrounds that use the `overlays/../` position trick resolve again.** A unique
+  position authored as `overlays/../background/…` was being mangled into a dead
+  `overlays%2F..%2F…` path. It now resolves exactly the way AO2-Client does (the
+  `../` is normalised like the OS would), and can never escape the asset root.
+- **The theme font no longer flickers back to built-in.** A theme that supplies its
+  own font could apply for a frame and then revert to the built-in font, caused by a
+  slower background theme-load landing out of order and clearing it. Load results are
+  now applied strictly newest-first, so the theme font sticks.
+- **The content report stops counting placeholders as "missing."** Blank/narrator
+  speakers (`-`, empty), empty emotes, `NO-SFX`, and the `-1` no-blip sentinel are no
+  longer enumerated, so the missing-asset count reflects real gaps, not sentinels.
+
 ## v1.81.0 — 2026-07-22
 
 Three Studio Mode / theme fixes, all reported by Crystalwarrior.

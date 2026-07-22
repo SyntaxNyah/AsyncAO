@@ -48,6 +48,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/SyntaxNyah/AsyncAO/internal/archive"
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -337,10 +338,12 @@ func enumerateContent(origin, startBg string, events []courtroom.Event) *Content
 			continue
 		}
 		m := ev.Message
-		if sfx := m.SFXName; sfx != "" && sfx != "0" && sfx != "1" {
+		// "0"/"1" are the legacy no-sound flags; "NO-SFX"/"-1" are the modern
+		// AO "no sound"/"no blip" sentinels — none is a real asset to probe.
+		if sfx := m.SFXName; sfx != "" && sfx != "0" && sfx != "1" && !strings.EqualFold(sfx, "NO-SFX") {
 			add(sfx, urls.SFX(sfx), courtroom.AssetRef{Base: urls.SFX(sfx), Type: assets.AssetTypeSFX})
 		}
-		if blip := m.Blipname; blip != "" {
+		if blip := m.Blipname; blip != "" && blip != "-1" {
 			// The authored-casing spelling is the chain alt (blips split lowercase
 			// vs raw-case on different mirrors — see URLBuilder.BlipAuthored).
 			add(blip, urls.Blip(blip), courtroom.AssetRef{
@@ -1280,13 +1283,17 @@ func fetchBundleBytes(mgr *assets.Manager, url string) ([]byte, error) {
 	return mgr.FetchRaw(ctx, url)
 }
 
-// writeBundleFile writes one bundled asset under destDir at its forward-slash
-// relative path, refusing path escapes (mirrors archive.writeAsset).
+// writeBundleFile writes one bundled asset under destDir at its DECODED,
+// human-readable relative path, refusing path escapes. Uses the SAME
+// archive.DiskPath the synchronous exporter does, so a packaged RP and a
+// maker-exported archive lay assets out identically (and both stay replayable
+// via the local fetcher's decoded-spelling attempt).
 func writeBundleFile(destDir, rel string, data []byte) error {
-	if rel == "" || strings.Contains(rel, "..") {
+	disk := archive.DiskPath(rel)
+	if disk == "" || strings.Contains(disk, "..") {
 		return fmt.Errorf("contentjob: refusing bad relative path %q", rel)
 	}
-	full := filepath.Join(destDir, filepath.FromSlash(rel))
+	full := filepath.Join(destDir, filepath.FromSlash(disk))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return err
 	}

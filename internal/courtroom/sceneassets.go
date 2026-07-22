@@ -2,6 +2,18 @@ package courtroom
 
 import "github.com/SyntaxNyah/AsyncAO/internal/assets"
 
+// blankSpeakerSentinel is AO's "no character" placeholder — a narrator/spectator
+// line with no sprite (alongside the empty name).
+const blankSpeakerSentinel = "-"
+
+// IsBlankSpeaker reports whether a character name is the AO "no character"
+// sentinel: empty, or the "-" placeholder. Such a speaker owns no sprite, so
+// asset enumeration skips it instead of inventing always-missing "characters//…"
+// refs.
+func IsBlankSpeaker(charName string) bool {
+	return charName == "" || charName == blankSpeakerSentinel
+}
+
 // AssetRef is one asset a scene needs, for the self-contained archive exporter.
 // Base is an extensionless AO base (sprite / background / desk) the exporter
 // resolves via Manager.ResolveRaw, OR a complete URL when Exact is set (music
@@ -62,10 +74,15 @@ func SceneAssets(urls URLBuilder, startBg string, events []Event) []AssetRef {
 			add(urls.Background(bg, bgPart), nil, assets.AssetTypeBackground, false)
 			add(urls.Background(bg, deskPart), nil, assets.AssetTypeDeskOverlay, false)
 			// Sprites carry the full spelling chain: "(a)X" → bare X → "(a)/X".
-			add(urls.Emote(m.CharName, m.Emote, EmoteIdle), urls.EmoteAlts(m.CharName, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, false)
-			add(urls.Emote(m.CharName, m.Emote, EmoteTalk), urls.EmoteAlts(m.CharName, m.Emote, EmoteTalk), assets.AssetTypeCharSprite, false)
-			if hasPreanim(m) {
-				add(urls.Emote(m.CharName, m.PreEmote, EmotePreanim), nil, assets.AssetTypeCharSprite, false)
+			// A blank speaker ("" or the "-" no-character sentinel) or a blank emote
+			// has no sprite to bundle — enumerating it only invents "characters//…"
+			// / "characters/-/…" refs that always miss, inflating the report.
+			if !IsBlankSpeaker(m.CharName) && m.Emote != "" {
+				add(urls.Emote(m.CharName, m.Emote, EmoteIdle), urls.EmoteAlts(m.CharName, m.Emote, EmoteIdle), assets.AssetTypeCharSprite, false)
+				add(urls.Emote(m.CharName, m.Emote, EmoteTalk), urls.EmoteAlts(m.CharName, m.Emote, EmoteTalk), assets.AssetTypeCharSprite, false)
+				if hasPreanim(m) {
+					add(urls.Emote(m.CharName, m.PreEmote, EmotePreanim), nil, assets.AssetTypeCharSprite, false)
+				}
 			}
 		}
 	}

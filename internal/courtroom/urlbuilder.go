@@ -6,6 +6,7 @@ package courtroom
 
 import (
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"unicode"
@@ -286,14 +287,29 @@ func (u URLBuilder) ShoutSFX(character, shoutName string) string {
 	return u.origin + charactersDir + u.charSeg(character) + "/" + seg(shoutName)
 }
 
-// Background returns a background part base (defenseempty, stand, ...). The
-// background NAME may nest ("cases/case1" — servers group case backgrounds in
-// subfolders), so its slashes stay real separators (segPath): a single-segment
-// escape turned "cases/case1" into "cases%2Fcase1", a dead path on strict
-// origins and — once bundled — a folder literally named "cases%2Fcase1" on disk
-// instead of the "cases/case1" subfolder (#40). // AssetType: Background
+// Background returns a background part base (defenseempty, stand, ...). Both the
+// background NAME and the position PART may nest and even carry "../" — AO2's
+// get_background_path builds "background/<bg>/<part>" and lets the OS/QFile
+// resolve the path, so a unique position authored as "overlays/../background/x"
+// (a real DRIO trick) climbs out and re-roots. We mirror that: keep every slash
+// a real separator (segPath, never the "%2F" a single-segment escape produced —
+// a dead path on strict origins AND a "cases%2Fcase1"/"overlays%2F..%2F…" folder
+// on disk once bundled, #40), and lexically collapse "."/".." like the OS does
+// (cleanRel, clamped so it can never escape the origin). Flat names are
+// unchanged. // AssetType: Background
 func (u URLBuilder) Background(bg, part string) string {
-	return u.origin + backgroundDir + segPath(bg) + "/" + seg(part)
+	return u.origin + segPath(cleanRel(backgroundDir+bg+"/"+part))
+}
+
+// cleanRel lexically collapses "." and ".." in a slash-separated asset path,
+// rooted so leading ".." can never escape the origin (a path-traversal guard):
+// it matches how AO2-Client's QFile/OS normalizes a "background/<bg>/overlays/
+// ../background/x" path. Operates on RAW (unescaped) names, before segPath.
+func cleanRel(p string) string {
+	if p == "" {
+		return ""
+	}
+	return strings.TrimPrefix(path.Clean("/"+p), "/")
 }
 
 // BackgroundsRoot returns the background/ directory URL (with trailing

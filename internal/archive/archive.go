@@ -9,6 +9,7 @@ package archive
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,7 +54,11 @@ func ExportAssets(ctx context.Context, mgr *assets.Manager, origin, startBg stri
 		}
 		rel = strings.TrimPrefix(rel, "/")
 		if err := writeAsset(destDir, rel, data); err != nil {
-			return res, err
+			// One un-writable name (e.g. a decoded segment carrying a
+			// Windows-illegal character like ':' or '?') must not sink the whole
+			// export — skip it and keep bundling, the same way the renderer degrades
+			// on a single missing asset. It simply 404s on replay, like any gap.
+			continue
 		}
 		res.Files++
 		res.Bytes += int64(len(data))
@@ -90,17 +95,53 @@ func resolveRef(ctx context.Context, mgr *assets.Manager, ref courtroom.AssetRef
 	return "", nil, false
 }
 
-// writeAsset writes one bundled asset under destDir at its forward-slash relative
-// path, refusing path escapes.
+// writeAsset writes one bundled asset under destDir at its DECODED, human-readable
+// relative path (DiskPath), refusing path escapes.
 func writeAsset(destDir, rel string, data []byte) error {
-	if rel == "" || strings.Contains(rel, "..") {
+	disk := DiskPath(rel)
+	if disk == "" || strings.Contains(disk, "..") {
 		return fmt.Errorf("archive: refusing bad relative path %q", rel)
 	}
-	full := filepath.Join(destDir, filepath.FromSlash(rel))
+	full := filepath.Join(destDir, filepath.FromSlash(disk))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(full, data, 0o644)
+}
+
+// DiskPath maps an origin-relative URL path to the clean, human-readable path a
+// bundle writes on disk: it percent-DECODES each segment (so "%20"→space,
+// "%5B"→"[", "%28"→"(", and a "%2F"→a real separator) and lexically collapses
+// "."/".." clamped at the root. Without this, a bundle recorded every asset at
+// its raw URL spelling — "characters/drio%2Fbyakuya%20togami", "sounds/music/
+// daily%20life/%5Bresign%5D…" — folders no human or other AO client can read
+// (#40 follow-up). A URL MUST escape spaces, so the clean names can only be
+// recovered here, at the URL→disk boundary; replay resolves them because the
+// local fetcher already tries a percent-decoded spelling (LocalFetcher.Fetch
+// Attempt 2), keeping the bundle replayable byte-for-byte.
+func DiskPath(rel string) string {
+	var out []string
+	for _, seg := range strings.Split(rel, "/") {
+		dec, err := url.PathUnescape(seg)
+		if err != nil {
+			dec = seg // malformed escape (%zz) — keep the literal, never fabricate a name
+		}
+		// A decoded segment can itself hold "/" (a decoded "%2F") or "."/".."; split
+		// again so those become real separators / traversal, then clamp.
+		for _, part := range strings.Split(dec, "/") {
+			switch part {
+			case "", ".":
+				// skip empty ("" from a leading/double slash) and current-dir
+			case "..":
+				if len(out) > 0 {
+					out = out[:len(out)-1] // pop — clamped, can never escape the bundle root
+				}
+			default:
+				out = append(out, part)
+			}
+		}
+	}
+	return strings.Join(out, "/")
 }
 
 // SeedFormats teaches a replay resolver the formats the archive bundled (keyed

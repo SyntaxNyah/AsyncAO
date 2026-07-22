@@ -160,3 +160,82 @@ func TestExportNestedBackgroundSubfolder(t *testing.T) {
 		return nil
 	})
 }
+
+// TestExportDecodesBundleNames pins the #40 follow-up: a character folder that
+// nests AND carries spaces ("drio/byakuya togami") must bundle onto clean,
+// human-readable folders ("characters/drio/byakuya togami/…"), never the raw URL
+// spelling ("characters/drio%2Fbyakuya%20togami"). A URL must escape the space,
+// so the clean name is recovered only at the URL→disk boundary — and the bundle
+// must still replay, via the local fetcher's decoded-spelling attempt.
+func TestExportDecodesBundleNames(t *testing.T) {
+	srcDir := t.TempDir()
+	srcLocal := assets.NewLocalFetcher([]string{srcDir})
+	origin := srcLocal.BaseURL()
+	urls := courtroom.NewURLBuilder(origin)
+	rel := func(base string) string {
+		r, _ := strings.CutPrefix(base, origin)
+		return r + config.ExtWebP
+	}
+	const char = "drio/byakuya togami" // nests (→%2F) and has a space (→%20)
+	idle := []byte("IDLE-BYTES")
+	// The SOURCE mount keeps the URL's escaped spelling (LocalFetcher resolves it
+	// raw-first); the export is what must decode.
+	writeFixture(t, srcDir, rel(urls.Emote(char, "normal", courtroom.EmoteIdle)), idle)
+	writeFixture(t, srcDir, rel(urls.Emote(char, "normal", courtroom.EmoteTalk)), []byte("TALK"))
+	bgPart, deskPart := courtroom.PositionScene("wit")
+	writeFixture(t, srcDir, rel(urls.Background("gs4", bgPart)), []byte("BG"))
+	writeFixture(t, srcDir, rel(urls.Background("gs4", deskPart)), []byte("DESK"))
+	srcMgr, _ := buildManager(t, srcLocal, true)
+
+	events := []courtroom.Event{
+		{Kind: courtroom.EventBackground, Text: "gs4"},
+		{Kind: courtroom.EventMessage, Message: &protocol.ChatMessage{CharName: char, Emote: "normal", Side: "wit"}},
+	}
+	archDir := t.TempDir()
+	if _, err := ExportAssets(context.Background(), srcMgr, origin, "", events, archDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// The character landed at a CLEAN "drio/byakuya togami" subfolder path.
+	clean := filepath.Join(archDir, "characters", "drio", "byakuya togami", "(a)normal.webp")
+	if _, err := os.Stat(clean); err != nil {
+		t.Fatalf("character not bundled at its decoded path %q: %v", clean, err)
+	}
+	// No escaped names survive anywhere in the tree.
+	_ = filepath.Walk(archDir, func(p string, info os.FileInfo, err error) error {
+		if err == nil && (strings.Contains(p, "%2F") || strings.Contains(p, "%20")) {
+			t.Errorf("bundle path is still URL-escaped: %q", p)
+		}
+		return nil
+	})
+
+	// And it still replays: a separate manager over the clean archive resolves the
+	// escaped URL via the local fetcher's decoded-spelling attempt.
+	repLocal := assets.NewLocalFetcher([]string{archDir})
+	repMgr, _ := buildManager(t, repLocal, true)
+	repUrls := courtroom.NewURLBuilder(repLocal.BaseURL())
+	_, data, ok := repMgr.ResolveRaw(repUrls.Emote(char, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite)
+	if !ok {
+		t.Fatal("decoded-name character did NOT resolve from the clean archive — round-trip broken")
+	}
+	if string(data) != string(idle) {
+		t.Errorf("archive idle bytes = %q, want %q", data, idle)
+	}
+}
+
+// TestDiskPathDecodesAndClamps unit-pins the URL→disk mapping: decode escapes,
+// turn "%2F" into a real separator, and clamp "../" so a bundle can never write
+// outside its root.
+func TestDiskPathDecodesAndClamps(t *testing.T) {
+	cases := map[string]string{
+		"characters/drio%2Fbyakuya%20togami/(a)normal.webp": "characters/drio/byakuya togami/(a)normal.webp",
+		"sounds/music/daily%20life/%5Bresign%5D.opus":       "sounds/music/daily life/[resign].opus",
+		"background/room/../../../../etc/passwd":            "etc/passwd", // clamped, cannot escape
+		"a//b/./c":                                          "a/b/c",
+	}
+	for in, want := range cases {
+		if got := DiskPath(in); got != want {
+			t.Errorf("DiskPath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

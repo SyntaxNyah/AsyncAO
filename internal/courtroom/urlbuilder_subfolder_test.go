@@ -29,6 +29,34 @@ func TestBackgroundSubfolderKeepsSeparators(t *testing.T) {
 	}
 }
 
+// TestBackgroundOverlayTraversal pins the DRIO "overlays/../background/x" trick
+// (#40 follow-up): a unique position authored with "../" must keep real
+// separators AND collapse the traversal exactly like AO2-Client's QFile does
+// (get_background_path builds "background/<bg>/<part>" and the OS normalizes it),
+// never the "overlays%2F..%2F…" escape that both 404s live and lands as a broken
+// folder on disk.
+func TestBackgroundOverlayTraversal(t *testing.T) {
+	u := NewURLBuilder("https://cdn/base/")
+	got := u.Background("drio/ch1/frontdoorroom", "overlays/../background/drio/monitor/wit")
+	if strings.Contains(got, "%2F") || strings.Contains(got, "%2f") || strings.Contains(got, "..") {
+		t.Fatalf("overlay traversal left an escape or a raw '..': %q", got)
+	}
+	// "frontdoorroom/overlays/.." collapses to "frontdoorroom", then re-descends.
+	const want = "https://cdn/base/background/drio/ch1/frontdoorroom/background/drio/monitor/wit"
+	if got != want {
+		t.Fatalf("Background(overlay) = %q, want %q", got, want)
+	}
+	// A traversal that climbs above background/ re-roots at the origin (matching
+	// AO2's OS resolution) and can never escape it.
+	esc := u.Background("room", "../../../../etc/passwd")
+	if strings.Contains(esc, "..") {
+		t.Fatalf("traversal escaped the clamp: %q", esc)
+	}
+	if esc != "https://cdn/base/etc/passwd" {
+		t.Fatalf("clamped traversal = %q, want origin-rooted etc/passwd", esc)
+	}
+}
+
 // TestBackgroundFolderSubfolder pins the same fix for the folder-listing URL the
 // background picker walks.
 func TestBackgroundFolderSubfolder(t *testing.T) {

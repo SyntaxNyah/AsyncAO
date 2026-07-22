@@ -732,17 +732,23 @@ type App struct {
 	// themeRes holds the newest off-thread theme load; gen ordering means a
 	// slow stale load can never clobber a fresh one (rapid theme cycling
 	// spawns several loads and completion order is not start order).
-	themeRes     atomic.Pointer[themeApply]
-	themeGen     atomic.Uint64
-	themeHealAt  time.Time       // last eviction heal (themeHealPeriod pacing)
-	themeTex     map[string]bool // theme:// stems resident in T1
-	themeSounds  map[string]string
-	themeChatbox bool // theme://chatbox resident (mirror of themeTex)
-	themeMsgCol  sdl.Color
-	themeHasMsg  bool
-	themePalette theme.Palette // last theme's chrome palette, kept so a #M3 chrome-preset change can re-overlay it
-	themeNameCol sdl.Color
-	themeHasName bool
+	themeRes atomic.Pointer[themeApply]
+	themeGen atomic.Uint64
+	// themeAppliedGen is the gen of the newest load pollThemeApply has already
+	// landed. The publish-time newest-wins guard only protects an UNCONSUMED
+	// result; once pollThemeApply Swaps one to nil, a slower older-gen load can
+	// still publish afterward. Comparing against this on the consume side drops
+	// that stale landing (which would revert the theme + clear its font).
+	themeAppliedGen uint64
+	themeHealAt     time.Time       // last eviction heal (themeHealPeriod pacing)
+	themeTex        map[string]bool // theme:// stems resident in T1
+	themeSounds     map[string]string
+	themeChatbox    bool // theme://chatbox resident (mirror of themeTex)
+	themeMsgCol     sdl.Color
+	themeHasMsg     bool
+	themePalette    theme.Palette // last theme's chrome palette, kept so a #M3 chrome-preset change can re-overlay it
+	themeNameCol    sdl.Color
+	themeHasName    bool
 	// Theme courtroom geometry (courtroom_design.ini): design-space rects
 	// + emote grid metrics; themeLay caches the window-scaled rects.
 	// themeRectsOrig keeps the theme's PRISTINE geometry so the layout
@@ -7554,6 +7560,15 @@ func (a *App) pollThemeApply() {
 	if res == nil {
 		return
 	}
+	// Consume-side newest-wins: a slower OLDER-gen load can publish AFTER a newer
+	// one was already consumed (the publish guard only protects an unconsumed
+	// result). Landing it would revert to the stale theme and — because an older
+	// boot/global "default" apply carries an empty fontPath — clear the chat font
+	// (the "applies then reverts" bug). Drop anything older than what's applied.
+	if res.gen < a.themeAppliedGen {
+		return
+	}
+	a.themeAppliedGen = res.gen
 	// Upload every loaded stem into the PINNED tier — theme chrome must
 	// never lose an eviction fight against streaming sprites (the cause
 	// of the black-flashing backdrop / glitching buttons) — and drop
