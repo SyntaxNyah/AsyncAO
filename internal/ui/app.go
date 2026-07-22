@@ -108,11 +108,6 @@ const (
 	// iniswapFetchTimeout caps the txt download.
 	iniswapFetchTimeout = 15 * time.Second
 
-	// keepalivePeriod matches AO2-Client's CH ping timer (courtroom.cpp
-	// keepalive_timer->start(45000)): servers idle-kick silent clients,
-	// which used to hit us whenever the window sat minimized.
-	keepalivePeriod = 45 * time.Second
-
 	// restoreDialTimeout bounds each restore-on-launch reconnect so a dead
 	// remembered server can't freeze boot (manual Join keeps Dial's full 10s).
 	restoreDialTimeout = 4 * time.Second
@@ -1372,7 +1367,6 @@ type sessionState struct {
 	// (areaLogCacheMax). Driven by the area-click switch; both park per tab.
 	areaLogs     map[string][]icEntry
 	areaLogOrder []string
-	lastPing     time.Time // CH keepalive pacing (active + background)
 	lastICSend   time.Time // chat_ratelimit window
 	// manifestFor is a RE-SEED SIGNAL for the CURRENT session origin: Settings
 	// writes "" to it to force fetchManifestAsync to re-fetch the connected
@@ -3142,7 +3136,6 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 	// event-driven loop; a queued no-op event otherwise — the wake is never
 	// treated as user input in either mode).
 	conn.SetNotify(PushWake)
-	a.lastPing = time.Now()
 	a.pkts.reset() // a fresh connection starts a clean packet history
 	a.pktConn = conn
 	a.sess = courtroom.NewSession(func(p protocol.Packet) error {
@@ -3151,6 +3144,10 @@ func (a *App) connectWith(name, wsURL string, dialCtx context.Context) {
 		}
 		return conn.Send(context.Background(), p)
 	}, hdid())
+	// Prime the background keepalive goroutine immediately, so the CH ping flows from
+	// the moment we connect even if the first render frame is delayed (or the window
+	// is already minimized). pumpConnection refreshes it as MyCharID changes.
+	conn.SetKeepalive(a.sess.KeepalivePacket())
 	a.screen = ScreenCharSelect
 }
 
@@ -3423,12 +3420,15 @@ func (a *App) pumpConnection() {
 	if a.conn == nil || a.sess == nil {
 		return
 	}
-	// Client-initiated keepalive (AO2-Client parity, 45 s): runs from
-	// Frame AND Background, so minimized sessions stay alive too.
-	if time.Since(a.lastPing) >= keepalivePeriod {
-		a.lastPing = time.Now()
-		a.sess.Ping()
-	}
+	// Keep the connection's background keepalive goroutine primed with the current
+	// CH payload (it carries MyCharID, which only changes on the render thread). The
+	// goroutine — NOT this loop — actually sends the ping every keepaliveInterval, so
+	// it keeps flowing even while the window is minimized and Windows has stalled this
+	// render loop (the old per-frame send died there, and the server idle-dropped us).
+	// Setting it here each frame is a cheap atomic swap; while minimized this loop may
+	// not run, but MyCharID can't change then anyway, so the last-set payload stays
+	// correct.
+	a.conn.SetKeepalive(a.sess.KeepalivePacket())
 	// Half-dead write side (#7a): Session.reply records the FIRST failed outgoing
 	// write into sendErr and then silently swallows every later packet. A non-nil
 	// SendErr means our writes are going into a dead socket (the keepalive above,

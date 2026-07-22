@@ -1062,6 +1062,16 @@ func (s *Session) Ping() {
 	s.reply(protocol.NewPacket("CH", strconv.Itoa(s.MyCharID)))
 }
 
+// KeepalivePacket returns the CH keepalive as a wire string for the connection's
+// background keepalive goroutine (Conn.SetKeepalive), which sends it off the render
+// loop so it keeps firing while the window is minimized. Built here so it carries
+// the current MyCharID; the caller refreshes it whenever that can change. Read on
+// the render thread (MyCharID is owned there), never from the keepalive goroutine —
+// that goroutine only sees the immutable string.
+func (s *Session) KeepalivePacket() string {
+	return protocol.NewPacket("CH", strconv.Itoa(s.MyCharID)).String()
+}
+
 // CallMod sends a mod call with an optional reason. The second field is
 // the target player id, −1 = whole area (courtroom.cpp:6530
 // on_call_mod_clicked sends {reason, "-1"}).

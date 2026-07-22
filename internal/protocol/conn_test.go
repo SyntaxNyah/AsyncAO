@@ -81,6 +81,47 @@ func TestConnDialReceiveSend(t *testing.T) {
 	}
 }
 
+// TestKeepaliveGoroutineSends pins the fix for the minimized-app disconnect: the CH
+// keepalive is driven by a dedicated goroutine (keepaliveLoop), NOT the caller's
+// render loop — so it keeps firing even when Windows stalls that loop (minimized
+// behind a fullscreen window). With a short interval and a payload set, the echo
+// server receives repeated CH pings although the client NEVER calls Send.
+func TestKeepaliveGoroutineSends(t *testing.T) {
+	srv := echoAOServer(t)
+	conn, err := Dial(context.Background(), wsURL(srv), DialOptions{KeepaliveInterval: 20 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("Dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Drain the server greeting.
+	select {
+	case <-conn.Incoming():
+	case <-time.After(5 * time.Second):
+		t.Fatal("no greeting")
+	}
+
+	// Arm the ping payload; the goroutine now sends CH#7 every ~20ms and the echo
+	// server bounces each back as ECHO#CH#7#%. Collect several without ever Send-ing.
+	conn.SetKeepalive(NewPacket("CH", "7").String())
+
+	got := 0
+	deadline := time.After(5 * time.Second)
+	for got < 3 {
+		select {
+		case p := <-conn.Incoming():
+			if p.Header == "ECHO" && p.Field(0) == "CH" && p.Field(1) == "7" {
+				got++
+			}
+		case <-deadline:
+			t.Fatalf("keepalive goroutine sent only %d CH pings; it must fire off the render loop", got)
+		}
+	}
+	if s := conn.Stats(); s.Sent < 3 {
+		t.Errorf("sent = %d, want ≥3 pings all from the goroutine (client never called Send)", s.Sent)
+	}
+}
+
 func TestConnCloseEndsIncomingCleanly(t *testing.T) {
 	srv := echoAOServer(t)
 	conn, err := Dial(context.Background(), wsURL(srv))

@@ -75,7 +75,6 @@ func TestPinnedPaneDeathSurfacesWarning(t *testing.T) {
 		serverKey:  "ws://pinned",
 		conn:       conn,
 		sess:       courtroom.NewSession(func(protocol.Packet) error { return nil }, ""),
-		lastPing:   time.Now(), // skip the keepalive-ping branch (conn is closing)
 	}}
 	a.tabs = []*courtTab{pinned, {}}
 	a.activeTab = 1 // the user is looking at a DIFFERENT tab

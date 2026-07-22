@@ -17,6 +17,13 @@ const (
 	dialTimeout = 10 * time.Second
 	// writeTimeout caps one outgoing packet write.
 	writeTimeout = 10 * time.Second
+	// keepaliveInterval is how often the connection's keepalive goroutine sends the
+	// CH ping. Matches AO2-Client's keepalive_timer (courtroom.cpp,
+	// keepalive_timer->start(45000)). It runs on its OWN goroutine (keepaliveLoop),
+	// NOT the render loop — Windows stalls a minimized app's frame loop when it's
+	// occluded by a fullscreen foreground app, which used to freeze the old
+	// loop-driven ping and let the server idle-drop the "silent" client.
+	keepaliveInterval = 45 * time.Second
 	// incomingQueueCap bounds the read-loop → client channel; the game
 	// loop drains it every frame.
 	incomingQueueCap = 256
@@ -41,6 +48,19 @@ type Conn struct {
 	readErr  atomic.Pointer[error]
 	closed   chan struct{}
 	once     sync.Once
+
+	// writeMu serializes every ws.Write: application Sends (render thread) and the
+	// keepalive goroutine share the one underlying socket, and coder/websocket
+	// permits only a single writer at a time (concurrent reads are fine, which is
+	// why readLoop needs no lock). Held only for the duration of a frame write.
+	writeMu sync.Mutex
+	// keepalive is the CH ping payload the keepalive goroutine sends each interval,
+	// swapped atomically by the client (SetKeepalive) so it always carries the
+	// current char id. nil means "nothing to send yet" (pre-join / handshake).
+	keepalive atomic.Pointer[string]
+	// keepaliveEvery is this connection's ping interval (0 → keepaliveInterval
+	// default); set from DialOptions so tests can shorten it.
+	keepaliveEvery time.Duration
 
 	// notify, when set, is called from the read loop after each packet is
 	// queued on Incoming (and once when Incoming closes) — the experimental
@@ -86,6 +106,10 @@ func (c *Conn) wake() {
 type DialOptions struct {
 	SkipTLSVerify bool
 	Origin        string
+	// KeepaliveInterval overrides how often the keepalive goroutine pings (0 = the
+	// keepaliveInterval package default). Tests set a short value to exercise the
+	// goroutine without waiting 45 s; production leaves it zero.
+	KeepaliveInterval time.Duration
 }
 
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.
@@ -126,7 +150,11 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 		incoming: make(chan Packet, incomingQueueCap),
 		closed:   make(chan struct{}),
 	}
+	if len(opts) > 0 && opts[0].KeepaliveInterval > 0 {
+		c.keepaliveEvery = opts[0].KeepaliveInterval
+	}
 	go c.readLoop()
+	go c.keepaliveLoop() // fires the CH ping off the render loop; exits on Close (no per-conn leak, §17.4)
 	return c, nil
 }
 
@@ -149,11 +177,72 @@ func (c *Conn) Err() error {
 func (c *Conn) Send(ctx context.Context, p Packet) error {
 	ctx, cancel := context.WithTimeout(ctx, writeTimeout)
 	defer cancel()
-	if err := c.ws.Write(ctx, websocket.MessageText, []byte(p.String())); err != nil {
+	c.writeMu.Lock()
+	err := c.ws.Write(ctx, websocket.MessageText, []byte(p.String()))
+	c.writeMu.Unlock()
+	if err != nil {
 		return fmt.Errorf("protocol: sending %s: %w", p.Header, err)
 	}
 	c.sent.Add(1)
 	return nil
+}
+
+// SetKeepalive installs (or clears, with an empty string) the CH ping payload the
+// keepalive goroutine sends each keepaliveInterval. The client refreshes it whenever
+// the char id can change (join / char pick); an empty string parks the ping (nothing
+// to send yet). Safe to call from any goroutine — the render loop sets it, the
+// keepalive goroutine reads it, via an atomic swap.
+func (c *Conn) SetKeepalive(payload string) {
+	if payload == "" {
+		c.keepalive.Store(nil)
+		return
+	}
+	c.keepalive.Store(&payload)
+}
+
+// keepaliveLoop sends the CH keepalive on a fixed interval from its OWN goroutine,
+// independent of the render loop — the whole point of the fix. AsyncAO used to fire
+// the ping from the frame/Background pump, but Windows stalls that loop when the app
+// is minimized behind a fullscreen foreground app (a video, say), so the ping
+// stopped and the server idle-dropped the "silent" client. This goroutine keeps it
+// flowing regardless of window state, exactly like readLoop keeps reading. A write
+// failure here is a genuinely dead socket (this is real traffic we must send, not a
+// probe), so it surfaces the drop through the same readErr/Close path as any read
+// error — no false positives like the removed staleness watchdog. Exits when the
+// conn closes, so a reconnect cycle can't leak it (rule §17.4).
+func (c *Conn) keepaliveLoop() {
+	every := c.keepaliveEvery
+	if every <= 0 {
+		every = keepaliveInterval
+	}
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-c.closed:
+			return
+		case <-t.C:
+		}
+		p := c.keepalive.Load()
+		if p == nil {
+			continue // not joined yet — nothing to ping with
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+		c.writeMu.Lock()
+		err := c.ws.Write(ctx, websocket.MessageText, []byte(*p))
+		c.writeMu.Unlock()
+		cancel()
+		if err != nil {
+			// A real write failed → the socket is dead. Record it (first error wins;
+			// after Close, readLoop won't clobber it) and Close, so Incoming closes and
+			// the drop reaches the UI (→ lobby) without waiting for the read side.
+			e := fmt.Errorf("protocol: keepalive write failed: %w", err)
+			c.readErr.CompareAndSwap(nil, &e)
+			c.Close()
+			return
+		}
+		c.sent.Add(1)
+	}
 }
 
 // Close tears the connection down. Safe to call multiple times.

@@ -475,10 +475,9 @@ func (a *App) pumpBackgroundTabs() {
 		if s.conn == nil || s.sess == nil {
 			continue
 		}
-		if time.Since(s.lastPing) >= keepalivePeriod {
-			s.lastPing = time.Now()
-			s.sess.Ping()
-		}
+		// Keep this parked tab's background keepalive goroutine primed (it sends the
+		// CH ping off the render loop, so a backgrounded app doesn't idle-drop it).
+		s.conn.SetKeepalive(s.sess.KeepalivePacket())
 		for drained := 0; drained < tabPumpBudget; drained++ {
 			select {
 			case p, ok := <-s.conn.Incoming():

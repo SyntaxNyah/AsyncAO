@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.81.5 — 2026-07-22
+
+- **Minimizing no longer eventually disconnects you.** The keepalive ping that
+  tells the server "I'm still here" used to be sent from the app's drawing loop —
+  and Windows stalls that loop when the app is minimized behind a fullscreen window
+  (a video, a game). So after a while the ping stopped, and the server dropped you
+  as an idle client — even though your PC and connection were perfectly fine. The
+  keepalive now runs on its own background thread, independent of the window, so it
+  keeps pinging whether the app is minimized, unfocused, or hidden behind
+  fullscreen. Your connection stays alive while you're doing other things. (This is
+  the real root cause behind the "it disconnects when I leave it in the background"
+  reports — no server or router change needed.)
+
 ## v1.81.4 — 2026-07-22
 
 - **Minimizing no longer dumps you at character select.** If your connection
