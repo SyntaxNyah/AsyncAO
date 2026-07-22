@@ -1060,33 +1060,33 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   loop.
 - **Reconnect, manual + automatic** (M2): when a connection drops or a join fails,
   the lobby shows a **"Reconnect to &lt;server&gt;"** button that re-dials the last
-  server you tried (the name + ws URL are remembered on every connect attempt). On
-  an **unexpected drop**, AsyncAO also **auto-reconnects** with exponential backoff
-  (≈2 s → 30 s, capped, several tries) until the server returns — the lobby shows
-  the retry status and a **Stop** button. A **deliberate Disconnect never
-  reconnects**, and a manual Reconnect / fresh Join takes over. A **server kick or
-  ban never auto-reconnects** either (re-joining after a ban reads as ban evasion),
-  though the manual Reconnect button still works. Retries **fire even while
-  the window is minimized or unfocused** (background rendering off), so a drop taken
-  while you're popped out recovers on its own. Toggle in **Settings → Audio & Chat**
-  ("Auto-reconnect after a dropped connection", ON by default). Idle it costs one
-  time-compare per frame.
-- **Involuntary-disconnect dialog**: when a connection dies on its own (wire
-  error, server-side close, kick/ban), the courtroom **stays on screen** — frozen,
-  the last IC/OOC lines still readable (tail pinned; scrollback is inert while
-  frozen) — under a modal that says **what happened** (a friendly line for the
-  known causes — kicked, banned, server closed, network unreachable, timeout —
-  with the raw close reason always shown underneath) plus a **Reconnect** button
-  (re-dials that same server through the normal join flow) and **Back to lobby**
-  (Esc does the same). A **deliberate** Disconnect/quit/tab-close never shows the
-  dialog. If the armed **auto-reconnect** countdown is running, the dialog shows
-  it live and a due retry fires from the frozen state. A **parked tab** whose
-  connection dies never pops a modal over the tab you're using — the reason is
-  latched and the dialog opens when you switch to that tab; if that tab was the
-  **pinned float pane**, its disappearance is **announced on the warn line** (the
-  server name + reason) so a torn-out server's death is never silent. A failed manual or
-  auto Reconnect lands on the lobby with the retry countdown + Reconnect button
-  (the frozen scene can't survive a redial teardown — by design).
+  server you tried (the name + ws URL are remembered on every connect attempt).
+  **Auto-reconnect is OFF by default** (user request — and forced off once on
+  update): a drop returns you to the lobby and stays there so you're never
+  bounced through the join handshake back to character select unexpectedly. Turn
+  it **ON** in **Settings → Audio & Chat** ("Auto-reconnect after a dropped
+  connection") to have AsyncAO **auto-retry** the last server with exponential
+  backoff (≈2 s → 30 s, capped) until it returns — the lobby shows the retry status
+  and a **Stop** button. The retry fires **only from the foreground** and only while
+  you're on the lobby, so a drop taken while minimized waits at the lobby until you
+  return rather than reconnecting silently in the background. A **deliberate
+  Disconnect** never reconnects, and a **kick/ban** never auto-reconnects (re-joining
+  after a ban reads as ban evasion), though the manual Reconnect button still works.
+  Idle it costs one time-compare per frame.
+- **Involuntary disconnect → lobby**: when your **active** server connection dies
+  on its own (wire error, server-side close, kick/ban), the client returns you to
+  the **lobby** with the reason on the connErr line and, for a genuine transport
+  drop, an **auto-reconnect countdown** (a due retry fires from the lobby, only
+  while the window is in the foreground — a drop taken while minimized waits at the
+  lobby until you return rather than reconnecting silently in the background). This
+  is the v1.60.0/v1.70.0 behaviour, restored after the v1.80.0 frozen-courtroom
+  dialog + background reconnect turned a minimized drop into a silent
+  reconnect-to-char-select. A **kick/ban** never auto-reconnects. A **parked tab**
+  whose connection dies never pops anything over the tab you're using — the reason
+  is latched and a **disconnect dialog** (with Reconnect / Back to lobby) opens when
+  you switch to that tab; if that tab was the **pinned float pane**, its
+  disappearance is **announced on the warn line** (server name + reason) so a
+  torn-out server's death is never silent.
 - **Auto-connect on launch** (OFF by default): turn this on in **Settings →
   Messages & connection** to open straight onto the **server you last used** — no
   lobby detour — even after you'd disconnected. The checkbox names the remembered

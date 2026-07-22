@@ -130,44 +130,16 @@ func (a *App) cancelAutoReconnect() {
 // reschedules, on success it clears. It calls connectWith directly (not Connect) so
 // the backoff counter survives.
 //
-// Two states can host a due retry:
-//   - the lobby (a drop that fell through to the plain teardown, or an earlier
-//     failed frozen attempt that collapsed to the lobby-with-countdown), and
-//   - a FROZEN courtroom under the involuntary-disconnect dialog: the retry must
-//     still fire there, or the countdown the dialog shows would tick to zero and do
-//     nothing. connectWith's parkActive→allocateTab→resetSessionState would strand
-//     a zombie tab over the connless frozen session, so the frozen fire first tears
-//     the frozen session fully down (exactly as the manual Reconnect button does)
-//     and clears the dialog, THEN redials — collapsing to the lobby if the dial
-//     fails (consistent with a manual Reconnect that fails: lobby + countdown).
-//
-// Any OTHER screen (settings, a live second tab) suppresses the retry, as before.
+// The retry fires ONLY from the lobby (v1.70.0 behaviour, restored by user
+// request): a drop lands on the phone book with the "Auto-reconnecting…" countdown
+// and the retry runs there. It is deliberately called only from the FOREGROUND
+// Frame loop, not from Background — so a drop taken while the window is minimized
+// waits at the lobby until the user returns, instead of silently reconnecting in
+// the background and landing them at char-select before they even restore. Any
+// other screen (courtroom, settings, a live second tab) suppresses the retry.
 func (a *App) pollAutoReconnect() {
-	frozen := a.disconnectDlg.open
-	if a.autoReconnectAt.IsZero() || a.now().Before(a.autoReconnectAt) ||
-		(a.screen != ScreenLobby && !frozen) {
+	if a.autoReconnectAt.IsZero() || a.now().Before(a.autoReconnectAt) || a.screen != ScreenLobby {
 		return
-	}
-	var frozenName, frozenURL, frozenRaw string
-	var frozenHiddenUntil time.Time
-	if frozen {
-		// Tear the frozen session down (deliberate, so the teardown itself doesn't
-		// re-arm) and clear the dialog, but PRESERVE the backoff counter across it —
-		// Disconnect→cancelAutoReconnect zeroes autoReconnectTries, and this is a
-		// continuation of the same retry sequence, not a fresh one. connErr is left
-		// as the drop set it; connectWith clears it on the redial attempt. Snapshot
-		// the dialog's own fields (including its hiddenUntil grace deadline) so a
-		// FAILED redial below can re-surface the SAME dialog instead of silently
-		// stranding the user on a bare lobby (the exact bug the dialog exists to
-		// prevent) — the grace window carries over unchanged, so a drop still
-		// mid-grace stays invisible across many retries, not just the first one.
-		tries := a.autoReconnectTries
-		frozenName, frozenURL, frozenRaw = a.disconnectDlg.name, a.disconnectDlg.url, a.disconnectDlg.reason.raw
-		frozenHiddenUntil = a.disconnectDlg.hiddenUntil
-		a.disconnectDlg = disconnectDialog{}
-		a.deliberateClose = true // the frozen-tab teardown is intentional here
-		a.Disconnect()           // → lobby; nils conn/sess, removes the frozen tab
-		a.autoReconnectTries = tries
 	}
 	a.autoReconnectTries++
 	a.autoReconnectMsg = "Auto-reconnecting to " + a.lastConnName + "… (attempt " +
@@ -178,13 +150,6 @@ func (a *App) pollAutoReconnect() {
 	if a.screen != ScreenLobby { // left the lobby = the dial connected; stop retrying
 		a.cancelAutoReconnect()
 		return
-	}
-	if frozen {
-		// Still down after tearing down the frozen courtroom to try again: re-open
-		// the SAME dialog (same grace deadline) rather than leaving the user on a
-		// bare lobby with the reason buried in connErr — the drop is still exactly
-		// as un-shown/shown as it was a moment ago, just one retry further along.
-		a.openDisconnectDialog(frozenName, frozenURL, frozenRaw, frozenHiddenUntil)
 	}
 	a.autoReconnectAt = a.now().Add(autoReconnectDelay(a.autoReconnectTries)) // failed: back off
 }

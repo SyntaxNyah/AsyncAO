@@ -9,10 +9,10 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
 )
 
-// froomApp builds a headless App parked in a FROZEN-able courtroom: a rehearsal
-// session (Ready, no char picked so loadCharINI/music resume stay inert), a live
-// room, a viewport for buildRoom, and the applied theme matched so a Disconnect()
-// in-test is a no-op (no async theme reload). One live tab holds the session.
+// froomApp builds a headless App parked in a courtroom: a rehearsal session
+// (Ready, no char picked so loadCharINI/music resume stay inert), a live room, a
+// viewport for buildRoom, and the applied theme matched so a Disconnect() in-test
+// is a no-op (no async theme reload). One live tab holds the session.
 func froomApp(t *testing.T) *App {
 	t.Helper()
 	a := testTabApp(t)
@@ -31,7 +31,8 @@ func froomApp(t *testing.T) *App {
 
 // TestFriendlyDisconnectReason pins the raw→friendly mapping table: the known
 // causes get a friendly line (raw always preserved underneath), and an unknown
-// reason keeps friendly == "" so it shows raw alone — never a guessed label.
+// reason keeps friendly == "" so it shows raw alone — never a guessed label. This
+// mapping still feeds the background/parked-tab dialog (see openDisconnectDialog).
 func TestFriendlyDisconnectReason(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -43,7 +44,6 @@ func TestFriendlyDisconnectReason(t *testing.T) {
 		{"network unreachable", "dial tcp: network is unreachable", true},
 		{"no route", "connect: no route to host", true},
 		{"timeout", "protocol: i/o timeout", true},
-		{"stale watchdog", "protocol: connection stale (no data for 100s)", true},
 		{"deadline", "context deadline exceeded", true},
 		{"eof close", "protocol: reading: EOF", true},
 		{"server going away", "websocket: close 1001 (going away)", true},
@@ -65,23 +65,22 @@ func TestFriendlyDisconnectReason(t *testing.T) {
 	}
 }
 
-// TestHandleInvoluntaryDropClassification is the load-bearing switch table: for a
-// connection ending, handleInvoluntaryDrop must freeze the courtroom (dialog up,
-// screen stays Courtroom) ONLY for an involuntary drop with a live room; a
-// deliberate close runs the plain teardown (no dialog, → lobby); a kick/ban freezes
-// but never arms auto-reconnect; a genuine transport drop freezes AND arms it.
-func TestHandleInvoluntaryDropClassification(t *testing.T) {
+// TestHandleInvoluntaryDropGoesToLobby is the load-bearing table for the restored
+// v1.70.0 behaviour: for a connection ending on the ACTIVE tab, handleInvoluntaryDrop
+// always runs the plain teardown to the LOBBY with the reason shown — it never
+// freezes the courtroom under the dialog. Auto-reconnect arms only for a genuine
+// transport drop (not a kick/ban, not a deliberate close).
+func TestHandleInvoluntaryDropGoesToLobby(t *testing.T) {
 	cases := []struct {
 		name        string
 		reason      string
 		deliberate  bool
-		wantDialog  bool
 		wantAutoArm bool
 	}{
-		{"transport drop freezes + arms", "connection closed", false, true, true},
-		{"kick freezes, no auto-reconnect", "Kicked: rude", false, true, false},
-		{"ban freezes, no auto-reconnect", "Banned: cheating", false, true, false},
-		{"deliberate close: plain teardown, no dialog", "connection closed", true, false, false},
+		{"transport drop → lobby + arms", "connection closed", false, true},
+		{"kick → lobby, no auto-reconnect", "Kicked: rude", false, false},
+		{"ban → lobby, no auto-reconnect", "Banned: cheating", false, false},
+		{"deliberate close → lobby, no arm", "connection closed", true, false},
 	}
 	for _, tc := range cases {
 		a := froomApp(t)
@@ -89,14 +88,14 @@ func TestHandleInvoluntaryDropClassification(t *testing.T) {
 		a.deliberateClose = tc.deliberate
 		a.connErr = tc.reason // the caller sets connErr before the shared tail
 		a.handleInvoluntaryDrop(tc.reason)
-		if a.disconnectDlg.open != tc.wantDialog {
-			t.Errorf("%s: disconnectDlg.open=%v, want %v", tc.name, a.disconnectDlg.open, tc.wantDialog)
+		if a.disconnectDlg.open {
+			t.Errorf("%s: an active-tab drop must NEVER freeze under the dialog", tc.name)
 		}
-		if tc.wantDialog && a.screen != ScreenCourtroom {
-			t.Errorf("%s: a freeze must keep screen==Courtroom, got %v", tc.name, a.screen)
+		if a.screen != ScreenLobby {
+			t.Errorf("%s: a drop must land on the lobby, got %v", tc.name, a.screen)
 		}
-		if !tc.wantDialog && a.screen != ScreenLobby {
-			t.Errorf("%s: a plain teardown must land on the lobby, got %v", tc.name, a.screen)
+		if a.connErr != tc.reason {
+			t.Errorf("%s: the lobby must show the reason, connErr=%q want %q", tc.name, a.connErr, tc.reason)
 		}
 		if gotArm := !a.autoReconnectAt.IsZero(); gotArm != tc.wantAutoArm {
 			t.Errorf("%s: auto-reconnect armed=%v, want %v", tc.name, gotArm, tc.wantAutoArm)
@@ -104,67 +103,71 @@ func TestHandleInvoluntaryDropClassification(t *testing.T) {
 	}
 }
 
-// TestBeginInvoluntaryDisconnectFreezesAndKeepsLogs pins the freeze contract: the
-// dialog opens, the network session is torn down (conn nilled) but a.sess/a.room —
-// and the IC log — stay alive and drawn, and the screen stays on the courtroom so
-// the last scene keeps rendering. The reason (friendly + raw) reaches the dialog.
-func TestBeginInvoluntaryDisconnectFreezesAndKeepsLogs(t *testing.T) {
+// TestVoluntaryDisconnectGoesToLobby pins that the user's own Disconnect lands on the
+// lobby with no dialog — a deliberate close is the plain teardown. Uses the SendErr
+// drop path stand-in every deliberate caller shares (they all set deliberateClose).
+func TestVoluntaryDisconnectGoesToLobby(t *testing.T) {
 	a := froomApp(t)
-	// A readable IC log the user was mid-read of — it must survive the freeze.
-	a.icLog = []icEntry{{text: "Phoenix: Objection!", speaker: "Phoenix"}}
-	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed", false)
-
-	if !a.disconnectDlg.open {
-		t.Fatal("an involuntary active-tab drop must open the dialog")
-	}
-	if a.screen != ScreenCourtroom {
-		t.Errorf("the courtroom must stay on screen (frozen), got screen=%v", a.screen)
-	}
-	if a.sess == nil || a.room == nil {
-		t.Error("the session and room must stay alive so the frozen scene keeps drawing")
-	}
-	if a.conn != nil {
-		t.Error("the network conn must be nilled — the pump early-returns, so the room is frozen")
-	}
-	if len(a.icLog) != 1 || a.icLog[0].text != "Phoenix: Objection!" {
-		t.Error("the IC log must remain intact under the dialog (the whole point)")
-	}
-	if a.disconnectDlg.reason.raw != "connection closed" {
-		t.Errorf("the raw reason must reach the dialog, got %q", a.disconnectDlg.reason.raw)
-	}
-	if a.disconnectDlg.reason.friendly == "" {
-		t.Error("a known cause (server closed) should carry a friendly line")
-	}
-	if a.disconnectDlg.url != "ws://test.example" {
-		t.Errorf("the redial target must be captured for Reconnect, got %q", a.disconnectDlg.url)
-	}
-}
-
-// TestBeginInvoluntaryDisconnectFallsBackToLobby pins the no-room-to-freeze corner:
-// a drop with no live courtroom (char-select / already torn down) must fall back to
-// the plain teardown so we still land on the lobby, never a dialog over nothing.
-func TestBeginInvoluntaryDisconnectFallsBackToLobby(t *testing.T) {
-	a := froomApp(t)
-	a.room = nil // no room to freeze (e.g. dropped at char-select)
-	a.screen = ScreenCharSelect
-	a.beginInvoluntaryDisconnect("connection closed", false)
+	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
+	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
+	a.deliberateClose = true // the user chose to leave
+	a.handleInvoluntaryDrop("connection closed")
 	if a.disconnectDlg.open {
-		t.Error("with no room to freeze, the dialog must NOT open")
+		t.Error("a deliberate close must NEVER open the dialog")
 	}
 	if a.screen != ScreenLobby {
-		t.Errorf("the fallback must land on the lobby, got %v", a.screen)
+		t.Errorf("a deliberate close lands on the lobby, got %v", a.screen)
 	}
 }
 
-// TestBackToLobbyLandsInPostDisconnectState pins the dialog's Back to lobby: it
-// runs the real teardown, so we land in EXACTLY today's post-disconnect state —
-// screen == lobby, conn/sess/room gone, the dialog cleared (fence released), and
-// the pending countdown cancelled (the user opted out).
+// TestAutoReconnectRetriesFromLobbyNeverGivesUp pins the restored v1.70.0 retry: a
+// due retry fires from the LOBBY (screen == lobby), and a genuine transport drop
+// keeps retrying indefinitely — no give-up cutoff — so an AFK session self-heals
+// when the server returns. With no reachable server the dial fails and backs off,
+// staying armed the whole way through.
+func TestAutoReconnectRetriesFromLobbyNeverGivesUp(t *testing.T) {
+	a := froomApp(t)
+	a.d.Prefs.SetAutoReconnect(true)
+	a.screen = ScreenLobby // a drop already tore down to the lobby
+	a.connErr = "connection closed"
+	a.autoReconnectTries = 0
+	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+
+	const attempts = 10 // well past the 8-try cutoff a prior version enforced
+	for i := 1; i <= attempts; i++ {
+		a.pollAutoReconnect()
+		if a.autoReconnectAt.IsZero() {
+			t.Fatalf("attempt %d: auto-reconnect stopped retrying — it must never give up", i)
+		}
+		a.autoReconnectAt = a.now().Add(-1 * time.Second) // force the next retry due now
+	}
+	if a.autoReconnectTries != attempts {
+		t.Errorf("expected %d attempts to have run, got %d", attempts, a.autoReconnectTries)
+	}
+}
+
+// TestAutoReconnectSuppressedOffLobby pins that the foreground retry only fires from
+// the lobby: while the user is anywhere else (a live courtroom, settings), a due
+// retry does NOT fire — the restored Frame-only-from-lobby contract.
+func TestAutoReconnectSuppressedOffLobby(t *testing.T) {
+	a := froomApp(t) // screen == Courtroom
+	a.autoReconnectTries = 0
+	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
+	a.pollAutoReconnect()
+	if a.autoReconnectTries != 0 {
+		t.Error("a retry must NOT fire off the lobby (courtroom): it stays armed until the user returns")
+	}
+	if a.autoReconnectAt.IsZero() {
+		t.Error("the armed retry must remain armed while off the lobby")
+	}
+}
+
+// TestBackToLobbyLandsInPostDisconnectState pins the (background-tab) dialog's Back
+// to lobby: it runs the real teardown, landing on the lobby with conn/sess/room
+// gone, the dialog cleared (fence released), and any pending countdown cancelled.
 func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 	a := froomApp(t)
-	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed", false)
+	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 	a.autoReconnectAt = a.now().Add(2 * time.Second) // a countdown was running
 	a.closeDisconnectDialogToLobby()
 
@@ -182,16 +185,14 @@ func TestBackToLobbyLandsInPostDisconnectState(t *testing.T) {
 	}
 }
 
-// TestReconnectFromDialogRedials pins the dialog's Reconnect: it tears the frozen
-// session fully down (deliberate, so the teardown itself doesn't auto-retry) and
-// redials the SAME server through the normal Connect path. The dialog clears; the
-// redial target is the frozen server, not whatever lastConn* held globally.
+// TestReconnectFromDialogRedials pins the (background-tab) dialog's Reconnect: it
+// tears the frozen session fully down and redials the SAME server captured in the
+// dialog through the normal Connect path — not whatever lastConn* held globally.
 func TestReconnectFromDialogRedials(t *testing.T) {
 	a := froomApp(t)
-	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed", false)
+	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 	// A DIFFERENT server later became the global lastConn* (a second tab): Reconnect
-	// must still target the frozen server captured in the dialog, not this one.
+	// must still target the server captured in the dialog, not this one.
 	a.lastConnName, a.lastConnURL = "Other", "ws://other.example"
 
 	a.reconnectFromDisconnectDialog()
@@ -202,21 +203,19 @@ func TestReconnectFromDialogRedials(t *testing.T) {
 	// Connect seeds lastConn* to the redial target; with no reachable server the dial
 	// fails and lands on the lobby, but lastConn* proves which server was dialed.
 	if a.lastConnURL != "ws://test.example" {
-		t.Errorf("Reconnect must redial the FROZEN server, got lastConnURL=%q", a.lastConnURL)
+		t.Errorf("Reconnect must redial the dialog's server, got lastConnURL=%q", a.lastConnURL)
 	}
 	if a.screen != ScreenLobby {
-		t.Errorf("a failed redial lands on the lobby (like the lobby Reconnect button), got %v", a.screen)
+		t.Errorf("a failed redial lands on the lobby, got %v", a.screen)
 	}
 }
 
 // TestEscClosesDisconnectDialogToLobby pins the closeTopOverlay routing: Esc while
-// the dialog is up must NOT merely flip the flag (that would strand the user in a
-// frozen courtroom with no dialog and no exit) — it routes through Back to lobby, so
-// closeTopOverlay reports handled AND we land on the lobby with the dialog cleared.
+// the (background-tab) dialog is up must route through Back to lobby, so it reports
+// handled AND we land on the lobby with the dialog cleared — never a frozen dead end.
 func TestEscClosesDisconnectDialogToLobby(t *testing.T) {
 	a := froomApp(t)
-	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed", false)
+	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 
 	if !a.closeTopOverlay() {
 		t.Fatal("Esc must be handled by closeTopOverlay while the dialog is up")
@@ -225,18 +224,14 @@ func TestEscClosesDisconnectDialogToLobby(t *testing.T) {
 		t.Error("Esc must clear the dialog")
 	}
 	if a.screen != ScreenLobby {
-		t.Errorf("Esc == Back to lobby: must land on the lobby (not a frozen dead-end), got %v", a.screen)
+		t.Errorf("Esc == Back to lobby: must land on the lobby, got %v", a.screen)
 	}
 }
 
 // TestDialogCloseAlwaysReleasesFence pins the emoji-picker freeze class: EVERY path
-// that closes the dialog must leave it closed, so the frame-tail fence (derived
-// from disconnectDlg.open) is never left set with no dialog to own it. Drives all
-// three close paths and asserts open==false and the pointer fence would not re-arm.
+// that closes the dialog must leave it closed, so the frame-tail fence (derived from
+// disconnectDlg.open) is never left set with no dialog to own it.
 func TestDialogCloseAlwaysReleasesFence(t *testing.T) {
-	// Reconnect is covered by its own test (it does a real redial); here we drive the
-	// network-free close paths, plus a foreign Disconnect() to prove the defensive
-	// clear in the teardown holds the disconnectDlg.open ⇒ screen==Courtroom invariant.
 	closers := map[string]func(a *App){
 		"back to lobby": (*App).closeDisconnectDialogToLobby,
 		"esc":           func(a *App) { a.closeTopOverlay() },
@@ -244,13 +239,9 @@ func TestDialogCloseAlwaysReleasesFence(t *testing.T) {
 	}
 	for name, close := range closers {
 		a := froomApp(t)
-		a.connErr = "connection closed"
-		a.beginInvoluntaryDisconnect("connection closed", false)
+		a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 		a.ctx.fencePointer() // stand in for the frame-tail fence set while the dialog is up
 		close(a)
-		// With the dialog closed, the frame-tail fence-on condition (disconnectDlg.open)
-		// is false — the pointer would not be re-fenced next frame, so no persistent
-		// freeze (the reported emoji-picker class).
 		if a.disconnectDlg.open {
 			t.Errorf("%s: the dialog must be closed so its fence releases (else a stuck freeze)", name)
 		}
@@ -259,10 +250,8 @@ func TestDialogCloseAlwaysReleasesFence(t *testing.T) {
 
 // TestParkedTabDeathArmsWithoutActiveModal pins the parked-tab rule: a BACKGROUND
 // tab's connection dying must mark the tab dead and LATCH its reason, but must NOT
-// pop the dialog over whatever ACTIVE tab the user is looking at. Both death sites
-// are exercised: a socket close (pumpBackgroundTabs) and a kick (routeBackgroundEvent).
+// pop the dialog over whatever ACTIVE tab the user is looking at.
 func TestParkedTabDeathArmsWithoutActiveModal(t *testing.T) {
-	// Kick/ban path: routeBackgroundEvent EventDisconnect.
 	a := testTabApp(t)
 	bg := &courtTab{state: sessionState{serverName: "Background", serverKey: "ws://bg"}, inCourt: true}
 	a.tabs = []*courtTab{bg, {}}
@@ -280,12 +269,10 @@ func TestParkedTabDeathArmsWithoutActiveModal(t *testing.T) {
 }
 
 // TestActivateDeadInCourtTabOpensDialog pins the other half of the parked rule:
-// switching TO a tab that died in court surfaces the same dialog over its restored
-// courtroom (reason from the latch), rather than silently booting to the lobby. The
-// dead flag is consumed so the dialog now owns the drop.
+// switching TO a tab that died in court surfaces the dialog over its restored
+// courtroom (reason from the latch), rather than silently booting to the lobby.
 func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
-	a := froomApp(t) // active tab 0 is a live frozen-able courtroom
-	// A background tab that died in court, with its reason latched.
+	a := froomApp(t) // active tab 0 is a live courtroom
 	dead := &courtTab{
 		state:   sessionState{serverName: "Dropped", serverKey: "ws://dropped"},
 		dead:    true,
@@ -311,94 +298,14 @@ func TestActivateDeadInCourtTabOpensDialog(t *testing.T) {
 	}
 }
 
-// TestAutoReconnectFiresWhileFrozen pins the tie-breaker the whole feature hinges
-// on: an armed countdown must fire even while the courtroom is FROZEN under the
-// dialog (screen != lobby). It also pins the re-open-on-failure contract: with no
-// reachable server the redial fails, and rather than stranding the user on a bare
-// lobby (buried connErr — the exact problem the dialog exists to prevent) the SAME
-// dialog re-opens over the lobby so the drop stays visible/informative.
-func TestAutoReconnectFiresWhileFrozen(t *testing.T) {
-	a := froomApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
-	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed", false) // no grace: show immediately, as before
-	// Arm a due retry (as scheduleAutoReconnect would, but already past its time).
-	a.autoReconnectTries = 0
-	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
-
-	// The poll must fire despite screen==Courtroom+dialog: it tears the frozen
-	// session down, attempts the redial, and — with no reachable server — the dial
-	// fails and backs off on the lobby, re-opening the dialog over it.
-	a.pollAutoReconnect()
-
-	if !a.disconnectDlg.open {
-		t.Error("a failed redial must re-open the dialog, not strand the user on a silent lobby")
-	}
-	if a.screen != ScreenLobby {
-		t.Errorf("after the frozen fire the session is torn down to the lobby, got %v", a.screen)
-	}
-	// The retry counter advanced (the attempt ran), proving the poll didn't early-out.
-	if a.autoReconnectTries == 0 {
-		t.Error("the frozen fire must have run an attempt (tries should have advanced)")
-	}
-}
-
-// TestAutoReconnectNeverGivesUp pins the AFK-safety contract auto-reconnect
-// exists for: a genuine transport drop keeps retrying indefinitely — well past
-// the 8-try cutoff a prior version enforced — instead of stranding the session
-// until someone is at the keyboard to click Reconnect. Runs the retry past the
-// old cutoff and asserts it is STILL armed (autoReconnectAt non-zero, no
-// terminal "gave up" state) the whole way through.
-func TestAutoReconnectNeverGivesUp(t *testing.T) {
-	a := froomApp(t)
-	a.d.Prefs.SetAutoReconnect(true)
-	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed", false)
-	a.autoReconnectTries = 0
-	a.autoReconnectAt = a.now().Add(-1 * time.Second) // due now
-
-	const pastOldCutoff = 10 // the old autoReconnectMaxTries was 8
-	for i := 1; i <= pastOldCutoff; i++ {
-		a.pollAutoReconnect()
-		if a.autoReconnectAt.IsZero() {
-			t.Fatalf("attempt %d: auto-reconnect stopped retrying — it must never give up on a genuine transport drop", i)
-		}
-		a.autoReconnectAt = a.now().Add(-1 * time.Second) // force the next retry due now
-	}
-	if a.autoReconnectTries != pastOldCutoff {
-		t.Errorf("expected %d attempts to have run, got %d", pastOldCutoff, a.autoReconnectTries)
-	}
-}
-
-// TestVoluntaryDisconnectNeverFreezes pins that the user's own Disconnect never
-// shows the involuntary dialog — a deliberate close is byte-identical to today
-// (plain teardown → lobby). Uses the SendErr drop path with deliberateClose set,
-// the stand-in every deliberate caller shares (they all set deliberateClose first).
-func TestVoluntaryDisconnectNeverFreezes(t *testing.T) {
-	a := froomApp(t)
-	a.sess = courtroom.NewSession(func(protocol.Packet) error { return nil }, "")
-	a.room = courtroom.NewCourtroom(courtroom.URLBuilder{}, nil, a.sess, courtroom.NopAudio{})
-	a.deliberateClose = true // the user chose to leave
-	a.handleInvoluntaryDrop("connection closed")
-	if a.disconnectDlg.open {
-		t.Error("a deliberate close must NEVER open the involuntary dialog")
-	}
-	if a.screen != ScreenLobby {
-		t.Errorf("a deliberate close lands on the lobby, got %v", a.screen)
-	}
-}
-
-// TestTabBarInertUnderDialog pins the state-safety guard: while the dialog is up,
-// handleTabBar (which runs in the update phase, BEFORE the frame-tail pointer fence)
-// must NOT act on a chip click — otherwise activating another tab would park the
-// frozen-but-not-dead session into a zombie slot (never pumped, s.conn==nil) while
-// the App-level dialog stayed up over the wrong server. The active tab must be
-// unchanged after a simulated click.
+// TestTabBarInertUnderDialog pins the state-safety guard: while the (background-tab)
+// dialog is up, handleTabBar must NOT act on a chip click — otherwise activating
+// another tab would park a frozen session into a zombie slot while the dialog stayed
+// up over the wrong server. The active tab must be unchanged after a simulated click.
 func TestTabBarInertUnderDialog(t *testing.T) {
 	a := froomApp(t)
 	a.tabs = append(a.tabs, &courtTab{state: sessionState{serverName: "Other", serverKey: "ws://other"}})
-	a.connErr = "connection closed"
-	a.beginInvoluntaryDisconnect("connection closed", false)
+	a.openDisconnectDialog("Test Server", "ws://test.example", "connection closed", time.Time{})
 	before := a.activeTab
 	a.ctx.mouseDown = true // a press this frame, as a chip click would present
 	a.handleTabBar(1000, 40)
@@ -407,38 +314,5 @@ func TestTabBarInertUnderDialog(t *testing.T) {
 	}
 	if !a.disconnectDlg.open {
 		t.Error("the dialog must still be up (the click must not have resolved it)")
-	}
-}
-
-// TestTeardownCallerClassification enumerates the literal ask: every teardown caller
-// classified voluntary/involuntary. The voluntary callers all set deliberateClose
-// before Disconnect() (asserted at their sites in screens.go/tabs.go); here we pin
-// the RESULT the classification produces — a voluntary reason never freezes, an
-// involuntary one does — for each caller's characteristic reason string, through the
-// one switch (handleInvoluntaryDrop) they conceptually share.
-func TestTeardownCallerClassification(t *testing.T) {
-	cases := []struct {
-		caller      string
-		reason      string
-		deliberate  bool // the caller sets deliberateClose = this before teardown
-		involuntary bool // => freezes under the dialog
-	}{
-		{"Disconnect button (requestDisconnect)", "connection closed", true, false},
-		{"Disconnect confirm Yes", "connection closed", true, false},
-		{"close active tab", "connection closed", true, false},
-		{"rehearsal end (parkActive)", "connection closed", true, false},
-		{"pumpConnection SendErr (transport)", "connection lost: write failed", false, true},
-		{"pumpConnection closed Incoming", "connection closed", false, true},
-		{"EventDisconnect kick", "Kicked: rude", false, true},
-		{"EventDisconnect ban", "Banned: evasion", false, true},
-	}
-	for _, tc := range cases {
-		a := froomApp(t)
-		a.deliberateClose = tc.deliberate
-		a.connErr = tc.reason
-		a.handleInvoluntaryDrop(tc.reason)
-		if got := a.disconnectDlg.open; got != tc.involuntary {
-			t.Errorf("%s: involuntary(freeze)=%v, want %v", tc.caller, got, tc.involuntary)
-		}
 	}
 }

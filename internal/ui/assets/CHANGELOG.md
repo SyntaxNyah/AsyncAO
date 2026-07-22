@@ -4,6 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.81.4 — 2026-07-22
+
+- **Minimizing no longer dumps you at character select.** If your connection
+  dropped (e.g. while the window was minimized), a recent change (v1.80.0) had the
+  client silently reconnect in the background and drop you back at character select
+  — losing your courtroom — often before you'd even restored the window. A drop now
+  simply returns you to the **server list (lobby)** with the reason shown, and
+  leaves you there: click **Reconnect** when you're ready. **Auto-reconnect is now
+  off by default** (and is forced off once when you update, so everyone gets the
+  stable behavior) — because reconnecting always re-runs the join handshake, which
+  is what put you back at character select. You can turn auto-retry back on in
+  Settings if you prefer it. The connection keepalive is unchanged, so an idle or
+  minimized client still stays connected. The frozen-courtroom disconnect dialog for
+  a single active server is gone in favour of the lobby; it still appears only when
+  you switch back to a *second* (parked) tab that died while you were away.
+
 ## v1.81.3 — 2026-07-22
 
 - **Fixed frequent disconnects.** A background "staleness watchdog" added in a

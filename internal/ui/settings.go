@@ -2992,7 +2992,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 	y += 26
 
 	ar := a.d.Prefs.AutoReconnectOn()
-	if next := c.Checkbox(pad, y, "Auto-reconnect after a dropped connection (ON by default): retries the last server with backoff. A deliberate Disconnect never reconnects; the manual Reconnect button always works.", ar); next != ar {
+	if next := c.Checkbox(pad, y, "Auto-reconnect after a dropped connection (OFF by default): a drop otherwise returns you to the lobby to click Reconnect. When ON, retries the last server with backoff (which re-runs the join handshake, so you land at character select). A deliberate Disconnect never reconnects; the manual Reconnect button always works.", ar); next != ar {
 		a.d.Prefs.SetAutoReconnect(next)
 	}
 	y += 26

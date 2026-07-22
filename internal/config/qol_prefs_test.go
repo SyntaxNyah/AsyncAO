@@ -126,8 +126,8 @@ func TestQoLPrefDefaults(t *testing.T) {
 	if p.ICTimestampsOn() {
 		t.Error("ICTimestampsOn default must be false (playtest: timestamps off by default)")
 	}
-	if !p.AutoReconnectOn() {
-		t.Error("AutoReconnectOn default must be true")
+	if p.AutoReconnectOn() {
+		t.Error("AutoReconnectOn default must be false (drops stay at the lobby; auto-retry is opt-in)")
 	}
 	if !p.ScreenEffectsOn() {
 		t.Error("ScreenEffectsOn default must be true (AO2 screen effects ship ON)")
@@ -836,7 +836,7 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	p.SetCallwordToast(false)        // same absent-default-ON pointer
 	p.SetMessageCounter(false)       // same absent-default-ON pointer
 	p.SetICTimestamps(true)          // explicit non-default true must survive the absent-default-OFF pointer
-	p.SetAutoReconnect(false)        // same absent-default-ON pointer
+	p.SetAutoReconnect(true)         // explicit non-default true must survive the absent-default-OFF pointer
 	p.SetScreenEffects(false)        // default-ON *bool — explicit false must survive
 	p.SetWordDelete(false)           // default-ON *bool — explicit false must survive
 	p.SetMusicHistory(false)         // same absent-default-ON pointer
@@ -897,8 +897,8 @@ func TestQoLPrefRoundTrip(t *testing.T) {
 	if q.MessageCounterOn() {
 		t.Error("MessageCounter=false lost (absent-default ON must not clobber explicit false)")
 	}
-	if q.AutoReconnectOn() {
-		t.Error("AutoReconnect=false lost (absent-default ON must not clobber explicit false)")
+	if !q.AutoReconnectOn() {
+		t.Error("AutoReconnect=true lost (absent-default OFF must not clobber explicit true)")
 	}
 	if q.MusicHistoryOn() {
 		t.Error("MusicHistory=false lost (absent-default ON must not clobber explicit false)")

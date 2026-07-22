@@ -1430,3 +1430,35 @@ func TestDPIScalePercent(t *testing.T) {
 		t.Errorf("a tiny DPI must floor at MinAutoUIScalePercent (%d), got %d", MinAutoUIScalePercent, got)
 	}
 }
+
+// TestAutoReconnectDefaultPullback pins the one-shot ON→OFF migration: a file
+// written by an OLDER build carries an explicit autoReconnect:true (the old default
+// the saver always wrote) but NO migrated stamp, and must be forced OFF once on the
+// first load — so everyone who updates lands with auto-reconnect off (a drop returns
+// them to the lobby). A file that already carries the stamp is respected as-is, so a
+// user who deliberately turns it back on after the update keeps it on.
+func TestAutoReconnectDefaultPullback(t *testing.T) {
+	old := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(old, []byte(`{"autoReconnect": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := load(old)
+	if err != nil {
+		t.Fatalf("load old file: %v", err)
+	}
+	if p.AutoReconnectOn() {
+		t.Error("an older file's ON auto-reconnect must be forced OFF on update (the pull-back)")
+	}
+
+	stamped := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(stamped, []byte(`{"autoReconnect": true, "autoReconnectDefaultMigrated": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q, err := load(stamped)
+	if err != nil {
+		t.Fatalf("load stamped file: %v", err)
+	}
+	if !q.AutoReconnectOn() {
+		t.Error("a stamped file's explicit ON must be respected (the pull-back already ran)")
+	}
+}

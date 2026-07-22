@@ -2687,21 +2687,13 @@ func (a *App) Background(dt time.Duration) {
 	a.pumpBackgroundTabs()
 	a.drainWarnings()
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
-	// M2 auto-reconnect must fire here too, not only from Frame. While popped out
-	// (minimized, or unfocused with background rendering off) ONLY Background runs:
-	// pumpConnection above detects the drop and scheduleAutoReconnect arms the
-	// countdown against a.now() (frameNow, stamped above) — but if the retry could
-	// only fire from Frame, a drop taken while popped out would count down to zero
-	// and just sit there, healing only once the window is refocused. A returning
-	// user expects silent self-recovery, so we DIAL while minimized/unfocused. The
-	// dial blocks this loop briefly, which is acceptable for the same reason the
-	// Frame path accepts it (a blocking connect, no off-thread session setup); this
-	// runs on the locked main thread just like Frame, so it is no new SDL/off-thread
-	// violation. Idempotent against Frame+Background double-polling: the first poll
-	// mutates a.autoReconnectAt (cancelAutoReconnect zeroes it on connect/give-up, a
-	// failed dial pushes it ≥autoReconnectBase into the future), so a second poll in
-	// the same due window early-returns on IsZero()/now().Before — it cannot double-dial.
-	a.pollAutoReconnect()
+	// Auto-reconnect is deliberately NOT polled here (v1.70.0 behaviour, restored by
+	// user request): pumpConnection above still detects a drop and lands us on the
+	// lobby with the retry armed, but the retry itself fires only from the foreground
+	// Frame loop (pollAutoReconnect). So a drop taken while the window is minimized
+	// waits at the lobby until the user returns — instead of the v1.80.0 behaviour of
+	// silently reconnecting in the background and stranding them at char-select on a
+	// churn of retries before they even restore the window.
 	a.pollCharINI()    // drain the async char.ini result here too, so the emote list appears at idle=0 (a skipped courtroom frame never reaches the draw-time poll)
 	a.pollLogBrowser() // same for the log browser's off-thread scope load (session list + log area) — else it stays blank at idle=0 until cursor motion
 	a.pollUpdate()     // and the self-update result — else "Downloading…" never flips to "Restart to apply" at idle=0 until cursor motion
@@ -7372,11 +7364,10 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			a.drawHideSpriteConfirm(winW, winH)
 		}
 	}
-	// The involuntary-disconnect dialog draws LAST of the blocking modals, over the
-	// already-painted frozen courtroom (its scene + logs stayed drawn under it). Own
-	// block, not folded into the switch above: it's mutually exclusive with the
-	// disconnect-confirm (beginInvoluntaryDisconnect clears confirmDisconnect so a drop
-	// mid-confirm can't stack the two), and drawing it unconditionally-when-open
+	// The involuntary-disconnect dialog (now reached only for a background/parked
+	// tab's death, surfaced on reactivation) draws LAST of the blocking modals, over
+	// the already-painted frozen courtroom (its scene + logs stayed drawn under it).
+	// Own block, not folded into the switch above: drawing it unconditionally-when-open
 	// guarantees the fence set for it (7068) is always released here — never a
 	// fenced-but-invisible dialog (the emoji-picker freeze class). Restore the pointer
 	// for its own buttons first.

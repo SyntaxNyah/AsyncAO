@@ -301,10 +301,14 @@ const defaultMessageCounter = true
 // Settings → Chat.
 const defaultICTimestamps = false
 
-// defaultAutoReconnect ships ON: after an unexpected drop, AsyncAO auto-retries
-// the last server with backoff (the manual Reconnect button still works, and a
-// deliberate Disconnect never auto-retries).
-const defaultAutoReconnect = true
+// defaultAutoReconnect ships OFF (user request): after an unexpected drop, AsyncAO
+// returns to the lobby with the reason shown and leaves you there — the manual
+// Reconnect button re-dials the last server when you're ready. Auto-retry is
+// opt-in because reconnecting always re-runs the AO handshake, which drops you at
+// character select (the server re-picks your character on any fresh connection);
+// staying at the lobby avoids that surprise, especially after a drop taken while
+// minimized. Turn it back ON in Settings to auto-retry the last server with backoff.
+const defaultAutoReconnect = false
 
 // defaultClipSpritesToStage clips the character sprites to the stage rect so a
 // large pair / reposition OFFSET can't spill a sprite over the chatbox or the log.
@@ -1170,8 +1174,13 @@ type AssetPreferences struct {
 	LoopPreanim bool `json:"loopPreanim"`
 	// ICTimestamps prefixes each IC log line with its local arrival time (OFF by default).
 	ICTimestamps bool `json:"icTimestamps"`
-	// AutoReconnect auto-retries the last server after an unexpected drop (ON by default).
+	// AutoReconnect auto-retries the last server after an unexpected drop (OFF by
+	// default; a drop otherwise returns you to the lobby with a manual Reconnect).
 	AutoReconnect bool `json:"autoReconnect"`
+	// AutoReconnectDefaultMigrated stamps that the one-shot ON→OFF default pull-back
+	// has run for this file (see load). Absent in files written before the pull-back;
+	// once true, the saved AutoReconnect choice is respected as-is.
+	AutoReconnectDefaultMigrated bool `json:"autoReconnectDefaultMigrated"`
 	// MusicHistory keeps the session "recently played" jukebox list (ON by default).
 	MusicHistory bool `json:"musicHistory"`
 	// MusicStreaming fetches and plays custom /play tracks (ON by default). OFF =
@@ -1492,22 +1501,23 @@ type prefsJSON struct {
 	CharDownloader     bool                      `json:"charDownloader"`
 	ToolboxSeen        bool                      `json:"toolboxSeen"` // A1: default OFF (zero value) = show the toolbox discoverability ring until first expand
 
-	ShowAssetWarnings  bool     `json:"showAssetWarnings"`    // default OFF (zero value)
-	SpriteMove         bool     `json:"spriteMove"`           // default OFF (zero value)
-	DeskFollowManifest bool     `json:"deskFollowManifest"`   // default OFF (zero value)
-	SpritePreview      *bool    `json:"spritePreview"`        // absent = default ON
-	PreviewHoverMs     *int     `json:"previewHoverMs"`       // absent = default 5 s
-	PreviewHeightPx    int      `json:"previewHeightPx"`      // 0/absent = shipped default (384)
-	EmoteHoverNames    *bool    `json:"emoteHoverNames"`      // absent = default ON
-	EmoteHoverNamesMs  *int     `json:"emoteHoverNamesMs"`    // absent = default 5 s
-	AutoLoginToast     *bool    `json:"autoLoginToast"`       // absent = default ON
-	CallwordToast      *bool    `json:"callwordToast"`        // absent = default ON
-	MessageCounter     *bool    `json:"messageCounter"`       // absent = default ON
-	ICTimestamps       *bool    `json:"icTimestamps"`         // absent = default OFF
-	AutoReconnect      *bool    `json:"autoReconnect"`        // absent = default ON
-	MusicHistory       *bool    `json:"musicHistory"`         // absent = default ON
-	MusicStreaming     *bool    `json:"musicStreaming"`       // absent = default ON
-	MusicHosts         []string `json:"musicHosts,omitempty"` // absent = default list
+	ShowAssetWarnings            bool     `json:"showAssetWarnings"`            // default OFF (zero value)
+	SpriteMove                   bool     `json:"spriteMove"`                   // default OFF (zero value)
+	DeskFollowManifest           bool     `json:"deskFollowManifest"`           // default OFF (zero value)
+	SpritePreview                *bool    `json:"spritePreview"`                // absent = default ON
+	PreviewHoverMs               *int     `json:"previewHoverMs"`               // absent = default 5 s
+	PreviewHeightPx              int      `json:"previewHeightPx"`              // 0/absent = shipped default (384)
+	EmoteHoverNames              *bool    `json:"emoteHoverNames"`              // absent = default ON
+	EmoteHoverNamesMs            *int     `json:"emoteHoverNamesMs"`            // absent = default 5 s
+	AutoLoginToast               *bool    `json:"autoLoginToast"`               // absent = default ON
+	CallwordToast                *bool    `json:"callwordToast"`                // absent = default ON
+	MessageCounter               *bool    `json:"messageCounter"`               // absent = default ON
+	ICTimestamps                 *bool    `json:"icTimestamps"`                 // absent = default OFF
+	AutoReconnect                *bool    `json:"autoReconnect"`                // absent = default OFF
+	AutoReconnectDefaultMigrated *bool    `json:"autoReconnectDefaultMigrated"` // absent = the ON→OFF pull-back hasn't run for this file yet
+	MusicHistory                 *bool    `json:"musicHistory"`                 // absent = default ON
+	MusicStreaming               *bool    `json:"musicStreaming"`               // absent = default ON
+	MusicHosts                   []string `json:"musicHosts,omitempty"`         // absent = default list
 
 	ShowMissingPlaceholder *bool  `json:"showMissingPlaceholder"`    // absent = default ON
 	ErrorSpritePath        string `json:"errorSpritePath,omitempty"` // "" = embedded default
@@ -1774,38 +1784,42 @@ func defaultPrefs(path string) *AssetPreferences {
 		MessageCounter:         defaultMessageCounter,
 		ICTimestamps:           defaultICTimestamps,
 		AutoReconnect:          defaultAutoReconnect,
-		MusicHistory:           defaultMusicHistory,
-		MusicStreaming:         defaultMusicStreaming,
-		ShowMissingPlaceholder: defaultShowMissingPlaceholder,
-		MusicHosts:             defaultMusicHostList(),
-		HighlightColor:         defaultHighlightColor,
-		ICCustomColor:          defaultICCustomColor,
-		NameSat:                defaultNameColorSat,
-		NameVal:                defaultNameColorVal,
-		BgSlideshowSecs:        defaultBgSlideshowSecs,
-		AutoDetectFormats:      defaultFormatAutoDetect,
-		BlipRate:               defaultBlipRate,
-		ThemeLayoutOn:          defaultThemeLayout,
-		ThemeFit:               defaultThemeFit,
-		ThemeFitZoom:           DefaultThemeZoom,
-		PlainLobby:             defaultPlainLobby,
-		UIScaleAutoOn:          defaultUIScaleAuto,
-		CatchUpOn:              defaultCatchUpWhenBehind,
-		CatchUpThreshold:       DefaultCatchUpThreshold,
-		MultiTabCap:            DefaultMultiTabCap,
-		SpriteLoadModeVal:      defaultSpriteLoadMode,       // webAO-style hold-previous by default (kills the cold-load flash)
-		MotionRedrawPerEvent:   defaultMotionRedrawPerEvent, // per-event motion redraw ON by default (less GPU on a moving cursor)
-		DiscordRPC:             defaultDiscordPrefs(),
-		MyAutoStatus:           defaultAutoStatusPref(),
-		ChromeThemeKey:         "dark",
-		ChromeShapeKey:         defaultChromeShape, // A5: "sharp" — byte-identical to today's flat chrome
-		ViewportPct:            DefaultViewportPercent,
-		ChatScalePct:           DefaultScalePercent,
-		ChatBoxPct:             DefaultScalePercent,
-		LogScalePct:            DefaultScalePercent,
-		InputHeightPct:         DefaultScalePercent,
-		UIScalePct:             DefaultScalePercent,
-		OOCInLogTab:            true, // default OOC = a log tab + bottom OOC bar (Legacy-style, hybrid); the OOC-box layout is opt-out
+		// A fresh install has nothing to pull back (it already defaults OFF), so it
+		// counts as already-migrated. Only a file written by an OLDER build lacks
+		// this stamp (absent → nil on load) and triggers the one-shot force-OFF.
+		AutoReconnectDefaultMigrated: true,
+		MusicHistory:                 defaultMusicHistory,
+		MusicStreaming:               defaultMusicStreaming,
+		ShowMissingPlaceholder:       defaultShowMissingPlaceholder,
+		MusicHosts:                   defaultMusicHostList(),
+		HighlightColor:               defaultHighlightColor,
+		ICCustomColor:                defaultICCustomColor,
+		NameSat:                      defaultNameColorSat,
+		NameVal:                      defaultNameColorVal,
+		BgSlideshowSecs:              defaultBgSlideshowSecs,
+		AutoDetectFormats:            defaultFormatAutoDetect,
+		BlipRate:                     defaultBlipRate,
+		ThemeLayoutOn:                defaultThemeLayout,
+		ThemeFit:                     defaultThemeFit,
+		ThemeFitZoom:                 DefaultThemeZoom,
+		PlainLobby:                   defaultPlainLobby,
+		UIScaleAutoOn:                defaultUIScaleAuto,
+		CatchUpOn:                    defaultCatchUpWhenBehind,
+		CatchUpThreshold:             DefaultCatchUpThreshold,
+		MultiTabCap:                  DefaultMultiTabCap,
+		SpriteLoadModeVal:            defaultSpriteLoadMode,       // webAO-style hold-previous by default (kills the cold-load flash)
+		MotionRedrawPerEvent:         defaultMotionRedrawPerEvent, // per-event motion redraw ON by default (less GPU on a moving cursor)
+		DiscordRPC:                   defaultDiscordPrefs(),
+		MyAutoStatus:                 defaultAutoStatusPref(),
+		ChromeThemeKey:               "dark",
+		ChromeShapeKey:               defaultChromeShape, // A5: "sharp" — byte-identical to today's flat chrome
+		ViewportPct:                  DefaultViewportPercent,
+		ChatScalePct:                 DefaultScalePercent,
+		ChatBoxPct:                   DefaultScalePercent,
+		LogScalePct:                  DefaultScalePercent,
+		InputHeightPct:               DefaultScalePercent,
+		UIScalePct:                   DefaultScalePercent,
+		OOCInLogTab:                  true, // default OOC = a log tab + bottom OOC bar (Legacy-style, hybrid); the OOC-box layout is opt-out
 
 		MusicVol:        defaultStartVolume,
 		SFXVol:          defaultStartVolume,
@@ -2089,8 +2103,25 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.ICTimestamps != nil {
 		p.ICTimestamps = *onDisk.ICTimestamps
 	}
-	if onDisk.AutoReconnect != nil {
-		p.AutoReconnect = *onDisk.AutoReconnect
+	// Auto-reconnect default pulled back ON→OFF (user request: a drop should return
+	// to the lobby and stay there, since reconnecting always re-runs the AO handshake
+	// and drops you at character select). One-shot: an existing file (written before
+	// this change) carries no migrated stamp AND — because the old default was ON and
+	// the saver always wrote the field — an explicit autoReconnect:true. Forcing it OFF
+	// once, on the first load that lacks the stamp, turns it off for everyone who
+	// updates while still letting them turn it back on afterwards (a later save writes
+	// the stamp, so their choice sticks). p.AutoReconnect is already the OFF default.
+	if onDisk.AutoReconnectDefaultMigrated != nil && *onDisk.AutoReconnectDefaultMigrated {
+		p.AutoReconnectDefaultMigrated = true
+		if onDisk.AutoReconnect != nil {
+			p.AutoReconnect = *onDisk.AutoReconnect
+		}
+	} else {
+		// Un-migrated: force OFF once and stamp it. markDirty so the stamp (and the
+		// forced value) persist promptly, so the pull-back never re-fires.
+		p.AutoReconnect = false
+		p.AutoReconnectDefaultMigrated = true
+		p.markDirty()
 	}
 	if onDisk.MusicHistory != nil {
 		p.MusicHistory = *onDisk.MusicHistory
