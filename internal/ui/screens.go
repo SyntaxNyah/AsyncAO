@@ -3213,8 +3213,8 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32) []areaWrapRow {
 			idx:         i,
 			name:        area,
 			detail:      detail,
-			nameLines:   wrapToWidth(font, area, nameW, areaWrapMaxLines),
-			detailLines: wrapToWidth(font, detail, detailW, areaWrapMaxLines),
+			nameLines:   wrapToWidth(constFont(font), area, nameW, areaWrapMaxLines),
+			detailLines: wrapToWidth(constFont(font), detail, detailW, areaWrapMaxLines),
 		})
 	}
 	a.areaWrap, a.areaWrapSeq, a.areaWrapQuery, a.areaWrapCardW, a.areaWrapPct, a.areaWrapGen =

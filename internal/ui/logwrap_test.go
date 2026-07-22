@@ -131,6 +131,50 @@ func TestOOCHoverLinkRun(t *testing.T) {
 	}
 }
 
+// TestWrapToWidthPerStringFontDrivesBreaks pins the #42 fix: wrapToWidth measures
+// each candidate with the font its picker returns FOR THAT STRING, so a wrapped
+// line is broken by the SAME face the log draws it in. Under a multi-face chain
+// (a custom font + the embedded last resort), the old fixed-font wrap measured a
+// whole paragraph in the fallback the custom font couldn't fully cover, then drew
+// covered lines in the wider custom face — and they overflowed. Here a wide face
+// for the marker word forces earlier breaks than an all-narrow wrap; proof the
+// per-string face, not one paragraph face, drives the break.
+func TestWrapToWidthPerStringFontDrivesBreaks(t *testing.T) {
+	if err := ttf.Init(); err != nil {
+		t.Skipf("SDL_ttf unavailable: %v", err)
+	}
+	defer ttf.Quit()
+	narrow, err := loadEmbeddedFont(12)
+	if err != nil {
+		t.Skipf("embedded font: %v", err)
+	}
+	defer narrow.Close()
+	wide, err := loadEmbeddedFont(48)
+	if err != nil {
+		t.Skipf("embedded font: %v", err)
+	}
+	defer wide.Close()
+
+	const text, colW, maxLines = "aa aa aa big aa aa aa", 120, 24
+	// The marker word (and any candidate containing it) measures in the WIDE face.
+	pick := func(s string) *ttf.Font {
+		if strings.Contains(s, "big") {
+			return wide
+		}
+		return narrow
+	}
+	perString := wrapToWidth(pick, text, colW, maxLines)
+	allNarrow := wrapToWidth(constFont(narrow), text, colW, maxLines)
+	if len(perString) <= len(allNarrow) {
+		t.Errorf("per-string wide word must force MORE breaks than an all-narrow wrap: perString=%d allNarrow=%d",
+			len(perString), len(allNarrow))
+	}
+	// No text is lost regardless of the per-string measure.
+	if got := stripSpaces(strings.Join(perString, "")); got != stripSpaces(text) {
+		t.Errorf("per-string wrap lost text: %q", got)
+	}
+}
+
 // TestWrapEmojiAwareBreaksEmojiNames pins the IC/OOC log wrap fix: a line with wide
 // colour emoji (an emoji-laden showname) must break under the emoji-AWARE measure,
 // where the plain word-wrap sizes the emoji as narrow tofu and lets the line overflow
@@ -156,7 +200,7 @@ func TestWrapEmojiAwareBreaksEmojiNames(t *testing.T) {
 	const width, maxLines = 200, 12
 	text := "💖💙🤍💜🩷 Bwuhpi: hello there, this is a fairly long message to wrap"
 
-	plain := wrapToWidth(primary, text, width, maxLines)                  // emoji sized as narrow tofu
+	plain := wrapToWidth(constFont(primary), text, width, maxLines)       // emoji sized as narrow tofu
 	aware := render.WrapEmojiAware(primary, emoji, text, width, maxLines) // emoji sized at the wide face
 	if len(aware) == 0 {
 		t.Fatal("emoji-aware wrap returned no lines")

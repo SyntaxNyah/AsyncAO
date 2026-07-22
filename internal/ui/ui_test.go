@@ -553,7 +553,7 @@ func TestWrapToWidthMOTD(t *testing.T) {
 	// All words fit the column, so join-equality holds (hard-split words
 	// rejoin with an inserted space and are asserted separately below).
 	motd := "welcome to the courtroom enjoy your stay in here"
-	lines := wrapToWidth(nil, motd, colW, 24)
+	lines := wrapToWidth(constFont(nil), motd, colW, 24)
 	if len(lines) < 4 {
 		t.Fatalf("MOTD wrapped to %d lines: %v", len(lines), lines)
 	}
@@ -567,16 +567,16 @@ func TestWrapToWidthMOTD(t *testing.T) {
 	}
 	// A 40-char "URL" must hard-split, not overflow.
 	long := strings.Repeat("x", 40)
-	for i, l := range wrapToWidth(nil, long, colW, 24) {
+	for i, l := range wrapToWidth(constFont(nil), long, colW, 24) {
 		if len(l)*8 > colW {
 			t.Errorf("hard-split line %d (%q) wider than the column", i, l)
 		}
 	}
 	// Hostile entry: the per-entry cap holds.
-	if got := wrapToWidth(nil, strings.Repeat("word ", 500), colW, 24); len(got) > 24 {
+	if got := wrapToWidth(constFont(nil), strings.Repeat("word ", 500), colW, 24); len(got) > 24 {
 		t.Errorf("line cap breached: %d lines", len(got))
 	}
-	if got := wrapToWidth(nil, "   ", colW, 24); got != nil {
+	if got := wrapToWidth(constFont(nil), "   ", colW, 24); got != nil {
 		t.Errorf("blank text → %v, want nil", got)
 	}
 }

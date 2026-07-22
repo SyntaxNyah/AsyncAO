@@ -1318,6 +1318,11 @@ func (a *App) oocWrapped(width int32) []string {
 	urls := a.oocWrapURL[:0]  // parallel to out: the entry's link on each of its display lines
 	cont := a.oocWrapCont[:0] // parallel to out: wrap continuation rows (hanging indent)
 	src := a.oocWrapSrc[:0]   // parallel to out: source oocLog entry index (link-hover boundary)
+	// Per-STRING covering-face pick, matching the OOC draw (LogFontFor per row):
+	// measuring each wrapped candidate in the face that will draw it keeps the
+	// wrap honest under a multi-face chain (#42). Hoisted so the rebuild loop
+	// doesn't re-alloc the closure per paragraph.
+	oocPick := func(s string) *ttf.Font { return a.ctx.LogFontFor(a.oocPct, s) }
 	for i, entry := range a.oocLog {
 		sp := ""
 		if i < len(a.oocSpeakers) {
@@ -1371,7 +1376,7 @@ func (a *App) oocWrapped(width int32) []string {
 			if ef := a.ctx.EmojiFont(a.oocPct); ef != nil && render.NeedsEmojiFallback(trimmed) {
 				lines = render.WrapEmojiAware(font, ef, trimmed, width, probe)
 			} else {
-				lines = wrapToWidth(font, trimmed, width, probe)
+				lines = wrapToWidth(oocPick, trimmed, width, probe)
 			}
 			if len(lines) > remaining {
 				lines = lines[:remaining] // overflowed the budget — clip and flag the marker
@@ -1474,6 +1479,9 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		return a.icWrap
 	}
 	out := a.icWrap[:0]
+	// Per-STRING covering-face pick, matching the IC draw (LogFontFor per row), so
+	// the wrap and draw agree under a multi-face chain (#42). Hoisted once.
+	icPick := func(s string) *ttf.Font { return a.ctx.LogFontFor(a.logPct, s) }
 	for _, i := range a.icLogFiltered() {
 		// Prefix the local arrival time when enabled. The stamp was formatted once
 		// on append; the only cost here is one concat per entry, and only on a wrap
@@ -1491,7 +1499,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		if ef := a.ctx.EmojiFont(a.logPct); ef != nil && render.NeedsEmojiFallback(text) {
 			wrapped = render.WrapEmojiAware(font, ef, text, width, icWrapMaxLinesPerEntry)
 		} else {
-			wrapped = wrapToWidth(font, text, width, icWrapMaxLinesPerEntry)
+			wrapped = wrapToWidth(icPick, text, width, icWrapMaxLinesPerEntry)
 		}
 		for _, ln := range wrapped {
 			out = append(out, icWrapLine{text: ln, entry: i})
@@ -1511,7 +1519,22 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 // font, and only runs on cache rebuilds). Words wider than the column
 // hard-split so a long URL can't force a 1-line overflow. A nil font
 // (headless tests) measures at a rough 8 px/char.
-func wrapToWidth(font *ttf.Font, text string, maxW int32, maxLines int) []string {
+// wrapToWidth breaks text to maxW, measuring each candidate string with the font
+// pick returns FOR THAT STRING — the same per-line covering face the log DRAW
+// picks (LogFontFor). This keeps wrap and draw in agreement even when the active
+// chain is multi-face (a custom font + the embedded last resort): a wrapped line
+// the custom font covers is measured AND drawn in the custom face, so it neither
+// overflows (the wrap measured the whole paragraph in the narrower fallback the
+// custom font couldn't fully cover) nor silently drops to the embedded face
+// (#42). A single-font chain makes pick constant, so this is a no-op there.
+// constFont adapts a single fixed face to wrapToWidth's per-string picker — for
+// callers (the area list, tests) whose text all draws in one font, where the
+// per-line pick can't diverge.
+func constFont(f *ttf.Font) func(string) *ttf.Font {
+	return func(string) *ttf.Font { return f }
+}
+
+func wrapToWidth(pick func(string) *ttf.Font, text string, maxW int32, maxLines int) []string {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
@@ -1524,6 +1547,7 @@ func wrapToWidth(font *ttf.Font, text string, maxW int32, maxLines int) []string
 		}
 	}
 	width := func(s string) int32 {
+		font := pick(s)
 		if font == nil {
 			return int32(len(s) * 8)
 		}

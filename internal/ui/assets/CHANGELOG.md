@@ -4,6 +4,16 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.81.2 — 2026-07-22
+
+- A custom or theme-supplied font no longer breaks word-wrap in the IC and OOC
+  logs. When a font covered a wrapped line but not the whole message (so the
+  message fell back to a second face for one stray character), the wrap measured
+  the line in the fallback face but drew it in the wider custom face — and the
+  text overflowed the column. The wrap now measures each line in the exact face
+  it will be drawn in, so lines break correctly whatever font is active (thanks
+  Crystalwarrior).
+
 ## v1.81.1 — 2026-07-22
 
 Follow-ups to v1.81.0's Studio/theme fixes, all from Crystalwarrior's testing.
