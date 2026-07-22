@@ -879,6 +879,42 @@ const (
 	evidPanelMinH = 240
 )
 
+// evidDescLineH is the pixel height of one wrapped description line in the
+// inspector (Issue #15). evidDescWrapMaxLines is a generous named cap (not a
+// visual constraint — the description now scrolls — but CLAUDE.md rule §4
+// forbids an unbounded wrap, so one runaway description can't allocate
+// without limit).
+const (
+	evidDescLineH        = 18
+	evidDescWrapMaxLines = 200
+	evidDescMinViewH     = evidDescLineH * 2 // floor so a tiny/minimized panel still shows something scrollable
+	// evidInspectorImageLineH/evidInspectorBtnRowH/evidInspectorLastBtnH mirror
+	// the exact Y increments the inspector's trailing block below the
+	// description uses (image line, present button, edit/delete row, pin
+	// button) — reserving the SAME numbers here keeps the description
+	// viewport's height in sync with them instead of guessing a duplicate
+	// magic constant that could drift.
+	evidInspectorImageLineH = 28
+	evidInspectorBtnRowH    = btnH + 6
+	evidInspectorLastBtnH   = btnH
+)
+
+// evidDescViewH is the pure height arithmetic behind the Issue #15
+// description viewport: whatever's left between descTop (just under the
+// item's name heading) and panelBottom (the panel's inner bottom edge)
+// after reserving the fixed trailing block (image line + present button +
+// edit/delete row + pin button), floored at evidDescMinViewH so a tiny or
+// mid-resize panel still shows a usable, scrollable region rather than a
+// zero/negative-height rect.
+func evidDescViewH(panelBottom, descTop int32) int32 {
+	trailH := int32(evidInspectorImageLineH + evidInspectorBtnRowH*2 + evidInspectorLastBtnH)
+	viewH := panelBottom - descTop - trailH
+	if viewH < evidDescMinViewH {
+		viewH = evidDescMinViewH
+	}
+	return viewH
+}
+
 // evidPanelRect is the Evidence window's screen rect. Its FIRST-OPEN default tucks
 // into the top-LEFT over the stage (not centred), so the IC input (bottom) and the log
 // (right column) stay visible — you can keep talking and follow the conversation while
@@ -1004,12 +1040,39 @@ func (a *App) drawEvidencePanel(w, h int32, pressed *bool) {
 		return
 	}
 	sel := &a.sess.Evidence[a.evidIdx]
+	if a.evidDescScrollIdx != a.evidIdx { // switched item: don't carry over the old description's scroll offset
+		a.evidDescScroll, a.evidDescScrollIdx = 0, a.evidIdx
+	}
 	c.Label(ix, iy, sel.Name, ColAccent)
 	iy += 22
-	for _, line := range c.WrapText(sel.Description, iw, maxDescLines) {
-		c.LabelClipped(ix, iy, iw, line, ColText)
-		iy += 18
+
+	// Description viewport (Issue #15): a fixed-height scrollable region
+	// instead of a hard 6-line cap, so reading a long description no longer
+	// requires resizing the whole floating window. Its height is whatever's
+	// left after reserving the trailing block (image line + buttons) below,
+	// floored at evidDescMinViewH.
+	descTextW := iw - scrollBarW - scrollBarGap
+	if descTextW < 40 {
+		descTextW = 40 // degenerate-width guard (very narrow panel)
 	}
+	viewH := evidDescViewH(r.Y+r.H-pad, iy)
+	lines := c.WrapText(sel.Description, descTextW, evidDescWrapMaxLines)
+	descContentH := int32(len(lines)) * evidDescLineH
+	viewport := sdl.Rect{X: ix, Y: iy, W: descTextW, H: viewH}
+	a.evidDescScroll -= c.WheelIn(viewport) * scrollStepPx
+	descTrack := sdl.Rect{X: ix + descTextW, Y: iy, W: scrollBarW, H: viewH}
+	a.evidDescScroll = c.VScrollbar("eviddescscroll", descTrack, a.evidDescScroll, descContentH, viewH)
+	clipPrev, clipHad := c.pushClip(viewport)
+	dy := iy - a.evidDescScroll
+	for _, line := range lines {
+		if dy+evidDescLineH >= iy && dy <= iy+viewH {
+			c.LabelClipped(ix, dy, descTextW, line, ColText)
+		}
+		dy += evidDescLineH
+	}
+	c.popClip(clipPrev, clipHad)
+	iy += viewH
+
 	c.LabelClipped(ix, iy, iw, "image: "+sel.Image, ColTextDim)
 	iy += 28
 	presentLabel := "Present with next message"

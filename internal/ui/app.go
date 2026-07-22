@@ -1674,6 +1674,19 @@ type sessionState struct {
 	musicSearch     string
 	musicFiltered   []int
 	musicFilterMemo musicFilterKey
+	// Music-list category collapse (Issue #17 — AO2/KFO parity: categories
+	// were flat with no fold triangle and no Expand/Collapse All). Collapsed
+	// state is keyed by the category HEADER's index into a.sess.Music (not
+	// its text — servers can reuse a category name, and the index is unique
+	// per occurrence). Absent from the map = expanded (the default AO2 look).
+	// musicCollapseGen bumps on every toggle/Expand-All/Collapse-All so
+	// musicRows (screens.go refreshMusicGroups) knows to rebuild; the grouped
+	// row layout itself is memoized the same way as musicFiltered so folding
+	// a category doesn't re-scan+re-lowercase the whole list every frame.
+	musicCollapsed   map[int]bool
+	musicCollapseGen uint64
+	musicRows        []musicRow
+	musicGroupMemo   musicGroupKey
 	// Areas-list search (#20 — parity with the Music tab beside it). Same
 	// memoized-filter shape: the query + a cheap Areas-list identity so a
 	// hub server's hundreds of areas aren't re-scanned (and re-lowercased —
@@ -1684,9 +1697,24 @@ type sessionState struct {
 	areaFiltered   []int
 	areaFilterMemo areaFilterKey
 	areaScroll     int32
-	logTab         int
-	volStripOn     bool // the log panel's toggleable on-screen volume strip
-	musicVolMode   bool // Music tab shows the volume sliders instead of the track list
+	// areaInfoSeq bumps on every EventAreasUpdated (ARUP) so areaWrapped
+	// (screens.go) knows when to re-wrap; it deliberately excludes cosmetic
+	// per-frame state (a.curArea) which the draw loop re-reads live instead.
+	areaInfoSeq uint64
+	// areaWrap caches the word-wrapped ARUP row text (Issue #22: area names
+	// and the player-count/status detail line previously never wrapped and
+	// just clipped off the panel edge). Mirrors the icWrapped idiom — rebuilds
+	// only when the ARUP state, search query, panel width, zoom, or font
+	// chain actually changed, never per frame.
+	areaWrap      []areaWrapRow
+	areaWrapSeq   uint64
+	areaWrapQuery string
+	areaWrapCardW int32
+	areaWrapPct   int
+	areaWrapGen   int
+	logTab        int
+	volStripOn    bool // the log panel's toggleable on-screen volume strip
+	musicVolMode  bool // Music tab shows the volume sliders instead of the track list
 	// Stick flags: the logs FOLLOW new lines while true; scrolling up
 	// releases, scrolling back to the bottom re-sticks. (The old "within
 	// one line of the bottom" heuristic broke whenever one wrapped
@@ -1781,7 +1809,13 @@ type sessionState struct {
 	evidDesc        string
 	evidImage       string
 	evidScroll      int32
-	evidAsk         []time.Time // thumbnail demand pacing, parallel to Evidence
+	// evidDescScroll (Issue #15) scrolls the inspector's description text
+	// instead of forcing the whole panel to be resized to read it.
+	// evidDescScrollIdx remembers which item it belongs to so switching the
+	// selection resets the scroll rather than carrying over a stale offset.
+	evidDescScroll    int32
+	evidDescScrollIdx int
+	evidAsk           []time.Time // thumbnail demand pacing, parallel to Evidence
 	// evShow is the incoming presented-evidence pop-up.
 	evShowImg string
 	evShowAt  time.Time
@@ -3530,6 +3564,7 @@ func (a *App) handleSessionEvents(events []courtroom.Event) {
 			a.rebuildLiveRoster()
 			a.maybeRefetchRoster() // ARUP head-count moved (covers spectator join/leave)
 			a.amICMNow = a.amICM() // the ARUP CM column may have changed — refresh the cached flag
+			a.areaInfoSeq++        // invalidate the area-list word-wrap cache (screens.go areaWrapped)
 		case courtroom.EventPlayersUpdated:
 			a.rebuildLiveRoster()
 			a.amICMNow = a.amICM() // a PU may have moved us to another area — refresh the cached flag  // server-pushed PR/PU: the live roster's primary source

@@ -3127,20 +3127,125 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	a.oocName, _ = c.TextFieldEmoji("oocname2", sdl.Rect{X: r.X, Y: fy, W: r.W - 4, H: fH}, a.oocName, "OOC name (this tab)", onPrimary, onEmoji)
 }
 
+// areaWrapMaxLines bounds how many lines a single area name or its detail
+// line (Issue #22) wraps to before the wrap helper truncates — a named cap
+// so one runaway server-supplied area name can't blow a row's height out
+// without limit (CLAUDE.md rule: no unbounded growth).
+const areaWrapMaxLines = 3
+
+// areaWrapRow is one ARUP row's word-wrapped display text, cached by
+// areaWrapped below so scrolling/resizing the panel doesn't re-wrap every
+// area every frame.
+type areaWrapRow struct {
+	idx         int // ORIGINAL index into a.sess.Areas / a.sess.AreaInfo
+	name        string
+	detail      string
+	nameLines   []string
+	detailLines []string
+}
+
+// areaWrapLines returns the number of visual lines a row occupies: the
+// wrapped name lines plus a detail block that reserves at least one line
+// even when empty (matching the pre-#22 fixed two-line row so areas with no
+// ARUP detail yet don't visually shrink).
+func (row areaWrapRow) lineCount() int32 {
+	nameN := int32(len(row.nameLines))
+	if nameN < 1 {
+		nameN = 1
+	}
+	detailN := int32(len(row.detailLines))
+	if detailN < 1 {
+		detailN = 1
+	}
+	return nameN + detailN
+}
+
+// areaWrapped returns the word-wrapped rows for the currently shown
+// (possibly search-filtered) areas, rebuilding only when the ARUP state
+// (areaInfoSeq), search query, card width, zoom, or font chain changed —
+// never per frame (mirrors icWrapped in qol.go).
+func (a *App) areaWrapped(font *ttf.Font, cardW int32) []areaWrapRow {
+	query := strings.ToLower(strings.TrimSpace(a.areaSearch))
+	if a.areaWrap != nil && a.areaWrapSeq == a.areaInfoSeq && a.areaWrapQuery == query &&
+		a.areaWrapCardW == cardW && a.areaWrapPct == a.areaPct && a.areaWrapGen == a.ctx.fontChainGen {
+		return a.areaWrap
+	}
+	shown := len(a.sess.Areas)
+	if query != "" {
+		a.refreshAreaFilter(query)
+		shown = len(a.areaFiltered)
+	}
+	nameW, detailW := cardW-12, cardW-24
+	out := a.areaWrap[:0]
+	for vi := 0; vi < shown; vi++ {
+		i := vi
+		if query != "" {
+			i = a.areaFiltered[vi]
+		}
+		if i < 0 || i >= len(a.sess.Areas) {
+			continue
+		}
+		area := a.sess.Areas[i]
+		detail := ""
+		if i < len(a.sess.AreaInfo) {
+			info := &a.sess.AreaInfo[i]
+			if info.Players >= 0 {
+				unit := "users"
+				if info.Players == 1 {
+					unit = "user"
+				}
+				detail = fmt.Sprintf("%d %s", info.Players, unit)
+			}
+			if info.Status != "" {
+				detail += "  ·  " + info.Status
+			}
+			switch strings.ToUpper(info.Lock) {
+			case "LOCKED":
+				detail += "  ·  locked"
+			case "SPECTATABLE":
+				detail += "  ·  spectatable"
+			}
+			if info.CM != "" && !strings.EqualFold(info.CM, "FREE") {
+				detail += "  ·  CM: " + info.CM
+			}
+		}
+		out = append(out, areaWrapRow{
+			idx:         i,
+			name:        area,
+			detail:      detail,
+			nameLines:   wrapToWidth(font, area, nameW, areaWrapMaxLines),
+			detailLines: wrapToWidth(font, detail, detailW, areaWrapMaxLines),
+		})
+	}
+	a.areaWrap, a.areaWrapSeq, a.areaWrapQuery, a.areaWrapCardW, a.areaWrapPct, a.areaWrapGen =
+		out, a.areaInfoSeq, query, cardW, a.areaPct, a.ctx.fontChainGen
+	return a.areaWrap
+}
+
 // areaRowHeaderPad is the fixed slack added on top of the two text rows of an
 // area card (the top inset + the gap between the name and detail line + the
 // bottom margin). Named so the row-height math is a single, testable formula
 // that stays in lock-step with the label offsets inside drawAreaList.
 const areaRowHeaderPad = int32(11)
 
-// areaRowLineH is the on-screen height of one two-row area card at a given font
-// height (name line + indented detail line + areaRowHeaderPad slack). Pure so
-// the row/scroll geometry can be pinned without an SDL font: at areaPct=100 it
-// matches the historical `font.Height()*2 + 11`, and it scales monotonically
-// with the zoomed font so the click hitboxes and the scrollbar content-height
-// track the text (the fixed-height-rows + big-fonts bug class).
+// areaRowLineH is the on-screen height of one two-LINE area card at a given
+// font height (name line + indented detail line + areaRowHeaderPad slack).
+// Pure so the row/scroll geometry can be pinned without an SDL font: at
+// areaPct=100 it matches the historical `font.Height()*2 + 11`, and it
+// scales monotonically with the zoomed font so the click hitboxes and the
+// scrollbar content-height track the text (the fixed-height-rows +
+// big-fonts bug class). Kept as the 2-line case of areaRowLineHN below —
+// most rows still are two lines; only long names/details (Issue #22) grow.
 func areaRowLineH(fontH int32) int32 {
-	return fontH*2 + areaRowHeaderPad
+	return areaRowLineHN(fontH, 2)
+}
+
+// areaRowLineHN is areaRowLineH generalized to an arbitrary visual line
+// count, for rows whose name and/or detail text wrapped to more than one
+// line each (Issue #22 — ARUP area names/details previously never wrapped
+// and just clipped off the panel edge).
+func areaRowLineHN(fontH, lines int32) int32 {
+	return fontH*lines + areaRowHeaderPad
 }
 
 // drawAreaList lists the server's areas; clicking one requests the room
@@ -3204,66 +3309,43 @@ func (a *App) drawAreaList(r sdl.Rect) {
 		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.areaPct) // area-list zoom, independent of the IC log
-	lineH := areaRowLineH(int32(font.Height()))
-	contentH := int32(shown) * lineH
+	subH := int32(font.Height())
+	cardW := r.W - scrollBarW - scrollBarGap - 4
+	rows := a.areaWrapped(font, cardW) // word-wrapped name/detail text (Issue #22), cached
+	contentH := int32(0)
+	for _, row := range rows {
+		contentH += areaRowLineHN(subH, row.lineCount())
+	}
 	track := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.areaScroll = c.VScrollbar("areascroll", track, a.areaScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r) // partial top/bottom row stays inside the panel
 	defer c.popClip(clipPrev, clipHad)
 	y := r.Y - a.areaScroll
-	for vi := 0; vi < shown; vi++ {
-		// i is the ORIGINAL index into a.sess.Areas (and the parallel AreaInfo);
-		// with a query active it comes from the filtered index list.
-		i := vi
-		if query != "" {
-			i = a.areaFiltered[vi]
-		}
-		if i < 0 || i >= len(a.sess.Areas) {
-			continue
-		}
-		area := a.sess.Areas[i]
+	for _, row := range rows {
+		rowH := areaRowLineHN(subH, row.lineCount())
 		if y > r.Y+r.H {
 			break
 		}
-		if y >= r.Y-lineH {
-			card := sdl.Rect{X: r.X + 2, Y: y + 2, W: r.W - scrollBarW - scrollBarGap - 4, H: lineH - areaCardGap}
+		if y >= r.Y-rowH {
+			card := sdl.Rect{X: r.X + 2, Y: y + 2, W: cardW, H: rowH - areaCardGap}
 			hover := c.hovering(card)
-			current := area == a.curArea
-			// Two-row entry: the name (population-coloured) on top, an indented
-			// detail line (count / status / lock / CM) under it. A locked room tints
-			// the whole row red, the area you're IN is accent. Fixes "it's all gray,
-			// I can't tell what's busy or where I am / every area looked the same".
+			current := row.name == a.curArea
+			// Two-block entry: the name (population-coloured) on top, an indented
+			// detail block (count / status / lock / CM) under it, each independently
+			// word-wrapped (Issue #22). A locked room tints the whole row red, the
+			// area you're IN is accent. Fixes "it's all gray, I can't tell what's
+			// busy or where I am / every area looked the same".
 			nameCol := ColTextDim
-			detail := ""
 			locked := false
-			if i < len(a.sess.AreaInfo) {
-				info := &a.sess.AreaInfo[i]
+			if row.idx < len(a.sess.AreaInfo) {
+				info := &a.sess.AreaInfo[row.idx]
 				if info.Players > 0 {
 					nameCol = ColText // populated reads at full strength
 				}
-				if info.Players >= 0 {
-					unit := "users"
-					if info.Players == 1 {
-						unit = "user"
-					}
-					detail = fmt.Sprintf("%d %s", info.Players, unit)
+				if info.Status != "" && strings.ToUpper(info.Status) != "IDLE" {
+					nameCol = areaStatusColor(info.Status) // a real status colours it; IDLE keeps the population colour
 				}
-				if info.Status != "" {
-					detail += "  ·  " + info.Status
-					if strings.ToUpper(info.Status) != "IDLE" {
-						nameCol = areaStatusColor(info.Status) // a real status colours it; IDLE keeps the population colour
-					}
-				}
-				switch strings.ToUpper(info.Lock) {
-				case "LOCKED":
-					detail += "  ·  locked"
-					locked = true
-				case "SPECTATABLE":
-					detail += "  ·  spectatable"
-				}
-				if info.CM != "" && !strings.EqualFold(info.CM, "FREE") {
-					detail += "  ·  CM: " + info.CM
-				}
+				locked = strings.EqualFold(info.Lock, "LOCKED")
 			}
 			fill, border := ColPanel, ColPanelHi // resting card = a plain button (bordered + filled = visually separate)
 			switch {
@@ -3276,16 +3358,24 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			}
 			c.Fill(card, fill)
 			c.Border(card, border)
-			subH := int32(font.Height())
-			c.LabelClippedFont(font, card.X+6, card.Y+3, card.W-12, area, nameCol)
-			if detail != "" {
-				c.LabelClippedFont(font, card.X+18, card.Y+5+subH, card.W-24, detail, ColTextDim)
+			ny := card.Y + 3
+			for _, line := range row.nameLines {
+				c.LabelClippedFont(font, card.X+6, ny, card.W-12, line, nameCol)
+				ny += subH
+			}
+			if len(row.nameLines) == 0 { // empty area name (shouldn't happen, but keep the block reserved)
+				ny += subH
+			}
+			dy := ny + 2
+			for _, line := range row.detailLines {
+				c.LabelClippedFont(font, card.X+18, dy, card.W-24, line, ColTextDim)
+				dy += subH
 			}
 			if c.ClickedIn(card) { // press+release in-card: a drag-in release must not transfer areas
-				a.jumpToArea(area) // consolidated: scrollback swap + curArea + presence + MC + warn line
+				a.jumpToArea(row.name) // consolidated: scrollback swap + curArea + presence + MC + warn line
 			}
 		}
-		y += lineH
+		y += rowH
 	}
 	if shown == 0 && query != "" {
 		c.Label(r.X+4, r.Y+6, "No areas match your search.", ColTextDim)
@@ -4169,6 +4259,110 @@ func (a *App) refreshMusicFilter(query string) {
 	}
 }
 
+// musicRow is one displayed row of the Music tab's track list: either a
+// category header (Issue #17: AO2/KFO group songs under a "==Category=="
+// entry with no audio extension — see courtroom.HasAudioExt) or a track,
+// both identified by their ORIGINAL index into a.sess.Music.
+type musicRow struct {
+	ti     int
+	header bool
+}
+
+// musicGroupKey memoizes the grouped/collapsed row layout, mirroring
+// musicFilterKey: the query plus a cheap list identity, PLUS
+// musicCollapseGen so toggling a category (or Expand/Collapse All)
+// invalidates it without re-keying on the whole collapse map every frame.
+type musicGroupKey struct {
+	q           string
+	n           int
+	first, last string
+	collapseGen uint64
+}
+
+// refreshMusicGroups (re)builds the visible row layout for the Music tab:
+// every category header, plus its tracks unless the header is collapsed.
+// Memoized against (query, list identity, collapse generation) so folding a
+// category — or typing in the search box — costs an O(N) rescan only on the
+// frame that actually changed something (the icWrapped/refreshMusicFilter
+// idiom), never per frame.
+//
+// While a search is active, collapse state is bypassed entirely: matching
+// tracks always show (auto-expanded, VSCode-style), with their category
+// header pulled in for context even if that header didn't itself match.
+// Manual collapse state is untouched and resumes the moment the query is
+// cleared.
+func (a *App) refreshMusicGroups(query string) {
+	n := len(a.sess.Music)
+	key := musicGroupKey{q: query, n: n, collapseGen: a.musicCollapseGen}
+	if n > 0 {
+		key.first, key.last = a.sess.Music[0], a.sess.Music[n-1]
+	}
+	if key == a.musicGroupMemo && a.musicRows != nil {
+		return
+	}
+	a.musicGroupMemo = key
+	a.musicRows = a.musicRows[:0]
+
+	if query == "" {
+		collapsed := false
+		for i, entry := range a.sess.Music {
+			if !courtroom.HasAudioExt(entry) {
+				collapsed = a.musicCollapsed[i]
+				a.musicRows = append(a.musicRows, musicRow{ti: i, header: true})
+				continue
+			}
+			if collapsed {
+				continue
+			}
+			a.musicRows = append(a.musicRows, musicRow{ti: i})
+		}
+		return
+	}
+
+	pendingHeader, headerShown := -1, false
+	for i, entry := range a.sess.Music {
+		if !courtroom.HasAudioExt(entry) {
+			pendingHeader = i
+			headerShown = strings.Contains(strings.ToLower(entry), query)
+			if headerShown {
+				a.musicRows = append(a.musicRows, musicRow{ti: i, header: true})
+			}
+			continue
+		}
+		if !strings.Contains(strings.ToLower(entry), query) {
+			continue
+		}
+		if pendingHeader >= 0 && !headerShown {
+			a.musicRows = append(a.musicRows, musicRow{ti: pendingHeader, header: true})
+			headerShown = true
+		}
+		a.musicRows = append(a.musicRows, musicRow{ti: i})
+	}
+}
+
+// setAllMusicCollapsed (Issue #17's Expand All / Collapse All button) bulk-sets
+// every category header's fold state in one pass and bumps musicCollapseGen
+// once, instead of one toggle (and one memo-invalidating bump) per category.
+func (a *App) setAllMusicCollapsed(collapsed bool) {
+	if !collapsed {
+		if len(a.musicCollapsed) == 0 {
+			return // already all-expanded (the default, empty-map state) — no-op
+		}
+		a.musicCollapsed = nil
+		a.musicCollapseGen++
+		return
+	}
+	if a.musicCollapsed == nil {
+		a.musicCollapsed = make(map[int]bool)
+	}
+	for i, entry := range a.sess.Music {
+		if !courtroom.HasAudioExt(entry) {
+			a.musicCollapsed[i] = true
+		}
+	}
+	a.musicCollapseGen++
+}
+
 // areaFilterKey memoizes the areas-list filter (#20), mirroring musicFilterKey.
 // Keyed by the query plus a cheap identity of the Areas list (len +
 // first/last name), which changes whenever the server resends the area list.
@@ -4311,50 +4505,99 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	r.Y += fieldH + 6
 	r.H -= fieldH + 6
 
+	// Category fold controls (Issue #17 — AO2/KFO parity: the track list used
+	// to be one flat list with no way to fold a category, unlike AO2-Client/
+	// KFO-Client. An actual button pair, not a right-click menu, per the
+	// issue's explicit ask for VSCode-style tree controls; per-category
+	// folding is the header row's own click, below.
+	expandW, collapseW := c.TextWidth("Expand all")+16, c.TextWidth("Collapse all")+16
+	if c.Button(sdl.Rect{X: r.X, Y: r.Y, W: expandW, H: btnH}, "Expand all") {
+		a.setAllMusicCollapsed(false)
+	}
+	if c.Button(sdl.Rect{X: r.X + expandW + 6, Y: r.Y, W: collapseW, H: btnH}, "Collapse all") {
+		a.setAllMusicCollapsed(true)
+	}
+	r.Y += btnH + 6
+	r.H -= btnH + 6
+
 	// Hover-gated (playtest: the music list scrolled from anywhere).
 	if !c.ctrlHeld { // ctrl+wheel resizes text (musicPct), never scrolls
 		a.musicScroll -= c.WheelIn(r) * scrollStepPx
 	}
 	font := c.LogFont(a.musicPct) // independent of the IC log scale
 	lineH := int32(font.Height()) + 10
-	contentH := int32(shown) * lineH
+	a.refreshMusicGroups(query) // grouped + (search: auto-expanded) row layout — cached, see screens.go
+	rows := a.musicRows
+	contentH := int32(len(rows)) * lineH
 	bar := sdl.Rect{X: r.X + r.W - scrollBarW, Y: r.Y, W: scrollBarW, H: r.H}
 	a.musicScroll = c.VScrollbar("musicscroll", bar, a.musicScroll, contentH, r.H)
 	clipPrev, clipHad := c.pushClip(r) // partial top/bottom row stays inside the panel
 	defer c.popClip(clipPrev, clipHad)
 	y := r.Y - a.musicScroll
-	for vi := 0; vi < shown; vi++ {
-		ti := vi
-		if query != "" {
-			ti = a.musicFiltered[vi]
-		}
+	for _, mr := range rows {
 		if y > r.Y+r.H {
 			break
 		}
-		if y >= r.Y-lineH && ti >= 0 && ti < len(a.sess.Music) {
-			track := a.sess.Music[ti]
+		if y >= r.Y-lineH && mr.ti >= 0 && mr.ti < len(a.sess.Music) {
+			entry := a.sess.Music[mr.ti]
 			row := sdl.Rect{X: r.X, Y: y, W: r.W - scrollBarW - scrollBarGap, H: lineH - 4}
 			hover := c.hovering(row)
-			if hover {
-				c.Fill(row, ColPanelHi)
-			}
-			c.LabelClippedFont(font, r.X+4, y+4, row.W-8, track, ColText)
-			if hover {
-				c.Tooltip(row, track) // full track name on hover (long titles get clipped)
-			}
-			if c.ClickedIn(row) { // press+release in-row: a scrollbar-drag release must not play a track
-				a.sess.RequestMusic(track)
+			if mr.header {
+				c.Fill(row, ColPanelHi) // section header, like drawJukeGroupHeader (music_history.go)
+				// ASCII fold marker, not a ▶/▼ glyph — LogFont's primary face isn't
+				// guaranteed to cover Geometric Shapes (see jukebox.go's "Play" button
+				// comment: those tofu on fonts without that block).
+				glyph := "[-] " // expanded
+				if a.musicCollapsed[mr.ti] {
+					glyph = "[+] " // collapsed
+				}
+				c.LabelClippedFont(font, r.X+4, y+4, row.W-8, glyph+musicCategoryLabel(entry), ColAccent)
+				if c.ClickedIn(row) { // toggle just this category, not a track request
+					if a.musicCollapsed == nil {
+						a.musicCollapsed = make(map[int]bool)
+					}
+					if a.musicCollapsed[mr.ti] {
+						delete(a.musicCollapsed, mr.ti)
+					} else {
+						a.musicCollapsed[mr.ti] = true
+					}
+					a.musicCollapseGen++
+				}
+			} else {
+				if hover {
+					c.Fill(row, ColPanelHi)
+				}
+				c.LabelClippedFont(font, r.X+20, y+4, row.W-24, entry, ColText) // indented under its category, tree-style
+				if hover {
+					c.Tooltip(row, entry) // full track name on hover (long titles get clipped)
+				}
+				if c.ClickedIn(row) { // press+release in-row: a scrollbar-drag release must not play a track
+					a.sess.RequestMusic(entry)
+				}
 			}
 		}
 		y += lineH
 	}
-	if shown == 0 {
+	if len(rows) == 0 {
 		hint := "Server sent no music list."
 		if query != "" {
 			hint = "No tracks match your search."
 		}
 		c.Label(r.X+4, r.Y+6, hint, ColTextDim)
 	}
+}
+
+// musicCategoryLabel strips a category header's decorative "==" wrapper
+// (the AO2 convention for marking a music-list entry as a section header,
+// e.g. "==Cave Story OST==") for display now that folding gives it a real
+// header row instead of relying on the punctuation to read as one. Left
+// untouched if the server didn't use that convention.
+func musicCategoryLabel(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if strings.HasPrefix(trimmed, "==") && strings.HasSuffix(trimmed, "==") && len(trimmed) > 4 {
+		return strings.TrimSpace(trimmed[2 : len(trimmed)-2])
+	}
+	return name
 }
 
 // musicDisplayName shortens a track for the Now-Playing line: a streaming URL

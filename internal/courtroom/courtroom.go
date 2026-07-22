@@ -578,7 +578,7 @@ func isAreaTransfer(track string) bool {
 	if isMusicURL(track) {
 		return false
 	}
-	return !hasAudioExt(track)
+	return !HasAudioExt(track)
 }
 
 // waitHolds reports whether the cold-load "wait" gate holds msg off-stage this

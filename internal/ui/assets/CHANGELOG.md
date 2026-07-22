@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.80.5 — 2026-07-22
+
+- Long area names and their player-count/status line now word-wrap in the
+  Areas list instead of clipping off the edge of the panel (thanks
+  Crystalwarrior).
+- The Evidence panel's description text now scrolls in place, so a long
+  description no longer forces you to resize the whole floating window to
+  read it (thanks Crystalwarrior).
+- The Music tab's categories can be folded, like AO2-Client/KFO-Client:
+  click a category to collapse or expand it, or use the new "Expand all" /
+  "Collapse all" buttons. Searching still shows every matching track,
+  auto-expanding its category for context (thanks Crystalwarrior).
+
 ## v1.80.4 — 2026-07-21
 
 A brief connection blip no longer interrupts you at all — the client waits a

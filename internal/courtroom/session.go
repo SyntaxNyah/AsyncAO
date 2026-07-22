@@ -1000,7 +1000,7 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 func splitAreasAndMusic(fields []string) (areas, music []string) {
 	musicStart := len(fields)
 	for i, f := range fields {
-		if hasAudioExt(f) {
+		if HasAudioExt(f) {
 			musicStart = i
 			break
 		}
@@ -1018,7 +1018,11 @@ func splitAreasAndMusic(fields []string) (areas, music []string) {
 
 var audioExts = []string{".wav", ".mp3", ".mp4", ".ogg", ".opus"}
 
-func hasAudioExt(name string) bool {
+// HasAudioExt reports whether name ends in a known AO audio extension.
+// Exported so the UI's music-list grouping (Issue #17 category
+// expand/collapse) can tell a track apart from a category-header entry
+// without re-deriving the AO2-Client extension list.
+func HasAudioExt(name string) bool {
 	lower := strings.ToLower(name)
 	for _, ext := range audioExts {
 		if strings.HasSuffix(lower, ext) {
