@@ -24,21 +24,6 @@ const (
 	// lists on 200-char servers fit comfortably).
 	maxIncomingBytes = 8 << 20
 
-	// staleReadTimeout is how long the read stream may go silent before the
-	// staleness watchdog probes the link. It MUST be ≥ 2× the client keepalive
-	// (the UI's keepalivePeriod = 45 s): a healthy server answers every CH ping,
-	// so at ~2× the ping period a silent read stream means the link is dead
-	// (NAT timeout / no FIN), not merely quiet. Named so both the UI keepalive
-	// and this stay in step. Overridable per-Dial (DialOptions) for tests.
-	staleReadTimeout = 100 * time.Second
-	// staleWatchdogInterval is how often the watchdog checks read-staleness. It
-	// must be well below staleReadTimeout so the silence is caught promptly but
-	// far above one frame, so the goroutine barely wakes.
-	staleWatchdogInterval = 5 * time.Second
-	// stalePingTimeout bounds the ping round-trip the watchdog fires on silence:
-	// no pong within this window and the connection is declared dead.
-	stalePingTimeout = 10 * time.Second
-
 	// userAgent mirrors AO2-Client's request header shape.
 	userAgent = "AsyncAO/" + Version + " (Desktop)"
 	// Version is the client version advertised in the ID handshake.
@@ -67,15 +52,6 @@ type Conn struct {
 
 	sent     atomic.Int64
 	received atomic.Int64
-
-	// lastReadAt is the unix-nano time of the most recent successful read (set
-	// at Dial and after every framed packet). The staleness watchdog reads it to
-	// tell a silent-but-alive link from a dead one. Atomic: written by readLoop,
-	// read by the watchdog goroutine.
-	lastReadAt atomic.Int64
-	// staleReadTimeout is this connection's read-silence threshold (0 → the
-	// package default); set from DialOptions so tests can shorten it.
-	staleTimeout time.Duration
 }
 
 // SetNotify installs (or clears, with nil) the packet-arrival wake callback.
@@ -110,11 +86,6 @@ func (c *Conn) wake() {
 type DialOptions struct {
 	SkipTLSVerify bool
 	Origin        string
-	// StaleReadTimeout overrides the read-silence threshold the staleness
-	// watchdog uses (0 = the staleReadTimeout package default). Tests set a
-	// short value to exercise the watchdog without waiting minutes; production
-	// leaves it zero.
-	StaleReadTimeout time.Duration
 }
 
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.
@@ -155,12 +126,7 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 		incoming: make(chan Packet, incomingQueueCap),
 		closed:   make(chan struct{}),
 	}
-	if len(opts) > 0 && opts[0].StaleReadTimeout > 0 {
-		c.staleTimeout = opts[0].StaleReadTimeout
-	}
-	c.lastReadAt.Store(time.Now().UnixNano()) // the dial itself counts as fresh traffic
 	go c.readLoop()
-	go c.watchStale() // read-staleness watchdog; exits when the conn closes (no per-conn leak)
 	return c, nil
 }
 
@@ -209,15 +175,13 @@ func (c *Conn) readLoop() {
 		msgType, data, err := c.ws.Read(context.Background())
 		if err != nil {
 			select {
-			case <-c.closed: // deliberate Close (or a watchdog-declared stale death): not a fresh error
+			case <-c.closed: // deliberate Close: not an error
 			default:
-				c.storeReadErr(err)
+				e := err
+				c.readErr.Store(&e)
 			}
 			return
 		}
-		// A framed read of ANY kind (even an ignored binary/pong-shaped frame)
-		// means the link is alive — reset the staleness clock before filtering.
-		c.lastReadAt.Store(time.Now().UnixNano())
 		if msgType != websocket.MessageText {
 			continue // AO is a text protocol; ignore stray binary frames
 		}
@@ -232,71 +196,6 @@ func (c *Conn) readLoop() {
 		case <-c.closed:
 			return
 		}
-	}
-}
-
-// storeReadErr records the terminal read error, but only the FIRST one wins:
-// the staleness watchdog stores its "connection stale" error and then calls
-// Close(), which unblocks readLoop's Read with a socket error — this guard keeps
-// that later, less-informative error from clobbering the watchdog's diagnosis.
-func (c *Conn) storeReadErr(err error) {
-	e := err
-	c.readErr.CompareAndSwap(nil, &e)
-}
-
-// watchStale is the read-staleness watchdog: one goroutine per connection, tied
-// to the connection's lifetime (it exits the moment closed fires, so a
-// reconnect cycle can't leak goroutines — rule §17.4). On a link that goes
-// silent past staleTimeout (NAT/idle timeout with no FIN, which leaves ws.Read
-// blocked forever), it fires a bounded Ping; a missing pong declares the
-// connection dead, which flows through the same closed-Incoming path as any
-// other drop (so auto-reconnect handles it uniformly). Ping is concurrency-safe
-// with the read loop and Send (coder/websocket), and this stays SDL-free.
-func (c *Conn) watchStale() {
-	timeout := c.staleTimeout
-	if timeout <= 0 {
-		timeout = staleReadTimeout
-	}
-	// Check more often than one full timeout so silence is caught promptly,
-	// but never below the interval floor (a tiny test timeout mustn't spin).
-	interval := staleWatchdogInterval
-	if interval > timeout {
-		interval = timeout
-	}
-	// Cap the probe's ping timeout at the staleness window: probing longer than
-	// the window itself is pointless, and it keeps a short (test) threshold fast.
-	// In production timeout ≫ stalePingTimeout, so this is the 10 s ping budget.
-	pingTimeout := stalePingTimeout
-	if pingTimeout > timeout {
-		pingTimeout = timeout
-	}
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-c.closed:
-			return
-		case <-ticker.C:
-		}
-		last := time.Unix(0, c.lastReadAt.Load())
-		if time.Since(last) < timeout {
-			continue // recent traffic: the link is alive
-		}
-		// Silent past the threshold — probe the peer. A pong resets lastReadAt
-		// via the read loop; no pong within pingTimeout means it's dead.
-		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
-		_, err := c.Ping(ctx)
-		cancel()
-		if err != nil {
-			c.storeReadErr(fmt.Errorf("protocol: connection stale (no data for %s, ping failed: %w)", timeout, err))
-			c.Close() // unblocks readLoop → Incoming closes → the drop surfaces
-			return
-		}
-		// Pong arrived: the link is alive. coder/websocket consumes the pong
-		// control frame internally (it never surfaces as a data read), so reset
-		// the staleness clock here — otherwise a genuinely idle link would be
-		// re-probed every interval.
-		c.lastReadAt.Store(time.Now().UnixNano())
 	}
 }
 

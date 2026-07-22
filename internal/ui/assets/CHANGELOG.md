@@ -4,6 +4,17 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.81.3 — 2026-07-22
+
+- **Fixed frequent disconnects.** A background "staleness watchdog" added in a
+  recent version would probe a quiet connection with a low-level WebSocket ping
+  and drop it if no reply came back in time. On servers that answer the client's
+  own keepalive but don't reply to that low-level ping — common in idle rooms —
+  this cut healthy connections loose every couple of minutes. The watchdog is
+  removed: the client now only disconnects on a real socket error, exactly as it
+  did in the early stable builds. (Auto-reconnect and the disconnect dialog are
+  unchanged — they still recover from genuine drops.)
+
 ## v1.81.2 — 2026-07-22
 
 - A custom or theme-supplied font no longer breaks word-wrap in the IC and OOC

@@ -3464,8 +3464,8 @@ func (a *App) pumpConnection() {
 			a.uiDirty = true // packets (or the drop below) change UI-visible state — redraw-worthy damage
 			if !ok {
 				// The Incoming channel closed: a genuine transport drop (Wi-Fi
-				// blip, server restart, read error, or the stale-link watchdog
-				// giving up). This branch is NOT reached on a deliberate
+				// blip, server restart, or a read error). This branch is NOT
+				// reached on a deliberate
 				// Disconnect (that nils a.conn first, so pumpConnection early-
 				// returns) — so unless deliberateClose was set by a refactor
 				// mid-teardown, this is exactly the case auto-reconnect exists

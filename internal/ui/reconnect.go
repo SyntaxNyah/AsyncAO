@@ -92,8 +92,7 @@ func autoReconnectDelay(tries int) time.Duration {
 //     bad optics. Matched by the EventDisconnect reason prefixes ("Banned: " /
 //     "Kicked: ", session.go:697-701).
 //   - anything else is a genuine transport drop (Wi-Fi blip, server restart,
-//     read error, stale-link watchdog) — the exact case auto-reconnect exists
-//     for — so retry.
+//     read error) — the exact case auto-reconnect exists for — so retry.
 func shouldAutoReconnect(reason string, deliberate bool) bool {
 	if deliberate {
 		return false

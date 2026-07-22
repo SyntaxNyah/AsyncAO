@@ -106,8 +106,8 @@ func friendlyDisconnectReason(raw string) disconnectReason {
 		r.friendly = "Your network is unreachable — check your internet connection."
 	case strings.Contains(low, "timeout") || strings.Contains(low, "deadline exceeded") ||
 		strings.Contains(low, "stale") || strings.Contains(low, "i/o timeout"):
-		// The stale-link watchdog gave up, or a write/keepalive timed out: the
-		// connection went quiet rather than closing cleanly.
+		// A write/keepalive timed out: the connection went quiet rather than
+		// closing cleanly.
 		r.friendly = "The connection timed out — the server stopped responding."
 	case strings.Contains(low, "connection closed") || strings.Contains(low, "eof") ||
 		strings.Contains(low, "connection lost") || strings.Contains(low, "closed") ||

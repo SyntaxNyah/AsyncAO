@@ -1066,9 +1066,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   the retry status and a **Stop** button. A **deliberate Disconnect never
   reconnects**, and a manual Reconnect / fresh Join takes over. A **server kick or
   ban never auto-reconnects** either (re-joining after a ban reads as ban evasion),
-  though the manual Reconnect button still works. A silently dead link (NAT
-  timeout, no FIN) is detected by a **read-staleness watchdog** that pings on
-  prolonged silence and treats a missing pong as a drop. Retries **fire even while
+  though the manual Reconnect button still works. Retries **fire even while
   the window is minimized or unfocused** (background rendering off), so a drop taken
   while you're popped out recovers on its own. Toggle in **Settings → Audio & Chat**
   ("Auto-reconnect after a dropped connection", ON by default). Idle it costs one
