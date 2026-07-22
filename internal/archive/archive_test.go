@@ -114,3 +114,49 @@ func TestExportReplayRoundTrip(t *testing.T) {
 		t.Errorf("archive idle bytes = %q, want %q", data, idleBytes)
 	}
 }
+
+// TestExportNestedBackgroundSubfolder pins issue #40: a scene whose background
+// nests in a subfolder ("cases/case1") must bundle onto real subfolders, never a
+// folder literally named "cases%2Fcase1". The bug was a single-segment escaper
+// on the background name; the exporter writes the origin-relative URL path
+// verbatim, so a "%2F" URL became a "%2F" directory on disk.
+func TestExportNestedBackgroundSubfolder(t *testing.T) {
+	srcDir := t.TempDir()
+	srcLocal := assets.NewLocalFetcher([]string{srcDir})
+	origin := srcLocal.BaseURL()
+	urls := courtroom.NewURLBuilder(origin)
+	rel := func(base string) string {
+		r, _ := strings.CutPrefix(base, origin)
+		return r + config.ExtWebP
+	}
+	const nestedBg = "cases/case1"
+	bgPart, deskPart := courtroom.PositionScene("wit")
+	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteIdle)), []byte("IDLE"))
+	writeFixture(t, srcDir, rel(urls.Emote("Phoenix", "normal", courtroom.EmoteTalk)), []byte("TALK"))
+	writeFixture(t, srcDir, rel(urls.Background(nestedBg, bgPart)), []byte("BG"))
+	writeFixture(t, srcDir, rel(urls.Background(nestedBg, deskPart)), []byte("DESK"))
+	srcMgr, _ := buildManager(t, srcLocal, true)
+
+	events := []courtroom.Event{
+		{Kind: courtroom.EventBackground, Text: nestedBg},
+		{Kind: courtroom.EventMessage, Message: &protocol.ChatMessage{CharName: "Phoenix", Emote: "normal", Side: "wit"}},
+	}
+
+	archDir := t.TempDir()
+	if _, err := ExportAssets(context.Background(), srcMgr, origin, "", events, archDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// The background must land under real "background/cases/case1/…" subfolders.
+	wantBg := filepath.Join(archDir, filepath.FromSlash(rel(urls.Background(nestedBg, bgPart))))
+	if _, err := os.Stat(wantBg); err != nil {
+		t.Fatalf("nested background not bundled at its subfolder path %q: %v", wantBg, err)
+	}
+	// And NO directory anywhere in the bundle carries a literal "%2F".
+	_ = filepath.Walk(archDir, func(p string, info os.FileInfo, err error) error {
+		if err == nil && strings.Contains(p, "%2F") {
+			t.Errorf("bundle path carries an escaped separator: %q", p)
+		}
+		return nil
+	})
+}

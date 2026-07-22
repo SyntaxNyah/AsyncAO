@@ -36,6 +36,25 @@ items move to `docs/FEATURES.md` as they ship.
     dropdown parity) so custom effects are selectable and sendable.
   Zero hot-path cost (cached-texture overlay blits, free when idle). The inline-code
   half is done and revert-clean, so this lands cleanly as a follow-up (v1.55.8).
+- **Per-element theme fonts (#39 follow-up).** v1.81.0 resolves a theme's
+  declared `message_font` family from the base `fonts/` folder and applies it to
+  the courtroom text (fixing "imported theme fonts are ignored"). The remaining
+  half is AO2's full granularity: `courtroom_fonts.ini` sets a font *family AND
+  point size* (plus `_bold`, `_sharp`) **per element** — `message`, `showname`,
+  `ic_chatlog`, `music_list`, the clocks, … (AO2-Client `set_font` /
+  `courtroom.cpp:1212`). Plan:
+  - Parse the full per-element `FontSpec` set at theme-apply time (the
+    `theme.Font(name)` reader already returns Size/Bold/Color/Font — extend the
+    async apply to carry every element's spec, not just `message`/`showname`
+    colours).
+  - Map the theme's absolute point size onto the client's percent-scaled chat
+    fonts without disturbing the zero-alloc raster gates or the DPI/`chatPct`
+    path (the risky part — must be measured, see `docs/PERFORMANCE.md`).
+  - Resolve each element's own `_font` family through the same base-`fonts/`
+    lookup (`theme.FontFile` / `fontDirMatch`), so showname and message can use
+    different faces.
+  Deferred deliberately from v1.81.0 to keep that release's font change low-risk;
+  the base-`fonts/` resolver it needs already landed.
 - **Screenshot annotator (#72)** — quick arrows/boxes/text on a captured
   screenshot before sharing. Deferred from the v1.50.0 batch (the studio +
   playtest-fix stream ate the session); the natural entry point is an

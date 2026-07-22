@@ -4,6 +4,29 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.81.0 — 2026-07-22
+
+Three Studio Mode / theme fixes, all reported by Crystalwarrior.
+
+- **Nested backgrounds and evidence bundle correctly.** A background or evidence
+  file that lives in a subfolder (e.g. `background/cases/case1/...`) used to have
+  its `/` turned into a literal `%2F` in the URL — a dead path on strict servers
+  and, when you packaged a replay bundle, a folder literally named `cases%2Fcase1`
+  on disk instead of the real subfolder. Nested asset paths now keep real
+  separators everywhere, both while streaming and when exporting a bundle.
+- **Video recording now honours your theme's layout.** Pressing "play" in Studio
+  Mode always showed the theme, but the recorded video fell back to the stock
+  layout — a full-frame stage with the chatbox pinned to the bottom. Recordings
+  now render through the same themed stage you see on playback: the theme's
+  courtroom backdrop, the viewport at its themed position and size, and the
+  chatbox skinned and placed where the theme puts it.
+- **Imported themes find their fonts by name.** A theme that declares a font in
+  `courtroom_fonts.ini` (`message_font = …`) but keeps the actual `.ttf` in your
+  base `fonts/` folder — the AO convention — now resolves it by name and applies
+  it to the courtroom text, instead of only recognising a font bundled inside the
+  theme's own folder. (Per-element font *sizes* and fully granular per-widget font
+  control are still on the way; this restores the missing font itself.)
+
 ## v1.80.5 — 2026-07-22
 
 - Long area names and their player-count/status line now word-wrap in the

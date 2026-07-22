@@ -169,42 +169,104 @@ func (t *Theme) HasFont(name string) bool {
 	return ok
 }
 
-// FontFile returns the path to a font file (.ttf/.otf) bundled inside the ACTIVE
-// theme's own directory, so a streaming client can honour a theme that ships its
-// own font (#6, Crystalwarrior). The family declared by "message_font" is
-// preferred when a file name matches it; otherwise the first font file found. The
-// default-theme fallback dirs are skipped — only the active theme may impose a
-// font. "" = none found.
+// FontFile returns the path to the font file (.ttf/.otf) the ACTIVE theme wants
+// its courtroom text drawn in, so a streaming client can honour a theme's font
+// (#6/#39, Crystalwarrior). Resolution order:
+//
+//  1. A file matching the "message_font" family bundled in the theme's own dir.
+//  2. That same declared family under the content root's base "fonts/" folder —
+//     AO themes reference fonts by NAME expecting them in base/fonts/, so this is
+//     where an imported theme's font actually lives (#39). The declared family is
+//     required here: base/fonts/ holds many faces, so we never grab an arbitrary
+//     one.
+//  3. Any font file bundled in the theme's own dir (a theme that ships one .ttf
+//     but declares no family — the original #6 case).
+//
+// The default-theme fallback dirs are skipped — only the active theme may impose
+// a font. "" = none found (keep the client font). Per-element font families and
+// sizes are not yet applied; see the release notes for the deferred slice.
 func (t *Theme) FontFile() string {
 	family := strings.ToLower(strings.TrimSpace(t.Font("message").Font))
 	var fallback string
+	// (1)+(3): the active theme's own directory (a bundled .ttf).
 	for _, dir := range t.dirs {
 		if filepath.Base(dir) != t.Name {
 			continue // skip the default-theme fallback dirs
 		}
-		ents, err := os.ReadDir(dir)
-		if err != nil {
-			continue
+		if m, first := fontDirMatch(dir, family); m != "" {
+			return m // file name carries the declared family — best match
+		} else if fallback == "" {
+			fallback = first
 		}
-		for _, e := range ents {
-			if e.IsDir() {
+	}
+	// (2): the AO base/fonts directory — a theme dir is "<root>/themes/<name>", so
+	// its base "fonts/" sibling is "<root>/fonts/". Only chased when a family is
+	// declared and the theme didn't bundle a matching file itself.
+	if family != "" {
+		seen := make(map[string]struct{}, len(t.dirs))
+		for _, dir := range t.dirs {
+			base := filepath.Dir(filepath.Dir(dir)) // <root>/themes/<name> → <root>
+			fontsDir := filepath.Join(base, "fonts")
+			if _, dup := seen[fontsDir]; dup {
 				continue
 			}
-			switch strings.ToLower(filepath.Ext(e.Name())) {
-			case ".ttf", ".otf":
-			default:
-				continue
-			}
-			full := filepath.Join(dir, e.Name())
-			if family != "" && strings.Contains(strings.ToLower(e.Name()), family) {
-				return full // file name carries the declared family — best match
-			}
-			if fallback == "" {
-				fallback = full
+			seen[fontsDir] = struct{}{}
+			if m, _ := fontDirMatch(fontsDir, family); m != "" {
+				return m
 			}
 		}
 	}
 	return fallback
+}
+
+// fontDirMatch scans dir for a .ttf/.otf whose file name carries the declared
+// font family (normalized: case-, space-, underscore- and hyphen-insensitive, so
+// "Ace Attorney" matches "ace_attorney.ttf"). It returns (match, firstFontFound):
+// match is "" when family is empty or nothing matches; firstFontFound is any font
+// file in the dir, the caller's family-less fallback.
+func fontDirMatch(dir, family string) (match, first string) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return "", ""
+	}
+	wantN := normalizeFontKey(family)
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		switch strings.ToLower(filepath.Ext(e.Name())) {
+		case ".ttf", ".otf":
+		default:
+			continue
+		}
+		full := filepath.Join(dir, e.Name())
+		if first == "" {
+			first = full
+		}
+		if wantN == "" {
+			continue
+		}
+		stemN := normalizeFontKey(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
+		if stemN == wantN || strings.Contains(stemN, wantN) {
+			return full, first
+		}
+	}
+	return "", first
+}
+
+// normalizeFontKey folds a font family or file stem to a comparison key:
+// lowercased with spaces, underscores and hyphens dropped, so the many spellings
+// of one family ("Igiari", "igiari", "ig-iari") collapse together.
+func normalizeFontKey(s string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(s) {
+		switch r {
+		case ' ', '_', '-':
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // SoundName returns the courtroom_sounds.ini entry (e.g. "word_call").

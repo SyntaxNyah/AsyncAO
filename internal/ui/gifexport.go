@@ -854,9 +854,8 @@ func (a *App) tickGifExport() {
 		a.d.Viewport.SetSpriteFX(a.spriteFX())
 		a.d.Viewport.Update(&j.room.Scene, j.frameDt)
 		img, err := j.ct.Capture(a.ctx.Ren, func(dst sdl.Rect) {
-			a.d.Viewport.Render(a.ctx.Ren, &j.room.Scene, dst)
-			a.drawGifChatbox(j, &j.room.Scene, dst) // composite the conversation over the scene
-			a.drawExportStamp(j, dst)               // #74 opt-in watermark, top-right
+			a.drawExportScene(j, &j.room.Scene, dst) // themed stage when a layout theme is active, else full-frame
+			a.drawExportStamp(j, dst)                // #74 opt-in watermark, top-right
 		})
 		if err != nil {
 			a.pushDebug("scene export capture: " + err.Error())
@@ -1150,6 +1149,114 @@ func (a *App) fitChatRaster(sc *courtroom.Scene, wrapW, vpH int32, pct int, comi
 	}
 	r, _ := renderRaster(a, sc, wrapW, false, config.MinChatScalePercent, comicInk) // safety: show text at the floor
 	return r
+}
+
+// drawExportScene composites one exported frame. When a layout theme is active
+// (the same gate the live courtroom uses — a valid design layout AND the theme-
+// layout pref on), the frame mirrors the themed stage: the theme's courtroom
+// backdrop, the viewport at its design rect, and the chatbox at ao2_chatbox.
+// Otherwise it keeps the full-frame default (viewport fills the frame, chatbox
+// pinned to the bottom). Fixes #41: the recorder used to ALWAYS take the default
+// path, so a themed session that "played" with its layout exported to a video
+// that looked like the stock layout. The layout is computed for the EXPORT
+// frame's size (dst is origin-anchored at 0,0), not the window's.
+func (a *App) drawExportScene(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect) {
+	if lay := a.themeLayout(dst.W, dst.H); lay.valid && a.d.Prefs.ThemeLayoutEnabled() {
+		if _, ok := lay.rect("viewport"); ok {
+			a.drawGifThemedFrame(j, sc, dst, lay)
+			return
+		}
+	}
+	a.d.Viewport.Render(a.ctx.Ren, sc, dst)
+	a.drawGifChatbox(j, sc, dst) // composite the conversation over the scene
+}
+
+// drawGifThemedFrame renders the export frame through the theme's design
+// geometry: the courtroom backdrop over the letterboxed design area, the scene
+// viewport at the theme's "viewport" rect, and the chatbox at "ao2_chatbox"
+// (falling back to a bottom overlay over the viewport when the theme omits a
+// chatbox rect). Geometry comes from the SAME themeLayout the live themed
+// courtroom uses, so the video matches what Studio playback shows.
+func (a *App) drawGifThemedFrame(j *gifExportJob, sc *courtroom.Scene, dst sdl.Rect, lay *themeLayoutCache) {
+	c := a.ctx
+	// Stage frame: the theme's window art over the centered design area (black
+	// letterbox bars are the capture's own clear). Mirrors drawCourtroomThemed.
+	court := sdl.Rect{X: lay.offX, Y: lay.offY, W: dst.W - 2*lay.offX, H: dst.H - 2*lay.offY}
+	if page, ok := a.themePage("courtroombackground"); ok {
+		c.cgoRect = court
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+	} else {
+		c.Fill(court, ColPanel)
+	}
+	vp, _ := lay.rect("viewport")
+	c.Fill(vp, sdl.Color{R: 0, G: 0, B: 0, A: 255})
+	a.d.Viewport.Render(c.Ren, sc, vp)
+	if box, ok := lay.rect("ao2_chatbox"); ok {
+		a.drawGifThemedChatbox(j, sc, box, lay)
+	} else {
+		a.drawGifChatbox(j, sc, vp) // theme has no chatbox rect: bottom overlay over the stage
+	}
+}
+
+// drawGifThemedChatbox draws the export chatbox at the theme's ao2_chatbox rect:
+// the theme's chatbox skin (or a flat panel), the showname and message at their
+// chatbox-relative design rects, clipped to the box. It mirrors drawThemedChatBox
+// but reads the EXPORT room's scene + its own cached raster (j.chatRaster), not
+// the live courtroom state.
+func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl.Rect, lay *themeLayoutCache) {
+	if sc.IsBlankPost || (sc.MessageText == "" && sc.ShownameText == "") {
+		return
+	}
+	c := a.ctx
+	skinned := false
+	if page, ok := a.themePage(themeStemChatbox); ok {
+		c.cgoRect = box
+		_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
+		skinned = true
+	}
+	if !skinned {
+		c.Fill(box, sdl.Color{R: 16, G: 16, B: 24, A: 215})
+		c.Border(box, ColAccent)
+	}
+
+	// showname/message sit at their chatbox-relative design rects (AO2 child
+	// semantics), falling back to the classic offsets when the theme omits them.
+	nameX, nameY, nameW := box.X+8, box.Y+4, box.W-16
+	if r, ok := lay.rect("showname"); ok {
+		nameX, nameY, nameW = box.X+r.X, box.Y+r.Y, r.W
+	}
+	msgX, msgY, wrapW := box.X+8, box.Y+gifChatNameRowH, box.W-16
+	if r, ok := lay.rect("message"); ok {
+		msgX, msgY, wrapW = box.X+r.X, box.Y+r.Y, r.W
+	}
+
+	nameCol := ColAccent
+	if skinned && a.themeHasName {
+		nameCol = a.themeNameCol
+	}
+	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
+		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
+	}
+	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), nameX, nameY, nameW, sc.ShownameText, nameCol)
+
+	// Rasterize once per line, wrapped to the design message width and shrunk to
+	// fit the box height (keyed by text like the default path — only one of the two
+	// chatbox paths runs across a whole export, so the shared cache never drifts).
+	if j.chatRaster == nil || j.chatText != sc.MessageText {
+		if j.chatRaster != nil {
+			j.chatRaster.Destroy()
+			j.chatRaster = nil
+		}
+		if sc.MessageText != "" {
+			j.chatRaster = a.fitChatRaster(sc, wrapW, box.H, j.chatPct, false)
+		}
+		j.chatText = sc.MessageText
+	}
+	if j.chatRaster != nil {
+		_ = c.Ren.SetClipRect(&box)
+		j.chatRaster.Draw(c.Ren, sc.VisibleRunes, msgX, msgY)
+		_ = c.Ren.SetClipRect(nil)
+	}
 }
 
 func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) {

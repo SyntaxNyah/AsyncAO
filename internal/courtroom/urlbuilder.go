@@ -94,7 +94,10 @@ func (u URLBuilder) Evidence(image string) string {
 	if !strings.Contains(image, ".") {
 		image += ".png"
 	}
-	return u.origin + evidenceDir + seg(image)
+	// A nested evidence name ("cases/knife.png") keeps its separators (segPath),
+	// so the exact URL mirrors the server's real layout and a bundle writes real
+	// subfolders, never a "cases%2Fknife.png" file (#40).
+	return u.origin + evidenceDir + segPath(image)
 }
 
 // encodeURIRestores maps Go's percent-escapes back to the literal marks
@@ -283,10 +286,14 @@ func (u URLBuilder) ShoutSFX(character, shoutName string) string {
 	return u.origin + charactersDir + u.charSeg(character) + "/" + seg(shoutName)
 }
 
-// Background returns a background part base (defenseempty, stand, ...).
-// AssetType: Background
+// Background returns a background part base (defenseempty, stand, ...). The
+// background NAME may nest ("cases/case1" — servers group case backgrounds in
+// subfolders), so its slashes stay real separators (segPath): a single-segment
+// escape turned "cases/case1" into "cases%2Fcase1", a dead path on strict
+// origins and — once bundled — a folder literally named "cases%2Fcase1" on disk
+// instead of the "cases/case1" subfolder (#40). // AssetType: Background
 func (u URLBuilder) Background(bg, part string) string {
-	return u.origin + backgroundDir + seg(bg) + "/" + seg(part)
+	return u.origin + backgroundDir + segPath(bg) + "/" + seg(part)
 }
 
 // BackgroundsRoot returns the background/ directory URL (with trailing
@@ -303,9 +310,10 @@ func (u URLBuilder) CharFolder(character string) string {
 	return u.origin + charactersDir + u.charSeg(character) + "/"
 }
 
-// BackgroundFolder returns one background's folder URL (with trailing slash).
+// BackgroundFolder returns one background's folder URL (with trailing slash). A
+// nested background name keeps its separators (segPath), matching Background.
 func (u URLBuilder) BackgroundFolder(bg string) string {
-	return u.origin + backgroundDir + seg(bg) + "/"
+	return u.origin + backgroundDir + segPath(bg) + "/"
 }
 
 // SFX returns a general sound base. Names may nest in subfolders (AO2's
