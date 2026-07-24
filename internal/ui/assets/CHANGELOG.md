@@ -4,6 +4,22 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.81.6 — 2026-07-24
+
+- **Fixed the last "disconnected after hours minimized" bug.** v1.81.5 kept the
+  outgoing keepalive alive while minimized, but the *incoming* side still ran
+  through the drawing loop that Windows stalls behind a fullscreen window. Over
+  hours, undelivered server messages slowly filled an internal queue; once it was
+  full the client stopped reading the connection at all — which also silently
+  stopped answering the server's low-level "are you alive?" checks — and the
+  server eventually dropped a perfectly healthy client. The connection now keeps
+  reading (and answering those checks) no matter what the window is doing:
+  messages that arrive while you're away are buffered and caught up the moment you
+  come back. You can stay minimized overnight — behind a fullscreen game or video —
+  and remain connected: the buffer covers days of a quiet room and a large part of
+  a day of nonstop busy chat before the client gives up deliberately. (Applies to
+  parked server tabs too, which shared the same flaw.)
+
 ## v1.81.5 — 2026-07-22
 
 - **Minimizing no longer eventually disconnects you.** The keepalive ping that

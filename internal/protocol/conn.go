@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -24,9 +25,34 @@ const (
 	// occluded by a fullscreen foreground app, which used to freeze the old
 	// loop-driven ping and let the server idle-drop the "silent" client.
 	keepaliveInterval = 45 * time.Second
-	// incomingQueueCap bounds the read-loop → client channel; the game
+	// incomingQueueCap bounds the deliver-loop → client channel; the game
 	// loop drains it every frame.
 	incomingQueueCap = 256
+	// readBacklogCap bounds the read-loop → deliver-loop parking channel that sits
+	// in FRONT of Incoming. It exists so readLoop NEVER blocks on a full Incoming:
+	// coder/websocket answers the server's WS PING control frames only while some
+	// goroutine is inside ws.Read (read.go handleControl), so a reader parked on a
+	// channel send stops ponging — and once Incoming filled (hours at idle-room
+	// packet rates, ~256 × 60 s) the server's ping-timeout dropped a perfectly
+	// healthy minimized client. Windows provably stalls the render loop that drains
+	// Incoming while the app is occluded (the v1.81.5 finding), so the socket must
+	// stay alive without it — for the WHOLE occlusion, which the reporting users
+	// measure in workdays. Sized for a BUSY room's full occluded stretch, not just
+	// an idle one (~0.5 packets/s of active courtroom chatter → ~18 h; idle rooms →
+	// days), because an occluded-but-healthy client is indistinguishable from a
+	// wedged one down here and must not be torn down inside any plausible stall.
+	// Costs ~1.6 MiB of preallocated channel buffer per connection (48 B/slot) —
+	// noise against the 256 MiB budget, and the courtroom's own bounded IC queue
+	// (messageQueueCap drop-oldest + packed-room catch-up) collapses the replay on
+	// restore, so depth here never turns into a replay storm. Still a hard, named
+	// bound: exhaustion means the drain has been dead for many busy hours with
+	// traffic still arriving, and THEN we disconnect (errReadBacklogOverflow).
+	readBacklogCap = 32768
+	// readBacklogMaxBytes bounds the WIRE bytes parked in the backlog channel, so a
+	// hostile/buggy server spraying maximum-size frames (maxIncomingBytes each)
+	// can't turn the packet-count bound into gigabytes of buffered strings. Idle
+	// traffic is tens of bytes per packet, so real stalls never approach this.
+	readBacklogMaxBytes = 32 << 20
 	// maxIncomingBytes bounds one server packet defensively (character
 	// lists on 200-char servers fit comfortably).
 	maxIncomingBytes = 8 << 20
@@ -39,6 +65,19 @@ const (
 	ClientName = "AsyncAO"
 )
 
+// errReadBacklogOverflow is the terminal error when the app has not drained
+// Incoming for an entire readBacklogCap of arriving packets (or the backlog's
+// byte bound): the render thread is genuinely wedged, not merely napping, so
+// the connection is abandoned deliberately rather than buffered without bound.
+var errReadBacklogOverflow = errors.New("protocol: incoming packet backlog overflowed (client stopped draining)")
+
+// sizedPacket carries a parsed packet plus its wire size through the backlog
+// channel, so the byte bound can be released when the packet is handed on.
+type sizedPacket struct {
+	p Packet
+	n int
+}
+
 // Conn is a WebSocket AO2 connection: one text frame in = one packet out the
 // Incoming channel; Send serializes and writes one packet. Legacy raw TCP is
 // not supported anywhere in AsyncAO.
@@ -48,6 +87,15 @@ type Conn struct {
 	readErr  atomic.Pointer[error]
 	closed   chan struct{}
 	once     sync.Once
+
+	// backlog decouples readLoop from Incoming (see readBacklogCap): readLoop is
+	// its only sender/closer and never blocks on it; deliverLoop moves packets on
+	// to Incoming with a blocking send, which is safe because deliverLoop is NOT
+	// the goroutine that must keep re-entering ws.Read to answer server pings.
+	backlog chan sizedPacket
+	// backlogBytes tracks wire bytes currently parked in backlog (single adder:
+	// readLoop; single subtractor: deliverLoop) against readBacklogMaxBytes.
+	backlogBytes atomic.Int64
 
 	// writeMu serializes every ws.Write: application Sends (render thread) and the
 	// keepalive goroutine share the one underlying socket, and coder/websocket
@@ -110,6 +158,11 @@ type DialOptions struct {
 	// keepaliveInterval package default). Tests set a short value to exercise the
 	// goroutine without waiting 45 s; production leaves it zero.
 	KeepaliveInterval time.Duration
+	// ReadBacklogCap overrides the backlog channel's packet capacity (0 = the
+	// readBacklogCap package default). Tests set a tiny value to exercise the
+	// wedged-client overflow disconnect without buffering thousands of packets;
+	// production leaves it zero.
+	ReadBacklogCap int
 }
 
 // Dial connects to a ws:// or wss:// AO server URL and starts the read loop.
@@ -145,15 +198,21 @@ func Dial(ctx context.Context, wsURL string, opts ...DialOptions) (*Conn, error)
 	}
 	ws.SetReadLimit(maxIncomingBytes)
 
+	backlogCap := readBacklogCap
+	if len(opts) > 0 && opts[0].ReadBacklogCap > 0 {
+		backlogCap = opts[0].ReadBacklogCap
+	}
 	c := &Conn{
 		ws:       ws,
 		incoming: make(chan Packet, incomingQueueCap),
+		backlog:  make(chan sizedPacket, backlogCap),
 		closed:   make(chan struct{}),
 	}
 	if len(opts) > 0 && opts[0].KeepaliveInterval > 0 {
 		c.keepaliveEvery = opts[0].KeepaliveInterval
 	}
 	go c.readLoop()
+	go c.deliverLoop()   // backlog → Incoming hand-off; exits when backlog closes or on Close (§17.4)
 	go c.keepaliveLoop() // fires the CH ping off the render loop; exits on Close (no per-conn leak, §17.4)
 	return c, nil
 }
@@ -253,13 +312,30 @@ func (c *Conn) Close() {
 	})
 }
 
+// readLoop's ONE invariant is that it always returns to ws.Read promptly: the
+// library answers server WS PING control frames only from inside an in-flight
+// Read, and an unanswered ping is how servers drop a healthy idle client (the
+// hours-minimized disconnect — the render loop that drains Incoming is stalled
+// by the OS while occluded, so this goroutine is the only thing keeping the
+// socket alive). It therefore NEVER blocks on a channel send: packets go into
+// backlog non-blockingly, and deliverLoop does the blocking hand-off to
+// Incoming. Backlog exhaustion (count or bytes) is the deliberate exception:
+// the drain has been dead for the whole bound with traffic still arriving, so
+// the client is wedged and disconnecting is correct.
 func (c *Conn) readLoop() {
-	// The close wake matters too: a dropped connection must surface (the
-	// "connection closed" toast + tab teardown) as fast as a packet would.
-	defer func() {
-		close(c.incoming)
-		c.wake()
-	}()
+	// readLoop is backlog's only sender, so it closes it on exit; deliverLoop
+	// then finishes delivering whatever is parked and closes Incoming — a
+	// dropped connection still surfaces (the "connection closed" toast + tab
+	// teardown) right after the buffered packets. Deliberately NO Close() on
+	// the transport-error path below: closing c.closed would make deliverLoop
+	// abandon parked packets, and surfacing the drop "immediately" buys
+	// nothing while the drain is stalled (nobody is watching a stalled
+	// window; on resume pumpConnection drains the parked packets AND hits the
+	// channel close in the same call, so the drop surfaces the same frame).
+	// Until then deliverLoop just stays parked — bounded, one per conn, and
+	// released by the resume, by keepaliveLoop's write-failure Close, or by
+	// the app's own teardown Close.
+	defer close(c.backlog)
 	for {
 		msgType, data, err := c.ws.Read(context.Background())
 		if err != nil {
@@ -279,11 +355,49 @@ func (c *Conn) readLoop() {
 			continue // tolerate malformed frames like AO2-Client does
 		}
 		c.received.Add(1)
+		if c.backlogBytes.Load()+int64(len(data)) > readBacklogMaxBytes {
+			c.readErr.CompareAndSwap(nil, &errReadBacklogOverflow)
+			c.Close()
+			return
+		}
 		select {
-		case c.incoming <- packet:
-			c.wake()
+		case c.backlog <- sizedPacket{p: packet, n: len(data)}:
+			c.backlogBytes.Add(int64(len(data)))
 		case <-c.closed:
 			return
+		default:
+			// Backlog full: the app hasn't drained Incoming for the entire
+			// bound while packets kept arriving — wedged, not napping.
+			c.readErr.CompareAndSwap(nil, &errReadBacklogOverflow)
+			c.Close()
+			return
+		}
+	}
+}
+
+// deliverLoop moves packets backlog → Incoming. Its send may block for hours —
+// that's the point: blocking HERE (instead of in readLoop) is what keeps the
+// reader inside ws.Read answering server pings while the render loop is
+// stalled. When the drain resumes, delivery resumes instantly (no waiting for
+// the next inbound frame). It is Incoming's only closer. On a transport drop
+// (readLoop exits WITHOUT Close, so c.closed stays open) the select's closed
+// arm is dead and every parked packet is delivered before the range ends —
+// nothing is dropped ahead of the close notification. Once c.closed IS closed
+// (deliberate Close, overflow, or keepaliveLoop's write-failure Close on an
+// already-dead socket) still-parked packets may be abandoned — acceptable, the
+// connection is being torn down and a reconnect resyncs full server state.
+func (c *Conn) deliverLoop() {
+	defer func() {
+		close(c.incoming)
+		c.wake() // the close wake: a drop must surface as fast as a packet would
+	}()
+	for item := range c.backlog {
+		select {
+		case c.incoming <- item.p:
+			c.backlogBytes.Add(-int64(item.n))
+			c.wake()
+		case <-c.closed:
+			return // deliberate Close / overflow teardown: stop delivering
 		}
 	}
 }
