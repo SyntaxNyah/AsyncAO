@@ -1,0 +1,61 @@
+# Auto-tag releases from the CHANGELOG — the "merge a PR = ship a release" glue.
+#
+# On every push to main this reads the NEWEST "## vX.Y.Z" heading in
+# internal/ui/assets/CHANGELOG.md (the same file release.yml builds the release
+# notes from, so the two can never disagree about what a version is called). If
+# that version has no tag yet, the pushed commit is tagged with it and the
+# Release pipeline is dispatched ON that tag ref. Releasing therefore becomes:
+# add the new "## vX.Y.Z" CHANGELOG section in the PR (already the convention),
+# merge, done — no manual tag push.
+#
+# Why the explicit dispatch instead of letting the tag push trigger release.yml:
+# refs created with a workflow's own GITHUB_TOKEN deliberately do NOT fire other
+# workflows (GitHub's recursive-workflow guard), so a GITHUB_TOKEN-pushed tag
+# would sit there and never build. An API workflow_dispatch IS allowed, and
+# dispatching with --ref <tag> runs release.yml with github.ref =
+# refs/tags/<ver> — exactly what its publish gate (startsWith refs/tags/) and
+# `gh release create --verify-tag` require. Manually-pushed tags still work
+# exactly as before (they trigger release.yml directly; this workflow then sees
+# the tag exists and does nothing).
+#
+# Idempotent by construction: an already-existing tag exits 0, so ordinary
+# pushes to main between releases are no-ops, and re-running is always safe.
+name: Auto-tag release
+
+on:
+  push:
+    branches: [main]
+  # Manual re-run (e.g. the guard skipped a fire, or dispatch hiccuped).
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the version tag
+  actions: write # dispatch the Release workflow
+
+jobs:
+  tag:
+    name: Tag from CHANGELOG + dispatch Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the version tag if new, then dispatch the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Newest-first file: the first "## vX.Y.Z — date" heading is the
+          # current version. $2 is the bare "vX.Y.Z" token.
+          ver=$(awk '/^## v/ { print $2; exit }' internal/ui/assets/CHANGELOG.md)
+          if [ -z "$ver" ]; then
+            echo "::error::No '## vX.Y.Z' heading found in internal/ui/assets/CHANGELOG.md"
+            exit 1
+          fi
+          if git ls-remote --exit-code origin "refs/tags/$ver" >/dev/null 2>&1; then
+            echo "::notice::$ver is already tagged — nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$ver" "$GITHUB_SHA"
+          git push origin "refs/tags/$ver"
+          echo "::notice::Tagged $ver at $GITHUB_SHA — dispatching the Release pipeline."
+          gh workflow run release.yml --ref "$ver"
