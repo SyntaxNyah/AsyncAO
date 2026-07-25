@@ -989,9 +989,21 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Call-mod is a floating panel.** The Call Mod window is now a movable / resizable
   **non-blocking** floating box (like Evidence / Pair) — keep talking and watching
   the courtroom while it's open.
-- **Theme fonts.** An AO theme that ships its own font (a `.ttf`/`.otf` in the theme
-  folder, named by its `courtroom_fonts.ini` `*_font` family) now loads it for the
-  IC/OOC text — below a manual font override and the dyslexia font ([#6]).
+- **Theme fonts, per element** (#39). A theme's `courtroom_fonts.ini` gives every
+  courtroom element its own **font family, point size and bold** (AO2's
+  `set_fonts`, courtroom.cpp:1188), and AsyncAO now applies all three to the
+  **showname**, the **message text**, the **IC chatlog**, the **server chatlog**,
+  the **music list**, the **now-playing name** and the **area list** — in every
+  layout variant, and in the GIF/WebP/video export chatbox. (Before this only the
+  *message* family was read, and it was applied globally to the whole client; no
+  element's size reached the screen at all.) The family is looked up where themes
+  actually keep their fonts — the theme's own folder including its `fonts/`
+  subfolder, the base `fonts/` folder, then your system fonts, so a theme that
+  simply declares "Arial" resolves too — and the theme-apply status line names the
+  files that resolved. Untick **"Use the theme's fonts"** (Settings → Theme →
+  Layout & fit, **ON by default**) to ignore the file; a manual font override or
+  the dyslexia font still outranks the theme's *families* (its sizes still apply,
+  [#6]). The attributes still deferred are listed in `docs/ROADMAP.md`.
 - **TLS certificate validation** (Settings → Account → **Security**; power users,
   **OFF by default**): strictly verify a `wss://` server's certificate. Off by
   default so the many community servers on self-signed certs stay reachable; on for
@@ -999,7 +1011,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **IC log**: 1024-line color-preserving scrollback with search, Copy to
   clipboard, and TXT/HTML export (`logs/` beside the exe; HTML keeps the
   AO palette). Lines **word-wrap to the list width** (cached against
-  log/width/font-scale — never re-wrapped per frame). **Local timestamps**
+  log/width/font-scale — never re-wrapped per frame), measured **in the face each
+  row is actually drawn in**: a custom chat font puts several faces in the log at
+  once (your font, plus the fallbacks for anything it doesn't cover) and an emoji
+  or mixed-script row is laid out glyph by glyph, so a wrap measured in any other
+  face used to overflow the column and clip at its right edge. Both logs — and the
+  pinned second courtroom's log, which had the same mismatch — now break against
+  the width they draw at, at any log zoom. **Local timestamps**
   prefix each line (`14:32  Phoenix: …`) so you can see when people spoke —
   **ON by default**, toggle in **Settings → Audio & Chat**. The time is stamped
   once when the line arrives, never formatted per frame (the toggle state is part
@@ -1058,6 +1076,18 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   in **Settings → Ignored players**. Free when unused: the match is one lock and
   zero iterations per message on an empty list, and nothing touches the render
   loop.
+- **Idling minimized no longer disconnects you**: leave AsyncAO minimized for a
+  while and you used to come back to a dropped connection with no reason given.
+  The client sends a few automated requests in the background (the roster refresh
+  that fills in a mod's IPID column), and while the window was minimized they
+  piled up unsent and then all went out **at once** the moment you came back — a
+  burst servers read as spam and answer with a kick. Those automated lines are now
+  **paced as they leave**, at the same rate whether the window is focused, in the
+  background or minimized, and the same request is never queued twice, so nothing
+  can bunch up. AO2-Client and webAO idle all day on these servers; so does
+  AsyncAO. Nothing about reconnecting changed — this is fixed at the source,
+  because a client that behaves shouldn't be dropping in the first place. (The
+  full diagnosis is in docs/KNOWN-ISSUES.md.)
 - **Reconnect, manual + automatic** (M2): when a connection drops or a join fails,
   the lobby shows a **"Reconnect to &lt;server&gt;"** button that re-dials the last
   server you tried (the name + ws URL are remembered on every connect attempt).
@@ -1306,13 +1336,26 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Hideable chrome**: shout row, layout knobs, emote grid, right column,
   OOC row, HP bars, clocks, badge, judge row — persisted per user.
 - **Now-Playing + reliable Stop** on the Music tab: a "Now playing: <track>"
-  line shows the current song (a streaming link shows its filename), and **Stop
+  line shows the current song by the same short name the rows use, and **Stop
   music** now **halts your own playback immediately** (and cancels a track still
   fetching) instead of only asking the server to stop a fake `~stop` track —
   which often failed, so the music kept going. It still sends the server-side
   stop too, so a DJ stops it for the room. A **search box** filters the server's
   track list (AO2/webAO parity), memoized so a list of thousands isn't re-scanned
   per frame; an "N / M" count shows how many match.
+- **Track names read like AO2's**: a music row shows just the song's **name** —
+  the folder path and the file extension are cut, exactly as AO2-Client's
+  `list_music` does it (courtroom.cpp:1738) — so a server track filed as
+  `999/songs/that/slap/[999] Tranquility.ogg` reads as `[999] Tranquility`
+  instead of overflowing the row with a path nobody needs. **Category rows** come
+  through unchanged (carrying no extension, they have nothing to cut), the **raw
+  entry is still on the hover tooltip**, and the search still matches the full
+  text, so a directory name stays findable. A direct `http(s)` link shows its
+  filename, with the signed query a Discord CDN link ends with stripped off. The
+  name **sent to the server is unchanged** — clicking a row plays the byte-exact
+  track it always did, and the music URL is still built from it. The same short
+  name is used on the "Now playing:" line, in the IC "*has played a song*" line
+  and in the jukebox's Recently-played rows, so the three can't disagree.
 - **Jukebox playlist** (Wardrobe → **Jukebox** tab): a library of the music
   links DJs/CMs `/play` in OOC (YouTube/Discord/etc.), organized into named
   playlists (folders) so you click instead of paste. Per song: a labelled
@@ -1389,8 +1432,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   and the position selector (AO2 ui_pos_dropdown parity, SD list when
   sent) — open lists draw above everything, auto-widen to their options,
   flip at window edges, and modally capture the pointer.
-- **Tab / Shift+Tab cycles focus** across visible text inputs in draw
-  order (IC → OOC → search ...), wrapping both ways.
+- **Tab / Shift+Tab cycles focus** across the visible text inputs, wrapping both
+  ways. The chat boxes follow **AO2's own order** — showname → message → OOC
+  message → OOC name, the order courtroom.cpp builds them in — instead of whatever
+  order the current layout happens to draw them in, so **Tab out of the message
+  box reaches the OOC box in every layout** (default, Legacy, the Legacy OOC-tab
+  hybrid, themed, torn-out panels and the pinned split pane) and **Shift+Tab comes
+  straight back**. It used to land on the showname in a themed layout and on the
+  log/music search in the default one. Everything else keeps draw order, and a
+  field that isn't on screen is never focused.
 - Clicking an emote **refocuses the IC input** (AO2 focus_ic_input) —
   pick and keep typing.
 - **Music ducking** (Settings → Audio & Chat, off by default): dips the
@@ -1425,7 +1475,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   unchanged).
 - **Emote grid pages** (`<` / `>` + a `page x/y · N emotes` counter) when
   a character ships more emotes than fit — both the classic and themed
-  layouts. The arrow row only appears when paging is needed; loading a
+  layouts. In a **themed layout the buttons keep their shape** (#33): the theme's
+  `emote_button_size` is scaled by a **single** factor, the way AO2 does it, so
+  stretching the window wide no longer elongates every emote button (and a tall
+  window no longer squashes them) — the grid just reflows and pages into whatever
+  rect the theme gave it. The arrow row only appears when paging is needed; loading a
   character resets to page 1. The **mouse-wheel over the grid pages too** (scroll
   up = previous, down = next). A **Random** button picks any emote (and jumps
   to its page), and **number keys 1–9** pick the emote in that grid position
@@ -1493,6 +1547,15 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Sprite hover-previews are configurable** (Settings → General): the preview
   pop-up is **ON by default** with a **5 s hover dwell** you tune with a slider
   (0.5–15 s), or switch off entirely.
+- **Character-select previews work for any pack**: the character grid used to
+  preview the emote literally named `normal`, so a character whose char.ini never
+  names one — packs spell their poses `SNormal` / `SCry` / `HSmug` / `VBlush` just
+  as often — showed a cell icon that loaded fine beside a preview box that stayed
+  empty forever. The preview now reads the hovered character's char.ini and falls
+  back to its **first real emote**, so every pack previews. A pack that does have
+  `normal` is unchanged and still costs a single probe. (The wardrobe / iniswap
+  grid and the pair menu already recovered this way; character select was the one
+  surface that didn't.)
 - **Reposition sprites by dragging** (Settings → General, **default OFF**): when
   enabled, drag any character in the viewport to move them (the override sticks
   per character; right-click a sprite to reset it, or "Reset all moved sprites"
@@ -1507,6 +1570,17 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   session-only (not persisted). Free on the render path: the suppression check
   short-circuits when nothing is hidden (the `RenderFrame` 0-alloc gate is in
   `render.Viewport`, untouched).
+- **A background with no desk draws no desk** (#44): pack authors suppress the
+  desk for a position by simply not shipping its image, so when the current
+  background has no desk for the position you're standing at, the stage now shows
+  **none** — instead of leaving the previous room's desk (usually the witness
+  stand, since sessions open at `wit`) sitting in front of everyone until the next
+  scene change. AO2-Client does exactly this: `set_scene` checks the file and
+  hides the desk when it's absent (courtroom.cpp:4628), and unlike the background
+  right above it the desk deliberately has **no** fall back to `wit`. A desk that
+  is merely still streaming keeps showing its previous frame as before, and the
+  char.ini `desk_mod` rules are unchanged; a desk that turns up later needs no
+  restart.
 - **Hide the desk** (Settings → General, **default OFF**): suppress the foreground
   courtroom desk so the **full character** shows (no table in front). Toggle it
   live with the **"Hide / show the desk"** key (Controls tab, default **Ctrl+V**)
@@ -1622,9 +1696,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Links in the OOC log too**: hovering an OOC line with an `http(s)://` or
   bare `www.` link highlights it; **left-click opens it**, **right-click copies
   the URL** to the clipboard (the IC log pins on right-click, so OOC takes
-  copy). A wrapped/linked message highlights as one block, keyed by its source
-  entry — two adjacent messages sharing the same URL stay independent. The URL
-  is detected only on the hovered line, so it costs nothing per frame.
+  copy). **Every link in a message is its own target**: someone dumping five
+  links in one post gets five independently hoverable, independently clickable
+  links — the highlight tints only the one under the cursor, and clicking opens
+  *that* one instead of always the first. Plain text beside a link, the gap
+  between two links and the sentence period after one all miss. A single long
+  link that the wrap splits across rows still highlights as one continuous run,
+  and two adjacent messages sharing the same URL stay independent. The links are
+  measured once when the log wraps, never per frame.
 - **Select & copy log text** (IC and OOC): **drag to highlight** any span of
   characters across lines, **Ctrl+C** copies it. The selection is anchored to
   content (not screen rows), so scrolling or new lines never corrupt it, and

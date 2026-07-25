@@ -64,6 +64,54 @@ draws the already-current room (`roomPreAdvanced` makes it skip its own
 hard-cap floor still uninterruptible. SDL_mixer stays on this thread (rule zero) —
 there is no separate audio thread.
 
+### Wire producers are never gated on window state
+
+`App.Frame` runs only when the window draws; `App.Background` runs while it is
+minimized (that branch `continue`s before `Frame` is ever reached). So a producer
+that runs in `Background` while its consumer runs only in `Frame` accumulates for
+the whole occlusion and then flushes as one burst on the first restored frame.
+That is precisely how an idling minimized client disconnected itself: the live
+roster queued a `/gas` OOC command every `rosterRefetchDebounce` (3 s) from
+`Background`, while `processOOCQueue` — the drain — ran only in `Frame`. Servers
+count OOC per IP and kick on breach; the kick closes the socket synchronously
+while its explanation is still queued asynchronously, so the client sees a bare
+close carrying no reason at all.
+
+Two invariants, either of which alone would have prevented it:
+
+- **A queue whose producer can run in `Background` must also be drained in
+  `Background`** — so the send rate is identical in every window state, instead
+  of being a function of whether the window happened to be on screen.
+- **Every automated wire sender is paced at the DRAIN, not at queue time.**
+  Scheduling only spaces lines that are *created* apart; a backlog comes due all
+  at once and leaves in one pass. `processOOCQueue` releases at most one line per
+  `oocSendMinGap`, measured against the previous actual send, and pollers consult
+  `oocQueuePending` before enqueuing so a slow drain cannot stack duplicates of
+  the same command.
+
+`maybeFollowJump` (`internal/ui/follow.go`) is the same shape still standing: it
+runs from `Background`, and `jumpToArea` sends an unpaced `MC`. It is safe only
+arithmetically — `followJumpDebounce` (2 s) is 0.5 packets/s against a typical
+server budget near 1.4/s, and the feature is opt-in — so anything added beside it
+inherits the hazard.
+
+**The frame clock is real time even while minimized.** `a.now()` reads `frameNow`,
+and `Background` restamps it (`1d759ce`, first tagged v1.74.5) so timer-driven work
+— the music-await self-heal, the resume-seek elapsed math — is not wedged at the
+last foreground timestamp. The side effect is that every `a.now()`-debounced poller
+now genuinely fires with no window on screen. Before that commit the clock froze, a
+3 s debounce could never elapse, and at most ONE `/gas` left per occlusion — which
+is why older builds could idle all day, and why this bug class stayed hidden.
+Anything that debounces off `a.now()` must be safe to run unattended.
+
+**A close code is not a diagnosis.** Nyathena wraps every client in
+`websocket.NetConn`, whose `Close()` is hardcoded to
+`Close(StatusNormalClosure, "")` — so a kick, a ban and an ordinary cleanup all
+emit an identical `1000` with an empty reason. It means "some server code called
+close()" and nothing more. Four releases were spent reading intent into that
+string. Connection debugging starts on our side — what we sent, at what rate, from
+which loop — and instruments the client before it interprets the close.
+
 ## Asset pipeline (spec §8)
 
 ```
@@ -198,6 +246,12 @@ MS parsing honors `MS_MINIMUM=15`, gates fields ≥ 15 on
 (`^0` = speaker in front). Outgoing MS reproduces AO2-Client's feature-gating
 ladder and its asymmetry (the server injects partner fields when relaying).
 
+Outbound automation carries its own named ceilings, independent of the frame
+rate: `oocSendMinGap` (1 s) is the hard floor between two automated OOC lines —
+login flows, macros and the live-roster poll share one queue — and
+`macroQueueCap` (32) bounds the pending backlog (rule §17.4). Both are enforced
+where the queue drains, for the reasons above.
+
 ## UI kit contract (`internal/ui`)
 
 Immediate-mode over one per-frame input snapshot — **order is law**:
@@ -263,8 +317,12 @@ so a release hit-tests where it actually happened.
   order chip promotes that extension one slot toward "probed first".
 - The pairing panel picks partners from a searchable click-to-pick list
   (the old one-by-one cycle was unusable against 4000-char rosters).
-- While minimized the loop runs `App.Background` (session pump, no
-  drawing) at a 50 ms nap — keepalives keep flowing at ~0 % GPU.
+- While minimized the loop runs `App.Background` (session pump **plus the
+  OOC automation drain**, no drawing) at a 50 ms nap — keepalives keep
+  flowing at ~0 % GPU, and queued automation keeps leaving at its paced
+  rate rather than piling up for the restore. The drain there is
+  load-bearing, not incidental: its producers run in `Background` too
+  (see "Wire producers are never gated on window state").
 - The renderer sets `BLENDMODE_BLEND` for draw ops at startup: alpha
   fills (chat box, taken overlay, selection highlight) actually blend —
   SDL's default NONE silently rendered them opaque.

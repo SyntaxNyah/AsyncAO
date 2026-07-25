@@ -66,6 +66,39 @@ char.ini `desk_mod` (the optional 5th `[Emotions]` field), defaulting to **show*
 as a non-hide value). Only an explicit `0`/`3`/`5` hides the desk. A hardcoded
 `1` previously meant a no-desk emote never hid the desk for the room (fixed).
 
+## Rate limits and close codes
+
+Servers flood-guard **inbound** packets and kick on breach. Nyathena's `pktOOC`
+runs two counters: `checkIPOOCRateLimit` (`ooc_rate_limit`, counted per **IP** —
+every tab behind one address shares the budget) and `CheckRateLimit`
+(`message_rate_limit`, counted per client across every message kind). Either
+breach runs `KickForRateLimit`. Both budgets are operator-set with no built-in
+default — the shipped sample is 4 per 1 s for OOC and 20 per 10 s for messages,
+and deployed servers commonly tighten the message budget to nearer 1.4/s, which
+is the figure the client's pacing is sized against.
+
+That kick is silent on the wire: the server queues its explanation
+**asynchronously** and closes the socket **synchronously**, so the reason
+usually loses the race and only the close arrives.
+
+Nor does the close frame say anything. Nyathena wraps each client in
+`websocket.NetConn`, and coder/nhooyr's `netConn.Close()` is hardcoded to
+`Close(StatusNormalClosure, "")` — so kick, ban, area cleanup and shutdown all
+emit an identical **1000, empty reason**. On these servers that code means only
+"server code called `Close()`"; it is *not* evidence of an idle timeout or a
+graceful goodbye, and a client must not report it as one. If anything it points
+the other way: a moderator kick (`KK`) normally lands before the socket goes, so
+a reasonless close is the fingerprint of an automated guard.
+
+The implementer's rule: **never emit a burst of automated commands.** Anything
+sent without a keypress behind it — roster polls, login sequences, macros —
+needs a hard minimum gap enforced where the packet is *sent*, not where it is
+scheduled, because a queue that stalls and then flushes its due entries is
+indistinguishable from flooding. AsyncAO's automated OOC path (`oocSendMinGap`,
+`internal/ui/macros.go`) releases one line per second and is drained from both
+the frame loop and the background pump, so the rate never depends on window
+state; see KNOWN-ISSUES.md for the disconnect this caused when it didn't.
+
 ## Features (`FL`), wire names
 
 `yellowtext flipping customobjections fastloading noencryption deskmod
@@ -134,6 +167,45 @@ The client never sends `other_name`, `other_emote`, `other_offset`,
 outgoing CCCC block is exactly: showname, other_charid(±`^order`), offset,
 immediate. Field count therefore varies by server features (15 bare → 28
 full); see `OutgoingMS.Fields`.
+
+## Music list — display name vs wire name
+
+`SM` ships music entries raw and `MC` echoes them raw; the raw string is also
+what `sounds/music/<track>` is built from. What AO2 *shows* is derived, in
+`Courtroom::list_music` (courtroom.cpp:1682-1782):
+
+```
+listname = entry.left(entry.lastIndexOf("."));
+listname = listname.right(listname.length() - (listname.lastIndexOf("/") + 1));
+```
+
+Cut at the LAST `.`, *then* keep everything after the LAST `/`. That order is
+canonical and is *not* basename-first: `vol.2/name` → `vol`. For
+any entry that genuinely ends in an extension the two agree, so
+`999/songs/that/slap/[999] Tranquility.ogg` displays as `[999] Tranquility`.
+A direct `http(s)://` track is instead shown as `QUrl(f_song).fileName()`
+(courtroom.cpp `handle_song`), which drops the query first — necessary because a
+signed CDN link carries dots after its extension.
+
+Two classifications ride on the same transform:
+
+- **Category headers.** `QString::left(-1)` returns the whole string, so an
+  entry with no `.` comes back unchanged, and AO2 reads `listname == entry` as a
+  category — a top-level tree item that the following entries nest under.
+  AsyncAO classifies headers by audio extension instead
+  (`courtroom.HasAudioExt`, the same rule the `SM` area/music split uses), which
+  cannot mis-cut a header that happens to contain a dot.
+- **Stop sentinels.** `~stop.mp3`, and any entry that reads "stop" once `=` is
+  stripped (`=stop=`), are not tracks — AO2 has no stop packet, so stopping is
+  requesting one of those fake entries (courtroom.cpp `music_stop`), and
+  `list_music` skips them so they can't be clicked as songs. AsyncAO leaves them
+  in the list (its Stop button halts local playback first and requests the
+  sentinel second, so a server that lacks one still stops for the listener).
+
+The derived name is **display only**. The `MC` request and the music URL must
+carry the entry byte-exact — the transform is lossy (it drops exactly the
+directory and extension a fetch needs), so a client that shortens the name it
+sends will request a track no server has.
 
 ## Asset URL conventions (webAO-mirrored)
 

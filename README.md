@@ -28,6 +28,8 @@ everything in memory and on disk, and renders without allocating.
   the moment something actually changes — typing, an animation, a packet, input.
   Every rate is a slider (active / idle / background), and sound stays smooth even
   at a 1 fps cap, so a 165 Hz laptop stops burning its GPU and fan on a quiet room.
+  Minimising the window stops the *drawing* only — the session keeps pumping at
+  exactly the rate a focused one does, so a tab can sit idle all day.
 - **Two servers at once** — every connection is a tab, and any background tab can
   be **popped out into a floating, movable, resizable second client** you watch
   or play alongside the main one (click it to take control; full-theme view with
@@ -49,7 +51,8 @@ everything in memory and on disk, and renders without allocating.
 - **Full pairing** — two characters with offsets, flip and z-order, fetched in
   parallel so a paired message costs the same wall-clock as a solo one.
 - **Looks the way you want** — AO2 theme support (point it at your `themes/`
-  folder and `courtroom_design.ini` keeps working), chrome colour presets
+  folder and `courtroom_design.ini` keeps working, while `courtroom_fonts.ini`
+  sets the family, size and weight of the chat, log and list text), chrome colour presets
   including eye-friendly **Soft Dark** and **Warm**, plus optional visual FX:
   shout punch, chatbox tint, outlines & shadows, vignette / scanlines / grain,
   animated chat text, reactions and inline emoji.

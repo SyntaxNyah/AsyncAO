@@ -15,6 +15,27 @@ items move to `docs/FEATURES.md` as they ship.
 
 ## Planned
 
+- **Pace every automated wire producer reachable from `App.Background`
+  (v1.82.0 follow-up).** The minimized-disconnect fix paced the OOC automation
+  queue at its **drain**: `processOOCQueue` (`internal/ui/macros.go`) releases at
+  most one line per `oocSendMinGap`, and `App.Background` drains it as well as
+  `App.Frame`, so the send rate is identical whether the window is focused,
+  unfocused or minimized. That closed the live-roster `/gas` poll
+  (`internal/ui/liveroster.go`), but the *class* is general: anything reachable
+  from `App.Background` puts packets on the wire at a rate that otherwise depends
+  on whether a frame was drawn, and servers rate-limit per IP and kick on breach
+  — a kick that arrives as a bare close with no reason, which is what made this
+  one so expensive to find. One instance is left: **follow-a-player**, where
+  `maybeFollowJump` (`internal/ui/follow.go`) rides the session-event drain and
+  `jumpToArea` (`internal/ui/playerlist.go`) sends its `MC` area transfer through
+  `Session.RequestMusic` **unpaced**. It is safe as it stands —
+  `followJumpDebounce` is 2 s (0.5 MC/s) against a typical server budget of
+  ~1.4 messages/s, and following is opt-in (`FollowEnabledOn`) — so this is
+  hardening, not a live bug. The work: generalize the drain-time floor beyond OOC
+  into one paced send path for automated packets, and make "does it go through
+  the paced path?" the standing review question for every new
+  `Background`-reachable producer. Zero hot-path cost — a timestamp compare on a
+  drain that already runs.
 - **Custom screen effects — AO2 `effects.ini` system (v1.55.7 follow-up).** The
   inline codes `\s`/`\f`/`\n`/`\p` and a dedicated "Enable screen effects" toggle
   **shipped in v1.55.7**; the remaining half is AO2's named custom-effect system so
