@@ -1488,11 +1488,12 @@ func (a *App) oocWrapped(width int32) []string {
 	src := a.oocWrapSrc[:0]    // parallel to out: source oocLog entry index
 	links := a.oocWrapLink[:0] // NOT parallel: the flat link-span table, rows index it via linkAt below
 	var nextLinkID int32       // link ids are unique across the whole rebuild, so a span identifies its link alone
-	// Per-STRING covering-face pick, matching the OOC draw (LogFontFor per row):
-	// measuring each wrapped candidate in the face that will draw it keeps the
-	// wrap honest under a multi-face chain (#42). Hoisted so the rebuild loop
+	// Per-CANDIDATE drawn-width measure, matching the OOC draw row for row: every
+	// wrapped candidate is measured exactly the way drawOOCLogRow will draw it —
+	// the row's own covering face for a plain row, the per-glyph raster's per-rune
+	// faces for an emoji / mixed-script one (#42). Hoisted so the rebuild loop
 	// doesn't re-alloc the closure per paragraph.
-	oocPick := func(s string) *ttf.Font { return a.ctx.LogFontFor(a.oocPct, s) }
+	oocMeasure := func(s string) int32 { return a.logDrawnWidth(a.oocPct, s) }
 	for i, entry := range a.oocLog {
 		sp := ""
 		if i < len(a.oocSpeakers) {
@@ -1516,28 +1517,31 @@ func (a *App) oocWrapped(width int32) []string {
 			if streamer {
 				para = streamerMaskLine(para)
 			}
-			// Per-paragraph font pick: wraps measure with the font that will DRAW the
-			// line — the OOC log draws at oocPct (its own scale, independent of the IC
-			// log's logPct), so the wrap must measure at oocPct too or a scaled-up OOC
-			// message overflows instead of wrapping (#1). (Also the CJK chain rule.)
-			font := a.ctx.LogFontFor(a.oocPct, para)
+			// Latch the broad / CJK font load off the WHOLE paragraph up front: the
+			// per-candidate picks below only ever see the rows the budget lets
+			// through, and a script that appears past the cut would otherwise never
+			// kick its face load. (This used to be a paragraph-wide LogFontFor pick,
+			// which is exactly the measure #42 removed — noteScript is the part that
+			// was actually load-bearing.)
+			a.ctx.noteScript(para)
 			trimmed := strings.TrimRight(para, "\r")
-			// Emoji-aware wrap for emoji lines (the plain font sizes colour emoji as
-			// narrow tofu, so an emoji-laden line overflowed instead of wrapping); plain
-			// lines keep the cheap word-wrap.
+			// Rune-granular wrap for emoji lines (the plain word-wrap would size a
+			// colour emoji as narrow tofu and hard-split it mid-rune); plain lines keep
+			// the cheap word-wrap. BOTH break against the same per-candidate drawn
+			// width, so neither can measure a row in a face the draw won't use (#42).
 			//
 			// Ask for remaining+1 rows (the "+1 probe"): the wrap functions cap
 			// SILENTLY (they don't report truncation), so an extra row lets us tell a
 			// paragraph that exactly filled the budget from one that overflowed it. We
 			// only ever pass ≥ 2 here (remaining ≥ 1 is guaranteed above), which also
 			// dodges the two wrappers' disagreement on maxLines ≤ 0 (wrapToWidth cuts
-			// to nothing, WrapEmojiAware treats it as unbounded).
+			// to nothing, WrapMeasured treats it as unbounded).
 			probe := remaining + 1
 			var lines []string
 			if ef := a.ctx.EmojiFont(a.oocPct); ef != nil && render.NeedsEmojiFallback(trimmed) {
-				lines = render.WrapEmojiAware(font, ef, trimmed, width, probe)
+				lines = render.WrapMeasured(oocMeasure, trimmed, width, probe)
 			} else {
-				lines = wrapToWidth(oocPick, trimmed, width, probe)
+				lines = wrapToWidthMeasured(oocMeasure, trimmed, width, probe)
 			}
 			if len(lines) > remaining {
 				lines = lines[:remaining] // overflowed the budget — clip and flag the marker
@@ -1655,9 +1659,10 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		return a.icWrap
 	}
 	out := a.icWrap[:0]
-	// Per-STRING covering-face pick, matching the IC draw (LogFontFor per row), so
-	// the wrap and draw agree under a multi-face chain (#42). Hoisted once.
-	icPick := func(s string) *ttf.Font { return a.ctx.LogFontFor(a.logPct, s) }
+	// Per-CANDIDATE drawn-width measure, matching the IC draw row for row (the OOC
+	// log's twin), so the wrap and draw agree under a multi-face chain (#42).
+	// Hoisted once.
+	icMeasure := func(s string) int32 { return a.logDrawnWidth(a.logPct, s) }
 	for _, i := range a.icLogFiltered() {
 		// Prefix the local arrival time when enabled. The stamp was formatted once
 		// on append; the only cost here is one concat per entry, and only on a wrap
@@ -1666,16 +1671,18 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		if showStamps && a.icLog[i].stamp != "" {
 			text = a.icLog[i].stamp + "  " + text
 		}
-		// Wrap with the font that will draw the entry (CJK chain rule). An emoji entry
-		// wraps with the emoji-AWARE measure: the plain font sizes colour emoji as narrow
-		// tofu, so a long emoji showname overflowed + clipped instead of wrapping. Plain
-		// entries keep the cheap word-wrap.
-		font := a.ctx.LogFontFor(a.logPct, text)
+		// Wrap against the width each row will really be DRAWN at (icMeasure). An
+		// emoji entry takes the rune-granular wrap: the plain word-wrap sizes colour
+		// emoji as narrow tofu and hard-splits by bytes, so a long emoji showname
+		// overflowed + clipped instead of wrapping. Plain entries keep the cheap
+		// word-wrap. Latch the CJK / broad face load off the whole entry first — the
+		// per-candidate picks only see the rows that survive the row cap.
+		a.ctx.noteScript(text)
 		var wrapped []string
 		if ef := a.ctx.EmojiFont(a.logPct); ef != nil && render.NeedsEmojiFallback(text) {
-			wrapped = render.WrapEmojiAware(font, ef, text, width, icWrapMaxLinesPerEntry)
+			wrapped = render.WrapMeasured(icMeasure, text, width, icWrapMaxLinesPerEntry)
 		} else {
-			wrapped = wrapToWidth(icPick, text, width, icWrapMaxLinesPerEntry)
+			wrapped = wrapToWidthMeasured(icMeasure, text, width, icWrapMaxLinesPerEntry)
 		}
 		for _, ln := range wrapped {
 			out = append(out, icWrapLine{text: ln, entry: i})
@@ -1730,7 +1737,49 @@ func fontWidth(font *ttf.Font, s string) int32 {
 	return int32(w)
 }
 
+// logDrawnWidth reports the pixel width one IC/OOC log row will occupy when
+// drawLogLineNamed DRAWS it at pct — the metric both log wraps break against, so
+// a wrapped row can never be measured in a face other than the one it lands in
+// (#42). It reproduces that function's own two-way gate:
+//
+//   - a plain row draws through LabelClippedFont in ONE covering face
+//     (LogFontFor), so SizeUTF8 on that face is exact;
+//   - an emoji row, or a mixed-script row no single face covers, draws through
+//     the per-glyph raster (labelEmoji → RasterizeFallback), which lays out
+//     per-RUNE faces — coverRunes for text, the colour-emoji face for emoji.
+//     Measuring such a row with the single picked face is what broke here: with
+//     a custom font installed the chain is multi-face, an emoji-laden MOTD
+//     paragraph picks the LAST face (nothing covers emoji) while its plain rows
+//     draw in the custom face — 73% wider for OpenDyslexic — and overflowed.
+//
+// Build-time only (both wraps are cached), never the render loop.
+func (a *App) logDrawnWidth(pct int, s string) int32 {
+	c := a.ctx
+	primary := c.LogFontFor(pct, s) // also populates the pick covers() reads below
+	if primary == nil {
+		return fontWidth(nil, s) // headless Ctx: the rough per-byte stand-in
+	}
+	ef := c.EmojiFont(pct)
+	if (ef == nil || !render.NeedsEmojiFallback(s)) && c.covers(s) {
+		return fontWidth(primary, s)
+	}
+	runes := []rune(s)
+	return render.MeasureFallbackWidth(c.coverRunes(primary, runes), ef, runes)
+}
+
 func wrapToWidth(pick func(string) *ttf.Font, text string, maxW int32, maxLines int) []string {
+	return wrapToWidthMeasured(func(s string) int32 { return fontWidth(pick(s), s) }, text, maxW, maxLines)
+}
+
+// wrapToWidthMeasured is wrapToWidth's body with the metric handed in: measure
+// reports a candidate line's DRAWN width. wrapToWidth's per-string PICK answers
+// that for a row the log draws in one face, but a row the per-glyph raster draws
+// (emoji, or a mixed-script row no single face covers) is laid out from per-RUNE
+// faces, and no single face's SizeUTF8 predicts it — the log passes
+// App.logDrawnWidth here so both kinds of row break against their real widths
+// (#42). Break rules are untouched, so wrapToWidth's shipped behaviour (and its
+// tests) carry over exactly.
+func wrapToWidthMeasured(measure func(string) int32, text string, maxW int32, maxLines int) []string {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
@@ -1742,7 +1791,7 @@ func wrapToWidth(pick func(string) *ttf.Font, text string, maxW int32, maxLines 
 			line.Reset()
 		}
 	}
-	width := func(s string) int32 { return fontWidth(pick(s), s) }
+	width := measure
 	for _, word := range strings.Fields(text) {
 		// Hard-split single words wider than the column.
 		for width(word) > maxW && len(word) > 1 {

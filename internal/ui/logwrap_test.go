@@ -346,3 +346,91 @@ func TestOOCWrapPathologicalMarker(t *testing.T) {
 		}
 	}
 }
+
+// TestLogWrapCustomFontRowsFitDrawnWidth reproduces #42 as reported (a theme's
+// own .ttf applied to the OOC log, an emoji-laden MOTD) and pins the invariant
+// that closes it: EVERY wrapped row of both logs, measured in the face(s) that
+// will actually DRAW it, fits the column.
+//
+// The setup is the real one, not a synthetic pick: installing a font chain makes
+// the log set MULTI-face (the chain face + the embedded last resort), which is
+// what takes pickSet off its len==1 fast path — without a custom font there is no
+// divergence to have. The emoji then split the picks apart: no face covers a
+// colour emoji, so the whole PARAGRAPH picks the last-resort face, while its
+// plain rows pick the wide chain face. The old emoji wrap measured every row in
+// the paragraph's face and the rows overflowed by the ratio between the two
+// (OpenDyslexic is ~70% wider than the embedded face at the same size) — exactly
+// the screenshot on the issue.
+func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
+	if err := ttf.Init(); err != nil {
+		t.Skipf("SDL_ttf unavailable: %v", err)
+	}
+	defer ttf.Quit()
+	base, err := loadEmbeddedFont(UIFontSize)
+	if err != nil {
+		t.Skipf("embedded font: %v", err)
+	}
+	a := testTabApp(t)
+	c := &Ctx{font: base, textCache: map[textKey]cachedText{}, widthCache: map[string]int32{}}
+	a.ctx = c
+	a.oocPct, a.logPct = DefaultScalePct, DefaultScalePct
+	c.SetFontChain([]string{dyslexiaFontName}, [][]byte{openDyslexicOTF}) // the "theme font" stand-in
+	c.SetEmojiFont(twemojiTTF)                                            // colour emoji, as a real session has
+
+	// Preconditions — assert them, don't assume: a single-face set can't diverge
+	// (pickSet's len==1 fast path), and neither can two faces of equal width.
+	faces := c.fontsFor(&c.logSet, a.oocPct)
+	if len(faces) < 2 {
+		t.Fatalf("fixture must build a MULTI-face log set, got %d face(s)", len(faces))
+	}
+	const motd = "\U0001F49B Welcome to Killing Fever Online, or KFO for short. This server is responsible " +
+		"for the KFO-Server codebase, used by Vanilla and everyone else."
+	plain := "Welcome to Killing Fever Online, or KFO for short."
+	if fontWidth(faces[0], plain) == fontWidth(faces[len(faces)-1], plain) {
+		t.Fatal("fixture must use faces of DIFFERENT width, else the desync is invisible")
+	}
+	if c.EmojiFont(a.oocPct) == nil {
+		t.Fatal("fixture must load a colour-emoji face, else the emoji wrap branch never runs")
+	}
+	if c.LogFontFor(a.oocPct, motd) == c.LogFontFor(a.oocPct, plain) {
+		t.Fatal("fixture must make the paragraph pick a DIFFERENT face than a plain row")
+	}
+
+	// The column the OOC list wraps against (its own indent already removed).
+	const colW = 240
+	a.oocLog = append(a.oocLog, motd)
+	a.oocSpeakers = append(a.oocSpeakers, "MOTD")
+	a.oocSeq++
+	rows := a.oocWrapped(colW)
+	if len(rows) < 3 {
+		t.Fatalf("MOTD must wrap into several rows, got %d", len(rows))
+	}
+	for i, row := range rows {
+		if len([]rune(row)) <= 1 {
+			continue // a lone rune wider than the column can't be split any further
+		}
+		if w := a.logDrawnWidth(a.oocPct, row); w > colW {
+			t.Errorf("OOC row %d %q draws %d px wide, column is %d — it will overflow", i, row, w, colW)
+		}
+	}
+	if got, want := stripSpaces(strings.Join(rows, "")), stripSpaces(motd); got != want {
+		t.Errorf("OOC wrap lost text:\n got %q\nwant %q", got, want)
+	}
+
+	// The IC log wraps through the same measure — pin it too (same entry, so the
+	// same paragraph-vs-row pick split).
+	a.icLog = append(a.icLog, icEntry{text: motd})
+	a.icLogSeq++
+	icRows := a.icWrapped(colW, false)
+	if len(icRows) < 3 {
+		t.Fatalf("IC entry must wrap into several rows, got %d", len(icRows))
+	}
+	for i, row := range icRows {
+		if len([]rune(row.text)) <= 1 {
+			continue
+		}
+		if w := a.logDrawnWidth(a.logPct, row.text); w > colW {
+			t.Errorf("IC row %d %q draws %d px wide, column is %d — it will overflow", i, row.text, w, colW)
+		}
+	}
+}

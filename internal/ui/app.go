@@ -1033,6 +1033,12 @@ type App struct {
 	splitWrapSeq   uint64
 	splitWrapEpoch uint64
 	splitWrapRows  []splitLogRow
+	// The pinned pane wraps in the LOG face, so its cache keys on that face's
+	// identity too: the log zoom (logPct) and the override-chain generation each
+	// change the metric its rows were broken at (#42, same rule as the main log
+	// wrap caches).
+	splitWrapPct int
+	splitWrapGen int
 	// The pinned server draws in a free-floating, movable/resizable "second client"
 	// window (clientWin geometry; the floatWin pattern) overlaying the primary —
 	// drag it anywhere, not a fixed split. clientHdr caches the title by server name
@@ -5078,6 +5084,13 @@ func (a *App) sendICSplit(shout int) {
 	}
 }
 
+// splitLogWrapMaxLines bounds ONE pinned-pane entry's wrapped rows. wrapToWidth
+// needs a finite cap (maxLines ≤ 0 cuts to nothing, unlike the kit's WrapText),
+// and this is DERIVED from the entry cap so a legitimate message can never be
+// clipped: an IC entry is at most icLineCap runes and, at the conservative floor
+// of oocWrapMinCharsPerRow runes per row, needs at most this many rows.
+const splitLogWrapMaxLines = icLineCap / oocWrapMinCharsPerRow
+
 // splitLogRow is one wrapped, coloured line of the pinned pane's chat log.
 type splitLogRow struct {
 	text string
@@ -5092,8 +5105,10 @@ func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 	font := c.LogFont(a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := r.W - 8
-	if wrapW != a.splitWrapW || s.icLogSeq != a.splitWrapSeq || a.splitPinEpoch != a.splitWrapEpoch {
+	if wrapW != a.splitWrapW || s.icLogSeq != a.splitWrapSeq || a.splitPinEpoch != a.splitWrapEpoch ||
+		a.logPct != a.splitWrapPct || c.fontChainGen != a.splitWrapGen {
 		a.splitWrapW, a.splitWrapSeq, a.splitWrapEpoch = wrapW, s.icLogSeq, a.splitPinEpoch
+		a.splitWrapPct, a.splitWrapGen = a.logPct, c.fontChainGen
 		a.splitWrapRows = a.splitWrapRows[:0]
 		for i := range s.icLog {
 			e := &s.icLog[i]
@@ -5101,7 +5116,13 @@ func (a *App) drawSplitLog(r sdl.Rect, s *sessionState) {
 			if e.color > 0 {
 				col = render.TextColor(e.color)
 			}
-			for _, ln := range c.WrapText(e.text, wrapW, 0) {
+			// Measure in the face this pane DRAWS in (LabelClippedFont(font) below),
+			// not the chrome face WrapText measures: with a custom font chain
+			// installed — or the log simply zoomed — the two differ and every row
+			// overflowed the pane (#42's bug class, same trigger). constFont because
+			// this draw uses the log PRIMARY face for every row, with no per-row
+			// covering pick and no emoji raster, so one face IS the whole metric.
+			for _, ln := range wrapToWidth(constFont(font), e.text, wrapW, splitLogWrapMaxLines) {
 				a.splitWrapRows = append(a.splitWrapRows, splitLogRow{text: ln, col: col})
 			}
 		}

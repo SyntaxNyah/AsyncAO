@@ -1,6 +1,10 @@
 package render
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 // The invisible emoji-format runes are built from code points (not written as
 // literals) so the source stays plain ASCII for them — staticcheck ST1018 rejects
@@ -66,4 +70,65 @@ func TestAssignEmoji(t *testing.T) {
 	// A bare '1' (no keycap) stays text.
 	check("bare digit", "1", []bool{false})
 	check("cjk", "你好", []bool{false, false})
+}
+
+// TestWrapMeasuredBreaksOnTheCallersWidth pins WrapMeasured (#42): the caller —
+// not a fixed face — decides how wide a candidate line is, so a wrap can be made
+// to agree with a draw that resolves DIFFERENT faces per row. Here the stand-in
+// metric charges a row that contains the marker word far more per rune, and that
+// alone must force the extra break; a fixed-metric wrap can't see it. Pure Go:
+// no font, no SDL.
+func TestWrapMeasuredBreaksOnTheCallersWidth(t *testing.T) {
+	const (
+		narrowPx = 6   // px per rune for an ordinary row
+		widePx   = 30  // px per rune once the marker word is on the row
+		colW     = 120 // the column both wraps break against
+	)
+	measure := func(s string) int32 {
+		per := int32(narrowPx)
+		if strings.Contains(s, "WIDE") {
+			per = widePx
+		}
+		return int32(len([]rune(s))) * per
+	}
+	const text = "aa aa aa WIDE aa aa aa"
+	wide := WrapMeasured(measure, text, colW, 0)
+	flat := WrapMeasured(func(s string) int32 { return int32(len([]rune(s))) * narrowPx }, text, colW, 0)
+	if len(wide) <= len(flat) {
+		t.Errorf("the caller's per-row metric must drive the breaks: marker=%d rows, flat=%d rows", len(wide), len(flat))
+	}
+	// The invariant the OOC/IC log relies on: no emitted row measures wider than
+	// the column (a lone rune that can't fit anywhere is the only exception).
+	for i, row := range wide {
+		if r := []rune(row); len(r) > 1 && measure(row) > colW {
+			t.Errorf("row %d %q measures %d > column %d", i, row, measure(row), colW)
+		}
+	}
+	if got, want := strings.Join(strings.Fields(strings.Join(wide, " ")), " "), text; got != want {
+		t.Errorf("wrap lost text: %q, want %q", got, want)
+	}
+
+	// Rune granularity: a run with no spaces hard-splits at a RUNE boundary, so a
+	// wall of 4-byte emoji stays valid UTF-8 (a byte-halving split would not).
+	emoji := strings.Repeat("😀", 40) // 40 × narrowPx = 240 px, twice the column
+	rows := WrapMeasured(measure, emoji, colW, 0)
+	if len(rows) < 2 {
+		t.Fatalf("a wall of emoji must hard-split, got %d rows", len(rows))
+	}
+	for i, row := range rows {
+		if !utf8.ValidString(row) {
+			t.Errorf("row %d is not valid UTF-8: %q", i, row)
+		}
+	}
+	if got := strings.Join(rows, ""); got != emoji {
+		t.Errorf("hard split lost runes: %q", got)
+	}
+
+	// maxLines caps the output; a nil metric returns nothing rather than panicking.
+	if got := WrapMeasured(measure, text, colW, 2); len(got) > 2 {
+		t.Errorf("maxLines=2 produced %d rows", len(got))
+	}
+	if got := WrapMeasured(nil, text, colW, 0); got != nil {
+		t.Errorf("nil measure = %v, want nil", got)
+	}
 }

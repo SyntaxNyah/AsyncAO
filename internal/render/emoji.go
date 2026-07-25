@@ -211,7 +211,9 @@ func rasterizeFallbackLine(ren *sdl.Renderer, runes []rune, fonts []*ttf.Font, s
 
 // measureRuns is the pixel width of runes[lo:hi] under per-rune fonts — summing
 // each maximal same-font sub-run's SizeUTF8 (a mixed-face line can't be measured
-// with one font).
+// with one font). A nil face contributes nothing: RasterizeFallback never builds
+// one (it would fail at buildSpan), but a headless caller measuring a set whose
+// last-resort face is nil must not panic.
 func measureRuns(fonts []*ttf.Font, runes []rune, lo, hi int) int32 {
 	var w int32
 	for i := lo; i < hi; {
@@ -219,11 +221,37 @@ func measureRuns(fonts []*ttf.Font, runes []rune, lo, hi int) int32 {
 		for j < hi && fonts[j] == fonts[i] {
 			j++
 		}
-		ww, _, _ := fonts[i].SizeUTF8(string(runes[i:j]))
-		w += int32(ww)
+		if fonts[i] != nil {
+			ww, _, _ := fonts[i].SizeUTF8(string(runes[i:j]))
+			w += int32(ww)
+		}
 		i = j
 	}
 	return w
+}
+
+// MeasureFallbackWidth is the pixel width of runes laid out EXACTLY the way
+// RasterizeFallback lays them out: emoji runes (assignEmoji) on the colour-emoji
+// face, every other rune on its own covering text face, summed run by run. It is
+// the measuring twin of the per-glyph draw, so a caller that wraps text which
+// will land on that path can break lines against the widths it will really get
+// (#42 — the OOC/IC log wrap). textFonts is per-rune (the ui's coverRunes);
+// emoji may be nil (no colour face yet), which routes every rune to its text
+// face, exactly as RasterizeFallback degrades. Build-time only.
+func MeasureFallbackWidth(textFonts []*ttf.Font, emoji *ttf.Font, runes []rune) int32 {
+	if len(runes) == 0 || len(textFonts) < len(runes) {
+		return 0
+	}
+	mask := assignEmoji(runes)
+	fonts := make([]*ttf.Font, len(runes))
+	for i := range runes {
+		if mask[i] && emoji != nil {
+			fonts[i] = emoji
+		} else {
+			fonts[i] = textFonts[i]
+		}
+	}
+	return measureRuns(fonts, runes, 0, len(runes))
 }
 
 // WrapEmojiAware word-wraps text to maxW pixels, measuring emoji runes with the EMOJI
@@ -258,10 +286,48 @@ func WrapEmojiAware(primary, emoji *ttf.Font, text string, maxW int32, maxLines 
 	return out
 }
 
+// WrapMeasured word-wraps text to maxW px asking measure for the width of each
+// candidate line — the caller answers with the width that line will have once
+// DRAWN, whatever face(s) the draw resolves for it. WrapEmojiAware can only
+// answer that for one fixed primary face: under a multi-face chain (a custom
+// font plus the embedded last resort) a paragraph containing one rune the custom
+// font lacks picks the fallback face for the WHOLE paragraph, while the draw
+// picks per row and puts the covered rows back in the wider custom face — they
+// then overflowed the column (#42, the half of it the v1.81.2 wrapToWidth fix
+// didn't reach). Same greedy line breaker as WrapEmojiAware (break at the last
+// space, else cut at a rune boundary), so only the metric changes.
+//
+// Cost: one measure per rune step, each handed a fresh candidate string — the
+// same order as WrapEmojiAware's per-step measureRuns, and build-time only (the
+// log caches its wrap), never the render loop. maxLines 0 = uncapped.
+func WrapMeasured(measure func(string) int32, text string, maxW int32, maxLines int) []string {
+	runes := []rune(text)
+	if len(runes) == 0 || measure == nil {
+		return nil
+	}
+	ranges := wrapMeasured(func(lo, hi int) int32 { return measure(string(runes[lo:hi])) }, runes, maxW)
+	if maxLines > 0 && len(ranges) > maxLines {
+		ranges = ranges[:maxLines]
+	}
+	out := make([]string, 0, len(ranges))
+	for _, lr := range ranges {
+		out = append(out, string(runes[lr.start:lr.end]))
+	}
+	return out
+}
+
 // wrapMultiFont greedily word-wraps runes to maxW px under per-rune fonts (mirrors
 // wrapStyled's visuals, but measures mixed-face prefixes). Build-time, fallback
 // path only.
 func wrapMultiFont(fonts []*ttf.Font, runes []rune, maxW int32) []lineRange {
+	return wrapMeasured(func(lo, hi int) int32 { return measureRuns(fonts, runes, lo, hi) }, runes, maxW)
+}
+
+// wrapMeasured is the shared greedy line breaker: measure(lo, hi) reports the
+// pixel width of runes[lo:hi]. Splitting it out lets the per-rune-font wrap
+// (wrapMultiFont) and the caller-measured wrap (WrapMeasured) share one set of
+// break rules, so the two can never drift apart.
+func wrapMeasured(measure func(lo, hi int) int32, runes []rune, maxW int32) []lineRange {
 	n := len(runes)
 	if maxW <= 0 {
 		return []lineRange{{0, n}}
@@ -278,7 +344,7 @@ func wrapMultiFont(fonts []*ttf.Font, runes []rune, maxW int32) []lineRange {
 		if runes[i] == ' ' {
 			lastSpace = i
 		}
-		if measureRuns(fonts, runes, lineStart, i+1) > maxW && i > lineStart {
+		if measure(lineStart, i+1) > maxW && i > lineStart {
 			if lastSpace > lineStart {
 				out = append(out, lineRange{lineStart, lastSpace})
 				lineStart = lastSpace + 1
