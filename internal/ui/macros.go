@@ -37,6 +37,20 @@ const (
 	// macroQueueCap bounds pending macro lines (rule §17.4) — spamming a
 	// macro key can't build an unbounded send backlog.
 	macroQueueCap = 32
+	// oocSendMinGap is the HARD floor between two automated OOC sends, enforced
+	// at drain time so a backlog can never leave as a burst.
+	//
+	// Servers flood-guard OOC per IP and KICK on breach, and the kick arrives as
+	// a bare close with no reason: Nyathena's pktOOC calls checkIPOOCRateLimit
+	// (ooc_rate_limit, commonly 4 per second) and CheckRateLimit
+	// (message_rate_limit, commonly 10 per 7 s ≈ 1.4/s) and on either breach runs
+	// KickForRateLimit, which queues its explanation ASYNCHRONOUSLY but closes
+	// SYNCHRONOUSLY — so the reason races off the wire and the client only sees
+	// the socket shut. One second keeps us under the tighter message_rate_limit
+	// even while draining a full queue back-to-back, and still lets a login macro
+	// finish quickly. Deliberately slower than macroLineDelay: being kicked is far
+	// worse than a macro taking an extra beat.
+	oocSendMinGap = time.Second
 	// defaultOOCNameRange is the N in the "AsyncAO<N>" fallback name.
 	defaultOOCNameRange = 200
 )
@@ -91,24 +105,42 @@ func (a *App) queueOOCLines(lines []string) {
 	}
 }
 
-// processOOCQueue sends due lines (called once per frame; the queue
-// belongs to the active session and pauses while its tab is parked).
+// processOOCQueue sends at most ONE due line per oocSendMinGap. Called from
+// BOTH Frame and Background (App.Background), so the queue drains at the same
+// rate whether the window is focused, unfocused or minimized — the drain must
+// never be coupled to the render loop (see oocSendMinGap for why).
+//
+// The one-at-a-time walk is the point: the old loop sent every due entry in a
+// single pass, so a queue that accumulated while the drain was stalled left as
+// one burst and the server kicked us for OOC flooding.
 func (a *App) processOOCQueue() {
 	if len(a.oocQueue) == 0 || a.sess == nil {
 		return
 	}
 	now := a.now()
-	sent := 0
+	// Space against the previous send. A zero stamp (first automated line of the
+	// run) sends immediately — the floor is between sends, not before the first.
+	if !a.lastAutoOOC.IsZero() && now.Sub(a.lastAutoOOC) < oocSendMinGap {
+		return
+	}
+	if a.oocQueue[0].due.After(now) {
+		return // the entry's own schedule hasn't come round yet
+	}
+	a.sess.SendOOC(a.oocNameOrDefault(), a.oocQueue[0].line)
+	a.lastAutoOOC = now
+	a.oocQueue = a.oocQueue[:copy(a.oocQueue, a.oocQueue[1:])]
+}
+
+// oocQueuePending reports whether line is already waiting in the automation
+// queue. Pollers use it so a stalled drain can't stack duplicate copies of the
+// same command (the live roster's /gas re-fetch is the one that mattered).
+func (a *App) oocQueuePending(line string) bool {
 	for _, m := range a.oocQueue {
-		if m.due.After(now) {
-			break
+		if m.line == line {
+			return true
 		}
-		a.sess.SendOOC(a.oocNameOrDefault(), m.line)
-		sent++
 	}
-	if sent > 0 {
-		a.oocQueue = a.oocQueue[:copy(a.oocQueue, a.oocQueue[sent:])]
-	}
+	return false
 }
 
 // runMacro queues one macro and reports it on the debug lane (lines may

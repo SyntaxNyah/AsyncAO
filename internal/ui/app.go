@@ -1790,11 +1790,17 @@ type sessionState struct {
 	ghostWarm map[string]string
 
 	// --- OOC automation (login flows + macros share the send pipeline) ---
-	oocQueue  []oocSend // paced OOC sends (≤ macroQueueCap)
-	showLogin bool
-	loginUser string
-	loginPass string
-	loginAuto bool
+	oocQueue []oocSend // paced OOC sends (≤ macroQueueCap)
+	// lastAutoOOC stamps the previous automated OOC send so processOOCQueue can
+	// space the NEXT one by oocSendMinGap. The pacing has to live at the DRAIN,
+	// not only in each entry's queue-time `due`: a queue that built up while the
+	// drain was stalled comes due all at once, and releasing it as one burst is
+	// exactly what tripped server OOC flood guards (see oocSendMinGap).
+	lastAutoOOC time.Time
+	showLogin   bool
+	loginUser   string
+	loginPass   string
+	loginAuto   bool
 
 	// --- viewport camera (hyperfocus zoom; 0 or 1 = off) ---
 	vpZoom   float64
@@ -2714,6 +2720,15 @@ func (a *App) Background(dt time.Duration) {
 	a.frameNow = time.Now()
 	a.pumpConnection()
 	a.pumpBackgroundTabs()
+	// Drain the OOC automation queue HERE as well as in Frame. The producers
+	// (the live-roster /gas poll, macros, auto-login) are driven by inbound
+	// packets and by the frame clock restamped just above, so they keep queueing
+	// while the window is minimized — but Frame, the queue's only other drain,
+	// never runs in that state. That producer/consumer split let the queue fill
+	// for the whole occlusion and then flush as one burst on the first restored
+	// frame, which servers read as OOC flooding and answer with a silent kick.
+	// Draining on both paths keeps the send rate identical in every window state.
+	a.processOOCQueue()
 	a.drainWarnings()
 	a.drainMusicFailures() // transient music-fetch failures → jukebox warn line (§1.1)
 	// Auto-reconnect is deliberately NOT polled here (v1.70.0 behaviour, restored by

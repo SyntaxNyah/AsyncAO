@@ -239,6 +239,10 @@ func (a *App) updateJoinFlash(now time.Time) {
 // snapshot in live mode — fresh enough, but never a command per packet.
 const rosterRefetchDebounce = 3 * time.Second
 
+// rosterCmd is the all-areas roster command. Named so the poll can check
+// whether one is already queued before adding another (see fetchRoster).
+const rosterCmd = "/gas"
+
 // fetchRoster pulls /gas (the all-areas UID/showname/IPID detail the live list
 // merges over the PR/PU rows) and stamps the debounce. /gas, NOT /getareas: the
 // live list spans every area (so the IPID source must too), and /gas is the alias
@@ -256,10 +260,19 @@ func (a *App) fetchRoster() {
 	if a.rosterCmdUnsupported {
 		return // this server rejected /gas earlier — don't re-spam it
 	}
+	if a.oocQueuePending(rosterCmd) {
+		// One /gas is already waiting to go out. Stacking another buys nothing
+		// (they'd return the same snapshot) and, if the drain is running behind,
+		// several identical commands leaving close together look like OOC
+		// flooding to the server. Re-stamp the debounce so the poll backs off
+		// until this one has actually been sent.
+		a.lastRosterFetch = a.now()
+		return
+	}
 	a.lastRosterFetch = a.now()
 	a.suppressAreaEchoUntil = a.now().Add(areaEchoSuppressWindow) // its whole reply burst is parsed but kept out of OOC
 	a.pairAreaReset = true
-	a.queueOOCLines([]string{"/gas"})
+	a.queueOOCLines([]string{rosterCmd})
 }
 
 // looksLikeCommandError reports whether an OOC line is a server "command not

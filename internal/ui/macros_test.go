@@ -28,14 +28,19 @@ func TestMacroQueuePacing(t *testing.T) {
 		t.Fatalf("at t0 exactly one line must send, %d left", len(a.oocQueue))
 	}
 	a.frameNow = t0.Add(macroLineDelay)
+	a.processOOCQueue() // still inside oocSendMinGap — nothing may leave yet
+	if len(a.oocQueue) != 2 {
+		t.Fatalf("a send inside oocSendMinGap must be held back, %d left", len(a.oocQueue))
+	}
+	a.frameNow = t0.Add(oocSendMinGap)
 	a.processOOCQueue()
 	if len(a.oocQueue) != 1 {
-		t.Fatalf("at t0+delay the second line must send, %d left", len(a.oocQueue))
+		t.Fatalf("at t0+oocSendMinGap the second line must send, %d left", len(a.oocQueue))
 	}
-	a.frameNow = t0.Add(10 * macroLineDelay)
+	a.frameNow = t0.Add(2 * oocSendMinGap)
 	a.processOOCQueue()
 	if len(a.oocQueue) != 0 {
-		t.Fatal("late frames must drain everything due")
+		t.Fatalf("the last line must send one gap later, %d left", len(a.oocQueue))
 	}
 
 	// Bound: spamming can't grow past macroQueueCap.
@@ -46,6 +51,76 @@ func TestMacroQueuePacing(t *testing.T) {
 	a.queueOOCLines(many)
 	if len(a.oocQueue) > macroQueueCap {
 		t.Fatalf("queue exceeded cap: %d > %d", len(a.oocQueue), macroQueueCap)
+	}
+}
+
+// TestOOCQueueNeverBursts pins the minimized-disconnect fix.
+//
+// The live-roster poll queues a /gas OOC command every rosterRefetchDebounce.
+// Its producer runs in App.Background (which DOES run while the window is
+// minimized); the drain used to run only in Frame (which does NOT). So the
+// queue filled for the whole occlusion and then flushed every due entry in one
+// pass on the first restored frame. Servers count OOC per IP — Nyathena kicks
+// at 4/s (and at message_rate_limit ≈ 1.4/s) via KickForRateLimit, which closes
+// the socket synchronously while its explanation is still queued, so the client
+// saw a bare close with no reason.
+//
+// However long the drain is stalled, a single call must release at most ONE
+// line, and clearing a backlog must take one oocSendMinGap per line.
+func TestOOCQueueNeverBursts(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", nil) // swallows sends
+	t0 := time.Now()
+	a.frameNow = t0
+
+	const backlog = 8
+	var lines []string
+	for i := 0; i < backlog; i++ {
+		lines = append(lines, "/gas")
+	}
+	a.queueOOCLines(lines)
+	if len(a.oocQueue) != backlog {
+		t.Fatalf("queued %d, want %d", len(a.oocQueue), backlog)
+	}
+
+	// The pathological frame: the drain was stalled for minutes, so every entry
+	// is long past due. Exactly one line may leave.
+	a.frameNow = t0.Add(5 * time.Minute)
+	a.processOOCQueue()
+	if got := backlog - len(a.oocQueue); got != 1 {
+		t.Fatalf("a stalled drain released %d lines in one pass, want 1 (this is the flood-kick bug)", got)
+	}
+
+	// And the backlog clears at one line per gap, never faster.
+	for i := 1; i < backlog; i++ {
+		a.frameNow = t0.Add(5*time.Minute + time.Duration(i)*oocSendMinGap)
+		a.processOOCQueue()
+		if want := backlog - i - 1; len(a.oocQueue) != want {
+			t.Fatalf("after %d gaps: %d queued, want %d", i, len(a.oocQueue), want)
+		}
+	}
+}
+
+// TestFetchRosterDoesNotStackDuplicates pins the other half of the same bug: a
+// stalled drain must not let the 3-second roster poll pile identical /gas
+// commands into the queue, or clearing the backlog re-creates the burst.
+func TestFetchRosterDoesNotStackDuplicates(t *testing.T) {
+	a := testTabApp(t)
+	a.sess = courtroom.NewRehearsalSession("", nil)
+	t0 := time.Now()
+	a.frameNow = t0
+
+	a.fetchRoster()
+	if len(a.oocQueue) != 1 {
+		t.Fatalf("first fetch queued %d, want 1", len(a.oocQueue))
+	}
+	// Poll repeatedly with the drain stalled — the queue must not grow.
+	for i := 1; i <= 20; i++ {
+		a.frameNow = t0.Add(time.Duration(i) * rosterRefetchDebounce)
+		a.fetchRoster()
+	}
+	if len(a.oocQueue) != 1 {
+		t.Fatalf("stalled drain stacked %d /gas commands, want 1", len(a.oocQueue))
 	}
 }
 
