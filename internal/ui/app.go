@@ -7937,6 +7937,36 @@ func (a *App) drainWarnings() {
 					a.d.Store.MarkMissing(w.Base)
 				}
 			}
+			// A conclusively-missing DESK overlay means this background ships no
+			// desk image for this position, and AO2's set_scene answers that by
+			// hiding the desk layer outright — there is deliberately no fallback,
+			// unlike the background arm beside it
+			// (../AO2-Client/src/courtroom.cpp:4628-4634). Without this relay the
+			// viewport's sticky scenery gate kept painting the PREVIOUS room's desk
+			// forever, because a 404'd base never becomes resident (#44). Same
+			// droppable Warning lane, no new channel/goroutine (§17.4); each room
+			// string-compares against its own scene, so wrong-room bases are a no-op.
+			if w.Type == assets.AssetTypeDeskOverlay {
+				if a.room != nil {
+					a.room.NotifyDeskMissing(w.Base)
+				}
+				if a.splitRoom != nil {
+					a.splitRoom.NotifyDeskMissing(w.Base)
+				}
+				if a.replayRoom != nil {
+					a.replayRoom.NotifyDeskMissing(w.Base)
+				}
+				if a.makerPreviewRoom != nil {
+					a.makerPreviewRoom.NotifyDeskMissing(w.Base)
+				}
+				// The render-side half: syncAnimDesk releases the held desk layer on
+				// this flag, so nothing is blitted (AO2's ui_vp_desk->hide()). The set
+				// self-heals — clearMissing runs on upload, so a desk that later
+				// appears (server repack, local mount added) recovers with no restart.
+				if a.d.Store != nil {
+					a.d.Store.MarkMissing(w.Base)
+				}
+			}
 			line := "Missing asset: " + w.Base
 			if len(w.Tried) > 0 {
 				line += " (tried " + strings.Join(w.Tried, " ") + " — see Settings → formats)"

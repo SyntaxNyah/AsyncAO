@@ -981,13 +981,13 @@ func warmRoom(outstanding int) int {
 // placeholder art (H3, covered end-to-end by exportstall_test.go over a 404 server).
 //
 // Note the production exit for a REAL mixed-type scene is quiescence, not all-ready:
-// drainWarnings only MarkMissing's AssetTypeCharSprite bases (app.go), so a 404'd
-// background/desk never reads IsMissing here and can hold the settled count below
-// len(warmRefs). That's fine when at least one sprite settles — the quiesce window
-// (gifWarmQuiet) then closes in well under a second. A scene with NO conclusively-
-// missing sprite (e.g. a background-only all-404 recording, or one whose only 404s
-// are bg/desk) keeps settled at 0, so the settled>0 quiesce guard never fires and
-// it too waits out the wall-clock ceiling — bounded (never the 20 s hard cap for a
+// drainWarnings MarkMissing's AssetTypeCharSprite and AssetTypeDeskOverlay bases
+// only (app.go), so a 404'd BACKGROUND never reads IsMissing here and can hold the
+// settled count below len(warmRefs). That's fine when at least one sprite or desk
+// settles — the quiesce window (gifWarmQuiet) then closes in well under a second. A
+// scene with NO conclusively-missing sprite/desk (e.g. a background-only all-404
+// recording) keeps settled at 0, so the settled>0 quiesce guard never fires and it
+// too waits out the wall-clock ceiling — bounded (never the 20 s hard cap for a
 // small ref set), but not sub-second. Render thread only (IsMissing is render-thread).
 func (a *App) warmSettled(base string) bool {
 	return a.d.Store.Contains(base) || a.d.Store.IsMissing(base)

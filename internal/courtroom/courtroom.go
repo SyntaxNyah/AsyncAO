@@ -42,6 +42,12 @@ const (
 	// of genuinely-missing sprites; past the cap we stop recording and the
 	// SpriteWaitTimeout still bounds any un-recorded miss.
 	missingSpritesCap = 512
+	// missingDesksCap bounds the conclusively-404'd DESK base set (spec §17.4 —
+	// no unbounded caches), sized like missingSpritesCap: a session visits a
+	// handful of backgrounds, each contributing at most one desk per position.
+	// Past the cap we stop recording and the desk simply keeps the pre-#44
+	// behaviour (the render-side release still covers the on-screen layer).
+	missingDesksCap = 512
 	// blipVolumeFull is the unattenuated per-character blip scale (M11): 100%,
 	// used when no BlipVolumeFor callback is wired (tests/embedders).
 	blipVolumeFull = 100
@@ -359,6 +365,16 @@ type Courtroom struct {
 	// (the play path already skips such a preanim via NotifyAssetMissing; the gate
 	// now matches it). Bounded (missingSpritesCap); lazily allocated; game-thread only.
 	missingSprites map[string]struct{}
+	// missingDesks remembers DESK bases the asset manager conclusively 404'd, fed
+	// by the same warning relay (NotifyDeskMissing). AO2-Client's set_scene calls
+	// file_exists on the position's desk image and forces show_desk = false when it
+	// is absent — with NO fallback, unlike the background arm right above it
+	// (../AO2-Client/src/courtroom.cpp:4613-4634). A streaming client can only learn
+	// absence asynchronously, and this set is that knowledge. Deliberately NOT the
+	// missingSprites map: that one is read by the preanim wait gate, where a desk
+	// base would be a semantic lie. Bounded (missingDesksCap); lazily allocated;
+	// game-thread only.
+	missingDesks map[string]struct{}
 
 	queue []*protocol.ChatMessage
 	phase MessagePhase
@@ -1093,7 +1109,9 @@ func (c *Courtroom) begin(msg *protocol.ChatMessage) {
 	// phase transitions (enterAfterShout preanim entry, startTalking) call
 	// applyDeskMods to flip it per phase — AO2's set_scene at preanim_start /
 	// start_chat_ticking. Pair/offset are set below from the message.
-	c.Scene.ShowDesk = deskVisible(msg.DeskMod, false)
+	// DeskDrawn (not bare deskVisible) so a background known to ship no desk for
+	// this position stays hidden — AO2's set_scene existence check (#44).
+	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, false, c.deskResolution())
 
 	c.Scene.Speaker = SpriteLayer{
 		Name:        speakerName,
@@ -1759,6 +1777,94 @@ func deskVisible(deskMod int, preanim bool) bool {
 	}
 }
 
+// DeskResolution is what a streaming client currently knows about the desk image
+// for the live background+position pair. AO2-Client answers this synchronously
+// with file_exists (../AO2-Client/src/courtroom.cpp:4628); we can only answer it
+// as the one prefetch we already issued resolves, so "not yet known" is a state.
+type DeskResolution int
+
+const (
+	// DeskUnresolved: the desk image has neither landed nor been declared absent
+	// (still streaming, or never asked for). The scenery already on screen is
+	// held exactly as before — a real desk must never blink off mid-load.
+	DeskUnresolved DeskResolution = iota
+	// DeskResolved: the desk image for THIS background+position is resident.
+	DeskResolved
+	// DeskAbsent: every configured format for the desk 404'd
+	// (assets.Manager.reportMissing → the App's warning drain → NotifyDeskMissing).
+	DeskAbsent
+)
+
+// DeskDrawn is the whole desk-visibility decision: the char.ini desk_mod phase
+// table AND the streamed availability of the desk image.
+//
+// AO2-Client's set_scene computes show_desk from desk_mod (courtroom.cpp:4075-4091
+// preanim / :4134-4152 talk) and then CLEARS it outright when the position's desk
+// file does not exist (:4628-4634), hiding the layer (:4656-4663). Note the
+// asymmetry with the background arm immediately above it (:4613-4626), which DOES
+// fall back to "wit": the desk deliberately has no fallback, because an author
+// suppresses a desk by simply not shipping the file. So a background that ships no
+// desk for a position must draw NO desk — never a substitute, never the previous
+// room's (#44).
+func DeskDrawn(deskMod int, preanim bool, res DeskResolution) bool {
+	if res == DeskAbsent {
+		return false
+	}
+	return deskVisible(deskMod, preanim)
+}
+
+// deskResolution reports what this room knows about the live Scene.DeskBase.
+// The courtroom has no view of the texture store, and does not need one: only
+// DeskAbsent changes the outcome of DeskDrawn, so a base we have not been told
+// is missing is simply DeskUnresolved. Plain map read, game-thread only.
+func (c *Courtroom) deskResolution() DeskResolution {
+	if c.Scene.DeskBase == "" {
+		return DeskUnresolved
+	}
+	if _, ok := c.missingDesks[c.Scene.DeskBase]; ok {
+		return DeskAbsent
+	}
+	return DeskUnresolved
+}
+
+// NotifyDeskMissing reports that the desk image for a background+position
+// conclusively 404'd (every configured format probed). Called from the App's
+// warning drain on the game/render thread, exactly like NotifyAssetMissing, and
+// costs no extra probe — it rides the Warning the desk prefetch already emitted.
+//
+// One Manager serves every room, so bases for OTHER rooms arrive here too; the
+// Scene.DeskBase compare makes those a string-compare no-op (the wrong-room
+// contract NotifyAssetMissing already follows).
+func (c *Courtroom) NotifyDeskMissing(base string) {
+	if base == "" {
+		return
+	}
+	c.recordMissingDesk(base)
+	// Re-derive the LIVE scene so the current message reacts immediately instead
+	// of waiting for the next phase edge (a settled message has no further edge —
+	// the desk would stay wrongly visible for the rest of the message).
+	// applyDeskMods recomputes from c.current and is idempotent.
+	if c.current != nil && base == c.Scene.DeskBase {
+		c.applyDeskMods(c.phase == PhasePreanim)
+	}
+}
+
+// recordMissingDesk remembers a conclusively-404'd desk base. Bounded
+// (missingDesksCap) and game-thread only, mirroring recordMissing's
+// stop-inserting-when-full policy.
+func (c *Courtroom) recordMissingDesk(base string) {
+	if c.missingDesks == nil {
+		c.missingDesks = make(map[string]struct{})
+	}
+	if _, ok := c.missingDesks[base]; ok {
+		return
+	}
+	if len(c.missingDesks) >= missingDesksCap {
+		return // full: the render-side release (Store.IsMissing) still covers the draw
+	}
+	c.missingDesks[base] = struct{}{}
+}
+
 // applyDeskMods re-derives the phase-dependent desk state from the CURRENT
 // message for the given phase (preanim vs talk/idle). It always recomputes from
 // c.current — never cumulatively mutating Scene — so a phase that shows the pair
@@ -1782,7 +1888,7 @@ func (c *Courtroom) applyDeskMods(preanim bool) {
 		return
 	}
 	msg := c.current
-	c.Scene.ShowDesk = deskVisible(msg.DeskMod, preanim)
+	c.Scene.ShowDesk = DeskDrawn(msg.DeskMod, preanim, c.deskResolution())
 	// Pair visibility. Mod 4 hides it in both phases (never re-shown by AO2); mod 5
 	// hides it in talk only. Otherwise it comes straight from the message.
 	hidePair := msg.DeskMod == protocol.DeskEmoteOnlyEx ||

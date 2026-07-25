@@ -572,7 +572,9 @@ func (v *Viewport) Update(scene *courtroom.Scene, dt time.Duration) {
 
 	shoutBase := effectiveShoutBase(scene, v.store)
 	v.syncAnimSticky(&v.bgAnim, scene.BackgroundBase)
-	v.syncAnimSticky(&v.deskAnim, scene.DeskBase)
+	// Desk AFTER the background: syncAnimDesk's coherence release reads the bg
+	// layer's freshly-synced base, so both scenery layers swap in the SAME frame.
+	v.syncAnimDesk(scene.DeskBase, scene.BackgroundBase)
 	v.syncAnim(&v.shoutAnim, shoutBase)
 	v.syncAnim(&v.speakerAnim, scene.Speaker.Active)
 	v.syncAnim(&v.pairAnim, scene.Pair.Active)
@@ -755,18 +757,54 @@ func (v *Viewport) syncAnim(a *animState, base string) {
 	}
 }
 
-// syncAnimSticky rebinds scenery layers (background, desk) only once the
-// incoming base is resident: a position flip to a still-loading background
-// must keep the last good scenery on screen instead of blanking the
-// viewport to the clear color. An empty base still clears immediately, and
-// the courtroom's HIGH-priority prefetch makes the swap a frame after the
-// texture lands. Contains is a plain map probe — no I/O, no allocation.
+// syncAnimSticky rebinds a scenery layer only once the incoming base is
+// resident: a position flip to a still-loading background must keep the last
+// good scenery on screen instead of blanking the viewport to the clear color.
+// An empty base still clears immediately, and the courtroom's HIGH-priority
+// prefetch makes the swap a frame after the texture lands. Contains is a plain
+// map probe — no I/O, no allocation.
+//
+// The BACKGROUND layer is its only caller; the desk adds two release conditions
+// on top of this gate and goes through syncAnimDesk (see there for why).
 func (v *Viewport) syncAnimSticky(a *animState, base string) {
 	if a.base == base {
 		return
 	}
 	if base == "" || v.store.Contains(base) {
 		a.reset(base)
+	}
+}
+
+// syncAnimDesk rebinds the DESK layer. It keeps syncAnimSticky's residency
+// stickiness (a real desk that is still streaming must not blink off — that is
+// the whole point of the sticky gate) and adds the two release conditions the
+// desk needs and the background does not:
+//
+//   - the incoming desk is CONCLUSIVELY MISSING (store.IsMissing, fed by the App's
+//     warning drain). AO2's set_scene hides the desk layer outright when the file
+//     does not exist, with no fallback of any kind
+//     (../AO2-Client/src/courtroom.cpp:4628-4634, :4656-4663). Holding the old desk
+//     for a base that can never arrive is not a cold-load bridge, it is a permanent
+//     wrong picture — the reported "default/witness desk on a deskless background"
+//     (#44).
+//   - the BACKGROUND has already swapped to this scene's bg while the desk has not.
+//     The desk is an OVERLAY on one specific background: AO2 loads the pair in a
+//     single set_scene call, so a held desk is only coherent while the background it
+//     belongs to is also still on screen. Releasing here closes the one-probe-RTT
+//     window before the miss is known, and stops two rooms compositing.
+//
+// Scoped to the desk on purpose: a CHARACTER sprite has no such pairing invariant,
+// and hold-previous there is a deliberate webAO-compatible default
+// (SpriteLoadHoldPrev, with its own thumb/held/missingno ladder and max-age knob).
+// Nothing about sprites changes. Contains/IsMissing are plain map probes — no I/O,
+// no allocation, so the render loop's alloc gate is untouched.
+func (v *Viewport) syncAnimDesk(deskBase, bgBase string) {
+	if v.deskAnim.base == deskBase {
+		return
+	}
+	if deskBase == "" || v.store.Contains(deskBase) || v.store.IsMissing(deskBase) ||
+		v.bgAnim.base == bgBase {
+		v.deskAnim.reset(deskBase)
 	}
 }
 
