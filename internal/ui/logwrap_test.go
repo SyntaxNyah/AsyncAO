@@ -77,57 +77,66 @@ func TestLogHangingIndent(t *testing.T) {
 	}
 }
 
-// TestOOCHoverLinkRun pins the block link highlight (playtest: a wrapped link
-// highlighted only the hovered row): hovering any row of a linked paragraph
-// returns the whole contiguous same-URL run WITHIN one source entry; unlinked
-// rows and the scrollbar gutter return an empty range (lo > hi). The run is now
-// keyed by source-entry index (oocWrapSrc) as well as URL — mirroring IC's
-// icWrapLine.entry keying — so two adjacent distinct messages carrying the same
-// URL never merge into one tinted run.
-func TestOOCHoverLinkRun(t *testing.T) {
+// TestOOCHoverSpan pins the link hit test on a hand-built span table (#38):
+// the cursor resolves to the ONE link under it — horizontally as well as
+// vertically — so plain text beside a link, a DIFFERENT link on the same row and
+// the scrollbar gutter all miss. Rows 1..3 hold one hard-split link (id 0, the
+// wrapped-across-rows case), row 5 holds two distinct links side by side.
+func TestOOCHoverSpan(t *testing.T) {
 	a := testTabApp(t)
-	// Entry 0 wraps into rows 1..3 (row 0 is a "" spacer); entry 1 is row 5.
-	a.oocWrapURL = []string{"", "u1", "u1", "u1", "", "u2"}
-	a.oocWrapSrc = []int{0, 0, 0, 0, 1, 1}
-	list := sdl.Rect{X: 0, Y: 0, W: 200, H: 120}
+	a.oocWrapLink = []oocLinkSpan{
+		{row: 1, x0: 0, x1: 100, link: 0, url: "u1"},
+		{row: 2, x0: 0, x1: 100, link: 0, url: "u1"},
+		{row: 3, x0: 0, x1: 40, link: 0, url: "u1"},
+		{row: 5, x0: 10, x1: 50, link: 1, url: "u2"},
+		{row: 5, x0: 80, x1: 120, link: 2, url: "u3"},
+	}
+	// linkAt[r] = index of row r's first span; 7 display rows → 8 entries.
+	a.oocWrapLinkAt = []int32{0, 0, 1, 2, 3, 3, 5, 5}
+	list := sdl.Rect{X: 0, Y: 0, W: 200, H: 140}
 	const lineH, wrapW = 20, 190
 	c := a.ctx
 
-	c.mouseX, c.mouseY = 10, 2*lineH+5 // row 2, mid-run of u1
-	lo, hi := a.oocHoverLinkRun(list, 0, lineH, wrapW, 6)
-	if lo != 1 || hi != 3 {
-		t.Fatalf("run = [%d,%d], want [1,3] (the whole wrapped paragraph)", lo, hi)
+	c.mouseX, c.mouseY = 10, 2*lineH+5 // row 2, inside the wrapped link
+	idx, id := a.oocHoverSpan(list, 0, lineH, wrapW, 7)
+	if idx != 1 || id != 0 {
+		t.Fatalf("mid-link hover = (%d,%d), want (1,0)", idx, id)
 	}
 
-	c.mouseY = 5 // row 0: no link
-	if lo, hi = a.oocHoverLinkRun(list, 0, lineH, wrapW, 6); hi >= lo {
-		t.Fatalf("unlinked row must give an empty range, got [%d,%d]", lo, hi)
+	c.mouseX, c.mouseY = 60, 3*lineH+5 // row 3, PAST the link's last piece
+	if idx, id = a.oocHoverSpan(list, 0, lineH, wrapW, 7); idx >= 0 {
+		t.Fatalf("plain text after a link must miss, got (%d,%d)", idx, id)
+	}
+
+	c.mouseX, c.mouseY = 10, 5 // row 0: no spans at all
+	if idx, _ = a.oocHoverSpan(list, 0, lineH, wrapW, 7); idx >= 0 {
+		t.Fatalf("an unlinked row must miss, got %d", idx)
 	}
 
 	c.mouseX, c.mouseY = wrapW+2, 2*lineH+5 // over the scrollbar gutter
-	if lo, hi = a.oocHoverLinkRun(list, 0, lineH, wrapW, 6); hi >= lo {
-		t.Fatalf("the scrollbar gutter must give an empty range, got [%d,%d]", lo, hi)
+	if idx, _ = a.oocHoverSpan(list, 0, lineH, wrapW, 7); idx >= 0 {
+		t.Fatalf("the scrollbar gutter must miss, got %d", idx)
+	}
+
+	// Two links on ONE row: each hit-tests to itself, the gap between them to
+	// neither. This is the heart of #38 ("only 1 link outta this link dump").
+	c.mouseX, c.mouseY = 20, 5*lineH+5
+	if idx, id = a.oocHoverSpan(list, 0, lineH, wrapW, 7); idx != 3 || id != 1 {
+		t.Fatalf("first link on the row = (%d,%d), want (3,1)", idx, id)
+	}
+	c.mouseX = 100
+	if idx, id = a.oocHoverSpan(list, 0, lineH, wrapW, 7); idx != 4 || id != 2 {
+		t.Fatalf("second link on the row = (%d,%d), want (4,2) — not the first link", idx, id)
+	}
+	c.mouseX = 65 // the plain text between them
+	if idx, _ = a.oocHoverSpan(list, 0, lineH, wrapW, 7); idx >= 0 {
+		t.Fatalf("the gap between two links must miss, got %d", idx)
 	}
 
 	// Scroll offset shifts which row the cursor lands on.
-	c.mouseX, c.mouseY = 10, 5 // top row on screen…
-	if lo, hi = a.oocHoverLinkRun(list, 5*lineH, lineH, wrapW, 6); lo != 5 || hi != 5 {
-		t.Fatalf("scrolled run = [%d,%d], want [5,5] (u2)", lo, hi)
-	}
-
-	// REGRESSION: two ADJACENT DISTINCT entries share the SAME URL. Keying by
-	// URL string alone merged them into one tinted run (the bug); keying also
-	// by source entry keeps each message's highlight to itself. Entry 0 is rows
-	// 0..1, entry 1 is rows 2..3 — all four carry "same".
-	a.oocWrapURL = []string{"same", "same", "same", "same"}
-	a.oocWrapSrc = []int{0, 0, 1, 1}
-	c.mouseX, c.mouseY = 10, 0*lineH+5 // row 0, entry 0
-	if lo, hi = a.oocHoverLinkRun(list, 0, lineH, wrapW, 4); lo != 0 || hi != 1 {
-		t.Fatalf("entry-0 run = [%d,%d], want [0,1] (must not merge into entry 1's same-URL rows)", lo, hi)
-	}
-	c.mouseX, c.mouseY = 10, 2*lineH+5 // row 2, entry 1
-	if lo, hi = a.oocHoverLinkRun(list, 0, lineH, wrapW, 4); lo != 2 || hi != 3 {
-		t.Fatalf("entry-1 run = [%d,%d], want [2,3] (must not merge into entry 0's same-URL rows)", lo, hi)
+	c.mouseX, c.mouseY = 20, 5 // top row on screen…
+	if idx, id = a.oocHoverSpan(list, 5*lineH, lineH, wrapW, 7); idx != 3 || id != 1 {
+		t.Fatalf("scrolled hover = (%d,%d), want (3,1)", idx, id)
 	}
 }
 
@@ -245,11 +254,12 @@ func TestOOCWrapLongHelpNoLoss(t *testing.T) {
 		t.Fatalf("fixture must exceed the old %d-row clamp, got %d rows",
 			oocWrapMaxLinesPerEntryOld, len(rows))
 	}
-	// Parallel slices stay in lockstep at the new budget.
-	if len(a.oocWrapName) != len(rows) || len(a.oocWrapURL) != len(rows) ||
-		len(a.oocWrapCont) != len(rows) || len(a.oocWrapSrc) != len(rows) {
-		t.Fatalf("parallel slices desynced: out=%d name=%d url=%d cont=%d src=%d",
-			len(rows), len(a.oocWrapName), len(a.oocWrapURL), len(a.oocWrapCont), len(a.oocWrapSrc))
+	// Parallel slices stay in lockstep at the new budget (the link index carries
+	// one extra entry by construction — it holds each row's span START).
+	if len(a.oocWrapName) != len(rows) || len(a.oocWrapCont) != len(rows) ||
+		len(a.oocWrapSrc) != len(rows) || len(a.oocWrapLinkAt) != len(rows)+1 {
+		t.Fatalf("parallel slices desynced: out=%d name=%d cont=%d src=%d linkAt=%d",
+			len(rows), len(a.oocWrapName), len(a.oocWrapCont), len(a.oocWrapSrc), len(a.oocWrapLinkAt))
 	}
 	if got, want := stripSpaces(strings.Join(rows, "")), stripSpaces(help); got != want {
 		t.Fatalf("text lost in wrap: reassembled %d chars, original %d", len(got), len(want))
@@ -322,10 +332,10 @@ func TestOOCWrapPathologicalMarker(t *testing.T) {
 		t.Fatalf("row count %d exceeds budget+marker (%d)", len(rows), oocWrapMaxLinesPerEntry+1)
 	}
 	// Parallel slices include the marker row.
-	if len(a.oocWrapName) != len(rows) || len(a.oocWrapURL) != len(rows) ||
-		len(a.oocWrapCont) != len(rows) || len(a.oocWrapSrc) != len(rows) {
-		t.Fatalf("marker desynced parallel slices: out=%d name=%d url=%d cont=%d src=%d",
-			len(rows), len(a.oocWrapName), len(a.oocWrapURL), len(a.oocWrapCont), len(a.oocWrapSrc))
+	if len(a.oocWrapName) != len(rows) || len(a.oocWrapCont) != len(rows) ||
+		len(a.oocWrapSrc) != len(rows) || len(a.oocWrapLinkAt) != len(rows)+1 {
+		t.Fatalf("marker desynced parallel slices: out=%d name=%d cont=%d src=%d linkAt=%d",
+			len(rows), len(a.oocWrapName), len(a.oocWrapCont), len(a.oocWrapSrc), len(a.oocWrapLinkAt))
 	}
 	// A NORMAL width never trips the marker for the same content.
 	a.oocSeq++ // force a cache rebuild at the new width

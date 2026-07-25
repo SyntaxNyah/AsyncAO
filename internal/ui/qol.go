@@ -1291,7 +1291,8 @@ const oocWrapMinCharsPerRow = 4
 
 // oocWrapMaxLinesPerEntry bounds ONE oocLog entry's total wrapped display rows
 // (across all its \n paragraphs) — a hostile MOTD cannot balloon the list, and
-// it backstops the same-URL run walk in oocHoverLinkRun. It's DERIVED from the
+// it therefore also bounds the link spans an entry can register (a link adds at
+// most one span per row it touches). It's DERIVED from the
 // stored cap so a legitimate entry can never be clipped: an entry is at most
 // oocLineCap (16384) bytes, and at the conservative floor of oocWrapMinCharsPerRow
 // chars/row that is 16384/4 = 4096 rows — well past the ~1500 rows a full 16 KiB
@@ -1300,6 +1301,174 @@ const oocWrapMinCharsPerRow = 4
 // under a synthetic width that forces fewer than oocWrapMinCharsPerRow per row;
 // today's silent loss past 24 rows was the bug being fixed.
 const oocWrapMaxLinesPerEntry = oocLineCap / oocWrapMinCharsPerRow
+
+// oocLinkSpan is ONE clickable link region on ONE wrapped OOC display row: the
+// byte range the link occupies inside that row's DISPLAYED text, the pixel range
+// it covers (measured at wrap time in the very face the row draws in), and the
+// URL to open.
+//
+// #38: the old model was one URL string per row — a paragraph's FIRST link, on
+// every one of its rows. That made the hover tint swallow the whole message and
+// left every link after the first unclickable ("only 1 link outta this link dump
+// being clickable"). Spans replace it: each link in a paragraph gets its own id,
+// and a link the wrap HARD-SPLIT across rows contributes one span per row all
+// sharing that id — so the highlight still covers the whole link (the deliberate
+// earlier fix) while stopping at its edges.
+type oocLinkSpan struct {
+	row    int32  // display-row index into a.oocWrap
+	lo, hi int32  // byte range inside a.oocWrap[row] (the drawn text)
+	x0, x1 int32  // pixel range relative to the row's TEXT origin (hanging indent NOT included)
+	link   int32  // link id; the pieces of one wrapped link share it and are contiguous in the table
+	url    string // what a click opens — read from the UNMASKED paragraph (streamer mode masks display only)
+}
+
+// oocLinksPerParagraphMax bounds how many links ONE paragraph (one line of one
+// OOC entry) registers as clickable. A real link dump puts one URL per line, so
+// this is already far past anything legitimate; it exists so a hostile MOTD line
+// of thousands of "www.x.y" tokens cannot grow the span table without bound
+// (hard rule 4). Links past the cap still DISPLAY — they just aren't clickable.
+// Total spans stay bounded too: a link adds one span per row it touches, so a
+// paragraph contributes at most (links + its row count) spans.
+const oocLinksPerParagraphMax = 64
+
+// appendLinkSpans records the clickable link regions of ONE wrapped paragraph.
+//
+// rows are the display rows the wrap just produced for it, already appended to
+// the wrap at index rowBase. raw is the paragraph as it ARRIVED; masked is what
+// is actually DRAWN — streamer mode redacts the sender prefix and IP-like tokens
+// (streamerMaskLine), which shifts every byte offset after them. So positions
+// come from the MASKED text (the pixels the user sees and clicks) while the URL
+// to OPEN comes from the RAW one (masking is display-only; the log keeps the
+// real link, and that is the pre-existing contract).
+//
+// Runs only inside oocWrapped's cached rebuild — never per frame.
+func (a *App) appendLinkSpans(dst []oocLinkSpan, rows []string, rowBase int, raw, masked string, nextID int32) ([]oocLinkSpan, int32) {
+	rawLinks := extractURLs(raw, oocLinksPerParagraphMax)
+	if len(rawLinks) == 0 || len(rows) == 0 {
+		return dst, nextID // the overwhelming common case: no link in this paragraph, no work
+	}
+	start, startID := len(dst), nextID
+	rawAt := 0          // cursor into rawLinks
+	rowIdx, pos := 0, 0 // walk position: row, byte offset within it
+	for _, tok := range strings.Fields(masked) {
+		// The drawn link, and the raw link it opens. Masking never INVENTS a
+		// link, but it can eat one (a sender whose name is a link becomes
+		// "???") and it can rewrite one (an IP host blocks out to "█.█.█.█"),
+		// so pair by exact match scanning forward from the cursor, and fall
+		// back to the next unconsumed raw link when the drawn text no longer
+		// matches it. With streamer mode off masked == raw and the very first
+		// comparison hits, so this costs nothing in the normal case.
+		tlo, thi := urlTokenRange(tok)
+		url := ""
+		if isURLToken(tok[tlo:thi]) && rawAt < len(rawLinks) {
+			for k := rawAt; k < len(rawLinks); k++ {
+				if rawLinks[k] == tok[tlo:thi] {
+					rawAt = k
+					break
+				}
+			}
+			url = rawLinks[rawAt]
+			rawAt++
+		}
+		// Walk the token across the display rows — EVERY token, link or not, so
+		// the position stays aligned. Both wrappers only ever drop whitespace at
+		// a break and cut mid-token when a token is wider than the whole column,
+		// so a token's bytes appear in order, possibly split across rows.
+		consumed := 0
+		for consumed < len(tok) {
+			for rowIdx < len(rows) {
+				row := rows[rowIdx]
+				if pos >= len(row) {
+					rowIdx, pos = rowIdx+1, 0
+					continue
+				}
+				// Whitespace is skipped only BEFORE a token starts: a token the
+				// wrap hard-split always resumes at the very start of the next
+				// row, so skipping mid-token would let "ab cd" masquerade as
+				// the token "abcd".
+				if consumed == 0 && (row[pos] == ' ' || row[pos] == '\t') {
+					pos++
+					continue
+				}
+				break
+			}
+			if rowIdx >= len(rows) {
+				break // the row budget clipped the rest of the paragraph
+			}
+			row := rows[rowIdx]
+			n := 0
+			for pos+n < len(row) && consumed+n < len(tok) && row[pos+n] == tok[consumed+n] {
+				n++
+			}
+			if n == 0 {
+				// Desync (a wrapper that rewrites text): emit NO spans for this
+				// paragraph rather than misplaced ones.
+				return dst[:start], startID
+			}
+			if url != "" {
+				// Intersect this piece's token range [consumed, consumed+n)
+				// with the link's trimmed range [tlo, thi) — the brackets and
+				// the sentence period around a link are not part of it.
+				ovLo, ovHi := max(consumed, tlo), min(consumed+n, thi)
+				if ovHi > ovLo {
+					dst = append(dst, oocLinkSpan{
+						row:  int32(rowBase + rowIdx),
+						lo:   int32(pos + ovLo - consumed),
+						hi:   int32(pos + ovHi - consumed),
+						link: nextID,
+						url:  url,
+					})
+				}
+			}
+			pos, consumed = pos+n, consumed+n
+		}
+		if url != "" {
+			nextID++
+		}
+	}
+	return a.measureLinkSpans(dst, start, rows, rowBase), nextID
+}
+
+// measureLinkSpans fills in the pixel range of the spans dst[start:], in the
+// exact face each row DRAWS in (LogFontFor per row, like drawOOCLogList) — so
+// the tint and the hit test land on the glyphs the user sees.
+//
+// A row the per-glyph raster draws (emoji, or a mixed-script row no single face
+// covers) has no advance we can trust here: labelEmoji composes per-rune faces,
+// so a plain SizeUTF8 prefix would put the highlight in the wrong place. Such a
+// row degrades to the pre-#38 behaviour — its FIRST link covers the whole row —
+// which is honest instead of drawing a lie, and keeps the row's spans
+// non-overlapping.
+func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowBase int) []oocLinkSpan {
+	w := start
+	for k := start; k < len(dst); k++ {
+		s := dst[k]
+		row := rows[int(s.row)-rowBase]
+		font := a.ctx.LogFontFor(a.oocPct, row) // memoized; also the pick covers() reads
+		if render.NeedsEmojiFallback(row) || !a.ctx.covers(row) {
+			if w > start && dst[w-1].row == s.row {
+				continue // this row already collapsed to a whole-row span
+			}
+			s.lo, s.hi = 0, int32(len(row))
+			s.x0, s.x1 = 0, fontWidth(font, row)
+		} else {
+			s.x0 = fontWidth(font, row[:s.lo])
+			s.x1 = fontWidth(font, row[:s.hi])
+		}
+		dst[w] = s
+		w++
+	}
+	return dst[:w]
+}
+
+// oocRowLinks returns display row li's link spans (a view into the flat table —
+// no allocation, so the per-frame draw can ask freely).
+func (a *App) oocRowLinks(li int) []oocLinkSpan {
+	if li < 0 || li+1 >= len(a.oocWrapLinkAt) {
+		return nil
+	}
+	return a.oocWrapLink[a.oocWrapLinkAt[li]:a.oocWrapLinkAt[li+1]]
+}
 
 // oocWrapped returns the OOC log as display lines: long entries (MOTDs)
 // word-wrap to the list width and embedded newlines split, instead of the
@@ -1314,10 +1483,11 @@ func (a *App) oocWrapped(width int32) []string {
 		return a.oocWrap
 	}
 	out := a.oocWrap[:0]
-	name := a.oocWrapName[:0] // parallel to out: speaker on each entry's first display line
-	urls := a.oocWrapURL[:0]  // parallel to out: the entry's link on each of its display lines
-	cont := a.oocWrapCont[:0] // parallel to out: wrap continuation rows (hanging indent)
-	src := a.oocWrapSrc[:0]   // parallel to out: source oocLog entry index (link-hover boundary)
+	name := a.oocWrapName[:0]  // parallel to out: speaker on each entry's first display line
+	cont := a.oocWrapCont[:0]  // parallel to out: wrap continuation rows (hanging indent)
+	src := a.oocWrapSrc[:0]    // parallel to out: source oocLog entry index
+	links := a.oocWrapLink[:0] // NOT parallel: the flat link-span table, rows index it via linkAt below
+	var nextLinkID int32       // link ids are unique across the whole rebuild, so a span identifies its link alone
 	// Per-STRING covering-face pick, matching the OOC draw (LogFontFor per row):
 	// measuring each wrapped candidate in the face that will draw it keeps the
 	// wrap honest under a multi-face chain (#42). Hoisted so the rebuild loop
@@ -1341,15 +1511,6 @@ func (a *App) oocWrapped(width int32) []string {
 			if remaining <= 0 {
 				truncated = true // out of budget with paragraphs still unrendered
 				break
-			}
-			// Link PER PARAGRAPH, from the UNMASKED line: a multi-line entry with a
-			// URL on each line (a server's fork/upstream description) makes each line
-			// open its OWN link, not the entry's first one. A long URL the wrap
-			// hard-splits below is still captured whole here — extractURLs runs on the
-			// full paragraph, never a wrapped fragment.
-			paraURL := ""
-			if u := extractURLs(rawPara, 1); len(u) > 0 {
-				paraURL = u[0]
 			}
 			para := rawPara
 			if streamer {
@@ -1385,15 +1546,14 @@ func (a *App) oocWrapped(width int32) []string {
 			if len(lines) == 0 {
 				out = append(out, "") // blank MOTD spacer lines survive
 				name = append(name, "")
-				urls = append(urls, "")
 				cont = append(cont, false)
 				src = append(src, i)
 				remaining-- // a spacer row spends budget too, so the count stays bounded
 				continue
 			}
+			rowBase := len(out) // where this paragraph's rows land — the spans index into the WRAP, not into lines
 			for row, ln := range lines {
 				out = append(out, ln)
-				urls = append(urls, paraURL) // every wrapped row of THIS line opens its link
 				cont = append(cont, row > 0) // rows the WRAP made are continuations (hanging indent); the paragraph's own newline isn't
 				src = append(src, i)         // all rows of this entry carry its oocLog index
 				if entryFirst {
@@ -1403,6 +1563,11 @@ func (a *App) oocWrapped(width int32) []string {
 					name = append(name, "")
 				}
 			}
+			// Links PER PARAGRAPH: every URL on the line becomes its own clickable
+			// span (#38), positioned against the DRAWN — possibly streamer-masked —
+			// rows but opening the link as it arrived. A URL the wrap hard-split
+			// still forms ONE link across its rows.
+			links, nextLinkID = a.appendLinkSpans(links, lines, rowBase, rawPara, trimmed, nextLinkID)
 			remaining -= len(lines)
 			if truncated {
 				break // clipped this paragraph — no point wrapping later ones
@@ -1413,7 +1578,6 @@ func (a *App) oocWrapped(width int32) []string {
 			// cont=true so it hangs under the entry as a tail, not a fresh paragraph.
 			out = append(out, "…")
 			name = append(name, "")
-			urls = append(urls, "")
 			cont = append(cont, true)
 			src = append(src, i)
 		}
@@ -1421,7 +1585,19 @@ func (a *App) oocWrapped(width int32) []string {
 	if out == nil {
 		out = []string{}
 	}
-	a.oocWrap, a.oocWrapName, a.oocWrapURL, a.oocWrapCont, a.oocWrapSrc = out, name, urls, cont, src
+	// linkAt[r] indexes the first span of display row r, so row r's spans are
+	// links[linkAt[r]:linkAt[r+1]] — hence len(rows)+1 entries. Spans were built
+	// in row order, so this is one linear pass, and it makes the per-frame row
+	// lookup (oocRowLinks) O(1) with no scan of the whole table.
+	linkAt := a.oocWrapLinkAt[:0]
+	for r, k := 0, 0; r <= len(out); r++ {
+		for k < len(links) && int(links[k].row) < r {
+			k++
+		}
+		linkAt = append(linkAt, int32(k))
+	}
+	a.oocWrap, a.oocWrapName, a.oocWrapCont, a.oocWrapSrc = out, name, cont, src
+	a.oocWrapLink, a.oocWrapLinkAt = links, linkAt
 	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.oocPct, streamer
 	a.oocWrapEpoch = a.logViewEpoch
 	a.oocWrapGen = a.ctx.fontChainGen
@@ -1534,6 +1710,26 @@ func constFont(f *ttf.Font) func(string) *ttf.Font {
 	return func(string) *ttf.Font { return f }
 }
 
+// wrapFallbackCharPx is the per-BYTE width assumed when there is no font (a
+// headless test Ctx, or a measure that errored): a rough monospace stand-in so
+// the wrap still produces plausible rows instead of one endless line.
+const wrapFallbackCharPx = 8
+
+// fontWidth measures s in font, falling back to wrapFallbackCharPx per byte.
+// The wrap AND the OOC link-span measure both go through it so a span's pixel
+// range is derived exactly the way the row's break points were — one measuring
+// rule, no drift between where a link is drawn and where it is clickable.
+func fontWidth(font *ttf.Font, s string) int32 {
+	if font == nil {
+		return int32(len(s) * wrapFallbackCharPx)
+	}
+	w, _, err := font.SizeUTF8(s)
+	if err != nil {
+		return int32(len(s) * wrapFallbackCharPx)
+	}
+	return int32(w)
+}
+
 func wrapToWidth(pick func(string) *ttf.Font, text string, maxW int32, maxLines int) []string {
 	if strings.TrimSpace(text) == "" {
 		return nil
@@ -1546,17 +1742,7 @@ func wrapToWidth(pick func(string) *ttf.Font, text string, maxW int32, maxLines 
 			line.Reset()
 		}
 	}
-	width := func(s string) int32 {
-		font := pick(s)
-		if font == nil {
-			return int32(len(s) * 8)
-		}
-		w, _, err := font.SizeUTF8(s)
-		if err != nil {
-			return int32(len(s) * 8)
-		}
-		return int32(w)
-	}
+	width := func(s string) int32 { return fontWidth(pick(s), s) }
 	for _, word := range strings.Fields(text) {
 		// Hard-split single words wider than the column.
 		for width(word) > maxW && len(word) > 1 {

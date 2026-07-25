@@ -482,27 +482,63 @@ func (a *App) linkLabel(x, y, maxW int32, url string) {
 func extractURLs(s string, max int) []string {
 	var out []string
 	for _, tok := range strings.Fields(s) {
-		// Wrapper and punctuation tails can alternate — "(www.example.com)."
-		// needs a wrapper pass, a punct pass, then the wrapper pass AGAIN for
-		// the ')' the '.' was shielding, so loop the two trims to a fixpoint
-		// (each pass returns a subslice of the token — no allocation).
-		for {
-			trimmed := strings.TrimRight(strings.Trim(tok, "()[]<>\"'"), ".,;!?")
-			if trimmed == tok {
-				break
-			}
-			tok = trimmed
-		}
-		if !strings.HasPrefix(tok, "http://") && !strings.HasPrefix(tok, "https://") &&
-			!strings.HasPrefix(tok, "www.") {
+		lo, hi := urlTokenRange(tok)
+		if !isURLToken(tok[lo:hi]) {
 			continue
 		}
-		out = append(out, tok)
+		out = append(out, tok[lo:hi])
 		if len(out) >= max {
 			break
 		}
 	}
 	return out
+}
+
+// urlWrapChars / urlTailChars are the two trim sets a link token is peeled with:
+// wrappers come off BOTH ends, sentence punctuation only off the tail (a leading
+// '.' would be part of no link anyway).
+const (
+	urlWrapChars = "()[]<>\"'"
+	urlTailChars = ".,;!?"
+)
+
+// urlTokenRange returns the byte range of tok that survives those trims —
+// "(www.example.com)." → the range covering "www.example.com". Wrapper and
+// punctuation tails can alternate, so the two trims loop to a fixpoint: that
+// example needs a wrapper pass, a punct pass, then the wrapper pass AGAIN for
+// the ')' the '.' was shielding.
+//
+// It returns the RANGE, not the string, because the OOC link spans need to know
+// WHERE inside the token the link sits (so the highlight covers the link and not
+// its brackets — #38). extractURLs uses it too, so detector and span builder can
+// never disagree about what a link's text is. All four trim sets are ASCII, so
+// byte-wise scanning is exact on valid UTF-8 (a multi-byte rune's bytes are all
+// ≥ 0x80 and appear in neither set).
+func urlTokenRange(tok string) (lo, hi int) {
+	lo, hi = 0, len(tok)
+	for {
+		s, e := lo, hi
+		for s < e && strings.IndexByte(urlWrapChars, tok[s]) >= 0 {
+			s++
+		}
+		for e > s && strings.IndexByte(urlWrapChars, tok[e-1]) >= 0 {
+			e--
+		}
+		for e > s && strings.IndexByte(urlTailChars, tok[e-1]) >= 0 {
+			e--
+		}
+		if s == lo && e == hi {
+			return lo, hi
+		}
+		lo, hi = s, e
+	}
+}
+
+// isURLToken applies extractURLs' prefix rule to an ALREADY-trimmed token (see
+// the boundary discussion above): scheme-prefixed links and bare "www." hosts.
+func isURLToken(tok string) bool {
+	return strings.HasPrefix(tok, "http://") || strings.HasPrefix(tok, "https://") ||
+		strings.HasPrefix(tok, "www.")
 }
 
 // schemeForOpen returns url ready to hand to the OS browser: a bare "www." link

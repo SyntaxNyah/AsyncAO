@@ -2902,8 +2902,9 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 	}
 	// Drag-select / Ctrl+C (before the loop so a real drag swallows the click).
 	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
-	// Hovering any wrapped row of a linked message tints the whole run of it.
-	linkLo, linkHi := a.oocHoverLinkRun(list, a.oocScroll, lineH, wrapW, len(lines))
+	// Hovering a link tints THAT link (all of it, across the rows the wrap split
+	// it into) — not the whole message, and not its neighbours (#38).
+	hoverSpan, hoverID := a.oocHoverSpan(list, a.oocScroll, lineH, wrapW, len(lines))
 	clipPrev, clipHad := c.pushClip(list) // top/bottom row clipped to the rect, not the tabs
 	y := list.Y - a.oocScroll
 	for li, line := range lines {
@@ -2911,86 +2912,127 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			break
 		}
 		if y >= list.Y-lineH {
-			col := ColText
 			font := c.LogFontFor(a.oocPct, line)
 			// Selection highlight sits under the text.
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
-			// Links in OOC are openable (click) and copyable (right-click) —
-			// matching the IC log. The link is the entry's, resolved at wrap
-			// time (oocWrapURL), so a URL the wrap hard-split still opens whole.
-			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
-			if li >= linkLo && li <= linkHi {
-				col = ColAccent
-			}
-			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
-				a.oocLinkActions(rowRect, a.oocWrapURL[li])
-			}
 			sp := ""
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
 			indent := a.logRowIndent(logSelOOC, li) // continuation rows hang right of their first row
-			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X+indent, y, wrapW-indent, line, sp, col, nameColorsOn, nameSat, nameVal, boldNames)
+			// Links in OOC are openable (click) and copyable (right-click) —
+			// matching the IC log. The URL was resolved at wrap time, so one the
+			// wrap hard-split still opens whole.
+			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
+			a.oocRowLinkActions(hoverSpan, li, rowRect, list.X+indent, y, lineH)
+			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames)
 		}
 		y += lineH
 	}
 	c.popClip(clipPrev, clipHad)
 }
 
-// oocHoverLinkRun resolves the OOC row under the cursor to the contiguous run
-// of rows sharing its link — the wrapped rows of one linked paragraph — so the
-// hover tint covers the WHOLE message (playtest: only the hovered row lit up,
-// so a wrapped link read as one highlighted line among plain ones). Returns
-// lo=0, hi=-1 (an empty range) when the cursor isn't on a linked row. The
-// outward walks are bounded by the per-entry wrap cap: a same-URL run longer
-// than that is several paragraphs, and one paragraph is the unit we tint.
+// oocHoverSpan resolves the cursor to ONE link span of the OOC scrollback: its
+// index into a.oocWrapLink and that link's id (-1, -1 = the cursor is not on a
+// link). The id is what the draw tints by, so the wrapped pieces of ONE
+// hard-split link light up together while a different link on the same row stays
+// plain.
 //
-// The walk requires the SAME url AND the same source oocLog entry
-// (oocWrapSrc) — this keys OOC the way IC keys off icWrapLine.entry, so two
-// ADJACENT DISTINCT messages that happen to carry the same URL no longer merge
-// into one tinted run (the URL boundary alone used to). The url boundary is
-// kept too: within ONE multi-paragraph entry, a per-paragraph link (each line
-// its own URL — TestOOCWrapURLPerParagraph) still tints only its own
-// paragraph, not the whole entry.
-func (a *App) oocHoverLinkRun(list sdl.Rect, scroll, lineH, wrapW int32, n int) (lo, hi int) {
+// #38: this used to resolve to a RUN OF ROWS sharing the row's single URL, which
+// tinted the whole message and made only a paragraph's first link clickable. The
+// hit test is now horizontal too — against the span's pixel range, measured at
+// wrap time in the row's own drawing face — so neighbouring text and a second
+// link on the same row are correctly missed.
+func (a *App) oocHoverSpan(list sdl.Rect, scroll, lineH, wrapW int32, n int) (int, int32) {
 	c := a.ctx
-	lo, hi = 0, -1
 	if lineH <= 0 || !c.hovering(list) || c.mouseX >= list.X+wrapW {
-		return
+		return -1, -1
 	}
 	li := int((c.mouseY - list.Y + scroll) / lineH)
-	if li < 0 || li >= n || li >= len(a.oocWrapURL) || a.oocWrapURL[li] == "" {
-		return
+	if li < 0 || li >= n {
+		return -1, -1
 	}
-	url := a.oocWrapURL[li]
-	// A run row must match the hovered row's URL AND its source oocLog entry. The
-	// source parallel is always present in-app; a bare unit test may set only
-	// oocWrapURL, so a missing/short oocWrapSrc degrades to url-only equality (the
-	// old behavior) rather than misbehaving. The check is inlined into both walks
-	// (no closure) so this stays allocation-free on the per-frame draw path.
-	src, hasSrc := -1, li < len(a.oocWrapSrc)
-	if hasSrc {
-		src = a.oocWrapSrc[li]
+	spans := a.oocRowLinks(li)
+	if len(spans) == 0 {
+		return -1, -1
 	}
-	lo, hi = li, li
-	for steps := 0; lo > 0 && a.oocWrapURL[lo-1] == url &&
-		(!hasSrc || (lo-1 < len(a.oocWrapSrc) && a.oocWrapSrc[lo-1] == src)) &&
-		steps < oocWrapMaxLinesPerEntry; steps++ {
-		lo--
+	// Spans are stored relative to the row's TEXT origin, so the hanging indent
+	// of a wrap-continuation row has to come off the cursor exactly the way the
+	// draw adds it — otherwise a continuation row's link would be off by
+	// logWrapIndentPx.
+	rel := c.mouseX - (list.X + a.logRowIndent(logSelOOC, li))
+	for k := range spans {
+		if rel >= spans[k].x0 && rel < spans[k].x1 {
+			return int(a.oocWrapLinkAt[li]) + k, spans[k].link
+		}
 	}
-	for steps := 0; hi+1 < len(a.oocWrapURL) && a.oocWrapURL[hi+1] == url &&
-		(!hasSrc || (hi+1 < len(a.oocWrapSrc) && a.oocWrapSrc[hi+1] == src)) &&
-		steps < oocWrapMaxLinesPerEntry; steps++ {
-		hi++
-	}
-	return
+	return -1, -1
 }
 
-// oocLinkActions handles the hover interactions for an OOC log line that holds
-// a link: a one-click "+ Jukebox" save button at the row's right edge, else
-// click-to-open / right-click-to-copy. Shared by the courtroom OOC log and the
-// OOC tab. Only ever called for the single hovered line (one extract/frame).
-func (a *App) oocLinkActions(rowRect sdl.Rect, url string) {
+// oocRowLinkActions runs the hover interactions when the hovered span sits on
+// display row li: the click/copy target is the LINK's rect (textX is the row's
+// text origin — the indent is already in it), while the Jukebox button still
+// anchors to the row. A no-op for every other row, so the draw loop can call it
+// unconditionally.
+func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, lineH int32) {
+	if hoverSpan < 0 || hoverSpan >= len(a.oocWrapLink) {
+		return
+	}
+	s := a.oocWrapLink[hoverSpan]
+	if int(s.row) != li {
+		return
+	}
+	a.oocLinkActions(rowRect, sdl.Rect{X: textX + s.x0, Y: y, W: s.x1 - s.x0, H: lineH}, s.url)
+}
+
+// drawOOCLogRow draws one wrapped OOC row, tinting ONLY the hovered link
+// (hoverID < 0 = none) instead of the whole row. The row is drawn whole in each
+// pass and the CLIP decides which slice of it lands, so the tinted and plain
+// parts share one glyph layout — no re-measure, no seam, and the speaker
+// name-split / emoji raster inside drawLogLineNamed keep working untouched. The
+// clip keeps the list's vertical bounds so a partially scrolled top/bottom row
+// still cuts at the rect edge.
+//
+// Per-frame cost: the common (nothing hovered) case is the single draw it always
+// was; a hovered link costs at most two extra clipped draws on its rows.
+func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, nameOn bool, sat, val float64, bold bool) {
+	c := a.ctx
+	ef := c.EmojiFont(a.oocPct)
+	spans := a.oocRowLinks(li)
+	if hoverID < 0 || len(spans) == 0 {
+		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, ColText, nameOn, sat, val, bold)
+		return
+	}
+	seg := func(lo, hi int32, col sdl.Color) {
+		if hi <= lo {
+			return
+		}
+		prev, had := c.pushClip(sdl.Rect{X: x + lo, Y: list.Y, W: hi - lo, H: list.H})
+		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, col, nameOn, sat, val, bold)
+		c.popClip(prev, had)
+	}
+	drawn := int32(0)
+	for k := range spans {
+		if spans[k].link != hoverID {
+			continue
+		}
+		seg(drawn, spans[k].x0, ColText) // plain text before the link
+		seg(spans[k].x0, spans[k].x1, ColAccent)
+		drawn = spans[k].x1
+	}
+	if drawn == 0 { // the hovered link isn't on this row after all
+		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, ColText, nameOn, sat, val, bold)
+		return
+	}
+	seg(drawn, textW, ColText) // the remainder of the row
+}
+
+// oocLinkActions handles the hover interactions for an OOC link: a one-click
+// "+ Jukebox" save button at the ROW's right edge (it needs the room), while
+// opening / copying is gated on linkRect — the link's own characters — so a
+// click on the plain text beside it does nothing (#38). Shared by the courtroom
+// OOC log and the OOC tab. Only ever called for the single hovered link.
+func (a *App) oocLinkActions(rowRect, linkRect sdl.Rect, url string) {
 	c := a.ctx
 	if a.juke != nil {
 		saveBtn := sdl.Rect{X: rowRect.X + rowRect.W - 96, Y: rowRect.Y + 1, W: 94, H: rowRect.H - 2}
@@ -3007,7 +3049,7 @@ func (a *App) oocLinkActions(rowRect sdl.Rect, url string) {
 			return // hovering the button — don't also open/copy the line
 		}
 	}
-	c.Tooltip(rowRect, "Click to open · right-click to copy · or + Jukebox to save: "+url)
+	c.Tooltip(linkRect, "Click to open · right-click to copy · or + Jukebox to save: "+url)
 	if c.clicked {
 		openBrowser(schemeForOpen(url)) // bare "www." link → https:// at open time (copy stays bare, as displayed)
 	} else if c.rightClicked {
@@ -3082,8 +3124,8 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	// Drag-select / Ctrl+C + links — same as the themed OOC log (this is the
 	// classic OOC tab's own scrollback; it must behave identically).
 	a.handleLogSelect(logSelOOC, list, a.oocScroll, lineH, wrapW)
-	// Hovering any wrapped row of a linked message tints the whole run of it.
-	linkLo, linkHi := a.oocHoverLinkRun(list, a.oocScroll, lineH, wrapW, len(lines))
+	// Hovering a link tints THAT link only — same contract as the themed log (#38).
+	hoverSpan, hoverID := a.oocHoverSpan(list, a.oocScroll, lineH, wrapW, len(lines))
 	clipPrev, clipHad := c.pushClip(list) // scrollback only; restored before the fields below
 	y := list.Y - a.oocScroll
 	for li, line := range lines {
@@ -3091,22 +3133,16 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 			break
 		}
 		if y >= list.Y-lineH {
-			col := ColText
 			font := c.LogFontFor(a.oocPct, line)
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
-			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
-			if li >= linkLo && li <= linkHi {
-				col = ColAccent
-			}
-			if c.hovering(rowRect) && li < len(a.oocWrapURL) && a.oocWrapURL[li] != "" {
-				a.oocLinkActions(rowRect, a.oocWrapURL[li])
-			}
 			sp := ""
 			if li < len(a.oocWrapName) {
 				sp = a.oocWrapName[li]
 			}
 			indent := a.logRowIndent(logSelOOC, li) // continuation rows hang right of their first row
-			a.drawLogLineNamed(font, c.EmojiFont(a.oocPct), list.X+indent, y, wrapW-indent, line, sp, col, nameColorsOn, nameSat, nameVal, boldNames)
+			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
+			a.oocRowLinkActions(hoverSpan, li, rowRect, list.X+indent, y, lineH)
+			a.drawOOCLogRow(list, li, font, list.X+indent, y, wrapW-indent, line, sp, hoverID, nameColorsOn, nameSat, nameVal, boldNames)
 		}
 		y += lineH
 	}

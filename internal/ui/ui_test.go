@@ -585,6 +585,8 @@ func TestWrapToWidthMOTD(t *testing.T) {
 // a long Discord CDN URL (a '&'-laden query string) is captured WHOLE from the
 // source entry, so every wrapped row of it opens the full link — not the
 // truncated fragment a per-display-line scan used to grab at the first '&'.
+// Post-#38 the pieces are spans that share ONE link id, so the hover tint still
+// covers the whole link across the rows it was split into.
 func TestOOCWrapURLFullLink(t *testing.T) {
 	a := testTabApp(t)
 	const url = "https://cdn.discordapp.com/attachments/151/151/asyncao-windows-x86_64.zip?ex=6a31e0a4&is=6a308f24&hm=335a54ec&"
@@ -593,8 +595,8 @@ func TestOOCWrapURLFullLink(t *testing.T) {
 	// A narrow column (15 chars at the 8 px/char headless metric) forces the
 	// URL to hard-split across several display rows.
 	lines := a.oocWrapped(120)
-	if len(a.oocWrapURL) != len(lines) {
-		t.Fatalf("oocWrapURL (%d) not parallel to wrapped lines (%d)", len(a.oocWrapURL), len(lines))
+	if len(a.oocWrapLinkAt) != len(lines)+1 {
+		t.Fatalf("link index (%d) not row-parallel to wrapped lines (%d)+1", len(a.oocWrapLinkAt), len(lines))
 	}
 	if len(lines) < 2 {
 		t.Fatalf("expected the URL to wrap across rows, got %d line(s): %v", len(lines), lines)
@@ -606,11 +608,24 @@ func TestOOCWrapURLFullLink(t *testing.T) {
 			t.Fatal("URL did not hard-split; the test no longer exercises the bug")
 		}
 	}
-	// Every wrapped row of the entry must resolve to the FULL link.
-	for li, ln := range lines {
-		if a.oocWrapURL[li] != url {
-			t.Errorf("row %d (%q): oocWrapURL = %q, want full %q", li, ln, a.oocWrapURL[li], url)
+	// Every piece opens the FULL link, and all of them belong to ONE link id
+	// (that is what makes the highlight contiguous).
+	if len(a.oocWrapLink) < 2 {
+		t.Fatalf("a hard-split link must leave one span per row, got %d", len(a.oocWrapLink))
+	}
+	rows := 0
+	for _, s := range a.oocWrapLink {
+		if s.url != url {
+			t.Errorf("span on row %d opens %q, want the full %q", s.row, s.url, url)
 		}
+		if s.link != a.oocWrapLink[0].link {
+			t.Errorf("span on row %d has link id %d, want %d — the pieces must tint as ONE link",
+				s.row, s.link, a.oocWrapLink[0].link)
+		}
+		rows++
+	}
+	if rows < 2 {
+		t.Fatal("the split link must span at least two rows")
 	}
 }
 
@@ -625,21 +640,23 @@ func TestOOCWrapURLPerParagraph(t *testing.T) {
 	a.pushOOC("Server: Fork:\n"+u1+"\nUpstream:\n"+u2, "Server")
 
 	lines := a.oocWrapped(800) // wide enough that each URL fits one row
-	if len(a.oocWrapURL) != len(lines) {
-		t.Fatalf("oocWrapURL (%d) not parallel to lines (%d)", len(a.oocWrapURL), len(lines))
+	if len(a.oocWrapLinkAt) != len(lines)+1 {
+		t.Fatalf("link index (%d) not row-parallel to lines (%d)+1", len(a.oocWrapLinkAt), len(lines))
 	}
 	var sawU1, sawU2 bool
 	for li, ln := range lines {
+		spans := a.oocRowLinks(li)
 		if ln == u1 {
 			sawU1 = true
-			if a.oocWrapURL[li] != u1 {
-				t.Errorf("u1 line carries %q, want u1", a.oocWrapURL[li])
+			if len(spans) != 1 || spans[0].url != u1 {
+				t.Errorf("u1 line carries %v, want exactly u1", spans)
 			}
 		}
 		if ln == u2 {
 			sawU2 = true
-			if a.oocWrapURL[li] != u2 { // the bug: this was u1 (the entry's first link)
-				t.Errorf("u2 line carries %q, want u2 (its OWN link, not the first)", a.oocWrapURL[li])
+			// The bug: this row used to carry u1 (the entry's first link).
+			if len(spans) != 1 || spans[0].url != u2 {
+				t.Errorf("u2 line carries %v, want exactly u2 (its OWN link, not the first)", spans)
 			}
 		}
 	}

@@ -409,17 +409,23 @@ type App struct {
 	// (App-global like the IC caches above, but keyed by logViewEpoch too so a
 	// tab switch — where both tabs' oocSeq can be equal — is a guaranteed miss,
 	// never a cross-tab false hit; see the logViewEpoch field doc.)
-	oocWrap      []string
-	oocWrapName  []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
-	oocWrapURL   []string // parallel to oocWrap: the entry's first link on each of its display lines ("" = none) — so a URL the wrap hard-split still opens whole (mirrors icEntry.url)
-	oocWrapCont  []bool   // parallel to oocWrap: true = a wrap continuation row (hanging indent); a paragraph's own newline starts a fresh row, not a continuation
-	oocWrapSrc   []int    // parallel to oocWrap: the source oocLog entry index of each display line — link-hover expands within one entry (mirrors icWrapLine.entry), so two ADJACENT distinct messages sharing a URL never merge into one tinted run
-	oocWrapSeq   uint64
-	oocWrapEpoch uint64
-	oocWrapW     int32
-	oocWrapPct   int
-	oocWrapMask  bool // streamer-mode masking baked into the cache
-	oocWrapGen   int  // font chain generation baked into the wrap
+	oocWrap     []string
+	oocWrapName []string // parallel to oocWrap: speaker to tint on each entry's FIRST display line ("" otherwise)
+	oocWrapCont []bool   // parallel to oocWrap: true = a wrap continuation row (hanging indent); a paragraph's own newline starts a fresh row, not a continuation
+	oocWrapSrc  []int    // parallel to oocWrap: the source oocLog entry index of each display line (mirrors icWrapLine.entry)
+	// Link spans (#38): every URL in a paragraph is separately hoverable and
+	// clickable, tinting only ITS characters instead of the whole message.
+	// oocWrapLink is the flat table in row order; oocWrapLinkAt has len(rows)+1
+	// entries so row r's spans are oocWrapLink[oocWrapLinkAt[r]:oocWrapLinkAt[r+1]]
+	// (see oocRowLinks — an O(1), allocation-free lookup for the draw loop).
+	oocWrapLink   []oocLinkSpan
+	oocWrapLinkAt []int32
+	oocWrapSeq    uint64
+	oocWrapEpoch  uint64
+	oocWrapW      int32
+	oocWrapPct    int
+	oocWrapMask   bool // streamer-mode masking baked into the cache
+	oocWrapGen    int  // font chain generation baked into the wrap
 
 	// last missing-asset warning surfaced to the user (spec §4).
 	warnLine string
