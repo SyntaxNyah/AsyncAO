@@ -4,6 +4,55 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.82.0 — 2026-07-25
+
+Thanks to Crystalwarrior for reporting the theme, music, desk, link and emote
+issues fixed below.
+
+- **Minimizing no longer disconnects you — the real cause this time.** Three
+  previous releases attributed this to the keepalive and to buffering, and each
+  time it came back. It was neither. The live player list quietly asks the server
+  for a roster update every few seconds, and those requests are sent through the
+  same paced queue as macros. The part that fills the queue keeps running while
+  the window is minimized; the part that empties it only ran while the window was
+  drawing. So the queue built up for as long as you were away and then emptied
+  all at once the moment you came back — which servers read as command spam and
+  answer by kicking you, closing the connection without ever sending the
+  explanation. That is why it always seemed to happen the instant you returned,
+  and why the disconnect never said why. The queue now empties at the same steady
+  rate whether the window is focused, unfocused or minimized, never releases more
+  than one command at a time no matter how long it has been waiting, and never
+  stacks duplicate roster requests. You can leave the client minimized all day.
+- **Every link in a message is now clickable.** Posting several links at once
+  left only the first one working, and hovering lit up the whole message instead
+  of the link. Each link is now its own target, highlighted and opened
+  individually.
+- **Imported themes now use their own fonts and font sizes.** A theme's
+  courtroom_fonts.ini is applied per element — the chat box, showname, chat log,
+  server log, music list and area list each take the font family, size and bold
+  setting the theme asks for. Fonts are found by name in the theme's own folder
+  and in the shared fonts folder.
+- **A custom font no longer breaks word wrap.** Lines are now measured against
+  the width they are actually drawn at, so text wraps correctly instead of
+  running past the edge of the log.
+- **The music list shows just the track name.** Entries arrived showing the full
+  path and file extension; they now display the way AO2 shows them, so a deeply
+  nested track reads as its name alone. Category rows are unaffected, and the
+  name sent to the server is unchanged.
+- **Backgrounds without a desk no longer borrow one.** A background that ships
+  no desk image for your position now draws no desk, instead of falling back to a
+  witness stand or keeping the previous room's.
+- **Emote buttons keep their shape when the window is stretched.** In themed
+  layouts the buttons were scaled separately on each axis, so widening the window
+  squashed them. They now scale evenly and reflow into the space instead.
+- **Tab moves from the message box to OOC.** Tab order followed drawing order,
+  so where it landed depended on the layout in use. It now reaches the on-screen
+  OOC box in every layout, and Shift+Tab walks back.
+- **Character previews work for every character.** The character-select preview
+  only ever looked for a sprite named "normal", so any character whose emotes are
+  named differently previewed as an empty box. It now uses the character's own
+  first emote.
+
 ## v1.81.6 — 2026-07-24
 
 - **Fixed the last "disconnected after hours minimized" bug.** v1.81.5 kept the
