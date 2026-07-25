@@ -306,8 +306,14 @@ type Ctx struct {
 	// coverage scan per rune per row would be a hidden storm once a fallback is
 	// installed). It also records whether the pick FULLY covers the line, so the
 	// raster gate knows when to take the per-glyph mixed-script path without a second
-	// scan. Cleared on any font rebuild.
-	pickMemo map[string]pickResult
+	// scan. Cleared on any font rebuild. Keyed by (text, SET, pct) — see pickKey.
+	pickMemo map[pickKey]pickResult
+	// coverHint is the LAST pick made, so the covers() gate a caller runs right
+	// after its own *FontFor call resolves as a compare instead of a set scan +
+	// map probe. A pure accelerator: coversFace stays correct when it misses.
+	coverHintFont *ttf.Font
+	coverHintText string
+	coverHintOK   bool
 	// Color-emoji fallback face (e.g. Segoe UI Emoji), kept SEPARATE from the
 	// chain so the common single-font fast path (pickSet len==1) is unchanged.
 	// emojiData is the font file bytes (read off-thread by the App; nil = none/not
@@ -339,6 +345,20 @@ type Ctx struct {
 	cjkData  [][]byte
 	cjkCover []*sfnt.Font
 	wantCJK  bool
+	// Per-element theme faces (#39): the font FILES the active theme's
+	// courtroom_fonts.ini named, read off-thread on theme apply (≤ themeFaceCap)
+	// and installed via SetThemeFaces. RWFromMem aliases the bytes, so they must
+	// outlive their faces — SetThemeFaces closes the element sets BEFORE dropping
+	// them. themeFaceCover holds the index-aligned sfnt cmap face for the PICK.
+	themeFaceData  [][]byte
+	themeFaceCover []*sfnt.Font
+	// One logical + one device fontSet PER ELEMENT (not per face): each element
+	// pins its OWN point size, so a theme with showname = 12 and message = 24
+	// can't thrash one shared set between two sizes every frame (buildSet's pct
+	// guard would rebuild — and purgeTextCache — on every draw). Built LAZILY: an
+	// element the theme doesn't dress never allocates one.
+	themeElemSets    [themeFontElemCount]fontSet
+	themeElemSetsDev [themeFontElemCount]fontSet
 
 	// uiPct is the global render scale percent; mouse coordinates
 	// unproject through it so logical hit-tests stay exact.
@@ -663,6 +683,13 @@ type fontSet struct {
 	// sets leave it 0). fontsForDev keys on it so a UI-scale change rebuilds the
 	// device set even though the caller's pct arg is unchanged.
 	devPct int
+	// srcChain/srcCover record the override chain this set was built FROM: the
+	// user's font chain for chat/log, or the ONE theme-declared face for a
+	// per-element set (#39). Recorded so the DEVICE sibling can be rebuilt from
+	// the same source without every caller threading it (deviceFontFor only
+	// resolves a face to its set, not to which chain that set came from).
+	srcChain []([]byte)
+	srcCover []*sfnt.Font
 }
 
 // fontChainCap bounds the override chain (a primary plus a few CJK
@@ -692,6 +719,73 @@ func (c *Ctx) LogFont(pct int) *ttf.Font {
 func (c *Ctx) LogFontFor(pct int, text string) *ttf.Font {
 	c.noteScript(text)
 	return c.pickSet(&c.logSet, pct, text)
+}
+
+// ThemeFont returns element el's PRIMARY face at pct (#39): the theme-declared
+// family when face indexes one, else the user's own chain — either way out of
+// el's OWN fontSet, so two elements at different point sizes never fight over
+// one shared set. Render thread.
+func (c *Ctx) ThemeFont(el themeFontElem, face, pct int) *ttf.Font {
+	return c.themeFontsFor(el, face, pct)[0]
+}
+
+// ThemeFontFor is ThemeFont with the per-line coverage pick (see ChatFontFor).
+func (c *Ctx) ThemeFontFor(el themeFontElem, face, pct int, text string) *ttf.Font {
+	c.noteScript(text)
+	s := &c.themeElemSets[el]
+	return c.pickIn(s, c.themeFontsFor(el, face, pct), pct, text)
+}
+
+// SetThemeFaces installs the theme-declared face bytes (nil clears), read
+// off-thread by the App on theme apply. Mirrors SetFallbackFonts: parse the cmap
+// covers, bump fontChainGen so every set rebuilds, purge the pointer-keyed
+// caches. The element sets' faces ALIAS the outgoing bytes (RWFromMem), so they
+// are closed here BEFORE the bytes lose their last reference. Render thread.
+func (c *Ctx) SetThemeFaces(data [][]byte) {
+	if len(data) > themeFaceCap {
+		data = data[:themeFaceCap]
+	}
+	if len(data) == 0 && c.themeFaceData == nil {
+		return // already clear — the overwhelmingly common no-theme-font case
+	}
+	c.dropThemeElemSets()
+	c.themeFaceData = data
+	c.themeFaceCover = c.themeFaceCover[:0]
+	for _, d := range data {
+		c.themeFaceCover = append(c.themeFaceCover, parseCover(d))
+	}
+	c.fontChainGen++ // every fontSet (global AND per-element) rebuilds; wrap caches invalidate
+	// Labels, emoji rasters and line picks all carry the OLD faces' identity
+	// (pointer keys) — purge wholesale. A theme apply is a user action.
+	c.purgeTextCache()
+	c.pickMemo = nil
+	c.coverHintFont = nil
+}
+
+// dropThemeElemSets closes and empties every per-element set (logical and
+// device). The close-guards mirror buildSet's: a set may SHARE the chrome face
+// as its embedded last resort, which it must never close.
+func (c *Ctx) dropThemeElemSets() {
+	for i := range c.themeElemSets {
+		s := &c.themeElemSets[i]
+		for _, f := range s.fonts {
+			if f != nil && f != c.font {
+				f.Close()
+			}
+		}
+		s.fonts, s.cover, s.srcChain, s.srcCover = nil, nil, nil, nil
+		s.pct, s.devPct, s.gen = 0, 0, 0
+	}
+	for i := range c.themeElemSetsDev {
+		s := &c.themeElemSetsDev[i]
+		for _, f := range s.fonts {
+			if f != nil && f != c.fontDev {
+				f.Close()
+			}
+		}
+		s.fonts, s.cover, s.srcChain, s.srcCover = nil, nil, nil, nil
+		s.pct, s.devPct, s.gen = 0, 0, 0
+	}
 }
 
 // noteScript raises the load latches the first time their script is seen: the broad
@@ -744,43 +838,100 @@ type pickResult struct {
 	covered bool
 }
 
+// pickKey scopes one memoized line pick to the SET and SCALE it was made for.
+// Keying by TEXT ALONE (the pre-#39 key) silently handed back another surface's
+// face the moment any fallback tier loaded — and with per-element theme sets it
+// would be a wrong-FAMILY bug on every theme, not just a wrong size. A composite
+// comparable key costs no allocation on lookup.
+type pickKey struct {
+	text string
+	set  *fontSet
+	pct  int32
+}
+
 // pickSet memoizes the per-line coverage pick: repeat draws cost one map probe, and
 // the no-fallback single-font set costs nothing at all (the len==1 fast path).
 func (c *Ctx) pickSet(s *fontSet, pct int, text string) *ttf.Font {
-	fonts := c.fontsFor(s, pct)
+	return c.pickIn(s, c.fontsFor(s, pct), pct, text)
+}
+
+// pickIn is pickSet's body with the set's faces already built — so a per-element
+// theme set (built from its own chain) shares the exact same memo and gate.
+func (c *Ctx) pickIn(s *fontSet, fonts []*ttf.Font, pct int, text string) *ttf.Font {
 	if len(fonts) == 1 {
+		c.noteCoverHint(fonts[0], text, true)
 		return fonts[0]
 	}
-	if r, ok := c.pickMemo[text]; ok {
+	key := pickKey{text: text, set: s, pct: int32(pct)}
+	if r, ok := c.pickMemo[key]; ok {
+		c.noteCoverHint(r.font, text, r.covered)
 		return r.font
 	}
 	f, covered := pickFont(fonts, s.cover, &c.sfntBuf, text)
 	if c.pickMemo == nil {
-		c.pickMemo = make(map[string]pickResult, 256)
+		c.pickMemo = make(map[pickKey]pickResult, 256)
 	} else if len(c.pickMemo) >= textCacheMax {
 		clear(c.pickMemo) // bounded: wholesale reset, repopulates hot lines
 	}
-	c.pickMemo[text] = pickResult{font: f, covered: covered}
+	c.pickMemo[key] = pickResult{font: f, covered: covered}
+	c.noteCoverHint(f, text, covered)
 	return f
 }
 
-// covers reports whether the whole-message pick for text covered every rune. A line
-// with no memo entry took the single-font fast path (no fallback loaded) and counts as
-// covered — so the raster gate stays cheap for the common case. Read AFTER the matching
-// *FontFor pick (same frame), which populated the entry.
-func (c *Ctx) covers(text string) bool {
-	r, ok := c.pickMemo[text]
+// noteCoverHint records the pick just made so the covers() gate every caller runs
+// IMMEDIATELY afterwards — with the face it just received — is a pointer + string
+// compare instead of a set scan plus a map probe. Purely an accelerator:
+// coversFace stays correct when the hint misses.
+func (c *Ctx) noteCoverHint(f *ttf.Font, text string, covered bool) {
+	c.coverHintFont, c.coverHintText, c.coverHintOK = f, text, covered
+}
+
+// coversFace reports whether the whole-message pick that returned `primary`
+// covered every rune of text. A line with no memo entry took the single-font fast
+// path (no fallback loaded) and counts as covered — so the raster gate stays cheap
+// for the common case. Read AFTER the matching *FontFor pick (same frame), which
+// populated the entry; primary identifies WHICH set (and therefore which element
+// and scale) that pick was made in.
+func (c *Ctx) coversFace(primary *ttf.Font, text string) bool {
+	if primary != nil && primary == c.coverHintFont && text == c.coverHintText {
+		return c.coverHintOK
+	}
+	s := c.setOf(primary)
+	if s == nil {
+		return true // chrome-only / headless: no pick was memoized for it
+	}
+	r, ok := c.pickMemo[pickKey{text: text, set: s, pct: int32(s.pct)}]
 	return !ok || r.covered
+}
+
+// setPairCount is every (logical, device) fontSet pair: the two global sets
+// (chat, log) plus one per theme-dressable element (#39).
+const setPairCount = 2 + int(themeFontElemCount)
+
+// setPairs returns every (logical, device) pair in ONE place, so setOf /
+// setIndexOf / Destroy / SetChromeFont can never miss a set as sets are added.
+// Returned BY VALUE as a fixed-size array — stack, no allocation — and walked
+// only on raster-BUILD paths (coverRunes / deviceTextFont / a font swap), never
+// per frame: ≤ setPairCount pairs × ≤ 8 faces is a bounded pointer scan.
+func (c *Ctx) setPairs() [setPairCount][2]*fontSet {
+	var out [setPairCount][2]*fontSet
+	out[0] = [2]*fontSet{&c.chatSet, &c.chatSetDev}
+	out[1] = [2]*fontSet{&c.logSet, &c.logSetDev}
+	for i := 0; i < int(themeFontElemCount); i++ {
+		out[2+i] = [2]*fontSet{&c.themeElemSets[i], &c.themeElemSetsDev[i]}
+	}
+	return out
 }
 
 // setOf finds the built fontSet a picked face belongs to, by pointer. Font instances
 // are unique per size, so this resolves to the set at the right scale without threading
 // pct anywhere — the face was just returned from that set's fontsFor this frame.
 func (c *Ctx) setOf(primary *ttf.Font) *fontSet {
-	for _, s := range []*fontSet{&c.chatSet, &c.logSet} {
-		for _, f := range s.fonts {
+	pairs := c.setPairs()
+	for _, p := range pairs {
+		for _, f := range p[0].fonts {
 			if f == primary {
-				return s
+				return p[0]
 			}
 		}
 	}
@@ -817,14 +968,11 @@ func (c *Ctx) coverRunes(primary *ttf.Font, runes []rune) []*ttf.Font {
 // face for the device-scaled one at the same chain position. (nil, nil, -1) when
 // the face isn't in a scaled set (chrome-only / headless).
 func (c *Ctx) setIndexOf(primary *ttf.Font) (logical, device *fontSet, idx int) {
-	pairs := []struct{ log, dev *fontSet }{
-		{&c.chatSet, &c.chatSetDev},
-		{&c.logSet, &c.logSetDev},
-	}
+	pairs := c.setPairs()
 	for _, p := range pairs {
-		for i, f := range p.log.fonts {
+		for i, f := range p[0].fonts {
 			if f == primary {
-				return p.log, p.dev, i
+				return p[0], p[1], i
 			}
 		}
 	}
@@ -845,7 +993,7 @@ func (c *Ctx) deviceFontFor(primary *ttf.Font, pct int) *ttf.Font {
 	if log == nil || idx < 0 {
 		return primary
 	}
-	df := c.fontsForDev(dev, log.pct) // build the sibling at the SAME per-element pct
+	df := c.fontsForDev(log, dev, log.pct) // build the sibling at the SAME per-element pct
 	if idx < len(df) {
 		return df[idx]
 	}
@@ -862,7 +1010,7 @@ func (c *Ctx) deviceCoverRunes(logicalPrimary *ttf.Font, pct int, runes []rune) 
 		// 1:1 or unresolved: device faces == logical faces.
 		return c.coverRunes(logicalPrimary, runes)
 	}
-	df := c.fontsForDev(dev, log.pct)
+	df := c.fontsForDev(log, dev, log.pct)
 	devPrimary := logicalPrimary
 	if _, _, idx := c.setIndexOf(logicalPrimary); idx >= 0 && idx < len(df) {
 		devPrimary = df[idx]
@@ -964,6 +1112,7 @@ func (c *Ctx) SetChromeFont(data []byte) bool {
 		}
 		s.fonts, s.cover = nil, nil
 	}
+	c.dropThemeElemSets() // the per-element sets (#39) share c.font/c.fontDev on the same rule
 	// Drop the device chrome faces too (they share or derive from the old chrome
 	// pair); rebuildDeviceChrome below rebuilds them against the new c.font.
 	if c.fontDev != nil && c.fontDev != c.font {
@@ -992,21 +1141,38 @@ func (c *Ctx) SetChromeFont(data []byte) bool {
 	clear(c.widthCache)
 	clear(c.devWidthCache) // device-face field memo carries the OLD chrome metrics
 	c.pickMemo = nil
+	c.coverHintFont = nil
 	return true
 }
 
 // fontsFor returns the LOGICAL set's fonts (the wrap/measure baseline), rebuilding
 // when the scale or the chain moved (settings actions — never per frame).
 func (c *Ctx) fontsFor(s *fontSet, pct int) []*ttf.Font {
-	return c.buildSet(s, pct, DefaultScalePct, c.font, false)
+	return c.buildSet(s, c.fontChain, c.chainCover, pct, DefaultScalePct, c.font, false)
+}
+
+// themeFontsFor builds element el's own LOGICAL set (#39): the theme-declared
+// face when one resolved (face indexes themeFaceData), else the user's own chain
+// — the second case still gets a DEDICATED set so an element the theme merely
+// SIZED (dangitx2new declares sizes and no families) pins its point size instead
+// of thrashing the shared chat/log set.
+func (c *Ctx) themeFontsFor(el themeFontElem, face, pct int) []*ttf.Font {
+	chain, cover := c.fontChain, c.chainCover
+	if face >= 0 && face < len(c.themeFaceData) && face < len(c.themeFaceCover) {
+		chain, cover = c.themeFaceData[face:face+1], c.themeFaceCover[face:face+1]
+	}
+	return c.buildSet(&c.themeElemSets[el], chain, cover, pct, DefaultScalePct, c.font, false)
 }
 
 // fontsForDev returns the DEVICE-scaled sibling set (#77): the same chain opened
 // at pct×(textDevPct/100) so the message-raster/emoji paths rasterize crisp. It
 // keys on textDevPct via s.devPct so a UI-scale change rebuilds it even though
 // pct is unchanged. Shares the device chrome face as the embedded last resort.
-func (c *Ctx) fontsForDev(s *fontSet, pct int) []*ttf.Font {
-	return c.buildSet(s, pct, int(c.textDevPct), c.fontDev, true)
+// It rebuilds from the LOGICAL set's recorded source chain (fontSet.srcChain), so
+// a per-element theme set's device sibling uses the theme face, not the global
+// chain.
+func (c *Ctx) fontsForDev(logical, dev *fontSet, pct int) []*ttf.Font {
+	return c.buildSet(dev, logical.srcChain, logical.srcCover, pct, int(c.textDevPct), c.fontDev, true)
 }
 
 // buildSet is the shared body: opens the chain at size = UIFontSize×pct×devPct/100²,
@@ -1017,7 +1183,11 @@ func (c *Ctx) fontsForDev(s *fontSet, pct int) []*ttf.Font {
 // DON'T reference (those key on the LOGICAL font) — so a device rebuild must NOT
 // purge them (doing so mid-frame could nil the pickMemo a logical pick just
 // populated, one-frame-mis-routing a mixed-script message).
-func (c *Ctx) buildSet(s *fontSet, pct, devPct int, chromeShare *ttf.Font, isDevice bool) []*ttf.Font {
+// chain/chainCover are the override faces this set is built FROM: the user's own
+// chain for the global chat/log sets, one theme-declared face for a per-element
+// set (#39). They are recorded on the set so its device sibling can be rebuilt
+// from the same source.
+func (c *Ctx) buildSet(s *fontSet, chain [][]byte, chainCover []*sfnt.Font, pct, devPct int, chromeShare *ttf.Font, isDevice bool) []*ttf.Font {
 	if devPct <= 0 {
 		devPct = DefaultScalePct
 	}
@@ -1036,10 +1206,12 @@ func (c *Ctx) buildSet(s *fontSet, pct, devPct int, chromeShare *ttf.Font, isDev
 		// rebuild skips this: those caches key on the logical face, unaffected.
 		c.purgeTextCache()
 		c.pickMemo = nil
+		c.coverHintFont = nil
 	}
 	s.fonts = s.fonts[:0]
 	s.cover = s.cover[:0]
 	s.pct, s.devPct, s.gen = pct, devPct, c.fontChainGen
+	s.srcChain, s.srcCover = chain, chainCover
 	// Fold the device scale into the point size (#77): the per-element pct AND the
 	// global device scale both multiply UIFontSize, so a device set rasterizes at
 	// the final device pixel size. devPct==100 reproduces the logical size exactly.
@@ -1049,10 +1221,10 @@ func (c *Ctx) buildSet(s *fontSet, pct, devPct int, chromeShare *ttf.Font, isDev
 	}
 	// Each entry appends its rendering font (per size) and its sfnt cover face (size-
 	// independent, parsed once) in lockstep, so a skipped face never desyncs them.
-	for i, data := range c.fontChain {
+	for i, data := range chain {
 		if f, err := memFont(data, size); err == nil {
 			s.fonts = append(s.fonts, f)
-			s.cover = append(s.cover, coverAt(c.chainCover, i))
+			s.cover = append(s.cover, coverAt(chainCover, i))
 		}
 	}
 	// Embedded last resort; share the chrome face at 1:1 (no duplicate
@@ -1841,7 +2013,7 @@ func (c *Ctx) deviceFontForAnyPct(font *ttf.Font) *ttf.Font {
 	if log == nil || idx < 0 {
 		return font
 	}
-	df := c.fontsForDev(dev, log.pct)
+	df := c.fontsForDev(log, dev, log.pct)
 	if idx < len(df) {
 		return df[idx]
 	}
@@ -3483,6 +3655,7 @@ func (c *Ctx) Destroy() {
 		}
 		s.fonts = nil
 	}
+	c.dropThemeElemSets() // per-element theme sets (#39), same close-guards
 	// Device chrome faces: close only when NOT sharing the logical faces (the
 	// 100% case shares them, so the logical closes below cover it).
 	if c.fontDev != nil && c.fontDev != c.font {

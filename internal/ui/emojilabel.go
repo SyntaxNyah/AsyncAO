@@ -55,7 +55,7 @@ func (a *App) labelEmoji(primary, emoji *ttf.Font, x, y, maxW int32, text string
 	// Per-glyph raster only when the label has emoji OR mixes scripts no single face
 	// covers (covers() reads the pick made by the caller's *FontFor, no rescan). Plain
 	// single-script text — the overwhelming common case — stays on the fast path.
-	if primary == nil || (!needEmoji && c.covers(text)) {
+	if primary == nil || (!needEmoji && c.coversFace(primary, text)) {
 		c.LabelClippedFont(primary, x, y, maxW, text, col)
 		return
 	}

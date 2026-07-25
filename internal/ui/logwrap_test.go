@@ -409,7 +409,7 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 		if len([]rune(row)) <= 1 {
 			continue // a lone rune wider than the column can't be split any further
 		}
-		if w := a.logDrawnWidth(a.oocPct, row); w > colW {
+		if w := a.logDrawnWidth(elemServerChatlog, a.oocPct, row); w > colW {
 			t.Errorf("OOC row %d %q draws %d px wide, column is %d — it will overflow", i, row, w, colW)
 		}
 	}
@@ -429,7 +429,7 @@ func TestLogWrapCustomFontRowsFitDrawnWidth(t *testing.T) {
 		if len([]rune(row.text)) <= 1 {
 			continue
 		}
-		if w := a.logDrawnWidth(a.logPct, row.text); w > colW {
+		if w := a.logDrawnWidth(elemICChatlog, a.logPct, row.text); w > colW {
 			t.Errorf("IC row %d %q draws %d px wide, column is %d — it will overflow", i, row.text, w, colW)
 		}
 	}

@@ -121,6 +121,15 @@ const (
 // the theme's lobby; the courtroom always uses the theme regardless.
 const defaultPlainLobby = true
 
+// defaultThemeFonts ships ON: an AO2 theme's courtroom_fonts.ini names a font
+// family, point size and weight PER courtroom element (showname, message,
+// ic_chatlog, server_chatlog, music_list, music_name, area_list) and AO2-Client
+// applies all of it (Courtroom::set_fonts, courtroom.cpp:1188) — a theme simply
+// does not look like itself without them (#39). Untick it to keep the client's
+// own font and per-panel zoom everywhere, whatever the theme asks for. A manual
+// font override / the dyslexia toggle already outranks the theme's families.
+const defaultThemeFonts = true
+
 // defaultCatchUpWhenBehind ships ON: in a packed room the IC stage otherwise
 // crawls through every queued preanim/shout, falling minutes behind real-time.
 // Catch-up fast-forwards the backlog; the IC log still keeps every message.
@@ -943,6 +952,7 @@ type AssetPreferences struct {
 	ThemeFitPanX           int                          `json:"themeFitPanX"`
 	ThemeFitPanY           int                          `json:"themeFitPanY"`
 	PlainLobby             bool                         `json:"plainLobby"`
+	ThemeFonts             bool                         `json:"themeFonts"` // per-element courtroom_fonts.ini families/sizes/bold (#39); default ON
 	UIScaleAutoOn          bool                         `json:"uiScaleAuto"`
 	CatchUpOn              bool                         `json:"catchUpWhenBehind"`
 	CatchUpThreshold       int                          `json:"catchUpThreshold"`
@@ -1361,6 +1371,7 @@ type prefsJSON struct {
 	ThemeFitPanX           int              `json:"themeFitPanX"`
 	ThemeFitPanY           int              `json:"themeFitPanY"`
 	PlainLobby             *bool            `json:"plainLobby"`           // absent = default ON
+	ThemeFonts             *bool            `json:"themeFonts"`           // absent = default ON (#39)
 	UIScaleAuto            *bool            `json:"uiScaleAuto"`          // absent = default ON (HiDPI)
 	CatchUpWhenBehind      *bool            `json:"catchUpWhenBehind"`    // absent = default ON
 	CatchUpThreshold       *int             `json:"catchUpThreshold"`     // absent = default
@@ -1803,6 +1814,7 @@ func defaultPrefs(path string) *AssetPreferences {
 		ThemeFit:                     defaultThemeFit,
 		ThemeFitZoom:                 DefaultThemeZoom,
 		PlainLobby:                   defaultPlainLobby,
+		ThemeFonts:                   defaultThemeFonts,
 		UIScaleAutoOn:                defaultUIScaleAuto,
 		CatchUpOn:                    defaultCatchUpWhenBehind,
 		CatchUpThreshold:             DefaultCatchUpThreshold,
@@ -2158,6 +2170,9 @@ func load(path string) (*AssetPreferences, error) {
 	p.ThemeFitPanY = clampPercent(onDisk.ThemeFitPanY, -MaxThemePan, MaxThemePan)
 	if onDisk.PlainLobby != nil {
 		p.PlainLobby = *onDisk.PlainLobby
+	}
+	if onDisk.ThemeFonts != nil {
+		p.ThemeFonts = *onDisk.ThemeFonts
 	}
 	if onDisk.UIScaleAuto != nil {
 		p.UIScaleAutoOn = *onDisk.UIScaleAuto
@@ -9313,6 +9328,26 @@ func (p *AssetPreferences) SetPlainLobby(on bool) {
 		return
 	}
 	p.PlainLobby = on
+	p.mu.Unlock()
+	p.markDirty()
+}
+
+// ThemeFontsOn reports whether the active theme's courtroom_fonts.ini drives the
+// per-element font family, point size and weight (ON by default — #39).
+func (p *AssetPreferences) ThemeFontsOn() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.ThemeFonts
+}
+
+// SetThemeFonts toggles per-element theme fonts.
+func (p *AssetPreferences) SetThemeFonts(on bool) {
+	p.mu.Lock()
+	if p.ThemeFonts == on {
+		p.mu.Unlock()
+		return
+	}
+	p.ThemeFonts = on
 	p.mu.Unlock()
 	p.markDirty()
 }

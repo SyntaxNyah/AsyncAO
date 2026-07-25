@@ -1711,6 +1711,14 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		a.themeLay.valid = false
 	}
 	y += 28
+	// #39: per-element courtroom_fonts.ini parity. Re-applies the theme so the
+	// table is rebuilt (and the faces read) off-thread, exactly like a theme swap.
+	tfonts := a.d.Prefs.ThemeFontsOn()
+	if next := c.Checkbox(pad, y, "Use the theme's fonts (courtroom_fonts.ini — per-element family, point size and bold)", tfonts); next != tfonts {
+		a.d.Prefs.SetThemeFonts(next)
+		a.applyThemeAsync()
+	}
+	y += 28
 
 	// Theme fit: how the theme's FIXED design size fills your (differently
 	// shaped) window — the cause of those borders.

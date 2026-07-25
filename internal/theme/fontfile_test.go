@@ -76,6 +76,206 @@ func TestFontFileBaseFontsNeedsDeclaredFamily(t *testing.T) {
 	}
 }
 
+// TestFontFileFromThemeFontsSubdir is the reporter's case for #39 (Lymantriina):
+// the theme declares "IBM Plex Serif" and ships it in its OWN fonts/ subfolder.
+// The pre-#39 scan skipped every directory entry, so the family never resolved
+// and the theme's font silently never applied. AO2-Client registers <base>/fonts
+// RECURSIVELY (main.cpp:44-55), so a subfolder is a normal place to find one.
+func TestFontFileFromThemeFontsSubdir(t *testing.T) {
+	root := t.TempDir()
+	writeTheme(t, root, "Lymantriina", aoDefaultDesign,
+		"message = 13\nmessage_font = IBM Plex Serif\n")
+	fontsDir := filepath.Join(root, ThemesDirName, "Lymantriina", "fonts")
+	if err := os.MkdirAll(fontsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"IBMPlexMono-Regular.otf", "IBMPlexSerif-Regular.otf"} {
+		if err := os.WriteFile(filepath.Join(fontsDir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	th, err := Load("Lymantriina", []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := th.FontFileFor("message", nil); filepath.Base(got) != "IBMPlexSerif-Regular.otf" {
+		t.Errorf("FontFileFor(message) = %q, want the theme's own fonts/IBMPlexSerif-Regular.otf", got)
+	}
+	if got := th.FontFile(); filepath.Base(got) != "IBMPlexSerif-Regular.otf" {
+		t.Errorf("FontFile = %q, want the same file (the #6 entry point must agree)", got)
+	}
+}
+
+// TestFontFileBaseFontsRecursive: <root>/fonts is walked recursively (AO2's
+// QDirIterator::Subdirectories), but only as deep as fontScanMaxDepth — the
+// named cap that keeps the walk bounded (hard rule 4).
+func TestFontFileBaseFontsRecursive(t *testing.T) {
+	root := t.TempDir()
+	writeTheme(t, root, "DRRA", aoDefaultDesign, "message = 24\nmessage_font = Ace Attorney\n")
+	nested := filepath.Join(root, "fonts", "aa")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "ace_attorney.ttf"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	th, err := Load("DRRA", []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := th.FontFileFor("message", nil); filepath.Base(got) != "ace_attorney.ttf" {
+		t.Errorf("FontFileFor = %q, want the nested base/fonts/aa/ace_attorney.ttf", got)
+	}
+
+	// Past the depth cap it must NOT resolve.
+	deepRoot := t.TempDir()
+	writeTheme(t, deepRoot, "DRRA", aoDefaultDesign, "message = 24\nmessage_font = Ace Attorney\n")
+	deep := filepath.Join(deepRoot, "fonts", "a", "b", "c", "d")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(deep, "ace_attorney.ttf"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deepTheme, err := Load("DRRA", []string{deepRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := deepTheme.FontFileFor("message", nil); got != "" {
+		t.Errorf("FontFileFor = %q, want empty past fontScanMaxDepth=%d", got, fontScanMaxDepth)
+	}
+}
+
+// TestFontFileSystemDirAlias pins the system-font tier — the ONLY way a theme
+// declaring plain "Arial" or "Times New Roman" (DRRetribution, KFO qHD, DR Theme)
+// can resolve at all, since neither ships the file. AO2 gets this from Qt's
+// system font database (get_qfont, courtroom.cpp:1263).
+func TestFontFileSystemDirAlias(t *testing.T) {
+	root := t.TempDir()
+	sys := t.TempDir()
+	for _, f := range []string{"arial.ttf", "times.ttf"} {
+		if err := os.WriteFile(filepath.Join(sys, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeTheme(t, root, "DRRet", aoDefaultDesign,
+		"message = 10\nmessage_font = Arial\nshowname = 8\nshowname_font = Times New Roman\n")
+	th, err := Load("DRRet", []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := th.FontFiles([]string{sys})
+	if got := filepath.Base(files["message"]); got != "arial.ttf" {
+		t.Errorf("message font = %q, want arial.ttf (plain stem match)", got)
+	}
+	if got := filepath.Base(files["showname"]); got != "times.ttf" {
+		t.Errorf("showname font = %q, want times.ttf (via systemFontAliases)", got)
+	}
+	// Without the system dirs the same theme resolves NOTHING — the tier is what
+	// makes it work, not a lucky match somewhere else.
+	if got := th.FontFiles(nil); len(got) != 0 {
+		t.Errorf("FontFiles(nil) = %v, want no matches without the system tier", got)
+	}
+}
+
+// TestFontFilesPerElement is the core of #39: DIFFERENT elements resolve to
+// DIFFERENT families in one bounded walk (3DS Widescreen's shape — Igiari
+// Cyrillic for the chat surfaces, Ace Name for the name/list ones).
+func TestFontFilesPerElement(t *testing.T) {
+	root := t.TempDir()
+	writeTheme(t, root, "3DS", aoDefaultDesign, `showname = 12
+showname_font = Ace Name
+message = 24
+message_font = Igiari Cyrillic
+ic_chatlog = 12
+ic_chatlog_font = Igiari Cyrillic
+music_list = 6
+music_list_font = Ace Name
+area_list = 6
+`)
+	dir := filepath.Join(root, ThemesDirName, "3DS", "fonts")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"igiari-cyrillic.ttf", "ace_name_regular.ttf"} {
+		if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	th, err := Load("3DS", []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := th.FontFiles(nil)
+	want := map[string]string{
+		"showname":   "ace_name_regular.ttf",
+		"message":    "igiari-cyrillic.ttf",
+		"ic_chatlog": "igiari-cyrillic.ttf",
+		"music_list": "ace_name_regular.ttf",
+	}
+	for id, base := range want {
+		if got := filepath.Base(files[id]); got != base {
+			t.Errorf("%s font = %q, want %q", id, got, base)
+		}
+	}
+	// area_list declares a SIZE but no family — it must resolve to nothing rather
+	// than inherit another element's face.
+	if got, ok := files["area_list"]; ok {
+		t.Errorf("area_list resolved to %q; a familyless element must stay unmapped", got)
+	}
+	if got := th.Font("area_list"); !got.SizeSet || got.Size != 6 {
+		t.Errorf("area_list spec = %+v, want SizeSet with Size 6", got)
+	}
+}
+
+// TestFontSpecFullParse pins every per-element attribute AO2's set_font reads
+// (courtroom.cpp:1212), including the SizeSet/ColorSet flags that tell a declared
+// value apart from the parser's default — HasFont conflates the two, so a theme
+// that only sets a colour must not be read as also setting a size.
+func TestFontSpecFullParse(t *testing.T) {
+	root := t.TempDir()
+	writeTheme(t, root, "Full", aoDefaultDesign, `showname = 14
+showname_bold = 1
+showname_sharp = 1
+showname_font = Igiari
+showname_color = 1, 2, 3
+music_name_color = 4, 5, 6
+`)
+	th, err := Load("Full", []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sn := th.Font("showname")
+	if sn.Size != 14 || !sn.SizeSet || !sn.Bold || !sn.Sharp || sn.Font != "Igiari" ||
+		!sn.ColorSet || sn.Color != (RGB{1, 2, 3}) {
+		t.Errorf("showname spec = %+v", sn)
+	}
+	// Colour only: the size is the parser's default and must be flagged as such.
+	mn := th.Font("music_name")
+	if mn.SizeSet || !mn.ColorSet || mn.Color != (RGB{4, 5, 6}) {
+		t.Errorf("music_name spec = %+v, want ColorSet without SizeSet", mn)
+	}
+	// Nothing declared at all.
+	if ml := th.Font("music_list"); ml.SizeSet || ml.ColorSet || ml.Bold || ml.Sharp || ml.Font != "" {
+		t.Errorf("music_list spec = %+v, want all-unset", ml)
+	}
+}
+
+// TestFontElementsCoverAO2SetFonts pins the element list against AO2-Client's
+// Courtroom::set_fonts order — internal/ui indexes its resolved table by position
+// here, so a reorder would silently apply the wrong element's font.
+func TestFontElementsCoverAO2SetFonts(t *testing.T) {
+	want := []string{"showname", "message", "ic_chatlog", "server_chatlog", "music_list", "music_name", "area_list"}
+	if len(FontElements) != len(want) {
+		t.Fatalf("FontElements = %v, want %v", FontElements, want)
+	}
+	for i, id := range want {
+		if FontElements[i] != id {
+			t.Errorf("FontElements[%d] = %q, want %q", i, FontElements[i], id)
+		}
+	}
+}
+
 // TestFontFileNoneWhenThemeShipsNoFont: a theme with no bundled font yields "".
 func TestFontFileNoneWhenThemeShipsNoFont(t *testing.T) {
 	root := t.TempDir()

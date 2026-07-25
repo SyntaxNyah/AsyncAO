@@ -37,7 +37,7 @@ func (a *App) animFontResolver(base *ttf.Font, pct int, text string) render.Font
 	// Cheap gate: a plain single-script message with no emoji needs no per-rune resolution —
 	// coverRunes would return base for every rune anyway, so skip the whole build and let
 	// RasterizeAnimated take its single-font path. This mirrors renderRaster's covers() gate.
-	if !needEmoji && a.ctx.covers(text) {
+	if !needEmoji && a.ctx.coversFace(base, text) {
 		return nil
 	}
 	if needEmoji {

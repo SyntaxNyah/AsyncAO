@@ -1444,8 +1444,8 @@ func (a *App) measureLinkSpans(dst []oocLinkSpan, start int, rows []string, rowB
 	for k := start; k < len(dst); k++ {
 		s := dst[k]
 		row := rows[int(s.row)-rowBase]
-		font := a.ctx.LogFontFor(a.oocPct, row) // memoized; also the pick covers() reads
-		if render.NeedsEmojiFallback(row) || !a.ctx.covers(row) {
+		font := a.elemFontFor(elemServerChatlog, a.oocPct, row) // memoized; also the pick coversFace() reads
+		if render.NeedsEmojiFallback(row) || !a.ctx.coversFace(font, row) {
 			if w > start && dst[w-1].row == s.row {
 				continue // this row already collapsed to a whole-row span
 			}
@@ -1477,9 +1477,13 @@ func (a *App) oocRowLinks(li int) []oocLinkSpan {
 // rebuilds happen on new messages or resizes, never per frame.
 func (a *App) oocWrapped(width int32) []string {
 	streamer := a.d.Prefs.StreamerMode()
+	// #39: key on the RESOLVED scale (theme "server_chatlog" size × the OOC zoom),
+	// so a theme swap that only changes the point size re-wraps instead of leaving
+	// rows measured at the old size.
+	pct := a.elemPct(elemServerChatlog, a.oocPct)
 	if a.oocWrap != nil && a.oocWrapSeq == a.oocSeq && a.oocWrapEpoch == a.logViewEpoch &&
 		a.oocWrapGen == a.ctx.fontChainGen &&
-		a.oocWrapW == width && a.oocWrapPct == a.oocPct && a.oocWrapMask == streamer {
+		a.oocWrapW == width && a.oocWrapPct == pct && a.oocWrapMask == streamer {
 		return a.oocWrap
 	}
 	out := a.oocWrap[:0]
@@ -1493,7 +1497,7 @@ func (a *App) oocWrapped(width int32) []string {
 	// the row's own covering face for a plain row, the per-glyph raster's per-rune
 	// faces for an emoji / mixed-script one (#42). Hoisted so the rebuild loop
 	// doesn't re-alloc the closure per paragraph.
-	oocMeasure := func(s string) int32 { return a.logDrawnWidth(a.oocPct, s) }
+	oocMeasure := func(s string) int32 { return a.logDrawnWidth(elemServerChatlog, a.oocPct, s) }
 	for i, entry := range a.oocLog {
 		sp := ""
 		if i < len(a.oocSpeakers) {
@@ -1538,7 +1542,7 @@ func (a *App) oocWrapped(width int32) []string {
 			// to nothing, WrapMeasured treats it as unbounded).
 			probe := remaining + 1
 			var lines []string
-			if ef := a.ctx.EmojiFont(a.oocPct); ef != nil && render.NeedsEmojiFallback(trimmed) {
+			if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(trimmed) {
 				lines = render.WrapMeasured(oocMeasure, trimmed, width, probe)
 			} else {
 				lines = wrapToWidthMeasured(oocMeasure, trimmed, width, probe)
@@ -1602,7 +1606,7 @@ func (a *App) oocWrapped(width int32) []string {
 	}
 	a.oocWrap, a.oocWrapName, a.oocWrapCont, a.oocWrapSrc = out, name, cont, src
 	a.oocWrapLink, a.oocWrapLinkAt = links, linkAt
-	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, a.oocPct, streamer
+	a.oocWrapSeq, a.oocWrapW, a.oocWrapPct, a.oocWrapMask = a.oocSeq, width, pct, streamer
 	a.oocWrapEpoch = a.logViewEpoch
 	a.oocWrapGen = a.ctx.fontChainGen
 	return out
@@ -1652,9 +1656,11 @@ const icWrapMaxLinesPerEntry = 16
 // (log seq, query, width, font scale) — rebuilds on new messages,
 // searches, and resizes, never per frame.
 func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
+	// #39: key on the RESOLVED scale (theme "ic_chatlog" size × the log zoom).
+	pct := a.elemPct(elemICChatlog, a.logPct)
 	if a.icWrap != nil && a.icWrapSeq == a.icLogSeq && a.icWrapEpoch == a.logViewEpoch &&
 		a.icWrapQuery == a.logSearch &&
-		a.icWrapW == width && a.icWrapPct == a.logPct && a.icWrapGen == a.ctx.fontChainGen &&
+		a.icWrapW == width && a.icWrapPct == pct && a.icWrapGen == a.ctx.fontChainGen &&
 		a.icWrapStamp == showStamps {
 		return a.icWrap
 	}
@@ -1662,7 +1668,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 	// Per-CANDIDATE drawn-width measure, matching the IC draw row for row (the OOC
 	// log's twin), so the wrap and draw agree under a multi-face chain (#42).
 	// Hoisted once.
-	icMeasure := func(s string) int32 { return a.logDrawnWidth(a.logPct, s) }
+	icMeasure := func(s string) int32 { return a.logDrawnWidth(elemICChatlog, a.logPct, s) }
 	for _, i := range a.icLogFiltered() {
 		// Prefix the local arrival time when enabled. The stamp was formatted once
 		// on append; the only cost here is one concat per entry, and only on a wrap
@@ -1679,7 +1685,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		// per-candidate picks only see the rows that survive the row cap.
 		a.ctx.noteScript(text)
 		var wrapped []string
-		if ef := a.ctx.EmojiFont(a.logPct); ef != nil && render.NeedsEmojiFallback(text) {
+		if ef := a.ctx.EmojiFont(pct); ef != nil && render.NeedsEmojiFallback(text) {
 			wrapped = render.WrapMeasured(icMeasure, text, width, icWrapMaxLinesPerEntry)
 		} else {
 			wrapped = wrapToWidthMeasured(icMeasure, text, width, icWrapMaxLinesPerEntry)
@@ -1692,7 +1698,7 @@ func (a *App) icWrapped(width int32, showStamps bool) []icWrapLine {
 		out = []icWrapLine{} // non-nil marks the cache as populated
 	}
 	a.icWrap, a.icWrapSeq, a.icWrapQuery, a.icWrapW, a.icWrapPct, a.icWrapGen, a.icWrapStamp =
-		out, a.icLogSeq, a.logSearch, width, a.logPct, a.ctx.fontChainGen, showStamps
+		out, a.icLogSeq, a.logSearch, width, pct, a.ctx.fontChainGen, showStamps
 	a.icWrapEpoch = a.logViewEpoch
 	return out
 }
@@ -1753,14 +1759,19 @@ func fontWidth(font *ttf.Font, s string) int32 {
 //     draw in the custom face — 73% wider for OpenDyslexic — and overflowed.
 //
 // Build-time only (both wraps are cached), never the render loop.
-func (a *App) logDrawnWidth(pct int, s string) int32 {
+//
+// el is the courtroom_fonts.ini element these rows belong to, so the measure runs
+// in the SAME face and point size the draw will use even when a theme dresses
+// that element (#39) — measuring in one face and drawing in another is exactly
+// the desync #42 removed.
+func (a *App) logDrawnWidth(el themeFontElem, userPct int, s string) int32 {
 	c := a.ctx
-	primary := c.LogFontFor(pct, s) // also populates the pick covers() reads below
+	primary := a.elemFontFor(el, userPct, s) // also populates the pick coversFace() reads below
 	if primary == nil {
 		return fontWidth(nil, s) // headless Ctx: the rough per-byte stand-in
 	}
-	ef := c.EmojiFont(pct)
-	if (ef == nil || !render.NeedsEmojiFallback(s)) && c.covers(s) {
+	ef := a.elemEmoji(el, userPct)
+	if (ef == nil || !render.NeedsEmojiFallback(s)) && c.coversFace(primary, s) {
 		return fontWidth(primary, s)
 	}
 	runes := []rune(s)

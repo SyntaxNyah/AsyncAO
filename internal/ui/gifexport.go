@@ -1237,7 +1237,8 @@ func (a *App) drawGifThemedChatbox(j *gifExportJob, sc *courtroom.Scene, box sdl
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
 	}
-	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), nameX, nameY, nameW, sc.ShownameText, nameCol)
+	a.labelEmoji(a.elemFontFor(elemShowname, DefaultScalePct, sc.ShownameText), a.elemEmoji(elemShowname, DefaultScalePct), // #39: theme showname family/size
+		nameX, nameY, nameW, sc.ShownameText, nameCol)
 
 	// Rasterize once per line, wrapped to the design message width and shrunk to
 	// fit the box height (keyed by text like the default path — only one of the two
@@ -1295,7 +1296,8 @@ func (a *App) drawGifChatbox(j *gifExportJob, sc *courtroom.Scene, vp sdl.Rect) 
 	}
 	// Same covering-face pick as the live nameplate, so a non-Latin showname renders
 	// into the exported comic/video instead of tofu (ASCII names keep the chrome font).
-	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
+	a.labelEmoji(a.elemFontFor(elemShowname, DefaultScalePct, sc.ShownameText), a.elemEmoji(elemShowname, DefaultScalePct), // #39: theme showname family/size
+		box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
 
 	if j.chatRaster != nil {
 		_ = c.Ren.SetClipRect(&box) // the cap case stays inside the box, never off-frame

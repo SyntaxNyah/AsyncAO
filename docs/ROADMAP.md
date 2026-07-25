@@ -36,25 +36,40 @@ items move to `docs/FEATURES.md` as they ship.
     dropdown parity) so custom effects are selectable and sendable.
   Zero hot-path cost (cached-texture overlay blits, free when idle). The inline-code
   half is done and revert-clean, so this lands cleanly as a follow-up (v1.55.8).
-- **Per-element theme fonts (#39 follow-up).** v1.81.0 resolves a theme's
-  declared `message_font` family from the base `fonts/` folder and applies it to
-  the courtroom text (fixing "imported theme fonts are ignored"). The remaining
-  half is AO2's full granularity: `courtroom_fonts.ini` sets a font *family AND
-  point size* (plus `_bold`, `_sharp`) **per element** — `message`, `showname`,
-  `ic_chatlog`, `music_list`, the clocks, … (AO2-Client `set_font` /
-  `courtroom.cpp:1212`). Plan:
-  - Parse the full per-element `FontSpec` set at theme-apply time (the
-    `theme.Font(name)` reader already returns Size/Bold/Color/Font — extend the
-    async apply to carry every element's spec, not just `message`/`showname`
-    colours).
-  - Map the theme's absolute point size onto the client's percent-scaled chat
-    fonts without disturbing the zero-alloc raster gates or the DPI/`chatPct`
-    path (the risky part — must be measured, see `docs/PERFORMANCE.md`).
-  - Resolve each element's own `_font` family through the same base-`fonts/`
-    lookup (`theme.FontFile` / `fontDirMatch`), so showname and message can use
-    different faces.
-  Deferred deliberately from v1.81.0 to keep that release's font change low-risk;
-  the base-`fonts/` resolver it needs already landed.
+- **Per-element theme fonts — remaining attributes (#39 follow-up).** The main
+  slice **shipped**: `courtroom_fonts.ini` now drives the **family, point size and
+  bold** of `showname`, `message`, `ic_chatlog`, `server_chatlog`, `music_list`,
+  `music_name` and `area_list` in every layout variant, and the family resolver
+  gained the tiers real themes actually need (the theme's own `fonts/` subfolder,
+  a recursive base `fonts/`, and the OS font folder for a theme that just says
+  "Arial"). What is still deliberately NOT applied:
+  - **`<id>_sharp`** — AO2 renders a "sharp" element with `QFont::NoAntialias`
+    (`courtroom.cpp:1237`). It is parsed into `theme.FontSpec.Sharp` but unused:
+    honouring it needs `RenderUTF8_Solid` instead of `RenderUTF8Blended`
+    (`ui.go` `textTexture`), i.e. a new dimension on the label cache key.
+  - **`<id>_outlined` / `_outline_color` / `_outline_width`** — AO2 outlines only
+    `AOChatboxLabel` (`courtroom.cpp:1282-1290`).
+  - **Per-element COLOUR for the list surfaces.** Real themes set
+    `music_list_color = 0,0,0` / `area_list_color = 0,0,0` (DRRetribution, KFO qHD,
+    DR Theme, default) — black on AsyncAO's dark panels is invisible. The chatbox
+    `message`/`showname` ink already has the luma guard (`app.go` `avgSkinLuma`);
+    extending colour to the panels needs the same guard per panel background and
+    is its own slice. `ic_chatlog_selfname_color`, `*_sender_color`,
+    `ic_chatlog_timestamp_color` and `label_color` ride with it.
+  - **`debug_log`, `clock_N`, `ms_chatlog`, `evidence_*`** — no distinct AsyncAO
+    surface (`ms_chatlog` folds into `server_chatlog`; the debug panel is chrome).
+  - **Per-character `get_chat(p_char)` font overlay** (AO2
+    `text_file_functions.cpp:562`) — a character's `misc/` folder can override the
+    chatbox fonts; AsyncAO applies only the theme's.
+  - **Local-mount `fonts/` folders** as a resolver tier (AsyncAO's analogue of
+    AO2's `Options::mountPaths()`, `internal/assets/local.go` `Mounts()`).
+  - **Design-resolution font scaling.** AO2 multiplies its INI point sizes by a
+    FIXED user option (`Options::themeScalingFactor`, default 1.0) and does not
+    track the window, so neither do we: a theme stretched far from its design
+    resolution keeps its declared point sizes and the per-panel Ctrl+wheel zoom
+    is the user's knob. Revisit only if the field asks — it would mean folding
+    `themeLayoutCache.scaleX/scaleY` into `elemPct`, which must be quantized or a
+    drag-resize rebuilds every font set (and purges the label cache) per pixel.
 - **Screenshot annotator (#72)** — quick arrows/boxes/text on a captured
   screenshot before sharing. Deferred from the v1.50.0 batch (the studio +
   playtest-fix stream ate the session); the natural entry point is an

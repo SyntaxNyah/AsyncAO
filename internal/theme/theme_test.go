@@ -36,11 +36,18 @@ width = 714
 height = 668
 `
 
+// aoDefaultFonts mimics a real AO2 courtroom_fonts.ini: several elements, each
+// with its own size, plus a per-element family and weight (#39). Deliberately no
+// "message_font": the FontFile tests below pin that a theme declaring no family
+// for the chatbox message never adopts an arbitrary font.
 const aoDefaultFonts = `message = 9
 message_color = 255, 255, 255
 showname = 8
 showname_bold = 1
 showname_color = 0, 255, 165
+showname_font = Igiari
+ic_chatlog = 10
+music_list = 8
 `
 
 func TestThemeLoadsAO2DesignAndFonts(t *testing.T) {
@@ -70,6 +77,20 @@ func TestThemeLoadsAO2DesignAndFonts(t *testing.T) {
 	sn := th.Font("showname")
 	if sn.Size != 8 || !sn.Bold || sn.Color != (RGB{0, 255, 165}) {
 		t.Errorf("showname font = %+v", sn)
+	}
+	// #39: every element carries its own size, and the parser distinguishes a
+	// declared one from its own default.
+	if ic := th.Font("ic_chatlog"); ic.Size != 10 || !ic.SizeSet {
+		t.Errorf("ic_chatlog font = %+v, want size 10 declared", ic)
+	}
+	if ml := th.Font("music_list"); ml.Size != 8 || !ml.SizeSet {
+		t.Errorf("music_list font = %+v, want size 8 declared", ml)
+	}
+	if an := th.Font("area_list"); an.SizeSet {
+		t.Errorf("area_list font = %+v, want SizeSet false (undeclared)", an)
+	}
+	if sn.Font != "Igiari" {
+		t.Errorf("showname_font = %q, want Igiari", sn.Font)
 	}
 
 	if v, ok := th.design.GetSection("Dimensions", "width"); !ok || v != "714" {

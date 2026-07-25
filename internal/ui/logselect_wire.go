@@ -33,7 +33,7 @@ func (a *App) drawLogLineNamed(font, emojiFont *ttf.Font, x, y, wrapW int32, lin
 			// An emoji line OR a mixed-script line no single face covers skips the
 			// per-speaker split (one `font` can't do per-glyph faces) and renders whole
 			// via the raster — coverage wins over the tint/bold for the rare mixed name.
-			if (emojiFont != nil && render.NeedsEmojiFallback(line)) || !c.covers(line) {
+			if (emojiFont != nil && render.NeedsEmojiFallback(line)) || !c.coversFace(font, line) {
 				a.labelEmoji(font, emojiFont, x, y, wrapW, line, col)
 				return
 			}
@@ -127,6 +127,17 @@ func logPrefixWidth(font *ttf.Font, runes []rune, off int) int32 {
 	return int32(w)
 }
 
+// logRowFont is the face one display row of log `which` is DRAWN in. The IC and
+// OOC logs are separate courtroom_fonts.ini elements (#39) with their own point
+// sizes and families, so the selection hit-test has to ask per log — measuring
+// both with the IC log's face put the caret on the wrong glyph in the OOC one.
+func (a *App) logRowFont(which int, text string) *ttf.Font {
+	if which == logSelIC {
+		return a.elemFontFor(elemICChatlog, a.logPct, text)
+	}
+	return a.elemFontFor(elemServerChatlog, a.oocPct, text)
+}
+
 // logPointAt maps a pixel position to a selection point: the wrapped-line index
 // from the scroll-adjusted y, and the rune offset from a binary search over
 // that ONE line's prefix widths (no per-rune-per-row metrics).
@@ -143,7 +154,7 @@ func (a *App) logPointAt(which int, listX, listY, scroll, lineH, mx, my int32) s
 		li = n - 1
 	}
 	runes := []rune(a.logLineText(which, li))
-	font := a.ctx.LogFontFor(a.logPct, string(runes))
+	font := a.logRowFont(which, string(runes))
 	// A wrap continuation row draws indented (hanging indent), so its rune
 	// hit-test starts at the same offset — clicks land on what's drawn.
 	off := hitTestRune(runes, mx-listX-a.logRowIndent(which, li), func(r []rune) int32 { return logPrefixWidth(font, r, len(r)) })

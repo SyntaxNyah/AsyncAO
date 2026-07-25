@@ -759,6 +759,11 @@ type App struct {
 	themePalette    theme.Palette // last theme's chrome palette, kept so a #M3 chrome-preset change can re-overlay it
 	themeNameCol    sdl.Color
 	themeHasName    bool
+	// themeFonts is the applied theme's per-element courtroom_fonts.ini table
+	// (#39): declared point size folded to a percent, the resolved family's face
+	// slot, and <id>_bold. The ZERO table means "this theme dresses nothing",
+	// which every accessor in themefonts.go turns back into the pre-#39 path.
+	themeFonts themeFontTable
 	// Theme courtroom geometry (courtroom_design.ini): design-space rects
 	// + emote grid metrics; themeLay caches the window-scaled rects.
 	// themeRectsOrig keeps the theme's PRISTINE geometry so the layout
@@ -2185,6 +2190,15 @@ type themeApply struct {
 	probed      []string
 	inkGuard    string // readability guard verdict ("" = colors kept)
 	fontPath    string // the active theme's bundled font file (.ttf/.otf), "" = none (#6)
+
+	// Per-element courtroom_fonts.ini parity (#39): the resolved size/face/bold
+	// table plus the DISTINCT face files it points at (≤ themeFaceCap), read
+	// off-thread here so the render thread never touches disk. facePaths is the
+	// dedupe key; faceNames feeds the settings status line.
+	fontTable themeFontTable
+	faceData  [][]byte
+	facePaths []string
+	faceNames []string
 }
 
 // themeStemChatbox is the chatbox skin's stem in themeTex / T1.
@@ -7552,6 +7566,10 @@ func (a *App) applyThemeAsync() {
 			res.iniKeys = t.KeyCount()
 			res.probed = t.Dirs()
 			res.fontPath = t.FontFile() // the theme's own bundled font, if any (#6)
+			// #39: per-element families/sizes/bold (AO2-Client Courtroom::set_fonts,
+			// courtroom.cpp:1188). Both the fonts/ walks and the face reads happen
+			// here, on this goroutine — never on the render thread (hard rule 2).
+			res.buildThemeFontTable(t, systemFontDirs())
 			if msg := t.Font("message"); t.HasFont("message") {
 				res.msgCol = sdl.Color{R: msg.Color.R, G: msg.Color.G, B: msg.Color.B, A: 255}
 				res.hasMsg = true
@@ -7724,6 +7742,7 @@ func (a *App) pollThemeApply() {
 		a.themeFontFile = res.fontPath
 		a.applyFontConfig()
 	}
+	a.landThemeFonts(res)
 	line := themeApplySummary(res)
 	settings.statusLine = clampLine(line)
 	a.pushDebug(line)
@@ -7758,13 +7777,20 @@ func (a *App) ensureThemeForSession() {
 // "nothing happened" is always distinguishable from "applied fine but this
 // theme only restyles the courtroom".
 func themeApplySummary(res *themeApply) string {
+	// #39: name the font files that actually resolved, so "did the theme's font
+	// resolve?" is answerable from the status line without a rebuild — the whole
+	// reason the previous attempt couldn't be verified in the field.
+	fonts := ""
+	if len(res.faceNames) > 0 {
+		fonts = " + fonts: " + strings.Join(res.faceNames, ", ")
+	}
 	switch {
 	case res.chatboxFile != "":
-		return fmt.Sprintf("Theme %q applied: %s + %d theme images + %d INI keys (%s)",
-			res.name, res.chatboxFile, len(res.images)-1, res.iniKeys, res.chatboxDir)
+		return fmt.Sprintf("Theme %q applied: %s + %d theme images + %d INI keys%s (%s)",
+			res.name, res.chatboxFile, len(res.images)-1, res.iniKeys, fonts, res.chatboxDir)
 	case len(res.images) > 0 || res.iniKeys > 0:
-		return fmt.Sprintf("Theme %q applied: %d theme images + %d INI keys, no chatbox skin (flat panel)",
-			res.name, len(res.images), res.iniKeys)
+		return fmt.Sprintf("Theme %q applied: %d theme images + %d INI keys%s, no chatbox skin (flat panel)",
+			res.name, len(res.images), res.iniKeys, fonts)
 	default:
 		return fmt.Sprintf("Theme %q: nothing found — probed %s",
 			res.name, strings.Join(res.probed, " ; "))

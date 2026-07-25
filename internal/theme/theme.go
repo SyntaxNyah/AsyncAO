@@ -36,12 +36,40 @@ type Rect struct {
 // Valid reports whether the element carried usable dimensions.
 func (r Rect) Valid() bool { return r.W > 0 && r.H > 0 }
 
-// FontSpec is one courtroom_fonts.ini entry.
+// FontSpec is one courtroom_fonts.ini entry (AO2-Client Courtroom::set_font,
+// courtroom.cpp:1212 — "<id>" size, "<id>_font" family, "<id>_bold",
+// "<id>_sharp", "<id>_color").
 type FontSpec struct {
 	Size  int
 	Bold  bool
 	Color RGB
 	Font  string // optional "<name>_font" family (AO2); used to find a bundled .ttf
+	// Sharp mirrors "<id>_sharp = 1" — AO2 renders that element WITHOUT
+	// antialiasing (courtroom.cpp:1237, QFont::NoAntialias). Parsed for parity;
+	// AsyncAO's label cache has no solid-render dimension yet, so it is unused.
+	Sharp bool
+	// SizeSet reports that the theme actually declared "<id>" — Size otherwise
+	// carries the parser's default and must NOT override the client's own scale.
+	// ColorSet is the same signal for "<id>_color". HasFont conflates the two,
+	// so it cannot answer either question on its own.
+	SizeSet  bool
+	ColorSet bool
+}
+
+// FontElements are the courtroom_fonts.ini identifiers AsyncAO honours, in
+// AO2-Client Courtroom::set_fonts order (courtroom.cpp:1188-1210). AO2 also sets
+// "debug_log" and "clock_N"; AsyncAO has no surface for either (its debug panel
+// is chrome, and there is no themed clock widget), and "ms_chatlog" folds into
+// server_chatlog here. Order is load-bearing: internal/ui indexes its resolved
+// per-element table by position in this list.
+var FontElements = [...]string{
+	"showname",
+	"message",
+	"ic_chatlog",
+	"server_chatlog",
+	"music_list",
+	"music_name",
+	"area_list",
 }
 
 // RGB is a theme color tuple.
@@ -142,16 +170,19 @@ func (t *Theme) Font(name string) FontSpec {
 	spec := FontSpec{Size: defaultFontSize, Color: RGB{255, 255, 255}}
 	if raw, ok := t.fonts.Get(name); ok {
 		if size := atoiTrim(raw); size > 0 {
-			spec.Size = size
+			spec.Size, spec.SizeSet = size, true
 		}
 	}
 	if raw, ok := t.fonts.Get(name + "_color"); ok {
 		if c, ok := parseRGB(raw); ok {
-			spec.Color = c
+			spec.Color, spec.ColorSet = c, true
 		}
 	}
 	if raw, ok := t.fonts.Get(name + "_bold"); ok {
 		spec.Bold = raw == "1"
+	}
+	if raw, ok := t.fonts.Get(name + "_sharp"); ok {
+		spec.Sharp = raw == "1"
 	}
 	if raw, ok := t.fonts.Get(name + "_font"); ok {
 		spec.Font = strings.TrimSpace(raw)
@@ -183,75 +214,231 @@ func (t *Theme) HasFont(name string) bool {
 //     but declares no family — the original #6 case).
 //
 // The default-theme fallback dirs are skipped — only the active theme may impose
-// a font. "" = none found (keep the client font). Per-element font families and
-// sizes are not yet applied; see the release notes for the deferred slice.
+// a font. "" = none found (keep the client font). FontFileFor / FontFiles resolve
+// the OTHER elements the same way (#39).
 func (t *Theme) FontFile() string {
-	family := strings.ToLower(strings.TrimSpace(t.Font("message").Font))
-	var fallback string
-	// (1)+(3): the active theme's own directory (a bundled .ttf).
+	if p := t.FontFileFor("message", nil); p != "" {
+		return p
+	}
+	// (3): any font file bundled in the active theme's own dir — a theme that
+	// ships one .ttf but declares no family (the original #6 case). Deliberately
+	// NOT recursive: a themes/<name>/fonts/ folder holding a dozen faces must not
+	// hand an arbitrary one to the whole client.
 	for _, dir := range t.dirs {
 		if filepath.Base(dir) != t.Name {
 			continue // skip the default-theme fallback dirs
 		}
-		if m, first := fontDirMatch(dir, family); m != "" {
-			return m // file name carries the declared family — best match
-		} else if fallback == "" {
-			fallback = first
+		if f := firstFontIn(dir); f != "" {
+			return f
 		}
 	}
-	// (2): the AO base/fonts directory — a theme dir is "<root>/themes/<name>", so
-	// its base "fonts/" sibling is "<root>/fonts/". Only chased when a family is
-	// declared and the theme didn't bundle a matching file itself.
-	if family != "" {
-		seen := make(map[string]struct{}, len(t.dirs))
-		for _, dir := range t.dirs {
-			base := filepath.Dir(filepath.Dir(dir)) // <root>/themes/<name> → <root>
-			fontsDir := filepath.Join(base, "fonts")
-			if _, dup := seen[fontsDir]; dup {
-				continue
-			}
-			seen[fontsDir] = struct{}{}
-			if m, _ := fontDirMatch(fontsDir, family); m != "" {
-				return m
-			}
-		}
-	}
-	return fallback
+	return ""
 }
 
-// fontDirMatch scans dir for a .ttf/.otf whose file name carries the declared
-// font family (normalized: case-, space-, underscore- and hyphen-insensitive, so
-// "Ace Attorney" matches "ace_attorney.ttf"). It returns (match, firstFontFound):
-// match is "" when family is empty or nothing matches; firstFontFound is any font
-// file in the dir, the caller's family-less fallback.
-func fontDirMatch(dir, family string) (match, first string) {
+// fontScanMaxDepth bounds the recursive font walks. AO2-Client registers
+// <base>/fonts with an UNBOUNDED QDirIterator::Subdirectories (main.cpp:44-55);
+// a named cap keeps hard rule 4 (nothing unbounded) while covering every real
+// layout seen in the wild: <theme>/x.ttf, <theme>/fonts/x.otf,
+// <base>/fonts/<family>/x.ttf.
+const fontScanMaxDepth = 3
+
+// fontScanMaxFiles caps one resolution's total file visits, so a user who points
+// the theme root at a whole drive can't stall the off-thread theme-apply. 4096 is
+// far past any real theme pack (C:\Windows\Fonts itself holds ~400 files).
+const fontScanMaxFiles = 4096
+
+// systemFontAliases maps a declared family to its Windows font FILE stem where
+// normalizeFontKey can't bridge the two ("Times New Roman" ships as times.ttf).
+// Families whose stem already normalizes to the family (Arial, Verdana, Tahoma,
+// Georgia, Impact, Calibri, Segoe UI, Consolas) need no entry. AO2 gets these for
+// free from Qt's system font database (get_qfont, courtroom.cpp:1263); a
+// streaming client has to name them.
+var systemFontAliases = map[string]string{
+	"timesnewroman":        "times",
+	"couriernew":           "cour",
+	"comicsansms":          "comic",
+	"trebuchetms":          "trebuc",
+	"franklingothicmedium": "framd",
+	"palatinolinotype":     "pala",
+	"lucidaconsole":        "lucon",
+	"msshelldlg2":          "tahoma",
+	"msgothic":             "msgothic",
+	"microsoftsansserif":   "micross",
+}
+
+// FontFileFor resolves ONE courtroom_fonts.ini element's declared family
+// ("<id>_font") to a font file on disk. The ladder mirrors what AO2-Client gets
+// from Qt — main.cpp:44-55 registers <base>/fonts RECURSIVELY into the
+// application font database, and QFont(family) then resolves against that plus
+// the system fonts:
+//
+//  1. the ACTIVE theme's own dir, recursively (DR Theme/igiari.ttf,
+//     Lymantriina/fonts/IBMPlexSerif-Regular.otf, 3DS Widescreen/fonts/*)
+//  2. <root>/fonts for every content root, recursively
+//  3. sysDirs (the OS font folders — pass nil to skip), stem match plus
+//     systemFontAliases, which is what makes a theme declaring plain "Arial"
+//     (DRRetribution, KFO qHD) resolve at all
+//
+// "" when the element declares no family or nothing matches.
+func (t *Theme) FontFileFor(element string, sysDirs []string) string {
+	return t.FontFiles(sysDirs)[element]
+}
+
+// FontFiles resolves every FontElements entry in ONE bounded disk walk, so a
+// theme apply pays a single scan instead of one per element. Absent keys mean
+// "no family declared, or nothing matched". Off-thread only (hard rule 2).
+func (t *Theme) FontFiles(sysDirs []string) map[string]string {
+	// Collect the declared families first: a theme that names none (the common
+	// case, and every theme before AO2 2.8) must not touch the disk at all.
+	want := make(map[string]string, len(FontElements))
+	for _, id := range FontElements {
+		if fam := strings.TrimSpace(t.Font(id).Font); fam != "" {
+			want[id] = fam
+		}
+	}
+	out := map[string]string{}
+	if len(want) == 0 {
+		return out
+	}
+	idx := &fontIndex{budget: fontScanMaxFiles}
+	// (1) the ACTIVE theme's own directory tree.
+	for _, dir := range t.dirs {
+		if filepath.Base(dir) != t.Name {
+			continue // skip the default-theme fallback dirs: only the active theme imposes fonts
+		}
+		idx.scan(dir, fontScanMaxDepth)
+	}
+	// (2) <root>/fonts — a theme dir is "<root>/themes/<name>", so the AO base
+	// "fonts/" sibling is "<root>/fonts/". Deduped across roots.
+	seen := make(map[string]struct{}, len(t.dirs))
+	for _, dir := range t.dirs {
+		fontsDir := filepath.Join(filepath.Dir(filepath.Dir(dir)), "fonts")
+		if _, dup := seen[fontsDir]; dup {
+			continue
+		}
+		seen[fontsDir] = struct{}{}
+		idx.scan(fontsDir, fontScanMaxDepth)
+	}
+	resolve := func() int {
+		missing := 0
+		for id, fam := range want {
+			if out[id] != "" {
+				continue
+			}
+			if p := idx.match(fam); p != "" {
+				out[id] = p
+			} else {
+				missing++
+			}
+		}
+		return missing
+	}
+	if resolve() == 0 {
+		return out
+	}
+	// (3) the OS font folders, scanned only when something is still unresolved —
+	// so a fully self-contained theme never reads C:\Windows\Fonts.
+	for _, dir := range sysDirs {
+		idx.scan(dir, 1) // flat: the system font folder has no per-family subdirs
+	}
+	resolve()
+	return out
+}
+
+// fontEntry is one indexed font file: its NORMALIZED file stem (the comparison
+// key) and the full path.
+type fontEntry struct{ stem, path string }
+
+// fontIndex is the flat, priority-ordered list of candidate font files built by
+// one resolution pass. budget is the shared remaining file allowance
+// (fontScanMaxFiles) so the whole walk — every tier, every root — is bounded.
+type fontIndex struct {
+	ents   []fontEntry
+	budget int
+}
+
+// scan appends dir's .ttf/.otf files to the index, then recurses into its
+// sub-directories while depth allows. FILES BEFORE DIRS so a font at the theme
+// root outranks one buried in a subfolder at the same tier.
+func (idx *fontIndex) scan(dir string, depth int) {
+	if depth <= 0 || idx.budget <= 0 || dir == "" {
+		return
+	}
 	ents, err := os.ReadDir(dir)
 	if err != nil {
-		return "", ""
+		return
 	}
-	wantN := normalizeFontKey(family)
+	for _, e := range ents {
+		if e.IsDir() {
+			continue
+		}
+		if idx.budget <= 0 {
+			return
+		}
+		idx.budget--
+		name := e.Name()
+		switch strings.ToLower(filepath.Ext(name)) {
+		case ".ttf", ".otf", ".ttc":
+		default:
+			continue
+		}
+		idx.ents = append(idx.ents, fontEntry{
+			stem: normalizeFontKey(strings.TrimSuffix(name, filepath.Ext(name))),
+			path: filepath.Join(dir, name),
+		})
+	}
+	for _, e := range ents {
+		if e.IsDir() {
+			idx.scan(filepath.Join(dir, e.Name()), depth-1)
+		}
+	}
+}
+
+// match resolves a declared family to an indexed path: an EXACT normalized stem
+// match first (so "Igiari" can't lose to "igiari-cyrillic.ttf"), then a stem that
+// CONTAINS the family ("IBM Plex Serif" → "IBMPlexSerif-Regular.otf"), then the
+// same two passes through systemFontAliases. "" when nothing matches.
+func (idx *fontIndex) match(family string) string {
+	want := normalizeFontKey(family)
+	if want == "" {
+		return ""
+	}
+	cands := [2]string{want, systemFontAliases[want]}
+	for _, w := range cands {
+		if w == "" {
+			continue
+		}
+		for _, e := range idx.ents {
+			if e.stem == w {
+				return e.path
+			}
+		}
+		for _, e := range idx.ents {
+			if strings.Contains(e.stem, w) {
+				return e.path
+			}
+		}
+	}
+	return ""
+}
+
+// firstFontIn returns any .ttf/.otf directly inside dir (no recursion) — the
+// family-less fallback for a theme that simply bundles one font file.
+func firstFontIn(dir string) string {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
 	for _, e := range ents {
 		if e.IsDir() {
 			continue
 		}
 		switch strings.ToLower(filepath.Ext(e.Name())) {
 		case ".ttf", ".otf":
-		default:
-			continue
-		}
-		full := filepath.Join(dir, e.Name())
-		if first == "" {
-			first = full
-		}
-		if wantN == "" {
-			continue
-		}
-		stemN := normalizeFontKey(strings.TrimSuffix(e.Name(), filepath.Ext(e.Name())))
-		if stemN == wantN || strings.Contains(stemN, wantN) {
-			return full, first
+			return filepath.Join(dir, e.Name())
 		}
 	}
-	return "", first
+	return ""
 }
 
 // normalizeFontKey folds a font family or file stem to a comparison key:

@@ -1987,7 +1987,9 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 	// Authored skin art (theme OR per-character) keeps its box (stretching looks wrong). Grows
 	// UPWARD from the current bottom edge, capped inside grownChatBoxH.
 	if _, hasSkin := a.themePage(themeStemChatbox); !hasSkin && charSkin == nil {
-		lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
+		// #39: the theme's "message" point size decides the line height, so a
+		// theme-sized message grows the flat panel by the right amount.
+		lineH := int32(a.messageFontFor(a.messagePct(), sc.MessageText).Height())
 		if g := grownChatBoxH(box.H, vp.H, int32(a.chatMsgLines(box.W-16, sc)), lineH); g > box.H {
 			box.Y -= g - box.H
 			box.H = g
@@ -2042,12 +2044,15 @@ func (a *App) drawChatOverlay(vp sdl.Rect, movableBox bool, w, h int32) {
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
 	}
 	// Pick a covering face for the showname (a Tifinagh / Cyrillic NAME would tofu on
-	// the fixed chrome font); ChatFontFor returns the chrome font for ASCII, so plain
-	// names are unchanged. DefaultScalePct matches the emoji face size below.
-	if a.d.Prefs.BoldNamesOn() { // faux-bold the showname (1px-shifted second pass) for readability — default on
-		a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), box.X+9, box.Y+4, box.W-16, sc.ShownameText, nameCol)
+	// the fixed chrome font); elemFontFor returns the chat set's chrome-sized face for
+	// a theme that says nothing, so plain names are unchanged. #39: a theme's
+	// "showname"/"showname_font"/"showname_bold" now drive size, family and weight.
+	snFont := a.elemFontFor(elemShowname, DefaultScalePct, sc.ShownameText)
+	snEmoji := a.elemEmoji(elemShowname, DefaultScalePct)
+	if a.d.Prefs.BoldNamesOn() || a.elemBold(elemShowname) { // faux-bold the showname (1px-shifted second pass) for readability — default on
+		a.labelEmoji(snFont, snEmoji, box.X+9, box.Y+4, box.W-16, sc.ShownameText, nameCol)
 	}
-	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
+	a.labelEmoji(snFont, snEmoji, box.X+8, box.Y+4, box.W-16, sc.ShownameText, nameCol)
 
 	wrapW := box.W - 16
 	a.ensureChatRaster(wrapW, themeSkinned) // theme ink only with the THEME's skin; char skins keep our readable text
@@ -2199,7 +2204,7 @@ func (a *App) drawChatSelHighlight(x, y, wrapW int32, sc *courtroom.Scene) {
 	c := a.ctx
 	m := a.msRaster
 	if m == nil { // animated message (msAnim): whole-block highlight
-		lineH := int32(c.ChatFontFor(a.chatPct, sc.MessageText).Height())
+		lineH := int32(a.messageFontFor(a.messagePct(), sc.MessageText).Height()) // #39: theme "message" size
 		c.Fill(sdl.Rect{X: x, Y: y, W: wrapW, H: int32(a.chatMsgLines(wrapW, sc)) * lineH}, a.highlightFill())
 		return
 	}
@@ -2277,13 +2282,17 @@ func (a *App) chatMsgLines(wrapW int32, sc *courtroom.Scene) int {
 func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	sc := a.renderScene() // matches drawChatOverlay (live / slideshow / replay scene)
 	effSig := effectsSig(sc.MessageEffects)
+	// #39: the RESOLVED message scale (the theme's declared point size folded with
+	// the Text zoom knob). It is what the raster is built at AND what rasterScale
+	// remembers, so a theme swap that changes the size re-rasters exactly once.
+	pct := a.messagePct()
 	// staleAnimChain: an effects line built BEFORE a lazily-loaded CJK/emoji tier landed
 	// carries the old font-chain generation; its glyphs are still tofu/uniform-advance until
 	// it re-rasters against the new chain. Keyed on fontChainGen the same way the log wrap
 	// caches are (qol.go) — Task E. Cheap field compare; only the effects path builds msAnim.
 	staleAnimChain := a.msAnim != nil && a.msAnim.ChainGen() != a.ctx.fontChainGen
 	if !staleAnimChain && (a.msRaster != nil || a.msAnim != nil) && a.rasterRaw == sc.MessageRaw && a.rasterText == sc.MessageText && a.rasterColor == sc.TextColor &&
-		a.rasterScale == a.chatPct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered &&
+		a.rasterScale == pct && a.rasterW == wrapW && a.rasterSkinned == skinned && a.rasterEffSig == effSig && a.rasterCentered == sc.Centered &&
 		a.rasterDevPct == a.ctx.textDevPct { // #77: a UI-scale change re-rasterizes at the new device size
 		return
 	}
@@ -2305,12 +2314,12 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 		if a.glyphCache == nil {
 			a.glyphCache = render.NewGlyphCache(glyphCacheCap)
 		}
-		anim, font := renderAnimated(a, sc, wrapW, skinned, a.chatPct)
+		anim, font := renderAnimated(a, sc, wrapW, skinned, pct)
 		anim.Warm(a.ctx.Ren, a.glyphCache, font) // render all glyphs up front → 0-alloc draws
 		a.msAnim = anim
 		a.msAnimFont = font
 	} else {
-		raster, err := renderRaster(a, sc, wrapW, skinned, a.chatPct, false)
+		raster, err := renderRaster(a, sc, wrapW, skinned, pct, false)
 		if err != nil {
 			return
 		}
@@ -2319,7 +2328,7 @@ func (a *App) ensureChatRaster(wrapW int32, skinned bool) {
 	a.rasterText = sc.MessageText
 	a.rasterRaw = sc.MessageRaw
 	a.rasterColor = sc.TextColor
-	a.rasterScale = a.chatPct
+	a.rasterScale = pct
 	a.rasterW = wrapW
 	a.rasterSkinned = skinned
 	a.rasterEffSig = effSig
@@ -2652,7 +2661,12 @@ func (a *App) easeICScroll(maxScroll int32, snap bool) int32 {
 // and the themed ic_chatlog element.
 func (a *App) drawICLogList(list sdl.Rect) {
 	c := a.ctx
-	font := c.LogFont(a.logPct)
+	// #39: the theme's "ic_chatlog" size/family/bold, folded with the log zoom.
+	// icPct is the RESOLVED scale — everything below (the wrap cache key, the
+	// per-row pick, the emoji face) must use the same one or the wrap and the draw
+	// disagree (the #42 class of bug).
+	icPct := a.elemPct(elemICChatlog, a.logPct)
+	font := a.elemFont(elemICChatlog, a.logPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so a continuation row (drawn at
@@ -2702,7 +2716,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 	// Per-speaker name colours (read once): tint each entry's name prefix on its
 	// first wrapped row. Short-circuit so the default OFF path adds nothing.
 	nameColorsOn := a.d.Prefs.NameColorsOn()
-	boldNames := a.d.Prefs.BoldNamesOn() // read once per frame, passed per line
+	boldNames := a.d.Prefs.BoldNamesOn() || a.elemBold(elemICChatlog) // read once per frame, passed per line (#39: ic_chatlog_bold)
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -2760,7 +2774,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				col = render.TextColor(ecol)
 			}
 			rowRect := sdl.Rect{X: list.X, Y: y, W: wrapW, H: lineH}
-			font := c.LogFontFor(a.logPct, row.text)
+			font := a.elemFontFor(elemICChatlog, a.logPct, row.text)
 			// A highlighted friend's line glows (warm tint behind it), gated on
 			// the master toggle + the entry flag — a no-friend log is byte-
 			// identical to before. A `name=hex` entry recolors the glow per
@@ -2797,7 +2811,7 @@ func (a *App) drawICLogList(list sdl.Rect) {
 				lineSpeaker = a.icLog[row.entry].speaker
 			}
 			indent := a.logRowIndent(logSelIC, ri) // continuation rows hang right of their first row
-			a.drawLogLineNamed(font, c.EmojiFont(a.logPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
+			a.drawLogLineNamed(font, c.EmojiFont(icPct), list.X+indent, y, wrapW-indent, row.text, lineSpeaker, col, nameColorsOn, nameSat, nameVal, boldNames)
 			if u := a.icLog[row.entry].url; u != "" {
 				if c.hovering(rowRect) {
 					c.Tooltip(rowRect, "Open "+u)
@@ -2865,14 +2879,16 @@ func (a *App) drawICLogList(list sdl.Rect) {
 // identity fields).
 func (a *App) drawOOCLogList(list sdl.Rect) {
 	c := a.ctx
-	font := c.LogFont(a.oocPct)
+	// #39: the theme's "server_chatlog" size/family/bold (AO2 folds ms_chatlog in
+	// here), folded with the OOC zoom.
+	font := a.elemFont(elemServerChatlog, a.oocPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
-	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.NameColorsOn()       // per-speaker OOC name colours (read once)
-	boldNames := a.d.Prefs.BoldNamesOn()           // read once per frame, passed per line
+	lines := a.oocWrapped(wrapW - logWrapIndentPx)                        // MOTDs wrap — never truncate
+	nameColorsOn := a.d.Prefs.NameColorsOn()                              // per-speaker OOC name colours (read once)
+	boldNames := a.d.Prefs.BoldNamesOn() || a.elemBold(elemServerChatlog) // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -2912,7 +2928,7 @@ func (a *App) drawOOCLogList(list sdl.Rect) {
 			break
 		}
 		if y >= list.Y-lineH {
-			font := c.LogFontFor(a.oocPct, line)
+			font := a.elemFontFor(elemServerChatlog, a.oocPct, line)
 			// Selection highlight sits under the text.
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
 			sp := ""
@@ -2997,7 +3013,7 @@ func (a *App) oocRowLinkActions(hoverSpan, li int, rowRect sdl.Rect, textX, y, l
 // was; a hovered link costs at most two extra clipped draws on its rows.
 func (a *App) drawOOCLogRow(list sdl.Rect, li int, font *ttf.Font, x, y, textW int32, line, sp string, hoverID int32, nameOn bool, sat, val float64, bold bool) {
 	c := a.ctx
-	ef := c.EmojiFont(a.oocPct)
+	ef := a.elemEmoji(elemServerChatlog, a.oocPct) // #39: baseline must match the row's resolved text scale
 	spans := a.oocRowLinks(li)
 	if hoverID < 0 || len(spans) == 0 {
 		a.drawLogLineNamed(font, ef, x, y, textW, line, sp, ColText, nameOn, sat, val, bold)
@@ -3084,14 +3100,17 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 	fieldsH := nFields*(fH+6) + 4
 	list := sdl.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H - fieldsH}
 
-	font := c.LogFont(a.oocPct)
+	// #39: same "server_chatlog" resolution as drawOOCLogList — this is the OTHER
+	// copy of the OOC scrollback (the clean right-column box / docked OOC tab), and
+	// a fix that lands in only one of the two is a silent miss.
+	font := a.elemFont(elemServerChatlog, a.oocPct)
 	lineH := int32(font.Height()) + 2
 	wrapW := list.W - scrollBarW - scrollBarGap
 	// Wrap against the indented width so a continuation row (drawn at
 	// +logWrapIndentPx) can never overflow the column.
-	lines := a.oocWrapped(wrapW - logWrapIndentPx) // MOTDs wrap — never truncate
-	nameColorsOn := a.d.Prefs.NameColorsOn()       // per-speaker OOC name colours (read once)
-	boldNames := a.d.Prefs.BoldNamesOn()           // read once per frame, passed per line
+	lines := a.oocWrapped(wrapW - logWrapIndentPx)                        // MOTDs wrap — never truncate
+	nameColorsOn := a.d.Prefs.NameColorsOn()                              // per-speaker OOC name colours (read once)
+	boldNames := a.d.Prefs.BoldNamesOn() || a.elemBold(elemServerChatlog) // read once per frame, passed per line
 	var nameSat, nameVal float64
 	if nameColorsOn {
 		nameSat = float64(a.d.Prefs.NameColorSat()) / 100
@@ -3133,7 +3152,7 @@ func (a *App) drawOOCPanel(r sdl.Rect, withInput bool) {
 			break
 		}
 		if y >= list.Y-lineH {
-			font := c.LogFontFor(a.oocPct, line)
+			font := a.elemFontFor(elemServerChatlog, a.oocPct, line)
 			a.drawLogSelHighlight(logSelOOC, li, list.X, y, wrapW, lineH, line, font)
 			sp := ""
 			if li < len(a.oocWrapName) {
@@ -3212,8 +3231,11 @@ func (row areaWrapRow) lineCount() int32 {
 // never per frame (mirrors icWrapped in qol.go).
 func (a *App) areaWrapped(font *ttf.Font, cardW int32) []areaWrapRow {
 	query := strings.ToLower(strings.TrimSpace(a.areaSearch))
+	// #39: key on the RESOLVED scale (theme "area_list" size × the area zoom), not
+	// the raw zoom — a theme swap that only changes the point size must re-wrap.
+	pct := a.elemPct(elemAreaList, a.areaPct)
 	if a.areaWrap != nil && a.areaWrapSeq == a.areaInfoSeq && a.areaWrapQuery == query &&
-		a.areaWrapCardW == cardW && a.areaWrapPct == a.areaPct && a.areaWrapGen == a.ctx.fontChainGen {
+		a.areaWrapCardW == cardW && a.areaWrapPct == pct && a.areaWrapGen == a.ctx.fontChainGen {
 		return a.areaWrap
 	}
 	shown := len(a.sess.Areas)
@@ -3264,7 +3286,7 @@ func (a *App) areaWrapped(font *ttf.Font, cardW int32) []areaWrapRow {
 		})
 	}
 	a.areaWrap, a.areaWrapSeq, a.areaWrapQuery, a.areaWrapCardW, a.areaWrapPct, a.areaWrapGen =
-		out, a.areaInfoSeq, query, cardW, a.areaPct, a.ctx.fontChainGen
+		out, a.areaInfoSeq, query, cardW, pct, a.ctx.fontChainGen
 	return a.areaWrap
 }
 
@@ -3354,7 +3376,9 @@ func (a *App) drawAreaList(r sdl.Rect) {
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
 		a.areaScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	font := c.LogFont(a.areaPct) // area-list zoom, independent of the IC log
+	// #39: the theme's "area_list" size/family, folded with the area zoom.
+	font := a.elemFont(elemAreaList, a.areaPct) // area-list zoom, independent of the IC log
+	areaBold := a.elemBold(elemAreaList)        // area_list_bold → the faux-bold second pass
 	subH := int32(font.Height())
 	cardW := r.W - scrollBarW - scrollBarGap - 4
 	rows := a.areaWrapped(font, cardW) // word-wrapped name/detail text (Issue #22), cached
@@ -3406,6 +3430,9 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			c.Border(card, border)
 			ny := card.Y + 3
 			for _, line := range row.nameLines {
+				if areaBold {
+					c.LabelClippedFont(font, card.X+7, ny, card.W-12, line, nameCol)
+				}
 				c.LabelClippedFont(font, card.X+6, ny, card.W-12, line, nameCol)
 				ny += subH
 			}
@@ -3414,6 +3441,9 @@ func (a *App) drawAreaList(r sdl.Rect) {
 			}
 			dy := ny + 2
 			for _, line := range row.detailLines {
+				if areaBold {
+					c.LabelClippedFont(font, card.X+19, dy, card.W-24, line, ColTextDim)
+				}
 				c.LabelClippedFont(font, card.X+18, dy, card.W-24, line, ColTextDim)
 				dy += subH
 			}
@@ -4530,12 +4560,24 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	if a.room != nil {
 		now = a.room.Scene.MusicTrack
 	}
+	// #39: "music_name" is AO2's own id for this line (Courtroom::set_fonts,
+	// courtroom.cpp:1201). elemLabelFont keeps the fixed chrome face when the theme
+	// says nothing, so an undressed client draws exactly what it did before; real
+	// themes set music_name_bold = 1, hence the faux-bold second pass.
+	nameFont := a.elemLabelFont(elemMusicName, DefaultScalePct)
 	if now != "" {
 		// Same short name the list rows and the IC "has played a song" line use
 		// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
-		c.LabelClipped(r.X+98, r.Y+6, r.W-98-104, "Now playing: "+courtroom.MusicDisplayName(now), ColAccent)
+		label := "Now playing: " + courtroom.MusicDisplayName(now)
+		if a.elemBold(elemMusicName) {
+			c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, label, ColAccent)
+		}
+		c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, label, ColAccent)
 	} else {
-		c.Label(r.X+98, r.Y+6, "Nothing playing", ColTextDim)
+		if a.elemBold(elemMusicName) {
+			c.LabelClippedFont(nameFont, r.X+99, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
+		}
+		c.LabelClippedFont(nameFont, r.X+98, r.Y+6, r.W-98-104, "Nothing playing", ColTextDim)
 	}
 	r.Y += 28
 	r.H -= 28
@@ -4577,7 +4619,10 @@ func (a *App) drawMusicList(r sdl.Rect) {
 	if !c.ctrlHeld { // ctrl+wheel resizes text (musicPct), never scrolls
 		a.musicScroll -= c.WheelIn(r) * scrollStepPx
 	}
-	font := c.LogFont(a.musicPct) // independent of the IC log scale
+	// #39: the theme's "music_list" size/family, folded with the music zoom
+	// (independent of the IC log scale).
+	font := a.elemFont(elemMusicList, a.musicPct)
+	musicBold := a.elemBold(elemMusicList) // music_list_bold → the faux-bold second pass
 	lineH := int32(font.Height()) + 10
 	a.refreshMusicGroups(query) // grouped + (search: auto-expanded) row layout — cached, see screens.go
 	rows := a.musicRows
@@ -4604,7 +4649,11 @@ func (a *App) drawMusicList(r sdl.Rect) {
 				if a.musicCollapsed[mr.ti] {
 					glyph = "[+] " // collapsed
 				}
-				c.LabelClippedFont(font, r.X+4, y+4, row.W-8, glyph+musicCategoryLabel(entry), ColAccent)
+				header := glyph + musicCategoryLabel(entry)
+				if musicBold {
+					c.LabelClippedFont(font, r.X+5, y+4, row.W-8, header, ColAccent)
+				}
+				c.LabelClippedFont(font, r.X+4, y+4, row.W-8, header, ColAccent)
 				if c.ClickedIn(row) { // toggle just this category, not a track request
 					if a.musicCollapsed == nil {
 						a.musicCollapsed = make(map[int]bool)
@@ -4625,7 +4674,11 @@ func (a *App) drawMusicList(r sdl.Rect) {
 				// whole wire entry. The click below still sends `entry` VERBATIM: the
 				// display is a pure substring, the MC packet and the music URL are
 				// built from the raw name.
-				c.LabelClippedFont(font, r.X+20, y+4, row.W-24, courtroom.MusicDisplayName(entry), ColText) // indented under its category, tree-style
+				display := courtroom.MusicDisplayName(entry)
+				if musicBold {
+					c.LabelClippedFont(font, r.X+21, y+4, row.W-24, display, ColText)
+				}
+				c.LabelClippedFont(font, r.X+20, y+4, row.W-24, display, ColText) // indented under its category, tree-style
 				if hover {
 					c.Tooltip(row, entry) // the RAW entry on hover — the full path is still one hover away
 				}
@@ -6873,10 +6926,13 @@ func (a *App) handleChatCommand(text string) bool {
 func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct int, comicInk bool) (*render.MessageRaster, error) {
 	// The chat zoom font: rebuilt only when the Text knob changes.
 	col := chatBaseColor(a, sc, skinned, comicInk)
-	// Per-message font pick at the given scale (pct): the override chain's first
-	// covering font (CJK fallback), the embedded font otherwise. The live chatbox
-	// passes a.chatPct; the export passes a size fitted to the capture frame.
-	logFont := a.ctx.ChatFontFor(pct, sc.MessageText)
+	// Per-message font pick at the given scale (pct): the theme's "message" family
+	// when it declares one (#39), else the override chain's first covering font
+	// (CJK fallback) / the embedded font. The live chatbox passes the RESOLVED
+	// message scale; the export passes a size fitted to the capture frame — so an
+	// export gets the theme's family without its point size overriding a size
+	// already fitted to the frame.
+	logFont := a.messageFontFor(pct, sc.MessageText)
 	// #77: rasterize with the DEVICE-scaled sibling at the ambient device scale so
 	// the LIVE chatbox is crisp at UI scale. Exports run with textDevPct BRACKETED
 	// to 100 for the whole session (see beginExportScaleBracket), so this ambient
@@ -6890,7 +6946,7 @@ func renderRaster(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct in
 	// Gated cheaply so PLAIN single-script messages (the overwhelming common case)
 	// never reach here and stay on the untouched fast paths below — zero change.
 	needEmoji := render.NeedsEmojiFallback(sc.MessageText)
-	if needEmoji || !a.ctx.covers(sc.MessageText) {
+	if needEmoji || !a.ctx.coversFace(logFont, sc.MessageText) {
 		if needEmoji {
 			a.ensureEmojiFontLoad() // kick off the one off-thread system-emoji read
 		}
@@ -6960,7 +7016,7 @@ func renderAnimated(a *App, sc *courtroom.Scene, wrapW int32, skinned bool, pct 
 	// renderer's SetScale bilinearly stretches it (correctly-sized, still soft at
 	// >100%). Static / emoji / plain messages ARE crisp; an EFFECTS message stays
 	// soft until the follow-up. Clean seam: msAnim XOR msRaster, one per message.
-	font := a.ctx.ChatFontFor(pct, sc.MessageText)
+	font := a.messageFontFor(pct, sc.MessageText) // #39: the theme's "message" family, if it names one
 	// Per-rune fallback resolver (Task E): an effects line resolves each rune's face the
 	// SAME way a plain message does — the covering CJK/broad face for scripts the chat font
 	// lacks, the colour-emoji face for emoji — so emoji stop rendering as tofu and CJK stops

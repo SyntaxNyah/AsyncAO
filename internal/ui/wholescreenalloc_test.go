@@ -156,6 +156,36 @@ func TestDrawCourtroomZeroAlloc(t *testing.T) {
 	}
 }
 
+// TestDrawCourtroomThemeFontsZeroAlloc is the same gate with a THEME's
+// per-element font table applied (#39): distinct sizes on the chatbox, the IC
+// log, the OOC log, the music list and the area list, plus bold on two of them.
+// It proves the per-element accessors add nothing per frame — elemPct is
+// arithmetic on a fixed array, the element fontSets are built once and then
+// cached, and setPairs (walked by setOf / deviceTextFont) returns a stack array
+// rather than a fresh slice.
+func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
+	a, cleanup := stageSettledCourtroom(t)
+	defer cleanup()
+
+	// Sizes deliberately DIFFER per element: one shared fontSet would rebuild —
+	// and purgeTextCache — every frame, which would read as a huge alloc count.
+	a.themeFonts.e[elemShowname] = themeElemFont{pct: themeFontPct(14), bold: true}
+	a.themeFonts.e[elemMessage] = themeElemFont{pct: themeFontPct(13)}
+	a.themeFonts.e[elemICChatlog] = themeElemFont{pct: themeFontPct(11)}
+	a.themeFonts.e[elemServerChatlog] = themeElemFont{pct: themeFontPct(9)}
+	a.themeFonts.e[elemMusicList] = themeElemFont{pct: themeFontPct(8), bold: true}
+	a.themeFonts.e[elemMusicName] = themeElemFont{pct: themeFontPct(10)}
+	a.themeFonts.e[elemAreaList] = themeElemFont{pct: themeFontPct(9)}
+
+	const w, h = 1280, 720
+	draw := func() { a.drawCourtroom(w, h) }
+	settle(draw)
+
+	if n := testing.AllocsPerRun(200, draw); n != 0 {
+		t.Fatalf("a settled themed-font drawCourtroom allocates %.1f/op, want 0 — the per-element font path leaks (fix the alloc, don't loosen the gate)", n)
+	}
+}
+
 // TestDrawLobbyZeroAlloc is the companion gate for the lobby (the first screen).
 func TestDrawLobbyZeroAlloc(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)

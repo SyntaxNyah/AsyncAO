@@ -811,10 +811,20 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	if a.d.Prefs.NameColorsOn() { // per-speaker name colour wins over accent/theme
 		nameCol = nameColor(sc.ShownameText, float64(a.d.Prefs.NameColorSat())/100, float64(a.d.Prefs.NameColorVal())/100)
 	}
-	// Clipped: a long showname must never spill past the theme's box. ChatFontFor (not
+	// Clipped: a long showname must never spill past the theme's box. elemFontFor (not
 	// the fixed chrome font) so a non-Latin name resolves to a covering face; emoji-aware
-	// so a colour-emoji name renders the glyphs, not tofu.
-	a.labelEmoji(c.ChatFontFor(DefaultScalePct, sc.ShownameText), c.EmojiFont(DefaultScalePct), nameX, nameY, nameW, sc.ShownameText, nameCol)
+	// so a colour-emoji name renders the glyphs, not tofu. #39: the theme's own
+	// showname family / point size / bold, matching the classic overlay.
+	snFont := a.elemFontFor(elemShowname, DefaultScalePct, sc.ShownameText)
+	snEmoji := a.elemEmoji(elemShowname, DefaultScalePct)
+	// Only the THEME's showname_bold adds the faux-bold pass here. The classic
+	// overlay also honours the client's "Bold names" pref; the themed box never
+	// has, and quietly turning that on for every themed user is a look change
+	// nobody asked for — kept out of #39's scope deliberately.
+	if a.elemBold(elemShowname) {
+		a.labelEmoji(snFont, snEmoji, nameX+1, nameY, nameW, sc.ShownameText, nameCol)
+	}
+	a.labelEmoji(snFont, snEmoji, nameX, nameY, nameW, sc.ShownameText, nameCol)
 
 	a.ensureChatRaster(wrapW, skinned)
 	// Text selection works on the themed chatbox too (drag a range / dbl-click
