@@ -117,8 +117,24 @@ func TestKeepaliveGoroutineSends(t *testing.T) {
 			t.Fatalf("keepalive goroutine sent only %d CH pings; it must fire off the render loop", got)
 		}
 	}
-	if s := conn.Stats(); s.Sent < 3 {
-		t.Errorf("sent = %d, want ≥3 pings all from the goroutine (client never called Send)", s.Sent)
+	// Stats is EVENTUALLY consistent with the echoes above, so poll it rather than
+	// reading it once. keepaliveLoop increments sent AFTER ws.Write returns (a
+	// failed write must not count), while an echo only needs the write to have
+	// returned — so the goroutine can be descheduled between those two steps and
+	// the echo can arrive first. Reading Stats immediately raced that gap and
+	// flaked on loaded CI runners; the 5 s bound still fails fast if the goroutine
+	// genuinely isn't sending.
+	deadline = time.After(5 * time.Second)
+	for {
+		s := conn.Stats()
+		if s.Sent >= 3 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("sent = %d, want ≥3 pings all from the goroutine (client never called Send)", s.Sent)
+		case <-time.After(5 * time.Millisecond):
+		}
 	}
 }
 
