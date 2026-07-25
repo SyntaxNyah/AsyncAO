@@ -74,6 +74,65 @@ func TestWitchesIPIDFromPlayerlist(t *testing.T) {
 	}
 }
 
+// TestPUIPIDField pins the dedicated PU type-4 IPID field: the clean way for a
+// server to stream a mod-only IPID, versus the witches fork's trick of smuggling
+// it into the name. 2.11 addresses PU by position, so adding a type is backward
+// compatible — and because the type is unambiguous there is NO per-family gate
+// and no token validation (Athena/Nyathena IPIDs are long base64-ish strings,
+// not the 8 hex chars splitTrailingIPID expects).
+func TestPUIPIDField(t *testing.T) {
+	newSrv := func(sw string) *Session {
+		s := NewSession(func(protocol.Packet) error { return nil }, "hdid")
+		s.Software = sw
+		feed(t, s, "PR#7#0#%")
+		return s
+	}
+
+	// 1. Works on a family that is NOT WAP — the whole point of a dedicated field.
+	//    Uses a real Nyathena-shaped IPID (base64-ish, 22 chars) that the
+	//    name-embedded peeler would reject outright.
+	s := newSrv("Athena")
+	feed(t, s, "PU#7#4#VJjbcvBuaT42EJtE7qIPEA#%")
+	if p := s.players[7]; p.IPID != "VJjbcvBuaT42EJtE7qIPEA" {
+		t.Fatalf("dedicated field: IPID %q, want VJjbcvBuaT42EJtE7qIPEA", p.IPID)
+	}
+
+	// 2. It must not disturb the other fields.
+	feed(t, s, "PU#7#0#skibi#%")
+	feed(t, s, "PU#7#2#Phoenix#%")
+	if p := s.players[7]; p.OOCName != "skibi" || p.Showname != "Phoenix" || p.IPID != "VJjbcvBuaT42EJtE7qIPEA" {
+		t.Fatalf("after name/showname: OOC %q showname %q IPID %q", p.OOCName, p.Showname, p.IPID)
+	}
+
+	// 3. Sticky: an empty type-4 (a server that stops sending it, or a non-mod
+	//    recipient) must not wipe an IPID a mod already holds.
+	feed(t, s, "PU#7#4##%")
+	if p := s.players[7]; p.IPID != "VJjbcvBuaT42EJtE7qIPEA" {
+		t.Fatalf("empty type-4 cleared the IPID: %q", p.IPID)
+	}
+
+	// 4. Wire-escaped like every other text field.
+	s2 := newSrv("Nyathena")
+	feed(t, s2, "PU#7#4#ab<percent>cd#%")
+	if p := s2.players[7]; p.IPID != "ab%cd" {
+		t.Fatalf("escaping: IPID %q, want ab%%cd", p.IPID)
+	}
+
+	// 5. An UNKNOWN type is ignored, not misfiled — that is what makes adding
+	//    type 4 safe for older clients in the first place.
+	s3 := newSrv("Athena")
+	feed(t, s3, "PU#7#99#garbage#%")
+	if p := s3.players[7]; p.IPID != "" || p.OOCName != "" || p.Showname != "" {
+		t.Fatalf("unknown type leaked: %+v", p)
+	}
+
+	// 6. PR REMOVE still drops the row, so a recycled UID can't inherit an IPID.
+	feed(t, s, "PR#7#1#%")
+	if _, ok := s.players[7]; ok {
+		t.Fatal("PR REMOVE must delete the row")
+	}
+}
+
 // TestSplitTrailingIPID unit-pins the pure peeler across the shapes WAP emits and
 // the ones it must ignore.
 func TestSplitTrailingIPID(t *testing.T) {

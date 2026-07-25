@@ -263,11 +263,25 @@ const (
 )
 
 // PU field types — PU#<id>#<type>#<data>#% (akashi PacketPU::DATA_TYPE).
+//
+// puIPID is an EXTENSION past akashi's four types. 2.11 defines PU by field
+// POSITION, so a server can add a type without breaking any client that doesn't
+// know it: an unknown type falls through the switch below and is ignored. It
+// carries the mod-only IPID as its own field instead of smuggling it inside the
+// name (the witches-fork trick handled under puOOCName), which is why it needs
+// no per-family gate — a dedicated type can't be confused with a player whose
+// OOC name merely ends in brackets, so the wrong-target-ban hazard that forced
+// embedsIPIDInName's gating cannot arise here.
+//
+// Whether a client is ALLOWED to see this is the server's decision, not ours:
+// PU is sent per recipient, so a server sends the IPID-bearing update only to
+// clients it has authenticated as moderators. We simply store what we are told.
 const (
 	puOOCName  = 0
 	puChar     = 1
 	puShowname = 2
 	puAreaID   = 3
+	puIPID     = 4
 )
 
 // ipidHexMin / ipidHexMax bound the parenthesised IPID token the witches-akashi-
@@ -628,6 +642,16 @@ func (s *Session) HandlePacket(p protocol.Packet) []Event {
 			pl.Showname = protocol.DecodeField(p.Field(2))
 		case puAreaID:
 			pl.AreaID = atoiOr(p.Field(2), 0)
+		case puIPID:
+			// Dedicated mod-only IPID field (see puIPID). Sticky like the
+			// name-embedded form: a server that sends it once per player must not
+			// have it cleared by a later update that omits it. Format is opaque —
+			// akashi uses 8 hex chars, Athena/Nyathena a longer base64-ish token —
+			// so unlike splitTrailingIPID there is nothing to validate beyond
+			// "non-empty", precisely because a dedicated field is unambiguous.
+			if ipid := protocol.DecodeField(p.Field(2)); ipid != "" {
+				pl.IPID = ipid
+			}
 		}
 		return []Event{{Kind: EventPlayersUpdated}}
 

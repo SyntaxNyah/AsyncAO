@@ -41,7 +41,7 @@ then percent-decoded *again* per sub-element (AO legacy double decode).
 | `DONE` | — | joined; char select usable |
 | `CharsCheck#…` | — | taken flags (`-1` = taken) |
 | `PR#<id>#<type>` | — | live player roster change: type `0` join, `1` leave (PlayerStateObserver; streamed from connect, no opt-in) |
-| `PU#<id>#<type>#<data>` | — | live player field: type `0` OOC name, `1` char folder, `2` showname, `3` area id; UID-keyed, carries no IPID |
+| `PU#<id>#<type>#<data>` | — | live player field: type `0` OOC name, `1` char folder, `2` showname, `3` area id, `4` IPID (extension — see below); UID-keyed |
 | `PV#<id>#CID#<char id>` | — | our character confirmed |
 | `BN#<background>[#pos]` | — | background change |
 | `MC#<track>#<char id>#…` | — | music / area transfer |
@@ -65,6 +65,36 @@ char.ini `desk_mod` (the optional 5th `[Emotions]` field), defaulting to **show*
 (`1`) when the emote omits it — AO2 `get_desk_mod` parity (an absent field reads
 as a non-hide value). Only an explicit `0`/`3`/`5` hides the desk. A hardcoded
 `1` previously meant a no-desk emote never hid the desk for the room (fixed).
+
+## `PU` type 4 — the mod-only IPID field
+
+Stock `PU` carries no IPID, which is the one field a moderator needs and the only
+reason a client has to fall back on polling `/gas` for a roster it already has
+live. AsyncAO accepts **`PU#<id>#4#<ipid>`** as a dedicated field.
+
+Because 2.11 addresses `PU` by position, adding a type is backward compatible: a
+client that doesn't know type 4 falls through its switch and ignores it.
+
+Notes for server authors:
+
+- **Send it per recipient, only to authenticated moderators.** `PU` is written
+  per client, not broadcast once, so this is a routing decision the server owns.
+  Sending IPIDs to every client would deanonymize every player to every other
+  player regardless of what any client's UI chooses to display — a modified
+  client sees whatever it is sent.
+- **The value is opaque.** Akashi uses 8 hex characters; Athena/Nyathena use a
+  longer base64-ish token. AsyncAO stores it verbatim and validates nothing
+  beyond non-empty, so any server's format works.
+- **It is sticky.** An omitted or empty type 4 never clears an IPID already held,
+  so a server may send it once per player rather than on every update.
+- Escape it like any other text field.
+
+The alternative in the wild is the witches/wizards Akashi-party trick of
+appending a `(<hex>)` token to the `PU` **name** field. AsyncAO still supports
+that, but only for servers identifying as that family, because a player whose OOC
+name merely ends in brackets would otherwise be mis-read as an IPID and could
+build a wrong-target ban. A dedicated type has no such ambiguity and therefore
+needs no family gate — prefer it.
 
 ## Rate limits and close codes
 
