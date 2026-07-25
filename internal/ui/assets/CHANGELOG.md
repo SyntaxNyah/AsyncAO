@@ -4,6 +4,19 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.83.0 — 2026-07-25
+
+- **Moderators: IPIDs can now arrive with the live player list.** The player list
+  is streamed by the server as people join, leave and move, but it has never
+  carried the moderator-only IPID — so a logged-in moderator's list always had
+  rows with that column blank, and the client filled them in by asking the server
+  for a roster it already had. AsyncAO now accepts the IPID as its own field in
+  that live stream. On a server that sends it, IPIDs appear the moment a player
+  does, and the extra request stops entirely. Nothing changes on servers that
+  don't send it, and nothing changes for anyone who isn't a logged-in moderator.
+  Whether to send it at all is the server's decision, and a server should send it
+  only to its moderators.
+
 ## v1.82.0 — 2026-07-25
 
 Thanks to Crystalwarrior for reporting the theme, music, desk, link and emote
