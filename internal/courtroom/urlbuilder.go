@@ -396,13 +396,26 @@ func (u URLBuilder) MusicURL(track string) string {
 	return u.origin + soundsMusic + escapePreservingSlashes(strings.ToLower(track))
 }
 
+// httpScheme / httpsScheme are the two direct-link prefixes a music track can
+// carry (AO2-Client get_music_path only special-cases http(s)).
+const (
+	httpScheme  = "http://"
+	httpsScheme = "https://"
+)
+
 // isMusicURL reports whether a track is a direct http(s):// music URL (a DJ
 // /play link) rather than a server-relative track name. Such a URL is ALWAYS
 // real music — never an area transfer — even though its audio extension may sit
 // before a query string (Discord CDN links carry a signed ?ex=&is=&hm= suffix).
 func isMusicURL(track string) bool {
-	lower := strings.ToLower(track)
-	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+	return hasPrefixFold(track, httpScheme) || hasPrefixFold(track, httpsScheme)
+}
+
+// hasPrefixFold is strings.HasPrefix, case-insensitively. Unlike lowercasing the
+// whole track first it allocates NOTHING, which matters because MusicDisplayName
+// calls isMusicURL once per visible row of the music list, every frame.
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
 }
 
 // escapePreservingSlashes escapes each path segment of a track that may

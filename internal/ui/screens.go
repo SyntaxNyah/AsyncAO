@@ -4241,6 +4241,11 @@ type musicFilterKey struct {
 // query, memoized against the query + the list identity. Only this O(N) scan
 // (and its ToLower allocs) is gated here; the per-frame call is an O(1) key
 // compare and early-return when neither the query nor the list changed.
+//
+// It matches the RAW list entry, which covers the displayed short name too:
+// courtroom.MusicDisplayName only ever slices, so the display is always a
+// substring of the raw name (#43 shortened the rows, not what you can search).
+// Searching the raw text additionally keeps a directory ("songs/") findable.
 func (a *App) refreshMusicFilter(query string) {
 	n := len(a.sess.Music)
 	key := musicFilterKey{q: query, n: n}
@@ -4480,7 +4485,9 @@ func (a *App) drawMusicList(r sdl.Rect) {
 		now = a.room.Scene.MusicTrack
 	}
 	if now != "" {
-		c.LabelClipped(r.X+98, r.Y+6, r.W-98-104, "Now playing: "+musicDisplayName(now), ColAccent)
+		// Same short name the list rows and the IC "has played a song" line use
+		// (courtroom.MusicDisplayName — AO2 list_music), so the three agree.
+		c.LabelClipped(r.X+98, r.Y+6, r.W-98-104, "Now playing: "+courtroom.MusicDisplayName(now), ColAccent)
 	} else {
 		c.Label(r.X+98, r.Y+6, "Nothing playing", ColTextDim)
 	}
@@ -4567,12 +4574,17 @@ func (a *App) drawMusicList(r sdl.Rect) {
 				if hover {
 					c.Fill(row, ColPanelHi)
 				}
-				c.LabelClippedFont(font, r.X+20, y+4, row.W-24, entry, ColText) // indented under its category, tree-style
+				// #43: show AO2's DISPLAY name (directory + extension cut —
+				// courtroom.MusicDisplayName mirrors Courtroom::list_music), not the
+				// whole wire entry. The click below still sends `entry` VERBATIM: the
+				// display is a pure substring, the MC packet and the music URL are
+				// built from the raw name.
+				c.LabelClippedFont(font, r.X+20, y+4, row.W-24, courtroom.MusicDisplayName(entry), ColText) // indented under its category, tree-style
 				if hover {
-					c.Tooltip(row, entry) // full track name on hover (long titles get clipped)
+					c.Tooltip(row, entry) // the RAW entry on hover — the full path is still one hover away
 				}
 				if c.ClickedIn(row) { // press+release in-row: a scrollbar-drag release must not play a track
-					a.sess.RequestMusic(entry)
+					a.sess.RequestMusic(entry) // wire name, byte-exact
 				}
 			}
 		}
@@ -4598,23 +4610,6 @@ func musicCategoryLabel(name string) string {
 		return strings.TrimSpace(trimmed[2 : len(trimmed)-2])
 	}
 	return name
-}
-
-// musicDisplayName shortens a track for the Now-Playing line: a streaming URL
-// shows its filename (query string stripped), a server track shows as-is.
-func musicDisplayName(track string) string {
-	if strings.HasPrefix(strings.ToLower(track), "http") {
-		if i := strings.IndexByte(track, '?'); i >= 0 {
-			track = track[:i]
-		}
-		if i := strings.LastIndexByte(track, '/'); i >= 0 && i+1 < len(track) {
-			track = track[i+1:]
-		}
-		if track == "" {
-			return "streaming link"
-		}
-	}
-	return track
 }
 
 // scaleControl draws one "Name − +" layout knob; steps mutate *value

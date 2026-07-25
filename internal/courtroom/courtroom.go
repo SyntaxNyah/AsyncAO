@@ -548,22 +548,72 @@ func MusicAction(track string) (action, song string, ok bool) {
 	if isAreaTransfer(track) {
 		return "", "", false
 	}
-	return "has played a song", cleanSongName(track), true
+	return "has played a song", MusicDisplayName(track), true
 }
 
-// cleanSongName is the song's display name — AO2's QUrl(f_song).fileName() minus
-// the extension: drop any URL query/fragment, the directory, then the extension.
-func cleanSongName(track string) string {
+// pathSeparators are the characters that end a track's directory part. AO2 only
+// splits on '/' (list_music / QUrl), but a Windows-authored list entry can carry
+// a '\'; treating it as a separator too is a strict superset — it can never
+// change the result for a '/'-only (or separator-free) name.
+const pathSeparators = `/\`
+
+// MusicDisplayName is the SHORT display name of a music-list entry or MC track —
+// what the music list, the Now-Playing line and the IC "has played a song" line
+// show (issue #43: a nested entry like "999/songs/that/slap/[999] Tranquility.ogg"
+// used to be printed whole). The WIRE name is never touched: callers keep the raw
+// string for the MC packet (Session.RequestMusic) and for URLBuilder.MusicURL.
+//
+// Two shapes, in this precedence order:
+//
+//  1. A direct http(s):// track — isMusicURL (urlbuilder.go): such a link is
+//     ALWAYS real music and its audio extension can sit BEFORE a signed query
+//     (a Discord CDN /play link ends in ?ex=&is=&hm=&). AO2-Client shows those
+//     through QUrl(f_song).fileName() (courtroom.cpp handle_song), so the
+//     query/fragment goes FIRST, then the directory, then the extension —
+//     the other order would cut the name at a '.' inside the query string.
+//  2. A server music-list name — exactly AO2-Client Courtroom::list_music()
+//     (courtroom.cpp:1738-1782):
+//     listname = i_song.left(i_song.lastIndexOf("."));
+//     listname = listname.right(listname.length() - (listname.lastIndexOf("/") + 1));
+//     i.e. cut at the LAST '.', THEN take everything after the LAST '/'. That
+//     ORDER is the canonical one and differs from basename-first for oddities
+//     like "vol.2/name" (AO2 → "vol"); for any name that actually ends in an
+//     extension the two agree. QString::left(-1) returns the whole string, so an
+//     entry with NO '.' comes back unchanged — which is how AO2 recognises a
+//     CATEGORY header (listname == i_song ⇒ top-level tree item). This client
+//     classifies headers with HasAudioExt instead (the same rule the SM split
+//     uses, and it can't mis-cut a header that happens to contain a dot).
+//
+// The result is always a SUBSTRING of track — pure slicing, zero allocations,
+// because this runs per visible row on the music-list draw. That also means a
+// search over the RAW name matches everything the display shows.
+//
+// One deliberate divergence: Qt's left(0) yields "" for a name that is nothing
+// but an extension (".mp3"), which would draw a blank, unclickable row. An empty
+// result falls back to the raw name so every row always shows something.
+func MusicDisplayName(track string) string {
 	s := track
-	if i := strings.IndexAny(s, "?#"); i >= 0 { // a Discord CDN /play link's signed query
-		s = s[:i]
+	if isMusicURL(track) {
+		if i := strings.IndexAny(s, "?#"); i >= 0 { // a Discord CDN /play link's signed query
+			s = s[:i]
+		}
+		s = strings.TrimRight(s, pathSeparators)
+		if i := strings.LastIndexAny(s, pathSeparators); i >= 0 { // basename
+			s = s[i+1:]
+		}
+		if i := strings.LastIndexByte(s, '.'); i > 0 { // strip the extension
+			s = s[:i]
+		}
+	} else {
+		if i := strings.LastIndexByte(s, '.'); i >= 0 { // left(lastIndexOf("."))
+			s = s[:i]
+		}
+		if i := strings.LastIndexAny(s, pathSeparators); i >= 0 { // right(... lastIndexOf("/") + 1)
+			s = s[i+1:]
+		}
 	}
-	s = strings.TrimRight(s, "/")
-	if i := strings.LastIndexAny(s, `/\`); i >= 0 { // basename
-		s = s[i+1:]
-	}
-	if i := strings.LastIndexByte(s, '.'); i > 0 { // strip the extension
-		s = s[:i]
+	if s == "" {
+		return track // never draw a blank row (see the divergence note above)
 	}
 	return s
 }
