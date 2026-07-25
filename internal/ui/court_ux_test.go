@@ -34,6 +34,152 @@ func TestCycleField(t *testing.T) {
 			t.Errorf("cycleField(%q, back=%v) = %q, want %q", tc.cur, tc.back, got, tc.want)
 		}
 	}
+
+	// Layout modes: Tab from the IC input must reach THAT MODE's OOC field
+	// (whichever id it uses), and Shift+Tab must reverse. Each seq is the
+	// literal per-frame fieldSeq append order of that layout (drawCourtroom /
+	// drawCourtroomThemed / drawFloatingPanels), run through the real pipeline
+	// orderTabChain → cycleField.
+	modes := []struct {
+		name   string
+		seq    []string // draw order, exactly as fieldSeq builds it
+		want   []string // order after orderTabChain
+		fromIC string   // Tab from "ic"
+		backIC string   // Shift+Tab from "ic"
+	}{
+		{"default classic, IC log tab",
+			[]string{"logsearch", "oocmsg", "oocname2", "icshownameov", "ic"},
+			[]string{"logsearch", "icshownameov", "ic", "oocmsg", "oocname2"},
+			"oocmsg", "icshownameov"},
+		{"default classic, music tab",
+			[]string{"musicsearch", "oocmsg", "oocname2", "icshownameov", "ic"},
+			[]string{"musicsearch", "icshownameov", "ic", "oocmsg", "oocname2"},
+			"oocmsg", "icshownameov"},
+		{"default classic, players tab (no search field)",
+			[]string{"oocmsg", "oocname2", "icshownameov", "ic"},
+			[]string{"icshownameov", "ic", "oocmsg", "oocname2"},
+			"oocmsg", "icshownameov"},
+		{"legacy / OOC-in-log-tab bottom bar",
+			[]string{"logsearch", "icshownameov", "ic", "ooc"},
+			[]string{"logsearch", "icshownameov", "ic", "ooc"},
+			"ooc", "icshownameov"},
+		{"legacy hybrid, OOC tab + bottom bar (two OOC inputs)",
+			[]string{"oocmsg", "oocname2", "icshownameov", "ic", "ooc"},
+			[]string{"icshownameov", "ic", "oocmsg", "ooc", "oocname2"},
+			"oocmsg", "icshownameov"},
+		{"themed layout (the reported bug)",
+			[]string{"ooc", "oocname", "ic", "icshownameov"},
+			[]string{"icshownameov", "ic", "ooc", "oocname"},
+			"ooc", "icshownameov"},
+		{"themed merged log, notes tab + music list interleaved",
+			[]string{"noteadd", "ooc", "oocname", "musicsearch", "ic", "icshownameov"},
+			[]string{"noteadd", "icshownameov", "ic", "ooc", "oocname", "musicsearch"},
+			"ooc", "icshownameov"},
+		{"floating panels appended after the courtroom",
+			[]string{"logsearch", "oocmsg", "oocname2", "icshownameov", "ic", "pairsearch", "evname"},
+			[]string{"logsearch", "icshownameov", "ic", "oocmsg", "oocname2", "pairsearch", "evname"},
+			"oocmsg", "icshownameov"},
+		{"pinned split pane: ic-split stays out of the chain",
+			[]string{"oocmsg", "oocname2", "icshownameov", "ic", "ic-split"},
+			[]string{"icshownameov", "ic", "oocmsg", "oocname2", "ic-split"},
+			"oocmsg", "icshownameov"},
+		{"no OOC on screen (log panel hidden): Tab stays inside what drew",
+			[]string{"icshownameov", "ic"},
+			[]string{"icshownameov", "ic"},
+			"icshownameov", "icshownameov"},
+	}
+	for _, m := range modes {
+		got := append([]string(nil), m.seq...)
+		orderTabChain(got)
+		if len(got) != len(m.want) {
+			t.Fatalf("%s: orderTabChain length changed: %v", m.name, got)
+		}
+		for i := range got {
+			if got[i] != m.want[i] {
+				t.Fatalf("%s: orderTabChain = %v, want %v", m.name, got, m.want)
+			}
+		}
+		if fwd := cycleField(got, icFieldID, false); fwd != m.fromIC {
+			t.Errorf("%s: Tab from ic = %q, want %q (order %v)", m.name, fwd, m.fromIC, got)
+		}
+		if back := cycleField(got, icFieldID, true); back != m.backIC {
+			t.Errorf("%s: Shift+Tab from ic = %q, want %q (order %v)", m.name, back, m.backIC, got)
+		}
+		// Shift+Tab must undo the Tab that just happened, in every mode.
+		if rt := cycleField(got, cycleField(got, icFieldID, false), true); rt != icFieldID {
+			t.Errorf("%s: Tab then Shift+Tab = %q, want %q (order %v)", m.name, rt, icFieldID, got)
+		}
+	}
+}
+
+// TestOrderTabChainIdempotent pins that re-ordering an already-ordered sequence
+// is a no-op: BeginFrame may cycle several times against the SAME fieldSeq when
+// the loop skips draw passes, so every pass after the first must see the same
+// chain.
+func TestOrderTabChainIdempotent(t *testing.T) {
+	seq := []string{"noteadd", "ooc", "oocname", "musicsearch", "ic", "icshownameov"}
+	orderTabChain(seq)
+	once := append([]string(nil), seq...)
+	orderTabChain(seq)
+	orderTabChain(seq)
+	for i := range seq {
+		if seq[i] != once[i] {
+			t.Fatalf("repeated orderTabChain = %v, want %v", seq, once)
+		}
+	}
+}
+
+// TestOrderTabChainNoAlloc pins the reorder as allocation-free (fixed stack
+// scratch + one copy). It runs on a Tab press, not per frame, but the whole
+// input path is held to the same bar as the draw path.
+func TestOrderTabChainNoAlloc(t *testing.T) {
+	seq := []string{"noteadd", "ooc", "oocname", "musicsearch", "ic", "icshownameov"}
+	// Idempotent, so repeated runs are valid — each pass does the full scan.
+	if n := testing.AllocsPerRun(100, func() { orderTabChain(seq) }); n != 0 {
+		t.Errorf("orderTabChain allocs = %v, want 0", n)
+	}
+}
+
+// TestOrderTabChainSpanCapKeepsDrawOrder pins the named bound: a frame whose
+// chat span exceeds tabChainSpanCap degrades to the old pure-draw-order
+// behaviour instead of shuffling a window it can't hold.
+func TestOrderTabChainSpanCapKeepsDrawOrder(t *testing.T) {
+	seq := []string{"ic"}
+	for i := 0; i < tabChainSpanCap; i++ { // push the OOC field past the cap
+		seq = append(seq, "filler")
+	}
+	seq = append(seq, "oocmsg")
+	want := append([]string(nil), seq...)
+	orderTabChain(seq)
+	for i := range seq {
+		if seq[i] != want[i] {
+			t.Fatalf("over-cap sequence was rewritten: %v, want %v", seq, want)
+		}
+	}
+}
+
+// TestTabRankCoversEveryChatFieldID guards against a renamed/added field id
+// silently dropping out of the AO2 chain: every chat id in every layout must
+// carry a role, and nothing else may.
+func TestTabRankCoversEveryChatFieldID(t *testing.T) {
+	chat := map[string]int{
+		"icshownameov": tabRankShowname,
+		icFieldID:      tabRankIC,
+		"oocmsg":       tabRankOOC,
+		"ooc":          tabRankOOC,
+		"oocname2":     tabRankOOCName,
+		"oocname":      tabRankOOCName,
+	}
+	for id, want := range chat {
+		if got := tabRank(id); got != want {
+			t.Errorf("tabRank(%q) = %d, want %d", id, got, want)
+		}
+	}
+	for _, id := range []string{"logsearch", "musicsearch", "areasearch", "noteadd", "pmmsg", "ic-split", "palette_q", "pairsearch", ""} {
+		if got := tabRank(id); got != tabRankNone {
+			t.Errorf("tabRank(%q) = %d, want tabRankNone", id, got)
+		}
+	}
 }
 
 // TestInkReadabilityGuard pins the theme ink-vs-skin contrast math: dark

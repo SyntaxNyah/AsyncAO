@@ -457,6 +457,8 @@ type Ctx struct {
 	// Tab focus cycling (playtest: "focus on ic, press tab, it goes to
 	// ooc"): TextField records draw order here each frame; the next
 	// BeginFrame moves focus along it. Bounded by fields drawn per frame.
+	// Order is DRAW order; orderTabChain (tabchain.go) re-seats the chat
+	// block into AO2's showname → IC → OOC → OOC-name chain at Tab time.
 	fieldSeq []string
 	tabShift bool // shift held at the Tab press → cycle backwards
 	// focusNext is a queued FocusField request, applied at the next
@@ -1272,6 +1274,11 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 	// the draw pass that followed the keypress has recorded every visible
 	// TextField (one frame of latency, imperceptible at frame rate).
 	if c.tabPressed && len(c.fieldSeq) > 0 {
+		// The chat fields cycle in AO2's chain (showname → IC → OOC → OOC name,
+		// courtroom.cpp:187-210 construction order), not in the draw order the
+		// layouts happen to use — every other field keeps draw order. See
+		// tabchain.go. Runs only on a Tab press, so the render path is untouched.
+		orderTabChain(c.fieldSeq)
 		c.focusID = cycleField(c.fieldSeq, c.focusID, c.tabShift)
 		c.caretOn = true // land visible: the caret shows where focus went
 		c.caretAcc = 0
