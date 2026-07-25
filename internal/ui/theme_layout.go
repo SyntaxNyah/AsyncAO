@@ -841,6 +841,81 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	a.chatZoomWheel(box)
 }
 
+// minEmoteCellPx rejects degenerate emote_button_size data (a 3 px "button"
+// is sloppy theme data, not a widget) — below it the grid falls back to AO2's
+// stock emoteBtnCell square.
+const minEmoteCellPx int32 = 8
+
+// emoteCellScale is the ONE factor the themed emote cell and its gap scale by.
+//
+// AO2 reads emote_button_size / emote_button_spacing through
+// AOApplication::get_button_spacing (text_file_functions.cpp:212-213), which
+// multiplies BOTH axes by the single Options::themeScalingFactor(); the button
+// art is then stretched into that cell with Qt::IgnoreAspectRatio
+// (aobutton.cpp AOButton::updateIcon). So in AO2 the cell ALWAYS keeps the
+// aspect ratio the theme designed, whatever the window shape.
+//
+// Our themeLayoutCache scale is per-axis and, in Stretch fit-mode only,
+// scaleX != scaleY (see the field comment on the struct). Scaling the cell
+// per-axis therefore squashed every emote button flat on a wide window (#33).
+// min() is the uniform stand-in rather than max(): a cell grown by the looser
+// axis would overflow the emotes rect on the tighter one, silently dropping a
+// whole row or column of buttons off the theme's grid. Letterbox/Crop/Custom
+// already have scaleX == scaleY, so this is a no-op there — only Stretch moves.
+func emoteCellScale(scaleX, scaleY float64) float64 { return math.Min(scaleX, scaleY) }
+
+// emoteGridMetrics is one themed emote page's geometry: the uniformly scaled
+// button cell, its gap, and how many whole cells tile the theme's rect.
+type emoteGridMetrics struct {
+	cellW, cellH int32 // emote_button_size × emoteCellScale (designed aspect kept)
+	gapX, gapY   int32 // emote_button_spacing, same uniform factor
+	cols, rows   int32 // whole cells that fit in the rect, each ≥ 1
+}
+
+// emoteGridLayout is the pure geometry behind drawEmoteGridThemed: available
+// rect + designed cell/gap + the uniform scale → cell size and grid extent.
+// Kept free of App/SDL state so the layout is table-testable headlessly.
+func emoteGridLayout(r sdl.Rect, cellPx, gapPx [2]int, scale float64) emoteGridMetrics {
+	m := emoteGridMetrics{
+		cellW: int32(float64(cellPx[0]) * scale),
+		cellH: int32(float64(cellPx[1]) * scale),
+		gapX:  int32(float64(gapPx[0]) * scale),
+		gapY:  int32(float64(gapPx[1]) * scale),
+	}
+	if m.cellW < minEmoteCellPx || m.cellH < minEmoteCellPx {
+		m.cellW, m.cellH = emoteBtnCell, emoteBtnCell // degenerate metrics: AO2 stock 40×40
+	}
+	if m.gapX < 0 {
+		m.gapX = 0
+	}
+	if m.gapY < 0 {
+		m.gapY = 0
+	}
+	m.cols = (r.W + m.gapX) / (m.cellW + m.gapX)
+	m.rows = (r.H + m.gapY) / (m.cellH + m.gapY)
+	if m.cols < 1 {
+		m.cols = 1
+	}
+	if m.rows < 1 {
+		m.rows = 1
+	}
+	return m
+}
+
+// perPage is how many emote buttons one page of this grid holds.
+func (m emoteGridMetrics) perPage() int { return int(m.cols) * int(m.rows) }
+
+// cellRect is the pixel rect of the n-th cell of a page (0-based, row-major)
+// laid out in r. Draw AND hit-test go through this one function, so a click
+// can never land on a rect the grid didn't draw.
+func (m emoteGridMetrics) cellRect(r sdl.Rect, n int32) sdl.Rect {
+	return sdl.Rect{
+		X: r.X + (n%m.cols)*(m.cellW+m.gapX),
+		Y: r.Y + (n/m.cols)*(m.cellH+m.gapY),
+		W: m.cellW, H: m.cellH,
+	}
+}
+
 // drawEmoteGridThemed lays the emote buttons out on the theme's grid
 // (emote_button_size/spacing scaled), paging with emote_left/right.
 func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect) {
@@ -851,22 +926,12 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	}
 	a.refreshEmoteView() // favourite set + visible-index list (#77)
 	vis := a.emoteVisible
-	cellW := int32(float64(a.themeEmoteCell[0]) * lay.scaleX)
-	cellH := int32(float64(a.themeEmoteCell[1]) * lay.scaleY)
-	gapX := int32(float64(a.themeEmoteGap[0]) * lay.scaleX)
-	gapY := int32(float64(a.themeEmoteGap[1]) * lay.scaleY)
-	if cellW < 8 || cellH < 8 {
-		cellW, cellH = 40, 40 // degenerate metrics: AO2 stock size
-	}
-	cols := (r.W + gapX) / (cellW + gapX)
-	rows := (r.H + gapY) / (cellH + gapY)
-	if cols < 1 {
-		cols = 1
-	}
-	if rows < 1 {
-		rows = 1
-	}
-	perPage := int(cols * rows)
+	// The rect r stays per-axis scaled (it is the theme's container, and the
+	// grid reflows/pages into whatever shape it takes), but the CELL scales
+	// uniformly so the button art keeps its designed aspect — see
+	// emoteCellScale for why (#33).
+	grid := emoteGridLayout(r, a.themeEmoteCell, a.themeEmoteGap, emoteCellScale(lay.scaleX, lay.scaleY))
+	perPage := grid.perPage()
 	pages := (len(vis) + perPage - 1) / perPage
 	if pages < 1 {
 		pages = 1 // favs-only with nothing starred yet: one empty page
@@ -891,12 +956,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	for slot := start; slot < len(vis) && slot < start+perPage; slot++ {
 		i := vis[slot] // real index into a.emotes (favs-only filters which show)
 		e := &a.emotes[i]
-		n := int32(slot - start)
-		btn := sdl.Rect{
-			X: r.X + (n%cols)*(cellW+gapX),
-			Y: r.Y + (n/cols)*(cellH+gapY),
-			W: cellW, H: cellH,
-		}
+		btn := grid.cellRect(r, int32(slot-start))
 		selected := i == a.emoteIdx
 		if selected {
 			c.Fill(sdl.Rect{X: btn.X - 2, Y: btn.Y - 2, W: btn.W + 4, H: btn.H + 4}, ColAccent)

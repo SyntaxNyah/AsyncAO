@@ -6007,6 +6007,11 @@ func (a *App) drawEmoteImageButton(btn sdl.Rect, me string, i int, selected bool
 		}
 	}
 	if ok && len(page.Frames) > 0 {
+		// Fills the cell deliberately: AO2 scales the button art into the button
+		// with Qt::IgnoreAspectRatio (aobutton.cpp AOButton::updateIcon), and the
+		// cell itself already carries the theme's designed aspect (fixed
+		// emoteBtnCell here, uniformly scaled emote_button_size in the themed grid
+		// — see emoteCellScale). Letterboxing here would diverge from AO2.
 		_ = c.Ren.Copy(page.Frames[0], nil, &btn)
 	} else {
 		// No emotions/button<N> art (404 / still streaming): fall back to the character
