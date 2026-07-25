@@ -359,6 +359,15 @@ type App struct {
 	previewAnims    []string
 	previewLabels   []string
 	previewEmoteIdx int
+	// previewEmoteCycle records WHICH surface asked for the emote list, because
+	// the two want different landings when the parse comes back:
+	//   true  (previewEmoteNav)      — the wardrobe's ‹ › navigator: always jump
+	//         to emote 0 so the caption index matches the sprite on screen.
+	//   false (previewEmotePortrait) — the char-select grid's single portrait:
+	//         keep the optimistic "normal" probe (right for almost every pack,
+	//         and already resolved) and repoint ONLY when the char.ini names no
+	//         emote "normal" — see correctPortraitPreview.
+	previewEmoteCycle bool
 
 	// --- async result channels (App-global plumbing; payloads carry the
 	// serverKey they were fetched for, and polls drop mismatches so a tab
@@ -6550,16 +6559,32 @@ func (a *App) warmCharINI(name string) {
 // (rule §17.4) — a pathological char.ini can't grow the slice unbounded.
 const previewEmoteCap = 256
 
-// ensurePreviewEmotes loads a previewed (non-worn) wardrobe character's emote
-// list ONCE so the preview box can cycle it (try-before-wear). The char.ini was
-// just warmed on hover (warmCharINI → PrefetchRaw), so the fetch rides the
-// cache; the parse runs off-thread and lands in previewEmoteRes. previewChar
-// guards it to one parse per character.
-func (a *App) ensurePreviewEmotes(name string) {
+// previewIdleAnim is the emote name AO packs conventionally give the resting
+// pose, and the one both preview surfaces probe optimistically on hover
+// (characters/<x>/(a)normal — the webAO URL convention). Most packs have it, so
+// the box fills in a single probe; the ones that don't are corrected from their
+// char.ini (correctPortraitPreview).
+const previewIdleAnim = "normal"
+
+// ensurePreviewEmotes' cycle argument, named so the call sites read as prose
+// (App.previewEmoteCycle documents what each landing does).
+const (
+	previewEmoteNav      = true  // wardrobe: drives the ‹ › try-before-wear navigator
+	previewEmotePortrait = false // char-select grid: one hover portrait, no navigator
+)
+
+// ensurePreviewEmotes loads a previewed (non-worn) character's emote list ONCE
+// so the preview box can cycle it (try-before-wear) or correct a pack that has
+// no "normal" emote (char-select). The char.ini was just warmed on hover
+// (warmCharINI → PrefetchRaw), so the fetch rides the cache; the parse runs
+// off-thread and lands in previewEmoteRes. previewChar guards it to one parse
+// per character.
+func (a *App) ensurePreviewEmotes(name string, cycle bool) {
 	if name == "" || name == a.previewChar || a.urls.Origin() == "" {
 		return
 	}
 	a.previewChar = name
+	a.previewEmoteCycle = cycle
 	a.previewAnims = nil
 	a.previewLabels = nil
 	a.previewEmoteIdx = 0
@@ -6590,8 +6615,12 @@ func (a *App) ensurePreviewEmotes(name string) {
 }
 
 // pollPreviewEmotes drains a finished preview-emote parse (dropped on a tab
-// switch or a newer hover). If the idle is still on screen for this character,
-// it advances to emote 0 so the ‹ › index always matches what's displayed.
+// switch or a newer hover — the key/char guards). For the wardrobe's ‹ ›
+// navigator it then advances to emote 0 so the index always matches what's
+// displayed; for the char-select portrait it only corrects a pack that has no
+// "normal" emote (correctPortraitPreview). Every screen that can call
+// ensurePreviewEmotes must call this, or the parse goroutine parks on the
+// one-slot channel.
 func (a *App) pollPreviewEmotes() {
 	select {
 	case res := <-a.previewEmoteRes:
@@ -6601,11 +6630,74 @@ func (a *App) pollPreviewEmotes() {
 		a.previewAnims = res.anims
 		a.previewLabels = res.labels
 		a.previewEmoteIdx = 0
-		if len(res.anims) > 0 && a.previewBase == a.urls.Emote(res.char, "normal", courtroom.EmoteIdle) {
+		if len(res.anims) == 0 {
+			return
+		}
+		if !a.previewEmoteCycle {
+			// char-select portrait. The box outlives the trigger cell (the travel
+			// corridor keeps it up once the cursor leaves), so a late parse has to
+			// correct it here instead of waiting for another hover frame.
+			a.correctPortraitPreview(res.char)
+			return
+		}
+		if a.previewBase == a.urls.Emote(res.char, previewIdleAnim, courtroom.EmoteIdle) {
 			a.setPreviewEmote(0)
 		}
 	default:
 	}
+}
+
+// previewPortraitAnim returns the emote the char-select grid should show for
+// name: the conventional "normal" idle pose, or — once the char.ini has been
+// parsed and turns out NOT to name one — the pack's FIRST real emote.
+//
+// "normal" is a convention, not a guarantee. A pack whose poses are spelled
+// SNormal/SCry/HSmug had no recovery at all here and previewed as a permanently
+// empty box (its cell icon still loaded — that's char_icon.png — so it read as
+// "the sprite is broken"). Same trap v1.53.0 fixed for the pair-menu preview
+// ("always looked for a sprite named 'normal', which plenty of packs simply
+// don't have"); the fix was never carried over to this grid.
+//
+// Until the parse lands it answers the convention, so the common pack still
+// fills the box from ONE optimistic probe and never pays for a second.
+func (a *App) previewPortraitAnim(name string) string {
+	if name != a.previewChar || len(a.previewAnims) == 0 {
+		return previewIdleAnim // not parsed (yet): the optimistic convention
+	}
+	for _, anim := range a.previewAnims {
+		// Case-insensitive: emote anims are lowercased into the URL (segPath), so
+		// a char.ini "Normal" resolves to the very base already probed.
+		if strings.EqualFold(anim, previewIdleAnim) {
+			return previewIdleAnim
+		}
+	}
+	return a.previewAnims[0]
+}
+
+// setCharPortraitPreview points the char-select hover box at name's portrait and
+// demands it. Idempotent by construction (it derives the emote from state, never
+// advances an index), because HoverPreview fires EVERY frame the cursor rests on
+// a cell — the same shape the grid always had, so a hovered cell still costs one
+// demand per frame and no more.
+func (a *App) setCharPortraitPreview(name string) {
+	anim := a.previewPortraitAnim(name)
+	a.previewBase = a.urls.Emote(name, anim, courtroom.EmoteIdle)
+	a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(name, anim, courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+}
+
+// correctPortraitPreview repoints an ALREADY-OPEN char-select portrait after its
+// char.ini landed. It moves the box only when the optimistic "normal" base is
+// still what's displayed AND the pack has no such emote — so a pack that does
+// have "normal" costs no second probe, and a box another surface has since
+// claimed is left alone.
+func (a *App) correctPortraitPreview(name string) {
+	if a.previewBase != a.urls.Emote(name, previewIdleAnim, courtroom.EmoteIdle) {
+		return
+	}
+	if a.previewPortraitAnim(name) == previewIdleAnim {
+		return
+	}
+	a.setCharPortraitPreview(name)
 }
 
 // setPreviewEmote points the preview box at emote i (wrapping) of the previewed

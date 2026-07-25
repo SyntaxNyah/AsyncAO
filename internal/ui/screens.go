@@ -636,6 +636,11 @@ func (a *App) directConnect() {
 func (a *App) drawCharSelect(w, h int32) {
 	c := a.ctx
 	a.drawScreenBackdrop(w, h, "charselect_bg")
+	// Both tabs here open sprite previews backed by a char.ini parse (the grid's
+	// portrait, the Wardrobe tab's try-before-wear cell), so this screen owns the
+	// drain: without it the parse goroutine parks on the one-slot result channel
+	// and the portrait never learns the pack has no "normal" emote.
+	a.pollPreviewEmotes()
 	title := "Choose a character"
 	if a.serverName != "" {
 		title += " — " + a.serverName
@@ -777,8 +782,13 @@ func (a *App) drawCharSelect(w, h int32) {
 		if y+iconCell > gridTop && y < gridTop+visibleH { // only rows touching the viewport (no draw/hover through the bar)
 			a.drawCharCell(slot, cell, i, dlOn)
 			if c.HoverPreview("char:"+slot.Name, cell) {
-				a.previewBase = a.urls.Emote(slot.Name, "normal", courtroom.EmoteIdle)
-				a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(slot.Name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
+				// Parse the char.ini behind the portrait (once per character): "normal"
+				// is only a convention, and a pack that spells its poses SNormal/SCry
+				// left this box permanently empty without it. previewPortraitAnim picks
+				// the first real emote for those packs and keeps "normal" — already
+				// probed — for everyone else. // AssetType: CharSprite (preview)
+				a.ensurePreviewEmotes(slot.Name, previewEmotePortrait)
+				a.setCharPortraitPreview(slot.Name)
 			}
 		}
 		col++
@@ -4212,7 +4222,7 @@ func (a *App) drawIniswapCell(idx int, cell sdl.Rect, click cellClick) {
 	if c.HoverPreview("iniswap:"+name, cell) {
 		a.previewBase = a.urls.Emote(name, "normal", courtroom.EmoteIdle)
 		a.d.Manager.PrefetchChain(a.previewBase, a.urls.EmoteAlts(name, "normal", courtroom.EmoteIdle), assets.AssetTypeCharSprite, network.PriorityHigh) // AssetType: CharSprite (preview)
-		a.ensurePreviewEmotes(name)                                                                                                                       // try-before-wear: load this character's emotes to cycle
+		a.ensurePreviewEmotes(name, previewEmoteNav)                                                                                                      // try-before-wear: load this character's emotes to cycle
 	}
 	if c.hovering(cell) {
 		a.iniHoverChar = name // number keys 0-9 quick-file the hovered character
