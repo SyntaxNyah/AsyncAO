@@ -240,6 +240,14 @@ func (a *App) blockingCourtPopup() bool {
 	// floating surface that fences via boxFencesPointer (which early-returns on
 	// !extrasSurfaceLive == a blocking popup). Adding it to a blocking predicate
 	// would make extrasSurfaceLive false while it's open, disabling its own fence.
+	// NOT the same set as courtroomModalUp (screens.go), and deliberately so: this
+	// list adds classicEdit (an editor is not a popup, but panels must still yield to
+	// it) and omits showSfxBrowser. The omission is PRE-EXISTING and left alone here
+	// on purpose — adding the SFX browser would also flip extrasSurfaceLive, which
+	// gates the pinned toolbox-pieces panel and the torn-off tabs, i.e. a visible
+	// behaviour change well beyond a fence question. Anything that needs "will
+	// drawCourtroomModals take the screen?" must ask courtroomModalUp, which is
+	// derived from that draw's own table.
 	return a.showIni || a.bgPick.show ||
 		a.showTimer || a.showLogin || a.pairPopupOpen ||
 		a.classicEdit

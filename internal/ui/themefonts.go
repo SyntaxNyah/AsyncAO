@@ -117,19 +117,37 @@ func (a *App) elemPct(el themeFontElem, userPct int) int {
 // surface. Matches which accessor each draw site used before #39.
 func elemChat(el themeFontElem) bool { return el == elemShowname || el == elemMessage }
 
+// UNDRESSED LOG ELEMENTS GET THEIR OWN SET TOO. A dressed element has always been
+// routed to themeElemSets[el] (its own fontSet), and TestThemeElemSetsPinTheirOwnScale
+// spells out why: two elements drawn in the same frame at different point sizes would
+// otherwise rebuild one shared set — and purgeTextCache with it — twice per frame,
+// forever. That reasoning has nothing to do with the THEME: the IC log, the OOC log,
+// the music list and the area list each carry their OWN Ctrl+wheel zoom (a.logPct /
+// a.oocPct / a.musicPct / a.areaPct), a themed courtroom paints all of them at once,
+// and one zoom notch on any of them makes the percents differ. Routed to the shared
+// c.logSet, that measured ~42 allocations per frame with a full text-atlas teardown.
+// So the undressed case takes the same route with face = -1 (out of range ⇒
+// themeFontsFor uses the client's OWN chain — the path
+// TestThemeElemSetsCapAndOutOfRangeFace already pins), which is metrically identical
+// to the old shared set, just no longer shared.
+//
+// Bounded by construction (hard rule 4): the element sets are a fixed
+// [themeFontElemCount]fontSet array on Ctx, not a growing per-pct cache.
+//
+// The CHAT pair (showname + message) deliberately still routes to c.chatSet: the
+// message raster is also built by the GIF/comic exports at a caller-fitted pct
+// (messageFontFor), and pinning that to an element set would make an export thrash
+// the live chatbox's set instead.
+
 // elemFontFor is the ONE call an element draw site makes: the covering face for
-// text, at el's resolved scale, in el's own declared family. Undressed elements
-// route straight back to ChatFontFor / LogFontFor, unchanged.
+// text, at el's resolved scale, in el's own declared family.
 func (a *App) elemFontFor(el themeFontElem, userPct int, text string) *ttf.Font {
 	f := a.themeFonts.e[el]
 	pct := a.elemPct(el, userPct)
-	if !f.dressed() {
-		if elemChat(el) {
-			return a.ctx.ChatFontFor(pct, text)
-		}
-		return a.ctx.LogFontFor(pct, text)
+	if !f.dressed() && elemChat(el) {
+		return a.ctx.ChatFontFor(pct, text)
 	}
-	return a.ctx.ThemeFontFor(el, f.faceIdx(), pct, text)
+	return a.ctx.ThemeFontFor(el, f.faceIdx(), pct, text) // faceIdx() == -1 when undressed
 }
 
 // elemFont is elemFontFor's metrics twin (line height / column measure): the
@@ -137,13 +155,10 @@ func (a *App) elemFontFor(el themeFontElem, userPct int, text string) *ttf.Font 
 func (a *App) elemFont(el themeFontElem, userPct int) *ttf.Font {
 	f := a.themeFonts.e[el]
 	pct := a.elemPct(el, userPct)
-	if !f.dressed() {
-		if elemChat(el) {
-			return a.ctx.ChatFont(pct)
-		}
-		return a.ctx.LogFont(pct)
+	if !f.dressed() && elemChat(el) {
+		return a.ctx.ChatFont(pct)
 	}
-	return a.ctx.ThemeFont(el, f.faceIdx(), pct)
+	return a.ctx.ThemeFont(el, f.faceIdx(), pct) // faceIdx() == -1 when undressed
 }
 
 // elemLabelFont is elemFont for a surface that used the fixed CHROME face before

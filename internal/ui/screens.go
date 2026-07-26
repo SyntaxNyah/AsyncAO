@@ -61,6 +61,17 @@ const (
 	cleanOOCMinH int32 = 96
 	cleanGapPx   int32 = 6
 	cleanHeaderH int32 = 20 // titled-header bar height on clean-layout boxes
+	// boxBodyInsetPx is the side inset a titled, BORDERED box gives its body — the
+	// clean-layout OOC box and every torn-off tab panel. It clears both the accent
+	// outline and the header bar's own 1px frame, which is why it's a pixel wider than
+	// logPanelInsetPx. Historical value, kept exactly: the classic layout must not move.
+	boxBodyInsetPx int32 = 5
+	// boxHeaderGapPx separates a titled box's header bar from the body beneath it.
+	boxHeaderGapPx int32 = 4
+	// cleanOOCBottomInsetPx is the clean OOC box's BOTTOM inset. It is one pixel
+	// tighter than boxBodyInsetPx for no reason beyond history; named rather than
+	// unified so this stays a naming change and not a pixel move.
+	cleanOOCBottomInsetPx int32 = 4
 )
 
 // --- LOBBY ------------------------------------------------------------------------
@@ -809,7 +820,13 @@ func (a *App) drawCharCell(slot *courtroom.CharacterSlot, cell sdl.Rect, idx int
 	c.Fill(cell, ColPanel)
 	base := a.urls.CharIcon(slot.Name)
 	if page, ok := a.cachedPage(&a.iconPages, &a.iconPagesGen, len(a.sess.Chars), idx, base); ok && len(page.Frames) > 0 {
-		_ = c.Ren.Copy(page.Frames[0], nil, &cell)
+		// &cell into cgo would heap-allocate the PARAMETER once per VISIBLE CELL per
+		// frame — a 7×9 themed grid is 63 of them, and escape analysis is static so
+		// the placeholder branch pays it too. Shared scratch (ui.go cgoRect contract:
+		// SDL copies the rect during the call and never retains the pointer); the
+		// cachedPage lookup above is done, so nothing can interleave.
+		c.cgoRect = cell
+		_ = c.Ren.Copy(page.Frames[0], nil, &c.cgoRect)
 	} else {
 		// Not resident: demand it (visible = not speculation) and draw the
 		// initials placeholder; the texture pops in live.
@@ -1364,6 +1381,14 @@ func (a *App) drawCourtroom(w, h int32) {
 		c.fencePointer()
 	}
 	defer c.unfencePointer()
+	// Overlay pointer exclusivity (#26/#37, overlayfence.go): fences published
+	// during THIS pass — the compact toolbox strip today — release when the pass
+	// returns, because the post-courtroom overlays in app.go (floating panels,
+	// palette, pickers, the pinned pieces panel) paint ABOVE the toolbox and must
+	// not inherit its fence. Taking a mark rather than clearing outright leaves
+	// room for an App-level publisher (the menu bar) to outlive this pass.
+	fenceMark := c.overlayFenceMark()
+	defer c.overlayFenceRelease(fenceMark)
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: h}, ColBackground)
 	// Clear the toolbox themed-rect flag every frame; only drawCourtroomThemed
 	// re-arms it (when the theme ships "asyncao_toolbox"). Without this reset a
@@ -1371,6 +1396,12 @@ func (a *App) drawCourtroom(w, h int32) {
 	// theater toolbox after the theme toggled off (the flag outlives the themed
 	// pass because the toolbox draws post-court in app.go).
 	a.toolboxThemeRectOn = false
+	// Same reset discipline for the toolbox's per-frame fence/draw latch: only
+	// fenceCompactToolbox (inside this pass, below the theme dispatch) sets it, so
+	// clearing here means a theater / dropped-session / lobby frame can never replay
+	// last frame's answer — and the post-courtroom draw site can trust !set as
+	// "the in-pass site did not own the toolbox this frame".
+	a.toolboxFence = compactToolboxLatch{}
 	a.pollCharINI()
 	if a.room == nil || a.sess == nil {
 		if a.classicEdit {
@@ -1407,6 +1438,15 @@ func (a *App) drawCourtroom(w, h int32) {
 	// widget draws so its clicks reach the editor, not the courtroom; the overlay
 	// itself draws LAST (after drawICControls).
 	a.classicEditFence()
+	// Classic path's toolbox latch + occlusion (#26). It must sit HERE, below the
+	// theme dispatch above: compactToolboxStripRect consults a.toolboxThemeRectOn,
+	// which this function force-clears each frame and only drawCourtroomThemed
+	// re-arms — so publishing any earlier would fence the bottom-right DEFAULT rect
+	// even under a theme that parks the toolbox somewhere else entirely.
+	// drawCompactToolboxInPass (bottom of this function) replays the latch rather
+	// than re-deriving it, so the fence and the pixels agree even though
+	// handleHotkeys and the modal return both run in between.
+	a.fenceCompactToolbox(w, h)
 
 	// Viewport: AO 4:3 at the user's width percent (View −/+ buttons).
 	vpW := w * int32(a.vpPct) / DefaultScalePct
@@ -1498,9 +1538,10 @@ func (a *App) drawCourtroom(w, h int32) {
 	// the whole courtroom pointer-blind while the cursor is over the panel, so its
 	// checkboxes/scrollbar/Close would be dead here. It draws post-courtroom in
 	// app.go (alongside drawFloatingPanels, where input is restored) instead.
-	if !a.classicEdit {
-		a.drawCompactToolbox(w, h)
-	}
+	// Unconditional: the `!a.classicEdit` gate that used to stand here now lives in
+	// the latch (fenceCompactToolbox), so the fence published at the top of this pass
+	// and the draw can no longer disagree when a hotkey arms the editor mid-pass.
+	a.drawCompactToolboxInPass()
 
 	// Live slot editor overlay (default layout only) — drawn LAST so it sits over every widget.
 	// Torn-off tab panels draw HERE while editing (before the editor) so slotRect registers them
@@ -1563,7 +1604,53 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	hdr := sdl.Rect{X: box.X + 1, Y: box.Y + 1, W: box.W - 2, H: cleanHeaderH}
 	c.Fill(hdr, ColPanelHi)
 	c.Label(hdr.X+7, hdr.Y+3, "OOC", ColText)
-	a.drawOOCPanel(sdl.Rect{X: box.X + 5, Y: box.Y + cleanHeaderH + 4, W: box.W - 10, H: box.H - cleanHeaderH - 8}, true)
+	a.drawOOCPanel(sdl.Rect{
+		X: box.X + boxBodyInsetPx,
+		Y: box.Y + cleanHeaderH + boxHeaderGapPx,
+		W: box.W - 2*boxBodyInsetPx,
+		H: box.H - cleanHeaderH - boxHeaderGapPx - cleanOOCBottomInsetPx,
+	}, true)
+}
+
+// courtroomModal is one return-to-top courtroom popup: the flag that opens it and
+// the draw that paints it. A TABLE rather than a switch so the "is one open?"
+// question and the "draw it" action are literally the same list — the fence a
+// later-drawn occluder publishes has to agree with whether the pass reaches its
+// draw at all, and a second hand-maintained copy of this set is exactly how the
+// two drift (a fence over pixels nothing painted eats clicks, the mirror of the
+// leak the fence exists to stop).
+type courtroomModal struct {
+	open func(*App) bool
+	draw func(*App, int32, int32)
+}
+
+// courtroomModals is that list, in the switch's original priority order. Package
+// level with plain function values, so walking it allocates nothing per frame (the
+// compactToolboxChips precedent).
+var courtroomModals = []courtroomModal{
+	{func(a *App) bool { return a.showIni }, (*App).drawIniswapPanel},
+	{func(a *App) bool { return a.bgPick.show }, (*App).drawBgPanel},
+	{func(a *App) bool { return a.showTimer }, (*App).drawTimerPanel},
+	{func(a *App) bool { return a.showLogin }, (*App).drawLoginDialog},
+	{func(a *App) bool { return a.pairPopupOpen }, (*App).drawPairPopup},
+	{func(a *App) bool { return a.showSfxBrowser }, (*App).drawSfxBrowser}, // #12 SFX Browser (preview + favourites)
+}
+
+// courtroomModalUp reports whether drawCourtroomModals will take the screen — the
+// predicate half of the table above, for anything that must decide BEFORE the pass
+// reaches the modal check (the compact toolbox's overlay fence).
+//
+// Deliberately NOT blockingCourtPopup (floatbox.go): that set is a different
+// question (which popups the Extras box and torn-off tabs yield to), it OMITS
+// showSfxBrowser, and it ADDS classicEdit. Reusing it would fence a band of the SFX
+// browser dead and mis-answer while the editor is armed.
+func (a *App) courtroomModalUp() bool {
+	for i := range courtroomModals {
+		if courtroomModals[i].open(a) {
+			return true
+		}
+	}
+	return false
 }
 
 // drawCourtroomModals draws whichever return-to-top courtroom popup is open and
@@ -1575,23 +1662,13 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 // picker that never rendered. (showPair is NOT here — it's a non-returning
 // overlay drawn on top in both paths.)
 func (a *App) drawCourtroomModals(w, h int32) bool {
-	switch {
-	case a.showIni:
-		a.drawIniswapPanel(w, h)
-	case a.bgPick.show:
-		a.drawBgPanel(w, h)
-	case a.showTimer:
-		a.drawTimerPanel(w, h)
-	case a.showLogin:
-		a.drawLoginDialog(w, h)
-	case a.pairPopupOpen:
-		a.drawPairPopup(w, h)
-	case a.showSfxBrowser:
-		a.drawSfxBrowser(w, h) // #12 SFX Browser modal (preview + favourites)
-	default:
-		return false
+	for i := range courtroomModals {
+		if courtroomModals[i].open(a) {
+			courtroomModals[i].draw(a, w, h)
+			return true
+		}
 	}
-	return true
+	return false
 }
 
 // handleVpDivider lets the user drag the viewport's right edge to resize the
@@ -2478,14 +2555,14 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 		c.Border(volBtn, ColAccent) // active cue
 	}
 	c.Tooltip(volBtn, "Show/hide volume sliders on screen (chat stays usable)")
-	innerY := r.Y + btnH + 4
+	innerY := r.Y + btnH + logPanelRowGapPx
 	if a.volStripOn {
 		// Just the two slider rows — the streaming checkbox moved to Settings →
 		// Audio only (v1.70.1; the popover was getting cluttered).
-		a.drawVolumeStrip(sdl.Rect{X: r.X + 4, Y: innerY, W: r.W - 8, H: volStripRowsH})
-		innerY += volStripRowsH + 4
+		a.drawVolumeStrip(sdl.Rect{X: r.X + logPanelInsetPx, Y: innerY, W: r.W - 2*logPanelInsetPx, H: volStripRowsH})
+		innerY += volStripRowsH + logPanelRowGapPx
 	}
-	inner := sdl.Rect{X: r.X + 4, Y: innerY, W: r.W - 8, H: r.Y + r.H - innerY - 4}
+	inner := sdl.Rect{X: r.X + logPanelInsetPx, Y: innerY, W: r.W - 2*logPanelInsetPx, H: r.Y + r.H - innerY - logPanelInsetPx}
 	// Ctrl+wheel (fine) or wheel-button-held (fast) anywhere on the panel
 	// resizes the log/OOC/list text; plain wheel keeps scrolling the active
 	// list. Taking the wheel here stops the inner lists' zoom from double-stepping.
@@ -2560,6 +2637,15 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 }
 
 const (
+	// logPanelInsetPx is the classic docked log panel's body inset inside its own
+	// accent border: the volume strip and the active tab's content must clear the
+	// outline. This is why drawICLogList / drawOOCLogList / drawMusicList / … carry NO
+	// internal padding — the classic path insets before it calls them, and the themed
+	// path does its own (themedLogInsetPx). Historical value, kept exactly.
+	logPanelInsetPx = int32(4)
+	// logPanelRowGapPx is the vertical gap between the log panel's stacked rows:
+	// tab strip → optional volume strip → body.
+	logPanelRowGapPx = int32(4)
 	// logSearchRowMinH is the search/export row's historical height — the
 	// floor, so the stock chrome font keeps the exact old geometry.
 	logSearchRowMinH = int32(24)
@@ -3370,7 +3456,7 @@ func (a *App) drawAreaList(r sdl.Rect) {
 		a.refreshAreaFilter(query)
 		shown = len(a.areaFiltered)
 	}
-	c.Label(r.X+r.W-142, r.Y+5, fmt.Sprintf("%d / %d", shown, total), ColTextDim)
+	c.Label(r.X+r.W-142, r.Y+5, a.areaCount.text(shown, total), ColTextDim)
 	r.Y += fieldH + 6
 	r.H -= fieldH + 6
 	if !c.ctrlHeld { // ctrl+wheel resizes text, never scrolls
@@ -4596,7 +4682,7 @@ func (a *App) drawMusicList(r sdl.Rect) {
 		a.refreshMusicFilter(query)
 		shown = len(a.musicFiltered)
 	}
-	c.Label(r.X+r.W-142, r.Y+5, fmt.Sprintf("%d / %d", shown, total), ColTextDim)
+	c.Label(r.X+r.W-142, r.Y+5, a.musicCount.text(shown, total), ColTextDim)
 	r.Y += fieldH + 6
 	r.H -= fieldH + 6
 
@@ -5912,6 +5998,30 @@ func (a *App) emotePageCounter(page, pages, n int) string {
 		a.emotePageLabelKey = key
 	}
 	return a.emotePageLabel
+}
+
+// shownTotalMemo memoizes a list header's "<shown> / <total>" counter, the same
+// memoize-on-change idiom as emotePageCounter above. Without it the Sprintf is
+// one heap allocation per frame for as long as the tab is open — invisible to
+// the classic whole-screen gate (it only ever draws the IC-log tab) but measured
+// the moment the themed gate put the music/areas panel on screen.
+//
+// Each list owns its OWN memo rather than sharing one slot: the Music and Areas
+// panels can be visible at once (a torn-off tab beside a docked one, or a theme
+// that gives them separate rects), and one shared slot would then rebuild twice
+// every frame — worse than the leak it replaces.
+type shownTotalMemo struct {
+	label        string
+	shown, total int
+}
+
+// text returns the cached label, rebuilding it only when a count moves.
+func (m *shownTotalMemo) text(shown, total int) string {
+	if m.label == "" || m.shown != shown || m.total != total {
+		m.label = fmt.Sprintf("%d / %d", shown, total)
+		m.shown, m.total = shown, total
+	}
+	return m.label
 }
 
 // nextRandomEmote picks a random emote index for auto-random mode. With more

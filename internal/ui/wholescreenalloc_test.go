@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/SyntaxNyah/AsyncAO/internal/assets"
+	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/render"
+	"github.com/SyntaxNyah/AsyncAO/internal/theme"
 )
 
 // The whole-screen 0-alloc gate (#28). Per-widget AllocsPerRun tests were each
@@ -56,6 +58,14 @@ func stageSettledCourtroom(t *testing.T) (*App, func()) {
 	// default scales (viewport 66%) a 1280×720 frame gives the log list a
 	// realistic positive height, so drawICLogList actually rasters its lines.
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = a.d.Prefs.LayoutScales()
+	// The FIVE remaining panel zooms, seeded EXACTLY the way loadPrefs does (app.go)
+	// and with no normalization on top: the fixture must reproduce a real install,
+	// not a tidied-up one. (This used to carry an `if a.oocPct == 0 { = logPct }`
+	// patch, which quietly papered over a shipped first-run bug — OOCScalePct had no
+	// entry in the config defaults block — AND hid the divergent-zoom allocation the
+	// sibling gate below now pins. Both are fixed; the patch is gone.)
+	a.oocPct = a.d.Prefs.OOCScale()
+	a.musicPct, a.playerPct, a.areaPct, a.modDashPct = a.logPct, a.logPct, a.logPct, a.logPct
 	// Pin a fixed frame clock so the append-time IC stamps (and anything else
 	// that reads a.now()) are deterministic across the measured frames.
 	a.frameNow = time.Date(2026, 7, 12, 16, 11, 0, 0, time.UTC)
@@ -185,6 +195,167 @@ func TestDrawCourtroomThemeFontsZeroAlloc(t *testing.T) {
 		t.Fatalf("a settled themed-font drawCourtroom allocates %.1f/op, want 0 — the per-element font path leaks (fix the alloc, don't loosen the gate)", n)
 	}
 }
+
+// ao2DefaultDesignRects is AO2's stock `default` theme courtroom_design.ini,
+// transcribed verbatim from AO2-Client/bin/base/themes/default/courtroom_design.ini
+// (courtroom :3, viewport :11, ic_chatlog :14, ms_chatlog/server_chatlog :17/:20,
+// ooc_chat_message :24, ooc_chat_name :27, music_list :38, emotes :62,
+// hold_it/objection/take_that :91-93, custom_objection :100, pos_dropdown :105,
+// the judge strip — defense/prosecution ± :126-129 and witness_testimony /
+// cross_examination :132-133 — call_mod :138, ao2_ic_chat_name :170,
+// pair_button :205, ao2_chatbox :243, showname :250, message :274,
+// ao2_ic_chat_message :284, evidence_button :304).
+//
+// It is a TABLE, not a pile of magic numbers: the point of the themed gate is
+// that the geometry it measures is the geometry real players run, so inventing
+// rects would gate a layout nobody has. `courtroom` + `viewport` are the two
+// keys themeLayout() requires (theme_layout.go), and the rest are picked to make
+// every always-drawn themed region resolve: the merged/split chatlogs, the OOC
+// inputs, the music/areas/players panel, the whole IC control row, the shout and
+// judge button strips, the emote grid, and the chatbox with its chatbox-relative
+// showname/message children.
+var ao2DefaultDesignRects = map[string]theme.Rect{
+	"courtroom":           {X: 0, Y: 0, W: 714, H: 579},
+	"viewport":            {X: 0, Y: 0, W: 256, H: 192},
+	"ic_chatlog":          {X: 260, Y: 0, W: 231, H: 220},
+	"ms_chatlog":          {X: 490, Y: 1, W: 224, H: 277},
+	"server_chatlog":      {X: 490, Y: 1, W: 224, H: 277},
+	"ooc_chat_message":    {X: 492, Y: 281, W: 222, H: 19},
+	"ooc_chat_name":       {X: 492, Y: 300, W: 85, H: 19},
+	"music_list":          {X: 490, Y: 342, W: 224, H: 236},
+	"emotes":              {X: 5, Y: 253, W: 490, H: 98},
+	"hold_it":             {X: 10, Y: 221, W: 76, H: 28},
+	"objection":           {X: 90, Y: 221, W: 76, H: 28},
+	"take_that":           {X: 170, Y: 221, W: 76, H: 28},
+	"custom_objection":    {X: 250, Y: 221, W: 76, H: 28},
+	"pos_dropdown":        {X: 222, Y: 380, W: 60, H: 20},
+	"witness_testimony":   {X: 290, Y: 380, W: 85, H: 42},
+	"cross_examination":   {X: 290, Y: 425, W: 85, H: 42},
+	"defense_plus":        {X: 183, Y: 476, W: 9, H: 9},
+	"defense_minus":       {X: 5, Y: 476, W: 9, H: 9},
+	"prosecution_plus":    {X: 183, Y: 492, W: 9, H: 9},
+	"prosecution_minus":   {X: 5, Y: 492, W: 9, H: 9},
+	"call_mod":            {X: 104, Y: 547, W: 64, H: 23},
+	"pair_button":         {X: 104, Y: 425, W: 42, H: 42},
+	"evidence_button":     {X: 627, Y: 322, W: 85, H: 18},
+	"ao2_ic_chat_name":    {X: 200, Y: 444, W: 78, H: 23},
+	"ao2_ic_chat_message": {X: 0, Y: 192, W: 256, H: 23},
+	"ao2_chatbox":         {X: 0, Y: 114, W: 256, H: 78},
+	"showname":            {X: 1, Y: 0, W: 46, H: 15},
+	"message":             {X: 10, Y: 13, W: 242, H: 57},
+}
+
+// stageThemedCourtroom is stageSettledCourtroom plus the theme geometry that
+// makes screens.go dispatch to drawCourtroomThemed instead of the classic path.
+// The classic gates never reach that function: their fixture leaves themeRects
+// empty, so themeLayout() returns lay.valid=false and drawCourtroom takes the
+// classic branch — which is exactly how the themed composite shipped ungated.
+//
+// asyncao_toolbox is added on TOP of the stock table (AsyncAO's own optional key,
+// consumed in drawCourtroomThemed) so the compact-toolbox region is anchored at a
+// theme rect rather than the classic slot default — that arm is only reachable
+// under a theme, so the classic gates cannot cover it either.
+func stageThemedCourtroom(t *testing.T) (*App, func()) {
+	t.Helper()
+	a, cleanup := stageSettledCourtroom(t)
+	a.themeRects = make(map[string]theme.Rect, len(ao2DefaultDesignRects)+1)
+	for k, r := range ao2DefaultDesignRects {
+		a.themeRects[k] = r
+	}
+	// toolboxDesignRect: the compact toolbox strip parked in the one genuinely EMPTY
+	// band of the stock 714×579 design space — x 5…125, y 354…378, between the emote
+	// grid's bottom edge (emotes = 5,253,490,98 ends at y 351) and pos_dropdown
+	// (y 380). It must be clear of the table above, because the toolbox publishes an
+	// overlay fence over exactly this rect and a fence landing on a live widget would
+	// change what the frame hit-tests — the gate would then be measuring a different
+	// screen than a real theme draws. (It used to sit at y 300, which is INSIDE
+	// `emotes`.) What the gate measures is that the themed arm of the toolbox
+	// (a.toolboxThemeRectOn) draws without allocating.
+	toolboxDesignRect := theme.Rect{X: 5, Y: 354, W: 120, H: 24}
+	a.themeRects["asyncao_toolbox"] = toolboxDesignRect
+	// A SEPARATE copy, exactly like the live theme apply (app.go): the layout
+	// editor's Reset writes themeRectsOrig back into themeRects, so aliasing one
+	// map would silently make Reset a no-op for anyone who extends this fixture.
+	a.themeRectsOrig = cloneRects(a.themeRects)
+	a.d.Prefs.SetThemeLayout(true) // default-ON today; pinned here so a default flip can't silently un-gate this
+	a.themeLay.valid = false       // force the first frame to build the cache from the rects above
+	return a, cleanup
+}
+
+// TestDrawCourtroomThemedZeroAlloc is the whole-screen gate for the THEMED
+// courtroom — the layout an AO2 theme with courtroom_design.ini geometry
+// actually renders, and the one branch TestDrawCourtroomZeroAlloc above can
+// never reach. It exists because drawCourtroomThemed could not have passed a
+// gate until the &court / &box / &cell cgo pointer arguments became the shared
+// c.cgoRect scratch: a pointer argument escapes through cgo, so &local
+// heap-allocated on every themed frame (see the cgoRect contract in ui.go).
+func TestDrawCourtroomThemedZeroAlloc(t *testing.T) {
+	a, cleanup := stageThemedCourtroom(t)
+	defer cleanup()
+
+	const w, h = 1280, 720
+	draw := func() { a.drawCourtroom(w, h) }
+	// Prove the fixture really took the themed branch before measuring anything:
+	// a silently-classic frame would make this a duplicate of the gate above and
+	// leave the themed path uncovered again.
+	draw()
+	if !a.themeLay.valid {
+		t.Fatal("themeLayout did not validate — the fixture's rects never reached the themed branch")
+	}
+	if !a.toolboxThemeRectOn {
+		t.Fatal("drawCourtroom took the CLASSIC branch — only drawCourtroomThemed arms toolboxThemeRectOn")
+	}
+	settle(draw)
+
+	if n := testing.AllocsPerRun(200, draw); n != 0 {
+		t.Fatalf("a settled themed drawCourtroom allocates %.1f/op, want 0 — a per-frame allocation shipped (fix the alloc, don't loosen the gate)", n)
+	}
+}
+
+// TestDrawCourtroomThemedDivergentZoomZeroAlloc is the same themed gate with the
+// panel zooms DIVERGED — one Ctrl+wheel over the OOC log and one over the music
+// list, both landing inside [MinLogScalePercent, MaxLogScalePercent], i.e. a
+// perfectly ordinary saved state.
+//
+// It exists because equal zooms hid a whole class of bug. The themed frame draws
+// the IC log, the OOC log AND the music list at once; while all three asked for the
+// same percent, one shared fontSet answered all three and never rebuilt. Diverge
+// any of them and that set was rebuilt — with a full purgeTextCache and text-atlas
+// teardown — on EVERY FRAME. The zoom knobs are per panel by design, so "they
+// happen to match" is not an invariant anything may rely on.
+func TestDrawCourtroomThemedDivergentZoomZeroAlloc(t *testing.T) {
+	a, cleanup := stageThemedCourtroom(t)
+	defer cleanup()
+
+	// Two legal, in-range divergences in opposite directions from the IC log.
+	a.oocPct = a.logPct + divergentZoomStepPct
+	a.musicPct = a.logPct - divergentZoomStepPct
+	for _, pct := range []int{a.logPct, a.oocPct, a.musicPct} {
+		if pct < config.MinLogScalePercent || pct > config.MaxLogScalePercent {
+			t.Fatalf("fixture zoom %d%% is outside the user-reachable range [%d, %d]",
+				pct, config.MinLogScalePercent, config.MaxLogScalePercent)
+		}
+	}
+
+	const w, h = 1280, 720
+	draw := func() { a.drawCourtroom(w, h) }
+	draw()
+	if !a.themeLay.valid || !a.toolboxThemeRectOn {
+		t.Fatal("the fixture did not reach the themed branch")
+	}
+	settle(draw)
+
+	if n := testing.AllocsPerRun(200, draw); n != 0 {
+		t.Fatalf("a settled themed drawCourtroom with divergent panel zooms allocates %.1f/op, want 0 — "+
+			"two panels are sharing one fontSet and rebuilding it every frame (fix the alloc, don't equalise the fixture)", n)
+	}
+}
+
+// divergentZoomStepPct is how far the sibling gate above pushes two panel zooms
+// apart. 20 points is a couple of Ctrl+wheel notches — big enough that the two
+// scales cannot round to one font size, small enough to stay inside the user
+// clamps at the 100% default (75 … 250 today).
+const divergentZoomStepPct = 20
 
 // TestDrawLobbyZeroAlloc is the companion gate for the lobby (the first screen).
 func TestDrawLobbyZeroAlloc(t *testing.T) {

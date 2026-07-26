@@ -1048,6 +1048,47 @@ func TestOOCScaleIndependent(t *testing.T) {
 	}
 }
 
+// TestOOCScaleFirstRunDefault is the first-launch hole the legacy-inherit rule
+// above did NOT cover. load() returns defaultPrefs verbatim on fs.ErrNotExist (and
+// on the corrupt-file quarantine path), so the "no stored value ⇒ inherit the log
+// size" overlay never runs there. OOCScalePct had no entry in the defaults block,
+// so a brand-new install got 0 — and 0 is not "absent" once it leaves this package:
+// the UI hands it straight to the font builder, which floors the point size at 1 px
+// and renders the whole OOC log unreadable (and, because the IC log asks the same
+// shared set for 100%, rebuilds that set twice per frame).
+func TestOOCScaleFirstRunDefault(t *testing.T) {
+	fresh, err := load(filepath.Join(t.TempDir(), "does-not-exist.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fresh.OOCScale(); got != DefaultScalePercent {
+		t.Errorf("first-run OOC scale = %d, want %d — a never-saved config must not yield a 0%% font scale", got, DefaultScalePercent)
+	}
+	// Same for a corrupt file: load quarantines it and returns the same defaults.
+	bad := filepath.Join(t.TempDir(), "corrupt.json")
+	if err := os.WriteFile(bad, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bp, _ := load(bad) // the parse error is expected; the prefs are the defaults
+	if got := bp.OOCScale(); got != DefaultScalePercent {
+		t.Errorf("quarantined-config OOC scale = %d, want %d", got, DefaultScalePercent)
+	}
+	// The default must not defeat the legacy-inherit rule: an EXISTING file with a
+	// log size and no oocScalePercent still inherits (covered above), and an
+	// existing file with neither lands on the same default via LogScalePct.
+	empty := filepath.Join(t.TempDir(), "empty.json")
+	if err := os.WriteFile(empty, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ep, err := load(empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ep.OOCScale(); got != DefaultScalePercent {
+		t.Errorf("empty-config OOC scale = %d, want %d", got, DefaultScalePercent)
+	}
+}
+
 // TestNameColorClamp pins the name-colour slider bounds: saturation clamps to
 // 0..100 and brightness is floored at minNameColorVal so a name can't go dark.
 func TestNameColorClamp(t *testing.T) {

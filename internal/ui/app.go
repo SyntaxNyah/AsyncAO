@@ -903,6 +903,14 @@ type App struct {
 	// value type (rect + bool) allocates nothing.
 	toolboxThemeRect   sdl.Rect
 	toolboxThemeRectOn bool
+	// toolboxFence is THIS FRAME's single toolbox decision (courttoolbox.go):
+	// fenceCompactToolbox latches it at the top of the courtroom pass and the draw
+	// at the bottom of the pass replays it, so the published overlay fence and the
+	// painted pixels are the same answer even though handleHotkeys and the modal
+	// return sit between them. Cleared at the top of every drawCourtroom, so a
+	// theater / lobby / dropped-session frame can never replay a stale one. Value
+	// type, App-level (the toolbox is client chrome, not per-tab state).
+	toolboxFence compactToolboxLatch
 	// pathStroke is the in-progress freehand stroke for the Sprite Style "draw a path" box
 	// (#34 B2): raw box-relative points captured while dragging, sampled to <=6 waypoints on
 	// release. pathDrawing = mid-stroke; pathPrevDown is its press-edge latch. Bounded.
@@ -1196,6 +1204,16 @@ type App struct {
 	jukeFavs        []favRef // memoized list of starred songs across all playlists
 	jukeFavRev      int64    // library revision the favorites list was built for
 	jukeFavLbl      string   // cached "★ Favorites (N)" toggle label (rebuilt only on change)
+
+	// extrasTip caches the themed Extras button's tooltip, which splices in the
+	// live Extras hotkey: unmemoized that concat is one heap allocation on EVERY
+	// themed frame (the themed whole-screen gate measures it), and the bind only
+	// moves when the user rebinds it. extrasTipKey is the bind the text was built
+	// for. App-level, not sessionState: the hotkey is a global pref, so parking it
+	// per tab would only re-derive the same string after every tab switch. Same
+	// idiom as jukeRecentLbl / jukeFavLbl above.
+	extrasTip    string
+	extrasTipKey string
 
 	// dlPaused is the download worker's pause flag — App-global (one worker at
 	// a time) and OUTSIDE sessionState (which is copied per tab, and an atomic
@@ -1617,6 +1635,14 @@ type sessionState struct {
 	// {page, pages, total} change (same idiom as the generation-cached pages).
 	emotePageLabel    string
 	emotePageLabelKey [3]int
+	// musicCount / areaCount memoize the "<shown> / <total>" header counters of
+	// the Music and Areas lists (shownTotalMemo, screens.go) — same reason as
+	// emotePageLabel: a bare Sprintf there is one allocation per frame for as long
+	// as the tab is open. Separate slots because both panels can be on screen at
+	// once. Per-SESSION (the counts come from a.sess.Music / a.sess.Areas), so
+	// they park and restore with the tab exactly like the emote memo above.
+	musicCount shownTotalMemo
+	areaCount  shownTotalMemo
 	// Emote favourites view (#77): emoteFavSet holds the active character's
 	// favourited emote indices for lock-free O(1) star lookups, and emoteVisible
 	// is the list of emote indices the grid shows (all, or favs-only) — a reused
@@ -2355,6 +2381,33 @@ var themeLayoutKeys = []string{
 	"defense_bar", "prosecution_bar",
 	"call_mod", "evidence_button",
 	"emotes", "emote_left", "emote_right",
+}
+
+// themeBtnStems is the precomputed theme:// stem ("btn/<design key>") for every
+// courtroom_design.ini key the themed courtroom can draw as a button.
+//
+// drawThemeButton runs a dozen times per THEMED FRAME (three shouts, the eight
+// judge chips, pos/pair/modcall/evidence, the two emote-page arrows) and
+// `themeBtnPrefix + key` is a runtime concat — one heap allocation per button per
+// frame, which is exactly what the themed whole-screen gate measures. The map is
+// built once from themeLayoutKeys, a fixed compile-time table, so it is bounded
+// by construction (hard rule 4).
+var themeBtnStems = func() map[string]string {
+	m := make(map[string]string, len(themeLayoutKeys))
+	for _, k := range themeLayoutKeys {
+		m[k] = themeBtnPrefix + k
+	}
+	return m
+}()
+
+// themeBtnStem is themeBtnPrefix+key without the per-frame allocation. A key
+// outside themeLayoutKeys falls back to the concat — still correct, just not
+// free; no draw site reaches that today.
+func themeBtnStem(key string) string {
+	if s, ok := themeBtnStems[key]; ok {
+		return s
+	}
+	return themeBtnPrefix + key
 }
 
 // themeTexKey is the T1 key for a theme texture stem; the scheme prefix can
@@ -7434,7 +7487,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 			if editingLayout {
 				savedModal := a.ctx.modalOn
 				a.ctx.modalOn = false
-				a.drawCompactToolbox(winW, winH)
+				a.drawCompactToolboxOverEditor(winW, winH)
 				a.drawToolboxPieces(winW, winH)
 				a.ctx.modalOn = savedModal
 			} else {

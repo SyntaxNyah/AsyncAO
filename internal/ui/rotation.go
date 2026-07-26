@@ -86,7 +86,7 @@ func (a *App) themedKeyRotatable(key string) bool {
 		_, ok := a.themePage(themeStemChatbox)
 		return ok
 	default:
-		_, ok := a.themePage(themeBtnPrefix + key)
+		_, ok := a.themePage(themeBtnStem(key)) // same stem as drawThemeButton, memoized (app.go)
 		return ok
 	}
 }

@@ -240,7 +240,7 @@ func (a *App) drawScreenBackdrop(w, h int32, stem string) {
 // (hover = accent border), the kit's chip button otherwise. Reports clicks.
 func (a *App) drawThemeButton(key, label string, r sdl.Rect) bool {
 	c := a.ctx
-	if page, ok := a.themePage(themeBtnPrefix + key); ok {
+	if page, ok := a.themePage(themeBtnStem(key)); ok {
 		// &r into cgo would heap-allocate the parameter on every call (same
 		// escape class as drawScreenBackdrop above).
 		c.cgoRect = r
@@ -275,6 +275,72 @@ func (a *App) drawThemedSFXPicker(rect sdl.Rect) {
 	c.TooltipAfter("sfxdd-tip", rect, "Sound for your NEXT message — 'auto' uses the emote's own sound, or pick one to override. Extras → SFX Browser for favourites & any sound by name.")
 }
 
+// Themed panel body metrics. A theme's design rect is the WHOLE widget (AO2 sizes a
+// bare Qt widget to it); the shared draw helpers below — drawICLogList,
+// drawOOCLogList, drawNotesTab, drawMusicList, drawAreaList, drawPlayerList — start
+// their content at list.X/list.Y, because the CLASSIC path already insets before
+// calling them. So the themed path has to do its own insetting, plus reserve room for
+// the chip strip it draws where AO2 had dedicated toggle buttons we have no rects for.
+const (
+	// themedLogInsetPx is the inner margin AO2's chatlogs get for free. ui_ic_chatlog
+	// is a QTextEdit and ui_server_chatlog an AOTextArea, and BOTH are frameless —
+	// AO2-Client src/courtroom.cpp:828 `ui_ic_chatlog->setFrameShape(QFrame::NoFrame);`
+	// and :835 `ui_server_chatlog->setFrameShape(QFrame::NoFrame);` — so the only inset
+	// left is Qt's QTextDocument::documentMargin, documented as "The margin around the
+	// document. The default is 4." It is NOT theme-CSS-derived: the sole `padding` rule
+	// in any shipped AO2 theme stylesheet is AOClockLabel{padding:0px}. Without it our
+	// themed logs drew flush against the panel art (issue #25). The music/areas/players
+	// body shares the value so one theme can't show padded logs beside a flush list.
+	themedLogInsetPx = int32(4)
+	// themedChipH is the height of the chip strip the themed panels draw across the top
+	// of their design rect. AO2 toggles IC/OOC with ooc_toggle and the music/area/player
+	// lists with its own theme-placed buttons; those rects don't exist for our extra
+	// tabs (Notes, Players), so we draw compact chips INSIDE the panel instead. Kept
+	// small so it costs little of a stock AO2 chatlog rect (default theme: 220px tall).
+	themedChipH = int32(22)
+	// themedChipGap separates two chips in the strip, and the strip from the body.
+	themedChipGap = int32(4)
+	// themedStripH is the vertical room the chip strip claims out of the panel's
+	// INSET body before the list starts: the chips plus one gap. It is measured from
+	// insetThemedBody(rect), not from the raw design rect — the chips and the list
+	// share one margin, so the chip-to-list gap really is themedChipGap. Offsetting
+	// the raw rect and THEN insetting would silently double it (a 4px design margin
+	// becoming an 8px gap under chips that still sat flush against the theme art).
+	themedStripH = themedChipH + themedChipGap
+	// themedLogTabW fits the short "IC" / "OOC" chip labels.
+	themedLogTabW = int32(44)
+	// themedNotesTabW fits the longer "Notes" label in the same strip.
+	themedNotesTabW = int32(56)
+	// themedListTabW fits "Music" / "Areas".
+	themedListTabW = int32(60)
+	// themedPlayersTabW fits the longest label in the list strip, "Player List".
+	themedPlayersTabW = int32(96)
+)
+
+// insetThemedBody applies themedLogInsetPx to a themed panel body before it goes to one
+// of the shared (classic-facing) draw helpers.
+//
+// The LEFT edge insets but the RIGHT edge deliberately does NOT — X and W move together
+// so X+W is unchanged. Two reasons: (1) the list scrollbar track is built at
+// `X: list.X + list.W - scrollBarW` (drawICLogList / drawOOCLogList), and Qt keeps a
+// QAbstractScrollArea's bar flush at the widget's right edge — floating ours 4px off the
+// panel art would be un-AO2 and visibly wrong; (2) text already gets its right margin
+// from `wrapW := list.W - scrollBarW - scrollBarGap`, so a second subtraction would
+// double-count it.
+//
+// A rect too small to hold the margin is returned untouched: an inverted rect draws
+// worse than a flush one, and rect() only guarantees minThemedElementPx.
+func insetThemedBody(r sdl.Rect) sdl.Rect {
+	if r.W <= themedLogInsetPx || r.H <= 2*themedLogInsetPx {
+		return r
+	}
+	r.X += themedLogInsetPx
+	r.W -= themedLogInsetPx
+	r.Y += themedLogInsetPx
+	r.H -= 2 * themedLogInsetPx
+	return r
+}
+
 // drawCourtroomThemed is the design-driven courtroom. Geometry comes from
 // the theme; behavior is shared with the classic path (same state, same
 // send/poll helpers, same modals).
@@ -295,6 +361,14 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	} else {
 		a.toolboxThemeRectOn = false
 	}
+	// Latch this frame's toolbox decision and occlude whatever the strip covers
+	// (#26 — the reported symptom is a theme whose "Call Mod" button sits under it).
+	// HERE, right after the rect above is resolved and before a single themed widget
+	// draws: the strip's position depends on that flag, and the fence is only
+	// consulted at hit-test time, so it has to exist before the widgets it occludes
+	// are drawn. drawCompactToolboxInPass (bottom of this function) replays the latch
+	// rather than re-deriving it, so the fence and the pixels agree.
+	a.fenceCompactToolbox(w, h)
 	a.themedExtrasHint() // one-time-per-session: point players at the Extras box
 
 	// Stage: letterbox fill, then the theme's window art over the design
@@ -305,17 +379,21 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 		W: w - 2*lay.offX, H: h - 2*lay.offY,
 	}
 	if page, ok := a.themePage("courtroombackground"); ok {
+		// &court into cgo would heap-allocate court on EVERY themed frame (escape
+		// analysis is static, so the plain-fill else-branch pays it too) — the same
+		// class the whole-screen gate caught in the classic path. Point SDL at the
+		// shared scratch instead (ui.go cgoRect contract: SDL copies the rect during
+		// the call and never retains it). Nothing between here and the Copy touches
+		// cgoRect: themedRotationDeg reads a map, themeFrame indexes a slice.
+		c.cgoRect = court
 		// A4: structured angle==0 → Copy / else CopyEx. courtroombackground is the
 		// stage frame (in layoutEditSkip), so it's not editor-hoverable and resolves
 		// 0 every frame — themedRotationDeg reads the baked cache map (NOT prefs), so
-		// this stays alloc-free on the always-drawn themed path. The local &court is
-		// kept (drawCourtroomThemed isn't the settled-gate path — that's the classic
-		// drawCourtroom — but keep it local regardless; a themed courtroom is never
-		// on the 0-alloc gate).
+		// this stays alloc-free on the always-drawn themed path.
 		if ang := a.themedRotationDeg("courtroombackground"); ang == 0 {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &court)
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 		} else {
-			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &court, ang, nil, sdl.FLIP_NONE)
+			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
 		}
 	} else {
 		c.Fill(court, ColPanel)
@@ -365,20 +443,25 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	}
 	merged := okIC && okOOC && rectOverlapFrac(icRect, oocRect) >= logMergeOverlapFrac
 	if merged && !a.panelHidden(panelLog) {
-		tab := sdl.Rect{X: icRect.X, Y: icRect.Y, W: 44, H: 22}
+		// ONE inset for the whole panel (#25): the chip strip and the list body both
+		// start from the inset body, so they share the theme's margin and the gap
+		// between them is exactly themedChipGap. Insetting only the body would leave
+		// the chips flush against the theme's panel art and silently double the gap.
+		panelBody := insetThemedBody(icRect)
+		tab := sdl.Rect{X: panelBody.X, Y: panelBody.Y, W: themedLogTabW, H: themedChipH}
 		if c.Button(tab, "IC") {
 			a.logTab = logTabLog
 		}
-		tab.X += 48
+		tab.X += themedLogTabW + themedChipGap
 		if c.Button(tab, "OOC") {
 			a.logTab = logTabOOC
 		}
-		tab.X += 48
-		tab.W = 56
+		tab.X += themedLogTabW + themedChipGap
+		tab.W = themedNotesTabW
 		if c.Button(tab, "Notes") {
 			a.logTab = logTabNotes
 		}
-		inner := sdl.Rect{X: icRect.X, Y: icRect.Y + 26, W: icRect.W, H: icRect.H - 26}
+		inner := sdl.Rect{X: panelBody.X, Y: panelBody.Y + themedStripH, W: panelBody.W, H: panelBody.H - themedStripH}
 		switch a.logTab {
 		case logTabOOC:
 			a.drawOOCLogList(inner)
@@ -388,10 +471,10 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 			a.drawICLogList(inner)
 		}
 	} else if okIC && !a.panelHidden(panelLog) {
-		a.drawICLogList(icRect)
+		a.drawICLogList(insetThemedBody(icRect))
 	}
 	if okOOC && !merged && !a.panelHidden(panelOOC) {
-		a.drawOOCLogList(oocRect)
+		a.drawOOCLogList(insetThemedBody(oocRect))
 	}
 	// OOC inputs draw wherever the theme put them — independent of how
 	// the log rects resolved (merged tabs still need a send box).
@@ -424,19 +507,23 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 
 	// Music / Areas / Players share the music_list rect (AO2 toggles them; we chip).
 	if r, ok := lay.rect("music_list"); ok && !a.panelHidden(panelLog) {
-		toggle := sdl.Rect{X: r.X, Y: r.Y, W: 60, H: 22}
+		// One inset for chips AND body, exactly as the log panel above (#25):
+		// drawMusicList / drawAreaList / drawPlayerList also place their first widget
+		// at r.X/r.Y, so without it a theme showed padded logs beside a flush list.
+		panelBody := insetThemedBody(r)
+		toggle := sdl.Rect{X: panelBody.X, Y: panelBody.Y, W: themedListTabW, H: themedChipH}
 		if c.Button(toggle, "Music") {
 			a.logTab = logTabMusic
 		}
-		toggle.X += 64
+		toggle.X += themedListTabW + themedChipGap
 		if c.Button(toggle, "Areas") {
 			a.logTab = logTabAreas
 		}
-		toggle.X += 64
-		if c.Button(sdl.Rect{X: toggle.X, Y: toggle.Y, W: 96, H: toggle.H}, "Player List") {
+		toggle.X += themedListTabW + themedChipGap
+		if c.Button(sdl.Rect{X: toggle.X, Y: toggle.Y, W: themedPlayersTabW, H: toggle.H}, "Player List") {
 			a.logTab = logTabPlayers
 		}
-		inner := sdl.Rect{X: r.X, Y: r.Y + 26, W: r.W, H: r.H - 26}
+		inner := sdl.Rect{X: panelBody.X, Y: panelBody.Y + themedStripH, W: panelBody.W, H: panelBody.H - themedStripH}
 		switch a.logTab {
 		case logTabAreas:
 			a.drawAreaList(inner)
@@ -734,9 +821,9 @@ func (a *App) drawCourtroomThemed(w, h int32, lay *themeLayoutCache) {
 	// themed editor is armed. The pinned per-piece panel is NOT drawn here (it
 	// needs real input this fenced pass can't give it — see the classic path in
 	// screens.go); it draws post-courtroom in app.go alongside drawFloatingPanels.
-	if !a.layoutEdit {
-		a.drawCompactToolbox(w, h)
-	}
+	// Unconditional: the `!a.layoutEdit` gate now lives in the latch, so the fence
+	// published at the top of this pass and the draw share one decision.
+	a.drawCompactToolboxInPass()
 
 	if a.warnActive() {
 		c.LabelClipped(pad, h-44, w-2*pad, a.warnLine, ColDanger)
@@ -761,14 +848,20 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	}
 	skinned := false
 	if page, ok := a.themePage(themeStemChatbox); ok {
+		// &box into cgo would heap-allocate the PARAMETER on every themed frame that
+		// has a message up — and because escape analysis is static, on the unskinned
+		// frames too. Shared scratch instead (ui.go cgoRect contract: SDL copies the
+		// rect during the call and never retains it); nothing runs between the
+		// assignment and the Copy but a map read and a slice index.
+		c.cgoRect = box
 		// A4: angle 0 keeps the original Copy path; a persisted nonzero angle tilts
 		// the SKIN art via CopyEx. Only the skin rotates — the showname/message text
 		// drawn below stays axis-aligned (opt-in cosmetic mismatch, accepted for the
-		// cheap tier, same as any rotated themed chrome). box is a local, kept.
+		// cheap tier, same as any rotated themed chrome).
 		if ang := lay.angle(themeChatboxKey); ang == 0 {
-			_ = c.Ren.Copy(a.themeFrame(page), nil, &box)
+			_ = c.Ren.Copy(a.themeFrame(page), nil, &c.cgoRect)
 		} else {
-			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &box, ang, nil, sdl.FLIP_NONE)
+			_ = c.Ren.CopyEx(a.themeFrame(page), nil, &c.cgoRect, ang, nil, sdl.FLIP_NONE)
 		}
 		skinned = true
 	}
@@ -833,7 +926,13 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 	textRect := sdl.Rect{X: msgX, Y: msgY, W: wrapW, H: box.Y + box.H - msgY}
 	a.handleChatSelect(textRect, sc)
 	if a.msAnim != nil || a.msRaster != nil {
-		_ = c.Ren.SetClipRect(&box)
+		// Shared scratch, same as pushClip (ui.go): SDL_RenderSetClipRect takes a
+		// `const SDL_Rect *` (SDL_render.h:930) and the renderer keeps its OWN copy —
+		// SDL_RenderGetClipRect (:946) fills a caller struct from it rather than
+		// handing the pointer back — so the highlight/raster draws below are free to
+		// overwrite cgoRect while this clip is in force.
+		c.cgoRect = box
+		_ = c.Ren.SetClipRect(&c.cgoRect)
 		if a.chatSelActive { // selection highlight, UNDER the text so it reads through
 			a.drawChatSelHighlight(msgX, msgY, wrapW, sc)
 		}
@@ -1045,6 +1144,23 @@ func (a *App) themedExtrasHint() {
 	a.warnAt = time.Now()
 }
 
+// extrasTipBody is the fixed half of the themed Extras tooltip; the live Extras
+// hotkey is appended to it. Split out so the concat can be memoized (see
+// extrasTipText) instead of running once per themed frame.
+const extrasTipBody = "AsyncAO extras (Wardrobe, Jukebox, Background, Settings…) — hotkey: "
+
+// extrasTipText is the Extras tooltip with the CURRENT bind spliced in, rebuilt
+// only when that bind changes. Unmemoized this was one heap allocation on every
+// themed frame — the themed whole-screen gate measured it. Same
+// memoize-on-change idiom as emotePageCounter (screens.go).
+func (a *App) extrasTipText() string {
+	key := a.hotkeyFor(hotkeyExtras)
+	if a.extrasTip == "" || key != a.extrasTipKey {
+		a.extrasTip, a.extrasTipKey = extrasTipBody+key, key
+	}
+	return a.extrasTip
+}
+
 // drawThemedExtrasButton places the bottom-left affordances for themed mode:
 // the "Extras" button — the one entry point to every AsyncAO feature an AO2
 // theme has no slot for (the box of widgets) — plus a sibling "Hotkeys" button
@@ -1065,7 +1181,7 @@ func (a *App) drawThemedExtrasButton(w, h int32) {
 		a.showWidgets = true
 	}
 	c.Border(r, ColAccent)
-	c.Tooltip(r, "AsyncAO extras (Wardrobe, Jukebox, Background, Settings…) — hotkey: "+a.hotkeyFor(hotkeyExtras))
+	c.Tooltip(r, a.extrasTipText())
 
 	// Sibling "Hotkeys" button (#96): one click to the cheat sheet of every
 	// shortcut + your custom binds, so themed users needn't open Extras or

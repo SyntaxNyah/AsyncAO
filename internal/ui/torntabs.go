@@ -252,7 +252,12 @@ func (a *App) drawTornTabs(w, h int32) {
 				continue // redocked — skip its body; other panels still draw
 			}
 		}
-		inner := sdl.Rect{X: r.X + 5, Y: r.Y + tornTabHeaderH + 4, W: r.W - 10, H: r.H - tornTabHeaderH - 9}
+		inner := sdl.Rect{
+			X: r.X + boxBodyInsetPx,
+			Y: r.Y + tornTabHeaderH + boxHeaderGapPx,
+			W: r.W - 2*boxBodyInsetPx,
+			H: r.H - tornTabHeaderH - boxHeaderGapPx - boxBodyInsetPx,
+		}
 		if inner.W > 8 && inner.H > 8 {
 			a.drawTabContent(t.id, inner)
 		}

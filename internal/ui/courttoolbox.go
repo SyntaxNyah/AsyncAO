@@ -246,37 +246,67 @@ func (a *App) compactHideUI() {
 	}
 }
 
+// drawCompactToolboxInPass is the IN-PASS draw site (classic screens.go / themed
+// theme_layout.go). It paints exactly what fenceCompactToolbox already decided and
+// published for this frame — never re-deriving the predicate — so the fence and the
+// pixels can never disagree. No latch (a modal owns the screen, an editor is armed,
+// theater, or the toolbox is hidden) ⇒ nothing drew, so nothing is drawn.
+func (a *App) drawCompactToolboxInPass() {
+	if !a.toolboxFence.set {
+		return
+	}
+	a.drawCompactToolbox(a.toolboxFence)
+}
+
+// drawCompactToolboxOverEditor is the POST-courtroom draw site (app.go): while a
+// layout editor is armed the toolbox draws there instead, over the editor overlay
+// and outside the editor's modal fence, force-expanded so Edit/Hide-UI/Theater stay
+// reachable. It evaluates its own latch because the in-pass fence deliberately
+// stands down for that frame.
+//
+// It stands down in turn if the in-pass site already took a latch this frame: a
+// hotkey can arm the editor from INSIDE the pass (handleHotkeys runs mid-pass), and
+// drawing the toolbox twice would hit-test its chips twice on a single click —
+// toggling the pin latch straight back off.
+func (a *App) drawCompactToolboxOverEditor(w, h int32) {
+	if a.toolboxFence.set {
+		return
+	}
+	a.drawCompactToolbox(a.latchCompactToolbox(w, h))
+}
+
 // drawCompactToolbox paints the collapsed grip and, while hovered OR pinned, the
-// expanded icon-chip row. In normal play it draws in-pass (classic + themed
-// courtroom); while a layout editor is armed it draws POST-courtroom instead
-// (app.go, fence released) and force-expands so the editor's fence can't blank its
-// grip/chips (A1 Phase 1). NOT drawn in theater mode or when hidden via panelToolbox.
-// A1: the grip is a press-to-pin latch (click toggles toolboxPinned), the chips draw
-// vector icons, and while the user has never expanded it the collapsed grip wears a
-// faint accent discoverability ring.
-func (a *App) drawCompactToolbox(w, h int32) {
-	if a.panelHidden(panelToolbox) {
+// expanded icon-chip row, from an already-decided latch. In normal play it draws
+// in-pass (classic + themed courtroom); while a layout editor is armed it draws
+// POST-courtroom instead (app.go, fence released) and force-expands so the editor's
+// fence can't blank its grip/chips (A1 Phase 1). NOT drawn in theater mode or when
+// hidden via panelToolbox. A1: the grip is a press-to-pin latch (click toggles
+// toolboxPinned), the chips draw vector icons, and while the user has never expanded
+// it the collapsed grip wears a faint accent discoverability ring.
+func (a *App) drawCompactToolbox(lat compactToolboxLatch) {
+	if !lat.draws {
 		return
 	}
 	c := a.ctx
-	// Expanded footprint (grip + chips to its left) so the strip stays open while
-	// the cursor is anywhere over a chip, not just the grip. Factored out
-	// (compactToolboxStripRect) so the editor's over-toolbox suppression rect and
-	// this draw agree — the click-leak class a fence rect that disagrees with the
-	// draw rect invites (mirrors toolboxPiecesRect's reason for existing). The strip
-	// routes through the slotToolbox override (A1 Phase 2), so the grip is DERIVED
-	// from the strip's right end rather than computed independently — a moved toolbox
-	// carries its grip with it and the two can never drift apart.
-	strip := a.compactToolboxStripRect(w, h)
+	// Geometry comes from the latch, not a fresh compactToolboxStripRect call: the
+	// rect the fence published IS the rect painted here (mirrors toolboxPiecesRect's
+	// reason for existing). The strip routes through the slotToolbox override (A1
+	// Phase 2), and the grip is DERIVED from the strip's right end rather than
+	// computed independently — a moved toolbox carries its grip with it.
+	strip := lat.strip
 	// The collapsed grip: the strip's right end, slim + semi-transparent.
 	grip := compactToolboxGripRect(strip)
-	hoverArea := sdl.Rect{X: grip.X - compactHoverPad, Y: grip.Y - compactHoverPad,
-		W: grip.W + compactHoverPad, H: grip.H + 2*compactHoverPad}
-	// While a layout editor is armed the toolbox draws (post-courtroom, fence
-	// released) as a stable target — it force-expands so its grip/chips are always
-	// reachable to reach Edit/Hide-UI/Theater without hunting for the hover sweet
-	// spot over the busy editor overlay (A1 Phase 1).
-	expanded := a.classicEdit || a.layoutEdit || a.toolboxPinned || c.hovering(hoverArea) || c.hovering(strip)
+	hoverArea := compactToolboxHoverRect(grip)
+	// The toolbox is an OCCLUDER: fenceCompactToolbox published this strip at the
+	// top of the courtroom pass so the widgets underneath it stay inert (#26). Own
+	// the pointer for our own draw or the fence would blank the grip and every chip
+	// — the same self-fencing an open dropdown dodges with raw pointIn(). The mark is
+	// the registry depth from just BEFORE our own publication, so an occluder that
+	// published EARLIER (an app-wide menu bar's open dropdown) still blanks us; a
+	// latch that published nothing carries the live depth and suspends nothing.
+	prevOwner := c.pushOverlayOwner(lat.mark)
+	defer c.popOverlayOwner(prevOwner)
+	expanded := lat.expanded
 
 	if expanded && !a.d.Prefs.ToolboxSeenOn() {
 		// First expand (hover or pin) latches the discoverability flag off so the
@@ -330,6 +360,15 @@ func (a *App) drawCompactToolbox(w, h int32) {
 	// grabbed the toolbox for a move in the editor pass, so a pin toggle here would
 	// double-fire on one click.
 	editing := a.classicEdit || a.layoutEdit
+	// NOT consumed (no `c.clicked = false`). The press is already exclusive where it
+	// needs to be: the overlay fence blanks everything drawn UNDER us in this pass,
+	// and the post-courtroom floating surfaces that could paint OVER us run the whole
+	// courtroom pass pointer-blind while the cursor is on them (boxFencesPointer), so
+	// this branch cannot even be reached from under one. Consuming would invert Z for
+	// anything drawn later that ISN'T pointer-fenced — the later widget owns the
+	// pixels, so it must own the click. The one genuine double-fire (a chip arming the
+	// editor mid-pass, then the post-courtroom site drawing the toolbox a second time)
+	// is closed structurally by drawCompactToolboxOverEditor's latch guard instead.
 	if !editing && c.hovering(grip) && c.clicked {
 		a.compactTogglePin()
 	}
@@ -362,7 +401,7 @@ func (a *App) drawCompactToolbox(w, h int32) {
 		}
 		drawToolIcon(c, ch.icon, chip, iconCol)
 		if hover && c.clicked {
-			ch.run(a)
+			ch.run(a) // not consumed — see the grip branch above for why
 		}
 		c.Tooltip(chip, ch.tip)
 	}
@@ -399,6 +438,121 @@ func (a *App) compactToolboxDefaultRect(w, h int32) sdl.Rect {
 // stay live buttons. Derived from the strip so a moved toolbox carries its grip.
 func compactToolboxGripRect(strip sdl.Rect) sdl.Rect {
 	return sdl.Rect{X: strip.X + strip.W - compactGripW, Y: strip.Y, W: compactGripW, H: compactGripH}
+}
+
+// compactToolboxHoverRect is the collapsed grip's forgiving hover target: a
+// compactHoverPad halo on the left/top/bottom so the strip doesn't fold shut the
+// instant the cursor grazes a chip's edge. The RIGHT edge is unpadded (X moves left
+// by the pad and W grows by exactly the same pad, so X+W is unchanged) — the strip
+// expands leftwards, so that is the side the cursor travels along. Factored out so
+// the reveal predicate (compactToolboxExpanded) and the collapsed tooltip agree.
+func compactToolboxHoverRect(grip sdl.Rect) sdl.Rect {
+	return sdl.Rect{X: grip.X - compactHoverPad, Y: grip.Y - compactHoverPad,
+		W: grip.W + compactHoverPad, H: grip.H + 2*compactHoverPad}
+}
+
+// compactToolboxExpanded reports whether the toolbox paints its EXPANDED chip strip
+// this frame (rather than just the collapsed grip). While a layout editor is armed
+// the toolbox draws post-courtroom as a stable target and force-expands, so its
+// grip/chips are always reachable for Edit/Hide-UI/Theater without hunting for the
+// hover sweet spot over the busy editor overlay (A1 Phase 1).
+//
+// Evaluated ONCE per frame, by latchCompactToolbox at the top of the courtroom pass
+// (the draw replays the answer): the fence must cover the strip on exactly the frames
+// the strip is on screen, and a second evaluation at draw time could disagree — the
+// cursor is re-read from the same Ctx, but classicEdit / layoutEdit can be flipped by
+// handleHotkeys in between.
+func (a *App) compactToolboxExpanded(strip, grip sdl.Rect) bool {
+	c := a.ctx
+	return a.classicEdit || a.layoutEdit || a.toolboxPinned ||
+		c.hovering(compactToolboxHoverRect(grip)) || c.hovering(strip)
+}
+
+// compactToolboxLatch is the ONE answer the compact toolbox's overlay fence and its
+// draw share for a frame. The fence has to be published at the TOP of the courtroom
+// pass (a fence is only consulted at hit-test time, and a single-pass kit hit-tests
+// as it draws) while the toolbox itself paints at the BOTTOM — so between the two
+// sits handleHotkeys, which can flip classicEdit / layoutEdit / the hidden set, and
+// drawCourtroomModals, which returns the pass outright. Re-deriving the predicate at
+// the draw would let those answer differently on one frame, and a fence that
+// disagrees with the draw eats clicks over pixels nothing painted: the mirror image
+// of the leak the fence exists to fix.
+type compactToolboxLatch struct {
+	// set marks that the IN-PASS site owns the toolbox this frame. False means the
+	// post-courtroom site (app.go, a layout editor armed) owns it instead — exactly
+	// one of the two draws per frame.
+	set bool
+	// draws is "the toolbox paints at all": false when it is hidden via panelToolbox
+	// or a modal took the screen before the draw was reached.
+	draws bool
+	// expanded is "the chip strip paints" (vs. the slim collapsed grip alone), which
+	// is also the condition under which a fence was published.
+	expanded bool
+	// strip is the exact rect published and painted — one computation, so the two
+	// cannot drift even if a slot override or the themed rect moves mid-frame.
+	strip sdl.Rect
+	// mark is the fence-registry depth from just BEFORE our own publication, handed
+	// to pushOverlayOwner so the toolbox is exempt from its OWN rect but still
+	// occluded by anything published earlier (overlayfence.go).
+	mark int
+}
+
+// latchCompactToolbox computes that answer. Split out so the post-courtroom draw
+// site can reuse the identical predicate without publishing a fence.
+//
+// Geometry note: the strip's position depends on a.toolboxThemeRectOn
+// (compactToolboxStripRect), which drawCourtroom force-clears every frame and only
+// drawCourtroomThemed re-arms — so this must run INSIDE the pass, below the theme
+// dispatch, never from an App-level pre-pass where the flag is stale.
+func (a *App) latchCompactToolbox(w, h int32) compactToolboxLatch {
+	lat := compactToolboxLatch{set: true, mark: a.ctx.overlayFenceMark()}
+	if a.panelHidden(panelToolbox) {
+		return lat // drawCompactToolbox early-returns; nothing is painted, so nothing is fenced
+	}
+	lat.draws = true
+	lat.strip = a.compactToolboxStripRect(w, h)
+	lat.expanded = a.compactToolboxExpanded(lat.strip, compactToolboxGripRect(lat.strip))
+	return lat
+}
+
+// fenceCompactToolbox latches this frame's answer and publishes the toolbox's
+// painted footprint as an overlay fence (overlayfence.go) so the widgets it covers
+// stay inert underneath it — issue #26: the strip parks over an AO2 theme's own
+// control buttons, and a press on a chip used to fire "Call Mod" underneath as well,
+// because the theme button draws EARLIER in the same single pass and had no way to
+// know.
+//
+// Two call sites, both INSIDE the courtroom pass: after the theme dispatch for the
+// classic path, and immediately after the asyncao_toolbox arming for the themed one.
+//
+// Publishes NOTHING unless the expanded strip really paints:
+//   - a layout editor is armed: the in-pass draw is skipped (the toolbox draws
+//     post-courtroom instead) and the editor's own modalOn already fences everything.
+//     The latch stays UNSET so the post-courtroom site knows it owns the draw.
+//   - a return-to-top modal is open: drawCourtroomModals ends the pass before the
+//     toolbox draw is ever reached, so a fence here would blank a ~122×22 band of
+//     the modal over pixels nothing painted.
+//   - hidden via panelToolbox: drawCompactToolbox early-returns, nothing is drawn.
+//   - collapsed: only the slim grip paints. Fencing the whole strip there would eat
+//     clicks over empty pixels, and it would be pointless anyway — the pointer being
+//     anywhere on the grip is itself what expands the strip on the very same frame.
+func (a *App) fenceCompactToolbox(w, h int32) {
+	c := a.ctx
+	a.toolboxFence = compactToolboxLatch{mark: c.overlayFenceMark()}
+	if a.classicEdit || a.layoutEdit {
+		return
+	}
+	if a.courtroomModalUp() {
+		// set, but draws=false: the in-pass site is still the owner (the editor is
+		// not armed), it simply never gets there.
+		a.toolboxFence.set = true
+		return
+	}
+	a.toolboxFence = a.latchCompactToolbox(w, h)
+	if !a.toolboxFence.expanded {
+		return
+	}
+	c.fenceOverlay(a.toolboxFence.strip)
 }
 
 // compactToolboxStripRect is the expanded strip's footprint (grip + the icon chips

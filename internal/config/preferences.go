@@ -1099,7 +1099,7 @@ type AssetPreferences struct {
 	LocalAssetsEnabled bool                      `json:"localAssetsEnabled"`
 	EmoteCaptions      bool                      `json:"emoteCaptions"`         // overlay the emote-name caption on icon-fallback emote buttons (default OFF — clean icons)
 	ViewportExactW     int                       `json:"viewportExactW"`        // exact viewport WIDTH in px (0 = size by the View % knob / divider); height derived 4:3. Integer multiples of 256 stay crisp.
-	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent); 0 = inherit the IC log size once (legacy configs), then diverges
+	OOCScalePct        int                       `json:"oocScalePercent"`       // OOC log text size, INDEPENDENT of the IC log (logScalePercent). NEVER 0 in memory: defaultPrefs seeds DefaultScalePercent and the load overlay resolves the legacy on-disk 0 (= inherit the IC log size once, then diverge). A 0 here reaches buildSet as a 0% scale and renders the OOC log at 1 px.
 	CustomChromeHex    [7]string                 `json:"customChrome"`          // user "Custom" chrome scheme: hex rrggbb per kit colour (bg,panel,panelHi,accent,text,textDim,danger); blank slot = stock dark. Active only when ChromeTheme=="custom".
 	LayoutPartHex      [4]string                 `json:"layoutPartColors"`      // per-layout-part panel tints (v1.52.0): hex rrggbb for log/OOC/emotes/chatbox, blank = chrome default (count pinned by LayoutPartColorCount)
 	BoldNamesOff       bool                      `json:"boldNamesOff"`          // speaker names in the IC/OOC log + chatbox are BOLD by default (readability); set to opt OUT (stored inverted so absent = bold on)
@@ -1829,9 +1829,16 @@ func defaultPrefs(path string) *AssetPreferences {
 		ChatScalePct:                 DefaultScalePercent,
 		ChatBoxPct:                   DefaultScalePercent,
 		LogScalePct:                  DefaultScalePercent,
-		InputHeightPct:               DefaultScalePercent,
-		UIScalePct:                   DefaultScalePercent,
-		OOCInLogTab:                  true, // default OOC = a log tab + bottom OOC bar (Legacy-style, hybrid); the OOC-box layout is opt-out
+		// The OOC log's own zoom. It MUST be seeded here and not left to the load
+		// overlay's legacy-inherit rule: load() returns these defaults verbatim when
+		// the file does not exist (first run) or was quarantined as corrupt, so the
+		// overlay never runs on those paths and OOCScalePct would stay 0 — which is
+		// not "absent" once it leaves config, it is a 0% scale that buildSet floors
+		// at a 1 px font, i.e. an unreadable OOC log on a brand-new install.
+		OOCScalePct:    DefaultScalePercent,
+		InputHeightPct: DefaultScalePercent,
+		UIScalePct:     DefaultScalePercent,
+		OOCInLogTab:    true, // default OOC = a log tab + bottom OOC bar (Legacy-style, hybrid); the OOC-box layout is opt-out
 
 		MusicVol:        defaultStartVolume,
 		SFXVol:          defaultStartVolume,
@@ -2349,7 +2356,9 @@ func load(path string) (*AssetPreferences, error) {
 	}
 	// OOC log text size is independent of the IC log. Legacy configs (no value)
 	// inherit the IC log size once so the OOC box doesn't visibly jump on upgrade;
-	// thereafter the two diverge as each is zoomed on its own.
+	// thereafter the two diverge as each is zoomed on its own. (First run never
+	// reaches here — load() returns defaultPrefs before the overlay — which is why
+	// OOCScalePct is also seeded in defaultPrefs.)
 	if onDisk.OOCScalePct != 0 {
 		p.OOCScalePct = clampPercent(onDisk.OOCScalePct, MinLogScalePercent, MaxLogScalePercent)
 	} else {

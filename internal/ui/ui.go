@@ -498,6 +498,22 @@ type Ctx struct {
 	modalRelease bool
 	ddDraws      []ddDraw // deferred overlay draws this frame (0 or 1)
 
+	// Overlay fence registry (overlayfence.go): rects published by chrome that
+	// paints OVER other widgets — the compact toolbox strip today, the menu bar
+	// next — so hovering() can refuse hits underneath them in a single-pass kit.
+	// A fixed array + count (hard rule 4): publishing never grows a slice and
+	// never allocates. overlayOwner suspends the test while the occluder
+	// hit-tests its OWN widgets (the dropdown's raw-pointIn precedent, scoped),
+	// and overlayOwnerMark bounds that suspend to the owner's own publication
+	// onwards — fences published EARLIER (an app-wide menu bar's open dropdown)
+	// still occlude the owner, because registry order is paint order.
+	// Zeroed every BeginFrame, so an un-released fence can't freeze the UI the
+	// way a stranded modalOn would.
+	overlayFences    [overlayFenceCap]sdl.Rect
+	overlayFenceN    int
+	overlayOwner     bool
+	overlayOwnerMark int
+
 	// Pointer fence (fencePointer/unfencePointer): the non-blocking floating
 	// panel runs the courtroom pass pointer-blind while the cursor sits over it,
 	// then restores the stashed state for its own pass.
@@ -1475,6 +1491,14 @@ func (c *Ctx) BeginFrame(dt time.Duration) {
 		c.modalRelease = false
 	}
 	c.ddDraws = c.ddDraws[:0]
+	// Overlay fences are per-frame publications (overlayfence.go). Zeroing them
+	// here — not trusting each publisher's release — is what keeps the registry
+	// from ever becoming the stranded-modalOn freeze: a pass that returns early
+	// still starts the next frame with a clear registry. overlayOwner is a scoped
+	// suspend that never outlives its draw, but it resets with them so a panic
+	// unwinding an owner bracket can't leave the fence permanently disabled.
+	c.overlayFenceN = 0
+	c.overlayOwner, c.overlayOwnerMark = false, 0
 
 	// prevMouseDown snapshots LAST frame's held state before this frame's
 	// events arrive — the press edge (mouseDown && !prevMouseDown) that starts
@@ -1821,6 +1845,20 @@ func (c *Ctx) hovering(r sdl.Rect) bool {
 	// you to that area (the "sent to the movie room" playtest bug).
 	if c.clipOn && !(c.mouseX >= c.clipRect.X && c.mouseX < c.clipRect.X+c.clipRect.W &&
 		c.mouseY >= c.clipRect.Y && c.mouseY < c.clipRect.Y+c.clipRect.H) {
+		return false
+	}
+	// A later-drawn overlay published its painted footprint this pass
+	// (overlayfence.go): it owns those PIXELS, so it must own the INPUT there too.
+	// Without this, pressing a compact-toolbox chip that sits over an AO2 theme's
+	// control rect also pressed the button underneath — issue #26, and PART of open
+	// issue #37: this is the only place the registry is consulted, so it covers
+	// hovering()-based hit tests only. Raw pointIn() sites (editOverToolbox, the
+	// dropdown's own list rows, the editors' drag tests) still see through a fence
+	// unless they call c.overlayFenced themselves. Checked AFTER modalOn and clipOn:
+	// a modal outranks every rect-scoped rule, and a clipped widget doesn't exist
+	// outside its clip at all. The occluder itself hit-tests from inside
+	// pushOverlayOwner, so its own chips stay live.
+	if c.overlayFenced(c.mouseX, c.mouseY) {
 		return false
 	}
 	return c.mouseX >= r.X && c.mouseX < r.X+r.W && c.mouseY >= r.Y && c.mouseY < r.Y+r.H
