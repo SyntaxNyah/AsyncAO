@@ -15,6 +15,33 @@ items move to `docs/FEATURES.md` as they ship.
 
 ## Planned
 
+- **Aspect-lock the CLASSIC (non-themed) layout (Native-fit follow-up).** The
+  theme-fit modes only govern the THEMED courtroom: `themeLayout`
+  (`internal/ui/theme_layout.go`) transforms an AO2 theme's design canvas, and
+  its new **Native 1:1** default reproduces stock AO2 exactly, because AO2 never
+  scales — its window *is* the canvas. The classic layout has no design canvas at
+  all: `fracToRect` (`internal/ui/classiclayout.go`) lays every box out as a
+  fraction of the live window, so its proportions follow the window shape rather
+  than a fixed one. Giving it the same "keep the authored proportions" guarantee
+  means choosing a reference canvas for a layout that was never authored against
+  one, and re-deriving every slot's anchor from it — a redesign of the classic
+  layout model, not a fit mode, which is why it was deliberately left out of the
+  Native-fit change. **Not to be confused with** the existing **4:3 lock** in the
+  classic layout *editor* (guarded by `a.classicEditKey == slotViewport`): that
+  keeps the STAGE box 4:3 while you drag it, is unrelated to theme fit, and stays
+  exactly as it is.
+- **Carry the theme-import window snap on the theme result itself.** The snap is
+  armed as a generation number held beside the apply (`themeResizeArmGen` in
+  `internal/ui/app.go`) and spent when the apply carrying that generation lands.
+  Because the theme pipeline publishes through a single slot and newest wins, an
+  apply started AFTER the armed one — a texture-eviction repair, a server binding
+  its own theme — can land first and annihilate the armed result, and the snap is
+  then simply lost (it disarms cleanly; nothing misfires, and the manual
+  **Settings → Window → Theme's design size** button is one click away). Moving
+  the intent onto the result object instead of naming its generation would make
+  the snap survive that race outright, but it means threading a UI decision
+  through the off-thread load, so it was left out of the pass that fixed the
+  stranding.
 - **Pace every automated wire producer reachable from `App.Background`
   (v1.82.0 follow-up).** The minimized-disconnect fix paced the OOC automation
   queue at its **drain**: `processOOCQueue` (`internal/ui/macros.go`) releases at

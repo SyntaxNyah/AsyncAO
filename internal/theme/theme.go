@@ -495,6 +495,15 @@ func (t *Theme) KeyCount() int {
 	return t.design.Len() + t.fonts.Len() + t.sounds.Len()
 }
 
+// atoiTrim discards the parse error ON PURPOSE — that is AO2 parity, not
+// sloppiness. Every design/font tuple in AO2 is read with QString::toInt(),
+// which returns 0 for anything it cannot parse (verified against Qt 6.5.3:
+// "8SS" → 0) and which AO2 then uses unchecked
+// (AO2-Client text_file_functions.cpp:236-239 for rects, :212-213 for pairs).
+// Reporting the error here and rejecting the whole tuple would make AsyncAO
+// STRICTER than the client every theme was authored against, silently dropping
+// rects that render fine in AO2. Callers that need "is this usable" ask
+// Rect.Valid(), exactly as AO2 checks width/height before laying a widget out.
 func atoiTrim(s string) int {
 	v, _ := strconv.Atoi(strings.TrimSpace(s))
 	return v

@@ -93,16 +93,36 @@ const defaultUIScaleAuto = true
 const defaultThemeLayout = true
 
 // Theme-fit modes: how an AO2 theme's FIXED design size fills a differently
-// shaped window. Stretch (default — webAO-style) fills edge-to-edge with a
+// shaped window.
+//
+// Native is the shipped default because stock AO2 never scales a theme at all —
+// setFixedSize makes the window BE the canvas (AO2-Client charselect.cpp:83, and
+// set_courtroom_size() for the courtroom), so a theme's pixels land on screen
+// pixels untouched. Our window is resizable, so Native reproduces that by drawing
+// the design canvas at scale exactly 1.0, centred, with bars, and scaling DOWN
+// uniformly only when the window is smaller than the canvas so nothing is ever
+// clipped. Stretch (the old default — webAO-style) fills edge-to-edge with a
 // slight aspect distortion; Letterbox keeps the exact proportions with bars;
-// Crop scales up to fill and lets the overflow run off-screen. Stretch is 0 so
-// the zero value (and every pre-existing prefs file) lands on the new default.
+// Crop scales up to fill and lets the overflow run off-screen.
+//
+// These values are PERSISTED, so the list is APPEND-ONLY: renumbering would
+// silently reinterpret every saved choice. Native therefore sits at 4, which
+// means the zero value is no longer the default — a file written before Native
+// existed carries a baked themeFit:0 (Stretch) that is indistinguishable from a
+// deliberate Stretch, so only the one-shot ThemeFitDefaultMigrated stamp (see
+// load) can move an existing user onto the new default.
 const (
 	ThemeFitStretch   = 0
 	ThemeFitLetterbox = 1
 	ThemeFitCrop      = 2
 	ThemeFitCustom    = 3 // manual zoom + pan (crop to taste)
-	defaultThemeFit   = ThemeFitStretch
+	ThemeFitNative    = 4 // 1:1, downscale-only: stock-AO2 pixels, never upscaled
+	// themeFitModeMax is the highest valid mode. Every clamp goes through it so a
+	// future mode can never be silently clamped away by a bound still pinned to the
+	// previous last value — which is exactly how the load overlay would have eaten
+	// Native had it kept clamping to ThemeFitCustom.
+	themeFitModeMax = ThemeFitNative
+	defaultThemeFit = ThemeFitNative
 )
 
 // Custom theme-fit knobs: a manual zoom (percent of the letterbox-fit scale,
@@ -1191,6 +1211,15 @@ type AssetPreferences struct {
 	// has run for this file (see load). Absent in files written before the pull-back;
 	// once true, the saved AutoReconnect choice is respected as-is.
 	AutoReconnectDefaultMigrated bool `json:"autoReconnectDefaultMigrated"`
+	// ThemeFitDefaultMigrated is the same one-shot stamp for the ThemeFit field
+	// above: it records that the Stretch→Native default move has RUN for this file
+	// (see load), not that the value changed — the move only touches a file still
+	// sitting on the old Stretch default, and stamps either way so it can never
+	// run twice. Absent in files written before the move; once true, the saved
+	// ThemeFit choice is respected as-is. It lives here, beside its sibling stamp,
+	// rather than beside ThemeFit itself, because ThemeFit sits inside a long run
+	// of alignment-formatted fields that a doc comment would re-flow wholesale.
+	ThemeFitDefaultMigrated bool `json:"themeFitDefaultMigrated"`
 	// MusicHistory keeps the session "recently played" jukebox list (ON by default).
 	MusicHistory bool `json:"musicHistory"`
 	// MusicStreaming fetches and plays custom /play tracks (ON by default). OFF =
@@ -1240,6 +1269,37 @@ type AssetPreferences struct {
 	// serialized (unexported) and exists solely so the UI can surface a
 	// one-time startup notice via Quarantine(). See load().
 	quarantine *Quarantine
+
+	// themeFitMovedToNative records that THIS load performed the one-shot
+	// Stretch→Native theme-fit move — i.e. that the stamp was absent AND the file
+	// was still sitting on the old Stretch default, so the move actually changed
+	// what the user sees. Never serialized (unexported): it describes this
+	// process's load, not the file, and the persisted record is the stamp itself.
+	//
+	// It exists because the mode flip alone leaves an upgrading user staring at a
+	// small centred canvas ringed by bars where an edge-to-edge Stretch courtroom
+	// used to be — the "you must go and tweak settings" outcome. The UI reads it
+	// once at startup (ThemeFitDefaultJustMoved) to arm the same one-shot window
+	// snap a deliberate theme pick arms, so the first launch after updating lands
+	// on the theme's design size and every later launch is untouched. Config never
+	// reaches into the UI; it only reports what it did. See load().
+	themeFitMovedToNative bool
+
+	// themeFitStampPending records that THIS load wrote the one-shot
+	// ThemeFitDefaultMigrated stamp that the file did not carry. Never serialized
+	// (unexported): it describes this load, and newWithDebounce clears it by
+	// flushing the file synchronously before the app can run.
+	//
+	// The debounced saver is not enough for a stamp. markDirty only queues, and
+	// during load() the dirty channel does not even exist yet, so the stamp reaches
+	// disk on the next unrelated mutation — or, failing that, only on Close. A
+	// launch that ends before either (a crash, a kill, a fast quit) leaves the file
+	// unstamped, and the migration AND the one-time window snap it arms both run
+	// again next launch. Writing once here is what makes "once, ever" true rather
+	// than "once per persisted stamp"; it is a boot-path write of one small file,
+	// not a render/decode/resolver path (hard rule 2), and it is the same reasoning
+	// the corrupt-file quarantine rename in load() already uses.
+	themeFitStampPending bool
 
 	// formatGen increments on every mutation that changes any effective
 	// probe list (format orders, fallback toggles). Consumers cache derived
@@ -1366,7 +1426,7 @@ type prefsJSON struct {
 	DebugOverlay           bool             `json:"debugOverlay"`
 	FormatAutoDetect       *bool            `json:"formatAutoDetect"` // absent = default ON
 	ThemeLayout            *bool            `json:"themeLayout"`      // absent = default ON
-	ThemeFit               int              `json:"themeFit"`         // 0 = Stretch (default)
+	ThemeFit               int              `json:"themeFit"`         // mode constant; 0 (absent) = Stretch, which is NOT the default — see themeFitDefaultMigrated
 	ThemeFitZoom           int              `json:"themeFitZoom"`     // 0 (absent) = default 100
 	ThemeFitPanX           int              `json:"themeFitPanX"`
 	ThemeFitPanY           int              `json:"themeFitPanY"`
@@ -1526,6 +1586,7 @@ type prefsJSON struct {
 	ICTimestamps                 *bool    `json:"icTimestamps"`                 // absent = default OFF
 	AutoReconnect                *bool    `json:"autoReconnect"`                // absent = default OFF
 	AutoReconnectDefaultMigrated *bool    `json:"autoReconnectDefaultMigrated"` // absent = the ON→OFF pull-back hasn't run for this file yet
+	ThemeFitDefaultMigrated      *bool    `json:"themeFitDefaultMigrated"`      // absent = the Stretch→Native default move hasn't run for this file yet; a POINTER because the sibling themeFit is a plain int, so "never written" and "deliberately Stretch" are the same bytes
 	MusicHistory                 *bool    `json:"musicHistory"`                 // absent = default ON
 	MusicStreaming               *bool    `json:"musicStreaming"`               // absent = default ON
 	MusicHosts                   []string `json:"musicHosts,omitempty"`         // absent = default list
@@ -1751,6 +1812,21 @@ func newWithDebounce(path string, debounce time.Duration) (*AssetPreferences, er
 	p.dirty = make(chan struct{}, 1)
 	p.stop = make(chan struct{})
 	p.done = make(chan struct{})
+	// Durable one-shot stamp. It runs HERE and not inside load() for two reasons:
+	// load() is only half-overlaid at the point the migration decides, so writing
+	// there would persist defaults for every field it has not reached yet; and
+	// bare load() is the white-box test entry point, while this is the one the app
+	// actually boots through. Boot path, one small file, and only on the single
+	// launch that migrates — see themeFitStampPending.
+	if p.themeFitStampPending {
+		p.themeFitStampPending = false
+		if serr := p.SaveNow(); serr != nil {
+			// SaveNow cleared `pending` before failing; re-mark so the saver and Close
+			// still retry rather than the stamp being silently dropped.
+			p.markDirty()
+			log.Printf("config: could not persist the theme-fit migration stamp: %v", serr)
+		}
+	}
 	go p.saverLoop()
 	return p, err
 }
@@ -1795,10 +1871,13 @@ func defaultPrefs(path string) *AssetPreferences {
 		MessageCounter:         defaultMessageCounter,
 		ICTimestamps:           defaultICTimestamps,
 		AutoReconnect:          defaultAutoReconnect,
-		// A fresh install has nothing to pull back (it already defaults OFF), so it
-		// counts as already-migrated. Only a file written by an OLDER build lacks
-		// this stamp (absent → nil on load) and triggers the one-shot force-OFF.
+		// Both one-shot default stamps. A fresh install has nothing to move — it
+		// already defaults to auto-reconnect OFF and theme fit Native — so it counts
+		// as already-migrated. Only a file written by an OLDER build lacks these
+		// stamps (absent → nil on load) and triggers the one-shot force-OFF /
+		// Stretch→Native move in the load overlay.
 		AutoReconnectDefaultMigrated: true,
+		ThemeFitDefaultMigrated:      true,
 		MusicHistory:                 defaultMusicHistory,
 		MusicStreaming:               defaultMusicStreaming,
 		ShowMissingPlaceholder:       defaultShowMissingPlaceholder,
@@ -2169,7 +2248,45 @@ func load(path string) (*AssetPreferences, error) {
 	if onDisk.ThemeLayout != nil {
 		p.ThemeLayoutOn = *onDisk.ThemeLayout
 	}
-	p.ThemeFit = clampPercent(onDisk.ThemeFit, ThemeFitStretch, ThemeFitCustom)
+	// Theme-fit default moved Stretch→Native (1:1). An imported theme has to look
+	// right with no settings tweaking, and stock AO2 never scales its theme at all,
+	// so the pixel-faithful mode is the one that must ship on by default.
+	// One-shot: the on-disk themeFit is a plain int, so an absent key and a
+	// deliberate Stretch are the same bytes — a bare default flip would reach nobody
+	// who has ever saved prefs. A file written before this change carries no stamp,
+	// so the move runs exactly once and stamps; every later load respects the saved
+	// mode, so a user who then picks Stretch keeps Stretch. The clamp uses
+	// themeFitModeMax, NOT ThemeFitCustom: a bound pinned to the old last mode would
+	// clamp the new default straight back off on load.
+	if onDisk.ThemeFitDefaultMigrated != nil && *onDisk.ThemeFitDefaultMigrated {
+		p.ThemeFitDefaultMigrated = true
+		p.ThemeFit = clampPercent(onDisk.ThemeFit, ThemeFitStretch, themeFitModeMax)
+	} else {
+		// Un-migrated. The move is VALUE-AWARE, unlike its auto-reconnect sibling:
+		// only a file still sitting on the OLD default (Stretch) moves. The old
+		// default was Stretch and the saver always wrote the field, so any on-disk
+		// themeFit other than Stretch is provably a deliberate pick — Letterbox,
+		// Crop, or a Custom mode whose zoom/pan would become meaningless if the mode
+		// were overwritten. Nothing about a preserved pick's look changes, which is
+		// also why such a file must NOT arm the one-time window snap below.
+		//
+		// The STAMP is written either way, so the move can never run twice. It is
+		// flushed SYNCHRONOUSLY once this load finishes (themeFitStampPending →
+		// newWithDebounce), not merely marked dirty: a stamp that only survives the
+		// debounce window is a "once per persisted stamp" guarantee, and this one has
+		// to be "once, ever" — the #35 window snap rides it. markDirty still runs, so
+		// a failed flush is retried by the saver and by Close.
+		saved := clampPercent(onDisk.ThemeFit, ThemeFitStretch, themeFitModeMax)
+		if saved == ThemeFitStretch {
+			p.ThemeFit = defaultThemeFit
+			p.themeFitMovedToNative = true
+		} else {
+			p.ThemeFit = saved
+		}
+		p.ThemeFitDefaultMigrated = true
+		p.themeFitStampPending = true
+		p.markDirty()
+	}
 	if onDisk.ThemeFitZoom != 0 { // 0 (absent) keeps the default
 		p.ThemeFitZoom = clampPercent(onDisk.ThemeFitZoom, MinThemeZoom, MaxThemeZoom)
 	}
@@ -9255,17 +9372,42 @@ func (p *AssetPreferences) SetThemeLayout(enabled bool) {
 	p.markDirty()
 }
 
-// ThemeFitMode reports how an AO2 theme fills the window: ThemeFitStretch
-// (default), ThemeFitLetterbox, or ThemeFitCrop.
+// ThemeFitMode reports how an AO2 theme fills the window: ThemeFitNative
+// (the default), ThemeFitStretch, ThemeFitLetterbox, ThemeFitCrop or
+// ThemeFitCustom.
 func (p *AssetPreferences) ThemeFitMode() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.ThemeFit
 }
 
+// ThemeFitDefaultJustMoved reports whether THIS load performed the one-shot
+// Stretch→Native theme-fit move: the stamp was absent (so this is the first run
+// after updating for this file) AND the file was still on the old Stretch
+// default, so the mode actually changed under the user.
+//
+// It is the upgrade signal for the #35 window snap — the caller uses it to arm
+// exactly one automatic resize to the theme's design size, so an existing user
+// does not go from an edge-to-edge courtroom to a small canvas ringed by bars
+// with no way back except the settings screen. Persisting the stamp is what
+// makes it fire once and only once: the next launch finds the stamp and this
+// reports false forever after. That is why the stamp is flushed SYNCHRONOUSLY on
+// the migrating launch (newWithDebounce) rather than left to the debounced saver
+// — a stamp that can be lost to a crash inside the debounce window would only
+// buy "once per persisted stamp", and the move would re-run and re-snap.
+//
+// Pure read (no consume), so it is safe to call from anywhere; the caller owns
+// the "act on it once" decision. A file that kept a deliberate Letterbox/Crop/
+// Custom pick reports FALSE — its look did not change, so nothing should move.
+func (p *AssetPreferences) ThemeFitDefaultJustMoved() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.themeFitMovedToNative
+}
+
 // SetThemeFit sets the theme-fit mode (clamped to a valid mode).
 func (p *AssetPreferences) SetThemeFit(mode int) {
-	mode = clampPercent(mode, ThemeFitStretch, ThemeFitCustom)
+	mode = clampPercent(mode, ThemeFitStretch, themeFitModeMax)
 	p.mu.Lock()
 	if p.ThemeFit == mode {
 		p.mu.Unlock()

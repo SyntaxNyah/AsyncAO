@@ -1503,3 +1503,260 @@ func TestAutoReconnectDefaultPullback(t *testing.T) {
 		t.Error("a stamped file's explicit ON must be respected (the pull-back already ran)")
 	}
 }
+
+// TestThemeFitModeRoundTrip walks EVERY theme-fit mode through save → load.
+//
+// It exists because the load overlay clamps the on-disk mode, and that clamp's
+// upper bound used to be a hard-coded ThemeFitCustom: appending ThemeFitNative
+// without moving the bound would have clamped the new default straight back to
+// Custom on the very next launch — a silent, invisible-until-a-user-complains
+// bug. Sweeping every constant means the next appended mode is caught the same
+// way, by a test that never has to be edited.
+func TestThemeFitModeRoundTrip(t *testing.T) {
+	modes := []struct {
+		mode int
+		name string
+	}{
+		{ThemeFitStretch, "Stretch"},
+		{ThemeFitLetterbox, "Letterbox"},
+		{ThemeFitCrop, "Crop"},
+		{ThemeFitCustom, "Custom"},
+		{ThemeFitNative, "Native"},
+	}
+	// Guard the sweep itself: if a mode is appended to the enum and not listed
+	// here, this test would silently stop covering it.
+	if len(modes) != themeFitModeMax-ThemeFitStretch+1 {
+		t.Fatalf("the mode sweep covers %d modes but the enum spans %d — add the new mode here", len(modes), themeFitModeMax-ThemeFitStretch+1)
+	}
+	for _, m := range modes {
+		t.Run(m.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), PrefsFileName)
+			p, err := newWithDebounce(path, testDebounce)
+			if err != nil {
+				t.Fatalf("newWithDebounce: %v", err)
+			}
+			p.SetThemeFit(m.mode)
+			if got := p.ThemeFitMode(); got != m.mode {
+				t.Fatalf("SetThemeFit(%s) = %d, want %d (clamped in the setter)", m.name, got, m.mode)
+			}
+			if err := p.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			q, err := load(path)
+			if err != nil {
+				t.Fatalf("reload: %v", err)
+			}
+			if got := q.ThemeFitMode(); got != m.mode {
+				t.Errorf("after save→load ThemeFitMode = %d, want %s(%d) — the load clamp ate it", got, m.name, m.mode)
+			}
+		})
+	}
+}
+
+// TestThemeFitDefaultMove pins the one-shot Stretch→Native default move. The
+// on-disk themeFit is a plain int, so a file written before Native existed
+// carries a baked themeFit:0 that is byte-identical to a deliberate Stretch —
+// only the absent stamp can tell them apart, and a bare default flip would
+// therefore reach nobody who has ever saved preferences. A stamped file is
+// respected as-is, so a user who deliberately picks Stretch afterwards keeps it.
+//
+// The move is VALUE-AWARE, unlike its auto-reconnect sibling: it only touches a
+// file still sitting on the OLD default. Since Stretch WAS that default and the
+// saver always wrote the field, any other stored mode is provably a deliberate
+// pick — and overwriting a Custom pick in particular would strand that user's
+// zoom and pan on a mode that no longer reads them. The STAMP is written either
+// way, so neither branch can run twice.
+func TestThemeFitDefaultMove(t *testing.T) {
+	old := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(old, []byte(`{"themeFit": 0}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := load(old)
+	if err != nil {
+		t.Fatalf("load old file: %v", err)
+	}
+	if p.ThemeFitMode() != ThemeFitNative {
+		t.Errorf("an older file's baked Stretch must move to Native(%d) once, got %d", ThemeFitNative, p.ThemeFitMode())
+	}
+	if !p.ThemeFitDefaultJustMoved() {
+		t.Error("the move must report itself, or the one-time upgrade window snap never arms")
+	}
+
+	stamped := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(stamped, []byte(`{"themeFit": 0, "themeFitDefaultMigrated": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	q, err := load(stamped)
+	if err != nil {
+		t.Fatalf("load stamped file: %v", err)
+	}
+	if q.ThemeFitMode() != ThemeFitStretch {
+		t.Errorf("a stamped file's deliberate Stretch must be respected, got %d", q.ThemeFitMode())
+	}
+	if q.ThemeFitDefaultJustMoved() {
+		t.Error("a stamped file must not report a move — the snap would fire on every launch")
+	}
+
+	// A pre-stamp file that chose a NON-Stretch mode KEEPS it. The old default was
+	// Stretch, so anything else on disk was picked on purpose; the stamp still goes
+	// down so this never runs again, and nothing about that user's look changed, so
+	// nothing may move their window either.
+	for _, tc := range []struct {
+		name string
+		json string
+		want int
+	}{
+		{"letterbox", `{"themeFit": 1}`, ThemeFitLetterbox},
+		{"crop", `{"themeFit": 2}`, ThemeFitCrop},
+		{"custom", `{"themeFit": 3, "themeFitZoom": 150, "themeFitPanX": 10}`, ThemeFitCustom},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), PrefsFileName)
+			if err := os.WriteFile(path, []byte(tc.json), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			r, err := load(path)
+			if err != nil {
+				t.Fatalf("load pre-stamp file: %v", err)
+			}
+			if got := r.ThemeFitMode(); got != tc.want {
+				t.Errorf("a deliberate pick was overwritten: ThemeFitMode = %d, want %d", got, tc.want)
+			}
+			if !r.ThemeFitDefaultMigrated {
+				t.Error("the stamp must be written even when the value is preserved, or the move runs again next launch")
+			}
+			if r.ThemeFitDefaultJustMoved() {
+				t.Error("a preserved pick must not report a move — its look did not change")
+			}
+		})
+	}
+	// The Custom pick's zoom/pan stay meaningful because the mode survived.
+	custom := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(custom, []byte(`{"themeFit": 3, "themeFitZoom": 150, "themeFitPanX": 10}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := load(custom)
+	if err != nil {
+		t.Fatalf("load Custom file: %v", err)
+	}
+	if c.ThemeZoom() != 150 {
+		t.Errorf("Custom zoom = %d, want the saved 150", c.ThemeZoom())
+	}
+	if px, _ := c.ThemePan(); px != 10 {
+		t.Errorf("Custom pan X = %d, want the saved 10", px)
+	}
+
+	// Fresh install: no file at all. defaults() already stamps, so the move must
+	// not re-fire on the next launch either — and there is nothing to snap to.
+	fresh, err := load(filepath.Join(t.TempDir(), PrefsFileName))
+	if err != nil {
+		t.Fatalf("load fresh: %v", err)
+	}
+	if fresh.ThemeFitMode() != ThemeFitNative {
+		t.Errorf("a fresh install must start on Native(%d), got %d", ThemeFitNative, fresh.ThemeFitMode())
+	}
+	if !fresh.ThemeFitDefaultMigrated {
+		t.Error("a fresh install must be stamped as already-migrated, or the move re-fires over a later deliberate Stretch")
+	}
+	if fresh.ThemeFitDefaultJustMoved() {
+		t.Error("a fresh install must not report a move — there is no upgrade to smooth over")
+	}
+}
+
+// TestThemeFitStampIsDurableWithoutAClose is what makes "once, ever" true instead
+// of "once per persisted stamp". The debounced saver cannot carry a one-shot
+// stamp on its own: markDirty only queues (and during load the dirty channel does
+// not even exist yet), so a launch that ends inside the debounce window — a
+// crash, a kill, a fast quit — used to leave the file unstamped and run the
+// migration, and the one-time window snap it arms, all over again next launch.
+// The migrating launch therefore flushes the file synchronously before the app
+// gets to run.
+func TestThemeFitStampIsDurableWithoutAClose(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(path, []byte(`{"themeFit": 0}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("load the pre-stamp file: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Close() })
+	if !p.ThemeFitDefaultJustMoved() {
+		t.Fatal("the first load did not perform the move")
+	}
+
+	// No Close, no SaveNow, no debounce window elapsed: the FILE must already carry
+	// the stamp and the moved value. Asserted against the bytes on disk, not
+	// against a reload — a reload just re-runs the migration in memory and would
+	// report a stamped, Native prefs object either way.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("re-read the file: %v", err)
+	}
+	var onDisk prefsJSON
+	if err := json.Unmarshal(data, &onDisk); err != nil {
+		t.Fatalf("parse the file: %v", err)
+	}
+	if onDisk.ThemeFitDefaultMigrated == nil || !*onDisk.ThemeFitDefaultMigrated {
+		t.Error("the stamp had not reached disk — a crash here re-runs the migration and re-snaps the window")
+	}
+	if onDisk.ThemeFit != ThemeFitNative {
+		t.Errorf("on-disk themeFit = %d, want the moved Native(%d)", onDisk.ThemeFit, ThemeFitNative)
+	}
+	// And the reload agrees: nothing left to move.
+	crashed, err := load(path)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if crashed.ThemeFitDefaultJustMoved() {
+		t.Error("the next launch would move (and re-snap) again")
+	}
+}
+
+// TestThemeFitDefaultMoveStampsOnce pins the durability half of the one-shot: the
+// move marks the preferences dirty, so the stamp reaches disk, and the SECOND
+// load of the same file neither moves the value nor reports a move. Everything
+// that keys off the signal (the one-time #35 window snap) therefore fires exactly
+// once, ever, rather than once per launch.
+func TestThemeFitDefaultMoveStampsOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PrefsFileName)
+	if err := os.WriteFile(path, []byte(`{"themeFit": 0}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first, err := newWithDebounce(path, testDebounce)
+	if err != nil {
+		t.Fatalf("first load: %v", err)
+	}
+	if !first.ThemeFitDefaultJustMoved() {
+		t.Fatal("the first load did not perform the move")
+	}
+	if err := first.Close(); err != nil { // flushes the pending stamp
+		t.Fatalf("Close: %v", err)
+	}
+
+	second, err := load(path)
+	if err != nil {
+		t.Fatalf("second load: %v", err)
+	}
+	if second.ThemeFitDefaultJustMoved() {
+		t.Error("the move re-fired on the next launch — the stamp did not persist")
+	}
+	if second.ThemeFitMode() != ThemeFitNative {
+		t.Errorf("the moved value did not persist: ThemeFitMode = %d", second.ThemeFitMode())
+	}
+	// And the stamp is respected even against a value the user changes afterwards.
+	second.SetThemeFit(ThemeFitStretch)
+	if err := second.SaveNow(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	third, err := load(path)
+	if err != nil {
+		t.Fatalf("third load: %v", err)
+	}
+	if third.ThemeFitMode() != ThemeFitStretch {
+		t.Errorf("a deliberate post-stamp Stretch was moved again: ThemeFitMode = %d", third.ThemeFitMode())
+	}
+	if third.ThemeFitDefaultJustMoved() {
+		t.Error("a deliberate post-stamp Stretch reported a move")
+	}
+}

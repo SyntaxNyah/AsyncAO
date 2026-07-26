@@ -182,6 +182,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	if sw, sh := prefs.WindowSize(); sw > 0 && sh > 0 {
 		winW, winH = int32(sw), int32(sh)
 	}
+	// sdl.WINDOWPOS_CENTERED is literally SDL_WINDOWPOS_CENTERED_DISPLAY(0), i.e.
+	// the PRIMARY display — and that is correct here and only here: there is no
+	// window yet, so there is no "current display" to prefer, and we persist a
+	// window size but never a position. Everywhere a window already exists we go
+	// through ui.CenteredWindowPos instead, which keeps it on the display it is on.
 	window, err := sdl.CreateWindow(windowTitle,
 		sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED,
 		winW, winH, sdl.WINDOW_SHOWN|sdl.WINDOW_RESIZABLE)
@@ -194,8 +199,11 @@ func run(serverURL, masterURL string, vsync, debugMode bool) error {
 	if di, err := window.GetDisplayIndex(); err == nil {
 		if ub, err := sdl.GetDisplayUsableBounds(di); err == nil {
 			if cw, ch := config.ClampWindowSize(int(winW), int(winH), int(ub.W), int(ub.H)); int32(cw) != winW || int32(ch) != winH {
+				// Recenter on the display we just measured, NOT on display 0: the two
+				// must agree or the window lands on one monitor sized for another.
+				pos := ui.CenteredWindowPos(di)
 				window.SetSize(int32(cw), int32(ch))
-				window.SetPosition(sdl.WINDOWPOS_CENTERED, sdl.WINDOWPOS_CENTERED)
+				window.SetPosition(pos, pos)
 			}
 		}
 	}

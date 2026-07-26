@@ -1531,12 +1531,18 @@ func TestShownamePresets(t *testing.T) {
 	}
 }
 
-// TestThemeFitDefaultsAndClamp pins the theme-fit prefs: Stretch is the default
-// (zero value), and the mode/zoom/pan all clamp to their bounds.
+// TestThemeFitDefaultsAndClamp pins the theme-fit prefs: Native (1:1) is the
+// default, and the mode/zoom/pan all clamp to their bounds.
+//
+// The default expectation CHANGED here (it was Stretch, the zero value) because
+// the shipped default deliberately moved: stock AO2 never scales a theme, so 1:1
+// is what an imported theme must look like with no settings tweaking. The clamp
+// expectation moved with it — the upper bound is the LAST mode, which is now
+// Native, not Custom.
 func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	p, _ := newTestPrefs(t)
-	if p.ThemeFitMode() != ThemeFitStretch {
-		t.Errorf("ThemeFitMode default = %d, want Stretch(%d)", p.ThemeFitMode(), ThemeFitStretch)
+	if p.ThemeFitMode() != ThemeFitNative {
+		t.Errorf("ThemeFitMode default = %d, want Native(%d)", p.ThemeFitMode(), ThemeFitNative)
 	}
 	if p.ThemeZoom() != DefaultThemeZoom {
 		t.Errorf("ThemeZoom default = %d, want %d", p.ThemeZoom(), DefaultThemeZoom)
@@ -1544,10 +1550,15 @@ func TestThemeFitDefaultsAndClamp(t *testing.T) {
 	if !p.PlainLobbyOn() {
 		t.Error("PlainLobbyOn default must be true (readable server list)")
 	}
-	p.SetThemeFit(99) // out of range → clamps to the last mode (Custom)
-	if p.ThemeFitMode() != ThemeFitCustom {
-		t.Errorf("SetThemeFit clamp = %d, want Custom(%d)", p.ThemeFitMode(), ThemeFitCustom)
+	p.SetThemeFit(99) // out of range → clamps to the last mode (Native)
+	if p.ThemeFitMode() != ThemeFitNative {
+		t.Errorf("SetThemeFit clamp = %d, want Native(%d)", p.ThemeFitMode(), ThemeFitNative)
 	}
+	p.SetThemeFit(-1) // below the first mode → clamps to Stretch(0)
+	if p.ThemeFitMode() != ThemeFitStretch {
+		t.Errorf("SetThemeFit low clamp = %d, want Stretch(%d)", p.ThemeFitMode(), ThemeFitStretch)
+	}
+	p.SetThemeFit(ThemeFitCustom) // restore a mid mode so the zoom/pan checks below are meaningful
 	p.SetThemeFitZoom(1 << 20)
 	if p.ThemeZoom() != MaxThemeZoom {
 		t.Errorf("zoom clamp = %d, want %d", p.ThemeZoom(), MaxThemeZoom)

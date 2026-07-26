@@ -773,6 +773,25 @@ type App struct {
 	themeEmoteCell [2]int
 	themeEmoteGap  [2]int
 	themeLay       themeLayoutCache
+	// themeResizeArmGen is the one-shot that arms the #35 auto-resize. It holds the
+	// themeGen of the ONE apply allowed to move the window; 0 = disarmed.
+	//
+	// It NAMES its apply rather than being a bare flag because the apply pipeline is
+	// re-entered constantly by things that must never move the window — boot,
+	// healTheme's eviction repair (fired from any theme-art draw, including the
+	// Settings screen's own live preview), the texture-filter Purge recovery, and a
+	// server binding its own theme. A bare flag is consumed by whichever apply lands
+	// first, so a heal that was already in flight when the user opened the theme
+	// dropdown would eat the arming and snap the window to the PREVIOUS theme's
+	// canvas, leaving the theme they actually picked unsnapped. Comparing gens makes
+	// the arming unforgeable: only the apply the user's click started can spend it.
+	//
+	// Armed at the USER-INITIATED sites (the Settings dropdown, the < > cycle
+	// arrows, a user-driven theme-folder scan landing) and once at boot when the
+	// ThemeFit default move ran for this prefs file, consumed by
+	// maybeResizeToThemeDesign. Render thread on both ends, so it needs no
+	// synchronisation (hard rules 1 and 8).
+	themeResizeArmGen uint64
 
 	// --- live layout editor (themed courtroom; overrides persist per theme) ---
 	layoutEdit   bool
@@ -2415,28 +2434,87 @@ func themeBtnStem(key string) string {
 func themeTexKey(stem string) string { return "theme://" + stem }
 
 const (
-	// defaultEmoteCellPx / defaultEmoteGapPx are AO2's stock emote-grid
-	// metrics, used when the design INI omits the tuples.
+	// defaultEmoteCellPx / defaultEmoteGapPx are AO2's stock emote-grid metrics,
+	// used when the design INI omits the tuples. Both are transcribed from
+	// AO2-Client/bin/base/themes/default/courtroom_design.ini:63-64
+	// (emote_button_spacing = 9, 9 / emote_button_size = 40, 40), because that is
+	// literally what AO2 resolves for a theme that omits them: get_button_spacing
+	// falls through get_config_value to the bundled DEFAULT THEME before it gives
+	// up and returns 0,0. A streaming client has no such tree on disk, so these
+	// constants stand in for it — see designPair.
+	//
+	// The gap was 1 for a long while, which was nobody's value: not AO2's stock 9,
+	// not AO2's give-up 0. It never showed in the 74-theme reference corpus because
+	// every top-level theme there declares the key (33 of them declare exactly
+	// 9, 9), so this only ever governed a theme that omits it entirely — where 1
+	// silently drew a tighter grid than the client the theme was authored against.
 	defaultEmoteCellPx = 40
-	defaultEmoteGapPx  = 1
+	defaultEmoteGapPx  = 9
 )
 
+// designPairComponents is how many numbers a "x, y" design tuple carries. AO2's
+// get_button_spacing bails when the split yields fewer (AO2-Client
+// text_file_functions.cpp:208-211); we bail at the same point but NOT to the same
+// value, and the difference is deliberate.
+//
+// AO2 returns 0,0 there — its return_value is pre-set to 0,0 at
+// text_file_functions.cpp:198-199 and the short-split branch returns it
+// untouched, exactly as the "value == """ (key resolved nowhere) branch four
+// lines above does. That 0,0 is AO2's GIVE-UP value, not a theme declaring flush
+// buttons: it is what you get once the key has failed to resolve in the theme,
+// the sub-theme AND the on-disk default theme. A streaming client has no such
+// tree to fall back through, so the caller's named stock constant stands in for
+// it — see designPair, which makes the identical argument for a missing key. A
+// half-written tuple is no more a declaration than a missing one, so it gets the
+// same stand-in rather than a silent zero.
+const designPairComponents = 2
+
 // designPair parses a "x, y" design tuple (emote_button_size and friends).
+//
+// ZERO IS A LEGITIMATE VALUE, not a missing one. AO2's get_button_spacing
+// (AO2-Client text_file_functions.cpp:193-216) converts both components with
+// QString::toInt() and applies no positivity test whatsoever, so "0, 0" means
+// what it says: buttons flush against each other, no gutter. Twelve shipped
+// themes — the whole CC* family, AAI, GrayGarden, "alter ego (mobi)" — declare
+// exactly that, and treating it as absent substituted a 1 px gap that walked
+// their emote grid off the artwork drawn behind it, a little further with every
+// column.
+//
+// A MISSING key still falls back to the caller's default rather than to AO2's
+// literal 0,0, because AO2 only returns 0,0 once the key has resolved NOWHERE:
+// get_button_spacing asks get_config_value, which searches the theme, the
+// sub-theme and then the on-disk DEFAULT theme (the default_theme argument), and
+// that theme declares emote_button_spacing = 9, 9 / emote_button_size = 40, 40.
+// A streaming client has no such tree on disk, so the caller's named constant
+// stands in for it — and defaultEmoteGapPx / defaultEmoteCellPx are those exact
+// stock values, so the fallback reproduces AO2 rather than inventing a look.
+//
+// An UNPARSEABLE component gets the same treatment, and that is the one place
+// this knowingly diverges from Qt: QString::toInt() yields 0 on junk, so AO2
+// reads HDF-Standard's "emote_button_spacing = 8, 8SS" as 8, 0 where we read
+// 8, defY. One pixel, one theme, and a real default beats a silent zero that is
+// indistinguishable from a deliberate one.
+//
+// Negative components pass through, exactly as AO2 lets them. The consumer
+// floors them — see minEmoteGapPx — because AO2 itself does not: emotes.cpp:70
+// and charselect.cpp:160 both divide by (spacing + button size) with no guard,
+// unlike evidence.cpp:211 which wraps the same expression in qMax(1, ...). A
+// theme shipping a spacing of -60 crashes AO2; it must not crash us.
 func designPair(t *theme.Theme, key string, defX, defY int) [2]int {
 	raw, ok := t.DesignValue(key)
 	if !ok {
 		return [2]int{defX, defY}
 	}
 	parts := strings.Split(raw, ",")
-	if len(parts) < 2 {
+	if len(parts) < designPairComponents {
 		return [2]int{defX, defY}
 	}
 	x, errX := strconv.Atoi(strings.TrimSpace(parts[0]))
 	y, errY := strconv.Atoi(strings.TrimSpace(parts[1]))
-	if errX != nil || x <= 0 {
+	if errX != nil {
 		x = defX
 	}
-	if errY != nil || y <= 0 {
+	if errY != nil {
 		y = defY
 	}
 	return [2]int{x, y}
@@ -2531,7 +2609,7 @@ func NewApp(ctx *Ctx, d Deps) *App {
 			a.jukeRes <- j
 		}
 	}()
-	a.applyThemeAsync()                                                         // chatbox skin + font colors from the saved theme
+	a.armBootThemeResize(a.applyThemeAsync())                                   // chatbox skin + font colors from the saved theme (+ the one-time #29 upgrade snap)
 	a.vpPct, a.chatPct, a.boxPct, a.logPct, a.inputPct = d.Prefs.LayoutScales() // per-session view state (pair, OOC name, volume views) seeds in resetSessionState (above)
 	a.oocPct = d.Prefs.OOCScale()                                               // OOC log text size, independent of the IC log
 	a.musicPct = a.logPct                                                       // starts matching the log; ctrl+wheel over the Music tab tunes it apart
@@ -3397,10 +3475,173 @@ func (a *App) applyWindowSize(w, h int) {
 		a.ctx.SetWindowFullscreen(false)
 		a.d.Prefs.SetWindowFullscreen(false)
 	}
+	// A MAXIMIZED window swallows the resize whole (#35): SDL_SetWindowSize has no
+	// maximized guard, and on Windows the backend's SetWindowPos runs against an
+	// HWND that still carries WS_MAXIMIZE, so Default / Fit to screen / Custom /
+	// Theme's design size all appeared to do nothing. Drop out of maximized first.
+	// This lives HERE and not in Ctx.ResizeWindow on purpose: applyFullscreen's
+	// leave-fullscreen snap-back shares ResizeWindow, and F11 must not silently
+	// un-maximize as a side effect. See Ctx.UnmaximizeWindow for the SDL sources.
+	a.ctx.UnmaximizeWindow()
 	uw, uh := a.ctx.WindowDisplayUsable()
 	w, h = config.ClampWindowSize(w, h, uw, uh)
 	a.ctx.ResizeWindow(w, h)
 	a.d.Prefs.SetWindowSize(w, h)
+}
+
+// themeDesignWindowSize reports the window size the ACTIVE theme was drawn for —
+// its courtroom_design.ini `courtroom` rect — and whether it declares one.
+//
+// That rect is the theme's canvas: stock AO2 hands it straight to
+// set_courtroom_size(), so the AO2 window simply IS the canvas and every theme
+// renders 1:1 with no scaling at all (the same setFixedSize idea as
+// AO2-Client charselect.cpp:83 on the char-select screen). Matching the window to
+// it is what makes an imported theme look right with no settings tweaking.
+//
+// `courtroom` is the only sane target: it is the one rect present on 100% of the
+// reference theme corpus, whereas char_select is absent on 21 of 74 themes and
+// differs from courtroom on 41 of them (stock AO2 genuinely resizes its window
+// between the two screens). Reads the PRISTINE geometry, so a layout-editor
+// override can't drag the window with it — and `courtroom` is in layoutEditSkip
+// anyway, so the two maps agree here by construction.
+//
+// `viewport` must be declared too, because that is the SECOND half of
+// themeLayout()'s own validity test: a theme with a courtroom rect but no
+// viewport draws through the CLASSIC layout, so its canvas is not what is on
+// screen and snapping the window to it would only cramp that layout — while the
+// affordance's hint promises "the window becomes the canvas". The two
+// preconditions have to read the same or the promise is false. (Overrides never
+// add or remove keys — applyRectOverrides only rewrites existing ones — so
+// testing the pristine map here matches themeLayout() testing the override map.)
+func (a *App) themeDesignWindowSize() (int, int, bool) {
+	r, ok := a.themeRectsOrig["courtroom"]
+	if !ok || r.W <= 0 || r.H <= 0 {
+		return 0, 0, false
+	}
+	if _, ok := a.themeRectsOrig["viewport"]; !ok {
+		return 0, 0, false
+	}
+	return r.W, r.H, true
+}
+
+// themeDesignSizeOffer reports the theme's design size and whether the MANUAL
+// "Theme's design size" affordance should be offered at all.
+//
+// It exists so both halves of #35 agree about when a theme canvas is meaningful.
+// The automatic snap already refuses while the themed courtroom layout is off
+// (maybeResizeToThemeDesign): with that pref off the CLASSIC layout is what is
+// drawn, the theme's canvas is not on screen, and shrinking the window to it just
+// cramps the classic layout — while the row's hint claims "the window becomes the
+// canvas, like the stock AO2 client", which would then be false.
+func (a *App) themeDesignSizeOffer() (int, int, bool) {
+	w, h, ok := a.themeDesignWindowSize()
+	return w, h, ok && a.d.Prefs.ThemeLayoutEnabled()
+}
+
+// applyThemeDesignWindowSize snaps the window to the active theme's design size,
+// reporting whether there was one to snap to. The MANUAL half of #35 (Settings →
+// Window, and any future menu entry): an explicit user command, so unlike the
+// automatic path it deliberately does not second-guess a maximized or fullscreen
+// window — applyWindowSize leaves both states, clamps and persists.
+func (a *App) applyThemeDesignWindowSize() bool {
+	w, h, ok := a.themeDesignWindowSize()
+	if !ok {
+		return false
+	}
+	a.applyWindowSize(w, h)
+	return true
+}
+
+// maybeResizeToThemeDesign is the AUTOMATIC half of #35: it consumes the one-shot
+// armed at the user-initiated theme-pick call sites and snaps the window to the
+// freshly applied theme's canvas, so importing a theme delivers stock-AO2 1:1
+// with zero user action. `gen` is the themeGen of the apply that just landed.
+//
+// The one-shot is why this can't key off "the theme name changed": pollThemeApply
+// is also re-entered at boot, by healTheme on a T1 eviction, by the texture-filter
+// Purge recovery, and whenever a SERVER binds a theme — a window that jumped on
+// any of those would be far worse than the bug being fixed. Both the arming sites
+// and this consumer run on the render thread, so the arming needs no
+// synchronisation (hard rules 1 and 8).
+//
+// The gen comparison is the whole point: applies overlap (healTheme can be in
+// flight when the user opens the theme dropdown) and completion order is not
+// start order. ONLY the exact apply the arming named may spend it. An older
+// landing carries the PREVIOUS theme's geometry, so firing on it would snap the
+// window to the wrong canvas AND swallow the arming, leaving the theme the user
+// actually picked unsnapped; a newer landing may be a server binding its own
+// theme, which must never move the window. Neither resizes.
+//
+// A NEWER landing does disarm, though, because it proves the armed apply can
+// never arrive: themeRes is a single slot, the publish loop drops a result
+// outraced by a higher generation, and pollThemeApply's consume-side guard drops
+// anything below themeAppliedGen — which this landing has just raised past the
+// armed generation. Leaving the arming set would strand it for the process
+// lifetime (generations only increase, so it can never match again). It cannot
+// mis-fire either way: this branch only ever clears, never resizes.
+//
+// Guard rails, in order: consume the arming unconditionally once its own apply
+// lands (a pick that can't resize must not resize LATER, on some unrelated
+// re-apply); never fight a user who chose fullscreen or maximized; respect the
+// "use the theme's courtroom layout" opt-out, because under the classic layout
+// the theme's canvas is not what is on screen; and skip a no-op resize, since
+// ResizeWindow also recenters and would yank a window the user had positioned.
+func (a *App) maybeResizeToThemeDesign(gen uint64) {
+	if a.themeResizeArmGen == 0 {
+		return
+	}
+	if gen != a.themeResizeArmGen {
+		if gen > a.themeResizeArmGen {
+			// Outraced: a later apply has landed, so the armed one is now barred from
+			// ever landing (see the newest-wins guards above). Disarm — the snap is
+			// lost, which is the safe failure, but the arming must not linger.
+			a.themeResizeArmGen = 0
+		}
+		return
+	}
+	a.themeResizeArmGen = 0
+	if a.d.Prefs.WindowFullscreen() || a.ctx.WindowMaximized() || !a.d.Prefs.ThemeLayoutEnabled() {
+		return
+	}
+	w, h, ok := a.themeDesignWindowSize()
+	if !ok {
+		return
+	}
+	// ClampWindowSize is pure, so clamping here to compare and again inside
+	// applyWindowSize yields the identical target — a 1918×982 theme on a 1366×768
+	// laptop lands on the same downscaled size either way.
+	uw, uh := a.ctx.WindowDisplayUsable()
+	tw, th := config.ClampWindowSize(w, h, uw, uh)
+	if cw, ch := a.ctx.WindowSize(); cw == tw && ch == th {
+		return
+	}
+	a.applyWindowSize(w, h)
+}
+
+// armBootThemeResize gives the ONE boot apply named by gen the same window snap
+// a deliberate theme pick gets — but only on the single launch where the #29
+// theme-fit default move actually ran for this preferences file.
+//
+// This is the upgrade path. The default moved Stretch→Native, and Native draws
+// the theme's canvas 1:1 and centres it: without a matching geometry move an
+// existing user's first launch after updating replaces their edge-to-edge
+// courtroom with a small canvas ringed by bars, and the only way back is to go
+// and find a setting — exactly the outcome the "an imported theme must look
+// right with zero tweaking" rule forbids. Snapping the window to the theme's
+// design size once makes the canvas fill the window, so the bars never appear.
+//
+// It is driven by the STAMP being newly written, never by "is this boot": the
+// stamp is persisted — synchronously, on the migrating launch, precisely so a
+// crash inside the saver's debounce window cannot resurrect it — so the signal
+// is false on every later launch, forever.
+// A file that kept a deliberate Letterbox/Crop/Custom pick reports false too —
+// its mode did not change, so nothing about its look did either. And because the
+// arming names one generation, it cannot leak onto healTheme, the texture-purge
+// recovery, or a server-bound theme, all of which re-enter the same pipeline.
+func (a *App) armBootThemeResize(gen uint64) {
+	if a.d.Prefs.ThemeFitDefaultJustMoved() {
+		a.themeResizeArmGen = gen
+	}
 }
 
 // fitWindowToScreen sizes the window to (most of) the display's usable area and
@@ -7603,7 +7844,10 @@ func themeLoadRoots(name, customRoot, exeDir string) []string {
 	return roots
 }
 
-func (a *App) applyThemeAsync() {
+// applyThemeAsync returns the themeGen it allocated for this load, so a caller
+// that means to act on THIS apply's landing (the #35 window snap) can name it.
+// Every other caller ignores it.
+func (a *App) applyThemeAsync() uint64 {
 	name, dir := a.d.Prefs.Theme()
 	// Per-server theme binding: while this session declares one, it wins
 	// over the global pick (set on connect from ServerWarmInfo.Theme;
@@ -7746,6 +7990,7 @@ func (a *App) applyThemeAsync() {
 			}
 		}
 	}()
+	return gen
 }
 
 // pollThemeApply lands theme pieces on the render thread: upload (or
@@ -7825,6 +8070,12 @@ func (a *App) pollThemeApply() {
 	// (the same invariant pollCharINI applies on a character change).
 	a.emoteBtnOff, a.emoteBtnOn, a.emoteIconPages = nil, nil, nil
 	a.emoteAsk, a.emoteIconAsk = nil, nil
+	// #35: last, because it needs the geometry landed above (themeRectsOrig) and
+	// because a resize is the most disruptive thing this function can do. No-op
+	// unless THIS apply's generation is the one a user-initiated pick armed —
+	// note that the stale-generation guard above already returned for anything
+	// older than what is applied, so such a landing can never spend the arming.
+	a.maybeResizeToThemeDesign(res.gen)
 }
 
 // ensureThemeForSession re-applies the theme whenever the session's

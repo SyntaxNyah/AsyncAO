@@ -600,10 +600,22 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   nothing flies off screen, whatever the theme author did.
 - **Theme fit modes** (Settings → Theme): an AO2 theme has a FIXED design size,
   so scaling it to a differently-shaped window leaves bars. Pick how it fills:
-  **Stretch** (default — edge-to-edge, slight distortion, the webAO behaviour),
+  **Native 1:1** (**the default** — the theme draws at its authored size,
+  centred, with bars, and only ever scales *down* when the window is smaller than
+  the canvas, so nothing is ever clipped and nothing is ever upscaled),
+  **Stretch** (edge-to-edge, slight distortion, the webAO behaviour),
   **Letterbox** (keep exact proportions, theme-coloured bars), **Crop** (scale up
   to fill, overflow runs off-screen), or **Custom** (a manual **zoom + pan** to
-  crop the theme to taste). **Custom** opens a **big interactive preview** shaped
+  crop the theme to taste). Native is the default because that is what stock AO2
+  does: it never scales a theme at all — its window simply *becomes* the theme's
+  canvas — so an imported theme looks exactly the way its author drew it, with no
+  settings to find and flip. Existing installs still sitting on the old Stretch
+  default are moved onto Native once — and their window is snapped to the theme's
+  design size on that same launch, so the switch shows up as a 1:1 courtroom
+  rather than as bars. An install that had deliberately picked Letterbox, Crop or
+  Custom keeps that pick untouched (a Custom zoom/pan stays meaningful), and
+  picking any mode afterwards sticks for good.
+  **Custom** opens a **big interactive preview** shaped
   to your window — **drag to pan, scroll to zoom** (or use the sliders) — so the
   crop you see is the crop you get; the live courtroom re-fits as you go.
   Per-axis scaling is folded into the geometry cache, so it stays a resize-only
@@ -1166,10 +1178,37 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   with a `&`-laden query string) that wraps across rows still opens / copies /
   saves whole — resolved from the source entry, not the visible fragment.
 - **Custom window size + fullscreen** (Settings → Window): pick a size from
-  presets, **Fit to screen**, or a custom W×H — or go **borderless fullscreen**
-  (**F11** toggles it from any screen). Every applied size is clamped to the
-  display and recentered, so a window bigger than the monitor can't be stranded
-  off-screen; the choice persists across launches.
+  presets, **Fit to screen**, **Theme's design size**, or a custom W×H — or go
+  **borderless fullscreen** (**F11** toggles it from any screen). Every applied
+  size is clamped to the display and recentered, so a window bigger than the
+  monitor can't be stranded off-screen; the choice persists across launches.
+  A **maximized** window no longer swallows these buttons — they drop it out of
+  maximized first, so the size you pick is the size you get — and recentering
+  keeps the window on the monitor it is already on instead of jumping it back to
+  the primary display.
+- **Applying a theme sizes the window to the theme.** An AO2 theme is drawn for
+  one fixed canvas, and the stock AO2 client's window simply *is* that canvas.
+  So when you pick a theme (the dropdown, the **< >** arrows, or by pointing
+  AsyncAO at a theme folder) the window snaps to that theme's declared courtroom
+  size — the theme then renders 1:1, exactly as its author drew it, with no
+  settings to find. It only ever happens on a deliberate pick: never at an
+  ordinary startup (the one-time upgrade snap below is the single exception),
+  never when a server binds its own theme, never when the client repairs its own
+  theme art mid-scene, and never while you are fullscreen or maximized. The snap
+  is tied to the exact theme load your click started, so a background repair that
+  happens to finish first can never spend it on the theme you just replaced.
+  **Settings → Window → Theme's design size** does the same thing on demand, so a
+  manually resized window is one click away from 1:1 again; it is offered while
+  the theme's courtroom layout is in use, since that is when a theme canvas is
+  what you are looking at.
+- **One-time upgrade snap.** The theme fit default moved to **Native** (1:1), and
+  Native centres the theme's canvas rather than stretching it to the window — so
+  the very first launch after updating also snaps the window to the theme's design
+  size once. Without that a courtroom that used to run edge to edge would come
+  back ringed by bars until you went looking for a setting. It happens on that one
+  launch only, and only for installs that were still on the old stretch default:
+  if you had deliberately chosen Letterbox, Crop or Custom, that choice (and a
+  Custom zoom/pan) is kept exactly as it was and nothing moves.
 - **Double-click any text field** to select all its text — a quick replace or
   clear without holding backspace.
 - **Per-area scrollback** (Settings → Audio & Chat, **OFF by default**): when

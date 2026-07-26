@@ -111,6 +111,16 @@ type settingsState struct {
 	themeList []string
 	themeRes  chan themeScan
 	themeBusy bool
+	// themeScanUserWant latches "a user asked for a rescan" across a scan that was
+	// already in flight. scanThemes single-flights on themeBusy, and it used to
+	// drop the whole request — including the fromUser bit — so clicking "Apply &
+	// rescan" (or picking a folder) while the Settings screen's automatic first-open
+	// scan was still running silently lost the #35 auto-snap for that action. The
+	// latch is OR'd on every user-initiated call and cleared only by the landing
+	// that actually acts on it, so neither a stale result nor a landing that
+	// resolved nothing can swallow the intent. Render thread only, like the rest of
+	// this struct: the scan goroutine never touches it (hard rules 1 and 8).
+	themeScanUserWant bool
 
 	// folder picking: native dialog output / resolved drag-drops land
 	// here from goroutines (never block or stat on the render thread). Still used
@@ -132,6 +142,22 @@ type themeScan struct {
 	names    []string
 	root     string
 	pickName string
+	// in is the theme folder this scan was ISSUED for — settings.themeDir as it
+	// read at scanThemes time, before normalizeThemeRoot touched it. It is what
+	// makes a STALE result recognisable: the folder can change (a picker landing,
+	// a drop, a typed path) while a scan is in flight, and this result then
+	// answers a question nobody is asking any more. Comparing `in` against the
+	// current folder is the only sound test — comparing res.root would fire on
+	// every normalized path too, because normalizing is exactly when root and the
+	// configured folder legitimately differ. See pollThemeScan.
+	in string
+	// fromUser marks a scan the user actually asked for (Apply & rescan, the
+	// folder picker, a dropped folder) as opposed to the automatic one the
+	// Settings screen fires the first time it opens. Only the former may arm the
+	// #35 auto-resize: the automatic scan re-applies the theme for anyone who has
+	// a custom theme folder saved, so treating it as a pick would resize the
+	// window merely for opening Settings.
+	fromUser bool
 }
 
 var settings = settingsState{
@@ -349,7 +375,7 @@ func (a *App) drawSettings(w, h int32) {
 			settings.themeName = theme.DefaultThemeName
 		}
 		settings.loaded = true
-		a.scanThemes()
+		a.scanThemes(false) // automatic: opening Settings is not a theme pick (#35)
 	}
 
 	// In-app .demo browser fence: while it's open the WHOLE settings screen behind
@@ -691,6 +717,18 @@ const (
 	settCardTopPad = 14  // padding above a card title
 	settSectionMid = 22  // title baseline → hairline
 	settSectionBot = 12  // hairline → the section's first row
+	// labelBtnPadX is the horizontal padding a label-measured button adds around
+	// its text (half each side). Buttons whose width is measured from the label
+	// rather than fixed — the Window section's size presets and the "Theme's
+	// design size (W×H)" row, which both size themselves because their labels
+	// carry live numbers — share it so a wider label can never look tighter than
+	// a narrow one in the same column.
+	labelBtnPadX = 14
+	// designSizeHintGap separates the "Theme's design size (W×H)" button from its
+	// explanatory hint. Its own constant because that button's width is measured
+	// from the label (the size is in it), so the hint's x AND its clip width are
+	// both derived from this one number — they must not drift apart.
+	designSizeHintGap = 10
 )
 
 // settingsSection delimits one card: it punches a page-coloured gap above the
@@ -1272,7 +1310,7 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			{"1920×1080", 1920, 1080},
 			{"Default", config.DefaultWindowW, config.DefaultWindowH},
 		} {
-			bw := c.TextWidth(p.label) + 14
+			bw := c.TextWidth(p.label) + labelBtnPadX
 			if c.Button(sdl.Rect{X: bx, Y: y, W: bw, H: btnH}, p.label) {
 				a.applyWindowSize(p.w, p.h)
 				settings.winLoaded = false
@@ -1306,6 +1344,31 @@ func (a *App) drawSettingsGeneral(y, _ int32) int32 {
 			}
 		}
 		y += btnH + 10
+		// #35, manual half: snap to the size the ACTIVE theme was drawn for. Only
+		// offered when the theme declares a courtroom rect — the automatic snap on a
+		// theme pick covers the common case, this is the way back to 1:1 after any
+		// manual resize. Same applyWindowSize route as every button above, so the
+		// clamp, the un-maximize and the persist are shared, and it stays a one-line
+		// call a future Window menu can reuse.
+		//
+		// themeDesignSizeOffer, not themeDesignWindowSize: it also gates on the
+		// themed courtroom layout being the one actually drawn, so this row and the
+		// automatic snap agree about when a theme canvas is meaningful.
+		if dw, dh, ok := a.themeDesignSizeOffer(); ok {
+			label := fmt.Sprintf("Theme's design size (%d×%d)", dw, dh)
+			bw := c.TextWidth(label) + labelBtnPadX
+			if c.Button(sdl.Rect{X: pad, Y: y, W: bw, H: btnH}, label) {
+				a.applyThemeDesignWindowSize()
+				settings.winLoaded = false
+			}
+			// The button label carries the size, so the hint is pure explanation —
+			// drop it rather than draw it into a negative width at a narrow window.
+			if hintW := w - pad - bw - designSizeHintGap - scrollBarW; hintW > 0 {
+				c.LabelClipped(pad+bw+designSizeHintGap, y+4, hintW,
+					"the canvas this theme was drawn for — the window becomes the canvas, like the stock AO2 client", ColTextDim)
+			}
+			y += btnH + 10
+		}
 	}
 
 	y = a.settingsSection(y, w, "Extras box")
@@ -1642,6 +1705,59 @@ func (a *App) drawSettingsStudio(y, _ int32) int32 {
 	return y
 }
 
+// themeFitOption pairs one row of the "Theme fit:" dropdown with the mode
+// constant it selects.
+//
+// The kit's Dropdown speaks LIST INDEXES, and the old code fed the index
+// straight to SetThemeFit — correct only for as long as the rows happened to sit
+// in constant order. They no longer do: the mode constants are persisted on disk
+// and therefore append-only (config.ThemeFitNative is 4), while Native has to be
+// listed FIRST because it is the shipped default. This table keeps the two
+// orders independent, so reordering or inserting a row can never silently
+// reinterpret somebody's saved mode.
+type themeFitOption struct {
+	mode  int
+	label string
+}
+
+var themeFitOptions = [...]themeFitOption{
+	{config.ThemeFitNative, "Native — 1:1, stock AO2 size"},
+	{config.ThemeFitStretch, "Stretch — fill, no bars"},
+	{config.ThemeFitLetterbox, "Letterbox — keep shape (bars)"},
+	{config.ThemeFitCrop, "Crop — fill, trim edges"},
+	{config.ThemeFitCustom, "Custom — zoom + pan"},
+}
+
+// themeFitLabels is the dropdown's row text, derived from themeFitOptions once
+// at package init so drawing the settings row never rebuilds a []string.
+var themeFitLabels = func() []string {
+	out := make([]string, len(themeFitOptions))
+	for i, o := range themeFitOptions {
+		out[i] = o.label
+	}
+	return out
+}()
+
+// themeFitRow maps a stored mode to its dropdown row. An unknown mode (a prefs
+// file from a NEWER build, downgraded) falls back to row 0 — the default mode —
+// rather than to a negative index the dropdown would render blank.
+func themeFitRow(mode int) int {
+	for i, o := range themeFitOptions {
+		if o.mode == mode {
+			return i
+		}
+	}
+	return 0
+}
+
+// themeFitModeAt maps a dropdown row back to its mode constant.
+func themeFitModeAt(row int) int {
+	if row < 0 || row >= len(themeFitOptions) {
+		return themeFitOptions[0].mode
+	}
+	return themeFitOptions[row].mode
+}
+
 // drawSettingsTheme: theme picker/folder, layout toggle, live preview, bind.
 func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	c := a.ctx
@@ -1663,7 +1779,11 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 		if next, changed := c.Dropdown("themedd", sdl.Rect{X: pad + 60, Y: y, W: 240, H: btnH}, settings.themeList, selIdx); changed {
 			settings.themeName = settings.themeList[next]
 			a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
-			a.applyThemeAsync()
+			// #35: a deliberate pick may snap the window to the new canvas. Arm the
+			// gen this very apply allocated, so a heal already in flight (themePage
+			// heals from any theme-art draw, this screen's live preview included)
+			// cannot land first and spend the arming on the OLD theme's canvas.
+			a.themeResizeArmGen = a.applyThemeAsync()
 		}
 	} else {
 		c.Label(pad+60, y+6, settings.themeName, ColAccent)
@@ -1684,7 +1804,7 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	settings.themeDir, _ = c.TextField("themedir", sdl.Rect{X: pad + 130, Y: y, W: 320, H: fieldH}, settings.themeDir, `optional root holding themes\<name> — or drop a folder anywhere`)
 	if c.Button(sdl.Rect{X: pad + 460, Y: y, W: 130, H: btnH}, "Apply & rescan") {
 		a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
-		a.scanThemes()
+		a.scanThemes(true) // user-driven: the scan landing may arm the #35 auto-resize
 		a.applyThemeAsync()
 	}
 	if runtime.GOOS == "windows" {
@@ -1723,12 +1843,11 @@ func (a *App) drawSettingsTheme(y, w, h int32) int32 {
 	// Theme fit: how the theme's FIXED design size fills your (differently
 	// shaped) window — the cause of those borders.
 	c.Label(pad, y+4, "Theme fit:", ColText)
-	fitOpts := []string{"Stretch — fill, no bars", "Letterbox — keep shape (bars)", "Crop — fill, trim edges", "Custom — zoom + pan"}
 	fit := a.d.Prefs.ThemeFitMode()
-	if next, changed := c.Dropdown("themefit", sdl.Rect{X: pad + 90, Y: y, W: 230, H: fieldH}, fitOpts, fit); changed {
-		a.d.Prefs.SetThemeFit(next)
+	if next, changed := c.Dropdown("themefit", sdl.Rect{X: pad + 90, Y: y, W: 230, H: fieldH}, themeFitLabels, themeFitRow(fit)); changed {
+		fit = themeFitModeAt(next) // rows are ordered for the user, modes for the disk
+		a.d.Prefs.SetThemeFit(fit)
 		a.themeLay.valid = false // rebuild the layout cache with the new fit
-		fit = next
 	}
 	c.LabelClipped(pad+330, y+4, w-pad-330-scrollBarW, "applies under a theme that drives the courtroom layout (above)", ColTextDim)
 	y += 30
@@ -4537,12 +4656,28 @@ func (a *App) cycleTheme(step int) {
 	idx = (idx + step + len(list)) % len(list)
 	settings.themeName = list[idx]
 	a.d.Prefs.SetTheme(settings.themeName, strings.TrimSpace(settings.themeDir))
-	a.applyThemeAsync() // chatbox skin + colors follow the pick live
+	// #35: stepping the arrows is a deliberate pick, like the dropdown — arm the
+	// gen of the apply the step itself started. Also loads the chatbox skin +
+	// colors, so the pick shows live.
+	a.themeResizeArmGen = a.applyThemeAsync()
 }
 
 // scanThemes lists themes/<name> directories under the custom root and the
 // executable's directory, off-thread; pollThemeScan picks up the result.
-func (a *App) scanThemes() {
+// fromUser distinguishes a scan the user asked for from the Settings screen's
+// automatic first-open scan — see themeScan.fromUser.
+//
+// The intent is latched BEFORE the single-flight bail, so a request that arrives
+// while a scan is already running is not lost. Otherwise the in-flight scan
+// (typically the automatic first-open one) re-applies the theme with fromUser
+// false and the user's #35 auto-snap goes with no trace — see
+// settingsState.themeScanUserWant. The latch alone is not enough when the
+// dropped request also changed the theme FOLDER: that scan's answer is about the
+// old folder, so pollThemeScan re-issues it rather than re-labelling it.
+func (a *App) scanThemes(fromUser bool) {
+	if fromUser {
+		settings.themeScanUserWant = true
+	}
 	if settings.themeBusy {
 		return
 	}
@@ -4557,7 +4692,7 @@ func (a *App) scanThemes() {
 		if exe, err := os.Executable(); err == nil {
 			roots = append(roots, filepath.Dir(exe))
 		}
-		settings.themeRes <- themeScan{names: scanThemeDirs(roots), root: root, pickName: pick}
+		settings.themeRes <- themeScan{names: scanThemeDirs(roots), root: root, pickName: pick, in: customRoot, fromUser: fromUser}
 	}()
 }
 
@@ -4566,6 +4701,26 @@ func (a *App) pollThemeScan() {
 	case res := <-settings.themeRes:
 		settings.themeBusy = false
 		settings.themeList = res.names
+		// A dropped request that also changed the theme FOLDER cannot be answered by
+		// re-labelling this result: the scan in flight carried the OLD folder, so its
+		// root would be written back over the folder the user just picked (below),
+		// and the latched intent would then arm a window snap for a theme root they
+		// never chose — while the folder they did choose is never scanned at all.
+		// Re-issue the request instead, keeping the latch for the landing that really
+		// answers it.
+		//
+		// It cannot spin: the re-issue is made with the CURRENT folder, so its own
+		// result matches unless the folder changed again, and every change is a fresh
+		// user action; the single-flight also guarantees only one scan is ever in
+		// flight, so no two landings can chase each other. themeBusy is already false
+		// above, so scanThemes issues rather than bailing.
+		if settings.themeScanUserWant && res.in != strings.TrimSpace(settings.themeDir) {
+			a.scanThemes(true)
+			return
+		}
+		// A request the single-flight dropped set the latch but could not set
+		// res.fromUser, so the two have to be OR'd.
+		fromUser := res.fromUser || settings.themeScanUserWant
 		// The scanner may have normalized the pasted path (the themes
 		// folder itself, or one theme inside it) into the root
 		// theme.Load expects — reflect and persist it.
@@ -4578,7 +4733,23 @@ func (a *App) pollThemeScan() {
 		}
 		if res.root != "" || res.pickName != "" {
 			a.d.Prefs.SetTheme(settings.themeName, settings.themeDir)
-			a.applyThemeAsync()
+			// #35: this is the import landing — the user pointed at a theme folder
+			// (picker, drag-drop or Apply & rescan) and it resolved. Note that
+			// pickName is EMPTY when they pointed at a themes/ parent, so the theme
+			// NAME often doesn't change here even though a real import happened;
+			// that is why the arming is explicit and not a name comparison.
+			// Arms, never disarms: an automatic scan landing must not swallow a
+			// pick the user made while it was in flight.
+			gen := a.applyThemeAsync()
+			if fromUser {
+				// Clear the latch HERE, on the one branch that consumes it. A landing
+				// that resolved no root and no pick (the default state: no custom
+				// theme folder at all, so "Apply & rescan" resolves nothing) takes no
+				// action, and clearing there would swallow the user's intent for a
+				// rescan that never happened.
+				settings.themeScanUserWant = false
+				a.themeResizeArmGen = gen
+			}
 		}
 	default:
 	}
@@ -5031,7 +5202,7 @@ func (a *App) pollFolderPick() {
 		}
 		settings.themeDir = path
 		a.d.Prefs.SetTheme(settings.themeName, path)
-		a.scanThemes()
+		a.scanThemes(true) // the user picked/dropped this folder — a real import (#35)
 		settings.statusLine = "Theme folder set: " + path
 	default:
 	}

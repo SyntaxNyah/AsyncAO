@@ -88,7 +88,7 @@ type themeLayoutCache struct {
 	valid          bool
 	winW, winH     int32
 	designW        int32
-	scaleX, scaleY float64 // per-axis: equal for Letterbox/Crop, independent for Stretch
+	scaleX, scaleY float64 // per-axis: equal for Native/Letterbox/Crop/Custom, independent for Stretch
 	offX, offY     int32
 	fit            int                 // ThemeFit mode it was built for (rebuild on change)
 	r              map[string]sdl.Rect // scaled; absolute except showname/message (chatbox-relative)
@@ -114,11 +114,23 @@ func (a *App) themeLayout(w, h int32) *themeLayoutCache {
 		return lay
 	}
 	lay.designW = int32(court.W)
-	// Per-axis scale by fit mode: Stretch fills both axes independently (no
-	// bars, slight distortion); Crop scales UP uniformly and lets the overflow
-	// run off-screen; Letterbox scales DOWN uniformly with centered bars.
+	// Per-axis scale by fit mode: Native pins scale at 1.0 and only ever shrinks;
+	// Stretch fills both axes independently (no bars, slight distortion); Crop
+	// scales UP uniformly and lets the overflow run off-screen; Letterbox scales
+	// DOWN uniformly with centered bars.
 	sx, sy := float64(w)/float64(court.W), float64(h)/float64(court.H)
 	switch fit {
+	case config.ThemeFitNative:
+		// Stock AO2 never scales: setFixedSize makes the window BE the canvas
+		// (AO2-Client charselect.cpp:83 for char select, set_courtroom_size() for the
+		// courtroom), so a theme's art lands on screen pixels untouched. Our window is
+		// resizable, so we reproduce that at scale exactly 1.0 and only ever scale
+		// DOWN — a window smaller than the theme's canvas shrinks uniformly rather
+		// than clipping anything, which matters because config.MinWindowW/H (640×480)
+		// is BELOW several real themes' design sizes and ABOVE several others'. The
+		// offX/offY centring below already supplies the bars.
+		s := math.Min(1, math.Min(sx, sy))
+		lay.scaleX, lay.scaleY = s, s
 	case config.ThemeFitStretch:
 		lay.scaleX, lay.scaleY = sx, sy
 	case config.ThemeFitCrop:
@@ -955,6 +967,20 @@ func (a *App) drawThemedChatBox(box sdl.Rect, lay *themeLayoutCache) {
 // stock emoteBtnCell square.
 const minEmoteCellPx int32 = 8
 
+// minEmoteGapPx floors emote_button_spacing, and it is ZERO on purpose.
+//
+// AO2 honours a spacing of 0 — get_button_spacing (AO2-Client
+// text_file_functions.cpp:193-216) applies no positivity test — and a dozen
+// shipped themes declare "0, 0" to butt their emote buttons together, so the
+// floor must not be 1. It cannot go below zero either: AO2's grid arithmetic
+// divides by (spacing + button size) with NO guard, both here
+// (emotes.cpp:70-71) and on the char-select grid (charselect.cpp:160-161) —
+// only evidence.cpp:211 wraps the same expression in qMax(1, ...). A theme
+// declaring a spacing that cancels the button size divides by zero in AO2; we
+// clamp instead. Together with the minEmoteCellPx fallback below, this makes
+// (cell + gap) ≥ minEmoteCellPx > 0, so the column/row divisions cannot trap.
+const minEmoteGapPx int32 = 0
+
 // emoteCellScale is the ONE factor the themed emote cell and its gap scale by.
 //
 // AO2 reads emote_button_size / emote_button_spacing through
@@ -969,8 +995,9 @@ const minEmoteCellPx int32 = 8
 // per-axis therefore squashed every emote button flat on a wide window (#33).
 // min() is the uniform stand-in rather than max(): a cell grown by the looser
 // axis would overflow the emotes rect on the tighter one, silently dropping a
-// whole row or column of buttons off the theme's grid. Letterbox/Crop/Custom
-// already have scaleX == scaleY, so this is a no-op there — only Stretch moves.
+// whole row or column of buttons off the theme's grid. Native/Letterbox/Crop/
+// Custom already have scaleX == scaleY, so this is a no-op there — only Stretch
+// moves.
 func emoteCellScale(scaleX, scaleY float64) float64 { return math.Min(scaleX, scaleY) }
 
 // emoteGridMetrics is one themed emote page's geometry: the uniformly scaled
@@ -994,11 +1021,11 @@ func emoteGridLayout(r sdl.Rect, cellPx, gapPx [2]int, scale float64) emoteGridM
 	if m.cellW < minEmoteCellPx || m.cellH < minEmoteCellPx {
 		m.cellW, m.cellH = emoteBtnCell, emoteBtnCell // degenerate metrics: AO2 stock 40×40
 	}
-	if m.gapX < 0 {
-		m.gapX = 0
+	if m.gapX < minEmoteGapPx {
+		m.gapX = minEmoteGapPx
 	}
-	if m.gapY < 0 {
-		m.gapY = 0
+	if m.gapY < minEmoteGapPx {
+		m.gapY = minEmoteGapPx
 	}
 	m.cols = (r.W + m.gapX) / (m.cellW + m.gapX)
 	m.rows = (r.H + m.gapY) / (m.cellH + m.gapY)
