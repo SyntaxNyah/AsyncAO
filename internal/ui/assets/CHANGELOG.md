@@ -6,7 +6,36 @@ tagged "installed" below.
 
 ## v1.84.0 — 2026-07-27
 
+The theme release. An AO2 theme you import now draws the way the stock AO2
+client draws it — at its own size, on its own grid, with its own padding and its
+own text proportions — and the client's own chrome has moved out of the theme's
+way into a menu bar of its own. Alongside that: character select laid out on the
+theme's canvas, three theme-file parsing faults that were quietly breaking real
+shipped themes, a settings tab dedicated to the single question that decides
+whether a server's art loads at all, and a run of fixes turned up while measuring
+everything above.
+
 Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
+
+### If you are upgrading, two things will look different
+
+- **Themes now draw at 1:1, and picking a theme snaps the window to it.** The
+  default fit mode has changed, and existing installs move to it once — on the
+  first launch after updating, with one window snap — but only if they were still
+  on the old default. If you deliberately chose Letterbox, Crop or Custom, your
+  choice is left exactly as it was, zoom and pan included. Full detail in the
+  first entry below.
+- **Chatbox text is now sized against the window, the way the rest of a theme
+  already was.** At the new default, in a window at least as big as the theme's
+  canvas, nothing moves at all. Anywhere else — a smaller window, or a different
+  fit mode — chatbox text will be a different size than it was yesterday, because
+  it is now the size the theme's author asked for. Full detail further down.
+
+Nothing changed about which file types AsyncAO asks servers for: the
+one-request-per-asset default and every format setting behave exactly as they
+did. They simply live somewhere findable now — see Formats, below.
+
+### Imported themes draw the way AO2 draws them
 
 - **An imported theme now draws at its real size, the way the stock AO2 client
   draws it.** An AO2 theme is authored for one fixed canvas, and stock AO2 never
@@ -26,60 +55,6 @@ Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
   snap never fires on an ordinary startup, never when a server binds its own
   theme, never while the client is repairing its own theme art mid-scene, and
   never while you are fullscreen or maximized.
-- **A menu bar.** The client's actions were scattered across places that fought
-  with the theme: a row of buttons along the top of the lobby, a floating toolbox
-  parked in the corner of the courtroom over whatever art was underneath it, and
-  a Settings screen you had to go and find. There is now a persistent bar at the
-  top of every screen — **Servers, View, Window, Extras, Help** — with real
-  dropdown menus. It reserves a band of its own, so nothing is painted over and
-  no screen has to dodge it, and it draws in the client's own chrome colours
-  rather than the palette an imported theme replaces, so it stays readable over
-  any theme art. Escape closes an open menu.
-- **The corner toolbox is no longer the only way to reach its commands.**
-  Theater mode, Edit layout and Hide UI pieces are now rows in the **Extras**
-  menu, alongside a switch that turns the floating toolbox off — previously the
-  only ways to hide it were the very chips it was covering, a hotkey, or the
-  Settings screen. The toolbox itself stays: it is a movable, theme-placeable box
-  and the layout editor's own drag handle.
-- **The lobby's button row no longer runs off the edge of a small window.** At
-  the minimum window size several buttons were positioned past the left edge and
-  could not be clicked at all. Everything that isn't a lobby page control moved
-  into the Servers and Help menus, and what is left is laid out from a cursor so
-  it cannot overflow again.
-- **The server-tab strip is docked, centred, and can be placed under a theme.**
-  It used to float over the stage at a fixed spot left of centre — on a themed
-  courtroom, on top of the IC log — and under a theme it genuinely could not be
-  moved, because the only layout editor you can reach there edits widgets the
-  theme declares and the strip had never been one. It now docks under the menu
-  bar in a band of its own and centres itself there, and it is a draggable box in
-  both layout editors: drag it where you want it, right-click to send it home,
-  Ctrl+Z to undo. A one-pixel drag moves it one pixel at every theme-fit scale.
-  Resizing is refused, matching how the same strip already behaves in the default
-  layout.
-- **Character select is laid out on the theme's own canvas and grid.** With an
-  imported theme the character list looked broken, and the cause was two grids on
-  one screen: AO2 draws character select on a fixed canvas whose backdrop art has
-  the slot frames painted into it, at an origin and pitch the theme declares,
-  while AsyncAO stretched that artwork across the whole window and then drew its
-  own grid at its own cell size from its own margin. Character select now has its
-  own canvas and its own geometry, fitted by the same code the courtroom uses,
-  with the stock AO2 table embedded as a per-key fallback — which is load-bearing
-  rather than a courtesy, since roughly a third of real themes declare no canvas
-  and a third declare no grid, and for those every number comes from that table.
-  The backdrop is blitted into the canvas rather than stretched to the window,
-  cells land on the slot frames the art paints for them at any scale, and the
-  theme's own character name column, search field, spectator, back and filter
-  controls sit at the rects it declares, with its hover and taken overlays. Where
-  a theme's controls would land off screen, or its cells would be too small to
-  make out a face, the screen falls back to the client's own layout rather than
-  showing you something unusable.
-- **A character cell's corner marks no longer swallow the click.** The favourite
-  star, the download badge and the wardrobe tab's folder and key marks were a
-  fixed size on cells that are now theme-driven, so on a small cell they covered
-  most of it and clicking a character favourited or downloaded it instead of
-  picking it. They now scale with the cell. On the wardrobe tab the star and its
-  right-click menu were also being armed on a screen that never drew them, so the
-  action was dropped and then fired later, out of context.
 - **Three theme-file parsing faults, each breaking real shipped themes.**
   Checking our reader against a reference implementation across a large set of
   real themes turned up three. A byte-order mark at the start of a file swallowed
@@ -92,7 +67,8 @@ Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
   drawing their emote grid at the wrong pitch. All three now match what AO2 does,
   including the deliberate limit that the second comment marker still only starts
   a comment at the beginning of a line — treating it otherwise would corrupt the
-  emote rows of every character file.
+  emote rows of every character file. The same reader serves character files, so
+  this is parity with AO2 rather than a divergence from it.
 - **Themed IC and OOC logs have an inner margin again.** Under a theme the log
   text started exactly at the edge of the theme's panel art, with nothing between
   the first letter and the frame, because the theme's rectangle went straight
@@ -105,23 +81,22 @@ Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
 - **The themed chatbox message sits inside its box, and shownames honour the
   theme's alignment.** Two separate faults looked like one missing margin, and
   neither turned out to be about a margin a theme declares — no theme declares
-  one. The first is the message text, which AO2
-  insets by four pixels on every side because of the text widget it is drawn in;
-  AsyncAO started it flat against the theme's rectangle, so the first letter of
-  every line touched the frame. It is now inset the same four pixels, on all four
-  sides — symmetrically, unlike the log panels, because the message has no
-  scrollbar to leave room for. The second is the showname, which AO2 places
-  across its own box according to a setting two thirds of real themes declare and
-  AsyncAO read from none of them: a name a theme meant to be centred was drawn
-  hard against the left edge. Centre, right and AO2's justify-means-centre are
-  all honoured now, and a name too wide for its box still starts at the left so
-  its beginning is never the part that gets cut. Deliberately left alone: the
-  showname's vertical position. It looks like it should be centred in a tall
-  showname box, but stock AO2 anchors it to the top — checked against a real
-  build of the toolkit AO2 uses rather than assumed — so matching AO2 means
-  leaving it where it was. The video and comic exports resolve this geometry
-  through the same code as the live chatbox, so an exported frame can no longer
-  drift from what you were looking at.
+  one. The first is the message text, which AO2 insets by four pixels on every
+  side because of the text widget it is drawn in; AsyncAO started it flat against
+  the theme's rectangle, so the first letter of every line touched the frame. It
+  is now inset the same four pixels, on all four sides — symmetrically, unlike
+  the log panels, because the message has no scrollbar to leave room for. The
+  second is the showname, which AO2 places across its own box according to a
+  setting two thirds of real themes declare and AsyncAO read from none of them: a
+  name a theme meant to be centred was drawn hard against the left edge. Centre,
+  right and AO2's justify-means-centre are all honoured now, and a name too wide
+  for its box still starts at the left so its beginning is never the part that
+  gets cut. Deliberately left alone: the showname's vertical position. It looks
+  like it should be centred in a tall showname box, but stock AO2 anchors it to
+  the top — checked against a real build of the toolkit AO2 uses rather than
+  assumed — so matching AO2 means leaving it where it was. The video and comic
+  exports resolve this geometry through the same code as the live chatbox, so an
+  exported frame can no longer drift from what you were looking at.
 - **Chatbox text is sized against the box the theme drew for it.** A theme fixes
   both halves of a proportion: how big the showname and message boxes are, and
   what point sizes it wants the text in them drawn at. The stock AO2 client
@@ -166,6 +141,74 @@ Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
   lining up with the art at any window size, and video and comic exports swap the
   same picture as the live chatbox so a long name cannot look right on screen and
   spill off the plate in the exported file.
+
+### Character select, on the theme's own canvas
+
+- **Character select is laid out on the theme's own canvas and grid.** With an
+  imported theme the character list looked broken, and the cause was two grids on
+  one screen: AO2 draws character select on a fixed canvas whose backdrop art has
+  the slot frames painted into it, at an origin and pitch the theme declares,
+  while AsyncAO stretched that artwork across the whole window and then drew its
+  own grid at its own cell size from its own margin. Character select now has its
+  own canvas and its own geometry, fitted by the same code the courtroom uses,
+  with the stock AO2 table embedded as a per-key fallback — which is load-bearing
+  rather than a courtesy, since roughly a third of real themes declare no canvas
+  and a third declare no grid, and for those every number comes from that table.
+  The backdrop is blitted into the canvas rather than stretched to the window,
+  cells land on the slot frames the art paints for them at any scale, and the
+  theme's own character name column, search field, spectator, back and filter
+  controls sit at the rects it declares, with its hover and taken overlays. Where
+  a theme's controls would land off screen, or its cells would be too small to
+  make out a face, the screen falls back to the client's own layout rather than
+  showing you something unusable.
+- **The theme's character name column is drawn.** It is not decoration: several
+  themes ship backdrop art that paints more slot columns than their grid actually
+  declares, and the name column is what is meant to cover the remainder. Without
+  it, those themes showed a run of permanently empty character frames down the
+  side of the screen.
+- **A character cell's corner marks no longer swallow the click.** The favourite
+  star, the download badge and the wardrobe tab's folder and key marks were a
+  fixed size on cells that are now theme-driven, so on a small cell they covered
+  most of it and clicking a character favourited or downloaded it instead of
+  picking it. They now scale with the cell. On the wardrobe tab the star and its
+  right-click menu were also being armed on a screen that never drew them, so the
+  action was dropped and then fired later, out of context.
+
+### A menu bar, and chrome that stays out of the theme's way
+
+- **A menu bar.** The client's actions were scattered across places that fought
+  with the theme: a row of buttons along the top of the lobby, a floating toolbox
+  parked in the corner of the courtroom over whatever art was underneath it, and
+  a Settings screen you had to go and find. There is now a persistent bar at the
+  top of every screen — **Servers, View, Window, Extras, Help** — with real
+  dropdown menus. It reserves a band of its own, so nothing is painted over and
+  no screen has to dodge it, and it draws in the client's own chrome colours
+  rather than the palette an imported theme replaces, so it stays readable over
+  any theme art. Escape closes an open menu. A row whose action can't do anything
+  right now — Disconnect with no server, Edit layout outside the courtroom — is
+  greyed out rather than removed, so a menu never changes shape under the cursor
+  and you can still see that the feature exists.
+- **The corner toolbox is no longer the only way to reach its commands.**
+  Theater mode, Edit layout and Hide UI pieces are now rows in the **Extras**
+  menu, alongside a switch that turns the floating toolbox off — previously the
+  only ways to hide it were the very chips it was covering, a hotkey, or the
+  Settings screen. The toolbox itself stays: it is a movable, theme-placeable box
+  and the layout editor's own drag handle.
+- **The lobby's button row no longer runs off the edge of a small window.** At
+  the minimum window size several buttons were positioned past the left edge and
+  could not be clicked at all. Everything that isn't a lobby page control moved
+  into the Servers and Help menus, and what is left is laid out from a cursor so
+  it cannot overflow again.
+- **The server-tab strip is docked, centred, and can be placed under a theme.**
+  It used to float over the stage at a fixed spot left of centre — on a themed
+  courtroom, on top of the IC log — and under a theme it genuinely could not be
+  moved, because the only layout editor you can reach there edits widgets the
+  theme declares and the strip had never been one. It now docks under the menu
+  bar in a band of its own and centres itself there, and it is a draggable box in
+  both layout editors: drag it where you want it, right-click to send it home,
+  Ctrl+Z to undo. A one-pixel drag moves it one pixel at every theme-fit scale.
+  Resizing is refused, matching how the same strip already behaves in the default
+  layout.
 - **Client chrome no longer passes your click through to whatever is under it.**
   Pressing a chip on the floating toolbox also pressed whatever the theme had put
   underneath it, because a widget drawn early has no way of knowing that a widget
@@ -173,6 +216,92 @@ Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
   actually paint, and anything beneath it reads as not hovered — so a click lands
   on the thing you can see. The menu bar and its open menus use the same
   mechanism.
+
+### Settings: one tab for image and audio formats
+
+- **A new Formats tab, because a server whose art doesn't load was the hardest
+  thing in the client to fix.** AsyncAO asks a server for exactly one file type
+  per image — one request, no guessing — which is what makes a room load in a
+  rush instead of trickling in. The cost is that a server shipping a type AsyncAO
+  wasn't expecting shows nothing at all, usually as blank emote buttons or
+  missing sprites. The cure has always been a single switch, but the switches
+  were split three ways: the per-server profile and the audio types on
+  **Assets**, the probe order, the per-type fallbacks, automatic detection and
+  the desk policy on **Power user**, and the learned-format tools among the
+  disk-cache buttons under **Assets → Cache**. So the only people who could find
+  the fix were the people who already knew the answer. All of it is now on one
+  tab, **Settings → Formats**, which opens by explaining the model — what one
+  request per asset buys you, what it costs, and what the escape hatch costs —
+  before it offers you a single control. Assets and Power user keep a button that
+  jumps here, never a second copy of a control.
+- **The tab tells you what the server you are on is actually doing.** It names
+  the asset host and states which situation you are in: this server publishes a
+  format list and AsyncAO read it, so nothing here needs touching; this server
+  publishes none, which is the case that may need one switch; its list could not
+  be read; automatic detection is switched off; or you have pinned this server's
+  formats yourself. The case where AsyncAO simply hasn't checked yet is reported
+  as itself rather than folded in with a server that publishes nothing — sending
+  you off to a fix you don't need is its own bug.
+- **You can see what a server taught AsyncAO.** A read-only table lists every
+  kind of asset beside the file type that server actually served for it, and
+  beside what would be asked for if it hadn't. A row that never fills in — emote
+  buttons, typically — is the entire diagnosis in one line.
+- **One click pins the file type a server serves.** WebP, AVIF, APNG, GIF, PNG
+  and JPG each get a button. A pin takes effect immediately with no extra network
+  round trip, survives reconnects, and applies to that one server, so fixing the
+  server in front of you never costs speed on any other. The ready-made list for
+  the official vanilla servers sits beside them, along with an unpin button that
+  hands the server back to automatic detection.
+- **Making a server re-learn its formats no longer wipes every other server.**
+  The recovery for a server that repacked its art used to be a button that
+  cleared the whole remembered table — every server you have ever loaded art
+  from, each of which then paid a full cold re-probe on your next visit. There is
+  now a per-server version: it drops that host's entries only, says how many went,
+  and re-reads that server's format list. The global reset is still available on
+  the same tab, labelled as global, next to the one-click repair for art that has
+  gone wrong everywhere.
+- **The learned-format tools are with the formats now.** Clearing, exporting and
+  importing the remembered table used to sit in the row of disk-cache buttons,
+  which is a different kind of state entirely — cache is files you have
+  downloaded, learned formats are what AsyncAO knows about a server. Export still
+  writes the whole table beside the program to carry to another machine or share,
+  and import still merges one in, warming every server it covers before you ever
+  visit them.
+- **Settings search finds the tab by symptom, not by jargon.** Searching for
+  images not loading, art not loading, nothing loads, or repeated images now
+  lands on the tab that fixes it, rather than requiring you to already know the
+  word for the mechanism. The one remaining cause of a server fetching nothing
+  that isn't a format — how a character's folder is capitalised in asset URLs —
+  deliberately stays on Power user, and the Formats tab closes with a note
+  pointing at it rather than growing a duplicate control.
+- No defaults moved. One request per asset, automatic detection on, global
+  fallbacks off, desks pinned to WebP: all unchanged. The audio fallback
+  switches, the per-type probe order and its reordering chips all behave exactly
+  as before, at a new address.
+
+### Chat, effects and the layout editors
+
+- **A message that is nothing but a screen effect now works.** Sending just `\f`
+  or `\s` did nothing at all, while the same code attached to text worked: with
+  no letters to reveal, the message counted as finished the instant it arrived
+  and the phase that fires the effects was skipped entirely. A bare effect now
+  fires, whether it comes from you or from someone else's client, and still
+  counts as a blankpost for display — the chat box hides and only your sprite
+  shows, like any other markup-only message. It goes out through the same chat
+  rate limit as any other line, and the number of effects a single message can
+  fire is capped.
+- **Arrow keys nudge in both layout editors.** A mouse drag can't express one
+  pixel left, and both editors snap to a grid by default. With a widget selected,
+  an arrow key moves it exactly one pixel, and **Ctrl+arrow** steps to the next
+  line of that editor's own snap grid, so a coarse nudge lands where a snapped
+  drag would. A nudge saves, undoes and resets exactly like a drag, and neither
+  step can push a widget off the window. Arrows stand down while the command
+  palette or a text box has the keyboard, and arming an editor releases a focused
+  text box first — otherwise a field you had clicked beforehand would have eaten
+  every nudge with no obvious way out.
+
+### Fixes
+
 - **Resizing a maximized window works.** Settings → Window's Default and
   Fit-to-screen buttons quietly did nothing while the window was maximized:
   Windows keeps the maximized style and the requested size never sticks. The
@@ -188,21 +317,13 @@ Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
   single font set, so zooming one of them away from another rebuilt that set
   twice every frame and tore down the text atlas with it — a state one scroll
   puts you in. Each of those surfaces now has its own.
-- **Arrow keys nudge in both layout editors.** A mouse drag can't express "one
-  pixel left", and both editors snap to a grid by default. With a widget
-  selected, an arrow key moves it exactly one pixel, and **Ctrl+arrow** steps to
-  the next line of that editor's own snap grid, so a coarse nudge lands where a
-  snapped drag would. A nudge saves, undoes and resets exactly like a drag, and
-  neither step can push a widget off the window.
-- **A message that is nothing but a screen effect now works.** Sending just `\f`
-  or `\s` did nothing at all, while the same code attached to text worked: with
-  no letters to reveal, the message counted as finished the instant it arrived
-  and the phase that fires the effects was skipped entirely. A bare effect now
-  fires, whether it comes from you or from someone else's client, and still
-  counts as a blankpost for display — the chat box hides and only your sprite
-  shows, like any other markup-only message. It goes out through the same chat
-  rate limit as any other line, and the number of effects a single message can
-  fire is capped.
+- **The themed courtroom is measured now.** It had no zero-allocation guard and
+  could not have had one: several rectangles escaped to the heap through the
+  graphics binding every frame, and the theme's button names, the list header
+  counters and the toolbox tooltip were rebuilt as fresh text on every frame that
+  drew them. Those are gone, and both the themed courtroom and the case above
+  where panels are zoomed apart are now held to zero allocations per frame by the
+  test suite, so a future change cannot quietly reintroduce them.
 
 ## v1.83.0 — 2026-07-25
 

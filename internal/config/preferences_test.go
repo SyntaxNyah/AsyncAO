@@ -821,6 +821,49 @@ func TestLearnedInvalidation(t *testing.T) {
 	}
 }
 
+// TestClearLearnedHostIsScoped pins the whole point of ClearLearnedHost: it is
+// the fix for ONE server, so every other server's warm state must survive it.
+// A wipe that took the rest with it would trade one server's missing art for a
+// cold re-probe of every server the player has ever visited.
+func TestClearLearnedHostIsScoped(t *testing.T) {
+	p, _ := newTestPrefs(t)
+	const bad, good = "repacked.example.com", "fine.example.com"
+	p.RecordLearned(bad, TypeCharSprite, ExtWebP)
+	p.RecordLearned(bad, TypeBackground, ExtWebP)
+	p.RecordLearned(good, TypeCharSprite, ExtPNG)
+
+	if n := p.ClearLearnedHost(bad); n != 2 {
+		t.Errorf("ClearLearnedHost dropped %d entries, want 2", n)
+	}
+	learned := p.LearnedSnapshot()
+	if _, ok := learned[LearnedKey(bad, TypeCharSprite)]; ok {
+		t.Error("the target host's sprite entry survived")
+	}
+	if _, ok := learned[LearnedKey(bad, TypeBackground)]; ok {
+		t.Error("the target host's background entry survived")
+	}
+	if got, ok := learned[LearnedKey(good, TypeCharSprite)]; !ok || len(got) != 1 || got[0] != ExtPNG {
+		t.Errorf("another host's entry = %v (present %v), want [%s] — the wipe must be scoped", got, ok, ExtPNG)
+	}
+	if n := p.ClearLearnedHost(bad); n != 0 {
+		t.Errorf("second ClearLearnedHost dropped %d entries, want 0", n)
+	}
+	if n := p.ClearLearnedHost(""); n != 0 {
+		t.Errorf("ClearLearnedHost(\"\") dropped %d entries, want 0", n)
+	}
+
+	// A host is a PREFIX of the key, so a different host whose name merely
+	// starts with the target's must not be caught.
+	p.RecordLearned(bad, TypeCharSprite, ExtWebP)
+	p.RecordLearned(bad+".cdn.example.com", TypeCharSprite, ExtWebP)
+	if n := p.ClearLearnedHost(bad); n != 1 {
+		t.Errorf("ClearLearnedHost dropped %d entries, want 1 (a longer host name is a different host)", n)
+	}
+	if _, ok := p.LearnedSnapshot()[LearnedKey(bad+".cdn.example.com", TypeCharSprite)]; !ok {
+		t.Error("a host whose name starts with the target's was wrongly cleared")
+	}
+}
+
 func TestMasterVolumeClamping(t *testing.T) {
 	p, _ := newTestPrefs(t)
 	p.SetMasterVolume(500)

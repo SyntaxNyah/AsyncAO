@@ -1497,6 +1497,12 @@ type sessionState struct {
 	// dedupe, which could only remember the ONE session origin and so never
 	// deduped a recording's (different) origin.
 	manifestSeeded map[string]struct{}
+	// manifestStatus records, per asset HOST, how that host's extensions.json
+	// probe ended (applied / absent / failed). Settings → Formats reads it to say
+	// out loud whether the server publishes a format manifest — the single fact
+	// that decides whether a player needs to touch anything at all. Same bound and
+	// same render-thread-only rule as manifestSeeded above.
+	manifestStatus map[string]seedStatus
 	// themeBound is this server's bound theme ("" = the global pick);
 	// loaded from ServerWarmInfo.Theme on connect, wins in
 	// applyThemeAsync while the session lives.
@@ -2286,10 +2292,16 @@ type previewEmoteFetch struct {
 	labels []string // per-emote display comment (caption)
 }
 
-// manifestFetch is one extensions.json autodetect result.
+// manifestFetch is one extensions.json autodetect result. status carries the
+// RAW outcome (applied / absent / failed) alongside err, which the sender
+// deliberately overwrites for the non-applied cases so the debug lane keeps its
+// old wording — Settings → Formats needs to tell "this server publishes no
+// format manifest" (normal, and exactly the case that may need one switch) apart
+// from "we could not reach it" (transient), and err alone cannot.
 type manifestFetch struct {
 	host   string
 	seeded int
+	status seedStatus
 	err    error
 }
 
@@ -4685,7 +4697,7 @@ func (a *App) fetchManifestAsync() {
 	}
 	go func() {
 		res := seedOriginFormats(a.d.Manager, a.d.Prefs, origin)
-		mf := manifestFetch{host: host, seeded: res.seeded, err: res.err}
+		mf := manifestFetch{host: host, seeded: res.seeded, status: res.status, err: res.err}
 		// Preserve the session path's prior semantics: pollManifest treats a nil
 		// err as "seeded, republish + log N classes". A host with no manifest
 		// (seedAbsent) or an unreadable one (seedFailed with no wrapped err) is NOT
@@ -4789,6 +4801,7 @@ func seedOriginFormats(mgr *assets.Manager, prefs *config.AssetPreferences, orig
 func (a *App) pollManifest() {
 	select {
 	case res := <-a.manifestRes:
+		a.noteManifestStatus(res.host, res.status)
 		if res.err != nil {
 			a.pushDebug("extensions.json: " + res.err.Error() + " — formats learn per probe instead")
 			return
@@ -4797,6 +4810,21 @@ func (a *App) pollManifest() {
 		a.pushDebug(fmt.Sprintf("extensions.json: seeded %d format classes for %s", res.seeded, res.host))
 	default:
 	}
+}
+
+// noteManifestStatus records whether a host published a usable extensions.json,
+// so Settings → Formats can state the fact instead of leaving the player to
+// guess. Render thread only (same as manifestSeeded, and for the same reason:
+// the map is not synchronized). Bounded by the number of DISTINCT asset hosts
+// visited in one session — a handful in practice (rule §17.4).
+func (a *App) noteManifestStatus(host string, st seedStatus) {
+	if host == "" {
+		return
+	}
+	if a.manifestStatus == nil {
+		a.manifestStatus = map[string]seedStatus{}
+	}
+	a.manifestStatus[host] = st
 }
 
 // fontLoad is one font-override read result: file bytes in chain order

@@ -3467,6 +3467,34 @@ func (p *AssetPreferences) ClearLearnedType(typeName string) {
 	p.markDirty()
 }
 
+// ClearLearnedHost drops every learned format belonging to ONE host and reports
+// how many entries went, so the next probe of each asset class on that server
+// re-derives from the configured order. It is the scoped counterpart to
+// ClearLearned: a server that repacked its art is one server's problem, and
+// wiping the whole table to fix it throws away every OTHER server's warm state
+// — each of which then pays a full cold re-probe on the next visit. The learned
+// key is "<host><LearnedKeySeparator><type name>" and the separator cannot occur
+// in a host, so matching the prefix is exact.
+func (p *AssetPreferences) ClearLearnedHost(host string) int {
+	if host == "" {
+		return 0
+	}
+	prefix := host + LearnedKeySeparator
+	p.mu.Lock()
+	n := 0
+	for key := range p.LearnedFormats {
+		if strings.HasPrefix(key, prefix) {
+			delete(p.LearnedFormats, key)
+			n++
+		}
+	}
+	p.mu.Unlock()
+	if n > 0 {
+		p.markDirty()
+	}
+	return n
+}
+
 // HighlightColorRGB returns the packed 0xRRGGBB log-selection highlight colour.
 func (p *AssetPreferences) HighlightColorRGB() int {
 	p.mu.RLock()

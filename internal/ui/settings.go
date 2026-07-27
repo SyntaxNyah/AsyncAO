@@ -14,7 +14,6 @@ import (
 
 	"github.com/veandco/go-sdl2/sdl"
 
-	"github.com/SyntaxNyah/AsyncAO/internal/assets"
 	"github.com/SyntaxNyah/AsyncAO/internal/config"
 	"github.com/SyntaxNyah/AsyncAO/internal/courtroom"
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
@@ -132,6 +131,18 @@ type settingsState struct {
 	// ioRes carries one-line results of off-thread file ops (learned
 	// format export/import) back to the status line.
 	ioRes chan string
+
+	// Formats tab: fmtOrderText caches each asset type's EFFECTIVE probe list as
+	// ready-to-draw text, parallel to config.TypeNames (whose order matches the
+	// assets.AssetType enum). It is rebuilt only when the preferences' format
+	// generation moves — one atomic load per frame — so drawing the tab joins no
+	// strings and clones no slices per frame. That matters here because the
+	// settings screen has no allocation gate: a per-frame regression on this page
+	// would not be caught by the benchmark suite, so the cache is the guard.
+	// fmtOrderOK distinguishes "never built" from "built at generation 0".
+	fmtOrderText []string
+	fmtOrderGen  uint64
+	fmtOrderOK   bool
 }
 
 // themeScan is one scan result: the theme names found, the NORMALIZED
@@ -169,10 +180,10 @@ var settings = settingsState{
 // Settings tabs: the screen is split into these categories so it's
 // navigable instead of one long scroll. numSettingsTabs sizes the per-tab
 // scroll array (keep it == len(settingsTabNames)).
-const numSettingsTabs = 12
+const numSettingsTabs = 13
 
 var settingsTabNames = [numSettingsTabs]string{
-	"General", "Theme", "Assets", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Power user", "Reset",
+	"General", "Theme", "Assets", "Formats", "Audio", "Chat", "Account", "Hotkeys", "Studio", "Data", "Voice", "Power user", "Reset",
 }
 
 // Tab indices (order matches settingsTabNames).
@@ -180,6 +191,13 @@ const (
 	tabGeneral = iota
 	tabTheme
 	tabAssets
+	// tabFormats owns EVERY control that decides which image/audio file type is
+	// asked for. They used to be split across Assets (server profile, audio
+	// fallbacks, learned-format tools) and Power user (probe order, per-type
+	// fallbacks, autodetect, desk policy) — three places, none of them where a
+	// player looks when art doesn't render. It sits next to Assets because that's
+	// the neighbourhood people browse when something didn't load.
+	tabFormats
 	tabAudio
 	tabChat
 	tabAccount
@@ -218,15 +236,39 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"layout presets", "preset", "presets", "save layout", "stage preset", "theater", "theatre",
 	},
 	tabAssets: {
-		// sections: Server format profile, Predictive prefetch, Audio formats, Local
-		// assets, Downloader, Cache. (Image formats moved to Power user.)
-		"server format profile", "format profile", "profile",
+		// sections: Predictive prefetch, Missing sprites, Local assets, Downloader,
+		// Cache. (Everything format-related lives on the Formats tab.)
 		"predictive prefetch", "prefetch", "aggressiveness", "speculative", "preload",
-		"audio format", "opus", "ogg", "mp3",
 		"local assets", "local", "mount", "downloader", "download",
-		"cache", "disk cache", "disk", "zstd", "learned formats", "learned", "clear cache",
+		"cache", "disk cache", "disk", "zstd", "clear cache",
 		"loop preanim", "preanimation", "preanim loop", "loop preanimations",
 		"placeholder", "missing sprite", "missingno", "missing character", "error sprite", "custom error sprite", "404",
+	},
+	tabFormats: {
+		// sections: How formats work, This server, Automatic detection, Formats per
+		// asset type, Fallbacks, Learned formats.
+		// NOTE the table is scanned in TAB ORDER and matches forward (the query is a
+		// SUBSTRING of a term), so a term here silently steals every query a LATER
+		// tab answers better — including queries hidden inside a longer term. Absent
+		// on purpose, each because a later tab owns the word: "blip"/"volume"
+		// (Audio); "ignore"/"callword" (Chat); "password" (Account); "webp"/"gif"
+		// (Studio's video export — so no "webp format" either, which would still
+		// contain "webp"); "export"/"import" (Studio, Data); "extensions.json"
+		// (its ".json" tail would swallow Data's "json").
+		// None of those are lost: the gather-search matches ROW LABELS first, and
+		// this tab's rows literally read ".webp", "extensions.json", "Export
+		// learned". This table is only the concept-level fallback. Bare
+		// "audio"/"format" need no entry at all — they match a TAB NAME, and the
+		// name pass runs before this one.
+		"image format", "file type", "file types", "extension", "extensions", "manifest",
+		"format profile", "server format profile", "per-server format", "pin format",
+		"probe", "probing", "one probe", "probe order", "format order", "which format",
+		"fallback", "fallbacks", "legacy format", "legacy audio", "audio format", "sound format",
+		"autodetect", "auto-detect", "detect formats", "desk format",
+		"png", "apng", "avif", "jpg", "jpeg", "opus", "ogg", "mp3", "wav",
+		"learned format", "learned formats", "learned", "clear learned",
+		"emotes not loading", "assets not loading", "images not loading", "art not loading",
+		"stuck images", "repeated images", "same image", "nothing loads",
 	},
 	tabAudio: {
 		// sections: Volume (master / music / SFX / blip / alert), music ducking,
@@ -282,12 +324,12 @@ var settingsSearchKeywords = [numSettingsTabs][]string{
 		"clear settings", "clear data", "defaults",
 	},
 	tabPowerUser: {
-		// sections: TLS, Asset Origin, character-folder casing, Image formats.
+		// sections: TLS, Asset Origin, character-folder casing, and the render/GPU
+		// knobs. (Image formats moved to the Formats tab — see tabFormats.)
 		"power user", "advanced", "expert",
 		"tls", "ssl", "certificate", "cert", "validate certificate", "self-signed", "wss", "verify", "security",
 		"origin", "cors", "referer", "asset origin", "origin header", "stream from base",
 		"casing", "capital", "capitalize", "capitalise", "uppercase", "lowercase", "character folder", "folder case",
-		"image format", "format", "fallback", "autodetect", "auto-detect", "extensions.json", "extensions", "webp", "png", "apng", "avif", "desk format",
 	},
 }
 
@@ -348,17 +390,6 @@ func diskCacheBudgetLabel(mib int) string {
 		return fmt.Sprintf("%.1f GiB", float64(mib)/1024)
 	}
 	return strconv.Itoa(mib) + " MiB"
-}
-
-// imageTypes get the per-format toggle treatment.
-var imageTypeNames = []string{
-	config.TypeCharIcon,
-	config.TypeCharSprite,
-	config.TypeBackground,
-	config.TypeDeskOverlay,
-	config.TypeShoutBubble,
-	config.TypeEmoteButton,
-	config.TypeMisc,
 }
 
 func (a *App) drawSettings(w, h int32) {
@@ -576,6 +607,8 @@ func (a *App) drawSettingsTabBody(tab int, y, w, h int32) int32 {
 		y = a.drawSettingsTheme(y, w, h)
 	case tabAssets:
 		y = a.drawSettingsAssets(y, w)
+	case tabFormats:
+		y = a.drawSettingsFormats(y, w)
 	case tabAudio:
 		y = a.drawSettingsAudio(y, w)
 	case tabChat:
@@ -2309,8 +2342,9 @@ func (a *App) drawThemeFitPreview(box sdl.Rect) {
 	}
 }
 
-// drawSettingsAssets: format probing, audio fallbacks, local mounts, the
-// opt-in downloader, and the cache browser/actions.
+// drawSettingsAssets: predictive prefetch, the missing-sprite placeholder, local
+// mounts, the opt-in downloader, and the cache browser/actions. Format probing
+// and the learned-format tools moved to the Formats tab (settingsformats.go).
 // prefetchAggroLabel names the predictive-prefetch level (#100) for the slider readout.
 func prefetchAggroLabel(n int) string {
 	switch n {
@@ -2330,41 +2364,14 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	pad := a.formX
 	w := a.formW2()
 
-	// Per-server format profile: probe exactly the formats a given server uses,
-	// seeded instantly so the very first probe is right (no webp-first waste). The
-	// official-vanilla servers carry a built-in example; apply or clear it per server.
-	y = a.settingsSection(y, w, "Server format profile")
-	host := hostOfURL(a.urls.Origin())
-	if host == "" {
-		c.Label(pad, y, "Connect to a server to set its format profile.", ColTextDim)
-		y += 26
-	} else {
-		hasCustom := a.d.Prefs.ExtProfile(host) != ""
-		status := "no profile — fetches this server's extensions.json, else your global default"
-		switch {
-		case hasCustom:
-			status = "custom profile active"
-		case a.extProfileFor(host) != "":
-			status = "built-in official-vanilla profile active"
-		}
-		c.LabelClipped(pad, y, w-pad-scrollBarW, "This server ("+host+"): "+status, ColTextDim)
-		y += 24
-		if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, "Apply official-vanilla profile here") {
-			a.d.Prefs.SetExtProfile(host, assets.BundledVanillaManifestJSON)
-			a.manifestFor = ""     // allow a re-seed
-			a.fetchManifestAsync() // apply instantly
-		}
-		if hasCustom {
-			if c.Button(sdl.Rect{X: pad + 310, Y: y, W: 130, H: btnH}, "Clear profile") {
-				a.d.Prefs.SetExtProfile(host, "")
-				a.manifestFor = ""
-				a.fetchManifestAsync()
-			}
-		}
-		y += btnH + 6
-		c.LabelClipped(pad, y, w-pad-scrollBarW, "A profile probes exactly the formats it lists (per server, instant) and overrides both the server's manifest and your global default — for this server only.", ColTextDim)
-		y += 22
-	}
+	// Pointer, not a duplicate: every format control (which file types are asked
+	// for, the per-server profile, autodetect, fallbacks, the learned-format
+	// tools) now lives on the Formats tab. Keeping a second copy here is what
+	// scattered them in the first place.
+	y = a.settingsSection(y, w, "Image & audio formats")
+	y = a.settingsDesc(pad, y, "Art or sounds not loading on a server? The controls that decide which file type AsyncAO asks for — including the one-click fix for the server you're on — moved to their own tab.", ColTextDim)
+	y += 6
+	y = a.formatsTabPointer(y)
 
 	y = a.settingsSection(y, w, "Predictive prefetch")
 	c.LabelClipped(pad, y, w-pad-scrollBarW, "How many of the next sprites AsyncAO guesses ahead and warms while you chat — higher means snappier sprite swaps but more speculative downloading.", ColTextDim)
@@ -2460,18 +2467,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "Optional: replace the built-in glitch placeholder with your own image (a PNG, WebP, GIF, APNG or JPG). Loaded in the background; if the file can't be read or decoded it's ignored and the built-in one stays. Leave blank for the default.", ColTextDim)
 	y += 10
 
-	y = a.settingsSection(y, w, "Audio formats")
-	// Audio fallbacks.
-	for _, typeName := range []string{config.TypeSFX, config.TypeMusic, config.TypeBlip} {
-		enabled := a.d.Prefs.TypeFallbacksEnabled(typeName)
-		if next := c.Checkbox(pad, y, typeName+": probe legacy audio formats (.ogg/.wav/.mp3) after .opus", enabled); next != enabled {
-			a.d.Prefs.SetTypeFallbacks(typeName, next)
-			a.d.Resolver.InvalidateAll()
-			a.d.Resolver.WarmFromPrefs()
-		}
-		y += 24
-	}
-	y += 10
+	// (The per-type audio-format fallbacks moved to the Formats tab, with the
+	// image ones — they are the same control for a different asset class.)
 
 	y = a.settingsSection(y, w, "Local assets")
 	// Local assets (no-streaming legacy mode).
@@ -2557,25 +2554,16 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	}
 	y += 32
 
-	// Cache actions.
+	// Cache actions. (The learned-format buttons that used to sit on this row —
+	// clear / export / import, and "Fix stuck images" — moved to the Formats tab:
+	// they are format state, not cache state, and splitting them across two tabs
+	// is why nobody could find either half.)
 	if c.Button(sdl.Rect{X: pad, Y: y, W: 170, H: btnH}, "Clear disk cache") {
 		if err := a.d.Manager.ClearDisk(); err != nil {
 			settings.statusLine = "Clear failed: " + err.Error()
 		} else {
 			settings.statusLine = "Disk cache cleared."
 		}
-	}
-	if c.Button(sdl.Rect{X: pad + 180, Y: y, W: 190, H: btnH}, "Clear learned formats") {
-		a.d.Prefs.ClearLearned()
-		a.d.Resolver.InvalidateAll()
-		settings.statusLine = "Learned formats cleared."
-	}
-	// Learned-format portability: one player's warm state seeds another's.
-	if c.Button(sdl.Rect{X: pad + 380, Y: y, W: 150, H: btnH}, "Export learned") {
-		exportLearnedAsync(a)
-	}
-	if c.Button(sdl.Rect{X: pad + 540, Y: y, W: 150, H: btnH}, "Import learned") {
-		importLearnedAsync(a)
 	}
 	y += 30
 	c.Label(pad, y, "\"Clear disk cache\" wipes the on-disk asset cache (T3); assets re-download fresh on next use.", ColTextDim)
@@ -2585,30 +2573,6 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 	c.Label(pad, y, "or your cache — can keep serving the OLD file, so you'd see the wrong (outdated) version. Worth keeping", ColTextDim)
 	y += 18
 	c.Label(pad, y, "in mind if a character or background looks stale right after a server update.", ColTextDim)
-	y += 30
-
-	// One-click "fix stuck images" (#36, Dag): a manual recovery for genuine
-	// server-side repacks / CDN staleness, where the learned format AND a cached
-	// 404 both have to be cleared together for the emote grid to re-derive the
-	// right format (either clear button alone leaves the other stuck). The
-	// learned-format RACE that once produced the same "every emote cell shows the
-	// character icon" symptom on its own is fixed at the root: manager.go tryBase
-	// never blanks the shared per-host learned slot during a stale re-probe, so a
-	// concurrent asset can no longer see an empty slot and fall back to the wrong
-	// default. This button remains for the CDN/repack case that no code path can
-	// pre-empt.
-	if c.Button(sdl.Rect{X: pad, Y: y, W: 300, H: btnH}, "Fix stuck / repeated images") {
-		a.d.Prefs.ClearLearned()
-		a.d.Resolver.InvalidateAll()
-		settings.statusLine = "Cleared learned formats + disk cache — images re-derive on next use."
-		if err := a.d.Manager.ClearDisk(); err != nil {
-			settings.statusLine = "Cleared learned formats; disk clear failed: " + err.Error()
-		}
-	}
-	y += 22
-	c.Label(pad, y, "Use if emote buttons (or other art) all show the SAME image: clears the learned format AND the", ColTextDim)
-	y += 18
-	c.Label(pad, y, "cached 404 together, so a wrongly-probed format re-derives from scratch.", ColTextDim)
 	y += 30
 
 	return y
@@ -3950,64 +3914,15 @@ func (a *App) drawSettingsPowerUser(y, _ int32) int32 {
 	y = a.settingsDesc(pad, y, "How the character FOLDER is capitalised in asset URLs. The VAST MAJORITY of servers are lowercase (the default) — CHECK YOUR SERVER FIRST: the wrong choice makes EVERY character fetch 0 assets. \"First cap\" = Phoenix wright · \"Title\" = Phoenix Wright. \"Auto-detect\" (OFF unless you pick it) probes one character per server once and learns the casing, staying on lowercase unless lowercase actually fails.", ColDanger)
 	y += 10
 
-	// Image formats (moved from Assets — it decides the one probe per asset).
-	y = a.settingsSection(y, w, "Image formats")
-	y = a.settingsDesc(pad, y, "Controls WHICH image file types AsyncAO asks a server for, per asset kind (sprites, icons, backgrounds…). AsyncAO streams with exactly one network probe per asset, so this list decides that probe — get it wrong and assets 404 (0 fetched), or extra formats are probed and the cold load slows down.", ColTextDim)
+	// Image formats lived here from v1.70.1 until they got their own tab. They are
+	// NOT power-user knobs: art failing to render is a first-week problem, and
+	// burying its fix behind a tab called Power user is why it went unfound. A
+	// pointer stays because the casing control above is the OTHER reason a server's
+	// art fetches nothing, so someone who lands here is one click away.
+	y = a.settingsSection(y, w, "Image & audio formats")
+	y = a.settingsDesc(pad, y, "Which file types AsyncAO asks a server for — and the one-click fix for a server whose art isn't loading — live on their own tab now.", ColTextDim)
 	y += 6
-	global := a.d.Prefs.GlobalFallbacks()
-	if next := c.Checkbox(pad, y, "Enable format fallbacks globally (probe legacy formats after the preferred one)", global); next != global {
-		a.d.Prefs.SetGlobalFallbacks(next)
-		a.d.Resolver.InvalidateAll()
-		a.d.Resolver.WarmFromPrefs()
-	}
-	y += 24
-	y = a.settingsDesc(pad, y, "When ON, if the preferred format 404s the client tries older ones (WebP → PNG → APNG → GIF): safer (finds more art) but can cost extra probes. When OFF, exactly one format is tried per asset.", ColTextDim)
-	y += 8
-	auto := a.d.Prefs.FormatAutoDetect()
-	if next := c.Checkbox(pad, y, "Auto-detect formats from the server's extensions.json on connect (recommended)", auto); next != auto {
-		auto = next
-		a.d.Prefs.SetFormatAutoDetect(next)
-		if next {
-			a.manifestFor = "" // re-check the current server right away
-			a.fetchManifestAsync()
-		}
-	}
-	y += 24
-	y = a.settingsDesc(pad, y, "Recommended ON: reads the server's extensions.json to learn which formats it actually ships, so the single probe per asset is correct. Turn it OFF only to force the formats by hand below.", ColTextDim)
-	y += 6
-	if auto {
-		y = a.settingsDesc(pad, y, "Manual tuning is disabled while auto-detect is on — the rows below show what each server's extensions.json resolved to. Untick auto-detect above to force them by hand. Exception: misc (chatbox skins) has no extensions.json key, so its probes stay hand-tunable here.", ColTextDim)
-		for _, typeName := range imageTypeNames {
-			if typeName == config.TypeMisc {
-				// Chatbox-skin art is never declared by extensions.json and
-				// mixes formats pack-by-pack on real servers, so the misc
-				// probes stay adjustable even with auto-detect on.
-				y = a.drawTypeFormatRow(typeName, y)
-				continue
-			}
-			c.Label(pad, y+2, typeName+":", ColTextDim)
-			c.Label(pad+110, y+2, strings.Join(a.d.Prefs.FormatOrder(typeName), "  "), ColTextDim)
-			y += 26
-		}
-	} else {
-		y = a.settingsDesc(pad, y, "Formats probed per asset type (defaults: char_icon = PNG only, misc = PNG then WebP — that's the chatbox skins — everything else = WebP only). Add only the formats your server actually uses — extra ones just waste probes.", ColTextDim)
-		for _, typeName := range imageTypeNames {
-			y = a.drawTypeFormatRow(typeName, y)
-		}
-	}
-	y += 8
-	deskWebP := !a.d.Prefs.DeskFollowsManifest()
-	if next := c.Checkbox(pad, y, "Always use WebP for desks, ignoring the server's extensions.json (recommended)", deskWebP); next != deskWebP {
-		a.d.Prefs.SetDeskFollowManifest(!next)
-		a.d.Prefs.ClearLearnedType(config.TypeDeskOverlay) // re-derive on next probe
-		a.d.Resolver.InvalidateAll()
-		a.d.Resolver.WarmFromPrefs()
-		if !next { // now following the manifest: re-seed from the current server
-			a.manifestFor = ""
-			a.fetchManifestAsync()
-		}
-	}
-	y += 28
+	y = a.formatsTabPointer(y)
 	return y
 }
 
@@ -4371,82 +4286,6 @@ func importLearnedAsync(a *App) {
 		default:
 		}
 	}()
-}
-
-// drawTypeFormatRow renders the per-type format checkboxes; ticking builds a
-// new format order: the type's default first, then enabled extras in the
-// OptionalImageFormats order.
-func (a *App) drawTypeFormatRow(typeName string, y int32) int32 {
-	c := a.ctx
-	pad := a.formX
-	c.Label(pad, y+2, typeName+":", ColText)
-	x := pad + 110
-
-	current := a.d.Prefs.FormatOrder(typeName)
-	enabled := map[string]bool{}
-	for _, ext := range current {
-		enabled[ext] = true
-	}
-
-	changed := false
-	for _, ext := range config.OptionalImageFormats {
-		on := enabled[ext]
-		next := c.Checkbox(x, y, ext, on)
-		if next != on {
-			enabled[ext] = next
-			changed = true
-		}
-		x += c.TextWidth(ext) + 46
-	}
-	if changed {
-		def := config.DefaultFormatOrder(typeName)
-		order := make([]string, 0, len(config.OptionalImageFormats))
-		for _, ext := range def {
-			if enabled[ext] {
-				order = append(order, ext)
-			}
-		}
-		for _, ext := range config.OptionalImageFormats {
-			if enabled[ext] && !containsExt(order, ext) {
-				order = append(order, ext)
-			}
-		}
-		if len(order) == 0 {
-			order = def // never allow zero probes
-		}
-		a.d.Prefs.SetFormatOrder(typeName, order)
-		a.d.Resolver.InvalidateAll()
-		a.d.Resolver.WarmFromPrefs()
-	}
-
-	// Probe-order chips: with 2+ formats ticked, clicking a chip promotes
-	// it one slot toward "probed first" (zero-fallback order is the user's
-	// to arrange — ticking chooses the set, chips choose the order).
-	if len(current) > 1 && !changed {
-		c.Label(x+12, y+2, "order:", ColTextDim)
-		cx := x + 12 + c.TextWidth("order:") + 8
-		for i, ext := range current {
-			bw := c.TextWidth(ext) + 14
-			if c.Button(sdl.Rect{X: cx, Y: y, W: bw, H: 22}, ext) && i > 0 {
-				order := append([]string(nil), current...)
-				order[i-1], order[i] = order[i], order[i-1]
-				a.d.Prefs.SetFormatOrder(typeName, order)
-				a.d.Resolver.InvalidateAll()
-				a.d.Resolver.WarmFromPrefs()
-			}
-			cx += bw + 6
-		}
-	}
-	return y + 26
-}
-
-func containsExt(list []string, ext string) bool {
-	for _, e := range list {
-		if e == ext {
-			return true
-		}
-	}
-	return false
 }
 
 // drawDownloaderSettings renders the opt-in single-asset downloader section:
