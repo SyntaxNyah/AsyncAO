@@ -66,6 +66,47 @@ depend on window state. Closing this entry means routing `MC` (and any other
 direct sender) through a paced queue like `processOOCQueue`, which is a
 transport-shaped change rather than a localized one.
 
+## The player list learns pairing by polling, so a partner's client never updates
+
+The Players tab is not fed by a live channel. `drawPlayerList`
+(`internal/ui/playerlist.go`) builds its rows by parsing the server's `/getarea`
+reply, and the pair column comes from there — AO has no per-player packet, only
+ARUP area counts, so the roster is refresh-driven and stamped as of its last
+fetch. `maybeRefetchRoster` re-runs that fetch on join and leave.
+
+A pair change is neither a join nor a leave, so nothing re-runs it. The client
+that set the pair renders it immediately because it knows locally; the partner's
+client is still holding a snapshot taken before the pair existed and shows
+nothing. The reported symptom is one-sided: the indicator is visible to whoever
+paired and invisible to the person they paired with.
+
+The obvious fix — refetch the roster when pairing changes — is **deliberately not
+taken**. It adds an automated OOC command on a user-triggered event, which is the
+same shape as the roster poll that caused the minimized-disconnect flood-kicks
+(see the entry above, and the sender-pacing rule it ends with). A pairing feature
+is not worth a disconnect.
+
+The real fix is to stop polling for something the wire can carry:
+
+- **Read AO2's own fields.** An incoming `MS` already carries the speaker's
+  pairing (`other_name` / `other_emote` / `other_offset` / `other_flip`, injected
+  server-side), and the client already parses them to render paired sprites. That
+  makes a pair knowable to every client the moment either party speaks, with no
+  protocol extension, no new packet and no extra traffic. It is still gated on
+  someone speaking, but it costs nothing and the data is already in the session.
+- **An AsyncAO packet on pair change** is the only answer that is live rather than
+  speak-gated, and it is the expensive one: it needs the server to relay a header
+  it does not know, which most AO servers will not do. Viable on server families
+  we control, with the standing requirement that a transmitted feature interops
+  AsyncAO-to-AsyncAO and degrades gracefully everywhere else.
+
+Riding the existing zero-width profile channel is a third option and a worse one:
+it needs the same "after they speak" precondition as reading `MS`, while also
+requiring an AsyncAO peer.
+
+Closing this entry means surfacing the `MS` pairing fields onto the roster, and
+deciding separately whether a live indicator justifies a server-side change.
+
 ## ~~Color emoji & supplementary-plane characters render as boxes~~ — RESOLVED
 
 Color emoji now render (per-glyph font fallback, `internal/render/emoji.go` +
