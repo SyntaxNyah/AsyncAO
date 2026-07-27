@@ -55,6 +55,54 @@ items move to `docs/FEATURES.md` as they ship.
   dead — the filter branch is commented out with a note that character
   passwording is unimplemented — so it is omitted for the same reason and would
   only become meaningful alongside real `PW` support.
+- **Showname / chatbox text fitting inside the theme's rects (#25 sibling).**
+  Reported alongside the log-padding issue: showname and chatbox text does not sit
+  inside its theme rect the way it does in AO2. It is NOT a margin declared
+  anywhere: a corpus-wide
+  grep finds `padding` exactly once per theme file and it is always an unrelated
+  clock rule, so nothing in a theme asks for one. What is genuinely missing is
+  four separate pieces of AO2 behaviour, none of which shipped with the themed-log
+  inset:
+  - **The dominant defect was text-to-box SCALE PARITY, and the shipped
+    `ThemeFitNative` default fixes it structurally.** AO2 multiplies design rects
+    AND `courtroom_fonts.ini` point sizes by the same `themeScalingFactor`, so
+    `rect width ÷ font size` is a theme-authored invariant; AsyncAO scaled the
+    rect by window÷design and never scaled the font, and the resulting capacity
+    ratio measured 0.49x…4.50x across the corpus (below 1.0 the message overruns
+    its rect and reads as "no margins"; above it the text floats in a huge box and
+    reads as "wrong margins"). At Native the layout scale is exactly 1.0, so the
+    two agree by construction. **Folding `min(scaleX, scaleY)` into the element
+    pct is only needed once the user resizes away from 1:1** — i.e. the
+    customization path, not the default — and is tracked as "design-resolution
+    font scaling" under the per-element font item below, with its clamp and
+    re-raster caveats.
+  - **The message rect's 4 px inset.** `ui_vp_message` is a frameless `QTextEdit`
+    with both scrollbars off, so Qt's default `QTextDocument::documentMargin`
+    insets it on ALL FOUR sides; the stock theme's own INI documents it ("There's
+    4 pixels from X position until the symbol is displayed"). Symmetric, unlike
+    the chatlog inset that shipped — the message has no scrollbar, so the
+    asymmetric helper must NOT be reused here.
+  - **Showname vertical centring and `showname_align`.** `ui_vp_showname` is a
+    `QLabel`, so its own margin is 0 (applying the 4 px inset to it would be
+    *wrong*) but it v-centres by Qt default while AsyncAO top-anchors it —
+    visible on the tall showname rects real themes ship. `showname_align` is
+    declared by 58 of 74 corpus themes (43 `center`, 15 `left`) and ignored
+    outright today. Both are cheap.
+  - **The `med` / `big` chatbox skin swap.** AO2 measures the showname and, if it
+    overflows, widens by `showname_extra_width` and swaps the chatbox art to
+    `<stem>med`, then `<stem>big`, cutting the text off past that; a theme
+    shipping neither is documented to leave the showname unresized. `chatmed`
+    exists on 66 of 74 themes, so the `med` rung alone covers ~89%. The blocker is
+    that AsyncAO is a zero-fallback streaming client: probing those stems must
+    ride the existing `themePage` residency path with a cached negative, never a
+    per-message network probe.
+  **Mirror site:** `drawGifThemedChatbox` (`internal/ui/gifexport.go`) repeats the
+  same un-inset rect resolution as the live chatbox, so every inset / alignment /
+  scale change must land there too or video and comic export diverge from what
+  players saw. **Clip caution:** AO2 does not clip `ui_vp_message` to the chatbox
+  (it is parented to the courtroom with only an origin offset) and themes
+  legitimately overhang — tightening the clip to the message rect would cut those
+  themes' last column.
 - **Read `lobby_design.ini` (theme follow-up).** Half the reference themes ship a
   lobby layout AsyncAO never opens: only `courtroom_design.ini`,
   `courtroom_fonts.ini`, `courtroom_sounds.ini` and the penalty INI are read. The

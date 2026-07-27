@@ -16,7 +16,7 @@ import (
 	"github.com/veandco/go-sdl2/sdl"
 )
 
-// colorWheelDiam is the picker disc diameter (a "giant" wheel per the request).
+// colorWheelDiam is the picker disc diameter (deliberately large, per the request).
 const colorWheelDiam = 150
 
 // icColorWheelCaption is the free-hex picker's heading. It MUST fit the
@@ -217,7 +217,7 @@ func (a *App) ensureColorWheel() *sdl.Texture {
 	return tex
 }
 
-// --- free-hex IC chat colour (v1.52.0, Tifera: "any hex while chatting") ---
+// --- free-hex IC chat colour (v1.52.0, requested by Tifera: any hex while chatting) ---
 
 // icColorWheelRect is the free-hex picker's floating rect, anchored just above
 // the IC colour swatch (the IC bar sits near the bottom), clamped on-screen —

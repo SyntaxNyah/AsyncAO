@@ -10,7 +10,7 @@ import (
 )
 
 // TestSnapViewportTo43 pins the editor's "4:3" toggle doing something the moment
-// it's clicked (the playtest report was "the 4:3 button does nothing"): the
+// it's clicked (the playtest report: the 4:3 button did nothing): the
 // stage's height re-derives from its width, the override persists, the change is
 // undoable, and an already-4:3 stage is a no-op (no phantom undo entry).
 func TestSnapViewportTo43(t *testing.T) {

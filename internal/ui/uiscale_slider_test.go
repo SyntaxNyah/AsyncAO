@@ -14,7 +14,7 @@ import (
 // main-loop order) and pins the commit-on-release contract: the value PREVIEWS
 // during the drag (no mid-drag rescale — that's the feedback loop the control
 // exists to avoid) and applies to uiScalePct + the prefs exactly once, on the
-// release frame (the playtest report was "snaps back to 100% immediately").
+// release frame (the playtest report: the slider snapped back to 100% at once).
 func TestManualUIScaleCommitOnRelease(t *testing.T) {
 	ren, cleanup := newCaptureHarness(t)
 	defer cleanup()

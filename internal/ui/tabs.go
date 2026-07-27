@@ -793,8 +793,8 @@ func (a *App) tabStripDockedRect(total, w int32) sdl.Rect {
 //
 //   - themeLayoutIn ranges the design map, so the key finally enters the layout cache;
 //   - the themed editor builds its editable key set from that cache, so the strip
-//     finally gets a drag box (issue #14's "I don't think this bar is rearrangable",
-//     which was true under every real theme — none declares the key);
+//     finally gets a drag box — issue #14's undraggable strip, which was undraggable
+//     under every real theme, none of which declares the key;
 //   - applyRectOverrides only rewrites keys that ALREADY EXIST, so without the seed a
 //     dragged position could never be re-applied after a theme reload;
 //   - right-click reset and the editor's "Reset all" both restore from the pristine
@@ -1350,8 +1350,8 @@ func (a *App) resetSessionState() {
 		oocName: a.defaultOOCName(),
 		// The volume-view toggles are per-session UI but PERSISTED prefs:
 		// NewApp restored them once and every connect wiped them back to
-		// hidden (playtest: "the show/hide volume option still doesn't
-		// persist"). Seed them on every fresh session instead.
+		// hidden (playtest: the show/hide volume option did not persist).
+		// Seed them on every fresh session instead.
 		volStripOn:   a.d.Prefs.VolStripShownOn(),
 		musicVolMode: a.d.Prefs.MusicVolModeOn(),
 		spriteOv:     map[string][2]int{},

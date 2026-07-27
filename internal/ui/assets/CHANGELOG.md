@@ -4,6 +4,142 @@ What changed, newest first. The "What's New" screen renders this embedded file,
 so every build ships its own history offline. The version you're running is
 tagged "installed" below.
 
+## v1.84.0 — 2026-07-27
+
+Thanks to Crystalwarrior for reporting the theme-import problems fixed below.
+
+- **An imported theme now draws at its real size, the way the stock AO2 client
+  draws it.** An AO2 theme is authored for one fixed canvas, and stock AO2 never
+  scales it — the window simply *is* the canvas. AsyncAO stretched every theme to
+  whatever shape your window happened to be, which distorted the art and left the
+  theme's text sized against a box its author never chose. There is a new fit
+  mode, **Native 1:1**, and it is now the default: the theme draws at exactly its
+  authored size, centred, and is only ever scaled *down* — never up — when the
+  window is smaller than the canvas, so nothing is clipped and no pixel is
+  resampled. Picking a theme also snaps the window to that theme's own design
+  size, which is what makes 1:1 fill the screen instead of sitting in bars;
+  **Settings → Window → Theme's design size** (also in the new Window menu) does
+  it again on demand. Existing installs move to Native once, on the first launch
+  after updating, and get that one snap with it — but only if they were still on
+  the old stretch default. If you deliberately chose Letterbox, Crop or Custom,
+  your choice and your Custom zoom and pan are left exactly as they were. The
+  snap never fires on an ordinary startup, never when a server binds its own
+  theme, never while the client is repairing its own theme art mid-scene, and
+  never while you are fullscreen or maximized.
+- **A menu bar.** The client's actions were scattered across places that fought
+  with the theme: a row of buttons along the top of the lobby, a floating toolbox
+  parked in the corner of the courtroom over whatever art was underneath it, and
+  a Settings screen you had to go and find. There is now a persistent bar at the
+  top of every screen — **Servers, View, Window, Extras, Help** — with real
+  dropdown menus. It reserves a band of its own, so nothing is painted over and
+  no screen has to dodge it, and it draws in the client's own chrome colours
+  rather than the palette an imported theme replaces, so it stays readable over
+  any theme art. Escape closes an open menu.
+- **The corner toolbox is no longer the only way to reach its commands.**
+  Theater mode, Edit layout and Hide UI pieces are now rows in the **Extras**
+  menu, alongside a switch that turns the floating toolbox off — previously the
+  only ways to hide it were the very chips it was covering, a hotkey, or the
+  Settings screen. The toolbox itself stays: it is a movable, theme-placeable box
+  and the layout editor's own drag handle.
+- **The lobby's button row no longer runs off the edge of a small window.** At
+  the minimum window size several buttons were positioned past the left edge and
+  could not be clicked at all. Everything that isn't a lobby page control moved
+  into the Servers and Help menus, and what is left is laid out from a cursor so
+  it cannot overflow again.
+- **The server-tab strip is docked, centred, and can be placed under a theme.**
+  It used to float over the stage at a fixed spot left of centre — on a themed
+  courtroom, on top of the IC log — and under a theme it genuinely could not be
+  moved, because the only layout editor you can reach there edits widgets the
+  theme declares and the strip had never been one. It now docks under the menu
+  bar in a band of its own and centres itself there, and it is a draggable box in
+  both layout editors: drag it where you want it, right-click to send it home,
+  Ctrl+Z to undo. A one-pixel drag moves it one pixel at every theme-fit scale.
+  Resizing is refused, matching how the same strip already behaves in the default
+  layout.
+- **Character select is laid out on the theme's own canvas and grid.** With an
+  imported theme the character list looked broken, and the cause was two grids on
+  one screen: AO2 draws character select on a fixed canvas whose backdrop art has
+  the slot frames painted into it, at an origin and pitch the theme declares,
+  while AsyncAO stretched that artwork across the whole window and then drew its
+  own grid at its own cell size from its own margin. Character select now has its
+  own canvas and its own geometry, fitted by the same code the courtroom uses,
+  with the stock AO2 table embedded as a per-key fallback — which is load-bearing
+  rather than a courtesy, since roughly a third of real themes declare no canvas
+  and a third declare no grid, and for those every number comes from that table.
+  The backdrop is blitted into the canvas rather than stretched to the window,
+  cells land on the slot frames the art paints for them at any scale, and the
+  theme's own character name column, search field, spectator, back and filter
+  controls sit at the rects it declares, with its hover and taken overlays. Where
+  a theme's controls would land off screen, or its cells would be too small to
+  make out a face, the screen falls back to the client's own layout rather than
+  showing you something unusable.
+- **A character cell's corner marks no longer swallow the click.** The favourite
+  star, the download badge and the wardrobe tab's folder and key marks were a
+  fixed size on cells that are now theme-driven, so on a small cell they covered
+  most of it and clicking a character favourited or downloaded it instead of
+  picking it. They now scale with the cell. On the wardrobe tab the star and its
+  right-click menu were also being armed on a screen that never drew them, so the
+  action was dropped and then fired later, out of context.
+- **Three theme-file parsing faults, each breaking real shipped themes.**
+  Checking our reader against a reference implementation across a large set of
+  real themes turned up three. A byte-order mark at the start of a file swallowed
+  that file's first setting, so two themes silently lost their showname font
+  size. A value with a comment written after it on the same line parsed its last
+  number as junk, which zeroed a rectangle's height and made the client discard
+  the whole rectangle as invalid — three real rectangles across two themes, plus
+  an alignment setting across a whole theme family. And a button-spacing pair
+  refused a legitimate zero and substituted a default, so twelve themes were
+  drawing their emote grid at the wrong pitch. All three now match what AO2 does,
+  including the deliberate limit that the second comment marker still only starts
+  a comment at the beginning of a line — treating it otherwise would corrupt the
+  emote rows of every character file.
+- **Themed IC and OOC logs have an inner margin again.** Under a theme the log
+  text started exactly at the edge of the theme's panel art, with nothing between
+  the first letter and the frame, because the theme's rectangle went straight
+  into the shared log draw — which starts at the rectangle's origin, since the
+  default layout insets before calling it. AO2 gets that margin for free from the
+  text widget it uses. The inset is now applied at every themed body, including
+  the music, areas and players lists, so a theme can't show padded logs beside a
+  flush one. The left edge insets and the right deliberately does not, so the
+  scrollbar stays flush against the panel edge exactly as AO2 keeps it.
+- **Client chrome no longer passes your click through to whatever is under it.**
+  Pressing a chip on the floating toolbox also pressed whatever the theme had put
+  underneath it, because a widget drawn early has no way of knowing that a widget
+  drawn later will paint over it. Overlays now publish the rectangle they
+  actually paint, and anything beneath it reads as not hovered — so a click lands
+  on the thing you can see. The menu bar and its open menus use the same
+  mechanism.
+- **Resizing a maximized window works.** Settings → Window's Default and
+  Fit-to-screen buttons quietly did nothing while the window was maximized:
+  Windows keeps the maximized style and the requested size never sticks. The
+  window is dropped out of maximized first, on the path that clamps and persists
+  the size — leaving fullscreen is untouched. Recentering also now keeps the
+  window on the monitor it is already on, instead of sending it back to the
+  primary display.
+- **The OOC log is readable on a first run.** Its text scale had no entry in the
+  preference defaults, so a fresh install left it at zero and the OOC log
+  rendered at a one-pixel font until you touched a slider.
+- **Zooming one log panel no longer stutters the courtroom.** On the undressed
+  layout the IC log, music list, area list and now-playing name all shared a
+  single font set, so zooming one of them away from another rebuilt that set
+  twice every frame and tore down the text atlas with it — a state one scroll
+  puts you in. Each of those surfaces now has its own.
+- **Arrow keys nudge in both layout editors.** A mouse drag can't express "one
+  pixel left", and both editors snap to a grid by default. With a widget
+  selected, an arrow key moves it exactly one pixel, and **Ctrl+arrow** steps to
+  the next line of that editor's own snap grid, so a coarse nudge lands where a
+  snapped drag would. A nudge saves, undoes and resets exactly like a drag, and
+  neither step can push a widget off the window.
+- **A message that is nothing but a screen effect now works.** Sending just `\f`
+  or `\s` did nothing at all, while the same code attached to text worked: with
+  no letters to reveal, the message counted as finished the instant it arrived
+  and the phase that fires the effects was skipped entirely. A bare effect now
+  fires, whether it comes from you or from someone else's client, and still
+  counts as a blankpost for display — the chat box hides and only your sprite
+  shows, like any other markup-only message. It goes out through the same chat
+  rate limit as any other line, and the number of effects a single message can
+  fire is capped.
+
 ## v1.83.0 — 2026-07-25
 
 - **Moderators: IPIDs can now arrive with the live player list.** The player list
@@ -92,8 +228,8 @@ issues fixed below.
   keepalive now runs on its own background thread, independent of the window, so it
   keeps pinging whether the app is minimized, unfocused, or hidden behind
   fullscreen. Your connection stays alive while you're doing other things. (This is
-  the real root cause behind the "it disconnects when I leave it in the background"
-  reports — no server or router change needed.)
+  the real root cause behind the background-disconnect reports — no server or
+  router change needed.)
 
 ## v1.81.4 — 2026-07-22
 
@@ -1981,7 +2117,7 @@ rapid-fire reports.
 - **Fixed the Cyrillic caret** — the cursor sat several letters away from
   where it really was in non-Latin text. The field now measures the caret,
   the scroll, and click positioning through the exact glyphs it draws.
-- **Fixed the size jump** — "as soon as I typed ТЕКСТ it all went up a size."
+- **Fixed the size jump** — typing one non-Latin word grew the whole field a size.
   Non-Latin text rendered at the log-zoom size inside input boxes; it now
   always matches the field's normal text size, whatever your log zoom is.
 
@@ -2055,7 +2191,7 @@ for the live feedback that shaped half of this.**
   flashed so your eye lands on it. No matches? It suggests the tab that
   covers the concept.
 
-### Performance (the "it should be lightweight on real hardware" thread)
+### Performance on real hardware
 - **Static skip:** a genuinely static courtroom now skips rendering entirely —
   idle GPU cost drops to ~zero (a heartbeat frame twice a second keeps
   everything honest).
@@ -2563,7 +2699,7 @@ portability) and **Gaygay** (the UI-scale report) for the feedback that drove it
 ### Quality of life
 - **Manual UI scale is actually usable.** It now applies **on release** (not while
   you drag, which fought your cursor) and has **preset chips** for quick sizes —
-  fixing the "manual scale is super hard to use" report on high-resolution screens.
+  fixing the reported difficulty of using manual scale on high-resolution screens.
 
 ### Under the hood
 - **Signed builds (groundwork).** The release pipeline can now Authenticode-sign
@@ -2585,7 +2721,7 @@ Noir)** for the font report (#6).
   UI scale now follows the **window size** (bigger window → bigger UI, up to a
   cap) on top of the display DPI. It's also **floored at 100%**, so an unreliable
   display-DPI reading can no longer auto-*shrink* everything below 100% — the root
-  of the "default fonts are really tiny" report. (#6, Crystalwarrior) Manual UI
+  of the reported tiny default fonts. (#6, Crystalwarrior) Manual UI
   scale (Settings → General) still overrides — turn auto-scale off there if you
   prefer a fixed size.
 - **AO theme fonts load.** A theme that ships its own font — a `.ttf` / `.otf` in
@@ -2728,7 +2864,7 @@ ZeitHeld and Crystalwarrior** for the detailed reports. (Numbered 1.1.0 rather t
 ### Talking IC is obvious now
 - **The IC text input sits directly under the stage** — the classic Attorney Online
   spot — instead of being buried under the control buttons where it read like the OOC
-  bar. ("At first I thought there was no way to talk IC at all.") (#8, ZeitHeld)
+  bar, where it read as unreachable. (#8, ZeitHeld)
 - **Build-your-own IC bar.** The colour picker, showname box, sound picker, the
   emoji / Text-FX / React buttons and the text input are now each their own box you
   can drag anywhere in **Edit Layout** (Default + Legacy layouts) — no more six things

@@ -350,9 +350,9 @@ func stageTabbarlessCourtroom(t *testing.T, themeName string) *App {
 	return a
 }
 
-// TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt is issue #14's literal
-// complaint — "I don't think this bar at the top is rearrangable" — and it was still
-// UNSHIPPED after asyncao_tabbar was added to themeLayoutKeys.
+// TestTabStripIsEditableUnderAThemeThatNeverDeclaredIt is issue #14's first defect —
+// the strip cannot be moved under a theme — and it was still UNSHIPPED after
+// asyncao_tabbar was added to themeLayoutKeys.
 //
 // Registering the key only means it is READ IF THE THEME DECLARES IT: the apply path
 // copies only keys ElementRect resolves, the layout cache is built by ranging that

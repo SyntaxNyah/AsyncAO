@@ -939,7 +939,7 @@ func TestSendICSplitTargetsPinnedSession(t *testing.T) {
 
 // TestResetSessionStatePairIsSessionOnly pins that pair placement neither
 // persists nor leaks: a fresh session always starts centered/unflipped
-// (playtest: offsets were "inexplicably saved" across client restarts), and
+// (playtest: offsets survived client restarts unexpectedly), and
 // one tab's live placement never seeds another's.
 func TestResetSessionStatePairIsSessionOnly(t *testing.T) {
 	a := testTabApp(t)

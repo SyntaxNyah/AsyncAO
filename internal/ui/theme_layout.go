@@ -1332,7 +1332,7 @@ func (a *App) drawEmoteGridThemed(r sdl.Rect, lay *themeLayoutCache, vp sdl.Rect
 	}
 	if a.previewBase != "" {
 		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
-		// (playtest: "you can't move the preview out of the viewport, wth").
+		// (playtest: the preview could not be moved out of the viewport).
 		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
 		if c.clicked {
 			a.previewBase = ""

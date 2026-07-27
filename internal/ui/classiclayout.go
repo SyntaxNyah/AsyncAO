@@ -16,6 +16,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -31,8 +32,8 @@ const (
 	slotRightCol = "rightcol" // IC log / right column (both themes)
 	slotOOC      = "ooc"      // the new-default OOC box (independent of the log)
 	slotEmotes   = "emotes"   // the emote grid (pages within its rect; both themes)
-	// The whole-bar "icbar" slot was REMOVED in v1.50.5 (Nightingale: "remove
-	// the panel, make every element independent") — the pieces below are the
+	// The whole-bar "icbar" slot was REMOVED in v1.50.5 (requested by Nightingale:
+	// drop the panel and make every element independent) — the pieces below are the
 	// only IC-bar slots now. A stale "icbar" override in old prefs is ignored.
 	// Individually-movable pieces pulled OUT of the IC bar (the "build your own
 	// layout" work). Each defaults to its spot in the bar — so an un-edited or
@@ -40,8 +41,8 @@ const (
 	slotICImmediate = "icbar.immediate" // the Immediate (non-interrupting preanim) toggle
 	slotICPre       = "icbar.pre"       // the "Pre" toggle — send the emote's preanim (auto-follows each pick), same wrap-not-extract rule as Immediate
 	slotICAdditive  = "icbar.additive"  // the Additive (2.8 append-to-last) toggle — shown only on additive servers, same wrap-not-extract rule as Immediate
-	// More IC-bar pieces pulled out individually (#4a, Crystalwarrior — "split it up so
-	// colours, checkboxes, etc. are located elsewhere"). Same wrap-not-extract rule as
+	// More IC-bar pieces pulled out individually (#4a, Crystalwarrior — split the bar up
+	// so the colours, checkboxes and the rest can live elsewhere). Same wrap-not-extract rule as
 	// Immediate: each draws through slotRect but the row cursor advances by the DEFAULT
 	// width, so an un-edited bar is pixel-identical and moving one never cascades the rest.
 	slotICColor    = "icbar.color"    // the text-colour swatch + dropdown
@@ -151,17 +152,39 @@ func (a *App) ensureClassicOv() {
 	a.classicOvLoaded = true
 }
 
+// fracPx resolves one stored window-fraction against an extent, rounding to the NEAREST
+// pixel instead of truncating.
+//
+// Truncation does not round-trip. float64(x)/float64(e)*float64(e) is only guaranteed to
+// be within one ulp of x, and whenever that ulp falls short int32() throws a whole pixel
+// away: measured over every x < e for a dozen common window sizes, 346 positions came
+// back one pixel short, and the stock AO2 canvas width (714) loses roughly one position
+// in six. A mouse drag travels far enough that nobody could ever see it. The arrow-key
+// nudge (layoutnudge.go) moves exactly one pixel, so a dropped pixel is the ENTIRE
+// gesture — a held arrow key would visibly stall against nothing.
+//
+// Rounding is also the fix at the right end: it leaves what is written to disk alone (a
+// drag onto 360 of 1000 px still persists 0.36) and only makes reading it back exact.
+// math.Floor(v+0.5) rather than int32(v+0.5) so a hand-edited negative fraction rounds
+// the same way as a positive one instead of toward zero.
+func fracPx(f float64, extent int32) int32 {
+	return int32(math.Floor(f*float64(extent) + 0.5))
+}
+
 // fracToRect converts a stored window-fraction override to screen pixels.
 func fracToRect(f [4]float64, w, h int32) sdl.Rect {
 	return sdl.Rect{
-		X: int32(f[0] * float64(w)),
-		Y: int32(f[1] * float64(h)),
-		W: int32(f[2] * float64(w)),
-		H: int32(f[3] * float64(h)),
+		X: fracPx(f[0], w),
+		Y: fracPx(f[1], h),
+		W: fracPx(f[2], w),
+		H: fracPx(f[3], h),
 	}
 }
 
 // rectToFrac is the inverse — screen pixels to window fractions for persistence.
+// Deliberately the plain quotient: the stored value is the number a user (or a preset,
+// or a test) reads, so a drag that lands on 360 of 1000 px must persist 0.36 and nothing
+// cleverer. Exactness is fracPx's job, at the other end.
 func rectToFrac(r sdl.Rect, w, h int32) [4]float64 {
 	if w <= 0 || h <= 0 {
 		return [4]float64{}
@@ -649,7 +672,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 		a.layoutSnap = !a.layoutSnap
 	}
 	// Grid chip: cycles the snap step (4 → 8 → 16 → 32, persisted) — playtest
-	// (Tifera): "allow us to edit the snap grid".
+	// request (Tifera): a user-editable snap grid.
 	if c.clicked && pointIn(c.mouseX, c.mouseY, gridBtn) {
 		a.d.Prefs.SetLayoutGridSize(nextLayoutGridSize(a.d.Prefs.LayoutGridSize()))
 	}
@@ -728,8 +751,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 
 	// A pins the hovered box to a window corner / the centre (cycles off →
-	// ↖ → ↗ → ↙ → ↘ → ● — Tifera: "anchor layout items to corners and center
-	// of the entire screen"): a pinned box keeps its PIXEL offsets from that
+	// ↖ → ↗ → ↙ → ↘ → ● — requested by Tifera: anchor layout items to the
+	// corners and centre of the screen): a pinned box keeps its PIXEL offsets from that
 	// reference when the window resizes, instead of drifting with the
 	// fractions. Consumed so a char keybind on A can't also fire mid-edit.
 	if a.classicEditDrag == 0 && hoverKey != "" && c.keyPressed == sdl.K_a {
@@ -758,8 +781,8 @@ func (a *App) drawClassicEditor(w, h int32) {
 	if pressed && a.classicEditDrag == 0 && !overChip && !overTray && !overToolbox {
 		// Alt forces a MOVE (skips the resize-edge test). A small widget — a single
 		// button — is almost ALL edge, so a plain drag kept resizing it instead of
-		// moving it (playtest: "I try to drag Disconnect and it just resizes unless I
-		// make it very big"). Hold Alt to grab-and-move anything regardless of size.
+		// moving it (playtest: dragging a small button resized it instead of moving it
+		// unless it was grown first). Hold Alt to grab-and-move anything regardless of size.
 		// Shift stays pixel-precise, so Alt+Shift = a precise move.
 		resizeKey, resizeEdges := "", uint8(0)
 		if sdl.GetModState()&sdl.KMOD_ALT == 0 {
@@ -846,7 +869,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 			if r.H < classicMinPx {
 				r.H = classicMinPx
 			}
-			// Alignment magnet (Tifera: "nothing was aligning properly" — the
+			// Alignment magnet (reported by Tifera: boxes would not line up — the
 			// defaults aren't grid-aligned, so the grid alone can't make two
 			// boxes flush): the dragged box's edges/centre snap to the OTHER
 			// boxes' edges/centres and the window edges/centre, overriding the
@@ -872,19 +895,10 @@ func (a *App) drawClassicEditor(w, h int32) {
 				r.W = r.H * 4 / 3
 			}
 		}
-		// Keep it on-screen (solid feel; below the editor banner).
-		if r.X < 0 {
-			r.X = 0
-		}
-		if r.Y < 0 { // the top strip is usable now (the banner is translucent and only its chips block a drag)
-			r.Y = 0
-		}
-		if r.X+r.W > w {
-			r.X = w - r.W
-		}
-		if r.Y+r.H > h {
-			r.Y = h - r.H
-		}
+		// Keep it on-screen (solid feel). The top strip is usable — the banner is
+		// translucent and only its chips block a drag. Shared with the arrow-key nudge
+		// (layoutnudge.go) so a drag and a nudge stop in exactly the same places.
+		r = clampSlotToWindow(r, w, h)
 		if a.classicEditMoved {
 			if a.classicOv == nil {
 				a.classicOv = make(map[string][4]float64, classicSlotRegCap)
@@ -962,7 +976,7 @@ func (a *App) drawClassicEditor(w, h int32) {
 	}
 	// Editor chrome LAST — topmost over every outline, tag and strip. It stays
 	// translucent so widgets parked in the top strip remain visible through it
-	// (you can drag boxes up there — playtest: "make use of that space"). A
+	// (you can drag boxes up there — playtest: the top strip was wasted space). A
 	// side effect of painting after the click handlers: the Snap/4:3 labels
 	// show the state a click just set, not last frame's.
 	a.noteEditorBanner() // the top band is ours this frame, so the menu bar stands down (menubar.go)
@@ -988,7 +1002,9 @@ func (a *App) drawClassicEditor(w, h int32) {
 		leftmostChipX = profileBtn.X
 	}
 	hintX := pad + c.TextWidth("Edit Layout") + 18
-	c.LabelClipped(hintX, 6, leftmostChipX-hintX-10, "Drag to move · edge to resize · green lines = aligned · Alt = move · Shift = precise", ColTextDim)
+	// The nudge sits second, right after the mouse gesture it refines: the line clips
+	// from the right, so the tail is what a narrow window loses first.
+	c.LabelClipped(hintX, 6, leftmostChipX-hintX-editBannerHintGap, "Drag to move · arrows = nudge 1 px (Ctrl = grid) · edge to resize · green lines = aligned · Alt = move · Shift = precise", ColTextDim)
 	a.rawChip(aspectBtn, aspectLabel)
 	a.rawChip(magnetBtn, magnetLabel)
 	if name := a.currentLayoutProfileLabel(); name != "" {

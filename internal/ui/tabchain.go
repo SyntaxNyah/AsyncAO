@@ -1,7 +1,7 @@
 package ui
 
-// Tab focus order for the CHAT fields (playtest: "focus on ic, press tab, it
-// goes to the showname instead of the OOC box").
+// Tab focus order for the CHAT fields (playtest: Tab out of the IC box landed on
+// the showname field instead of the OOC box).
 //
 // AO2-Client never calls setTabOrder (0 hits across ../AO2-Client/src), so its
 // Tab chain is Qt's implicit one: widget CONSTRUCTION order. courtroom.cpp

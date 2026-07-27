@@ -86,8 +86,8 @@ func (a *App) debugDiagLine() string {
 		len(a.tabs), area, queue, len(a.icLog), len(a.oocLog), runtime.NumGoroutine())
 }
 
-// debugColdLoadLine is the cold-load profiling readout (the playtest "profile
-// the client and nail down the exact bottleneck" ask): per-stage EWMAs of what
+// debugColdLoadLine is the cold-load profiling readout (the playtest ask for a
+// profile that names the exact bottleneck): per-stage EWMAs of what
 // an UNCACHED asset costs — network fetch (all-hosts TTFB) · decode+downscale ·
 // GPU upload. The big number is the bottleneck. Computed only while the opt-in
 // overlay draws; a stage with no samples yet reads "—".

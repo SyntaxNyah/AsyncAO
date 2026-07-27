@@ -117,7 +117,7 @@ func TestVariantPageInverts(t *testing.T) {
 // stays white, black stays black, a mid-luma pixel takes the paint colour exactly,
 // alpha is untouched, and brightness ORDER is preserved (a lighter source pixel is
 // never darker after the paint) — the old grayscale×tint multiply failed the white
-// case for every saturated hue, which was the "it gets darkened anyway" report.
+// case for every saturated hue, which is the reported darkening.
 func TestApplyPaint(t *testing.T) {
 	// White / black / mid-gray / a semi-transparent colour pixel, painted red.
 	pix := []byte{

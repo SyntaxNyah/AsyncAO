@@ -173,8 +173,8 @@ func (a *App) pollBgList() {
 
 // rebuildBgList merges the menu: the current background first, then the last
 // remembered one, then this server's starred favorites, then every name from
-// the autoindex (de-duplicated, case-insensitively). Seeds float to the top so
-// "what I'm looking at" and "my favorites" are always reachable even on a host
+// the autoindex (de-duplicated, case-insensitively). Seeds float to the top so the
+// background on screen and the starred ones are always reachable even on a host
 // with no listing. fav is built parallel to the list for the per-cell star.
 func (a *App) rebuildBgList() {
 	favList := a.d.Prefs.FavBackgroundList(a.serverKey)

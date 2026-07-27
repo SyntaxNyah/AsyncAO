@@ -133,8 +133,8 @@ var hideableButtons = []struct{ id, label string }{
 	{"ctrl.hotkeys", "Hotkeys"},
 	{"ctrl.about", "About"},
 	{"ctrl.login", "Login"},
-	// v1.50.5 (Nightingale: "your hide menus are missing quite a few — I can't
-	// hide the voice chat or gc"): the once-"contextual" buttons are hideable
+	// v1.50.5 (reported by Nightingale: the hide menus omitted several buttons,
+	// among them voice chat and group chat): the once-"contextual" buttons are hideable
 	// too. Each still self-gates (Voice only in VC areas, GC behind its pref);
 	// hiding wins over both. Mod/CM stay auto-only (moderation affordances).
 	{"ctrl.pair", "Pair"},
@@ -734,8 +734,8 @@ const (
 func (a *App) drawPosSelect(x, y, h int32) int32 {
 	c := a.ctx
 	labelW := c.TextWidth("Pos") + 6
-	// v1.50.5 (Nightingale: "everything is movable EXCEPT the /pos thing"): the
-	// whole Pos control (label + dropdown) is a movable+resizable "ctrl.pos"
+	// v1.50.5 (reported by Nightingale: every control was movable except the Pos
+	// one): the whole Pos control (label + dropdown) is a movable+resizable "ctrl.pos"
 	// slot — and hideable like any control button. The row cursor advances by
 	// the DEFAULT width either way (wrap-not-extract), so moving or hiding it
 	// never cascades the rest of the row.

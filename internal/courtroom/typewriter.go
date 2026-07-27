@@ -44,8 +44,8 @@ const (
 	// above the palette/sentinels so the buildColorSpans switch can branch on
 	// `Color >= ColorExtBase`.
 	ColorExtBase = 0x1000
-	// ColorHexBase tags an EXACT transmitted colour (v1.52.0, Tifera's "any
-	// hex while chatting"): StyleRun.Color is ColorHexBase + 0xRRGGBB, parsed
+	// ColorHexBase tags an EXACT transmitted colour (v1.52.0, requested by Tifera:
+	// any hex colour while chatting). StyleRun.Color is ColorHexBase + 0xRRGGBB, parsed
 	// from the inline `\c#RRGGBB` code. Sits above ColorExtBase + any letter
 	// (≈0x107A) so the render switch can branch `>= ColorHexBase` first; the
 	// packed range spans exactly 24 bits, so the two can never collide.
@@ -272,6 +272,27 @@ type EffectMark struct {
 	Kind EffectKind
 }
 
+// effectMarksMax bounds how many inline \s/\f marks ONE MESSAGE can record (hard
+// rule §17.4 — every queue has a named cap). Two runes per code against AO's
+// ~256-character IC line means a hostile peer could otherwise hand us ~128 marks
+// in a single message; a hand-authored line never uses more than a handful. The
+// visual is already idempotent (each fire just restamps the same ShakeLeft /
+// FlashLeft countdown), so dropping the overflow costs nothing real and keeps a
+// wall of \s from being a screenshake-spam vector.
+//
+// "One message" is per PARSE PHASE, not per parse, and that distinction is the
+// whole point on the 2.8 additive path. StartAppend re-parses prefix+message in one
+// pass — the prefix being every ADDITIVE line accumulated so far — so a whole-parse
+// budget would be spent by the accumulated chain and then refuse every mark in the
+// tail: the newest continuation's own \s/\f, including the mark AT the join that
+// StartAppend's skip loop deliberately preserves and that a tail-of-pure-markup
+// continuation exists to fire. The budget therefore restarts at the join
+// (effectMarkBase), so the tail always gets a full, unspent allowance no matter how
+// long the chain has grown. The slice stays bounded: at most two phases per parse,
+// hence at most 2×effectMarksMax marks, and the prefix's marks are dropped by
+// StartAppend's skip loop anyway (they fired on the original line).
+const effectMarksMax = 32
+
 // parsePauseDuration reads the optional digit run of a \p code beginning at index
 // `at` (the char after 'p'). Bare \p is a 1000 ms pause; \p<n> is n ms clamped to
 // pauseMaxMs (AO2-Client parse_pause_duration parity). Returns the pause in
@@ -341,6 +362,11 @@ type Typewriter struct {
 	accumulator  time.Duration
 	blipCounter  int
 	effectCursor int // next unfired effect (advanced by NextEffect; dropped by SkipToEnd)
+	// effectMarkBase is where the current parse phase's effectMarksMax budget starts
+	// counting from — 0 for an ordinary Start, and the mark count AT THE JOIN for the
+	// additive StartAppend, so the appended tail gets its own full allowance instead of
+	// inheriting a budget the accumulated prefix already spent. See effectMarksMax.
+	effectMarkBase int
 
 	// Interval is the base per-character delay.
 	Interval time.Duration
@@ -365,7 +391,14 @@ func NewTypewriter() Typewriter {
 // an AO2 delimiter. A lone `\` (or any other `\X`) is kept literally so ordinary
 // text isn't eaten. Every consumption rule here is mirrored in StripChatMarkup
 // (pinned equal by TestStripMatchesTypewriter).
-func (t *Typewriter) Start(message string) {
+func (t *Typewriter) Start(message string) { t.startJoined("", message) }
+
+// startJoined is the one parse both entry points run. prefix is the ALREADY-REVEALED
+// additive text StartAppend prepends (empty for a plain Start); it is parsed in the
+// same single pass as message — that is what carries inline colour/speed state across
+// an additive join exactly like AO2 concatenating the HTML — and its only other effect
+// is to mark where the effect-mark budget restarts (effectMarksMax).
+func (t *Typewriter) startJoined(prefix, message string) {
 	t.runes = t.runes[:0]
 	t.intervals = t.intervals[:0]
 	t.styles = t.styles[:0]
@@ -374,6 +407,7 @@ func (t *Typewriter) Start(message string) {
 	t.accumulator = 0
 	t.blipCounter = 0
 	t.effectCursor = 0
+	t.effectMarkBase = 0
 
 	speed := speedStepDefault
 	// base is the AsyncAO-native `\c` colour (ColorDefault until a `\cN` code).
@@ -420,8 +454,19 @@ func (t *Typewriter) Start(message string) {
 		}
 	}
 
-	rs := []rune(message)
+	rs := []rune(prefix + message)
+	// join is where the appended tail starts, in SOURCE runes. Crossing it opens the
+	// tail's own effect-mark budget. `>=` rather than `==` because the body advances i
+	// past whole escape sequences, so the index can step over the join (a prefix ending
+	// in a lone `\` and a message starting with `s` parse as one `\s` across it); the
+	// latch makes the first index at or past the join the phase change, once.
+	join := len([]rune(prefix))
+	tailOpen := false
 	for i := 0; i < len(rs); i++ {
+		if !tailOpen && i >= join {
+			tailOpen = true
+			t.effectMarkBase = len(t.effects)
+		}
 		r := rs[i]
 		if r == '{' {
 			if speed < len(speedMultipliers)-1 {
@@ -480,11 +525,11 @@ func (t *Typewriter) Start(message string) {
 				i++
 				continue
 			case n == 's': // \s → screenshake when the reveal reaches here (AO2 parity)
-				t.effects = append(t.effects, EffectMark{At: len(t.runes), Kind: EffectShake})
+				t.addEffect(EffectShake)
 				i++
 				continue
 			case n == 'f': // \f → realization flash when the reveal reaches here
-				t.effects = append(t.effects, EffectMark{At: len(t.runes), Kind: EffectFlash})
+				t.addEffect(EffectFlash)
 				i++
 				continue
 			case n == 'p': // \p / \p<n> → pause before the next rune (timing modifier)
@@ -534,6 +579,17 @@ func (t *Typewriter) Start(message string) {
 	flush()
 }
 
+// addEffect records one inline \s/\f mark at the current reveal position, capped at
+// effectMarksMax marks SINCE the current parse phase began (effectMarkBase — zero for
+// a plain Start, the join for an additive StartAppend). Shared by the two Start cases
+// so the cap can't be applied to one code and not the other.
+func (t *Typewriter) addEffect(k EffectKind) {
+	if len(t.effects)-t.effectMarkBase >= effectMarksMax {
+		return
+	}
+	t.effects = append(t.effects, EffectMark{At: len(t.runes), Kind: k})
+}
+
 // StartAppend loads message with prefix ALREADY revealed — the 2.8 additive case
 // (#14): an ADDITIVE=1 line continues the previous one, so the prior text shows
 // instantly and only the appended tail crawls (pacing + blips run on the tail
@@ -543,8 +599,11 @@ func (t *Typewriter) Start(message string) {
 // prefix are DROPPED (they fired on the original line; a re-reveal must not re-fire
 // them), matching SkipToEnd's rule for skipped marks. prefix "" is identical to
 // Start(message).
+//
+// The tail also gets its OWN effect-mark budget rather than whatever the accumulated
+// prefix left of one — see effectMarksMax, and TestAppendTailKeepsItsOwnEffectBudget.
 func (t *Typewriter) StartAppend(prefix, message string) {
-	t.Start(prefix + message)
+	t.startJoined(prefix, message)
 	// The processed-prefix rune count is what StripChatMarkup yields for the prefix:
 	// TestStripMatchesTypewriter pins StripChatMarkup's rune output equal to Start's
 	// emitted runes, so this lands the boundary exactly at the join.
@@ -643,6 +702,18 @@ func (t *Typewriter) SkipToEnd() {
 	t.visible = len(t.runes)
 	t.effectCursor = len(t.effects)
 }
+
+// EffectsPending reports whether this message still has inline \s/\f marks that
+// NextEffect has not handed out. It exists because "the reveal is finished" and
+// "there is nothing left to do" are NOT the same thing: a message that is ONLY
+// effect codes (`\f`, `\s\s`) strips to zero runes, so Done() is true from the
+// first instant while its marks — all at position 0 — have never fired. The
+// lifecycle uses it to decide whether the talking phase is still needed, which
+// is what makes a bare-effect message behave like AO2, whose emptiness test
+// (start_chat_ticking, AO2-Client courtroom.cpp:4183) reads the RAW wire text —
+// and a raw "\f" is not empty, so AO2 ticks it and do_flash() runs.
+// Pure read, zero-alloc: safe on the per-frame Update path.
+func (t *Typewriter) EffectsPending() bool { return t.effectCursor < len(t.effects) }
 
 // NextEffect returns the next inline \s/\f mark whose position has been revealed
 // since the last call, advancing an internal cursor; ok=false when none are

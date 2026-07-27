@@ -1,8 +1,8 @@
 package ui
 
-// Inkscape-style alignment snapping for the classic layout editor (playtest,
-// Tifera: "nothing was aligning properly... make an alignment thingy like how
-// Inkscape does"). While a box is dragged or resized, its edges and centre
+// Inkscape-style alignment snapping for the classic layout editor (playtest
+// request, Tifera: boxes would not line up with each other, and Inkscape's
+// alignment guides were the named model). While a box is dragged or resized, its edges and centre
 // are compared against every OTHER registered slot's edges/centres and the
 // window's edges/centre; within alignSnapPx the box snaps flush and a
 // full-length guide line shows WHAT it aligned to. Grid snapping alone could

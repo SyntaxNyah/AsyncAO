@@ -12,8 +12,8 @@ import (
 	"github.com/SyntaxNyah/AsyncAO/internal/network"
 )
 
-// Group-chat visual pass (playtest: "char icons + more customization, it's
-// kinda boring"): character icons on every message/member/DM surface, a stable
+// Group-chat visual pass (playtest: the surfaces were plain, with no character
+// icons and little customization): character icons on every message/member/DM surface, a stable
 // per-person name colour, chat-app bubbles with timestamps drawn newest-first
 // from the bottom, a per-group accent chip, and unread counts in the chat list.
 // All of it is LOCAL rendering — the wire (the /pm fan-out) is untouched.

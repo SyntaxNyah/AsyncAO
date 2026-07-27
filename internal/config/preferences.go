@@ -220,7 +220,7 @@ const defaultRightClickHideSprite = true
 
 // defaultDragLayout makes the courtroom resize by dragging panel edges (the
 // viewport↔log divider) the default; unchecking it brings back the +/− knob
-// buttons. Default-ON per the request ("mouse is draggable by default").
+// buttons. Default-ON per the request: dragging works without opting in.
 const defaultDragLayout = true
 
 // defaultSmoothScaling turns on linear texture filtering (SDL render
@@ -290,8 +290,8 @@ const (
 )
 
 // defaultAutoLoginToast ships ON: when a saved auto-login fires on join, a
-// toast + desktop notification confirms it ("am I logged in rn?") so a mod
-// knows their session is authenticated. Toggleable off in Settings.
+// toast + desktop notification confirms it, so a mod never has to guess whether
+// their session is authenticated. Toggleable off in Settings.
 const defaultAutoLoginToast = true
 
 // defaultScreenEffects ships ON: the AO2 screenshake (\s) and realization flash
@@ -1057,11 +1057,11 @@ type AssetPreferences struct {
 	// profiles, which is acceptable for this superset.
 	LayoutProfiles map[string]LayoutProfile `json:"layoutProfiles,omitempty"`
 	// LayoutGridPx is the layout editor's snap-grid step in logical px
-	// (playtest, Tifera: "allow us to edit the snap grid"); 0 = the default 8.
+	// (playtest request, Tifera: a user-editable snap grid); 0 = the default 8.
 	LayoutGridPx int `json:"layoutGridPx,omitempty"`
 	// ClassicAnchors pins classic-layout slots to a window corner/edge/centre
-	// (playtest, Tifera: "anchor layout items to corners and center of the
-	// entire screen"). The slot's ClassicLayout FRACTION override stays the
+	// (playtest request, Tifera: anchor layout items to the corners and centre
+	// of the screen). The slot's ClassicLayout FRACTION override stays the
 	// single geometry source; the anchor re-bases it to PIXEL offsets from the
 	// anchored reference at resolve time, using the window size the override
 	// was saved at (WinW/WinH) — so the box stays glued through window
@@ -1285,7 +1285,8 @@ type AssetPreferences struct {
 	//
 	// It exists because the mode flip alone leaves an upgrading user staring at a
 	// small centred canvas ringed by bars where an edge-to-edge Stretch courtroom
-	// used to be — the "you must go and tweak settings" outcome. The UI reads it
+	// used to be — an outcome that can only be undone by hunting through Settings.
+	// The UI reads it
 	// once at startup (ThemeFitDefaultJustMoved) to arm the same one-shot window
 	// snap a deliberate theme pick arms, so the first launch after updating lands
 	// on the theme's design size and every later launch is untouched. Config never
@@ -1717,7 +1718,7 @@ type MacroSpec struct {
 	Lines []string `json:"lines"`
 }
 
-// Macro bounds (rule §17.4): "as many as you want" within named caps.
+// Macro bounds (rule §17.4): as many as wanted, within named caps.
 const (
 	MacroCap      = 64  // macros per user
 	MacroLinesCap = 8   // lines per macro
@@ -6290,7 +6291,7 @@ func (p *AssetPreferences) SetCustomChrome(hex [7]string) {
 }
 
 // LayoutPartColorCount is the number of individually-tintable layout parts
-// (v1.52.0, Tifera: "color individual parts of the layout"). The ui package
+// (v1.52.0, requested by Tifera: colour individual parts of the layout). The ui package
 // owns the index meanings (log / OOC / emote grid / chatbox); this package
 // just stores the hex slots, blank = use the chrome default.
 const LayoutPartColorCount = 4
@@ -9177,8 +9178,8 @@ func (p *AssetPreferences) ClearClassicAnchor(name string) {
 	p.markDirty()
 }
 
-// Layout-editor snap grid (playtest, Tifera: "allow us to edit the snap
-// grid"). The step is clamped to [MinLayoutGridPx, MaxLayoutGridPx]; the
+// Layout-editor snap grid (playtest request, Tifera: a user-editable snap
+// grid). The step is clamped to [MinLayoutGridPx, MaxLayoutGridPx]; the
 // editor's Grid chip cycles a sensible subset.
 const (
 	// DefaultLayoutGridPx is the long-standing 8 px editor grid.

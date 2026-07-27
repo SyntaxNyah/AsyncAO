@@ -297,6 +297,58 @@ so a release hit-tests where it actually happened.
   (`browseForFolder`, a `FolderBrowserDialog` the in-app browser doesn't
   replace today); the in-app browser is the proven escalation path if that
   one ever fails foreground the same way.
+- **Overlay fences make a single-pass kit occlusion-aware**
+  (`overlayfence.go`). Because the pass is immediate-mode, a widget drawn
+  early cannot know a widget drawn later will paint over it — so chrome
+  clicks leaked through to the theme underneath. The fix follows the
+  house idiom of *publishing a rect others consult* (`c.modalOn`,
+  `c.ddOpenList`, `a.boxFencesPointer`) rather than inventing a paradigm:
+  overlays register the rect they actually paint in a **bounded**
+  fixed-size registry on `Ctx` (§17.4 — no slice growth, no map, no
+  per-frame alloc), and `hovering()` consults it after `modalOn` /
+  `clipOn`. It is **frame-scoped and self-healing** (cleared in
+  `BeginFrame`, so unlike `modalOn` it can never strand and freeze the
+  UI), **pass-scoped** so a later overlay doesn't inherit an earlier
+  one's fence, and **mark-scoped** for the occluder's own hit tests so
+  fences already in force still apply to it — which is what lets the
+  registry nest for the menu bar's panes and submenus. An occluder whose
+  position depends on a latched flag must publish **inside** the pass
+  that sets the flag, never from a site that also runs on frames where
+  that pass didn't draw.
+- **One reserved top chrome band, measured in one place**
+  (`chrometop.go`). `topChromeH()` = menu bar (`menubar.go`) + the docked
+  server-tab strip (`tabs.go`), and **every screen offsets its content by
+  it** — no screen may hardcode `menuBarH` or `tabBarH`. Both halves
+  self-zero (the menu bar in the full-window modes that preempt the
+  screen dispatch — gif export, replay, scene maker, theater; the strip
+  when there are no sessions or the user has dragged it out of the band),
+  so a screen never has to ask *which* chrome is showing. The strip has
+  exactly two draw sites — inside the courtroom pass, beneath a layout
+  editor's banner, or over everything in `App.Frame` — arbitrated by a
+  latch taken once at the top of the pass, because re-deriving the
+  predicate at each site let them double-paint on the dismiss frame and
+  drop the paint on the arm frame. `screenDispatchPreempted()` and
+  `editorDrawSiteRuns()` are the shared predicates: the arrow-key nudge
+  (`layoutnudge.go`) claims a key only when an armed editor's own draw
+  really reaches the screen, using the *same* conjunction the strip's
+  paint site does, so keyboard and paint can never disagree about who
+  owns the frame.
+- **Character select owns a second design canvas, deliberately outside
+  `a.themeRects`** (`charselectlayout.go`, `charselectgrid.go`,
+  `charselectwidgets.go`). AO2's char select is its own fixed-size canvas
+  (`setFixedSize` from `char_select`, default 714x668) and disagrees with
+  the `courtroom` rect on most real themes. Reusing `a.themeRects` was
+  blocked twice over: every key there becomes a draggable, persistable
+  box in the *courtroom* layout editor, and the courtroom design space
+  drops or clamps any key outside `courtroom`'s bounds — which silently
+  discards `spectator` and truncates `char_select` under the stock theme.
+  So the screen keeps its own rect map with the stock AO2 table as a
+  **per-key** fallback (AO2 falls back to its default theme key by key,
+  not file by file), and shares only `fitDesignCanvas` with the courtroom
+  so both honour one `ThemeFit`. Widget rects take the canvas *scale*;
+  the character grid maps each cell through the canvas *rect*, because a
+  scaled cell plus a scaled gutter round independently and the error
+  accumulates across a row.
 
 ## Courtroom knobs (all persisted, all live)
 
@@ -391,6 +443,6 @@ a solo sprite.
 | `golang.org/x/image` | pure-Go WebP fallback + embedded Go font |
 | `coder/websocket` | **addition:** AO2 ≥ 2.11 is WebSocket-only; stdlib has no WS client. Zero-dependency, maintained, context-aware. |
 | MSYS2 `libavif` (CGO, no Go module) | **addition (user request):** `.avif` as a probe format — native dav1d/aom decode for stills *and* AV1 image sequences, bound exactly like the libwebp CGO shim (~100 lines). The pure-Go alternatives embed a WASM runtime (gen2brain/avif → wazero), the opposite of this project's soul. CGO-less builds degrade to a descriptive decode error; sniffing (`ftyp` + `avif`/`avis` brands) stays pure Go. |
-| System `ffmpeg` (runtime, no Go module, no CGO) | **addition (user request, #99 scene video export):** the **🎥 Video** button streams captured frames into an external `ffmpeg` process (`internal/videoenc`, pure Go) for H.264/MP4 or VP9/WebM. It is **runtime-optional by design** (user: "it still boots even without em") — `Available()` is a cached PATH lookup, a missing ffmpeg only disables that one action, and there is **no build-time dependency** and nothing linked. Audio (music/SFX) muxing into the video is reserved for a follow-up pass. |
+| System `ffmpeg` (runtime, no Go module, no CGO) | **addition (user request, #99 scene video export):** the **🎥 Video** button streams captured frames into an external `ffmpeg` process (`internal/videoenc`, pure Go) for H.264/MP4 or VP9/WebM. It is **runtime-optional by design** (a user requirement: the client must still boot without ffmpeg installed) — `Available()` is a cached PATH lookup, a missing ffmpeg only disables that one action, and there is **no build-time dependency** and nothing linked. Audio (music/SFX) muxing into the video is reserved for a follow-up pass. |
 | OpenDyslexic font (embedded asset, no Go module) | **addition (user request, M9):** the "dyslexia-friendly font" toggle bundles `internal/ui/fonts/OpenDyslexic-Regular.otf` via `//go:embed` (~172 KB) so it works for every user with no separate install — a path-on-disk preset only helped the few who'd installed it. SIL OFL 1.1 (license shipped alongside as `OpenDyslexic-LICENSE-OFL.txt`; embedded unmodified, so the Reserved Font Name clause is satisfied). Applied only to the IC/OOC chat + log text (the existing override-chain scope), so chrome widget metrics are untouched. |
 | `josephspurrier/goversioninfo` (BUILD-TIME tool, NOT a linked dependency) | **addition (Defender false-positive mitigation):** generates the committed Windows VERSIONINFO resource (`cmd/asyncao/versioninfo_windows.syso` from `versioninfo.json`) that gives the `.exe` real CompanyName/ProductName/FileDescription/LegalCopyright metadata. A blank-provenance unsigned Go binary is a small heuristic signal in the `Bearfoos.A!ml` false positive (docs/DEFENDER-FALSE-POSITIVE.md); the resource lowers that surface at zero runtime cost. Run via `go run …@v1.4.0` (the same pin as `.github/workflows/release.yml`; never imported — it does not enter `go.mod` and nothing links it); the syso is committed so a normal build needs no tooling, and the release workflow regenerates it per-tag best-effort. |

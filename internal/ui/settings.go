@@ -2616,8 +2616,8 @@ func (a *App) drawSettingsAssets(y, _ int32) int32 {
 
 // drawSettingsReset is the dedicated Reset tab: the factory-reset launcher, moved
 // out of the Assets tab into its own section so it stands alone and isn't a
-// misclick risk among other controls (playtest: "make reset all settings its own
-// section. Split the settings.").
+// misclick risk among other controls (playtest: factory reset wanted a section of
+// its own, and the settings wanted splitting up).
 func (a *App) drawSettingsReset(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -2731,7 +2731,7 @@ func (a *App) applyPrefsToState() {
 
 // drawSettingsAudio: per-channel volumes (master/music/SFX/blip/alert) and music
 // ducking. Split out of the old combined Audio & Chat tab so audio settings stand
-// on their own (playtest: "why is audio and chat in the same group").
+// on their own (playtest: audio and chat did not belong in one group).
 func (a *App) drawSettingsAudio(y, _ int32) int32 {
 	c := a.ctx
 	pad := a.formX
@@ -2917,7 +2917,7 @@ func (a *App) drawSettingsChat(y, _ int32) int32 {
 		y += 30
 	}
 	// Message-send extras — lived in General → Display & behaviour; moved here
-	// on playtest feedback (Tifera: "move messaging settings to Chat"). They
+	// on playtest feedback (Tifera: the messaging settings belong in Chat). They
 	// shape the messages you TYPE, so they belong with text & typing.
 	re := a.d.Prefs.RandomEmoteOn()
 	if next := c.Checkbox(pad, y, "Auto-random emote (OFF by default): every message picks a different emote from your character's set — for the lazy, and to show off more sprites", re); next != re {

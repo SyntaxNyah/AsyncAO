@@ -1,7 +1,7 @@
 package ui
 
-// Persistent window anchoring for classic-layout slots (playtest, Tifera:
-// "anchor layout items to corners and center of the entire screen"). The
+// Persistent window anchoring for classic-layout slots (playtest request,
+// Tifera: anchor layout items to the corners and centre of the screen). The
 // alignment magnet (classicalign.go) places a box flush ONCE; an anchor keeps
 // it there THROUGH WINDOW RESIZES: the slot's fraction override is re-based
 // to pixel offsets from the pinned reference, reconstructed from the window
@@ -148,8 +148,8 @@ func applyAnchor(ov [4]float64, ar anchorRef, w, h int32) sdl.Rect {
 	case anchorMid:
 		r.X = w/2 + (r0.X + r0.W/2 - ar.winW/2) - r0.W/2
 	default: // fraction axis: today's proportional scaling
-		r.X = int32(ov[0] * float64(w))
-		r.W = int32(ov[2] * float64(w))
+		r.X = fracPx(ov[0], w) // fracPx, not a raw multiply: one rounding rule for every frac→px site
+		r.W = fracPx(ov[2], w)
 	}
 	switch ar.v {
 	case anchorLow:
@@ -158,8 +158,8 @@ func applyAnchor(ov [4]float64, ar anchorRef, w, h int32) sdl.Rect {
 	case anchorMid:
 		r.Y = h/2 + (r0.Y + r0.H/2 - ar.winH/2) - r0.H/2
 	default:
-		r.Y = int32(ov[1] * float64(h))
-		r.H = int32(ov[3] * float64(h))
+		r.Y = fracPx(ov[1], h)
+		r.H = fracPx(ov[3], h)
 	}
 	// On-screen clamp (position only — sizes are the user's).
 	if r.X+r.W > w {

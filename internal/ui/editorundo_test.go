@@ -5,8 +5,8 @@ package ui
 // editors' old in-draw c.keyPressed checks were dead — Ctrl+Z did nothing and
 // Ctrl+Y fired its default bind ("Reshow hidden sprites") mid-edit. These
 // tests pin the fix: editorUndoChord owns Z/Y while an editor is armed and
-// falls through otherwise (playtest: "Layout Editor doesn't register
-// Ctrl-Z/Y").
+// falls through otherwise (playtest: the layout editor did not register
+// Ctrl+Z / Ctrl+Y).
 
 import (
 	"testing"

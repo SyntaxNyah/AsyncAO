@@ -474,8 +474,8 @@ type Ctx struct {
 	// parked/reset: it's config state, not per-frame input.
 	wordDeleteOn bool
 
-	// Tab focus cycling (playtest: "focus on ic, press tab, it goes to
-	// ooc"): TextField records draw order here each frame; the next
+	// Tab focus cycling (playtest: Tab out of the IC box landed on the wrong
+	// field): TextField records draw order here each frame; the next
 	// BeginFrame moves focus along it. Bounded by fields drawn per frame.
 	// Order is DRAW order; orderTabChain (tabchain.go) re-seats the chat
 	// block into AO2's showname → IC → OOC → OOC-name chain at Tab time.
@@ -3279,8 +3279,8 @@ type ddDraw struct {
 // wheel-scroll inside the overlay.
 const ddMaxVisibleRows = 12
 
-// Dropdown is a click-to-open selector (playtest: "PLEASE make the color
-// and pos selection a dropdown"). Closed, it shows options[cur] plus a
+// Dropdown is a click-to-open selector (playtest request: the colour and pos
+// selectors should be dropdowns). Closed, it shows options[cur] plus a
 // chevron; open, the option list paints above everything and the pointer
 // is modally captured so widgets underneath stay inert. Returns the
 // (possibly new) index and whether it changed this frame.

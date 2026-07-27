@@ -890,8 +890,8 @@ func (a *App) drawCharSelect(w, h int32) {
 		c.Heading(pad, hdrY, a.charSelectTitle(), ColText)
 
 		// Top-right is the consistent "leave this screen" slot (matches Settings/About/
-		// Help/etc.) so muscle memory doesn't land on Disconnect (playtest: "in char select
-		// the top-right is Disconnect, not Back — I keep almost pressing it"). Re-picking a
+		// Help/etc.) so muscle memory doesn't land on Disconnect (playtest: char select put
+		// Disconnect where Back lives everywhere else, a near-miss waiting to happen). Re-picking a
 		// character from the courtroom puts a safe Back there; Disconnect is ALWAYS danger-
 		// tinted (red outline + label) and kept out of that spot. Buttons lay out R→L.
 		rightX := w - pad
@@ -1491,7 +1491,8 @@ func (a *App) handlePreviewInput() {
 		c.wheelY = 0
 		c.wheelTaken = true
 	}
-	// Corner-grip resize (playtest: "consistently sized… but resizable"): drag
+	// Corner-grip resize (playtest: a consistent default size that is still
+	// resizable): drag
 	// the ◢ vertically to change the box height; width follows the art's aspect
 	// on the next draw. Claims the press before the body move-drag below.
 	grip := previewGripRect(box)
@@ -1541,8 +1542,8 @@ func (a *App) handlePreviewInput() {
 }
 
 // drawPreviewZoom draws the caption strip along the preview's bottom — the
-// source resolution + the scale it's shown at (the playtest's "resolution scale
-// line, just like existing AO") — flanked by the − / + magnifier buttons, whose
+// source resolution + the scale it's shown at (the playtest ask for the resolution
+// scale line existing AO clients show) — flanked by the − / + magnifier buttons, whose
 // clicks are consumed so the caller's click-to-dismiss doesn't fire. At >1× the
 // cursor pans the magnified view.
 func (a *App) drawPreviewZoom(frame sdl.Rect, srcW, srcH, shownH int32) {
@@ -1622,8 +1623,8 @@ func (a *App) drawPreviewEmoteNav(frame sdl.Rect) {
 
 func (a *App) drawCourtroom(w, h int32) {
 	c := a.ctx
-	// v1.50.5 (Nightingale: "disabled buttons still show up in editor view"):
-	// the slot registry is rebuilt from THIS frame's draws while editing, so a
+	// v1.50.5 (reported by Nightingale: hidden buttons still showed handles in the
+	// editor view): the slot registry is rebuilt from THIS frame's draws while editing, so a
 	// piece hidden mid-session stops ghosting handles the moment it stops
 	// drawing — stale registrations from when it was visible used to live in
 	// the map forever. Edit-mode only (the registry isn't read otherwise).
@@ -1858,8 +1859,8 @@ func (a *App) drawCleanRightColumn(rcol sdl.Rect, vp sdl.Rect, w, h int32) {
 	boxDef := sdl.Rect{X: rcol.X, Y: rcol.Y + logH + cleanGapPx, W: rcol.W, H: oocH}
 	// If the OOC box is hidden, or has been dragged to its own spot (a slot override), it
 	// no longer sits under the log — so the log reclaims the FULL column instead of leaving
-	// a dead gap where the OOC used to be (playtest: "unpin OOC and the IC log is stuck
-	// with empty space that never goes away").
+	// a dead gap where the OOC used to be (playtest: unpinning the OOC box left the IC
+	// log with permanent empty space).
 	_, oocMoved := a.classicOv[slotOOC]
 	oocHidden := a.panelHidden(panelOOC)
 	if oocMoved || oocHidden {
@@ -2931,7 +2932,7 @@ func (a *App) drawLogPanel(r sdl.Rect, vp sdl.Rect) {
 	// the CHROME font: textField vertically centres its text, so a custom
 	// whole-UI font taller than the old fixed 24px box spilled its glyphs
 	// BELOW the field, straight onto the first log line 4px under it
-	// (playtest, Tifera: "the logs overlap with the search bar"). With the
+	// (playtest, reported by Tifera: the log overlapped the search bar). With the
 	// stock font the max() keeps the row at exactly 24px — byte-identical.
 	rowY := inner.Y
 	rowH := logSearchRowH(int32(c.font.Height()))
@@ -4951,7 +4952,7 @@ func (a *App) drawMusicVolume(r sdl.Rect) {
 	c := a.ctx
 	c.LabelClipped(r.X, r.Y, r.W, "Volume — the IC box stays live below, so adjust and keep chatting.", ColTextDim)
 	y := r.Y + 30
-	// FIX #9 parity (playtest: "Volume button in Music tab does not work"): drive the
+	// FIX #9 parity (playtest: the Music tab's Volume control did nothing): drive the
 	// EFFECTIVE (per-server when connected) volumes, exactly like the strip and the
 	// Settings/Extras sliders. This menu used to read/write the GLOBAL prefs, which a
 	// connected server's per-server audio profile overrides — so as soon as volume had
@@ -6331,7 +6332,7 @@ func (a *App) drawEmoteRow(r sdl.Rect, vp sdl.Rect) {
 
 	if a.previewBase != "" {
 		// Clamp to the WINDOW, not the stage — the box is draggable anywhere
-		// (playtest: "you can't move the preview out of the viewport, wth").
+		// (playtest: the preview could not be moved out of the viewport).
 		a.drawSpritePreview(a.winW, a.winH, false, a.previewedEmoteName()) // ARM 2: caption the emote name
 		a.closeSpritePreviewOnLeave()
 	}
@@ -6836,8 +6837,8 @@ func (a *App) drawPairGhost(pv sdl.Rect) {
 	if me := a.activeCharName(); me != "" { // iniswap-aware: preview the folder that actually renders
 		// YOUR ghost is the SELECTED emote's idle — the sprite the next message
 		// really shows. The old hardcoded "normal" drew nothing for the many
-		// packs without a normal.* sprite (playtest: "the sprite doesn't
-		// display at all") while the live viewport worked fine.
+		// packs without a normal.* sprite (playtest: the ghost sprite did not
+		// display at all) while the live viewport worked fine.
 		anim := ghostFallbackEmote
 		if a.emoteIdx >= 0 && a.emoteIdx < len(a.emotes) {
 			anim = a.emotes[a.emoteIdx].Anim
@@ -6965,8 +6966,8 @@ func (a *App) offsetControl(id string, x, y int32, label string, val int, buf *s
 	}
 	// A mouse edit (−/+ button, wheel) while the field is FOCUSED: the field
 	// displays the edit buffer, not val, so refresh it — wheeling never blurs,
-	// and the row froze at its old number until a click-off (playtest: "they
-	// react to the buttons and the wheel but stay at 0 until I click off").
+	// and the row froze at its old number until a click-off (playtest: the rows
+	// answered the buttons and the wheel but displayed 0 until clicked away from).
 	// Typing keeps its partial-input buffer: this only fires on mouse edits.
 	if val != typed && c.focusID == id {
 		*buf = strconv.Itoa(val) // textField clamps the caret to the new length

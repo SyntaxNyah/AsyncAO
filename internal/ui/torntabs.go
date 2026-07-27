@@ -243,7 +243,7 @@ func (a *App) drawTornTabs(w, h int32) {
 		c.Label(hdr.X+7, hdr.Y+3, t.title, ColText)
 		// Redock: RIGHT-CLICK the header — a deliberate gesture. The old one-click "x"
 		// sat in the corner and was far too easy to hit by accident during normal play
-		// (playtest: "really easy to accidentally click, I just did it"), so it's gone.
+		// (playtest: it was hit by accident in normal play), so it's gone.
 		// In edit mode the tray chip / right-click-reset handle redocking instead.
 		if !a.classicEdit {
 			c.TooltipAfter("redock:"+t.key, hdr, "Right-click to redock this panel")

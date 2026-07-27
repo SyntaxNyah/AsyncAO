@@ -1,7 +1,7 @@
 package ui
 
-// Per-field undo/redo for the kit's text fields (playtest: "it generally
-// needs to behave more like a native text field… it doesn't have ctrl+z").
+// Per-field undo/redo for the kit's text fields (playtest: the fields did not
+// behave like native ones — no Ctrl+Z among other gaps).
 // Every field gets a bounded history keyed by its id. Two things feed it:
 //
 //   1. the field's own edits (typing, backspace, paste, selection replace),

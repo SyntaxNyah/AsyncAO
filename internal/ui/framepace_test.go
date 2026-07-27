@@ -199,8 +199,8 @@ func TestEaseICScrollAnimates(t *testing.T) {
 	}
 }
 
-// TestTalkBudget pins the blip-cadence floor (playtest: "at a lower framerate
-// the blips are ALSO at a lower framerate"): while a message plays, the frame
+// TestTalkBudget pins the blip-cadence floor (playtest: the blip rate fell with
+// the frame rate): while a message plays, the frame
 // budget must never be slower than the typewriter's rune interval — one rune
 // per frame keeps every blip boundary on its own frame — and never faster than
 // the user's cap.

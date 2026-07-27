@@ -2,6 +2,40 @@
 
 Tracked limitations that need more than a localized fix.
 
+## Chrome that paints over a widget must also claim its input (issue #37)
+
+The kit is immediate-mode and single-pass, so a widget drawn early has no way of
+knowing that a widget drawn later will paint over it. Left to itself, every piece
+of client chrome that floats above a screen leaks the pointer to whatever is
+underneath: the reported symptom is a button press that also presses the control
+it is covering. This is a bug **class**, not a bug — it recurs every time a new
+overlay is added, which is why the client had already grown three ad-hoc answers
+to it (`c.modalOn`, `c.ddOpenList` consulted by the floating-box code, and
+`a.boxFencesPointer` / `c.fencePointer()`).
+
+The generalized primitive now exists: `fenceOverlay` (`internal/ui/overlayfence.go`)
+publishes an overlay's painted rect into a bounded, frame-scoped registry, and
+`hovering()` (`internal/ui/ui.go`) reads it after the `modalOn` and `clipOn`
+checks, so anything beneath a published rect reads as not-hovered. It nests, it
+cannot strand (it is cleared in `BeginFrame`, unlike `modalOn`), and an occluder's
+own chips stay live because it hit-tests from inside its own ownership scope.
+
+**Two limits keep this open.** First, adoption: only the compact toolbox strip and
+the menu bar (its strip, its panes and its submenus) publish today. Every other
+overlay still relies on the older per-case fences or on nothing at all. Second,
+reach: `hovering()` is the **only** consumer, so the registry covers
+`hovering()`-based hit tests only — raw `pointIn()` sites (the layout editors' drag
+tests, a dropdown's own list rows) still see straight through a fence unless they
+call `c.overlayFenced` themselves.
+
+The rule for anything new: **an overlay that paints over pixels a screen already
+drew must publish that rect**, from **inside** the pass that draws it — never from
+a site that also runs on frames where that pass didn't draw, because a latched
+position is stale then and a fence over pixels nothing painted is the mirror image
+of the leak it fixes. Closing this entry means sweeping every remaining overlay
+onto the primitive and deciding, per raw `pointIn()` site, whether it should honour
+a fence — an audit across the whole kit rather than a localized change.
+
 ## Automated senders whose wire rate depends on whether a frame was drawn
 
 A producer that runs in `App.Background` (which keeps ticking while the window

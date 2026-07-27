@@ -393,8 +393,8 @@ type App struct {
 	icFilterSeq   uint64
 	icFilterEpoch uint64
 	icFilterQuery string
-	// IC wrapped-rows cache (playtest: "make the log break lines
-	// according to its size"): filtered entries wrap to the list width;
+	// IC wrapped-rows cache (playtest: log lines must break to the log's own
+	// width): filtered entries wrap to the list width;
 	// rebuilt only when the log, query, width, or font scale moved.
 	icWrap      []icWrapLine
 	icWrapSeq   uint64
@@ -1187,7 +1187,7 @@ type App struct {
 	musicPct                                 int // music-list font scale, independent of the log so long titles can shrink without shrinking IC
 	areaPct                                  int // areas-list font scale (Ctrl+wheel); mirrors musicPct — on App (global, survives tab switch), NOT sessionState, so it never resets on a session swap
 	modDashPct                               int // mod/CM dashboard list font scale (Ctrl+wheel); mirrors musicPct — on App (global), independent of the log
-	playerPct                                int // Players-tab/pair-popup text zoom (Ctrl+wheel); moved OUT of sessionState to mirror musicPct — session-swap resets silently discarded the zoom (playtest: zoom "didn't work"; the docked tab also needed its own case in the panel scale switch, screens.go)
+	playerPct                                int // Players-tab/pair-popup text zoom (Ctrl+wheel); moved OUT of sessionState to mirror musicPct — session-swap resets silently discarded the zoom (playtest: the zoom did not take; the docked tab also needed its own case in the panel scale switch, screens.go)
 	uiScalePct                               int // global renderer scale (manual)
 	// Manual UI-scale slider COMMITS ON RELEASE: applying live rescales the slider
 	// under the cursor (feedback loop → "super hard to use"). These hold the in-drag
@@ -2338,8 +2338,8 @@ const themeStemChatbox = "chatbox"
 // loader here and the canvas blit in charselectlayout.go, which must not drift.
 const themeStemCharSelectBG = "charselect_bg"
 
-// Readability guard for theme ink (playtest: "displaying black text even
-// when I choose white"). A theme's message/showname colors are designed
+// Readability guard for theme ink (playtest: chat text drew black however the
+// colour was set). A theme's message/showname colors are designed
 // against its own chatbox art, but real themes ship mismatched pairs —
 // dark ink with a dark skin — that render invisible. At load time we
 // compare the ink's luma against the skin's average luma and drop the
@@ -2486,7 +2486,7 @@ var themeLayoutKeys = []string{
 	// OPTIONAL, same shape (#14): "asyncao_tabbar" parks the server-tab strip inside
 	// the theme's design canvas and — because the themed layout editor builds its
 	// editable key set from the layout cache — makes it DRAGGABLE there, which is the
-	// affordance issue #14's reporter did not have under a theme. Absent ⇒ the strip
+	// affordance issue #14 reported missing under a theme. Absent ⇒ the strip
 	// stays docked in the top chrome band (chrometop.go), where it overlaps nothing.
 	// Consumed by tabStripOrigin (tabs.go); the constant is themeTabBarKey.
 	"asyncao_tabbar",
@@ -3289,7 +3289,7 @@ func (a *App) keepSceneAssetsWarm() {
 
 // frameCrashLog is the last-resort diagnostic: a panic that escaped every
 // per-feature recover (replay/preview/maker) would otherwise hard-crash the app
-// with no trace — the exact "it crashes, no crash log" report. This writes the
+// with no trace — the reported crash that left no log behind. This writes the
 // panic + full stack to recordings\scene-maker-crash.log, then RE-PANICS so the
 // behaviour is unchanged (it does NOT mask the bug or leave SDL in a half-bound
 // state — it just makes the next crash diagnosable).
@@ -5658,7 +5658,7 @@ func (a *App) crossfadeDur() time.Duration {
 // InputGraceFrames pref counts these. A fixed 60 fps reference, so the frame
 // count means the same thing regardless of the active cap. After a click/key the
 // rate holds full for InputGraceFrames of them, then drops straight back to idle
-// (the playtest ask was "1 frame, not a whole second"). Mouse MOTION is separate
+// (the playtest ask was one frame of full rate, not a whole second). Mouse MOTION is separate
 // — it keeps its own short motionInputGrace.
 const inputGraceFrameDuration = time.Second / 60
 
@@ -5745,8 +5745,8 @@ func (a *App) NoteMotion() {
 // staticTalkFPS paces a message whose stage is ALL STATIC art (single-frame
 // sprites, no effects): the only motion is the typewriter's text crawl, which
 // reveals runes at ≥ ~40 ms — 30 fps samples it cleanly, so full rate is pure
-// waste there (the playtest ask: "if it's just an image it shouldn't render at
-// high fps"). The effective rate never drops below the user's idle rate and
+// waste there (the playtest ask: a still image should not be redrawn at high
+// fps). The effective rate never drops below the user's idle rate and
 // never exceeds their cap.
 const staticTalkFPS = 30
 
@@ -5851,8 +5851,8 @@ func (a *App) serverTimersLive() bool {
 // talkBudget is the frame budget while a message plays over all-static art:
 // fast enough that AT MOST ONE typewriter rune reveals per frame, so every blip
 // boundary lands its own frame — blips fire from the per-frame room Update, so
-// a frame slower than the rune interval audibly coalesces them (playtest: "at
-// a lower framerate the blips are ALSO at a lower framerate"). Base cadence is
+// a frame slower than the rune interval audibly coalesces them (playtest: the
+// blip rate fell with the frame rate). Base cadence is
 // staticTalkFPS; faster text (the speed slider / {} spans) tightens it; full
 // (the cap's budget) still bounds it.
 func (a *App) talkBudget(full time.Duration) time.Duration {
@@ -5968,7 +5968,7 @@ func (a *App) FramePace(focused bool) time.Duration {
 		}
 		// An unfocused window is still VISIBLE (second monitor): a live stage
 		// animation keeps its OWN schedule — the flat trickle rate here was the
-		// "idle animations go choppy the moment I click into another window" report.
+		// reported cause of choppy idle animations on an unfocused window.
 		if due, ok := nextAnimDue(); ok && due < unf {
 			unf = clampDur(due, full, unf)
 			a.lastPacerTier = pacerContentAnim // the stage-anim deadline set the budget
@@ -6228,8 +6228,8 @@ func (a *App) NoteDeadline() { a.uiDirty = true }
 // only appears on the NEXT frame. The main loop calls this after a rendered input
 // frame so that frame is guaranteed regardless of the input-grace timing, instead
 // of leaving the new state stranded until cursor motion or the idle tick reveals
-// it (the "click Settings and the screen doesn't change until I wiggle the mouse"
-// report). Idle-safe: no input, no follow-up.
+// it (the report of a screen that only repaints on the next mouse movement).
+// Idle-safe: no input, no follow-up.
 func (a *App) NoteInteraction() { a.uiDirty = true }
 
 const (
@@ -7653,7 +7653,7 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 				// AsyncAO is built for fullscreen, so Esc is the keyboard exit (playtest):
 				// the bare courtroom — nothing else open — leaves the server THROUGH the
 				// confirm (requestDisconnect), so an accidental tap can't instantly drop you
-				// ("you press it by accident and you're dead"). A focused field (the IC input)
+				// on one stray keypress. A focused field (the IC input)
 				// eats the first Esc, exactly like every menu screen.
 				if a.ctx.focusID != "" {
 					a.ctx.focusID = ""
@@ -7897,6 +7897,13 @@ func (a *App) Frame(dt time.Duration, winW, winH int32) {
 	// once by drawMenuBar to settle who owns the top band — so it must be cleared AFTER
 	// phase 1 and BEFORE the dispatch, or the bar would replay a stale answer.
 	a.editorBannerPainted = false
+	// Arrow-key nudging for an armed layout editor (layoutnudge.go). PRE-SCREEN, and
+	// for the same reason the editors' Ctrl+Z lives in editorUndoChord rather than in
+	// their draw bodies: both editors draw LAST in their pass, by which point a focused
+	// text field's caret, the IC/OOC recall rings, the pair-ghost offset nudge and the
+	// emote-preview cycler have all already looked at this frame's arrow key. It claims
+	// nothing at all unless an editor's own draw actually reaches the screen.
+	a.editorNudgeKeys(winW, winH)
 
 	if a.gifExporting {
 		// M16 GIF export: owns the viewport (renders the scene offscreen) — tick a
@@ -8583,7 +8590,7 @@ func (a *App) drainWarnings() {
 // (bounded) and surfaces the newest to the jukebox warn line (§1.1). Runs on
 // the render thread alongside drainWarnings, so touching a.warnLine here is
 // race-free. A big track that timed out (or a backing-off host) was otherwise
-// completely silent — "it just doesn't play, no error." Always shown (unlike
+// completely silent — no playback and no error. Always shown (unlike
 // the opt-out asset banner): a music track the user actively /play'd failing
 // is a direct, expected-feedback event, not sparse-pack noise.
 func (a *App) drainMusicFailures() {

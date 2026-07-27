@@ -237,12 +237,20 @@ func (a *App) startLayoutEdit() {
 // The menu bar goes with them: it neither paints nor takes input while an editor is
 // armed (menuBarPaints), so a pane left open would be an invisible surface still
 // holding the kit's modal fence — and the first thing Esc would answer.
+//
+// The FOCUSED FIELD goes too. A text field keeps eating keys while it holds focus —
+// the pointer fence blanks hovering(), not the keyboard — so an IC box still focused
+// from before Ctrl+F2 would swallow the editor's arrow-key nudge and its own Esc for
+// the whole edit, from a caret the editor's chrome is drawn over. Dropping it here is
+// also what makes the pre-screen field-undo gate's claim ("the editors never run with
+// a focused field", App.Frame) true rather than merely hoped for.
 func (a *App) closeEditorBlockingOverlays() {
 	a.closeCourtroomModals()
 	a.showEvid, a.showModcall, a.showPair = false, false, false
 	a.showModDash, a.banBoxKind, a.showCMPanel = false, 0, false
 	a.showDebugPanel, a.showFxPicker = false, false
 	a.closeMenuBar()
+	a.ctx.focusID = ""
 }
 
 // stopLayoutEdit disarms and releases the input fence.
@@ -296,11 +304,13 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		return
 	}
 
-	// Banner + chrome (raw-hit buttons — the fence blocks kit ones).
-	banner := "LAYOUT EDIT — drag = move, corner grip = resize, Tab = cycle, R = rotate, right-click = reset, Ctrl+Z/Y = undo, Esc = exit"
+	// Banner + chrome (raw-hit buttons — the fence blocks kit ones). The nudge sits
+	// straight after "drag = move" because it is the same verb done precisely, and
+	// because the line clips from the right on a narrow window (below) — the tail is
+	// what disappears first, so the newest entry must not live there.
+	banner := "LAYOUT EDIT — drag = move, arrows = nudge 1 px (Ctrl = grid), corner grip = resize, Tab = cycle, R = rotate, right-click = reset, Ctrl+Z/Y = undo, Esc = exit"
 	a.noteEditorBanner() // the top band is ours this frame, so the menu bar stands down (menubar.go)
 	c.Fill(sdl.Rect{X: 0, Y: 0, W: w, H: layoutBannerH}, sdl.Color{R: 0, G: 0, B: 0, A: 210})
-	c.Label(pad, 5, banner, ColTierYellow)
 	doneBtn := sdl.Rect{X: w - 70 - pad, Y: 2, W: 70, H: 22}
 	resetBtn := sdl.Rect{X: doneBtn.X - 96, Y: 2, W: 90, H: 22}
 	snapBtn := sdl.Rect{X: resetBtn.X - 106, Y: 2, W: 100, H: 22}
@@ -316,6 +326,15 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 	if a.layoutMagnetOff {
 		magnetLabel = "Magnet: off"
 	}
+	// The help line clips before the LEFTMOST chip actually drawn (the profile chip when
+	// one exists, else magnet) — the classic banner has always done this, and this one
+	// has to now that it carries the nudge as well: unclipped, the text ran straight
+	// under the Snap / Reset all / Done row on a small window.
+	leftmostChipX := magnetBtn.X
+	if a.hasLayoutProfiles() {
+		leftmostChipX = profileBtn.X
+	}
+	c.LabelClipped(pad, 5, leftmostChipX-pad-editBannerHintGap, banner, ColTierYellow)
 	a.rawChip(doneBtn, "Done")
 	a.rawChip(resetBtn, "Reset all")
 	a.rawChip(snapBtn, snapLabel)
@@ -573,18 +592,7 @@ func (a *App) drawLayoutEditor(w, h int32, lay *themeLayoutCache) {
 		if screenDrag {
 			r = clampTabStripScreen(r, lay, w, h)
 		} else if court, ok := a.themeRectsOrig["courtroom"]; ok {
-			if r.X < 0 {
-				r.X = 0
-			}
-			if r.Y < 0 {
-				r.Y = 0
-			}
-			if r.X+r.W > court.W {
-				r.X = court.W - r.W
-			}
-			if r.Y+r.H > court.H {
-				r.Y = court.H - r.H
-			}
+			r = clampDesignRectToCanvas(r, court) // shared with the arrow-key nudge (layoutnudge.go)
 		}
 		a.themeRects[a.editKey] = r
 		a.invalidateThemeCanvases()

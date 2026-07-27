@@ -1439,7 +1439,24 @@ func (c *Courtroom) startTalking() {
 		// preanim plays, exactly like the blocking PhasePreanim path.
 		c.timer = c.PreanimTimeout
 	}
-	if c.Typewriter.Done() && !c.Scene.Speaker.PlayOnce { // blank post, no pending preanim
+	// Skip the talking phase only when there is genuinely nothing left to do:
+	// no text still to reveal, no inline \s/\f mark still to fire, and no
+	// immediate-mode preanim playing over the box. The effects clause is
+	// load-bearing for a message that is ONLY effect codes ("\f", "\s\f"): it
+	// strips to zero runes, so Done() is true from the very first instant, and
+	// without EffectsPending this jumped straight to linger — PhaseTalking (the
+	// only place NextEffect is drained, see Update) never ran, so a bare effect
+	// silently did nothing while the SAME code attached to text worked. AO2 has
+	// no such hole because its emptiness test reads the RAW wire text
+	// (start_chat_ticking, ../AO2-Client/src/courtroom.cpp:4183) and a raw "\f"
+	// is not empty, so chat_tick walks the escape and calls do_flash (:4442-4448).
+	// One extra Update tick is all this costs: that tick drains every mark at
+	// position 0 and then falls through to enterLinger below, so the message
+	// still settles immediately. Purely a lifecycle decision — the visual is
+	// still gated by effectsVisible inside fireInlineEffect, and Scene.IsBlankPost
+	// is untouched, so an effect-only message keeps hiding the chatbox exactly
+	// like any other markup-only message (see begin).
+	if c.Typewriter.Done() && !c.Typewriter.EffectsPending() && !c.Scene.Speaker.PlayOnce {
 		c.enterLinger()
 		return
 	}

@@ -115,7 +115,7 @@ func stageThemedEditorFixture(t *testing.T) (*App, int32, int32, func()) {
 // layoutEditorBannerText mirrors drawLayoutEditor's own banner string. Rasterized
 // nowhere else in the client, so finding it in a freshly purged text cache is proof
 // the editor's overlay drew this frame.
-const layoutEditorBannerText = "LAYOUT EDIT — drag = move, corner grip = resize, Tab = cycle, R = rotate, right-click = reset, Ctrl+Z/Y = undo, Esc = exit"
+const layoutEditorBannerText = "LAYOUT EDIT — drag = move, arrows = nudge 1 px (Ctrl = grid), corner grip = resize, Tab = cycle, R = rotate, right-click = reset, Ctrl+Z/Y = undo, Esc = exit"
 
 // TestThemedEditorSurvivesAnOpenCourtroomModal is the BLOCKING regression: the themed
 // courtroom could hard-lock.

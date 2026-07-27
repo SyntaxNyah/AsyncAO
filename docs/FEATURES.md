@@ -360,10 +360,16 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   types out. The codes ride the wire untouched, so **other AO2/webAO players see
   the effects too**; a skip/recall drops any the crawl didn't reach (no burst of
   shakes), and the codes never show as text (the IC log and chatbox both strip
-  them). Turn the shake/flash off with **Settings → Stage & viewport effects →
-  "Enable screen effects"** (on by default; the accessibility "Reduce motion" also
-  suppresses them, and the effect sound still plays either way). Custom
-  `effects.ini` overlay effects are the next step (see `docs/ROADMAP.md`).
+  them). A message that is **nothing but effect codes** works too — send just `\f`
+  and the screen flashes with no line spoken (the message still counts as a
+  blankpost for display, so the chatbox hides and only your sprite shows, exactly
+  like any other markup-only message). Bare effects are ordinary IC sends: they
+  go through the chat rate limit like everything else, and the number of codes one
+  message can fire is capped. Turn the shake/flash off with **Settings → Stage &
+  viewport effects → "Enable screen effects"** (on by default; the accessibility
+  "Reduce motion" also suppresses them, and the effect sound still plays either
+  way). Custom `effects.ini` overlay effects are the next step (see
+  `docs/ROADMAP.md`).
 - **Random / rainbow message colour** (M61, Settings → General, both OFF):
   **Random colour** picks a fresh palette colour for each IC message you send
   (the standard TextColor field — every client sees it); **Rainbow** prefixes
@@ -584,7 +590,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   loops its idle too, keeping frames coming through the same `NoteAnimating`
   census while it's drawn; it's torn down on any screen switch so a box left
   open across one can't latch the pace or eat clicks/scroll underneath (v1.55.2).
-- **courtroom_stylesheets.css works** ("the css stuff"): a QSS-subset
+- **courtroom_stylesheets.css works** (the reported missing CSS support): a QSS-subset
   parser extracts the palette (QWidget/QPushButton/QLineEdit/etc colors;
   `#rgb`/`#rrggbb`/Qt `#aarrggbb`/`rgb()`/named) and recolors the whole
   client kit — panels, buttons, text, accents — restoring the stock
@@ -598,6 +604,48 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   themes that stack the IC/OOC logs on one rect (AO2's ooc_toggle
   pattern) render as tabs instead of drawing on top of each other —
   nothing flies off screen, whatever the theme author did.
+- **Character select on the theme's own canvas and grid** (#20). AO2's character
+  select is a **second** fixed canvas, separate from the courtroom's — its
+  backdrop art has the slot frames painted *into* it, at an origin and pitch the
+  theme declares (`char_select`, `char_buttons`, `char_button_spacing`,
+  `char_list`, `char_search`, `spectator`, `back_to_lobby`, the page arrows and
+  the two filter boxes). AsyncAO used to stretch that artwork over the whole
+  window and then draw its own grid at its own cell size from its own margin —
+  two grids, two origins, two pitches, so the character cells sat away from the
+  frames painted for them. The screen now has its **own** design canvas and its own
+  rect table, fitted by the same code (and the same **Theme fit** mode) the
+  courtroom uses, so the two canvases can never round apart. The backdrop is
+  blitted **into the canvas**, not the window, and every cell is mapped through
+  the canvas rect rather than stepped at a scaled pitch (scaling the cell and the
+  gutter separately accumulates rounding error across a row and walks the grid off
+  the artwork at any scale but 1:1). Column and row counts are derived in design
+  space for the same reason. **The stock AO2 table is embedded as a per-key
+  fallback** — AO2 falls back to its default theme key by key, and across the
+  reference themes about a third declare no canvas and a third no grid, so for
+  those every number comes from that table. Also drawn: the theme's **character
+  name column** (not decoration — several themes' artwork paints more slot columns
+  than their grid declares, and the name column is what covers the remainder), its
+  search field, spectator, back and filter controls at their declared rects, and
+  its **hover** and **taken** overlays at AO2's geometry. Character icons keep
+  their existing bake size and are drawn scaled into the theme's cell, which is
+  what AO2 does with them too. **Graceful degradation:** if a theme's controls
+  would land off screen, or its cells would be smaller than the client is willing
+  to call a recognisable face, the screen falls back to AsyncAO's own full-window
+  grid rather than shipping something unusable — and the whole path is gated on
+  the same "use the theme's layout" preference the courtroom uses, so the two
+  screens are never half-themed.
+- **Themed IC/OOC logs have an inner margin** (#25). Under a theme the log text
+  started flush against the panel art, because the theme's design rect went
+  straight into the shared log draw — which starts text at the rect origin, since
+  the default layout insets *before* calling it. AO2 gets that margin for free
+  (its chatlogs are frameless Qt text widgets whose document margin defaults to
+  4 px; it is not theme CSS). The same inset now applies at every themed body,
+  **including the music / areas / players list**, so a theme can't show padded
+  logs beside a flush one, and the tab chip strips are built from the inset body
+  so chips and text share one margin. Deliberately **asymmetric** — the left edge
+  insets and the right does not — so the scrollbar stays flush at the panel edge
+  the way Qt keeps a scroll area's bar, and the text's right margin isn't
+  double-counted against the wrap width.
 - **Theme fit modes** (Settings → Theme): an AO2 theme has a FIXED design size,
   so scaling it to a differently-shaped window leaves bars. Pick how it fills:
   **Native 1:1** (**the default** — the theme draws at its authored size,
@@ -662,6 +710,14 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   dialog (whose footer is now just **Done**). The toolbox is itself hideable (its
   own entry in the hide list) and is a pure hover reveal, so it stays on the
   zero-allocation render path and can't wake the render loop at idle.
+  **Its commands also live in the menu bar's Extras menu** (#26) — the toolbox
+  was reported as encroaching on theme art, and before the menu existed the only
+  ways to turn it off were the very chips it was covering, a hotkey, or the
+  Settings screen. **Extras → Floating toolbox** switches it off from a surface
+  reachable on every screen. The toolbox survives as a secondary surface because
+  it is also a movable, theme-placeable box and the layout editor's own drag
+  handle, and it now publishes an overlay fence so its chips can no longer press
+  whatever the theme drew underneath them.
 - **The "Hide UI pieces" panel scrolls.** On short windows (768p laptops,
   minimum window height) its growing checkbox lists and footer buttons could clip
   off-screen and become unreachable; the lists now scroll (input-aware clipping,
@@ -708,6 +764,32 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 
 ## Quality of life
 
+- **App-wide menu bar** (#14): a persistent strip along the top of **every**
+  screen with real dropdown menus — **Servers** (refresh, connect-time sort,
+  Phone Book, direct connect, disconnect, quit), **View** (keep aspect ratio, a
+  **Theme fit ▸** submenu, plain backdrops, the F3 performance overlay),
+  **Window** (restore default size, **Theme's design size**, fit to screen,
+  fullscreen), **Extras** (theater, edit layout, hide UI pieces, the floating
+  toolbox switch, Settings) and **Help** (hotkeys, What's New with its unread
+  badge, privacy, glossary, chat logs, the server-owner guide, About). It
+  **reserves its own band**, so nothing is painted over and no screen has to dodge
+  it, and it draws in the client's **own chrome colours** rather than the palette
+  an imported theme overwrites — client furniture stays readable over arbitrary
+  theme art. Click or hover to walk the titles, **Escape** closes. Menus gather
+  what used to be scattered across a lobby button row, a corner toolbox and the
+  Settings screen; the lobby's remaining right-hand cluster is laid out from a
+  cursor, so it can no longer run off the edge of a minimum-size window (several
+  of its buttons used to sit at negative coordinates there and were unclickable).
+- **Chrome can't leak your click to what's under it** (#26/#37). The kit is
+  immediate-mode and single-pass, so a widget drawn early has no way of knowing a
+  widget drawn later will paint over it — pressing a floating-toolbox chip also
+  pressed whatever the theme had put underneath. Overlays now publish the rect
+  they actually paint into a small bounded **overlay-fence registry**, and hit
+  tests underneath read as not-hovered, so a click lands on the thing you can see.
+  It is frame-scoped and self-healing (unlike the modal fence, it can never strand
+  and freeze the UI), pass-scoped so a later overlay doesn't inherit it, and it
+  nests — which is what lets the menu bar, its open panes and the toolbox all use
+  one mechanism.
 - **Recordings keep their assets** (default **ON**, toggle in **Settings →
   Studio**): the moment a recording stops, the scene's assets are still warm
   in the cache — so AsyncAO automatically packages them into
@@ -996,7 +1078,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
 - **Window-relative UI scale.** Auto UI scale now follows the **window size** (a
   reference height = 100%, larger windows scale up, capped) as well as the display
   DPI, and is **floored at 100%** so an unreliable DPI reading can never auto-shrink
-  the UI — fixing "everything is tiny" on big monitors / maximized windows ([#6]).
+  the UI — fixing the reported tiny UI on big monitors / maximized windows ([#6]).
   Manual scale (Settings → General) still overrides.
 - **Call-mod is a floating panel.** The Call Mod window is now a movable / resizable
   **non-blocking** floating box (like Evidence / Pair) — keep talking and watching
@@ -1258,7 +1340,7 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   (`.wav`/`.ogg`/`.mp3`/**`.opus`**), else a **built-in ping**. The ping is the
   reliable default: we deliberately do **not** route through the theme's
   `word_call` (a theme that *names* it but ships no loadable file would play
-  nothing and silence the alert — the "callwords don't work" report). A **Test
+  nothing and silence the alert — the report of callwords never firing). A **Test
   sound** button next to the field plays exactly what an alert fires, so you can
   confirm it's audible. The same custom-file → built-in-ping rule covers the
   friend-speaks sound. The built-in ping is a **~1.5 s trill** (the old 160 ms
@@ -1903,7 +1985,13 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   any widget across the screen, grab its corner grip to shrink/grow,
   right-click to reset one, Reset all for the theme. A **Snap** toggle
   (on by default) rounds moves and resizes to a tidy grid so widgets line
-  up; flip it off for free-hand placement. **Ctrl+Z / Ctrl+Y undo & redo**
+  up; flip it off for free-hand placement. **Arrow keys nudge the selected
+  widget one pixel** — the precision a mouse drag can't give — and **Ctrl+arrow**
+  steps to the next line of the editor's grid, the same lattice a snapped drag
+  lands on. A nudge saves, undoes and resets exactly like a drag. (The
+  server-tab strip is client chrome, so it nudges one *screen* pixel at any
+  theme-fit scale; a theme's own widgets nudge one *design* pixel, the unit
+  their rects are authored in.) **Ctrl+Z / Ctrl+Y undo & redo**
   any move, resize, or reset (each restores and re-persists the rects).
   Edits persist per theme as
   design-space overrides (window resizes keep working; the theme's own
@@ -1926,8 +2014,11 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   rows + the scale knobs, dragged as one unit — mostly vertically, since it
   stays full width) all move independently. Right-click a
   box to reset it, **Reset all** to clear every override, **Snap** to tidy
-  placement, **Ctrl+Z / Ctrl+Y** to undo / redo (right-click only goes back to
-  *default* — undo gets a previous *custom* spot back), and **Tab** to cycle the
+  placement, **arrow keys** to nudge the selected box one pixel (**Ctrl+arrow**
+  steps to the next line of the **Grid** chip's step, so the coarse nudge lands
+  where a snapped drag would; both save and undo like a drag, and neither can
+  push a box off the window), **Ctrl+Z / Ctrl+Y** to undo / redo (right-click
+  only goes back to *default* — undo gets a previous *custom* spot back), and **Tab** to cycle the
   stack of boxes under the cursor when they overlap (the bottom hint shows how
   many are stacked). Overrides are saved as window *fractions* (config `classicLayout`),
   so they survive window resizes and persist across sessions — with **zero
@@ -2007,9 +2098,23 @@ canonical reference it mirrors. AO2-Client wins every semantic conflict
   General → "Max server tabs"): Join while connected opens a NEW tab —
   the old session parks and keeps running (its packets drain on a
   per-frame budget into its own logs; unread counts and callword
-  flashes still fire). A floating chip strip (top-center, every screen)
-  switches tabs, shows unread, closes background tabs (×), and clicking
-  the active chip drops you to the lobby with the session still live. A
+  flashes still fire). A chip strip **docked directly under the menu bar**, in a
+  band of its own on every screen, switches tabs, shows unread, closes background
+  tabs (×), and clicking
+  the active chip drops you to the lobby with the session still live. It used to
+  float over the stage at a fixed spot left of centre — on a themed courtroom
+  that put it on top of the IC log — and under a theme it could not be moved at
+  all, because the only editor reachable there edits widgets the *theme* declares
+  and the strip had never been one. It now **centres itself** in its band and is a
+  draggable box in **both** layout editors (a `slotTabBar` override in the default
+  layout, an `asyncao_tabbar` key in the themed one): drag it where you want,
+  right-click to send it home, Ctrl+Z to undo, arrow keys to nudge. Because it is
+  client chrome that is intrinsically sized by its own tabs, its placement is
+  tracked and stored in **screen** pixels rather than as a scaled design rect, so
+  a one-pixel drag moves exactly one pixel at every theme-fit scale. Resizing is
+  refused, matching how the same strip already behaved in the default layout. When
+  it is dragged out of the band, the band collapses and the space goes back to the
+  screen. A
   **"+" chip** at the end of the strip (accent-bordered, with a hover hint)
   is the discoverable way to open another server — it parks the current
   session and opens the lobby to connect a new tab; it hides at the cap.

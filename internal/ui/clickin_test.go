@@ -9,8 +9,8 @@ import (
 // TestClickedIn pins press-origin gating. A committed click requires the button
 // to be pressed AND released inside the rect; a release that drifted in from a
 // drag begun elsewhere (a scrollbar grab, a panel move) must NOT fire. This is
-// the fix for "I only hovered over the jukebox / player list and ended up in
-// another area" — the navigational rows (area list, area-jump header, music
+// the fix for area changes fired by a mere hover-and-release over the jukebox or
+// the player list — the navigational rows (area list, area-jump header, music
 // track) all route through ClickedIn so a stray release can't transfer areas.
 func TestClickedIn(t *testing.T) {
 	row := sdl.Rect{X: 100, Y: 100, W: 200, H: 20}

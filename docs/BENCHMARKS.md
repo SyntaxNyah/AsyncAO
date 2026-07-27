@@ -24,6 +24,8 @@ go test -race -count=1 ./...   # the assertion-style gates live in tests
 | UI server-clock chips, 0 allocs | **0 allocs/op** for a stable/paused clock — labels memoized per displayed second into a reused scratch slice (was a slice + `fmt.Sprintf`/visible-timer every frame); a running clock rebuilds ≤ 1×/sec | `TestTimerChipLabelsMemoized` |
 | UI whole-screen courtroom draw, 0 allocs | **0 allocs/op** steady state — a settled headless courtroom scene (real font-loaded Ctx over a software renderer, every stage base resident, room settled) exercises `drawICControls`, the hover toolbox, and the pushClip conversions; guards the whole-screen composite instead of one widget | `TestDrawCourtroomZeroAlloc` |
 | UI whole-screen lobby draw, 0 allocs | **0 allocs/op** steady state — the lobby composite (`screens.go` `drawLobby`) held to the same whole-screen gate | `TestDrawLobbyZeroAlloc` |
+| UI whole-screen **themed** courtroom draw, 0 allocs | **0 allocs/op** steady state — the theme-driven composite (`theme_layout.go` `drawCourtroomThemed`) had no gate and could not have had one: three rects escaped to the heap through cgo every frame, plus per-frame string building for theme button stems, the list header counter and the extras tooltip. All converted to the `c.cgoRect` idiom / memoized first | `TestDrawCourtroomThemedZeroAlloc` |
+| UI themed draw with divergent panel zooms, 0 allocs | **0 allocs/op** steady state — the sibling gate for a user who has zoomed one panel away from another (one scroll reaches it). It caught a real defect: the log, music, area and music-name surfaces shared one font set, so divergent zoom rebuilt it twice per frame and tore down the text atlas — 42 allocs/frame. Each element now draws from its own set | `TestDrawCourtroomThemedDivergentZoomZeroAlloc` |
 | Cold probes ≤ 1/asset, ≤ 450 total | **285 probes / 285 assets** (200-char session) | `TestProbeBudget200CharServer` |
 | Paired cold ≈ single (±20%) | **parallel: 0.17 s with 150 ms/request latency** (serial would be ≥ 0.30 s) | `TestPairedPrefetchResolvesConcurrently` |
 | Steady-state probes (learned warm start) | **N probes for N assets, all first-try** | `TestManagerLearnedWarmStart` |
@@ -45,4 +47,11 @@ Notes:
   eviction, or purge bumps `TextureStore.Generation` (re-measured above).
 - GIF/APNG composition canvases and DisposalPrevious snapshots come from the
   pixel pool: animated decodes now allocate only their output frames.
+- **Character select is the one whole-screen draw with no gate yet.** Its themed
+  geometry is alloc-free (`charSelectGridPlan`, `cellAt`, `charHoverID` and the
+  cached heading are all covered), but `drawCharCell` still rebuilds each visible
+  character's icon URL every frame, and that URL depends on the session's asset
+  origin — so caching it means a second invalidation source, not a one-liner.
+  Tracked in `docs/ROADMAP.md`; do not add a gate that only passes by shrinking
+  the staged roster.
 - Keep this file current: update measurements when touching any gated path.

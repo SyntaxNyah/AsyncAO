@@ -591,7 +591,8 @@ func (a *App) boxFencesPointer(w, h int32) bool {
 	// visuals and the courtroom pass must NOT run pointer-blind, or the dropdown's
 	// own click resolution (raw pointIn in dropdownEx) goes blind with it. Without
 	// this, a list flipped up over a torn-tab panel had dead rows exactly where the
-	// two overlapped (custom-layout playtest: "can't select higher than Gray").
+	// two overlapped (custom-layout playtest: the upper rows of a flipped-up colour
+	// list could not be picked).
 	if a.ctx.ddOpen != "" && pointIn(a.ctx.mouseX, a.ctx.mouseY, a.ctx.ddOpenList) {
 		return false
 	}

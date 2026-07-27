@@ -1,7 +1,7 @@
 package ui
 
-// Per-part layout colours (v1.52.0, Tifera: "color individual parts of the
-// layout"). Each big courtroom panel — the log column, the OOC box, the emote
+// Per-part layout colours (v1.52.0, requested by Tifera: colour individual parts
+// of the layout). Each big courtroom panel — the log column, the OOC box, the emote
 // grid, the chatbox — can carry its own background tint instead of the global
 // chrome Panel colour. Overrides live in prefs as hex strings (blank = chrome
 // default) and are parsed ONCE into an App-local cache, so the draw sites pay

@@ -102,7 +102,7 @@ func (a *App) labelName(x, y, maxW int32, text string, col sdl.Color) {
 // single-font path draws (c.font) — so typing one non-Latin rune never changes
 // the rendered text size. These used to come back at the LOG zoom (a.logPct),
 // which made the whole field visibly grow the moment a Cyrillic letter landed
-// (playtest: "as soon as I typed ТЕКСТ it all went up a size").
+// (playtest: typing one Cyrillic rune grew the whole field a size).
 func (a *App) icFieldFonts(text string) (primary, emoji *ttf.Font) {
 	if isASCII(text) {
 		return nil, nil

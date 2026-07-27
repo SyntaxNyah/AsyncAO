@@ -38,7 +38,7 @@ func TestSkipFrameExpExtendsToMenus(t *testing.T) {
 	}
 	a.pinging = false
 
-	// Settings now skips when static (the user's ask — "virtually nothing moves").
+	// Settings now skips when static (the user's ask: a still screen must not redraw).
 	a.screen = ScreenSettings
 	if !a.SkipFrame(true, false) {
 		t.Error("exp: a static Settings screen must skip")

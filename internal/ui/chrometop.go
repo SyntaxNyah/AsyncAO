@@ -4,20 +4,20 @@ package ui
 //
 // Two strips live above every screen: the menu bar (menubar.go) and, docked
 // directly beneath it, the server-tab strip (tabs.go). Before this file existed the
-// tab strip FLOATED over the stage — which is exactly what issue #14 reported. Its
-// attachment shows a themed courtroom with the strip sitting left-of-centre ON TOP
-// of the IC log, and the reporter's three complaints were all true:
+// tab strip FLOATED over the stage — which is exactly what issue #14 reported: on a
+// themed courtroom the strip sat left-of-centre ON TOP of the IC log. Three separate
+// defects, all real:
 //
-//   - "I don't think this bar at the top is rearrangable" — correct under a theme.
-//     openLayoutEditor routes to the THEMED editor whenever the theme layout is valid
-//     and enabled (layoutedit.go); the themed editor's editable key set is built from
-//     the theme layout cache alone, and "tabbar" is not a theme key; slotRect only
-//     registers a draggable slot while classicEdit is true (classiclayout.go); and
-//     drawCourtroom force-stops the classic editor on a themed layout (screens.go).
-//     So on the screen he photographed the strip was literally undraggable.
-//   - "it clashes with the theme" — it is plain kit chrome painted over theme art.
-//   - "it doesn't even center itself" — tabStripDefaultX used to centre the strip in
-//     the gap LEFT of the docked log column, which reads as "parked off to one side".
+//   - The strip could not be moved under a theme. openLayoutEditor routes to the
+//     THEMED editor whenever the theme layout is valid and enabled (layoutedit.go);
+//     the themed editor's editable key set is built from the theme layout cache
+//     alone, and "tabbar" is not a theme key; slotRect only registers a draggable
+//     slot while classicEdit is true (classiclayout.go); and drawCourtroom
+//     force-stops the classic editor on a themed layout (screens.go). So on a themed
+//     screen the strip was literally undraggable.
+//   - It clashed with the theme: plain kit chrome painted over theme art.
+//   - It did not centre itself — tabStripDefaultX used to centre the strip in the gap
+//     LEFT of the docked log column, which parks it off to one side.
 //
 // The fix is structural: the strip DOCKS in a band that belongs to it, every screen
 // starts its content BELOW that band, and the band is measured in exactly one place —
@@ -78,10 +78,12 @@ func (a *App) screenDispatchPreempted() bool {
 // whole screen dispatch — an editor flag can outlive any of those. Evaluated after the
 // dispatch (both editors are force-stopped by the layout they do not belong to), so it
 // and the two in-pass gates always agree.
-func (a *App) tabStripPaintsUnderEditor() bool {
-	return a.layoutEditorArmed() && a.screen == ScreenCourtroom &&
-		a.room != nil && a.sess != nil && !a.theaterOn && !a.screenDispatchPreempted()
-}
+//
+// That question — "does an armed editor's own draw reach the screen this frame" — is
+// editorDrawSiteRuns (layoutnudge.go), where the arrow-key nudge needs the same answer
+// before it may claim a key. ONE copy of the conjunction, so the strip's paint and the
+// editor's keyboard can never disagree about who owns the frame.
+func (a *App) tabStripPaintsUnderEditor() bool { return a.editorDrawSiteRuns() }
 
 // tabStripPaintLatch is THIS FRAME's single answer to WHICH of the strip's two draw
 // sites owns the paint — the compactToolboxLatch idea applied to the same class of

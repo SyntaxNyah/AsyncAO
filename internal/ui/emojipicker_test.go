@@ -43,8 +43,8 @@ func TestEmojiPickerFenceReleases(t *testing.T) {
 	}
 }
 
-// TestEmojiPickerKeepsPanels pins the playtest fix "the emoji button makes all
-// the areas disappear": the picker still FENCES the pointer (courtModalOpen)
+// TestEmojiPickerKeepsPanels pins the playtest fix for the emoji button making the
+// areas panel disappear: the picker still FENCES the pointer (courtModalOpen)
 // but no longer counts as a blocking popup, so the Extras surface — the box and
 // every torn-off tab panel (Areas!) — keeps drawing while it's open. Truly
 // blocking popups still hide them.
